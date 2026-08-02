@@ -58,6 +58,7 @@ __all__ = (
     "LITERAL",
     "TYPE",
     "PREDICATE",
+    "APP",
     "CAPTURE",
     "FORM",
     "MATCH",
@@ -1057,6 +1058,60 @@ class FORM(Pattern):
 
     def __kos_repr__(self):
         return f"(FORM {kos_repr(self._sub)})"
+
+
+class APP(Pattern):
+    """
+    Apply the named extern callable to a single source element and match
+    the inner pattern against the call's result. The extern is invoked
+    synchronously at match time (an awaitable result raises; demand-wrap
+    koskari callables); a raising extractor propagates as an error, not
+    a no-match
+    """
+
+
+    def __init__(self, extern_name, sub=None):
+        """
+        :param extern_name: the extractor's extern binding name
+        :param sub: optional pattern applied to the call result
+        :raises TypeError: when extern_name is not a str or sub is not
+            a pattern
+        :raises ValueError: when extern_name is empty
+        """
+
+        check_str_arg(extern_name, "APP extern name")
+        if sub is not None:
+            check_pattern_arg(sub, "APP sub")
+        self._extern = extern_name
+        self._sub = sub
+
+
+    def lower(self, ctx):
+        """
+        Intern the extern, emit the inner pattern, then an APP node
+        """
+
+        idx = ctx.intern_extern(self._extern)
+        sub_idx = self._sub.lower(ctx) if self._sub is not None else -1
+        return ctx.append_node(("APP", idx, sub_idx))
+
+
+    def visit(self, fn):
+        fn(self)
+        if self._sub is not None:
+            self._sub.visit(fn)
+
+
+    def __repr__(self):
+        if self._sub is None:
+            return f"APP({self._extern!r})"
+        return f"APP({self._extern!r}, {repr(self._sub)})"
+
+
+    def __kos_repr__(self):
+        if self._sub is None:
+            return f"(APP {self._extern})"
+        return f"(APP {self._extern} {kos_repr(self._sub)})"
 
 
 class MATCH(Pattern):
@@ -3492,6 +3547,22 @@ def str_arg_factory(name, ctor):
     return factory
 
 
+def app_factory(head_sym, raw_args):
+    """
+    Lower (APP fn) or (APP fn pat). fn is the extractor's extern name
+    (a symbol); the optional pat matches the call's result
+    """
+
+    items = list(unpack(raw_args))
+    if not items or len(items) > 2:
+        raise ValueError(
+            f"(APP ...) expects 1 or 2 arguments, got {len(items)}")
+    fn = coerce_slot("APP", items[0])
+    if len(items) == 1:
+        return APP(fn)
+    return APP(fn, parse_matcher(items[1]))
+
+
 def field_factory(head_sym, raw_args):
     """
     Lower (FIELD pat) or (FIELD NAME pat). Single-arg form becomes
@@ -3557,6 +3628,7 @@ def register_builtin_matchers():
     register_matcher("PREDICATE", str_arg_factory("PREDICATE", PREDICATE))
     register_matcher("TEST_ANY", test_any_factory)
     register_matcher("FIELD", field_factory)
+    register_matcher("APP", app_factory)
 
 
 register_builtin_matchers()
@@ -3602,6 +3674,15 @@ CASE_ELEMENT_PATTERN = ONEOF(
         REST("or_branches"))),
     FORM(MATCH(LITERAL_SYM("not"), CAPTURE("not_operand"))),
     FORM(MATCH(LITERAL_SYM("?"), CAPTURE("pred_name", TYPE("symbol")))),
+
+    # computed extraction: (app f) / (app f pat)
+    FORM(MATCH(
+        LITERAL_SYM("app"),
+        CAPTURE("app_fn", TYPE("symbol")),
+        CAPTURE("app_pat"))),
+    FORM(MATCH(
+        LITERAL_SYM("app"),
+        CAPTURE("app_fn", TYPE("symbol")))),
 
     # marked typed element: (name :: ...) / (:: ...); the whole form is
     # re-fed to parse_matcher, which owns the constraint grammar
@@ -3747,6 +3828,12 @@ def parse_case_element(elem):
 
     if "pred_name" in c:
         return PREDICATE(str(c["pred_name"].datum))
+
+    if "app_fn" in c:
+        fn = str(c["app_fn"].datum)
+        if "app_pat" in c:
+            return APP(fn, parse_case_element(c["app_pat"].datum))
+        return APP(fn)
 
     if "marked_name" in c or "anon_marker" in c:
         return parse_matcher(elem)

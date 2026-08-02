@@ -39,6 +39,7 @@ typedef enum {
   KOS_MATCH_NODE_CLASS,
   KOS_MATCH_NODE_FIELD,
   KOS_MATCH_NODE_SAME,
+  KOS_MATCH_NODE_APP,
   KOS_MATCH_NODE_KIND_COUNT
 } KosMatchNodeKind;
 
@@ -160,6 +161,13 @@ typedef struct {
 
 
 typedef struct {
+  uint32_t fn_extern;     /* index into matcher->externs / extern_env:
+                             the synchronous extractor callable */
+  uint32_t subnode;       /* width-1 sub-matcher for the call result */
+} KosMatchApp;
+
+
+typedef struct {
   uint16_t kind;
   uint16_t flags;
   uint32_t next;         /* next sibling in GROUP, next branch in ONEOF,
@@ -181,6 +189,7 @@ typedef struct {
     KosMatchClass    class_;
     KosMatchField    field;
     KosMatchSame     same;
+    KosMatchApp      app;
   } as;
 } KosMatchNode;
 

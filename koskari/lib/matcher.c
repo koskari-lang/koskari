@@ -180,6 +180,11 @@ static int append_check_node(KosMatcherBuilder *b, const KosMatchNode *node) {
   case KOS_MATCH_NODE_SAME:
     break;
 
+  case KOS_MATCH_NODE_APP:
+    if (append_check_index(b, node->as.app.subnode, "app.subnode"))
+      return -1;
+    break;
+
   default:
     PyErr_Format(PyExc_ValueError, "unhandled node kind: %u",
                  (unsigned) node->kind);
@@ -743,6 +748,13 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
     n->max_width = 1;
     break;
 
+  case KOS_MATCH_NODE_APP:
+    /* consumes exactly one spine element; the sub-matcher runs against
+       the extractor's result in its own synthesized subject */
+    n->min_width = 1;
+    n->max_width = 1;
+    break;
+
   case KOS_MATCH_NODE_FIELD:
     /* FIELDs are inert as outer-spine atoms; only meaningful as
        descendants of a CLASS chain. The structural validator rejects
@@ -858,6 +870,16 @@ static int validate_slot_extern_const_indices(KosMatcher *m) {
       }
       break;
 
+    case KOS_MATCH_NODE_APP:
+      if ((Py_ssize_t) n->as.app.fn_extern >= n_externs) {
+        PyErr_Format(PyExc_ValueError,
+                     "APP fn_extern %u out of range "
+                     "(externs size=%zd) at node %zd",
+                     (unsigned) n->as.app.fn_extern, n_externs, i);
+        return -1;
+      }
+      break;
+
     case KOS_MATCH_NODE_FIELD:
       switch (n->as.field.field_kind) {
       case KOS_MATCH_FIELD_POSITIONAL:
@@ -924,6 +946,9 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
 
   case KOS_MATCH_NODE_FORM:
     return has_capture_in_subtree(m, n->as.form.subnode);
+
+  case KOS_MATCH_NODE_APP:
+    return has_capture_in_subtree(m, n->as.app.subnode);
 
   case KOS_MATCH_NODE_MATCH:
     for (uint32_t cidx = n->as.match.first_child;
@@ -1117,7 +1142,8 @@ static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
   case KOS_MATCH_NODE_TEST:
   case KOS_MATCH_NODE_SAME:
   case KOS_MATCH_NODE_FORM:
-  case KOS_MATCH_NODE_CLASS: {
+  case KOS_MATCH_NODE_CLASS:
+  case KOS_MATCH_NODE_APP: {
     c.min = 1;
     c.max = 1;
     c.is_rest = 0;
@@ -1367,6 +1393,12 @@ static int validate_branches(KosMatcher *m) {
     case KOS_MATCH_NODE_FORM:
       if (n->as.form.subnode != KOS_MATCH_NO_INDEX &&
           validate_one_branch(m, n->as.form.subnode))
+        return -1;
+      break;
+
+    case KOS_MATCH_NODE_APP:
+      if (n->as.app.subnode != KOS_MATCH_NO_INDEX &&
+          validate_one_branch(m, n->as.app.subnode))
         return -1;
       break;
 
@@ -1971,6 +2003,27 @@ static PyObject *matcher_peel_datum(PyObject *obj) {
 }
 
 
+/**
+   Enforce the matcher's synchronous-callable contract: matching never
+   enters the evaluator, so a callable extern (predicate, APP extractor)
+   that returns an awaitable is an error, never silently truthy and
+   never auto-awaited. Koskari callables must be demand-wrapped by the
+   caller. Returns 0 when res is an ordinary value; -1 with TypeError
+   set when it is awaitable.
+*/
+static int matcher_check_sync_result(PyObject *res, const char *what) {
+  if (res && Py_TYPE(res)->tp_as_async
+      && Py_TYPE(res)->tp_as_async->am_await) {
+    PyErr_Format(PyExc_TypeError,
+                 "matcher %s returned an awaitable %.200s; matcher"
+                 " externs must be synchronous (demand-wrap koskari"
+                 " callables)", what, Py_TYPE(res)->tp_name);
+    return -1;
+  }
+  return 0;
+}
+
+
 /* === subject adapters === */
 
 
@@ -2537,6 +2590,10 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
     PyObject *res = PyObject_CallOneArg(pred, got);
     if (! res)
       return -1;
+    if (matcher_check_sync_result(res, "predicate")) {
+      Py_DECREF(res);
+      return -1;
+    }
     int r = PyObject_IsTrue(res);
     Py_DECREF(res);
     if (r < 0)
@@ -3234,6 +3291,80 @@ static int match_one_field(
 }
 
 
+/**
+   APP: call the extractor extern on the current spine element and match
+   the sub-pattern against the call's result. The extractor is invoked
+   synchronously (an awaitable result raises); a raising extractor
+   propagates as an error, never a no-match. The result is matched in
+   its own synthesized single-element subject, same as a CLASS field's
+   projected value.
+*/
+static int match_app(
+    MatchEngine *e,
+    KosMatchNode *n,
+    Py_ssize_t *cursor,
+    uint32_t trailing_min) {
+
+  Py_ssize_t length = e->subj->vt->length(e->subj);
+  if (*cursor + 1 + (Py_ssize_t) trailing_min > length)
+    return 0;
+
+  if (! e->extern_env) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "APP requires an extern environment");
+    return -1;
+  }
+
+  PyObject *elem = e->subj->vt->get(e->subj, *cursor);
+  PyObject *fn = PyTuple_GET_ITEM(e->extern_env, n->as.app.fn_extern);
+  PyObject *got = matcher_peel_datum(elem);
+
+  PyObject *res = PyObject_CallOneArg(fn, got);
+  if (! res)
+    return -1;
+  if (matcher_check_sync_result(res, "extractor")) {
+    Py_DECREF(res);
+    return -1;
+  }
+
+  if (n->as.app.subnode == KOS_MATCH_NO_INDEX) {
+    Py_DECREF(res);
+    (*cursor)++;
+    return 1;
+  }
+
+  PyObject *one = PyTuple_Pack(1, res);
+  Py_DECREF(res);
+  if (! one)
+    return -1;
+
+  KosMatchSubject sub;
+  if (KosMatchSubject_FromPySequence(one, &sub)) {
+    Py_DECREF(one);
+    return -1;
+  }
+  Py_DECREF(one);
+
+  KosMatchSubject *saved = e->subj;
+  e->subj = &sub;
+
+  Py_ssize_t sub_cursor = 0;
+  int r = match_node(e, n->as.app.subnode, &sub_cursor, 0);
+
+  Py_ssize_t sub_length = sub.vt->length(&sub);
+  e->subj = saved;
+  KosMatchSubject_Release(&sub);
+
+  if (r != 1)
+    return r;
+  if (sub_cursor != sub_length)
+    return 0;
+
+  (*cursor)++;
+  return 1;
+}
+
+
 static int match_class(
     MatchEngine *e,
     KosMatchNode *n,
@@ -3419,6 +3550,9 @@ static int match_node(
 
   case KOS_MATCH_NODE_CLASS:
     return match_class(e, n, cursor, trailing_min);
+
+  case KOS_MATCH_NODE_APP:
+    return match_app(e, n, cursor, trailing_min);
 
   case KOS_MATCH_NODE_FIELD:
     PyErr_Format(PyExc_RuntimeError,
@@ -4048,6 +4182,20 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
     n.kind = KOS_MATCH_NODE_FORM;
     if (thaw_parse_index(PyTuple_GET_ITEM(t, 1),
                          &n.as.form.subnode, "FORM.subnode"))
+      return -1;
+
+  } else if (PyUnicode_CompareWithASCIIString(tag, "APP") == 0) {
+    if (arity != 3) {
+      PyErr_Format(PyExc_ValueError,
+                   "APP node tuple must be 3-tuple, got %zd", arity);
+      return -1;
+    }
+    n.kind = KOS_MATCH_NODE_APP;
+    if (thaw_parse_index(PyTuple_GET_ITEM(t, 1),
+                         &n.as.app.fn_extern, "APP.fn_extern"))
+      return -1;
+    if (thaw_parse_index(PyTuple_GET_ITEM(t, 2),
+                         &n.as.app.subnode, "APP.subnode"))
       return -1;
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "MATCH") == 0) {

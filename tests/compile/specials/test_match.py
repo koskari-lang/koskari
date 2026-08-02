@@ -184,6 +184,20 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "odd")
 
 
+    async def test_match_app_extraction(self):
+        src = """
+        (compile/match data
+          [[(app divmod3 #[q 0])] q]
+          [[(app divmod3 #[q r])] r]
+          [else: "meh"])
+        """
+        dm3 = lambda v: divmod(v, 3)  # noqa: E731
+        expr, mod = self.compile_expr(src, data=9, divmod3=dm3)
+        self.assertEqual(await expr(), 3)
+        expr, mod = self.compile_expr(src, data=10, divmod3=dm3)
+        self.assertEqual(await expr(), 1)
+
+
     async def test_match_first_arm_wins(self):
         src = """
         (compile/match data

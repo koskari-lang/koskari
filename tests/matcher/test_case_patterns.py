@@ -30,6 +30,7 @@ from dataclasses import dataclass
 
 from koskari.lib import cons, keyword, nil, symbol
 from koskari.matcher import (
+    APP,
     CAPTURE,
     CLASS,
     FORM,
@@ -42,6 +43,7 @@ from koskari.matcher import (
     REST,
     parse_case_element,
     parse_case_pattern,
+    parse_matcher,
     thaw,
 )
 
@@ -242,6 +244,26 @@ class TestClassifyCombinators(unittest.TestCase):
             _list(symbol("REST"), symbol("r"))))
         self.assertIsInstance(pat, REST)
 
+    def test_app_with_pattern(self):
+        pat = parse_case_pattern(_delim(
+            _list(symbol("app"), symbol("f"), symbol("x"))))
+        self.assertIsInstance(pat, APP)
+        frozen = _frozen(pat)
+        self.assertEqual(frozen[1], ("x",))
+        self.assertEqual(frozen[2], ("f",))
+
+    def test_app_without_pattern(self):
+        pat = parse_case_pattern(_delim(
+            _list(symbol("app"), symbol("f"))))
+        self.assertIsInstance(pat, APP)
+        self.assertEqual(_frozen(pat)[2], ("f",))
+
+    def test_app_registry_head(self):
+        # the canonical matcher-surface spelling also works
+        pat = parse_matcher(
+            _list(symbol("APP"), symbol("f"), symbol("x")))
+        self.assertIsInstance(pat, APP)
+
     def test_unknown_head_raises(self):
         with self.assertRaises(ValueError):
             parse_case_pattern(_delim(
@@ -331,6 +353,88 @@ class TestCasePatternMatching(unittest.TestCase):
         self.assertEqual(caps["a"], 1)
         self.assertEqual(caps["b"], 2)
         self.assertEqual(caps["z"], 3)
+
+
+class TestAppMatching(unittest.TestCase):
+    """
+    APP: apply an extern extractor to the element and match the result.
+    The extractor is synchronous; an awaitable result raises and a
+    raising extractor propagates.
+    """
+
+    def test_extraction_and_bind(self):
+        pat = parse_case_pattern(_delim(
+            _list(symbol("app"), symbol("half"), symbol("h"))))
+        matched, caps = _match_value(pat, 10, half=lambda v: v // 2)
+        self.assertTrue(matched)
+        self.assertEqual(caps["h"], 5)
+
+    def test_extraction_result_miss(self):
+        pat = parse_case_pattern(_delim(
+            _list(symbol("app"), symbol("half"), 4)))
+        self.assertTrue(_match_value(pat, 8, half=lambda v: v // 2)[0])
+        self.assertFalse(_match_value(pat, 10, half=lambda v: v // 2)[0])
+
+    def test_extraction_result_destructured(self):
+        # (app divmod3 #[q r])
+        seq = _list(symbol("#list"), symbol("q"), symbol("r"))
+        pat = parse_case_pattern(_delim(
+            _list(symbol("app"), symbol("divmod3"), seq)))
+        matched, caps = _match_value(
+            pat, 10, divmod3=lambda v: divmod(v, 3))
+        self.assertTrue(matched)
+        self.assertEqual(caps["q"], 3)
+        self.assertEqual(caps["r"], 1)
+
+    def test_app_in_sequence(self):
+        # #[(app double d) y]
+        appel = _list(symbol("app"), symbol("double"), symbol("d"))
+        pat = parse_case_pattern(_delim(
+            _list(symbol("#list"), appel, symbol("y"))))
+        matched, caps = _match_value(
+            pat, (4, 9), double=lambda v: v * 2)
+        self.assertTrue(matched)
+        self.assertEqual(caps["d"], 8)
+        self.assertEqual(caps["y"], 9)
+
+    def test_app_under_oneof(self):
+        # (or (app half 3) (app half 5))
+        orp = _list(
+            symbol("or"),
+            _list(symbol("app"), symbol("half"), 3),
+            _list(symbol("app"), symbol("half"), 5))
+        pat = parse_case_pattern(_delim(orp))
+        half = lambda v: v // 2  # noqa: E731
+        self.assertTrue(_match_value(pat, 6, half=half)[0])
+        self.assertTrue(_match_value(pat, 10, half=half)[0])
+        self.assertFalse(_match_value(pat, 8, half=half)[0])
+
+    def test_awaitable_result_raises(self):
+        async def afn(v):
+            return v
+        pat = parse_case_pattern(_delim(
+            _list(symbol("app"), symbol("f"), symbol("x"))))
+        m = thaw(_frozen(pat))
+        with self.assertRaises(TypeError):
+            m.match((5,), f=afn)
+
+    def test_raising_extractor_propagates(self):
+        def bad(v):
+            raise RuntimeError("boom")
+        pat = parse_case_pattern(_delim(
+            _list(symbol("app"), symbol("f"), symbol("x"))))
+        m = thaw(_frozen(pat))
+        with self.assertRaises(RuntimeError):
+            m.match((5,), f=bad)
+
+    def test_awaitable_predicate_result_raises(self):
+        async def apred(v):
+            return True
+        pat = parse_case_pattern(_delim(
+            _list(symbol("?"), symbol("p"))))
+        m = thaw(_frozen(pat))
+        with self.assertRaises(TypeError):
+            m.match((5,), p=apred)
 
 
 # The end.
