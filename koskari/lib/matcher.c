@@ -3416,6 +3416,52 @@ static int match_not(
 
 
 /**
+   Match a width-1 sub-matcher against one projected value — a CLASS
+   field, an APP call result, or a MAP entry lookup. The value is
+   matched in its own synthesized single-element subject rather than
+   being treated as a sequence itself. subnode may be
+   KOS_MATCH_NO_INDEX for a presence-only projection (immediate match).
+   val is borrowed; the caller retains ownership. Returns 1 on match,
+   0 on no-match, -1 on error.
+*/
+static int match_projected_value(
+    MatchEngine *e,
+    uint32_t subnode,
+    PyObject *val) {
+
+  if (subnode == KOS_MATCH_NO_INDEX)
+    return 1;
+
+  PyObject *one = PyTuple_Pack(1, val);
+  if (! one)
+    return -1;
+
+  KosMatchSubject sub;
+  if (KosMatchSubject_FromPySequence(one, &sub)) {
+    Py_DECREF(one);
+    return -1;
+  }
+  Py_DECREF(one);
+
+  KosMatchSubject *saved = e->subj;
+  e->subj = &sub;
+
+  Py_ssize_t sub_cursor = 0;
+  int r = match_node(e, subnode, &sub_cursor, 0);
+
+  Py_ssize_t sub_length = sub.vt->length(&sub);
+  e->subj = saved;
+  KosMatchSubject_Release(&sub);
+
+  if (r != 1)
+    return r;
+  if (sub_cursor != sub_length)
+    return 0;
+  return 1;
+}
+
+
+/**
    Run a single FIELD against an instance. value resolution failure
    (AttributeError) is turned into a soft no-match (return 0); any
    other exception (or sub-matcher error) propagates as -1.
@@ -3454,41 +3500,9 @@ static int match_one_field(
     return -1;
   }
 
-  if (fn->as.field.subnode == KOS_MATCH_NO_INDEX) {
-    Py_DECREF(val);
-    return 1;
-  }
-
-  /* The FIELD's sub-matcher is width-1 — synthesize a single-element
-     subject around the projected value rather than treating val itself
-     as a sequence. */
-  PyObject *one = PyTuple_Pack(1, val);
+  int r = match_projected_value(e, fn->as.field.subnode, val);
   Py_DECREF(val);
-  if (! one)
-    return -1;
-
-  KosMatchSubject sub;
-  if (KosMatchSubject_FromPySequence(one, &sub)) {
-    Py_DECREF(one);
-    return -1;
-  }
-  Py_DECREF(one);
-
-  KosMatchSubject *saved = e->subj;
-  e->subj = &sub;
-
-  Py_ssize_t sub_cursor = 0;
-  int r = match_node(e, fn->as.field.subnode, &sub_cursor, 0);
-
-  Py_ssize_t sub_length = sub.vt->length(&sub);
-  e->subj = saved;
-  KosMatchSubject_Release(&sub);
-
-  if (r != 1)
-    return r;
-  if (sub_cursor != sub_length)
-    return 0;
-  return 1;
+  return r;
 }
 
 
@@ -3525,38 +3539,31 @@ static int match_one_mentry(
     return -1;
   }
 
-  if (en->as.mentry.subnode == KOS_MATCH_NO_INDEX) {
-    Py_DECREF(val);
-    return 1;
-  }
-
-  PyObject *one = PyTuple_Pack(1, val);
+  int r = match_projected_value(e, en->as.mentry.subnode, val);
   Py_DECREF(val);
-  if (! one)
-    return -1;
+  return r;
+}
 
-  KosMatchSubject sub;
-  if (KosMatchSubject_FromPySequence(one, &sub)) {
-    Py_DECREF(one);
-    return -1;
+
+/**
+   Cached collections.abc.Mapping, resolved lazily on the first non-dict
+   MAP attempt and then immortal. The MAP miss path runs for every
+   non-mapping element that flows past a mapping arm, so it must not pay
+   import-machinery costs per call; a benign double-resolve race under
+   the GIL at worst leaks one reference. Returns a borrowed reference,
+   or NULL with an exception set.
+*/
+static PyObject *get_abc_mapping(void) {
+  static PyObject *abc_mapping_type = NULL;
+
+  if (! abc_mapping_type) {
+    PyObject *abc = PyImport_ImportModule("collections.abc");
+    if (! abc)
+      return NULL;
+    abc_mapping_type = PyObject_GetAttrString(abc, "Mapping");
+    Py_DECREF(abc);
   }
-  Py_DECREF(one);
-
-  KosMatchSubject *saved = e->subj;
-  e->subj = &sub;
-
-  Py_ssize_t sub_cursor = 0;
-  int r = match_node(e, en->as.mentry.subnode, &sub_cursor, 0);
-
-  Py_ssize_t sub_length = sub.vt->length(&sub);
-  e->subj = saved;
-  KosMatchSubject_Release(&sub);
-
-  if (r != 1)
-    return r;
-  if (sub_cursor != sub_length)
-    return 0;
-  return 1;
+  return abc_mapping_type;
 }
 
 
@@ -3583,15 +3590,10 @@ static int match_map(
   if (! PyDict_Check(mapping)) {
     /* Not a dict: accept any collections.abc.Mapping, reject the rest
        with a soft no-match. */
-    PyObject *abc = PyImport_ImportModule("collections.abc");
-    if (! abc)
-      return -1;
-    PyObject *mapping_type = PyObject_GetAttrString(abc, "Mapping");
-    Py_DECREF(abc);
+    PyObject *mapping_type = get_abc_mapping();
     if (! mapping_type)
       return -1;
     int isinst = PyObject_IsInstance(mapping, mapping_type);
-    Py_DECREF(mapping_type);
     if (isinst < 0)
       return -1;
     if (! isinst)
@@ -3645,38 +3647,10 @@ static int match_app(
   if (! res)
     return -1;
 
-  if (n->as.app.subnode == KOS_MATCH_NO_INDEX) {
-    Py_DECREF(res);
-    (*cursor)++;
-    return 1;
-  }
-
-  PyObject *one = PyTuple_Pack(1, res);
+  int r = match_projected_value(e, n->as.app.subnode, res);
   Py_DECREF(res);
-  if (! one)
-    return -1;
-
-  KosMatchSubject sub;
-  if (KosMatchSubject_FromPySequence(one, &sub)) {
-    Py_DECREF(one);
-    return -1;
-  }
-  Py_DECREF(one);
-
-  KosMatchSubject *saved = e->subj;
-  e->subj = &sub;
-
-  Py_ssize_t sub_cursor = 0;
-  int r = match_node(e, n->as.app.subnode, &sub_cursor, 0);
-
-  Py_ssize_t sub_length = sub.vt->length(&sub);
-  e->subj = saved;
-  KosMatchSubject_Release(&sub);
-
   if (r != 1)
     return r;
-  if (sub_cursor != sub_length)
-    return 0;
 
   (*cursor)++;
   return 1;
