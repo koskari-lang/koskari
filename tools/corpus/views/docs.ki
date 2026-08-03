@@ -49,11 +49,9 @@ record's references to their documentation content.
 
 import-from pathlib Path
 
-import-from koskari.lib demand
-
-(import-from tools.corpus.views._material
+import-from tools.corpus.views._material:
     markdown_title_summary
-    rewrite_markdown_links)
+    rewrite_markdown_links
 
 
 define VIEW_NAME "koskari-docs"
@@ -70,7 +68,7 @@ define _section [rel_path]:
     """
 
     when (in? "/" rel_path):
-        return (item (rel_path.rsplit "/" 1) 0)
+        return (rel_path.rsplit "/" 1)[0]
     return rel_path
 
 
@@ -91,23 +89,25 @@ define generate [root provenance]:
         define base (docs_dir.joinpath subdir)
         unless (base.is_dir):
             (continue)
+
         for-each [path (base.rglob "*.md")]:
-            define rel_path (.as_posix (path.relative_to docs_dir))
+            define rel_path ((path.relative_to docs_dir).as_posix)
             define text (rewrite_markdown_links
                 (path.read_text encoding: "utf-8") rel_path)
             define-values [title summary] (markdown_title_summary text)
-            (rows.append (dict
-                path: rel_path
-                title: (or title path.stem)
-                summary: summary
-                content: text
-                section: (_section rel_path)
-                kind: "doc"
-                schema_version: (item provenance "schema_version")
-                git_ref: (item provenance "git_ref")))
 
-    ; list.sort drives the key from Python, so it must be synchronous.
-    (rows.sort key: (demand { (item %1 "path") }))
+            rows.append #{
+                "path": rel_path
+                "title": (or title path.stem)
+                "summary": summary
+                "content": text
+                "section": (_section rel_path)
+                "kind": "doc"
+                "schema_version": provenance["schema_version"]
+                "git_ref": provenance["git_ref"]
+            }
+
+    rows.sort key: (itemgetter "path")
     return rows
 
 

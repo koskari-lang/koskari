@@ -44,10 +44,10 @@ import-from argparse ArgumentParser
 import-from pathlib Path
 
 
-define _HERE (.resolve (Path __file__))
-define REPO_ROOT (item _HERE.parents 2)
+define _HERE ((Path __file__).resolve)
+define REPO_ROOT _HERE.parents[2]
 
-when (not (in? (str REPO_ROOT) sys.path)):
+when (not-in? (str REPO_ROOT) sys.path):
     sys.path.insert 0 (str REPO_ROOT)
 
 
@@ -64,8 +64,6 @@ when (not (in? (str REPO_ROOT) sys.path)):
     load_schema
     parse_eval_expected)
 
-(import-from koskari.lib car cdr kos_repr nil)
-(import-from koskari.types is_pair is_proper is_symbol unpack)
 
 import-from tools.corpus load
 
@@ -80,7 +78,8 @@ define _CATEGORY_TO_SHARD #{
     "iter": "iter"
     "syntax": "syntax"
     "special": "specials"
-    "macro": "syntax"}
+    "macro": "syntax"
+}
 
 
 define _make_case [feature: None block: False fixtures: None]:
@@ -93,32 +92,21 @@ define _make_case [feature: None block: False fixtures: None]:
     :return: a bound CorpusTestCase
     """
 
-    define record (dict
-        id: "<quick>"
-        feature: (or feature "")
-        source: ""
-        tags: (if block #["surface:block"] #[]))
+    define record #{
+        "id": "<quick>"
+        "feature": (or feature "")
+        "source": ""
+        "tags": (if block #["surface:block"] #[])
+    }
+
     define case (CorpusTestCase "bind_record")
     (case.bind_record record)
+
     when fixtures:
-        for-each [[key val] (.items fixtures)]:
-            (set-item case.module_ns key val)
+        for-each [[key val] (fixtures.items)]:
+            set! case.module_ns[key] val
+
     return case
-
-
-define render_form [form]:
-    """
-    Render a read form back to its s-expression text
-
-    Uses kos_repr rather than str so that keywords render with their
-    trailing colon (``count:`` not ``count``) and the text reads back to
-    the same structure.
-
-    :param form: a read/expanded form
-    :return: source text that reads back to the same structure
-    """
-
-    return (kos_repr form)
 
 
 define _json_or_none [value separators: None]:
@@ -127,9 +115,11 @@ define _json_or_none [value separators: None]:
     """
 
     try:
-        when (None? separators):
-            return (json.dumps value)
-        return (json.dumps value separators: separators)
+        if (None? separators):
+            json.dumps value
+        else:
+            json.dumps value separators: separators
+
     except [#(TypeError ValueError)]:
         return None
 
@@ -143,9 +133,10 @@ define _scalar_token [value]:
     :raises TypeError: when the element cannot be encoded
     """
 
-    when (is_symbol value):
-        return (str value)
-    return (json.dumps value)
+    if (symbol? value):
+        (str value)
+    else:
+        (json.dumps value)
 
 
 define _pair_candidates [got]:
@@ -158,20 +149,23 @@ define _pair_candidates [got]:
 
     define out None
     try:
-        if (is_proper got):
+        if (proper? got):
             define items (list (unpack got))
             define encoded (json.dumps items separators: #("," ":"))
             set! out f"proper-list:{encoded}"
+
         else:
             define parts #[]
             define cur got
-            while (is_pair cur):
+            while (pair? cur):
                 (parts.append (_scalar_token (car cur)))
                 set! cur (cdr cur)
             (parts.append (_scalar_token cur))
-            define head (.join " " (item-slice parts 0 -1))
-            define tail (item parts -1)
+
+            define head (" ".join (item-slice parts 0 -1))
+            define tail parts[-1]
             set! out f"improper-list:({head} . {tail})"
+
     except [#(TypeError ValueError)]:
         (return)
 
@@ -189,41 +183,53 @@ define _eval_candidates [got]:
     :return: iterator of candidate encoding strings
     """
 
-    when (or (None? got) (is? got nil)):
+    when (or (None? got) (nil? got)):
         yield "null"
         (return)
+
     when (is? got True):
         yield "true"
         (return)
+
     when (is? got False):
         yield "false"
         (return)
-    when (is_symbol got):
+
+    when (symbol? got):
         define name (str got)
         yield f"symbol:{name}"
         (return)
+
     when (instance? got #(int float)):
         define number (_json_or_none got)
         unless (None? number):
             yield number
         (return)
-    when (instance? got str):
+
+    when (str? got):
         yield (json.dumps got)
         (return)
-    when (instance? got list):
+
+    when (list? got):
         define listing (_json_or_none got separators: #("," ":"))
         unless (None? listing):
             yield f"list:{listing}"
         (return)
-    when (instance? got tuple):
-        define parts (list-each [x got] (_json_or_none x separators: #("," ":")))
+
+    when (tuple? got):
+        define parts:
+            list-each [x got]:
+                _json_or_none x separators: #("," ":")
+
         unless (in? None parts):
-            define joined (.join "," parts)
+            define joined (",".join parts)
             yield f"tuple:({joined})"
         (return)
-    when (is_pair got):
+
+    when (pair? got):
         yield-from (_pair_candidates got)
         (return)
+
     define fallback (_json_or_none got)
     unless (None? fallback):
         yield fallback
@@ -244,12 +250,14 @@ define suggest_eval_encoding [got]:
         define kind None
         define payload None
         define parsed True
+
         try:
             define-values [k p] (parse_eval_expected cand)
             set! kind k
             set! payload p
         except [Exception]:
             set! parsed False
+
         when (and parsed (== kind "literal")):
             define matched False
             try:
@@ -258,6 +266,7 @@ define suggest_eval_encoding [got]:
                 set! matched False
             when matched:
                 return cand
+
     return None
 
 
@@ -267,10 +276,12 @@ define _stage_read [case source warnings]:
     """
 
     define form (case.read_source source)
-    define text (render_form form)
+    define text (repr form)
     define reread (case.parse_expected_form text)
+
     unless (forms_equal form reread):
-        (warnings.append "read string did not round-trip; verify by hand")
+        warnings.append "read string did not round-trip; verify by hand"
+
     return text
 
 
@@ -281,10 +292,12 @@ define _stage_expand [case source warnings]:
 
     define form (case.read_source source)
     define expanded (case.macroexpand1 form)
-    define text (render_form expanded)
+    define text (repr expanded)
     define reread (case.parse_expected_form text)
+
     unless (forms_equal expanded reread):
         (warnings.append "expand string did not round-trip; verify by hand")
+
     return text
 
 
@@ -298,17 +311,18 @@ define _stage_eval [case source result]:
 
     define got (case.eval_source source)
     define encoding (suggest_eval_encoding got)
+
     if (not (None? encoding)):
-        (set-item result "eval" encoding)
+        set! result["eval"] encoding
+
     else:
-        ; __repr__ directly: koskari's repr is kos_repr, and this field
-        ; has always carried the Python repr.
-        (set-item result "eval_raw" (.__repr__ got))
-        (set-item result "eval_type" (attr (type got) __name__))
-        (.append (result.setdefault "warnings" #[])
-            (+ "could not auto-encode eval result; choose a literal or"
-               " @marked: encoding by hand (see docs/corpus/SCHEMA.md)"
-               " and confirm with \"quick insert --dry-run\""))
+        set! result["eval_raw"] (py-repr got)
+        set! result["eval_type"] (type got).__name__
+
+        ((result.setdefault "warnings" #[]).append
+            "could not auto-encode eval result; choose a literal or"-
+            " @marked: encoding by hand (see docs/corpus/SCHEMA.md)"-
+            " and confirm with \"quick insert --dry-run\"")
 
 
 define cmd_verify [options]:
@@ -322,52 +336,55 @@ define cmd_verify [options]:
     define source options.form
     when (None? source):
         set! source (sys.stdin.read)
+
     set! source (source.strip)
     unless source:
-        print (json.dumps (dict error: "empty source" stage: "read"))
+        print (json.dumps #{"error": "empty source" "stage": "read"})
         return 1
 
     define stages #[]
     if (or options.all
            (not (or options.read options.expand options.eval))):
         set! stages #["read" "expand" "eval"]
+
     else:
         when options.read:
-            (stages.append "read")
+            stages.append "read"
         when options.expand:
-            (stages.append "expand")
+            stages.append "expand"
         when options.eval:
-            (stages.append "eval")
+            stages.append "eval"
 
     define fixtures (if options.fixture (json.loads options.fixture) None)
     define case (_make_case
         feature: options.feature block: options.block fixtures: fixtures)
 
-    define result (dict)
+    define result #{}
     define warnings #[]
-    define errors (dict)
+    define errors #{}
 
     for-each [stage stages]:
         try:
             if (== stage "read"):
-                (set-item result "read" (_stage_read case source warnings))
+                set! result["read"] (_stage_read case source warnings)
             elif (== stage "expand"):
-                (set-item result "expand" (_stage_expand case source warnings))
+                set! result["expand"] (_stage_expand case source warnings)
             else:
                 (_stage_eval case source result)
         except [Exception as: exc]:
-            define kind (attr (type exc) __name__)
-            (set-item errors stage f"{kind}: {exc}")
+            define kind (type exc).__name__
+            set! errors[stage] f"{kind}: {exc}"
 
     when warnings:
-        (.extend (result.setdefault "warnings" #[]) warnings)
+        ((result.setdefault "warnings" #[]).extend warnings)
+
     when errors:
-        (set-item result "errors" errors)
+        set! result["errors"] errors
 
     define single (== (len stages) 1)
-    when (and single (in? (item stages 0) errors)):
+    when (and single (in? stages[0] errors)):
         define only (item stages 0)
-        print (json.dumps (dict error: (item errors only) stage: only))
+        print (json.dumps #{"error": errors[only] "stage": only})
         return 1
 
     define produced False
@@ -392,9 +409,11 @@ define _read_candidate [options]:
     define text (if options.file
         (.read_text (Path options.file))
         (sys.stdin.read))
+
     define doc (yaml.safe_load text)
-    unless (instance? doc dict):
+    unless (dict? doc):
         raise (ValueError "candidate is not a single YAML mapping")
+
     return doc
 
 
@@ -409,15 +428,19 @@ define _verify_stages [record]:
     define verify (or (record.get "verify") (dict))
     define case (CorpusTestCase "bind_record")
     (case.bind_record record)
+
     define ran 0
     for-each [[stage expected] (.items verify)]:
         when (== stage "invalid"):
             (continue)
+
         define handler (HANDLERS.get stage)
-        when (None? handler):
+        unless handler:
             raise (ValueError f"no handler for verify stage '{stage}'")
+
         (handler case expected)
-        set! ran (+ ran 1)
+        incr! ran
+
     unless ran:
         raise (ValueError "record has no runnable verify stages")
 
@@ -445,8 +468,12 @@ define _target_shard [record records_dir override]:
     """
 
     when override:
-        define name (if (override.endswith ".yaml") override (+ override ".yaml"))
-        return (.joinpath (Path records_dir) name)
+        define name:
+            if (override.endswith ".yaml"):
+                override
+            else:
+                f"{override}.yaml"
+        return ((Path records_dir).joinpath name)
 
     define category (_category_of record)
     define base (_CATEGORY_TO_SHARD.get category)
@@ -455,15 +482,17 @@ define _target_shard [record records_dir override]:
         raise (ValueError
             f"cannot infer shard from tags {tags}; pass --shard")
 
-    define verify (or (record.get "verify") (dict))
+    define verify (or (record.get "verify") #{})
     define invalid (or (== (record.get "stability") "invalid")
                        (in? "error" verify)
                        (in? "invalid" verify))
+
     when invalid:
-        define inv (.joinpath (Path records_dir) f"{base}-invalid.yaml")
+        define inv ((Path records_dir).joinpath f"{base}-invalid.yaml")
         when (inv.exists):
             return inv
-    return (.joinpath (Path records_dir) f"{base}.yaml")
+
+    return ((Path records_dir).joinpath f"{base}.yaml")
 
 
 define _append_record [path record]:
@@ -478,13 +507,16 @@ define _append_record [path record]:
 
     define doc (load.dump_record record)
     define new None
-    if (and (path.exists) (.strip (path.read_text))):
+
+    if (and (path.exists) ((path.read_text).strip)):
         define text (path.read_text)
         unless (text.endswith "\n"):
-            set! text (+ text "\n")
+            incr! text "\n"
+
         set! new f"{text}---\n{doc}\n"
     else:
         set! new f"{doc}\n"
+
     (path.write_text new)
 
 
@@ -502,7 +534,7 @@ define cmd_insert [options]:
     try:
         set! record (_read_candidate options)
     except [Exception as: exc]:
-        define kind (attr (type exc) __name__)
+        define kind (type exc).__name__
         print f"FAIL <unparsed> {kind}: {exc}"
         return 1
 
@@ -564,12 +596,12 @@ define cmd_coverage [options]:
         print f"error loading corpus: {exc}"
         return 1
 
-    define counts (dict)
-    define ids_by_feature (dict)
-    for-each [record (.values index)]:
+    define counts #{}
+    define ids_by_feature #{}
+    for-each [record (index.values)]:
         define feature (or (record.get "feature") "<none>")
-        (set-item counts feature (+ (counts.get feature 0) 1))
-        (.append (ids_by_feature.setdefault feature #[]) (item record "id"))
+        set! counts[feature] (+ (counts.get feature 0) 1)
+        ((ids_by_feature.setdefault feature #[]).append record["id"])
 
     when options.feature:
         define n (counts.get options.feature 0)
@@ -581,7 +613,8 @@ define cmd_coverage [options]:
     define rows #[]
     for-each [[f c] (.items counts)]:
         when (< c options.min_entries):
-            (rows.append #(c f))
+            rows.append #(c f)
+
     (rows.sort)
     for-each [[count feature] rows]:
         print f"{count}\t{feature}"
@@ -589,13 +622,13 @@ define cmd_coverage [options]:
     define below (len rows)
     define total (len counts)
     (print
-        f"# {below} features below {options.min_entries} entries (of {total} features with any coverage)"
+        f"# {below} features below {options.min_entries} entries"-
+        f" (of {total} features with any coverage)"
         file: sys.stderr)
-    ; Joined explicitly: adjacent string literals are separate arguments
-    ; here, not one concatenated literal as in Python.
+
     (print
-        (+ "# note: lists only features that already appear; gap analysis"
-           " vs the full special/macro registry is not yet implemented")
+        "# note: lists only features that already appear; gap analysis"-
+        " vs the full special/macro registry is not yet implemented"
         file: sys.stderr)
     return 0
 
@@ -675,9 +708,9 @@ define main [argv: None]:
     define parser (ArgumentParser
         prog: "quick"
         description: "Corpus oracle, validator, and coverage query.")
-    (build_arguments parser)
 
-    return (run (parser.parse_args args))
+    (build_arguments parser)
+    run (parser.parse_args args)
 
 
 when-main:

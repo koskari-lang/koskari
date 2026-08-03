@@ -25,8 +25,6 @@ import re
 
 import-from pathlib Path
 
-import-from koskari.lib demand
-
 import yaml
 
 
@@ -58,8 +56,8 @@ define _YAML_BOOL_WORDS (frozenset #(
     "off"
     "~"))
 
-(define _NUMBER_RE
-    (re.compile "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$"))
+define _NUMBER_RE:
+    (re.compile "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$")
 
 ; Leading characters that carry YAML meaning in a plain scalar.
 define _LEADING_META "@`&*!|>\\%"
@@ -88,6 +86,7 @@ define load_records [records_dir]:
         define docs None
         try:
             set! docs (list (yaml.safe_load_all text))
+
         ; Koskari's raise takes no explicit cause, so the chain here is
         ; the implicit __context__ from raising inside the handler.
         except [yaml.YAMLError as: exc]:
@@ -96,10 +95,12 @@ define load_records [records_dir]:
         for-each [[doc_no doc] (enumerate docs 1)]:
             when (None? doc):
                 (continue)
+
             unless (instance? doc dict):
-                define kind (attr (type doc) __name__)
+                define kind (type doc).__name__
                 raise (ValueError
                     f"{shard.name}:document {doc_no}: expected mapping, got {kind}")
+
             (records.append doc)
 
     return records
@@ -110,7 +111,7 @@ define _escape_double_quoted [text]:
     Escape a string for YAML double-quoted scalar form
     """
 
-    return (.replace (.replace text "\\" "\\\\") "\"" "\\\"")
+    ((text.replace "\\" "\\\\").replace "\"" "\\\"")
 
 
 define _yaml_needs_double_quotes [text]:
@@ -131,7 +132,7 @@ define _yaml_needs_double_quotes [text]:
         return True
     when (in? ":" text):
         return True
-    when (in? (item text 0) _LEADING_META):
+    when (in? text[0] _LEADING_META):
         return True
     when (!= (text.strip) text):
         return True
@@ -152,13 +153,15 @@ define _format_inline_scalar [text]:
     """
 
     when (and (>= (len text) 2)
-              (== (item text 0) "\"")
-              (== (item text -1) "\"")):
-        define single (.replace text "'" "''")
+              (== text[0] "\"")
+              (== text[-1] "\"")):
+        define single (text.replace "'" "''")
         return f"'{single}'"
+
     when (_yaml_needs_double_quotes text):
         define escaped (_escape_double_quoted text)
         return f"\"{escaped}\""
+
     return text
 
 
@@ -173,6 +176,7 @@ define _format_scalar_lines [key text indent]:
         for-each [line (text.split "\n")]:
             (lines.append f"{prefix}  {line}")
         return lines
+
     define scalar (_format_inline_scalar text)
     return #[f"{prefix}{key}: {scalar}"]
 
@@ -184,11 +188,14 @@ define _format_verify [verify indent]:
 
     define prefix (* "  " indent)
     define lines #[f"{prefix}verify:"]
+
     for-each [key _VERIFY_KEY_ORDER]:
         unless (in? key verify):
             (continue)
+
         (lines.extend
-            (_format_scalar_lines key (item verify key) (+ indent 1)))
+            (_format_scalar_lines key verify[key] (+ indent 1)))
+
     return lines
 
 
@@ -204,10 +211,12 @@ define _format_list [key values indent]:
     define prefix (* "  " indent)
     unless values:
         return #[f"{prefix}{key}: []"]
+
     define lines #[f"{prefix}{key}:"]
     for-each [value values]:
         define scalar (_format_inline_scalar value)
         (lines.append f"{prefix}  - {scalar}")
+
     return lines
 
 
@@ -224,19 +233,22 @@ define dump_record [record]:
     for-each [field _RECORD_FIELD_ORDER]:
         unless (in? field record):
             (continue)
-        define value (item record field)
-        if (== field "verify"):
-            (lines.extend (_format_verify value 0))
-        elif (in? field #("references" "tags")):
-            (lines.extend (_format_list field value 0))
-        elif (== field "source"):
-            (lines.extend (_format_scalar_lines field value 0))
-        elif (== field "notes"):
-            (lines.extend (_format_scalar_lines field value 0))
-        else:
-            define scalar (_format_inline_scalar value)
-            (lines.append f"{field}: {scalar}")
-    return (.join "\n" lines)
+
+        define value record[field]
+        switch field:
+            case ["verify"]:
+                lines.extend (_format_verify value 0)
+            case ["references" "tags"]:
+                lines.extend (_format_list field value 0)
+            case ["source"]:
+                lines.extend (_format_scalar_lines field value 0)
+            case ["notes"]:
+                lines.extend (_format_scalar_lines field value 0)
+            else:
+                define scalar (_format_inline_scalar value)
+                lines.append f"{field}: {scalar}"
+
+    "\n".join lines
 
 
 @demand
@@ -249,7 +261,7 @@ define dump_shard [records]:
     """
 
     define docs (list-each [record records] (dump_record record))
-    return (+ (.join "\n---\n" docs) "\n")
+    return (+ ("\n---\n".join docs) "\n")
 
 
 @demand
@@ -261,7 +273,7 @@ define write_shard [path records]:
     :param records: list of corpus record dicts
     """
 
-    (.write_text (Path path) (dump_shard records))
+    ((Path path).write_text (dump_shard records))
 
 
 ; The end.

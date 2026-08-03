@@ -33,13 +33,11 @@ import-from pathlib Path
 import-from pyarrow Table
 import-from pyarrow.parquet write_table
 
-import-from koskari.lib demand
-
 
 define _HERE (.resolve (Path __file__))
 
 ; parents is a property, so it is indexed rather than called.
-define _REPO_ROOT (item _HERE.parents 2)
+define _REPO_ROOT _HERE.parents[2]
 
 ; Invoked as a script the interpreter puts this directory on sys.path
 ; rather than the repository root, so the tools package needs help.
@@ -177,7 +175,7 @@ define export_corpus [view records_dir schema_path output_dir root: None]:
     """
 
     define views (load_views)
-    define transform (item views.VIEWS view)
+    define transform views.VIEWS[view]
     define root_path (project_root root)
 
     define provenance (_provenance schema_path root_path)
@@ -204,7 +202,7 @@ define export_source_view [view schema_path output_dir root: None]:
     """
 
     define views (load_views)
-    define generate (item views.SOURCE_VIEWS view)
+    define generate views.SOURCE_VIEWS[view]
     define root_path (project_root root)
 
     define provenance (_provenance schema_path root_path)
@@ -247,7 +245,7 @@ define build_arguments [parser]:
     """
 
     define root (project_root)
-    define datasets (.joinpath root "build" "corpus" "datasets")
+    define datasets (root.joinpath "build" "corpus" "datasets")
 
     (parser.add_argument "--all-views"
         action: "store_true"
@@ -294,14 +292,15 @@ define run [options]:
         if (in? options.view views.SOURCE_VIEWS):
             set! path (export_source_view
                 options.view options.schema options.output_dir root: root)
-        elif (not (in? options.view views.VIEWS)):
-            define names (.join ", "
+
+        elif (not-in? options.view views.VIEWS):
+            define names (", ".join
                 (sorted (.union (set views.VIEWS) (set views.SOURCE_VIEWS))))
-            ; Quoted explicitly: koskari's repr renders strings
-            ; double-quoted, where this message has always used Python's.
+
             (sys.stderr.write
                 f"unknown view '{options.view}'; available: {names}\n")
             return 2
+
         else:
             set! path (export_corpus
                 options.view options.records_dir options.schema
@@ -331,9 +330,9 @@ define main [argv: None]:
     define parser (ArgumentParser
         prog: "corpus-export"
         description: "Export corpus YAML records to parquet dataset views")
-    (build_arguments parser)
 
-    return (run (parser.parse_args args))
+    (build_arguments parser)
+    run (parser.parse_args args)
 
 
 when-main:

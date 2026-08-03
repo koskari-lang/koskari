@@ -21,9 +21,6 @@ koskari-corpus dataset view: every record with all verify stages.
 """
 
 
-import-from koskari.lib demand
-
-
 define VIEW_NAME "koskari-corpus"
 
 define _STAGES #("read" "expand" "eval" "error" "invalid")
@@ -39,18 +36,22 @@ define transform [record provenance]:
     :return: row dict for every record
     """
 
-    define verify (or (record.get "verify") (dict))
-    define row (dict
-        corpus_id: (item record "id")
-        feature: (item record "feature")
-        source: (item record "source")
-        references: (or (record.get "references") #[])
-        stability: (record.get "stability")
-        tags: (or (record.get "tags") #[])
-        schema_version: (item provenance "schema_version")
-        git_ref: (item provenance "git_ref"))
+    define verify (or (record.get "verify") #{})
+
+    define row #{
+        "corpus_id": record["id"]
+        "feature": record["feature"]
+        "source": record["source"]
+        "references": (or (record.get "references") #[])
+        "stability": (record.get "stability")
+        "tags": (or (record.get "tags") #[])
+        "schema_version": provenance["schema_version"]
+        "git_ref": provenance["git_ref"]
+    }
+
     for-each [stage _STAGES]:
-        (set-item row stage (verify.get stage))
+        set! row[stage] (verify.get stage)
+
     return row
 
 

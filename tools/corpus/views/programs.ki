@@ -32,12 +32,10 @@ applies to the ``content`` column here.
 
 import-from pathlib Path
 
-import-from koskari.lib demand
-
-(import-from tools.corpus.views._material
+import-from tools.corpus.views._material:
     ki_title_summary
     markdown_title_summary
-    rewrite_markdown_links)
+    rewrite_markdown_links
 
 
 define VIEW_NAME "koskari-programs"
@@ -66,8 +64,8 @@ define _section [rel_parts]:
     """
 
     when (> (len rel_parts) 2):
-        return (.join "/" (item-slice rel_parts 0 2))
-    return (item rel_parts 0)
+        return ("/".join (item-slice rel_parts 0 2))
+    return rel_parts[0]
 
 
 define _included [path]:
@@ -102,6 +100,7 @@ define generate [root provenance]:
     for-each [path (examples_dir.rglob "*")]:
         unless (and (path.is_file) (_included path)):
             (continue)
+
         ; Bound rather than written (.parts ...): parts is a property, and
         ; the leading-dot form would call the tuple it returns.
         define relative (path.relative_to root_path)
@@ -123,18 +122,18 @@ define generate [root provenance]:
             set! title (or mt path.stem)
             set! summary ms
 
-        (rows.append (dict
-            path: rel_path
-            title: title
-            summary: summary
-            content: text
-            section: (_section rel_parts)
-            kind: "example"
-            schema_version: (item provenance "schema_version")
-            git_ref: (item provenance "git_ref")))
+        rows.append #{
+            "path": rel_path
+            "title": title
+            "summary": summary
+            "content": text
+            "section": (_section rel_parts)
+            "kind": "example"
+            "schema_version": provenance["schema_version"]
+            "git_ref": provenance["git_ref"]
+        }
 
-    ; list.sort drives the key from Python, so it must be synchronous.
-    (rows.sort key: (demand { (item %1 "path") }))
+    rows.sort key: (itemgetter "path")
     return rows
 
 

@@ -34,11 +34,9 @@ callable would hand a coroutine back to a Python caller.
 import posixpath
 import re
 
-import-from koskari.lib demand
 
-
-(define _LINK_RE (re.compile "\\[([^\\]]+)\\]\\([^)]*\\)"))
-(define _EMPHASIS_RE (re.compile "[*_`]+"))
+define _LINK_RE (re.compile "\\[([^\\]]+)\\]\\([^)]*\\)")
+define _EMPHASIS_RE (re.compile "[*_`]+")
 
 define _LICENSE_MARKERS #(
     "redistribute"
@@ -49,12 +47,12 @@ define _LICENSE_MARKERS #(
     "see <http"
     "copyright")
 
-(define _HEADING_RE (re.compile "#+\\s+(.*)"))
-(define _MD_LINK_RE (re.compile "(!?\\[[^\\]]*\\]\\()([^)]+)(\\))"))
-(define _SCHEME_RE (re.compile "[A-Za-z][A-Za-z0-9+.-]*:"))
-(define _TITLE_RE (re.compile "(\\S+)(\\s+[\"'].*)\\Z"))
-(define _TOCTREE_TITLE_RE (re.compile "(.*<)([^>]+)(>)\\Z"))
-(define _GLOB_CHARS (frozenset "*?[]"))
+define _HEADING_RE (re.compile "#+\\s+(.*)")
+define _MD_LINK_RE (re.compile "(!?\\[[^\\]]*\\]\\()([^)]+)(\\))")
+define _SCHEME_RE (re.compile "[A-Za-z][A-Za-z0-9+.-]*:")
+define _TITLE_RE (re.compile "(\\S+)(\\s+[\"'].*)\\Z")
+define _TOCTREE_TITLE_RE (re.compile "(.*<)([^>]+)(>)\\Z")
+define _GLOB_CHARS (frozenset "*?[]")
 
 
 define _clean_inline [text]:
@@ -67,7 +65,7 @@ define _clean_inline [text]:
 
     set! text (_LINK_RE.sub "\\1" text)
     set! text (_EMPHASIS_RE.sub "" text)
-    return (.join " " (text.split))
+    " ".join (text.split)
 
 
 define _strip_frontmatter [lines]:
@@ -78,9 +76,9 @@ define _strip_frontmatter [lines]:
     :return: lines with any leading frontmatter removed
     """
 
-    when (and lines (== (.strip (item lines 0)) "---")):
+    when (and lines (== (lines[0].strip) "---")):
         for-each [index (range 1 (len lines))]:
-            when (== (.strip (item lines index)) "---"):
+            when (== (lines[index].strip) "---"):
                 return (item-slice lines (+ index 1))
     return lines
 
@@ -106,6 +104,7 @@ define markdown_title_summary [text]:
     define summary None
     define in_fence False
     define paragraph #[]
+
     for-each [line lines]:
         define stripped (line.strip)
         if (stripped.startswith "```"):
@@ -117,10 +116,11 @@ define markdown_title_summary [text]:
                 (break)
         else:
             (paragraph.append stripped)
-    when paragraph:
-        set! summary (_clean_inline (.join " " paragraph))
 
-    return #(title summary)
+    when paragraph:
+        set! summary (_clean_inline (" ".join paragraph))
+
+    return title summary
 
 
 define _normalize_link_target [dest base_dir]:
@@ -162,6 +162,7 @@ define _normalize_link_target [dest base_dir]:
     when (>= hash_index 0):
         set! fragment (item-slice target hash_index)
         set! target (item-slice target 0 hash_index)
+
     unless target:
         return None
 
@@ -253,15 +254,12 @@ define rewrite_markdown_links [text rel_path]:
 
     define base_dir (posixpath.dirname rel_path)
 
-    define _sub [match]:
+    @demand
+    define sub_fn [match]:
         define replaced (_normalize_link_target (match.group 2) base_dir)
         when (None? replaced):
             return (match.group 0)
         return (+ (match.group 1) replaced (match.group 3))
-
-    ; re.sub calls back from Python, so the substitution must be driven
-    ; synchronously rather than handed over as a coroutine.
-    define sub_fn (demand _sub)
 
     define out #[]
     define fence None
@@ -269,6 +267,7 @@ define rewrite_markdown_links [text rel_path]:
 
     for-each [line (text.splitlines keepends: True)]:
         define marker (line.lstrip)
+
         if (None? fence):
             if (or (marker.startswith "```") (marker.startswith "~~~")):
                 if (and (marker.startswith "```") (in? "toctree" marker)):
@@ -278,21 +277,21 @@ define rewrite_markdown_links [text rel_path]:
                     set! fence "code"
             else:
                 set! line (_MD_LINK_RE.sub sub_fn line)
-            (out.append line)
+            out.append line
         elif (or (marker.startswith "```") (marker.startswith "~~~")):
             set! fence None
-            (out.append line)
+            out.append line
         elif (!= fence "toctree"):
-            (out.append line)
+            out.append line
         elif (== (marker.strip) ":glob:"):
             set! toctree_glob True
-            (out.append line)
+            out.append line
         elif toctree_glob:
-            (out.append line)
+            out.append line
         else:
-            (out.append (_rewrite_toctree_line line base_dir))
+            out.append (_rewrite_toctree_line line base_dir)
 
-    return (.join "" out)
+    "".join out
 
 
 define _extract_module_docstring [lines start]:
@@ -305,23 +304,26 @@ define _extract_module_docstring [lines start]:
     """
 
     define body #[]
-    define first (.lstrip (item lines start))
+    define first (lines[start].lstrip)
     unless (first.startswith "\"\"\""):
         return None
+
     define remainder (item-slice first 3)
     when (in? "\"\"\"" remainder):
-        return (or (_clean_inline (item (remainder.split "\"\"\"" 1) 0)) None)
+        return (or (_clean_inline (remainder.split "\"\"\"" 1)[0]) None)
 
-    (body.append remainder)
+    body.append remainder
     for-each [line (item-slice lines (+ start 1))]:
         when (in? "\"\"\"" line):
-            (body.append (item (line.split "\"\"\"" 1) 0))
+            body.append (line.split "\"\"\"" 1)[0]
             (break)
-        (body.append line)
+        body.append line
+
     for-each [line body]:
         define cleaned (_clean_inline line)
         when cleaned:
             return cleaned
+
     return None
 
 
@@ -339,14 +341,18 @@ define _is_boilerplate_comment [line stem]:
 
     unless line:
         return True
+
     define lowered (line.lower)
     when (line.startswith ":"):
         return True
+
     when (or (line.endswith ".ki") (and (in? "/" line) (in? stem line))):
         return True
+
     for-each [marker _LICENSE_MARKERS]:
         when (in? marker lowered):
             return True
+
     return False
 
 
@@ -366,20 +372,21 @@ define ki_title_summary [text stem]:
 
     define lines (text.splitlines)
     define comments #[]
+
     define index 0
     while (< index (len lines)):
-        define stripped (.strip (item lines index))
+        define stripped (lines[index].strip)
         if (not stripped):
-            set! index (+ index 1)
+            incr! index
         elif (stripped.startswith ";"):
-            (comments.append (.strip (stripped.lstrip ";")))
-            set! index (+ index 1)
+            comments.append ((stripped.lstrip ";").strip)
+            incr! index
         else:
             (break)
 
     define summary None
     when (and (< index (len lines))
-              (.startswith (.lstrip (item lines index)) "\"\"\"")):
+              ((lines[index].lstrip).startswith "\"\"\"")):
         set! summary (_extract_module_docstring lines index)
 
     when (None? summary):
@@ -388,7 +395,7 @@ define ki_title_summary [text stem]:
                 set! summary (_clean_inline comment)
                 (break)
 
-    return #(stem summary)
+    return stem summary
 
 
 ; The end.
