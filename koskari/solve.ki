@@ -29,7 +29,24 @@ continuation multiplies the search.
 """
 
 
-(declare-exports amb fail require solve solve-first)
+import-from koskari.exceptions KoskariContinuationError KoskariPromptNotFound
+
+
+(declare-exports SearchError NoActiveSearch
+                 amb fail require solve solve-first)
+
+
+define-class SearchError [KoskariContinuationError]:
+  """
+  Base class for search errors raised by koskari.solve
+  """
+
+
+define-class NoActiveSearch [SearchError]:
+  """
+  amb, fail, or require was called with no enclosing solve or
+  solve-first to delimit the search
+  """
 
 
 ; Dynamic stop marker for solve-first: a mutable box (list). None or
@@ -40,29 +57,50 @@ continuation multiplies the search.
 (define-parameter amb-stop-marker None)
 
 
+; compile/reset and compile/shift delimit with prompt tag 0. A capture
+; failure carrying this id failed against the search delimiter; any
+; other id belongs to a foreign delimiter and is not ours to interpret.
+(define search-prompt-tag 0)
+
+
 define amb [choices]:
   """
   Nondeterministically choose a value from choices.
 
   Captures the continuation up to the enclosing search delimiter and
   invokes it once per choice, collecting each choice's solutions; the
-  collected list becomes the search's result at the delimiter
+  collected list becomes the search's result at the delimiter. Raises
+  NoActiveSearch when no solve or solve-first delimits the call
   """
 
-  shift k:
-    let [[out #[]]]:
-      for-each [c choices]:
-        when amb-stop-marker (break)
-        out.extend (k c)
-      out
+  try:
+    shift k:
+      let [[out #[]]]:
+        for-each [c choices]:
+          when amb-stop-marker (break)
+          out.extend (k c)
+        out
+  except [e KoskariPromptNotFound]:
+    if (== e.prompt_id search-prompt-tag):
+      raise (NoActiveSearch "amb requires an enclosing solve or solve-first")
+    else:
+      (raise)
 
 
 define fail []:
   """
-  Abandon the current branch; it contributes no solutions
+  Abandon the current branch; it contributes no solutions.
+
+  Raises NoActiveSearch when no solve or solve-first delimits the call
   """
 
-  shift k #()
+  try:
+    shift k #()
+  except [e KoskariPromptNotFound]:
+    if (== e.prompt_id search-prompt-tag):
+      raise (NoActiveSearch "fail requires an enclosing solve or solve-first")
+    else:
+      (raise)
 
 
 define require [test]:

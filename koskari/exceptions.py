@@ -468,7 +468,7 @@ class KoskariPromptUnreachable(KoskariContinuationError):
     """
 
     def __init__(self, message, prompt_id=None, operation=None,
-            boundary=None):
+                 boundary=None):
         super().__init__(message, prompt_id, operation)
         self.boundary = boundary
 

@@ -17,7 +17,7 @@ Search shapes exercising koskari.solve; imported by tests.solve
 """
 
 
-import-from koskari.solve amb fail require solve solve-first
+import-from koskari.solve NoActiveSearch amb fail require solve solve-first
 
 
 (define triples
@@ -81,6 +81,20 @@ import-from koskari.solve amb fail require solve solve-first
       (visits.append x)
       (require (> x 1))
       x)))
+
+
+; amb and fail with no enclosing search delimiter raise the module's
+; NoActiveSearch rather than the VM's capture vocabulary.
+define catch-no-search [thunk]:
+  try:
+    (thunk)
+    None
+  except [e NoActiveSearch]:
+    e
+
+(define outside-amb (catch-no-search (lambda [] (amb (#list 1 2 3)))))
+
+(define outside-fail (catch-no-search (lambda [] (fail))))
 
 
 ;; The end.

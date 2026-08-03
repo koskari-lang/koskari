@@ -488,6 +488,120 @@ int kos_ctx_exc_stash_chain_top(
   } while (0)
 
 
+/* === Continuation capture errors === */
+
+
+static PyObject *exc_prompt_not_found = NULL;
+static PyObject *exc_prompt_unreachable = NULL;
+
+
+/**
+   Lazily resolve the capture error classes from koskari.exceptions.
+   Capture only runs long after the package is fully imported, so the
+   import never cycles; the classes are cached for the process lifetime.
+*/
+static int kos_load_capture_excs(void) {
+  PyObject *mod;
+
+  if (exc_prompt_not_found && exc_prompt_unreachable)
+    return 0;
+
+  mod = PyImport_ImportModule("koskari.exceptions");
+  if (! mod)
+    return -1;
+
+  exc_prompt_not_found =
+      PyObject_GetAttrString(mod, "KoskariPromptNotFound");
+  exc_prompt_unreachable =
+      PyObject_GetAttrString(mod, "KoskariPromptUnreachable");
+  Py_DECREF(mod);
+
+  if (! exc_prompt_not_found || ! exc_prompt_unreachable) {
+    Py_CLEAR(exc_prompt_not_found);
+    Py_CLEAR(exc_prompt_unreachable);
+    return -1;
+  }
+  return 0;
+}
+
+
+/**
+   Raise KoskariPromptNotFound for a capture walk that exhausted the
+   chain without meeting a prompt matching prompt_id.
+*/
+static int kos_raise_prompt_not_found(uint32_t prompt_id) {
+  PyObject *exc;
+
+  if (kos_load_capture_excs())
+    return -1;
+
+  exc = PyObject_CallFunction(
+      exc_prompt_not_found, "sIs",
+      "shift has no enclosing reset",
+      (unsigned int) prompt_id, "shift");
+  if (! exc)
+    return -1;
+  PyErr_SetObject(exc_prompt_not_found, exc);
+  Py_DECREF(exc);
+  return -1;
+}
+
+
+/**
+   Raise KoskariPromptUnreachable at a node that denied handle(SHIFT).
+   The deny site does not know which prompt the walk was seeking, so
+   prompt_id is left None; kos_capture_note_prompt_id fills it in when
+   the walk owner regains control.
+*/
+static void kos_raise_prompt_unreachable(const char *boundary) {
+  PyObject *msg;
+  PyObject *exc;
+
+  if (kos_load_capture_excs())
+    return;
+
+  msg = PyUnicode_FromFormat(
+      "shift cannot capture across a %s boundary", boundary);
+  if (! msg)
+    return;
+
+  exc = PyObject_CallFunction(
+      exc_prompt_unreachable, "OOss",
+      msg, Py_None, "shift", boundary);
+  Py_DECREF(msg);
+  if (! exc)
+    return;
+  PyErr_SetObject(exc_prompt_unreachable, exc);
+  Py_DECREF(exc);
+}
+
+
+/**
+   Note the seeking prompt id on an in-flight KoskariPromptUnreachable.
+   Any other in-flight exception is left untouched.
+*/
+static void kos_capture_note_prompt_id(uint32_t prompt_id) {
+  PyObject *typ;
+  PyObject *val;
+  PyObject *tb;
+  PyObject *pid;
+
+  if (! exc_prompt_unreachable
+      || ! PyErr_ExceptionMatches(exc_prompt_unreachable))
+    return;
+
+  PyErr_Fetch(&typ, &val, &tb);
+  PyErr_NormalizeException(&typ, &val, &tb);
+  pid = PyLong_FromUnsignedLong(prompt_id);
+  if (pid) {
+    if (PyObject_SetAttrString(val, "prompt_id", pid))
+      PyErr_Clear();
+    Py_DECREF(pid);
+  }
+  PyErr_Restore(typ, val, tb);
+}
+
+
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_delim.c"
@@ -1364,8 +1478,7 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
           || event == KOS_XFER_EVENT_RAISE)
         return KOS_HANDLE_CONSUMED;
       if (event == KOS_XFER_EVENT_SHIFT) {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "shift cannot cross generator boundary");
+        kos_raise_prompt_unreachable("generator");
         return KOS_HANDLE_ERROR;
       }
       return KOS_HANDLE_PASS;
@@ -1831,8 +1944,10 @@ int kos_shift_capture(
     while (node) {
       KosHandleResult hr = kos_dyn_handle(es, node, KOS_XFER_EVENT_SHIFT);
 
-      if (hr == KOS_HANDLE_ERROR)
+      if (hr == KOS_HANDLE_ERROR) {
+        kos_capture_note_prompt_id(prompt_id);
         return -1;
+      }
       if (hr == KOS_HANDLE_CONSUMED) {
         if (KosDynNode_IS_PROMPT(node)
             && KosDynPrompt_ID((KosDynPrompt *) node) == prompt_id) {
@@ -1846,10 +1961,8 @@ int kos_shift_capture(
       node = KosDynNode_PARENT(node);
     }
   }
-  if (! prompt) {
-    PyErr_SetString(PyExc_RuntimeError, "prompt not found");
-    return -1;
-  }
+  if (! prompt)
+    return kos_raise_prompt_not_found(prompt_id);
 
   /* Bound the invoke template at the prompt's owning FRAME: clone from
    * dyn_top down through heritage nodes (WIND, PARAM, ...), the PROMPT,

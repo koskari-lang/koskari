@@ -73,4 +73,21 @@ class TestSolveModule(unittest.TestCase):
         self.assertEqual(getattr(self.cases, "first-passing"), 2)
         self.assertEqual(self.cases.visits, [1, 2])
 
+    def test_amb_outside_a_search_raises_no_active_search(self):
+        import koskari.solve as solve
+        from koskari.exceptions import KoskariContinuationError
+
+        err = getattr(self.cases, "outside-amb")
+        self.assertIsInstance(err, solve.NoActiveSearch)
+        self.assertIsInstance(err, solve.SearchError)
+        self.assertIsInstance(err, KoskariContinuationError)
+        self.assertIn("solve", str(err))
+
+    def test_fail_outside_a_search_raises_no_active_search(self):
+        import koskari.solve as solve
+
+        err = getattr(self.cases, "outside-fail")
+        self.assertIsInstance(err, solve.NoActiveSearch)
+        self.assertIn("solve", str(err))
+
 # The end.

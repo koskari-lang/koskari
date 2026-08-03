@@ -19,6 +19,10 @@ handler. Mirrors the semantics in design/language/control-flow.md.
 """
 
 from . import SpecialsTestCase
+from koskari.exceptions import (
+    KoskariPromptNotFound,
+    KoskariPromptUnreachable,
+)
 from koskari.lib import DelimitedContinuation, ParamRef
 from tests.dis.dis import dis
 
@@ -556,6 +560,46 @@ class TestResetShiftSpecials(SpecialsTestCase):
         result = await expr()
         self.assertEqual(result, 5)
         self.assertEqual(events, ["enter", "exit"])
+
+
+class TestShiftCaptureErrors(SpecialsTestCase):
+
+    async def test_shift_without_reset_raises_prompt_not_found(self):
+        """
+        shift with no enclosing reset raises KoskariPromptNotFound
+        carrying the sought prompt id and the operation name
+        """
+
+        src_str = """
+        (compile/shift k (compile/call k 1))
+        """
+        expr, mod = self.compile_expr(src_str)
+        with self.assertRaises(KoskariPromptNotFound) as caught:
+            await expr()
+        self.assertEqual(caught.exception.prompt_id, 0)
+        self.assertEqual(caught.exception.operation, "shift")
+
+    async def test_shift_across_generator_raises_prompt_unreachable(self):
+        """
+        A reset exists outside the generator, but the shift inside the
+        generator body cannot capture across the generator boundary:
+        KoskariPromptUnreachable, naming the boundary
+        """
+
+        src_str = """
+        (compile/reset
+          (compile/begin
+            (compile/setq g
+              (compile/call
+                (compile/lambda [] (compile/yield (compile/shift k 1)))))
+            (compile/next g)))
+        """
+        expr, mod = self.compile_expr(src_str)
+        with self.assertRaises(KoskariPromptUnreachable) as caught:
+            await expr()
+        self.assertEqual(caught.exception.boundary, "generator")
+        self.assertEqual(caught.exception.operation, "shift")
+        self.assertEqual(caught.exception.prompt_id, 0)
 
 
 # The end.
