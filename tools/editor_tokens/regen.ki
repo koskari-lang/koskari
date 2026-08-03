@@ -61,9 +61,10 @@ define expand_block_header_tokens [layout_heads layout_peers]:
 
     define out #[]
     for-each [head layout_heads]:
-        (out.append head)
-        (out.extend (layout_peers.get head #()))
-    return (sorted (set out) reverse: True)
+        out.append head
+        out.extend (layout_peers.get head #())
+
+    sorted (set out) reverse: True
 
 
 define escape_regex_token [token]:
@@ -75,9 +76,10 @@ define escape_regex_token [token]:
     define parts #[]
     for-each [ch token]:
         when (in? ch REGEX_META):
-            (parts.append "\\")
-        (parts.append ch)
-    return (.join "" parts)
+            parts.append "\\"
+        parts.append ch
+
+    "".join parts
 
 
 @demand
@@ -86,7 +88,7 @@ define join_regex_alternation [tokens]:
     Join escaped tokens with ``|`` for a regex alternation.
     """
 
-    return (.join "|" (list-each [t tokens] (escape_regex_token t)))
+    "|".join (list-each [t tokens] (escape_regex_token t))
 
 
 @demand
@@ -96,7 +98,7 @@ define json_string_escape [fragment]:
     quotes).
     """
 
-    return (item-slice (json.dumps fragment) 1 -1)
+    item-slice (json.dumps fragment) 1 -1
 
 
 define emacs_regex_alternation [tokens]:
@@ -104,7 +106,7 @@ define emacs_regex_alternation [tokens]:
     Build an Emacs regexp alternation string using ``\\|`` separators.
     """
 
-    return (.join "\\|" (list-each [t tokens] (escape_regex_token t)))
+    "\\|".join (list-each [t tokens] (escape_regex_token t))
 
 
 define emacs_regex_body_concat_lines [body indent continuation]:
@@ -141,16 +143,17 @@ define emacs_regex_body_concat_lines [body indent continuation]:
 
         set! chunk (item-slice body start end)
         when (and continuation (< end body_len)):
-            set! chunk (+ chunk "\\|")
-        (lines.append (+ indent (json.dumps chunk)))
+            incr! chunk "\\|"
+
+        lines.append (+ indent (json.dumps chunk))
 
         if (None? split_at):
             set! start end
         else:
             set! start (+ split_at (len "\\|"))
 
-    (lines.append "")
-    return (.join "\n" lines)
+    lines.append ""
+    "\n".join lines
 
 
 @demand
@@ -190,11 +193,11 @@ define jinja_env [templates_dir]:
         trim_blocks: False
         lstrip_blocks: False)
 
-    (set-item env.filters "regex_alternation" join_regex_alternation)
-    (set-item env.filters "json_string_escape" json_string_escape)
-    (set-item env.filters "emacs_concat_block" emacs_block_control_concat_lines)
-    (set-item env.filters "emacs_concat_list_head" emacs_regex_lines)
-    (set-item env.globals "block_header_tokens" expand_block_header_tokens)
+    set! env.filters["regex_alternation"] join_regex_alternation
+    set! env.filters["json_string_escape"] json_string_escape
+    set! env.filters["emacs_concat_block"] emacs_block_control_concat_lines
+    set! env.filters["emacs_concat_list_head"] emacs_regex_lines
+    set! env.globals["block_header_tokens"] expand_block_header_tokens
 
     return env
 
@@ -204,19 +207,20 @@ define render [spec_path template_path output_path]:
     Load YAML, render one template, write ``output_path``.
     """
 
-    define spec_file (.resolve (Path spec_path))
+    define spec_file ((Path spec_path).resolve)
     define spec (yaml.safe_load (spec_file.read_text))
-    (set-item spec "list_head_specials"
-        (sorted (item spec "list_head_specials") reverse: True))
 
-    define template_file (.resolve (Path template_path))
+    set! spec["list_head_specials"]:
+        sorted spec["list_head_specials"] reverse: True
+
+    define template_file ((Path template_path).resolve)
     define env (jinja_env template_file.parent)
     define template (env.get_template template_file.name)
     define rendered (template.render spec)
 
-    define output_file (.resolve (Path output_path))
-    (output_file.parent.mkdir parents: True exist_ok: True)
-    (output_file.write_text rendered)
+    define output_file ((Path output_path).resolve)
+    output_file.parent.mkdir parents: True exist_ok: True
+    output_file.write_text rendered
 
 
 define main [argv: None]:
@@ -246,8 +250,7 @@ define main [argv: None]:
 
     define options (parser.parse_args args)
 
-    (render options.spec_yaml options.template options.output)
-
+    render options.spec_yaml options.template options.output
     return 0
 
 

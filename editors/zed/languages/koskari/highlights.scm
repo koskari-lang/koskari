@@ -122,6 +122,7 @@
    "next"
    "min"
    "max"
+   "match"
    "map"
    "macroexpandq-1"
    "macroexpandq"

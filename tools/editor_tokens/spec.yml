@@ -3,32 +3,35 @@ version: 1
 # Layout block heads (specialty-defined layouts) that appear as `NAME:` at the
 # start of a line. Peer heads are listed separately under layout_peers.
 layout_heads:
-  - if
-  - try
   - begin
-  - define
-  - when
-  - when-main
   - call
   - class
-  - for-each
-  - while
-  - dyn-wind
-  - with
-  - dyn-with
+  - define
   - define-class
+  - define-coroutine
   - define-dataclass
   - define-syntax
+  - dyn-wind
+  - dyn-with
   - extend-syntax
-  - syntax-rules
-  - macro-rules
-  - special-rules
-  - syntax-match
-  - macro-match
-  - special-match
-  - define-coroutine
-  - switch
+  - for-each
+  - if
   - import-from
+  - macro-match
+  - macro-rules
+  - match
+  - reset
+  - shift
+  - special-match
+  - special-rules
+  - switch
+  - syntax-match
+  - syntax-rules
+  - try
+  - when
+  - when-main
+  - while
+  - with
 
 # Peer block heads for layouts that declare peers. These are not necessarily
 # special forms, but they do appear as `NAME:` block headers.
@@ -40,16 +43,10 @@ layout_peers:
     - except
     - else
     - finally
-  switch:
-    - case
-    - else
   while:
     - else
   for-each:
     - else
-  dyn-wind:
-    - before
-    - after
 
 # Literal constants reserved for future editor highlighting. The first
 # iteration keeps these in the spec but does not wire them into grammars yet.
@@ -229,8 +226,8 @@ list_head_specials:
   - int?
   - is
   - is-not
-  - is?
   - is-not?
+  - is?
   - item
   - item*
   - item-slice
@@ -262,6 +259,7 @@ list_head_specials:
   - macroexpandq
   - macroexpandq-1
   - map
+  - match
   - max
   - min
   - next

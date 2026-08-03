@@ -82,10 +82,10 @@
    ;; Source: design/SPECIALS.md, design/LAYOUTS.md
    (list (concat "^\\([ \t]*\\)"
                  "\\(with\\|while\\|when-main\\|when\\|try\\|syntax-rules\\|syntax-match\\|"
-                 "switch\\|special-rules\\|special-match\\|macro-rules\\|macro-match\\|"
-                 "import-from\\|if\\|for-each\\|finally\\|extend-syntax\\|except\\|else\\|elif\\|"
-                 "dyn-with\\|dyn-wind\\|define-syntax\\|define-dataclass\\|define-coroutine\\|"
-                 "define-class\\|define\\|class\\|case\\|call\\|begin\\|before\\|after\\)"
+                 "switch\\|special-rules\\|special-match\\|shift\\|reset\\|match\\|macro-rules\\|"
+                 "macro-match\\|import-from\\|if\\|for-each\\|finally\\|extend-syntax\\|except\\|"
+                 "else\\|elif\\|dyn-with\\|dyn-wind\\|define-syntax\\|define-dataclass\\|"
+                 "define-coroutine\\|define-class\\|define\\|class\\|call\\|begin\\)"
 
                  "\\b\\([^\n]*?\\)\\(:\\)")
          (list 2 font-lock-keyword-face)
@@ -106,7 +106,7 @@
                  "parse-rule-pattern\\|parse-match-patternq\\|parse-match-pattern\\|"
                  "parameterq\\|parameterize\\|parameter\\|pair\\?\\|pair\\|ord\\|or\\|open\\|"
                  "on-demand\\?\\|object\\?\\|object\\|not-in\\?\\|not-in\\|not-equal\\?\\|not\\|"
-                 "nil\\?\\|nil\\|next\\|min\\|max\\|map\\|macroexpandq-1\\|macroexpandq\\|"
+                 "nil\\?\\|nil\\|next\\|min\\|max\\|match\\|map\\|macroexpandq-1\\|macroexpandq\\|"
                  "macroexpand-1\\|macroexpand\\|macro-rules\\|macro-match\\|lt\\?\\|locals\\|"
                  "local\\|load-exception\\|list\\?\\|list-each\\|list\\|letrec\\|let/cc\\|"
                  "let-values\\|let-syntax\\|let\\*\\|let\\|len\\|le\\?\\|lambda\\|labels\\|"
@@ -153,7 +153,7 @@
                  "parse-rule-pattern\\|parse-match-patternq\\|parse-match-pattern\\|"
                  "parameterq\\|parameterize\\|parameter\\|pair\\?\\|pair\\|ord\\|or\\|open\\|"
                  "on-demand\\?\\|object\\?\\|object\\|not-in\\?\\|not-in\\|not-equal\\?\\|not\\|"
-                 "nil\\?\\|nil\\|next\\|min\\|max\\|map\\|macroexpandq-1\\|macroexpandq\\|"
+                 "nil\\?\\|nil\\|next\\|min\\|max\\|match\\|map\\|macroexpandq-1\\|macroexpandq\\|"
                  "macroexpand-1\\|macroexpand\\|macro-rules\\|macro-match\\|lt\\?\\|locals\\|"
                  "local\\|load-exception\\|list\\?\\|list-each\\|list\\|letrec\\|let/cc\\|"
                  "let-values\\|let-syntax\\|let\\*\\|let\\|len\\|le\\?\\|lambda\\|labels\\|"
