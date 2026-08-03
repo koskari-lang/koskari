@@ -40,6 +40,9 @@ __all__ = (
     "ReaderEOF",
     "FormatStringSyntaxError",
     "LayoutError",
+    "KoskariContinuationError",
+    "KoskariPromptNotFound",
+    "KoskariPromptUnreachable",
     "CodeBoundary",
     "RUN_INFRASTRUCTURE_MODULES",
     "format_exception_with_koskari_trace",
@@ -421,6 +424,53 @@ class UncaughtCompilerError(CompilerError):
     """
 
     pass
+
+
+@builtin("KoskariContinuationError")
+class KoskariContinuationError(KoskariException):
+    """
+    Base class for continuation capture and transfer errors.
+
+    The catch target for the whole category. Deliberately not a
+    RuntimeError subclass: an overbroad except RuntimeError around a
+    continuation-using call must not silently swallow these
+    """
+
+    def __init__(self, message, prompt_id=None, operation=None):
+        super().__init__(message)
+        self.message = message
+        self.prompt_id = prompt_id
+        self.operation = operation
+
+
+@builtin("KoskariPromptNotFound")
+class KoskariPromptNotFound(KoskariContinuationError):
+    """
+    No prompt matching the requested id exists on the dynamic chain.
+
+    The construct in operation (shift) has no enclosing delimiter;
+    establish one. prompt_id identifies the delimiter the capture was
+    seeking, letting a library recognize a failure against its own
+    delimiter and leave foreign failures alone
+    """
+
+    pass
+
+
+@builtin("KoskariPromptUnreachable")
+class KoskariPromptUnreachable(KoskariContinuationError):
+    """
+    A matching prompt exists but a crossed node denied capture.
+
+    Adding a delimiter will not help; the region between the capture
+    point and the delimiter must be restructured. boundary describes
+    the denying node (for example a generator boundary)
+    """
+
+    def __init__(self, message, prompt_id=None, operation=None,
+            boundary=None):
+        super().__init__(message, prompt_id, operation)
+        self.boundary = boundary
 
 
 class CodeBoundary(Exception):
