@@ -26,7 +26,7 @@ define-class FunTimes []:
         self.real_x
 
     define set_x [self x]:
-        (set-attr self real_x x)
+        set! self.real_x x
 
 
 (print "Hello, Koskari!")
@@ -36,7 +36,7 @@ define-class FunTimes []:
 (print "fun.real_x:" fun.real_x)
 (print "fun.get_x:" (fun.get_x))
 
-(bindq fx (ref-attr fun real_x))
+(bindq fx &fun.real_x)
 
 (fun.set_x 20)
 (print "fx:" fx)

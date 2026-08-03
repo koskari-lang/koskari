@@ -508,9 +508,9 @@ define main [argv: None]:
     define parser (ArgumentParser
         prog: (basename name)
         description: "Opcode n-gram frequency analysis over Koskari code")
-    (build_arguments parser)
 
-    return (run (parser.parse_args args))
+    build_arguments parser
+    run (parser.parse_args args)
 
 
 when-main:

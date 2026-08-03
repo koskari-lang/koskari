@@ -53,7 +53,7 @@ define fib-recur-cached [n]:
     define cache #{}
     let inner [[n n]]:
         if (in n cache):
-            item cache n
+            cache[n]
 
         elif (< n 2):
             if (< n 1) 0 n
@@ -61,7 +61,7 @@ define fib-recur-cached [n]:
         else:
             define result (+ (inner (- n 1))
                              (inner (- n 2)))
-            set! (item cache n) result
+            set! cache[n] result
             result
 
 
@@ -90,7 +90,7 @@ define fib-loop [n]:
     while (> n 0):
         decr! n
         set! tmp accu
-        set! accu (+ accu v)
+        incr! accu v
         set! v tmp
     v
 

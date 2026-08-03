@@ -73,8 +73,7 @@ define cmd_opgrams [options]:
     """
 
     import-from tools.opgrams run
-
-    return (run options)
+    run options
 
 
 define cmd_corpus [options]:
@@ -83,8 +82,7 @@ define cmd_corpus [options]:
     """
 
     import-from tools.corpus.export run
-
-    return (run options)
+    run options
 
 
 define cmd_matchbench [options]:
@@ -93,8 +91,7 @@ define cmd_matchbench [options]:
     """
 
     import-from tools.matchbench run
-
-    return (run options)
+    run options
 
 
 define build_parser [name]:
@@ -168,7 +165,7 @@ define main [argv: None]:
     define parser (build_parser name)
     define options (parser.parse_args args)
 
-    return (options.func options)
+    options.func options
 
 
 when-main:

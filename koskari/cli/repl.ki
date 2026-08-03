@@ -57,7 +57,7 @@ define block_body? [buffer]:
     return False
 
   define lines (buffer.splitlines)
-  unless (any? (each [ln lines] (.endswith (ln.rstrip) ":"))):
+  unless (any? (each [ln lines] ((ln.rstrip).endswith ":"))):
     return False
 
   define nonempty (list-each [ln lines] when: (ln.strip) ln)
@@ -83,7 +83,7 @@ define continuation_indent [buffer]:
   unless lines:
     return ""
 
-  when (.endswith (buffer.rstrip) ":"):
+  when ((buffer.rstrip).endswith ":"):
     define last lines[-1]
     define indent_len (- (len last) (len (last.lstrip)))
     return (* " " (+ indent_len 4))
@@ -278,7 +278,7 @@ define repl [
       define tb exc.__traceback__
       define elines (format_exception_with_koskari_trace (type exc) exc tb)
       apply_sys_last_exc (type exc) exc tb
-      print (.join "" elines) end: "" file: stderr
+      print ("".join elines) end: "" file: stderr
       (stderr.flush)
       set! buffer ""
       set! prompt ">>> "
@@ -294,7 +294,7 @@ define repl [
       define info (sys.exc_info)
       define elines (format_exception_with_koskari_trace *: info)
       apply_sys_last_exc *: info
-      print (.join "" elines) end: "" file: stderr
+      print ("".join elines) end: "" file: stderr
       (stderr.flush)
       set! buffer ""
       set! prompt ">>> "

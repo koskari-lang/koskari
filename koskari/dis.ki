@@ -27,7 +27,9 @@ __self__ in a leading section).
 """
 
 
-import-from koskari.lib BoundMethod Code Compare Expression Function NamespaceSpec OpCode Operand OpStyle
+import-from koskari.lib:
+  BoundMethod Code Compare Expression Function
+  NamespaceSpec OpCode Operand OpStyle
 
 
 (declare-exports dis)
@@ -48,7 +50,8 @@ define _boundmethod_inner_function [bm]:
   unless (instance? func Function):
     (raise
       (TypeError
-        f"BoundMethod __func__ must be Function or Demand(Function), got {(attr (type func) __name__)}"))
+        f"BoundMethod __func__ must be Function or Demand[Function],"-
+        f" got {(type func).__name__}"))
   return func
 
 
@@ -467,7 +470,7 @@ define dis [x file: None]:
     unless code:
       raise (TypeError
           "expected Code, Expression, Function, or"-
-          f" BoundMethod, got {(attr (type x) __name__)}")
+          f" BoundMethod, got {(type x).__name__}")
 
   set! out (_resolve_file out)
   define cpool code.constants_pool

@@ -56,7 +56,9 @@ define-class Cube []:
 
 
 define area [shape]:
-    """ dispatch on shape class, destructuring fields positionally """
+    """
+    dispatch on shape class, destructuring fields positionally
+    """
 
     match shape:
         case Point[x y]:
@@ -72,7 +74,9 @@ define area [shape]:
 
 
 define describe [shape]:
-    """ keyword-field literals and guards refine the dispatch """
+    """
+    keyword-field literals and guards refine the dispatch
+    """
 
     match shape:
         case Point[x: 0 y: 0]:
@@ -92,7 +96,9 @@ define describe [shape]:
 
 
 define summarize [shapes]:
-    """ sequence patterns destructure the collection itself """
+    """
+    sequence patterns destructure the collection itself
+    """
 
     match shapes:
         case #[]:
@@ -104,7 +110,9 @@ define summarize [shapes]:
 
 
 define from-message [msg]:
-    """ mapping patterns pick apart dict-shaped input """
+    """
+    mapping patterns pick apart dict-shaped input
+    """
 
     match msg:
         case #{"shape": "square" "side": s}:

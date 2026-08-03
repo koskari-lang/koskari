@@ -47,7 +47,9 @@ import-from dataclasses dataclass
 import-from os.path basename
 import-from time perf_counter
 
-import-from koskari.matcher APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAP_ENTRY MATCH ONEOF PREDICATE SYMBOL MatchCompiler make_matcher thaw
+import-from koskari.matcher:
+    APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAP_ENTRY
+    MATCH ONEOF PREDICATE SYMBOL MatchCompiler make_matcher thaw
 
 
 ;; === fixtures ===
@@ -393,7 +395,7 @@ define run [options]:
     :return: integer exit code
     """
 
-    define names (if options.cells options.cells None)
+    define names (or options.cells None)
     define rows (run-cells names options.iterations)
     if options.json:
         (report-json rows options.iterations)
@@ -418,9 +420,9 @@ define main [argv: None]:
     define parser (ArgumentParser
         prog: (basename name)
         description: "Matcher and match/case micro-benchmarks")
-    (build_arguments parser)
 
-    return (run (parser.parse_args args))
+    build_arguments parser
+    run (parser.parse_args args)
 
 
 when-main:

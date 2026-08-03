@@ -155,7 +155,7 @@ define viewer-rows [data]:
     """
 
     define rows (data.get "rows" #())
-    list-each [entry rows] (item entry "row")
+    list-each [entry rows] entry["row"]
 
 
 define compact-example [row]:
@@ -168,12 +168,12 @@ define compact-example [row]:
     for-each [key META_KEYS]:
         define value (row.get key)
         unless (None? value):
-            set! (item out key) value
+            set! out[key] value
 
     for-each [key VERIFY_KEYS]:
         define value (row.get key)
         unless (None? value):
-            set! (item out key) value
+            set! out[key] value
 
     out
 
@@ -212,7 +212,7 @@ define pick-fields [row keys]:
     for-each [key keys]:
         define value (row.get key)
         unless (None? value):
-            set! (item out key) value
+            set! out[key] value
     out
 
 
@@ -241,7 +241,7 @@ define resolve-references [refs]:
     define clauses:
         list-each [ref refs] f"\"path\"='{(escape-sql-string ref)}'"
 
-    define joined (.join " OR " clauses)
+    define joined (" OR ".join clauses)
     define where f"({joined})"
     define extra #{"where": where "offset": 0 "length": (len refs)}
     define rows (viewer-rows (viewer-get "/filter" extra config: DOCS_CONFIG))
@@ -261,7 +261,7 @@ define doc-like-clause [text]:
         list-each [column DOC_SEARCH_COLUMNS]:
             f"\"{column}\" LIKE {needle}"
 
-    define joined (.join " OR " clauses)
+    define joined (" OR ".join clauses)
     f"({joined})"
 
 
@@ -352,7 +352,7 @@ define search-like-clause [text]:
     define clauses:
         list-each [column SEARCH_COLUMNS]:
             f"\"{column}\" LIKE {needle}"
-    define joined (.join " OR " clauses)
+    define joined (" OR ".join clauses)
     f"({joined})"
 
 
@@ -361,9 +361,9 @@ define viewer-search-rows [path extra cap config: CONFIG]:
     Issue a Dataset Viewer query with paging bounds and return its rows
     """
 
-    set! (item extra "offset") 0
-    set! (item extra "length") cap
-    (viewer-rows (viewer-get path extra config: config))
+    set! extra["offset"] 0
+    set! extra["length"] cap
+    viewer-rows (viewer-get path extra config: config)
 
 
 define fts-search [search_text cap]:
@@ -371,7 +371,7 @@ define fts-search [search_text cap]:
     Full-text search rows via the Dataset Viewer /search endpoint
     """
 
-    (viewer-search-rows "/search" #{"query": search_text} cap)
+    viewer-search-rows "/search" #{"query": search_text} cap
 
 
 define like-search [search_text feature_path cap]:
@@ -383,7 +383,7 @@ define like-search [search_text feature_path cap]:
     define clause (search-like-clause search_text)
     when feature_path:
         set! clause f"{clause} AND {(feature-where-clause feature_path)}"
-    (viewer-search-rows "/filter" #{"where": clause} cap)
+    viewer-search-rows "/filter" #{"where": clause} cap
 
 
 define feature-search [feature_path cap]:
@@ -515,10 +515,10 @@ define get_example [corpus_id]:
     unless rows:
         return f"No corpus example with corpus_id={(repr corpus_id)}."
 
-    define example (compact-example (item rows 0))
-    define refs (dict.get example "references")
+    define example (compact-example rows[0])
+    define refs (example.get "references")
     when refs:
-        set! (item example "references_resolved") (resolve-references refs)
+        set! example["references_resolved"] (resolve-references refs)
 
     (json.dumps example)
 
@@ -547,14 +547,15 @@ define get_reference [path]:
     unless rows:
         return f"No reference material with path={(repr path)}."
 
-    (json.dumps (pick-fields (item rows 0) REFERENCE_FULL_KEYS))
+    json.dumps (pick-fields rows[0] REFERENCE_FULL_KEYS)
 
 
 @(mcp.tool)
 @coroutine-fn
-define search_docs [search_text
-                    [kind :: str value: None]
-                    [limit :: int value: 10]]:
+define search_docs [
+        search_text
+        [kind :: str value: None]
+        [limit :: int value: 10]]:
     """
     Search Koskari documentation and example programs by text
 
@@ -574,7 +575,7 @@ define search_docs [search_text
     unless limited:
         return "No matching reference material."
 
-    (json.dumps limited)
+    json.dumps limited
 
 
 @(mcp.tool)
@@ -600,12 +601,12 @@ define list_features []:
         for-each [row rows]:
             define feature (row.get "feature" "")
             when feature:
-                define count (dict.get seen feature 0)
-                set! (item seen feature) (+ count 1)
+                define count (seen.get feature 0)
+                set! seen[feature] (+ count 1)
 
         incr! offset (len rows)
 
-        when (item page "partial"):
+        when page["partial"]:
             (break)
 
         when (< (len rows) 100):
@@ -616,24 +617,27 @@ define list_features []:
 
     define groups #{}
     for-each [p (sorted (seen.items))]:
-        define top (item (.split (item p 0) "/") 0)
+        define top (p[0].split "/")[0]
+
         define bucket (groups.get top)
-        when (None? bucket):
+        unless bucket:
             set! bucket #[]
-            set! (item groups top) bucket
-        (bucket.append p)
+            set! groups[top] bucket
+        bucket.append p
 
     define lines #[]
     for-each [top (sorted (groups.keys))]:
-        define bucket (item groups top)
+        define bucket groups[top]
         define subtotal 0
-        for-each [p bucket]:
-            incr! subtotal (item p 1)
-        (lines.append f"{top}/  ({subtotal})")
-        for-each [p bucket]:
-            (lines.append f"  {(item p 0)}\t{(item p 1)}")
 
-    (.join "\n" lines)
+        for-each [p bucket]:
+            incr! subtotal p[1]
+
+        lines.append f"{top}/  ({subtotal})"
+        for-each [p bucket]:
+            lines.append f"  {p[0]}\t{p[1]}"
+
+    "\n".join lines
 
 
 @(mcp.tool)
@@ -664,11 +668,11 @@ define list_tags []:
         for-each [row rows]:
             for-each [tag (or (row.get "tags") #())]:
                 define count (seen.get tag 0)
-                set! (item seen tag) (+ count 1)
+                set! seen[tag] (+ count 1)
 
         incr! offset (len rows)
 
-        when (item page "partial"):
+        when page["partial"]:
             (break)
 
         when (< (len rows) 100):
@@ -679,7 +683,7 @@ define list_tags []:
 
     define ranked:
         (sorted (seen.items)
-            key: { #((- (item %1 1)) (item %1 0)) })
+            key: { #((- %1[1]) %1[0]) })
 
     define intent #[]
     define structural #[]
@@ -696,7 +700,7 @@ define list_tags []:
     (lines.append f"structural ({(len structural)}):")
     (lines.extend structural)
 
-    (.join "\n" lines)
+    "\n".join lines
 
 
 define main [argv: None]:
@@ -734,7 +738,7 @@ define main [argv: None]:
         return (mcp.run_stdio_async)
 
     ; resplit, strip, and filter out empty strings
-    define allowed (.split (.join "," options.allowed_hosts) ",")
+    define allowed ((",".join options.allowed_hosts).split ",")
     set! allowed (list-each [h (map str.strip allowed)] when: h h)
 
     ; mcp by default filters by requested hostname, allowing only
