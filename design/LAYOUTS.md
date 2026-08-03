@@ -393,6 +393,77 @@ switch x:
 **Tests:** `tests/reader/layouts/test_switch_layout.py`
 
 
+## layout/match
+
+**Symbol:** `layout/match`
+
+**Use-case:** Structural pattern matching in block syntax. Lowers to the
+clause lists consumed by `compile/match`
+([SPECIALS.md](SPECIALS.md) § compile/match; pattern dialect in
+[MATCHER.md](MATCHER.md) § Runtime match/case).
+
+**Behaviour:** Does not accept peers. Header must be exactly
+`match VALUE:` (one value expression). A **raw** layout: `case` and `else`
+children arrive as block sources, so each case header — however many
+tokens — stays structurally separate from its body. The whole header tail
+becomes the clause's pattern delimiter, which is how a multi-token
+spelling like `case x :: int:` survives as one delimiter. Case and else
+bodies are expanded with `apply_layouts`. Emits:
+
+`(compile/match VALUE [[PATTERN...] BODY...] ... [else: BODY...])`
+
+— the same clause shape an s-expr author writes directly.
+
+A `when` / `unless` marker in a case header splits it into pattern and
+guard: `case PATTERN when COND:` emits `[[PATTERN] when: COND BODY...]`
+(bare marker symbol in the header, keyword in the clause).
+
+Rules:
+
+- body entries must be `case` or `else` blocks only
+- `case` requires a pattern and a non-empty body
+- a guard marker needs a pattern before it and exactly one expression
+  after it
+- `else` takes no arguments, requires a non-empty body, is allowed once,
+  and no `case` may follow it
+- empty body is allowed and lowers to `(compile/match VALUE)`
+
+**Syntax:**
+
+```
+match VALUE:
+  case PATTERN:
+    BODY
+  case PATTERN when COND:
+    BODY
+  else:
+    BODY
+```
+
+**Examples:**
+
+```scheme
+match (get-value):
+  case #[a b c]:
+    (use a b c)
+  case x :: int:
+    (use x)
+  case Point[x y] when (> x y):
+    (use x y)
+  else:
+    (other)
+;; -> (compile/match (get-value)
+;;      [[#[a b c]] (use a b c)]
+;;      [[x :: int] (use x)]
+;;      [[Point[x y]] when: (> x y) (use x y)]
+;;      [else: (other)])
+```
+
+**Implementation:** `koskari/reader/layouts/conditionals.layout_match`
+
+**Tests:** `tests/reader/layouts/test_match_layout.py`
+
+
 ## layout/try
 
 **Symbol:** `layout/try`

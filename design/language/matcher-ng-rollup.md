@@ -1509,7 +1509,7 @@ Composite sketches are summarized under **As-built notes** above and in
 
 ### Phase 6 — Matcher syntax parser *(landed)*
 
-The matcher-syntax parser now ships in `koskari/matcher.py` and uses
+The matcher-syntax parser lives in `koskari/matcher.py` and uses
 the existing primitives/composites to unpack matcher syntax itself.
 Implemented pieces:
 

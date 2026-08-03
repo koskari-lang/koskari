@@ -139,8 +139,8 @@ Types are defined in the native extension `koskari.lib`; the Python module `kosk
 
 ### Completed
 
-The following types have been migrated to koskari and are fully implemented
-with C extension support and comprehensive test coverage:
+The following types have been migrated to koskari, with C extension
+support:
 
 **Atom Types** (from python-sibilant):
 - `symbol`: Interned immutable identifier with split/rsplit support

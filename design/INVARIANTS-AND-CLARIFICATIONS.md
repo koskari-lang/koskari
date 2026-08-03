@@ -196,7 +196,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 ## 9. Implementation Status (What Exists Today)
 
-**Fully implemented and tested (C + Python)**:
+**Implemented (C + Python)**:
 
 - Atoms: symbol, keyword, gensym (atom.c).
 - Pairs: pair, nil, cons, car, cdr, setcar, setcdr, build_unpack_pair, predicates (pair.c).

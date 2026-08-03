@@ -22,7 +22,7 @@ Highlights (not an exhaustive list):
 | Area | Implemented as |
 | ---- | -------------- |
 | Core | `compile/quote`, `compile/quasiquote`, `compile/unquote`, `compile/unquote-splicing`, `compile/quote-block`, `compile/quasiquote-block`, `compile/begin`, `compile/lambda`, `compile/function`, `compile/let`, `compile/define`, `compile/define-global`, `compile/setq`, `compile/delq`, `compile/refq`, `compile/bindq`, `compile/cons`, `compile/car`, `compile/cdr`, `compile/class` |
-| Control | `compile/cond`, `compile/switch`, `compile/and`, `compile/or`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/try`, `compile/raise`, internal exception helpers |
+| Control | `compile/cond`, `compile/switch`, `compile/match`, `compile/and`, `compile/or`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/try`, `compile/raise`, internal exception helpers |
 | Context | `compile/with`, `compile/dyn-with`, `compile/dyn-wind`, `compile/parameterize` |
 | Generators / async | `compile/yield`, `compile/yield-from`, `compile/await` |
 | Calls / attrs / items | `compile/call`, `compile/call-attr`, `compile/attr`, `compile/set-attr`, `compile/inplace-attr`, `compile/del-attr`, `compile/ref-attr`, `compile/item`, `compile/set-item`, `compile/inplace-item`, `compile/del-item`, `compile/ref-item`, `compile/deref` |
@@ -42,6 +42,32 @@ Highlights (not an exhaustive list):
 - **Chained** comparisons (`a < b < c`).
 - Method calls: **`compile/call-attr`**, dot-prefix **`(compile/call .method obj …)`**, and **`(compile/call (attr obj m) …)`** expansion — no separate `method-call` special.
 - **Bracket-pair type and call convention**: `[ ]` is **not** a vector literal — it reads into a `bracket-pair` (a value-equal `pair` subtype that marks `[ ]` origin) and **compiles identically to `( )` by default** (a non-empty head-position list is a call either way). The `( )` = call / `[ ]` = data split is a convention; optional module pragmas turn it into a check — `reader/brackets` (reader: emit the marker) and `compiler/call-brackets` (compiler: `ignore` / `warn` / `error` when a bracket-pair reaches call position). See [SYNTAX.md](SYNTAX.md), [PRAGMA.md](PRAGMA.md).
+
+### Runtime match/case
+
+Value-level pattern matching over the native matcher engine
+(`koskari.lib.Matcher`), the same engine that drives macro and special-form
+dispatch. **`compile/match`** (s-expr) and **`layout/match`** (block syntax)
+lower each arm's pattern to a frozen matcher constant and emit a
+`SWITCH_EQ`-style chain of **`MATCH_CASE`** / **`MATCH_STORE_NAMES`** opcodes,
+with a per-site `KOS_CACHE_MATCHER` slot (thaw-once).
+
+- **Case-pattern dialect**: capture symbols, literals, `x :: T` type
+  constraints, sequence `#[…]` / `#(…)` (with `*:` rest), mapping `#{K: PAT}`,
+  class patterns `Point[x y]` (PEP 634 field rules: `__match_args__`
+  positional, `k: pat` keyword), `(app f PAT)` projection, `(? pred)`
+  predicates, `(or …)` / `(not …)`, and registry-head passthrough. Pattern
+  kind is decided by head symbol or marker, never by bracket type.
+- **Guards**: `when:` / `unless:` on an arm; subject survives a failed guard
+  and falls to the next arm.
+- **Semantics**: first arm wins; bindings land in the enclosing scope and
+  persist after the form (Python-consistent); no match + no `else:` → `None`;
+  strings/bytes are atoms to sequence patterns. On 3.9 the engine synthesizes
+  `__match_args__` for dataclasses and namedtuples.
+
+See [MATCHER.md](MATCHER.md) § Runtime match/case;
+`koskari/compile/specials/conditionals.py`,
+`koskari/reader/layouts/conditionals.py`, `koskari/lib/opcode/MATCH_CASE.c`.
 
 ### Slices
 
@@ -65,7 +91,7 @@ gives the idiomatic direct form `(item-slice seq 1)` in place of
 Indentation-based blocks; heads via `layout/<name>` in the module namespace.
 Implemented handlers include:
 
-`layout/if`, `layout/switch`, `layout/try`, `layout/while`, `layout/for-each`, `layout/dyn-wind`, `layout/class`, `layout/define-class`, `layout/call`, `layout/block`, `layout/block-begin`, `layout/quote`, `layout/quasiquote`, `layout/syntax-rules`, `layout/macro-rules`, `layout/special-rules`, `layout/syntax-match`, `layout/macro-match`, `layout/special-match`.
+`layout/if`, `layout/switch`, `layout/match`, `layout/try`, `layout/while`, `layout/for-each`, `layout/dyn-wind`, `layout/class`, `layout/define-class`, `layout/call`, `layout/block`, `layout/block-begin`, `layout/quote`, `layout/quasiquote`, `layout/syntax-rules`, `layout/macro-rules`, `layout/special-rules`, `layout/syntax-match`, `layout/macro-match`, `layout/special-match`.
 
 Unknown heads fall back to **`layout/block`**. See [LAYOUTS.md](LAYOUTS.md).
 
@@ -117,10 +143,7 @@ These appear in [language/special-forms.md](language/special-forms.md) or older 
 | **`method-call` / `!`** | Call-attr and dot-prefix sugar |
 | **`doc`** special | Docstrings via leading string on **`compile/lambda`** / **`compile/function`** / class body |
 | **`build-tuple`**, **`build-list`**, … as specials | Runtime **`build_tuple`**, **`build_list`**, … in bootstrap ([api/builtins.md](api/builtins.md)) |
-| Bundles, match-case, … | [TODO.md](TODO.md) |
-
-Slices and fenced literals were on this list historically; both now ship -- see
-§ Slices and § Fenced foreign literals above.
+| Bundles, … | [TODO.md](TODO.md) |
 
 ---
 
@@ -128,7 +151,7 @@ Slices and fenced literals were on this list historically; both now ship -- see
 
 ### Types (`koskari.lib`)
 
-`symbol`, `keyword`, `pair` / `nil`, `gensym`, namespaces (`Namespace`, `ModuleNamespace`, `CollectorNamespace`, …), `Ref` variants (`AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`, `ParamRef`), `Formals`, `values`, `Code`, `Arena`, `Function`, `Expression`, `Coroutine`, `AsyncGenerator`, continuations, **`defer`**, `Domain`, operand `Stack`, etc. See [api/types.md](api/types.md).
+`symbol`, `keyword`, `pair` / `nil`, `gensym`, namespaces (`Namespace`, `ModuleNamespace`, `CollectorNamespace`, …), `Ref` variants (`AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`, `ParamRef`), `Formals`, `values`, `Code`, `Arena`, `Function`, `Expression`, `Coroutine`, `AsyncGenerator`, continuations, **`defer`**, `Domain`, `Matcher`, operand `Stack`, etc. See [api/types.md](api/types.md).
 
 ### Builtins (bootstrap + `koskari.lib`)
 
@@ -237,6 +260,7 @@ wrappers, GC hooks.
 | Topic | Doc |
 | ----- | --- |
 | Special forms | [SPECIALS.md](SPECIALS.md) |
+| Matcher and match/case | [MATCHER.md](MATCHER.md) |
 | Macros | [MACROS.md](MACROS.md) |
 | Layout syntax | [LAYOUTS.md](LAYOUTS.md), [docs/reference/reader-layout.md](../docs/reference/reader-layout.md) |
 | Planned language surface | [language/special-forms.md](language/special-forms.md), [language/async.md](language/async.md) |

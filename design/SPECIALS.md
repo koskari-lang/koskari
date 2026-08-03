@@ -506,6 +506,108 @@ the sequencing.
 **Tests:** `tests/compile/specials/test_switch.py`,
 `tests/reader/layouts/test_switch_layout.py`
 
+## compile/match
+
+**Symbol:** `compile/match`
+
+**Syntax:** `(compile/match SUBJECT [[PATTERN] BODY...] ... [else: BODY...])`
+
+**Use-case:** Structural pattern matching against one subject value. `SUBJECT`
+is evaluated once, then each arm's pattern is tried in order. The first
+matching arm binds its captured names into the enclosing scope and runs its
+body, whose value is the result of the form. `else:` always matches and must
+be last; with no matching arm and no `else:` the form yields `None`. The
+pattern language is the case-pattern dialect
+([MATCHER.md](MATCHER.md) § Runtime match/case).
+
+**Behaviour:** Requires at least one argument (`SUBJECT`); otherwise
+`SpecialError` (`"match requires a subject"`). Each non-else clause must be a
+pair/list (`"match clause must be a list"`) whose first element is the
+**pattern delimiter** — a list holding one pattern form or the multi-token
+`::` spelling of a typed capture. The delimiter is a pure container read with
+`pair`/`nil` checks only. Classification errors from the dialect surface as
+`SpecialError` at the clause's position.
+
+Per arm the pattern is lowered to a frozen matcher constant
+(`MatchCompiler().lower(MATCH(...))`). The frozen slot table supplies the
+binding names (ordered dedup — `ONEOF` branches may declare the same slot);
+the extern table lists every name the pattern resolves at match time (types,
+classes, predicates, extractors, symbol mapping keys). Each extern is passed
+through `request_var` so closure-bound names used only in a pattern are still
+captured.
+
+The subject stays on the stack across the arm chain (same discipline as
+`compile/switch`). Each arm emits one **`MATCH_CASE`** EXTRA row (no-match
+label, frozen matcher, externs tuple, keep-subject flag) followed by
+**`MATCH_STORE_NAMES`** with the names tuple (or a plain `POP` of the
+captures dict when the pattern binds nothing). No match leaves the subject in
+place and jumps to the next arm; a match pushes the captures dict and
+consumes the subject unless the keep flag is set. `MATCH_STORE_NAMES` binds
+only the slots that actually captured — an unbound optional slot raises
+`NameError` when read. Binding names are `declare_var`'d in the enclosing
+scope; bindings persist after the form (arms are not isolated scopes).
+
+A clause may carry a **guard** between the delimiter and the body:
+`[[PATTERN] when: COND BODY...]` (or `unless:`). A guard keyword with no
+expression raises `SpecialError` (`"match guard requires an expression"`).
+With a guard, `MATCH_CASE` keeps the subject under the captures; the guard
+expression compiles after the names bind and a `JUMP_FALSE` (`when:`) or
+`JUMP_TRUE` (`unless:`) falls to the next arm with the subject intact —
+captures persist across a failed guard. A passing guard pops the subject and
+commits to the body.
+
+Clause bodies are compiled via `helper_begin`; after any successful arm,
+control jumps to a shared done label. Entering `else:` pops the retained
+subject before its body. Exhausting all arms without `else:` pops the subject
+and pushes `None`.
+
+The head may be written as `match` or `compile/match`; compiler lookup
+resolves `match` to `compile/match`.
+
+**Expected lowered shape from layout/match:**
+
+```scheme
+(match SUBJECT
+  [[PATTERN] BODY...]
+  [[PATTERN] when: COND BODY...]
+  [else: BODY...])
+```
+
+The layout wraps each `case` header into the clause delimiter, so layout and
+s-expression forms produce identical clauses.
+
+**Examples:**
+
+```scheme
+;; sequence destructure with rest
+(compile/match data
+  [[#[a b *: rest]] rest]
+  [else: 0])
+;; data = #(1 2 3)  ->  (2 3)
+
+;; whole-value typed capture, multi-token spelling
+(compile/match data
+  [[x :: int] x]
+  [else: "not an int"])
+;; data = 7  ->  7
+
+;; class pattern and guard
+(compile/match p
+  [[Point[x y]] when: (> x y) "descending"]
+  [[Point[x y]] "ascending-or-equal"]
+  [else: "not a point"])
+
+;; mapping with a literal and a bound key
+(compile/match msg
+  [[#{"kind": "job" "url": u}] u]
+  [[#{"kind": k}] k]
+  [else: "other"])
+```
+
+**Tests:** `tests/compile/specials/test_match.py`,
+`tests/reader/layouts/test_match_layout.py`,
+`tests/lib/opcode/test_match_case.py`
+
 ## compile/and
 
 **Symbol:** `compile/and`
