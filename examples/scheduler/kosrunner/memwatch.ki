@@ -32,10 +32,16 @@ define logger (logging.getLogger "kosrunner.memwatch")
 
 define _STATUS (Path "/proc/self/status")
 
-;; the previous sample's census, so a report can show what GREW rather
-;; than just how much of everything there is. Module-level, so two
-;; memwatch jobs in one definition would share (and fight over) it.
+;; Two references to measure against: the previous sample (movement) and
+;; the first one of this process (drift). Drift is the leak signal --
+;; per-sample movement alone cannot tell a climb from jitter, because a
+;; count oscillating around a stable mean is up half the time it is
+;; sampled. Module-level, so two memwatch jobs in one definition would
+;; share (and fight over) them.
 define _prev #{}
+define _base #{}
+define _base-totals #{}
+define _samples #[0]
 
 
 define vmrss []:
@@ -66,6 +72,25 @@ define memory-census []:
     (values collected counts)
 
 
+define _drift [key value unit: ""]:
+    """
+    One header figure as `<total><unit>(<drift>)`, the drift measured
+    against this process's first sample of that figure -- a total on its
+    own says nothing about which way it is going. The first sample IS the
+    baseline, so it prints bare.
+    """
+
+    when (None? value):
+        (return "n/a")
+
+    define first (_base-totals.get key)
+    when (None? first):
+        (set! (item _base-totals key) value)
+        (return (.format "{}{}" value unit))
+
+    (.format "{}{}({:+d})" value unit (- value first))
+
+
 define _task-count []:
     try:
         (len (asyncio.all_tasks))
@@ -75,32 +100,52 @@ define _task-count []:
 
 define memory-report [top: 10]:
     """
-    Log one memory sample: process totals, then the `top` type names that
-    grew the most since the previous call.
+    Log one memory sample: process totals, then the `top` types that have
+    drifted furthest since this process's first sample. Every figure is
+    reported as a total AND a movement -- a total alone cannot show a
+    trend, and a delta alone cannot show the scale it moved against.
 
     `blocks` (every live pymalloc block) is the number that decides
     whether a climbing RSS is a leak. `live` counts only GC-TRACKED
     containers, and CPython untracks a dict whose values are all scalars,
     so a pile-up of strings, ints, or scalar dicts moves `blocks` while
     leaving `live` flat. Blocks climbing with RSS is retention -- the
-    growers below usually name it. Blocks flat under a climbing RSS is
+    types below usually name it. Blocks flat under a climbing RSS is
     allocator fragmentation or allocation outside pymalloc (thread
     stacks, sqlite, the extension), and nothing this process is holding.
+
+    Read the two per-type numbers together. Only a `first` that keeps
+    climbing sample after sample is retention; one that wanders either
+    side of zero while `last` flips sign is a count that jitters, which
+    plenty of them do. The first few samples of a process include its
+    warm-up, so treat an early drift as a baseline still settling.
     """
 
     define-values [collected counts] (memory-census)
+    (set! (item _samples 0) (+ 1 (item _samples 0)))
 
-    (logger.info "rss=%sKiB blocks=%s live=%s collected=%s threads=%s tasks=%s"
-        (vmrss) (sys.getallocatedblocks) (sum (counts.values)) collected
-        (threading.active_count) (_task-count))
+    (logger.info
+        "sample=%s rss=%s blocks=%s live=%s collected=%s threads=%s tasks=%s"
+        (item _samples 0)
+        (_drift "rss" (vmrss) unit: "KiB")
+        (_drift "blocks" (sys.getallocatedblocks))
+        (_drift "live" (sum (counts.values)))
+        collected (threading.active_count) (_task-count))
 
-    when _prev:
+    ;; ranked by the SIZE of the drift, not its sign: a count that fell
+    ;; is as much of a clue as one that rose, and hiding the falls is
+    ;; what makes an oscillating count read as a leak
+    when _base:
         define moved (list-each [[name n] (counts.items)]
-            #((- n (_prev.get name 0)) name))
-        for-each [[delta name] (item-slice (sorted moved reverse: True) stop: top)]:
-            when (> delta 0):
-                (logger.info "  +%s %s" delta name)
+            (let [[drift (- n (_base.get name 0))]]
+                #((abs drift) drift (- n (_prev.get name 0)) n name)))
+        for-each [[mag drift delta n name]
+                  (item-slice (sorted moved reverse: True) stop: top)]:
+            when drift:
+                (logger.info "  %-28s %8s  last %+d  first %+d" name n delta drift)
 
+    unless _base:
+        (_base.update counts)
     (_prev.clear)
     (_prev.update counts)
     None

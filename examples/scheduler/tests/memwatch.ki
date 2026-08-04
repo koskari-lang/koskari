@@ -55,9 +55,11 @@ define-class TestMemwatch [SchedulerAsyncTestCase]:
         define output (item detail "output")
         (self.assertIn "rss=" output)
         (self.assertIn "blocks=" output)
-        ;; the second sample has a previous census to compare against, so
-        ;; it carries per-type growth lines the first one cannot
-        (self.assertIn "  +" output)
+        ;; the second sample has a baseline to measure against, so it
+        ;; carries per-type drift lines the first one cannot
+        (self.assertIn "sample=2" output)
+        (self.assertIn "last " output)
+        (self.assertIn "first +" output)
 
 
 ;; The end.

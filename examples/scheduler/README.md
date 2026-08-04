@@ -565,10 +565,30 @@ job cron memwatch [*/5 * * * *]:
 ```
 
 Each fire logs process totals -- RSS, live pymalloc blocks, GC-tracked
-objects, threads, tasks -- followed by the type names that grew since the
-previous fire. It logs to a `kosrunner.*` logger, so every sample is
-captured into its own run's `output.log` and the run history becomes the
-trend line.
+objects, threads, tasks -- followed by the types that moved furthest,
+each with its live count, its movement since the previous fire, and its
+drift from this process's first sample:
+
+```
+sample=5 rss=56812KiB(+340) blocks=253845(+472) live=79566(-75) collected=217 threads=3 tasks=1
+  ReferenceType                    2598  last -81  first -100
+  builtin_function_or_method       1376  last +0  first +22
+```
+
+Every figure is a total *and* a movement, since a total alone cannot show
+a trend and a delta alone cannot show the scale it moved against. The
+header's parenthesised figures are drift from the first sample; the first
+sample is the baseline, so it prints bare.
+
+It logs to a `kosrunner.*` logger, so every sample is captured into its
+own run's `output.log` and the run history becomes the trend line.
+
+Those types are ranked by the **size** of their drift, sign included. A
+list of only the things that grew is worse than no list: plenty of counts
+jitter around a stable mean, and one sampled while it happens to be up
+looks exactly like a leak when the samples where it fell are filtered
+out. Only a `first` that climbs sample after sample is retention; one
+wandering either side of zero while `last` flips sign is noise.
 
 Read `blocks` first. `live` counts only GC-**tracked** containers, and
 CPython untracks a dict whose values are all scalars, so a pile-up of
