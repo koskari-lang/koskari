@@ -6,8 +6,9 @@ directly from `Exception`). Decision 2 resolved as recommended: class names,
 with the numbering question left to the lint-namespace pass (see
 [TODO.md](../TODO.md) § User documentation). Decision 3 (the `defer`
 double-await `RuntimeError`) left for its own pass. The corpus schema question
-proved real -- `verify.error` is compile-time only -- and is recorded in
-[TODO.md](../TODO.md) rather than fixed here.
+proved real -- `verify.error` asserts only read and compile failures, so the
+corpus records document the runtime classes as unenforced `verify.invalid`
+prose.
 
 Replace the bare `RuntimeError: prompt not found` raised by the delimited
 continuation capture walk with a proper exception family, and give
