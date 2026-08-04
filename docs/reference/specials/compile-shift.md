@@ -12,6 +12,25 @@ Koskari eval loop via `INVOKE_K` or `INVOKE_K_VAR`).
 `VAR_STORE K` (binds the captured delimited continuation), compiles body with
 `helper_begin`, emits `POP_SHIFT 0`.
 
+**Errors:** Capture can fail in two structurally different ways, each with its
+own exception under the `KoskariContinuationError` category (see
+[Error codes](../error-codes.md)):
+
+- `KoskariPromptNotFound` -- no matching prompt anywhere on the dynamic
+  chain: `shift has no enclosing reset`. Establish a delimiter with
+  [`reset`](compile-reset.md).
+- `KoskariPromptUnreachable` -- a matching prompt exists, but a node between
+  the shift and the prompt denied the capture: `shift cannot capture across a
+  generator boundary`. Adding a `reset` will not help; restructure so the
+  capture does not cross the boundary. The denying boundary is recorded on the
+  exception's `boundary` attribute.
+
+Both carry `prompt_id` (the delimiter id the capture was seeking) and
+`operation` (the surface construct, `shift`). A library that establishes its
+own delimiter can use `prompt_id` to recognize failures against it and
+translate them into its own vocabulary, as `koskari.solve` does with
+`NoActiveSearch`.
+
 **Examples:**
 
 ```koskari

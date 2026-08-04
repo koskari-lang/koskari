@@ -19,7 +19,7 @@ to any depth.
 Nondeterministically choose a value from `CHOICES` (any iterable). The
 rest of the enclosing search runs once per choice, and each choice's
 solutions are collected in order. Calling `amb` with no enclosing
-`solve` or `solve-first` raises `RuntimeError: prompt not found`.
+`solve` or `solve-first` raises `NoActiveSearch` (see § Errors).
 
 ## require
 
@@ -56,7 +56,25 @@ Enumeration is eager within a search: `solve` explores everything
 before returning, and `solve-first` stops early by skipping rather than
 by suspending. A lazy, one-solution-at-a-time enumerator is a
 non-goal for this module: it would require yielding across choice
-points, and a `shift` cannot cross a generator boundary.
+points, and a `shift` cannot cross a generator boundary (see § Errors).
+
+## Errors
+
+The module exports its own error vocabulary, rooted under the language's
+[`KoskariContinuationError`](../error-codes.md) category:
+
+- `SearchError` -- base class for search errors raised by this module.
+- `NoActiveSearch` -- `amb`, `fail`, or `require` was called with no
+  enclosing `solve` or `solve-first` to delimit the search. Wrap the
+  whole computation in `(solve (lambda [] ...))` or
+  `(solve-first (lambda [] ...))`.
+
+A choice point inside a generator raises `KoskariPromptUnreachable`
+untranslated: the delimiter exists but the capture cannot cross the
+generator boundary, and no added delimiter will help -- the generator
+must be restructured out of the path between the choice point and the
+search. A capture failure against a foreign (non-search) delimiter also
+propagates untouched.
 
 **Examples:**
 

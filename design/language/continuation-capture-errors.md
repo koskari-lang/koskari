@@ -1,6 +1,13 @@
 # Continuation capture errors
 
-**Status:** proposal — two decisions open (see [Open decisions](#open-decisions)).
+**Status:** implemented (tiers 1 and 2, raise sites, docs, corpus). Decision 1
+resolved as recommended: no `RuntimeError` base (`KoskariException` derives
+directly from `Exception`). Decision 2 resolved as recommended: class names,
+with the numbering question left to the lint-namespace pass (see
+[TODO.md](../TODO.md) § User documentation). Decision 3 (the `defer`
+double-await `RuntimeError`) left for its own pass. The corpus schema question
+proved real -- `verify.error` is compile-time only -- and is recorded in
+[TODO.md](../TODO.md) rather than fixed here.
 
 Replace the bare `RuntimeError: prompt not found` raised by the delimited
 continuation capture walk with a proper exception family, and give

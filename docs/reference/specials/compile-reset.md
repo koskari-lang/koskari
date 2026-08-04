@@ -11,6 +11,11 @@ including) this prompt.
 **Behaviour:** Emits `PUSH_PROMPT 0`, compiles the body with `helper_begin`,
 emits `POP_PROMPT 0`.
 
+A `shift` that cannot reach a prompt raises `KoskariPromptNotFound` (no
+delimiter established) or `KoskariPromptUnreachable` (a delimiter exists but a
+crossed boundary denied the capture); see the **Errors** section of
+[`compile/shift`](compile-shift.md).
+
 **Examples:**
 
 ```koskari

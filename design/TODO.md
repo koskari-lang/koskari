@@ -223,7 +223,17 @@ Gaps per [documentation-goals.md](documentation-goals.md):
   covers only a handful of bootstrap entry points (builtins surface mainly in
   `api/koskari-builtins.md` autodoc).
 - **`reference/error-codes.md`** — exception-class guide only; no stable
-  identifier or message-pattern catalog for deep links from REPL output.
+  identifier or message-pattern catalog for deep links from REPL output. Any
+  numbering scheme must be designed together with the `koskari.lint` code
+  namespace (see [language/continuation-capture-errors.md](language/continuation-capture-errors.md)
+  § Open decisions); until then class names are the searchable identifier.
+- **Corpus `verify.error` is compile-time only** — the runner asserts read
+  (`LayoutError`) and compile failures and resolves class names against
+  `koskari.exceptions` alone; there is no slot for asserting a *runtime*
+  exception class, so records like the `solve-invalid.yaml` pair document
+  `NoActiveSearch` / `KoskariPromptUnreachable` as unenforced `verify.invalid`
+  prose. A stable runtime exception class is exactly what most wants a
+  regression assertion.
 - **`reference/vm/`** — contract lives in one large `index.md`; ~155 of 218
   `opcodes/*.md` pages are thin stubs. Split maintainer-facing pages from the
   spec (standalone bytecode-format, disassembly-and-debugging,

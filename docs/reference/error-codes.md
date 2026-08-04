@@ -58,6 +58,9 @@ and Koskari runtime exceptions.
 | --- | --- | --- |
 | `KoskariException` | Base class for Koskari-raised exceptions. | Read the specific subclass and form details. |
 | `KoskariSyncViolation` | Async/demand code was used from an incompatible sync path. | Move the operation into an async-aware path or use explicit awaiting. |
+| `KoskariContinuationError` | Base class for continuation capture failures. | Read the specific subclass; the two below need different fixes. |
+| `KoskariPromptNotFound` | A `shift` found no enclosing delimiter on the dynamic chain. | Establish one: `reset`, or for searches `solve` / `solve-first`. |
+| `KoskariPromptUnreachable` | A delimiter exists but a crossed boundary (`boundary` attribute, e.g. a generator) denied the capture. | Restructure so the capture does not cross the boundary; adding a delimiter will not help. |
 | Python exceptions such as `ZeroDivisionError`, `NameError`, `ValueError` | A called operation failed at runtime. | Fix the value, missing name, or failing Python call. |
 
 Example:
