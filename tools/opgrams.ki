@@ -58,13 +58,34 @@ define TOPDIR (dirname (dirname (abspath __file__)))
 
 define MODULE_GROUPS #{
     "bootstrap": #("koskari.builtins")
-    "cli": #("koskari.cli.launch" "koskari.cli.repl" "koskari.dis")
-    "life": #("koslife.cli" "koslife.curse" "koslife.life")
+
+    "modules": #(
+        "koskari.cli.launch"
+        "koskari.cli.repl"
+        "koskari.dis"
+        "koskari.solve")
+
+    "life": #(
+        "koslife.cli"
+        "koslife.curse"
+        "koslife.life")
+
     "churn": #(
-        "ki.binary_trees" "ki.branch" "ki.fannkuch" "ki.field"
-        "ki.field_slots" "ki.list_each" "ki.loop" "ki.match_case"
-        "ki.method" "ki.nbody" "ki.pidigits" "ki.starmap" "ki.tree"
+        "ki.binary_trees"
+        "ki.branch"
+        "ki.fannkuch"
+        "ki.field"
+        "ki.field_slots"
+        "ki.list_each"
+        "ki.loop"
+        "ki.match_case"
+        "ki.method"
+        "ki.nbody"
+        "ki.pidigits"
+        "ki.starmap"
+        "ki.tree"
         "ki.yieldfrom")
+
     ; The developer tools: string, dict, path, and argparse work, a
     ; different opcode mix from the numeric churn kernels. Importing
     ; tools.corpus.quick pulls in tests.corpus, which is why this group
