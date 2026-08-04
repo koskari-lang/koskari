@@ -552,6 +552,32 @@ Config-only types, no jobs:
   wired yet). Singular per jobset, so only the unnamed form exists.
 - `config access:` -- see next section.
 
+### Watching memory
+
+A runner that stays up for months is worth measuring. `memory-report`
+(from [kosrunner/memwatch.ki](kosrunner/memwatch.ki)) is written to be the
+entire body of a cron handler:
+
+```koskari
+job cron memwatch [*/5 * * * *]:
+    handler []:
+        (memory-report)
+```
+
+Each fire logs process totals -- RSS, live pymalloc blocks, GC-tracked
+objects, threads, tasks -- followed by the type names that grew since the
+previous fire. It logs to a `kosrunner.*` logger, so every sample is
+captured into its own run's `output.log` and the run history becomes the
+trend line.
+
+Read `blocks` first. `live` counts only GC-**tracked** containers, and
+CPython untracks a dict whose values are all scalars, so a pile-up of
+strings, ints, or scalar dicts moves `blocks` while leaving `live` flat.
+Blocks climbing alongside RSS means the process is holding something and
+the growers name it; blocks flat under a climbing RSS means allocator
+fragmentation or allocation outside pymalloc (thread stacks, sqlite, the
+extension), which no amount of pruning will recover.
+
 ## Access: who may do what
 
 Authentication is the front-end's job (oauth2-proxy injects the verified
@@ -668,6 +694,7 @@ by name.
 | [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/`run` tracking/enabled, `jobset` back-ref), `JobSet` (tracking + control plane incl. `retrigger`), `require-extra` |
 | [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `with-subitems`; the `config/logging` service config; `layout/config` |
 | [kosrunner/store.ki](kosrunner/store.ki) | `StorageConfig` + `RunStore` (aiosqlite run history, per-run artifacts, log capture) + `config/storage` |
+| [kosrunner/memwatch.ki](kosrunner/memwatch.ki) | `memory-report` / `memory-census` / `vmrss` -- process memory sampling for a cron handler |
 | [kosrunner/server.ki](kosrunner/server.ki) | `ServerConfig` (host/port/prefix dataclass), `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action/page helpers |
 | [kosrunner/cron.ki](kosrunner/cron.ki) | `CronJob` + `config/cron` / `job/cron` (aiocron) |
 | [kosrunner/kafka.ki](kosrunner/kafka.ki) | `KafkaJob` + `on-error` + `config/kafka` / `job/kafka` (aiokafka) |

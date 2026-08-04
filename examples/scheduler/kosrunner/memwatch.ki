@@ -1,0 +1,109 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+;; Process memory sampling for a long-lived runner. `memory-report` is
+;; meant to be the whole body of a cron job's handler: each fire logs one
+;; line of process totals plus the types that grew since the last fire,
+;; and because it logs to a `kosrunner.*` logger the report lands in that
+;; run's own output.log alongside every other run in the history.
+
+import gc
+import sys
+import asyncio
+import logging
+import threading
+
+import-from collections Counter
+import-from pathlib Path
+
+
+define logger (logging.getLogger "kosrunner.memwatch")
+
+define _STATUS (Path "/proc/self/status")
+
+;; the previous sample's census, so a report can show what GREW rather
+;; than just how much of everything there is. Module-level, so two
+;; memwatch jobs in one definition would share (and fight over) it.
+define _prev #{}
+
+
+define vmrss []:
+    """
+    This process's resident set size in KiB, read from /proc/self/status.
+    None where that file does not exist (anywhere but Linux).
+    """
+
+    unless (_STATUS.exists):
+        (return None)
+    for-each [line (.splitlines (_STATUS.read_text))]:
+        when (line.startswith "VmRSS:"):
+            (return (int (item (line.split) 1)))
+    None
+
+
+define memory-census []:
+    """
+    Live objects by type name, counted AFTER a full collection so that
+    everything counted is genuinely reachable rather than cyclic garbage
+    that has simply not been swept yet. Returns the collection's count
+    and the census.
+    """
+
+    define collected (gc.collect)
+    define counts (Counter
+        (list-each [obj (gc.get_objects)] obj.__class__.__name__))
+    (values collected counts)
+
+
+define _task-count []:
+    try:
+        (len (asyncio.all_tasks))
+    except [RuntimeError]:
+        None
+
+
+define memory-report [top: 10]:
+    """
+    Log one memory sample: process totals, then the `top` type names that
+    grew the most since the previous call.
+
+    `blocks` (every live pymalloc block) is the number that decides
+    whether a climbing RSS is a leak. `live` counts only GC-TRACKED
+    containers, and CPython untracks a dict whose values are all scalars,
+    so a pile-up of strings, ints, or scalar dicts moves `blocks` while
+    leaving `live` flat. Blocks climbing with RSS is retention -- the
+    growers below usually name it. Blocks flat under a climbing RSS is
+    allocator fragmentation or allocation outside pymalloc (thread
+    stacks, sqlite, the extension), and nothing this process is holding.
+    """
+
+    define-values [collected counts] (memory-census)
+
+    (logger.info "rss=%sKiB blocks=%s live=%s collected=%s threads=%s tasks=%s"
+        (vmrss) (sys.getallocatedblocks) (sum (counts.values)) collected
+        (threading.active_count) (_task-count))
+
+    when _prev:
+        define moved (list-each [[name n] (counts.items)]
+            #((- n (_prev.get name 0)) name))
+        for-each [[delta name] (item-slice (sorted moved reverse: True) stop: top)]:
+            when (> delta 0):
+                (logger.info "  +%s %s" delta name)
+
+    (_prev.clear)
+    (_prev.update counts)
+    None
+
+
+;; The end.

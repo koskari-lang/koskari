@@ -1,0 +1,63 @@
+;; Memory sampling as a job handler. The report is only useful if it
+;; reaches the run history, so the check that matters is the round trip:
+;; fire a tracked run whose handler is `memory-report`, then read the
+;; sample back out of that run's captured output.
+
+import logging
+
+import-from .harness SchedulerAsyncTestCase
+import-from kosrunner CronJob memory-census memory-report vmrss
+
+
+define-class TestMemwatch [SchedulerAsyncTestCase]:
+
+    @coroutine-fn
+    define test-vmrss-is-a-positive-size [self]:
+        ;; None off Linux; a real reading is KiB, so smaller than the
+        ;; RSS of any live CPython would be a misparse
+        define rss (vmrss)
+        unless (None? rss):
+            (self.assertGreater rss 1000)
+
+
+    @coroutine-fn
+    define test-census-counts-live-objects-by-type [self]:
+        define-values [collected counts] (memory-census)
+        (self.assertGreaterEqual collected 0)
+        ;; the census is taken from inside a test case, so the case
+        ;; itself is among the objects it counts
+        (self.assertGreater (counts.get "TestMemwatch" 0) 0)
+
+
+    @coroutine-fn
+    define test-report-lands-in-the-run-history [self]:
+        define js (self.jobset-with-store)
+        define job (CronJob "*/5 * * * *")
+        (job.configure)
+        (job.handler (lambda [] (memory-report)))
+        (js.register "memwatch" job)
+
+        ;; capture only sees records the logger actually emits, and no
+        ;; `config logging:` has run here to lower the level
+        define lg (logging.getLogger "kosrunner")
+        define was lg.level
+        (lg.setLevel logging.INFO)
+        (self.addCleanup (demand (lambda [] (lg.setLevel was))))
+
+        (job.run cause: "schedule")
+        (job.run cause: "schedule")
+
+        define runs (js.store.list-runs job: "memwatch")
+        (self.assertEqual (len runs) 2)
+
+        define detail (js.store.run-detail (item (item runs 0) "run_id"))
+        (self.assertEqual (item detail "status") "success")
+        define output (item detail "output")
+        (self.assertIn "rss=" output)
+        (self.assertIn "blocks=" output)
+        ;; the second sample has a previous census to compare against, so
+        ;; it carries per-type growth lines the first one cannot
+        (self.assertIn "  +" output)
+
+
+;; The end.

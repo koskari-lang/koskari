@@ -24,6 +24,7 @@ import-from .server:
     HttpServer get-server normalize-prefix ServerConfig stop-all-servers
 import-from .store:
     StorageConfig RunStore config/storage resolve-storage-root safe-segment
+import-from .memwatch vmrss memory-census memory-report
 import-from .fake FakeConfig FakeJob config/fake job/fake
 import-from .cron CronConfig CronJob config/cron job/cron
 import-from .kafka KafkaConfig KafkaJob config/kafka job/kafka
@@ -47,6 +48,7 @@ declare-exports [
     HttpServer get-server normalize-prefix ServerConfig stop-all-servers
 
     StorageConfig RunStore config/storage resolve-storage-root safe-segment
+    vmrss memory-census memory-report
 
     FakeConfig FakeJob config/fake job/fake
     CronConfig CronJob config/cron job/cron
