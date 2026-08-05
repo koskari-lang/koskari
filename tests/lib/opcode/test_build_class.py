@@ -49,8 +49,7 @@ class TestPushCollectPopCollectBuildClass(CevalTest):
         result = await expr()
         self.assertIsInstance(result, type)
         self.assertEqual(result.__name__, "C")
-        KosType = __import__("koskari.lib", fromlist=["KosType"]).KosType
-        self.assertIs(type(result), KosType)
+        self.assertIs(type(result), type)
 
 
 class TestPushCollectErrorPath(CevalTest):

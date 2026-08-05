@@ -36,7 +36,6 @@ import koskari.builtins  # noqa: F401
 from koskari import exceptions
 from koskari.compile import Compiler, CompilerMode
 from koskari.lib import (
-    KosType,
     car,
     cdr,
     cons,
@@ -381,12 +380,12 @@ def parse_eval_expected(text):
 
 def _check_marked_kostype(case, got, name):
     """
-    Assert eval result is a KosType with the given name
+    Assert eval result is a Koskari-defined class with the given name
     """
 
     case.assertIsInstance(got, type)
     case.assertEqual(got.__name__, name)
-    case.assertIs(type(got), KosType)
+    case.assertIs(type(got), type)
 
 
 def _check_marked_annotations_return(case, got, type_name):

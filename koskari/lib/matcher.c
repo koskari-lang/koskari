@@ -912,17 +912,17 @@ PyObject *KosMatcherBuilder_Finalize(
 /**
    isinstance for pattern tests: a dispatch-free shortcut for the
    affirmative case. When cls is a type whose metaclass is exactly
-   ``type`` or exactly ``KosType`` -- neither can carry a custom
-   ``__instancecheck__`` -- a nominal identity/MRO hit is provably the
-   same answer isinstance would give, without the metaclass method
-   dispatch. Everything the shortcut cannot prove (a nominal miss,
-   which may still match through a virtual ``__class__``; any other
-   metaclass) falls through to PyObject_IsInstance unchanged.
+   ``type`` -- which cannot carry a custom ``__instancecheck__`` -- a
+   nominal identity/MRO hit is provably the same answer isinstance
+   would give, without the metaclass method dispatch. Everything the
+   shortcut cannot prove (a nominal miss, which may still match through
+   a virtual ``__class__``; any other metaclass) falls through to
+   PyObject_IsInstance unchanged.
 */
 static int matcher_isinstance(PyObject *inst, PyObject *cls) {
   if (likely(PyType_Check(cls))) {
     PyTypeObject *meta = Py_TYPE(cls);
-    if ((meta == &PyType_Type || meta == &KosTypeType)
+    if (meta == &PyType_Type
         && PyObject_TypeCheck(inst, (PyTypeObject *) cls))
       return 1;
   }

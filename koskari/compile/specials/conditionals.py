@@ -251,10 +251,9 @@ def special_match(compiler, source, tc=False):
         # extern-table order for MATCH_CASE to consume. The loads lower
         # to FAST with every other read, and the request also captures
         # a closure-bound type used only in a pattern.
-        externs = tuple(
-            str(name)
-            for name in Matcher.from_tuple(frozen).missing_externs(
-                    exclude_defaults=True))
+        matcher = Matcher.from_tuple(frozen)
+        externs = [str(name) for name
+                   in matcher.missing_externs(exclude_defaults=True)]
         for extern in externs:
             fragment.request_var(extern)
             fragment.instruction(OpCode.VAR, extern)
@@ -262,7 +261,7 @@ def special_match(compiler, source, tc=False):
         next_label = gen_label()
         fragment.instruction(
             OpCode.MATCH_CASE,
-            (next_label, frozen, externs,
+            (next_label, frozen, tuple(externs),
              1 if guard_kw is not None else 0))
 
         for name in names:

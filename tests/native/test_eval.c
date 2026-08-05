@@ -84,18 +84,17 @@ static int install_frozen_gen(KosContext *ctx, KosDynGen *gen) {
 }
 
 
-/* === Test: KosType is not KosCallable (uses default PyObject_Call path) === */
+/* === Test: type is not KosCallable (uses default PyObject_Call path) === */
 
 
-static int test_kostype_is_not_koscallable(void) {
+static int test_class_is_not_koscallable(void) {
     /*
-      KosType is not a KosCallable. (Foo) uses the default PyObject_Call path
-      which invokes kostype_tp_call.
+      Koskari-built classes use plain type as their metaclass, which is
+      not a KosCallable. (Foo) uses the default PyObject_Call path.
     */
-    PyTypeObject *kostype = &KosTypeType;
     PyTypeObject *koscallable = KOS_CALLABLE_PYTYPE(KosCallableType);
-    TEST_ASSERT(! PyType_IsSubtype(kostype, koscallable),
-                "KosType must not be KosCallable; (Foo) uses default PyCall path");
+    TEST_ASSERT(! PyType_IsSubtype(&PyType_Type, koscallable),
+                "type must not be KosCallable; (Foo) uses default PyCall path");
     return 0;
 }
 
@@ -1006,7 +1005,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     /*
       Bytecode: CONST "C", CONST (), BUILD_ARGS 2, PUSH_COLLECT nspec,
       POP_COLLECT, BUILD_CLASS, RETURN 1.
-      Expect KOS_RES_RETURN with a KosType whose __name__ is "C".
+      Expect KOS_RES_RETURN with a plain type whose __name__ is "C".
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -1045,7 +1044,8 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
     TEST_ASSERT(PyType_Check(ev.val), "result is a type");
-    TEST_ASSERT(KosType_Check(ev.val), "result is KosType (metaclass used)");
+    TEST_ASSERT(Py_TYPE(ev.val) == &PyType_Type,
+                "result metaclass is plain type");
 
     PyObject *cname = PyObject_GetAttrString(ev.val, "__name__");
     TEST_ASSERT_NOT_NULL(cname, "__name__ exists");
@@ -1923,7 +1923,7 @@ int run_eval_tests(void) {
 
     BEGIN_TEST_SUITE("Eval Tests");
 
-    RUN_TEST(test_kostype_is_not_koscallable);
+    RUN_TEST(test_class_is_not_koscallable);
     RUN_TEST(test_eval_object_add_return);
     RUN_TEST(test_domain_non_null);
     RUN_TEST(test_domain_fresh_when_no_tls);

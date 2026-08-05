@@ -3,9 +3,9 @@
 - **Status**: Implemented.
 - **Stack**: Expects `[..., pos, ns]` with TOS = ns, TOS-1 = pos. Pops ns, pos.
   pos = (name, bases) or (name, bases, metaclass). Builds the class via
-  `kos_build_class` (namespace materialization, optional explicit metaclass,
-  derived/composite metaclass, `__prepare__`, merge, metaclass call); pushes
-  resulting class.
+  `kos_build_class` (namespace materialization, demand-wrap of slot-backed
+  dunders, metaclass resolution -- plain `type` by default -- with
+  `__prepare__`, merge, metaclass call); pushes resulting class.
 - **Compiler form:** Build pos with BUILD_ARGS; use with_collector_namespace for
   PUSH_COLLECT/body/POP_COLLECT; then BUILD_CLASS. See [compile/class](../../specials/compile-class.md).
 

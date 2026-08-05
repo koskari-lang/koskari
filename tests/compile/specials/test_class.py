@@ -36,9 +36,7 @@ class TestClassEmpty(SpecialsTestCase):
         self.assertEqual(result.__name__, "C")
 
 
-    async def test_empty_class_is_kostype(self):
-        from koskari.lib import KosType
-
+    async def test_empty_class_is_plain_type(self):
         src_str = """
         (compile/class C () 5)
         """
@@ -47,7 +45,7 @@ class TestClassEmpty(SpecialsTestCase):
         dis(expr.code)
 
         result = await expr()
-        self.assertIs(type(result), KosType)
+        self.assertIs(type(result), type)
 
         c = result()
         self.assertIsInstance(c, result)
@@ -252,10 +250,8 @@ class TestClassKosCallable(SpecialsTestCase):
 
     async def test_class_identity(self):
         """
-        Koskari-defined class is a type with KosType metaclass and correct name
+        Koskari-defined class is a plain type with correct name
         """
-
-        from koskari.lib import KosType
 
         src_str = """
         (compile/class Foo () 1)
@@ -263,25 +259,23 @@ class TestClassKosCallable(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertIsInstance(result, type)
-        self.assertIs(type(result), KosType)
+        self.assertIs(type(result), type)
         self.assertEqual(result.__name__, "Foo")
         self.assertEqual(result.__qualname__, "Foo")
         self.assertEqual(result.__module__, "test")
 
 
-    async def test_class_mro_metaclass_is_kostype(self):
+    async def test_class_metaclass_is_type(self):
         """
-        Koskari-defined class has KosType as metaclass
+        Koskari-defined class has plain type as metaclass
         """
-
-        from koskari.lib import KosType
 
         src_str = """
         (compile/class C () 1)
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
-        self.assertIs(type(result), KosType)
+        self.assertIs(type(result), type)
 
 
     async def test_call_returns_instance_not_class(self):

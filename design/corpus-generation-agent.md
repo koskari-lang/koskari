@@ -106,7 +106,7 @@ Notes:
 - The emitted `eval` string is **verified**: `quick` only outputs an encoding
   that round-trips through the same parse + compare helpers `insert` uses, so it
   is safe to paste. When it cannot auto-encode (e.g. a proper list of symbols, a
-  `KosType`, a callable) it returns `eval_raw` + `eval_type` + a warning instead,
+  a class, a callable) it returns `eval_raw` + `eval_type` + a warning instead,
   and the author hand-writes a literal or `@marked:` encoding and confirms it
   with `insert --dry-run`.
 
