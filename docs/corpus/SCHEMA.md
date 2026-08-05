@@ -170,7 +170,7 @@ with `@`. The harness strips `@` and runs a registered complex check.
 
 | Form | Meaning |
 |------|---------|
-| `@kostype:NAME` | Eval result is a KosType named NAME |
+| `@kostype:NAME` | Eval result is a Koskari-defined class named NAME |
 | `@annotations:return:TYPE` | Eval result is callable whose `__annotations__['return']` **is** the builtin named TYPE (e.g. `@annotations:return:int` asserts the `int` type object, not the string `"int"`) |
 
 **Forbidden in marked encodings:** opcodes, bytecode shape, disassembly,

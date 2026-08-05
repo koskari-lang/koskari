@@ -21,29 +21,15 @@
 #include <Python.h>
 
 
-/* === KosType === */
-
-
-extern PyTypeObject KosTypeType;
-
-
-#define KosType_Check(obj)                                           \
-  ((obj) && PyType_Check(obj) &&                                     \
-   PyType_IsSubtype(Py_TYPE(obj), &KosTypeType))
-
-#define KosType_CheckExact(obj)                                      \
-  ((obj) && PyType_Check(obj) &&                                     \
-   (Py_TYPE(obj) == &KosTypeType))
+/* === Class builder === */
 
 
 /**
-   Return the default metaclass for Koskari-defined classes (KosType).
-   Caller receives a new reference.
-*/
-PyObject *kos_get_default_metaclass(void);
-
-/**
-   Build a class using Koskari metaclass composition semantics.
+   Build a class from a captured namespace. Demand-wraps the slot-backed
+   dunders (Procedure for __init__), resolves the winning metaclass
+   (plain type by default), and delegates construction to it. Installs
+   the kos_instance_call sentinel when __call__ resolves to a
+   KosCallable.
 
    :param name: class name (str)
    :param bases: base classes tuple

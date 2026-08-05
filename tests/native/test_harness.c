@@ -148,7 +148,8 @@ static int initialize_types(void) {
         return -1;
     }
 
-    /* Initialize callable, sync, object (object needs both; eval may dispatch to KosType) */
+    /* Initialize callable, sync, object (object needs both; Procedure
+       subclasses Demand and BUILD_CLASS demand-wraps namespaces) */
     if (koskari_callable_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize callable\n");
         return -1;

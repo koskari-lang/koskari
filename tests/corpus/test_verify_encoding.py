@@ -24,8 +24,6 @@ import unittest
 
 import pytest
 
-from koskari.lib import KosType
-
 from tests.corpus import (
     CorpusTestCase,
     eval_values_equal,
@@ -60,7 +58,7 @@ class TestParseEvalExpected(unittest.TestCase):
 class TestMarkedEvalCheck(unittest.TestCase):
 
     def test_kostype_check_passes(self):
-        class Counter(metaclass=KosType):
+        class Counter:
             pass
 
         Counter.__name__ = 'Counter'
@@ -69,7 +67,7 @@ class TestMarkedEvalCheck(unittest.TestCase):
 
 
     def test_kostype_check_fails_on_wrong_name(self):
-        class Counter(metaclass=KosType):
+        class Counter:
             pass
 
         Counter.__name__ = 'Counter'

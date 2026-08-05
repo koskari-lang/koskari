@@ -1908,7 +1908,7 @@ Emits **`build-special-rules`** with **`()`** for the serialized literals tuple.
 
 **Use-case:** Create a Koskari class via PUSH_COLLECT/POP_COLLECT/BUILD_CLASS and
 run the body in a CollectorNamespace. The **value of the form** is the new class
-object (default metaclass is KosType; use `meta: MyMeta` in SUPERS for a custom
+object (default metaclass is plain `type`; use `meta: MyMeta` in SUPERS for a custom
 metaclass). To **bind** the class to a name in the surrounding scope, wrap with
 `compile/define` (or use the **`define-class`** macro — see
 [MACROS.md](MACROS.md) § compile/define-class).

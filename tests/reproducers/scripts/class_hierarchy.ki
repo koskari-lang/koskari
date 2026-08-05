@@ -1,4 +1,4 @@
-;; Full-stack reproducers for KosType instance construction across bases.
+;; Full-stack reproducers for class instance construction across bases.
 
 
 ;; Koskari subclassing Koskari

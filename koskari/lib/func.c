@@ -1168,7 +1168,7 @@ boundmethod_get_annotations(PyObject *self, void *closure) {
   (void) closure;
 
   if (! resolved) {
-    if (KosDemand_CheckExact(func))
+    if (KosDemand_Check(func))
       return PyObject_GetAttrString(func, "__annotations__");
     return NULL;
   }
@@ -1243,7 +1243,7 @@ boundmethod_get_signature(PyObject *self, void *closure) {
   (void) closure;
 
   if (! resolved) {
-    if (KosDemand_CheckExact(func))
+    if (KosDemand_Check(func))
       return PyObject_GetAttrString(func, "__signature__");
     return NULL;
   }
@@ -1281,7 +1281,7 @@ static PyObject *boundmethod_resolve_function(PyObject *func) {
     return func;
   }
 
-  if (KosDemand_CheckExact(func)) {
+  if (KosDemand_Check(func)) {
     PyObject *inner = KosDemand_GetWrapped(func);
 
     if (inner && KosFunction_CheckExact(inner)) {
@@ -1461,7 +1461,7 @@ KosCallableTypeObject KosBoundMethodType = {
 
 PyObject *KosBoundMethod_New(PyObject *func, PyObject *self) {
 
-  if (! KosFunction_CheckExact(func) && ! KosDemand_CheckExact(func)) {
+  if (! KosFunction_CheckExact(func) && ! KosDemand_Check(func)) {
     PyErr_Format(PyExc_TypeError,
                  "KosBoundMethod requires Function or Demand, got %R",
                  func);

@@ -222,9 +222,10 @@ static int demand_sync_ex(
   // for the __repr__
   SAYF("[demand_sync] callable = %p", callable);
 
-  /* KosDemand wrapper: unwrap and recurse on the inner callable directly.
-     Must come before KosCallable_Check since Demand is now a KosCallable. */
-  if (KosDemand_CheckExact(callable)) {
+  /* KosDemand wrapper (or a subtype such as Procedure): unwrap and recurse
+     on the inner callable directly. Must come before KosCallable_Check
+     since Demand is now a KosCallable. */
+  if (KosDemand_Check(callable)) {
     PyObject *inner = KosDemand_GetWrapped(callable);
     if (! inner) {
       PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
@@ -271,8 +272,9 @@ static int demand_sync_ex(
     Py_XINCREF(call_args);
   }
 
-  /* BoundMethod may unwrap to Demand: recurse with bound args. */
-  if (KosDemand_CheckExact(callable)) {
+  /* BoundMethod may unwrap to Demand (or a subtype): recurse with bound
+     args. */
+  if (KosDemand_Check(callable)) {
     PyObject *inner = KosDemand_GetWrapped(callable);
     if (! inner) {
       Py_DECREF(call_args);
@@ -471,7 +473,7 @@ static int demand_sync_ex(
     goto run_eval;
   }
 
-  /* Other KosCallable (e.g. KosType) - not supported for demand_sync yet */
+  /* Other KosCallable - not supported for demand_sync yet */
   PyErr_Format(PyExc_TypeError,
                "demand_sync does not support %s",
                Py_TYPE(callable)->tp_name);

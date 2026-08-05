@@ -16,8 +16,8 @@
 /**
    BUILD_CLASS: arg unused. Stack: [..., pos, ns] with TOS = ns,
    TOS-1 = pos. pos = (name, bases) or (name, bases, metaclass).
-   Pops ns, pos; builds class via kos_build_class (prepare, composite meta,
-   namespace merge); pushes resulting class.
+   Pops ns, pos; builds class via kos_build_class (demand-wrap pass,
+   metaclass resolution, prepare, namespace merge); pushes resulting class.
 */
 
 KOS_OP_HANDLER_COLD(BUILD_CLASS) {

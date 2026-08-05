@@ -29,6 +29,9 @@ extern KosCallableTypeObject KosDemandCallableType;
 #define KosDemand_CheckExact(obj) \
   ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosDemandCallableType)))
 
+#define KosDemand_Check(obj) \
+  ((obj) && PyObject_TypeCheck((obj), KOS_CALLABLE_PYTYPE(KosDemandCallableType)))
+
 
 /**
    Return the inner callable held by a Demand instance.

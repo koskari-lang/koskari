@@ -14,7 +14,7 @@
 """
 tests.reproducers.test_class_hierarchy_repro
 
-Full-stack reproducers for KosType construction across inheritance shapes.
+Full-stack reproducers for class construction across inheritance shapes.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -37,7 +37,7 @@ _SCRIPT = os.path.join(os.path.dirname(__file__), 'scripts', 'class_hierarchy.ki
 
 class TestClassHierarchyReproducer(unittest.IsolatedAsyncioTestCase):
     """
-    KosType tp_call hybrid construction across diverse base-class paths
+    Class construction across diverse base-class paths
     """
 
     async def load_module(self):
