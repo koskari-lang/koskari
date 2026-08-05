@@ -1,0 +1,64 @@
+;; A variety's long-lived background task (a kafka consume loop, the
+;; uvicorn serve task) is held in a slot by its owner, so nothing ever
+;; retrieves its exception on its own: asyncio reports an unretrieved
+;; failure only when the task is collected, and the owner's slot means it
+;; never is. `watch-task` closes that -- the crash gets logged, the
+;; exception gets retrieved, and a job stops claiming to be running.
+
+import asyncio
+
+import-from .harness SchedulerAsyncTestCase
+import-from kosrunner Job watch-task
+
+
+define-class TestWatchTask [SchedulerAsyncTestCase]:
+
+    define crashing-task [self]:
+        define boom []:
+            raise (RuntimeError "consumer died")
+        (create-task (defer boom))
+
+
+    @coroutine-fn
+    define test-crash-is-retrieved-and-logged [self]:
+        define task (self.crashing-task)
+        with [caught (self.assertLogs "kosrunner" level: "ERROR")]:
+            (watch-task task "test loop")
+            (await (asyncio.gather task return_exceptions: True))
+            (asyncio.sleep 0)                      ; let the callback run
+
+        ;; retrieved by the watcher, so the task is not holding an
+        ;; unreported failure
+        (self.assertIsInstance (task.exception) RuntimeError)
+        (self.assertIn "test loop crashed" (.join "\n" caught.output))
+
+
+    @coroutine-fn
+    define test-crash-clears-the-job-running-flag [self]:
+        define job (Job)
+        set! job.running True
+        define task (self.crashing-task)
+        with [caught (self.assertLogs "kosrunner" level: "ERROR")]:
+            (watch-task task "test loop" job: job)
+            (await (asyncio.gather task return_exceptions: True))
+            (asyncio.sleep 0)
+
+        ;; a job whose background work died must not keep reporting
+        ;; itself healthy to the dashboard
+        (self.assertFalse job.running)
+
+
+    @coroutine-fn
+    define test-cancellation-is-not-an-error [self]:
+        define forever []:
+            (asyncio.sleep 3600)
+        define task (create-task (defer forever))
+        (watch-task task "test loop")
+        (asyncio.sleep 0)
+        (task.cancel)
+        (await (asyncio.gather task return_exceptions: True))
+        (asyncio.sleep 0)
+        (self.assertTrue (task.cancelled))
+
+
+;; The end.

@@ -12,7 +12,7 @@
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 
-import-from .job Config Job JobSet require-extra
+import-from .job Config Job JobSet require-extra watch-task
 import-from .subitems:
     jobset job config handler on-error allow with-subitems layout/config
     config/logging configure-logging reqenv
@@ -35,7 +35,7 @@ import-from .ui UiConfig UiJob config/ui job/ui
 
 
 declare-exports [
-    Config Job JobSet require-extra
+    Config Job JobSet require-extra watch-task
 
     jobset job config handler on-error allow with-subitems
     layout/config

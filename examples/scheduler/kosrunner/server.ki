@@ -14,7 +14,7 @@
 
 import logging
 
-import-from .job Config
+import-from .job Config watch-task
 
 
 define logger (logging.getLogger "kosrunner.server")
@@ -236,8 +236,13 @@ define-class HttpServer []:
             port: self.port)
 
         set! self._server (Server config)
-        ;; keep the Task: the loop holds only a weak reference
-        set! self._serve_task (create-task (defer self._server.serve))
+        ;; keep the Task: the loop holds only a weak reference. Watched
+        ;; too -- uvicorn's serve() returning early (a bound port, a
+        ;; startup failure) takes every job mounted here down with it,
+        ;; and that must not pass silently.
+        set! self._serve_task (watch-task
+            (create-task (defer self._server.serve))
+            f"http server on {self.host}:{self.port}")
 
 
     define stop [self]:

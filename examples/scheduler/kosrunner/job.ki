@@ -44,6 +44,40 @@ define require-extra [module extra]:
             f" pip install koskari-kosrunner[{extra}]"))
 
 
+define watch-task [task what job: None]:
+    """
+    Watch a long-lived background task so that its death is reported.
+
+    Retrieving the exception is the substance of this: an un-retrieved
+    failure keeps the task, the exception, and every frame's locals
+    behind that traceback alive for as long as anything holds the task,
+    and asyncio only complains about the loss once the task is collected
+    -- which never happens while its owner keeps it in a slot. The owner
+    is left holding a dead task it believes is working.
+
+    Pass `job` and a crash also clears its `running` flag, because a job
+    whose background work has stopped must not keep reporting itself
+    healthy to the dashboard. Returns the task, so a caller can watch it
+    in the same expression that stores it.
+    """
+
+    define _done [t]:
+        unless (None? job):
+            set! job.running False
+        try:
+            define exc (t.exception)
+        except [CancelledError]:
+            (logger.info "%s cancelled" what)
+            (return)
+        if exc:
+            (logger.error "%s crashed" what exc_info: exc)
+        else:
+            (logger.info "%s ended" what)
+
+    (task.add_done_callback (demand _done))
+    task
+
+
 define-class ConfigBase []:
     """
     Method carrier for Config (a dataclass body holds fields, so the

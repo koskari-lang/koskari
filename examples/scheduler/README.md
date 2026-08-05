@@ -711,7 +711,7 @@ by name.
 
 | File | Contents |
 |---|---|
-| [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/`run` tracking/enabled, `jobset` back-ref), `JobSet` (tracking + control plane incl. `retrigger`), `require-extra` |
+| [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/`run` tracking/enabled, `jobset` back-ref), `JobSet` (tracking + control plane incl. `retrigger`), `require-extra`, `watch-task` |
 | [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `with-subitems`; the `config/logging` service config; `layout/config` |
 | [kosrunner/store.ki](kosrunner/store.ki) | `StorageConfig` + `RunStore` (aiosqlite run history, per-run artifacts, log capture) + `config/storage` |
 | [kosrunner/memwatch.ki](kosrunner/memwatch.ki) | `memory-report` / `memory-census` / `vmrss` -- process memory sampling for a cron handler |
@@ -741,7 +741,10 @@ enumerates types, so this is the whole recipe:
    and store the trigger key in `__init__`. Read effective config from
    `self.config` by attribute (`self.config.servers`), call `self.callback`
    as the handler. Add variety sub-item methods (like kafka's `on-error`) as
-   needed.
+   needed. If `start` spawns a long-lived background task, hand it to
+   `watch-task` (`job: self`): a task nobody retrieves the exception from
+   dies silently, leaving the job reporting itself healthy while doing
+   nothing, and pinning its traceback for the life of the process.
 3. Define `config/<type>` (construct the dataclass, bind the name, run the
    `&default/<type>` guard) with the `()`-sentinel unnamed case.
 4. Define `job/<type>` (parse the header, construct the job, configure it --

@@ -18,7 +18,7 @@ import-from typing Any
 
 ;; aiokafka is the `kafka` EXTRA, so it is imported where it is used, not
 ;; here -- this module must stay importable without it (see `require-extra`)
-import-from .job Config Job require-extra
+import-from .job Config Job require-extra watch-task
 
 
 define logger (logging.getLogger "kosrunner.kafka")
@@ -130,7 +130,13 @@ define-class KafkaJob [Job]:
         (logger.info "starting kafka consumer: %s" self.topic)
         set! self._consumer (self.make-consumer)
         (self._consumer.start)
-        set! self._task (create-task (defer self._consume))
+        ;; watched: an unrecoverable consumer error ends the loop, and
+        ;; without this the job would keep reporting itself running while
+        ;; consuming nothing
+        set! self._task (watch-task
+            (create-task (defer self._consume))
+            f"kafka consumer for {self.topic}"
+            job: self)
 
 
     define stop [self]:
