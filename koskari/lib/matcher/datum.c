@@ -463,6 +463,7 @@ static PyObject *matcher_peel_datum(PyObject *obj) {
 }
 
 
+#ifndef Py_TPFLAGS_SEQUENCE
 /**
    Cached collections.abc.Sequence, resolved lazily on the first
    non-fast-path FORM descent and then immortal — the same shape as
@@ -482,6 +483,7 @@ static PyObject *get_abc_sequence(void) {
   }
   return abc_sequence_type;
 }
+#endif
 
 
 /**

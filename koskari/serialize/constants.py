@@ -25,10 +25,11 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 
 # Semantic bytecode ABI for .kio (four little-endian u32 in the file header).
 # Bump when KosOpCode values or softened CODEP instruction semantics change.
-# MINOR bumped: MATCH_CASE's fourth EXTRA slot becomes the keep-subject
-# flag (COUNT); a zero flag preserves the prior consume-on-match behavior.
+# MINOR bumped: MATCH_CASE's third EXTRA slot becomes the missing-externs
+# name tuple, whose values the compiler pushes above the subject; the
+# opcode no longer resolves externs from the namespace itself.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 9
+BYTECODE_ABI_MINOR = 10
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 0
 

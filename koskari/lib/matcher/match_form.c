@@ -23,10 +23,11 @@ static int match_form(
   /* PEP 634 sequence-pattern gate. str / bytes / bytearray are atoms —
      destructuring a string into characters is never what a match
      meant. Beyond the KosPair spine and the list/tuple fast paths,
-     only collections.abc.Sequence instances descend: mappings and sets
-     are not sequences (PySequence_Fast would happily iterate a dict's
-     keys), and an iterator must never be silently consumed by a
-     failed arm. Soft no-match for all of them. */
+     only sequence types descend (Py_TPFLAGS_SEQUENCE on 3.10+, the
+     collections.abc.Sequence ABC on 3.9): mappings and sets are not
+     sequences (PySequence_Fast would happily iterate a dict's keys),
+     and an iterator must never be silently consumed by a failed arm.
+     Soft no-match for all of them. */
   PyObject *peeled = matcher_peel_datum(elem);
   if (PyUnicode_Check(peeled) || PyBytes_Check(peeled)
       || PyByteArray_Check(peeled)) {
@@ -35,6 +36,15 @@ static int match_form(
   }
   if (! (KosPair_Check(peeled) || KosNilP(peeled)
          || PyList_Check(peeled) || PyTuple_Check(peeled))) {
+#ifdef Py_TPFLAGS_SEQUENCE
+    /* Sequence-flagged types descend, exactly as CPython's
+       MATCH_SEQUENCE does (PEP 634). */
+    if (! PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_SEQUENCE)) {
+      e->in_from_datum = saved_in;
+      return 0;
+    }
+#else
+    /* 3.9: no tp_flags sequence bit; fall back to the ABC check. */
     PyObject *seq_type = get_abc_sequence();
     if (! seq_type) {
       e->in_from_datum = saved_in;
@@ -49,6 +59,7 @@ static int match_form(
       e->in_from_datum = saved_in;
       return 0;
     }
+#endif
   }
 
   KosMatchSubject sub;

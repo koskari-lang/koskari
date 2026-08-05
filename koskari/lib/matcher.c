@@ -909,6 +909,27 @@ PyObject *KosMatcherBuilder_Finalize(
 #include "matcher/subject.c"
 
 
+/**
+   isinstance for pattern tests: a dispatch-free shortcut for the
+   affirmative case. When cls is a type whose metaclass is exactly
+   ``type`` or exactly ``KosType`` -- neither can carry a custom
+   ``__instancecheck__`` -- a nominal identity/MRO hit is provably the
+   same answer isinstance would give, without the metaclass method
+   dispatch. Everything the shortcut cannot prove (a nominal miss,
+   which may still match through a virtual ``__class__``; any other
+   metaclass) falls through to PyObject_IsInstance unchanged.
+*/
+static int matcher_isinstance(PyObject *inst, PyObject *cls) {
+  if (likely(PyType_Check(cls))) {
+    PyTypeObject *meta = Py_TYPE(cls);
+    if ((meta == &PyType_Type || meta == &KosTypeType)
+        && PyObject_TypeCheck(inst, (PyTypeObject *) cls))
+      return 1;
+  }
+  return PyObject_IsInstance(inst, cls);
+}
+
+
 /* === match engine === */
 
 
@@ -1251,7 +1272,7 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
     }
     PyObject *cls = PyTuple_GET_ITEM(e->extern_env, t->ref_index);
     PyObject *got = matcher_peel_datum(elem);
-    int r = PyObject_IsInstance(got, cls);
+    int r = matcher_isinstance(got, cls);
     if (r < 0)
       return -1;
     return r;
@@ -1528,33 +1549,35 @@ static int match_node(
 }
 
 
-PyObject *KosMatcher_Match(
+int KosMatcher_Run(
     KosMatcher *m,
     KosMatchSubject *subj,
-    PyObject *extern_env) {
+    PyObject *extern_env,
+    PyObject **out_caps) {
 
-  if (! m || ! subj) {
+  if (! m || ! subj || ! out_caps) {
     PyErr_SetString(PyExc_ValueError,
-                    "KosMatcher_Match requires matcher and subject");
-    return NULL;
+                    "KosMatcher_Run requires matcher, subject, and out");
+    return -1;
   }
+  *out_caps = NULL;
 
   Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
   if (n_externs > 0) {
     if (! extern_env) {
       PyErr_Format(PyExc_TypeError,
                    "matcher requires %zd extern bindings", n_externs);
-      return NULL;
+      return -1;
     }
     if (! PyTuple_Check(extern_env)) {
       PyErr_SetString(PyExc_TypeError, "extern_env must be a tuple");
-      return NULL;
+      return -1;
     }
     if (PyTuple_GET_SIZE(extern_env) != n_externs) {
       PyErr_Format(PyExc_TypeError,
                    "extern_env has %zd entries, expected %zd",
                    PyTuple_GET_SIZE(extern_env), n_externs);
-      return NULL;
+      return -1;
     }
   }
 
@@ -1568,7 +1591,7 @@ PyObject *KosMatcher_Match(
 
   PyObject *root = match_frame_new(&engine, 0);
   if (! root)
-    return NULL;
+    return -1;
 
   engine.root_captures = root;
   engine.cur_captures = root;
@@ -1592,25 +1615,42 @@ PyObject *KosMatcher_Match(
 
   if (r < 0) {
     Py_DECREF(root);
-    return NULL;
+    return -1;
   }
 
-  PyObject *out_caps;
-  if (matched) {
-    if (datum_frame_set_source(&engine, root, subj, 0, cursor)) {
-      Py_DECREF(root);
-      return NULL;
-    }
-    out_caps = root;
-  } else {
+  if (! matched) {
     Py_DECREF(root);
-    out_caps = PyDict_New();
-    if (! out_caps)
+    return 0;
+  }
+
+  if (datum_frame_set_source(&engine, root, subj, 0, cursor)) {
+    Py_DECREF(root);
+    return -1;
+  }
+
+  *out_caps = root;
+  return 1;
+}
+
+
+PyObject *KosMatcher_Match(
+    KosMatcher *m,
+    KosMatchSubject *subj,
+    PyObject *extern_env) {
+
+  PyObject *caps = NULL;
+  int matched = KosMatcher_Run(m, subj, extern_env, &caps);
+  if (matched < 0)
+    return NULL;
+
+  if (! matched) {
+    caps = PyDict_New();
+    if (! caps)
       return NULL;
   }
 
-  PyObject *result = make_match_result(matched, out_caps);
-  Py_DECREF(out_caps);
+  PyObject *result = make_match_result(matched, caps);
+  Py_DECREF(caps);
   return result;
 }
 

@@ -42,9 +42,12 @@ class TestMatchCaseOpcode(CevalTest):
     """
     Tests for MATCH_CASE.
 
-    Stack `[..., subject]` with the subject at TOS. EXTRA schema
+    Stack `[..., subject, e0..eN-1]` with N = len(a2). EXTRA schema
     (LABEL, CONST, CONST, NOARG): a0 = no-match target PC, a1 = frozen
-    matcher tuple, a2 = externs name tuple. On no match the subject is
+    matcher tuple, a2 = missing-externs name tuple, whose values are
+    pushed above the subject in extern-table order; extern names absent
+    from a2 resolve from the matcher extern defaults. The stacked
+    externs are consumed on both outcomes. On no match the subject is
     left on the stack and control jumps to the label; on the first match
     the subject is dropped and the capture dict is pushed. Capture names
     are declared as namespace slots (via ``local_syms``), the same
@@ -143,13 +146,14 @@ class TestMatchCaseOpcode(CevalTest):
 
     async def test_match_case_extern_type_match(self):
         """
-        MATCH_CASE loads a matcher extern (a type) from the namespace and
+        MATCH_CASE consumes a stacked matcher extern (a type) and
         matches when the subject satisfies it
         """
 
         f = frozen(MATCH(CAPTURE("x", TYPE("int"))))
         code, ns = build_expr([
             ["CONST", 7],
+            ["VAR", "int"],
             ["MATCH_CASE", ("elsebody", f, f[2], 0)],
             ["MATCH_STORE_NAMES", f[1]],
             ["VAR", "x"],
@@ -165,12 +169,14 @@ class TestMatchCaseOpcode(CevalTest):
 
     async def test_match_case_extern_type_no_match(self):
         """
-        MATCH_CASE misses when the subject fails an extern type test
+        MATCH_CASE misses when the subject fails a stacked extern type
+        test, consuming the stacked extern
         """
 
         f = frozen(MATCH(CAPTURE("x", TYPE("int"))))
         code, ns = build_expr([
             ["CONST", "hello"],
+            ["VAR", "int"],
             ["MATCH_CASE", ("elsebody", f, f[2], 0)],
             ["MATCH_STORE_NAMES", f[1]],
             ["VAR", "x"],

@@ -23,7 +23,7 @@ compile/when, and compile/unless.
 
 
 from ...exceptions import SpecialError
-from ...lib import OpCode, keyword
+from ...lib import Matcher, OpCode, keyword
 from ...matcher import (
     CALLEDBY, MATCH, MatchCompiler, REST, parse_case_pattern)
 from ...bootstrap import builtin
@@ -243,14 +243,21 @@ def special_match(compiler, source, tc=False):
         # Ordered dedup: ONEOF branches may declare the same slot in
         # mutually exclusive arms.
         names = list(dict.fromkeys(str(n) for n in frozen[1]))
-        externs = tuple(str(name) for name in frozen[2])
 
-        # the matcher resolves its externs (type / class / predicate
-        # names) from the namespace at match time, so request each one
-        # through resolution -- otherwise a closure-bound type used only
-        # in a pattern is never captured.
+        # externs covered by the matcher extern defaults (int, str,
+        # pair, ...) resolve from that baked-in table at match time and
+        # never touch the namespace; only the missing ones are loaded,
+        # as ordinary variable reads pushed above the subject in
+        # extern-table order for MATCH_CASE to consume. The loads lower
+        # to FAST with every other read, and the request also captures
+        # a closure-bound type used only in a pattern.
+        externs = tuple(
+            str(name)
+            for name in Matcher.from_tuple(frozen).missing_externs(
+                    exclude_defaults=True))
         for extern in externs:
             fragment.request_var(extern)
+            fragment.instruction(OpCode.VAR, extern)
 
         next_label = gen_label()
         fragment.instruction(

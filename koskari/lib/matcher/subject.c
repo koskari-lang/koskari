@@ -61,6 +61,59 @@ int KosMatchSubject_FromPySequence(PyObject *seq, KosMatchSubject *out) {
 }
 
 
+static Py_ssize_t single_length(const KosMatchSubject *s) {
+  (void) s;
+  return 1;
+}
+
+
+static PyObject *single_get(KosMatchSubject *s, Py_ssize_t i) {
+  (void) i;
+  return s->backing;
+}
+
+
+static PyObject *single_slice(
+    KosMatchSubject *s,
+    Py_ssize_t start,
+    Py_ssize_t end) {
+
+  if (start <= 0 && end >= 1)
+    return PyTuple_Pack(1, s->backing);
+  return PyTuple_New(0);
+}
+
+
+static PyObject *single_tail(KosMatchSubject *s, Py_ssize_t start) {
+  return single_slice(s, start, 1);
+}
+
+
+static void single_release(KosMatchSubject *s) {
+  Py_CLEAR(s->backing);
+  s->cached_length = 0;
+}
+
+
+static const KosMatchSubjectVTable single_vtable = {
+  .length = (Py_ssize_t (*)(KosMatchSubject *)) single_length,
+  .get = single_get,
+  .tail = single_tail,
+  .slice = single_slice,
+  .release = single_release,
+};
+
+
+void KosMatchSubject_FromSingle(PyObject *value, KosMatchSubject *out) {
+  out->vt = &single_vtable;
+  Py_INCREF(value);
+  out->backing = value;
+  out->kp_cars = NULL;
+  out->kp_tails = NULL;
+  out->cached_length = 1;
+}
+
+
 static Py_ssize_t kospair_length(const KosMatchSubject *s) {
   return s->cached_length;
 }

@@ -351,6 +351,18 @@ int KosMatchSubject_FromKosPair(
     KosMatchSubject *out);
 
 
+/**
+   Initialize a length-1 subject over a single value without
+   materializing a backing tuple. The value is the sole spine element,
+   exactly as if it had been wrapped in a 1-tuple and passed through
+   ``KosMatchSubject_FromPySequence``. Always succeeds; the subject
+   must be released with KosMatchSubject_Release.
+ */
+void KosMatchSubject_FromSingle(
+    PyObject *value,
+    KosMatchSubject *out);
+
+
 void KosMatchSubject_Release(KosMatchSubject *subject);
 
 
@@ -370,6 +382,20 @@ PyObject *KosMatcher_Match(
     KosMatcher *matcher,
     KosMatchSubject *subject,
     PyObject *extern_env);
+
+
+/**
+   Allocation-lean core of ``KosMatcher_Match``: run the matcher and
+   report the outcome without building a MatchResult. Returns 1 on a
+   match with ``*out_caps`` set to a new reference to the capture
+   frame; 0 on no match with ``*out_caps`` set to NULL and nothing
+   allocated; -1 with a Python exception set on error.
+ */
+int KosMatcher_Run(
+    KosMatcher *matcher,
+    KosMatchSubject *subject,
+    PyObject *extern_env,
+    PyObject **out_caps);
 
 
 /**

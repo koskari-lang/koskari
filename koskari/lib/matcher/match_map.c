@@ -41,6 +41,7 @@ static int match_one_mentry(
 }
 
 
+#ifndef Py_TPFLAGS_MAPPING
 /**
    Cached collections.abc.Mapping, resolved lazily on the first non-dict
    MAP attempt and then immortal. The MAP miss path runs for every
@@ -61,6 +62,7 @@ static PyObject *get_abc_mapping(void) {
   }
   return abc_mapping_type;
 }
+#endif
 
 
 /**
@@ -84,8 +86,15 @@ static int match_map(
   PyObject *mapping = matcher_peel_datum(elem);
 
   if (! PyDict_Check(mapping)) {
-    /* Not a dict: accept any collections.abc.Mapping, reject the rest
-       with a soft no-match. */
+#ifdef Py_TPFLAGS_MAPPING
+    /* Not a dict: accept mapping-flagged types, exactly as CPython's
+       MATCH_MAPPING does (PEP 634), reject the rest with a soft
+       no-match. */
+    if (! PyType_HasFeature(Py_TYPE(mapping), Py_TPFLAGS_MAPPING))
+      return 0;
+#else
+    /* 3.9: no tp_flags mapping bit; accept any collections.abc.Mapping,
+       reject the rest with a soft no-match. */
     PyObject *mapping_type = get_abc_mapping();
     if (! mapping_type)
       return -1;
@@ -94,6 +103,7 @@ static int match_map(
       return -1;
     if (! isinst)
       return 0;
+#endif
   }
 
   for (uint32_t eidx = n->as.map.first_entry;
