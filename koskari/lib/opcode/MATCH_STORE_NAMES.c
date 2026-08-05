@@ -14,54 +14,44 @@
 */
 
 /**
-  MATCH_STORE_NAMES: arg = cpool index of a names tuple. Stack [..., caps]
-  with the matched arm's capture dict = TOS. Pop the dict and bind each
-  named capture into the current namespace, then fall through to the arm
-  body. Single-cell captures are revealed from their Datum box; repeat
-  frames and rest slices arrive as plain lists/tuples and pass through. A
-  name absent from the dict (an OPTIONAL that did not fire) is left unbound.
+  MATCH_STORE_NAMES: arg = cpool index of a names tuple (compile-time
+  metadata; the capture names the arm declared). Stack [..., caps] with
+  the matched arm's capture dict = TOS. Pop the dict, reveal single-cell
+  captures from their Datum boxes in place, and hand the whole dict to
+  KosNamespace_StoreDict, which binds each capture into the current
+  namespace and raises on an undeclared name. Repeat frames and rest
+  slices arrive as plain lists/tuples and pass through. A name absent
+  from the dict (an OPTIONAL that did not fire) is left unbound.
 */
 
 KOS_OP_HANDLER_COLD(MATCH_STORE_NAMES) {
-  PyObject *names = KosEvalState_CONST(es, KosOp_ARG(insn));
-  if (unlikely(! names || ! PyTuple_Check(names))) {
-    PyErr_SetString(PyExc_SystemError,
-                    "MATCH_STORE_NAMES requires a names tuple const");
-    return EVAL_RAISE();
-  }
+  PyObject *ns = CURRENT_NS();
+  KOS_OP_REQUIRE_NS(ns);
 
   PyObject *caps = KosEvalState_StackPopRef(es);
   if (unlikely(! caps))
     return EVAL_RAISE();
 
-  Py_ssize_t n = PyTuple_GET_SIZE(names);
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *name = PyTuple_GET_ITEM(names, i);
-    PyObject *val = PyDict_GetItemWithError(caps, name);
-    if (! val) {
-      if (unlikely(PyErr_Occurred())) {
+  /* Reveal Datum boxes in place; the dict is freshly owned and value
+     replacement of existing keys is iteration-safe. Only pair-spine
+     subjects produce boxed captures. */
+  Py_ssize_t pos = 0;
+  PyObject *key = NULL;
+  PyObject *val = NULL;
+  while (PyDict_Next(caps, &pos, &key, &val)) {
+    if (KosDatum_Check(val)) {
+      PyObject *inner = ((KosDatum *) val)->datum;
+      if (inner && unlikely(PyDict_SetItem(caps, key, inner))) {
         Py_DECREF(caps);
         return EVAL_RAISE();
       }
-      continue;
-    }
-
-    if (KosDatum_Check(val)) {
-      PyObject *inner = ((KosDatum *) val)->datum;
-      if (inner)
-        val = inner;
-    }
-
-    Py_INCREF(val);
-    int r = frame_ns_store(es, name, val);
-    Py_DECREF(val);
-    if (unlikely(r < 0)) {
-      Py_DECREF(caps);
-      return EVAL_RAISE();
     }
   }
 
+  int r = KosNamespace_StoreDict(ns, caps);
   Py_DECREF(caps);
+  if (unlikely(r < 0))
+    return EVAL_RAISE();
   return EVAL_NORMAL();
 }
 

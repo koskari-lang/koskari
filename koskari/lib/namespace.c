@@ -514,7 +514,13 @@ PyObject *KosNamespaceSpec_New(
 /* === Namespace === */
 
 
-static PyObject *ns_borrow_loose_ref(PyObject *namespace, PyObject *key) {
+static PyObject *ns_borrow_loose_ref_index(
+    PyObject *namespace,
+    PyObject *key,
+    int *out_index) {
+
+  *out_index = -1;
+
   PyObject *binds = KosNamespace_BINDS(namespace);
   if (binds) {
     PyObject *ref = PyDict_GetItemWithError(binds, key);
@@ -524,13 +530,22 @@ static PyObject *ns_borrow_loose_ref(PyObject *namespace, PyObject *key) {
 
   // Not held in the dict (or dict-less): resolve against the fast slot. A
   // raw slot synthesizes the Py_None sentinel; a non-raw slot already
-  // carries its Ref in fast[], so hand that back (borrowed).
+  // carries its Ref in fast[], so hand that back (borrowed). Either way
+  // the found index rides along in *out_index, so a store never scans
+  // the name table a second time.
   int index = ns_fast_index(namespace, key);
   if (index < 0)
     return NULL;
+  *out_index = index;
   if (kos_ns_is_raw(namespace, (size_t) index))
     return Py_None;
   return KosNamespace_GET_FAST_VAL(namespace, (size_t) index);
+}
+
+
+static PyObject *ns_borrow_loose_ref(PyObject *namespace, PyObject *key) {
+  int index;
+  return ns_borrow_loose_ref_index(namespace, key, &index);
 }
 
 
@@ -871,9 +886,60 @@ static PyObject *ns_deref_symbol(PyObject *self, PyObject *key) {
 }
 
 
+/* Single-scan classification for a store: the loose ref (borrowed;
+   Py_None sentinel = raw fast slot, otherwise a Ref) with the found
+   fast index riding along in *out_index (-1 when the binding lives in
+   BINDS, or for module namespaces which always yield a real Ref).
+   NULL with no error set means undeclared. */
+static PyObject *ns_loose_ref_index(
+    PyObject *self,
+    PyObject *key,
+    int *out_index) {
+
+  if (KosNamespace_CheckExact(self) ||
+      KosCollectorNamespace_CheckExact(self))
+    return ns_borrow_loose_ref_index(self, key, out_index);
+
+  *out_index = -1;
+  if (KosModuleNamespace_CheckExact(self))
+    return mdl_ns_borrow_ref(self, key);
+  return NULL;
+}
+
+
+/* Write val through a classified binding: the raw-slot sentinel takes
+   a direct fast[] write at the carried index, a Ref stores (or clears,
+   for NULL val) through the cell. */
+static int ns_store_classified(
+    PyObject *self,
+    PyObject *ref,
+    int index,
+    PyObject *key,
+    PyObject *val) {
+
+  if (ref == Py_None) {
+    if (index < 0) {
+      PyErr_Format(PyExc_NameError, "No such reference: %S", key);
+      return -1;
+    }
+
+    Py_XINCREF(val);
+    Py_XDECREF(KosNamespace_GET_FAST_VAL(self, (size_t) index));
+    KosNamespace_GET_FAST_VAL(self, (size_t) index) = val;
+    // raw bit is already 1 when dict entry is Py_None; reaffirm it
+    kos_ns_set_raw(self, (size_t) index, 1);
+
+    return 0;
+  }
+
+  return val? KosRef_Store(ref, val): KosRef_Clear(ref);
+}
+
+
 static int ns_store_symbol(PyObject *self, PyObject *key, PyObject *val) {
 
-  PyObject *ref = KosNamespace_LOOSE_REF(self, key);
+  int index = -1;
+  PyObject *ref = ns_loose_ref_index(self, key, &index);
 
   if (! ref) {
 
@@ -889,25 +955,9 @@ static int ns_store_symbol(PyObject *self, PyObject *key, PyObject *val) {
     if (! PyErr_Occurred())
       PyErr_Format(PyExc_NameError, "No such reference: %S", key);
     return -1;
-
-  } else if (ref == Py_None) {
-    int index = ns_fast_index(self, key);
-    if (index < 0) {
-      PyErr_Format(PyExc_NameError, "No such reference: %S", key);
-      return -1;
-    }
-
-    Py_XINCREF(val);
-    Py_XDECREF(KosNamespace_GET_FAST_VAL(self, (size_t) index));
-    KosNamespace_GET_FAST_VAL(self, (size_t) index) = val;
-    // raw bit is already 1 when dict entry is Py_None; reaffirm it
-    kos_ns_set_raw(self, (size_t) index, 1);
-
-    return 0;
-
-  } else {
-    return val? KosRef_Store(ref, val): KosRef_Clear(ref);
   }
+
+  return ns_store_classified(self, ref, index, key, val);
 }
 
 
@@ -1624,6 +1674,51 @@ int KosNamespace_Store(
     PyObject *val) {
 
   return ns_store_symbol(namespace, key, val);
+}
+
+
+int KosNamespace_StoreDict(PyObject *namespace, PyObject *dict) {
+
+  if (! dict || ! PyDict_Check(dict)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "StoreDict requires a dict");
+    return -1;
+  }
+
+  Py_ssize_t pos = 0;
+  PyObject *key = NULL;
+  PyObject *val = NULL;
+  while (PyDict_Next(dict, &pos, &key, &val)) {
+    if (ns_store_symbol(namespace, key, val))
+      return -1;
+  }
+  return 0;
+}
+
+
+int KosNamespace_StoreVector(
+    PyObject *namespace,
+    PyObject *names,
+    PyObject *const *values) {
+
+  if (! names || ! PyTuple_Check(names)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "StoreVector requires a names tuple");
+    return -1;
+  }
+
+  Py_ssize_t n = PyTuple_GET_SIZE(names);
+  if (n > 0 && ! values) {
+    PyErr_SetString(PyExc_ValueError,
+                    "StoreVector requires a value array");
+    return -1;
+  }
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    if (ns_store_symbol(namespace, PyTuple_GET_ITEM(names, i), values[i]))
+      return -1;
+  }
+  return 0;
 }
 
 
