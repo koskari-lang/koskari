@@ -33,10 +33,13 @@
   <tr><th>run</th><th>cause</th><th>status</th><th>started</th><th></th></tr>
   {% for r in runs %}
   <tr>
-    <td><a href="{{ prefix }}/runs/{{ r.run_id }}">{{ r.run_id }}</a></td>
+    <td>
+      <a href="{{ prefix }}/runs/{{ r.run_id }}">{{ r.mnemonic or r.run_id }}</a>
+      {% if r.mnemonic %}<div class="muted">{{ r.run_id }}</div>{% endif %}
+    </td>
     <td>{{ r.cause }}</td>
     <td class="status-{{ r.status }}">{{ r.status }}</td>
-    <td class="muted">{{ r.started_at }}</td>
+    <td class="muted">{{ r.started_at | stamp }}</td>
     <td>
       {% if may_trigger %}
       <form method="post" action="{{ prefix }}/retrigger/{{ r.run_id }}"><button>retrigger</button></form>

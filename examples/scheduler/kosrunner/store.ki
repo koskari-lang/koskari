@@ -107,10 +107,71 @@ define _make-runid []:
 ;; --- schema --------------------------------------------------------
 
 define _SCHEMA #[
-    "CREATE TABLE IF NOT EXISTS runs (run_id TEXT PRIMARY KEY, job TEXT NOT NULL, job_dir TEXT NOT NULL, type TEXT NOT NULL, cause TEXT NOT NULL, parent TEXT, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, error TEXT)"
+    "CREATE TABLE IF NOT EXISTS runs (run_id TEXT PRIMARY KEY, job TEXT NOT NULL, job_dir TEXT NOT NULL, type TEXT NOT NULL, cause TEXT NOT NULL, parent TEXT, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, error TEXT, mnemonic TEXT)"
     "CREATE INDEX IF NOT EXISTS runs_job_started ON runs (job, started_at)"
     "CREATE INDEX IF NOT EXISTS runs_status ON runs (status)"
 ]
+
+;; Columns added to `runs` after the first release. CREATE TABLE IF NOT
+;; EXISTS leaves an existing table exactly as it was, so a store built by
+;; an older version needs the column added explicitly; the check is by
+;; name, and adding a nullable column is instant however many rows the
+;; table holds.
+define _ADDED-COLUMNS #{"mnemonic": "TEXT"}
+
+
+;; --- run mnemonics -------------------------------------------------
+
+;; A mnemonic is one short line a handler may hang on its own run --
+;; "DOC-1234 reindexed", "sample=58 rss=77032KiB" -- so the job history
+;; can be read at a glance instead of by run id. Optional, non-unique,
+;; and a property of the RUN rather than its trigger, which is why a
+;; retrigger computes its own instead of inheriting one.
+define MNEMONIC-MAX 200
+
+
+define clean-mnemonic [value]:
+    """
+    Fit whatever a handler passed into one table cell: stringified,
+    all whitespace collapsed to single spaces, capped. None -- or
+    anything that collapses to nothing -- leaves the run unlabelled.
+    """
+
+    when (None? value):
+        (return None)
+
+    define text (.join " " (.split (str value)))
+    unless text:
+        (return None)
+    if (> (len text) MNEMONIC-MAX):
+        (+ (item-slice text stop: (- MNEMONIC-MAX 3)) "...")
+    else:
+        text
+
+
+;; The active run's mnemonic slot. A MUTABLE cell, not a plain value: a
+;; ContextVar `.set` performed inside a called function does not reach
+;; the caller's context, so `mnemonic` mutates the cell that Job.run put
+;; here and still holds, exactly as log capture appends to a buffer
+;; rather than re-setting one.
+define _current-mnemonic (ContextVar "kosrunner_mnemonic" default: None)
+
+
+define mnemonic [value]:
+    """
+    Label the run in progress. Call this from anywhere inside a handler
+    (or an on-error hook, which still runs inside the run); the last call
+    wins, so a handler may set a provisional label early and refine it
+    once it knows more. Outside a run it does nothing, which keeps a
+    handler callable directly in a test or a REPL. Returns the cleaned
+    text.
+    """
+
+    define text (clean-mnemonic value)
+    define cell (_current-mnemonic.get)
+    unless (None? cell):
+        (set! (item cell 0) text)
+    text
 
 
 ;; --- per-run log capture ------------------------------------------
@@ -193,6 +254,7 @@ define-class RunStore []:
             (self._exec stmt)
         (self.db.commit)
 
+        (self.migrate)
         (self.reconcile)
         (logger.info "run store open: %s" self.dbpath)
         self
@@ -202,6 +264,23 @@ define-class RunStore []:
         when self.db:
             (self.db.close)
             set! self.db None
+
+
+    define migrate [self]:
+        """
+        Add any column the running code expects that this store predates.
+        Runs on every open and does nothing once the table is current, so
+        a store carried across upgrades keeps its history rather than
+        needing to be thrown away.
+        """
+
+        define have (list-each [col (self._rows "PRAGMA table_info(runs)")]
+            (item col "name"))
+        for-each [[name decl] (_ADDED-COLUMNS.items)]:
+            unless (in? name have):
+                (self._exec f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+                (self.db.commit)
+                (logger.info "store migrated: runs.%s added" name)
 
 
     define reconcile [self]:
@@ -271,11 +350,15 @@ define-class RunStore []:
         runid
 
 
-    define record-finish [self runid status result: None error: None log: None]:
+    define record-finish [
+            self runid status
+            result: None error: None log: None mnemonic: None]:
         """
         Close a run: write its result (and captured log) artifacts and
-        stamp the row with the final status, finish time, and a short
-        error summary.
+        stamp the row with the final status, finish time, a short error
+        summary, and the mnemonic the handler set (if any). The mnemonic
+        rides the UPDATE that was happening anyway, so labelling a run
+        costs no extra query.
         """
 
         define row (self.get-run runid)
@@ -291,8 +374,9 @@ define-class RunStore []:
               "result": result
               "error": error})
         (self._exec
-            "UPDATE runs SET status = ?, finished_at = ?, error = ? WHERE run_id = ?"
-            #[status (_utcnow-iso) (if (None? error) None (str error)) runid])
+            "UPDATE runs SET status = ?, finished_at = ?, error = ?, mnemonic = ? WHERE run_id = ?"
+            #[status (_utcnow-iso) (if (None? error) None (str error))
+              (clean-mnemonic mnemonic) runid])
         (self.db.commit)
         (logger.info "run finish: %s %s" runid status)
         None

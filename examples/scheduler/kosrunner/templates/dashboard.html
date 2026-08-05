@@ -13,7 +13,8 @@
     <td>
       {% if j.last %}
       <a href="{{ prefix }}/runs/{{ j.last.run_id }}" class="status-{{ j.last.status }}">{{ j.last.status }}</a>
-      <span class="muted">{{ j.last.started_at }}</span>
+      <span class="muted">{{ j.last.started_at | stamp }}</span>
+      {% if j.last.mnemonic %}<div>{{ j.last.mnemonic }}</div>{% endif %}
       {% else %}<span class="muted">&mdash;</span>{% endif %}
     </td>
   </tr>

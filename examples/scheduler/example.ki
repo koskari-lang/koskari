@@ -81,9 +81,11 @@ jobset workload:
     ;; A whole handler can be one call into the framework. This one samples
     ;; process memory (see kosrunner/memwatch.ki); each fire logs its
     ;; report into its own run, so the history doubles as the trend.
+    ;; `mnemonic` labels the run with the sample's headline numbers, which
+    ;; is what makes the history scannable.
     job cron memwatch [*/5 * * * *]:
         handler []:
-            (memory-report)
+            (mnemonic (memory-report))
 
     ;; webhook job on the default webhook config; handler returns the
     ;; response payload.

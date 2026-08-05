@@ -44,15 +44,33 @@ define-dataclass UiConfig [ServerConfig]:
     define [prefix :: str] "/ui"
 
 
+define stamp [value]:
+    """
+    A run timestamp for reading rather than for sorting. Stored values
+    are full ISO-8601 UTC (fractional seconds and a +00:00 offset), which
+    is what makes them sort correctly and what makes a column of them
+    unreadable; every run in a listing is UTC to the same precision, so
+    the display keeps the date and the second and drops the rest.
+    """
+
+    when (None? value):
+        (return "")
+    (.replace (item-slice (str value) stop: 19) "T" " ")
+
+
 ;; Templates ship as package data. Koskari modules have no __file__, so
 ;; the package directory is located via its import spec.
 define _build-env []:
     define spec (find_spec "kosrunner")
     define pkgdir (item (list spec.submodule_search_locations) 0)
     define tdir (os.path.join pkgdir "templates")
-    (jinja2.Environment
+    define env (jinja2.Environment
         loader: (jinja2.FileSystemLoader tdir)
         autoescape: True)
+    ;; demand: jinja calls a filter synchronously, so a bare koskari
+    ;; function would hand it back an un-awaited coroutine
+    (set! (item env.filters "stamp") (demand stamp))
+    env
 
 
 define _render [env name ctx]:

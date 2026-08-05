@@ -552,6 +552,41 @@ Config-only types, no jobs:
   wired yet). Singular per jobset, so only the unnamed form exists.
 - `config access:` -- see next section.
 
+### Run mnemonics
+
+A run's id is a timestamp, which is a poor way to find the run you want.
+Any handler may hang a short label on its own run instead:
+
+```koskari
+job kafka reindex "topic.documents":
+    handler [msg]:
+        define doc (json.loads msg)
+        (mnemonic f"{(doc.get 'id')} reindexed")
+        ...
+```
+
+The label is optional, non-unique, and belongs to the **run** rather than
+to its trigger, so a retrigger computes its own rather than inheriting
+one. It shows as the primary text of each row in a job's history (with
+the run id demoted beneath it), on the dashboard's last-run cell, and at
+the head of the run page; a run without one falls back to its id
+everywhere.
+
+`mnemonic` may be called from anywhere inside a handler, including an
+`on-error` hook, and the last call wins, so a handler can set a
+provisional label early and refine it once it knows more. The label is
+read when the run closes, which means a run that labelled itself and then
+failed keeps its label -- the case where it is worth the most. Whatever
+is passed gets stringified, collapsed to a single line, and capped at 200
+characters, since it has to fit a table cell. Outside a run the call does
+nothing, so handlers stay directly callable in a test or a REPL.
+
+Storage is a `mnemonic` column on `runs`, written by the UPDATE that
+closes a run, so labelling costs no extra query. A store created before
+this feature gains the column on open: `RunStore.migrate` adds any column
+the running code expects that the store predates, so upgrading keeps your
+history instead of discarding it.
+
 ### Watching memory
 
 A runner that stays up for months is worth measuring. `memory-report`
@@ -713,7 +748,7 @@ by name.
 |---|---|
 | [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/`run` tracking/enabled, `jobset` back-ref), `JobSet` (tracking + control plane incl. `retrigger`), `require-extra`, `watch-task` |
 | [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `with-subitems`; the `config/logging` service config; `layout/config` |
-| [kosrunner/store.ki](kosrunner/store.ki) | `StorageConfig` + `RunStore` (aiosqlite run history, per-run artifacts, log capture) + `config/storage` |
+| [kosrunner/store.ki](kosrunner/store.ki) | `StorageConfig` + `RunStore` (aiosqlite run history, per-run artifacts, log capture, additive column migration) + `mnemonic` + `config/storage` |
 | [kosrunner/memwatch.ki](kosrunner/memwatch.ki) | `memory-report` / `memory-census` / `vmrss` -- process memory sampling for a cron handler |
 | [kosrunner/server.ki](kosrunner/server.ki) | `ServerConfig` (host/port/prefix dataclass), `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action/page helpers |
 | [kosrunner/cron.ki](kosrunner/cron.ki) | `CronJob` + `config/cron` / `job/cron` (aiocron) |

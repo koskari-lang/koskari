@@ -104,6 +104,8 @@ define memory-report [top: 10]:
     drifted furthest since this process's first sample. Every figure is
     reported as a total AND a movement -- a total alone cannot show a
     trend, and a delta alone cannot show the scale it moved against.
+    Returns the totals line, so a handler can pass it to `mnemonic` and
+    put this sample's numbers straight into the run history.
 
     `blocks` (every live pymalloc block) is the number that decides
     whether a climbing RSS is a leak. `live` counts only GC-TRACKED
@@ -124,13 +126,17 @@ define memory-report [top: 10]:
     define-values [collected counts] (memory-census)
     (set! (item _samples 0) (+ 1 (item _samples 0)))
 
-    (logger.info
-        "sample=%s rss=%s blocks=%s live=%s collected=%s threads=%s tasks=%s"
+    ;; built as one string rather than logged with args, because it is
+    ;; also the return value -- a handler hands it to `mnemonic` to label
+    ;; its own run with the numbers the history is scanned for
+    define line (.format
+        "sample={} rss={} blocks={} live={} collected={} threads={} tasks={}"
         (item _samples 0)
         (_drift "rss" (vmrss) unit: "KiB")
         (_drift "blocks" (sys.getallocatedblocks))
         (_drift "live" (sum (counts.values)))
         collected (threading.active_count) (_task-count))
+    (logger.info "%s" line)
 
     ;; ranked by the SIZE of the drift, not its sign: a count that fell
     ;; is as much of a clue as one that rose, and hiding the falls is
@@ -148,7 +154,7 @@ define memory-report [top: 10]:
         (_base.update counts)
     (_prev.clear)
     (_prev.update counts)
-    None
+    line
 
 
 ;; The end.

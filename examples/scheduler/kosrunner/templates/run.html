@@ -2,6 +2,7 @@
 {% block title %}run {{ run.run_id }}{% endblock %}
 {% block body %}
 <h1>{{ run.job }} &middot; <span class="status-{{ run.status }}">{{ run.status }}</span></h1>
+{% if run.mnemonic %}<p class="mnemonic">{{ run.mnemonic }}</p>{% endif %}
 <table>
   <tr><th>run id</th><td>{{ run.run_id }}</td></tr>
   <tr><th>type</th><td>{{ run.type }}</td></tr>
@@ -9,8 +10,10 @@
   <tr><th>parent</th><td>
     {% if run.parent %}<a href="{{ prefix }}/runs/{{ run.parent }}">{{ run.parent }}</a>{% else %}<span class="muted">&mdash;</span>{% endif %}
   </td></tr>
-  <tr><th>started</th><td>{{ run.started_at }}</td></tr>
-  <tr><th>finished</th><td>{{ run.finished_at or "&mdash;" }}</td></tr>
+  <tr><th>started</th><td>{{ run.started_at | stamp }}</td></tr>
+  <tr><th>finished</th><td>
+    {% if run.finished_at %}{{ run.finished_at | stamp }}{% else %}<span class="muted">&mdash;</span>{% endif %}
+  </td></tr>
   {% if run.error %}<tr><th>error</th><td class="status-failed">{{ run.error }}</td></tr>{% endif %}
 </table>
 

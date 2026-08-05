@@ -200,21 +200,27 @@ define-class Job []:
 
     define _tracked-invoke [self store runid args kwargs]:
         """
-        The recorded body of a run: set the per-run log buffer, invoke the
-        callback, dispatch the on-error hook on failure, and flush the
-        outcome to the store. This runs as ONE unit in whatever context
-        executes the callback -- inline for a synchronous run, or inside
-        the background task for an async one -- because the capture
-        contextvar must be set in the same context the callback logs from,
-        or the buffer the log handler reads is not the one this invoke set.
-        Returns the callback result.
+        The recorded body of a run: set the per-run log buffer and
+        mnemonic slot, invoke the callback, dispatch the on-error hook on
+        failure, and flush the outcome to the store. This runs as ONE unit
+        in whatever context executes the callback -- inline for a
+        synchronous run, or inside the background task for an async one --
+        because the capture contextvars must be set in the same context
+        the callback runs in, or the buffer the log handler reads and the
+        cell `mnemonic` writes are not the ones this invoke set. Returns
+        the callback result.
         """
 
         ;; local import dodges the job<->store load-time cycle
-        import-from .store _current-run
+        import-from .store _current-run _current-mnemonic
 
         define buf #[]
+        ;; a one-slot cell rather than a value: `mnemonic` mutates this
+        ;; from inside the handler, where a contextvar `.set` would not
+        ;; carry back out to this context
+        define label #[None]
         define token (_current-run.set buf)
+        define mtoken (_current-mnemonic.set label)
         define status "success"
         define result None
         define err None
@@ -237,11 +243,16 @@ define-class Job []:
 
         finally:
             (_current-run.reset token)
+            (_current-mnemonic.reset mtoken)
+            ;; the mnemonic is read here, in the finally, so a run that
+            ;; labelled itself and then failed keeps the label -- which is
+            ;; the case where it is worth the most
             (store.record-finish runid
                 status: status
                 result: result
                 error: err
-                log: (when buf ("\n".join buf)))
+                log: (when buf ("\n".join buf))
+                mnemonic: (item label 0))
 
         result
 
