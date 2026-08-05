@@ -173,7 +173,7 @@ static int match_class(
   }
 
   PyObject *elem = e->subj->vt->get(e->subj, *cursor);
-  PyObject *cls = PyTuple_GET_ITEM(e->extern_env, n->as.class_.type_extern);
+  PyObject *cls = e->extern_env[n->as.class_.type_extern];
 
   int isinst = matcher_isinstance(elem, cls);
   if (isinst < 0)

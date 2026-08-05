@@ -23,20 +23,20 @@
 
   Stack [..., subject, e0..eN-1] with N = len(row.a2): the compiler
   emits one load per missing extern (VAR, lowered to FAST when a slot
-  exists) above the subject, pushed in row.a2 order. The subject is
-  presented as a length-1 spine so the whole value matches as one
-  element, then the arm matcher runs against it. The extern env is
-  aligned to the matcher's own extern table by a two-cursor merge:
-  names in row.a2 take the next stacked value, every other name
-  resolves from the matcher extern defaults (a miss there raises). The
-  stacked externs are consumed on both outcomes, returning the subject
-  to TOS. On no match: leave the subject and jump to row.a0. On the
-  first match: push the capture dict for the arm's MATCH_STORE_NAMES
-  (or a following POP for a capture-less arm). When the keep flag is
-  clear the match consumes the subject; when set (a guarded arm) the
-  subject stays beneath the capture dict, and the guard code is
-  responsible for either jumping to row.a0 with the subject intact or
-  popping it before the arm body commits.
+  exists) above the subject, pushed in row.a2 order. The opcode is
+  only the interface between the stack and the matcher API: the
+  subject is presented as a length-1 spine and the stacked segment is
+  handed with its names to KosMatcher_RunVectorcall, which does all
+  extern resolution (inbuilt defaults included) and raises its own
+  errors. The stacked externs are consumed on both outcomes,
+  returning the subject to TOS. On no match: leave the subject and
+  jump to row.a0. On the first match: push the capture dict for the
+  arm's MATCH_STORE_NAMES (or a following POP for a capture-less
+  arm). When the keep flag is clear the match consumes the subject;
+  when set (a guarded arm) the subject stays beneath the capture
+  dict, and the guard code is responsible for either jumping to
+  row.a0 with the subject intact or popping it before the arm body
+  commits.
 */
 
 KOS_OP_HANDLER_COLD(MATCH_CASE) {
@@ -71,16 +71,16 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
   }
 
   /* The stacked missing externs sit above the subject; tail[0] is the
-     subject, tail[1 + j] the value for row.a2's j-th name. The subject
+     subject, tail[1..n] the values named by row.a2. The subject
      becomes a length-1 spine directly; no wrapper tuple is
      materialized. */
-  PyObject *missing = KosEvalState_CONST(es, row.a2);
-  Py_ssize_t n_stacked = 0;
-  if (missing && PyTuple_Check(missing))
-    n_stacked = PyTuple_GET_SIZE(missing);
+  PyObject *names = KosEvalState_CONST(es, row.a2);
+  Py_ssize_t n = 0;
+  if (names && PyTuple_Check(names))
+    n = PyTuple_GET_SIZE(names);
 
   PyObject *const *tail =
-      KosEvalState_StackTailPtr(es, (size_t) (n_stacked + 1));
+      KosEvalState_StackTailPtr(es, (size_t) (n + 1));
   if (unlikely(! tail)) {
     PyErr_SetString(PyExc_SystemError,
                     "MATCH_CASE stack underflow");
@@ -88,84 +88,15 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
       Py_DECREF(matcher);
     return EVAL_RAISE();
   }
-  PyObject *subject = tail[0];
-
-  /* Build the extern env aligned to the matcher's extern table by a
-     two-cursor merge: names in row.a2 take the next stacked value,
-     every other name resolves from the extern defaults. */
-  PyObject *externs = ((KosMatcher *) matcher)->externs;
-  Py_ssize_t n_ext = PyTuple_GET_SIZE(externs);
-  PyObject *extern_env = NULL;
-  PyObject *defaults = NULL;
-  Py_ssize_t j = 0;
-  if (n_ext > 0) {
-    extern_env = PyTuple_New(n_ext);
-    if (unlikely(! extern_env)) {
-      if (matcher_owned)
-        Py_DECREF(matcher);
-      return EVAL_RAISE();
-    }
-    for (Py_ssize_t i = 0; i < n_ext; i++) {
-      PyObject *name = PyTuple_GET_ITEM(externs, i);
-      PyObject *val = NULL;
-      if (j < n_stacked) {
-        int eq = PyObject_RichCompareBool(
-            PyTuple_GET_ITEM(missing, j), name, Py_EQ);
-        if (unlikely(eq < 0)) {
-          Py_DECREF(extern_env);
-          if (matcher_owned)
-            Py_DECREF(matcher);
-          return EVAL_RAISE();
-        }
-        if (eq) {
-          val = tail[1 + j];
-          j++;
-          Py_INCREF(val);
-        }
-      }
-      if (! val) {
-        if (! defaults) {
-          defaults = KosMatcher_ExternDefaults();
-          if (unlikely(! defaults)) {
-            Py_DECREF(extern_env);
-            if (matcher_owned)
-              Py_DECREF(matcher);
-            return EVAL_RAISE();
-          }
-        }
-        val = PyDict_GetItemWithError(defaults, name);
-        if (unlikely(! val)) {
-          if (! PyErr_Occurred())
-            PyErr_Format(PyExc_TypeError,
-                         "matcher missing extern binding: %R", name);
-          Py_DECREF(extern_env);
-          if (matcher_owned)
-            Py_DECREF(matcher);
-          return EVAL_RAISE();
-        }
-        Py_INCREF(val);
-      }
-      PyTuple_SET_ITEM(extern_env, i, val);   /* steals val */
-    }
-  }
-  if (unlikely(j != n_stacked)) {
-    PyErr_SetString(PyExc_SystemError,
-                    "MATCH_CASE stacked externs misaligned with the"
-                    " matcher extern table");
-    Py_XDECREF(extern_env);
-    if (matcher_owned)
-      Py_DECREF(matcher);
-    return EVAL_RAISE();
-  }
 
   KosMatchSubject subj;
-  KosMatchSubject_FromSingle(subject, &subj);
+  KosMatchSubject_FromSingle(tail[0], &subj);
 
   PyObject *caps = NULL;
-  int matched = KosMatcher_Run((KosMatcher *) matcher, &subj,
-                               extern_env, &caps);
+  int matched = KosMatcher_RunVectorcall(
+      (KosMatcher *) matcher, &subj,
+      n ? tail + 1 : NULL, names, &caps);
   KosMatchSubject_Release(&subj);
-  Py_XDECREF(extern_env);
   if (matcher_owned)
     Py_DECREF(matcher);
 
@@ -173,8 +104,8 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
     return EVAL_RAISE();
 
   /* Consume the stacked externs; the subject returns to TOS. */
-  if (n_stacked)
-    KosEvalState_StackDropNoErr(es, (size_t) n_stacked);
+  if (n)
+    KosEvalState_StackDropNoErr(es, (size_t) n);
 
   if (! matched) {
     KosEvalState_SET_PC(es, row.a0);

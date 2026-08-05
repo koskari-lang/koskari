@@ -28,7 +28,7 @@ static int match_app(
   }
 
   PyObject *elem = e->subj->vt->get(e->subj, *cursor);
-  PyObject *fn = PyTuple_GET_ITEM(e->extern_env, n->as.app.fn_extern);
+  PyObject *fn = e->extern_env[n->as.app.fn_extern];
   PyObject *got = matcher_peel_datum(elem);
 
   PyObject *res = matcher_call_extern(fn, got);

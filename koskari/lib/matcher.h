@@ -386,15 +386,37 @@ PyObject *KosMatcher_Match(
 
 /**
    Allocation-lean core of ``KosMatcher_Match``: run the matcher and
-   report the outcome without building a MatchResult. Returns 1 on a
-   match with ``*out_caps`` set to a new reference to the capture
+   report the outcome without building a MatchResult. ``extern_env``
+   is a borrowed value array aligned to the matcher's extern table
+   (``n_extern_env`` must equal the table length; NULL/0 when the
+   table is empty) -- a tuple's item array works directly. Returns 1
+   on a match with ``*out_caps`` set to a new reference to the capture
    frame; 0 on no match with ``*out_caps`` set to NULL and nothing
    allocated; -1 with a Python exception set on error.
  */
 int KosMatcher_Run(
     KosMatcher *matcher,
     KosMatchSubject *subject,
-    PyObject *extern_env,
+    PyObject *const *extern_env,
+    Py_ssize_t n_extern_env,
+    PyObject **out_caps);
+
+
+/**
+   Vectorcall-style entry to ``KosMatcher_Run``: ``ext_values`` is a
+   borrowed value array (a stack segment works as-is) named by the
+   aligned ``ext_names`` tuple. Each extern-table entry resolves from
+   the named values first, then the matcher's inbuilt extern defaults;
+   a genuine miss raises the matcher's missing-binding TypeError. When
+   the names cover the whole extern table in order the value array is
+   used as the env directly with no allocation. Same returns as
+   ``KosMatcher_Run``.
+ */
+int KosMatcher_RunVectorcall(
+    KosMatcher *matcher,
+    KosMatchSubject *subject,
+    PyObject *const *ext_values,
+    PyObject *ext_names,
     PyObject **out_caps);
 
 

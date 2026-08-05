@@ -23,7 +23,7 @@ static int match_one_mentry(
                       "MAP extern key requires an extern environment");
       return -1;
     }
-    key = PyTuple_GET_ITEM(e->extern_env, en->as.map_entry.key_ref);
+    key = e->extern_env[en->as.map_entry.key_ref];
   }
 
   PyObject *val = PyObject_GetItem(mapping, key);

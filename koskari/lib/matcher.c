@@ -944,7 +944,8 @@ typedef struct {
 typedef struct {
   KosMatcher *m;
   KosMatchSubject *subj;
-  PyObject *extern_env;       /* PyTuple aligned to m->externs, or NULL */
+  PyObject *const *extern_env;   /* borrowed value array aligned to
+                                    m->externs, or NULL */
   PyObject *root_captures;
   PyObject *cur_captures;
   PyObject *capture_parent;
@@ -1108,6 +1109,25 @@ static PyObject *match_frame_new(const MatchEngine *e, Py_ssize_t start) {
 }
 
 
+/**
+   Current capture frame, creating the lazy root on first use. The
+   root stays NULL until a slot actually fires, so failing attempts
+   allocate no frame at all; inside a GROUP the current frame is the
+   group's own sub-frame and already exists. Borrowed reference, or
+   NULL with an exception set.
+*/
+static PyObject *engine_captures_frame(MatchEngine *e) {
+  if (! e->cur_captures) {
+    PyObject *root = match_frame_new(e, 0);
+    if (! root)
+      return NULL;
+    e->root_captures = root;
+    e->cur_captures = root;
+  }
+  return e->cur_captures;
+}
+
+
 static PyObject *match_frame_copy(PyObject *frame) {
 
   if (! KosDatumFrame_Check(frame))
@@ -1167,7 +1187,11 @@ static int engine_set_slot(
   }
 
   PyObject *name = PyTuple_GET_ITEM(e->m->slots, slot);
-  PyObject *d = e->cur_captures;
+  PyObject *d = engine_captures_frame(e);
+  if (! d) {
+    Py_DECREF(value);
+    return -1;
+  }
 
   PyObject *prev = PyDict_GetItemWithError(d, name);
   if (! prev && PyErr_Occurred()) {
@@ -1270,7 +1294,7 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
                    "TEST_TYPE requires an extern environment");
       return -1;
     }
-    PyObject *cls = PyTuple_GET_ITEM(e->extern_env, t->ref_index);
+    PyObject *cls = e->extern_env[t->ref_index];
     PyObject *got = matcher_peel_datum(elem);
     int r = matcher_isinstance(got, cls);
     if (r < 0)
@@ -1284,7 +1308,7 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
                    "TEST_PREDICATE requires an extern environment");
       return -1;
     }
-    PyObject *pred = PyTuple_GET_ITEM(e->extern_env, t->ref_index);
+    PyObject *pred = e->extern_env[t->ref_index];
     PyObject *got = matcher_peel_datum(elem);
     PyObject *res = matcher_call_extern(pred, got);
     if (! res)
@@ -1318,6 +1342,8 @@ static PyObject *engine_changes_to_dict(
   PyObject *d = PyDict_New();
   if (! d)
     return NULL;
+  if (! e->cur_captures)
+    return d;
   for (Py_ssize_t i = from_change; i < e->change_count; i++) {
     uint32_t slot = e->change_stack[i].slot_idx;
     PyObject *name = PyTuple_GET_ITEM(e->m->slots, slot);
@@ -1457,6 +1483,8 @@ static int match_node(
         return 0;
       dict = e->capture_parent;
     }
+    if (! dict)
+      return 0;
 
     if ((Py_ssize_t) n->as.same.slot >= e->slot_count)
       return 0;
@@ -1552,7 +1580,8 @@ static int match_node(
 int KosMatcher_Run(
     KosMatcher *m,
     KosMatchSubject *subj,
-    PyObject *extern_env,
+    PyObject *const *extern_env,
+    Py_ssize_t n_extern_env,
     PyObject **out_caps) {
 
   if (! m || ! subj || ! out_caps) {
@@ -1563,22 +1592,16 @@ int KosMatcher_Run(
   *out_caps = NULL;
 
   Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
-  if (n_externs > 0) {
-    if (! extern_env) {
-      PyErr_Format(PyExc_TypeError,
-                   "matcher requires %zd extern bindings", n_externs);
-      return -1;
-    }
-    if (! PyTuple_Check(extern_env)) {
-      PyErr_SetString(PyExc_TypeError, "extern_env must be a tuple");
-      return -1;
-    }
-    if (PyTuple_GET_SIZE(extern_env) != n_externs) {
-      PyErr_Format(PyExc_TypeError,
-                   "extern_env has %zd entries, expected %zd",
-                   PyTuple_GET_SIZE(extern_env), n_externs);
-      return -1;
-    }
+  if (n_extern_env != n_externs) {
+    PyErr_Format(PyExc_TypeError,
+                 "extern_env has %zd entries, expected %zd",
+                 n_extern_env, n_externs);
+    return -1;
+  }
+  if (n_externs > 0 && ! extern_env) {
+    PyErr_Format(PyExc_TypeError,
+                 "matcher requires %zd extern bindings", n_externs);
+    return -1;
   }
 
   Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
@@ -1589,12 +1612,11 @@ int KosMatcher_Run(
   engine.extern_env = extern_env;
   engine.slot_count = n_slots;
 
-  PyObject *root = match_frame_new(&engine, 0);
-  if (! root)
-    return -1;
-
-  engine.root_captures = root;
-  engine.cur_captures = root;
+  /* The root capture frame is created lazily by the first slot write
+     (engine_captures_frame), so an attempt that never captures -- in
+     particular every failing attempt -- allocates nothing here. */
+  engine.root_captures = NULL;
+  engine.cur_captures = NULL;
   engine.capture_parent = NULL;
 
   Py_ssize_t cursor = 0;
@@ -1614,13 +1636,23 @@ int KosMatcher_Run(
   PyMem_Free(engine.change_stack);
 
   if (r < 0) {
-    Py_DECREF(root);
+    Py_XDECREF(engine.root_captures);
     return -1;
   }
 
   if (! matched) {
-    Py_DECREF(root);
+    Py_XDECREF(engine.root_captures);
     return 0;
+  }
+
+  /* A capture-less match still materializes the frame: the caller
+     contract (and the DatumFrame source/position it may carry) is the
+     same whether or not any slot fired. */
+  PyObject *root = engine.root_captures;
+  if (! root) {
+    root = match_frame_new(&engine, 0);
+    if (! root)
+      return -1;
   }
 
   if (datum_frame_set_source(&engine, root, subj, 0, cursor)) {
@@ -1638,8 +1670,35 @@ PyObject *KosMatcher_Match(
     KosMatchSubject *subj,
     PyObject *extern_env) {
 
+  if (! m || ! subj) {
+    PyErr_SetString(PyExc_ValueError,
+                    "KosMatcher_Match requires matcher and subject");
+    return NULL;
+  }
+
+  Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
+  PyObject *const *env = NULL;
+  if (n_externs > 0) {
+    if (! extern_env) {
+      PyErr_Format(PyExc_TypeError,
+                   "matcher requires %zd extern bindings", n_externs);
+      return NULL;
+    }
+    if (! PyTuple_Check(extern_env)) {
+      PyErr_SetString(PyExc_TypeError, "extern_env must be a tuple");
+      return NULL;
+    }
+    if (PyTuple_GET_SIZE(extern_env) != n_externs) {
+      PyErr_Format(PyExc_TypeError,
+                   "extern_env has %zd entries, expected %zd",
+                   PyTuple_GET_SIZE(extern_env), n_externs);
+      return NULL;
+    }
+    env = &PyTuple_GET_ITEM(extern_env, 0);
+  }
+
   PyObject *caps = NULL;
-  int matched = KosMatcher_Run(m, subj, extern_env, &caps);
+  int matched = KosMatcher_Run(m, subj, env, n_externs, &caps);
   if (matched < 0)
     return NULL;
 
@@ -1652,6 +1711,162 @@ PyObject *KosMatcher_Match(
   PyObject *result = make_match_result(matched, caps);
   Py_DECREF(caps);
   return result;
+}
+
+
+/**
+   Resolve one extern name from the inbuilt extern defaults. Borrowed
+   reference, or NULL with the missing-binding TypeError (or a real
+   error) set. The single home of that error.
+*/
+static PyObject *matcher_extern_default(PyObject *name) {
+  PyObject *defaults = KosMatcher_ExternDefaults();
+  if (! defaults)
+    return NULL;
+  PyObject *val = PyDict_GetItemWithError(defaults, name);
+  if (! val && ! PyErr_Occurred())
+    PyErr_Format(PyExc_TypeError,
+                 "matcher missing extern binding: %R", name);
+  return val;
+}
+
+
+/**
+   Build the extern env tuple aligned to m->externs: each name resolves
+   from the provided dict first (may be NULL), then the inbuilt extern
+   defaults. Unknown provided names are ignored, matching the kwargs
+   behavior of ``Matcher.match``. On success *out_env is a new tuple
+   reference, or NULL when the matcher declares no externs (provided
+   entries are then rejected). Returns 0, or -1 with an exception set.
+*/
+static int matcher_extern_env(
+    KosMatcher *m,
+    PyObject *provided,
+    PyObject **out_env) {
+
+  *out_env = NULL;
+  Py_ssize_t n = PyTuple_GET_SIZE(m->externs);
+  if (n == 0) {
+    if (provided && PyDict_GET_SIZE(provided) > 0) {
+      PyErr_SetString(PyExc_TypeError,
+                      "matcher takes no extern bindings");
+      return -1;
+    }
+    return 0;
+  }
+
+  PyObject *env = PyTuple_New(n);
+  if (! env)
+    return -1;
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *name = PyTuple_GET_ITEM(m->externs, i);
+    PyObject *val = NULL;
+    if (provided) {
+      val = PyDict_GetItemWithError(provided, name);
+      if (! val && PyErr_Occurred())
+        goto fail;
+    }
+    if (! val) {
+      val = matcher_extern_default(name);
+      if (! val)
+        goto fail;
+    }
+    Py_INCREF(val);
+    PyTuple_SET_ITEM(env, i, val);
+  }
+
+  *out_env = env;
+  return 0;
+
+ fail:
+  Py_DECREF(env);
+  return -1;
+}
+
+
+int KosMatcher_RunVectorcall(
+    KosMatcher *m,
+    KosMatchSubject *subj,
+    PyObject *const *ext_values,
+    PyObject *ext_names,
+    PyObject **out_caps) {
+
+  if (! m) {
+    PyErr_SetString(PyExc_ValueError,
+                    "KosMatcher_RunVectorcall requires matcher");
+    return -1;
+  }
+
+  Py_ssize_t n_named = 0;
+  if (ext_names && PyTuple_Check(ext_names))
+    n_named = PyTuple_GET_SIZE(ext_names);
+  Py_ssize_t n_ext = PyTuple_GET_SIZE(m->externs);
+
+  /* Fast path: the names cover the whole extern table in order, so the
+     value array is the env as-is. Identity-first compares: the common
+     caller feeds back the matcher's own names. */
+  if (n_named == n_ext) {
+    Py_ssize_t i = 0;
+    for (; i < n_ext; i++) {
+      PyObject *a = PyTuple_GET_ITEM(ext_names, i);
+      PyObject *b = PyTuple_GET_ITEM(m->externs, i);
+      if (a == b)
+        continue;
+      int eq = PyObject_RichCompareBool(a, b, Py_EQ);
+      if (eq < 0)
+        return -1;
+      if (! eq)
+        break;
+    }
+    if (i == n_ext)
+      return KosMatcher_Run(m, subj, ext_values, n_ext, out_caps);
+  }
+
+  if (n_ext == 0) {
+    PyErr_SetString(PyExc_TypeError,
+                    "matcher takes no extern bindings");
+    return -1;
+  }
+
+  /* General path: per table entry take the named value when present
+     (order-independent, kwargs semantics), else the inbuilt defaults. */
+  PyObject *env = PyTuple_New(n_ext);
+  if (! env)
+    return -1;
+
+  for (Py_ssize_t i = 0; i < n_ext; i++) {
+    PyObject *name = PyTuple_GET_ITEM(m->externs, i);
+    PyObject *val = NULL;
+    for (Py_ssize_t j = 0; j < n_named; j++) {
+      PyObject *nm = PyTuple_GET_ITEM(ext_names, j);
+      if (nm != name) {
+        int eq = PyObject_RichCompareBool(nm, name, Py_EQ);
+        if (eq < 0) {
+          Py_DECREF(env);
+          return -1;
+        }
+        if (! eq)
+          continue;
+      }
+      val = ext_values[j];
+      break;
+    }
+    if (! val) {
+      val = matcher_extern_default(name);
+      if (! val) {
+        Py_DECREF(env);
+        return -1;
+      }
+    }
+    Py_INCREF(val);
+    PyTuple_SET_ITEM(env, i, val);
+  }
+
+  int matched = KosMatcher_Run(m, subj, &PyTuple_GET_ITEM(env, 0),
+                               n_ext, out_caps);
+  Py_DECREF(env);
+  return matched;
 }
 
 
@@ -1709,55 +1924,7 @@ int KosMatcher_MatchSelect(
     KosMatcher *m = (KosMatcher *) item;
 
     PyObject *extern_env = NULL;
-    Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
-    if (n_externs > 0) {
-      extern_env = PyTuple_New(n_externs);
-      if (! extern_env) {
-        KosMatchSubject_Release(&subj);
-        Py_DECREF(fast);
-        return -1;
-      }
-      for (Py_ssize_t j = 0; j < n_externs; j++) {
-        PyObject *name = PyTuple_GET_ITEM(m->externs, j);
-        PyObject *val = NULL;
-        if (kwargs)
-          val = PyDict_GetItemWithError(kwargs, name);
-        if (! val) {
-          if (PyErr_Occurred()) {
-            Py_DECREF(extern_env);
-            KosMatchSubject_Release(&subj);
-            Py_DECREF(fast);
-            return -1;
-          }
-          PyObject *defs = KosMatcher_ExternDefaults();
-          if (! defs) {
-            Py_DECREF(extern_env);
-            KosMatchSubject_Release(&subj);
-            Py_DECREF(fast);
-            return -1;
-          }
-          val = PyDict_GetItemWithError(defs, name);
-          if (! val) {
-            if (PyErr_Occurred()) {
-              Py_DECREF(extern_env);
-              KosMatchSubject_Release(&subj);
-              Py_DECREF(fast);
-              return -1;
-            }
-            PyErr_Format(PyExc_TypeError,
-                         "matcher missing extern binding: %R", name);
-            Py_DECREF(extern_env);
-            KosMatchSubject_Release(&subj);
-            Py_DECREF(fast);
-            return -1;
-          }
-        }
-        Py_INCREF(val);
-        PyTuple_SET_ITEM(extern_env, j, val);
-      }
-    } else if (kwargs && PyDict_GET_SIZE(kwargs) > 0) {
-      PyErr_SetString(PyExc_TypeError,
-                      "matcher takes no extern bindings");
+    if (matcher_extern_env(m, kwargs, &extern_env)) {
       KosMatchSubject_Release(&subj);
       Py_DECREF(fast);
       return -1;
@@ -1886,48 +2053,8 @@ static PyObject *matcher_match_method(
 
   /* Build extern_env tuple aligned to m->externs from kwargs. */
   PyObject *extern_env = NULL;
-  Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
-  if (n_externs > 0) {
-    extern_env = PyTuple_New(n_externs);
-    if (! extern_env)
-      return NULL;
-    for (Py_ssize_t i = 0; i < n_externs; i++) {
-      PyObject *name = PyTuple_GET_ITEM(m->externs, i);
-      PyObject *val = NULL;
-      if (kwargs)
-        val = PyDict_GetItemWithError(kwargs, name);
-      if (! val) {
-        if (PyErr_Occurred()) {
-          Py_DECREF(extern_env);
-          return NULL;
-        }
-        PyObject *defs = KosMatcher_ExternDefaults();
-        if (! defs) {
-          Py_DECREF(extern_env);
-          return NULL;
-        }
-        val = PyDict_GetItemWithError(defs, name);
-        if (! val) {
-          if (PyErr_Occurred()) {
-            Py_DECREF(extern_env);
-            return NULL;
-          }
-          PyErr_Format(PyExc_TypeError,
-                       "matcher missing extern binding: %R", name);
-          Py_DECREF(extern_env);
-          return NULL;
-        }
-      }
-      Py_INCREF(val);
-      PyTuple_SET_ITEM(extern_env, i, val);
-    }
-  } else if (kwargs && PyDict_GET_SIZE(kwargs) > 0) {
-    /* Allow extra kwargs to be silently ignored? Reject for now to
-       catch typos. */
-    PyErr_SetString(PyExc_TypeError,
-                    "matcher takes no extern bindings");
+  if (matcher_extern_env(m, kwargs, &extern_env))
     return NULL;
-  }
 
   KosMatchSubject subj;
   if (subject_from_any(subject, &subj)) {
