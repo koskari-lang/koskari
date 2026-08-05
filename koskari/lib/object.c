@@ -18,8 +18,10 @@
    koskari/lib/object.c
 
    Functional class builder. kos_build_class demand-wraps the
-   slot-backed dunders in the class namespace (Demand for value-returning
-   dunders, Procedure for __init__) and delegates construction to the
+   synchronous dunders in the class namespace (Demand for
+   value-returning dunders, Procedure for __init__, staticmethod(Demand)
+   for __new__, classmethod(Demand) for the class-construction hooks)
+   and delegates construction to the
    winning metaclass -- plain type by default. CPython's own slot
    machinery then dispatches tp_repr, tp_richcompare, and the rest
    through the wrapped, synchronous callables; no custom metaclass is
@@ -40,42 +42,96 @@
 
 
 static PyObject *str_call_name = NULL;
+static PyObject *str_func_name = NULL;
 
 
 /**
-   Slot-backed dunders that cannot tolerate a coroutine escaping into a
-   C protocol. Values under these names that are KosCallables get
-   demand-wrapped at class-build time; __init__ takes the Procedure
-   wrapper so its result is discarded, satisfying slot_tp_init's
-   None-return check. Growing coverage is one row per name.
+   Dunders that cannot tolerate a coroutine escaping into a synchronous
+   Python protocol, grouped by the wrapper each needs. Values under
+   these names that are KosCallables get wrapped at class-build time;
+   growing coverage is one string per list.
+
+   - procedure dunders: run on the demand path with the result
+     discarded (slot_tp_init rejects a non-None return).
+   - static dunders: canonicalized to staticmethod(Demand); type_new
+     staticmethod-wraps these itself but only for exact plain Python
+     functions.
+   - class dunders: canonicalized to classmethod(Demand); same
+     PyFunction-only gate in type_new's auto-classmethod treatment.
+   - demand dunders: every other synchronous object dunder, wrapped in
+     Demand.
 
    Deliberately absent: __call__ (async semantics preserved; the
    evaluator inlines it via the kos_instance_call sentinel) and the
    async protocol dunders (__await__, __aiter__, __anext__, __aenter__,
    __aexit__).
 */
-static const struct {
-  const char *name;
-  int procedure;
-} wrap_specs[] = {
-  {"__init__", 1},
-  {"__repr__", 0},
-  {"__str__", 0},
-  {"__add__", 0},
-  {"__eq__", 0},
-  {"__ne__", 0},
-  {"__lt__", 0},
-  {"__le__", 0},
-  {"__gt__", 0},
-  {"__ge__", 0},
-  {"__len__", 0},
-  {"__bool__", 0},
-  {"__iter__", 0},
+
+
+static const char *procedure_dunders[] = {
+  "__init__",
+  NULL,
 };
 
-#define WRAP_SPEC_COUNT (sizeof(wrap_specs) / sizeof(wrap_specs[0]))
 
-static PyObject *wrap_names[WRAP_SPEC_COUNT];
+static const char *static_dunders[] = {
+  "__new__",
+  NULL,
+};
+
+
+static const char *class_dunders[] = {
+  "__init_subclass__",
+  "__class_getitem__",
+  "__subclasshook__",
+  NULL,
+};
+
+
+static const char *demand_dunders[] = {
+  "__repr__", "__str__", "__format__", "__bytes__",
+  "__hash__", "__bool__",
+  "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__",
+  "__getattr__", "__getattribute__", "__setattr__", "__delattr__",
+  "__dir__",
+  "__get__", "__set__", "__delete__", "__set_name__",
+  "__len__", "__length_hint__",
+  "__getitem__", "__setitem__", "__delitem__", "__missing__",
+  "__iter__", "__next__", "__reversed__", "__contains__",
+  "__add__", "__radd__", "__iadd__",
+  "__sub__", "__rsub__", "__isub__",
+  "__mul__", "__rmul__", "__imul__",
+  "__matmul__", "__rmatmul__", "__imatmul__",
+  "__truediv__", "__rtruediv__", "__itruediv__",
+  "__floordiv__", "__rfloordiv__", "__ifloordiv__",
+  "__mod__", "__rmod__", "__imod__",
+  "__divmod__", "__rdivmod__",
+  "__pow__", "__rpow__", "__ipow__",
+  "__lshift__", "__rlshift__", "__ilshift__",
+  "__rshift__", "__rrshift__", "__irshift__",
+  "__and__", "__rand__", "__iand__",
+  "__xor__", "__rxor__", "__ixor__",
+  "__or__", "__ror__", "__ior__",
+  "__neg__", "__pos__", "__abs__", "__invert__",
+  "__complex__", "__int__", "__float__", "__index__",
+  "__round__", "__trunc__", "__floor__", "__ceil__",
+  "__enter__", "__exit__",
+  "__reduce__", "__reduce_ex__",
+  "__getstate__", "__setstate__",
+  "__getnewargs__", "__getnewargs_ex__",
+  "__copy__", "__deepcopy__", "__sizeof__",
+  "__fspath__", "__del__",
+  "__instancecheck__", "__subclasscheck__",
+  NULL,
+};
+
+
+#define COUNT_OF(arr) (sizeof(arr) / sizeof((arr)[0]))
+
+static PyObject *procedure_names[COUNT_OF(procedure_dunders)];
+static PyObject *static_names[COUNT_OF(static_dunders)];
+static PyObject *class_names[COUNT_OF(class_dunders)];
+static PyObject *demand_names[COUNT_OF(demand_dunders)];
 
 
 /* === Procedure === */
@@ -224,33 +280,30 @@ static PyObject *build_default_namespace(PyObject *namespace) {
 
 
 /**
-   Demand-wrap the listed dunders in place. Only KosCallables are
-   touched; plain Python callables are already synchronous and pass
-   through untouched. Demand and Procedure construction are both
+   Wrap every KosCallable under the listed names in place using wrap
+   (KosDemand_New or KosProcedure_New). Both constructors are
    idempotent, so re-running over an already-wrapped namespace is a
    no-op.
 */
-static int demand_wrap_namespace(PyObject *ns_dict) {
+static int wrap_name_list(
+    PyObject *ns_dict,
+    PyObject **names,
+    PyObject *(*wrap)(PyObject *)) {
 
-  for (size_t i = 0; i < WRAP_SPEC_COUNT; i++) {
-    PyObject *val = PyDict_GetItemWithError(ns_dict, wrap_names[i]);
-    if (! val) {
-      if (PyErr_Occurred())
-        return -1;
+  for (size_t i = 0; names[i]; i++) {
+    PyObject *val = PyDict_GetItem(ns_dict, names[i]);
+    if (! val)
       continue;
-    }
 
     if (! KosCallable_Check(val))
       continue;
 
-    PyObject *wrapped = wrap_specs[i].procedure
-        ? KosProcedure_New(val)
-        : KosDemand_New(val);
+    PyObject *wrapped = wrap(val);
     if (! wrapped)
       return -1;
 
     if (wrapped != val
-        && PyDict_SetItem(ns_dict, wrap_names[i], wrapped) < 0) {
+        && PyDict_SetItem(ns_dict, names[i], wrapped) < 0) {
       Py_DECREF(wrapped);
       return -1;
     }
@@ -258,6 +311,92 @@ static int demand_wrap_namespace(PyObject *ns_dict) {
   }
 
   return 0;
+}
+
+
+/**
+   Canonicalize KosCallables under the listed names to
+   descr_new(Demand(fn)) -- staticmethod(Demand) or classmethod(Demand).
+   type_new performs its own staticmethod/classmethod treatment for
+   these names, but only for exact plain Python functions
+   (PyFunction_Check); a bare KosCallable would otherwise reach the
+   synchronous construction machinery unwrapped. An author-written
+   staticmethod/classmethod is unwrapped through __func__ and rebuilt
+   the same way, so both spellings converge on one canonical form.
+   Already-canonical entries and plain Python callables are untouched.
+*/
+static int canonicalize_name_list(
+    PyObject *ns_dict,
+    PyObject **names,
+    PyTypeObject *descr_type,
+    PyObject *(*descr_new)(PyObject *)) {
+
+  for (size_t i = 0; names[i]; i++) {
+    PyObject *val = PyDict_GetItem(ns_dict, names[i]);
+    if (! val)
+      continue;
+
+    PyObject *inner = val;
+    PyObject *func_ref = NULL;
+    int is_wrapped = (Py_TYPE(val) == descr_type);
+
+    if (is_wrapped) {
+      func_ref = PyObject_GetAttr(val, str_func_name);
+      if (! func_ref)
+        return -1;
+      inner = func_ref;
+    }
+
+    if (! KosCallable_Check(inner)) {
+      Py_XDECREF(func_ref);
+      continue;
+    }
+
+    PyObject *demanded = KosDemand_New(inner);
+    Py_XDECREF(func_ref);
+    if (! demanded)
+      return -1;
+
+    if (is_wrapped && demanded == inner) {
+      /* already descr(Demand(...)): true no-op */
+      Py_DECREF(demanded);
+      continue;
+    }
+
+    PyObject *descr = descr_new(demanded);
+    Py_DECREF(demanded);
+    if (! descr)
+      return -1;
+
+    int r = PyDict_SetItem(ns_dict, names[i], descr);
+    Py_DECREF(descr);
+    if (r < 0)
+      return -1;
+  }
+
+  return 0;
+}
+
+
+/**
+   Apply the four wrap passes to the class namespace in place. Only
+   KosCallables are touched; plain Python callables are already
+   synchronous and pass through untouched. Every pass is idempotent.
+*/
+static int demand_wrap_namespace(PyObject *ns_dict) {
+
+  if (wrap_name_list(ns_dict, procedure_names, KosProcedure_New) < 0)
+    return -1;
+
+  if (wrap_name_list(ns_dict, demand_names, KosDemand_New) < 0)
+    return -1;
+
+  if (canonicalize_name_list(ns_dict, static_names,
+                             &PyStaticMethod_Type, PyStaticMethod_New) < 0)
+    return -1;
+
+  return canonicalize_name_list(ns_dict, class_names,
+                                &PyClassMethod_Type, PyClassMethod_New);
 }
 
 
@@ -471,6 +610,26 @@ PyObject *kos_build_class(
 /* === Unit lifecycle === */
 
 
+static int intern_name_list(const char **specs, PyObject **out) {
+
+  size_t i;
+  for (i = 0; specs[i]; i++) {
+    out[i] = PyUnicode_InternFromString(specs[i]);
+    if (! out[i])
+      return -1;
+  }
+  out[i] = NULL;
+  return 0;
+}
+
+
+static void clear_name_list(PyObject **names) {
+
+  for (size_t i = 0; names[i]; i++)
+    Py_CLEAR(names[i]);
+}
+
+
 int koskari_object_init(PyObject *mod) {
 
   (void) mod;
@@ -479,11 +638,15 @@ int koskari_object_init(PyObject *mod) {
   if (! str_call_name)
     return -1;
 
-  for (size_t i = 0; i < WRAP_SPEC_COUNT; i++) {
-    wrap_names[i] = PyUnicode_InternFromString(wrap_specs[i].name);
-    if (! wrap_names[i])
-      return -1;
-  }
+  str_func_name = PyUnicode_InternFromString("__func__");
+  if (! str_func_name)
+    return -1;
+
+  if (intern_name_list(procedure_dunders, procedure_names) < 0
+      || intern_name_list(static_dunders, static_names) < 0
+      || intern_name_list(class_dunders, class_names) < 0
+      || intern_name_list(demand_dunders, demand_names) < 0)
+    return -1;
 
   /* Demand must be ready first: koskari_demand_init runs earlier in the
      unit order (see lib.c). */
@@ -497,8 +660,11 @@ int koskari_object_init(PyObject *mod) {
 int koskari_object_clear(PyObject *mod) {
 
   Py_CLEAR(str_call_name);
-  for (size_t i = 0; i < WRAP_SPEC_COUNT; i++)
-    Py_CLEAR(wrap_names[i]);
+  Py_CLEAR(str_func_name);
+  clear_name_list(procedure_names);
+  clear_name_list(static_names);
+  clear_name_list(class_names);
+  clear_name_list(demand_names);
   (void) mod;
   return 0;
 }

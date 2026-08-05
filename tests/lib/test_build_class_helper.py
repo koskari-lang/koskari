@@ -137,6 +137,80 @@ class TestBuildClassDemandWrap(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(obj, cls)
 
 
+    async def test_koskari_new_demand_wrapped(self):
+        """
+        Koskari __new__: canonicalized to staticmethod(Demand), so C()
+        runs it synchronously with cls as the first positional. The
+        sentinel return (not an instance of C) comes back directly,
+        proving no coroutine escaped tp_new
+        """
+
+        code = build_code(
+            [
+                ['CONST', 7],
+                ['RETURN', 1],
+            ],
+            local_syms=('cls',),
+            name='__new__',
+        )
+        _, ns = build_expr(
+            [['CONST', 0], ['RETURN', 1]],
+            local_syms=('cls',),
+        )
+        new = make_callable(code, ns, FormalsSpec(('cls',)))
+
+        cls = build_class("WithNew", (), {'__new__': new})
+        self.assertEqual(7, cls())
+
+
+    async def test_koskari_staticmethod_new_demand_wrapped(self):
+        """
+        Author-written staticmethod over a Koskari __new__ converges on
+        the same canonical form and behaves identically
+        """
+
+        code = build_code(
+            [
+                ['CONST', 9],
+                ['RETURN', 1],
+            ],
+            local_syms=('cls',),
+            name='__new__',
+        )
+        _, ns = build_expr(
+            [['CONST', 0], ['RETURN', 1]],
+            local_syms=('cls',),
+        )
+        new = make_callable(code, ns, FormalsSpec(('cls',)))
+
+        cls = build_class("WithStaticNew", (), {'__new__': staticmethod(new)})
+        self.assertEqual(9, cls())
+
+
+    async def test_koskari_class_getitem_classmethod_wrapped(self):
+        """
+        Koskari __class_getitem__: canonicalized to classmethod(Demand),
+        so Cls[x] runs it synchronously with cls bound
+        """
+
+        code = build_code(
+            [
+                ['CONST', 3],
+                ['RETURN', 1],
+            ],
+            local_syms=('cls', 'item'),
+            name='__class_getitem__',
+        )
+        _, ns = build_expr(
+            [['CONST', 0], ['RETURN', 1]],
+            local_syms=('cls', 'item'),
+        )
+        cgi = make_callable(code, ns, FormalsSpec(('cls', 'item')))
+
+        cls = build_class("Subscriptable", (), {'__class_getitem__': cgi})
+        self.assertEqual(3, cls[99])
+
+
     async def test_koskari_len_demand_wrapped(self):
         """
         Koskari __len__: len(obj) returns the value synchronously

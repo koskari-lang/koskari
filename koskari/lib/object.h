@@ -25,8 +25,10 @@
 
 
 /**
-   Build a class from a captured namespace. Demand-wraps the slot-backed
-   dunders (Procedure for __init__), resolves the winning metaclass
+   Build a class from a captured namespace. Demand-wraps the synchronous
+   dunders (Procedure for __init__, staticmethod(Demand) for __new__,
+   classmethod(Demand) for __init_subclass__ and friends), resolves the
+   winning metaclass
    (plain type by default), and delegates construction to it. Installs
    the kos_instance_call sentinel when __call__ resolves to a
    KosCallable.
