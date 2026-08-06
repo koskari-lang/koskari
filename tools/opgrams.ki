@@ -63,6 +63,10 @@ define MODULE_GROUPS #{
         "koskari.cli.launch"
         "koskari.cli.repl"
         "koskari.dis"
+        "koskari.help"
+        "koskari.help.layout"
+        "koskari.help.syntax"
+        "koskari.help.tools"
         "koskari.solve")
 
     "life": #(
