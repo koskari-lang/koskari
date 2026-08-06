@@ -24,18 +24,40 @@ import unittest
 
 import pytest
 
-import koskari.help.tools as tools
-from koskari.help import (
-    HelpFormatter,
-    help_into,
-    help_register,
-    help_registry_clear,
-    help_registry_snapshot,
-    help_unregister,
-)
+
+pytestmark = pytest.mark.phase_basics
+
+HelpFormatter = None
+help_into = None
+help_register = None
+help_registry_clear = None
+help_registry_snapshot = None
+help_unregister = None
 
 
-pytestmark = pytest.mark.phase_infra
+def setUpModule():
+    """
+    Import koskari.help at execution time, not collection
+
+    koskari.help is written in Koskari; loading it needs the import
+    hook and the full bootstrap, which earlier phases should not pull
+    in during collection.
+    """
+
+    global HelpFormatter, help_into, help_register, help_registry_clear
+    global help_registry_snapshot, help_unregister
+
+    from koskari.importer import install
+    install()
+
+    from koskari.help import (
+        HelpFormatter,
+        help_into,
+        help_register,
+        help_registry_clear,
+        help_registry_snapshot,
+        help_unregister,
+    )
 
 
 def _plain_help(text):
@@ -47,12 +69,14 @@ class TestHelpRegistry(unittest.TestCase):
 
     def setUp(self):
         # keep a copy to restore
-        self._registry = dict(tools._registry)
+        self._registry = help_registry_snapshot()
 
 
     def tearDown(self):
         # restore the registry
-        tools._registry = self._registry
+        help_registry_clear()
+        for typeobj, handler in self._registry.items():
+            help_register(typeobj, handler)
         self._registry = None
 
 

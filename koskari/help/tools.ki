@@ -1,0 +1,326 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+koskari.help.tools
+
+HelpFormatter, registry dispatch, and kos-help builtins
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import pydoc
+
+import-from ..lib symbol
+
+
+(declare-exports
+  HelpFormatter help_for help_into help_register help_registry_clear
+  help_registry_snapshot help_unregister kos_help kos_help_text
+  kos_help_text_object)
+
+
+define _registry #{}
+
+
+define _HELP_PREFIXES #("compile/" "layout/" "match/")
+
+
+define-class HelpFormatter []:
+  """
+  Mutable help document builder rendered via pydoc.TextDoc
+  """
+
+  define __init__ [self title: None]:
+    set! self.title title
+    set! self._textdoc (pydoc.TextDoc)
+    set! self._paragraphs #[]
+    set! self._lines #[]
+    set! self._raw #[]
+    set! self._children #[]
+
+  @demand
+  define is_empty [self]:
+    """
+    True when this formatter has no text or nested sections with content
+    """
+
+    when (or self._paragraphs self._lines self._raw):
+      (return False)
+    for-each [child self._children]:
+      unless (child.is_empty):
+        (return False)
+    True
+
+  @demand
+  define paragraph [self text]:
+    """
+    Append a prose paragraph in the current section
+    """
+
+    when text:
+      (self._paragraphs.append (str text))
+
+  @demand
+  define item [self text]:
+    """
+    Append an indented line in the current section
+    """
+
+    when text:
+      (self._lines.append (str text))
+
+  @demand
+  define raw [self text]:
+    """
+    Append pre-formatted pydoc text without re-indenting
+    """
+
+    when (None? text):
+      (return None)
+    define stripped ((str text).rstrip)
+    when stripped:
+      (self._raw.append stripped)
+
+  @demand
+  define section [self title]:
+    """
+    Open a section and return a child formatter scoped to it
+    """
+
+    define child (HelpFormatter title: (str title))
+    (self._children.append child)
+    child
+
+  define _render_body [self]:
+    """
+    Assemble section body before TextDoc.section wrapping
+    """
+
+    define parts #[]
+    for-each [chunk self._raw]:
+      (parts.append chunk)
+    for-each [para self._paragraphs]:
+      (parts.append para)
+    when self._lines:
+      (parts.append ("\n".join self._lines))
+    for-each [child self._children]:
+      define rendered (child.render)
+      when rendered:
+        (parts.append (rendered.rstrip "\n"))
+    ("\n\n".join parts)
+
+  @demand
+  define render [self]:
+    """
+    Render this formatter and nested sections to a single string
+    """
+
+    define body (self._render_body)
+    if self.title:
+      if body:
+        (self._textdoc.section self.title body)
+      else:
+        ""
+    elif body:
+      (+ body "\n")
+    else:
+      ""
+
+
+@demand
+define help_for [typeobj]:
+  """
+  Decorator to register a help handler for a type
+  """
+
+  define decorator [handler]:
+    (help_register typeobj handler)
+    handler
+  (demand decorator)
+
+
+@demand
+define help_register [typeobj handler]:
+  """
+  Register a type-specific help renderer
+
+  :param typeobj: type object to match via MRO
+  :param handler: callable ``(obj, formatter) -> None``
+  """
+
+  set! _registry[typeobj] handler
+  None
+
+
+@demand
+define help_unregister [typeobj]:
+  """
+  Remove a type from the help registry if present
+  """
+
+  (_registry.pop typeobj None)
+  None
+
+
+@demand
+define help_registry_clear []:
+  """
+  Clear all help registry entries
+  """
+
+  (_registry.clear)
+
+
+@demand
+define help_registry_snapshot []:
+  """
+  Return a shallow copy of the help registry dict
+  """
+
+  (dict _registry)
+
+
+define _default_help [obj formatter]:
+  """
+  Fallback help via pydoc.TextDoc.document
+  """
+
+  (formatter.raw ((pydoc.TextDoc).document obj))
+
+
+define _help_protocol [obj formatter]:
+  """
+  Invoke __kos_help__ or legacy __help__ on obj
+  """
+
+  for-each [attrname #("__kos_help__" "__help__")]:
+    define meth (getattr obj attrname None)
+    unless (callable? meth):
+      (continue)
+    try:
+      (meth formatter)
+    except [TypeError]:
+      define text (meth)
+      when (and (instance? text str) (text.strip)):
+        (formatter.paragraph (text.strip))
+    (return True)
+  False
+
+
+@demand
+define help_into [formatter obj]:
+  """
+  Render help for obj into formatter using registry, protocol, or default
+
+  :param formatter: HelpFormatter scoped to the current binding section
+  :param obj: value to describe
+  """
+
+  for-each [ty (attr (type obj) __mro__)]:
+    define handler (_registry.get ty)
+    unless (None? handler):
+      (handler obj formatter)
+      (return None)
+  when (_help_protocol obj formatter):
+    (return None)
+  (_default_help obj formatter)
+  None
+
+
+define _help_lookup_keys [name]:
+  """
+  Namespace keys to try for a help subject name
+  """
+
+  define n (str name)
+  when (n.startswith _HELP_PREFIXES):
+    (return #(n))
+  #(n (+ "compile/" n) (+ "layout/" n) (+ "match/" n))
+
+
+define _namespace_get [namespace key]:
+  """
+  Fetch one binding from a namespace mapping
+  """
+
+  when (hasattr? namespace "get"):
+    (return (namespace.get key))
+  try:
+    namespace[key]
+  except [KeyError]:
+    None
+
+
+@demand
+define kos_help_text_object [obj heading: None]:
+  """
+  Collect help text for an object
+  """
+
+  define doc (HelpFormatter)
+  define sec (doc.section (or heading (repr obj)))
+  (help_into sec obj)
+  (doc.render)
+
+
+@demand
+define kos_help_text [name namespace: None heading: None]:
+  """
+  Collect help text for name and related namespace keys
+
+  :param name: subject name (symbol or string)
+  :param namespace: mapping of names to bindings (required)
+  :return: combined help sections, or empty string when nothing found
+  :raises TypeError: when namespace is None
+  """
+
+  define doc (HelpFormatter)
+
+  when (None? namespace):
+    (raise (TypeError "namespace is required"))
+
+  for-each [key (_help_lookup_keys name)]:
+    define val (_namespace_get namespace key)
+    when (None? val):
+      (continue)
+    define sec (doc.section (or heading key))
+    (help_into sec val)
+
+  when (doc.is_empty):
+    (return "")
+  (doc.render)
+
+
+@demand
+define kos_help [element namespace: None]:
+  """
+  Display help for name in namespace via the system pager
+  """
+
+  define units (if (instance? element #(list tuple)) element #[element])
+
+  define col #[]
+  for-each [unit units]:
+    if (instance? unit #(str symbol)):
+      (col.append (kos_help_text unit namespace))
+    else:
+      (col.append (kos_help_text_object unit))
+
+  (pydoc.pager ("\n".join col))
+
+
+; The end.

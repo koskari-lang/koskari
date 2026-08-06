@@ -24,10 +24,27 @@ import unittest
 
 import pytest
 
-from koskari.help import HelpFormatter
+
+pytestmark = pytest.mark.phase_basics
+
+HelpFormatter = None
 
 
-pytestmark = pytest.mark.phase_infra
+def setUpModule():
+    """
+    Import koskari.help at execution time, not collection
+
+    koskari.help is written in Koskari; loading it needs the import
+    hook and the full bootstrap, which earlier phases should not pull
+    in during collection.
+    """
+
+    global HelpFormatter
+
+    from koskari.importer import install
+    install()
+
+    from koskari.help import HelpFormatter
 
 
 def _plain_help(text):
