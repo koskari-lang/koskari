@@ -1,0 +1,57 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+koskari.help.layout
+
+Registry help renderer for koskari.reader.layouts.LayoutHandler
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import-from ..reader.layouts.helpers LayoutHandler
+import-from .tools help_for
+
+
+(declare-exports format_layout_peer help_for_layout_handler)
+
+
+@demand
+define format_layout_peer [peer]:
+  """
+  Render one peer head symbol for help text
+  """
+
+  (str peer)
+
+
+@(help_for LayoutHandler)
+define help_for_layout_handler [obj formatter]:
+  """
+  Fill formatter with LayoutHandler documentation
+  """
+
+  define doc (getattr obj "__doc__" None)
+  when doc:
+    (formatter.paragraph doc)
+
+  when obj.peers:
+    define sec (formatter.section "Peers")
+    for-each [peer obj.peers]:
+      (sec.item (format_layout_peer peer))
+
+
+; The end.

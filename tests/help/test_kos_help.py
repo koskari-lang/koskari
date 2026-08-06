@@ -27,10 +27,28 @@ import pytest
 from koskari.matcher import CALLEDBY, MATCH, VALUE
 from koskari.reader.layouts import layout_if
 from koskari.syntax import special
-from koskari.help import kos_help_text
 
 
-pytestmark = pytest.mark.phase_infra
+pytestmark = pytest.mark.phase_basics
+
+kos_help_text = None
+
+
+def setUpModule():
+    """
+    Import koskari.help at execution time, not collection
+
+    koskari.help is written in Koskari; loading it needs the import
+    hook and the full bootstrap, which earlier phases should not pull
+    in during collection.
+    """
+
+    global kos_help_text
+
+    from koskari.importer import install
+    install()
+
+    from koskari.help import kos_help_text
 
 
 def _plain_help(text):

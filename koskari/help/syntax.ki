@@ -1,0 +1,85 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+koskari.help.syntax
+
+Registry help renderer for koskari.syntax.Syntax
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+
+import-from ..syntax Syntax
+import-from ..lib kos_repr
+import-from .tools help_for
+
+
+(declare-exports format_accept_pattern help_for_syntax)
+
+
+@demand
+define format_accept_pattern [pattern head]:
+  """
+  Render one accepted-arm pattern for help text and SyntaxMatchError
+  """
+
+  import-from ..matcher CALLEDBY MATCH
+
+  unless (instance? pattern MATCH):
+    try:
+      (return (kos_repr pattern))
+    except [Exception]:
+      (return "<unrenderable pattern>")
+
+  define children pattern._children
+
+  when (and children (instance? children[0] CALLEDBY)):
+    define h (or head "(CALLEDBY)")
+    try:
+      define reprs (list-each [c (item-slice children 1)] (kos_repr c))
+      define rest (" ".join reprs)
+      when rest:
+        (return f"({h} {rest})")
+      (return f"({h})")
+    except [Exception]:
+      (return "<unrenderable pattern>")
+
+  try:
+    define reprs (list-each [c children] (kos_repr c))
+    define body (" ".join reprs)
+    f"({body})"
+  except [Exception]:
+    "<unrenderable pattern>"
+
+
+@(help_for Syntax)
+define help_for_syntax [obj formatter]:
+  """
+  Fill formatter with Syntax dispatcher documentation
+  """
+
+  define doc (getattr obj "__doc__" None)
+  when doc:
+    (formatter.paragraph doc)
+
+  when obj.transforms:
+    define acc (formatter.section "Accepts")
+    define head (str obj.name)
+    for-each [transform obj.transforms]:
+      (acc.item (format_accept_pattern transform.pattern head))
+
+
+; The end.

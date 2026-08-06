@@ -120,7 +120,6 @@ def make_bootstrap():
 
     from .. import asyncio as _koskari_asyncio  # noqa: F401
     from .. import exceptions as _koskari_exceptions  # noqa: F401
-    from .. import help as _koskari_help  # noqa: F401
     from .. import syntax as _koskari_syntax  # noqa: F401
     from .. import fences as _koskari_fences  # noqa: F401
     from ..compile import specials as _koskari_compile_specials  # noqa: F401
@@ -282,6 +281,19 @@ def make_bootstrap():
 
     for sym, fn in _BUILTIN_REGISTRY.items():
         _bind(sym, fn)
+
+    # koskari.help is written in Koskari and cannot load while the
+    # bootstrap builtins are still being assembled; this shim defers its
+    # import to the first call.
+    def _kos_help(element, namespace=None):
+        """
+        Display help for name in namespace via the system pager
+        """
+
+        from ..help import kos_help
+        return kos_help(element, namespace)
+
+    _bind('help', _kos_help)
 
     # Python's builtins, exceptions (all subclasses of BaseException)
     import builtins as py_builtins
