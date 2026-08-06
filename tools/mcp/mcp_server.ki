@@ -14,8 +14,10 @@
 """
 Koskari MCP server for the published language corpus
 
-Forwards search and lookup tools to the Hugging Face Dataset Viewer API
-for obriencj/koskari config corpus.
+Serves search and lookup tools over a dataset baked into the image at
+build time: the corpus, docs, and programs parquet views are loaded into
+memory at startup and every query runs against those in-process tables,
+so the running service makes no outbound requests.
 
 :author: Christopher O'Brien  <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -24,15 +26,14 @@ for obriencj/koskari config corpus.
 
 import json
 import logging
+import re
 import sys
 
 import-from argparse ArgumentParser
 import-from os getenv
-import-from os.path basename
+import-from os.path basename join
 
-import httpx
-
-import-from mcp.server.fastmcp FastMCP
+import-from mcp.server MCPServer
 import-from mcp.server.transport_security TransportSecuritySettings
 
 
@@ -43,12 +44,12 @@ define logger (logging.getLogger "koskari.mcp")
     level: (getenv "LOGLEVEL" "WARNING"))
 
 
-define DATASET "koskari/koskari"
-define CONFIG "corpus"
-define DOCS_CONFIG "docs"
-define PROGRAMS_CONFIG "programs"
-define SPLIT "train"
-define BASE_URL "https://datasets-server.huggingface.co"
+;; Baked dataset layout: one parquet per view under the data directory,
+;; each written by tools/corpus/export.py as <view>/train.parquet.
+define DATA_DIR (getenv "KOSKARI_CORPUS_DATA" "/srv/data")
+define CORPUS_VIEW "koskari-corpus"
+define DOCS_VIEW "koskari-docs"
+define PROGRAMS_VIEW "koskari-programs"
 
 define VERIFY_KEYS #(
     "read" "expand" "eval" "error" "invalid")
@@ -104,58 +105,78 @@ the question.
 """
 
 
-define mcp (FastMCP "koskari-corpus" instructions: INSTRUCTIONS)
-define http (httpx.AsyncClient timeout: 30.0)
+define mcp (MCPServer "koskari-corpus" instructions: INSTRUCTIONS)
 
 
-define escape-sql-string [text]:
+;; In-memory tables, each a list of row dicts loaded from parquet at
+;; startup, plus the git ref of the baked snapshot. Query functions take
+;; a table explicitly and stay pure; the tool bodies read these globals.
+;; The dict is mutated in place by load-tables!, never rebound.
+define STATE #{
+    "corpus": #[]
+    "docs": #[]
+    "programs": #[]
+    "git_ref": None}
+
+
+define corpus-table [] (item STATE "corpus")
+define docs-table [] (item STATE "docs")
+define programs-table [] (item STATE "programs")
+
+
+;; === Dataset loading ===
+
+
+define load-parquet [path]:
     """
-    Escape a string for single-quoted SQL filter literals
-    """
+    Read a parquet file into a list of row dicts
 
-    (text.replace "'" "''")
-
-
-define viewer-base-params [config: CONFIG]:
-    """
-    Shared query parameters for every Dataset Viewer request
-    """
-
-    #{"dataset": DATASET
-      "config": config
-      "split": SPLIT}
-
-
-define viewer-get [path extra: #{} config: CONFIG]:
-    """
-    Issue a GET to the Dataset Viewer API and return parsed JSON
-    """
-
-    define params (dict (viewer-base-params config: config))
-    when extra:
-        (params.update extra)
-
-    define url f"{BASE_URL}{path}"
-    define response (http.get url params: params)
-    (response.raise_for_status)
-
-    define data (response.json)
-    define error (data.get "error")
-
-    unless error:
-        return data
-
-    (logger.error "viewer API error on %s: %s" path error)
-    raise (RuntimeError error)
-
-
-define viewer-rows [data]:
-    """
-    Extract row dicts from a /rows, /search, or /filter response
+    pyarrow is imported lazily so that merely importing this module (for
+    tests or --help) does not require it; it is needed only to serve.
     """
 
-    define rows (data.get "rows" #())
-    list-each [entry rows] entry["row"]
+    import-from pyarrow.parquet read_table
+    (.to_pylist (read_table path))
+
+
+define view-path [view]:
+    """
+    Absolute path to a view's train.parquet under the data directory
+    """
+
+    (join DATA_DIR view "train.parquet")
+
+
+define snapshot-git-ref [rows]:
+    """
+    Read the baked snapshot's git ref from the first row, or empty string
+    """
+
+    if rows:
+        (or (.get (item rows 0) "git_ref") "")
+    else:
+        ""
+
+
+define load-tables! []:
+    """
+    Load every baked parquet view into STATE and log the snapshot
+
+    Called once at startup before serving, for every transport mode.
+    """
+
+    set! (item STATE "corpus") (load-parquet (view-path CORPUS_VIEW))
+    set! (item STATE "docs") (load-parquet (view-path DOCS_VIEW))
+    set! (item STATE "programs") (load-parquet (view-path PROGRAMS_VIEW))
+    set! (item STATE "git_ref") (snapshot-git-ref (corpus-table))
+
+    (logger.info
+        "loaded corpus snapshot git_ref=%s (corpus=%i docs=%i programs=%i)"
+        (item STATE "git_ref")
+        (len (corpus-table)) (len (docs-table)) (len (programs-table)))
+
+
+;; === Row shaping ===
 
 
 define compact-example [row]:
@@ -195,14 +216,6 @@ define format-examples [rows]:
     (json.dumps items)
 
 
-;; === Reference material (docs and programs) ===
-
-
-define REFERENCE_FULL_KEYS #("path" "title" "section" "kind" "content")
-define REFERENCE_HIT_KEYS #("path" "title" "summary" "kind")
-define DOC_SEARCH_COLUMNS #("path" "title" "content")
-
-
 define pick-fields [row keys]:
     """
     Build a dict from the named row keys, skipping missing values
@@ -216,92 +229,124 @@ define pick-fields [row keys]:
     out
 
 
-define reference-config-for [path]:
-    """
-    Route a reference path to its Dataset Viewer config
+;; === Reference material (docs and programs) ===
 
-    examples/ paths resolve against the programs config; every other path
-    is a documentation page in the docs config.
+
+define REFERENCE_FULL_KEYS #("path" "title" "section" "kind" "content")
+define REFERENCE_HIT_KEYS #("path" "title" "summary" "kind")
+define DOC_SEARCH_COLUMNS #("path" "title" "content")
+define SEARCH_COLUMNS #("source" "feature" "corpus_id")
+
+
+define table-for-path [path]:
+    """
+    Route a reference path to the table that holds it
+
+    examples/ paths resolve against the programs table; every other path
+    is a documentation page in the docs table.
     """
 
     if (path.startswith "examples/"):
-        PROGRAMS_CONFIG
+        (programs-table)
     else:
-        DOCS_CONFIG
+        (docs-table)
 
 
-define resolve-references [refs]:
+define tables-for-kind [kind]:
     """
-    Resolve corpus reference paths to their doc title and summary
-    """
+    Return the tables a doc search should cover
 
-    unless refs:
-        return #[]
-
-    define clauses:
-        list-each [ref refs] f"\"path\"='{(escape-sql-string ref)}'"
-
-    define joined (" OR ".join clauses)
-    define where f"({joined})"
-    define extra #{"where": where "offset": 0 "length": (len refs)}
-    define rows (viewer-rows (viewer-get "/filter" extra config: DOCS_CONFIG))
-
-    list-each [row rows]:
-        pick-fields row REFERENCE_HIT_KEYS
-
-
-define doc-like-clause [text]:
-    """
-    Build an OR of LIKE predicates over documentation text columns
-    """
-
-    define escaped (escape-sql-string text)
-    define needle f"'%{escaped}%'"
-    define clauses:
-        list-each [column DOC_SEARCH_COLUMNS]:
-            f"\"{column}\" LIKE {needle}"
-
-    define joined (" OR ".join clauses)
-    f"({joined})"
-
-
-define doc-configs-for [kind]:
-    """
-    Return the Dataset Viewer configs a doc search should cover
+    "doc" restricts to documentation pages, "example" to programs; any
+    other value (including None) searches both.
     """
 
     if (== kind "doc"):
-        #[DOCS_CONFIG]
+        #[(docs-table)]
 
     elif (== kind "example"):
-        #[PROGRAMS_CONFIG]
+        #[(programs-table)]
 
     else:
-        #[DOCS_CONFIG PROGRAMS_CONFIG]
+        #[(docs-table) (programs-table)]
 
 
-define search-docs-config [search_text cap config]:
+;; === In-memory query layer ===
+;;
+;; These pure functions replace the former Dataset Viewer fetch layer.
+;; At a few hundred rows a linear scan is sub-millisecond, so no index is
+;; warranted. Each takes its table explicitly and is deterministic, which
+;; keeps them unit-testable without a network or a real parquet file.
+
+
+define tokenize [text]:
     """
-    Search one docs config: full-text first, substring fallback
+    Lowercase and split text into content tokens
 
-    Mirrors search_examples: the full-text index drops language stop words,
-    so an empty result falls back to substring matching.
+    The token class keeps hyphens so hyphenated form names (for-each,
+    error-handling) tokenize as a single unit rather than fragments.
     """
 
-    define rows:
-        (viewer-search-rows "/search"
-            #{"query": search_text}
-            cap
-            config: config)
+    (re.findall "[a-z0-9-]+" (.lower (str (or text ""))))
 
-    unless rows:
-        define clause (doc-like-clause search_text)
-        set! rows (viewer-search-rows "/filter"
-            #{"where": clause}
-            cap
-            config: config)
 
-    rows
+define row-search-text [row columns]:
+    """
+    Concatenate a row's searchable columns into one string
+    """
+
+    (.join " " (list-each [column columns] (str (or (row.get column) ""))))
+
+
+define token-score [query_tokens row_tokens]:
+    """
+    Count how many query tokens appear as whole tokens in the row
+    """
+
+    define score 0
+    for-each [token query_tokens]:
+        when (in? token row_tokens):
+            incr! score 1
+    score
+
+
+define token-search [table query columns cap]:
+    """
+    Rank rows by query-token overlap over the searchable columns
+
+    Content-word matches rank first; rows with no overlap are dropped.
+    Ties keep table order, since sorted is stable. Returns up to cap rows.
+    """
+
+    define query_tokens (tokenize query)
+    unless query_tokens:
+        return #[]
+
+    define scored #[]
+    for-each [row table]:
+        define score (token-score query_tokens (tokenize (row-search-text row columns)))
+        when (> score 0):
+            (scored.append #(score row))
+
+    define ranked (sorted scored key: { (- (item %1 0)) })
+    (list-each [pair (item-slice ranked 0 cap)] (item pair 1))
+
+
+define substring-search [table query columns cap]:
+    """
+    Keep rows where the query is a substring of the searchable columns
+
+    Covers language keywords a token match would treat as noise and the
+    stop-word-only queries the former full-text index dropped (while,
+    for-each, if, and, or, not). Returns up to cap rows in table order.
+    """
+
+    define needle (query.lower)
+    define out #[]
+    for-each [row table]:
+        define hay (.lower (row-search-text row columns))
+        when (in? needle hay):
+            (out.append row)
+    (item-slice out 0 cap)
 
 
 define feature-matches? [row feature]:
@@ -316,18 +361,6 @@ define feature-matches? [row feature]:
         (== value feature)
 
 
-define feature-where-clause [feature]:
-    """
-    Build a Dataset Viewer filter predicate for feature
-    """
-
-    define escaped (escape-sql-string feature)
-    if (feature.endswith "/"):
-        f"\"feature\" LIKE '{escaped}%'"
-    else:
-        f"\"feature\"='{escaped}'"
-
-
 define filter-rows-by-feature [rows feature]:
     """
     Keep rows whose feature column matches the filter
@@ -338,61 +371,76 @@ define filter-rows-by-feature [rows feature]:
         row)
 
 
-define SEARCH_COLUMNS #("source" "feature" "corpus_id")
-
-
-define search-like-clause [text]:
+define feature-search [feature_path cap]:
     """
-    Build an OR of LIKE predicates matching text as a substring across the
-    searchable text columns
+    Rows for a feature filter over the corpus table
     """
 
-    define escaped (escape-sql-string text)
-    define needle f"'%{escaped}%'"
-    define clauses:
-        list-each [column SEARCH_COLUMNS]:
-            f"\"{column}\" LIKE {needle}"
-    define joined (" OR ".join clauses)
-    f"({joined})"
-
-
-define viewer-search-rows [path extra cap config: CONFIG]:
-    """
-    Issue a Dataset Viewer query with paging bounds and return its rows
-    """
-
-    set! extra["offset"] 0
-    set! extra["length"] cap
-    viewer-rows (viewer-get path extra config: config)
+    (item-slice (filter-rows-by-feature (corpus-table) feature_path) 0 cap)
 
 
 define fts-search [search_text cap]:
     """
-    Full-text search rows via the Dataset Viewer /search endpoint
+    Token-ranked corpus search over the code-bearing columns
     """
 
-    viewer-search-rows "/search" #{"query": search_text} cap
+    (token-search (corpus-table) search_text SEARCH_COLUMNS cap)
 
 
 define like-search [search_text feature_path cap]:
     """
-    Substring search rows via /filter, covering language keywords the
-    full-text index drops as stop words (while, for, each, if, and, or, not)
+    Substring corpus search, optionally narrowed to a feature
+
+    Covers language keywords the token search drops as noise (while,
+    for-each, if, and, or, not).
     """
 
-    define clause (search-like-clause search_text)
-    when feature_path:
-        set! clause f"{clause} AND {(feature-where-clause feature_path)}"
-    viewer-search-rows "/filter" #{"where": clause} cap
+    define rows (substring-search (corpus-table) search_text SEARCH_COLUMNS cap)
+    if feature_path:
+        (filter-rows-by-feature rows feature_path)
+    else:
+        rows
 
 
-define feature-search [feature_path cap]:
+define search-docs-table [search_text cap table]:
     """
-    Fetch rows for a feature filter via the /filter endpoint
+    Search one docs/programs table: token-ranked first, substring fallback
+
+    Mirrors search_examples: a token miss falls back to substring so short
+    keyword queries still resolve.
     """
 
-    define where (feature-where-clause feature_path)
-    (viewer-search-rows "/filter" #{"where": where} cap)
+    define rows (token-search table search_text DOC_SEARCH_COLUMNS cap)
+    unless rows:
+        set! rows (substring-search table search_text DOC_SEARCH_COLUMNS cap)
+    rows
+
+
+define first-by-field [table field value]:
+    """
+    Return the first row whose field equals value, or None
+    """
+
+    for-each [row table]:
+        when (== (row.get field) value):
+            return row
+    None
+
+
+define resolve-references [refs]:
+    """
+    Resolve corpus reference paths to their doc title and summary
+    """
+
+    unless refs:
+        return #[]
+
+    define out #[]
+    for-each [ref refs]:
+        define row (first-by-field (docs-table) "path" ref)
+        when row:
+            (out.append (pick-fields row REFERENCE_HIT_KEYS))
+    out
 
 
 define row-invalid? [row]:
@@ -411,7 +459,7 @@ define demote-invalid [rows]:
     It stays in the results — searching for it directly is useful — but
     must never outrank a valid example, so a bare form-name query returns
     the canonical usage first rather than a copy-paste footgun. Relative
-    order within each group is the search engine's own ranking, preserved.
+    order within each group is the search ranking, preserved.
     """
 
     define valid #[]
@@ -445,6 +493,9 @@ define filter-by-polarity [rows polarity]:
             rows
 
 
+;; === Tools ===
+
+
 @(mcp.tool)
 @coroutine-fn
 define search_examples [
@@ -455,9 +506,9 @@ define search_examples [
     """
     Search verified Koskari corpus examples by text and optional feature
 
-    Text search ranks content words through the full-text index, then
-    falls back to substring matching so language keywords the index treats
-    as stop words (while, for-each, if, and, or, not) still resolve.
+    Text search ranks content words by token overlap, then falls back to
+    substring matching so language keywords the token search drops as
+    noise (while, for-each, if, and, or, not) still resolve.
 
     polarity narrows by validity: "valid" returns only canonical usage,
     "invalid" returns only wrong-usage (how-not-to) records; omit it for
@@ -503,19 +554,11 @@ define get_example [corpus_id]:
     Fetch one corpus record by corpus_id
     """
 
-    define escaped (escape-sql-string corpus_id)
-    define where f"\"corpus_id\"='{escaped}'"
-    define extra #{
-        "where": where
-        "offset": 0
-        "length": 1
-    }
-    define data (viewer-get "/filter" extra)
-    define rows (viewer-rows data)
-    unless rows:
+    define row (first-by-field (corpus-table) "corpus_id" corpus_id)
+    unless row:
         return f"No corpus example with corpus_id={(repr corpus_id)}."
 
-    define example (compact-example rows[0])
+    define example (compact-example row)
     define refs (example.get "references")
     when refs:
         set! example["references_resolved"] (resolve-references refs)
@@ -534,20 +577,11 @@ define get_reference [path]:
     examples/. Returns the full raw content.
     """
 
-    define config (reference-config-for path)
-    define escaped (escape-sql-string path)
-    define where f"\"path\"='{escaped}'"
-    define extra #{
-        "where": where
-        "offset": 0
-        "length": 1
-    }
-    define data (viewer-get "/filter" extra config: config)
-    define rows (viewer-rows data)
-    unless rows:
+    define row (first-by-field (table-for-path path) "path" path)
+    unless row:
         return f"No reference material with path={(repr path)}."
 
-    json.dumps (pick-fields rows[0] REFERENCE_FULL_KEYS)
+    (json.dumps (pick-fields row REFERENCE_FULL_KEYS))
 
 
 @(mcp.tool)
@@ -566,8 +600,8 @@ define search_docs [
 
     define cap (min (int limit) 100)
     define hits #[]
-    for-each [config (doc-configs-for kind)]:
-        define rows (search-docs-config search_text cap config)
+    for-each [table (tables-for-kind kind)]:
+        define rows (search-docs-table search_text cap table)
         for-each [row rows]:
             (hits.append (pick-fields row REFERENCE_HIT_KEYS))
 
@@ -586,31 +620,11 @@ define list_features []:
     """
 
     define seen #{}
-    define offset 0
-    while True:
-        define extra #{
-            "offset": offset
-            "length": 100
-        }
-
-        define page (viewer-get "/rows" extra)
-        define rows (viewer-rows page)
-        unless rows:
-            (break)
-
-        for-each [row rows]:
-            define feature (row.get "feature" "")
-            when feature:
-                define count (seen.get feature 0)
-                set! seen[feature] (+ count 1)
-
-        incr! offset (len rows)
-
-        when page["partial"]:
-            (break)
-
-        when (< (len rows) 100):
-            (break)
+    for-each [row (corpus-table)]:
+        define feature (row.get "feature" "")
+        when feature:
+            define count (seen.get feature 0)
+            set! (item seen feature) (+ count 1)
 
     unless seen:
         return "No features found."
@@ -646,37 +660,17 @@ define list_tags []:
     """
     List corpus tags with occurrence counts, grouped by facet
 
-    Tags are full-text searchable, so these are the words search_examples
-    matches and the goal vocabulary to pair with polarity. Output splits
-    the closed intent (goal-based) vocabulary from structural tags (form
+    Tags are searchable, so these are the words search_examples matches
+    and the goal vocabulary to pair with polarity. Output splits the
+    closed intent (goal-based) vocabulary from structural tags (form
     names, categories, surface markers); each group is sorted by count.
     """
 
     define seen #{}
-    define offset 0
-    while True:
-        define extra #{
-            "offset": offset
-            "length": 100
-        }
-
-        define page (viewer-get "/rows" extra)
-        define rows (viewer-rows page)
-        unless rows:
-            (break)
-
-        for-each [row rows]:
-            for-each [tag (or (row.get "tags") #())]:
-                define count (seen.get tag 0)
-                set! seen[tag] (+ count 1)
-
-        incr! offset (len rows)
-
-        when page["partial"]:
-            (break)
-
-        when (< (len rows) 100):
-            (break)
+    for-each [row (corpus-table)]:
+        for-each [tag (or (row.get "tags") #())]:
+            define count (seen.get tag 0)
+            set! (item seen tag) (+ count 1)
 
     unless seen:
         return "No tags found."
@@ -703,14 +697,34 @@ define list_tags []:
     "\n".join lines
 
 
+@(mcp.tool)
+@coroutine-fn
+define corpus_version []:
+    """
+    Report the baked snapshot's git ref and per-view row counts
+
+    Since the dataset is fixed at build time, this identifies exactly
+    which snapshot a running deployment is serving.
+    """
+
+    (json.dumps #{
+        "git_ref": (item STATE "git_ref")
+        "corpus": (len (corpus-table))
+        "docs": (len (docs-table))
+        "programs": (len (programs-table))})
+
+
 define main [argv: None]:
     """
     Run the MCP server.
 
-    With no arguments, relay over stdio -- the default, suited to a
-    per-session client subprocess. With ``--serve``, serve over
-    streamable HTTP bound to all interfaces, for running as a
-    shared, long-lived service behind a reverse proxy.
+    Loads the baked dataset into memory, then serves in one of three
+    mutually exclusive modes. With no flag, relay over stdio -- the
+    default, suited to a per-session client subprocess. With ``--serve``,
+    serve over streamable HTTP bound to all interfaces, for a shared,
+    long-lived service behind a reverse proxy. With ``--lambda``, serve
+    stateless streamable HTTP on the loopback port the AWS Lambda Web
+    Adapter proxies to. ``--serve`` and ``--lambda`` cannot be combined.
     """
 
     when (None? argv):
@@ -719,9 +733,13 @@ define main [argv: None]:
     define-values [name *: args] argv
 
     define parser (ArgumentParser (basename name))
-    (parser.add_argument "--serve"
+    define mode (parser.add_mutually_exclusive_group)
+    (mode.add_argument "--serve"
         action: "store_true" default: False
         help: "serve over streamable HTTP (default: stdio only)")
+    (mode.add_argument "--lambda"
+        dest: "lambda_mode" action: "store_true" default: False
+        help: "serve stateless streamable HTTP behind the AWS Lambda Web Adapter")
     (parser.add_argument "--host"
         type: str default: "0.0.0.0"
         help: "host when using --serve (default: 0.0.0.0)")
@@ -732,6 +750,21 @@ define main [argv: None]:
         action: "append" default: #[]
         help: "hostname protection for --serve (default: localhost only)")
     define options (parser.parse_args args)
+
+    (load-tables!)
+
+    ; Lambda mode: stateless JSON on the loopback port the Lambda Web
+    ; Adapter proxies to. Session state must not live in-process, since
+    ; consecutive requests from one client can land on different Lambda
+    ; execution environments; host protection is enforced at the gateway.
+    when options.lambda_mode:
+        define port (int (getenv "PORT" "8080"))
+        (logger.info "serving koskari-corpus for lambda on 127.0.0.1:%i" port)
+        return (mcp.run_streamable_http_async
+            host: "127.0.0.1"
+            port: port
+            stateless_http: True
+            json_response: True)
 
     ; stdio mode, MCP running in an agent-managed subprocess
     unless options.serve:
@@ -745,19 +778,20 @@ define main [argv: None]:
     ; "localhost" and "127.0.0.1" by default. This needs to be overridden
     ; for the MCP to be accessible from other hosts (eg. proxied and made
     ; publicly accessible).
+    define security None
     when allowed:
-        set! mcp.settings.transport_security:
+        set! security:
             (TransportSecuritySettings
                 allowed_hosts: allowed
                 allowed_origins: (list-each [h allowed] f"https://{h}"))
 
-    set! mcp.settings.host options.host
-    set! mcp.settings.port options.port
-
     (logger.info "serving koskari-corpus over http on %s:%i"
         options.host options.port)
 
-    (mcp.run_streamable_http_async)
+    (mcp.run_streamable_http_async
+        host: options.host
+        port: options.port
+        transport_security: security)
 
 
 when-main:

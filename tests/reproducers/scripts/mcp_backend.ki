@@ -1,0 +1,73 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+Driver for tests/reproducers/test_mcp_backend.py
+
+Loads the MCP server's baked in-memory backend from parquet staged by the
+test into KOSKARI_CORPUS_DATA, then exercises every tool and emits tagged
+JSON lines the test asserts against.
+"""
+
+import-from mcp_server load-tables! search_examples get_example search_docs get_reference list_features list_tags corpus_version
+import json
+
+
+define ids [result]:
+    (list-each [entry (json.loads result)] (item entry "corpus_id"))
+
+
+define paths [result]:
+    (list-each [entry (json.loads result)] (item entry "path"))
+
+
+define emit [tag value]:
+    (print f"[[{tag}]] {(json.dumps value)}")
+
+
+(load-tables!)
+
+(emit "version" (json.loads (corpus_version)))
+
+; token ranking: a content word matches exactly one row
+(emit "map" (ids (search_examples "map" limit: 10)))
+
+; "while" is a whole token in two rows; the invalid one must sort last
+(emit "while" (ids (search_examples "while" limit: 10)))
+(emit "while_valid" (ids (search_examples "while" polarity: "valid" limit: 10)))
+(emit "while_invalid" (ids (search_examples "while" polarity: "invalid" limit: 10)))
+
+; "each" is not a whole token anywhere; only the substring fallback finds it
+(emit "each_fallback" (ids (search_examples "each" limit: 10)))
+
+; feature selector on its own, no search text
+(emit "feature_loops" (ids (search_examples "" feature_path: "loops/" limit: 10)))
+
+; get_example resolves reference paths against the docs table
+(emit "get_refs" (item (json.loads (get_example "ex-while")) "references_resolved"))
+
+; doc vs program routing
+(emit "docs_loops" (paths (search_docs "loops" kind: "doc" limit: 10)))
+(emit "prog_greet" (paths (search_docs "greetings" kind: "example" limit: 10)))
+(emit "ref_prog" (json.loads (get_reference "examples/hello.ki")))
+
+; overview tools
+(emit "features" (list_features))
+(emit "tags" (list_tags))
+
+; miss messages
+(emit "miss_id" (get_example "nope"))
+(emit "miss_search" (search_examples "zzznomatch" limit: 5))
+
+
+; The end.

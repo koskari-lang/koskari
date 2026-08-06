@@ -355,10 +355,23 @@ corpus-parquet-container:  ## Run corpus export in the tools container; writes t
 ##@ MCP
 
 MCP_IMAGE := koskari-mcp
+MCP_DATA := tools/mcp/data
+MCP_ARCH := $(shell uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')
 
-build-mcp:  ## Build koskari MCP server container (requires koskari:local)
+mcp-data: corpus-parquet-all  ## Stage baked corpus parquet into the MCP build context
+	@echo "Staging corpus parquet into $(MCP_DATA)..."
+	@rm -rf $(MCP_DATA)
+	@mkdir -p $(MCP_DATA)
+	@cp -R $(BUILD_DIR)/corpus/datasets/. $(MCP_DATA)/
+
+build-mcp: mcp-data  ## Build koskari MCP server container (requires koskari:local)
 	@echo "Building MCP server container image $(MCP_IMAGE)..."
 	@$(CONTAINER_ENGINE) build -q -t $(MCP_IMAGE):local -f tools/mcp/Containerfile tools/mcp/
+
+build-mcp-lambda: mcp-data  ## Build the Lambda image (set MCP_ARCH=arm64 for AWS arm64)
+	@echo "Building Lambda MCP image $(MCP_IMAGE):lambda for $(MCP_ARCH)..."
+	@$(CONTAINER_ENGINE) build -q --arch $(MCP_ARCH) \
+	  -t $(MCP_IMAGE):lambda -f tools/mcp/Containerfile.lambda tools/mcp/
 
 build-mcp-container: build-container build-mcp  ## Build koskari:local then the MCP server container
 
@@ -522,7 +535,9 @@ python:  ## Show Python executable
 	handlers \
 	help \
 	icons \
+	mcp-data \
 	build-mcp \
+	build-mcp-lambda \
 	build-mcp-container \
 	run-mcp \
 	install \

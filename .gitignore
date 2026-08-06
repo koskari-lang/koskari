@@ -83,4 +83,7 @@ tmp/
 trace.json
 worktrees/
 
+# Baked MCP dataset staged into the build context (see make mcp-data)
+tools/mcp/data/
+
 # The end.

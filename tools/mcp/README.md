@@ -4,19 +4,21 @@ Maintainer tooling that exposes verified Koskari corpus examples and
 documentation to MCP clients (Cursor, Claude Desktop, VS Code, and similar)
 via a stdio server implemented in Koskari (`mcp_server.ki`).
 
-The server forwards tool calls to the Hugging Face
-[Dataset Viewer API](https://huggingface.co/docs/dataset-viewer/index) for the
-published dataset [obriencj/koskari](https://huggingface.co/datasets/obriencj/koskari)
-(configs `corpus`, `docs`, and `programs`). It does not download or cache the
-dataset locally.
+The corpus, docs, and programs parquet views are baked into the image at build
+time and loaded into memory at startup, so every query runs against those
+in-process tables and the server makes no outbound requests. The served
+snapshot is identified by its git ref (see the `corpus_version` tool). The
+underlying views are the same ones published to
+[obriencj/koskari](https://huggingface.co/datasets/obriencj/koskari) (configs
+`corpus`, `docs`, and `programs`); the dataset is now a downstream artifact, no
+longer on the request path.
 
-Design record: [design/corpus-mcp-server.md](../../design/archive/corpus-mcp-server.md).
+Design record: [design/mcp-baked-in-lambda.md](../../design/mcp-baked-in-lambda.md).
 
 ## Prerequisites
 
 - `koskari:local` container image (`make build-container`)
-- Published, public `obriencj/koskari` dataset indexed by the Viewer API
-- Outbound HTTPS from the container to `datasets-server.huggingface.co`
+- `tox` (to export the corpus parquet views during the build)
 
 ## Build
 
@@ -24,7 +26,10 @@ Design record: [design/corpus-mcp-server.md](../../design/archive/corpus-mcp-ser
 make build-mcp
 ```
 
-This depends on `build-container` and tags the image `koskari-mcp:local`.
+This stages the corpus parquet views into `tools/mcp/data/` (via `make
+mcp-data`, which runs the `regen-corpus` export), then builds and tags the
+image `koskari-mcp:local` on top of `koskari:local`. Rebuild whenever the
+corpus records change to pick up a fresh snapshot.
 
 ## Run
 
@@ -40,6 +45,24 @@ make run-mcp
 
 **Important:** use `-i` so stdin stays open for MCP JSON-RPC. Do **not** pass
 `-t`; a TTY corrupts the protocol stream.
+
+## Serving modes
+
+The same `mcp_server.ki` serves three mutually exclusive transports:
+
+| Mode | Invocation | Use |
+|------|------------|-----|
+| stdio (default) | `mcp_server.ki` | local MCP clients as a subprocess |
+| `--serve` | `mcp_server.ki -- --serve` | self-hosted HTTP behind a reverse proxy |
+| `--lambda` | `mcp_server.ki -- --lambda` | stateless HTTP behind the AWS Lambda Web Adapter |
+
+`--lambda` serves stateless JSON on the loopback `PORT` (default 8080) the
+adapter proxies to; `--serve` and `--lambda` cannot be combined. The `--`
+separates koskari launcher options from script arguments.
+
+For AWS, `make build-mcp-lambda` builds the Lambda image
+(`Containerfile.lambda`, with the Lambda Web Adapter baked in); deploy it with
+the SAM stack and workflow under [deploy/](deploy/README.md).
 
 ## MCP client configuration
 
@@ -67,6 +90,7 @@ needed):
 | `get_example` | Fetch one corpus record by `corpus_id` |
 | `list_features` | List distinct `feature` paths with counts |
 | `list_tags` | List searchable tags with counts, grouped into the intent (goal-based) vocabulary and structural tags |
+| `corpus_version` | Report the baked snapshot's git ref and per-view row counts |
 
 Tool results are JSON text including `corpus_id`, `feature`, `source`, verify
 stage columns when present, and `references`.
@@ -87,8 +111,11 @@ report that as a CLI/bootstrap issue.
 
 | File | Role |
 |------|------|
-| `mcp_server.ki` | Koskari MCP server (FastMCP + httpx) |
+| `mcp_server.ki` | Koskari MCP server (FastMCP over the baked, in-memory dataset) |
+| `Containerfile` | stdio image on `koskari:local` with `mcp` and `pyarrow`, baking `data/` |
+| `Containerfile.lambda` | Lambda image: same, plus the AWS Lambda Web Adapter |
+| `data/` | Corpus parquet views staged by `make mcp-data`; build output, gitignored |
+| `deploy/` | AWS SAM stack and notes for serving on Lambda |
 
 The server source must not be named `mcp.ki`: Koskari derives the module
 name from the filename, which would shadow Python's `mcp` package on import.
-| `Containerfile` | Child image on `koskari:local` with `mcp` and `httpx` |

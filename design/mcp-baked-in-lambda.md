@@ -10,7 +10,10 @@ This supersedes Track B ("thin shim over the Dataset Viewer API") of
 container for local MCP clients is retained; the HF-relay data backend is
 removed.
 
-**Status:** Designed, not implemented.
+**Status:** Parts 1-3 and 5 implemented (baked backend, `--lambda` mode,
+Lambda image, and the SAM stack + deploy workflow). Part 4 -- the one-time
+AWS bring-up -- remains, and is a manual, credentialed step; see
+[../tools/mcp/deploy/README.md](../tools/mcp/deploy/README.md).
 
 ---
 
