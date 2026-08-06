@@ -33,7 +33,7 @@ import-from argparse ArgumentParser
 import-from os getenv
 import-from os.path basename join
 
-import-from mcp.server.fastmcp FastMCP
+import-from mcp.server MCPServer
 import-from mcp.server.transport_security TransportSecuritySettings
 
 
@@ -105,7 +105,7 @@ the question.
 """
 
 
-define mcp (FastMCP "koskari-corpus" instructions: INSTRUCTIONS)
+define mcp (MCPServer "koskari-corpus" instructions: INSTRUCTIONS)
 
 
 ;; In-memory tables, each a list of row dicts loaded from parquet at
@@ -113,10 +113,10 @@ define mcp (FastMCP "koskari-corpus" instructions: INSTRUCTIONS)
 ;; a table explicitly and stay pure; the tool bodies read these globals.
 ;; The dict is mutated in place by load-tables!, never rebound.
 define STATE #{
-    corpus: #[]
-    docs: #[]
-    programs: #[]
-    git_ref: None}
+    "corpus": #[]
+    "docs": #[]
+    "programs": #[]
+    "git_ref": None}
 
 
 define corpus-table [] (item STATE "corpus")
@@ -708,10 +708,10 @@ define corpus_version []:
     """
 
     (json.dumps #{
-        git_ref: (item STATE "git_ref")
-        corpus: (len (corpus-table))
-        docs: (len (docs-table))
-        programs: (len (programs-table))})
+        "git_ref": (item STATE "git_ref")
+        "corpus": (len (corpus-table))
+        "docs": (len (docs-table))
+        "programs": (len (programs-table))})
 
 
 define main [argv: None]:
@@ -758,13 +758,13 @@ define main [argv: None]:
     ; consecutive requests from one client can land on different Lambda
     ; execution environments; host protection is enforced at the gateway.
     when options.lambda_mode:
-        set! mcp.settings.stateless_http True
-        set! mcp.settings.json_response True
-        set! mcp.settings.host "127.0.0.1"
-        set! mcp.settings.port (int (getenv "PORT" "8080"))
-        (logger.info "serving koskari-corpus for lambda on 127.0.0.1:%i"
-            mcp.settings.port)
-        return (mcp.run_streamable_http_async)
+        define port (int (getenv "PORT" "8080"))
+        (logger.info "serving koskari-corpus for lambda on 127.0.0.1:%i" port)
+        return (mcp.run_streamable_http_async
+            host: "127.0.0.1"
+            port: port
+            stateless_http: True
+            json_response: True)
 
     ; stdio mode, MCP running in an agent-managed subprocess
     unless options.serve:
@@ -778,19 +778,20 @@ define main [argv: None]:
     ; "localhost" and "127.0.0.1" by default. This needs to be overridden
     ; for the MCP to be accessible from other hosts (eg. proxied and made
     ; publicly accessible).
+    define security None
     when allowed:
-        set! mcp.settings.transport_security:
+        set! security:
             (TransportSecuritySettings
                 allowed_hosts: allowed
                 allowed_origins: (list-each [h allowed] f"https://{h}"))
 
-    set! mcp.settings.host options.host
-    set! mcp.settings.port options.port
-
     (logger.info "serving koskari-corpus over http on %s:%i"
         options.host options.port)
 
-    (mcp.run_streamable_http_async)
+    (mcp.run_streamable_http_async
+        host: options.host
+        port: options.port
+        transport_security: security)
 
 
 when-main:

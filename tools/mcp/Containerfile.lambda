@@ -27,7 +27,7 @@ COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 \
 
 RUN pip install --no-cache-dir --disable-pip-version-check \
     --root-user-action=ignore \
-    mcp pyarrow
+    'mcp>=2' pyarrow
 
 WORKDIR /srv
 COPY mcp_server.ki ./mcp_server.ki
