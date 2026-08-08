@@ -517,6 +517,34 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns.name, "<module>")
 
 
+    async def test_len_empty(self):
+        """Empty ModuleNamespace has len 0 and is falsey"""
+        ns = ModuleNamespace("ns", {})
+        self.assertEqual(len(ns), 0)
+        self.assertFalse(ns)
+
+
+    async def test_len_after_store(self):
+        """len and truthiness track binds after store"""
+        ns = ModuleNamespace("ns", {})
+        ns.store('a', 1)
+        ns.store('b', 2)
+        self.assertEqual(len(ns), 2)
+        self.assertTrue(ns)
+
+
+    async def test_len_builtins_not_counted(self):
+        """Builtins alone do not contribute to len until materialized"""
+        ns = ModuleNamespace("ns", {'x': 1})
+        self.assertEqual(len(ns), 0)
+        self.assertFalse(ns)
+        self.assertEqual(list(ns.keys()), [])
+
+        ns.deref('x')
+        self.assertEqual(len(ns), 1)
+        self.assertTrue(ns)
+
+
 class TestCollectorNamespace(unittest.IsolatedAsyncioTestCase):
     """Tests for the CollectorNamespace type"""
 

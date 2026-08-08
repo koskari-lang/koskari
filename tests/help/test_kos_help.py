@@ -73,27 +73,31 @@ def _make_foo_syntax():
     return handler
 
 
-class TestKosHelp(unittest.TestCase):
+class TestKosHelp(unittest.IsolatedAsyncioTestCase):
+    """
+    kos_help_text is a plain Koskari definition, so Python callers have
+    to await it.
+    """
 
 
-    def test_kos_help_finds_compile_prefixed_binding(self):
+    async def test_kos_help_finds_compile_prefixed_binding(self):
         syn = _make_foo_syntax()
         ns = {'compile/foo': syn}
-        text = _plain_help(kos_help_text('foo', ns))
+        text = _plain_help(await kos_help_text('foo', ns))
         self.assertIn('compile/foo', text)
         self.assertIn('Doc line for compile/foo', text)
 
 
-    def test_kos_help_uses_syntax_help(self):
+    async def test_kos_help_uses_syntax_help(self):
         syn = _make_foo_syntax()
         ns = {'compile/foo': syn}
-        text = _plain_help(kos_help_text('foo', ns))
+        text = _plain_help(await kos_help_text('foo', ns))
         self.assertIn('Accepts', text)
         self.assertIn('compile/foo', text)
         self.assertIn('VALUE', text)
 
 
-    def test_kos_help_pydoc_fallback_for_python_binding(self):
+    async def test_kos_help_pydoc_fallback_for_python_binding(self):
         def py_fn():
             """
             Python fallback doc line
@@ -101,20 +105,20 @@ class TestKosHelp(unittest.TestCase):
             pass
 
         ns = {'my-fn': py_fn}
-        text = _plain_help(kos_help_text('my-fn', ns))
+        text = _plain_help(await kos_help_text('my-fn', ns))
         self.assertIn('my-fn', text)
         self.assertIn('Python fallback doc line', text)
         self.assertIn('py_fn', text)
 
 
-    def test_special_steals_doc(self):
+    async def test_special_steals_doc(self):
         syn = _make_foo_syntax()
         self.assertIn('Doc line for compile/foo', syn.__doc__)
 
 
-    def test_kos_help_uses_layout_handler_help(self):
+    async def test_kos_help_uses_layout_handler_help(self):
         ns = {'layout/if': layout_if}
-        text = _plain_help(kos_help_text('if', ns))
+        text = _plain_help(await kos_help_text('if', ns))
         self.assertIn('layout/if', text)
         self.assertIn('Lower if/elif/else block sources', text)
         self.assertIn('Peers', text)
@@ -122,7 +126,7 @@ class TestKosHelp(unittest.TestCase):
         self.assertIn('else', text)
 
 
-    def test_layout_steals_doc(self):
+    async def test_layout_steals_doc(self):
         self.assertIn('Lower if/elif/else block sources', layout_if.__doc__)
 
 

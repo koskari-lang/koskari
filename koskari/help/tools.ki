@@ -52,6 +52,7 @@ define-class HelpFormatter []:
     set! self._raw #[]
     set! self._children #[]
 
+
   @demand
   define is_empty [self]:
     """
@@ -65,6 +66,7 @@ define-class HelpFormatter []:
         (return False)
     True
 
+
   @demand
   define paragraph [self text]:
     """
@@ -74,6 +76,7 @@ define-class HelpFormatter []:
     when text:
       (self._paragraphs.append (str text))
 
+
   @demand
   define item [self text]:
     """
@@ -82,6 +85,7 @@ define-class HelpFormatter []:
 
     when text:
       (self._lines.append (str text))
+
 
   @demand
   define raw [self text]:
@@ -95,6 +99,7 @@ define-class HelpFormatter []:
     when stripped:
       (self._raw.append stripped)
 
+
   @demand
   define section [self title]:
     """
@@ -104,6 +109,7 @@ define-class HelpFormatter []:
     define child (HelpFormatter title: (str title))
     (self._children.append child)
     child
+
 
   define _render_body [self]:
     """
@@ -122,6 +128,7 @@ define-class HelpFormatter []:
       when rendered:
         (parts.append (rendered.rstrip "\n"))
     ("\n\n".join parts)
+
 
   @demand
   define render [self]:
@@ -153,7 +160,6 @@ define help_for [typeobj]:
   (demand decorator)
 
 
-@demand
 define help_register [typeobj handler]:
   """
   Register a type-specific help renderer
@@ -166,7 +172,6 @@ define help_register [typeobj handler]:
   None
 
 
-@demand
 define help_unregister [typeobj]:
   """
   Remove a type from the help registry if present
@@ -176,7 +181,6 @@ define help_unregister [typeobj]:
   None
 
 
-@demand
 define help_registry_clear []:
   """
   Clear all help registry entries
@@ -185,7 +189,6 @@ define help_registry_clear []:
   (_registry.clear)
 
 
-@demand
 define help_registry_snapshot []:
   """
   Return a shallow copy of the help registry dict
@@ -211,17 +214,21 @@ define _help_protocol [obj formatter]:
     define meth (getattr obj attrname None)
     unless (callable? meth):
       (continue)
+
     try:
       (meth formatter)
+
     except [TypeError]:
       define text (meth)
-      when (and (instance? text str) (text.strip)):
+      when (and (str? text) (text.strip)):
         (formatter.paragraph (text.strip))
-    (return True)
-  False
+
+    break True
+
+  else:
+    False
 
 
-@demand
 define help_into [formatter obj]:
   """
   Render help for obj into formatter using registry, protocol, or default
@@ -235,8 +242,10 @@ define help_into [formatter obj]:
     unless (None? handler):
       (handler obj formatter)
       (return None)
+
   when (_help_protocol obj formatter):
     (return None)
+
   (_default_help obj formatter)
   None
 
@@ -247,9 +256,10 @@ define _help_lookup_keys [name]:
   """
 
   define n (str name)
-  when (n.startswith _HELP_PREFIXES):
-    (return #(n))
-  #(n (+ "compile/" n) (+ "layout/" n) (+ "match/" n))
+  if (n.startswith _HELP_PREFIXES):
+    #(n)
+  else:
+    #(n f"compile/{n}" f"layout/{n}" f"match/{n}")
 
 
 define _namespace_get [namespace key]:
@@ -257,15 +267,16 @@ define _namespace_get [namespace key]:
   Fetch one binding from a namespace mapping
   """
 
-  when (hasattr? namespace "get"):
-    (return (namespace.get key))
-  try:
-    namespace[key]
-  except [KeyError]:
-    None
+  if (hasattr? namespace "get"):
+    namespace.get key
+
+  else:
+    try:
+      namespace[key]
+    except [KeyError]:
+      None
 
 
-@demand
 define kos_help_text_object [obj heading: None]:
   """
   Collect help text for an object
@@ -277,7 +288,6 @@ define kos_help_text_object [obj heading: None]:
   (doc.render)
 
 
-@demand
 define kos_help_text [name namespace: None heading: None]:
   """
   Collect help text for name and related namespace keys
@@ -291,7 +301,9 @@ define kos_help_text [name namespace: None heading: None]:
   define doc (HelpFormatter)
 
   when (None? namespace):
-    (raise (TypeError "namespace is required"))
+    ; we don't use a normal truthiness simply because an empty namespace
+    ; is considered Falsey
+    raise (TypeError "namespace is required")
 
   for-each [key (_help_lookup_keys name)]:
     define val (_namespace_get namespace key)
@@ -300,27 +312,33 @@ define kos_help_text [name namespace: None heading: None]:
     define sec (doc.section (or heading key))
     (help_into sec val)
 
-  when (doc.is_empty):
-    (return "")
-  (doc.render)
+  if (doc.is_empty) "" (doc.render)
 
 
-@demand
 define kos_help [element namespace: None]:
   """
   Display help for name in namespace via the system pager
   """
 
-  define units (if (instance? element #(list tuple)) element #[element])
-
-  define col #[]
-  for-each [unit units]:
-    if (instance? unit #(str symbol)):
-      (col.append (kos_help_text unit namespace))
+  define units:
+    if (instance? element #(list tuple)):
+      element
     else:
-      (col.append (kos_help_text_object unit))
+      #[element]
 
-  (pydoc.pager ("\n".join col))
+  define symtypes #(str symbol)
+
+  define col:
+    list-each [unit units]:
+      if (instance? unit symtypes):
+        kos_help_text unit namespace
+      else:
+        kos_help_text_object unit
+
+  if (any? col):
+    pydoc.pager ("\n".join col)
+  else:
+    print f"No help found for {(repr element)}"
 
 
 ; The end.

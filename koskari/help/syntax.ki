@@ -23,7 +23,6 @@ Registry help renderer for koskari.syntax.Syntax
 
 
 import-from ..syntax Syntax
-import-from ..lib kos_repr
 import-from .tools help_for
 
 
@@ -40,27 +39,29 @@ define format_accept_pattern [pattern head]:
 
   unless (instance? pattern MATCH):
     try:
-      (return (kos_repr pattern))
+      return (repr pattern)
     except [Exception]:
-      (return "<unrenderable pattern>")
+      return "<unrenderable pattern>"
 
   define children pattern._children
 
-  when (and children (instance? children[0] CALLEDBY)):
-    define h (or head "(CALLEDBY)")
-    try:
-      define reprs (list-each [c (item-slice children 1)] (kos_repr c))
-      define rest (" ".join reprs)
-      when rest:
-        (return f"({h} {rest})")
-      (return f"({h})")
-    except [Exception]:
-      (return "<unrenderable pattern>")
-
   try:
-    define reprs (list-each [c children] (kos_repr c))
-    define body (" ".join reprs)
-    f"({body})"
+    if (and children (instance? children[0] CALLEDBY)):
+      define h (or head "(CALLEDBY)")
+
+      define reprs (list-each [c (item-slice children 1)] (repr c))
+      define rest (" ".join reprs)
+
+      if rest:
+        f"({h} {rest})"
+      else:
+        f"({h})"
+
+    else:
+      define reprs (list-each [c children] (repr c))
+      define body (" ".join reprs)
+      f"({body})"
+
   except [Exception]:
     "<unrenderable pattern>"
 
@@ -73,13 +74,13 @@ define help_for_syntax [obj formatter]:
 
   define doc (getattr obj "__doc__" None)
   when doc:
-    (formatter.paragraph doc)
+    formatter.paragraph doc
 
   when obj.transforms:
     define acc (formatter.section "Accepts")
     define head (str obj.name)
     for-each [transform obj.transforms]:
-      (acc.item (format_accept_pattern transform.pattern head))
+      acc.item (format_accept_pattern transform.pattern head)
 
 
 ; The end.

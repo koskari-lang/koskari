@@ -64,85 +64,90 @@ def _plain_help(text):
     return re.sub(r'.\x08', '', text)
 
 
-class TestHelpRegistry(unittest.TestCase):
+class TestHelpRegistry(unittest.IsolatedAsyncioTestCase):
+    """
+    The registry entry points are plain Koskari definitions, so Python
+    callers have to await them.  The HelpFormatter methods handed to a
+    handler stay demand-wrapped and are called synchronously.
+    """
 
 
-    def setUp(self):
+    async def asyncSetUp(self):
         # keep a copy to restore
-        self._registry = help_registry_snapshot()
+        self._registry = await help_registry_snapshot()
 
 
-    def tearDown(self):
+    async def asyncTearDown(self):
         # restore the registry
-        help_registry_clear()
+        await help_registry_clear()
         for typeobj, handler in self._registry.items():
-            help_register(typeobj, handler)
+            await help_register(typeobj, handler)
         self._registry = None
 
 
-    def test_register_and_help_into(self):
+    async def test_register_and_help_into(self):
         class Reggie(object):
             pass
 
         def handler(obj, formatter):
             formatter.paragraph('reggie-out')
 
-        help_register(Reggie, handler)
+        await help_register(Reggie, handler)
         fmt = HelpFormatter()
-        help_into(fmt, Reggie())
+        await help_into(fmt, Reggie())
         self.assertIn('reggie-out', _plain_help(fmt.render()))
 
 
-    def test_mro_wins_subclass(self):
+    async def test_mro_wins_subclass(self):
         class Base(object):
             pass
 
         class Child(Base):
             pass
 
-        help_register(Base, lambda o, f: f.paragraph('base'))
-        help_register(Child, lambda o, f: f.paragraph('child'))
+        await help_register(Base, lambda o, f: f.paragraph('base'))
+        await help_register(Child, lambda o, f: f.paragraph('child'))
         fmt = HelpFormatter()
-        help_into(fmt, Child())
+        await help_into(fmt, Child())
         text = _plain_help(fmt.render())
         self.assertIn('child', text)
         self.assertNotIn('base', text)
 
 
-    def test_unregister_restores_default(self):
+    async def test_unregister_restores_default(self):
         class R2(object):
             """
             fallback doc
             """
 
-        help_register(R2, lambda o, f: f.paragraph('custom'))
-        help_unregister(R2)
+        await help_register(R2, lambda o, f: f.paragraph('custom'))
+        await help_unregister(R2)
         fmt = HelpFormatter()
-        help_into(fmt, R2)
+        await help_into(fmt, R2)
         self.assertIn('fallback doc', _plain_help(fmt.render()))
 
 
-    def test_registry_clear(self):
+    async def test_registry_clear(self):
         class R3(object):
             pass
 
-        help_register(R3, lambda o, f: f.paragraph('r3'))
-        help_registry_clear()
+        await help_register(R3, lambda o, f: f.paragraph('r3'))
+        await help_registry_clear()
         fmt = HelpFormatter()
-        help_into(fmt, R3())
+        await help_into(fmt, R3())
         self.assertIn('R3 object', _plain_help(fmt.render()))
 
 
-    def test_snapshot_is_shallow_copy(self):
+    async def test_snapshot_is_shallow_copy(self):
         class Snap(object):
             pass
 
-        help_register(Snap, lambda o, f: f.paragraph('snap'))
-        snap = help_registry_snapshot()
+        await help_register(Snap, lambda o, f: f.paragraph('snap'))
+        snap = await help_registry_snapshot()
         self.assertIn(Snap, snap)
         snap.clear()
         fmt = HelpFormatter()
-        help_into(fmt, Snap())
+        await help_into(fmt, Snap())
         self.assertIn('snap', _plain_help(fmt.render()))
 
 

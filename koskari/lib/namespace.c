@@ -2317,6 +2317,18 @@ static PyObject *mdl_ns_m_get(PyObject *self, PyObject *args) {
 }
 
 
+static Py_ssize_t mdl_ns_len(PyObject *self) {
+  return PyDict_Size(KosNamespace_BINDS(self));
+}
+
+
+static PyMappingMethods mdl_ns_as_mapping = {
+  .mp_length = mdl_ns_len,
+  .mp_subscript = ns_deref_symbol,
+  .mp_ass_subscript = ns_store_symbol,
+};
+
+
 static PyMethodDef mdl_ns_methods[] = {
   { "ref", (PyCFunction) ns_m_ref, METH_O,
     "NS.ref(K) -> R\n"
@@ -2384,6 +2396,7 @@ PyTypeObject KosModuleNamespaceType = {
   .tp_base = &KosNamespaceType,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_methods = mdl_ns_methods,
+  .tp_as_mapping = &mdl_ns_as_mapping,
   .tp_new = mdl_ns_new,
   .tp_dealloc = mdl_ns_dealloc,
   .tp_traverse = mdl_ns_traverse,

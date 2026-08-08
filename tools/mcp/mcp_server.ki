@@ -136,7 +136,7 @@ define load-parquet [path]:
     """
 
     import-from pyarrow.parquet read_table
-    (.to_pylist (read_table path))
+    ((read_table path).to_pylist)
 
 
 define view-path [view]:
@@ -153,7 +153,7 @@ define snapshot-git-ref [rows]:
     """
 
     if rows:
-        (or (.get (item rows 0) "git_ref") "")
+        (or (rows[0].get "git_ref") "")
     else:
         ""
 
@@ -165,14 +165,14 @@ define load-tables! []:
     Called once at startup before serving, for every transport mode.
     """
 
-    set! (item STATE "corpus") (load-parquet (view-path CORPUS_VIEW))
-    set! (item STATE "docs") (load-parquet (view-path DOCS_VIEW))
-    set! (item STATE "programs") (load-parquet (view-path PROGRAMS_VIEW))
-    set! (item STATE "git_ref") (snapshot-git-ref (corpus-table))
+    set! STATE["corpus"] (load-parquet (view-path CORPUS_VIEW))
+    set! STATE["docs"] (load-parquet (view-path DOCS_VIEW))
+    set! STATE["programs"] (load-parquet (view-path PROGRAMS_VIEW))
+    set! STATE["git_ref"] (snapshot-git-ref (corpus-table))
 
     (logger.info
         "loaded corpus snapshot git_ref=%s (corpus=%i docs=%i programs=%i)"
-        (item STATE "git_ref")
+        STATE["git_ref"]
         (len (corpus-table)) (len (docs-table)) (len (programs-table)))
 
 
@@ -294,7 +294,7 @@ define row-search-text [row columns]:
     Concatenate a row's searchable columns into one string
     """
 
-    (.join " " (list-each [column columns] (str (or (row.get column) ""))))
+    " ".join (list-each [column columns] (str (or (row.get column) "")))
 
 
 define token-score [query_tokens row_tokens]:
@@ -327,8 +327,9 @@ define token-search [table query columns cap]:
         when (> score 0):
             (scored.append #(score row))
 
-    define ranked (sorted scored key: { (- (item %1 0)) })
-    (list-each [pair (item-slice ranked 0 cap)] (item pair 1))
+    define ranked (sorted scored key: (itemgetter 0) reverse: True)
+    list-each [pair (item-slice ranked 0 cap)]:
+        pair[1]
 
 
 define substring-search [table query columns cap]:
@@ -366,9 +367,9 @@ define filter-rows-by-feature [rows feature]:
     Keep rows whose feature column matches the filter
     """
 
-    (list-each [row rows]
-        when: (feature-matches? row feature)
-        row)
+    list-each [row rows]:
+        when (feature-matches? row feature):
+            row
 
 
 define feature-search [feature_path cap]:
@@ -410,10 +411,9 @@ define search-docs-table [search_text cap table]:
     keyword queries still resolve.
     """
 
-    define rows (token-search table search_text DOC_SEARCH_COLUMNS cap)
-    unless rows:
-        set! rows (substring-search table search_text DOC_SEARCH_COLUMNS cap)
-    rows
+    or:
+        (token-search table search_text DOC_SEARCH_COLUMNS cap)
+        (substring-search table search_text DOC_SEARCH_COLUMNS cap)
 
 
 define first-by-field [table field value]:
@@ -624,7 +624,7 @@ define list_features []:
         define feature (row.get "feature" "")
         when feature:
             define count (seen.get feature 0)
-            set! (item seen feature) (+ count 1)
+            set! seen[feature] (+ count 1)
 
     unless seen:
         return "No features found."
@@ -670,7 +670,7 @@ define list_tags []:
     for-each [row (corpus-table)]:
         for-each [tag (or (row.get "tags") #())]:
             define count (seen.get tag 0)
-            set! (item seen tag) (+ count 1)
+            set! seen[tag] (+ count 1)
 
     unless seen:
         return "No tags found."
