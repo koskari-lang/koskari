@@ -38,6 +38,13 @@ import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 
+# mcp 2.x declares Requires-Python >=3.10, so the dependency is absent
+# from the 3.9 test env by design (see the marker in setup.cfg).
+if sys.version_info < (3, 10):
+    pytest.skip(
+        "tools/mcp requires mcp 2.x, which needs Python 3.10 or newer",
+        allow_module_level=True)
+
 pyarrow = pytest.importorskip("pyarrow")
 pytest.importorskip("mcp")
 import pyarrow.parquet as pq  # noqa: E402
