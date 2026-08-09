@@ -320,13 +320,15 @@ transposer use-case.
 
 Ref: [language/formal-default-modes.md](language/formal-default-modes.md).
 
-### Decorator compose and the `closure` decorator
+### `decorate-subject` decorator expansion
 
-Replace `compile/decorate`'s `function-compose` routing with literal nesting:
-cheaper, drops a synthetic frame, and puts the decorated form lexically inside
-each decorator expression. That last part is what enables `closure`, a
-`let`-style decorator injecting a lexical binding around a definition, easing
-the use of closures in function definitions.
+Replace `compile/decorate`'s `function-compose` routing with a fold over a new
+single-decorator macro, `compile/decorate-subject`: default arm is invocation
+(today's behavior per layer), and shape arms match a body-less extent form in
+decorator position, grafting the subject in as its body. `let`, `with`, and
+`parameterize` ship as base arms, making the decorator prefix a composing
+block without the indentation -- `@let [[counter 0]]` over a definition is a
+lexical closure around the subject.
 
 Ref: [language/decorator-compose.md](language/decorator-compose.md).
 
