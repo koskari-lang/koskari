@@ -322,13 +322,12 @@ Ref: [language/formal-default-modes.md](language/formal-default-modes.md).
 
 ### `decorate-subject` decorator expansion
 
-Replace `compile/decorate`'s `function-compose` routing with a fold over a new
-single-decorator macro, `compile/decorate-subject`: default arm is invocation
-(today's behavior per layer), and shape arms match a body-less extent form in
-decorator position, grafting the subject in as its body. `let`, `with`, and
-`parameterize` ship as base arms, making the decorator prefix a composing
-block without the indentation -- `@let [[counter 0]]` over a definition is a
-lexical closure around the subject.
+**Implemented** on the `better-decorate` branch: `compile/decorate` folds
+through `compile/decorate-subject`, whose shape arms cover the graft family
+(`let` / `with` / `parameterize`) and the call-time family (`call-with` /
+`call-parameterize` with `decorate-wraps`). Remaining in the design doc's open
+questions: the graft-over-define lint, class-subject scoping, and koskari
+`Function` identity attrs being read-only to wraps.
 
 Ref: [language/decorator-compose.md](language/decorator-compose.md).
 
