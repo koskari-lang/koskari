@@ -13,27 +13,43 @@
 
 
 """
-Example: Python dataclass decorator on a Koskari define-class
+Example: Pydantic model using a Koskari define-class
 """
 
 
-import-from pydantic BaseModel
+import-from pydantic BaseModel ConfigDict
 import-from itertools product
+import-from koskari.lib Function
 
 
 define around [i reach: 1]:
     (range (- i reach) (+ i reach 1))
 
 
+define base_config [**: cfg]:
+    """
+    Pydantic ConfigDict for Koskari-written models.
+
+    Injects the demand and Function types into the config's
+    ignored_types setting.
+    """
+
+    define ignored (cfg.get "ignored_types" #())
+    set! cfg["ignored_types"] #(demand Function *: ignored)
+    (ConfigDict **: cfg)
+
+
 define-class Point [BaseModel]:
     """ A point in 2D space """
+
+    define model_config (base_config)
 
     define x :: int 0
     define y :: int 0
 
     define neighbors [self reach: 1]:
         each [[x y] (product (around self.x reach) (around self.y reach))]:
-            (Point x y)
+            (Point x: x y: y)
 
 
 when-main:
