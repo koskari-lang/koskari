@@ -154,15 +154,6 @@ modules, so nothing leaks into distributed libraries. Scope out flag spelling,
 
 Ref: [language/pragma-cli.md](language/pragma-cli.md); [PRAGMA.md](PRAGMA.md).
 
-### Rewrite `koskari.help` in Koskari
-
-Port `koskari/help/` (`tools.py`, `syntax.py`, `layout.py`) from Python to
-`.ki`, matching the CLI/REPL already living in Koskari. Preserve the help
-registry, formatter, and `kos-help` builtins that bootstrap, pragma help, and
-Sphinx extras depend on.
-
-Ref: `koskari/help/`; [archive/cli-repl-rework.md](archive/cli-repl-rework.md).
-
 ### Assert gate reads the module pragma at expand time
 
 `compiler/enable-asserts` is applied as a side effect of its setting function:
@@ -318,6 +309,26 @@ callees; Python and Koskari callers); triple timestamps with baseline
 subtraction; ~1000 iterations per cell; aggregate averages.
 
 Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
+
+### Formal default modes (`value:` / `copy:` / `new:`)
+
+Generalize a defaulted formal from *a value to share* into *an operand plus an
+operation applied at each application that omits the argument*: `value:`
+(share), `copy:` (duplicate), `new:` (call). By-ref formals default to `copy`.
+**Review and implement for feel**, with the explicit intent of easing the
+transposer use-case.
+
+Ref: [language/formal-default-modes.md](language/formal-default-modes.md).
+
+### Decorator compose and the `closure` decorator
+
+Replace `compile/decorate`'s `function-compose` routing with literal nesting:
+cheaper, drops a synthetic frame, and puts the decorated form lexically inside
+each decorator expression. That last part is what enables `closure`, a
+`let`-style decorator injecting a lexical binding around a definition, easing
+the use of closures in function definitions.
+
+Ref: [language/decorator-compose.md](language/decorator-compose.md).
 
 ---
 
