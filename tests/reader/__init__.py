@@ -13,6 +13,11 @@ def parse_layout(src_str, **defns):
     builtins.update(defns)
 
     reader = LayoutReader(builtins)
+
+    # a raw reader is deliberately bare; opt in to the pragma-gated
+    # surfaces the layout tests exercise
+    reader.set_layout_modes(layout_decorators=True)
+
     stream = source_str(src_str, '<unittest>')
     return reader.read(stream)
 

@@ -85,6 +85,7 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | `reader/implicit-calls` | reader | `True` | `True` | bool | multiple values on one layout line form an implicit call |
 | `reader/pass-none` | reader | `False` | `True` | bool | the `pass` symbol reads as the `None` literal (mention-to-enable) |
 | `reader/fences` | reader | `True` | `True` | bool | triple-backtick fences read into `compile/apply-fence` forms |
+| `reader/decorators` | reader | `True` | `True` | bool | leading `@` layout lines read as decorators, lowering to `compile/decorate`; a raw reader starts with this off, and `(compile/decorate ...)` stays available as a macro regardless |
 | `compiler/resolution` | compiler | `koskari` | *(required)* | `koskari` / `scheme` / `python` | name-resolution semantics for writes |
 | `compiler/call-brackets` | compiler | `warn` | `warn` | `ignore` / `warn` / `error` | policy when a bracket-pair reaches call position |
 | `compiler/stray-colon` | compiler | `warn` | `warn` | `allow` / `warn` / `error` | policy when a bare `:` symbol is compiled as a name |

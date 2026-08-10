@@ -155,6 +155,7 @@ class TestLayoutDecorateErrors(IsolatedAsyncioTestCase):
 
         builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins)
+        reader.set_layout_modes(layout_decorators=True)
         stream = source_str(src, '<unittest>')
 
         with self.assertRaises(ReaderSyntaxError) as ctx:
@@ -180,6 +181,58 @@ class TestLayoutDecorateLayoutMacroDisabled(IsolatedAsyncioTestCase):
 
         reader = LayoutReaderNoAt(builtins)
         stream = source_str('@foo\ndefine-class Obj []:\n  x\n', '<unittest>')
+        result = reader.read(stream)
+
+        self.assertTrue(str(result).startswith('@'))
+
+
+class TestDecoratorPragmaGate(IsolatedAsyncioTestCase):
+    """
+    The @ layout macro is gated by the reader/decorators pragma: off on a
+    raw reader, on at the pragma baseline, and declarable off per module.
+    """
+
+    SRC = '@foo\ndefine-class Obj []:\n  x\n'
+
+
+    async def test_bare_reader_reads_at_as_atom(self):
+        """
+        A directly-constructed reader has no decorator surface; a leading
+        @ line reads through the ordinary atom path
+        """
+
+        reader = LayoutReader(dict(_BUILTIN_REGISTRY))
+        stream = source_str(self.SRC, '<unittest>')
+        result = reader.read(stream)
+
+        self.assertTrue(str(result).startswith('@'))
+
+
+    async def test_pragma_baseline_enables_decorators(self):
+        """
+        A reader built from a default pragma lowers @ lines to
+        compile/decorate
+        """
+
+        reader = LayoutReader.from_pragma(dict(_BUILTIN_REGISTRY))
+        stream = source_str(self.SRC, '<unittest>')
+        result = reader.read(stream)
+
+        head, _rest = result
+        self.assertEqual(head, symbol('compile/decorate'))
+
+
+    async def test_pragma_declared_off_disables_decorators(self):
+        """
+        reader/decorators False in the pragma turns the surface off
+        """
+
+        from koskari.pragma import ModulePragma
+
+        pragma = ModulePragma({"reader/decorators": False})
+        reader = LayoutReader.from_pragma(
+            dict(_BUILTIN_REGISTRY), pragma=pragma)
+        stream = source_str(self.SRC, '<unittest>')
         result = reader.read(stream)
 
         self.assertTrue(str(result).startswith('@'))

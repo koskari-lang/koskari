@@ -17,7 +17,7 @@ koskari.reader.pragma
 Reader-side pragma settings, registered into the koskari.pragma registry at
 import: reader/brackets, reader/index-brackets, reader/dot-attrs,
 reader/string-segments, reader/layout, reader/implicit-calls,
-reader/pass-none, reader/fences. Each setting's
+reader/pass-none, reader/fences, reader/decorators. Each setting's
 ``default`` is its baseline (value when undeclared); the function's argument
 defaults are the parameter defaults (value when declared but the arg is
 omitted).
@@ -106,6 +106,18 @@ def reader_fences(enabled: bool = True) -> bool:
     """
     Whether triple-backtick fences read into compile/apply-fence forms
     (baseline on); off, backtick keeps only its quasiquote readings
+    """
+
+    return enabled
+
+
+@pragma_setting("reader/decorators", True)
+def reader_decorators(enabled: bool = True) -> bool:
+    """
+    Whether leading ``@`` layout lines read as decorators, lowering to
+    ``compile/decorate`` forms (baseline on). Gates the layout surface
+    only; the s-expression ``(compile/decorate ...)`` spelling is a
+    macro and remains available regardless
     """
 
     return enabled
