@@ -33,8 +33,8 @@ from ..lib import (Arena, Compare, Operand, Code, FormalsSpec, FunctionSpec,
                    Module, ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    bracket_pair, cons, keyword, kos_repr, nil, symbol)
-from ..types import (is_nil, get_position, is_keyword, is_pair, is_proper,
-                     is_symbol)
+from ..types import (fill_position, is_nil, get_position, is_keyword,
+                     is_pair, is_proper, is_symbol)
 from .pragma import (BracketCalls, KeywordLiterals, KoskariPragma,
                      PackModule, ResolutionMode, StrayColon)
 
@@ -1026,7 +1026,9 @@ class Compiler:
         # compile/call's patterns need to see (eg. a (compile/attr obj
         # name) head routing to compile/call-attr); the special compiles
         # the callable itself when no pattern claims it.
-        return cons(_symbol_call, head, tail)
+        reemitted = cons(_symbol_call, head, tail)
+        fill_position(reemitted, pos)
+        return reemitted
 
 
     def compile_special(self, fragment, comp, source_obj, tc):

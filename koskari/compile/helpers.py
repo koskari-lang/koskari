@@ -1003,6 +1003,9 @@ def helper_begin(
         fragment.position_of(body)
 
         expr, body = body
+        # layout bodies position the statement form but not the spine
+        # cell holding it, so the cell alone is not enough here
+        fragment.position_of(expr)
         if is_nil(body):
             fragment.merge(compiler.full_compile(expr, tc))
             break

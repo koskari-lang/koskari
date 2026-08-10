@@ -26,7 +26,7 @@ from ...lib import OpCode, cons, nil, pair, symbol
 from ...matcher import CALLEDBY, LIST, LITERAL_SYM, MATCH, BODY, SYMBOL, VALUE
 from ...bootstrap import builtin
 from ...syntax import special
-from ...types import is_symbol
+from ...types import fill_position, is_symbol
 from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import gather_parameters, match
 
@@ -121,9 +121,11 @@ def special_call(
     if "attr" in caps:
         obj = caps["obj"]
         attr = caps["attr"]
-        return cons(
+        rewritten = cons(
             _sym_call_attr,
             obj.datum, attr.datum, rest)
+        fill_position(rewritten, pos)
+        return rewritten
 
     callable = caps["callable"].datum
 
@@ -134,9 +136,11 @@ def special_call(
     # (compile/call-attr obj foo args...)
     if name and rest and name.startswith("."):
         obj, rest = rest
-        return cons(
+        rewritten = cons(
             _sym_call_attr,
             obj, symbol(name[1:]), rest)
+        fill_position(rewritten, pos)
+        return rewritten
 
     fragment = compiler.fragment(called_by)
     if use_var_path:
