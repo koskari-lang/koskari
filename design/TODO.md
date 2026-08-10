@@ -325,9 +325,9 @@ Ref: [language/formal-default-modes.md](language/formal-default-modes.md).
 **Implemented** on the `better-decorate` branch: `compile/decorate` folds
 through `compile/decorate-subject`, whose shape arms cover the graft family
 (`let` / `with` / `parameterize`) and the call-time family (`call-with` /
-`call-parameterize` with `decorate-wraps`). Remaining in the design doc's open
-questions: the graft-over-define lint, class-subject scoping, and koskari
-`Function` identity attrs being read-only to wraps.
+`call-parameterize` with `decorate-wraps`, a plain update_wrapper now that
+Function identity attrs are writable). Remaining in the design doc's open
+questions: the graft-over-define lint and class-subject scoping.
 
 Ref: [language/decorator-compose.md](language/decorator-compose.md).
 

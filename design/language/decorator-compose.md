@@ -265,21 +265,23 @@ parameter. So the names must stay syntactic, which means macro arms.
 for the same shape.
 
 The "real function" ingredient survives as **`decorate-wraps`**, the runtime
-helper both templates call: a tolerant `functools.update_wrapper` that
-attempts each wrapper assignment independently, merges `__dict__`, and sets
-`__wrapped__`.
+helper both templates call: a plain `functools.update_wrapper`, so a
+delivered wrapper answers for the function it wraps -- `__name__`,
+`__qualname__`, `__doc__`, `__module__`, `__annotations__`, the `__dict__`
+merge, and the `__wrapped__` chain.
 
-Current limitation: koskari `Function` identity attributes (`__name__`,
-`__qualname__`, `__doc__`, `__module__`, `__annotations__`) are read-only at
-the C level, so today the copy effectively delivers `__wrapped__` plus the
-`__dict__` merge, and a wrapper still introspects as `<lambda>` (the original
-remains reachable through `__wrapped__`). The helper is written so that if
-those slots become writable, the full copy starts happening with no change
-here. The recorded direction on that question: make them writable on
-`Function` (CPython made them writable on plain functions deliberately, for
-exactly this idiom, while tracebacks keep reading the code object's name);
-`Demand` delegates reads to the wrapped function; `BoundMethod` stays
-CPython-style read-only delegating to `__func__`.
+That works because koskari `Function` identity attributes are writable
+([func.c](../../koskari/lib/func.c), landed with this branch). Name and
+qualname writes go to metadata override fields, never to the function's
+semantic name: self-binding keys off the semantic name at call time and it
+must stay fixed after construction, while `repr` follows the override and
+tracebacks keep reading the code object's name -- the same split CPython
+makes, where `wraps` renames a function without retitling its frames. The
+annotations setter requires a dict and refreshes the derived `__signature__`.
+`Demand` delegates identity reads to the wrapped function; `BoundMethod`
+delegates them to `__func__` and refuses writes, matching CPython bound
+methods. Contract tests:
+[tests/lib/test_function_metadata.py](../../tests/lib/test_function_metadata.py).
 
 ## The trap spelling
 
@@ -332,7 +334,8 @@ extend-syntax compile/decorate-subject:
   `let` to module scope (the `function` form deliberately carries no
   self-reference, [lambda_.py:102](../../koskari/compile/specials/lambda_.py:102)).
 - `call-with`: per-call enter/exit, distinct context-manager instance per
-  call, args/kwargs forwarded, value delivered, `__wrapped__` chain intact.
+  call, args/kwargs forwarded, value delivered, and the wrapper answers with
+  the original's name, docstring, and `__wrapped__` chain.
 - `call-parameterize`: value visible during the call, ambient restored after.
 - Full regression surface green (compile, hygiene, syntax, importer, reader,
   help, cli, solve, reproducers, extras).
