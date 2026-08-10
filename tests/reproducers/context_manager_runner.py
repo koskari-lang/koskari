@@ -48,6 +48,9 @@ SHAPES = {
     'sync_binding': ('sync_binding', ('KosCM',)),
     'sync_raises': ('sync_raises', ('KosCM',)),
     'sync_swallowed': ('sync_swallowed', ('KosSwallowCM',)),
+    'sync_exit_raises': ('sync_exit_raises', ('KosExitBoomCM',)),
+    'sync_exit_raises_during_unwind': (
+        'sync_exit_raises_during_unwind', ('KosExitBoomCM',)),
     'sync_nested': ('sync_nested', ('KosCM', 'KosCM')),
     'async_no_binding': ('async_no_binding', ('KosAsyncCM',)),
     'async_binding': ('async_binding', ('KosAsyncCM',)),

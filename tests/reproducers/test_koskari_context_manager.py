@@ -188,6 +188,40 @@ class TestSyncContextManager(ContextManagerShapeTestCase):
         self.assertManagers(result, (True, True, None), (True, True, None))
 
 
+class TestSyncExitRaises(ContextManagerShapeTestCase):
+    """
+    A koskari-defined __exit__ that itself raises. The exit exception
+    must propagate out of the with block; the failure mode is re-firing
+    __exit__ on its own exception forever, which the child timeout
+    reports as a wedge.
+    """
+
+    def test_exit_exception_propagates(self):
+        """
+        Clean body, raising __exit__: the exit exception is what comes
+        out of the block
+        """
+
+        result = self.run_shape('sync_exit_raises')
+        self.assertEqual(result['outcome'], 'raised')
+        self.assertEqual(result['exc_type'], 'RuntimeError')
+        self.assertEqual(result['exc_str'], "exit boom")
+        self.assertManagers(result, (True, True, None))
+
+
+    def test_exit_exception_during_unwind_propagates(self):
+        """
+        Raising body, raising __exit__: __exit__ sees the body exception
+        once, and its own exception is what comes out of the block
+        """
+
+        result = self.run_shape('sync_exit_raises_during_unwind')
+        self.assertEqual(result['outcome'], 'raised')
+        self.assertEqual(result['exc_type'], 'RuntimeError')
+        self.assertEqual(result['exc_str'], "exit boom")
+        self.assertManagers(result, (True, True, 'ValueError'))
+
+
 class TestAsyncContextManager(ContextManagerShapeTestCase):
     """
     with over a koskari-defined manager implementing the async protocol.

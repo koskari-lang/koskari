@@ -515,6 +515,21 @@ static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
 */
 KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
 
+  if (KosDynWith_EXIT_PENDING(node)) {
+    /* __exit__ was already dispatched; an unwind can only arrive back
+       here when it completed by raising instead of returning through
+       kos_dynnode_on_control_returned. The manager is discharged: its
+       exception replaces the saved one and must never re-fire
+       __exit__. NORMAL with the error left pending pops the node and
+       lets the unwind continue past it. */
+    Py_CLEAR(KosDynWith_EXC_TYP(node));
+    Py_CLEAR(KosDynWith_EXC_VAL(node));
+    Py_CLEAR(KosDynWith_EXC_TB(node));
+    KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+    kos_dyn_with_shot_after_exit_done(node);
+    return EVAL_NORMAL();
+  }
+
   if (kos_dyn_with_single_exit_done(node)) {
     /* __exit__ already ran, possibly on a twin sharing the exit-done
        cell; complete the extent without re-firing it. */

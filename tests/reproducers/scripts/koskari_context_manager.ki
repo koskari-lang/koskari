@@ -46,6 +46,18 @@ define-class KosSwallowCM [KosCM]:
         True
 
 
+define-class KosExitBoomCM [KosCM]:
+    """
+    Synchronous manager whose __exit__ itself raises.
+    """
+
+    @demand
+    define __exit__ [self typ val tb]:
+        set! self.exited True
+        set! self.exc_type typ
+        raise (RuntimeError "exit boom")
+
+
 ;; === Asynchronous managers === ;;
 
 
@@ -137,6 +149,26 @@ define sync_nested [outer inner]:
     with [a outer]:
         with [b inner]:
             (#list a b)
+
+
+define sync_exit_raises [mgr]:
+    """
+    __exit__ raises after a clean body; its exception propagates out of
+    the with block.
+    """
+
+    with [x mgr]:
+        "body"
+
+
+define sync_exit_raises_during_unwind [mgr]:
+    """
+    Body raises and __exit__ raises while handling it; the exit
+    exception propagates instead of re-firing __exit__ forever.
+    """
+
+    with [x mgr]:
+        (boom)
 
 
 ;; === Asynchronous with exercises === ;;
