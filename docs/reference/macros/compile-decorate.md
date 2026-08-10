@@ -1,10 +1,20 @@
 # compile/decorate
 **Syntax:**
 
-- `(decorate [] FN)`
-- `(decorate [DECORATOR ...] (define-class NAME SUPERS BODY ...))`
-- `(decorate [DECORATOR ...] (define NAME FORMALS BODY ...))`
-- `(decorate [DECORATOR ...] FN)` — **`((function-compose DECORATOR ...) FN)`**
+- `(decorate [] FN)` — **`FN`**
+- `(decorate [DECORATOR ...] (define NAME FORMALS BODY ...))` —
+  **`(define NAME (decorate [DECORATOR ...] (function NAME FORMALS BODY ...)))`**
+- `(decorate [DECORATOR ...] (define-class NAME SUPERS BODY ...))` —
+  **`(define NAME (decorate [DECORATOR ...] (class NAME SUPERS (begin BODY ...))))`**
+- `(decorate [D REST ...] FN)` — **`(decorate-subject D (decorate [REST ...] FN))`**
 
-**Behaviour:** Wraps **`class`** / **`lambda`** inside **`define`** / **`define-class`**, or
-composes decorators for a bare callable.
+**Behaviour:** Handler for the `@` decorator layout surface, also usable
+directly on an s-expr form. Hoists the name out of a **`define`** /
+**`define-class`** subject, then folds the decorator list through
+[`compile/decorate-subject`](compile-decorate-subject.md) one decorator per
+step, outermost decorator first — `@d1` `@d2` over a definition applies as
+`(d1 (d2 ...))`, matching Python's ordering.
+
+See [Decorators](../concepts/decorators.md) for the full pipeline from the
+`reader/decorators` pragma through layout lowering to expansion and
+extension.
