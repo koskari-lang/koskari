@@ -44,25 +44,28 @@ define fib-recur-decorated [n]:
         + (fib-recur-decorated (- n 1)) (fib-recur-decorated (- n 2))
 
 
+;; The @let decorator closes the function over a private cache, so the
+;; memo persists across calls -- a second call reuses everything the
+;; first one computed. A cache defined inside the body would be rebuilt
+;; per call and only serve that call's own recursion.
+@let [[cache #{}]]
 define fib-recur-cached [n]:
     """
     Good old Fibonacci sequence, defined recursively with
     a cache.
     """
 
-    define cache #{}
-    let inner [[n n]]:
-        if (in n cache):
-            cache[n]
+    if (in n cache):
+        cache[n]
 
-        elif (< n 2):
-            if (< n 1) 0 n
+    elif (< n 2):
+        if (< n 1) 0 n
 
-        else:
-            define result (+ (inner (- n 1))
-                             (inner (- n 2)))
-            set! cache[n] result
-            result
+    else:
+        define result (+ (fib-recur-cached (- n 1))
+                         (fib-recur-cached (- n 2)))
+        set! cache[n] result
+        result
 
 
 define fib-tail-recur [n]:

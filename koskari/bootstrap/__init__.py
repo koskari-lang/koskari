@@ -61,6 +61,10 @@ _BUILTINS_SOURCES = (
     # baseline define-syntax meta-macros
     '_define_syntax.ki',
 
+    # decorator expansion
+    # requires: _define_syntax.ki
+    '_decorator.ki',
+
     # conditional expressions
     '_conditionals.ki',
 
@@ -78,7 +82,7 @@ _BUILTINS_SOURCES = (
     # requires: _variables.ki
     '_pairs.ki',
 
-    # function composition, decorators
+    # function composition
     # requires: _iter.ki
     '_functions.ki',
 

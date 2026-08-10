@@ -15,6 +15,7 @@ name-resolution-and-prefixes
 demand-async-and-defer
 choosing-an-async-construct
 layout-and-s-expressions
+decorators
 fences
 macro-matching-and-hygiene
 match-patterns
@@ -36,6 +37,7 @@ idiomatic-koskari
 | [Demand, async, and defer](demand-async-and-defer.md) | Ambient async model, demand path, defer, on-demand? |
 | [Choosing an async construct](choosing-an-async-construct.md) | Decision aid: `demand` / `define-demanding` vs `defer` vs `coroutine-fn` vs `as-coroutine` |
 | [Layout and s-expressions](layout-and-s-expressions.md) | Layout vs s-expr surfaces, YAML/JSON mental model, three authoring forms |
+| [Decorators](decorators.md) | The `@` surface end to end: `reader/decorators` pragma, layout lowering, the decorate-subject expansion and its graft / call-time families, extending with new decorator shapes |
 | [Fences](fences.md) | Triple-backtick foreign literals, the compile-time transliterator model, when a format earns a fence |
 | [Macro matching and hygiene](macro-matching-and-hygiene.md) | Pattern match at expand time, datum forms and wrappers |
 | [Match patterns](match-patterns.md) | Runtime `match`/`case` pattern language: sequences, classes, mappings, typed captures, extraction, guards |

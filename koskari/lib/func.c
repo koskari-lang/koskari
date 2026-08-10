@@ -1183,11 +1183,12 @@ static PyObject *
 function_get_name_dunder(PyObject *self, void *closure) {
 
   KosFunction *fn = (KosFunction *) self;
-  PyObject *name = KosFunction_NAME(fn);
+  PyObject *name;
   PyObject *cn;
 
   (void) closure;
 
+  name = fn->name_override ? fn->name_override : KosFunction_NAME(fn);
   if (name != NULL) {
     Py_INCREF(name);
     return name;
@@ -1203,30 +1204,127 @@ function_get_name_dunder(PyObject *self, void *closure) {
 }
 
 
+/*
+  __name__ and __qualname__ writes land in metadata override slots, never
+  in `name`: self-binding keys off `name` at call time (see
+  kos_function_bind_self_if_local), so the semantic name stays fixed
+  after construction while wraps-style renames remain visible to
+  introspection.
+*/
+static int
+function_set_name_dunder(PyObject *self, PyObject *val, void *closure) {
+
+  KosFunction *fn = (KosFunction *) self;
+
+  (void) closure;
+
+  if (! val || ! PyUnicode_Check(val)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "__name__ must be set to a string object");
+    return -1;
+  }
+
+  Py_INCREF(val);
+  Py_XSETREF(fn->name_override, val);
+  return 0;
+}
+
+
 static PyObject *
 function_get_qualname_dunder(PyObject *self, void *closure) {
 
+  KosFunction *fn = (KosFunction *) self;
+
+  if (fn->qualname_override) {
+    Py_INCREF(fn->qualname_override);
+    return fn->qualname_override;
+  }
+
   return function_get_name_dunder(self, closure);
+}
+
+
+static int
+function_set_qualname_dunder(PyObject *self, PyObject *val, void *closure) {
+
+  KosFunction *fn = (KosFunction *) self;
+
+  (void) closure;
+
+  if (! val || ! PyUnicode_Check(val)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "__qualname__ must be set to a string object");
+    return -1;
+  }
+
+  Py_INCREF(val);
+  Py_XSETREF(fn->qualname_override, val);
+  return 0;
 }
 
 
 static PyObject *
 function_get_module_dunder(PyObject *self, void *closure) {
 
-  (void) self;
+  KosFunction *fn = (KosFunction *) self;
+
   (void) closure;
+
+  if (fn->module_override) {
+    Py_INCREF(fn->module_override);
+    return fn->module_override;
+  }
 
   Py_INCREF(Py_None);
   return Py_None;
 }
 
 
+static int
+function_set_module_dunder(PyObject *self, PyObject *val, void *closure) {
+
+  KosFunction *fn = (KosFunction *) self;
+
+  (void) closure;
+
+  Py_XINCREF(val);
+  Py_XSETREF(fn->module_override, val);
+  return 0;
+}
+
+
+static int
+function_set_annotations(PyObject *self, PyObject *val, void *closure) {
+
+  KosFunction *fn = (KosFunction *) self;
+
+  (void) closure;
+
+  if (! val || ! PyDict_Check(val)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "__annotations__ must be set to a dict object");
+    return -1;
+  }
+
+  Py_INCREF(val);
+  Py_XSETREF(fn->annotations_cache, val);
+
+  /* a cached signature was derived from the previous annotations */
+  Py_CLEAR(fn->inspect_signature);
+  return 0;
+}
+
+
 static PyGetSetDef function_getsets[] = {
   { "__signature__", (getter) function_get_signature, NULL, NULL, NULL },
-  { "__annotations__", (getter) function_get_annotations, NULL, NULL, NULL },
-  { "__name__", (getter) function_get_name_dunder, NULL, NULL, NULL },
-  { "__qualname__", (getter) function_get_qualname_dunder, NULL, NULL, NULL },
-  { "__module__", (getter) function_get_module_dunder, NULL, NULL, NULL },
+  { "__annotations__", (getter) function_get_annotations,
+    (setter) function_set_annotations, NULL, NULL },
+  { "__name__", (getter) function_get_name_dunder,
+    (setter) function_set_name_dunder, NULL, NULL },
+  { "__qualname__", (getter) function_get_qualname_dunder,
+    (setter) function_set_qualname_dunder, NULL, NULL },
+  { "__module__", (getter) function_get_module_dunder,
+    (setter) function_set_module_dunder, NULL, NULL },
   { "__dict__", PyObject_GenericGetDict, PyObject_GenericSetDict, NULL, NULL },
   { NULL, }
 };
@@ -1264,9 +1362,33 @@ boundmethod_get_signature(PyObject *self, void *closure) {
 }
 
 
+/*
+  Identity metadata delegates to the callable this method binds, matching
+  CPython bound-method behavior: reads forward to __func__, writes are
+  refused (the getset has no setter). Plain attribute access covers
+  Function and Demand alike, since both expose these names.
+*/
+static PyObject *
+boundmethod_get_func_attr(PyObject *self, void *closure) {
+
+  const char *name = (const char *) closure;
+  PyObject *func = KosBoundMethod_FUNC(self);
+
+  return PyObject_GetAttrString(func, name);
+}
+
+
 static PyGetSetDef boundmethod_getsets[] = {
   { "__signature__", (getter) boundmethod_get_signature, NULL, NULL, NULL },
   { "__annotations__", (getter) boundmethod_get_annotations, NULL, NULL, NULL },
+  { "__name__", (getter) boundmethod_get_func_attr, NULL, NULL,
+    (void *) "__name__" },
+  { "__qualname__", (getter) boundmethod_get_func_attr, NULL, NULL,
+    (void *) "__qualname__" },
+  { "__doc__", (getter) boundmethod_get_func_attr, NULL, NULL,
+    (void *) "__doc__" },
+  { "__module__", (getter) boundmethod_get_func_attr, NULL, NULL,
+    (void *) "__module__" },
   { NULL, }
 };
 
@@ -1629,6 +1751,9 @@ static int function_traverse(
   Py_VISIT(KosFunction_DICT(self));
   Py_VISIT(((KosFunction *) self)->creation_annotations);
   Py_VISIT(((KosFunction *) self)->annotations_cache);
+  Py_VISIT(((KosFunction *) self)->name_override);
+  Py_VISIT(((KosFunction *) self)->qualname_override);
+  Py_VISIT(((KosFunction *) self)->module_override);
   return 0;
 }
 
@@ -1640,6 +1765,9 @@ static int function_clear(PyObject *self) {
   Py_CLEAR(KosFunction_DICT(self));
   Py_CLEAR(((KosFunction *) self)->creation_annotations);
   Py_CLEAR(((KosFunction *) self)->annotations_cache);
+  Py_CLEAR(((KosFunction *) self)->name_override);
+  Py_CLEAR(((KosFunction *) self)->qualname_override);
+  Py_CLEAR(((KosFunction *) self)->module_override);
   return 0;
 }
 
@@ -1656,6 +1784,9 @@ static void function_dealloc(PyObject *self) {
   Py_CLEAR(KosFunction_DICT(self));
   Py_CLEAR(((KosFunction *) self)->creation_annotations);
   Py_CLEAR(((KosFunction *) self)->annotations_cache);
+  Py_CLEAR(((KosFunction *) self)->name_override);
+  Py_CLEAR(((KosFunction *) self)->qualname_override);
+  Py_CLEAR(((KosFunction *) self)->module_override);
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -1948,7 +2079,10 @@ static PyObject *function_descr_get(
 
 static PyObject *function_repr(PyObject *self) {
   KosFunction *fn = (KosFunction *) self;
-  PyObject *name = KosFunction_NAME(fn);
+  PyObject *name;
+
+  /* display follows a __name__ override (wraps); self-binding does not */
+  name = fn->name_override ? fn->name_override : KosFunction_NAME(fn);
   if (name != NULL)
     return PyUnicode_FromFormat("<Function %R>", name);
   name = KosCode_NAME(KosFunction_CODE(fn));
@@ -1982,7 +2116,7 @@ static PyMemberDef function_members[] = {
   { "base_ns", T_OBJECT, offsetof(KosFunction, base_ns), READONLY, NULL },
   { "formals", T_OBJECT, offsetof(KosFunction, formals), READONLY, NULL },
   { "name", T_OBJECT, offsetof(KosFunction, name), READONLY, NULL },
-  { "__doc__", T_OBJECT, offsetof(KosFunction, doc), READONLY, NULL },
+  { "__doc__", T_OBJECT, offsetof(KosFunction, doc), 0, NULL },
   { NULL, 0, 0, 0, NULL },
 };
 

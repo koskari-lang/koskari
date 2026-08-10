@@ -170,6 +170,10 @@ typedef struct {
   PyObject *dict;           /* instance __dict__ for arbitrary attributes; NULL */
   PyObject *creation_annotations; /* raw dict from BUILD_FUNCTION, or NULL */
   PyObject *annotations_cache; /* realized __annotations__ dict, or NULL */
+  PyObject *name_override;  /* __name__ metadata write (e.g. wraps), or NULL.
+                               Display-only: self-binding keys off `name` */
+  PyObject *qualname_override; /* __qualname__ metadata write, or NULL */
+  PyObject *module_override; /* __module__ metadata write, or NULL */
   int annotations_need_resolve; /* creation dict holds str forward refs */
   int bind_self_state;      /* self-bind on call: 0 unresolved (lazily
                                computed on first call; name is fixed after

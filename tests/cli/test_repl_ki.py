@@ -120,6 +120,22 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         self.assertIn('25', out)
 
 
+    async def test_decorator_surface_enabled(self):
+        """
+        The REPL reader follows the pragma baseline, so @ decorator
+        lines work at the prompt (reader/decorators)
+        """
+
+        out, _ = await self._run_repl(
+            ['@(let [[c 41]])',
+             'define bump []:',
+             '    (incr! c)',
+             '    c',
+             '',
+             '(bump)'])
+        self.assertIn('42', out)
+
+
     async def test_defer_result_stays_a_handle(self):
         out, _ = await self._run_repl(
             ['(define log (list))',

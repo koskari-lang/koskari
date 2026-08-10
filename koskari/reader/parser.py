@@ -2614,6 +2614,10 @@ class LayoutReader(Reader):
         self.layout_enabled = layout_enabled
         self.layout_implicit_calls = layout_implicit_calls
 
+        # raw default is off; reload_pragma raises it to the pragma
+        # baseline (reader/decorators)
+        self.layout_decorators = False
+
         if not nodefaults:
             self._add_default_macros()
             self._add_default_atoms()
@@ -2775,7 +2779,9 @@ class LayoutReader(Reader):
         return inst
 
 
-    def set_layout_modes(self, *, layout_enabled=None, layout_implicit_calls=None):
+    def set_layout_modes(
+            self, *, layout_enabled=None, layout_implicit_calls=None,
+            layout_decorators=None):
         """
         Update layout-mode feature switches on this reader.
 
@@ -2787,6 +2793,8 @@ class LayoutReader(Reader):
             self.layout_enabled = bool(layout_enabled)
         if layout_implicit_calls is not None:
             self.layout_implicit_calls = bool(layout_implicit_calls)
+        if layout_decorators is not None:
+            self.layout_decorators = bool(layout_decorators)
 
 
     def reload_pragma(self, pragma):
@@ -2794,8 +2802,9 @@ class LayoutReader(Reader):
         Apply reader settings from a module pragma
 
         Extends :meth:`Reader.reload_pragma` with the layout switches
-        (reader/layout and reader/implicit-calls) and mirrors every setting
-        onto the inner s-expression reader, so both surfaces agree.
+        (reader/layout, reader/implicit-calls, and reader/decorators) and
+        mirrors every setting onto the inner s-expression reader, so both
+        surfaces agree.
 
         :param pragma: a module pragma, or None for a no-op
         """
@@ -2808,7 +2817,8 @@ class LayoutReader(Reader):
 
         self.set_layout_modes(
             layout_enabled=pragma.get("reader/layout"),
-            layout_implicit_calls=pragma.get("reader/implicit-calls"))
+            layout_implicit_calls=pragma.get("reader/implicit-calls"),
+            layout_decorators=pragma.get("reader/decorators"))
 
 
     @contextmanager
@@ -3399,6 +3409,24 @@ class LayoutReader(Reader):
             return cons(_symbol_compile_decorate, deco_list, inner, nil)
 
 
+    def _layout_macro_enabled(self, c):
+        """
+        Whether the layout-only prefix macro for ``c`` is currently active.
+
+        Gated here rather than by removing the table entry, so pragma
+        settings toggle behavior while registration stays stable (the
+        same reasoning as :meth:`Reader._dotted_attr_match`). ``@`` is
+        governed by ``reader/decorators`` via :attr:`layout_decorators`.
+
+        :param c: the dispatch character
+        :return: True when the macro should fire
+        """
+
+        if c == '@':
+            return self.layout_decorators
+        return True
+
+
     def read_form(self, stream):
         """
         Read one layout form using a line-oriented header-mode loop
@@ -3407,7 +3435,8 @@ class LayoutReader(Reader):
         :attr:`inner`.
 
         When layout is enabled: ``c`` in ``_layout_macros`` runs the layout-only
-        prefix handler (e.g. ``@``). Otherwise collects header-mode values on
+        prefix handler (e.g. ``@``), provided its gate is open (see
+        :meth:`_layout_macro_enabled`). Otherwise collects header-mode values on
         the current logical line until ``LINE_END``, ``EOF``, or structural
         ``COLON`` (horizontal whitespace only between tokens). Empty lines are
         skipped. At ``LINE_END`` with several values, folds with ``cons`` or
@@ -3442,7 +3471,7 @@ class LayoutReader(Reader):
 
             outer_indent = position[1]
 
-            if c in self._layout_macros:
+            if c in self._layout_macros and self._layout_macro_enabled(c):
                 stream.read(1)
                 layout_macro = self._layout_macros[c]
                 result = layout_macro(stream, outer_indent)

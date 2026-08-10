@@ -106,25 +106,4 @@ define-syntax compile/labels:
         body ...)
 
 
-define-syntax compile/decorate:
-  """
-  Handler for the decorator layout syntax, can also be used to apply
-  decorator-style wrappers to an s-expr form.
-  """
-
-  syntax-rules [define-class define compile/define-class compile/define]:
-    case (decorate [] fn):
-      fn
-    case (decorate [decorators ...] (define-class name supers body ...)):
-      (define name (decorate [decorators ...] (class name supers (begin body ...))))
-    case (decorate [decorators ...] (compile/define-class name supers body ...)):
-      (define name (decorate [decorators ...] (class name supers (begin body ...))))
-    case (decorate [decorators ...] (define name formals body ...)):
-      (define name (decorate [decorators ...] (function name formals body ...)))
-    case (decorate [decorators ...] (compile/define name formals body ...)):
-      (define name (decorate [decorators ...] (function name formals body ...)))
-    case (decorate [decorators ...] fn):
-      ((function-compose decorators ...) fn)
-
-
 ;; The end.

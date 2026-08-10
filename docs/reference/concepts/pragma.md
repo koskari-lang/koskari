@@ -113,6 +113,11 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   `compile/apply-fence` forms. Off, backtick keeps only its quote and
   quasiquote readings. See
   [compile/apply-fence](../specials/compile-apply-fence.md).
+- **`reader/decorators`** *(default on)* — whether leading `@` layout lines
+  read as decorators, lowering the decorated form to `compile/decorate`. Off,
+  `@` has no layout meaning and reads through the ordinary atom rules. This
+  gates the reader surface only; `(compile/decorate ...)` remains available as
+  a macro regardless.
 
 ### Compiler
 
