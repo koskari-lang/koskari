@@ -764,7 +764,9 @@ define main [argv: None]:
             host: "127.0.0.1"
             port: port
             stateless_http: True
-            json_response: True)
+            json_response: True
+            transport_security: (TransportSecuritySettings
+                enable_dns_rebinding_protection: False))
 
     ; stdio mode, MCP running in an agent-managed subprocess
     unless options.serve:

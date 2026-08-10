@@ -110,15 +110,8 @@ define _write_function_instance_section [file fn]:
   define base_ns fn.base_ns
   file.write "  base_ns (closures):\n"
   if base_ns:
-    try:
-      define items (base_ns.items)
-    except [#(AttributeError TypeError)]:
-      file.write "    (unable to iterate)\n"
-    else:
-      for-each [kv items]:
-        define k kv[0]
-        define v kv[1]
-        file.write f"    {(repr k)}: {(_format_constant v)}\n"
+    for-each [[k v] (base_ns.items)]:
+      file.write f"    {(repr k)}: {(_format_constant v)}\n"
   else:
     file.write "    (none)\n"
   file.write "\n"
@@ -233,10 +226,9 @@ define _compare_name [sel]:
   """
 
   try:
-    define member (Compare sel)
+    (Compare sel).name
   except [ValueError]:
-    return (str sel)
-  member.name
+    (str sel)
 
 
 define _operand_name [sel]:
@@ -245,10 +237,9 @@ define _operand_name [sel]:
   """
 
   try:
-    define member (Operand sel)
+    (Operand sel).name
   except [ValueError]:
-    return (str sel)
-  member.name
+    (str sel)
 
 
 define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
