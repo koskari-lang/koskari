@@ -50,7 +50,10 @@ def make_layout_reader():
     from koskari.reader import LayoutReader
     from koskari.bootstrap import _BUILTIN_REGISTRY
     ns = dict(_BUILTIN_REGISTRY)
-    return LayoutReader(ns)
+
+    # pragma-built, not raw: token classification should see the same
+    # gated surfaces (e.g. reader/decorators) a default module reads with
+    return LayoutReader.from_pragma(ns)
 
 
 def default_layout_reader():
