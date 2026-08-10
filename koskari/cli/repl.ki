@@ -120,7 +120,9 @@ define eval_expression [compiler source ns]:
 
   define reader (ns.get "__reader__")
   when (None? reader):
-    set! reader (LayoutReader ns)
+    ;; build against the session's pragma (or a default one), so the
+    ;; REPL reads with the same pragma-gated surfaces as a module
+    set! reader (LayoutReader.from_pragma ns pragma: (ns.get "__pragma__"))
     set! ns["__reader__"] reader
 
   define stream (source_str source "<stdin>")
