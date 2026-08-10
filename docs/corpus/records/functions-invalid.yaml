@@ -133,3 +133,61 @@ tags:
   - surprising
   - pitfall
 notes: "a bare (unparenthesized) define or set! does NOT continue onto a more-indented next line: `define x` binds nothing and `(+ 1 2)` reads as a separate statement. corrective: parenthesize the whole form -- (define x (+ 1 2))."
+---
+id: function-decorate-parameterize-timing-001
+feature: layout/decorate
+source: |-
+  define-parameter verbose False
+  
+  @parameterize [[verbose True]]
+  define loud? []:
+    verbose
+  
+  (loud?)
+  
+verify:
+  read: (compile/begin (define-parameter verbose False) (compile/decorate ((parameterize [[verbose True]])) (define loud? [] verbose)) (loud?))
+  invalid: grafted @parameterize completes at definition time, so the parameter extent spans only the define itself and has already ended before any call; (loud?) reads verbose at call time and returns False, not True
+references:
+  - reference/concepts/decorators.md
+  - reference/macros/compile-decorate-subject.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - decorate-subject
+  - parameterize
+  - "surface:block"
+  - "pragma:reader/decorators"
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: @call-parameterize [[verbose True]] enters the extent per invocation, which is almost always what a grafted with/parameterize over a define was trying to say. Requires reader/decorators (baseline on)."
+---
+id: function-define-percall-state-001
+feature: special/compile/define
+source: |-
+  define tick []:
+    define count 0
+    incr! count
+    count
+  
+  #[(tick) (tick)]
+  
+verify:
+  read: "(compile/begin (define tick [] (define count 0) (incr! count) count) (#list (tick) (tick)))"
+  invalid: "count is re-defined inside the body on every call, so the state never persists -- both calls return 1, giving list:[1,1] instead of list:[1,2]"
+references:
+  - reference/specials/compile-define.md
+  - reference/concepts/decorators.md
+stability: evolving
+tags:
+  - function
+  - define
+  - "surface:block"
+  - invalid
+  - surprising
+  - pitfall
+  - closure
+  - mutate
+notes: "corrective: hoist the state into a definition-time extent with @let [[count 0]] over the define, which grafts the define as the let body and makes count private persistent state."

@@ -925,3 +925,198 @@ tags:
   - async
   - python-interop
 notes: "create-task schedules the deferred body and returns the Task HANDLE. Tasks and Futures are excluded from implicit auto-await, so binding or returning one does NOT wait for it -- an un-awaited (asyncio.gather ...) waits for nothing. Explicit (await t) resolves the handle; (await (asyncio.gather *: tasks)) drains many. Passing a defer consumes it (the Task owns its single shot). Needs a running event loop, which the corpus eval harness does not provide -- hence no eval pin."
+---
+id: function-decorate-let-private-state-001
+feature: layout/decorate
+source: |-
+  @let [[count 0]]
+  define tick []:
+    incr! count
+    count
+  
+  (tick)
+  (tick)
+  (tick)
+  
+verify:
+  read: (compile/begin (compile/decorate ((let [[count 0]])) (define tick [] (incr! count) count)) (tick) (tick) (tick))
+  eval: "3"
+references:
+  - reference/concepts/decorators.md
+  - reference/macros/compile-decorate-subject.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - decorate-subject
+  - let
+  - "surface:block"
+  - "pragma:reader/decorators"
+  - closure
+  - mutate
+  - idiom
+notes: "graft arm: a body-less @let over a define completes the let with the definition as its body, so count is bound once at definition time, private to tick, and persists across calls. This is the idiom for private persistent state (caches, counters). Requires reader/decorators (baseline on)."
+---
+id: function-decorate-subject-let-graft-001
+feature: macro/compile/decorate-subject
+source: |-
+  (compile/decorate-subject (let [[c 0]]) (function f [] c))
+  
+verify:
+  expand: (let [[c 0]] (function f [] c))
+references:
+  - reference/macros/compile-decorate-subject.md
+  - reference/concepts/decorators.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate-subject
+  - let
+  - closure
+  - decorate
+notes: "graft arm: a body-less let decorator is completed by splicing the subject in as its body, giving the function a definition-time lexical capture. Only the body-less spelling grafts; a complete let falls through to the default invocation arm."
+---
+id: function-decorate-subject-default-arm-001
+feature: macro/compile/decorate-subject
+source: |-
+  (compile/decorate-subject demand (function f [] 1))
+  
+verify:
+  expand: (demand (function f [] 1))
+references:
+  - reference/macros/compile-decorate-subject.md
+  - reference/concepts/decorators.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate-subject
+  - decorate
+  - higher-order
+notes: "default arm: a decorator expression with no registered shape evaluates and is invoked on the subject -- ordinary Python decorator semantics, stacked as (d1 (d2 fn))."
+---
+id: function-decorate-define-hoist-001
+feature: macro/compile/decorate
+source: |-
+  (compile/decorate (demand) (define foo [x] x))
+  
+verify:
+  expand: (define foo (compile/decorate [demand] (function foo [x] x)))
+references:
+  - reference/macros/compile-decorate.md
+  - reference/concepts/decorators.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+  - name-resolution
+notes: compile/decorate hoists the name out of a define subject so the function value is what gets decorated and the finished result is what gets bound; define-class is hoisted the same way.
+---
+id: function-decorate-call-parameterize-001
+feature: layout/decorate
+source: |-
+  define-parameter verbose False
+  
+  @call-parameterize [[verbose True]]
+  define loud? []:
+    verbose
+  
+  #[(loud?) verbose]
+  
+verify:
+  read: "(compile/begin (define-parameter verbose False) (compile/decorate ((call-parameterize [[verbose True]])) (define loud? [] verbose)) (#list (loud?) verbose))"
+  eval: "list:[true,false]"
+references:
+  - reference/concepts/decorators.md
+  - reference/macros/compile-decorate-subject.md
+  - reference/macros/compile-define-parameter-and-compile-parameterq.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - decorate-subject
+  - call-parameterize
+  - parameterize
+  - "surface:block"
+  - "pragma:reader/decorators"
+notes: "call arm: @call-parameterize wraps the function so the parameter extent is entered per invocation -- verbose is True inside a call to loud? and False everywhere else. Requires reader/decorators (baseline on)."
+---
+id: function-decorate-call-parameterize-002
+feature: macro/compile/decorate
+source: |-
+  (begin
+    (define-parameter p False)
+    (compile/decorate ((call-parameterize [[p True]]))
+      (define f [] p))
+    (f))
+  
+verify:
+  eval: "true"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/macros/compile-decorate-subject.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+  - decorate-subject
+  - call-parameterize
+  - parameterize
+notes: "s-expression spelling of the call-parameterize arm: the decorated f sees p bound to True during each invocation."
+---
+id: function-decorate-subject-call-with-001
+feature: macro/compile/decorate-subject
+source: |-
+  (compile/decorate-subject (call-with [(cm)]) (function f [] 1))
+  
+verify:
+  expand: "(let [[... (function f [] 1)]] (decorate-wraps ... (lambda [*: ... **: ...] (with [(cm)] (... *: ... **: ...)))))"
+references:
+  - reference/macros/compile-decorate-subject.md
+  - reference/concepts/decorators.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate-subject
+  - call-with
+  - decorate
+  - cleanup
+notes: "call arm: the subject is bound, then wrapped in a forwarding lambda that enters the context manager per invocation; decorate-wraps makes the wrapper answer for the original. Gensym names are elided with ... in the expand pattern."
+---
+id: function-decorate-stacked-arms-001
+feature: layout/decorate
+source: |-
+  define-parameter scale 10
+  
+  @let [[total 0]]
+  @call-parameterize [[scale 100]]
+  define add [n]:
+    set! total (+ total (* n scale))
+    total
+  
+  (add 1)
+  (add 2)
+  
+verify:
+  read: (compile/begin (define-parameter scale 10) (compile/decorate ((let [[total 0]]) (call-parameterize [[scale 100]])) (define add [n] (set! total (+ total (* n scale))) total)) (add 1) (add 2))
+  eval: "300"
+references:
+  - reference/concepts/decorators.md
+  - reference/macros/compile-decorate-subject.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - decorate-subject
+  - let
+  - call-parameterize
+  - "surface:block"
+  - "pragma:reader/decorators"
+  - closure
+  - mutate
+  - idiom
+notes: "stacked decorators peel outermost first: @let grafts a definition-time private binding while @call-parameterize enters the parameter extent per call; total persists across calls and scale is 100 only during each call. Requires reader/decorators (baseline on)."
