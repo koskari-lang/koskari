@@ -2,17 +2,24 @@
 
 ## Status
 
-**Implemented (2026-08-09, `better-decorate` branch).** `compile/decorate`
-peels one decorator per expansion into `compile/decorate-subject`
-([_functions.ki:141](../../koskari/bootstrap/_functions.ki:141)), whose default
+**Implemented and archived (2026-08-09).** `compile/decorate` peels one
+decorator per expansion into `compile/decorate-subject`
+([_decorator.ki:32](../../koskari/bootstrap/_decorator.ki:32)), whose default
 arm is invocation and whose shape arms cover two families: the graft forms
 `let` / `with` / `parameterize`, and the call-time forms `call-with` /
 `call-parameterize` supported by the `decorate-wraps` builtin
-([_functions.ki:109](../../koskari/bootstrap/_functions.ki:109)). Tests:
+([_decorator.ki:20](../../koskari/bootstrap/_decorator.ki:20)). The machinery
+lives in its own bootstrap source, loaded second so every later bootstrap
+file can use decorators; the `@` reader surface is gated by the
+`reader/decorators` pragma (baseline on, off on a raw reader); and Function
+identity metadata is writable, so `decorate-wraps` is a plain
+`functools.update_wrapper`. Tests:
 [tests/importer/test_decorate_subject.py](../../tests/importer/test_decorate_subject.py)
-(behavior) and
+(behavior),
 [tests/reader/test_layout_decorators.py](../../tests/reader/test_layout_decorators.py)
-(layout lowering, pre-existing).
+(layout lowering and the pragma gate), and
+[tests/lib/test_function_metadata.py](../../tests/lib/test_function_metadata.py)
+(metadata writability).
 
 ## The former expansion, and why it was replaced
 
@@ -367,7 +374,8 @@ extend-syntax compile/decorate-subject:
 
 A binding introduced by `@let [[cache #{}]]` is shared across every call to
 the decorated function. A `copy:` or `new:` default
-([formal-default-modes.md](formal-default-modes.md)) produces a fresh value
+([formal-default-modes.md](../language/formal-default-modes.md)) produces a
+fresh value
 per call. Both are things a mutable default value gets used for today, so a
 lint that flags a mutable default has a concrete spelling to suggest for
 either intent.
