@@ -265,9 +265,10 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["loud", "quiet"], await expr())
 
 
-    async def test_call_with_sets_wrapped_chain(self):
+    async def test_call_with_wrapper_answers_for_original(self):
         """
-        The delivered wrapper carries __wrapped__ naming the original
+        The delivered wrapper carries the original's identity metadata
+        and the __wrapped__ chain
         """
 
         log = []
@@ -275,31 +276,38 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (compile/decorate [(call-with [(cm)])]
-            (define shout [w] w))
+            (define shout [w]
+              \"\"\"
+              original docstring
+              \"\"\"
+              w))
           shout)
         """
         expr, _mod = self.compile_expr(
             src, cm=ContextRecorder(log, made), log=log)
         fn = await expr()
+        self.assertEqual("shout", fn.__name__)
+        self.assertEqual("shout", fn.__qualname__)
+        self.assertIn("original docstring", fn.__doc__)
         self.assertEqual("shout", fn.__wrapped__.__name__)
 
 
     async def test_decorate_wraps_merges_dict(self):
         """
-        decorate-wraps copies __dict__ entries and sets __wrapped__ on
-        the wrapper
+        decorate-wraps copies identity metadata and __dict__ entries and
+        sets __wrapped__ on the wrapper
         """
 
         src = """
         (begin
-          (define a (lambda [x] x))
+          (define a (function aname [x] x))
           (setattr a "mark" "m1")
           (define b (lambda [x] x))
           (decorate-wraps a b)
-          #[(is b.__wrapped__ a) b.mark])
+          #[(is b.__wrapped__ a) b.mark b.__name__])
         """
         expr, _mod = self.compile_expr(src)
-        self.assertEqual([True, "m1"], await expr())
+        self.assertEqual([True, "m1", "aname"], await expr())
 
 
     async def test_let_stacks_with_call_parameterize(self):

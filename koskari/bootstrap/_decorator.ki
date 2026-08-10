@@ -19,34 +19,14 @@ Portion of koskari.builtins
 
 define-global decorate-wraps [inner wrapper]:
   """
-  Copies callable metadata from inner onto wrapper, returning wrapper.
-
-  A tolerant functools.update_wrapper: each wrapper assignment is
-  attempted independently, so metadata a wrapper cannot accept is
-  skipped rather than aborting the copy. Used by the call-with and
-  call-parameterize decorator expansions so the delivered wrapper
+  Copies callable metadata from inner onto wrapper via
+  functools.update_wrapper, returning wrapper. Used by the call-with
+  and call-parameterize decorator expansions so the delivered wrapper
   answers for the function it wraps.
   """
 
   import functools
-
-  for-each [attr functools.WRAPPER_ASSIGNMENTS]:
-    try:
-      setattr wrapper attr (getattr inner attr)
-    except [AttributeError]:
-      (continue)
-
-  try:
-    ((getattr wrapper "__dict__").update (getattr inner "__dict__" #{}))
-  except [AttributeError]:
-    None
-
-  try:
-    setattr wrapper "__wrapped__" inner
-  except [AttributeError]:
-    None
-
-  wrapper
+  (functools.update_wrapper wrapper inner)
 
 
 define-syntax compile/decorate-subject:
