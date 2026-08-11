@@ -42,10 +42,12 @@ define _STATUS (Path "/proc/self/status")
 define _prev #{}
 define _base #{}
 define _base-totals #{}
-define _samples #[0]
+define _samples 0
 
-;; the previous tracemalloc snapshot, held only while tracing is on
-define _snap #[None]
+;; the previous sample's per-line tracemalloc statistics, held only
+;; while tracing is on -- never the Snapshot itself, which materializes
+;; millions of blocks and would be traced by the next take_snapshot
+define _snap None
 
 
 define vmrss []:
@@ -55,10 +57,10 @@ define vmrss []:
     """
 
     unless (_STATUS.exists):
-        (return None)
-    for-each [line (.splitlines (_STATUS.read_text))]:
+        return None
+    for-each [line ((_STATUS.read_text).splitlines)]:
         when (line.startswith "VmRSS:"):
-            (return (int (item (line.split) 1)))
+            return (int (line.split)[1])
     None
 
 
@@ -85,19 +87,19 @@ define _drift [key value unit: ""]:
     """
 
     when (None? value):
-        (return "n/a")
+        return "n/a"
 
     define first (_base-totals.get key)
     when (None? first):
-        (set! (item _base-totals key) value)
-        (return (.format "{}{}" value unit))
+        set! _base-totals[key] value
+        return f"{value}{unit}"
 
-    (.format "{}{}({:+d})" value unit (- value first))
+    f"{value}{unit}({(- value first):+d})"
 
 
 define _task-count []:
     try:
-        (len (asyncio.all_tasks))
+        len (asyncio.all_tasks)
     except [RuntimeError]:
         None
 
@@ -108,29 +110,51 @@ define _snapshot-report [top]:
     most since the previous sample, ranked like the census by the size
     of the move in either direction. Does nothing unless tracemalloc is
     tracing -- arm it by starting the process with
-    PYTHONTRACEMALLOC=<frames>. The first tracing sample only captures
-    the baseline, so movements begin one sample later.
+    PYTHONTRACEMALLOC=<frames>. Only per-line statistics survive
+    between samples; holding the Snapshot would hand the next
+    take_snapshot millions of its own blocks to trace, tripling the
+    walk and ratcheting RSS. The transient snapshot still costs one
+    walk of the traced blocks per fire. The first tracing sample only
+    captures the baseline, so movements begin one sample later.
     """
 
     unless (tracemalloc.is_tracing):
-        (return None)
+        return None
 
-    define snap (.filter_traces (tracemalloc.take_snapshot)
+    define snap ((tracemalloc.take_snapshot).filter_traces
         #((tracemalloc.Filter False "<frozen importlib._bootstrap>")
           (tracemalloc.Filter False "<unknown>")
           (tracemalloc.Filter False tracemalloc.__file__)))
-    define prev (item _snap 0)
-    (set! (item _snap 0) snap)
+
+    define stats #{}
+    for-each [stat (snap.statistics "lineno")]:
+        let [[frame stat.traceback[0]]]:
+            (set! stats[f"{frame.filename}:{frame.lineno}"]
+                #(stat.size stat.count))
+
+    global _snap
+    define prev _snap
+    set! _snap stats
 
     when (None? prev):
-        (logger.info "  tracemalloc baseline captured")
-        (return None)
+        logger.info "  tracemalloc baseline captured"
+        return None
 
-    define moved (list-each [stat (snap.compare_to prev "lineno")]
-        (let [[frame (item stat.traceback 0)]]
-            #((abs stat.size_diff) stat.size_diff stat.count_diff
-              stat.size stat.count
-              (.format "{}:{}" frame.filename frame.lineno))))
+    ;; every line seen in either sample, so a site that vanished shows
+    ;; its fall rather than silently dropping out of the report
+    define keys (set (stats.keys))
+    keys.update (prev.keys)
+
+    define moved:
+        list-each [where keys]:
+            let [[cur (stats.get where #(0 0))]
+                 [old (prev.get where #(0 0))]]:
+
+                #((abs (- cur[0] old[0]))
+                  (- cur[0] old[0])
+                  (- cur[1] old[1])
+                  cur[0] cur[1] where)
+
     for-each [[mag sdiff cdiff size count where]
               (item-slice (sorted moved reverse: True) stop: top)]:
         when mag:
@@ -171,18 +195,21 @@ define memory-report [top: 10]:
     """
 
     define-values [collected counts] (memory-census)
-    (set! (item _samples 0) (+ 1 (item _samples 0)))
+
+    global _samples
+    incr! _samples
 
     ;; built as one string rather than logged with args, because it is
     ;; also the return value -- a handler hands it to `mnemonic` to label
     ;; its own run with the numbers the history is scanned for
-    define line (.format
-        "sample={} rss={} blocks={} live={} collected={} threads={} tasks={}"
-        (item _samples 0)
-        (_drift "rss" (vmrss) unit: "KiB")
-        (_drift "blocks" (sys.getallocatedblocks))
-        (_drift "live" (sum (counts.values)))
-        collected (threading.active_count) (_task-count))
+    define sample _samples
+    define rss (_drift "rss" (vmrss) unit: "KiB")
+    define blocks (_drift "blocks" (sys.getallocatedblocks))
+    define live (_drift "live" (sum (counts.values)))
+    define threads (threading.active_count)
+    define tasks (_task-count)
+    define line f"sample={sample} rss={rss} blocks={blocks} live={live}"-
+                f" collected={collected} threads={threads} tasks={tasks}"
     (logger.info "%s" line)
 
     ;; ranked by the SIZE of the drift, not its sign: a count that fell
@@ -192,6 +219,7 @@ define memory-report [top: 10]:
         define moved (list-each [[name n] (counts.items)]
             (let [[drift (- n (_base.get name 0))]]
                 #((abs drift) drift (- n (_prev.get name 0)) n name)))
+
         for-each [[mag drift delta n name]
                   (item-slice (sorted moved reverse: True) stop: top)]:
             when drift:

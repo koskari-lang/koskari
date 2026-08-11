@@ -44,9 +44,9 @@ dependencies = [
 # importable regardless -- each resolves its client in the job constructor
 # via require-extra, which names the extra to install when it is missing.
 [project.optional-dependencies]
-kafka = ["aiokafka"]
+kafka = ["aiokafka[snappy]"]
 umb = ["stompman"]
-all = ["aiokafka", "stompman"]
+all = ["aiokafka[snappy]", "stompman"]
 
 [project.urls]
 Homepage = "https://github.com/obriencj/koskari/"
