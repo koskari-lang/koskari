@@ -62,14 +62,14 @@ define stamp [value]:
 ;; the package directory is located via its import spec.
 define _build-env []:
     define spec (find_spec "kosrunner")
-    define pkgdir (item (list spec.submodule_search_locations) 0)
+    define pkgdir (list spec.submodule_search_locations)[0]
     define tdir (os.path.join pkgdir "templates")
     define env (jinja2.Environment
         loader: (jinja2.FileSystemLoader tdir)
         autoescape: True)
     ;; demand: jinja calls a filter synchronously, so a bare koskari
     ;; function would hand it back an un-awaited coroutine
-    (set! (item env.filters "stamp") (demand stamp))
+    set! env.filters["stamp"] (demand stamp)
     env
 
 
@@ -203,10 +203,13 @@ define-class UiJob [Job]:
 
             define jobname detail["job"]
             define job (js.jobs.get jobname)
+            define-values [older newer] (js.store.run-neighbors runid)
             (_render env "run.html"
                 #{"prefix": prefix
                   "root": root
                   "run": detail
+                  "prev": older
+                  "next": newer
                   "may_retrigger": (and job (trigger-allowed? js.access ctx job))
                   "crumbs": #[#{"label": jobname "href": (job-url jobname)}
                               #{"label": detail["run_id"]}]})

@@ -95,7 +95,7 @@ define _utcnow []:
 
 
 define _utcnow-iso []:
-    (.isoformat (_utcnow))
+    ((_utcnow).isoformat)
 
 
 define _make-runid []:
@@ -140,9 +140,10 @@ define clean-mnemonic [value]:
     when (None? value):
         (return None)
 
-    define text (.join " " (.split (str value)))
+    define text (" ".join ((str value).split))
     unless text:
         (return None)
+
     if (> (len text) MNEMONIC-MAX):
         (+ (item-slice text stop: (- MNEMONIC-MAX 3)) "...")
     else:
@@ -170,7 +171,7 @@ define mnemonic [value]:
     define text (clean-mnemonic value)
     define cell (_current-mnemonic.get)
     unless (None? cell):
-        (set! (item cell 0) text)
+        set! cell[0] text
     text
 
 
@@ -194,7 +195,7 @@ define-class _RunLogHandler [logging.Handler]:
     @demand
     define emit [self record]:
         define buf (_current-run.get)
-        when (not (None? buf)):
+        unless (None? buf):
             (buf.append (self.format record))
 
 
@@ -204,14 +205,14 @@ define install-run-logging []:
     variety's log output during a run lands in that run's output.log.
     """
 
-    unless (item _log-installed 0):
+    unless _log-installed[0]:
         define lg (logging.getLogger "kosrunner")
         define handler (_RunLogHandler)
+
         (handler.setFormatter
             (logging.Formatter "%(asctime)s %(levelname)s %(name)s %(message)s"))
         (lg.addHandler handler)
-        (set! (item _log-installed 0) True)
-    None
+        set! _log-installed[0] True
 
 
 define-class RunStore []:
@@ -274,8 +275,10 @@ define-class RunStore []:
         needing to be thrown away.
         """
 
-        define have (list-each [col (self._rows "PRAGMA table_info(runs)")]
-            (item col "name"))
+        define have:
+            list-each [col (self._rows "PRAGMA table_info(runs)")]:
+                col["name"]
+
         for-each [[name decl] (_ADDED-COLUMNS.items)]:
             unless (in? name have):
                 (self._exec f"ALTER TABLE runs ADD COLUMN {name} {decl}")
@@ -290,7 +293,8 @@ define-class RunStore []:
         """
 
         (self._exec
-            "UPDATE runs SET status = 'interrupted', finished_at = ? WHERE status = 'running'"
+            "UPDATE runs SET status = 'interrupted',"-
+            " finished_at = ? WHERE status = 'running'"
             #[(_utcnow-iso)])
         (self.db.commit)
 
@@ -342,7 +346,10 @@ define-class RunStore []:
               "kwargs": kwargs})
 
         (self._exec
-            "INSERT INTO runs (run_id, job, job_dir, type, cause, parent, status, started_at) VALUES (?, ?, ?, ?, ?, ?, 'running', ?)"
+            "INSERT INTO runs"-
+            " (run_id, job, job_dir, type, cause, parent, status, started_at)"-
+            " VALUES (?, ?, ?, ?, ?, ?, 'running', ?)"
+
             #[runid job seg type cause parent (_utcnow-iso)])
         (self.db.commit)
 
@@ -367,8 +374,10 @@ define-class RunStore []:
             (return)
 
         define rundir (self.runs-dir.joinpath (item row "job_dir") runid)
-        when (not (None? log)):
+
+        unless (None? log):
             (self._write-text (rundir.joinpath "output.log") log)
+
         (self._write-json (rundir.joinpath "result.json")
             #{"status": status
               "result": result
@@ -385,8 +394,9 @@ define-class RunStore []:
     ; --- queries ---
 
     define get-run [self runid]:
-        define rows (self._rows "SELECT * FROM runs WHERE run_id = ?" #[runid])
-        (if rows (item rows 0) None)
+        define rows (self._rows
+            "SELECT * FROM runs WHERE run_id = ?" #[runid])
+        when rows rows[0]
 
 
     define list-runs [self job: None status: None limit: 50 offset: 0]:
@@ -407,6 +417,30 @@ define-class RunStore []:
             params)
 
 
+    define run-neighbors [self runid]:
+        """
+        The run ids adjacent to `runid` in its own job's history, as
+        (values older newer), None on the ends. Ordered the way the
+        listings are -- started_at, with run_id breaking a tie -- so
+        stepping prev/next from a run page walks exactly the job page's
+        order.
+        """
+
+        define row (self.get-run runid)
+        when (None? row):
+            return (values None None)
+
+        define params #[row["job"] row["started_at"] runid]
+        define older (self._rows
+            "SELECT run_id FROM runs WHERE job = ? AND (started_at, run_id) < (?, ?) ORDER BY started_at DESC, run_id DESC LIMIT 1"
+            params)
+        define newer (self._rows
+            "SELECT run_id FROM runs WHERE job = ? AND (started_at, run_id) > (?, ?) ORDER BY started_at ASC, run_id ASC LIMIT 1"
+            params)
+        (values (when older older[0]["run_id"])
+                (when newer newer[0]["run_id"]))
+
+
     define last-runs [self]:
         """
         The most recent run row per job, as a job-name -> row dict. One
@@ -415,28 +449,35 @@ define-class RunStore []:
         """
 
         define rows (self._rows
-            "SELECT r.* FROM runs r JOIN (SELECT job, MAX(started_at) AS latest FROM runs GROUP BY job) m ON r.job = m.job AND r.started_at = m.latest")
+            "SELECT r.* FROM runs r JOIN"-
+            " (SELECT job, MAX(started_at) AS latest"-
+            " FROM runs GROUP BY job)"-
+            " m ON r.job = m.job AND r.started_at = m.latest")
+
         define out #{}
         for-each [row rows]:
-            (set! (item out (item row "job")) row)
+            set! out[row["job"]] row
+
         out
 
 
     define run-log-path [self runid]:
         define row (self.get-run runid)
-        (if (None? row)
-            None
-            (self.runs-dir.joinpath (item row "job_dir") runid "output.log"))
+
+        unless (None? row):
+            (self.runs-dir.joinpath row["job_dir"] runid "output.log")
 
 
     define _read-text-at [self base name]:
         define path (base.joinpath name)
-        (if (path.exists) (asyncio.to_thread path.read_text) None)
+        when (path.exists):
+            (asyncio.to_thread path.read_text)
 
 
     define _read-json-at [self base name]:
         define text (self._read-text-at base name)
-        (if (None? text) None (json.loads text))
+        unless (None? text):
+            (json.loads text)
 
 
     define get-trigger [self runid]:
@@ -446,9 +487,7 @@ define-class RunStore []:
         """
 
         define row (self.get-run runid)
-        if (None? row):
-            None
-        else:
+        unless (None? row):
             define base (self.runs-dir.joinpath (item row "job_dir") runid)
             (self._read-json-at base "trigger.json")
 
@@ -462,10 +501,11 @@ define-class RunStore []:
         define row (self.get-run runid)
         when (None? row):
             (return None)
-        define base (self.runs-dir.joinpath (item row "job_dir") runid)
-        (set! (item row "output")  (self._read-text-at base "output.log"))
-        (set! (item row "result")  (self._read-json-at base "result.json"))
-        (set! (item row "trigger") (self._read-json-at base "trigger.json"))
+
+        define base (self.runs-dir.joinpath row["job_dir"] runid)
+        set! row["output"]  (self._read-text-at base "output.log")
+        set! row["result"]  (self._read-json-at base "result.json")
+        set! row["trigger"] (self._read-json-at base "trigger.json")
         row
 
 

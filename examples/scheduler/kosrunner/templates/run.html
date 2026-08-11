@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}run {{ run.run_id }}{% endblock %}
 {% block body %}
+<nav class="runnav">
+  {% if prev %}<a href="{{ prefix }}/runs/{{ prev }}">&larr; prev</a>{% else %}<span class="muted">&larr; prev</span>{% endif %}
+  &middot;
+  {% if next %}<a href="{{ prefix }}/runs/{{ next }}">next &rarr;</a>{% else %}<span class="muted">next &rarr;</span>{% endif %}
+</nav>
 <h1>{{ run.job }} &middot; <span class="status-{{ run.status }}">{{ run.status }}</span></h1>
 {% if run.mnemonic %}<p class="mnemonic">{{ run.mnemonic }}</p>{% endif %}
 <table>
