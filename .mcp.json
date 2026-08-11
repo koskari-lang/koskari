@@ -1,13 +1,8 @@
 {
   "mcpServers": {
     "koskari-corpus": {
-      "command": "podman",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "koskari-mcp:local"
-      ]
+      "type": "http",
+      "url": "https://corpus.koskari.org/mcp"
     }
   }
 }
