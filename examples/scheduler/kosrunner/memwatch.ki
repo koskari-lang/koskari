@@ -23,6 +23,7 @@ import sys
 import asyncio
 import logging
 import threading
+import tracemalloc
 
 import-from collections Counter
 import-from pathlib Path
@@ -42,6 +43,9 @@ define _prev #{}
 define _base #{}
 define _base-totals #{}
 define _samples #[0]
+
+;; the previous tracemalloc snapshot, held only while tracing is on
+define _snap #[None]
 
 
 define vmrss []:
@@ -98,6 +102,43 @@ define _task-count []:
         None
 
 
+define _snapshot-report [top]:
+    """
+    Log the `top` allocation sites whose retained bytes have moved the
+    most since the previous sample, ranked like the census by the size
+    of the move in either direction. Does nothing unless tracemalloc is
+    tracing -- arm it by starting the process with
+    PYTHONTRACEMALLOC=<frames>. The first tracing sample only captures
+    the baseline, so movements begin one sample later.
+    """
+
+    unless (tracemalloc.is_tracing):
+        (return None)
+
+    define snap (.filter_traces (tracemalloc.take_snapshot)
+        #((tracemalloc.Filter False "<frozen importlib._bootstrap>")
+          (tracemalloc.Filter False "<unknown>")
+          (tracemalloc.Filter False tracemalloc.__file__)))
+    define prev (item _snap 0)
+    (set! (item _snap 0) snap)
+
+    when (None? prev):
+        (logger.info "  tracemalloc baseline captured")
+        (return None)
+
+    define moved (list-each [stat (snap.compare_to prev "lineno")]
+        (let [[frame (item stat.traceback 0)]]
+            #((abs stat.size_diff) stat.size_diff stat.count_diff
+              stat.size stat.count
+              (.format "{}:{}" frame.filename frame.lineno))))
+    for-each [[mag sdiff cdiff size count where]
+              (item-slice (sorted moved reverse: True) stop: top)]:
+        when mag:
+            (logger.info "  %-52s %9dB (%+d)  blocks %d (%+d)"
+                where size sdiff count cdiff)
+    None
+
+
 define memory-report [top: 10]:
     """
     Log one memory sample: process totals, then the `top` types that have
@@ -121,6 +162,12 @@ define memory-report [top: 10]:
     side of zero while `last` flips sign is a count that jitters, which
     plenty of them do. The first few samples of a process include its
     warm-up, so treat an early drift as a baseline still settling.
+
+    When tracemalloc is tracing (start the process with
+    PYTHONTRACEMALLOC=<frames>), each sample also logs the allocation
+    sites whose retained bytes moved most since the previous sample --
+    the file:line view of the drift that `blocks` shows only in
+    aggregate.
     """
 
     define-values [collected counts] (memory-census)
@@ -154,6 +201,8 @@ define memory-report [top: 10]:
         (_base.update counts)
     (_prev.clear)
     (_prev.update counts)
+
+    (_snapshot-report top)
     line
 
 
