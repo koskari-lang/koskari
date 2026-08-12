@@ -50,10 +50,14 @@ are present. Missing stages are null.
 ### docs
 
 User documentation pages (Markdown) from the source repository's
-`docs/reference/` and `docs/start/` trees. One row per page. The `path`
-column matches the strings in the `corpus` config's `references` column
-verbatim, so a record's references resolve directly to their documentation
-content.
+`docs/reference/`, `docs/start/`, `docs/guide/`, `docs/patterns/`, and
+`docs/agents/` trees. One row per page. The `path` column matches the
+strings in the `corpus` config's `references` column verbatim, so a
+record's references resolve directly to their documentation content.
+
+The `agents` section is written for AI consumers rather than humans:
+dense normative rules, valid/invalid pairs, and guidance on querying
+this dataset. Filter with `section == "agents"`.
 
 | Column | Description |
 |--------|-------------|

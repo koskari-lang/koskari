@@ -21,6 +21,7 @@ Unit tests for corpus dataset view transforms.
 
 
 import importlib
+import re
 
 import pytest
 
@@ -179,6 +180,33 @@ def test_docs_view_resolves_all_record_references():
     assert cited
     missing = cited - doc_paths
     assert not missing, 'dangling doc references: %s' % sorted(missing)
+
+
+def test_docs_view_agents_links_resolve():
+    """
+    Every internal Markdown link in the agents section resolves to a
+    koskari-docs row. The agents pages are excluded from the Sphinx
+    build, so this replaces the link validation that build would
+    otherwise provide.
+    """
+
+    docs = _load_view_module('docs')
+    rows = _generate_source_view(docs)
+    doc_paths = {row['path'] for row in rows}
+
+    agents_rows = [row for row in rows if row['section'] == 'agents']
+    assert agents_rows
+
+    link_re = re.compile(r'\[[^\]]*\]\(([^)#]+\.md)(?:#[^)]*)?\)')
+    missing = set()
+    for row in agents_rows:
+        for target in link_re.findall(row['content']):
+            if '://' in target or target.startswith('/'):
+                continue
+            if target not in doc_paths:
+                missing.add('%s -> %s' % (row['path'], target))
+
+    assert not missing, 'dangling agents links: %s' % sorted(missing)
 
 
 def test_programs_view_columns():

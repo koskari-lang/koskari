@@ -85,6 +85,15 @@ behaves. This includes "what is X", "how does X work", "how do I write
 X", "is this form valid", and "show me an example of X" questions about
 any language construct.
 
+Cold start: on first use of this server in a session, call
+get_reference with path "agents/index.md". It is an orientation page
+written for agents: a map of which documentation page answers which
+class of question, the rules for writing syntactically valid Koskari
+source, and pitfalls for Python/Scheme priors. Pages in the "agents"
+section are written for AI consumers -- dense, normative, with
+valid/invalid pairs. For effective searching, see
+"agents/querying-the-corpus.md".
+
 Tools:
 - search_docs: full-text search across documentation pages and example
   programs. Start here for open-ended questions; each hit returns a path
@@ -101,7 +110,8 @@ Tools:
 Typical flow: search_docs or search_examples to locate a path, then
 get_reference for the full content. Treat corpus results as ground
 truth; fall back to reading source only when the corpus does not cover
-the question.
+the question. The "agents" documentation section is the fastest route
+to correct Koskari syntax.
 """
 
 
@@ -235,7 +245,7 @@ define pick-fields [row keys]:
 define REFERENCE_FULL_KEYS #("path" "title" "section" "kind" "content")
 define REFERENCE_HIT_KEYS #("path" "title" "summary" "kind")
 define DOC_SEARCH_COLUMNS #("path" "title" "content")
-define SEARCH_COLUMNS #("source" "feature" "corpus_id")
+define SEARCH_COLUMNS #("source" "feature" "corpus_id" "tags")
 
 
 define table-for-path [path]:
@@ -574,7 +584,8 @@ define get_reference [path]:
 
     Paths come from a corpus record's references field (documentation
     pages) or are repository-relative example paths beginning with
-    examples/. Returns the full raw content.
+    examples/. Returns the full raw content. The path "agents/index.md"
+    is the orientation page for agents.
     """
 
     define row (first-by-field (table-for-path path) "path" path)
@@ -596,6 +607,7 @@ define search_docs [
     kind restricts results: "doc" for documentation pages, "example" for
     programs; omit it to search both. Returns path, title, and summary for
     each hit; call get_reference with a path for full content.
+    Documentation in the "agents" section is written for AI consumers.
     """
 
     define cap (min (int limit) 100)

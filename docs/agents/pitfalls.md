@@ -1,0 +1,74 @@
+# Koskari pitfalls for agents with Python or Scheme priors
+
+Common mistakes and gotchas: Koskari code that parses fine but means
+the wrong thing, usually because a Python or Scheme habit was carried
+over. Each pitfall states the wrong assumption, the rule, and the
+correct form. For rules about source that fails to *parse* as
+intended, see [Writing Koskari source files](writing-ki-files.md).
+
+---
+
+## Coming from Python
+
+**`isinstance` is not the name.** Type tests are `instance?` and
+`subclass?`:
+
+```koskari
+(instance? x str)       ; not (isinstance x str)
+```
+
+**Dashes are not folded to underscores on Python attributes.** Python
+names are used verbatim: `(asyncio.get_running_loop)`, not
+`get-running-loop`. Koskari-defined names keep their dashes.
+
+**Koskari functions handed to Python callers need `demand`.** Koskari
+runs ambiently async; a plain lambda passed to a synchronous Python
+higher-order function (`map`, `filter`, a Python API taking a
+callback) hands back an un-awaited coroutine object instead of a
+value. Wrap the callable:
+
+```koskari
+(list (map (demand {(* %1 %1)}) numbers))
+```
+
+`sorted` is a known exception: Koskari's `sorted` demand-wraps a
+callable `key:` itself, so no wrap is needed there.
+
+**Call methods on the binding.** When a dict (or any object) is bound
+to a name, call its method directly rather than routing through the
+type:
+
+```koskari
+(config.get "port" 8080)      ; not (dict.get config "port" 8080)
+```
+
+**Dict-literal keys are expressions.** A keyword-looking key lowers to
+a *name*, not a string: `#{ok: True}` evaluates the name `ok` as the
+key and raises `NameError` unless a binding `ok` exists. Quote string
+keys:
+
+```koskari
+#{"ok": True}
+```
+
+## Coming from Scheme or another LISP
+
+**Write Koskari forms, not Scheme stand-ins.** There is no `eq` /
+`eqv?`; equality is `==` (also spelled `equal?`). Rest parameters are
+`*:` / `**:`, not a dotted tail. `for-each` takes a `[var seq]`
+binding, not a procedure argument.
+
+**Brackets are not vectors.** `[ ]` and `( )` read identically and
+compare equal; `[ ]` is a readability convention, covered in
+[Brackets and the call convention](../reference/concepts/brackets-and-call-convention.md).
+
+**The idiomatic form is the direct one.** Koskari prefers `(when x
+...)` over `(if x ... None)` and direct forms over compositions of
+primitives; see [Idiomatic Koskari](../reference/concepts/idiomatic-koskari.md).
+
+---
+
+Every pitfall family here is also covered by verified wrong-usage
+records: call `search_examples` with `polarity: "invalid"` and the
+form's name to get the documented mistake, why it fails, and the
+corrected source. See [Querying the corpus](querying-the-corpus.md).
