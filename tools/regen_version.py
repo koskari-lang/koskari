@@ -246,7 +246,10 @@ def assemble_version(version, state, now=None):
             stamp = now.strftime('%Y%m%dT%H%M%S')
             release = release + '+' + stamp
 
-    major, minor, micro = version.split('.')
+    # a snapshot build stamps a dev release like 0.1.0.dev20260817 into
+    # setup.cfg; the numeric triple is the leading three components and
+    # any further segment rides along only in the full version string
+    major, minor, micro = version.split('.')[:3]
 
     version_info = (int(major), int(minor), int(micro), release)
 

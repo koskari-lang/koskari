@@ -1,0 +1,133 @@
+# Weekly PyPI snapshot pipeline, reusable for real releases.
+#
+# Schedule: every Monday it checks whether master gained commits since
+# the last published tag; if so it runs the full test suite, builds
+# sdist + wheels stamped with <setup.cfg version>.devYYYYMMDD, publishes
+# to PyPI, and only then tags the commit (v0.1.0.dev20260817-style), so
+# a failed build or upload leaves no tag and the next run retries.
+# Quiet weeks publish nothing.
+#
+# A real release is the same pipeline dispatched by hand with
+# release=true: the setup.cfg version is published verbatim and tagged
+# (v0.1.0). After a release, bump setup.cfg to the next version so
+# snapshots continue as 0.2.0.devYYYYMMDD.
+#
+# Dev releases sort before their final version and are skipped by pip's
+# resolver once a final release exists; until the first final release,
+# a bare pip install resolves to the newest snapshot.
+#
+# Publishing authenticates via PyPI Trusted Publishers (OIDC): register
+# this repository with workflow publish_pypi.yml and environment pypi on
+# the PyPI project settings. No token secret is stored.
+
+name: Publish PyPI
+
+on:
+  schedule:
+    - cron: '30 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: >-
+          Publish the setup.cfg version verbatim as a real release
+          instead of a dated dev snapshot
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: publish-pypi
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # The "should I" job: computes the version and refuses to proceed when
+  # HEAD is already tagged (nothing new since the last publish) or when
+  # the computed tag already exists (same-day rerun, repeated release).
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.decide.outputs.proceed }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Decide version and whether to publish
+        id: decide
+        run: |
+          base="$(sed -n 's/^version = //p' setup.cfg)"
+          if [ "${{ inputs.release }}" = "true" ]; then
+            version="$base"
+          else
+            version="${base}.dev$(date -u +%Y%m%d)"
+          fi
+          tag="v$version"
+
+          proceed=true
+          if git tag --points-at HEAD | grep -q '^v'; then
+            echo "HEAD already carries a published tag; nothing new"
+            proceed=false
+          elif git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            echo "tag $tag already exists; refusing to republish"
+            proceed=false
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "proceed=$proceed" >> "$GITHUB_OUTPUT"
+
+  tests:
+    needs: gate
+    if: ${{ needs.gate.outputs.proceed == 'true' }}
+    uses: ./.github/workflows/run_tests.yml
+
+  build:
+    needs: [gate, tests]
+    uses: ./.github/workflows/build_wheel.yml
+    with:
+      version: ${{ needs.gate.outputs.version }}
+
+  publish:
+    needs: [gate, build]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/koskari/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '{sdist,wheels-*}'
+          merge-multiple: true
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # Tag last: the tag records what was actually published, and its
+  # absence after a failure is what lets the next scheduled run retry.
+  tag:
+    needs: [gate, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Tag the published commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ needs.gate.outputs.tag }}" "$GITHUB_SHA"
+          git push origin "refs/tags/${{ needs.gate.outputs.tag }}"
+
+# The end.

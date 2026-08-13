@@ -80,6 +80,18 @@ class TestAssembleVersion(unittest.TestCase):
         self.assertEqual(info['release'], 'ga')
         self.assertEqual(info['build_kind'], 'release')
 
+    def test_dev_snapshot_version(self):
+        state = {
+            'commit': 'abc1234',
+            'exact_tag': 'v0.1.0.dev20260817',
+            'dirty': False,
+        }
+        info = regen.assemble_version('0.1.0.dev20260817', state)
+        self.assertEqual(info['version'], '0.1.0.dev20260817')
+        self.assertEqual(info['version_info'], (0, 1, 0, 'ga'))
+        self.assertEqual(info['release'], 'ga')
+        self.assertEqual(info['build_kind'], 'release')
+
 
 class TestVersionState(unittest.TestCase):
 

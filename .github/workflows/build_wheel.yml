@@ -1,75 +1,96 @@
+# Build PyPI-uploadable distributions: sdist plus cibuildwheel wheels.
+#
+# Linux wheels must carry manylinux/musllinux tags to be accepted by
+# PyPI, so cibuildwheel drives the builds inside the blessed images and
+# audits the results; macOS wheels are tagged by deployment target and
+# need no repair. Coverage: CPython 3.9-3.14 on manylinux + musllinux
+# x86_64 and aarch64 (native runners, no QEMU), and macOS arm64 plus
+# cross-compiled x86_64.
+#
+# The optional version input stamps a PEP 440 version into setup.cfg
+# before building, which is how publish_pypi.yml injects snapshot (.devN)
+# and release versions; without it, distributions carry the setup.cfg
+# version as committed.
+
 name: "Build: Wheel"
 
 on:
   workflow_call:
+    inputs:
+      version:
+        description: >-
+          PEP 440 version to stamp into setup.cfg before building; empty
+          builds the committed version
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          PEP 440 version to stamp into setup.cfg before building; empty
+          builds the committed version
+        required: false
+        default: ''
+        type: string
 
 jobs:
-  build-wheel-linux:
-    runs-on: self-hosted
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version:
-          - '3.9'
-          - '3.10'
-          - '3.11'
-          - '3.12'
-          - '3.13'
-          - '3.14'
-    container:
-      image: docker.io/library/python:${{ matrix.python-version }}-bookworm
+  build-sdist:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Dependencies
+      - name: Stamp version into setup.cfg
+        if: ${{ inputs.version != '' }}
+        run: sed -i "s/^version = .*/version = ${{ inputs.version }}/" setup.cfg
+
+      - name: Install build
         run: python -m pip install --disable-pip-version-check build
 
-      - name: Generate Wheel
-        run: python -B -m build .
+      - name: Build sdist
+        run: python -B -m build --sdist .
 
-      - name: Store Wheel
+      - name: Store sdist
         uses: actions/upload-artifact@v7
         with:
-          name: wheel-linux-py${{ matrix.python-version }}
-          path: dist/*.whl
+          name: sdist
+          path: dist/*.tar.gz
           if-no-files-found: error
 
-  build-wheel-macos:
-    runs-on: macos-latest
+  build-wheels:
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        python-version:
-          - '3.9'
-          - '3.10'
-          - '3.11'
-          - '3.12'
-          - '3.13'
-          - '3.14'
-
+        include:
+          - runner: ubuntu-latest
+            archs: x86_64
+          - runner: ubuntu-24.04-arm
+            archs: aarch64
+          - runner: macos-latest
+            archs: arm64 x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
+      - name: Stamp version into setup.cfg
+        if: ${{ inputs.version != '' }}
+        run: sed -i.bak "s/^version = .*/version = ${{ inputs.version }}/" setup.cfg
 
-      - name: Install Dependencies
-        run: python -m pip install --disable-pip-version-check build
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.2
+        env:
+          CIBW_BUILD: cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*
+          CIBW_ARCHS: ${{ matrix.archs }}
+          CIBW_TEST_COMMAND: python -c "import koskari"
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
 
-      - name: Generate Wheel
-        run: python -B -m build .
-
-      - name: Store Wheel
+      - name: Store wheels
         uses: actions/upload-artifact@v7
         with:
-          name: wheel-macos-py${{ matrix.python-version }}
-          path: dist/*.whl
+          name: wheels-${{ matrix.runner }}
+          path: wheelhouse/*.whl
           if-no-files-found: error
-
 
 # The end.
