@@ -18,6 +18,14 @@ on:
         required: false
         default: false
         type: boolean
+      dataset_artifact:
+        description: >-
+          Name of a parquet artifact already uploaded in this workflow
+          run; when set, the export job is skipped and the publish job
+          downloads this artifact instead
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       dry_run:
@@ -31,6 +39,7 @@ jobs:
     runs-on: self-hosted
     container:
       image: docker.io/library/python:3.14-bookworm
+    if: ${{ inputs.dataset_artifact == '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -54,7 +63,10 @@ jobs:
     container:
       image: docker.io/library/python:3.14-bookworm
     needs: export
-    if: "${{ !inputs.dry_run }}"
+    if: |
+      !cancelled()
+      && !inputs.dry_run
+      && (needs.export.result == 'success' || needs.export.result == 'skipped')
 
     permissions:
       id-token: write
@@ -71,7 +83,7 @@ jobs:
       - name: Download parquet artifact
         uses: actions/download-artifact@v8
         with:
-          name: corpus-datasets
+          name: ${{ inputs.dataset_artifact || 'corpus-datasets' }}
           path: build/corpus/datasets/
 
       - name: Install Hugging Face CLI

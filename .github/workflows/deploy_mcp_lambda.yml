@@ -8,6 +8,12 @@
 # The image builds FROM the published GHCR koskari runtime image; local
 # builds of the same Containerfile default to koskari:local instead.
 #
+# The baked dataset comes from the dataset_artifact input when the
+# pipeline provides one (a parquet artifact uploaded earlier in the same
+# run), so the Lambda ships bytes identical to the published dataset.
+# Dispatched by hand there is no artifact, and the dataset is exported
+# fresh from this checkout instead.
+#
 # Because the dataset is baked into the image, a corpus change and a server
 # change take the identical path -- both are just a new image. Authenticates
 # to AWS via GitHub OIDC (no long-lived keys), mirroring the Hugging Face
@@ -23,6 +29,15 @@ name: Deploy MCP Lambda
 
 on:
   workflow_call:
+    inputs:
+      dataset_artifact:
+        description: >-
+          Name of a parquet artifact already uploaded in this workflow
+          run; when set, the corpus export is skipped and the artifact
+          is staged into the image build context instead
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
 
 permissions:
@@ -45,18 +60,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Download parquet artifact into the MCP build context
+        if: ${{ inputs.dataset_artifact != '' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.dataset_artifact }}
+          path: tools/mcp/data/
+
       - name: Set up Python
+        if: ${{ inputs.dataset_artifact == '' }}
         uses: actions/setup-python@v7
         with:
           python-version: 3.14
 
       - name: Install tox
+        if: ${{ inputs.dataset_artifact == '' }}
         run: pip install tox
 
       - name: Export all corpus views to parquet
+        if: ${{ inputs.dataset_artifact == '' }}
         run: tox -qe regen-corpus -- --all-views
 
       - name: Stage parquet into the MCP build context
+        if: ${{ inputs.dataset_artifact == '' }}
         run: |
           rm -rf tools/mcp/data
           mkdir -p tools/mcp/data

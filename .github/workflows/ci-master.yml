@@ -9,15 +9,22 @@
 #
 # Job graph:
 #
-#   tests  ─┐
-#   detect ─┴─► base ─┬─► corpus (Hugging Face)
-#                     └─► mcp    (Lambda)
+#   tests  ─┬─► base   ──┬─► corpus (Hugging Face)
+#   detect ─┴─► export ──┴─► mcp    (Lambda)
+#
+# (corpus and mcp each need both base and export.)
 #
 # base rebuilds the GHCR koskari runtime image only when its inputs
 # changed; corpus and mcp run in parallel after it, each on their own
 # change detection. A base rebuild alone does not redeploy the Lambda:
 # the MCP image consumes the base at its next relevant rebuild, or on a
 # manual dispatch of deploy_mcp_lambda.yml.
+#
+# export builds the corpus parquet views exactly once per pipeline run
+# and shares them as the corpus-datasets artifact, so the Hugging Face
+# dataset and the Lambda's baked data are byte-identical per push. The
+# called workflows receive the artifact name as an input; dispatched by
+# hand (no input) they export fresh from their own checkout instead.
 #
 # No on.push path filter: detection is runtime (the detect job), so the
 # lists below are the single source of truth for what is "relevant".
@@ -100,34 +107,66 @@ jobs:
     uses: ./.github/workflows/deploy_container.yml
     secrets: inherit
 
+  # One parquet export shared by corpus and mcp, mirroring the export
+  # job in publish_corpus_dataset.yml (which those runs then skip).
+  export:
+    needs: [tests, detect]
+    if: ${{ needs.detect.outputs.corpus == 'true' || needs.detect.outputs.mcp == 'true' }}
+    runs-on: self-hosted
+    container:
+      image: docker.io/library/python:3.14-bookworm
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install tox
+        run: python -m pip install --disable-pip-version-check tox tox-uv
+
+      - name: Export all corpus views to parquet
+        run: tox -qe regen-corpus -- --all-views
+
+      - name: Upload parquet artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: corpus-datasets
+          path: build/corpus/datasets/
+
   # base may be skipped, which a plain needs chain would propagate; the
   # !cancelled() form lets these run after a skip while still refusing
   # to run over a failed gate or a failed base build.
   corpus:
-    needs: [tests, detect, base]
+    needs: [tests, detect, base, export]
     if: |
       !cancelled()
       && needs.tests.result == 'success'
       && needs.detect.outputs.corpus == 'true'
+      && needs.export.result == 'success'
       && (needs.base.result == 'success' || needs.base.result == 'skipped')
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/publish_corpus_dataset.yml
+    with:
+      dataset_artifact: corpus-datasets
     secrets: inherit
 
   mcp:
-    needs: [tests, detect, base]
+    needs: [tests, detect, base, export]
     if: |
       !cancelled()
       && needs.tests.result == 'success'
       && needs.detect.outputs.mcp == 'true'
+      && needs.export.result == 'success'
       && (needs.base.result == 'success' || needs.base.result == 'skipped')
     permissions:
       contents: read
       id-token: write
       packages: read
     uses: ./.github/workflows/deploy_mcp_lambda.yml
+    with:
+      dataset_artifact: corpus-datasets
     secrets: inherit
 
 
