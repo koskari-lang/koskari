@@ -159,7 +159,9 @@ static KosDynNode *kos_dynnode_alloc(void) {
     dyn_freelist = KosDynNode_PARENT(p);
     dyn_freecount--;
     KOS_TRACE_FL_ALLOC("dyn_node", 1);
-    memset(p, 0, sizeof(KosDynNode));
+    /* zeroed on return to the freelist; only the parent link (reused
+       as the freelist chain) needs clearing */
+    KosDynNode_PARENT(p) = NULL;
     p->node_id = kos_dynnode_mint_id();
     return p;
   }

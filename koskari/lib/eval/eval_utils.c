@@ -565,8 +565,10 @@ KosOpResult KosEvalState_Call(
 
 /* === kos_call_invoke: the shared call core (call-unification Phase 2) ===
 
-   One noinline entry for the CALL_* opcode prologues.  argv is always a
-   BORROWED read vector (vectorcall convention).  With
+   The entry for the CALL_* opcode prologues: kos_call_invoke inlines
+   into each handler (window math and self-arg prepend), delegating to
+   the noinline kos_call_invoke_body for the class dispatch.  argv is
+   always a BORROWED read vector (vectorcall convention).  With
    KOS_CALL_ARGV_WINDOW, argv additionally names the caller's stack tail
    (nargs + kwname values, plus the callable itself under
    KOS_CALL_WINDOW_CALLABLE); the core owns dropping that window from
@@ -706,18 +708,16 @@ fn_frame_install:
 
     /* Frame install: nothing lands on the caller's block, so the drop
        runs last and the window keeps callable and args alive for the
-       whole install. */
+       whole install.  kos_dyn_push_frame installs code and frame_ns in
+       one pass (consuming frame_ns even on failure), so the live
+       registers are loaded once, with their final values. */
     {
-      KosDynFrame *frame = kos_dyn_push_frame_empty(es);
+      KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
       if (unlikely(! frame)) {
-        Py_DECREF(frame_ns);
         if (window)
           kos_stack_drop_noerr_fast(caller_slot, window);
         return EVAL_RAISE();
       }
-      /* takes ownership of frame_ns; INCREFs code itself */
-      (void) KosEvalState_SetFrameCodeAndNamespace(es, frame, code,
-                                                   frame_ns);
       if (window)
         kos_stack_drop_noerr_fast(caller_slot, window);
       return EVAL_NORMAL();
@@ -795,7 +795,7 @@ legacy:
    on the caller's stack).  See the block comment above for the window
    sequencing contract.
 */
-static KOS_NOINLINE KosOpResult kos_call_invoke(
+static inline KosOpResult kos_call_invoke(
         KosEvalState *es,
         PyObject *callable,
         PyObject *self_arg,
