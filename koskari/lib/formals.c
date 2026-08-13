@@ -1815,6 +1815,66 @@ int KosFormals_VectorApplyFast(
 }
 
 
+/* === Simple-call steal binding === */
+
+
+/**
+   Steal-bind positionals for the simple-call class: move args[0..nargs-1]
+   into namespace fast slots 0..nargs-1.  Requires the simple-call
+   classification (KosFunction simple_arity1) and a namespace fresh from
+   KosNamespace_Copy, so every target slot is raw positional and NULL --
+   the bind is a bare pointer transfer with no refcount traffic.
+
+   Ownership: the caller forfeits every reference in args; after this
+   returns the namespace owns them all.  A buffer holding any borrowed
+   entry (e.g. the self-arg prepend buffer, whose slot 0 is borrowed)
+   must never be passed here.
+*/
+int KosFormals_SimpleStealApply(
+    PyObject *ns,
+    PyObject *const *args,
+    Py_ssize_t nargs) {
+
+  for (Py_ssize_t i = 0; i < nargs; i++)
+    KosNamespace_GET_FAST_VAL(ns, i) = args[i];
+  return 0;
+}
+
+
+/**
+   Steal-bind positionals from the tail of a stack block: move the top
+   nargs references into namespace fast slots 0..nargs-1 and retract the
+   block length in the same step, so the transfer and the window
+   accounting cannot come apart -- the moved span must not be dropped by
+   the caller.  Same classification contract as
+   KosFormals_SimpleStealApply.
+
+   :return: 0 on success; -1 on underrun (error set, nothing moved)
+*/
+int KosFormals_SimpleStealApplyBlock(
+    PyObject *ns,
+    KosStackBlock *block,
+    Py_ssize_t nargs) {
+
+  if (! nargs)
+    return 0;
+
+  if (unlikely(! block || (size_t) nargs > KosStackBlock_LEN(block))) {
+    PyErr_Format(PyExc_RuntimeError, "formals steal underrun."
+                 " requested: %zu, available: %zu", (size_t) nargs,
+                 block ? KosStackBlock_LEN(block) : 0);
+    return -1;
+  }
+
+  {
+    size_t base = KosStackBlock_LEN(block) - (size_t) nargs;
+    (void) KosFormals_SimpleStealApply(ns, &block->objs[base], nargs);
+    KosStackBlock_LEN(block) = base;
+  }
+  return 0;
+}
+
+
 /* === Unit lifecycle === */
 
 

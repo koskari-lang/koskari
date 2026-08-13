@@ -2021,6 +2021,27 @@ PyObject *KosFunction_SimpleCallNamespaceFromVector(
 }
 
 
+PyObject *KosFunction_SimpleCallNamespaceStealBlock(
+    PyObject *self,
+    KosStackBlock *block,
+    Py_ssize_t nargs) {
+
+  KosFunction *fn = (KosFunction *) self;
+  PyObject *frame_ns = KosNamespace_Copy(KosFunction_BASE_NS(fn));
+  if (unlikely(! frame_ns))
+    return NULL;
+
+  /* caller guarantees bind_self_state == 2, so nothing after the steal
+     can fail: a NULL return always means the arg span is still intact
+     on the block */
+  if (unlikely(KosFormals_SimpleStealApplyBlock(frame_ns, block, nargs) < 0)) {
+    Py_DECREF(frame_ns);
+    return NULL;
+  }
+  return frame_ns;
+}
+
+
 PyObject *KosFunction_VectorCall(
     PyObject *self,
     PyObject *const *args,

@@ -187,6 +187,8 @@ typedef struct {
 
 #define KosFunction_SIMPLE_ARITY1(fn) (((KosFunction *) (fn))->simple_arity1)
 
+#define KosFunction_BIND_SELF_STATE(fn) (((KosFunction *) (fn))->bind_self_state)
+
 
 /**
    Simple-call namespace prep: copy the base namespace and bind exactly
@@ -199,6 +201,22 @@ typedef struct {
 PyObject *KosFunction_SimpleCallNamespaceFromVector(
       PyObject *self,
       PyObject *const *args,
+      Py_ssize_t nargs);
+
+
+/**
+   Steal-binding variant of the simple-call namespace prep: the top
+   nargs references move off the block tail into the call namespace via
+   KosFormals_SimpleStealApplyBlock, retracting the block length.
+   Caller must additionally have checked bind_self_state == 2 (no
+   self-bind), which makes the post-copy path infallible: a NULL return
+   always means the arg span is still intact on the block.
+
+   :return: new namespace reference, or NULL with error set
+*/
+PyObject *KosFunction_SimpleCallNamespaceStealBlock(
+      PyObject *self,
+      KosStackBlock *block,
       Py_ssize_t nargs);
 
 

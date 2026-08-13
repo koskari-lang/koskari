@@ -598,6 +598,10 @@ KosOpResult KosEvalState_Call(
    block-clear IS the window drop); everything else spills and keeps
    KosEvalState_Call's tail semantics. */
 #define KOS_CALL_TAIL             0x8u
+/* Internal, set by kos_call_invoke when self_arg was injected: argv is
+   the prepend buffer, not the block tail, so the steal-bind fast path
+   (which moves references directly off the block) must not run. */
+#define KOS_CALL_ARGV_PREPENDED   0x10u
 
 #define KOS_CALL_SPILL_FAST 16
 
@@ -672,7 +676,28 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
          index; the general formals machine is bypassed, and the
          generator branch below is unreachable by classification.  Any
          mismatch falls through to the general path, which owns the
-         arity error messages. */
+         arity error messages.
+
+         When argv is the block tail (window, no self-arg prepend) and
+         the function has no self-bind, the args steal-move off the
+         block into the namespace -- the stolen span leaves the window,
+         so only the residue (a WINDOW_CALLABLE slot) drops after the
+         install. */
+      if (likely((flags & KOS_CALL_ARGV_WINDOW)
+                 && ! (flags & KOS_CALL_ARGV_PREPENDED)
+                 && KosFunction_BIND_SELF_STATE(callable) == 2)) {
+        frame_ns = KosFunction_SimpleCallNamespaceStealBlock(
+            callable, *caller_slot, nargs);
+        if (unlikely(! frame_ns)) {
+          /* nothing stolen; the whole window is still on the block */
+          if (window)
+            kos_stack_drop_noerr_fast(caller_slot, window);
+          return EVAL_RAISE();
+        }
+        window -= (size_t) nargs;
+        goto fn_frame_install;
+      }
+
       frame_ns = KosFunction_SimpleCallNamespaceFromVector(
           callable, argv, nargs);
       if (unlikely(! frame_ns)) {
@@ -837,7 +862,8 @@ static inline KosOpResult kos_call_invoke(
       memcpy(pre + 1, argv, (size_t) (total - 1) * sizeof(PyObject *));
 
     r = kos_call_invoke_body(es, caller_slot, window, callable,
-                             pre, nargs + 1, kwnames, flags);
+                             pre, nargs + 1, kwnames,
+                             flags | KOS_CALL_ARGV_PREPENDED);
     if (pre != pre_small)
       PyMem_Free(pre);
     return r;

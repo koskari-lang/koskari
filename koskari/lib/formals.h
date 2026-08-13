@@ -189,6 +189,32 @@ PyObject *KosFormals_NamespaceSpec(
   ((obj) && ((obj)->ob_type == &KosFormalsType))
 
 
+/* === Simple-call steal binding === */
+
+
+/**
+  Steal-bind positionals into fast slots 0..nargs-1.  Requires the
+  simple-call classification and a fresh call namespace (raw NULL
+  slots).  The caller forfeits every reference in args; buffers with
+  borrowed entries must not be passed.
+*/
+int KosFormals_SimpleStealApply(
+    PyObject *ns,
+    PyObject *const *args,
+    Py_ssize_t nargs);
+
+
+/**
+  Steal-bind the top nargs references off the block tail into fast
+  slots 0..nargs-1, retracting the block length in the same step.  The
+  moved span must not also be dropped by the caller.
+*/
+int KosFormals_SimpleStealApplyBlock(
+    PyObject *ns,
+    KosStackBlock *block,
+    Py_ssize_t nargs);
+
+
 /* === Unit lifecycle === */
 
 
