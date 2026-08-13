@@ -28,6 +28,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -58,6 +61,9 @@ jobs:
         with:
           context: .
           file: Containerfile
+          # arm64 included so the MCP Lambda image (arm64) can consume
+          # this image as its base
+          platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
             KOSKARI_COMMIT=${{ steps.version.outputs.commit }}

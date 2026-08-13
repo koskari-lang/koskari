@@ -1,5 +1,13 @@
 # Build the baked-in corpus MCP Lambda image and redeploy it.
 #
+# Pure "do it" workflow: no change detection here. It is invoked by the
+# master pipeline (ci-master.yml) when something MCP-relevant changed,
+# and can be dispatched by hand to force a rebuild and redeploy (for
+# example to pick up a new koskari base image).
+#
+# The image builds FROM the published GHCR koskari runtime image; local
+# builds of the same Containerfile default to koskari:local instead.
+#
 # Because the dataset is baked into the image, a corpus change and a server
 # change take the identical path -- both are just a new image. Authenticates
 # to AWS via GitHub OIDC (no long-lived keys), mirroring the Hugging Face
@@ -14,19 +22,13 @@
 name: Deploy MCP Lambda
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'docs/corpus/records/**'
-      - 'tools/mcp/**'
-      - 'tools/corpus/**'
-      - 'Containerfile'
-      - '.github/workflows/deploy_mcp_lambda.yml'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
+  packages: read
 
 env:
   AWS_REGION: us-east-1
@@ -65,12 +67,21 @@ jobs:
         run: |
           eval "$(python3 -B tools/regen_version.py --report)"
           echo "commit=$KOSKARI_COMMIT" >> "$GITHUB_OUTPUT"
-          echo "dirty=$KOSKARI_DIRTY" >> "$GITHUB_OUTPUT"
-          echo "exact_tag=$KOSKARI_EXACT_TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$KOSKARI_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve base image
+        id: base
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}:latest" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU (arm64 emulation)
         uses: docker/setup-qemu-action@v3
+
+      - name: Log in to GHCR (pull the koskari base)
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -82,16 +93,6 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build koskari runtime base (arm64)
-        run: |
-          docker build --platform "$PLATFORM" \
-            -t koskari:local -f Containerfile \
-            --build-arg KOSKARI_COMMIT=${{ steps.version.outputs.commit }} \
-            --build-arg KOSKARI_DIRTY=${{ steps.version.outputs.dirty }} \
-            --build-arg KOSKARI_EXACT_TAG=${{ steps.version.outputs.exact_tag }} \
-            --build-arg KOSKARI_VERSION=${{ steps.version.outputs.version }} \
-            .
-
       - name: Build and push Lambda image (arm64)
         id: build
         env:
@@ -101,6 +102,7 @@ jobs:
           repo="$REGISTRY/$ECR_REPOSITORY"
           docker build --platform "$PLATFORM" \
             -t "$repo:$tag" -t "$repo:latest" \
+            --build-arg KOSKARI_BASE="${{ steps.base.outputs.image }}" \
             -f tools/mcp/Containerfile.lambda tools/mcp/
           docker push "$repo:$tag"
           docker push "$repo:latest"
@@ -114,5 +116,6 @@ jobs:
             --image-uri "${{ steps.build.outputs.image }}"
           aws lambda wait function-updated \
             --function-name "$FUNCTION_NAME"
+
 
 # The end.

@@ -1,0 +1,134 @@
+# Master pipeline: test gate, then conditional publish and deploy.
+#
+# Replaces ci-push-main.yml. Every push to the default branch runs the
+# full test suite; only after it passes do the delivery jobs consider
+# running. All of the "should I" change detection lives here -- the
+# called workflows are pure "do it" definitions, each also dispatchable
+# by hand to force a run (see deploy_container.yml,
+# publish_corpus_dataset.yml, deploy_mcp_lambda.yml).
+#
+# Job graph:
+#
+#   tests  ─┐
+#   detect ─┴─► base ─┬─► corpus (Hugging Face)
+#                     └─► mcp    (Lambda)
+#
+# base rebuilds the GHCR koskari runtime image only when its inputs
+# changed; corpus and mcp run in parallel after it, each on their own
+# change detection. A base rebuild alone does not redeploy the Lambda:
+# the MCP image consumes the base at its next relevant rebuild, or on a
+# manual dispatch of deploy_mcp_lambda.yml.
+#
+# No on.push path filter: detection is runtime (the detect job), so the
+# lists below are the single source of truth for what is "relevant".
+# Runs are queued, never cancelled, so the mutable GHCR :latest base tag
+# stays coherent between overlapping pushes.
+
+name: CI master
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ci-master
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    uses: ./.github/workflows/run_tests.yml
+
+  detect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      base: ${{ steps.filter.outputs.base }}
+      corpus: ${{ steps.filter.outputs.corpus }}
+      mcp: ${{ steps.filter.outputs.mcp }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # The corpus-data anchor covers everything baked into the parquet
+      # views: corpus records, the export tooling, the docs subtrees the
+      # koskari-docs view ingests, and the examples tree the
+      # koskari-programs view ingests.
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            corpus-data: &corpus-data
+              - 'docs/corpus/records/**'
+              - 'tools/corpus/**'
+              - 'docs/reference/**'
+              - 'docs/start/**'
+              - 'docs/guide/**'
+              - 'docs/patterns/**'
+              - 'docs/agents/**'
+              - 'examples/**'
+            base:
+              - 'koskari/**'
+              - 'Containerfile'
+              - 'setup.py'
+              - 'setup.cfg'
+              - 'pyproject.toml'
+              - 'MANIFEST.in'
+              - 'koskari.pth'
+              - 'tools/regen_version.py'
+              - '.github/workflows/deploy_container.yml'
+            corpus:
+              - *corpus-data
+              - '.github/workflows/publish_corpus_dataset.yml'
+            mcp:
+              - *corpus-data
+              - 'tools/mcp/**'
+              - '.github/workflows/deploy_mcp_lambda.yml'
+
+  base:
+    needs: [tests, detect]
+    if: ${{ needs.detect.outputs.base == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy_container.yml
+    secrets: inherit
+
+  # base may be skipped, which a plain needs chain would propagate; the
+  # !cancelled() form lets these run after a skip while still refusing
+  # to run over a failed gate or a failed base build.
+  corpus:
+    needs: [tests, detect, base]
+    if: |
+      !cancelled()
+      && needs.tests.result == 'success'
+      && needs.detect.outputs.corpus == 'true'
+      && (needs.base.result == 'success' || needs.base.result == 'skipped')
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/publish_corpus_dataset.yml
+    secrets: inherit
+
+  mcp:
+    needs: [tests, detect, base]
+    if: |
+      !cancelled()
+      && needs.tests.result == 'success'
+      && needs.detect.outputs.mcp == 'true'
+      && (needs.base.result == 'success' || needs.base.result == 'skipped')
+    permissions:
+      contents: read
+      id-token: write
+      packages: read
+    uses: ./.github/workflows/deploy_mcp_lambda.yml
+    secrets: inherit
+
+
+# The end.

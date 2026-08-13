@@ -1,5 +1,9 @@
 # Containerfile for the Koskari corpus MCP server.
 #
+# The base image is an argument: local builds default to koskari:local
+# (built from the repository root Containerfile), while CI passes the
+# published GHCR runtime image via --build-arg KOSKARI_BASE=...
+#
 # Build (requires koskari:local from repository root):
 #   make build-mcp
 #
@@ -13,7 +17,9 @@
 # author: Christopher O'Brien <obriencj@gmail.com>
 # license: GPL v.3
 
-FROM koskari:local
+ARG KOSKARI_BASE=koskari:local
+
+FROM ${KOSKARI_BASE}
 
 LABEL maintainer="obriencj@gmail.com" \
       description="Koskari MCP server for the baked-in koskari corpus"

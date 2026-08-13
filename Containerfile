@@ -37,9 +37,11 @@ LABEL org.opencontainers.image.title="koskari" \
       org.opencontainers.image.revision="${KOSKARI_COMMIT}"
 
 ENTRYPOINT ["koskari"]
+# Raw runtime only: no extras. Consumers (the MCP images, the tools
+# image, an interactive REPL image) layer their own dependencies on top.
 COPY --from=builder /build/dist /dist
 RUN pip install --root-user-action=ignore --no-cache-dir --disable-pip-version-check \
-        --find-links=/dist/ koskari[repl,lsp,pygments,sphinx] && \
+        --find-links=/dist/ koskari && \
     rm -rf /dist
 
 

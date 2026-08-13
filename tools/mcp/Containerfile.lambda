@@ -6,6 +6,10 @@
 # streamable-HTTP mode (mcp_server.ki --lambda) on the loopback port the
 # adapter proxies to.
 #
+# The base image is an argument: local builds default to koskari:local,
+# while CI passes the published GHCR runtime image via
+# --build-arg KOSKARI_BASE=...
+#
 # Build (stages data first; build for the Lambda function's architecture):
 #   make build-mcp-lambda
 #   make build-mcp-lambda MCP_ARCH=arm64
@@ -15,7 +19,9 @@
 # author: Christopher O'Brien <obriencj@gmail.com>
 # license: GPL v.3
 
-FROM koskari:local
+ARG KOSKARI_BASE=koskari:local
+
+FROM ${KOSKARI_BASE}
 
 LABEL maintainer="obriencj@gmail.com" \
       description="Koskari corpus MCP server for AWS Lambda (baked-in corpus)"
