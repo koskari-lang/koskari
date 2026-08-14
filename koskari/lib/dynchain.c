@@ -1114,8 +1114,11 @@ static void kos_dyn_retarget_after_push(
   /* Install-time back link: the pushed node's segment remembers the
      owning slot it displaced, for uninstall restoration and parent
      delivery. Inheriting nodes (bl == live slot) link nothing. */
-  if (bl != KosEvalState_BLOCK(es) && *bl)
+  if (bl != KosEvalState_BLOCK(es) && *bl) {
     KosSegment_BACK(*bl) = KosEvalState_BLOCK(es);
+    if (KosSegment_IS_INLINE(*bl))
+      KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
+  }
 
   kos_dyn_apply_live(es, ft, bl, ns, 1);
 

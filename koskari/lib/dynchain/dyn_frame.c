@@ -147,9 +147,12 @@ KosDynFrame *kos_dyn_push_frame(
      in eval_ng_plain_return. */
   if (cur)
     KosEvalState_FlushLiveRegsToFrame(es);
-  if (KosDynNode_STACK((KosDynNode *) frame))
+  if (KosDynNode_STACK((KosDynNode *) frame)) {
     KosSegment_BACK(KosDynNode_STACK((KosDynNode *) frame)) =
         KosEvalState_BLOCK(es);
+    if (KosSegment_IS_INLINE(KosDynNode_STACK((KosDynNode *) frame)))
+      KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
+  }
   KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
   KosEvalState_FRAME(es) = frame;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
@@ -191,9 +194,12 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
     }
   }
 
-  if (KosDynNode_STACK((KosDynNode *) frame))
+  if (KosDynNode_STACK((KosDynNode *) frame)) {
     KosSegment_BACK(KosDynNode_STACK((KosDynNode *) frame)) =
         KosEvalState_BLOCK(es);
+    if (KosSegment_IS_INLINE(KosDynNode_STACK((KosDynNode *) frame)))
+      KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
+  }
   KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
   KosEvalState_FRAME(es) = frame;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);

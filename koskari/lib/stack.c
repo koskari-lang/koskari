@@ -99,6 +99,7 @@ static KosSegment *KosStack_Grow(KosSegment *self) {
     if (! heap)
       return NULL;
 
+    KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_SPILL);
     memcpy(heap->objs, self->objs, self->len * sizeof(PyObject *));
     KosSegment_LEN(heap) = self->len;
     KosSegment_BACK(heap) = KosSegment_BACK(self);

@@ -258,9 +258,21 @@ debug-only.
    Valgrind ran clean on the first build.  Native tests cover inline
    capacity, spill (slot update, value and back carry-over, inline
    left empty), and detach semantics.
-3. **Telemetry and benchmarks.**  Spill-rate counters decide 8 vs 16.
-   Churn benchmarks (`tox -qe churn`, binary_trees) plus RSS decide
-   whether the locality win pays for the node-size increase.
+3. **Telemetry and benchmarks.**  DONE (stage 3).  Spill counters
+   (`seg_inline_install` / `seg_inline_spill` KOS_TRACE events, visible
+   via `tox -qe churn-trace`) measured the full churn battery at
+   **134,965,324 inline installs and 56 spills** -- a spill rate of
+   4e-7.  **KOS_SEGMENT_INLINE_SLOTS stays 8**; the 16-slot variant is
+   moot.  RSS is a non-issue: peak 35.4 MB on the tree-heavy koskari
+   benchmarks, and the dyn-node freelist cap (128) bounds the
+   node-growth footprint at ~11 KB.  Branch medians (5 samples):
+   binary_trees 2.90x, method 2.82x, match_case 2.99x, nbody 2.65x,
+   loop 1.52x ki/py.  The binary_trees figure sits slightly above the
+   2.70x recorded when the frame cache landed; whether that is a real
+   allocation-cost regression or run-condition drift needs an A/B on
+   master under identical conditions
+   (`tox -qe churn -- --samples 5 --warmup 1 binary_trees method
+   match_case nbody`) before drawing a conclusion.
 
 Abandon criteria: stage 1 reveals legitimate cross-extent stack reads
 that resist cleanup, or stage 3 shows the footprint cost without a
