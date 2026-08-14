@@ -77,9 +77,27 @@ def extra_compile_args(platform=None, debug=False):
         if environ.get(env) == "1":
             args.append(f"-D{env}=1")
 
+    if environ.get("KOS_ASAN") == "1":
+        args.append("-fsanitize=address")
+        args.append("-fno-omit-frame-pointer")
+        args.append("-g")
+
     if platform == "linux":
         args.append("-fno-gcse")
         args.append("-ffat-lto-objects")
+
+    return args
+
+
+def extra_link_args():
+    """
+    Get linker flags for C extensions
+    """
+
+    args = []
+
+    if environ.get("KOS_ASAN") == "1":
+        args.append("-fsanitize=address")
 
     return args
 
@@ -105,6 +123,7 @@ def extension(platform=None, debug=None):
         sources=sources,
         depends=depends,
         extra_compile_args=extra_compile_args(platform, debug),
+        extra_link_args=extra_link_args(),
     )
 
 
