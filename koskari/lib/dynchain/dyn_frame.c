@@ -19,21 +19,15 @@ KosDynFrame *kos_dynframe_new(
     return NULL;
   }
 
-  if (! stack) {
-    stack = KosStack_NewEmpty();
-    if (! stack) {
-      Py_XDECREF(ns);
-      kos_dynnode_return_to_freelist(frame);
-      return NULL;
-    }
-  }
-
   kos_dynnode_init(frame, KOS_DYN_FRAME, parent, 0);
   Py_XINCREF(code);
   KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
-  KosDynFrame_STACK(frame) = stack;  /* ownership transferred */
+  if (stack)
+    KosDynFrame_STACK(frame) = stack;  /* ownership transferred */
+  else
+    kos_dynnode_use_inline_segment((KosDynNode *) frame);
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
@@ -57,12 +51,6 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(frame);
 
-  KosSegment *cst = KosStack_DeepCopy(KosDynFrame_STACK(frame));
-  if (! cst) {
-    kos_dynnode_return_to_freelist(clone);
-    return NULL;
-  }
-  KosDynFrame_STACK(clone) = cst;
   KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* owned */
   Py_XINCREF(KosDynFrame_CODE(clone));
   KosDynFrame_PC(clone) = KosDynFrame_PC(frame);

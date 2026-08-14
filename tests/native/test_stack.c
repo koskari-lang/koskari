@@ -809,6 +809,107 @@ static int test_seg_freelist_no_grown(void) {
 }
 
 
+/* === inline segments === */
+
+
+static int test_seg_inline_basic(void) {
+    /*
+      An inline segment holds up to KOS_SEGMENT_INLINE_SLOTS values
+      with no spill; Release empties it without freeing.
+    */
+    KosInlineSegment is;
+    KosSegment *seg = kos_inline_segment_init(&is);
+
+    TEST_ASSERT(KosSegment_IS_INLINE(seg), "inline discriminator");
+    TEST_ASSERT_EQ(KosSegment_MAX(seg), KOS_SEGMENT_INLINE_SLOTS,
+                   "inline capacity");
+
+    PyObject *v1 = PyLong_FromLong(TEST_VAL_1);
+    Py_ssize_t initial = Py_REFCNT(v1);
+
+    for (int i = 0; i < KOS_SEGMENT_INLINE_SLOTS; i++)
+        KosStack_PushRef(&seg, v1);
+    TEST_ASSERT_SAME(seg, &is.hdr, "no spill at capacity");
+    TEST_ASSERT_EQ(KosSegment_LEN(seg), KOS_SEGMENT_INLINE_SLOTS, "full");
+
+    KosStack_Release(seg);
+    TEST_ASSERT_EQ(Py_REFCNT(v1), initial, "contents released");
+    TEST_ASSERT_EQ(KosSegment_LEN(seg), 0, "emptied in place");
+
+    Py_DECREF(v1);
+    return 0;
+}
+
+
+static int test_seg_inline_spill(void) {
+    /*
+      The push past inline capacity spills to a heap segment through
+      the owning slot; values and the back link carry over; the inline
+      storage is left empty.
+    */
+    KosInlineSegment is;
+    KosSegment *seg = kos_inline_segment_init(&is);
+    KosSegment *sentinel = NULL;
+
+    KosSegment_BACK(seg) = &sentinel;
+
+    for (int i = 0; i < KOS_SEGMENT_INLINE_SLOTS + 1; i++) {
+        PyObject *val = PyLong_FromLong(40000 + i);
+        int result = KosStack_PushRef(&seg, val);
+        Py_DECREF(val);
+        TEST_ASSERT_EQ(result, 0, "push succeeded");
+    }
+
+    TEST_ASSERT(seg != &is.hdr, "spilled to heap");
+    TEST_ASSERT(! KosSegment_IS_INLINE(seg), "heap discriminator");
+    TEST_ASSERT_EQ(KosSegment_LEN(seg), KOS_SEGMENT_INLINE_SLOTS + 1,
+                   "all values carried");
+    TEST_ASSERT(KosSegment_BACK(seg) == &sentinel, "back carried over");
+    TEST_ASSERT_EQ(KosSegment_LEN(&is.hdr), 0, "inline left empty");
+    TEST_ASSERT_NULL(KosSegment_BACK(&is.hdr), "inline back cleared");
+
+    for (int i = KOS_SEGMENT_INLINE_SLOTS; i >= 0; i--) {
+        PyObject *popped = KosStack_PopRef(&seg);
+        TEST_ASSERT_EQ(PyLong_AsLong(popped), 40000 + i, "value intact");
+        Py_DECREF(popped);
+    }
+
+    KosStack_Release(seg);
+    return 0;
+}
+
+
+static int test_seg_inline_detach(void) {
+    /*
+      Detach moves an inline segment's contents to a heap segment for
+      storage away from the owner; a heap segment detaches as itself.
+    */
+    KosInlineSegment is;
+    KosSegment *seg = kos_inline_segment_init(&is);
+
+    PyObject *v1 = PyLong_FromLong(TEST_VAL_1);
+    Py_ssize_t initial = Py_REFCNT(v1);
+    KosStack_PushRef(&seg, v1);
+    KosStack_PushRef(&seg, v1);
+
+    KosSegment *detached = KosStack_Detach(&seg);
+    TEST_ASSERT_NOT_NULL(detached, "detached");
+    TEST_ASSERT(detached != &is.hdr, "moved to heap");
+    TEST_ASSERT(! KosSegment_IS_INLINE(detached), "heap segment");
+    TEST_ASSERT_EQ(KosSegment_LEN(detached), 2, "contents moved");
+    TEST_ASSERT_EQ(Py_REFCNT(v1), initial + 2, "refs moved, not churned");
+    TEST_ASSERT_EQ(KosSegment_LEN(&is.hdr), 0, "inline emptied");
+
+    KosSegment *again = KosStack_Detach(&detached);
+    TEST_ASSERT_SAME(again, detached, "heap detaches as itself");
+
+    KosStack_Release(detached);
+    TEST_ASSERT_EQ(Py_REFCNT(v1), initial, "balanced");
+    Py_DECREF(v1);
+    return 0;
+}
+
+
 /* === GC traverse === */
 
 
@@ -895,6 +996,11 @@ int run_stack_tests(void) {
     /* freelist */
     RUN_TEST(test_seg_freelist_reuse);
     RUN_TEST(test_seg_freelist_no_grown);
+
+    /* inline segments */
+    RUN_TEST(test_seg_inline_basic);
+    RUN_TEST(test_seg_inline_spill);
+    RUN_TEST(test_seg_inline_detach);
 
     /* GC */
     RUN_TEST(test_seg_traverse);

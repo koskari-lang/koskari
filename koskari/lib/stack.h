@@ -67,6 +67,53 @@ struct KosSegment {
 };
 
 
+/* === inline segments === */
+
+
+#define KOS_SEGMENT_INLINE_SLOTS 8
+
+
+/**
+   Embedded segment storage: a KosSegment header immediately followed
+   by its slot array, laid out inside an owning structure (a dynamic
+   chain node). Never heap-freed and never freelisted; growth spills
+   the contents to a heap segment (KosStack_Grow handles this
+   transparently through the owning slot). Discriminated from heap
+   segments by capacity: inline capacity sits below the heap birth
+   size.
+*/
+typedef struct KosInlineSegment {
+  KosSegment hdr;
+  PyObject *slots[KOS_SEGMENT_INLINE_SLOTS];
+} KosInlineSegment;
+
+
+#define KosSegment_IS_INLINE(seg) \
+  (KosSegment_MAX(seg) <= KOS_SEGMENT_INLINE_SLOTS)
+
+
+/**
+   Reset embedded storage to an empty segment and return its header.
+*/
+static inline KosSegment *kos_inline_segment_init(KosInlineSegment *is) {
+  is->hdr.back = NULL;
+  is->hdr.max = KOS_SEGMENT_INLINE_SLOTS;
+  is->hdr.len = 0;
+  return &is->hdr;
+}
+
+
+/**
+   Detach the segment in slot for storage away from its owning node.
+   A heap segment is returned as-is. An inline segment cannot outlive
+   or leave its node: its contents move (refcount-free) to a fresh
+   heap segment, the inline storage is left empty, and the heap
+   segment is returned. Returns NULL on allocation failure (slot
+   contents unchanged).
+*/
+KosSegment *KosStack_Detach(KosSegment **slot);
+
+
 /* === accessor macros === */
 
 

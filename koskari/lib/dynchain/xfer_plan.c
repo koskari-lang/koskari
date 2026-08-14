@@ -1605,9 +1605,20 @@ static int kos_delimited_invoke_inplace(
    * state; the delim owns the displaced stack until restitch. The
    * invoke-site acting pc is saved for extent lookups after restitch
    * (slice execution overwrites the frame's acting pc). */
-  KosDynDelim_SAVED_STACK(delim) = KosDynFrame_STACK(resume_frame);
-  if (KosDynDelim_SAVED_STACK(delim))
-    KosSegment_BACK(KosDynDelim_SAVED_STACK(delim)) = NULL;
+  /* The displaced segment is stored away from its node until restitch;
+     an inline segment cannot leave its node, so detach spills it to a
+     heap segment first. */
+  {
+    KosSegment *displaced = KosStack_Detach(&KosDynFrame_STACK(resume_frame));
+    if (! displaced && KosDynFrame_STACK(resume_frame)) {
+      if (resume_stack)
+        KosStack_Release(resume_stack);
+      return -1;
+    }
+    KosDynDelim_SAVED_STACK(delim) = displaced;
+    if (displaced)
+      KosSegment_BACK(displaced) = NULL;
+  }
   KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(resume_frame);
   KosDynDelim_SAVED_ACTING_PC(delim) = KosEvalState_ACTING_PC(es);
   KosDynFrame_STACK(resume_frame) = resume_stack;

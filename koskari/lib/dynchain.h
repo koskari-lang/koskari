@@ -34,6 +34,8 @@
 #include <Python.h>
 #include <stdint.h>
 
+#include "stack.h"
+
 
 /* === DynNode kind enum === */
 
@@ -344,7 +346,24 @@ struct KosDynNode {
       int n;                 /* 1 or 2 */
     } next;
   } u;
+
+  /* Embedded operand-segment storage for region kinds: stack aims
+     here at construction and spills to a heap segment on growth (the
+     storage then sits dormant until node reuse). Transfer bookmarks
+     leave it unused. */
+  KosInlineSegment iseg;
 };
+
+
+/**
+   Aim a node's stack at its embedded inline segment, reset empty.
+   For region-kind construction; cannot fail.
+*/
+static inline KosSegment *kos_dynnode_use_inline_segment(
+        struct KosDynNode *node) {
+  node->stack = kos_inline_segment_init(&node->iseg);
+  return node->stack;
+}
 
 typedef struct KosDynNode KosDynFrame;
 

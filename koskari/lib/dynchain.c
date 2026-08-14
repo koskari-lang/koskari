@@ -629,8 +629,8 @@ static int kos_dyn_ensure_region_segment(KosDynNode *node) {
     case KOS_DYN_PARAM:
     case KOS_DYN_NS:
     case KOS_DYN_WIND:
-      KosDynNode_STACK(node) = KosStack_NewEmpty();
-      return KosDynNode_STACK(node) ? 0 : -1;
+      kos_dynnode_use_inline_segment(node);
+      return 0;
     default:
       return 0;
   }
@@ -1703,14 +1703,28 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
 
   KosDynNode *cloned = kos_dyn_clone_dispatch(node);
 
-  /* Universal ownership: kinds whose per-kind clone predates node-owned
-     segments copy nothing; carry the source's operand values so the
-     clone is faithful. Copies are born with back NULL. */
+  /* Segment copy is centralized here: per-kind clones carry only their
+     payload. Values that fit go into the clone's embedded storage;
+     larger sources deep-copy to a heap segment. Copies are born with
+     back NULL either way. */
   if (cloned && ! KosDynNode_STACK(cloned) && KosDynNode_STACK(node)) {
-    KosDynNode_STACK(cloned) = KosStack_DeepCopy(KosDynNode_STACK(node));
-    if (! KosDynNode_STACK(cloned)) {
-      kos_dynnode_free(cloned);
-      return NULL;
+    KosSegment *src = KosDynNode_STACK(node);
+    size_t len = KosSegment_LEN(src);
+
+    if (len <= KOS_SEGMENT_INLINE_SLOTS) {
+      KosSegment *dst = kos_dynnode_use_inline_segment(cloned);
+      for (size_t i = 0; i < len; i++) {
+        PyObject *val = src->objs[i];
+        Py_INCREF(val);
+        dst->objs[i] = val;
+      }
+      KosSegment_LEN(dst) = len;
+    } else {
+      KosDynNode_STACK(cloned) = KosStack_DeepCopy(src);
+      if (! KosDynNode_STACK(cloned)) {
+        kos_dynnode_free(cloned);
+        return NULL;
+      }
     }
   }
 

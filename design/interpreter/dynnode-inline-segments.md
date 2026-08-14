@@ -1,12 +1,25 @@
 # DynNode Inline Segments: Every Extent Owns Its Stack
 
-**Status: Stage 1 (universal region ownership, heap segments)
-IMPLEMENTED on branch `simplify-stackblock`; all gates green including
-the cache cross-check build.  Stage 1 revised the design: ownership is
-universal across *region* kinds, not across every node -- see the
-region/bookmark taxonomy below, which the probe surfaced immediately.
-Later stages (inline layout, telemetry/sizing, end state) remain
-speculative.  Builds on the landed simplification pass (archived spec:
+**Status: Stages 1 and 2 IMPLEMENTED on branch `simplify-stackblock`;
+all gates green including ASAN/Valgrind and the cache cross-check
+build.  Stage 1 (universal region ownership) revised the design:
+ownership is universal across *region* kinds, not across every node --
+see the region/bookmark taxonomy below, which the probe surfaced
+immediately.  Stage 2 embedded the inline segment
+(`KOS_SEGMENT_INLINE_SLOTS` = 8, discriminated by `max` below the heap
+birth size): region constructors aim `stack` at the node's embedded
+storage via `kos_dynnode_use_inline_segment`; `KosStack_Grow` spills
+inline contents to a heap segment through the owning slot;
+`KosStack_Release` empties inline segments in place; `KosStack_Detach`
+covers the one displacement site (the delim stash) where a segment is
+stored away from its node; segment cloning is centralized in
+`kos_dyn_clone` (into the clone's inline storage when it fits, heap
+DeepCopy otherwise) and the eight per-kind clone copies were deleted.
+Continuation resume-stack aliasing was audited: originals alias
+chain-owned segments and are cleared without release; clones and plans
+always hold heap deep-copies, so inline aliases never escape their
+node's lifetime.  Remaining stages: telemetry/sizing, then the end
+state.  Builds on the landed simplification pass (archived spec:
 [archive/stack-segment-simplification.md](../archive/stack-segment-simplification.md)).**
 
 ## Purpose
@@ -239,10 +252,12 @@ debug-only.
    fixes (the predicate, the wind delivery arm) took the suite, the
    native/ASAN/Valgrind gates, and the cache cross-check build to
    green.
-2. **Inline layout.**  Add the embedded segment, spill, and the
-   inline-aware Grow/Release.  Native memory gates (`test-asan`,
-   `test-valgrind`) are mandatory here; the inline/heap discrimination
-   is exactly the kind of thing they exist for.
+2. **Inline layout.**  DONE (stage 2).  Embedded segment, spill in
+   Grow, inline-aware Release, Detach at the delim stash, centralized
+   clone copy.  The fast paths in stack.h needed no changes; ASAN and
+   Valgrind ran clean on the first build.  Native tests cover inline
+   capacity, spill (slot update, value and back carry-over, inline
+   left empty), and detach semantics.
 3. **Telemetry and benchmarks.**  Spill-rate counters decide 8 vs 16.
    Churn benchmarks (`tox -qe churn`, binary_trees) plus RSS decide
    whether the locality win pays for the node-size increase.

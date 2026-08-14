@@ -47,6 +47,12 @@
 
 #define BLOCK_MAX_FREE 256
 
+/* The inline discriminator (max <= KOS_SEGMENT_INLINE_SLOTS) and the
+   single-step spill in KosStack_Grow both require inline capacity to
+   sit strictly below the heap birth size. */
+_Static_assert(KOS_SEGMENT_INLINE_SLOTS < BLOCK_NEW_SIZE,
+               "inline capacity must be below heap birth size");
+
 static size_t block_freecount = 0;
 
 /* Linked-list cache for stack blocks; same pattern used for dyn nodes and context. */
@@ -83,6 +89,24 @@ KosSegment *KosStack_NewEmpty(void) {
 
 static KosSegment *KosStack_Grow(KosSegment *self) {
   size_t max = self->max * 2;
+
+  /* Inline segments live inside their owning node and cannot realloc:
+     spill the contents (refcount-free) to a fresh heap segment. The
+     caller updates the owning slot; the inline storage goes dormant
+     until its node is reused. */
+  if (KosSegment_IS_INLINE(self)) {
+    KosSegment *heap = KosStack_NewEmpty();
+    if (! heap)
+      return NULL;
+
+    memcpy(heap->objs, self->objs, self->len * sizeof(PyObject *));
+    KosSegment_LEN(heap) = self->len;
+    KosSegment_BACK(heap) = KosSegment_BACK(self);
+
+    KosSegment_LEN(self) = 0;
+    KosSegment_BACK(self) = NULL;
+    return heap;
+  }
 
   /* stack starts 16, then doubles each grow up to the BLOCK_MAX_SIZE.
      Anything past that is considered an error, indicating there's
@@ -122,6 +146,15 @@ void KosStack_Release(KosSegment *self) {
 
   for (size_t i = self->len; i--; ) {
     Py_DECREF(self->objs[i]);
+  }
+
+  /* Inline segments are embedded in their owning node: release the
+     contents only; the storage lives and dies with the node. */
+  if (KosSegment_IS_INLINE(self)) {
+    KosSegment_LEN(self) = 0;
+    KosSegment_BACK(self) = NULL;
+    SAY(" inline segment, contents released");
+    return;
   }
 
   /* Grown blocks (max > BLOCK_NEW_SIZE) are from KosStack_Grow via
@@ -165,6 +198,26 @@ int KosStack_Traverse(
   }
 
   return 0;
+}
+
+
+KosSegment *KosStack_Detach(KosSegment **slot) {
+  KosSegment *s = *slot;
+
+  if (! s || ! KosSegment_IS_INLINE(s))
+    return s;
+
+  KosSegment *heap = KosStack_NewEmpty();
+  if (! heap)
+    return NULL;
+
+  memcpy(heap->objs, s->objs, s->len * sizeof(PyObject *));
+  KosSegment_LEN(heap) = s->len;
+  KosSegment_BACK(heap) = KosSegment_BACK(s);
+
+  KosSegment_LEN(s) = 0;
+  KosSegment_BACK(s) = NULL;
+  return heap;
 }
 
 
