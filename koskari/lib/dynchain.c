@@ -608,6 +608,75 @@ static void kos_dyn_clear_seg_backs(KosDynNode *from, KosDynNode *stop) {
 }
 
 
+/**
+   Region kinds own an operand segment; transfer bookmarks (cc,
+   cc_raise, delim, shift, gen, next, yield_from) stay transparent.
+   The compiler emits bookmark pushes mid-expression -- PUSH_CC inside
+   an open call window, OBJECT_NEXT between operand loads -- so their
+   extents legitimately straddle operand windows on the enclosing
+   segment and must not capture them. Block-structured regions
+   (PUSH_X body POP_X) isolate their body's operands on their own
+   segment. The eight kinds that predate universal ownership allocate
+   in their constructors; this covers the region kinds that inherited
+   before.
+*/
+static int kos_dyn_ensure_region_segment(KosDynNode *node) {
+
+  if (KosDynNode_STACK(node))
+    return 0;
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_PARAM:
+    case KOS_DYN_NS:
+    case KOS_DYN_WIND:
+      KosDynNode_STACK(node) = KosStack_NewEmpty();
+      return KosDynNode_STACK(node) ? 0 : -1;
+    default:
+      return 0;
+  }
+}
+
+
+/**
+   Steal every value remaining on a transparent extent's segment ahead
+   of its pop. Pair with kos_dyn_repush_stolen after the pop completes:
+   the values flow onto the revealed segment exactly as they did when
+   the extent shared its parent's segment. Refcount-free in both
+   halves: references move, they are never duplicated or dropped.
+*/
+static int kos_dyn_steal_extent_values(
+    KosDynNode *node,
+    KosStackSteal *vals) {
+
+  KosSegment *seg = KosDynNode_STACK(node);
+  size_t count = seg ? KosSegment_LEN(seg) : 0;
+
+  return KosStackSteal_Tail(vals, count, &KosDynNode_STACK(node));
+}
+
+
+/**
+   Push values stolen by kos_dyn_steal_extent_values onto the live
+   segment, bottom-first, consuming vals. On a push failure the failed
+   value has been released by the push; the unpushed remainder is
+   released here.
+*/
+static int kos_dyn_repush_stolen(KosEvalState *es, KosStackSteal *vals) {
+
+  for (size_t i = 0; i < vals->len; i++) {
+    if (kos_stack_push_steal_fast(KosEvalState_BLOCK(es), vals->vals[i]) < 0) {
+      vals->owned_start = i + 1;
+      KosStackSteal_Free(vals);
+      return -1;
+    }
+  }
+
+  vals->len = 0;
+  KosStackSteal_Free(vals);
+  return 0;
+}
+
+
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_delim.c"
@@ -1232,6 +1301,9 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   if (! node)
     return -1;
 
+  if (kos_dyn_ensure_region_segment(node) < 0)
+    return -1;
+
   prev = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = node;
 
@@ -1269,6 +1341,9 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
 int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
 
   if (! node)
+    return -1;
+
+  if (kos_dyn_ensure_region_segment(node) < 0)
     return -1;
 
   KosEvalState_DYN_TOP(es) = node;
@@ -1571,10 +1646,7 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node) {
    Allocate a copy of node.  Returns NULL on error or if the node kind
    does not support cloning.
 */
-KosDynNode *kos_dyn_clone(KosDynNode *node) {
-  if (! node)
-    return NULL;
-
+static KosDynNode *kos_dyn_clone_dispatch(KosDynNode *node) {
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_FRAME:
       return (KosDynNode *) kos_dynframe_clone((KosDynFrame *) node);
@@ -1622,6 +1694,27 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
                    (unsigned) KosDynNode_KIND(node));
       return NULL;
   }
+}
+
+
+KosDynNode *kos_dyn_clone(KosDynNode *node) {
+  if (! node)
+    return NULL;
+
+  KosDynNode *cloned = kos_dyn_clone_dispatch(node);
+
+  /* Universal ownership: kinds whose per-kind clone predates node-owned
+     segments copy nothing; carry the source's operand values so the
+     clone is faithful. Copies are born with back NULL. */
+  if (cloned && ! KosDynNode_STACK(cloned) && KosDynNode_STACK(node)) {
+    KosDynNode_STACK(cloned) = KosStack_DeepCopy(KosDynNode_STACK(node));
+    if (! KosDynNode_STACK(cloned)) {
+      kos_dynnode_free(cloned);
+      return NULL;
+    }
+  }
+
+  return cloned;
 }
 
 

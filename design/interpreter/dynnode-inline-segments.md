@@ -1,9 +1,13 @@
 # DynNode Inline Segments: Every Extent Owns Its Stack
 
-**Status: Speculative.  Try-it-and-evaluate; builds on the landed
-simplification pass (archived spec:
-[archive/stack-segment-simplification.md](../archive/stack-segment-simplification.md)).
-Adopt only if the staged evaluation below holds up.**
+**Status: Stage 1 (universal region ownership, heap segments)
+IMPLEMENTED on branch `simplify-stackblock`; all gates green including
+the cache cross-check build.  Stage 1 revised the design: ownership is
+universal across *region* kinds, not across every node -- see the
+region/bookmark taxonomy below, which the probe surfaced immediately.
+Later stages (inline layout, telemetry/sizing, end state) remain
+speculative.  Builds on the landed simplification pass (archived spec:
+[archive/stack-segment-simplification.md](../archive/stack-segment-simplification.md)).**
 
 ## Purpose
 
@@ -75,6 +79,40 @@ at 8 slots, ~280 at 16.  All node kinds share one allocation size for
 the single freelist, so the increase applies to every node and the
 whole freelist; measure RSS on the churn benchmarks, not just speed.
 
+### Region kinds vs transfer bookmarks (stage 1 finding)
+
+Universal ownership applies to **block-structured region kinds**:
+frame, with, try, finally, loop, foreach, collect, prompt (the
+pre-existing owners) plus param, ns, and wind (added by stage 1).
+These compile as `PUSH_X body POP_X` blocks and isolate their body's
+operands on their own segment.
+
+**Transfer bookmarks stay transparent**: cc, cc_raise, delim, shift,
+gen, next, yield_from.  The compiler emits their pushes
+mid-expression -- `PUSH_CC` lands inside an open call window with the
+callable already on the stack; `OBJECT_NEXT` sits between operand
+loads -- so their extents legitimately straddle operand windows on the
+enclosing segment and must not capture them.  The suite fails within
+seconds if a bookmark kind is given a segment (call underruns in
+continuations, generator delivery losses), which is exactly the probe
+working as designed.  Enforcement is `kos_dyn_ensure_region_segment`
+at the push entry points; the per-kind clone gap is closed generically
+in `kos_dyn_clone` (a clone whose per-kind body copied no stack deep-
+copies the source's).
+
+Delivery for the stage-1 additions: transparent-extent values flow
+upward by **deliver-all on normal pop** (`kos_dyn_steal_extent_values`
+/ `kos_dyn_repush_stolen`, refcount-free steal around the pop) --
+reproducing exactly what the shared segment did, with no per-kind
+count knowledge -- and are discarded on unwind pops, where the old
+leftovers were cleared by the catching handler anyway.  Wind is the
+one special case: its no-after-thunk uninstall arm delivers
+`body_result` to the enclosing owner's segment through the owning
+slot (a justified parent-delivery site; the wind's own segment dies
+with the node).  POP_WIND and POP_SHIFT already extract their value
+before popping and needed nothing.
+
+
 ### Universal ownership and upward delivery
 
 Every node kind allocates nothing extra (the inline segment is part of
@@ -129,11 +167,16 @@ because a popped node can shadow any subset of them without the chain
 recording what it displaced.  The end state makes each fact evident on
 push and pop with no walk, by a mechanism chosen per fact:
 
-1. **Segment: by ownership.**  Universal ownership (this document)
-   makes the live slot `&STACK(dyn_top)` unconditionally.  The segment
-   `back` link from the simplification pass dies here: even parent
-   delivery becomes `&STACK(PARENT(owner))`, one link-follow, since
-   every node owns.
+1. **Segment: by ownership, for region kinds.**  Universal region
+   ownership (this document) makes the live slot `&STACK(dyn_top)`
+   whenever the top is a region node.  Transfer bookmarks stay
+   transparent (see the taxonomy above), so the fully walk-free
+   variant needs bookmarks to *alias* the enclosing slot at install --
+   a borrowed `KosSegment **` under the same install-time/detach
+   discipline as the current back link -- or the pop reveal skips
+   bookmarks with a bounded hop.  Either way the segment `back` link
+   on region segments dies: parent delivery becomes a walk of at most
+   the bookmark run between owner and enclosing owner.
 
 2. **Namespace: by owned fill.**  Every node's existing `ns` field is
    filled at push -- its own namespace when it introduces one, an
@@ -188,12 +231,14 @@ debug-only.
 
 ## Evaluation plan (staged)
 
-1. **Probe the invariant first, cheaply.**  Before any inline layout
-   work: give every node kind a heap segment at push (universal
-   ownership only), with delivery steps added to the inheriting kinds.
-   Run the full suite and the corpus.  Any code that reads or pops
-   across an extent boundary surfaces as an immediate underrun.  This
-   validates the semantic change in isolation.
+1. **Probe the invariant first, cheaply.**  DONE (stage 1, branch
+   `simplify-stackblock`).  Heap segments at push for the previously
+   inheriting kinds, deliver-all on their normal pops.  The probe
+   worked exactly as designed: underruns immediately partitioned the
+   kinds into regions and bookmarks (taxonomy above); two rounds of
+   fixes (the predicate, the wind delivery arm) took the suite, the
+   native/ASAN/Valgrind gates, and the cache cross-check build to
+   green.
 2. **Inline layout.**  Add the embedded segment, spill, and the
    inline-aware Grow/Release.  Native memory gates (`test-asan`,
    `test-valgrind`) are mandatory here; the inline/heap discrimination

@@ -139,20 +139,25 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
   }
 
   if (! KosDynWind_AFTER_THUNK(node)) {
-    /* No after-thunk: push stored body result and finish uninstall */
+    /* No after-thunk: deliver the stored body result and finish
+       uninstall. The wind owns the live segment and is mid-pop, so the
+       result goes to the enclosing owner's segment (parent delivery,
+       through the owning slot); pushing onto the live segment would
+       free the value with the node. */
     PyObject *body_result = KosDynWind_BODY_RESULT(node);
     KosDynWind_BODY_RESULT(node) = NULL;
-    if ((KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-             ? *KosEvalState_BLOCK(es)
-             : NULL)
-        && body_result) {
-      if (KosEvalState_StackPushRef(es, body_result) < 0) {
-        KosDynWind_BODY_RESULT(node) = body_result;
-        return -1;
+    if (body_result) {
+      KosDynNode *p = KosDynNode_PARENT((KosDynNode *) node);
+      while (p && ! KosDynNode_STACK(p))
+        p = KosDynNode_PARENT(p);
+      if (p) {
+        if (KosStack_PushRef(&KosDynNode_STACK(p), body_result) < 0) {
+          KosDynWind_BODY_RESULT(node) = body_result;
+          return -1;
+        }
       }
-    }
-    if (body_result)
       Py_DECREF(body_result);
+    }
     return 0;
   }
 
