@@ -173,7 +173,10 @@ static KosDynNode *kos_dynnode_alloc(void) {
     return NULL;
   }
 
-  memset(p, 0, sizeof(KosDynNode));
+  /* The embedded segment at the tail needs no zeroing: its header is
+     initialized on use (kos_dynnode_use_inline_segment) and its slots
+     are gated by len. */
+  memset(p, 0, offsetof(KosDynNode, iseg));
   p->node_id = kos_dynnode_mint_id();
 
   return p;
@@ -192,7 +195,8 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 
   if (dyn_freecount < DYN_NODE_MAX_FREE) {
     KOS_TRACE_FL_RETURN("dyn_node", 0);
-    memset(node, 0, sizeof(KosDynNode));
+    /* Skip the embedded segment tail; see kos_dynnode_alloc. */
+    memset(node, 0, offsetof(KosDynNode, iseg));
     KosDynNode_PARENT(node) = dyn_freelist;
     dyn_freelist = node;
     dyn_freecount++;

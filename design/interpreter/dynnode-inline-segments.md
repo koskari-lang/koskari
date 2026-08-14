@@ -267,12 +267,18 @@ debug-only.
    benchmarks, and the dyn-node freelist cap (128) bounds the
    node-growth footprint at ~11 KB.  Branch medians (5 samples):
    binary_trees 2.90x, method 2.82x, match_case 2.99x, nbody 2.65x,
-   loop 1.52x ki/py.  The binary_trees figure sits slightly above the
-   2.70x recorded when the frame cache landed; whether that is a real
-   allocation-cost regression or run-condition drift needs an A/B on
-   master under identical conditions
-   (`tox -qe churn -- --samples 5 --warmup 1 binary_trees method
-   match_case nbody`) before drawing a conclusion.
+   loop 1.52x ki/py.  A heap-forced A/B (region nodes given heap
+   segments, inline shrunk to 1) isolated the cost: call-heavy
+   workloads (binary_trees, method) ran ~5-8% faster with small nodes,
+   locality workloads (nbody, match_case) ~4-5% faster with inline --
+   the node-growth cost was the two full-struct memsets in the node
+   alloc/freelist cycle, not the layout.  Fix: both memsets now stop
+   at `offsetof(KosDynNode, iseg)` -- the embedded tail needs no
+   zeroing, its header is initialized on use and its slots are gated
+   by len.  With the trim, inline-8 is best-of-all-configs on
+   binary_trees (0.1392s, 2.67x -- at the pre-branch 2.70x mark),
+   method, and match_case, keeping nbody's locality win.  Valgrind
+   runs clean, confirming the len-gating of the unzeroed tail.
 
 Abandon criteria: stage 1 reveals legitimate cross-extent stack reads
 that resist cleanup, or stage 3 shows the footprint cost without a
