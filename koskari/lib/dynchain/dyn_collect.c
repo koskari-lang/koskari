@@ -42,13 +42,12 @@ static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
 
 
 /**
-   DECREF node namespace; return node to freelist.
+   Return node to freelist (which releases the owned namespace).
 */
 static void kos_dyncollect_free(KosDynCollect *col_node) {
   if (! col_node)
     return;
 
-  Py_DECREF(KosDynNode_NS((KosDynNode *) col_node));
   kos_dynnode_return_to_freelist((KosDynNode *) col_node);
 }
 
@@ -122,6 +121,5 @@ static int dynnode_traverse_collect(KosDynNode *node, visitproc visit, void *arg
   int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
-  Py_VISIT(KosDynNode_NS(node));
   return 0;
 }

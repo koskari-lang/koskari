@@ -193,6 +193,10 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
     KosDynNode_STACK(node) = NULL;
   }
 
+  /* The base ns field is uniformly owned (introducers attach their
+     own; every other pushed node carries a fill of the live one). */
+  Py_CLEAR(KosDynNode_NS(node));
+
   if (dyn_freecount < DYN_NODE_MAX_FREE) {
     KOS_TRACE_FL_RETURN("dyn_node", 0);
     /* Skip the embedded segment tail; see kos_dynnode_alloc. */
@@ -1056,6 +1060,7 @@ static void kos_dyn_walk_live_from(
     if (! bl && KosDynNode_STACK(node))
       bl = &KosDynNode_STACK(node);
 
+    /* under the owned fill, any carried ns is the live value */
     if (! ns && KosDynNode_NS(node))
       ns = KosDynNode_NS(node);
 
@@ -1105,10 +1110,11 @@ static void kos_dyn_retarget_after_push(
     ns = KosDynNode_NS(new_node);
   } else {
     ft = KosEvalState_FRAME(es);
-    if (KosDynNode_NS(new_node))
-      ns = KosDynNode_NS(new_node);
-    else
-      ns = KosEvalState_NAMESPACE(es);
+    /* the fill ran at push, so the node's ns is the live value; NULL
+       only in the placeholder-frame window, where the mirror stands */
+    ns = KosDynNode_NS(new_node)
+        ? KosDynNode_NS(new_node)
+        : KosEvalState_NAMESPACE(es);
     if (KosDynNode_STACK(new_node))
       bl = &KosDynNode_STACK(new_node);
     else
@@ -1166,10 +1172,11 @@ static void kos_dyn_retarget_after_pop(
 
   int need_frame = 0;
   int need_block = 0;
-  int need_ns = 0;
+  int walk_ns = 0;
   KosDynFrame *ft = NULL;
   KosSegment **bl = NULL;
   PyObject *ns = NULL;
+  PyObject *ns_new;
 
   if (! es)
     return;
@@ -1186,17 +1193,48 @@ static void kos_dyn_retarget_after_pop(
       && KosEvalState_BLOCK(es) == &KosDynNode_STACK(removed))
     need_block = 1;
 
-  if (KosDynNode_NS(removed)
-      && KosEvalState_NAMESPACE(es) == KosDynNode_NS(removed))
-    need_ns = 1;
+  /* Namespace reconcile: under the owned fill the revealed node
+     carries the live namespace, so the answer is read from the
+     survivor -- never from the dying node. A node that reached the
+     chain without passing through push (a splice) may carry none;
+     fall back to the introduces-walk for that case. */
+  ns_new = KosEvalState_NAMESPACE(es);
+  {
+    PyObject *ns_top = new_top ? KosDynNode_NS(new_top) : NULL;
+    if (ns_top) {
+#if KOS_DEBUG_PATCH_DYN_CACHES
+      {
+        KosDynFrame *ft_dbg = NULL;
+        KosSegment **bl_dbg = NULL;
+        PyObject *ns_dbg = NULL;
+        kos_dyn_walk_live_from(es, new_top, &ft_dbg, &bl_dbg, &ns_dbg);
+        if (ns_dbg && ns_dbg != ns_top) {
+          PyErr_SetString(PyExc_SystemError,
+                          "kos_dyn_retarget_after_pop: ns fill drift"
+                          " vs walk");
+        }
+      }
+#endif
+      ns_new = ns_top;
+    } else if (KosDynNode_NS(removed)
+               && KosEvalState_NAMESPACE(es) == KosDynNode_NS(removed)) {
+      /* unfilled survivor and the dying node carried the live ns:
+         recompute by walk */
+      walk_ns = 1;
+    }
+  }
 
-  if (! need_frame && ! need_block && ! need_ns)
+  if (! need_frame && ! need_block && ! walk_ns) {
+    if (ns_new != KosEvalState_NAMESPACE(es))
+      kos_dyn_apply_live(es, KosEvalState_FRAME(es), KosEvalState_BLOCK(es),
+                         ns_new, 0);
     return;
+  }
 
-  if (need_block && ! need_frame && ! need_ns
+  if (need_block && ! need_frame && ! walk_ns
       && new_top && KosDynNode_STACK(new_top)) {
     kos_dyn_apply_live(es, KosEvalState_FRAME(es), &KosDynNode_STACK(new_top),
-                       KosEvalState_NAMESPACE(es), 0);
+                       ns_new, 0);
     return;
   }
 
@@ -1205,7 +1243,7 @@ static void kos_dyn_retarget_after_pop(
      when frame or ns also changed, one walk resolves all three. The
      segment is still alive here -- uninstall frees the node only
      after this retarget completes. */
-  if (need_block && ! need_frame && ! need_ns
+  if (need_block && ! need_frame && ! walk_ns
       && KosSegment_BACK(KosDynNode_STACK(removed))) {
     KosSegment **cached = KosSegment_BACK(KosDynNode_STACK(removed));
 #if KOS_DEBUG_PATCH_DYN_CACHES
@@ -1221,8 +1259,7 @@ static void kos_dyn_retarget_after_pop(
       }
     }
 #endif
-    kos_dyn_apply_live(es, KosEvalState_FRAME(es), cached,
-                       KosEvalState_NAMESPACE(es), 0);
+    kos_dyn_apply_live(es, KosEvalState_FRAME(es), cached, ns_new, 0);
     return;
   }
 
@@ -1232,8 +1269,8 @@ static void kos_dyn_retarget_after_pop(
     ft = KosEvalState_FRAME(es);
   if (! need_block)
     bl = KosEvalState_BLOCK(es);
-  if (! need_ns)
-    ns = KosEvalState_NAMESPACE(es);
+  if (! walk_ns)
+    ns = ns_new;
 
   kos_dyn_apply_live(es, ft, bl, ns, 0);
 }
@@ -1268,6 +1305,7 @@ void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
     if (! bl && KosDynNode_STACK(node))
       bl = &KosDynNode_STACK(node);
 
+    /* under the owned fill, any carried ns is the live value */
     if (! ns && KosDynNode_NS(node))
       ns = KosDynNode_NS(node);
 
@@ -1311,6 +1349,19 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   if (kos_dyn_ensure_region_segment(node) < 0)
     return -1;
 
+  /* Namespace owned fill: a node that does not introduce its own
+     namespace carries an owned reference to the live one, so on pop
+     the revealed node always answers the namespace question. Frames
+     keep their exact semantics (a placeholder frame's NULL ns stays
+     NULL until its real namespace is bound). */
+  if (! KosDynNode_IS_FRAME(node) && ! KosDynNode_NS(node)) {
+    PyObject *live_ns = KosEvalState_NAMESPACE(es);
+    if (live_ns) {
+      Py_INCREF(live_ns);
+      KosDynNode_NS(node) = live_ns;
+    }
+  }
+
   prev = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = node;
 
@@ -1352,6 +1403,19 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
 
   if (kos_dyn_ensure_region_segment(node) < 0)
     return -1;
+
+  /* Namespace owned fill: a node that does not introduce its own
+     namespace carries an owned reference to the live one, so on pop
+     the revealed node always answers the namespace question. Frames
+     keep their exact semantics (a placeholder frame's NULL ns stays
+     NULL until its real namespace is bound). */
+  if (! KosDynNode_IS_FRAME(node) && ! KosDynNode_NS(node)) {
+    PyObject *live_ns = KosEvalState_NAMESPACE(es);
+    if (live_ns) {
+      Py_INCREF(live_ns);
+      KosDynNode_NS(node) = live_ns;
+    }
+  }
 
   KosEvalState_DYN_TOP(es) = node;
   kos_dyn_retarget_after_push(es, node);
@@ -1709,6 +1773,15 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
     return NULL;
 
   KosDynNode *cloned = kos_dyn_clone_dispatch(node);
+
+  /* Filled namespaces are copied generically: a per-kind clone that
+     attached no ns of its own (every non-introducing kind) carries
+     the same live-ns fill its source held. Introducing kinds handle
+     their own (frame goes through KosNamespace_Reveal). */
+  if (cloned && ! KosDynNode_NS(cloned) && KosDynNode_NS(node)) {
+    Py_INCREF(KosDynNode_NS(node));
+    KosDynNode_NS(cloned) = KosDynNode_NS(node);
+  }
 
   /* Segment copy is centralized here: per-kind clones carry only their
      payload. Values that fit go into the clone's embedded storage;
@@ -2491,7 +2564,8 @@ static PyObject *dynnode_to_dict_generic(KosDynNode *node) {
   if (snapshot_set_uint(out, "node_id", KosDynNode_NODE_ID(node)) < 0
       || snapshot_set_item(out, "kind",
           PyUnicode_FromString(kos_dynnode_kind_name(KosDynNode_KIND(node)))) < 0
-      || snapshot_set_obj(out, "namespace", KosDynNode_NS(node)) < 0) {
+      || snapshot_set_obj(out, "namespace",
+          kos_dynnode_introduces_ns(node) ? KosDynNode_NS(node) : NULL) < 0) {
     Py_DECREF(out);
     return NULL;
   }
@@ -2561,6 +2635,10 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node) {
 int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
   if (! node)
     return 0;
+
+  /* The base ns field is uniformly owned; visit it here, once, for
+     every kind. Per-kind traversals cover only their payloads. */
+  Py_VISIT(KosDynNode_NS(node));
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_FRAME:

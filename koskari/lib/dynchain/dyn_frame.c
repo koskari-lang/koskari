@@ -94,7 +94,6 @@ void kos_dynframe_free(KosDynFrame *frame) {
 
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
   KosDynFrame_CODE(frame) = NULL;
-  Py_CLEAR(KosDynFrame_NS(frame));
 
   kos_dynnode_return_to_freelist(frame);
 }
@@ -328,7 +327,6 @@ int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out) {
 static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) {
   KosDynFrame *frame = (KosDynFrame *) node;
   Py_VISIT(KosDynFrame_CODE(frame));
-  Py_VISIT(KosDynFrame_NS(frame));
   Py_VISIT(KosDynFrame_FN(frame));
   {
     int tr = KosStack_Traverse(KosDynFrame_STACK(frame), visit, arg);

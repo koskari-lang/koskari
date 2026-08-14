@@ -365,6 +365,26 @@ static inline KosSegment *kos_dynnode_use_inline_segment(
   return node->stack;
 }
 
+
+/**
+   True when node introduces its own namespace extent: it is one of
+   the kinds that binds a namespace (frame, ns, collect) and one is
+   attached.  Introspection-only: under the namespace owned-fill every
+   pushed node carries an ns and the live-value question is answered
+   by reading it, so retarget logic never needs this distinction --
+   only displays that report scope structure do.
+*/
+static inline int kos_dynnode_introduces_ns(const struct KosDynNode *node) {
+  switch (node->kind) {
+    case KOS_DYN_FRAME:
+    case KOS_DYN_NS:
+    case KOS_DYN_COLLECT:
+      return node->ns != NULL;
+    default:
+      return 0;
+  }
+}
+
 typedef struct KosDynNode KosDynFrame;
 
 

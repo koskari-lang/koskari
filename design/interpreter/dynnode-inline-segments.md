@@ -191,14 +191,26 @@ push and pop with no walk, by a mechanism chosen per fact:
    on region segments dies: parent delivery becomes a walk of at most
    the bookmark run between owner and enclosing owner.
 
-2. **Namespace: by owned fill.**  Every node's existing `ns` field is
-   filled at push -- its own namespace when it introduces one, an
-   incref of the inherited active namespace when it does not.  The
-   active ns is then `NS(dyn_top)`, always, and it is owned state
-   correct by construction rather than a cached answer: frozen spans,
-   stashed slices, and clones carry strong refs that stay valid
-   wherever the span goes, so the entire ns detach-hygiene class
-   (and the resumed-region namespace-loss bug family) disappears.
+2. **Namespace: by owned fill.**  IMPLEMENTED.  Every node's existing
+   `ns` field is filled at push -- its own namespace when it
+   introduces one, an incref of the inherited active namespace when it
+   does not (frames excepted: a placeholder frame's NULL ns keeps its
+   exact semantics until the real namespace is bound).  The active ns
+   is then `NS(dyn_top)`, always, and it is owned state correct by
+   construction rather than a cached answer: frozen spans, stashed
+   slices, and clones carry strong refs that stay valid wherever the
+   span goes, so the entire ns detach-hygiene class (and the
+   resumed-region namespace-loss bug family) disappears.
+   As landed: ownership is centralized -- release in
+   `kos_dynnode_return_to_freelist`, GC visit in the
+   `kos_dynnode_traverse` dispatcher, fill-copy in `kos_dyn_clone` --
+   with the per-kind decrefs/visits deleted.  The pop side follows the
+   reconcile rule: read `NS(new_top)` from the survivor (never the
+   dying node; no ordering constraint), borrowed into the eval mirror
+   with zero refcount traffic on the frame path; an unfilled survivor
+   (splice-installed) falls back to the introduces-walk, and the
+   `KOS_DEBUG_PATCH_DYN_CACHES` build cross-checks fill vs walk on
+   every reconcile.
    A back link on the namespace object itself does NOT work: segments
    are single-owner, namespaces are shared (the module namespace is
    the extent of every module-level frame concurrently; closures keep
@@ -208,11 +220,16 @@ push and pop with no walk, by a mechanism chosen per fact:
    (off the per-opcode path; frames already own theirs); free,
    traverse, and every per-kind clone treat the base `ns` field as
    uniformly owned; and -- the one silent hazard -- `NS(node) !=
-   NULL` stops meaning "introduces a namespace scope".  Every reader
-   using the field as an ownership discriminator (the walk, the
-   inherit arm of retarget_after_push, snapshots, capture logic
-   seeking the innermost ns owner) must switch to a kind- or
-   flag-based test.  That audit is its own work item.
+   NULL` stops meaning "introduces a namespace scope".
+   The discriminator audit is DONE and, with the fill landed, mostly
+   retired: `kos_dynnode_introduces_ns` (dynchain.h) pinned the old
+   truth transitionally so the fill could land without silent drift,
+   and now survives in exactly one place -- the snapshot display,
+   where "introduces a scope" is genuinely what introspection reports.
+   Every retarget/walk reader uses the plain first-non-NULL read,
+   which under the fill is both correct and faster (a filled node
+   answers at the first hop; the walks only run for unfilled
+   splice-installed survivors and the placeholder-frame window).
 
 3. **Frame: by back-frame restore.**  Dynnodes are not refcounted, so
    a uniform per-node frame stamp would be a borrowed pointer with
