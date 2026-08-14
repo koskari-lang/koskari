@@ -48,21 +48,14 @@ Ref: [interpreter/attr-lookup-cache.md](interpreter/attr-lookup-cache.md)
 
 ## Stack segments
 
-### Stack segment simplification pass (IMPLEMENTED)
-
-Done on branch `simplify-stackblock`: dropped the `Stack` Python wrapper and
-the dead object-level/chain APIs; renamed `KosStackBlock` to `KosSegment` with
-surviving calls as `KosStack_X(KosSegment **)`; `back` is now an install-time
-unwind cache (owning-slot form, NULL on clones, chain walk as fallback).
-
-Ref: [interpreter/stack-segment-simplification.md](interpreter/stack-segment-simplification.md).
-
 ### DynNode inline segments (speculative)
 
 Every dyn node owns its segment: an inline mini-segment (8 or 16 slots,
 telemetry decides) embedded in `KosDynNode`, spilling to heap on overflow;
 refcount-free upward delivery on pop. Staged: heap-only universal-ownership
 probe first, then inline layout, then spill telemetry + churn/RSS benchmarks.
+End state (own step): retire the retarget walks via ns owned-fill and a
+frame back-frame link; see the doc's End state section.
 
 Ref: [interpreter/dynnode-inline-segments.md](interpreter/dynnode-inline-segments.md).
 

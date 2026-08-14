@@ -1,8 +1,9 @@
 # DynNode Inline Segments: Every Extent Owns Its Stack
 
-**Status: Speculative.  Try-it-and-evaluate; depends on
-[stack-segment-simplification.md](stack-segment-simplification.md)
-landing first.  Adopt only if the staged evaluation below holds up.**
+**Status: Speculative.  Try-it-and-evaluate; builds on the landed
+simplification pass (archived spec:
+[archive/stack-segment-simplification.md](../archive/stack-segment-simplification.md)).
+Adopt only if the staged evaluation below holds up.**
 
 ## Purpose
 
@@ -119,6 +120,72 @@ Consequences:
   detachment boundary must be cleared per the simplification doc's
   validity rule.
 
+## End state: retiring the retarget walks
+
+Where this ultimately points.  Evaluation requires three live facts on
+the eval state -- the frame (code and PCs derive from it), the operand
+segment slot, and the namespace -- and the retarget walks exist only
+because a popped node can shadow any subset of them without the chain
+recording what it displaced.  The end state makes each fact evident on
+push and pop with no walk, by a mechanism chosen per fact:
+
+1. **Segment: by ownership.**  Universal ownership (this document)
+   makes the live slot `&STACK(dyn_top)` unconditionally.  The segment
+   `back` link from the simplification pass dies here: even parent
+   delivery becomes `&STACK(PARENT(owner))`, one link-follow, since
+   every node owns.
+
+2. **Namespace: by owned fill.**  Every node's existing `ns` field is
+   filled at push -- its own namespace when it introduces one, an
+   incref of the inherited active namespace when it does not.  The
+   active ns is then `NS(dyn_top)`, always, and it is owned state
+   correct by construction rather than a cached answer: frozen spans,
+   stashed slices, and clones carry strong refs that stay valid
+   wherever the span goes, so the entire ns detach-hygiene class
+   (and the resumed-region namespace-loss bug family) disappears.
+   A back link on the namespace object itself does NOT work: segments
+   are single-owner, namespaces are shared (the module namespace is
+   the extent of every module-level frame concurrently; closures keep
+   function namespaces re-runnable), and two installs of one shared
+   object would race one field.
+   Costs: one incref per non-introducing push and one decref at free
+   (off the per-opcode path; frames already own theirs); free,
+   traverse, and every per-kind clone treat the base `ns` field as
+   uniformly owned; and -- the one silent hazard -- `NS(node) !=
+   NULL` stops meaning "introduces a namespace scope".  Every reader
+   using the field as an ownership discriminator (the walk, the
+   inherit arm of retarget_after_push, snapshots, capture logic
+   seeking the innermost ns owner) must switch to a kind- or
+   flag-based test.  That audit is its own work item.
+
+3. **Frame: by back-frame restore.**  Dynnodes are not refcounted, so
+   a uniform per-node frame stamp would be a borrowed pointer with
+   hygiene obligations on every node.  Frame needs less: popping a
+   non-frame node never changes the live frame, so the only event
+   needing an answer is popping a frame, and a `back_frame` link
+   recorded on the frame at install (the frame it displaced --
+   generalizing what `eval_ng_plain_return` already does by hand)
+   covers exactly that.  One borrowed cache with a narrow validity
+   story: cleared at park, clone, and freeze, restamped at splice.
+
+With all three in place the retarget walks reduce to a splice-time
+restamp (`rebuild_live_from_chain` becomes "restamp the span", run
+once per splice instead of once per pop) plus the
+`KOS_DEBUG_PATCH_DYN_CACHES` cross-check, which should stay enabled
+through the whole transition; the walk code is retired only after the
+stamped world has soaked under it.  Note the deliberate asymmetry of
+mechanisms -- ownership, owned fill, borrowed restore -- each is
+locally optimal, and unifying them in either direction would be wrong:
+ns cannot be ownership-based (sharing), segment needs no restore
+(universal ownership), frame cannot be owned fill (nodes are not
+refcounted).
+
+Sequencing: path 2 as specified above (kills the block walk and the
+segment back link), then ns owned-fill and the frame back-frame as a
+separate step (kills the remaining walk arms), then walk demotion to
+debug-only.
+
+
 ## Evaluation plan (staged)
 
 1. **Probe the invariant first, cheaply.**  Before any inline layout
@@ -144,5 +211,6 @@ measurable win.
 - No change to the segment growth model past the spill (heap segments
   keep realloc-doubling to the cap).
 - No revival of intra-stack block chains; the chain is the dynamic
-  chain.  `back` remains the loose unwind cache defined in the
-  simplification doc.
+  chain.  Within this document's scope `back` remains the loose unwind
+  cache defined in the simplification doc; its eventual removal
+  belongs to the end-state step above.
