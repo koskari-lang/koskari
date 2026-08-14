@@ -1,6 +1,21 @@
 # Install and run
 
+## Install from PyPI
+
+Weekly development snapshots publish to PyPI, with wheels for Linux and
+MacOS. They are dev releases, so pip needs the `--pre` flag:
+
+```bash
+pip install --pre "koskari[repl]"
+```
+
+The optional `repl` extra enables syntax-highlighted REPL input. From
+here, skip ahead to [First session](#first-session). The rest of this
+section covers building from a source checkout instead.
+
 ## Prerequisites
+
+For building from source:
 
 - Python 3.9 or newer (CPython)
 - A C compiler with musttail support for the native extension: clang, or GCC 15 or newer
@@ -83,8 +98,10 @@ Files live under `editors/` in the repository root.
 For Helix and LSP support, install the `lsp` extra first:
 
 ```bash
-pip install -e ".[repl,lsp]"
+pip install --pre "koskari[repl,lsp]"
 ```
+
+In a source checkout, `pip install -e ".[repl,lsp]"` does the same.
 
 ## Next steps
 

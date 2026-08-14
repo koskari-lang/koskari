@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Koskari &mdash; a Lisp that runs alongside Python</title>
-  <meta name="description" content="Koskari is a stackless Lisp for Python: real continuations, ambient async, and an indentation layout that frees you from the parenthesis curse.">
+  <title>Koskari &mdash; a Lisp that lives with Python</title>
+  <meta name="description" content="Koskari is a stackless Lisp for Python: first-class continuations, ambient async, and an indentation layout that reads blocks into forms.">
   <meta property="og:title" content="Koskari">
-  <meta property="og:description" content="A Lisp that runs alongside Python. Real continuations, ambient async, indentation layout.">
+  <meta property="og:description" content="A Lisp that lives with Python. First-class continuations, ambient async, indentation layout.">
   <meta property="og:type" content="website">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -38,16 +38,16 @@
   <!-- hero -->
   <div class="ko-hero">
     <div>
-      <div class="ko-eyebrow">a lisp that runs alongside python</div>
-      <h1 class="ko-h1">Lisp, the fun parts.<br><span class="ko-accent">Python, all of it.</span></h1>
-      <p class="ko-lede">Koskari is a stackless Lisp that lives next to Python, with real continuations, ambient async, and an indentation mode that frees you from the parenthesis curse. Come have fun with programming again.</p>
+      <div class="ko-eyebrow">the fourth iteration of the sibilant idea</div>
+      <h1 class="ko-h1">A Lisp that lives<br><span class="ko-accent">with Python.</span></h1>
+      <p class="ko-lede">Koskari is a stackless Lisp running inside CPython: first-class continuations, ambient async, and an indentation layout that reads blocks into forms. It is built as a playground, with Python's whole ecosystem in reach and fewer of Python's restrictions.</p>
       <div class="ko-cta-row">
         <a class="ko-btn ko-btn-primary" href="/docs/start/overview/">Get started <span class="ko-btn-arrow">&rarr;</span></a>
         <a class="ko-btn ko-btn-secondary" href="/docs/">Browse the docs</a>
       </div>
       <div class="ko-install">
-        <span class="ko-install-cmd"><span class="ko-prompt">$</span> pip install koskari</span>
-        <span class="ko-install-soon">{{ beta_target }} BETA &middot; SOON</span>
+        <span class="ko-install-cmd"><span class="ko-prompt">$</span> pip install --pre koskari</span>
+        <span class="ko-install-soon">WEEKLY DEV SNAPSHOTS</span>
       </div>
     </div>
     <div class="ko-hero-art">
@@ -60,36 +60,36 @@
 
   <!-- features -->
   <div class="ko-section">
-    <div class="ko-label">Why it's fun</div>
+    <div class="ko-label">What it is</div>
     <div class="ko-features-grid">
       <div class="ko-card">
         <div class="ko-card-icon">&#8646;</div>
         <h3 class="ko-card-title">Lives with Python</h3>
-        <p class="ko-card-body">Import any module, pass objects both ways. It's no transpiler: a real stackless interpreter running side by side with CPython.</p>
+        <p class="ko-card-body">Koskari code runs on its own stackless bytecode evaluator inside the CPython process. Import any Python module, subclass its classes, pass objects both ways.</p>
       </div>
       <div class="ko-card">
         <div class="ko-card-icon ko-card-icon-sm">(&nbsp;)</div>
-        <h3 class="ko-card-title">Beyond the parens</h3>
-        <p class="ko-card-body">A novel indentation layout lets you write Lisp's power without drowning in brackets. Drop back into S-expressions whenever you like.</p>
+        <h3 class="ko-card-title">Layout syntax</h3>
+        <p class="ko-card-body">An indentation layout reads blocks into forms at parse time, so most code sits closer to Python than to classic S-expressions. Parenthesized forms mix in freely.</p>
       </div>
       <div class="ko-card">
         <div class="ko-card-icon">&#8635;</div>
-        <h3 class="ko-card-title">Continuations, really</h3>
-        <p class="ko-card-body">Stackless to the core: first-class continuations, coroutines, and control flow you can pick up and hold in your hand.</p>
+        <h3 class="ko-card-title">First-class continuations</h3>
+        <p class="ko-card-body">The stackless evaluator supports delimited and full continuations, multi-shot included, along with coroutines, tail calls, and dynamic wind.</p>
       </div>
       <div class="ko-card">
         <div class="ko-card-icon">&#8767;</div>
         <h3 class="ko-card-title">Ambiently async</h3>
-        <p class="ko-card-body">Concurrency without the colored functions. Everything can await, nothing has to. The runtime just gets out of your way.</p>
+        <p class="ko-card-body">Awaitable values are awaited in place. Any function can suspend and none carries an async marker, so the same code serves synchronous and asynchronous callers.</p>
       </div>
     </div>
   </div>
 
   <!-- example -->
   <div id="examples" class="ko-section ko-section-tight">
-    <div class="ko-label ko-label-tight">See it for yourself</div>
+    <div class="ko-label ko-label-tight">An example</div>
     <h2 class="ko-section-title">A point, and its neighbors</h2>
-    <p class="ko-section-lede">That <span class="ko-inline-code">@dataclass</span> comes straight from Python's standard library; Koskari just uses it. Notice the layout: no wall of closing parens in sight.</p>
+    <p class="ko-section-lede">The <span class="ko-inline-code">@dataclass</span> decorator comes straight from Python's standard library. The class body is layout syntax; the parenthesized forms inside it are ordinary S-expressions.</p>
     <div class="ko-code-window">
       <div class="ko-code-chrome">
         <span class="ko-dot ko-dot-close"></span>
@@ -154,7 +154,7 @@
     <div class="ko-download-grid">
       <div>
         <h2 class="ko-download-title">Get Koskari</h2>
-        <p class="ko-download-lede">Today it's <strong class="ko-download-strong">v{{ version }}</strong>, built from source. Next up is <strong class="ko-download-strong">v{{ beta_target }}</strong>, the first public beta, landing on PyPI. Cross-platform: anywhere CPython runs.</p>
+        <p class="ko-download-lede">Koskari is in early development. Weekly snapshots of <strong class="ko-download-strong">v{{ version }}</strong> publish to PyPI as dev releases; <strong class="ko-download-strong">v{{ beta_target }}</strong> will be the first public beta. Cross-platform: anywhere CPython runs.</p>
         <div class="ko-platform-tags">
           <span class="ko-platform-tag">Linux</span>
           <span class="ko-platform-tag">MacOS</span>
@@ -163,12 +163,12 @@
       </div>
       <div class="ko-download-cmds">
         <div class="ko-cmd-box">
-          <div class="ko-cmd-label">From source &middot; today</div>
-          <div class="ko-cmd-line"><span class="ko-cmd-prompt">$</span> git clone {{ repo_short }}</div>
+          <div class="ko-cmd-label">PyPI &middot; weekly dev snapshot</div>
+          <div class="ko-cmd-line"><span class="ko-cmd-prompt">$</span> pip install --pre koskari</div>
         </div>
         <div class="ko-cmd-box">
-          <div class="ko-cmd-label">PyPI &middot; pending v{{ beta_target }}</div>
-          <div class="ko-cmd-line"><span class="ko-cmd-prompt">$</span> pip install koskari</div>
+          <div class="ko-cmd-label">From source</div>
+          <div class="ko-cmd-line"><span class="ko-cmd-prompt">$</span> git clone {{ repo_short }}</div>
         </div>
       </div>
     </div>

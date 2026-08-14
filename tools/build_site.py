@@ -66,7 +66,7 @@ ICON_WORDMARK_MARKUP = """
 # position, so reordering or inserting rows just works.
 DOC_ROWS = [
     ("Getting Started", "/docs/start/overview/",
-     "Install, open the REPL, evaluate your first form. Five minutes, tops."),
+     "Install, open the REPL, evaluate your first form."),
     ("Learn Koskari", "/docs/start/beginner/",
      "The language from zero, one chapter at a time."),
     ("Coming from Python", "/docs/start/from-python/",
