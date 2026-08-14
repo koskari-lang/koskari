@@ -48,14 +48,14 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
 static void kos_dyn_apply_live(
     KosEvalState *es,
     KosDynFrame *ft,
-    KosStackBlock **bl,
+    KosSegment **bl,
     PyObject *ns,
     int flush);
 static void kos_dyn_walk_live_from(
     KosEvalState *es,
     KosDynNode *start,
     KosDynFrame **ft_out,
-    KosStackBlock ***bl_out,
+    KosSegment ***bl_out,
     PyObject **ns_out);
 static void kos_dyn_retarget_after_push(
     KosEvalState *es,
@@ -186,7 +186,7 @@ static KosDynNode *kos_dynnode_alloc(void) {
 */
 static void kos_dynnode_return_to_freelist(KosDynNode *node) {
   if (KosDynNode_STACK(node)) {
-    KosStackBlock_Release(KosDynNode_STACK(node));
+    KosStack_Release(KosDynNode_STACK(node));
     KosDynNode_STACK(node) = NULL;
   }
 
@@ -238,30 +238,18 @@ static int snapshot_set_obj(PyObject *dict, const char *key, PyObject *obj) {
 }
 
 
-static PyObject *snapshot_stack_to_list(KosStackBlock *stack) {
+static PyObject *snapshot_stack_to_list(KosSegment *stack) {
 
-  size_t total = 0;
-  for (KosStackBlock *b = stack; b; b = KosStackBlock_PARENT(b))
-    total += KosStackBlock_LEN(b);
+  size_t len = stack ? KosSegment_LEN(stack) : 0;
 
-  if (total > (size_t) PY_SSIZE_T_MAX) {
-    PyErr_SetString(PyExc_OverflowError,
-                    "stack snapshot too large for Python list");
-    return NULL;
-  }
-
-  PyObject *out = PyList_New((Py_ssize_t) total);
+  PyObject *out = PyList_New((Py_ssize_t) len);
   if (! out)
     return NULL;
 
-  Py_ssize_t idx = 0;
-  for (KosStackBlock *b = stack; b; b = KosStackBlock_PARENT(b)) {
-    size_t len = KosStackBlock_LEN(b);
-    for (size_t i = 0; i < len; i++) {
-      PyObject *item = b->objs[i];
-      Py_INCREF(item);
-      PyList_SET_ITEM(out, idx++, item);
-    }
+  for (size_t i = 0; i < len; i++) {
+    PyObject *item = stack->objs[i];
+    Py_INCREF(item);
+    PyList_SET_ITEM(out, (Py_ssize_t) i, item);
   }
 
   return out;
@@ -604,6 +592,22 @@ static void kos_capture_note_prompt_id(uint32_t prompt_id) {
 }
 
 
+/**
+   Clear the unwind-cache back links on the segments owned by nodes in
+   [from, stop), walking parent links. Call whenever a span of nodes is
+   detached from (or re-spliced into) the live chain: the links were
+   recorded against the chain shape at install time and a moved span
+   cannot trust them. Over-clearing is always safe -- a NULL back falls
+   back to the chain walk.
+*/
+static void kos_dyn_clear_seg_backs(KosDynNode *from, KosDynNode *stop) {
+  for (KosDynNode *n = from; n && n != stop; n = KosDynNode_PARENT(n)) {
+    if (KosDynNode_STACK(n))
+      KosSegment_BACK(KosDynNode_STACK(n)) = NULL;
+  }
+}
+
+
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_delim.c"
@@ -899,7 +903,7 @@ KosDynNode *kos_clone_chain_segment(
 static void kos_dyn_apply_live(
     KosEvalState *es,
     KosDynFrame *ft,
-    KosStackBlock **bl,
+    KosSegment **bl,
     PyObject *ns,
     int flush) {
 
@@ -960,11 +964,11 @@ static void kos_dyn_walk_live_from(
     KosEvalState *es,
     KosDynNode *start,
     KosDynFrame **ft_out,
-    KosStackBlock ***bl_out,
+    KosSegment ***bl_out,
     PyObject **ns_out) {
 
   KosDynFrame *ft = NULL;
-  KosStackBlock **bl = NULL;
+  KosSegment **bl = NULL;
   PyObject *ns = NULL;
   KosDynNode *node;
 
@@ -1014,7 +1018,7 @@ static void kos_dyn_retarget_after_push(
     KosDynNode *new_node) {
 
   KosDynFrame *ft = NULL;
-  KosStackBlock **bl = NULL;
+  KosSegment **bl = NULL;
   PyObject *ns = NULL;
 
   KOS_TRACE_EVAL_SYNC_BEGIN();
@@ -1038,12 +1042,18 @@ static void kos_dyn_retarget_after_push(
       bl = KosEvalState_BLOCK(es);
   }
 
+  /* Install-time back link: the pushed node's segment remembers the
+     owning slot it displaced, for uninstall restoration and parent
+     delivery. Inheriting nodes (bl == live slot) link nothing. */
+  if (bl != KosEvalState_BLOCK(es) && *bl)
+    KosSegment_BACK(*bl) = KosEvalState_BLOCK(es);
+
   kos_dyn_apply_live(es, ft, bl, ns, 1);
 
 #if KOS_DEBUG_PATCH_DYN_CACHES
   {
     KosDynFrame *ft_dbg = KosEvalState_FRAME(es);
-    KosStackBlock **bl_dbg = KosEvalState_BLOCK(es);
+    KosSegment **bl_dbg = KosEvalState_BLOCK(es);
     PyObject *ns_dbg = KosEvalState_NAMESPACE(es);
 
     kos_dyn_rebuild_live_from_chain(es);
@@ -1082,7 +1092,7 @@ static void kos_dyn_retarget_after_pop(
   int need_block = 0;
   int need_ns = 0;
   KosDynFrame *ft = NULL;
-  KosStackBlock **bl = NULL;
+  KosSegment **bl = NULL;
   PyObject *ns = NULL;
 
   if (! es)
@@ -1110,6 +1120,32 @@ static void kos_dyn_retarget_after_pop(
   if (need_block && ! need_frame && ! need_ns
       && new_top && KosDynNode_STACK(new_top)) {
     kos_dyn_apply_live(es, KosEvalState_FRAME(es), &KosDynNode_STACK(new_top),
+                       KosEvalState_NAMESPACE(es), 0);
+    return;
+  }
+
+  /* Unwind cache: the removed owner's segment remembers the slot it
+     displaced at install. Only when the block alone needs restoring;
+     when frame or ns also changed, one walk resolves all three. The
+     segment is still alive here -- uninstall frees the node only
+     after this retarget completes. */
+  if (need_block && ! need_frame && ! need_ns
+      && KosSegment_BACK(KosDynNode_STACK(removed))) {
+    KosSegment **cached = KosSegment_BACK(KosDynNode_STACK(removed));
+#if KOS_DEBUG_PATCH_DYN_CACHES
+    {
+      KosDynFrame *ft_dbg = NULL;
+      KosSegment **bl_dbg = NULL;
+      PyObject *ns_dbg = NULL;
+      kos_dyn_walk_live_from(es, new_top, &ft_dbg, &bl_dbg, &ns_dbg);
+      if (cached != bl_dbg) {
+        PyErr_SetString(PyExc_SystemError,
+                        "kos_dyn_retarget_after_pop: back cache drift"
+                        " vs walk");
+      }
+    }
+#endif
+    kos_dyn_apply_live(es, KosEvalState_FRAME(es), cached,
                        KosEvalState_NAMESPACE(es), 0);
     return;
   }
@@ -1142,7 +1178,7 @@ static void kos_dyn_retarget_after_pop(
 void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
 
   KosDynFrame *ft = NULL;
-  KosStackBlock **bl = NULL;
+  KosSegment **bl = NULL;
   PyObject *ns = NULL;
   KosDynNode *node;
 
@@ -1729,7 +1765,7 @@ static KosContinuation *cont_freelist = NULL;
 static KosContinuation *kos_continuation_create(
     KosDynNode *captured_chain,
     uint32_t resume_pc,
-    KosStackBlock *resume_stack,
+    KosSegment *resume_stack,
     uint32_t prompt_id,
     uint32_t graft_point_id,
     int one_shot,
@@ -1810,7 +1846,7 @@ static inline KosDynFrame *kos_chain_first_frame(KosDynNode *chain) {
 /**
    Operand stack for resume: frame stack or innermost stack owner on chain.
 */
-static inline KosStackBlock *kos_chain_resume_stack(
+static inline KosSegment *kos_chain_resume_stack(
     KosDynNode *chain,
     KosDynFrame *frame) {
 
@@ -1861,7 +1897,7 @@ static KosContinuation *kos_continuation_capture_segment(
   KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *captured_chain;
   KosDynFrame *resume_frame;
-  KosStackBlock *resume_stack;
+  KosSegment *resume_stack;
   KosContinuation *k;
   PyObject *token;
 
@@ -2028,7 +2064,7 @@ int kos_shift_capture(
            (void *) frame_inside,
            (void *) KosDynFrame_STACK(f),
            KosDynFrame_STACK(f)
-               ? (size_t) KosStackBlock_LEN(KosDynFrame_STACK(f)) : 0);
+               ? (size_t) KosSegment_LEN(KosDynFrame_STACK(f)) : 0);
       (void) f;
 
     } else {
@@ -2079,8 +2115,8 @@ int kos_shift_capture(
           while (owner && ! KosDynNode_STACK(owner))
             owner = KosDynNode_PARENT(owner);
           if (owner) {
-            KosStackBlock *ops =
-                KosStackBlock_DeepCopy(KosDynNode_STACK(owner));
+            KosSegment *ops =
+                KosStack_DeepCopy(KosDynNode_STACK(owner));
             if (! ops) {
               kos_continuation_free(k);
               return -1;
@@ -2257,7 +2293,7 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
   KosContinuation *clone = kos_continuation_create(
       cloned_chain,
       KosContinuation_RESUME_PC(k),
-      KosStackBlock_DeepCopy(KosContinuation_RESUME_STACK(k)),
+      KosStack_DeepCopy(KosContinuation_RESUME_STACK(k)),
       KosContinuation_PROMPT_ID(k),
       KosContinuation_GRAFT_POINT_ID(k),
       KosContinuation_ONE_SHOT(k),
@@ -2573,7 +2609,7 @@ int kos_dyn_finish_delimited_pop_return(
   /* Operand stack for the handler lives below the DELIM marker; do not use
    * ctx->block (walk parent chain). */
   {
-    KosStackBlock **slot = NULL;
+    KosSegment **slot = NULL;
     KosDynNode *n = KosDynNode_PARENT((KosDynNode *) delim);
     while (n) {
       if (KosDynNode_STACK(n)) {
@@ -2584,7 +2620,7 @@ int kos_dyn_finish_delimited_pop_return(
     }
     if (! slot)
       slot = &KosDynNode_STACK((KosDynNode *) ret_frame);
-    if (KosStackBlock_PushRef(slot, value) < 0) {
+    if (KosStack_PushRef(slot, value) < 0) {
       Py_DECREF(value);
       return -1;
     }
@@ -2660,14 +2696,19 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
     resume_frame = (KosDynFrame *) node;
   }
 
-  /* Drop the spent slice stack; restore the displaced invoke-time state. */
+  /* Drop the spent slice stack; restore the displaced invoke-time state.
+     The restored segment's install-time back link predates the
+     displacement; the chain below may have been restitched since, so
+     clear it and let the walk answer. */
   {
-    KosStackBlock *spent = KosDynFrame_STACK(resume_frame);
+    KosSegment *spent = KosDynFrame_STACK(resume_frame);
     KosDynFrame_STACK(resume_frame) = KosDynDelim_SAVED_STACK(delim);
+    if (KosDynFrame_STACK(resume_frame))
+      KosSegment_BACK(KosDynFrame_STACK(resume_frame)) = NULL;
     KosDynDelim_SAVED_STACK(delim) = NULL;
     KosDynFrame_PC(resume_frame) = KosDynDelim_SAVED_PC(delim);
     if (spent)
-      KosStackBlock_ReleaseChain(spent);
+      KosStack_Release(spent);
   }
 
   /* Re-link the stashed invoke span above the prompt; the prompt stays on
@@ -2693,6 +2734,10 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
       bottom = KosDynNode_PARENT(bottom);
     KosDynNode_PARENT(bottom) = base;
     KosDynDelim_RETURN_CHAIN(delim) = NULL;
+
+    /* The re-linked span's unwind-cache back links predate the stash;
+       clear them and let the walk answer. */
+    kos_dyn_clear_seg_backs(span, base);
   }
 
   KosDynFrame_PC(ret_frame) = ret_pc;

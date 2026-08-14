@@ -218,7 +218,7 @@ Present when `flags.freelist` is true. Fixed keys (always all five):
 | **dyn_node** | `KosDynNode` | Dynamic chain nodes. Max 128 cached. |
 | **continuation** | `KosContinuation` | Continuation structures. Max 64 cached. |
 | **context** | `KosContext` | Evaluator context (one per coroutine). Max 16 cached. |
-| **stack_block** | `KosStackBlock` | Operand stack blocks. Max 256 cached. |
+| **stack_block** | `KosSegment` | Operand stack blocks. Max 256 cached. |
 | **pair** | `KosPair` | Cons cells. Max 256 cached. |
 
 Each value is a [freelist entry](#freelist-entry).
@@ -377,7 +377,7 @@ Each freelist entry has four counters:
 
 - **dynchain.c** — `kos_dynnode_alloc`, `kos_dynnode_return_to_freelist`; continuation alloc/free paths
 - **eval.c** — `KosContext_New`, `KosContext_Free`, context release on allocation failure
-- **stack.c** — `KosStackBlock_New`, `KosStackBlock_NewSized`, release paths
+- **stack.c** — `KosStack_NewEmpty`, release paths
 - **pair.c** — `KosPair_New`, `pair_dealloc`
 
 **Events** — `KOS_TRACE_EVENTS_INC` in **dynchain.c** (see `events` table).

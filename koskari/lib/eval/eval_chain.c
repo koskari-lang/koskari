@@ -417,7 +417,7 @@ static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
       PyObject *inject_val = KosTransferAction_INJECT_VALUE(inject_a);
       int inject_throw = KosTransferAction_INJECT_IS_THROW(inject_a);
       uint32_t rpc = KosTransferPlan_RESUME_PC(outer);
-      KosStackBlock *rstack = KosTransferPlan_RESUME_STACK(outer);
+      KosSegment *rstack = KosTransferPlan_RESUME_STACK(outer);
       uint32_t graft_id = KosTransferPlan_GRAFT_POINT_ID(outer);
       KosDynNode *target_keep = NULL;
 
@@ -435,7 +435,7 @@ static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
         if (! target_keep) {
           Py_XDECREF(inject_val);
           if (rstack)
-            KosStackBlock_ReleaseChain(rstack);
+            KosStack_Release(rstack);
           return process_raise(es);
         }
         bottom = target_keep;
@@ -449,7 +449,7 @@ static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
       if (! target_keep) {
         Py_XDECREF(inject_val);
         if (rstack)
-          KosStackBlock_ReleaseChain(rstack);
+          KosStack_Release(rstack);
         break;
       }
 
@@ -459,7 +459,7 @@ static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
                                           &new_plan) < 0) {
         Py_XDECREF(inject_val);
         if (rstack)
-          KosStackBlock_ReleaseChain(rstack);
+          KosStack_Release(rstack);
         kos_dynchain_free(target_keep, NULL);
         return process_raise(es);
       }

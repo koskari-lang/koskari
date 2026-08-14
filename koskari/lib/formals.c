@@ -1853,23 +1853,23 @@ int KosFormals_SimpleStealApply(
 */
 int KosFormals_SimpleStealApplyBlock(
     PyObject *ns,
-    KosStackBlock *block,
+    KosSegment *block,
     Py_ssize_t nargs) {
 
   if (! nargs)
     return 0;
 
-  if (unlikely(! block || (size_t) nargs > KosStackBlock_LEN(block))) {
+  if (unlikely(! block || (size_t) nargs > KosSegment_LEN(block))) {
     PyErr_Format(PyExc_RuntimeError, "formals steal underrun."
                  " requested: %zu, available: %zu", (size_t) nargs,
-                 block ? KosStackBlock_LEN(block) : 0);
+                 block ? KosSegment_LEN(block) : 0);
     return -1;
   }
 
   {
-    size_t base = KosStackBlock_LEN(block) - (size_t) nargs;
+    size_t base = KosSegment_LEN(block) - (size_t) nargs;
     (void) KosFormals_SimpleStealApply(ns, &block->objs[base], nargs);
-    KosStackBlock_LEN(block) = base;
+    KosSegment_LEN(block) = base;
   }
   return 0;
 }

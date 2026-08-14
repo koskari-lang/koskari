@@ -123,7 +123,7 @@ with `PySequence_Tuple`” pattern. **Suggested public**: one
 
 Many opcodes use only **stack**, **namespace**, **Python C API**, and/or **already
 public** koskari APIs (`KosContext_Call`, `kos_dyn_*`, `kos_extent_*`,
-`KosStackBlock_*`, `KosNamespace_*`, …) with **no** extra `static` helper from
+`KosStack_*`, `KosNamespace_*`, …) with **no** extra `static` helper from
 `eval.c`. Examples: most `FAST_INPLACE_*`, `NOOP`, `JUMP*`, `BUILD_*`, `POP*`
 (except where listed above), `KOS_OP_HANDLER` stubs that delegate to
 `KosContext_Call`, etc.

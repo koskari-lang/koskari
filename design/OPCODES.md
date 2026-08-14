@@ -522,7 +522,7 @@ When adding or changing an opcode:
   `i`-th element of the realized sequence and **TOS = v_0 = seq[0]** (so the
   first binding in source order can use `VAR_STORE` / `FAST_STORE` on TOS
   first). Implementation: pop TOS, `PySequence_List(raw)` (new list), require
-  `len(seq) == n`, then `KosStackBlock_PushRef` for indices `n-1` down to `0`,
+  `len(seq) == n`, then `KosStack_PushRef` for indices `n-1` down to `0`,
   then `Py_DECREF(seq)`.
 - **Invariants**: `n >= 0`. For `n == 0`, TOS must be an empty sequence after
   realization.
@@ -553,8 +553,8 @@ bottom to top matches push order).
   **tuple** (new reference). Pushes are ordered so that after all pushes,
   **TOS is the first prefix element** `seq[0]` (when `left > 0`):
   1. **Suffix** scalars: indices `L-1, L-2, ..., L-right` (each via
-     `KosStackBlock_PushRef`).
-  2. **Middle**: one value — the tuple — via `KosStackBlock_PUSH` (**stolen**
+     `KosStack_PushRef`).
+  2. **Middle**: one value — the tuple — via `KosStack_PUSH` (**stolen**
      reference from `PySequence_Tuple`).
   3. **Prefix** scalars: indices `left-1, ..., 0` (each via `PushRef`).
 - **Stack (TOS right)**: `[..., raw] → [..., seq[L-1], ..., seq[L-right],
@@ -669,8 +669,8 @@ bottom to top matches push order).
   top = tail).
 - **Status**: Implemented.
 - **Stack**: `[..., e_0, ..., e_{count-1}] → [..., result]` where result =
-  (e_0 . (e_1 . ... (e_{count-1}) ...)). Implemented via KosStackBlock_TailPtr,
-  KosPair_ConsFromPtr, KosStackBlock_Drop, then push result. count 0 → push
+  (e_0 . (e_1 . ... (e_{count-1}) ...)). Implemented via KosStack_TailPtr,
+  KosPair_ConsFromPtr, KosStack_Drop, then push result. count 0 → push
   nil (INCREF).
 
 
@@ -2481,7 +2481,7 @@ popped.
 
 **Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval.c):
 
-- **Stack arrangement**: `ptr = KosStackBlock_TailPtr(*stack, count)` where `count = n + 1`. Index layout: `ptr[0]` = obj, `ptr[1..count-1]` = positional args. Attr name from `KosCode_GetConstant(code, row.a0)`. Stack is consumed via `KosStackSteal_Tail` (KosCallable path) or `KosStackBlock_DropNoErr` (plain Python path).
+- **Stack arrangement**: `ptr = KosStack_TailPtr(*stack, count)` where `count = n + 1`. Index layout: `ptr[0]` = obj, `ptr[1..count-1]` = positional args. Attr name from `KosCode_GetConstant(code, row.a0)`. Stack is consumed via `KosStackSteal_Tail` (KosCallable path) or `KosStack_DropNoErr` (plain Python path).
 
 - **`kos_resolve_named_attr` return value**: -1 = error (exception set); 0 = send self (unbound class method — caller invokes `fn(obj, *args)`); 1 = omit self (bound method, instance dict, data descriptor result, etc. — caller invokes `callable(*args)`).
 
@@ -2780,8 +2780,8 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: LABEL. Handler targets in extent table.
 - **Status**: Implemented.
-- **Stack**: Pushes TRY node and a KosStackBlock (like PUSH_LOOP). Exception dispatch clears the block before jumping to the handler. POP_TRY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_TRY runs. Node unwind (e.g. BREAK through TRY) also drops the block.
-- **Pushes:** KOS_DYN_TRY (static extent KOS_EXT_TRY; handler targets in extent descriptor) and KosStackBlock.
+- **Stack**: Pushes TRY node and a KosSegment (like PUSH_LOOP). Exception dispatch clears the block before jumping to the handler. POP_TRY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_TRY runs. Node unwind (e.g. BREAK through TRY) also drops the block.
+- **Pushes:** KOS_DYN_TRY (static extent KOS_EXT_TRY; handler targets in extent descriptor) and KosSegment.
 - **Invariants**: Extent kind KOS_EXT_TRY. Handler targets (except_pc, finally_pc, exit_pc) from extent descriptor.
 
 **Example:** try/except. Extent table holds except_pc, finally_pc, exit_pc.
@@ -2801,8 +2801,8 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: LABEL. Arg = handler/finally target.
 - **Status**: Implemented.
-- **Stack**: Pushes FINALLY node and a KosStackBlock (like PUSH_TRY). Exception dispatch clears the block before jumping to the finally handler. POP_FINALLY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_FINALLY runs. Node unwind drops the block when control passes through.
-- **Pushes:** KOS_DYN_FINALLY (static extent KOS_EXT_FINALLY) and KosStackBlock.
+- **Stack**: Pushes FINALLY node and a KosSegment (like PUSH_TRY). Exception dispatch clears the block before jumping to the finally handler. POP_FINALLY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_FINALLY runs. Node unwind drops the block when control passes through.
+- **Pushes:** KOS_DYN_FINALLY (static extent KOS_EXT_FINALLY) and KosSegment.
 - **Invariants**: Extent kind KOS_EXT_FINALLY.
 
 **Example:** Push finally block. Arg = finally block pc (or extent holds it).

@@ -48,6 +48,10 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
   ctx_active = KosEvalState_DYN_TOP(es);
   KosDynGen_ACTIVE(gen) = ctx_active;
 
+  /* The frozen span leaves the live chain; its segments' unwind-cache
+     back links cannot survive the detach. */
+  kos_dyn_clear_seg_backs(ctx_active, NULL);
+
   SAY("[gen] freeze storing in gen->active: chain ");
   for (n = ctx_active; n; n = KosDynNode_PARENT(n))
     SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
@@ -253,7 +257,7 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
           /* Deliver to finally block: clear stack, push value, set PC */
           KosDynFinally *fin = (KosDynFinally *) top;
           {
-            if (KosEvalState_StackClearBlock(es) < 0) {
+            if (KosEvalState_StackClear(es) < 0) {
               Py_DECREF(val);
               return -1;
             }
@@ -417,7 +421,7 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
         ? KosDynLoop_CONTINUE_PC((KosDynLoop *) region)
         : KosDynForeach_CONTINUE_PC((KosDynForeach *) region);
 
-    if (KosEvalState_StackClearBlock(es) < 0) {
+    if (KosEvalState_StackClear(es) < 0) {
       return -1;
     }
 
@@ -651,7 +655,7 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
             kos_dynnode_raise_handler_pc_for_try_finally(es, region);
 
         if (KosDynNode_IS_TRY(region) || KosDynNode_IS_FINALLY(region)) {
-          if (KosEvalState_StackClearBlock(es) < 0) {
+          if (KosEvalState_StackClear(es) < 0) {
             return EVAL_FATAL();
           }
         }

@@ -1274,7 +1274,7 @@ dynchain.c and eval.c).
 
 Authoritative layout is `struct KosContext` in [`eval.h`](../../koskari/lib/eval.h).
 It holds `dyn_top`, `frame_top`, **`block`** (address of the innermost operand-stack
-`KosStackBlock *`; maintained with the dyn chain), `globals_frame` / cache version,
+`KosSegment *`; maintained with the dyn chain), `globals_frame` / cache version,
 transfer-plan fields, unwind/return staging, Python await bridge (`py_await_iter`,
 `py_resume_inject`, `py_resume_kind`), exception inject fields, `suspension_event`,
 and `flags`. Delimited **invoke return** metadata lives on **`KOS_DYN_DELIM`**
@@ -1288,7 +1288,7 @@ see `kos_dyn_complete_pending_exit` in `dynchain.c` and `revive_await` in `eval.
 struct KosContext {
   KosDynNode *dyn_top;
   KosDynFrame *frame_top;
-  KosStackBlock **block;
+  KosSegment **block;
   PyObject *namespace;
   KosEvaluatorToken *token;
   PyObject *domain;
@@ -1308,20 +1308,26 @@ struct KosContext {
 };
 ```
 
-#### KosStackBlock — Storage-Only Operand Stack
+#### KosSegment — Storage-Only Operand Stack
 
 Control flow metadata (block style, labels, enabled flag) lives in the region
-nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). `KosStackBlock` is purely storage:
+nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). `KosSegment` is purely storage:
 
 ```c
-struct KosStackBlock {
-  KosStackBlock *back;    /* previous block */
-  size_t refcount;        /* for copy-on-write */
-  size_t max;             /* allocated capacity */
-  size_t len;             /* used count */
-  PyObject *objs[0];      /* flexible array of values */
+struct KosSegment {
+  KosSegment **back;  /* unwind cache: enclosing owning slot, or NULL */
+  size_t max;         /* allocated capacity */
+  size_t len;         /* used count */
+  PyObject *objs[0];  /* flexible array of values */
 };
 ```
+
+The `back` field is an install-time unwind cache: the owning slot that
+was live when this segment's owner was installed. It serves uninstall
+restoration and parent delivery; NULL means fall back to the dynamic
+chain walk, which stays the semantic definition. Segments are single-
+owner with no sharing; continuation capture deep-copies (copies are
+born with `back` NULL).
 
 #### Operand stack authority
 
@@ -1334,7 +1340,7 @@ Rules (landed; archived proposal [node-owned-operand-stack.md](archive/node-owne
 
 1. **Single source of truth** — opcodes push/pop via **`KosEvalState_Stack*`** /
    **`ctx->block`**; they do not infer region boundaries from
-   **`KosStackBlock.back`** on the hot path.
+   **`KosSegment.back`** on the hot path.
 2. **Symmetric lifecycle** — installing a dyn node that owns a stack extent
    sets **`ctx->block`** to that node's **`stack`**; uninstalling restores the
    previous extent (TRY, FINALLY, LOOP, FOREACH, WITH, COLLECT, etc.).
@@ -1366,7 +1372,7 @@ struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
   uint32_t resume_pc;           /* pc to resume at; the frame is resolved
                                    from the landed chain at invoke time */
-  KosStackBlock *resume_stack;  /* aliases a node-owned stack on captured_chain */
+  KosSegment *resume_stack;  /* aliases a node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag */
   uint32_t graft_point_id;      /* node_id of graft point for LCA fallback; 0 for capture-cc */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
@@ -1398,7 +1404,7 @@ struct KosTransferPlan {
   KosDynNode *original_target;  /* for chain-change detection */
   uint32_t chain_version;       /* version at plan creation */
   uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
-  KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
+  KosSegment *resume_stack;  /* stack state at capture (invocation only) */
   PyObject *continuation_ref;   /* keep continuation alive until plan is freed */
   KosContinuation *invoke_clone;/* release when plan freed (re-invocation clone) */
   PyObject *step_awaitable;     /* when step suspended on await (owned) */
@@ -1493,7 +1499,7 @@ To avoid recursive C calls and keep a single state machine:
 
 1. **CALL (Koskari callables)**: The CALL opcode invokes `kos_callable_call`, which dispatches to the callable's install slot. The install pushes a new frame (or, for TAIL_CALL, resets the current frame) and configures it for bytecode or native execution. The evaluator does **not** call Python or recurse into `koskari_eval`; it continues the dispatch loop. See [api/special-call-protocol.md](../api/special-call-protocol.md) for the install-slot design.
 
-2. **RETURN (frame has parent, normal call return)**: When the callee’s dynamic parent is not a GEN, the RETURN opcode runs `KOS_TRANS_WALK_RETURN_TO_FRAME` via `kos_dyn_transition`, then `kos_dyn_pop_frame` so the **caller** becomes `frame_top`. It does **not** push onto the parent stack in the opcode handler. Instead it returns `EVAL_PARENT_RETURN(val)` (`KOS_RES_PARENT_RETURN` in `KosOpResult`). `cg_handle_op_result` dispatches to **`eval_parent_return_deliver`**: optional flattened Koskari async-gen iterator delivery (`kos_dyn_try_deliver_iterator_boundary_after_pop`), else native-frame handler or `KosStackBlock_PushRef` onto the parent stack, then **`kos_dynnode_on_control_returned`** (WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the eval loop eventually stops for another reason.
+2. **RETURN (frame has parent, normal call return)**: When the callee’s dynamic parent is not a GEN, the RETURN opcode runs `KOS_TRANS_WALK_RETURN_TO_FRAME` via `kos_dyn_transition`, then `kos_dyn_pop_frame` so the **caller** becomes `frame_top`. It does **not** push onto the parent stack in the opcode handler. Instead it returns `EVAL_PARENT_RETURN(val)` (`KOS_RES_PARENT_RETURN` in `KosOpResult`). `cg_handle_op_result` dispatches to **`eval_parent_return_deliver`**: optional flattened Koskari async-gen iterator delivery (`kos_dyn_try_deliver_iterator_boundary_after_pop`), else native-frame handler or `KosStack_PushRef` onto the parent stack, then **`kos_dynnode_on_control_returned`** (WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the eval loop eventually stops for another reason.
 
 3. **NEXT/ITER_NEXT (Koskari async gen)**: **`NEXT`** pushes a **`KOS_DYN_NEXT`** boundary (`kos_dyn_push_next_for_kos_agen`, …) as needed, then **attaches** the generator’s frame with **`op_attach_koskari_agen_frame(es, …)`** (live **`KosEvalState *es`** from the opcode). **`ITER_NEXT`** records state on the innermost **`KOS_DYN_FOREACH`** region and uses **`op_attach_koskari_agen_frame_for_iter_next(es, …)`**. Each performs its own validation and failure cleanup, then **`kos_attach_agen_gen_flatten(es, agen, gen)`** → **`kos_dyn_gen_install(es, gen)`** so **`KosEvalState_RefreshDynCaches`** updates the same **`es`** the dispatch loop uses. The gen’s frame runs until it YIELD or RETURN. On YIELD/RETURN, the **frame-has-parent** rule runs: the gen frame is **detached** (without freeing), the value (or exhausted/default) is delivered to the awaiting frame, and the loop continues with the caller as `frame_top`. No recursive `koskari_eval(agen->ctx, ...)`.
 
@@ -1638,7 +1644,7 @@ void KosContext_Free(KosContext *ctx);
 
 /* Frame helpers (wrappers around kos_dynframe_new/clone/free) */
 KosFrame *kos_frame_new(KosCode *code, PyObject *ns,
-        KosStackBlock *stack, KosDynNode *parent);
+        KosSegment *stack, KosDynNode *parent);
 KosFrame *kos_frame_clone(KosFrame *frame);
 void kos_frame_free(KosFrame *frame);
 ```
@@ -1736,7 +1742,7 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg);
 int kos_dynchain_traverse(KosDynNode *node, KosDynNode *stop,
         visitproc visit, void *arg);
 int kos_continuation_traverse(KosContinuation *k, visitproc visit, void *arg);
-int KosStackBlock_Traverse(KosStackBlock *block, visitproc visit, void *arg);
+int KosStack_Traverse(KosSegment *block, visitproc visit, void *arg);
 int KosContext_Traverse(KosContext *ctx, visitproc visit, void *arg);
 ```
 

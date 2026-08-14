@@ -12,14 +12,14 @@ static KosDynCollect *kos_dyncollect_new(
     KosDynNode *parent,
     PyObject *ns) {
   KosDynCollect *col_node = (KosDynCollect *) kos_dynnode_alloc();
-  KosStackBlock *stack;
+  KosSegment *stack;
 
   if (! col_node) {
     Py_DECREF(ns);
     return NULL;
   }
 
-  stack = KosStackBlock_NewEmpty();
+  stack = KosStack_NewEmpty();
   if (! stack) {
     kos_dynnode_return_to_freelist((KosDynNode *) col_node);
     Py_DECREF(ns);
@@ -48,7 +48,7 @@ static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID((KosDynNode *) col_node);
   if (KosDynNode_STACK((KosDynNode *) col_node)) {
     KosDynNode_STACK((KosDynNode *) clone) =
-        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) col_node));
+        KosStack_DeepCopy(KosDynNode_STACK((KosDynNode *) col_node));
     if (! KosDynNode_STACK((KosDynNode *) clone)) {
       kos_dyncollect_free(clone);
       return NULL;
@@ -136,7 +136,7 @@ int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
    GC traverse a KOS_DYN_COLLECT: visit node-owned namespace for collector.
 */
 static int dynnode_traverse_collect(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
   Py_VISIT(KosDynNode_NS(node));

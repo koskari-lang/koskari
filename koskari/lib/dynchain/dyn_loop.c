@@ -11,7 +11,7 @@ KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t cont
   if (! node)
     return NULL;
 
-  KosStackBlock *stack = KosStackBlock_NewEmpty();
+  KosSegment *stack = KosStack_NewEmpty();
   if (! stack) {
     kos_dynnode_return_to_freelist((KosDynNode *) node);
     return NULL;
@@ -44,7 +44,7 @@ KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
   Py_XINCREF(KosDynLoop_RESULT(clone));
   if (KosDynNode_STACK((KosDynNode *) node)) {
     KosDynNode_STACK((KosDynNode *) clone) =
-        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) node));
+        KosStack_DeepCopy(KosDynNode_STACK((KosDynNode *) node));
     if (! KosDynNode_STACK((KosDynNode *) clone)) {
       kos_dynloop_free(clone);
       return NULL;
@@ -122,7 +122,7 @@ int kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node) {
    GC traverse a KOS_DYN_LOOP: visit optional continue result.
 */
 static int dynnode_traverse_loop(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
   Py_VISIT(KosDynLoop_RESULT((KosDynLoop *) node));

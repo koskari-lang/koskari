@@ -876,10 +876,10 @@ static int get_prompt_id_from_insn(
    Print current stack block address/id and length when KOS_ENABLE_DEBUG;
    also print top two slot values as integers when PyLong.
 */
-static void trace_stack(const char *prefix, KosStackBlock *stack) {
+static void trace_stack(const char *prefix, KosSegment *stack) {
   SAYF("[eval] %s stack=%p", prefix, (void *) stack);
   if (stack) {
-    size_t n = KosStackBlock_LEN(stack);
+    size_t n = KosSegment_LEN(stack);
     SAYF(" len=%zu", n);
     for (size_t i = (n >= 2 ? n - 2 : 0); i < n; i++) {
       PyObject *o = stack->objs[i];
@@ -2451,7 +2451,7 @@ cg_prologue:
 
   #if KOS_STACK_TRACE
   {
-    KosStackBlock **_kos_tr = KosEvalState_BLOCK(es);
+    KosSegment **_kos_tr = KosEvalState_BLOCK(es);
     trace_stack("  after ",
                 (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
   }
@@ -2485,7 +2485,7 @@ cg_prologue:
 
   #if KOS_STACK_TRACE
   {
-    KosStackBlock **_kos_tr = KosEvalState_BLOCK(es);
+    KosSegment **_kos_tr = KosEvalState_BLOCK(es);
     trace_stack("  before",
                 (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
   }

@@ -41,7 +41,7 @@ KOS_OP_HANDLER(POP_DYN_WITH) {
     return EVAL_RAISE();
 
   if (KosDynNode_STACK((KosDynNode *) with_node)
-      && KosStackBlock_LEN(KosDynNode_STACK((KosDynNode *) with_node)) > 0) {
+      && KosSegment_LEN(KosDynNode_STACK((KosDynNode *) with_node)) > 0) {
     PyObject *body_val = KosEvalState_StackPopRef(es);
     if (! body_val)
       return EVAL_RAISE();

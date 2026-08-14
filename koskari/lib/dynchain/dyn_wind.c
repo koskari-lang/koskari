@@ -217,7 +217,7 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_BEGIN;
     KosDynWind_ENTERED(wind) = 1;
     if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-        && KosStackBlock_LEN(*KosEvalState_BLOCK(es))) {
+        && KosSegment_LEN(*KosEvalState_BLOCK(es))) {
       PyObject *val = KosEvalState_StackPopRef(es);
       if (val)
         Py_DECREF(val);
@@ -254,7 +254,7 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     }
 
     if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-        && KosStackBlock_LEN(*KosEvalState_BLOCK(es))) {
+        && KosSegment_LEN(*KosEvalState_BLOCK(es))) {
       PyObject *thunk_ret = KosEvalState_StackPopRef(es);
       if (thunk_ret)
         Py_DECREF(thunk_ret);

@@ -11,7 +11,7 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   if (! node)
     return NULL;
 
-  KosStackBlock *stack = KosStackBlock_NewEmpty();
+  KosSegment *stack = KosStack_NewEmpty();
   if (! stack) {
     kos_dynnode_return_to_freelist((KosDynNode *) node);
     return NULL;
@@ -53,7 +53,7 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
   KosDynForeach_ITER_STEP_PHASE(clone) = KosDynForeach_ITER_STEP_PHASE(node);
   if (KosDynNode_STACK((KosDynNode *) node)) {
     KosDynNode_STACK((KosDynNode *) clone) =
-        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) node));
+        KosStack_DeepCopy(KosDynNode_STACK((KosDynNode *) node));
     if (! KosDynNode_STACK((KosDynNode *) clone)) {
       kos_dynforeach_free(clone);
       return NULL;
@@ -204,7 +204,7 @@ int kos_dyn_foreach_deliver_return_kos_agen(
    GC traverse a KOS_DYN_FOREACH: visit result and iterator refs.
 */
 static int dynnode_traverse_foreach(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
   Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));

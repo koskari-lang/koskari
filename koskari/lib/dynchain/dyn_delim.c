@@ -86,7 +86,7 @@ void kos_dyndelim_free(KosDynDelim *delim) {
   }
 
   if (KosDynDelim_SAVED_STACK(delim)) {
-    KosStackBlock_ReleaseChain(KosDynDelim_SAVED_STACK(delim));
+    KosStack_Release(KosDynDelim_SAVED_STACK(delim));
     KosDynDelim_SAVED_STACK(delim) = NULL;
   }
 
@@ -188,10 +188,10 @@ int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
 */
 static int dynnode_traverse_delim(KosDynNode *node, visitproc visit, void *arg) {
   KosDynNode *chain = KosDynDelim_RETURN_CHAIN((KosDynDelim *) node);
-  KosStackBlock *saved = KosDynDelim_SAVED_STACK((KosDynDelim *) node);
+  KosSegment *saved = KosDynDelim_SAVED_STACK((KosDynDelim *) node);
 
   if (saved) {
-    int tr = KosStackBlock_Traverse(saved, visit, arg);
+    int tr = KosStack_Traverse(saved, visit, arg);
     if (tr != 0)
       return tr;
   }

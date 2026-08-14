@@ -15,7 +15,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
   if (! prompt)
     return NULL;
 
-  KosStackBlock *stack = KosStackBlock_NewEmpty();
+  KosSegment *stack = KosStack_NewEmpty();
   if (! stack) {
     kos_dynnode_return_to_freelist((KosDynNode *) prompt);
     return NULL;
@@ -78,7 +78,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   KosDynPrompt_POP_PC(clone) = KosDynPrompt_POP_PC(prompt);
   if (KosDynNode_STACK((KosDynNode *) prompt)) {
     KosDynNode_STACK((KosDynNode *) clone) =
-        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) prompt));
+        KosStack_DeepCopy(KosDynNode_STACK((KosDynNode *) prompt));
     if (! KosDynNode_STACK((KosDynNode *) clone)) {
       kos_dynprompt_free(clone);
       return NULL;
@@ -158,6 +158,6 @@ int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
    GC traverse a KOS_DYN_PROMPT: the owned region block.
 */
 static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
-  return KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
+  return KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
 }
 

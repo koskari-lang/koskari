@@ -236,7 +236,7 @@ PyObject *KosFunction_SimpleCallNamespaceFromVector(
 */
 PyObject *KosFunction_SimpleCallNamespaceStealBlock(
       PyObject *self,
-      KosStackBlock *block,
+      KosSegment *block,
       Py_ssize_t nargs);
 
 

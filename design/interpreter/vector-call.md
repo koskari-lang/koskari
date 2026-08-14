@@ -34,7 +34,7 @@ KOS_OP_HANDLER(CALL) {
 }
 ```
 
-`KosStackBlock_PopTail` allocates a fresh `PyTuple`, copies N borrowed
+`KosStack_PopTail` allocates a fresh `PyTuple`, copies N borrowed
 references into it, and returns it. That tuple is then consumed (by
 `PrepareCallNamespace` for KosCallable, or by `PyObject_Call` for plain Python
 callables) and immediately freed. The allocation and deallocation are pure
@@ -47,7 +47,7 @@ instead.
 ### `CALL_NAMES N` Opcode (CALL_NAMES.c)
 
 Stack layout: `[callable, pos_0..pos_N, kw_val_0..kw_val_M, names_tuple]`.
-The opcode pops the names tuple, calls `KosStackBlock_PopTailDictFromNames` to
+The opcode pops the names tuple, calls `KosStack_PopTailDictFromNames` to
 build a kwds dict from the M values below it, then `PopTail` for the N
 positional args, then pops the callable. Two heap allocations result: the
 positional tuple and the keyword dict.
@@ -70,7 +70,7 @@ res = fn(args, (size_t) opa);
 KosEvalState_StackDropNoErr(es, (size_t) opa);
 ```
 
-`KosStackBlock_TailPtr` returns a pointer directly into the block's `objs[]`
+`KosStack_TailPtr` returns a pointer directly into the block's `objs[]`
 without allocating or touching refcounts. The drop follows the call. This is
 the pattern we generalize.
 
@@ -95,9 +95,9 @@ Replace `PopTail` with `TailPtr` + post-call `Drop`:
 
 ```c
 /* Before: PopTail / PopRef on the current operand block (*KosContext_BLOCK(ctx)) */
-KosStackBlock **sl = KosContext_BLOCK(ctx);
-args = KosStackBlock_PopTail(sl, n);
-callable = KosStackBlock_PopRef(sl);
+KosSegment **sl = KosContext_BLOCK(ctx);
+args = KosStack_PopTail(sl, n);
+callable = KosStack_PopRef(sl);
 int r = kos_callable_call(ctx, out_ev, callable, args, NULL);
 Py_DECREF(callable); Py_XDECREF(args);
 
@@ -129,14 +129,14 @@ or failed, and result ownership has been transferred.
 
 #### COW Safety
 
-`KosStackBlock_TailPtr` returns a pointer into the block's internal array.
+`KosStack_TailPtr` returns a pointer into the block's internal array.
 This is safe across the call provided no operation modifies the block during
 the call. For native Python callables dispatched through `call_default_python_call`,
 the Koskari stack is not touched during the Python call. For KosCallable
 subtypes, `kos_install_function` calls `KosFunction_PrepareCallNamespace` and
 then `kos_dyn_push_frame` — neither of which touches the calling frame's stack.
 A COW copy would only be triggered by a `PushRef` or `CopyForWrite` on the
-same `KosStackBlock **` pointer, which does not occur in these paths.
+same `KosSegment **` pointer, which does not occur in these paths.
 
 If a future path is introduced that touches the caller's stack during dispatch,
 that path must not use the TailPtr shortcut. The implementation should assert
@@ -331,18 +331,18 @@ The revised opcode sequence:
 
 ```c
 /* Pop names tuple from TOS */
-PyObject *kwnames = KosStackBlock_PopRef(stack);
+PyObject *kwnames = KosStack_PopRef(stack);
 Py_ssize_t nkw = (Py_ssize_t) PyTuple_GET_SIZE(kwnames);
 Py_ssize_t npos = (Py_ssize_t) KosOp_ARG(insn);
 Py_ssize_t ntotal = npos + nkw;
 
-PyObject *const *args = KosStackBlock_TailPtr(stack, ntotal + 1);
+PyObject *const *args = KosStack_TailPtr(stack, ntotal + 1);
 /* args[0] = callable, args[1..npos] = positional, args[npos+1..] = kw values */
 PyObject *callable = args[0];  /* borrowed */
 args++;                        /* advance past callable */
 
 int r = kos_callable_vcall(ctx, out_ev, callable, args, npos, kwnames);
-KosStackBlock_DropNoErr(stack, ntotal + 1);
+KosStack_DropNoErr(stack, ntotal + 1);
 Py_DECREF(kwnames);
 ```
 

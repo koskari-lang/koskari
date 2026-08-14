@@ -23,399 +23,192 @@
 #include "hints.h"
 
 
-/* === StackBlock structure === */
+/* === KosSegment structure === */
 
 
 /**
-   KosStackBlock is a storage-only operand stack segment.
+   KosSegment is a storage-only operand stack segment.
 
    Control flow metadata (block style, labels, enabled flag) has been
    moved to KosDynRegion nodes in the dynamic chain. See dynchain.h.
 
-   The stack is organized as a linked list of blocks. Each block holds
-   a flexible array of PyObject pointers. Each block chain has a single
-   owner; no sharing.
+   Each segment holds a flexible array of PyObject pointers and has a
+   single owner (a dynamic-chain node); no sharing.
+
+   Invariant: a segment can only grow -- and therefore move, via
+   realloc -- while it is the live push target, and only the innermost
+   segment receives pushes.  The sole tolerated exception is a
+   parent-slot delivery push, which writes through the owning slot and
+   so survives the move.
+
+   The back field is an unwind cache: the owning slot (the address of
+   the enclosing owner's stack field) of the segment that was live
+   when this segment's owner was installed.  It serves two distinct
+   consumers: (a) uninstall restoration -- re-aiming the eval state's
+   live block slot when the owner pops, a read-only use -- and (b)
+   parent delivery, pushing a value through the enclosing slot, the
+   tolerated mutation of a non-active segment noted above.  It is set
+   at install time only; DeepCopy results are born with back NULL; a
+   NULL back means fall back to the dynamic-chain walk, which remains
+   the semantic definition.  The link is meaningful only while the
+   owner is on the live chain of the current eval state: any operation
+   that detaches a span must clear the backs of the segments it
+   detaches.  While a segment sits on the freelist the field is reused
+   as the freelist link.
 */
 
-struct KosStackBlock {
-  KosStackBlock *back;    /* previous block (toward bottom) */
+struct KosSegment {
+  KosSegment **back;  /* unwind cache: enclosing owning slot, or NULL */
 
-  size_t max;             /* allocated count of objs */
-  size_t len;             /* used objs */
+  size_t max;         /* allocated count of objs */
+  size_t len;         /* used objs */
 
-  PyObject *objs[0];      /* flexible array member */
+  PyObject *objs[0];  /* flexible array member */
 };
-
-
-/* === Stack type === */
-
-
-extern PyTypeObject KosStackType;
-
-
-typedef struct KosStack {
-  PyObject_HEAD
-
-  KosStackBlock *block;
-} KosStack;
-
-
-/* === type check macros === */
-
-
-#define KosStack_Check(obj)                                     \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosStackType))
-
-#define KosStack_CheckExact(obj)                \
-  ((obj) && ((obj)->ob_type == &KosStackType))
 
 
 /* === accessor macros === */
 
 
-#define KosStack_BLOCK(s)                       \
-  (((KosStack *) s)->block)
+#define KosSegment_BACK(sb)                \
+  (((KosSegment *) sb)->back)
 
-#define KosStackBlock_PARENT(sb)                \
-  (((KosStackBlock *) sb)->back)
+#define KosSegment_MAX(sb)                   \
+  (((KosSegment *) sb)->max)
 
-#define KosStackBlock_MAX(sb)                   \
-  (((KosStackBlock *) sb)->max)
-
-#define KosStackBlock_LEN(sb)                   \
-  (((KosStackBlock *) sb)->len)
+#define KosSegment_LEN(sb)                   \
+  (((KosSegment *) sb)->len)
 
 
 /* === public API === */
 
 
-PyObject *KosStack_New(void);
-
-
 /**
-   Produces a new copy of stack. Performs a full deep copy; the result
-   is independent of the original.
+   Release a stack segment. Caller must hold exclusive ownership.
  */
-PyObject *KosStack_Copy(PyObject *original);
+void KosStack_Release(KosSegment *block);
 
 
 /**
-   Release a stack block. Caller must hold exclusive ownership.
- */
-void KosStackBlock_Release(KosStackBlock *block);
+   Traverse a KosSegment segment for GC.
 
+   Used when traversing owning frames and dynamic-chain nodes for GC.
+   Visits all PyObject pointers stored in the segment.
 
-/**
-   Release a full stack block chain (via KosStackBlock_PARENT / back).
-   Each block is released with KosStackBlock_Release.
- */
-void KosStackBlock_ReleaseChain(KosStackBlock *block);
-
-
-/**
-   Traverse a KosStackBlock chain for GC.
-
-   Used when traversing owning frames and dynamic-chain nodes for GC,
-   and by Python wrappers implementing tp_traverse.
-   Visits all PyObject pointers stored in each block.
-
-   :param block: head of the chain (may be NULL)
+   :param block: segment (may be NULL)
    :param visit: visitproc from Python GC
    :param arg: opaque visitor argument
 
    :return: 0 on success, non-zero if visit returns non-zero
  */
-int KosStackBlock_Traverse(
-    KosStackBlock *block,
+int KosStack_Traverse(
+    KosSegment *block,
     visitproc visit,
     void *arg);
 
 
 /**
-   Deep-copy a stack block chain: new blocks, same values (new refs).
+   Deep-copy a stack segment: new segment, same values (new refs).
    Caller must Release the result. Returns NULL if block is NULL or on error.
  */
-KosStackBlock *KosStackBlock_DeepCopy(KosStackBlock *block);
+KosSegment *KosStack_DeepCopy(KosSegment *block);
 
 
 /**
-   Allocate an empty root operand stack block (no parent segment).
-   Caller must Release. Used when installing dyn nodes that own a stack.
+   Allocate an empty operand stack segment. Caller must Release. Used
+   when installing dyn nodes that own a stack.
  */
-KosStackBlock *KosStackBlock_NewEmpty(void);
+KosSegment *KosStack_NewEmpty(void);
 
 
 /**
-   Push val onto the block chain (increments ref). val is borrowed; stack
-   gains a new reference. For use by eval/dynchain on frame stacks.
-   Grows as needed.
+   Push val onto the segment (increments ref). val is borrowed; the
+   segment gains a new reference. For use by eval/dynchain on frame
+   stacks. Grows as needed.
 
    :return: 0 on success, -1 on error
  */
-int KosStackBlock_PushRef(KosStackBlock **block, PyObject *val);
+int KosStack_PushRef(KosSegment **block, PyObject *val);
 
 
 /**
-   Push val onto the block chain, stealing the reference. val is consumed
+   Push val onto the segment, stealing the reference. val is consumed
    (ownership transferred). Saves an incref/decref compared to PushRef
-   when the caller already owns val. On success, the block owns val.
+   when the caller already owns val. On success, the segment owns val.
    On failure (-1) will Py_DECREF val.
 
    :return: 0 on success, -1 on error
  */
-int KosStackBlock_PUSH(KosStackBlock **block, PyObject *val);
+int KosStack_PUSH(KosSegment **block, PyObject *val);
 
 
 /**
-   Pop one value from the block chain. Caller owns the returned reference.
+   Pop one value from the segment. Caller owns the returned reference.
 
    :return: value or NULL on underrun (sets exception)
  */
-PyObject *KosStackBlock_PopRef(KosStackBlock **block);
+PyObject *KosStack_PopRef(KosSegment **block);
 
 
 /**
-   Appends val to the current block's stack, incrementing the reference.
-
-   :return: 0 if successful, sets err and returns -1 if overrun
- */
-int KosStack_Push(PyObject *stack, PyObject *val);
-
-
-/**
-   Appends val to current block's stack, stealing the reference.
-
-   If unsuccessful, calls Py_DECREF on val
-
-   :return: 0 if successful, sets err and returns -1 if overrun
- */
-int KosStack_PUSH(PyObject *stack, PyObject *val);
-
-
-/**
-   Extends elements from seq in-order onto the current block's stack.
-
-   If reverse is non-zero then the elements will be pushed onto the
-   stack in reverse order (first element will be TOS)
-
-   :return: 0 if successful, sets err and returns -1 if overrun
- */
-int KosStack_Extend(PyObject *stack, PyObject *seq, int reverse);
-
-
-/**
-   Extends elements to the current block's stack, incrementing references.
-
-   If reverse is non-zero then the elements will be pushed onto the
-   stack in reverse order (first element will be TOS)
-
-   :return: 0 if successful, sets err and returns -1 if overrun
- */
-int KosStack_ExtendPtr(
-    PyObject *stack,
-    PyObject *const *elements,
-    size_t count,
-    int reverse);
-
-
-/**
-   Extends elements to the current block's stack, stealing references.
-
-   If reverse is non-zero then the elements will be pushed onto the
-   stack in reverse order (first element will be TOS)
-
-   If unsuccessful, calls Py_DECREF on all elements
-
-   :return: 0 if successful, sets err and returns -1 if overrun
- */
-int KosStack_EXTENDPTR(
-    PyObject *stack,
-    PyObject *const *elements,
-    size_t count,
-    int reverse);
-
-
-/**
-   Borrows reference to the last element of the current block's stack
-
-   Sets err and returns NULL if underrun
- */
-PyObject *KosStack_Peek(PyObject *stack);
-
-
-/**
-   Borrows reference to the element at index of the current block's
-   stack. 0 is the index of the bottom of the stack. An index of -1 is
-   the same as KosStack_Peek.
-
-   Sets err and returns NULL if over/underrun
- */
-PyObject *KosStack_PeekAt(PyObject *stack, Py_ssize_t index);
-
-
-/**
-   Copies references from the top of the parent block's stack in order
-   to the current block's stack
-
-   Sets err and returns -1 if underrun on parent block or overrun on
-   current block
- */
-int KosStack_Pull(PyObject *stack, size_t count);
-
-
-/**
-   Steals the last element from the current block's stack and returns
-   it, lowering the block's stack by one
-
-   Sets err and returns NULL if underrun
- */
-PyObject *KosStack_Pop(PyObject *stack);
-
-
-/**
-   Steals the last count elements from the current block's stack,
-   returns them inside a new PyTuple reference, lowers the block's stack
-   by count
-
-   Sets err and returns NULL if underrun
- */
-PyObject *KosStack_PopTail(PyObject *stack, size_t count);
-
-
-/**
-   Steals the last (count * 2) elements from the current block's
-   stack, returns them inside a new PyDict reference, lowers the
-   block's stack by (count * 2)
-
-   Elements from the stack must be in key, val order. They are
-   inserted into the dict from bottom up
-
-   Sets err and returns NULL if underrun
- */
-PyObject *KosStack_PopTailDict(PyObject *stack, size_t count);
-
-
-/**
-   Top of stack is expected to be a tuple of keys. Below that, count
-   elements correspond to the values for those keys.
-
-   Returns a new PyDict reference mapping keys to values.
-
-   Sets err and returns NULL if underrun
- */
-PyObject *KosStack_PopTailDictNames(PyObject *stack, size_t count);
-
-
-/**
-   Pointer to count elements back from top of current block's stack
-
-   Sets err and returns NULL if underrun
- */
-PyObject *const *KosStack_TailPtr(PyObject *stack, size_t count);
-
-
-/**
-   Steals the last count elements from the current block's stack, copies
-   them to an array at dest
-
-   dest must have at least count elements available, or it will result
-   in a segfault.
-
-   Sets err and returns -1 if underrun
- */
-int KosStack_PopTailPtr(PyObject *stack, size_t count, PyObject **dest);
-
-
-/**
-   Removes the last count elements from the current block's stack
-
-   Sets err and returns -1 if underrun
- */
-int KosStack_Drop(PyObject *stack, size_t count);
-
-
-/**
-   Removes the last count elements from the current block's stack
-
-   Returns -1 if underrun, does not set err
- */
-int KosStack_DropNoErr(PyObject *stack, size_t count);
-
-
-/**
-   Duplicates the last count elements of the current block's stack
-   onto the same block
+   Duplicate the last count elements onto the segment.
 
    Sets err and returns -1 if underrun or overrun
  */
-int KosStack_Duplicate(PyObject *stack, size_t count);
+int KosStack_Duplicate(KosSegment **self, size_t count);
 
 
 /**
-   Replaces stack entry at index (counted from bottom) with value
+   Pointer to count elements back from top of the segment. Does not
+   modify the segment.
 
-   Sets err and returns -1 if underrun or if value is NULL
+   Sets err and returns NULL if underrun
  */
-int KosStack_Replace(PyObject *stack, size_t index, PyObject *value);
+PyObject *const *KosStack_TailPtr(KosSegment *self, size_t count);
 
 
 /**
-   Block-level API for eval: duplicate the last count elements.
-   Same semantics as KosStack_Duplicate but operates on block chain.
+   Borrow reference to TOS. Sets err and returns NULL if underrun.
  */
-int KosStackBlock_Duplicate(KosStackBlock **self, size_t count);
+PyObject *KosStack_Peek(KosSegment *self);
 
 
 /**
-   Block-level API for eval: pointer to count elements back from top.
-   Same semantics as KosStack_TailPtr. Does not modify stack.
+   Borrow reference at index. 0 = bottom, -1 = TOS.
+   Sets err and returns NULL if over/underrun.
  */
-PyObject *const *KosStackBlock_TailPtr(KosStackBlock *self, size_t count);
+PyObject *KosStack_PeekAt(KosSegment *self, Py_ssize_t index);
 
 
 /**
-   Block-level API for eval: borrow reference to TOS. Same semantics as
-   KosStack_Peek. Sets err and returns NULL if underrun.
+   Remove the last count elements. Sets err on underrun.
  */
-PyObject *KosStackBlock_Peek(KosStackBlock *self);
+int KosStack_Drop(KosSegment **self, size_t count);
 
 
 /**
-   Block-level API for eval: borrow reference at index. 0 = bottom, -1 = TOS.
-   Same semantics as KosStack_PeekAt. Sets err and returns NULL if over/underrun.
- */
-PyObject *KosStackBlock_PeekAt(KosStackBlock *self, Py_ssize_t index);
-
-
-/**
-   Block-level API for eval: remove last count elements. Sets err on underrun.
- */
-int KosStackBlock_Drop(KosStackBlock **self, size_t count);
-
-
-/**
-   Block-level API for eval: remove last element. Sets err on underrun.
+   Remove the last element. Sets err on underrun.
 */
-int KosStackBlock_Drop1(KosStackBlock **self);
+int KosStack_Drop1(KosSegment **self);
 
 
 /**
-   Block-level API for eval: remove last count elements. Does not set err.
+   Remove the last count elements. Does not set err.
  */
-int KosStackBlock_DropNoErr(KosStackBlock **self, size_t count);
+int KosStack_DropNoErr(KosSegment **self, size_t count);
 
 
 /**
-   Block-level API for eval: steal last count elements into a new tuple.
+   Steal the last count elements into a new tuple.
  */
-PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count);
+PyObject *KosStack_PopTail(KosSegment **self, size_t count);
 
 
 /**
-   Block-level API for eval: steal last count elements into dest[0..count-1].
-   Block loses refs; caller owns them. Returns -1 on underrun.
+   Steal the last count elements into dest[0..count-1]. The segment
+   loses the refs; caller owns them. Returns -1 on underrun.
  */
-int KosStackBlock_PopTailPtr(KosStackBlock **self, size_t count, PyObject **dest);
+int KosStack_PopTailPtr(KosSegment **self, size_t count, PyObject **dest);
 
 
 /* === Opcode-loop fast paths (API bypass) === */
@@ -440,69 +233,69 @@ int KosStackBlock_PopTailPtr(KosStackBlock **self, size_t count, PyObject **dest
 
 #if KOS_STACK_TRACE
 
-#define kos_stack_push_ref_fast     KosStackBlock_PushRef
-#define kos_stack_push_steal_fast   KosStackBlock_PUSH
-#define kos_stack_pop_ref_fast      KosStackBlock_PopRef
-#define kos_stack_drop1_fast        KosStackBlock_Drop1
-#define kos_stack_drop_noerr_fast   KosStackBlock_DropNoErr
-#define kos_stack_peek_fast         KosStackBlock_Peek
-#define kos_stack_tail_ptr_fast     KosStackBlock_TailPtr
-#define kos_stack_pop_tail_ptr_fast KosStackBlock_PopTailPtr
+#define kos_stack_push_ref_fast     KosStack_PushRef
+#define kos_stack_push_steal_fast   KosStack_PUSH
+#define kos_stack_pop_ref_fast      KosStack_PopRef
+#define kos_stack_drop1_fast        KosStack_Drop1
+#define kos_stack_drop_noerr_fast   KosStack_DropNoErr
+#define kos_stack_peek_fast         KosStack_Peek
+#define kos_stack_tail_ptr_fast     KosStack_TailPtr
+#define kos_stack_pop_tail_ptr_fast KosStack_PopTailPtr
 
 #else  /* ! KOS_STACK_TRACE */
 
 static inline int kos_stack_push_ref_fast(
-        KosStackBlock **block,
+        KosSegment **block,
         PyObject *val) {
 
-  KosStackBlock *s = *block;
+  KosSegment *s = *block;
   if (likely(s && s->len < s->max)) {
     Py_INCREF(val);
     s->objs[s->len++] = val;
     return 0;
   }
-  return KosStackBlock_PushRef(block, val);
+  return KosStack_PushRef(block, val);
 }
 
 
 static inline int kos_stack_push_steal_fast(
-        KosStackBlock **block,
+        KosSegment **block,
         PyObject *val) {
 
-  KosStackBlock *s = *block;
+  KosSegment *s = *block;
   if (likely(s && s->len < s->max)) {
     s->objs[s->len++] = val;
     return 0;
   }
-  return KosStackBlock_PUSH(block, val);
+  return KosStack_PUSH(block, val);
 }
 
 
-static inline PyObject *kos_stack_pop_ref_fast(KosStackBlock **block) {
+static inline PyObject *kos_stack_pop_ref_fast(KosSegment **block) {
 
-  KosStackBlock *s = *block;
+  KosSegment *s = *block;
   if (likely(s && s->len))
     return s->objs[--s->len];
-  return KosStackBlock_PopRef(block);
+  return KosStack_PopRef(block);
 }
 
 
-static inline int kos_stack_drop1_fast(KosStackBlock **block) {
+static inline int kos_stack_drop1_fast(KosSegment **block) {
 
-  KosStackBlock *s = *block;
+  KosSegment *s = *block;
   if (likely(s && s->len)) {
     Py_DECREF(s->objs[--s->len]);
     return 0;
   }
-  return KosStackBlock_Drop1(block);
+  return KosStack_Drop1(block);
 }
 
 
 static inline int kos_stack_drop_noerr_fast(
-        KosStackBlock **block,
+        KosSegment **block,
         size_t count) {
 
-  KosStackBlock *s = *block;
+  KosSegment *s = *block;
   if (likely(s && count <= s->len)) {
     size_t len = s->len;
     while (count--)
@@ -510,35 +303,35 @@ static inline int kos_stack_drop_noerr_fast(
     s->len = len;
     return 0;
   }
-  return KosStackBlock_DropNoErr(block, count);
+  return KosStack_DropNoErr(block, count);
 }
 
 
-/* No NULL guard, mirroring KosStackBlock_Peek exactly. */
-static inline PyObject *kos_stack_peek_fast(KosStackBlock *s) {
+/* No NULL guard, mirroring KosStack_Peek exactly. */
+static inline PyObject *kos_stack_peek_fast(KosSegment *s) {
 
   if (likely(s->len))
     return s->objs[s->len - 1];
-  return KosStackBlock_Peek(s);
+  return KosStack_Peek(s);
 }
 
 
 static inline PyObject *const *kos_stack_tail_ptr_fast(
-        KosStackBlock *s,
+        KosSegment *s,
         size_t count) {
 
   if (likely(s && count && count <= s->len))
     return &s->objs[s->len - count];
-  return KosStackBlock_TailPtr(s, count);
+  return KosStack_TailPtr(s, count);
 }
 
 
 static inline int kos_stack_pop_tail_ptr_fast(
-        KosStackBlock **block,
+        KosSegment **block,
         size_t count,
         PyObject **dest) {
 
-  KosStackBlock *s = *block;
+  KosSegment *s = *block;
   if (likely(s && count && count <= s->len)) {
     size_t len = s->len;
     while (count--)
@@ -546,7 +339,7 @@ static inline int kos_stack_pop_tail_ptr_fast(
     s->len = len;
     return 0;
   }
-  return KosStackBlock_PopTailPtr(block, count, dest);
+  return KosStack_PopTailPtr(block, count, dest);
 }
 
 #endif  /* KOS_STACK_TRACE */
@@ -599,7 +392,7 @@ struct KosStackSteal {
 int KosStackSteal_Tail(
     KosStackSteal *s,
     size_t count,
-    KosStackBlock **block);
+    KosSegment **block);
 
 
 /**
@@ -613,7 +406,7 @@ int KosStackSteal_TailPrepend(
     KosStackSteal *s,
     PyObject *prefix,
     size_t count,
-    KosStackBlock **block);
+    KosSegment **block);
 
 
 /**
@@ -624,95 +417,36 @@ void KosStackSteal_Free(KosStackSteal *s);
 
 
 /**
-   Block-level API for eval: pop count * 2 elements as key,val pairs;
-   return a new dict. Stack layout: key_0, val_0, ..., key_{n-1}, val_{n-1}
+   Pop count * 2 elements as key,val pairs; return a new dict. Stack layout: key_0, val_0, ..., key_{n-1}, val_{n-1}
    with val_{n-1} at TOS. Caller owns the returned reference.
  */
-PyObject *KosStackBlock_PopTailDict(KosStackBlock **self, size_t pair_count);
+PyObject *KosStack_PopTailDict(KosSegment **self, size_t pair_count);
 
 
 /**
-   Block-level API for eval: TOS = names tuple, below it count values.
-   Pops names and count values, returns a new dict mapping each name to
+   TOS = names tuple, below it count values. Pops names and count values, returns a new dict mapping each name to
    its value. Caller owns the returned reference.
  */
-PyObject *KosStackBlock_PopTailDictNames(KosStackBlock **self, size_t count);
+PyObject *KosStack_PopTailDictNames(KosSegment **self, size_t count);
 
 
 /**
-   Block-level API for eval: given a names tuple (not on stack), pop
-   len(names) values and return a new dict mapping each name to its
+   Given a names tuple (not on stack), pop len(names) values and return a new dict mapping each name to its
    value. Stack layout: val_0 deepest, val_{n-1} at TOS; names[i] maps
    to val_i. Caller owns the returned reference.
  */
-PyObject *KosStackBlock_PopTailDictFromNames(
-    KosStackBlock **self,
+PyObject *KosStack_PopTailDictFromNames(
+    KosSegment **self,
     PyObject *names);
 
 
 /**
-   Push a new empty block onto the block chain. *block is updated to the
-   new top. For use by eval when entering loop/foreach blocks.
+   Clear the segment in place: drop refs to all elements and set
+   length to 0.
 
    :return: 0 on success, -1 on error
  */
-int KosStackBlock_PushBlock(KosStackBlock **block);
-
-
-/**
-   Drop the top block without moving values to the parent. *block must
-   have a parent (cannot drop root block).
-
-   :return: 0 on success, -1 on error
- */
-int KosStackBlock_DropBlock(KosStackBlock **block);
-
-
-/**
-   Steal the last count elements from the current block, append them
-   to the parent block, then drop the current block. For count 0,
-   same as DropBlock.
-
-   :return: 0 on success, -1 on error
- */
-int KosStackBlock_PopBlock(KosStackBlock **block, size_t count);
-
-
-/**
-   Clear the current block in place: drop refs to all elements and set
-   length to 0. Does not drop or push blocks.
-
-   :return: 0 on success, -1 on error
- */
-int KosStackBlock_ClearBlock(KosStackBlock **block);
-
-
-/**
-   Allocates a new block and makes it the current block
- */
-int KosStack_PushBlock(PyObject *stack);
-
-
-/**
-   Steals the last count elements from the current block's stack,
-   then pops the block, and pushes the stolen elements onto the
-   parent block's stack.
- */
-int KosStack_PopBlock(PyObject *stack, size_t count);
-
-
-/**
-   Drops references to all elements in the current block's stack,
-   frees the current block, reveals the parent block
- */
-int KosStack_DropBlock(PyObject *stack);
-
-
-/**
-   Drops references to all elements in all blocks, and frees all
-   but the first block, leaving it empty and current
- */
-int KosStack_Clear(PyObject *stack);
+int KosStack_Clear(KosSegment **block);
 
 
 /* === unit lifecycle === */

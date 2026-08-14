@@ -11,7 +11,7 @@ KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
   if (! node)
     return NULL;
 
-  KosStackBlock *stack = KosStackBlock_NewEmpty();
+  KosSegment *stack = KosStack_NewEmpty();
   if (! stack) {
     kos_dynnode_return_to_freelist((KosDynNode *) node);
     return NULL;
@@ -41,7 +41,7 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
   KosDynTry_ENABLED(clone) = KosDynTry_ENABLED(node);
   if (KosDynNode_STACK((KosDynNode *) node)) {
     KosDynNode_STACK((KosDynNode *) clone) =
-        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) node));
+        KosStack_DeepCopy(KosDynNode_STACK((KosDynNode *) node));
     if (! KosDynNode_STACK((KosDynNode *) clone)) {
       kos_dyntry_free(clone);
       return NULL;
@@ -114,7 +114,7 @@ int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
    GC traverse a KOS_DYN_TRY: operand stack only.
 */
 static int dynnode_traverse_try(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
   return 0;

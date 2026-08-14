@@ -61,7 +61,7 @@ When `kos_dyn_unwind_to_frame` is used (e.g. by RETURN or by exception propagati
 
 ## Try/catch, finally
 
-- **TRY**: PUSH_TRY and PUSH_FINALLY each push a KosStackBlock. Exception dispatch clears the block before jumping to the handler. The per-kind unwind helpers drop the stack block when BREAK/CONTINUE passes through. Catch is "find handler and jump" in the raise path, not in the generic unwind helper.
+- **TRY**: PUSH_TRY and PUSH_FINALLY each push a KosSegment. Exception dispatch clears the block before jumping to the handler. The per-kind unwind helpers drop the stack block when BREAK/CONTINUE passes through. Catch is "find handler and jump" in the raise path, not in the generic unwind helper.
 - **FINALLY**: Same stack block behavior as TRY. Unwind = run finally body (code at region's pc) then pop. Model as async: helper starts the body via the same hook runner; when the body ends, unwinding continues.
 
 **With / dyn-with:** Context managers are specified in [with-dyn-with.md](with-dyn-with.md). Single-shot `with` (KOS_DYN_WITH) uses enter/exit and structural stack blocks; multi-shot `dyn-with` (KOS_DYN_DYN_WITH) participates in transfer-plan wind/unwind.

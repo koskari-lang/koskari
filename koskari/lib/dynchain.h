@@ -217,7 +217,7 @@ struct KosDynNode {
   uint32_t flags;       /* KosDynFlags bitfield */
   uint32_t caps;        /* capability bits for generic code (KOS_DYN_CAP_*) */
   uint32_t node_id;     /* stable allocation ID; copied on clone for LCA matching */
-  KosStackBlock *stack; /* owned operand-stack extent; NULL if none (inherit ancestor) */
+  KosSegment *stack; /* owned operand-stack extent; NULL if none (inherit ancestor) */
   PyObject *ns;         /* owned namespace extent; NULL if none (inherit ancestor) */
 
   union {
@@ -257,7 +257,7 @@ struct KosDynNode {
       KosDynNode *node;
       /* INPLACE only: displaced resume-frame state (stack owned) and
          the invoke-site acting pc for extent lookups after restitch */
-      KosStackBlock *saved_stack;
+      KosSegment *saved_stack;
       uint32_t saved_pc;
       uint32_t saved_acting_pc;
     } delim;
@@ -460,7 +460,7 @@ typedef struct KosDynNode KosDynNext;
 struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
   uint32_t resume_pc;           /* pc to resume at */
-  KosStackBlock *resume_stack;  /* aliases node-owned stack on captured_chain */
+  KosSegment *resume_stack;  /* aliases node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag */
   uint32_t graft_point_id;      /* node_id of graft point for ID fallback; 0 = none */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
@@ -623,7 +623,7 @@ struct KosTransferPlan {
   KosDynNode *original_target;  /* target for chain-change detection */
   uint32_t graft_point_id;      /* node_id for LCA fallback when replanning */
   uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
-  KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
+  KosSegment *resume_stack;  /* stack state at capture (invocation only) */
   PyObject *continuation_ref;   /* strong ref (Py_INCREF) until plan freed or moved to prompt */
   KosContinuation *invoke_clone;  /* when set, release then free when plan freed */
 
@@ -687,7 +687,7 @@ KosDynFrame *kos_dynframe_new(
    KosDynNode *parent,
    KosCode *code,
    PyObject *ns,
-   KosStackBlock *stack);
+   KosSegment *stack);
 
 
 /**
@@ -1417,8 +1417,8 @@ int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node);
 
 /**
    Undo a successful kos_dyn_push_try/finally/loop/foreach when a follow-up
-   step (e.g. KosStackBlock_PushBlock) fails. region must be the pointer
-   returned from the corresponding push.
+   install step fails. region must be the pointer returned from the
+   corresponding push.
 
    :param ctx: execution context
    :param region: region node still at dyn_top

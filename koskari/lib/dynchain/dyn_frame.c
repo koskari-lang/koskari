@@ -11,7 +11,7 @@ KosDynFrame *kos_dynframe_new(
     KosDynNode *parent,
     KosCode *code,
     PyObject *ns,
-    KosStackBlock *stack) {
+    KosSegment *stack) {
 
   KosDynFrame *frame = kos_dynnode_alloc();
   if (! frame) {
@@ -20,7 +20,7 @@ KosDynFrame *kos_dynframe_new(
   }
 
   if (! stack) {
-    stack = KosStackBlock_NewEmpty();
+    stack = KosStack_NewEmpty();
     if (! stack) {
       Py_XDECREF(ns);
       kos_dynnode_return_to_freelist(frame);
@@ -57,7 +57,7 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(frame);
 
-  KosStackBlock *cst = KosStackBlock_DeepCopy(KosDynFrame_STACK(frame));
+  KosSegment *cst = KosStack_DeepCopy(KosDynFrame_STACK(frame));
   if (! cst) {
     kos_dynnode_return_to_freelist(clone);
     return NULL;
@@ -159,6 +159,9 @@ KosDynFrame *kos_dyn_push_frame(
      in eval_ng_plain_return. */
   if (cur)
     KosEvalState_FlushLiveRegsToFrame(es);
+  if (KosDynNode_STACK((KosDynNode *) frame))
+    KosSegment_BACK(KosDynNode_STACK((KosDynNode *) frame)) =
+        KosEvalState_BLOCK(es);
   KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
   KosEvalState_FRAME(es) = frame;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
@@ -200,6 +203,9 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
     }
   }
 
+  if (KosDynNode_STACK((KosDynNode *) frame))
+    KosSegment_BACK(KosDynNode_STACK((KosDynNode *) frame)) =
+        KosEvalState_BLOCK(es);
   KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
   KosEvalState_FRAME(es) = frame;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
@@ -217,7 +223,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  KosStackBlock_ClearBlock(&KosDynFrame_STACK(frame));
+  KosStack_Clear(&KosDynFrame_STACK(frame));
 
   /* Replace ns with empty dict */
   Py_XDECREF(KosDynFrame_NS(frame));
@@ -331,7 +337,7 @@ static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) 
   Py_VISIT(KosDynFrame_NS(frame));
   Py_VISIT(KosDynFrame_FN(frame));
   {
-    int tr = KosStackBlock_Traverse(KosDynFrame_STACK(frame), visit, arg);
+    int tr = KosStack_Traverse(KosDynFrame_STACK(frame), visit, arg);
     if (tr != 0)
       return tr;
   }

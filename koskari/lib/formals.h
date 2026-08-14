@@ -211,7 +211,7 @@ int KosFormals_SimpleStealApply(
 */
 int KosFormals_SimpleStealApplyBlock(
     PyObject *ns,
-    KosStackBlock *block,
+    KosSegment *block,
     Py_ssize_t nargs);
 
 

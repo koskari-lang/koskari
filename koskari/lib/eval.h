@@ -219,7 +219,7 @@ struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
 
-  KosStackBlock **block;     /* non-owning: &innermost dynnode stack; frozen snapshot */
+  KosSegment **block;     /* non-owning: &innermost dynnode stack; frozen snapshot */
   PyObject *namespace;       /* borrowed: active namespace object */
 
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
@@ -339,7 +339,7 @@ struct KosEvalState {
   KosTransferPlan *plan_stack; /* RUN: suspended plans (via plan->suspended) */
   KosDynFrame *frame; /* live top frame; thaw and kos_dyn_* retarget */
   KosCode *code;      /* live code from frame */
-  KosStackBlock **block; /* live innermost stack slot; non-owning */
+  KosSegment **block; /* live innermost stack slot; non-owning */
   PyObject *namespace;   /* live namespace; borrowed */
   uint32_t pc;        /* live next-instruction PC (freeze copies to frame) */
   uint32_t acting_pc; /* live acting PC (freeze copies to frame) */
@@ -368,7 +368,7 @@ struct KosEvalState {
 #define KosEvalState_StackHead(es) \
   ((KosEvalState_BLOCK(es) && *(KosEvalState_BLOCK(es))) \
    ? (*(KosEvalState_BLOCK(es))) \
-   : (KosStackBlock *) NULL)
+   : (KosSegment *) NULL)
 
 
 #define KosEvalState_CurrentNode(es) \
@@ -408,16 +408,16 @@ struct KosEvalState {
   KosStackSteal_TailPrepend((s), (prefix), (count), KosEvalState_BLOCK(es))
 
 #define KosEvalState_StackPopTail(es, count) \
-  KosStackBlock_PopTail(KosEvalState_BLOCK(es), (count))
+  KosStack_PopTail(KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackTailPtr(es, count) \
   kos_stack_tail_ptr_fast(*KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackLen(es) \
-  KosStackBlock_LEN(*KosEvalState_BLOCK(es))
+  KosSegment_LEN(*KosEvalState_BLOCK(es))
 
 #define KosEvalState_StackDrop(es, count) \
-  KosStackBlock_Drop(KosEvalState_BLOCK(es), (count))
+  KosStack_Drop(KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackDrop1(es) \
   kos_stack_drop1_fast(KosEvalState_BLOCK(es))
@@ -425,26 +425,26 @@ struct KosEvalState {
 #define KosEvalState_StackDropNoErr(es, count) \
   kos_stack_drop_noerr_fast(KosEvalState_BLOCK(es), (count))
 
-#define KosEvalState_StackClearBlock(es) \
-  KosStackBlock_ClearBlock(KosEvalState_BLOCK(es))
+#define KosEvalState_StackClear(es) \
+  KosStack_Clear(KosEvalState_BLOCK(es))
 
 #define KosEvalState_StackDuplicate(es, count) \
-  KosStackBlock_Duplicate(KosEvalState_BLOCK(es), (count))
+  KosStack_Duplicate(KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackPopTailDict(es, count) \
-  KosStackBlock_PopTailDict(KosEvalState_BLOCK(es), (count))
+  KosStack_PopTailDict(KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackPopTailDictNames(es, count) \
-  KosStackBlock_PopTailDictNames(KosEvalState_BLOCK(es), (count))
+  KosStack_PopTailDictNames(KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackPopTailDictFromNames(es, names) \
-  KosStackBlock_PopTailDictFromNames(KosEvalState_BLOCK(es), (names))
+  KosStack_PopTailDictFromNames(KosEvalState_BLOCK(es), (names))
 
 #define KosEvalState_StackPeek(es) \
   kos_stack_peek_fast(*KosEvalState_BLOCK(es))
 
 #define KosEvalState_StackPeekAt(es, index) \
-  KosStackBlock_PeekAt(*KosEvalState_BLOCK(es), (index))
+  KosStack_PeekAt(*KosEvalState_BLOCK(es), (index))
 
 #define KosEvalState_StackPopTailPtr(es, count, dest) \
   kos_stack_pop_tail_ptr_fast(KosEvalState_BLOCK(es), (count), (dest))
