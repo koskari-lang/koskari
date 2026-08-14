@@ -37,6 +37,7 @@ KosDynFrame *kos_dynframe_new(
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
+  KosDynFrame_FN(frame) = NULL;
   return frame;
 }
 
@@ -73,6 +74,8 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame);
   KosDynFrame_NATIVE_HANDLER(clone) = KosDynFrame_NATIVE_HANDLER(frame);
+  /* clones opt out of the per-function frame cache */
+  KosDynFrame_FN(clone) = NULL;
   return clone;
 }
 
@@ -80,10 +83,26 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 /**
    Release stack chain and namespace; return node to freelist. Callers:
    kos_dynnode_free, chain teardown.
+
+   When the frame carries a cache-participation fn reference, offer the
+   node to the function's frame cache first; parked or not, the fn
+   reference is released here, so a parked node sits fn-less and the
+   fn -> frame -> fn cycle can never form.
 */
 void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
+
+  {
+    PyObject *fn = KosDynFrame_FN(frame);
+    if (fn) {
+      KosDynFrame_FN(frame) = NULL;
+      int parked = KosFunction_TryParkFrame(fn, frame);
+      Py_DECREF(fn);
+      if (parked)
+        return;
+    }
+  }
 
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
   KosDynFrame_CODE(frame) = NULL;
@@ -162,6 +181,36 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es) {
 
 
 /**
+   Push a prepared frame from the per-function cache as DYN_TOP and
+   FRAME_TOP.  Code, namespace, and cleared stack are already attached
+   and the node base was normalized at park time
+   (KosFunction_TryParkFrame); this is the install half of
+   kos_dyn_push_frame with a fresh node id minted, and cannot fail.
+*/
+void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
+
+  KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(es);
+  KosDynNode_NODE_ID(frame) = kos_dynnode_mint_id();
+
+  {
+    KosDynFrame *cur = KosEvalState_FRAME(es);
+    if (cur) {
+      KosDynFrame_FLAGS(frame) |= (KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND);
+      KosEvalState_FlushLiveRegsToFrame(es);
+    }
+  }
+
+  KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
+  KosEvalState_FRAME(es) = frame;
+  KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
+  KosEvalState_NAMESPACE(es) = KosDynNode_NS((KosDynNode *) frame);
+  KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
+  es->pc = 0;
+  es->acting_pc = 0;
+}
+
+
+/**
    Clear stack and metadata for tail-call reuse of the same frame object.
 */
 void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
@@ -180,6 +229,8 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
+  /* the frame is being repurposed for a different function */
+  Py_CLEAR(KosDynFrame_FN(frame));
 }
 
 
@@ -278,6 +329,7 @@ static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) 
   KosDynFrame *frame = (KosDynFrame *) node;
   Py_VISIT(KosDynFrame_CODE(frame));
   Py_VISIT(KosDynFrame_NS(frame));
+  Py_VISIT(KosDynFrame_FN(frame));
   {
     int tr = KosStackBlock_Traverse(KosDynFrame_STACK(frame), visit, arg);
     if (tr != 0)

@@ -686,6 +686,27 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
       if (likely((flags & KOS_CALL_ARGV_WINDOW)
                  && ! (flags & KOS_CALL_ARGV_PREPENDED)
                  && KosFunction_BIND_SELF_STATE(callable) == 2)) {
+        KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
+
+        if (likely(cached)) {
+          /* Cache hit: steal-bind into the parked namespace first -- on
+             failure nothing is stolen and the frame stays parked. */
+          if (unlikely(KosFormals_SimpleStealApplyBlock(
+                  KosDynFrame_NS(cached), *caller_slot, nargs) < 0)) {
+            if (window)
+              kos_stack_drop_noerr_fast(caller_slot, window);
+            return EVAL_RAISE();
+          }
+          KosFunction_CACHED_FRAME(callable) = NULL;
+          window -= (size_t) nargs;
+          kos_dyn_push_ready_frame(es, cached);
+          Py_INCREF(callable);
+          KosDynFrame_FN(cached) = callable;
+          if (window)
+            kos_stack_drop_noerr_fast(caller_slot, window);
+          return EVAL_NORMAL();
+        }
+
         frame_ns = KosFunction_SimpleCallNamespaceStealBlock(
             callable, *caller_slot, nargs);
         if (unlikely(! frame_ns)) {
@@ -695,7 +716,22 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
           return EVAL_RAISE();
         }
         window -= (size_t) nargs;
-        goto fn_frame_install;
+
+        /* Cache miss: install as usual, then tag the frame for the
+           park attempt at release. */
+        {
+          KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
+          if (unlikely(! frame)) {
+            if (window)
+              kos_stack_drop_noerr_fast(caller_slot, window);
+            return EVAL_RAISE();
+          }
+          Py_INCREF(callable);
+          KosDynFrame_FN(frame) = callable;
+          if (window)
+            kos_stack_drop_noerr_fast(caller_slot, window);
+          return EVAL_NORMAL();
+        }
       }
 
       frame_ns = KosFunction_SimpleCallNamespaceFromVector(

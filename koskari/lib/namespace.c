@@ -218,6 +218,16 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
 }
 
 
+void KosNamespace_ClearRawFast(PyObject *ns) {
+
+  size_t count = KosNamespace_FAST_COUNT(ns);
+  for (size_t i = 0; i < count; i++) {
+    if (kos_ns_is_raw(ns, i))
+      Py_CLEAR(KosNamespace_GET_FAST_VAL(ns, i));
+  }
+}
+
+
 static PyObject *nspec_m_namespace(PyObject *self, PyObject *parent) {
 
   PyObject *ns = KosNamespace_FromSpec(self, parent);

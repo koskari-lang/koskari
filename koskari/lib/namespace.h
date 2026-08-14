@@ -141,6 +141,15 @@ PyObject *KosNamespace_Copy(PyObject *template_ns);
 
 
 /**
+  Clear every raw fast slot back to NULL, leaving non-raw slots (shared
+  closure/global Refs) untouched: restores a call namespace to the state
+  KosNamespace_Copy produced.  Used by the per-function frame cache at
+  park time.
+*/
+void KosNamespace_ClearRawFast(PyObject *ns);
+
+
+/**
    Looks up Ref matching key.
 
    Borrowed reference, or NULL with error set

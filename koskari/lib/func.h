@@ -183,11 +183,31 @@ typedef struct {
                                formals, no defaults/star/kwd/by-refs,
                                non-yielding code); 0 = not simple, so
                                zeroed construction is fail-safe */
+  KosDynFrame *cached_frame; /* parked prepared frame (code + reset ns +
+                                cleared stack, fn NULL) for the next
+                                non-recursive simple call; owned; NULL
+                                when empty.  See KosFunction_TryParkFrame */
 } KosFunction;
 
 #define KosFunction_SIMPLE_ARITY1(fn) (((KosFunction *) (fn))->simple_arity1)
 
 #define KosFunction_BIND_SELF_STATE(fn) (((KosFunction *) (fn))->bind_self_state)
+
+#define KosFunction_CACHED_FRAME(fn) (((KosFunction *) (fn))->cached_frame)
+
+
+/**
+   Offer a released frame to the function's single-slot frame cache.
+   Parks only when the slot is open and the frame is provably private:
+   exact Namespace with refcount 1, GC-untracked, no binds dict, and no
+   native handler.  On park the namespace's raw slots are cleared, the
+   stack block is cleared, and the node base is normalized for
+   kos_dyn_push_ready_frame.  The frame's fn field must already be
+   NULL (kos_dynframe_free clears it before offering).
+
+   :return: 1 when parked (ownership taken), 0 when refused
+*/
+int KosFunction_TryParkFrame(PyObject *self, KosDynFrame *frame);
 
 
 /**

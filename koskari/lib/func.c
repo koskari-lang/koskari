@@ -1727,6 +1727,7 @@ static int function_init(
   self->annotations_need_resolve = 0;
   self->bind_self_state = 0;
   self->simple_arity1 = function_compute_simple_arity(code, formals) + 1;
+  self->cached_frame = NULL;
 
   if (kos_function_attach_annotations(self, annotations) < 0)
     return -1;
@@ -1737,11 +1738,40 @@ static int function_init(
 }
 
 
+/** Tear down the parked frame, if any; the parked node's fn is always
+    NULL, so this cannot re-enter the function. */
+static void func_drop_cached_frame(KosFunction *fn) {
+  KosDynFrame *frame = fn->cached_frame;
+  if (frame) {
+    fn->cached_frame = NULL;
+    kos_dynnode_free((KosDynNode *) frame);
+  }
+}
+
+
 static int function_traverse(
     PyObject *self,
     visitproc visit,
     void *arg) {
 
+  if (((KosFunction *) self)->cached_frame) {
+    KosDynFrame *cached = ((KosFunction *) self)->cached_frame;
+    int r = kos_dynnode_traverse((KosDynNode *) cached, visit, arg);
+    if (r != 0)
+      return r;
+    /* the parked namespace is GC-untracked (that is a park condition),
+       so its references -- notably parent, into the tracked base-ns
+       chain -- must be attributed through the function or cycles
+       involving a parked frame become uncollectable */
+    {
+      PyObject *pns = KosDynFrame_NS(cached);
+      if (pns) {
+        r = Py_TYPE(pns)->tp_traverse(pns, visit, arg);
+        if (r != 0)
+          return r;
+      }
+    }
+  }
   Py_VISIT(KosFunction_NAME(self));
   Py_VISIT(KosFunction_CODE(self));
   Py_VISIT(KosFunction_BASE_NS(self));
@@ -1760,6 +1790,7 @@ static int function_traverse(
 
 static int function_clear(PyObject *self) {
 
+  func_drop_cached_frame((KosFunction *) self);
   Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
   Py_CLEAR(KosFunction_DICT(self));
@@ -1775,6 +1806,7 @@ static int function_clear(PyObject *self) {
 static void function_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
+  func_drop_cached_frame((KosFunction *) self);
   Py_CLEAR(KosFunction_NAME(self));
   Py_CLEAR(KosFunction_CODE(self));
   Py_CLEAR(KosFunction_BASE_NS(self));
@@ -2039,6 +2071,45 @@ PyObject *KosFunction_SimpleCallNamespaceStealBlock(
     return NULL;
   }
   return frame_ns;
+}
+
+
+int KosFunction_TryParkFrame(PyObject *self, KosDynFrame *frame) {
+
+  KosFunction *fn = (KosFunction *) self;
+  PyObject *ns;
+
+  if (fn->cached_frame)
+    return 0;
+
+  /* The namespace must be provably private to the frame: a captured,
+     revealed, or dynamically-extended namespace stays live-visible and
+     the frame takes the ordinary teardown instead. */
+  ns = KosDynFrame_NS(frame);
+  if (! ns
+      || ! KosNamespace_CheckExact(ns)
+      || Py_REFCNT(ns) != 1
+      || PyObject_GC_IsTracked(ns)
+      || KosNamespace_BINDS(ns) != NULL
+      || KosDynFrame_NATIVE_HANDLER(frame)
+      || ! KosDynFrame_STACK(frame))
+    return 0;
+
+  /* Reset to the state a fresh install would produce: raw slots NULL
+     (non-raw template refs retained), empty stack, normalized node
+     base ready for kos_dyn_push_ready_frame. */
+  KosNamespace_ClearRawFast(ns);
+  KosStackBlock_ClearBlock(&KosDynFrame_STACK(frame));
+
+  KosDynNode_PARENT(frame) = NULL;
+  KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
+  KosDynNode_CAPS(frame) = 0;
+  KosDynFrame_PC(frame) = 0;
+  KosDynFrame_ACTING_PC(frame) = 0;
+  KosDynFrame_FLAGS(frame) = 0;
+
+  fn->cached_frame = frame;
+  return 1;
 }
 
 

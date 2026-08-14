@@ -229,6 +229,12 @@ struct KosDynNode {
       /* Native frame evaluator: KosNativeHandlerFn (see eval.h); void * to
          avoid the include-order constraint of naming KosOpResult here. */
       void *native_handler;
+      /* Owning KosFunction (strong) when this frame participates in the
+         per-function frame cache; NULL opts out (clones, placeholder,
+         native-handler, and generator frames never set it).  Released --
+         Py_CLEAR mandatory -- at free (after the park attempt) and at
+         tail reuse. */
+      PyObject *fn;
     } frame;
     struct {
       uint32_t prompt_id;
@@ -949,6 +955,15 @@ KosDynFrame *kos_dyn_push_frame(KosEvalState *es, KosCode *code, PyObject *ns);
    :return: new frame, or NULL on error
 */
 KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es);
+
+
+/**
+   Push a prepared frame -- code, namespace, and cleared stack already
+   attached, node base normalized by KosFunction_TryParkFrame -- as
+   DYN_TOP and FRAME_TOP.  The install mirrors kos_dyn_push_frame minus
+   the allocation; cannot fail.
+*/
+void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame);
 
 
 void kos_dynframe_reset_for_tail(KosDynFrame *frame);
@@ -2279,6 +2294,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KOS_FRAME_DEMAND          (1u << 0)  /* frame is a demand-sync root */
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
+#define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
 #define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)
