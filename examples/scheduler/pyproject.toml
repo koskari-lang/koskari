@@ -49,7 +49,7 @@ umb = ["stompman"]
 all = ["aiokafka[snappy]", "stompman"]
 
 [project.urls]
-Homepage = "https://github.com/obriencj/koskari/"
+Homepage = "https://github.com/koskari-lang/koskari/"
 
 
 [tool.setuptools]

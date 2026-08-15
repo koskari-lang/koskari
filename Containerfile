@@ -28,7 +28,7 @@ ARG KOSKARI_COMMIT=
 ARG KOSKARI_VERSION=
 
 LABEL org.opencontainers.image.title="koskari" \
-      org.opencontainers.image.source="https://github.com/obriencj/koskari" \
+      org.opencontainers.image.source="https://github.com/koskari-lang/koskari" \
       org.opencontainers.image.description="Koskari: A LISP dialect for Python" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
       org.opencontainers.image.authors="Christopher O'Brien <obriencj@gmail.com>" \

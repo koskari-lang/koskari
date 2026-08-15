@@ -41,8 +41,8 @@ BETA_TARGET = "0.9.0"
 
 # Public repository. The GitHub link 404s for anonymous visitors until the
 # repository is made public.
-REPO_URL = "https://github.com/obriencj/koskari"
-REPO_SHORT = "github.com/obriencj/koskari"
+REPO_URL = "https://github.com/koskari-lang/koskari"
+REPO_SHORT = "github.com/koskari-lang/koskari"
 
 LICENSE_LABEL = "GPLv3 licensed"
 

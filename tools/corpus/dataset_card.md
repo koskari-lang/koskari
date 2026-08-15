@@ -22,7 +22,7 @@ Verified Koskari language examples exported from the Koskari conformance
 corpus. Each row traces to a corpus record with machine-checked expectations
 at one or more language phases (read, expand, eval, error, invalid).
 
-Source repository: [github.com/obriencj/koskari](https://github.com/obriencj/koskari)
+Source repository: [github.com/koskari-lang/koskari](https://github.com/koskari-lang/koskari)
 
 ## Configurations
 

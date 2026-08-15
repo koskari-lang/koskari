@@ -25,19 +25,8 @@ Local export tooling produces the same parquet under
 
 Each exported row carries provenance (`corpus_id`, `schema_version`, `git_ref`).
 
-Publication is triggered manually via
-[`.github/workflows/publish_corpus_dataset.yml`](../../.github/workflows/publish_corpus_dataset.yml)
-(`workflow_dispatch`). The publish job authenticates to Hugging Face via
-[Trusted Publishers](https://huggingface.co/docs/hub/trusted-publishers) (OIDC);
-no `HF_TOKEN` secret is stored in GitHub.
-
-On the dataset repo settings at
-`https://huggingface.co/datasets/obriencj/koskari/settings`, configure a
-trusted publisher with:
-
-- Provider: GitHub Actions
-- `repository` = `obriencj/koskari`
-- `workflow` = `publish_corpus_dataset.yml`
+Publication runs from CI, so the Hub dataset follows the corpus records in the
+repository.
 
 ## Configurations
 

@@ -4,7 +4,7 @@ version = "0.0.1"
 schema_version = 1
 authors = ["Christopher O'Brien <obriencj@preoccupied.net>"]
 description = "Syntax highlighting for the Koskari Lisp dialect (.ki)."
-repository = "https://github.com/obriencj/koskari"
+repository = "https://github.com/koskari-lang/koskari"
 
 # Zed builds the grammar from a cloned git revision, so it reads the parser
 # from a COMMIT, not the working tree. The grammar lives in a subdirectory of
@@ -19,6 +19,6 @@ repository = "https://github.com/obriencj/koskari"
 #
 # See editors/tree-sitter/README.md (the Zed section) for the full procedure.
 [grammars.koskari]
-repository = "https://github.com/obriencj/koskari"
+repository = "https://github.com/koskari-lang/koskari"
 rev = "master"
 path = "editors/tree-sitter"

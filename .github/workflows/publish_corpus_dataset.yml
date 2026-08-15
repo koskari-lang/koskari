@@ -4,7 +4,7 @@
 #
 # Publish authenticates via Hugging Face Trusted Publishers (OIDC). Configure
 # the publisher on obriencj/koskari dataset settings with repository
-# obriencj/koskari; when invoked via workflow_call the OIDC token's
+# koskari-lang/koskari; when invoked via workflow_call the OIDC token's
 # workflow_ref names the calling workflow, so the publisher list needs an
 # entry for ci-master.yml alongside publish_corpus_dataset.yml.
 
