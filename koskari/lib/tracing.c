@@ -48,6 +48,9 @@ static const char *const kos_te_names[KOS_TE__COUNT] = {
   "raise_local_walk_iter",
   "seg_inline_install",
   "seg_inline_spill",
+  "retarget_walk_fallback",
+  "parent_slot_walk",
+  "live_rebuild",
 };
 
 

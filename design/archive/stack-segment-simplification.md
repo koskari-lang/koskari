@@ -5,7 +5,7 @@ full suite, native, ASAN, Valgrind, plus a suite run with
 `KOS_DEBUG_PATCH_DYN_CACHES=1` validating the back cache against the
 walk (both flags now route through the setup.py passenv `-D`
 mechanism).  Companion follow-up:
-[dynnode-inline-segments.md](../interpreter/dynnode-inline-segments.md).**
+[dynnode-inline-segments.md](dynnode-inline-segments.md).**
 
 ## Purpose
 
@@ -165,7 +165,7 @@ is the live slot or a delivery target).
   fast-path inlines, or `KosStackSteal` semantics.
 - No per-extent segment expansion and no inline mini-segments; that is
   the companion proposal
-  ([dynnode-inline-segments.md](../interpreter/dynnode-inline-segments.md)), which
+  ([dynnode-inline-segments.md](dynnode-inline-segments.md)), which
   builds on this pass.
 
 ## Validation

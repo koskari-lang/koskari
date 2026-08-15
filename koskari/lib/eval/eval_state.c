@@ -215,6 +215,7 @@ static KosSegment **kos_evalstate_parent_stack_slot(
     }
   }
 
+  KOS_TRACE_EVENTS_INC(KOS_TE_PARENT_SLOT_WALK);
   owner = KosEvalState_InnermostStackOwner(es);
   if (unlikely(! owner)) {
     PyErr_SetString(PyExc_RuntimeError,

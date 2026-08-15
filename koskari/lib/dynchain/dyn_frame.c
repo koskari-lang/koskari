@@ -32,6 +32,7 @@ KosDynFrame *kos_dynframe_new(
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
   KosDynFrame_FN(frame) = NULL;
+  KosDynFrame_BACK_FRAME(frame) = NULL;
   return frame;
 }
 
@@ -64,6 +65,8 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynFrame_NATIVE_HANDLER(clone) = KosDynFrame_NATIVE_HANDLER(frame);
   /* clones opt out of the per-function frame cache */
   KosDynFrame_FN(clone) = NULL;
+  /* borrowed unwind cache is meaningless off the source's chain */
+  KosDynFrame_BACK_FRAME(clone) = NULL;
   return clone;
 }
 
@@ -152,6 +155,7 @@ KosDynFrame *kos_dyn_push_frame(
     if (KosSegment_IS_INLINE(KosDynNode_STACK((KosDynNode *) frame)))
       KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
   }
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) cur;
   KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
   KosEvalState_FRAME(es) = frame;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
@@ -199,6 +203,7 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
     if (KosSegment_IS_INLINE(KosDynNode_STACK((KosDynNode *) frame)))
       KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
   }
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) KosEvalState_FRAME(es);
   KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
   KosEvalState_FRAME(es) = frame;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);

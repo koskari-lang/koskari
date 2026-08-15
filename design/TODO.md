@@ -46,21 +46,6 @@ Ref: [interpreter/attr-lookup-cache.md](interpreter/attr-lookup-cache.md)
 
 ---
 
-## Stack segments
-
-### DynNode inline segments (speculative)
-
-Every dyn node owns its segment: an inline mini-segment (8 or 16 slots,
-telemetry decides) embedded in `KosDynNode`, spilling to heap on overflow;
-refcount-free upward delivery on pop. Staged: heap-only universal-ownership
-probe first, then inline layout, then spill telemetry + churn/RSS benchmarks.
-End state (own step): retire the retarget walks via ns owned-fill and a
-frame back-frame link; see the doc's End state section.
-
-Ref: [interpreter/dynnode-inline-segments.md](interpreter/dynnode-inline-segments.md).
-
----
-
 ## Profiling / instrumentation
 
 - Optional opcode-level histograms (freelist tracing, `KOS_TRACE_EVENTS`, and

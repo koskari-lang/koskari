@@ -612,6 +612,8 @@ static void kos_dyn_clear_seg_backs(KosDynNode *from, KosDynNode *stop) {
   for (KosDynNode *n = from; n && n != stop; n = KosDynNode_PARENT(n)) {
     if (KosDynNode_STACK(n))
       KosSegment_BACK(KosDynNode_STACK(n)) = NULL;
+    if (KosDynNode_IS_FRAME(n))
+      KosDynFrame_BACK_FRAME(n) = NULL;
   }
 }
 
@@ -1108,6 +1110,9 @@ static void kos_dyn_retarget_after_push(
     ft = (KosDynFrame *) new_node;
     bl = &KosDynNode_STACK(new_node);
     ns = KosDynNode_NS(new_node);
+    /* install-time back link for uninstall restoration */
+    KosDynFrame_BACK_FRAME(new_node) =
+        (KosDynNode *) KosEvalState_FRAME(es);
   } else {
     ft = KosEvalState_FRAME(es);
     /* the fill ran at push, so the node's ns is the live value; NULL
@@ -1263,6 +1268,40 @@ static void kos_dyn_retarget_after_pop(
     return;
   }
 
+  /* Frame pop: every fact is cache-available -- the back frame
+     recorded at install, the frame segment's displaced owning slot,
+     and the reconciled ns from the survivor. A missing piece (a
+     splice-installed frame carries neither link) falls through to
+     the walk. */
+  if (need_frame && ! walk_ns
+      && KosDynFrame_BACK_FRAME(removed)
+      && (! need_block
+          || (KosDynNode_STACK(removed)
+              && KosSegment_BACK(KosDynNode_STACK(removed))))) {
+    KosDynFrame *cached_ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(removed);
+    KosSegment **cached_bl = need_block
+        ? KosSegment_BACK(KosDynNode_STACK(removed))
+        : KosEvalState_BLOCK(es);
+#if KOS_DEBUG_PATCH_DYN_CACHES
+    {
+      KosDynFrame *ft_dbg = NULL;
+      KosSegment **bl_dbg = NULL;
+      PyObject *ns_dbg = NULL;
+      kos_dyn_walk_live_from(es, new_top, &ft_dbg, &bl_dbg, &ns_dbg);
+      if (cached_ft != ft_dbg
+          || (need_block && cached_bl != bl_dbg)
+          || (ns_dbg && ns_dbg != ns_new)) {
+        PyErr_SetString(PyExc_SystemError,
+                        "kos_dyn_retarget_after_pop: back frame drift"
+                        " vs walk");
+      }
+    }
+#endif
+    kos_dyn_apply_live(es, cached_ft, cached_bl, ns_new, 0);
+    return;
+  }
+
+  KOS_TRACE_EVENTS_INC(KOS_TE_RETARGET_WALK_FALLBACK);
   kos_dyn_walk_live_from(es, new_top, &ft, &bl, &ns);
 
   if (! need_frame)
@@ -1289,6 +1328,8 @@ static void kos_dyn_retarget_after_pop(
    or parent pop.
 */
 void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
+
+  KOS_TRACE_EVENTS_INC(KOS_TE_LIVE_REBUILD);
 
   KosDynFrame *ft = NULL;
   KosSegment **bl = NULL;

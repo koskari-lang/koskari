@@ -242,6 +242,11 @@ struct KosDynNode {
          Py_CLEAR mandatory -- at free (after the park attempt) and at
          tail reuse. */
       PyObject *fn;
+      /* Unwind cache: the frame displaced at install (borrowed; an
+         ancestor on the chain, so it outlives this frame while
+         installed). Set at install only; cleared at park, clone, and
+         span detach; NULL means fall back to the chain walk. */
+      struct KosDynNode *back_frame;
     } frame;
     struct {
       uint32_t prompt_id;
@@ -2332,6 +2337,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KOS_FRAME_DEMAND          (1u << 0)  /* frame is a demand-sync root */
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
+#define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
 #define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)

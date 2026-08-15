@@ -2101,6 +2101,7 @@ int KosFunction_TryParkFrame(PyObject *self, KosDynFrame *frame) {
   KosNamespace_ClearRawFast(ns);
   KosStack_Clear(&KosDynFrame_STACK(frame));
   KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
+  KosDynFrame_BACK_FRAME(frame) = NULL;
 
   KosDynNode_PARENT(frame) = NULL;
   KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
