@@ -53,7 +53,9 @@ env:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # Native arm64 runner: the Lambda function is arm64, so building on
+    # an arm host removes the QEMU emulation layer entirely.
+    runs-on: ubuntu-24.04-arm
     environment:
       name: corpus-mcp
       url: https://corpus.koskari.org/
@@ -100,9 +102,6 @@ jobs:
         id: base
         run: |
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}:latest" >> "$GITHUB_OUTPUT"
-
-      - name: Set up QEMU (arm64 emulation)
-        uses: docker/setup-qemu-action@v4
 
       - name: Log in to GHCR (pull the koskari base)
         uses: docker/login-action@v4
