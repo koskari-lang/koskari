@@ -69,7 +69,7 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   access. This governs both spellings at once: `foo.bar` written inside a
   single atom, and a `.` attached to any just-read value, so
   `(get-fn x).baz` and `"".join` are attribute reads on a form and on a
-  literal. Both produce `(compile/attr …)`, chain left to right
+  literal. Both produce `(attr …)`, chain left to right
   (`obj.a.b`), and compose with index brackets in either order —
   `foo[0].bar` and `foo.bar[0]` both read the way they look. A space breaks
   the attachment, so `.name` after whitespace stays an ordinary symbol and
@@ -88,7 +88,7 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
          " up across lines")
   ```
 
-  The segments join into a `(compile/#str …)` form, which folds back to a
+  The segments join into a `(#str …)` form, which folds back to a
   single constant when every segment is one, so the result costs nothing at
   runtime. Each segment carries its own prefix — an `f` segment
   interpolates, an `r` segment is raw — and the gap between a marker and
@@ -116,7 +116,7 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
 - **`reader/decorators`** *(default on)* — whether leading `@` layout lines
   read as decorators, lowering the decorated form to `compile/decorate`. Off,
   `@` has no layout meaning and reads through the ordinary atom rules. This
-  gates the reader surface only; `(compile/decorate ...)` remains available as
+  gates the reader surface only; `(decorate ...)` remains available as
   a macro regardless.
 
 ### Compiler

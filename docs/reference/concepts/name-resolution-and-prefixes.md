@@ -27,7 +27,7 @@ When the compiler sees a list whose head is a symbol, `(foo a b)`, it resolves
 
 1. Is `foo` (the **bare** name) bound to a **syntax**? Use it.
 2. Otherwise, is `compile/foo` bound to a syntax? Use it.
-3. Otherwise, rewrite the call to `(compile/call foo a b)` — a **runtime
+3. Otherwise, rewrite the call to `(call foo a b)` — a **runtime
    function call** of whatever value `foo` holds.
 
 So the compile-time slot wins when it exists; only when there is no syntax for

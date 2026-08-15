@@ -75,7 +75,7 @@ Output is a JSON object. Example:
 $ quick verify --all '(incr! z)'
 {
   "read": "(incr! z)",
-  "expand": "(compile/inplace + z 1)",
+  "expand": "(inplace + z 1)",
   "eval": "null"
 }
 ```

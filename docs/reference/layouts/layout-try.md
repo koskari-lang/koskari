@@ -5,7 +5,7 @@
 compilation. Requires at least one `except` or `finally` peer.
 
 **Behaviour:** Accepts peer blocks `except`, `else`, and `finally`. Produces
-`(try (compile/begin BODY) CATCHES...)` where CATCHES is the list of except,
+`(try (begin BODY) CATCHES...)` where CATCHES is the list of except,
 else, and finally clauses. Rules: `else` and `finally` take no arguments;
 multiple `else` or `finally` are not allowed; at least one except or finally
 is required.
@@ -50,31 +50,31 @@ try:
   x
 except [Exception]:
   y
-;; → (try (compile/begin x) [[Exception] y])
+;; → (try (begin x) [[Exception] y])
 
 try:
   x
 except [e Exception]:
   y
-;; → (try (compile/begin x) [[e Exception] y])
+;; → (try (begin x) [[e Exception] y])
 
 try:
   x
 except [Exception as: e]:
   y
-;; → (try (compile/begin x) [[e Exception] y])
+;; → (try (begin x) [[e Exception] y])
 
 try:
   x
 except:
   y
-;; → (try (compile/begin x) [except: y])
+;; → (try (begin x) [except: y])
 
 try:
   x
 finally:
   z
-;; → (try (compile/begin x) [finally: z])
+;; → (try (begin x) [finally: z])
 
 try:
   x
@@ -84,7 +84,7 @@ else:
   a
 finally:
   z
-;; → (try (compile/begin x) [[Exception] y] [else: a] [finally: z])
+;; → (try (begin x) [[Exception] y] [else: a] [finally: z])
 ```
 
 **Implementation:** `koskari/reader/layouts/exceptions.layout_try`

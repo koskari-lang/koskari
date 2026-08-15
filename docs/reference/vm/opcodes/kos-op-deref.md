@@ -2,7 +2,7 @@
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: `[..., ref] → [..., value]`. Pop one value (a Ref with a deref method). Call `ref.deref()`, push result. Raises TypeError if TOS has no deref method.
-- **Use-case**: Fast path for dereferencing a mutable reference. Used by the `(compile/deref EXPR)` special form.
+- **Use-case**: Fast path for dereferencing a mutable reference. Used by the `(deref EXPR)` special form.
 
 **Example:** Dereference a ref. For `(deref r)` where r holds a Ref: VAR (or FAST) loads r, DEREF calls ref.deref().
 

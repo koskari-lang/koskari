@@ -97,7 +97,7 @@ as a layout line.
 
 | Surface | Example source | Reader output (informal) |
 | ------- | -------------- | ------------------------ |
-| Layout block `if` | `if True:` / `1` / `else:` / `2` | `(compile/cond (True 1) (else: 2))` |
+| Layout block `if` | `if True:` / `1` / `else:` / `2` | `(cond (True 1) (else: 2))` |
 | Layout block `when` | `when True:` / `42` | `(when True 42)` |
 | Layout line `if` | `if True 1 2` | `(if True 1 2)` |
 | S-expression `if` | `(if True 1 2)` | `(if True 1 2)` |

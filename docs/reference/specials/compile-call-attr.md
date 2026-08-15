@@ -17,7 +17,7 @@ does `(.name obj args...)` when `.name` is a symbol whose text starts with `.`
 and at least `obj` is present (the dotted callee is not used as a variable).
 
 **The postfix spelling reaches this too, for any receiver.** Because the reader
-turns a dot attached to a value into `(compile/attr ...)`, and this special
+turns a dot attached to a value into `(attr ...)`, and this special
 matches that form in call position, `(obj.name args)` is a method call whatever
 `obj` is — a name, a form, or a literal:
 

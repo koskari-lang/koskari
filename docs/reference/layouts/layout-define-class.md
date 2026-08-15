@@ -2,7 +2,7 @@
 **Symbol:** `layout/define-class`
 
 **Use-case:** Class **definition** block syntax: lowers to
-`(compile/define-class NAME SUPERS (compile/begin BODY))`, which the
+`(define-class NAME SUPERS (begin BODY))`, which the
 **`compile/define-class`** macro expands to **`define`** plus **`class`** (see
 [compile/define-class](../specials/compile-class.md)). Same header shape as
 **`layout/class`**, but the read result binds **NAME** to the class after
@@ -18,11 +18,11 @@ than three.
 ```
 define-class NAME:
   BODY
-;; → (compile/define-class NAME () (compile/begin BODY))
+;; → (define-class NAME () (begin BODY))
 
 define-class NAME (Base1 Base2):
   BODY
-;; → (compile/define-class NAME (Base1 Base2) (compile/begin BODY))
+;; → (define-class NAME (Base1 Base2) (begin BODY))
 ```
 
 **Examples:**
@@ -30,11 +30,11 @@ define-class NAME (Base1 Base2):
 ```koskari
 define-class C:
   x
-;; → (compile/define-class C () (compile/begin x))
+;; → (define-class C () (begin x))
 
 define-class C (Base):
   x
-;; → (compile/define-class C (Base) (compile/begin x))
+;; → (define-class C (Base) (begin x))
 ```
 
 **Implementation:** `koskari/reader/layouts/classes.layout_define_class`

@@ -7,7 +7,7 @@
 - **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
 
 **Compiler use-case:** `compile/and` is the canonical consumer
-(`koskari/compile/specials/conditionals.py`). For `(compile/and A B C)` the
+(`koskari/compile/specials/conditionals.py`). For `(and A B C)` the
 compiler emits one `JUMP_AND done` after each non-last term; the last term is
 compiled without a jump. Because `JUMP_AND` already discards the value on the
 fall-through path, no `POP` is needed between terms.

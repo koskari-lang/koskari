@@ -1,7 +1,7 @@
 # compile/apply-fence
 **Symbol:** `compile/apply-fence`
 
-**Syntax:** `(compile/apply-fence NAME RAW META)` — normally produced by the
+**Syntax:** `(apply-fence NAME RAW META)` — normally produced by the
 triple-backtick fence reader syntax rather than written by hand.
 
 **Use-case:** Compile-time expansion of a fenced foreign literal. A fence

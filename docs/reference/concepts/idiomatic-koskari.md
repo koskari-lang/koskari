@@ -32,7 +32,7 @@ A dotted target on `set!` reads as an attribute location, so a separate
 (set! obj.value 7)       ; idiomatic
 ```
 
-The dotted form reads as `(set! (compile/attr obj value) 7)`.
+The dotted form reads as `(set! (attr obj value) 7)`.
 
 ## Destructuring
 

@@ -8,7 +8,7 @@ without nesting parentheses for the whole call.
 
 **Behaviour:** Does not accept peers. The header must be exactly
 `(layout/call FN)` — no extra forms after **`FN`** (raises `LayoutError` if
-there are header arguments). Produces **`(compile/call FN ARG ...)`**. The body
+there are header arguments). Produces **`(call FN ARG ...)`**. The body
 is **not** wrapped in **`compile/begin`**.
 
 Before building the call, the handler walks the body list: if a body form is a
@@ -35,18 +35,18 @@ it to keyword plus value as described above.
 ```koskari
 layout/call print:
   "hello"
-;; → (compile/call print "hello")
+;; → (call print "hello")
 
 layout/call foo:
   bar
   (baz)
-;; → (compile/call foo bar (baz))
+;; → (call foo bar (baz))
 
 layout/call foo:
   bar
   (baz)
   alpha: beta
-;; → (compile/call foo bar (baz) alpha: beta)
+;; → (call foo bar (baz) alpha: beta)
 ```
 
 **Implementation:** `koskari/reader/layouts/conditionals.layout_call`

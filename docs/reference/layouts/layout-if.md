@@ -10,7 +10,7 @@ Lowers to `compile/cond`.
 body, the reader gathers contiguous peer blocks at the same indent as the
 `if` header (including when `if`/`else` appears nested inside another block's
 body) and expands them with the primary through **`apply_layouts`**. Produces
-`(compile/cond (TEST BODY) (TEST BODY) ... (else: BODY))`. Rules: `elif` cannot
+`(cond (TEST BODY) (TEST BODY) ... (else: BODY))`. Rules: `elif` cannot
 follow `else`; `else` takes no arguments; only one `else` is allowed.
 
 **Syntax:**
@@ -29,7 +29,7 @@ else:
 ```koskari
 if x:
   y
-;; → (compile/cond (x y))
+;; → (cond (x y))
 
 if x:
   a
@@ -37,7 +37,7 @@ elif y:
   b
 else:
   c
-;; → (compile/cond (x a) (y b) (else: c))
+;; → (cond (x a) (y b) (else: c))
 ```
 
 **Implementation:** `koskari/reader/layouts/conditionals.layout_if`
