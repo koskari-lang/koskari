@@ -51,12 +51,10 @@ __all__ = (
     "Syntax",
     "SyntaxTransform",
     "Transform",
-    "append_syntax_doc",
     "build_bare_syntax",
     "build_macro",
     "build_special",
     "build_syntax",
-    "join_syntax_docs",
     "parse_syntax_rules_pattern",
     "special",
 )
@@ -225,8 +223,22 @@ class Syntax(Compiled):
             return NotImplemented
 
         syn = Syntax(self.name, new_transforms, bare)
-        syn.__doc__ = join_syntax_docs(self.__doc__, other_doc)
+        syn.__doc__ = _join_docs(self.__doc__, other_doc)
         return syn
+
+
+    def append_doc(self, doc):
+        """
+        Append an extension's documentation to what this syntax already
+        carries. Used by ``extend-syntax`` so an extension describes what
+        it adds rather than replacing the original text
+
+        :param doc: documentation text contributed by the extension
+        :return: self
+        """
+
+        self.__doc__ = _join_docs(self.__doc__, doc)
+        return self
 
 
 class Transform(ABC):
@@ -447,7 +459,7 @@ class SpecialTransform(Transform):
         return self.handler(compiler, source, result, tc)
 
 
-def join_syntax_docs(base, extra):
+def _join_docs(base, extra):
     """
     Combine a syntax's documentation with an extension's, base text first
     and separated by a blank line. Either side may be absent, and an
@@ -775,19 +787,6 @@ def build_syntax(name, *pattern_template_pairs):
         transforms.append(SyntaxTransform(pat, tmpl))
 
     return Syntax(name, transforms)
-
-
-@builtin('append-syntax-doc')
-def append_syntax_doc(syn, doc):
-    """
-    Koskari runtime: ``(append-syntax-doc SYNTAX DOC)``, appending an
-    extension's documentation to what ``SYNTAX`` already carries. Used by
-    ``extend-syntax`` so an extension describes what it adds rather than
-    replacing the original text
-    """
-
-    syn.__doc__ = join_syntax_docs(getattr(syn, "__doc__", None), doc)
-    return syn
 
 
 @builtin('build-bare-syntax')

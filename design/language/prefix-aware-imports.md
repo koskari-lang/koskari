@@ -1,7 +1,20 @@
 # Prefix-Aware Imports
 
-**Status:** Planned
+**Status:** Partially implemented
 **Author:** Christopher O'Brien <obriencj@preoccupied.net>
+
+Definition-side injection is in place: `define-syntax`, `extend-syntax`,
+and `let-syntax` bind (and overlay) under `compile/NAME` regardless of the
+written spelling, computing the key idempotently in their `macro-rules`
+arms (`koskari/bootstrap/_define_syntax.ki`). As an interim bridge,
+`IMPORT_FROM` retries an unprefixed member that misses as
+`compile/{attr}` before its submodule fallback, still binding under the
+requested name (`koskari/lib/opcode/IMPORT_FROM.c`); the family
+expansion, grouped payload, family renames, scope gating, and the §5
+error messages remain unimplemented, and that interim probe is replaced
+by them. `IMPORT_STAR` has no translation yet, so star-importing a
+module whose `__all__` names transformers fails. The resolver flip
+(prepend-only `find_compiled`) has not happened.
 
 ---
 

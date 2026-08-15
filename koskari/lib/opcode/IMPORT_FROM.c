@@ -24,6 +24,13 @@
    current frame namespace under the corresponding binding name. No
    stack effect.
 
+   Transformer probe: a member defined as a syntax transformer is bound
+   in its module under the compile/ prefix, so an unprefixed member that
+   misses is retried as "compile/{attr}" before the submodule fallback.
+   A member written with a namespace prefix is taken literally. See
+   design/language/prefix-aware-imports.md; full family import is the
+   follow-up there.
+
    Submodule fallback: when getattr raises AttributeError and the
    member is actually a not-yet-imported submodule, import
    "{module.__name__}.{attr}" and retry the getattr — matching
@@ -33,9 +40,9 @@
 
 
 /**
-   Fetch one from-import member from the module, importing
-   "{mod.__name__}.{attr}" and retrying on AttributeError. New
-   reference or NULL with error set.
+   Fetch one from-import member from the module, retrying an unprefixed
+   miss as "compile/{attr}", then importing "{mod.__name__}.{attr}" on a
+   remaining AttributeError. New reference or NULL with error set.
 */
 static PyObject *kos_import_from_member(PyObject *mod, PyObject *attr) {
 
@@ -44,6 +51,26 @@ static PyObject *kos_import_from_member(PyObject *mod, PyObject *attr) {
     return val;
 
   PyErr_Clear();
+
+  const char *rawname = PyUnicode_Check(attr)? PyUnicode_AsUTF8(attr): NULL;
+  if (! rawname)
+    PyErr_Clear();
+
+  if (rawname &&
+      strncmp(rawname, "compile/", 8) != 0 &&
+      strncmp(rawname, "layout/", 7) != 0) {
+
+    PyObject *pattr = PyUnicode_FromFormat("compile/%U", attr);
+    if (! pattr)
+      return NULL;
+
+    val = PyObject_GetAttr(mod, pattr);
+    Py_DECREF(pattr);
+    if (val || ! PyErr_ExceptionMatches(PyExc_AttributeError))
+      return val;
+
+    PyErr_Clear();
+  }
 
   PyObject *mod_name = PyObject_GetAttrString(mod, "__name__");
   if (! mod_name)
