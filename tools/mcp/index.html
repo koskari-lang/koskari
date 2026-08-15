@@ -15,7 +15,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>koskari corpus MCP</title>
+<title>Koskari Corpus MCP</title>
 <style>
   :root {
     --bg: #12141a;
@@ -275,12 +275,15 @@
 <body>
 
 <header>
+  <h1>Koskari Corpus <span class="mcp">MCP</span></h1>
+
   <!--
     The project mark, copied from docs/_static/koskari-icon.svg. It is
     inlined rather than served: the image build context is tools/mcp/
     and cannot reach docs/, and the favicon is derived from this same
     element at load, so the page carries exactly one copy of it.
   -->
+  <a href="https://koskari.org">
   <svg id="mark" xmlns="http://www.w3.org/2000/svg"
        viewBox="-7 -10 114 114" width="64" height="64"
        role="img" aria-label="Koskari">
@@ -347,8 +350,8 @@
       <path d="M53 48 L40 70"/>
     </g>
   </svg>
+  </a>
 
-  <h1>koskari corpus <span class="mcp">MCP</span></h1>
   <p>
     A Model Context Protocol server for the Koskari language: documentation,
     a reference for special forms, macros, layouts and reader behavior, and a

@@ -65,7 +65,7 @@ The deploy workflow assumes an IAM role via GitHub OIDC -- no stored AWS keys.
    this repo's subject, with permissions to push to the ECR repo and call
    `lambda:UpdateFunctionCode` on the function.
 2. Add the role ARN as the `AWS_MCP_DEPLOY_ROLE` secret (environment
-   `aws-mcp`).
+   `corpus-mcp`).
 3. Adjust `AWS_REGION` / `ECR_REPOSITORY` / `FUNCTION_NAME` in the workflow
    `env:` block if they differ from the defaults.
 
