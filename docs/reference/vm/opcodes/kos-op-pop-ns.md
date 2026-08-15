@@ -1,7 +1,7 @@
 # KOS_OP_POP_NS
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Restore frame namespace from saved_ns; pop NS node. No stack block.
+- **Stack**: Pop the NS node; the revealed node's namespace becomes active, and any values remaining on the NS node's segment are delivered onto the revealed segment.
 
 **Example:** Pool: N/A.
 

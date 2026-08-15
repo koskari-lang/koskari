@@ -1,8 +1,8 @@
 # KOS_OP_PUSH_LOOP
 - **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`). Continue target = instruction immediately following PUSH_LOOP (i.e. `CURRENT_PC` after the evaluator has advanced past the opcode).
 - **Status**: Implemented.
-- **Stack**: Pushes LOOP node and stack block. Break/continue use `break_pc` (derived at runtime) and `continue_pc` (next instruction after PUSH_LOOP). Initializes node result to `None`.
-- **Pushes:** KOS_DYN_LOOP (static extent KOS_EXT_LOOP; plus stack block for loop body).
+- **Stack**: Pushes the LOOP node, which owns its segment. Break/continue use `break_pc` (derived at runtime) and `continue_pc` (next instruction after PUSH_LOOP). Initializes node result to `None`.
+- **Pushes:** KOS_DYN_LOOP (static extent KOS_EXT_LOOP; with its own segment for the loop body).
 - **Invariants**: A KOS_EXT_LOOP extent must exist at the PUSH_LOOP PC; otherwise RuntimeError. Extent kind KOS_EXT_LOOP.
 - **Compiler form:** Pre-compile arg = 0 (unused). Break target is not stored in the instruction; it is derived at runtime via `kos_extent_find(KOS_EXT_LOOP)` → `ext->pop_pc + 1`.
 

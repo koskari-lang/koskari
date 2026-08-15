@@ -1,7 +1,7 @@
 # KOS_OP_PUSH_FOREACH
 - **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`).
 - **Status**: Implemented.
-- **Stack**: Pops iterable (TOS); creates iterator; pushes FOREACH node and stack block. Region loop result starts unset. ITER_NEXT uses the node's iterator. Break target = `extent.pop_pc + 1` (instruction after the matching POP_FOREACH).
+- **Stack**: Pops iterable (TOS); creates iterator; pushes the FOREACH node, which owns its segment. Region loop result starts unset. ITER_NEXT uses the node's iterator. Break target = `extent.pop_pc + 1` (instruction after the matching POP_FOREACH).
 - **Pushes:** KOS_DYN_FOREACH (static extent KOS_EXT_FOREACH; node holds iterator and loop state).
 - **Invariants**: A KOS_EXT_FOREACH extent must exist at the PUSH_FOREACH PC; otherwise RuntimeError. Extent kind KOS_EXT_FOREACH.
 - **Compiler form:** Pre-compile arg = 0 (unused). Break target is not stored in the instruction; it is derived at runtime via `kos_extent_find(KOS_EXT_FOREACH)` → `ext->pop_pc + 1`.

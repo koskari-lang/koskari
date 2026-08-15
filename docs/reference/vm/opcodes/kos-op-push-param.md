@@ -2,7 +2,7 @@
 - **Style**: CONST. Arg = constant pool index of names tuple `(name_0, name_1, ...)`.
 - **Status**: Implemented.
 - **Stack**: `[..., val_0, val_1, ..., val_{n-1}]` → `[]`. Values consumed; names come from constant.
-- **Pushes:** KOS_DYN_PARAM (extent kind KOS_EXT_PARAM). Builds dict from names and values, enters param extent.
+- **Pushes:** KOS_DYN_PARAM (extent kind KOS_EXT_PARAM; owns its operand segment). Builds dict from names and values, enters param extent.
 - **Invariants**: Constant at arg must be a tuple of names; stack must have at least `len(names)` values.
 - **Example:** `(parameterize ((x 1) (y 2)) body)` compiles to push values 1, 2, then PUSH_PARAM with names `("x", "y")`.
 

@@ -3,7 +3,7 @@
 - **Status**: Implemented.
 - **Constant pool**: NSPEC and NAMES are loaded from the pool; they are not placed on the stack by preceding `CONST` opcodes.
 - **Stack**: If `opa == 0`, no stack operands for bindings. If `opa > 0`, stack is `[..., val_0, ..., val_{opa-1}]` with TOS = last value; names come from the extra row. The VM binds `names[i]` to `val[i]`, then drops `opa` stack slots.
-- **Pushes:** KOS_DYN_NS (static extent KOS_EXT_NS; stores saved namespace for restore on POP_NS).
+- **Pushes:** KOS_DYN_NS (static extent KOS_EXT_NS; owns its operand segment; the prior namespace returns on POP_NS when the enclosing node is revealed).
 - **Invariants**: Extent kind KOS_EXT_NS.
 
 **Example:** Push namespace with no bound values (names = None). Operand row holds NSPEC and None; stack carries only the chain side effect until body runs.

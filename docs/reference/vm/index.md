@@ -2227,7 +2227,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 - **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`).
 - **Status**: Implemented.
-- **Stack**: Pops iterable (TOS); creates iterator; pushes FOREACH node and stack block. Region loop result starts unset. ITER_NEXT uses the node's iterator. Break target = `extent.pop_pc + 1` (instruction after the matching POP_FOREACH).
+- **Stack**: Pops iterable (TOS); creates iterator; pushes the FOREACH node, which owns its segment. Region loop result starts unset. ITER_NEXT uses the node's iterator. Break target = `extent.pop_pc + 1` (instruction after the matching POP_FOREACH).
 - **Pushes:** KOS_DYN_FOREACH (static extent KOS_EXT_FOREACH; node holds iterator and loop state).
 - **Invariants**: A KOS_EXT_FOREACH extent must exist at the PUSH_FOREACH PC; otherwise RuntimeError. Extent kind KOS_EXT_FOREACH.
 - **Compiler form:** Pre-compile arg = 0 (unused). Break target is not stored in the instruction; it is derived at runtime via `kos_extent_find(KOS_EXT_FOREACH)` → `ext->pop_pc + 1`.
@@ -2254,16 +2254,16 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: CONST. Arg = constant pool index of binding name (symbol/string) or sentinel for no binding.
 - **Status**: Implemented (single-shot with; sync and async __enter__/__exit__; VM auto-awaits when enter returns awaitable).
-- **Stack before:** `[..., mgr]`. **Stack after:** body runs in a fresh operand stack block.
-- **Behaviour:** Pop `mgr`; resolve and cache enter/exit; call enter (auto-await if needed); on success bind enter result if name given; push new stack block; look up WITH extent at current PC, compute `resume_pc = ext->pop_pc + 1`; push `KOS_DYN_WITH` with `resume_pc` stored on the node. On enter failure, no node or block is installed; exception propagates.
+- **Stack before:** `[..., mgr]`. **Stack after:** body runs in a fresh operand segment.
+- **Behaviour:** Pop `mgr`; resolve and cache enter/exit; call enter (auto-await if needed); on success bind enter result if name given; push new segment; look up WITH extent at current PC, compute `resume_pc = ext->pop_pc + 1`; push `KOS_DYN_WITH` with `resume_pc` stored on the node. On enter failure, no node or block is installed; exception propagates.
 - **Pushes:** KOS_DYN_WITH (single-shot; transfer barrier). Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
-- **Invariants:** Node owns one operand stack block; stack restoration is structural (block pop), not height-mark. A WITH extent must exist at the PUSH_WITH PC; otherwise RuntimeError.
+- **Invariants:** Node owns one operand segment; stack restoration is structural (segment pop), not height-mark. A WITH extent must exist at the PUSH_WITH PC; otherwise RuntimeError.
 
 ### KOS_OP_POP_WITH {#kos_op_pop_with}
 
 - **Style**: NOARG (argument unused in current `opcodes.incl`).
 - **Status**: Implemented (sync and async exit; VM auto-awaits when exit returns awaitable).
-- **Behaviour:** Call exit (no-exception form); auto-await if needed; pop owned stack block; pop dyn node; push `None`. When exit returns an awaitable: step via `kos_with_exit_start_await`; on sync completion (r==0) call `kos_complete_pending_with_exit` to consume the exit result and push `None`; on suspend returns **`EVAL_AWAIT(awaitable)`**; on resume, revive calls `kos_complete_pending_with_exit` so the with-expression value is always `None` (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
+- **Behaviour:** Call exit (no-exception form); auto-await if needed; pop the owned segment; pop dyn node; push `None`. When exit returns an awaitable: step via `kos_with_exit_start_await`; on sync completion (r==0) call `kos_complete_pending_with_exit` to consume the exit result and push `None`; on suspend returns **`EVAL_AWAIT(awaitable)`**; on resume, revive calls `kos_complete_pending_with_exit` so the with-expression value is always `None` (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
 - **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is always `None`; exit return is used only for swallow logic and is never the value seen by RETURN.
 ### KOS_OP_PUSH_DYN_WITH {#kos_op_push_dyn_with}
 
@@ -2285,10 +2285,10 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 - **Status**: Implemented.
 - **Stack**: Does not consume the stack. Loads NamespaceSpec from constant pool at
   arg, creates CollectorNamespace, installs as frame ns, pushes KOS_DYN_COLLECT,
-  then pushes a stack block. The body runs in this block; expression results (e.g.
+  and owns an operand segment; the body runs in it; expression results (e.g.
   None from compile/define) stay in the block and are discarded on POP_COLLECT.
 - **Pushes:** KOS_DYN_COLLECT (static extent KOS_EXT_COLLECT; stores saved ns for
-  restore on POP_COLLECT), then a stack block for the body.
+  restore on POP_COLLECT), with its owned segment for the body.
 - **Invariants**: Extent kind KOS_EXT_COLLECT. Frame namespace must be KosNamespace.
 
 ---
@@ -2334,8 +2334,8 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`). Continue target = instruction immediately following PUSH_LOOP (i.e. `CURRENT_PC` after the evaluator has advanced past the opcode).
 - **Status**: Implemented.
-- **Stack**: Pushes LOOP node and stack block. Break/continue use `break_pc` (derived at runtime) and `continue_pc` (next instruction after PUSH_LOOP). Initializes node result to `None`.
-- **Pushes:** KOS_DYN_LOOP (static extent KOS_EXT_LOOP; plus stack block for loop body).
+- **Stack**: Pushes the LOOP node, which owns its segment. Break/continue use `break_pc` (derived at runtime) and `continue_pc` (next instruction after PUSH_LOOP). Initializes node result to `None`.
+- **Pushes:** KOS_DYN_LOOP (static extent KOS_EXT_LOOP; with its own segment for the loop body).
 - **Invariants**: A KOS_EXT_LOOP extent must exist at the PUSH_LOOP PC; otherwise RuntimeError. Extent kind KOS_EXT_LOOP.
 - **Compiler form:** Pre-compile arg = 0 (unused). Break target is not stored in the instruction; it is derived at runtime via `kos_extent_find(KOS_EXT_LOOP)` → `ext->pop_pc + 1`.
 
@@ -2359,7 +2359,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 - **Status**: Implemented.
 - **Constant pool**: NSPEC and NAMES are loaded from the pool; they are not placed on the stack by preceding `CONST` opcodes.
 - **Stack**: If `opa == 0`, no stack operands for bindings. If `opa > 0`, stack is `[..., val_0, ..., val_{opa-1}]` with TOS = last value; names come from the extra row. The VM binds `names[i]` to `val[i]`, then drops `opa` stack slots.
-- **Pushes:** KOS_DYN_NS (static extent KOS_EXT_NS; stores saved namespace for restore on POP_NS).
+- **Pushes:** KOS_DYN_NS (static extent KOS_EXT_NS; owns its operand segment; the prior namespace returns on POP_NS when the enclosing node is revealed).
 - **Invariants**: Extent kind KOS_EXT_NS.
 
 **Example:** Push namespace with no bound values (names = None). Operand row holds NSPEC and None; stack carries only the chain side effect until body runs.
@@ -2376,7 +2376,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: LABEL. Handler targets in extent table.
 - **Status**: Implemented.
-- **Stack**: Pushes TRY node and a KosSegment (like PUSH_LOOP). Exception dispatch clears the block before jumping to the handler. POP_TRY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_TRY runs. Node unwind (e.g. BREAK through TRY) also drops the block.
+- **Stack**: Pushes TRY node and a KosSegment (like PUSH_LOOP). Exception dispatch clears the segment before jumping to the handler. POP_TRY promotes the protected result (exactly one value) to the revealed segment and drops the region's segment. Node unwind (e.g. BREAK through TRY) also drops the segment.
 - **Pushes:** KOS_DYN_TRY (static extent KOS_EXT_TRY; handler targets in extent descriptor) and KosSegment.
 - **Invariants**: Extent kind KOS_EXT_TRY. Handler targets (except_pc, finally_pc, exit_pc) from extent descriptor.
 
@@ -2397,7 +2397,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: LABEL. Arg = handler/finally target.
 - **Status**: Implemented.
-- **Stack**: Pushes FINALLY node and a KosSegment (like PUSH_TRY). Exception dispatch clears the block before jumping to the finally handler. POP_FINALLY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_FINALLY runs. Node unwind drops the block when control passes through.
+- **Stack**: Pushes FINALLY node and a KosSegment (like PUSH_TRY). Exception dispatch clears the segment before jumping to the finally handler. POP_FINALLY promotes exactly one value to the revealed segment and drops the region's segment. Node unwind drops the segment when control passes through.
 - **Pushes:** KOS_DYN_FINALLY (static extent KOS_EXT_FINALLY) and KosSegment.
 - **Invariants**: Extent kind KOS_EXT_FINALLY.
 
@@ -2417,7 +2417,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: No stack effect. Clears FINALLY region state on non-local exit; does not pop the region (POP_FINALLY does at target). Does not touch the stack block (only disables the region); the block is dropped by POP_FINALLY or unwind.
+- **Stack**: No stack effect. Clears FINALLY region state on non-local exit; does not pop the region (POP_FINALLY does at target). Does not touch the segment (only disables the region); the segment is dropped by POP_FINALLY or unwind.
 - **Example:** Exception or unwind path before transferring to a finally handler.
 
 ---
@@ -2426,7 +2426,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: No stack effect. Disables the top LOOP region (sets `enabled` to 0) and clears the loop stack block. Used on normal exit from a while-loop body (before POP_LOOP), or on iterator exhaustion in patterns that only use LOOP extents.
+- **Stack**: No stack effect. Disables the top LOOP region (sets `enabled` to 0) and clears the loop segment. Used on normal exit from a while-loop body (before POP_LOOP), or on iterator exhaustion in patterns that only use LOOP extents.
 - **Invariants**: Top of chain must be KOS_DYN_LOOP. Use CLEAR_FOREACH for FOREACH extents.
 - **Example:** On `break` from a while loop: CLEAR_LOOP (and possibly CLEAR_TRY) then jump to break_pc; POP_LOOP at target.
 - **Implementation**: `koskari/lib/opcode/CLEAR_LOOP.c`
@@ -2437,7 +2437,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: No stack effect. Disables the top FOREACH region (sets `enabled` to 0) and clears the loop stack block. Used when a for-each iterator is exhausted naturally (before POP_FOREACH).
+- **Stack**: No stack effect. Disables the top FOREACH region (sets `enabled` to 0) and clears the loop segment. Used when a for-each iterator is exhausted naturally (before POP_FOREACH).
 - **Invariants**: Top of chain must be KOS_DYN_FOREACH. Use CLEAR_LOOP for LOOP extents.
 - **Implementation**: `koskari/lib/opcode/CLEAR_FOREACH.c`
 
@@ -2447,7 +2447,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: No stack effect. Clears TRY region state on non-local exit; does not touch the stack block; POP_TRY drops the block at the target.
+- **Stack**: No stack effect. Clears TRY region state on non-local exit; does not touch the segment; POP_TRY drops the segment at the target.
 - **Invariants**: Used with structured exception and non-local control flow.
 
 ---
@@ -2456,7 +2456,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: NOARG. Argument unused (or 0).
 - **Status**: Implemented.
-- **Stack**: Promote one value (TOS) from try block to parent via PopBlock(1), then drop the block and pop the region. Block must have exactly one value. Clear exception state before pop.
+- **Stack**: Promote one value: pop TOS from the try segment, pop the region (dropping its segment), and push the value onto the revealed segment. The segment must hold exactly one value. Clear exception state before pop.
 - **Invariants**: Top of chain must be KOS_DYN_TRY.
 
 ---
@@ -2465,7 +2465,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Same structural behaviour as POP_TRY for the finally block: promote one value via PopBlock(1), drop block, pop region.
+- **Stack**: Same structural behaviour as POP_TRY for the finally segment: promote one value, drop the segment, pop the region.
 - **Invariants**: Top of chain must be KOS_DYN_FINALLY.
 
 ---
@@ -2474,7 +2474,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Drop stack block (no promotion); pop LOOP region; push loop result from the region (stored on the region, not from the block).
+- **Stack**: Drop the region's segment (no promotion); pop LOOP region; push loop result from the region (stored on the region, not from the block).
 - **Invariants**: Top of chain must be KOS_DYN_LOOP (paired with PUSH_LOOP).
 - **Implementation**: `koskari/lib/opcode/POP_LOOP.c`
 
@@ -2484,7 +2484,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Drop stack block (no promotion); pop FOREACH region; push loop result from the region (stored on the region, not from the block). When no BREAK or CONTINUE set a result, push `None`.
+- **Stack**: Drop the region's segment (no promotion); pop FOREACH region; push loop result from the region (stored on the region, not from the block). When no BREAK or CONTINUE set a result, push `None`.
 - **Invariants**: Top of chain must be KOS_DYN_FOREACH (paired with PUSH_FOREACH).
 - **Implementation**: `koskari/lib/opcode/POP_FOREACH.c`
 
@@ -2494,7 +2494,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Restore frame namespace from saved_ns; pop NS node. No stack block.
+- **Stack**: Pop the NS node; the revealed node's namespace becomes active, and any values remaining on the NS node's segment are delivered onto the revealed segment.
 
 **Example:** Pool: N/A.
 
@@ -2738,7 +2738,7 @@ back-edge increment is this single dispatch.
 ## 20. Delimited continuations
 
 Delimited continuations use a block-based layout: PUSH_PROMPT establishes the
-reset and owns the COW stack block for the delimited region; PUSH_SHIFT and
+reset and owns the operand segment for the delimited region; PUSH_SHIFT and
 POP_SHIFT delimit the shift block (handler); the continuation is the code
 between POP_SHIFT and POP_PROMPT.
 
@@ -2746,22 +2746,22 @@ between POP_SHIFT and POP_PROMPT.
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
-- **Stack**: Pushes a new COW stack block (so the reset body has an isolated stack), then pushes the prompt node onto the dynamic chain.
-- **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt). PROMPT owns the stack block for the delimited region; SHIFT does not create one.
-- **Invariants**: PUSH_SHIFT captures up to this prompt. Exception unwinding past a PROMPT drops the stack block and unlinks the node via the HANDLES_EXCEPTIONS capability (no kind-specific check in the unwind loop).
+- **Stack**: The prompt owns a fresh operand segment (so the reset body has an isolated stack), then pushes the prompt node onto the dynamic chain.
+- **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt). PROMPT owns the segment for the delimited region; SHIFT does not create one.
+- **Invariants**: PUSH_SHIFT captures up to this prompt. Exception unwinding past a PROMPT drops the segment and unlinks the node via the HANDLES_EXCEPTIONS capability (no kind-specific check in the unwind loop).
 - **Compiler form:** Pre-compile arg may be prompt id value or symbol; post-compile arg = pool index.
 
 **Example:** reset (push prompt). Pool: 0 = prompt_id.
 
 | index | opcode     | arg | arg view | comment |
 |------:|------------|-----|----------|---------|
-| 0     | PUSH_PROMPT| 0   | 0 (pid)  | push stack block; push prompt onto chain |
+| 0     | PUSH_PROMPT| 0   | 0 (pid)  | push prompt (owning its segment) onto chain |
 | 1     | …          | …   | …        | body before shift (continuation prefix) |
 | 2     | PUSH_SHIFT | 0   | 0 (pid)  | capture k; enter shift block with k on stack |
 | 3     | …          | …   | …        | shift body (k available) |
 | 4     | POP_SHIFT  | 0   | 0        | return from shift without invoking |
 | 5     | …          | …   | …        | continuation (body after shift) |
-| 6     | POP_PROMPT | 0   | 0        | drop stack block; pop prompt |
+| 6     | POP_PROMPT | 0   | 0        | drop segment; pop prompt |
 
 ---
 
@@ -2769,8 +2769,8 @@ between POP_SHIFT and POP_PROMPT.
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
-- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. Pushes a SHIFT marker recording the captured prompt's instance, pushes the captured continuation on stack, and enters the shift block in place; no unwinding happens at capture. SHIFT does not push its own stack block; the PROMPT's block is the active block throughout.
-- **Pushes:** KOS_DYN_SHIFT (simple marker; no stack block, no handlers).
+- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. Pushes a SHIFT marker recording the captured prompt's instance, pushes the captured continuation on stack, and enters the shift block in place; no unwinding happens at capture. SHIFT is a transparent bookmark with no segment of its own; the PROMPT's segment stays active throughout.
+- **Pushes:** KOS_DYN_SHIFT (transparent bookmark: no segment of its own, no handlers).
 - **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
 - **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies handle(SHIFT) (a generator boundary) raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `prompt_id` and `operation`.
 - **Compiler form:** Pre-compile arg may be prompt id value/symbol; post-compile arg = pool index.
@@ -2787,15 +2787,15 @@ between POP_SHIFT and POP_PROMPT.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Pops TOS as result; builds a transfer plan that unwinds from the current position through the matching SHIFT and PROMPT nodes (TRUNCATE_AND_INJECT step drops both and their stack block), then injects the single result value onto the outer frame's stack (below the PROMPT's block boundary). Handler returns without invoking k.
-- **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent). Stack block owned by PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value lands on the frame's stack below the former block boundary.
+- **Stack**: Pops TOS as result; builds a transfer plan that unwinds from the current position through the matching SHIFT and PROMPT nodes (TRUNCATE_AND_INJECT step drops both and their segment), then injects the single result value onto the outer frame's stack (below the PROMPT's block boundary). Handler returns without invoking k.
+- **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent). The segment owned by the PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value lands on the frame's stack below the former block boundary.
 - **Compiler form:** No argument.
 
 **Example:** Shift handler returns value without invoking k.
 
 | index | opcode   | arg | arg view | comment |
 |------:|----------|-----|----------|---------|
-| 4     | POP_SHIFT| 0   | 0        | pop result; unwind through SHIFT+PROMPT; drop stack block; inject result onto outer stack |
+| 4     | POP_SHIFT| 0   | 0        | pop result; unwind through SHIFT+PROMPT; drop segment; inject result onto outer stack |
 
 ---
 
@@ -2803,16 +2803,16 @@ between POP_SHIFT and POP_PROMPT.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's COW stack block, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: when a nearest **`KOS_DYN_DELIM`** with mode **`KOS_DYN_DELIM_MODE_POP_PROMPT`** is present (`kos_find_nearest_delim`), pops TOS as result, unwinds continuation frames back to the invocation site per that node’s return metadata, drops the PROMPT's stack block, pushes result, restores the PC recorded in that node's return metadata (the continuation invocation site), and resumes.
-- **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (return path recorded on **`KOS_DYN_DELIM`**), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's stack block and one is injected to the outer stack.
+- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's segment, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: when a nearest **`KOS_DYN_DELIM`** with mode **`KOS_DYN_DELIM_MODE_POP_PROMPT`** is present (`kos_find_nearest_delim`), pops TOS as result, unwinds continuation frames back to the invocation site per that node’s return metadata, drops the PROMPT's segment, pushes result, restores the PC recorded in that node's return metadata (the continuation invocation site), and resumes.
+- **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (return path recorded on **`KOS_DYN_DELIM`**), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's segment and one is injected to the outer stack.
 - **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it consults the **`KOS_DYN_DELIM`** marker installed for that invoke and resumes at the call site with the value on stack.
-- **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the `unwind_on_exception` handler (dispatched via `KOS_DYN_CAP_HANDLES_EXCEPTIONS`) drops the stack block and unlinks the PROMPT, then continues unwinding. No POP_PROMPT opcode executes in this path.
+- **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the `unwind_on_exception` handler (dispatched via `KOS_DYN_CAP_HANDLES_EXCEPTIONS`) drops the segment and unlinks the PROMPT, then continues unwinding. No POP_PROMPT opcode executes in this path.
 
 **Example:** End of reset body.
 
 | index | opcode    | arg | arg view | comment |
 |------:|-----------|-----|----------|---------|
-| 6     | POP_PROMPT| 0   | 0        | pop result; drop stack block; pop prompt; push result to outer stack |
+| 6     | POP_PROMPT| 0   | 0        | pop result; drop segment; pop prompt; push result to outer stack |
 
 ---
 
@@ -2895,7 +2895,7 @@ and [compile/dyn-wind](../specials/compile-dyn-wind.md).
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Pops wind from dynamic chain; runs after thunk (if entered and non-null) via kos_dyn_wind_unwind; may return KOS_DYN_UNWIND_ASYNC_STARTED when thunk pushes a frame.
+- **Stack**: Pops TOS (the body result) into the wind node, pops wind from the dynamic chain, and runs the after thunk (if entered and non-null) via kos_dyn_wind_unwind; the body result is delivered to the revealed segment when the thunk completes (or immediately when there is none). May return KOS_DYN_UNWIND_ASYNC_STARTED when the thunk pushes a frame.
 - **Invariants**: Dyn top must be KOS_DYN_WIND; otherwise RuntimeError.
 
 ## 23. Parameterize extent and parameter reads
@@ -2905,7 +2905,7 @@ and [compile/dyn-wind](../specials/compile-dyn-wind.md).
 - **Style**: CONST. Arg = constant pool index of names tuple `(name_0, name_1, ...)`.
 - **Status**: Implemented.
 - **Stack**: `[..., val_0, val_1, ..., val_{n-1}]` → `[]`. Values consumed; names come from constant.
-- **Pushes:** KOS_DYN_PARAM (extent kind KOS_EXT_PARAM). Builds dict from names and values, enters param extent.
+- **Pushes:** KOS_DYN_PARAM (extent kind KOS_EXT_PARAM; owns its operand segment). Builds dict from names and values, enters param extent.
 - **Invariants**: Constant at arg must be a tuple of names; stack must have at least `len(names)` values.
 - **Example:** `(parameterize ((x 1) (y 2)) body)` compiles to push values 1, 2, then PUSH_PARAM with names `("x", "y")`.
 
@@ -2924,7 +2924,7 @@ and [compile/dyn-wind](../specials/compile-dyn-wind.md).
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: No change.
-- **Pops:** KOS_DYN_PARAM from dynamic chain. Restores the cells the extent displaced in the context's shadow table.
+- **Pops:** KOS_DYN_PARAM from dynamic chain. Restores the cells the extent displaced in the context's shadow table. The PARAM node owns its operand segment; any values remaining on it are delivered onto the revealed segment, so the observable stack effect is unchanged.
 - **Invariants**: Dyn top must be KOS_DYN_PARAM; otherwise RuntimeError.
 - **Example:** See PUSH_PARAM table.
 

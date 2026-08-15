@@ -139,15 +139,15 @@ Eval and opcodes share a single **`KosEvalState *es`** for the running slice. No
 
 ### 1.5 Derived `KosContext` caches (`frame_top`, `block`, `namespace`)
 
-These fields summarize the innermost frame, operand-stack head, and namespace along the dynamic chain (same predicate as the walk in **`KosEvalState_RefreshDynCaches`**). **`KosEvalState`** mirrors them for opcode hot paths.
+These fields mirror the live frame, operand-segment slot, and namespace for opcode hot paths. Each fact is answered by per-node state rather than a chain walk: the top node's segment (region kinds always own one), the top node's `ns` (the namespace owned fill), and -- on frame pops -- the popped frame's `back_frame` unwind cache.
 
 | Mechanism | Role |
 | --------- | ---- |
-| **`KosEvalState_PatchDynCaches(es, new_node)`** | **Trusting push-only** update after **`new_node` is already `dyn_top`** via **`kos_dyn_push`** / **`kos_dyn_push_noinstall`**: O(1), no parent walk. Frame nodes refresh all three derived fields from that frame; other nodes update **namespace** and/or **block** only when the node carries them. Always ends with **`KosEvalState_ApplyDynCaches`**. |
-| **`KosEvalState_RefreshDynCaches(es)`** | **Full recompute** (walk from **`dyn_top`**, then **`ApplyDynCaches`**). Used when the head changes by **pop**, **splice**, **`kos_dyn_commit_dyn_top`** without the simple-push contract (uninstall after pop, transfer-plan steps, **`kos_dyn_gen_install`** publishing a grafted segment, etc.). |
-| **`kos_dyn_rebuild_live_from_chain(es)`** | Full walk from **`dyn_top`** when incremental retarget does not apply (xfer INSTALL/PUSH, splices, bootstrap). |
+| **`kos_dyn_retarget_after_push(es, new_node)`** | O(1) update after a single-node push: frame nodes replace all live fields; other nodes update only what they carry. Stamps the pushed node's unwind caches (segment `back` = displaced owning slot; frames also record `back_frame` = displaced frame). |
+| **`kos_dyn_retarget_after_pop(es, removed, new_top)`** | O(1) update after `kos_dyn_commit_dyn_top` pops a single head: block from the removed segment's `back` (or the surviving owner), namespace read from the survivor's `ns`, frame from `back_frame`. Under **`KOS_EVAL_SAFETYNET=1`** a counted chain-walk fallback backs every cache; default builds trust the cache model and fail fast on violation. |
+| **`kos_dyn_rebuild_live_from_chain(es)`** | Full walk from **`dyn_top`** when incremental retarget does not apply (xfer INSTALL/PUSH, splices, gen freeze/thaw, bootstrap). Finishes by **restamping** the contiguous unstamped prefix at the top of the chain -- spliced spans arrive with cleared caches -- so subsequent pops stay O(1). |
 
-Optional **`KOS_DEBUG_PATCH_DYN_CACHES`**: after push retarget, compare incremental caches to a full rebuild and raise on mismatch.
+Optional **`KOS_DEBUG_PATCH_DYN_CACHES`**: cross-check every cache answer (push retarget vs full rebuild; pop-side caches vs the walk) and raise on drift.
 
 Coroutine drivers outside the bytecode loop (**`coro.c`**) still hold a **`KosContext *`** on the **`KosCoroutine`** object; they construct a short-lived **`KosEvalState`** when they need the same Python-bridge helpers as **`revive_await`**.
 
@@ -353,13 +353,13 @@ flowchart TD
 
 **`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) sets a local **`KosOp *insn`** to the current instruction in **`KosCode_CODE`** and updates the frame: load `code` and `pc`, optional **`SAYF`** trace, set `acting_pc`, pre-advance `pc`. It assumes a valid frame, in-range `pc`, and valid bytecode (no defensive checks).
 
-Opcode handlers receive **`KosEvalState *es`** (see **`koskari/lib/eval.h`**): cached **`frame`**, **`code`**, operand-stack **`block`**, and live **`pc`** / **`acting_pc`** registers for the eval slice, aligned with **`KosEvalState_CONTEXT(es)`** via **`KosEvalState_PatchDynCaches`**, **`KosEvalState_RefreshDynCaches`**, and **`KosEvalState_SyncFromContext`** as summarized in section 1.5 above. There is no separate per-opcode struct beyond handler parameters; the hot path keeps **`KosOp *insn`** into **`op_*`**. **`cg_handle_op_result`** does not receive `insn`; it switches on the returned `KosOpResult.kind`.
+Opcode handlers receive **`KosEvalState *es`** (see **`koskari/lib/eval.h`**): cached **`frame`**, **`code`**, operand-stack **`block`**, and live **`pc`** / **`acting_pc`** registers for the eval slice, aligned with **`KosEvalState_CONTEXT(es)`** via **`kos_dyn_retarget_after_push`** / **`kos_dyn_commit_dyn_top`** / **`kos_dyn_rebuild_live_from_chain`** (and **`KosEvalState_ThawFromContext`** / **`FreezeToContext`** at the invocation boundary) as summarized in section 1.5 above. There is no separate per-opcode struct beyond handler parameters; the hot path keeps **`KosOp *insn`** into **`op_*`**. **`cg_handle_op_result`** does not receive `insn`; it switches on the returned `KosOpResult.kind`.
 
 PC is rolled back for WITH enter/exit suspend so the same instruction is retried on resume.
 
 #### 2.4.1 Flattened Koskari async generator attach (NEXT / ITER_NEXT / YIELD_FROM)
 
-When a **KosPyAsyncGen** is stepped **inside** the same **`koskari_eval`** invocation (not from Python **`__anext__`** alone), **`koskari/lib/eval.c`** installs its active dyn chain onto the **consumer** context. **`op_attach_koskari_agen_frame`** (**NEXT**), **`op_attach_koskari_agen_frame_for_iter_next`** (**ITER_NEXT**), and **`op_attach_koskari_agen_frame_for_yield_from`** (**YIELD_FROM** kos-async-gen driver) are thin wrappers over the shared **`attach_agen_gen_checked(es, agen)`** core, which resolves the agen’s **`gen`** node (RuntimeError when absent) and calls **`kos_attach_agen_gen_flatten(es, agen, gen)`** (static). Each wrapper runs its own **opcode-specific** failure cleanup when the core returns **-1** (NEXT abort + decrefs; ITER_NEXT may reset **`KOS_DYN_FOREACH`** step phase; YIELD_FROM pops **`KOS_DYN_YIELD_FROM`**). **`kos_attach_agen_gen_flatten`** clears **`agen->ctx`**’s **`dyn_top`** / **`frame_top`** and calls **`kos_dyn_gen_install(es, gen)`** for a frozen (**`KosDynGen_ACTIVE`**) gen, or **`kos_dyn_gen_install_bootstrap`** when only a bootstrap chain is present. **`kos_dyn_gen_install`** publishes the restored **`dyn_top`** via **`kos_dyn_commit_dyn_top(es, active)`**, which runs **`KosEvalState_RefreshDynCaches`** (full chain walk, then **`KosEvalState_ApplyDynCaches`**) — **not** **`PatchDynCaches`**, because install grafts a frozen **segment** rather than appending a single new head. Earlier draft text in this section sometimes paired that path with **`KosEvalState_SyncFromContext`**; **`RefreshDynCaches`** already applies eval mirrors via **`ApplyDynCaches`**, so that was redundant.
+When a **KosPyAsyncGen** is stepped **inside** the same **`koskari_eval`** invocation (not from Python **`__anext__`** alone), **`koskari/lib/eval.c`** installs its active dyn chain onto the **consumer** context. **`op_attach_koskari_agen_frame`** (**NEXT**), **`op_attach_koskari_agen_frame_for_iter_next`** (**ITER_NEXT**), and **`op_attach_koskari_agen_frame_for_yield_from`** (**YIELD_FROM** kos-async-gen driver) are thin wrappers over the shared **`attach_agen_gen_checked(es, agen)`** core, which resolves the agen’s **`gen`** node (RuntimeError when absent) and calls **`kos_attach_agen_gen_flatten(es, agen, gen)`** (static). Each wrapper runs its own **opcode-specific** failure cleanup when the core returns **-1** (NEXT abort + decrefs; ITER_NEXT may reset **`KOS_DYN_FOREACH`** step phase; YIELD_FROM pops **`KOS_DYN_YIELD_FROM`**). **`kos_attach_agen_gen_flatten`** clears **`agen->ctx`**’s **`dyn_top`** / **`frame_top`** and calls **`kos_dyn_gen_install(es, gen)`** for a frozen (**`KosDynGen_ACTIVE`**) gen, or **`kos_dyn_gen_install_bootstrap`** when only a bootstrap chain is present. **`kos_dyn_gen_install`** publishes the restored **`dyn_top`** via **`kos_dyn_commit_dyn_top(es, active)`**, whose retarget detects the grafted span (new top is not the popped node's parent) and runs **`kos_dyn_rebuild_live_from_chain`** — the full walk plus restamp — rather than the O(1) single-head retarget.
 
 The **same** live **`es`** passed into the opcode must be forwarded to the attach path. All three helpers take **`KosEvalState *es`** first so **`kos_dyn_gen_install`** refreshes the interpreter’s eval-state mirrors—not a temporary **`KosEvalState`** built only for install.
 
@@ -1229,10 +1229,19 @@ frames, prompts, wind extents, and control regions. This replaces the previous
 separate frame chain and handler chain.
 
 **KosDynNode** — Single tagged-union struct for all chain node kinds. Base fields
-`parent`, `kind`, `flags`, `caps`, `node_id`, and **`stack`** (optional owned operand
-extent; `NULL` = inherit) precede union `u`. Payload variants live in `u` (see
-`struct KosDynNode` in [`dynchain.h`](../../koskari/lib/dynchain.h)). **`KosDynFrame_STACK`**
-reads this **`stack`** field on the node, not a member of `u.frame`.
+`parent`, `kind`, `flags`, `caps`, `node_id`, **`stack`**, and **`ns`** precede
+union `u`; an embedded **`KosInlineSegment`** (`iseg`, 8 slots) sits at the tail.
+Region kinds always own a segment -- aimed at `iseg` at construction or push and
+spilled to a heap segment on growth -- so **`stack == NULL` marks a transfer
+bookmark** (cc, cc_raise, delim, shift, gen, next, yield_from), which inherits
+the enclosing extent's segment. The **`ns`** field is uniformly owned: an
+introduced scope for `KOS_DYN_CAP_BINDS_NS` kinds (frame, ns, collect),
+otherwise the live-namespace fill taken at push, so the active namespace is
+always readable from the top node. Frames additionally record the displaced
+frame (**`back_frame`**, borrowed) as an unwind cache. Payload variants live in
+`u` (see `struct KosDynNode` in [`dynchain.h`](../../koskari/lib/dynchain.h)).
+**`KosDynFrame_STACK`** reads this **`stack`** field on the node, not a member
+of `u.frame`.
 Typedefs (KosDynFrame, KosDynPrompt, KosDynWind, KosDynNs, KosDynCC, KosDynWith,
 KosDynShift, KosDynParam, KosDynYieldFrom, …) all refer to this same struct.
 **All field access must use the macros** defined in dynchain.h; do not touch union
@@ -1336,20 +1345,34 @@ mirrored on **`KosEvalState`** via **`KosEvalState_Stack*`** helpers). That
 pointer tracks the innermost **`KosDynNode.stack`** extent installed on the
 dynamic chain — not a separate “frame stack” authority.
 
-Rules (landed; archived proposal [node-owned-operand-stack.md](archive/node-owned-operand-stack.md)):
+Rules (landed; archived proposals
+[node-owned-operand-stack.md](archive/node-owned-operand-stack.md),
+[stack-segment-simplification.md](archive/stack-segment-simplification.md),
+[dynnode-inline-segments.md](archive/dynnode-inline-segments.md)):
 
 1. **Single source of truth** — opcodes push/pop via **`KosEvalState_Stack*`** /
-   **`ctx->block`**; they do not infer region boundaries from
-   **`KosSegment.back`** on the hot path.
-2. **Symmetric lifecycle** — installing a dyn node that owns a stack extent
-   sets **`ctx->block`** to that node's **`stack`**; uninstalling restores the
-   previous extent (TRY, FINALLY, LOOP, FOREACH, WITH, COLLECT, etc.).
-3. **Node-owned snapshots** — continuation capture and transfer plans clone or
-   reinstall nodes together with their owned **`stack`** blocks so chain and
-   operand storage stay aligned across delimited transfer.
-
-Region nodes without an owned stack (**`stack == NULL`**) inherit the current
-block from an ancestor frame or enclosing extent.
+   **`ctx->block`**; they never touch **`KosSegment.back`** on the hot path.
+2. **Universal region ownership** — every block-structured region kind owns a
+   segment (FRAME, WITH, TRY, FINALLY, LOOP, FOREACH, COLLECT, PROMPT, PARAM,
+   NS, WIND), born in the node's embedded 8-slot `KosInlineSegment` and
+   spilled to a heap segment on growth. Transfer bookmarks (CC, CC_RAISE,
+   DELIM, SHIFT, GEN, NEXT, YIELD_FROM) are deliberately transparent: the
+   compiler emits their pushes mid-expression, so their extents straddle open
+   operand windows on the enclosing segment.
+3. **Symmetric lifecycle with unwind caches** — installing an owning node aims
+   **`ctx->block`** at its **`stack`** and stamps the segment's **`back`**
+   with the displaced owning slot (frames also record **`back_frame`**);
+   uninstalling restores from those caches in O(1). Transparent extents
+   deliver their remaining values to the revealed segment on normal pop
+   (refcount-free steal/repush) and discard them on unwind.
+4. **Node-owned snapshots** — continuation capture and transfer plans clone or
+   reinstall nodes together with their owned **`stack`** segments; clones are
+   born with cleared caches, and every splice ends in
+   **`kos_dyn_rebuild_live_from_chain`**, which restamps the spliced prefix.
+5. **The cache model is authoritative** — chain-walk fallbacks behind the
+   caches are compiled only under **`KOS_EVAL_SAFETYNET=1`** (counted, for
+   diagnostics); default builds trust the caches and fail fast on a model
+   violation.
 
 #### koskari_eval Return Value
 
@@ -1501,7 +1524,7 @@ To avoid recursive C calls and keep a single state machine:
 
 2. **RETURN (frame has parent, normal call return)**: When the callee’s dynamic parent is not a GEN, the RETURN opcode runs `KOS_TRANS_WALK_RETURN_TO_FRAME` via `kos_dyn_transition`, then `kos_dyn_pop_frame` so the **caller** becomes `frame_top`. It does **not** push onto the parent stack in the opcode handler. Instead it returns `EVAL_PARENT_RETURN(val)` (`KOS_RES_PARENT_RETURN` in `KosOpResult`). `cg_handle_op_result` dispatches to **`eval_parent_return_deliver`**: optional flattened Koskari async-gen iterator delivery (`kos_dyn_try_deliver_iterator_boundary_after_pop`), else native-frame handler or `KosStack_PushRef` onto the parent stack, then **`kos_dynnode_on_control_returned`** (WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the eval loop eventually stops for another reason.
 
-3. **NEXT/ITER_NEXT (Koskari async gen)**: **`NEXT`** pushes a **`KOS_DYN_NEXT`** boundary (`kos_dyn_push_next_for_kos_agen`, …) as needed, then **attaches** the generator’s frame with **`op_attach_koskari_agen_frame(es, …)`** (live **`KosEvalState *es`** from the opcode). **`ITER_NEXT`** records state on the innermost **`KOS_DYN_FOREACH`** region and uses **`op_attach_koskari_agen_frame_for_iter_next(es, …)`**. Each performs its own validation and failure cleanup, then **`kos_attach_agen_gen_flatten(es, agen, gen)`** → **`kos_dyn_gen_install(es, gen)`** so **`KosEvalState_RefreshDynCaches`** updates the same **`es`** the dispatch loop uses. The gen’s frame runs until it YIELD or RETURN. On YIELD/RETURN, the **frame-has-parent** rule runs: the gen frame is **detached** (without freeing), the value (or exhausted/default) is delivered to the awaiting frame, and the loop continues with the caller as `frame_top`. No recursive `koskari_eval(agen->ctx, ...)`.
+3. **NEXT/ITER_NEXT (Koskari async gen)**: **`NEXT`** pushes a **`KOS_DYN_NEXT`** boundary (`kos_dyn_push_next_for_kos_agen`, …) as needed, then **attaches** the generator’s frame with **`op_attach_koskari_agen_frame(es, …)`** (live **`KosEvalState *es`** from the opcode). **`ITER_NEXT`** records state on the innermost **`KOS_DYN_FOREACH`** region and uses **`op_attach_koskari_agen_frame_for_iter_next(es, …)`**. Each performs its own validation and failure cleanup, then **`kos_attach_agen_gen_flatten(es, agen, gen)`** → **`kos_dyn_gen_install(es, gen)`** so **`kos_dyn_rebuild_live_from_chain`** updates the same **`es`** the dispatch loop uses. The gen’s frame runs until it YIELD or RETURN. On YIELD/RETURN, the **frame-has-parent** rule runs: the gen frame is **detached** (without freeing), the value (or exhausted/default) is delivered to the awaiting frame, and the loop continues with the caller as `frame_top`. No recursive `koskari_eval(agen->ctx, ...)`.
 
 4. **YIELD (top-level)**: When a top-level or otherwise surfaced YIELD returns `EVAL_YIELD(val)`, `cg_handle_op_result` routes to **`eval_event_yield`**, which performs stage A (`eval_yield_handle_walk_and_freeze`: `KOS_TRANS_WALK_HANDLE_YIELD`) and stage B (optional NEXT/FOREACH/YIELD_FROM delivery for flattened Koskari async gens via **`eval_event_yield_deliver_to_boundary`**), or tags suspension for the outer driver. In-loop child-frame YIELD (parent non-NULL) still avoids stopping `koskari_eval` with a public boundary; the exact unwind/freeze steps live in `kos_dyn_transition` / dynchain helpers.
 
@@ -1551,9 +1574,10 @@ per kind). Walk/pop/transition helpers live in **`dynchain/dyn_walk.c`**. See
 **Eval state:** Mutators and chain-aware helpers exposed from `dynchain.h` take
 **`KosEvalState *es`** as their first parameter (not `KosContext *ctx`). Use
 **`KosEvalState_CONTEXT(es)`** when you need the heap context. After edits to
-**`dyn_top`** / **`frame_top`** / operand stack ownership, call
-**`KosEvalState_RefreshDynCaches(es)`** and then **`KosEvalState_SyncFromContext(es)`**
-where the hot-path **`frame`** / **`code`** caches must match **`ctx`**.
+**`dyn_top`** / **`frame_top`** / operand stack ownership that do not
+go through push or commit, call **`kos_dyn_rebuild_live_from_chain(es)`**
+so the hot-path **`frame`** / **`code`** caches match the chain (it
+also restamps the spliced prefix's unwind caches).
 
 Representative signatures (see **`koskari/lib/dynchain.h`** for the full set):
 
