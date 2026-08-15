@@ -17,7 +17,8 @@ static KosDynCollect *kos_dyncollect_new(
     return NULL;
   }
 
-  kos_dynnode_init((KosDynNode *) col_node, KOS_DYN_COLLECT, parent, 0);
+  kos_dynnode_init((KosDynNode *) col_node, KOS_DYN_COLLECT, parent,
+                   KOS_DYN_CAP_BINDS_NS);
   KosDynNode_NS((KosDynNode *) col_node) = ns;
   kos_dynnode_use_inline_segment((KosDynNode *) col_node);
   return col_node;

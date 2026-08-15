@@ -140,6 +140,11 @@ typedef enum KosDynFlags {
    which marks failed-pop recovery (kos_dyn_exception_unwind). */
 #define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
 
+/* This kind binds its own namespace extent (frame, ns, collect); the
+   ns field holds an introduced scope rather than the owned live-ns
+   fill every other pushed node carries. */
+#define KOS_DYN_CAP_BINDS_NS                 (1u << 11)
+
 /* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
 #define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
 
@@ -367,22 +372,15 @@ static inline KosSegment *kos_dynnode_use_inline_segment(
 
 
 /**
-   True when node introduces its own namespace extent: it is one of
-   the kinds that binds a namespace (frame, ns, collect) and one is
-   attached.  Introspection-only: under the namespace owned-fill every
-   pushed node carries an ns and the live-value question is answered
-   by reading it, so retarget logic never needs this distinction --
-   only displays that report scope structure do.
+   True when node introduces its own namespace extent: it carries
+   KOS_DYN_CAP_BINDS_NS and one is attached.  Introspection-only:
+   under the namespace owned-fill every pushed node carries an ns and
+   the live-value question is answered by reading it, so retarget
+   logic never needs this distinction -- only displays that report
+   scope structure do.
 */
 static inline int kos_dynnode_introduces_ns(const struct KosDynNode *node) {
-  switch (node->kind) {
-    case KOS_DYN_FRAME:
-    case KOS_DYN_NS:
-    case KOS_DYN_COLLECT:
-      return node->ns != NULL;
-    default:
-      return 0;
-  }
+  return (node->caps & KOS_DYN_CAP_BINDS_NS) && node->ns != NULL;
 }
 
 typedef struct KosDynNode KosDynFrame;

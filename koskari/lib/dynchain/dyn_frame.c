@@ -19,7 +19,7 @@ KosDynFrame *kos_dynframe_new(
     return NULL;
   }
 
-  kos_dynnode_init(frame, KOS_DYN_FRAME, parent, 0);
+  kos_dynnode_init(frame, KOS_DYN_FRAME, parent, KOS_DYN_CAP_BINDS_NS);
   Py_XINCREF(code);
   KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = 0;

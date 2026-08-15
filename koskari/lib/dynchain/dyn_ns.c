@@ -15,7 +15,7 @@ static KosDynNs *kos_dynns_new(
     return NULL;
   }
 
-  kos_dynnode_init(ns_node, KOS_DYN_NS, parent, 0);
+  kos_dynnode_init(ns_node, KOS_DYN_NS, parent, KOS_DYN_CAP_BINDS_NS);
   KosDynNode_NS(ns_node) = ns;  /* caller transferred ownership */
   return ns_node;
 }
