@@ -606,7 +606,7 @@ tox -qe py -- tests/reproducers/test_reset_shift_nested.py -q
 | `test_continuation_passes_through_intermediate_context_with_dyn_with_unwind` | cc-unwind carve-out; dyn-with `__exit__` sees no exception |
 
 All in `tests/compile/specials/test_dyn_wind.py` or `tests/lib/opcode/test_continuations.py`.
-Use `tox` only per [testing rules](../../.cursor/rules/testing.mdc).
+Use `tox` only per [testing rules](../../.claude/rules/testing.md).
 
 ### 7.3 Trace debugging
 

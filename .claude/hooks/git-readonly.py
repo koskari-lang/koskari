@@ -1,10 +1,30 @@
-#!/usr/bin/env python3
-"""
-Allow only a small git command set for agent shell execution.
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
 
-Permitted: log, status, show, diff, commit via heredoc (-F - <<'EOF'), and
-guarded worktree add/list/remove/prune under ~/.cursor/worktrees/.
+
 """
+git-readonly - PreToolUse hook restricting agent git usage
+
+Permits log, status, show, diff, add, mv, rm, commit via heredoc
+(-F - <<'EOF'), and guarded worktree add/list/remove/prune beneath a
+Claude worktree root. Everything else, push above all, is denied.
+Permitted commands fall through to the normal permission flow rather
+than being auto-approved here.
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
+"""
+
 
 import json
 import os
@@ -15,15 +35,27 @@ import sys
 
 ALLOWED_SUBCMDS = frozenset({
     'add',
+    'blame',
+    'cat-file',
+    'describe',
     'diff',
-    'mv',
-    'rm',
+    'grep',
     'log',
+    'ls-files',
+    'mv',
+    'rev-parse',
+    'rm',
+    'shortlog',
     'show',
     'status',
 })
 
-CURSOR_WORKTREE_ROOT = os.path.expanduser('~/.cursor/worktrees')
+WORKTREE_ROOTS = (
+    os.path.join(
+        os.environ.get('CLAUDE_PROJECT_DIR', os.getcwd()),
+        '.claude', 'worktrees'),
+    os.path.expanduser('~/.claude/worktrees'),
+)
 
 WORKTREE_ADD_FORBIDDEN_FLAGS = frozenset({
     '-b',
@@ -47,8 +79,9 @@ GLOBAL_OPTS = frozenset({
     '--no-optional-locks',
 })
 
-SEGMENT_SPLIT_RE = re.compile(r'\s*(?:&&|\|\||;|\|)\s*')
+SEGMENT_SPLIT_RE = re.compile(r'[ \t]*(?:&&|\|\||;|\||\n)[ \t\n]*')
 COMMIT_HEREDOC_RE = re.compile(r"<<\s*'EOF'")
+HEREDOC_OPEN_RE = re.compile(r"<<-?\s*'([A-Za-z_][A-Za-z0-9_]*)'")
 GIT_WORD_RE = re.compile(r'(^|[\s;&|])git([\s;&|]|$)')
 FORBIDDEN_COMMIT_RE = re.compile(
     r'\b(-a|-m|-p|--all|--amend|--message|--no-edit|--only|--patch)\b')
@@ -66,26 +99,59 @@ FORBIDDEN_COMMIT_FLAGS = frozenset({
 })
 
 
-def deny(user_message, agent_message):
+def deny(reason):
     """
-    Emit a hook denial response and exit blocked
+    Emit a PreToolUse denial and exit
     """
 
     print(json.dumps({
-        'permission': 'deny',
-        'user_message': user_message,
-        'agent_message': agent_message,
+        'hookSpecificOutput': {
+            'hookEventName': 'PreToolUse',
+            'permissionDecision': 'deny',
+            'permissionDecisionReason': reason,
+        },
     }))
-    sys.exit(2)
-
-
-def allow():
-    """
-    Emit a hook allow response
-    """
-
-    print(json.dumps({'permission': 'allow'}))
     sys.exit(0)
+
+
+def proceed():
+    """
+    Exit without a decision, deferring to the normal permission flow
+    """
+
+    sys.exit(0)
+
+
+def strip_heredoc_bodies(command):
+    """
+    Remove quoted heredoc bodies, leaving the shell text around them
+
+    A heredoc body is data, not shell. Splitting it into segments makes
+    prose in a commit message look like chained commands, so it is cut
+    away before any analysis. The opening redirection itself is kept, so
+    the commit form remains recognizable.
+
+    :param command: the raw shell command text
+    :return: the command with every quoted heredoc body removed
+    """
+
+    lines = command.split('\n')
+    kept = []
+    idx = 0
+
+    while idx < len(lines):
+        line = lines[idx]
+        kept.append(line)
+        idx += 1
+
+        delims = HEREDOC_OPEN_RE.findall(line)
+        for delim in delims:
+            while idx < len(lines) and lines[idx].strip() != delim:
+                idx += 1
+            if idx < len(lines):
+                idx += 1
+
+    return '\n'.join(kept)
 
 
 def skip_git_globals(args):
@@ -105,16 +171,18 @@ def skip_git_globals(args):
         if token.startswith('-C'):
             idx += 1
             continue
-        if '=' in token and token.split('=', 1)[0] in {'--git-dir', '--work-tree'}:
-            idx += 1
-            continue
+        if '=' in token:
+            head = token.split('=', 1)[0]
+            if head in {'--git-dir', '--work-tree'}:
+                idx += 1
+                continue
         break
     return args[idx:]
 
 
 def is_commit_heredoc_segment(segment):
     """
-    Return True for git commit -F - <<'EOF' ... EOF on the raw shell text
+    Return True for git commit -F - <<'EOF' ... EOF on raw shell text
     """
 
     if not GIT_WORD_RE.search(segment):
@@ -133,7 +201,7 @@ def is_commit_heredoc_segment(segment):
 
 def is_allowed_commit(argv):
     """
-    Return True only for git commit -F - argv (heredoc checked separately)
+    Return True only for git commit -F - argv
     """
 
     rest = skip_git_globals(argv[1:])
@@ -153,24 +221,32 @@ def is_allowed_commit(argv):
     return True
 
 
-def is_cursor_worktree_path(path):
+def is_worktree_path(path):
     """
-    Return True when path is a nested directory under CURSOR_WORKTREE_ROOT
+    Return True when path is a nested directory under a worktree root
     """
 
     try:
         resolved = os.path.realpath(os.path.expanduser(path))
-        root = os.path.realpath(CURSOR_WORKTREE_ROOT)
     except (OSError, TypeError, ValueError):
         return False
 
-    prefix = root + os.sep
-    if not resolved.startswith(prefix):
-        return False
+    for candidate in WORKTREE_ROOTS:
+        try:
+            root = os.path.realpath(candidate)
+        except (OSError, TypeError, ValueError):
+            continue
 
-    rel = os.path.relpath(resolved, root)
-    parts = [part for part in rel.split(os.sep) if part]
-    return len(parts) >= 2
+        prefix = root + os.sep
+        if not resolved.startswith(prefix):
+            continue
+
+        rel = os.path.relpath(resolved, root)
+        parts = [part for part in rel.split(os.sep) if part]
+        if parts:
+            return True
+
+    return False
 
 
 def git_worktree_list_check(tail):
@@ -183,7 +259,7 @@ def git_worktree_list_check(tail):
 
 def git_worktree_add_check(tail):
     """
-    Return True for git worktree add --detach <cursor-worktree-path> [<ref>]
+    Return True for git worktree add --detach <worktree-path> [<ref>]
     """
 
     if '--detach' not in tail:
@@ -202,27 +278,19 @@ def git_worktree_add_check(tail):
     if not positionals:
         return False
 
-    return is_cursor_worktree_path(positionals[0])
+    return is_worktree_path(positionals[0])
 
 
 def git_worktree_remove_check(tail):
     """
-    Return True for git worktree remove [-f|--force] <cursor-worktree-path>
+    Return True for git worktree remove [-f|--force] <worktree-path>
     """
 
     filtered = [token for token in tail if token not in ('-f', '--force')]
     if len(filtered) != 1:
         return False
 
-    return is_cursor_worktree_path(filtered[0])
-
-
-def git_worktree_prune_check(tail):
-    """
-    Return True for git worktree prune with no extra arguments
-    """
-
-    return not tail
+    return is_worktree_path(filtered[0])
 
 
 def git_worktree_check(argv):
@@ -244,7 +312,7 @@ def git_worktree_check(argv):
     if subcmd == 'remove':
         return git_worktree_remove_check(tail)
     if subcmd == 'prune':
-        return git_worktree_prune_check(tail)
+        return not tail
 
     return False
 
@@ -300,46 +368,56 @@ def inspect_segment(segment):
 
     segment = segment.strip()
     if not segment or 'git' not in segment:
-        return True
+        return
 
     if is_commit_heredoc_segment(segment):
-        return True
+        return
 
     try:
         tokens = shlex.split(segment)
     except ValueError:
         deny(
-            'Unparseable shell command containing git was blocked.',
-            'Shell segment could not be parsed; git usage denied.',
-        )
+            'Unparseable shell command containing git was blocked. Split it'
+            ' into separate calls.')
 
     for argv in git_invocations(tokens):
         if not is_allowed_git(argv):
             quoted = ' '.join(shlex.quote(token) for token in argv)
             deny(
-                "Git commands are heavily restricted due to Agents demonstrable"
-                "inability to follow project-level rules.",
-                'Blocked git command: %s' % quoted,
-            )
-
-    return True
+                'Git is restricted to reads plus add, mv, rm, and heredoc'
+                ' commit. Pushing, branch creation, and history rewriting'
+                ' belong to the user alone. Blocked: %s' % quoted)
 
 
 def main():
     """
-    beforeShellExecution hook entry point
+    PreToolUse hook entry point
     """
 
-    payload = json.load(sys.stdin)
-    command = payload.get('command', '')
+    try:
+        payload = json.load(sys.stdin)
+    except ValueError:
+        proceed()
+
+    if payload.get('tool_name') != 'Bash':
+        proceed()
+
+    command = payload.get('tool_input', {}).get('command', '')
     if not command or 'git' not in command:
-        allow()
+        proceed()
+
+    command = strip_heredoc_bodies(command)
+    if 'git' not in command:
+        proceed()
 
     for segment in SEGMENT_SPLIT_RE.split(command):
         inspect_segment(segment)
 
-    allow()
+    proceed()
 
 
 if __name__ == '__main__':
     main()
+
+
+# The end.

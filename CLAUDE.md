@@ -2,9 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Rules
+
+@.claude/rules/testing.md
+@.claude/rules/git.md
+@.claude/rules/python-style.md
+@.claude/rules/docs-boundaries.md
+
+C style lives in [koskari/lib/CLAUDE.md](koskari/lib/CLAUDE.md) and loads when working in the native extension. It applies to `tests/native/` too.
+
 ## Commands
 
-**All Python execution must go through tox — never invoke `python`, `python3`, or `pytest` directly.**
+**All Python execution goes through tox. Never invoke `python`, `python3`, `pip`, or `pytest` directly.**
+
+For a short probe of a Python API or of Koskari syntax, use `uv run python3` or `uv run koskari`. Do not reach for `tox -qe py -- -c` to do it. Never pass `-r` or `--recreate` to tox; if an environment is broken, diagnose the cause.
 
 ```bash
 # Run full test suite (phases in order)
@@ -16,6 +27,10 @@ tox -qe py -- tests/compile/specials/
 
 # Run tests with native debugger output
 tox -qe gdb -- tests/<path>
+
+# Short behavior probe (not tox)
+uv run python3
+uv run koskari
 
 # Lint (flake8)
 make lint
@@ -77,47 +92,5 @@ Native memory tests (C-level) require a container: `make test-native`, `make tes
 Language behavior test cases stored as multi-document YAML shards. Each record has `id`, `feature`, `source`, and `verify` fields (with expected results at `read`, `expand`, `compile`, and/or `eval` phases). Export to Parquet: `make corpus-parquet`.
 
 For questions about Koskari language behavior, syntax, special forms, macros, layouts, or documented/verified examples, query the `koskari-corpus` MCP server (`search_docs`, `search_examples`, `get_reference`) before grepping source — it is the fastest authoritative path.
-
-### Documentation Boundaries
-
-- `docs/` — user-facing Sphinx site. Never link or copy from `design/` here.
-- `design/` — internal design docs, VM contracts, in-progress ideas. May link into `docs/`.
-
-## Koskari Pair Idioms
-
-These apply whenever working with `pair` objects in Python code:
-
-```python
-# Destructure a pair — do NOT use car()/cdr()
-head, tail = body
-
-# Build a list — cons is variadic, do NOT nest
-lst = cons(1, 2, 3, nil)   # correct
-lst = cons(1, cons(2, cons(3, nil)))  # wrong
-```
-
-## Python Style
-
-- New `.py` files begin with the GPLv3 short-form comment block, then a blank line, then a module docstring with `:author:` and `:license:` fields. Do not add per-file `:ai-assistant:` (or similar) attribution fields; AI-assisted development is disclosed once at the project level (see [docs/project/provenance.md](docs/project/provenance.md)).
-- End every module with `# The end.` followed by a single newline.
-- Two blank lines between all top-level definitions and between methods.
-- Multi-line function signatures: double-indent continuation parameters (8 spaces); close paren on the last parameter line.
-- Docstrings: triple double-quoted, opening/closing `"""` on their own lines, blank line between closing `"""` and first statement. End a line with a period only when another sentence follows in the same paragraph.
-- Use `typing.Union` and related aliases; avoid the `X | Y` syntax (Python 3.10+) and `from __future__ import annotations`.
-- `setup.cfg` is authoritative for package config, tox, flake8, and pytest settings. Do not add `pyproject.toml` content or Black config.
-
-## C Style
-
-- 2-space indentation; 79-character line limit.
-- Files start with the GPLv3 block comment, then a `/** ... */` doc comment. End with `// The end.`.
-- Multi-line function signatures: 4-space indent on continuation parameters.
-- Negated pointer checks: `if (! ptr)` not `if (ptr == NULL)` or `if (!ptr)`.
-- Section separators: `/* === Section name === */` with two blank lines before and one after.
-
-## Git
-
-Do not push. Do not run `git restore`, `git reset`, `git revert`, `git checkout`, `git merge`, or create/delete branches — only the user performs those operations. `git add` and `git commit` only when explicitly requested.
-
-Do not append `Claude-Session:` trailers to commit messages.
 
 # The end.
