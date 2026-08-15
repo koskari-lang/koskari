@@ -50,7 +50,7 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
 
   /* The frozen span leaves the live chain; its segments' unwind-cache
      back links cannot survive the detach. */
-  kos_dyn_clear_seg_backs(ctx_active, NULL);
+  kos_dyn_clear_unwind_caches(ctx_active, NULL);
 
   SAY("[gen] freeze storing in gen->active: chain ");
   for (n = ctx_active; n; n = KosDynNode_PARENT(n))

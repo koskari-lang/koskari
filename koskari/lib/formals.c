@@ -1842,7 +1842,7 @@ int KosFormals_SimpleStealApply(
 
 
 /**
-   Steal-bind positionals from the tail of a stack block: move the top
+   Steal-bind positionals from the tail of a segment: move the top
    nargs references into namespace fast slots 0..nargs-1 and retract the
    block length in the same step, so the transfer and the window
    accounting cannot come apart -- the moved span must not be dropped by

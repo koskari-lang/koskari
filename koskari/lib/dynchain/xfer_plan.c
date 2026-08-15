@@ -1584,7 +1584,7 @@ static int kos_delimited_invoke_inplace(
    * unwind-cache back links die with the detach. */
   KosDynNode_PARENT(shift) = NULL;
   KosDynDelim_RETURN_CHAIN(delim) = span_top;
-  kos_dyn_clear_seg_backs(span_top, NULL);
+  kos_dyn_clear_unwind_caches(span_top, NULL);
 
   /* Wire prompt <- delim <- invocation prompt <- slice so the slice's
    * natural unwind leaves the invocation prompt (then the delim) at
@@ -1598,7 +1598,7 @@ static int kos_delimited_invoke_inplace(
     KosDynNode_PARENT(child) = (KosDynNode *) invocation_prompt;
     /* The re-spliced slice span's back links likewise predate the new
      * shape. */
-    kos_dyn_clear_seg_backs(slice_top, (KosDynNode *) invocation_prompt);
+    kos_dyn_clear_unwind_caches(slice_top, (KosDynNode *) invocation_prompt);
   }
 
   /* Displace the resume frame's live state with the captured resume

@@ -263,12 +263,13 @@ int KosStack_PopTailPtr(KosSegment **self, size_t count, PyObject **dest);
 
 /*
    Inline fast paths for the hot stack operations in the opcode
-   dispatch loop.  The common case -- a block with spare capacity for a
-   push, or enough occupied slots for a pop/peek/drop -- is a couple of
-   loads and one store, with no function call.  Every slow or failing
-   case (grow, empty-block allocation, underrun reporting) delegates to
-   the out-of-line implementations in stack.c, so the block-management
-   logic and the error strings live in exactly one place.
+   dispatch loop.  The common case -- a segment with spare capacity for
+   a push, or enough occupied slots for a pop/peek/drop -- is a couple
+   of loads and one store, with no function call.  Every slow or
+   failing case (grow, empty-segment allocation, underrun reporting)
+   delegates to the out-of-line implementations in stack.c, so the
+   segment-management logic and the error strings live in exactly one
+   place.
 
    Semantics are bit-identical to the out-of-line functions, including
    the count == 0 quirks (TailPtr returns NULL with no error; DropNoErr
@@ -412,7 +413,7 @@ static inline int kos_stack_pop_tail_ptr_fast(
 
 
 /**
-   KosStackSteal holds stolen tail elements from a stack block. Uses an
+   KosStackSteal holds stolen tail elements from a segment. Uses an
    embedded array for small counts; allocates for larger. Caller must
    invoke KosStackSteal_Free when done.
 

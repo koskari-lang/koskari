@@ -17,7 +17,7 @@
    PUSH_FOREACH: no arg. Break target is derived from the extent table
    (pop_pc + 1), not from the instruction argument. Stack: [iterable].
    Pops iterable, creates iterator, stores it in region (result defaults
-   to NULL), pushes FOREACH region and stack block. Continue target =
+   to NULL), pushes FOREACH region (with its own segment). Continue target =
    next insn.
 */
 

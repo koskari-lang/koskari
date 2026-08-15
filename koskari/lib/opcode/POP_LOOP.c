@@ -14,7 +14,7 @@
 */
 
 /**
-   POP_LOOP: arg unused. Pop LOOP region, drop stack block, push
+   POP_LOOP: arg unused. Pop LOOP region, drop its segment, push
    KosDynLoop_RESULT to the operand stack as the loop expression result.
 */
 

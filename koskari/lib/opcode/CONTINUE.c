@@ -16,7 +16,7 @@
 /**
    CONTINUE: arg = result count (0 = None, 1 = single value, N = tuple of N).
    Jump to innermost loop/foreach continue target. Updates the region result
-   and clears the loop stack block before jumping. Raises RuntimeError if
+   and clears the loop segment before jumping. Raises RuntimeError if
    no LOOP/FOREACH region on the chain.
 */
 

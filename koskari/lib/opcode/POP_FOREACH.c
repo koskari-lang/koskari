@@ -14,7 +14,7 @@
 */
 
 /**
-   POP_FOREACH: arg unused. Pop FOREACH region, drop stack block, push
+   POP_FOREACH: arg unused. Pop FOREACH region, drop its segment, push
    KosDynForeach_RESULT to the operand stack as the loop expression result.
    When region result is NULL, push None.
 */

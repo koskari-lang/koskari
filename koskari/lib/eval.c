@@ -873,7 +873,7 @@ static int get_prompt_id_from_insn(
 
 #if KOS_STACK_TRACE
 /**
-   Print current stack block address/id and length when KOS_ENABLE_DEBUG;
+   Print current segment address/id and length when KOS_ENABLE_DEBUG;
    also print top two slot values as integers when PyLong.
 */
 static void trace_stack(const char *prefix, KosSegment *stack) {

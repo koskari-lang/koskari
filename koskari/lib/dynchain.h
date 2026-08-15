@@ -58,7 +58,8 @@
    KOS_DYN_PARAM     - Parameter bindings (parameterize extent)
    KOS_DYN_WITH      - Context manager (with / dyn-with); multi vs single-shot
                        is u.with.shot (see KOS_DYN_WITH_SHOT_*), not a second kind
-   KOS_DYN_SHIFT     - Shift handler block (push stack block; no frame/namespace)
+   KOS_DYN_SHIFT     - Shift handler bookmark (transparent; no segment,
+                       frame, or namespace of its own)
    KOS_DYN_CC_RAISE  - Sentinel node holding a KoskariContinuationApply exception
                        for the foreign-token transfer path; its unwind re-raises the
                        stored exception so the eval loop exits with KOS_RES_RAISE
@@ -224,8 +225,15 @@ struct KosDynNode {
   uint32_t flags;       /* KosDynFlags bitfield */
   uint32_t caps;        /* capability bits for generic code (KOS_DYN_CAP_*) */
   uint32_t node_id;     /* stable allocation ID; copied on clone for LCA matching */
-  KosSegment *stack; /* owned operand-stack extent; NULL if none (inherit ancestor) */
-  PyObject *ns;         /* owned namespace extent; NULL if none (inherit ancestor) */
+  /* Owned operand segment. Region kinds always own one (aimed at the
+     embedded iseg at construction or push, heap after a spill); NULL
+     marks a transfer bookmark, which inherits the enclosing extent's
+     segment. */
+  KosSegment *stack;
+  /* Owned namespace: an introduced scope for KOS_DYN_CAP_BINDS_NS
+     kinds, otherwise the owned live-ns fill taken at push. NULL only
+     in the placeholder-frame window and on unfilled splices. */
+  PyObject *ns;
 
   union {
     struct {
@@ -746,7 +754,8 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame);
 /**
    Free a frame node and release its resources.
 
-   Releases the stack blocks, DECREFs the namespace.
+   Releases code; the segment and namespace release in the freelist
+   return.
    Does NOT free the parent chain.
 
    :param frame: frame to free (may be NULL)

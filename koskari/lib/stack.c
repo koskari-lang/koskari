@@ -55,7 +55,7 @@ _Static_assert(KOS_SEGMENT_INLINE_SLOTS < BLOCK_NEW_SIZE,
 
 static size_t block_freecount = 0;
 
-/* Linked-list cache for stack blocks; same pattern used for dyn nodes and context. */
+/* Linked-list cache for heap segments; same pattern used for dyn nodes and context. */
 static KosSegment *block_freelist = NULL;
 
 
@@ -72,7 +72,7 @@ KosSegment *KosStack_NewEmpty(void) {
     KOS_TRACE_FL_ALLOC("stack_block", 0);
     self = PyMem_Malloc(KosSegment_NEEDED_SIZE(BLOCK_NEW_SIZE));
     if (! self) {
-      PyErr_SetString(PyExc_RuntimeError, "block malloc failed");
+      PyErr_SetString(PyExc_RuntimeError, "segment malloc failed");
       return NULL;
     }
     KosSegment_MAX(self) = BLOCK_NEW_SIZE;
@@ -125,13 +125,13 @@ static KosSegment *KosStack_Grow(KosSegment *self) {
      Anything past that is considered an error, indicating there's
      some problem in the bytecode that is endlessly growing the stack */
   if (max > BLOCK_MAX_SIZE) {
-    PyErr_SetString(PyExc_RuntimeError, "block cannot grow over limit");
+    PyErr_SetString(PyExc_RuntimeError, "segment cannot grow over limit");
     return NULL;
   }
 
   self = PyMem_Realloc(self, KosSegment_NEEDED_SIZE(max));
   if (! self) {
-    PyErr_SetString(PyExc_RuntimeError, "block realloc failed");
+    PyErr_SetString(PyExc_RuntimeError, "segment realloc failed");
     return NULL;
   }
 
@@ -170,13 +170,13 @@ void KosStack_Release(KosSegment *self) {
     return;
   }
 
-  /* Grown blocks (max > BLOCK_NEW_SIZE) are from KosStack_Grow via
+  /* Grown segments (max > BLOCK_NEW_SIZE) are from KosStack_Grow via
      PyMem_Realloc. Do not cache them: Valgrind reports them as indirectly
      lost when the freelist chain crosses Python-allocated memory. */
   if (self->max > BLOCK_NEW_SIZE) {
     KOS_TRACE_FL_RETURN("stack_block", 1);
     PyMem_Free(self);
-    SAY(" grown block, dealloced");
+    SAY(" grown segment, dealloced");
   } else if (block_freecount < BLOCK_MAX_FREE) {
     KOS_TRACE_FL_RETURN("stack_block", 0);
     KosSegment_LEN(self) = 0;
@@ -226,18 +226,27 @@ KosSegment *KosStack_DeepCopy(KosSegment *block) {
     return NULL;
 
   size_t len = KosSegment_LEN(block);
+  KosSegment *copy;
 
-  KosSegment *copy = KosStack_NewEmpty();
-  if (! copy)
-    return NULL;
+  if (len <= BLOCK_NEW_SIZE) {
+    copy = KosStack_NewEmpty();
+    if (! copy)
+      return NULL;
+  } else {
+    /* size the segment in one allocation: the next power-of-two
+       capacity Grow would have reached */
+    size_t cap = BLOCK_NEW_SIZE;
+    while (cap < len)
+      cap *= 2;
 
-  while (KosSegment_MAX(copy) < len) {
-    KosSegment *grown = KosStack_Grow(copy);
-    if (! grown) {
-      KosStack_Release(copy);
+    copy = PyMem_Malloc(KosSegment_NEEDED_SIZE(cap));
+    if (! copy) {
+      PyErr_SetString(PyExc_RuntimeError, "segment malloc failed");
       return NULL;
     }
-    copy = grown;
+    KosSegment_MAX(copy) = cap;
+    KosSegment_LEN(copy) = 0;
+    KosSegment_BACK(copy) = NULL;
   }
 
   for (size_t i = 0; i < len; i++) {
@@ -256,7 +265,7 @@ int KosStack_PushRef(
     PyObject *val) {
 
   if (KOS_STACK_TRACE) {
-    SAYF("[stack] PushRef block=%p len=%zu accepting %R",
+    SAYF("[stack] PushRef seg=%p len=%zu accepting %R",
          (void *) *self, *self ? KosSegment_LEN(*self) : 0, val);
   }
 
@@ -288,7 +297,7 @@ int KosStack_PUSH(
     PyObject *val) {
 
   if (KOS_STACK_TRACE) {
-    SAYF("[stack] PUSH block=%p len=%zu accepting %R",
+    SAYF("[stack] PUSH seg=%p len=%zu accepting %R",
          (void *) *self, *self ? KosSegment_LEN(*self) : 0, val);
   }
 
@@ -361,7 +370,7 @@ PyObject *KosStack_PopRef(KosSegment **self) {
 
   size_t len = s->len;
   if (KOS_STACK_TRACE)
-    SAYF("[stack] Pop block=%p len=%zu", (void *) s, len);
+    SAYF("[stack] Pop seg=%p len=%zu", (void *) s, len);
   if (! len) {
     if (KOS_STACK_TRACE)
       SAY("underrun");
@@ -375,7 +384,7 @@ PyObject *KosStack_PopRef(KosSegment **self) {
   /* stolen reference */
   PyObject *ret = s->objs[len];
   if (KOS_STACK_TRACE)
-    SAYF("[stack] Pop block=%p len=%zu -> %R", (void *) s, len, ret);
+    SAYF("[stack] Pop seg=%p len=%zu -> %R", (void *) s, len, ret);
   return ret;
 }
 
@@ -874,6 +883,10 @@ PyObject *KosStack_PopTailDictFromNames(
 
 
 int koskari_stack_init(PyObject *mod) {
+  /* Nothing to register: the unit has no Python-visible surface since
+     the Stack wrapper type was removed. Kept as the standard per-unit
+     init hook (lib.c calls every unit's). */
+  (void) mod;
   return 0;
 }
 

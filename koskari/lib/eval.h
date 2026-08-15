@@ -219,7 +219,7 @@ struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
 
-  KosSegment **block;     /* non-owning: &innermost dynnode stack; frozen snapshot */
+  KosSegment **block;        /* non-owning: &innermost dynnode stack; frozen snapshot */
   PyObject *namespace;       /* borrowed: active namespace object */
 
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
@@ -315,7 +315,7 @@ struct KosContext {
 
 /**
   KosEvalState holds a borrowed pointer to the heap KosContext plus the live
-  frame, code, operand-stack block pointer, and namespace for the active eval
+  frame, code, operand-segment slot, and namespace for the active eval
   slice.
 
   See design/interpreter/eval-state-live-authority.md and the archived
@@ -340,7 +340,7 @@ struct KosEvalState {
   KosDynFrame *frame; /* live top frame; thaw and kos_dyn_* retarget */
   KosCode *code;      /* live code from frame */
   KosSegment **block; /* live innermost stack slot; non-owning */
-  PyObject *namespace;   /* live namespace; borrowed */
+  PyObject *namespace; /* live namespace; borrowed */
   uint32_t pc;        /* live next-instruction PC (freeze copies to frame) */
   uint32_t acting_pc; /* live acting PC (freeze copies to frame) */
 };
