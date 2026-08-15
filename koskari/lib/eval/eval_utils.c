@@ -980,10 +980,7 @@ KosOpResult KosEvalState_CallNoArgs(
     if (KosInstanceCall_Check(callable)) {
       PyObject *call_fn = kos_instance_call_target(callable);
       if (call_fn) {
-        /* self is the sole positional. */
-        PyObject *self_arg[1];
-        self_arg[0] = callable;
-        return KosEvalState_Call(es, call_fn, self_arg, 1, NULL, tail_call);
+        return KosEvalState_Call(es, call_fn, &callable, 1, NULL, tail_call);
       }
     }
     int tail_defer_return = 0;
