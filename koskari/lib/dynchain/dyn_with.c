@@ -639,11 +639,6 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
 */
 static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
   KosDynWith *with_node = (KosDynWith *) node;
-  {
-    int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
-    if (tr != 0)
-      return tr;
-  }
   Py_VISIT(KosDynWith_MGR(with_node));
   Py_VISIT(KosDynWith_ENTER(with_node));
   Py_VISIT(KosDynWith_EXIT(with_node));

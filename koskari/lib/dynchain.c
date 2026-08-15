@@ -630,20 +630,92 @@ static void kos_dyn_clear_seg_backs(KosDynNode *from, KosDynNode *stop) {
    in their constructors; this covers the region kinds that inherited
    before.
 */
-static int kos_dyn_ensure_region_segment(KosDynNode *node) {
+static void kos_dyn_ensure_region_segment(KosDynNode *node) {
 
   if (KosDynNode_STACK(node))
-    return 0;
+    return;
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
     case KOS_DYN_NS:
     case KOS_DYN_WIND:
+    case KOS_DYN_COLLECT:
       kos_dynnode_use_inline_segment(node);
-      return 0;
+      break;
     default:
-      return 0;
+      break;
   }
+}
+
+
+/**
+   Shared push preparation: attach the region segment and run the
+   namespace owned fill. A node that does not introduce its own
+   namespace carries an owned reference to the live one, so on pop the
+   revealed node always answers the namespace question. Frames keep
+   their exact semantics (a placeholder frame's NULL ns stays NULL
+   until its real namespace is bound).
+*/
+static void kos_dyn_prepare_push(KosEvalState *es, KosDynNode *node) {
+
+  kos_dyn_ensure_region_segment(node);
+
+  if (! KosDynNode_IS_FRAME(node) && ! KosDynNode_NS(node)) {
+    PyObject *live_ns = KosEvalState_NAMESPACE(es);
+    if (live_ns) {
+      Py_INCREF(live_ns);
+      KosDynNode_NS(node) = live_ns;
+    }
+  }
+}
+
+
+
+
+/**
+   Copy a source node's segment onto a stackless clone: into the
+   clone's embedded storage when it fits, a heap deep copy otherwise.
+   Copies are born with back NULL. No-op when the clone already has a
+   segment or the source has none.
+
+   :return: 0 on success, -1 on allocation failure
+*/
+static int kos_dyn_clone_copy_segment(KosDynNode *cloned, KosDynNode *src) {
+
+  KosSegment *seg = KosDynNode_STACK(src);
+
+  if (KosDynNode_STACK(cloned) || ! seg)
+    return 0;
+
+  size_t len = KosSegment_LEN(seg);
+
+  if (len <= KOS_SEGMENT_INLINE_SLOTS) {
+    KosSegment *dst = kos_dynnode_use_inline_segment(cloned);
+    for (size_t i = 0; i < len; i++) {
+      PyObject *val = seg->objs[i];
+      Py_INCREF(val);
+      dst->objs[i] = val;
+    }
+    KosSegment_LEN(dst) = len;
+    return 0;
+  }
+
+  KosDynNode_STACK(cloned) = KosStack_DeepCopy(seg);
+  return KosDynNode_STACK(cloned) ? 0 : -1;
+}
+
+
+/**
+   Install-time segment stamp: record the displaced owning slot as the
+   unwind cache and count inline installs.
+*/
+static inline void kos_dyn_stamp_installed_segment(
+    KosSegment *seg,
+    KosSegment **live_slot) {
+
+  KosSegment_BACK(seg) = live_slot;
+  if (KosSegment_IS_INLINE(seg))
+    KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
 }
 
 
@@ -684,6 +756,30 @@ static int kos_dyn_repush_stolen(KosEvalState *es, KosStackSteal *vals) {
   vals->len = 0;
   KosStackSteal_Free(vals);
   return 0;
+}
+
+
+/**
+   Pop a transparent extent at dyn_top: steal its remaining values,
+   commit the parent as the new top, free the node, and repush the
+   values onto the revealed segment. The caller performs any per-kind
+   teardown (e.g. param restore) first.
+*/
+static int kos_dyn_pop_transparent_deliver(
+    KosEvalState *es,
+    KosDynNode *node) {
+
+  KosStackSteal vals;
+  KosDynNode *parent = KosDynNode_PARENT(node);
+
+  if (kos_dyn_steal_extent_values(node, &vals) < 0)
+    return -1;
+
+  kos_dyn_commit_dyn_top(es, parent);
+  KosDynNode_PARENT(node) = NULL;
+  kos_dynnode_free(node);
+
+  return kos_dyn_repush_stolen(es, &vals);
 }
 
 
@@ -1129,11 +1225,8 @@ static void kos_dyn_retarget_after_push(
   /* Install-time back link: the pushed node's segment remembers the
      owning slot it displaced, for uninstall restoration and parent
      delivery. Inheriting nodes (bl == live slot) link nothing. */
-  if (bl != KosEvalState_BLOCK(es) && *bl) {
-    KosSegment_BACK(*bl) = KosEvalState_BLOCK(es);
-    if (KosSegment_IS_INLINE(*bl))
-      KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
-  }
+  if (bl != KosEvalState_BLOCK(es) && *bl)
+    kos_dyn_stamp_installed_segment(*bl, KosEvalState_BLOCK(es));
 
   kos_dyn_apply_live(es, ft, bl, ns, 1);
 
@@ -1236,36 +1329,32 @@ static void kos_dyn_retarget_after_pop(
     return;
   }
 
-  if (need_block && ! need_frame && ! walk_ns
-      && new_top && KosDynNode_STACK(new_top)) {
-    kos_dyn_apply_live(es, KosEvalState_FRAME(es), &KosDynNode_STACK(new_top),
-                       ns_new, 0);
-    return;
-  }
-
-  /* Unwind cache: the removed owner's segment remembers the slot it
-     displaced at install. Only when the block alone needs restoring;
-     when frame or ns also changed, one walk resolves all three. The
-     segment is still alive here -- uninstall frees the node only
-     after this retarget completes. */
-  if (need_block && ! need_frame && ! walk_ns
-      && KosSegment_BACK(KosDynNode_STACK(removed))) {
-    KosSegment **cached = KosSegment_BACK(KosDynNode_STACK(removed));
+  /* Block-only restore: the removed owner's segment remembers the
+     slot it displaced at install (still alive here -- uninstall frees
+     the node only after this retarget completes); a survivor that
+     owns a stack supplies the same answer when the cache is missing.
+     When frame or ns also changed, one walk resolves everything. */
+  if (need_block && ! need_frame && ! walk_ns) {
+    KosSegment **slot = KosSegment_BACK(KosDynNode_STACK(removed));
+    if (! slot && new_top && KosDynNode_STACK(new_top))
+      slot = &KosDynNode_STACK(new_top);
+    if (slot) {
 #if KOS_DEBUG_PATCH_DYN_CACHES
-    {
-      KosDynFrame *ft_dbg = NULL;
-      KosSegment **bl_dbg = NULL;
-      PyObject *ns_dbg = NULL;
-      kos_dyn_walk_live_from(es, new_top, &ft_dbg, &bl_dbg, &ns_dbg);
-      if (cached != bl_dbg) {
-        PyErr_SetString(PyExc_SystemError,
-                        "kos_dyn_retarget_after_pop: back cache drift"
-                        " vs walk");
+      {
+        KosDynFrame *ft_dbg = NULL;
+        KosSegment **bl_dbg = NULL;
+        PyObject *ns_dbg = NULL;
+        kos_dyn_walk_live_from(es, new_top, &ft_dbg, &bl_dbg, &ns_dbg);
+        if (slot != bl_dbg) {
+          PyErr_SetString(PyExc_SystemError,
+                          "kos_dyn_retarget_after_pop: back cache drift"
+                          " vs walk");
+        }
       }
-    }
 #endif
-    kos_dyn_apply_live(es, KosEvalState_FRAME(es), cached, ns_new, 0);
-    return;
+      kos_dyn_apply_live(es, KosEvalState_FRAME(es), slot, ns_new, 0);
+      return;
+    }
   }
 
   /* Frame pop: every fact is cache-available -- the back frame
@@ -1485,21 +1574,7 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   if (! node)
     return -1;
 
-  if (kos_dyn_ensure_region_segment(node) < 0)
-    return -1;
-
-  /* Namespace owned fill: a node that does not introduce its own
-     namespace carries an owned reference to the live one, so on pop
-     the revealed node always answers the namespace question. Frames
-     keep their exact semantics (a placeholder frame's NULL ns stays
-     NULL until its real namespace is bound). */
-  if (! KosDynNode_IS_FRAME(node) && ! KosDynNode_NS(node)) {
-    PyObject *live_ns = KosEvalState_NAMESPACE(es);
-    if (live_ns) {
-      Py_INCREF(live_ns);
-      KosDynNode_NS(node) = live_ns;
-    }
-  }
+  kos_dyn_prepare_push(es, node);
 
   prev = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = node;
@@ -1540,21 +1615,7 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
   if (! node)
     return -1;
 
-  if (kos_dyn_ensure_region_segment(node) < 0)
-    return -1;
-
-  /* Namespace owned fill: a node that does not introduce its own
-     namespace carries an owned reference to the live one, so on pop
-     the revealed node always answers the namespace question. Frames
-     keep their exact semantics (a placeholder frame's NULL ns stays
-     NULL until its real namespace is bound). */
-  if (! KosDynNode_IS_FRAME(node) && ! KosDynNode_NS(node)) {
-    PyObject *live_ns = KosEvalState_NAMESPACE(es);
-    if (live_ns) {
-      Py_INCREF(live_ns);
-      KosDynNode_NS(node) = live_ns;
-    }
-  }
+  kos_dyn_prepare_push(es, node);
 
   KosEvalState_DYN_TOP(es) = node;
   kos_dyn_retarget_after_push(es, node);
@@ -1922,29 +1983,13 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
     KosDynNode_NS(cloned) = KosDynNode_NS(node);
   }
 
-  /* Segment copy is centralized here: per-kind clones carry only their
-     payload. Values that fit go into the clone's embedded storage;
-     larger sources deep-copy to a heap segment. Copies are born with
-     back NULL either way. */
-  if (cloned && ! KosDynNode_STACK(cloned) && KosDynNode_STACK(node)) {
-    KosSegment *src = KosDynNode_STACK(node);
-    size_t len = KosSegment_LEN(src);
-
-    if (len <= KOS_SEGMENT_INLINE_SLOTS) {
-      KosSegment *dst = kos_dynnode_use_inline_segment(cloned);
-      for (size_t i = 0; i < len; i++) {
-        PyObject *val = src->objs[i];
-        Py_INCREF(val);
-        dst->objs[i] = val;
-      }
-      KosSegment_LEN(dst) = len;
-    } else {
-      KosDynNode_STACK(cloned) = KosStack_DeepCopy(src);
-      if (! KosDynNode_STACK(cloned)) {
-        kos_dynnode_free(cloned);
-        return NULL;
-      }
-    }
+  /* Segment copy is centralized here for clones built through this
+     dispatcher; kos_dynframe_clone copies its own segment so its
+     direct callers (delim return-frame snapshot, capture baseline)
+     stay faithful too. */
+  if (cloned && kos_dyn_clone_copy_segment(cloned, node) < 0) {
+    kos_dynnode_free(cloned);
+    return NULL;
   }
 
   return cloned;
@@ -2775,9 +2820,15 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
   if (! node)
     return 0;
 
-  /* The base ns field is uniformly owned; visit it here, once, for
-     every kind. Per-kind traversals cover only their payloads. */
+  /* The base ns and stack fields are uniformly owned; visit them
+     here, once, for every kind. Per-kind traversals cover only their
+     payloads. */
   Py_VISIT(KosDynNode_NS(node));
+  {
+    int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
+    if (tr != 0)
+      return tr;
+  }
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_FRAME:

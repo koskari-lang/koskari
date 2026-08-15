@@ -36,7 +36,7 @@ static int test_dynframe_new_free(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create namespace dict");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     TEST_ASSERT_EQ(KosDynNode_KIND(frame), KOS_DYN_FRAME, "frame kind is FRAME");
@@ -55,7 +55,7 @@ static int test_dynframe_clone(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create namespace dict");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosDynFrame_PC(frame) = 42;
@@ -345,7 +345,7 @@ static int test_transfer_plan_free_with_inject_exc_type(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create namespace dict");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -384,7 +384,7 @@ static int test_dyngen_free_disposes_active(void) {
     TEST_ASSERT_NOT_NULL(gen, "create gen");
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns, NULL);
+    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
 
     KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
@@ -404,7 +404,7 @@ static int test_dyngen_bootstrap_no_active(void) {
     TEST_ASSERT_NOT_NULL(gen, "create gen");
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns, NULL);
+    frame = kos_dynframe_new((KosDynNode *) gen, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
     TEST_ASSERT_NULL(KosDynGen_ACTIVE(gen), "ACTIVE unset at bootstrap");
 
@@ -434,7 +434,7 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
     ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    frame = kos_dynframe_new(NULL, NULL, ns, NULL);
+    frame = kos_dynframe_new(NULL, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     ctx = KosContext_New(frame);
@@ -478,7 +478,7 @@ static int test_dynwith_free_exc_unconditional(void) {
     ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    frame = kos_dynframe_new(NULL, NULL, ns, NULL);
+    frame = kos_dynframe_new(NULL, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     ctx = KosContext_New(frame);
@@ -522,7 +522,7 @@ static int test_dyndelim_clone_no_chain_alias(void) {
     ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    inner = kos_dynframe_new(NULL, NULL, ns, NULL);
+    inner = kos_dynframe_new(NULL, NULL, ns);
     TEST_ASSERT_NOT_NULL(inner, "create inner frame chain");
 
     delim = kos_dyndelim_new(

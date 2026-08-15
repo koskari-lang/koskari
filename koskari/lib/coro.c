@@ -45,7 +45,7 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
     return NULL;
   }
   KosDynFrame *frame = kos_dynframe_new(
-      (KosDynNode *) gen, code, ns, NULL);
+      (KosDynNode *) gen, code, ns);
   if (! frame) {
     kos_dyngen_free(gen);
     Py_DECREF(ns);
@@ -87,7 +87,7 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
   if (KosCode_YIELDS((KosCode *) code))
     return KosAsyncGen_NewFromCodeAndNs((KosCode *) code, ns);
 
-  KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
+  KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code, ns);
   if (! frame)
     return NULL;
 

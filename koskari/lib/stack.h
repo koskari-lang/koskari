@@ -104,14 +104,14 @@ static inline KosSegment *kos_inline_segment_init(KosInlineSegment *is) {
 
 
 /**
-   Detach the segment in slot for storage away from its owning node.
-   A heap segment is returned as-is. An inline segment cannot outlive
-   or leave its node: its contents move (refcount-free) to a fresh
-   heap segment, the inline storage is left empty, and the heap
-   segment is returned. Returns NULL on allocation failure (slot
-   contents unchanged).
+   Detach a segment for storage away from its owning node. A heap
+   segment is returned as-is. An inline segment cannot outlive or
+   leave its node: its contents move (refcount-free) to a fresh heap
+   segment, the inline storage is left empty, and the heap segment is
+   returned. Returns NULL on allocation failure (source untouched).
+   The caller owns re-pointing its slot.
 */
-KosSegment *KosStack_Detach(KosSegment **slot);
+KosSegment *KosStack_Detach(KosSegment *seg);
 
 
 /* === accessor macros === */

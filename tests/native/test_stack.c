@@ -892,7 +892,7 @@ static int test_seg_inline_detach(void) {
     KosStack_PushRef(&seg, v1);
     KosStack_PushRef(&seg, v1);
 
-    KosSegment *detached = KosStack_Detach(&seg);
+    KosSegment *detached = KosStack_Detach(seg);
     TEST_ASSERT_NOT_NULL(detached, "detached");
     TEST_ASSERT(detached != &is.hdr, "moved to heap");
     TEST_ASSERT(! KosSegment_IS_INLINE(detached), "heap segment");
@@ -900,7 +900,7 @@ static int test_seg_inline_detach(void) {
     TEST_ASSERT_EQ(Py_REFCNT(v1), initial + 2, "refs moved, not churned");
     TEST_ASSERT_EQ(KosSegment_LEN(&is.hdr), 0, "inline emptied");
 
-    KosSegment *again = KosStack_Detach(&detached);
+    KosSegment *again = KosStack_Detach(detached);
     TEST_ASSERT_SAME(again, detached, "heap detaches as itself");
 
     KosStack_Release(detached);

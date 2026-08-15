@@ -721,15 +721,13 @@ typedef int (*KosHookInvokeFn)(KosEvalState *es, void *hook_state);
    :param parent: parent node in dynamic chain (or NULL for root)
    :param code: bytecode object (borrowed reference)
    :param ns: namespace (reference is stolen)
-   :param stack: operand stack (ownership transferred)
 
    :return: new frame node, or NULL on error
 */
 KosDynFrame *kos_dynframe_new(
-   KosDynNode *parent,
-   KosCode *code,
-   PyObject *ns,
-   KosSegment *stack);
+    KosDynNode *parent,
+    KosCode *code,
+    PyObject *ns);
 
 
 /**

@@ -1609,7 +1609,7 @@ static int kos_delimited_invoke_inplace(
      an inline segment cannot leave its node, so detach spills it to a
      heap segment first. */
   {
-    KosSegment *displaced = KosStack_Detach(&KosDynFrame_STACK(resume_frame));
+    KosSegment *displaced = KosStack_Detach(KosDynFrame_STACK(resume_frame));
     if (! displaced && KosDynFrame_STACK(resume_frame)) {
       if (resume_stack)
         KosStack_Release(resume_stack);

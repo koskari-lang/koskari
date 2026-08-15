@@ -20,7 +20,9 @@ static KosDynCollect *kos_dyncollect_new(
   kos_dynnode_init((KosDynNode *) col_node, KOS_DYN_COLLECT, parent,
                    KOS_DYN_CAP_BINDS_NS);
   KosDynNode_NS((KosDynNode *) col_node) = ns;
-  kos_dynnode_use_inline_segment((KosDynNode *) col_node);
+  /* segment attaches at push (kos_dyn_ensure_region_segment): a clone
+     built through this constructor must arrive stackless so the
+     centralized copy in kos_dyn_clone can carry the source's values */
   return col_node;
 }
 
@@ -119,8 +121,8 @@ int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
    GC traverse a KOS_DYN_COLLECT: visit node-owned namespace for collector.
 */
 static int dynnode_traverse_collect(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
-  if (tr != 0)
-    return tr;
+  (void) node;
+  (void) visit;
+  (void) arg;
   return 0;
 }

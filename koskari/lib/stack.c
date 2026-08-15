@@ -87,27 +87,39 @@ KosSegment *KosStack_NewEmpty(void) {
 }
 
 
+/**
+   Move an inline segment's contents (refcount-free) to a fresh heap
+   segment, leaving the inline storage empty. Returns NULL on
+   allocation failure with the source untouched.
+*/
+static KosSegment *kos_segment_spill(KosSegment *self) {
+  KosSegment *heap = KosStack_NewEmpty();
+  if (! heap)
+    return NULL;
+
+  memcpy(heap->objs, self->objs, self->len * sizeof(PyObject *));
+  KosSegment_LEN(heap) = self->len;
+  KosSegment_BACK(heap) = KosSegment_BACK(self);
+
+  KosSegment_LEN(self) = 0;
+  KosSegment_BACK(self) = NULL;
+  return heap;
+}
+
+
 static KosSegment *KosStack_Grow(KosSegment *self) {
-  size_t max = self->max * 2;
 
   /* Inline segments live inside their owning node and cannot realloc:
-     spill the contents (refcount-free) to a fresh heap segment. The
-     caller updates the owning slot; the inline storage goes dormant
-     until its node is reused. */
+     spill to a fresh heap segment. The caller updates the owning
+     slot; the inline storage goes dormant until its node is reused. */
   if (KosSegment_IS_INLINE(self)) {
-    KosSegment *heap = KosStack_NewEmpty();
-    if (! heap)
-      return NULL;
-
-    KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_SPILL);
-    memcpy(heap->objs, self->objs, self->len * sizeof(PyObject *));
-    KosSegment_LEN(heap) = self->len;
-    KosSegment_BACK(heap) = KosSegment_BACK(self);
-
-    KosSegment_LEN(self) = 0;
-    KosSegment_BACK(self) = NULL;
+    KosSegment *heap = kos_segment_spill(self);
+    if (heap)
+      KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_SPILL);
     return heap;
   }
+
+  size_t max = self->max * 2;
 
   /* stack starts 16, then doubles each grow up to the BLOCK_MAX_SIZE.
      Anything past that is considered an error, indicating there's
@@ -202,23 +214,10 @@ int KosStack_Traverse(
 }
 
 
-KosSegment *KosStack_Detach(KosSegment **slot) {
-  KosSegment *s = *slot;
-
-  if (! s || ! KosSegment_IS_INLINE(s))
-    return s;
-
-  KosSegment *heap = KosStack_NewEmpty();
-  if (! heap)
-    return NULL;
-
-  memcpy(heap->objs, s->objs, s->len * sizeof(PyObject *));
-  KosSegment_LEN(heap) = s->len;
-  KosSegment_BACK(heap) = KosSegment_BACK(s);
-
-  KosSegment_LEN(s) = 0;
-  KosSegment_BACK(s) = NULL;
-  return heap;
+KosSegment *KosStack_Detach(KosSegment *seg) {
+  if (! seg || ! KosSegment_IS_INLINE(seg))
+    return seg;
+  return kos_segment_spill(seg);
 }
 
 
@@ -463,11 +462,13 @@ int KosStack_Duplicate(KosSegment **self, size_t count) {
     return -1;
   }
 
-  /* grow if needed */
+  /* grow if needed; write the slot back each step so a later failure
+     cannot strand values in a spilled segment */
   while (s->len + count >= s->max) {
     s = KosStack_Grow(s);
     if (! s)
       return -1;
+    *self = s;
   }
 
   for (size_t i = count; i--; ) {

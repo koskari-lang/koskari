@@ -321,7 +321,7 @@ static int demand_sync_ex(
         goto ret_fail;
       }
       frame = kos_dynframe_new(
-          (KosDynNode *) gen_node, (KosCode *) code, ns, NULL);
+          (KosDynNode *) gen_node, (KosCode *) code, ns);
       if (! frame) {
         kos_dyngen_free(gen_node);
         Py_DECREF(ns);
@@ -375,7 +375,7 @@ static int demand_sync_ex(
       return 0;
     }
     else {
-      frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
+      frame = kos_dynframe_new(NULL, (KosCode *) code, ns);
       if (! frame) {
         Py_DECREF(ns);
         goto ret_fail;
@@ -406,7 +406,7 @@ static int demand_sync_ex(
       if (! gen_node)
         goto ret_fail;
       frame = kos_dynframe_new(
-          (KosDynNode *) gen_node, (KosCode *) code, frame_ns, NULL);
+          (KosDynNode *) gen_node, (KosCode *) code, frame_ns);
       if (! frame) {
         kos_dyngen_free(gen_node);
         goto ret_fail;
@@ -459,7 +459,7 @@ static int demand_sync_ex(
       return 0;
     }
 
-    frame = kos_dynframe_new(NULL, (KosCode *) code, frame_ns, NULL);
+    frame = kos_dynframe_new(NULL, (KosCode *) code, frame_ns);
     if (! frame)
       goto ret_fail;
     SAYF("[demand_sync] frame=%p KosDynFrame_NS(frame): ptr=%p type=%s "

@@ -77,18 +77,13 @@ int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc) {
 
   KOS_DYN_POP_REQUIRE_KIND(cc, KOS_DYN_CC, "POP_CC", "CC");
   {
-    KosStackSteal vals;
+    /* CC is a transfer bookmark: it never owns a segment, so there is
+       nothing to deliver -- a bare unlink suffices. */
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) cc);
-
-    if (kos_dyn_steal_extent_values((KosDynNode *) cc, &vals) < 0)
-      return -1;
 
     kos_dyn_commit_dyn_top(es, parent);
     KosDynNode_PARENT((KosDynNode *) cc) = NULL;
     kos_dyncc_free(cc);
-
-    if (kos_dyn_repush_stolen(es, &vals) < 0)
-      return -1;
   }
   return 0;
 }

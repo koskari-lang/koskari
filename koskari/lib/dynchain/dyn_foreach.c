@@ -190,9 +190,6 @@ int kos_dyn_foreach_deliver_return_kos_agen(
    GC traverse a KOS_DYN_FOREACH: visit result and iterator refs.
 */
 static int dynnode_traverse_foreach(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
-  if (tr != 0)
-    return tr;
   Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));
   Py_VISIT(KosDynForeach_ITER((KosDynForeach *) node));
   return 0;

@@ -144,6 +144,9 @@ int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
    GC traverse a KOS_DYN_PROMPT: the owned region block.
 */
 static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
-  return KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
+  (void) node;
+  (void) visit;
+  (void) arg;
+  return 0;
 }
 

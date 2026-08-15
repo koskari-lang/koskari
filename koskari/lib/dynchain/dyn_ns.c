@@ -95,21 +95,7 @@ int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node) {
   }
 
   KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_NS, "POP_NS", "NS");
-  {
-    KosStackSteal vals;
-    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
-
-    if (kos_dyn_steal_extent_values((KosDynNode *) node, &vals) < 0)
-      return -1;
-
-    kos_dyn_commit_dyn_top(es, parent);
-    KosDynNode_PARENT((KosDynNode *) node) = NULL;
-    kos_dynns_free(node);
-
-    if (kos_dyn_repush_stolen(es, &vals) < 0)
-      return -1;
-  }
-  return 0;
+  return kos_dyn_pop_transparent_deliver(es, (KosDynNode *) node);
 }
 
 

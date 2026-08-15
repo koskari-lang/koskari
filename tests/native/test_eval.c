@@ -131,7 +131,7 @@ static int test_eval_object_add_return(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -173,7 +173,7 @@ static int test_domain_non_null(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -214,8 +214,8 @@ static int test_domain_fresh_when_no_tls(void) {
     TEST_ASSERT_NOT_NULL(ns1, "create ns1");
     TEST_ASSERT_NOT_NULL(ns2, "create ns2");
 
-    KosDynFrame *frame1 = kos_dynframe_new(NULL, (KosCode *) code_obj, ns1, NULL);
-    KosDynFrame *frame2 = kos_dynframe_new(NULL, (KosCode *) code_obj, ns2, NULL);
+    KosDynFrame *frame1 = kos_dynframe_new(NULL, (KosCode *) code_obj, ns1);
+    KosDynFrame *frame2 = kos_dynframe_new(NULL, (KosCode *) code_obj, ns2);
     TEST_ASSERT_NOT_NULL(frame1, "create frame1");
     TEST_ASSERT_NOT_NULL(frame2, "create frame2");
 
@@ -267,7 +267,7 @@ static int test_eval_ctx_current_outside_eval(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -326,7 +326,7 @@ static int test_eval_try_except_catch(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -389,7 +389,7 @@ static int test_eval_try_finally_rerase(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -470,7 +470,7 @@ static int test_eval_reset_shift_invoke(void) {
     if (! ns)
         goto cleanup;
 
-    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     if (! frame) {
         Py_DECREF(ns);
         goto cleanup;
@@ -556,7 +556,7 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -646,7 +646,7 @@ static int test_eval_call_continuation_underrun(void) {
     if (! ns)
         goto cleanup;
 
-    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     if (! frame) {
         Py_DECREF(ns);
         goto cleanup;
@@ -713,7 +713,7 @@ static int test_eval_call_wrong_type(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -760,7 +760,7 @@ static int test_eval_object_add_underrun(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -805,7 +805,7 @@ static int test_eval_return_underrun(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -847,7 +847,7 @@ static int test_eval_dup_underrun(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -889,7 +889,7 @@ static int test_eval_call_empty_stack(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -1033,7 +1033,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
     Py_DECREF(nspec);
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -1086,7 +1086,7 @@ static int test_eval_push_collect_empty_stack_raises(void) {
     TEST_ASSERT_NOT_NULL(ns, "create ns");
     Py_DECREF(nspec);
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -1184,7 +1184,7 @@ static int test_eval_call_zero_args(void) {
     if (! ns)
         goto cleanup;
 
-    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     if (! frame) {
         Py_DECREF(ns);
         goto cleanup;
@@ -1266,7 +1266,7 @@ static int test_eval_fast_on_dict_ns(void) {
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -1336,7 +1336,7 @@ static int test_eval_build_function_no_defaults(void) {
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
     Py_DECREF(nspec);
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     KosContext *ctx = KosContext_New(frame);
@@ -1391,7 +1391,7 @@ static int make_simple_ctx(
         KosDynGen *gen = kos_dyngen_new(NULL);
         if (! gen) { Py_DECREF(*code_obj_out); return -1; }
         frame = kos_dynframe_new(
-            (KosDynNode *) gen, (KosCode *) *code_obj_out, ns, NULL);
+            (KosDynNode *) gen, (KosCode *) *code_obj_out, ns);
         if (! frame) {
             kos_dyngen_free(gen);
             Py_DECREF(*code_obj_out);
@@ -1402,7 +1402,7 @@ static int make_simple_ctx(
             *gen_out_opt = gen;
     }
     else {
-        frame = kos_dynframe_new(NULL, (KosCode *) *code_obj_out, ns, NULL);
+        frame = kos_dynframe_new(NULL, (KosCode *) *code_obj_out, ns);
         if (gen_out_opt)
             *gen_out_opt = NULL;
     }
@@ -1575,7 +1575,7 @@ static int test_eval_await_throw_completes_iterator(void) {
     Py_DECREF(nspec);
     Py_DECREF(aw);
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "frame");
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "context");
@@ -1652,7 +1652,7 @@ static int test_eval_await_throw_reyield(void) {
     Py_DECREF(nspec);
     Py_DECREF(aw);
 
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "frame");
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "context");

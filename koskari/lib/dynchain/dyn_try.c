@@ -100,8 +100,8 @@ int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
    GC traverse a KOS_DYN_TRY: operand stack only.
 */
 static int dynnode_traverse_try(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
-  if (tr != 0)
-    return tr;
+  (void) node;
+  (void) visit;
+  (void) arg;
   return 0;
 }
