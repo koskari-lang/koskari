@@ -58,12 +58,12 @@ class TestLayoutDefineSyntax(TestCase):
         """
         rule1 = (
             (symbol('do-something-with-x'),),
-            (symbol('compile/begin'),
+            (symbol('begin'),
              (symbol('print'), 'x and no args', symbol('x')),
              symbol('x'),))
         rule2 = (
             (symbol('do-something-with-x'), symbol('y')),
-            (symbol('compile/begin'),
+            (symbol('begin'),
              (symbol('print'), 'x and one arg', symbol('x'), symbol('y')),
              (symbol('+'), symbol('x'), symbol('y'))))
         expected = pycons(
@@ -82,19 +82,19 @@ class TestLayoutDefineSyntax(TestCase):
         """
         src = """
         define-syntax m:
-          syntax-rules [item compile/item]:
+          syntax-rules [item item]:
             case (ref (item obj name)):
-              (compile/ref-item obj name)
+              (ref-item obj name)
         """
         rule1 = (
             (symbol('ref'), (symbol('item'), symbol('obj'), symbol('name')),),
-            (symbol('compile/begin'),
-             (symbol('compile/ref-item'), symbol('obj'), symbol('name')),))
+            (symbol('begin'),
+             (symbol('ref-item'), symbol('obj'), symbol('name')),))
         expected = pycons(
             (symbol('define-syntax'),
              symbol('m'),
              (symbol('syntax-rules'),
-              (symbol('item'), symbol('compile/item')),
+              (symbol('item'), symbol('item')),
               rule1)))
         self._assert_layout_parse(src, expected)
 
@@ -108,7 +108,7 @@ class TestLayoutDefineSyntax(TestCase):
         """
         rule1 = (
             (symbol('m'), symbol('x')),
-            (symbol('compile/begin'), symbol('x'),))
+            (symbol('begin'), symbol('x'),))
         expected = pycons(
             (symbol('define-syntax'),
              symbol('m'),
@@ -131,7 +131,7 @@ class TestLayoutDefineSyntax(TestCase):
              (symbol('syntax-rules'),
               (),
               ((symbol('double'), symbol('x')),
-               (symbol('compile/begin'),
+               (symbol('begin'),
                 (symbol('+'), symbol('x'), symbol('x'),)))))
         )
         self._assert_layout_parse(src, expected)
@@ -150,7 +150,7 @@ class TestLayoutDefineSyntax(TestCase):
              (symbol('syntax-rules'),
               (),
               ((symbol('double'), symbol('x')),
-               (symbol('compile/begin'),
+               (symbol('begin'),
                 (symbol('*'), symbol('x'), 2),)))))
         self._assert_layout_parse(src, expected)
 
@@ -164,7 +164,7 @@ class TestLayoutDefineSyntax(TestCase):
         """
         rule1 = (
             (symbol('m'), symbol('x')),
-            (symbol('compile/begin'), symbol('x'),))
+            (symbol('begin'), symbol('x'),))
         expected = pycons(
             (symbol('define-syntax'),
              symbol('m'),
@@ -183,7 +183,7 @@ class TestLayoutDefineSyntax(TestCase):
         """
         rule1 = (
             (symbol('m'), symbol('x')),
-            (symbol('compile/begin'), symbol('x'),))
+            (symbol('begin'), symbol('x'),))
         expected = pycons(
             (symbol('define-syntax'),
              symbol('m'),
@@ -202,7 +202,7 @@ class TestLayoutDefineSyntax(TestCase):
         """
         rule1 = (
             (symbol('m'), symbol('x')),
-            (symbol('compile/begin'), symbol('x'),))
+            (symbol('begin'), symbol('x'),))
         expected = pycons(
             (symbol('define-syntax'),
              symbol('m'),
@@ -223,7 +223,7 @@ class TestLayoutDefineSyntax(TestCase):
              symbol('m'),
              (symbol('macro-match'),
               ((symbol('m'), symbol('x')),
-               (symbol('compile/begin'), symbol('x'),)))))
+               (symbol('begin'), symbol('x'),)))))
         self._assert_layout_parse(src, expected)
 
 
@@ -239,7 +239,7 @@ class TestLayoutDefineSyntax(TestCase):
              symbol('m'),
              (symbol('special-match'),
               ((symbol('m'), symbol('x')),
-               (symbol('compile/begin'), symbol('x'),)))))
+               (symbol('begin'), symbol('x'),)))))
         self._assert_layout_parse(src, expected)
 
 

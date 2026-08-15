@@ -467,7 +467,7 @@ tags:
 ---
 id: object-class-slot-001
 feature: special/compile/class
-source: (begin (define Box (class Box () (define label "hi"))) (compile/attr Box label))
+source: (begin (define Box (class Box () (define label "hi"))) (attr Box label))
 verify:
   eval: '"hi"'
 references:
@@ -495,7 +495,7 @@ id: object-define-class-expand-001
 feature: macro/compile/define-class
 source: (define-class Counter [] (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1))))
 verify:
-  expand: "(compile/begin (define Counter (class Counter [] (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1))))) (create-instance-check Counter))"
+  expand: "(begin (define Counter (class Counter [] (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1))))) (create-instance-check Counter))"
 references:
   - reference/macros/compile-define-class.md
   - reference/specials/compile-class.md
@@ -552,7 +552,7 @@ source: |-
     define bump [self]:
       (set-attr self n (+ (attr self n) 1))
 verify:
-  read: "(compile/define-class Counter () (compile/begin (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1)))))"
+  read: "(define-class Counter () (begin (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1)))))"
 references:
   - reference/layouts/layout-define-class.md
   - reference/macros/compile-define-class.md
@@ -864,7 +864,7 @@ source: |-
   (incr! z 5)
   
 verify:
-  expand: (compile/inplace + z 5)
+  expand: (inplace + z 5)
   eval: "null"
 references:
   - reference/macros/compile-incr-and-compile-decr.md
@@ -899,7 +899,7 @@ source: |-
   (decr! z)
   
 verify:
-  expand: (compile/inplace - z 1)
+  expand: (inplace - z 1)
   eval: "null"
 references:
   - reference/macros/compile-incr-and-compile-decr.md
@@ -916,7 +916,7 @@ source: |-
   (decr! z 3)
   
 verify:
-  expand: (compile/inplace - z 3)
+  expand: (inplace - z 3)
   eval: "null"
 references:
   - reference/macros/compile-incr-and-compile-decr.md
@@ -1794,8 +1794,8 @@ source: |-
   obj.value
   
 verify:
-  read: (compile/attr obj value)
-  expand: (compile/attr obj value)
+  read: (attr obj value)
+  expand: (attr obj value)
   eval: "99"
 references:
   - reference/grammar.md
@@ -1813,8 +1813,8 @@ source: |-
   obj.count
   
 verify:
-  read: (compile/attr obj count)
-  expand: (compile/attr obj count)
+  read: (attr obj count)
+  expand: (attr obj count)
   eval: "5"
 references:
   - reference/grammar.md
@@ -1832,8 +1832,8 @@ source: |-
   obj.value.real
   
 verify:
-  read: (compile/attr (compile/attr obj value) real)
-  expand: (compile/attr (compile/attr obj value) real)
+  read: (attr (attr obj value) real)
+  expand: (attr (attr obj value) real)
   eval: "99"
 references:
   - reference/grammar.md
@@ -1853,7 +1853,7 @@ source: |-
       42
   
 verify:
-  read: (compile/class MyClass (object) (compile/begin (define method (self) 42)))
+  read: (class MyClass (object) (begin (define method (self) 42)))
 references:
   - reference/layouts/layout-class.md
 stability: stable
@@ -1873,7 +1873,7 @@ source: |-
       (incr! self._n)
   
 verify:
-  read: (compile/class Counter (object) (compile/begin (define __init__ (self n) (setattr self "_n" n)) (define tick (self) (incr! (compile/attr self _n)))))
+  read: (class Counter (object) (begin (define __init__ (self n) (setattr self "_n" n)) (define tick (self) (incr! (attr self _n)))))
 references:
   - reference/layouts/layout-class.md
 stability: stable
@@ -1893,7 +1893,7 @@ source: |-
       (+ self.base x)
   
 verify:
-  read: (compile/class Adder (object) (compile/begin (define __init__ (self base) (setattr self "base" base)) (define add (self x) (+ (compile/attr self base) x))))
+  read: (class Adder (object) (begin (define __init__ (self base) (setattr self "base" base)) (define add (self x) (+ (attr self base) x))))
 references:
   - reference/layouts/layout-class.md
 stability: stable
@@ -1964,8 +1964,8 @@ source: |-
     ns.name)
   
 verify:
-  read: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns name "koskari") (compile/attr ns name))
-  expand: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns name "koskari") (compile/attr ns name))
+  read: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns name "koskari") (attr ns name))
+  expand: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns name "koskari") (attr ns name))
   eval: '"koskari"'
 references:
   - reference/specials/compile-set-attr.md
@@ -1987,8 +1987,8 @@ source: |-
     (+ ns.x ns.y))
   
 verify:
-  read: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (compile/attr ns x) (compile/attr ns y)))
-  expand: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (compile/attr ns x) (compile/attr ns y)))
+  read: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (attr ns x) (attr ns y)))
+  expand: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (attr ns x) (attr ns y)))
   eval: "30"
 references:
   - reference/specials/compile-set-attr.md
@@ -2003,8 +2003,8 @@ id: object-define-class-eq-behavior-001
 feature: macro/compile/define-class
 source: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== self.x other.x) (== self.y other.y)))) (== (V2 1 2) (V2 1 2)))
 verify:
-  read: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== (compile/attr self x) (compile/attr other x)) (== (compile/attr self y) (compile/attr other y))))) (== (V2 1 2) (V2 1 2)))
-  expand: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== (compile/attr self x) (compile/attr other x)) (== (compile/attr self y) (compile/attr other y))))) (== (V2 1 2) (V2 1 2)))
+  read: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== (attr self x) (attr other x)) (== (attr self y) (attr other y))))) (== (V2 1 2) (V2 1 2)))
+  expand: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== (attr self x) (attr other x)) (== (attr self y) (attr other y))))) (== (V2 1 2) (V2 1 2)))
   eval: "true"
 references:
   - reference/macros/compile-define-class.md
@@ -2022,8 +2022,8 @@ id: object-define-class-call-behavior-001
 feature: macro/compile/define-class
 source: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* self.f v))) (define dbl (Mult 2)) (dbl 21))
 verify:
-  read: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* (compile/attr self f) v))) (define dbl (Mult 2)) (dbl 21))
-  expand: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* (compile/attr self f) v))) (define dbl (Mult 2)) (dbl 21))
+  read: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* (attr self f) v))) (define dbl (Mult 2)) (dbl 21))
+  expand: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* (attr self f) v))) (define dbl (Mult 2)) (dbl 21))
   eval: "42"
 references:
   - reference/macros/compile-define-class.md
@@ -2094,8 +2094,8 @@ source: |-
   (seq.index 2)
   
 verify:
-  read: ((compile/attr seq index) 2)
-  expand: ((compile/attr seq index) 2)
+  read: ((attr seq index) 2)
+  expand: ((attr seq index) 2)
   eval: "1"
 references:
   - reference/specials/compile-attr.md

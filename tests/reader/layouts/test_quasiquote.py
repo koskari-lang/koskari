@@ -14,7 +14,7 @@
 """
 tests.compile.specials.test_quasiquote_layout
 
-Integration tests exercising compile/quasiquote through the LayoutReader
+Integration tests exercising quasiquote through the LayoutReader
 block syntax.  These verify that quasi-quoted forms written in indentation
 style parse and compile correctly.
 
@@ -55,7 +55,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
-           (symbol("compile/quasiquote"), symbol("hello")))
+           (symbol("quasiquote"), symbol("hello")))
         )
 
         result = parse_layout(src)
@@ -73,9 +73,9 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
-           (symbol("compile/quasiquote"),
+           (symbol("quasiquote"),
             (symbol('hello'),
-             (symbol("compile/unquote"), symbol("world")))))
+             (symbol("unquote"), symbol("world")))))
         )
 
         result = parse_layout(src)
@@ -93,9 +93,9 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
-           (symbol("compile/quasiquote"),
+           (symbol("quasiquote"),
             (symbol('hello'),
-             (symbol("compile/unquote-splicing"), symbol("world")))))
+             (symbol("unquote-splicing"), symbol("world")))))
         )
 
         result = parse_layout(src)
@@ -115,9 +115,9 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
            (symbol("without"),
-            (symbol("compile/quasiquote"),
+            (symbol("quasiquote"),
              (symbol("who"),
-              (symbol("compile/unquote-splicing"), symbol("hello")))),
+              (symbol("unquote-splicing"), symbol("hello")))),
             symbol("we"),
             symbol("sing")))
         )
@@ -140,10 +140,10 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
-           (symbol("compile/quasiquote"),
+           (symbol("quasiquote"),
             (_kw_block,
              (symbol("begin"),),
-             ((symbol("compile/unquote-splicing"), symbol("hello")),)))))
+             ((symbol("unquote-splicing"), symbol("hello")),)))))
 
         result = parse_layout(src)
         print("result   :", result)
@@ -172,16 +172,16 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
         expected = pycons(
           (symbol("define"), symbol("get-cond"), nil,
-           (symbol("compile/quasiquote"),
+           (symbol("quasiquote"),
             (_kw_block,
              (symbol("begin"),),
              ((_kw_block,
                (symbol("if"),
-                (symbol("compile/unquote"), symbol("test-expr"))),
-               ((symbol("compile/unquote"), symbol("result")),)),
+                (symbol("unquote"), symbol("test-expr"))),
+               ((symbol("unquote"), symbol("result")),)),
               (_kw_block,
                (symbol("else"),),
-               ((symbol("compile/unquote"), symbol("fallback")),)))))))
+               ((symbol("unquote"), symbol("fallback")),)))))))
 
         result = parse_layout(src)
         print("result   :", result)
@@ -192,13 +192,13 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
 class TestQuoteBlock(IsolatedAsyncioTestCase):
     """
-    Tests for the 'head: raw block quote syntax that produces compile/quote-block forms
+    Tests for the 'head: raw block quote syntax that produces quote-block forms
     """
 
     async def test_simple_quote_block(self):
         """
         A leading ' before a block head reads the block as a :block: cons
-        wrapped in compile/quote-block
+        wrapped in quote-block
         """
 
         src = """
@@ -208,7 +208,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-            (symbol("compile/quote"),
+            (symbol("quote"),
              (_keyword_block,
               (symbol("begin"),),
               (symbol("foo"), symbol("bar"))))
@@ -236,7 +236,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
         result = parse_layout(src)
 
         self.assertTrue(is_pair(result))
-        self.assertEqual(car(result), symbol("compile/quote"))
+        self.assertEqual(car(result), symbol("quote"))
 
         block_repr = car(cdr(result))
         self.assertTrue(is_pair(block_repr))
@@ -263,7 +263,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-            (symbol("compile/quote"),
+            (symbol("quote"),
              (_keyword_block,
               (symbol("begin"),),
               ((_keyword_block,
@@ -281,7 +281,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
     async def test_quote_block_inside_normal_block(self):
         """
         A quoted block used as a body element inside a normal define block
-        is returned as a compile/quote-block form in the body
+        is returned as a quote-block form in the body
         """
 
         src = """
@@ -293,7 +293,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (symbol("define"), symbol("get-block"), nil,
-             (symbol("compile/quote"),
+             (symbol("quote"),
               (_keyword_block,
                (symbol("begin"),),
                (symbol("foo"), symbol("bar")))))

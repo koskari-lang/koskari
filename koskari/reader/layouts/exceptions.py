@@ -111,7 +111,7 @@ def layout_try(ns, source, peers):
             'try block requires at least one except or one finally',
             get_position(source))
 
-    try_body = cons(symbol('compile/begin'), body)
+    try_body = cons(symbol('begin'), body)
     catches = []
     for clause in except_clauses:
         catches.append(clause)

@@ -128,7 +128,7 @@ define-syntax compile/has?:
 
   syntax-rules []:
     case (has? collection element):
-      (compile/in element collection)
+      (in element collection)
 
 
 define build-slice [start: None stop: None step: None]:
@@ -207,9 +207,9 @@ define-global next [it default: UNDEFINED]:
   """
 
   if (is? default UNDEFINED):
-    compile/next it
+    next it
   else:
-    compile/next it default
+    next it default
 
 
 define-global iter [val]:
@@ -217,7 +217,7 @@ define-global iter [val]:
   Produce an iterator for an iterable value
   """
 
-  compile/iter val
+  iter val
 
 
 ;; The end.

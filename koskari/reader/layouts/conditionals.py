@@ -98,7 +98,7 @@ def layout_if(ns, source, peers):
                 'invalid peer for if block: %r' % (phead,),
                 get_position(peer))
 
-    return cons(symbol('compile/cond'), *clauses, nil)
+    return cons(symbol('cond'), *clauses, nil)
 
 
 @builtin('layout/switch')
@@ -191,7 +191,7 @@ def layout_switch(ns, source, peers):
                 'got %r' % (head,),
                 get_position(form))
 
-    return cons(symbol('compile/switch'), value, *clauses, nil)
+    return cons(symbol('switch'), value, *clauses, nil)
 
 
 def _split_case_guard(cargs, child):
@@ -335,7 +335,7 @@ def layout_match(ns, source, peers):
                 f'got {chead!r}',
                 get_position(child))
 
-    return cons(symbol('compile/match'), value, *clauses, nil)
+    return cons(symbol('match'), value, *clauses, nil)
 
 
 # The end.

@@ -206,7 +206,7 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('compile/cond'),
+          (symbol('cond'),
            (symbol('x'), 1),
            (keyword('else'), 2))
         )

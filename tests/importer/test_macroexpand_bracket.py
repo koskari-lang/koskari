@@ -47,12 +47,12 @@ class TestMacroexpandBracket(unittest.IsolatedAsyncioTestCase):
         return await expr()
 
     async def test_if_expands_with_brackets(self):
-        """(if foo 100 200) expands to (compile/cond [foo 100] [else: 200])"""
+        """(if foo 100 200) expands to (cond [foo 100] [else: 200])"""
 
         result = await self.eval_src("(macroexpand-1 '(if foo 100 200))")
         self.assertEqual(
             kos_repr(result),
-            "(compile/cond [foo 100] [else: 200])")
+            "(cond [foo 100] [else: 200])")
 
 
 # The end.

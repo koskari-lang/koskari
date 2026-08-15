@@ -34,7 +34,7 @@ import pytest
 pytestmark = pytest.mark.phase_infra
 
 
-_symbol_switch = symbol('compile/switch')
+_symbol_switch = symbol('switch')
 _keyword_else = keyword('else')
 
 

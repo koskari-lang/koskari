@@ -300,7 +300,7 @@ def _try_else_finally(
 
 
 def _except(compiler, catches):
-    mod = [symbol("compile/cond")]
+    mod = [symbol("cond")]
     has_bare = False
 
     for ca in catches:
@@ -332,7 +332,7 @@ def _except(compiler, catches):
             if pos:
                 fill_position(checksrc, pos)
             define_form = cons(
-                symbol("compile/define"),
+                symbol("define"),
                 symbol(str(key)),
                 cons(symbol("load-exception"), nil),
                 nil)
@@ -340,7 +340,7 @@ def _except(compiler, catches):
                 begin_body = cons(define_form, act)
             else:
                 begin_body = cons(define_form, act, nil)
-            mod.append((checksrc, cons(symbol("compile/begin"), begin_body)))
+            mod.append((checksrc, cons(symbol("begin"), begin_body)))
 
     if not has_bare:
         mod.append((keyword("else"), cons(symbol("raise"), nil)))

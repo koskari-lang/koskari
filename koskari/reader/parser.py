@@ -88,24 +88,22 @@ class ReadEOFType(object):
 
 READ_EOF = ReadEOFType()
 
-_symbol__str = symbol("compile/#str")
-_symbol_gensym_thunk = symbol("compile/gensym-thunk")
+_symbol__str = symbol("#str")
+_symbol_gensym_thunk = symbol("gensym-thunk")
 _symbol_decimal = symbol("decimal")
 _symbol_format = symbol("format")
 _symbol_fraction = symbol("fraction")
-_symbol_quasiquote = symbol("compile/quasiquote")
-_symbol_attr = symbol("compile/attr")
-_symbol_quote = symbol("compile/quote")
-_symbol_layout_quote = symbol("quote")
-_symbol_layout_quasiquote = symbol("quasiquote")
-_symbol_compile_decorate = symbol("compile/decorate")
-_symbol_ref = symbol("compile/ref")
-_symbol_refq = symbol("compile/refq")
-_symbol_splice = symbol("compile/splice")
-_symbol_unquote = symbol("compile/unquote")
-_symbol_unquote_splicing = symbol("compile/unquote-splicing")
+_symbol_quasiquote = symbol("quasiquote")
+_symbol_attr = symbol("attr")
+_symbol_quote = symbol("quote")
+_symbol_decorate = symbol("decorate")
+_symbol_ref = symbol("ref")
+_symbol_refq = symbol("refq")
+_symbol_splice = symbol("splice")
+_symbol_unquote = symbol("unquote")
+_symbol_unquote_splicing = symbol("unquote-splicing")
 _symbol_pass_none = symbol("reader/pass-none")
-_symbol_apply_fence = symbol("compile/apply-fence")
+_symbol_apply_fence = symbol("apply-fence")
 _symbol_colon = symbol(":")
 _symbol_tuple = symbol("#tuple")
 _keyword_starstar = keyword("**")
@@ -1835,7 +1833,7 @@ class Reader:
 
         ap = self.set_atom_pattern
 
-        ap(symbol("compile/attr"), self._dotted_attr_match,
+        ap(symbol("attr"), self._dotted_attr_match,
            _as_dotted_attr_atom)
         ap(symbol("keyword"), _keyword_re, keyword)
         ap(symbol("ellipsis"), _ellipsis_atom_re, _as_ellipsis)
@@ -3299,7 +3297,7 @@ class LayoutReader(Reader):
         head, args, _ = self.read_block_header(stream)
         raw = self.read_block(stream, outer_indent, head, args)
         return cons(_keyword_block,
-                    cons(_symbol_layout_quote, nil),
+                    cons(_symbol_quote, nil),
                     cons(raw, nil),
                     nil)
 
@@ -3321,7 +3319,7 @@ class LayoutReader(Reader):
             head, args, _ = self.read_block_header(stream)
             raw = self.read_block(stream, outer_indent, head, args)
         return cons(_keyword_block,
-                    cons(_symbol_layout_quasiquote, nil),
+                    cons(_symbol_quasiquote, nil),
                     cons(raw, nil),
                     nil)
 
@@ -3404,9 +3402,9 @@ class LayoutReader(Reader):
 
         deco_list = cons(*decorators, nil)
         if event is BLOCKS:
-            return cons(_symbol_compile_decorate, deco_list, inner)
+            return cons(_symbol_decorate, deco_list, inner)
         else:
-            return cons(_symbol_compile_decorate, deco_list, inner, nil)
+            return cons(_symbol_decorate, deco_list, inner, nil)
 
 
     def _layout_macro_enabled(self, c):

@@ -35,14 +35,14 @@ extend-syntax compile/set!:
                 deref compile/deref]:
 
     case (set! (item obj name) value):
-      (compile/set-item obj name value)
+      (set-item obj name value)
     case (set! (compile/item obj name) value):
-      (compile/set-item obj name value)
+      (set-item obj name value)
 
     case (set! (attr obj name) value):
-      (compile/set-attr obj name value)
+      (set-attr obj name value)
     case (set! (compile/attr obj name) value):
-      (compile/set-attr obj name value)
+      (set-attr obj name value)
 
     case (set! (deref ref) value):
       (.store ref value)
@@ -56,31 +56,31 @@ extend-syntax compile/set!:
   syntax-rules [+ - * / // % ** @ << >> & ^ |]:
 
     case (set! name (+ name value)):
-      (compile/inplace + name value)
+      (inplace + name value)
     case (set! name (- name value)):
-      (compile/inplace - name value)
+      (inplace - name value)
     case (set! name (* name value)):
-      (compile/inplace * name value)
+      (inplace * name value)
     case (set! name (/ name value)):
-      (compile/inplace / name value)
+      (inplace / name value)
     case (set! name (// name value)):
-      (compile/inplace // name value)
+      (inplace // name value)
     case (set! name (% name value)):
-      (compile/inplace % name value)
+      (inplace % name value)
     case (set! name (** name value)):
-      (compile/inplace ** name value)
+      (inplace ** name value)
     case (set! name (@ name value)):
-      (compile/inplace @ name value)
+      (inplace @ name value)
     case (set! name (<< name value)):
-      (compile/inplace << name value)
+      (inplace << name value)
     case (set! name (>> name value)):
-      (compile/inplace >> name value)
+      (inplace >> name value)
     case (set! name (& name value)):
-      (compile/inplace & name value)
+      (inplace & name value)
     case (set! name (^ name value)):
-      (compile/inplace ^ name value)
+      (inplace ^ name value)
     case (set! name (| name value)):
-      (compile/inplace | name value)
+      (inplace | name value)
 
 
 extend-syntax compile/set!:
@@ -88,20 +88,20 @@ extend-syntax compile/set!:
 
   syntax-rules [values]:
     case (set! (values pattern ...) value):
-      (compile/setq-values [pattern ...] value)
+      (setq-values [pattern ...] value)
 
 
 extend-syntax compile/inplace:
   syntax-rules [item compile/item attr compile/attr]:
     case (inplace op (item obj name) value):
-      (compile/inplace-item op obj name value)
+      (inplace-item op obj name value)
     case (inplace op (compile/item obj name) value):
-      (compile/inplace-item op obj name value)
+      (inplace-item op obj name value)
 
     case (inplace op (attr obj name) value):
-      (compile/inplace-attr op obj name value)
+      (inplace-attr op obj name value)
     case (inplace op (compile/attr obj name) value):
-      (compile/inplace-attr op obj name value)
+      (inplace-attr op obj name value)
 
 
 define-syntax compile/unassigned?:
@@ -171,9 +171,9 @@ define-syntax compile/incr!:
 
   syntax-rules []:
     case (incr! location):
-      (compile/inplace + location 1)
+      (inplace + location 1)
     case (incr! location value):
-      (compile/inplace + location value)
+      (inplace + location value)
 
 
 define-syntax compile/decr!:
@@ -183,9 +183,9 @@ define-syntax compile/decr!:
 
   syntax-rules []:
     case (decr! location):
-      (compile/inplace - location 1)
+      (inplace - location 1)
     case (decr! location value):
-      (compile/inplace - location value)
+      (inplace - location value)
 
 
 define-syntax compile/ref:
@@ -202,14 +202,14 @@ define-syntax compile/ref:
                 environ]:
 
     case (ref (item obj name)):
-      (compile/ref-item obj name)
+      (ref-item obj name)
     case (ref (compile/item obj name)):
-      (compile/ref-item obj name)
+      (ref-item obj name)
 
     case (ref (attr obj name)):
-      (compile/ref-attr obj name)
+      (ref-attr obj name)
     case (ref (compile/attr obj name)):
-      (compile/ref-attr obj name)
+      (ref-attr obj name)
 
     case (ref (dynamic r ...)):
       (DynamicRef '<dynamic> r ...)
@@ -231,7 +231,7 @@ define-syntax compile/ref:
       (environ-ref 'key)
 
     case (ref name):
-      (compile/refq name)
+      (refq name)
 
 
 define-syntax compile/bind!:
@@ -248,36 +248,36 @@ define-syntax compile/bind!:
                 environ]:
 
     case (bind! name (item obj key)):
-      (compile/bindq name (ref-item obj key))
+      (bindq name (ref-item obj key))
     case (bind! name (compile/item obj key)):
-      (compile/bindq name (ref-item obj key))
+      (bindq name (ref-item obj key))
 
     case (bind! name (attr obj key)):
-      (compile/bindq name (ref-attr obj key))
+      (bindq name (ref-attr obj key))
     case (bind! name (compile/attr obj key)):
-      (compile/bindq name (ref-attr obj key))
+      (bindq name (ref-attr obj key))
 
     case (bind! name (dynamic r ...)):
-      (compile/bindq name (DynamicRef 'name r ...))
+      (bindq name (DynamicRef 'name r ...))
 
     case (bind! name (constant value)):
-      (compile/bindq name (ConstantRef 'name value))
+      (bindq name (ConstantRef 'name value))
 
     case (bind! name (memoized getfn)):
-      (compile/bindq name (MemoizedRef 'name getfn))
+      (bindq name (MemoizedRef 'name getfn))
 
     case (bind! name (parameter param-name default)):
-      (compile/bindq name (ParamRef 'param-name default))
+      (bindq name (ParamRef 'param-name default))
     case (bind! name (parameter param-name)):
-      (compile/bindq name (ParamRef 'param-name))
+      (bindq name (ParamRef 'param-name))
 
     case (bind! name (environ key default)):
-      (compile/bindq name (environ-ref 'key default))
+      (bindq name (environ-ref 'key default))
     case (bind! name (environ key)):
-      (compile/bindq name (environ-ref 'key))
+      (bindq name (environ-ref 'key))
 
     case (bind! name value):
-      (compile/bindq name value)
+      (bindq name value)
 
 
 define environ-ref [key: None default: None]:
@@ -305,9 +305,9 @@ define-syntax compile/global:
 
   syntax-rules []:
     case (global name):
-      (compile/define-global name)
+      (define-global name)
     case (global name value):
-      (compile/define-global name value)
+      (define-global name value)
 
 
 define-syntax compile/local:
@@ -318,9 +318,9 @@ define-syntax compile/local:
 
   syntax-rules []:
     case (local name):
-      (compile/define name)
+      (define name)
     case (local name value):
-      (compile/define name value)
+      (define name value)
 
 
 define-syntax compile/define-parameter:
@@ -330,11 +330,11 @@ define-syntax compile/define-parameter:
 
   syntax-rules []:
     case (define-parameter name):
-      (compile/define name)
-      (compile/bindq name (ParamRef 'name))
+      (define name)
+      (bindq name (ParamRef 'name))
     case (define-parameter name default):
-      (compile/define name)
-      (compile/bindq name (ParamRef 'name default))
+      (define name)
+      (bindq name (ParamRef 'name default))
 
 
 define-syntax compile/parameterq:
@@ -345,9 +345,9 @@ define-syntax compile/parameterq:
 
   syntax-rules []:
     case (parameterq name):
-      (compile/parameter name)
+      (parameter name)
     case (parameterq name default):
-      (compile/parameter name default)
+      (parameter name default)
 
 
 define-syntax compile/define-environ:
@@ -358,11 +358,11 @@ define-syntax compile/define-environ:
 
   syntax-rules []:
     case (define-environ name default):
-      (compile/define name)
-      (compile/bindq name (environ-ref 'name default))
+      (define name)
+      (bindq name (environ-ref 'name default))
     case (define-environ name):
-      (compile/define name)
-      (compile/bindq name (environ-ref 'name))
+      (define name)
+      (bindq name (environ-ref 'name))
 
 
 define-syntax compile/let-values:
@@ -382,7 +382,7 @@ define-syntax compile/let-values:
   syntax-rules []:
     case (let-values [pattern value] body ...):
       (let [[resolved value]]
-        (compile/define-values pattern resolved) body ...)
+        (define-values pattern resolved) body ...)
 
 
 define-syntax compile/let*:

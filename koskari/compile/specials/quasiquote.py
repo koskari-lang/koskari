@@ -46,10 +46,10 @@ from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
 from ...syntax import special
 
-_symbol_quasiquote = symbol("compile/quasiquote")
-_symbol_quote = symbol("compile/quote")
-_symbol_unquote = symbol("compile/unquote")
-_symbol_unquote_splicing = symbol("compile/unquote-splicing")
+_symbol_quasiquote = symbol("quasiquote")
+_symbol_quote = symbol("quote")
+_symbol_unquote = symbol("unquote")
+_symbol_unquote_splicing = symbol("unquote-splicing")
 
 _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 

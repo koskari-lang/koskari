@@ -122,9 +122,9 @@ def _reduce_op(op, py_fold, compiler, source, operand=None):
     for fm in unpack(body):
         if is_keyword(fm):
             if have_acc:
-                return cons(symbol("compile/call"), called_by, acc, body)
+                return cons(symbol("call"), called_by, acc, body)
             else:
-                return cons(symbol("compile/call"), called_by, body)
+                return cons(symbol("call"), called_by, body)
 
     if have_acc:
         frag.instruction(OpCode.CONST, acc)

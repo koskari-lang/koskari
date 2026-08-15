@@ -89,7 +89,7 @@ class TestBracketReader(unittest.TestCase):
         v = self.read("`(a ,() b)")
         self.assertEqual(
             kos_repr(v),
-            "(compile/quasiquote (a (compile/unquote ()) b))")
+            "(quasiquote (a (unquote ()) b))")
 
     def test_unquote_of_empty_bracket(self):
         """,[] is likewise an unquote of the empty bracket list"""
@@ -97,7 +97,7 @@ class TestBracketReader(unittest.TestCase):
         v = self.read("`(a ,[] b)")
         self.assertEqual(
             kos_repr(v),
-            "(compile/quasiquote (a (compile/unquote []) b))")
+            "(quasiquote (a (unquote []) b))")
 
 
 class TestBracketPairsDisabled(unittest.TestCase):

@@ -241,23 +241,23 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
 
     async def test_read_quote(self):
         result = _parse_ng("'foo")
-        self.assertEqual(result, cons(symbol("compile/quote"), symbol("foo"), nil))
+        self.assertEqual(result, cons(symbol("quote"), symbol("foo"), nil))
 
     async def test_read_quasiquote(self):
         result = _parse_ng("`foo")
-        self.assertEqual(result, cons(symbol("compile/quasiquote"), symbol("foo"), nil))
+        self.assertEqual(result, cons(symbol("quasiquote"), symbol("foo"), nil))
 
     async def test_read_ref_atom(self):
         result = _parse_ng("&foo")
         self.assertEqual(
             result,
-            cons(symbol("compile/ref"), symbol("foo"), nil))
+            cons(symbol("ref"), symbol("foo"), nil))
 
     async def test_read_ref_atom_dotted(self):
         result = _parse_ng("&foo.bar")
         expected = cons(
-            symbol("compile/ref"),
-            cons(symbol("compile/attr"), symbol("foo"), symbol("bar"), nil),
+            symbol("ref"),
+            cons(symbol("attr"), symbol("foo"), symbol("bar"), nil),
             nil)
         self.assertEqual(result, expected)
 
@@ -269,10 +269,10 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
     async def test_read_ref_atom_dotted_multi(self):
         result = _parse_ng("&foo.bar.baz")
         expected = cons(
-            symbol("compile/ref"),
+            symbol("ref"),
             cons(
-                symbol("compile/attr"),
-                cons(symbol("compile/attr"), symbol("foo"), symbol("bar"), nil),
+                symbol("attr"),
+                cons(symbol("attr"), symbol("foo"), symbol("bar"), nil),
                 symbol("baz"),
                 nil),
             nil)
@@ -281,7 +281,7 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
     async def test_read_ref_call(self):
         result = _parse_ng("&(item foo 12)")
         expected = cons(
-            symbol("compile/ref"),
+            symbol("ref"),
             cons(symbol("item"), symbol("foo"), 12, nil),
             nil)
         self.assertEqual(result, expected)
@@ -289,7 +289,7 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
     async def test_read_ref_call_layout(self):
         result = _parse_layout_ng("&(item foo 12)")
         expected = cons(
-            symbol("compile/ref"),
+            symbol("ref"),
             cons(symbol("item"), symbol("foo"), 12, nil),
             nil)
         self.assertEqual(result, expected)
@@ -307,13 +307,13 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
         result = _parse_ng("foo.bar")
         self.assertEqual(
             result,
-            cons(symbol("compile/attr"), symbol("foo"), symbol("bar"), nil))
+            cons(symbol("attr"), symbol("foo"), symbol("bar"), nil))
 
     async def test_read_dotted_attr_atom_multi(self):
         result = _parse_ng("obj.foo.bar")
         expected = cons(
-            symbol("compile/attr"),
-            cons(symbol("compile/attr"), symbol("obj"), symbol("foo"), nil),
+            symbol("attr"),
+            cons(symbol("attr"), symbol("obj"), symbol("foo"), nil),
             symbol("bar"),
             nil)
         self.assertEqual(result, expected)
@@ -357,7 +357,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
           2
         """
         expected = pycons(
-            (symbol('compile/cond'),
+            (symbol('cond'),
              (symbol('x'), 1),
              (keyword('else'), 2))
         )
@@ -401,7 +401,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
         """
         _kw_block = keyword(':block:')
         expected = pycons(
-            (symbol("compile/quote"),
+            (symbol("quote"),
              (_kw_block,
               (symbol("begin"),),
               (symbol("foo"), symbol("bar"))))

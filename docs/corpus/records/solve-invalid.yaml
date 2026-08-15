@@ -5,7 +5,7 @@ source: |-
     (import-from koskari.solve amb)
     (amb (#list 1 2)))
 verify:
-  read: "(begin (import-from (compile/attr koskari solve) amb) (amb (#list 1 2)))"
+  read: "(begin (import-from (attr koskari solve) amb) (amb (#list 1 2)))"
   invalid: "amb is a shift over the delimiter that solve (or solve-first) establishes, so calling it with no enclosing search fails at runtime with NoActiveSearch (koskari.solve's subclass of KoskariContinuationError). Wrap the whole search in (solve (lambda [] ...)) or (solve-first (lambda [] ...))."
 references:
   - reference/runtime/koskari-solve.md

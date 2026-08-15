@@ -359,11 +359,11 @@ class TestDotAttrs(SuffixReaderMixin, unittest.TestCase):
 
     def test_dotted_atom_is_an_attr_form(self):
         """
-        foo.bar reads as (compile/attr foo bar)
+        foo.bar reads as (attr foo bar)
         """
 
         self.assertEqual(kos_repr(self.read("foo.bar")),
-                         "(compile/attr foo bar)")
+                         "(attr foo bar)")
 
     def test_dotted_atom_is_left_associative(self):
         """
@@ -371,7 +371,7 @@ class TestDotAttrs(SuffixReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read("foo.bar.baz")),
-                         "(compile/attr (compile/attr foo bar) baz)")
+                         "(attr (attr foo bar) baz)")
 
     def test_attaches_to_a_form(self):
         """
@@ -379,7 +379,7 @@ class TestDotAttrs(SuffixReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read("(get-fn x).baz")),
-                         "(compile/attr (get-fn x) baz)")
+                         "(attr (get-fn x) baz)")
 
     def test_attaches_to_a_string_literal(self):
         """
@@ -387,7 +387,7 @@ class TestDotAttrs(SuffixReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"".join')),
-                         '(compile/attr "" join)')
+                         '(attr "" join)')
 
     def test_suffix_chains_on_a_form(self):
         """
@@ -395,7 +395,7 @@ class TestDotAttrs(SuffixReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read("(f x).a.b")),
-                         "(compile/attr (compile/attr (f x) a) b)")
+                         "(attr (attr (f x) a) b)")
 
     def test_attribute_names_admit_dash_and_slash(self):
         """
@@ -403,9 +403,9 @@ class TestDotAttrs(SuffixReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read("(f x).bar-baz")),
-                         "(compile/attr (f x) bar-baz)")
+                         "(attr (f x) bar-baz)")
         self.assertEqual(kos_repr(self.read("(f x).a/b")),
-                         "(compile/attr (f x) a/b)")
+                         "(attr (f x) a/b)")
 
     def test_whitespace_breaks_the_attachment(self):
         """
@@ -512,7 +512,7 @@ class TestDotAttrsWithIndexBrackets(SuffixReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read("foo[0].bar")),
-                         "(compile/attr (item foo 0) bar)")
+                         "(attr (item foo 0) bar)")
 
     def test_index_after_attr(self):
         """
@@ -520,7 +520,7 @@ class TestDotAttrsWithIndexBrackets(SuffixReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read("foo.bar[0]")),
-                         "(item (compile/attr foo bar) 0)")
+                         "(item (attr foo bar) 0)")
 
     def test_arbitrary_alternation(self):
         """
@@ -529,7 +529,7 @@ class TestDotAttrsWithIndexBrackets(SuffixReaderMixin, unittest.TestCase):
 
         self.assertEqual(
             kos_repr(self.read("(f x)[0].a.b[1]")),
-            "(item (compile/attr (compile/attr (item (f x) 0) a) b) 1)")
+            "(item (attr (attr (item (f x) 0) a) b) 1)")
 
 
 class TestDotAttrsDisabled(SuffixReaderMixin, unittest.TestCase):
@@ -598,7 +598,7 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"a"-" b"')),
-                         '(compile/#str "a" " b")')
+                         '(#str "a" " b")')
 
     def test_gap_may_be_whitespace(self):
         """
@@ -606,7 +606,7 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"a"-   " b"')),
-                         '(compile/#str "a" " b")')
+                         '(#str "a" " b")')
 
     def test_gap_may_cross_lines(self):
         """
@@ -614,7 +614,7 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"a"-\n" b"')),
-                         '(compile/#str "a" " b")')
+                         '(#str "a" " b")')
 
     def test_gap_may_cross_blank_lines(self):
         """
@@ -622,7 +622,7 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"a"-\n\n\n" b"')),
-                         '(compile/#str "a" " b")')
+                         '(#str "a" " b")')
 
     def test_gap_skips_comments(self):
         """
@@ -630,7 +630,7 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"a"- ; note\n" b"')),
-                         '(compile/#str "a" " b")')
+                         '(#str "a" " b")')
 
     def test_chain_stays_flat(self):
         """
@@ -638,7 +638,7 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"a"-\n" b"-\n" c"')),
-                         '(compile/#str "a" " b" " c")')
+                         '(#str "a" " b" " c")')
 
     def test_raw_segment_keeps_its_own_flavor(self):
         """
@@ -646,7 +646,7 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"head"-\nr"\\d+"')),
-                         '(compile/#str "head" "\\d+")')
+                         '(#str "head" "\\d+")')
 
     def test_format_segment_splices(self):
         """
@@ -654,7 +654,7 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"head"-\nf"{x}"')),
-                         '(compile/#str "head" (format x))')
+                         '(#str "head" (format x))')
 
     def test_format_opener_continues(self):
         """
@@ -662,7 +662,7 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('f"{x}"-\n" tail"')),
-                         '(compile/#str (format x) " tail")')
+                         '(#str (format x) " tail")')
 
     def test_bytes_segment_joins_like_any_other(self):
         """
@@ -670,15 +670,15 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"a"- b"x"')),
-                         '(compile/#str "a" b\'x\')')
+                         '(#str "a" b\'x\')')
 
     def test_bytes_opener_continues(self):
         """
-        A bytes receiver is continued too; compile/#str answers for it
+        A bytes receiver is continued too; #str answers for it
         """
 
         self.assertEqual(kos_repr(self.read('b"x"- b"y"')),
-                         "(compile/#str b'x' b'y')")
+                         "(#str b'x' b'y')")
 
     def test_later_suffixes_bind_outside_the_join(self):
         """
@@ -687,7 +687,7 @@ class TestStringSegments(SegmentReaderMixin, unittest.TestCase):
 
         self.assertEqual(
             kos_repr(self.read('"a"- " b".join')),
-            '(compile/attr (compile/#str "a" " b") join)')
+            '(attr (#str "a" " b") join)')
 
 
 class TestStringSegmentsDecline(SegmentReaderMixin, unittest.TestCase):
@@ -791,7 +791,7 @@ class TestStringSegmentsInLayout(unittest.TestCase):
         """
 
         form = self.read('if True:\n    print "a"-\n      " b"\n')
-        self.assertIn('(compile/#str "a" " b")', kos_repr(form))
+        self.assertIn('(#str "a" " b")', kos_repr(form))
 
     def test_continuation_indented_less_than_the_block_joins(self):
         """
@@ -799,7 +799,7 @@ class TestStringSegmentsInLayout(unittest.TestCase):
         """
 
         form = self.read('if True:\n    print "a"-\n  " b"\n')
-        self.assertIn('(compile/#str "a" " b")', kos_repr(form))
+        self.assertIn('(#str "a" " b")', kos_repr(form))
 
     def test_continuation_at_column_zero_names_the_indentation(self):
         """
@@ -860,7 +860,7 @@ class TestSuffixesCompose(SuffixReaderMixin, unittest.TestCase):
         """
 
         self.assertEqual(kos_repr(self.read('"a"- " b"[0]')),
-                         '(item (compile/#str "a" " b") 0)')
+                         '(item (#str "a" " b") 0)')
 
     def test_all_three_kinds_in_one_expression(self):
         """
@@ -869,7 +869,7 @@ class TestSuffixesCompose(SuffixReaderMixin, unittest.TestCase):
 
         self.assertEqual(
             kos_repr(self.read('"ab"-"cd"[1].x')),
-            '(compile/attr (item (compile/#str "ab" "cd") 1) x)')
+            '(attr (item (#str "ab" "cd") 1) x)')
 
 
 # The end.

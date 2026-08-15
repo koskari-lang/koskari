@@ -975,8 +975,8 @@ source: |-
   (equal? '[1 2 3] '(1 2 3))
   
 verify:
-  read: (equal? (compile/quote (1 2 3)) (compile/quote (1 2 3)))
-  expand: (equal? (compile/quote (1 2 3)) (compile/quote (1 2 3)))
+  read: (equal? (quote (1 2 3)) (quote (1 2 3)))
+  expand: (equal? (quote (1 2 3)) (quote (1 2 3)))
   eval: "true"
 references:
   - reference/grammar.md
@@ -992,8 +992,8 @@ source: |-
   (car '[a b c])
   
 verify:
-  read: (car (compile/quote (a b c)))
-  expand: (car (compile/quote (a b c)))
+  read: (car (quote (a b c)))
+  expand: (car (quote (a b c)))
   eval: "symbol:a"
 references:
   - reference/grammar.md
@@ -1046,7 +1046,7 @@ source: |-
   
 verify:
   read: (has? seq 3)
-  expand: (compile/in 3 seq)
+  expand: (in 3 seq)
   eval: "true"
 references:
   - reference/macros/compile-has.md
@@ -1065,7 +1065,7 @@ source: |-
   
 verify:
   read: (has? seq 9)
-  expand: (compile/in 9 seq)
+  expand: (in 9 seq)
   eval: "false"
 references:
   - reference/macros/compile-has.md

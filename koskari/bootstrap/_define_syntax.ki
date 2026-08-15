@@ -32,25 +32,25 @@ Portion of koskari.builtins
         (set-attr name __doc__ docstr))]
 
     [(define-syntax name (bare-syntax slot template))
-      (compile/define-global name (bare-syntax name slot template))]
+      (define-global name (bare-syntax name slot template))]
 
     [(define-syntax name (syntax-rules literals rule ...))
-      (compile/define-global name (syntax-rules name literals rule ...))]
+      (define-global name (syntax-rules name literals rule ...))]
 
     [(define-syntax name (syntax-match rule ...))
-      (compile/define-global name (syntax-match name rule ...))]
+      (define-global name (syntax-match name rule ...))]
 
     [(define-syntax name (macro-rules literals rule ...))
-      (compile/define-global name (macro-rules name literals rule ...))]
+      (define-global name (macro-rules name literals rule ...))]
 
     [(define-syntax name (macro-match rule ...))
-      (compile/define-global name (macro-match name rule ...))]
+      (define-global name (macro-match name rule ...))]
 
     [(define-syntax name (special-rules literals rule ...))
-      (compile/define-global name (special-rules name literals rule ...))]
+      (define-global name (special-rules name literals rule ...))]
 
     [(define-syntax name (special-match rule ...))
-      (compile/define-global name (special-match name rule ...))]))
+      (define-global name (special-match name rule ...))]))
 
 
 set-attr compile/define-syntax __doc__:

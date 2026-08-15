@@ -52,7 +52,7 @@ _BARE_HEAD_PATTERNS = [
 ]
 
 
-_symbol_compile_begin = symbol('compile/begin')
+_symbol_begin = symbol('begin')
 _symbol_bare_syntax = symbol('bare-syntax')
 _symbol_syntax_rules = symbol('syntax-rules')
 _symbol_macro_rules = symbol('macro-rules')
@@ -106,7 +106,7 @@ def _rule_row(ns, rule_source, layout_body=False):
     if layout_body:
         from . import apply_layouts
         body = apply_layouts(body, ns)
-    template = cons(_symbol_compile_begin, body)
+    template = cons(_symbol_begin, body)
     return cons(pattern, template, nil)
 
 
@@ -221,7 +221,7 @@ def layout_bare_syntax(ns, source, peers):
             'bare-syntax requires a template',
             get_position(source))
 
-    ret = cons(cons(_symbol_compile_begin, body), nil)
+    ret = cons(cons(_symbol_begin, body), nil)
     ret = cons(head_m['slot'].datum, ret)
 
     if 'name' in head_m:

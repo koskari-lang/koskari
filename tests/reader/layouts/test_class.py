@@ -37,10 +37,10 @@ class TestLayoutClass(IsolatedAsyncioTestCase):
           x
         """
         expected = pycons(
-            (symbol('compile/class'),
+            (symbol('class'),
              symbol('C'),
              (),
-             (symbol('compile/begin'), symbol('x'))))
+             (symbol('begin'), symbol('x'))))
         result = parse_layout(src)
         self.assertEqual(result, expected)
 
@@ -51,10 +51,10 @@ class TestLayoutClass(IsolatedAsyncioTestCase):
           x
         """
         expected = pycons(
-            (symbol('compile/class'),
+            (symbol('class'),
              symbol('C'),
              (symbol('Base'),),
-             (symbol('compile/begin'), symbol('x'))))
+             (symbol('begin'), symbol('x'))))
         result = parse_layout(src)
         self.assertEqual(result, expected)
 
@@ -65,10 +65,10 @@ class TestLayoutClass(IsolatedAsyncioTestCase):
           x
         """
         expected = pycons(
-            (symbol('compile/class'),
+            (symbol('class'),
              symbol('C'),
              (),
-             (symbol('compile/begin'), symbol('x'))))
+             (symbol('begin'), symbol('x'))))
         result = parse_layout(src)
         self.assertEqual(result, expected)
 

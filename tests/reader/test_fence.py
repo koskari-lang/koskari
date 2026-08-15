@@ -15,7 +15,7 @@
 tests.reader.test_fence
 
 Unit tests for the triple-backtick fence reader macro, which lowers
-fenced foreign source to (compile/apply-fence NAME RAW META) forms.
+fenced foreign source to (apply-fence NAME RAW META) forms.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -61,10 +61,10 @@ def parse_layout_all(src_str, **defns):
 
 def fence_form(name, raw, line, col=0, options=()):
     """
-    Expected (compile/apply-fence ...) tree as nested tuples for pycons
+    Expected (apply-fence ...) tree as nested tuples for pycons
     """
 
-    return (symbol("compile/apply-fence"), symbol(name), raw,
+    return (symbol("apply-fence"), symbol(name), raw,
             (keyword("filename"), "<unittest>",
              keyword("line"), line,
              keyword("col"), col,
@@ -176,18 +176,18 @@ class TestFenceRead(IsolatedAsyncioTestCase):
 
     async def test_quasiquote_unaffected(self):
         result = parse_source("`foo")
-        expected = pycons((symbol("compile/quasiquote"), symbol("foo")))
+        expected = pycons((symbol("quasiquote"), symbol("foo")))
         self.assertEqual(result, expected)
 
         result = parse_source("`(a b)")
-        expected = pycons((symbol("compile/quasiquote"),
+        expected = pycons((symbol("quasiquote"),
                            (symbol("a"), symbol("b"))))
         self.assertEqual(result, expected)
 
     async def test_double_backtick_unaffected(self):
         result = parse_source("``foo")
-        expected = pycons((symbol("compile/quasiquote"),
-                           (symbol("compile/quasiquote"), symbol("foo"))))
+        expected = pycons((symbol("quasiquote"),
+                           (symbol("quasiquote"), symbol("foo"))))
         self.assertEqual(result, expected)
 
 
@@ -258,7 +258,7 @@ class TestFenceLayoutRead(IsolatedAsyncioTestCase):
         forms = parse_layout_all(src)
         expected = pycons((
             symbol("define"), symbol("get-name"), (),
-            (symbol("compile/quasiquote"), symbol("hello"))))
+            (symbol("quasiquote"), symbol("hello"))))
         self.assertEqual(forms[0], expected)
 
 
@@ -268,16 +268,16 @@ class TestFencePragma(IsolatedAsyncioTestCase):
     """
 
     TRIPLE_QQ = pycons((
-        symbol("compile/quasiquote"),
-        (symbol("compile/quasiquote"),
-         (symbol("compile/quasiquote"), symbol("foo")))))
+        symbol("quasiquote"),
+        (symbol("quasiquote"),
+         (symbol("quasiquote"), symbol("foo")))))
 
     async def test_default_pragma_enables_fences(self):
         reader = LayoutReader.from_pragma(dict(_BUILTIN_REGISTRY))
         stream = source_str("```bash\necho hi\n```\n", "<unittest>")
         result = reader.read(stream)
         head, _tail = result
-        self.assertIs(head, symbol("compile/apply-fence"))
+        self.assertIs(head, symbol("apply-fence"))
 
     async def test_pragma_disables_fences(self):
         pragma = ModulePragma({"reader/fences": False})
@@ -295,7 +295,7 @@ class TestFencePragma(IsolatedAsyncioTestCase):
         stream = source_str("```bash\necho hi\n```\n", "<unittest>")
         result = reader.read(stream)
         head, _tail = result
-        self.assertIs(head, symbol("compile/apply-fence"))
+        self.assertIs(head, symbol("apply-fence"))
 
     async def test_plain_reader_switch(self):
         reader = Reader()
@@ -308,7 +308,7 @@ class TestFencePragma(IsolatedAsyncioTestCase):
         stream = source_str("```bash\necho hi\n```\n", "<unittest>")
         result = reader.read(stream)
         head, _tail = result
-        self.assertIs(head, symbol("compile/apply-fence"))
+        self.assertIs(head, symbol("apply-fence"))
 
 
 # The end.

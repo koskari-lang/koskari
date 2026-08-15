@@ -25,15 +25,15 @@ define-syntax compile/if:
 
   syntax-rules []:
     case (if condition then: then else: else):
-      (compile/cond
+      (cond
         [condition then]
         [else: else])
     case (if condition then else):
-      (compile/cond
+      (cond
         [condition then]
         [else: else])
     case (if condition then):
-      (compile/cond
+      (cond
         [condition then]
         [else: None])
 
@@ -46,7 +46,7 @@ define-syntax compile/when:
 
   syntax-rules []:
     case (when condition then ...):
-      (compile/cond
+      (cond
         [condition then ...]
         [else: None])
 
@@ -59,7 +59,7 @@ define-syntax compile/unless:
 
   syntax-rules []:
     case (unless condition then ...):
-      (compile/cond
+      (cond
         [condition None]
         [else: then ...])
 
@@ -67,15 +67,15 @@ define-syntax compile/unless:
 define-syntax compile/?:
   syntax-rules []:
     case (? condition then else):
-      (compile/cond
+      (cond
         [condition then]
         [else: else])
     case (? condition then):
-      (compile/cond
+      (cond
         [condition then]
         [else: False])
     case (? condition):
-      (compile/truth condition)
+      (truth condition)
 
 
 define-syntax compile/bool:
@@ -85,7 +85,7 @@ define-syntax compile/bool:
 
   syntax-rules []:
     case (bool value):
-      (compile/truth value)
+      (truth value)
 
 
 define-syntax compile/when-main:
@@ -106,7 +106,7 @@ define-syntax compile/None?:
 
   syntax-rules []:
     case (None? value):
-      (compile/is value None)
+      (is value None)
 
 
 ;; nil? is compiled by the compile/nil? special (koskari.compile.specials.

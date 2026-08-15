@@ -9,7 +9,7 @@ import pytest
 
 pytestmark = pytest.mark.phase_infra
 
-_compile_cond = symbol('compile/cond')
+_compile_cond = symbol('cond')
 
 
 class TestLayoutIfPeers(IsolatedAsyncioTestCase):

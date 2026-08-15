@@ -73,7 +73,7 @@ def is_lazygensym(x):
     return False
 
 
-_SYM_COMPILE_CALL = symbol("compile/call")
+_SYM_CALL = symbol("call")
 
 
 def splat_call_form(called_by, body):
@@ -83,7 +83,7 @@ def splat_call_form(called_by, body):
 
     Variadic builders such as ``#list``, ``#tuple``, and ``#str`` cannot
     emit a ``*:`` / ``**:`` splat directly. When BODY contains any keyword
-    argument, rewrite the source into ``(compile/call CALLED_BY . BODY)`` so
+    argument, rewrite the source into ``(call CALLED_BY . BODY)`` so
     the ``call`` special merges the splatted arguments; the operator symbol
     resolves to its runtime builtin as the callee.
 
@@ -94,20 +94,20 @@ def splat_call_form(called_by, body):
 
     :param called_by: the operator symbol heading the source form
     :param body: the argument list pair (may be nil)
-    :return: a ``(compile/call ...)`` source pair when a keyword is present,
+    :return: a ``(call ...)`` source pair when a keyword is present,
         otherwise None
     """
 
     for fm in unpack(body):
         if is_keyword(fm):
-            return cons(_SYM_COMPILE_CALL, called_by, body)
+            return cons(_SYM_CALL, called_by, body)
 
     return None
 
 
 _SYM_BEGIN = symbol('begin')
-_SYM_COMPILE_BEGIN = symbol('compile/begin')
-_BEGIN_HEADS = (_SYM_BEGIN, _SYM_COMPILE_BEGIN)
+_SYM_BEGIN = symbol('begin')
+_BEGIN_HEADS = (_SYM_BEGIN, _SYM_BEGIN)
 
 
 def match_pattern_raw(source, patterns, literals=None):
@@ -598,11 +598,11 @@ def const_only_expr(fragment):
 
 def call_form_reroute(called_by, body):
     """
-    Rewrite a variadic builder into its ``(compile/call CALLED_BY . BODY)``
+    Rewrite a variadic builder into its ``(call CALLED_BY . BODY)``
     form so the ``call`` special assembles keyword / double-splat arguments.
     """
 
-    return cons(_SYM_COMPILE_CALL, called_by, body)
+    return cons(_SYM_CALL, called_by, body)
 
 
 def partition_collection_runs(compiler, args_seq):
@@ -672,7 +672,7 @@ def requote(
 
     The reconstruction preserves the source's delimiter style: a bracket-pair
     spine rebuilds via a runtime ``bracket-cons`` call (terminating with
-    ``bracket-nil``), a plain pair spine via the ``compile/cons`` special
+    ``bracket-nil``), a plain pair spine via the ``cons`` special
     (the ``CONS`` opcode). Nested elements are re-quoted, so each sublist's
     own style is detected recursively.
     """
@@ -681,9 +681,9 @@ def requote(
         if isinstance(source, bracket_pair):
             cons_sym = symbol("bracket-cons")
         else:
-            cons_sym = symbol("compile/cons")
+            cons_sym = symbol("cons")
     if quote_sym is None:
-        quote_sym = symbol("compile/quote")
+        quote_sym = symbol("quote")
 
     col = []
     while True:
@@ -1086,7 +1086,7 @@ def _strip_byref_sym(sym):
     Strip a leading & from a symbol name; return (symbol, by_ref).
 
     Covers the reader-disabled by-ref form where ``&x`` survives as a literal
-    symbol rather than expanding to ``(compile/ref x)``
+    symbol rather than expanding to ``(ref x)``
     """
 
     s = str(sym)

@@ -224,13 +224,13 @@ def _label_generator(formatstr="label_%04x"):
 _symbol_None = symbol("None")
 _symbol_True = symbol("True")
 _symbol_False = symbol("False")
-_symbol_attr = symbol("compile/attr")
+_symbol_attr = symbol("attr")
 _symbol_Ellipsis = symbol("Ellipsis")
 _symbol_ellipsis = symbol("...")
 _symbol_nil = symbol("nil")
 
-_symbol_call = symbol("compile/call")
-_symbol_cons = symbol("compile/cons")
+_symbol_call = symbol("call")
+_symbol_cons = symbol("cons")
 
 _symbol_colon = symbol(":")
 

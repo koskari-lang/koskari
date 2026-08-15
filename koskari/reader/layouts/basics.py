@@ -72,7 +72,7 @@ def layout_block_begin(ns, source, peers):
             f"{header.car} layout does not take peers",
             get_position(source))
 
-    header.append(cons(symbol('compile/begin'), body))
+    header.append(cons(symbol('begin'), body))
     return header
 
 
@@ -174,8 +174,8 @@ def layout_import_from(ns, source, peers):
     return layout_inline_block.read(ns, source, peers)
 
 
-_symbol_compile_quote = symbol('compile/quote')
-_symbol_compile_quasiquote = symbol('compile/quasiquote')
+_symbol_quote = symbol('quote')
+_symbol_quasiquote = symbol('quasiquote')
 
 
 def _unbox_compile_layout(source, peers, compile_sym, label):
@@ -210,7 +210,7 @@ def layout_quote(ns, source, peers):
     """
 
     return _unbox_compile_layout(
-        source, peers, _symbol_compile_quote, 'quote')
+        source, peers, _symbol_quote, 'quote')
 
 
 @builtin('layout/quasiquote')
@@ -224,7 +224,7 @@ def layout_quasiquote(ns, source, peers):
     """
 
     return _unbox_compile_layout(
-        source, peers, _symbol_compile_quasiquote, 'quasiquote')
+        source, peers, _symbol_quasiquote, 'quasiquote')
 
 
 # The end.

@@ -77,7 +77,7 @@ def _partition_kwds(kwds_seq):
     return chunks
 
 
-_sym_call_attr = symbol("compile/call-attr")
+_sym_call_attr = symbol("call-attr")
 
 
 _CALL_PATTERNS = [

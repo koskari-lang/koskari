@@ -76,7 +76,7 @@ class TestParse(IsolatedAsyncioTestCase):
         """
         result = parse(src)
         self.assertTrue(is_pair(result))
-        self.assertEqual(car(result), symbol('compile/cond'))
+        self.assertEqual(car(result), symbol('cond'))
 
 
 class TestParseAll(IsolatedAsyncioTestCase):

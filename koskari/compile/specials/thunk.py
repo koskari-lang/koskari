@@ -148,7 +148,7 @@ def special_gensym_thunk(
         rest = _transform(pos_map, rest)
     formals = _build_formals(pos_map, source)
 
-    return cons(symbol("compile/lambda"), formals, rest)
+    return cons(symbol("lambda"), formals, rest)
 
 
 # The end.

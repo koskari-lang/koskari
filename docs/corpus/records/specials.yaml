@@ -1003,8 +1003,8 @@ source: |-
   'hello
   
 verify:
-  read: (compile/quote hello)
-  expand: (compile/quote hello)
+  read: (quote hello)
+  expand: (quote hello)
   eval: "symbol:hello"
 references:
   - reference/grammar.md
@@ -1021,8 +1021,8 @@ source: |-
   '(1 2 3)
   
 verify:
-  read: (compile/quote (1 2 3))
-  expand: (compile/quote (1 2 3))
+  read: (quote (1 2 3))
+  expand: (quote (1 2 3))
   eval: "proper-list:[1,2,3]"
 references:
   - reference/grammar.md
@@ -1039,8 +1039,8 @@ source: |-
   '42
   
 verify:
-  read: (compile/quote 42)
-  expand: (compile/quote 42)
+  read: (quote 42)
+  expand: (quote 42)
   eval: "42"
 references:
   - reference/grammar.md
@@ -1057,8 +1057,8 @@ source: |-
   `hello
   
 verify:
-  read: (compile/quasiquote hello)
-  expand: (compile/quasiquote hello)
+  read: (quasiquote hello)
+  expand: (quasiquote hello)
   eval: "symbol:hello"
 references:
   - reference/grammar.md
@@ -1076,8 +1076,8 @@ source: |-
   `(1 ,z 3)
   
 verify:
-  read: (compile/quasiquote (1 (compile/unquote z) 3))
-  expand: (compile/quasiquote (1 (compile/unquote z) 3))
+  read: (quasiquote (1 (unquote z) 3))
+  expand: (quasiquote (1 (unquote z) 3))
   eval: "proper-list:[1,1,3]"
 references:
   - reference/grammar.md
@@ -1096,8 +1096,8 @@ source: |-
   `(1 ,z 3)
   
 verify:
-  read: (compile/quasiquote (1 (compile/unquote z) 3))
-  expand: (compile/quasiquote (1 (compile/unquote z) 3))
+  read: (quasiquote (1 (unquote z) 3))
+  expand: (quasiquote (1 (unquote z) 3))
   eval: "proper-list:[1,1,3]"
 references:
   - reference/grammar.md
@@ -1116,8 +1116,8 @@ source: |-
   `(first ,z last)
   
 verify:
-  read: (compile/quasiquote (first (compile/unquote z) last))
-  expand: (compile/quasiquote (first (compile/unquote z) last))
+  read: (quasiquote (first (unquote z) last))
+  expand: (quasiquote (first (unquote z) last))
 references:
   - reference/grammar.md
 stability: stable
@@ -1134,8 +1134,8 @@ source: |-
   `(,@seq end)
   
 verify:
-  read: (compile/quasiquote ((compile/unquote-splicing seq) end))
-  expand: (compile/quasiquote ((compile/unquote-splicing seq) end))
+  read: (quasiquote ((unquote-splicing seq) end))
+  expand: (quasiquote ((unquote-splicing seq) end))
 references:
   - reference/grammar.md
 stability: stable
@@ -1153,8 +1153,8 @@ source: |-
   (car `(start ,@seq end))
   
 verify:
-  read: (car (compile/quasiquote (start (compile/unquote-splicing seq) end)))
-  expand: (car (compile/quasiquote (start (compile/unquote-splicing seq) end)))
+  read: (car (quasiquote (start (unquote-splicing seq) end)))
+  expand: (car (quasiquote (start (unquote-splicing seq) end)))
   eval: "symbol:start"
 references:
   - reference/grammar.md
@@ -1173,8 +1173,8 @@ source: |-
   (car `(a ,@seq b))
   
 verify:
-  read: (car (compile/quasiquote (a (compile/unquote-splicing seq) b)))
-  expand: (car (compile/quasiquote (a (compile/unquote-splicing seq) b)))
+  read: (car (quasiquote (a (unquote-splicing seq) b)))
+  expand: (car (quasiquote (a (unquote-splicing seq) b)))
   eval: "symbol:a"
 references:
   - reference/grammar.md
@@ -1193,8 +1193,8 @@ source: |-
   ({(+ %1 %2)} 3 4)
   
 verify:
-  read: ((compile/gensym-thunk (+ %1 %2)) 3 4)
-  expand: ((compile/gensym-thunk (+ %1 %2)) 3 4)
+  read: ((gensym-thunk (+ %1 %2)) 3 4)
+  expand: ((gensym-thunk (+ %1 %2)) 3 4)
   eval: "7"
 references:
   - reference/grammar.md
@@ -1211,8 +1211,8 @@ source: |-
   ({(* %1 %1)} 5)
   
 verify:
-  read: ((compile/gensym-thunk (* %1 %1)) 5)
-  expand: ((compile/gensym-thunk (* %1 %1)) 5)
+  read: ((gensym-thunk (* %1 %1)) 5)
+  expand: ((gensym-thunk (* %1 %1)) 5)
   eval: "25"
 references:
   - reference/grammar.md
@@ -1229,7 +1229,7 @@ source: |-
   {(+ %1 1)}
   
 verify:
-  read: (compile/gensym-thunk (+ %1 1))
+  read: (gensym-thunk (+ %1 1))
 references:
   - reference/grammar.md
 stability: stable
@@ -1245,8 +1245,8 @@ source: |-
   (car `(a b c))
   
 verify:
-  read: (car (compile/quasiquote (a b c)))
-  expand: (car (compile/quasiquote (a b c)))
+  read: (car (quasiquote (a b c)))
+  expand: (car (quasiquote (a b c)))
   eval: "symbol:a"
 references:
   - reference/grammar.md
@@ -1264,8 +1264,8 @@ source: |-
   (car (cdr `(x ,a y)))
   
 verify:
-  read: (car (cdr (compile/quasiquote (x (compile/unquote a) y))))
-  expand: (car (cdr (compile/quasiquote (x (compile/unquote a) y))))
+  read: (car (cdr (quasiquote (x (unquote a) y))))
+  expand: (car (cdr (quasiquote (x (unquote a) y))))
   eval: "0"
 references:
   - reference/grammar.md
@@ -1309,8 +1309,8 @@ source: |-
     (str e)
   
 verify:
-  read: (try (compile/begin (/ 1 0)) ((e ZeroDivisionError) (str e)))
-  expand: (try (compile/begin (/ 1 0)) ((e ZeroDivisionError) (str e)))
+  read: (try (begin (/ 1 0)) ((e ZeroDivisionError) (str e)))
+  expand: (try (begin (/ 1 0)) ((e ZeroDivisionError) (str e)))
   eval: '"division by zero"'
 references:
   - reference/specials/compile-try.md
@@ -1377,8 +1377,8 @@ source: |-
     (f.read)
   
 verify:
-  read: (with (f (open "/dev/null")) ((compile/attr f read)))
-  expand: (with (f (open "/dev/null")) ((compile/attr f read)))
+  read: (with (f (open "/dev/null")) ((attr f read)))
+  expand: (with (f (open "/dev/null")) ((attr f read)))
   eval: '""'
 references:
   - reference/specials/with.md
@@ -1479,7 +1479,7 @@ source: |-
   except [e ValueError]:
     (str e)
 verify:
-  read: (try (compile/begin (when (< -1 0) (raise (ValueError "neg")))) ([e ValueError] (str e)))
+  read: (try (begin (when (< -1 0) (raise (ValueError "neg")))) ([e ValueError] (str e)))
   eval: '"neg"'
 references:
   - reference/specials/compile-raise.md

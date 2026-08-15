@@ -34,31 +34,31 @@ from ...types import build_proper, is_pair, is_proper, is_symbol, unpack
 from ..helpers import match, match1
 
 
-_sym_compile_quote = symbol("compile/quote")
+_sym_quote = symbol("quote")
 _sym_parse_rule_pattern = symbol("parse-rule-pattern")
 _sym_parse_match_pattern = symbol("parse-match-pattern")
 
 
 def _emit_parse_rule_pattern(pattern_src, literals_datum):
     """
-    Emit ``(parse-rule-pattern (compile/quote PATTERN) (compile/quote LITS))``
+    Emit ``(parse-rule-pattern (quote PATTERN) (quote LITS))``
     """
 
     return cons(
         _sym_parse_rule_pattern,
-        cons(_sym_compile_quote, pattern_src, nil),
-        cons(_sym_compile_quote, literals_datum, nil),
+        cons(_sym_quote, pattern_src, nil),
+        cons(_sym_quote, literals_datum, nil),
         nil)
 
 
 def _emit_parse_match_pattern(pattern_src):
     """
-    Emit ``(parse-match-pattern (compile/quote PATTERN))``
+    Emit ``(parse-match-pattern (quote PATTERN))``
     """
 
     return cons(
         _sym_parse_match_pattern,
-        cons(_sym_compile_quote, pattern_src, nil),
+        cons(_sym_quote, pattern_src, nil),
         nil)
 
 
@@ -142,8 +142,8 @@ def special_compile_syntax_rules(compiler, source, tc=False):
     """
     Compile (compile/syntax-rules NAME LITERALS RULES...).
 
-    Lowers to ``(build-syntax NAME-STR (parse-rule-pattern (compile/quote PATTERN)
-    (compile/quote LITERALS-LIST)) (compile/quote TEMPLATE) ...)`` for
+    Lowers to ``(build-syntax NAME-STR (parse-rule-pattern (quote PATTERN)
+    (quote LITERALS-LIST)) (quote TEMPLATE) ...)`` for
     recompilation. ``NAME-STR`` is the macro name as a string. ``LITERALS-LIST``
     is the literals list form from the source; the macro name is unioned into
     the literal set when rules are evaluated. The built transformer is the value
@@ -173,7 +173,7 @@ def special_compile_syntax_rules(compiler, source, tc=False):
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
         parts.append(_emit_parse_rule_pattern(pattern_src, literals_expr))
-        parts.append(cons(_sym_compile_quote, template_expr, nil))
+        parts.append(cons(_sym_quote, template_expr, nil))
 
     literals = set(unpack(literals_expr))
     literals.add(namesym)
@@ -202,7 +202,7 @@ def special_compile_bare_syntax(compiler, source, tc=False):
     rather than at the head of a call form. ``SLOT`` names the called-by
     capture, the only binding ``TEMPLATE`` may refer to.
 
-    Lowers to ``(build-bare-syntax NAME-STR SLOT-STR (compile/quote
+    Lowers to ``(build-bare-syntax NAME-STR SLOT-STR (quote
     TEMPLATE))`` for recompilation. The result is a ``Syntax`` carrying
     only that arm; use ``(compile/define NAME ...)`` to bind it, or
     ``extend-syntax`` to attach it to an existing syntax.
@@ -222,7 +222,7 @@ def special_compile_bare_syntax(compiler, source, tc=False):
 
     return cons(symbol("build-bare-syntax"),
                 str(namesym), str(slotsym),
-                cons(_sym_compile_quote, template_expr, nil),
+                cons(_sym_quote, template_expr, nil),
                 nil)
 
 
@@ -237,8 +237,8 @@ def special_compile_macro_rules(compiler, source, tc=False):
     """
     Compile (compile/macro-rules NAME LITERALS RULES...).
 
-    Lowers to ``(build-macro NAME-STR (parse-rule-pattern (compile/quote PATTERN)
-    (compile/quote LITERALS-SET)) (compile/lambda FORMALS . BODY) ...)`` for
+    Lowers to ``(build-macro NAME-STR (parse-rule-pattern (quote PATTERN)
+    (quote LITERALS-SET)) (lambda FORMALS . BODY) ...)`` for
     recompilation, where ``LITERALS-SET`` is the literals set (including the macro
     name) used for RULE lowering. The built transformer is the value of that
     expression; use ``(compile/define NAME ...)`` to bind it.
@@ -264,7 +264,7 @@ def special_compile_macro_rules(compiler, source, tc=False):
 
     for pattern_matcher, pattern_src, formals, body_forms in rows:
         parts.append(_emit_parse_rule_pattern(pattern_src, literals))
-        parts.append(cons(symbol("compile/lambda"),
+        parts.append(cons(symbol("lambda"),
                           build_proper(*formals), body_forms))
 
     return cons(symbol("build-macro"), str(namesym), *parts, nil)
@@ -284,8 +284,8 @@ def special_compile_syntax_match(compiler, source, tc=False):
     Rule rows are ``(PATTERN TEMPLATE)``. Each pattern is lowered at runtime by
     ``parse-match-pattern`` (see :func:`koskari.matcher.parse_explicit_rule_pattern`).
 
-    Lowers to ``(build-syntax NAME-STR (parse-match-pattern (compile/quote PATTERN))
-    (compile/quote TEMPLATE) ...)`` for recompilation. The built transformer is
+    Lowers to ``(build-syntax NAME-STR (parse-match-pattern (quote PATTERN))
+    (quote TEMPLATE) ...)`` for recompilation. The built transformer is
     the value of that expression; use ``(compile/define NAME ...)`` to bind it.
     Pattern parsing runs when that expression is evaluated.
     """
@@ -312,7 +312,7 @@ def special_compile_syntax_match(compiler, source, tc=False):
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
         parts.append(_emit_parse_match_pattern(pattern_src))
-        parts.append(cons(_sym_compile_quote, template_expr, nil))
+        parts.append(cons(_sym_quote, template_expr, nil))
 
     return cons(symbol("build-syntax"), str(namesym), *parts, nil)
 
@@ -332,8 +332,8 @@ def special_compile_macro_match(compiler, source, tc=False):
     :func:`koskari.matcher.parse_explicit_rule_pattern` at compile time only to
     derive matcher slot order for generated formals.
 
-    Lowers to ``(build-macro NAME-STR (parse-match-pattern (compile/quote PATTERN))
-    (compile/lambda FORMALS . BODY) ...)`` for recompilation. The built
+    Lowers to ``(build-macro NAME-STR (parse-match-pattern (quote PATTERN))
+    (lambda FORMALS . BODY) ...)`` for recompilation. The built
     transformer is the value of that expression; use ``(compile/define NAME ...)``
     to bind it.
     """
@@ -364,7 +364,7 @@ def special_compile_macro_match(compiler, source, tc=False):
         vars_ordered = [symbol(n) for n in pattern_slot_names(pattern_matcher)]
 
         parts.append(_emit_parse_match_pattern(pattern_src))
-        parts.append(cons(symbol("compile/lambda"),
+        parts.append(cons(symbol("lambda"),
                           build_proper(*vars_ordered), body_src))
 
     return cons(symbol("build-macro"), str(namesym), *parts, nil)
@@ -385,8 +385,8 @@ def special_compile_special_rules(compiler, source, tc=False):
     first subform names the compiler parameter (any symbol), the second is the
     nested RULE pattern, the optional third names the ``tc`` formal. PATTERN is
     lowered with :func:`parse_syntax_rules_pattern`. Lowers to a
-    ``(build-special NAME-STR (parse-rule-pattern (compile/quote INNER-PATTERN)
-    (compile/quote LITERALS-SET)) (compile/lambda ...) ...)`` call form for
+    ``(build-special NAME-STR (parse-rule-pattern (quote INNER-PATTERN)
+    (quote LITERALS-SET)) (lambda ...) ...)`` call form for
     recompilation. The built transformer is the value of that expression; use
     ``(compile/define NAME ...)`` to bind it.
     """
@@ -437,7 +437,7 @@ def special_compile_special_rules(compiler, source, tc=False):
         vars_ordered = collect_pattern_variable_symbols(inner, literals)
 
         parts.append(_emit_parse_rule_pattern(inner, literals))
-        parts.append(cons(symbol("compile/lambda"),
+        parts.append(cons(symbol("lambda"),
                           build_proper(compiler_formal, tc_formal, *vars_ordered),
                           body_forms))
 
@@ -461,7 +461,7 @@ def special_compile_special_match(compiler, source, tc=False):
     names the ``tc`` formal.
 
     Lowers to a ``(build-special NAME-STR (parse-match-pattern
-    (compile/quote INNER-PATTERN)) (compile/lambda ...) ...)`` call form for
+    (quote INNER-PATTERN)) (lambda ...) ...)`` call form for
     recompilation (same shape as ``compile/macro-match``). The built transformer
     is the value of that expression; use ``(compile/define NAME ...)`` to bind it.
     """
@@ -505,7 +505,7 @@ def special_compile_special_match(compiler, source, tc=False):
         vars_ordered = [symbol(n) for n in pattern_slot_names(pattern_matcher)]
 
         parts.append(_emit_parse_match_pattern(inner))
-        parts.append(cons(symbol("compile/lambda"),
+        parts.append(cons(symbol("lambda"),
                           build_proper(compiler_formal, tc_formal, *vars_ordered),
                           body_src))
 
@@ -554,7 +554,7 @@ def parse_macro_rules_rows(name, literals_expr, rules_expr):
     """
     Parse macro-rules literals and rules tail into matchers and body datums
 
-    No ``compile/lambda`` or ``build-macro`` source is emitted here; compile
+    No ``lambda`` or ``build-macro`` source is emitted here; compile
     specials lower that from the returned rows.
 
     :param name: macro name symbol (included in literals)

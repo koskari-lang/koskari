@@ -595,7 +595,7 @@ source: |-
   (global count)
   
 verify:
-  expand: (compile/define-global count)
+  expand: (define-global count)
 references:
   - reference/macros/compile-global-and-compile-local.md
 stability: evolving
@@ -613,7 +613,7 @@ source: |-
   (local x)
   
 verify:
-  expand: (compile/define x)
+  expand: (define x)
 references:
   - reference/macros/compile-global-and-compile-local.md
 stability: evolving
@@ -630,7 +630,7 @@ source: |-
   (local x 42)
   
 verify:
-  expand: (compile/define x 42)
+  expand: (define x 42)
 references:
   - reference/macros/compile-global-and-compile-local.md
 stability: evolving
@@ -701,7 +701,7 @@ source: |-
   (parameterq some-setting 99)
   
 verify:
-  expand: (compile/parameter some-setting 99)
+  expand: (parameter some-setting 99)
 references:
   - reference/macros/compile-define-parameter-and-compile-parameterq.md
 stability: evolving
@@ -719,7 +719,7 @@ source: |-
   (define-parameter max-retries 3)
   
 verify:
-  expand: (compile/begin (compile/define max-retries) (compile/bindq max-retries (ParamRef (compile/quote max-retries) 3)))
+  expand: (begin (define max-retries) (bindq max-retries (ParamRef (quote max-retries) 3)))
 references:
   - reference/macros/compile-define-parameter-and-compile-parameterq.md
 stability: evolving
@@ -1020,8 +1020,8 @@ source: |-
   &z
   
 verify:
-  read: (compile/ref z)
-  expand: (compile/refq z)
+  read: (ref z)
+  expand: (refq z)
 references:
   - reference/grammar.md
 stability: stable
@@ -1037,8 +1037,8 @@ source: |-
   (deref &z)
   
 verify:
-  read: (deref (compile/ref z))
-  expand: (deref (compile/ref z))
+  read: (deref (ref z))
+  expand: (deref (ref z))
   eval: "1"
 references:
   - reference/grammar.md
@@ -1055,8 +1055,8 @@ source: |-
   (deref &obj.count)
   
 verify:
-  read: (deref (compile/ref (compile/attr obj count)))
-  expand: (deref (compile/ref (compile/attr obj count)))
+  read: (deref (ref (attr obj count)))
+  expand: (deref (ref (attr obj count)))
   eval: "5"
 references:
   - reference/grammar.md
@@ -1093,7 +1093,7 @@ source: |-
   &x
   
 verify:
-  read: (compile/ref x)
+  read: (ref x)
 references:
   - reference/macros/compile-ref.md
   - reference/concepts/references-and-storage-indirection.md
@@ -1127,7 +1127,7 @@ source: |-
   &(item seq 0)
   
 verify:
-  read: (compile/ref (item seq 0))
+  read: (ref (item seq 0))
 references:
   - reference/macros/compile-ref.md
   - reference/concepts/references-and-storage-indirection.md
@@ -1196,7 +1196,7 @@ source: |-
   (begin (define v 7) (define bump [&n] (set! n (+ n 1))) (bump &v) v)
   
 verify:
-  read: (begin (define v 7) (define bump ((compile/ref n)) (set! n (+ n 1))) (bump (compile/ref v)) v)
+  read: (begin (define v 7) (define bump ((ref n)) (set! n (+ n 1))) (bump (ref v)) v)
   eval: "8"
 references:
   - reference/specials/compile-lambda.md

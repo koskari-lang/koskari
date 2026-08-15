@@ -478,7 +478,7 @@ source: |-
   if True:
     1
 verify:
-  read: (compile/cond (True 1))
+  read: (cond (True 1))
   eval: "1"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -498,7 +498,7 @@ source: |-
   if False:
     1
 verify:
-  read: (compile/cond (False 1))
+  read: (cond (False 1))
   eval: "null"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -521,7 +521,7 @@ source: |-
   else:
     2
 verify:
-  read: "(compile/cond (True 1) (else: 2))"
+  read: "(cond (True 1) (else: 2))"
   eval: "1"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -543,7 +543,7 @@ source: |-
   else:
     2
 verify:
-  read: "(compile/cond (False 1) (else: 2))"
+  read: "(cond (False 1) (else: 2))"
   eval: "2"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -566,7 +566,7 @@ source: |-
   elif True:
     2
 verify:
-  read: (compile/cond (False 1) (True 2))
+  read: (cond (False 1) (True 2))
   eval: "2"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -590,7 +590,7 @@ source: |-
   elif False:
     2
 verify:
-  read: (compile/cond (False 1) (False 2))
+  read: (cond (False 1) (False 2))
   eval: "null"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -614,7 +614,7 @@ source: |-
   elif False:
     2
 verify:
-  read: (compile/cond (True 1) (False 2))
+  read: (cond (True 1) (False 2))
   eval: "1"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -640,7 +640,7 @@ source: |-
   else:
     3
 verify:
-  read: "(compile/cond (True 1) (False 2) (else: 3))"
+  read: "(cond (True 1) (False 2) (else: 3))"
   eval: "1"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -666,7 +666,7 @@ source: |-
   else:
     3
 verify:
-  read: "(compile/cond (False 1) (True 2) (else: 3))"
+  read: "(cond (False 1) (True 2) (else: 3))"
   eval: "2"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -692,7 +692,7 @@ source: |-
   else:
     3
 verify:
-  read: "(compile/cond (False 1) (False 2) (else: 3))"
+  read: "(cond (False 1) (False 2) (else: 3))"
   eval: "3"
 references:
   - reference/concepts/layout-and-s-expressions.md
@@ -1000,7 +1000,7 @@ source: |-
   
 verify:
   read: (bool 0)
-  expand: (compile/truth 0)
+  expand: (truth 0)
   eval: "false"
 references:
   - reference/macros/compile-bool.md

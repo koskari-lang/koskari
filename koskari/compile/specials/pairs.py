@@ -127,7 +127,7 @@ def special_cons(compiler, source, tc=False):
 
     for fm in exprs:
         if is_keyword(fm):
-            return cons(symbol("compile/call"), source)
+            return cons(symbol("call"), source)
 
     frag = compiler.fragment(called_by)
     frag.position_of(source)

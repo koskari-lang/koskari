@@ -23,7 +23,7 @@ define-syntax create-instance-check:
       define pname (datum (symbol f"{name.datum}?"))
       `define ,pname:
         lambda ,pname [value]:
-          compile/instance? value ,name
+          instance? value ,name
 
 
 define-syntax compile/define-class:
@@ -71,9 +71,9 @@ define-syntax compile/define-dataclass:
 define-syntax compile/super:
   syntax-rules []:
     case (super):
-      (compile/call super (type self) self)
+      (call super (type self) self)
     case (super args ...):
-      (compile/call super args ...)
+      (call super args ...)
 
 
 ;; The end.

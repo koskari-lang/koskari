@@ -100,7 +100,7 @@ extend-syntax compile/help:
         case (help (pragma key)):
             (help-pragma-key 'key)
         case (help pragma):
-            (compile/call help #('__pragma__ 'pragma) (globals))
+            (call help #('__pragma__ 'pragma) (globals))
 
 
 ; The end.

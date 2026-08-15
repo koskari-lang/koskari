@@ -27,7 +27,7 @@ source: |-
     (define-syntax twice (macro-rules [] [(twice x) `(+ ,x ,x)]))
     (twice 21))
 verify:
-  read: (begin (define-syntax twice (macro-rules [] [(twice x) (compile/quasiquote (+ (compile/unquote x) (compile/unquote x)))])) (twice 21))
+  read: (begin (define-syntax twice (macro-rules [] [(twice x) (quasiquote (+ (unquote x) (unquote x)))])) (twice 21))
   invalid: "a macro and a use of it cannot share a compilation unit. define-syntax registers twice, but inside the same begin (twice 21) is compiled before that registration is visible, so twice is treated as a runtime value and eval fails with TypeError: 'Syntax' object is not callable. Read and expand succeed; only eval fails."
 references:
   - reference/macros/compile-define-syntax.md
@@ -48,7 +48,7 @@ source: |-
       (values 1 2)
   
 verify:
-  read: (compile/begin (define-values [a b]) (values 1 2))
+  read: (begin (define-values [a b]) (values 1 2))
   invalid: "in layout, a bare indented line under a header is a CHILD form, not a continuation of the header -- the value becomes a separate expression, leaving define-values with no value: SyntaxMatchError (no matching syntax rule) at compile. To split just the value, either open its parenthesis on the header line and continue inside it, or end the header with a colon and nest the single value expression as a block."
 stability: evolving
 tags:
@@ -66,8 +66,8 @@ source: |-
   (d.keys())
   
 verify:
-  read: "(compile/begin (define d (dict a: 1)) ((compile/attr d keys) ()))"
-  invalid: "python call syntax does not carry over. the dot reads the attribute and the ENCLOSING parens are the call, so d.keys() is not a no-argument call -- the trailing () is a second, empty list passed as an argument, giving ((compile/attr d keys) ()) and TypeError: dict.keys() takes no arguments (1 given). the same mistake is silent when the method tolerates an argument."
+  read: "(begin (define d (dict a: 1)) ((attr d keys) ()))"
+  invalid: "python call syntax does not carry over. the dot reads the attribute and the ENCLOSING parens are the call, so d.keys() is not a no-argument call -- the trailing () is a second, empty list passed as an argument, giving ((attr d keys) ()) and TypeError: dict.keys() takes no arguments (1 given). the same mistake is silent when the method tolerates an argument."
 references:
   - reference/specials/compile-call-attr.md
 stability: evolving
@@ -123,7 +123,7 @@ source: |-
   seq [0]
   
 verify:
-  read: (compile/begin seq [0])
+  read: (begin seq [0])
   invalid: "the group must touch the value. with a space this is two separate forms, a symbol and a one-element bracket list, not an item access -- and because a bracket list is value-equal to a paren form it goes on to fail at eval with TypeError: 'int' object is not callable rather than reporting anything about indexing."
 references:
   - reference/grammar.md
@@ -160,7 +160,7 @@ source: |-
   "a" - " b"
   
 verify:
-  read: (compile/begin "a" - " b")
+  read: (begin "a" - " b")
   invalid: the marker must touch the closing quote. with a space this is three separate forms -- two strings and the subtraction symbol -- which at top level evaluates to the last of them, " b", instead of joining anything. it fails silently rather than erroring, so the wrong result is easy to miss.
 references:
   - reference/grammar.md

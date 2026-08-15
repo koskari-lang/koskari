@@ -35,7 +35,7 @@ import pytest
 pytestmark = pytest.mark.phase_infra
 
 
-_symbol_match = symbol('compile/match')
+_symbol_match = symbol('match')
 _keyword_else = keyword('else')
 
 
