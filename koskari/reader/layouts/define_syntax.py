@@ -46,8 +46,14 @@ _MATCH_HEAD_PATTERNS = [
     MATCH(LIST(CALLEDBY())),
 ]
 
+_BARE_HEAD_PATTERNS = [
+    MATCH(LIST(CALLEDBY(), SYMBOL("name"), SYMBOL("slot"))),
+    MATCH(LIST(CALLEDBY(), SYMBOL("slot"))),
+]
+
 
 _symbol_compile_begin = symbol('compile/begin')
+_symbol_bare_syntax = symbol('bare-syntax')
 _symbol_syntax_rules = symbol('syntax-rules')
 _symbol_macro_rules = symbol('macro-rules')
 _symbol_special_rules = symbol('special-rules')
@@ -185,6 +191,43 @@ def layout_syntax_rules(ns, source, peers):
     return _lower_rules(
         ns, source, peers, _symbol_syntax_rules,
         _RULES_HEAD_PATTERNS, True)
+
+
+@builtin('layout/bare-syntax')
+@layout(symbol('layout/bare-syntax'), raw=True)
+def layout_bare_syntax(ns, source, peers):
+    """
+    Lower bare-syntax block to ``(bare-syntax SLOT (compile/begin TMPL...))``.
+
+    The header names the called-by slot; the body is the template, left
+    unexpanded like a syntax-rules template.
+    """
+
+    if peers:
+        raise LayoutError(
+            'bare-syntax block does not take peers',
+            get_position(source))
+
+    header, body = source
+
+    head_m = match1(header, _BARE_HEAD_PATTERNS)
+    if head_m is None:
+        raise LayoutError(
+            'bare-syntax requires a called-by symbol',
+            get_position(source))
+
+    if is_nil(body):
+        raise LayoutError(
+            'bare-syntax requires a template',
+            get_position(source))
+
+    ret = cons(cons(_symbol_compile_begin, body), nil)
+    ret = cons(head_m['slot'].datum, ret)
+
+    if 'name' in head_m:
+        ret = cons(head_m['name'].datum, ret)
+
+    return cons(_symbol_bare_syntax, ret)
 
 
 @builtin('layout/macro-rules')

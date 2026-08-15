@@ -26,7 +26,7 @@ import-from ..syntax Syntax
 import-from .tools help_for
 
 
-(declare-exports format_accept_pattern help_for_syntax)
+(declare-exports format_accept_pattern format_bare_pattern help_for_syntax)
 
 
 @demand
@@ -66,6 +66,15 @@ define format_accept_pattern [pattern head]:
     "<unrenderable pattern>"
 
 
+@demand
+define format_bare_pattern [head]:
+  """
+  Render the bare arm's accepted lone-atom form for help text
+  """
+
+  (or head "(CALLEDBY)")
+
+
 @(help_for Syntax)
 define help_for_syntax [obj formatter]:
   """
@@ -76,11 +85,16 @@ define help_for_syntax [obj formatter]:
   when doc:
     formatter.paragraph doc
 
+  define head (str obj.name)
+
   when obj.transforms:
     define acc (formatter.section "Accepts")
-    define head (str obj.name)
     for-each [transform obj.transforms]:
       acc.item (format_accept_pattern transform.pattern head)
+
+  when obj.bare:
+    define sec (formatter.section "Bare")
+    sec.item (format_bare_pattern head)
 
 
 ; The end.

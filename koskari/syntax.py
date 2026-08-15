@@ -34,24 +34,29 @@ from koskari.hygiene import (Hygiene, collect_binding_symbols,
                              finalize_macro_hygiene_unbox_one_pass)
 from koskari.lib import (Datum, Matcher, demand_call, gensym, match_select,
                          nil, symbol)
-from koskari.matcher import (BIND, FORM, LITERAL, MATCH, REST, SAME, TEST_ANY,
-                             HygienicMatchCompiler, Pattern, check_pattern_arg,
-                             parse_explicit_rule_pattern, repeat_capture)
+from koskari.matcher import (BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME,
+                             TEST_ANY, HygienicMatchCompiler, Pattern,
+                             check_pattern_arg, parse_explicit_rule_pattern,
+                             repeat_capture)
 from koskari.reader.layouts import apply_layout
 from koskari.bootstrap import builtin
 from koskari.types import is_pair, is_proper, is_symbol, unpack
 
 
 __all__ = (
+    "BareTransform",
     "Datum",
     "MacroTransform",
     "SpecialTransform",
     "Syntax",
     "SyntaxTransform",
     "Transform",
+    "append_syntax_doc",
+    "build_bare_syntax",
     "build_macro",
     "build_special",
     "build_syntax",
+    "join_syntax_docs",
     "parse_syntax_rules_pattern",
     "special",
 )
@@ -65,23 +70,39 @@ class Syntax(Compiled):
     Ordered dispatcher over ``Transform`` clauses (compiled form). Try order
     follows ``transforms`` tuple order; use ``__add__`` to prepend clauses
 
+    A syntax may also carry one ``BareTransform`` in its ``bare`` slot,
+    outside the ordered ``transforms``. That arm expands the syntax name
+    when it appears as a lone atom rather than at the head of a call form
+
     :param name: primary compile-time symbol for this form
     :param transforms: ordered transforms tried on each expansion
+    :param bare: lone-atom arm, or None
     """
 
-    def __init__(self, name, transforms=()):
+    def __init__(self, name, transforms=(), bare=None):
         """
         :param name: symbol or str naming this syntax object
         :param transforms: iterable of ``Transform`` instances
+        :param bare: ``BareTransform`` for lone-atom use, or None
         """
 
         self.name = name
         self.transforms = tuple(transforms)
 
+        # instance-level, so a syntax without documentation reports none
+        # rather than inheriting this class's own docstring
+        self.__doc__ = None
+
         for t in self.transforms:
             if not isinstance(t, Transform):
                 raise TypeError("Syntax transforms must be Transform instances,"
                                 f" got {t!r}")
+
+        if bare is not None and not isinstance(bare, BareTransform):
+            raise TypeError("Syntax bare must be a BareTransform instance,"
+                            f" got {bare!r}")
+
+        self.bare = bare
 
         # fast matching via match_select
         self._matchers = tuple(t.matcher for t in self.transforms)
@@ -134,12 +155,27 @@ class Syntax(Compiled):
         """
         Try each transform in order; first non-``None`` result wins
 
+        A non-pair source is a lone-atom use, which bypasses the matchers
+        entirely and goes straight to the ``bare`` arm
+
         :param compiler: active compiler instance
         :param source_obj: full special form being compiled
         :param tc: tail-call flag
         :raises SyntaxMatchError: when no arm matches
         :return: compile product from the winning transform
         """
+
+        if not is_pair(source_obj):
+            # compile_symbol only routes here through find_bare_compiled, so
+            # a missing bare arm means the expansion was invoked directly
+            if self.bare is None:
+                raise SyntaxMatchError(
+                    "syntax has no bare form",
+                    source_obj,
+                    syntax=self,
+                    patterns=self.patterns,
+                )
+            return self.bare.expand_bare(compiler, source_obj, tc)
 
         idx, result = match_select(self._matchers, source_obj)
         if result is None:
@@ -159,17 +195,38 @@ class Syntax(Compiled):
         Return a new ``Syntax`` with ``other``'s transforms prepended before
         ``self``'s (``other`` is tried first at expansion time)
 
+        A syntax carries at most one bare arm, so the bare slot is an
+        either-or rather than a merge: ``other``'s wins when it has one,
+        otherwise ``self``'s carries forward
+
+        Documentation accumulates instead: ``self``'s text carries forward
+        and ``other``'s is appended after it, so extending a documented
+        syntax keeps the original text and lets the extension describe what
+        it adds
+
         :param other: ``Transform`` or ``Syntax``
         :rtype: Syntax
         """
 
-        if isinstance(other, Transform):
+        bare = self.bare
+        other_doc = None
+
+        if isinstance(other, BareTransform):
+            new_transforms = self.transforms
+            bare = other
+        elif isinstance(other, Transform):
             new_transforms = (other,) + self.transforms
         elif isinstance(other, Syntax):
             new_transforms = other.transforms + self.transforms
+            other_doc = other.__doc__
+            if other.bare is not None:
+                bare = other.bare
         else:
             return NotImplemented
-        return Syntax(self.name, new_transforms)
+
+        syn = Syntax(self.name, new_transforms, bare)
+        syn.__doc__ = join_syntax_docs(self.__doc__, other_doc)
+        return syn
 
 
 class Transform(ABC):
@@ -268,6 +325,56 @@ class SyntaxTransform(Transform):
         return _finalize_macro_output(compiler, subst)
 
 
+class _BareResult:
+    """
+    Stand-in for a native ``MatchResult`` on the bare path, where the matcher
+    is bypassed and the called-by symbol is the only capture
+    """
+
+    __slots__ = ("captures", "matched")
+
+
+    def __init__(self, captures):
+        """
+        :param captures: slot name to capture value mapping
+        """
+
+        self.captures = captures
+        self.matched = True
+
+
+class BareTransform(SyntaxTransform):
+    """
+    Bare arm: template expansion for the syntax name used as a lone atom
+    rather than at the head of a call form. The called-by symbol is the only
+    capture, bound to ``slot``; the matcher is never consulted for dispatch,
+    it stands in for the ``(NAME)`` call form the template usually rewrites to
+    """
+
+    def __init__(self, slot, template):
+        """
+        :param slot: symbol or str naming the called-by capture
+        :param template: template form expanded with that single capture
+        """
+
+        self.slot = str(slot)
+        super().__init__(MATCH(CALLEDBY(self.slot)), template)
+
+
+    def expand_bare(self, compiler, sym, tc):
+        """
+        Expand ``template`` with ``sym`` bound to the called-by slot
+
+        :param compiler: active compiler instance
+        :param sym: lone atom that triggered this expansion
+        :param tc: tail-call flag
+        :return: expanded form after hygiene and finalize
+        """
+
+        result = _BareResult({self.slot: Datum(sym)})
+        return self.handle_expand(compiler, sym, result, tc)
+
+
 class MacroTransform(Transform):
     """
     Procedural arm: invoke handler then ``hygiene`` on expanded output
@@ -338,6 +445,24 @@ class SpecialTransform(Transform):
         """
 
         return self.handler(compiler, source, result, tc)
+
+
+def join_syntax_docs(base, extra):
+    """
+    Combine a syntax's documentation with an extension's, base text first
+    and separated by a blank line. Either side may be absent, and an
+    extension repeating the text it already carries adds nothing
+
+    :param base: existing documentation, or None
+    :param extra: documentation contributed by the extension, or None
+    :return: combined documentation, or None when neither side has any
+    """
+
+    if not base:
+        return extra
+    if not extra or extra == base:
+        return base
+    return f"{base}\n\n{extra}"
 
 
 def _captures_to_bindings(captures):
@@ -650,6 +775,31 @@ def build_syntax(name, *pattern_template_pairs):
         transforms.append(SyntaxTransform(pat, tmpl))
 
     return Syntax(name, transforms)
+
+
+@builtin('append-syntax-doc')
+def append_syntax_doc(syn, doc):
+    """
+    Koskari runtime: ``(append-syntax-doc SYNTAX DOC)``, appending an
+    extension's documentation to what ``SYNTAX`` already carries. Used by
+    ``extend-syntax`` so an extension describes what it adds rather than
+    replacing the original text
+    """
+
+    syn.__doc__ = join_syntax_docs(getattr(syn, "__doc__", None), doc)
+    return syn
+
+
+@builtin('build-bare-syntax')
+def build_bare_syntax(name, slot, template):
+    """
+    Koskari runtime: ``(build-bare-syntax NAME SLOT TMPL)``, producing a
+    ``Syntax`` carrying only a bare arm. ``SLOT`` names the called-by
+    capture that ``TMPL`` refers to. Combine with ``+`` to attach the arm
+    to an existing syntax
+    """
+
+    return Syntax(name, (), BareTransform(slot, template))
 
 
 @builtin('build-macro')

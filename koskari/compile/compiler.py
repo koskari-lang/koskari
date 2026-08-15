@@ -786,6 +786,30 @@ class Compiler:
         return found
 
 
+    def find_bare_compiled(self, name):
+        """
+        Resolve as :meth:`find_compiled`, keeping only a Compiled that
+        declares a bare form. Anything else resolves as not found, so a
+        symbol naming an ordinary special still compiles as a variable
+
+        The ``compile/NAME`` spelling always denotes the transformer object
+        itself and never expands, so ``(set-attr compile/foo ...)`` and
+        friends keep referencing the syntax rather than triggering its bare
+        form
+
+        :param name: symbol or string for the compile-time object
+        :return: Compiled instance with a bare form, or None
+        """
+
+        if str(name).startswith("compile/"):
+            return None
+
+        found = self.find_compiled(name)
+        if found is None or getattr(found, "bare", None) is None:
+            return None
+        return found
+
+
     def fragment(self, name=None, mode=None):
         reso = self._resolution_instance
         if reso is None:
@@ -868,9 +892,9 @@ class Compiler:
         if sym in _COMPILER_LITERALS:
             return self.compile_const(fragment, _COMPILER_LITERALS[sym], tc)
 
-        # comp = self.find_compiled(sym)
-        # if comp and _is_alias(comp):
-        #     return self.compile_special(fragment, comp, sym, tc)
+        comp = self.find_bare_compiled(sym)
+        if comp is not None:
+            return self.compile_special(fragment, comp, sym, tc)
 
         # This is handled by the reader macros now.
         # ex = sym.rsplit(".", 1)

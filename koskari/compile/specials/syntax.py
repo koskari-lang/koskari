@@ -182,6 +182,50 @@ def special_compile_syntax_rules(compiler, source, tc=False):
                 str(namesym), *parts, nil)
 
 
+_BARE_SYNTAX_PATTERNS = [
+    MATCH(CALLEDBY(), SYMBOL("name"), SYMBOL("slot"), VALUE("template")),
+]
+
+# After compile/define-syntax, (compile/bare-syntax NAME SLOT TEMPLATE).
+_COMPILE_NAME_SLOT_TEMPLATE = [
+    MATCH(SYMBOL("name"), SYMBOL("slot"), VALUE("template")),
+]
+
+
+@builtin("compile/bare-syntax")
+@special("compile/bare-syntax", patterns=_BARE_SYNTAX_PATTERNS)
+def special_compile_bare_syntax(compiler, source, tc=False):
+    """
+    Compile (compile/bare-syntax NAME SLOT TEMPLATE).
+
+    A bare arm expands the syntax name where it appears as a lone atom
+    rather than at the head of a call form. ``SLOT`` names the called-by
+    capture, the only binding ``TEMPLATE`` may refer to.
+
+    Lowers to ``(build-bare-syntax NAME-STR SLOT-STR (compile/quote
+    TEMPLATE))`` for recompilation. The result is a ``Syntax`` carrying
+    only that arm; use ``(compile/define NAME ...)`` to bind it, or
+    ``extend-syntax`` to attach it to an existing syntax.
+    """
+
+    _, rest = source
+    matched = match(rest, _COMPILE_NAME_SLOT_TEMPLATE)
+    if matched is None:
+        raise SpecialError(
+            "compile/bare-syntax requires name, called-by symbol,"
+            " and one template",
+            source)
+
+    namesym = matched["name"].datum
+    slotsym = matched["slot"].datum
+    template_expr = matched["template"].datum
+
+    return cons(symbol("build-bare-syntax"),
+                str(namesym), str(slotsym),
+                cons(_sym_compile_quote, template_expr, nil),
+                nil)
+
+
 _MACRO_RULES_PATTERNS = [
     MATCH(CALLEDBY(), SYMBOL("name"), BIND("literals"), REST("rules")),
 ]
