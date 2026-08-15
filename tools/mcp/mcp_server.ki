@@ -31,10 +31,12 @@ import sys
 
 import-from argparse ArgumentParser
 import-from os getenv
-import-from os.path basename join
+import-from os.path abspath basename dirname join
+import-from pathlib Path
 
 import-from mcp.server MCPServer
 import-from mcp.server.transport_security TransportSecuritySettings
+import-from starlette.responses HTMLResponse PlainTextResponse
 
 
 define logger (logging.getLogger "koskari.mcp")
@@ -50,6 +52,13 @@ define DATA_DIR (getenv "KOSKARI_CORPUS_DATA" "/srv/data")
 define CORPUS_VIEW "koskari-corpus"
 define DOCS_VIEW "koskari-docs"
 define PROGRAMS_VIEW "koskari-programs"
+
+
+;; The landing page served at the service root over HTTP. It ships
+;; beside this script, so the default is resolved from this file rather
+;; than from the working directory.
+define PAGE_PATH (getenv "KOSKARI_CORPUS_PAGE"
+    (join (dirname (abspath __file__)) "index.html"))
 
 define VERIFY_KEYS #(
     "read" "expand" "eval" "error" "invalid")
@@ -107,6 +116,18 @@ Tools:
 - list_tags: enumerate searchable tags -- the goal-based intent
   vocabulary and structural tags -- with counts.
 
+Two kinds of path travel between these tools, and they are not
+interchangeable. Feature paths (special/compile/cond, layout/try) are
+what list_features returns, and search_examples alone accepts them, as
+feature_path; a feature filter is an exact match unless it ends in "/",
+which makes it a prefix, so "special/compile/" matches that whole
+family. Reference paths (reference/specials/compile-cond.md,
+agents/index.md, anything under examples/) are what get_reference
+takes, and they come from search_docs hits or from the references field
+carried by every corpus record. Handed a feature path, get_reference
+answers with that feature's reference paths, so a wrong guess still
+lands somewhere useful.
+
 Typical flow: search_docs or search_examples to locate a path, then
 get_reference for the full content. Treat corpus results as ground
 truth; fall back to reading source only when the corpus does not cover
@@ -119,14 +140,16 @@ define mcp (MCPServer "koskari-corpus" instructions: INSTRUCTIONS)
 
 
 ;; In-memory tables, each a list of row dicts loaded from parquet at
-;; startup, plus the git ref of the baked snapshot. Query functions take
-;; a table explicitly and stay pure; the tool bodies read these globals.
-;; The dict is mutated in place by load-tables!, never rebound.
+;; startup, plus the git ref of the baked snapshot and the landing page
+;; source. Query functions take a table explicitly and stay pure; the
+;; tool bodies read these globals. The dict is mutated in place by
+;; load-tables! and load-page!, never rebound.
 define STATE #{
     "corpus": #[]
     "docs": #[]
     "programs": #[]
-    "git_ref": None}
+    "git_ref": None
+    "page": None}
 
 
 define corpus-table [] (item STATE "corpus")
@@ -184,6 +207,22 @@ define load-tables! []:
         "loaded corpus snapshot git_ref=%s (corpus=%i docs=%i programs=%i)"
         STATE["git_ref"]
         (len (corpus-table)) (len (docs-table)) (len (programs-table)))
+
+
+define load-page! []:
+    """
+    Load the landing page into STATE, tolerating its absence
+
+    Only the HTTP transports serve it, and the stdio image does not
+    ship it, so a missing file leaves the page None and the root route
+    falls back to a plain pointer at the MCP endpoint.
+    """
+
+    try:
+        set! STATE["page"] ((Path PAGE_PATH).read_text encoding: "utf-8")
+        (logger.info "loaded landing page from %s" PAGE_PATH)
+    except [OSError as: exc]:
+        (logger.info "no landing page at %s: %s" PAGE_PATH exc)
 
 
 ;; === Row shaping ===
@@ -390,6 +429,41 @@ define feature-search [feature_path cap]:
     (item-slice (filter-rows-by-feature (corpus-table) feature_path) 0 cap)
 
 
+define references-for-feature [feature]:
+    """
+    Distinct reference paths across the corpus records of a feature
+
+    Ordered by first appearance, so the page a feature's earliest
+    records cite leads the list.
+    """
+
+    define out #[]
+    for-each [row (corpus-table)]:
+        when (feature-matches? row feature):
+            for-each [ref (or (row.get "references") #[])]:
+                unless (in? ref out):
+                    (out.append ref)
+    out
+
+
+define features-under [prefix]:
+    """
+    Distinct feature paths beginning with prefix as a path segment
+
+    The prefix is slash-normalized first, so a parent named without its
+    trailing slash still finds its family.
+    """
+
+    define stem (if (prefix.endswith "/") prefix f"{prefix}/")
+    define out #[]
+    for-each [row (corpus-table)]:
+        define feature (or (row.get "feature") "")
+        when (feature.startswith stem):
+            unless (in? feature out):
+                (out.append feature)
+    out
+
+
 define fts-search [search_text cap]:
     """
     Token-ranked corpus search over the code-bearing columns
@@ -503,6 +577,45 @@ define filter-by-polarity [rows polarity]:
             rows
 
 
+define reference-miss [path]:
+    """
+    Answer a reference lookup that matched no page
+
+    A feature path is the likeliest wrong guess here, since
+    list_features hands them out and they name no page at all. When the
+    path is one, resolve it to the references its records cite so the
+    guess still arrives; when it merely prefixes features, name them and
+    the trailing slash that selects them.
+    """
+
+    define refs (references-for-feature path)
+    when refs:
+        return (json.dumps #{
+            "path": path
+            "kind": "feature"
+            "note": (+ "Not a reference path: this is a feature path. "
+                "The pages below document it -- call get_reference on "
+                "one. For the examples themselves, call search_examples "
+                f"with feature_path={(repr path)}.")
+            "references": refs})
+
+    define under (features-under path)
+    when under:
+        return (json.dumps #{
+            "path": path
+            "kind": "feature-prefix"
+            "note": (+ "Not a reference path: this names a family of "
+                "features. Pass one of these to search_examples as "
+                "feature_path, or the prefix with a trailing slash to "
+                "take the whole family.")
+            "features": (item-slice under 0 20)})
+
+    (+ f"No reference material with path={(repr path)}. "
+        "Reference paths come from search_docs hits or from a record's "
+        "references field; feature paths from list_features belong in "
+        "search_examples as feature_path.")
+
+
 ;; === Tools ===
 
 
@@ -519,6 +632,12 @@ define search_examples [
     Text search ranks content words by token overlap, then falls back to
     substring matching so language keywords the token search drops as
     noise (while, for-each, if, and, or, not) still resolve.
+
+    feature_path takes the paths list_features returns, and is the only
+    place they are accepted. It is an exact match unless it ends in "/",
+    which makes it a prefix: "special/compile/" matches that whole
+    family, while "special/compile" matches nothing. A feature is a
+    valid selector on its own, with no search_text.
 
     polarity narrows by validity: "valid" returns only canonical usage,
     "invalid" returns only wrong-usage (how-not-to) records; omit it for
@@ -552,7 +671,11 @@ define search_examples [
     set! rows (filter-by-polarity rows polarity)
     set! rows (item-slice (demote-invalid rows) 0 cap)
     unless rows:
-        return "No matching corpus examples."
+        return (+ "No matching corpus examples. A feature_path is an "
+            "exact match unless it ends in '/', which makes it a prefix "
+            "over the family; its values come from list_features. Free "
+            "text belongs in search_text, and search_docs covers the "
+            "documentation that search_examples does not.")
 
     (format-examples rows)
 
@@ -586,11 +709,15 @@ define get_reference [path]:
     pages) or are repository-relative example paths beginning with
     examples/. Returns the full raw content. The path "agents/index.md"
     is the orientation page for agents.
+
+    A feature path is not a reference path, but passing one here is
+    answered with the reference paths that feature's records cite,
+    rather than with a miss.
     """
 
     define row (first-by-field (table-for-path path) "path" path)
     unless row:
-        return f"No reference material with path={(repr path)}."
+        return (reference-miss path)
 
     (json.dumps (pick-fields row REFERENCE_FULL_KEYS))
 
@@ -619,7 +746,10 @@ define search_docs [
 
     define limited (item-slice hits 0 cap)
     unless limited:
-        return "No matching reference material."
+        return (+ "No matching reference material. Try fewer or more "
+            "common words, drop kind to search both pages and programs, "
+            "or call search_examples for corpus records with their "
+            "expected results.")
 
     json.dumps limited
 
@@ -662,6 +792,15 @@ define list_features []:
         lines.append f"{top}/  ({subtotal})"
         for-each [p bucket]:
             lines.append f"  {p[0]}\t{p[1]}"
+
+    ;; The listing is a dead end without this: nothing in a feature path
+    ;; says which tool consumes it, or that the group headings above are
+    ;; themselves usable as prefixes.
+    (lines.append "")
+    (lines.append (+ "Pass any of these to search_examples as "
+        "feature_path, or a group heading with its trailing slash to "
+        "take the whole family. get_reference does not take feature "
+        "paths; a record's references field names its documentation."))
 
     "\n".join lines
 
@@ -726,6 +865,34 @@ define corpus_version []:
         "programs": (len (programs-table))})
 
 
+;; === Landing page ===
+
+
+;; The service root is outside the MCP protocol: custom routes are
+;; served by the same app that carries /mcp, so this answers under both
+;; --serve and --lambda, and is simply never reached over stdio. The
+;; page drives /mcp from the browser on the same origin, so it needs no
+;; CORS allowance and no configuration of its own.
+
+@(mcp.custom_route "/" methods: #["GET"])
+@coroutine-fn
+define landing_page [request]:
+    """
+    Serve the landing page at the service root
+    """
+
+    define page (item STATE "page")
+    unless page:
+        return (PlainTextResponse
+            "koskari-corpus MCP server. The endpoint is POST /mcp.\n")
+
+    (HTMLResponse page
+        headers: #{"Cache-Control": "public, max-age=300"})
+
+
+;; === Entry point ===
+
+
 define main [argv: None]:
     """
     Run the MCP server.
@@ -764,6 +931,7 @@ define main [argv: None]:
     define options (parser.parse_args args)
 
     (load-tables!)
+    (load-page!)
 
     ; Lambda mode: stateless JSON on the loopback port the Lambda Web
     ; Adapter proxies to. Session state must not live in-process, since

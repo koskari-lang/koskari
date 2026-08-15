@@ -30,6 +30,7 @@ RUN pip install --no-cache-dir --disable-pip-version-check \
 
 WORKDIR /srv
 COPY mcp_server.ki ./mcp_server.ki
+COPY index.html ./index.html
 COPY data/ ./data/
 
 CMD ["mcp_server.ki"]

@@ -378,6 +378,10 @@ build-mcp-container: build-container build-mcp  ## Build koskari:local then the 
 run-mcp:  ## Run MCP server on stdio (manual smoke test; use -i, no -t)
 	@$(CONTAINER_ENGINE) run -i --rm $(MCP_IMAGE):local
 
+run-mcp-web: ## Serve the landing page and stateless /mcp at localhost:8080
+	@echo "Serving http://localhost:8080/ -- ctrl-c to stop"
+	@$(CONTAINER_ENGINE) run --rm --network host $(MCP_IMAGE):lambda
+
 
 ##@ Developer Tools
 
@@ -540,6 +544,7 @@ python:  ## Show Python executable
 	build-mcp-lambda \
 	build-mcp-container \
 	run-mcp \
+	run-mcp-web \
 	install \
 	install-dev \
 	koskari-bin \

@@ -10,9 +10,9 @@ This supersedes Track B ("thin shim over the Dataset Viewer API") of
 container for local MCP clients is retained; the HF-relay data backend is
 removed.
 
-**Status:** Parts 1-3 and 5 implemented (baked backend, `--lambda` mode,
-Lambda image, and the SAM stack + deploy workflow). Part 4 -- the one-time
-AWS bring-up -- remains, and is a manual, credentialed step; see
+**Status:** Parts 1-3, 5 and 6 implemented (baked backend, `--lambda` mode,
+Lambda image, the SAM stack + deploy workflow, and the landing page). Part 4
+-- the one-time AWS bring-up -- remains, and is a manual, credentialed step; see
 [../tools/mcp/deploy/README.md](../tools/mcp/deploy/README.md).
 
 ---
@@ -366,6 +366,44 @@ The stated intent is more than one MCP server over time. Make the AWS side
   a parameter, not a rewrite.
 - The GitHub workflow becomes a reusable job keyed on server name, so adding a
   server is "instantiate the module + add a matrix entry."
+
+---
+
+## Part 6 — Landing page and browser terminal
+
+`corpus.koskari.org` is a bare protocol endpoint: a browser that follows the
+URL from a client configuration gets a 404, and nothing states what the
+service is or how to register it. The API Gateway already routes `ANY /` to
+the function, so the root is the server's to answer.
+
+`index.html` ships beside `mcp_server.ki` in both images and is served at
+`GET /` through FastMCP's `custom_route`, which mounts plain Starlette routes
+into the same app that carries `/mcp`. Both HTTP modes therefore serve it, and
+stdio simply never reaches it. The file is read once at startup into `STATE`
+alongside the tables; a missing file is logged and the root falls back to a
+one-line pointer at the endpoint, so the stdio image is free to omit it.
+`Cache-Control: public, max-age=300` keeps reloads off the function.
+
+The page carries a terminal that issues the MCP handshake from the browser --
+`initialize`, `notifications/initialized`, `tools/list`, then `tools/call` per
+command -- and prints the outgoing request beside each reply. Three properties
+of the deployment make this cheap:
+
+- **Same origin.** The page is served from the host that serves `/mcp`, so
+  there is no CORS surface to open and no allowance to configure.
+- **Stateless mode.** Lambda mode answers with `application/json` and needs no
+  `Mcp-Session-Id`, so a command is one `fetch`. The terminal still captures a
+  session id and parses SSE when it sees them, so the same page works
+  unmodified against a stateful `--serve` instance.
+- **Self-describing tools.** The command set, its arguments, and the tool
+  table on the page are built from `tools/list` at load, so a new tool needs
+  no page edit.
+
+Consequences worth accepting deliberately: the root now wakes the function on
+a plain page view (the cache header limits repeats), and a public terminal
+invites more traffic at an unauthenticated endpoint than a bare URL does,
+which makes the stage throttle and reserved concurrency from Part 4 load-
+bearing rather than theoretical.
 
 ---
 

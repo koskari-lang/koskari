@@ -46,6 +46,16 @@ make run-mcp
 **Important:** use `-i` so stdin stays open for MCP JSON-RPC. Do **not** pass
 `-t`; a TTY corrupts the protocol stream.
 
+To see what the deployed service serves -- landing page and stateless `/mcp`
+on <http://localhost:8080/> -- run the Lambda image locally:
+
+```bash
+make build-mcp-lambda && make run-mcp-web
+```
+
+It runs the same image AWS runs (the Lambda Web Adapter sits idle outside
+Lambda), on the host network so the loopback bind is reachable.
+
 ## Serving modes
 
 The same `mcp_server.ki` serves three mutually exclusive transports:
@@ -59,6 +69,13 @@ The same `mcp_server.ki` serves three mutually exclusive transports:
 `--lambda` serves stateless JSON on the loopback `PORT` (default 8080) the
 adapter proxies to; `--serve` and `--lambda` cannot be combined. The `--`
 separates koskari launcher options from script arguments.
+
+Both HTTP modes also answer `GET /` with the landing page (`index.html`,
+baked in beside the server): the client configuration, the tool list, and a
+terminal that speaks JSON-RPC to `/mcp` from the browser. The page and the
+endpoint share an origin, so it needs no CORS allowance. `KOSKARI_CORPUS_PAGE`
+overrides the file; if it is missing, the root serves a plain pointer at
+`/mcp` instead.
 
 For AWS, `make build-mcp-lambda` builds the Lambda image
 (`Containerfile.lambda`, with the Lambda Web Adapter baked in); deploy it with
@@ -85,7 +102,7 @@ needed):
 | Tool | Description |
 |------|-------------|
 | `search_docs` | Search documentation pages and example programs by text; optional `kind` (`doc`/`example`) and `limit` |
-| `get_reference` | Fetch one documentation page or example program by its path |
+| `get_reference` | Fetch one documentation page or example program by its path; given a feature path instead, answers with the reference paths that feature's records cite |
 | `search_examples` | Search verified corpus examples by text (`search_text`) with optional `feature_path` filter, `polarity` (`valid`/`invalid`) narrowing, and `limit` (default 10, max 100); invalid/wrong-usage records are demoted below valid ones |
 | `get_example` | Fetch one corpus record by `corpus_id` |
 | `list_features` | List distinct `feature` paths with counts |
@@ -94,6 +111,16 @@ needed):
 
 Tool results are JSON text including `corpus_id`, `feature`, `source`, verify
 stage columns when present, and `references`.
+
+Two kinds of path travel between these tools and are not interchangeable.
+*Feature paths* (`special/compile/cond`) come from `list_features` and are
+accepted only by `search_examples` as `feature_path`, where the match is exact
+unless the value ends in `/`, which makes it a prefix over the family.
+*Reference paths* (`reference/specials/compile-cond.md`, `examples/…`) are what
+`get_reference` takes, and come from `search_docs` hits or from a record's
+`references` field. Because a feature path is the likeliest wrong guess at
+`get_reference`, it is answered there with that feature's references rather
+than a miss, and each empty result names the next call to try.
 
 ## Manual smoke test
 
@@ -112,6 +139,7 @@ report that as a CLI/bootstrap issue.
 | File | Role |
 |------|------|
 | `mcp_server.ki` | Koskari MCP server (FastMCP over the baked, in-memory dataset) |
+| `index.html` | Landing page served at `GET /` by the HTTP modes |
 | `Containerfile` | stdio image on `koskari:local` with `mcp` and `pyarrow`, baking `data/` |
 | `Containerfile.lambda` | Lambda image: same, plus the AWS Lambda Web Adapter |
 | `data/` | Corpus parquet views staged by `make mcp-data`; build output, gitignored |

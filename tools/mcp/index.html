@@ -1,0 +1,918 @@
+<!doctype html>
+<!--
+  Landing page for the Koskari corpus MCP server.
+
+  Served at GET / by mcp_server.ki in its --serve and --lambda modes. It
+  states the client configuration and carries a small terminal that speaks
+  JSON-RPC to /mcp on the same origin, so a visitor drives the server the
+  way an agent does. No external resources: the page is baked into the
+  image beside the server and served as-is.
+
+  author: Christopher O'Brien <obriencj@gmail.com>
+  license: GPL v.3
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>koskari corpus MCP</title>
+<style>
+  :root {
+    --bg: #12141a;
+    --panel: #171a21;
+    --panel-2: #1d212a;
+    --line: #2a2f3a;
+    --fg: #d7dbe4;
+    --dim: #8a93a5;
+    --accent: #7fd1c1;
+    --accent-2: #c9a4f5;
+    --warn: #e8a06a;
+    --err: #e8737d;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  body {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+  }
+
+  a { color: var(--accent); }
+
+  h1 {
+    margin: 0;
+    font-size: 1.6rem;
+    letter-spacing: -0.01em;
+  }
+
+  h1 .mcp {
+    color: var(--accent);
+  }
+
+  h2 {
+    margin: 2.75rem 0 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+  }
+
+  header p {
+    margin: 0.6rem 0 0;
+    color: var(--dim);
+    max-width: 46rem;
+  }
+
+  /* The mark floats, so the title and the paragraph beneath it wrap
+     around the apple rather than sitting beside a rigid column. */
+  #mark {
+    float: right;
+    width: 5.5rem;
+    height: 5.5rem;
+    margin: 0 0 0.75rem 1.25rem;
+    shape-outside: circle(50%);
+  }
+
+  header::after {
+    content: "";
+    display: block;
+    clear: both;
+  }
+
+  @media (max-width: 32rem) {
+    #mark {
+      width: 4rem;
+      height: 4rem;
+    }
+  }
+
+  .snapshot {
+    display: inline-block;
+    margin-top: 1rem;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 0.8rem;
+    color: var(--dim);
+  }
+
+  .snapshot b { color: var(--accent-2); font-weight: 600; }
+
+  .block {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+  }
+
+  .block + .block { margin-top: 0.6rem; }
+
+  .block pre {
+    margin: 0;
+    font-size: 0.85rem;
+    white-space: pre;
+  }
+
+  .block .label {
+    display: block;
+    margin-bottom: 0.45rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  .copy {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    background: var(--panel-2);
+    color: var(--dim);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+    font-family: inherit;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+
+  .copy:hover { color: var(--fg); border-color: var(--dim); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+
+  th, td {
+    text-align: left;
+    vertical-align: top;
+    padding: 0.4rem 0.75rem 0.4rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  th {
+    color: var(--dim);
+    font-weight: 600;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  td.name { color: var(--accent); white-space: nowrap; }
+  td.desc { color: var(--dim); }
+
+  .note-box {
+    margin: 1rem 0 0;
+    padding: 0.85rem 1rem;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--accent-2);
+    border-radius: 6px;
+    color: var(--dim);
+    font-size: 0.85rem;
+  }
+
+  .note-box p { margin: 0; }
+  .note-box p + p { margin-top: 0.6rem; }
+  .note-box code { color: var(--accent); }
+  .note-box b { color: var(--fg); font-weight: 600; }
+
+  /* Terminal */
+
+  .term {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.75rem;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--line);
+    font-size: 0.75rem;
+    color: var(--dim);
+  }
+
+  .dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--line);
+  }
+
+  .dot.live { background: var(--accent); }
+  .dot.bad { background: var(--err); }
+
+  .term-bar .endpoint { margin-left: auto; }
+
+  #scroll {
+    height: 26rem;
+    overflow-y: auto;
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  #scroll .line {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+  }
+
+  .sent { color: var(--dim); }
+  .recv { color: var(--fg); }
+  .note { color: var(--accent-2); }
+  .err { color: var(--err); }
+  .pending { color: var(--warn); }
+
+  .term-input {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-top: 1px solid var(--line);
+    padding: 0.5rem 1rem;
+  }
+
+  .term-input span { color: var(--accent); }
+
+  #cmd {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    outline: 0;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.15rem 0;
+  }
+
+  footer {
+    margin-top: 3rem;
+    color: var(--dim);
+    font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <!--
+    The project mark, copied from docs/_static/koskari-icon.svg. It is
+    inlined rather than served: the image build context is tools/mcp/
+    and cannot reach docs/, and the favicon is derived from this same
+    element at load, so the page carries exactly one copy of it.
+  -->
+  <svg id="mark" xmlns="http://www.w3.org/2000/svg"
+       viewBox="-7 -10 114 114" width="64" height="64"
+       role="img" aria-label="Koskari">
+    <defs>
+      <radialGradient id="ko-skin" cx="33%" cy="24%" r="90%">
+        <stop offset="0" stop-color="#f3d883"/>
+        <stop offset="0.36" stop-color="#e6b73f"/>
+        <stop offset="0.74" stop-color="#cc9420"/>
+        <stop offset="1" stop-color="#a9761a"/>
+      </radialGradient>
+      <radialGradient id="ko-flesh" cx="50%" cy="38%" r="72%">
+        <stop offset="0" stop-color="#fdf5da"/>
+        <stop offset="1" stop-color="#f1e1b6"/>
+      </radialGradient>
+      <linearGradient id="ko-shade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff5d2" stop-opacity="0.42"/>
+        <stop offset="0.45" stop-color="#fff5d2" stop-opacity="0"/>
+        <stop offset="1" stop-color="#6e4808" stop-opacity="0.30"/>
+      </linearGradient>
+      <linearGradient id="ko-leaf" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#ecc757"/>
+        <stop offset="1" stop-color="#caa033"/>
+      </linearGradient>
+      <linearGradient id="ko-stem" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#7a5418"/>
+        <stop offset="1" stop-color="#9c7126"/>
+      </linearGradient>
+      <filter id="ko-shadow" x="-20%" y="-20%" width="140%" height="150%">
+        <feDropShadow dx="0" dy="4" stdDeviation="3.5"
+            flood-color="#785a0a" flood-opacity="0.18"/>
+      </filter>
+    </defs>
+
+    <g filter="url(#ko-shadow)">
+      <rect x="47" y="-3" width="7" height="24" rx="3" ry="3"
+          fill="url(#ko-stem)" transform="rotate(10 50.5 15)"/>
+      <path d="M44 1 Q12 1 12 20 Q44 20 44 1 Z"
+        fill="url(#ko-leaf)" stroke="#b78d28" stroke-width="0.6"
+        stroke-opacity="0.7" transform="rotate(20 43.36 19.62)"/>
+      <path d="M48.16 9 L51.84 9
+               A44.16 39.65 0 0 1 96 48.65 L96 48.66
+               A43.24 49.34 0 0 1 52.76 98 L47.24 98
+               A43.24 49.34 0 0 1 4 48.66 L4 48.65
+               A44.16 39.65 0 0 1 48.16 9 Z"
+          fill="url(#ko-skin)"/>
+      <path d="M48.16 9 L51.84 9
+               A44.16 39.65 0 0 1 96 48.65 L96 48.66
+               A43.24 49.34 0 0 1 52.76 98 L47.24 98
+               A43.24 49.34 0 0 1 4 48.66 L4 48.65
+               A44.16 39.65 0 0 1 48.16 9 Z"
+          fill="url(#ko-shade)"/>
+      <path d="M48.48 16 L51.52 16
+               A36.48 32.53 0 0 1 88 48.53 L88 48.53
+               A35.72 40.47 0 0 1 52.28 89 L47.72 89
+               A35.72 40.47 0 0 1 12 48.53 L12 48.53
+               A36.48 32.53 0 0 1 48.48 16 Z"
+          fill="url(#ko-flesh)" stroke="#b48c28" stroke-width="1"
+          stroke-opacity="0.35"/>
+    </g>
+
+    <g fill="none" stroke="#b07d12" stroke-width="7.2"
+       stroke-linecap="round" stroke-linejoin="round">
+      <path d="M45 32 L64 70"/>
+      <path d="M53 48 L40 70"/>
+    </g>
+  </svg>
+
+  <h1>koskari corpus <span class="mcp">MCP</span></h1>
+  <p>
+    A Model Context Protocol server for the Koskari language: documentation,
+    a reference for special forms, macros, layouts and reader behavior, and a
+    corpus of verified example programs with expected results at the read,
+    expand, compile and eval phases. The dataset is baked into the image, so
+    every query is answered from memory with no outbound request.
+  </p>
+  <div class="snapshot" id="snapshot">snapshot &hellip;</div>
+</header>
+
+<h2>Connect</h2>
+
+<div class="block">
+  <span class="label">Endpoint (streamable HTTP)</span>
+  <button class="copy" data-copy="#endpoint">copy</button>
+  <pre id="endpoint">https://corpus.koskari.org/mcp</pre>
+</div>
+
+<div class="block">
+  <span class="label">Claude Code</span>
+  <button class="copy" data-copy="#cfg-cli">copy</button>
+  <pre id="cfg-cli">claude mcp add --transport http koskari-corpus https://corpus.koskari.org/mcp</pre>
+</div>
+
+<div class="block">
+  <span class="label">mcp.json / client configuration</span>
+  <button class="copy" data-copy="#cfg-json">copy</button>
+  <pre id="cfg-json">{
+  "mcpServers": {
+    "koskari-corpus": {
+      "type": "http",
+      "url": "https://corpus.koskari.org/mcp"
+    }
+  }
+}</pre>
+</div>
+
+<h2>Tools</h2>
+
+<table id="tools">
+  <thead>
+    <tr><th>Tool</th><th>Arguments</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="desc" colspan="3">loading from tools/list &hellip;</td></tr>
+  </tbody>
+</table>
+
+<div class="note-box">
+  <p>
+    <b>Two kinds of path, and they are not interchangeable.</b>
+    <b>Feature paths</b> -- <code>special/compile/cond</code>,
+    <code>layout/try</code> -- are what <code>list_features</code> returns,
+    and <code>search_examples</code> is the only tool that takes them, as
+    <code>feature_path</code>. <b>Reference paths</b> --
+    <code>reference/specials/compile-cond.md</code>,
+    <code>agents/index.md</code>, anything under <code>examples/</code> --
+    are what <code>get_reference</code> takes. Handing a feature path to
+    <code>get_reference</code> finds nothing.
+  </p>
+  <p>
+    What bridges them is the <code>references</code> field on every record:
+    <code>list_features</code> to choose a feature,
+    <code>search_examples feature_path=&lt;it&gt;</code> for the examples,
+    then <code>get_reference</code> on a path from their
+    <code>references</code> for the documentation behind them.
+  </p>
+  <p>
+    A feature filter is an exact match unless it ends in a slash, which
+    makes it a prefix: <code>special/compile/</code> matches the whole
+    family, while <code>special/compile</code> matches nothing.
+  </p>
+</div>
+
+<h2>Try it</h2>
+
+<p style="color: var(--dim); font-size: 0.85rem; margin: 0 0 0.75rem;">
+  This terminal speaks JSON-RPC to the endpoint above from your browser --
+  the same requests an agent makes. Dimmed lines are what goes out.
+  Type <b>help</b> for commands.
+</p>
+
+<div class="term">
+  <div class="term-bar">
+    <span class="dot" id="status-dot"></span>
+    <span id="status-text">connecting</span>
+    <span class="endpoint" id="status-endpoint"></span>
+  </div>
+  <div id="scroll" aria-live="polite"></div>
+  <form class="term-input" id="term-form" autocomplete="off">
+    <span>&gt;</span>
+    <input id="cmd" name="cmd" spellcheck="false" autocapitalize="off"
+           placeholder="search_examples cond limit=3" disabled>
+  </form>
+</div>
+
+<footer>
+  Served by <code>mcp_server.ki</code>, a server written in Koskari.
+  <a href="https://github.com/koskari-lang/koskari">github.com/koskari-lang/koskari</a>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* The terminal drives whichever origin served this page, so a local
+     run talks to the local server; the configuration blocks above keep
+     naming the public service. */
+  var ENDPOINT = location.origin + "/mcp";
+  var PROTOCOL = "2025-06-18";
+
+  var scroll = document.getElementById("scroll");
+  var input = document.getElementById("cmd");
+  var form = document.getElementById("term-form");
+  var dot = document.getElementById("status-dot");
+  var statusText = document.getElementById("status-text");
+
+  var session = null;      // Mcp-Session-Id, when the server is stateful
+  var tools = [];          // from tools/list
+  var history = [];
+  var histPos = 0;
+  var nextId = 1;
+
+  document.getElementById("status-endpoint").textContent = ENDPOINT;
+
+  /* Wear the mark on the tab too, serialized out of the element already
+     on the page so the icon and the header cannot drift apart. */
+  (function setFavicon() {
+    var mark = document.getElementById("mark");
+    if (! mark || ! window.XMLSerializer) {
+      return;
+    }
+    var markup = new XMLSerializer().serializeToString(mark);
+    var link = document.createElement("link");
+    link.rel = "icon";
+    link.type = "image/svg+xml";
+    link.href = "data:image/svg+xml;charset=utf-8," +
+      encodeURIComponent(markup);
+    document.head.appendChild(link);
+  }());
+
+  /* --- output ------------------------------------------------------- */
+
+  function emit(text, cls) {
+    var p = document.createElement("p");
+    p.className = "line " + (cls || "recv");
+    p.textContent = text;
+    scroll.appendChild(p);
+    scroll.scrollTop = scroll.scrollHeight;
+    return p;
+  }
+
+  function pretty(value) {
+    return JSON.stringify(value, null, 2);
+  }
+
+  /* Print a result payload: JSON text is reflowed, anything else is raw. */
+  function emitPayload(text) {
+    var out = text;
+    try {
+      out = pretty(JSON.parse(text));
+    } catch (e) { /* not JSON; print as sent */ }
+    emit(out, "recv");
+  }
+
+  /* --- transport ---------------------------------------------------- */
+
+  /* Stateless mode answers with application/json; a stateful server
+     answers the same POST as an SSE stream. Accept both. */
+  function parseBody(contentType, body) {
+    if (contentType.indexOf("text/event-stream") !== -1) {
+      var payload = null;
+      body.split(/\r?\n/).forEach(function (line) {
+        if (line.indexOf("data:") === 0) {
+          payload = line.slice(5).trim();
+        }
+      });
+      return payload ? JSON.parse(payload) : null;
+    }
+    return body ? JSON.parse(body) : null;
+  }
+
+  function rpc(method, params, isNotification) {
+    var message = { jsonrpc: "2.0", method: method };
+    if (params !== undefined) {
+      message.params = params;
+    }
+    if (! isNotification) {
+      message.id = nextId++;
+    }
+
+    var headers = {
+      "Content-Type": "application/json",
+      "Accept": "application/json, text/event-stream",
+      "MCP-Protocol-Version": PROTOCOL
+    };
+    if (session) {
+      headers["Mcp-Session-Id"] = session;
+    }
+
+    return fetch(ENDPOINT, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(message)
+    }).then(function (response) {
+      var sid = response.headers.get("mcp-session-id");
+      if (sid) {
+        session = sid;
+      }
+      return response.text().then(function (body) {
+        if (! response.ok) {
+          throw new Error("HTTP " + response.status + " " + body.slice(0, 200));
+        }
+        var parsed = parseBody(
+          response.headers.get("content-type") || "", body);
+        if (parsed && parsed.error) {
+          throw new Error(parsed.error.message || pretty(parsed.error));
+        }
+        return parsed ? parsed.result : null;
+      });
+    });
+  }
+
+  /* Echo the outgoing call the way it goes over the wire, then send. */
+  function call(method, params, isNotification) {
+    emit("> " + method + (params ? " " + JSON.stringify(params) : ""), "sent");
+    return rpc(method, params, isNotification);
+  }
+
+  /* --- argument parsing --------------------------------------------- */
+
+  /* Split on whitespace, honouring "quoted phrases". */
+  function tokenize(text) {
+    var out = [];
+    var re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+    var m;
+    while ((m = re.exec(text)) !== null) {
+      out.push(m[1] !== undefined ? m[1] :
+               m[2] !== undefined ? m[2] : m[3]);
+    }
+    return out;
+  }
+
+  function schemaOf(tool) {
+    return (tool && (tool.inputSchema || tool.input_schema)) || {};
+  }
+
+  /* The first required property is the one a bare argument fills. */
+  function primaryParam(tool) {
+    var schema = schemaOf(tool);
+    var required = schema.required || [];
+    if (required.length) {
+      return required[0];
+    }
+    var props = Object.keys(schema.properties || {});
+    return props.length ? props[0] : null;
+  }
+
+  function coerce(tool, key, raw) {
+    var props = schemaOf(tool).properties || {};
+    var spec = props[key] || {};
+    var type = spec.type;
+    if (Array.isArray(spec.anyOf)) {
+      type = (spec.anyOf.filter(function (s) {
+        return s.type && s.type !== "null";
+      })[0] || {}).type;
+    }
+    if (type === "integer" || type === "number") {
+      var n = Number(raw);
+      return isNaN(n) ? raw : n;
+    }
+    if (type === "boolean") {
+      return raw === "true" || raw === "1";
+    }
+    return raw;
+  }
+
+  /* "cond limit=3" -> {search_text: "cond", limit: 3} */
+  function buildArgs(tool, tokens) {
+    var args = {};
+    var positional = [];
+    tokens.forEach(function (token) {
+      var m = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(token);
+      if (m) {
+        args[m[1]] = coerce(tool, m[1], m[2]);
+      } else {
+        positional.push(token);
+      }
+    });
+    if (positional.length) {
+      var key = primaryParam(tool);
+      if (key) {
+        args[key] = coerce(tool, key, positional.join(" "));
+      }
+    }
+    return args;
+  }
+
+  function paramList(tool) {
+    var schema = schemaOf(tool);
+    var required = schema.required || [];
+    return Object.keys(schema.properties || {}).map(function (name) {
+      return required.indexOf(name) === -1 ? "[" + name + "]" : name;
+    }).join(" ");
+  }
+
+  function findTool(name) {
+    return tools.filter(function (t) { return t.name === name; })[0] || null;
+  }
+
+  /* --- commands ------------------------------------------------------ */
+
+  function doHelp(rest) {
+    if (rest.length) {
+      var tool = findTool(rest[0]);
+      if (! tool) {
+        emit("no such tool: " + rest[0], "err");
+        return;
+      }
+      emit(tool.name + " " + paramList(tool), "note");
+      emit((tool.description || "").trim());
+      emit(pretty(schemaOf(tool).properties || {}), "sent");
+      return;
+    }
+
+    emit("commands", "note");
+    emit("  help              this text");
+    emit("  help <tool>       arguments and description for one tool");
+    emit("  tools             call tools/list on the server");
+    emit("  clear             clear the scrollback");
+    emit("  <tool> <args>     call a tool; bare words fill its main");
+    emit("                    argument, name=value sets any other");
+    emit(" ");
+    emit("examples", "note");
+    emit("  search_examples cond limit=3");
+    emit("  search_docs \"for-each loop\" kind=doc");
+    emit("  get_reference agents/index.md");
+    emit("  get_example conditional-cond-single-true-001");
+    emit("  list_features");
+    emit(" ");
+    emit("paths", "note");
+    emit("  feature paths (list_features) go only to search_examples as");
+    emit("  feature_path=; a trailing slash makes it a prefix. reference");
+    emit("  paths go to get_reference, and come from search_docs or from");
+    emit("  a record's references field.");
+  }
+
+  function doTools() {
+    return call("tools/list", {}).then(function (result) {
+      tools = (result && result.tools) || [];
+      emit("< " + tools.length + " tools", "sent");
+      tools.forEach(function (tool) {
+        emit("  " + tool.name + " " + paramList(tool), "note");
+      });
+      renderToolTable();
+    });
+  }
+
+  function doCall(name, rest) {
+    var tool = findTool(name);
+    if (! tool) {
+      emit("unknown command: " + name + " (try help)", "err");
+      return Promise.resolve();
+    }
+
+    var args = buildArgs(tool, rest);
+    var waiting = emit("  waiting", "pending");
+
+    return call("tools/call", { name: name, arguments: args })
+      .then(function (result) {
+        waiting.remove();
+        var content = (result && result.content) || [];
+        if (result && result.isError) {
+          emit("tool reported an error", "err");
+        }
+        if (! content.length) {
+          emit("(no content)", "sent");
+        }
+        content.forEach(function (part) {
+          if (part.type === "text") {
+            emitPayload(part.text);
+          } else {
+            emit(pretty(part), "recv");
+          }
+        });
+      }, function (err) {
+        waiting.remove();
+        emit(String(err.message || err), "err");
+      });
+  }
+
+  function run(text) {
+    var tokens = tokenize(text);
+    if (! tokens.length) {
+      return Promise.resolve();
+    }
+
+    var name = tokens[0];
+    var rest = tokens.slice(1);
+
+    if (name === "help" || name === "?") {
+      doHelp(rest);
+      return Promise.resolve();
+    }
+    if (name === "clear") {
+      scroll.textContent = "";
+      return Promise.resolve();
+    }
+    if (name === "tools") {
+      return doTools().catch(function (err) {
+        emit(String(err.message || err), "err");
+      });
+    }
+    return doCall(name, rest);
+  }
+
+  /* --- tool table ---------------------------------------------------- */
+
+  function renderToolTable() {
+    var body = document.querySelector("#tools tbody");
+    body.textContent = "";
+    tools.forEach(function (tool) {
+      var row = document.createElement("tr");
+      var name = document.createElement("td");
+      var args = document.createElement("td");
+      var desc = document.createElement("td");
+
+      name.className = "name";
+      name.textContent = tool.name;
+      args.className = "desc";
+      args.textContent = paramList(tool) || "--";
+      desc.className = "desc";
+      /* The first line of the docstring is the summary. */
+      desc.textContent = (tool.description || "").trim().split("\n")[0];
+
+      row.appendChild(name);
+      row.appendChild(args);
+      row.appendChild(desc);
+      body.appendChild(row);
+    });
+  }
+
+  /* --- boot ---------------------------------------------------------- */
+
+  function setStatus(text, cls) {
+    statusText.textContent = text;
+    dot.className = "dot " + (cls || "");
+  }
+
+  function boot() {
+    emit("koskari-corpus MCP over " + ENDPOINT, "note");
+
+    return call("initialize", {
+      protocolVersion: PROTOCOL,
+      capabilities: {},
+      clientInfo: { name: "corpus.koskari.org terminal", version: "1" }
+    }).then(function (result) {
+      var info = (result && result.serverInfo) || {};
+
+      /* Speak whatever version the server negotiated from here on. */
+      if (result && result.protocolVersion) {
+        PROTOCOL = result.protocolVersion;
+      }
+      emit("< " + (info.name || "server") + " " + (info.version || "") +
+           ", protocol " + PROTOCOL, "sent");
+
+      /* The handshake is only complete once the client says so. */
+      return call("notifications/initialized", undefined, true);
+
+    }).then(function () {
+      return doTools();
+
+    }).then(function () {
+      return call("tools/call",
+                  { name: "corpus_version", arguments: {} });
+
+    }).then(function (result) {
+      var content = (result && result.content) || [];
+      var text = content.length ? content[0].text : "{}";
+      var version = JSON.parse(text);
+      emitPayload(text);
+
+      document.getElementById("snapshot").innerHTML =
+        "snapshot <b>" + (version.git_ref || "unknown") + "</b> &middot; " +
+        version.corpus + " examples &middot; " +
+        version.docs + " pages &middot; " +
+        version.programs + " programs";
+
+      setStatus(session ? "connected (session)" : "connected (stateless)",
+                "live");
+      emit(" ");
+      emit("ready -- type help", "note");
+      input.disabled = false;
+      input.focus();
+
+    }).catch(function (err) {
+      setStatus("unreachable", "bad");
+      emit(String(err.message || err), "err");
+      emit("the endpoint did not answer; the terminal is offline", "err");
+    });
+  }
+
+  /* --- input --------------------------------------------------------- */
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var text = input.value.trim();
+    if (! text) {
+      return;
+    }
+    input.value = "";
+    history.push(text);
+    histPos = history.length;
+    emit("$ " + text, "note");
+    input.disabled = true;
+    run(text).then(function () {
+      input.disabled = false;
+      input.focus();
+    });
+  });
+
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      if (! history.length) {
+        return;
+      }
+      event.preventDefault();
+      histPos += (event.key === "ArrowUp") ? -1 : 1;
+      histPos = Math.max(0, Math.min(history.length, histPos));
+      input.value = history[histPos] || "";
+
+    } else if (event.key === "Tab") {
+      event.preventDefault();
+      var prefix = input.value;
+      var matches = tools.map(function (t) { return t.name; })
+        .filter(function (name) { return name.indexOf(prefix) === 0; });
+      if (matches.length === 1) {
+        input.value = matches[0] + " ";
+      } else if (matches.length > 1) {
+        emit(matches.join("  "), "sent");
+      }
+    }
+  });
+
+  document.querySelectorAll(".copy").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var target = document.querySelector(button.dataset.copy);
+      if (! navigator.clipboard) {
+        button.textContent = "select it";
+        return;
+      }
+      navigator.clipboard.writeText(target.textContent).then(function () {
+        button.textContent = "copied";
+        setTimeout(function () { button.textContent = "copy"; }, 1200);
+      }, function () {
+        button.textContent = "select it";
+      });
+    });
+  });
+
+  boot();
+})();
+</script>
+
+</body>
+</html>
+<!-- The end. -->
