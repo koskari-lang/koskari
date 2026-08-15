@@ -5,7 +5,7 @@
   `i`-th element of the realized sequence and **TOS = v_0 = seq[0]** (so the
   first binding in source order can use `VAR_STORE` / `FAST_STORE` on TOS
   first). Implementation: pop TOS, `PySequence_List(raw)` (new list), require
-  `len(seq) == n`, then `KosStackBlock_PushRef` for indices `n-1` down to `0`,
+  `len(seq) == n`, then `KosStack_PushRef` for indices `n-1` down to `0`,
   then `Py_DECREF(seq)`.
 - **Invariants**: `n >= 0`. For `n == 0`, TOS must be an empty sequence after
   realization.

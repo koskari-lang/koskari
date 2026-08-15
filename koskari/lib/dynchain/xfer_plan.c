@@ -686,7 +686,7 @@ static void xfer_plan_release_invoke_clone(KosTransferPlan *plan) {
   KosContinuation *clone = KosTransferPlan_INVOKE_CLONE(plan);
   KosTransferPlan_INVOKE_CLONE(plan) = NULL;
   if (KosContinuation_RESUME_STACK(clone)) {
-    KosStackBlock_ReleaseChain(KosContinuation_RESUME_STACK(clone));
+    KosStack_Release(KosContinuation_RESUME_STACK(clone));
     KosContinuation_RESUME_STACK(clone) = NULL;
   }
   if (KosContinuation_CAPTURED_CHAIN(clone)) {
@@ -721,7 +721,7 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
   }
   xfer_plan_release_invoke_clone(plan);
   if (KosTransferPlan_RESUME_STACK(plan)) {
-    KosStackBlock_ReleaseChain(KosTransferPlan_RESUME_STACK(plan));
+    KosStack_Release(KosTransferPlan_RESUME_STACK(plan));
     KosTransferPlan_RESUME_STACK(plan) = NULL;
   }
   Py_XDECREF(KosTransferPlan_CONTINUATION_REF(plan));
@@ -772,21 +772,21 @@ KOS_OP_INLINE void xfer_plan_apply_resume_state(
     KosTransferPlan *plan) {
 
   if (KosTransferPlan_RESUME_STACK(plan)) {
-    KosStackBlock *new_stack = KosTransferPlan_RESUME_STACK(plan);
+    KosSegment *new_stack = KosTransferPlan_RESUME_STACK(plan);
     KosDynNode *owner = KosEvalState_InnermostStackOwner(es);
     if (! owner && KosEvalState_FRAME(es))
       owner = (KosDynNode *) KosEvalState_FRAME(es);
 
     if (owner) {
-      KosStackBlock *old_stack = KosDynNode_STACK(owner);
+      KosSegment *old_stack = KosDynNode_STACK(owner);
       KosDynNode_STACK(owner) = new_stack;
       KosTransferPlan_RESUME_STACK(plan) = NULL;
 
       if (old_stack && old_stack != new_stack)
-        KosStackBlock_ReleaseChain(old_stack);
+        KosStack_Release(old_stack);
       kos_dyn_rebuild_live_from_chain(es);
     } else {
-      KosStackBlock_ReleaseChain(new_stack);
+      KosStack_Release(new_stack);
       KosTransferPlan_RESUME_STACK(plan) = NULL;
     }
   }
@@ -1478,7 +1478,7 @@ static int kos_delimited_invoke_inplace(
   KosDynNode *span_top = KosEvalState_DYN_TOP(es);
   KosDynNode *slice_top = KosDynNode_PARENT(shift);
   KosDynFrame *resume_frame;
-  KosStackBlock *resume_stack;
+  KosSegment *resume_stack;
   KosDynDelim *delim;
   KosDynFrame *return_frame;
   uint32_t return_pc;
@@ -1509,7 +1509,7 @@ static int kos_delimited_invoke_inplace(
   }
 
   resume_stack = KosContinuation_RESUME_STACK(k)
-      ? KosStackBlock_DeepCopy(KosContinuation_RESUME_STACK(k)) : NULL;
+      ? KosStack_DeepCopy(KosContinuation_RESUME_STACK(k)) : NULL;
   if (! resume_stack && KosContinuation_RESUME_STACK(k)) {
     if (! PyErr_Occurred())
       PyErr_NoMemory();
@@ -1529,7 +1529,7 @@ static int kos_delimited_invoke_inplace(
     KosDynFrame *tmpl = kos_dynframe_clone(return_frame);
     if (! tmpl) {
       if (resume_stack)
-        KosStackBlock_ReleaseChain(resume_stack);
+        KosStack_Release(resume_stack);
       if (! PyErr_Occurred())
         PyErr_NoMemory();
       return -1;
@@ -1545,7 +1545,7 @@ static int kos_delimited_invoke_inplace(
                            NULL);
   if (! delim) {
     if (resume_stack)
-      KosStackBlock_ReleaseChain(resume_stack);
+      KosStack_Release(resume_stack);
     if (! PyErr_Occurred())
       PyErr_NoMemory();
     return -1;
@@ -1567,7 +1567,7 @@ static int kos_delimited_invoke_inplace(
     KosDynNode_PARENT((KosDynNode *) delim) = NULL;
     kos_dyndelim_free(delim);
     if (resume_stack)
-      KosStackBlock_ReleaseChain(resume_stack);
+      KosStack_Release(resume_stack);
     if (! PyErr_Occurred())
       PyErr_NoMemory();
     return -1;
@@ -1580,9 +1580,11 @@ static int kos_delimited_invoke_inplace(
          (void *) resume_frame, (unsigned) return_pc);
   #endif
 
-  /* Detach the invoke span and stash it on the delim. */
+  /* Detach the invoke span and stash it on the delim. Its segments'
+   * unwind-cache back links die with the detach. */
   KosDynNode_PARENT(shift) = NULL;
   KosDynDelim_RETURN_CHAIN(delim) = span_top;
+  kos_dyn_clear_unwind_caches(span_top, NULL);
 
   /* Wire prompt <- delim <- invocation prompt <- slice so the slice's
    * natural unwind leaves the invocation prompt (then the delim) at
@@ -1594,13 +1596,29 @@ static int kos_delimited_invoke_inplace(
     while (KosDynNode_PARENT(child) != prompt)
       child = KosDynNode_PARENT(child);
     KosDynNode_PARENT(child) = (KosDynNode *) invocation_prompt;
+    /* The re-spliced slice span's back links likewise predate the new
+     * shape. */
+    kos_dyn_clear_unwind_caches(slice_top, (KosDynNode *) invocation_prompt);
   }
 
   /* Displace the resume frame's live state with the captured resume
    * state; the delim owns the displaced stack until restitch. The
    * invoke-site acting pc is saved for extent lookups after restitch
    * (slice execution overwrites the frame's acting pc). */
-  KosDynDelim_SAVED_STACK(delim) = KosDynFrame_STACK(resume_frame);
+  /* The displaced segment is stored away from its node until restitch;
+     an inline segment cannot leave its node, so detach spills it to a
+     heap segment first. */
+  {
+    KosSegment *displaced = KosStack_Detach(KosDynFrame_STACK(resume_frame));
+    if (! displaced && KosDynFrame_STACK(resume_frame)) {
+      if (resume_stack)
+        KosStack_Release(resume_stack);
+      return -1;
+    }
+    KosDynDelim_SAVED_STACK(delim) = displaced;
+    if (displaced)
+      KosSegment_BACK(displaced) = NULL;
+  }
   KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(resume_frame);
   KosDynDelim_SAVED_ACTING_PC(delim) = KosEvalState_ACTING_PC(es);
   KosDynFrame_STACK(resume_frame) = resume_stack;
@@ -1759,7 +1777,7 @@ int kos_invoke_continuation(
      delimited graft carries none. Undelimited INSTALL keeps the plan
      copy (released in kos_free_transfer_plan if the plan dies early). */
   KosTransferPlan_RESUME_STACK(plan) = (! is_delimited && to_use->resume_stack)
-      ? KosStackBlock_DeepCopy(to_use->resume_stack) : NULL;
+      ? KosStack_DeepCopy(to_use->resume_stack) : NULL;
   #if KOS_XFER_TRACE
     SAYF("[xfer] plan resume_stack=%p",
          (void *) KosTransferPlan_RESUME_STACK(plan));
@@ -1793,7 +1811,7 @@ int kos_invoke_continuation(
     KosTransferPlan_INVOKE_CLONE(plan) = to_use;
     /* Do not release to_use->resume_stack here; that would DECREF the
      * continuation and free k before the plan runs. kos_free_transfer_plan
-     * releases it via KosStackBlock_ReleaseChain then frees to_use.
+     * releases it via KosStack_Release then frees to_use.
      * The clone retains ownership of captured_chain until
      * xfer_plan_release_invoke_clone frees it. */
   }

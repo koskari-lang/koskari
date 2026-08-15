@@ -12,23 +12,17 @@ static KosDynCollect *kos_dyncollect_new(
     KosDynNode *parent,
     PyObject *ns) {
   KosDynCollect *col_node = (KosDynCollect *) kos_dynnode_alloc();
-  KosStackBlock *stack;
-
   if (! col_node) {
     Py_DECREF(ns);
     return NULL;
   }
 
-  stack = KosStackBlock_NewEmpty();
-  if (! stack) {
-    kos_dynnode_return_to_freelist((KosDynNode *) col_node);
-    Py_DECREF(ns);
-    return NULL;
-  }
-
-  kos_dynnode_init((KosDynNode *) col_node, KOS_DYN_COLLECT, parent, 0);
+  kos_dynnode_init((KosDynNode *) col_node, KOS_DYN_COLLECT, parent,
+                   KOS_DYN_CAP_BINDS_NS);
   KosDynNode_NS((KosDynNode *) col_node) = ns;
-  KosDynNode_STACK((KosDynNode *) col_node) = stack;
+  /* segment attaches at push (kos_dyn_ensure_region_segment): a clone
+     built through this constructor must arrive stackless so the
+     centralized copy in kos_dyn_clone can carry the source's values */
   return col_node;
 }
 
@@ -46,26 +40,17 @@ static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
   if (! clone)
     return NULL;
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID((KosDynNode *) col_node);
-  if (KosDynNode_STACK((KosDynNode *) col_node)) {
-    KosDynNode_STACK((KosDynNode *) clone) =
-        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) col_node));
-    if (! KosDynNode_STACK((KosDynNode *) clone)) {
-      kos_dyncollect_free(clone);
-      return NULL;
-    }
-  }
   return clone;
 }
 
 
 /**
-   DECREF node namespace; return node to freelist.
+   Return node to freelist (which releases the owned namespace).
 */
 static void kos_dyncollect_free(KosDynCollect *col_node) {
   if (! col_node)
     return;
 
-  Py_DECREF(KosDynNode_NS((KosDynNode *) col_node));
   kos_dynnode_return_to_freelist((KosDynNode *) col_node);
 }
 
@@ -136,9 +121,8 @@ int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
    GC traverse a KOS_DYN_COLLECT: visit node-owned namespace for collector.
 */
 static int dynnode_traverse_collect(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
-  if (tr != 0)
-    return tr;
-  Py_VISIT(KosDynNode_NS(node));
+  (void) node;
+  (void) visit;
+  (void) arg;
   return 0;
 }

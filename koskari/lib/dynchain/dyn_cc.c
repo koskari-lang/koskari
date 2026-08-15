@@ -77,6 +77,8 @@ int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc) {
 
   KOS_DYN_POP_REQUIRE_KIND(cc, KOS_DYN_CC, "POP_CC", "CC");
   {
+    /* CC is a transfer bookmark: it never owns a segment, so there is
+       nothing to deliver -- a bare unlink suffices. */
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) cc);
 
     kos_dyn_commit_dyn_top(es, parent);

@@ -15,7 +15,7 @@ static KosDynNs *kos_dynns_new(
     return NULL;
   }
 
-  kos_dynnode_init(ns_node, KOS_DYN_NS, parent, 0);
+  kos_dynnode_init(ns_node, KOS_DYN_NS, parent, KOS_DYN_CAP_BINDS_NS);
   KosDynNode_NS(ns_node) = ns;  /* caller transferred ownership */
   return ns_node;
 }
@@ -38,13 +38,12 @@ static KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
 
 
 /**
-   DECREF node namespace; return node to freelist.
+   Return node to freelist (which releases the owned namespace).
 */
 static void kos_dynns_free(KosDynNs *ns_node) {
   if (! ns_node)
     return;
 
-  Py_DECREF(KosDynNode_NS(ns_node));
   kos_dynnode_return_to_freelist(ns_node);
 }
 
@@ -96,14 +95,7 @@ int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node) {
   }
 
   KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_NS, "POP_NS", "NS");
-  {
-    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
-
-    kos_dyn_commit_dyn_top(es, parent);
-    KosDynNode_PARENT((KosDynNode *) node) = NULL;
-    kos_dynns_free(node);
-  }
-  return 0;
+  return kos_dyn_pop_transparent_deliver(es, (KosDynNode *) node);
 }
 
 
@@ -111,9 +103,12 @@ int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node) {
 
 
 /**
-   GC traverse a KOS_DYN_NS: visit node-owned namespace reference.
+   GC traverse a KOS_DYN_NS: no payload beyond the base fields (the
+   namespace is visited generically by kos_dynnode_traverse).
 */
 static int dynnode_traverse_ns(KosDynNode *node, visitproc visit, void *arg) {
-  Py_VISIT(KosDynNode_NS(node));
+  (void) node;
+  (void) visit;
+  (void) arg;
   return 0;
 }

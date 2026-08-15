@@ -32,7 +32,7 @@ These fields **must** remain coherent with any new implementation:
 |-------|-------------------|
 | `dyn_top` | Top of `KosDynNode` chain |
 | `frame_top` | Cached top `KosDynFrame` |
-| `block` | Address of innermost operand-stack `KosStackBlock *` (refreshed with chain) |
+| `block` | Address of innermost operand-stack `KosSegment *` (refreshed with chain) |
 | `globals_frame` | Outermost frame for `GLOBALS` |
 | `globals_cache_version` | Invalidation vs `chain_version` |
 | `token` / `domain` | Evaluator identity / ambient KosDomain |

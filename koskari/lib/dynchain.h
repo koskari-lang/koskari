@@ -34,6 +34,8 @@
 #include <Python.h>
 #include <stdint.h>
 
+#include "stack.h"
+
 
 /* === DynNode kind enum === */
 
@@ -56,7 +58,8 @@
    KOS_DYN_PARAM     - Parameter bindings (parameterize extent)
    KOS_DYN_WITH      - Context manager (with / dyn-with); multi vs single-shot
                        is u.with.shot (see KOS_DYN_WITH_SHOT_*), not a second kind
-   KOS_DYN_SHIFT     - Shift handler block (push stack block; no frame/namespace)
+   KOS_DYN_SHIFT     - Shift handler bookmark (transparent; no segment,
+                       frame, or namespace of its own)
    KOS_DYN_CC_RAISE  - Sentinel node holding a KoskariContinuationApply exception
                        for the foreign-token transfer path; its unwind re-raises the
                        stored exception so the eval loop exits with KOS_RES_RAISE
@@ -138,6 +141,11 @@ typedef enum KosDynFlags {
    which marks failed-pop recovery (kos_dyn_exception_unwind). */
 #define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
 
+/* This kind binds its own namespace extent (frame, ns, collect); the
+   ns field holds an introduced scope rather than the owned live-ns
+   fill every other pushed node carries. */
+#define KOS_DYN_CAP_BINDS_NS                 (1u << 11)
+
 /* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
 #define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
 
@@ -217,8 +225,15 @@ struct KosDynNode {
   uint32_t flags;       /* KosDynFlags bitfield */
   uint32_t caps;        /* capability bits for generic code (KOS_DYN_CAP_*) */
   uint32_t node_id;     /* stable allocation ID; copied on clone for LCA matching */
-  KosStackBlock *stack; /* owned operand-stack extent; NULL if none (inherit ancestor) */
-  PyObject *ns;         /* owned namespace extent; NULL if none (inherit ancestor) */
+  /* Owned operand segment. Region kinds always own one (aimed at the
+     embedded iseg at construction or push, heap after a spill); NULL
+     marks a transfer bookmark, which inherits the enclosing extent's
+     segment. */
+  KosSegment *stack;
+  /* Owned namespace: an introduced scope for KOS_DYN_CAP_BINDS_NS
+     kinds, otherwise the owned live-ns fill taken at push. NULL only
+     in the placeholder-frame window and on unfilled splices. */
+  PyObject *ns;
 
   union {
     struct {
@@ -235,6 +250,11 @@ struct KosDynNode {
          Py_CLEAR mandatory -- at free (after the park attempt) and at
          tail reuse. */
       PyObject *fn;
+      /* Unwind cache: the frame displaced at install (borrowed; an
+         ancestor on the chain, so it outlives this frame while
+         installed). Set at install only; cleared at park, clone, and
+         span detach; NULL means fall back to the chain walk. */
+      struct KosDynNode *back_frame;
     } frame;
     struct {
       uint32_t prompt_id;
@@ -257,7 +277,7 @@ struct KosDynNode {
       KosDynNode *node;
       /* INPLACE only: displaced resume-frame state (stack owned) and
          the invoke-site acting pc for extent lookups after restitch */
-      KosStackBlock *saved_stack;
+      KosSegment *saved_stack;
       uint32_t saved_pc;
       uint32_t saved_acting_pc;
     } delim;
@@ -344,7 +364,37 @@ struct KosDynNode {
       int n;                 /* 1 or 2 */
     } next;
   } u;
+
+  /* Embedded operand-segment storage for region kinds: stack aims
+     here at construction and spills to a heap segment on growth (the
+     storage then sits dormant until node reuse). Transfer bookmarks
+     leave it unused. */
+  KosInlineSegment iseg;
 };
+
+
+/**
+   Aim a node's stack at its embedded inline segment, reset empty.
+   For region-kind construction; cannot fail.
+*/
+static inline KosSegment *kos_dynnode_use_inline_segment(
+        struct KosDynNode *node) {
+  node->stack = kos_inline_segment_init(&node->iseg);
+  return node->stack;
+}
+
+
+/**
+   True when node introduces its own namespace extent: it carries
+   KOS_DYN_CAP_BINDS_NS and one is attached.  Introspection-only:
+   under the namespace owned-fill every pushed node carries an ns and
+   the live-value question is answered by reading it, so retarget
+   logic never needs this distinction -- only displays that report
+   scope structure do.
+*/
+static inline int kos_dynnode_introduces_ns(const struct KosDynNode *node) {
+  return (node->caps & KOS_DYN_CAP_BINDS_NS) && node->ns != NULL;
+}
 
 typedef struct KosDynNode KosDynFrame;
 
@@ -460,7 +510,7 @@ typedef struct KosDynNode KosDynNext;
 struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
   uint32_t resume_pc;           /* pc to resume at */
-  KosStackBlock *resume_stack;  /* aliases node-owned stack on captured_chain */
+  KosSegment *resume_stack;  /* aliases node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag */
   uint32_t graft_point_id;      /* node_id of graft point for ID fallback; 0 = none */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
@@ -623,7 +673,7 @@ struct KosTransferPlan {
   KosDynNode *original_target;  /* target for chain-change detection */
   uint32_t graft_point_id;      /* node_id for LCA fallback when replanning */
   uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
-  KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
+  KosSegment *resume_stack;  /* stack state at capture (invocation only) */
   PyObject *continuation_ref;   /* strong ref (Py_INCREF) until plan freed or moved to prompt */
   KosContinuation *invoke_clone;  /* when set, release then free when plan freed */
 
@@ -679,15 +729,13 @@ typedef int (*KosHookInvokeFn)(KosEvalState *es, void *hook_state);
    :param parent: parent node in dynamic chain (or NULL for root)
    :param code: bytecode object (borrowed reference)
    :param ns: namespace (reference is stolen)
-   :param stack: operand stack (ownership transferred)
 
    :return: new frame node, or NULL on error
 */
 KosDynFrame *kos_dynframe_new(
-   KosDynNode *parent,
-   KosCode *code,
-   PyObject *ns,
-   KosStackBlock *stack);
+    KosDynNode *parent,
+    KosCode *code,
+    PyObject *ns);
 
 
 /**
@@ -706,7 +754,8 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame);
 /**
    Free a frame node and release its resources.
 
-   Releases the stack blocks, DECREFs the namespace.
+   Releases code; the segment and namespace release in the freelist
+   return.
    Does NOT free the parent chain.
 
    :param frame: frame to free (may be NULL)
@@ -1417,8 +1466,8 @@ int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node);
 
 /**
    Undo a successful kos_dyn_push_try/finally/loop/foreach when a follow-up
-   step (e.g. KosStackBlock_PushBlock) fails. region must be the pointer
-   returned from the corresponding push.
+   install step fails. region must be the pointer returned from the
+   corresponding push.
 
    :param ctx: execution context
    :param region: region node still at dyn_top
@@ -2295,6 +2344,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KOS_FRAME_DEMAND          (1u << 0)  /* frame is a demand-sync root */
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
+#define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
 #define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)

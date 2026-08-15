@@ -139,20 +139,32 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
   }
 
   if (! KosDynWind_AFTER_THUNK(node)) {
-    /* No after-thunk: push stored body result and finish uninstall */
+    /* No after-thunk: deliver the stored body result and finish
+       uninstall. The wind owns the live segment and is mid-pop, so the
+       result goes to the enclosing owner's segment (parent delivery,
+       through the owning slot supplied by the wind's own unwind
+       cache); pushing onto the live segment would free the value with
+       the node. Walk only on a cache miss (splice-installed node). */
     PyObject *body_result = KosDynWind_BODY_RESULT(node);
     KosDynWind_BODY_RESULT(node) = NULL;
-    if ((KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-             ? *KosEvalState_BLOCK(es)
-             : NULL)
-        && body_result) {
-      if (KosEvalState_StackPushRef(es, body_result) < 0) {
-        KosDynWind_BODY_RESULT(node) = body_result;
-        return -1;
+    if (body_result) {
+      KosSegment **slot = KosDynNode_STACK((KosDynNode *) node)
+          ? KosSegment_BACK(KosDynNode_STACK((KosDynNode *) node))
+          : NULL;
+      if (! slot) {
+        KosDynNode *p = KosDynNode_PARENT((KosDynNode *) node);
+        while (p && ! KosDynNode_STACK(p))
+          p = KosDynNode_PARENT(p);
+        slot = p ? &KosDynNode_STACK(p) : NULL;
       }
-    }
-    if (body_result)
+      if (slot) {
+        if (KosStack_PushRef(slot, body_result) < 0) {
+          KosDynWind_BODY_RESULT(node) = body_result;
+          return -1;
+        }
+      }
       Py_DECREF(body_result);
+    }
     return 0;
   }
 
@@ -217,7 +229,7 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_BEGIN;
     KosDynWind_ENTERED(wind) = 1;
     if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-        && KosStackBlock_LEN(*KosEvalState_BLOCK(es))) {
+        && KosSegment_LEN(*KosEvalState_BLOCK(es))) {
       PyObject *val = KosEvalState_StackPopRef(es);
       if (val)
         Py_DECREF(val);
@@ -254,7 +266,7 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     }
 
     if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-        && KosStackBlock_LEN(*KosEvalState_BLOCK(es))) {
+        && KosSegment_LEN(*KosEvalState_BLOCK(es))) {
       PyObject *thunk_ret = KosEvalState_StackPopRef(es);
       if (thunk_ret)
         Py_DECREF(thunk_ret);

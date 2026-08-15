@@ -47,7 +47,7 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
     KosDynFinally_HANDLING_RETURN((KosDynFinally *) region) = 0;
 
   {
-    PyObject *promoted = KosStackBlock_PopRef(&KosDynNode_STACK(region));
+    PyObject *promoted = KosStack_PopRef(&KosDynNode_STACK(region));
     if (! promoted)
       return EVAL_RAISE();
     if (unlikely(kos_dyn_pop_finally(es, (KosDynFinally *) region) < 0)) {

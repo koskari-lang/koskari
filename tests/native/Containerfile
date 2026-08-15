@@ -27,15 +27,22 @@ LABEL maintainer="obriencj@gmail.com" \
 # - gcc: C compiler
 # - make: build system
 # - python3-devel: Python headers for extension building
+# - python3-pip: for the tox install below
 # - libasan: AddressSanitizer runtime library
 # - valgrind: memory error detector
 RUN dnf install -y \
     gcc \
     make \
     python3-devel \
+    python3-pip \
     libasan \
     valgrind \
     && dnf clean all
+
+# tox drives the full-suite sanitizer modes (suite-asan,
+# suite-valgrind) using the [testenv:asan] / [testenv:valgrind]
+# definitions from setup.cfg.
+RUN pip3 install --no-cache-dir tox tox-uv
 
 WORKDIR /src/tests/native
 

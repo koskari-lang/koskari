@@ -11,12 +11,6 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   if (! node)
     return NULL;
 
-  KosStackBlock *stack = KosStackBlock_NewEmpty();
-  if (! stack) {
-    kos_dynnode_return_to_freelist((KosDynNode *) node);
-    return NULL;
-  }
-
   kos_dynnode_init(node, KOS_DYN_FINALLY, parent,
                    KOS_DYN_CAP_HANDLES_EXCEPTIONS
                    | KOS_DYN_CAP_INTERCEPTS_RAISE);
@@ -25,7 +19,7 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynFinally_HANDLING_RAISE(node) = 0;
   KosDynFinally_HANDLING_RETURN(node) = 0;
   KosDynFinally_HANDLING_RESULT(node) = NULL;
-  KosDynNode_STACK((KosDynNode *) node) = stack;
+  kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
 }
 
@@ -46,14 +40,6 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   KosDynFinally_HANDLING_RETURN(clone) = KosDynFinally_HANDLING_RETURN(node);
   KosDynFinally_HANDLING_RESULT(clone) = KosDynFinally_HANDLING_RESULT(node);
   Py_XINCREF(KosDynFinally_HANDLING_RESULT(clone));
-  if (KosDynNode_STACK((KosDynNode *) node)) {
-    KosDynNode_STACK((KosDynNode *) clone) =
-        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) node));
-    if (! KosDynNode_STACK((KosDynNode *) clone)) {
-      kos_dynfinally_free(clone);
-      return NULL;
-    }
-  }
   return clone;
 }
 
@@ -129,9 +115,6 @@ int kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node) {
    GC traverse a KOS_DYN_FINALLY: visit handling result when present.
 */
 static int dynnode_traverse_finally(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
-  if (tr != 0)
-    return tr;
   Py_VISIT(KosDynFinally_HANDLING_RESULT((KosDynFinally *) node));
   return 0;
 }

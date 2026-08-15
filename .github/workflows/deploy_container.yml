@@ -1,5 +1,22 @@
 # Build koskari runtime image (root Containerfile) and push to GHCR.
 # Invoke via workflow_call, workflow_dispatch, or from release pipelines.
+#
+# Job graph:
+#
+#   prep ──► image (amd64, arm64) ──► manifest
+#
+# Each architecture builds on a native runner and pushes an untagged
+# manifest by digest; the manifest job then assembles those digests into
+# the multi-arch tags. arm64 is built rather than dropped because the MCP
+# Lambda image (arm64) consumes this image as its base.
+#
+# prep resolves the version metadata once so both build legs stamp
+# identical build-args and the manifest job agrees on the tag.
+#
+# The GHCR :latest tag only moves in the manifest job, so a failed build
+# leg leaves the previous multi-arch :latest intact. It does leave the
+# successful leg's untagged digest behind in GHCR, which is inert but
+# accumulates; prune untagged versions periodically.
 
 name: Deploy container
 
@@ -22,24 +39,18 @@ permissions:
   packages: write
 
 jobs:
-  image:
+  prep:
     runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.version.outputs.commit }}
+      dirty: ${{ steps.version.outputs.dirty }}
+      exact_tag: ${{ steps.version.outputs.exact_tag }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      image: ${{ steps.version.outputs.image }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Set up QEMU (arm64 emulation)
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve version metadata
         id: version
@@ -56,22 +67,103 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
+  image:
+    needs: prep
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # No QEMU: each leg builds its own architecture natively.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pushed by digest with no tag; the manifest job attaches the tags.
+      # The cache scope is per-arch: a shared scope would have the two
+      # legs overwriting each other's entries.
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Containerfile
-          # arm64 included so the MCP Lambda image (arm64) can consume
-          # this image as its base
-          platforms: linux/amd64,linux/arm64
-          push: true
+          platforms: ${{ matrix.platform }}
           build-args: |
-            KOSKARI_COMMIT=${{ steps.version.outputs.commit }}
-            KOSKARI_DIRTY=${{ steps.version.outputs.dirty }}
-            KOSKARI_EXACT_TAG=${{ steps.version.outputs.exact_tag }}
-            KOSKARI_VERSION=${{ steps.version.outputs.version }}
-          tags: |
-            ${{ steps.version.outputs.image }}:${{ steps.version.outputs.tag }}
-            ${{ steps.version.outputs.image }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            KOSKARI_COMMIT=${{ needs.prep.outputs.commit }}
+            KOSKARI_DIRTY=${{ needs.prep.outputs.dirty }}
+            KOSKARI_EXACT_TAG=${{ needs.prep.outputs.exact_tag }}
+            KOSKARI_VERSION=${{ needs.prep.outputs.version }}
+          outputs: type=image,name=${{ needs.prep.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=base-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=base-${{ matrix.arch }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  manifest:
+    needs: [prep, image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push the manifest list
+        working-directory: /tmp/digests
+        env:
+          IMAGE: ${{ needs.prep.outputs.image }}
+          TAG: ${{ needs.prep.outputs.tag }}
+        run: |
+          docker buildx imagetools create \
+            -t "$IMAGE:$TAG" \
+            -t "$IMAGE:latest" \
+            $(printf "$IMAGE@sha256:%s " *)
+
+      - name: Inspect the pushed manifest
+        env:
+          IMAGE: ${{ needs.prep.outputs.image }}
+          TAG: ${{ needs.prep.outputs.tag }}
+        run: docker buildx imagetools inspect "$IMAGE:$TAG"
+
+# The end.

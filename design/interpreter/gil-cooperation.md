@@ -130,7 +130,7 @@ Places identified as good candidates (low or no PyObject/refcount work; or singl
 
 ### 5.3 Stack
 
-- **In `KosStackBlock_DeepCopy`**: After the "collect pointers into vals[]" loop (no refcount) and before the PushRef loop (which does INCREF). One call in that gap.
+- **In `KosStack_DeepCopy`**: After the "collect pointers into vals[]" loop (no refcount) and before the PushRef loop (which does INCREF). One call in that gap.
 
 ### 5.4 Other
 

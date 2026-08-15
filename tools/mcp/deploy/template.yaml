@@ -4,7 +4,7 @@ Description: >
   Koskari corpus MCP server: a container-image Lambda behind an API Gateway
   HTTP API with a custom domain and stage throttling. Parameterized by name,
   image, and domain so the same stack instantiates future MCP servers.
-  Codifies design/mcp-baked-in-lambda.md Part 4; see deploy/README.md.
+  Codifies design/archive/mcp-baked-in-lambda.md Part 4; see deploy/README.md.
 
 Parameters:
   ServerName:

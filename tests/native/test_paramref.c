@@ -226,7 +226,7 @@ static int test_paramref_store_deref_inside_scope(void) {
     ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     ctx = KosContext_New(frame);
@@ -280,7 +280,7 @@ static int test_paramref_clear_inside_scope(void) {
     ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     ctx = KosContext_New(frame);
@@ -338,7 +338,7 @@ static int test_paramref_is_empty_inside_scope(void) {
     ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     ctx = KosContext_New(frame);
@@ -390,7 +390,7 @@ static int test_dynparam_push_pop_restore(void) {
     ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
-    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
     ctx = KosContext_New(frame);
@@ -454,7 +454,7 @@ static int test_dynparam_nested_restore(void) {
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     ns = PyDict_New();
-    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     ctx = KosContext_New(frame);
     key = PyUnicode_FromString("nested");
     param_ref = KosParamRef_New(key, NULL);

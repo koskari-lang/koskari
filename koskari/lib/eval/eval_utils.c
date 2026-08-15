@@ -608,7 +608,7 @@ KosOpResult KosEvalState_Call(
 
 static KOS_NOINLINE KosOpResult kos_call_invoke_body(
         KosEvalState *es,
-        KosStackBlock **caller_slot,
+        KosSegment **caller_slot,
         size_t window,
         PyObject *callable,
         PyObject *const *argv,
@@ -865,7 +865,7 @@ static inline KosOpResult kos_call_invoke(
         PyObject *kwnames,
         unsigned flags) {
 
-  KosStackBlock **caller_slot = KosEvalState_BLOCK(es);
+  KosSegment **caller_slot = KosEvalState_BLOCK(es);
   Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
   size_t window = 0;
 

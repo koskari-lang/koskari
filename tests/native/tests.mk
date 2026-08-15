@@ -103,6 +103,31 @@ asan: test-asan  ## Run tests with AddressSanitizer
 valgrind: test-valgrind  ## Run tests under Valgrind
 all: normal asan valgrind  ## Run all test modes
 
+
+# Full Python unit test suite under sanitizers. Driven by tox using
+# the [testenv:asan] / [testenv:valgrind] definitions in setup.cfg
+# (single source of truth shared with host-side runs); the tox workdir
+# stays in the container, off the /src mount.
+
+.PHONY: suite-asan suite-valgrind
+
+suite-asan:  ## Run the FULL unit test suite with an ASan-instrumented extension
+	@mkdir -p /build/tox
+	@ASAN_RT=$$(gcc -print-file-name=libasan.so.8); \
+	 if [ ! -e "$$ASAN_RT" ]; then \
+	   echo "error: libasan runtime not found in container"; \
+	   exit 1; \
+	 fi; \
+	 cd /src && \
+	 KOS_ASAN=1 \
+	 LD_PRELOAD="$$ASAN_RT" \
+	 ASAN_OPTIONS=detect_leaks=0:abort_on_error=1 \
+	 tox --workdir /build/tox -re asan
+
+suite-valgrind:  ## Run the FULL unit test suite under Valgrind (slow)
+	@mkdir -p /build/tox
+	@cd /src && tox --workdir /build/tox -re valgrind
+
 $(OBJDIR):
 	mkdir -p $@
 

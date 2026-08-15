@@ -289,14 +289,7 @@ int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node) {
   KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_PARAM, "POP_PARAM", "PARAM");
 
   kos_dynparam_restore(ctx, node);
-  {
-    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
-
-    kos_dyn_commit_dyn_top(es, parent);
-    KosDynNode_PARENT((KosDynNode *) node) = NULL;
-    kos_dynparam_free(node);
-  }
-  return 0;
+  return kos_dyn_pop_transparent_deliver(es, (KosDynNode *) node);
 }
 
 

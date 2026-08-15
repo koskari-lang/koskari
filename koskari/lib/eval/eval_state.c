@@ -179,11 +179,48 @@ static inline PyObject *KosEvalState_GetConstant(
 #endif
 
 
-static KosStackBlock **kos_evalstate_parent_stack_slot(
+static KosSegment **kos_evalstate_parent_stack_slot(
     KosEvalState *es) {
 
-  KosDynNode *owner = KosEvalState_InnermostStackOwner(es);
+  KosDynNode *owner;
   KosDynNode *node;
+
+  /* Unwind cache: the live segment's back is the enclosing owning
+     slot recorded at install. Note the deliberate exception this
+     serves: a parent delivery mutates a segment that is not the
+     active push target, writing through the owning slot so a grow
+     survives. Cache miss (NULL) falls through to the chain walk,
+     which stays the semantic definition. */
+  {
+    KosSegment **cur = KosEvalState_BLOCK(es);
+    if (likely(cur && *cur && KosSegment_BACK(*cur))) {
+      KosSegment **cached = KosSegment_BACK(*cur);
+#if KOS_DEBUG_PATCH_DYN_CACHES
+      KosDynNode *owner_dbg = KosEvalState_InnermostStackOwner(es);
+      if (owner_dbg) {
+        KosDynNode *n_dbg = KosDynNode_PARENT(owner_dbg);
+        for (; n_dbg; n_dbg = KosDynNode_PARENT(n_dbg)) {
+          if (KosDynNode_STACK(n_dbg))
+            break;
+        }
+        if (! n_dbg || cached != &KosDynNode_STACK(n_dbg)) {
+          PyErr_SetString(PyExc_SystemError,
+                          "kos_evalstate_parent_stack_slot: back cache"
+                          " drift vs walk");
+          return NULL;
+        }
+      }
+#endif
+      return cached;
+    }
+  }
+
+#if KOS_EVAL_SAFETYNET
+  /* Safety net: recompute the parent slot by walk. Unreachable under
+     the cache model (the counter measured zero across the benchmark
+     battery); kept as a diagnostic for model violations. */
+  KOS_TRACE_EVENTS_INC(KOS_TE_PARENT_SLOT_WALK);
+  owner = KosEvalState_InnermostStackOwner(es);
   if (unlikely(! owner)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "KosEvalState_ParentStack*: no current stack owner");
@@ -198,25 +235,36 @@ static KosStackBlock **kos_evalstate_parent_stack_slot(
   PyErr_SetString(PyExc_RuntimeError,
                   "KosEvalState_ParentStack*: no parent stack owner");
   return NULL;
+#else
+  /* The cache model is authoritative; a miss here is a model
+     violation. Fail clean; build with -DKOS_EVAL_SAFETYNET=1 to
+     diagnose by walk instead. */
+  (void) owner;
+  (void) node;
+  PyErr_SetString(PyExc_RuntimeError,
+                  "KosEvalState_ParentStack*: unwind cache missing"
+                  " (KOS_EVAL_SAFETYNET=1 to diagnose)");
+  return NULL;
+#endif
 }
 
 
 int KosEvalState_ParentStackPushRef(KosEvalState *es, PyObject *val) {
-  KosStackBlock **slot = kos_evalstate_parent_stack_slot(es);
+  KosSegment **slot = kos_evalstate_parent_stack_slot(es);
   if (unlikely(! slot))
     return -1;
 
-  return KosStackBlock_PushRef(slot, val);
+  return KosStack_PushRef(slot, val);
 }
 
 
 int KosEvalState_ParentStackPUSH(KosEvalState *es, PyObject *val) {
-  KosStackBlock **slot = kos_evalstate_parent_stack_slot(es);
+  KosSegment **slot = kos_evalstate_parent_stack_slot(es);
   if (unlikely(! slot)) {
     Py_XDECREF(val);
     return -1;
   }
-  return KosStackBlock_PUSH(slot, val);
+  return KosStack_PUSH(slot, val);
 }
 
 

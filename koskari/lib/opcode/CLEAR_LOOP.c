@@ -27,7 +27,7 @@ KOS_OP_HANDLER(CLEAR_LOOP) {
   }
 
   KosDynLoop_ENABLED((KosDynLoop *) region) = 0;
-  if (KosEvalState_StackClearBlock(es) < 0)
+  if (KosEvalState_StackClear(es) < 0)
     return EVAL_RAISE();
 
   (void) insn;

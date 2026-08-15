@@ -18,16 +18,9 @@ static KosDynWith *kos_dyn_with_allocate(
     uint8_t shot) {
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
-  KosStackBlock *stack;
 
   if (! node)
     return NULL;
-
-  stack = KosStackBlock_NewEmpty();
-  if (! stack) {
-    kos_dynnode_return_to_freelist((KosDynNode *) node);
-    return NULL;
-  }
 
   {
     uint32_t caps;
@@ -40,7 +33,7 @@ static KosDynWith *kos_dyn_with_allocate(
     kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent, caps);
   }
 
-  KosDynNode_STACK((KosDynNode *) node) = stack;
+  kos_dynnode_use_inline_segment((KosDynNode *) node);
   KosDynWith_MGR(node) = mgr;
   KosDynWith_ENTER(node) = enter;
   KosDynWith_EXIT(node) = exit;
@@ -60,8 +53,6 @@ static KosDynWith *kos_dyn_with_allocate(
   if (shot == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE) {
     KosDynWith_EXIT_DONE(node) = KosRef_New(NULL, NULL);
     if (! KosDynWith_EXIT_DONE(node)) {
-      KosStackBlock_ReleaseChain(stack);
-      KosDynNode_STACK((KosDynNode *) node) = NULL;
       kos_dynnode_return_to_freelist((KosDynNode *) node);
       return NULL;
     }
@@ -99,11 +90,11 @@ static int kos_dyn_with_post_unwind_deliver(
     KosEvalState *es,
     KosDynWith *with_node) {
 
-  KosStackBlock *stack = KosDynNode_STACK((KosDynNode *) with_node);
-  if (! stack || KosStackBlock_LEN(stack) == 0)
+  KosSegment *stack = KosDynNode_STACK((KosDynNode *) with_node);
+  if (! stack || KosSegment_LEN(stack) == 0)
     return 0;
 
-  PyObject *body_val = KosStackBlock_PopRef(&KosDynNode_STACK((KosDynNode *) with_node));
+  PyObject *body_val = KosStack_PopRef(&KosDynNode_STACK((KosDynNode *) with_node));
   if (! body_val)
     return -1;
   if (KosEvalState_ParentStackPushRef(es, body_val) < 0) {
@@ -154,14 +145,6 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   KosDynWith_EXC_TYP(node) = NULL;
   KosDynWith_EXC_VAL(node) = NULL;
   KosDynWith_EXC_TB(node) = NULL;
-  if (KosDynNode_STACK((KosDynNode *) src)) {
-    KosDynNode_STACK((KosDynNode *) node) =
-        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) src));
-    if (! KosDynNode_STACK((KosDynNode *) node)) {
-      kos_dynwith_free(node);
-      return NULL;
-    }
-  }
   return node;
 }
 
@@ -656,11 +639,6 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
 */
 static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
   KosDynWith *with_node = (KosDynWith *) node;
-  {
-    int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
-    if (tr != 0)
-      return tr;
-  }
   Py_VISIT(KosDynWith_MGR(with_node));
   Py_VISIT(KosDynWith_ENTER(with_node));
   Py_VISIT(KosDynWith_EXIT(with_node));

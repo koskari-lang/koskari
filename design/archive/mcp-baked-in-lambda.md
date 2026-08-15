@@ -6,14 +6,15 @@ running that image as a public, persistent service on **AWS Lambda** at
 `corpus.koskari.org`.
 
 This supersedes Track B ("thin shim over the Dataset Viewer API") of
-[archive/corpus-mcp-server.md](archive/corpus-mcp-server.md). The stdio
+[corpus-mcp-server.md](corpus-mcp-server.md). The stdio
 container for local MCP clients is retained; the HF-relay data backend is
 removed.
 
-**Status:** Parts 1-3, 5 and 6 implemented (baked backend, `--lambda` mode,
-Lambda image, the SAM stack + deploy workflow, and the landing page). Part 4
--- the one-time AWS bring-up -- remains, and is a manual, credentialed step; see
-[../tools/mcp/deploy/README.md](../tools/mcp/deploy/README.md).
+**Status:** implemented and archived. Every part is done, including the
+one-time AWS bring-up, and the service is live at `corpus.koskari.org`. The
+operational record -- stack parameters, the deploy role, throttling and cost --
+lives on in [../../tools/mcp/deploy/README.md](../../tools/mcp/deploy/README.md),
+which is the page to read when running or changing the deployment.
 
 ---
 
@@ -457,7 +458,7 @@ bearing rather than theoretical.
 
 ## References
 
-- [archive/corpus-mcp-server.md](archive/corpus-mcp-server.md) -- superseded
+- [corpus-mcp-server.md](corpus-mcp-server.md) -- superseded
   Track B (HF Viewer relay) and the still-current Track A (HF publication)
 - [corpus-schema-philosophy.md](corpus-schema-philosophy.md) -- corpus as
   source of truth, datasets as views

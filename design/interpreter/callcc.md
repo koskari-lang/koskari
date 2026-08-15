@@ -75,7 +75,7 @@ struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
   KosDynFrame *resume_frame;    /* frame to resume into */
   uint32_t resume_pc;           /* pc to resume at */
-  KosStackBlock *resume_stack;  /* stack state (COW reference) */
+  KosSegment *resume_stack;  /* stack state (COW reference) */
   uint32_t prompt_id;           /* target prompt tag (KOS_PROMPT_ID_UNDELIMITED for call/cc) */
   uint32_t graft_point_id;      /* node_id of graft point for LCA fallback; 0 for capture-cc */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
@@ -340,7 +340,7 @@ It does NOT contain:
 **Not GC-tracked directly**:
 - `KosDynNode` chain nodes (traversed via wrappers)
 - `KosContinuation` (internal struct)
-- `KosStackBlock` (traversed via chain)
+- `KosSegment` (traversed via chain)
 
 Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 - Frame chain: namespace, stack values

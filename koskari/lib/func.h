@@ -201,7 +201,7 @@ typedef struct {
    Parks only when the slot is open and the frame is provably private:
    exact Namespace with refcount 1, GC-untracked, no binds dict, and no
    native handler.  On park the namespace's raw slots are cleared, the
-   stack block is cleared, and the node base is normalized for
+   segment is cleared, and the node base is normalized for
    kos_dyn_push_ready_frame.  The frame's fn field must already be
    NULL (kos_dynframe_free clears it before offering).
 
@@ -236,7 +236,7 @@ PyObject *KosFunction_SimpleCallNamespaceFromVector(
 */
 PyObject *KosFunction_SimpleCallNamespaceStealBlock(
       PyObject *self,
-      KosStackBlock *block,
+      KosSegment *block,
       Py_ssize_t nargs);
 
 

@@ -2055,7 +2055,7 @@ PyObject *KosFunction_SimpleCallNamespaceFromVector(
 
 PyObject *KosFunction_SimpleCallNamespaceStealBlock(
     PyObject *self,
-    KosStackBlock *block,
+    KosSegment *block,
     Py_ssize_t nargs) {
 
   KosFunction *fn = (KosFunction *) self;
@@ -2099,7 +2099,9 @@ int KosFunction_TryParkFrame(PyObject *self, KosDynFrame *frame) {
      (non-raw template refs retained), empty stack, normalized node
      base ready for kos_dyn_push_ready_frame. */
   KosNamespace_ClearRawFast(ns);
-  KosStackBlock_ClearBlock(&KosDynFrame_STACK(frame));
+  KosStack_Clear(&KosDynFrame_STACK(frame));
+  KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
+  KosDynFrame_BACK_FRAME(frame) = NULL;
 
   KosDynNode_PARENT(frame) = NULL;
   KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;

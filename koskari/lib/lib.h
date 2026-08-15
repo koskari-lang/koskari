@@ -29,7 +29,7 @@
 
 struct KosPyAsyncGen;       typedef struct KosPyAsyncGen       KosPyAsyncGen;
 struct KosCode;             typedef struct KosCode             KosCode;
-struct KosStackBlock;       typedef struct KosStackBlock       KosStackBlock;
+struct KosSegment;          typedef struct KosSegment          KosSegment;
 struct KosContext;          typedef struct KosContext          KosContext;
 struct KosDynNode;          typedef struct KosDynNode          KosDynNode;
 struct KosContinuation;     typedef struct KosContinuation     KosContinuation;

@@ -161,7 +161,7 @@ subtracted: `binary_trees` -3.45%, `field` -0.63%, `tree` -0.45%,
 -0.155%.  The win concentrates in return-dense code.  Forcing
 `eval_ng_plain_return` back inline was measured and rejected: it costs
 8,886 B, because the body owns frame teardown and drags
-`kos_dynframe_free`, `KosStackBlock_Release` and `ns_dealloc` in with
+`kos_dynframe_free`, `KosStack_Release` and `ns_dealloc` in with
 it.  Splitting into an always-inlined core for the fast arm plus an
 out-of-line wrapper for the general path measured byte for byte
 identical, so the cost is intrinsic to the fast arm's copy and there is

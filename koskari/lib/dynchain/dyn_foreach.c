@@ -11,12 +11,6 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   if (! node)
     return NULL;
 
-  KosStackBlock *stack = KosStackBlock_NewEmpty();
-  if (! stack) {
-    kos_dynnode_return_to_freelist((KosDynNode *) node);
-    return NULL;
-  }
-
   kos_dynnode_init(node, KOS_DYN_FOREACH, parent, 0);
   KosDynForeach_BREAK_PC(node) = break_pc;
   KosDynForeach_CONTINUE_PC(node) = continue_pc;
@@ -26,7 +20,7 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   KosDynForeach_EXHAUSTED(node) = 0;
   KosDynForeach_ITER_NEXT_ELSE_PC(node) = 0;
   KosDynForeach_ITER_STEP_PHASE(node) = KOS_FOREACH_ITER_STEP_IDLE;
-  KosDynNode_STACK((KosDynNode *) node) = stack;
+  kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
 }
 
@@ -51,14 +45,6 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
   KosDynForeach_EXHAUSTED(clone) = KosDynForeach_EXHAUSTED(node);
   KosDynForeach_ITER_NEXT_ELSE_PC(clone) = KosDynForeach_ITER_NEXT_ELSE_PC(node);
   KosDynForeach_ITER_STEP_PHASE(clone) = KosDynForeach_ITER_STEP_PHASE(node);
-  if (KosDynNode_STACK((KosDynNode *) node)) {
-    KosDynNode_STACK((KosDynNode *) clone) =
-        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) node));
-    if (! KosDynNode_STACK((KosDynNode *) clone)) {
-      kos_dynforeach_free(clone);
-      return NULL;
-    }
-  }
   return clone;
 }
 
@@ -204,9 +190,6 @@ int kos_dyn_foreach_deliver_return_kos_agen(
    GC traverse a KOS_DYN_FOREACH: visit result and iterator refs.
 */
 static int dynnode_traverse_foreach(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
-  if (tr != 0)
-    return tr;
   Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));
   Py_VISIT(KosDynForeach_ITER((KosDynForeach *) node));
   return 0;

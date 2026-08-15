@@ -15,7 +15,7 @@
 
 /**
    PUSH_LOOP: no arg. Break target is derived from the extent table
-   (pop_pc + 1). Push LOOP region and stack block; continue target =
+   (pop_pc + 1). Push LOOP region (with its own segment); continue target =
    next instruction. Initializes region result to None.
 */
 

@@ -3,15 +3,15 @@
 
 
 /**
-  Allocate a FRAME node: code, namespace, stack ownership per caller.
-  Frame takes a strong reference to code.
+  Allocate a FRAME node: code and namespace attached, operand segment
+  aimed at the embedded inline storage. Frame takes a strong reference
+  to code.
    Callers: internal frame construction, kos_dyn_push_frame.
 */
 KosDynFrame *kos_dynframe_new(
     KosDynNode *parent,
     KosCode *code,
-    PyObject *ns,
-    KosStackBlock *stack) {
+    PyObject *ns) {
 
   KosDynFrame *frame = kos_dynnode_alloc();
   if (! frame) {
@@ -19,31 +19,26 @@ KosDynFrame *kos_dynframe_new(
     return NULL;
   }
 
-  if (! stack) {
-    stack = KosStackBlock_NewEmpty();
-    if (! stack) {
-      Py_XDECREF(ns);
-      kos_dynnode_return_to_freelist(frame);
-      return NULL;
-    }
-  }
-
-  kos_dynnode_init(frame, KOS_DYN_FRAME, parent, 0);
+  kos_dynnode_init(frame, KOS_DYN_FRAME, parent, KOS_DYN_CAP_BINDS_NS);
   Py_XINCREF(code);
   KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
-  KosDynFrame_STACK(frame) = stack;  /* ownership transferred */
+  kos_dynnode_use_inline_segment((KosDynNode *) frame);
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
   KosDynFrame_FN(frame) = NULL;
+  KosDynFrame_BACK_FRAME(frame) = NULL;
   return frame;
 }
 
 
 /**
-   Deep-copy stack for continuation capture / INSTALL. Callers: kos_dyn_clone.
+   Clone a frame with its operand segment (continuation capture, delim
+   return-frame snapshot, capture baseline). Callers: kos_dyn_clone
+   and the direct snapshot sites; the segment copy happens here so the
+   direct callers stay faithful without the dispatcher.
 */
 KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   if (! frame)
@@ -57,12 +52,12 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(frame);
 
-  KosStackBlock *cst = KosStackBlock_DeepCopy(KosDynFrame_STACK(frame));
-  if (! cst) {
+  if (kos_dyn_clone_copy_segment((KosDynNode *) clone,
+                                 (KosDynNode *) frame) < 0) {
     kos_dynnode_return_to_freelist(clone);
     return NULL;
   }
-  KosDynFrame_STACK(clone) = cst;
+
   KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* owned */
   Py_XINCREF(KosDynFrame_CODE(clone));
   KosDynFrame_PC(clone) = KosDynFrame_PC(frame);
@@ -76,6 +71,8 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynFrame_NATIVE_HANDLER(clone) = KosDynFrame_NATIVE_HANDLER(frame);
   /* clones opt out of the per-function frame cache */
   KosDynFrame_FN(clone) = NULL;
+  /* borrowed unwind cache is meaningless off the source's chain */
+  KosDynFrame_BACK_FRAME(clone) = NULL;
   return clone;
 }
 
@@ -106,7 +103,6 @@ void kos_dynframe_free(KosDynFrame *frame) {
 
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
   KosDynFrame_CODE(frame) = NULL;
-  Py_CLEAR(KosDynFrame_NS(frame));
 
   kos_dynnode_return_to_freelist(frame);
 }
@@ -141,7 +137,7 @@ KosDynFrame *kos_dyn_push_frame(
     PyObject *ns) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynFrame *frame = kos_dynframe_new(KosEvalState_DYN_TOP(es), code, ns, NULL);
+  KosDynFrame *frame = kos_dynframe_new(KosEvalState_DYN_TOP(es), code, ns);
   if (! frame)
     return NULL;
 
@@ -159,6 +155,9 @@ KosDynFrame *kos_dyn_push_frame(
      in eval_ng_plain_return. */
   if (cur)
     KosEvalState_FlushLiveRegsToFrame(es);
+  kos_dyn_stamp_installed_segment(KosDynNode_STACK((KosDynNode *) frame),
+                                  KosEvalState_BLOCK(es));
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) cur;
   KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
   KosEvalState_FRAME(es) = frame;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
@@ -200,6 +199,9 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
     }
   }
 
+  kos_dyn_stamp_installed_segment(KosDynNode_STACK((KosDynNode *) frame),
+                                  KosEvalState_BLOCK(es));
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) KosEvalState_FRAME(es);
   KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
   KosEvalState_FRAME(es) = frame;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
@@ -217,7 +219,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  KosStackBlock_ClearBlock(&KosDynFrame_STACK(frame));
+  KosStack_Clear(&KosDynFrame_STACK(frame));
 
   /* Replace ns with empty dict */
   Py_XDECREF(KosDynFrame_NS(frame));
@@ -322,18 +324,13 @@ int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out) {
 
 
 /**
-   GC traverse a KOS_DYN_FRAME: visit the frame's namespace and every
-   object on the frame's stack block chain.  Used by kos_dynnode_traverse.
+   GC traverse a KOS_DYN_FRAME: visit the code and fn references.  The
+   frame's namespace and operand segment are visited generically by
+   kos_dynnode_traverse.
 */
 static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) {
   KosDynFrame *frame = (KosDynFrame *) node;
   Py_VISIT(KosDynFrame_CODE(frame));
-  Py_VISIT(KosDynFrame_NS(frame));
   Py_VISIT(KosDynFrame_FN(frame));
-  {
-    int tr = KosStackBlock_Traverse(KosDynFrame_STACK(frame), visit, arg);
-    if (tr != 0)
-      return tr;
-  }
   return 0;
 }

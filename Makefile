@@ -157,6 +157,14 @@ test-valgrind: test-container-build  ## Run Valgrind tests in container
 	@echo "Running Valgrind tests in container..."
 	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) valgrind
 
+test-asan-suite: test-container-build  ## Run the FULL unit test suite under ASan in container
+	@echo "Running full test suite under ASan in container..."
+	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) suite-asan
+
+test-valgrind-suite: test-container-build  ## Run the FULL unit test suite under Valgrind in container (slow)
+	@echo "Running full test suite under Valgrind in container (slow)..."
+	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) suite-valgrind
+
 
 ##@ Full-Python Valgrind
 
@@ -558,6 +566,7 @@ python:  ## Show Python executable
 	site-preview \
 	test \
 	test-asan \
+	test-asan-suite \
 	test-container-build \
 	test-native \
 	test-py310 \
@@ -568,6 +577,7 @@ python:  ## Show Python executable
 	test-py39 \
 	test-pyversions \
 	test-valgrind \
+	test-valgrind-suite \
 	tox \
 	valgrind-image-build \
 	valgrind-koslife \

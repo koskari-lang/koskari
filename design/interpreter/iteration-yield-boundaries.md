@@ -60,7 +60,7 @@ This document describes how four related mechanisms are implemented in the Koska
 
 **Underlying calls (boundary path)**
 
-- `KosStackBlock_PopRef` / `PopTail`
+- `KosStack_PopRef` / `PopTail`
 - `kos_dyn_detach_top_frame` (non-boundary path)
 - `kos_dyn_walk_handle_yield` → `kos_dyn_gen_freeze_and_release` (typical)
 - Entry: `revive_yield` pushes `send_val` for resume
@@ -105,7 +105,7 @@ This document describes how four related mechanisms are implemented in the Koska
 
 - `kos_extent_find`, `kos_extent_desc`
 - `PyObject_GetIter`, async `am_aiter`
-- `kos_dyn_push_foreach`, `KosStackBlock_PushBlock`
+- `kos_dyn_push_foreach` (the FOREACH node owns its stack segment)
 
 **Overlap note:** this three-way acquisition is **similar in spirit** to the **fallback** branch of `yield_from_normalize` (Koskari agen / async / sync), but **does not** perform yield-from’s full taxonomy (sync `PyGen`, callable, explicit `__anext__` classifier, coroutine rejection message).
 
