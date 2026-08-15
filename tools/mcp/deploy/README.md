@@ -2,7 +2,7 @@
 
 Infrastructure-as-code for serving the baked-in corpus MCP image
 (`tools/mcp/Containerfile.lambda`) as a public HTTPS endpoint. This codifies
-Part 4 of [design/mcp-baked-in-lambda.md](../../../design/mcp-baked-in-lambda.md).
+Part 4 of [design/archive/mcp-baked-in-lambda.md](../../../design/archive/mcp-baked-in-lambda.md).
 
 ```
 ECR (image)  →  Lambda (container, arm64)  →  API Gateway HTTP API  →  corpus.koskari.org

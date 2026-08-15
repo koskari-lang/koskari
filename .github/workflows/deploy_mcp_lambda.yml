@@ -20,7 +20,7 @@
 # Trusted-Publishers pattern in publish_corpus_dataset.yml.
 #
 # Prerequisites (one-time, see tools/mcp/deploy/README.md and
-# design/mcp-baked-in-lambda.md Part 4): ECR repo, the Lambda function and
+# design/archive/mcp-baked-in-lambda.md Part 4): ECR repo, the Lambda function and
 # HTTP API stood up (the SAM template), and an IAM role trusting this repo's
 # OIDC subject with ECR push + lambda:UpdateFunctionCode. Provide the role
 # ARN as the AWS_MCP_DEPLOY_ROLE repository variable/secret.

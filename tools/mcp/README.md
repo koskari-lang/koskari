@@ -13,7 +13,7 @@ underlying views are the same ones published to
 `corpus`, `docs`, and `programs`); the dataset is now a downstream artifact, no
 longer on the request path.
 
-Design record: [design/mcp-baked-in-lambda.md](../../design/mcp-baked-in-lambda.md).
+Design record: [design/archive/mcp-baked-in-lambda.md](../../design/archive/mcp-baked-in-lambda.md).
 
 ## Prerequisites
 
