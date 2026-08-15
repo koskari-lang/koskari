@@ -1327,6 +1327,102 @@ static void kos_dyn_retarget_after_pop(
    kos_dyn_push and kos_dyn_commit_dyn_top when the edit is a single-head push
    or parent pop.
 */
+/**
+   Restamp the unstamped top region of the chain after a splice.
+   Spliced spans arrive with NULL unwind caches: clones are born
+   clear, detaches clear, and direct links never stamp. Chain
+   mutations are top-regional (installs, restitches, and thaws land at
+   or near dyn_top), so unstamped nodes form a contiguous prefix;
+   collect it, read the facts live at its base, and stamp
+   rootward-first -- segment backs, frame back links, and ns fills --
+   so the pop-side caches are complete for every resident node.
+   Stamps never overwrite: a non-NULL cache is valid by the detach
+   hygiene invariant. Allocation failure just leaves the prefix
+   unstamped; the counted fallback walks remain the safety net.
+*/
+#define KOS_RESTAMP_FIXED 64
+
+static void kos_dyn_restamp_spliced_prefix(KosEvalState *es) {
+
+  KosDynNode *fixed[KOS_RESTAMP_FIXED];
+  KosDynNode **span = fixed;
+  size_t cap = KOS_RESTAMP_FIXED;
+  size_t len = 0;
+  KosDynNode *node = KosEvalState_DYN_TOP(es);
+
+  /* collect the contiguous unstamped prefix */
+  for (; node; node = KosDynNode_PARENT(node)) {
+    int unstamped =
+        (KosDynNode_STACK(node)
+         && ! KosSegment_BACK(KosDynNode_STACK(node)))
+        || (KosDynNode_IS_FRAME(node)
+            ? ! KosDynFrame_BACK_FRAME(node)
+            /* a frame's NULL ns is semantic (placeholder window); only
+               non-frames are fillable */
+            : ! KosDynNode_NS(node));
+    if (! unstamped)
+      break;
+
+    if (len == cap) {
+      size_t ncap = cap * 2;
+      KosDynNode **grown;
+      if (span == fixed) {
+        grown = PyMem_Malloc(ncap * sizeof(KosDynNode *));
+        if (grown)
+          memcpy(grown, span, len * sizeof(KosDynNode *));
+      } else {
+        grown = PyMem_Realloc(span, ncap * sizeof(KosDynNode *));
+      }
+      if (! grown)
+        goto out;
+      span = grown;
+      cap = ncap;
+    }
+    span[len++] = node;
+  }
+
+  if (len) {
+    /* facts live at the base of the prefix */
+    KosDynFrame *rft = NULL;
+    KosSegment **rbl = NULL;
+    PyObject *rns = NULL;
+    kos_dyn_walk_live_from(es, node, &rft, &rbl, &rns);
+
+    /* stamp rootward-first, threading the running facts upward */
+    for (size_t i = len; i--; ) {
+      KosDynNode *n = span[i];
+
+      if (! KosDynNode_NS(n)) {
+        /* fill non-frames only; a frame's NULL ns is the placeholder
+           window and stays NULL until its real namespace is bound */
+        if (rns && ! KosDynNode_IS_FRAME(n)) {
+          Py_INCREF(rns);
+          KosDynNode_NS(n) = rns;
+        }
+      } else {
+        rns = KosDynNode_NS(n);
+      }
+
+      if (KosDynNode_IS_FRAME(n)) {
+        if (! KosDynFrame_BACK_FRAME(n))
+          KosDynFrame_BACK_FRAME(n) = (KosDynNode *) rft;
+        rft = (KosDynFrame *) n;
+      }
+
+      if (KosDynNode_STACK(n)) {
+        if (! KosSegment_BACK(KosDynNode_STACK(n)))
+          KosSegment_BACK(KosDynNode_STACK(n)) = rbl;
+        rbl = &KosDynNode_STACK(n);
+      }
+    }
+  }
+
+out:
+  if (span != fixed)
+    PyMem_Free(span);
+}
+
+
 void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
 
   KOS_TRACE_EVENTS_INC(KOS_TE_LIVE_REBUILD);
@@ -1368,6 +1464,8 @@ void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
          (void *) KosEvalState_DYN_TOP(es));
 
   kos_dyn_apply_live(es, ft, bl, ns, 1);
+
+  kos_dyn_restamp_spliced_prefix(es);
 
 done:
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_rebuild_live_from_chain);
