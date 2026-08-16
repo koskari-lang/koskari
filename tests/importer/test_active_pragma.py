@@ -169,6 +169,56 @@ class TestActivePragma(ActivePragmaCase):
         self.assertIsNone(await mod.f(True))
 
 
+    async def test_bare_control_word_warn_peer_attribution(self):
+        # a bare word inside a peer clause reports the peer's line, not
+        # the primary block's
+        import warnings
+        self.write_ki('ki_ap_peer', """(pragma [compiler/bare-control-words 'warn])
+define foobar [x]:
+    if x:
+        1
+    elif (== x 0):
+        2
+    else:
+        return
+""")
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            importlib.import_module('ki_ap_peer')
+
+        hits = [
+            w for w in caught
+            if issubclass(w.category, SyntaxWarning)
+            and "bare return" in str(w.message)]
+        self.assertTrue(hits)
+        self.assertEqual(hits[0].lineno, 7)
+
+
+    async def test_bare_control_word_warn_handler_attribution(self):
+        # a bare word inside a try handler reports the except clause's
+        # line
+        import warnings
+        self.write_ki('ki_ap_handler', """(pragma [compiler/bare-control-words 'warn])
+define f []:
+    try:
+        (ValueError "boom")
+    except [e ValueError]:
+        raise
+""")
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            importlib.import_module('ki_ap_handler')
+
+        hits = [
+            w for w in caught
+            if issubclass(w.category, SyntaxWarning)
+            and "bare raise" in str(w.message)]
+        self.assertTrue(hits)
+        self.assertEqual(hits[0].lineno, 5)
+
+
     async def test_provider_pragma_does_not_leak(self):
         self.write_ki('ki_ap_provider3', """
         (pragma [compiler/tco-enable False])

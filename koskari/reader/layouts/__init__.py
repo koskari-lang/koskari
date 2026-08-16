@@ -152,7 +152,11 @@ def apply_layouts(blocks, namespace):
                     if str(sibling_head.car) not in declared:
                         break
 
-                    peers.append(cons(sibling_head, sibling_exprs))
+                    peer = cons(sibling_head, sibling_exprs)
+                    peer_pos = get_position(sibling)
+                    if peer_pos:
+                        peer.set_position(peer_pos)
+                    peers.append(peer)
                     tail = blocks.cdr = tail.cdr
 
             block_pos = get_position(form)
@@ -162,25 +166,27 @@ def apply_layouts(blocks, namespace):
                 if block_pos and is_pair(source):
                     source.set_position(block_pos)
                 lowered = layout_obj.read(namespace, source, peers)
-                # handlers build fresh conses; restamp the block position
-                # onto any output cells that lack one
-                fill_position(lowered, block_pos)
-                blocks.car = lowered
             else:
                 expanded_body = apply_layouts(body_exprs, namespace)
                 expanded_peers = []
                 for peer in peers:
                     pheader, pbody = peer
                     expanded_pbody = apply_layouts(pbody, namespace)
-                    expanded_peers.append(cons(pheader, expanded_pbody))
+                    expanded = cons(pheader, expanded_pbody)
+                    peer_pos = get_position(peer)
+                    if peer_pos:
+                        expanded.set_position(peer_pos)
+                    expanded_peers.append(expanded)
                 source = cons(head_args, expanded_body)
                 if block_pos and is_pair(source):
                     source.set_position(block_pos)
                 lowered = layout_obj.read(namespace, source, expanded_peers)
-                # handlers build fresh conses; restamp the block position
-                # onto any output cells that lack one
-                fill_position(lowered, block_pos)
-                blocks.car = lowered
+
+            # handlers build fresh conses; restamp the block position onto
+            # any output cells that lack one (handlers stamp peer-derived
+            # clauses with the peer's own position first)
+            fill_position(lowered, block_pos)
+            blocks.car = lowered
 
         else:
             blocks.car = apply_layouts(form, namespace)

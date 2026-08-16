@@ -28,7 +28,7 @@ from ...matcher import (
     CALLEDBY, MATCH, MatchCompiler, REST, parse_case_pattern)
 from ...bootstrap import builtin
 from ...syntax import special
-from ...types import is_pair
+from ...types import get_position, is_pair
 from ..helpers import helper_begin
 
 
@@ -66,16 +66,18 @@ def special_cond(compiler, source, tc=False):
 
         test, body = element
 
+        clause_pos = get_position(element)
+
         if test is _keyword_else:
             if cl:
                 raise SpecialError("else: must be last clause", source)
 
-            helper_begin(fragment, body, tc)
+            helper_begin(fragment, body, tc, clause_pos)
             break
 
-        fragment.merge(compiler.full_compile(test))
+        fragment.merge(compiler.full_compile(test, False, clause_pos))
         fragment.instruction(OpCode.JUMP_FALSE, label)
-        helper_begin(fragment, body, tc)
+        helper_begin(fragment, body, tc, clause_pos)
         fragment.instruction(OpCode.JUMP, done)
 
     else:

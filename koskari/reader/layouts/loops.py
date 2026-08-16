@@ -24,7 +24,7 @@ Layout decorator for reader block syntax.
 from ...bootstrap import builtin
 from ...lib import cons, keyword, symbol
 from ...exceptions import LayoutError
-from ...types import get_position
+from ...types import fill_position, get_position
 from .helpers import layout
 
 
@@ -57,7 +57,9 @@ def _layout_loop(source, peers):
                 get_position(peers))
 
         else_body = pbody
-        header.append(cons(_keyword_else, else_body))
+        clause = cons(_keyword_else, else_body)
+        fill_position(clause, get_position(peer))
+        header.append(clause)
 
     return header
 

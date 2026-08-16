@@ -26,6 +26,7 @@ from ..compiler import ByteCodeFragment, Compiler
 from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
 from ...syntax import special
+from ...types import get_position
 from ..helpers import helper_begin
 
 
@@ -41,7 +42,9 @@ def special_begin(
 
     called_by, body = source
     fragment = compiler.fragment(called_by)
-    return helper_begin(fragment, body, tc)
+    # thread the form's own position to diagnostics about positionless
+    # atoms in the body
+    return helper_begin(fragment, body, tc, get_position(source))
 
 
 # The end.

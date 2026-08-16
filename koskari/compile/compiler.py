@@ -29,10 +29,11 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..lib import (Arena, Compare, Operand, Code, FormalsSpec, FunctionSpec,
-                   Module, ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
-                   Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
-                   bracket_pair, cons, keyword, kos_repr, nil, symbol)
+from ..lib import (Arena, Compare, Datum, Operand, Code, FormalsSpec,
+                   FunctionSpec, Module, ModuleNamespace,
+                   NAMESPACE_FAST_SLOT_MAX, Namespace, NamespaceSpec, OpCode,
+                   OpStyle, bracket_nil, bracket_pair, cons, keyword,
+                   kos_repr, nil, symbol)
 from ..types import (fill_position, is_nil, get_position, is_keyword,
                      is_pair, is_proper, is_symbol, parameterize)
 from .pragma import (BracketCalls, KeywordLiterals, KoskariPragma,
@@ -779,17 +780,6 @@ class Compiler:
         return None
 
 
-    @property
-    def last_position(self):
-        """
-        The innermost source position seen by this compiler's current
-        walk. Interned atoms carry no position of their own, so this is
-        the best available location for a diagnostic about one.
-        """
-
-        return self._last_position
-
-
     def find_compiled(self, name):
         """
         Resolve compile/<name> in the module namespace
@@ -839,7 +829,7 @@ class Compiler:
             self, str(name), self.filename, mode=mode, resolution=reso)
 
 
-    def compile(self, source_obj, tc=False):
+    def compile(self, source_obj, tc=False, position=None):
         if isinstance(source_obj, ByteCodeFragment):
             return source_obj
 
@@ -849,7 +839,7 @@ class Compiler:
 
         try:
             fragment = self.fragment(self.name)
-            ret = self.compile_expr(fragment, source_obj, tc)
+            ret = self.compile_expr(fragment, source_obj, tc, position)
             # None is the emitted-into-fragment sentinel; a falsy
             # form (an expansion to False, 0, "") is a real result
             return fragment if ret is None else ret
@@ -858,14 +848,14 @@ class Compiler:
                 self._resolution_instance = None
 
 
-    def full_compile(self, source_obj, tc=False):
+    def full_compile(self, source_obj, tc=False, position=None):
         tmp = self._resolution_instance is None
         if tmp:
             self._resolution_instance = self._resolution_pragma_class()
         try:
             res = source_obj
             while not isinstance(res, ByteCodeFragment):
-                res = self.compile(res, tc)
+                res = self.compile(res, tc, position)
             return res
         finally:
             if tmp:
@@ -893,7 +883,13 @@ class Compiler:
             return self.full_compile(source_obj, tc)
 
 
-    def compile_expr(self, fragment, source_obj, tc):
+    def compile_expr(self, fragment, source_obj, tc, position=None):
+        """
+        ``position`` is the innermost enclosing source position known to
+        the caller, threaded to diagnostics about positionless atoms; a
+        source object carrying its own position wins over it
+        """
+
         tc = self.tco_enabled and tc
 
         if is_symbol(source_obj):
@@ -908,7 +904,7 @@ class Compiler:
             raise CompilerError("Unsupported source object", source_obj)
 
         try:
-            ret = dispatch(fragment, source_obj, tc)
+            ret = dispatch(fragment, source_obj, tc, position)
             # None is the emitted-into-fragment sentinel; a falsy form
             # (an expansion to False, 0, "") is a real result
             return fragment if ret is None else ret
@@ -921,12 +917,12 @@ class Compiler:
             raise UncaughtCompilerError(ex, source_obj) from ex
 
 
-    def compile_const(self, fragment, value, tc):
+    def compile_const(self, fragment, value, tc, position=None):
         fragment.instruction(OpCode.CONST, value)
         return fragment
 
 
-    def compile_symbol(self, fragment, sym, tc):
+    def compile_symbol(self, fragment, sym, tc, position=None):
 
         if sym is _symbol_colon:
             self.check_stray_colon(sym)
@@ -942,7 +938,10 @@ class Compiler:
 
         comp = self.find_bare_compiled(sym)
         if comp is not None:
-            return self.compile_special(fragment, comp, sym, tc)
+            # the atom is interned and positionless; hand the bare arm
+            # the caller-threaded position via the Datum carrier
+            return self.compile_special(
+                fragment, comp, Datum(sym, position), tc)
 
         # This is handled by the reader macros now.
         # ex = sym.rsplit(".", 1)
@@ -1063,7 +1062,7 @@ class Compiler:
                                self.filename or "<unknown>", lineno)
 
 
-    def compile_pair(self, fragment, source_obj, tc):
+    def compile_pair(self, fragment, source_obj, tc, position=None):
         # print("compile_pair", kos_repr(source_obj))
 
         if is_nil(source_obj):
@@ -1099,7 +1098,7 @@ class Compiler:
         # name) head routing to compile/call-attr); the special compiles
         # the callable itself when no pattern claims it.
         reemitted = cons(_symbol_call, head, tail)
-        fill_position(reemitted, pos)
+        fill_position(reemitted, pos or position)
         return reemitted
 
 

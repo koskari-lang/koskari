@@ -58,7 +58,9 @@ def layout_try(ns, source, peers):
         if phead is _symbol_except:
             has_except = True
             if not ppargs:
-                except_clauses.append(cons(_keyword_except, pbody))
+                clause = cons(_keyword_except, pbody)
+                fill_position(clause, get_position(peer))
+                except_clauses.append(clause)
             else:
                 if len(ppargs) != 1:
                     raise LayoutError(
@@ -77,7 +79,9 @@ def layout_try(ns, source, peers):
                     raise LayoutError(
                         'invalid except USE form: %s' % e,
                         get_position(peer))
-                except_clauses.append(cons(prest.car, pbody))
+                clause = cons(prest.car, pbody)
+                fill_position(clause, get_position(peer))
+                except_clauses.append(clause)
 
         elif phead is _symbol_else:
             if act_else is not None:

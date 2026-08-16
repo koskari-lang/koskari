@@ -20,7 +20,7 @@ Layout handler for layout/dyn-wind block syntax.
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
 from ...bootstrap import builtin
-from ...types import is_nil, get_position
+from ...types import fill_position, is_nil, get_position
 from .helpers import layout
 
 
@@ -79,6 +79,8 @@ def layout_dyn_wind(ns, source, peers):
                     'before block does not take arguments',
                     get_position(peer))
             before_form = pbody and cons(_symbol_begin, pbody)
+            if before_form:
+                fill_position(before_form, get_position(peer))
 
         elif phead is _symbol_after:
             if not is_nil(after_form):
@@ -90,6 +92,8 @@ def layout_dyn_wind(ns, source, peers):
                     'after block does not take arguments',
                     get_position(peer))
             after_form = pbody and cons(_symbol_begin, pbody)
+            if after_form:
+                fill_position(after_form, get_position(peer))
 
     return cons(
         symbol('dyn-wind'),

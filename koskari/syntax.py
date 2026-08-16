@@ -171,23 +171,31 @@ class Syntax(Compiled):
         """
 
         if not is_pair(source_obj):
-            # compile_symbol only routes here through find_bare_compiled, so
-            # a missing bare arm means the expansion was invoked directly
+            # compile_symbol only routes here through find_bare_compiled,
+            # handing the atom in a Datum carrying the caller-threaded
+            # position; a missing bare arm means the expansion was
+            # invoked directly
+            pos = None
+            sym = source_obj
+            if isinstance(sym, Datum):
+                pos = sym.position
+                sym = sym.datum
             if self.bare is None:
                 raise SyntaxMatchError(
                     "syntax has no bare form",
-                    source_obj,
+                    sym,
                     syntax=self,
                     patterns=self.patterns,
                 )
-            return self.bare.expand_bare(compiler, source_obj, tc)
+            return self.bare.expand_bare(compiler, sym, tc, pos)
 
         if self.bare is not None and not self.transforms:
             # bare-only: alias semantics, decided up front -- there are
             # no call arms, so there is nothing to consult the matchers
             # about
             head, tail = source_obj
-            expansion = self.bare.expand_bare(compiler, head, tc)
+            expansion = self.bare.expand_bare(
+                compiler, head, tc, get_position(source_obj))
             reemitted = cons(expansion, tail)
             fill_position(reemitted, get_position(source_obj))
             return reemitted
@@ -390,25 +398,25 @@ class BareTransform(SyntaxTransform):
         super().__init__(MATCH(CALLEDBY(self.slot)), template)
 
 
-    def expand_bare(self, compiler, sym, tc):
+    def expand_bare(self, compiler, sym, tc, position=None):
         """
         Expand ``template`` with ``sym`` bound to the called-by slot
 
-        The capture carries the compiler's innermost enclosing position:
-        the atom itself is interned and positionless, so the enclosing
-        form's position is the best available location for diagnostics
+        The capture carries the caller-threaded enclosing position: the
+        atom itself is interned and positionless, so the enclosing form's
+        position is the best available location for diagnostics
 
         :param compiler: active compiler instance
         :param sym: lone atom that triggered this expansion
         :param tc: tail-call flag
+        :param position: enclosing source position threaded by the caller
         :return: expanded form after hygiene and finalize
         """
 
-        pos = compiler.last_position
-        result = _BareResult({self.slot: Datum(sym, pos)})
+        result = _BareResult({self.slot: Datum(sym, position)})
         expansion = self.handle_expand(compiler, sym, result, tc)
-        if pos and is_pair(expansion):
-            fill_position(expansion, pos)
+        if position and is_pair(expansion):
+            fill_position(expansion, position)
         return expansion
 
 
