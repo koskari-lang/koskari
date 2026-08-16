@@ -30,23 +30,15 @@ define-syntax compile/set!:
 extend-syntax compile/set!:
   ;; extending set! to handle item, attr, and deref places
 
-  syntax-rules [item compile/item
-                attr compile/attr
-                deref compile/deref]:
+  syntax-rules [item attr deref]:
 
     case (set! (item obj name) value):
-      (set-item obj name value)
-    case (set! (compile/item obj name) value):
       (set-item obj name value)
 
     case (set! (attr obj name) value):
       (set-attr obj name value)
-    case (set! (compile/attr obj name) value):
-      (set-attr obj name value)
 
     case (set! (deref ref) value):
-      (.store ref value)
-    case (set! (compile/deref ref) value):
       (.store ref value)
 
 
@@ -92,15 +84,11 @@ extend-syntax compile/set!:
 
 
 extend-syntax compile/inplace:
-  syntax-rules [item compile/item attr compile/attr]:
+  syntax-rules [item attr]:
     case (inplace op (item obj name) value):
-      (inplace-item op obj name value)
-    case (inplace op (compile/item obj name) value):
       (inplace-item op obj name value)
 
     case (inplace op (attr obj name) value):
-      (inplace-attr op obj name value)
-    case (inplace op (compile/attr obj name) value):
       (inplace-attr op obj name value)
 
 
@@ -131,14 +119,10 @@ define-syntax compile/del!:
   Clears a binding, or deletes an attribute, or item.
   """
 
-  syntax-rules [item compile/item attr compile/attr]:
+  syntax-rules [item attr]:
     case (del! (item obj name)):
       (del-item obj name)
-    case (del! (compile/item obj name)):
-      (del-item obj name)
     case (del! (attr obj name)):
-      (del-attr obj name)
-    case (del! (compile/attr obj name)):
       (del-attr obj name)
 
     case (del! name):
@@ -150,14 +134,10 @@ define-syntax compile/take!:
   Takes a value from a binding, attribute, or item, clearing it.
   """
 
-  syntax-rules [item compile/item attr compile/attr]:
+  syntax-rules [item attr]:
     case (take! (item obj name)):
       (take-item obj name)
-    case (take! (compile/item obj name)):
-      (take-item obj name)
     case (take! (attr obj name)):
-      (take-attr obj name)
-    case (take! (compile/attr obj name)):
       (take-attr obj name)
 
     case (take! name):
@@ -193,8 +173,7 @@ define-syntax compile/ref:
   Obtain a reference to a storage location
   """
 
-  syntax-rules [item compile/item
-                attr compile/attr
+  syntax-rules [item attr
                 dynamic
                 constant
                 memoized
@@ -203,12 +182,8 @@ define-syntax compile/ref:
 
     case (ref (item obj name)):
       (ref-item obj name)
-    case (ref (compile/item obj name)):
-      (ref-item obj name)
 
     case (ref (attr obj name)):
-      (ref-attr obj name)
-    case (ref (compile/attr obj name)):
       (ref-attr obj name)
 
     case (ref (dynamic r ...)):
@@ -239,8 +214,7 @@ define-syntax compile/bind!:
   Bind a reference to a name in the current scope
   """
 
-  syntax-rules [item compile/item
-                attr compile/attr
+  syntax-rules [item attr
                 dynamic
                 constant
                 memoized
@@ -249,12 +223,8 @@ define-syntax compile/bind!:
 
     case (bind! name (item obj key)):
       (bindq name (ref-item obj key))
-    case (bind! name (compile/item obj key)):
-      (bindq name (ref-item obj key))
 
     case (bind! name (attr obj key)):
-      (bindq name (ref-attr obj key))
-    case (bind! name (compile/attr obj key)):
       (bindq name (ref-attr obj key))
 
     case (bind! name (dynamic r ...)):

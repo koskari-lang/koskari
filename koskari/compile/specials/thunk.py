@@ -32,7 +32,7 @@ from ..compiler import ByteCodeFragment, Compiler
 
 
 _keyword_star = keyword("*")
-_monitor = (symbol("gensym-thunk"), symbol("compile/gensym-thunk"))
+_monitor = (symbol("gensym-thunk"),)
 
 
 _thunksym = re.compile("^%[1-9][0-9]*$").match

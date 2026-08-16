@@ -85,18 +85,11 @@ _CALL_PATTERNS = [
     MATCH(
         CALLEDBY(),
         LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr"))),
-    MATCH(
-        CALLEDBY(),
-        LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr"))),
 
     # call (attr obj attr) args...
     MATCH(
         CALLEDBY(),
         LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr")),
-        BODY("args")),
-    MATCH(
-        CALLEDBY(),
-        LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr")),
         BODY("args")),
 
     MATCH(CALLEDBY(), VALUE("callable")),

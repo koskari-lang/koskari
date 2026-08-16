@@ -802,19 +802,12 @@ class Compiler:
         """
         Resolve as :meth:`find_compiled`, keeping only a Compiled that
         declares a bare form. Anything else resolves as not found, so a
-        symbol naming an ordinary special still compiles as a variable
-
-        The ``compile/NAME`` spelling always denotes the transformer object
-        itself and never expands, so ``(set-attr compile/foo ...)`` and
-        friends keep referencing the syntax rather than triggering its bare
-        form
+        symbol naming an ordinary special still compiles as a variable;
+        prefixed spellings never resolve as uses, per find_compiled
 
         :param name: symbol or string for the compile-time object
         :return: Compiled instance with a bare form, or None
         """
-
-        if str(name).startswith("compile/"):
-            return None
 
         found = self.find_compiled(name)
         if found is None or getattr(found, "bare", None) is None:

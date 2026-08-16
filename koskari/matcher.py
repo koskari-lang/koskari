@@ -2401,7 +2401,7 @@ def formal_param_pattern():
         SYMBOL("name"),
         FORM(MATCH(SYMBOL("name"))),
         FORM(MATCH(
-            ONEOF(LITERAL_SYM("compile/ref"), LITERAL_SYM("ref")),
+            LITERAL_SYM("ref"),
             SYMBOL("ref_name"))),
         FORM(MATCH(SYMBOL("name"), VALUE("default"))),
         FORM(MATCH(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))),
@@ -2417,7 +2417,7 @@ def frame_formal_name(fr):
     """
     Resolve one positional formal frame to (name, by_ref).
 
-    The binding symbol lives under 'ref_name' for the (compile/ref x) and
+    The binding symbol lives under 'ref_name' for the (ref x) and
     (ref x) by-ref shapes. Otherwise it lives under 'name'; a 'name' carrying
     a leading & is the reader-disabled by-ref fallback and is stripped. The
     returned name is the raw symbol (Datum-unwrapped) or None

@@ -18,12 +18,10 @@ Portion of koskari.builtins
 
 
 define-syntax compile/help:
-  syntax-rules [pragma attr compile/attr]:
+  syntax-rules [pragma attr]:
     case (help obj ns):
       (call help obj ns)
 
-    case (help (compile/attr obj ...)):
-      (call help (attr obj ...))
     case (help (attr obj ...)):
       (call help (attr obj ...))
 

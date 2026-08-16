@@ -268,9 +268,9 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
         self.assertEqual(pos, [symbol("foo"), symbol("a")])
         self.assertEqual(by_refs, ("foo",))
 
-    def test_byref_positional_compile_ref(self):
-        # reader-on shape: &foo expands to (compile/ref foo)
-        spine = cons(cons(symbol("compile/ref"), symbol("foo"), nil),
+    def test_byref_positional_ref_form(self):
+        # reader-on shape: &foo expands to (ref foo)
+        spine = cons(cons(symbol("ref"), symbol("foo"), nil),
                      symbol("a"), nil)
         grp = _match_formals_group(spine)
         pos, defaults, kwonly, star, starstar, ann, by_refs = \

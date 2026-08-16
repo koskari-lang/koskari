@@ -106,8 +106,7 @@ def splat_call_form(called_by, body):
 
 
 _SYM_BEGIN = symbol('begin')
-_SYM_COMPILE_BEGIN = symbol('compile/begin')
-_BEGIN_HEADS = (_SYM_BEGIN, _SYM_COMPILE_BEGIN)
+_BEGIN_HEADS = (_SYM_BEGIN,)
 
 
 def match_pattern_raw(source, patterns, literals=None):
