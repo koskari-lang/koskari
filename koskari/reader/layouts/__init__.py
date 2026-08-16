@@ -25,7 +25,7 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 
 from ...bootstrap import builtin
 from ...lib import cons, keyword, nil
-from ...types import get_position, is_pair, is_symbol
+from ...types import fill_position, get_position, is_pair, is_symbol
 from .basics import (layout_block, layout_block_begin, layout_call,
                      layout_inline_block,
                      layout_keyword_block, layout_quasiquote, layout_quote)
@@ -161,7 +161,11 @@ def apply_layouts(blocks, namespace):
                 source = cons(head_args, body_exprs)
                 if block_pos and is_pair(source):
                     source.set_position(block_pos)
-                blocks.car = layout_obj.read(namespace, source, peers)
+                lowered = layout_obj.read(namespace, source, peers)
+                # handlers build fresh conses; restamp the block position
+                # onto any output cells that lack one
+                fill_position(lowered, block_pos)
+                blocks.car = lowered
             else:
                 expanded_body = apply_layouts(body_exprs, namespace)
                 expanded_peers = []
@@ -172,7 +176,11 @@ def apply_layouts(blocks, namespace):
                 source = cons(head_args, expanded_body)
                 if block_pos and is_pair(source):
                     source.set_position(block_pos)
-                blocks.car = layout_obj.read(namespace, source, expanded_peers)
+                lowered = layout_obj.read(namespace, source, expanded_peers)
+                # handlers build fresh conses; restamp the block position
+                # onto any output cells that lack one
+                fill_position(lowered, block_pos)
+                blocks.car = lowered
 
         else:
             blocks.car = apply_layouts(form, namespace)

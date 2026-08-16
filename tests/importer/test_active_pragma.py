@@ -153,10 +153,16 @@ class TestActivePragma(ActivePragmaCase):
             warnings.simplefilter("always")
             mod = importlib.import_module('ki_ap_warned')
 
-        self.assertTrue(any(
-            issubclass(w.category, SyntaxWarning)
-            and "bare return" in str(w.message)
-            for w in caught))
+        hits = [
+            w for w in caught
+            if issubclass(w.category, SyntaxWarning)
+            and "bare return" in str(w.message)]
+        self.assertTrue(hits)
+
+        # the warning names the koskari source, not the Python frame
+        # that ran the macro body
+        self.assertTrue(hits[0].filename.endswith("ki_ap_warned.ki"))
+        self.assertGreater(hits[0].lineno, 0)
 
         # warn still converts: the function works
         self.assertEqual(await mod.f(False), 99)

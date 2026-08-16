@@ -30,7 +30,7 @@ Portion of koskari.builtins
 
 let []:
 
-    import-from warnings warn
+    import-from warnings warn_explicit
     import-from koskari.pragma register
 
 
@@ -55,20 +55,26 @@ let []:
         """
         Gate for a bare control word: expands to the word's call form,
         warning or refusing first when the compiling module's
-        compiler/bare-control-words pragma says so.
+        compiler/bare-control-words pragma says so. Diagnostics carry
+        the source position the bare word was captured at.
         """
 
-        macro-match:
-            case (bare-control-word (BIND word)):
+        special-rules []:
+            case [c (bare-control-word word) tc]:
                 define mode (or (active-pragma compiler/bare-control-words)
                                 "convert")
                 define w word.datum
+                define pos word.position
                 if (== mode "error"):
                     raise (CompilerError
-                           f"bare {w} (write ({w}); the"
-                           " compiler/bare-control-words pragma is error)")
+                           f"bare {w} (write ({w}); the compiler/"-
+                           "bare-control-words pragma is error)"
+                           None pos c.filename)
                 elif (== mode "warn"):
-                    (warn f"bare {w} converted to ({w})" SyntaxWarning)
+                    define line (if (None? pos) 0 (item pos 0))
+                    (warn_explicit f"bare {w} converted to ({w})"
+                                   SyntaxWarning (or c.filename "<koskari>")
+                                   line)
                     `(,w)
                 else:
                     `(,w)

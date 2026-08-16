@@ -394,14 +394,22 @@ class BareTransform(SyntaxTransform):
         """
         Expand ``template`` with ``sym`` bound to the called-by slot
 
+        The capture carries the compiler's innermost enclosing position:
+        the atom itself is interned and positionless, so the enclosing
+        form's position is the best available location for diagnostics
+
         :param compiler: active compiler instance
         :param sym: lone atom that triggered this expansion
         :param tc: tail-call flag
         :return: expanded form after hygiene and finalize
         """
 
-        result = _BareResult({self.slot: Datum(sym)})
-        return self.handle_expand(compiler, sym, result, tc)
+        pos = getattr(compiler, "_last_position", None)
+        result = _BareResult({self.slot: Datum(sym, pos)})
+        expansion = self.handle_expand(compiler, sym, result, tc)
+        if pos and is_pair(expansion):
+            fill_position(expansion, pos)
+        return expansion
 
 
 class MacroTransform(Transform):
