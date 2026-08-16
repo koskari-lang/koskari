@@ -45,6 +45,21 @@ And `help` describes it:
 its default; `(help (pragma KEY))` shows the accepted arguments and
 documentation for a single setting.
 
+A second read form exists for code that runs *during* compilation:
+
+```koskari
+(active-pragma)                          ; the pragma of the module being compiled
+(active-pragma compiler/enable-asserts)  ; one of its settings
+```
+
+`(pragma KEY)` reads the pragma of the module the form is written in. A macro
+body, though, is a closure over the module that *defined* it, while it runs
+while some other module compiles — so inside a macro, `(pragma KEY)` would
+answer for the wrong module. `(active-pragma KEY)` reads the pragma the
+compiler has bound for the current compilation turn instead, so a macro's
+expansion is governed by the settings of the module using it. Outside a
+compilation turn it reads as `None`.
+
 ## What each setting means
 
 Settings are grouped by what they affect: the reader (`reader/*`), the compiler
@@ -176,6 +191,22 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   behavior. The gate is consulted as each `assert` is compiled, so a change
   affects only the asserts that appear after it. See
   [compile/assert](../macros/compile-assert.md).
+- **`compiler/bare-control-words`** *(default `convert`)* — what happens when
+  a bare `return`, `continue`, `break`, or `raise` symbol is compiled. These
+  statement words are call forms in Koskari, and their bare forms expand the
+  lone symbol into its call form — `return` becomes `(return)` — matching the
+  Python-style spelling. One of:
+  - `convert` — expand silently.
+  - `warn` — emit a `SyntaxWarning`, then expand.
+  - `error` — refuse with a compile error naming the corrective spelling.
+
+  Each module answers for its own setting: the gate reads the pragma of the
+  module being compiled, so a strict module does not harden its neighbors.
+  The cost of conversion is that these four names always expand and can never
+  name a variable. See [compile/return](../specials/compile-return.md),
+  [compile/continue](../specials/compile-continue.md),
+  [compile/break](../specials/compile-break.md), and
+  [compile/raise](../specials/compile-raise.md).
 - **`compiler/tco-enable`** *(default on)* — whether tail calls are optimized.
 - **`compiler/convert-fast`** *(default on)* — whether the compiler lowers local
   variable access to its fast form. Off disables that optimization.

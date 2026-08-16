@@ -91,6 +91,7 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | `compiler/stray-colon` | compiler | `warn` | `warn` | `allow` / `warn` / `error` | policy when a bare `:` symbol is compiled as a name |
 | `compiler/keyword-literals` | compiler | `warn` | `warn` | `allow` / `warn` / `error` | policy when an unquoted keyword is compiled as a literal value |
 | `compiler/enable-asserts` | compiler | `True` | `True` | bool | `(assert …)` forms expand to their check; off, they compile away entirely (Python `-O` semantics) |
+| `compiler/bare-control-words` | compiler | `convert` | `convert` | `convert` / `warn` / `error` | policy when a bare `return`, `continue`, `break`, or `raise` symbol is compiled: silently expand to the call form, warn and expand, or refuse |
 | `compiler/tco-enable` | compiler | `True` | `True` | bool | tail-call optimization |
 | `compiler/convert-fast` | compiler | `True` | `True` | bool | VAR→FAST local-access lowering pass |
 | `compiler/compress` | compiler | `False` | `False` | bool | bytecode compression pass — registered but inert (pass not yet built) |
@@ -255,8 +256,9 @@ See **[Available settings](#available-settings)** above for the current catalog
 with baselines, bare-form values, and domains. Each is registered `active` —
 its refresh reconfigures the reader or compiler — except `compiler/compress`,
 whose pass is not yet built (registered but inert), and
-`compiler/enable-asserts`, whose setting function itself flips the assert
-expansion gate held in the bootstrap closure (no facet refresh involved).
+`compiler/enable-asserts` and `compiler/bare-control-words`, whose setting
+functions are pure coercers: their gates read the value per expansion through
+`active-pragma`, so no facet refresh or watcher state is involved.
 `compiler/convert-fast`,
 `compiler/tco-enable`, and `compiler/compress` are candidates to collapse into a
 single graduated `compiler/optimize` level later (see **Future**).
@@ -333,9 +335,17 @@ the reader and compiler pass a bound method; no required base class.
 Pull and push are not competitors; they serve different consumers, and both are
 supported:
 
-* **Pull** — read `__pragma__` on demand. For consumers that hold no derived
-  state: user macros, passive features, introspection. No subscription; just
-  read the slot at expand time. This is all a passive feature needs.
+* **Pull** — read the pragma on demand. For consumers that hold no derived
+  state: user macros, passive features, introspection. No subscription. The
+  read has two spellings with different subjects: `(pragma KEY)` reads
+  `__pragma__`, the pragma of the module the form is *written in*, while
+  `(active-pragma KEY)` reads the pragma of the module *being compiled*.
+  Inside a macro body — a closure over its defining module — the second is
+  almost always the correct one: the compiler binds its `ModulePragma` into
+  the `active-compiler-pragma` parameter around each compilation turn (a
+  host-side `parameterize` in `Compiler.compile`), so an expansion-time read
+  answers for the consumer. The assert gate and the bare-control-word gate
+  are the reference consumers.
 * **Push** — subscribe and get announced. For consumers that cache derived state
   and must rebuild: the reader (atom tables) and compiler (flags, resolution
   instance). They cannot re-derive on every access, so they want notification.
