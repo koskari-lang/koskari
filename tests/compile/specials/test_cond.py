@@ -29,21 +29,21 @@ pytestmark = pytest.mark.phase_specials
 class TestCondSpecial(SpecialsTestCase):
 
     async def test_cond_empty(self):
-        src_str = "(compile/cond)"
+        src_str = "(cond)"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, None)
 
 
     async def test_cond_single_true(self):
-        src_str = "(compile/cond [True 100])"
+        src_str = "(cond [True 100])"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, 100)
 
 
     async def test_cond_else_only(self):
-        src_str = "(compile/cond [else: 100])"
+        src_str = "(cond [else: 100])"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, 100)
@@ -51,7 +51,7 @@ class TestCondSpecial(SpecialsTestCase):
 
     async def test_cond_first_match(self):
         src_str = """
-        (compile/cond
+        (cond
           [False 100]
           [True 101]
           [else: 102])
@@ -63,7 +63,7 @@ class TestCondSpecial(SpecialsTestCase):
 
     async def test_cond_else_fallthrough(self):
         src_str = """
-        (compile/cond
+        (cond
           [False 100]
           [False 101]
           [else: 102])
@@ -78,8 +78,8 @@ class TestCondSpecial(SpecialsTestCase):
             return a + b
 
         src_str = """
-        (compile/call add
-          (compile/cond [False 100] [nil 101] [else: 102])
+        (call add
+          (cond [False 100] [nil 101] [else: 102])
           100)
         """
         expr, mod = self.compile_expr(src_str, add=add)
@@ -89,10 +89,10 @@ class TestCondSpecial(SpecialsTestCase):
 
     async def test_cond_nested(self):
         src_str = """
-        (compile/cond
+        (cond
           [False 100]
           [False 101]
-          [else: (compile/cond [False 102] [else: 103])])
+          [else: (cond [False 102] [else: 103])])
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -102,37 +102,37 @@ class TestCondSpecial(SpecialsTestCase):
 class TestAndSpecial(SpecialsTestCase):
 
     async def test_and_no_args(self):
-        src_str = "(compile/and)"
+        src_str = "(and)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), True)
 
 
     async def test_and_single_truthy(self):
-        src_str = "(compile/and 42)"
+        src_str = "(and 42)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), 42)
 
 
     async def test_and_single_falsy(self):
-        src_str = "(compile/and None)"
+        src_str = "(and None)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), None)
 
 
     async def test_and_all_truthy_returns_last(self):
-        src_str = "(compile/and 1 2 3)"
+        src_str = "(and 1 2 3)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), 3)
 
 
     async def test_and_short_circuits_on_falsy(self):
-        src_str = "(compile/and 1 None 3)"
+        src_str = "(and 1 None 3)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), None)
 
 
     async def test_and_returns_first_falsy(self):
-        src_str = "(compile/and False 99)"
+        src_str = "(and False 99)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), False)
 
@@ -145,10 +145,10 @@ class TestAndSpecial(SpecialsTestCase):
             return val
 
         src_str = """
-        (compile/and
-          (compile/call side 1)
-          (compile/call side None)
-          (compile/call side 3))
+        (and
+          (call side 1)
+          (call side None)
+          (call side 3))
         """
         expr, mod = self.compile_expr(src_str, side=side)
         result = await expr()
@@ -159,37 +159,37 @@ class TestAndSpecial(SpecialsTestCase):
 class TestOrSpecial(SpecialsTestCase):
 
     async def test_or_no_args(self):
-        src_str = "(compile/or)"
+        src_str = "(or)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), False)
 
 
     async def test_or_single_truthy(self):
-        src_str = "(compile/or 42)"
+        src_str = "(or 42)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), 42)
 
 
     async def test_or_single_falsy(self):
-        src_str = "(compile/or None)"
+        src_str = "(or None)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), None)
 
 
     async def test_or_short_circuits_on_truthy(self):
-        src_str = "(compile/or None 99 0)"
+        src_str = "(or None 99 0)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), 99)
 
 
     async def test_or_all_falsy_returns_last(self):
-        src_str = "(compile/or None False 0)"
+        src_str = "(or None False 0)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), 0)
 
 
     async def test_or_returns_first_truthy(self):
-        src_str = "(compile/or False 42)"
+        src_str = "(or False 42)"
         expr, mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), 42)
 
@@ -202,10 +202,10 @@ class TestOrSpecial(SpecialsTestCase):
             return val
 
         src_str = """
-        (compile/or
-          (compile/call side None)
-          (compile/call side 42)
-          (compile/call side 99))
+        (or
+          (call side None)
+          (call side 42)
+          (call side 99))
         """
         expr, mod = self.compile_expr(src_str, side=side)
         result = await expr()

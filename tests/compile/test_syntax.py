@@ -103,7 +103,7 @@ def assert_binding_renamed(test_case, let_form, original_name):
 
 def assert_formal_renamed(test_case, lambda_form, original_name):
     """
-    Assert the first formal in a (compile/lambda FORMALS BODY) form was
+    Assert the first formal in a (lambda FORMALS BODY) form was
     hygienically renamed from original_name.
     """
 
@@ -146,13 +146,13 @@ class TestSyntaxExpansion(unittest.TestCase):
             'lambda-inc',
             build_proper(symbol('lambda-inc')),
             build_proper(
-                symbol('compile/lambda'),
+                symbol('lambda'),
                 build_proper(symbol('n')),
                 build_proper(symbol('+'), symbol('n'), 1),
             ),
         )
         expanded = expand(transformer, build_proper(symbol('lambda-inc')))
-        assert_head(self, expanded, 'compile/lambda')
+        assert_head(self, expanded, 'lambda')
         assert_formal_renamed(self, expanded, 'n')
 
 
@@ -278,18 +278,18 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
             symbol('name'),
             build_proper(symbol('+'), symbol('name'), symbol('value')))
         tpl = build_proper(
-            symbol('compile/inplace'),
+            symbol('inplace'),
             symbol('+'),
             symbol('name'),
             symbol('value'))
-        transformer = rule('compile/set!', pat_form, tpl)
+        transformer = rule('set!', pat_form, tpl)
         expanded = expand(
             transformer,
             build_proper(
                 symbol('set!'),
                 symbol('n'),
                 build_proper(symbol('+'), symbol('n'), 99)))
-        assert_head(self, expanded, 'compile/inplace')
+        assert_head(self, expanded, 'inplace')
 
 
 # The end.

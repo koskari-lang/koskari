@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Integration tests for compile/define with syntax and macro transformers.
+Integration tests for define with syntax and macro transformers.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -64,12 +64,12 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
 
     async def test_compile_syntax_rules_unless_macro(self):
         src_str = """
-        (compile/define unless
-          (compile/syntax-rules unless [else:]
+        (define unless
+          (syntax-rules unless [else:]
             [(unless test body ... else: alt)
-             (compile/cond [test alt] [else: (compile/begin body ...)])]
+             (cond [test alt] [else: (begin body ...)])]
             [(unless test body ...)
-             (compile/cond [test None] [else: (compile/begin body ...)])]))
+             (cond [test None] [else: (begin body ...)])]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
@@ -78,7 +78,7 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
         defn = {'compile/unless': vars(mod)['unless']}
 
         src_str = """
-        (compile/begin
+        (begin
           (unless True 10)
           (unless False 40))
         """
@@ -97,8 +97,8 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
         """
 
         src_str = """
-        (compile/define example
-          (compile/syntax-rules example [#list]
+        (define example
+          (syntax-rules example [#list]
             [(example fn (a b) ...)
              (#list (fn a b) ...)]))
         """
@@ -130,8 +130,8 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
         """
 
         src_str = """
-        (compile/define grouped
-          (compile/syntax-rules grouped [#list]
+        (define grouped
+          (syntax-rules grouped [#list]
             [(grouped (a b ...) ...)
              (#list (#list a b ...) ...)]))
         """
@@ -157,8 +157,8 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
 
     async def test_compile_syntax_rules_no_matching_rule_raises(self):
         src_str = """
-        (compile/define only-one
-          (compile/syntax-rules only-one []
+        (define only-one
+          (syntax-rules only-one []
             [(only-one x) x]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -176,8 +176,8 @@ class TestCompileMacroRules(DefineSyntaxCompileHelpers):
 
     async def test_compile_macro_rules_identity(self):
         src_str = """
-        (compile/define ident
-          (compile/macro-rules ident []
+        (define ident
+          (macro-rules ident []
             [(ident x) x]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -201,13 +201,13 @@ class TestCompileMacroRules(DefineSyntaxCompileHelpers):
         ``macro-rules`` must bind ``xs ...`` to the pattern variable ``xs`` (not
         an internal gensym) and pass repeat captures so the macro body can
         splice them (e.g. ``(#list ,@xs)``). Regression for
-        ``compile/function-compose``-style macros that iterate ``reverse`` over
+        ``function-compose``-style macros that iterate ``reverse`` over
         the repeated forms.
         """
 
         src_str = """
-        (compile/define ellipsis-repro
-          (compile/macro-rules ellipsis-repro []
+        (define ellipsis-repro
+          (macro-rules ellipsis-repro []
             [(ellipsis-repro xs ...)
              `(#list ,@xs)]))
         """
@@ -234,8 +234,8 @@ class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_syntax_match_value_pattern(self):
         src_str = """
-        (compile/define double
-          (compile/syntax-match double
+        (define double
+          (syntax-match double
             [(double (VALUE x)) (+ x x)]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -256,8 +256,8 @@ class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_syntax_match_repeat_value_elem_and_min_count_kwarg(self):
         src_str = """
-        (compile/define zot
-          (compile/syntax-match zot
+        (define zot
+          (syntax-match zot
             [(zot (REPEAT xs (VALUE e) min: 0)) (+ 1 1)]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -274,8 +274,8 @@ class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_syntax_match_repeat_literal_elem_and_min_count_kwarg(self):
         src_str = """
-        (compile/define zot
-          (compile/syntax-match zot
+        (define zot
+          (syntax-match zot
             [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -294,8 +294,8 @@ class TestCompileMacroMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_macro_match_value_pattern(self):
         src_str = """
-        (compile/define ident
-          (compile/macro-match ident
+        (define ident
+          (macro-match ident
             [(ident (VALUE x)) x]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -316,8 +316,8 @@ class TestCompileMacroMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_macro_match_repeat_literal_elem_and_min_count_kwarg(self):
         src_str = """
-        (compile/define zot
-          (compile/macro-match zot
+        (define zot
+          (macro-match zot
             [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -336,8 +336,8 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
 
     async def test_compile_special_rules_identity(self):
         src_str = """
-        (compile/define ident
-          (compile/special-rules ident []
+        (define ident
+          (special-rules ident []
             [(c (ident x) t) x.datum]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -363,8 +363,8 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
         # would re-expand forever. Take the argument with (car (cdr x)).
 
         src_str = """
-        (compile/define ident
-          (compile/special-rules ident []
+        (define ident
+          (special-rules ident []
             [(c x t) (car (cdr x.datum))]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -389,8 +389,8 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_special_match_value_pattern(self):
         src_str = """
-        (compile/define ident
-          (compile/special-match ident
+        (define ident
+          (special-match ident
             [(compiler (ident (VALUE x)) t)
              x.datum]))
         """
@@ -417,8 +417,8 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
         # full-form bind; expand to the operand, not the whole form.
 
         src_str = """
-        (compile/define ident
-          (compile/special-match ident
+        (define ident
+          (special-match ident
             [(c x t)
              (car (cdr x.datum))]))
         """

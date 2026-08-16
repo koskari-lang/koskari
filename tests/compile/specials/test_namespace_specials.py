@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for compile/globals and compile/locals specials
+Tests for globals and locals specials
 """
 
 
@@ -34,17 +34,17 @@ def _opcodes(code):
 class TestCompileGlobals(SpecialsTestCase):
 
     async def test_globals_emits_opcode(self):
-        code = self.compile_to_code("(compile/globals)")
+        code = self.compile_to_code("(globals)")
         self.assertIn(OpCode.GLOBALS, _opcodes(code))
 
 
     async def test_globals_rejects_args(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/globals x)")
+            self.compile_to_code("(globals x)")
 
 
     async def test_globals_returns_namespace_with_binding(self):
-        expr, mod = self.compile_expr("(compile/globals)", marker=42)
+        expr, mod = self.compile_expr("(globals)", marker=42)
         result = await expr()
         self.assertIsInstance(result, ModuleNamespace)
         self.assertEqual(42, result["marker"])
@@ -52,7 +52,7 @@ class TestCompileGlobals(SpecialsTestCase):
 
     async def test_globals_inside_let_returns_module_namespace(self):
         expr, mod = self.compile_expr(
-            "(compile/let [[x 10]] (compile/globals))",
+            "(let [[x 10]] (globals))",
             marker=42)
         result = await expr()
         self.assertIsInstance(result, ModuleNamespace)
@@ -62,17 +62,17 @@ class TestCompileGlobals(SpecialsTestCase):
 class TestCompileLocals(SpecialsTestCase):
 
     async def test_locals_emits_opcode(self):
-        code = self.compile_to_code("(compile/locals)")
+        code = self.compile_to_code("(locals)")
         self.assertIn(OpCode.LOCALS, _opcodes(code))
 
 
     async def test_locals_rejects_args(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/locals x)")
+            self.compile_to_code("(locals x)")
 
 
     async def test_locals_returns_namespace_with_binding(self):
-        expr, mod = self.compile_expr("(compile/locals)", marker=42)
+        expr, mod = self.compile_expr("(locals)", marker=42)
         result = await expr()
         self.assertIsInstance(result, ModuleNamespace)
         self.assertEqual(42, result["marker"])

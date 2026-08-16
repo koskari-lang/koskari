@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/with special form.
+Tests for koskari.compile with special form.
 
 Single-shot context manager: enter runs before body, exit runs after (or on
 exception). Uses PUSH_WITH/POP_WITH. Covers sync and async __enter__/__exit__
@@ -127,8 +127,8 @@ class TestWithSpecial(SpecialsTestCase):
 
         mgr = SimpleMgr(100)
         src = """
-        (compile/with [(compile/call make_mgr)]
-          (compile/call set_y 1))
+        (with [(call make_mgr)]
+          (call set_y 1))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, set_y=set_y)
         result = await expr()
@@ -147,8 +147,8 @@ class TestWithSpecial(SpecialsTestCase):
             state["got"] = x
 
         src = """
-        (compile/with [x (compile/call make_mgr)]
-          (compile/call check x))
+        (with [x (call make_mgr)]
+          (call check x))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, check=check)
         result = await expr()
@@ -166,8 +166,8 @@ class TestWithSpecial(SpecialsTestCase):
             raise ValueError("oops")
 
         src = """
-        (compile/with [(compile/call make_mgr)]
-          (compile/call raise_err))
+        (with [(call make_mgr)]
+          (call raise_err))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, raise_err=raise_err)
         with self.assertRaises(ValueError) as ctx:
@@ -193,10 +193,10 @@ class TestWithSpecial(SpecialsTestCase):
             raise ValueError("oops")
 
         src = """
-        (compile/begin
-          (compile/with [(compile/call make_mgr)]
-            (compile/call raise_err))
-          (compile/call after_raise 1))
+        (begin
+          (with [(call make_mgr)]
+            (call raise_err))
+          (call after_raise 1))
         """
         expr, mod = self.compile_expr(
             src,
@@ -214,7 +214,7 @@ class TestWithSpecial(SpecialsTestCase):
 
     async def test_async_enter_exit_expression_returns_none(self):
         """
-        compile/with with async manager: VM awaits enter then body then exit;
+        with with async manager: VM awaits enter then body then exit;
         expression result is None.
         """
         state = {}
@@ -224,8 +224,8 @@ class TestWithSpecial(SpecialsTestCase):
             state["y"] = val
 
         src = """
-        (compile/with [(compile/call make_mgr)]
-          (compile/call set_y 1))
+        (with [(call make_mgr)]
+          (call set_y 1))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, set_y=set_y)
         result = await expr()
@@ -236,7 +236,7 @@ class TestWithSpecial(SpecialsTestCase):
 
 
     async def test_async_with_binding_entered_value(self):
-        """compile/with [name expr] with async manager binds enter result in body."""
+        """with [name expr] with async manager binds enter result in body."""
         state = {}
         mgr = AsyncMgr(200)
 
@@ -244,8 +244,8 @@ class TestWithSpecial(SpecialsTestCase):
             state["got"] = x
 
         src = """
-        (compile/with [x (compile/call make_mgr)]
-          (compile/call check x))
+        (with [x (call make_mgr)]
+          (call check x))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, check=check)
         result = await expr()
@@ -274,8 +274,8 @@ class TestWithSpecial(SpecialsTestCase):
             state["got"] = x
 
         src = """
-        (compile/with [x (compile/call make_mgr)]
-          (compile/call check x))
+        (with [x (call make_mgr)]
+          (call check x))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, check=check)
         result = await expr()
@@ -298,10 +298,10 @@ class TestWithSpecial(SpecialsTestCase):
             raise ValueError("oops")
 
         src = """
-        (compile/begin
-          (compile/with [(compile/call make_mgr)]
-            (compile/call raise_err))
-          (compile/call after_raise 1))
+        (begin
+          (with [(call make_mgr)]
+            (call raise_err))
+          (call after_raise 1))
         """
         expr, mod = self.compile_expr(
             src,
@@ -328,7 +328,7 @@ class TestWithSpecial(SpecialsTestCase):
 
         mgr = SimpleMgr(100)
         src = """
-        (compile/with [x (compile/call make_mgr)]
+        (with [x (call make_mgr)]
           100)
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr)
@@ -345,8 +345,8 @@ class TestWithSpecial(SpecialsTestCase):
 
         mgr = SimpleMgr(200)
         src = """
-        (compile/with [x (compile/call make_mgr)]
-          (compile/call (compile/lambda [] 99)))
+        (with [x (call make_mgr)]
+          (call (lambda [] 99)))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr)
         result = await expr()

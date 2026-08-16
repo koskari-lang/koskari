@@ -48,10 +48,10 @@ class TestExcInfoIsolation(SpecialsTestCase):
             raise ValueError("boom")
 
         src_str = """
-        (compile/try
+        (try
           (boom 1)
           ([ValueError]
-            (compile/begin
+            (begin
               (snooze)
               (probe))))
         """
@@ -82,10 +82,10 @@ class TestExcInfoIsolation(SpecialsTestCase):
                 raise exc_type("boom")
 
             src_str = """
-            (compile/try
+            (try
               (boom 1)
               ([Exc]
-                (compile/begin
+                (begin
                   (snooze)
                   (probe))))
             """

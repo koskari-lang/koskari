@@ -288,15 +288,15 @@ class TestTrySpecial(SpecialsTestCase):
 
     async def test_try_finally_preserves_compile_return_in_try(self):
         """
-        ``finally`` runs for side effects; try ``compile/return`` value is not
+        ``finally`` runs for side effects; try ``return`` value is not
         replaced by a bare finally expression
         """
 
         src = """
         ((lambda []
           (try
-            (compile/return 5)
-            [[Exception] (compile/return 9)]
+            (return 5)
+            [[Exception] (return 9)]
             [finally: 100])))
         """
         expr, mod = self.compile_expr(src)
@@ -306,7 +306,7 @@ class TestTrySpecial(SpecialsTestCase):
 
     async def test_try_finally_preserves_compile_return_in_except_when_raised(self):
         """
-        When the handler runs, ``compile/return`` from except is not replaced
+        When the handler runs, ``return`` from except is not replaced
         by a bare ``finally`` expression
         """
 
@@ -316,7 +316,7 @@ class TestTrySpecial(SpecialsTestCase):
         ((lambda []
           (try
             (bad_guy 1)
-            [[Exception] (compile/return 9)]
+            [[Exception] (return 9)]
             [finally: 100])))
         """
         expr, mod = self.compile_expr(
@@ -328,15 +328,15 @@ class TestTrySpecial(SpecialsTestCase):
 
     async def test_try_finally_compile_return_in_finally_overwrites_try_return(self):
         """
-        Explicit ``compile/return`` in ``finally`` replaces a pending try return
+        Explicit ``return`` in ``finally`` replaces a pending try return
         """
 
         src = """
         ((lambda []
           (try
-            (compile/return 5)
-            [[Exception] (compile/return 9)]
-            [finally: (compile/return 2)])))
+            (return 5)
+            [[Exception] (return 9)]
+            [finally: (return 2)])))
         """
         expr, mod = self.compile_expr(src)
         res = await expr()
@@ -345,7 +345,7 @@ class TestTrySpecial(SpecialsTestCase):
 
     async def test_try_finally_compile_return_in_finally_overwrites_except_return(self):
         """
-        Explicit ``compile/return`` in ``finally`` replaces a pending except
+        Explicit ``return`` in ``finally`` replaces a pending except
         return
         """
 
@@ -355,8 +355,8 @@ class TestTrySpecial(SpecialsTestCase):
         ((lambda []
           (try
             (bad_guy 1)
-            [[Exception] (compile/return 9)]
-            [finally: (compile/return -3)])))
+            [[Exception] (return 9)]
+            [finally: (return -3)])))
         """
         expr, mod = self.compile_expr(
             src, bad_guy=bad_guy, Exception=Exception)
@@ -370,7 +370,7 @@ class TestTryCompoundExceptionType(SpecialsTestCase):
     An exception-type expression that is a compound form must be
     compiled as a single expression.
 
-    The reader lowers a dotted atom to (compile/attr obj name), so a
+    The reader lowers a dotted atom to (attr obj name), so a
     pair in the type position is the ordinary case rather than an
     exotic one, and a clause naming `mod.Err` must resolve `mod.Err` --
     never the trailing segment on its own.

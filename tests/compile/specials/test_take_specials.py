@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/takeq, compile/take-item, and
-compile/take-attr special forms.
+Tests for koskari.compile takeq, take-item, and
+take-attr special forms.
 """
 
 
@@ -30,9 +30,9 @@ class TestTakeqSpecial(SpecialsTestCase):
 
     async def test_takeq_returns_value_and_clears(self):
         src_str = """
-        (compile/begin
-          (compile/setq z 42)
-          (compile/takeq z))
+        (begin
+          (setq z 42)
+          (takeq z))
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -45,9 +45,9 @@ class TestTakeqSpecial(SpecialsTestCase):
 
     async def test_takeq_on_uninitialized_raises(self):
         src_str = """
-        (compile/begin
-          (compile/define x)
-          (compile/takeq x))
+        (begin
+          (define x)
+          (takeq x))
         """
         expr, mod = self.compile_expr(src_str)
         with self.assertRaises(NameError):
@@ -56,9 +56,9 @@ class TestTakeqSpecial(SpecialsTestCase):
 
     async def test_delq_on_uninitialized_returns_none(self):
         src_str = """
-        (compile/begin
-          (compile/define x)
-          (compile/delq x))
+        (begin
+          (define x)
+          (delq x))
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -69,7 +69,7 @@ class TestTakeItemSpecial(SpecialsTestCase):
 
     async def test_take_item_returns_and_removes(self):
         data = {"k": 5}
-        src_str = '(compile/take-item d "k")'
+        src_str = '(take-item d "k")'
         expr, mod = self.compile_expr(src_str, d=data)
         result = await expr()
         self.assertEqual(result, 5)
@@ -80,7 +80,7 @@ class TestTakeAttrSpecial(SpecialsTestCase):
 
     async def test_take_attr_returns_and_removes(self):
         obj = SimpleNamespace(v=11)
-        src_str = "(compile/take-attr obj v)"
+        src_str = "(take-attr obj v)"
         expr, mod = self.compile_expr(src_str, obj=obj)
         result = await expr()
         self.assertEqual(result, 11)

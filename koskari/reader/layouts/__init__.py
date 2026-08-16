@@ -94,11 +94,11 @@ def find_layout(ns, name):
 
     name = str(name)
 
-    found = _find_layout(ns, name)
-    if found is None:
-        if not name.startswith("layout/"):
-            return _find_layout(ns, "layout/" + name)
-    return found
+    # prefix-only resolution, mirroring find_compiled: the short
+    # name is the use, the prefixed spelling is the handler object
+    if name.startswith("layout/"):
+        return None
+    return _find_layout(ns, "layout/" + name)
 
 
 _keyword_block = keyword(':block:')
@@ -134,7 +134,7 @@ def apply_layouts(blocks, namespace):
             if is_symbol(head):
                 layout_obj = find_layout(namespace, str(head))
             if layout_obj is None:
-                layout_obj = find_layout(namespace, "layout/block")
+                layout_obj = find_layout(namespace, "block")
             if layout_obj is None:
                 raise RuntimeError(
                     "layout/block handler not found in module namespace")

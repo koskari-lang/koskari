@@ -100,7 +100,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         (decorate [] subject) evaluates to the subject unchanged
         """
 
-        expr, _mod = self.compile_expr("(compile/decorate [] 42)")
+        expr, _mod = self.compile_expr("(decorate [] 42)")
         self.assertEqual(42, await expr())
 
 
@@ -113,7 +113,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (define inc (lambda [v] (+ v 1)))
-          (compile/decorate-subject inc 41))
+          (decorate-subject inc 41))
         """
         expr, _mod = self.compile_expr(src)
         self.assertEqual(42, await expr())
@@ -128,7 +128,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         (begin
           (define d1 (lambda [v] f"1<{v}>"))
           (define d2 (lambda [v] f"2<{v}>"))
-          (compile/decorate [d1 d2] "x"))
+          (decorate [d1 d2] "x"))
         """
         expr, _mod = self.compile_expr(src)
         self.assertEqual("1<2<x>>", await expr())
@@ -142,7 +142,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (define d1 (lambda [fn] (lambda [x] (fn (fn x)))))
-          (compile/decorate [d1] (define add3 [x] (+ x 3)))
+          (decorate [d1] (define add3 [x] (+ x 3)))
           (add3 1))
         """
         expr, _mod = self.compile_expr(src)
@@ -157,7 +157,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (compile/decorate [(let [[c 0]])]
+          (decorate [(let [[c 0]])]
             (define counter [] (incr! c) c))
           #[(counter) (counter) (counter)])
         """
@@ -173,7 +173,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (define c "module-c")
-          (compile/decorate [(let [[c 0]])]
+          (decorate [(let [[c 0]])]
             (define counter [] (incr! c) c))
           (counter)
           (counter)
@@ -192,7 +192,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         log = []
         made = []
         src = """
-        (compile/decorate [(with [(cm)])]
+        (decorate [(with [(cm)])]
           (begin
             (log.append "body")
             "val"))
@@ -213,7 +213,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         (begin
           (define-parameter deco-vol-a "quiet")
           (define inside
-            (compile/decorate [(parameterize [[deco-vol-a "loud"]])]
+            (decorate [(parameterize [[deco-vol-a "loud"]])]
               (begin deco-vol-a)))
           #[inside deco-vol-a])
         """
@@ -231,7 +231,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         made = []
         src = """
         (begin
-          (compile/decorate [(call-with [(cm)])]
+          (decorate [(call-with [(cm)])]
             (define shout [w]
               (log.append w)
               w))
@@ -257,7 +257,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (define-parameter deco-vol-b "quiet")
-          (compile/decorate [(call-parameterize [[deco-vol-b "loud"]])]
+          (decorate [(call-parameterize [[deco-vol-b "loud"]])]
             (define speak [] deco-vol-b))
           #[(speak) deco-vol-b])
         """
@@ -275,7 +275,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         made = []
         src = """
         (begin
-          (compile/decorate [(call-with [(cm)])]
+          (decorate [(call-with [(cm)])]
             (define shout [w]
               \"\"\"
               original docstring
@@ -319,7 +319,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (define-parameter deco-vol-c "v0")
-          (compile/decorate [(let [[n 0]])
+          (decorate [(let [[n 0]])
                              (call-parameterize [[deco-vol-c "v1"]])]
             (define f []
               (incr! n)

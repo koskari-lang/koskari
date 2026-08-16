@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/attr, compile/del-attr, and compile/set-attr
+Tests for koskari.compile attr, del-attr, and set-attr
 special forms.
 """
 
@@ -30,7 +30,7 @@ class TestAttrSpecial(SpecialsTestCase):
 
     async def test_attr_loads_attribute(self):
         obj = SimpleNamespace(value=10)
-        src_str = "(compile/attr obj value)"
+        src_str = "(attr obj value)"
         expr, mod = self.compile_expr(src_str, obj=obj)
         result = await expr()
         self.assertEqual(10, result)
@@ -41,9 +41,9 @@ class TestSetAttrSpecial(SpecialsTestCase):
     async def test_set_attr_then_read(self):
         obj = SimpleNamespace(x=0)
         src_str = """
-        (compile/begin
-          (compile/set-attr obj x 42)
-          (compile/attr obj x))
+        (begin
+          (set-attr obj x 42)
+          (attr obj x))
         """
         expr, mod = self.compile_expr(src_str, obj=obj)
         result = await expr()
@@ -55,7 +55,7 @@ class TestDelAttrSpecial(SpecialsTestCase):
 
     async def test_del_attr_returns_none(self):
         obj = SimpleNamespace(temporary=100)
-        src_str = "(compile/del-attr obj temporary)"
+        src_str = "(del-attr obj temporary)"
         expr, mod = self.compile_expr(src_str, obj=obj)
         result = await expr()
         self.assertIsNone(result)

@@ -53,7 +53,7 @@ class TestLetSyntax(BasicsCompileHelpers):
         src_str = """
         (let-syntax twice
           (syntax-rules []
-            [(twice x) (compile/+ x x)])
+            [(twice x) (+ x x)])
           (twice 5))
         """
         expr, mod = self.compile_expr(src_str)
@@ -65,10 +65,10 @@ class TestLetSyntax(BasicsCompileHelpers):
         src_str = """
         (let-syntax twice
           (syntax-rules []
-            [(twice x) (compile/+ x 1)])
+            [(twice x) (+ x 1)])
           (let-syntax twice
             (syntax-rules []
-              [(twice x) (compile/+ x x)])
+              [(twice x) (+ x x)])
             (twice 3)))
         """
         expr, mod = self.compile_expr(src_str)
@@ -81,7 +81,7 @@ class TestInlineMacro(BasicsCompileHelpers):
     async def test_inline_macro_splices_source(self):
         src_str = """
         (inline-macro
-          (compile/quote (compile/+ 10 32)))
+          (quote (+ 10 32)))
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()

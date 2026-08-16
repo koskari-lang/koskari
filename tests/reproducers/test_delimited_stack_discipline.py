@@ -56,8 +56,8 @@ class TestDelimitedResumeStackDiscipline(SpecialsTestCase):
         """
 
         src = """
-        (compile/call joiner "A"
-          (compile/reset (compile/shift k (compile/call k 5))))
+        (call joiner "A"
+          (reset (shift k (call k 5))))
         """
 
         expr, _mod = self.compile_expr(src, joiner=joiner)
@@ -70,8 +70,8 @@ class TestDelimitedResumeStackDiscipline(SpecialsTestCase):
         """
 
         src = """
-        (compile/call joiner "A"
-          (compile/reset (+ 1 (compile/shift k (compile/call k 5)))))
+        (call joiner "A"
+          (reset (+ 1 (shift k (call k 5)))))
         """
 
         expr, _mod = self.compile_expr(src, joiner=joiner)
@@ -84,8 +84,8 @@ class TestDelimitedResumeStackDiscipline(SpecialsTestCase):
         """
 
         src = """
-        (compile/call joiner "C" "D"
-          (compile/reset (+ 1 2 (compile/shift k (compile/call k 5)))))
+        (call joiner "C" "D"
+          (reset (+ 1 2 (shift k (call k 5)))))
         """
 
         expr, _mod = self.compile_expr(src, joiner=joiner)
@@ -98,8 +98,8 @@ class TestDelimitedResumeStackDiscipline(SpecialsTestCase):
         """
 
         src = """
-        (compile/call joiner "B"
-          (compile/reset (+ 1 2 3 (compile/shift k (compile/call k 4)))))
+        (call joiner "B"
+          (reset (+ 1 2 3 (shift k (call k 4)))))
         """
 
         expr, _mod = self.compile_expr(src, joiner=joiner)
@@ -113,9 +113,9 @@ class TestDelimitedResumeStackDiscipline(SpecialsTestCase):
         """
 
         src = """
-        (compile/call joiner "B"
-          (compile/reset
-            (compile/call mx 1 (compile/shift k (compile/call k 5)))))
+        (call joiner "B"
+          (reset
+            (call mx 1 (shift k (call k 5)))))
         """
 
         expr, _mod = self.compile_expr(src, joiner=joiner, mx=max)
@@ -129,8 +129,8 @@ class TestDelimitedResumeStackDiscipline(SpecialsTestCase):
         """
 
         src = """
-        (compile/#list "E"
-          (compile/reset (+ 1 (compile/shift k (compile/call k 5)))))
+        (#list "E"
+          (reset (+ 1 (shift k (call k 5)))))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -143,10 +143,10 @@ class TestDelimitedResumeStackDiscipline(SpecialsTestCase):
         """
 
         src = """
-        (compile/call joiner "A"
-          (compile/reset
-            (+ 1 (compile/shift k
-                   (+ (compile/call k 10) (compile/call k 20))))))
+        (call joiner "A"
+          (reset
+            (+ 1 (shift k
+                   (+ (call k 10) (call k 20))))))
         """
 
         expr, _mod = self.compile_expr(src, joiner=joiner)
@@ -159,12 +159,12 @@ class TestDelimitedResumeStackDiscipline(SpecialsTestCase):
         """
 
         src = """
-        (compile/#list "x"
-          (+ 1 (compile/shift k (compile/call k 5)))
+        (#list "x"
+          (+ 1 (shift k (call k 5)))
           "y")
         """
 
-        src = f"(compile/reset {src})"
+        src = f"(reset {src})"
         expr, _mod = self.compile_expr(src)
         self.assertEqual(await expr(), ["x", 6, "y"])
 

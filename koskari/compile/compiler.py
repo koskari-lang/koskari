@@ -790,11 +790,12 @@ class Compiler:
 
         name = str(name)
 
-        found = self._find_compiled(name)
-        if found is None:
-            if not name.startswith("compile/"):
-                return self._find_compiled("compile/" + name)
-        return found
+        # prefix-only resolution: the short name is the use; the
+        # prefixed spelling denotes the transformer object itself and
+        # never resolves as a syntax use
+        if name.startswith("compile/"):
+            return None
+        return self._find_compiled("compile/" + name)
 
 
     def find_bare_compiled(self, name):

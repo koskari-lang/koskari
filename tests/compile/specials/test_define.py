@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/define special form.
+Tests for koskari.compile define special form.
 """
 
 
@@ -36,9 +36,9 @@ class TestDefineDeclareOnly(SpecialsTestCase):
 
     async def test_define_then_setq_then_read(self):
         src_str = """
-        (compile/begin
+        (begin
           (define x)
-          (compile/setq x 42)
+          (setq x 42)
           x)
         """
         expr, mod = self.compile_expr(src_str)
@@ -50,7 +50,7 @@ class TestDefineWithExpr(SpecialsTestCase):
 
     async def test_define_then_read(self):
         src_str = """
-        (compile/begin
+        (begin
           (define y 99)
           y)
         """
@@ -63,7 +63,7 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
 
     async def test_define_double(self):
         src_str = """
-        (compile/begin
+        (begin
           (define double [x] (mul x 2))
           (double 5))
         """
@@ -74,7 +74,7 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
 
     async def test_define_fact(self):
         src_str = """
-        (compile/begin
+        (begin
           (define fact [n]
             (cond
               [(eq n 0) 1]
@@ -92,7 +92,7 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
 
     async def test_define_function_shorthand_inline_return_annotation(self):
         src_str = """
-        (compile/begin
+        (begin
           (define f :: int [x] (mul x 2))
           f)
         """
@@ -105,7 +105,7 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
 
     async def test_define_function_shorthand_decl_bracket_still_works(self):
         src_str = """
-        (compile/begin
+        (begin
           (define [f :: int] [x] (mul x 2))
           f)
         """
@@ -118,7 +118,7 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
 
     async def test_define_function_shorthand_type_colon_return_annotation(self):
         src_str = """
-        (compile/begin
+        (begin
           (define g type: int [x] (mul x 2))
           g)
         """
@@ -133,7 +133,7 @@ class TestDefineInlineTypedValue(SpecialsTestCase):
 
     async def test_define_inline_typed_value(self):
         src_str = """
-        (compile/begin
+        (begin
           (define z :: int 100)
           z)
         """
@@ -155,14 +155,14 @@ class TestDefineAnnotationBindings(SpecialsTestCase):
         return compiler.full_compile(source)
 
     def test_value_branch_records_annotation_binding(self):
-        f = self.compile_fragment("(compile/define z :: int 100)")
+        f = self.compile_fragment("(define z :: int 100)")
         self.assertEqual(len(f.annotation_bindings), 1)
         self.assertEqual(f.annotation_bindings[0][0], "z")
         self.assertEqual(f.annotation_bindings[0][1], symbol("int"))
 
     def test_function_shorthand_no_fragment_annotation_binding(self):
         f = self.compile_fragment(
-            "(compile/define f :: int [x] (mul x 2))", mul=lambda a, b: a * b)
+            "(define f :: int [x] (mul x 2))", mul=lambda a, b: a * b)
         self.assertEqual(f.annotation_bindings, [])
 
 

@@ -56,10 +56,10 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
-          (compile/define-global f (compile/lambda []
-                              (compile/shift k (compile/call k 1))))
-          (compile/reset (compile/call f)))
+        (begin
+          (define-global f (lambda []
+                              (shift k (call k 1))))
+          (reset (call f)))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -73,10 +73,10 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
-          (compile/define-global f (compile/lambda []
-                              (compile/shift k (compile/call k 5))))
-          (compile/reset (+ 1 (compile/call f))))
+        (begin
+          (define-global f (lambda []
+                              (shift k (call k 5))))
+          (reset (+ 1 (call f))))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -91,10 +91,10 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
-          (compile/define-global f (compile/lambda [n]
-                              (+ n (compile/shift k (compile/call k 100)))))
-          (compile/reset (+ 1 (compile/call f 2))))
+        (begin
+          (define-global f (lambda [n]
+                              (+ n (shift k (call k 100)))))
+          (reset (+ 1 (call f 2))))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -107,12 +107,12 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
-          (compile/define-global inner (compile/lambda []
-                                  (compile/shift k (compile/call k 1))))
-          (compile/define-global outer (compile/lambda []
-                                  (compile/call inner)))
-          (compile/reset (compile/call outer)))
+        (begin
+          (define-global inner (lambda []
+                                  (shift k (call k 1))))
+          (define-global outer (lambda []
+                                  (call inner)))
+          (reset (call outer)))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -125,10 +125,10 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
-          (compile/define-global f (compile/lambda []
-                              (compile/shift k "abandoned")))
-          (compile/reset (+ 1 (compile/call f))))
+        (begin
+          (define-global f (lambda []
+                              (shift k "abandoned")))
+          (reset (+ 1 (call f))))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -143,9 +143,9 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
         """
 
         src = """
-        (compile/let [[f (compile/lambda []
-                           (compile/shift k (compile/call k 1)))]]
-          (compile/reset (compile/call f)))
+        (let [[f (lambda []
+                           (shift k (call k 1)))]]
+          (reset (call f)))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -159,16 +159,16 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
         """
 
         src = """
-        (compile/let [[collect
-                       (compile/lambda [choices]
-                         (compile/shift k
-                           (compile/let [[out (compile/#list)]]
-                             (compile/for-each [c choices]
-                               (compile/call (compile/attr out append)
-                                 (compile/call k c)))
+        (let [[collect
+                       (lambda [choices]
+                         (shift k
+                           (let [[out (#list)]]
+                             (for-each [c choices]
+                               (call (attr out append)
+                                 (call k c)))
                              out)))]]
-          (compile/reset
-            (+ 100 (compile/call collect (compile/#list 1 2 3)))))
+          (reset
+            (+ 100 (call collect (#list 1 2 3)))))
         """
 
         expr, _mod = self.compile_expr(src)

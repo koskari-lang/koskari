@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for the compile/nil? special: NILP emission and CHECK_NIL squash.
+Tests for the nil? special: NILP emission and CHECK_NIL squash.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.phase_specials
 
 
 class TestCompileNilp(SpecialsTestCase):
-    """compile/nil? emits NILP, which compression lowers to CHECK_NIL"""
+    """nil? emits NILP, which compression lowers to CHECK_NIL"""
 
     def opcodes(self, code):
         """

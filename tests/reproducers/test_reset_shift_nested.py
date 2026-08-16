@@ -41,16 +41,16 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
         events, mark = make_accumulator()
 
         src = """
-        (compile/begin
-          (compile/call mark "outer:before")
-          (compile/reset
-            (compile/begin
-              (compile/call mark "inner:before")
-              (compile/shift k
-                (compile/call mark "inner:handler")
-                (compile/call k 7))
-              (compile/call mark "inner:after")))
-          (compile/call mark "outer:after"))
+        (begin
+          (call mark "outer:before")
+          (reset
+            (begin
+              (call mark "inner:before")
+              (shift k
+                (call mark "inner:handler")
+                (call k 7))
+              (call mark "inner:after")))
+          (call mark "outer:after"))
         """
 
         expr, _mod = self.compile_expr(src, mark=mark)
@@ -70,22 +70,22 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
         events, mark = make_accumulator()
 
         src = """
-        (compile/let [[outer 0]]
-          (compile/begin
-            (compile/setq outer
-              (compile/reset
-                (compile/shift k k)))
-            (compile/call mark "before-inner")
-            (compile/reset
-              (compile/begin
-                (compile/call mark "inner:start")
-                (compile/shift k_inner
-                  (compile/call mark "inner:handler")
-                  (compile/call k_inner 21))
-                (compile/call mark "inner:after")))
-            (compile/call mark "before-outer-invoke")
-            (compile/call mark (compile/call outer 99))
-            (compile/call mark "after-outer-invoke")))
+        (let [[outer 0]]
+          (begin
+            (setq outer
+              (reset
+                (shift k k)))
+            (call mark "before-inner")
+            (reset
+              (begin
+                (call mark "inner:start")
+                (shift k_inner
+                  (call mark "inner:handler")
+                  (call k_inner 21))
+                (call mark "inner:after")))
+            (call mark "before-outer-invoke")
+            (call mark (call outer 99))
+            (call mark "after-outer-invoke")))
         """
 
         expr, _mod = self.compile_expr(src, mark=mark)
@@ -107,22 +107,22 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
         events, mark = make_accumulator()
 
         src = """
-        (compile/reset
-          (compile/begin
-            (compile/call mark "outer:start")
-            (compile/shift k_outer
-              (compile/begin
-                (compile/call mark "outer:handler:start")
-                (compile/reset
-                  (compile/begin
-                    (compile/call mark "inner:start")
-                    (compile/shift k_inner
-                      (compile/call mark "inner:handler")
-                      (compile/call k_inner 21))
-                    (compile/call mark "inner:after")))
-                (compile/call mark "outer:handler:before-k")
-                (compile/call k_outer 99)))
-            (compile/call mark "outer:after")))
+        (reset
+          (begin
+            (call mark "outer:start")
+            (shift k_outer
+              (begin
+                (call mark "outer:handler:start")
+                (reset
+                  (begin
+                    (call mark "inner:start")
+                    (shift k_inner
+                      (call mark "inner:handler")
+                      (call k_inner 21))
+                    (call mark "inner:after")))
+                (call mark "outer:handler:before-k")
+                (call k_outer 99)))
+            (call mark "outer:after")))
         """
 
         expr, _mod = self.compile_expr(src, mark=mark)
@@ -142,14 +142,14 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
 
     async def test_minimal_nested_reset_shift_outer_invoke(self):
         src = """
-        (compile/reset
-          (compile/begin
-            (compile/shift k_outer
-              (compile/begin
-                (compile/reset
-                  (compile/shift k_inner
-                    (compile/call k_inner 1)))
-                (compile/call k_outer 2)))
+        (reset
+          (begin
+            (shift k_outer
+              (begin
+                (reset
+                  (shift k_inner
+                    (call k_inner 1)))
+                (call k_outer 2)))
             3))
         """
 
@@ -163,13 +163,13 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
         events, mark = make_accumulator()
 
         src = """
-        (compile/let [[stolen 0]]
-          (compile/begin
-            (compile/setq stolen
-              (compile/reset
-                (compile/shift k k)))
-            (compile/call mark "before-invoke")
-            (compile/call mark (compile/call stolen 42))))
+        (let [[stolen 0]]
+          (begin
+            (setq stolen
+              (reset
+                (shift k k)))
+            (call mark "before-invoke")
+            (call mark (call stolen 42))))
         """
 
         expr, _mod = self.compile_expr(src, mark=mark)
@@ -183,12 +183,12 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
         events, mark = make_accumulator()
 
         src = """
-        (compile/let [[k 0]]
-          (compile/begin
-            (compile/setq k (compile/reset (compile/shift k k)))
-            (compile/call mark (compile/call k 1))
-            (compile/call mark (compile/call k 2))
-            (compile/call mark "done")))
+        (let [[k 0]]
+          (begin
+            (setq k (reset (shift k k)))
+            (call mark (call k 1))
+            (call mark (call k 2))
+            (call mark "done")))
         """
 
         expr, _mod = self.compile_expr(src, mark=mark)
@@ -202,13 +202,13 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
         events, mark = make_accumulator()
 
         src = """
-        (compile/let [[k1 0] [k2 0]]
-          (compile/begin
-            (compile/setq k1 (compile/reset (compile/shift k k)))
-            (compile/setq k2 (compile/reset (compile/shift k k)))
-            (compile/call mark (compile/call k1 1))
-            (compile/call mark (compile/call k2 2))
-            (compile/call mark "done")))
+        (let [[k1 0] [k2 0]]
+          (begin
+            (setq k1 (reset (shift k k)))
+            (setq k2 (reset (shift k k)))
+            (call mark (call k1 1))
+            (call mark (call k2 2))
+            (call mark "done")))
         """
 
         expr, _mod = self.compile_expr(src, mark=mark)
@@ -228,17 +228,17 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
             return a + b + c + d + e + f
 
         src = """
-        (compile/reset
-          (compile/call mark
-            (compile/call mul2
-              (compile/shift k
-                (compile/call sum6
-                  (compile/call k 0)
-                  (compile/call k 1)
-                  (compile/call k 2)
-                  (compile/call k 3)
-                  (compile/call k 4)
-                  (compile/call k 5))))))
+        (reset
+          (call mark
+            (call mul2
+              (shift k
+                (call sum6
+                  (call k 0)
+                  (call k 1)
+                  (call k 2)
+                  (call k 3)
+                  (call k 4)
+                  (call k 5))))))
         """
 
         expr, _mod = self.compile_expr(src, mark=mark, mul2=mul2, sum6=sum6)
@@ -258,26 +258,26 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
             return a + b + c + d + e + f
 
         src = """
-        (compile/reset
-          (compile/begin
-            (compile/call mark "outer:start")
-            (compile/shift k_outer
-              (compile/begin
-                (compile/call mark "outer:handler:start")
-                (compile/reset
-                  (compile/call mark
-                    (compile/call mul2
-                      (compile/shift k_inner
-                        (compile/call sum6
-                          (compile/call k_inner 0)
-                          (compile/call k_inner 1)
-                          (compile/call k_inner 2)
-                          (compile/call k_inner 3)
-                          (compile/call k_inner 4)
-                          (compile/call k_inner 5))))))
-                (compile/call mark "outer:handler:before-k")
-                (compile/call k_outer 99)))
-            (compile/call mark "outer:after")))
+        (reset
+          (begin
+            (call mark "outer:start")
+            (shift k_outer
+              (begin
+                (call mark "outer:handler:start")
+                (reset
+                  (call mark
+                    (call mul2
+                      (shift k_inner
+                        (call sum6
+                          (call k_inner 0)
+                          (call k_inner 1)
+                          (call k_inner 2)
+                          (call k_inner 3)
+                          (call k_inner 4)
+                          (call k_inner 5))))))
+                (call mark "outer:handler:before-k")
+                (call k_outer 99)))
+            (call mark "outer:after")))
         """
 
         expr, _mod = self.compile_expr(src, mark=mark, mul2=mul2, sum6=sum6)

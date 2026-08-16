@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/for-each.
+Tests for koskari.compile for-each.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -36,8 +36,8 @@ class TestForEachSpecial(SpecialsTestCase):
     async def test_foreach_basic(self):
         col = []
         src = """
-        (compile/for-each [i x]
-          (compile/call append col (compile/call add 100 i)))
+        (for-each [i x]
+          (call append col (call add 100 i)))
         """
         expr, mod = self.compile_expr(
             src, x=range(0, 5), col=col,
@@ -50,8 +50,8 @@ class TestForEachSpecial(SpecialsTestCase):
     async def test_foreach_unpack_pair(self):
         sums = []
         src = """
-        (compile/for-each [[a b] pairs]
-          (compile/call append sums (compile/call add a b)))
+        (for-each [[a b] pairs]
+          (call append sums (call add a b)))
         """
         expr, mod = self.compile_expr(
             src,
@@ -67,8 +67,8 @@ class TestForEachSpecial(SpecialsTestCase):
     async def test_foreach_unused_else(self):
         col = []
         src = """
-        (compile/for-each [i x]
-          (compile/call append col (compile/call add 100 i))
+        (for-each [i x]
+          (call append col (call add 100 i))
           [else: None])
         """
         expr, mod = self.compile_expr(
@@ -82,10 +82,10 @@ class TestForEachSpecial(SpecialsTestCase):
     async def test_foreach_else_fires_on_exhaustion(self):
         col = []
         src = """
-        (compile/for-each [i x]
-          (compile/cond
-            [(compile/call gt i 4) (compile/break)]
-            [else: (compile/call append col (compile/call add 100 i))])
+        (for-each [i x]
+          (cond
+            [(call gt i 4) (break)]
+            [else: (call append col (call add 100 i))])
           [else: "unmatched"])
         """
         expr, mod = self.compile_expr(
@@ -100,10 +100,10 @@ class TestForEachSpecial(SpecialsTestCase):
     async def test_foreach_else_skipped_on_break(self):
         col = []
         src = """
-        (compile/for-each [i x]
-          (compile/cond
-            [(compile/call gt i 4) (compile/break)]
-            [else: (compile/call append col (compile/call add 100 i))])
+        (for-each [i x]
+          (cond
+            [(call gt i 4) (break)]
+            [else: (call append col (call add 100 i))])
           [else: "unmatched"])
         """
         expr, mod = self.compile_expr(
@@ -118,8 +118,8 @@ class TestForEachSpecial(SpecialsTestCase):
     async def test_foreach_empty_iterable_returns_none(self):
         col = []
         src = """
-        (compile/for-each [i x]
-          (compile/call append col i))
+        (for-each [i x]
+          (call append col i))
         """
         expr, mod = self.compile_expr(
             src, x=[], col=col, append=_append)
@@ -130,9 +130,9 @@ class TestForEachSpecial(SpecialsTestCase):
 
     async def test_foreach_break_with_value(self):
         src = """
-        (compile/for-each [i x]
-          (compile/cond
-            [(compile/call gt i 2) (compile/break "found")]
+        (for-each [i x]
+          (cond
+            [(call gt i 2) (break "found")]
             [else: None]))
         """
         expr, mod = self.compile_expr(

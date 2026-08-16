@@ -33,8 +33,8 @@ class TestResolutionModelModuleLevel(SpecialsTestCase):
     async def test_module_level_setq_works(self):
         """setq at top level (no enclosing function) continues to work"""
         src_str = """
-        (compile/begin
-          (compile/setq x 1)
+        (begin
+          (setq x 1)
           x)
         """
         expr, mod = self.compile_expr(src_str)
@@ -48,7 +48,7 @@ class TestResolutionModelTypoError(SpecialsTestCase):
         """setq to undeclared name inside function raises CompilerError"""
         src_str = """
         ((lambda ()
-           (compile/setq mistyped 1)))
+           (setq mistyped 1)))
         """
         with self.assertRaises(CompilerError) as ctx:
             self.compile_expr(src_str)
@@ -61,9 +61,9 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
     async def test_define_global_then_setq_works(self):
         """define-global then setq to same name works"""
         src_str = """
-        (compile/begin
-          (compile/define-global x 1)
-          (compile/setq x 2)
+        (begin
+          (define-global x 1)
+          (setq x 2)
           x)
         """
         expr, mod = self.compile_expr(src_str)
@@ -79,7 +79,7 @@ class TestResolutionModelImplicitRead(SpecialsTestCase):
             return x
 
         src_str = """
-        (compile/call printer undefined_global)
+        (call printer undefined_global)
         """
         expr, mod = self.compile_expr(src_str, printer=printer,
                                       undefined_global=99)
@@ -92,10 +92,10 @@ class TestResolutionModelNestedWrite(SpecialsTestCase):
     async def test_nested_write_to_closure_works(self):
         """Outer define x, inner setq x works (closure write)"""
         src_str = """
-        (compile/let [[x 0]]
-          (compile/begin
+        (let [[x 0]]
+          (begin
             ((lambda ()
-               (compile/setq x 1)))
+               (setq x 1)))
             x))
         """
         expr, mod = self.compile_expr(src_str)
@@ -107,12 +107,12 @@ class TestResolutionModelNestedWrite(SpecialsTestCase):
         """define x, inner define setter with setq x works (closure write)"""
         src_str = """
         ((lambda ()
-           (compile/define x 101)
-           (compile/define getter (lambda () x))
-           (compile/define setter (lambda [v] (compile/setq x v)))
-           (compile/call (lambda [g s]
-             (compile/call s 42)
-             (compile/call g))
+           (define x 101)
+           (define getter (lambda () x))
+           (define setter (lambda [v] (setq x v)))
+           (call (lambda [g s]
+             (call s 42)
+             (call g))
              getter setter)))
         """
         expr, mod = self.compile_expr(src_str)
@@ -123,9 +123,9 @@ class TestResolutionModelNestedWrite(SpecialsTestCase):
     async def test_nested_let_with_closure_read(self):
         """Nested let with lambda closing over both bindings; read-only closure"""
         src_str = """
-        (compile/let [[a 1]]
-          (compile/let [[b 2]]
-            ((lambda () (compile/call + a b)))))
+        (let [[a 1]]
+          (let [[b 2]]
+            ((lambda () (call + a b)))))
         """
         expr, mod = self.compile_expr(src_str, **{'+': lambda x, y: x + y})
         result = await expr()
@@ -138,12 +138,12 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
         """define-global counter; inner lambda setq counter; shared across calls"""
         src_str = """
         ((lambda ()
-           (compile/define-global counter 0)
-           (compile/define inc (lambda ()
-             (compile/setq counter (compile/call + counter 1))
+           (define-global counter 0)
+           (define inc (lambda ()
+             (setq counter (call + counter 1))
              counter))
-           (compile/call inc)
-           (compile/call inc)
+           (call inc)
+           (call inc)
            counter))
         """
         expr, mod = self.compile_expr(src_str, **{'+': lambda x, y: x + y})
@@ -155,11 +155,11 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
         """Outer define x; inner define-global x; inner setq does not touch outer"""
         src_str = """
         ((lambda ()
-           (compile/define x 0)
-           (compile/define inner (lambda ()
-             (compile/define-global x 99)
-             (compile/setq x 1)))
-           (compile/call inner)
+           (define x 0)
+           (define inner (lambda ()
+             (define-global x 99)
+             (setq x 1)))
+           (call inner)
            x))
         """
         expr, mod = self.compile_expr(src_str)
@@ -189,9 +189,9 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
 
         pragma = KoskariPragma()
         src_str = """
-        (compile/let [[a 1]]
-          (compile/let [[b 2]]
-            (lambda () (compile/call + a b))))
+        (let [[a 1]]
+          (let [[b 2]]
+            (lambda () (call + a b))))
         """
         code = self.compile_to_code(
             src_str, resolution_mode=ResolutionMode.KOSKARI,
@@ -220,9 +220,9 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
         pragma = KoskariPragma()
         src_str = """
         ((lambda ()
-           (compile/define x 101)
-           (compile/define setter (lambda [v] (compile/setq x v)))
-           (compile/call setter 42)))
+           (define x 101)
+           (define setter (lambda [v] (setq x v)))
+           (call setter 42)))
         """
         code = self.compile_to_code(
             src_str, resolution_mode=ResolutionMode.KOSKARI,
@@ -248,9 +248,9 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
     async def test_define_global_module_level_has_global_syms(self):
         """define-global at module level yields global_syms in root Code"""
         src_str = """
-        (compile/begin
-          (compile/define-global x 1)
-          (compile/setq x 2)
+        (begin
+          (define-global x 1)
+          (setq x 2)
           x)
         """
         code = self.compile_to_code(src_str)

@@ -249,14 +249,14 @@ class TestExpandTemplate(unittest.TestCase):
         cond = symbol("condition")
         then = symbol("then")
         inner = bracket_pair(cond, bracket_pair(then, bracket_nil))
-        tpl = build_proper(symbol("compile/cond"), inner)
+        tpl = build_proper(symbol("cond"), inner)
         out = expand_template_with_hygiene(
             tpl, {cond: symbol("foo"), then: 100}, set())
 
         self.assertIs(type(out), pair)            # outer form stays paren
         inner_out = out.cdr.car
         self.assertIs(type(inner_out), bracket_pair)   # inner stays bracket
-        self.assertEqual(kos_repr(out), "(compile/cond [foo 100])")
+        self.assertEqual(kos_repr(out), "(cond [foo 100])")
 
 
     def test_template_ellipsis_list_binding_uses_repeat_count(self):
@@ -460,12 +460,12 @@ def _bootstrap_define_syntax_macro_match_form(macro_name, inner_name):
     pattern = cons(macro_name, cons(inner_name, nil), nil)
     rule = cons(pattern, cons(nil, nil), nil)
     macro_match = cons(
-        symbol("compile/macro-match"),
+        symbol("macro-match"),
         Datum(macro_name),
         cons(rule, nil),
         nil)
     return cons(
-        symbol("compile/define"),
+        symbol("define"),
         Datum(macro_name),
         macro_match,
         nil)
@@ -518,7 +518,7 @@ class TestDefineSyntaxBootstrapHygiene(unittest.TestCase):
 
         loop = symbol("loop")
         form = cons(
-            symbol("compile/define"),
+            symbol("define"),
             loop,
             cons(nil, nil),
             nil)
@@ -537,12 +537,12 @@ class TestDefineSyntaxBootstrapHygiene(unittest.TestCase):
         inner_type = symbol("compile/MyType")
         bindings = cons(cons(cons(tp, Datum(inner_type), nil), nil), nil)
         body = cons(
-            symbol("compile/lambda"),
+            symbol("lambda"),
             Datum(export),
             cons(symbol("value"), nil),
             nil)
-        let_form = cons(symbol("compile/let"), bindings, body, nil)
-        form = cons(symbol("compile/define"), Datum(export), let_form, nil)
+        let_form = cons(symbol("let"), bindings, body, nil)
+        form = cons(symbol("define"), Datum(export), let_form, nil)
         compiler = _make_hygiene_compiler()
         syms = collect_binding_symbols(form, compiler.find_compiled)
         self.assertIn(tp, syms)
@@ -560,18 +560,18 @@ class TestDefineSyntaxBootstrapHygiene(unittest.TestCase):
         type_sym = symbol("foobar")
         bindings = cons(cons(cons(tp, Datum(type_sym), nil), nil), nil)
         isinstance_form = cons(
-            symbol("compile/isinstance"),
+            symbol("isinstance"),
             symbol("value"),
             tp,
             nil)
         lambda_form = cons(
-            symbol("compile/lambda"),
+            symbol("lambda"),
             export,
             cons(cons(symbol("value"), nil), nil),
             isinstance_form,
             nil)
-        let_form = cons(symbol("compile/let"), bindings, lambda_form, nil)
-        form = cons(symbol("compile/define"), Datum(export), let_form, nil)
+        let_form = cons(symbol("let"), bindings, lambda_form, nil)
+        form = cons(symbol("define"), Datum(export), let_form, nil)
         compiler = _make_hygiene_compiler()
         syms = collect_binding_symbols(form, compiler.find_compiled)
         self.assertIn(tp, syms)
@@ -603,7 +603,7 @@ class TestCollectDatumOpaque(unittest.TestCase):
         ``Datum`` on the expanded tree is opaque for binding-symbol discovery
         """
 
-        hd = symbol("compile/define")
+        hd = symbol("define")
         export = symbol("compile/caddddr")
         form = cons(hd, Datum(export), nil)
         syms = collect_binding_symbols(form, lambda head: None)
@@ -618,7 +618,7 @@ class TestFinalizeDatum(unittest.TestCase):
         Datum-wrapped substituted captures keep the real symbol after finalize
         """
 
-        hd = symbol("compile/define")
+        hd = symbol("define")
         export = symbol("compile/caddddr")
         form = cons(hd, Datum(export), nil)
         out = finalize_macro_hygiene_unbox_one_pass(
@@ -631,7 +631,7 @@ class TestFinalizeDatum(unittest.TestCase):
         Bare template literals in binding_symbols are still freshened
         """
 
-        hd = symbol("compile/define")
+        hd = symbol("define")
         export = symbol("compile/caddddr")
         form = cons(hd, export, nil)
         out = finalize_macro_hygiene_unbox_one_pass(

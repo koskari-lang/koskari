@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/setq and compile/delq special forms.
+Tests for koskari.compile setq and delq special forms.
 """
 
 
@@ -27,9 +27,9 @@ class TestSetqSpecial(SpecialsTestCase):
 
     async def test_setq_then_read(self):
         src_str = """
-        (compile/let [[x 0]]
-          (compile/begin
-            (compile/setq x 42)
+        (let [[x 0]]
+          (begin
+            (setq x 42)
             x))
         """
         expr, mod = self.compile_expr(src_str)
@@ -41,10 +41,10 @@ class TestSetqValuesSpecial(SpecialsTestCase):
 
     async def test_setq_values_pair_pattern(self):
         src_str = """
-        (compile/let [[a 0] [b 0]]
-          (compile/begin
-            (compile/setq-values [a b] (compile/call pair 1 2))
-            (compile/call add a b)))
+        (let [[a 0] [b 0]]
+          (begin
+            (setq-values [a b] (call pair 1 2))
+            (call add a b)))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -56,10 +56,10 @@ class TestSetqValuesSpecial(SpecialsTestCase):
 
     async def test_setq_values_three_element_pattern(self):
         src_str = """
-        (compile/let [[a 0] [b 0] [c 0]]
-          (compile/begin
-            (compile/setq-values [a b c] seq)
-            (compile/call triple a b c)))
+        (let [[a 0] [b 0] [c 0]]
+          (begin
+            (setq-values [a b c] seq)
+            (call triple a b c)))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -71,10 +71,10 @@ class TestSetqValuesSpecial(SpecialsTestCase):
 
     async def test_setq_values_star_element_pattern(self):
         src_str = """
-        (compile/let [[a 0] [b 0] [c 0]]
-          (compile/begin
-            (compile/setq-values [a *: b c] seq)
-            (compile/call triple a b c)))
+        (let [[a 0] [b 0] [c 0]]
+          (begin
+            (setq-values [a *: b c] seq)
+            (call triple a b c)))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -88,9 +88,9 @@ class TestDefineValuesSpecial(SpecialsTestCase):
 
     async def test_define_values_pair_pattern(self):
         src_str = """
-        (compile/begin
-          (compile/define-values [a b] (compile/call pair 1 2))
-          (compile/call add a b))
+        (begin
+          (define-values [a b] (call pair 1 2))
+          (call add a b))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -102,9 +102,9 @@ class TestDefineValuesSpecial(SpecialsTestCase):
 
     async def test_define_values_three_element_pattern(self):
         src_str = """
-        (compile/begin
-          (compile/define-values [a b c] seq)
-          (compile/call triple a b c))
+        (begin
+          (define-values [a b c] seq)
+          (call triple a b c))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -116,9 +116,9 @@ class TestDefineValuesSpecial(SpecialsTestCase):
 
     async def test_define_values_nested_front(self):
         src_str = """
-        (compile/begin
-          (compile/define-values [[a b] c] seq)
-          (compile/call triple a b c))
+        (begin
+          (define-values [[a b] c] seq)
+          (call triple a b c))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -130,9 +130,9 @@ class TestDefineValuesSpecial(SpecialsTestCase):
 
     async def test_define_values_nested_back(self):
         src_str = """
-        (compile/begin
-          (compile/define-values [a [b c]] seq)
-          (compile/call triple a b c))
+        (begin
+          (define-values [a [b c]] seq)
+          (call triple a b c))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -144,9 +144,9 @@ class TestDefineValuesSpecial(SpecialsTestCase):
 
     async def test_define_values_star_element_pattern(self):
         src_str = """
-        (compile/begin
-          (compile/define-values [a *: b c] seq)
-          (compile/call triple a b c))
+        (begin
+          (define-values [a *: b c] seq)
+          (call triple a b c))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -158,9 +158,9 @@ class TestDefineValuesSpecial(SpecialsTestCase):
 
     async def test_define_values_star_nested_front(self):
         src_str = """
-        (compile/begin
-          (compile/define-values [[a b] *: c] seq)
-          (compile/call triple a b c))
+        (begin
+          (define-values [[a b] *: c] seq)
+          (call triple a b c))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -172,9 +172,9 @@ class TestDefineValuesSpecial(SpecialsTestCase):
 
     async def test_define_values_star_nested_back(self):
         src_str = """
-        (compile/begin
-          (compile/define-values [*: a [b c]] seq)
-          (compile/call triple a b c))
+        (begin
+          (define-values [*: a [b c]] seq)
+          (call triple a b c))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -188,8 +188,8 @@ class TestDelqSpecial(SpecialsTestCase):
 
     async def test_delq_returns_none(self):
         src_str = """
-        (compile/let [[z 1]]
-          (compile/delq z))
+        (let [[z 1]]
+          (delq z))
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -198,7 +198,7 @@ class TestDelqSpecial(SpecialsTestCase):
 
     async def test_delq_removes(self):
         src_str = """
-        (compile/delq z)
+        (delq z)
         """
         expr, mod = self.compile_expr(src_str, z=1, x=2)
         result = await expr()

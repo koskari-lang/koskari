@@ -95,7 +95,7 @@ class TestInspectCompiledDefine(SpecialsTestCase):
 
     async def test_define_shorthand_signature_types(self):
         src_str = """
-        (compile/begin
+        (begin
           (define f :: int [(x :: int)] (mul x 2))
           f)
         """

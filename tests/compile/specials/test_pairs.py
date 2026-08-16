@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/quote special form.
+Tests for koskari.compile quote special form.
 """
 
 from koskari.lib import OpCode, cons, nil
@@ -28,10 +28,10 @@ class TestCompileConsCarCdr(SpecialsTestCase):
 
     async def test_compile_cons_two_elements(self):
         """
-        (compile/cons 1 2 nil) yields (1 . (2 . nil)), unpack to [1, 2]
+        (cons 1 2 nil) yields (1 . (2 . nil)), unpack to [1, 2]
         """
 
-        src_str = "(compile/cons 1 2 nil)"
+        src_str = "(cons 1 2 nil)"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertIsNotNone(result)
@@ -40,10 +40,10 @@ class TestCompileConsCarCdr(SpecialsTestCase):
 
     async def test_compile_cons_three_elements(self):
         """
-        (compile/cons 1 2 3 nil) yields (1 . (2 . (3 . nil)))
+        (cons 1 2 3 nil) yields (1 . (2 . (3 . nil)))
         """
 
-        src_str = "(compile/cons 1 2 3 nil)"
+        src_str = "(cons 1 2 3 nil)"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(cons(1, 2, 3, nil), result)
@@ -51,10 +51,10 @@ class TestCompileConsCarCdr(SpecialsTestCase):
 
     async def test_compile_cons_star_arg_rewrites_to_call_not_cons_opcode(self):
         """
-        *: cannot lower to CONS; handler falls back to compile/call.
+        *: cannot lower to CONS; handler falls back to call.
         """
 
-        code = self.compile_to_code("(compile/cons 1 *: xs nil)")
+        code = self.compile_to_code("(cons 1 *: xs nil)")
         opcodes = [code.oparg(i)[0] for i in range(code.length())]
         self.assertNotIn(OpCode.CONS, opcodes)
         self.assertTrue(self.call_ops(code))
@@ -62,10 +62,10 @@ class TestCompileConsCarCdr(SpecialsTestCase):
 
     async def test_compile_car(self):
         """
-        (compile/car (compile/cons 1 nil)) yields 1
+        (car (cons 1 nil)) yields 1
         """
 
-        src_str = "(compile/car (compile/cons 1 nil))"
+        src_str = "(car (cons 1 nil))"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(1, result)
@@ -73,10 +73,10 @@ class TestCompileConsCarCdr(SpecialsTestCase):
 
     async def test_compile_cdr(self):
         """
-        (compile/cdr (compile/cons 1 (compile/cons 2 nil))) yields (2 . nil)
+        (cdr (cons 1 (cons 2 nil))) yields (2 . nil)
         """
 
-        src_str = "(compile/cdr (compile/cons 1 (compile/cons 2 nil)))"
+        src_str = "(cdr (cons 1 (cons 2 nil)))"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual([2], list(result.unpack()))

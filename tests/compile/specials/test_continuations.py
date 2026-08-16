@@ -45,19 +45,19 @@ class TestDelimitedTransferNestedForbid(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/let [[pass 0] [k nil]]
-          (compile/begin
-            (compile/setq k
-              (compile/reset
-                (compile/dyn-wind
-                  (compile/begin
-                    (compile/setq pass (compile/+ pass 1))
-                    (compile/cond
-                      ((compile/>= pass 2) (compile/call k 99))
+        (let [[pass 0] [k nil]]
+          (begin
+            (setq k
+              (reset
+                (dyn-wind
+                  (begin
+                    (setq pass (+ pass 1))
+                    (cond
+                      ((>= pass 2) (call k 99))
                       (else: nil)))
-                  (compile/shift k k)
+                  (shift k k)
                   nil)))
-            (compile/call k 0)))
+            (call k 0)))
         """
         expr, mod = self.compile_expr(src_str)
         with self.assertRaises(RuntimeError) as ctx:

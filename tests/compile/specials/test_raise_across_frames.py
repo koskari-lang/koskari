@@ -38,8 +38,8 @@ class TestRaiseAcrossFrames(SpecialsTestCase):
             raise ValueError("boom")
 
         src_str = """
-        (compile/try
-          (compile/call (compile/lambda [] (boom 1)))
+        (try
+          (call (lambda [] (boom 1)))
           ([ValueError] "caught"))
         """
         expr, mod = self.compile_expr(
@@ -64,10 +64,10 @@ class TestRaiseAcrossFrames(SpecialsTestCase):
             raise ValueError("boom")
 
         src_str = """
-        (compile/try
-          (compile/call
-            (compile/lambda []
-              (compile/let [[x 1]]
+        (try
+          (call
+            (lambda []
+              (let [[x 1]]
                 (boom x))))
           ([ValueError] "caught"))
         """
@@ -88,8 +88,8 @@ class TestRaiseAcrossFrames(SpecialsTestCase):
             raise ValueError("boom")
 
         src_str = """
-        (compile/try
-          (compile/try
+        (try
+          (try
             (boom 1)
             ([KeyError] "wrong"))
           ([ValueError] "caught"))
@@ -113,9 +113,9 @@ class TestRaiseAcrossFrames(SpecialsTestCase):
             raise ValueError("boom")
 
         src_str = """
-        (compile/call
-          (compile/lambda []
-            (compile/let [[x 1]]
+        (call
+          (lambda []
+            (let [[x 1]]
               (boom x))))
         """
         expr, mod = self.compile_expr(src_str, boom=boom)

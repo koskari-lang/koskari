@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/dyn-with special form.
+Tests for koskari.compile dyn-with special form.
 
 Multi-shot context manager: enter runs before body, exit runs after (or on
 exception). Uses PUSH_DYN_WITH/POP_DYN_WITH. Participates in transfer plans.
@@ -50,7 +50,7 @@ class SimpleMgr:
 
 class TestDynWithSpecial(SpecialsTestCase):
     """
-    Tests for compile/dyn-with special form
+    Tests for dyn-with special form
     """
 
     async def test_normal_enter_exit_expression_returns_none(self):
@@ -65,8 +65,8 @@ class TestDynWithSpecial(SpecialsTestCase):
 
         mgr = SimpleMgr(100)
         src = """
-        (compile/dyn-with [(compile/call make_mgr)]
-          (compile/call set_y 1))
+        (dyn-with [(call make_mgr)]
+          (call set_y 1))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, set_y=set_y)
         result = await expr()
@@ -88,8 +88,8 @@ class TestDynWithSpecial(SpecialsTestCase):
             state["got"] = x
 
         src = """
-        (compile/dyn-with [x (compile/call make_mgr)]
-          (compile/call check x))
+        (dyn-with [x (call make_mgr)]
+          (call check x))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, check=check)
         result = await expr()
@@ -101,12 +101,12 @@ class TestDynWithSpecial(SpecialsTestCase):
 
     async def test_emits_push_dyn_with_pop_dyn_with(self):
         """
-        compile/dyn-with emits PUSH_DYN_WITH and POP_DYN_WITH opcodes
+        dyn-with emits PUSH_DYN_WITH and POP_DYN_WITH opcodes
         """
 
         from koskari.lib import OpCode
 
-        src = "(compile/dyn-with [x (compile/call make_mgr)] (compile/call noop x))"
+        src = "(dyn-with [x (call make_mgr)] (call noop x))"
         code = self.compile_to_code(src, make_mgr=lambda: None, noop=lambda x: None)
         ops = [code.oparg(i)[0] for i in range(code.length())]
         self.assertIn(OpCode.PUSH_DYN_WITH, ops)
@@ -121,7 +121,7 @@ class TestDynWithSpecial(SpecialsTestCase):
 
         mgr = SimpleMgr(100)
         src = """
-        (compile/dyn-with [x (compile/call make_mgr)]
+        (dyn-with [x (call make_mgr)]
           100)
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr)
@@ -138,8 +138,8 @@ class TestDynWithSpecial(SpecialsTestCase):
 
         mgr = SimpleMgr(200)
         src = """
-        (compile/dyn-with [x (compile/call make_mgr)]
-          (compile/call (compile/lambda [] 99)))
+        (dyn-with [x (call make_mgr)]
+          (call (lambda [] 99)))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr)
         result = await expr()
@@ -191,18 +191,18 @@ class TestDynWithTransferWindReproducer(SpecialsTestCase):
             return k(99)
 
         src_str = """
-        (compile/begin
-          (compile/define result
-            (compile/dyn-with [x (compile/call make_mgr)]
-              (compile/capture/cc k
-                (compile/begin
-                  (compile/call record "stash")
-                  (compile/call stash k)
-                  (compile/call record "capture-body")
+        (begin
+          (define result
+            (dyn-with [x (call make_mgr)]
+              (capture/cc k
+                (begin
+                  (call record "stash")
+                  (call stash k)
+                  (call record "capture-body")
                   42))))
-          (compile/call record "after-setup")
-          (compile/call record result)
-          (compile/cond [saved (invoke_saved)] [else: result]))
+          (call record "after-setup")
+          (call record result)
+          (cond [saved (invoke_saved)] [else: result]))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -292,20 +292,20 @@ class TestDynWithTransferFailures(SpecialsTestCase):
             return k(99)
 
         src_str = """
-        (compile/begin
-          (compile/define result
-            (compile/try
-              (compile/dyn-with [a (compile/call make_outer)]
-                (compile/dyn-with [b (compile/call make_inner)]
-                  (compile/capture/cc k
-                    (compile/begin
-                      (compile/call stash k)
-                      (compile/call record "capture-body")
+        (begin
+          (define result
+            (try
+              (dyn-with [a (call make_outer)]
+                (dyn-with [b (call make_inner)]
+                  (capture/cc k
+                    (begin
+                      (call stash k)
+                      (call record "capture-body")
                       42))))
-              ([Exception] (compile/call record "caught"))))
-          (compile/call record "after-setup")
-          (compile/call record result)
-          (compile/cond [saved (invoke_saved)] [else: result]))
+              ([Exception] (call record "caught"))))
+          (call record "after-setup")
+          (call record result)
+          (cond [saved (invoke_saved)] [else: result]))
         """
         expr, mod = self.compile_expr(
             src_str,

@@ -31,8 +31,8 @@ class TestKoskariPragma(SpecialsTestCase):
     async def test_module_level_setq_with_explicit_pragma(self):
         """KoskariPragma: setq at top level works (same as default)"""
         src_str = """
-        (compile/begin
-          (compile/setq x 1)
+        (begin
+          (setq x 1)
           x)
         """
         expr, mod = self.compile_expr(
@@ -45,7 +45,7 @@ class TestKoskariPragma(SpecialsTestCase):
         """KoskariPragma: setq to undeclared name inside function raises"""
         src_str = """
         ((lambda ()
-           (compile/setq mistyped 1)))
+           (setq mistyped 1)))
         """
         with self.assertRaises(CompilerError) as ctx:
             self.compile_expr(src_str, resolution_mode=ResolutionMode.KOSKARI)
@@ -59,7 +59,7 @@ class TestPythonPragma(SpecialsTestCase):
         """PythonPragma: setq without prior declare creates implicit local"""
         src_str = """
         ((lambda ()
-           (compile/setq x 1)
+           (setq x 1)
            x))
         """
         expr, mod = self.compile_expr(
@@ -72,7 +72,7 @@ class TestPythonPragma(SpecialsTestCase):
         """PythonPragma: implicit local in lambda does not create module binding"""
         src_str = """
         ((lambda ()
-           (compile/setq local_var 42)
+           (setq local_var 42)
            local_var))
         """
         expr, mod = self.compile_expr(
@@ -89,7 +89,7 @@ class TestSchemePragma(SpecialsTestCase):
         """SchemePragma: setq to undeclared name in lambda compiles and runs"""
         src_str = """
         ((lambda ()
-           (compile/setq x 1)
+           (setq x 1)
            x))
         """
         expr, mod = self.compile_expr(
@@ -102,7 +102,7 @@ class TestSchemePragma(SpecialsTestCase):
         """SchemePragma: unsatisfied write in lambda creates module binding"""
         src_str = """
         ((lambda ()
-           (compile/setq scheme_global 42)
+           (setq scheme_global 42)
            scheme_global))
         """
         expr, mod = self.compile_expr(

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/inplace-item and compile/inplace-attr
+Tests for koskari.compile inplace-item and inplace-attr
 special forms.
 """
 
@@ -60,9 +60,9 @@ class TestInplaceItemSpecial(SpecialsTestCase):
     async def test_inplace_item_constant_key(self):
         d = {"k": 10}
         src_str = """
-        (compile/begin
-          (compile/inplace-item + d "k" 1)
-          (compile/item d "k"))
+        (begin
+          (inplace-item + d "k" 1)
+          (item d "k"))
         """
         expr, mod = self.compile_expr(src_str, d=d)
         result = await expr()
@@ -73,10 +73,10 @@ class TestInplaceItemSpecial(SpecialsTestCase):
     async def test_inplace_item_variable_key(self):
         lst = [1, 2, 3]
         src_str = """
-        (compile/let [[i 1]]
-          (compile/begin
-            (compile/inplace-item + lst i 10)
-            (compile/item lst i)))
+        (let [[i 1]]
+          (begin
+            (inplace-item + lst i 10)
+            (item lst i)))
         """
         expr, mod = self.compile_expr(src_str, lst=lst)
         result = await expr()
@@ -86,7 +86,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
 
     async def test_inplace_item_returns_none(self):
         d = {"k": 0}
-        src_str = '(compile/inplace-item + d "k" 1)'
+        src_str = '(inplace-item + d "k" 1)'
         expr, mod = self.compile_expr(src_str, d=d)
         result = await expr()
         self.assertIsNone(result)
@@ -96,9 +96,9 @@ class TestInplaceItemSpecial(SpecialsTestCase):
     async def test_inplace_item_subtract(self):
         d = {"k": 10}
         src_str = """
-        (compile/begin
-          (compile/inplace-item - d "k" 3)
-          (compile/item d "k"))
+        (begin
+          (inplace-item - d "k" 3)
+          (item d "k"))
         """
         expr, mod = self.compile_expr(src_str, d=d)
         result = await expr()
@@ -113,7 +113,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
             calls["n"] += 1
             return {"k": 10}
 
-        src_str = '(compile/inplace-item + (make_d) "k" 1)'
+        src_str = '(inplace-item + (make_d) "k" 1)'
         expr, mod = self.compile_expr(src_str, make_d=make_d)
         await expr()
         self.assertEqual(1, calls["n"])
@@ -127,7 +127,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
             calls["n"] += 1
             return 1
 
-        src_str = "(compile/inplace-item + lst (keyfn) 5)"
+        src_str = "(inplace-item + lst (keyfn) 5)"
         expr, mod = self.compile_expr(src_str, lst=lst, keyfn=keyfn)
         await expr()
         self.assertEqual(1, calls["n"])
@@ -135,7 +135,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
 
 
     async def test_inplace_item_const_key_emits_dup_and_const_item_store(self):
-        code = self.compile_to_code('(compile/inplace-item + d "k" 1)', d={})
+        code = self.compile_to_code('(inplace-item + d "k" 1)', d={})
         self.assertEqual(1, _count_op(code, OpCode.DUP))
         self.assertIn(OpCode.CONST_ITEM, _opcodes(code))
         self.assertIn(OpCode.CONST_ITEM_STORE, _opcodes(code))
@@ -143,7 +143,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
 
 
     async def test_inplace_item_var_key_emits_dup_and_item_store(self):
-        code = self.compile_to_code("(compile/inplace-item + lst i 1)", lst=[], i=0)
+        code = self.compile_to_code("(inplace-item + lst i 1)", lst=[], i=0)
         self.assertEqual(1, _count_op(code, OpCode.DUP))
         self.assertIn(OpCode.ITEM, _opcodes(code))
         self.assertIn(OpCode.ITEM_STORE, _opcodes(code))
@@ -158,7 +158,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
 
         inner = [1, 2]
         d = {"k": inner}
-        src_str = '(compile/inplace-item + d "k" ext)'
+        src_str = '(inplace-item + d "k" ext)'
         expr, mod = self.compile_expr(src_str, d=d, ext=[3])
         await expr()
         self.assertIs(inner, d["k"])
@@ -172,12 +172,12 @@ class TestInplaceItemSpecial(SpecialsTestCase):
         """
 
         d = {"k": 10}
-        src_str = '(compile/inplace-item + d "k" 1 2 3)'
+        src_str = '(inplace-item + d "k" 1 2 3)'
         expr, mod = self.compile_expr(src_str, d=d)
         await expr()
         self.assertEqual(16, d["k"])
 
-        code = self.compile_to_code('(compile/inplace-item + d "k" 1 2 3)',
+        code = self.compile_to_code('(inplace-item + d "k" 1 2 3)',
                                     d={})
         arg = _find_inplace(code, Operand.ADD)
         self.assertEqual(4, arg)
@@ -185,17 +185,17 @@ class TestInplaceItemSpecial(SpecialsTestCase):
 
     async def test_inplace_item_power_takes_one_value(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code('(compile/inplace-item ** d "k" 2 3)', d={})
+            self.compile_to_code('(inplace-item ** d "k" 2 3)', d={})
 
 
     async def test_inplace_item_unknown_operator(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code('(compile/inplace-item ?? d "k" 1)', d={})
+            self.compile_to_code('(inplace-item ?? d "k" 1)', d={})
 
 
     async def test_inplace_item_wrong_arg_count(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code('(compile/inplace-item + d "k")', d={})
+            self.compile_to_code('(inplace-item + d "k")', d={})
 
 
 class TestInplaceAttrSpecial(SpecialsTestCase):
@@ -203,9 +203,9 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
     async def test_inplace_attr_symbol_obj(self):
         obj = SimpleNamespace(x=10)
         src_str = """
-        (compile/begin
-          (compile/inplace-attr + obj x 1)
-          (compile/attr obj x))
+        (begin
+          (inplace-attr + obj x 1)
+          (attr obj x))
         """
         expr, mod = self.compile_expr(src_str, obj=obj)
         result = await expr()
@@ -216,9 +216,9 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
     async def test_inplace_attr_expression_obj(self):
         obj = SimpleNamespace(x=10)
         src_str = """
-        (compile/begin
-          (compile/inplace-attr + (identity obj) x 1)
-          (compile/attr obj x))
+        (begin
+          (inplace-attr + (identity obj) x 1)
+          (attr obj x))
         """
         expr, mod = self.compile_expr(src_str, obj=obj, identity=lambda o: o)
         result = await expr()
@@ -228,7 +228,7 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
 
     async def test_inplace_attr_returns_none(self):
         obj = SimpleNamespace(x=0)
-        src_str = "(compile/inplace-attr + obj x 1)"
+        src_str = "(inplace-attr + obj x 1)"
         expr, mod = self.compile_expr(src_str, obj=obj)
         result = await expr()
         self.assertIsNone(result)
@@ -242,7 +242,7 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
             calls["n"] += 1
             return SimpleNamespace(x=10)
 
-        src_str = "(compile/inplace-attr + (make_obj) x 1)"
+        src_str = "(inplace-attr + (make_obj) x 1)"
         expr, mod = self.compile_expr(src_str, make_obj=make_obj)
         await expr()
         self.assertEqual(1, calls["n"])
@@ -250,7 +250,7 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
 
     async def test_inplace_attr_symbol_obj_emits_var_attr_inplace(self):
         code = self.compile_to_code(
-            "(compile/inplace-attr + obj x 1)",
+            "(inplace-attr + obj x 1)",
             obj=SimpleNamespace(x=0))
         ops = _opcodes(code)
         # a single fused op replaces load + OBJECT_INPLACE + store
@@ -263,7 +263,7 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
 
     async def test_inplace_attr_expression_obj_emits_attr_inplace(self):
         code = self.compile_to_code(
-            "(compile/inplace-attr + (identity obj) x 1)",
+            "(inplace-attr + (identity obj) x 1)",
             obj=SimpleNamespace(x=0),
             identity=lambda o: o)
         ops = _opcodes(code)
@@ -284,7 +284,7 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
 
         inner = {1, 2}
         obj = SimpleNamespace(x=inner)
-        src_str = "(compile/inplace-attr | obj x ext)"
+        src_str = "(inplace-attr | obj x ext)"
         expr, mod = self.compile_expr(src_str, obj=obj, ext={3})
         await expr()
         self.assertIs(inner, obj.x)
@@ -293,7 +293,7 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
 
     async def test_inplace_attr_multiple_values(self):
         obj = SimpleNamespace(x=10)
-        src_str = "(compile/inplace-attr + obj x 1 2 3)"
+        src_str = "(inplace-attr + obj x 1 2 3)"
         expr, mod = self.compile_expr(src_str, obj=obj)
         await expr()
         self.assertEqual(16, obj.x)
@@ -302,14 +302,14 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
     async def test_inplace_attr_power_takes_one_value(self):
         with self.assertRaises(SpecialError):
             self.compile_to_code(
-                "(compile/inplace-attr ** obj x 2 3)",
+                "(inplace-attr ** obj x 2 3)",
                 obj=SimpleNamespace(x=2))
 
 
     async def test_inplace_attr_attr_must_be_symbol(self):
         with self.assertRaises(SpecialError):
             self.compile_to_code(
-                "(compile/inplace-attr + obj (sym) 1)",
+                "(inplace-attr + obj (sym) 1)",
                 obj=SimpleNamespace(x=0),
                 sym=lambda: "x")
 
@@ -317,14 +317,14 @@ class TestInplaceAttrSpecial(SpecialsTestCase):
     async def test_inplace_attr_unknown_operator(self):
         with self.assertRaises(SpecialError):
             self.compile_to_code(
-                "(compile/inplace-attr ?? obj x 1)",
+                "(inplace-attr ?? obj x 1)",
                 obj=SimpleNamespace(x=0))
 
 
     async def test_inplace_attr_wrong_arg_count(self):
         with self.assertRaises(SpecialError):
             self.compile_to_code(
-                "(compile/inplace-attr + obj x)",
+                "(inplace-attr + obj x)",
                 obj=SimpleNamespace(x=0))
 
 

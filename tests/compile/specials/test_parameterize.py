@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/parameterize special form.
+Tests for koskari.compile parameterize special form.
 
 Parameterize temporarily rebinds dynamic parameters for the duration of its
 body. A consumer function (simulating bind-param) uses ParamRef(name).deref()
@@ -42,8 +42,8 @@ class TestParameterizeSpecial(SpecialsTestCase):
             return ParamRef("format", "%r").deref()
 
         src_str = """
-        (compile/parameterize [[format "woot %r woot"]]
-          (compile/call pretty 100))
+        (parameterize [[format "woot %r woot"]]
+          (call pretty 100))
         """
         expr, mod = self.compile_expr(src_str, pretty=pretty)
         result = await expr()
@@ -59,8 +59,8 @@ class TestParameterizeSpecial(SpecialsTestCase):
             return (ParamRef("a").deref(), ParamRef("b").deref())
 
         src_str = """
-        (compile/parameterize [[a 100] [b 101]]
-          (compile/call check_both))
+        (parameterize [[a 100] [b 101]]
+          (call check_both))
         """
         expr, mod = self.compile_expr(src_str, check_both=check_both)
         result = await expr()
@@ -85,10 +85,10 @@ class TestParameterizeSpecial(SpecialsTestCase):
             return args
 
         src_str = """
-        (compile/call seq
-          (compile/parameterize [[format "inner"]]
-            (compile/call probe))
-          (compile/call probe))
+        (call seq
+          (parameterize [[format "inner"]]
+            (call probe))
+          (call probe))
         """
         expr, mod = self.compile_expr(src_str, probe=probe, seq=seq)
         result = await expr()
@@ -117,11 +117,11 @@ class TestParameterizeSpecial(SpecialsTestCase):
             return args
 
         src_str = """
-        (compile/call seq
-          (compile/call outer_store)
-          (compile/parameterize [[shadowed "extent-value"]]
-            (compile/call inside))
-          (compile/call inside))
+        (call seq
+          (call outer_store)
+          (parameterize [[shadowed "extent-value"]]
+            (call inside))
+          (call inside))
         """
         expr, mod = self.compile_expr(
             src_str, outer_store=outer_store, inside=inside, seq=seq)
@@ -156,14 +156,14 @@ class TestParameterizeSpecial(SpecialsTestCase):
             return args
 
         src_str = """
-        (compile/let [[stolen 0]]
-          (compile/call seq
-            (compile/reset
-              (compile/parameterize [[cellshare "declared"]]
-                (compile/call consume
-                  (compile/shift k (compile/setq stolen k) (compile/call k 0)))))
-            (compile/call stolen 1)
-            (compile/call stolen 2)))
+        (let [[stolen 0]]
+          (call seq
+            (reset
+              (parameterize [[cellshare "declared"]]
+                (call consume
+                  (shift k (setq stolen k) (call k 0)))))
+            (call stolen 1)
+            (call stolen 2)))
         """
 
         expr, mod = self.compile_expr(src_str, consume=consume, seq=seq)
