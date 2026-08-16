@@ -17,7 +17,7 @@ koskari.fences
 Fence handlers for compile-time expansion of fenced foreign literals.
 
 A triple-backtick fence captures raw foreign source at read time; the
-reader lowers it to a (compile/apply-fence NAME RAW META) form. The
+reader lowers it to an (apply-fence NAME RAW META) form. The
 compile/apply-fence special resolves fence/<name> in the module
 namespace and calls the handler with the raw text and a metadata dict;
 the handler returns ordinary Koskari source, which is compiled in place

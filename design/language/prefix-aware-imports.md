@@ -4,17 +4,19 @@
 **Author:** Christopher O'Brien <obriencj@preoccupied.net>
 
 Definition-side injection is in place: `define-syntax`, `extend-syntax`,
-and `let-syntax` bind (and overlay) under `compile/NAME` regardless of the
-written spelling, computing the key idempotently in their `macro-rules`
-arms (`koskari/bootstrap/_define_syntax.ki`). As an interim bridge,
-`IMPORT_FROM` retries an unprefixed member that misses as
-`compile/{attr}` before its submodule fallback, still binding under the
-requested name (`koskari/lib/opcode/IMPORT_FROM.c`); the family
-expansion, grouped payload, family renames, scope gating, and the §5
-error messages remain unimplemented, and that interim probe is replaced
-by them. `IMPORT_STAR` has no translation yet, so star-importing a
-module whose `__all__` names transformers fails. The resolver flip
-(prepend-only `find_compiled`) has not happened.
+and `let-syntax` bind (and overlay) under `compile/NAME` regardless of
+the written spelling (`koskari/bootstrap/_define_syntax.ki`). The
+resolver flip has happened: `find_compiled` and `find_layout` are
+prefix-only, so the short name is the use and the prefixed spelling
+denotes the object. An interim `IMPORT_FROM` probe that retried an
+unprefixed member as `compile/{attr}` was tried and reverted -- it bound
+the transformer under the consumer's bare name, wrong under this
+design. Until the family form lands, a transformer is imported by its
+explicit binding name, `(import-from mod compile/NAME)`, which composes
+correctly with local definitions and `extend-syntax`. The family form
+will be a **separate opcode or a mode switch on `IMPORT_FROM`**, not new
+behavior inside the existing opcode, which keeps `import-from` at exact
+Python parity.
 
 ---
 
@@ -22,20 +24,17 @@ module whose `__all__` names transformers fails. The resolver flip
 
 Koskari keeps compile-time and runtime objects in one namespace and separates
 them by a naming convention: a special or macro is bound as `compile/NAME`, a
-block handler as `layout/NAME`. Today `find_compiled` accepts either spelling,
-resolving `NAME` by falling through to `compile/NAME`, and accepting
-`compile/NAME` directly.
+block handler as `layout/NAME`. The prefix is now an implicit facet of
+definition: a transformer is bound only under `compile/NAME`, `find_compiled`
+resolves a bare `NAME` by prepending the prefix, and an already-prefixed
+input never resolves as a use. The prefixed spelling names the transformer
+object itself.
 
-Once the prefix becomes an implicit facet of definition, that changes. A
-transformer is bound only under `compile/NAME`, `find_compiled` resolves a bare
-`NAME` by prepending the prefix, and it no longer accepts an already-prefixed
-input. The prefixed spelling stops being a way to invoke the form and becomes
-the way to name the transformer object itself.
-
-That leaves imports stranded. A module defining `tacos` binds `compile/tacos`,
-so `(import-from mod tacos)` finds no attribute, and a hypothetical
-`(import-from mod compile/tacos)` binds a name the resolver would refuse to
-look up. This document specifies how imports bridge that gap.
+That leaves bare-member imports stranded. A module defining `tacos` binds
+`compile/tacos`, so `(import-from mod tacos)` finds no attribute; the
+explicit `(import-from mod compile/tacos)` works and is the current
+spelling. This document specifies the family form that lets consumers
+import by the written name again.
 
 See [../api/import-system.md](../api/import-system.md) for the existing
 machinery this builds on.
@@ -156,45 +155,38 @@ The probe runs only on the error path, so it costs nothing in the common case.
 
 ### 6. `import-all-from`
 
-`__all__` holds short names. `declare-exports` builds it from the symbols it is
-given, and it commonly appears near the top of a file before any definition has
-run, so it cannot know which of its names are transformers. Making it
-prefix-aware is not possible; the translation belongs to the consumer.
-
-`IMPORT_STAR` therefore applies the same family expansion to each `__all__`
-entry. Without this it binds the runtime facet and silently drops the macro.
+Star import stays at Python parity and gains no family translation:
+exporting a transformer means naming its binding explicitly, so a module
+that wants its macros star-importable lists `compile/x` alongside `x` in
+its exports. `declare-exports` keeps building `__all__` from exactly the
+symbols it is given. The family behavior belongs to the `require` form
+alone.
 
 The existing module-level restriction on `import-all-from` is unchanged.
 
 ### 7. Unchanged
 
 - `import` (whole-module import) is unaffected; it binds a module object.
+- `import-from` is unaffected: exact Python attribute semantics, with the
+  prefixed member spelling as the explicit path to a transformer.
 - Python-side registrations keep writing the prefix: `@builtin("compile/foo")`
   states the binding key directly.
-- `__all__` contents stay in short names.
-- Patterns that match prefixed spellings in user source are unaffected; this
-  document covers binding and resolution only.
 
 ## Implementation notes
 
-**Prefix set constant.** Currently a literal in `koskari/help/tools.ki`. It
-moves somewhere shared and is read by `help`, `special_import_from`, and the
-`IMPORT_STAR` path.
+**Prefix set.** No shared importable constant: the prefix spellings are
+each consumer's own literal (`koskari/help/tools.ki` carries its own).
 
-**`special_import_from`.** Classifies each member as bare or prefixed, expands
-bare members when `scope_depth == 0`, declares every candidate, and emits the
-expanded attr/bind pairs. The existing payload already carries parallel
-`attrs`/`binds` tuples, so renames and expansion need no new operand shape.
+**The family form.** A separate opcode (working name `IMPORT_FAMILY`) or a
+mode switch on `IMPORT_FROM`, emitted by the family special; the existing
+`IMPORT_FROM` keeps exact Python semantics either way. The payload is one
+**stem per member** with a parallel binds tuple -- the handler derives each
+stem's candidate set itself, so one stem is one group and no group-id
+plumbing is needed; a prefixed stem degenerates to a candidate set of one.
+The compiler emits the family opcode at module level and plain
+`IMPORT_FROM` in nested scopes, which is §3's gate expressed structurally.
 
-**`IMPORT_FROM` grouping.** This is the one piece of new plumbing. A missing
-attribute is currently a hard error per pair; with families a per-pair miss is
-normal and only an all-missed family is an error. The flat parallel tuples
-cannot express which pairs belong to the same member, so the payload needs
-either a third parallel array of group ids or a restructure into per-member
-groups. The error text in §5 is only constructible once the handler knows the
-grouping, so this should be designed before the special is written.
-
-**`IMPORT_STAR`.** Applies family expansion per `__all__` entry.
+**`IMPORT_STAR`.** Unchanged; see §6.
 
 ## Open questions
 
