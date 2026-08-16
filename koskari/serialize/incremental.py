@@ -56,7 +56,7 @@ def _compile_top_level_to_codes(mod, compiler, reader, source_stream):
             if source_expr is READ_EOF:
                 break
 
-            fragment = compiler.full_compile(source_expr)
+            fragment = compiler.compile_expression(source_expr)
             code = compiler.complete(
                 fragment, mode=CompilerMode.EXPRESSION, is_root=True)
             bodies.append(code)

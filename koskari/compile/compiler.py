@@ -848,15 +848,11 @@ class Compiler:
             self._resolution_instance = self._resolution_pragma_class()
 
         try:
-            # macro bodies run during this turn read the compiling
-            # module's pragma through (active-pragma), regardless of
-            # which module they were defined in
-            with parameterize(**{ACTIVE_PRAGMA_PARAM: self.pragma}):
-                fragment = self.fragment(self.name)
-                ret = self.compile_expr(fragment, source_obj, tc)
-                # None is the emitted-into-fragment sentinel; a falsy
-                # form (an expansion to False, 0, "") is a real result
-                return fragment if ret is None else ret
+            fragment = self.fragment(self.name)
+            ret = self.compile_expr(fragment, source_obj, tc)
+            # None is the emitted-into-fragment sentinel; a falsy
+            # form (an expansion to False, 0, "") is a real result
+            return fragment if ret is None else ret
         finally:
             if tmp:
                 self._resolution_instance = None
@@ -874,6 +870,27 @@ class Compiler:
         finally:
             if tmp:
                 self._resolution_instance = None
+
+
+    def compile_expression(self, source_obj, tc=False):
+        """
+        Compile one top-level source expression: the entry point for the
+        places a compilation turn starts -- the module loaders, the REPL,
+        the serializer, and any harness whose pragma should govern the
+        turn. Binds this compiler's pragma into the active-compiler-pragma
+        parameter for the turn's extent, so macro bodies running during
+        the compile read the compiling module's pragma through
+        (active-pragma), regardless of which module defined them. Inner
+        recursive compilation chains through compile and full_compile
+        directly and never rebinds.
+
+        :param source_obj: top-level source form
+        :param tc: tail-call flag
+        :return: compiled ByteCodeFragment
+        """
+
+        with parameterize(**{ACTIVE_PRAGMA_PARAM: self.pragma}):
+            return self.full_compile(source_obj, tc)
 
 
     def compile_expr(self, fragment, source_obj, tc):

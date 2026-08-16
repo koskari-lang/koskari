@@ -91,7 +91,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         source = default_reader.read(
             source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 

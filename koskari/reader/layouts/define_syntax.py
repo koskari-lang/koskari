@@ -197,7 +197,9 @@ def layout_syntax_rules(ns, source, peers):
 @layout(symbol('layout/bare-syntax'), raw=True)
 def layout_bare_syntax(ns, source, peers):
     """
-    Lower bare-syntax block to ``(bare-syntax SLOT (compile/begin TMPL...))``.
+    Lower bare-syntax block to ``(bare-syntax SLOT (begin TMPL...))``, or
+    with a leading name in the header, ``(bare-syntax NAME SLOT (begin
+    TMPL...))``.
 
     The header names the called-by slot; the body is the template, left
     unexpanded like a syntax-rules template.

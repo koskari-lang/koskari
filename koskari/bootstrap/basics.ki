@@ -164,7 +164,7 @@ let []:
       unless compiler:
           raise (ValueError "__compiler__ not found in namespace")
 
-      define frag (compiler.full_compile source_obj)
+      define frag (compiler.compile_expression source_obj)
       frag.as_expression ns
 
 

@@ -191,7 +191,7 @@ async def load_module_async(module, *, seal=True, detach=True):
                     else:
                         docstr = False
 
-                fragment = compiler.full_compile(source_expr)
+                fragment = compiler.compile_expression(source_expr)
                 expr = fragment.as_expression(ns)
                 await expr()
 
@@ -258,7 +258,7 @@ def load_module_demand(module, *, seal=True, detach=True):
                     else:
                         docstr = False
 
-                fragment = compiler.full_compile(source_expr)
+                fragment = compiler.compile_expression(source_expr)
                 expr = fragment.as_expression(ns)
                 demand_call(expr)
 
@@ -332,7 +332,7 @@ async def load_module_source_async(
                 else:
                     docstr = False
 
-            fragment = compiler.full_compile(source_expr)
+            fragment = compiler.compile_expression(source_expr)
             expr = fragment.as_expression(ns)
             await expr()
 

@@ -136,7 +136,7 @@ define eval_expression [compiler source ns]:
   when (is? source_expr READ_EOF):
     return _INCOMPLETE
 
-  define fragment (compiler.full_compile source_expr)
+  define fragment (compiler.compile_expression source_expr)
   (fragment.as_expression ns)
 
 

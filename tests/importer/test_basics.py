@@ -76,7 +76,7 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
@@ -150,7 +150,7 @@ class TestLetStarMacro(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
@@ -199,7 +199,7 @@ class TestCarCdrMacros(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
@@ -276,7 +276,7 @@ class TestSetBangPairMacros(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
@@ -352,7 +352,7 @@ class TestConditionalMacros(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 

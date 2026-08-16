@@ -761,7 +761,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         """
 
         form = self.read_source(source)
-        fragment = self.compiler.full_compile(form, tc=tc)
+        fragment = self.compiler.compile_expression(form, tc=tc)
         return self.compiler.complete(fragment, mode=CompilerMode.EXPRESSION)
 
 
@@ -774,7 +774,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         """
 
         form = self.read_source(source)
-        fragment = self.compiler.full_compile(form)
+        fragment = self.compiler.compile_expression(form)
         expr = fragment.as_expression(self.module_ns)
         return demand_call(expr)
 

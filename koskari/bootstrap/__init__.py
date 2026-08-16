@@ -94,7 +94,7 @@ _BUILTINS_SOURCES = (
     '_pragma.ki',
 
     # assert
-    # requires: _define_syntax.ki, _conditionals.ki
+    # requires: _define_syntax.ki, _conditionals.ki, _pragma.ki
     '_assert.ki',
 
     # requires: _define_syntax.ki, _pragma.ki
