@@ -82,7 +82,7 @@ class TestLayoutDefineSyntax(TestCase):
         """
         src = """
         define-syntax m:
-          syntax-rules [item item]:
+          syntax-rules [item compile/item]:
             case (ref (item obj name)):
               (ref-item obj name)
         """
@@ -94,7 +94,7 @@ class TestLayoutDefineSyntax(TestCase):
             (symbol('define-syntax'),
              symbol('m'),
              (symbol('syntax-rules'),
-              (symbol('item'), symbol('item')),
+              (symbol('item'), symbol('compile/item')),
               rule1)))
         self._assert_layout_parse(src, expected)
 

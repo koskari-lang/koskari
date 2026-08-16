@@ -779,6 +779,17 @@ class Compiler:
         return None
 
 
+    @property
+    def last_position(self):
+        """
+        The innermost source position seen by this compiler's current
+        walk. Interned atoms carry no position of their own, so this is
+        the best available location for a diagnostic about one.
+        """
+
+        return self._last_position
+
+
     def find_compiled(self, name):
         """
         Resolve compile/<name> in the module namespace

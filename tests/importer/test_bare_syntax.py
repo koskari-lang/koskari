@@ -179,6 +179,13 @@ class TestBareControlWords(BareSyntaxHelpers):
         self.assertEqual(result, [1])
 
 
+    async def test_bare_yield(self):
+        result = await self.run_forms(
+            "(define gen (lambda gen [] (begin yield (yield 2))))",
+            "(list (gen))")
+        self.assertEqual(result, [None, 2])
+
+
     async def test_bare_raise_reraises(self):
         result = await self.run_forms(
             '(try'

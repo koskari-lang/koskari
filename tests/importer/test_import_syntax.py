@@ -14,13 +14,12 @@
 """
 tests.importer.test_import_syntax
 
-Cross-module import of a syntax transformer. A module defining a macro and
-a second module importing it by name, so the macro is available to the
-consumer at its own compile time.
-
-These pin the contract that survives the move to prefixed binding keys:
-whatever name a transformer is bound under, importing it by the name the
-author wrote must leave it usable as syntax in the importing module.
+Cross-module import of a syntax transformer. A transformer defined as
+NAME is bound under compile/NAME, and until family imports land
+(design/language/prefix-aware-imports.md) the importer must name that
+binding explicitly: (import-from mod compile/NAME). These pin the
+explicit-member contract: imported that way, the transformer is usable
+as syntax in the consumer, renameable, and extendable.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -100,7 +99,7 @@ class TestImportSyntax(SyntaxImportCase):
     async def test_imported_syntax_expands_in_consumer(self):
         self.write_ki('ki_syn_provider', PROVIDER)
         self.write_ki('ki_syn_user', """
-        (import-from ki_syn_provider doubled)
+        (import-from ki_syn_provider compile/doubled)
         (define result (doubled 21))
         """)
 
@@ -111,7 +110,7 @@ class TestImportSyntax(SyntaxImportCase):
     async def test_imported_syntax_is_bound_in_consumer(self):
         self.write_ki('ki_syn_provider2', PROVIDER)
         self.write_ki('ki_syn_user2', """
-        (import-from ki_syn_provider2 doubled)
+        (import-from ki_syn_provider2 compile/doubled)
         (define result (doubled 4))
         """)
 
@@ -122,7 +121,7 @@ class TestImportSyntax(SyntaxImportCase):
     async def test_renamed_syntax_expands_under_new_name(self):
         self.write_ki('ki_syn_provider3', PROVIDER)
         self.write_ki('ki_syn_user3', """
-        (import-from ki_syn_provider3 [doubled as: twiced])
+        (import-from ki_syn_provider3 [compile/doubled as: compile/twiced])
         (define result (twiced 5))
         """)
 
@@ -130,10 +129,22 @@ class TestImportSyntax(SyntaxImportCase):
         self.assertEqual(10, mod.result)
 
 
+    async def test_extend_after_import(self):
+        self.write_ki('ki_syn_provider5', PROVIDER)
+        self.write_ki('ki_syn_user5', """
+        (import-from ki_syn_provider5 compile/doubled)
+        (extend-syntax doubled (syntax-rules [] [(doubled x y) (* x y)]))
+        (define result #[(doubled 21) (doubled 6 7)])
+        """)
+
+        mod = importlib.import_module('ki_syn_user5')
+        self.assertEqual(mod.result, [42, 42])
+
+
     async def test_syntax_and_value_import_together(self):
         self.write_ki('ki_syn_provider4', PROVIDER)
         self.write_ki('ki_syn_user4', """
-        (import-from ki_syn_provider4 doubled plain-value)
+        (import-from ki_syn_provider4 compile/doubled plain-value)
         (define result (doubled plain-value))
         """)
 

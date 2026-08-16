@@ -25,56 +25,118 @@ Portion of koskari.builtins
 ;; The builders keep the written name as the transformer's identity:
 ;; it feeds help text, match errors, and the pattern literal set.
 
-(define compile/define-syntax
-  ;; the macro for defining macros
+let []:
 
-  (macro-rules compile/define-syntax
-      [syntax-rules syntax-match
-       macro-rules macro-match
-       special-rules special-match
-       bare-syntax]
+    (define transformer-binding-name
+      ;; The binding key for a transformer written as NAME, as a datum-wrapped
+      ;; symbol ready to splice into binding position: compile/NAME, or NAME
+      ;; unchanged when it already carries the prefix. One home for the rule
+      ;; every define-syntax and extend-syntax arm applies.
 
-    [(define-syntax name (bare-syntax slot template))
-      (define n (str name.datum))
-      (define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                         (else: f"compile/{n}")))))
-      `(define-global ,bound (bare-syntax ,name ,slot ,template))]
+      (lambda transformer-binding-name (name)
+        (datum (symbol (cond (((str name).startswith "compile/") (str name))
+                             (else: f"compile/{(str name)}"))))))
 
-    [(define-syntax name (syntax-rules literals rule ...))
-      (define n (str name.datum))
-      (define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                         (else: f"compile/{n}")))))
-      `(define-global ,bound (syntax-rules ,name ,literals ,@rule))]
 
-    [(define-syntax name (syntax-match rule ...))
-      (define n (str name.datum))
-      (define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                         (else: f"compile/{n}")))))
-      `(define-global ,bound (syntax-match ,name ,@rule))]
+    (define-global compile/define-syntax
+      ;; the macro for defining macros
 
-    [(define-syntax name (macro-rules literals rule ...))
-      (define n (str name.datum))
-      (define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                         (else: f"compile/{n}")))))
-      `(define-global ,bound (macro-rules ,name ,literals ,@rule))]
+      (macro-rules compile/define-syntax
+          [syntax-rules syntax-match
+           macro-rules macro-match
+           special-rules special-match
+           bare-syntax]
 
-    [(define-syntax name (macro-match rule ...))
-      (define n (str name.datum))
-      (define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                         (else: f"compile/{n}")))))
-      `(define-global ,bound (macro-match ,name ,@rule))]
+        [(define-syntax name (bare-syntax slot template))
+          (define bound (transformer-binding-name name.datum))
+          `(define-global ,bound (bare-syntax ,name ,slot ,template))]
 
-    [(define-syntax name (special-rules literals rule ...))
-      (define n (str name.datum))
-      (define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                         (else: f"compile/{n}")))))
-      `(define-global ,bound (special-rules ,name ,literals ,@rule))]
+        [(define-syntax name (syntax-rules literals rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(define-global ,bound (syntax-rules ,name ,literals ,@rule))]
 
-    [(define-syntax name (special-match rule ...))
-      (define n (str name.datum))
-      (define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                         (else: f"compile/{n}")))))
-      `(define-global ,bound (special-match ,name ,@rule))]))
+        [(define-syntax name (syntax-match rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(define-global ,bound (syntax-match ,name ,@rule))]
+
+        [(define-syntax name (macro-rules literals rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(define-global ,bound (macro-rules ,name ,literals ,@rule))]
+
+        [(define-syntax name (macro-match rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(define-global ,bound (macro-match ,name ,@rule))]
+
+        [(define-syntax name (special-rules literals rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(define-global ,bound (special-rules ,name ,literals ,@rule))]
+
+        [(define-syntax name (special-match rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(define-global ,bound (special-match ,name ,@rule))]))
+
+
+    (define-global compile/extend-syntax
+      ;; the macro for extending macros; raw like define-syntax above,
+      ;; since the definer is not yet usable within this same unit
+
+      (macro-rules compile/extend-syntax
+          [syntax-rules syntax-match
+           macro-rules macro-match
+           special-rules special-match
+           bare-syntax]
+
+        [(extend-syntax name (bare-syntax slot template))
+          (define bound (transformer-binding-name name.datum))
+          `(setq ,bound (+ ,bound (bare-syntax ,name ,slot ,template)))]
+
+        [(extend-syntax name (syntax-rules literals rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(setq ,bound (+ ,bound (syntax-rules ,name ,literals ,@rule)))]
+
+        [(extend-syntax name (syntax-match rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(setq ,bound (+ ,bound (syntax-match ,name ,@rule)))]
+
+        [(extend-syntax name (macro-rules literals rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(setq ,bound (+ ,bound (macro-rules ,name ,literals ,@rule)))]
+
+        [(extend-syntax name (macro-match rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(setq ,bound (+ ,bound (macro-match ,name ,@rule)))]
+
+        [(extend-syntax name (special-rules literals rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(setq ,bound (+ ,bound (special-rules ,name ,literals ,@rule)))]
+
+        [(extend-syntax name (special-match rule ...))
+          (define bound (transformer-binding-name name.datum))
+          `(setq ,bound (+ ,bound (special-match ,name ,@rule)))]))
+
+
+    ;; The docstring forms of define-syntax and extend-syntax arrive as
+    ;; extensions now that extend-syntax exists; extend-syntax documents
+    ;; itself by way of its own new arm.
+
+    (setq compile/define-syntax
+      (+ compile/define-syntax
+         (macro-rules compile/define-syntax []
+           [(define-syntax name docstr (form ...))
+             (define bound (transformer-binding-name name.datum))
+             `(begin
+                (define-syntax ,name (,@form))
+                ((attr ,bound append_doc) ,docstr))])))
+
+
+    (setq compile/extend-syntax
+      (+ compile/extend-syntax
+         (macro-rules compile/extend-syntax []
+           [(extend-syntax name docstr (form ...))
+             (define bound (transformer-binding-name name.datum))
+             `(begin
+                (extend-syntax ,name (,@form))
+                ((attr ,bound append_doc) ,docstr))])))
 
 
 set-attr compile/define-syntax __doc__:
@@ -106,55 +168,6 @@ set-attr compile/define-syntax __doc__:
   """
 
 
-define-syntax compile/extend-syntax:
-  macro-rules [syntax-rules syntax-match
-               macro-rules macro-match
-               special-rules special-match
-               bare-syntax]:
-
-    case (extend-syntax name (bare-syntax slot template)):
-      define n (str name.datum)
-      define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                        (else: f"compile/{n}"))))
-      `(setq ,bound (+ ,bound (bare-syntax ,name ,slot ,template)))
-
-    case (extend-syntax name (syntax-rules literals rule ...)):
-      define n (str name.datum)
-      define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                        (else: f"compile/{n}"))))
-      `(setq ,bound (+ ,bound (syntax-rules ,name ,literals ,@rule)))
-
-    case (extend-syntax name (syntax-match rule ...)):
-      define n (str name.datum)
-      define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                        (else: f"compile/{n}"))))
-      `(setq ,bound (+ ,bound (syntax-match ,name ,@rule)))
-
-    case (extend-syntax name (macro-rules literals rule ...)):
-      define n (str name.datum)
-      define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                        (else: f"compile/{n}"))))
-      `(setq ,bound (+ ,bound (macro-rules ,name ,literals ,@rule)))
-
-    case (extend-syntax name (macro-match rule ...)):
-      define n (str name.datum)
-      define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                        (else: f"compile/{n}"))))
-      `(setq ,bound (+ ,bound (macro-match ,name ,@rule)))
-
-    case (extend-syntax name (special-rules literals rule ...)):
-      define n (str name.datum)
-      define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                        (else: f"compile/{n}"))))
-      `(setq ,bound (+ ,bound (special-rules ,name ,literals ,@rule)))
-
-    case (extend-syntax name (special-match rule ...)):
-      define n (str name.datum)
-      define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                        (else: f"compile/{n}"))))
-      `(setq ,bound (+ ,bound (special-match ,name ,@rule)))
-
-
 set-attr compile/extend-syntax __doc__:
   """
   Extends an existing Syntax definition with new rules. The newer rules
@@ -163,32 +176,6 @@ set-attr compile/extend-syntax __doc__:
   The original documentation is carried forward. A docstring given here
   is appended to it, describing what this extension adds.
   """
-
-
-;; The docstring forms of define-syntax and extend-syntax arrive as
-;; extensions now that extend-syntax exists; extend-syntax documents
-;; itself by way of its own new arm.
-
-extend-syntax compile/define-syntax:
-  macro-rules []:
-    case (define-syntax name docstr (form ...)):
-      define n (str name.datum)
-      define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                        (else: f"compile/{n}"))))
-      `(begin
-         (define-syntax ,name (,@form))
-         ((attr ,bound append_doc) ,docstr))
-
-
-extend-syntax compile/extend-syntax:
-  macro-rules []:
-    case (extend-syntax name docstr (form ...)):
-      define n (str name.datum)
-      define bound (datum (symbol (cond ((n.startswith "compile/") n)
-                                        (else: f"compile/{n}"))))
-      `(begin
-         (extend-syntax ,name (,@form))
-         ((attr ,bound append_doc) ,docstr))
 
 
 define-syntax compile/let-syntax:

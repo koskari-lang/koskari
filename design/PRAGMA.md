@@ -91,7 +91,7 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | `compiler/stray-colon` | compiler | `warn` | `warn` | `allow` / `warn` / `error` | policy when a bare `:` symbol is compiled as a name |
 | `compiler/keyword-literals` | compiler | `warn` | `warn` | `allow` / `warn` / `error` | policy when an unquoted keyword is compiled as a literal value |
 | `compiler/enable-asserts` | compiler | `True` | `True` | bool | `(assert …)` forms expand to their check; off, they compile away entirely (Python `-O` semantics) |
-| `compiler/bare-control-words` | compiler | `convert` | `convert` | `convert` / `warn` / `error` | policy when a bare `return`, `continue`, `break`, or `raise` symbol is compiled: silently expand to the call form, warn and expand, or refuse |
+| `compiler/bare-control-words` | compiler | `convert` | `convert` | `convert` / `warn` / `error` | policy when a bare `return`, `continue`, `break`, `raise`, or `yield` symbol is compiled: silently expand to the call form, warn and expand, or refuse |
 | `compiler/tco-enable` | compiler | `True` | `True` | bool | tail-call optimization |
 | `compiler/convert-fast` | compiler | `True` | `True` | bool | VAR→FAST local-access lowering pass |
 | `compiler/compress` | compiler | `False` | `False` | bool | bytecode compression pass — registered but inert (pass not yet built) |

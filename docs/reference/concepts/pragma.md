@@ -192,7 +192,8 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   affects only the asserts that appear after it. See
   [compile/assert](../macros/compile-assert.md).
 - **`compiler/bare-control-words`** *(default `convert`)* — what happens when
-  a bare `return`, `continue`, `break`, or `raise` symbol is compiled. These
+  a bare `return`, `continue`, `break`, `raise`, or `yield` symbol is
+  compiled. These
   statement words are call forms in Koskari, and their bare forms expand the
   lone symbol into its call form — `return` becomes `(return)` — matching the
   Python-style spelling. One of:
@@ -202,11 +203,12 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
 
   Each module answers for its own setting: the gate reads the pragma of the
   module being compiled, so a strict module does not harden its neighbors.
-  The cost of conversion is that these four names always expand and can never
+  The cost of conversion is that these five names always expand and can never
   name a variable. See [compile/return](../specials/compile-return.md),
   [compile/continue](../specials/compile-continue.md),
-  [compile/break](../specials/compile-break.md), and
-  [compile/raise](../specials/compile-raise.md).
+  [compile/break](../specials/compile-break.md),
+  [compile/raise](../specials/compile-raise.md), and
+  [compile/yield](../specials/compile-yield.md).
 - **`compiler/tco-enable`** *(default on)* — whether tail calls are optimized.
 - **`compiler/convert-fast`** *(default on)* — whether the compiler lowers local
   variable access to its fast form. Off disables that optimization.

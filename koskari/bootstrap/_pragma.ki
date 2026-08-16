@@ -103,21 +103,30 @@ extend-syntax compile/help:
             (call help #('__pragma__ 'pragma) (globals))
 
 
-define active-pragma [key: None]:
-  """
-  The pragma active in the current compilation turn, bound by the
-  compiler into the active-compiler-pragma parameter. With no key,
-  the pragma object itself, or None outside a compilation turn. With
-  a key, the value of that setting, or None when no pragma is active.
-  """
+let [[default-pragma None]]:
 
-  define p (parameterq active-compiler-pragma None)
-  if (None? key):
-    p
-  elif (None? p):
-    None
-  else:
-    (item p (str key))
+  import-from koskari.pragma ModulePragma
+
+
+  define-global active-pragma [key: None]:
+    """
+    The pragma active in the current compilation turn, bound by the
+    compiler into the active-compiler-pragma parameter. When no pragma
+    is bound -- a compiler built without one, or no compilation turn at
+    all -- a default pragma carrying every registered setting's default
+    answers instead. With no key, the pragma object; with a key, the
+    value of that setting.
+    """
+
+    define p (parameterq active-compiler-pragma None)
+    when (None? p):
+      when (None? default-pragma):
+        set! default-pragma (ModulePragma)
+      set! p default-pragma
+    if (None? key):
+      p
+    else:
+      (item p (str key))
 
 
 define-syntax compile/active-pragma:

@@ -17,9 +17,9 @@ Portion of koskari.builtins
 """
 
 
-;; The statement words return, continue, break, and raise are call
-;; forms, and a common error is expecting the bare symbol to behave as
-;; it does in Python. Their bare forms expand the lone symbol through
+;; The statement words return, continue, break, raise, and yield are
+;; call forms, and a common error is expecting the bare symbol to behave
+;; as it does in Python. Their bare forms expand the lone symbol through
 ;; the bare-control-word gate, whose behavior each module selects with
 ;; the compiler/bare-control-words pragma: convert (the default)
 ;; silently expands to the call form, warn converts with a
@@ -61,8 +61,7 @@ let []:
 
         special-rules []:
             case [c (bare-control-word word) tc]:
-                define mode (or (active-pragma compiler/bare-control-words)
-                                "convert")
+                define mode (active-pragma compiler/bare-control-words)
                 define w word.datum
                 define pos word.position
                 if (== mode "error"):
@@ -98,6 +97,11 @@ extend-syntax compile/break:
 extend-syntax compile/raise:
   bare-syntax raise:
     (bare-control-word raise)
+
+
+extend-syntax compile/yield:
+  bare-syntax yield:
+    (bare-control-word yield)
 
 
 ;; The end.

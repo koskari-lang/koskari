@@ -404,7 +404,7 @@ class BareTransform(SyntaxTransform):
         :return: expanded form after hygiene and finalize
         """
 
-        pos = getattr(compiler, "_last_position", None)
+        pos = compiler.last_position
         result = _BareResult({self.slot: Datum(sym, pos)})
         expansion = self.handle_expand(compiler, sym, result, tc)
         if pos and is_pair(expansion):

@@ -84,7 +84,7 @@ class TestActivePragma(ActivePragmaCase):
     async def test_consumer_default_pragma(self):
         self.write_ki('ki_ap_provider', PROVIDER)
         self.write_ki('ki_ap_default', """
-        (import-from ki_ap_provider tco-setting)
+        (import-from ki_ap_provider compile/tco-setting)
         (define result (tco-setting))
         """)
 
@@ -95,7 +95,7 @@ class TestActivePragma(ActivePragmaCase):
     async def test_consumer_overridden_pragma(self):
         self.write_ki('ki_ap_provider2', PROVIDER)
         self.write_ki('ki_ap_altered', """
-        (import-from ki_ap_provider2 tco-setting)
+        (import-from ki_ap_provider2 compile/tco-setting)
         (pragma [compiler/tco-enable False])
         (define result (tco-setting))
         """)
@@ -177,7 +177,7 @@ class TestActivePragma(ActivePragmaCase):
             [(tco-setting) (datum (active-pragma compiler/tco-enable))]))
         """)
         self.write_ki('ki_ap_clean', """
-        (import-from ki_ap_provider3 tco-setting)
+        (import-from ki_ap_provider3 compile/tco-setting)
         (define result (tco-setting))
         """)
 
