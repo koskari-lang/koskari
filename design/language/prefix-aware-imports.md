@@ -198,6 +198,11 @@ grouping, so this should be designed before the special is written.
 
 ## Open questions
 
+- The consumer surface for family import. The working name has been
+  `require` (Elixir's analogue for making compile-time facets available),
+  with `use` reserved for the bundle install hook. The two may land
+  together, and `use` may subsume `require` entirely -- bundles as the
+  one model, leaving only `import` (Python parity) and `use`.
 - Whether `match/` becomes an active prefix for `syntax-match`, `match/case`,
   and other match-language builders. Deferring is safe as long as the set stays
   centralized; adding it later is then a one-line change that `help` and

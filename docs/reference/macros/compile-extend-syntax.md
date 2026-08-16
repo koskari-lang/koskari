@@ -1,12 +1,20 @@
 # compile/extend-syntax
 **Symbol:** `compile/extend-syntax`
 
-**Syntax:** `(extend-syntax NAME TRANSFORMER)` with the same six transformer heads as
-`define-syntax`.
+**Syntax:** `(extend-syntax NAME TRANSFORMER)` with the same transformer heads as
+`define-syntax`, including `bare-syntax`.
 
-**Behaviour:** Replaces **`NAME`** via **`setq`** with a new **`syntax-rules`** /
-**`syntax-match`** / **`macro-rules`** / **`special-rules`** / **`special-match`**
-spec (each expansion passes **`NAME`** as the first argument to the builder form).
+**Behaviour:** Rebinds **`compile/NAME`** via **`setq`** with the combination of
+the existing transformer and a new **`syntax-rules`** / **`syntax-match`** /
+**`macro-rules`** / **`macro-match`** / **`special-rules`** / **`special-match`** /
+**`bare-syntax`** spec (each expansion passes the written **`NAME`** as the
+builder's identity argument).
+
+**Documentation:** the original docstring carries forward; a docstring given
+in the extension is appended to it rather than replacing it.
+
+**Bare forms:** a transformer carries at most one bare form, so extending
+with `bare-syntax` replaces any existing bare arm rather than stacking.
 
 **Precedence:** The newer rules take precedence over the existing ones (the
 combination is `NAME + new` via `Syntax.__add__`). So a base transformer can

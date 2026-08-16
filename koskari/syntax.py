@@ -32,15 +32,16 @@ from koskari.types import is_nil
 from koskari.hygiene import (Hygiene, collect_binding_symbols,
                              expand_template_with_hygiene,
                              finalize_macro_hygiene_unbox_one_pass)
-from koskari.lib import (Datum, Matcher, demand_call, gensym, match_select,
-                         nil, symbol)
+from koskari.lib import (Datum, Matcher, cons, demand_call, gensym,
+                         match_select, nil, symbol)
 from koskari.matcher import (BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME,
                              TEST_ANY, HygienicMatchCompiler, Pattern,
                              check_pattern_arg, parse_explicit_rule_pattern,
                              repeat_capture)
 from koskari.reader.layouts import apply_layout
 from koskari.bootstrap import builtin
-from koskari.types import is_pair, is_proper, is_symbol, unpack
+from koskari.types import (fill_position, get_position, is_pair, is_proper,
+                           is_symbol, unpack)
 
 
 __all__ = (
@@ -156,6 +157,12 @@ class Syntax(Compiled):
         A non-pair source is a lone-atom use, which bypasses the matchers
         entirely and goes straight to the ``bare`` arm
 
+        A bare-only syntax (no call arms at all) used in form position is
+        an alias: the head expands through the bare arm and the tail rides
+        along for recompilation. A syntax that has call arms never falls
+        back to its bare arm -- a form no call arm matches is a malformed
+        use, and the bare arm stands in for the lone atom, not for a call
+
         :param compiler: active compiler instance
         :param source_obj: full special form being compiled
         :param tc: tail-call flag
@@ -174,6 +181,16 @@ class Syntax(Compiled):
                     patterns=self.patterns,
                 )
             return self.bare.expand_bare(compiler, source_obj, tc)
+
+        if self.bare is not None and not self.transforms:
+            # bare-only: alias semantics, decided up front -- there are
+            # no call arms, so there is nothing to consult the matchers
+            # about
+            head, tail = source_obj
+            expansion = self.bare.expand_bare(compiler, head, tc)
+            reemitted = cons(expansion, tail)
+            fill_position(reemitted, get_position(source_obj))
+            return reemitted
 
         idx, result = match_select(self._matchers, source_obj)
         if result is None:

@@ -958,3 +958,31 @@ tags:
   - "surface:block"
   - construct
 notes: requires reader/string-segments (baseline on). the continuation lines are consumed as part of the value on the line that opened them, so the block structure is untouched and the statement after the segment chain still belongs to the block
+---
+id: syntax-define-syntax-bare-expand-001
+feature: macro/compile/define-syntax
+source: (define-syntax greeting (bare-syntax me (quote hello)))
+verify:
+  expand: (define-global compile/greeting (bare-syntax greeting me (quote hello)))
+references:
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - bare-syntax
+notes: "bare-syntax kind: the transformer's bare form expands the lone atom greeting; the slot symbol me names the called-by capture. Binding key is prefixed, identity stays as written."
+---
+id: syntax-extend-syntax-bare-expand-001
+feature: macro/compile/extend-syntax
+source: (extend-syntax pick (bare-syntax me (quote alone)))
+verify:
+  expand: (setq compile/pick (+ compile/pick (bare-syntax pick me (quote alone))))
+references:
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - extend-syntax
+  - bare-syntax
+notes: attaching a bare form to an existing transformer; a syntax carries at most one bare arm, and an extension's bare arm replaces the original's

@@ -1621,3 +1621,36 @@ tags:
   - "surface:block"
   - idiom
 notes: keyword arguments to yield produce a values object labelling each result; dict exposes its fields. koskari/compile/specials/continuations.py
+---
+id: special-return-bare-word-001
+feature: special/compile/return
+source: "(begin (define f (lambda f [x] (begin (when x return) 99))) #[(f True) (f False)])"
+verify:
+  eval: "list:[null,99]"
+references:
+  - reference/specials/compile-return.md
+stability: evolving
+tags:
+  - special
+  - return
+  - bare-syntax
+  - early-exit
+  - control-flow
+notes: the bare symbol return expands to (return) through the bootstrap bare form, so the Python-style spelling works; the cost is that return can never name a variable
+---
+id: special-raise-bare-word-reraise-001
+feature: special/compile/raise
+source: (try (try (raise (ValueError "boom")) ([e ValueError] raise)) ([e2 ValueError] "caught"))
+verify:
+  eval: '"caught"'
+references:
+  - reference/specials/compile-raise.md
+  - reference/specials/compile-try.md
+stability: evolving
+tags:
+  - special
+  - raise
+  - re-raise
+  - bare-syntax
+  - error-handling
+notes: the bare symbol raise expands to (raise) through the bootstrap bare form, giving Python's bare-raise re-raise spelling inside a handler
