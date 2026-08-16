@@ -440,8 +440,12 @@ static void decorate_exception_with_dynchain(
     return;
   }
 
-  /* Carry forward frames recorded while the raise walk crossed them;
-     they are no longer on the live chain below. */
+  /* Carry forward every previously recorded frame. Crossed entries
+     were popped by the raise walk; the rest were recorded at the
+     escape of an earlier eval, whose context died with that escape
+     (see kos_eval_prepare_boundary_raise). Either way none of them
+     can still be on this context's live chain, so appending the live
+     chain below cannot duplicate them. */
   {
     PyObject *prior = PyObject_GetAttrString(exc_val,
                                              "__koskari_dynchain__");
@@ -451,9 +455,7 @@ static void decorate_exception_with_dynchain(
       if (PyList_Check(prior)) {
         for (Py_ssize_t i = 0; i < PyList_GET_SIZE(prior); i++) {
           PyObject *meta = PyList_GET_ITEM(prior, i);
-          PyObject *crossed = PyDict_Check(meta)
-              ? PyDict_GetItemString(meta, "crossed") : NULL;
-          if (crossed && PyObject_IsTrue(crossed))
+          if (PyDict_Check(meta))
             PyList_Append(frames, meta);
         }
       }
