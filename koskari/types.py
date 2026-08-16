@@ -21,10 +21,11 @@ Koskari native types, predicates, and helper functions
 """
 
 import operator
+from contextlib import contextmanager
 from functools import partial
 
-from .lib import (KoskariSyncViolation, bracket_nil, bracket_pair, cons,
-                  keyword, nil, nilp, pair, symbol)
+from .lib import (Domain, KoskariSyncViolation, ParamRef, bracket_nil,
+                  bracket_pair, cons, keyword, nil, nilp, pair, symbol)
 
 
 __all__ = (
@@ -36,9 +37,49 @@ __all__ = (
     "is_recursive",
     "build_proper",
     "bracket_splice",
+    "parameterize",
     "unpack",
     "is_on_demand",
 )
+
+
+@contextmanager
+def parameterize(**bindings):
+    """
+    Bind parameters for the extent of a Python block.
+
+    The host-side counterpart of the koskari ``parameterize`` special:
+    ensures a Domain is active (entering a fresh one when none is), stores
+    each binding through its ``ParamRef``, and restores the prior state on
+    exit. Values land in the root scope of the active domain, the channel
+    reserved for host pre-defines, so koskari code invoked inside the
+    block -- including macro bodies run by the compiler -- reads them
+    through normal parameter resolution.
+
+    :param bindings: parameter name to value mappings
+    """
+
+    entered = None
+    if Domain.current_domain() is None:
+        entered = Domain()
+        entered.__enter__()
+
+    saved = []
+    try:
+        for name, value in bindings.items():
+            ref = ParamRef(name)
+            had = not ref.empty
+            saved.append((ref, had, ref.deref() if had else None))
+            ref.store(value)
+        yield
+    finally:
+        for ref, had, prior in reversed(saved):
+            if had:
+                ref.store(prior)
+            else:
+                ref.clear()
+        if entered is not None:
+            entered.__exit__(None, None, None)
 
 
 class TypePredicate(partial):

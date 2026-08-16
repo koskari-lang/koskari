@@ -1,0 +1,97 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+Portion of koskari.builtins
+"""
+
+
+;; The statement words return, continue, break, and raise are call
+;; forms, and a common error is expecting the bare symbol to behave as
+;; it does in Python. Their bare forms expand the lone symbol through
+;; the bare-control-word gate, whose behavior each module selects with
+;; the compiler/bare-control-words pragma: convert (the default)
+;; silently expands to the call form, warn converts with a
+;; SyntaxWarning, and error refuses at compile time. The deliberate
+;; cost of conversion: these names always expand, so none of them can
+;; name a variable.
+
+
+let []:
+
+    import-from warnings warn
+    import-from koskari.pragma register
+
+
+    define pragma-bare-control-words [mode: "convert"]:
+        """
+        How a bare control word compiles: convert, warn, or error.
+        Baseline convert.
+        """
+
+        define m (str mode)
+        unless (in? m #("convert" "warn" "error")):
+            raise (ValueError
+                   f"bare-control-words must be convert, warn, or error: {m}")
+        m
+
+
+    (register "compiler/bare-control-words"
+              (demand pragma-bare-control-words) "convert")
+
+
+    define-syntax compile/bare-control-word:
+        """
+        Gate for a bare control word: expands to the word's call form,
+        warning or refusing first when the compiling module's
+        compiler/bare-control-words pragma says so.
+        """
+
+        macro-match:
+            case (bare-control-word (BIND word)):
+                define mode (or (active-pragma compiler/bare-control-words)
+                                "convert")
+                define w word.datum
+                if (== mode "error"):
+                    raise (CompilerError
+                           f"bare {w} (write ({w}); the"
+                           " compiler/bare-control-words pragma is error)")
+                elif (== mode "warn"):
+                    (warn f"bare {w} converted to ({w})" SyntaxWarning)
+                    `(,w)
+                else:
+                    `(,w)
+
+
+extend-syntax compile/return:
+  bare-syntax return:
+    (bare-control-word return)
+
+
+extend-syntax compile/continue:
+  bare-syntax continue:
+    (bare-control-word continue)
+
+
+extend-syntax compile/break:
+  bare-syntax break:
+    (bare-control-word break)
+
+
+extend-syntax compile/raise:
+  bare-syntax raise:
+    (bare-control-word raise)
+
+
+;; The end.

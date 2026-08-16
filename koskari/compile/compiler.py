@@ -34,7 +34,7 @@ from ..lib import (Arena, Compare, Operand, Code, FormalsSpec, FunctionSpec,
                    Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
                    bracket_pair, cons, keyword, kos_repr, nil, symbol)
 from ..types import (fill_position, is_nil, get_position, is_keyword,
-                     is_pair, is_proper, is_symbol)
+                     is_pair, is_proper, is_symbol, parameterize)
 from .pragma import (BracketCalls, KeywordLiterals, KoskariPragma,
                      PackModule, ResolutionMode, StrayColon)
 
@@ -233,6 +233,10 @@ _symbol_call = symbol("call")
 _symbol_cons = symbol("cons")
 
 _symbol_colon = symbol(":")
+
+# the parameter name (active-pragma) reads; the compiler binds it for
+# each compilation turn
+ACTIVE_PRAGMA_PARAM = "active-compiler-pragma"
 
 
 def unique_append(lst, val):
@@ -557,6 +561,10 @@ class Compiler:
 
         self.name = name
 
+        # the ModulePragma this compiler answers to, attached by
+        # reload_pragma; None for a compiler built without one
+        self.pragma = None
+
         # settings, possibly from pragma
         self.convert_fast_enabled = True
         self.tco_enabled = tco_enabled
@@ -637,6 +645,8 @@ class Compiler:
         """
         Reload the compiler from a pragma.
         """
+
+        self.pragma = pragma
 
         self.convert_fast_enabled = pragma.get("compiler/convert-fast")
         self.tco_enabled = pragma.get("compiler/tco-enable")
@@ -827,8 +837,15 @@ class Compiler:
             self._resolution_instance = self._resolution_pragma_class()
 
         try:
-            fragment = self.fragment(self.name)
-            return self.compile_expr(fragment, source_obj, tc) or fragment
+            # macro bodies run during this turn read the compiling
+            # module's pragma through (active-pragma), regardless of
+            # which module they were defined in
+            with parameterize(**{ACTIVE_PRAGMA_PARAM: self.pragma}):
+                fragment = self.fragment(self.name)
+                ret = self.compile_expr(fragment, source_obj, tc)
+                # None is the emitted-into-fragment sentinel; a falsy
+                # form (an expansion to False, 0, "") is a real result
+                return fragment if ret is None else ret
         finally:
             if tmp:
                 self._resolution_instance = None
@@ -863,7 +880,10 @@ class Compiler:
             raise CompilerError("Unsupported source object", source_obj)
 
         try:
-            return dispatch(fragment, source_obj, tc) or fragment
+            ret = dispatch(fragment, source_obj, tc)
+            # None is the emitted-into-fragment sentinel; a falsy form
+            # (an expansion to False, 0, "") is a real result
+            return fragment if ret is None else ret
         except CompilerError:
             raise
         except Exception as ex:

@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-let [[assert-enabled True]]:
+let []:
 
     import-from koskari.pragma register
 
@@ -27,44 +27,44 @@ let [[assert-enabled True]]:
         Whether assert forms expand to their check. Baseline enabled.
         """
 
-        set! assert-enabled (bool enabled)
-        assert-enabled
+        (bool enabled)
 
 
     register "compiler/enable-asserts" (demand pragma-enable-asserts) True
 
 
-    define-syntax compile/assert:
-        """
-        Raise AssertionError when the expression is falsey if asserts are
-        enabled. Evaluates as None otherwise.
+define-syntax compile/assert:
+    """
+    Raise AssertionError when the expression is falsey if asserts are
+    enabled. Evaluates as None otherwise.
 
-        Usage::
+    Usage::
 
-            (assert expr)
-            (assert expr message)
+        (assert expr)
+        (assert expr message)
 
-        Note that the enablement behavior is gated at compile-time, not run-time.
-        The ``expr`` is not evaluated if asserts are disabled.
+    Note that the enablement behavior is gated at compile-time, not run-time.
+    The ``expr`` is not evaluated if asserts are disabled.
 
-        Asserts are enabled by default, but may be disabled via the
-        ``compiler/enable-asserts`` pragma.
+    Asserts are enabled by default, but may be disabled per module via the
+    ``compiler/enable-asserts`` pragma. The gate reads the pragma of the
+    module being compiled, so each module answers for its own setting.
 
-        eg.::
+    eg.::
 
-          (pragma [compiler/enable-asserts False])
-        """
+      (pragma [compiler/enable-asserts False])
+    """
 
-        macro-rules []:
-            case (assert expr message):
-                (if assert-enabled
-                    `(unless ,expr (raise (AssertionError ,message)))
-                    '(begin))
+    macro-rules []:
+        case (assert expr message):
+            (if (active-pragma compiler/enable-asserts)
+                `(unless ,expr (raise (AssertionError ,message)))
+                '(begin))
 
-            case (assert expr):
-                (if assert-enabled
-                    `(unless ,expr (raise (AssertionError)))
-                    '(begin))
+        case (assert expr):
+            (if (active-pragma compiler/enable-asserts)
+                `(unless ,expr (raise (AssertionError)))
+                '(begin))
 
 
 ; The end.

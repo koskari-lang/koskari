@@ -129,30 +129,4 @@ define on-demand? :: bool []:
     False
 
 
-;; The statement words return, continue, break, and raise are call
-;; forms, and a common error is expecting the bare symbol to behave as
-;; it does in Python. These bare forms expand the lone symbol into its
-;; call form. The deliberate cost: these names always expand, so none
-;; of them can ever name a variable.
-
-extend-syntax compile/return:
-  bare-syntax return:
-    (return)
-
-
-extend-syntax compile/continue:
-  bare-syntax continue:
-    (continue)
-
-
-extend-syntax compile/break:
-  bare-syntax break:
-    (break)
-
-
-extend-syntax compile/raise:
-  bare-syntax raise:
-    (raise)
-
-
 ;; The end.

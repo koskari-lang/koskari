@@ -103,4 +103,40 @@ extend-syntax compile/help:
             (call help #('__pragma__ 'pragma) (globals))
 
 
+define active-pragma [key: None]:
+  """
+  The pragma active in the current compilation turn, bound by the
+  compiler into the active-compiler-pragma parameter. With no key,
+  the pragma object itself, or None outside a compilation turn. With
+  a key, the value of that setting, or None when no pragma is active.
+  """
+
+  define p (parameterq active-compiler-pragma None)
+  if (None? key):
+    p
+  elif (None? p):
+    None
+  else:
+    (item p (str key))
+
+
+define-syntax compile/active-pragma:
+  """
+  The pragma active for the module currently being compiled
+
+  `(active-pragma)` is the pragma instance the compiler bound for the
+  current compilation turn. `(active-pragma KEY)` is the value of that
+  pragma's KEY setting. Unlike `(pragma ...)`, which reads the pragma of
+  the module a form is written in, this reads the pragma of the module
+  being compiled -- inside a macro body, that is the consumer's pragma,
+  not the pragma of the module the macro was defined in.
+  """
+
+  syntax-rules []:
+    case (active-pragma):
+      (call active-pragma)
+    case (active-pragma key):
+      (call active-pragma (quote key))
+
+
 ; The end.
