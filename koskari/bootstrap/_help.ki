@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-define-syntax compile/help:
+define-syntax help:
   syntax-rules [pragma attr]:
     case (help obj ns):
       (call help obj ns)

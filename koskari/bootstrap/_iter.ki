@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-define-syntax compile/each:
+define-syntax each:
   """
   Generator comprehension over a sequence
   """
@@ -51,7 +51,7 @@ define-syntax compile/each:
       (each [binding seq] (begin body ...))
 
 
-define-syntax compile/list-each:
+define-syntax list-each:
   """
   List comprehension over a sequence.
 
@@ -101,7 +101,7 @@ define-syntax compile/list-each:
       (list-each [binding seq] (begin body ...))
 
 
-define-syntax compile/dict-each:
+define-syntax dict-each:
   """
   Dict comprehension over a sequence via `compile/each`
   """
@@ -121,7 +121,7 @@ define-syntax compile/dict-each:
       (dict (each [binding seq] (begin body ...)))
 
 
-define-syntax compile/has?:
+define-syntax has?:
   """
   True if the collection contains the element
   """
@@ -139,7 +139,7 @@ define build-slice [start: None stop: None step: None]:
   (slice start stop step)
 
 
-define-syntax compile/slice:
+define-syntax slice:
   """
   Adapter to route slice invocations to the build-slice function to
   enable keyword argument passing
@@ -152,7 +152,7 @@ define-syntax compile/slice:
       (call build-slice args ...)
 
 
-define-syntax compile/item-slice:
+define-syntax item-slice:
   """
   Slice a sequence.
 

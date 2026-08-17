@@ -75,20 +75,10 @@ let []:
       unless (instance? tf #(SyntaxTransform MacroTransform)):
         return form
 
-      define expanded (tf.handle_expand compiler form mr False)
-
-      if (and (pair? expanded)
-              (equal? (.length expanded) 2)
-              (in? (car expanded) #('begin))):
-        ;; many of the macros written in layout form have an additional
-        ;; `begin` wrapper, so we strip it if it's present and not needed
-        ;; to combine multiple expressions.
-        set! form (cadr expanded)
-      else:
-        set! form expanded
+      set! form (tf.handle_expand compiler form mr False)
 
 
-define-syntax compile/macroexpand-1:
+define-syntax macroexpand-1:
   """
   Apply a single expansion step to a source form object in the given
   namespace, or the current globals namespace if unspecified.
@@ -101,7 +91,7 @@ define-syntax compile/macroexpand-1:
       (call macroexpand-1 form (globals))
 
 
-define-syntax compile/macroexpand:
+define-syntax macroexpand:
   """
   Expand a source form object in the given namespace, or the current globals
   namespace if unspecified. Repeat until the result is no longer a
@@ -115,7 +105,7 @@ define-syntax compile/macroexpand:
       (call macroexpand form (globals))
 
 
-define-syntax compile/macroexpandq-1:
+define-syntax macroexpandq-1:
   """
   Quote and expand a source object in the given namespace, or
   the current globals namespace if unspecified.
@@ -130,7 +120,7 @@ define-syntax compile/macroexpandq-1:
       (call macroexpand-1 (quote form) (globals))
 
 
-define-syntax compile/macroexpandq:
+define-syntax macroexpandq:
   """
   Quote and expand a source object in the given namespace, or
   the current globals namespace if unspecified. Repeat until the result
@@ -152,37 +142,37 @@ let []:
 
 
   define-global compile [source_obj ns]:
-      """
-      Compile a source object into a code object via the compiler from
-      the given namespace
-      """
+    """
+    Compile a source object into a code object via the compiler from
+    the given namespace
+    """
 
-      when (instance? source_obj #(Expression Function)):
-          return source_obj
+    when (instance? source_obj #(Expression Function)):
+      return source_obj
 
-      define compiler (ns.get "__compiler__" None)
-      unless compiler:
-          raise (ValueError "__compiler__ not found in namespace")
+    define compiler (ns.get "__compiler__" None)
+    unless compiler:
+      raise (ValueError "__compiler__ not found in namespace")
 
-      define frag (compiler.compile_expression source_obj)
-      frag.as_expression ns
+    define frag (compiler.compile_expression source_obj)
+    frag.as_expression ns
 
 
   define-global evaluate [source_obj ns]:
-      """
-      Compile and evaluate a source object as an expression in the given
-      namespace
-      """
+    """
+    Compile and evaluate a source object as an expression in the given
+    namespace
+    """
 
-      define code source_obj
-      unless (instance? source_obj Code):
-          set! code (compile source_obj ns)
+    define code source_obj
+    unless (instance? source_obj Code):
+      set! code (compile source_obj ns)
 
-      define expr (code.as_expression ns)
-      (expr)
+    define expr (code.as_expression ns)
+    (expr)
 
 
-define-syntax compile/evaluate:
+define-syntax evaluate:
   syntax-rules []:
     case (evaluate form ns):
       (call evaluate form ns)
@@ -190,7 +180,7 @@ define-syntax compile/evaluate:
       (call evaluate form (locals))
 
 
-define-syntax compile/compileq:
+define-syntax compileq:
   syntax-rules []:
     case (compileq form ns):
       (call compile (quote form) ns)
@@ -198,7 +188,7 @@ define-syntax compile/compileq:
       (call compile (quote form) (locals))
 
 
-define-syntax compile/inline-macro:
+define-syntax inline-macro:
   """
   Evaluate body and expand to the resulting form
   """

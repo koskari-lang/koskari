@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-define-syntax compile/if:
+define-syntax if:
   """
   Evaluates the `then` body only when the `condition` is truthy.
   Evaluates the `else` body otherwise, or `None` if not provided.
@@ -38,7 +38,7 @@ define-syntax compile/if:
         [else: None])
 
 
-define-syntax compile/when:
+define-syntax when:
   """
   Evaluates the body only when the condition is true
   Evaluates as None otherwise.
@@ -51,7 +51,7 @@ define-syntax compile/when:
         [else: None])
 
 
-define-syntax compile/unless:
+define-syntax unless:
   """
   Evaluates the body only when the condition is false.
   Evaluates as None otherwise.
@@ -64,7 +64,7 @@ define-syntax compile/unless:
         [else: then ...])
 
 
-define-syntax compile/?:
+define-syntax ?:
   syntax-rules []:
     case (? condition then else):
       (cond
@@ -78,7 +78,7 @@ define-syntax compile/?:
       (truth condition)
 
 
-define-syntax compile/bool:
+define-syntax bool:
   """
   Compile-time object truthiness as a boolean.
   """
@@ -88,7 +88,7 @@ define-syntax compile/bool:
       (truth value)
 
 
-define-syntax compile/when-main:
+define-syntax when-main:
   """
   Evaluates the body only when the current module's name is "__main__"
   """
@@ -99,7 +99,7 @@ define-syntax compile/when-main:
         (begin body ...)
 
 
-define-syntax compile/None?:
+define-syntax None?:
   """
   Identity predicate for the None singleton
   """

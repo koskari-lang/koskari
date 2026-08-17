@@ -17,25 +17,25 @@ Portion of koskari.builtins
 """
 
 
-define-syntax compile/cddr:
+define-syntax cddr:
   (syntax-rules [] [(cddr x) (cdr (cdr x))])
 
-define-syntax compile/cdddr:
+define-syntax cdddr:
   (syntax-rules [] [(cdddr x) (cdr (cddr x))])
 
-define-syntax compile/cddddr:
+define-syntax cddddr:
   (syntax-rules [] [(cddddr x) (cdr (cdddr x))])
 
-define-syntax compile/cadr:
+define-syntax cadr:
   (syntax-rules [] [(cadr x) (car (cdr x))])
 
-define-syntax compile/caddr:
+define-syntax caddr:
   (syntax-rules [] [(caddr x) (car (cddr x))])
 
-define-syntax compile/cadddr:
+define-syntax cadddr:
   (syntax-rules [] [(cadddr x) (car (cdddr x))])
 
-define-syntax compile/caddddr:
+define-syntax caddddr:
   (syntax-rules [] [(caddddr x) (car (cddddr x))])
 
 define cddr [p] (cddr p)
@@ -53,7 +53,7 @@ define fourth cadddr
 define fifth caddddr
 
 
-extend-syntax compile/set!:
+extend-syntax set!:
   syntax-rules [car cdr
                 cadr caddr cadddr caddddr
                 cddr cdddr cddddr]:
@@ -79,10 +79,10 @@ extend-syntax compile/set!:
       (set-cdr (cdddr p) value)
 
 
-define-syntax compile/build-proper:
+define-syntax build-proper:
   """
   Compile-time optimized version of build-proper, dispatching
-  to `compile/cons` or `nil` for an empty call.
+  to `cons` or `nil` for an empty call.
   """
 
   syntax-rules []:
