@@ -202,6 +202,7 @@ async def load_module_async(module, *, seal=True, detach=True):
                 compiler.seal()
         finally:
             if detach:
+                materialize_exports(module)
                 detach_module_load_facets(module)
 
 
@@ -269,6 +270,7 @@ def load_module_demand(module, *, seal=True, detach=True):
                 compiler.seal()
         finally:
             if detach:
+                materialize_exports(module)
                 detach_module_load_facets(module)
 
 
@@ -343,6 +345,7 @@ async def load_module_source_async(
             compiler.seal()
     finally:
         if detach:
+            materialize_exports(module)
             detach_module_load_facets(module)
 
 
@@ -483,6 +486,45 @@ def attach_module_load_facets(module, pragma, compiler, reader):
     ns['__pragma__'] = pragma
     ns['__compiler__'] = compiler
     ns['__reader__'] = reader
+
+
+def materialize_exports(module):
+    """
+    Materialize ``__all__`` from a module's declared feature stems.
+
+    ``declare-exports`` authors stems -- feature names without facet
+    prefixes -- into ``__features__`` before the definitions exist. At
+    the end of the load every definition is settled, so each stem
+    resolves to the binding keys that actually exist: the runtime name
+    and its compile/ and layout/ facets. A stem written with a facet
+    prefix is a literal single-binding export. The result is a plain
+    Python ``__all__``: every entry is a real attribute, so Python-side
+    star imports and import-all-from stay honest.
+
+    A module with no ``__features__`` is left alone.
+
+    :param module: koskari Module (or object whose ``vars()`` is the ns)
+    """
+
+    ns = vars(module)
+    features = ns.get('__features__')
+    if features is None:
+        return
+
+    facets = ("", "compile/", "layout/")
+    out = []
+    for stem in features:
+        stem = str(stem)
+        if stem.startswith(("compile/", "layout/")):
+            if ns.get(stem) is not None:
+                out.append(stem)
+            continue
+        for prefix in facets:
+            key = prefix + stem
+            if ns.get(key) is not None:
+                out.append(key)
+
+    ns['__all__'] = tuple(sorted(set(out)))
 
 
 def detach_module_load_facets(module):

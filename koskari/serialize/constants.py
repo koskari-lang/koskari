@@ -28,8 +28,10 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # MINOR bumped: MATCH_CASE's third EXTRA slot becomes the missing-externs
 # name tuple, whose values the compiler pushes above the subject; the
 # opcode no longer resolves externs from the namespace itself.
+# MINOR bumped: IMPORT_USE opcode appended for the use form's
+# feature-family import.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 10
+BYTECODE_ABI_MINOR = 11
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 0
 

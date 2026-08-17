@@ -14,7 +14,7 @@
 
 import logging
 
-import-from .job Config Job
+(use .job Config Job)
 
 
 define logger (logging.getLogger "kosrunner.fake")

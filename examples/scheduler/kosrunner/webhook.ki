@@ -17,8 +17,8 @@ import logging
 import-from fastapi HTTPException
 import-from hmac compare_digest
 
-import-from .job Job
-import-from .server get-server normalize-prefix ServerConfig
+(use .job Job)
+(use .server get-server normalize-prefix ServerConfig)
 
 
 define logger (logging.getLogger "kosrunner.webhook")

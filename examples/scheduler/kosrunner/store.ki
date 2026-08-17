@@ -26,7 +26,7 @@ import-from contextvars ContextVar
 import-from datetime datetime timezone
 import-from pathlib Path
 
-import-from .job Config
+(use .job Config)
 
 
 define logger (logging.getLogger "kosrunner.store")

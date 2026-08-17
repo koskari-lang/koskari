@@ -21,10 +21,10 @@ import jinja2
 import-from importlib.util find_spec
 import-from fastapi.responses HTMLResponse RedirectResponse
 
-import-from .access operator? resolve-identity trigger-allowed?
-import-from .job Job
-import-from .server get-server normalize-prefix ServerConfig
-import-from .webhook coerce-input
+(use .access operator? resolve-identity trigger-allowed?)
+(use .job Job)
+(use .server get-server normalize-prefix ServerConfig)
+(use .webhook coerce-input)
 
 
 ;; run-history rows per page on the job page

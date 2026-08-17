@@ -111,6 +111,7 @@ OP(LOCALS, 0, NOARG)
 OP(IMPORT, 0,      EXTRA, CONST, COUNT, COUNT, CONST)  // name, level, leaf flag, bind name
 OP(IMPORT_FROM, 0, EXTRA, CONST, COUNT, CONST, CONST)  // name, level, attr names tuple, bind names tuple
 OP(IMPORT_STAR, 0, EXTRA, CONST, COUNT, NOARG, NOARG)  // name, level; binds the module's public names
+OP(IMPORT_USE, 0,  EXTRA, CONST, COUNT, CONST, CONST)  // name, level, feature stems tuple, bind stems tuple
 
 // exception handling
 OP(EXCEPTION, 0, NOARG)

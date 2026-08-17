@@ -412,26 +412,29 @@ define-syntax compile/attr*:
 
 define-syntax compile/declare-exports:
   """
-  Declare a list of names as exports
+  Declare the module's exported features
 
-  Expands to a global definition of __all__ with the given names as strings,
-  sorted and deduplicated.
+  Each name is a feature stem: at the end of the module load, __all__ is
+  materialized from the stems as the binding keys that actually exist --
+  the runtime name, compile/stem, and layout/stem facets of each. A name
+  written with a facet prefix is a literal single-binding export. The
+  stems themselves persist as __features__.
 
   (declare-exports name1 name2 ...)
 
-  is equivalent to
+  expands to
 
-  (define-global __all__ #("name1" "name2" ...))
+  (define-global __features__ #("name1" "name2" ...))
   """
 
   macro-rules []:
     case (declare-exports):
-      `(define-global ,(datum '__all__) #())
+      `(define-global ,(datum '__features__) #())
     case (declare-exports [names ...]):
-      `(define-global ,(datum '__all__)
+      `(define-global ,(datum '__features__)
         #(,@(sorted (set (list-each [n names] (str n.datum))))))
     case (declare-exports names ...):
-      `(define-global ,(datum '__all__)
+      `(define-global ,(datum '__features__)
         #(,@(sorted (set (list-each [n names] (str n.datum))))))
 
 

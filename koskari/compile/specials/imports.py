@@ -360,4 +360,77 @@ def special_import_all_from(compiler, source, tc=False):
     return frag
 
 
+_USE_FACET_PREFIXES = ("compile/", "layout/")
+
+
+@builtin("compile/use")
+@special("compile/use", patterns=_DEFAULT_PATTERNS)
+def special_use(compiler, source, tc=False):
+    """
+    Compile (use MODULE) and (use MODULE STEM...), where each STEM is a
+    plain symbol or a [STEM as: BIND] rename form.
+
+    The koskari-native import: a stem names a feature, and every facet
+    of it -- the runtime binding, compile/stem, layout/stem -- imports
+    together, each bound under the bind stem with the same prefix, so a
+    rename renames the family. A stem already carrying a facet prefix
+    is literal. With no stems, lowers to import-all-from: the module's
+    materialized __all__ already carries every feature's facets.
+
+    On a Python module, whose namespace has no facet keys, use behaves
+    exactly as import-from and import-all-from do. Only allowed at
+    module top level.
+    """
+
+    called_by, rest = source
+    if is_nil(rest):
+        raise SpecialError("use requires a module name", source)
+
+    if compiler.scope_depth > 0:
+        raise SpecialError(
+            "use is only allowed at module level", source)
+
+    name_sym, rest = rest
+    level, dotted = _parse_import_name(name_sym, source)
+
+    if is_nil(rest):
+        frag = compiler.fragment(called_by)
+        frag.instruction(
+            OpCode.IMPORT_STAR, (dotted, level, 0, 0))
+        frag.instruction(OpCode.CONST, None)
+        return frag
+
+    stems = []
+    binds = []
+    current = rest
+    while not is_nil(current):
+        elem, current = current
+        bind, target = _parse_member(elem, source, "use")
+        if not is_symbolish(target):
+            raise SpecialError(
+                f"use member must name a feature, not {target!r}",
+                source)
+        stem = str(target)
+        stems.append(stem)
+        binds.append(bind if bind is not None else stem)
+
+    frag = compiler.fragment(called_by)
+    for bind in binds:
+        frag.declare_var(bind)
+        if not bind.startswith(_USE_FACET_PREFIXES):
+            for prefix in _USE_FACET_PREFIXES:
+                frag.declare_var(prefix + bind)
+
+    stems = tuple(stems)
+    binds = tuple(binds)
+    if stems == binds:
+        binds = stems
+
+    frag.instruction(
+        OpCode.IMPORT_USE, (dotted, level, stems, binds))
+    frag.instruction(OpCode.CONST, None)
+
+    return frag
+
+
 # The end.

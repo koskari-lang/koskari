@@ -24,6 +24,7 @@ Compile .ki sources into .kio bodies and drive evaluation from loaded .kio.
 from ..compile.compiler import CompilerMode
 from ..lib import demand_call
 from ..module import (build_module_load_facets, detach_module_load_facets,
+                      materialize_exports,
                       init_module, new_module)
 from ..reader import (READ_EOF, IndentAwareStream, source_open,
                       source_str)
@@ -67,6 +68,7 @@ def _compile_top_level_to_codes(mod, compiler, reader, source_stream):
 
         return bodies
     finally:
+        materialize_exports(mod)
         detach_module_load_facets(mod)
 
 
