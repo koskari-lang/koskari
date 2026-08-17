@@ -513,16 +513,26 @@ def materialize_exports(module):
 
     facets = ("", "compile/", "layout/")
     out = []
+    # assignment is the presence test: the load-time namespace holds
+    # declared-but-unassigned cells left by compile-time probes, which
+    # answer to containment, while a key legitimately bound to None
+    # must still export. Deref separates the two.
     for stem in features:
         stem = str(stem)
         if stem.startswith(("compile/", "layout/")):
-            if ns.get(stem) is not None:
-                out.append(stem)
+            try:
+                ns[stem]
+            except NameError:
+                continue
+            out.append(stem)
             continue
         for prefix in facets:
             key = prefix + stem
-            if ns.get(key) is not None:
-                out.append(key)
+            try:
+                ns[key]
+            except NameError:
+                continue
+            out.append(key)
 
     ns['__all__'] = tuple(sorted(set(out)))
 

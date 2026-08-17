@@ -7,7 +7,7 @@ Useful when a call has several arguments and you want them on separate lines
 without nesting parentheses for the whole call.
 
 **Behaviour:** Does not accept peers. The header must be exactly
-`(layout/call FN)` — no extra forms after **`FN`** (raises `LayoutError` if
+`(call FN)` — no extra forms after **`FN`** (raises `LayoutError` if
 there are header arguments). Produces **`(call FN ARG ...)`**. The body
 is **not** wrapped in **`compile/begin`**.
 
@@ -22,7 +22,7 @@ For **`*:`**, splices, and the full **`compile/call`** surface, see
 **Syntax:**
 
 ```
-layout/call FN:
+call FN:
   ARG-FORM
   ...
 ```
@@ -33,16 +33,16 @@ it to keyword plus value as described above.
 **Examples:**
 
 ```koskari
-layout/call print:
+call print:
   "hello"
 ;; → (call print "hello")
 
-layout/call foo:
+call foo:
   bar
   (baz)
 ;; → (call foo bar (baz))
 
-layout/call foo:
+call foo:
   bar
   (baz)
   alpha: beta

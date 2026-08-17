@@ -23,10 +23,12 @@
    feature: the handler probes the stem itself and its compile/ and
    layout/ facet spellings on the imported module, and stores each hit
    under the parallel bind stem with the same facet prefix applied --
-   so a rename is pure stem substitution across the family. A stem
-   that already carries a facet prefix is literal: one candidate, one
-   bind. Per-facet misses are tolerated; a stem resolving no candidate
-   at all raises ImportError naming the spellings tried.
+   so a rename is pure stem substitution across the family. A stem or
+   bind that already carries a facet prefix is literal: one candidate,
+   one bind, matching the compile side which declares no facet
+   variants for a prefixed bind. Per-facet misses are tolerated; a
+   stem resolving no candidate at all raises ImportError naming the
+   spellings tried.
 
    The bare-stem candidate keeps IMPORT_FROM's submodule fallback via
    kos_import_from_member (visible in this translation unit), so a
@@ -95,6 +97,15 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
       return EVAL_RAISE();
     }
 
+    const char *rawbind = PyUnicode_Check(bind)?
+      PyUnicode_AsUTF8(bind): NULL;
+    if (! rawbind) {
+      if (! PyErr_Occurred())
+        PyErr_Format(PyExc_TypeError, "invalid use bind %R", bind);
+      Py_DECREF(mod);
+      return EVAL_RAISE();
+    }
+
     int hits = 0;
 
     /* the bare candidate, with from-import's submodule fallback */
@@ -120,8 +131,11 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
       return EVAL_RAISE();
     }
 
-    /* facet candidates, unless the stem is already a literal facet */
-    if (! kos_use_stem_is_literal(rawstem)) {
+    /* facet candidates, unless the stem or its bind is already a
+       literal facet; the compile side declares no facet variants for
+       a prefixed bind, so storing them would desync */
+    if (! kos_use_stem_is_literal(rawstem) &&
+        ! kos_use_stem_is_literal(rawbind)) {
       const char **pre;
 
       for (pre = _use_facet_prefixes; *pre; pre++) {
@@ -161,10 +175,14 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
     }
 
     if (! hits) {
-      PyErr_Format(PyExc_ImportError,
-                   "module %R has no feature %U"
-                   " (tried %U, compile/%U, layout/%U)",
-                   mod, stem, stem, stem, stem);
+      if (kos_use_stem_is_literal(rawstem))
+        PyErr_Format(PyExc_ImportError,
+                     "module %R has no feature %U", mod, stem);
+      else
+        PyErr_Format(PyExc_ImportError,
+                     "module %R has no feature %U"
+                     " (tried %U, compile/%U, layout/%U)",
+                     mod, stem, stem, stem, stem);
       Py_DECREF(mod);
       return EVAL_RAISE();
     }

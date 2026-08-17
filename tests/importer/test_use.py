@@ -132,6 +132,22 @@ class TestUse(UseCase):
         self.assertIn("compile/nonesuch", msg)
 
 
+    async def test_use_missing_literal_stem_error_names_one_spelling(self):
+        # a literal-facet stem probes exactly one candidate; the error
+        # must not enumerate spellings that were never tried
+        self.write_ki('ki_use_prov4b', PROVIDER)
+        self.write_ki('ki_use_user4b', """
+        (use ki_use_prov4b compile/nonesuch)
+        """)
+
+        with self.assertRaises(ImportError) as caught:
+            importlib.import_module('ki_use_user4b')
+        msg = str(caught.exception)
+        self.assertIn("compile/nonesuch", msg)
+        self.assertNotIn("compile/compile/nonesuch", msg)
+        self.assertNotIn("layout/compile/nonesuch", msg)
+
+
     async def test_use_python_module_degrades_to_from_import(self):
         self.write_ki('ki_use_user5', """
         (use os.path join)
@@ -151,6 +167,25 @@ class TestUse(UseCase):
 
         mod = importlib.import_module('ki_use_user6')
         self.assertEqual(mod.result, 8)
+
+
+    async def test_use_prefixed_bind_is_literal(self):
+        # a rename onto a facet-prefixed bind is a literal single
+        # binding: the bare candidate lands there, and no doubled-prefix
+        # facet keys the compiler never declared are stored
+        self.write_ki('ki_use_prov10', """
+        (define-syntax spoken (syntax-rules [] [(spoken x) x]))
+        (define spoken "aloud")
+        """)
+        self.write_ki('ki_use_user10', """
+        (use ki_use_prov10 [spoken as: compile/said])
+        """)
+
+        mod = importlib.import_module('ki_use_user10')
+        ns = vars(mod)
+        self.assertEqual(ns['compile/said'], "aloud")
+        self.assertNotIn('compile/compile/said', ns)
+        self.assertNotIn('layout/compile/said', ns)
 
 
     async def test_use_nested_scope_rejected(self):
@@ -245,6 +280,18 @@ class TestUseBare(UseCase):
 
         mod = importlib.import_module('ki_useb_user3')
         self.assertEqual(mod.result, 10)
+
+
+    async def test_none_valued_export_materializes(self):
+        # presence, not non-None-ness: a declared export bound to None
+        # is a real attribute and belongs in __all__
+        self.write_ki('ki_useb_prov5', """
+        (declare-exports flag)
+        (define flag None)
+        """)
+
+        prov = importlib.import_module('ki_useb_prov5')
+        self.assertIn("flag", prov.__all__)
 
 
     async def test_literal_prefixed_declaration(self):
