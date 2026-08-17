@@ -26,8 +26,9 @@ Requires import koskari.builtins so bootstrap definitions are loaded.
 import pytest
 import unittest
 
-from koskari.compile import Compiler
+from koskari.compile import Compiler, CompilerMode
 from koskari.exceptions import SyntaxMatchError
+from koskari.lib import OpCode
 from koskari.lib import Module, ModuleNamespace
 from koskari.reader import default_reader, source_str
 
@@ -249,6 +250,101 @@ class TestBareControlWords(BareSyntaxHelpers):
             '    ([e ValueError] raise))'
             '  ([e2 ValueError] "caught"))')
         self.assertEqual(result, "caught")
+
+
+CALL_ATTR_FAMILY = (
+    OpCode.CALL_ATTR,
+    OpCode.CALL_ATTR_NAMES,
+    OpCode.CALL_ATTR_STAR,
+    OpCode.CALL_VAR_ATTR,
+    OpCode.CALL_VAR_ATTR_NAMES,
+    OpCode.CALL_VAR_ATTR_STAR,
+    OpCode.CALL_FAST_ATTR,
+    OpCode.CALL_FAST_ATTR_NAMES,
+    OpCode.CALL_FAST_ATTR_STAR,
+)
+
+
+class TestHeadLoweringFusion(BareSyntaxHelpers):
+    """
+    Fusion tripwires: an attr head must reach the call path raw, so
+    calling a method fuses to a CALL_ATTR-family opcode whether the
+    attr form is written directly or produced by head lowering
+    """
+
+
+    async def compile_last(self, *srcs):
+        """
+        Evaluate all but the last form in a shared module, then compile
+        the last form and return its Code
+        """
+
+        module, mod_ns, compiler = self.make_module()
+        fragment = None
+        for lineno, src in enumerate(srcs, 1):
+            source = default_reader.read(
+                source_str(src, __file__, line_no=lineno))
+            fragment = compiler.full_compile(source)
+            if lineno < len(srcs):
+                await fragment.as_expression(mod_ns)()
+        return compiler.complete(fragment, mode=CompilerMode.EXPRESSION)
+
+
+    def assert_fused(self, code):
+        ops = [code.oparg(i)[0] for i in range(code.length())]
+        fused = [op for op in ops if op in CALL_ATTR_FAMILY]
+        self.assertTrue(fused, f"no CALL_ATTR-family opcode in {ops}")
+
+
+    async def test_direct_method_call_fuses(self):
+        code = await self.compile_last(
+            '("-".join #["a" "b"])')
+        self.assert_fused(code)
+
+
+    async def test_explicit_attr_head_fuses(self):
+        code = await self.compile_last(
+            '((attr "-" join) #["a" "b"])')
+        self.assert_fused(code)
+
+
+    async def test_macro_lowered_attr_head_fuses(self):
+        # the head lowers through a macro to an attr form; the rebuilt
+        # form must still fuse
+        code = await self.compile_last(
+            "(define-syntax joinery (macro-rules []"
+            "  [(joinery s) `(attr ,s join)]))",
+            '((joinery "-") #["a" "b"])')
+        self.assert_fused(code)
+
+
+    async def test_begin_wrapped_template_fuses(self):
+        # layout-defined templates wrap their body in a begin; the
+        # begin-of-one dissolves so the attr head still reaches the
+        # call path raw
+        code = await self.compile_last(
+            "(define-syntax joinery (macro-rules []"
+            "  [(joinery s) `(begin (attr ,s join))]))",
+            '((joinery "-") #["a" "b"])')
+        self.assert_fused(code)
+
+
+    async def test_bare_alias_attr_head_fuses(self):
+        # a bare-only alias in form position rewrites the head; an attr
+        # expansion must fuse like the hand-written spelling
+        code = await self.compile_last(
+            '(define-syntax dash (bare-syntax me (attr "-" join)))',
+            '(dash #["a" "b"])')
+        self.assert_fused(code)
+
+
+    async def test_lowered_fusion_evaluates(self):
+        # the fused path computes the same value as the direct spelling
+        result = await self.run_forms(
+            "(define-syntax joinery (macro-rules []"
+            "  [(joinery s) `(begin (attr ,s join))]))",
+            '((joinery "-") #["a" "b"])')
+        self.assertEqual(result, "a-b")
 
 
 # The end.
