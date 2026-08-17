@@ -144,10 +144,10 @@ imported `basicConfig`.
 So a macro that ships in a library must only emit names the caller can reach.
 The reliable way is to route through the library's own **exported** helpers:
 have the expansion call an exported `(configure-logging …)` rather than
-`basicConfig` directly, and export both. Note that importing the macro itself
-is by its binding name — `(import-from your-lib compile/your-macro)` — until
-the planned `require` form imports a name's facets together
-(design/language/prefix-aware-imports.md).
+`basicConfig` directly, and export both. Import the macro with
+[`use`](../specials/use.md), which brings a name's facets together:
+`(use your-lib your-macro)` carries the transformer and any runtime
+sibling in one member.
 
 This is the single rule behind a working macro library: **export everything a
 macro expands into.** A quick audit is to read the expansion and confirm each

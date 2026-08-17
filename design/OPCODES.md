@@ -269,7 +269,7 @@ When adding or changing an opcode:
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
+- [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT
 - [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT
@@ -335,6 +335,7 @@ When adding or changing an opcode:
 | IMPORT | EXTRA | Import module; bind root or leaf (self-contained) | [§10.1](#kos_op_import) |
 | IMPORT_FROM | EXTRA | Import module; bind named attrs (self-contained) | [§10.1](#kos_op_import_from) |
 | IMPORT_STAR | EXTRA | Import module; bind its public names | [§10.1](#kos_op_import_star) |
+| IMPORT_USE | EXTRA | Import module; bind feature families (self-contained) | [§10.1](#kos_op_import_use) |
 | EXCEPTION | NOARG | Push current exception | [§11](#kos_op_exception) |
 | EXCEPTION_CLEAR | NOARG | Clear exception state | [§11](#kos_op_exception_clear) |
 | EXCEPTION_MATCH | NOARG | Pop type(s), push match result | [§11](#kos_op_exception_match) |
@@ -1422,6 +1423,40 @@ Extra row: `("os.path", 0, 0, 0)`.
 | 0     | IMPORT_STAR | 0   | 0 ("os.path", 0, …)   | bind public names; stack: [...] |
 | 1     | CONST       | 1   | 1 (None)              | statement value |
 | 2     | RETURN      | 1   | 1                     | |
+
+### KOS_OP_IMPORT_USE {#kos_op_import_use}
+
+- **Style**: EXTRA (`CONST`, `COUNT`, `CONST`, `CONST`). Row: `a0` = cpool
+  module name str (or None), `a1` = level, `a2` = cpool tuple of feature
+  stems, `a3` = cpool tuple of bind stems (parallel; the same tuple object
+  when there are no renames).
+- **Status**: Implemented.
+- **Stack**: no effect.
+- **Semantics**: Import the leaf module via `kos_import_module`, then for
+  each feature stem probe its candidate set — the stem itself,
+  `compile/{stem}`, `layout/{stem}` — and store each hit under the parallel
+  bind stem with the same facet prefix applied, so a rename substitutes the
+  whole family. A stem already carrying a facet prefix is literal: one
+  candidate, bound as written.
+- **Miss handling**: a per-facet miss is tolerated. The bare candidate uses
+  `kos_import_from_member` (submodule fallback included); its crafted
+  missing-member `ImportError` counts as a miss, while a
+  `ModuleNotFoundError` from inside a submodule's own import propagates. A
+  stem with zero hits raises `ImportError` naming the spellings tried.
+- **Compiler restriction**: the `use` special emits this opcode only at
+  module top level (guarded by `Compiler.scope_depth`).
+- **Invariants**: `a2` and `a3` are equal-length tuples of str.
+- **Implementation**: `koskari/lib/opcode/IMPORT_USE.c`
+
+**Example:** `(use tacotruck tacos)` where the module defines `tacos` and
+`compile/tacos` — bind both. Extra row: `("tacotruck", 0, ("tacos",),
+("tacos",))`.
+
+| index | opcode     | arg | arg view                          | comment |
+|------:|------------|-----|-----------------------------------|---------|
+| 0     | IMPORT_USE | 0   | 0 ("tacotruck", 0, ("tacos",), …) | bind "tacos", "compile/tacos"; stack: [...] |
+| 1     | CONST      | 1   | 1 (None)                          | statement value |
+| 2     | RETURN     | 1   | 1                                 | |
 
 ---
 
