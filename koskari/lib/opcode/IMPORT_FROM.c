@@ -28,8 +28,42 @@
    member is actually a not-yet-imported submodule, import
    "{module.__name__}.{attr}" and retry the getattr — matching
    CPython's "from pkg import sub" behavior for submodules the package
-   __init__ does not import. Other exceptions propagate.
+   __init__ does not import. When the fallback fails because the
+   synthesized submodule itself does not exist, the raw
+   ModuleNotFoundError would misreport the situation (the user asked
+   for a member, not a module), so it is replaced with CPython's
+   from-import report: cannot import name X from Y (path). Other
+   exceptions propagate.
 */
+
+
+/**
+   True when the current exception is a ModuleNotFoundError whose name
+   attribute equals full — i.e. the module we synthesized for the
+   submodule fallback is itself what was not found, rather than some
+   deeper import failing during its execution. Preserves the pending
+   exception.
+*/
+static int kos_pending_missing_module_is(PyObject *full) {
+
+  if (! PyErr_ExceptionMatches(PyExc_ModuleNotFoundError))
+    return 0;
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+  PyErr_Fetch(&typ, &val, &tb);
+  PyErr_NormalizeException(&typ, &val, &tb);
+
+  int match = 0;
+  PyObject *name = val ? PyObject_GetAttrString(val, "name") : NULL;
+  if (name) {
+    match = PyObject_RichCompareBool(name, full, Py_EQ) == 1;
+    Py_DECREF(name);
+  }
+  PyErr_Clear();
+
+  PyErr_Restore(typ, val, tb);
+  return match;
+}
 
 
 /**
@@ -55,15 +89,33 @@ static PyObject *kos_import_from_member(PyObject *mod, PyObject *attr) {
   }
 
   PyObject *full = PyUnicode_FromFormat("%U.%U", mod_name, attr);
-  Py_DECREF(mod_name);
-  if (! full)
+  if (! full) {
+    Py_DECREF(mod_name);
     return NULL;
+  }
 
   PyObject *sub = PyImport_ImportModuleLevelObject(
     full, NULL, NULL, _import_fromlist, 0);
+
+  if (! sub && kos_pending_missing_module_is(full)) {
+    /* No such attribute and no such submodule: the real story is the
+       missing member, not a missing module. */
+    PyErr_Clear();
+    PyObject *path = PyModule_GetFilenameObject(mod);
+    if (path) {
+      PyErr_Format(PyExc_ImportError, "cannot import name %R from %R (%S)",
+                   attr, mod_name, path);
+      Py_DECREF(path);
+    } else {
+      PyErr_Clear();
+      PyErr_Format(PyExc_ImportError,
+                   "cannot import name %R from %R (unknown location)",
+                   attr, mod_name);
+    }
+  }
+
   Py_DECREF(full);
-  if (! sub)
-    return NULL;
+  Py_DECREF(mod_name);
 
   /* the import wires the submodule up as an attribute of the parent,
      but the imported leaf is exactly the value we want */

@@ -155,6 +155,7 @@ def _make_repl_prompter(histfile, ns):
 REPL_INFRASTRUCTURE_MODULES = frozenset((
     'koskari.cli',
     'koskari.cli.host',
+    'koskari.importer',
     'asyncio',
     'asyncio.base_events',
     'asyncio.events',

@@ -741,6 +741,7 @@ def format_code_boundary_exception(
 
 RUN_INFRASTRUCTURE_MODULES = frozenset((
     'koskari.cli',
+    'koskari.importer',
     'koskari.launcher',
     'koskari.module',
     'asyncio',
