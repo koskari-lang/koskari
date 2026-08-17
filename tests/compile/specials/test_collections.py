@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile.specials.collections compile/#list and
-compile/#list-append.
+Tests for koskari.compile.specials.collections #list and
+#list-append.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -269,8 +269,8 @@ class TestListEachPattern(SpecialsTestCase):
 
     async def test_let_foreach_list_append_pattern(self):
         src = """
-        (compile/let [[col (#list)]]
-          (compile/for-each [i x]
+        (let [[col (#list)]]
+          (for-each [i x]
             (#list-append col i))
           col)
         """
@@ -280,8 +280,8 @@ class TestListEachPattern(SpecialsTestCase):
 
     async def test_let_foreach_list_append_no_calls(self):
         src = """
-        (compile/let [[col (#list)]]
-          (compile/for-each [i x]
+        (let [[col (#list)]]
+          (for-each [i x]
             (#list-append col i))
           col)
         """
@@ -292,7 +292,7 @@ class TestListEachPattern(SpecialsTestCase):
 class TestDictLiteral(SpecialsTestCase):
     """
     The #{ } literal lowers to a plain runtime #dict call with
-    (#tuple KEY VALUE) entry arguments; there is no compile/#dict
+    (#tuple KEY VALUE) entry arguments; there is no #dict
     special.
     """
 
@@ -319,7 +319,7 @@ class TestDictLiteral(SpecialsTestCase):
     async def test_dict_keyword_key_is_expression(self):
         # #{foo: bar} resolves foo as an expression, matching Python's
         # { } literal; the string-key spelling is the direct #dict call
-        src = '(compile/let [[foo "F"]] #{foo: "B"})'
+        src = '(let [[foo "F"]] #{foo: "B"})'
         expr, mod = self.compile_expr(src)
         self.assertEqual({"F": "B"}, await expr())
 
@@ -330,18 +330,18 @@ class TestDictLiteral(SpecialsTestCase):
 
 
     async def test_dict_expression_values(self):
-        expr, mod = self.compile_expr('#{"n": (compile/+ 1 2)}')
+        expr, mod = self.compile_expr('#{"n": (+ 1 2)}')
         self.assertEqual({"n": 3}, await expr())
 
 
     async def test_dict_splat_merges_last(self):
-        src = '(compile/let [[m #{"b": 2}]] #{"a": 1 "b": 99 **: m})'
+        src = '(let [[m #{"b": 2}]] #{"a": 1 "b": 99 **: m})'
         expr, mod = self.compile_expr(src)
         self.assertEqual({"a": 1, "b": 2}, await expr())
 
 
     async def test_dict_splat_nonstring_keys(self):
-        src = '(compile/let [[m #{1: "one"}]] #{2: "two" **: m})'
+        src = '(let [[m #{1: "one"}]] #{2: "two" **: m})'
         expr, mod = self.compile_expr(src)
         self.assertEqual({2: "two", 1: "one"}, await expr())
 

@@ -14,8 +14,8 @@
 
 import logging
 
-import-from .job Config Job
-import-from .subitems with-subitems
+(use .job Config Job)
+(use .subitems with-subitems)
 
 
 define logger (logging.getLogger "kosrunner.cron")

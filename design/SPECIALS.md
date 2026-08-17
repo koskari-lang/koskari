@@ -3108,6 +3108,56 @@ allowed at module level"), matching Python 3.
 (import-all-from .util)
 ```
 
+## use
+
+**Symbol:** `compile/use`
+
+**Syntax:** `(use MODULE)`, `(use MODULE STEM ...)`,
+`(use MODULE [STEM as: BIND] ...)`
+
+`MODULE` follows the same dotted-name and relative-import rules as `import`.
+Each `STEM` names a feature; a `[STEM as: BIND]` member renames the whole
+family.
+
+**Use-case:** The koskari-native import. A stem imports every facet of a
+feature together -- the runtime binding, `compile/stem`, `layout/stem` --
+each bound under the bind stem with the same prefix. A stem written with a
+facet prefix is literal. On a module with no facet keys each stem behaves
+exactly as an `import-from` member, submodule fallback included, so `use`
+degrades to Python semantics on Python modules.
+
+**Behaviour:** With stems, emit a single `IMPORT_USE` (row `(name, level,
+stems, binds)` with the two parallel tuples) then `CONST None`; the opcode
+derives each stem's candidate set itself, tolerates per-facet misses, and
+raises a directed `ImportError` naming the spellings tried when a stem
+resolves nothing. With no stems, emit `IMPORT_STAR` exactly as
+`import-all-from` does -- a koskari module's `declare-exports` names
+feature stems, and `__all__` is materialized at end of load
+(`koskari.module.materialize_exports`) as the binding keys the stems
+resolve to, so the star already carries every feature's facets.
+
+**Restriction:** module top level only, matching `import-all-from`.
+
+**Implementation:** `koskari/compile/specials/imports.py` — `special_use`
+
+**Examples:**
+
+```scheme
+;; a feature that is a macro and a runtime value together
+(use tacotruck tacos)
+
+;; rename the family
+(use tacotruck [tacos as: burritos])
+
+;; everything the module exports
+(use tacotruck)
+
+;; exactly one facet
+(use tacotruck compile/tacos)
+```
+
+**Tests:** `tests/importer/test_use.py`
+
 **Tests:** `tests/compile/specials/test_import.py`,
 `tests/lib/opcode/test_import_ops.py`
 

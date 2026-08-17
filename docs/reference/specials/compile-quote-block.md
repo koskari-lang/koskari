@@ -12,10 +12,10 @@ other compile-time code.
 **Reader shorthand:** A `'` immediately preceding a block head (e.g. `'begin: ...`)
 reads the block as raw **`:block:`** conses and wraps them in a synthetic
 **`(:block: quote () (INNER))`** form. **`layout/quote`** lowers that to
-**`(compile/quote INNER)`** at layout expansion. Sub-blocks in the body remain
+**`(quote INNER)`** at layout expansion. Sub-blocks in the body remain
 **`:block:`** nodes.
 
-**Behaviour:** Purely transformative. Rewrites to `(compile/quote BLOCK-REPR)`
+**Behaviour:** Purely transformative. Rewrites to `(quote BLOCK-REPR)`
 and returns that cons for normal compiler dispatch. The `:block:` cons is
 treated as opaque data — no layout expansion takes place on the quoted block.
 

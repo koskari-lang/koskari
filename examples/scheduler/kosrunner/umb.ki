@@ -21,7 +21,7 @@ import-from typing Any
 
 ;; stompman is the `umb` EXTRA, so it is imported where it is used, not
 ;; here -- this module must stay importable without it (see `require-extra`)
-import-from .job Config Job require-extra
+(use .job Config Job require-extra)
 
 
 define logger (logging.getLogger "kosrunner.umb")

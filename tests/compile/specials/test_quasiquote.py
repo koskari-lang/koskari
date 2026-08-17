@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/quasiquote special form, covering:
+Tests for koskari.compile quasiquote special form, covering:
 - atom quasi-quote (symbols, keywords, numbers)
 - proper list quasi-quote (all-constant tuple-optimisation path)
 - unquote (,) in various positions
@@ -329,7 +329,7 @@ class TestQuasiquoteDottedPair(SpecialsTestCase):
     Quasi-quoting improper (dotted) lists.
 
     Note: `(a . ,x) at the reader level becomes the three-element proper list
-    (compile/quasiquote (a compile/unquote x)) because the dotted-pair syntax
+    (quasiquote (a unquote x)) because the dotted-pair syntax
     `(X . (Y Z))` is identical to the list `(X Y Z)`.  Only atomic (non-pair)
     dotted tails produce genuine improper pairs.
     """
@@ -391,28 +391,28 @@ class TestQuasiquoteNested(SpecialsTestCase):
 
     async def test_nested_quasiquote_inner_unquote_not_evaluated(self):
         """
-        ``(a ,(+ 1 2)) at the outer level yields (compile/quasiquote (a (compile/unquote (+ 1 2))))
+        ``(a ,(+ 1 2)) at the outer level yields (quasiquote (a (unquote (+ 1 2))))
         as a literal data structure — the inner unquote is NOT evaluated
         """
 
         expr, mod = self.compile_expr("``(a ,(+ 1 2))")
         result = await expr()
-        # result is (compile/quasiquote (a (compile/unquote (+ 1 2))))
-        self.assertEqual(symbol("compile/quasiquote"), result[0])
+        # result is (quasiquote (a (unquote (+ 1 2))))
+        self.assertEqual(symbol("quasiquote"), result[0])
         inner = result[1][0]
         self.assertEqual(symbol("a"), inner[0])
         unquote_form = inner[1][0]
-        self.assertEqual(symbol("compile/unquote"), unquote_form[0])
+        self.assertEqual(symbol("unquote"), unquote_form[0])
 
 
     async def test_nested_quasiquote_level_tracking(self):
         """
-        ``x yields (compile/quasiquote x) as a literal pair
+        ``x yields (quasiquote x) as a literal pair
         """
 
         expr, mod = self.compile_expr("``x")
         result = await expr()
-        self.assertEqual(symbol("compile/quasiquote"), result[0])
+        self.assertEqual(symbol("quasiquote"), result[0])
         self.assertEqual(symbol("x"), result[1][0])
 
 
@@ -423,32 +423,32 @@ class TestQuasiquoteErrors(SpecialsTestCase):
 
     async def test_unquote_outside_quasiquote_raises(self):
         """
-        (compile/unquote x) at top level raises SpecialError
+        (unquote x) at top level raises SpecialError
         """
 
-        self.assertRaises(SpecialError, self.compile_expr, "(compile/unquote x)")
+        self.assertRaises(SpecialError, self.compile_expr, "(unquote x)")
 
 
     async def test_unquote_splicing_outside_quasiquote_raises(self):
         """
-        (compile/unquote-splicing x) at top level raises SpecialError
+        (unquote-splicing x) at top level raises SpecialError
         """
 
         self.assertRaises(
             SpecialError,
             self.compile_expr,
-            "(compile/unquote-splicing x)")
+            "(unquote-splicing x)")
 
 
     async def test_unquote_splicing_outside_quasiquote_also_raises(self):
         """
-        (compile/unquote-splicing x) at top level raises SpecialError
+        (unquote-splicing x) at top level raises SpecialError
         """
 
         self.assertRaises(
             SpecialError,
             self.compile_expr,
-            "(compile/unquote-splicing x)")
+            "(unquote-splicing x)")
 
 
 from koskari.compile import Compiler
@@ -476,9 +476,9 @@ def _make_block(head_args_tuple, body_tuple):
 
 class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
     """
-    Base for compile/quasiquote-block tests.
+    Base for quasiquote-block tests.
 
-    compile/quasiquote-block rewrites to compile/quasiquote on the raw :block:
+    quasiquote-block rewrites to quasiquote on the raw :block:
     cons. When compiled and run, it produces a :block: cons with all unquote
     slots filled in — the same shape the reader uses for blocks, without an
     embedded layout wrapper in the datum. Macro expansion applies
@@ -505,9 +505,9 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
     async def compile_cons_to_source(self, source, **defns):
         """
         Compile a cons source form and run it to obtain the filled :block:
-        cons produced by compile/quasiquote-block (via compile/quasiquote).
+        cons produced by quasiquote-block (via quasiquote).
 
-        :param source: a cons to compile (typically compile/quasiquote-block ...)
+        :param source: a cons to compile (typically quasiquote-block ...)
         :param defns: name->value bindings placed in the module namespace
         :return: (intermediate :block: cons, module, mod_ns, compiler)
         """
@@ -522,7 +522,7 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
     async def compile_layout_src_to_source(self, src_str, **defns):
         """
         Read a layout-syntax source string, compile it, and run it to obtain
-        the filled :block: cons produced by compile/quasiquote-block.
+        the filled :block: cons produced by quasiquote-block.
 
         Uses a LayoutReader with all layout handlers registered so block syntax
         (e.g. `begin: ...) is correctly parsed.
@@ -564,7 +564,7 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
 class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
     """
     Type-1 tests: verify the shape of the intermediate :block: cons produced
-    by running compiled compile/quasiquote-block code (unquote slots filled).
+    by running compiled quasiquote-block code (unquote slots filled).
     """
 
     async def test_static_begin_block_shape(self):
@@ -573,7 +573,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         """
 
         block = _make_block((symbol('begin'),), (42,))
-        source = cons(symbol('compile/quasiquote'), block, nil)
+        source = cons(symbol('quasiquote'), block, nil)
         intermediate, _, _, _ = await self.compile_cons_to_source(source)
 
         self.assertTrue(is_pair(intermediate))
@@ -595,9 +595,9 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         intermediate source cons
         """
 
-        unquote_x = cons(symbol('compile/unquote'), symbol('x'), nil)
+        unquote_x = cons(symbol('unquote'), symbol('x'), nil)
         block = _make_block((symbol('begin'),), (unquote_x,))
-        source = cons(symbol('compile/quasiquote'), block, nil)
+        source = cons(symbol('quasiquote'), block, nil)
         intermediate, _, _, _ = await self.compile_cons_to_source(source, x=99)
 
         self.assertTrue(is_pair(intermediate))
@@ -615,9 +615,9 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         intermediate source cons
         """
 
-        splice = cons(symbol('compile/unquote-splicing'), symbol('forms'), nil)
+        splice = cons(symbol('unquote-splicing'), symbol('forms'), nil)
         block = _make_block((symbol('begin'),), (splice,))
-        source = cons(symbol('compile/quasiquote'), block, nil)
+        source = cons(symbol('quasiquote'), block, nil)
         forms = cons(10, 20, nil)
         intermediate, _, _, _ = await self.compile_cons_to_source(source, forms=forms)
 
@@ -634,7 +634,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
 
 class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
     """
-    Type-2 tests: two-phase compile of compile/quasiquote-block forms.
+    Type-2 tests: two-phase compile of quasiquote-block forms.
 
     Phase 1 compiles and runs the quasiquote-block, producing a :block: cons
     with slots filled. Phase 2 runs koskari.reader.layouts.apply_layout,
@@ -647,7 +647,7 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         """
 
         block = _make_block((symbol('begin'),), (42,))
-        source = cons(symbol('compile/quasiquote'), block, nil)
+        source = cons(symbol('quasiquote'), block, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(source)
         result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 42)
@@ -658,9 +658,9 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         ,x unquote in body; with x=99 two-phase result is 99
         """
 
-        unquote_x = cons(symbol('compile/unquote'), symbol('x'), nil)
+        unquote_x = cons(symbol('unquote'), symbol('x'), nil)
         block = _make_block((symbol('begin'),), (unquote_x,))
-        source = cons(symbol('compile/quasiquote'), block, nil)
+        source = cons(symbol('quasiquote'), block, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, x=99)
         result = await self.run_source(intermediate, module, mod_ns, compiler)
@@ -672,9 +672,9 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         ,@forms splice in body; with forms=(1 2 3) two-phase result is 3
         """
 
-        splice = cons(symbol('compile/unquote-splicing'), symbol('forms'), nil)
+        splice = cons(symbol('unquote-splicing'), symbol('forms'), nil)
         block = _make_block((symbol('begin'),), (splice,))
-        source = cons(symbol('compile/quasiquote'), block, nil)
+        source = cons(symbol('quasiquote'), block, nil)
         forms = cons(1, 2, 3, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, forms=forms)
@@ -687,11 +687,11 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         begin block with if/else peer siblings; with cond=True result is 1
         """
 
-        unquote_cond = cons(symbol('compile/unquote'), symbol('cond'), nil)
+        unquote_cond = cons(symbol('unquote'), symbol('cond'), nil)
         if_block = _make_block((symbol('if'), unquote_cond), (1,))
         else_block = _make_block((symbol('else'),), (2,))
         outer = _make_block((symbol('begin'),), (if_block, else_block))
-        source = cons(symbol('compile/quasiquote'), outer, nil)
+        source = cons(symbol('quasiquote'), outer, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, cond=True)
         result = await self.run_source(intermediate, module, mod_ns, compiler)
@@ -703,11 +703,11 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         begin block with if/else peer siblings; with cond=False result is 2
         """
 
-        unquote_cond = cons(symbol('compile/unquote'), symbol('cond'), nil)
+        unquote_cond = cons(symbol('unquote'), symbol('cond'), nil)
         if_block = _make_block((symbol('if'), unquote_cond), (1,))
         else_block = _make_block((symbol('else'),), (2,))
         outer = _make_block((symbol('begin'),), (if_block, else_block))
-        source = cons(symbol('compile/quasiquote'), outer, nil)
+        source = cons(symbol('quasiquote'), outer, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, cond=False)
         result = await self.run_source(intermediate, module, mod_ns, compiler)

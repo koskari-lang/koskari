@@ -39,3 +39,9 @@ A member that names a not-yet-imported submodule is imported on demand, so
 ;; Relative with rename
 (import-from .util [helper as: h])
 ```
+
+## Related
+
+- [use](use.md) — the koskari-native import: one *feature* per member,
+  carrying the runtime, `compile/`, and `layout/` facets together.
+- [import-all-from](import-all-from.md) — Python's `from M import *`.

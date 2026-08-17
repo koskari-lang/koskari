@@ -96,7 +96,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
 
     async def test_define_foobar_call_matches_python_formals_apply(self):
         src = """
-        (compile/begin
+        (begin
           (define foobar [a b *: more x y: 100 **: lol]
             (col a b more x y lol))
           (foobar 1 2 3 4 x: "ecks"))
@@ -112,7 +112,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
+        (begin
           (define g [a b *: more x **: rest]
             (col a b more x rest))
           (g 1 2 x: "only"))
@@ -128,7 +128,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
+        (begin
           (define f [a b *: more x y: 100 **: lol]
             (col a b more x y lol))
           (f 1 2 3 4 x: "ecks" y: 42))
@@ -144,7 +144,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
+        (begin
           (define f [a b *: more x y: 100 **: lol]
             (col a b more x y lol))
           (f 1 2 3 4 x: "ecks" extra: 7))
@@ -162,7 +162,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
+        (begin
           (define h [a *: more p q **: r]
             (col a more p q r))
           (h 10 p: 1 q: 2))
@@ -178,7 +178,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
+        (begin
           (define f [a b: 99 *: more x **: lol]
             (col a b more x lol))
           (f 1 2 3 x: "z"))

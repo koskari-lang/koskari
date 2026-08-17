@@ -55,7 +55,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         source = default_reader.read(
             source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
@@ -114,7 +114,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         compile/deref in the set! place expands like bare deref
         """
 
-        src = "(begin (define v 10) (define r &v) (set! (compile/deref r) 30) v)"
+        src = "(begin (define v 10) (define r &v) (set! (deref r) 30) v)"
         expr, mod = self.compile_expr(src)
         self.assertEqual(await expr(), 30)
 

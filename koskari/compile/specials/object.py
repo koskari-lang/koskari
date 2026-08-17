@@ -122,9 +122,9 @@ def _reduce_op(op, py_fold, compiler, source, operand=None):
     for fm in unpack(body):
         if is_keyword(fm):
             if have_acc:
-                return cons(symbol("compile/call"), called_by, acc, body)
+                return cons(symbol("call"), called_by, acc, body)
             else:
-                return cons(symbol("compile/call"), called_by, body)
+                return cons(symbol("call"), called_by, body)
 
     if have_acc:
         frag.instruction(OpCode.CONST, acc)
@@ -871,7 +871,6 @@ _OPERAND_BY_SYM = {
 _INPLACE_OPERAND_MAP = {}
 for _sym_text, _binop in _OPERAND_BY_SYM.items():
     _INPLACE_OPERAND_MAP[symbol(_sym_text)] = _binop
-    _INPLACE_OPERAND_MAP[symbol('compile/' + _sym_text)] = _binop
 
 
 @builtin("compile/inplace")
@@ -880,7 +879,7 @@ def special_inplace(compiler, source, tc=False):
     """
     Compile (compile/inplace OP VAR VALUE). In-place update: VAR OP= VALUE.
     OP is any numeric or bitwise operator (+, -, *, /, //, %, **, @, &, |, ^,
-    <<, >>) or its compile/ form.
+    <<, >>).
     """
 
     called_by, body = source

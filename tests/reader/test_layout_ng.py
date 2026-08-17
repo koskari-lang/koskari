@@ -234,7 +234,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
           y
         """
 
-        try_body = cons(symbol('compile/begin'), symbol('x'), nil)
+        try_body = cons(symbol('begin'), symbol('x'), nil)
         except_clause = cons(cons(symbol('Exception'), nil), symbol('y'), nil)
         expected = cons(symbol('try'), try_body, except_clause, nil)
 
@@ -253,7 +253,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
           z
         """
 
-        try_body = cons(symbol('compile/begin'), symbol('x'), nil)
+        try_body = cons(symbol('begin'), symbol('x'), nil)
         except_clause = cons(cons(symbol('Exception'), nil), symbol('y'), nil)
         else_clause = cons(keyword('else'), symbol('a'), nil)
         finally_clause = cons(keyword('finally'), symbol('z'), nil)
@@ -395,7 +395,7 @@ class TestLayoutLineEvents(IsolatedAsyncioTestCase):
         stream = source_str("' (1 2)\n", '<unittest>')
         result = reader.read(stream)
         expected = cons(
-            symbol('compile/quote'),
+            symbol('quote'),
             cons(1, 2, nil),
             nil)
         self.assertEqual(result, expected)

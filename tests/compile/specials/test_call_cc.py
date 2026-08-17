@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/call/cc, compile/let/cc, and
-compile/capture/cc special forms.
+Tests for koskari.compile call/cc, let/cc, and
+capture/cc special forms.
 
 call/cc captures the current continuation and passes it to a callable.
 let/cc pushes a child namespace, captures the continuation and binds it
@@ -47,7 +47,7 @@ class TestCallCcSpecial(SpecialsTestCase):
         the result is 42
         """
 
-        src_str = "(compile/call/cc (lambda [k] (compile/call k 42)))"
+        src_str = "(call/cc (lambda [k] (call k 42)))"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, 42)
@@ -61,7 +61,7 @@ class TestCallCcSpecial(SpecialsTestCase):
         def fn(k):
             return 99
 
-        src_str = "(compile/call/cc fn)"
+        src_str = "(call/cc fn)"
         expr, mod = self.compile_expr(src_str, fn=fn)
         result = await expr()
         self.assertEqual(result, 99)
@@ -75,7 +75,7 @@ class TestCallCcSpecial(SpecialsTestCase):
         def fn(k):
             return k
 
-        src_str = "(compile/call/cc fn)"
+        src_str = "(call/cc fn)"
         expr, mod = self.compile_expr(src_str, fn=fn)
         result = await expr()
         self.assertIsNotNone(result)
@@ -93,7 +93,7 @@ class TestCallCcSpecial(SpecialsTestCase):
         def fn(k):
             return k(42)
 
-        src_str = "(compile/call/cc fn)"
+        src_str = "(call/cc fn)"
         expr, mod = self.compile_expr(src_str, fn=fn)
         result = await expr()
         self.assertEqual(result, 42)
@@ -105,7 +105,7 @@ class TestCallCcSpecial(SpecialsTestCase):
         """
 
         with self.assertRaises(SpecialError):
-            self.compile_expr("(compile/call/cc)")
+            self.compile_expr("(call/cc)")
 
 
     async def test_call_cc_too_many_args_raises(self):
@@ -117,7 +117,7 @@ class TestCallCcSpecial(SpecialsTestCase):
             return k
 
         with self.assertRaises(SpecialError):
-            self.compile_expr("(compile/call/cc fn fn)", fn=fn)
+            self.compile_expr("(call/cc fn fn)", fn=fn)
 
 
 class TestLetCcSpecial(SpecialsTestCase):
@@ -127,7 +127,7 @@ class TestLetCcSpecial(SpecialsTestCase):
         (let/cc k 42) binds k but does not invoke it; body returns 42
         """
 
-        src_str = "(compile/let/cc k 42)"
+        src_str = "(let/cc k 42)"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, 42)
@@ -139,7 +139,7 @@ class TestLetCcSpecial(SpecialsTestCase):
         result is 7
         """
 
-        src_str = "(compile/let/cc k (compile/call k 7) 99)"
+        src_str = "(let/cc k (call k 7) 99)"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, 7)
@@ -151,7 +151,7 @@ class TestLetCcSpecial(SpecialsTestCase):
         """
 
         with self.assertRaises(SpecialError):
-            self.compile_expr("(compile/let/cc 42 0)")
+            self.compile_expr("(let/cc 42 0)")
 
 
     async def test_let_cc_k_is_continuation_instance(self):
@@ -159,7 +159,7 @@ class TestLetCcSpecial(SpecialsTestCase):
         (let/cc k k) returns the captured continuation as a Continuation object
         """
 
-        src_str = "(compile/let/cc k k)"
+        src_str = "(let/cc k k)"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertIsNotNone(result)
@@ -173,8 +173,8 @@ class TestLetCcSpecial(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/begin
-          (compile/let/cc k 0)
+        (begin
+          (let/cc k 0)
           k)
         """
         expr, mod = self.compile_expr(src_str)
@@ -191,8 +191,8 @@ class TestCaptureCcSpecial(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/let [[k 0]]
-          (compile/capture/cc k 42))
+        (let [[k 0]]
+          (capture/cc k 42))
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -211,9 +211,9 @@ class TestCaptureCcSpecial(SpecialsTestCase):
             return val
 
         src_str = """
-        (compile/let [[k 0]]
-          (compile/capture/cc k
-            (compile/call record k)))
+        (let [[k 0]]
+          (capture/cc k
+            (call record k)))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         await expr()
@@ -228,9 +228,9 @@ class TestCaptureCcSpecial(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/let [[k 0]]
-          (compile/capture/cc k
-            (compile/call k 55)
+        (let [[k 0]]
+          (capture/cc k
+            (call k 55)
             99))
         """
         expr, mod = self.compile_expr(src_str)
@@ -244,7 +244,7 @@ class TestCaptureCcSpecial(SpecialsTestCase):
         """
 
         with self.assertRaises(SpecialError):
-            self.compile_expr("(compile/capture/cc 42 0)")
+            self.compile_expr("(capture/cc 42 0)")
 
 
 # The end.

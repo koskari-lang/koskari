@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/item, compile/del-item, and compile/set-item
+Tests for koskari.compile item, del-item, and set-item
 special forms.
 """
 
@@ -28,7 +28,7 @@ class TestItemSpecial(SpecialsTestCase):
 
     async def test_item_constant_key(self):
         lst = [10, 20, 30]
-        src_str = "(compile/item lst 0)"
+        src_str = "(item lst 0)"
         expr, mod = self.compile_expr(src_str, lst=lst)
         result = await expr()
         self.assertEqual(10, result)
@@ -37,8 +37,8 @@ class TestItemSpecial(SpecialsTestCase):
     async def test_item_variable_key(self):
         lst = [10, 20, 30]
         src_str = """
-        (compile/let [[i 2]]
-          (compile/item lst i))
+        (let [[i 2]]
+          (item lst i))
         """
         expr, mod = self.compile_expr(src_str, lst=lst)
         result = await expr()
@@ -50,9 +50,9 @@ class TestSetItemSpecial(SpecialsTestCase):
     async def test_set_item_then_read(self):
         lst = [1, 2, 3]
         src_str = """
-        (compile/begin
-          (compile/set-item lst 1 99)
-          (compile/item lst 1))
+        (begin
+          (set-item lst 1 99)
+          (item lst 1))
         """
         expr, mod = self.compile_expr(src_str, lst=lst)
         result = await expr()
@@ -64,7 +64,7 @@ class TestDelItemSpecial(SpecialsTestCase):
 
     async def test_del_item_returns_none(self):
         d = {"remove_me": 1}
-        src_str = '(compile/del-item d "remove_me")'
+        src_str = '(del-item d "remove_me")'
         expr, mod = self.compile_expr(src_str, d=d)
         result = await expr()
         self.assertIsNone(result)

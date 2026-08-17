@@ -31,8 +31,8 @@ from ..compiler import Compiler
 from ..helpers import helper_begin
 
 
-_sym_call = symbol('compile/call')
-_sym_lambda = symbol('compile/lambda')
+_sym_call = symbol('call')
+_sym_lambda = symbol('lambda')
 
 
 def _let_bindings_parallel(bindings):

@@ -43,16 +43,16 @@ class TestMacroexpandBracket(unittest.IsolatedAsyncioTestCase):
         # load time by koskari.module)
         mod_ns['__compiler__'] = compiler
         source = default_reader.read(source_str(src_str, __file__))
-        expr = compiler.full_compile(source).as_expression(mod_ns)
+        expr = compiler.compile_expression(source).as_expression(mod_ns)
         return await expr()
 
     async def test_if_expands_with_brackets(self):
-        """(if foo 100 200) expands to (compile/cond [foo 100] [else: 200])"""
+        """(if foo 100 200) expands to (cond [foo 100] [else: 200])"""
 
         result = await self.eval_src("(macroexpand-1 '(if foo 100 200))")
         self.assertEqual(
             kos_repr(result),
-            "(compile/cond [foo 100] [else: 200])")
+            "(cond [foo 100] [else: 200])")
 
 
 # The end.

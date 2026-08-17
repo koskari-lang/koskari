@@ -16,7 +16,7 @@ import os
 
 import-from logging basicConfig
 
-import-from .job JobSet
+(use .job JobSet)
 
 
 ;; Base sub-item vocabulary. The job macro rewrites each of a job's

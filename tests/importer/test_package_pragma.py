@@ -56,7 +56,7 @@ class TestPackagePragmaMacro(unittest.IsolatedAsyncioTestCase):
 
     def compile_expr(self, module, compiler, src_str):
         source = default_reader.read(source_str(src_str, __file__))
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(vars(module))
 
 

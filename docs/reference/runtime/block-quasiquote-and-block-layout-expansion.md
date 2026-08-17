@@ -2,8 +2,8 @@
 
 Block backtick reads raw **`:block:`** conses and wraps them in a synthetic
 **`(:block: quasiquote () (INNER))`** form. **`layout/quasiquote`** lowers that
-to **`(compile/quasiquote-block INNER)`**, which rewrites to
-**`(compile/quasiquote INNER)`** for compilation.
+to **`(quasiquote-block INNER)`**, which rewrites to
+**`(quasiquote INNER)`** for compilation.
 
 Module reading expands ordinary blocks through **`LayoutReader.read()`** →
 **`apply_layout`** / **`apply_layouts`**. **`define-syntax`** output is

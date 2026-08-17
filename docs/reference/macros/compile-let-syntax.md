@@ -20,7 +20,7 @@ the body compile finishes; nothing is stored in the module namespace.
 ```koskari
 (let-syntax twice
   (syntax-rules []
-    [(twice x) (compile/+ x x)])
+    [(twice x) (+ x x)])
   (twice 5))
 ;; => 10
 ```
@@ -30,10 +30,10 @@ Nested shadowing:
 ```koskari
 (let-syntax twice
   (syntax-rules []
-    [(twice x) (compile/+ x 1)])
+    [(twice x) (+ x 1)])
   (let-syntax twice
     (syntax-rules []
-      [(twice x) (compile/+ x x)])
+      [(twice x) (+ x x)])
     (twice 3)))
 ;; => 6
 ```

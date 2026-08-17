@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/dyn-wind special form.
+Tests for koskari.compile dyn-wind special form.
 
 Dynamic-wind runs before/after thunks on extent entry and exit.
 """
@@ -39,10 +39,10 @@ class TestDynWindSpecial(SpecialsTestCase):
             log.append(s)
 
         src_str = """
-        (compile/dyn-wind
-          (compile/begin (compile/call record "before"))
-          (compile/begin (compile/call record "body") 42)
-          (compile/begin (compile/call record "after")))
+        (dyn-wind
+          (begin (call record "before"))
+          (begin (call record "body") 42)
+          (begin (call record "after")))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
@@ -54,7 +54,7 @@ class TestDynWindSpecial(SpecialsTestCase):
 
     async def test_after_only(self):
         """
-        compile/dyn-wind with nil before and non-nil after
+        dyn-wind with nil before and non-nil after
         """
 
         log = []
@@ -63,10 +63,10 @@ class TestDynWindSpecial(SpecialsTestCase):
             log.append(s)
 
         src_str = """
-        (compile/dyn-wind
+        (dyn-wind
           []
-          (compile/begin (compile/call record "body") 1)
-          (compile/begin (compile/call record "after")))
+          (begin (call record "body") 1)
+          (begin (call record "after")))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
@@ -78,7 +78,7 @@ class TestDynWindSpecial(SpecialsTestCase):
 
     async def test_before_only(self):
         """
-        compile/dyn-wind with non-nil before and nil after
+        dyn-wind with non-nil before and nil after
         """
 
         log = []
@@ -87,9 +87,9 @@ class TestDynWindSpecial(SpecialsTestCase):
             log.append(s)
 
         src_str = """
-        (compile/dyn-wind
-          (compile/begin (compile/call record "before"))
-          (compile/begin (compile/call record "body") 2)
+        (dyn-wind
+          (begin (call record "before"))
+          (begin (call record "body") 2)
           [])
         """
         expr, mod = self.compile_expr(src_str, record=record)
@@ -102,7 +102,7 @@ class TestDynWindSpecial(SpecialsTestCase):
 
     async def test_keyword_form_before_and_after(self):
         """
-        compile/dyn-wind keyword form with before, body, and after
+        dyn-wind keyword form with before, body, and after
         """
 
         log = []
@@ -111,10 +111,10 @@ class TestDynWindSpecial(SpecialsTestCase):
             log.append(s)
 
         src_str = """
-        (compile/dyn-wind
-          (before: (compile/call record "before"))
-          (body: (compile/call record "body") 42)
-          (after: (compile/call record "after")))
+        (dyn-wind
+          (before: (call record "before"))
+          (body: (call record "body") 42)
+          (after: (call record "after")))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
@@ -126,7 +126,7 @@ class TestDynWindSpecial(SpecialsTestCase):
 
     async def test_keyword_form_after_only(self):
         """
-        compile/dyn-wind keyword form with body and after only
+        dyn-wind keyword form with body and after only
         """
 
         log = []
@@ -135,9 +135,9 @@ class TestDynWindSpecial(SpecialsTestCase):
             log.append(s)
 
         src_str = """
-        (compile/dyn-wind
-          (body: (compile/call record "body") 1)
-          (after: (compile/call record "after")))
+        (dyn-wind
+          (body: (call record "body") 1)
+          (after: (call record "after")))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
@@ -149,7 +149,7 @@ class TestDynWindSpecial(SpecialsTestCase):
 
     async def test_keyword_form_before_only(self):
         """
-        compile/dyn-wind keyword form with before and body only
+        dyn-wind keyword form with before and body only
         """
 
         log = []
@@ -158,9 +158,9 @@ class TestDynWindSpecial(SpecialsTestCase):
             log.append(s)
 
         src_str = """
-        (compile/dyn-wind
-          (before: (compile/call record "before"))
-          (body: (compile/call record "body") 2))
+        (dyn-wind
+          (before: (call record "before"))
+          (body: (call record "body") 2))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
@@ -180,10 +180,10 @@ class TestDynWindSpecial(SpecialsTestCase):
             log.append(s)
 
         src_str = """
-        (compile/dyn-wind
-          (before: (compile/call record "before"))
-          (body: (compile/begin (compile/call record "body") 77))
-          (after: (compile/call record "after")))
+        (dyn-wind
+          (before: (call record "before"))
+          (body: (begin (call record "body") 77))
+          (after: (call record "after")))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
@@ -204,10 +204,10 @@ class TestDynWindSpecial(SpecialsTestCase):
             log.append(s)
 
         src_str = """
-        (compile/dyn-wind
-          (compile/begin (compile/call record "before"))
-          (compile/begin (compile/call record "body") 99)
-          (compile/begin (compile/call record "after")))
+        (dyn-wind
+          (begin (call record "before"))
+          (begin (call record "body") 99)
+          (begin (call record "after")))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
@@ -228,10 +228,10 @@ class TestDynWindSpecial(SpecialsTestCase):
             log.append(s)
 
         src_str = """
-        (compile/dyn-wind
-          (compile/begin (compile/call record "before"))
-          (compile/begin (compile/call record "body") 999)
-          (compile/begin (compile/call record "after")))
+        (dyn-wind
+          (begin (call record "before"))
+          (begin (call record "body") 999)
+          (begin (call record "after")))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
@@ -252,10 +252,10 @@ class TestDynWindSpecial(SpecialsTestCase):
             log.append(s)
 
         src_str = """
-        (compile/dyn-wind
-          (compile/begin (compile/call record "before"))
-          (compile/call (compile/lambda [] 99))
-          (compile/begin (compile/call record "after")))
+        (dyn-wind
+          (begin (call record "before"))
+          (call (lambda [] 99))
+          (begin (call record "after")))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
@@ -267,7 +267,7 @@ class TestDynWindSpecial(SpecialsTestCase):
 
 class TestDynWindContinuations(SpecialsTestCase):
     """
-    Tests for interactions between compile/dyn-wind and compile/let/cc.
+    Tests for interactions between dyn-wind and let/cc.
     These exercise the interrupted-transfer machinery: when a wind thunk
     invokes a continuation while an outer transfer plan is already active,
     the outer plan must be suspended, the inner transfer must complete, and
@@ -287,11 +287,11 @@ class TestDynWindContinuations(SpecialsTestCase):
             return s
 
         src_str = """
-        (compile/let/cc k
-          (compile/dyn-wind
+        (let/cc k
+          (dyn-wind
             nil
-            (compile/call k 42)
-            (compile/call record "after")))
+            (call k 42)
+            (call record "after")))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         result = await expr()
@@ -309,12 +309,12 @@ class TestDynWindContinuations(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/let/cc outer-k
-          (compile/let/cc inner-k
-            (compile/dyn-wind
+        (let/cc outer-k
+          (let/cc inner-k
+            (dyn-wind
               nil
-              (compile/call outer-k 42)
-              (compile/call inner-k 99))))
+              (call outer-k 42)
+              (call inner-k 99))))
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -335,17 +335,17 @@ class TestDynWindContinuations(SpecialsTestCase):
             return s
 
         src_str = """
-        (compile/let/cc escape
-          (compile/let/cc k
-            (compile/dyn-wind
-              (compile/begin
-                (compile/call record "before")
-                (compile/call escape 99))
-              (compile/begin
-                (compile/call record "body")
+        (let/cc escape
+          (let/cc k
+            (dyn-wind
+              (begin
+                (call record "before")
+                (call escape 99))
+              (begin
+                (call record "body")
                 42)
               nil)
-            (compile/call k 0)))
+            (call k 0)))
         """
         expr, mod = self.compile_expr(src_str, record=record)
         result = await expr()
@@ -388,22 +388,22 @@ class TestDynWindTransferWindReproducer(SpecialsTestCase):
             return k(99)
 
         src_str = """
-        (compile/begin
-          (compile/define result
-            (compile/dyn-wind
-              (compile/begin
-                (compile/call record "before-setup")
-                (compile/call before_thunk))
-              (compile/capture/cc k
-                (compile/begin
-                  (compile/call record "stash")
-                  (compile/call stash k)
-                  (compile/call record "capture-body")
+        (begin
+          (define result
+            (dyn-wind
+              (begin
+                (call record "before-setup")
+                (call before_thunk))
+              (capture/cc k
+                (begin
+                  (call record "stash")
+                  (call stash k)
+                  (call record "capture-body")
                   42))
               nil))
-          (compile/call record "after-setup")
-          (compile/call record result)
-          (compile/cond [saved (invoke_saved)] [else: result]))
+          (call record "after-setup")
+          (call record result)
+          (cond [saved (invoke_saved)] [else: result]))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -474,24 +474,24 @@ class TestDynWindTransferFailures(SpecialsTestCase):
             return k(99)
 
         src_str = """
-        (compile/begin
-          (compile/define result
-            (compile/try
-              (compile/dyn-wind
-                (compile/begin
-                  (compile/call record "before-setup")
-                  (compile/call wind_before))
-                (compile/let/cc k
-                  (compile/begin
-                    (compile/call record "stash")
-                    (compile/call stash k)
-                    (compile/call record "capture-body")
+        (begin
+          (define result
+            (try
+              (dyn-wind
+                (begin
+                  (call record "before-setup")
+                  (call wind_before))
+                (let/cc k
+                  (begin
+                    (call record "stash")
+                    (call stash k)
+                    (call record "capture-body")
                     42))
                 nil)
-              ([Exception] (compile/call record "caught"))))
-          (compile/begin
-            (compile/call record "after-setup")
-            (compile/cond [saved (invoke_saved)] [else: result])))
+              ([Exception] (call record "caught"))))
+          (begin
+            (call record "after-setup")
+            (cond [saved (invoke_saved)] [else: result])))
         """
         expr, mod = self.compile_expr(
             src_str,
@@ -552,33 +552,33 @@ class TestDynWindTransferFailures(SpecialsTestCase):
             return k(99)
 
         src_str = """
-        (compile/begin
-          (compile/define result
-            (compile/try
-              (compile/dyn-wind
-                (compile/begin
-                  (compile/call record "before-setup")
-                  (compile/cond
-                    [(compile/call should_raise)
-                      (compile/begin
-                        (compile/call record "raise")
-                        (compile/raise (ValueError "wind-fail")))]
+        (begin
+          (define result
+            (try
+              (dyn-wind
+                (begin
+                  (call record "before-setup")
+                  (cond
+                    [(call should_raise)
+                      (begin
+                        (call record "raise")
+                        (raise (ValueError "wind-fail")))]
                     [else:
-                      (compile/begin
-                        (compile/call record "before-setup-ok")
+                      (begin
+                        (call record "before-setup-ok")
                         0)]))
-                (compile/let/cc k
-                  (compile/call record "stash")
-                  (compile/call stash k)
-                  (compile/call record "capture-body")
+                (let/cc k
+                  (call record "stash")
+                  (call stash k)
+                  (call record "capture-body")
                   42)
                 nil)
-              ([Exception] (compile/call record "caught"))))
+              ([Exception] (call record "caught"))))
 
-          (compile/call record "after-setup")
-          (compile/call record result)
+          (call record "after-setup")
+          (call record result)
 
-          (compile/cond
+          (cond
             [saved (invoke_saved)]
             [else: result])
 
@@ -641,8 +641,8 @@ class TestDynWindRaiseUnwind(SpecialsTestCase):
             raise ValueError("boom")
 
         src_str = """
-        (compile/try
-          (compile/dyn-wind
+        (try
+          (dyn-wind
             (rec "before")
             (boom 1)
             (rec "after"))
@@ -670,8 +670,8 @@ class TestDynWindRaiseUnwind(SpecialsTestCase):
             raise RuntimeError("teardown")
 
         src_str = """
-        (compile/dyn-wind
-          (compile/begin)
+        (dyn-wind
+          (begin)
           (boom 1)
           (boom2 1))
         """
@@ -706,9 +706,9 @@ class TestDynWindRaiseUnwind(SpecialsTestCase):
             return type(ctx).__name__ if ctx is not None else "none"
 
         src_str = """
-        (compile/try
-          (compile/dyn-wind
-            (compile/begin)
+        (try
+          (dyn-wind
+            (begin)
             (boom 1)
             (boom2 1))
           ([RuntimeError] (probe)))

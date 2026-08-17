@@ -132,7 +132,7 @@ class LambdaNgFullStackBase(SpecialsTestCase):
 class TestLambdaNgAnonymous(LambdaNgFullStackBase):
 
     async def test_ng_anonymous_lambda_identity(self):
-        src = "(compile/lambda-ng [x] x)"
+        src = "(lambda-ng [x] x)"
         expr, mod = self.compile_expr(src)
         fn = await expr()
         result = await fn(42)
@@ -140,7 +140,7 @@ class TestLambdaNgAnonymous(LambdaNgFullStackBase):
 
 
     async def test_ng_anonymous_lambda_repr_has_debug_label(self):
-        src = "(compile/lambda-ng [x] x)"
+        src = "(lambda-ng [x] x)"
         expr, mod = self.compile_expr(src)
         fn = await expr()
         repr_str = repr(fn)
@@ -151,7 +151,7 @@ class TestLambdaNgNamed(LambdaNgFullStackBase):
 
 
     async def test_ng_named_lambda_repr_shows_name(self):
-        src = "(compile/lambda-ng fact [n] n)"
+        src = "(lambda-ng fact [n] n)"
         expr, mod = self.compile_expr(src)
         fn = await expr()
         repr_str = repr(fn)
@@ -159,7 +159,7 @@ class TestLambdaNgNamed(LambdaNgFullStackBase):
 
 
     async def test_ng_named_lambda_identity(self):
-        src = "(compile/lambda-ng fact [n] n)"
+        src = "(lambda-ng fact [n] n)"
         expr, mod = self.compile_expr(src)
         fn = await expr()
         result = await fn(10)
@@ -167,7 +167,7 @@ class TestLambdaNgNamed(LambdaNgFullStackBase):
 
 
     async def test_ng_lambda_docstring_from_leading_str(self):
-        src = '(compile/lambda-ng [x] "module doc line" x)'
+        src = '(lambda-ng [x] "module doc line" x)'
         expr, mod = self.compile_expr(src)
         fn = await expr()
         self.assertEqual(fn.__doc__, 'module doc line')
@@ -175,7 +175,7 @@ class TestLambdaNgNamed(LambdaNgFullStackBase):
 
 
     async def test_ng_lambda_param_annotation_real_object(self):
-        src = "(compile/lambda-ng [(a :: int)] a)"
+        src = "(lambda-ng [(a :: int)] a)"
         expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
         self.assertEqual(fn.__annotations__, {"a": int})
@@ -185,7 +185,7 @@ class TestLambdaNgReturnType(LambdaNgFullStackBase):
 
 
     async def test_ng_named_lambda_double_colon_return(self):
-        src = "(compile/lambda-ng f :: int [x] x)"
+        src = "(lambda-ng f :: int [x] x)"
         expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
         self.assertIs(fn.__annotations__['return'], int)
@@ -193,14 +193,14 @@ class TestLambdaNgReturnType(LambdaNgFullStackBase):
 
 
     async def test_ng_named_lambda_type_kw_return(self):
-        src = "(compile/lambda-ng f type: int [x] x)"
+        src = "(lambda-ng f type: int [x] x)"
         expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
         self.assertIs(fn.__annotations__['return'], int)
 
 
     async def test_ng_anonymous_lambda_double_colon_return(self):
-        src = "(compile/lambda-ng :: int [x] x)"
+        src = "(lambda-ng :: int [x] x)"
         expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
         self.assertIs(fn.__annotations__['return'], int)
@@ -208,14 +208,14 @@ class TestLambdaNgReturnType(LambdaNgFullStackBase):
 
 
     async def test_ng_anonymous_lambda_type_kw_return(self):
-        src = "(compile/lambda-ng type: int [x] x)"
+        src = "(lambda-ng type: int [x] x)"
         expr, mod = self.compile_expr(src, int=int)
         fn = await expr()
         self.assertIs(fn.__annotations__['return'], int)
 
 
     async def test_ng_untyped_lambda_still_works(self):
-        src = "(compile/lambda-ng [x] x)"
+        src = "(lambda-ng [x] x)"
         expr, mod = self.compile_expr(src)
         fn = await expr()
         self.assertNotIn('return', fn.__annotations__)
@@ -225,7 +225,7 @@ class TestLambdaNgFormalsFeatures(LambdaNgFullStackBase):
 
 
     async def test_ng_keyword_default_positional(self):
-        src = "(compile/lambda-ng [x y: 10] y)"
+        src = "(lambda-ng [x y: 10] y)"
         expr, mod = self.compile_expr(src)
         fn = await expr()
         self.assertEqual(await fn(1), 10)
@@ -233,7 +233,7 @@ class TestLambdaNgFormalsFeatures(LambdaNgFullStackBase):
 
 
     async def test_ng_varargs_star(self):
-        src = "(compile/lambda-ng [a *: rest] rest)"
+        src = "(lambda-ng [a *: rest] rest)"
         expr, mod = self.compile_expr(src)
         fn = await expr()
         tail = await fn(1, 2, 3)
@@ -241,14 +241,14 @@ class TestLambdaNgFormalsFeatures(LambdaNgFullStackBase):
 
 
     async def test_ng_kwonly_after_star(self):
-        src = "(compile/lambda-ng [*: _ k: 5] k)"
+        src = "(lambda-ng [*: _ k: 5] k)"
         expr, mod = self.compile_expr(src)
         fn = await expr()
         self.assertEqual(await fn(), 5)
 
 
     async def test_ng_starstar_collects(self):
-        src = "(compile/lambda-ng [**: kw] kw)"
+        src = "(lambda-ng [**: kw] kw)"
         expr, mod = self.compile_expr(src)
         fn = await expr()
         bag = await fn(x=1, y=2)
@@ -259,7 +259,7 @@ class TestLambdaNgErrors(LambdaNgFullStackBase):
 
 
     def test_ng_no_match_raises_special_error(self):
-        src = "(compile/lambda-ng)"
+        src = "(lambda-ng)"
         with self.assertRaises(SyntaxMatchError):
             self.compile_expr(src)
 

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/while, compile/break, compile/continue.
+Tests for koskari.compile while, break, continue.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -37,9 +37,9 @@ class TestWhileSpecial(SpecialsTestCase):
     async def test_while_simple(self):
         c = []
         src_str = """
-        (compile/while x
-          (compile/call append c x)
-          (compile/setq x (compile/call sub x 1)))
+        (while x
+          (call append c x)
+          (setq x (call sub x 1)))
         """
         expr, mod = self.compile_expr(src_str, x=5, c=c, append=append,
                                       sub=operator.sub)
@@ -54,7 +54,7 @@ class TestWhileSpecial(SpecialsTestCase):
         def trigger():
             trigger_called.append(True)
 
-        src_str = "(compile/while False (compile/call trigger))"
+        src_str = "(while False (call trigger))"
         expr, mod = self.compile_expr(src_str, trigger=trigger)
         await expr()
         self.assertEqual(trigger_called, [])
@@ -63,11 +63,11 @@ class TestWhileSpecial(SpecialsTestCase):
     async def test_while_break(self):
         c = []
         src_str = """
-        (compile/while True
-          (compile/cond
-            [x (compile/call append c x)
-               (compile/setq x (compile/call sub x 1))]
-            [else: (compile/break "done")]))
+        (while True
+          (cond
+            [x (call append c x)
+               (setq x (call sub x 1))]
+            [else: (break "done")]))
         """
         expr, mod = self.compile_expr(src_str, x=5, c=c, append=append,
                                       sub=operator.sub)
@@ -77,7 +77,7 @@ class TestWhileSpecial(SpecialsTestCase):
 
 
     async def test_while_break_value(self):
-        src_str = "(compile/while True (compile/break 99))"
+        src_str = "(while True (break 99))"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, 99)
@@ -86,12 +86,12 @@ class TestWhileSpecial(SpecialsTestCase):
     async def test_while_continue(self):
         c = []
         src_str = """
-        (compile/while x
-          (compile/cond [(compile/call odd x)
-                         (compile/setq x (compile/call sub x 1))
-                         (compile/continue)])
-          (compile/call append c x)
-          (compile/setq x (compile/call sub x 1)))
+        (while x
+          (cond [(call odd x)
+                         (setq x (call sub x 1))
+                         (continue)])
+          (call append c x)
+          (setq x (call sub x 1)))
         """
         expr, mod = self.compile_expr(
             src_str, x=11, c=c, append=append, sub=operator.sub,

@@ -16,7 +16,7 @@ import logging
 
 import-from dataclasses field
 
-import-from .job Config
+(use .job Config)
 
 
 define logger (logging.getLogger "kosrunner.access")

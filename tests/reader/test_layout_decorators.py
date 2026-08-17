@@ -14,7 +14,7 @@
 """
 tests.reader.test_layout_decorators
 
-Layout _layout_macros @ prefix producing compile/decorate forms.
+Layout _layout_macros @ prefix producing decorate forms.
 """
 
 from unittest import IsolatedAsyncioTestCase
@@ -44,13 +44,13 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         """
 
         inner = pycons(
-            (symbol('compile/define-class'),
+            (symbol('define-class'),
              symbol('Obj'),
              (),
-             (symbol('compile/begin'), symbol('x'))))
+             (symbol('begin'), symbol('x'))))
 
         expected = pycons(
-            (symbol('compile/decorate'),
+            (symbol('decorate'),
              (symbol('foo'),),
              inner))
 
@@ -67,13 +67,13 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         """
 
         inner = pycons(
-            (symbol('compile/define-class'),
+            (symbol('define-class'),
              symbol('Obj'),
              (),
-             (symbol('compile/begin'), symbol('x'))))
+             (symbol('begin'), symbol('x'))))
 
         expected = pycons(
-            (symbol('compile/decorate'),
+            (symbol('decorate'),
              (symbol('foo'), (symbol('bar'), 123)),
              inner))
 
@@ -90,13 +90,13 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         """
 
         inner = pycons(
-            (symbol('compile/define-class'),
+            (symbol('define-class'),
              symbol('Obj'),
              (),
-             (symbol('compile/begin'), symbol('x'))))
+             (symbol('begin'), symbol('x'))))
 
         expected = pycons(
-            (symbol('compile/decorate'),
+            (symbol('decorate'),
              ((symbol('foo'), 123),),
              inner))
 
@@ -113,7 +113,7 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         inner = pycons((symbol('list'), 1))
 
         expected = pycons(
-            (symbol('compile/decorate'),
+            (symbol('decorate'),
              (symbol('foo'),),
              inner))
 
@@ -131,12 +131,12 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         """
 
         inner = pycons(
-            (symbol('compile/cond'),
+            (symbol('cond'),
              (symbol('cond'), symbol('a')),
              (keyword('else'), symbol('b'))))
 
         expected = pycons(
-            (symbol('compile/decorate'),
+            (symbol('decorate'),
              (symbol('mark'),),
              inner))
 
@@ -211,7 +211,7 @@ class TestDecoratorPragmaGate(IsolatedAsyncioTestCase):
     async def test_pragma_baseline_enables_decorators(self):
         """
         A reader built from a default pragma lowers @ lines to
-        compile/decorate
+        decorate
         """
 
         reader = LayoutReader.from_pragma(dict(_BUILTIN_REGISTRY))
@@ -219,7 +219,7 @@ class TestDecoratorPragmaGate(IsolatedAsyncioTestCase):
         result = reader.read(stream)
 
         head, _rest = result
-        self.assertEqual(head, symbol('compile/decorate'))
+        self.assertEqual(head, symbol('decorate'))
 
 
     async def test_pragma_declared_off_disables_decorators(self):

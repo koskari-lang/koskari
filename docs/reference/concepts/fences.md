@@ -17,7 +17,7 @@ echo hello
 
 The fence names a format (`bash`) on the opener line; the body is captured
 verbatim. At read time the reader does not understand the body — it only
-wraps it into a `(compile/apply-fence NAME RAW META)` form. Compilation then
+wraps it into a `(apply-fence NAME RAW META)` form. Compilation then
 resolves a handler named `fence/<name>` and asks it to turn the raw text into
 Koskari source, which is compiled in place of the fence.
 

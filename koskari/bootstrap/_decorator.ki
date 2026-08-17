@@ -17,19 +17,21 @@ Portion of koskari.builtins
 """
 
 
-define-global decorate-wraps [inner wrapper]:
-  """
-  Copies callable metadata from inner onto wrapper via
-  functools.update_wrapper, returning wrapper. Used by the call-with
-  and call-parameterize decorator expansions so the delivered wrapper
-  answers for the function it wraps.
-  """
+let []:
+  import-from functools update_wrapper
 
-  import functools
-  (functools.update_wrapper wrapper inner)
+  define-global decorate-wraps [inner wrapper]:
+    """
+    Copies callable metadata from inner onto wrapper via
+    functools.update_wrapper, returning wrapper. Used by the call-with
+    and call-parameterize decorator expansions so the delivered wrapper
+    answers for the function it wraps.
+    """
+
+    update_wrapper wrapper inner
 
 
-define-syntax compile/decorate-subject:
+define-syntax decorate-subject:
   """
   Applies one decorator expression to a subject form.
 
@@ -48,27 +50,32 @@ define-syntax compile/decorate-subject:
   syntax-rules [let with parameterize call-with call-parameterize]:
     case (decorate-subject (let bindings) subject):
       (let bindings subject)
+
     case (decorate-subject (with binding) subject):
       (with binding subject)
+
     case (decorate-subject (parameterize params) subject):
       (parameterize params subject)
+
     case (decorate-subject (call-with binding) subject):
       (let [[inner subject]]
         (decorate-wraps inner
           (lambda [*: args **: kwds]
             (with binding
               (inner *: args **: kwds)))))
+
     case (decorate-subject (call-parameterize params) subject):
       (let [[inner subject]]
         (decorate-wraps inner
           (lambda [*: args **: kwds]
             (parameterize params
               (inner *: args **: kwds)))))
+
     case (decorate-subject deco subject):
       (deco subject)
 
 
-define-syntax compile/decorate:
+define-syntax decorate:
   """
   Handler for the decorator layout syntax, can also be used to apply
   decorator-style wrappers to an s-expr form.
@@ -77,19 +84,18 @@ define-syntax compile/decorate:
   `decorate-subject`, outermost decorator first.
   """
 
-  syntax-rules [define-class define compile/define-class compile/define]:
+  syntax-rules [define-class define]:
     case (decorate [] fn):
       fn
+
     case (decorate [decorators ...] (define-class name supers body ...)):
-      (define name (decorate [decorators ...] (class name supers (begin body ...))))
-    case (decorate [decorators ...] (compile/define-class name supers body ...)):
-      (define name (decorate [decorators ...] (class name supers (begin body ...))))
+      define name (decorate [decorators ...] (class name supers (begin body ...)))
+
     case (decorate [decorators ...] (define name formals body ...)):
-      (define name (decorate [decorators ...] (function name formals body ...)))
-    case (decorate [decorators ...] (compile/define name formals body ...)):
-      (define name (decorate [decorators ...] (function name formals body ...)))
+      define name (decorate [decorators ...] (function name formals body ...))
+
     case (decorate [d rest ...] fn):
-      (decorate-subject d (decorate [rest ...] fn))
+      decorate-subject d (decorate [rest ...] fn)
 
 
 ;; The end.

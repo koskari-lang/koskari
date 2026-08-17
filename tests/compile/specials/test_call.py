@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for compile/call special: tail position emits TAIL_CALL; non-tail uses CALL.
+Tests for call special: tail position emits TAIL_CALL; non-tail uses CALL.
 Bytecode shape for positional, keyword, star; evaluation order; end-to-end.
 """
 
@@ -29,7 +29,7 @@ pytestmark = pytest.mark.phase_specials
 
 class TestCallSpecialTailPosition(SpecialsTestCase):
     """
-    compile/call in tail position emits TAIL_CALL; otherwise CALL
+    call in tail position emits TAIL_CALL; otherwise CALL
     """
 
     async def test_lambda_body_tail_call_one_arg(self):
@@ -90,7 +90,7 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
 
 class TestCallBytecodeShape(SpecialsTestCase):
     """
-    compile/call emits correct opcodes for positional, keyword, and star forms
+    call emits correct opcodes for positional, keyword, and star forms
     """
 
     async def test_positional_zero_args_emits_call_zero(self):
@@ -320,7 +320,7 @@ class TestCallVarPath(SpecialsTestCase):
         or a generic CALL over a pre-resolved attribute
         """
         code = self.compile_to_code(
-            "(lambda [] ((compile/attr obj upper) \"hi\"))", tc=False)
+            "(lambda [] ((attr obj upper) \"hi\"))", tc=False)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -363,7 +363,7 @@ class TestCallEvaluationOrder(SpecialsTestCase):
             received.append(x)
             return x
 
-        src = '(compile/call f (compile/call tag "a") (compile/call tag "b"))'
+        src = '(call f (call tag "a") (call tag "b"))'
         expr, mod = self.compile_expr(src, f=spy, tag=tag)
         await expr()
         self.assertEqual(received[0], "a")
@@ -373,7 +373,7 @@ class TestCallEvaluationOrder(SpecialsTestCase):
 
 class TestCallEndToEnd(SpecialsTestCase):
     """
-    Compiled (compile/call f ...) runs and passes args/kwargs to callable
+    Compiled (call f ...) runs and passes args/kwargs to callable
     """
 
     async def test_call_zero_args(self):
@@ -383,7 +383,7 @@ class TestCallEndToEnd(SpecialsTestCase):
             got.append((args, kwargs))
             return 42
 
-        expr, mod = self.compile_expr("(compile/call f)", f=spy)
+        expr, mod = self.compile_expr("(call f)", f=spy)
         dis(expr.code)
 
         result = await expr()
@@ -399,7 +399,7 @@ class TestCallEndToEnd(SpecialsTestCase):
             got.append((args, kwargs))
             return None
 
-        expr, mod = self.compile_expr("(compile/call f 1)", f=spy)
+        expr, mod = self.compile_expr("(call f 1)", f=spy)
         await expr()
         self.assertEqual(got[0], ((1,), {}))
 
@@ -411,7 +411,7 @@ class TestCallEndToEnd(SpecialsTestCase):
             got.append((args, kwargs))
             return None
 
-        expr, mod = self.compile_expr("(compile/call f 1 2 3)", f=spy)
+        expr, mod = self.compile_expr("(call f 1 2 3)", f=spy)
         await expr()
         self.assertEqual(got[0], ((1, 2, 3), {}))
 
@@ -423,7 +423,7 @@ class TestCallEndToEnd(SpecialsTestCase):
             got.append((args, kwargs))
             return None
 
-        expr, mod = self.compile_expr("(compile/call f 1 name: 2)", f=spy)
+        expr, mod = self.compile_expr("(call f 1 name: 2)", f=spy)
         await expr()
         self.assertEqual(got[0], ((1,), {"name": 2}))
 
@@ -435,7 +435,7 @@ class TestCallEndToEnd(SpecialsTestCase):
             got.append((args, kwargs))
             return None
 
-        expr, mod = self.compile_expr("(compile/call f name: 2)", f=spy)
+        expr, mod = self.compile_expr("(call f name: 2)", f=spy)
         await expr()
         self.assertEqual(got[0], ((), {"name": 2}))
 
@@ -448,7 +448,7 @@ class TestCallEndToEnd(SpecialsTestCase):
             return None
 
         expr, mod = self.compile_expr(
-            "(compile/call f *: more)",
+            "(call f *: more)",
             f=spy, more=(1, 2, 3))
         await expr()
         self.assertEqual(got[0], ((1, 2, 3), {}))
@@ -461,7 +461,7 @@ class TestCallEndToEnd(SpecialsTestCase):
             got.append((list(args), dict(kwargs)))
             return None
 
-        src = "(compile/call f 1 *: mid 2 *: end)"
+        src = "(call f 1 *: mid 2 *: end)"
         expr, mod = self.compile_expr(
             src, f=spy, mid=(10, 11), end=(20, 21))
         await expr()
@@ -484,8 +484,8 @@ class TestGeneratorTailCallDemotion(SpecialsTestCase):
             """
             (lambda [x]
               (if x
-                (compile/yield x)
-                (compile/call list 1 2 3)))
+                (yield x)
+                (call list 1 2 3)))
             """,
             list=list,
             tc=True,

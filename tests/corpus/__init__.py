@@ -698,7 +698,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         """
         Read corpus source text to a single form
 
-        Multiple top-level forms are wrapped in compile/begin
+        Multiple top-level forms are wrapped in begin
 
         :param source: source text from the record
         :return: read form
@@ -716,7 +716,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
             raise ValueError('empty source')
         if len(forms) == 1:
             return forms[0]
-        return cons(symbol('compile/begin'), *forms, nil)
+        return cons(symbol('begin'), *forms, nil)
 
 
     def macroexpand1(self, form):
@@ -761,7 +761,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         """
 
         form = self.read_source(source)
-        fragment = self.compiler.full_compile(form, tc=tc)
+        fragment = self.compiler.compile_expression(form, tc=tc)
         return self.compiler.complete(fragment, mode=CompilerMode.EXPRESSION)
 
 
@@ -774,7 +774,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         """
 
         form = self.read_source(source)
-        fragment = self.compiler.full_compile(form)
+        fragment = self.compiler.compile_expression(form)
         expr = fragment.as_expression(self.module_ns)
         return demand_call(expr)
 

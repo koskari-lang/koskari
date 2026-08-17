@@ -40,11 +40,15 @@ from .test_syntax_lambda_fullstack import LambdaNgFullStackBase
 pytestmark = pytest.mark.phase_specials
 
 
+# binding keys carry the compile/ prefix; patterns match the short
+# spelling users write
 SYM_DEMO_RULES = symbol("compile/syntax-ng-demo-rules")
 SYM_DEMO_MATCH = symbol("compile/syntax-ng-demo-match")
 SYM_DEMO_MACRO = symbol("compile/syntax-ng-demo-macro")
+USE_DEMO_RULES = symbol("syntax-ng-demo-rules")
+USE_DEMO_MATCH = symbol("syntax-ng-demo-match")
 
-_LAMBDA_HEAD = symbol("compile/lambda-ng")
+_LAMBDA_HEAD = symbol("lambda-ng")
 _SRC_FORMAL = "n"
 
 
@@ -57,7 +61,7 @@ def _unwrap_datum(x):
 def _install_lambda_ng_template(ns):
     reader = LayoutReader(ns)
     stream = source_str(
-        "(compile/lambda-ng [n] (compile/+ n 1))",
+        "(lambda-ng [n] (+ n 1))",
         __file__,
         line_no=1,
     )
@@ -68,11 +72,11 @@ def _install_demo_syntaxes(ns, tpl):
     rules_syn = syntax_from_rule_datums(
         SYM_DEMO_RULES,
         (),
-        ((build_proper(SYM_DEMO_RULES), tpl),),
+        ((build_proper(USE_DEMO_RULES), tpl),),
     )
     match_syn = syntax_from_match_datums(
         SYM_DEMO_MATCH,
-        ((build_proper(SYM_DEMO_MATCH), tpl),),
+        ((build_proper(USE_DEMO_MATCH), tpl),),
     )
 
     def macro_proc(compiler, tc=None, **kw):
@@ -154,7 +158,7 @@ class TestNgDemoMacroHygieneStructure(MacroLambdaHygieneFullStackBase):
 
     def test_rules_demo_expansion_renames_lambda_formal(self):
         _mod, ns, compiler, _tpl = _make_compiler_and_ns(self)
-        use_site = _read_form(ns, "(compile/syntax-ng-demo-rules)")
+        use_site = _read_form(ns, "(syntax-ng-demo-rules)")
         rules_syn = ns[str(SYM_DEMO_RULES)]
         expanded = rules_syn.compile_impl(compiler, use_site, False)
         assert_lambda_ng_formal_renamed(self, expanded, _SRC_FORMAL)
@@ -162,7 +166,7 @@ class TestNgDemoMacroHygieneStructure(MacroLambdaHygieneFullStackBase):
 
     def test_match_demo_expansion_renames_lambda_formal(self):
         _mod, ns, compiler, _tpl = _make_compiler_and_ns(self)
-        use_site = _read_form(ns, "(compile/syntax-ng-demo-match)")
+        use_site = _read_form(ns, "(syntax-ng-demo-match)")
         match_syn = ns[str(SYM_DEMO_MATCH)]
         expanded = match_syn.compile_impl(compiler, use_site, False)
         assert_lambda_ng_formal_renamed(self, expanded, _SRC_FORMAL)
@@ -170,7 +174,7 @@ class TestNgDemoMacroHygieneStructure(MacroLambdaHygieneFullStackBase):
 
     def test_macro_demo_expansion_renames_lambda_formal(self):
         _mod, ns, compiler, _tpl = _make_compiler_and_ns(self)
-        use_site = _read_form(ns, "(compile/syntax-ng-demo-macro)")
+        use_site = _read_form(ns, "(syntax-ng-demo-macro)")
         macro_syn = ns[str(SYM_DEMO_MACRO)]
         expanded = macro_syn.compile_impl(compiler, use_site, False)
         assert_lambda_ng_formal_renamed(self, expanded, _SRC_FORMAL)
@@ -181,8 +185,8 @@ class TestNgDemoMacroHygieneRuntime(MacroLambdaHygieneFullStackBase):
 
     async def test_rules_demo_runtime_plus_one(self):
         src = (
-            "(compile/begin\n"
-            "  (compile/define F (compile/syntax-ng-demo-rules))\n"
+            "(begin\n"
+            "  (define F (syntax-ng-demo-rules))\n"
             "  (F 41))"
         )
         expr, _mod = self.compile_expr_with_demos(src)
@@ -192,8 +196,8 @@ class TestNgDemoMacroHygieneRuntime(MacroLambdaHygieneFullStackBase):
 
     async def test_macro_demo_runtime_plus_one(self):
         src = (
-            "(compile/begin\n"
-            "  (compile/define G (compile/syntax-ng-demo-macro))\n"
+            "(begin\n"
+            "  (define G (syntax-ng-demo-macro))\n"
             "  (G 8))"
         )
         expr, _mod = self.compile_expr_with_demos(src)

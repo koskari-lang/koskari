@@ -32,7 +32,7 @@ from ..compiler import ByteCodeFragment, Compiler
 
 
 _keyword_star = keyword("*")
-_monitor = (symbol("gensym-thunk"), symbol("compile/gensym-thunk"))
+_monitor = (symbol("gensym-thunk"),)
 
 
 _thunksym = re.compile("^%[1-9][0-9]*$").match
@@ -148,7 +148,7 @@ def special_gensym_thunk(
         rest = _transform(pos_map, rest)
     formals = _build_formals(pos_map, source)
 
-    return cons(symbol("compile/lambda"), formals, rest)
+    return cons(symbol("lambda"), formals, rest)
 
 
 # The end.

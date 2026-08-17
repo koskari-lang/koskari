@@ -17,7 +17,7 @@ source: |-
   if x:
     y
 verify:
-  read: (compile/cond (x y))
+  read: (cond (x y))
 references:
   - reference/layouts/layout-if.md
 ```

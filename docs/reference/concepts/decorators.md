@@ -58,7 +58,7 @@ like the other pragma-gated reader features; readers built via
 baseline.
 
 The pragma gates only the reader surface. The s-expression spelling
-`(compile/decorate ...)` is a macro and remains available regardless of the
+`(decorate ...)` is a macro and remains available regardless of the
 setting. See [Pragmas and feature settings](pragma.md).
 
 ---
@@ -74,7 +74,7 @@ then reads the single layout form beneath them, and wraps the lot:
 define tick []: ...
 
 ;; reads as
-(compile/decorate ((let [[c 0]]) demand) (define tick [] ...))
+(decorate ((let [[c 0]]) demand) (define tick [] ...))
 ```
 
 Two reader conveniences fall out of existing layout rules:
@@ -100,9 +100,9 @@ expansion, which is why the s-expr spelling works with the pragma off.
 moves outside the decoration so the decorated *value* is what gets bound:
 
 ```koskari
-(compile/decorate (d1) (define foo [x] x))
+(decorate (d1) (define foo [x] x))
 ;; expands to
-(define foo (compile/decorate (d1) (function foo [x] x)))
+(define foo (decorate (d1) (function foo [x] x)))
 ```
 
 **The fold.** With a value-form subject, decorate peels one decorator per
@@ -228,6 +228,6 @@ hoist, the peel, and the arm — which is usually the fastest way to see why
 a decorator did or didn't fire:
 
 ```koskari
-(macroexpand-1 '(compile/decorate ((let [[c 0]])) (function f [] c)) ns)
-;; -> (decorate-subject (let [[c 0]]) (compile/decorate [] (function f [] c)))
+(macroexpand-1 '(decorate ((let [[c 0]])) (function f [] c)) ns)
+;; -> (decorate-subject (let [[c 0]]) (decorate [] (function f [] c)))
 ```

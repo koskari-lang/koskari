@@ -13,8 +13,8 @@ Compile-time specials are ``syntax.Syntax`` dispatchers. Hygiene discovery
 uses each winning transform arm's hygiene tree via
 ``Syntax.match_for_hygiene`` (``(matched, pattern, hygiene)``), then walks
 scope regions such as the let ``BODY`` capture so a sole body form like
-``(compile/lambda [y] ...)`` still contributes lambda formals alongside
-``compile/let`` binders.
+``(lambda [y] ...)`` still contributes lambda formals alongside
+``let`` binders.
 
 :license: GNU General Public License v3
 """
@@ -59,14 +59,14 @@ def _read_compile_form(compiler, src, line_no=1):
 class TestHygieneLetBodyDescent(unittest.TestCase):
     """
     Regression: ``hygiene.collect_binding_symbols`` and
-    ``expand_template_with_hygiene`` on parsed ``compile/let`` / ``compile/lambda``
+    ``expand_template_with_hygiene`` on parsed ``let`` / ``lambda``
     forms read like procedural macro templates.
     """
 
     def test_collect_standalone_lambda_only_lambda_formals(self):
         """Baseline: hygiene sees ``lambda`` formals without any enclosing ``let``."""
 
-        src = "(compile/lambda [y] (+ y))"
+        src = "(lambda [y] (+ y))"
         compiler, _mod_ns = _make_compiler()
         form = _read_compile_form(compiler, src, line_no=1)
         syms = collect_binding_symbols(form, compiler.find_compiled)
@@ -79,7 +79,7 @@ class TestHygieneLetBodyDescent(unittest.TestCase):
         still contribute binders, not only when the body is a single form.
         """
 
-        src = "(compile/let [[t 1]] 0 (compile/lambda [y] (+ t y)))"
+        src = "(let [[t 1]] 0 (lambda [y] (+ t y)))"
         compiler, _mod_ns = _make_compiler()
         form = _read_compile_form(compiler, src, line_no=1)
         syms = collect_binding_symbols(form, compiler.find_compiled)
@@ -92,7 +92,7 @@ class TestHygieneLetBodyDescent(unittest.TestCase):
         hygiene; ``y`` must not be dropped when the lambda is the sole let body.
         """
 
-        src = "(compile/let [[t 1]] (compile/lambda [y] (+ t y)))"
+        src = "(let [[t 1]] (lambda [y] (+ t y)))"
         compiler, _mod_ns = _make_compiler()
         form = _read_compile_form(compiler, src, line_no=1)
         syms = collect_binding_symbols(form, compiler.find_compiled)
@@ -105,7 +105,7 @@ class TestHygieneLetBodyDescent(unittest.TestCase):
         lambda formals, and ``(+ ...)`` references.
         """
 
-        src = "(compile/let [[t 1]] (compile/lambda [y] (+ t y)))"
+        src = "(let [[t 1]] (lambda [y] (+ t y)))"
         compiler, _mod_ns = _make_compiler()
         form = _read_compile_form(compiler, src, line_no=1)
         syms = collect_binding_symbols(form, compiler.find_compiled)
@@ -115,7 +115,7 @@ class TestHygieneLetBodyDescent(unittest.TestCase):
         out = expand_template_with_hygiene(form, {}, syms, {})
 
         self.assertTrue(is_pair(out))
-        self.assertEqual(car(out), symbol("compile/let"))
+        self.assertEqual(car(out), symbol("let"))
 
         bind_block, lam_tail = car(cdr(out)), cdr(cdr(out))
         bpair = car(bind_block)
@@ -127,7 +127,7 @@ class TestHygieneLetBodyDescent(unittest.TestCase):
         self.assertNotEqual(str(let_name), "t")
 
         lam = car(lam_tail)
-        self.assertEqual(car(lam), symbol("compile/lambda"))
+        self.assertEqual(car(lam), symbol("lambda"))
         formals = car(cdr(lam))
         formal_y = car(formals)
         self.assertTrue(is_symbol(formal_y))

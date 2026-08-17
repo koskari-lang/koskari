@@ -17,36 +17,127 @@ Portion of koskari.builtins
 """
 
 
-(define compile/define-syntax
-  ;; the macro for defining macros
+;; A transformer written as NAME is bound under compile/NAME whatever
+;; the author wrote; the short name is what source says, the prefixed
+;; name is where it lives. Each arm computes the binding key from the
+;; written name, idempotently, and wraps it in a datum so hygiene
+;; treats it as substitution rather than a template-introduced binding.
+;; The builders keep the written name as the transformer's identity:
+;; it feeds help text, match errors, and the pattern literal set.
 
-  (syntax-rules compile/define-syntax
-      [syntax-rules syntax-match
-       macro-rules macro-match
-       special-rules special-match]
+let []:
 
-    [(define-syntax name docstr (form ...))
-      (begin
-        (define-syntax name (form ...))
-        (set-attr name __doc__ docstr))]
+  (define transformer-binding-name
+    ;; The binding key for a transformer written as NAME, as a datum-wrapped
+    ;; symbol ready to splice into binding position: compile/NAME, or NAME
+    ;; unchanged when it already carries the prefix. One home for the rule
+    ;; every define-syntax and extend-syntax arm applies.
 
-    [(define-syntax name (syntax-rules literals rule ...))
-      (compile/define-global name (syntax-rules name literals rule ...))]
+    (lambda transformer-binding-name (name)
+      (define n (str name))
+      (datum (symbol (cond ((n.startswith "compile/") n)
+                            (else: f"compile/{n}"))))))
 
-    [(define-syntax name (syntax-match rule ...))
-      (compile/define-global name (syntax-match name rule ...))]
 
-    [(define-syntax name (macro-rules literals rule ...))
-      (compile/define-global name (macro-rules name literals rule ...))]
+  (define-global compile/define-syntax
+    ;; the macro for defining macros
 
-    [(define-syntax name (macro-match rule ...))
-      (compile/define-global name (macro-match name rule ...))]
+    (macro-rules compile/define-syntax
+        [syntax-rules syntax-match
+          macro-rules macro-match
+          special-rules special-match
+          bare-syntax]
 
-    [(define-syntax name (special-rules literals rule ...))
-      (compile/define-global name (special-rules name literals rule ...))]
+      [(define-syntax name (bare-syntax slot template))
+        (define bound (transformer-binding-name name.datum))
+        `(define-global ,bound (bare-syntax ,name ,slot ,template))]
 
-    [(define-syntax name (special-match rule ...))
-      (compile/define-global name (special-match name rule ...))]))
+      [(define-syntax name (syntax-rules literals rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(define-global ,bound (syntax-rules ,name ,literals ,@rule))]
+
+      [(define-syntax name (syntax-match rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(define-global ,bound (syntax-match ,name ,@rule))]
+
+      [(define-syntax name (macro-rules literals rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(define-global ,bound (macro-rules ,name ,literals ,@rule))]
+
+      [(define-syntax name (macro-match rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(define-global ,bound (macro-match ,name ,@rule))]
+
+      [(define-syntax name (special-rules literals rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(define-global ,bound (special-rules ,name ,literals ,@rule))]
+
+      [(define-syntax name (special-match rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(define-global ,bound (special-match ,name ,@rule))]))
+
+
+  (define-global compile/extend-syntax
+    ;; the macro for extending macros; raw like define-syntax above,
+    ;; since the definer is not yet usable within this same unit
+
+    (macro-rules compile/extend-syntax
+        [syntax-rules syntax-match
+          macro-rules macro-match
+          special-rules special-match
+          bare-syntax]
+
+      [(extend-syntax name (bare-syntax slot template))
+        (define bound (transformer-binding-name name.datum))
+        `(setq ,bound (+ ,bound (bare-syntax ,name ,slot ,template)))]
+
+      [(extend-syntax name (syntax-rules literals rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(setq ,bound (+ ,bound (syntax-rules ,name ,literals ,@rule)))]
+
+      [(extend-syntax name (syntax-match rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(setq ,bound (+ ,bound (syntax-match ,name ,@rule)))]
+
+      [(extend-syntax name (macro-rules literals rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(setq ,bound (+ ,bound (macro-rules ,name ,literals ,@rule)))]
+
+      [(extend-syntax name (macro-match rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(setq ,bound (+ ,bound (macro-match ,name ,@rule)))]
+
+      [(extend-syntax name (special-rules literals rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(setq ,bound (+ ,bound (special-rules ,name ,literals ,@rule)))]
+
+      [(extend-syntax name (special-match rule ...))
+        (define bound (transformer-binding-name name.datum))
+        `(setq ,bound (+ ,bound (special-match ,name ,@rule)))]))
+
+
+  ;; The docstring forms of define-syntax and extend-syntax arrive as
+  ;; extensions now that extend-syntax exists; extend-syntax documents
+  ;; itself by way of its own new arm.
+
+  (setq compile/define-syntax
+    (+ compile/define-syntax
+        (macro-rules compile/define-syntax []
+          [(define-syntax name docstr (form ...))
+            (define bound (transformer-binding-name name.datum))
+            `(begin
+              (define-syntax ,name (,@form))
+              ((attr ,bound append_doc) ,docstr))])))
+
+
+  (setq compile/extend-syntax
+    (+ compile/extend-syntax
+        (macro-rules compile/extend-syntax []
+          [(extend-syntax name docstr (form ...))
+            (define bound (transformer-binding-name name.datum))
+            `(begin
+              (extend-syntax ,name (,@form))
+              ((attr ,bound append_doc) ,docstr))])))
 
 
 set-attr compile/define-syntax __doc__:
@@ -70,40 +161,25 @@ set-attr compile/define-syntax __doc__:
   `special-rules` and `special-match` map rules to low-level compiler
   transformations.
 
+  `bare-syntax` accepts a called-by symbol and a template, and applies
+  when the transformer's name is used as a lone atom rather than at the
+  head of a call form. A transformer has at most one bare form.
+
   Transformers can be extended with `extend-syntax`
   """
 
 
-define-syntax compile/extend-syntax:
+set-attr compile/extend-syntax __doc__:
   """
   Extends an existing Syntax definition with new rules. The newer rules
   take precedence over existing rules.
+
+  The original documentation is carried forward. A docstring given here
+  is appended to it, describing what this extension adds.
   """
 
-  syntax-rules [syntax-rules syntax-match
-                macro-rules macro-match
-                special-rules special-match]:
 
-    case (extend-syntax name (syntax-rules literals rule ...)):
-      setq name (+ name (syntax-rules name literals rule ...))
-
-    case (extend-syntax name (syntax-match rule ...)):
-      setq name (+ name (syntax-match name rule ...))
-
-    case (extend-syntax name (macro-rules literals rule ...)):
-      setq name (+ name (macro-rules name literals rule ...))
-
-    case (extend-syntax name (macro-match rule ...)):
-      setq name (+ name (macro-match name rule ...))
-
-    case (extend-syntax name (special-rules literals rule ...)):
-      setq name (+ name (special-rules name literals rule ...))
-
-    case (extend-syntax name (special-match rule ...)):
-      setq name (+ name (special-match name rule ...))
-
-
-define-syntax compile/let-syntax:
+define-syntax let-syntax:
   special-rules []:
     case [c (let-syntax name (syntax-rules literals rule ...) body ...) tc]:
       ; the each macro isn't defined yet, so we use a manual generator thunk
@@ -112,11 +188,18 @@ define-syntax compile/let-syntax:
       define bdy `(begin ,@({(for-each [b body] (yield b.datum))}))
       define frag (c.full_compile src)
       define expr (frag.as_expression (vars c.module))
-      with [(c.macro_overlay name.datum (expr))]:
+
+      ; the overlay key is the binding spelling, so resolution finds the
+      ; local syntax through the same compile/ probe as a global one
+      define n (str name.datum)
+      define key (cond ((n.startswith "compile/") n)
+                       (else: f"compile/{n}"))
+
+      with [(c.macro_overlay key (expr))]:
         (c.full_compile bdy tc)
 
 
-define-syntax compile/datum:
+define-syntax datum:
   """
   Captures `expr` form in a datum, recording the source position
   """
@@ -128,7 +211,7 @@ define-syntax compile/datum:
       `(call datum ,expr ,(getattr expr "position" None))
 
 
-define-syntax compile/datumq:
+define-syntax datumq:
   """
   Captures `expr` form in a datum, recording the source position
   """
@@ -140,7 +223,7 @@ define-syntax compile/datumq:
       `(call datum (quote ,expr) ,(getattr expr "position" None))
 
 
-define-syntax compile/parse-match-patternq:
+define-syntax parse-match-patternq:
   """
   Parse a match style pattern to a Pattern.
   """
@@ -150,7 +233,7 @@ define-syntax compile/parse-match-patternq:
       (call parse-match-pattern (quote form))
 
 
-define-syntax compile/parse-rule-patternq:
+define-syntax parse-rule-patternq:
   """
   Parse a syntax-rules style pattern and literals list to a Pattern.
   """

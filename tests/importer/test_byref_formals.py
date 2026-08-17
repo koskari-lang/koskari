@@ -16,7 +16,7 @@ tests.importer.test_byref_formals
 
 By-ref formals: a formal marked by-ref aliases the caller-supplied Ref, so
 set! in the callee writes through to the caller's binding. Covers the
-equivalent surface shapes (&x, (compile/ref x), (ref x), [x byref: True]),
+equivalent surface shapes (&x, (ref x), (ref x), [x byref: True]),
 the by_refs spec field, and end-to-end write-through. Runs at phase_basics
 because the call site uses the & / set! macros from bootstrap + basics.ki.
 
@@ -52,7 +52,7 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
         source = default_reader.read(
             source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
@@ -69,11 +69,11 @@ class TestByRefFormals(unittest.IsolatedAsyncioTestCase):
 
     async def test_surface_shapes_agree(self):
         """
-        &x, (compile/ref x), and (ref x) produce the same by-ref formal
+        &x, (ref x), and (ref x) produce the same by-ref formal
         """
 
         for src in ("(lambda [a &result] result)",
-                    "(lambda [a (compile/ref result)] result)",
+                    "(lambda [a (ref result)] result)",
                     "(lambda [a (ref result)] result)"):
             expr, mod = self.compile_expr(src)
             fn = await expr()

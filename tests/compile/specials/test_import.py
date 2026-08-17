@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for the compile/import, compile/import-from, and
-compile/import-all-from special forms.
+Tests for the import, import-from, and
+import-all-from special forms.
 
 These tests inspect the generated opcode sequences without executing them
 at the koskari VM level; runtime behavior is exercised by the importer
@@ -289,7 +289,7 @@ class TestSpecialImportErrors(_OpcodeHelper, SpecialsTestCase):
     async def test_import_all_from_in_let_raises(self):
         with self.assertRaises(SpecialError):
             self.compile_to_code(
-                '(compile/let [[x 1]] (import-all-from os))')
+                '(let [[x 1]] (import-all-from os))')
 
 
 # The end.

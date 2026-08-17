@@ -40,7 +40,7 @@ pytestmark = pytest.mark.phase_infra
 
 
 _keyword_block = keyword(':block:')
-_symbol_compile_begin = symbol('compile/begin')
+_symbol_compile_begin = symbol('begin')
 
 
 def _make_block(head_args_tuple, body_tuple):

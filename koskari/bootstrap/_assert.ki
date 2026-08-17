@@ -17,54 +17,54 @@ Portion of koskari.builtins
 """
 
 
-let [[assert-enabled True]]:
+let []:
 
-    import-from koskari.pragma register
-
-
-    define pragma-enable-asserts [enabled: True]:
-        """
-        Whether assert forms expand to their check. Baseline enabled.
-        """
-
-        set! assert-enabled (bool enabled)
-        assert-enabled
+  import-from koskari.pragma register
 
 
-    register "compiler/enable-asserts" (demand pragma-enable-asserts) True
+  define pragma-enable-asserts [enabled: True]:
+    """
+    Whether assert forms expand to their check. Baseline enabled.
+    """
+
+    (bool enabled)
 
 
-    define-syntax compile/assert:
-        """
-        Raise AssertionError when the expression is falsey if asserts are
-        enabled. Evaluates as None otherwise.
+  register "compiler/enable-asserts" (demand pragma-enable-asserts) True
 
-        Usage::
 
-            (assert expr)
-            (assert expr message)
+define-syntax assert:
+  """
+  Raise AssertionError when the expression is falsey if asserts are
+  enabled. Evaluates as None otherwise.
 
-        Note that the enablement behavior is gated at compile-time, not run-time.
-        The ``expr`` is not evaluated if asserts are disabled.
+  Usage::
 
-        Asserts are enabled by default, but may be disabled via the
-        ``compiler/enable-asserts`` pragma.
+    (assert expr)
+    (assert expr message)
 
-        eg.::
+  Note that the enablement behavior is gated at compile-time, not run-time.
+  The ``expr`` is not evaluated if asserts are disabled.
 
-          (pragma [compiler/enable-asserts False])
-        """
+  Asserts are enabled by default, but may be disabled per module via the
+  ``compiler/enable-asserts`` pragma. The gate reads the pragma of the
+  module being compiled, so each module answers for its own setting.
 
-        macro-rules []:
-            case (assert expr message):
-                (if assert-enabled
-                    `(unless ,expr (raise (AssertionError ,message)))
-                    '(begin))
+  eg.::
 
-            case (assert expr):
-                (if assert-enabled
-                    `(unless ,expr (raise (AssertionError)))
-                    '(begin))
+    (pragma [compiler/enable-asserts False])
+  """
+
+  macro-rules []:
+    case (assert expr message):
+      (if (active-pragma compiler/enable-asserts)
+        `(unless ,expr (raise (AssertionError ,message)))
+        '(begin))
+
+    case (assert expr):
+      (if (active-pragma compiler/enable-asserts)
+        `(unless ,expr (raise (AssertionError)))
+        '(begin))
 
 
 ; The end.

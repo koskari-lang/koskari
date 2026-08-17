@@ -39,8 +39,8 @@ define-syntax do-something-with-x:
       (+ x y)
 ;; → (define-syntax do-something-with-x
 ;;     (syntax-rules (x)
-;;       ((do-something-with-x) (compile/begin (print "x and no args" x) x))
-;;       ((do-something-with-x y) (compile/begin (print "x and one arg" x y) (+ x y)))))
+;;       ((do-something-with-x) (begin (print "x and no args" x) x))
+;;       ((do-something-with-x y) (begin (print "x and one arg" x y) (+ x y)))))
 ```
 
 **Implementation:** default **`layout/block`** via **`koskari/reader/layouts/basics.layout_block`**

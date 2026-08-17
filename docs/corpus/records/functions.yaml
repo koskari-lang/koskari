@@ -881,8 +881,8 @@ source: |-
   (begin (import inspect) #[(inspect.iscoroutinefunction (lambda [] 1)) (inspect.iscoroutinefunction (coroutine-fn (lambda [] 1)))])
   
 verify:
-  read: "(begin (import inspect) (#list ((compile/attr inspect iscoroutinefunction) (lambda [] 1)) ((compile/attr inspect iscoroutinefunction) (coroutine-fn (lambda [] 1)))))"
-  expand: "(begin (import inspect) (#list ((compile/attr inspect iscoroutinefunction) (lambda [] 1)) ((compile/attr inspect iscoroutinefunction) (coroutine-fn (lambda [] 1)))))"
+  read: "(begin (import inspect) (#list ((attr inspect iscoroutinefunction) (lambda [] 1)) ((attr inspect iscoroutinefunction) (coroutine-fn (lambda [] 1)))))"
+  expand: "(begin (import inspect) (#list ((attr inspect iscoroutinefunction) (lambda [] 1)) ((attr inspect iscoroutinefunction) (coroutine-fn (lambda [] 1)))))"
   eval: "list:[false,true]"
 stability: evolving
 tags:
@@ -939,7 +939,7 @@ source: |-
   (tick)
   
 verify:
-  read: (compile/begin (compile/decorate ((let [[count 0]])) (define tick [] (incr! count) count)) (tick) (tick) (tick))
+  read: (begin (decorate ((let [[count 0]])) (define tick [] (incr! count) count)) (tick) (tick) (tick))
   eval: "3"
 references:
   - reference/concepts/decorators.md
@@ -960,7 +960,7 @@ notes: "graft arm: a body-less @let over a define completes the let with the def
 id: function-decorate-subject-let-graft-001
 feature: macro/compile/decorate-subject
 source: |-
-  (compile/decorate-subject (let [[c 0]]) (function f [] c))
+  (decorate-subject (let [[c 0]]) (function f [] c))
   
 verify:
   expand: (let [[c 0]] (function f [] c))
@@ -980,7 +980,7 @@ notes: "graft arm: a body-less let decorator is completed by splicing the subjec
 id: function-decorate-subject-default-arm-001
 feature: macro/compile/decorate-subject
 source: |-
-  (compile/decorate-subject demand (function f [] 1))
+  (decorate-subject demand (function f [] 1))
   
 verify:
   expand: (demand (function f [] 1))
@@ -999,10 +999,10 @@ notes: "default arm: a decorator expression with no registered shape evaluates a
 id: function-decorate-define-hoist-001
 feature: macro/compile/decorate
 source: |-
-  (compile/decorate (demand) (define foo [x] x))
+  (decorate (demand) (define foo [x] x))
   
 verify:
-  expand: (define foo (compile/decorate [demand] (function foo [x] x)))
+  expand: (define foo (decorate [demand] (function foo [x] x)))
 references:
   - reference/macros/compile-decorate.md
   - reference/concepts/decorators.md
@@ -1026,7 +1026,7 @@ source: |-
   #[(loud?) verbose]
   
 verify:
-  read: "(compile/begin (define-parameter verbose False) (compile/decorate ((call-parameterize [[verbose True]])) (define loud? [] verbose)) (#list (loud?) verbose))"
+  read: "(begin (define-parameter verbose False) (decorate ((call-parameterize [[verbose True]])) (define loud? [] verbose)) (#list (loud?) verbose))"
   eval: "list:[true,false]"
 references:
   - reference/concepts/decorators.md
@@ -1048,7 +1048,7 @@ feature: macro/compile/decorate
 source: |-
   (begin
     (define-parameter p False)
-    (compile/decorate ((call-parameterize [[p True]]))
+    (decorate ((call-parameterize [[p True]]))
       (define f [] p))
     (f))
   
@@ -1070,7 +1070,7 @@ notes: "s-expression spelling of the call-parameterize arm: the decorated f sees
 id: function-decorate-subject-call-with-001
 feature: macro/compile/decorate-subject
 source: |-
-  (compile/decorate-subject (call-with [(cm)]) (function f [] 1))
+  (decorate-subject (call-with [(cm)]) (function f [] 1))
   
 verify:
   expand: "(let [[... (function f [] 1)]] (decorate-wraps ... (lambda [*: ... **: ...] (with [(cm)] (... *: ... **: ...)))))"
@@ -1102,7 +1102,7 @@ source: |-
   (add 2)
   
 verify:
-  read: (compile/begin (define-parameter scale 10) (compile/decorate ((let [[total 0]]) (call-parameterize [[scale 100]])) (define add [n] (set! total (+ total (* n scale))) total)) (add 1) (add 2))
+  read: (begin (define-parameter scale 10) (decorate ((let [[total 0]]) (call-parameterize [[scale 100]])) (define add [n] (set! total (+ total (* n scale))) total)) (add 1) (add 2))
   eval: "300"
 references:
   - reference/concepts/decorators.md

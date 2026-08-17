@@ -119,13 +119,13 @@ Four prefixes wrap the form that follows them:
 
 | Written | Reads as |
 |---|---|
-| `'form` | `(compile/quote form)` |
-| `` `form `` | `(compile/quasiquote form)` |
-| `,form` | `(compile/unquote form)` |
-| `,@form` | `(compile/unquote-splicing form)` |
+| `'form` | `(quote form)` |
+| `` `form `` | `(quasiquote form)` |
+| `,form` | `(unquote form)` |
+| `,@form` | `(unquote-splicing form)` |
 
 `,` and `,@` are meaningful only inside a quasiquote. One more prefix, `&form`,
-reads as `(compile/ref form)` for by-reference passing; a bare `&` with nothing
+reads as `(ref form)` for by-reference passing; a bare `&` with nothing
 attached is the ordinary `&` symbol.
 
 ### Comments
@@ -146,11 +146,11 @@ other:
 |---|---|
 | `foo[0]` | `(item foo 0)` |
 | `grid[y][x]` | `(item (item grid y) x)` |
-| `obj.value` | `(compile/attr obj value)` |
-| `(get-fn x).baz` | `(compile/attr (get-fn x) baz)` |
+| `obj.value` | `(attr obj value)` |
+| `(get-fn x).baz` | `(attr (get-fn x) baz)` |
 | `("hello".upper)` | a method call on a literal |
-| `foo[0].bar` | `(compile/attr (item foo 0) bar)` |
-| `"a"- " b"` | `(compile/#str "a" " b")` |
+| `foo[0].bar` | `(attr (item foo 0) bar)` |
+| `"a"- " b"` | `(#str "a" " b")` |
 
 **Attachment is strict.** The suffix character must follow the value with no
 space between them. A space ends the value instead, which is what keeps

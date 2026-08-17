@@ -300,7 +300,8 @@ def _try_else_finally(
 
 
 def _except(compiler, catches):
-    mod = [symbol("compile/cond")]
+    mod = [symbol("cond")]
+    clause_positions = [None]
     has_bare = False
 
     for ca in catches:
@@ -316,6 +317,7 @@ def _except(compiler, catches):
                 (keyword("else"),) + tuple(act_list)
                 if act_list
                 else (keyword("else"), nil))
+            clause_positions.append(pos)
 
         elif key is _keyword_except:
             checksrc = cons(symbol("check-exception"), cons(match, nil))
@@ -326,13 +328,14 @@ def _except(compiler, catches):
                 (checksrc,) + tuple(act_list)
                 if act_list
                 else (checksrc, nil))
+            clause_positions.append(pos)
 
         else:
             checksrc = cons(symbol("check-exception"), cons(match, nil))
             if pos:
                 fill_position(checksrc, pos)
             define_form = cons(
-                symbol("compile/define"),
+                symbol("define"),
                 symbol(str(key)),
                 cons(symbol("load-exception"), nil),
                 nil)
@@ -340,12 +343,25 @@ def _except(compiler, catches):
                 begin_body = cons(define_form, act)
             else:
                 begin_body = cons(define_form, act, nil)
-            mod.append((checksrc, cons(symbol("compile/begin"), begin_body)))
+            begin_form = cons(symbol("begin"), begin_body)
+            if pos:
+                fill_position(begin_form, pos)
+            mod.append((checksrc, begin_form))
+            clause_positions.append(pos)
 
     if not has_bare:
         mod.append((keyword("else"), cons(symbol("raise"), nil)))
+        clause_positions.append(None)
 
     expr = pycons(mod)
+
+    # pycons builds fresh positionless conses; restamp each clause with
+    # the catch it came from so diagnostics inside handlers name it
+    spine = expr.cdr
+    for pos in clause_positions[1:]:
+        clause, spine = spine
+        if pos:
+            fill_position(clause, pos)
 
     return compiler.full_compile(expr, False)
 

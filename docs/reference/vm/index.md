@@ -564,7 +564,7 @@ bottom to top matches push order).
 
 - **Style**: COUNT (stack element count).
 - **Status**: Implemented.
-- **Arg**: `1` — pop TOS (awaitable), dispatch; may return `EVAL_AWAIT(val)` or push the resolved value; on resume from a Python awaitable, result is pushed onto the operand stack. `0` — bare cooperative suspend: no stack pop or push; returns `EVAL_AWAIT(Py_None)` (no `py_await_iter`); `revive_await` does not push the resume value onto the operand stack (e.g. next instruction may be `CONST None` for `(compile/await)`).
+- **Arg**: `1` — pop TOS (awaitable), dispatch; may return `EVAL_AWAIT(val)` or push the resolved value; on resume from a Python awaitable, result is pushed onto the operand stack. `0` — bare cooperative suspend: no stack pop or push; returns `EVAL_AWAIT(Py_None)` (no `py_await_iter`); `revive_await` does not push the resume value onto the operand stack (e.g. next instruction may be `CONST None` for `(await)`).
 
 **Example:** Await a coroutine; TOS is the awaitable. On resume, result is pushed.
 
@@ -830,7 +830,7 @@ bottom to top matches push order).
 - **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
 
 **Compiler use-case:** `compile/and` is the canonical consumer
-(`koskari/compile/specials/conditionals.py`). For `(compile/and A B C)` the
+(`koskari/compile/specials/conditionals.py`). For `(and A B C)` the
 compiler emits one `JUMP_AND done` after each non-last term; the last term is
 compiled without a jump. Because `JUMP_AND` already discards the value on the
 fall-through path, no `POP` is needed between terms.
@@ -866,7 +866,7 @@ done:
 - **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
 
 **Compiler use-case:** `compile/or` is the canonical consumer
-(`koskari/compile/specials/conditionals.py`). For `(compile/or A B C)` the
+(`koskari/compile/specials/conditionals.py`). For `(or A B C)` the
 compiler emits one `JUMP_OR done` after each non-last term; the last term is
 compiled without a jump. Because `JUMP_OR` already discards the value on the
 fall-through path, no `POP` is needed between terms.
@@ -1238,6 +1238,40 @@ row: `("os.path", 0, 0, 0)`.
 | 1     | CONST       | 1   | 1 (None)            | statement value |
 | 2     | RETURN      | 1   | 1                   | |
 
+### KOS_OP_IMPORT_USE {#kos_op_import_use}
+
+- **Style**: EXTRA (`CONST`, `COUNT`, `CONST`, `CONST`). Row: `a0` = cpool
+  module name str (or None), `a1` = level, `a2` = cpool tuple of feature
+  stems, `a3` = cpool tuple of bind stems (parallel; the same tuple object
+  when there are no renames).
+- **Status**: Implemented.
+- **Stack**: no effect.
+- **Semantics**: Import the leaf module, then for each feature stem probe
+  its candidate set — the stem itself, `compile/{stem}`, `layout/{stem}` —
+  and store each hit under the parallel bind stem with the same facet
+  prefix applied, so a rename substitutes the whole family. A stem already
+  carrying a facet prefix is literal: one candidate, bound as written.
+- **Miss handling**: a per-facet miss is tolerated. The bare candidate uses
+  the same member fetch as `IMPORT_FROM` (submodule fallback included); its
+  crafted missing-member `ImportError` counts as a miss, while a
+  `ModuleNotFoundError` from inside a submodule's own import propagates. A
+  stem with zero hits raises `ImportError` naming the spellings tried.
+- **Compiler restriction**: the `use` special emits this opcode only at
+  module top level.
+- **Invariants**: `a2` and `a3` are equal-length tuples of str.
+- **Implementation**: `koskari/lib/opcode/IMPORT_USE.c`
+
+**Example:** `(use tacotruck tacos)` where the module defines `tacos` and
+`compile/tacos` — bind both. Extra row: `("tacotruck", 0, ("tacos",),
+("tacos",))`.
+
+| index | opcode     | arg | arg view                          | comment |
+|------:|------------|-----|-----------------------------------|---------|
+| 0     | IMPORT_USE | 0   | 0 ("tacotruck", 0, ("tacos",), …) | bind "tacos", "compile/tacos"; stack: [...] |
+| 1     | CONST      | 1   | 1 (None)                          | statement value |
+| 2     | RETURN     | 1   | 1                                 | |
+
+
 ---
 
 **Note:** There is **no** `KOS_OP_CAPTURE_FRAME` (or similar) in `koskari/lib/opcodes.incl`; a future opcode would be added there first, then documented here.
@@ -1417,7 +1451,7 @@ row: `("os.path", 0, 0, 0)`.
 | 0     | VAR_STORE_CONST | 0   | 0 → ('x', 42, …)      | STORE 42 into "x"; stack unchanged |
 | 1     | RETURN          | 1   | 1                     | |
 
-**Example (fusion source):** `(compile/setq x 42)` emits value, **`VAR_STORE`**, **`CONST`** `None`; compress turns **`CONST`** `42` + **`VAR_STORE`** `x` into **`VAR_STORE_CONST`**.
+**Example (fusion source):** `(setq x 42)` emits value, **`VAR_STORE`**, **`CONST`** `None`; compress turns **`CONST`** `42` + **`VAR_STORE`** `x` into **`VAR_STORE_CONST`**.
 
 
 ### 12.1 Attribute access on variables (VAR_ATTR_*)
@@ -1885,7 +1919,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: `[..., ref] → [..., value]`. Pop one value (a Ref with a deref method). Call `ref.deref()`, push result. Raises TypeError if TOS has no deref method.
-- **Use-case**: Fast path for dereferencing a mutable reference. Used by the `(compile/deref EXPR)` special form.
+- **Use-case**: Fast path for dereferencing a mutable reference. Used by the `(deref EXPR)` special form.
 
 **Example:** Dereference a ref. For `(deref r)` where r holds a Ref: VAR (or FAST) loads r, DEREF calls ref.deref().
 

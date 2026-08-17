@@ -362,14 +362,14 @@ class TestQuoted(IsolatedAsyncioTestCase):
         'foo
         """
         col = parse_source(src)
-        self.assertEqual(col, cons(symbol("compile/quote"), symbol("foo"), nil))
+        self.assertEqual(col, cons(symbol("quote"), symbol("foo"), nil))
 
     async def test_quote_list(self):
         src = """
         '(foo bar)
         """
         col = parse_source(src)
-        expected = cons(symbol("compile/quote"),
+        expected = cons(symbol("quote"),
                         cons(symbol("foo"), symbol("bar"), nil),
                         nil)
         self.assertEqual(col, expected)
@@ -379,7 +379,7 @@ class TestQuoted(IsolatedAsyncioTestCase):
         `bar
         """
         col = parse_source(src)
-        self.assertEqual(col, cons(symbol("compile/quasiquote"), symbol("bar"), nil))
+        self.assertEqual(col, cons(symbol("quasiquote"), symbol("bar"), nil))
 
     async def test_unquote_splicing(self):
         src = """
@@ -387,8 +387,8 @@ class TestQuoted(IsolatedAsyncioTestCase):
         """
         col = parse_source(src)
         exp = cons(
-            symbol("compile/quasiquote"),
-            cons(cons(symbol("compile/unquote-splicing"), symbol("foo"), nil), nil),
+            symbol("quasiquote"),
+            cons(cons(symbol("unquote-splicing"), symbol("foo"), nil), nil),
             nil)
         self.assertEqual(col, exp)
 
@@ -438,7 +438,7 @@ class TestConsPairs(IsolatedAsyncioTestCase):
     async def test_curly_brace_is_gensym_thunk(self):
         src = "{testing a thing}"
         col = parse_source(src)
-        self.assertEqual(col, cons(symbol("compile/gensym-thunk"),
+        self.assertEqual(col, cons(symbol("gensym-thunk"),
                                    symbol("testing"),
                                    symbol("a"),
                                    symbol("thing"),

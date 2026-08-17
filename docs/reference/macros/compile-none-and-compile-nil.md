@@ -2,7 +2,7 @@
 **Syntax:** `(None? VALUE)`, `(nil? VALUE)`
 
 **Behaviour:** Identity predicates for the **`None`** and **`nil`** singletons. Expand to
-**`(compile/is VALUE None)`** and **`(compile/is VALUE nil)`**.
+**`(is VALUE None)`** and **`(is VALUE nil)`**.
 
 `None?` tests **identity against `None`**, not truthiness. A value that is falsy
 but is not `None` -- `0`, `""`, an empty collection -- is **not** `None`, so

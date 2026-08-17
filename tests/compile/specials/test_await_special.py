@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for compile/await: run compiled expressions (see test_try.py pattern).
+Tests for await: run compiled expressions (see test_try.py pattern).
 """
 
 from asyncio import sleep
@@ -33,7 +33,7 @@ class TestCompileAwait(SpecialsTestCase):
     async def test_await_sleep_returns_value(self):
         src = """
             (begin
-              (compile/await (sleep 0))
+              (await (sleep 0))
               42)
         """
 
@@ -47,7 +47,7 @@ class TestCompileAwait(SpecialsTestCase):
 
     async def test_await_defer_returns_value(self):
         src = """
-            (compile/await (compile/call defer identity 42))
+            (await (call defer identity 42))
         """
 
         expr, _mod = self.compile_expr(
@@ -61,7 +61,7 @@ class TestCompileAwait(SpecialsTestCase):
 
     async def test_await_bare_returns_none(self):
         src = """
-            (compile/await)
+            (await)
         """
         expr, _mod = self.compile_expr(src)
         res = await expr()
@@ -71,7 +71,7 @@ class TestCompileAwait(SpecialsTestCase):
     async def test_await_bare(self):
         src = """
             (begin
-              (compile/await)
+              (await)
               42)
         """
         expr, _mod = self.compile_expr(src)
@@ -81,7 +81,7 @@ class TestCompileAwait(SpecialsTestCase):
 
     def test_await_two_args_raises_at_compile(self):
         with self.assertRaises(SpecialError):
-            self.compile_expr("(compile/await a b)")
+            self.compile_expr("(await a b)")
 
 
 # The end.

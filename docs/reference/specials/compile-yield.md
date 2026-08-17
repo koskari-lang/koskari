@@ -16,6 +16,12 @@ frame and returns the value to the driver; resumption is via `send(value)` or
 yields that value; with two or more positional arguments it yields a `tuple`;
 and with keyword arguments it yields a multi-value `values` object.
 
+**Bare form:** the lone symbol `yield` expands to `(yield)`, so the
+Python-style spelling yields `None`. Governed by the
+[`compiler/bare-control-words`](../concepts/pragma.md#compiler) pragma of the
+module being compiled (`convert` by default, or `warn` / `error`); because the
+bare symbol always expands, `yield` can never name a variable.
+
 **Behaviour:** Compiles each positional argument and emits `YIELD N`, where `N`
 is the argument count. `YIELD 0` yields `None`, `YIELD 1` yields the single
 value, and `YIELD N` (for `N > 1`) packages the values as a tuple. A keyword

@@ -299,14 +299,14 @@ def special_define(compiler, caps, tc=False):
         body_spine = body.datum
         if type_expr is not None:
             val_expr = cons(
-                symbol("compile/function"),
+                symbol("function"),
                 namesym,
                 keyword("::"),
                 type_expr,
                 formals_spine,
                 body_spine)
         else:
-            val_expr = cons(symbol("compile/function"), namesym,
+            val_expr = cons(symbol("function"), namesym,
                             formals_spine,
                             body_spine)
 
@@ -400,14 +400,14 @@ def special_define_global(compiler, caps, tc=False):
         body_spine = body.datum
         if type_expr is not None:
             val_expr = cons(
-                symbol("compile/function"),
+                symbol("function"),
                 namesym,
                 keyword("::"),
                 type_expr,
                 formals_spine,
                 body_spine)
         else:
-            val_expr = cons(symbol("compile/function"), namesym,
+            val_expr = cons(symbol("function"), namesym,
                             formals_spine,
                             body_spine)
 

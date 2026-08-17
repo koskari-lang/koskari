@@ -40,18 +40,18 @@ class Point:
 class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_no_clauses(self):
-        expr, mod = self.compile_expr("(compile/match 5)")
+        expr, mod = self.compile_expr("(match 5)")
         self.assertEqual(await expr(), None)
 
 
     async def test_match_else_only(self):
-        expr, mod = self.compile_expr("(compile/match 5 [else: 100])")
+        expr, mod = self.compile_expr("(match 5 [else: 100])")
         self.assertEqual(await expr(), 100)
 
 
     async def test_match_literal(self):
         src = """
-        (compile/match data
+        (match data
           [[1] "one"]
           [[5] "five"]
           [else: "meh"])
@@ -62,7 +62,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_literal_no_match_to_else(self):
         src = """
-        (compile/match data
+        (match data
           [[1] "one"]
           [[5] "five"]
           [else: "meh"])
@@ -73,7 +73,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_capture_whole_value(self):
         src = """
-        (compile/match data
+        (match data
           [[x] x])
         """
         expr, mod = self.compile_expr(src, data=42)
@@ -82,7 +82,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_typed_multi_token(self):
         src = """
-        (compile/match data
+        (match data
           [[x :: int] x]
           [else: "nope"])
         """
@@ -92,7 +92,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_typed_multi_token_no_match(self):
         src = """
-        (compile/match data
+        (match data
           [[x :: int] x]
           [else: "nope"])
         """
@@ -102,7 +102,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_typed_single_form(self):
         src = """
-        (compile/match data
+        (match data
           [[(x :: int)] x]
           [else: "nope"])
         """
@@ -112,7 +112,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_sequence(self):
         src = """
-        (compile/match data
+        (match data
           [[#[a b c]] b]
           [else: 0])
         """
@@ -122,7 +122,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_sequence_wrong_length_falls_through(self):
         src = """
-        (compile/match data
+        (match data
           [[#[a b]] b]
           [else: 99])
         """
@@ -133,7 +133,7 @@ class TestMatchSpecial(SpecialsTestCase):
     async def test_match_string_is_not_a_sequence(self):
         # PEP 634: a string never destructures under a sequence pattern
         src = """
-        (compile/match data
+        (match data
           [[#[a b *: rest]] "seq"]
           [[s :: str] "string"]
           [else: "other"])
@@ -144,7 +144,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_sequence_rest(self):
         src = """
-        (compile/match data
+        (match data
           [[#[a *: rest]] rest]
           [else: 0])
         """
@@ -154,7 +154,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_class(self):
         src = """
-        (compile/match data
+        (match data
           [[(item Point a b)] b]
           [else: "nope"])
         """
@@ -165,7 +165,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_class_no_match(self):
         src = """
-        (compile/match data
+        (match data
           [[(item Point a b)] b]
           [else: "nope"])
         """
@@ -175,7 +175,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_or(self):
         src = """
-        (compile/match data
+        (match data
           [[(or 1 2)] "low"]
           [else: "high"])
         """
@@ -187,7 +187,7 @@ class TestMatchSpecial(SpecialsTestCase):
         # ONEOF branches may declare the same slot; the arm's binding
         # step dedups the name and binds whichever branch matched
         src = """
-        (compile/match data
+        (match data
           [[(or (s :: str) (s :: int))] s]
           [else: "no"])
         """
@@ -199,7 +199,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_predicate(self):
         src = """
-        (compile/match data
+        (match data
           [[(? even)] "even"]
           [else: "odd"])
         """
@@ -212,7 +212,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_mapping(self):
         src = """
-        (compile/match data
+        (match data
           [[#{"kind": "job" "url": u}] u]
           [[#{"kind": k}] k]
           [else: "other"])
@@ -228,7 +228,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_mapping_extern_key(self):
         src = """
-        (compile/match data
+        (match data
           [[#{field: v}] v]
           [else: "missing"])
         """
@@ -242,7 +242,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_app_extraction(self):
         src = """
-        (compile/match data
+        (match data
           [[(app divmod3 #[q 0])] q]
           [[(app divmod3 #[q r])] r]
           [else: "meh"])
@@ -256,7 +256,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_first_arm_wins(self):
         src = """
-        (compile/match data
+        (match data
           [[#[a b]] "two"]
           [[#[a b c]] "three"]
           [else: "other"])
@@ -267,7 +267,7 @@ class TestMatchSpecial(SpecialsTestCase):
 
     async def test_match_bare_multi_token_raises(self):
         src = """
-        (compile/match data
+        (match data
           [[a b c] "seq?"]
           [else: 0])
         """
@@ -283,7 +283,7 @@ class TestMatchGuards(SpecialsTestCase):
 
     async def test_when_guard_passes(self):
         src = """
-        (compile/match data
+        (match data
           [[x :: int] when: (big x) "big"]
           [else: "other"])
         """
@@ -294,7 +294,7 @@ class TestMatchGuards(SpecialsTestCase):
 
     async def test_when_guard_fails_advances(self):
         src = """
-        (compile/match data
+        (match data
           [[x :: int] when: (big x) "big"]
           [[y :: int] "small"]
           [else: "other"])
@@ -306,7 +306,7 @@ class TestMatchGuards(SpecialsTestCase):
 
     async def test_unless_guard(self):
         src = """
-        (compile/match data
+        (match data
           [[x :: int] unless: (big x) "small"]
           [else: "other"])
         """
@@ -319,7 +319,7 @@ class TestMatchGuards(SpecialsTestCase):
 
     async def test_guard_sees_bound_captures(self):
         src = """
-        (compile/match data
+        (match data
           [[#[a b]] when: (bigger a b) a]
           [[#[a b]] b]
           [else: 0])
@@ -333,7 +333,7 @@ class TestMatchGuards(SpecialsTestCase):
 
     async def test_guard_fail_then_else(self):
         src = """
-        (compile/match data
+        (match data
           [[x] when: (big x) "big"]
           [else: "meh"])
         """
@@ -344,7 +344,7 @@ class TestMatchGuards(SpecialsTestCase):
 
     async def test_guard_missing_expression_raises(self):
         src = """
-        (compile/match data
+        (match data
           [[x] when:])
         """
         with self.assertRaises(SpecialError):
@@ -354,7 +354,7 @@ class TestMatchGuards(SpecialsTestCase):
 class TestMatchLayout(SpecialsTestCase):
     """
     End-to-end tests through the match/case block layout, which wraps
-    each case header into the clause delimiter for compile/match.
+    each case header into the clause delimiter for match.
     """
 
     async def test_layout_sequence(self):
@@ -483,9 +483,9 @@ class TestMatchExternResolution(SpecialsTestCase):
         # match pattern of the returned lambda, so it can only resolve if
         # the extern name was requested (and thus captured).
         src = """
-        (compile/let [[T int]]
+        (let [[T int]]
           (lambda [data]
-            (compile/match data
+            (match data
               [[x :: T] "isT"]
               [else: "no"])))
         """

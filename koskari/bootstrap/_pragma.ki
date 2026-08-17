@@ -17,50 +17,54 @@ Portion of koskari.builtins
 """
 
 
-define-syntax compile/pragma:
-    """
-    Update the pragma in the current module with the given settings
+define-syntax pragma:
+  """
+  Update the pragma in the current module with the given settings
 
-    eg.
-      (pragma [compiler/call-brackets 'warn])
+  eg.::
 
-    To get the value of a pragma key, use eg.
-      (pragma compiler/call-brackets)
+    (pragma [compiler/call-brackets 'warn])
 
-    To get the pragma object, use
-      (pragma)
-    """
+  To get the value of a pragma key, use eg.::
 
-    macro-match:
-        case (pragma (REPEAT settings (LIST (SYMBOL key) (REST values)))):
-            define fixed:
-                list-each [s settings]:
-                    define key (item s "key")
-                    setq key key.datum
+    (pragma compiler/call-brackets)
 
-                    define vals (item s "values")
-                    setq vals (list-each [v vals] v.datum)
+  To get the pragma object, use::
 
-                    `#(',key (values ,@vals))
+    (pragma)
+  """
 
-            `(setq __pragma__ (.rebuild __pragma__ ,@fixed))
+  macro-match:
+    case (pragma (REPEAT settings (LIST (SYMBOL key) (REST values)))):
+      define fixed:
+        list-each [s settings]:
+          define key (item s "key")
+          setq key key.datum
 
+          define vals (item s "values")
+          setq vals (list-each [v vals] v.datum)
 
-        case (pragma (SYMBOL key)):
-            `(item __pragma__ ,(str key.datum))
+          `#(',key (values ,@vals))
 
-
-        case (pragma):
-            '__pragma__
+      `(setq __pragma__ (.rebuild __pragma__ ,@fixed))
 
 
-define-syntax compile/package-pragma:
+    case (pragma (SYMBOL key)):
+      `(item __pragma__ ,(str key.datum))
+
+
+    case (pragma):
+      '__pragma__
+
+
+define-syntax package-pragma:
     """
     Update the pragma in the current module with the given settings, then
     record the result as the package default that sub-packages and
     sub-modules inherit
 
-    eg.
+    eg.::
+
       (package-pragma [compiler/call-brackets 'error])
 
     Declare in a package __init__, before any local (pragma ...)
@@ -69,17 +73,17 @@ define-syntax compile/package-pragma:
     """
 
     syntax-rules []:
-        case (package-pragma):
-            when &__package_pragma__:
-                __package_pragma__
+      case (package-pragma):
+        when &__package_pragma__:
+          __package_pragma__
 
-        case (package-pragma [settings ...] ...):
-            (pragma [settings ...] ...)
-            (setq __package_pragma__ __pragma__)
+      case (package-pragma [settings ...] ...):
+        (pragma [settings ...] ...)
+        (setq __package_pragma__ __pragma__)
 
-        case (package-pragma setting):
-            when &__package_pragma__:
-                (item __package_pragma__ (str 'setting))
+      case (package-pragma setting):
+        when &__package_pragma__:
+          (item __package_pragma__ (str 'setting))
 
 
 define help-pragma-key [key]:
@@ -89,18 +93,64 @@ define help-pragma-key [key]:
 
     define handler (lookup key)
     unless handler:
-        raise (ValueError f"Unknown pragma key: {key}")
+      raise (ValueError f"Unknown pragma key: {key}")
 
     pager (kos_help_text_object (item handler 0)
-            heading: f"Pragma key {key}")
+           heading: f"Pragma key {key}")
 
 
-extend-syntax compile/help:
-    syntax-rules [pragma]:
-        case (help (pragma key)):
-            (help-pragma-key 'key)
-        case (help pragma):
-            (compile/call help #('__pragma__ 'pragma) (globals))
+extend-syntax help:
+  ;; teach help to handle pragma and (pragma key)
+
+  syntax-rules [pragma]:
+    case (help (pragma key)):
+      (help-pragma-key 'key)
+    case (help pragma):
+      (call help #('__pragma__ 'pragma) (globals))
+
+
+let [[default-pragma None]]:
+
+  import-from koskari.pragma ModulePragma
+
+
+  define-global active-pragma [key: None]:
+    """
+    The pragma active in the current compilation turn, bound by the
+    compiler into the active-compiler-pragma parameter. When no pragma
+    is bound -- a compiler built without one, or no compilation turn at
+    all -- a default pragma carrying every registered setting's default
+    answers instead. With no key, the pragma object; with a key, the
+    value of that setting.
+    """
+
+    define p (parameterq active-compiler-pragma None)
+    when (None? p):
+      when (None? default-pragma):
+        set! default-pragma (ModulePragma)
+      set! p default-pragma
+
+    if (None? key) p (item p (str key))
+
+
+define-syntax active-pragma:
+  """
+  The pragma active for the module currently being compiled
+
+  `(active-pragma)` is the pragma instance the compiler bound for the
+  current compilation turn. `(active-pragma KEY)` is the value of that
+  pragma's KEY setting. Unlike `(pragma ...)`, which reads the pragma of
+  the module a form is written in, this reads the pragma of the module
+  being compiled -- inside a macro body, that is the consumer's pragma,
+  not the pragma of the module the macro was defined in.
+  """
+
+  syntax-rules []:
+    case (active-pragma):
+      (call active-pragma)
+
+    case (active-pragma key):
+      (call active-pragma (quote key))
 
 
 ; The end.

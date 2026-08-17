@@ -76,14 +76,14 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
     async def test_ref_symbol_expands_to_refq(self):
         src_str = """
         (let [[x 10]]
-          (compile/call deref (ref x)))
+          (call deref (ref x)))
         """
         def deref(r):
             return r.deref()
@@ -96,7 +96,7 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
     async def test_ref_attr_expands_to_ref_attr(self):
         obj = SimpleNamespace(count=5)
         src_str = """
-        (compile/call deref (ref (attr obj count)))
+        (call deref (ref (attr obj count)))
         """
         def deref(r):
             return r.deref()
@@ -109,7 +109,7 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
     async def test_ampersand_dotted_expands_to_ref_attr(self):
         obj = SimpleNamespace(count=7)
         src_str = """
-        (compile/call deref &obj.count)
+        (call deref &obj.count)
         """
         def deref(r):
             return r.deref()
@@ -122,7 +122,7 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
     async def test_ref_item_expands_to_ref_item(self):
         lst = [10, 20, 30]
         src_str = """
-        (compile/call deref (ref (item lst 1)))
+        (call deref (ref (item lst 1)))
         """
         def deref(r):
             return r.deref()
@@ -150,14 +150,14 @@ class TestLetStarMacro(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
     async def test_let_star_single_binding(self):
         src_str = """
         (let* [[a 1]]
-          (compile/call add a 0))
+          (call add a 0))
         """
 
         def add(x, y):
@@ -169,8 +169,8 @@ class TestLetStarMacro(unittest.IsolatedAsyncioTestCase):
 
     async def test_let_star_sequential_bindings(self):
         src_str = """
-        (let* [[a 1] [b (compile/+ a 1)]]
-          (compile/call add b 0))
+        (let* [[a 1] [b (+ a 1)]]
+          (call add b 0))
         """
 
         def add(x, y):
@@ -199,23 +199,23 @@ class TestCarCdrMacros(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
     async def test_cxxr_accessors(self):
         src_str = """
-        (let [[lst (compile/cons 1 2 3 4 5 nil)]]
-          (compile/cons
-            (compile/car lst)
-            (compile/cadr lst)
-            (compile/caddr lst)
-            (compile/cadddr lst)
-            (compile/caddddr lst)
-            (compile/cdr lst)
-            (compile/cddr lst)
-            (compile/cdddr lst)
-            (compile/cddddr lst)
+        (let [[lst (cons 1 2 3 4 5 nil)]]
+          (cons
+            (car lst)
+            (cadr lst)
+            (caddr lst)
+            (cadddr lst)
+            (caddddr lst)
+            (cdr lst)
+            (cddr lst)
+            (cdddr lst)
+            (cddddr lst)
             nil))
         """
 
@@ -243,8 +243,8 @@ class TestCarCdrMacros(unittest.IsolatedAsyncioTestCase):
 
     async def test_first_through_fifth_aliases(self):
         src_str = """
-        (let [[lst (compile/cons 10 20 30 40 50 nil)]]
-          (compile/cons
+        (let [[lst (cons 10 20 30 40 50 nil)]]
+          (cons
             (first lst)
             (second lst)
             (third lst)
@@ -276,15 +276,15 @@ class TestSetBangPairMacros(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
     async def test_set_bang_car_and_cdr(self):
         src_str = """
-        (let [[lst (compile/cons 1 2 nil)]]
-          (compile/set! (car lst) 9)
-          (compile/set! (cdr lst) (compile/cons 8 nil))
+        (let [[lst (cons 1 2 nil)]]
+          (set! (car lst) 9)
+          (set! (cdr lst) (cons 8 nil))
           lst)
         """
 
@@ -295,11 +295,11 @@ class TestSetBangPairMacros(unittest.IsolatedAsyncioTestCase):
 
     async def test_set_bang_cxxr_positions(self):
         src_str = """
-        (let [[lst (compile/cons 1 2 3 4 5 nil)]]
-          (compile/set! (cadr lst) 20)
-          (compile/set! (caddr lst) 30)
-          (compile/set! (cadddr lst) 40)
-          (compile/set! (caddddr lst) 50)
+        (let [[lst (cons 1 2 3 4 5 nil)]]
+          (set! (cadr lst) 20)
+          (set! (caddr lst) 30)
+          (set! (cadddr lst) 40)
+          (set! (caddddr lst) 50)
           lst)
         """
 
@@ -310,24 +310,24 @@ class TestSetBangPairMacros(unittest.IsolatedAsyncioTestCase):
 
     async def test_set_bang_cxxr_tail_positions(self):
         src_cddr = """
-        (let [[lst (compile/cons 1 2 3 nil)]]
-          (compile/set! (cddr lst) (compile/cons 9 8 nil))
+        (let [[lst (cons 1 2 3 nil)]]
+          (set! (cddr lst) (cons 9 8 nil))
           lst)
         """
         expr, mod = self.compile_expr(src_cddr)
         self.assertEqual(cons(1, 2, 9, 8, nil), await expr())
 
         src_cdddr = """
-        (let [[lst (compile/cons 1 2 3 4 nil)]]
-          (compile/set! (cdddr lst) (compile/cons 9 8 nil))
+        (let [[lst (cons 1 2 3 4 nil)]]
+          (set! (cdddr lst) (cons 9 8 nil))
           lst)
         """
         expr, mod = self.compile_expr(src_cdddr)
         self.assertEqual(cons(1, 2, 3, 9, 8, nil), await expr())
 
         src_cddddr = """
-        (let [[lst (compile/cons 1 2 3 4 5 nil)]]
-          (compile/set! (cddddr lst) (compile/cons 9 nil))
+        (let [[lst (cons 1 2 3 4 5 nil)]]
+          (set! (cddddr lst) (cons 9 nil))
           lst)
         """
         expr, mod = self.compile_expr(src_cddddr)
@@ -352,36 +352,36 @@ class TestConditionalMacros(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
     async def test_if_then_else(self):
-        src_str_t = "(compile/if True 1 2)"
+        src_str_t = "(if True 1 2)"
         expr, mod = self.compile_expr(src_str_t)
         self.assertEqual(await expr(), 1)
 
-        src_str_f = "(compile/if False 1 2)"
+        src_str_f = "(if False 1 2)"
         expr, mod = self.compile_expr(src_str_f)
         self.assertEqual(await expr(), 2)
 
 
     async def test_when(self):
-        src_str_t = "(compile/when True 42)"
+        src_str_t = "(when True 42)"
         expr, mod = self.compile_expr(src_str_t)
         self.assertEqual(await expr(), 42)
 
-        src_str_f = "(compile/when False 42)"
+        src_str_f = "(when False 42)"
         expr, mod = self.compile_expr(src_str_f)
         self.assertEqual(await expr(), None)
 
 
     async def test_unless(self):
-        src_str_f = "(compile/unless False 42)"
+        src_str_f = "(unless False 42)"
         expr, mod = self.compile_expr(src_str_f)
         self.assertEqual(await expr(), 42)
 
-        src_str_t = "(compile/unless True 42)"
+        src_str_t = "(unless True 42)"
         expr, mod = self.compile_expr(src_str_t)
         self.assertEqual(await expr(), None)
 

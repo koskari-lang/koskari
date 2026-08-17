@@ -62,7 +62,7 @@ class FenceTestCase(unittest.IsolatedAsyncioTestCase):
         module = Module(mod_ns)
         source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        fragment = compiler.full_compile(source)
+        fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
 
@@ -74,7 +74,7 @@ class TestApplyFence(FenceTestCase):
     async def test_handwritten_apply_fence(self):
         # the special stands alone, independent of the reader fence syntax
         defns = {"fence/echo": lambda raw, meta: raw}
-        src = '(compile/apply-fence echo "hello")'
+        src = '(apply-fence echo "hello")'
         expr, _mod = self.compile_expr(src, **defns)
         self.assertEqual(await expr(), "hello")
 
@@ -88,16 +88,16 @@ class TestApplyFence(FenceTestCase):
     async def test_malformed_apply_fence(self):
         # shape is enforced by the special's match patterns
         with self.assertRaises(SpecialError):
-            self.compile_expr("(compile/apply-fence)")
+            self.compile_expr("(apply-fence)")
 
         with self.assertRaises(SpecialError):
-            self.compile_expr("(compile/apply-fence bash)")
+            self.compile_expr("(apply-fence bash)")
 
         with self.assertRaises(SpecialError):
-            self.compile_expr("(compile/apply-fence bash 5)")
+            self.compile_expr("(apply-fence bash 5)")
 
         with self.assertRaises(SpecialError):
-            self.compile_expr('(compile/apply-fence "bash" "raw")')
+            self.compile_expr('(apply-fence "bash" "raw")')
 
 
     async def test_python_callable_fence(self):

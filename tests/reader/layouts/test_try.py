@@ -31,7 +31,7 @@ import pytest
 pytestmark = pytest.mark.phase_infra
 
 _symbol_try = symbol('try')
-_compile_begin = symbol('compile/begin')
+_compile_begin = symbol('begin')
 
 
 class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):

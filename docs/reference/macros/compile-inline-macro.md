@@ -19,7 +19,7 @@ computed literal or configuration value).
 
 ```koskari
 (inline-macro
-  (compile/quote (compile/+ 10 32)))
+  (quote (+ 10 32)))
 ;; => 42
 ```
 

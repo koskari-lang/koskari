@@ -55,9 +55,9 @@ class TestDelimitedReentrant(SpecialsTestCase):
         """
 
         src = """
-        (compile/reset
-          (+ (compile/shift k (+ (compile/call k 1) (compile/call k 2)))
-             (compile/shift j (compile/call j 10))))
+        (reset
+          (+ (shift k (+ (call k 1) (call k 2)))
+             (shift j (call j 10))))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -72,9 +72,9 @@ class TestDelimitedReentrant(SpecialsTestCase):
         """
 
         src = """
-        (compile/reset
-          (+ (compile/shift k (+ (compile/call k 1) (compile/call k 2)))
-             (compile/shift j 100)))
+        (reset
+          (+ (shift k (+ (call k 1) (call k 2)))
+             (shift j 100)))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -88,9 +88,9 @@ class TestDelimitedReentrant(SpecialsTestCase):
         """
 
         src = """
-        (compile/reset
-          (+ 1 (compile/shift k
-                 (compile/call k (compile/call k (compile/call k 0))))))
+        (reset
+          (+ 1 (shift k
+                 (call k (call k (call k 0))))))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -104,18 +104,18 @@ class TestDelimitedReentrant(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
-          (compile/define-global amb (compile/lambda [choices]
-            (compile/shift k
-              (compile/let [[out (compile/#list)]]
-                (compile/for-each [c choices]
-                  (compile/call (compile/attr out extend)
-                    (compile/call k c)))
+        (begin
+          (define-global amb (lambda [choices]
+            (shift k
+              (let [[out (#list)]]
+                (for-each [c choices]
+                  (call (attr out extend)
+                    (call k c)))
                 out))))
-          (compile/reset
-            (compile/#list
-              (compile/#tuple (compile/call amb (compile/#list 1 2))
-                              (compile/call amb (compile/#list 10 20))))))
+          (reset
+            (#list
+              (#tuple (call amb (#list 1 2))
+                              (call amb (#list 10 20))))))
         """
 
         expr, _mod = self.compile_expr(src)
@@ -130,22 +130,22 @@ class TestDelimitedReentrant(SpecialsTestCase):
         """
 
         src = """
-        (compile/begin
-          (compile/define-global amb (compile/lambda [choices]
-            (compile/shift k
-              (compile/let [[out (compile/#list)]]
-                (compile/for-each [c choices]
-                  (compile/call (compile/attr out extend)
-                    (compile/call k c)))
+        (begin
+          (define-global amb (lambda [choices]
+            (shift k
+              (let [[out (#list)]]
+                (for-each [c choices]
+                  (call (attr out extend)
+                    (call k c)))
                 out))))
-          (compile/define-global fail (compile/lambda []
-            (compile/shift k (compile/#list))))
-          (compile/reset
-            (compile/#list
-              (compile/let [[x (compile/call amb (compile/#list 1 2 3 4))]]
-                (compile/cond
+          (define-global fail (lambda []
+            (shift k (#list))))
+          (reset
+            (#list
+              (let [[x (call amb (#list 1 2 3 4))]]
+                (cond
                   ((> x 2) x)
-                  (else: (compile/call fail)))))))
+                  (else: (call fail)))))))
         """
 
         expr, _mod = self.compile_expr(src)

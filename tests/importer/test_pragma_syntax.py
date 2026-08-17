@@ -193,7 +193,7 @@ class TestPragmaReaderEffects(PragmaSyntaxHelpers):
 
         result = reader.read(source_str("```json\n{}\n```\n", __file__))
         head, _tail = result
-        self.assertIs(head, symbol("compile/apply-fence"))
+        self.assertIs(head, symbol("apply-fence"))
 
         expr = self.compile_expr(
             module, compiler, "(pragma [reader/fences False])")
@@ -201,7 +201,7 @@ class TestPragmaReaderEffects(PragmaSyntaxHelpers):
 
         result = reader.read(source_str("```foo\n", __file__))
         head, _tail = result
-        self.assertIs(head, symbol("compile/quasiquote"))
+        self.assertIs(head, symbol("quasiquote"))
 
 
 # The end.

@@ -21,7 +21,7 @@ Layout handlers for conditional block syntax.
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
 from ...bootstrap import builtin
-from ...types import get_position, is_nil, is_pair, unpack
+from ...types import fill_position, get_position, is_nil, is_pair, unpack
 from .helpers import block_source_from_cons, layout, match_block_source
 
 
@@ -79,7 +79,9 @@ def layout_if(ns, source, peers):
                 raise LayoutError(
                     'elif block requires exactly one condition',
                     get_position(peer))
-            clauses.append(cons(ppargs[0], pbody))
+            clause = cons(ppargs[0], pbody)
+            fill_position(clause, get_position(peer))
+            clauses.append(clause)
 
         elif phead is _symbol_else:
             if saw_else:
@@ -90,7 +92,9 @@ def layout_if(ns, source, peers):
                 raise LayoutError(
                     'else block does not take arguments',
                     get_position(peer))
-            clauses.append(cons(_keyword_else, pbody))
+            clause = cons(_keyword_else, pbody)
+            fill_position(clause, get_position(peer))
+            clauses.append(clause)
             saw_else = True
 
         else:
@@ -98,7 +102,7 @@ def layout_if(ns, source, peers):
                 'invalid peer for if block: %r' % (phead,),
                 get_position(peer))
 
-    return cons(symbol('compile/cond'), *clauses, nil)
+    return cons(symbol('cond'), *clauses, nil)
 
 
 @builtin('layout/switch')
@@ -191,7 +195,7 @@ def layout_switch(ns, source, peers):
                 'got %r' % (head,),
                 get_position(form))
 
-    return cons(symbol('compile/switch'), value, *clauses, nil)
+    return cons(symbol('switch'), value, *clauses, nil)
 
 
 def _split_case_guard(cargs, child):
@@ -335,7 +339,7 @@ def layout_match(ns, source, peers):
                 f'got {chead!r}',
                 get_position(child))
 
-    return cons(symbol('compile/match'), value, *clauses, nil)
+    return cons(symbol('match'), value, *clauses, nil)
 
 
 # The end.

@@ -29,7 +29,7 @@ from .helpers import layout
 @layout(symbol('layout/class'))
 def layout_class(ns, source, peers):
     """
-    Lower class block to (compile/class NAME SUPERS (compile/begin BODY)).
+    Lower class block to (class NAME SUPERS (begin BODY)).
     SUPERS may be omitted; when missing, use nil.
     """
 
@@ -55,10 +55,10 @@ def layout_class(ns, source, peers):
     supers = nil if len(header_parts) == 2 else header_parts[2]
 
     return cons(
-        symbol('compile/class'),
+        symbol('class'),
         name,
         supers,
-        cons(symbol('compile/begin'), body),
+        cons(symbol('begin'), body),
         nil)
 
 
@@ -66,7 +66,7 @@ def layout_class(ns, source, peers):
 @layout(symbol('layout/define-class'))
 def layout_define_class(ns, source, peers):
     """
-    Lower define-class block to (compile/define-class NAME SUPERS (compile/begin BODY)).
+    Lower define-class block to (define-class NAME SUPERS (begin BODY)).
     SUPERS may be omitted; when missing, use nil.
     """
 
@@ -92,10 +92,10 @@ def layout_define_class(ns, source, peers):
     supers = nil if len(header_parts) == 2 else header_parts[2]
 
     return cons(
-        symbol('compile/define-class'),
+        symbol('define-class'),
         name,
         supers,
-        cons(symbol('compile/begin'), body),
+        cons(symbol('begin'), body),
         nil)
 
 

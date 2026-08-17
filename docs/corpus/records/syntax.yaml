@@ -2,7 +2,7 @@ id: syntax-define-syntax-sr-expand-001
 feature: macro/compile/define-syntax
 source: "(define-syntax unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
 verify:
-  expand: "(compile/define-global unless (syntax-rules unless unless (else:) ...))"
+  expand: "(define-global compile/unless (syntax-rules unless unless (else:) ...))"
 references:
   - reference/macros/compile-define-syntax.md
   - reference/specials/compile-define-syntax.md
@@ -17,7 +17,7 @@ id: syntax-define-syntax-sm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax double (syntax-match [(double (VALUE x)) (+ x x)]))
 verify:
-  expand: (compile/define-global double (syntax-match double ...))
+  expand: (define-global compile/double (syntax-match double ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -32,7 +32,7 @@ id: syntax-define-syntax-mr-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (macro-rules [] [(ident x) x]))
 verify:
-  expand: (compile/define-global ident (macro-rules ident [] [(ident x) x]))
+  expand: (define-global compile/ident (macro-rules ident [] [(ident x) x]))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -47,7 +47,7 @@ id: syntax-define-syntax-mm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (macro-match [(ident (VALUE x)) x]))
 verify:
-  expand: (compile/define-global ident (macro-match ident ...))
+  expand: (define-global compile/ident (macro-match ident ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -62,7 +62,7 @@ id: syntax-define-syntax-spr-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (special-rules [] [(c (ident x) t) x.datum]))
 verify:
-  expand: (compile/define-global ident (special-rules ident [] ...))
+  expand: (define-global compile/ident (special-rules ident [] ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -77,7 +77,7 @@ id: syntax-define-syntax-spm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (special-match [(compiler (ident (VALUE x)) t) x.datum]))
 verify:
-  expand: (compile/define-global ident (special-match ident ...))
+  expand: (define-global compile/ident (special-match ident ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -92,7 +92,7 @@ id: syntax-extend-syntax-sr-expand-001
 feature: macro/compile/extend-syntax
 source: (extend-syntax pick (syntax-rules [] [(pick a b) a]))
 verify:
-  expand: (setq pick (+ pick (syntax-rules pick [] ...)))
+  expand: (setq compile/pick (+ compile/pick (syntax-rules pick [] ...)))
 references:
   - reference/macros/compile-extend-syntax.md
 stability: evolving
@@ -295,7 +295,7 @@ source: |-
       double x:
         (+ x x)
 verify:
-  read: (define-syntax double (syntax-rules () ((double x) (compile/begin (+ x x)))))
+  read: (define-syntax double (syntax-rules () ((double x) (+ x x))))
 references:
   - reference/macros/compile-define-syntax.md
   - reference/layouts/index.md
@@ -315,7 +315,7 @@ source: |-
       m x:
         x
 verify:
-  read: (define-syntax m (macro-rules () ((m x) (compile/begin x))))
+  read: (define-syntax m (macro-rules () ((m x) x)))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -546,8 +546,8 @@ source: |-
   (define second (special-match second [(compiler (second (VALUE x) (VALUE y)) t) y.datum]))
   
 verify:
-  read: (define second (special-match second ((compiler (second (VALUE x) (VALUE y)) t) (compile/attr y datum))))
-  expand: (define second (special-match second ((compiler (second (VALUE x) (VALUE y)) t) (compile/attr y datum))))
+  read: (define second (special-match second ((compiler (second (VALUE x) (VALUE y)) t) (attr y datum))))
+  expand: (define second (special-match second ((compiler (second (VALUE x) (VALUE y)) t) (attr y datum))))
   eval: "null"
 references:
   - reference/specials/compile-special-match.md
@@ -676,8 +676,8 @@ source: |-
          `(,head ,TAG ,@rest))]))
   
 verify:
-  read: (define-syntax tag-head (macro-rules [] [(tag-head TAG form) (begin (define-values [head rest] (compile/attr form datum)) (compile/quasiquote ((compile/unquote head) (compile/unquote TAG) (compile/unquote-splicing rest))))]))
-  expand: (compile/define-global tag-head (macro-rules tag-head [] [(tag-head TAG form) (begin (define-values [head rest] (compile/attr form datum)) (compile/quasiquote ((compile/unquote head) (compile/unquote TAG) (compile/unquote-splicing rest))))]))
+  read: (define-syntax tag-head (macro-rules [] [(tag-head TAG form) (begin (define-values [head rest] (attr form datum)) (quasiquote ((unquote head) (unquote TAG) (unquote-splicing rest))))]))
+  expand: (define-global compile/tag-head (macro-rules tag-head [] [(tag-head TAG form) (begin (define-values [head rest] (attr form datum)) (quasiquote ((unquote head) (unquote TAG) (unquote-splicing rest))))]))
 references:
   - reference/specials/compile-macro-rules.md
 stability: evolving
@@ -702,7 +702,7 @@ source: |-
        (begin (subhead tag subrest ...) ...)]))
 verify:
   read: (define-syntax with-subitems (syntax-rules [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
-  expand: (compile/define-global with-subitems (syntax-rules with-subitems [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
+  expand: (define-global compile/with-subitems (syntax-rules with-subitems [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
 references:
   - reference/specials/compile-syntax-rules.md
 stability: evolving
@@ -721,7 +721,7 @@ source: |-
       [(config (kafka name) params ...) (kafka-configure name params ...)]))
 verify:
   read: (extend-syntax config (syntax-rules [kafka] [(config (kafka name) params ...) (kafka-configure name params ...)]))
-  expand: (setq config (+ config (syntax-rules config [kafka] [(config (kafka name) params ...) (kafka-configure name params ...)])))
+  expand: (setq compile/config (+ compile/config (syntax-rules config [kafka] [(config (kafka name) params ...) (kafka-configure name params ...)])))
 references:
   - reference/macros/compile-extend-syntax.md
 stability: evolving
@@ -739,8 +739,8 @@ source: |-
     (macro-rules []
       [(job tp rest ...) `(,(datum (symbol f"job/{tp.datum}")) ,@rest)]))
 verify:
-  read: "(define-syntax job (macro-rules [] [(job tp rest ...) (compile/quasiquote ((compile/unquote (datum (symbol (compile/#str \"job/\" (format (compile/attr tp datum)))))) (compile/unquote-splicing rest)))]))"
-  expand: "(compile/define-global job (macro-rules job [] [(job tp rest ...) (compile/quasiquote ((compile/unquote (datum (symbol (compile/#str \"job/\" (format (compile/attr tp datum)))))) (compile/unquote-splicing rest)))]))"
+  read: "(define-syntax job (macro-rules [] [(job tp rest ...) (quasiquote ((unquote (datum (symbol (#str \"job/\" (format (attr tp datum)))))) (unquote-splicing rest)))]))"
+  expand: "(define-global compile/job (macro-rules job [] [(job tp rest ...) (quasiquote ((unquote (datum (symbol (#str \"job/\" (format (attr tp datum)))))) (unquote-splicing rest)))]))"
 references:
   - reference/specials/compile-macro-rules.md
 stability: evolving
@@ -754,7 +754,7 @@ id: reader-unquote-dotted-attr-001
 feature: reader/unquote
 source: "`(fire ,job.enabled)"
 verify:
-  read: (compile/quasiquote (fire (compile/unquote (compile/attr job enabled))))
+  read: (quasiquote (fire (unquote (attr job enabled))))
 references:
   - reference/grammar.md
 stability: evolving
@@ -775,8 +775,8 @@ source: |-
   (+ a b)
   
 verify:
-  read: (compile/begin (define-values [a b] (values 1 2)) (+ a b))
-  expand: (compile/begin (define-values [a b] (values 1 2)) (+ a b))
+  read: (begin (define-values [a b] (values 1 2)) (+ a b))
+  expand: (begin (define-values [a b] (values 1 2)) (+ a b))
   eval: "3"
 stability: evolving
 tags:
@@ -793,8 +793,8 @@ source: |-
   (+ a b)
   
 verify:
-  read: (compile/begin (define-values [a b] (values 1 2)) (+ a b))
-  expand: (compile/begin (define-values [a b] (values 1 2)) (+ a b))
+  read: (begin (define-values [a b] (values 1 2)) (+ a b))
+  expand: (begin (define-values [a b] (values 1 2)) (+ a b))
   eval: "3"
 stability: evolving
 tags:
@@ -829,7 +829,7 @@ source: |-
   grid[1][0]
   
 verify:
-  read: "(compile/begin (define grid (#list (#list 1 2) (#list 3 4))) (item (item grid 1) 0))"
+  read: "(begin (define grid (#list (#list 1 2) (#list 3 4))) (item (item grid 1) 0))"
   eval: "3"
 references:
   - reference/grammar.md
@@ -847,7 +847,7 @@ source: |-
   ("hello".upper)
   
 verify:
-  read: ((compile/attr "hello" upper))
+  read: ((attr "hello" upper))
   eval: '"HELLO"'
 references:
   - reference/specials/compile-call-attr.md
@@ -867,7 +867,7 @@ source: |-
   ("-".join #["a" "b"])
   
 verify:
-  read: "((compile/attr \"-\" join) (#list \"a\" \"b\"))"
+  read: "((attr \"-\" join) (#list \"a\" \"b\"))"
   eval: '"a-b"'
 references:
   - reference/specials/compile-call-attr.md
@@ -887,7 +887,7 @@ source: |-
   ("abc"[0].upper)
   
 verify:
-  read: ((compile/attr (item "abc" 0) upper))
+  read: ((attr (item "abc" 0) upper))
   eval: '"A"'
 references:
   - reference/grammar.md
@@ -907,7 +907,7 @@ source: |-
   (print "one"- " two"- " three")
   
 verify:
-  read: "(print (compile/#str \"one\" \" two\" \" three\"))"
+  read: "(print (#str \"one\" \" two\" \" three\"))"
   eval: "null"
 references:
   - reference/grammar.md
@@ -926,7 +926,7 @@ source: |-
   (print "n is "- f"{n}")
   
 verify:
-  read: "(compile/begin (define n 7) (print (compile/#str \"n is \" (format n))))"
+  read: "(begin (define n 7) (print (#str \"n is \" (format n))))"
   eval: "null"
 references:
   - reference/grammar.md
@@ -946,7 +946,7 @@ source: |-
              f"{name}!"
   
 verify:
-  read: "(define greet [name] (return (compile/#str \"Hello, \" (format name) \"!\")))"
+  read: "(define greet [name] (return (#str \"Hello, \" (format name) \"!\")))"
   eval: "null"
 references:
   - reference/reader-layout.md
@@ -958,3 +958,31 @@ tags:
   - "surface:block"
   - construct
 notes: requires reader/string-segments (baseline on). the continuation lines are consumed as part of the value on the line that opened them, so the block structure is untouched and the statement after the segment chain still belongs to the block
+---
+id: syntax-define-syntax-bare-expand-001
+feature: macro/compile/define-syntax
+source: (define-syntax greeting (bare-syntax me (quote hello)))
+verify:
+  expand: (define-global compile/greeting (bare-syntax greeting me (quote hello)))
+references:
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - bare-syntax
+notes: "bare-syntax kind: the transformer's bare form expands the lone atom greeting; the slot symbol me names the called-by capture. Binding key is prefixed, identity stays as written."
+---
+id: syntax-extend-syntax-bare-expand-001
+feature: macro/compile/extend-syntax
+source: (extend-syntax pick (bare-syntax me (quote alone)))
+verify:
+  expand: (setq compile/pick (+ compile/pick (bare-syntax pick me (quote alone))))
+references:
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - extend-syntax
+  - bare-syntax
+notes: attaching a bare form to an existing transformer; a syntax carries at most one bare arm, and an extension's bare arm replaces the original's

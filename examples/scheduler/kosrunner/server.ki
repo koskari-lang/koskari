@@ -14,7 +14,7 @@
 
 import logging
 
-import-from .job Config watch-task
+(use .job Config watch-task)
 
 
 define logger (logging.getLogger "kosrunner.server")

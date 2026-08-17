@@ -25,15 +25,16 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 
 from ...bootstrap import builtin
 from ...lib import cons, keyword, nil
-from ...types import get_position, is_pair, is_symbol
+from ...types import fill_position, get_position, is_pair, is_symbol
 from .basics import (layout_block, layout_block_begin, layout_call,
                      layout_inline_block,
                      layout_keyword_block, layout_quasiquote, layout_quote)
 from .classes import layout_class, layout_define_class
 from .conditionals import layout_if, layout_match, layout_switch
-from .define_syntax import (layout_macro_match, layout_macro_rules,
-                            layout_special_match, layout_special_rules,
-                            layout_syntax_match, layout_syntax_rules)
+from .define_syntax import (layout_bare_syntax, layout_macro_match,
+                            layout_macro_rules, layout_special_match,
+                            layout_special_rules, layout_syntax_match,
+                            layout_syntax_rules)
 from .dyn_wind import layout_dyn_wind
 from .exceptions import layout_try
 from .helpers import LayoutHandler, layout
@@ -49,6 +50,7 @@ __all__ = (
     "layout_inline_block",
     "layout_keyword_block",
 
+    "layout_bare_syntax",
     "layout_call",
     "layout_quote",
     "layout_quasiquote",
@@ -92,11 +94,11 @@ def find_layout(ns, name):
 
     name = str(name)
 
-    found = _find_layout(ns, name)
-    if found is None:
-        if not name.startswith("layout/"):
-            return _find_layout(ns, "layout/" + name)
-    return found
+    # prefix-only resolution, mirroring find_compiled: the short
+    # name is the use, the prefixed spelling is the handler object
+    if name.startswith("layout/"):
+        return None
+    return _find_layout(ns, "layout/" + name)
 
 
 _keyword_block = keyword(':block:')
@@ -132,7 +134,7 @@ def apply_layouts(blocks, namespace):
             if is_symbol(head):
                 layout_obj = find_layout(namespace, str(head))
             if layout_obj is None:
-                layout_obj = find_layout(namespace, "layout/block")
+                layout_obj = find_layout(namespace, "block")
             if layout_obj is None:
                 raise RuntimeError(
                     "layout/block handler not found in module namespace")
@@ -150,7 +152,11 @@ def apply_layouts(blocks, namespace):
                     if str(sibling_head.car) not in declared:
                         break
 
-                    peers.append(cons(sibling_head, sibling_exprs))
+                    peer = cons(sibling_head, sibling_exprs)
+                    peer_pos = get_position(sibling)
+                    if peer_pos:
+                        peer.set_position(peer_pos)
+                    peers.append(peer)
                     tail = blocks.cdr = tail.cdr
 
             block_pos = get_position(form)
@@ -159,18 +165,28 @@ def apply_layouts(blocks, namespace):
                 source = cons(head_args, body_exprs)
                 if block_pos and is_pair(source):
                     source.set_position(block_pos)
-                blocks.car = layout_obj.read(namespace, source, peers)
+                lowered = layout_obj.read(namespace, source, peers)
             else:
                 expanded_body = apply_layouts(body_exprs, namespace)
                 expanded_peers = []
                 for peer in peers:
                     pheader, pbody = peer
                     expanded_pbody = apply_layouts(pbody, namespace)
-                    expanded_peers.append(cons(pheader, expanded_pbody))
+                    expanded = cons(pheader, expanded_pbody)
+                    peer_pos = get_position(peer)
+                    if peer_pos:
+                        expanded.set_position(peer_pos)
+                    expanded_peers.append(expanded)
                 source = cons(head_args, expanded_body)
                 if block_pos and is_pair(source):
                     source.set_position(block_pos)
-                blocks.car = layout_obj.read(namespace, source, expanded_peers)
+                lowered = layout_obj.read(namespace, source, expanded_peers)
+
+            # handlers build fresh conses; restamp the block position onto
+            # any output cells that lack one (handlers stamp peer-derived
+            # clauses with the peer's own position first)
+            fill_position(lowered, block_pos)
+            blocks.car = lowered
 
         else:
             blocks.car = apply_layouts(form, namespace)

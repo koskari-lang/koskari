@@ -23,10 +23,10 @@ define-syntax create-instance-check:
       define pname (datum (symbol f"{name.datum}?"))
       `define ,pname:
         lambda ,pname [value]:
-          compile/instance? value ,name
+          instance? value ,name
 
 
-define-syntax compile/define-class:
+define-syntax define-class:
   """
   Defines a class and a typecheck function for it
   """
@@ -37,22 +37,21 @@ define-syntax compile/define-class:
       create-instance-check name
 
 
-define-syntax compile/define-dataclass:
+define-syntax define-dataclass:
   """
   Defines a dataclass and a typecheck function for it.
 
   eg.::
 
-  (define-dataclass Point []
-    (define x :: int 0)
-    (define y :: int 0)
-  )
+    (define-dataclass Point []
+      (define x :: int 0)
+      (define y :: int 0))
 
   is equivalent to::
 
-  (define Point
-    (dataclass (class Point [] (define x :: int 0) (define y :: int 0))))
-  (define Point? [value] (instance? value Point))
+    (define Point
+      (dataclass (class Point [] (define x :: int 0) (define y :: int 0))))
+    (define Point? [value] (instance? value Point))
   """
 
   syntax-rules [begin]:
@@ -68,12 +67,12 @@ define-syntax compile/define-dataclass:
       create-instance-check name
 
 
-define-syntax compile/super:
+define-syntax super:
   syntax-rules []:
     case (super):
-      (compile/call super (type self) self)
+      (call super (type self) self)
     case (super args ...):
-      (compile/call super args ...)
+      (call super args ...)
 
 
 ;; The end.

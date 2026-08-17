@@ -213,7 +213,7 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
 
     async def test_compiler_error_uses_explain_only(self):
         # Compile-phase errors render via .explain() with no Python traceback.
-        form = '((lambda () (compile/setq _repl_typo_undeclared 1)))'
+        form = '((lambda () (setq _repl_typo_undeclared 1)))'
         _, err = await self._run_repl([form])
         self.assertTrue(err.strip())
         self.assertNotIn('Traceback (most recent call last)', err)

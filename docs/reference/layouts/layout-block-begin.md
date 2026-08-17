@@ -6,7 +6,7 @@ in **`compile/begin`**. Bind in a **`.ki`** module, for example
 **`define layout/my-head layout/block-begin`**, when a head needs sequential
 body evaluation inside an explicit begin form.
 
-**Behaviour:** Produces **`(HEAD ARG … (compile/begin BODY …))`**. Does not
+**Behaviour:** Produces **`(HEAD ARG … (begin BODY …))`**. Does not
 accept peers.
 
 **Syntax:**
@@ -24,7 +24,7 @@ HEAD ARG ... :
 foo x:
   bar
   baz
-;; → (foo x (compile/begin bar baz))
+;; → (foo x (begin bar baz))
 ```
 
 **Implementation:** `koskari/reader/layouts/basics.layout_block_begin`

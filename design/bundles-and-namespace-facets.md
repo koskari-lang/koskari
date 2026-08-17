@@ -4,6 +4,19 @@
 
 Exploratory design.
 
+**Settled: the import seam.** The `use` special and its `IMPORT_USE`
+opcode landed with their contract stated as "obtain the bindings a
+feature names, and store them". Today the obtain step is the default
+facet probe -- the stem itself, `compile/{stem}`, `layout/{stem}`.
+When bundles land, a module that declares an installer under a
+reserved name replaces that step: the opcode invokes the installer
+upon the module, and the installer returns a name-to-value mapping
+stored exactly as probe hits are. Bundles therefore need no new
+opcode and no new import surface.
+
+Everything below -- facades, trampolines, activation scopes -- is one
+possible bundle solution, not a settled direction.
+
 ## Summary
 
 Introduce **bundles** as first-class namespace facet objects that can be activated during compilation and runtime resolution. Bundles provide a structured way to deliver a cohesive feature surface without polluting the module namespace.
@@ -281,12 +294,9 @@ The precise syntax for defining bundles remains unspecified.
 
 ### Bundle Import Syntax
 
-Possible forms include:
-
-```
-(import koskari.fences.sql)
-(use-bundle sql)
-```
+Settled: `(use MODULE FEATURE ...)` is the import surface. The open
+question is only the installer side -- the reserved declaration name
+and the installer's calling convention.
 
 ### Nested Bundle Composition
 

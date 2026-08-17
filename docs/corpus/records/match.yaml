@@ -441,7 +441,7 @@ source: |-
           "meh"
   
 verify:
-  read: "(compile/match 5 ((1) \"one\") ((5) \"five\") (else: \"meh\"))"
+  read: "(match 5 ((1) \"one\") ((5) \"five\") (else: \"meh\"))"
   eval: '"five"'
 references:
   - reference/layouts/layout-match.md
@@ -464,7 +464,7 @@ source: |-
           "no"
   
 verify:
-  read: "(compile/match 7 ((x :: int) x) (else: \"no\"))"
+  read: "(match 7 ((x :: int) x) (else: \"no\"))"
   eval: "7"
 references:
   - reference/layouts/layout-match.md
@@ -488,7 +488,7 @@ source: |-
           "small"
   
 verify:
-  read: "(compile/match 42 ((x) when: (> x 10) \"big\") (else: \"small\"))"
+  read: "(match 42 ((x) when: (> x 10) \"big\") (else: \"small\"))"
   eval: '"big"'
 references:
   - reference/layouts/layout-match.md
@@ -513,7 +513,7 @@ source: |-
           0
   
 verify:
-  read: "(compile/match seq (((#list a b c)) b) (((#list a *: rest)) rest) (else: 0))"
+  read: "(match seq (((#list a b c)) b) (((#list a *: rest)) rest) (else: 0))"
   eval: "2"
 references:
   - reference/layouts/layout-match.md

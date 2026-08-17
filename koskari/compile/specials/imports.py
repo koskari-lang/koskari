@@ -72,9 +72,9 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 def _attr_form_to_dotted(form, source):
     """
-    Convert (compile/attr obj name) or nested equivalent to dotted string.
+    Convert (attr obj name) or nested equivalent to dotted string.
 
-    :param form: (compile/attr obj name) with obj symbol or nested attr
+    :param form: (attr obj name) with obj symbol or nested attr
     :param source: source form for error context
     :return: str like "os.path" or "foo.bar.baz"
     :raises SpecialError: when form is invalid
@@ -85,30 +85,30 @@ def _attr_form_to_dotted(form, source):
 
     if not is_pair(form):
         raise SpecialError(
-            "import argument must be symbol or (compile/attr ...)",
+            "import argument must be symbol or (attr ...)",
             source)
 
     head, tail = form
-    if str(head) != 'compile/attr':
+    if str(head) != 'attr':
         raise SpecialError(
-            "import argument must be symbol or (compile/attr ...)",
+            "import argument must be symbol or (attr ...)",
             source)
 
     parts = list(unpack(tail))
     if len(parts) < 2:
         raise SpecialError(
-            "compile/attr in import requires two arguments",
+            "attr in import requires two arguments",
             source)
 
     result = []
     for p in parts:
         if is_symbol(p) or isinstance(p, str):
             result.append(str(p))
-        elif is_pair(p) and str(p[0]) == 'compile/attr':
+        elif is_pair(p) and str(p[0]) == 'attr':
             result.append(_attr_form_to_dotted(p, source))
         else:
             raise SpecialError(
-                "import compile/attr arguments must be symbols",
+                "import attr arguments must be symbols",
                 source)
 
     return '.'.join(result)
@@ -116,14 +116,14 @@ def _attr_form_to_dotted(form, source):
 
 def _parse_import_name(name_form, source):
     """
-    Split a module name (symbol or (compile/attr ...)) into (level:int,
+    Split a module name (symbol or (attr ...)) into (level:int,
     dotted_name:str).
 
     Counts leading dots for relative imports and strips them from the
     returned name.  A bare dot sequence (level > 0, no name) returns
     (level, None) representing an import of the enclosing package itself.
 
-    :param name_form: symbol like 'foo', 'foo.bar', '.foo' or (compile/attr
+    :param name_form: symbol like 'foo', 'foo.bar', '.foo' or (attr
         obj name) from reader expansion
     :param source: source form for error context
     :return: (level, name) where level >= 0 and name is str or None
@@ -137,12 +137,12 @@ def _parse_import_name(name_form, source):
         name = stripped if stripped else None
         return (level, name)
 
-    if is_pair(name_form) and str(name_form[0]) == 'compile/attr':
+    if is_pair(name_form) and str(name_form[0]) == 'attr':
         dotted = _attr_form_to_dotted(name_form, source)
         return (0, dotted)
 
     raise SpecialError(
-        "import argument must be a symbol or (compile/attr ...)",
+        "import argument must be a symbol or (attr ...)",
         source)
 
 
@@ -242,7 +242,7 @@ def special_import(compiler, source, tc=False):
 
     bind = None
     name_form = arg
-    if is_pair(arg) and str(arg[0]) != 'compile/attr':
+    if is_pair(arg) and str(arg[0]) != 'attr':
         bind, name_form = _parse_member(arg, source, "import")
 
     level, dotted = _parse_import_name(name_form, source)
@@ -355,6 +355,79 @@ def special_import_all_from(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     frag.instruction(
         OpCode.IMPORT_STAR, (dotted, level, 0, 0))
+    frag.instruction(OpCode.CONST, None)
+
+    return frag
+
+
+_USE_FACET_PREFIXES = ("compile/", "layout/")
+
+
+@builtin("compile/use")
+@special("compile/use", patterns=_DEFAULT_PATTERNS)
+def special_use(compiler, source, tc=False):
+    """
+    Compile (use MODULE) and (use MODULE STEM...), where each STEM is a
+    plain symbol or a [STEM as: BIND] rename form.
+
+    The koskari-native import: a stem names a feature, and every facet
+    of it -- the runtime binding, compile/stem, layout/stem -- imports
+    together, each bound under the bind stem with the same prefix, so a
+    rename renames the family. A stem already carrying a facet prefix
+    is literal. With no stems, lowers to import-all-from: the module's
+    materialized __all__ already carries every feature's facets.
+
+    On a Python module, whose namespace has no facet keys, use behaves
+    exactly as import-from and import-all-from do. Only allowed at
+    module top level.
+    """
+
+    called_by, rest = source
+    if is_nil(rest):
+        raise SpecialError("use requires a module name", source)
+
+    if compiler.scope_depth > 0:
+        raise SpecialError(
+            "use is only allowed at module level", source)
+
+    name_sym, rest = rest
+    level, dotted = _parse_import_name(name_sym, source)
+
+    if is_nil(rest):
+        frag = compiler.fragment(called_by)
+        frag.instruction(
+            OpCode.IMPORT_STAR, (dotted, level, 0, 0))
+        frag.instruction(OpCode.CONST, None)
+        return frag
+
+    stems = []
+    binds = []
+    current = rest
+    while not is_nil(current):
+        elem, current = current
+        bind, target = _parse_member(elem, source, "use")
+        if not is_symbolish(target):
+            raise SpecialError(
+                f"use member must name a feature, not {target!r}",
+                source)
+        stem = str(target)
+        stems.append(stem)
+        binds.append(bind if bind is not None else stem)
+
+    frag = compiler.fragment(called_by)
+    for bind in binds:
+        frag.declare_var(bind)
+        if not bind.startswith(_USE_FACET_PREFIXES):
+            for prefix in _USE_FACET_PREFIXES:
+                frag.declare_var(prefix + bind)
+
+    stems = tuple(stems)
+    binds = tuple(binds)
+    if stems == binds:
+        binds = stems
+
+    frag.instruction(
+        OpCode.IMPORT_USE, (dotted, level, stems, binds))
     frag.instruction(OpCode.CONST, None)
 
     return frag

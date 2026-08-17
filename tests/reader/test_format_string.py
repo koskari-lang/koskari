@@ -32,7 +32,7 @@ import pytest
 pytestmark = pytest.mark.phase_infra
 
 
-_symbol_str = symbol("compile/#str")
+_symbol_str = symbol("#str")
 _symbol_format = symbol("format")
 
 
@@ -64,7 +64,7 @@ def read_fstring_pragma(src):
 
 def fstring_parts(form):
     """
-    Return the compile/#str argument list from a read f-string form
+    Return the #str argument list from a read f-string form
     """
 
     called_by, body = form

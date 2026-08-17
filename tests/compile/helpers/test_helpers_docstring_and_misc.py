@@ -116,8 +116,8 @@ class TestRequote(unittest.TestCase):
     def test_quotes_each_spine_element(self):
         src = cons(symbol("a"), cons(1, nil))
         out = requote(src)
-        cq = symbol("compile/quote")
-        cc = symbol("compile/cons")
+        cq = symbol("quote")
+        cc = symbol("cons")
         self.assertEqual(out[0], cc)
         q1 = car(cdr(out))
         self.assertEqual(car(q1), cq)

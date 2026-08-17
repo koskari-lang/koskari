@@ -18,8 +18,10 @@ Bootstrap loads these sources in order (`koskari/bootstrap/__init__.py`,
 8. `_class.ki` — classes, dataclasses, `super`
 9. `_pragma.ki` — `pragma` set/read forms, `(help pragma)`
 10. `_assert.ki` — `assert`, gated by the `compiler/enable-asserts` pragma
-11. `_fences.ki` — `define-fence`, `fence/bash`
-12. `basics.ki` — list accessors, `help`, macro expansion, compile/evaluate helpers,
+11. `_control.ki` — bare forms for the statement words, gated by
+    `compiler/bare-control-words`
+12. `_fences.ki` — `define-fence`, `fence/bash`
+13. `basics.ki` — list accessors, `help`, macro expansion, compile/evaluate helpers,
     `inline-macro`
 
 The merged module is exposed as `koskari.builtins`. Macros are available in every
@@ -29,6 +31,59 @@ User-facing **`define-syntax`** is not a compiler special: it is expanded by
 the **`compile/define-syntax`** macro in `_define_syntax.ki`. The compiler
 lowers transformer specs via **`compile/syntax-rules`**, **`compile/macro-rules`**,
 and related specials (see [SPECIALS.md](SPECIALS.md) § compile/define-syntax).
+
+**Binding keys are injected.** A transformer written as `NAME` is bound under
+`compile/NAME` whichever spelling the definition used; resolution is
+prefix-only (the short name is the use, the prefixed spelling denotes the
+transformer object), and the written name stays the transformer's *identity*
+for help text, match errors, and pattern literals. The injection is
+idempotent, computed by a helper hidden in the `let` that defines the two
+meta-macros.
+
+### Expansion in operator position
+
+Two expansion paths exist beyond the ordinary symbol-headed macro use, both
+implemented in `Compiler` (`compile_symbol`, `compile_pair`, `lower_head`):
+
+- **Bare forms.** A `Syntax` may carry one `BareTransform` in its dedicated
+  `bare` slot (the `bare-syntax` transformer kind): a *lone symbol* whose
+  `compile/NAME` binding has a bare arm expands before the runtime slot is
+  ever consulted. A **bare-only** syntax (no call arms) used in form
+  position is an **alias**: the head expands through the bare arm and the
+  tail rides along for recompilation. A syntax *with* call arms never falls
+  back to its bare arm — a form no call arm matches raises
+  `SyntaxMatchError`. Bare arms are template-only; the called-by symbol is
+  the sole capture, carried with the caller-threaded source position.
+
+- **Pair heads** (`Compiler.lower_head`). When a form's head is itself a
+  form, the compiler attempts to lower it: attempts nest through arbitrary
+  depth, and only a head whose innermost head names a syntax is attempted
+  at all. An expansion yielding *source* succeeds — each enclosing level is
+  reconstructed around it (positions filled) and the whole form re-enters
+  compilation from the top, so an expansion landing on a symbol becomes a
+  fresh syntax use with the tail as its arguments. A non-syntax head, or an
+  expansion that compiles to bytecode, fails the entire attempt with
+  nothing committed (the scratch fragment is never merged), and the raw
+  head flows to `compile/call` untouched — preserving the `(attr …)` head
+  patterns and their `CALL_ATTR` fusion. Failure semantics are
+  all-or-nothing per attempt; successes restart, so no partial rewrites
+  ever mix with a failure.
+
+  Interlocking rule: **`begin` of a single form is that form** — the
+  `compile/begin` special returns a one-form body for recompilation, and
+  the layout rule lowering only wraps *multi-form* bodies in `begin` to
+  start with. Without this, every layout-defined macro's template would
+  arrive wrapped, and the wrapper would defeat head lowering and the
+  call-attr routing behind it.
+
+  Known cost knob (unmeasured, deliberate): an attempted head that
+  compiles to bytecode — every `(attr obj name)` method-call head — is
+  compiled twice at compile time, once discarded. A statically decidable
+  fast path exists (SpecialTransform-matched arms always fragment) but
+  would demote form-returning specials in head position; it is deferred
+  until measurement warrants it. There is no cycle guard on the
+  expansion-restart loop beyond `full_compile`'s existing exposure — see
+  TODO.md § macro-expansion cycle checks.
 
 **Design:** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md),
 [MATCHER.md](MATCHER.md), [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md).
@@ -48,29 +103,43 @@ hygiene (see [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block).
 
 **Symbol:** `compile/define-syntax`
 
-**Syntax:** Matches **`(define-syntax NAME TRANSFORMER)`** where **`TRANSFORMER`** is:
+**Syntax:** Matches **`(define-syntax NAME TRANSFORMER)`** where **`TRANSFORMER`** is
+one of the seven kinds — `syntax-rules`, `syntax-match`, `macro-rules`,
+`macro-match`, `special-rules`, `special-match`, or `bare-syntax`.
 
-- `(syntax-rules literals rule …)` → `(compile/define name (syntax-rules name literals rule …))`
-- `(syntax-match rule …)` → `(compile/define name (syntax-match name rule …))`
-- `(macro-rules literals rule …)` → `(compile/define name (macro-rules name literals rule …))`
-- `(macro-match rule …)` → `(compile/define name (macro-match name rule …))`
-- `(special-rules literals rule …)` → `(compile/define name (special-rules name literals rule …))`
-- `(special-match rule …)` → `(compile/define name (special-match name rule …))`
-- `(define-syntax name docstr (form …))` — re-expands with docstring attached via `set-attr` on `__doc__`
+**Behaviour:** a **`macro-rules`** core (not templates: each arm computes the
+binding key). Every kind arm expands to
+**`(define-global compile/NAME (KIND NAME …))`** — the binding key carries the
+`compile/` prefix (idempotently injected), while the *written* name is passed
+to the builder as the transformer's identity. `bare-syntax` takes a called-by
+slot and a template and produces a transformer whose lone-symbol form expands
+(see *Expansion in operator position* above). The docstring arm —
+`(define-syntax NAME DOCSTR (KIND …))` — is **not** in the core: it arrives as
+an `extend-syntax` extension later in the same `let`, re-expanding the plain
+definition and appending the docstring via `Syntax.append_doc`. The core, the
+extend-syntax core, and both docstring extensions live in one `let` closing
+over the binding-key helper; the two meta-macro cores are written as raw
+builder calls because a definer cannot be used in the compile unit that
+defines it.
 
-**Tests:** `tests/compile/specials/test_define_syntax.py`
+**Tests:** `tests/compile/specials/test_define_syntax.py`,
+`tests/importer/test_bare_syntax.py`
 
 
 ### compile/extend-syntax
 
 **Symbol:** `compile/extend-syntax`
 
-**Syntax:** `(extend-syntax NAME TRANSFORMER)` with the same six transformer heads as
-`define-syntax`.
+**Syntax:** `(extend-syntax NAME TRANSFORMER)` with the same seven transformer
+kinds as `define-syntax`, plus the docstring arm.
 
-**Behaviour:** Replaces **`NAME`** via **`setq`** with a new **`syntax-rules`** /
-**`syntax-match`** / **`macro-rules`** / **`special-rules`** / **`special-match`**
-spec (each expansion passes **`NAME`** as the first argument to the builder form).
+**Behaviour:** Rebinds **`compile/NAME`** via **`setq`** with
+**`(+ compile/NAME (KIND NAME …))`** — the combination prepends the new arms
+so they win where both match, the written name stays the identity, and the
+original documentation carries forward (a docstring given in the extension is
+*appended* through `Syntax.append_doc`, not replaced). A syntax carries at
+most one bare arm, so extending with `bare-syntax` replaces any existing bare
+arm.
 
 
 ### compile/let-syntax
@@ -84,7 +153,9 @@ expand time it builds the same **`(syntax-rules NAME literals rule …)`** form
 **`define-syntax`** would compile, runs **`full_compile`** on that spec and evaluates
 the resulting expression to obtain a **`Syntax`** transformer. The body is compiled
 inside **`Compiler.macro_overlay`**, which pushes the transformer onto a stack consulted
-by **`find_compiled`** before the module namespace. Nested **`let-syntax`** shadows
+by **`find_compiled`** before the module namespace; the overlay key is the
+**`compile/NAME`** binding spelling, so prefix-only resolution finds the local
+syntax through the same probe as a global one. Nested **`let-syntax`** shadows
 outer bindings. The overlay is discarded when the body compile finishes; nothing is
 stored in the module namespace.
 
@@ -412,7 +483,13 @@ deletes it. An empty **`KEY`** raises **`ValueError`**.
 
 **Syntax:** **`(declare-exports name …)`**
 
-**Behaviour:** **`macro-rules`** → **`(define-global __all__ #(…))`** with sorted, deduplicated string names.
+**Behaviour:** **`macro-rules`** → **`(define-global __features__ #(…))`**
+with sorted, deduplicated string names. Each name is a **feature stem**: at
+end of load, every loader runs `koskari.module.materialize_exports`, which
+expands the stems against the settled namespace into `__all__` — the binding
+keys that actually exist (runtime name, `compile/` and `layout/` facets). A
+name written with a facet prefix is a literal single-binding export. See
+[api/import-system.md](api/import-system.md) § Module Lifecycle.
 
 
 ## koskari/bootstrap/_class.ki
@@ -547,6 +624,24 @@ expands to **`__pragma__`**. See [PRAGMA.md](PRAGMA.md) for the available
 settings.
 
 
+### active-pragma (function + macro)
+
+**Symbol:** `compile/active-pragma` (surface: `active-pragma`), with a
+same-named runtime function
+
+**Syntax:** **`(active-pragma)`**, **`(active-pragma NS/KEY)`**
+
+**Behaviour:** Reads the pragma the compiler bound for the **current
+compilation turn** (`Compiler.compile_expression` binds `self.pragma` into
+the `active-compiler-pragma` parameter around each turn). Inside a macro
+body — a closure over its *defining* module — this answers for the module
+*being compiled*, where `(pragma …)` would answer for the wrong module.
+When no pragma is bound, a lazily-built default `ModulePragma` carrying
+every registered default answers instead, so gates behave sanely under a
+bare `Compiler`. The macro quotes the key and calls the function; the
+function and its cache live in a `let`.
+
+
 ### (help pragma)
 
 **Syntax:** **`(help pragma)`**, **`(help (pragma NS/KEY))`**
@@ -566,26 +661,51 @@ setting: the signature and docstring of its registered function.
 
 **Syntax:** **`(assert EXPR)`**, **`(assert EXPR MESSAGE)`**
 
-**Behaviour:** **`macro-rules`** expansion gated at expand time by the
-`compiler/enable-asserts` pragma setting (baseline `True`; see
-[PRAGMA.md](PRAGMA.md)). Enabled, expands to
-**`(unless EXPR (raise (AssertionError MESSAGE?)))`** — so **`MESSAGE`** is
-evaluated only on failure. Disabled, expands to **`(begin)`**: neither
-**`EXPR`** nor **`MESSAGE`** is compiled or evaluated (Python `-O` semantics).
-Because the gate is consulted per expansion, a pragma change is forward-only —
-an assert compiled while disabled stays compiled away even if asserts are
-re-enabled before it runs.
+**Behaviour:** **`macro-rules`** expansion gated at expand time by
+**`(active-pragma compiler/enable-asserts)`** — the pragma of the module
+*being compiled*, not the module the macro was defined in, so each module
+answers for its own setting and modules never cross-contaminate. Enabled,
+expands to **`(unless EXPR (raise (AssertionError MESSAGE?)))`** — so
+**`MESSAGE`** is evaluated only on failure. Disabled, expands to
+**`(begin)`**: neither **`EXPR`** nor **`MESSAGE`** is compiled or evaluated
+(Python `-O` semantics). Because the gate is consulted per expansion, a
+pragma change is forward-only — an assert compiled while disabled stays
+compiled away even if asserts are re-enabled before it runs.
 
-The gate itself is a private closure variable in `_assert.ki`: the file
-registers `compiler/enable-asserts` via `koskari.pragma.register`, passing a
-`demand`-wrapped closure as the setting function; applying the pragma calls
-that closure, which writes the variable the macro reads. The transformer is
-bound with **`define-global`** inside that closure, using the standalone
-**`macro-rules NAME [literals]`** layout header (the rules/match layout heads
-accept an optional leading name so a transformer can be built outside
-`define-syntax`).
+The setting function registered for `compiler/enable-asserts` is a pure
+coercer; no shared gate state exists.
 
 **Tests:** `tests/importer/test_assert.py`
+
+
+## koskari/bootstrap/_control.ki
+
+### compile/bare-control-word
+
+**Symbol:** `compile/bare-control-word`
+
+**Syntax:** `(bare-control-word WORD)` — emitted by the statement words'
+bare forms, not written by hand.
+
+**Behaviour:** **`special-rules`** gate consulted when a bare statement
+word converts. Reads **`(active-pragma compiler/bare-control-words)`**:
+`convert` (baseline) expands silently to `(WORD)`, `warn` emits a
+`SyntaxWarning` through `warn_explicit` with the koskari filename and the
+captured source line, `error` raises a `CompilerError` carrying position
+and filename. Diagnostics carry the position threaded through the bare
+capture.
+
+
+### bare forms: return, continue, break, raise, yield
+
+**Behaviour:** `extend-syntax … bare-syntax` blocks give each statement
+word a bare form expanding through the gate, so the lone symbol becomes
+its call form — `raise` alone is Python's re-raise spelling. The
+deliberate cost: these five names always expand and can never name a
+variable.
+
+**Tests:** `tests/importer/test_bare_syntax.py`,
+`tests/importer/test_active_pragma.py`
 
 
 ## koskari/bootstrap/basics.ki

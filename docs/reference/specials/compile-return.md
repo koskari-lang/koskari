@@ -10,10 +10,13 @@
 | `(return VAL ...)`  | returns a `tuple` of the values                  |
 | `(return K: V ...)` | returns a `values` object over the keyword pairs |
 
-**Note:** `return` is only valid as a **call**. A bare `return` symbol (as in
-`unless ok: return`) is not a value binding; it reads and compiles cleanly but
-raises `NameError: Empty reference: return` the moment that branch runs. Always
-write `(return)` (or `(return value)`).
+**Bare form:** the lone symbol `return` (as in `unless ok: return`) expands to
+`(return)`, so the Python-style spelling returns `None` from the current
+function. The expansion is governed by the
+[`compiler/bare-control-words`](../concepts/pragma.md#compiler) pragma of the
+module being compiled: `convert` (the default) expands silently, `warn` expands
+with a `SyntaxWarning`, and `error` refuses at compile time. Because the bare
+symbol always expands, `return` can never name a variable.
 
 **Use-case:** Return from the current function and transfer control back to the
 caller. `return` is variadic. With no argument it returns `None`; with one it

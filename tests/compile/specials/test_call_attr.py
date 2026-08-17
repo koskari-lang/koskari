@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for compile/call-attr special form. Emits CALL_ATTR for positional-only,
+Tests for call-attr special form. Emits CALL_ATTR for positional-only,
 CALL_ATTR_NAMES for keyword args, CALL_ATTR_STAR for *args/**kwargs when the
 receiver is compiled as an expression. When the receiver is a bare symbol that
 is a fast local (e.g. lambda formal), the compiler emits CALL_VAR_ATTR* first,
@@ -70,12 +70,12 @@ def call_attr_family_ops(code):
 
 class TestCallAttrBytecodeShape(SpecialsTestCase):
     """
-    compile/call-attr emits correct opcodes for positional, keyword, star
+    call-attr emits correct opcodes for positional, keyword, star
     """
 
     async def test_positional_zero_args_emits_call_attr(self):
         code = self.compile_to_code(
-            "(lambda [] (compile/call-attr s upper))", s="hello")
+            "(lambda [] (call-attr s upper))", s="hello")
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
@@ -88,7 +88,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
 
     async def test_positional_one_arg_emits_call_attr(self):
         code = self.compile_to_code(
-            "(lambda [] (compile/call-attr s split sep))",
+            "(lambda [] (call-attr s split sep))",
             s="a-b-c", sep="-")
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
@@ -102,7 +102,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
 
     async def test_positional_three_args_emits_call_attr(self):
         code = self.compile_to_code(
-            "(lambda [] (compile/call-attr s replace a b))",
+            "(lambda [] (call-attr s replace a b))",
             s="hello", a="l", b="L")
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
@@ -116,7 +116,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
 
     async def test_keyword_emits_call_attr_names(self):
         code = self.compile_to_code(
-            "(lambda [] (compile/call-attr obj m 1 name: 2))",
+            "(lambda [] (call-attr obj m 1 name: 2))",
             obj=object(), m=lambda self, x, name=0: (x, name))
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
@@ -131,7 +131,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
 
     async def test_star_arg_emits_call_attr_star(self):
         code = self.compile_to_code(
-            "(lambda [] (compile/call-attr obj m *: rest))",
+            "(lambda [] (call-attr obj m *: rest))",
             obj=object(), m=lambda *a: a, rest=(1, 2, 3))
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
@@ -144,7 +144,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
 
     async def test_starstar_arg_emits_call_attr_star(self):
         code = self.compile_to_code(
-            "(lambda [] (compile/call-attr obj m **: kw))",
+            "(lambda [] (call-attr obj m **: kw))",
             obj=object(), m=lambda **kw: kw, kw={'x': 1})
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
@@ -157,7 +157,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
 
     async def test_positional_uses_call_attr_not_call_attr_names(self):
         code = self.compile_to_code(
-            "(lambda [] (compile/call-attr s upper))", s="x")
+            "(lambda [] (call-attr s upper))", s="x")
         body = self.lambda_body_code(code)
         all_ops = [body.oparg(i)[0] for i in range(body.length())]
         self.assertIn(OpCode.CALL_FAST_ATTR, all_ops)
@@ -169,17 +169,17 @@ class TestCallAttrNameMustBeSymbol(SpecialsTestCase):
 
     async def test_non_symbol_name_raises_syntax_match_error(self):
         with self.assertRaises(SyntaxMatchError):
-            self.compile_expr("(compile/call-attr obj 42)", obj="hello")
+            self.compile_expr("(call-attr obj 42)", obj="hello")
 
 
 class TestCallAttrEndToEnd(SpecialsTestCase):
     """
-    Compiled (compile/call-attr obj name args...) runs and invokes method
+    Compiled (call-attr obj name args...) runs and invokes method
     """
 
     async def test_zero_args_str_upper(self):
         s = "hello"
-        expr, mod = self.compile_expr("(compile/call-attr s upper)", s=s)
+        expr, mod = self.compile_expr("(call-attr s upper)", s=s)
         result = await expr()
         self.assertEqual(result, "HELLO")
 
@@ -188,7 +188,7 @@ class TestCallAttrEndToEnd(SpecialsTestCase):
         s = "a-b-c"
         sep = "-"
         expr, mod = self.compile_expr(
-            "(compile/call-attr s split sep)", s=s, sep=sep)
+            "(call-attr s split sep)", s=s, sep=sep)
         result = await expr()
         self.assertEqual(result, ["a", "b", "c"])
 
@@ -196,7 +196,7 @@ class TestCallAttrEndToEnd(SpecialsTestCase):
     async def test_two_args_str_replace(self):
         s = "hello"
         expr, mod = self.compile_expr(
-            "(compile/call-attr s replace \"l\" \"L\")", s=s)
+            "(call-attr s replace \"l\" \"L\")", s=s)
         result = await expr()
         self.assertEqual(result, "heLLo")
 
@@ -210,7 +210,7 @@ class TestCallAttrEndToEnd(SpecialsTestCase):
 
         obj = type('Obj', (), {'m': recorder})()
         expr, mod = self.compile_expr(
-            "(compile/call-attr obj m 99 name: 42)", obj=obj)
+            "(call-attr obj m 99 name: 42)", obj=obj)
         await expr()
         self.assertEqual(received, [(99, 42)])
 
@@ -219,7 +219,7 @@ class TestCallAttrEndToEnd(SpecialsTestCase):
         sep = ", "
         rest = (["a", "b", "c"],)
         expr, mod = self.compile_expr(
-            "(compile/call-attr sep join *: rest)",
+            "(call-attr sep join *: rest)",
             sep=sep, rest=rest)
         result = await expr()
         self.assertEqual(result, "a, b, c")
@@ -232,7 +232,7 @@ class TestCallAttrEndToEnd(SpecialsTestCase):
         obj = type('Obj', (), {'m': m})()
         kwargs = {'x': 1, 'y': 2}
         expr, mod = self.compile_expr(
-            "(compile/call-attr obj m **: kwargs)",
+            "(call-attr obj m **: kwargs)",
             obj=obj, kwargs=kwargs)
         result = await expr()
         self.assertEqual(result, {'x': 1, 'y': 2})
@@ -240,13 +240,13 @@ class TestCallAttrEndToEnd(SpecialsTestCase):
 
 class TestCallAttrExpansion(SpecialsTestCase):
     """
-    (compile/call (attr obj name) args) and (compile/call (compile/attr obj name) args)
-    expand to (compile/call-attr obj name args) and emit CALL_ATTR
+    (call (attr obj name) args) and (call (attr obj name) args)
+    expand to (call-attr obj name args) and emit CALL_ATTR
     """
 
     async def test_compile_call_compile_attr_emits_call_attr(self):
         code = self.compile_to_code(
-            "(lambda [] (compile/call (compile/attr s upper)))", s="hello")
+            "(lambda [] (call (attr s upper)))", s="hello")
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
@@ -259,7 +259,7 @@ class TestCallAttrExpansion(SpecialsTestCase):
 
     async def test_compile_call_attr_emits_call_attr(self):
         code = self.compile_to_code(
-            "(lambda [] (compile/call (attr obj m) 1 2))",
+            "(lambda [] (call (attr obj m) 1 2))",
             obj=object(), m=lambda self, a, b: (a, b))
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
@@ -274,7 +274,7 @@ class TestCallAttrExpansion(SpecialsTestCase):
     async def test_compile_call_compile_attr_end_to_end(self):
         s = "hello"
         expr, mod = self.compile_expr(
-            "(compile/call (compile/attr s upper))", s=s)
+            "(call (attr s upper))", s=s)
         result = await expr()
         self.assertEqual(result, "HELLO")
 
@@ -282,7 +282,7 @@ class TestCallAttrExpansion(SpecialsTestCase):
     async def test_compile_call_attr_end_to_end(self):
         obj = type('Obj', (), {'m': lambda self, a, b: a + b})()
         expr, mod = self.compile_expr(
-            "(compile/call (attr obj m) 10 32)", obj=obj)
+            "(call (attr obj m) 10 32)", obj=obj)
         result = await expr()
         self.assertEqual(result, 42)
 
@@ -294,13 +294,13 @@ class TestCallAttrLocalReceiverLowersToFast(SpecialsTestCase):
 
     The call form must not be the lambda body's tail expression: the body is
     compiled with tail-call tracking, which forces the stack path for
-    compile/call-attr. Wrap in begin with a trailing value so the attr call is
+    call-attr. Wrap in begin with a trailing value so the attr call is
     compiled with tc=False and the VAR path (then convert_fast) applies.
     """
 
     async def test_local_receiver_positional_emits_call_fast_attr(self):
         code = self.compile_to_code(
-            "(lambda [obj] (begin (compile/call-attr obj upper) 0))")
+            "(lambda [obj] (begin (call-attr obj upper) 0))")
         body = self.lambda_body_code(code)
         ops = call_attr_family_ops(body)
         self.assertEqual(len(ops), 1)
@@ -314,7 +314,7 @@ class TestCallAttrLocalReceiverLowersToFast(SpecialsTestCase):
 
     async def test_local_receiver_via_compile_call_attr_emits_call_fast_attr(self):
         code = self.compile_to_code(
-            "(lambda [obj] (begin (compile/call (attr obj m) 1 2) 0))",
+            "(lambda [obj] (begin (call (attr obj m) 1 2) 0))",
             m=lambda self, a, b: (a, b))
         body = self.lambda_body_code(code)
         ops = call_attr_family_ops(body)
@@ -329,7 +329,7 @@ class TestCallAttrLocalReceiverLowersToFast(SpecialsTestCase):
 
     async def test_local_receiver_keyword_emits_call_fast_attr_names(self):
         code = self.compile_to_code(
-            "(lambda [obj] (begin (compile/call-attr obj m 1 name: 2) 0))",
+            "(lambda [obj] (begin (call-attr obj m 1 name: 2) 0))",
             m=lambda self, x, name=0: (x, name))
         body = self.lambda_body_code(code)
         ops = call_attr_family_ops(body)
@@ -345,7 +345,7 @@ class TestCallAttrLocalReceiverLowersToFast(SpecialsTestCase):
 
     async def test_local_receiver_starstar_emits_call_fast_attr_star(self):
         code = self.compile_to_code(
-            "(lambda [obj] (begin (compile/call-attr obj m **: kw) 0))",
+            "(lambda [obj] (begin (call-attr obj m **: kw) 0))",
             m=lambda self, **kw: kw,
             kw={'x': 1})
         body = self.lambda_body_code(code)

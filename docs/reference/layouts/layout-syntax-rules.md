@@ -41,12 +41,12 @@ syntax-rules [x]:
     (print "one arg" x y)
     (+ x y)
 ;; → (syntax-rules (x)
-;;     ((do-something-with-x) (compile/begin (print "no args" x) x))
-;;     ((do-something-with-x y) (compile/begin (print "one arg" x y) (+ x y))))
+;;     ((do-something-with-x) (begin (print "no args" x) x))
+;;     ((do-something-with-x y) (begin (print "one arg" x y) (+ x y))))
 
 syntax-rules [item]:
   case (ref (item obj name)):
-    (compile/ref-item obj name)
+    (ref-item obj name)
 ;; → same as ref (item obj name): ...
 ```
 

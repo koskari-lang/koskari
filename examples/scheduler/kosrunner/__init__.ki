@@ -12,27 +12,27 @@
 ; along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 
-import-from .job Config Job JobSet require-extra watch-task
-import-from .subitems:
-    jobset job config handler on-error allow with-subitems layout/config
-    config/logging configure-logging reqenv
-import-from .access:
-    AccessConfig Group group config/access resolve-identity resolve-level
-    groups-of operator? may-trigger? trigger-allowed?
-    require-operator! require-trigger!
-import-from .server:
-    HttpServer get-server normalize-prefix ServerConfig stop-all-servers
-import-from .store:
-    StorageConfig RunStore config/storage resolve-storage-root safe-segment
-    mnemonic clean-mnemonic
-import-from .memwatch vmrss memory-census memory-report
-import-from .fake FakeConfig FakeJob config/fake job/fake
-import-from .cron CronConfig CronJob config/cron job/cron
-import-from .kafka KafkaConfig KafkaJob config/kafka job/kafka
-import-from .umb UmbConfig UmbJob config/umb job/umb
-import-from .webhook WebhookConfig WebhookJob config/webhook job/webhook
-import-from .admin AdminConfig AdminJob config/admin job/admin
-import-from .ui UiConfig UiJob config/ui job/ui
+(use .job Config Job JobSet require-extra watch-task)
+(use .subitems
+     jobset job config handler on-error allow with-subitems layout/config
+     config/logging configure-logging reqenv)
+(use .access
+     AccessConfig Group group config/access resolve-identity resolve-level
+     groups-of operator? may-trigger? trigger-allowed?
+     require-operator! require-trigger!)
+(use .server
+     HttpServer get-server normalize-prefix ServerConfig stop-all-servers)
+(use .store
+     StorageConfig RunStore config/storage resolve-storage-root safe-segment
+     mnemonic clean-mnemonic)
+(use .memwatch vmrss memory-census memory-report)
+(use .fake FakeConfig FakeJob config/fake job/fake)
+(use .cron CronConfig CronJob config/cron job/cron)
+(use .kafka KafkaConfig KafkaJob config/kafka job/kafka)
+(use .umb UmbConfig UmbJob config/umb job/umb)
+(use .webhook WebhookConfig WebhookJob config/webhook job/webhook)
+(use .admin AdminConfig AdminJob config/admin job/admin)
+(use .ui UiConfig UiJob config/ui job/ui)
 
 
 declare-exports [

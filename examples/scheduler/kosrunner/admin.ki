@@ -14,9 +14,9 @@
 
 import logging
 
-import-from .access require-operator! require-trigger!
-import-from .job Job
-import-from .server get-server normalize-prefix ServerConfig
+(use .access require-operator! require-trigger!)
+(use .job Job)
+(use .server get-server normalize-prefix ServerConfig)
 
 
 define logger (logging.getLogger "kosrunner.admin")

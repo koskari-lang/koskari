@@ -27,7 +27,7 @@ from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
 from ...matcher import BIND, CALLEDBY, LIST, LITERAL, MATCH, SYMBOL
 from ...bootstrap import builtin
-from ...types import is_nil, get_position, unpack
+from ...types import is_nil, is_pair, get_position, unpack
 from .helpers import block_source_from_cons, layout, match_block_source
 
 
@@ -46,8 +46,14 @@ _MATCH_HEAD_PATTERNS = [
     MATCH(LIST(CALLEDBY())),
 ]
 
+_BARE_HEAD_PATTERNS = [
+    MATCH(LIST(CALLEDBY(), SYMBOL("name"), SYMBOL("slot"))),
+    MATCH(LIST(CALLEDBY(), SYMBOL("slot"))),
+]
 
-_symbol_compile_begin = symbol('compile/begin')
+
+_symbol_begin = symbol('begin')
+_symbol_bare_syntax = symbol('bare-syntax')
 _symbol_syntax_rules = symbol('syntax-rules')
 _symbol_macro_rules = symbol('macro-rules')
 _symbol_special_rules = symbol('special-rules')
@@ -100,7 +106,12 @@ def _rule_row(ns, rule_source, layout_body=False):
     if layout_body:
         from . import apply_layouts
         body = apply_layouts(body, ns)
-    template = cons(_symbol_compile_begin, body)
+    if not is_nil(body) and is_pair(body) and is_nil(body.cdr):
+        # a single-form body is its own template; the begin wrapper is
+        # only for sequencing
+        template = body.car
+    else:
+        template = cons(_symbol_begin, body)
     return cons(pattern, template, nil)
 
 
@@ -185,6 +196,49 @@ def layout_syntax_rules(ns, source, peers):
     return _lower_rules(
         ns, source, peers, _symbol_syntax_rules,
         _RULES_HEAD_PATTERNS, True)
+
+
+@builtin('layout/bare-syntax')
+@layout(symbol('layout/bare-syntax'), raw=True)
+def layout_bare_syntax(ns, source, peers):
+    """
+    Lower bare-syntax block to ``(bare-syntax SLOT TMPL)``, or with a
+    leading name in the header, ``(bare-syntax NAME SLOT TMPL)``; a
+    multi-form template body is wrapped in ``begin``.
+
+    The header names the called-by slot; the body is the template, left
+    unexpanded like a syntax-rules template.
+    """
+
+    if peers:
+        raise LayoutError(
+            'bare-syntax block does not take peers',
+            get_position(source))
+
+    header, body = source
+
+    head_m = match1(header, _BARE_HEAD_PATTERNS)
+    if head_m is None:
+        raise LayoutError(
+            'bare-syntax requires a called-by symbol',
+            get_position(source))
+
+    if is_nil(body):
+        raise LayoutError(
+            'bare-syntax requires a template',
+            get_position(source))
+
+    if not is_nil(body) and is_pair(body) and is_nil(body.cdr):
+        template = body.car
+    else:
+        template = cons(_symbol_begin, body)
+    ret = cons(template, nil)
+    ret = cons(head_m['slot'].datum, ret)
+
+    if 'name' in head_m:
+        ret = cons(head_m['name'].datum, ret)
+
+    return cons(_symbol_bare_syntax, ret)
 
 
 @builtin('layout/macro-rules')

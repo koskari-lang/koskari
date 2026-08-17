@@ -10,7 +10,7 @@ Motivation and the "when does a format earn a fence" framing are in
 A triple-backtick fence is read into a `compile/apply-fence` form:
 
 ```
-(compile/apply-fence NAME RAW META)
+(apply-fence NAME RAW META)
 ```
 
 `NAME` is the fence format, `RAW` is the captured body text, and `META` is a

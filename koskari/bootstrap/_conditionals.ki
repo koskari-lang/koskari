@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-define-syntax compile/if:
+define-syntax if:
   """
   Evaluates the `then` body only when the `condition` is truthy.
   Evaluates the `else` body otherwise, or `None` if not provided.
@@ -25,20 +25,20 @@ define-syntax compile/if:
 
   syntax-rules []:
     case (if condition then: then else: else):
-      (compile/cond
+      (cond
         [condition then]
         [else: else])
     case (if condition then else):
-      (compile/cond
+      (cond
         [condition then]
         [else: else])
     case (if condition then):
-      (compile/cond
+      (cond
         [condition then]
         [else: None])
 
 
-define-syntax compile/when:
+define-syntax when:
   """
   Evaluates the body only when the condition is true
   Evaluates as None otherwise.
@@ -46,12 +46,12 @@ define-syntax compile/when:
 
   syntax-rules []:
     case (when condition then ...):
-      (compile/cond
+      (cond
         [condition then ...]
         [else: None])
 
 
-define-syntax compile/unless:
+define-syntax unless:
   """
   Evaluates the body only when the condition is false.
   Evaluates as None otherwise.
@@ -59,36 +59,36 @@ define-syntax compile/unless:
 
   syntax-rules []:
     case (unless condition then ...):
-      (compile/cond
+      (cond
         [condition None]
         [else: then ...])
 
 
-define-syntax compile/?:
+define-syntax ?:
   syntax-rules []:
     case (? condition then else):
-      (compile/cond
+      (cond
         [condition then]
         [else: else])
     case (? condition then):
-      (compile/cond
+      (cond
         [condition then]
         [else: False])
     case (? condition):
-      (compile/truth condition)
+      (truth condition)
 
 
-define-syntax compile/bool:
+define-syntax bool:
   """
   Compile-time object truthiness as a boolean.
   """
 
   syntax-rules []:
     case (bool value):
-      (compile/truth value)
+      (truth value)
 
 
-define-syntax compile/when-main:
+define-syntax when-main:
   """
   Evaluates the body only when the current module's name is "__main__"
   """
@@ -99,14 +99,14 @@ define-syntax compile/when-main:
         (begin body ...)
 
 
-define-syntax compile/None?:
+define-syntax None?:
   """
   Identity predicate for the None singleton
   """
 
   syntax-rules []:
     case (None? value):
-      (compile/is value None)
+      (is value None)
 
 
 ;; nil? is compiled by the compile/nil? special (koskari.compile.specials.

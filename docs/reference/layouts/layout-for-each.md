@@ -40,10 +40,10 @@ while x:
 ;; → (while x y)
 
 for-each [i items]:
-  (compile/call append result i)
+  (call append result i)
 else:
   "finished"
-;; → (for-each [i items] (compile/call append result i) (else: "finished"))
+;; → (for-each [i items] (call append result i) (else: "finished"))
 ```
 
 **Implementation:** `koskari/reader/layouts/loops.layout_loop` (registered as

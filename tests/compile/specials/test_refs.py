@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/deref, compile/ref-attr, compile/ref-item,
-compile/refq, and compile/bindq special forms.
+Tests for koskari.compile deref, ref-attr, ref-item,
+refq, and bindq special forms.
 """
 
 
@@ -32,9 +32,9 @@ class TestDerefSpecial(SpecialsTestCase):
 
     async def test_deref_emits_deref_opcode(self):
         src_str = """
-        (compile/let [[x 42]]
-          (compile/let [[r (compile/refq x)]]
-            (compile/deref r)))
+        (let [[x 42]]
+          (let [[r (refq x)]]
+            (deref r)))
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -43,9 +43,9 @@ class TestDerefSpecial(SpecialsTestCase):
 
     async def test_deref_uses_deref_opcode(self):
         code = self.compile_to_code("""
-        (compile/let [[x 1]]
-          (compile/let [[r (compile/refq x)]]
-            (compile/deref r)))
+        (let [[x 1]]
+          (let [[r (refq x)]]
+            (deref r)))
         """)
         ops = [code.oparg(i)[0] for i in range(code.length())]
         self.assertIn(OpCode.DEREF, ops)
@@ -53,9 +53,9 @@ class TestDerefSpecial(SpecialsTestCase):
 
     async def test_deref_call_for_higher_order(self):
         src_str = """
-        (compile/let [[a 1] [b 2]]
-          (compile/let [[ra (compile/refq a)] [rb (compile/refq b)]]
-            (compile/call deref ra)))
+        (let [[a 1] [b 2]]
+          (let [[ra (refq a)] [rb (refq b)]]
+            (call deref ra)))
         """
         expr, mod = self.compile_expr(src_str, deref=deref)
         result = await expr()
@@ -70,7 +70,7 @@ class TestRefAttrSpecial(SpecialsTestCase):
 
         obj = SimpleNamespace(count=5)
         src_str = """
-        (compile/call deref (compile/ref-attr obj count))
+        (call deref (ref-attr obj count))
         """
         expr, mod = self.compile_expr(src_str, obj=obj, deref=deref)
         result = await expr()
@@ -85,7 +85,7 @@ class TestRefItemSpecial(SpecialsTestCase):
 
         d = {"k": "v"}
         src_str = """
-        (compile/call deref (compile/ref-item d "k"))
+        (call deref (ref-item d "k"))
         """
         expr, mod = self.compile_expr(src_str, d=d, deref=deref)
         result = await expr()
@@ -99,8 +99,8 @@ class TestRefqSpecial(SpecialsTestCase):
             return r.deref()
 
         src_str = """
-        (compile/let [[x 10]]
-          (compile/call deref (compile/refq x)))
+        (let [[x 10]]
+          (call deref (refq x)))
         """
         expr, mod = self.compile_expr(src_str, deref=deref)
         result = await expr()
@@ -111,8 +111,8 @@ class TestBindqSpecial(SpecialsTestCase):
 
     async def test_bindq_then_read(self):
         src_str = """
-        (compile/begin
-          (compile/bindq y (compile/ref-attr obj value))
+        (begin
+          (bindq y (ref-attr obj value))
           y)
         """
         obj = SimpleNamespace(value=99)

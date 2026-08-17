@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/reset and compile/shift special forms.
+Tests for koskari.compile reset and shift special forms.
 
 reset establishes a prompt; shift captures the continuation and runs a
 handler. Mirrors the semantics in design/language/control-flow.md.
@@ -35,12 +35,12 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_reset_shift_invoke(self):
         """
-        (compile/reset (+ 1 (compile/shift k (compile/call k 5)))) => 6
+        (reset (+ 1 (shift k (call k 5)))) => 6
         """
 
         add_fn = lambda a, b: a + b
         src_str = """
-        (compile/reset (+ 1 (compile/shift k (compile/call k 5))))
+        (reset (+ 1 (shift k (call k 5))))
         """
         expr, mod = self.compile_expr(src_str, **{'+': add_fn})
         result = await expr()
@@ -49,11 +49,11 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_reset_shift_return_cont(self):
         """
-        (compile/reset (compile/shift k k)) => continuation
+        (reset (shift k k)) => continuation
         """
 
         src_str = """
-        (compile/reset (compile/shift k k))
+        (reset (shift k k))
         """
         expr, mod = self.compile_expr(src_str)
         cont = await expr()
@@ -67,9 +67,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/begin
-          (compile/setq k (compile/reset (compile/shift k k)))
-          (compile/call k 42))
+        (begin
+          (setq k (reset (shift k k)))
+          (call k 42))
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -86,9 +86,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return a + ParamRef('amt', 0).deref()
 
         src_str = """
-        (compile/parameterize [[amt 100]]
-          (compile/reset
-            (add (compile/shift k (compile/call k 10)))))
+        (parameterize [[amt 100]]
+          (reset
+            (add (shift k (call k 10)))))
         """
 
         expr, mod = self.compile_expr(src_str, add=add)
@@ -107,10 +107,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return a + ParamRef('amt', 0).deref()
 
         src_str = """
-        (compile/let [[stolen 0]]
-          (compile/parameterize [[amt 100]]
-            (compile/reset
-              (add (compile/shift k (compile/setq stolen k) (compile/call k 10))))))
+        (let [[stolen 0]]
+          (parameterize [[amt 100]]
+            (reset
+              (add (shift k (setq stolen k) (call k 10))))))
         """
 
         expr, mod = self.compile_expr(src_str, add=add)
@@ -129,9 +129,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return a + b
 
         src_str = """
-        (compile/let [[stolen 0]]
-          (compile/reset
-            (add 1 (compile/shift k (compile/setq stolen k) (compile/call k 10)))))
+        (let [[stolen 0]]
+          (reset
+            (add 1 (shift k (setq stolen k) (call k 10)))))
         """
 
         expr, mod = self.compile_expr(src_str, add=add)
@@ -161,15 +161,15 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return a + ParamRef('amt', 0).deref()
 
         src_str = """
-        (compile/parameterize [[amt 100]]
-          (compile/let [[stolen 0]]
-            (compile/call seq None
-              (compile/call add 1)
-              (compile/reset
-                (compile/call add (compile/shift k (compile/setq stolen k) (compile/call k 10))))
-              (compile/parameterize [[amt 200]]
-                (compile/call stolen 9))
-              (compile/call add 2)
+        (parameterize [[amt 100]]
+          (let [[stolen 0]]
+            (call seq None
+              (call add 1)
+              (reset
+                (call add (shift k (setq stolen k) (call k 10))))
+              (parameterize [[amt 200]]
+                (call stolen 9))
+              (call add 2)
             )))
         """
 
@@ -190,10 +190,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/reset
-          (compile/dyn-wind
-            (compile/begin)
-            (compile/shift k k)
+        (reset
+          (dyn-wind
+            (begin)
+            (shift k k)
             nil))
         """
         expr, mod = self.compile_expr(src_str)
@@ -209,15 +209,15 @@ class TestResetShiftSpecials(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/let [[captured nil]]
-          (compile/begin
-            (compile/setq captured
-              (compile/reset
-                (compile/dyn-wind
-                  (compile/begin)
-                  (compile/shift k k)
+        (let [[captured nil]]
+          (begin
+            (setq captured
+              (reset
+                (dyn-wind
+                  (begin)
+                  (shift k k)
                   nil)))
-            (compile/call captured 5)))
+            (call captured 5)))
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -232,10 +232,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/reset
-          (compile/dyn-wind
-            (compile/begin)
-            (compile/shift k (compile/call k 5))
+        (reset
+          (dyn-wind
+            (begin)
+            (shift k (call k 5))
             nil))
         """
         expr, mod = self.compile_expr(src_str)
@@ -264,10 +264,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return None
 
         src_str = """
-        (compile/reset
-          (compile/dyn-wind
+        (reset
+          (dyn-wind
             (rec "before")
-            (compile/shift k (compile/call k 5))
+            (shift k (call k 5))
             (rec "after")))
         """
         expr, mod = self.compile_expr(src_str, rec=rec)
@@ -291,15 +291,15 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return None
 
         src_str = """
-        (compile/let [[captured nil]]
-          (compile/begin
-            (compile/setq captured
-              (compile/reset
-                (compile/dyn-wind
+        (let [[captured nil]]
+          (begin
+            (setq captured
+              (reset
+                (dyn-wind
                   (rec "before")
-                  (compile/shift k k)
+                  (shift k k)
                   (rec "after"))))
-            (compile/call captured 5)))
+            (call captured 5)))
         """
         expr, mod = self.compile_expr(src_str, rec=rec)
         result = await expr()
@@ -320,15 +320,15 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return a + ParamRef('amt', 0).deref()
 
         src_str = """
-        (compile/let [[captured nil]]
-          (compile/begin
-            (compile/parameterize [[amt 100]]
-              (compile/setq captured
-                (compile/call
-                  (compile/lambda []
-                    (compile/reset (add (compile/shift k k)))))))
-            (compile/parameterize [[amt 200]]
-              (compile/call captured 7))))
+        (let [[captured nil]]
+          (begin
+            (parameterize [[amt 100]]
+              (setq captured
+                (call
+                  (lambda []
+                    (reset (add (shift k k)))))))
+            (parameterize [[amt 200]]
+              (call captured 7))))
         """
         expr, mod = self.compile_expr(src_str, add=add)
         result = await expr()
@@ -352,11 +352,11 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return None
 
         src_str = """
-        (compile/reset
-          (compile/dyn-wind
+        (reset
+          (dyn-wind
             (rec "before")
-            (compile/shift k
-              (compile/call (compile/lambda [f] (compile/call f 5)) k))
+            (shift k
+              (call (lambda [f] (call f 5)) k))
             (rec "after")))
         """
         expr, mod = self.compile_expr(src_str, rec=rec)
@@ -383,11 +383,11 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return a + b
 
         src_str = """
-        (compile/reset
-          (compile/dyn-wind
+        (reset
+          (dyn-wind
             (rec "before")
-            (compile/shift k
-              (add (compile/call k 3) (compile/call k 4)))
+            (shift k
+              (add (call k 3) (call k 4)))
             (rec "after")))
         """
         expr, mod = self.compile_expr(src_str, rec=rec, add=add)
@@ -418,17 +418,17 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return n + 1
 
         src_str = """
-        (compile/begin
-          (compile/setq g nil)
-          (compile/reset
-            (compile/begin
-              (compile/setq n
-                (compile/shift k
-                  (compile/begin
-                    (compile/setq g k)
-                    (compile/call k 0))))
-              (compile/cond
-                [(lt n 3) (compile/call g (inc n))]
+        (begin
+          (setq g nil)
+          (reset
+            (begin
+              (setq n
+                (shift k
+                  (begin
+                    (setq g k)
+                    (call k 0))))
+              (cond
+                [(lt n 3) (call g (inc n))]
                 [else: n]))))
         """
         expr, mod = self.compile_expr(src_str, lt=lt, inc=inc)
@@ -441,18 +441,18 @@ class TestResetShiftSpecials(SpecialsTestCase):
         """
         An exception raised inside an in-place (Path A) slice restitches the
         invoke span and propagates to the invoke call site, where the
-        enclosing compile/try in the shift body catches it.
+        enclosing try in the shift body catches it.
         """
 
         def boom(v):
             raise ValueError("slice-boom")
 
         src_str = """
-        (compile/reset
+        (reset
           (boom
-            (compile/shift k
-              (compile/try
-                (compile/call k 5)
+            (shift k
+              (try
+                (call k 5)
                 ([ValueError] "caught")))))
         """
         expr, mod = self.compile_expr(
@@ -481,13 +481,13 @@ class TestResetShiftSpecials(SpecialsTestCase):
             raise ValueError("slice-boom")
 
         src_str = """
-        (compile/reset
-          (compile/dyn-wind
+        (reset
+          (dyn-wind
             (rec "before")
             (boom
-              (compile/shift k
-                (compile/try
-                  (compile/call k 5)
+              (shift k
+                (try
+                  (call k 5)
                   ([ValueError] "caught"))))
             (rec "after")))
         """
@@ -502,7 +502,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         """
         KNOWN DEFECT (intentionally red): an exception raised by the
         continuation slice during a remote invoke must route to the invoke
-        call site, where the enclosing compile/try catches it and this test
+        call site, where the enclosing try catches it and this test
         returns "caught". Today it escapes the evaluator as a raw Python
         exception - the RAISE walk from the grafted segment never reaches
         the live handlers below the DELIM bookmark.
@@ -512,12 +512,12 @@ class TestResetShiftSpecials(SpecialsTestCase):
             raise ValueError("slice-boom")
 
         src_str = """
-        (compile/let [[captured nil]]
-          (compile/begin
-            (compile/setq captured
-              (compile/reset (boom (compile/shift k k))))
-            (compile/try
-              (compile/call captured 5)
+        (let [[captured nil]]
+          (begin
+            (setq captured
+              (reset (boom (shift k k))))
+            (try
+              (call captured 5)
               ([ValueError] "caught"))))
         """
         expr, mod = self.compile_expr(
@@ -528,7 +528,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_remote_invoke_with_enter_exit_count(self):
         """
-        KNOWN DEFECT (intentionally red): compile/with wrapping shift under
+        KNOWN DEFECT (intentionally red): with wrapping shift under
         a remote invoke must see a single [enter, exit] lifecycle on the
         manager. Today __exit__ runs twice - once at POP_SHIFT truncation
         during capture, once more when the grafted clone's WITH unwinds on
@@ -548,13 +548,13 @@ class TestResetShiftSpecials(SpecialsTestCase):
                 return False
 
         src_str = """
-        (compile/let [[captured nil]]
-          (compile/begin
-            (compile/setq captured
-              (compile/reset
-                (compile/with [(compile/call make_mgr)]
-                  (compile/shift k k))))
-            (compile/call captured 5)))
+        (let [[captured nil]]
+          (begin
+            (setq captured
+              (reset
+                (with [(call make_mgr)]
+                  (shift k k))))
+            (call captured 5)))
         """
         expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
         result = await expr()
@@ -571,7 +571,7 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/shift k (compile/call k 1))
+        (shift k (call k 1))
         """
         expr, mod = self.compile_expr(src_str)
         with self.assertRaises(KoskariPromptNotFound) as caught:
@@ -587,12 +587,12 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         """
 
         src_str = """
-        (compile/reset
-          (compile/begin
-            (compile/setq g
-              (compile/call
-                (compile/lambda [] (compile/yield (compile/shift k 1)))))
-            (compile/next g)))
+        (reset
+          (begin
+            (setq g
+              (call
+                (lambda [] (yield (shift k 1)))))
+            (next g)))
         """
         expr, mod = self.compile_expr(src_str)
         with self.assertRaises(KoskariPromptUnreachable) as caught:

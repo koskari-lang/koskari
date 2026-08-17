@@ -29,14 +29,14 @@ pytestmark = pytest.mark.phase_specials
 class TestSwitchSpecial(SpecialsTestCase):
 
     async def test_switch_no_clauses(self):
-        src_str = "(compile/switch 5)"
+        src_str = "(switch 5)"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, None)
 
 
     async def test_switch_else_only(self):
-        src_str = "(compile/switch 5 [else: 100])"
+        src_str = "(switch 5 [else: 100])"
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, 100)
@@ -44,7 +44,7 @@ class TestSwitchSpecial(SpecialsTestCase):
 
     async def test_switch_first_match(self):
         src_str = """
-        (compile/switch 5
+        (switch 5
           [[1] "one"]
           [[2] "two"]
           [[5] "five"]
@@ -57,7 +57,7 @@ class TestSwitchSpecial(SpecialsTestCase):
 
     async def test_switch_else_fallthrough(self):
         src_str = """
-        (compile/switch 5
+        (switch 5
           [[1] "one"]
           [[2] "two"]
           [else: "meh"])
@@ -69,7 +69,7 @@ class TestSwitchSpecial(SpecialsTestCase):
 
     async def test_switch_no_match_returns_none(self):
         src_str = """
-        (compile/switch 5
+        (switch 5
           [[1] "one"]
           [[2] "two"])
         """
@@ -86,7 +86,7 @@ class TestSwitchSpecial(SpecialsTestCase):
             return 5
 
         src_str = """
-        (compile/switch (compile/call get_val)
+        (switch (call get_val)
           [[1] "one"]
           [[2] "two"]
           [[3] "three"]
@@ -106,9 +106,9 @@ class TestSwitchSpecial(SpecialsTestCase):
             return val
 
         src_str = """
-        (compile/switch 1
-          [[(compile/call side 1)] "one"]
-          [[(compile/call side 2)] "two"]
+        (switch 1
+          [[(call side 1)] "one"]
+          [[(call side 2)] "two"]
           [else: "meh"])
         """
         expr, mod = self.compile_expr(src_str, side=side)
@@ -122,8 +122,8 @@ class TestSwitchSpecial(SpecialsTestCase):
             return a + b
 
         src_str = """
-        (compile/call add
-          (compile/switch 2 [[1] "one"] [[2] 100] [else: 0])
+        (call add
+          (switch 2 [[1] "one"] [[2] 100] [else: 0])
           100)
         """
         expr, mod = self.compile_expr(src_str, add=add)
@@ -133,7 +133,7 @@ class TestSwitchSpecial(SpecialsTestCase):
 
 class TestSwitchLayoutIntegration(SpecialsTestCase):
     """
-    End-to-end tests exercising layout/switch -> compile/switch through
+    End-to-end tests exercising layout/switch -> switch through
     the LayoutReader-driven compile_expr helper
     """
 

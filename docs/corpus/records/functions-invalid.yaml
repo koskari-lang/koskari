@@ -120,7 +120,7 @@ source: |-
   define x
       (+ 1 2)
 verify:
-  read: (compile/begin (define x) (+ 1 2))
+  read: (begin (define x) (+ 1 2))
 references:
   - reference/grammar.md
   - reference/concepts/layout-and-s-expressions.md
@@ -146,7 +146,7 @@ source: |-
   (loud?)
   
 verify:
-  read: (compile/begin (define-parameter verbose False) (compile/decorate ((parameterize [[verbose True]])) (define loud? [] verbose)) (loud?))
+  read: (begin (define-parameter verbose False) (decorate ((parameterize [[verbose True]])) (define loud? [] verbose)) (loud?))
   invalid: grafted @parameterize completes at definition time, so the parameter extent spans only the define itself and has already ended before any call; (loud?) reads verbose at call time and returns False, not True
 references:
   - reference/concepts/decorators.md
@@ -175,7 +175,7 @@ source: |-
   #[(tick) (tick)]
   
 verify:
-  read: "(compile/begin (define tick [] (define count 0) (incr! count) count) (#list (tick) (tick)))"
+  read: "(begin (define tick [] (define count 0) (incr! count) count) (#list (tick) (tick)))"
   invalid: "count is re-defined inside the body on every call, so the state never persists -- both calls return 1, giving list:[1,1] instead of list:[1,2]"
 references:
   - reference/specials/compile-define.md

@@ -26,6 +26,7 @@ from ..compiler import ByteCodeFragment, Compiler
 from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
 from ...syntax import special
+from ...types import get_position, is_nil, is_pair
 from ..helpers import helper_begin
 
 
@@ -40,8 +41,19 @@ def special_begin(
         tc: bool = False) -> ByteCodeFragment:
 
     called_by, body = source
+
+    if not is_nil(body) and is_pair(body) and is_nil(body.cdr):
+        # begin of a single form is that form: return it for
+        # recompilation, so wrappers (layout rule bodies especially)
+        # never obscure the form they hold -- a lowered head stays
+        # recognizable to call's patterns, and expansion output stays
+        # honest
+        return body.car
+
     fragment = compiler.fragment(called_by)
-    return helper_begin(fragment, body, tc)
+    # thread the form's own position to diagnostics about positionless
+    # atoms in the body
+    return helper_begin(fragment, body, tc, get_position(source))
 
 
 # The end.

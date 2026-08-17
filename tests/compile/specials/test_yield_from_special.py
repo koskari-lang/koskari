@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for compile/yield-from special and pairing with compile/for-each.
+Tests for yield-from special and pairing with for-each.
 
 The koslife-style reproducer compares iterating dict.items via a for-each
 that yields each pair against a single yield-from over the same items view.
@@ -62,7 +62,7 @@ async def _collect_async_pairs(agen):
 class TestCompileYieldFrom(SpecialsTestCase):
 
     async def test_yield_from_emits_opcode(self):
-        code = self.compile_to_code("(compile/yield-from (compile/quote 1))")
+        code = self.compile_to_code("(yield-from (quote 1))")
         ops = _opcodes(code)
         self.assertIn(OpCode.YIELD_FROM, ops)
         yf = ops.index(OpCode.YIELD_FROM)
@@ -72,7 +72,7 @@ class TestCompileYieldFrom(SpecialsTestCase):
 
 
     async def test_yield_from_arg_zero(self):
-        code = self.compile_to_code("(compile/yield-from (compile/quote x))")
+        code = self.compile_to_code("(yield-from (quote x))")
         pairs = _opcodes_with_arg(code)
         yf_idx = _opcodes(code).index(OpCode.YIELD_FROM)
         op, arg = pairs[yf_idx]
@@ -82,10 +82,10 @@ class TestCompileYieldFrom(SpecialsTestCase):
 
     async def test_yield_from_requires_one_arg(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/yield-from)")
+            self.compile_to_code("(yield-from)")
 
         with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/yield-from a b)")
+            self.compile_to_code("(yield-from a b)")
 
 
 class TestYieldFromWithForEach(SpecialsTestCase):
@@ -97,8 +97,8 @@ class TestYieldFromWithForEach(SpecialsTestCase):
         code = self.compile_to_code(
             """
             (lambda []
-              (compile/for-each [pair (compile/call dict_items d)]
-                (compile/yield pair)))
+              (for-each [pair (call dict_items d)]
+                (yield pair)))
             """,
             d={"u": 1, "v": 2},
             dict_items=lambda obj: obj.items(),
@@ -114,7 +114,7 @@ class TestYieldFromWithForEach(SpecialsTestCase):
         code = self.compile_to_code(
             """
             (lambda []
-              (compile/yield-from (compile/call dict_items d)))
+              (yield-from (call dict_items d)))
             """,
             d={"u": 1, "v": 2},
             dict_items=lambda obj: obj.items(),
@@ -138,12 +138,12 @@ class TestYieldFromWithForEach(SpecialsTestCase):
 
         src_foreach = """
         (lambda []
-          (compile/for-each [pair (compile/call dict_items d)]
-            (compile/yield pair)))
+          (for-each [pair (call dict_items d)]
+            (yield pair)))
         """
         src_yield_from = """
         (lambda []
-          (compile/yield-from (compile/call dict_items d)))
+          (yield-from (call dict_items d)))
         """
 
         defns = {"d": data, "dict_items": dict_items}

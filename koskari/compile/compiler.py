@@ -29,12 +29,13 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..lib import (Arena, Compare, Operand, Code, FormalsSpec, FunctionSpec,
-                   Module, ModuleNamespace, NAMESPACE_FAST_SLOT_MAX,
-                   Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
-                   bracket_pair, cons, keyword, kos_repr, nil, symbol)
+from ..lib import (Arena, Compare, Datum, Operand, Code, FormalsSpec,
+                   FunctionSpec, Module, ModuleNamespace,
+                   NAMESPACE_FAST_SLOT_MAX, Namespace, NamespaceSpec, OpCode,
+                   OpStyle, bracket_nil, bracket_pair, cons, keyword,
+                   kos_repr, nil, symbol)
 from ..types import (fill_position, is_nil, get_position, is_keyword,
-                     is_pair, is_proper, is_symbol)
+                     is_pair, is_proper, is_symbol, parameterize)
 from .pragma import (BracketCalls, KeywordLiterals, KoskariPragma,
                      PackModule, ResolutionMode, StrayColon)
 
@@ -224,15 +225,19 @@ def _label_generator(formatstr="label_%04x"):
 _symbol_None = symbol("None")
 _symbol_True = symbol("True")
 _symbol_False = symbol("False")
-_symbol_attr = symbol("compile/attr")
+_symbol_attr = symbol("attr")
 _symbol_Ellipsis = symbol("Ellipsis")
 _symbol_ellipsis = symbol("...")
 _symbol_nil = symbol("nil")
 
-_symbol_call = symbol("compile/call")
-_symbol_cons = symbol("compile/cons")
+_symbol_call = symbol("call")
+_symbol_cons = symbol("cons")
 
 _symbol_colon = symbol(":")
+
+# the parameter name (active-pragma) reads; the compiler binds it for
+# each compilation turn
+ACTIVE_PRAGMA_PARAM = "active-compiler-pragma"
 
 
 def unique_append(lst, val):
@@ -557,6 +562,10 @@ class Compiler:
 
         self.name = name
 
+        # the ModulePragma this compiler answers to, attached by
+        # reload_pragma; None for a compiler built without one
+        self.pragma = None
+
         # settings, possibly from pragma
         self.convert_fast_enabled = True
         self.tco_enabled = tco_enabled
@@ -637,6 +646,8 @@ class Compiler:
         """
         Reload the compiler from a pragma.
         """
+
+        self.pragma = pragma
 
         self.convert_fast_enabled = pragma.get("compiler/convert-fast")
         self.tco_enabled = pragma.get("compiler/tco-enable")
@@ -779,10 +790,28 @@ class Compiler:
 
         name = str(name)
 
-        found = self._find_compiled(name)
-        if found is None:
-            if not name.startswith("compile/"):
-                return self._find_compiled("compile/" + name)
+        # prefix-only resolution: the short name is the use; the
+        # prefixed spelling denotes the transformer object itself and
+        # never resolves as a syntax use
+        if name.startswith("compile/"):
+            return None
+        return self._find_compiled("compile/" + name)
+
+
+    def find_bare_compiled(self, name):
+        """
+        Resolve as :meth:`find_compiled`, keeping only a Compiled that
+        declares a bare form. Anything else resolves as not found, so a
+        symbol naming an ordinary special still compiles as a variable;
+        prefixed spellings never resolve as uses, per find_compiled
+
+        :param name: symbol or string for the compile-time object
+        :return: Compiled instance with a bare form, or None
+        """
+
+        found = self.find_compiled(name)
+        if found is None or getattr(found, "bare", None) is None:
+            return None
         return found
 
 
@@ -794,7 +823,7 @@ class Compiler:
             self, str(name), self.filename, mode=mode, resolution=reso)
 
 
-    def compile(self, source_obj, tc=False):
+    def compile(self, source_obj, tc=False, position=None):
         if isinstance(source_obj, ByteCodeFragment):
             return source_obj
 
@@ -804,27 +833,57 @@ class Compiler:
 
         try:
             fragment = self.fragment(self.name)
-            return self.compile_expr(fragment, source_obj, tc) or fragment
+            ret = self.compile_expr(fragment, source_obj, tc, position)
+            # None is the emitted-into-fragment sentinel; a falsy
+            # form (an expansion to False, 0, "") is a real result
+            return fragment if ret is None else ret
         finally:
             if tmp:
                 self._resolution_instance = None
 
 
-    def full_compile(self, source_obj, tc=False):
+    def full_compile(self, source_obj, tc=False, position=None):
         tmp = self._resolution_instance is None
         if tmp:
             self._resolution_instance = self._resolution_pragma_class()
         try:
             res = source_obj
             while not isinstance(res, ByteCodeFragment):
-                res = self.compile(res, tc)
+                res = self.compile(res, tc, position)
             return res
         finally:
             if tmp:
                 self._resolution_instance = None
 
 
-    def compile_expr(self, fragment, source_obj, tc):
+    def compile_expression(self, source_obj, tc=False):
+        """
+        Compile one top-level source expression: the entry point for the
+        places a compilation turn starts -- the module loaders, the REPL,
+        the serializer, and any harness whose pragma should govern the
+        turn. Binds this compiler's pragma into the active-compiler-pragma
+        parameter for the turn's extent, so macro bodies running during
+        the compile read the compiling module's pragma through
+        (active-pragma), regardless of which module defined them. Inner
+        recursive compilation chains through compile and full_compile
+        directly and never rebinds.
+
+        :param source_obj: top-level source form
+        :param tc: tail-call flag
+        :return: compiled ByteCodeFragment
+        """
+
+        with parameterize(**{ACTIVE_PRAGMA_PARAM: self.pragma}):
+            return self.full_compile(source_obj, tc)
+
+
+    def compile_expr(self, fragment, source_obj, tc, position=None):
+        """
+        ``position`` is the innermost enclosing source position known to
+        the caller, threaded to diagnostics about positionless atoms; a
+        source object carrying its own position wins over it
+        """
+
         tc = self.tco_enabled and tc
 
         if is_symbol(source_obj):
@@ -839,7 +898,10 @@ class Compiler:
             raise CompilerError("Unsupported source object", source_obj)
 
         try:
-            return dispatch(fragment, source_obj, tc) or fragment
+            ret = dispatch(fragment, source_obj, tc, position)
+            # None is the emitted-into-fragment sentinel; a falsy form
+            # (an expansion to False, 0, "") is a real result
+            return fragment if ret is None else ret
         except CompilerError:
             raise
         except Exception as ex:
@@ -849,12 +911,12 @@ class Compiler:
             raise UncaughtCompilerError(ex, source_obj) from ex
 
 
-    def compile_const(self, fragment, value, tc):
+    def compile_const(self, fragment, value, tc, position=None):
         fragment.instruction(OpCode.CONST, value)
         return fragment
 
 
-    def compile_symbol(self, fragment, sym, tc):
+    def compile_symbol(self, fragment, sym, tc, position=None):
 
         if sym is _symbol_colon:
             self.check_stray_colon(sym)
@@ -868,9 +930,12 @@ class Compiler:
         if sym in _COMPILER_LITERALS:
             return self.compile_const(fragment, _COMPILER_LITERALS[sym], tc)
 
-        # comp = self.find_compiled(sym)
-        # if comp and _is_alias(comp):
-        #     return self.compile_special(fragment, comp, sym, tc)
+        comp = self.find_bare_compiled(sym)
+        if comp is not None:
+            # the atom is interned and positionless; hand the bare arm
+            # the caller-threaded position via the Datum carrier
+            return self.compile_special(
+                fragment, comp, Datum(sym, position), tc)
 
         # This is handled by the reader macros now.
         # ex = sym.rsplit(".", 1)
@@ -991,7 +1056,7 @@ class Compiler:
                                self.filename or "<unknown>", lineno)
 
 
-    def compile_pair(self, fragment, source_obj, tc):
+    def compile_pair(self, fragment, source_obj, tc, position=None):
         # print("compile_pair", kos_repr(source_obj))
 
         if is_nil(source_obj):
@@ -1021,14 +1086,68 @@ class Compiler:
             if head is _symbol_call:
                 raise CompilerError("compile/call not found", source_obj)
 
+        elif is_pair(head):
+            # expansion is legal in operator position: when the head is
+            # itself a form whose own head is a syntax, attempt to lower
+            # it. A successful lowering re-emits this form with the new
+            # head for a fresh dispatch; a failed attempt commits nothing
+            # and the raw head flows to the call path below.
+            lowered = self.lower_head(head, position=pos or position)
+            if lowered is not None:
+                ret = cons(lowered, tail)
+                fill_position(ret, pos or position)
+                return ret
+
         # Re-emit as an explicit call form with the head left as raw
         # source. Compiling the head here would destroy forms that
         # compile/call's patterns need to see (eg. a (compile/attr obj
         # name) head routing to compile/call-attr); the special compiles
         # the callable itself when no pattern claims it.
         reemitted = cons(_symbol_call, head, tail)
-        fill_position(reemitted, pos)
+        fill_position(reemitted, pos or position)
         return reemitted
+
+
+    def lower_head(self, form, position=None):
+        """
+        Attempt to lower a form found in operator position.
+
+        The attempt nests through arbitrarily deep pair heads: each level
+        resolves its own head, and only a form whose innermost head names
+        a syntax is attempted at all. A syntax whose expansion yields a
+        source form succeeds, reconstructing each enclosing level around
+        the result; a non-syntax head, or an expansion that compiles to
+        bytecode, fails the whole attempt. Failure commits nothing -- the
+        discarded fragment was never merged -- so the caller's raw form
+        flows to the call path untouched.
+
+        :param form: the pair found in operator position
+        :param position: enclosing source position threaded to diagnostics
+        :return: the lowered replacement form, or None when the attempt
+            fails
+        """
+
+        head = form.car
+
+        if is_pair(head):
+            inner = self.lower_head(head, position)
+            if inner is None:
+                return None
+            ret = cons(inner, form.cdr)
+            fill_position(ret, get_position(form) or position)
+            return ret
+
+        if not is_symbol(head):
+            return None
+
+        comp = self.find_compiled(head)
+        if comp is None:
+            return None
+
+        res = comp.compile_impl(self, form, False)
+        if res is None or isinstance(res, ByteCodeFragment):
+            return None
+        return res
 
 
     def compile_special(self, fragment, comp, source_obj, tc):

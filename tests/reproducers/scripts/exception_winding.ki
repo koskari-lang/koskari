@@ -141,7 +141,7 @@ define scenario-remote-exc []:
         (bad (shift k k))
 
     (check "remote-exc" "caught"
-           (try (compile/call captured 5) ([e ValueError] "caught")))
+           (try (call captured 5) ([e ValueError] "caught")))
 
 
 when-main:

@@ -18,7 +18,7 @@ import-from typing Any
 
 ;; aiokafka is the `kafka` EXTRA, so it is imported where it is used, not
 ;; here -- this module must stay importable without it (see `require-extra`)
-import-from .job Config Job require-extra watch-task
+(use .job Config Job require-extra watch-task)
 
 
 define logger (logging.getLogger "kosrunner.kafka")

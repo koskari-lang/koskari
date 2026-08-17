@@ -81,13 +81,13 @@ def _find_segments(source):
         after = matched.get("after")
 
         before_src = (
-            cons(symbol("compile/begin"), before.datum)
+            cons(symbol("begin"), before.datum)
             if before else nil)
         body_src = (
-            cons(symbol("compile/begin"), body.datum)
+            cons(symbol("begin"), body.datum)
             if body else nil)
         after_src = (
-            cons(symbol("compile/begin"), after.datum)
+            cons(symbol("begin"), after.datum)
             if after else nil)
 
     if is_nil(before_src) and is_nil(after_src):
@@ -148,7 +148,7 @@ def special_dyn_wind(
     """
     Compile (compile/dyn-wind [before] [body] [after]). Body is required;
     at least one of before or after is required. Wraps before/after in
-    (compile/lambda [] ...) thunks and emits PUSH_WIND / POP_WIND.
+    (lambda [] ...) thunks and emits PUSH_WIND / POP_WIND.
     """
 
     called_by, rest = source
