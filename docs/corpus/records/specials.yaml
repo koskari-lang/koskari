@@ -1654,3 +1654,64 @@ tags:
   - bare-syntax
   - error-handling
 notes: the bare symbol raise expands to (raise) through the bootstrap bare form, giving Python's bare-raise re-raise spelling inside a handler
+---
+id: special-use-python-module-001
+feature: special/compile/use
+source: (begin (use os.path join) (join "a" "b"))
+verify:
+  eval: '"a/b"'
+references:
+  - reference/specials/use.md
+  - reference/specials/import-from.md
+stability: evolving
+tags:
+  - special
+  - use
+  - import
+  - python-interop
+notes: on a Python module, whose namespace has no facet keys, each use stem behaves exactly as an import-from member; use is always safe to write
+---
+id: special-use-rename-001
+feature: special/compile/use
+source: "(begin (use os.path [join as: j]) (j \"a\" \"b\"))"
+verify:
+  eval: '"a/b"'
+references:
+  - reference/specials/use.md
+stability: evolving
+tags:
+  - special
+  - use
+  - import
+  - rename
+notes: "a [STEM as: BIND] member renames the whole feature family; every facet binds under the new stem with its prefix"
+---
+id: special-use-koskari-module-001
+feature: special/compile/use
+source: (begin (use koskari.solve amb solve) (callable? amb))
+verify:
+  eval: "true"
+references:
+  - reference/specials/use.md
+stability: evolving
+tags:
+  - special
+  - use
+  - import
+notes: each stem names a feature of the module; runtime facets bind under the stem
+---
+id: special-use-bare-form-001
+feature: special/compile/use
+source: (begin (use koskari.solve) (callable? solve-first))
+verify:
+  eval: "true"
+references:
+  - reference/specials/use.md
+  - reference/specials/import-all-from.md
+stability: evolving
+tags:
+  - special
+  - use
+  - import
+  - star-import
+notes: "the bare form is equivalent to import-all-from: declare-exports names feature stems and __all__ is materialized at end of load as the binding keys they resolve to, so the star already carries every facet"

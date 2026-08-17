@@ -50,3 +50,37 @@ tags:
   - invalid
   - pitfall
 notes: "corrective: obj.count (bare, no parens) -- or (attr obj count), which it lowers to. Baked fixture obj has .count=5. The surface pairs: obj.count / (attr obj count) READ the attribute; (obj.count) / ((attr obj count)) / (.count obj) all CALL it. Classic instance: (.status_code (client.post url)) -- status_code is data, so write (client.post url).status_code."
+---
+id: special-use-nested-scope-invalid-001
+feature: special/compile/use
+source: (define f (lambda f [] (begin (use os.path join) 1)))
+verify:
+  read: (define f (lambda f [] (begin (use (attr os path) join) 1)))
+  error: use is only allowed at module level
+references:
+  - reference/specials/use.md
+stability: evolving
+tags:
+  - special
+  - use
+  - import
+  - invalid
+  - scope
+notes: "use is module-level only, like import-all-from: inside a nested scope the compile-time facets could not take effect, since the enclosing body is already compiled. corrective: use import-from for runtime values in nested scopes, or move the use to module level"
+---
+id: special-use-missing-feature-invalid-001
+feature: special/compile/use
+source: (begin (use os.path nonesuch))
+verify:
+  read: (begin (use (attr os path) nonesuch))
+  invalid: "reads and compiles cleanly, but fails at eval with ImportError: no feature nonesuch (tried nonesuch, compile/nonesuch, layout/nonesuch) -- a stem must resolve at least one facet. A per-facet miss is normal; only a stem with no facets at all is an error"
+references:
+  - reference/specials/use.md
+stability: evolving
+tags:
+  - special
+  - use
+  - import
+  - invalid
+  - error-handling
+notes: "runtime failure, not a compile error; the message names every spelling tried. corrective: check the feature name, or name a single facet explicitly if only one exists"
