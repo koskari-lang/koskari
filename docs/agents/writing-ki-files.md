@@ -19,9 +19,18 @@ single expression stands alone.
 ```koskari
 print "total:" n     ; reads as (print "total:" n)
 (process items)      ; a parenthesized form is itself
-return               ; a lone name -- this does NOT return
-(return)             ; correct empty return; `return value` also works
+return               ; expands to (return) via its bare form
+total                ; a lone name with no bare form is a reference
 ```
+
+The statement words `return`, `continue`, `break`, `raise`, and
+`yield` carry a *bare form*: the lone symbol expands to its call
+form, so a `return` line returns None and a lone `raise` re-raises.
+Prefer the explicit `(return)` spelling anyway -- the
+`compiler/bare-control-words` pragma can make the bare spelling warn
+or error. Any other lone name is an ordinary variable reference
+unless a syntax was defined with the `bare-syntax` kind; see
+[Name resolution](../reference/concepts/name-resolution-and-prefixes.md).
 
 ## A bare form never continues onto the next line
 
@@ -98,13 +107,34 @@ conversion suffixes -- call `(repr x)` or `(str x)` in the slot.
 
 ## Calls on results, attributes, and refs
 
-Dotted attribute access hangs off a name: `path.stem`,
-`(rows.sort key: fn)`. To call a method on the *result of a call*,
-use the leading-dot form:
+Dotted attribute access hangs off any expression, not only a name:
+`path.stem`, `(rows.sort key: fn)`, and equally a parenthesized
+result -- the dot suffix attaches to the closing paren. This is the
+preferred spelling for calling a method on the result of a call:
 
 ```koskari
-(.joinpath (Path root) "docs")
+((Path root).joinpath "docs")   ; preferred: dot suffix on the result
+(.joinpath (Path root) "docs")  ; valid, but stylistically outdated
 ```
+
+Both compile the same way; write the dot-suffix form.
+
+## Subscripts use the bracket suffix
+
+Item access is a bracket suffix on the value, exactly as in Python:
+`row["name"]`, `grid[y][x]`, `(line.split)[0]`. The suffix attaches
+with no space and chains freely with the dot suffix. `(item obj key)`
+is the form it reads as and is valid to write, but the suffix is the
+preferred spelling:
+
+```koskari
+config["port"]                  ; preferred: bracket suffix
+(item config "port")            ; valid, but spell it as a suffix
+(set! counts[word] (+ 1 n))     ; a subscript is a store target too
+```
+
+Keep subscripts out of f-string slots: compute
+`define port config["port"]` first and interpolate `{port}`.
 
 Rest parameters in formals are `*:` and `**:` --
 `define f [a *: rest **: kwargs]:`. Iteration binds a variable
