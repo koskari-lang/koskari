@@ -1,7 +1,19 @@
 # Prefix-Aware Imports
 
-**Status:** Partially implemented
+**Status:** Completed and archived
 **Author:** Christopher O'Brien <obriencj@preoccupied.net>
+
+The work this document designed shipped as the `use` form and the
+`IMPORT_USE` opcode, with `declare-exports` authoring feature stems into
+`__features__` and `__all__` materialized at end of load. Reality
+diverged from the design in places this document does not track: the
+form is named `use` (no `require` ever shipped), candidates derive in
+the opcode handler rather than being declared at compile time, the
+module-level gate is a property of the `use` special rather than dual
+emission, and star import stays at Python parity with the family
+behavior belonging to `use` alone. The surviving documentation is
+SPECIALS.md, OPCODES.md, api/import-system.md, and the user pages
+(reference/specials/use.md and friends).
 
 Definition-side injection is in place: `define-syntax`, `extend-syntax`,
 and `let-syntax` bind (and overlay) under `compile/NAME` regardless of
