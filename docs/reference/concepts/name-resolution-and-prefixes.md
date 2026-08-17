@@ -25,7 +25,10 @@ slots* section below.
 When the compiler sees a list whose head is a symbol, `(foo a b)`, it resolves
 `foo` in this exact order:
 
-1. Is `compile/foo` bound to a **syntax**? Use it.
+1. Is `compile/foo` bound to a **syntax**? Use it. A syntax whose only arm
+   is a *bare form* (see below) acts as an **alias** here: the head expands
+   through the bare arm and the arguments ride along, so `(foo a b)`
+   becomes `(EXPANSION a b)` and resolves again from the top.
 2. Otherwise, rewrite the call to `(call foo a b)` — a **runtime
    function call** of whatever value `foo` holds.
 
@@ -33,6 +36,9 @@ The short name is the *only* spelling that resolves as a use. Writing the
 prefixed spelling in operator position — `(compile/foo a b)` — does **not**
 invoke the syntax: it is a runtime call of the syntax *object*, which fails.
 The prefixed spelling always denotes the object itself (see below).
+
+When the head is not a symbol but a **form**, the compiler first attempts
+to lower it — see *Expansion in operator position* below.
 
 ### The two `+`
 
@@ -63,6 +69,16 @@ there is nothing in the runtime slot:
 (if True 1 2)    ; fine: compile/if is a syntax
 (define x if)    ; NameError: Empty reference: if  -- there is no runtime `if`
 ```
+
+One class of names never reaches value resolution at all: a syntax with a
+**bare form** expands its lone symbol before the runtime slot is ever
+consulted. The statement words carry bootstrap bare forms, so a lone
+`return`, `continue`, `break`, `raise`, or `yield` expands to its call form
+— the Python-style spelling works, and none of these five can ever name a
+variable. The [`compiler/bare-control-words`](pragma.md#compiler) pragma
+selects whether that conversion is silent, warned, or refused. Any syntax
+can declare a bare form with the `bare-syntax` transformer kind — see
+[compile/define-syntax](../macros/compile-define-syntax.md).
 
 ## Forcing a runtime call: `call`
 
@@ -117,6 +133,42 @@ definition**: the transformer is always bound under `compile/foo`, whichever
 spelling you write. The short spelling is preferred — the written name is the
 transformer's *identity*, feeding help text and match errors, and the short
 name is what users write at every use site.
+
+## Expansion in operator position
+
+A head does not have to be a symbol. When the head of a form is itself a
+*form*, the compiler attempts to **lower** it before falling back to a
+call: if the head's own (innermost) head names a syntax whose expansion
+yields source, the head is replaced by its expansion and the whole form is
+resolved again from the top.
+
+```koskari
+(define-syntax sel (syntax-rules [] [(sel x) +]))
+
+((sel 1) 2 3)      ; head (sel 1) expands to the symbol +
+                   ; -> (+ 2 3) -> 5, compiled as the arithmetic special
+```
+
+The expansion landing on a *symbol* is the powerful case: the rebuilt form
+is a fresh syntax use, with the tail as that syntax's arguments. This goes
+beyond Scheme, where an application's operator is expanded as an expression
+and never re-examined as syntax — in Koskari, a macro can *compute* the
+syntax at the head of a form.
+
+Attempts nest through arbitrary depth and are all-or-nothing: a head whose
+innermost head is not a syntax, or whose expansion compiles to bytecode
+rather than source, fails the whole attempt, and the original form lowers
+to an ordinary call of the head's value — which is why
+`((make-adder 1) 2)` with a plain function still means exactly what it
+always did, and why a method call's `(attr obj name)` head still reaches
+the call machinery intact. Nothing from a failed attempt is kept.
+
+```koskari
+(define-syntax foo2 (syntax-rules [] [(foo2 x) bar2]))
+(define-syntax bar2 (syntax-rules [] [(bar2 x) +]))
+
+(((foo2 1) 2) 3)   ; -> ((bar2 2) 3) -> (+ 3) -> 3
+```
 
 ## Referencing the syntax object
 
