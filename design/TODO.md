@@ -175,22 +175,6 @@ modules, so nothing leaks into distributed libraries. Scope out flag spelling,
 
 Ref: [language/pragma-cli.md](language/pragma-cli.md); [PRAGMA.md](PRAGMA.md).
 
-### Assert gate reads the module pragma at expand time
-
-`compiler/enable-asserts` is applied as a side effect of its setting function:
-a process-global gate held in a bootstrap closure (`_assert.ki`). Two
-consequences: any module's declaration flips the gate for every module loaded
-after it, and package-pragma inheritance never honors it at all (seeding
-copies resolved settings values without running setting functions). Fix: the
-assert expansion should read the compiling module's `__pragma__` at expand
-time — likely by switching the macro to a form with access to the compile
-namespace (special-rules) — and the closure gate goes away. General invariant
-(recorded in the package pragma doc): a setting's effect must derive from the
-pragma value, never from the act of applying the setting.
-
-Ref: [language/pragma-package.md](language/pragma-package.md) (§Implementation,
-known limitation); `koskari/bootstrap/_assert.ki`.
-
 ---
 
 ## Import / loader
