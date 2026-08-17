@@ -145,6 +145,62 @@ class TestMixedBareAndCall(BareSyntaxHelpers):
                 "(pick 1 2)")
 
 
+class TestHeadPositionLowering(BareSyntaxHelpers):
+    """
+    Expansion is legal in operator position: a pair head whose own head
+    is a syntax lowers, and a symbol outcome re-dispatches the whole
+    form as a fresh syntax use
+    """
+
+
+    async def test_head_expands_to_syntax_symbol(self):
+        # ((sel 1) 2 3): the head expands to the symbol +, and the
+        # rebuilt (+ 2 3) dispatches as the arithmetic special
+        result = await self.run_forms(
+            "(define-syntax sel (syntax-rules [] [(sel x) +]))",
+            "((sel 1) 2 3)")
+        self.assertEqual(result, 5)
+
+
+    async def test_nested_heads_restart_per_level(self):
+        # (((foo2 1) 2) 3) lowers to ((bar2 2) 3), restarts, lowers to
+        # (+ 3), restarts, and compiles as the special
+        result = await self.run_forms(
+            "(define-syntax foo2 (syntax-rules [] [(foo2 x) bar2]))",
+            "(define-syntax bar2 (syntax-rules [] [(bar2 x) +]))",
+            "(((foo2 1) 2) 3)")
+        self.assertEqual(result, 3)
+
+
+    async def test_head_expanding_to_call_form(self):
+        # the head expands to a form rather than a symbol; the rebuilt
+        # outer form calls its value
+        result = await self.run_forms(
+            "(define mk (lambda mk [a] (lambda inner [b] (+ a b))))",
+            "(define-syntax curried (macro-rules []"
+            "  [(curried x) `(call mk ,x)]))",
+            "((curried 1) 2)")
+        self.assertEqual(result, 3)
+
+
+    async def test_plain_function_head_is_not_attempted(self):
+        # a pair head whose own head is no syntax lowers straight to the
+        # call path: ((mk 1) 2) calls the returned closure
+        result = await self.run_forms(
+            "(define mk (lambda mk [a] (lambda inner [b] (+ a b))))",
+            "((mk 1) 2)")
+        self.assertEqual(result, 3)
+
+
+    async def test_method_call_heads_unaffected(self):
+        # the natural method-call spelling: the dot suffix reads as an
+        # attr head, which reaches the call path raw and routes to
+        # call-attr
+        result = await self.run_forms(
+            '("-".join #["a" "b"])')
+        self.assertEqual(result, "a-b")
+
+
 class TestBareControlWords(BareSyntaxHelpers):
     """
     Bootstrap bare forms for the statement words: the lone symbol

@@ -295,7 +295,7 @@ source: |-
       double x:
         (+ x x)
 verify:
-  read: (define-syntax double (syntax-rules () ((double x) (begin (+ x x)))))
+  read: (define-syntax double (syntax-rules () ((double x) (+ x x))))
 references:
   - reference/macros/compile-define-syntax.md
   - reference/layouts/index.md
@@ -315,7 +315,7 @@ source: |-
       m x:
         x
 verify:
-  read: (define-syntax m (macro-rules () ((m x) (begin x))))
+  read: (define-syntax m (macro-rules () ((m x) x)))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving

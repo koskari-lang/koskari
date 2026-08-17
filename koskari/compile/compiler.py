@@ -1086,6 +1086,18 @@ class Compiler:
             if head is _symbol_call:
                 raise CompilerError("compile/call not found", source_obj)
 
+        elif is_pair(head):
+            # expansion is legal in operator position: when the head is
+            # itself a form whose own head is a syntax, attempt to lower
+            # it. A successful lowering re-emits this form with the new
+            # head for a fresh dispatch; a failed attempt commits nothing
+            # and the raw head flows to the call path below.
+            lowered = self.lower_head(head, position=pos or position)
+            if lowered is not None:
+                ret = cons(lowered, tail)
+                fill_position(ret, pos or position)
+                return ret
+
         # Re-emit as an explicit call form with the head left as raw
         # source. Compiling the head here would destroy forms that
         # compile/call's patterns need to see (eg. a (compile/attr obj
@@ -1094,6 +1106,48 @@ class Compiler:
         reemitted = cons(_symbol_call, head, tail)
         fill_position(reemitted, pos or position)
         return reemitted
+
+
+    def lower_head(self, form, position=None):
+        """
+        Attempt to lower a form found in operator position.
+
+        The attempt nests through arbitrarily deep pair heads: each level
+        resolves its own head, and only a form whose innermost head names
+        a syntax is attempted at all. A syntax whose expansion yields a
+        source form succeeds, reconstructing each enclosing level around
+        the result; a non-syntax head, or an expansion that compiles to
+        bytecode, fails the whole attempt. Failure commits nothing -- the
+        discarded fragment was never merged -- so the caller's raw form
+        flows to the call path untouched.
+
+        :param form: the pair found in operator position
+        :param position: enclosing source position threaded to diagnostics
+        :return: the lowered replacement form, or None when the attempt
+            fails
+        """
+
+        head = form.car
+
+        if is_pair(head):
+            inner = self.lower_head(head, position)
+            if inner is None:
+                return None
+            ret = cons(inner, form.cdr)
+            fill_position(ret, get_position(form) or position)
+            return ret
+
+        if not is_symbol(head):
+            return None
+
+        comp = self.find_compiled(head)
+        if comp is None:
+            return None
+
+        res = comp.compile_impl(self, form, False)
+        if res is None or isinstance(res, ByteCodeFragment):
+            return None
+        return res
 
 
     def compile_special(self, fragment, comp, source_obj, tc):
