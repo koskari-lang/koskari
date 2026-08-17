@@ -177,6 +177,30 @@ class TestUse(UseCase):
         self.assertEqual(mod.result, [42, 42])
 
 
+class TestUseErrorFidelity(UseCase):
+    """
+    A stem miss is tolerated per facet, but a real failure inside a
+    submodule's own import propagates as itself, matching import-from
+    """
+
+
+    async def test_broken_submodule_error_propagates(self):
+        pkg = os.path.join(self._tmpdir, 'ki_use_pkg')
+        os.makedirs(pkg)
+        with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
+            fh.write("(define marker 1)\n")
+        with open(os.path.join(pkg, 'broken.ki'), 'w') as fh:
+            fh.write('(raise (RuntimeError "boom inside broken"))\n')
+
+        self.write_ki('ki_use_user9', """
+        (use ki_use_pkg broken)
+        """)
+
+        with self.assertRaises(RuntimeError) as caught:
+            importlib.import_module('ki_use_user9')
+        self.assertIn("boom inside broken", str(caught.exception))
+
+
 class TestUseBare(UseCase):
     """
     The bare form: (use mod) lowers to import-all-from, and the seal-

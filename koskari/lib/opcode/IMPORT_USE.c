@@ -108,8 +108,11 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
       }
       hits++;
 
-    } else if (PyErr_ExceptionMatches(PyExc_ImportError) ||
-               PyErr_ExceptionMatches(PyExc_AttributeError)) {
+    } else if (PyErr_ExceptionMatches(PyExc_ImportError) &&
+               ! PyErr_ExceptionMatches(PyExc_ModuleNotFoundError)) {
+      /* the member-missing report crafted by kos_import_from_member;
+         a ModuleNotFoundError is a real failure inside a submodule's
+         own import and must propagate, matching IMPORT_FROM */
       PyErr_Clear();
 
     } else {
