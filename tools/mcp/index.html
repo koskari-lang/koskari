@@ -411,17 +411,6 @@
 
   document.getElementById("status-endpoint").textContent = ENDPOINT;
 
-  /* Wear the mark on the tab too. /favicon.ico serves the same SVG
-     (see mcp_server.ki), so this is only needed for browsers that
-     don't try that path unprompted. */
-  (function setFavicon() {
-    var link = document.createElement("link");
-    link.rel = "icon";
-    link.type = "image/svg+xml";
-    link.href = "/koskari-icon.svg";
-    document.head.appendChild(link);
-  }());
-
   /* --- output ------------------------------------------------------- */
 
   function emit(text, cls) {
