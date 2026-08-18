@@ -286,7 +286,8 @@ class Transform(ABC):
 
         if not isinstance(pattern, Pattern):
             raise TypeError(
-                f"Transform pattern must be a matcher pattern, got {type(pattern)}")
+                "Transform pattern must be a matcher pattern,"
+                f" got {type(pattern)}")
 
         self.pattern = pattern
 

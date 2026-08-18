@@ -796,11 +796,11 @@ define list_features []:
     ;; The listing is a dead end without this: nothing in a feature path
     ;; says which tool consumes it, or that the group headings above are
     ;; themselves usable as prefixes.
-    (lines.append "")
-    (lines.append (+ "Pass any of these to search_examples as "
-        "feature_path, or a group heading with its trailing slash to "
-        "take the whole family. get_reference does not take feature "
-        "paths; a record's references field names its documentation."))
+    lines.append ""
+    lines.append "Pass any of these to search_examples as "-
+        "feature_path, or a group heading with its trailing slash to "-
+        "take the whole family. get_reference does not take feature "-
+        "paths; a record's references field names its documentation."
 
     "\n".join lines
 

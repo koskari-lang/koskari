@@ -48,10 +48,10 @@ define _boundmethod_inner_function [bm]:
     set! func func.__wrapped__
 
   unless (instance? func Function):
-    (raise
-      (TypeError
-        f"BoundMethod __func__ must be Function or Demand[Function],"-
-        f" got {(type func).__name__}"))
+    raise (TypeError
+      f"BoundMethod __func__ must be Function or Demand[Function],"-
+      f" got {(type func).__name__}")
+
   return func
 
 
@@ -207,11 +207,12 @@ define _format_fast_part [val local_names closure_names]:
   define n_local (if local_names (len local_names) 0)
 
   if (< val n_local):
-    (define name
+    define name:
       (if local_names
        then: local_names[val]
-       else: f"local[{val}]"))
+       else: f"local[{val}]")
     f"fast {val} ({(repr name)})"
+
   else:
     define idx (- val n_local)
     if (and closure_names (<= 0 idx) (< idx (len closure_names))):

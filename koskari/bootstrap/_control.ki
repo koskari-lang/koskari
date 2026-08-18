@@ -30,57 +30,57 @@ Portion of koskari.builtins
 
 let []:
 
-    import-from warnings warn_explicit
-    import-from koskari.pragma register
+  import-from warnings warn_explicit
+  import-from koskari.pragma register
 
 
-    define pragma-bare-control-words [mode: "convert"]:
-        """
-        How a bare control word compiles: convert, warn, or error.
-        Baseline convert.
-        """
+  define pragma-bare-control-words [mode: "convert"]:
+    """
+    How a bare control word compiles: convert, warn, or error.
+    Baseline convert.
+    """
 
-        define m (str mode)
-        unless (in? m #("convert" "warn" "error")):
-            raise (ValueError
-                   f"bare-control-words must be convert, warn, or error: {m}")
-        m
-
-
-    (register "compiler/bare-control-words"
-              (demand pragma-bare-control-words) "convert")
+    define m (str mode)
+    unless (in? m #("convert" "warn" "error")):
+      raise (ValueError
+             f"bare-control-words must be convert, warn, or error: {m}")
+    m
 
 
-    define-syntax bare-control-word:
-        """
-        Gate for a bare control word: expands to the word's call form,
-        warning or refusing first when the compiling module's
-        compiler/bare-control-words pragma says so. Diagnostics carry
-        the source position the bare word was captured at.
-        """
+  (register "compiler/bare-control-words"
+            (demand pragma-bare-control-words) "convert")
 
-        special-rules []:
-          case [c (bare-control-word word) tc]:
-            define mode (active-pragma compiler/bare-control-words)
-            define w word.datum
-            define pos word.position
 
-            switch mode:
-              case ["error"]:
-                raise (CompilerError
-                       f"bare {w} (write ({w}); the compiler/"-
-                       "bare-control-words pragma is error)"
-                        None pos c.filename)
+  define-syntax bare-control-word:
+    """
+    Gate for a bare control word: expands to the word's call form,
+    warning or refusing first when the compiling module's
+    compiler/bare-control-words pragma says so. Diagnostics carry
+    the source position the bare word was captured at.
+    """
 
-              case ["warn"]:
-                define line (if (None? pos) 0 (item pos 0))
-                (warn_explicit f"bare {w} converted to ({w})"
-                               SyntaxWarning (or c.filename "<koskari>")
-                               line)
-                `(,w)
+    special-rules []:
+      case [c (bare-control-word word) tc]:
+        define mode (active-pragma compiler/bare-control-words)
+        define w word.datum
+        define pos word.position
 
-              else:
-                `(,w)
+        switch mode:
+          case ["error"]:
+            raise (CompilerError
+              f"bare {w} (write ({w}); the compiler/"-
+              "bare-control-words pragma is error)"
+              None pos c.filename)
+
+          case ["warn"]:
+            define line (if (None? pos) 0 (item pos 0))
+            (warn_explicit f"bare {w} converted to ({w})"
+                            SyntaxWarning (or c.filename "<koskari>")
+                            line)
+            `(,w)
+
+          else:
+            `(,w)
 
 
 extend-syntax return:

@@ -176,11 +176,18 @@ class Hygiene(object):
         :rtype: Hygiene
         """
 
+        if binders is not None:
+            binders = dict(binders)
+
+        if regions is not None:
+            regions = dict(regions)
+
         ss = frozenset(scoped_slots or ())
+
         node = HygieneNode(
             0, None,
-            dict(binders or {}),
-            dict(regions or {}),
+            binders or {},
+            regions or {},
             ss)
         return cls((node,), (), 0)
 
@@ -209,13 +216,15 @@ def validate_hygiene_tree(tree):
     for node in tree.nodes:
         if node.parent_id is not None and node.parent_id not in ids:
             raise ValueError(
-                "node %d parent %r missing"
-                % (node.node_id, node.parent_id))
+                f"node {node.node_id}"
+                f" parent {node.parent_id} missing")
+
         for slot in node.binders:
             if slot in node.regions:
                 raise ValueError(
                     "slot %r is both binder and region on node %d"
                     % (slot, node.node_id))
+
         overlap = set(node.regions) & set(node.scoped_slots)
         if overlap:
             raise ValueError(
@@ -226,6 +235,7 @@ def validate_hygiene_tree(tree):
         if edge.parent_id not in ids or edge.child_id not in ids:
             raise ValueError(
                 "edge %r references missing node" % (edge,))
+
         if edge.kind not in ("group_child", "repeat_element"):
             raise ValueError(
                 "unknown edge kind %r" % (edge.kind,))

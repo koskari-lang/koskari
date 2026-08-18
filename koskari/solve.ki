@@ -49,11 +49,7 @@ define-class NoActiveSearch [SearchError]:
   """
 
 
-; Dynamic stop marker for solve-first: a mutable box (list). None or
-; empty means keep exploring; non-empty means a solution has been
-; accepted and remaining choices are skipped without invoking their
-; continuations. Scoped with parameterize per search, so a nested
-; search never observes an enclosing search's stop.
+; Dynamic stop marker for solve-first
 (define-parameter amb-stop-marker None)
 
 
