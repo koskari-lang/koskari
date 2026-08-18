@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   BUILD_LIST: arg = count of elements.
-   Stack: [..., v_0, ..., v_{n-1}] -> [..., list].
-   Pop n elements into a new list and push it.
-*/
 
+/**
+  BUILD_LIST: arg = count of elements.
+  Stack: [..., v_0, ..., v_{n-1}] -> [..., list].
+  Pop n elements into a new list and push it.
+*/
 KOS_OP_HANDLER(BUILD_LIST) {
   unsigned opa = KosOp_ARG(insn);
   size_t count = (size_t) opa;

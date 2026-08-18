@@ -13,13 +13,13 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   VAR4: arg = extra index. Schema VAR x4 (name constants). Look up all
-   four names in the current frame namespace and push the values in row
-   order. All names resolve before any push, so a missing name raises
-   with nothing pushed.
-*/
 
+/**
+  VAR4: arg = extra index. Schema VAR x4 (name constants). Look up all
+  four names in the current frame namespace and push the values in row
+  order. All names resolve before any push, so a missing name raises
+  with nothing pushed.
+*/
 KOS_OP_HANDLER_COLD(VAR4) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
@@ -30,7 +30,7 @@ KOS_OP_HANDLER_COLD(VAR4) {
   for (size_t i = 0; i < 4; i++) {
     PyObject *name = KosEvalState_CONST(es, idx[i]);
     vals[i] = name ? frame_ns_deref(es, name) : NULL;
-    if (! vals[i]) {
+    if (unlikely(! vals[i])) {
       while (i)
         Py_DECREF(vals[--i]);
       return EVAL_RAISE();
@@ -38,13 +38,14 @@ KOS_OP_HANDLER_COLD(VAR4) {
   }
 
   for (size_t i = 0; i < 4; i++) {
-    if (KosEvalState_StackPUSH(es, vals[i]) < 0) {
+    if (unlikely(KosEvalState_StackPUSH(es, vals[i]) < 0)) {
       /* PUSH consumes vals[i] even on failure; free the rest */
       while (++i < 4)
         Py_DECREF(vals[i]);
       return EVAL_RAISE();
     }
   }
+
   return EVAL_NORMAL();
 }
 

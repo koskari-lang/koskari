@@ -13,19 +13,21 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
    OBJECT_TYPE: arg unused. Pop TOS, push type(TOS).
 */
-
 KOS_OP_HANDLER(OBJECT_TYPE) {
+  (void) insn;
+
   PyObject *val = KosEvalState_StackPopRef(es);
-  if (! val)
+  if (unlikely(! val))
     return EVAL_RAISE();
 
   PyObject *res = (PyObject *) Py_TYPE(val);
   Py_INCREF(res);
   Py_DECREF(val);
-  (void) insn;
+
   return kos_op_result_PUSH(es, res);
 }
 

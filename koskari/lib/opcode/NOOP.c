@@ -13,10 +13,10 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   NOOP: arg unused. No operation; advance to next instruction.
-*/
 
+/**
+  NOOP: arg unused. No operation; advance to next instruction.
+*/
 KOS_OP_HANDLER_COLD(NOOP) {
   (void) insn;
   return EVAL_NORMAL();  /* continue */

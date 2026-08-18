@@ -13,11 +13,11 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   POP: arg = number of stack slots to drop. Remove that many values from
-   the top of the stack.
-*/
 
+/**
+  POP: arg = number of stack slots to drop. Remove that many values from
+  the top of the stack.
+*/
 KOS_OP_HANDLER(POP) {
 
   unsigned n = KosOp_ARG(insn);
@@ -25,6 +25,7 @@ KOS_OP_HANDLER(POP) {
     return kos_op_result_from_push_int(
         KosEvalState_StackDrop1(es));
   }
+
   return kos_op_result_from_push_int(
       KosEvalState_StackDrop(es, (size_t) n));
 }

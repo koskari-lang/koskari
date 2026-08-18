@@ -13,13 +13,14 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   RAISE: arg = 0 (reraise current exception), 1 (raise TOS: instance or class).
-   Set the current exception; control will transfer to a handler by the eval loop.
-*/
 
+/**
+  RAISE: arg = 0 (reraise current exception), 1 (raise TOS: instance or class).
+  Set the current exception; control will transfer to a handler by the eval loop.
+*/
 KOS_OP_HANDLER_COLD(RAISE) {
   unsigned n = KosOp_ARG(insn);
+
   if (n == 0) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_GetExcInfo(&typ, &val, &tb);
@@ -30,17 +31,19 @@ KOS_OP_HANDLER_COLD(RAISE) {
       Py_XDECREF(tb);
       return EVAL_RAISE();
     }
+
     PyErr_Restore(typ, val, tb);
     PyErr_SetExcInfo(NULL, NULL, NULL);
 
   } else if (n == 1) {
     PyObject *exc = KosEvalState_StackPopRef(es);
-    if (! exc) {
+    if (unlikely(! exc))
       return EVAL_RAISE();
-    }
+
     if (PyExceptionInstance_Check(exc)) {
       PyObject *typ = (PyObject *) Py_TYPE(exc);
       PyErr_SetObject(typ, exc);
+
     } else if (PyExceptionClass_Check(exc)) {
       PyObject *inst = PyObject_CallNoArgs(exc);
       if (inst) {
@@ -50,6 +53,7 @@ KOS_OP_HANDLER_COLD(RAISE) {
       Py_DECREF(exc);
       if (PyErr_Occurred())
         return EVAL_RAISE();
+
     } else {
       Py_DECREF(exc);
       PyErr_SetString(PyExc_TypeError, "exceptions must derive from BaseException");

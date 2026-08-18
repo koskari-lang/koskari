@@ -13,10 +13,10 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   POSITION: arg unused. Debug/source position marker; no runtime effect.
-*/
 
+/**
+  POSITION: arg unused. Debug/source position marker; no runtime effect.
+*/
 KOS_OP_HANDLER_COLD(POSITION) {
   (void) insn;
   return EVAL_NORMAL();

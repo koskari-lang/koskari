@@ -13,23 +13,26 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   VAR_STORE: arg = constant index (name). Pop TOS and store into name in
-   the current frame namespace.
-*/
 
+/**
+  VAR_STORE: arg = constant index (name). Pop TOS and store into name in
+  the current frame namespace.
+*/
 KOS_OP_HANDLER_COLD(VAR_STORE) {
   PyObject *name = get_name_from_insn(es, insn);
-  if (! name)
+  if (unlikely(! name))
     return EVAL_RAISE();
+
   PyObject *val = KosEvalState_StackPopRef(es);
-  if (! val)
+  if (unlikely(! val))
     return EVAL_RAISE();
-  if (frame_ns_store(es, name, val) < 0) {
+
+  if (unlikely(frame_ns_store(es, name, val) < 0)) {
     Py_DECREF(val);
     return EVAL_RAISE();
   }
   Py_DECREF(val);
+
   return EVAL_NORMAL();
 }
 

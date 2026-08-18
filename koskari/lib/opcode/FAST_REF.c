@@ -13,17 +13,19 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST_REF: arg = slot index. Push reference to fast slot.
-*/
 
+/**
+  FAST_REF: arg = slot index. Push reference to fast slot.
+*/
 KOS_OP_HANDLER(FAST_REF) {
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
+
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *ref = KosNamespace_FastRef(ns, idx);
-  if (! ref)
+  if (unlikely(! ref))
     return EVAL_RAISE();
+
   Py_INCREF(ref);
   return kos_op_result_PUSH(es, ref);
 }

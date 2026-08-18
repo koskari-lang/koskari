@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST4: arg = extra index. Schema FASTVAR x4. Push four values from
-   fast local slots in row order. All slots resolve before any push, so
-   an unbound name raises with nothing pushed.
-*/
 
+/**
+  FAST4: arg = extra index. Schema FASTVAR x4. Push four values from
+  fast local slots in row order. All slots resolve before any push, so
+  an unbound name raises with nothing pushed.
+*/
 KOS_OP_HANDLER(FAST4) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
@@ -30,7 +30,7 @@ KOS_OP_HANDLER(FAST4) {
 
   for (size_t i = 0; i < 4; i++) {
     vals[i] = kos_ns_fast_deref(ns, (size_t) idx[i]);
-    if (! vals[i]) {
+    if (unlikely(! vals[i])) {
       while (i)
         Py_DECREF(vals[--i]);
       return EVAL_RAISE();
@@ -38,13 +38,14 @@ KOS_OP_HANDLER(FAST4) {
   }
 
   for (size_t i = 0; i < 4; i++) {
-    if (KosEvalState_StackPUSH(es, vals[i]) < 0) {
+    if (unlikely(KosEvalState_StackPUSH(es, vals[i]) < 0)) {
       /* PUSH consumes vals[i] even on failure; free the rest */
       while (++i < 4)
         Py_DECREF(vals[i]);
       return EVAL_RAISE();
     }
   }
+
   return EVAL_NORMAL();
 }
 

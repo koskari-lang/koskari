@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   UNPACK_VAR: arg = extra index. Schema VAR, VAR for two cpool name indices.
-   Pop TOS, materialize as fast sequence, require len == 2, store seq[0] and
-   seq[1] into the two names (VAR_STORE semantics).
-*/
 
+/**
+  UNPACK_VAR: arg = extra index. Schema VAR, VAR for two cpool name indices.
+  Pop TOS, materialize as fast sequence, require len == 2, store seq[0] and
+  seq[1] into the two names (VAR_STORE semantics).
+*/
 KOS_OP_HANDLER_COLD(UNPACK_VAR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
@@ -26,24 +26,24 @@ KOS_OP_HANDLER_COLD(UNPACK_VAR) {
   uint32_t name1_idx = row.a1;
 
   PyObject *name0 = KosEvalState_CONST(es, name0_idx);
-  if (! name0)
+  if (unlikely(! name0))
     return EVAL_RAISE();
 
   PyObject *name1 = KosEvalState_CONST(es, name1_idx);
-  if (! name1)
+  if (unlikely(! name1))
     return EVAL_RAISE();
 
   PyObject *raw = KosEvalState_StackPopRef(es);
-  if (! raw)
+  if (unlikely(! raw))
     return EVAL_RAISE();
 
   PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
-  if (! seq)
+  if (unlikely(! seq))
     return EVAL_RAISE();
 
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
-  if (slen != 2) {
+  if (unlikely(slen != 2)) {
     Py_DECREF(seq);
     PyErr_Format(PyExc_ValueError,
                  "UNPACK_VAR expected sequence of length 2, got %zd",
@@ -51,8 +51,9 @@ KOS_OP_HANDLER_COLD(UNPACK_VAR) {
     return EVAL_RAISE();
   }
 
-  if (frame_ns_store(es, name0, PySequence_Fast_GET_ITEM(seq, 0)) ||
-      frame_ns_store(es, name1, PySequence_Fast_GET_ITEM(seq, 1))) {
+  if (unlikely(
+      frame_ns_store(es, name0, PySequence_Fast_GET_ITEM(seq, 0)) ||
+      frame_ns_store(es, name1, PySequence_Fast_GET_ITEM(seq, 1)))) {
     Py_DECREF(seq);
     return EVAL_RAISE();
   }

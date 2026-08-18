@@ -13,10 +13,10 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   ITEM: arg unused. Push TOS1[TOS] (subscript). Stack: obj, key (TOS).
-*/
 
+/**
+  ITEM: arg unused. Push TOS1[TOS] (subscript). Stack: obj, key (TOS).
+*/
 KOS_OP_HANDLER(ITEM) {
   PyObject *key = KosEvalState_StackPopRef(es);
   if (unlikely(! key))

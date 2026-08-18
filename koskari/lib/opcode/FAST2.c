@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST2: arg = extra index. Schema FASTVAR, FASTVAR. Push two values
-   from fast local slots in row order. Both slots resolve before either
-   push, so an unbound name raises with nothing pushed.
-*/
 
+/**
+  FAST2: arg = extra index. Schema FASTVAR, FASTVAR. Push two values
+  from fast local slots in row order. Both slots resolve before either
+  push, so an unbound name raises with nothing pushed.
+*/
 KOS_OP_HANDLER(FAST2) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
@@ -26,19 +26,20 @@ KOS_OP_HANDLER(FAST2) {
   KOS_OP_REQUIRE_NS(ns);
 
   PyObject *a = kos_ns_fast_deref(ns, (size_t) row.a0);
-  if (! a)
+  if (unlikely(! a))
     return EVAL_RAISE();
 
   PyObject *b = kos_ns_fast_deref(ns, (size_t) row.a1);
-  if (! b) {
+  if (unlikely(! b)) {
     Py_DECREF(a);
     return EVAL_RAISE();
   }
 
-  if (KosEvalState_StackPUSH(es, a) < 0) {
+  if (unlikely(KosEvalState_StackPUSH(es, a) < 0)) {
     Py_DECREF(b);
     return EVAL_RAISE();
   }
+
   return kos_op_result_PUSH(es, b);
 }
 

@@ -13,21 +13,22 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   DUP: arg = number of top stack slots to duplicate. Duplicate that many
-   top-of-stack values (pushed again in order).
-*/
 
+/**
+  DUP: arg = number of top stack slots to duplicate. Duplicate that many
+  top-of-stack values (pushed again in order).
+*/
 KOS_OP_HANDLER(DUP) {
   int opa = (int) KosOp_ARG(insn);
-  if (opa < 0) {
+  if (unlikely(opa < 0)) {
     PyErr_Format(PyExc_RuntimeError, "DUP invoked with negative"
                  " argument count: %i", opa);
     return EVAL_RAISE();
   }
 
-  if (KosEvalState_StackDuplicate(es, (size_t) opa) < 0)
+  if (unlikely(KosEvalState_StackDuplicate(es, (size_t) opa) < 0))
     return EVAL_RAISE();
+
   return EVAL_NORMAL();
 }
 

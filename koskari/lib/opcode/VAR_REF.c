@@ -13,17 +13,19 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   VAR_REF: arg = constant index (name). Push name reference (for closure).
-*/
 
+/**
+  VAR_REF: arg = constant index (name). Push name reference (for closure).
+*/
 KOS_OP_HANDLER_COLD(VAR_REF) {
   PyObject *name = get_name_from_insn(es, insn);
-  if (! name)
+  if (unlikely(! name))
     return EVAL_RAISE();
+
   PyObject *ref = frame_ns_ref(es, name);
-  if (! ref)
+  if (unlikely(! ref))
     return EVAL_RAISE();
+
   Py_INCREF(ref);
   return kos_op_result_PUSH(es, ref);
 }

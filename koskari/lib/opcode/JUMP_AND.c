@@ -13,11 +13,11 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   JUMP_AND: arg = target PC. Short-circuit and: if TOS is falsy, leave on
-   stack and jump; else pop and continue.
-*/
 
+/**
+  JUMP_AND: arg = target PC. Short-circuit and: if TOS is falsy, leave on
+  stack and jump; else pop and continue.
+*/
 KOS_OP_HANDLER(JUMP_AND) {
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))

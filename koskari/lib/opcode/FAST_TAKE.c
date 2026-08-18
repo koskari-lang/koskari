@@ -13,17 +13,17 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
    FAST_TAKE: arg = slot index. Deref and clear fast slot, push value.
 */
-
 KOS_OP_HANDLER(FAST_TAKE) {
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *val = KosNamespace_FastTake(ns, idx);
-  if (! val)
+  if (unlikely(! val))
     return EVAL_RAISE();
 
   return kos_op_result_PUSH(es, val);

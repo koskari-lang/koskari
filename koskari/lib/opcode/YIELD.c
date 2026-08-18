@@ -13,13 +13,13 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   YIELD: arg = 0 (None), 1 (single value), or N (tuple of N values).
-   Pop the value(s) from the stack and return EVAL_YIELD(val); apply_kos_op_result
-   routes to eval_event_yield for walk/freeze and boundary delivery.
-   Resumption (send value) is handled by py_resume_inject at re-entry.
-*/
 
+/**
+  YIELD: arg = 0 (None), 1 (single value), or N (tuple of N values).
+  Pop the value(s) from the stack and return EVAL_YIELD(val); apply_kos_op_result
+  routes to eval_event_yield for walk/freeze and boundary delivery.
+  Resumption (send value) is handled by py_resume_inject at re-entry.
+*/
 KOS_OP_HANDLER(YIELD) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
@@ -30,14 +30,14 @@ KOS_OP_HANDLER(YIELD) {
 
   } else if (opa == 1) {
     val = KosEvalState_StackPopRef(es);
-    if (! val) {
+    if (unlikely(! val)) {
       SAY("[eval] YIELD pop underrun\n");
       return EVAL_RAISE();
     }
 
   } else {
     val = KosEvalState_StackPopTail(es, (size_t) opa);
-    if (! val) {
+    if (unlikely(! val)) {
       SAY("[eval] YIELD PopTail underrun\n");
       return EVAL_RAISE();
     }

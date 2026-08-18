@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   VAR_LIST_APPEND: arg = constant index (name). Pop TOS (value), append to
-   the list bound to name. Does not push. TypeError when the binding is not
-   a list.
-*/
 
+/**
+  VAR_LIST_APPEND: arg = constant index (name). Pop TOS (value), append to
+  the list bound to name. Does not push. TypeError when the binding is not
+  a list.
+*/
 KOS_OP_HANDLER_COLD(VAR_LIST_APPEND) {
 
   PyObject *name = get_name_from_insn(es, insn);

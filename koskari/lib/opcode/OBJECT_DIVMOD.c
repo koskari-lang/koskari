@@ -13,23 +13,34 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   OBJECT_DIVMOD: pop right, left; call PyNumber_Divmod; push result.
+  OBJECT_DIVMOD: pop right, left; call PyNumber_Divmod; push result.
 */
 KOS_OP_HANDLER_COLD(OBJECT_DIVMOD) {
-    if (KosOp_ARG(insn) != 2) {
-      PyErr_SetString(PyExc_RuntimeError, "OBJECT_DIVMOD: only arg 2 supported");
-      return EVAL_RAISE();
-    }
-    PyObject *right = KosEvalState_StackPopRef(es);
-    if (! right) return EVAL_RAISE();
-    PyObject *left = KosEvalState_StackPopRef(es);
-    if (! left) { Py_DECREF(right); return EVAL_RAISE(); }
-    PyObject *res = PyNumber_Divmod(left, right);
-    Py_DECREF(left);
+  if (unlikely(KosOp_ARG(insn) != 2)) {
+    PyErr_SetString(PyExc_RuntimeError, "OBJECT_DIVMOD: only arg 2 supported");
+    return EVAL_RAISE();
+  }
+
+  PyObject *right = KosEvalState_StackPopRef(es);
+  if (unlikely(! right))
+    return EVAL_RAISE();
+
+  PyObject *left = KosEvalState_StackPopRef(es);
+  if (unlikely(! left)) {
     Py_DECREF(right);
-    if (! res) return EVAL_RAISE();
-    return kos_op_result_PUSH(es, res);
+    return EVAL_RAISE();
+  }
+
+  PyObject *res = PyNumber_Divmod(left, right);
+  Py_DECREF(left);
+  Py_DECREF(right);
+
+  if (unlikely(! res))
+    return EVAL_RAISE();
+
+  return kos_op_result_PUSH(es, res);
 }
 
 

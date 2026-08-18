@@ -13,22 +13,22 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
   CDR: arg = repeat count. Pop TOS once; walk cdr that many times in locals
   (refcount-safe); push the final value. arg < 1 is an error. Fails if any
   intermediate is not a pair or is nil.
 */
-
 KOS_OP_HANDLER(CDR) {
   int opa = (int) KosOp_ARG(insn);
-  if (opa <= 0) {
+  if (unlikely(opa <= 0)) {
     PyErr_Format(PyExc_RuntimeError, "CDR invoked with invalid"
                  " argument count: %i", opa);
     return EVAL_RAISE();
   }
 
   PyObject *cur = KosEvalState_StackPopRef(es);
-  if (! cur)
+  if (unlikely(! cur))
     return EVAL_RAISE();
 
   for (int i = 0; i < opa; i++) {
@@ -37,16 +37,19 @@ KOS_OP_HANDLER(CDR) {
           ? "nil"
           : Py_TYPE(cur)->tp_name;
       Py_DECREF(cur);
+
       PyErr_Format(PyExc_TypeError,
                    "CDR at index %d of %d requires a non-nil pair, got %s",
                    i, opa, got);
       return EVAL_RAISE();
     }
+
     PyObject *next = KosPair_CDR(cur);
     Py_INCREF(next);
     Py_DECREF(cur);
     cur = next;
   }
+
   return kos_op_result_PUSH(es, cur);
 }
 

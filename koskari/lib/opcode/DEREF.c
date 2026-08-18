@@ -13,21 +13,23 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   DEREF: no arg. Pop one value (a ref). Call KosRef_Deref() for C-level
-   dispatch; push result. Fails if TOS has no deref handler.
-
-   :author: Christopher O'Brien <obriencj@preoccupied.net>
-   :license: GNU General Public License v3
+  DEREF: no arg. Pop one value (a ref). Call KosRef_Deref() for C-level
+  dispatch; push result. Fails if TOS has no deref handler.
 */
-
 KOS_OP_HANDLER(DEREF) {
+  (void) insn;
+
   PyObject *ref = KosEvalState_StackPopRef(es);
-  if (! ref)
+  if (unlikely(! ref))
     return EVAL_RAISE();
 
   PyObject *val = KosRef_Deref(ref);
   Py_DECREF(ref);
+
+  if (unlikely(! val))
+    return EVAL_RAISE();
 
   return kos_op_result_PUSH(es, val);
 }

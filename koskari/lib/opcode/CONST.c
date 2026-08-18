@@ -13,17 +13,18 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   CONST: arg = constant index. Push the code object constant at that index
-   onto the stack.
+  CONST: arg = constant index. Push the code object constant at that index
+  onto the stack.
 
-   Pool trust follows KosEvalState_CONST / KOS_EVAL_SAFETYNET.
+  Pool trust follows KosEvalState_CONST / KOS_EVAL_SAFETYNET.
 */
-
 KOS_OP_HANDLER(CONST) {
   PyObject *val = KosEvalState_CONST(es, KosOp_ARG(insn));
-  if (! val)
+  if (unlikely(! val))
     return EVAL_RAISE();
+
   Py_INCREF(val);
   return kos_op_result_PUSH(es, val);
 }

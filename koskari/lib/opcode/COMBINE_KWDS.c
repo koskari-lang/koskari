@@ -13,21 +13,21 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   COMBINE_KWDS: arg = count of dicts to merge.
-   Stack: [..., d_0, ..., d_{m-1}] -> [..., dict].
-   Merge the m dicts (later overwrite earlier on key clash) and push result.
-*/
 
+/**
+  COMBINE_KWDS: arg = count of dicts to merge.
+  Stack: [..., d_0, ..., d_{m-1}] -> [..., dict].
+  Merge the m dicts (later overwrite earlier on key clash) and push result.
+*/
 KOS_OP_HANDLER_COLD(COMBINE_KWDS) {
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *built = PyDict_New();
-  if (! built)
+  if (unlikely(! built))
     return EVAL_RAISE();
 
   if (opa == 0) {
-    if (KosEvalState_StackPushRef(es, built) < 0) {
+    if (unlikely(KosEvalState_StackPushRef(es, built) < 0)) {
       Py_DECREF(built);
       return EVAL_RAISE();
     }
@@ -35,9 +35,8 @@ KOS_OP_HANDLER_COLD(COMBINE_KWDS) {
     return EVAL_NORMAL();
   }
 
-  PyObject *const *vals = KosEvalState_StackTailPtr(es,
-                                                 (size_t) opa);
-  if (! vals) {
+  PyObject *const *vals = KosEvalState_StackTailPtr(es, (size_t) opa);
+  if (unlikely(! vals)) {
     Py_DECREF(built);
     return EVAL_RAISE();
   }
@@ -52,7 +51,7 @@ KOS_OP_HANDLER_COLD(COMBINE_KWDS) {
 
   KosEvalState_StackDropNoErr(es, (size_t) opa);
 
-  if (KosEvalState_StackPushRef(es, built) < 0) {
+  if (unlikely(KosEvalState_StackPushRef(es, built) < 0)) {
     Py_DECREF(built);
     return EVAL_RAISE();
   }

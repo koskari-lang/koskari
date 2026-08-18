@@ -13,18 +13,18 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
    BUILD_CLASS: arg unused. Stack: [..., pos, ns] with TOS = ns,
    TOS-1 = pos. pos = (name, bases) or (name, bases, metaclass).
    Pops ns, pos; builds class via kos_build_class (demand-wrap pass,
    metaclass resolution, prepare, namespace merge); pushes resulting class.
 */
-
 KOS_OP_HANDLER_COLD(BUILD_CLASS) {
   (void) insn;
 
   PyObject *ns = KosEvalState_StackPopRef(es);
-  if (! ns) {
+  if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError, "BUILD_CLASS stack underrun (ns)");
     return EVAL_RAISE();
   }
@@ -32,7 +32,7 @@ KOS_OP_HANDLER_COLD(BUILD_CLASS) {
   SAYF("BUILD_CLASS: ns=%R", ns);
 
   PyObject *pos = KosEvalState_StackPopRef(es);
-  if (! pos) {
+  if (unlikely(! pos)) {
     Py_DECREF(ns);
     PyErr_SetString(PyExc_RuntimeError, "BUILD_CLASS stack underrun (pos)");
     return EVAL_RAISE();
@@ -44,7 +44,7 @@ KOS_OP_HANDLER_COLD(BUILD_CLASS) {
     PyObject *fixed = PySequence_Tuple(pos);
     Py_DECREF(pos);
     pos = fixed;
-    if (! pos) {
+    if (unlikely(! pos)) {
       Py_DECREF(ns);
       return EVAL_RAISE();
     }
@@ -54,7 +54,8 @@ KOS_OP_HANDLER_COLD(BUILD_CLASS) {
   PyObject *bases = NULL;
   PyObject *metaclass = NULL;
 
-  if (! PyArg_ParseTuple(pos, "OO|O:BUILD_CLASS", &name, &bases, &metaclass)) {
+  if (unlikely(! PyArg_ParseTuple(pos,
+        "OO|O:BUILD_CLASS", &name, &bases, &metaclass))) {
     Py_DECREF(pos);
     Py_DECREF(ns);
     return EVAL_RAISE();
@@ -77,7 +78,7 @@ KOS_OP_HANDLER_COLD(BUILD_CLASS) {
   Py_XDECREF(metaclass);
   Py_DECREF(ns);
 
-  if (! cls)
+  if (unlikely(! cls))
     return EVAL_RAISE();
 
   SAYF("BUILD_CLASS: cls=%R", cls);

@@ -13,21 +13,21 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   PARAM: arg = extra index. Schema CONST (parameter name), COUNT (0 or
-   1 stacked defaults).
-   Stack [] -> [value] at count 0, [default] -> [value] at count 1.
-   Resolves the enclosing parameterize extent, then the root scope. On a
-   miss the stacked default answers, or NameError when there is none.
-   Creates nothing in either store.
-*/
 
+/**
+  PARAM: arg = extra index. Schema CONST (parameter name), COUNT (0 or
+  1 stacked defaults).
+  Stack [] -> [value] at count 0, [default] -> [value] at count 1.
+  Resolves the enclosing parameterize extent, then the root scope. On a
+  miss the stacked default answers, or NameError when there is none.
+  Creates nothing in either store.
+*/
 KOS_OP_HANDLER(PARAM) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
   PyObject *name = KosEvalState_CONST(es, row.a0);
-  if (! name)
+  if (unlikely(! name))
     return EVAL_RAISE();
 
   PyObject *cell = kos_param_lookup(KosEvalState_CONTEXT(es), name);
@@ -42,14 +42,17 @@ KOS_OP_HANDLER(PARAM) {
     return kos_op_result_PUSH(es, value);
   }
 
-  if (row.a1) {
+  if (likely(row.a1)) {
     // the stacked default is already in result position
     return EVAL_NORMAL();
-  }
 
-  PyErr_Format(PyExc_NameError, "Param %S has no binding and no default",
-               name);
-  return EVAL_RAISE();
+  } else {
+    PyErr_Format(
+      PyExc_NameError,
+      "Param %S has no binding and no default",
+      name);
+    return EVAL_RAISE();
+  }
 }
 
 

@@ -13,20 +13,20 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   BUILD_ARGS: arg = count of positional arguments.
-   Stack: [..., v_0, ..., v_{n-1}] -> [..., tuple].
-   Pop n elements and push a tuple of them.
-*/
 
+/**
+  BUILD_ARGS: arg = count of positional arguments.
+  Stack: [..., v_0, ..., v_{n-1}] -> [..., tuple].
+  Pop n elements and push a tuple of them.
+*/
 KOS_OP_HANDLER(BUILD_ARGS) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *built = KosEvalState_StackPopTail(es, (size_t) opa);
 
-  if (! built)
+  if (unlikely(! built))
     return EVAL_RAISE();
 
-  if (KosEvalState_StackPushRef(es, built) < 0) {
+  if (unlikely(KosEvalState_StackPushRef(es, built) < 0)) {
     Py_DECREF(built);
     return EVAL_RAISE();
   }

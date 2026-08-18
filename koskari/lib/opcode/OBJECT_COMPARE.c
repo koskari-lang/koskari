@@ -14,11 +14,10 @@
 */
 
 /**
-   OBJECT_COMPARE: arg = CMPCOUNT (KosCompare selector high byte, reduce
-   count low byte). Chain-compare the top COUNT operands under the
-   selector and push the result.
+  OBJECT_COMPARE: arg = CMPCOUNT (KosCompare selector high byte, reduce
+  count low byte). Chain-compare the top COUNT operands under the
+  selector and push the result.
 */
-
 KOS_OP_HANDLER(OBJECT_COMPARE) {
   uint16_t arg = KosOp_ARG(insn);
   size_t count = (size_t) KosCmpCount_COUNT(arg);

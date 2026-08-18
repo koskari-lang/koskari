@@ -13,24 +13,27 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   OBJECT_VARS: arg unused. Pop TOS, push getattr(TOS, "__dict__").
-*/
 
+/**
+  OBJECT_VARS: arg unused. Pop TOS, push getattr(TOS, "__dict__").
+*/
 KOS_OP_HANDLER(OBJECT_VARS) {
+  (void) insn;
+
   PyObject *val = KosEvalState_StackPopRef(es);
-  if (! val)
+  if (unlikely(! val))
     return EVAL_RAISE();
 
   PyObject *d = PyObject_GetAttrString(val, "__dict__");
   Py_DECREF(val);
-  if (! d) {
+
+  if (unlikely(! d)) {
     PyErr_Clear();
     PyErr_SetString(PyExc_TypeError,
                     "vars argument must have __dict__ attribute");
     return EVAL_RAISE();
   }
-  (void) insn;
+
   return kos_op_result_PUSH(es, d);
 }
 

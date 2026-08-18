@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST_LIST_APPEND: arg = slot index. Pop TOS (value), append to the list
-   in the fast slot. Does not push. TypeError when the slot value is not a
-   list.
-*/
 
+/**
+  FAST_LIST_APPEND: arg = slot index. Pop TOS (value), append to the list
+  in the fast slot. Does not push. TypeError when the slot value is not a
+  list.
+*/
 KOS_OP_HANDLER(FAST_LIST_APPEND) {
 
   PyObject *ns = CURRENT_NS();

@@ -13,24 +13,29 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   ITEM_REF: arg unused. Push item reference for subscription. Stack: obj, key (TOS).
-*/
 
+/**
+  ITEM_REF: arg unused. Push item reference for subscription.
+  Stack: obj, key (TOS).
+*/
 KOS_OP_HANDLER(ITEM_REF) {
   PyObject *key = KosEvalState_StackPopRef(es);
-  if (! key)
+  if (unlikely(! key))
     return EVAL_RAISE();
+
   PyObject *obj = KosEvalState_StackPopRef(es);
-  if (! obj) {
+  if (unlikely(! obj)) {
     Py_DECREF(key);
     return EVAL_RAISE();
   }
+
   PyObject *ref = KosItemRef_New(NULL, obj, key);
   Py_DECREF(obj);
   Py_DECREF(key);
-  if (! ref)
+
+  if (unlikely(! ref))
     return EVAL_RAISE();
+
   return kos_op_result_PUSH(es, ref);
 }
 

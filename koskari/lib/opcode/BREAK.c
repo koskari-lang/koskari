@@ -13,13 +13,13 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   BREAK: arg = result count (0 = None, 1 = single value, N = tuple of N).
-   Exit innermost loop/foreach; jump to its break target. Pops the loop
-   region and pushes the result value to the parent stack as the loop
-   expression value. Raises RuntimeError if no LOOP/FOREACH region on chain.
-*/
 
+/**
+  BREAK: arg = result count (0 = None, 1 = single value, N = tuple of N).
+  Exit innermost loop/foreach; jump to its break target. Pops the loop
+  region and pushes the result value to the parent stack as the loop
+  expression value. Raises RuntimeError if no LOOP/FOREACH region on chain.
+*/
 KOS_OP_HANDLER(BREAK) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
@@ -30,14 +30,14 @@ KOS_OP_HANDLER(BREAK) {
 
   } else if (opa == 1) {
     result = KosEvalState_StackPopRef(es);
-    if (! result) {
+    if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK pop underrun");
       return EVAL_RAISE();
     }
 
   } else {
     result = KosEvalState_StackPopTail(es, (size_t) opa);
-    if (! result) {
+    if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK PopTail underrun");
       return EVAL_RAISE();
     }

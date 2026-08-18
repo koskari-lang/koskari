@@ -13,16 +13,16 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   BUILD_LIST_EXTEND: stack [..., list, iterable] with iterable on TOS.
-   Extend list in place from iterable; pop iterable; leave list on stack.
+  BUILD_LIST_EXTEND: stack [..., list, iterable] with iterable on TOS.
+  Extend list in place from iterable; pop iterable; leave list on stack.
 
-   The iterable may be any object the list API accepts (sequence or
-   iterator); PySequence_InPlaceConcat drives list.extend semantics. Used for
-   a *: splat segment of a list literal. TypeError when the list slot is not
-   a list.
+  The iterable may be any object the list API accepts (sequence or
+  iterator); PySequence_InPlaceConcat drives list.extend semantics. Used for
+  a *: splat segment of a list literal. TypeError when the list slot is not
+  a list.
 */
-
 KOS_OP_HANDLER(BUILD_LIST_EXTEND) {
 
   PyObject *iterable = KosEvalState_StackPopRef(es);

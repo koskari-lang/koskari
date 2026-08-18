@@ -13,10 +13,10 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
    LABEL: arg unused. Marks a branch target; no runtime effect.
 */
-
 KOS_OP_HANDLER_COLD(LABEL) {
   (void) insn;
   return EVAL_NORMAL();

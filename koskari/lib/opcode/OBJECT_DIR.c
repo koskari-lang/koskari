@@ -13,17 +13,21 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   OBJECT_DIR: pop TOS, call PyObject_Dir, push result.
+  OBJECT_DIR: pop TOS, call PyObject_Dir, push result.
 */
 KOS_OP_HANDLER(OBJECT_DIR) {
-    PyObject *val = KosEvalState_StackPopRef(es);
-    if (! val) return EVAL_RAISE();
-    PyObject *res = PyObject_Dir(val);
-    Py_DECREF(val);
-    if (! res) return EVAL_RAISE();
-    (void) insn;
-    return kos_op_result_PUSH(es, res);
+  (void) insn;
+
+  PyObject *val = KosEvalState_StackPopRef(es);
+  if (! val) return EVAL_RAISE();
+
+  PyObject *res = PyObject_Dir(val);
+  Py_DECREF(val);
+
+  if (! res) return EVAL_RAISE();
+  return kos_op_result_PUSH(es, res);
 }
 
 

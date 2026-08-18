@@ -13,17 +13,17 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
   CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
   ..., arg_{N-1}] (callable oldest). Prologue only: the whole window
   (callable included) is borrowed; kos_call_invoke owns the drop.
 */
-
 KOS_OP_HANDLER(CALL) {
   unsigned n = KosOp_ARG(insn);
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
-  if (! ptr)
+  if (unlikely(! ptr))
     return EVAL_RAISE();
 
   SAYF("CALL: callable=%R", ptr[0]);

@@ -13,23 +13,24 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST_STORE: arg = slot index. Store TOS into fast slot.
-*/
 
+/**
+  FAST_STORE: arg = slot index. Store TOS into fast slot.
+*/
 KOS_OP_HANDLER(FAST_STORE) {
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
+
   PyObject *val = KosEvalState_StackPopRef(es);
-  if (! val)
+  if (unlikely(! val))
     return EVAL_RAISE();
 
   size_t idx = (size_t) KosOp_ARG(insn);
   int res = kos_ns_fast_store(ns, idx, val);
   Py_DECREF(val);
 
-  if (res < 0)
+  if (unlikely(res < 0))
     return EVAL_RAISE();
 
   return EVAL_NORMAL();

@@ -13,20 +13,20 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   PARAM_CONST: arg = extra index. Schema CONST (parameter name), CONST
-   (default value).
-   Stack [] -> [value].
-   As PARAM, with the default coming from the constant pool rather than
-   the stack. Creates nothing in either store.
-*/
 
+/**
+  PARAM_CONST: arg = extra index. Schema CONST (parameter name), CONST
+  (default value).
+  Stack [] -> [value].
+  As PARAM, with the default coming from the constant pool rather than
+  the stack. Creates nothing in either store.
+*/
 KOS_OP_HANDLER(PARAM_CONST) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
   PyObject *name = KosEvalState_CONST(es, row.a0);
-  if (! name)
+  if (unlikely(! name))
     return EVAL_RAISE();
 
   PyObject *cell = kos_param_lookup(KosEvalState_CONTEXT(es), name);
@@ -34,7 +34,7 @@ KOS_OP_HANDLER(PARAM_CONST) {
 
   if (! value) {
     value = KosEvalState_CONST(es, row.a1);
-    if (! value)
+    if (unlikely(! value))
       return EVAL_RAISE();
   }
 

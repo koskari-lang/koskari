@@ -13,11 +13,11 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   OBJECT_STR: arg = number of operands. Build str from top N values (e.g. for
-   f-string), push result or await it.
-*/
 
+/**
+  OBJECT_STR: arg = number of operands. Build str from top N values (e.g. for
+  f-string), push result or await it.
+*/
 KOS_OP_HANDLER(OBJECT_STR) {
   return kos_op_result_from_push_int(obj_op_reducing(es, insn, KosOperator_BuildStr));
 }

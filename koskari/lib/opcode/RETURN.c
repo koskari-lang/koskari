@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   RETURN: arg = 0 (None), 1 (single value), or N (tuple of N values).
-   Pop the return value(s) from the stack; eval_event_return delivers
-   KOS_RES_RETURN at the driver boundary.
-*/
 
+/**
+  RETURN: arg = 0 (None), 1 (single value), or N (tuple of N values).
+  Pop the return value(s) from the stack; eval_event_return delivers
+  KOS_RES_RETURN at the driver boundary.
+*/
 KOS_OP_HANDLER(RETURN) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
@@ -37,7 +37,7 @@ KOS_OP_HANDLER(RETURN) {
 
   } else if (opa == 1) {
     val = KosEvalState_StackPopRef(es);
-    if (! val) {
+    if (unlikely(! val)) {
       SAYF("[RETURN] pop underrun: stack=%p len=%zu",
            (void *) KosEvalState_StackHead(es),
            (unsigned long) KosEvalState_StackLen(es));
@@ -47,7 +47,7 @@ KOS_OP_HANDLER(RETURN) {
 
   } else {
     val = KosEvalState_StackPopTail(es, (size_t) opa);
-    if (! val) {
+    if (unlikely(! val)) {
       SAY("[eval] RETURN PopTail underrun\n");
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
       return EVAL_RAISE();

@@ -13,17 +13,24 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
    OBJECT_BIT_INVERT: pop TOS, call PyNumber_Invert, push result.
 */
 KOS_OP_HANDLER(OBJECT_BIT_INVERT) {
-    PyObject *val = KosEvalState_StackPopRef(es);
-    if (! val) return EVAL_RAISE();
-    PyObject *res = PyNumber_Invert(val);
-    Py_DECREF(val);
-    if (! res) return EVAL_RAISE();
-    (void) insn;
-    return kos_op_result_PUSH(es, res);
+  (void) insn;
+
+  PyObject *val = KosEvalState_StackPopRef(es);
+  if (unlikely(! val))
+    return EVAL_RAISE();
+
+  PyObject *res = PyNumber_Invert(val);
+  Py_DECREF(val);
+
+  if (unlikely(! res))
+    return EVAL_RAISE();
+
+  return kos_op_result_PUSH(es, res);
 }
 
 

@@ -13,13 +13,13 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
   CALL_VAR: arg = extra index. Schema VAR (name), COUNT (arg count).
   Call callable from namespace by name. Stack [arg_0, ..., arg_{N-1}].
   KosCallable: steal args then KosEvalState_Call. Plain Python: TailPtr +
   PyObject_Vectorcall + DropNoErr.
 */
-
 KOS_OP_HANDLER_COLD(CALL_VAR) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
@@ -27,18 +27,18 @@ KOS_OP_HANDLER_COLD(CALL_VAR) {
   unsigned n = row.a1;
 
   PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
-  if (! name)
+  if (unlikely(! name))
     return EVAL_RAISE();
 
   PyObject *callable = frame_ns_deref(es, name);
   SAYF("CALL_VAR: callable=%R", callable);
-  if (! callable)
+  if (unlikely(! callable))
     return EVAL_RAISE();
 
   PyObject *const *argv = NULL;
   if (n) {
     argv = KosEvalState_StackTailPtr(es, n);
-    if (! argv) {
+    if (unlikely(! argv)) {
       Py_DECREF(callable);
       return EVAL_RAISE();
     }

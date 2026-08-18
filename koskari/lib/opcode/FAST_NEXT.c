@@ -13,19 +13,19 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST_NEXT: fused FAST + OBJECT_NEXT. Arg = extra index. Schema
-   FASTVAR (iterator slot), COUNT (n = 1 or 2). Stack: [] or [default]
-   per n. Load the iterator from its fast slot and run the shared step
-   core (object_next_step): value or default on exhaustion, 1-arg
-   raises StopIteration, auto-await.
-*/
 
+/**
+  FAST_NEXT: fused FAST + OBJECT_NEXT. Arg = extra index. Schema
+  FASTVAR (iterator slot), COUNT (n = 1 or 2). Stack: [] or [default]
+  per n. Load the iterator from its fast slot and run the shared step
+  core (object_next_step): value or default on exhaustion, 1-arg
+  raises StopIteration, auto-await.
+*/
 KOS_OP_HANDLER_COLD(FAST_NEXT) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint16_t n = (uint16_t) row.a1;
-  if (n != 1 && n != 2) {
+  if (unlikely(n != 1 && n != 2)) {
     PyErr_Format(PyExc_ValueError, "FAST_NEXT arg must be 1 or 2, got %u", n);
     return EVAL_RAISE();
   }
@@ -36,12 +36,12 @@ KOS_OP_HANDLER_COLD(FAST_NEXT) {
   PyObject *default_val = NULL;
   if (n == 2) {
     default_val = KosEvalState_StackPopRef(es);
-    if (! default_val)
+    if (unlikely(! default_val))
       return EVAL_RAISE();
   }
 
   PyObject *iter = kos_ns_fast_deref(ns, (size_t) row.a0);
-  if (! iter) {
+  if (unlikely(! iter)) {
     Py_XDECREF(default_val);
     return EVAL_RAISE();
   }

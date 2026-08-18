@@ -13,20 +13,27 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   OBJECT_ITER: pop TOS, acquire an iterator uniformly over both
-   protocols (kos_iter_acquire, PUSH_FOREACH's preference order: Koskari
-   AsyncGenerator passes through, am_aiter, then the sync protocol),
-   push result.
+  OBJECT_ITER: pop TOS, acquire an iterator uniformly over both
+  protocols (kos_iter_acquire, PUSH_FOREACH's preference order: Koskari
+  AsyncGenerator passes through, am_aiter, then the sync protocol),
+  push result.
 */
 KOS_OP_HANDLER(OBJECT_ITER) {
-    PyObject *val = KosEvalState_StackPopRef(es);
-    if (! val) return EVAL_RAISE();
-    PyObject *res = kos_iter_acquire(val);
-    Py_DECREF(val);
-    if (! res) return EVAL_RAISE();
-    (void) insn;
-    return kos_op_result_PUSH(es, res);
+  (void) insn;
+
+  PyObject *val = KosEvalState_StackPopRef(es);
+  if (unlikely(! val))
+    return EVAL_RAISE();
+
+  PyObject *res = kos_iter_acquire(val);
+  Py_DECREF(val);
+
+  if (unlikely(! res))
+    return EVAL_RAISE();
+
+  return kos_op_result_PUSH(es, res);
 }
 
 

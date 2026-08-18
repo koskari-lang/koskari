@@ -13,23 +13,23 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   ITEM_TAKE: arg unused. getitem then delitem TOS1[TOS]. Stack: obj, key.
-*/
 
+/**
+  ITEM_TAKE: arg unused. getitem then delitem TOS1[TOS]. Stack: obj, key.
+*/
 KOS_OP_HANDLER(ITEM_TAKE) {
   PyObject *key = KosEvalState_StackPopRef(es);
-  if (! key)
+  if (unlikely(! key))
     return EVAL_RAISE();
 
   PyObject *obj = KosEvalState_StackPopRef(es);
-  if (! obj) {
+  if (unlikely(! obj)) {
     Py_DECREF(key);
     return EVAL_RAISE();
   }
 
   PyObject *item = PyObject_GetItem(obj, key);
-  if (! item) {
+  if (unlikely(! item)) {
     Py_DECREF(obj);
     Py_DECREF(key);
     return EVAL_RAISE();
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(ITEM_TAKE) {
   int res = PyObject_DelItem(obj, key);
   Py_DECREF(obj);
   Py_DECREF(key);
-  if (res < 0) {
+  if (unlikely(res < 0)) {
     Py_DECREF(item);
     return EVAL_RAISE();
   }

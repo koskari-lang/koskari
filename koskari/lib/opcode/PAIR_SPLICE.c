@@ -13,26 +13,13 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   PAIR_SPLICE: arg = count. Stack (bottom to top) = seg_0 ... seg_{count-1}.
-   Each segment is a pair (proper list), a Python tuple (of elements), nil,
-   or any other iterable. Flatten all segments in order into a single proper
-   cons list and push the result.
-
-   nil segments are skipped. The result is always a proper list (ends in nil).
-   PAIR_SPLICE 0 pushes nil.
-
-   Used by compile/quasiquote to concatenate literal segments and
-   unquote-splicing results into the final list.
-*/
 
 /**
-   Extend a PyList with the contents of a single segment item.
-   Handles pair (via KosPair_Unpack), tuple (fast path), nil (skip),
-   and generic iterable. Returns 0 on success, -1 on error.
+  Extend a PyList with the contents of a single segment item.
+  Handles pair (via KosPair_Unpack), tuple (fast path), nil (skip),
+  and generic iterable. Returns 0 on success, -1 on error.
 */
-static int
-pair_splice_extend(PyObject *coll, PyObject *item) {
+static int pair_splice_extend(PyObject *coll, PyObject *item) {
   if (KosNilP(item)) {
     /* nil contributes nothing */
     return 0;
@@ -74,6 +61,18 @@ pair_splice_extend(PyObject *coll, PyObject *item) {
 }
 
 
+/**
+  PAIR_SPLICE: arg = count. Stack (bottom to top) = seg_0 ... seg_{count-1}.
+  Each segment is a pair (proper list), a Python tuple (of elements), nil,
+  or any other iterable. Flatten all segments in order into a single proper
+  cons list and push the result.
+
+  nil segments are skipped. The result is always a proper list (ends in nil).
+  PAIR_SPLICE 0 pushes nil.
+
+  Used by compile/quasiquote to concatenate literal segments and
+  unquote-splicing results into the final list.
+*/
 KOS_OP_HANDLER_COLD(PAIR_SPLICE) {
   size_t count = (size_t) KosOp_ARG(insn);
 
@@ -83,15 +82,15 @@ KOS_OP_HANDLER_COLD(PAIR_SPLICE) {
   }
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
-  if (! ptr)
+  if (unlikely(! ptr))
     return EVAL_RAISE();
 
   PyObject *coll = PyList_New(0);
-  if (! coll)
+  if (unlikely(! coll))
     return EVAL_RAISE();
 
   for (size_t i = 0; i < count; i++) {
-    if (pair_splice_extend(coll, ptr[i]) < 0) {
+    if (unlikely(pair_splice_extend(coll, ptr[i]) < 0)) {
       Py_DECREF(coll);
       return EVAL_RAISE();
     }
@@ -103,6 +102,7 @@ KOS_OP_HANDLER_COLD(PAIR_SPLICE) {
     Py_DECREF(coll);
     Py_INCREF(KosNil);
     result = KosNil;
+
   } else {
     /* Append nil to make the result a proper list. */
     if (PyList_Append(coll, KosNil) < 0) {
@@ -115,7 +115,7 @@ KOS_OP_HANDLER_COLD(PAIR_SPLICE) {
       return EVAL_RAISE();
   }
 
-  if (KosEvalState_StackDrop(es, count) < 0) {
+  if (unlikely(KosEvalState_StackDrop(es, count) < 0)) {
     Py_DECREF(result);
     return EVAL_RAISE();
   }

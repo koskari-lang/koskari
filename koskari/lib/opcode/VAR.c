@@ -13,18 +13,18 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   VAR: arg = constant index of a name. Look up that name in the current
-   frame's namespace and push the value (or await it if async).
-*/
 
+/**
+  VAR: arg = constant index of a name. Look up that name in the current
+  frame's namespace and push the value (or await it if async).
+*/
 KOS_OP_HANDLER_COLD(VAR) {
   PyObject *name = get_name_from_insn(es, insn);
-  if (! name)
+  if (unlikely(! name))
     return EVAL_RAISE();
 
   PyObject *val = frame_ns_deref(es, name);
-  if (! val)
+  if (unlikely(! val))
     return EVAL_RAISE();
 
   return kos_op_result_PUSH(es, val);

@@ -13,31 +13,31 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   CONTINUE: arg = result count (0 = None, 1 = single value, N = tuple of N).
-   Jump to innermost loop/foreach continue target. Updates the region result
-   and clears the loop segment before jumping. Raises RuntimeError if
-   no LOOP/FOREACH region on the chain.
-*/
 
+/**
+  CONTINUE: arg = result count (0 = None, 1 = single value, N = tuple of N).
+  Jump to innermost loop/foreach continue target. Updates the region result
+  and clears the loop segment before jumping. Raises RuntimeError if
+  no LOOP/FOREACH region on the chain.
+*/
 KOS_OP_HANDLER(CONTINUE) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
 
-  if (opa == 0) {
+  if (likely(opa == 0)) {
     result = Py_None;
     Py_INCREF(result);
 
   } else if (opa == 1) {
     result = KosEvalState_StackPopRef(es);
-    if (! result) {
+    if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE pop underrun");
       return EVAL_RAISE();
     }
 
   } else {
     result = KosEvalState_StackPopTail(es, (size_t) opa);
-    if (! result) {
+    if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE PopTail underrun");
       return EVAL_RAISE();
     }

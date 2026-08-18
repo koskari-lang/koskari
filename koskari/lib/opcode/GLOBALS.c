@@ -13,14 +13,20 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   GLOBALS: arg unused. Push module globals: walk KosNamespace_PARENT from the
-   current frame's namespace to the outermost parent (not dyn_top or let scope).
-*/
 
+/**
+  GLOBALS: arg unused. Push module globals: walk KosNamespace_PARENT from the
+  current frame's namespace to the outermost parent (not dyn_top or let scope).
+*/
 KOS_OP_HANDLER(GLOBALS) {
   PyObject *ns = KosEvalState_GlobalsNamespace(es);
   Py_INCREF(ns);
+
+  if (unlikely(! ns)) {
+    PyErr_SetString(PyExc_RuntimeError, "GLOBALS: namespace is NULL");
+    return EVAL_RAISE();
+  }
+
   return kos_op_result_PUSH(es, ns);
 }
 

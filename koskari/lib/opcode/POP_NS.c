@@ -13,16 +13,17 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
    POP_NS: arg unused. Verify dyn_top is KOS_DYN_NS and pop the NS node.
 */
-
 KOS_OP_HANDLER(POP_NS) {
   (void) insn;
 
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (unlikely(kos_dyn_pop_ns(es, (KosDynNs *) top) < 0))
     return EVAL_RAISE();
+
   return EVAL_NORMAL();
 }
 

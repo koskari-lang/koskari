@@ -13,19 +13,27 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   OBJECT_NOT: pop TOS, call PyObject_Not, push Py_True/Py_False.
+  OBJECT_NOT: pop TOS, call PyObject_Not, push Py_True/Py_False.
 */
 KOS_OP_HANDLER(OBJECT_NOT) {
-    PyObject *val = KosEvalState_StackPopRef(es);
-    if (! val) return EVAL_RAISE();
-    int r = PyObject_Not(val);
-    Py_DECREF(val);
-    if (r < 0) return EVAL_RAISE();
-    PyObject *res = (r ? Py_True : Py_False);
-    Py_INCREF(res);
-    (void) insn;
-    return kos_op_result_PUSH(es, res);
+  (void) insn;
+
+  PyObject *val = KosEvalState_StackPopRef(es);
+  if (unlikely(! val))
+    return EVAL_RAISE();
+
+  int r = PyObject_Not(val);
+  Py_DECREF(val);
+
+  if (unlikely(r < 0))
+    return EVAL_RAISE();
+
+  PyObject *res = (r ? Py_True : Py_False);
+  Py_INCREF(res);
+
+  return kos_op_result_PUSH(es, res);
 }
 
 

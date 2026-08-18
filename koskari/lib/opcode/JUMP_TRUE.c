@@ -13,10 +13,10 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   JUMP_TRUE: arg = target PC. Branch if TOS is true.
-*/
 
+/**
+  JUMP_TRUE: arg = target PC. Branch if TOS is true.
+*/
 KOS_OP_HANDLER(JUMP_TRUE) {
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))

@@ -13,13 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   VAR_STORE_CONST: arg = extra index. Schema VAR, CONST for name and value.
-   Store the value into the name in the current frame namespace.
+  VAR_STORE_CONST: arg = extra index. Schema VAR, CONST for name and value.
+  Store the value into the name in the current frame namespace.
 */
-
 KOS_OP_HANDLER_COLD(VAR_STORE_CONST) {
-
     KosCode *code = KosEvalState_CurrentCode(es);
     KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
@@ -32,6 +31,7 @@ KOS_OP_HANDLER_COLD(VAR_STORE_CONST) {
     if (unlikely(frame_ns_store(es, name, val) < 0)) {
       return EVAL_RAISE();
     }
+
     return EVAL_NORMAL();
   }
 

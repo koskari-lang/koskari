@@ -13,23 +13,23 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   CONST_ITEM_REF: arg = constant index (key). Push constant-key item reference.
-*/
 
+/**
+  CONST_ITEM_REF: arg = constant index (key). Push constant-key item reference.
+*/
 KOS_OP_HANDLER(CONST_ITEM_REF) {
   PyObject *key = KosEvalState_CONST(es, KosOp_ARG(insn));
 
-  if (! key)
+  if (unlikely(! key))
     return EVAL_RAISE();
 
   PyObject *obj = KosEvalState_StackPopRef(es);
-  if (! obj)
+  if (unlikely(! obj))
     return EVAL_RAISE();
 
   PyObject *ref = KosItemRef_New(NULL, obj, key);
   Py_DECREF(obj);
-  if (! ref)
+  if (unlikely(! ref))
     return EVAL_RAISE();
 
   return kos_op_result_PUSH(es, ref);

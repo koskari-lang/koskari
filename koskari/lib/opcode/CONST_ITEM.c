@@ -13,22 +13,22 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   CONST_ITEM: arg = constant index (key). Push TOS[key].
-*/
 
+/**
+  CONST_ITEM: arg = constant index (key). Push TOS[key].
+*/
 KOS_OP_HANDLER(CONST_ITEM) {
   PyObject *key = KosEvalState_CONST(es, KosOp_ARG(insn));
-  if (! key)
+  if (unlikely(! key))
     return EVAL_RAISE();
 
   PyObject *obj = KosEvalState_StackPopRef(es);
-  if (! obj)
+  if (unlikely(! obj))
     return EVAL_RAISE();
 
   PyObject *item = PyObject_GetItem(obj, key);
   Py_DECREF(obj);
-  if (! item)
+  if (unlikely(! item))
     return EVAL_RAISE();
 
   return kos_op_result_PUSH(es, item);

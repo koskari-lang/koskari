@@ -13,39 +13,39 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   IMPORT: arg = extra index. Schema CONST (module name str, or None for
-   a bare relative import), COUNT (level: leading dots, 0 = absolute),
-   COUNT (leaf flag: 0 = bind root, 1 = bind leaf), CONST (binding name
-   str).
+  IMPORT: arg = extra index. Schema CONST (module name str, or None for
+  a bare relative import), COUNT (level: leading dots, 0 = absolute),
+  COUNT (leaf flag: 0 = bind root, 1 = bind leaf), CONST (binding name
+  str).
 
-   Self-contained: imports the module via kos_import_module and stores
-   it into the current frame namespace under the binding name. No stack
-   effect.
+  Self-contained: imports the module via kos_import_module and stores
+  it into the current frame namespace under the binding name. No stack
+  effect.
 
-   With the leaf flag clear the root package is bound while the full
-   dotted chain is still imported (plain Python "import foo.bar"
-   semantics); with it set the deepest submodule is bound (the
-   "(import [foo.bar as: fbar])" member form).
+  With the leaf flag clear the root package is bound while the full
+  dotted chain is still imported (plain Python "import foo.bar"
+  semantics); with it set the deepest submodule is bound (the
+  "(import [foo.bar as: fbar])" member form).
 */
-
 KOS_OP_HANDLER(IMPORT) {
   KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
 
   PyObject *name = KosEvalState_CONST(es, row.a0);
-  if (! name)
+  if (unlikely(! name))
     return EVAL_RAISE();
 
   PyObject *bind = KosEvalState_CONST(es, row.a3);
-  if (! bind)
+  if (unlikely(! bind))
     return EVAL_RAISE();
 
   PyObject *mod = kos_import_module(es, name, (long) row.a1, row.a2);
-  if (! mod)
+  if (unlikely(! mod))
     return EVAL_RAISE();
 
-  if (frame_ns_store(es, bind, mod) < 0) {
+  if (unlikely(frame_ns_store(es, bind, mod) < 0)) {
     Py_DECREF(mod);
     return EVAL_RAISE();
   }

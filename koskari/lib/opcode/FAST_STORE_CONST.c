@@ -13,11 +13,11 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST_STORE_CONST: arg = extra index. Schema FASTVAR, CONST for slot and value.
-   Store the value into the name in the current frame namespace.
-*/
 
+/**
+  FAST_STORE_CONST: arg = extra index. Schema FASTVAR, CONST for slot and value.
+  Store the value into the name in the current frame namespace.
+*/
 KOS_OP_HANDLER(FAST_STORE_CONST) {
 
     PyObject *ns = CURRENT_NS();

@@ -13,21 +13,20 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   AWAIT: arg = stack element count. 1: pop TOS (awaitable), start/resume
-   awaiting it; may return EVAL_AWAIT(val) or push the result. 0: bare
-   cooperative suspend — no stack effect; EVAL_AWAIT(Py_None) payload
-   and no py_await_iter.
-*/
 
+/**
+  AWAIT: arg = stack element count. 1: pop TOS (awaitable), start/resume
+  awaiting it; may return EVAL_AWAIT(val) or push the result. 0: bare
+  cooperative suspend — no stack effect; EVAL_AWAIT(Py_None) payload
+  and no py_await_iter.
+*/
 KOS_OP_HANDLER(AWAIT) {
   uint32_t arg = KosOp_ARG(insn);
 
-  if (arg == 0u) {
+  if (arg == 0u)
     return EVAL_AWAIT(Py_NewRef(Py_None));
-  }
 
-  if (arg != 1u) {
+  if (unlikely(arg != 1u)) {
     PyErr_Format(PyExc_RuntimeError,
                  "AWAIT: arg must be 0 or 1 (stack count), got %u",
                  (unsigned) arg);
@@ -35,8 +34,9 @@ KOS_OP_HANDLER(AWAIT) {
   }
 
   PyObject *val = KosEvalState_StackPopRef(es);
-  if (! val)
+  if (unlikely(! val))
     return EVAL_RAISE();
+
   return kos_await_dispatch(es, val);
 }
 

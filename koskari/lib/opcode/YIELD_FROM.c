@@ -19,12 +19,12 @@
 
 
 /**
-   Classify obj as a yield-from delegate kind.  Order matters and must
-   match the flattening preference: a Koskari async gen is driven
-   flattened even though it also speaks the Python async protocol.
+  Classify obj as a yield-from delegate kind.  Order matters and must
+  match the flattening preference: a Koskari async gen is driven
+  flattened even though it also speaks the Python async protocol.
 
-   :return: a KOS_YF_* kind, or -1 when obj is none of the delegate
-     shapes (callable and plain-iterable fallbacks are the caller's)
+  :return: a KOS_YF_* kind, or -1 when obj is none of the delegate
+    shapes (callable and plain-iterable fallbacks are the caller's)
 */
 static int yield_from_classify(PyObject *obj) {
 
@@ -53,12 +53,12 @@ static int yield_from_classify(PyObject *obj) {
 
 
 /**
-   Normalize TOS to a (delegate, kind) for yield-from. On success returns 0
-   and sets *delegate_out (new ref) and *kind_out. On failure returns -1.
+  Normalize TOS to a (delegate, kind) for yield-from. On success returns 0
+  and sets *delegate_out (new ref) and *kind_out. On failure returns -1.
 
-   Yield-from operates on iterables and async-iterables only. Coroutines
-   are rejected (same idea as iter(1) being invalid). We classify by type
-   so the handler can drive the delegate with the right protocol.
+  Yield-from operates on iterables and async-iterables only. Coroutines
+  are rejected (same idea as iter(1) being invalid). We classify by type
+  so the handler can drive the delegate with the right protocol.
 */
 static int yield_from_normalize(
     PyObject *obj,
@@ -142,8 +142,8 @@ static int yield_from_normalize(
 
 
 /**
-   Reset the pending inject state back to a plain STEP: release
-   PENDING_ARG / PENDING_ARG_TYPE and set PENDING_ACTION.
+  Reset the pending inject state back to a plain STEP: release
+  PENDING_ARG / PENDING_ARG_TYPE and set PENDING_ACTION.
 */
 static void yield_from_clear_pending(KosDynYieldFrom *yf) {
 
@@ -156,11 +156,11 @@ static void yield_from_clear_pending(KosDynYieldFrom *yf) {
 
 
 /**
-   Consume the resume-from-await inject: release INFLIGHT and take the
-   stashed await result out of PENDING_ARG (ownership transfers to the
-   caller), resetting PENDING_ACTION to STEP.
+  Consume the resume-from-await inject: release INFLIGHT and take the
+  stashed await result out of PENDING_ARG (ownership transfers to the
+  caller), resetting PENDING_ACTION to STEP.
 
-   :return: the await result (new ref), or NULL with PyErr set
+  :return: the await result (new ref), or NULL with PyErr set
 */
 static PyObject *yield_from_take_await_result(KosDynYieldFrom *yf) {
 
@@ -179,22 +179,24 @@ static PyObject *yield_from_take_await_result(KosDynYieldFrom *yf) {
 
 
 /**
-   Emit EVAL_YIELD using the value at TOS. Call after pushing the
-   yielded value onto the frame stack. Requires at least one value on
-   the frame stack (TOS). On success sets phase to EXPECT_SEND and returns
-   EVAL_YIELD. On failure returns EVAL_RAISE.
+  Emit EVAL_YIELD using the value at TOS. Call after pushing the
+  yielded value onto the frame stack. Requires at least one value on
+  the frame stack (TOS). On success sets phase to EXPECT_SEND and returns
+  EVAL_YIELD. On failure returns EVAL_RAISE.
 */
 static KosOpResult yield_from_emit_yield(
     KosEvalState *es,
     KosDynYieldFrom *yf) {
 
-  /* No demand deny here: this is a yield-shaped suspension, and demand
-     generators yield as iteration (the demand bit denies await only).
-     A demand-flagged frame can only reach YIELD_FROM as a demand-driven
-     generator; the await-shaped suspension below keeps its deny. */
+  /*
+    No demand deny here: this is a yield-shaped suspension, and demand
+    generators yield as iteration (the demand bit denies await only).
+    A demand-flagged frame can only reach YIELD_FROM as a demand-driven
+    generator; the await-shaped suspension below keeps its deny.
+  */
 
   PyObject *const *tos = KosEvalState_StackTailPtr(es, 1);
-  if (! tos) {
+  if (unlikely(! tos)) {
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
                       "yield-from emit_yield: missing TOS after push");
@@ -214,39 +216,41 @@ static KosOpResult yield_from_emit_yield(
 
 
 /**
-   Yield value (a new ref, consumed) out of the delegating generator:
-   push it and re-emit it as this generator's own yield.
+  Yield value (a new ref, consumed) out of the delegating generator:
+  push it and re-emit it as this generator's own yield.
 */
 static KOS_NOINLINE KosOpResult yield_from_yield_value(
     KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *value) {
 
-  if (KosEvalState_StackPushRef(es, value) < 0) {
+  if (unlikely(KosEvalState_StackPushRef(es, value) < 0)) {
     Py_DECREF(value);
     return EVAL_RAISE();
   }
+
   Py_DECREF(value);
   return yield_from_emit_yield(es, yf);
 }
 
 
 /**
-   Delegate exhausted: pop the yield-from node and continue normally
-   (Koskari yield-from is a void completion).
+  Delegate exhausted: pop the yield-from node and continue normally
+  (Koskari yield-from is a void completion).
 */
 static KOS_NOINLINE KosOpResult yield_from_finish(
     KosEvalState *es,
     KosDynYieldFrom *yf) {
 
-  if (kos_dyn_pop_yield_from(es, yf) < 0)
+  if (unlikely(kos_dyn_pop_yield_from(es, yf) < 0))
     return EVAL_RAISE();
+
   return EVAL_NORMAL();
 }
 
 
 /**
-   Consume active StopIteration and discard its value (do not push or return).
+  Consume active StopIteration and discard its value (do not push or return).
 */
 static void yield_from_discard_stop_iteration_value(void) {
 
@@ -257,8 +261,8 @@ static void yield_from_discard_stop_iteration_value(void) {
 
 
 /**
-   Active StopAsyncIteration ends the delegation: consume the raised
-   exception, discard its value, pop the yield-from node.
+  Active StopAsyncIteration ends the delegation: consume the raised
+  exception, discard its value, pop the yield-from node.
 */
 static KOS_NOINLINE KosOpResult yield_from_finish_stop_async(
     KosEvalState *es,
@@ -268,18 +272,20 @@ static KOS_NOINLINE KosOpResult yield_from_finish_stop_async(
   PyObject *final_val = StopAsyncIteration_VALUE(exc);
   Py_XINCREF(final_val);
   Py_DECREF(exc);
+
   kos_dyn_pop_yield_from(es, yf);
   Py_XDECREF(final_val);
+
   return EVAL_NORMAL();
 }
 
 
 /**
-   THROW(StopAsyncIteration) closes the delegation quietly: when the
-   pending inject is a StopAsyncIteration instance, discard it and its
-   value, pop the yield-from node.
+  THROW(StopAsyncIteration) closes the delegation quietly: when the
+  pending inject is a StopAsyncIteration instance, discard it and its
+  value, pop the yield-from node.
 
-   :return: 1 when handled (node popped), 0 when not applicable
+  :return: 1 when handled (node popped), 0 when not applicable
 */
 static KOS_NOINLINE int yield_from_throw_stop_async_finish(
     KosEvalState *es,
@@ -302,9 +308,9 @@ static KOS_NOINLINE int yield_from_throw_stop_async_finish(
 
 
 /**
-   Drive one step of a sync-iterator delegate (PyIter_Next). On a yielded
-   value returns EVAL_YIELD; on exhaustion returns EVAL_NORMAL; on error
-   returns EVAL_RAISE.
+  Drive one step of a sync-iterator delegate (PyIter_Next). On a yielded
+  value returns EVAL_YIELD; on exhaustion returns EVAL_NORMAL; on error
+  returns EVAL_RAISE.
 */
 static KosOpResult yield_from_drive_sync_iter(
     KosEvalState *es,
@@ -332,9 +338,11 @@ static KosOpResult yield_from_drive_sync_iter(
   if (n)
     return yield_from_yield_value(es, yf, n);
 
-  /* PyIter_Next returns NULL with no exception set on normal exhaustion.
-     StopIteration (with optional .value) is only set for some iterators /
-     gen.send paths; when present, discard the value per yield-from rules. */
+  /*
+    PyIter_Next returns NULL with no exception set on normal exhaustion.
+    StopIteration (with optional .value) is only set for some iterators /
+    gen.send paths; when present, discard the value per yield-from rules.
+  */
   if (PyErr_Occurred()) {
     if (! PyErr_ExceptionMatches(PyExc_StopIteration))
       return EVAL_RAISE();
@@ -346,9 +354,9 @@ static KosOpResult yield_from_drive_sync_iter(
 
 
 /**
-   Drive one step of a sync-generator delegate (send/throw/close).
-   Check exhaustion (StopIteration) before treating non-NULL send result
-   as a yielded value.
+  Drive one step of a sync-generator delegate (send/throw/close).
+  Check exhaustion (StopIteration) before treating non-NULL send result
+  as a yielded value.
 */
 static KosOpResult yield_from_drive_sync_gen(
     KosEvalState *es,
@@ -404,9 +412,9 @@ static KosOpResult yield_from_drive_sync_gen(
 
 
 /**
-   Drive one step of a Python async-iterator or async-generator
-   (__anext__ / asend / athrow / aclose). kind is KOS_YF_PY_ASYNC_ITER
-   or KOS_YF_PY_ASYNC_GEN.
+  Drive one step of a Python async-iterator or async-generator
+  (__anext__ / asend / athrow / aclose). kind is KOS_YF_PY_ASYNC_ITER
+  or KOS_YF_PY_ASYNC_GEN.
 */
 static KosOpResult yield_from_drive_py_async(
     KosEvalState *es,
@@ -508,11 +516,11 @@ static KosOpResult yield_from_drive_py_async(
 
 
 /**
-   Drive one step of a Koskari async-generator delegate (flattened into the
-   same koskari_eval).  Handles resume-from-await inject, close,
-   throw(StopAsyncIteration), and stepping.  Returns 0 on success, -1 on
-   error (PyErr set).  Never emits YIELD or AWAIT directly; those surface
-   through the inner koskari_eval flattening path.
+  Drive one step of a Koskari async-generator delegate (flattened into the
+  same koskari_eval).  Handles resume-from-await inject, close,
+  throw(StopAsyncIteration), and stepping.  Returns 0 on success, -1 on
+  error (PyErr set).  Never emits YIELD or AWAIT directly; those surface
+  through the inner koskari_eval flattening path.
 */
 static int yield_from_drive_kos_async_gen(
     KosEvalState *es,
@@ -629,17 +637,16 @@ static int yield_from_drive_kos_async_gen(
 
 
 /**
-   YIELD_FROM: delegate to a sub-iterator or sub-generator; PC-stable
-   state machine.
+  YIELD_FROM: delegate to a sub-iterator or sub-generator; PC-stable
+  state machine.
 
-   First entry: TOS is the yield-from expression; we normalize to
-   (delegate, kind), push the yield_from dyn node, roll back PC, and
-   re-dispatch so the next iteration runs this handler again and drives
-   the delegate.  Subsequent entries: we have the yield_from node; we
-   consume any resume inject, then drive one step (or close/throw)
-   according to delegate kind.
+  First entry: TOS is the yield-from expression; we normalize to
+  (delegate, kind), push the yield_from dyn node, roll back PC, and
+  re-dispatch so the next iteration runs this handler again and drives
+  the delegate.  Subsequent entries: we have the yield_from node; we
+  consume any resume inject, then drive one step (or close/throw)
+  according to delegate kind.
 */
-
 KOS_OP_HANDLER_COLD(YIELD_FROM) {
   KosDynNode *dyn_top = KosEvalState_CurrentNode(es);
 
