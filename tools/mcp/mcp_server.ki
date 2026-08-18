@@ -36,7 +36,8 @@ import-from pathlib Path
 
 import-from mcp.server MCPServer
 import-from mcp.server.transport_security TransportSecuritySettings
-import-from starlette.responses HTMLResponse PlainTextResponse
+import-from starlette.responses HTMLResponse JSONResponse PlainTextResponse
+import-from starlette.routing Route
 
 
 define logger (logging.getLogger "koskari.mcp")
@@ -149,12 +150,13 @@ define STATE #{
     "docs": #[]
     "programs": #[]
     "git_ref": None
-    "page": None}
+    "page": None
+}
 
 
-define corpus-table [] (item STATE "corpus")
-define docs-table [] (item STATE "docs")
-define programs-table [] (item STATE "programs")
+define corpus-table [] STATE["corpus"]
+define docs-table [] STATE["docs"]
+define programs-table [] STATE["programs"]
 
 
 ;; === Dataset loading ===
@@ -677,7 +679,7 @@ define search_examples [
             "text belongs in search_text, and search_docs covers the "
             "documentation that search_examples does not.")
 
-    (format-examples rows)
+    format-examples rows
 
 
 @(mcp.tool)
@@ -696,7 +698,7 @@ define get_example [corpus_id]:
     when refs:
         set! example["references_resolved"] (resolve-references refs)
 
-    (json.dumps example)
+    json.dumps example
 
 
 @(mcp.tool)
@@ -719,7 +721,7 @@ define get_reference [path]:
     unless row:
         return (reference-miss path)
 
-    (json.dumps (pick-fields row REFERENCE_FULL_KEYS))
+    json.dumps (pick-fields row REFERENCE_FULL_KEYS)
 
 
 @(mcp.tool)
@@ -840,10 +842,10 @@ define list_tags []:
             (structural.append line)
 
     define lines #[]
-    (lines.append f"intent ({(len intent)}):")
-    (lines.extend intent)
-    (lines.append f"structural ({(len structural)}):")
-    (lines.extend structural)
+    lines.append f"intent ({(len intent)}):"
+    lines.extend intent
+    lines.append f"structural ({(len structural)}):"
+    lines.extend structural
 
     "\n".join lines
 
@@ -858,11 +860,12 @@ define corpus_version []:
     which snapshot a running deployment is serving.
     """
 
-    (json.dumps #{
-        "git_ref": (item STATE "git_ref")
+    json.dumps #{
+        "git_ref": STATE["git_ref"]
         "corpus": (len (corpus-table))
         "docs": (len (docs-table))
-        "programs": (len (programs-table))})
+        "programs": (len (programs-table))
+    }
 
 
 ;; === Landing page ===
@@ -881,13 +884,73 @@ define landing_page [request]:
     Serve the landing page at the service root
     """
 
-    define page (item STATE "page")
+    define page STATE["page"]
     unless page:
         return (PlainTextResponse
             "koskari-corpus MCP server. The endpoint is POST /mcp.\n")
 
     (HTMLResponse page
         headers: #{"Cache-Control": "public, max-age=300"})
+
+
+;; === GET /mcp fallback ===
+
+
+;; The streamable-HTTP GET path exists to carry server-initiated
+;; messages on an existing session. This deployment is stateless
+;; (--lambda and --serve both), so that stream can never receive
+;; anything: a client that advertises SSE support in its Accept
+;; header -- most MCP clients do, even on a bare probe -- would
+;; otherwise hang on GET /mcp until the invocation times out, rather
+;; than getting an answer. mcp.custom_route cannot fix this: the SDK's
+;; /mcp route matches every method, and custom routes are appended
+;; after it, so a decorator-registered GET handler here would never
+;; be reached. Instead, run_streamable_http_with_info below builds
+;; the app directly and splices this route in ahead of the catch-all.
+
+@coroutine-fn
+define serve_mcp_info [request]:
+    """
+    Answer a plain GET /mcp with server identity
+    """
+
+    JSONResponse #{
+        "name": "koskari-corpus"
+        "protocol": "mcp"
+        "transport": "streamable-http"
+        "endpoint": "POST /mcp"
+        "git_ref": STATE["git_ref"]
+    }
+
+
+define run_streamable_http_with_info [host port **: app_kwargs]:
+    """
+    Run streamable HTTP, with GET /mcp answered directly
+
+    Reimplements the few lines mcp.run_streamable_http_async wraps, so
+    the info route can be spliced ahead of the SDK's catch-all /mcp
+    route before serving.
+    """
+
+    import uvicorn
+
+    define app:
+        (mcp.streamable_http_app
+            host: host
+            **: app_kwargs)
+
+    (app.routes.insert 0
+        (Route "/mcp"
+            endpoint: serve_mcp_info
+            methods: #["GET"]))
+
+    define config:
+        (uvicorn.Config app
+            host: host port: port
+            log_level: (mcp.settings.log_level.lower))
+
+    define server (uvicorn.Server config)
+    (server.serve)
 
 
 ;; === Entry point ===
@@ -940,7 +1003,7 @@ define main [argv: None]:
     when options.lambda_mode:
         define port (int (getenv "PORT" "8080"))
         (logger.info "serving koskari-corpus for lambda on 127.0.0.1:%i" port)
-        return (mcp.run_streamable_http_async
+        return (run_streamable_http_with_info
             host: "127.0.0.1"
             port: port
             stateless_http: True
@@ -970,7 +1033,7 @@ define main [argv: None]:
     (logger.info "serving koskari-corpus over http on %s:%i"
         options.host options.port)
 
-    (mcp.run_streamable_http_async
+    (run_streamable_http_with_info
         host: options.host
         port: options.port
         transport_security: security)
