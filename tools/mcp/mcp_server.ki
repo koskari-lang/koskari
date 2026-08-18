@@ -36,7 +36,8 @@ import-from pathlib Path
 
 import-from mcp.server MCPServer
 import-from mcp.server.transport_security TransportSecuritySettings
-import-from starlette.responses HTMLResponse JSONResponse PlainTextResponse
+import-from mcp_types Icon
+import-from starlette.responses HTMLResponse JSONResponse PlainTextResponse Response
 import-from starlette.routing Route
 
 
@@ -60,6 +61,15 @@ define PROGRAMS_VIEW "koskari-programs"
 ;; than from the working directory.
 define PAGE_PATH (getenv "KOSKARI_CORPUS_PAGE"
     (join (dirname (abspath __file__)) "index.html"))
+
+;; The project mark, ships beside this script for the same reason as
+;; the landing page. This is a short-term local copy of
+;; docs/_static/koskari-icon.svg (the container build context cannot
+;; reach docs/); once https://koskari.org publishes the canonical
+;; file, ICON_URL below should point there instead.
+define ICON_PATH (getenv "KOSKARI_CORPUS_ICON"
+    (join (dirname (abspath __file__)) "koskari-icon.svg"))
+define ICON_URL "https://corpus.koskari.org/koskari-icon.svg"
 
 define VERIFY_KEYS #(
     "read" "expand" "eval" "error" "invalid")
@@ -137,7 +147,10 @@ to correct Koskari syntax.
 """
 
 
-define mcp (MCPServer "koskari-corpus" instructions: INSTRUCTIONS)
+define mcp:
+    (MCPServer "koskari-corpus"
+        instructions: INSTRUCTIONS
+        icons: #[(Icon src: ICON_URL mime_type: "image/svg+xml" sizes: #["any"])])
 
 
 ;; In-memory tables, each a list of row dicts loaded from parquet at
@@ -151,6 +164,7 @@ define STATE #{
     "programs": #[]
     "git_ref": None
     "page": None
+    "icon": None
 }
 
 
@@ -213,11 +227,13 @@ define load-tables! []:
 
 define load-page! []:
     """
-    Load the landing page into STATE, tolerating its absence
+    Load the landing page and project icon into STATE, tolerating
+    their absence
 
-    Only the HTTP transports serve it, and the stdio image does not
-    ship it, so a missing file leaves the page None and the root route
-    falls back to a plain pointer at the MCP endpoint.
+    Only the HTTP transports serve either, and the stdio image does
+    not ship them, so a missing file leaves the state entry None: the
+    root route falls back to a plain pointer at the MCP endpoint, and
+    the icon route answers 404.
     """
 
     try:
@@ -225,6 +241,12 @@ define load-page! []:
         (logger.info "loaded landing page from %s" PAGE_PATH)
     except [OSError as: exc]:
         (logger.info "no landing page at %s: %s" PAGE_PATH exc)
+
+    try:
+        set! STATE["icon"] ((Path ICON_PATH).read_text encoding: "utf-8")
+        (logger.info "loaded project icon from %s" ICON_PATH)
+    except [OSError as: exc]:
+        (logger.info "no project icon at %s: %s" ICON_PATH exc)
 
 
 ;; === Row shaping ===
@@ -890,6 +912,28 @@ define landing_page [request]:
             "koskari-corpus MCP server. The endpoint is POST /mcp.\n")
 
     (HTMLResponse page
+        headers: #{"Cache-Control": "public, max-age=300"})
+
+
+;; The project mark, served both under its own name (referenced by the
+;; landing page and the MCP icons: field) and at /favicon.ico, so a
+;; browser's automatic favicon fetch gets it too -- browsers sniff the
+;; Content-Type here, not the .ico extension.
+
+@(mcp.custom_route "/koskari-icon.svg" methods: #["GET"])
+@(mcp.custom_route "/favicon.ico" methods: #["GET"])
+@coroutine-fn
+define serve_icon [request]:
+    """
+    Serve the project mark
+    """
+
+    define icon STATE["icon"]
+    unless icon:
+        return (PlainTextResponse "" status_code: 404)
+
+    (Response icon
+        media_type: "image/svg+xml"
         headers: #{"Cache-Control": "public, max-age=300"})
 
 
