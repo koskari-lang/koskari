@@ -21,7 +21,9 @@
    multiple times with different definitions of the OP macro to
    generate both the enum and the styles table.
 
-   Format: OP(name, style)
+   Format: OP(name, cache_slots, style) for simple styles, or
+   OP(name, cache_slots, EXTRA, f0, f1, f2, f3) declaring the four
+   field kinds of an EXTRA row (NOARG pads unused fields).
 
    All Koskari code is async by default. Generators are distinguished
    by the presence of YIELD/YIELD_FROM opcodes which set the

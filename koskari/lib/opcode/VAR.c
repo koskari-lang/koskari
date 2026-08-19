@@ -16,7 +16,7 @@
 
 /**
   VAR: arg = constant index of a name. Look up that name in the current
-  frame's namespace and push the value (or await it if async).
+  frame's namespace and push the value.
 */
 KOS_OP_HANDLER_COLD(VAR) {
   PyObject *name = get_name_from_insn(es, insn);
