@@ -8,7 +8,7 @@
   chain-compare the three operands under the selector and push the
   chain result.
 - **Invariants**: Selector is a valid KosCompare ordinal.
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when the
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when the
   exact CONST / VAR / CONST feeder shape meets an arity-3 comparison.
   In value position the OBJECT_COMPARE quartet collapses to this row
   alone; in branch position the arity-3 CHECK_COMPARE splits into this

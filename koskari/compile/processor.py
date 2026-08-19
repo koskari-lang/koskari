@@ -640,7 +640,7 @@ class ByteCodeProcessor:
         self.instructions = rows
 
 
-    def fuse_check_feeders(self):
+    def fuse_feeders(self):
         """
         The feeder-absorption half of the compress pipeline: the fuse
         rule set over the shared driver. Every pattern requires the
@@ -663,7 +663,7 @@ class ByteCodeProcessor:
         """
 
         self.squish()
-        self.fuse_check_feeders()
+        self.fuse_feeders()
         self.pack_var_runs()
 
 
@@ -751,21 +751,21 @@ class ByteCodeProcessor:
         nstack = []
         findex = []
 
-        def push_nspec(n):
-            nstack.append(n)
-            findex.clear()
-            findex.extend(n.local_syms)
-            findex.extend(n.closure_syms)
-            findex.extend(n.global_syms)
-
-        def pop_nspec():
-            nstack.pop()
+        def reload_findex():
             findex.clear()
             if nstack:
                 n = nstack[-1]
                 findex.extend(n.local_syms)
                 findex.extend(n.closure_syms)
                 findex.extend(n.global_syms)
+
+        def push_nspec(n):
+            nstack.append(n)
+            reload_findex()
+
+        def pop_nspec():
+            nstack.pop()
+            reload_findex()
 
         if self.mode == CompilerMode.FUNCTION:
             push_nspec(base_nspec)

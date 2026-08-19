@@ -903,9 +903,9 @@ bottom to top matches push order).
 - **Status**: Implemented.
 - **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and run the shared step core (`object_next_step`) -- Koskari agen flatten, ambient async (a suspended python step rides the NEXT boundary), 1-arg raises StopIteration on exhaustion, 2-arg pops and delivers the default.
 - **Invariants**: The fused name resolution runs after the default row (the fusion requires a bare default feeder, so the reorder is unobservable beyond NameError timing).
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_NEXT's iterator feeder is a bare VAR load (the 2-arg form also requires a bare VAR/CONST default). Lowers to FAST_NEXT through the generic schema-driven `convert_fast` path.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_NEXT's iterator feeder is a bare VAR load (the 2-arg form also requires a bare VAR/CONST default). Lowers to FAST_NEXT through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_NEXT.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_next.py`
 
 ### KOS_OP_FAST_NEXT {#kos_op_fast_next}
@@ -915,7 +915,7 @@ bottom to top matches push order).
 - **Stack**: As VAR_NEXT, with the iterator loaded from its fast slot.
 - **Compiler form:** Post-compile only: the generic `convert_fast` lowering of VAR_NEXT when the iterator name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_NEXT.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_next.py`
 
 
@@ -1108,9 +1108,9 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
   under the selector, jump to LABEL on failure.
 - **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
   are never emitted (that is a folding case).
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` (late `compress` sweep) absorbing two bare VAR/CONST feeder rows into an arity-2 [CHECK_COMPARE](#kos_op_check_compare). Runs before `pack_var_runs` so this fusion gets first claim on the feeders. Lowers to CHECK_COMPARE_FAST via the CMPSRC-aware `convert_fast` case (all-or-nothing on the name slots).
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` (late `compress` sweep) absorbing two bare VAR/CONST feeder rows into an arity-2 [CHECK_COMPARE](#kos_op_check_compare). Runs before `pack_var_runs` so this fusion gets first claim on the feeders. Lowers to CHECK_COMPARE_FAST via the CMPSRC-aware `convert_fast` case (all-or-nothing on the name slots).
 - **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_VAR.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`
 
 **Example:** Loop condition `i < n` on fast slots 1 and 0.
@@ -1134,7 +1134,7 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
   are never emitted (that is a folding case).
 - **Compiler form:** Post-compile only: the CMPSRC-aware `convert_fast` lowering of CHECK_COMPARE_VAR when every name-sourced slot has a fast slot. Constant-bit slots pass through untouched.
 - **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_FAST.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`
 
 **Example:** Loop condition `i < n` on fast slots 1 and 0.
@@ -2989,9 +2989,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   value use).
 - **Invariants**: Selector is a valid KosCompare ordinal (richcompare
   chain semantics; extended selectors are never emitted at arity 3).
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when the exact CONST / VAR / CONST feeder shape meets an arity-3 comparison. In value position the OBJECT_COMPARE quartet collapses to this row alone; in branch position the arity-3 CHECK_COMPARE cannot also carry its label (five fields), so it splits into this row plus `JUMP_FALSE`. Lowers to OBJECT_COMPARE_FAST through the generic schema-driven `convert_fast` path.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when the exact CONST / VAR / CONST feeder shape meets an arity-3 comparison. In value position the OBJECT_COMPARE quartet collapses to this row alone; in branch position the arity-3 CHECK_COMPARE cannot also carry its label (five fields), so it splits into this row plus `JUMP_FALSE`. Lowers to OBJECT_COMPARE_FAST through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE_VAR.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`,
   `tests/reproducers/test_compare_fusion.py`
 
@@ -3017,7 +3017,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   chain semantics; extended selectors are never emitted at arity 3).
 - **Compiler form:** Post-compile only: the generic `convert_fast` lowering of OBJECT_COMPARE_VAR when the middle name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE_FAST.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`,
   `tests/reproducers/test_compare_fusion.py`
 
@@ -3063,9 +3063,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Style**: VAR. Arg = constant index of a name.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., iterator]`. Fused VAR + OBJECT_ITER: resolve the name in the current frame's namespace and push its iterator, acquired uniformly over both protocols (`kos_iter_acquire`).
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_ITER is fed by a bare VAR load. Lowers to FAST_ITER through the simple `convert_fast` path.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_ITER is fed by a bare VAR load. Lowers to FAST_ITER through the simple `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_ITER.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_unary.py`
 
 ### KOS_OP_FAST_ITER {#kos_op_fast_iter}
@@ -3075,7 +3075,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Stack**: As VAR_ITER, with the iterable loaded from its fast slot.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_ITER when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ITER.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_unary.py`
 
 ### KOS_OP_OBJECT_LEN {#kos_op_object_len}
@@ -3131,9 +3131,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Style**: VAR. Arg = constant index of a name.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT (arg=1): resolve the name in the current frame's namespace and push `PyObject_Format(obj, NULL)`.
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_FORMAT (arg=1) is fed by a bare VAR load. Lowers to FAST_FORMAT through the simple `convert_fast` path.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_FORMAT (arg=1) is fed by a bare VAR load. Lowers to FAST_FORMAT through the simple `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_FORMAT.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_VAR_FORMAT_CONST {#kos_op_var_format_const}
@@ -3141,9 +3141,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Style**: EXTRA (VAR, CONST). Row = obj name (pool), rules string (pool).
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT_CONST: resolve the name in the current frame's namespace and push `PyObject_Format(obj, rules)`.
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_FORMAT_CONST is fed by a bare VAR load. The 2-arg OBJECT_FORMAT (dynamic rules) stays unfused: absorbing the object load would move its name resolution past the rules evaluation. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_FORMAT_CONST is fed by a bare VAR load. The 2-arg OBJECT_FORMAT (dynamic rules) stays unfused: absorbing the object load would move its name resolution past the rules evaluation. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_FORMAT_CONST.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_FAST_FORMAT {#kos_op_fast_format}
@@ -3153,7 +3153,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Stack**: As VAR_FORMAT, with the object loaded from its fast slot.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_FORMAT when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_FAST_FORMAT_CONST {#kos_op_fast_format_const}
@@ -3163,7 +3163,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Stack**: As VAR_FORMAT_CONST, with the object loaded from its fast slot.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_FORMAT_CONST when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT_CONST.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_OBJECT_TRUTH {#kos_op_object_truth}

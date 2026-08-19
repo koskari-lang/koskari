@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Unit tests for ByteCodeProcessor.fuse_check_feeders (CHECK_COMPARE feeder
+Unit tests for ByteCodeProcessor.fuse_feeders (CHECK_COMPARE feeder
 absorption into CHECK_COMPARE_VAR) and its convert_fast lowering to
 CHECK_COMPARE_FAST
 
@@ -46,7 +46,7 @@ OCV = OpCode.OBJECT_COMPARE_VAR
 
 def fuse_ops(instr):
     proc = ByteCodeProcessor(instr)
-    proc.fuse_check_feeders()
+    proc.fuse_feeders()
     return proc.instructions
 
 
@@ -284,7 +284,7 @@ P = OpCode.POSITION
 
 class TestFuseIterNext(unittest.TestCase):
     """
-    fuse_check_feeders absorbs bare VAR feeders into VAR_ITER and
+    fuse_feeders absorbs bare VAR feeders into VAR_ITER and
     VAR_NEXT
     """
 
@@ -377,7 +377,7 @@ VFC = OpCode.VAR_FORMAT_CONST
 
 class TestFuseFormat(unittest.TestCase):
     """
-    fuse_check_feeders absorbs bare VAR feeders into VAR_FORMAT and
+    fuse_feeders absorbs bare VAR feeders into VAR_FORMAT and
     VAR_FORMAT_CONST
     """
 

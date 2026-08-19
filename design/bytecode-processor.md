@@ -1,7 +1,7 @@
 # ByteCodeProcessor: a unified bytecode transformation submodule
 
 Design for migrating the pre-finalize instruction transformations --
-`compress`, `fuse_check_feeders`, `pack_var_runs`, `normalize_opcount`,
+`compress`, `fuse_feeders`, `pack_var_runs`, `normalize_opcount`,
 `convert_fast`, and the future tail-call promotion -- out of `Compiler`
 methods into a dedicated class, `ByteCodeProcessor`, living in the
 **single submodule `koskari/compile/processor.py`**: the class
@@ -19,7 +19,7 @@ data-driven potential:
   map plus the EXTRA schemas (a new fused op costs zero compiler code),
   and `_CHECK_SQUASHES` / `_SWITCH_SQUASHES` are the same idea in
   miniature.
-- **Feeder absorptions** (`fuse_check_feeders`) share real machinery --
+- **Feeder absorptions** (`fuse_feeders`) share real machinery --
   `scan_back`, `splice`, POSITION transparency -- but each rule has
   bespoke argument surgery (cmpsrc packing, ternary splitting, the
   VAR_NEXT default-row reorder).
