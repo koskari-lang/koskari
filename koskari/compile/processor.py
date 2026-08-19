@@ -155,6 +155,9 @@ POP_PRIORS = frozenset((OpCode.CONST, OpCode.DUP))
 CONST_PRIOR = frozenset((OpCode.CONST,))
 JUMP_PRIOR = frozenset((OpCode.JUMP,))
 
+# pattern atom for fusion rule declarations: a bare value load
+FEEDER = frozenset((OpCode.VAR, OpCode.CONST))
+
 
 def build_var_to_fast():
     # Pre-compiled map: VAR opcode -> FAST opcode for convert_fast lowering.
@@ -211,13 +214,23 @@ def squish_rule(op):
     return register
 
 
-def fuse_rule(op):
+def fuse_rule(*pattern):
     """
-    Register a processor method as the fusion rule for the trigger op
+    Register a processor method as a fusion rule for the form given in
+    stream order: the lookback slot specs (an opcode, or a set of
+    opcodes) followed by the trigger opcode. Candidates for a trigger
+    are tried in registration order; the first whose form matches and
+    whose rule accepts is applied. A trigger-only pattern registers a
+    fallback rule that performs its own lookback.
     """
 
+    *priors, trigger = pattern
+    priors = tuple(
+        spec if isinstance(spec, frozenset) else frozenset((spec,))
+        for spec in priors)
+
     def register(fn):
-        FUSE_RULES[op] = fn
+        FUSE_RULES.setdefault(trigger, []).append((priors, fn))
         return fn
     return register
 
@@ -300,27 +313,6 @@ class ByteCodeProcessor:
             rows.append(trailing)
 
 
-    FEEDERS = frozenset((OpCode.VAR, OpCode.CONST))
-
-    def scan_feeders(self, want):
-        """
-        Seek back over contiguous bare VAR / CONST feeder rows
-        """
-
-        return self.seek_back(want, self.FEEDERS)
-
-
-    def ternary_shape(self, found):
-        """
-        The bounds shape: CONST below, VAR middle, CONST on top
-        """
-
-        rows = self.rows
-        return (rows[found[2]][0] == OpCode.CONST
-                and rows[found[1]][0] == OpCode.VAR
-                and rows[found[0]][0] == OpCode.CONST)
-
-
     def apply_rules(self, rules, rows):
         """
         Walk the incoming instructions, dispatching each row through
@@ -342,6 +334,64 @@ class ByteCodeProcessor:
                     rows.append((op, arg))
                     break
                 outcome = rule(self, op, arg)
+                if outcome is None:
+                    rows.append((op, arg))
+                    break
+                if outcome is DONE:
+                    break
+                op, arg = outcome
+        self.rows = None
+        return rows
+
+
+    def match_priors(self, priors):
+        """
+        Match a rule's declared prior slots against the top of the
+        working rows, bottom-most slot first; POSITION rows are stepped
+        over. Returns (found, skipped) with found in pattern order, or
+        (None, skipped) when the shape does not match.
+        """
+
+        posop = OpCode.POSITION
+        rows = self.rows
+        found = []
+        skipped = []
+        i = len(rows) - 1
+        for spec in reversed(priors):
+            while i >= 0 and rows[i][0] == posop:
+                skipped.append(i)
+                i -= 1
+            if i < 0 or rows[i][0] not in spec:
+                return None, skipped
+            found.append(i)
+            i -= 1
+        found.reverse()
+        return found, skipped
+
+
+    def apply_fusions(self, rows):
+        """
+        Walk the incoming instructions dispatching each row against the
+        fusion registry: the candidates for the row's opcode are tried
+        in registration order, and the first whose declared form
+        matches and whose rule accepts is applied. A rule returns DONE
+        when it handled the trigger, a new (op, arg) pair to retry
+        dispatch on a rewritten trigger -- the lowering ladder -- or
+        None to pass the form along; with no acceptance the row is
+        appended unchanged.
+        """
+
+        self.rows = rows
+        for op, arg in self.instructions:
+            while True:
+                outcome = None
+                for priors, fn in FUSE_RULES.get(op, ()):
+                    found, skipped = self.match_priors(priors)
+                    if found is None:
+                        continue
+                    outcome = fn(self, op, arg, found, skipped)
+                    if outcome is not None:
+                        break
                 if outcome is None:
                     rows.append((op, arg))
                     break
@@ -540,152 +590,151 @@ class ByteCodeProcessor:
         return DONE
 
 
-    @fuse_rule(OpCode.CHECK_COMPARE)
-    def fuse_check_compare(self, op, arg):
+    @fuse_rule(FEEDER, FEEDER, OpCode.CHECK_COMPARE)
+    def fuse_check_compare(self, op, arg, found, skip):
         """
-        Arity-2 CHECK_COMPARE absorbs its bare feeders (not both CONST
-        -- that is a folding case) into CHECK_COMPARE_VAR with a CMPSRC
-        field carrying the selector and per-operand source bits. The
-        arity-3 CONST / VAR / CONST bounds shape cannot also carry the
-        label in one row, so it splits into the bool-producing
-        OBJECT_COMPARE_VAR plus JUMP_FALSE.
+        x y CHECK_COMPARE (arity 2, not both feeders constant -- that
+        is a folding case) -> CHECK_COMPARE_VAR with a CMPSRC field
+        carrying the selector and per-operand source bits
         """
 
+        if arg[1] != 2:
+            return None
+        x_op, x_arg = self.rows[found[0]]
+        y_op, y_arg = self.rows[found[1]]
+        x_const = x_op == OpCode.CONST
+        y_const = y_op == OpCode.CONST
+        if x_const and y_const:
+            return None
+        sel, _cnt, label, _pad = arg
+        self.splice(found[0], skip, [(
+            OpCode.CHECK_COMPARE_VAR,
+            (make_cmpsrc(sel, x_const, y_const), x_arg, y_arg, label))])
+        return DONE
+
+
+    @fuse_rule(OpCode.CONST, OpCode.VAR, OpCode.CONST,
+               OpCode.CHECK_COMPARE)
+    def fuse_check_bounds(self, op, arg, found, skip):
+        """
+        lo x hi CHECK_COMPARE (arity 3 bounds shape) -> the
+        bool-producing OBJECT_COMPARE_VAR plus JUMP_FALSE, since the
+        fused row cannot also carry the label
+        """
+
+        if arg[1] != 3:
+            return None
         rows = self.rows
-        if arg[1] == 2:
-            found, skip = self.scan_feeders(2)
-            if found:
-                y_op, y_arg = rows[found[0]]
-                x_op, x_arg = rows[found[1]]
-                x_const = x_op == OpCode.CONST
-                y_const = y_op == OpCode.CONST
-                if not (x_const and y_const):
-                    sel, _cnt, label, _pad = arg
-                    self.splice(found[1], skip, [(
-                        OpCode.CHECK_COMPARE_VAR,
-                        (make_cmpsrc(sel, x_const, y_const),
-                         x_arg, y_arg, label))])
-                    return DONE
-
-        elif arg[1] == 3:
-            found, skip = self.scan_feeders(3)
-            if found and self.ternary_shape(found):
-                sel, _cnt, label, _pad = arg
-                self.splice(found[2], skip, [
-                    (OpCode.OBJECT_COMPARE_VAR,
-                     (sel, rows[found[2]][1], rows[found[1]][1],
-                      rows[found[0]][1])),
-                    (OpCode.JUMP_FALSE, label),
-                ])
-                return DONE
-
-        return None
+        sel, _cnt, label, _pad = arg
+        self.splice(found[0], skip, [
+            (OpCode.OBJECT_COMPARE_VAR,
+             (sel, rows[found[0]][1], rows[found[1]][1],
+              rows[found[2]][1])),
+            (OpCode.JUMP_FALSE, label),
+        ])
+        return DONE
 
 
-    @fuse_rule(OpCode.OBJECT_COMPARE)
-    def fuse_compare_bounds(self, op, arg):
+    @fuse_rule(OpCode.CONST, OpCode.VAR, OpCode.CONST,
+               OpCode.OBJECT_COMPARE)
+    def fuse_compare_bounds(self, op, arg, found, skip):
         """
-        The arity-3 CONST / VAR / CONST bounds shape in value position
-        collapses into the bool-producing OBJECT_COMPARE_VAR
+        lo x hi OBJECT_COMPARE (arity 3 bounds shape) in value position
+        -> the bool-producing OBJECT_COMPARE_VAR
         """
 
         sel, cnt = split_cmpcount(arg)
         if cnt != 3:
             return None
-        found, skip = self.scan_feeders(3)
-        if not (found and self.ternary_shape(found)):
-            return None
         rows = self.rows
-        self.splice(found[2], skip, [(
+        self.splice(found[0], skip, [(
             OpCode.OBJECT_COMPARE_VAR,
-            (sel, rows[found[2]][1], rows[found[1]][1],
-             rows[found[0]][1]))])
+            (sel, rows[found[0]][1], rows[found[1]][1],
+             rows[found[2]][1]))])
         return DONE
 
 
-    @fuse_rule(OpCode.OBJECT_ITER)
-    def fuse_iter(self, op, arg):
+    @fuse_rule(OpCode.VAR, OpCode.OBJECT_ITER)
+    def fuse_iter(self, op, arg, found, skip):
         """
-        OBJECT_ITER fed by a bare VAR collapses into VAR_ITER
+        VAR OBJECT_ITER -> VAR_ITER
         """
 
-        found, skip = self.scan_feeders(1)
-        if not (found and self.rows[found[0]][0] == OpCode.VAR):
-            return None
         self.splice(found[0], skip, [(
             OpCode.VAR_ITER, self.rows[found[0]][1])])
         return DONE
 
 
-    @fuse_rule(OpCode.OBJECT_NEXT)
-    def fuse_next(self, op, arg):
+    @fuse_rule(OpCode.VAR, OpCode.OBJECT_NEXT)
+    def fuse_next(self, op, arg, found, skip):
         """
-        OBJECT_NEXT fed by a bare VAR iterator collapses into VAR_NEXT.
-        The 2-arg form fuses only when the default is also a bare
-        feeder (absorbing the iterator load moves its name resolution
-        after the default's row); the default row stays on the stack
-        and VAR_NEXT pops it.
+        VAR OBJECT_NEXT (1-arg) -> VAR_NEXT
         """
 
+        if arg != 1:
+            return None
+        self.splice(found[0], skip, [(
+            OpCode.VAR_NEXT, (self.rows[found[0]][1], 1, None, None))])
+        return DONE
+
+
+    @fuse_rule(OpCode.VAR, FEEDER, OpCode.OBJECT_NEXT)
+    def fuse_next_default(self, op, arg, found, skip):
+        """
+        VAR default OBJECT_NEXT (2-arg) -> the default row plus
+        VAR_NEXT, which pops it. Absorbing the iterator load moves its
+        name resolution after the default's row, so the fusion requires
+        the default to be a bare feeder too.
+        """
+
+        if arg != 2:
+            return None
         rows = self.rows
-        if arg == 1:
-            found, skip = self.scan_feeders(1)
-            if found and rows[found[0]][0] == OpCode.VAR:
-                self.splice(found[0], skip, [(
-                    OpCode.VAR_NEXT,
-                    (rows[found[0]][1], 1, None, None))])
-                return DONE
-        else:
-            found, skip = self.scan_feeders(2)
-            if found and rows[found[1]][0] == OpCode.VAR:
-                default_row = rows[found[0]]
-                it_name = rows[found[1]][1]
-                self.splice(found[1], skip, [
-                    default_row,
-                    (OpCode.VAR_NEXT, (it_name, 2, None, None)),
-                ])
-                return DONE
-        return None
+        default_row = rows[found[1]]
+        it_name = rows[found[0]][1]
+        self.splice(found[0], skip, [
+            default_row,
+            (OpCode.VAR_NEXT, (it_name, 2, None, None)),
+        ])
+        return DONE
 
 
-    @fuse_rule(OpCode.OBJECT_FORMAT)
-    def fuse_format(self, op, arg):
+    @fuse_rule(OpCode.VAR, OpCode.OBJECT_FORMAT)
+    def fuse_format(self, op, arg, found, skip):
         """
-        OBJECT_FORMAT (arg=1) fed by a bare VAR collapses into
-        VAR_FORMAT. The 2-arg form with a constant rules feeder demotes
-        to OBJECT_FORMAT_CONST and retries into the format lowering
-        ladder; with dynamic rules it stays unfused, since absorbing
-        the object load would move its name resolution past the rules
+        VAR OBJECT_FORMAT (1-arg) -> VAR_FORMAT
+        """
+
+        if arg != 1:
+            return None
+        self.splice(found[0], skip, [(
+            OpCode.VAR_FORMAT, self.rows[found[0]][1])])
+        return DONE
+
+
+    @fuse_rule(OpCode.CONST, OpCode.OBJECT_FORMAT)
+    def demote_format_const(self, op, arg, found, skip):
+        """
+        CONST OBJECT_FORMAT (2-arg, constant rules) -> demote to
+        OBJECT_FORMAT_CONST and retry into the format lowering ladder.
+        With dynamic rules the form stays unfused, since absorbing the
+        object load would move its name resolution past the rules
         evaluation.
         """
 
-        rows = self.rows
-        if arg == 1:
-            found, skip = self.scan_feeders(1)
-            if found and rows[found[0]][0] == OpCode.VAR:
-                self.splice(found[0], skip, [(
-                    OpCode.VAR_FORMAT, rows[found[0]][1])])
-                return DONE
+        if arg != 2:
             return None
-
-        found, skip = self.scan_feeders(1)
-        if not (found and rows[found[0]][0] == OpCode.CONST):
-            return None
-        rules = rows[found[0]][1]
+        rules = self.rows[found[0]][1]
         self.splice(found[0], skip, [])
         return (OpCode.OBJECT_FORMAT_CONST, rules)
 
 
-    @fuse_rule(OpCode.OBJECT_FORMAT_CONST)
-    def fuse_format_const(self, op, arg):
+    @fuse_rule(OpCode.VAR, OpCode.OBJECT_FORMAT_CONST)
+    def fuse_format_const(self, op, arg, found, skip):
         """
-        OBJECT_FORMAT_CONST fed by a bare VAR collapses into
-        VAR_FORMAT_CONST
+        VAR OBJECT_FORMAT_CONST -> VAR_FORMAT_CONST
         """
 
-        found, skip = self.scan_feeders(1)
-        if not (found and self.rows[found[0]][0] == OpCode.VAR):
-            return None
         self.splice(found[0], skip, [(
             OpCode.VAR_FORMAT_CONST,
             (self.rows[found[0]][1], arg, None, None))])
@@ -730,7 +779,7 @@ class ByteCodeProcessor:
         fusion gets first claim on the feeders.
         """
 
-        self.instructions = self.apply_rules(FUSE_RULES, [])
+        self.instructions = self.apply_fusions([])
 
 
     def compress(self):
