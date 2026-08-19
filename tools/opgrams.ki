@@ -409,6 +409,28 @@ define print_markov [tally threshold file]:
         file.write f"  {op:<24} x{count:<7} -> {joined}\n"
 
 
+define print_opcounts [tally file]:
+    """
+    Write the full per-opcode emission count table: every emitted
+    opcode with its count, then the never-emitted remainder of the
+    enum in opcodes.incl order
+    """
+
+    (file.write "\n=== opcode emission counts (full enum) ===\n")
+
+    for-each [[op count] (tally.op_counts.most_common)]:
+        file.write f"  {op:<24} x{count}\n"
+
+    define missing #[]
+    for-each [op (list OpCode)]:
+        unless (in? op.name tally.op_counts):
+            (missing.append op.name)
+
+    file.write f"\n  never emitted ({(len missing)}):\n"
+    for-each [name missing]:
+        file.write f"    {name}\n"
+
+
 define tally_to_json [tally top]:
     """
     Render the tally as a JSON-serializable mapping
@@ -427,11 +449,16 @@ define tally_to_json [tally top]:
     for-each [[op succs] (tally.successors.items)]:
         set! successors[op] (dict (succs.most_common))
 
+    define op_counts #{}
+    for-each [op (list OpCode)]:
+        set! op_counts[op.name] (tally.op_counts.get op.name 0)
+
     #{"codes": tally.code_count
       "blocks": tally.block_count
       "weight_base": tally.weight_base
       "grams": grams
-      "successors": successors}
+      "successors": successors
+      "op_counts": op_counts}
 
 
 define load_group [group]:
@@ -514,6 +541,7 @@ define run [options]:
         f"   groups: {joined}")
     (print_gram_tables tally options.top sys.stdout)
     (print_markov tally options.markov_threshold sys.stdout)
+    (print_opcounts tally sys.stdout)
     return 0
 
 

@@ -13,15 +13,15 @@ Per-handler sizes come from a measurement build with `KOS_ALL_COLD=1`
 its own symbol; sizes read via `nm --print-size` on the built extension.  Standalone noinline
 size is a proxy for a handler's inlined contribution (inlining can specialise or
 shrink it) -- good enough to rank and prioritise.  The proxy still over-estimates:
-the fully-inlined dispatch fn (66,053 B) is smaller than floor + hot bodies
-(67,181 B), so at `-O2 -flto` inlining shares tails and specialises away more
+the fully-inlined dispatch fn (64,715 B) is smaller than floor + hot bodies
+(65,627 B), so at `-O2 -flto` inlining shares tails and specialises away more
 than the standalone bodies imply.  Shared static cores called from several
 handlers sit outside the `op_` symbols and are not in the table (e.g.
 `object_next_step`, the 1,367 B step core behind the three cold NEXT forms --
 which is why OBJECT_NEXT reads far smaller than the old monolithic NEXT).
 The operator cores in `operator.c` (`op_add`, `op_bit_and`, ...) share the
 `op_` prefix but are not handlers; they are excluded from every figure here.
-85 handlers are `KOS_OP_HANDLER_COLD` -- their bodies appear in the table below
+88 handlers are `KOS_OP_HANDLER_COLD` -- their bodies appear in the table below
 but do not contribute to the inlined function at all.
 
 Hotness is now backed by measurement for one workload: the
@@ -47,9 +47,9 @@ Measured 2026-08-19 on `bytecode-processor` at 9c541af5, 214 opcodes
 
 | quantity | bytes | meaning |
 |---|---:|---|
-| fully-inlined dispatch fn | 66,053 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`) |
+| fully-inlined dispatch fn | 64,715 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`) |
 | floor (all 214 handlers un-inlined) | 26,738 | per-op glue (label, NORMAL-check, gil-poll, prepare-next, `goto`, one call) x 214 + loop scaffold |
-| handler bodies | 100,244 | sum of standalone noinline bodies -- 59,801 B across the 85 cold handlers, 40,443 B across the 129 hot ones (the actual inline budget) |
+| handler bodies | 100,244 | sum of standalone noinline bodies -- 61,355 B across the 88 cold handlers, 38,889 B across the 126 hot ones (the actual inline budget) |
 
 Distribution (top-heavy, long-tailed; % of the 100,244 B body):
 
@@ -65,19 +65,30 @@ twins.
 ## Applied changes since the previous sweep
 
 **TAIL_CALL twins (this branch).**  Fifteen new opcodes complete tail
-parity for the fused call family; the split moved 127/72 -> 129/85.
-Thirteen twins are cold; `TAIL_CALL_FAST` (381 B) and
-`TAIL_CALL_FAST_ATTR` (1,034 B) are hot, mirroring their CALL twins'
-election.  Each twin's body mirrors its CALL twin within LTO and
-alignment noise -- TAIL_CALL_FAST = CALL_FAST byte for byte, several
-pairs identical -- because the handlers differ only by the tail flag
-into the shared call core.  Twin bodies total ~13.4 KB, all but the
-1,415 B hot pair landing in the cold ledger.  The inline fn grew
-62,613 -> 66,053 (+3,440 B): the two hot bodies plus fifteen labels'
-glue inside the loop.  The dispatch-sizing question the twins raise is
-answered by the same numbers: the hot budget moved 38,836 -> 40,443
-(+4%), so the inline body's growth is one deliberate hot handler, not
-the family.
+parity for the fused call family.  Each twin's body mirrors its CALL
+twin within LTO and alignment noise -- TAIL_CALL_FAST = CALL_FAST byte
+for byte, several pairs identical -- because the handlers differ only
+by the tail flag into the shared call core.  Twin bodies total
+~13.4 KB; thirteen are cold, with `TAIL_CALL_FAST` (381 B, 43 corpus
+sites) and `TAIL_CALL_FAST_ATTR` (1,034 B, 26 sites) hot, mirroring
+their CALL twins.  That election grew the inline fn 62,613 -> 66,053 B
+-- over the 64 KiB I-cache line -- which forced the demotion sweep
+below.
+
+**Zero-emission demotions, driven by the new opcount census.**  The
+opgrams tool now emits a full per-opcode emission count (text section
+and `op_counts` in the JSON), zeros included: 104 of the 214 opcodes
+are never emitted anywhere in the corpus, dozens of them hot.  To get
+the inline fn back under 64 KiB the three largest zero-emission hot
+handlers were demoted -- `EXCEPTION_MATCH` (546 B; structurally zero,
+the squish pass folds it into CHECK_EXCEPTION), `ITEM_TAKE` (541 B),
+and `UNPACK` (467 B) -- landing the fn at 64,715 B, 821 B under the
+line, with both hot twins kept.  The split moved 127/72 -> 126/88.
+The census also shows plain `TAIL_CALL`, `TAIL_CALL_NAMES`, and
+`TAIL_CALL_STAR` at zero post-promotion (every promoted call in real
+code is a fused form), making the 164 B hot `TAIL_CALL` the obvious
+next demotion whenever budget is needed; the zero-emission hot list is
+the standing donor pool.
 
 **CALL_FAST_ATTR_STAR leak fix.**  +214 B (1,217 -> 1,431, cold): the
 handler previously leaked its owned receiver on every path; the fix
@@ -338,9 +349,9 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 569 | `POP_PROMPT` | cold |
 | 557 | `POP_FINALLY` | cold |
 | 550 | `VAR_ATTR_STORE` | cold |
-| 546 | `EXCEPTION_MATCH` | hot |
+| 546 | `EXCEPTION_MATCH` | cold |
 | 543 | `SWITCH_EQ_FAST_ATTR` | hot |
-| 541 | `ITEM_TAKE` | hot |
+| 541 | `ITEM_TAKE` | cold |
 | 541 | `FAST_ATTR` | hot |
 | 530 | `VAR_ATTR_INPLACE` | cold |
 | 529 | `IMPORT_FROM` | cold |
@@ -354,7 +365,7 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 494 | `CAR` | hot |
 | 490 | `PUSH_FOREACH` | hot |
 | 474 | `FAST_ATTR_TAKE` | hot |
-| 467 | `UNPACK` | hot |
+| 467 | `UNPACK` | cold |
 | 460 | `SWITCH_EQ_VAR_ATTR` | cold |
 | 457 | `OBJECT_DIVMOD` | cold |
 | 449 | `POP_DYN_WITH` | hot |
