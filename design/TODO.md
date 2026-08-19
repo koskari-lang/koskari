@@ -44,17 +44,6 @@ real workload that shows the win:
 Ref: [interpreter/attr-lookup-cache.md](interpreter/attr-lookup-cache.md)
 (§Phase 5).
 
-### Fused binary compare opcodes
-
-Single-op variants of the binary comparison of a variable against another
-variable or a constant: `FAST_COMPARE_CONST`, `FAST_COMPARE_FAST`, and the
-VAR variations (`VAR_COMPARE_CONST`, `VAR_COMPARE_VAR`). Today these sites
-emit loads plus stack-reducing `OBJECT_COMPARE`; the fused forms would sit
-beside the ternary bounds opcodes (`OBJECT_COMPARE_VAR` /
-`OBJECT_COMPARE_FAST`) and push the boolean result.
-
-Ref: [archive/compare-unification.md](archive/compare-unification.md).
-
 ---
 
 ## Profiling / instrumentation
