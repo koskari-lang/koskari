@@ -122,7 +122,7 @@ def special_call(
 
     callable = caps["callable"].datum
 
-    use_var_path = is_symbol(callable) and not tc
+    use_var_path = is_symbol(callable)
     name = str(callable) if is_symbol(callable) else None
 
     # rewriting (.foo obj args...) to
@@ -159,8 +159,6 @@ def special_call(
             if use_var_path:
                 fragment.instruction(
                     OpCode.CALL_VAR, (name, len(args_seq), 0, 0))
-            elif tc:
-                fragment.instruction(OpCode.TAIL_CALL, len(args_seq))
             else:
                 fragment.instruction(OpCode.CALL, len(args_seq))
         else:
@@ -182,8 +180,6 @@ def special_call(
                 fragment.instruction(
                     OpCode.CALL_VAR_NAMES,
                     (name, tuple(kw_names), opa, 0))
-            elif tc:
-                fragment.instruction(OpCode.TAIL_CALL_NAMES, opa)
             else:
                 fragment.instruction(OpCode.CALL_NAMES, opa)
     else:
@@ -222,8 +218,6 @@ def special_call(
         if use_var_path:
             fragment.instruction(
                 OpCode.CALL_VAR_STAR, (name, opa, 0, 0))
-        elif tc:
-            fragment.instruction(OpCode.TAIL_CALL_STAR, opa)
         else:
             fragment.instruction(OpCode.CALL_STAR, opa)
 
