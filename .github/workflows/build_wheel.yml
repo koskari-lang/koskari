@@ -79,7 +79,7 @@ jobs:
         run: sed -i.bak "s/^version = .*/version = ${{ inputs.version }}/" setup.cfg
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2
+        uses: pypa/cibuildwheel@v4.2
         env:
           CIBW_BUILD: cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*
           CIBW_ARCHS: ${{ matrix.archs }}
