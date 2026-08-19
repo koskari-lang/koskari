@@ -97,35 +97,6 @@ per-turn expansion budget, and what the diagnostic should name (the
 cycling syntax, the forms in the loop). Applies to both loops at once if
 the guard lives in `full_compile`.
 
-### Tail-call promotion bytecode pass
-
-Move tail-call optimization out of special forms into a `complete()` bytecode
-pass: specials always emit `CALL*`; `promote_tail_calls` rewrites eligible sites
-to `TAIL_CALL*` using extent-aware heuristics. Removes the `tc` parameter from
-all special signatures and simplifies `compile/call` and `compile/call-attr`.
-Gate with `Compiler.tco_enabled` for now; pragma gating deferred. v1 promotes
-only opcodes that already have `TAIL_CALL` analogues (`CALL`, `CALL_NAMES`,
-`CALL_STAR`).
-
-Promotion is only valid for non-yielding functions, and yield-ness is fully
-known before the pass runs: scan for `YIELD` / `YIELD_FROM` first and skip
-promotion entirely for yielding streams — never convert then un-convert.
-`demote_tail_calls_if_yields` stays in the pipeline as a safety net only,
-for raw `TAIL_CALL*` embedded via bytecode specialty syntax in a generator.
-
-Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
-
-### ByteCodeProcessor: unified pass submodule
-
-Migrate compress / fuse_check_feeders / pack_var_runs / convert_fast and
-the future tail-call promotion out of `Compiler` into a use-and-discard
-processor object in a new `koskari.compile` subpackage: one `process()`
-call gated by a pragma snapshot, dispatch-dict rules with re-dispatch
-cascades, shared lookback (POSITION-transparent, LABEL a hard boundary),
-label index/refcounts, and an extent tracker.
-
-Ref: [bytecode-processor.md](bytecode-processor.md).
-
 ### Dict literal compression (review)
 
 A theoretical `compile/#dict` form could compress `(#dict ...)` calls

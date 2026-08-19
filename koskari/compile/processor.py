@@ -897,10 +897,10 @@ class ByteCodeProcessor:
         followed through the label index with a seen set guarding
         cycles; arrival at RETURN 1 promotes, and any other arrival
         invalidates. Yielding streams are skipped outright: generator
-        frames never use tail-call frame reuse. CALL_VAR is not
-        promotable: its callee rides in the row, and TAIL_CALL needs
-        the callable below the arguments, unreachable by local
-        rewrite.
+        frames never use tail-call frame reuse. Every call op has a
+        schema-identical TAIL twin, so promotion is a pure relabel
+        through the name-derived map -- fused VAR, FAST, and ATTR
+        forms included.
         """
 
         instr = self.instructions
