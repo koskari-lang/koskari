@@ -290,8 +290,7 @@
     A Model Context Protocol server for the Koskari language: documentation,
     a reference for special forms, macros, layouts and reader behavior, and a
     corpus of verified example programs with expected results at the read,
-    expand, compile and eval phases. The dataset is baked into the image, so
-    every query is answered from memory with no outbound request.
+    expand, compile and eval phases.
   </p>
   <div class="snapshot" id="snapshot">snapshot &hellip;</div>
 </header>
@@ -336,15 +335,14 @@
 
 <div class="note-box">
   <p>
-    <b>Two kinds of path, and they are not interchangeable.</b>
-    <b>Feature paths</b> -- <code>special/compile/cond</code>,
-    <code>layout/try</code> -- are what <code>list_features</code> returns,
-    and <code>search_examples</code> is the only tool that takes them, as
-    <code>feature_path</code>. <b>Reference paths</b> --
+    There are two primary kinds of path.
+    <b>Feature paths</b>, e.g. <code>special/compile/cond</code>,
+    <code>layout/try</code>. Features are what <code>list_features</code>
+    returns, and <code>search_examples</code> is the only tool that takes them,
+    as <code>feature_path</code>. <b>Reference paths</b>, e.g.
     <code>reference/specials/compile-cond.md</code>,
-    <code>agents/index.md</code>, anything under <code>examples/</code> --
-    are what <code>get_reference</code> takes. Handing a feature path to
-    <code>get_reference</code> finds nothing.
+    <code>agents/index.md</code>, and anything under <code>examples/</code>.
+    References are what <code>get_reference</code> takes.
   </p>
   <p>
     What bridges them is the <code>references</code> field on every record:
@@ -364,8 +362,7 @@
 
 <p style="color: var(--dim); font-size: 0.85rem; margin: 0 0 0.75rem;">
   This terminal speaks JSON-RPC to the endpoint above from your browser --
-  the same requests an agent makes. Dimmed lines are what goes out.
-  Type <b>help</b> for commands.
+  the same requests an agent makes. Type <b>help</b> for commands.
 </p>
 
 <div class="term">
@@ -383,7 +380,7 @@
 </div>
 
 <footer>
-  Served by <code>mcp_server.ki</code>, a server written in Koskari.
+  Served by <code>mcp_server.ki</code>, a simple MCP server written in Koskari.
   <a href="https://github.com/koskari-lang/koskari">github.com/koskari-lang/koskari</a>
 </footer>
 
