@@ -180,19 +180,27 @@ emit naive forms. Detail lives in
 the processor-specific mechanics:
 
 - Specials always emit `CALL*` + `RETURN`; the `tc=` parameter threading
-  through every special signature is deleted.
-- Detection is a forward walk from the call row accepting POSITION
-  rows, LABELs, and jump-chasing (a JUMP whose label row leads to
-  another JUMP, as nested conditionals produce), succeeding only on
-  arrival at `RETURN 1`. Arrival at anything else -- including
-  `RETURN 0`, which discards the value -- disqualifies. This uniformly
-  catches shapes the per-special approach structurally cannot, e.g. a
-  conditional whose arms each end in a call jumping to a shared RETURN.
-- Eligibility reads the extent stack at the call site (which matches
-  the state at the label, by structured emission) against a data table
-  of tail-blocking extents: try / finally / with / wind / prompt
-  require cleanup or chain discipline and block promotion. That table
-  lives beside the opcode declarations, not inside pass logic.
+  through every special signature is deleted. Note the un-fusion
+  obligation: today `tc` suppresses the CALL_VAR fusion
+  (`use_var_path = is_symbol(callable) and not tc`), so a
+  tail-position `CALL_VAR` must rewrite to the bare load plus
+  TAIL_CALL to reproduce current emission, before the fast lowering.
+- The pass is one linear read maintaining the extent stack from the
+  push/pop rows. At each promotable call: if **any** frame of the
+  stack is a disallowed extent, denied. Otherwise read forward --
+  allowed route rows are extent pops, LABEL, POSITION, and NOOP;
+  unconditional JUMPs are followed through the label index with a
+  seen-set guarding cycles -- and promote **only on arrival at
+  `RETURN 1`**. RETURN 0 discards the value and RETURN 2+ is a
+  different shape; any other row invalidates, and the scan continues
+  at the next call. This catches what syntactic threading cannot:
+  explicit returns, and arms jumping to a shared RETURN.
+- The extent table is data beside the pass, decided by one principle:
+  **an extent whose uninstall behavior must run after the call cannot
+  be tail-called through.** Disallowed: try, finally, with, dyn-with,
+  wind, prompt/reset, shift, call/cc, param(eterize), collect.
+  Discardable (allowed): namespace and loop/foreach extents, safely
+  dropped by frame handoff.
 - The rewrite touches the call row only. The JUMP and the shared
   RETURN stay: other predecessors may land on that label with non-tail
   values. Rows unreachable on the lowered path are harmless (or food
@@ -200,6 +208,64 @@ the processor-specific mechanics:
 - Yield-ness gates the whole pass up front, per the TODO entry: scan
   for YIELD / YIELD_FROM first, skip promotion entirely for yielding
   streams, never convert-then-unconvert.
+
+### Tail opcode parity worksheet
+
+The specials will stop emitting TAIL forms entirely; promotion in the
+processor then needs a TAIL twin for every call op the call specials
+can emit, so that promotion is always a pure relabel carrying the same
+operands and stack contract, with only the frame handoff differing.
+The historical gap was election, not impossibility: a tail form of a
+var or fast call stores the lookup and the arguments before resetting
+the frame. Current state of the family:
+
+| call op | tail twin | status |
+|---|---|---|
+| CALL | TAIL_CALL | exists |
+| CALL_NAMES | TAIL_CALL_NAMES | exists |
+| CALL_STAR | TAIL_CALL_STAR | exists |
+| CALL_VAR | TAIL_CALL_VAR | needed |
+| CALL_VAR_NAMES | TAIL_CALL_VAR_NAMES | needed |
+| CALL_VAR_STAR | TAIL_CALL_VAR_STAR | needed |
+| CALL_FAST | TAIL_CALL_FAST | needed |
+| CALL_FAST_NAMES | TAIL_CALL_FAST_NAMES | needed |
+| CALL_FAST_STAR | TAIL_CALL_FAST_STAR | needed |
+| CALL_ATTR | TAIL_CALL_ATTR | needed |
+| CALL_ATTR_NAMES | TAIL_CALL_ATTR_NAMES | needed |
+| CALL_ATTR_STAR | TAIL_CALL_ATTR_STAR | needed |
+| CALL_VAR_ATTR | TAIL_CALL_VAR_ATTR | needed |
+| CALL_VAR_ATTR_NAMES | TAIL_CALL_VAR_ATTR_NAMES | needed |
+| CALL_VAR_ATTR_STAR | TAIL_CALL_VAR_ATTR_STAR | needed |
+| CALL_FAST_ATTR | TAIL_CALL_FAST_ATTR | needed |
+| CALL_FAST_ATTR_NAMES | TAIL_CALL_FAST_ATTR_NAMES | needed |
+| CALL_FAST_ATTR_STAR | TAIL_CALL_FAST_ATTR_STAR | needed |
+
+Fifteen new opcodes for full parity: the VAR and FAST tiers of the
+plain family, and the nine attr forms. The attr tier reverses the old
+"attr calls never tail-call" election recorded in `compile/call-attr`.
+Each twin takes exactly its CALL form's operand schema. Adding them
+renumbers nothing if appended within their families, but any insertion
+plan carries the usual bytecode ABI minor bump.
+
+Wiring notes:
+
+- The promotion table grows one relabel entry per pair; no un-fusion
+  or stack surgery anywhere.
+- The VAR to FAST lowering pairs (TAIL_CALL_VAR -> TAIL_CALL_FAST and
+  the attr and names/star variants) do not register through the
+  name-driven map as written: `build_var_to_fast` keys on the `FAST` /
+  `CALL_FAST` name prefixes and will not see `TAIL_CALL_FAST*`. Either
+  the builder grows the `TAIL_CALL_FAST` prefix or the pairs are added
+  explicitly.
+- Promotion ordering relative to the fast lowering becomes free once
+  both tiers exist: promoting before lowering relabels the VAR forms
+  and lowering carries them to FAST twins, or promotion after lowering
+  relabels the FAST forms directly. Either works when the map is
+  complete.
+- During the transition, with the specials' tc pinned False and parity
+  not yet built, tests that assert TAIL emission for the fused call
+  shapes are expected to fail; they check the old election too
+  closely and settle once the twins land.
 
 Tail-call promotion changes observable behavior (backtrace shape,
 frame identity), so it lands in two steps: (a) the pass reproduces
