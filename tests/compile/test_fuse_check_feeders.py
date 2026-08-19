@@ -372,4 +372,101 @@ class TestIterNextLowering(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, [(VN, ("it", 1, None, None))])
 
 
+OF = OpCode.OBJECT_FORMAT
+OFC = OpCode.OBJECT_FORMAT_CONST
+VF = OpCode.VAR_FORMAT
+VFC = OpCode.VAR_FORMAT_CONST
+
+
+class TestFuseFormat(unittest.TestCase):
+    """
+    fuse_check_feeders absorbs bare VAR feeders into VAR_FORMAT and
+    VAR_FORMAT_CONST
+    """
+
+    def test_var_format_fuses(self):
+        out = fuse_ops([(V, "a"), (OF, 1)])
+        self.assertEqual(out, [(VF, "a")])
+
+    def test_const_format_stays(self):
+        out = fuse_ops([(C, 99), (OF, 1)])
+        self.assertEqual(out, [(C, 99), (OF, 1)])
+
+    def test_computed_format_stays(self):
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([(V, "f"), call, (OF, 1)])
+        self.assertEqual(out, [(V, "f"), call, (OF, 1)])
+
+    def test_dynamic_rules_stays(self):
+        # 2-arg OBJECT_FORMAT never fuses: there is no fused form
+        # carrying a stacked rules operand
+        out = fuse_ops([(V, "a"), (V, "r"), (OF, 2)])
+        self.assertEqual(out, [(V, "a"), (V, "r"), (OF, 2)])
+
+    def test_var_format_position_transparent(self):
+        out = fuse_ops([(V, "a"), (P, 7), (OF, 1)])
+        self.assertEqual(out, [(VF, "a"), (P, 7)])
+
+    def test_var_format_const_fuses(self):
+        out = fuse_ops([(V, "a"), (OFC, "04d")])
+        self.assertEqual(out, [(VFC, ("a", "04d", None, None))])
+
+    def test_const_format_const_stays(self):
+        out = fuse_ops([(C, 7), (OFC, "04d")])
+        self.assertEqual(out, [(C, 7), (OFC, "04d")])
+
+    def test_compress_runs_the_fusion_before_packing(self):
+        # adjacent interpolations: each VAR fuses into its format row
+        # instead of packing into VAR2
+        comp = make_compiler()
+        out = comp.compress([
+            (V, "a"), (OF, 1),
+            (V, "b"), (OFC, ".2f"),
+        ])
+        self.assertEqual(out[:2], [
+            (VF, "a"),
+            (VFC, ("b", ".2f", None, None)),
+        ])
+
+
+class TestFormatLowering(unittest.IsolatedAsyncioTestCase):
+    """
+    convert_fast lowers VAR_FORMAT / VAR_FORMAT_CONST to their FAST
+    twins: the simple path for VAR_FORMAT, the generic schema-driven
+    path for the EXTRA-styled VAR_FORMAT_CONST
+    """
+
+    async def test_var_format_lowers_when_local(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("x",), ())
+        result = compiler.convert_fast(
+            nspec, [(VF, "x")], mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [(OpCode.FAST_FORMAT, 0)])
+
+    async def test_var_format_stays_when_not_local(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("y",), ())
+        result = compiler.convert_fast(
+            nspec, [(VF, "x")], mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [(VF, "x")])
+
+    async def test_var_format_const_lowers_when_local(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("x",), ())
+        result = compiler.convert_fast(
+            nspec, [(VFC, ("x", "04d", None, None))],
+            mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [
+            (OpCode.FAST_FORMAT_CONST, (0, "04d", None, None)),
+        ])
+
+    async def test_var_format_const_stays_when_not_local(self):
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("y",), ())
+        result = compiler.convert_fast(
+            nspec, [(VFC, ("x", "04d", None, None))],
+            mode=CompilerMode.FUNCTION)
+        self.assertEqual(result, [(VFC, ("x", "04d", None, None))])
+
+
 # The end.

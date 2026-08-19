@@ -3131,18 +3131,20 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Style**: VAR. Arg = constant index of a name.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT (arg=1): resolve the name in the current frame's namespace and push `PyObject_Format(obj, NULL)`.
-- **Compiler form:** Not yet emitted; a planned compression pass will produce it from a bare VAR feeding OBJECT_FORMAT (arg=1). Lowers to FAST_FORMAT through the simple `convert_fast` path.
+- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_FORMAT (arg=1) is fed by a bare VAR load. Lowers to FAST_FORMAT through the simple `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_FORMAT.c` (cold handler)
-- **Covered by**: `tests/lib/opcode/test_format_fused.py`
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_VAR_FORMAT_CONST {#kos_op_var_format_const}
 
 - **Style**: EXTRA (VAR, CONST). Row = obj name (pool), rules string (pool).
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT_CONST: resolve the name in the current frame's namespace and push `PyObject_Format(obj, rules)`.
-- **Compiler form:** Not yet emitted; a planned compression pass will produce it from a bare VAR feeding OBJECT_FORMAT_CONST. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
+- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_FORMAT_CONST is fed by a bare VAR load. The 2-arg OBJECT_FORMAT (dynamic rules) stays unfused: absorbing the object load would move its name resolution past the rules evaluation. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_FORMAT_CONST.c` (cold handler)
-- **Covered by**: `tests/lib/opcode/test_format_fused.py`
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_FAST_FORMAT {#kos_op_fast_format}
 
@@ -3151,7 +3153,8 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Stack**: As VAR_FORMAT, with the object loaded from its fast slot.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_FORMAT when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT.c`
-- **Covered by**: `tests/lib/opcode/test_format_fused.py`
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_FAST_FORMAT_CONST {#kos_op_fast_format_const}
 
@@ -3160,7 +3163,8 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Stack**: As VAR_FORMAT_CONST, with the object loaded from its fast slot.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_FORMAT_CONST when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT_CONST.c`
-- **Covered by**: `tests/lib/opcode/test_format_fused.py`
+- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+  `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_OBJECT_TRUTH {#kos_op_object_truth}
 

@@ -55,17 +55,6 @@ beside the ternary bounds opcodes (`OBJECT_COMPARE_VAR` /
 
 Ref: [archive/compare-unification.md](archive/compare-unification.md).
 
-### Fused format opcodes
-
-`compile/format` (f-string interpolation) emits a variable load followed by
-`OBJECT_FORMAT` or `OBJECT_FORMAT_CONST` whenever the object being formatted
-is not itself constant -- the common case, e.g. `f"{x}"` or `f"{x:.2f}"`.
-Add compressed single-op forms: `VAR_FORMAT` / `VAR_FORMAT_CONST` (VAR +
-the respective OBJECT_FORMAT op) and their `FAST_FORMAT` / `FAST_FORMAT_CONST`
-FASTVAR analogues.
-
-Ref: `koskari/compile/specials/object.py` (`compile/format`).
-
 ---
 
 ## Profiling / instrumentation

@@ -1317,6 +1317,11 @@ class Compiler:
           a bare feeder (absorbing the iterator load moves its name
           resolution after the default's row); the default row stays on
           the stack and VAR_NEXT pops it.
+        - OBJECT_FORMAT (arg=1) or OBJECT_FORMAT_CONST fed by a bare
+          VAR collapses into VAR_FORMAT / VAR_FORMAT_CONST. The 2-arg
+          OBJECT_FORMAT stays unfused: there is no fused form carrying
+          a stacked rules operand, and absorbing the object load would
+          move its name resolution past the rules evaluation.
 
         The fast pass later lowers the VAR forms to their FAST twins.
         Runs before pack_var_runs so fusion gets first claim on the
@@ -1432,6 +1437,22 @@ class Compiler:
                              (it_name, 2, None, None)),
                         ])
                         continue
+
+            elif op == OpCode.OBJECT_FORMAT:
+                if arg == 1:
+                    found, pos_rows = scan_back(1)
+                    if found and result[found[0]][0] == OpCode.VAR:
+                        splice(found[0], pos_rows, [(
+                            OpCode.VAR_FORMAT, result[found[0]][1])])
+                        continue
+
+            elif op == OpCode.OBJECT_FORMAT_CONST:
+                found, pos_rows = scan_back(1)
+                if found and result[found[0]][0] == OpCode.VAR:
+                    splice(found[0], pos_rows, [(
+                        OpCode.VAR_FORMAT_CONST,
+                        (result[found[0]][1], arg, None, None))])
+                    continue
 
             result.append((op, arg))
 

@@ -1163,25 +1163,33 @@ class TestObjectVars(SpecialsTestCase):
 
 class TestObjectFormat(SpecialsTestCase):
 
-    async def test_format_no_rules_emits_object_format_arg_one(self):
+    async def test_format_no_rules_emits_opcode(self):
+        # a bare VAR feeder fuses into VAR_FORMAT; a computed object
+        # keeps the stack-based OBJECT_FORMAT
         code = self.compile_to_code("(format a)")
-        arg = _find_op(code, OpCode.OBJECT_FORMAT)
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        name_ix = _find_op(code, OpCode.VAR_FORMAT)
+        self.assertEqual("a", str(code.constant(name_ix)))
+        code = self.compile_to_code("(format (a))")
+        self.assertEqual(1, _find_op(code, OpCode.OBJECT_FORMAT))
 
 
-    async def test_format_const_rules_emits_const_opcode(self):
+    async def test_format_const_rules_emits_opcode(self):
         code = self.compile_to_code('(format a "04d")')
+        a0, a1, _a2, _a3 = code.extra_tuple(
+            _find_op(code, OpCode.VAR_FORMAT_CONST))
+        self.assertEqual("a", str(code.constant(a0)))
+        self.assertEqual("04d", code.constant(a1))
+        code = self.compile_to_code('(format (a) "04d")')
         arg = _find_op(code, OpCode.OBJECT_FORMAT_CONST)
-        self.assertIsNotNone(arg)
         self.assertEqual("04d", code.constant(arg))
 
 
-    async def test_format_quoted_symbol_rules_emits_const_opcode(self):
+    async def test_format_quoted_symbol_rules_emits_opcode(self):
         code = self.compile_to_code("(format a (quote z))")
-        arg = _find_op(code, OpCode.OBJECT_FORMAT_CONST)
-        self.assertIsNotNone(arg)
-        self.assertEqual("z", code.constant(arg))
+        a0, a1, _a2, _a3 = code.extra_tuple(
+            _find_op(code, OpCode.VAR_FORMAT_CONST))
+        self.assertEqual("a", str(code.constant(a0)))
+        self.assertEqual("z", code.constant(a1))
 
 
     async def test_format_dynamic_rules_emits_object_format_arg_two(self):

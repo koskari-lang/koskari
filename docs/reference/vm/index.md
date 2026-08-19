@@ -2722,7 +2722,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Style**: VAR. Arg = constant index of a name.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT (arg=1): resolve the name in the current frame's namespace and push `PyObject_Format(obj, NULL)`.
-- **Compiler form:** Not yet emitted by the compiler. Lowers to FAST_FORMAT through the simple `convert_fast` path.
+- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_FORMAT (arg=1) is fed by a bare VAR load. Lowers to FAST_FORMAT through the simple `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_FORMAT.c`
 
 ### KOS_OP_VAR_FORMAT_CONST {#kos_op_var_format_const}
@@ -2730,7 +2730,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Style**: EXTRA (VAR, CONST). Row = obj name (pool), rules string (pool).
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT_CONST: resolve the name in the current frame's namespace and push `PyObject_Format(obj, rules)`.
-- **Compiler form:** Not yet emitted by the compiler. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
+- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_FORMAT_CONST is fed by a bare VAR load. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_FORMAT_CONST.c`
 
 ### KOS_OP_FAST_FORMAT {#kos_op_fast_format}
