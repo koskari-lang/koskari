@@ -44,28 +44,6 @@ real workload that shows the win:
 Ref: [interpreter/attr-lookup-cache.md](interpreter/attr-lookup-cache.md)
 (§Phase 5).
 
-### Fused binary compare opcodes
-
-Single-op variants of the binary comparison of a variable against another
-variable or a constant: `FAST_COMPARE_CONST`, `FAST_COMPARE_FAST`, and the
-VAR variations (`VAR_COMPARE_CONST`, `VAR_COMPARE_VAR`). Today these sites
-emit loads plus stack-reducing `OBJECT_COMPARE`; the fused forms would sit
-beside the ternary bounds opcodes (`OBJECT_COMPARE_VAR` /
-`OBJECT_COMPARE_FAST`) and push the boolean result.
-
-Ref: [archive/compare-unification.md](archive/compare-unification.md).
-
-### Fused format opcodes
-
-`compile/format` (f-string interpolation) emits a variable load followed by
-`OBJECT_FORMAT` or `OBJECT_FORMAT_CONST` whenever the object being formatted
-is not itself constant -- the common case, e.g. `f"{x}"` or `f"{x:.2f}"`.
-Add compressed single-op forms: `VAR_FORMAT` / `VAR_FORMAT_CONST` (VAR +
-the respective OBJECT_FORMAT op) and their `FAST_FORMAT` / `FAST_FORMAT_CONST`
-FASTVAR analogues.
-
-Ref: `koskari/compile/specials/object.py` (`compile/format`).
-
 ---
 
 ## Profiling / instrumentation

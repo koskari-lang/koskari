@@ -30,8 +30,11 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # opcode no longer resolves externs from the namespace itself.
 # MINOR bumped: IMPORT_USE opcode appended for the use form's
 # feature-family import.
+# MINOR bumped: fused format opcodes VAR_FORMAT / VAR_FORMAT_CONST and
+# FAST_FORMAT / FAST_FORMAT_CONST inserted mid-enum, renumbering every
+# opcode after the VAR and FAST families.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 11
+BYTECODE_ABI_MINOR = 12
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 0
 

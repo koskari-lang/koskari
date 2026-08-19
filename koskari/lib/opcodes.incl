@@ -21,7 +21,9 @@
    multiple times with different definitions of the OP macro to
    generate both the enum and the styles table.
 
-   Format: OP(name, style)
+   Format: OP(name, cache_slots, style) for simple styles, or
+   OP(name, cache_slots, EXTRA, f0, f1, f2, f3) declaring the four
+   field kinds of an EXTRA row (NOARG pads unused fields).
 
    All Koskari code is async by default. Generators are distinguished
    by the presence of YIELD/YIELD_FROM opcodes which set the
@@ -138,6 +140,8 @@ OP(VAR_ATTR_STORE, 1, EXTRA, VAR, CONST, NOARG, NOARG)
 OP(VAR_ATTR_INPLACE, 1, EXTRA, OPCOUNT, VAR, CONST, NOARG)
 OP(VAR_ITER, 0, VAR)
 OP(VAR_NEXT, 0, EXTRA, VAR, COUNT, NOARG, NOARG)
+OP(VAR_FORMAT, 0, VAR)
+OP(VAR_FORMAT_CONST, 0, EXTRA, VAR, CONST, NOARG, NOARG)
 
 // variables by index reference (fast locals)
 OP(FAST, 0, FASTVAR)
@@ -159,6 +163,8 @@ OP(FAST_ATTR_STORE, 1, EXTRA, FASTVAR, CONST, NOARG, NOARG)
 OP(FAST_ATTR_INPLACE, 1, EXTRA, OPCOUNT, FASTVAR, CONST, NOARG)
 OP(FAST_ITER, 0, FASTVAR)
 OP(FAST_NEXT, 0, EXTRA, FASTVAR, COUNT, NOARG, NOARG)
+OP(FAST_FORMAT, 0, FASTVAR)
+OP(FAST_FORMAT_CONST, 0, EXTRA, FASTVAR, CONST, NOARG, NOARG)
 
 // object attribute access
 OP(ATTR, 0, CONST)
