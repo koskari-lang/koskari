@@ -68,7 +68,7 @@ jobs:
       # koskari-programs view ingests.
       - name: Detect relevant changes
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             corpus-data: &corpus-data
