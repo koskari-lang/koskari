@@ -242,7 +242,7 @@ _FORMAT_PATTERNS_FULL = tuple(
 
 @builtin("compile/format")
 @special("compile/format", patterns=_FORMAT_PATTERNS_FULL)
-def special_format(compiler, source, tc=False):
+def special_format(compiler, source):
     """
     Compile (compile/format OBJ [RULES]). Rules may be dynamic, constant str,
     or quoted symbol constant. The all-constant case folds to CONST here,
@@ -343,7 +343,7 @@ def _chain_compare(sel, compiler, source):
 
 @builtin("compile/==", "compile/equal?")
 @special("compile/==", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_eq(compiler, source, tc=False):
+def special_eq(compiler, source):
     """
     Compile (compile/= A B). Test equality via __eq__
     """
@@ -353,7 +353,7 @@ def special_eq(compiler, source, tc=False):
 
 @builtin("compile/!=", "compile/not-equal?")
 @special("compile/!=", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_ne(compiler, source, tc=False):
+def special_ne(compiler, source):
     """
     Compile (compile/!= A B). Test inequality via __ne__
     """
@@ -363,7 +363,7 @@ def special_ne(compiler, source, tc=False):
 
 @builtin("compile/<", "compile/lt?")
 @special("compile/<", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_lt(compiler, source, tc=False):
+def special_lt(compiler, source):
     """
     Compile (compile/< A B). Test less-than via __lt__
     """
@@ -373,7 +373,7 @@ def special_lt(compiler, source, tc=False):
 
 @builtin("compile/<=", "compile/le?")
 @special("compile/<=", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_le(compiler, source, tc=False):
+def special_le(compiler, source):
     """
     Compile (compile/<= A B). Test less-than-or-equal via __le__
     """
@@ -383,7 +383,7 @@ def special_le(compiler, source, tc=False):
 
 @builtin("compile/>", "compile/gt?")
 @special("compile/>", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_gt(compiler, source, tc=False):
+def special_gt(compiler, source):
     """
     Compile (compile/> A B). Test greater-than via __gt__
     """
@@ -393,7 +393,7 @@ def special_gt(compiler, source, tc=False):
 
 @builtin("compile/>=", "compile/ge?")
 @special("compile/>=", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_ge(compiler, source, tc=False):
+def special_ge(compiler, source):
     """
     Compile (compile/>= A B). Test greater-than-or-equal via __ge__
     """
@@ -407,7 +407,7 @@ def special_ge(compiler, source, tc=False):
 
 @builtin("compile/in", "compile/in?")
 @special("compile/in", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_in(compiler, source, tc=False):
+def special_in(compiler, source):
     """
     Compile (compile/in ITEM COLLECTION). Membership test via __contains__
     """
@@ -418,7 +418,7 @@ def special_in(compiler, source, tc=False):
 
 @builtin("compile/not-in", "compile/not-in?")
 @special("compile/not-in", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_not_in(compiler, source, tc=False):
+def special_not_in(compiler, source):
     """
     Compile (compile/not-in ITEM COLLECTION). Negated membership test
     """
@@ -429,7 +429,7 @@ def special_not_in(compiler, source, tc=False):
 
 @builtin("compile/is", "compile/is?")
 @special("compile/is", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_is(compiler, source, tc=False):
+def special_is(compiler, source):
     """
     Compile (compile/is A B). Identity test
     """
@@ -440,7 +440,7 @@ def special_is(compiler, source, tc=False):
 
 @builtin("compile/is-not", "compile/is-not?")
 @special("compile/is-not", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_is_not(compiler, source, tc=False):
+def special_is_not(compiler, source):
     """
     Compile (compile/is-not A B). Negated identity test
     """
@@ -490,7 +490,7 @@ def _type_check_op(sel, compiler, source):
 
 @builtin("compile/instance?")
 @special("compile/instance?", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_isinstance(compiler, source, tc=False):
+def special_isinstance(compiler, source):
     """
     Compile (compile/instance? OBJ TYPE ...). Instance type check
     """
@@ -501,7 +501,7 @@ def special_isinstance(compiler, source, tc=False):
 
 @builtin("compile/subclass?")
 @special("compile/subclass?", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_issubclass(compiler, source, tc=False):
+def special_issubclass(compiler, source):
     """
     Compile (compile/subclass? CLS TYPE ...). Subclass type check
     """
@@ -516,7 +516,7 @@ def special_issubclass(compiler, source, tc=False):
 
 @builtin("compile/+")
 @special("compile/+", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_add(compiler, source, tc=False):
+def special_add(compiler, source):
     """
     Compile (compile/+ A B ...). Variadic addition via __add__
     """
@@ -528,7 +528,7 @@ def special_add(compiler, source, tc=False):
 
 @builtin("compile/-")
 @special("compile/-", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_subtract(compiler, source, tc=False):
+def special_subtract(compiler, source):
     """
     Compile (compile/- A B ...). Variadic subtraction via __sub__
     """
@@ -540,7 +540,7 @@ def special_subtract(compiler, source, tc=False):
 
 @builtin("compile/*")
 @special("compile/*", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_multiply(compiler, source, tc=False):
+def special_multiply(compiler, source):
     """
     Compile (compile/* A B ...). Variadic multiplication via __mul__
     """
@@ -552,7 +552,7 @@ def special_multiply(compiler, source, tc=False):
 
 @builtin("compile/**")
 @special("compile/**", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_power(compiler, source, tc=False):
+def special_power(compiler, source):
     """
     Compile (compile/** BASE EXP [MOD]). Exponentiation via __pow__
     """
@@ -564,7 +564,7 @@ def special_power(compiler, source, tc=False):
 
 @builtin("compile/&")
 @special("compile/&", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_and(compiler, source, tc=False):
+def special_bit_and(compiler, source):
     """
     Compile (compile/& A B ...). Variadic bitwise AND via __and__
     """
@@ -576,7 +576,7 @@ def special_bit_and(compiler, source, tc=False):
 
 @builtin("compile/|")
 @special("compile/|", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_or(compiler, source, tc=False):
+def special_bit_or(compiler, source):
     """
     Compile (compile/| A B ...). Variadic bitwise OR via __or__
     """
@@ -588,7 +588,7 @@ def special_bit_or(compiler, source, tc=False):
 
 @builtin("compile/^")
 @special("compile/^", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_xor(compiler, source, tc=False):
+def special_bit_xor(compiler, source):
     """
     Compile (compile/^ A B ...). Variadic bitwise XOR via __xor__
     """
@@ -600,7 +600,7 @@ def special_bit_xor(compiler, source, tc=False):
 
 @builtin("compile///")
 @special("compile///", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_floor_divide(compiler, source, tc=False):
+def special_floor_divide(compiler, source):
     """
     Compile (compile/// A B ...). Variadic floor division via __floordiv__
     """
@@ -612,7 +612,7 @@ def special_floor_divide(compiler, source, tc=False):
 
 @builtin("compile/@")
 @special("compile/@", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_matrix_multiply(compiler, source, tc=False):
+def special_matrix_multiply(compiler, source):
     """
     Compile (compile/@ A B ...). Variadic matrix multiplication via __matmul__
     """
@@ -628,7 +628,7 @@ def special_matrix_multiply(compiler, source, tc=False):
 
 @builtin("compile//")
 @special("compile//", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_true_divide(compiler, source, tc=False):
+def special_true_divide(compiler, source):
     """
     Compile (compile// A B ...). True division via __truediv__
     """
@@ -640,7 +640,7 @@ def special_true_divide(compiler, source, tc=False):
 
 @builtin("compile/%")
 @special("compile/%", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_modulo(compiler, source, tc=False):
+def special_modulo(compiler, source):
     """
     Compile (compile/% A B). Modulo via __mod__
     """
@@ -651,7 +651,7 @@ def special_modulo(compiler, source, tc=False):
 
 @builtin("compile/<<")
 @special("compile/<<", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_left(compiler, source, tc=False):
+def special_bit_left(compiler, source):
     """
     Compile (compile/<< A B). Left bit-shift via __lshift__
     """
@@ -662,7 +662,7 @@ def special_bit_left(compiler, source, tc=False):
 
 @builtin("compile/>>")
 @special("compile/>>", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_right(compiler, source, tc=False):
+def special_bit_right(compiler, source):
     """
     Compile (compile/>> A B). Right bit-shift via __rshift__
     """
@@ -673,7 +673,7 @@ def special_bit_right(compiler, source, tc=False):
 
 @builtin("compile/divmod")
 @special("compile/divmod", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_divmod(compiler, source, tc=False):
+def special_divmod(compiler, source):
     """
     Compile (compile/divmod A B). Combined quotient and remainder
     """
@@ -687,7 +687,7 @@ def special_divmod(compiler, source, tc=False):
 
 @builtin("compile/not")
 @special("compile/not", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_not(compiler, source, tc=False):
+def special_not(compiler, source):
     """
     Compile (compile/not OBJ). Boolean negation via __bool__ then invert
     """
@@ -697,7 +697,7 @@ def special_not(compiler, source, tc=False):
 
 @builtin("compile/nil?")
 @special("compile/nil?", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_nilp(compiler, source, tc=False):
+def special_nilp(compiler, source):
     """
     Compile (nil? OBJ). True if OBJ is an empty-list singleton, either
     nil or bracket-nil. Emits NILP, which compression may lower to a
@@ -709,7 +709,7 @@ def special_nilp(compiler, source, tc=False):
 
 @builtin("compile/repr")
 @special("compile/repr", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_repr(compiler, source, tc=False):
+def special_repr(compiler, source):
     """
     Compile (compile/repr OBJ). String representation via __repr__
     """
@@ -719,7 +719,7 @@ def special_repr(compiler, source, tc=False):
 
 @builtin("compile/truth")
 @special("compile/truth", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_truth(compiler, source, tc=False):
+def special_truth(compiler, source):
     """
     Compile (compile/truth OBJ). Boolean coercion via __bool__
     """
@@ -729,7 +729,7 @@ def special_truth(compiler, source, tc=False):
 
 @builtin("compile/iter")
 @special("compile/iter", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_iter(compiler, source, tc=False):
+def special_iter(compiler, source):
     """
     Compile (compile/iter OBJ). Iterator acquisition uniform over both
     protocols: a koskari AsyncGenerator passes through as itself, an
@@ -752,7 +752,7 @@ _NEXT_PATTERNS_FULL = tuple(
 
 @builtin("compile/next")
 @special("compile/next", patterns=_NEXT_PATTERNS_FULL)
-def special_next(compiler, source, tc=False):
+def special_next(compiler, source):
     """
     Compile (compile/next IT [DEFAULT]). One step of either iteration
     protocol via OBJECT_NEXT, ambient async: exhaustion raises
@@ -782,7 +782,7 @@ def special_next(compiler, source, tc=False):
 
 @builtin("compile/~")
 @special("compile/~", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_invert(compiler, source, tc=False):
+def special_bit_invert(compiler, source):
     """
     Compile (compile/~ OBJ). Bitwise inversion via __invert__
     """
@@ -792,7 +792,7 @@ def special_bit_invert(compiler, source, tc=False):
 
 @builtin("compile/#str")
 @special("compile/#str", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_str(compiler, source, tc=False):
+def special_str(compiler, source):
     """
     Compile (compile/#str OBJ ...). String conversion via __str__, variadic
     for f-string style multi-part concatenation
@@ -817,7 +817,7 @@ def special_str(compiler, source, tc=False):
 
 @builtin("compile/len")
 @special("compile/len", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_len(compiler, source, tc=False):
+def special_len(compiler, source):
     """
     Compile (compile/len OBJ). Length query via __len__
     """
@@ -827,7 +827,7 @@ def special_len(compiler, source, tc=False):
 
 @builtin("compile/type")
 @special("compile/type", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_type(compiler, source, tc=False):
+def special_type(compiler, source):
     """
     Compile (compile/type OBJ). Type introspection via type()
     """
@@ -837,7 +837,7 @@ def special_type(compiler, source, tc=False):
 
 @builtin("compile/dir")
 @special("compile/dir", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_dir(compiler, source, tc=False):
+def special_dir(compiler, source):
     """
     Compile (compile/dir OBJ). Attribute listing via __dir__
     """
@@ -847,7 +847,7 @@ def special_dir(compiler, source, tc=False):
 
 @builtin("compile/vars")
 @special("compile/vars", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_vars(compiler, source, tc=False):
+def special_vars(compiler, source):
     """
     Compile (compile/vars OBJ). Attribute dict via __dict__
     """
@@ -880,7 +880,7 @@ for _sym_text, _binop in _OPERAND_BY_SYM.items():
 
 @builtin("compile/inplace")
 @special("compile/inplace", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_inplace(compiler, source, tc=False):
+def special_inplace(compiler, source):
     """
     Compile (compile/inplace OP VAR VALUE). In-place update: VAR OP= VALUE.
     OP is any numeric or bitwise operator (+, -, *, /, //, %, **, @, &, |, ^,
@@ -930,7 +930,7 @@ def special_inplace(compiler, source, tc=False):
 
 @builtin("compile/inplace-item")
 @special("compile/inplace-item", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_inplace_item(compiler, source, tc=False):
+def special_inplace_item(compiler, source):
     """
     Compile (compile/inplace-item OP OBJ KEY VALUE...). Multiple values
     reduce left-to-right through the single OBJECT_INPLACE instruction.
@@ -1001,7 +1001,7 @@ def special_inplace_item(compiler, source, tc=False):
 
 @builtin("compile/inplace-attr")
 @special("compile/inplace-attr", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_inplace_attr(compiler, source, tc=False):
+def special_inplace_attr(compiler, source):
     """
     Compile (compile/inplace-attr OP OBJ ATTR VALUE...). Multiple values
     reduce left-to-right into OBJ.ATTR through a single fused instruction:

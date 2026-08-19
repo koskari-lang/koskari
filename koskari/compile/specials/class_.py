@@ -58,7 +58,7 @@ def _compiling_module_name(compiler):
 
 @builtin("compile/class")
 @special("compile/class", patterns=_DEFAULT_PATTERNS)
-def special_class(compiler, source, tc=False):
+def special_class(compiler, source):
     """
     Compile (compile/class NAME (SUPERS) BODY...). Creates a class via
     PUSH_COLLECT/POP_COLLECT/BUILD_CLASS, runs body in CollectorNamespace,
@@ -123,7 +123,7 @@ def special_class(compiler, source, tc=False):
         frag.instruction(OpCode.BUILD_ARGS, 2)
 
     with frag.collector_namespace(called_by) as body_frag:
-        helper_begin(body_frag, body, tc)
+        helper_begin(body_frag, body)
 
         if doc and "__doc__" not in body_frag.declares:
             # don't override an existing __doc__, just in case

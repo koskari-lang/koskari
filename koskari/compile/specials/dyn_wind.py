@@ -143,8 +143,7 @@ _DYN_WIND_PATTERNS_FULL = tuple(
 @special("compile/dyn-wind", patterns=_DYN_WIND_PATTERNS_FULL)
 def special_dyn_wind(
         compiler: Compiler,
-        source: pair,
-        tc: bool = False) -> ByteCodeFragment:
+        source: pair) -> ByteCodeFragment:
     """
     Compile (compile/dyn-wind [before] [body] [after]). Body is required;
     at least one of before or after is required. Wraps before/after in

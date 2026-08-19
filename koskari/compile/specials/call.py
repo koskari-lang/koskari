@@ -101,8 +101,7 @@ _CALL_PATTERNS = [
 @special("compile/call", patterns=_CALL_PATTERNS, unpack="match")
 def special_call(
         compiler: Compiler,
-        caps: dict,
-        tc: bool = False) -> ByteCodeFragment:
+        caps: dict) -> ByteCodeFragment:
 
     called_by = caps["called-by"].datum
     pos = caps["called-by"].position
@@ -238,8 +237,7 @@ _CALL_ATTR_PATTERNS_FULL = tuple(
 @special("compile/call-attr", patterns=_CALL_ATTR_PATTERNS_FULL)
 def special_call_attr(
         compiler: Compiler,
-        source: pair,
-        tc: bool = False) -> ByteCodeFragment:
+        source: pair) -> ByteCodeFragment:
 
     called_by, body = source
 

@@ -609,11 +609,12 @@ def special(form_symbol, *, patterns, unpack=None):
     :param form_symbol: primary compile-time head symbol for this form
     :param patterns: one ``matcher.Pattern`` or an iterable (try-order)
     :param unpack: only for this decorator: ``None`` (receive
-        ``compiler, source_obj, tc``), ``match`` (receive
-        ``compiler, captures_dict, tc``), or ``kwargs`` (captures merged after
-        ``tc``). For ``match`` and ``kwargs``, ``captures_dict`` includes only
-        slots the matcher bound; values are matcher outputs (``Datum``
-        wrappers may be present). Not available on ``build_*`` rule rows.
+        ``compiler, source_obj``), ``match`` (receive
+        ``compiler, captures_dict``), or ``kwargs`` (captures merged after
+        ``compiler``). For ``match`` and ``kwargs``, ``captures_dict``
+        includes only slots the matcher bound; values are matcher outputs
+        (``Datum`` wrappers may be present). Not available on ``build_*``
+        rule rows.
     """
 
     if unpack not in (None, "match", "kwargs"):
@@ -633,15 +634,15 @@ def special(form_symbol, *, patterns, unpack=None):
         plist = _normalize_special_patterns(patterns)
         if unpack is None:
             def wrapped(compiler, source_obj, match_result, tc):
-                return fn(compiler, source_obj, tc)
+                return fn(compiler, source_obj)
 
         elif unpack == "match":
             def wrapped(compiler, source_obj, match_result, tc):
-                return fn(compiler, match_result.captures, tc)
+                return fn(compiler, match_result.captures)
 
         elif unpack == "kwargs":
             def wrapped(compiler, source_obj, match_result, tc):
-                return fn(compiler, tc=tc, **match_result.captures)
+                return fn(compiler, **match_result.captures)
 
         else:
             raise ValueError(f"internal: bad unpack {unpack!r}")
@@ -798,7 +799,7 @@ def _wrap_special_handler(raw):
 
     @wraps(raw)
     def handler(compiler, source_obj, match_result, tc):
-        return demand_call(raw, compiler, tc, **match_result.captures)
+        return demand_call(raw, compiler, **match_result.captures)
 
     return handler
 

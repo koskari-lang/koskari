@@ -36,7 +36,7 @@ _ATTR_FORMS = [
 
 @builtin("compile/attr")
 @special("compile/attr", patterns=_ATTR_FORMS, unpack="match")
-def special_attr(compiler, caps, tc=False):
+def special_attr(compiler, caps):
     """
     Compile (compile/attr OBJ SYM). Load attribute SYM from OBJ
     """
@@ -67,7 +67,7 @@ _DEL_ATTR_FORMS = [
 
 @builtin("compile/take-attr")
 @special("compile/take-attr", patterns=_DEL_ATTR_FORMS, unpack="match")
-def special_take_attr(compiler, caps, tc=False):
+def special_take_attr(compiler, caps):
     """
     Compile (compile/take-attr OBJ SYM). Get attribute SYM from OBJ, delete
     it, push the value
@@ -95,7 +95,7 @@ def special_take_attr(compiler, caps, tc=False):
 
 @builtin("compile/del-attr")
 @special("compile/del-attr", patterns=_DEL_ATTR_FORMS, unpack="match")
-def special_del_attr(compiler, caps, tc=False):
+def special_del_attr(compiler, caps):
     """
     Compile (compile/del-attr OBJ SYM). Delete attribute SYM from OBJ
     """
@@ -129,7 +129,7 @@ _SET_ATTR_FORMS = [
 
 @builtin("compile/set-attr")
 @special("compile/set-attr", patterns=_SET_ATTR_FORMS, unpack="match")
-def special_set_attr(compiler, caps, tc=False):
+def special_set_attr(compiler, caps):
     """
     Compile (compile/set-attr OBJ SYM VAL). Store VAL into attribute SYM on OBJ
     """

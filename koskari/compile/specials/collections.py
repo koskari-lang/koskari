@@ -37,7 +37,7 @@ _DEFAULT_LIST_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 @builtin("compile/#tuple")
 @special("compile/#tuple", patterns=_DEFAULT_LIST_PATTERNS)
-def special_build_tuple(compiler, source, tc=False):
+def special_build_tuple(compiler, source):
     """
     Build a Python tuple from evaluated elements.
 
@@ -86,7 +86,7 @@ def special_build_tuple(compiler, source, tc=False):
 
 @builtin("compile/#list")
 @special("compile/#list", patterns=_DEFAULT_LIST_PATTERNS)
-def special_build_list(compiler, source, tc=False):
+def special_build_list(compiler, source):
     """
     Build a Python list from evaluated elements.
 
@@ -154,7 +154,7 @@ _LIST_APPEND_PATTERNS = [
 
 @builtin("compile/#list-append")
 @special("compile/#list-append", patterns=_LIST_APPEND_PATTERNS, unpack="match")
-def special_list_append(compiler, caps, tc=False):
+def special_list_append(compiler, caps):
     """
     Append the value of EXPR to a list binding or list expression
     """

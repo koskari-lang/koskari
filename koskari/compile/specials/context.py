@@ -39,8 +39,7 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 @special("compile/parameterize", patterns=_DEFAULT_PATTERNS)
 def special_parameterize(
         compiler: Compiler,
-        source: pair,
-        tc: bool = False) -> ByteCodeFragment:
+        source: pair) -> ByteCodeFragment:
     """
     Compile (compile/parameterize [[name val] ...] BODY...).
 
@@ -78,8 +77,7 @@ def special_parameterize(
 @special("compile/parameter", patterns=_DEFAULT_PATTERNS)
 def special_parameter(
         compiler: Compiler,
-        source: pair,
-        tc: bool = False) -> ByteCodeFragment:
+        source: pair) -> ByteCodeFragment:
     """
     Compile (compile/parameter NAME [DEFAULT]).
 
@@ -129,7 +127,7 @@ _WITH_PATTERNS = [
 
 @builtin("compile/with")
 @special("compile/with", patterns=_WITH_PATTERNS, unpack="match")
-def special_with(compiler, caps, tc=False):
+def special_with(compiler, caps):
     """
     Compile (compile/with [name? expr] BODY...). Single-shot context manager
     """
@@ -169,7 +167,7 @@ def special_with(compiler, caps, tc=False):
 
 @builtin("compile/dyn-with")
 @special("compile/dyn-with", patterns=_WITH_PATTERNS, unpack="match")
-def special_dyn_with(compiler, caps, tc=False):
+def special_dyn_with(compiler, caps):
     """
     Compile (compile/dyn-with [name? expr] BODY...). Multi-shot context manager
     that participates in transfer plans (exit on unwind, enter on wind).

@@ -36,8 +36,7 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 @special("compile/bytecode", patterns=_DEFAULT_PATTERNS)
 def special_bytecode(
         compiler: Compiler,
-        source: pair,
-        tc: bool = False) -> ByteCodeFragment:
+        source: pair) -> ByteCodeFragment:
 
     called_by, body = source
 

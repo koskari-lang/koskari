@@ -131,8 +131,7 @@ def _build_formals(pos_map, source):
 @special("compile/gensym-thunk", patterns=_DEFAULT_PATTERNS)
 def special_gensym_thunk(
         compiler: Compiler,
-        source,
-        tc: bool = False) -> ByteCodeFragment:
+        source) -> ByteCodeFragment:
     """
     Compile (compile/gensym-thunk BODY...) to a lambda with inferred formals.
 

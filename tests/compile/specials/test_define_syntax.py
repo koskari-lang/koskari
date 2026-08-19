@@ -338,7 +338,7 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
         src_str = """
         (define ident
           (special-rules ident []
-            [(c (ident x) t) x.datum]))
+            [(c (ident x)) x.datum]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
@@ -365,7 +365,7 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
         src_str = """
         (define ident
           (special-rules ident []
-            [(c x t) (car (cdr x.datum))]))
+            [(c x) (car (cdr x.datum))]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
@@ -391,7 +391,7 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (define ident
           (special-match ident
-            [(compiler (ident (VALUE x)) t)
+            [(compiler (ident (VALUE x)))
              x.datum]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -419,7 +419,7 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (define ident
           (special-match ident
-            [(c x t)
+            [(c x)
              (car (cdr x.datum))]))
         """
         expr, mod = self.compile_expr(src_str)

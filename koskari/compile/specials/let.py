@@ -78,8 +78,7 @@ _LET_PATTERNS = [
 @special("compile/let", patterns=_LET_PATTERNS, unpack="match")
 def special_let(
         compiler: Compiler,
-        caps,
-        tc: bool = False):
+        caps):
     """
     Compile (compile/let BINDINGS BODY...) or (compile/let NAME BINDINGS
     BODY...). Named let expands to an immediately-invoked named lambda:
@@ -112,7 +111,7 @@ def special_let(
         fragment = compiler.fragment(called_by)
         fragment.position(pos)
         with fragment.child_namespace(called_by, args, vals) as frag:
-            helper_begin(frag, body, tc)
+            helper_begin(frag, body)
 
     return fragment
 
@@ -129,8 +128,7 @@ _LETREC_PATTERNS = [
 @special("compile/letrec", patterns=_LETREC_PATTERNS, unpack="match")
 def special_letrec(
         compiler: Compiler,
-        caps,
-        tc: bool = False):
+        caps):
     """
     Compile (compile/letrec BINDINGS BODY...). Each name is declared in a
     single child scope without initial values, then each RHS is evaluated and
@@ -161,7 +159,7 @@ def special_letrec(
             frag.declare_var(str(name))
             frag.merge(compiler.full_compile(expr))
             frag.instruction(OpCode.VAR_STORE, str(name))
-        helper_begin(frag, body, tc)
+        helper_begin(frag, body)
 
     return fragment
 

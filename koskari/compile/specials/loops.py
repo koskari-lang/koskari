@@ -39,7 +39,7 @@ _WHILE_PATTERNS = [
 
 @builtin("compile/while")
 @special("compile/while", patterns=_WHILE_PATTERNS, unpack="kwargs")
-def special_while(compiler, tc, _while, test, body):
+def special_while(compiler, _while, test, body):
     """
     Compile (compile/while TEST BODY... [else: ELSEBODY]). Loop with break and continue support
     """
@@ -88,7 +88,7 @@ _FOREACH_PATTERNS = (
 
 @builtin("compile/for-each")
 @special("compile/for-each", patterns=_FOREACH_PATTERNS, unpack="match")
-def special_for_each(compiler, caps, tc=False):
+def special_for_each(compiler, caps):
     """
     Compile (compile/for-each [BINDING EXPR] BODY... [else: ELSEBODY]) or
     (compile/for-each [[PATTERN...] EXPR] BODY... [else: ELSEBODY]).
@@ -176,7 +176,7 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), OPTIONAL(VALUE("val"))),)
 
 @builtin("compile/break")
 @special("compile/break", patterns=_DEFAULT_PATTERNS)
-def special_break(compiler, source, tc=False):
+def special_break(compiler, source):
     """
     Compile (compile/break) or (compile/break VAL). Exits innermost loop.
     """
@@ -186,7 +186,7 @@ def special_break(compiler, source, tc=False):
 
 @builtin("compile/continue")
 @special("compile/continue", patterns=_DEFAULT_PATTERNS)
-def special_continue(compiler, source, tc=False):
+def special_continue(compiler, source):
     """
     Compile (compile/continue) or (compile/continue VAL). Restarts loop.
     """

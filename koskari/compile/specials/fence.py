@@ -64,7 +64,7 @@ def _is_source(value):
 @builtin("compile/apply-fence")
 @special("compile/apply-fence", patterns=_APPLY_FENCE_PATTERNS,
          unpack="match")
-def special_apply_fence(compiler, caps, tc=False):
+def special_apply_fence(compiler, caps):
     """
     Compile (compile/apply-fence NAME RAW META) — fence expansion.
 

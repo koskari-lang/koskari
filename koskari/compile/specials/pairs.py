@@ -36,7 +36,7 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 @builtin("compile/quote")
 @special("compile/quote", patterns=_DEFAULT_PATTERNS)
-def special_quote(compiler, source, tc=False):
+def special_quote(compiler, source):
     called_by, body = source
 
     if is_nil(body) or not is_pair(body):
@@ -59,7 +59,7 @@ def special_quote(compiler, source, tc=False):
 
 @builtin("compile/car")
 @special("compile/car", patterns=_DEFAULT_PATTERNS)
-def special_car(compiler, source, tc=False):
+def special_car(compiler, source):
     """
     Compile (compile/car EXPR). Emit code that evaluates EXPR, then pushes
     the car of that pair. One argument. Emits CAR 1; consecutive CAR/CDR
@@ -84,7 +84,7 @@ def special_car(compiler, source, tc=False):
 
 @builtin("compile/cdr")
 @special("compile/cdr", patterns=_DEFAULT_PATTERNS)
-def special_cdr(compiler, source, tc=False):
+def special_cdr(compiler, source):
     """
     Compile (compile/cdr EXPR). Emit code that evaluates EXPR, then pushes
     the cdr of that pair. One argument. Emits CDR 1; consecutive CDR/CAR
@@ -109,7 +109,7 @@ def special_cdr(compiler, source, tc=False):
 
 @builtin("compile/cons")
 @special("compile/cons", patterns=_DEFAULT_PATTERNS)
-def special_cons(compiler, source, tc=False):
+def special_cons(compiler, source):
     """
     Variadic: (compile/cons EXPR1 EXPR2 ... EXPR_TAIL). Compile each
     expression in order (stack bottom = first element, top = tail), then

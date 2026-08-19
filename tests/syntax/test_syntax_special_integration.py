@@ -58,11 +58,10 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         )
 
         @special(primary, patterns=pat, unpack="match")
-        def _fn(compiler, caps, tc):
+        def _fn(compiler, caps):
             return (
                 caps["head"].datum,
                 caps["x"].datum,
-                tc,
             )
 
         alias = symbol("define/ng-int")
@@ -72,7 +71,6 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         out = _fn.compile_impl(comp, src, True)
         self.assertEqual(out[0], alias)
         self.assertEqual(out[1], arg)
-        self.assertTrue(out[2])
 
 
     def test_special_first_arm_wins_when_both_match(self):
@@ -86,7 +84,7 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
 
         seen = []
 
-        def fn(compiler, caps, tc):
+        def fn(compiler, caps):
             seen.append(frozenset(caps.keys()))
             return symbol("ok")
 
@@ -160,7 +158,7 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         saw = []
 
         @special(primary, patterns=pat, unpack=None)
-        def _fn(compiler, source_obj, tc):
+        def _fn(compiler, source_obj):
             saw.append(source_obj)
             return symbol("ok")
 

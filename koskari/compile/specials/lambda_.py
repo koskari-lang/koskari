@@ -148,7 +148,7 @@ _FUNCTION_PATTERNS = (
 
 @builtin("compile/function")
 @special("compile/function", patterns=_FUNCTION_PATTERNS, unpack="match")
-def special_function(compiler, caps, tc=False) -> ByteCodeFragment:
+def special_function(compiler, caps) -> ByteCodeFragment:
     """
     Compile (function [args] body) or (function name [args] body).
 
@@ -202,7 +202,7 @@ _LAMBDA_PATTERNS = (
 
 @builtin("compile/lambda")
 @special("compile/lambda", patterns=_LAMBDA_PATTERNS, unpack="match")
-def special_lambda(compiler, caps, tc=False) -> ByteCodeFragment:
+def special_lambda(compiler, caps) -> ByteCodeFragment:
     """
     Compile (lambda [args] body) or (lambda name [args] body).
 

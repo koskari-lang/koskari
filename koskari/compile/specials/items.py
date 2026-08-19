@@ -35,7 +35,7 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 @builtin("compile/item")
 @special("compile/item", patterns=_DEFAULT_PATTERNS)
-def special_item(compiler, source, tc=False):
+def special_item(compiler, source):
     """
     Compile (compile/item OBJ KEY). Load item at KEY from OBJ
     """
@@ -68,7 +68,7 @@ def special_item(compiler, source, tc=False):
 
 @builtin("compile/del-item")
 @special("compile/del-item", patterns=_DEFAULT_PATTERNS)
-def special_del_item(compiler, source, tc=False):
+def special_del_item(compiler, source):
     """
     Compile (compile/del-item OBJ KEY). Delete item at KEY from OBJ
     """
@@ -103,7 +103,7 @@ def special_del_item(compiler, source, tc=False):
 
 @builtin("compile/take-item")
 @special("compile/take-item", patterns=_DEFAULT_PATTERNS)
-def special_take_item(compiler, source, tc=False):
+def special_take_item(compiler, source):
     """
     Compile (compile/take-item OBJ KEY). Get item at KEY from OBJ, delete it,
     push the value
@@ -137,7 +137,7 @@ def special_take_item(compiler, source, tc=False):
 
 @builtin("compile/set-item")
 @special("compile/set-item", patterns=_DEFAULT_PATTERNS)
-def special_set_item(compiler, source, tc=False):
+def special_set_item(compiler, source):
     """
     Compile (compile/set-item OBJ KEY VAL). Store VAL at item KEY in OBJ
     """
