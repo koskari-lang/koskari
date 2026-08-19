@@ -153,7 +153,7 @@ def special_call(
     if not has_star and not has_starstar:
         if not kwds_seq:
             for _, expr in args_seq:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             fragment.position(pos)
             if use_var_path:
                 fragment.instruction(
@@ -169,9 +169,9 @@ def special_call(
                 kw_values.append(item[1])
             opa = len(pos_exprs)
             for expr in pos_exprs:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             for expr in kw_values:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             if not use_var_path:
                 fragment.instruction(OpCode.CONST, tuple(kw_names))
             fragment.position(pos)
@@ -193,10 +193,10 @@ def special_call(
             for kind, data in arg_chunks:
                 if kind == "pos":
                     for _, expr in data:
-                        fragment.merge(compiler.full_compile(expr, False))
+                        fragment.merge(compiler.full_compile(expr))
                     fragment.instruction(OpCode.BUILD_ARGS, len(data))
                 else:
-                    fragment.merge(compiler.full_compile(data, False))
+                    fragment.merge(compiler.full_compile(data))
             if len(arg_chunks) > 1:
                 fragment.instruction(OpCode.COMBINE_ARGS, len(arg_chunks))
 
@@ -206,10 +206,10 @@ def special_call(
                 if kind == "kw":
                     names = tuple(n for n, _ in data)
                     for _, expr in data:
-                        fragment.merge(compiler.full_compile(expr, False))
+                        fragment.merge(compiler.full_compile(expr))
                     fragment.instruction(OpCode.BUILD_KWDS_NAMES, names)
                 else:
-                    fragment.merge(compiler.full_compile(data, False))
+                    fragment.merge(compiler.full_compile(data))
             if len(kwd_chunks) > 1:
                 fragment.instruction(OpCode.COMBINE_KWDS, len(kwd_chunks))
 
@@ -269,7 +269,7 @@ def special_call_attr(
     if not has_star and not has_starstar:
         if not kwds_seq:
             for _, expr in args_seq:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             fragment.position_of(source)
             if use_var_path:
                 fragment.instruction(
@@ -286,9 +286,9 @@ def special_call_attr(
                 kw_values.append(item[1])
             opa = len(pos_exprs)
             for expr in pos_exprs:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             for expr in kw_values:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             fragment.position_of(source)
             if use_var_path:
                 fragment.instruction(
@@ -308,10 +308,10 @@ def special_call_attr(
             for kind, data in arg_chunks:
                 if kind == "pos":
                     for _, expr in data:
-                        fragment.merge(compiler.full_compile(expr, False))
+                        fragment.merge(compiler.full_compile(expr))
                     fragment.instruction(OpCode.BUILD_ARGS, len(data))
                 else:
-                    fragment.merge(compiler.full_compile(data, False))
+                    fragment.merge(compiler.full_compile(data))
             if len(arg_chunks) > 1:
                 fragment.instruction(OpCode.COMBINE_ARGS, len(arg_chunks))
 
@@ -321,10 +321,10 @@ def special_call_attr(
                 if kind == "kw":
                     names = tuple(n for n, _ in data)
                     for _, expr in data:
-                        fragment.merge(compiler.full_compile(expr, False))
+                        fragment.merge(compiler.full_compile(expr))
                     fragment.instruction(OpCode.BUILD_KWDS_NAMES, names)
                 else:
-                    fragment.merge(compiler.full_compile(data, False))
+                    fragment.merge(compiler.full_compile(data))
             if len(kwd_chunks) > 1:
                 fragment.instruction(OpCode.COMBINE_KWDS, len(kwd_chunks))
 

@@ -58,7 +58,7 @@ def _finally_body(compiler, fragment, body):
     while True:
         fragment.position_of(body)
         expr, body = body
-        fragment.merge(compiler.full_compile(expr, False))
+        fragment.merge(compiler.full_compile(expr))
         fragment.instruction(OpCode.POP, 1)
         if is_nil(body):
             break
@@ -152,7 +152,7 @@ def special_check_exception(compiler, source):
 
     while not is_nil(checks):
         expr, checks = checks
-        fragment.merge(compiler.full_compile(expr, False))
+        fragment.merge(compiler.full_compile(expr))
         count += 1
 
     fragment.instruction(OpCode.BUILD_ARGS, count)
@@ -219,7 +219,7 @@ def _try(compiler, try_expr, catches):
     frag = compiler.fragment("<try>")
 
     frag.instruction(OpCode.PUSH_TRY, except_label)
-    frag.merge(compiler.full_compile(try_expr, False))
+    frag.merge(compiler.full_compile(try_expr))
 
     frag.instruction(OpCode.CLEAR_TRY, 0)
     frag.instruction(OpCode.JUMP, end_label)
@@ -240,7 +240,7 @@ def _try_else(compiler, try_expr, catches, else_exprs):
     frag = compiler.fragment("<try-else>")
 
     frag.instruction(OpCode.PUSH_TRY, except_label)
-    frag.merge(compiler.full_compile(try_expr, False))
+    frag.merge(compiler.full_compile(try_expr))
 
     frag.instruction(OpCode.CLEAR_TRY, 0)
     helper_begin(frag, else_exprs)
@@ -264,7 +264,7 @@ def _try_finally(compiler, try_expr, catches, fin_exprs):
     if catches:
         frag.merge(_try(compiler, try_expr, catches))
     else:
-        frag.merge(compiler.full_compile(try_expr, False))
+        frag.merge(compiler.full_compile(try_expr))
 
     frag.instruction(OpCode.CLEAR_FINALLY, 0)
     frag.instruction(OpCode.LABEL, cleanup)
@@ -362,7 +362,7 @@ def _except(compiler, catches):
         if pos:
             fill_position(clause, pos)
 
-    return compiler.full_compile(expr, False)
+    return compiler.full_compile(expr)
 
 
 @builtin("compile/raise")
@@ -379,7 +379,7 @@ def special_raise(compiler, source):
     if not is_nil(rest):
         raise TypeError("too many arguments to raise")
 
-    fragment.merge(compiler.full_compile(expr, False))
+    fragment.merge(compiler.full_compile(expr))
     fragment.instruction(OpCode.RAISE, 1)
 
     return fragment

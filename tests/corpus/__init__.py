@@ -739,7 +739,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         if not isinstance(tf, (SyntaxTransform, MacroTransform)):
             return form
 
-        expanded = tf.handle_expand(self.compiler, form, mr, False)
+        expanded = tf.handle_expand(self.compiler, form, mr)
 
         if is_proper(expanded):
             parts = list(expanded.unpack())
@@ -751,17 +751,16 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         return expanded
 
 
-    def compile_source(self, source, tc=False):
+    def compile_source(self, source):
         """
         Compile source to a Code object
 
         :param source: source text
-        :param tc: enable tail-call tracking when True
         :return: Code object
         """
 
         form = self.read_source(source)
-        fragment = self.compiler.compile_expression(form, tc=tc)
+        fragment = self.compiler.compile_expression(form)
         return self.compiler.complete(fragment, mode=CompilerMode.EXPRESSION)
 
 

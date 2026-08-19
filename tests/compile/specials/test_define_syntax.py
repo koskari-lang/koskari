@@ -44,7 +44,7 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
 
 
     def compile_to_code(
-            self, src_str, lineno=1, tc=False,
+            self, src_str, lineno=1,
             resolution_mode=None, resolution_instance=None,
             **defns):
 
@@ -54,7 +54,7 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
         defns.setdefault('parse-match-pattern', parse_match_pattern)
         defns.setdefault('parse-rule-pattern', parse_rule_pattern)
         return super().compile_to_code(
-            src_str, lineno=lineno, tc=tc,
+            src_str, lineno=lineno,
             resolution_mode=resolution_mode,
             resolution_instance=resolution_instance,
             **defns)

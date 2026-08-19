@@ -75,7 +75,7 @@ def special_cond(compiler, source):
             helper_begin(fragment, body, clause_pos)
             break
 
-        fragment.merge(compiler.full_compile(test, False, clause_pos))
+        fragment.merge(compiler.full_compile(test, position=clause_pos))
         fragment.instruction(OpCode.JUMP_FALSE, label)
         helper_begin(fragment, body, clause_pos)
         fragment.instruction(OpCode.JUMP, done)

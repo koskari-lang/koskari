@@ -56,7 +56,7 @@ def special_while(compiler, _while, test, body):
     fragment.instruction(OpCode.PUSH_LOOP, 0)
 
     # loop test
-    fragment.merge(compiler.full_compile(test.datum, False))
+    fragment.merge(compiler.full_compile(test.datum))
     fragment.instruction(OpCode.JUMP_FALSE, loop_exit)
 
     helper_begin(fragment, body, False)
@@ -66,7 +66,7 @@ def special_while(compiler, _while, test, body):
 
     if has_elsebody:
         fragment.instruction(OpCode.CLEAR_LOOP, 0)
-        fragment.merge(compiler.full_compile(elsebody, False))
+        fragment.merge(compiler.full_compile(elsebody))
         fragment.instruction(OpCode.BREAK, 1)
 
     fragment.instruction(OpCode.POP_LOOP, 0)
@@ -115,7 +115,7 @@ def special_for_each(compiler, caps):
     expr = binding["expr"] if binding else using["expr"]
 
     # the iterable expression
-    fragment.merge(compiler.full_compile(expr.datum, False))
+    fragment.merge(compiler.full_compile(expr.datum))
 
     # set up the loop and get the first value
     fragment.instruction(OpCode.PUSH_FOREACH, 0)
@@ -137,7 +137,7 @@ def special_for_each(compiler, caps):
     fragment.instruction(OpCode.LABEL, loop_else)
     if has_elsebody:
         fragment.instruction(OpCode.CLEAR_FOREACH, 0)
-        fragment.merge(compiler.full_compile(elsebody, False))
+        fragment.merge(compiler.full_compile(elsebody))
         fragment.instruction(OpCode.BREAK, 1)
 
     fragment.instruction(OpCode.POP_FOREACH, 0)
@@ -166,7 +166,7 @@ def _special_break_continue(compiler, source, op):
 
     frag = compiler.fragment(called_by)
     frag.position_of(source)
-    frag.merge(compiler.full_compile(val, False))
+    frag.merge(compiler.full_compile(val))
     frag.instruction(op, 1)
     return frag
 

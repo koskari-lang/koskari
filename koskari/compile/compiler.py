@@ -44,7 +44,7 @@ from .processor import ByteCodeProcessor
 class Compiled(ABC):
 
     @abstractmethod
-    def compile_impl(self, compiler, source_obj, tc):
+    def compile_impl(self, compiler, source_obj):
         """
         Compile a source object into a bytecode fragment
         """
@@ -319,7 +319,7 @@ class ByteCodeFragment:
                     child.declare_var(name)
                 valfrag = compiler.fragment(ns_name)
                 for val in values:
-                    valfrag.merge(compiler.full_compile(val, False))
+                    valfrag.merge(compiler.full_compile(val))
 
             yield child
             nspec = child.as_namespace_spec()
@@ -675,7 +675,7 @@ class Compiler:
             self, str(name), self.filename, mode=mode, resolution=reso)
 
 
-    def compile(self, source_obj, tc=False, position=None):
+    def compile(self, source_obj, *, position=None):
         if isinstance(source_obj, ByteCodeFragment):
             return source_obj
 
@@ -685,7 +685,7 @@ class Compiler:
 
         try:
             fragment = self.fragment(self.name)
-            ret = self.compile_expr(fragment, source_obj, tc, position)
+            ret = self.compile_expr(fragment, source_obj, position)
             # None is the emitted-into-fragment sentinel; a falsy
             # form (an expansion to False, 0, "") is a real result
             return fragment if ret is None else ret
@@ -694,21 +694,21 @@ class Compiler:
                 self._resolution_instance = None
 
 
-    def full_compile(self, source_obj, tc=False, position=None):
+    def full_compile(self, source_obj, *, position=None):
         tmp = self._resolution_instance is None
         if tmp:
             self._resolution_instance = self._resolution_pragma_class()
         try:
             res = source_obj
             while not isinstance(res, ByteCodeFragment):
-                res = self.compile(res, tc, position)
+                res = self.compile(res, position=position)
             return res
         finally:
             if tmp:
                 self._resolution_instance = None
 
 
-    def compile_expression(self, source_obj, tc=False):
+    def compile_expression(self, source_obj):
         """
         Compile one top-level source expression: the entry point for the
         places a compilation turn starts -- the module loaders, the REPL,
@@ -721,25 +721,19 @@ class Compiler:
         directly and never rebinds.
 
         :param source_obj: top-level source form
-        :param tc: tail-call flag
         :return: compiled ByteCodeFragment
         """
 
         with parameterize(**{ACTIVE_PRAGMA_PARAM: self.pragma}):
-            return self.full_compile(source_obj, tc)
+            return self.full_compile(source_obj)
 
 
-    def compile_expr(self, fragment, source_obj, tc, position=None):
+    def compile_expr(self, fragment, source_obj, position=None):
         """
         ``position`` is the innermost enclosing source position known to
         the caller, threaded to diagnostics about positionless atoms; a
         source object carrying its own position wins over it
         """
-
-        # tail-call promotion moved into the processor's
-        # promote_tail_calls pass; the specials' tc threading is pinned
-        # off here pending removal of the parameter itself
-        tc = False
 
         if is_symbol(source_obj):
             dispatch = self.compile_symbol
@@ -753,7 +747,7 @@ class Compiler:
             raise CompilerError("Unsupported source object", source_obj)
 
         try:
-            ret = dispatch(fragment, source_obj, tc, position)
+            ret = dispatch(fragment, source_obj, position)
             # None is the emitted-into-fragment sentinel; a falsy form
             # (an expansion to False, 0, "") is a real result
             return fragment if ret is None else ret
@@ -766,12 +760,12 @@ class Compiler:
             raise UncaughtCompilerError(ex, source_obj) from ex
 
 
-    def compile_const(self, fragment, value, tc, position=None):
+    def compile_const(self, fragment, value, position=None):
         fragment.instruction(OpCode.CONST, value)
         return fragment
 
 
-    def compile_symbol(self, fragment, sym, tc, position=None):
+    def compile_symbol(self, fragment, sym, position=None):
 
         if sym is _symbol_colon:
             self.check_stray_colon(sym)
@@ -783,25 +777,25 @@ class Compiler:
         # itself.
 
         if sym in _COMPILER_LITERALS:
-            return self.compile_const(fragment, _COMPILER_LITERALS[sym], tc)
+            return self.compile_const(fragment, _COMPILER_LITERALS[sym])
 
         comp = self.find_bare_compiled(sym)
         if comp is not None:
             # the atom is interned and positionless; hand the bare arm
             # the caller-threaded position via the Datum carrier
             return self.compile_special(
-                fragment, comp, Datum(sym, position), tc)
+                fragment, comp, Datum(sym, position))
 
         # This is handled by the reader macros now.
         # ex = sym.rsplit(".", 1)
         # if len(ex) > 1:
         #     source = cons(_symbol_attr, *ex, nil)
-        #     return self.compile_pair(fragment, source, tc)
+        #     return self.compile_pair(fragment, source)
 
-        return self.compile_raw_symbol(fragment, sym, tc)
+        return self.compile_raw_symbol(fragment, sym)
 
 
-    def compile_raw_symbol(self, fragment, sym, tc):
+    def compile_raw_symbol(self, fragment, sym):
         strsym = str(sym)
         fragment.request_var(strsym)
         fragment.instruction(OpCode.VAR, strsym)
@@ -911,11 +905,11 @@ class Compiler:
                                self.filename or "<unknown>", lineno)
 
 
-    def compile_pair(self, fragment, source_obj, tc, position=None):
+    def compile_pair(self, fragment, source_obj, position=None):
         # print("compile_pair", kos_repr(source_obj))
 
         if is_nil(source_obj):
-            return self.compile_const(fragment, source_obj, False)
+            return self.compile_const(fragment, source_obj)
 
         self._check_bracket_call(source_obj)
 
@@ -936,7 +930,7 @@ class Compiler:
         if is_symbol(head):
             comp = self.find_compiled(head)
             if comp:
-                return self.compile_special(fragment, comp, source_obj, tc)
+                return self.compile_special(fragment, comp, source_obj)
 
             if head is _symbol_call:
                 raise CompilerError("compile/call not found", source_obj)
@@ -999,14 +993,14 @@ class Compiler:
         if comp is None:
             return None
 
-        res = comp.compile_impl(self, form, False)
+        res = comp.compile_impl(self, form)
         if res is None or isinstance(res, ByteCodeFragment):
             return None
         return res
 
 
-    def compile_special(self, fragment, comp, source_obj, tc):
-        res = comp.compile_impl(self, source_obj, tc)
+    def compile_special(self, fragment, comp, source_obj):
+        res = comp.compile_impl(self, source_obj)
         if isinstance(res, ByteCodeFragment):
             fragment.merge(res)
             return fragment
@@ -1062,10 +1056,15 @@ class Compiler:
         # One use-and-discard processor per stream runs the gated
         # transformation pipeline (compress, operand normalization, the
         # optional fast lowering, generator tail-call demotion).
+        # Tail-call promotion is a function-body optimization: expression
+        # streams (module top-level, REPL) run once, and promoting there
+        # only costs backtrace frames. The pragma gates it; the mode
+        # excludes expression code.
         proc = ByteCodeProcessor(
             fragment.instructions,
             gates={'convert-fast': self.convert_fast_enabled,
-                   'tco': self.tco_enabled},
+                   'tco': (self.tco_enabled
+                           and mode != CompilerMode.EXPRESSION)},
             mode=mode)
         instr = proc.process(resolve_nspec)
 

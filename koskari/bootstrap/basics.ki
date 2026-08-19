@@ -40,7 +40,7 @@ let []:
     unless (instance? tf #(SyntaxTransform MacroTransform)):
       return form
 
-    define expanded (tf.handle_expand compiler form mr False)
+    define expanded (tf.handle_expand compiler form mr)
 
     if (and (pair? expanded)
             (equal? (.length expanded) 2)
@@ -75,7 +75,7 @@ let []:
       unless (instance? tf #(SyntaxTransform MacroTransform)):
         return form
 
-      set! form (tf.handle_expand compiler form mr False)
+      set! form (tf.handle_expand compiler form mr)
 
 
 define-syntax macroexpand-1:

@@ -47,7 +47,7 @@ def _compile_thunk(compiler, body_src, fragment):
     stack.
     """
     thunk = compiler.fragment("<dyn-wind-thunk>")
-    thunk.merge(compiler.full_compile(body_src, True))
+    thunk.merge(compiler.full_compile(body_src))
     code = compiler.complete(thunk, CompilerMode.FUNCTION)
     fspec = FunctionSpec(None, FormalsSpec((), (), (), (), None, None), code)
     fragment.instruction(OpCode.CONST, fspec)
@@ -176,7 +176,7 @@ def special_dyn_wind(
         fragment.instruction(OpCode.PUSH_WIND, 2)
 
     # helper_begin(fragment, body_src, False)
-    fragment.merge(compiler.full_compile(body_src, False))
+    fragment.merge(compiler.full_compile(body_src))
     fragment.instruction(OpCode.POP_WIND, 0)
     return fragment
 

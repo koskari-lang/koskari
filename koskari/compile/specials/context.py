@@ -65,7 +65,7 @@ def special_parameterize(
     fragment.position_of(source)
 
     for val in vals:
-        fragment.merge(compiler.full_compile(val, False))
+        fragment.merge(compiler.full_compile(val))
 
     fragment.instruction(OpCode.PUSH_PARAM, tuple(map(str, args)))
     helper_begin(fragment, body, False)
@@ -106,7 +106,7 @@ def special_parameter(
     if not is_nil(extra):
         raise SpecialError("parameter takes a name and one default", source)
 
-    defaultfrag = compiler.full_compile(default, False)
+    defaultfrag = compiler.full_compile(default)
     is_const, const_val = const_only_expr(defaultfrag)
 
     if is_const:
@@ -151,7 +151,7 @@ def special_with(compiler, caps):
     # print(f"body: {body}")
 
     fragment = compiler.fragment(called_by)
-    fragment.merge(compiler.full_compile(expr, False))
+    fragment.merge(compiler.full_compile(expr))
 
     if name is not None:
         name = str(name)
@@ -186,7 +186,7 @@ def special_dyn_with(compiler, caps):
     body = caps["body"].datum
 
     fragment = compiler.fragment(called_by)
-    fragment.merge(compiler.full_compile(expr, False))
+    fragment.merge(compiler.full_compile(expr))
 
     if name is not None:
         name = str(name)

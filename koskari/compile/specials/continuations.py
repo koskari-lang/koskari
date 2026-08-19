@@ -55,7 +55,7 @@ def special_call_cc(compiler, source):
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
     fragment.instruction(OpCode.PUSH_CC, 0)
-    fragment.merge(compiler.full_compile(expr, False))
+    fragment.merge(compiler.full_compile(expr))
     fragment.instruction(OpCode.CAPTURE_CC, 0)
     fragment.instruction(OpCode.CALL, 1)
     fragment.instruction(OpCode.POP_CC, 0)
@@ -205,7 +205,7 @@ def special_return(compiler, source):
             return source
 
         frag.position_of(rest)
-        frag.merge(compiler.full_compile(rest.car, False))
+        frag.merge(compiler.full_compile(rest.car))
 
         rest = rest.cdr
         count += 1
@@ -240,7 +240,7 @@ def special_yield(compiler, source):
             return source
 
         frag.position_of(rest)
-        frag.merge(compiler.full_compile(rest.car, False))
+        frag.merge(compiler.full_compile(rest.car))
 
         rest = rest.cdr
         count += 1
@@ -268,7 +268,7 @@ def special_await(compiler, source):
     frag = compiler.fragment(called_by)
     frag.position_of(source)
     if expr:
-        frag.merge(compiler.full_compile(expr, False))
+        frag.merge(compiler.full_compile(expr))
         frag.instruction(OpCode.AWAIT, 1)
     else:
         frag.instruction(OpCode.AWAIT, 0)
@@ -293,7 +293,7 @@ def special_yield_from(compiler, source):
 
     frag = compiler.fragment(called_by)
     frag.position_of(source)
-    frag.merge(compiler.full_compile(expr, False))
+    frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.YIELD_FROM, 0)
     frag.instruction(OpCode.CONST, None)
     return frag

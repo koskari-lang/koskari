@@ -68,7 +68,7 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         arg = symbol("argval")
         src = cons(alias, arg, nil)
         comp = _StubCompiler()
-        out = _fn.compile_impl(comp, src, True)
+        out = _fn.compile_impl(comp, src)
         self.assertEqual(out[0], alias)
         self.assertEqual(out[1], arg)
 
@@ -92,7 +92,7 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
 
         src = cons(symbol("any-head"), symbol("cell"), nil)
         comp = _StubCompiler()
-        out = h.compile_impl(comp, src, False)
+        out = h.compile_impl(comp, src)
         self.assertEqual(out, symbol("ok"))
         self.assertEqual(len(seen), 1)
         self.assertIn("a", seen[0])
@@ -108,12 +108,12 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         pat = MATCH(CALLEDBY(), VALUE("x"), VALUE("y"))
 
         h = special(primary, patterns=pat, unpack="match")(
-            lambda c, caps, tc: symbol("never"))
+            lambda c, caps: symbol("never"))
 
         src = cons(symbol("h"), symbol("only-one"), nil)
         comp = _StubCompiler()
         with self.assertRaises(SyntaxMatchError) as ctx:
-            h.compile_impl(comp, src, False)
+            h.compile_impl(comp, src)
 
         exc = ctx.exception
         self.assertIs(exc.syntax, h)
@@ -136,14 +136,14 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         pat = MATCH(SYMBOL("head"), VALUE("x"))
 
         h = special(primary, patterns=pat, unpack="match")(
-            lambda c, caps, tc: symbol("unreachable"))
+            lambda c, caps: symbol("unreachable"))
 
         a = symbol("a")
         b = symbol("b")
         bad = cons(a, b)
         comp = _StubCompiler()
         with self.assertRaises(TypeError) as ctx:
-            h.compile_impl(comp, bad, False)
+            h.compile_impl(comp, bad)
         self.assertIn("proper list", str(ctx.exception).lower())
 
 
@@ -164,7 +164,7 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
 
         src = cons(symbol("op"), symbol("u"), nil)
         comp = _StubCompiler()
-        out = _fn.compile_impl(comp, src, False)
+        out = _fn.compile_impl(comp, src)
         self.assertEqual(out, symbol("ok"))
         self.assertEqual(len(saw), 1)
         self.assertIs(saw[0], src)

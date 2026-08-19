@@ -160,7 +160,7 @@ class TestNgDemoMacroHygieneStructure(MacroLambdaHygieneFullStackBase):
         _mod, ns, compiler, _tpl = _make_compiler_and_ns(self)
         use_site = _read_form(ns, "(syntax-ng-demo-rules)")
         rules_syn = ns[str(SYM_DEMO_RULES)]
-        expanded = rules_syn.compile_impl(compiler, use_site, False)
+        expanded = rules_syn.compile_impl(compiler, use_site)
         assert_lambda_ng_formal_renamed(self, expanded, _SRC_FORMAL)
 
 
@@ -168,7 +168,7 @@ class TestNgDemoMacroHygieneStructure(MacroLambdaHygieneFullStackBase):
         _mod, ns, compiler, _tpl = _make_compiler_and_ns(self)
         use_site = _read_form(ns, "(syntax-ng-demo-match)")
         match_syn = ns[str(SYM_DEMO_MATCH)]
-        expanded = match_syn.compile_impl(compiler, use_site, False)
+        expanded = match_syn.compile_impl(compiler, use_site)
         assert_lambda_ng_formal_renamed(self, expanded, _SRC_FORMAL)
 
 
@@ -176,7 +176,7 @@ class TestNgDemoMacroHygieneStructure(MacroLambdaHygieneFullStackBase):
         _mod, ns, compiler, _tpl = _make_compiler_and_ns(self)
         use_site = _read_form(ns, "(syntax-ng-demo-macro)")
         macro_syn = ns[str(SYM_DEMO_MACRO)]
-        expanded = macro_syn.compile_impl(compiler, use_site, False)
+        expanded = macro_syn.compile_impl(compiler, use_site)
         assert_lambda_ng_formal_renamed(self, expanded, _SRC_FORMAL)
 
 

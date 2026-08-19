@@ -111,13 +111,13 @@ def special_class(compiler, source):
 
     if bases:
         for base_expr in bases:
-            frag.merge(compiler.full_compile(base_expr, False))
+            frag.merge(compiler.full_compile(base_expr))
         frag.instruction(OpCode.BUILD_ARGS, len(bases))
     else:
         frag.instruction(OpCode.CONST, ())
 
     if metaclass_expr is not None:
-        frag.merge(compiler.full_compile(metaclass_expr, False))
+        frag.merge(compiler.full_compile(metaclass_expr))
         frag.instruction(OpCode.BUILD_ARGS, 3)
     else:
         frag.instruction(OpCode.BUILD_ARGS, 2)
@@ -164,7 +164,7 @@ def special_class(compiler, source):
 
             collapsed = dict(binds)
             for name, type_expr in collapsed.items():
-                annos.merge(compiler.full_compile(type_expr, False))
+                annos.merge(compiler.full_compile(type_expr))
 
             annos.instruction(OpCode.BUILD_KWDS_NAMES,
                               tuple(collapsed.keys()))

@@ -91,12 +91,13 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
 
 
     def compile_to_code(
-            self, src_str, lineno=1, tc=False,
+            self, src_str, lineno=1,
             resolution_mode=None, resolution_instance=None,
             **defns):
         """
-        Compile source to a Code object for opcode inspection; tc=True enables
-        tail-call tracking
+        Compile source to a Code object for opcode inspection. Tail-call
+        promotion runs in the processor for FUNCTION-mode streams; a test
+        that needs it off sets the compiler/tco-enable pragma
         """
 
         mod_ns = self.get_glbls(**defns)
@@ -111,7 +112,7 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         compiler = Compiler("<unittest>", module, filename=__file__, **kwargs)
         if resolution_instance is not None:
             compiler._resolution_instance = resolution_instance
-        fragment = compiler.full_compile(source, tc=tc)
+        fragment = compiler.full_compile(source)
         return compiler.complete(fragment, mode=CompilerMode.EXPRESSION)
 
 

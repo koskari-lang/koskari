@@ -174,17 +174,17 @@ def special_list_append(compiler, caps):
         if not is_pair(expr):
             frag.position(pos)
 
-        frag.merge(compiler.full_compile(expr, False))
+        frag.merge(compiler.full_compile(expr))
         frag.instruction(OpCode.VAR_LIST_APPEND, name)
         frag.instruction(OpCode.CONST, None)
         return frag
 
     list_expr = caps["list_expr"].datum
-    frag.merge(compiler.full_compile(list_expr, False))
+    frag.merge(compiler.full_compile(list_expr))
     if not is_pair(expr):
         frag.position_of(called_by)
 
-    frag.merge(compiler.full_compile(expr, False))
+    frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.BUILD_LIST_APPEND, 1)
     return frag
 

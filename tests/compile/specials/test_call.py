@@ -12,8 +12,10 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for call special: tail position emits TAIL_CALL; non-tail uses CALL.
-Bytecode shape for positional, keyword, star; evaluation order; end-to-end.
+Tests for call special: the processor promotes tail-position calls in
+FUNCTION-mode streams onto their TAIL twins; expression streams and
+non-tail sites keep the plain forms. Bytecode shape for positional,
+keyword, star; evaluation order; end-to-end.
 """
 
 
@@ -38,7 +40,7 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
     """
 
     async def test_lambda_body_tail_call_one_arg(self):
-        code = self.compile_to_code("(lambda [x] (f x))", tc=True)
+        code = self.compile_to_code("(lambda [x] (f x))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -48,7 +50,7 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
 
 
     async def test_lambda_body_tail_call_zero_args(self):
-        code = self.compile_to_code("(lambda [] (f))", tc=True)
+        code = self.compile_to_code("(lambda [] (f))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -58,7 +60,7 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
 
 
     async def test_lambda_begin_first_call_then_tail_call(self):
-        code = self.compile_to_code("(lambda [x] (begin (f 1) (g x)))", tc=True)
+        code = self.compile_to_code("(lambda [x] (begin (f 1) (g x)))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 2)
@@ -69,12 +71,13 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         self.assertEqual(body.extra_tuple(ops[1][2])[1], 1)
 
 
-    async def test_begin_single_form_tail_call(self):
-        code = self.compile_to_code("(begin (f 1))", tc=True)
+    async def test_begin_single_form_expression_stays_plain(self):
+        # module/REPL expression streams never promote: the frame is the
+        # top of the eval and its backtrace entry is worth keeping
+        code = self.compile_to_code("(begin (f 1))")
         ops = self.call_ops(code)
         self.assertEqual(len(ops), 1)
-        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
-                                  OpCode.TAIL_CALL_FAST))
+        self.assertIn(ops[0][1], (OpCode.CALL_VAR, OpCode.CALL_FAST))
         self.assertEqual(code.extra_tuple(ops[0][2])[1], 1)
 
 
@@ -82,22 +85,22 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         """
         (begin (f x) x) -> f is not in tail position -> CALL or CALL_VAR/FAST
         """
-        code = self.compile_to_code("(begin (f x) x)", tc=True)
+        code = self.compile_to_code("(begin (f x) x)")
         ops = self.call_ops(code)
         self.assertEqual(len(ops), 1)
         self.assertIn(ops[0][1], (OpCode.CALL, OpCode.CALL_VAR,
                                   OpCode.CALL_FAST))
 
 
-    async def test_begin_x_f_x_tail_call(self):
+    async def test_begin_x_f_x_expression_stays_plain(self):
         """
-        (begin x (f x)) -> f is in tail position -> the tail twin
+        (begin x (f x)) at expression scope stays a plain call: only
+        FUNCTION-mode streams promote
         """
-        code = self.compile_to_code("(begin x (f x))", tc=True)
+        code = self.compile_to_code("(begin x (f x))")
         ops = self.call_ops(code)
         self.assertEqual(len(ops), 1)
-        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
-                                  OpCode.TAIL_CALL_FAST))
+        self.assertIn(ops[0][1], (OpCode.CALL_VAR, OpCode.CALL_FAST))
         self.assertEqual(code.extra_tuple(ops[0][2])[1], 1)
 
 
@@ -107,7 +110,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
     """
 
     async def test_positional_zero_args_emits_call_zero(self):
-        code = self.compile_to_code("(lambda [] (f))", tc=True)
+        code = self.compile_to_code("(lambda [] (f))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -117,7 +120,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
 
 
     async def test_positional_three_args_emits_call_three(self):
-        code = self.compile_to_code("(lambda [] (f a b c))", tc=True)
+        code = self.compile_to_code("(lambda [] (f a b c))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -127,7 +130,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
 
 
     async def test_positional_no_call_names_or_call_star(self):
-        code = self.compile_to_code("(lambda [] (f 1 2))", tc=True)
+        code = self.compile_to_code("(lambda [] (f 1 2))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -138,7 +141,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
 
 
     async def test_keyword_emits_call_names(self):
-        code = self.compile_to_code("(lambda [] (f 1 name: 2))", tc=True)
+        code = self.compile_to_code("(lambda [] (f 1 name: 2))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -149,7 +152,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
 
     async def test_keyword_names_tuple_in_call_row(self):
         # the fused tail twin carries the kw names tuple in its row
-        code = self.compile_to_code("(lambda [] (f 1 name: 2))", tc=True)
+        code = self.compile_to_code("(lambda [] (f 1 name: 2))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -160,7 +163,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
 
 
     async def test_star_arg_emits_call_star(self):
-        code = self.compile_to_code("(lambda [] (f *: rest))", tc=True)
+        code = self.compile_to_code("(lambda [] (f *: rest))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -170,7 +173,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
 
 
     async def test_star_arg_with_positional_emits_build_args_and_combine(self):
-        code = self.compile_to_code("(lambda [] (f a b *: more))", tc=True)
+        code = self.compile_to_code("(lambda [] (f a b *: more))")
         body = self.lambda_body_code(code)
         arg_ops = self.arg_building_ops(body)
         call_ops = self.call_ops(body)
@@ -187,7 +190,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
         twin with opa=3
         """
         code = self.compile_to_code(
-            "(lambda [] (f a b *: more x: xval y: yval **: kwargs))", tc=True)
+            "(lambda [] (f a b *: more x: xval y: yval **: kwargs))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -201,7 +204,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
         (f a *: bargs c *: dargs) uses CALL_STAR with COMBINE_ARGS 4
         """
         code = self.compile_to_code(
-            "(lambda [] (f a *: bargs c *: dargs))", tc=True)
+            "(lambda [] (f a *: bargs c *: dargs))")
         body = self.lambda_body_code(code)
         arg_ops = self.arg_building_ops(body)
         call_ops = self.call_ops(body)
@@ -220,7 +223,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
         (f x: 1 **: kw1 y: 2 **: kw2) uses CALL_STAR with COMBINE_KWDS 4
         """
         code = self.compile_to_code(
-            "(lambda [] (f x: 1 **: kw1 y: 2 **: kw2))", tc=True)
+            "(lambda [] (f x: 1 **: kw1 y: 2 **: kw2))")
         body = self.lambda_body_code(code)
         arg_ops = self.arg_building_ops(body)
         call_ops = self.call_ops(body)
@@ -238,7 +241,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
         """
         (f 1 2 3) uses the plain-call tail twin, not a names or star form
         """
-        code = self.compile_to_code("(lambda [] (f 1 2 3))", tc=True)
+        code = self.compile_to_code("(lambda [] (f 1 2 3))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -253,7 +256,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
         """
         (f 1 name: 2) uses the names tail twin, not a star form
         """
-        code = self.compile_to_code("(lambda [] (f 1 name: 2))", tc=True)
+        code = self.compile_to_code("(lambda [] (f 1 name: 2))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -272,7 +275,7 @@ class TestCallVarPath(SpecialsTestCase):
         """
         (begin (f 1) 2) with tc: f is symbol, not tail -> CALL_VAR or CALL_FAST
         """
-        code = self.compile_to_code("(lambda [] (begin (f 1) 2))", tc=True)
+        code = self.compile_to_code("(lambda [] (begin (f 1) 2))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -286,7 +289,7 @@ class TestCallVarPath(SpecialsTestCase):
         """
         (begin (f 1 2) 2): f not in tail -> CALL_VAR or CALL_FAST
         """
-        code = self.compile_to_code("(lambda [] (begin (f 1 2) 2))", tc=True)
+        code = self.compile_to_code("(lambda [] (begin (f 1 2) 2))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -300,7 +303,7 @@ class TestCallVarPath(SpecialsTestCase):
         (begin (f 1 name: 2) 2): f not in tail -> CALL_VAR_NAMES or CALL_FAST_NAMES
         """
         code = self.compile_to_code(
-            "(lambda [] (begin (f 1 name: 2) 2))", tc=True)
+            "(lambda [] (begin (f 1 name: 2) 2))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -313,7 +316,7 @@ class TestCallVarPath(SpecialsTestCase):
         """
         (begin (f *: rest) 2): f not in tail -> CALL_VAR_STAR or CALL_FAST_STAR
         """
-        code = self.compile_to_code("(lambda [] (begin (f *: rest) 2))", tc=True)
+        code = self.compile_to_code("(lambda [] (begin (f *: rest) 2))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -327,7 +330,7 @@ class TestCallVarPath(SpecialsTestCase):
         Symbol in tail position -> the fused tail twin, not a plain
         CALL_VAR or CALL_FAST
         """
-        code = self.compile_to_code("(lambda [] (f 1))", tc=True)
+        code = self.compile_to_code("(lambda [] (f 1))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -341,7 +344,7 @@ class TestCallVarPath(SpecialsTestCase):
         or a generic CALL over a pre-resolved attribute
         """
         code = self.compile_to_code(
-            "(lambda [] ((attr obj upper) \"hi\"))", tc=False)
+            "(lambda [] ((attr obj upper) \"hi\"))")
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
@@ -362,7 +365,7 @@ class TestCallEvaluationOrder(SpecialsTestCase):
     """
 
     async def test_positional_args_precede_call(self):
-        code = self.compile_to_code("(lambda [] (f 1 2))", tc=True)
+        code = self.compile_to_code("(lambda [] (f 1 2))")
         body = self.lambda_body_code(code)
         call_idx = None
         const_count = 0
@@ -513,7 +516,6 @@ class TestGeneratorTailCallDemotion(SpecialsTestCase):
                 (call list 1 2 3)))
             """,
             list=list,
-            tc=True,
         )
         body = self.lambda_body_code(code)
         ops = [body.oparg(i)[0] for i in range(body.length())]

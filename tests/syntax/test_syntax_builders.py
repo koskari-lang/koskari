@@ -63,7 +63,7 @@ class TestBuildSyntax(unittest.TestCase):
         s = syntax_from_rule_datums(m, (), rules)
         comp = _StubCompiler()
         src = cons(m, symbol("z"), nil)
-        out = s.compile_impl(comp, src, False)
+        out = s.compile_impl(comp, src)
         self.assertEqual(out, symbol("first"))
 
     def test_build_syntax_second_arm_when_first_misses_structure(self):
@@ -81,7 +81,7 @@ class TestBuildSyntax(unittest.TestCase):
         s = syntax_from_rule_datums(m, (onlyhere,), rules)
         comp = _StubCompiler()
         src = cons(m, symbol("solo"), symbol("extra"), nil)
-        out = s.compile_impl(comp, src, False)
+        out = s.compile_impl(comp, src)
         self.assertEqual(out, symbol("wide"))
 
     def test_build_syntax_empty_rules_raises(self):
@@ -105,25 +105,24 @@ class TestMacroFromRuleRows(unittest.TestCase):
         m = symbol("compile/mm")
         saw = []
 
-        def proc(compiler, tc=None, **caps):
-            saw.append((tc, caps))
+        def proc(compiler, **caps):
+            saw.append(caps)
             return symbol("macro-out")
 
         s = macro_from_rule_rows(m, (), ((build_proper(m, symbol("v")), proc),))
         comp = _StubCompiler()
         slot = symbol("slot")
         src = cons(m, slot, nil)
-        out = s.compile_impl(comp, src, False)
+        out = s.compile_impl(comp, src)
         self.assertEqual(out, symbol("macro-out"))
         self.assertEqual(len(saw), 1)
-        tc, caps = saw[0]
-        self.assertFalse(tc)
+        caps = saw[0]
         self.assertEqual(caps["v"].datum, slot)
 
     def test_macro_from_rule_rows_three_tuple_row_raises(self):
         m = symbol("compile/mm2")
 
-        def proc(compiler, tc=None, **caps):
+        def proc(compiler, **caps):
             return symbol("done")
 
         with self.assertRaises(ValueError):
@@ -155,12 +154,12 @@ class TestSpecialFromRuleRows(unittest.TestCase):
     def test_special_from_rule_rows_handler_shape(self):
         m = symbol("compile/ss")
 
-        def proc(compiler, source_obj, result, tc):
+        def proc(compiler, source_obj, result):
             return symbol("special-out")
 
         s = special_from_rule_rows(m, (), ((build_proper(m, symbol("q")), proc),))
         src = cons(m, symbol("arg"), nil)
-        out = s.compile_impl(None, src, False)
+        out = s.compile_impl(None, src)
         self.assertEqual(out, symbol("special-out"))
 
     def test_special_from_match_rows_uses_match_dialect_pattern(self):
@@ -168,12 +167,12 @@ class TestSpecialFromRuleRows(unittest.TestCase):
         pat = build_proper(
             m, build_proper(symbol("SYMBOL"), symbol("r")))
 
-        def proc(compiler, source_obj, result, tc):
+        def proc(compiler, source_obj, result):
             return symbol("match-out")
 
         s = special_from_match_rows(m, ((pat, proc),))
         src = cons(m, symbol("x"), nil)
-        out = s.compile_impl(None, src, False)
+        out = s.compile_impl(None, src)
         self.assertEqual(out, symbol("match-out"))
 
     def test_special_from_rule_rows_empty_raises(self):
