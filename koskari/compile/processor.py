@@ -168,6 +168,48 @@ TAIL_CALL_TO_CALL = {
 }
 
 
+CALL_TO_TAIL_CALL = {
+    OpCode.CALL: OpCode.TAIL_CALL,
+    OpCode.CALL_NAMES: OpCode.TAIL_CALL_NAMES,
+    OpCode.CALL_STAR: OpCode.TAIL_CALL_STAR,
+}
+
+
+# Extent classification for tail-call promotion, by the uninstall
+# principle: an extent whose uninstall behavior must run after the
+# call cannot be tail-called through. Discardable extents (True) are
+# safely dropped by frame handoff.
+EXTENT_DISCARDABLE = {
+    OpCode.PUSH_NS: True,
+    OpCode.PUSH_LOOP: True,
+    OpCode.PUSH_FOREACH: True,
+    OpCode.PUSH_COLLECT: False,
+    OpCode.PUSH_TRY: False,
+    OpCode.PUSH_FINALLY: False,
+    OpCode.PUSH_WITH: False,
+    OpCode.PUSH_DYN_WITH: False,
+    OpCode.PUSH_WIND: False,
+    OpCode.PUSH_PROMPT: False,
+    OpCode.PUSH_SHIFT: False,
+    OpCode.PUSH_CC: False,
+    OpCode.PUSH_PARAM: False,
+}
+
+
+EXTENT_POPS = frozenset((
+    OpCode.POP_NS, OpCode.POP_LOOP, OpCode.POP_FOREACH,
+    OpCode.POP_COLLECT, OpCode.POP_TRY, OpCode.POP_FINALLY,
+    OpCode.POP_WITH, OpCode.POP_DYN_WITH, OpCode.POP_WIND,
+    OpCode.POP_PROMPT, OpCode.POP_SHIFT, OpCode.POP_CC,
+    OpCode.POP_PARAM,
+))
+
+
+# rows the tail-call route reads through on its way to RETURN 1
+ROUTE_TRANSPARENT = frozenset((
+    OpCode.LABEL, OpCode.POSITION, OpCode.NOOP)) | EXTENT_POPS
+
+
 # The per-pass rule registries: trigger opcode -> candidate list of
 # (priors, rule method). Sight reading a pass means reading its
 # registered rules in source order.
@@ -838,6 +880,73 @@ class ByteCodeProcessor:
         self.instructions = result
 
 
+    def promote_tail_calls(self):
+        """
+        Rewrite calls with a clear route to RETURN 1 into their
+        TAIL_CALL forms.
+
+        One linear read maintains the extent stack from the push and
+        pop rows. At a promotable call, promotion is denied if any
+        open extent is not discardable -- an extent whose uninstall
+        behavior must run after the call cannot be tail-called
+        through. Otherwise the route reads forward: extent pops,
+        LABEL, POSITION, and NOOP rows pass; unconditional JUMPs are
+        followed through the label index with a seen set guarding
+        cycles; arrival at RETURN 1 promotes, and any other arrival
+        invalidates. Yielding streams are skipped outright: generator
+        frames never use tail-call frame reuse. CALL_VAR is not
+        promotable: its callee rides in the row, and TAIL_CALL needs
+        the callable below the arguments, unreachable by local
+        rewrite.
+        """
+
+        instr = self.instructions
+        yield_ops = (OpCode.YIELD, OpCode.YIELD_FROM)
+        if any(op in yield_ops for op, _ in instr):
+            return
+
+        labels = {
+            arg: i for i, (op, arg) in enumerate(instr)
+            if op == OpCode.LABEL}
+
+        def clear_route(start):
+            seen = set()
+            i = start
+            while i < len(instr):
+                op, arg = instr[i]
+                if op == OpCode.RETURN:
+                    return arg == 1
+                if op == OpCode.JUMP:
+                    if arg in seen or arg not in labels:
+                        return False
+                    seen.add(arg)
+                    i = labels[arg]
+                    continue
+                if op in ROUTE_TRANSPARENT:
+                    i += 1
+                    continue
+                return False
+            return False
+
+        result = []
+        extents = []
+        for i, (op, arg) in enumerate(instr):
+            discard = EXTENT_DISCARDABLE.get(op)
+            if discard is not None:
+                extents.append(discard)
+            elif op in EXTENT_POPS:
+                if extents:
+                    extents.pop()
+
+            elif (op in CALL_TO_TAIL_CALL
+                  and all(extents) and clear_route(i + 1)):
+                op = CALL_TO_TAIL_CALL[op]
+
+            result.append((op, arg))
+
+        self.instructions = result
+
+
     def demote_tail_calls_if_yields(self):
         """
         If the stream contains yield or yield-from, replace TAIL_CALL*
@@ -869,14 +978,22 @@ class ByteCodeProcessor:
         """
 
         self.compress()
+
+        # promote and demote are brothers, dispatched exclusively: a
+        # yielding stream never promotes and instead demotes any raw
+        # TAIL_CALL*; every other stream may promote under the tco gate.
+        if any(op in (OpCode.YIELD, OpCode.YIELD_FROM)
+               for op, _ in self.instructions):
+            self.demote_tail_calls_if_yields()
+        elif self.gates.get('tco'):
+            self.promote_tail_calls()
+
         self.normalize_opcount()
 
         base_nspec = resolve_nspec(self.instructions)
 
         if self.gates.get('convert-fast', True):
             self.convert_fast(base_nspec)
-
-        self.demote_tail_calls_if_yields()
 
         return self.instructions
 

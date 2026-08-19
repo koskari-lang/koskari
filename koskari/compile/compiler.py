@@ -736,7 +736,10 @@ class Compiler:
         source object carrying its own position wins over it
         """
 
-        tc = self.tco_enabled and tc
+        # tail-call promotion moved into the processor's
+        # promote_tail_calls pass; the specials' tc threading is pinned
+        # off here pending removal of the parameter itself
+        tc = False
 
         if is_symbol(source_obj):
             dispatch = self.compile_symbol
@@ -1061,7 +1064,8 @@ class Compiler:
         # optional fast lowering, generator tail-call demotion).
         proc = ByteCodeProcessor(
             fragment.instructions,
-            gates={'convert-fast': self.convert_fast_enabled},
+            gates={'convert-fast': self.convert_fast_enabled,
+                   'tco': self.tco_enabled},
             mode=mode)
         instr = proc.process(resolve_nspec)
 
