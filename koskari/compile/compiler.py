@@ -38,15 +38,7 @@ from ..types import (fill_position, is_nil, get_position, is_keyword,
                      is_pair, is_proper, is_symbol, parameterize)
 from .pragma import (BracketCalls, KeywordLiterals, KoskariPragma,
                      PackModule, ResolutionMode, StrayColon)
-from . import processor as _processor
 from .processor import ByteCodeProcessor
-
-# Compatibility re-exports: these moved into koskari.compile.processor
-# but remain importable from here for existing consumers.
-from .processor import (  # noqa: F401
-    _CHECK_SQUASHES, _SWITCH_SQUASHES, CMPSRC_X_CONST, CMPSRC_Y_CONST,
-    VAR_TO_FAST, make_cmpsrc, merge_cmpcount, merge_opcount,
-    split_cmpcount)
 
 
 class Compiled(ABC):
@@ -1016,59 +1008,6 @@ class Compiler:
             fragment.merge(res)
             return fragment
         return res
-
-
-    def compress(self, instr):
-        """
-        The compress pipeline: peephole squish, then feeder fusion,
-        then VAR run packing, delegated to koskari.compile.processor
-        """
-
-        return _processor.pack_var_runs(
-            _processor.fuse_check_feeders(
-                _processor.squish(instr)))
-
-
-    def fuse_check_feeders(self, instr):
-        """
-        Delegate to the processor's feeder-absorption pass
-        """
-
-        return _processor.fuse_check_feeders(instr)
-
-
-    def pack_var_runs(self, instr):
-        """
-        Delegate to the processor's VAR run packing pass
-        """
-
-        return _processor.pack_var_runs(instr)
-
-
-    def normalize_opcount(self, instr):
-        """
-        Delegate to the processor's operand normalization pass
-        """
-
-        return _processor.normalize_opcount(instr)
-
-
-    def convert_fast(self, base_nspec, instr, mode=None):
-        """
-        Delegate to the processor's VAR to FAST lowering pass
-        """
-
-        if mode is None:
-            mode = self.mode
-        return _processor.convert_fast(base_nspec, instr, mode)
-
-
-    def demote_tail_calls_if_yields(self, instr):
-        """
-        Delegate to the processor's generator tail-call demotion
-        """
-
-        return _processor.demote_tail_calls_if_yields(instr)
 
 
     def _cpool_scan_merge(self, fragment, instr):

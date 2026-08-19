@@ -14,11 +14,10 @@
 """
 koskari.compile.processor
 
-The bytecode processor: a use-and-discard machine that internalizes an
-instruction stream and applies the gated transformation pipeline --
-peephole squish, feeder fusion, VAR run packing, operand normalization,
-VAR to FAST lowering, and generator tail-call demotion -- yielding the
-finished rows for Code construction
+The bytecode processor internalizes an instruction stream and applies
+the gated transformation pipelines: peephole squish, feeder fusion, VAR
+run packing, operand normalization, VAR to FAST lowering, and generator
+tail-call demotion. Produces the finished rows for Code construction
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -37,7 +36,7 @@ def merge_opcount(value):
     Normalize an OPCOUNT-style operand to its merged uint16 (operator selector
     in the high byte, reduce count in the low byte).
 
-    Accepts either idiom, so specials may emit whichever reads cleanly:
+    Accepts either idiom, so specials may emit either:
       - a ``(op_type, count)`` pair, which is merged, or
       - a pre-merged int, which is validated to have been correctly packed.
 
@@ -190,214 +189,6 @@ _TAIL_CALL_TO_CALL = {
 }
 
 
-def normalize_opcount(instr):
-    """
-    Merge every OPCOUNT and CMPCOUNT operand to its
-    packed uint16. Specials may emit a (selector, count) pair or a
-    pre-merged int; the merge helpers accept and validate both. Runs
-    unconditionally, independent of the optional convert_fast lowering
-    (which only relabels VAR->FAST and leaves non-VAR fields, including
-    merged OPCOUNT/CMPCOUNT args, untouched).
-    """
-
-    result = []
-    for op, arg in instr:
-        if op.style == OpStyle.OPCOUNT:
-            arg = merge_opcount(arg)
-        elif op.style == OpStyle.CMPCOUNT:
-            arg = merge_cmpcount(arg)
-        elif OpStyle.OPCOUNT in op.extra:
-            arg = tuple(
-                merge_opcount(v) if fk == OpStyle.OPCOUNT else v
-                for v, fk in zip(arg, op.extra))
-        result.append((op, arg))
-    return result
-
-
-def convert_fast(base_nspec, instr, mode):
-    """
-    Lower VAR-family rows to their FAST twins where the name has a fast
-    slot in the active namespace scope, tracking PUSH_NS / PUSH_COLLECT
-    scope entries through the stream
-    """
-
-    from .compiler import CompilerMode
-
-    result = []
-    nstack = []
-    findex = []
-
-    def push_nspec(n):
-        nstack.append(n)
-        findex.clear()
-        findex.extend(n.local_syms)
-        findex.extend(n.closure_syms)
-        findex.extend(n.global_syms)
-
-    def pop_nspec():
-        nstack.pop()
-        findex.clear()
-        if nstack:
-            n = nstack[-1]
-            findex.extend(n.local_syms)
-            findex.extend(n.closure_syms)
-            findex.extend(n.global_syms)
-
-    if mode == CompilerMode.FUNCTION:
-        push_nspec(base_nspec)
-
-    def fast_slot(name):
-        # Return the fast slot index for name, or -1 if it has no fast
-        # slot (not in the pool, or pool is at capacity).
-        try:
-            idx = findex.index(name)
-        except ValueError:
-            return -1
-        return idx if idx < NAMESPACE_FAST_SLOT_MAX else -1
-
-    nspec = None
-    for op, arg in instr:
-        if op == OpCode.CONST:
-            if isinstance(arg, NamespaceSpec):
-                nspec = arg
-
-        elif op == OpCode.PUSH_NS:
-            push_nspec(arg[0])
-            nspec = None
-
-        elif op == OpCode.PUSH_COLLECT:
-            push_nspec(arg if isinstance(arg, NamespaceSpec) else nspec)
-            nspec = None
-
-        elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
-            pop_nspec()
-
-        elif nstack and op == OpCode.CHECK_COMPARE_VAR:
-            # CMPSRC row: slot kinds are data-dependent (a set source
-            # bit means CONST, else the declared VAR kind), so the
-            # generic schema-driven lowering below cannot apply. Lower
-            # each name-sourced slot to its fast index; all-or-nothing
-            # as usual, const-bit slots pass through untouched.
-            cmpsrc, x, y, label = arg
-            nx = x if (cmpsrc & CMPSRC_X_CONST) else fast_slot(x)
-            ny = y if (cmpsrc & CMPSRC_Y_CONST) else fast_slot(y)
-            if (((cmpsrc & CMPSRC_X_CONST) or nx >= 0)
-                    and ((cmpsrc & CMPSRC_Y_CONST) or ny >= 0)):
-                op = OpCode.CHECK_COMPARE_FAST
-                arg = (cmpsrc, nx, ny, label)
-
-        elif nstack and op in VAR_TO_FAST:
-            # An EXTRA opcode carries its schema tuple in op.extra
-            # (opcodes.incl field kinds). Zip with the operand 4-tuple; each
-            # VAR-kind slot is lowered to a fast index if one is
-            # available; otherwise that field stays as the original value
-            # and the whole opcode stays as VAR.
-            new_op = VAR_TO_FAST[op]
-            if op.extra:
-                new_arg = tuple([
-                    fast_slot(v) if fk == OpStyle.VAR else v
-                    for v, fk in zip(arg, op.extra)])
-                if all(
-                        idx >= 0
-                        for v, fk, idx in zip(arg, op.extra, new_arg)
-                        if fk == OpStyle.VAR):
-                    arg = new_arg
-                    op = new_op
-            else:
-                idx = fast_slot(arg)
-                if idx >= 0:
-                    arg = idx
-                    op = new_op
-
-        result.append((op, arg))
-
-    return result
-
-
-def demote_tail_calls_if_yields(instr):
-    """
-    If the stream contains yield or yield-from, replace TAIL_CALL* with
-    CALL* so generator frames never use tail-call frame reuse. Native
-    Code lowering rejects the combination outright.
-    """
-
-    yield_ops = (OpCode.YIELD, OpCode.YIELD_FROM)
-    if not any(op in yield_ops for op, _ in instr):
-        return instr
-    return [
-        (_TAIL_CALL_TO_CALL.get(op, op), arg)
-        for op, arg in instr]
-
-
-def pack_var_runs(instr):
-    """
-    Late sweep: combine runs of consecutive bare VAR loads into VAR4 /
-    VAR2 rows (greedy, in that order). Runs after every other squash so
-    consumer-specific fusions get first claim on their feeder rows, and
-    breaks at any non-VAR instruction (including LABEL). POSITION rows
-    inside a run are absorbed -- the merged row keeps the position in
-    effect at the run's first load, and the latest absorbed position is
-    re-emitted after the run so following instructions keep theirs. The
-    fast pass later lowers VAR2/VAR4 to FAST2/FAST4 through the
-    ordinary VAR->FAST path.
-    """
-
-    result = []
-    run = []
-    trailing_pos = None
-
-    def flush():
-        nonlocal trailing_pos
-        while len(run) >= 4:
-            a, b, c, d = run[:4]
-            del run[:4]
-            result.append((OpCode.VAR4, (a, b, c, d)))
-        if len(run) >= 2:
-            a, b = run[:2]
-            del run[:2]
-            result.append((OpCode.VAR2, (a, b, None, None)))
-        if run:
-            result.append((OpCode.VAR, run.pop()))
-        if trailing_pos is not None:
-            result.append(trailing_pos)
-            trailing_pos = None
-
-    for op, arg in instr:
-        if op == OpCode.VAR:
-            run.append(arg)
-            continue
-        if run and op == OpCode.POSITION:
-            trailing_pos = (op, arg)
-            continue
-        flush()
-        result.append((op, arg))
-
-    flush()
-    return result
-
-
-def squish(instr):
-    """
-    Functional entry for the peephole squish pass: run it alone over
-    instr through a throwaway processor
-    """
-
-    proc = ByteCodeProcessor(instr)
-    proc.squish()
-    return proc.instructions
-
-
-def fuse_check_feeders(instr):
-    """
-    Functional entry for the feeder-absorption pass: run it alone over
-    instr through a throwaway processor
-    """
-
-    proc = ByteCodeProcessor(instr)
-    proc.fuse_check_feeders()
-    return proc.instructions
-
-
 class ByteCodeProcessor:
     """
     A single-use transformation machine over one instruction stream.
@@ -405,7 +196,7 @@ class ByteCodeProcessor:
     Constructed per code object with the rows, the pragma-derived gate
     flags, and the compilation mode; mutated in place as passes apply;
     discarded after the finished rows are taken. Rules and pass tables
-    are stateless module-level data -- the instance carries only the
+    are stateless module-level data. The instance carries only the
     stream and its per-stream working state, so its lifetime is exactly
     the validity of that state.
     """
@@ -801,32 +592,194 @@ class ByteCodeProcessor:
 
         self.squish()
         self.fuse_check_feeders()
-        self.instructions = pack_var_runs(self.instructions)
+        self.pack_var_runs()
+
+
+    def pack_var_runs(self):
+        """
+        Late sweep: combine runs of consecutive bare VAR loads into VAR4 /
+        VAR2 rows (greedy, in that order). Runs after every other squash so
+        consumer-specific fusions get first claim on their feeder rows, and
+        breaks at any non-VAR instruction (including LABEL). POSITION rows
+        inside a run are absorbed. Merged row keeps the position in
+        effect at the run's first load, and the latest absorbed position is
+        re-emitted after the run so following instructions keep theirs. The
+        fast pass later lowers VAR2/VAR4 to FAST2/FAST4 through the
+        ordinary VAR->FAST path.
+        """
+
+        result = []
+        run = []
+        trailing_pos = None
+
+        def flush():
+            nonlocal trailing_pos
+            while len(run) >= 4:
+                a, b, c, d = run[:4]
+                del run[:4]
+                result.append((OpCode.VAR4, (a, b, c, d)))
+            if len(run) >= 2:
+                a, b = run[:2]
+                del run[:2]
+                result.append((OpCode.VAR2, (a, b, None, None)))
+            if run:
+                result.append((OpCode.VAR, run.pop()))
+            if trailing_pos is not None:
+                result.append(trailing_pos)
+                trailing_pos = None
+
+        for op, arg in self.instructions:
+            if op == OpCode.VAR:
+                run.append(arg)
+                continue
+            if run and op == OpCode.POSITION:
+                trailing_pos = (op, arg)
+                continue
+            flush()
+            result.append((op, arg))
+
+        flush()
+        self.instructions = result
 
 
     def normalize_opcount(self):
         """
-        Pack OPCOUNT and CMPCOUNT operands to their merged uint16 form
+        Merge every OPCOUNT and CMPCOUNT operand to its packed uint16.
+        Specials may emit a (selector, count) pair or a pre-merged int;
+        the merge helpers accept and validate both. Runs
+        unconditionally, independent of the optional convert_fast
+        lowering (which only relabels VAR->FAST and leaves non-VAR
+        fields, including merged OPCOUNT/CMPCOUNT args, untouched).
         """
 
-        self.instructions = normalize_opcount(self.instructions)
+        result = []
+        for op, arg in self.instructions:
+            if op.style == OpStyle.OPCOUNT:
+                arg = merge_opcount(arg)
+            elif op.style == OpStyle.CMPCOUNT:
+                arg = merge_cmpcount(arg)
+            elif OpStyle.OPCOUNT in op.extra:
+                arg = tuple(
+                    merge_opcount(v) if fk == OpStyle.OPCOUNT else v
+                    for v, fk in zip(arg, op.extra))
+            result.append((op, arg))
+        self.instructions = result
 
 
     def convert_fast(self, base_nspec):
         """
-        Lower VAR-family rows to their FAST twins against base_nspec
+        Lower VAR-family rows to their FAST twins where the name has a
+        fast slot in the active namespace scope, tracking PUSH_NS /
+        PUSH_COLLECT scope entries through the stream
         """
 
-        self.instructions = convert_fast(
-            base_nspec, self.instructions, self.mode)
+        from .compiler import CompilerMode
+
+        result = []
+        nstack = []
+        findex = []
+
+        def push_nspec(n):
+            nstack.append(n)
+            findex.clear()
+            findex.extend(n.local_syms)
+            findex.extend(n.closure_syms)
+            findex.extend(n.global_syms)
+
+        def pop_nspec():
+            nstack.pop()
+            findex.clear()
+            if nstack:
+                n = nstack[-1]
+                findex.extend(n.local_syms)
+                findex.extend(n.closure_syms)
+                findex.extend(n.global_syms)
+
+        if self.mode == CompilerMode.FUNCTION:
+            push_nspec(base_nspec)
+
+        def fast_slot(name):
+            # Return the fast slot index for name, or -1 if it has no
+            # fast slot (not in the pool, or pool is at capacity).
+            try:
+                idx = findex.index(name)
+            except ValueError:
+                return -1
+            return idx if idx < NAMESPACE_FAST_SLOT_MAX else -1
+
+        nspec = None
+        for op, arg in self.instructions:
+            if op == OpCode.CONST:
+                if isinstance(arg, NamespaceSpec):
+                    nspec = arg
+
+            elif op == OpCode.PUSH_NS:
+                push_nspec(arg[0])
+                nspec = None
+
+            elif op == OpCode.PUSH_COLLECT:
+                push_nspec(arg if isinstance(arg, NamespaceSpec) else nspec)
+                nspec = None
+
+            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
+                pop_nspec()
+
+            elif nstack and op == OpCode.CHECK_COMPARE_VAR:
+                # CMPSRC row: slot kinds are data-dependent (a set source
+                # bit means CONST, else the declared VAR kind), so the
+                # generic schema-driven lowering below cannot apply. Lower
+                # each name-sourced slot to its fast index; all-or-nothing
+                # as usual, const-bit slots pass through untouched.
+                cmpsrc, x, y, label = arg
+                nx = x if (cmpsrc & CMPSRC_X_CONST) else fast_slot(x)
+                ny = y if (cmpsrc & CMPSRC_Y_CONST) else fast_slot(y)
+                if (((cmpsrc & CMPSRC_X_CONST) or nx >= 0)
+                        and ((cmpsrc & CMPSRC_Y_CONST) or ny >= 0)):
+                    op = OpCode.CHECK_COMPARE_FAST
+                    arg = (cmpsrc, nx, ny, label)
+
+            elif nstack and op in VAR_TO_FAST:
+                # An EXTRA opcode carries its schema tuple in op.extra
+                # (opcodes.incl field kinds). Zip with the operand
+                # 4-tuple; each VAR-kind slot is lowered to a fast index
+                # if one is available; otherwise that field stays as the
+                # original value and the whole opcode stays as VAR.
+                new_op = VAR_TO_FAST[op]
+                if op.extra:
+                    new_arg = tuple([
+                        fast_slot(v) if fk == OpStyle.VAR else v
+                        for v, fk in zip(arg, op.extra)])
+                    if all(
+                            idx >= 0
+                            for v, fk, idx in zip(arg, op.extra, new_arg)
+                            if fk == OpStyle.VAR):
+                        arg = new_arg
+                        op = new_op
+                else:
+                    idx = fast_slot(arg)
+                    if idx >= 0:
+                        arg = idx
+                        op = new_op
+
+            result.append((op, arg))
+
+        self.instructions = result
 
 
     def demote_tail_calls_if_yields(self):
         """
-        Replace TAIL_CALL* with CALL* in yielding streams
+        If the stream contains yield or yield-from, replace TAIL_CALL*
+        with CALL* so generator frames never use tail-call frame reuse.
+        Native Code lowering rejects the combination outright.
         """
 
-        self.instructions = demote_tail_calls_if_yields(self.instructions)
+        instr = self.instructions
+        yield_ops = (OpCode.YIELD, OpCode.YIELD_FROM)
+        if not any(op in yield_ops for op, _ in instr):
+            return
+        self.instructions = [
+            (_TAIL_CALL_TO_CALL.get(op, op), arg)
+            for op, arg in instr]
 
 
     def process(self, resolve_nspec):
