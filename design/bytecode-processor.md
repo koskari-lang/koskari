@@ -3,12 +3,11 @@
 Design for migrating the pre-finalize instruction transformations --
 `compress`, `fuse_check_feeders`, `pack_var_runs`, `normalize_opcount`,
 `convert_fast`, and the future tail-call promotion -- out of `Compiler`
-methods into a dedicated class, `ByteCodeProcessor` (name provisional),
-living in a **new submodule of the compiler package**. Given the rule
-registry, the TCO pass, and the extent machinery to come, a
-`koskari/compile/processor/` subpackage with one module per pass family
-will age better than a single file; pick at phase 1 and never revisit.
-`Compiler` delegates to it; the passes leave `compiler.py`.
+methods into a dedicated class, `ByteCodeProcessor`, living in the
+**single submodule `koskari/compile/processor.py`**: the class
+definition and all implementation facets in one module, not a
+subpackage. `Compiler` delegates to it; the passes leave
+`compiler.py`.
 
 ## What the current code teaches
 
@@ -226,7 +225,7 @@ behavior-preserving) and a bootstrap import timing before and after.
 ## Migration phases
 
 1. **The heave.**  Passes relocate from `compiler.py` into the new
-   subpackage under the processor class, behavior-preserving:
+   submodule under the processor class, behavior-preserving:
    `Compiler` keeps thin delegate methods so tests and helper imports
    move only trivially; the single `process()` entry with the gate
    snapshot arrives here. Fingerprint identical.
@@ -250,3 +249,4 @@ behavior-preserving) and a bootstrap import timing before and after.
 Each service arrives with its consumer: label index with the TCO pass,
 extent tracker with it, dead-region sweep and label GC last, if at
 all.
+
