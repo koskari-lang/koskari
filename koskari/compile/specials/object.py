@@ -245,7 +245,10 @@ _FORMAT_PATTERNS_FULL = tuple(
 def special_format(compiler, source, tc=False):
     """
     Compile (compile/format OBJ [RULES]). Rules may be dynamic, constant str,
-    or quoted symbol constant. Constant cases may fold to CONST.
+    or quoted symbol constant. The all-constant case folds to CONST here,
+    where a bad rules value diagnoses at compile time; every other shape
+    emits naively, and the processor's format lowering ladder owns the
+    demotion to OBJECT_FORMAT_CONST and the fused forms.
     """
 
     called_by, body = source
@@ -264,6 +267,7 @@ def special_format(compiler, source, tc=False):
         rules_frag = compiler.full_compile(rules_expr)
         rules_is_const, rules_const = const_only_expr(rules_frag)
         if rules_is_const and is_symbol(rules_const):
+            # a quoted symbol as rules means its string
             rules_const = str(rules_const)
     else:
         rules_expr = None
@@ -276,7 +280,8 @@ def special_format(compiler, source, tc=False):
             frag.instruction(OpCode.CONST, format(obj_const, rules_const))
         elif rules_is_const:
             frag.merge(obj_frag)
-            frag.instruction(OpCode.OBJECT_FORMAT_CONST, rules_const)
+            frag.instruction(OpCode.CONST, rules_const)
+            frag.instruction(OpCode.OBJECT_FORMAT, 2)
         else:
             frag.merge(obj_frag)
             frag.merge(rules_frag)

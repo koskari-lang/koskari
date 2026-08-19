@@ -23,7 +23,7 @@ import unittest
 
 import pytest
 
-from koskari.compile.processor import ByteCodeProcessor, _CHECK_SQUASHES
+from koskari.compile.processor import ByteCodeProcessor, CHECK_SQUASHES
 from koskari.lib import OpCode, Operand
 
 
@@ -134,7 +134,7 @@ class TestCompress(unittest.TestCase):
         self.assertEqual(out[:1], [(OpCode.CHECK_EXCEPTION, "handler")])
 
     def test_check_squash_object_ops(self):
-        for prior, squashed in _CHECK_SQUASHES.items():
+        for prior, squashed in CHECK_SQUASHES.items():
             if prior == OpCode.OBJECT_NOT:
                 continue
 

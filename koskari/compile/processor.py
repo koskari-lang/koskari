@@ -28,7 +28,7 @@ from ..lib import (Compare, NAMESPACE_FAST_SLOT_MAX, NamespaceSpec,
                    OpCode, Operand, OpStyle)
 
 
-_OPERAND_COUNT = len(Operand)
+OPERAND_COUNT = len(Operand)
 
 
 def merge_opcount(value):
@@ -60,7 +60,7 @@ def merge_opcount(value):
             raise ValueError(f"opcount int out of uint16 range: {value!r}")
         op_type, count = merged >> 8, merged & 0xff
 
-    if not 0 <= op_type < _OPERAND_COUNT:
+    if not 0 <= op_type < OPERAND_COUNT:
         raise ValueError(f"opcount op-type is not a known Operand: {op_type!r}")
     if not 0 <= count <= 0xff:
         raise ValueError(f"opcount count out of byte range: {count!r}")
@@ -68,7 +68,7 @@ def merge_opcount(value):
     return (op_type << 8) | count
 
 
-_COMPARE_COUNT = len(Compare)
+COMPARE_COUNT = len(Compare)
 
 
 def merge_cmpcount(value):
@@ -96,7 +96,7 @@ def merge_cmpcount(value):
             raise ValueError(f"cmpcount int out of uint16 range: {value!r}")
         sel, count = merged >> 8, merged & 0xff
 
-    if not 0 <= sel < _COMPARE_COUNT:
+    if not 0 <= sel < COMPARE_COUNT:
         raise ValueError(f"cmpcount selector is not a known Compare: {sel!r}")
     if not 0 <= count <= 0xff:
         raise ValueError(f"cmpcount count out of byte range: {count!r}")
@@ -130,14 +130,14 @@ def make_cmpsrc(sel, x_const, y_const):
             | (CMPSRC_Y_CONST if y_const else 0))
 
 
-_CHECK_SQUASHES = {
+CHECK_SQUASHES = {
     OpCode.OBJECT_NOT: OpCode.JUMP_TRUE,
     OpCode.EXCEPTION_MATCH: OpCode.CHECK_EXCEPTION,
     OpCode.NILP: OpCode.CHECK_NIL,
 }
 
 
-_SWITCH_SQUASHES = {
+SWITCH_SQUASHES = {
     OpCode.CONST: OpCode.SWITCH_EQ_CONST,
     OpCode.VAR: OpCode.SWITCH_EQ_VAR,
     OpCode.VAR_ATTR: OpCode.SWITCH_EQ_VAR_ATTR,
@@ -147,16 +147,16 @@ _SWITCH_SQUASHES = {
 # The squish rules' prior-row match sets, precomputed as frozensets for
 # the seekback. The JUMP_FALSE set unions its three disjoint prior
 # kinds; the rule dispatches on which one matched.
-_JUMP_PRIORS = frozenset((OpCode.JUMP_TRUE, OpCode.JUMP_FALSE))
-_JUMP_FALSE_PRIORS = frozenset(
-    (OpCode.CONST, OpCode.OBJECT_COMPARE)) | frozenset(_CHECK_SQUASHES)
-_SWITCH_PRIORS = frozenset(_SWITCH_SQUASHES)
-_POP_PRIORS = frozenset((OpCode.CONST, OpCode.DUP))
-_CONST_PRIOR = frozenset((OpCode.CONST,))
-_JUMP_PRIOR = frozenset((OpCode.JUMP,))
+JUMP_PRIORS = frozenset((OpCode.JUMP_TRUE, OpCode.JUMP_FALSE))
+JUMP_FALSE_PRIORS = frozenset(
+    (OpCode.CONST, OpCode.OBJECT_COMPARE)) | frozenset(CHECK_SQUASHES)
+SWITCH_PRIORS = frozenset(SWITCH_SQUASHES)
+POP_PRIORS = frozenset((OpCode.CONST, OpCode.DUP))
+CONST_PRIOR = frozenset((OpCode.CONST,))
+JUMP_PRIOR = frozenset((OpCode.JUMP,))
 
 
-def _build_var_to_fast():
+def build_var_to_fast():
     # Pre-compiled map: VAR opcode -> FAST opcode for convert_fast lowering.
     # Built by finding each FAST_* opcode and resolving to a matching VAR_*
     # opcode.
@@ -179,14 +179,43 @@ def _build_var_to_fast():
     return var_to_fast
 
 
-VAR_TO_FAST = _build_var_to_fast()
+VAR_TO_FAST = build_var_to_fast()
 
 
-_TAIL_CALL_TO_CALL = {
+TAIL_CALL_TO_CALL = {
     OpCode.TAIL_CALL: OpCode.CALL,
     OpCode.TAIL_CALL_NAMES: OpCode.CALL_NAMES,
     OpCode.TAIL_CALL_STAR: OpCode.CALL_STAR,
 }
+
+
+# A rule returns DONE when it fully handled its trigger row (spliced a
+# replacement, or edited prior rows and dropped the trigger).
+DONE = object()
+
+
+def rules_registry():
+    """
+    Build a pass's rule registry: the dict of trigger opcode to rule
+    method, paired with the decorator that registers methods into it
+    """
+
+    table = {}
+
+    def register(*ops):
+        def deco(fn):
+            for op in ops:
+                table[op] = fn
+            return fn
+        return deco
+
+    return table, register
+
+
+# The per-pass rule registries: trigger opcode -> rule method. Sight
+# reading a pass means reading its registered rules in source order.
+SQUISH_RULES, squish_rule = rules_registry()
+FUSE_RULES, fuse_rule = rules_registry()
 
 
 class ByteCodeProcessor:
@@ -200,10 +229,6 @@ class ByteCodeProcessor:
     stream and its per-stream working state, so its lifetime is exactly
     the validity of that state.
     """
-
-    # Ops the backward scans treat as invisible: every pass seeks its
-    # prior rows through this set.
-    TRANSPARENT = frozenset((OpCode.POSITION,))
 
     def __init__(self, instructions, gates=None, mode=None):
         """
@@ -220,19 +245,18 @@ class ByteCodeProcessor:
 
         # the output accumulator of the pass currently walking the
         # stream; the seekback and splice services address it
-        self._rows = None
+        self.rows = None
 
 
-    def _seek_back(self, want, accept, transparent=(), start=None):
+    def seek_back(self, want, accept, start=None):
         """
         Scan the working rows backward, collecting up to want indices
-        whose op is in accept. Rows whose op is in transparent are
+        whose op is in accept. Rows whose op is OpCode.POSITION are
         stepped over and their indices gathered separately; any other
         op ends the scan.
 
         :param want: how many accepted rows to find
         :param accept: ops that match
-        :param transparent: ops stepped over without matching
         :param start: scan begins just below this index; default is
             the end of the working rows
         :return: (found, skipped) where found lists the matching row
@@ -240,13 +264,14 @@ class ByteCodeProcessor:
             and skipped lists the stepped-over rows' indices
         """
 
-        rows = self._rows
+        posop = OpCode.POSITION
+        rows = self.rows
         found = []
         skipped = []
         i = (len(rows) if start is None else start) - 1
         while i >= 0 and len(found) < want:
             rop = rows[i][0]
-            if rop in transparent:
+            if rop == posop:
                 skipped.append(i)
             elif rop in accept:
                 found.append(i)
@@ -256,14 +281,14 @@ class ByteCodeProcessor:
         return (found if len(found) == want else None), skipped
 
 
-    def _splice(self, start, skipped, replacement):
+    def splice(self, start, skipped, replacement):
         """
         Replace the working rows from start onward with replacement,
         re-emitting the latest stepped-over row (by index) afterward so
         following instructions keep their position
         """
 
-        rows = self._rows
+        rows = self.rows
         trailing = rows[max(skipped)] if skipped else None
         del rows[start:]
         rows.extend(replacement)
@@ -271,316 +296,434 @@ class ByteCodeProcessor:
             rows.append(trailing)
 
 
+    FEEDERS = frozenset((OpCode.VAR, OpCode.CONST))
+
+    def scan_feeders(self, want):
+        """
+        Seek back over contiguous bare VAR / CONST feeder rows
+        """
+
+        return self.seek_back(want, self.FEEDERS)
+
+
+    def ternary_shape(self, found):
+        """
+        The bounds shape: CONST below, VAR middle, CONST on top
+        """
+
+        rows = self.rows
+        return (rows[found[2]][0] == OpCode.CONST
+                and rows[found[1]][0] == OpCode.VAR
+                and rows[found[0]][0] == OpCode.CONST)
+
+
+    def apply_rules(self, rules, rows):
+        """
+        Walk the incoming instructions, dispatching each row through
+        the pass's rule table into the working list.
+
+        A rule returns DONE when it fully handled its trigger, a new
+        (op, arg) pair to retry dispatch on a rewritten trigger -- the
+        lowering ladder -- or None to decline; an undispatched or
+        declined row is appended unchanged. Retry termination is the
+        rule author's obligation: every rewrite must consume rows or
+        produce an op that resolves without further rewriting.
+        """
+
+        self.rows = rows
+        for op, arg in self.instructions:
+            while True:
+                rule = rules.get(op)
+                if rule is None:
+                    rows.append((op, arg))
+                    break
+                outcome = rule(self, op, arg)
+                if outcome is None:
+                    rows.append((op, arg))
+                    break
+                if outcome is DONE:
+                    break
+                op, arg = outcome
+        self.rows = None
+        return rows
+
+
+    @squish_rule(OpCode.POP)
+    def pop_pushed_value(self, op, arg):
+        """
+        POP 1 of a value just pushed by CONST or DUP: both rows vanish
+        """
+
+        if arg != 1:
+            return None
+        found, skip = self.seek_back(1, POP_PRIORS)
+        if not found:
+            return None
+        self.splice(found[0], skip, [])
+        return DONE
+
+
+    @squish_rule(OpCode.OBJECT_NOT)
+    def not_const_fold(self, op, arg):
+        """
+        OBJECT_NOT of a constant folds into the negated constant
+        """
+
+        found, skip = self.seek_back(1, CONST_PRIOR)
+        if not found:
+            return None
+        rows = self.rows
+        rows[found[0]] = (OpCode.CONST, not rows[found[0]][1])
+        return DONE
+
+
+    @squish_rule(OpCode.JUMP_TRUE)
+    def jump_true_const_fold(self, op, arg):
+        """
+        JUMP_TRUE on a constant resolves to a plain JUMP or nothing
+        """
+
+        found, skip = self.seek_back(1, CONST_PRIOR)
+        if not found:
+            return None
+        rep = [(OpCode.JUMP, arg)] if self.rows[found[0]][1] else []
+        self.splice(found[0], skip, rep)
+        return DONE
+
+
+    @squish_rule(OpCode.JUMP_FALSE)
+    def jump_false_prior_fold(self, op, arg):
+        """
+        JUMP_FALSE resolves against its prior: a constant folds to a
+        plain JUMP or nothing, a check-squashable predicate combines
+        into its single check jump, and OBJECT_COMPARE fuses into
+        CHECK_COMPARE carrying selector, count, and target in one row
+        """
+
+        found, skip = self.seek_back(1, JUMP_FALSE_PRIORS)
+        if not found:
+            return None
+        prior, prior_arg = self.rows[found[0]]
+
+        if prior == OpCode.CONST:
+            rep = [] if prior_arg else [(OpCode.JUMP, arg)]
+            self.splice(found[0], skip, rep)
+
+        elif prior in CHECK_SQUASHES:
+            self.splice(found[0], skip, [(CHECK_SQUASHES[prior], arg)])
+
+        else:
+            sel, cnt = split_cmpcount(prior_arg)
+            self.splice(found[0], skip, [(
+                OpCode.CHECK_COMPARE, (sel, cnt, arg, None))])
+
+        return DONE
+
+
+    @squish_rule(OpCode.SWITCH_EQ)
+    def switch_eq_squash(self, op, arg):
+        """
+        SWITCH_EQ absorbs its CONST, VAR, or VAR_ATTR comparand into
+        the corresponding single-op switch form
+        """
+
+        found, skip = self.seek_back(1, SWITCH_PRIORS)
+        if not found:
+            return None
+        prior, pargs = self.rows[found[0]]
+        if isinstance(pargs, tuple):
+            new_arg = (arg, *pargs[:3])
+        else:
+            new_arg = (arg, pargs, None, None)
+        self.splice(found[0], skip, [(SWITCH_SQUASHES[prior], new_arg)])
+        return DONE
+
+
+    @squish_rule(OpCode.LABEL)
+    def label_jump_elision(self, op, arg):
+        """
+        A jump targeting the immediately following label is useless: a
+        plain JUMP vanishes; a conditional jump vanishes with its
+        constant test, or degrades to POP 1 when the test is dynamic.
+        The label itself always survives via the declining return.
+        """
+
+        rows = self.rows
+        found, skip = self.seek_back(1, JUMP_PRIOR)
+        if found and rows[found[0]][1] == arg:
+            self.splice(found[0], skip, [])
+            return None
+
+        found, skip = self.seek_back(1, JUMP_PRIORS)
+        if found and rows[found[0]][1] == arg:
+            below, skip2 = self.seek_back(1, CONST_PRIOR, start=found[0])
+            if below:
+                self.splice(below[0], skip + skip2, [])
+            else:
+                rows[found[0]] = (OpCode.POP, 1)
+        return None
+
+
+    @squish_rule(OpCode.RETURN, OpCode.BREAK,
+                 OpCode.CONTINUE, OpCode.YIELD)
+    def control_none_normalize(self, op, arg):
+        """
+        A control op carrying a just-pushed CONST None normalizes to
+        its bare zero-arg form: CONST None, RETURN 1 -> RETURN 0
+        """
+
+        if arg != 1:
+            return None
+        found, skip = self.seek_back(1, CONST_PRIOR)
+        if not found or self.rows[found[0]][1] is not None:
+            return None
+        self.splice(found[0], skip, [])
+        return (op, 0)
+
+
+    @squish_rule(OpCode.CAR, OpCode.CDR)
+    def car_cdr_merge(self, op, arg):
+        """
+        Consecutive CAR or consecutive CDR rows merge their counts
+        """
+
+        found, skip = self.seek_back(1, frozenset((op,)))
+        if not found:
+            return None
+        rows = self.rows
+        prev_op, prev_arg = rows[found[0]]
+        rows[found[0]] = (prev_op, prev_arg + arg)
+        return DONE
+
+
+    @squish_rule(OpCode.VAR_STORE)
+    def var_store_const_fuse(self, op, arg):
+        """
+        VAR_STORE of a just-pushed constant fuses to the stack-free
+        VAR_STORE_CONST row
+        """
+
+        found, skip = self.seek_back(1, CONST_PRIOR)
+        if not found:
+            return None
+        prior_arg = self.rows[found[0]][1]
+        self.splice(found[0], skip, [(
+            OpCode.VAR_STORE_CONST, (arg, prior_arg, None, None))])
+        return DONE
+
+
+    @squish_rule(OpCode.VAR_INPLACE)
+    def var_inplace_const_fuse(self, op, arg):
+        """
+        Single-operand VAR_INPLACE with a constant rhs fuses to the
+        stack-free VAR_INPLACE_CONST: bare operator selector, name,
+        pooled operand
+        """
+
+        found, skip = self.seek_back(1, CONST_PRIOR)
+        if not found:
+            return None
+        merged = merge_opcount(arg[0])
+        if merged & 0xff != 1:
+            return None
+        prior_arg = self.rows[found[0]][1]
+        self.splice(found[0], skip, [(
+            OpCode.VAR_INPLACE_CONST,
+            (merged >> 8, arg[1], prior_arg, None))])
+        return DONE
+
+
+    @fuse_rule(OpCode.CHECK_COMPARE)
+    def fuse_check_compare(self, op, arg):
+        """
+        Arity-2 CHECK_COMPARE absorbs its bare feeders (not both CONST
+        -- that is a folding case) into CHECK_COMPARE_VAR with a CMPSRC
+        field carrying the selector and per-operand source bits. The
+        arity-3 CONST / VAR / CONST bounds shape cannot also carry the
+        label in one row, so it splits into the bool-producing
+        OBJECT_COMPARE_VAR plus JUMP_FALSE.
+        """
+
+        rows = self.rows
+        if arg[1] == 2:
+            found, skip = self.scan_feeders(2)
+            if found:
+                y_op, y_arg = rows[found[0]]
+                x_op, x_arg = rows[found[1]]
+                x_const = x_op == OpCode.CONST
+                y_const = y_op == OpCode.CONST
+                if not (x_const and y_const):
+                    sel, _cnt, label, _pad = arg
+                    self.splice(found[1], skip, [(
+                        OpCode.CHECK_COMPARE_VAR,
+                        (make_cmpsrc(sel, x_const, y_const),
+                         x_arg, y_arg, label))])
+                    return DONE
+
+        elif arg[1] == 3:
+            found, skip = self.scan_feeders(3)
+            if found and self.ternary_shape(found):
+                sel, _cnt, label, _pad = arg
+                self.splice(found[2], skip, [
+                    (OpCode.OBJECT_COMPARE_VAR,
+                     (sel, rows[found[2]][1], rows[found[1]][1],
+                      rows[found[0]][1])),
+                    (OpCode.JUMP_FALSE, label),
+                ])
+                return DONE
+
+        return None
+
+
+    @fuse_rule(OpCode.OBJECT_COMPARE)
+    def fuse_compare_bounds(self, op, arg):
+        """
+        The arity-3 CONST / VAR / CONST bounds shape in value position
+        collapses into the bool-producing OBJECT_COMPARE_VAR
+        """
+
+        sel, cnt = split_cmpcount(arg)
+        if cnt != 3:
+            return None
+        found, skip = self.scan_feeders(3)
+        if not (found and self.ternary_shape(found)):
+            return None
+        rows = self.rows
+        self.splice(found[2], skip, [(
+            OpCode.OBJECT_COMPARE_VAR,
+            (sel, rows[found[2]][1], rows[found[1]][1],
+             rows[found[0]][1]))])
+        return DONE
+
+
+    @fuse_rule(OpCode.OBJECT_ITER)
+    def fuse_iter(self, op, arg):
+        """
+        OBJECT_ITER fed by a bare VAR collapses into VAR_ITER
+        """
+
+        found, skip = self.scan_feeders(1)
+        if not (found and self.rows[found[0]][0] == OpCode.VAR):
+            return None
+        self.splice(found[0], skip, [(
+            OpCode.VAR_ITER, self.rows[found[0]][1])])
+        return DONE
+
+
+    @fuse_rule(OpCode.OBJECT_NEXT)
+    def fuse_next(self, op, arg):
+        """
+        OBJECT_NEXT fed by a bare VAR iterator collapses into VAR_NEXT.
+        The 2-arg form fuses only when the default is also a bare
+        feeder (absorbing the iterator load moves its name resolution
+        after the default's row); the default row stays on the stack
+        and VAR_NEXT pops it.
+        """
+
+        rows = self.rows
+        if arg == 1:
+            found, skip = self.scan_feeders(1)
+            if found and rows[found[0]][0] == OpCode.VAR:
+                self.splice(found[0], skip, [(
+                    OpCode.VAR_NEXT,
+                    (rows[found[0]][1], 1, None, None))])
+                return DONE
+        else:
+            found, skip = self.scan_feeders(2)
+            if found and rows[found[1]][0] == OpCode.VAR:
+                default_row = rows[found[0]]
+                it_name = rows[found[1]][1]
+                self.splice(found[1], skip, [
+                    default_row,
+                    (OpCode.VAR_NEXT, (it_name, 2, None, None)),
+                ])
+                return DONE
+        return None
+
+
+    @fuse_rule(OpCode.OBJECT_FORMAT)
+    def fuse_format(self, op, arg):
+        """
+        OBJECT_FORMAT (arg=1) fed by a bare VAR collapses into
+        VAR_FORMAT. The 2-arg form with a constant rules feeder demotes
+        to OBJECT_FORMAT_CONST and retries into the format lowering
+        ladder; with dynamic rules it stays unfused, since absorbing
+        the object load would move its name resolution past the rules
+        evaluation.
+        """
+
+        rows = self.rows
+        if arg == 1:
+            found, skip = self.scan_feeders(1)
+            if found and rows[found[0]][0] == OpCode.VAR:
+                self.splice(found[0], skip, [(
+                    OpCode.VAR_FORMAT, rows[found[0]][1])])
+                return DONE
+            return None
+
+        found, skip = self.scan_feeders(1)
+        if not (found and rows[found[0]][0] == OpCode.CONST):
+            return None
+        rules = rows[found[0]][1]
+        self.splice(found[0], skip, [])
+        return (OpCode.OBJECT_FORMAT_CONST, rules)
+
+
+    @fuse_rule(OpCode.OBJECT_FORMAT_CONST)
+    def fuse_format_const(self, op, arg):
+        """
+        OBJECT_FORMAT_CONST fed by a bare VAR collapses into
+        VAR_FORMAT_CONST
+        """
+
+        found, skip = self.scan_feeders(1)
+        if not (found and self.rows[found[0]][0] == OpCode.VAR):
+            return None
+        self.splice(found[0], skip, [(
+            OpCode.VAR_FORMAT_CONST,
+            (self.rows[found[0]][1], arg, None, None))])
+        return DONE
+
+
     def squish(self):
         """
-        The peephole half of the compress pipeline: single-lookback
-        folds and fusions plus trailing RETURN normalization. Feeder
-        fusion and VAR run packing follow as separate passes.
-
-        The rules seek their prior row through the POSITION-transparent
-        seekback. A rewrite that consumes the prior row goes through
-        the splice service, which re-emits the latest stepped-over
-        position row after the rewritten rows so following instructions
-        keep their attribution; a rewrite that only edits the prior row
-        in place leaves stepped-over positions where they lie. The
-        LABEL boundary is enforced by the seekback's break-on-other
-        scan.
+        The peephole half of the compress pipeline: the squish rule set
+        over the shared driver, plus trailing RETURN normalization.
+        Feeder fusion and VAR run packing follow as separate passes.
         """
-
-        transparent = self.TRANSPARENT
 
         # the NOOP sentinel floors every seekback, so rules never need
         # an emptiness check; it is stripped at the end
-        self._rows = squished = [(OpCode.NOOP, 0)]
+        rows = self.apply_rules(SQUISH_RULES, [(OpCode.NOOP, 0)])
 
-        for (op, arg) in self.instructions:
-            if op == OpCode.POP and arg == 1:
-                found, skip = self._seek_back(1, _POP_PRIORS, transparent)
-                if found:
-                    self._splice(found[0], skip, [])
-                    continue
-
-            elif op == OpCode.OBJECT_NOT:
-                found, skip = self._seek_back(1, _CONST_PRIOR, transparent)
-                if found:
-                    val = squished[found[0]][1]
-                    squished[found[0]] = (OpCode.CONST, not val)
-                    continue
-
-            elif op == OpCode.JUMP_TRUE:
-                found, skip = self._seek_back(1, _CONST_PRIOR, transparent)
-                if found:
-                    truthy = bool(squished[found[0]][1])
-                    rep = [(OpCode.JUMP, arg)] if truthy else []
-                    self._splice(found[0], skip, rep)
-                    continue
-
-            elif op == OpCode.JUMP_FALSE:
-                found, skip = self._seek_back(
-                    1, _JUMP_FALSE_PRIORS, transparent)
-                if found:
-                    prior, prior_arg = squished[found[0]]
-
-                    if prior == OpCode.CONST:
-                        # jumping based on a constant value
-                        rep = [] if prior_arg else [(OpCode.JUMP, arg)]
-                        self._splice(found[0], skip, rep)
-                        continue
-
-                    elif prior in _CHECK_SQUASHES:
-                        # here we're combining an object operand with a
-                        # jump into a single check jump
-                        self._splice(found[0], skip, [
-                            (_CHECK_SQUASHES[prior], arg)])
-                        continue
-
-                    else:
-                        # fuse the compare with its jump: CHECK_COMPARE
-                        # branches on chain failure, carrying the
-                        # selector, count, and target in one EXTRA row
-                        sel, cnt = split_cmpcount(prior_arg)
-                        self._splice(found[0], skip, [(
-                            OpCode.CHECK_COMPARE,
-                            (sel, cnt, arg, None))])
-                        continue
-
-            elif op == OpCode.SWITCH_EQ:
-                found, skip = self._seek_back(1, _SWITCH_PRIORS, transparent)
-                if found:
-                    prior, pargs = squished[found[0]]
-                    if isinstance(pargs, tuple):
-                        new_arg = (arg, *pargs[:3])
-                    else:
-                        new_arg = (arg, pargs, None, None)
-                    self._splice(found[0], skip, [
-                        (_SWITCH_SQUASHES[prior], new_arg)])
-                    continue
-
-            elif op == OpCode.LABEL:
-                # omit useless jump when the jump target is the next
-                # instruction: JUMP foo, LABEL foo -> NOOP
-                found, skip = self._seek_back(1, _JUMP_PRIOR, transparent)
-                if found and squished[found[0]][1] == arg:
-                    self._splice(found[0], skip, [])
-                else:
-                    found, skip = self._seek_back(
-                        1, _JUMP_PRIORS, transparent)
-                    if found and squished[found[0]][1] == arg:
-                        below, skip2 = self._seek_back(
-                            1, _CONST_PRIOR, transparent, start=found[0])
-                        if below:
-                            self._splice(below[0], skip + skip2, [])
-                        else:
-                            squished[found[0]] = (OpCode.POP, 1)
-
-            elif (op in (OpCode.RETURN,
-                         OpCode.BREAK,
-                         OpCode.CONTINUE,
-                         OpCode.YIELD)
-                  and arg == 1):
-                found, skip = self._seek_back(1, _CONST_PRIOR, transparent)
-                if found and squished[found[0]][1] is None:
-                    # CONST None, RETURN 1 -> RETURN 0
-                    self._splice(found[0], skip, [])
-                    arg = 0
-
-            elif op in (OpCode.CAR, OpCode.CDR):
-                found, skip = self._seek_back(
-                    1, frozenset((op,)), transparent)
-                if found:
-                    prev_op, prev_arg = squished[found[0]]
-                    squished[found[0]] = (prev_op, prev_arg + arg)
-                    continue
-
-            elif op == OpCode.VAR_STORE:
-                found, skip = self._seek_back(1, _CONST_PRIOR, transparent)
-                if found:
-                    prior_arg = squished[found[0]][1]
-                    self._splice(found[0], skip, [(
-                        OpCode.VAR_STORE_CONST,
-                        (arg, prior_arg, None, None))])
-                    continue
-
-            elif op == OpCode.VAR_INPLACE:
-                # CONST rhs on a single-operand augmented assignment
-                # fuses to the stack-free form: bare operator selector,
-                # name, pooled operand
-                found, skip = self._seek_back(1, _CONST_PRIOR, transparent)
-                if found:
-                    merged = merge_opcount(arg[0])
-                    if merged & 0xff == 1:
-                        prior_arg = squished[found[0]][1]
-                        self._splice(found[0], skip, [(
-                            OpCode.VAR_INPLACE_CONST,
-                            (merged >> 8, arg[1], prior_arg, None))])
-                        continue
-
-            squished.append((op, arg))
-
-        if squished[-1][0] != OpCode.RETURN:
-            if squished[-1][0] == OpCode.CONST \
-               and squished[-1][1] is None:
-                squished[-1] = (OpCode.RETURN, 0)
+        if rows[-1][0] != OpCode.RETURN:
+            if rows[-1][0] == OpCode.CONST \
+               and rows[-1][1] is None:
+                rows[-1] = (OpCode.RETURN, 0)
             else:
-                squished.append((OpCode.RETURN, 1))
+                rows.append((OpCode.RETURN, 1))
 
-        if len(squished) > 1:
+        if len(rows) > 1:
             # if we actually had ops, we'll have a leading NOOP that we
             # can remove
-            squished = squished[1:]
+            rows = rows[1:]
 
-        self.instructions = squished
-        self._rows = None
+        self.instructions = rows
 
-
-    _FEEDERS = frozenset((OpCode.VAR, OpCode.CONST))
 
     def fuse_check_feeders(self):
         """
-        Late sweep: absorb the operand feeders of comparison and
-        iteration rows. All patterns require the immediately preceding
-        value rows to be bare VAR or CONST loads (POSITION rows are
-        transparent -- the fused row keeps the position in effect at the
-        first feeder, and the latest interior position is re-emitted
-        after the row):
-
-        - arity-2 CHECK_COMPARE (not both feeders CONST -- that is a
-          folding case): the trio collapses into CHECK_COMPARE_VAR with
-          a CMPSRC field carrying the selector and per-operand source
-          bits.
-        - the ternary bounds shape CONST / VAR / CONST feeding an
-          arity-3 comparison: collapses into the bool-producing
-          OBJECT_COMPARE_VAR. In branch position (an arity-3
-          CHECK_COMPARE) the row cannot also carry the label -- five
-          fields -- so the check splits back into OBJECT_COMPARE_VAR
-          plus JUMP_FALSE.
-        - OBJECT_ITER fed by a bare VAR collapses into VAR_ITER.
-        - OBJECT_NEXT fed by a bare VAR iterator collapses into
-          VAR_NEXT. The 2-arg form fuses only when the default is also
-          a bare feeder (absorbing the iterator load moves its name
-          resolution after the default's row); the default row stays on
-          the stack and VAR_NEXT pops it.
-        - OBJECT_FORMAT (arg=1) or OBJECT_FORMAT_CONST fed by a bare
-          VAR collapses into VAR_FORMAT / VAR_FORMAT_CONST. The 2-arg
-          OBJECT_FORMAT stays unfused: there is no fused form carrying
-          a stacked rules operand, and absorbing the object load would
-          move its name resolution past the rules evaluation.
-
-        The fast pass later lowers the VAR forms to their FAST twins.
-        Runs before pack_var_runs so fusion gets first claim on the
-        feeders.
+        The feeder-absorption half of the compress pipeline: the fuse
+        rule set over the shared driver. Every pattern requires the
+        immediately preceding value rows to be bare VAR or CONST loads;
+        POSITION rows are transparent, with the fused row keeping the
+        position in effect at the first feeder and the latest interior
+        position re-emitted after the row. The fast pass later lowers
+        the VAR forms to their FAST twins. Runs before pack_var_runs so
+        fusion gets first claim on the feeders.
         """
 
-        self._rows = result = []
-
-        def scan_back(want):
-            return self._seek_back(
-                want, self._FEEDERS, transparent=self.TRANSPARENT)
-
-        def ternary_shape(found):
-            # bounds shape: CONST below, VAR middle, CONST on top
-            hi_op = result[found[0]][0]
-            mid_op = result[found[1]][0]
-            lo_op = result[found[2]][0]
-            return (lo_op == OpCode.CONST
-                    and mid_op == OpCode.VAR
-                    and hi_op == OpCode.CONST)
-
-        for op, arg in self.instructions:
-            if op == OpCode.CHECK_COMPARE and arg[1] == 2:
-                found, pos_rows = scan_back(2)
-                if found:
-                    y_op, y_arg = result[found[0]]
-                    x_op, x_arg = result[found[1]]
-                    x_const = x_op == OpCode.CONST
-                    y_const = y_op == OpCode.CONST
-                    if not (x_const and y_const):
-                        sel, _cnt, label, _pad = arg
-                        self._splice(found[1], pos_rows, [(
-                            OpCode.CHECK_COMPARE_VAR,
-                            (make_cmpsrc(sel, x_const, y_const),
-                             x_arg, y_arg, label))])
-                        continue
-
-            elif op == OpCode.CHECK_COMPARE and arg[1] == 3:
-                found, pos_rows = scan_back(3)
-                if found and ternary_shape(found):
-                    sel, _cnt, label, _pad = arg
-                    lo = result[found[2]][1]
-                    mid = result[found[1]][1]
-                    hi = result[found[0]][1]
-                    self._splice(found[2], pos_rows, [
-                        (OpCode.OBJECT_COMPARE_VAR,
-                         (sel, lo, mid, hi)),
-                        (OpCode.JUMP_FALSE, label),
-                    ])
-                    continue
-
-            elif op == OpCode.OBJECT_COMPARE:
-                sel, cnt = split_cmpcount(arg)
-                if cnt == 3:
-                    found, pos_rows = scan_back(3)
-                    if found and ternary_shape(found):
-                        lo = result[found[2]][1]
-                        mid = result[found[1]][1]
-                        hi = result[found[0]][1]
-                        self._splice(found[2], pos_rows, [(
-                            OpCode.OBJECT_COMPARE_VAR,
-                            (sel, lo, mid, hi))])
-                        continue
-
-            elif op == OpCode.OBJECT_ITER:
-                found, pos_rows = scan_back(1)
-                if found and result[found[0]][0] == OpCode.VAR:
-                    self._splice(found[0], pos_rows, [(
-                        OpCode.VAR_ITER, result[found[0]][1])])
-                    continue
-
-            elif op == OpCode.OBJECT_NEXT:
-                if arg == 1:
-                    found, pos_rows = scan_back(1)
-                    if found and result[found[0]][0] == OpCode.VAR:
-                        self._splice(found[0], pos_rows, [(
-                            OpCode.VAR_NEXT,
-                            (result[found[0]][1], 1, None, None))])
-                        continue
-                else:
-                    # 2-arg: the iterator load sits below the default.
-                    # Absorbing it moves the name resolution after the
-                    # default's row, so the fusion requires the default
-                    # to be a bare feeder too (scan_back guarantees it);
-                    # the default row stays and VAR_NEXT pops it.
-                    found, pos_rows = scan_back(2)
-                    if found and result[found[1]][0] == OpCode.VAR:
-                        default_row = result[found[0]]
-                        it_name = result[found[1]][1]
-                        self._splice(found[1], pos_rows, [
-                            default_row,
-                            (OpCode.VAR_NEXT,
-                             (it_name, 2, None, None)),
-                        ])
-                        continue
-
-            elif op == OpCode.OBJECT_FORMAT:
-                if arg == 1:
-                    found, pos_rows = scan_back(1)
-                    if found and result[found[0]][0] == OpCode.VAR:
-                        self._splice(found[0], pos_rows, [(
-                            OpCode.VAR_FORMAT, result[found[0]][1])])
-                        continue
-
-            elif op == OpCode.OBJECT_FORMAT_CONST:
-                found, pos_rows = scan_back(1)
-                if found and result[found[0]][0] == OpCode.VAR:
-                    self._splice(found[0], pos_rows, [(
-                        OpCode.VAR_FORMAT_CONST,
-                        (result[found[0]][1], arg, None, None))])
-                    continue
-
-            result.append((op, arg))
-
-        self.instructions = result
-        self._rows = None
+        self.instructions = self.apply_rules(FUSE_RULES, [])
 
 
     def compress(self):
@@ -778,7 +921,7 @@ class ByteCodeProcessor:
         if not any(op in yield_ops for op, _ in instr):
             return
         self.instructions = [
-            (_TAIL_CALL_TO_CALL.get(op, op), arg)
+            (TAIL_CALL_TO_CALL.get(op, op), arg)
             for op, arg in instr]
 
 

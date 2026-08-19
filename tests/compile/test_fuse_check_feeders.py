@@ -395,10 +395,27 @@ class TestFuseFormat(unittest.TestCase):
         self.assertEqual(out, [(V, "f"), call, (OF, 1)])
 
     def test_dynamic_rules_stays(self):
-        # 2-arg OBJECT_FORMAT never fuses: there is no fused form
-        # carrying a stacked rules operand
+        # 2-arg OBJECT_FORMAT with dynamic rules never fuses: there is
+        # no fused form carrying a stacked rules operand
         out = fuse_ops([(V, "a"), (V, "r"), (OF, 2)])
         self.assertEqual(out, [(V, "a"), (V, "r"), (OF, 2)])
+
+    def test_const_rules_demotes_and_fuses(self):
+        # the full lowering ladder: the constant rules feeder demotes
+        # OBJECT_FORMAT to OBJECT_FORMAT_CONST, whose retry fuses the
+        # VAR object feeder
+        out = fuse_ops([(V, "a"), (C, "04d"), (OF, 2)])
+        self.assertEqual(out, [(VFC, ("a", "04d", None, None))])
+
+    def test_const_rules_computed_object_demotes_only(self):
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([(V, "f"), call, (C, "04d"), (OF, 2)])
+        self.assertEqual(out, [(V, "f"), call, (OFC, "04d")])
+
+    def test_const_rules_position_transparent_demotion(self):
+        pos = (P, 9)
+        out = fuse_ops([(V, "a"), (C, "04d"), pos, (OF, 2)])
+        self.assertEqual(out, [(VFC, ("a", "04d", None, None)), pos])
 
     def test_var_format_position_transparent(self):
         out = fuse_ops([(V, "a"), (P, 7), (OF, 1)])
