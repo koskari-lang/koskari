@@ -10,8 +10,8 @@
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR4, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT
-- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST4, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT
+- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR4, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST
+- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST4, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, CONST_ITEM, and variants
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF

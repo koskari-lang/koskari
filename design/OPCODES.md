@@ -271,8 +271,8 @@ When adding or changing an opcode:
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT
-- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT
+- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST
+- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_TAKE, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, ITEM_TAKE, CONST_ITEM, CONST_ITEM_TAKE, and variants
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
@@ -3125,6 +3125,42 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   `PyObject_Format(obj, rules_const)`, push resulting string.
   Stack effect: `[..., obj] -> [..., str]`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_FORMAT_CONST.c`
+
+### KOS_OP_VAR_FORMAT {#kos_op_var_format}
+
+- **Style**: VAR. Arg = constant index of a name.
+- **Status**: Implemented.
+- **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT (arg=1): resolve the name in the current frame's namespace and push `PyObject_Format(obj, NULL)`.
+- **Compiler form:** Not yet emitted; a planned compression pass will produce it from a bare VAR feeding OBJECT_FORMAT (arg=1). Lowers to FAST_FORMAT through the simple `convert_fast` path.
+- **Implementation**: `koskari/lib/opcode/VAR_FORMAT.c` (cold handler)
+- **Covered by**: `tests/lib/opcode/test_format_fused.py`
+
+### KOS_OP_VAR_FORMAT_CONST {#kos_op_var_format_const}
+
+- **Style**: EXTRA (VAR, CONST). Row = obj name (pool), rules string (pool).
+- **Status**: Implemented.
+- **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT_CONST: resolve the name in the current frame's namespace and push `PyObject_Format(obj, rules)`.
+- **Compiler form:** Not yet emitted; a planned compression pass will produce it from a bare VAR feeding OBJECT_FORMAT_CONST. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
+- **Implementation**: `koskari/lib/opcode/VAR_FORMAT_CONST.c` (cold handler)
+- **Covered by**: `tests/lib/opcode/test_format_fused.py`
+
+### KOS_OP_FAST_FORMAT {#kos_op_fast_format}
+
+- **Style**: FASTVAR. Arg = slot index.
+- **Status**: Implemented.
+- **Stack**: As VAR_FORMAT, with the object loaded from its fast slot.
+- **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_FORMAT when the name has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_FORMAT.c`
+- **Covered by**: `tests/lib/opcode/test_format_fused.py`
+
+### KOS_OP_FAST_FORMAT_CONST {#kos_op_fast_format_const}
+
+- **Style**: EXTRA (FASTVAR, CONST). Row = obj slot, rules string (pool).
+- **Status**: Implemented.
+- **Stack**: As VAR_FORMAT_CONST, with the object loaded from its fast slot.
+- **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_FORMAT_CONST when the name has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_FORMAT_CONST.c`
+- **Covered by**: `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_OBJECT_TRUTH {#kos_op_object_truth}
 
