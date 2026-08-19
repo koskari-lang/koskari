@@ -4,9 +4,11 @@ Design for migrating the pre-finalize instruction transformations --
 `compress`, `fuse_check_feeders`, `pack_var_runs`, `normalize_opcount`,
 `convert_fast`, and the future tail-call promotion -- out of `Compiler`
 methods into a dedicated class, `ByteCodeProcessor` (name provisional),
-living in a **new submodule of the compiler package**
-(`koskari/compile/processor.py` or similar). `Compiler` delegates to it;
-the passes leave `compiler.py`.
+living in a **new submodule of the compiler package**. Given the rule
+registry, the TCO pass, and the extent machinery to come, a
+`koskari/compile/processor/` subpackage with one module per pass family
+will age better than a single file; pick at phase 1 and never revisit.
+`Compiler` delegates to it; the passes leave `compiler.py`.
 
 ## What the current code teaches
 
@@ -27,6 +29,50 @@ data-driven potential:
 
 Lesson: the matching side generalizes; the rewrite side mostly does
 not.
+
+## Lifecycle: a use-and-discard mutable box
+
+The processor is not a persistent peer of `Compiler`; it is closer to
+`ByteCodeFragment` -- constructed per instruction stream, used once,
+discarded:
+
+- **Rules live on the class.**  The dispatch registry is built once at
+  class-definition time and shared by every instance, the way
+  `VAR_TO_FAST` and `_CHECK_SQUASHES` are module-level today. That is
+  the stateless part.
+- **The instance is the mutable box.**  It internalizes the incoming
+  rows and mutates itself as rules apply. Everything else it carries is
+  per-stream state with no meaning beyond one code object: the lookback
+  window, the label index and refcounts, the extent stack, the
+  re-dispatch worklist. Lifetime == state validity: no reset method to
+  forget, no cross-stream leakage possible by construction.
+- **Fragment symmetry.**  Ingest from a fragment (or raw rows), mutate
+  in place, emit back out. Whether the exit is a real `to_fragment()`
+  or handing finished rows to finalize is decided when phase 1 shows
+  what `complete()` needs; the ingest/mutate/emit lifecycle stands
+  either way.
+
+## Pragma gating
+
+The passes remain pragma-gated, and the gates stay positionally
+correct: pragma state affects the code after it in a module, so each
+code object must be processed under the gates in effect at its compile
+point. The use-and-discard lifecycle delivers this for free -- the
+gate snapshot is taken at construction and is consistent for the whole
+run.
+
+- `Compiler` resolves the pragma into a small bundle of per-pass flags
+  (`compiler/convert-fast` as today; whatever gates compress and fusion
+  carry; `tco` later) and constructs the processor with rows, flags,
+  and the convert-fast context (nspec, mode).
+- The compiler invokes the processor **once** (`process()`); the
+  processor checks its own gates internally, running or skipping each
+  pipeline step. The compiler stops knowing the pipeline exists.
+- **The processor never holds a `Compiler` reference.**  It defines
+  which flags it consumes; the compiler supplies them. Coupling stays
+  one-directional, and unit tests construct a processor from a row
+  list and a flags dict -- no `Compiler`, no `Module` -- where today's
+  fusion tests must stand up both to call one method.
 
 ## Architecture
 
@@ -160,25 +206,47 @@ comparison chains raising on unorderable constants with the source
 form in hand -- the special remains the right home; see the invariant
 above.)
 
+## Verification: emission fingerprints
+
+Every behavior-preserving phase gets an objective gate beyond the test
+suite. The opgrams corpus compiles bootstrap, modules, life, churn,
+and tools; `tox -qe opgrams -- --json` is a whole-corpus emission
+fingerprint. Capture the baseline before phase 1; diff byte-for-byte
+after each preserving step. When a step is *supposed* to change
+emission, the fingerprint diff is the review artifact instead.
+
 ## Performance stance
 
 The budget is bootstrap compile time at package import. Dict dispatch
 should beat the elif chains outright; re-dispatch adds a bounded
-constant. Verify with `tox -qe opgrams` (emission unchanged means the
-refactor is behavior-preserving) and a bootstrap import timing before
-and after.
+constant; per-stream construction is noise against compiling the
+stream. Verify with the emission fingerprint (unchanged means
+behavior-preserving) and a bootstrap import timing before and after.
 
-## Migration order
+## Migration phases
 
-1. Mechanical move: passes relocate from `compiler.py` into the new
-   submodule under the processor class, behavior-preserving, tests
-   untouched except imports.
-2. Dispatch conversion: elif chains become the rule registry;
-   generalized lookback replaces the literal `squished[-1]` peepholes;
-   re-dispatch lands with its termination rule.
-3. New services as their consumers arrive: label index with the
-   tail-call pass; extent tracker with it; dead-region sweep and label
-   GC last, if at all.
+1. **The heave.**  Passes relocate from `compiler.py` into the new
+   subpackage under the processor class, behavior-preserving:
+   `Compiler` keeps thin delegate methods so tests and helper imports
+   move only trivially; the single `process()` entry with the gate
+   snapshot arrives here. Fingerprint identical.
+2. **Machinery.**  The shared services replace the ad-hoc versions:
+   generalized lookback, splice, per-stream state on the instance.
+   Land emission-identical first (replicating today's literal
+   `squished[-1]` peepholes), then flip POSITION transparency for the
+   peepholes as its own fingerprinted commit.
+3. **Pattern-oriented handlers.**  The elif chains become the rule
+   registry; re-dispatch lands with its termination rule, then any new
+   cascades it enables (e.g. the OBJECT_FORMAT demotion ladder) as
+   separate fingerprinted commits.
+4. **TCO**, only once the processor is fully proved, in two steps:
+   (a) the pass reproduces exactly the promotions the specials make
+   today -- `tc=` threading deleted, bootstrap bytecode diff
+   identical, gating preserved; (b) the eligibility extension to
+   join-point shapes and the extent table, as genuinely new behavior
+   with its own review. The extent tracker's safetynet verification
+   must be in place and exercised before (b).
 
-Sequencing: after the remaining fused-opcode TODO items, on its own
-branch.
+Each service arrives with its consumer: label index with the TCO pass,
+extent tracker with it, dead-region sweep and label GC last, if at
+all.

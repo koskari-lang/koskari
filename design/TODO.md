@@ -118,10 +118,11 @@ Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
 ### ByteCodeProcessor: unified pass submodule
 
 Migrate compress / fuse_check_feeders / pack_var_runs / convert_fast and
-the future tail-call promotion out of `Compiler` into a processor class
-in a new `koskari.compile` submodule: dispatch-dict rules with
-re-dispatch cascades, shared lookback ({POSITION} transparent, LABEL an
-absolute boundary), label index/refcounts, and an extent tracker.
+the future tail-call promotion out of `Compiler` into a use-and-discard
+processor object in a new `koskari.compile` subpackage: one `process()`
+call gated by a pragma snapshot, dispatch-dict rules with re-dispatch
+cascades, shared lookback (POSITION-transparent, LABEL a hard boundary),
+label index/refcounts, and an extent tracker.
 
 Ref: [bytecode-processor.md](bytecode-processor.md).
 
