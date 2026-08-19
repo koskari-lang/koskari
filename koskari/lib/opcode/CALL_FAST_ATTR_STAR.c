@@ -16,9 +16,9 @@
 /**
    CALL_FAST_ATTR_STAR: arg = extra index. Schema FASTVAR (slot), CONST (attr),
    COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs).
-   Stack [pos, kwd] or subsets per flags; obj from fast local slot (borrowed).
-   Ensure pos is tuple, resolve obj.attr, prepend obj to args if send_self,
-   call via KosEvalState_CallArgs.
+   Stack [pos, kwd] or subsets per flags; obj from fast local slot (owned
+   deref). Ensure pos is tuple, resolve obj.attr, prepend obj to args if
+   send_self, call via KosEvalState_CallArgs.
 */
 
 
@@ -61,40 +61,52 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
 
   if ((opa & 3) == 3) {
     kwd = KosEvalState_StackPopRef(es);
-    if (! kwd)
+    if (! kwd) {
+      Py_DECREF(obj);
       return EVAL_RAISE();
+    }
     pos = KosEvalState_StackPopRef(es);
     if (! pos) {
+      Py_DECREF(obj);
       Py_DECREF(kwd);
       return EVAL_RAISE();
     }
     if (ensure_tuple_fast_attr_star(&pos)) {
+      Py_DECREF(obj);
       Py_DECREF(pos);
       Py_DECREF(kwd);
       return EVAL_RAISE();
     }
   } else if (opa & 2) {
     kwd = KosEvalState_StackPopRef(es);
-    if (! kwd)
+    if (! kwd) {
+      Py_DECREF(obj);
       return EVAL_RAISE();
+    }
     pos = PyTuple_New(0);
     if (! pos) {
+      Py_DECREF(obj);
       Py_DECREF(kwd);
       return EVAL_RAISE();
     }
   } else if (opa & 1) {
     pos = KosEvalState_StackPopRef(es);
-    if (! pos)
+    if (! pos) {
+      Py_DECREF(obj);
       return EVAL_RAISE();
+    }
     if (ensure_tuple_fast_attr_star(&pos)) {
+      Py_DECREF(obj);
       Py_DECREF(pos);
       return EVAL_RAISE();
     }
     kwd = NULL;
   } else {
     pos = PyTuple_New(0);
-    if (! pos)
+    if (! pos) {
+      Py_DECREF(obj);
       return EVAL_RAISE();
+    }
     kwd = NULL;
   }
 
@@ -104,6 +116,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
       ? NULL : &KosCode_CACHE(code)[cache_ix];
   int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
   if (send_self < 0) {
+    Py_DECREF(obj);
     Py_DECREF(pos);
     Py_XDECREF(kwd);
     return EVAL_RAISE();
@@ -115,6 +128,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
   if (send_self == 0) {
     combined = PyTuple_Pack(1, obj);
     if (! combined) {
+      Py_DECREF(obj);
       Py_DECREF(resolved);
       Py_DECREF(pos);
       Py_XDECREF(kwd);
@@ -123,6 +137,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
     args_for_call = PySequence_Concat(combined, pos);
     Py_DECREF(combined);
     if (! args_for_call) {
+      Py_DECREF(obj);
       Py_DECREF(resolved);
       Py_DECREF(pos);
       Py_XDECREF(kwd);
@@ -130,6 +145,8 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
     }
     Py_DECREF(pos);
   }
+
+  Py_DECREF(obj);
 
   KosOpResult res = KosEvalState_CallArgs(es, resolved, args_for_call, kwd, 0);
 
