@@ -657,10 +657,9 @@ class TestDynWindRaiseUnwind(SpecialsTestCase):
 
     async def test_after_thunk_failure_supersedes_chained(self):
         """
-        KNOWN DEFECT (intentionally red): when the after thunk itself
-        raises during an exception unwind, the thunk's exception
-        supersedes the original and propagates with the original chained
-        as __context__. Today the parked original is dropped unchained.
+        When the after thunk itself raises during an exception unwind, the
+        thunk's exception supersedes the original and propagates with the
+        original chained as __context__.
         """
 
         def boom(v):
@@ -688,9 +687,8 @@ class TestDynWindRaiseUnwind(SpecialsTestCase):
 
     async def test_after_thunk_failure_caught_with_context(self):
         """
-        KNOWN DEFECT (intentionally red): the superseding teardown
-        exception is catchable by an enclosing handler, and the handler
-        sees the original as __context__.
+        The superseding teardown exception is catchable by an enclosing
+        handler, and the handler sees the original as __context__.
         """
 
         def boom(v):

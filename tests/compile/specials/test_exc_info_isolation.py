@@ -64,12 +64,8 @@ class TestExcInfoIsolation(SpecialsTestCase):
 
     async def test_exc_info_across_interleaved_tasks(self):
         """
-        KNOWN DEFECT (intentionally red): two contexts suspended inside
-        their handlers on one thread must each see their own exception on
-        resume. Today exc_info is staged into the shared thread slot with
-        no per-context swap at freeze/thaw, so the interleaved handlers
-        corrupt each other's view (one sees the other's exception, the
-        other sees none).
+        Two contexts suspended inside their handlers on one thread each see
+        their own exception on resume.
         """
 
         async def snooze():
