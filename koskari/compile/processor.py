@@ -50,21 +50,21 @@ def merge_opcount(value):
 
     if isinstance(value, tuple):
         if len(value) != 2:
-            raise ValueError("opcount operand must be (op_type, count), "
-                             "got %r" % (value,))
+            raise ValueError(f"opcount operand must be (op_type, count), "
+                             f"got {value!r}")
         op_type, count = value
         op_type = int(getattr(op_type, 'value', op_type))
         count = int(count)
     else:
         merged = int(value)
         if not 0 <= merged <= 0xffff:
-            raise ValueError("opcount int out of uint16 range: %r" % (value,))
+            raise ValueError(f"opcount int out of uint16 range: {value!r}")
         op_type, count = merged >> 8, merged & 0xff
 
     if not 0 <= op_type < _OPERAND_COUNT:
-        raise ValueError("opcount op-type is not a known Operand: %r" % (op_type,))
+        raise ValueError(f"opcount op-type is not a known Operand: {op_type!r}")
     if not 0 <= count <= 0xff:
-        raise ValueError("opcount count out of byte range: %r" % (count,))
+        raise ValueError(f"opcount count out of byte range: {count!r}")
 
     return (op_type << 8) | count
 
@@ -86,21 +86,21 @@ def merge_cmpcount(value):
 
     if isinstance(value, tuple):
         if len(value) != 2:
-            raise ValueError("cmpcount operand must be (selector, count), "
-                             "got %r" % (value,))
+            raise ValueError(f"cmpcount operand must be (selector, count), "
+                             f"got {value!r}")
         sel, count = value
         sel = int(getattr(sel, 'value', sel))
         count = int(count)
     else:
         merged = int(value)
         if not 0 <= merged <= 0xffff:
-            raise ValueError("cmpcount int out of uint16 range: %r" % (value,))
+            raise ValueError(f"cmpcount int out of uint16 range: {value!r}")
         sel, count = merged >> 8, merged & 0xff
 
     if not 0 <= sel < _COMPARE_COUNT:
-        raise ValueError("cmpcount selector is not a known Compare: %r" % (sel,))
+        raise ValueError(f"cmpcount selector is not a known Compare: {sel!r}")
     if not 0 <= count <= 0xff:
-        raise ValueError("cmpcount count out of byte range: %r" % (count,))
+        raise ValueError(f"cmpcount count out of byte range: {count!r}")
 
     return (sel << 8) | count
 
@@ -410,9 +410,8 @@ class ByteCodeProcessor:
     the validity of that state.
     """
 
-    # Ops the backward scans treat as invisible. The literal-lookback
-    # peephole rules pass an empty set instead; flipping them onto this
-    # default is a deliberate, separately-verified emission change.
+    # Ops the backward scans treat as invisible: every pass seeks its
+    # prior rows through this set.
     TRANSPARENT = frozenset((OpCode.POSITION,))
 
     def __init__(self, instructions, gates=None, mode=None):
@@ -487,10 +486,17 @@ class ByteCodeProcessor:
         folds and fusions plus trailing RETURN normalization. Feeder
         fusion and VAR run packing follow as separate passes.
 
-        The rules seek their prior row with an empty transparency set,
-        preserving the literal-lookback behavior; the LABEL boundary is
-        enforced by the seekback's break-on-other scan.
+        The rules seek their prior row through the POSITION-transparent
+        seekback. A rewrite that consumes the prior row goes through
+        the splice service, which re-emits the latest stepped-over
+        position row after the rewritten rows so following instructions
+        keep their attribution; a rewrite that only edits the prior row
+        in place leaves stepped-over positions where they lie. The
+        LABEL boundary is enforced by the seekback's break-on-other
+        scan.
         """
+
+        transparent = self.TRANSPARENT
 
         # the NOOP sentinel floors every seekback, so rules never need
         # an emptiness check; it is stripped at the end
@@ -498,82 +504,81 @@ class ByteCodeProcessor:
 
         for (op, arg) in self.instructions:
             if op == OpCode.POP and arg == 1:
-                found, _skip = self._seek_back(1, _POP_PRIORS)
+                found, skip = self._seek_back(1, _POP_PRIORS, transparent)
                 if found:
-                    del squished[found[0]]
+                    self._splice(found[0], skip, [])
                     continue
 
             elif op == OpCode.OBJECT_NOT:
-                found, _skip = self._seek_back(1, _CONST_PRIOR)
+                found, skip = self._seek_back(1, _CONST_PRIOR, transparent)
                 if found:
                     val = squished[found[0]][1]
                     squished[found[0]] = (OpCode.CONST, not val)
                     continue
 
             elif op == OpCode.JUMP_TRUE:
-                found, _skip = self._seek_back(1, _CONST_PRIOR)
+                found, skip = self._seek_back(1, _CONST_PRIOR, transparent)
                 if found:
                     truthy = bool(squished[found[0]][1])
-                    del squished[found[0]]
-                    if truthy:
-                        op = OpCode.JUMP
-                    else:
-                        continue
+                    rep = [(OpCode.JUMP, arg)] if truthy else []
+                    self._splice(found[0], skip, rep)
+                    continue
 
             elif op == OpCode.JUMP_FALSE:
-                found, _skip = self._seek_back(1, _JUMP_FALSE_PRIORS)
+                found, skip = self._seek_back(
+                    1, _JUMP_FALSE_PRIORS, transparent)
                 if found:
                     prior, prior_arg = squished[found[0]]
 
                     if prior == OpCode.CONST:
                         # jumping based on a constant value
-                        truthy = not prior_arg
-                        del squished[found[0]]
-                        if truthy:
-                            op = OpCode.JUMP
-                        else:
-                            continue
+                        rep = [] if prior_arg else [(OpCode.JUMP, arg)]
+                        self._splice(found[0], skip, rep)
+                        continue
 
                     elif prior in _CHECK_SQUASHES:
                         # here we're combining an object operand with a
                         # jump into a single check jump
-                        del squished[found[0]]
-                        op = _CHECK_SQUASHES[prior]
+                        self._splice(found[0], skip, [
+                            (_CHECK_SQUASHES[prior], arg)])
+                        continue
 
                     else:
                         # fuse the compare with its jump: CHECK_COMPARE
                         # branches on chain failure, carrying the
                         # selector, count, and target in one EXTRA row
-                        del squished[found[0]]
                         sel, cnt = split_cmpcount(prior_arg)
-                        op = OpCode.CHECK_COMPARE
-                        arg = (sel, cnt, arg, None)
+                        self._splice(found[0], skip, [(
+                            OpCode.CHECK_COMPARE,
+                            (sel, cnt, arg, None))])
+                        continue
 
             elif op == OpCode.SWITCH_EQ:
-                found, _skip = self._seek_back(1, _SWITCH_PRIORS)
+                found, skip = self._seek_back(1, _SWITCH_PRIORS, transparent)
                 if found:
                     prior, pargs = squished[found[0]]
-                    op = _SWITCH_SQUASHES[prior]
                     if isinstance(pargs, tuple):
-                        arg = (arg, *pargs[:3])
+                        new_arg = (arg, *pargs[:3])
                     else:
-                        arg = (arg, pargs, None, None)
-                    del squished[found[0]]
+                        new_arg = (arg, pargs, None, None)
+                    self._splice(found[0], skip, [
+                        (_SWITCH_SQUASHES[prior], new_arg)])
+                    continue
 
             elif op == OpCode.LABEL:
                 # omit useless jump when the jump target is the next
                 # instruction: JUMP foo, LABEL foo -> NOOP
-                found, _skip = self._seek_back(1, _JUMP_PRIOR)
+                found, skip = self._seek_back(1, _JUMP_PRIOR, transparent)
                 if found and squished[found[0]][1] == arg:
-                    del squished[found[0]]
+                    self._splice(found[0], skip, [])
                 else:
-                    found, _skip = self._seek_back(1, _JUMP_PRIORS)
+                    found, skip = self._seek_back(
+                        1, _JUMP_PRIORS, transparent)
                     if found and squished[found[0]][1] == arg:
-                        below, _skip = self._seek_back(
-                            1, _CONST_PRIOR, start=found[0])
+                        below, skip2 = self._seek_back(
+                            1, _CONST_PRIOR, transparent, start=found[0])
                         if below:
-                            del squished[found[0]]
-                            del squished[below[0]]
+                            self._splice(below[0], skip + skip2, [])
                         else:
                             squished[found[0]] = (OpCode.POP, 1)
 
@@ -582,39 +587,42 @@ class ByteCodeProcessor:
                          OpCode.CONTINUE,
                          OpCode.YIELD)
                   and arg == 1):
-                found, _skip = self._seek_back(1, _CONST_PRIOR)
+                found, skip = self._seek_back(1, _CONST_PRIOR, transparent)
                 if found and squished[found[0]][1] is None:
                     # CONST None, RETURN 1 -> RETURN 0
-                    del squished[found[0]]
+                    self._splice(found[0], skip, [])
                     arg = 0
 
             elif op in (OpCode.CAR, OpCode.CDR):
-                found, _skip = self._seek_back(1, frozenset((op,)))
+                found, skip = self._seek_back(
+                    1, frozenset((op,)), transparent)
                 if found:
                     prev_op, prev_arg = squished[found[0]]
                     squished[found[0]] = (prev_op, prev_arg + arg)
                     continue
 
             elif op == OpCode.VAR_STORE:
-                found, _skip = self._seek_back(1, _CONST_PRIOR)
+                found, skip = self._seek_back(1, _CONST_PRIOR, transparent)
                 if found:
                     prior_arg = squished[found[0]][1]
-                    del squished[found[0]]
-                    op = OpCode.VAR_STORE_CONST
-                    arg = (arg, prior_arg, None, None)
+                    self._splice(found[0], skip, [(
+                        OpCode.VAR_STORE_CONST,
+                        (arg, prior_arg, None, None))])
+                    continue
 
             elif op == OpCode.VAR_INPLACE:
                 # CONST rhs on a single-operand augmented assignment
                 # fuses to the stack-free form: bare operator selector,
                 # name, pooled operand
-                found, _skip = self._seek_back(1, _CONST_PRIOR)
+                found, skip = self._seek_back(1, _CONST_PRIOR, transparent)
                 if found:
                     merged = merge_opcount(arg[0])
                     if merged & 0xff == 1:
                         prior_arg = squished[found[0]][1]
-                        del squished[found[0]]
-                        op = OpCode.VAR_INPLACE_CONST
-                        arg = (merged >> 8, arg[1], prior_arg, None)
+                        self._splice(found[0], skip, [(
+                            OpCode.VAR_INPLACE_CONST,
+                            (merged >> 8, arg[1], prior_arg, None))])
+                        continue
 
             squished.append((op, arg))
 
@@ -632,7 +640,6 @@ class ByteCodeProcessor:
 
         self.instructions = squished
         self._rows = None
-
 
 
     _FEEDERS = frozenset((OpCode.VAR, OpCode.CONST))
