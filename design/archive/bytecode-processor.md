@@ -2,12 +2,12 @@
 
 The pre-finalize instruction transformations -- peephole squish, feeder
 fusion, VAR run packing, operand normalization, VAR to FAST lowering,
-and generator tail-call demotion -- live in `ByteCodeProcessor` in the
-**single submodule `koskari/compile/processor.py`**: the class
-definition and all implementation facets in one module, not a
-subpackage. `Compiler.complete()` invokes it once; the compiler holds
-no other knowledge of the pipeline. Phases 1-3 below are **built**;
-phase 4 (tail-call promotion) remains.
+tail-call promotion, and generator tail-call demotion -- live in
+`ByteCodeProcessor` in the **single submodule
+`koskari/compile/processor.py`**: the class definition and all
+implementation facets in one module, not a subpackage.
+`Compiler.complete()` invokes it once; the compiler holds no other
+knowledge of the pipeline. All four phases are **built**.
 
 ## What the original code taught
 
@@ -60,8 +60,12 @@ The use-and-discard lifecycle delivers this for free -- the gate
 snapshot is taken at construction and is consistent for the whole run.
 
 - `Compiler` resolves the pragma into a per-pass flags bundle
-  (`convert-fast` today; `tco` later) and constructs the processor
-  with rows, flags, and mode. `process()` checks the gates internally.
+  (`convert-fast` and `tco`) and constructs the processor with rows,
+  flags, and mode. `process()` checks the gates internally. The tco
+  gate is computed at the seam as the pragma combined with the
+  compilation mode: FUNCTION-mode streams promote, EXPRESSION streams
+  (module top-level and REPL) never do -- they run once, and promotion
+  there only costs backtrace frames.
 - **The processor never holds a `Compiler` reference.**  It defines
   which flags it consumes; the compiler supplies them. Coupling stays
   one-directional, and the pass-level unit tests construct a processor
@@ -139,14 +143,12 @@ forward run-accumulation -- it is not lookback-shaped.
   failure is a diagnostic naming the source form. A pass must never
   need to know what a form *means*.
 
-## Future services
+## Services built with the pass, and future services
 
-**Label refcounting and index.**  One linear pass collecting every
-label operand from every jump-carrying row -- schema-driven, since
-LABEL is a declared operand kind in `opcodes.incl` styles and EXTRA
-schemas, so no hand-maintained list of jump ops. Yields the
-label -> row index (needed by tail-call forward chasing) and reference
-counts.
+**Label index.**  Built, minimally: `promote_tail_calls` collects a
+per-run label -> row index for its forward chasing. The fuller
+schema-driven service with reference counts is not built; it arrives
+with the dead-region sweep, if that ever does.
 
 **Dead-region sweep and label GC** (optional, deferred).  With
 refcounts, unreachable-code trimming is a scan with a mode bit, not a
@@ -161,122 +163,96 @@ asserts this and refuses a deletion that would straddle a pair.
 Repeatable-segment detection is genuinely graph-shaped and stays out
 of scope.
 
-**Extent tracker.**  A push/pop stack of open extents maintained
-during the walk. Sound as a linear scan because the emitter generates
-structured code (jumps do not cross extent boundaries); verified
-safetynet-style during the pass rather than trusted, so a miscompiled
-extent fails loudly at compile time instead of distantly at runtime.
-Open questions: CLEAR_* semantics against the stack (restart vs
-close), and unifying this computation with whatever finalize already
-does to produce the Code object's extent metadata, so nesting is
-computed once.
+**Extent tracker.**  Built as the pass's discardability stack: a
+push/pop stack of open extents maintained during the walk, sound as a
+linear scan because the emitter generates structured code (jumps do
+not cross extent boundaries). Still open (see `design/TODO.md`): the
+safetynet-style verification, so a miscompiled extent fails loudly at
+compile time instead of being silently tolerated; CLEAR_* semantics
+against the stack (restart vs close); and unifying this computation
+with whatever finalize already does to produce the Code object's
+extent metadata, so nesting is computed once.
 
-## The tail-call promotion pass (phase 4, remaining)
+## The tail-call promotion pass (phase 4, built)
 
 The strongest motivation for the processor -- the same principle as
 "opcodes are thin interfaces": the pass owns the optimization, specials
 emit naive forms. Detail lives in
-[language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md);
-the processor-specific mechanics:
+[language/tail-call-bytecode-pass.md](../language/tail-call-bytecode-pass.md);
+the processor-specific mechanics as built:
 
-- Specials always emit `CALL*` + `RETURN`; the `tc=` parameter threading
-  through every special signature is deleted. Note the un-fusion
-  obligation: today `tc` suppresses the CALL_VAR fusion
-  (`use_var_path = is_symbol(callable) and not tc`), so a
-  tail-position `CALL_VAR` must rewrite to the bare load plus
-  TAIL_CALL to reproduce current emission, before the fast lowering.
-- The pass is one linear read maintaining the extent stack from the
-  push/pop rows. At each promotable call: if **any** frame of the
-  stack is a disallowed extent, denied. Otherwise read forward --
+- Specials always emit `CALL*` + `RETURN`. The `tc=` threading is
+  deleted end to end: every special signature, the compiler's
+  compile/full_compile/compile_expr chain, the syntax dispatch
+  (`compile_impl`, `handle_expand`, `try_expand`, `expand_bare`), and
+  the Koskari-facing `special-rules` / `special-match` pattern column,
+  now `(compiler-formal pattern)`. The un-fusion obligation the plan
+  carried dissolved: with a schema-identical twin for every call op,
+  fused forms promote by relabel and nothing rewrites back to the
+  bare-load shape. The `position` argument of `compile` and
+  `full_compile` became keyword-only so a stale positional-tc caller
+  fails loudly.
+- `promote_tail_calls` is one linear read maintaining the extent stack
+  from the push/pop rows. At each promotable call: if **any** frame of
+  the stack is a disallowed extent, denied. Otherwise read forward --
   allowed route rows are extent pops, LABEL, POSITION, and NOOP;
   unconditional JUMPs are followed through the label index with a
   seen-set guarding cycles -- and promote **only on arrival at
   `RETURN 1`**. RETURN 0 discards the value and RETURN 2+ is a
   different shape; any other row invalidates, and the scan continues
-  at the next call. This catches what syntactic threading cannot:
+  at the next call. This catches what syntactic threading could not:
   explicit returns, and arms jumping to a shared RETURN.
-- The extent table is data beside the pass, decided by one principle:
-  **an extent whose uninstall behavior must run after the call cannot
-  be tail-called through.** Disallowed: try, finally, with, dyn-with,
-  wind, prompt/reset, shift, call/cc, param(eterize), collect.
-  Discardable (allowed): namespace and loop/foreach extents, safely
-  dropped by frame handoff.
+- The extent table (`EXTENT_DISCARDABLE`) is data beside the pass,
+  decided by one principle: **an extent whose uninstall behavior must
+  run after the call cannot be tail-called through.** Disallowed: try,
+  finally, with, dyn-with, wind, prompt/reset, shift, call/cc,
+  param(eterize), collect. Discardable (allowed): namespace and
+  loop/foreach extents, safely dropped by frame handoff.
 - The rewrite touches the call row only. The JUMP and the shared
   RETURN stay: other predecessors may land on that label with non-tail
   values. Rows unreachable on the lowered path are harmless (or food
   for the dead-region sweep).
-- Yield-ness gates the whole pass up front, per the TODO entry: scan
-  for YIELD / YIELD_FROM first, skip promotion entirely for yielding
-  streams, never convert-then-unconvert.
+- Yield-ness gates the whole pass up front: scan for YIELD /
+  YIELD_FROM first, skip promotion entirely for yielding streams,
+  never convert-then-unconvert. `demote_tail_calls_if_yields` remains
+  as the safety net for raw `TAIL_CALL*` hand-assembled into a
+  generator.
 
-### Tail opcode parity worksheet
+### Tail opcode parity
 
-The specials will stop emitting TAIL forms entirely; promotion in the
-processor then needs a TAIL twin for every call op the call specials
-can emit, so that promotion is always a pure relabel carrying the same
-operands and stack contract, with only the frame handoff differing.
-The historical gap was election, not impossibility: a tail form of a
-var or fast call stores the lookup and the arguments before resetting
-the frame. Current state of the family:
+Every call op the specials can emit has a schema-identical TAIL twin,
+so promotion is always a pure relabel carrying the same operands and
+stack contract, with only the frame handoff differing. The historical
+gap was election, not impossibility: fifteen twins were added for full
+parity (bytecode ABI 0.13) -- the VAR and FAST tiers of the plain
+family, and the nine attr forms, reversing the old "attr calls never
+tail-call" election. All eighteen pairs derive by name: the promotion
+and demotion maps strip and add the `TAIL_` prefix, and
+`build_var_to_fast` grew the `TAIL_CALL_FAST` prefix so the VAR twins
+lower through the same name-driven map. Promotion ordering relative to
+the fast lowering is free with the map complete; as built, promotion
+runs before `convert_fast` and the lowering carries the VAR twins to
+their FAST forms.
 
-| call op | tail twin | status |
-|---|---|---|
-| CALL | TAIL_CALL | exists |
-| CALL_NAMES | TAIL_CALL_NAMES | exists |
-| CALL_STAR | TAIL_CALL_STAR | exists |
-| CALL_VAR | TAIL_CALL_VAR | needed |
-| CALL_VAR_NAMES | TAIL_CALL_VAR_NAMES | needed |
-| CALL_VAR_STAR | TAIL_CALL_VAR_STAR | needed |
-| CALL_FAST | TAIL_CALL_FAST | needed |
-| CALL_FAST_NAMES | TAIL_CALL_FAST_NAMES | needed |
-| CALL_FAST_STAR | TAIL_CALL_FAST_STAR | needed |
-| CALL_ATTR | TAIL_CALL_ATTR | needed |
-| CALL_ATTR_NAMES | TAIL_CALL_ATTR_NAMES | needed |
-| CALL_ATTR_STAR | TAIL_CALL_ATTR_STAR | needed |
-| CALL_VAR_ATTR | TAIL_CALL_VAR_ATTR | needed |
-| CALL_VAR_ATTR_NAMES | TAIL_CALL_VAR_ATTR_NAMES | needed |
-| CALL_VAR_ATTR_STAR | TAIL_CALL_VAR_ATTR_STAR | needed |
-| CALL_FAST_ATTR | TAIL_CALL_FAST_ATTR | needed |
-| CALL_FAST_ATTR_NAMES | TAIL_CALL_FAST_ATTR_NAMES | needed |
-| CALL_FAST_ATTR_STAR | TAIL_CALL_FAST_ATTR_STAR | needed |
-
-Fifteen new opcodes for full parity: the VAR and FAST tiers of the
-plain family, and the nine attr forms. The attr tier reverses the old
-"attr calls never tail-call" election recorded in `compile/call-attr`.
-Each twin takes exactly its CALL form's operand schema. Adding them
-renumbers nothing if appended within their families, but any insertion
-plan carries the usual bytecode ABI minor bump.
-
-Wiring notes:
-
-- The promotion table grows one relabel entry per pair; no un-fusion
-  or stack surgery anywhere.
-- The VAR to FAST lowering pairs (TAIL_CALL_VAR -> TAIL_CALL_FAST and
-  the attr and names/star variants) do not register through the
-  name-driven map as written: `build_var_to_fast` keys on the `FAST` /
-  `CALL_FAST` name prefixes and will not see `TAIL_CALL_FAST*`. Either
-  the builder grows the `TAIL_CALL_FAST` prefix or the pairs are added
-  explicitly.
-- Promotion ordering relative to the fast lowering becomes free once
-  both tiers exist: promoting before lowering relabels the VAR forms
-  and lowering carries them to FAST twins, or promotion after lowering
-  relabels the FAST forms directly. Either works when the map is
-  complete.
-- During the transition, with the specials' tc pinned False and parity
-  not yet built, tests that assert TAIL emission for the fused call
-  shapes are expected to fail; they check the old election too
-  closely and settle once the twins land.
+On the C side the twins were pure addition: `kos_call_invoke` already
+composed `KOS_CALL_TAIL` with every flag combination the CALL family
+uses, and `KosEvalState_CallArgs` already took the tail flag, so each
+handler is its CALL twin with the tail bit set. The VAR tier
+dispatches cold; TAIL_CALL_FAST and TAIL_CALL_FAST_ATTR stay hot like
+their twins. Landing the twins surfaced and fixed an owned-reference
+leak of the receiver in CALL_FAST_ATTR_STAR.
 
 Tail-call promotion changes observable behavior (backtrace shape,
-frame identity), so it lands in two steps: (a) the pass reproduces
-exactly the promotions the specials make today -- `tc=` threading
-deleted, bootstrap bytecode diff identical, gated by
-`Compiler.tco_enabled`; (b) the eligibility extension to join-point
-shapes and the extent table, as genuinely new behavior with its own
-review. The extent tracker's safetynet verification must be in place
-and exercised before (b). Each service arrives with its consumer:
-label index and extent tracker with this pass, dead-region sweep and
-label GC last, if at all.
+frame identity). The planned two-step landing collapsed once the twins
+made fused promotion free; the behavior change is bounded instead by
+the mode gate -- expression streams never promote, so module top-level
+and REPL emission is unchanged, and the new frame handoffs appear only
+in function bodies. The full suite, the corpus conformance phase, and
+ASAN/valgrind runs stand as the review; the opgrams fingerprint diff
+is folded into the dispatch-sizing effort, which also checks that the
+grown opcode count stays within cache-friendly dispatch size. The
+extent tracker's safetynet verification remains open (see
+`design/TODO.md`).
 
 ## Simplifications delivered and available
 
@@ -310,8 +286,11 @@ phase-3 processor steady ~0.235s (min 0.232) -- parity within noise.
 The dict-dispatch-beats-elif claim did not materialize at this scale,
 and neither did any cost from the matcher, candidate lists, or
 replacement splices. The registry stands on sight-readability, not
-speed; re-measure only if a future pass (TCO's label index and extent
-tracking) grows the walk.
+speed. The re-measure trigger -- a pass growing the walk -- fired when
+TCO landed; measured 2026-08-19 with the full promotion pass live
+(yield scan, label index, extent stack, clear-route chasing on every
+function stream): steady ~0.235s, min 0.232 -- parity with both
+earlier baselines. The walk still costs nothing measurable.
 
 ## Build record
 
@@ -329,4 +308,18 @@ tracking) grows the walk.
    simplification; the fusion pass renamed `fuse_feeders`. Emission
    verified unchanged throughout, except where the change was the
    point.
-4. **TCO** -- remaining; see above.
+4. **Tail opcode parity** -- fifteen TAIL twins added (ABI 0.13), each
+   a pure-addition C handler over the existing `KOS_CALL_TAIL` /
+   tail-flag machinery; the promotion and demotion maps and the fast
+   lowering became name-derived; the CALL_FAST_ATTR_STAR receiver leak
+   found and fixed along the way. ASAN and valgrind clean.
+5. **Promotion live, threading deleted** -- `promote_tail_calls` runs
+   under the pragma-and-mode gate (FUNCTION streams only); the `tc=`
+   threading deleted from every special signature, the compiler chain,
+   the syntax dispatch, and the `special-rules` / `special-match`
+   column; `position` made keyword-only on `compile` / `full_compile`
+   as the tripwire for stale callers. Tests asserting the old election
+   settled onto the twins; expression-scope emission returned to the
+   pre-pass shape under the mode gate.
+6. **Documented** -- the twins recorded in the opcode rollup and the
+   user VM reference; the delivered TODO entries stricken.

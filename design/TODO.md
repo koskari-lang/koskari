@@ -97,6 +97,17 @@ per-turn expansion budget, and what the diagnostic should name (the
 cycling syntax, the forms in the loop). Applies to both loops at once if
 the guard lives in `full_compile`.
 
+### Extent tracker verification and dead-region sweep
+
+The promotion pass's extent stack is trusted, not verified: add the
+safetynet-style check so a miscompiled extent fails loudly at compile
+time, settle CLEAR_* semantics against the stack (restart vs close),
+and unify the walk's extent computation with finalize's extent
+metadata so nesting is computed once. Dead-region sweep and label GC
+(with the refcount service) stay optional, last if at all.
+
+Ref: [archive/bytecode-processor.md](archive/bytecode-processor.md).
+
 ### Dict literal compression (review)
 
 A theoretical `compile/#dict` form could compress `(#dict ...)` calls
