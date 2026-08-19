@@ -584,7 +584,8 @@ KosOpResult KosEvalState_Call(
    Legacy classes (KosCallables other than exact KosFunction, and
    instance-call injection) preserve today's steal-first ordering by
    spilling the window into an owned vector before delegating to
-   KosEvalState_Call.  Tail calls do not come through here yet. */
+   KosEvalState_Call.  Tail calls ride the same entry under
+   KOS_CALL_TAIL (see the flag notes below). */
 
 #define KOS_CALL_PLAIN            0x0u
 #define KOS_CALL_ARGV_WINDOW      0x1u

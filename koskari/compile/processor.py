@@ -144,7 +144,8 @@ def build_var_to_fast():
     for opcode in OpCode:
         opname = opcode.name
         if not (opname.startswith('FAST')
-                or opname.startswith('CALL_FAST')):
+                or opname.startswith('CALL_FAST')
+                or opname.startswith('TAIL_CALL_FAST')):
             continue
         varname = opname.replace('FAST', 'VAR', 1)
         if hasattr(OpCode, varname):
@@ -161,17 +162,19 @@ def build_var_to_fast():
 VAR_TO_FAST = build_var_to_fast()
 
 
+# Name-derived relabel pairs: every TAIL_CALL* opcode twins the CALL*
+# opcode named by stripping the TAIL_ prefix, carrying the same operand
+# schema and stack contract.
 TAIL_CALL_TO_CALL = {
-    OpCode.TAIL_CALL: OpCode.CALL,
-    OpCode.TAIL_CALL_NAMES: OpCode.CALL_NAMES,
-    OpCode.TAIL_CALL_STAR: OpCode.CALL_STAR,
+    opcode: OpCode[opcode.name[len('TAIL_'):]]
+    for opcode in OpCode
+    if opcode.name.startswith('TAIL_CALL')
 }
 
 
 CALL_TO_TAIL_CALL = {
-    OpCode.CALL: OpCode.TAIL_CALL,
-    OpCode.CALL_NAMES: OpCode.TAIL_CALL_NAMES,
-    OpCode.CALL_STAR: OpCode.TAIL_CALL_STAR,
+    call: tail
+    for tail, call in TAIL_CALL_TO_CALL.items()
 }
 
 

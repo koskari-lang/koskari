@@ -27,43 +27,55 @@ import pytest
 pytestmark = pytest.mark.phase_specials
 
 
+TAIL_CALL_OPCODES = tuple(
+    op for op in OpCode if op.name.startswith('TAIL_CALL'))
+
+
 class TestCallSpecialTailPosition(SpecialsTestCase):
     """
-    call in tail position emits TAIL_CALL; otherwise CALL
+    a call in tail position is relabeled onto its TAIL twin by the
+    promotion pass; otherwise the plain call form survives
     """
 
     async def test_lambda_body_tail_call_one_arg(self):
         code = self.compile_to_code("(lambda [x] (f x))", tc=True)
-        ops = self.call_ops(self.lambda_body_code(code))
+        body = self.lambda_body_code(code)
+        ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
-        self.assertEqual(ops[0][2], 1)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
+                                  OpCode.TAIL_CALL_FAST))
+        self.assertEqual(body.extra_tuple(ops[0][2])[1], 1)
 
 
     async def test_lambda_body_tail_call_zero_args(self):
         code = self.compile_to_code("(lambda [] (f))", tc=True)
-        ops = self.call_ops(self.lambda_body_code(code))
+        body = self.lambda_body_code(code)
+        ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
-        self.assertEqual(ops[0][2], 0)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
+                                  OpCode.TAIL_CALL_FAST))
+        self.assertEqual(body.extra_tuple(ops[0][2])[1], 0)
 
 
     async def test_lambda_begin_first_call_then_tail_call(self):
         code = self.compile_to_code("(lambda [x] (begin (f 1) (g x)))", tc=True)
-        ops = self.call_ops(self.lambda_body_code(code))
+        body = self.lambda_body_code(code)
+        ops = self.call_ops(body)
         self.assertEqual(len(ops), 2)
         self.assertIn(ops[0][1], (OpCode.CALL, OpCode.CALL_VAR,
                                   OpCode.CALL_FAST))
-        self.assertEqual(ops[1][1], OpCode.TAIL_CALL)
-        self.assertEqual(ops[1][2], 1)
+        self.assertIn(ops[1][1], (OpCode.TAIL_CALL_VAR,
+                                  OpCode.TAIL_CALL_FAST))
+        self.assertEqual(body.extra_tuple(ops[1][2])[1], 1)
 
 
     async def test_begin_single_form_tail_call(self):
         code = self.compile_to_code("(begin (f 1))", tc=True)
         ops = self.call_ops(code)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
-        self.assertEqual(ops[0][2], 1)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
+                                  OpCode.TAIL_CALL_FAST))
+        self.assertEqual(code.extra_tuple(ops[0][2])[1], 1)
 
 
     async def test_begin_f_x_x_call_not_tail(self):
@@ -79,13 +91,14 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
 
     async def test_begin_x_f_x_tail_call(self):
         """
-        (begin x (f x)) -> f is in tail position -> TAIL_CALL
+        (begin x (f x)) -> f is in tail position -> the tail twin
         """
         code = self.compile_to_code("(begin x (f x))", tc=True)
         ops = self.call_ops(code)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
-        self.assertEqual(ops[0][2], 1)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
+                                  OpCode.TAIL_CALL_FAST))
+        self.assertEqual(code.extra_tuple(ops[0][2])[1], 1)
 
 
 class TestCallBytecodeShape(SpecialsTestCase):
@@ -98,8 +111,9 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
-        self.assertEqual(ops[0][2], 0)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
+                                  OpCode.TAIL_CALL_FAST))
+        self.assertEqual(body.extra_tuple(ops[0][2])[1], 0)
 
 
     async def test_positional_three_args_emits_call_three(self):
@@ -107,8 +121,9 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
-        self.assertEqual(ops[0][2], 3)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
+                                  OpCode.TAIL_CALL_FAST))
+        self.assertEqual(body.extra_tuple(ops[0][2])[1], 3)
 
 
     async def test_positional_no_call_names_or_call_star(self):
@@ -116,7 +131,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
+                                  OpCode.TAIL_CALL_FAST))
         self.assertNotIn(OpCode.CALL_NAMES, [o[1] for o in ops])
         self.assertNotIn(OpCode.CALL_STAR, [o[1] for o in ops])
 
@@ -126,26 +142,21 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_NAMES)
-        self.assertEqual(ops[0][2], 1)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR_NAMES,
+                                  OpCode.TAIL_CALL_FAST_NAMES))
+        self.assertEqual(body.extra_tuple(ops[0][2])[2], 1)
 
 
-    async def test_keyword_names_tuple_before_call_names(self):
+    async def test_keyword_names_tuple_in_call_row(self):
+        # the fused tail twin carries the kw names tuple in its row
         code = self.compile_to_code("(lambda [] (f 1 name: 2))", tc=True)
         body = self.lambda_body_code(code)
-        call_idx = None
-        const_idx = None
-        for i in range(body.length()):
-            op, arg = body.oparg(i)
-            if op == OpCode.TAIL_CALL_NAMES:
-                call_idx = i
-            elif op == OpCode.CONST:
-                val = body.constant(arg)
-                if isinstance(val, tuple) and "name" in val:
-                    const_idx = i
-        self.assertIsNotNone(call_idx)
-        self.assertIsNotNone(const_idx)
-        self.assertLess(const_idx, call_idx)
+        ops = self.call_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR_NAMES,
+                                  OpCode.TAIL_CALL_FAST_NAMES))
+        names = body.constant(body.extra_tuple(ops[0][2])[1])
+        self.assertEqual(names, ("name",))
 
 
     async def test_star_arg_emits_call_star(self):
@@ -153,8 +164,9 @@ class TestCallBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_STAR)
-        self.assertEqual(ops[0][2], 1)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR_STAR,
+                                  OpCode.TAIL_CALL_FAST_STAR))
+        self.assertEqual(body.extra_tuple(ops[0][2])[1], 1)
 
 
     async def test_star_arg_with_positional_emits_build_args_and_combine(self):
@@ -163,22 +175,25 @@ class TestCallBytecodeShape(SpecialsTestCase):
         arg_ops = self.arg_building_ops(body)
         call_ops = self.call_ops(body)
         self.assertEqual(len(call_ops), 1)
-        self.assertEqual(call_ops[0][1], OpCode.TAIL_CALL_STAR)
+        self.assertIn(call_ops[0][1], (OpCode.TAIL_CALL_VAR_STAR,
+                                       OpCode.TAIL_CALL_FAST_STAR))
         self.assertIn(OpCode.BUILD_ARGS, [o[1] for o in arg_ops])
         self.assertIn(OpCode.COMBINE_ARGS, [o[1] for o in arg_ops])
 
 
     async def test_full_varargs_emits_call_star_with_positional_and_keywords(self):
         """
-        (fn a b *: more x: xval y: yval **: kwargs) uses CALL_STAR opa=3
+        (fn a b *: more x: xval y: yval **: kwargs) uses the star tail
+        twin with opa=3
         """
         code = self.compile_to_code(
             "(lambda [] (f a b *: more x: xval y: yval **: kwargs))", tc=True)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_STAR)
-        self.assertEqual(ops[0][2], 3)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR_STAR,
+                                  OpCode.TAIL_CALL_FAST_STAR))
+        self.assertEqual(body.extra_tuple(ops[0][2])[1], 3)
 
 
     async def test_interleaved_positional_and_star_emits_call_star(self):
@@ -191,7 +206,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         arg_ops = self.arg_building_ops(body)
         call_ops = self.call_ops(body)
         self.assertEqual(len(call_ops), 1)
-        self.assertEqual(call_ops[0][1], OpCode.TAIL_CALL_STAR)
+        self.assertIn(call_ops[0][1], (OpCode.TAIL_CALL_VAR_STAR,
+                                       OpCode.TAIL_CALL_FAST_STAR))
         self.assertIn(OpCode.BUILD_ARGS, [o[1] for o in arg_ops])
         self.assertIn(OpCode.COMBINE_ARGS, [o[1] for o in arg_ops])
         combine_ops = [o for o in arg_ops if o[1] == OpCode.COMBINE_ARGS]
@@ -209,7 +225,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         arg_ops = self.arg_building_ops(body)
         call_ops = self.call_ops(body)
         self.assertEqual(len(call_ops), 1)
-        self.assertEqual(call_ops[0][1], OpCode.TAIL_CALL_STAR)
+        self.assertIn(call_ops[0][1], (OpCode.TAIL_CALL_VAR_STAR,
+                                       OpCode.TAIL_CALL_FAST_STAR))
         self.assertIn(OpCode.BUILD_KWDS_NAMES, [o[1] for o in arg_ops])
         self.assertIn(OpCode.COMBINE_KWDS, [o[1] for o in arg_ops])
         combine_ops = [o for o in arg_ops if o[1] == OpCode.COMBINE_KWDS]
@@ -219,13 +236,14 @@ class TestCallBytecodeShape(SpecialsTestCase):
 
     async def test_pure_positional_uses_call_not_call_star(self):
         """
-        (f 1 2 3) uses CALL, not CALL_NAMES or CALL_STAR
+        (f 1 2 3) uses the plain-call tail twin, not a names or star form
         """
         code = self.compile_to_code("(lambda [] (f 1 2 3))", tc=True)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
+                                  OpCode.TAIL_CALL_FAST))
         all_ops = [body.oparg(i)[0] for i in range(body.length())]
         self.assertNotIn(OpCode.CALL_NAMES, all_ops)
         self.assertNotIn(OpCode.CALL_STAR, all_ops)
@@ -233,13 +251,14 @@ class TestCallBytecodeShape(SpecialsTestCase):
 
     async def test_positional_and_keyword_uses_call_names_not_call_star(self):
         """
-        (f 1 name: 2) uses CALL_NAMES, not CALL_STAR
+        (f 1 name: 2) uses the names tail twin, not a star form
         """
         code = self.compile_to_code("(lambda [] (f 1 name: 2))", tc=True)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_NAMES)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR_NAMES,
+                                  OpCode.TAIL_CALL_FAST_NAMES))
         all_ops = [body.oparg(i)[0] for i in range(body.length())]
         self.assertNotIn(OpCode.CALL_STAR, all_ops)
 
@@ -305,13 +324,15 @@ class TestCallVarPath(SpecialsTestCase):
 
     async def test_tail_position_still_emits_tail_call(self):
         """
-        Symbol in tail position with tc=True -> TAIL_CALL, not CALL_VAR
+        Symbol in tail position -> the fused tail twin, not a plain
+        CALL_VAR or CALL_FAST
         """
         code = self.compile_to_code("(lambda [] (f 1))", tc=True)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.TAIL_CALL)
+        self.assertIn(ops[0][1], (OpCode.TAIL_CALL_VAR,
+                                  OpCode.TAIL_CALL_FAST))
 
 
     async def test_complex_callable_emits_call_attr_not_call_var(self):
@@ -328,7 +349,10 @@ class TestCallVarPath(SpecialsTestCase):
             ops[0][1],
             (OpCode.CALL_ATTR,
              OpCode.CALL_VAR_ATTR,
-             OpCode.CALL_FAST_ATTR),
+             OpCode.CALL_FAST_ATTR,
+             OpCode.TAIL_CALL_ATTR,
+             OpCode.TAIL_CALL_VAR_ATTR,
+             OpCode.TAIL_CALL_FAST_ATTR),
             "complex attr callable should use a fused attr-call opcode")
 
 
@@ -344,7 +368,7 @@ class TestCallEvaluationOrder(SpecialsTestCase):
         const_count = 0
         for i in range(body.length()):
             op, arg = body.oparg(i)
-            if op in (OpCode.CALL, OpCode.TAIL_CALL):
+            if op in self.CALL_OPCODES:
                 call_idx = i
             elif op == OpCode.CONST:
                 const_count += 1
@@ -476,8 +500,9 @@ class TestGeneratorTailCallDemotion(SpecialsTestCase):
 
     async def test_yield_and_tail_position_emits_call_not_tail_call(self):
         """
-        Else branch is a call in tail position (would be TAIL_CALL without
-        demotion). With yield in the same body, final code uses CALL.
+        Else branch is a call in tail position (would promote to a tail
+        twin in a non-yielding body). With yield in the same body, final
+        code keeps the plain call form.
         """
 
         code = self.compile_to_code(
@@ -493,8 +518,11 @@ class TestGeneratorTailCallDemotion(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = [body.oparg(i)[0] for i in range(body.length())]
         self.assertIn(OpCode.YIELD, ops)
-        self.assertNotIn(OpCode.TAIL_CALL, ops)
-        self.assertIn(OpCode.CALL, ops)
+        for op in ops:
+            self.assertNotIn(op, TAIL_CALL_OPCODES)
+        self.assertTrue(any(op in (OpCode.CALL, OpCode.CALL_VAR,
+                                   OpCode.CALL_FAST)
+                            for op in ops))
 
 
 # The end.

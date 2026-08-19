@@ -43,6 +43,15 @@ CALL_ATTR_OR_FAST_OPCODES = CALL_ATTR_OPCODES + (
     OpCode.CALL_FAST_ATTR,
     OpCode.CALL_FAST_ATTR_NAMES,
     OpCode.CALL_FAST_ATTR_STAR,
+    OpCode.TAIL_CALL_ATTR,
+    OpCode.TAIL_CALL_ATTR_NAMES,
+    OpCode.TAIL_CALL_ATTR_STAR,
+    OpCode.TAIL_CALL_VAR_ATTR,
+    OpCode.TAIL_CALL_VAR_ATTR_NAMES,
+    OpCode.TAIL_CALL_VAR_ATTR_STAR,
+    OpCode.TAIL_CALL_FAST_ATTR,
+    OpCode.TAIL_CALL_FAST_ATTR_NAMES,
+    OpCode.TAIL_CALL_FAST_ATTR_STAR,
 )
 
 
@@ -79,7 +88,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "upper")
@@ -93,7 +102,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "split")
@@ -107,7 +116,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "replace")
@@ -121,7 +130,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR_NAMES)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_FAST_ATTR_NAMES)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "m")
@@ -136,7 +145,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR_STAR)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_FAST_ATTR_STAR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(a2, 1)
@@ -149,7 +158,7 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR_STAR)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_FAST_ATTR_STAR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(a2, 2)
@@ -160,9 +169,9 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
             "(lambda [] (call-attr s upper))", s="x")
         body = self.lambda_body_code(code)
         all_ops = [body.oparg(i)[0] for i in range(body.length())]
-        self.assertIn(OpCode.CALL_FAST_ATTR, all_ops)
-        self.assertNotIn(OpCode.CALL_FAST_ATTR_NAMES, all_ops)
-        self.assertNotIn(OpCode.CALL_FAST_ATTR_STAR, all_ops)
+        self.assertIn(OpCode.TAIL_CALL_FAST_ATTR, all_ops)
+        self.assertNotIn(OpCode.TAIL_CALL_FAST_ATTR_NAMES, all_ops)
+        self.assertNotIn(OpCode.TAIL_CALL_FAST_ATTR_STAR, all_ops)
 
 
 class TestCallAttrNameMustBeSymbol(SpecialsTestCase):
@@ -241,7 +250,9 @@ class TestCallAttrEndToEnd(SpecialsTestCase):
 class TestCallAttrExpansion(SpecialsTestCase):
     """
     (call (attr obj name) args) and (call (attr obj name) args)
-    expand to (call-attr obj name args) and emit CALL_ATTR
+    expand to (call-attr obj name args) and emit the fused attr-call
+    family (the tail twin here, since the call is the lambda body's
+    tail expression)
     """
 
     async def test_compile_call_compile_attr_emits_call_attr(self):
@@ -250,7 +261,7 @@ class TestCallAttrExpansion(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "upper")
@@ -264,7 +275,7 @@ class TestCallAttrExpansion(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.CALL_FAST_ATTR)
+        self.assertEqual(ops[0][1], OpCode.TAIL_CALL_FAST_ATTR)
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a1), "m")
@@ -292,10 +303,10 @@ class TestCallAttrLocalReceiverLowersToFast(SpecialsTestCase):
     Lambda formals are fast locals; attribute calls on a formal symbol should
     appear as CALL_FAST_ATTR* after compile (VAR path + convert_fast).
 
-    The call form must not be the lambda body's tail expression: the body is
-    compiled with tail-call tracking, which forces the stack path for
-    call-attr. Wrap in begin with a trailing value so the attr call is
-    compiled with tc=False and the VAR path (then convert_fast) applies.
+    The call form must not be the lambda body's tail expression: a
+    tail-position attr call is relabeled onto its TAIL_CALL_*ATTR* twin
+    by the promotion pass. Wrap in begin with a trailing value so the
+    plain CALL_FAST_ATTR* form survives to finalize.
     """
 
     async def test_local_receiver_positional_emits_call_fast_attr(self):

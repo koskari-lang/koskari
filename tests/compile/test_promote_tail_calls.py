@@ -183,16 +183,18 @@ class TestPromotionForms(unittest.TestCase):
         out = promote([(OpCode.CALL_STAR, 1), (RET, 1)])
         self.assertEqual(out[0], (OpCode.TAIL_CALL_STAR, 1))
 
-    def test_call_var_stays(self):
-        # CALL_VAR carries its callee in the row; TAIL_CALL needs the
-        # callable below the arguments, so no local rewrite promotes it
+    def test_call_var_promotes(self):
+        # the tail twin takes the same operand row, so promotion is a
+        # pure relabel
         out = promote([(OpCode.CALL_VAR, ("f", 2, 0, 0)), (RET, 1)])
-        self.assertEqual(out, [(OpCode.CALL_VAR, ("f", 2, 0, 0)), (RET, 1)])
+        self.assertEqual(
+            out, [(OpCode.TAIL_CALL_VAR, ("f", 2, 0, 0)), (RET, 1)])
 
-    def test_attr_call_stays(self):
+    def test_attr_call_promotes(self):
         out = promote([
             (OpCode.CALL_FAST_ATTR, (0, "m", 1, 0)), (RET, 1)])
-        self.assertEqual(out[0], (OpCode.CALL_FAST_ATTR, (0, "m", 1, 0)))
+        self.assertEqual(
+            out[0], (OpCode.TAIL_CALL_FAST_ATTR, (0, "m", 1, 0)))
 
     def test_yielding_stream_untouched(self):
         instr = [(CALL, 1), (RET, 1), (C, 1), (OpCode.YIELD, 1)]
