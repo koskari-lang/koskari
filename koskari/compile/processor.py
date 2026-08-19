@@ -194,28 +194,32 @@ TAIL_CALL_TO_CALL = {
 DONE = object()
 
 
-def rules_registry():
-    """
-    Build a pass's rule registry: the dict of trigger opcode to rule
-    method, paired with the decorator that registers methods into it
-    """
-
-    table = {}
-
-    def register(*ops):
-        def deco(fn):
-            for op in ops:
-                table[op] = fn
-            return fn
-        return deco
-
-    return table, register
-
-
 # The per-pass rule registries: trigger opcode -> rule method. Sight
 # reading a pass means reading its registered rules in source order.
-SQUISH_RULES, squish_rule = rules_registry()
-FUSE_RULES, fuse_rule = rules_registry()
+SQUISH_RULES = {}
+FUSE_RULES = {}
+
+
+def squish_rule(op):
+    """
+    Register a processor method as the squish rule for the trigger op
+    """
+
+    def register(fn):
+        SQUISH_RULES[op] = fn
+        return fn
+    return register
+
+
+def fuse_rule(op):
+    """
+    Register a processor method as the fusion rule for the trigger op
+    """
+
+    def register(fn):
+        FUSE_RULES[op] = fn
+        return fn
+    return register
 
 
 class ByteCodeProcessor:
@@ -464,8 +468,10 @@ class ByteCodeProcessor:
         return None
 
 
-    @squish_rule(OpCode.RETURN, OpCode.BREAK,
-                 OpCode.CONTINUE, OpCode.YIELD)
+    @squish_rule(OpCode.RETURN)
+    @squish_rule(OpCode.BREAK)
+    @squish_rule(OpCode.CONTINUE)
+    @squish_rule(OpCode.YIELD)
     def control_none_normalize(self, op, arg):
         """
         A control op carrying a just-pushed CONST None normalizes to
@@ -481,7 +487,8 @@ class ByteCodeProcessor:
         return (op, 0)
 
 
-    @squish_rule(OpCode.CAR, OpCode.CDR)
+    @squish_rule(OpCode.CAR)
+    @squish_rule(OpCode.CDR)
     def car_cdr_merge(self, op, arg):
         """
         Consecutive CAR or consecutive CDR rows merge their counts
