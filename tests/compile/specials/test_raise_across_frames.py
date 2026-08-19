@@ -111,10 +111,13 @@ class TestRaiseAcrossFrames(SpecialsTestCase):
             raise ValueError("boom")
 
         src_str = """
-        (call
-          (lambda []
-            (let [[x 1]]
-              (boom x))))
+        (begin
+          (call
+            (lambda []
+              (let [[x 1]]
+                (boom x))))
+          5  ; preventing tail-call promotion
+        )
         """
         expr, mod = self.compile_expr(src_str, boom=boom)
         try:
