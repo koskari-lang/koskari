@@ -29,79 +29,63 @@ from ..lib import (Compare, NAMESPACE_FAST_SLOT_MAX, NamespaceSpec,
 
 
 OPERAND_COUNT = len(Operand)
-
-
-def merge_opcount(value):
-    """
-    Normalize an OPCOUNT-style operand to its merged uint16 (operator selector
-    in the high byte, reduce count in the low byte).
-
-    Accepts either idiom, so specials may emit either:
-      - a ``(op_type, count)`` pair, which is merged, or
-      - a pre-merged int, which is validated to have been correctly packed.
-
-    Both are range- and op-type-checked, so no soften-side reversal is needed.
-
-    :param value: (op_type, count) pair, or a pre-merged int
-    :return: merged uint16 int
-    :raises ValueError: on a bad shape, out-of-range byte, or unknown op-type
-    """
-
-    if isinstance(value, tuple):
-        if len(value) != 2:
-            raise ValueError(f"opcount operand must be (op_type, count), "
-                             f"got {value!r}")
-        op_type, count = value
-        op_type = int(getattr(op_type, 'value', op_type))
-        count = int(count)
-    else:
-        merged = int(value)
-        if not 0 <= merged <= 0xffff:
-            raise ValueError(f"opcount int out of uint16 range: {value!r}")
-        op_type, count = merged >> 8, merged & 0xff
-
-    if not 0 <= op_type < OPERAND_COUNT:
-        raise ValueError(f"opcount op-type is not a known Operand: {op_type!r}")
-    if not 0 <= count <= 0xff:
-        raise ValueError(f"opcount count out of byte range: {count!r}")
-
-    return (op_type << 8) | count
-
-
 COMPARE_COUNT = len(Compare)
 
 
-def merge_cmpcount(value):
+def merge_packed(value, label, selector_count):
     """
-    Normalize a CMPCOUNT-style operand to its merged uint16 (Compare
-    selector in the high byte, reduce count in the low byte). The
-    CMPCOUNT twin of merge_opcount: accepts a (selector, count) pair or
-    a pre-merged int, both range- and selector-checked.
+    Normalize a packed-uint16 operand -- a (selector, count) pair or a
+    pre-merged int -- validating the selector against selector_count
+    and the count as a byte
 
     :param value: (selector, count) pair, or a pre-merged int
+    :param label: operand kind name for error messages
+    :param selector_count: exclusive upper bound for the selector
     :return: merged uint16 int
-    :raises ValueError: on a bad shape, out-of-range byte, or unknown selector
+    :raises ValueError: on a bad shape, out-of-range byte, or unknown
+        selector
     """
 
     if isinstance(value, tuple):
         if len(value) != 2:
-            raise ValueError(f"cmpcount operand must be (selector, count), "
-                             f"got {value!r}")
+            raise ValueError(f"{label} operand must be a "
+                             f"(selector, count) pair, got {value!r}")
         sel, count = value
         sel = int(getattr(sel, 'value', sel))
         count = int(count)
     else:
         merged = int(value)
         if not 0 <= merged <= 0xffff:
-            raise ValueError(f"cmpcount int out of uint16 range: {value!r}")
+            raise ValueError(f"{label} int out of uint16 range: {value!r}")
         sel, count = merged >> 8, merged & 0xff
 
-    if not 0 <= sel < COMPARE_COUNT:
-        raise ValueError(f"cmpcount selector is not a known Compare: {sel!r}")
+    if not 0 <= sel < selector_count:
+        raise ValueError(f"{label} selector out of range: {sel!r}")
     if not 0 <= count <= 0xff:
-        raise ValueError(f"cmpcount count out of byte range: {count!r}")
+        raise ValueError(f"{label} count out of byte range: {count!r}")
 
     return (sel << 8) | count
+
+
+def merge_opcount(value):
+    """
+    Normalize an OPCOUNT-style operand to its merged uint16 (operator
+    selector in the high byte, reduce count in the low byte). Accepts
+    either idiom, so specials may emit either a (op_type, count) pair
+    or a pre-merged int, both range- and op-type-checked
+    """
+
+    return merge_packed(value, 'opcount', OPERAND_COUNT)
+
+
+def merge_cmpcount(value):
+    """
+    Normalize a CMPCOUNT-style operand to its merged uint16 (Compare
+    selector in the high byte, reduce count in the low byte); the
+    CMPCOUNT twin of merge_opcount
+    """
+
+    return merge_packed(value, 'cmpcount', COMPARE_COUNT)
 
 
 def split_cmpcount(value):
@@ -144,18 +128,10 @@ SWITCH_SQUASHES = {
 }
 
 
-# The squish rules' prior-row match sets, precomputed as frozensets for
-# the seekback. The JUMP_FALSE set unions its three disjoint prior
-# kinds; the rule dispatches on which one matched.
+# pattern atoms for rule declarations: sets match any member, a bare
+# opcode matches itself
 JUMP_PRIORS = frozenset((OpCode.JUMP_TRUE, OpCode.JUMP_FALSE))
-JUMP_FALSE_PRIORS = frozenset(
-    (OpCode.CONST, OpCode.OBJECT_COMPARE)) | frozenset(CHECK_SQUASHES)
-SWITCH_PRIORS = frozenset(SWITCH_SQUASHES)
 POP_PRIORS = frozenset((OpCode.CONST, OpCode.DUP))
-CONST_PRIOR = frozenset((OpCode.CONST,))
-JUMP_PRIOR = frozenset((OpCode.JUMP,))
-
-# pattern atom for fusion rule declarations: a bare value load
 FEEDER = frozenset((OpCode.VAR, OpCode.CONST))
 
 
@@ -192,24 +168,30 @@ TAIL_CALL_TO_CALL = {
 }
 
 
-# A rule returns DONE when it fully handled its trigger row (spliced a
-# replacement, or edited prior rows and dropped the trigger).
-DONE = object()
-
-
-# The per-pass rule registries: trigger opcode -> rule method. Sight
-# reading a pass means reading its registered rules in source order.
+# The per-pass rule registries: trigger opcode -> candidate list of
+# (priors, rule method). Sight reading a pass means reading its
+# registered rules in source order.
 SQUISH_RULES = {}
 FUSE_RULES = {}
 
 
-def squish_rule(op):
+def squish_rule(*pattern):
     """
-    Register a processor method as the squish rule for the trigger op
+    Register a processor method as a squish rule for the form given in
+    stream order: the lookback slot specs (an opcode, or a set of
+    opcodes) followed by the trigger opcode. Candidates for a trigger
+    are tried in registration order; the first whose form matches and
+    whose rule accepts is applied. A trigger-only pattern registers a
+    fallback rule that inspects the working rows itself.
     """
 
+    *priors, trigger = pattern
+    priors = tuple(
+        spec if isinstance(spec, frozenset) else frozenset((spec,))
+        for spec in priors)
+
     def register(fn):
-        SQUISH_RULES[op] = fn
+        SQUISH_RULES.setdefault(trigger, []).append((priors, fn))
         return fn
     return register
 
@@ -221,7 +203,7 @@ def fuse_rule(*pattern):
     opcodes) followed by the trigger opcode. Candidates for a trigger
     are tried in registration order; the first whose form matches and
     whose rule accepts is applied. A trigger-only pattern registers a
-    fallback rule that performs its own lookback.
+    fallback rule that inspects the working rows itself.
     """
 
     *priors, trigger = pattern
@@ -261,41 +243,8 @@ class ByteCodeProcessor:
         self.mode = mode
 
         # the output accumulator of the pass currently walking the
-        # stream; the seekback and splice services address it
+        # stream; the matcher and splice services address it
         self.rows = None
-
-
-    def seek_back(self, want, accept, start=None):
-        """
-        Scan the working rows backward, collecting up to want indices
-        whose op is in accept. Rows whose op is OpCode.POSITION are
-        stepped over and their indices gathered separately; any other
-        op ends the scan.
-
-        :param want: how many accepted rows to find
-        :param accept: ops that match
-        :param start: scan begins just below this index; default is
-            the end of the working rows
-        :return: (found, skipped) where found lists the matching row
-            indices nearest-first, or None if fewer than want matched,
-            and skipped lists the stepped-over rows' indices
-        """
-
-        posop = OpCode.POSITION
-        rows = self.rows
-        found = []
-        skipped = []
-        i = (len(rows) if start is None else start) - 1
-        while i >= 0 and len(found) < want:
-            rop = rows[i][0]
-            if rop == posop:
-                skipped.append(i)
-            elif rop in accept:
-                found.append(i)
-            else:
-                break
-            i -= 1
-        return (found if len(found) == want else None), skipped
 
 
     def splice(self, start, skipped, replacement):
@@ -311,37 +260,6 @@ class ByteCodeProcessor:
         rows.extend(replacement)
         if trailing is not None:
             rows.append(trailing)
-
-
-    def apply_rules(self, rules, rows):
-        """
-        Walk the incoming instructions, dispatching each row through
-        the pass's rule table into the working list.
-
-        A rule returns DONE when it fully handled its trigger, a new
-        (op, arg) pair to retry dispatch on a rewritten trigger -- the
-        lowering ladder -- or None to decline; an undispatched or
-        declined row is appended unchanged. Retry termination is the
-        rule author's obligation: every rewrite must consume rows or
-        produce an op that resolves without further rewriting.
-        """
-
-        self.rows = rows
-        for op, arg in self.instructions:
-            while True:
-                rule = rules.get(op)
-                if rule is None:
-                    rows.append((op, arg))
-                    break
-                outcome = rule(self, op, arg)
-                if outcome is None:
-                    rows.append((op, arg))
-                    break
-                if outcome is DONE:
-                    break
-                op, arg = outcome
-        self.rows = None
-        return rows
 
 
     def match_priors(self, priors):
@@ -369,229 +287,209 @@ class ByteCodeProcessor:
         return found, skipped
 
 
-    def apply_fusions(self, rows):
+    def apply_rules(self, rules, rows):
         """
-        Walk the incoming instructions dispatching each row against the
-        fusion registry: the candidates for the row's opcode are tried
+        Walk the incoming instructions dispatching each row against a
+        pass's registry: the candidates for the row's opcode are tried
         in registration order, and the first whose declared form
-        matches and whose rule accepts is applied. A rule returns DONE
-        when it handled the trigger, a new (op, arg) pair to retry
-        dispatch on a rewritten trigger -- the lowering ladder -- or
-        None to pass the form along; with no acceptance the row is
-        appended unchanged.
+        matches and whose rule accepts is applied.
+
+        A rule receives the matched prior rows in pattern order and
+        returns None to pass the form along, a list of rows to splice
+        over the matched form, or a rewritten (op, arg) trigger -- the
+        matched rows are absorbed and dispatch retries, descending the
+        lowering ladder. With no acceptance the row is appended
+        unchanged. Retry termination is the rule author's obligation:
+        every rewrite must consume rows or produce an op that resolves
+        without further rewriting.
         """
 
         self.rows = rows
         for op, arg in self.instructions:
             while True:
-                outcome = None
-                for priors, fn in FUSE_RULES.get(op, ()):
+                outcome = found = skipped = None
+                for priors, fn in rules.get(op, ()):
                     found, skipped = self.match_priors(priors)
                     if found is None:
                         continue
-                    outcome = fn(self, op, arg, found, skipped)
+                    outcome = fn(self, op, arg,
+                                 [rows[i] for i in found])
                     if outcome is not None:
                         break
                 if outcome is None:
                     rows.append((op, arg))
                     break
-                if outcome is DONE:
+                start = found[0] if found else len(rows)
+                if isinstance(outcome, list):
+                    self.splice(start, skipped, outcome)
                     break
+                self.splice(start, skipped, [])
                 op, arg = outcome
         self.rows = None
         return rows
 
 
-    @squish_rule(OpCode.POP)
-    def pop_pushed_value(self, op, arg):
+    @squish_rule(POP_PRIORS, OpCode.POP)
+    def pop_pushed_value(self, op, arg, matched):
         """
-        POP 1 of a value just pushed by CONST or DUP: both rows vanish
+        CONST|DUP POP1 -> nothing: both rows vanish
         """
 
         if arg != 1:
             return None
-        found, skip = self.seek_back(1, POP_PRIORS)
-        if not found:
-            return None
-        self.splice(found[0], skip, [])
-        return DONE
+        return []
 
 
-    @squish_rule(OpCode.OBJECT_NOT)
-    def not_const_fold(self, op, arg):
+    @squish_rule(OpCode.CONST, OpCode.OBJECT_NOT)
+    def not_const_fold(self, op, arg, matched):
         """
-        OBJECT_NOT of a constant folds into the negated constant
+        CONST OBJECT_NOT -> the negated constant
         """
 
-        found, skip = self.seek_back(1, CONST_PRIOR)
-        if not found:
-            return None
-        rows = self.rows
-        rows[found[0]] = (OpCode.CONST, not rows[found[0]][1])
-        return DONE
+        return [(OpCode.CONST, not matched[0][1])]
 
 
-    @squish_rule(OpCode.JUMP_TRUE)
-    def jump_true_const_fold(self, op, arg):
+    @squish_rule(OpCode.CONST, OpCode.JUMP_TRUE)
+    def jump_true_const_fold(self, op, arg, matched):
         """
-        JUMP_TRUE on a constant resolves to a plain JUMP or nothing
+        CONST JUMP_TRUE -> a plain JUMP or nothing
         """
 
-        found, skip = self.seek_back(1, CONST_PRIOR)
-        if not found:
-            return None
-        rep = [(OpCode.JUMP, arg)] if self.rows[found[0]][1] else []
-        self.splice(found[0], skip, rep)
-        return DONE
+        return [(OpCode.JUMP, arg)] if matched[0][1] else []
 
 
-    @squish_rule(OpCode.JUMP_FALSE)
-    def jump_false_prior_fold(self, op, arg):
+    @squish_rule(OpCode.CONST, OpCode.JUMP_FALSE)
+    def jump_false_const_fold(self, op, arg, matched):
         """
-        JUMP_FALSE resolves against its prior: a constant folds to a
-        plain JUMP or nothing, a check-squashable predicate combines
-        into its single check jump, and OBJECT_COMPARE fuses into
-        CHECK_COMPARE carrying selector, count, and target in one row
+        CONST JUMP_FALSE -> a plain JUMP or nothing
         """
 
-        found, skip = self.seek_back(1, JUMP_FALSE_PRIORS)
-        if not found:
-            return None
-        prior, prior_arg = self.rows[found[0]]
-
-        if prior == OpCode.CONST:
-            rep = [] if prior_arg else [(OpCode.JUMP, arg)]
-            self.splice(found[0], skip, rep)
-
-        elif prior in CHECK_SQUASHES:
-            self.splice(found[0], skip, [(CHECK_SQUASHES[prior], arg)])
-
-        else:
-            sel, cnt = split_cmpcount(prior_arg)
-            self.splice(found[0], skip, [(
-                OpCode.CHECK_COMPARE, (sel, cnt, arg, None))])
-
-        return DONE
+        return [] if matched[0][1] else [(OpCode.JUMP, arg)]
 
 
-    @squish_rule(OpCode.SWITCH_EQ)
-    def switch_eq_squash(self, op, arg):
+    @squish_rule(frozenset(CHECK_SQUASHES), OpCode.JUMP_FALSE)
+    def jump_false_check_squash(self, op, arg, matched):
+        """
+        A check-squashable predicate and its JUMP_FALSE combine into
+        the single check jump
+        """
+
+        return [(CHECK_SQUASHES[matched[0][0]], arg)]
+
+
+    @squish_rule(OpCode.OBJECT_COMPARE, OpCode.JUMP_FALSE)
+    def jump_false_compare_fuse(self, op, arg, matched):
+        """
+        OBJECT_COMPARE JUMP_FALSE -> CHECK_COMPARE branching on chain
+        failure, carrying selector, count, and target in one row
+        """
+
+        sel, cnt = split_cmpcount(matched[0][1])
+        return [(OpCode.CHECK_COMPARE, (sel, cnt, arg, None))]
+
+
+    @squish_rule(frozenset(SWITCH_SQUASHES), OpCode.SWITCH_EQ)
+    def switch_eq_squash(self, op, arg, matched):
         """
         SWITCH_EQ absorbs its CONST, VAR, or VAR_ATTR comparand into
         the corresponding single-op switch form
         """
 
-        found, skip = self.seek_back(1, SWITCH_PRIORS)
-        if not found:
-            return None
-        prior, pargs = self.rows[found[0]]
+        prior, pargs = matched[0]
         if isinstance(pargs, tuple):
             new_arg = (arg, *pargs[:3])
         else:
             new_arg = (arg, pargs, None, None)
-        self.splice(found[0], skip, [(SWITCH_SQUASHES[prior], new_arg)])
-        return DONE
+        return [(SWITCH_SQUASHES[prior], new_arg)]
 
 
-    @squish_rule(OpCode.LABEL)
-    def label_jump_elision(self, op, arg):
+    @squish_rule(OpCode.JUMP, OpCode.LABEL)
+    def label_jump_elision(self, op, arg, matched):
         """
-        A jump targeting the immediately following label is useless: a
-        plain JUMP vanishes; a conditional jump vanishes with its
-        constant test, or degrades to POP 1 when the test is dynamic.
-        The label itself always survives via the declining return.
+        JUMP L LABEL L -> the label alone: a jump to the next
+        instruction is useless
         """
 
-        rows = self.rows
-        found, skip = self.seek_back(1, JUMP_PRIOR)
-        if found and rows[found[0]][1] == arg:
-            self.splice(found[0], skip, [])
+        if matched[0][1] != arg:
             return None
-
-        found, skip = self.seek_back(1, JUMP_PRIORS)
-        if found and rows[found[0]][1] == arg:
-            below, skip2 = self.seek_back(1, CONST_PRIOR, start=found[0])
-            if below:
-                self.splice(below[0], skip + skip2, [])
-            else:
-                rows[found[0]] = (OpCode.POP, 1)
-        return None
+        return [(op, arg)]
 
 
-    @squish_rule(OpCode.RETURN)
-    @squish_rule(OpCode.BREAK)
-    @squish_rule(OpCode.CONTINUE)
-    @squish_rule(OpCode.YIELD)
-    def control_none_normalize(self, op, arg):
+    @squish_rule(OpCode.CONST, JUMP_PRIORS, OpCode.LABEL)
+    def label_const_jump_elision(self, op, arg, matched):
+        """
+        CONST JUMP_TRUE|FALSE L LABEL L -> the label alone: the
+        conditional jump to the next instruction vanishes with its
+        constant test
+        """
+
+        if matched[1][1] != arg:
+            return None
+        return [(op, arg)]
+
+
+    @squish_rule(JUMP_PRIORS, OpCode.LABEL)
+    def label_dynamic_jump_elision(self, op, arg, matched):
+        """
+        JUMP_TRUE|FALSE L LABEL L -> POP 1 and the label: the useless
+        conditional jump degrades to popping its dynamic test
+        """
+
+        if matched[0][1] != arg:
+            return None
+        return [(OpCode.POP, 1), (op, arg)]
+
+
+    @squish_rule(OpCode.CONST, OpCode.RETURN)
+    @squish_rule(OpCode.CONST, OpCode.BREAK)
+    @squish_rule(OpCode.CONST, OpCode.CONTINUE)
+    @squish_rule(OpCode.CONST, OpCode.YIELD)
+    def control_none_normalize(self, op, arg, matched):
         """
         A control op carrying a just-pushed CONST None normalizes to
         its bare zero-arg form: CONST None, RETURN 1 -> RETURN 0
         """
 
-        if arg != 1:
+        if arg != 1 or matched[0][1] is not None:
             return None
-        found, skip = self.seek_back(1, CONST_PRIOR)
-        if not found or self.rows[found[0]][1] is not None:
-            return None
-        self.splice(found[0], skip, [])
-        return (op, 0)
+        return [(op, 0)]
 
 
-    @squish_rule(OpCode.CAR)
-    @squish_rule(OpCode.CDR)
-    def car_cdr_merge(self, op, arg):
+    @squish_rule(OpCode.CAR, OpCode.CAR)
+    @squish_rule(OpCode.CDR, OpCode.CDR)
+    def car_cdr_merge(self, op, arg, matched):
         """
         Consecutive CAR or consecutive CDR rows merge their counts
         """
 
-        found, skip = self.seek_back(1, frozenset((op,)))
-        if not found:
-            return None
-        rows = self.rows
-        prev_op, prev_arg = rows[found[0]]
-        rows[found[0]] = (prev_op, prev_arg + arg)
-        return DONE
+        return [(op, matched[0][1] + arg)]
 
 
-    @squish_rule(OpCode.VAR_STORE)
-    def var_store_const_fuse(self, op, arg):
+    @squish_rule(OpCode.CONST, OpCode.VAR_STORE)
+    def var_store_const_fuse(self, op, arg, matched):
         """
-        VAR_STORE of a just-pushed constant fuses to the stack-free
-        VAR_STORE_CONST row
+        CONST VAR_STORE -> the stack-free VAR_STORE_CONST row
         """
 
-        found, skip = self.seek_back(1, CONST_PRIOR)
-        if not found:
-            return None
-        prior_arg = self.rows[found[0]][1]
-        self.splice(found[0], skip, [(
-            OpCode.VAR_STORE_CONST, (arg, prior_arg, None, None))])
-        return DONE
+        return [(OpCode.VAR_STORE_CONST, (arg, matched[0][1], None, None))]
 
 
-    @squish_rule(OpCode.VAR_INPLACE)
-    def var_inplace_const_fuse(self, op, arg):
+    @squish_rule(OpCode.CONST, OpCode.VAR_INPLACE)
+    def var_inplace_const_fuse(self, op, arg, matched):
         """
-        Single-operand VAR_INPLACE with a constant rhs fuses to the
-        stack-free VAR_INPLACE_CONST: bare operator selector, name,
-        pooled operand
+        CONST VAR_INPLACE (single operand) -> the stack-free
+        VAR_INPLACE_CONST: bare operator selector, name, pooled operand
         """
 
-        found, skip = self.seek_back(1, CONST_PRIOR)
-        if not found:
-            return None
         merged = merge_opcount(arg[0])
         if merged & 0xff != 1:
             return None
-        prior_arg = self.rows[found[0]][1]
-        self.splice(found[0], skip, [(
-            OpCode.VAR_INPLACE_CONST,
-            (merged >> 8, arg[1], prior_arg, None))])
-        return DONE
+        return [(OpCode.VAR_INPLACE_CONST,
+                 (merged >> 8, arg[1], matched[0][1], None))]
 
 
     @fuse_rule(FEEDER, FEEDER, OpCode.CHECK_COMPARE)
-    def fuse_check_compare(self, op, arg, found, skip):
+    def fuse_check_compare(self, op, arg, matched):
         """
         x y CHECK_COMPARE (arity 2, not both feeders constant -- that
         is a folding case) -> CHECK_COMPARE_VAR with a CMPSRC field
@@ -600,22 +498,20 @@ class ByteCodeProcessor:
 
         if arg[1] != 2:
             return None
-        x_op, x_arg = self.rows[found[0]]
-        y_op, y_arg = self.rows[found[1]]
+        x_op, x_arg = matched[0]
+        y_op, y_arg = matched[1]
         x_const = x_op == OpCode.CONST
         y_const = y_op == OpCode.CONST
         if x_const and y_const:
             return None
         sel, _cnt, label, _pad = arg
-        self.splice(found[0], skip, [(
-            OpCode.CHECK_COMPARE_VAR,
-            (make_cmpsrc(sel, x_const, y_const), x_arg, y_arg, label))])
-        return DONE
+        return [(OpCode.CHECK_COMPARE_VAR,
+                 (make_cmpsrc(sel, x_const, y_const), x_arg, y_arg, label))]
 
 
     @fuse_rule(OpCode.CONST, OpCode.VAR, OpCode.CONST,
                OpCode.CHECK_COMPARE)
-    def fuse_check_bounds(self, op, arg, found, skip):
+    def fuse_check_bounds(self, op, arg, matched):
         """
         lo x hi CHECK_COMPARE (arity 3 bounds shape) -> the
         bool-producing OBJECT_COMPARE_VAR plus JUMP_FALSE, since the
@@ -624,20 +520,17 @@ class ByteCodeProcessor:
 
         if arg[1] != 3:
             return None
-        rows = self.rows
         sel, _cnt, label, _pad = arg
-        self.splice(found[0], skip, [
+        return [
             (OpCode.OBJECT_COMPARE_VAR,
-             (sel, rows[found[0]][1], rows[found[1]][1],
-              rows[found[2]][1])),
+             (sel, matched[0][1], matched[1][1], matched[2][1])),
             (OpCode.JUMP_FALSE, label),
-        ])
-        return DONE
+        ]
 
 
     @fuse_rule(OpCode.CONST, OpCode.VAR, OpCode.CONST,
                OpCode.OBJECT_COMPARE)
-    def fuse_compare_bounds(self, op, arg, found, skip):
+    def fuse_compare_bounds(self, op, arg, matched):
         """
         lo x hi OBJECT_COMPARE (arity 3 bounds shape) in value position
         -> the bool-producing OBJECT_COMPARE_VAR
@@ -646,40 +539,32 @@ class ByteCodeProcessor:
         sel, cnt = split_cmpcount(arg)
         if cnt != 3:
             return None
-        rows = self.rows
-        self.splice(found[0], skip, [(
-            OpCode.OBJECT_COMPARE_VAR,
-            (sel, rows[found[0]][1], rows[found[1]][1],
-             rows[found[2]][1]))])
-        return DONE
+        return [(OpCode.OBJECT_COMPARE_VAR,
+                 (sel, matched[0][1], matched[1][1], matched[2][1]))]
 
 
     @fuse_rule(OpCode.VAR, OpCode.OBJECT_ITER)
-    def fuse_iter(self, op, arg, found, skip):
+    def fuse_iter(self, op, arg, matched):
         """
         VAR OBJECT_ITER -> VAR_ITER
         """
 
-        self.splice(found[0], skip, [(
-            OpCode.VAR_ITER, self.rows[found[0]][1])])
-        return DONE
+        return [(OpCode.VAR_ITER, matched[0][1])]
 
 
     @fuse_rule(OpCode.VAR, OpCode.OBJECT_NEXT)
-    def fuse_next(self, op, arg, found, skip):
+    def fuse_next(self, op, arg, matched):
         """
         VAR OBJECT_NEXT (1-arg) -> VAR_NEXT
         """
 
         if arg != 1:
             return None
-        self.splice(found[0], skip, [(
-            OpCode.VAR_NEXT, (self.rows[found[0]][1], 1, None, None))])
-        return DONE
+        return [(OpCode.VAR_NEXT, (matched[0][1], 1, None, None))]
 
 
     @fuse_rule(OpCode.VAR, FEEDER, OpCode.OBJECT_NEXT)
-    def fuse_next_default(self, op, arg, found, skip):
+    def fuse_next_default(self, op, arg, matched):
         """
         VAR default OBJECT_NEXT (2-arg) -> the default row plus
         VAR_NEXT, which pops it. Absorbing the iterator load moves its
@@ -689,31 +574,25 @@ class ByteCodeProcessor:
 
         if arg != 2:
             return None
-        rows = self.rows
-        default_row = rows[found[1]]
-        it_name = rows[found[0]][1]
-        self.splice(found[0], skip, [
-            default_row,
-            (OpCode.VAR_NEXT, (it_name, 2, None, None)),
-        ])
-        return DONE
+        return [
+            matched[1],
+            (OpCode.VAR_NEXT, (matched[0][1], 2, None, None)),
+        ]
 
 
     @fuse_rule(OpCode.VAR, OpCode.OBJECT_FORMAT)
-    def fuse_format(self, op, arg, found, skip):
+    def fuse_format(self, op, arg, matched):
         """
         VAR OBJECT_FORMAT (1-arg) -> VAR_FORMAT
         """
 
         if arg != 1:
             return None
-        self.splice(found[0], skip, [(
-            OpCode.VAR_FORMAT, self.rows[found[0]][1])])
-        return DONE
+        return [(OpCode.VAR_FORMAT, matched[0][1])]
 
 
     @fuse_rule(OpCode.CONST, OpCode.OBJECT_FORMAT)
-    def demote_format_const(self, op, arg, found, skip):
+    def demote_format_const(self, op, arg, matched):
         """
         CONST OBJECT_FORMAT (2-arg, constant rules) -> demote to
         OBJECT_FORMAT_CONST and retry into the format lowering ladder.
@@ -724,21 +603,17 @@ class ByteCodeProcessor:
 
         if arg != 2:
             return None
-        rules = self.rows[found[0]][1]
-        self.splice(found[0], skip, [])
-        return (OpCode.OBJECT_FORMAT_CONST, rules)
+        return (OpCode.OBJECT_FORMAT_CONST, matched[0][1])
 
 
     @fuse_rule(OpCode.VAR, OpCode.OBJECT_FORMAT_CONST)
-    def fuse_format_const(self, op, arg, found, skip):
+    def fuse_format_const(self, op, arg, matched):
         """
         VAR OBJECT_FORMAT_CONST -> VAR_FORMAT_CONST
         """
 
-        self.splice(found[0], skip, [(
-            OpCode.VAR_FORMAT_CONST,
-            (self.rows[found[0]][1], arg, None, None))])
-        return DONE
+        return [(OpCode.VAR_FORMAT_CONST,
+                 (matched[0][1], arg, None, None))]
 
 
     def squish(self):
@@ -748,21 +623,19 @@ class ByteCodeProcessor:
         Feeder fusion and VAR run packing follow as separate passes.
         """
 
-        # the NOOP sentinel floors every seekback, so rules never need
-        # an emptiness check; it is stripped at the end
-        rows = self.apply_rules(SQUISH_RULES, [(OpCode.NOOP, 0)])
+        rows = self.apply_rules(SQUISH_RULES, [])
 
-        if rows[-1][0] != OpCode.RETURN:
-            if rows[-1][0] == OpCode.CONST \
-               and rows[-1][1] is None:
-                rows[-1] = (OpCode.RETURN, 0)
+        # trailing RETURN normalization, POSITION-transparent like any
+        # other lookback
+        i = len(rows) - 1
+        while i >= 0 and rows[i][0] == OpCode.POSITION:
+            i -= 1
+        if i < 0 or rows[i][0] != OpCode.RETURN:
+            if i >= 0 and rows[i][0] == OpCode.CONST \
+               and rows[i][1] is None:
+                rows[i] = (OpCode.RETURN, 0)
             else:
                 rows.append((OpCode.RETURN, 1))
-
-        if len(rows) > 1:
-            # if we actually had ops, we'll have a leading NOOP that we
-            # can remove
-            rows = rows[1:]
 
         self.instructions = rows
 
@@ -779,7 +652,7 @@ class ByteCodeProcessor:
         fusion gets first claim on the feeders.
         """
 
-        self.instructions = self.apply_fusions([])
+        self.instructions = self.apply_rules(FUSE_RULES, [])
 
 
     def compress(self):
