@@ -118,17 +118,6 @@ gate options, and the equivalence obligations are recorded for review.
 
 Ref: [language/dict-literal-compression.md](language/dict-literal-compression.md).
 
-### All-constant comparison chains fold to a literal bool
-
-Comparison specials (`compile/<`, `compile/==`, etc.) never fold, unlike
-the arithmetic/bitwise family's leading-constant fold. When every operand
-in a comparison chain compiles to a single `CONST`, evaluate the chain at
-compile time and emit `CONST True`/`CONST False` instead of `OBJECT_COMPARE`:
-`(< 4 8)` should compile straight to `CONST True`.
-
-Ref: [SPECIALS.md](SPECIALS.md) (§Comparison interface);
-`koskari/compile/specials/object.py`.
-
 ### Bundles and namespace facets
 
 Introduce **bundles** as first-class namespace facet objects: a namespace of

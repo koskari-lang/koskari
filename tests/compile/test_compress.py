@@ -24,7 +24,7 @@ import unittest
 import pytest
 
 from koskari.compile.processor import ByteCodeProcessor, CHECK_SQUASHES
-from koskari.lib import OpCode, Operand
+from koskari.lib import Compare, OpCode, Operand
 
 
 pytestmark = pytest.mark.phase_compile
@@ -322,6 +322,157 @@ class TestInplaceConstSquash(unittest.TestCase):
             out)
         self.assertNotIn(
             OpCode.VAR_INPLACE_CONST, [op for op, _ in out])
+
+
+class TestCompareConstFold(unittest.TestCase):
+    """
+    An all-constant OBJECT_COMPARE chain folds to a single CONST bool
+    at compile time; non-foldable selectors, non-constant feeders, and
+    comparison errors leave the op in place
+    """
+
+    def test_lt_folds_true(self):
+        out = compress_ops([
+            (OpCode.CONST, 4),
+            (OpCode.CONST, 8),
+            (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
+        ])
+        self.assertEqual(out, [(OpCode.CONST, True),
+                               (OpCode.RETURN, 1)])
+
+    def test_gt_folds_false(self):
+        out = compress_ops([
+            (OpCode.CONST, 4),
+            (OpCode.CONST, 8),
+            (OpCode.OBJECT_COMPARE, (Compare.GT, 2)),
+        ])
+        self.assertEqual(out, [(OpCode.CONST, False),
+                               (OpCode.RETURN, 1)])
+
+    def test_merged_int_operand_folds(self):
+        out = compress_ops([
+            (OpCode.CONST, 5),
+            (OpCode.CONST, 5),
+            (OpCode.OBJECT_COMPARE, (int(Compare.EQ) << 8) | 2),
+        ])
+        self.assertEqual(out, [(OpCode.CONST, True),
+                               (OpCode.RETURN, 1)])
+
+    def test_chain_folds_true(self):
+        out = compress_ops([
+            (OpCode.CONST, 1),
+            (OpCode.CONST, 2),
+            (OpCode.CONST, 3),
+            (OpCode.OBJECT_COMPARE, (Compare.LT, 3)),
+        ])
+        self.assertEqual(out, [(OpCode.CONST, True),
+                               (OpCode.RETURN, 1)])
+
+    def test_chain_folds_false(self):
+        out = compress_ops([
+            (OpCode.CONST, 1),
+            (OpCode.CONST, 3),
+            (OpCode.CONST, 2),
+            (OpCode.OBJECT_COMPARE, (Compare.LT, 3)),
+        ])
+        self.assertEqual(out, [(OpCode.CONST, False),
+                               (OpCode.RETURN, 1)])
+
+    def test_membership_folds(self):
+        out = compress_ops([
+            (OpCode.CONST, 3),
+            (OpCode.CONST, (1, 2, 3)),
+            (OpCode.OBJECT_COMPARE, (Compare.IN, 2)),
+        ])
+        self.assertEqual(out, [(OpCode.CONST, True),
+                               (OpCode.RETURN, 1)])
+
+    def test_not_in_folds(self):
+        out = compress_ops([
+            (OpCode.CONST, 9),
+            (OpCode.CONST, (1, 2, 3)),
+            (OpCode.OBJECT_COMPARE, (Compare.NOT_IN, 2)),
+        ])
+        self.assertEqual(out, [(OpCode.CONST, True),
+                               (OpCode.RETURN, 1)])
+
+    def test_position_between_feeders_is_kept(self):
+        out = compress_ops([
+            (OpCode.CONST, 4),
+            (OpCode.POSITION, (1, 2)),
+            (OpCode.CONST, 8),
+            (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
+        ])
+        self.assertEqual(out, [(OpCode.CONST, True),
+                               (OpCode.POSITION, (1, 2)),
+                               (OpCode.RETURN, 1)])
+
+    def test_identity_selector_declines(self):
+        instr = [
+            (OpCode.CONST, None),
+            (OpCode.CONST, None),
+            (OpCode.OBJECT_COMPARE, (Compare.IS, 2)),
+        ]
+        out = compress_ops(instr)
+        self.assertEqual(out, instr + [(OpCode.RETURN, 1)])
+
+    def test_non_const_feeder_declines(self):
+        instr = [
+            (OpCode.VAR, "x"),
+            (OpCode.CONST, 1),
+            (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
+        ]
+        out = compress_ops(instr)
+        self.assertEqual(out, instr + [(OpCode.RETURN, 1)])
+
+    def test_uncomparable_consts_decline(self):
+        instr = [
+            (OpCode.CONST, 1),
+            (OpCode.CONST, "a"),
+            (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
+        ]
+        out = compress_ops(instr)
+        self.assertEqual(out, instr + [(OpCode.RETURN, 1)])
+
+    def test_membership_bad_arity_declines(self):
+        instr = [
+            (OpCode.CONST, 1),
+            (OpCode.CONST, 2),
+            (OpCode.CONST, 3),
+            (OpCode.OBJECT_COMPARE, (Compare.IN, 3)),
+        ]
+        out = compress_ops(instr)
+        self.assertEqual(out, instr + [(OpCode.RETURN, 1)])
+
+    def test_fold_feeds_jump_false_elision(self):
+        out = compress_ops([
+            (OpCode.CONST, 4),
+            (OpCode.CONST, 8),
+            (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
+            (OpCode.JUMP_FALSE, "L1"),
+            (OpCode.CONST, "yep"),
+            (OpCode.LABEL, "L1"),
+        ])
+        ops = [op for op, _ in out]
+        self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
+        self.assertNotIn(OpCode.CHECK_COMPARE, ops)
+        self.assertNotIn(OpCode.JUMP_FALSE, ops)
+        self.assertNotIn(OpCode.JUMP, ops)
+        self.assertIn((OpCode.CONST, "yep"), out)
+
+    def test_fold_feeds_jump_true_conversion(self):
+        out = compress_ops([
+            (OpCode.CONST, 4),
+            (OpCode.CONST, 8),
+            (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
+            (OpCode.JUMP_TRUE, "L1"),
+            (OpCode.CONST, "nope"),
+            (OpCode.LABEL, "L1"),
+        ])
+        ops = [op for op, _ in out]
+        self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
+        self.assertNotIn(OpCode.JUMP_TRUE, ops)
+        self.assertIn((OpCode.JUMP, "L1"), out)
 
 
 # The end.

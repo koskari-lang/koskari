@@ -24,6 +24,8 @@ tail-call demotion. Produces the finished rows for Code construction
 """
 
 
+import operator
+
 from ..lib import (Compare, NAMESPACE_FAST_SLOT_MAX, NamespaceSpec,
                    OpCode, Operand, OpStyle)
 
@@ -133,6 +135,54 @@ SWITCH_SQUASHES = {
 JUMP_PRIORS = frozenset((OpCode.JUMP_TRUE, OpCode.JUMP_FALSE))
 POP_PRIORS = frozenset((OpCode.CONST, OpCode.DUP))
 FEEDER = frozenset((OpCode.VAR, OpCode.CONST))
+CONST_FEEDER = frozenset((OpCode.CONST,))
+
+
+def chain_fold(pyop):
+    """
+    Build a chain-compare fold over pyop: True when every adjacent
+    operand pair satisfies the comparison
+    """
+
+    def fold(values):
+        for x, y in zip(values, values[1:]):
+            if not pyop(x, y):
+                return False
+        return True
+    return fold
+
+
+def membership_fold(negate):
+    """
+    Build an arity-2 membership fold; negate selects the not-in sense
+
+    :raises TypeError: on any other arity, declining the fold so the
+        runtime raises its own arity error
+    """
+
+    def fold(values):
+        if len(values) != 2:
+            raise TypeError("membership comparison requires 2 operands")
+        found = values[0] in values[1]
+        return not found if negate else found
+    return fold
+
+
+# Compare selector -> compile-time fold for compare_const_fold. The
+# identity and type-check selectors are deliberately absent: IS/IS_NOT
+# depend on object identity, which folding cannot promise across code
+# serialization, and IS_INSTANCE/IS_SUBCLASS never see constant class
+# operands from the compiler.
+COMPARE_FOLDS = {
+    Compare.LT: chain_fold(operator.lt),
+    Compare.LE: chain_fold(operator.le),
+    Compare.EQ: chain_fold(operator.eq),
+    Compare.NE: chain_fold(operator.ne),
+    Compare.GT: chain_fold(operator.gt),
+    Compare.GE: chain_fold(operator.ge),
+    Compare.IN: membership_fold(False),
+    Compare.NOT_IN: membership_fold(True),
+}
 
 
 def build_var_to_fast():
@@ -392,6 +442,36 @@ class ByteCodeProcessor:
         """
 
         return [(OpCode.CONST, not matched[0][1])]
+
+
+    @squish_rule(OpCode.OBJECT_COMPARE)
+    def compare_const_fold(self, op, arg, matched):
+        """
+        CONST xN OBJECT_COMPARE with a foldable selector -> the chain
+        evaluated at compile time as a single CONST bool. A fallback
+        rule: the feeder count is read from the CMPCOUNT operand, so
+        matching and splicing run through the services directly.
+        Declines on a non-foldable selector, any non-CONST feeder, or
+        a comparison error, leaving the runtime behavior in place.
+        """
+
+        sel, cnt = split_cmpcount(arg)
+        fold = COMPARE_FOLDS.get(sel)
+        if fold is None or cnt < 2:
+            return None
+
+        found, skipped = self.match_priors((CONST_FEEDER,) * cnt)
+        if found is None:
+            return None
+
+        rows = self.rows
+        try:
+            result = fold([rows[i][1] for i in found])
+        except (TypeError, ValueError, ArithmeticError):
+            return None
+
+        self.splice(found[0], skipped, [(OpCode.CONST, result)])
+        return []
 
 
     @squish_rule(OpCode.CONST, OpCode.JUMP_TRUE)

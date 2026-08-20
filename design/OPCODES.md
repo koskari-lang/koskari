@@ -194,6 +194,7 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 |----------|------|
 | Dead stack | **`KOS_OP_CONST`** or **`KOS_OP_DUP`** followed by **`KOS_OP_POP`** with **arg 1** → drop both (omit the POP and remove the prior instruction). |
 | Constant fold | **`KOS_OP_OBJECT_NOT`** with prior **`KOS_OP_CONST`** → replace the pair with a single **`KOS_OP_CONST`** whose value is **`not`** the prior constant (Python `bool` semantics for the folded value). |
+| Compare fold | **`KOS_OP_OBJECT_COMPARE`** whose CMPCOUNT count is fed entirely by prior bare **`KOS_OP_CONST`** rows → evaluate the chain at compile time and replace all rows with a single **`KOS_OP_CONST`** bool. A fallback rule (count read from the operand). Folds the six richcompare selectors (chained-pair semantics) plus IN / NOT_IN at arity 2; IS / IS_NOT never fold (object identity does not survive const serialization), nor do IS_INSTANCE / IS_SUBCLASS. Declines on any comparison error, leaving the runtime op in place. |
 | Constant + `JUMP_TRUE` | Prior **`KOS_OP_CONST`**: if truthy, replace with **`KOS_OP_JUMP`** to the same label; if falsy, drop both (no jump). |
 | Constant + `JUMP_FALSE` | Prior **`KOS_OP_CONST`**: if the constant is falsy, unconditional **`KOS_OP_JUMP`**; if truthy, drop both. |
 | Compare + `JUMP_FALSE` | Prior opcode is in **`_CHECK_SQUASHES`** (see table below): delete the prior instruction and replace **`JUMP_FALSE`** with the mapped single opcode (same jump target **arg**). |
