@@ -43,23 +43,27 @@ _DEFAULT_SPECIAL_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 def _reduce_fold(py_fold, compiler, body):
     """
-    Consume leading constant arguments from body, fold them with py_fold,
-    and emit a single CONST into frag if any folding occurred.
+    Consume leading constant arguments from body, folding them with
+    py_fold into a single accumulated value.
 
     Walks body left-to-right, compiling each expression. While the result is
     a CONST-only fragment and py_fold succeeds, accumulate into a running
-    total. Stops at the first non-constant expression or on a fold error.
+    total. Stops at the first non-constant expression or on a fold error,
+    preserving that expression's compiled fragment so the caller can merge
+    it instead of compiling it a second time.
 
     :param py_fold: binary Python callable used to reduce two constant values
     :param compiler: active Compiler
-    :param frag: ByteCodeFragment to emit the folded CONST into
     :param body: pair list of remaining source arguments
-    :return: (remaining_body, folded) where remaining_body is the unconsumed
-        tail of body and folded is True if a CONST was emitted
+    :return: (remaining_body, folded, acc, pending) where remaining_body is
+        the unconsumed tail of body, folded is True if constants were
+        accumulated into acc, and pending is the already-compiled fragment
+        for the head of remaining_body, or None
     """
 
     acc = None
     have_acc = False
+    pending = None
 
     current = body
     while not is_nil(current):
@@ -69,6 +73,7 @@ def _reduce_fold(py_fold, compiler, body):
         is_const, const_val = const_only_expr(expr_frag)
 
         if not is_const:
+            pending = expr_frag
             break
 
         if not have_acc:
@@ -80,11 +85,12 @@ def _reduce_fold(py_fold, compiler, body):
         try:
             acc = py_fold(acc, const_val)
         except (TypeError, ValueError, ArithmeticError):
+            pending = expr_frag
             break
 
         current = rest
 
-    return (current, have_acc, acc)
+    return (current, have_acc, acc, pending)
 
 
 def _reduce_op(op, py_fold, compiler, source, operand=None):
@@ -115,9 +121,10 @@ def _reduce_op(op, py_fold, compiler, source, operand=None):
     count = 0
 
     have_acc = False
+    pending = None
     if py_fold is not None:
         frag.position_of(body)
-        body, have_acc, acc = _reduce_fold(py_fold, compiler, body)
+        body, have_acc, acc, pending = _reduce_fold(py_fold, compiler, body)
 
     for fm in unpack(body):
         if is_keyword(fm):
@@ -131,6 +138,12 @@ def _reduce_op(op, py_fold, compiler, source, operand=None):
         count += 1
 
     current = body
+    if pending is not None:
+        frag.position_of(current)
+        _, current = current
+        frag.merge(pending)
+        count += 1
+
     while not is_nil(current):
         frag.position_of(current)
         expr, current = current
