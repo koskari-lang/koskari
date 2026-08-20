@@ -102,9 +102,9 @@ below is where those changes appear.
 
 ## Execution profile (churn, `KOS_TRACE_TIMING`)
 
-From `design/trace/trace-20260819-0642.json`: 52.76e9 dispatches over
-the fourteen churn kernels, the first trace of the 199-opcode build
-(fused format ops and IMPORT_USE included).  The timing build wraps
+From `design/trace/trace-20260819-2329.json`: 52.76e9 dispatches over
+the fourteen churn kernels, the first trace of the 214-opcode build
+with tail promotion live.  The timing build wraps
 every dispatch in two `clock_gettime` calls, so absolute nanoseconds
 are inflated and the per-opcode averages compress towards the wrapper
 cost.  Counts and shares are the usable signal; avg_ns only separates
@@ -126,12 +126,12 @@ the genuinely expensive handlers from the rest.
 | `CHECK_COMPARE_FAST` | 0.90e9 | 1.70 | 1.58 | 918 | hot |
 
 The sizing consequence is the coverage number, not the ranking.  Only
-72 of the 199 opcodes execute at all on churn.  Of the 127 hot
-handlers, 54 fire (18,844 B) and 73 never fire (19,992 B) -- 51% of
+72 of the 214 opcodes execute at all on churn.  Of the 126 hot
+handlers, 54 fire (19,181 B) and 72 never fire (19,708 B) -- 51% of
 the inline budget is code this workload never touches.  Eighteen cold
 handlers fire, six of them enough to notice: `OBJECT_INPLACE` 227.6M,
 `MATCH_CASE` 50.7M, `MATCH_STORE_NAMES` 10.7M, `UNPACK_FAST` 3.87M,
-`YIELD_FROM` 1.31M, `CALL_ATTR` 145K dispatches.  `OBJECT_INPLACE` is
+`YIELD_FROM` 1.31M, `TAIL_CALL_ATTR` 145K dispatches.  `OBJECT_INPLACE` is
 traffic from the kernels' in-place subscript shape; at 58 B it is the
 cold mirror of `OBJECT_OPERAND`, so promoting it hot is near-free
 inline budget if the library traces agree it is common.  `FAST_FORMAT`
@@ -153,22 +153,28 @@ dispatch layer costs 121.4e9 ns over 1.98e9 invocations, 9.2% of
 instrumented eval time, 55% of that in `return_boundary` -- which is
 where the plain-return fast arm below was aimed.
 
-Against `design/trace/trace-20260805-1822.json` the counts are
-directly comparable and effectively identical: the kernel set is
-unchanged, the total matches at 52.76e9, and no per-opcode count moved
-by more than the three newly-firing opcodes above.  The format fusion
-is emission-visible but execution-invisible here because the kernels
-interpolate almost nothing.  Treat this trace as the count baseline
+The count lineage runs unbroken through `trace-20260805-1822.json`
+and `trace-20260819-0642.json`: the kernel set is unchanged, the
+total matches at 52.76e9 in all three, and outside the promotion
+relabels below no per-opcode count has moved by more than a handful
+of harness-side dispatches.  Treat this trace as the count baseline
 for future deltas.  The earlier caveat stands: parameterize, `with`
 and delimited-continuation code paths remain invisible to these
 kernels.
 
-**Stale against the TAIL twins.**  This trace predates tail-call
-promotion: the kernels' function bodies now relabel tail-position
-calls onto the twins (`CALL_FAST` -> `TAIL_CALL_FAST` and the attr
-forms), so the call-family rows above no longer match current
-emission.  Non-call counts remain comparable, but re-trace before
-reading any call-family delta against this baseline.
+**The twins under execution.**  Against the pre-promotion trace
+(`trace-20260819-0642.json`) the relabels are exact and everything
+else is untouched: `CALL_ATTR` 145,200 -> `TAIL_CALL_ATTR` 145,200
+(the attr-tier reversal live, cold to cold) and `TAIL_CALL` 38,866 ->
+`TAIL_CALL_FAST` 38,866 (hot to hot); no other per-opcode count moved
+by more than harness noise (-47K of 52.76e9 total), the opcache
+counters are identical to the digit, and the post-handler layer is
+unchanged.  The kernels' heavy call traffic -- `CALL_FAST` 507.4M and
+`CALL_FAST_ATTR` 300.2M -- is all non-tail and did not move.
+Notably, `TAIL_CALL_FAST_ATTR` fired **zero** times: its hot election
+still rests on emission evidence alone (26 corpus sites), and plain
+`TAIL_CALL` is now zero in both execution and emission, firming it up
+as the first donor when inline budget is next needed.
 
 ## Measuring a change
 
