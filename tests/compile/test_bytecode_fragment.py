@@ -473,17 +473,15 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
         f = ByteCodeFragment()
         self.assertIsNone(f.name)
         self.assertIsNone(f.filename)
-        self.assertIsNone(f.mode)
         self.assertIsNone(f.compiler)
         self.assertEqual(f.instructions, [])
         self.assertEqual(f.requests, [])
         self.assertEqual(f.declares, [])
 
     async def test_init_args(self):
-        f = ByteCodeFragment(name="block", filename="x.ki", mode=1)
+        f = ByteCodeFragment(name="block", filename="x.ki")
         self.assertEqual(f.name, "block")
         self.assertEqual(f.filename, "x.ki")
-        self.assertEqual(f.mode, 1)
         self.assertIsNone(f.compiler)
 
     async def test_declare_var(self):

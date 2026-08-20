@@ -38,7 +38,7 @@ from ..types import (fill_position, is_nil, get_position, is_keyword,
                      is_pair, is_proper, is_symbol, parameterize)
 from .pragma import (BracketCalls, KeywordLiterals, KoskariPragma,
                      PackModule, ResolutionMode, StrayColon)
-from .processor import process
+from .processor import ByteCodeProcessor
 
 
 class Compiled(ABC):
@@ -140,19 +140,17 @@ class ByteCodeFragment:
     closure requests and name declarations for the namespace
     """
 
-    def __init__(self, compiler=None, name=None, filename=None, mode=None,
+    def __init__(self, compiler=None, name=None, filename=None,
                  resolution=None):
         """
         :param compiler: the compiler/builder used to complete this fragment
         :param name: optional fragment name (e.g. for a block or loop)
         :param filename: optional source filename
-        :param mode: optional compilation mode
         :param resolution: resolution instance; default KoskariPragma when omitted
         """
 
         self.name = name
         self.filename = filename
-        self.mode = mode
         self.compiler = compiler
         self.resolution = resolution or KoskariPragma()
         self.instructions = []
@@ -357,12 +355,6 @@ class ByteCodeFragment:
             self.instruction(OpCode.PUSH_COLLECT, nspec)
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_COLLECT, 0)
-
-
-    def as_bytecode(self):
-        if self.compiler is None:
-            raise TypeError("ByteCodeFragment has no compiler")
-        return self.compiler.complete(self, is_root=True)
 
 
     def as_function_spec(self, formals_spec=((), ())):
@@ -670,12 +662,12 @@ class Compiler:
         return found
 
 
-    def fragment(self, name=None, mode=None):
+    def fragment(self, name=None):
         reso = self._resolution_instance
         if reso is None:
             reso = self._resolution_pragma_class()
         return ByteCodeFragment(
-            self, str(name), self.filename, mode=mode, resolution=reso)
+            self, str(name), self.filename, resolution=reso)
 
 
     def compile(self, source_obj, *, position=None):
@@ -1055,25 +1047,6 @@ class Compiler:
         return res
 
 
-    def _cpool_scan_merge(self, fragment, instr):
-        """
-        Scan instructions for CONST (FunctionSpec) and merge inner Code's
-        closure_syms and request_for_write_syms into the fragment.
-        """
-
-        reso = fragment.resolution
-        for op, arg in instr:
-            if op == OpCode.CONST and isinstance(arg, FunctionSpec):
-                code = arg.code
-                if code is None:
-                    continue
-                nspec = code.namespace_spec
-                if nspec is None:
-                    continue
-                request_for_write_syms = reso.get_request_for_write_syms(code)
-                reso.cpool_merge(fragment, nspec, request_for_write_syms)
-
-
     def complete(self, fragment, mode=None, _validate=True, is_root=False):
         """
         Complete a fragment into a Code object.
@@ -1085,33 +1058,15 @@ class Compiler:
         :return: the completed Code object
         """
 
-        if mode is None:
-            mode = self.mode
-
         reso = fragment.resolution
-        base_nspec = None
 
-        def resolve_nspec(rows):
-            # this disgusting bit of hackery is necessary because the
-            # ByteCodeProcessor needs the NamespaceSpec to know whether
-            # to convert VARs to FASTs, and the NamespaceSpec is only
-            # cleanly available after the compress/normalize passes.
-
-            nonlocal base_nspec
-            self._cpool_scan_merge(fragment, rows)
-            base_nspec = reso.build_namespace_spec(fragment)
-            if mode == CompilerMode.FUNCTION:
-                return base_nspec
-            return None
-
-        tco_enabled =  self.tco_enabled and mode == CompilerMode.FUNCTION
-
-        # handles compression, var-to-fast lowering, and tail-call promotion
-        instr = process(
-            fragment.instructions,
-            resolve_nspec,
-            tco_enabled=tco_enabled,
-            convert_fast=self.convert_fast_enabled)
+        # handles compression, var-to-fast lowering, and tail-call
+        # promotion, deriving the pass settings from this compiler
+        # through the fragment; the base NamespaceSpec it resolves
+        # mid-pipeline stays readable for Code construction below
+        proc = ByteCodeProcessor(fragment)
+        instr = proc.process(mode == CompilerMode.FUNCTION)
+        base_nspec = proc.base_nspec
 
         # Resolve filename for Code metadata
         try:

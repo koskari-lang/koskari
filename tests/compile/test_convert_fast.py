@@ -24,13 +24,15 @@ import unittest
 from koskari.compile.processor import ByteCodeProcessor
 from koskari.lib import OpCode, NamespaceSpec
 
+from . import make_fragment
+
 import pytest
 
 pytestmark = pytest.mark.phase_compile
 
 
 def convert_fast(base_nspec, instr):
-    proc = ByteCodeProcessor(instr)
+    proc = ByteCodeProcessor(make_fragment(instr))
     proc.convert_fast(base_nspec)
     return proc.instructions
 

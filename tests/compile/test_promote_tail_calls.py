@@ -27,6 +27,8 @@ import pytest
 from koskari.compile.processor import ByteCodeProcessor
 from koskari.lib import OpCode
 
+from . import make_fragment
+
 
 pytestmark = pytest.mark.phase_compile
 
@@ -42,7 +44,7 @@ J = OpCode.JUMP
 
 
 def promote(instr):
-    proc = ByteCodeProcessor(instr)
+    proc = ByteCodeProcessor(make_fragment(instr))
     proc.promote_tail_calls()
     return proc.instructions
 

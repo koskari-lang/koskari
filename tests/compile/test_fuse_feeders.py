@@ -28,6 +28,8 @@ import pytest
 from koskari.compile.processor import ByteCodeProcessor, make_cmpsrc
 from koskari.lib import Compare, NamespaceSpec, OpCode
 
+from . import make_fragment
+
 
 pytestmark = pytest.mark.phase_compile
 
@@ -44,18 +46,18 @@ OCV = OpCode.OBJECT_COMPARE_VAR
 
 
 def fuse_ops(instr):
-    proc = ByteCodeProcessor(instr)
+    proc = ByteCodeProcessor(make_fragment(instr))
     proc.fuse_feeders()
     return proc.instructions
 
 
 def process_ops(instr):
-    proc = ByteCodeProcessor(instr)
-    return proc.process(lambda rows: None)
+    proc = ByteCodeProcessor(make_fragment(instr))
+    return proc.process()
 
 
 def convert_fast(base_nspec, instr):
-    proc = ByteCodeProcessor(instr)
+    proc = ByteCodeProcessor(make_fragment(instr))
     proc.convert_fast(base_nspec)
     return proc.instructions
 

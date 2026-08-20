@@ -27,8 +27,8 @@ for Code construction
 
 import operator
 
-from ..lib import (Compare, NAMESPACE_FAST_SLOT_MAX, NamespaceSpec,
-                   OpCode, Operand, OpStyle)
+from ..lib import (Compare, FunctionSpec, NAMESPACE_FAST_SLOT_MAX,
+                   NamespaceSpec, OpCode, Operand, OpStyle)
 
 
 OPERAND_COUNT = len(Operand)
@@ -323,59 +323,32 @@ def fuse_rule(*pattern):
     return register
 
 
-def process(
-        instructions,
-        resolve_nspec,
-        *,
-        tco_enabled=False,
-        convert_fast=True):
-    """
-    Run the full gated pipeline and return the finished rows.
-
-    :param instructions: sequence of (op, arg) rows, internalized
-    :param resolve_nspec: function to resolve the NamespaceSpec
-    :param tco_enabled: whether tail-call promotion may run
-    :param convert_fast: whether the VAR to FAST lowering runs
-    :return: the finished rows
-    """
-
-    proc = ByteCodeProcessor(
-        instructions,
-        tco_enabled=tco_enabled,
-        convert_fast=convert_fast)
-    return proc.process(resolve_nspec)
-
-
-
 class ByteCodeProcessor:
     """
-    A single-use transformation machine over one instruction stream.
+    A single-use transformation machine over one fragment's
+    instruction stream.
 
-    Constructed per code object with the rows and the explicit pass
-    settings, which the creating compiler derives from its pragma and
-    the stream's mode; mutated in place as passes apply; discarded
-    after the finished rows are taken. Rules and pass tables are
-    stateless module-level data. The instance carries only the stream
-    and its per-stream working state, so its lifetime is exactly the
-    validity of that state.
+    Constructed per code object with the ByteCodeFragment, which
+    supplies the rows, the resolution instance, and the compiler whose
+    settings govern the passes; mutated in place as passes apply;
+    discarded after the finished rows are taken. Rules and pass tables
+    are stateless module-level data. The instance carries only the
+    stream and its per-stream working state, so its lifetime is
+    exactly the validity of that state.
     """
 
-    def __init__(
-            self,
-            instructions,
-            *,
-            tco_enabled=False,
-            convert_fast=True):
+    def __init__(self, fragment):
         """
-        :param instructions: sequence of (op, arg) rows, internalized
-        :param tco_enabled: whether tail-call promotion may run
-        :param convert_fast: whether the VAR to FAST lowering runs
+        :param fragment: the ByteCodeFragment whose instructions are
+            processed
         """
 
-        self.instructions = list(instructions)
+        self.fragment = fragment
+        self.instructions = list(fragment.instructions)
 
-        self.tco_enabled = tco_enabled
-        self.convert_fast_enabled = convert_fast
+        # the base NamespaceSpec resolved mid-pipeline; remains
+        # readable after process returns, for Code construction
+        self.base_nspec = None
 
         # the output accumulator of the pass currently walking the
         # stream; the matcher and splice services address it
@@ -1085,19 +1058,44 @@ class ByteCodeProcessor:
             for op, arg in instr]
 
 
-    def process(self, resolve_nspec):
+    def cpool_scan_merge(self):
         """
-        Run the full gated pipeline and return the finished rows.
+        Scan the working instructions for CONST (FunctionSpec) and
+        merge each inner Code's closure_syms and
+        request_for_write_syms into the fragment
+        """
 
-        The namespace spec is not knowable until the compressed stream
-        has been scanned for inner code (closure and write-request
-        merging), so the caller supplies resolve_nspec: a callable
-        receiving the compressed rows and returning the base
-        NamespaceSpec for the fast lowering.
+        fragment = self.fragment
+        reso = fragment.resolution
+        for op, arg in self.instructions:
+            if op == OpCode.CONST and isinstance(arg, FunctionSpec):
+                code = arg.code
+                if code is None:
+                    continue
+                nspec = code.namespace_spec
+                if nspec is None:
+                    continue
+                request_for_write_syms = reso.get_request_for_write_syms(code)
+                reso.cpool_merge(fragment, nspec, request_for_write_syms)
 
-        :param resolve_nspec: callable(rows) -> NamespaceSpec
+
+    def process(self, function_body=False):
+        """
+        Run the full pipeline and return the finished rows.
+
+        The pass settings come from the fragment's compiler: tail-call
+        promotion needs the compiler's tco setting and a function-body
+        stream, and the VAR to FAST lowering follows the compiler's
+        convert-fast setting. The base NamespaceSpec is resolved
+        mid-pipeline from the fragment's resolution instance and stays
+        readable on the processor afterward.
+
+        :param function_body: whether this stream is a function body
+            (has a base scope, runs repeatedly, may tail-call promote)
         :return: the finished instruction rows
         """
+
+        compiler = self.fragment.compiler
 
         # first we do the peephole squish, which sounds more suggestive than
         # it actually is.
@@ -1107,9 +1105,10 @@ class ByteCodeProcessor:
         self.fuse_feeders()
 
         # we either promote or forcibly demote tail calls depending
-        # on whether tco is enable and also allowed (not yielding).
+        # on whether tco is enable and also allowed (a non-yielding
+        # function body).
         tco_enabled = (
-            self.tco_enabled and not
+            compiler.tco_enabled and function_body and not
             any(op in (OpCode.YIELD, OpCode.YIELD_FROM)
                 for op, _ in self.instructions))
 
@@ -1121,11 +1120,14 @@ class ByteCodeProcessor:
         # fixes the opcount and cmpcount operands to be packed uint16s
         self.normalize_opcount()
 
-        # gross hack.
-        base_nspec = resolve_nspec(self.instructions)
+        # merge surviving inner FunctionSpec syms into the fragment,
+        # then build the base NamespaceSpec from its buckets
+        self.cpool_scan_merge()
+        self.base_nspec = self.fragment.resolution.build_namespace_spec(
+            self.fragment)
 
-        if self.convert_fast_enabled and base_nspec:
-            self.convert_fast(base_nspec)
+        if compiler.convert_fast_enabled and function_body:
+            self.convert_fast(self.base_nspec)
 
         # combine runs of consecutive bare CONST, VAR, FAST
         self.pack_runs()

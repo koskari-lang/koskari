@@ -28,23 +28,25 @@ import pytest
 from koskari.compile.processor import ByteCodeProcessor
 from koskari.lib import NamespaceSpec, OpCode
 
+from . import make_fragment
+
 
 pytestmark = pytest.mark.phase_compile
 
 
 def pack_ops(instr):
-    proc = ByteCodeProcessor(instr)
+    proc = ByteCodeProcessor(make_fragment(instr))
     proc.pack_runs()
     return proc.instructions
 
 
 def process_ops(instr):
-    proc = ByteCodeProcessor(instr)
-    return proc.process(lambda rows: None)
+    proc = ByteCodeProcessor(make_fragment(instr))
+    return proc.process()
 
 
 def convert_fast(base_nspec, instr):
-    proc = ByteCodeProcessor(instr)
+    proc = ByteCodeProcessor(make_fragment(instr))
     proc.convert_fast(base_nspec)
     return proc.instructions
 
