@@ -51,11 +51,15 @@ where the walk already holds the open-extent stack at every pc. On a
 TAIL-family op, scan the open stack; any kind outside {NS, LOOP,
 FOREACH} is a construction error naming the pc and the extent kind.
 Cost is one opcode-class test per instruction plus a short stack scan
-at tail sites. The discardable set must stay in lockstep with the
-processor's `EXTENT_DISCARDABLE` table and the runtime's switch --
-three copies of one policy; deriving all three from a single
-declaration (an `opcodes.incl`-style marker or a shared header list)
-is part of the work.
+at tail sites. The discardable set then exists in three places -- the
+processor's `EXTENT_DISCARDABLE` table, the runtime's switch, and the
+finalize check -- and that duplication is deliberate, not a hazard to
+engineer away. The Python table is the malleable experimentation
+surface; the C copies are the legality rule. They are kept textually
+and mechanically separate so that churn on the Python side cannot
+silently rewrite what C enforces: a wrong Python-side tweak produces
+bytecode that C refuses loudly, which is the boundary working. Do not
+derive the copies from a shared declaration.
 
 Not worth building: verification inside the promotion pass itself.
 The pass runs pre-finalize in Python, where it can be bypassed,
@@ -88,17 +92,20 @@ before the finalize check lands, because the check must either treat
 cleared extents as open (restart) or track CLEAR ops in the walk
 (close).
 
-## Open question: computing nesting once
+## Settled: the two walks stay separate
 
-The promotion pass's transient stack duplicates the shape of the
-finalize walk, one in Python over pre-finalize rows (labels and
-positions still present), one in C over final instructions. True
-unification is blocked by that representation gap: finalize cannot
-run earlier, and the pass cannot consume a table that does not exist
-yet. The realistic version is discipline, not code sharing -- both
-walks driven by the same declared push/pop/kind tables (see the
-single-declaration note above) so they cannot drift, with the C walk
-remaining the authority.
+The promotion pass's transient stack echoes the shape of the finalize
+walk, one in Python over pre-finalize rows (labels and positions
+still present), one in C over final instructions. The archived doc
+asked whether the computation could be unified so nesting is computed
+once; the answer is no, by design and not only by the representation
+gap. The Python walk belongs to the compiler's experimentation layer,
+where rules are cheap to tweak and juggle; the C walk is the ultimate
+legality rule, expressed in its own terms and deliberately harder to
+move. How each applies its logic stays separate along with the
+rulesets themselves. The C walk is the authority; a Python walk that
+drifts produces output the C layer rejects, and that rejection is the
+designed failure mode.
 
 ## Deferred: dead-region sweep and label GC
 

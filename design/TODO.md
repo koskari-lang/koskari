@@ -101,9 +101,9 @@ the guard lives in `full_compile`.
 
 Add the TAIL-under-non-discardable-extent check to the finalize walk
 (`derive_extents_fill`), which already verifies extent balance and
-cannot be mocked out; settle per-kind CLEAR semantics first, and
-derive the discardable set from one declaration across all three
-layers. Dead-region sweep and label GC stay last, if at all.
+cannot be mocked out; settle per-kind CLEAR semantics first. The
+Python and C rulesets stay deliberately distinct: C is the legality
+rule. Dead-region sweep and label GC stay last, if at all.
 
 Ref: [extent-verification.md](extent-verification.md).
 
