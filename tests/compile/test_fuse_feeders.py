@@ -25,7 +25,6 @@ import unittest
 
 import pytest
 
-from koskari.compile import CompilerMode
 from koskari.compile.processor import ByteCodeProcessor, make_cmpsrc
 from koskari.lib import Compare, NamespaceSpec, OpCode
 
@@ -50,15 +49,14 @@ def fuse_ops(instr):
     return proc.instructions
 
 
-def compress_ops(instr):
+def process_ops(instr):
     proc = ByteCodeProcessor(instr)
-    proc.compress()
-    return proc.instructions
+    return proc.process(lambda rows: None)
 
 
-def convert_fast(nspec, instr, mode=None):
-    proc = ByteCodeProcessor(instr, mode=mode)
-    proc.convert_fast(nspec)
+def convert_fast(base_nspec, instr):
+    proc = ByteCodeProcessor(instr)
+    proc.convert_fast(base_nspec)
     return proc.instructions
 
 
@@ -134,10 +132,10 @@ class TestFuseCheckFeeders(unittest.TestCase):
             pos2,
         ])
 
-    def test_compress_runs_the_fusion_before_packing(self):
+    def test_process_runs_the_fusion_before_packing(self):
         # a loop-condition shape: the feeders fuse into the check
         # instead of packing into VAR2
-        out = compress_ops([
+        out = process_ops([
             (V, "a"), (V, "b"),
             (OpCode.OBJECT_COMPARE, (int(LT), 2)),
             (OpCode.JUMP_FALSE, "fail"),
@@ -216,7 +214,7 @@ class TestTernaryLowering(unittest.IsolatedAsyncioTestCase):
     async def test_lowers_when_local(self):
         nspec = NamespaceSpec(None, ("x",), ())
         instr = [(OCV, (int(LT), 0, "x", 100))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(result, [
             (OpCode.OBJECT_COMPARE_FAST, (int(LT), 0, 0, 100)),
         ])
@@ -224,7 +222,7 @@ class TestTernaryLowering(unittest.IsolatedAsyncioTestCase):
     async def test_stays_var_when_not_local(self):
         nspec = NamespaceSpec(None, ("y",), ())
         instr = [(OCV, (int(LT), 0, "x", 100))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(result, [
             (OCV, (int(LT), 0, "x", 100)),
         ])
@@ -240,7 +238,7 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
         nspec = NamespaceSpec(None, ("a", "b"), ())
         src = make_cmpsrc(LT, False, False)
         instr = [(CCV, (src, "a", "b", "fail"))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(result, [
             (OpCode.CHECK_COMPARE_FAST, (src, 0, 1, "fail")),
         ])
@@ -249,7 +247,7 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
         nspec = NamespaceSpec(None, ("a",), ())
         src = make_cmpsrc(LT, False, True)
         instr = [(CCV, (src, "a", 100, "fail"))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(result, [
             (OpCode.CHECK_COMPARE_FAST, (src, 0, 100, "fail")),
         ])
@@ -258,7 +256,7 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
         nspec = NamespaceSpec(None, ("a",), ())
         src = make_cmpsrc(LT, False, False)
         instr = [(CCV, (src, "a", "elsewhere", "fail"))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(result, [
             (CCV, (src, "a", "elsewhere", "fail")),
         ])
@@ -269,7 +267,7 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
         nspec = NamespaceSpec(None, ("a",), ())
         src = make_cmpsrc(LT, False, True)
         instr = [(CCV, (src, "a", "a", "fail"))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(result, [
             (OpCode.CHECK_COMPARE_FAST, (src, 0, "a", "fail")),
         ])
@@ -343,20 +341,19 @@ class TestIterNextLowering(unittest.IsolatedAsyncioTestCase):
     async def test_var_iter_lowers_when_local(self):
         nspec = NamespaceSpec(None, ("x",), ())
         result = convert_fast(
-            nspec, [(VI, "x")], mode=CompilerMode.FUNCTION)
+            nspec, [(VI, "x")])
         self.assertEqual(result, [(OpCode.FAST_ITER, 0)])
 
     async def test_var_iter_stays_when_not_local(self):
         nspec = NamespaceSpec(None, ("y",), ())
         result = convert_fast(
-            nspec, [(VI, "x")], mode=CompilerMode.FUNCTION)
+            nspec, [(VI, "x")])
         self.assertEqual(result, [(VI, "x")])
 
     async def test_var_next_lowers_when_local(self):
         nspec = NamespaceSpec(None, ("it",), ())
         result = convert_fast(
-            nspec, [(VN, ("it", 2, None, None))],
-            mode=CompilerMode.FUNCTION)
+            nspec, [(VN, ("it", 2, None, None))])
         self.assertEqual(result, [
             (OpCode.FAST_NEXT, (0, 2, None, None)),
         ])
@@ -364,8 +361,7 @@ class TestIterNextLowering(unittest.IsolatedAsyncioTestCase):
     async def test_var_next_stays_when_not_local(self):
         nspec = NamespaceSpec(None, ("y",), ())
         result = convert_fast(
-            nspec, [(VN, ("it", 1, None, None))],
-            mode=CompilerMode.FUNCTION)
+            nspec, [(VN, ("it", 1, None, None))])
         self.assertEqual(result, [(VN, ("it", 1, None, None))])
 
 
@@ -429,10 +425,10 @@ class TestFuseFormat(unittest.TestCase):
         out = fuse_ops([(C, 7), (OFC, "04d")])
         self.assertEqual(out, [(C, 7), (OFC, "04d")])
 
-    def test_compress_runs_the_fusion_before_packing(self):
+    def test_process_runs_the_fusion_before_packing(self):
         # adjacent interpolations: each VAR fuses into its format row
         # instead of packing into VAR2
-        out = compress_ops([
+        out = process_ops([
             (V, "a"), (OF, 1),
             (V, "b"), (OFC, ".2f"),
         ])
@@ -452,20 +448,19 @@ class TestFormatLowering(unittest.IsolatedAsyncioTestCase):
     async def test_var_format_lowers_when_local(self):
         nspec = NamespaceSpec(None, ("x",), ())
         result = convert_fast(
-            nspec, [(VF, "x")], mode=CompilerMode.FUNCTION)
+            nspec, [(VF, "x")])
         self.assertEqual(result, [(OpCode.FAST_FORMAT, 0)])
 
     async def test_var_format_stays_when_not_local(self):
         nspec = NamespaceSpec(None, ("y",), ())
         result = convert_fast(
-            nspec, [(VF, "x")], mode=CompilerMode.FUNCTION)
+            nspec, [(VF, "x")])
         self.assertEqual(result, [(VF, "x")])
 
     async def test_var_format_const_lowers_when_local(self):
         nspec = NamespaceSpec(None, ("x",), ())
         result = convert_fast(
-            nspec, [(VFC, ("x", "04d", None, None))],
-            mode=CompilerMode.FUNCTION)
+            nspec, [(VFC, ("x", "04d", None, None))])
         self.assertEqual(result, [
             (OpCode.FAST_FORMAT_CONST, (0, "04d", None, None)),
         ])
@@ -473,8 +468,7 @@ class TestFormatLowering(unittest.IsolatedAsyncioTestCase):
     async def test_var_format_const_stays_when_not_local(self):
         nspec = NamespaceSpec(None, ("y",), ())
         result = convert_fast(
-            nspec, [(VFC, ("x", "04d", None, None))],
-            mode=CompilerMode.FUNCTION)
+            nspec, [(VFC, ("x", "04d", None, None))])
         self.assertEqual(result, [(VFC, ("x", "04d", None, None))])
 
 

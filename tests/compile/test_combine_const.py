@@ -12,7 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Unit tests for ByteCodeProcessor.combine_const (CONST2 pair packing)
+Unit tests for the CONST2 pair packing in ByteCodeProcessor.pack_runs
+(the trailing pack phase)
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -35,7 +36,7 @@ C = OpCode.CONST
 
 def combine_ops(instr):
     proc = ByteCodeProcessor(instr)
-    proc.combine_const()
+    proc.pack_runs()
     return proc.instructions
 
 

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Unit tests for ByteCodeProcessor.compress peephole optimizations
+Unit tests for the ByteCodeProcessor.squish peephole pass
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -30,30 +30,30 @@ from koskari.lib import Compare, OpCode, Operand
 pytestmark = pytest.mark.phase_compile
 
 
-def compress_ops(instr):
+def squish_ops(instr):
     proc = ByteCodeProcessor(instr)
-    proc.compress()
+    proc.squish()
     return proc.instructions
 
 
 class TestCompress(unittest.TestCase):
 
     def test_pop_elides_const(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 1),
             (OpCode.POP, 1),
         ])
         self.assertEqual(out, [(OpCode.RETURN, 1)])
 
     def test_pop_elides_dup(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.DUP, 0),
             (OpCode.POP, 1),
         ])
         self.assertEqual(out, [(OpCode.RETURN, 1)])
 
     def test_object_not_folds_const_truthy(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, True),
             (OpCode.OBJECT_NOT, 0),
         ])
@@ -61,7 +61,7 @@ class TestCompress(unittest.TestCase):
                                (OpCode.RETURN, 1)])
 
     def test_object_not_folds_const_falsy(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 0),
             (OpCode.OBJECT_NOT, 0),
         ])
@@ -69,7 +69,7 @@ class TestCompress(unittest.TestCase):
                                (OpCode.RETURN, 1)])
 
     def test_jump_true_after_const_true_becomes_jump(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, True),
             (OpCode.JUMP_TRUE, "L1"),
             (OpCode.CONST, "nope"),
@@ -79,7 +79,7 @@ class TestCompress(unittest.TestCase):
         self.assertEqual(out[:1], [(OpCode.JUMP, "L1")])
 
     def test_jump_true_after_const_false_is_removed(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, False),
             (OpCode.JUMP_TRUE, "L1"),
             (OpCode.CONST, "nope"),
@@ -90,7 +90,7 @@ class TestCompress(unittest.TestCase):
         self.assertNotIn((OpCode.JUMP, "L1"), out)
 
     def test_jump_false_after_const_false_becomes_jump(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, False),
             (OpCode.JUMP_FALSE, "L1"),
             (OpCode.CONST, "nope"),
@@ -100,7 +100,7 @@ class TestCompress(unittest.TestCase):
         self.assertEqual(out[:1], [(OpCode.JUMP, "L1")])
 
     def test_jump_false_after_const_true_is_removed(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, True),
             (OpCode.JUMP_FALSE, "L1"),
             (OpCode.CONST, "nope"),
@@ -111,7 +111,7 @@ class TestCompress(unittest.TestCase):
         self.assertNotIn((OpCode.JUMP, "L1"), out)
 
     def test_check_squash_object_not_to_jump_true(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.OBJECT_NOT, 0),
             (OpCode.JUMP_FALSE, "L1"),
             (OpCode.CONST, 123),
@@ -124,7 +124,7 @@ class TestCompress(unittest.TestCase):
         """
         EXCEPTION_MATCH then JUMP_FALSE squashes to CHECK_EXCEPTION
         """
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.EXCEPTION_MATCH, 0),
             (OpCode.JUMP_FALSE, "handler"),
             (OpCode.CONST, "matched"),
@@ -138,7 +138,7 @@ class TestCompress(unittest.TestCase):
             if prior == OpCode.OBJECT_NOT:
                 continue
 
-            out = compress_ops([
+            out = squish_ops([
                 (prior, 0),
                 (OpCode.JUMP_FALSE, "L1"),
                 (OpCode.CONST, "ok"),
@@ -149,7 +149,7 @@ class TestCompress(unittest.TestCase):
                              msg="expected %s -> %s" % (prior, squashed))
 
     def test_jump_to_immediate_label_is_removed(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.JUMP, "L1"),
             (OpCode.LABEL, "L1"),
             (OpCode.CONST, 1),
@@ -158,7 +158,7 @@ class TestCompress(unittest.TestCase):
         self.assertIn((OpCode.LABEL, "L1"), out)
 
     def test_cond_jump_to_immediate_label_with_const_is_removed(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, True),
             (OpCode.JUMP_TRUE, "L1"),
             (OpCode.LABEL, "L1"),
@@ -169,7 +169,7 @@ class TestCompress(unittest.TestCase):
         self.assertIn((OpCode.LABEL, "L1"), out)
 
     def test_cond_jump_to_immediate_label_becomes_pop(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.VAR, "x"),
             (OpCode.JUMP_TRUE, "L1"),
             (OpCode.LABEL, "L1"),
@@ -180,26 +180,26 @@ class TestCompress(unittest.TestCase):
         self.assertIn((OpCode.LABEL, "L1"), out)
 
     def test_const_none_before_return_is_removed(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, None),
             (OpCode.RETURN, 1),
         ])
         self.assertEqual(out, [(OpCode.RETURN, 0)])
 
     def test_missing_return_appends_return_one(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 123),
         ])
         self.assertEqual(out[-1], (OpCode.RETURN, 1))
 
     def test_trailing_const_none_becomes_return_zero(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, None),
         ])
         self.assertEqual(out, [(OpCode.RETURN, 0)])
 
     def test_consecutive_cdr_merges_to_sum(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 0),
             (OpCode.CDR, 1),
             (OpCode.CDR, 1),
@@ -212,7 +212,7 @@ class TestCompress(unittest.TestCase):
              (OpCode.RETURN, 1)])
 
     def test_consecutive_cdr_merges_mixed_counts(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 0),
             (OpCode.CDR, 2),
             (OpCode.CDR, 1),
@@ -224,7 +224,7 @@ class TestCompress(unittest.TestCase):
              (OpCode.RETURN, 1)])
 
     def test_consecutive_car_merges_to_sum(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 0),
             (OpCode.CAR, 1),
             (OpCode.CAR, 1),
@@ -236,7 +236,7 @@ class TestCompress(unittest.TestCase):
              (OpCode.RETURN, 1)])
 
     def test_car_then_cdr_not_merged(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 0),
             (OpCode.CAR, 1),
             (OpCode.CDR, 1),
@@ -249,7 +249,7 @@ class TestCompress(unittest.TestCase):
              (OpCode.RETURN, 1)])
 
     def test_var_store_const_squash(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 42),
             (OpCode.VAR_STORE, "x"),
         ])
@@ -259,7 +259,7 @@ class TestCompress(unittest.TestCase):
              (OpCode.RETURN, 1)])
 
     def test_var_store_not_squashed_without_const(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.VAR, "y"),
             (OpCode.VAR_STORE, "x"),
         ])
@@ -267,7 +267,7 @@ class TestCompress(unittest.TestCase):
         self.assertNotIn(OpCode.VAR_STORE_CONST, [op for op, _ in out])
 
     def test_var_store_not_squashed_when_prior_not_const(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 1),
             (OpCode.VAR, "y"),
             (OpCode.VAR_STORE, "x"),
@@ -285,7 +285,7 @@ class TestInplaceConstSquash(unittest.TestCase):
     """
 
     def test_const_rhs_fuses(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 1),
             (OpCode.VAR_INPLACE,
              ((Operand.ADD, 1), "i", 0, 0)),
@@ -298,7 +298,7 @@ class TestInplaceConstSquash(unittest.TestCase):
             OpCode.VAR_INPLACE, [op for op, _ in out])
 
     def test_computed_rhs_stays_generic(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.VAR, "y"),
             (OpCode.VAR_INPLACE,
              ((Operand.ADD, 1), "i", 0, 0)),
@@ -315,7 +315,7 @@ class TestInplaceConstSquash(unittest.TestCase):
             (OpCode.VAR_INPLACE,
              ((Operand.ADD, 2), "i", 0, 0)),
         ]
-        out = compress_ops(instr)
+        out = squish_ops(instr)
         self.assertIn(
             (OpCode.VAR_INPLACE,
              ((Operand.ADD, 2), "i", 0, 0)),
@@ -332,7 +332,7 @@ class TestCompareConstFold(unittest.TestCase):
     """
 
     def test_lt_folds_true(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 4),
             (OpCode.CONST, 8),
             (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
@@ -341,7 +341,7 @@ class TestCompareConstFold(unittest.TestCase):
                                (OpCode.RETURN, 1)])
 
     def test_gt_folds_false(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 4),
             (OpCode.CONST, 8),
             (OpCode.OBJECT_COMPARE, (Compare.GT, 2)),
@@ -350,7 +350,7 @@ class TestCompareConstFold(unittest.TestCase):
                                (OpCode.RETURN, 1)])
 
     def test_merged_int_operand_folds(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 5),
             (OpCode.CONST, 5),
             (OpCode.OBJECT_COMPARE, (int(Compare.EQ) << 8) | 2),
@@ -359,7 +359,7 @@ class TestCompareConstFold(unittest.TestCase):
                                (OpCode.RETURN, 1)])
 
     def test_chain_folds_true(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 1),
             (OpCode.CONST, 2),
             (OpCode.CONST, 3),
@@ -369,7 +369,7 @@ class TestCompareConstFold(unittest.TestCase):
                                (OpCode.RETURN, 1)])
 
     def test_chain_folds_false(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 1),
             (OpCode.CONST, 3),
             (OpCode.CONST, 2),
@@ -379,7 +379,7 @@ class TestCompareConstFold(unittest.TestCase):
                                (OpCode.RETURN, 1)])
 
     def test_membership_folds(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 3),
             (OpCode.CONST, (1, 2, 3)),
             (OpCode.OBJECT_COMPARE, (Compare.IN, 2)),
@@ -388,7 +388,7 @@ class TestCompareConstFold(unittest.TestCase):
                                (OpCode.RETURN, 1)])
 
     def test_not_in_folds(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 9),
             (OpCode.CONST, (1, 2, 3)),
             (OpCode.OBJECT_COMPARE, (Compare.NOT_IN, 2)),
@@ -397,7 +397,7 @@ class TestCompareConstFold(unittest.TestCase):
                                (OpCode.RETURN, 1)])
 
     def test_position_between_feeders_is_kept(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 4),
             (OpCode.POSITION, (1, 2)),
             (OpCode.CONST, 8),
@@ -413,7 +413,7 @@ class TestCompareConstFold(unittest.TestCase):
             (OpCode.CONST, None),
             (OpCode.OBJECT_COMPARE, (Compare.IS, 2)),
         ]
-        out = compress_ops(instr)
+        out = squish_ops(instr)
         self.assertEqual(out, instr + [(OpCode.RETURN, 1)])
 
     def test_non_const_feeder_declines(self):
@@ -422,7 +422,7 @@ class TestCompareConstFold(unittest.TestCase):
             (OpCode.CONST, 1),
             (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
         ]
-        out = compress_ops(instr)
+        out = squish_ops(instr)
         self.assertEqual(out, instr + [(OpCode.RETURN, 1)])
 
     def test_uncomparable_consts_decline(self):
@@ -431,7 +431,7 @@ class TestCompareConstFold(unittest.TestCase):
             (OpCode.CONST, "a"),
             (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
         ]
-        out = compress_ops(instr)
+        out = squish_ops(instr)
         self.assertEqual(out, instr + [(OpCode.RETURN, 1)])
 
     def test_membership_bad_arity_declines(self):
@@ -441,11 +441,11 @@ class TestCompareConstFold(unittest.TestCase):
             (OpCode.CONST, 3),
             (OpCode.OBJECT_COMPARE, (Compare.IN, 3)),
         ]
-        out = compress_ops(instr)
+        out = squish_ops(instr)
         self.assertEqual(out, instr + [(OpCode.RETURN, 1)])
 
     def test_fold_feeds_jump_false_elision(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 4),
             (OpCode.CONST, 8),
             (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
@@ -461,7 +461,7 @@ class TestCompareConstFold(unittest.TestCase):
         self.assertIn((OpCode.CONST, "yep"), out)
 
     def test_fold_feeds_jump_true_conversion(self):
-        out = compress_ops([
+        out = squish_ops([
             (OpCode.CONST, 4),
             (OpCode.CONST, 8),
             (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),

@@ -38,7 +38,7 @@ from ..types import (fill_position, is_nil, get_position, is_keyword,
                      is_pair, is_proper, is_symbol, parameterize)
 from .pragma import (BracketCalls, KeywordLiterals, KoskariPragma,
                      PackModule, ResolutionMode, StrayColon)
-from .processor import ByteCodeProcessor
+from .processor import process
 
 
 class Compiled(ABC):
@@ -1092,29 +1092,26 @@ class Compiler:
         base_nspec = None
 
         def resolve_nspec(rows):
-            # Runs between the compress/normalize passes and the fast
-            # lowering: merge closure/write syms from inner FunctionSpecs
-            # into the fragment, then build the NamespaceSpec from the
-            # fragment buckets (local, closure, global).
+            # this disgusting bit of hackery is necessary because the
+            # ByteCodeProcessor needs the NamespaceSpec to know whether
+            # to convert VARs to FASTs, and the NamespaceSpec is only
+            # cleanly available after the compress/normalize passes.
+
             nonlocal base_nspec
             self._cpool_scan_merge(fragment, rows)
             base_nspec = reso.build_namespace_spec(fragment)
-            return base_nspec
+            if mode == CompilerMode.FUNCTION:
+                return base_nspec
+            return None
 
-        # One use-and-discard processor per stream runs the gated
-        # transformation pipeline (compress, operand normalization, the
-        # optional fast lowering, generator tail-call demotion).
-        # Tail-call promotion is a function-body optimization: expression
-        # streams (module top-level, REPL) run once, and promoting there
-        # only costs backtrace frames. The pragma gates it; the mode
-        # excludes expression code.
-        proc = ByteCodeProcessor(
+        tco_enabled =  self.tco_enabled and mode == CompilerMode.FUNCTION
+
+        # handles compression, var-to-fast lowering, and tail-call promotion
+        instr = process(
             fragment.instructions,
-            gates={'convert-fast': self.convert_fast_enabled,
-                   'tco': (self.tco_enabled
-                           and mode != CompilerMode.EXPRESSION)},
-            mode=mode)
-        instr = proc.process(resolve_nspec)
+            resolve_nspec,
+            tco_enabled=tco_enabled,
+            convert_fast=self.convert_fast_enabled)
 
         # Resolve filename for Code metadata
         try:

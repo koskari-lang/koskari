@@ -21,7 +21,6 @@ Unit tests for convert_fast VAR to FAST lowering in the compiler.
 
 import unittest
 
-from koskari.compile import CompilerMode
 from koskari.compile.processor import ByteCodeProcessor
 from koskari.lib import OpCode, NamespaceSpec
 
@@ -30,9 +29,9 @@ import pytest
 pytestmark = pytest.mark.phase_compile
 
 
-def convert_fast(nspec, instr, mode=None):
-    proc = ByteCodeProcessor(instr, mode=mode)
-    proc.convert_fast(nspec)
+def convert_fast(base_nspec, instr):
+    proc = ByteCodeProcessor(instr)
+    proc.convert_fast(base_nspec)
     return proc.instructions
 
 
@@ -48,7 +47,7 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("obj",), ())
         instr = [(OpCode.CALL_VAR_ATTR_NAMES, ("obj", "upper", (), 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_FAST_ATTR_NAMES)
@@ -61,7 +60,7 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("obj",), ())
         instr = [(OpCode.CALL_VAR_ATTR_NAMES, ("other", "upper", (), 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_VAR_ATTR_NAMES)
@@ -74,7 +73,7 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("obj",), ())
         instr = [(OpCode.VAR, "obj")]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.FAST)
@@ -87,7 +86,7 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, (), ("obj",))
         instr = [(OpCode.CALL_VAR_ATTR_NAMES, ("obj", "upper", (), 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_FAST_ATTR_NAMES)
@@ -98,9 +97,8 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         """
         CALL_VAR_ATTR_NAMES is not converted when nstack is empty
         """
-        nspec = NamespaceSpec(None, ("obj",), ())
         instr = [(OpCode.CALL_VAR_ATTR_NAMES, ("obj", "upper", (), 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.EXPRESSION)
+        result = convert_fast(None, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_VAR_ATTR_NAMES)
@@ -113,7 +111,7 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("x",), ())
         instr = [(OpCode.VAR_STORE_CONST, ("x", 99, None, None))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.FAST_STORE_CONST)
@@ -126,7 +124,7 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("x",), ())
         instr = [(OpCode.VAR_STORE_CONST, ("other", 99, None, None))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.VAR_STORE_CONST)
@@ -144,7 +142,7 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("f",), ())
         instr = [(OpCode.CALL_VAR, ("f", 2, 0, 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_FAST)
@@ -157,7 +155,7 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("f",), ())
         instr = [(OpCode.CALL_VAR_NAMES, ("f", ("name",), 1, 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_FAST_NAMES)
@@ -170,7 +168,7 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("f",), ())
         instr = [(OpCode.CALL_VAR_STAR, ("f", 3, 0, 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_FAST_STAR)
@@ -183,7 +181,7 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("a", "b"), ())
         instr = [(OpCode.CALL_VAR, ("other", 1, 0, 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_VAR)
@@ -196,7 +194,7 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("obj",), ())
         instr = [(OpCode.CALL_VAR_ATTR, ("obj", "upper", 0, 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_FAST_ATTR)
@@ -209,7 +207,7 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("obj",), ())
         instr = [(OpCode.CALL_VAR_ATTR, ("other", "upper", 0, 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_VAR_ATTR)
@@ -222,7 +220,7 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, ("obj",), ())
         instr = [(OpCode.CALL_VAR_ATTR_STAR, ("obj", "m", 3, 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_FAST_ATTR_STAR)
@@ -235,7 +233,7 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, (), ("obj",))
         instr = [(OpCode.CALL_VAR_ATTR, ("obj", "add_one", 1, 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_FAST_ATTR)
@@ -248,7 +246,7 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         """
         nspec = NamespaceSpec(None, (), ("obj",))
         instr = [(OpCode.CALL_VAR_ATTR_STAR, ("obj", "m", 2, 0))]
-        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr)
         self.assertEqual(len(result), 1)
         op, arg = result[0]
         self.assertEqual(op, OpCode.CALL_FAST_ATTR_STAR)
@@ -259,14 +257,12 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         """
         CALL_VAR_ATTR and CALL_VAR_ATTR_STAR are not converted when nstack is empty
         """
-        nspec = NamespaceSpec(None, ("obj",), ())
         for op_in, arg_in in (
                 (OpCode.CALL_VAR_ATTR, ("obj", "upper", 0, 0)),
                 (OpCode.CALL_VAR_ATTR_STAR, ("obj", "m", 3, 0)),
         ):
             instr = [(op_in, arg_in)]
-            result = convert_fast(
-                nspec, instr, mode=CompilerMode.EXPRESSION)
+            result = convert_fast(None, instr)
             self.assertEqual(len(result), 1)
             op, arg = result[0]
             self.assertEqual(op, op_in)

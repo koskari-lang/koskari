@@ -15,9 +15,10 @@
 koskari.compile.processor
 
 The bytecode processor internalizes an instruction stream and applies
-the gated transformation pipelines: peephole squish, feeder fusion, VAR
-run packing, operand normalization, VAR to FAST lowering, and generator
-tail-call demotion. Produces the finished rows for Code construction
+the gated transformation pipelines: peephole squish, feeder fusion,
+operand normalization, VAR to FAST lowering, generator tail-call
+demotion, and the trailing bulk-load pack. Produces the finished rows
+for Code construction
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -228,6 +229,16 @@ CALL_TO_TAIL_CALL = {
 }
 
 
+# The trailing pack phase's run kinds: bare load opcode -> (pair
+# twin, quad twin or None). A run is homogeneous; a load of another
+# kind breaks it.
+PACK_SHAPES = {
+    OpCode.CONST: (OpCode.CONST2, None),
+    OpCode.VAR: (OpCode.VAR2, OpCode.VAR4),
+    OpCode.FAST: (OpCode.FAST2, OpCode.FAST4),
+}
+
+
 # Extent classification for tail-call promotion, by the uninstall
 # principle: an extent whose uninstall behavior must run after the
 # call cannot be tail-called through. Discardable extents (True) are
@@ -312,30 +323,59 @@ def fuse_rule(*pattern):
     return register
 
 
+def process(
+        instructions,
+        resolve_nspec,
+        *,
+        tco_enabled=False,
+        convert_fast=True):
+    """
+    Run the full gated pipeline and return the finished rows.
+
+    :param instructions: sequence of (op, arg) rows, internalized
+    :param resolve_nspec: function to resolve the NamespaceSpec
+    :param tco_enabled: whether tail-call promotion may run
+    :param convert_fast: whether the VAR to FAST lowering runs
+    :return: the finished rows
+    """
+
+    proc = ByteCodeProcessor(
+        instructions,
+        tco_enabled=tco_enabled,
+        convert_fast=convert_fast)
+    return proc.process(resolve_nspec)
+
+
+
 class ByteCodeProcessor:
     """
     A single-use transformation machine over one instruction stream.
 
-    Constructed per code object with the rows, the pragma-derived gate
-    flags, and the compilation mode; mutated in place as passes apply;
-    discarded after the finished rows are taken. Rules and pass tables
-    are stateless module-level data. The instance carries only the
-    stream and its per-stream working state, so its lifetime is exactly
-    the validity of that state.
+    Constructed per code object with the rows and the explicit pass
+    settings, which the creating compiler derives from its pragma and
+    the stream's mode; mutated in place as passes apply; discarded
+    after the finished rows are taken. Rules and pass tables are
+    stateless module-level data. The instance carries only the stream
+    and its per-stream working state, so its lifetime is exactly the
+    validity of that state.
     """
 
-    def __init__(self, instructions, gates=None, mode=None):
+    def __init__(
+            self,
+            instructions,
+            *,
+            tco_enabled=False,
+            convert_fast=True):
         """
         :param instructions: sequence of (op, arg) rows, internalized
-        :param gates: optional mapping of pass-gate flags; recognized
-            key 'convert-fast' enables the VAR to FAST lowering
-        :param mode: CompilerMode for the stream, consulted by the
-            fast lowering
+        :param tco_enabled: whether tail-call promotion may run
+        :param convert_fast: whether the VAR to FAST lowering runs
         """
 
         self.instructions = list(instructions)
-        self.gates = dict(gates) if gates else {}
-        self.mode = mode
+
+        self.tco_enabled = tco_enabled
+        self.convert_fast_enabled = convert_fast
 
         # the output accumulator of the pass currently walking the
         # stream; the matcher and splice services address it
@@ -745,7 +785,7 @@ class ByteCodeProcessor:
         """
         The peephole half of the compress pipeline: the squish rule set
         over the shared driver, plus trailing RETURN normalization.
-        Feeder fusion and VAR run packing follow as separate passes.
+        Feeder fusion follows as a separate pass.
         """
 
         rows = self.apply_rules(SQUISH_RULES, [])
@@ -773,70 +813,11 @@ class ByteCodeProcessor:
         POSITION rows are transparent, with the fused row keeping the
         position in effect at the first feeder and the latest interior
         position re-emitted after the row. The fast pass later lowers
-        the VAR forms to their FAST twins. Runs before pack_var_runs so
-        fusion gets first claim on the feeders.
+        the VAR forms to their FAST twins; the trailing pack phase gets
+        only the feeders every fusion declined.
         """
 
         self.instructions = self.apply_rules(FUSE_RULES, [])
-
-
-    def compress(self):
-        """
-        The compress pipeline: peephole squish, then feeder fusion,
-        then VAR run packing, in that order so fusion gets first claim
-        on feeder rows
-        """
-
-        self.squish()
-        self.fuse_feeders()
-        self.pack_var_runs()
-
-
-    def pack_var_runs(self):
-        """
-        Late sweep: combine runs of consecutive bare VAR loads into VAR4 /
-        VAR2 rows (greedy, in that order). Runs after every other squash so
-        consumer-specific fusions get first claim on their feeder rows, and
-        breaks at any non-VAR instruction (including LABEL). POSITION rows
-        inside a run are absorbed. Merged row keeps the position in
-        effect at the run's first load, and the latest absorbed position is
-        re-emitted after the run so following instructions keep theirs. The
-        fast pass later lowers VAR2/VAR4 to FAST2/FAST4 through the
-        ordinary VAR->FAST path.
-        """
-
-        result = []
-        run = []
-        trailing_pos = None
-
-        def flush():
-            nonlocal trailing_pos
-            while len(run) >= 4:
-                a, b, c, d = run[:4]
-                del run[:4]
-                result.append((OpCode.VAR4, (a, b, c, d)))
-            if len(run) >= 2:
-                a, b = run[:2]
-                del run[:2]
-                result.append((OpCode.VAR2, (a, b, None, None)))
-            if run:
-                result.append((OpCode.VAR, run.pop()))
-            if trailing_pos is not None:
-                result.append(trailing_pos)
-                trailing_pos = None
-
-        for op, arg in self.instructions:
-            if op == OpCode.VAR:
-                run.append(arg)
-                continue
-            if run and op == OpCode.POSITION:
-                trailing_pos = (op, arg)
-                continue
-            flush()
-            result.append((op, arg))
-
-        flush()
-        self.instructions = result
 
 
     def normalize_opcount(self):
@@ -868,9 +849,11 @@ class ByteCodeProcessor:
         Lower VAR-family rows to their FAST twins where the name has a
         fast slot in the active namespace scope, tracking PUSH_NS /
         PUSH_COLLECT scope entries through the stream
-        """
 
-        from .compiler import CompilerMode
+        :param base_nspec: NamespaceSpec seeding the base scope, or
+            None for a stream with no base scope (only inner PUSH_NS /
+            PUSH_COLLECT scopes lower)
+        """
 
         result = []
         nstack = []
@@ -892,7 +875,7 @@ class ByteCodeProcessor:
             nstack.pop()
             reload_findex()
 
-        if self.mode == CompilerMode.FUNCTION:
+        if base_nspec is not None:
             push_nspec(base_nspec)
 
         def fast_slot(name):
@@ -963,35 +946,50 @@ class ByteCodeProcessor:
         self.instructions = result
 
 
-    def combine_const(self):
+    def pack_runs(self):
         """
-        Final sweep: combine adjacent bare CONST loads into CONST2 rows
-        (greedy pairs). Runs as the very last pass of process, after
-        convert_fast, so no other pass ever sees a CONST2 row; the only
-        consumers are the schema-driven finalize, dis, and codex.
-        POSITION rows inside a run are absorbed, with the merged row
-        keeping the position in effect at the run's first load and the
-        latest absorbed position re-emitted after the run.
+        The trailing pack phase, the very last pass of process:
+        combine runs of consecutive bare CONST, VAR, or FAST loads
+        into their bulk twins (CONST2; VAR4/VAR2; FAST4/FAST2, greedy
+        quads then pairs). Runs after convert_fast, so no other pass
+        ever sees a packed row and FAST runs pack directly; the only
+        consumers are the schema-driven finalize, dis, and codex. A
+        run is homogeneous -- a load of another kind breaks it, as
+        does any other instruction. POSITION rows inside a run are
+        absorbed, with the merged rows keeping the position in effect
+        at the run's first load and the latest absorbed position
+        re-emitted after the run.
         """
 
         result = []
+        kind = None
         run = []
         trailing_pos = None
 
         def flush():
-            nonlocal trailing_pos
-            while len(run) >= 2:
-                a, b = run[:2]
-                del run[:2]
-                result.append((OpCode.CONST2, (a, b, None, None)))
+            nonlocal kind, trailing_pos
             if run:
-                result.append((OpCode.CONST, run.pop()))
+                op2, op4 = PACK_SHAPES[kind]
+                while op4 is not None and len(run) >= 4:
+                    a, b, c, d = run[:4]
+                    del run[:4]
+                    result.append((op4, (a, b, c, d)))
+                while len(run) >= 2:
+                    a, b = run[:2]
+                    del run[:2]
+                    result.append((op2, (a, b, None, None)))
+                if run:
+                    result.append((kind, run.pop()))
+            kind = None
             if trailing_pos is not None:
                 result.append(trailing_pos)
                 trailing_pos = None
 
         for op, arg in self.instructions:
-            if op == OpCode.CONST:
+            if op in PACK_SHAPES:
+                if op != kind:
+                    flush()
+                    kind = op
                 run.append(arg)
                 continue
             if run and op == OpCode.POSITION:
@@ -1101,25 +1099,36 @@ class ByteCodeProcessor:
         :return: the finished instruction rows
         """
 
-        self.compress()
+        # first we do the peephole squish, which sounds more suggestive than
+        # it actually is.
+        self.squish()
 
-        # promote and demote are brothers, dispatched exclusively: a
-        # yielding stream never promotes and instead demotes any raw
-        # TAIL_CALL*; every other stream may promote under the tco gate.
-        if any(op in (OpCode.YIELD, OpCode.YIELD_FROM)
-               for op, _ in self.instructions):
-            self.demote_tail_calls_if_yields()
-        elif self.gates.get('tco'):
+        # then we fuse the feeders and consumer opcodes where applicable
+        self.fuse_feeders()
+
+        # we either promote or forcibly demote tail calls depending
+        # on whether tco is enable and also allowed (not yielding).
+        tco_enabled = (
+            self.tco_enabled and not
+            any(op in (OpCode.YIELD, OpCode.YIELD_FROM)
+                for op, _ in self.instructions))
+
+        if tco_enabled:
             self.promote_tail_calls()
+        else:
+            self.demote_tail_calls_if_yields()
 
+        # fixes the opcount and cmpcount operands to be packed uint16s
         self.normalize_opcount()
 
+        # gross hack.
         base_nspec = resolve_nspec(self.instructions)
 
-        if self.gates.get('convert-fast', True):
+        if self.convert_fast_enabled and base_nspec:
             self.convert_fast(base_nspec)
 
-        self.combine_const()
+        # combine runs of consecutive bare CONST, VAR, FAST
+        self.pack_runs()
 
         return self.instructions
 
