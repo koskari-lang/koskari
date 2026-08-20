@@ -87,16 +87,6 @@ Two pieces of work:
 
 ## Compiler
 
-### Macro-expansion cycle checks (investigate)
-
-A self-producing expansion spins the compiler: `full_compile`'s rewrite
-loop has no cycle or depth guard, and operator-position lowering added a
-second rewrite-until-settled loop (`Compiler.lower_head` restarts via the
-same path). Investigate detection: a depth cap, a seen-form check, or a
-per-turn expansion budget, and what the diagnostic should name (the
-cycling syntax, the forms in the loop). Applies to both loops at once if
-the guard lives in `full_compile`.
-
 ### Extent verification and dead-region sweep
 
 Add the TAIL-under-non-discardable-extent check to the finalize walk
