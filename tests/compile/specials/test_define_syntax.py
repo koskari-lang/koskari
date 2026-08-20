@@ -22,6 +22,7 @@ Integration tests for define with syntax and macro transformers.
 import pytest
 
 from tests.dis.dis import dis
+from koskari.exceptions import CompilerError
 from koskari.lib import OpCode, build_list
 from koskari.syntax import (Syntax, build_macro, build_special, build_syntax,
                             parse_match_pattern, parse_rule_pattern)
@@ -436,6 +437,77 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
         expr, mod = self.compile_expr(src_str, **defn)
         dis(expr.code)
 
+        result = await expr()
+        self.assertEqual(42, result)
+
+
+class TestExpansionCycleGuard(DefineSyntaxCompileHelpers):
+    """
+    The full_compile rewrite loop detects macro-expansion cycles by
+    form equality and stops divergent growth at the settling limit,
+    raising CompilerError instead of spinning
+    """
+
+    async def define_macro(self, src_str, name):
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        return vars(mod)[name]
+
+    async def test_self_expansion_cycle(self):
+        spin = await self.define_macro("""
+        (define spin
+          (syntax-rules spin []
+            [(spin x) (spin x)]))
+        """, 'spin')
+
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr("(spin 1)", **{'compile/spin': spin})
+
+        self.assertIn("macro expansion cycle", str(caught.exception))
+        self.assertIn("(spin 1)", str(caught.exception))
+
+    async def test_two_step_cycle(self):
+        spin = await self.define_macro("""
+        (define spin
+          (syntax-rules spin []
+            [(spin x) (spun x)]))
+        """, 'spin')
+        spun = await self.define_macro("""
+        (define spun
+          (syntax-rules spun []
+            [(spun x) (spin x)]))
+        """, 'spun')
+
+        defns = {'compile/spin': spin, 'compile/spun': spun}
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr("(spin 1)", **defns)
+
+        message = str(caught.exception)
+        self.assertIn("macro expansion cycle", message)
+        self.assertIn("(spin 1)", message)
+        self.assertIn("(spun 1)", message)
+
+    async def test_growing_expansion_hits_limit(self):
+        grow = await self.define_macro("""
+        (define grow
+          (syntax-rules grow []
+            [(grow x) (grow (grow x))]))
+        """, 'grow')
+
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr("(grow 1)", **{'compile/grow': grow})
+
+        self.assertIn("did not settle", str(caught.exception))
+
+    async def test_settling_expansion_still_compiles(self):
+        twice = await self.define_macro("""
+        (define twice
+          (syntax-rules twice []
+            [(twice x) (+ x x)]))
+        """, 'twice')
+
+        expr, mod = self.compile_expr(
+            "(twice 21)", **{'compile/twice': twice})
         result = await expr()
         self.assertEqual(42, result)
 

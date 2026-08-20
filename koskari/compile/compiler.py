@@ -105,6 +105,11 @@ _symbol_colon = symbol(":")
 # each compilation turn
 ACTIVE_PRAGMA_PARAM = "active-compiler-pragma"
 
+# Rewrite-loop settling limit for full_compile: legitimate expansion
+# chains are single-digit, and a divergent expansion grows costlier
+# with every rewrite, so the ceiling stays low.
+REWRITE_LIMIT = 32
+
 
 def unique_append(lst, val):
     """
@@ -700,12 +705,52 @@ class Compiler:
             self._resolution_instance = self._resolution_pragma_class()
         try:
             res = source_obj
+            seen = None
             while not isinstance(res, ByteCodeFragment):
+                if seen is None:
+                    seen = [res]
+                else:
+                    self.check_rewrite_cycle(seen, res)
+                    seen.append(res)
                 res = self.compile(res, position=position)
             return res
         finally:
             if tmp:
                 self._resolution_instance = None
+
+
+    def check_rewrite_cycle(self, seen, form):
+        """
+        Guard the full_compile rewrite loop: a rewrite that repeats an
+        earlier form in this position is a macro-expansion cycle, and a
+        chain past the settling limit is divergent growth; either way
+        the compile stops here instead of spinning.
+
+        Identity is exempt from the cycle check: a special may mutate
+        its source in place and return the same object to request a
+        recompile (the return/yield keyword-values fixup), which is
+        progress, not a cycle. A genuinely stuck identical form falls
+        to the settling limit instead.
+
+        :param seen: prior rewrite forms in this position, oldest first
+        :param form: the newly produced rewrite
+        :raises CompilerError: on a cycle or an unsettled chain
+        """
+
+        for i, prior in enumerate(seen):
+            if form is prior:
+                continue
+            if form == prior:
+                chain = " -> ".join(str(f) for f in seen[i:])
+                raise CompilerError(
+                    f"macro expansion cycle: {chain} -> {form}",
+                    form)
+
+        if len(seen) >= REWRITE_LIMIT:
+            raise CompilerError(
+                f"macro expansion did not settle after {REWRITE_LIMIT}"
+                f" rewrites; last form: {form}",
+                form)
 
 
     def compile_expression(self, source_obj):
