@@ -110,7 +110,7 @@ def helper_function(compiler, caps, selfref):
     lamb.doc = discover_docstring(body_src)
 
     with compiler.resolution_scope():
-        lamb = helper_begin(lamb, body_src, True)
+        lamb = helper_begin(lamb, body_src)
     code = compiler.complete(lamb, CompilerMode.FUNCTION)
     fspec = FunctionSpec(proper_name, FormalsSpec(
         tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),

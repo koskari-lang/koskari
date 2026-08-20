@@ -52,7 +52,7 @@ def special_begin(
     fragment = compiler.fragment(called_by)
     # thread the form's own position to diagnostics about positionless
     # atoms in the body
-    return helper_begin(fragment, body, get_position(source))
+    return helper_begin(fragment, body, position=get_position(source))
 
 
 # The end.

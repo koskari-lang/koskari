@@ -175,7 +175,7 @@ def special_dyn_wind(
         _compile_thunk(compiler, after_src, fragment)
         fragment.instruction(OpCode.PUSH_WIND, 2)
 
-    # helper_begin(fragment, body_src, False)
+    # helper_begin(fragment, body_src)
     fragment.merge(compiler.full_compile(body_src))
     fragment.instruction(OpCode.POP_WIND, 0)
     return fragment

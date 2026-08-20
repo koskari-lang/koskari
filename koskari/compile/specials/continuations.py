@@ -87,7 +87,7 @@ def special_let_cc(compiler, source):
         frag.declare_var(k_name)
         frag.instruction(OpCode.CAPTURE_CC, 0)
         frag.instruction(OpCode.VAR_STORE, k_name)
-        helper_begin(frag, body, False)
+        helper_begin(frag, body)
     fragment.instruction(OpCode.POP_CC, 0)
 
     return fragment
@@ -120,7 +120,7 @@ def special_capture_cc(compiler, source):
     fragment.instruction(OpCode.PUSH_CC, 0)
     fragment.instruction(OpCode.CAPTURE_CC, 0)
     fragment.instruction(OpCode.VAR_STORE, k_name)
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.POP_CC, 0)
 
     return fragment
@@ -141,7 +141,7 @@ def special_reset(compiler, source):
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
     fragment.instruction(OpCode.PUSH_PROMPT, 0)
-    helper_begin(fragment, rest, False)
+    helper_begin(fragment, rest)
     fragment.instruction(OpCode.POP_PROMPT, 0)
 
     return fragment
@@ -174,7 +174,7 @@ def special_shift(compiler, source):
     fragment.instruction(OpCode.PUSH_SHIFT, 0)
     fragment.declare_var(k_name)
     fragment.instruction(OpCode.VAR_STORE, k_name)
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.POP_SHIFT, 0)
 
     return fragment

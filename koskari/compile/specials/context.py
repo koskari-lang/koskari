@@ -68,7 +68,7 @@ def special_parameterize(
         fragment.merge(compiler.full_compile(val))
 
     fragment.instruction(OpCode.PUSH_PARAM, tuple(map(str, args)))
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.POP_PARAM, 0)
     return fragment
 
@@ -159,7 +159,7 @@ def special_with(compiler, caps):
 
     fragment.position(pos)
     fragment.instruction(OpCode.PUSH_WITH, name)
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.POP_WITH, 0)
 
     return fragment
@@ -194,7 +194,7 @@ def special_dyn_with(compiler, caps):
 
     fragment.position(pos)
     fragment.instruction(OpCode.PUSH_DYN_WITH, name)
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.POP_DYN_WITH, 0)
 
     return fragment

@@ -982,6 +982,7 @@ def discover_docstring(body):
 def helper_begin(
         fragment: ByteCodeFragment,
         body: pair,
+        *,
         position=None) -> ByteCodeFragment:
     """
     Compile a body list into a fragment

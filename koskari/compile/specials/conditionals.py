@@ -72,12 +72,12 @@ def special_cond(compiler, source):
             if cl:
                 raise SpecialError("else: must be last clause", source)
 
-            helper_begin(fragment, body, clause_pos)
+            helper_begin(fragment, body, position=clause_pos)
             break
 
         fragment.merge(compiler.full_compile(test, position=clause_pos))
         fragment.instruction(OpCode.JUMP_FALSE, label)
-        helper_begin(fragment, body, clause_pos)
+        helper_begin(fragment, body, position=clause_pos)
         fragment.instruction(OpCode.JUMP, done)
 
     else:

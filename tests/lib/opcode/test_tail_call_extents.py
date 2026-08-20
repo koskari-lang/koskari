@@ -85,4 +85,29 @@ class TestTailCallExtents(CevalTest):
         self.assertIn("non-discardable", str(ctx.exception))
 
 
+    async def test_yield_with_tail_twin_rejected_at_construction(self):
+        """
+        The C validator refuses a stream mixing YIELD with any TAIL
+        family opcode, twins included; direct Code construction cannot
+        bypass the compiler-side demotion
+        """
+
+        with self.assertRaises(ValueError) as ctx:
+            build_expr([
+                ["YIELD", 1],
+                ["VAR", "f"],
+                ["TAIL_CALL", 0],
+                ["RETURN", 1],
+            ])
+        self.assertIn("TAIL_CALL", str(ctx.exception))
+
+        with self.assertRaises(ValueError) as ctx:
+            build_expr([
+                ["YIELD", 1],
+                ["TAIL_CALL_VAR", ("f", 0, 0, 0)],
+                ["RETURN", 1],
+            ])
+        self.assertIn("TAIL_CALL", str(ctx.exception))
+
+
 # The end.

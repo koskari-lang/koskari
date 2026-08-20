@@ -59,7 +59,7 @@ def special_while(compiler, _while, test, body):
     fragment.merge(compiler.full_compile(test.datum))
     fragment.instruction(OpCode.JUMP_FALSE, loop_exit)
 
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.CONTINUE, 1)
 
     fragment.instruction(OpCode.LABEL, loop_exit)
@@ -131,7 +131,7 @@ def special_for_each(compiler, caps):
         fragment.instruction(OpCode.VAR_STORE, binding_name)
 
     # perform the loop body, then continue back up at the ITER_NEXT
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.CONTINUE, 1)
 
     fragment.instruction(OpCode.LABEL, loop_else)
