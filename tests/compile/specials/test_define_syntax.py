@@ -22,8 +22,9 @@ Integration tests for define with syntax and macro transformers.
 import pytest
 
 from tests.dis.dis import dis
+from koskari.compile import Compiler
 from koskari.exceptions import CompilerError
-from koskari.lib import OpCode, build_list
+from koskari.lib import OpCode, build_list, cons, nil, symbol
 from koskari.syntax import (Syntax, build_macro, build_special, build_syntax,
                             parse_match_pattern, parse_rule_pattern)
 
@@ -498,6 +499,26 @@ class TestExpansionCycleGuard(DefineSyntaxCompileHelpers):
             self.compile_expr("(grow 1)", **{'compile/grow': grow})
 
         self.assertIn("did not settle", str(caught.exception))
+
+    def test_rewrite_limit_bounds_chain(self):
+        compiler = Compiler("<unittest>", None)
+        compiler.rewrite_limit = 3
+        seen = [cons(symbol("a"), i, nil) for i in range(3)]
+
+        with self.assertRaises(CompilerError) as caught:
+            compiler.check_rewrite_cycle(seen, cons(symbol("b"), nil))
+
+        self.assertIn("did not settle", str(caught.exception))
+
+    def test_rewrite_limit_zero_is_unlimited(self):
+        compiler = Compiler("<unittest>", None)
+        compiler.rewrite_limit = 0
+        seen = [cons(symbol("a"), i, nil) for i in range(100)]
+
+        compiler.check_rewrite_cycle(seen, cons(symbol("b"), nil))
+
+        with self.assertRaises(CompilerError):
+            compiler.check_rewrite_cycle(seen, cons(symbol("a"), 42, nil))
 
     async def test_settling_expansion_still_compiles(self):
         twice = await self.define_macro("""

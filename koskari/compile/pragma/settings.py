@@ -17,8 +17,9 @@ koskari.compile.pragma.settings
 Compiler-side pragma settings, registered into the koskari.pragma registry at
 import: compiler/resolution, compiler/call-brackets, compiler/stray-colon,
 compiler/keyword-literals, compiler/tco-enable, compiler/cache-expression,
-compiler/cache-function, compiler/protect-code, compiler/pack-module, and
-the reserved compiler/convert-fast and compiler/compress. Each setting's
+compiler/cache-function, compiler/protect-code, compiler/pack-module,
+compiler/rewrite-limit, and the reserved compiler/convert-fast and
+compiler/compress. Each setting's
 ``default`` is its baseline (value when undeclared); the function's
 argument defaults are the parameter defaults (value when declared but the
 arg is omitted).
@@ -164,6 +165,24 @@ def compiler_keyword_literals(level=KeywordLiterals.WARN) -> KeywordLiterals:
     if isinstance(level, KeywordLiterals):
         return level
     return KeywordLiterals(str(level))
+
+
+@pragma_setting("compiler/rewrite-limit", 32)
+def compiler_rewrite_limit(limit=32) -> int:
+    """
+    The full_compile rewrite-loop settling limit: how many expansion
+    rewrites one form may take before the compiler reports divergent
+    growth. 0 means unlimited; the equality cycle check applies
+    regardless. Baseline 32 -- legitimate expansion chains are
+    single-digit, and a divergent expansion grows costlier with every
+    rewrite, so the ceiling stays low.
+    """
+
+    limit = int(limit)
+    if limit < 0:
+        raise ValueError(
+            f"rewrite-limit must be >= 0, not {limit}")
+    return limit
 
 
 @pragma_setting("compiler/tco-enable", True)

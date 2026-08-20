@@ -133,6 +133,25 @@ class TestPragmaSetForm(PragmaSyntaxHelpers):
             False, self.module_pragma(module).get("compiler/tco-enable"))
 
 
+    async def test_set_rewrite_limit(self):
+        module, compiler = self.make_module()
+        expr = self.compile_expr(
+            module, compiler, "(pragma [compiler/rewrite-limit 8])")
+        await expr()
+        self.assertEqual(
+            8, self.module_pragma(module).get("compiler/rewrite-limit"))
+        # the declaration reaches the watching compiler, not just the pragma
+        self.assertEqual(8, compiler.rewrite_limit)
+
+
+    async def test_rewrite_limit_rejects_negative(self):
+        module, compiler = self.make_module()
+        expr = self.compile_expr(
+            module, compiler, "(pragma [compiler/rewrite-limit -1])")
+        with self.assertRaises(ValueError):
+            await expr()
+
+
     async def test_set_resolution_mode(self):
         module, compiler = self.make_module()
         expr = self.compile_expr(

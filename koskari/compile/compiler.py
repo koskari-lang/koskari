@@ -105,11 +105,6 @@ _symbol_colon = symbol(":")
 # each compilation turn
 ACTIVE_PRAGMA_PARAM = "active-compiler-pragma"
 
-# Rewrite-loop settling limit for full_compile: legitimate expansion
-# chains are single-digit, and a divergent expansion grows costlier
-# with every rewrite, so the ceiling stays low.
-REWRITE_LIMIT = 32
-
 
 def unique_append(lst, val):
     """
@@ -435,6 +430,7 @@ class Compiler:
         self.pack_module = PackModule(True, 0, 0)
         self.cache_expression = False
         self.cache_function = True
+        self.rewrite_limit = 32
 
         # position of the innermost form compiled so far, for attributing
         # diagnostics about source objects that carry no position
@@ -522,6 +518,8 @@ class Compiler:
 
         self.cache_expression = pragma.get("compiler/cache-expression", False)
         self.cache_function = pragma.get("compiler/cache-function", True)
+
+        self.rewrite_limit = pragma.get("compiler/rewrite-limit", 32)
 
 
     @property
@@ -732,6 +730,10 @@ class Compiler:
         progress, not a cycle. A genuinely stuck identical form falls
         to the settling limit instead.
 
+        The settling limit comes from the compiler/rewrite-limit
+        pragma setting; 0 disables the limit while the cycle check
+        stays in force.
+
         :param seen: prior rewrite forms in this position, oldest first
         :param form: the newly produced rewrite
         :raises CompilerError: on a cycle or an unsettled chain
@@ -746,9 +748,10 @@ class Compiler:
                     f"macro expansion cycle: {chain} -> {form}",
                     form)
 
-        if len(seen) >= REWRITE_LIMIT:
+        limit = self.rewrite_limit
+        if limit and len(seen) >= limit:
             raise CompilerError(
-                f"macro expansion did not settle after {REWRITE_LIMIT}"
+                f"macro expansion did not settle after {limit}"
                 f" rewrites; last form: {form}",
                 form)
 

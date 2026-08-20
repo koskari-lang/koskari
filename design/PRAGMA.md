@@ -92,6 +92,7 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | `compiler/keyword-literals` | compiler | `warn` | `warn` | `allow` / `warn` / `error` | policy when an unquoted keyword is compiled as a literal value |
 | `compiler/enable-asserts` | compiler | `True` | `True` | bool | `(assert …)` forms expand to their check; off, they compile away entirely (Python `-O` semantics) |
 | `compiler/bare-control-words` | compiler | `convert` | `convert` | `convert` / `warn` / `error` | policy when a bare `return`, `continue`, `break`, `raise`, or `yield` symbol is compiled: silently expand to the call form, warn and expand, or refuse |
+| `compiler/rewrite-limit` | compiler | `32` | `32` | int, `0` = unlimited | settling limit for the full_compile macro-expansion rewrite loop; a chain past the limit reports divergent growth, while `0` disables the limit and leaves the equality cycle check in force |
 | `compiler/tco-enable` | compiler | `True` | `True` | bool | tail-call optimization |
 | `compiler/convert-fast` | compiler | `True` | `True` | bool | VAR→FAST local-access lowering pass |
 | `compiler/compress` | compiler | `False` | `False` | bool | bytecode compression pass — registered but inert (pass not yet built) |

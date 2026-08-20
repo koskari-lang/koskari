@@ -209,6 +209,13 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   [compile/break](../specials/compile-break.md),
   [compile/raise](../specials/compile-raise.md), and
   [compile/yield](../specials/compile-yield.md).
+- **`compiler/rewrite-limit`** *(default 32)* — how many macro-expansion
+  rewrites a single form may take before the compiler reports it as
+  divergent. A macro that expands into an ever-growing form stops with a
+  compile error instead of hanging. An expansion that repeats an earlier
+  form is reported immediately as a cycle, regardless of this setting.
+  `0` removes the limit; legitimate expansion chains are only a few
+  rewrites deep, so the default leaves generous headroom.
 - **`compiler/tco-enable`** *(default on)* — whether tail calls are optimized.
 - **`compiler/convert-fast`** *(default on)* — whether the compiler lowers local
   variable access to its fast form. Off disables that optimization.
