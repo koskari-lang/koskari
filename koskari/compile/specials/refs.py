@@ -36,7 +36,7 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 @builtin("compile/deref")
 @special("compile/deref", patterns=_DEFAULT_PATTERNS)
-def special_deref(compiler, source, tc=False):
+def special_deref(compiler, source):
     """
     Compile (compile/deref EXPR). Compile EXPR (produces ref on stack),
     then emit DEREF to call ref.deref() and push result.
@@ -60,7 +60,7 @@ def special_deref(compiler, source, tc=False):
 
 @builtin("compile/ref-attr")
 @special("compile/ref-attr", patterns=_DEFAULT_PATTERNS)
-def special_ref_attr(compiler, source, tc=False):
+def special_ref_attr(compiler, source):
     """
     Compile (compile/ref-attr OBJ SYM). Produce a mutable reference to attribute SYM on OBJ
     """
@@ -84,7 +84,7 @@ def special_ref_attr(compiler, source, tc=False):
 
 @builtin("compile/ref-item")
 @special("compile/ref-item", patterns=_DEFAULT_PATTERNS)
-def special_ref_item(compiler, source, tc=False):
+def special_ref_item(compiler, source):
     """
     Compile (compile/ref-item OBJ KEY). Produce a mutable reference to item at KEY in OBJ
     """
@@ -117,7 +117,7 @@ def special_ref_item(compiler, source, tc=False):
 
 @builtin("compile/refq")
 @special("compile/refq", patterns=_DEFAULT_PATTERNS)
-def special_refq(compiler, source, tc=False):
+def special_refq(compiler, source):
     """
     Compile (compile/refq SYM). Load the value of the binding named SYM
     """
@@ -146,7 +146,7 @@ _BINDQ_PATTERNS = [
 
 @builtin("compile/bindq")
 @special("compile/bindq", patterns=_BINDQ_PATTERNS, unpack="match")
-def special_bindq(compiler, caps, tc=False):
+def special_bindq(compiler, caps):
     """
     Compile (compile/bindq SYM EXPR). Declare a new binding SYM and initialize
     it to EXPR

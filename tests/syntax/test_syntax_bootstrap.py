@@ -184,7 +184,7 @@ class TestSyntaxAdd(unittest.TestCase):
         t2 = MacroTransform(
             parse_syntax_rules_pattern(
                 build_proper(n, symbol("b")), frozenset({n}), None),
-            lambda c, tc=None, **kw: nil)
+            lambda c, **kw: nil)
         s = Syntax(n, (t1,))
         s2 = s + t2
         self.assertIsNot(s2, s)
@@ -217,7 +217,7 @@ class TestSyntaxCompileImpl(unittest.TestCase):
         n = symbol("compile/stub")
         s = Syntax(n, ())
         with self.assertRaises(SyntaxMatchError):
-            s.compile_impl(None, cons(n, nil), False)
+            s.compile_impl(None, cons(n, nil))
 
 
     def test_compile_impl_first_arm_wins_when_both_patterns_match(self):
@@ -228,11 +228,11 @@ class TestSyntaxCompileImpl(unittest.TestCase):
             build_proper(n, symbol("b")), frozenset({n}), None)
         seen = []
 
-        def h1(c, s, mr, t):
+        def h1(c, s, mr):
             seen.append(1)
             return symbol("one")
 
-        def h2(c, s, mr, t):
+        def h2(c, s, mr):
             seen.append(2)
             return symbol("two")
 
@@ -243,7 +243,7 @@ class TestSyntaxCompileImpl(unittest.TestCase):
                 SpecialTransform(p2, h2),
             ))
         src = cons(n, symbol("c"), nil)
-        out = s.compile_impl(None, src, False)
+        out = s.compile_impl(None, src)
         self.assertEqual(out, symbol("one"))
         self.assertEqual(seen, [1])
 
@@ -255,10 +255,10 @@ class TestSyntaxCompileImpl(unittest.TestCase):
         p_rest = parse_syntax_rules_pattern(
             build_proper(n, symbol("a"), symbol("b")), frozenset({n}), None)
 
-        def need_arg(c, s, mr, t):
+        def need_arg(c, s, mr):
             return symbol("narrow")
 
-        def rest_z(c, s, mr, t):
+        def rest_z(c, s, mr):
             return symbol("wide")
 
         s = Syntax(
@@ -268,7 +268,7 @@ class TestSyntaxCompileImpl(unittest.TestCase):
                 SpecialTransform(p_rest, rest_z),
             ))
         src = cons(n, symbol("z"), symbol("tail"), nil)
-        out = s.compile_impl(None, src, False)
+        out = s.compile_impl(None, src)
         self.assertEqual(out, symbol("wide"))
 
 
@@ -295,9 +295,9 @@ class TestTransformFreeze(unittest.TestCase):
             build_proper(qsym, symbol("q")), frozenset({qsym}), None)
         self.assertTrue(isinstance(SyntaxTransform(p, nil), Transform))
         self.assertTrue(isinstance(
-            MacroTransform(p, lambda c, tc=None, **kw: nil), Transform))
+            MacroTransform(p, lambda c, **kw: nil), Transform))
         self.assertTrue(isinstance(
-            SpecialTransform(p, lambda c, s, t, mr: nil), Transform))
+            SpecialTransform(p, lambda c, s, mr: nil), Transform))
 
 
 class TestSpecialUnpack(unittest.TestCase):
@@ -309,15 +309,15 @@ class TestSpecialUnpack(unittest.TestCase):
             build_proper(head, symbol("v")), frozenset({head}), None)
         saw = []
 
-        def fn(compiler, source_obj, tc):
+        def fn(compiler, source_obj):
             saw.append(source_obj)
             return symbol("done")
 
         st = SpecialTransform(
             p,
-            lambda compiler, source_obj, mr, tc: fn(compiler, source_obj, tc))
+            lambda compiler, source_obj, mr: fn(compiler, source_obj))
         src = cons(head, symbol("slot"), nil)
-        out = st.try_expand(None, src, False)
+        out = st.try_expand(None, src)
         self.assertEqual(out, symbol("done"))
         self.assertEqual(len(saw), 1)
         self.assertIs(saw[0], src)
@@ -329,42 +329,41 @@ class TestSpecialUnpack(unittest.TestCase):
             build_proper(head, symbol("v")), frozenset({head}), None)
         saw = []
 
-        def fn(compiler, caps, tc):
+        def fn(compiler, caps):
             saw.append(caps)
             return symbol("done")
 
         st = SpecialTransform(
             p,
-            lambda compiler, source_obj, mr, tc: fn(
-                compiler, mr.captures, tc))
+            lambda compiler, source_obj, mr: fn(
+                compiler, mr.captures))
         slot = symbol("slot")
         src = cons(head, slot, nil)
-        out = st.try_expand(None, src, False)
+        out = st.try_expand(None, src)
         self.assertEqual(out, symbol("done"))
         self.assertEqual(len(saw), 1)
         self.assertEqual(saw[0]["v"].datum, slot)
 
 
-    def test_unpack_kwargs_passes_tc_and_captures(self):
+    def test_unpack_kwargs_passes_captures(self):
         head = symbol("compile/unpack-kw")
         p = parse_syntax_rules_pattern(
             build_proper(head, symbol("v")), frozenset({head}), None)
         saw = []
 
-        def fn(compiler, tc=None, **caps):
-            saw.append((tc, caps))
+        def fn(compiler, **caps):
+            saw.append(caps)
             return symbol("done")
 
         st = SpecialTransform(
             p,
-            lambda compiler, source_obj, mr, tc: fn(
-                compiler, tc=tc, **mr.captures))
+            lambda compiler, source_obj, mr: fn(
+                compiler, **mr.captures))
         slot = symbol("slot")
         src = cons(head, slot, nil)
-        out = st.try_expand(None, src, True)
+        out = st.try_expand(None, src)
         self.assertEqual(out, symbol("done"))
-        self.assertEqual(saw[0][0], True)
-        self.assertEqual(saw[0][1]["v"].datum, slot)
+        self.assertEqual(saw[0]["v"].datum, slot)
 
 
 class TestSpecialDecorator(unittest.TestCase):
@@ -379,7 +378,7 @@ class TestSpecialDecorator(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             special(symbol("compile/bad-unpack2"), patterns=p, unpack="what")(
-                lambda c, s, t: nil)
+                lambda c, s: nil)
 
 
     def test_builds_syntax_with_one_or_many_patterns(self):
@@ -389,7 +388,7 @@ class TestSpecialDecorator(unittest.TestCase):
         p2 = parse_syntax_rules_pattern(
             build_proper(d, symbol("b")), frozenset({d}), None)
         h = special(d, patterns=(p1, p2))(
-            lambda c, s, t: nil)
+            lambda c, s: nil)
         self.assertIsInstance(h, Syntax)
         self.assertEqual(len(h.transforms), 2)
 

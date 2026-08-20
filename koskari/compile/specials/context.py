@@ -39,8 +39,7 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 @special("compile/parameterize", patterns=_DEFAULT_PATTERNS)
 def special_parameterize(
         compiler: Compiler,
-        source: pair,
-        tc: bool = False) -> ByteCodeFragment:
+        source: pair) -> ByteCodeFragment:
     """
     Compile (compile/parameterize [[name val] ...] BODY...).
 
@@ -66,10 +65,10 @@ def special_parameterize(
     fragment.position_of(source)
 
     for val in vals:
-        fragment.merge(compiler.full_compile(val, False))
+        fragment.merge(compiler.full_compile(val))
 
     fragment.instruction(OpCode.PUSH_PARAM, tuple(map(str, args)))
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.POP_PARAM, 0)
     return fragment
 
@@ -78,8 +77,7 @@ def special_parameterize(
 @special("compile/parameter", patterns=_DEFAULT_PATTERNS)
 def special_parameter(
         compiler: Compiler,
-        source: pair,
-        tc: bool = False) -> ByteCodeFragment:
+        source: pair) -> ByteCodeFragment:
     """
     Compile (compile/parameter NAME [DEFAULT]).
 
@@ -108,7 +106,7 @@ def special_parameter(
     if not is_nil(extra):
         raise SpecialError("parameter takes a name and one default", source)
 
-    defaultfrag = compiler.full_compile(default, False)
+    defaultfrag = compiler.full_compile(default)
     is_const, const_val = const_only_expr(defaultfrag)
 
     if is_const:
@@ -129,7 +127,7 @@ _WITH_PATTERNS = [
 
 @builtin("compile/with")
 @special("compile/with", patterns=_WITH_PATTERNS, unpack="match")
-def special_with(compiler, caps, tc=False):
+def special_with(compiler, caps):
     """
     Compile (compile/with [name? expr] BODY...). Single-shot context manager
     """
@@ -153,7 +151,7 @@ def special_with(compiler, caps, tc=False):
     # print(f"body: {body}")
 
     fragment = compiler.fragment(called_by)
-    fragment.merge(compiler.full_compile(expr, False))
+    fragment.merge(compiler.full_compile(expr))
 
     if name is not None:
         name = str(name)
@@ -161,7 +159,7 @@ def special_with(compiler, caps, tc=False):
 
     fragment.position(pos)
     fragment.instruction(OpCode.PUSH_WITH, name)
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.POP_WITH, 0)
 
     return fragment
@@ -169,7 +167,7 @@ def special_with(compiler, caps, tc=False):
 
 @builtin("compile/dyn-with")
 @special("compile/dyn-with", patterns=_WITH_PATTERNS, unpack="match")
-def special_dyn_with(compiler, caps, tc=False):
+def special_dyn_with(compiler, caps):
     """
     Compile (compile/dyn-with [name? expr] BODY...). Multi-shot context manager
     that participates in transfer plans (exit on unwind, enter on wind).
@@ -188,7 +186,7 @@ def special_dyn_with(compiler, caps, tc=False):
     body = caps["body"].datum
 
     fragment = compiler.fragment(called_by)
-    fragment.merge(compiler.full_compile(expr, False))
+    fragment.merge(compiler.full_compile(expr))
 
     if name is not None:
         name = str(name)
@@ -196,7 +194,7 @@ def special_dyn_with(compiler, caps, tc=False):
 
     fragment.position(pos)
     fragment.instruction(OpCode.PUSH_DYN_WITH, name)
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.POP_DYN_WITH, 0)
 
     return fragment

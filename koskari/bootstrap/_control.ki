@@ -60,7 +60,7 @@ let []:
     """
 
     special-rules []:
-      case [c (bare-control-word word) tc]:
+      case [c (bare-control-word word)]:
         define mode (active-pragma compiler/bare-control-words)
         define w word.datum
         define pos word.position

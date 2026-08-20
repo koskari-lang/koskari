@@ -23,7 +23,7 @@ convenience syntax to runtime call forms of builder functions.
 
 
 from ...exceptions import SpecialError
-from ...lib import cons, gensym, nil, symbol
+from ...lib import cons, nil, symbol
 from ...matcher import (BIND, CALLEDBY, DEFINE, LIST, LITERAL_SYM, MATCH, REST,
                         SYMBOL,
                         VALUE, parse_explicit_rule_pattern, pattern_slot_names,
@@ -81,7 +81,6 @@ _MATCH_FORM_PATTERN = LIST(LITERAL_SYM("match"), VALUE("inner"))
 SPECIAL_RULES_PATTERN = MATCH(
     repeat_capture("rules", _MACRO_MATCH_RULE_ROW))
 SPECIAL_PATTERN_BREAKOUT = [
-    MATCH(LIST(SYMBOL("compiler"), VALUE("pattern"), SYMBOL("tc"))),
     MATCH(LIST(SYMBOL("compiler"), VALUE("pattern"))),
 ]
 
@@ -138,7 +137,7 @@ _SYNTAX_RULES_PATTERNS = [
 
 @builtin("compile/syntax-rules")
 @special("compile/syntax-rules", patterns=_SYNTAX_RULES_PATTERNS)
-def special_compile_syntax_rules(compiler, source, tc=False):
+def special_compile_syntax_rules(compiler, source):
     """
     Compile (compile/syntax-rules NAME LITERALS RULES...).
 
@@ -194,7 +193,7 @@ _COMPILE_NAME_SLOT_TEMPLATE = [
 
 @builtin("compile/bare-syntax")
 @special("compile/bare-syntax", patterns=_BARE_SYNTAX_PATTERNS)
-def special_compile_bare_syntax(compiler, source, tc=False):
+def special_compile_bare_syntax(compiler, source):
     """
     Compile (compile/bare-syntax NAME SLOT TEMPLATE).
 
@@ -233,7 +232,7 @@ _MACRO_RULES_PATTERNS = [
 
 @builtin("compile/macro-rules")
 @special("compile/macro-rules", patterns=_MACRO_RULES_PATTERNS)
-def special_compile_macro_rules(compiler, source, tc=False):
+def special_compile_macro_rules(compiler, source):
     """
     Compile (compile/macro-rules NAME LITERALS RULES...).
 
@@ -277,7 +276,7 @@ _SYNTAX_MATCH_PATTERNS = [
 
 @builtin("compile/syntax-match")
 @special("compile/syntax-match", patterns=_SYNTAX_MATCH_PATTERNS)
-def special_compile_syntax_match(compiler, source, tc=False):
+def special_compile_syntax_match(compiler, source):
     """
     Compile (compile/syntax-match NAME RULE ...).
 
@@ -324,7 +323,7 @@ _MACRO_MATCH_PATTERNS = [
 
 @builtin("compile/macro-match")
 @special("compile/macro-match", patterns=_MACRO_MATCH_PATTERNS)
-def special_compile_macro_match(compiler, source, tc=False):
+def special_compile_macro_match(compiler, source):
     """
     Compile (compile/macro-match NAME RULE ...).
 
@@ -377,13 +376,13 @@ _SPECIAL_RULES_PATTERNS = [
 
 @builtin("compile/special-rules")
 @special("compile/special-rules", patterns=_SPECIAL_RULES_PATTERNS)
-def special_compile_special_rules(compiler, source, tc=False):
+def special_compile_special_rules(compiler, source):
     """
     Compile (compile/special-rules NAME LITERALS RULES...).
 
-    Each rule pattern column is ``(compiler-formal pattern [tc-formal])``: the
-    first subform names the compiler parameter (any symbol), the second is the
-    nested RULE pattern, the optional third names the ``tc`` formal. PATTERN is
+    Each rule pattern column is ``(compiler-formal pattern)``: the first
+    subform names the compiler parameter (any symbol), the second is the
+    nested RULE pattern. PATTERN is
     lowered with :func:`parse_syntax_rules_pattern`. Lowers to a
     ``(build-special NAME-STR (parse-rule-pattern (quote INNER-PATTERN)
     (quote LITERALS-SET)) (lambda ...) ...)`` call form for
@@ -427,18 +426,17 @@ def special_compile_special_rules(compiler, source, tc=False):
         if m is None:
             raise SpecialError(
                 "special-rules pattern column must be "
-                "(compiler-formal pattern [tc-formal])",
+                "(compiler-formal pattern)",
                 pattern_src)
 
         compiler_formal = m["compiler"].datum
         inner = m["pattern"].datum
-        tc_formal = m["tc"].datum if "tc" in m else gensym()
 
         vars_ordered = collect_pattern_variable_symbols(inner, literals)
 
         parts.append(_emit_parse_rule_pattern(inner, literals))
         parts.append(cons(symbol("lambda"),
-                          build_proper(compiler_formal, tc_formal, *vars_ordered),
+                          build_proper(compiler_formal, *vars_ordered),
                           body_forms))
 
     return cons(symbol("build-special"), str(namesym), *parts, nil)
@@ -451,14 +449,13 @@ _SPECIAL_MATCH_PATTERNS = [
 
 @builtin("compile/special-match")
 @special("compile/special-match", patterns=_SPECIAL_MATCH_PATTERNS)
-def special_compile_special_match(compiler, source, tc=False):
+def special_compile_special_match(compiler, source):
     """
     Compile (compile/special-match NAME RULE ...).
 
-    Each rule pattern column is ``(compiler-formal pattern [tc-formal])``: the
-    first subform names the compiler parameter (any symbol), the second is the
-    nested MATCH pattern for parse_explicit_rule_pattern, the optional third
-    names the ``tc`` formal.
+    Each rule pattern column is ``(compiler-formal pattern)``: the first
+    subform names the compiler parameter (any symbol), the second is the
+    nested MATCH pattern for parse_explicit_rule_pattern.
 
     Lowers to a ``(build-special NAME-STR (parse-match-pattern
     (quote INNER-PATTERN)) (lambda ...) ...)`` call form for
@@ -492,21 +489,20 @@ def special_compile_special_match(compiler, source, tc=False):
         if m is None:
             raise SpecialError(
                 "special-match pattern column must be "
-                "(compiler-formal pattern [tc-formal])",
+                "(compiler-formal pattern)",
                 pattern_src)
 
         compiler_formal = m["compiler"].datum
         inner = m["pattern"].datum
         if is_symbol(inner):
             inner = cons(cons(symbol("REST"), inner, nil), nil)
-        tc_formal = m["tc"].datum if "tc" in m else gensym()
 
         pattern_matcher = parse_explicit_rule_pattern(inner)
         vars_ordered = [symbol(n) for n in pattern_slot_names(pattern_matcher)]
 
         parts.append(_emit_parse_match_pattern(inner))
         parts.append(cons(symbol("lambda"),
-                          build_proper(compiler_formal, tc_formal, *vars_ordered),
+                          build_proper(compiler_formal, *vars_ordered),
                           body_src))
 
     return cons(symbol("build-special"), str(namesym), *parts, nil)

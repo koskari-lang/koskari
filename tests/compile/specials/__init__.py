@@ -91,12 +91,13 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
 
 
     def compile_to_code(
-            self, src_str, lineno=1, tc=False,
+            self, src_str, lineno=1,
             resolution_mode=None, resolution_instance=None,
             **defns):
         """
-        Compile source to a Code object for opcode inspection; tc=True enables
-        tail-call tracking
+        Compile source to a Code object for opcode inspection. Tail-call
+        promotion runs in the processor for FUNCTION-mode streams; a test
+        that needs it off sets the compiler/tco-enable pragma
         """
 
         mod_ns = self.get_glbls(**defns)
@@ -111,7 +112,7 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         compiler = Compiler("<unittest>", module, filename=__file__, **kwargs)
         if resolution_instance is not None:
             compiler._resolution_instance = resolution_instance
-        fragment = compiler.full_compile(source, tc=tc)
+        fragment = compiler.full_compile(source)
         return compiler.complete(fragment, mode=CompilerMode.EXPRESSION)
 
 
@@ -123,20 +124,35 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         OpCode.CALL_STAR,
         OpCode.TAIL_CALL_STAR,
         OpCode.CALL_VAR,
+        OpCode.TAIL_CALL_VAR,
         OpCode.CALL_VAR_NAMES,
+        OpCode.TAIL_CALL_VAR_NAMES,
         OpCode.CALL_VAR_STAR,
+        OpCode.TAIL_CALL_VAR_STAR,
         OpCode.CALL_FAST,
+        OpCode.TAIL_CALL_FAST,
         OpCode.CALL_FAST_NAMES,
+        OpCode.TAIL_CALL_FAST_NAMES,
         OpCode.CALL_FAST_STAR,
+        OpCode.TAIL_CALL_FAST_STAR,
         OpCode.CALL_ATTR,
+        OpCode.TAIL_CALL_ATTR,
         OpCode.CALL_ATTR_NAMES,
+        OpCode.TAIL_CALL_ATTR_NAMES,
         OpCode.CALL_ATTR_STAR,
+        OpCode.TAIL_CALL_ATTR_STAR,
         OpCode.CALL_VAR_ATTR,
+        OpCode.TAIL_CALL_VAR_ATTR,
         OpCode.CALL_VAR_ATTR_NAMES,
+        OpCode.TAIL_CALL_VAR_ATTR_NAMES,
         OpCode.CALL_VAR_ATTR_STAR,
+        OpCode.TAIL_CALL_VAR_ATTR_STAR,
         OpCode.CALL_FAST_ATTR,
+        OpCode.TAIL_CALL_FAST_ATTR,
         OpCode.CALL_FAST_ATTR_NAMES,
+        OpCode.TAIL_CALL_FAST_ATTR_NAMES,
         OpCode.CALL_FAST_ATTR_STAR,
+        OpCode.TAIL_CALL_FAST_ATTR_STAR,
     )
 
 

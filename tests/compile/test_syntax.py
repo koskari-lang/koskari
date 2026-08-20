@@ -54,7 +54,7 @@ def expand(transformer, input_form):
     """
 
     compiler = _make_compiler()
-    return transformer.compile_impl(compiler, input_form, tc=False)
+    return transformer.compile_impl(compiler, input_form)
 
 
 def rule(macro_name, pat_form, tpl_form):

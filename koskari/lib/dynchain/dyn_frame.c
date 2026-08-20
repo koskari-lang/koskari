@@ -213,6 +213,53 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
 
 
 /**
+   Drop the discardable extent nodes (NS, LOOP, FOREACH) open above
+   frame, in preparation for tail-call frame reuse.  These are the
+   extents tail-call promotion allows a call through: their uninstall
+   is pure reference release, and it must happen here because the
+   reused frame never reaches their POP_* rows.  Any other node kind
+   above the frame is a miscompiled or hand-assembled tail site and
+   fails loudly rather than discarding an extent whose uninstall
+   behavior must run.
+
+   :return: 0 on success (DYN_TOP == frame), -1 with an exception set
+*/
+int kos_dyn_drop_discardable_to_frame(KosEvalState *es, KosDynFrame *frame) {
+  KosDynNode *top = KosEvalState_DYN_TOP(es);
+
+  while (top && top != (KosDynNode *) frame) {
+    switch (KosDynNode_KIND(top)) {
+      case KOS_DYN_NS:
+      case KOS_DYN_LOOP:
+      case KOS_DYN_FOREACH:
+        break;
+      default:
+        PyErr_Format(PyExc_RuntimeError,
+                     "tail call through non-discardable %s extent",
+                     kos_dynnode_kind_name(KosDynNode_KIND(top)));
+        return -1;
+    }
+
+    {
+      KosDynNode *parent = KosDynNode_PARENT(top);
+      kos_dyn_commit_dyn_top(es, parent);
+      KosDynNode_PARENT(top) = NULL;
+      kos_dynnode_free(top);
+      top = parent;
+    }
+  }
+
+  if (! top) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "tail-call frame not on the dynamic chain");
+    return -1;
+  }
+
+  return 0;
+}
+
+
+/**
    Clear stack and metadata for tail-call reuse of the same frame object.
 */
 void kos_dynframe_reset_for_tail(KosDynFrame *frame) {

@@ -181,7 +181,7 @@ set-attr compile/extend-syntax __doc__:
 
 define-syntax let-syntax:
   special-rules []:
-    case [c (let-syntax name (syntax-rules literals rule ...) body ...) tc]:
+    case [c (let-syntax name (syntax-rules literals rule ...) body ...)]:
       ; the each macro isn't defined yet, so we use a manual generator thunk
       define src `(syntax-rules ,name.datum ,literals.datum
                   ,@({(for-each [r rule] (yield r.datum))}))
@@ -196,7 +196,7 @@ define-syntax let-syntax:
                        (else: f"compile/{n}"))
 
       with [(c.macro_overlay key (expr))]:
-        (c.full_compile bdy tc)
+        (c.full_compile bdy)
 
 
 define-syntax datum:

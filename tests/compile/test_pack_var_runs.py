@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Unit tests for Compiler.pack_var_runs (VAR2/VAR4 bulk-load packing) and
+Unit tests for ByteCodeProcessor.pack_var_runs (VAR2/VAR4 bulk-load packing) and
 its convert_fast lowering to FAST2/FAST4
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -25,20 +25,29 @@ import unittest
 import pytest
 
 from koskari.compile import CompilerMode
-from koskari.compile.compiler import Compiler
-from koskari.lib import Module, ModuleNamespace, NamespaceSpec, OpCode
+from koskari.compile.processor import ByteCodeProcessor
+from koskari.lib import NamespaceSpec, OpCode
 
 
 pytestmark = pytest.mark.phase_compile
 
 
-def make_compiler():
-    mod = Module(ModuleNamespace("test", {}))
-    return Compiler("test", mod)
-
-
 def pack_ops(instr):
-    return make_compiler().pack_var_runs(instr)
+    proc = ByteCodeProcessor(instr)
+    proc.pack_var_runs()
+    return proc.instructions
+
+
+def compress_ops(instr):
+    proc = ByteCodeProcessor(instr)
+    proc.compress()
+    return proc.instructions
+
+
+def convert_fast(nspec, instr, mode=None):
+    proc = ByteCodeProcessor(instr, mode=mode)
+    proc.convert_fast(nspec)
+    return proc.instructions
 
 
 V = OpCode.VAR
@@ -125,8 +134,7 @@ class TestPackVarRuns(unittest.TestCase):
         self.assertEqual(out, [pos, (OpCode.CONST, 1)])
 
     def test_compress_runs_the_packer(self):
-        comp = make_compiler()
-        out = comp.compress([(V, "a"), (V, "b"), (V, "c"), (V, "d")])
+        out = compress_ops([(V, "a"), (V, "b"), (V, "c"), (V, "d")])
         self.assertEqual(out, [
             (OpCode.VAR4, ("a", "b", "c", "d")),
             (OpCode.RETURN, 1),
@@ -140,28 +148,25 @@ class TestBulkLoadLowering(unittest.IsolatedAsyncioTestCase):
     """
 
     async def test_var2_lowers_to_fast2(self):
-        compiler = Compiler("<test>", None)
         nspec = NamespaceSpec(None, ("a", "b"), ())
         instr = [(OpCode.VAR2, ("a", "b", None, None))]
-        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
         self.assertEqual(result, [
             (OpCode.FAST2, (0, 1, None, None)),
         ])
 
     async def test_var4_lowers_to_fast4(self):
-        compiler = Compiler("<test>", None)
         nspec = NamespaceSpec(None, ("a", "b"), ("c", "d"))
         instr = [(OpCode.VAR4, ("a", "b", "c", "d"))]
-        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
         self.assertEqual(result, [
             (OpCode.FAST4, (0, 1, 2, 3)),
         ])
 
     async def test_mixed_eligibility_stays_var(self):
-        compiler = Compiler("<test>", None)
         nspec = NamespaceSpec(None, ("a",), ())
         instr = [(OpCode.VAR2, ("a", "elsewhere", None, None))]
-        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        result = convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
         self.assertEqual(result, [
             (OpCode.VAR2, ("a", "elsewhere", None, None)),
         ])

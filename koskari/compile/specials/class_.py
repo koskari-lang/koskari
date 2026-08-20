@@ -58,7 +58,7 @@ def _compiling_module_name(compiler):
 
 @builtin("compile/class")
 @special("compile/class", patterns=_DEFAULT_PATTERNS)
-def special_class(compiler, source, tc=False):
+def special_class(compiler, source):
     """
     Compile (compile/class NAME (SUPERS) BODY...). Creates a class via
     PUSH_COLLECT/POP_COLLECT/BUILD_CLASS, runs body in CollectorNamespace,
@@ -111,19 +111,19 @@ def special_class(compiler, source, tc=False):
 
     if bases:
         for base_expr in bases:
-            frag.merge(compiler.full_compile(base_expr, False))
+            frag.merge(compiler.full_compile(base_expr))
         frag.instruction(OpCode.BUILD_ARGS, len(bases))
     else:
         frag.instruction(OpCode.CONST, ())
 
     if metaclass_expr is not None:
-        frag.merge(compiler.full_compile(metaclass_expr, False))
+        frag.merge(compiler.full_compile(metaclass_expr))
         frag.instruction(OpCode.BUILD_ARGS, 3)
     else:
         frag.instruction(OpCode.BUILD_ARGS, 2)
 
     with frag.collector_namespace(called_by) as body_frag:
-        helper_begin(body_frag, body, tc)
+        helper_begin(body_frag, body)
 
         if doc and "__doc__" not in body_frag.declares:
             # don't override an existing __doc__, just in case
@@ -164,7 +164,7 @@ def special_class(compiler, source, tc=False):
 
             collapsed = dict(binds)
             for name, type_expr in collapsed.items():
-                annos.merge(compiler.full_compile(type_expr, False))
+                annos.merge(compiler.full_compile(type_expr))
 
             annos.instruction(OpCode.BUILD_KWDS_NAMES,
                               tuple(collapsed.keys()))

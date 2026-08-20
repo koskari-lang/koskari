@@ -84,7 +84,7 @@ _SETQ_PATTERNS = [
 
 @builtin("compile/setq")
 @special("compile/setq", patterns=_SETQ_PATTERNS, unpack="match")
-def special_setq(compiler, caps, tc=False):
+def special_setq(compiler, caps):
     """
     Compile (compile/setq SYM EXPR). Store the value of EXPR into the existing
     binding SYM
@@ -115,7 +115,7 @@ _VALUES_BIND_PATTERNS = [
 
 @builtin("compile/setq-values")
 @special("compile/setq-values", patterns=_VALUES_BIND_PATTERNS, unpack="match")
-def special_setq_values(compiler, caps, tc=False):
+def special_setq_values(compiler, caps):
     """
     Compile (compile/setq-values PATTERN VALUE). Evaluate VALUE, then store
     into existing bindings given by PATTERN (symbol or unpack list, same as
@@ -146,7 +146,7 @@ def special_setq_values(compiler, caps, tc=False):
 
 @builtin("compile/define-values")
 @special("compile/define-values", patterns=_VALUES_BIND_PATTERNS, unpack="match")
-def special_define_values(compiler, caps, tc=False):
+def special_define_values(compiler, caps):
     """
     Compile (compile/define-values PATTERN VALUE). Evaluate VALUE, then bind
     fresh names from PATTERN (symbol or unpack list, same shape as
@@ -178,7 +178,7 @@ _DELQ_PATTERNS = [
 
 @builtin("compile/delq")
 @special("compile/delq", patterns=_DELQ_PATTERNS, unpack="match")
-def special_delq(compiler, caps, tc=False):
+def special_delq(compiler, caps):
     """
     Compile (compile/delq SYM). Clear the binding SYM, resetting it to unset
     """
@@ -204,7 +204,7 @@ _TAKEQ_PATTERNS = [
 
 @builtin("compile/takeq")
 @special("compile/takeq", patterns=_TAKEQ_PATTERNS, unpack="match")
-def special_takeq(compiler, caps, tc=False):
+def special_takeq(compiler, caps):
     """
     Compile (compile/takeq SYM). Deref SYM, clear the binding, push value
     """
@@ -272,7 +272,7 @@ _DEFINE_PATTERNS = _DEFINE_INLINE_PATTERNS + _DEFINE_DECL_PATTERNS
 
 @builtin("compile/define")
 @special("compile/define", patterns=_DEFINE_PATTERNS, unpack="match")
-def special_define(compiler, caps, tc=False):
+def special_define(compiler, caps):
     """
     Compile (define X), (define X EXPR), (define X [Y Z] BODY...), or
     typed variants with ``X :: T`` / ``X type: T`` before formals, value,
@@ -337,7 +337,7 @@ def special_define(compiler, caps, tc=False):
 
 @builtin("compile/globals")
 @special("compile/globals", patterns=_DEFAULT_PATTERNS)
-def special_globals(compiler, source, tc=False):
+def special_globals(compiler, source):
     """
     Compile (compile/globals). Push the outermost frame namespace (globals)
     """
@@ -353,7 +353,7 @@ def special_globals(compiler, source, tc=False):
 
 @builtin("compile/locals")
 @special("compile/locals", patterns=_DEFAULT_PATTERNS)
-def special_locals(compiler, source, tc=False):
+def special_locals(compiler, source):
     """
     Compile (compile/locals). Push the current frame namespace (locals)
     """
@@ -369,7 +369,7 @@ def special_locals(compiler, source, tc=False):
 
 @builtin("compile/define-global")
 @special("compile/define-global", patterns=_DEFINE_PATTERNS, unpack="match")
-def special_define_global(compiler, caps, tc=False):
+def special_define_global(compiler, caps):
     """
     Compile (define-global X), (define-global X EXPR),
     (define-global X [Y Z] BODY...), or typed ``X :: T`` / ``X type: T``

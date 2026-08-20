@@ -117,6 +117,21 @@
 | TAIL_CALL | COUNT | Tail call (replace frame) | [§17](#kos_op_tail_call) |
 | TAIL_CALL_NAMES | COUNT | Tail call with keyword names | [§17](#kos_op_tail_call_names) |
 | TAIL_CALL_STAR | STAR | Tail call with *args and/or **kwargs | [§17](#kos_op_tail_call_star) |
+| TAIL_CALL_ATTR | EXTRA | Tail call obj.name with N positional args | [§17](#kos_op_tail_call_attr) |
+| TAIL_CALL_ATTR_NAMES | EXTRA | Tail call obj.name with positional + keyword args | [§17](#kos_op_tail_call_attr_names) |
+| TAIL_CALL_ATTR_STAR | EXTRA | Tail call obj.name with *args/**kwargs | [§17](#kos_op_tail_call_attr_star) |
+| TAIL_CALL_VAR | EXTRA | Tail call callable from namespace by name | [§17](#kos_op_tail_call_var) |
+| TAIL_CALL_VAR_NAMES | EXTRA | Tail call by name with keyword args | [§17](#kos_op_tail_call_var_names) |
+| TAIL_CALL_VAR_STAR | EXTRA | Tail call by name with *args/**kwargs | [§17](#kos_op_tail_call_var_star) |
+| TAIL_CALL_VAR_ATTR | EXTRA | Tail call obj.name; obj from VAR | [§17](#kos_op_tail_call_var_attr) |
+| TAIL_CALL_VAR_ATTR_NAMES | EXTRA | Tail call obj.name with keyword args; obj from VAR | [§17](#kos_op_tail_call_var_attr_names) |
+| TAIL_CALL_VAR_ATTR_STAR | EXTRA | Tail call obj.name with *args/**kwargs; obj from VAR | [§17](#kos_op_tail_call_var_attr_star) |
+| TAIL_CALL_FAST | EXTRA | Tail call callable from fast local slot | [§17](#kos_op_tail_call_fast) |
+| TAIL_CALL_FAST_NAMES | EXTRA | Tail call from fast slot with keyword args | [§17](#kos_op_tail_call_fast_names) |
+| TAIL_CALL_FAST_STAR | EXTRA | Tail call from fast slot with *args/**kwargs | [§17](#kos_op_tail_call_fast_star) |
+| TAIL_CALL_FAST_ATTR | EXTRA | Tail call obj.name; obj from fast slot | [§17](#kos_op_tail_call_fast_attr) |
+| TAIL_CALL_FAST_ATTR_NAMES | EXTRA | Tail call obj.name with keyword args; obj from fast slot | [§17](#kos_op_tail_call_fast_attr_names) |
+| TAIL_CALL_FAST_ATTR_STAR | EXTRA | Tail call obj.name with *args/**kwargs; obj from fast slot | [§17](#kos_op_tail_call_fast_attr_star) |
 | PUSH_FOREACH | NOARG | Push foreach region; break target from extent table | [§18](#kos_op_push_foreach) |
 | PUSH_LOOP | NOARG | Push loop region; break target from extent table | [§18](#kos_op_push_loop) |
 | POP_FOREACH | NOARG | Pop foreach region; push loop result | [§18](#kos_op_pop_foreach) |

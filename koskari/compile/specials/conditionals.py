@@ -41,7 +41,7 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 @builtin("compile/cond")
 @special("compile/cond", patterns=_DEFAULT_PATTERNS)
-def special_cond(compiler, source, tc=False):
+def special_cond(compiler, source):
     """
     Compile (compile/cond (TEST BODY...) (TEST BODY...) ... (else: BODY...)).
     Conditionally executes body depending on a test expression. Multiple
@@ -72,12 +72,12 @@ def special_cond(compiler, source, tc=False):
             if cl:
                 raise SpecialError("else: must be last clause", source)
 
-            helper_begin(fragment, body, tc, clause_pos)
+            helper_begin(fragment, body, position=clause_pos)
             break
 
-        fragment.merge(compiler.full_compile(test, False, clause_pos))
+        fragment.merge(compiler.full_compile(test, position=clause_pos))
         fragment.instruction(OpCode.JUMP_FALSE, label)
-        helper_begin(fragment, body, tc, clause_pos)
+        helper_begin(fragment, body, position=clause_pos)
         fragment.instruction(OpCode.JUMP, done)
 
     else:
@@ -90,7 +90,7 @@ def special_cond(compiler, source, tc=False):
 
 @builtin("compile/switch")
 @special("compile/switch", patterns=_DEFAULT_PATTERNS)
-def special_switch(compiler, source, tc=False):
+def special_switch(compiler, source):
     """
     Compile (compile/switch VALUE (COMPARE BODY...) (COMPARE BODY...) ... (else: BODY...)).
     Conditionally executes body depending on a compare expression. Multiple
@@ -128,7 +128,7 @@ def special_switch(compiler, source, tc=False):
             checks.instruction(OpCode.JUMP, else_label)
             bodies.instruction(OpCode.LABEL, else_label)
             bodies.instruction(OpCode.POP, 1)
-            helper_begin(bodies, body, tc)
+            helper_begin(bodies, body)
             bodies.instruction(OpCode.JUMP, done)
             break
 
@@ -145,7 +145,7 @@ def special_switch(compiler, source, tc=False):
             checks.instruction(OpCode.SWITCH_EQ, body_label)
 
         bodies.instruction(OpCode.LABEL, body_label)
-        helper_begin(bodies, body, tc)
+        helper_begin(bodies, body)
         bodies.instruction(OpCode.JUMP, done)
 
     else:
@@ -178,7 +178,7 @@ def _lower_pattern(pattern, source):
 
 @builtin("compile/match")
 @special("compile/match", patterns=_DEFAULT_PATTERNS)
-def special_match(compiler, source, tc=False):
+def special_match(compiler, source):
     """
     Compile (compile/match SUBJECT [[PATTERN] BODY...] ... [else: BODY...]).
     Evaluates SUBJECT once, then tries each arm's pattern in order. The
@@ -224,7 +224,7 @@ def special_match(compiler, source, tc=False):
                 raise SpecialError("else: must be last clause", source)
 
             fragment.instruction(OpCode.POP, 1)
-            helper_begin(fragment, body, tc)
+            helper_begin(fragment, body)
             fragment.instruction(OpCode.JUMP, done)
             break
 
@@ -287,7 +287,7 @@ def special_match(compiler, source, tc=False):
                 next_label)
             fragment.instruction(OpCode.POP, 1)
 
-        helper_begin(fragment, body, tc)
+        helper_begin(fragment, body)
         fragment.instruction(OpCode.JUMP, done)
         fragment.instruction(OpCode.LABEL, next_label)
 
@@ -301,7 +301,7 @@ def special_match(compiler, source, tc=False):
 
 @builtin("compile/and")
 @special("compile/and", patterns=_DEFAULT_PATTERNS)
-def special_and(compiler, source, tc=False):
+def special_and(compiler, source):
     """
     Compile (compile/and EXPR ...). Short-circuit conjunction. Evaluates
     expressions left-to-right; returns the first falsy value without evaluating
@@ -322,7 +322,7 @@ def special_and(compiler, source, tc=False):
     while cl:
         expr, cl = cl
         fragment.position_of(expr)
-        fragment.merge(compiler.full_compile(expr, tc if not cl else False))
+        fragment.merge(compiler.full_compile(expr))
         if cl:
             fragment.instruction(OpCode.JUMP_AND, done)
 
@@ -332,7 +332,7 @@ def special_and(compiler, source, tc=False):
 
 @builtin("compile/or")
 @special("compile/or", patterns=_DEFAULT_PATTERNS)
-def special_or(compiler, source, tc=False):
+def special_or(compiler, source):
     """
     Compile (compile/or EXPR ...). Short-circuit disjunction. Evaluates
     expressions left-to-right; returns the first truthy value without evaluating
@@ -353,7 +353,7 @@ def special_or(compiler, source, tc=False):
     while cl:
         expr, cl = cl
         fragment.position_of(expr)
-        fragment.merge(compiler.full_compile(expr, tc if not cl else False))
+        fragment.merge(compiler.full_compile(expr))
         if cl:
             fragment.instruction(OpCode.JUMP_OR, done)
 

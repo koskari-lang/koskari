@@ -58,7 +58,7 @@ def _finally_body(compiler, fragment, body):
     while True:
         fragment.position_of(body)
         expr, body = body
-        fragment.merge(compiler.full_compile(expr, False))
+        fragment.merge(compiler.full_compile(expr))
         fragment.instruction(OpCode.POP, 1)
         if is_nil(body):
             break
@@ -144,7 +144,7 @@ def _collect_catches(compiler, catches):
 
 @builtin("compile/check-exception")
 @special("compile/check-exception", patterns=_DEFAULT_PATTERNS)
-def special_check_exception(compiler, source, tc=False):
+def special_check_exception(compiler, source):
     called_by, checks = source
 
     fragment = compiler.fragment(called_by)
@@ -152,7 +152,7 @@ def special_check_exception(compiler, source, tc=False):
 
     while not is_nil(checks):
         expr, checks = checks
-        fragment.merge(compiler.full_compile(expr, False))
+        fragment.merge(compiler.full_compile(expr))
         count += 1
 
     fragment.instruction(OpCode.BUILD_ARGS, count)
@@ -162,7 +162,7 @@ def special_check_exception(compiler, source, tc=False):
 
 @builtin("compile/clear-exception")
 @special("compile/clear-exception", patterns=_DEFAULT_PATTERNS)
-def special_clear_exception(compiler, source, tc=False):
+def special_clear_exception(compiler, source):
     called_by, rest = source
 
     if not is_nil(rest):
@@ -176,7 +176,7 @@ def special_clear_exception(compiler, source, tc=False):
 
 @builtin("compile/load-exception")
 @special("compile/load-exception", patterns=_DEFAULT_PATTERNS)
-def special_load_exception(compiler, source, tc=False):
+def special_load_exception(compiler, source):
     called_by, rest = source
 
     if not is_nil(rest):
@@ -190,7 +190,7 @@ def special_load_exception(compiler, source, tc=False):
 
 @builtin("compile/try")
 @special("compile/try", patterns=_DEFAULT_PATTERNS)
-def special_try(compiler, source, tc=False):
+def special_try(compiler, source):
     called_by, rest = source
     if is_nil(rest) or not is_pair(rest):
         raise SpecialError("try requires body and clauses", source)
@@ -201,25 +201,25 @@ def special_try(compiler, source, tc=False):
     if act_finally is not None:
         if act_else is not None:
             return _try_else_finally(
-                compiler, try_expr, ca, act_else, act_finally, tc)
+                compiler, try_expr, ca, act_else, act_finally)
         else:
-            return _try_finally(compiler, try_expr, ca, act_finally, tc)
+            return _try_finally(compiler, try_expr, ca, act_finally)
 
     elif act_else is not None:
-        return _try_else(compiler, try_expr, ca, act_else, tc)
+        return _try_else(compiler, try_expr, ca, act_else)
 
     else:
-        return _try(compiler, try_expr, ca, tc)
+        return _try(compiler, try_expr, ca)
 
 
-def _try(compiler, try_expr, catches, tc):
+def _try(compiler, try_expr, catches):
     except_label = compiler.gen_label()
     end_label = compiler.gen_label()
 
     frag = compiler.fragment("<try>")
 
     frag.instruction(OpCode.PUSH_TRY, except_label)
-    frag.merge(compiler.full_compile(try_expr, False))
+    frag.merge(compiler.full_compile(try_expr))
 
     frag.instruction(OpCode.CLEAR_TRY, 0)
     frag.instruction(OpCode.JUMP, end_label)
@@ -233,17 +233,17 @@ def _try(compiler, try_expr, catches, tc):
     return frag
 
 
-def _try_else(compiler, try_expr, catches, else_exprs, tc):
+def _try_else(compiler, try_expr, catches, else_exprs):
     except_label = compiler.gen_label()
     end_label = compiler.gen_label()
 
     frag = compiler.fragment("<try-else>")
 
     frag.instruction(OpCode.PUSH_TRY, except_label)
-    frag.merge(compiler.full_compile(try_expr, False))
+    frag.merge(compiler.full_compile(try_expr))
 
     frag.instruction(OpCode.CLEAR_TRY, 0)
-    helper_begin(frag, else_exprs, tc)
+    helper_begin(frag, else_exprs)
     frag.instruction(OpCode.JUMP, end_label)
 
     frag.instruction(OpCode.LABEL, except_label)
@@ -255,16 +255,16 @@ def _try_else(compiler, try_expr, catches, else_exprs, tc):
     return frag
 
 
-def _try_finally(compiler, try_expr, catches, fin_exprs, tc):
+def _try_finally(compiler, try_expr, catches, fin_exprs):
     cleanup = compiler.gen_label()
 
     frag = compiler.fragment("<try-finally>")
 
     frag.instruction(OpCode.PUSH_FINALLY, cleanup)
     if catches:
-        frag.merge(_try(compiler, try_expr, catches, tc))
+        frag.merge(_try(compiler, try_expr, catches))
     else:
-        frag.merge(compiler.full_compile(try_expr, False))
+        frag.merge(compiler.full_compile(try_expr))
 
     frag.instruction(OpCode.CLEAR_FINALLY, 0)
     frag.instruction(OpCode.LABEL, cleanup)
@@ -280,15 +280,14 @@ def _try_else_finally(
         try_expr,
         catches,
         else_exprs,
-        fin_exprs,
-        tc):
+        fin_exprs):
 
     cleanup = compiler.gen_label()
 
     frag = compiler.fragment("<try-else-finally>")
 
     frag.instruction(OpCode.PUSH_FINALLY, cleanup)
-    frag.merge(_try_else(compiler, try_expr, catches, else_exprs, False))
+    frag.merge(_try_else(compiler, try_expr, catches, else_exprs))
 
     frag.instruction(OpCode.CLEAR_FINALLY, 0)
     frag.instruction(OpCode.LABEL, cleanup)
@@ -363,12 +362,12 @@ def _except(compiler, catches):
         if pos:
             fill_position(clause, pos)
 
-    return compiler.full_compile(expr, False)
+    return compiler.full_compile(expr)
 
 
 @builtin("compile/raise")
 @special("compile/raise", patterns=_DEFAULT_PATTERNS)
-def special_raise(compiler, source, tc=False):
+def special_raise(compiler, source):
     called_by, rest = source
 
     fragment = compiler.fragment(called_by)
@@ -380,7 +379,7 @@ def special_raise(compiler, source, tc=False):
     if not is_nil(rest):
         raise TypeError("too many arguments to raise")
 
-    fragment.merge(compiler.full_compile(expr, False))
+    fragment.merge(compiler.full_compile(expr))
     fragment.instruction(OpCode.RAISE, 1)
 
     return fragment

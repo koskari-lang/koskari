@@ -363,7 +363,7 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
 
 @builtin("compile/quasiquote")
 @special("compile/quasiquote", patterns=_DEFAULT_PATTERNS)
-def special_quasiquote(compiler, source, tc=False):
+def special_quasiquote(compiler, source):
     """
     Compile (compile/quasiquote EXPR) — the backtick quasi-quote special form.
 
@@ -389,7 +389,7 @@ def special_quasiquote(compiler, source, tc=False):
 
 @builtin("compile/unquote")
 @special("compile/unquote", patterns=_DEFAULT_PATTERNS)
-def special_unquote(compiler, source, tc=False):
+def special_unquote(compiler, source):
     """
     Raise SpecialError — unquote is only valid inside quasiquote
     """
@@ -399,7 +399,7 @@ def special_unquote(compiler, source, tc=False):
 
 @builtin("compile/unquote-splicing")
 @special("compile/unquote-splicing", patterns=_DEFAULT_PATTERNS)
-def special_unquote_splicing(compiler, source, tc=False):
+def special_unquote_splicing(compiler, source):
     """
     Raise SpecialError — unquote-splicing is only valid inside quasiquote
     """

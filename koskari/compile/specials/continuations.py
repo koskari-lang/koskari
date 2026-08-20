@@ -39,7 +39,7 @@ _symbol_values = symbol("values")
 
 @builtin("compile/call/cc")
 @special("compile/call/cc", patterns=_DEFAULT_PATTERNS)
-def special_call_cc(compiler, source, tc=False):
+def special_call_cc(compiler, source):
     """
     Compile (compile/call/cc FN). Captures continuation, invokes FN with the
     continuation, and returns the result.
@@ -55,7 +55,7 @@ def special_call_cc(compiler, source, tc=False):
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
     fragment.instruction(OpCode.PUSH_CC, 0)
-    fragment.merge(compiler.full_compile(expr, False))
+    fragment.merge(compiler.full_compile(expr))
     fragment.instruction(OpCode.CAPTURE_CC, 0)
     fragment.instruction(OpCode.CALL, 1)
     fragment.instruction(OpCode.POP_CC, 0)
@@ -65,7 +65,7 @@ def special_call_cc(compiler, source, tc=False):
 
 @builtin("compile/let/cc")
 @special("compile/let/cc", patterns=_DEFAULT_PATTERNS)
-def special_let_cc(compiler, source, tc=False):
+def special_let_cc(compiler, source):
     """
     Compile (compile/let/cc K BODY...). Pushes new namespace to hold K,
     captures continuation, binds to K, runs body. K must be a symbol
@@ -87,7 +87,7 @@ def special_let_cc(compiler, source, tc=False):
         frag.declare_var(k_name)
         frag.instruction(OpCode.CAPTURE_CC, 0)
         frag.instruction(OpCode.VAR_STORE, k_name)
-        helper_begin(frag, body, False)
+        helper_begin(frag, body)
     fragment.instruction(OpCode.POP_CC, 0)
 
     return fragment
@@ -95,7 +95,7 @@ def special_let_cc(compiler, source, tc=False):
 
 @builtin("compile/capture/cc")
 @special("compile/capture/cc", patterns=_DEFAULT_PATTERNS)
-def special_capture_cc(compiler, source, tc=False):
+def special_capture_cc(compiler, source):
     """
     Compile (compile/capture/cc K BODY...). Captures continuation, binds to K,
     runs body.
@@ -120,7 +120,7 @@ def special_capture_cc(compiler, source, tc=False):
     fragment.instruction(OpCode.PUSH_CC, 0)
     fragment.instruction(OpCode.CAPTURE_CC, 0)
     fragment.instruction(OpCode.VAR_STORE, k_name)
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.POP_CC, 0)
 
     return fragment
@@ -128,7 +128,7 @@ def special_capture_cc(compiler, source, tc=False):
 
 @builtin("compile/reset")
 @special("compile/reset", patterns=_DEFAULT_PATTERNS)
-def special_reset(compiler, source, tc=False):
+def special_reset(compiler, source):
     """
     Compile (compile/reset EXPR...). Establishes a prompt (tag 0), runs body,
     pops prompt. Enables delimited continuations via compile/shift.
@@ -141,7 +141,7 @@ def special_reset(compiler, source, tc=False):
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
     fragment.instruction(OpCode.PUSH_PROMPT, 0)
-    helper_begin(fragment, rest, False)
+    helper_begin(fragment, rest)
     fragment.instruction(OpCode.POP_PROMPT, 0)
 
     return fragment
@@ -149,7 +149,7 @@ def special_reset(compiler, source, tc=False):
 
 @builtin("compile/shift")
 @special("compile/shift", patterns=_DEFAULT_PATTERNS)
-def special_shift(compiler, source, tc=False):
+def special_shift(compiler, source):
     """
     Compile (compile/shift K EXPR...). Captures continuation, binds to K, runs
     handler body. K must be a symbol; tag 0.
@@ -174,7 +174,7 @@ def special_shift(compiler, source, tc=False):
     fragment.instruction(OpCode.PUSH_SHIFT, 0)
     fragment.declare_var(k_name)
     fragment.instruction(OpCode.VAR_STORE, k_name)
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.POP_SHIFT, 0)
 
     return fragment
@@ -182,7 +182,7 @@ def special_shift(compiler, source, tc=False):
 
 @builtin("compile/return")
 @special("compile/return", patterns=_DEFAULT_PATTERNS)
-def special_return(compiler, source, tc=False):
+def special_return(compiler, source):
     """
     Returns from function.
 
@@ -205,7 +205,7 @@ def special_return(compiler, source, tc=False):
             return source
 
         frag.position_of(rest)
-        frag.merge(compiler.full_compile(rest.car, False))
+        frag.merge(compiler.full_compile(rest.car))
 
         rest = rest.cdr
         count += 1
@@ -217,7 +217,7 @@ def special_return(compiler, source, tc=False):
 
 @builtin("compile/yield")
 @special("compile/yield", patterns=_DEFAULT_PATTERNS)
-def special_yield(compiler, source, tc=False):
+def special_yield(compiler, source):
     """
     Yields from function.
 
@@ -240,7 +240,7 @@ def special_yield(compiler, source, tc=False):
             return source
 
         frag.position_of(rest)
-        frag.merge(compiler.full_compile(rest.car, False))
+        frag.merge(compiler.full_compile(rest.car))
 
         rest = rest.cdr
         count += 1
@@ -252,7 +252,7 @@ def special_yield(compiler, source, tc=False):
 
 @builtin("compile/await")
 @special("compile/await", patterns=_DEFAULT_PATTERNS)
-def special_await(compiler, source, tc=False):
+def special_await(compiler, source):
     """
     Compile (compile/await) or (compile/await EXPR). Zero-arg: bare AWAIT (0)
     then CONST None. One-arg: evaluate EXPR, then AWAIT (1) on TOS.
@@ -268,7 +268,7 @@ def special_await(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     frag.position_of(source)
     if expr:
-        frag.merge(compiler.full_compile(expr, False))
+        frag.merge(compiler.full_compile(expr))
         frag.instruction(OpCode.AWAIT, 1)
     else:
         frag.instruction(OpCode.AWAIT, 0)
@@ -277,7 +277,7 @@ def special_await(compiler, source, tc=False):
 
 @builtin("compile/yield-from")
 @special("compile/yield-from", patterns=_DEFAULT_PATTERNS)
-def special_yield_from(compiler, source, tc=False):
+def special_yield_from(compiler, source):
     """
     Compile (compile/yield-from EXPR). Evaluates EXPR, then yields from TOS via
     YIELD_FROM.
@@ -293,7 +293,7 @@ def special_yield_from(compiler, source, tc=False):
 
     frag = compiler.fragment(called_by)
     frag.position_of(source)
-    frag.merge(compiler.full_compile(expr, False))
+    frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.YIELD_FROM, 0)
     frag.instruction(OpCode.CONST, None)
     return frag

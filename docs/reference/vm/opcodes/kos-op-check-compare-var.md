@@ -8,7 +8,7 @@
   pool), compare under the selector, jump to LABEL on failure.
 - **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
   are never emitted (that is a folding case).
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` (late
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` (late
   `compress` sweep) absorbing two bare VAR/CONST feeder rows into an
   arity-2 `CHECK_COMPARE`. Runs before `pack_var_runs` so this fusion
   gets first claim on the feeders. Lowers to `CHECK_COMPARE_FAST` via

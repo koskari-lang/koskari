@@ -44,7 +44,7 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
 
 
     def compile_to_code(
-            self, src_str, lineno=1, tc=False,
+            self, src_str, lineno=1,
             resolution_mode=None, resolution_instance=None,
             **defns):
 
@@ -54,7 +54,7 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
         defns.setdefault('parse-match-pattern', parse_match_pattern)
         defns.setdefault('parse-rule-pattern', parse_rule_pattern)
         return super().compile_to_code(
-            src_str, lineno=lineno, tc=tc,
+            src_str, lineno=lineno,
             resolution_mode=resolution_mode,
             resolution_instance=resolution_instance,
             **defns)
@@ -338,7 +338,7 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
         src_str = """
         (define ident
           (special-rules ident []
-            [(c (ident x) t) x.datum]))
+            [(c (ident x)) x.datum]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
@@ -365,7 +365,7 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
         src_str = """
         (define ident
           (special-rules ident []
-            [(c x t) (car (cdr x.datum))]))
+            [(c x) (car (cdr x.datum))]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
@@ -391,7 +391,7 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (define ident
           (special-match ident
-            [(compiler (ident (VALUE x)) t)
+            [(compiler (ident (VALUE x)))
              x.datum]))
         """
         expr, mod = self.compile_expr(src_str)
@@ -419,7 +419,7 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (define ident
           (special-match ident
-            [(c x t)
+            [(c x)
              (car (cdr x.datum))]))
         """
         expr, mod = self.compile_expr(src_str)

@@ -40,11 +40,10 @@ pytestmark = pytest.mark.phase_specials
 )
 def special_lambda_ng(
         compiler,
-        caps,
-        tc=False):
+        caps):
     """
-    Decorated lambda-ng: filtered captures per arm; tc unused (body uses
-    helper_begin(..., True) like production lambda)
+    Decorated lambda-ng: filtered captures per arm; body compiled through
+    helper_begin like production lambda
     """
 
     called_by = caps["called-by"].datum
@@ -108,7 +107,7 @@ def special_lambda_ng(
     lamb.doc = discover_docstring(body_src)
 
     with compiler.resolution_scope():
-        lamb = helper_begin(lamb, body_src, True)
+        lamb = helper_begin(lamb, body_src)
     code = compiler.complete(lamb, CompilerMode.FUNCTION)
     fspec = FunctionSpec(proper_name, FormalsSpec(
         tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),

@@ -33,8 +33,11 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # MINOR bumped: fused format opcodes VAR_FORMAT / VAR_FORMAT_CONST and
 # FAST_FORMAT / FAST_FORMAT_CONST inserted mid-enum, renumbering every
 # opcode after the VAR and FAST families.
+# MINOR bumped: TAIL_CALL twins for the ATTR, VAR, and FAST call
+# families inserted after TAIL_CALL_STAR, renumbering every opcode
+# after the tail-call family.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 12
+BYTECODE_ABI_MINOR = 13
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 0
 

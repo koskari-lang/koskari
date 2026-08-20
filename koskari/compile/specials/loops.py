@@ -39,7 +39,7 @@ _WHILE_PATTERNS = [
 
 @builtin("compile/while")
 @special("compile/while", patterns=_WHILE_PATTERNS, unpack="kwargs")
-def special_while(compiler, tc, _while, test, body):
+def special_while(compiler, _while, test, body):
     """
     Compile (compile/while TEST BODY... [else: ELSEBODY]). Loop with break and continue support
     """
@@ -56,17 +56,17 @@ def special_while(compiler, tc, _while, test, body):
     fragment.instruction(OpCode.PUSH_LOOP, 0)
 
     # loop test
-    fragment.merge(compiler.full_compile(test.datum, False))
+    fragment.merge(compiler.full_compile(test.datum))
     fragment.instruction(OpCode.JUMP_FALSE, loop_exit)
 
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.CONTINUE, 1)
 
     fragment.instruction(OpCode.LABEL, loop_exit)
 
     if has_elsebody:
         fragment.instruction(OpCode.CLEAR_LOOP, 0)
-        fragment.merge(compiler.full_compile(elsebody, False))
+        fragment.merge(compiler.full_compile(elsebody))
         fragment.instruction(OpCode.BREAK, 1)
 
     fragment.instruction(OpCode.POP_LOOP, 0)
@@ -88,7 +88,7 @@ _FOREACH_PATTERNS = (
 
 @builtin("compile/for-each")
 @special("compile/for-each", patterns=_FOREACH_PATTERNS, unpack="match")
-def special_for_each(compiler, caps, tc=False):
+def special_for_each(compiler, caps):
     """
     Compile (compile/for-each [BINDING EXPR] BODY... [else: ELSEBODY]) or
     (compile/for-each [[PATTERN...] EXPR] BODY... [else: ELSEBODY]).
@@ -115,7 +115,7 @@ def special_for_each(compiler, caps, tc=False):
     expr = binding["expr"] if binding else using["expr"]
 
     # the iterable expression
-    fragment.merge(compiler.full_compile(expr.datum, False))
+    fragment.merge(compiler.full_compile(expr.datum))
 
     # set up the loop and get the first value
     fragment.instruction(OpCode.PUSH_FOREACH, 0)
@@ -131,13 +131,13 @@ def special_for_each(compiler, caps, tc=False):
         fragment.instruction(OpCode.VAR_STORE, binding_name)
 
     # perform the loop body, then continue back up at the ITER_NEXT
-    helper_begin(fragment, body, False)
+    helper_begin(fragment, body)
     fragment.instruction(OpCode.CONTINUE, 1)
 
     fragment.instruction(OpCode.LABEL, loop_else)
     if has_elsebody:
         fragment.instruction(OpCode.CLEAR_FOREACH, 0)
-        fragment.merge(compiler.full_compile(elsebody, False))
+        fragment.merge(compiler.full_compile(elsebody))
         fragment.instruction(OpCode.BREAK, 1)
 
     fragment.instruction(OpCode.POP_FOREACH, 0)
@@ -166,7 +166,7 @@ def _special_break_continue(compiler, source, op):
 
     frag = compiler.fragment(called_by)
     frag.position_of(source)
-    frag.merge(compiler.full_compile(val, False))
+    frag.merge(compiler.full_compile(val))
     frag.instruction(op, 1)
     return frag
 
@@ -176,7 +176,7 @@ _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), OPTIONAL(VALUE("val"))),)
 
 @builtin("compile/break")
 @special("compile/break", patterns=_DEFAULT_PATTERNS)
-def special_break(compiler, source, tc=False):
+def special_break(compiler, source):
     """
     Compile (compile/break) or (compile/break VAL). Exits innermost loop.
     """
@@ -186,7 +186,7 @@ def special_break(compiler, source, tc=False):
 
 @builtin("compile/continue")
 @special("compile/continue", patterns=_DEFAULT_PATTERNS)
-def special_continue(compiler, source, tc=False):
+def special_continue(compiler, source):
     """
     Compile (compile/continue) or (compile/continue VAL). Restarts loop.
     """

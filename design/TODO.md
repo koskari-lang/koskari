@@ -97,23 +97,15 @@ per-turn expansion budget, and what the diagnostic should name (the
 cycling syntax, the forms in the loop). Applies to both loops at once if
 the guard lives in `full_compile`.
 
-### Tail-call promotion bytecode pass
+### Extent verification and dead-region sweep
 
-Move tail-call optimization out of special forms into a `complete()` bytecode
-pass: specials always emit `CALL*`; `promote_tail_calls` rewrites eligible sites
-to `TAIL_CALL*` using extent-aware heuristics. Removes the `tc` parameter from
-all special signatures and simplifies `compile/call` and `compile/call-attr`.
-Gate with `Compiler.tco_enabled` for now; pragma gating deferred. v1 promotes
-only opcodes that already have `TAIL_CALL` analogues (`CALL`, `CALL_NAMES`,
-`CALL_STAR`).
+Add the TAIL-under-non-discardable-extent check to the finalize walk
+(`derive_extents_fill`), which already verifies extent balance and
+cannot be mocked out; settle per-kind CLEAR semantics first. The
+Python and C rulesets stay deliberately distinct: C is the legality
+rule. Dead-region sweep and label GC stay last, if at all.
 
-Promotion is only valid for non-yielding functions, and yield-ness is fully
-known before the pass runs: scan for `YIELD` / `YIELD_FROM` first and skip
-promotion entirely for yielding streams — never convert then un-convert.
-`demote_tail_calls_if_yields` stays in the pipeline as a safety net only,
-for raw `TAIL_CALL*` embedded via bytecode specialty syntax in a generator.
-
-Ref: [language/tail-call-bytecode-pass.md](language/tail-call-bytecode-pass.md).
+Ref: [extent-verification.md](extent-verification.md).
 
 ### Dict literal compression (review)
 

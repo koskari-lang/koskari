@@ -2383,15 +2383,17 @@ static int validate_no_tail_with_yield(PyObject *instr_fast) {
     long lop = PyLong_AsLong(a);
     if (lop == KOS_OP_YIELD || lop == KOS_OP_YIELD_FROM) {
       saw_yield = 1;
-    } else if (lop == KOS_OP_TAIL_CALL || lop == KOS_OP_TAIL_CALL_NAMES
-               || lop == KOS_OP_TAIL_CALL_STAR) {
+    } else if (lop >= KOS_OP_TAIL_CALL
+               && lop <= KOS_OP_TAIL_CALL_FAST_ATTR_STAR) {
+      /* the TAIL_CALL family is one contiguous run in opcodes.incl;
+         additions belong inside the run so this range stays total */
       saw_tail = 1;
     }
 
     if (saw_yield && saw_tail) {
       PyErr_SetString(PyExc_ValueError,
                       "code containing yield or yield-from cannot use "
-                      "TAIL_CALL, TAIL_CALL_NAMES, or TAIL_CALL_STAR");
+                      "TAIL_CALL family opcodes");
       return -1;
     }
   }

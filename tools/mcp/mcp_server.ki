@@ -99,20 +99,18 @@ macros, layouts, and reader behavior, and a corpus of verified example
 programs with expected results at the read, expand, compile, and eval
 phases.
 
-Reach for these tools FIRST -- before reading or grepping repository
-source -- whenever a question is about what Koskari is or how it
-behaves. This includes "what is X", "how does X work", "how do I write
-X", "is this form valid", and "show me an example of X" questions about
-any language construct.
+Reach for these tools FIRST whenever a question is about what Koskari is
+or how it behaves. This includes "what is X", "how does X work", "how do
+I write X", "is this form valid", and "show me an example of X" questions
+about any language construct.
 
 Cold start: on first use of this server in a session, call
 get_reference with path "agents/index.md". It is an orientation page
 written for agents: a map of which documentation page answers which
 class of question, the rules for writing syntactically valid Koskari
 source, and pitfalls for Python/Scheme priors. Pages in the "agents"
-section are written for AI consumers -- dense, normative, with
-valid/invalid pairs. For effective searching, see
-"agents/querying-the-corpus.md".
+section are written explicitly for AI consumers. For effective searching,
+see "agents/querying-the-corpus.md".
 
 Tools:
 - search_docs: full-text search across documentation pages and example
@@ -127,8 +125,8 @@ Tools:
 - list_tags: enumerate searchable tags -- the goal-based intent
   vocabulary and structural tags -- with counts.
 
-Two kinds of path travel between these tools, and they are not
-interchangeable. Feature paths (special/compile/cond, layout/try) are
+Two non-interchangeable kinds of path travel between these tools.
+Feature paths (special/compile/cond, layout/try) are
 what list_features returns, and search_examples alone accepts them, as
 feature_path; a feature filter is an exact match unless it ends in "/",
 which makes it a prefix, so "special/compile/" matches that whole
@@ -617,10 +615,10 @@ define reference-miss [path]:
         return (json.dumps #{
             "path": path
             "kind": "feature"
-            "note": (+ "Not a reference path: this is a feature path. "
-                "The pages below document it -- call get_reference on "
-                "one. For the examples themselves, call search_examples "
-                f"with feature_path={(repr path)}.")
+            "note": "Not a reference path: this is a feature path. "-
+                "The pages below document it -- call get_reference on "-
+                "one. For the examples themselves, call search_examples "-
+                f"with feature_path={(repr path)}."
             "references": refs})
 
     define under (features-under path)
@@ -628,16 +626,16 @@ define reference-miss [path]:
         return (json.dumps #{
             "path": path
             "kind": "feature-prefix"
-            "note": (+ "Not a reference path: this names a family of "
-                "features. Pass one of these to search_examples as "
-                "feature_path, or the prefix with a trailing slash to "
-                "take the whole family.")
+            "note": "Not a reference path: this names a family of "-
+                "features. Pass one of these to search_examples as "-
+                "feature_path, or the prefix with a trailing slash to "-
+                "take the whole family."
             "features": (item-slice under 0 20)})
 
-    (+ f"No reference material with path={(repr path)}. "
-        "Reference paths come from search_docs hits or from a record's "
-        "references field; feature paths from list_features belong in "
-        "search_examples as feature_path.")
+    f"No reference material with path={(repr path)}. "-
+    "Reference paths come from search_docs hits or from a record's "-
+    "references field; feature paths from list_features belong in "-
+    "search_examples as feature_path."
 
 
 ;; === Tools ===
@@ -695,11 +693,11 @@ define search_examples [
     set! rows (filter-by-polarity rows polarity)
     set! rows (item-slice (demote-invalid rows) 0 cap)
     unless rows:
-        return (+ "No matching corpus examples. A feature_path is an "
-            "exact match unless it ends in '/', which makes it a prefix "
-            "over the family; its values come from list_features. Free "
-            "text belongs in search_text, and search_docs covers the "
-            "documentation that search_examples does not.")
+        return "No matching corpus examples. A feature_path is an "-
+            "exact match unless it ends in '/', which makes it a prefix "-
+            "over the family; its values come from list_features. Free "-
+            "text belongs in search_text, and search_docs covers the "-
+            "documentation that search_examples does not."
 
     format-examples rows
 
@@ -770,10 +768,10 @@ define search_docs [
 
     define limited (item-slice hits 0 cap)
     unless limited:
-        return (+ "No matching reference material. Try fewer or more "
-            "common words, drop kind to search both pages and programs, "
-            "or call search_examples for corpus records with their "
-            "expected results.")
+        return "No matching reference material. Try fewer or more "-
+            "common words, drop kind to search both pages and programs, "-
+            "or call search_examples for corpus records with their "-
+            "expected results."
 
     json.dumps limited
 

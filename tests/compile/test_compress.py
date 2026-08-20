@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Unit tests for Compiler.compress peephole optimizations
+Unit tests for ByteCodeProcessor.compress peephole optimizations
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -23,20 +23,17 @@ import unittest
 
 import pytest
 
-from koskari.compile.compiler import _CHECK_SQUASHES, Compiler
-from koskari.lib import Module, ModuleNamespace, OpCode, Operand
+from koskari.compile.processor import ByteCodeProcessor, CHECK_SQUASHES
+from koskari.lib import OpCode, Operand
 
 
 pytestmark = pytest.mark.phase_compile
 
 
-def make_compiler():
-    mod = Module(ModuleNamespace("test", {}))
-    return Compiler("test", mod)
-
-
 def compress_ops(instr):
-    return make_compiler().compress(instr)
+    proc = ByteCodeProcessor(instr)
+    proc.compress()
+    return proc.instructions
 
 
 class TestCompress(unittest.TestCase):
@@ -137,7 +134,7 @@ class TestCompress(unittest.TestCase):
         self.assertEqual(out[:1], [(OpCode.CHECK_EXCEPTION, "handler")])
 
     def test_check_squash_object_ops(self):
-        for prior, squashed in _CHECK_SQUASHES.items():
+        for prior, squashed in CHECK_SQUASHES.items():
             if prior == OpCode.OBJECT_NOT:
                 continue
 

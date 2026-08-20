@@ -645,10 +645,10 @@ def partition_collection_runs(compiler, args_seq):
         if kind == "*":
             flush_const()
             flush_expr()
-            chunks.append(("splat", compiler.full_compile(element, False)))
+            chunks.append(("splat", compiler.full_compile(element)))
             continue
 
-        frag = compiler.full_compile(element, False)
+        frag = compiler.full_compile(element)
         found, value = const_only_expr(frag)
         if found and _is_const(value):
             flush_expr()
@@ -982,14 +982,13 @@ def discover_docstring(body):
 def helper_begin(
         fragment: ByteCodeFragment,
         body: pair,
-        tc: bool = False,
+        *,
         position=None) -> ByteCodeFragment:
     """
     Compile a body list into a fragment
 
     :param fragment: the fragment to compile into
     :param body: the body list to compile
-    :param tc: whether to compile in tail call optimization mode
     :param position: enclosing source position threaded to diagnostics
         about positionless atoms in the body
     :return: the compiled fragment
@@ -1009,10 +1008,10 @@ def helper_begin(
         # cell holding it, so the cell alone is not enough here
         fragment.position_of(expr)
         if is_nil(body):
-            fragment.merge(compiler.full_compile(expr, tc, position))
+            fragment.merge(compiler.full_compile(expr, position=position))
             break
         else:
-            fragment.merge(compiler.full_compile(expr, False, position))
+            fragment.merge(compiler.full_compile(expr, position=position))
             fragment.instruction(OpCode.POP, 1)
 
     return fragment

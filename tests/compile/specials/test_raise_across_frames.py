@@ -102,21 +102,22 @@ class TestRaiseAcrossFrames(SpecialsTestCase):
 
     async def test_crossed_frames_recorded_in_dynchain_meta(self):
         """
-        KNOWN DEFECT (intentionally red): frames crossed during a raise
-        walk are recorded into the exception's __koskari_dynchain__
-        metadata before being popped (marked "crossed"); today only the
-        frames still live at escape time appear, so crossed callee frames
-        vanish from the trace.
+        Frames crossed during a raise walk are recorded into the
+        exception's __koskari_dynchain__ metadata before being popped,
+        marked "crossed".
         """
 
         def boom(v):
             raise ValueError("boom")
 
         src_str = """
-        (call
-          (lambda []
-            (let [[x 1]]
-              (boom x))))
+        (begin
+          (call
+            (lambda []
+              (let [[x 1]]
+                (boom x))))
+          5  ; preventing tail-call promotion
+        )
         """
         expr, mod = self.compile_expr(src_str, boom=boom)
         try:

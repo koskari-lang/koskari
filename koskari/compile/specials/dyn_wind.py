@@ -47,7 +47,7 @@ def _compile_thunk(compiler, body_src, fragment):
     stack.
     """
     thunk = compiler.fragment("<dyn-wind-thunk>")
-    thunk.merge(compiler.full_compile(body_src, True))
+    thunk.merge(compiler.full_compile(body_src))
     code = compiler.complete(thunk, CompilerMode.FUNCTION)
     fspec = FunctionSpec(None, FormalsSpec((), (), (), (), None, None), code)
     fragment.instruction(OpCode.CONST, fspec)
@@ -143,8 +143,7 @@ _DYN_WIND_PATTERNS_FULL = tuple(
 @special("compile/dyn-wind", patterns=_DYN_WIND_PATTERNS_FULL)
 def special_dyn_wind(
         compiler: Compiler,
-        source: pair,
-        tc: bool = False) -> ByteCodeFragment:
+        source: pair) -> ByteCodeFragment:
     """
     Compile (compile/dyn-wind [before] [body] [after]). Body is required;
     at least one of before or after is required. Wraps before/after in
@@ -176,8 +175,8 @@ def special_dyn_wind(
         _compile_thunk(compiler, after_src, fragment)
         fragment.instruction(OpCode.PUSH_WIND, 2)
 
-    # helper_begin(fragment, body_src, False)
-    fragment.merge(compiler.full_compile(body_src, False))
+    # helper_begin(fragment, body_src)
+    fragment.merge(compiler.full_compile(body_src))
     fragment.instruction(OpCode.POP_WIND, 0)
     return fragment
 

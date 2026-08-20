@@ -60,7 +60,7 @@ notes: koskari/bootstrap/_define_syntax.ki macro-match arm
 ---
 id: syntax-define-syntax-spr-expand-001
 feature: macro/compile/define-syntax
-source: (define-syntax ident (special-rules [] [(c (ident x) t) x.datum]))
+source: (define-syntax ident (special-rules [] [(c (ident x)) x.datum]))
 verify:
   expand: (define-global compile/ident (special-rules ident [] ...))
 references:
@@ -75,7 +75,7 @@ notes: koskari/bootstrap/_define_syntax.ki special-rules arm
 ---
 id: syntax-define-syntax-spm-expand-001
 feature: macro/compile/define-syntax
-source: (define-syntax ident (special-match [(compiler (ident (VALUE x)) t) x.datum]))
+source: (define-syntax ident (special-match [(compiler (ident (VALUE x))) x.datum]))
 verify:
   expand: (define-global compile/ident (special-match ident ...))
 references:
@@ -233,9 +233,9 @@ notes: define-only
 ---
 id: syntax-special-rules-identity-001
 feature: special/compile/special-rules
-source: (define ident (special-rules ident [] [(c (ident x) t) x.datum]))
+source: (define ident (special-rules ident [] [(c (ident x)) x.datum]))
 verify:
-  read: (define ident (special-rules ident [] [(c (ident x) t) x.datum]))
+  read: (define ident (special-rules ident [] [(c (ident x)) x.datum]))
 references:
   - reference/specials/compile-special-rules.md
 stability: evolving
@@ -247,9 +247,9 @@ notes: define-only
 ---
 id: syntax-special-rules-bare-form-001
 feature: special/compile/special-rules
-source: (define ident (special-rules ident [] [(c x t) (car (cdr x.datum))]))
+source: (define ident (special-rules ident [] [(c x) (car (cdr x.datum))]))
 verify:
-  read: (define ident (special-rules ident [] [(c x t) (car (cdr x.datum))]))
+  read: (define ident (special-rules ident [] [(c x) (car (cdr x.datum))]))
 references:
   - reference/specials/compile-special-rules.md
 stability: evolving
@@ -261,9 +261,9 @@ notes: define-only
 ---
 id: syntax-special-match-identity-001
 feature: special/compile/special-match
-source: (define ident (special-match ident [(compiler (ident (VALUE x)) t) x.datum]))
+source: (define ident (special-match ident [(compiler (ident (VALUE x))) x.datum]))
 verify:
-  read: (define ident (special-match ident [(compiler (ident (VALUE x)) t) x.datum]))
+  read: (define ident (special-match ident [(compiler (ident (VALUE x))) x.datum]))
 references:
   - reference/specials/compile-special-match.md
 stability: evolving
@@ -275,9 +275,9 @@ notes: define-only
 ---
 id: syntax-special-match-bare-form-001
 feature: special/compile/special-match
-source: (define ident (special-match ident [(c x t) (car (cdr x.datum))]))
+source: (define ident (special-match ident [(c x) (car (cdr x.datum))]))
 verify:
-  read: (define ident (special-match ident [(c x t) (car (cdr x.datum))]))
+  read: (define ident (special-match ident [(c x) (car (cdr x.datum))]))
 references:
   - reference/specials/compile-special-match.md
 stability: evolving
@@ -527,7 +527,7 @@ notes: two VALUE pattern vars; define-only; macro-match matches hygienically
 id: syntax-special-rules-double-003
 feature: special/compile/special-rules
 source: |-
-  (define dbl (special-rules dbl [] [(c (dbl x) t) (+ x.datum x.datum)]))
+  (define dbl (special-rules dbl [] [(c (dbl x)) (+ x.datum x.datum)]))
   
 verify:
   eval: "null"
@@ -543,11 +543,11 @@ notes: define-only; x.datum accesses the datum from the AST node; [] reads as ni
 id: syntax-special-match-second-003
 feature: special/compile/special-match
 source: |-
-  (define second (special-match second [(compiler (second (VALUE x) (VALUE y)) t) y.datum]))
+  (define second (special-match second [(compiler (second (VALUE x) (VALUE y))) y.datum]))
   
 verify:
-  read: (define second (special-match second ((compiler (second (VALUE x) (VALUE y)) t) (attr y datum))))
-  expand: (define second (special-match second ((compiler (second (VALUE x) (VALUE y)) t) (attr y datum))))
+  read: (define second (special-match second ((compiler (second (VALUE x) (VALUE y))) (attr y datum))))
+  expand: (define second (special-match second ((compiler (second (VALUE x) (VALUE y))) (attr y datum))))
   eval: "null"
 references:
   - reference/specials/compile-special-match.md

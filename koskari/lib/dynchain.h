@@ -1017,6 +1017,10 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame);
 
 void kos_dynframe_reset_for_tail(KosDynFrame *frame);
 
+/* Drop discardable extent nodes (NS, LOOP, FOREACH) above frame before
+   tail-call frame reuse; errors on any other open node kind. */
+int kos_dyn_drop_discardable_to_frame(KosEvalState *es, KosDynFrame *frame);
+
 
 /**
    Create a generator boundary node.  The generator object owns the node;

@@ -101,8 +101,7 @@ _CALL_PATTERNS = [
 @special("compile/call", patterns=_CALL_PATTERNS, unpack="match")
 def special_call(
         compiler: Compiler,
-        caps: dict,
-        tc: bool = False) -> ByteCodeFragment:
+        caps: dict) -> ByteCodeFragment:
 
     called_by = caps["called-by"].datum
     pos = caps["called-by"].position
@@ -122,7 +121,7 @@ def special_call(
 
     callable = caps["callable"].datum
 
-    use_var_path = is_symbol(callable) and not tc
+    use_var_path = is_symbol(callable)
     name = str(callable) if is_symbol(callable) else None
 
     # rewriting (.foo obj args...) to
@@ -154,13 +153,11 @@ def special_call(
     if not has_star and not has_starstar:
         if not kwds_seq:
             for _, expr in args_seq:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             fragment.position(pos)
             if use_var_path:
                 fragment.instruction(
                     OpCode.CALL_VAR, (name, len(args_seq), 0, 0))
-            elif tc:
-                fragment.instruction(OpCode.TAIL_CALL, len(args_seq))
             else:
                 fragment.instruction(OpCode.CALL, len(args_seq))
         else:
@@ -172,9 +169,9 @@ def special_call(
                 kw_values.append(item[1])
             opa = len(pos_exprs)
             for expr in pos_exprs:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             for expr in kw_values:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             if not use_var_path:
                 fragment.instruction(OpCode.CONST, tuple(kw_names))
             fragment.position(pos)
@@ -182,8 +179,6 @@ def special_call(
                 fragment.instruction(
                     OpCode.CALL_VAR_NAMES,
                     (name, tuple(kw_names), opa, 0))
-            elif tc:
-                fragment.instruction(OpCode.TAIL_CALL_NAMES, opa)
             else:
                 fragment.instruction(OpCode.CALL_NAMES, opa)
     else:
@@ -198,10 +193,10 @@ def special_call(
             for kind, data in arg_chunks:
                 if kind == "pos":
                     for _, expr in data:
-                        fragment.merge(compiler.full_compile(expr, False))
+                        fragment.merge(compiler.full_compile(expr))
                     fragment.instruction(OpCode.BUILD_ARGS, len(data))
                 else:
-                    fragment.merge(compiler.full_compile(data, False))
+                    fragment.merge(compiler.full_compile(data))
             if len(arg_chunks) > 1:
                 fragment.instruction(OpCode.COMBINE_ARGS, len(arg_chunks))
 
@@ -211,10 +206,10 @@ def special_call(
                 if kind == "kw":
                     names = tuple(n for n, _ in data)
                     for _, expr in data:
-                        fragment.merge(compiler.full_compile(expr, False))
+                        fragment.merge(compiler.full_compile(expr))
                     fragment.instruction(OpCode.BUILD_KWDS_NAMES, names)
                 else:
-                    fragment.merge(compiler.full_compile(data, False))
+                    fragment.merge(compiler.full_compile(data))
             if len(kwd_chunks) > 1:
                 fragment.instruction(OpCode.COMBINE_KWDS, len(kwd_chunks))
 
@@ -222,8 +217,6 @@ def special_call(
         if use_var_path:
             fragment.instruction(
                 OpCode.CALL_VAR_STAR, (name, opa, 0, 0))
-        elif tc:
-            fragment.instruction(OpCode.TAIL_CALL_STAR, opa)
         else:
             fragment.instruction(OpCode.CALL_STAR, opa)
 
@@ -244,8 +237,7 @@ _CALL_ATTR_PATTERNS_FULL = tuple(
 @special("compile/call-attr", patterns=_CALL_ATTR_PATTERNS_FULL)
 def special_call_attr(
         compiler: Compiler,
-        source: pair,
-        tc: bool = False) -> ByteCodeFragment:
+        source: pair) -> ByteCodeFragment:
 
     called_by, body = source
 
@@ -259,10 +251,9 @@ def special_call_attr(
     attr = matched["attr"].datum
     args_src = matched["args"].datum if "args" in matched else nil
 
-    # No TAIL_CALL_ATTR exists: attr calls never tail-call and the frame
-    # is not reset before the call, so the var path stays valid even in
-    # tail position. Reinstate an `and not tc` guard here if a tail form
-    # transition for CALL_ATTR is ever implemented.
+    # The attr call always takes the var path when obj is a symbol; the
+    # processor's promotion pass relabels tail-position attr calls onto
+    # their TAIL_CALL_*ATTR* twins after emission.
     use_var_path = is_symbol(obj)
 
     fragment.position_of(body)
@@ -278,7 +269,7 @@ def special_call_attr(
     if not has_star and not has_starstar:
         if not kwds_seq:
             for _, expr in args_seq:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             fragment.position_of(source)
             if use_var_path:
                 fragment.instruction(
@@ -295,9 +286,9 @@ def special_call_attr(
                 kw_values.append(item[1])
             opa = len(pos_exprs)
             for expr in pos_exprs:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             for expr in kw_values:
-                fragment.merge(compiler.full_compile(expr, False))
+                fragment.merge(compiler.full_compile(expr))
             fragment.position_of(source)
             if use_var_path:
                 fragment.instruction(
@@ -317,10 +308,10 @@ def special_call_attr(
             for kind, data in arg_chunks:
                 if kind == "pos":
                     for _, expr in data:
-                        fragment.merge(compiler.full_compile(expr, False))
+                        fragment.merge(compiler.full_compile(expr))
                     fragment.instruction(OpCode.BUILD_ARGS, len(data))
                 else:
-                    fragment.merge(compiler.full_compile(data, False))
+                    fragment.merge(compiler.full_compile(data))
             if len(arg_chunks) > 1:
                 fragment.instruction(OpCode.COMBINE_ARGS, len(arg_chunks))
 
@@ -330,10 +321,10 @@ def special_call_attr(
                 if kind == "kw":
                     names = tuple(n for n, _ in data)
                     for _, expr in data:
-                        fragment.merge(compiler.full_compile(expr, False))
+                        fragment.merge(compiler.full_compile(expr))
                     fragment.instruction(OpCode.BUILD_KWDS_NAMES, names)
                 else:
-                    fragment.merge(compiler.full_compile(data, False))
+                    fragment.merge(compiler.full_compile(data))
             if len(kwd_chunks) > 1:
                 fragment.instruction(OpCode.COMBINE_KWDS, len(kwd_chunks))
 

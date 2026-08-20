@@ -68,7 +68,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         s = syntax_from_rule_datums(m, (onlyhere,), rules)
         comp = _StubCompiler()
         src = cons(m, symbol("solo"), symbol("extra"), nil)
-        out = s.compile_impl(comp, src, False)
+        out = s.compile_impl(comp, src)
         self.assertEqual(out, symbol("wide"))
 
 
@@ -84,7 +84,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         s = syntax_from_match_datums(m, rules)
         comp = _StubCompiler()
         src = cons(m, symbol("arg"), nil)
-        out = s.compile_impl(comp, src, False)
+        out = s.compile_impl(comp, src)
         self.assertEqual(out, symbol("syntax-match-out"))
 
 
@@ -96,17 +96,17 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         m = symbol("compile/matrix-mr")
         saw = []
 
-        def proc(compiler, tc=None, **caps):
-            saw.append((tc, caps))
+        def proc(compiler, **caps):
+            saw.append(caps)
             return symbol("macro-rules-out")
 
         s = macro_from_rule_rows(m, (), ((build_proper(m, symbol("v")), proc),))
         comp = _StubCompiler()
         slot = symbol("slotval")
         src = cons(m, slot, nil)
-        out = s.compile_impl(comp, src, False)
+        out = s.compile_impl(comp, src)
         self.assertEqual(out, symbol("macro-rules-out"))
-        self.assertEqual(saw[0][1]["v"].datum, slot)
+        self.assertEqual(saw[0]["v"].datum, slot)
 
 
     def test_macro_match_shape(self):
@@ -119,17 +119,17 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
             m, build_proper(symbol("SYMBOL"), symbol("v")))
         saw = []
 
-        def proc(compiler, tc=None, **caps):
-            saw.append((tc, caps))
+        def proc(compiler, **caps):
+            saw.append(caps)
             return symbol("macro-match-out")
 
         s = macro_from_match_rows(m, ((pat, proc),))
         comp = _StubCompiler()
         slot = symbol("slotval")
         src = cons(m, slot, nil)
-        out = s.compile_impl(comp, src, False)
+        out = s.compile_impl(comp, src)
         self.assertEqual(out, symbol("macro-match-out"))
-        self.assertEqual(saw[0][1]["v"].datum, slot)
+        self.assertEqual(saw[0]["v"].datum, slot)
 
 
     def test_special_rules_shape(self):
@@ -139,13 +139,13 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
 
         m = symbol("compile/matrix-spr")
 
-        def proc(compiler, source_obj, result, tc):
+        def proc(compiler, source_obj, result):
             return symbol("special-rules-out")
 
         s = special_from_rule_rows(
             m, (), ((build_proper(m, symbol("q")), proc),))
         src = cons(m, symbol("arg"), nil)
-        out = s.compile_impl(None, src, False)
+        out = s.compile_impl(None, src)
         self.assertEqual(out, symbol("special-rules-out"))
 
 
@@ -158,12 +158,12 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         pat = build_proper(
             m, build_proper(symbol("SYMBOL"), symbol("q")))
 
-        def proc(compiler, source_obj, result, tc):
+        def proc(compiler, source_obj, result):
             return symbol("special-match-out")
 
         s = special_from_match_rows(m, ((pat, proc),))
         src = cons(m, symbol("arg"), nil)
-        out = s.compile_impl(None, src, False)
+        out = s.compile_impl(None, src)
         self.assertEqual(out, symbol("special-match-out"))
 
 
@@ -182,7 +182,7 @@ class TestPatternLanguageTraps(unittest.TestCase):
         s = syntax_from_rule_datums(m, (), rules)
         comp = _StubCompiler()
         src = build_proper(m, symbol("x"), symbol("y"))
-        out = s.compile_impl(comp, src, False)
+        out = s.compile_impl(comp, src)
         self.assertEqual(out, symbol("ellipsis-ok"))
 
 
@@ -216,7 +216,7 @@ class TestPatternLanguageTraps(unittest.TestCase):
         s = syntax_from_match_datums(m, rules)
         comp = _StubCompiler()
         src = cons(m, symbol("inner-form"), nil)
-        out = s.compile_impl(comp, src, False)
+        out = s.compile_impl(comp, src)
         self.assertEqual(out, symbol("group-out"))
 
 

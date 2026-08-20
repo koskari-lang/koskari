@@ -215,7 +215,7 @@ def _parse_member(elem, source, what):
 
 @builtin("compile/import")
 @special("compile/import", patterns=_DEFAULT_PATTERNS)
-def special_import(compiler, source, tc=False):
+def special_import(compiler, source):
     """
     Compile (import MODULE) and (import [MODULE as: BIND]).
 
@@ -275,7 +275,7 @@ def special_import(compiler, source, tc=False):
 
 @builtin("compile/import-from")
 @special("compile/import-from", patterns=_DEFAULT_PATTERNS)
-def special_import_from(compiler, source, tc=False):
+def special_import_from(compiler, source):
     """
     Compile (import-from NAME MEMBER...) where each MEMBER is either a
     plain symbol or a [ATTR as: BIND] rename form.
@@ -329,7 +329,7 @@ def special_import_from(compiler, source, tc=False):
 
 @builtin("compile/import-all-from")
 @special("compile/import-all-from", patterns=_DEFAULT_PATTERNS)
-def special_import_all_from(compiler, source, tc=False):
+def special_import_all_from(compiler, source):
     """
     Compile (import-all-from MODULE): Python's `from MODULE import *`.
 
@@ -365,7 +365,7 @@ _USE_FACET_PREFIXES = ("compile/", "layout/")
 
 @builtin("compile/use")
 @special("compile/use", patterns=_DEFAULT_PATTERNS)
-def special_use(compiler, source, tc=False):
+def special_use(compiler, source):
     """
     Compile (use MODULE) and (use MODULE STEM...), where each STEM is a
     plain symbol or a [STEM as: BIND] rename form.

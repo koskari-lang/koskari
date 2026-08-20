@@ -58,21 +58,19 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         )
 
         @special(primary, patterns=pat, unpack="match")
-        def _fn(compiler, caps, tc):
+        def _fn(compiler, caps):
             return (
                 caps["head"].datum,
                 caps["x"].datum,
-                tc,
             )
 
         alias = symbol("define/ng-int")
         arg = symbol("argval")
         src = cons(alias, arg, nil)
         comp = _StubCompiler()
-        out = _fn.compile_impl(comp, src, True)
+        out = _fn.compile_impl(comp, src)
         self.assertEqual(out[0], alias)
         self.assertEqual(out[1], arg)
-        self.assertTrue(out[2])
 
 
     def test_special_first_arm_wins_when_both_match(self):
@@ -86,7 +84,7 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
 
         seen = []
 
-        def fn(compiler, caps, tc):
+        def fn(compiler, caps):
             seen.append(frozenset(caps.keys()))
             return symbol("ok")
 
@@ -94,7 +92,7 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
 
         src = cons(symbol("any-head"), symbol("cell"), nil)
         comp = _StubCompiler()
-        out = h.compile_impl(comp, src, False)
+        out = h.compile_impl(comp, src)
         self.assertEqual(out, symbol("ok"))
         self.assertEqual(len(seen), 1)
         self.assertIn("a", seen[0])
@@ -110,12 +108,12 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         pat = MATCH(CALLEDBY(), VALUE("x"), VALUE("y"))
 
         h = special(primary, patterns=pat, unpack="match")(
-            lambda c, caps, tc: symbol("never"))
+            lambda c, caps: symbol("never"))
 
         src = cons(symbol("h"), symbol("only-one"), nil)
         comp = _StubCompiler()
         with self.assertRaises(SyntaxMatchError) as ctx:
-            h.compile_impl(comp, src, False)
+            h.compile_impl(comp, src)
 
         exc = ctx.exception
         self.assertIs(exc.syntax, h)
@@ -138,14 +136,14 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         pat = MATCH(SYMBOL("head"), VALUE("x"))
 
         h = special(primary, patterns=pat, unpack="match")(
-            lambda c, caps, tc: symbol("unreachable"))
+            lambda c, caps: symbol("unreachable"))
 
         a = symbol("a")
         b = symbol("b")
         bad = cons(a, b)
         comp = _StubCompiler()
         with self.assertRaises(TypeError) as ctx:
-            h.compile_impl(comp, bad, False)
+            h.compile_impl(comp, bad)
         self.assertIn("proper list", str(ctx.exception).lower())
 
 
@@ -160,13 +158,13 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         saw = []
 
         @special(primary, patterns=pat, unpack=None)
-        def _fn(compiler, source_obj, tc):
+        def _fn(compiler, source_obj):
             saw.append(source_obj)
             return symbol("ok")
 
         src = cons(symbol("op"), symbol("u"), nil)
         comp = _StubCompiler()
-        out = _fn.compile_impl(comp, src, False)
+        out = _fn.compile_impl(comp, src)
         self.assertEqual(out, symbol("ok"))
         self.assertEqual(len(saw), 1)
         self.assertIs(saw[0], src)

@@ -93,4 +93,12 @@ lst = cons(1, 2, 3, nil)   # correct
 lst = cons(1, cons(2, cons(3, nil)))  # wrong
 ```
 
-# The end.
+## String Interpolation
+
+Use f-strings. Do not use the `%` operator for string interpolation.
+
+The only time we use `%` style formatters is in C code, or sending
+values into logging.
+
+
+<!-- The end. -->

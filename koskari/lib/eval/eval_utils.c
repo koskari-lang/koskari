@@ -428,6 +428,10 @@ static inline int do_frame_prep(
   KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
 
   if (wants && tail_call) {
+    /* Uninstall discardable extents left open above the frame before
+       the reuse; their POP_* rows are unreachable on the tail path. */
+    if (kos_dyn_drop_discardable_to_frame(es, frame) < 0)
+      return -1;
     kos_dynframe_reset_for_tail(frame);
     KosEvalState_CODE(es) = NULL;
     KosEvalState_NAMESPACE(es) = NULL;
@@ -584,7 +588,8 @@ KosOpResult KosEvalState_Call(
    Legacy classes (KosCallables other than exact KosFunction, and
    instance-call injection) preserve today's steal-first ordering by
    spilling the window into an owned vector before delegating to
-   KosEvalState_Call.  Tail calls do not come through here yet. */
+   KosEvalState_Call.  Tail calls ride the same entry under
+   KOS_CALL_TAIL (see the flag notes below). */
 
 #define KOS_CALL_PLAIN            0x0u
 #define KOS_CALL_ARGV_WINDOW      0x1u
@@ -634,6 +639,16 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
 
       if (! (code && KosCode_YIELDS(code))) {
         PyObject *frame_ns;
+
+        /* Discardable extents open above the frame (a tail call from
+           inside let / loop / foreach) uninstall now: the reused frame
+           never reaches their POP_* rows.  The window is unaffected --
+           the guard above pins it to the frame's own block. */
+        if (unlikely(kos_dyn_drop_discardable_to_frame(es, frame) < 0)) {
+          if (window)
+            kos_stack_drop_noerr_fast(caller_slot, window);
+          return EVAL_RAISE();
+        }
 
         if (likely(! kwnames
                    && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {

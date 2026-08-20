@@ -150,7 +150,7 @@ class Syntax(Compiled):
         return result.captures, tf.pattern, tf.hygiene
 
 
-    def compile_impl(self, compiler, source_obj, tc):
+    def compile_impl(self, compiler, source_obj):
         """
         Try each transform in order; first non-``None`` result wins
 
@@ -165,7 +165,6 @@ class Syntax(Compiled):
 
         :param compiler: active compiler instance
         :param source_obj: full special form being compiled
-        :param tc: tail-call flag
         :raises SyntaxMatchError: when no arm matches
         :return: compile product from the winning transform
         """
@@ -187,7 +186,7 @@ class Syntax(Compiled):
                     syntax=self,
                     patterns=self.patterns,
                 )
-            return self.bare.expand_bare(compiler, sym, tc, pos)
+            return self.bare.expand_bare(compiler, sym, pos)
 
         if self.bare is not None and not self.transforms:
             # bare-only: alias semantics, decided up front -- there are
@@ -195,7 +194,7 @@ class Syntax(Compiled):
             # about
             head, tail = source_obj
             expansion = self.bare.expand_bare(
-                compiler, head, tc, get_position(source_obj))
+                compiler, head, get_position(source_obj))
             reemitted = cons(expansion, tail)
             fill_position(reemitted, get_position(source_obj))
             return reemitted
@@ -210,7 +209,7 @@ class Syntax(Compiled):
             )
 
         tf = self.transforms[idx]
-        return tf.handle_expand(compiler, source_obj, result, tc)
+        return tf.handle_expand(compiler, source_obj, result)
 
 
     def __add__(self, other):
@@ -296,13 +295,12 @@ class Transform(ABC):
         self.hygiene = hc.build_hygiene()
 
 
-    def try_expand(self, compiler, source_obj, tc):
+    def try_expand(self, compiler, source_obj):
         """
         Try this arm on ``source_obj``; return compile result or ``None``
 
         :param compiler: active compiler instance
         :param source_obj: full special form as a proper list (pair spine)
-        :param tc: tail-call flag
         :return: fragment or form for ``compile_special``, or ``None`` when the
             pattern does not match
         """
@@ -310,11 +308,11 @@ class Transform(ABC):
         result = self.matcher.match(source_obj)
         if not result.matched:
             return None
-        return self.handle_expand(compiler, source_obj, result, tc)
+        return self.handle_expand(compiler, source_obj, result)
 
 
     @abstractmethod
-    def handle_expand(self, compiler, source, result, tc):
+    def handle_expand(self, compiler, source, result):
         """
         When the pattern matches, handle the expansion.
         """
@@ -331,7 +329,7 @@ class SyntaxTransform(Transform):
     def __init__(self, pattern, template, pattern_src=nil):
         """
         :param pattern: matcher pattern tree
-        :param transformer: ``(compiler, tc, **captures)`` procedure, or
+        :param transformer: ``(compiler, **captures)`` procedure, or
             ``nil`` / ``None`` for template-only expansion
         :param template: syntax-rules template form (often contains pattern vars)
         :param pattern_src: original RULE or MATCH pattern datum for errors
@@ -343,14 +341,13 @@ class SyntaxTransform(Transform):
         self.pattern_src = pattern_src
 
 
-    def handle_expand(self, compiler, source, result, tc):
+    def handle_expand(self, compiler, source, result):
         """
         run ``transformer`` or expand ``template`` with captures
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
         :param result: match result from ``self._matcher``
-        :param tc: tail-call flag (passed to ``transformer`` when set)
         :return: expanded form after hygiene and finalize
         """
 
@@ -399,7 +396,7 @@ class BareTransform(SyntaxTransform):
         super().__init__(MATCH(CALLEDBY(self.slot)), template)
 
 
-    def expand_bare(self, compiler, sym, tc, position=None):
+    def expand_bare(self, compiler, sym, position=None):
         """
         Expand ``template`` with ``sym`` bound to the called-by slot
 
@@ -409,13 +406,12 @@ class BareTransform(SyntaxTransform):
 
         :param compiler: active compiler instance
         :param sym: lone atom that triggered this expansion
-        :param tc: tail-call flag
         :param position: enclosing source position threaded by the caller
         :return: expanded form after hygiene and finalize
         """
 
         result = _BareResult({self.slot: Datum(sym, position)})
-        expansion = self.handle_expand(compiler, sym, result, tc)
+        expansion = self.handle_expand(compiler, sym, result)
         if position and is_pair(expansion):
             fill_position(expansion, position)
         return expansion
@@ -430,7 +426,7 @@ class MacroTransform(Transform):
         """
         :param pattern: matcher pattern tree
         :param handler:
-            ``(compiler, tc, **captures)`` procedure returning expanded form;
+            ``(compiler, **captures)`` procedure returning expanded form;
             ``captures`` are string-keyed match slots from ``match_result.captures``
         """
 
@@ -442,18 +438,17 @@ class MacroTransform(Transform):
         self.handler = handler
 
 
-    def handle_expand(self, compiler, source, result, tc):
+    def handle_expand(self, compiler, source, result):
         """
         Run handler, then procedural macro hygiene on the result
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
         :param result: match result from ``self._matcher``
-        :param tc: tail-call flag (passed to the handler as ``tc``)
         :return: hygiened expanded form after finalize
         """
 
-        expanded = self.handler(compiler, tc, **result.captures)
+        expanded = self.handler(compiler, **result.captures)
         result = _finalize_macro_output(compiler, expanded)
         return result
 
@@ -467,7 +462,7 @@ class SpecialTransform(Transform):
         """
         :param pattern: matcher pattern tree
         :param handler:
-            ``(compiler, source_obj, match_result, tc)`` procedure; use
+            ``(compiler, source_obj, match_result)`` procedure; use
             :func:`special` if you need other calling conventions
         """
 
@@ -479,18 +474,17 @@ class SpecialTransform(Transform):
         self.handler = handler
 
 
-    def handle_expand(self, compiler, source, result, tc):
+    def handle_expand(self, compiler, source, result):
         """
         Return handler result unchanged
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
         :param result: match result from ``self._matcher``
-        :param tc: tail-call flag
         :return: compile product from the handler
         """
 
-        return self.handler(compiler, source, result, tc)
+        return self.handler(compiler, source, result)
 
 
 def _join_docs(base, extra):
@@ -609,11 +603,12 @@ def special(form_symbol, *, patterns, unpack=None):
     :param form_symbol: primary compile-time head symbol for this form
     :param patterns: one ``matcher.Pattern`` or an iterable (try-order)
     :param unpack: only for this decorator: ``None`` (receive
-        ``compiler, source_obj, tc``), ``match`` (receive
-        ``compiler, captures_dict, tc``), or ``kwargs`` (captures merged after
-        ``tc``). For ``match`` and ``kwargs``, ``captures_dict`` includes only
-        slots the matcher bound; values are matcher outputs (``Datum``
-        wrappers may be present). Not available on ``build_*`` rule rows.
+        ``compiler, source_obj``), ``match`` (receive
+        ``compiler, captures_dict``), or ``kwargs`` (captures merged after
+        ``compiler``). For ``match`` and ``kwargs``, ``captures_dict``
+        includes only slots the matcher bound; values are matcher outputs
+        (``Datum`` wrappers may be present). Not available on ``build_*``
+        rule rows.
     """
 
     if unpack not in (None, "match", "kwargs"):
@@ -632,16 +627,16 @@ def special(form_symbol, *, patterns, unpack=None):
 
         plist = _normalize_special_patterns(patterns)
         if unpack is None:
-            def wrapped(compiler, source_obj, match_result, tc):
-                return fn(compiler, source_obj, tc)
+            def wrapped(compiler, source_obj, match_result):
+                return fn(compiler, source_obj)
 
         elif unpack == "match":
-            def wrapped(compiler, source_obj, match_result, tc):
-                return fn(compiler, match_result.captures, tc)
+            def wrapped(compiler, source_obj, match_result):
+                return fn(compiler, match_result.captures)
 
         elif unpack == "kwargs":
-            def wrapped(compiler, source_obj, match_result, tc):
-                return fn(compiler, tc=tc, **match_result.captures)
+            def wrapped(compiler, source_obj, match_result):
+                return fn(compiler, **match_result.captures)
 
         else:
             raise ValueError(f"internal: bad unpack {unpack!r}")
@@ -785,7 +780,7 @@ def _wrap_macro_handler(raw):
     """
 
     @wraps(raw)
-    def handler(compiler, tc, **captures):
+    def handler(compiler, **captures):
         return demand_call(raw, **captures)
 
     return handler
@@ -797,8 +792,8 @@ def _wrap_special_handler(raw):
     """
 
     @wraps(raw)
-    def handler(compiler, source_obj, match_result, tc):
-        return demand_call(raw, compiler, tc, **match_result.captures)
+    def handler(compiler, source_obj, match_result):
+        return demand_call(raw, compiler, **match_result.captures)
 
     return handler
 

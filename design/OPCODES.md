@@ -384,6 +384,21 @@ When adding or changing an opcode:
 | TAIL_CALL | COUNT | Tail call (replace frame) | [§17](#kos_op_tail_call) |
 | TAIL_CALL_NAMES | COUNT | Tail call with keyword names | [§17](#kos_op_tail_call_names) |
 | TAIL_CALL_STAR | STAR | Tail call with *args and/or **kwargs | [§17](#kos_op_tail_call_star) |
+| TAIL_CALL_ATTR | EXTRA | Tail call obj.name with N positional args | [§17](#kos_op_tail_call_attr) |
+| TAIL_CALL_ATTR_NAMES | EXTRA | Tail call obj.name with positional + keyword args | [§17](#kos_op_tail_call_attr_names) |
+| TAIL_CALL_ATTR_STAR | EXTRA | Tail call obj.name with *args/**kwargs | [§17](#kos_op_tail_call_attr_star) |
+| TAIL_CALL_VAR | EXTRA | Tail call callable from namespace by name | [§17](#kos_op_tail_call_var) |
+| TAIL_CALL_VAR_NAMES | EXTRA | Tail call by name with keyword args | [§17](#kos_op_tail_call_var_names) |
+| TAIL_CALL_VAR_STAR | EXTRA | Tail call by name with *args/**kwargs | [§17](#kos_op_tail_call_var_star) |
+| TAIL_CALL_VAR_ATTR | EXTRA | Tail call obj.name; obj from VAR | [§17](#kos_op_tail_call_var_attr) |
+| TAIL_CALL_VAR_ATTR_NAMES | EXTRA | Tail call obj.name with keyword args; obj from VAR | [§17](#kos_op_tail_call_var_attr_names) |
+| TAIL_CALL_VAR_ATTR_STAR | EXTRA | Tail call obj.name with *args/**kwargs; obj from VAR | [§17](#kos_op_tail_call_var_attr_star) |
+| TAIL_CALL_FAST | EXTRA | Tail call callable from fast local slot | [§17](#kos_op_tail_call_fast) |
+| TAIL_CALL_FAST_NAMES | EXTRA | Tail call from fast slot with keyword args | [§17](#kos_op_tail_call_fast_names) |
+| TAIL_CALL_FAST_STAR | EXTRA | Tail call from fast slot with *args/**kwargs | [§17](#kos_op_tail_call_fast_star) |
+| TAIL_CALL_FAST_ATTR | EXTRA | Tail call obj.name; obj from fast slot | [§17](#kos_op_tail_call_fast_attr) |
+| TAIL_CALL_FAST_ATTR_NAMES | EXTRA | Tail call obj.name with keyword args; obj from fast slot | [§17](#kos_op_tail_call_fast_attr_names) |
+| TAIL_CALL_FAST_ATTR_STAR | EXTRA | Tail call obj.name with *args/**kwargs; obj from fast slot | [§17](#kos_op_tail_call_fast_attr_star) |
 | PUSH_FOREACH | NOARG | Push foreach region; break target from extent table | [§18](#kos_op_push_foreach) |
 | PUSH_LOOP | NOARG | Push loop region; break target from extent table | [§18](#kos_op_push_loop) |
 | POP_FOREACH | NOARG | Pop foreach region; push loop result | [§18](#kos_op_pop_foreach) |
@@ -903,9 +918,9 @@ bottom to top matches push order).
 - **Status**: Implemented.
 - **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and run the shared step core (`object_next_step`) -- Koskari agen flatten, ambient async (a suspended python step rides the NEXT boundary), 1-arg raises StopIteration on exhaustion, 2-arg pops and delivers the default.
 - **Invariants**: The fused name resolution runs after the default row (the fusion requires a bare default feeder, so the reorder is unobservable beyond NameError timing).
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_NEXT's iterator feeder is a bare VAR load (the 2-arg form also requires a bare VAR/CONST default). Lowers to FAST_NEXT through the generic schema-driven `convert_fast` path.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_NEXT's iterator feeder is a bare VAR load (the 2-arg form also requires a bare VAR/CONST default). Lowers to FAST_NEXT through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_NEXT.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_next.py`
 
 ### KOS_OP_FAST_NEXT {#kos_op_fast_next}
@@ -915,7 +930,7 @@ bottom to top matches push order).
 - **Stack**: As VAR_NEXT, with the iterator loaded from its fast slot.
 - **Compiler form:** Post-compile only: the generic `convert_fast` lowering of VAR_NEXT when the iterator name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_NEXT.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_next.py`
 
 
@@ -1108,9 +1123,9 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
   under the selector, jump to LABEL on failure.
 - **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
   are never emitted (that is a folding case).
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` (late `compress` sweep) absorbing two bare VAR/CONST feeder rows into an arity-2 [CHECK_COMPARE](#kos_op_check_compare). Runs before `pack_var_runs` so this fusion gets first claim on the feeders. Lowers to CHECK_COMPARE_FAST via the CMPSRC-aware `convert_fast` case (all-or-nothing on the name slots).
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` (late `compress` sweep) absorbing two bare VAR/CONST feeder rows into an arity-2 [CHECK_COMPARE](#kos_op_check_compare). Runs before `pack_var_runs` so this fusion gets first claim on the feeders. Lowers to CHECK_COMPARE_FAST via the CMPSRC-aware `convert_fast` case (all-or-nothing on the name slots).
 - **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_VAR.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`
 
 **Example:** Loop condition `i < n` on fast slots 1 and 0.
@@ -1134,7 +1149,7 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
   are never emitted (that is a folding case).
 - **Compiler form:** Post-compile only: the CMPSRC-aware `convert_fast` lowering of CHECK_COMPARE_VAR when every name-sourced slot has a fast slot. Constant-bit slots pass through untouched.
 - **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_FAST.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`
 
 **Example:** Loop condition `i < n` on fast slots 1 and 0.
@@ -2559,7 +2574,7 @@ popped.
 - **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (npos), NOARG.
 - **Status**: Implemented.
 - **Stack**: `[..., arg_0, ..., arg_{N-1}] → [..., result]`. Same resolution and invocation rules as [`KOS_OP_CALL_ATTR`](#kos_op_call_attr), but `obj` is **not** on the stack: it is loaded from the current frame namespace via `KosNamespace_FastDeref` (slot `a0`). Requires a namespace that supports fast locals (`KosNamespace_SupportsFast`). When `send_self=0` (unbound method), uses `KosStackSteal_TailPrepend` to prepend `obj` to the stolen args; when `send_self=1`, uses `KosStackSteal_Tail` for `N` args only.
-- **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR.c): Borrowed `obj` from fast slot — no `Py_DECREF(obj)` on control paths (contrast `KOS_OP_CALL_VAR_ATTR`).
+- **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR.c): `obj` is an owned deref from the fast slot (`kos_ns_fast_deref` increfs); the handler releases it on every path, same discipline as `KOS_OP_CALL_VAR_ATTR`.
 - **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
@@ -2630,7 +2645,7 @@ popped.
 - **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. Extracts args via PopTailPtr (small counts) or PopTail (large) before branching; opcode owns storage, DECREFs at end. For KosCallable: tail install recycles the frame. For Plain Python: `kos_dyn_pop_frame` when parent exists, then PyObject_Vectorcall, kos_push_or_await. Returns **`EVAL_CONTROL_RETURNED()`** when continuing (triggers **`kos_dynnode_on_control_returned`** for wind thunks).
 - **Execution model**: When the callable is a KosExpression or KosFunction, the VM replaces the current frame (tail install). For all other callable types, the opcode drops the current frame when parent exists, calls the callable, and pushes the result.
 - **Invariants**: Stack has at least 1 + arg elements. KosExpression allows no arguments (arg must be 0); otherwise TypeError.
-- **Compiler form:** Emitted by the compile/call special when the call is in tail position (`tc` true).
+- **Compiler form:** Produced by the processor's `promote_tail_calls` pass relabeling a tail-position CALL in function-body code; never emitted by a special.
 
 **Example:** Tail call with 0 args (replace frame with callee). Pool: 0 = fn.
 
@@ -2654,6 +2669,141 @@ popped.
 - **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and ensure_tuple as CALL_STAR. KosCallable: kos_callable_tail_call. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Call, kos_push_or_await. Returns **`EVAL_CONTROL_RETURNED()`** when continuing. Same replace-frame semantics as TAIL_CALL.
+
+---
+
+### KOS_OP_TAIL_CALL_ATTR {#kos_op_tail_call_attr}
+
+- **Style**: EXTRA. Schema: CONST (attr name), COUNT (npos), NOARG, NOARG. One cache slot (attr resolution).
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_ATTR: `[..., obj, arg_0, ..., arg_{N-1}]`. Resolve `obj.name` via `kos_resolve_named_attr`, then call in tail position: the caller's frame is reused rather than a new frame pushed (`KOS_CALL_TAIL` through `kos_call_invoke`; an exact non-yielding KosFunction takes the bind-before-reset subpath, every other callable class spills and keeps `KosEvalState_Call`'s tail semantics).
+- **Compiler form:** Produced by the processor's `promote_tail_calls` pass relabeling a tail-position CALL_ATTR in function-body code; never emitted by a special.
+
+---
+
+### KOS_OP_TAIL_CALL_ATTR_NAMES {#kos_op_tail_call_attr_names}
+
+- **Style**: EXTRA. Schema: CONST (attr name), CONST (kwarg names tuple), COUNT (npos), NOARG. One cache slot.
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Compiler form:** Promotion relabel of a tail-position CALL_ATTR_NAMES; never emitted by a special.
+
+---
+
+### KOS_OP_TAIL_CALL_ATTR_STAR {#kos_op_tail_call_attr_star}
+
+- **Style**: EXTRA. Schema: CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG. One cache slot.
+- **Status**: Implemented.
+- **Stack**: Same layout and pop order as CALL_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Compiler form:** Promotion relabel of a tail-position CALL_ATTR_STAR; never emitted by a special.
+
+---
+
+### KOS_OP_TAIL_CALL_VAR {#kos_op_tail_call_var}
+
+- **Style**: EXTRA. Schema: VAR (name cpool idx), COUNT (npos), NOARG, NOARG.
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_VAR: `[..., pos_0, ..., pos_{N-1}]`; the callable is loaded from the frame namespace by name, not on the stack. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Compiler form:** Promotion relabel of a tail-position CALL_VAR; convert_fast lowers it to TAIL_CALL_FAST when the name has a fast slot.
+
+---
+
+### KOS_OP_TAIL_CALL_VAR_NAMES {#kos_op_tail_call_var_names}
+
+- **Style**: EXTRA. Schema: VAR (name), CONST (kwarg names tuple), COUNT (npos).
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_VAR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Compiler form:** Promotion relabel of a tail-position CALL_VAR_NAMES; lowers to TAIL_CALL_FAST_NAMES.
+
+---
+
+### KOS_OP_TAIL_CALL_VAR_STAR {#kos_op_tail_call_var_star}
+
+- **Style**: EXTRA. Schema: VAR (name), STAR (bitflags), NOARG, NOARG.
+- **Status**: Implemented.
+- **Stack**: Same layout and pop order as CALL_VAR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Compiler form:** Promotion relabel of a tail-position CALL_VAR_STAR; lowers to TAIL_CALL_FAST_STAR.
+
+---
+
+### KOS_OP_TAIL_CALL_VAR_ATTR {#kos_op_tail_call_var_attr}
+
+- **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), COUNT (npos), NOARG. One cache slot.
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_VAR_ATTR: args only; obj is loaded from the frame namespace by name (owned deref, released on every path). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR; lowers to TAIL_CALL_FAST_ATTR.
+
+---
+
+### KOS_OP_TAIL_CALL_VAR_ATTR_NAMES {#kos_op_tail_call_var_attr_names}
+
+- **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos). One cache slot.
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_VAR_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR_NAMES; lowers to TAIL_CALL_FAST_ATTR_NAMES.
+
+---
+
+### KOS_OP_TAIL_CALL_VAR_ATTR_STAR {#kos_op_tail_call_var_attr_star}
+
+- **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), COUNT (opa bitflags), NOARG. One cache slot.
+- **Status**: Implemented.
+- **Stack**: Same layout and pop order as CALL_VAR_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR_STAR; lowers to TAIL_CALL_FAST_ATTR_STAR.
+
+---
+
+### KOS_OP_TAIL_CALL_FAST {#kos_op_tail_call_fast}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot index), COUNT (npos), NOARG, NOARG.
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_FAST; the callable is loaded from the fast local slot (owned deref). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Compiler form:** Reached through promotion of CALL_VAR plus the fast lowering, or promotion of an already-lowered CALL_FAST; never emitted by a special.
+
+---
+
+### KOS_OP_TAIL_CALL_FAST_NAMES {#kos_op_tail_call_fast_names}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot), CONST (kwarg names tuple), COUNT (npos).
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_FAST_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Compiler form:** Fast tier of TAIL_CALL_VAR_NAMES; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
+
+---
+
+### KOS_OP_TAIL_CALL_FAST_STAR {#kos_op_tail_call_fast_star}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot), STAR (bitflags), NOARG, NOARG.
+- **Status**: Implemented.
+- **Stack**: Same layout and pop order as CALL_FAST_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Compiler form:** Fast tier of TAIL_CALL_VAR_STAR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
+
+---
+
+### KOS_OP_TAIL_CALL_FAST_ATTR {#kos_op_tail_call_fast_attr}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), COUNT (npos), NOARG. One cache slot.
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_FAST_ATTR: args only; obj is loaded from the fast local slot (owned deref, released on every path). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
+
+---
+
+### KOS_OP_TAIL_CALL_FAST_ATTR_NAMES {#kos_op_tail_call_fast_attr_names}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos). One cache slot.
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_FAST_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR_NAMES; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
+
+---
+
+### KOS_OP_TAIL_CALL_FAST_ATTR_STAR {#kos_op_tail_call_fast_attr_star}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), COUNT (opa bitflags), NOARG. One cache slot.
+- **Status**: Implemented.
+- **Stack**: Same layout and pop order as CALL_FAST_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR_STAR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
 ---
 
@@ -2989,9 +3139,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   value use).
 - **Invariants**: Selector is a valid KosCompare ordinal (richcompare
   chain semantics; extended selectors are never emitted at arity 3).
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when the exact CONST / VAR / CONST feeder shape meets an arity-3 comparison. In value position the OBJECT_COMPARE quartet collapses to this row alone; in branch position the arity-3 CHECK_COMPARE cannot also carry its label (five fields), so it splits into this row plus `JUMP_FALSE`. Lowers to OBJECT_COMPARE_FAST through the generic schema-driven `convert_fast` path.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when the exact CONST / VAR / CONST feeder shape meets an arity-3 comparison. In value position the OBJECT_COMPARE quartet collapses to this row alone; in branch position the arity-3 CHECK_COMPARE cannot also carry its label (five fields), so it splits into this row plus `JUMP_FALSE`. Lowers to OBJECT_COMPARE_FAST through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE_VAR.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`,
   `tests/reproducers/test_compare_fusion.py`
 
@@ -3017,7 +3167,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   chain semantics; extended selectors are never emitted at arity 3).
 - **Compiler form:** Post-compile only: the generic `convert_fast` lowering of OBJECT_COMPARE_VAR when the middle name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE_FAST.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`,
   `tests/reproducers/test_compare_fusion.py`
 
@@ -3063,9 +3213,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Style**: VAR. Arg = constant index of a name.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., iterator]`. Fused VAR + OBJECT_ITER: resolve the name in the current frame's namespace and push its iterator, acquired uniformly over both protocols (`kos_iter_acquire`).
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_ITER is fed by a bare VAR load. Lowers to FAST_ITER through the simple `convert_fast` path.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_ITER is fed by a bare VAR load. Lowers to FAST_ITER through the simple `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_ITER.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_unary.py`
 
 ### KOS_OP_FAST_ITER {#kos_op_fast_iter}
@@ -3075,7 +3225,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Stack**: As VAR_ITER, with the iterable loaded from its fast slot.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_ITER when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ITER.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_unary.py`
 
 ### KOS_OP_OBJECT_LEN {#kos_op_object_len}
@@ -3131,9 +3281,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Style**: VAR. Arg = constant index of a name.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT (arg=1): resolve the name in the current frame's namespace and push `PyObject_Format(obj, NULL)`.
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_FORMAT (arg=1) is fed by a bare VAR load. Lowers to FAST_FORMAT through the simple `convert_fast` path.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_FORMAT (arg=1) is fed by a bare VAR load. Lowers to FAST_FORMAT through the simple `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_FORMAT.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_VAR_FORMAT_CONST {#kos_op_var_format_const}
@@ -3141,9 +3291,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Style**: EXTRA (VAR, CONST). Row = obj name (pool), rules string (pool).
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT_CONST: resolve the name in the current frame's namespace and push `PyObject_Format(obj, rules)`.
-- **Compiler form:** Produced by `Compiler.fuse_check_feeders` when OBJECT_FORMAT_CONST is fed by a bare VAR load. The 2-arg OBJECT_FORMAT (dynamic rules) stays unfused: absorbing the object load would move its name resolution past the rules evaluation. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_FORMAT_CONST is fed by a bare VAR load. The 2-arg OBJECT_FORMAT (dynamic rules) stays unfused: absorbing the object load would move its name resolution past the rules evaluation. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_FORMAT_CONST.c` (cold handler)
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_FAST_FORMAT {#kos_op_fast_format}
@@ -3153,7 +3303,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Stack**: As VAR_FORMAT, with the object loaded from its fast slot.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_FORMAT when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_FAST_FORMAT_CONST {#kos_op_fast_format_const}
@@ -3163,7 +3313,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Stack**: As VAR_FORMAT_CONST, with the object loaded from its fast slot.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_FORMAT_CONST when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT_CONST.c`
-- **Covered by**: `tests/compile/test_fuse_check_feeders.py`,
+- **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
 
 ### KOS_OP_OBJECT_TRUTH {#kos_op_object_truth}

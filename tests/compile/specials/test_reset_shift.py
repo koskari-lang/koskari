@@ -245,14 +245,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_thunk_count_invoke_inside_shift_body(self):
         """
-        KNOWN BUG (intentionally red): in-shift invoke double-runs dyn-wind
-        thunks.
-
-        (reset (dyn-wind before (shift k (call k 5)) after)) returns 5, but
-        the PUSH invoke model grafts a clone of the captured segment while
-        the live WIND below is still entered, replaying before on the clone
-        and unwinding both copies: [before, before, after, after]. Correct
-        lifecycle is a single [before, after]. Fix is Path A in
+        (reset (dyn-wind before (shift k (call k 5)) after)) returns 5, and
+        an in-shift invoke runs the dyn-wind thunks exactly once: a single
+        [before, after] lifecycle. Regression guard for Path A in
         design/interpreter/delimited-invoke-model.md (resume in place when
         the prompt is in live ancestry; no graft, no wind replay).
         """
@@ -337,11 +332,10 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_dyn_wind_thunk_count_invoke_in_deeper_frame(self):
         """
-        KNOWN BUG (intentionally red): same double-wind as
+        Same single-lifecycle guarantee as
         test_dyn_wind_thunk_count_invoke_inside_shift_body, but the in-shift
         invoke happens in a deeper frame (k passed to and called from a
-        lambda inside the shift body). Correct lifecycle is a single
-        [before, after]. Fix is Path A in
+        lambda inside the shift body). Regression guard for Path A in
         design/interpreter/delimited-invoke-model.md.
         """
 
@@ -463,12 +457,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_inplace_slice_raise_runs_after_thunk(self):
         """
-        KNOWN DEFECT (intentionally red): when an in-place (Path A) slice
-        raises, the dyn-wind after thunk wrapping the slice must run exactly
-        once during the raise unwind before the exception reaches the
-        invoke-site handler. Today it is skipped - the engine-wide dyn-wind
-        after-thunk-on-raise defect (also red in test_dyn_wind.py's
-        continuation-free reproducer).
+        When an in-place (Path A) slice raises, the dyn-wind after thunk
+        wrapping the slice runs exactly once during the raise unwind, before
+        the exception reaches the invoke-site handler.
         """
 
         events = []
@@ -500,12 +491,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_remote_invoke_slice_exception_propagates(self):
         """
-        KNOWN DEFECT (intentionally red): an exception raised by the
-        continuation slice during a remote invoke must route to the invoke
-        call site, where the enclosing try catches it and this test
-        returns "caught". Today it escapes the evaluator as a raw Python
-        exception - the RAISE walk from the grafted segment never reaches
-        the live handlers below the DELIM bookmark.
+        An exception raised by the continuation slice during a remote invoke
+        routes to the invoke call site, where the enclosing try catches it
+        and this test returns "caught".
         """
 
         def boom(v):
@@ -528,11 +516,8 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
     async def test_remote_invoke_with_enter_exit_count(self):
         """
-        KNOWN DEFECT (intentionally red): with wrapping shift under
-        a remote invoke must see a single [enter, exit] lifecycle on the
-        manager. Today __exit__ runs twice - once at POP_SHIFT truncation
-        during capture, once more when the grafted clone's WITH unwinds on
-        the invoke return path.
+        A with wrapping shift under a remote invoke sees a single
+        [enter, exit] lifecycle on the manager.
         """
 
         events = []
