@@ -79,7 +79,7 @@ def _install_demo_syntaxes(ns, tpl):
         ((build_proper(USE_DEMO_MATCH), tpl),),
     )
 
-    def macro_proc(compiler, tc=None, **kw):
+    def macro_proc(compiler, **kw):
         return tpl
 
     macro_syn = macro_from_rule_rows(

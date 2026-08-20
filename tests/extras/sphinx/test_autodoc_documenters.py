@@ -48,7 +48,7 @@ def _make_syntax():
     pat = MATCH(CALLEDBY(), VALUE('x'))
 
     @special('compile/foo', patterns=pat, unpack='match')
-    def handler(compiler, caps, tc):
+    def handler(compiler, caps):
         """
         Doc for compile/foo
         """

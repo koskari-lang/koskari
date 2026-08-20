@@ -97,16 +97,15 @@ per-turn expansion budget, and what the diagnostic should name (the
 cycling syntax, the forms in the loop). Applies to both loops at once if
 the guard lives in `full_compile`.
 
-### Extent tracker verification and dead-region sweep
+### Extent verification and dead-region sweep
 
-The promotion pass's extent stack is trusted, not verified: add the
-safetynet-style check so a miscompiled extent fails loudly at compile
-time, settle CLEAR_* semantics against the stack (restart vs close),
-and unify the walk's extent computation with finalize's extent
-metadata so nesting is computed once. Dead-region sweep and label GC
-(with the refcount service) stay optional, last if at all.
+Add the TAIL-under-non-discardable-extent check to the finalize walk
+(`derive_extents_fill`), which already verifies extent balance and
+cannot be mocked out; settle per-kind CLEAR semantics first, and
+derive the discardable set from one declaration across all three
+layers. Dead-region sweep and label GC stay last, if at all.
 
-Ref: [archive/bytecode-processor.md](archive/bytecode-processor.md).
+Ref: [extent-verification.md](extent-verification.md).
 
 ### Dict literal compression (review)
 

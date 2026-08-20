@@ -46,7 +46,7 @@ def _make_syntax():
     pat = MATCH(CALLEDBY(), VALUE('x'))
 
     @special('compile/pick-test', patterns=pat, unpack='match')
-    def handler(compiler, caps, tc):
+    def handler(compiler, caps):
         """
         Pick test
         """

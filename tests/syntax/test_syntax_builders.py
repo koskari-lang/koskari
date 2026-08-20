@@ -99,7 +99,7 @@ class TestMacroFromRuleRows(unittest.TestCase):
 
     def test_macro_from_rule_rows_kwargs_invoke(self):
         """
-        Macro procedures receive captures as keyword arguments plus tc
+        Macro procedures receive captures as keyword arguments
         """
 
         m = symbol("compile/mm")
@@ -143,7 +143,7 @@ class TestMacroFromRuleRows(unittest.TestCase):
                 (
                     (
                         symbol("a"),
-                        lambda c, tc=None, **kw: nil,
+                        lambda c, **kw: nil,
                         "extra",
                     ),
                 ))
