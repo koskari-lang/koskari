@@ -110,4 +110,50 @@ class TestConstOpcodes(CevalTest):
         self.assertEqual(result.deref(), "v")
 
 
+class TestConst2Opcode(CevalTest):
+    """
+    Tests for the CONST2 bulk constant load
+    """
+
+    async def test_const2_pushes_second_on_top(self):
+        """
+        CONST2 pushes both constants in row order; TOS is the second
+        """
+
+        code, ns = build_expr([
+            ["CONST2", (10, 20, None, None)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 20)
+
+
+    async def test_const2_pushes_first_beneath(self):
+        """
+        Popping TOS after CONST2 leaves the first constant
+        """
+
+        code, ns = build_expr([
+            ["CONST2", (10, 20, None, None)],
+            ["POP", 1],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 10)
+
+
+    async def test_const2_same_value_both_slots(self):
+        """
+        Both slots may intern to the same pool constant
+        """
+
+        code, ns = build_expr([
+            ["CONST2", (7, 7, None, None)],
+            ["POP", 1],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 7)
+
+
 # The end.

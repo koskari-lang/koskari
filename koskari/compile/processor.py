@@ -963,6 +963,47 @@ class ByteCodeProcessor:
         self.instructions = result
 
 
+    def combine_const(self):
+        """
+        Final sweep: combine adjacent bare CONST loads into CONST2 rows
+        (greedy pairs). Runs as the very last pass of process, after
+        convert_fast, so no other pass ever sees a CONST2 row; the only
+        consumers are the schema-driven finalize, dis, and codex.
+        POSITION rows inside a run are absorbed, with the merged row
+        keeping the position in effect at the run's first load and the
+        latest absorbed position re-emitted after the run.
+        """
+
+        result = []
+        run = []
+        trailing_pos = None
+
+        def flush():
+            nonlocal trailing_pos
+            while len(run) >= 2:
+                a, b = run[:2]
+                del run[:2]
+                result.append((OpCode.CONST2, (a, b, None, None)))
+            if run:
+                result.append((OpCode.CONST, run.pop()))
+            if trailing_pos is not None:
+                result.append(trailing_pos)
+                trailing_pos = None
+
+        for op, arg in self.instructions:
+            if op == OpCode.CONST:
+                run.append(arg)
+                continue
+            if run and op == OpCode.POSITION:
+                trailing_pos = (op, arg)
+                continue
+            flush()
+            result.append((op, arg))
+
+        flush()
+        self.instructions = result
+
+
     def promote_tail_calls(self):
         """
         Rewrite calls with a clear route to RETURN 1 into their
@@ -1077,6 +1118,8 @@ class ByteCodeProcessor:
 
         if self.gates.get('convert-fast', True):
             self.convert_fast(base_nspec)
+
+        self.combine_const()
 
         return self.instructions
 

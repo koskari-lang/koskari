@@ -6,6 +6,7 @@
 #include "opcode/DUP.c"
 #include "opcode/POP.c"
 #include "opcode/CONST.c"
+#include "opcode/CONST2.c"
 #include "opcode/CAR.c"
 #include "opcode/CDR.c"
 #include "opcode/CONS.c"

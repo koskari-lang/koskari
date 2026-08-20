@@ -375,6 +375,8 @@ class TestCallEvaluationOrder(SpecialsTestCase):
                 call_idx = i
             elif op == OpCode.CONST:
                 const_count += 1
+            elif op == OpCode.CONST2:
+                const_count += 2
         self.assertIsNotNone(call_idx)
         self.assertGreaterEqual(const_count, 2)
 

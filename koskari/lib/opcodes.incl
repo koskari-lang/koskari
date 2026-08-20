@@ -54,6 +54,7 @@ OP(POP, 0, COUNT)
 
 // constant loading
 OP(CONST, 0, CONST)
+OP(CONST2, 0, EXTRA, CONST, CONST, NOARG, NOARG)
 
 // pair access and variadic cons
 OP(CAR, 0, COUNT)
