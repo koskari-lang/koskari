@@ -9,7 +9,7 @@ time and loaded into memory at startup, so every query runs against those
 in-process tables and the server makes no outbound requests. The served
 snapshot is identified by its git ref (see the `corpus_version` tool). The
 underlying views are the same ones published to
-[obriencj/koskari](https://huggingface.co/datasets/obriencj/koskari) (configs
+[obriencj/koskari](https://huggingface.co/datasets/koskari/koskari) (configs
 `corpus`, `docs`, and `programs`); the dataset is now a downstream artifact, no
 longer on the request path.
 

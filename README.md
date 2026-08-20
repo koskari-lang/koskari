@@ -82,7 +82,7 @@ Koskari maintains a verified example corpus under
 [docs/corpus/](docs/corpus/): records carry `read` / `expand` / `eval`
 verification phases, so they double as regression tests and as canonical
 teaching material. The corpus is published as a Hugging Face dataset,
-[obriencj/koskari](https://huggingface.co/datasets/obriencj/koskari).
+[koskari/koskari](https://huggingface.co/datasets/koskari/koskari).
 
 A container-based **MCP server** exposes the corpus and the documentation to AI
 coding assistants (Cursor, Claude Desktop, VS Code, and similar) so they can
