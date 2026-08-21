@@ -58,10 +58,8 @@ KOS_OP_HANDLER_COLD(CALL_FAST_NAMES) {
     }
   }
 
-  KosOpResult r = kos_call_invoke(es, callable, NULL, argv, npos, names,
-                                  KOS_CALL_ARGV_WINDOW);
-  Py_DECREF(callable);
-  return r;
+  return kos_call_invoke(es, callable, NULL, argv, npos, names,
+                         KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED);
 }
 
 

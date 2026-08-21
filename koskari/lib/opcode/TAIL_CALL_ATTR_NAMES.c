@@ -67,15 +67,15 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_ATTR_NAMES) {
   if (send_self == 0) {
     r = kos_call_invoke(es, resolved, NULL, ptr, npos + 1,
                         nkwds ? names : NULL,
-                        KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL);
+                        KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL
+                        | KOS_CALL_CALLABLE_OWNED);
   } else {
     r = kos_call_invoke(es, resolved, NULL,
                         (total > 0) ? &ptr[1] : NULL, npos,
                         nkwds ? names : NULL,
                         KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
-                        | KOS_CALL_TAIL);
+                        | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED);
   }
-  Py_DECREF(resolved);
   return r;
 }
 
