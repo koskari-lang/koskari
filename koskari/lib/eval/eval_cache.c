@@ -71,15 +71,53 @@ static int descr_is_data(PyObject *descr) {
 
 
 /**
-   Get instance dict from obj, or NULL if it has none. Uses
-   _PyObject_GetDictPtr for correct layout handling across versions
-   (managed dict, inline values).
+   Get instance dict from obj, or NULL if it has none. Must never
+   materialize: _PyObject_GetDictPtr builds the dict of a values-mode
+   managed instance as a side effect, permanently disabling its
+   inline-values fast paths, so managed types are peeked through the
+   compat layer instead. For a values-mode instance this returns NULL --
+   callers that need the stored attributes go through instance_attr_peek,
+   which consults the inline values first.
 */
 static PyObject *instance_dict_get(PyObject *obj) {
+#if PY_MINOR_VERSION >= 11
+  if (kos_type_has_managed_dict(Py_TYPE(obj)))
+    return kos_managed_dict_peek(obj);
+#endif
+
   PyObject **dictptr = _PyObject_GetDictPtr(obj);
   if (! dictptr)
     return NULL;
   return *dictptr;
+}
+
+
+/**
+   Peek at an instance attribute: the stored value (borrowed) or NULL, with
+   no side effects and no error state. A values-mode instance is read in
+   place -- every attribute of such an instance lives at a shared-keys
+   index, so absence from the keys is absence from the instance. Otherwise
+   the (never materialized) instance dict is consulted.
+*/
+static PyObject *instance_attr_peek(PyObject *obj, PyObject *name) {
+#if PY_MINOR_VERSION >= 11
+  PyTypeObject *tp = Py_TYPE(obj);
+  if (kos_type_has_inline_values(tp)) {
+    int active;
+    PyObject **slots = kos_inline_value_slots(obj, &active);
+    if (active) {
+      uint32_t ix;
+      if (kos_type_value_index(tp, name, &ix))
+        return slots[ix];
+      return NULL;
+    }
+  }
+#endif
+
+  PyObject *dict = instance_dict_get(obj);
+  if (! dict)
+    return NULL;
+  return PyDict_GetItem(dict, name);
 }
 
 
@@ -180,17 +218,14 @@ static int resolve_named_attr_slow(
     return 1;
   }
 
-  /* Instance dict: the value is stored directly, no descriptor. */
+  /* Instance attribute: the value is stored directly, no descriptor. */
   {
-    PyObject *dict = instance_dict_get(obj);
-    if (dict) {
-      PyObject *val = PyDict_GetItem(dict, name);
-      if (val) {
-        Py_INCREF(val);
-        *out = val;
-        *mode = KOS_METHOD_INSTANCE_DICT;
-        return 1;
-      }
+    PyObject *val = instance_attr_peek(obj, name);
+    if (val) {
+      Py_INCREF(val);
+      *out = val;
+      *mode = KOS_METHOD_INSTANCE_DICT;
+      return 1;
     }
   }
 
@@ -320,9 +355,8 @@ static int method_slot_hit(
 
   switch (slot->u.method.mode) {
   case KOS_METHOD_DIRECT_OBJECT_GUARDED: {
-    /* Instance dict may shadow the class attribute. */
-    PyObject *dict = instance_dict_get(obj);
-    if (dict && PyDict_GetItem(dict, name))
+    /* An instance attribute may shadow the class attribute. */
+    if (instance_attr_peek(obj, name))
       return KOS_CACHE_HIT_FALL;
     if (is_plain_instance_method(descr)) {
       Py_INCREF(descr);
@@ -335,14 +369,11 @@ static int method_slot_hit(
     return 1;
   }
   case KOS_METHOD_INSTANCE_DICT: {
-    PyObject *dict = instance_dict_get(obj);
-    if (dict) {
-      PyObject *val = PyDict_GetItem(dict, name);
-      if (val) {
-        Py_INCREF(val);
-        *out = val;
-        return 1;
-      }
+    PyObject *val = instance_attr_peek(obj, name);
+    if (val) {
+      Py_INCREF(val);
+      *out = val;
+      return 1;
     }
     return KOS_CACHE_HIT_FALL;   /* value gone -> slow */
   }
@@ -586,8 +617,10 @@ static void field_slot_store(PyObject *obj, uint32_t offset, PyObject *val) {
 static PyObject *field_instance_value_load(PyObject *obj, uint32_t index) {
   int active;
   PyObject **slots = kos_inline_value_slots(obj, &active);
-  if (! active)
+  if (! active || ! slots[index]) {
+    KOS_TRACE_OPCACHE_INC(KOS_OC_FIELD_FALLBACK);
     return NULL;
+  }
   return slots[index];
 }
 
@@ -603,8 +636,10 @@ static int field_instance_value_store(PyObject *obj, uint32_t index,
     PyObject *val) {
   int active;
   PyObject **slots = kos_inline_value_slots(obj, &active);
-  if (! active || ! slots[index])
+  if (! active || ! slots[index]) {
+    KOS_TRACE_OPCACHE_INC(KOS_OC_FIELD_FALLBACK);
     return 0;
+  }
   Py_INCREF(val);
   Py_SETREF(slots[index], val);
   return 1;

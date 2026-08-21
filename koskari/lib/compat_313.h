@@ -77,4 +77,30 @@ static inline PyObject **kos_inline_value_slots(PyObject *obj, int *active) {
 }
 
 
+/* Does tp keep the instance dict in the managed pre-header slot? Peek is
+   GIL-only: the free-threaded pre-header differs, so the generic (and
+   possibly materializing) path stays correct there. */
+static inline int kos_type_has_managed_dict(PyTypeObject *tp) {
+#ifdef Py_GIL_DISABLED
+  (void) tp;
+  return 0;
+#else
+  return (tp->tp_flags & Py_TPFLAGS_MANAGED_DICT) != 0;
+#endif
+}
+
+
+/*
+   The managed dict, or NULL when none has been materialized. A peek only:
+   _PyObject_GetDictPtr materializes the dict of a values-mode instance as a
+   side effect, which kills the inline-values fast paths for that object, so
+   readers that merely want to consult the dict must come through here. On
+   3.13 the dict pointer sits three slots ahead of the object (a materialized
+   dict may coexist with still-valid inline values, which it shares).
+*/
+static inline PyObject *kos_managed_dict_peek(PyObject *obj) {
+  return *(((PyObject **) obj) - 3);
+}
+
+
 // The end.

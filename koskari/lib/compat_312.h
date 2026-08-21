@@ -76,4 +76,26 @@ static inline PyObject **kos_inline_value_slots(PyObject *obj, int *active) {
 }
 
 
+/* Does tp keep the instance dict in the managed pre-header slot? */
+static inline int kos_type_has_managed_dict(PyTypeObject *tp) {
+  return (tp->tp_flags & Py_TPFLAGS_MANAGED_DICT) != 0;
+}
+
+
+/*
+   The managed dict, or NULL when none has been materialized. A peek only:
+   _PyObject_GetDictPtr materializes the dict of a values-mode instance as a
+   side effect, which kills the inline-values fast paths for that object, so
+   readers that merely want to consult the dict must come through here. On
+   3.12 the dict-or-values slot is tagged: a set low bit means live inline
+   values (no dict), otherwise the union holds the dict pointer.
+*/
+static inline PyObject *kos_managed_dict_peek(PyObject *obj) {
+  KosDictOrValues312 dov = *kos_dict_or_values312(obj);
+  if (((uintptr_t) dov.values) & 1)
+    return NULL;
+  return dov.dict;
+}
+
+
 // The end.

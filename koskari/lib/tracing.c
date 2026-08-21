@@ -74,6 +74,7 @@ static const char *const kos_oc_names[KOS_OC__COUNT] = {
   "field_hit",
   "field_generic",
   "field_miss",
+  "field_fallback",
 };
 
 
