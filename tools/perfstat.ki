@@ -44,10 +44,13 @@ import-from datetime date
 import-from os.path dirname exists join
 
 
-define EVENTS "instructions:u,cycles:u,branch-misses:u,L1-icache-load-misses:u"
-
 define EVENT_KEYS #(
-    "instructions:u" "cycles:u" "branch-misses:u" "L1-icache-load-misses:u")
+    "instructions:u"
+    "cycles:u"
+    "branch-misses:u"
+    "L1-icache-load-misses:u")
+
+define EVENTS (",".join EVENTS_KEYS)
 
 define CHURN (join "examples" "churn")
 
@@ -76,10 +79,11 @@ define churn-command [python name samples warmup]:
     :return: argv list
     """
 
-    return #[python "-B" (join CHURN "churn.py")
-             "--mode" "koskari"
-             "--samples" (str samples) "--warmup" (str warmup)
-             name]
+    return #[
+        python "-B" (join CHURN "churn.py")
+        "--mode" "koskari"
+        "--samples" (str samples) "--warmup" (str warmup)
+        name]
 
 
 ;; === perf collection ===
@@ -184,11 +188,11 @@ define run-opcodes [opts]:
     define data (join "build" "perf-opcodes.data")
     (os.makedirs "build" exist_ok: True)
 
-    define cmd:
-        #[opts.python "-B" (join CHURN "churn.py")
-          "--mode" "koskari"
-          "--samples" (str opts.samples) "--warmup" (str opts.warmup)
-          *: names]
+    define cmd #[
+        opts.python "-B" (join CHURN "churn.py")
+        "--mode" "koskari"
+        "--samples" (str opts.samples) "--warmup" (str opts.warmup)
+        *: names]
 
     (print "recording:" (" ".join names))
     (subprocess.run
