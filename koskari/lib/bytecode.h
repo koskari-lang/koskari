@@ -248,6 +248,10 @@ typedef enum KosCodeFlag {
     See design/interpreter/attr-lookup-cache.md. */
 #define KOS_CACHE_UNSET 0xFFFF
 
+/** Sentinel for KosCacheSlot method.value_ix: the site's name is not an
+    inline attribute of the guarded type's instances. */
+#define KOS_VALUE_ABSENT UINT32_MAX
+
 
 /**
    A single bytecode instruction: 6 bytes total.
@@ -395,13 +399,22 @@ typedef struct KosCacheSlot {
        identity check sound even where a dict-version is unavailable.
        ``type_version`` guards against class-dict mutation; ``mode`` selects
        the resolver fast path. ``resolved`` is NULL for modes that cache only
-       a negative fact (INSTANCE_DICT, GENERIC_LOOKUP). */
+       a negative fact (INSTANCE_DICT, GENERIC_LOOKUP). The values_* trio
+       memoizes the shared-keys scan for the site's name on values-mode
+       receivers: entry indices are append-only for a given keys object, so
+       a found index holds for those keys' lifetime, while an absent verdict
+       is guarded by the entry count (shared keys gain names without bumping
+       the type version). ``values_keys`` is borrowed and only ever compared
+       against the freshly fetched keys, never dereferenced. */
     struct {
       PyTypeObject *type;      /* guard receiver type; owned */
       uint64_t type_version;   /* guard: type dict version at populate */
       KosMethodMode mode;      /* which resolution behavior */
       uint8_t misses;          /* consecutive guard misses; drives the bypass */
       PyObject *resolved;      /* cached descriptor/object; owned, may be NULL */
+      void *values_keys;       /* shared keys at last name scan; identity only */
+      uint32_t values_nentries; /* dk_nentries at last scan; guards absence */
+      uint32_t value_ix;       /* values index of name, or KOS_VALUE_ABSENT */
     } method;
 
     /* KOS_CACHE_FIELD: instance-attribute storage location. The payload is a

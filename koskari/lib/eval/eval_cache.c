@@ -326,6 +326,9 @@ static void method_slot_populate(
   slot->u.method.type_version = ver;
   slot->u.method.mode = mode;
   slot->u.method.misses = misses;
+  slot->u.method.values_keys = NULL;   /* force a fresh name scan */
+  slot->u.method.values_nentries = 0;
+  slot->u.method.value_ix = KOS_VALUE_ABSENT;
   slot->kind = KOS_CACHE_METHOD;
 }
 
@@ -337,6 +340,42 @@ static int method_guard_ok(PyTypeObject *tp, KosCacheSlot *slot) {
   return tp == slot->u.method.type
       && kos_type_version(tp) == slot->u.method.type_version;
 }
+
+
+#if PY_MINOR_VERSION >= 11
+/**
+   The inline-values index of name on tp, memoized in the method slot.
+   Shared-keys entries are append-only, so a found index holds for the life
+   of that keys object; an absent verdict is guarded by the entry count,
+   since the keys can gain the name later without bumping the type version.
+   The memoized keys pointer is only compared -- every read goes through the
+   freshly fetched keys. Returns KOS_VALUE_ABSENT when name is not an inline
+   attribute of tp instances.
+*/
+static uint32_t method_values_index(
+    KosCacheSlot *slot,
+    PyTypeObject *tp,
+    PyObject *name) {
+
+  KosSharedKeys *keys =
+      (KosSharedKeys *) ((PyHeapTypeObject *) tp)->ht_cached_keys;
+  if (! keys || keys->dk_kind == 0)
+    return KOS_VALUE_ABSENT;
+
+  if (slot->u.method.values_keys == (void *) keys
+      && slot->u.method.values_nentries == (uint32_t) keys->dk_nentries)
+    return slot->u.method.value_ix;
+
+  uint32_t ix;
+  if (! kos_type_value_index(tp, name, &ix))
+    ix = KOS_VALUE_ABSENT;
+
+  slot->u.method.values_keys = (void *) keys;
+  slot->u.method.values_nentries = (uint32_t) keys->dk_nentries;
+  slot->u.method.value_ix = ix;
+  return ix;
+}
+#endif
 
 
 /**
@@ -356,7 +395,24 @@ static int method_slot_hit(
   switch (slot->u.method.mode) {
   case KOS_METHOD_DIRECT_OBJECT_GUARDED: {
     /* An instance attribute may shadow the class attribute. */
-    if (instance_attr_peek(obj, name))
+    int shadowed;
+
+#if PY_MINOR_VERSION >= 11
+    int active = 0;
+    PyObject **values = NULL;
+    if (kos_type_has_inline_values(tp))
+      values = kos_inline_value_slots(obj, &active);
+    if (active) {
+      uint32_t ix = method_values_index(slot, tp, name);
+      shadowed = (ix != KOS_VALUE_ABSENT && values[ix] != NULL);
+    } else {
+      shadowed = instance_attr_peek(obj, name) != NULL;
+    }
+#else
+    shadowed = instance_attr_peek(obj, name) != NULL;
+#endif
+
+    if (shadowed)
       return KOS_CACHE_HIT_FALL;
     if (is_plain_instance_method(descr)) {
       Py_INCREF(descr);
@@ -369,7 +425,23 @@ static int method_slot_hit(
     return 1;
   }
   case KOS_METHOD_INSTANCE_DICT: {
-    PyObject *val = instance_attr_peek(obj, name);
+    PyObject *val;
+
+#if PY_MINOR_VERSION >= 11
+    int active = 0;
+    PyObject **values = NULL;
+    if (kos_type_has_inline_values(tp))
+      values = kos_inline_value_slots(obj, &active);
+    if (active) {
+      uint32_t ix = method_values_index(slot, tp, name);
+      val = (ix != KOS_VALUE_ABSENT) ? values[ix] : NULL;
+    } else {
+      val = instance_attr_peek(obj, name);
+    }
+#else
+    val = instance_attr_peek(obj, name);
+#endif
+
     if (val) {
       Py_INCREF(val);
       *out = val;
