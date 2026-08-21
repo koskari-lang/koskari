@@ -611,6 +611,22 @@ KosOpResult KosEvalState_Call(
 #define KOS_CALL_SPILL_FAST 16
 
 
+/**
+   True when the live frame's namespace is provably private, so a
+   self-tail call may rebind it in place.  Mirrors the privacy test in
+   KosFunction_TryParkFrame: a captured, revealed, or dynamically
+   extended namespace stays live-visible and takes the ordinary
+   namespace rebuild instead.
+*/
+static inline int kos_tail_ns_reusable(PyObject *ns) {
+  return ns
+      && KosNamespace_CheckExact(ns)
+      && Py_REFCNT(ns) == 1
+      && ! PyObject_GC_IsTracked(ns)
+      && KosNamespace_BINDS(ns) == NULL;
+}
+
+
 static KOS_NOINLINE KosOpResult kos_call_invoke_body(
         KosEvalState *es,
         KosSegment **caller_slot,
@@ -650,6 +666,35 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
           return EVAL_RAISE();
         }
 
+        /* Self-tail at simple arity with a provably private namespace:
+           rebind the live frame's own namespace in place -- release the
+           raw locals, steal the arg span back into slots 0..nargs-1, and
+           clear the block residue.  No namespace build, no frame reset;
+           callable == FN means the frame's own ref keeps callable (and
+           code) alive across the block clear. */
+        if (callable == (PyObject *) KosDynFrame_FN(frame)
+            && ! kwnames
+            && ! (flags & KOS_CALL_ARGV_PREPENDED)
+            && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
+            && KosFunction_BIND_SELF_STATE(callable) == 2
+            && ! KosDynFrame_NATIVE_HANDLER(frame)
+            && kos_tail_ns_reusable(KosDynFrame_NS(frame))) {
+          PyObject *ns = KosDynFrame_NS(frame);
+
+          KosNamespace_ClearRawFast(ns);
+          if (unlikely(KosFormals_SimpleStealApplyBlock(
+                  ns, *caller_slot, nargs) < 0)) {
+            if (window)
+              kos_stack_drop_noerr_fast(caller_slot, window);
+            return EVAL_RAISE();
+          }
+          KosStack_Clear(&KosDynFrame_STACK(frame));
+          KOS_TRACE_EVENTS_INC(KOS_TE_CALL_TAIL_INPLACE);
+          es->pc = 0;
+          es->acting_pc = 0;
+          return EVAL_NORMAL();
+        }
+
         if (likely(! kwnames
                    && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
           frame_ns = KosFunction_SimpleCallNamespaceFromVector(
@@ -665,12 +710,15 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
         }
 
         /* The callable is window-resident: the reset's block-clear
-           releases it.  Hold it (and thereby code) across the reset. */
+           releases it.  Hold it (and thereby code) across the reset,
+           then transfer the reference into the FN tag -- the reset
+           cleared the previous one -- so a following self-tail can
+           rebind in place and release can attempt the park. */
         Py_INCREF(callable);
         kos_dynframe_reset_for_tail(frame);
         (void) KosEvalState_SetFrameCodeAndNamespace(es, frame, code,
                                                      frame_ns);
-        Py_DECREF(callable);
+        KosDynFrame_FN(frame) = callable;
         es->pc = 0;
         es->acting_pc = 0;
         return EVAL_NORMAL();
@@ -717,6 +765,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
           kos_dyn_push_ready_frame(es, cached);
           Py_INCREF(callable);
           KosDynFrame_FN(cached) = callable;
+          KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
           if (window)
             kos_stack_drop_noerr_fast(caller_slot, window);
           return EVAL_NORMAL();
@@ -743,6 +792,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
           }
           Py_INCREF(callable);
           KosDynFrame_FN(frame) = callable;
+          KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_STEAL);
           if (window)
             kos_stack_drop_noerr_fast(caller_slot, window);
           return EVAL_NORMAL();
@@ -756,6 +806,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
           kos_stack_drop_noerr_fast(caller_slot, window);
         return EVAL_RAISE();
       }
+      KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
       goto fn_frame_install;
     }
 
@@ -865,11 +916,85 @@ legacy:
 
 
 /**
+   Install a simple-arity KosFunction call whose receiver arrives out of
+   band (unbound method resolution): fast slot 0 binds from self_arg and
+   the window's arg span steal-binds into slots 1..nargs, through the
+   parked frame when one is available.  The caller has already
+   classified the callable -- exact KosFunction, simple arity nargs + 2,
+   no self-bind, no kwnames -- and the window holds the args at the
+   block tail.  Mirrors the two steal-bind arms of the simple-call
+   branch in kos_call_invoke_body.
+*/
+static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
+        KosEvalState *es,
+        KosSegment **caller_slot,
+        size_t window,
+        PyObject *callable,
+        PyObject *self_arg,
+        Py_ssize_t nargs) {
+
+  KosCode *code = (KosCode *) KosFunction_CODE(callable);
+  KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
+  PyObject *frame_ns;
+
+  if (likely(cached)) {
+    /* Cache hit: steal-bind into the parked namespace first -- on
+       failure nothing is stolen and the frame stays parked. */
+    if (unlikely(KosFormals_SimpleStealApplySelfBlock(
+            KosDynFrame_NS(cached), self_arg, *caller_slot, nargs) < 0)) {
+      if (window)
+        kos_stack_drop_noerr_fast(caller_slot, window);
+      return EVAL_RAISE();
+    }
+    KosFunction_CACHED_FRAME(callable) = NULL;
+    window -= (size_t) nargs;
+    kos_dyn_push_ready_frame(es, cached);
+    Py_INCREF(callable);
+    KosDynFrame_FN(cached) = callable;
+    KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+    if (window)
+      kos_stack_drop_noerr_fast(caller_slot, window);
+    return EVAL_NORMAL();
+  }
+
+  frame_ns = KosFunction_SimpleCallNamespaceStealSelfBlock(
+      callable, self_arg, *caller_slot, nargs);
+  if (unlikely(! frame_ns)) {
+    /* nothing stolen; the whole window is still on the block */
+    if (window)
+      kos_stack_drop_noerr_fast(caller_slot, window);
+    return EVAL_RAISE();
+  }
+  window -= (size_t) nargs;
+
+  /* Cache miss: install as usual, then tag the frame for the park
+     attempt at release. */
+  {
+    KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
+    if (unlikely(! frame)) {
+      if (window)
+        kos_stack_drop_noerr_fast(caller_slot, window);
+      return EVAL_RAISE();
+    }
+    Py_INCREF(callable);
+    KosDynFrame_FN(frame) = callable;
+    KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_STEAL);
+    if (window)
+      kos_stack_drop_noerr_fast(caller_slot, window);
+    return EVAL_NORMAL();
+  }
+}
+
+
+/**
    Shared call core entry.  self_arg (borrowed, may be NULL) is injected
    as the first positional via a local borrowed-pointer prepend buffer;
    the window accounting is untouched by the injection (self never lives
-   on the caller's stack).  See the block comment above for the window
-   sequencing contract.
+   on the caller's stack).  An unbound-method call that fits the simple
+   steal-bind classification skips the buffer entirely and routes
+   through kos_call_invoke_self_steal, keeping the parked-frame path
+   reachable.  See the block comment above for the window sequencing
+   contract.
 */
 static inline KosOpResult kos_call_invoke(
         KosEvalState *es,
@@ -892,6 +1017,15 @@ static inline KosOpResult kos_call_invoke(
   if (! self_arg)
     return kos_call_invoke_body(es, caller_slot, window, callable,
                                 argv, nargs, kwnames, flags);
+
+  if (likely((flags & KOS_CALL_ARGV_WINDOW))
+      && ! (flags & KOS_CALL_TAIL)
+      && ! kwnames
+      && Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType)
+      && nargs + 2 == KosFunction_SIMPLE_ARITY1(callable)
+      && KosFunction_BIND_SELF_STATE(callable) == 2)
+    return kos_call_invoke_self_steal(es, caller_slot, window, callable,
+                                      self_arg, nargs);
 
   {
     PyObject *pre_small[KOS_CALL_SPILL_FAST];

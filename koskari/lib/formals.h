@@ -215,6 +215,20 @@ int KosFormals_SimpleStealApplyBlock(
     Py_ssize_t nargs);
 
 
+/**
+  Self-injecting variant of KosFormals_SimpleStealApplyBlock: bind fast
+  slot 0 from self (borrowed; a reference is taken), then steal-bind the
+  top nargs references off the block tail into fast slots 1..nargs,
+  retracting the block length.  Same classification contract; the
+  function's simple arity is nargs + 1.
+*/
+int KosFormals_SimpleStealApplySelfBlock(
+    PyObject *ns,
+    PyObject *self,
+    KosSegment *block,
+    Py_ssize_t nargs);
+
+
 /* === Unit lifecycle === */
 
 

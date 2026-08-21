@@ -240,6 +240,22 @@ PyObject *KosFunction_SimpleCallNamespaceStealBlock(
       Py_ssize_t nargs);
 
 
+/**
+   Self-injecting variant of KosFunction_SimpleCallNamespaceStealBlock:
+   slot 0 binds from recv (borrowed; a reference is taken) and the top
+   nargs block references steal into slots 1..nargs.  Same contract; the
+   function's simple arity is nargs + 1 and recv never lives on the
+   block, so the caller's window accounting is untouched.
+
+   :return: new namespace reference, or NULL with error set
+*/
+PyObject *KosFunction_SimpleCallNamespaceStealSelfBlock(
+      PyObject *self,
+      PyObject *recv,
+      KosSegment *block,
+      Py_ssize_t nargs);
+
+
 /** Borrowed reference. Do not Py_DECREF the result. */
 #define KosFunction_CODE(func) (((KosFunction *) (func))->code)
 

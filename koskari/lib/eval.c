@@ -2082,11 +2082,8 @@ static KosOpResult eval_ng_plain_return(
   es->acting_pc = KosDynFrame_ACTING_PC((KosDynFrame *) parent);
   kos_dynframe_free((KosDynFrame *) child);
 
-  if (KosEvalState_StackPushRef(es, val) < 0) {
-    Py_DECREF(val);
+  if (KosEvalState_StackPUSH(es, val) < 0)
     return EVAL_FATAL();
-  }
-  Py_DECREF(val);
 
   /* Control-returned hook fast-exit, inlined: parent (now dyn_top) is a
      FRAME; only a WITH directly beneath it can demand the hook.  On this
@@ -2099,6 +2096,92 @@ static KosOpResult eval_ng_plain_return(
       return EVAL_DISPATCH();
   }
   return kos_eval_post_opcode_control_returned_after_hook(es);
+}
+
+
+/**
+   Extent-plain return predicate: the frame returns into a discardable
+   lexical extent (LOOP, NS, FOREACH) whose owning frame is a plain
+   Koskari frame.  Every retarget fact is cache-available — the back
+   frame recorded at install, the freed segment's displaced owning slot,
+   and the survivor-carried namespace — so the delivery reduces to a
+   straight retarget plus push, and the control-returned hook is a no-op
+   for these node kinds (kos_dynnode_on_control_returned's default arm).
+   Any missing fact falls through to the general path, mirroring the
+   cache-or-walk split in kos_dyn_retarget_after_pop.
+*/
+static inline int kos_return_is_extent_plain(
+    KosEvalState *es,
+    KosDynNode **out_child,
+    KosDynNode **out_parent,
+    KosDynFrame **out_ft) {
+
+  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynNode *parent;
+  KosDynFrame *ft;
+
+  if (! child || KosEvalState_DYN_TOP(es) != child)
+    return 0;
+
+  parent = KosDynNode_PARENT(child);
+  if (! parent)
+    return 0;
+  switch (KosDynNode_KIND(parent)) {
+  case KOS_DYN_NS:
+  case KOS_DYN_LOOP:
+  case KOS_DYN_FOREACH:
+    break;
+  default:
+    return 0;
+  }
+
+  ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
+  if (! ft
+      || ! KosDynNode_IS_FRAME((KosDynNode *) ft)
+      || KosDynFrame_NATIVE_HANDLER(ft))
+    return 0;
+
+  if (! KosDynNode_STACK(child)
+      || ! KosSegment_BACK(KosDynNode_STACK(child))
+      || ! KosDynNode_NS(parent))
+    return 0;
+
+  *out_child = child;
+  *out_parent = parent;
+  *out_ft = ft;
+  return 1;
+}
+
+
+/**
+   NG fast path: return into a discardable extent above a plain frame.
+   Same inline retarget as eval_ng_plain_return, except the extent node
+   (which stays installed) becomes dyn_top, while the frame registers
+   load from the cached back frame and the block restores through the
+   freed segment's displaced-slot record.  val consumed.
+*/
+static KosOpResult eval_ng_extent_return(
+    KosEvalState *es,
+    KosDynNode *child,
+    KosDynNode *parent,
+    KosDynFrame *ft,
+    PyObject *val) {
+
+  KosSegment **bl = KosSegment_BACK(KosDynNode_STACK(child));
+
+  KosEvalState_DYN_TOP(es) = parent;
+  KosEvalState_FRAME(es) = ft;
+  KosEvalState_BLOCK(es) = bl;
+  KosEvalState_NAMESPACE(es) = KosDynNode_NS(parent);
+  KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
+  es->pc = KosDynFrame_PC(ft);
+  es->acting_pc = KosDynFrame_ACTING_PC(ft);
+  kos_dynframe_free((KosDynFrame *) child);
+
+  if (KosEvalState_StackPUSH(es, val) < 0)
+    return EVAL_FATAL();
+
+  return EVAL_DISPATCH();
 }
 
 
@@ -2559,6 +2642,15 @@ cg_handle_op_result: {
       KOS_TRACE_POST_OP_WRAP(plain_return,
           r = eval_ng_plain_return(es, child, parent, op_res.val));
       goto cg_have_result;
+    }
+    {
+      KosDynFrame *ft;
+      if (kos_return_is_extent_plain(es, &child, &parent, &ft)) {
+        kos_eval_resume_clear_if_armed(es);
+        KOS_TRACE_POST_OP_WRAP(plain_return,
+            r = eval_ng_extent_return(es, child, parent, ft, op_res.val));
+        goto cg_have_result;
+      }
     }
   }
 

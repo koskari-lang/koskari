@@ -50,6 +50,14 @@ typedef enum KosTraceEventId {
   KOS_TE_RETARGET_WALK_FALLBACK,
   KOS_TE_PARENT_SLOT_WALK,
   KOS_TE_LIVE_REBUILD,
+  /* call-class routing: frame_cached = simple call served by a parked
+     frame; simple_steal = steal-bind into a fresh namespace; simple_vector
+     = simple call bound from a vector (no steal, no park eligibility);
+     tail_inplace = self-tail call rebinding the live frame's namespace. */
+  KOS_TE_CALL_FRAME_CACHED,
+  KOS_TE_CALL_SIMPLE_STEAL,
+  KOS_TE_CALL_SIMPLE_VECTOR,
+  KOS_TE_CALL_TAIL_INPLACE,
   KOS_TE__COUNT
 } KosTraceEventId;
 
