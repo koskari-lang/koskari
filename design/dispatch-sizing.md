@@ -40,71 +40,58 @@ trigger a rebuild.  Clear the build first:
     make clean-built && rm -f .venv/.koskari-srchash
     KOS_ALL_COLD=1 make venv
 
-Measured 2026-08-19 on `bytecode-processor` at 9c541af5, 214 opcodes
-(one handler each; 215 symbols counting the split-out `GLOBALS.cold`).
+Measured 2026-08-20 on `master` at 66c2d8b6, 215 opcodes (one handler
+each; 216 symbols counting one split-out `.cold`).
 
 ## Baseline
 
 | quantity | bytes | meaning |
 |---|---:|---|
-| fully-inlined dispatch fn | 64,715 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`) |
-| floor (all 214 handlers un-inlined) | 26,738 | per-op glue (label, NORMAL-check, gil-poll, prepare-next, `goto`, one call) x 214 + loop scaffold |
-| handler bodies | 100,244 | sum of standalone noinline bodies -- 61,355 B across the 88 cold handlers, 38,889 B across the 126 hot ones (the actual inline budget) |
+| fully-inlined dispatch fn | 65,047 | current `koskari_eval_dispatch_computed_goto` (+30 B `.cold`) |
+| floor (all 215 handlers un-inlined) | 26,866 | per-op glue (label, NORMAL-check, gil-poll, prepare-next, `goto`, one call) x 215 + loop scaffold |
+| handler bodies | 100,451 | sum of standalone noinline bodies -- 61,253 B across the 88 cold handlers, 39,198 B across the 127 hot ones (the actual inline budget) |
 
-Distribution (top-heavy, long-tailed; % of the 100,244 B body):
+Distribution (top-heavy, long-tailed; % of the 100,451 B body):
 
-- `>= 1000 B`: 24 handlers, 34,145 B (34% of body)
-- `>=  500 B`: 62 handlers, 59,791 B (60% of body)
-- `>=  200 B`: 168 handlers, 94,717 B (94% of body)
-- `>=  100 B`: 197 handlers, 99,283 B (99% of body)
+- `>= 1000 B`: 24 handlers, 33,984 B (34% of body)
+- `>=  500 B`: 62 handlers, 59,654 B (59% of body)
+- `>=  200 B`: 169 handlers, 94,908 B (94% of body)
+- `>=  100 B`: 198 handlers, 99,482 B (99% of body)
 
-The floor grew 24,930 -> 26,738 B against the previous sweep: +1,808 B
-is fifteen opcodes' worth of glue, matching the fifteen TAIL_CALL
-twins.
+The floor grew 26,738 -> 26,866 B against the previous sweep: +128 B
+is one opcode's worth of glue, matching CONST2.
 
 ## Applied changes since the previous sweep
 
-**TAIL_CALL twins (this branch).**  Fifteen new opcodes complete tail
-parity for the fused call family.  Each twin's body mirrors its CALL
-twin within LTO and alignment noise -- TAIL_CALL_FAST = CALL_FAST byte
-for byte, several pairs identical -- because the handlers differ only
-by the tail flag into the shared call core.  Twin bodies total
-~13.4 KB; thirteen are cold, with `TAIL_CALL_FAST` (381 B, 43 corpus
-sites) and `TAIL_CALL_FAST_ATTR` (1,034 B, 26 sites) hot, mirroring
-their CALL twins.  That election grew the inline fn 62,613 -> 66,053 B
--- over the 64 KiB I-cache line -- which forced the demotion sweep
-below.
+**CONST2 bulk constant load (hot).**  One new opcode pairs adjacent
+constant pushes, packed by the processor's trailing pack phase.  The
+body is 277 B hot; the election grew the inline fn 64,715 -> 65,047 B,
+leaving 489 B under the 64 KiB line.  The election rests on both
+views: `CONST` is 13.6% of churn dispatches with a 16% CONST->CONST
+2-gram, and the same-day emission shows 161 CONST2 rows against 1,218
+surviving bare CONST -- about a fifth of former CONST rows packed.
+`TAIL_CALL` (164 B hot, zero emission and zero execution) remains the
+first donor whenever budget is next needed.
 
-**Zero-emission demotions, driven by the new opcount census.**  The
-opgrams tool now emits a full per-opcode emission count (text section
-and `op_counts` in the JSON), zeros included: 104 of the 214 opcodes
-are never emitted anywhere in the corpus, dozens of them hot.  To get
-the inline fn back under 64 KiB the three largest zero-emission hot
-handlers were demoted -- `EXCEPTION_MATCH` (546 B; structurally zero,
-the squish pass folds it into CHECK_EXCEPTION), `ITEM_TAKE` (541 B),
-and `UNPACK` (467 B) -- landing the fn at 64,715 B, 821 B under the
-line, with both hot twins kept.  The split moved 127/72 -> 126/88.
-The census also shows plain `TAIL_CALL`, `TAIL_CALL_NAMES`, and
-`TAIL_CALL_STAR` at zero post-promotion (every promoted call in real
-code is a fused form), making the 164 B hot `TAIL_CALL` the obvious
-next demotion whenever budget is needed; the zero-emission hot list is
-the standing donor pool.
+**The trailing pack phase (compiler-side).**  All bulk-load packing
+(CONST2, VAR2/VAR4, FAST2/FAST4) moved to a single pack_runs sweep
+that runs after convert_fast, so FAST runs now pack directly instead
+of through the VAR2->FAST2 lowering, and mixed-eligibility pairs
+lower per-name rather than freezing as unlowered VAR2.  Emission
+shows FAST2 x274 and FAST4 x10 under the new placement.  No handler
+moved.
 
-**CALL_FAST_ATTR_STAR leak fix.**  +214 B (1,217 -> 1,431, cold): the
-handler previously leaked its owned receiver on every path; the fix
-adds the release paths.  Its tail twin is the corrected clone at
-1,431 B.
-
-**Everything else is compiler-side.**  The promotion pass, the tc
-threading removal, and the mode gate changed emission, not handlers:
-no other handler moved beyond alignment (+/-16 B).  The emission view
-below is where those changes appear.
+**All-constant comparison folding (compiler-side).**  A squish rule
+folds all-CONST OBJECT_COMPARE chains to a CONST bool at compile
+time, feeding the existing jump elisions.  Emission-only; the
+both-const CHECK_COMPARE_VAR case the fusion has always declined is
+now genuinely claimed upstream.
 
 ## Execution profile (churn, `KOS_TRACE_TIMING`)
 
-From `design/trace/trace-20260819-2329.json`: 52.76e9 dispatches over
-the fourteen churn kernels, the first trace of the 214-opcode build
-with tail promotion live.  The timing build wraps
+From `design/trace/trace-20260820-1710.json`: 52.76e9 dispatches over
+the fourteen churn kernels, the first trace of the 215-opcode build
+with CONST2 and the trailing pack placement live.  The timing build wraps
 every dispatch in two `clock_gettime` calls, so absolute nanoseconds
 are inflated and the per-opcode averages compress towards the wrapper
 cost.  Counts and shares are the usable signal; avg_ns only separates
@@ -112,55 +99,63 @@ the genuinely expensive handlers from the rest.
 
 | opcode | dispatches | % dispatches | % time | body B | temp |
 |---|---:|---:|---:|---:|---|
-| `OBJECT_OPERAND` | 12.31e9 | 23.34 | 27.29 | 58 | hot |
-| `FAST` | 10.33e9 | 19.57 | 14.98 | 221 | hot |
-| `CONST` | 7.17e9 | 13.58 | 10.29 | 154 | hot |
-| `FAST_STORE` | 3.31e9 | 6.27 | 5.54 | 301 | hot |
-| `FAST2` | 2.44e9 | 4.61 | 3.62 | 569 | hot |
-| `FAST_ATTR` | 2.40e9 | 4.55 | 4.26 | 541 | hot |
-| `FAST_ATTR_INPLACE` | 2.40e9 | 4.55 | 6.95 | 647 | hot |
-| `FAST_INPLACE` | 2.34e9 | 4.43 | 5.93 | 78 | hot |
-| `CONTINUE` | 2.20e9 | 4.17 | 3.70 | 370 | hot |
-| `CHECK_COMPARE` | 1.11e9 | 2.10 | 1.94 | 652 | hot |
-| `ITER_NEXT` | 0.91e9 | 1.73 | 2.04 | 615 | hot |
-| `CHECK_COMPARE_FAST` | 0.90e9 | 1.70 | 1.58 | 918 | hot |
+| `OBJECT_OPERAND` | 12.31e9 | 23.34 | 27.19 | 62 | hot |
+| `FAST` | 10.33e9 | 19.57 | 15.13 | 221 | hot |
+| `CONST` | 7.17e9 | 13.58 | 10.28 | 153 | hot |
+| `FAST_STORE` | 3.31e9 | 6.27 | 5.57 | 314 | hot |
+| `FAST2` | 2.44e9 | 4.61 | 3.61 | 573 | hot |
+| `FAST_ATTR` | 2.40e9 | 4.55 | 4.34 | 541 | hot |
+| `FAST_ATTR_INPLACE` | 2.40e9 | 4.55 | 6.68 | 663 | hot |
+| `FAST_INPLACE` | 2.34e9 | 4.43 | 5.95 | 78 | hot |
+| `CONTINUE` | 2.20e9 | 4.17 | 3.67 | 364 | hot |
+| `CHECK_COMPARE` | 1.11e9 | 2.10 | 1.96 | 652 | hot |
+| `ITER_NEXT` | 0.91e9 | 1.73 | 2.06 | 615 | hot |
+| `CHECK_COMPARE_FAST` | 0.90e9 | 1.70 | 1.61 | 902 | hot |
 
 The sizing consequence is the coverage number, not the ranking.  Only
-72 of the 214 opcodes execute at all on churn.  Of the 126 hot
-handlers, 54 fire (19,181 B) and 72 never fire (19,708 B) -- 51% of
+73 of the 215 opcodes execute at all on churn.  Of the 127 hot
+handlers, 55 fire (19,442 B) and 72 never fire (19,756 B) -- half of
 the inline budget is code this workload never touches.  Eighteen cold
 handlers fire, six of them enough to notice: `OBJECT_INPLACE` 227.6M,
 `MATCH_CASE` 50.7M, `MATCH_STORE_NAMES` 10.7M, `UNPACK_FAST` 3.87M,
 `YIELD_FROM` 1.31M, `TAIL_CALL_ATTR` 145K dispatches.  `OBJECT_INPLACE` is
-traffic from the kernels' in-place subscript shape; at 58 B it is the
+traffic from the kernels' in-place subscript shape; at 62 B it is the
 cold mirror of `OBJECT_OPERAND`, so promoting it hot is near-free
-inline budget if the library traces agree it is common.  `FAST_FORMAT`
-fires for the first time -- 136 dispatches, each paired with an
-`OBJECT_STR` join (140, up from 4), harness-side f-strings newly
-executed this run -- the fusion visible from the execution side, at a
-count that matters only as confirmation.  `CALL_VAR_ATTR` (54) and
-`PAIR_SPLICE` (131) also join the fired set at trivial counts.
-Neither list is otherwise an action item on its own, because churn is
+inline budget if the library traces agree it is common.  Neither list
+is otherwise an action item on its own, because churn is
 numeric-kernel code; the emission view below is what says whether an
 unfired handler is rare everywhere or just rare here.
 
 Two supporting facts from the same trace.  The opcode caches are
 effectively saturated: 5.10e9 field lookups for 56 misses and 22,022
 generic fallbacks, 300.2M method lookups for 145K misses -- identical
-to the digit with the previous trace (`method_uncached` shows its
-first nonzero, 55, in the new harness path).  And the post-handler
-dispatch layer costs 121.4e9 ns over 1.98e9 invocations, 9.2% of
+to the digit across three traces now.  And the post-handler
+dispatch layer costs 121.0e9 ns over 1.98e9 invocations, 9.2% of
 instrumented eval time, 55% of that in `return_boundary` -- which is
 where the plain-return fast arm below was aimed.
 
-The count lineage runs unbroken through `trace-20260805-1822.json`
-and `trace-20260819-0642.json`: the kernel set is unchanged, the
-total matches at 52.76e9 in all three, and outside the promotion
-relabels below no per-opcode count has moved by more than a handful
-of harness-side dispatches.  Treat this trace as the count baseline
-for future deltas.  The earlier caveat stands: parameterize, `with`
-and delimited-continuation code paths remain invisible to these
-kernels.
+The count lineage runs unbroken through `trace-20260805-1822.json`,
+`trace-20260819-0642.json`, and `trace-20260819-2329.json`: the
+kernel set is unchanged and, promotion relabels aside, no per-opcode
+count has moved by more than a handful of harness-side dispatches.
+Treat this trace as the count baseline for future deltas.  The
+earlier caveat stands: parameterize, `with` and delimited-continuation
+code paths remain invisible to these kernels.
+
+**CONST2 and the pack placement under execution.**  Against
+`trace-20260819-2329.json` the delta is surgical: the total moved by
+exactly -16,472 dispatches, and `CONST2` fired exactly 16,472 times
+at 21 avg ns (under the 24 ns dispatch mean) -- every delta dispatch
+is a collapsed CONST pair, and nothing else moved by more than
+harness noise.  The kernels' constant traffic is loop-carried single
+loads, not adjacent pairs, so CONST2's churn share is trivial
+(3.1e-7); its real population is the library- and tool-shaped code
+the emission view counts at 161 rows.  The trailing pack placement is
+execution-invariant here: `FAST2` (2.435e9) and `FAST4` (14.79M)
+counts are unchanged from packing before versus after the lowering,
+confirming the refactor relocated the pass without changing its
+product on function-mode streams.  `VAR2` fires twice (module-level
+scaffolding), `VAR4` not at all.
 
 **The twins under execution.**  Against the pre-promotion trace
 (`trace-20260819-0642.json`) the relabels are exact and everything
@@ -231,35 +226,34 @@ says which *sequences* the compiler produces -- the fusion targets.
 Regenerate the two together (`tox -qe opgrams`) so both are read
 against the same tree.
 
-The corpus holds at 282 codes; blocks moved 2,097 -> 2,062 with no new
-source, the promotion relabels shifting terminator rows at promoted
-call sites.  The headline change is the tail promotion appearing in
-emission for the first time: 89 promoted call sites across the corpus,
-all of them fused forms -- `TAIL_CALL_FAST` 40, `TAIL_CALL_FAST_ATTR`
-24, `TAIL_CALL_ATTR` 13, `TAIL_CALL_FAST_ATTR_NAMES` 6,
-`TAIL_CALL_FAST_NAMES` 6.  Not one plain `TAIL_CALL`, `TAIL_CALL_NAMES`
-or `TAIL_CALL_STAR` site survives in the corpus: every promoted call in
-real code is a fused shape, the exact set the old tc election could
-never tail-call.  Successors verify the pass from the emission side:
-each twin exits to `RETURN` 88-100%, the 10-12% `JUMP` remainder being
-the shared-return join shapes that promotion's forward route-chasing
-exists to catch.  The twins are emission-visible but not sequence-hot:
-none appears in the top-300 weighted 2-grams.
+The corpus moves to 283 codes; blocks 2,062 -> 2,074.  The headline
+change is CONST2 appearing in emission: 161 CONST2 rows against 1,218
+surviving bare `CONST` -- 322 former CONST rows packed, about a fifth
+of the population, matching the 16% CONST->CONST 2-gram that motivated
+the opcode plus the fold-and-pack interactions.  The successor mix
+says the runs skew long: `CONST2 -> CONST2` 17% (runs of four or
+more) and `CONST2 -> CONST` 17% (odd runs of three), with
+`CALL_FAST_ATTR_NAMES` 23% and `CALL_FAST_ATTR` 11% as the leading
+consumers -- constant argument blocks feeding fused calls.  The
+remaining bare CONST population's top successors are `JUMP` 18% and
+`FAST` 18%, pairs the packer correctly cannot touch.  Under the
+trailing pack placement FAST runs pack directly: `FAST2` x274,
+`FAST4` x10.
 
 Top weighted 2-grams (loop-depth weighted, base 100), otherwise stable
 against the previous sweep:
 
 | weighted | raw | pattern | reading |
 |---:|---:|---|---|
-| 2.11M | 99 | `CONST FAST_FORMAT` | literal segment, then a fused interpolation |
-| 2.09M | 94 | `FAST_FORMAT CONST` | fused interpolation, then the next literal segment |
+| 2.11M | 100 | `CONST FAST_FORMAT` | literal segment, then a fused interpolation |
+| 2.09M | 95 | `FAST_FORMAT CONST` | fused interpolation, then the next literal segment |
 | 2.05M | 19 | `PUSH_LOOP CHECK_COMPARE_FAST` | the fused loop head |
 | 2.00M | 3 | `FAST_STORE FAST4` | store then bulk reload |
 | 2.00M | 2 | `FAST4 ITEM` (and `FAST2 ITEM`, 1.03M) | indexed access off bulk loads; a FAST-keyed ITEM fusion candidate |
 | 2.00M | 2 | `ITEM ITEM_STORE` | element move between subscripts |
 | 1.14M | 57 | `OBJECT_OPERAND FAST_STORE` | compute-then-store; the fused store-destination quad target |
-| 1.14M | 97 | `PUSH_FOREACH ITER_NEXT` | the foreach head, a fixed shape |
-| 1.06M | 54 | `FAST BUILD_ARGS` | load a local into call-argument assembly |
+| 1.14M | 101 | `PUSH_FOREACH ITER_NEXT` | the foreach head, a fixed shape |
+| 1.06M | 55 | `FAST BUILD_ARGS` | load a local into call-argument assembly |
 | 1.05M | 39 | `FAST_FORMAT OBJECT_STR` | fused interpolation then stringify |
 | 1.04M | 20 | `FAST_INPLACE_CONST CONTINUE` | the loop tail: constant increment in one dispatch |
 | 1.04M | 30 | `ITEM FAST_STORE` | subscript into a local |
@@ -308,11 +302,11 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 1,712 | `CALL_ATTR_STAR` | cold |
 | 1,626 | `TAIL_CALL_ATTR_STAR` | cold |
 | 1,600 | `IMPORT_USE` | cold |
-| 1,493 | `CALL_VAR_ATTR_STAR` | cold |
 | 1,431 | `TAIL_CALL_FAST_ATTR_STAR` | cold |
 | 1,431 | `CALL_FAST_ATTR_STAR` | cold |
 | 1,417 | `PUSH_WIND` | cold |
 | 1,364 | `TAIL_CALL_VAR_ATTR_STAR` | cold |
+| 1,348 | `CALL_VAR_ATTR_STAR` | cold |
 | 1,254 | `TAIL_CALL_FAST_ATTR_NAMES` | cold |
 | 1,254 | `CALL_FAST_ATTR_NAMES` | cold |
 | 1,210 | `TAIL_CALL_STAR` | cold |
@@ -324,8 +318,8 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 1,061 | `IMPORT_STAR` | cold |
 | 1,057 | `PAIR_SPLICE` | cold |
 | 1,034 | `TAIL_CALL_FAST_ATTR` | hot |
-| 1,034 | `CALL_FAST_ATTR` | hot |
 | 1,027 | `COMBINE_ARGS` | cold |
+| 1,018 | `CALL_FAST_ATTR` | hot |
 | 1,014 | `TAIL_CALL_FAST_STAR` | cold |
 | 1,014 | `CALL_FAST_STAR` | cold |
 | 955 | `TAIL_CALL_VAR_STAR` | cold |
@@ -336,8 +330,8 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 876 | `BUILD_FUNCTION` | cold |
 | 864 | `PUSH_WITH` | cold |
 | 858 | `PUSH_NS` | hot |
+| 845 | `UNPACK_FAST` | cold |
 | 832 | `PUSH_DYN_WITH` | cold |
-| 829 | `UNPACK_FAST` | cold |
 | 824 | `UNPACK_STAR` | cold |
 | 809 | `FAST_ATTR_STORE` | hot |
 | 766 | `COMBINE_KWDS` | cold |
@@ -350,9 +344,9 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 595 | `OBJECT_FORMAT` | hot |
 | 587 | `TAIL_CALL_ATTR_NAMES` | cold |
 | 587 | `CALL_ATTR_NAMES` | cold |
+| 577 | `POP_PROMPT` | cold |
 | 573 | `FAST2` | hot |
 | 571 | `FAST_INPLACE_CONST` | hot |
-| 569 | `POP_PROMPT` | cold |
 | 557 | `POP_FINALLY` | cold |
 | 550 | `VAR_ATTR_STORE` | cold |
 | 546 | `EXCEPTION_MATCH` | cold |
@@ -370,27 +364,27 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 495 | `CALL_NAMES` | cold |
 | 494 | `CAR` | hot |
 | 490 | `PUSH_FOREACH` | hot |
+| 483 | `UNPACK` | cold |
 | 474 | `FAST_ATTR_TAKE` | hot |
-| 467 | `UNPACK` | cold |
 | 460 | `SWITCH_EQ_VAR_ATTR` | cold |
 | 457 | `OBJECT_DIVMOD` | cold |
 | 449 | `POP_DYN_WITH` | hot |
 | 445 | `VAR_LIST_APPEND` | cold |
-| 445 | `ITEM_REF` | hot |
 | 445 | `ITEM` | hot |
+| 445 | `ITEM_REF` | hot |
 | 445 | `BUILD_LIST_EXTEND_CONST` | hot |
 | 439 | `SWITCH_EQ_FAST` | hot |
 | 437 | `TAIL_CALL_VAR_NAMES` | cold |
 | 437 | `CALL_VAR_NAMES` | cold |
 | 429 | `CHECK_EXCEPTION` | hot |
 | 426 | `PUSH_SHIFT` | hot |
+| 425 | `PARAM` | hot |
 | 423 | `FAST4` | hot |
 | 420 | `BUILD_LIST_EXTEND` | hot |
 | 417 | `ATTR_INPLACE` | cold |
 | 411 | `VAR_ATTR` | cold |
 | 410 | `OBJECT_COMPARE` | hot |
 | 410 | `ATTR_TAKE` | hot |
-| 409 | `PARAM` | hot |
 | 399 | `SWITCH_EQ` | hot |
 | 397 | `OBJECT_STR` | hot |
 | 397 | `CONST_ITEM_TAKE` | hot |
@@ -404,12 +398,12 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 374 | `OBJECT_NEXT` | cold |
 | 370 | `BREAK` | hot |
 | 365 | `MATCH_STORE_NAMES` | cold |
+| 365 | `CALL_ATTR` | cold |
 | 364 | `CONTINUE` | hot |
 | 362 | `VAR2` | cold |
 | 362 | `TAIL_CALL_ATTR` | cold |
 | 362 | `OBJECT_COMPARE_FAST` | hot |
 | 362 | `CONST_ITEM_STORE` | hot |
-| 362 | `CALL_ATTR` | cold |
 | 354 | `FAST_NEXT` | cold |
 | 351 | `VAR4` | cold |
 | 349 | `ATTR_STORE` | hot |
@@ -432,18 +426,19 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 289 | `CONST_ITEM` | hot |
 | 287 | `OBJECT_COMPARE_VAR` | cold |
 | 287 | `NILP` | hot |
+| 285 | `OBJECT_VARS` | hot |
 | 282 | `OBJECT_TRUTH` | hot |
 | 282 | `OBJECT_NOT` | hot |
 | 282 | `FAST_ITER` | hot |
 | 282 | `FAST_FORMAT` | hot |
 | 279 | `SWITCH_EQ_CONST` | hot |
 | 277 | `CONST_ITEM_REF` | hot |
+| 277 | `CONST2` | hot |
 | 277 | `BUILD_KWDS_NAMES` | hot |
 | 275 | `OBJECT_FORMAT_CONST` | hot |
-| 275 | `ATTR_REF` | hot |
 | 275 | `ATTR` | hot |
+| 275 | `ATTR_REF` | hot |
 | 273 | `POP_WIND` | hot |
-| 269 | `OBJECT_VARS` | hot |
 | 259 | `VAR_ATTR_REF` | cold |
 | 258 | `OBJECT_LEN` | hot |
 | 253 | `OBJECT_DIR` | hot |
@@ -472,9 +467,9 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 204 | `POP_LOOP` | hot |
 | 202 | `POP_COLLECT` | hot |
 | 202 | `BUILD_ARGS` | hot |
+| 197 | `PUSH_PROMPT` | hot |
 | 191 | `FAST_STORE_CONST` | hot |
 | 191 | `CAPTURE_CC` | hot |
-| 189 | `PUSH_PROMPT` | hot |
 | 189 | `AWAIT` | hot |
 | 183 | `RETURN` | hot |
 | 182 | `CHECK_NIL` | hot |
@@ -510,10 +505,10 @@ Temperature is the handler macro: `hot` = `KOS_OP_HANDLER`
 | 62 | `OBJECT_INPLACE` | cold |
 | 56 | `FAST_CLEAR` | hot |
 | 56 | `DUP` | hot |
+| 52 | `POP_PARAM` | hot |
 | 52 | `POP_NS` | hot |
+| 52 | `POP_CC` | hot |
 | 52 | `EXCEPTION_CLEAR` | hot |
-| 48 | `POP_PARAM` | hot |
-| 48 | `POP_CC` | hot |
 | 35 | `JUMP` | hot |
 | 28 | `POSITION` | cold |
 | 28 | `NOOP` | cold |
