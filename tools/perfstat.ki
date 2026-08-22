@@ -50,7 +50,7 @@ define EVENT_KEYS #(
     "branch-misses:u"
     "L1-icache-load-misses:u")
 
-define EVENTS (",".join EVENTS_KEYS)
+define EVENTS (",".join EVENT_KEYS)
 
 define CHURN (join "examples" "churn")
 
