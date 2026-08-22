@@ -31,7 +31,7 @@ KOS_OP_HANDLER(SWITCH_EQ) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 2);
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
+    KosEvalState_SET_PC(es, KosEvalState_JumpTarget(es, KosOp_ARG(insn)));
   } else {
     KosEvalState_StackDropNoErr(es, 1);
   }

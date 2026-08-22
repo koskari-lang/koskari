@@ -19,7 +19,8 @@
 */
 
 KOS_OP_HANDLER(PUSH_FINALLY) {
-  KosDynNode *const region = (KosDynNode *) kos_dyn_push_finally(es, KosOp_ARG(insn));
+  KosDynNode *const region = (KosDynNode *) kos_dyn_push_finally(es,
+      KosEvalState_JumpTarget(es, KosOp_ARG(insn)));
   if (! region) {
     PyErr_NoMemory();
     return EVAL_RAISE();

@@ -45,7 +45,7 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
-    KosEvalState_SET_PC(es, row.a0);
+    KosEvalState_SET_PC(es, KosEvalState_JumpTarget(es, row.a0));
   }
 
   return EVAL_NORMAL();

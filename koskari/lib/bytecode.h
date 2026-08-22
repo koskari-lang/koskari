@@ -272,6 +272,20 @@ typedef struct KosOp {
 #define KosOp_CACHE(insn) (((KosOp *) (insn))->cache)
 
 
+/**
+   LABEL operands are signed instruction-unit deltas relative to the
+   owning instruction's index, stored two's-complement in the unsigned
+   arg / extra field. The assembler computes them from the label table;
+   consumers resolve against the acting instruction. Instruction-unit
+   (not byte) deltas keep the field width and jump range identical to
+   the old absolute encoding.
+*/
+#define KosOp_LABEL_DELTA(raw)  ((int32_t) (int16_t) (raw))
+
+#define KosOp_LABEL_TARGET(owner_pc, raw) \
+  ((uint32_t) ((int32_t) (owner_pc) + KosOp_LABEL_DELTA(raw)))
+
+
 /* === KosPosition: position change entry === */
 
 

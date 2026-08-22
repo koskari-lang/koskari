@@ -204,6 +204,7 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         code = Code(nspec, instr)
         self.assertEqual(code.length(), 4)
         self.assertEqual(code.oparg(0), (OpCode.CONST, 0))
+        # oparg resolves LABEL operands to absolute instruction indexes
         self.assertEqual(code.oparg(1), (OpCode.JUMP_FALSE, 3))
         self.assertEqual(code.oparg(2), (OpCode.JUMP, 0))
         self.assertEqual(code.oparg(3), (OpCode.RETURN, 1))
