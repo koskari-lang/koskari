@@ -65,13 +65,18 @@ static inline int kos_type_has_inline_values(PyTypeObject *tp) {
    The values tag is set by storing (real - 1), so the array is recovered as
    (stored + 1); mirrors _PyDictOrValues_GetValues.
 */
-static inline PyObject **kos_inline_value_slots(PyObject *obj, int *active) {
+static inline PyObject **kos_inline_value_slots(
+    PyObject *obj, int *active, uint32_t *capacity) {
   KosDictOrValues312 dov = *kos_dict_or_values312(obj);
   if (! (((uintptr_t) dov.values) & 1)) {
     *active = 0;
+    *capacity = 0;
     return NULL;
   }
   *active = 1;
+  /* every 3.12 instance's values buffer is sized to the keys object's
+     full capacity, so any keys-derived index is in range */
+  *capacity = UINT32_MAX;
   return ((KosDictValues312 *) (dov.values + 1))->values;
 }
 

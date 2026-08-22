@@ -73,13 +73,18 @@ static inline int kos_type_has_inline_values(PyTypeObject *tp) {
    Mirrors _PyObject_ValuesPointer: the values pointer sits four slots ahead of
    the object and is NULL once the dict is materialized.
 */
-static inline PyObject **kos_inline_value_slots(PyObject *obj, int *active) {
+static inline PyObject **kos_inline_value_slots(
+    PyObject *obj, int *active, uint32_t *capacity) {
   KosDictValues311 *v = *(((KosDictValues311 **) obj) - 4);
   if (! v) {
     *active = 0;
+    *capacity = 0;
     return NULL;
   }
   *active = 1;
+  /* every 3.11 instance's values buffer is sized to the keys object's
+     full capacity, so any keys-derived index is in range */
+  *capacity = UINT32_MAX;
   return v->values;
 }
 

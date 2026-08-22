@@ -104,10 +104,16 @@ static PyObject *instance_attr_peek(PyObject *obj, PyObject *name) {
   PyTypeObject *tp = Py_TYPE(obj);
   if (kos_type_has_inline_values(tp)) {
     int active;
-    PyObject **slots = kos_inline_value_slots(obj, &active);
+    uint32_t cap;
+    PyObject **slots = kos_inline_value_slots(obj, &active, &cap);
     if (active) {
+      /* Bound the type-wide keys index by this instance's own values
+         capacity: 3.13+ sizes each instance at creation, so a
+         later-grown keys index can exceed the buffer. Out of range
+         means the name cannot live inline on this instance, and with
+         values valid that means it is absent. */
       uint32_t ix;
-      if (kos_type_value_index(tp, name, &ix))
+      if (kos_type_value_index(tp, name, &ix) && ix < cap)
         return slots[ix];
       return NULL;
     }
@@ -399,12 +405,15 @@ static int method_slot_hit(
 
 #if PY_MINOR_VERSION >= 11
     int active = 0;
+    uint32_t cap = 0;
     PyObject **values = NULL;
     if (kos_type_has_inline_values(tp))
-      values = kos_inline_value_slots(obj, &active);
+      values = kos_inline_value_slots(obj, &active, &cap);
     if (active) {
+      /* ix is type-wide; the receiver's own capacity bounds the read */
       uint32_t ix = method_values_index(slot, tp, name);
-      shadowed = (ix != KOS_VALUE_ABSENT && values[ix] != NULL);
+      shadowed = (ix != KOS_VALUE_ABSENT && ix < cap
+                  && values[ix] != NULL);
     } else {
       shadowed = instance_attr_peek(obj, name) != NULL;
     }
@@ -429,12 +438,14 @@ static int method_slot_hit(
 
 #if PY_MINOR_VERSION >= 11
     int active = 0;
+    uint32_t cap = 0;
     PyObject **values = NULL;
     if (kos_type_has_inline_values(tp))
-      values = kos_inline_value_slots(obj, &active);
+      values = kos_inline_value_slots(obj, &active, &cap);
     if (active) {
+      /* ix is type-wide; the receiver's own capacity bounds the read */
       uint32_t ix = method_values_index(slot, tp, name);
-      val = (ix != KOS_VALUE_ABSENT) ? values[ix] : NULL;
+      val = (ix != KOS_VALUE_ABSENT && ix < cap) ? values[ix] : NULL;
     } else {
       val = instance_attr_peek(obj, name);
     }
@@ -682,14 +693,16 @@ static void field_slot_store(PyObject *obj, uint32_t offset, PyObject *val) {
    Read an inline instance value (KOS_FIELD_INSTANCE_VALUE) at its index.
    Returns a borrowed reference, or NULL to signal the caller must fall back:
    the instance materialized its dict, or the slot is unset (AttributeError /
-   __getattr__ / a shadowed class attribute). The type-version guard has
-   already matched, so the index is in bounds for a values-mode instance. The
+   __getattr__ / a shadowed class attribute), or the site's index exceeds
+   this instance's own values capacity (3.13+ sizes instances at creation,
+   so a later-grown keys index can outrun an early instance's buffer). The
    per-version value access is behind kos_inline_value_slots (compat_3xx.h).
 */
 static PyObject *field_instance_value_load(PyObject *obj, uint32_t index) {
   int active;
-  PyObject **slots = kos_inline_value_slots(obj, &active);
-  if (! active || ! slots[index]) {
+  uint32_t cap;
+  PyObject **slots = kos_inline_value_slots(obj, &active, &cap);
+  if (! active || index >= cap || ! slots[index]) {
     KOS_TRACE_OPCACHE_INC(KOS_OC_FIELD_FALLBACK);
     return NULL;
   }
@@ -707,8 +720,9 @@ static PyObject *field_instance_value_load(PyObject *obj, uint32_t index) {
 static int field_instance_value_store(PyObject *obj, uint32_t index,
     PyObject *val) {
   int active;
-  PyObject **slots = kos_inline_value_slots(obj, &active);
-  if (! active || ! slots[index]) {
+  uint32_t cap;
+  PyObject **slots = kos_inline_value_slots(obj, &active, &cap);
+  if (! active || index >= cap || ! slots[index]) {
     KOS_TRACE_OPCACHE_INC(KOS_OC_FIELD_FALLBACK);
     return 0;
   }

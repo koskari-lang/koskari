@@ -115,6 +115,36 @@ class TestCallFastPaths(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await mod.call_bump(shadowed, 3), 3)
 
 
+    async def test_small_capacity_instance_probes_grown_keys(self):
+        # 3.13+ sizes an instance's inline values from the shared keys
+        # at creation, so a keys index added later can exceed an early
+        # instance's buffer; the cached call site's shadow probe for
+        # such a name must bound its read by the receiver's capacity
+        # (ASAN catches the miss) and resolve to the class method
+        mod = await self.load_module()
+        early = mod.Counter()
+        for _ in range(8):
+            await mod.call_bump(early, 1)
+
+        # grow the shared keys one name at a time through fresh
+        # instances, each sized to the keys of its moment, so the keys
+        # advance well past the early instance's capacity
+        for k in range(16):
+            g = mod.Counter()
+            setattr(g, 'grow_%02d' % k, k)
+
+        # 'bump' joins the keys at an index beyond early's buffer
+        shadowed = mod.Counter()
+        shadowed.bump = lambda v: ('shadowed', v)
+        self.assertEqual(await mod.call_bump(shadowed, 2), ('shadowed', 2))
+
+        # the early instance has no shadow: the class method runs, and
+        # a late-keys name absent from it raises cleanly
+        self.assertEqual(await mod.call_bump(early, 3), early.total)
+        with self.assertRaises(AttributeError):
+            early.grow_00
+
+
     async def test_dict_materialized_shadow_seen(self):
         # materialize the instance dict and plant the shadow through it
         # directly: on 3.13+ a materialized dict can coexist with valid

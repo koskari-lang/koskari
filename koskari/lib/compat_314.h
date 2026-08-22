@@ -72,10 +72,15 @@ static inline int kos_type_has_inline_values(PyTypeObject *tp) {
    dereferenced. Mirrors _PyObject_InlineValues for 3.14 (values at
    tp_basicsize).
 */
-static inline PyObject **kos_inline_value_slots(PyObject *obj, int *active) {
+static inline PyObject **kos_inline_value_slots(
+    PyObject *obj, int *active, uint32_t *capacity) {
   KosDictValues314 *v =
     (KosDictValues314 *) ((char *) obj + Py_TYPE(obj)->tp_basicsize);
   *active = v->valid;
+  /* 3.14 sizes each instance's values from the shared keys at creation
+     time, so a later-grown keys index can exceed this instance's
+     buffer; consumers must bound their index by this capacity */
+  *capacity = v->capacity;
   return v->values;
 }
 
