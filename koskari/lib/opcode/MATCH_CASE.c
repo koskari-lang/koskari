@@ -108,7 +108,7 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
     KosEvalState_StackDropNoErr(es, (size_t) n);
 
   if (! matched) {
-    KosEvalState_SET_PC(es, KosEvalState_JumpTarget(es, row.a0));
+    KosEvalState_SET_PC(es, row.a0);
     return EVAL_NORMAL();
   }
 

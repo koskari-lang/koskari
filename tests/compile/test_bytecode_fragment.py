@@ -204,10 +204,30 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         code = Code(nspec, instr)
         self.assertEqual(code.length(), 4)
         self.assertEqual(code.oparg(0), (OpCode.CONST, 0))
-        # oparg resolves LABEL operands to absolute instruction indexes
         self.assertEqual(code.oparg(1), (OpCode.JUMP_FALSE, 3))
         self.assertEqual(code.oparg(2), (OpCode.JUMP, 0))
         self.assertEqual(code.oparg(3), (OpCode.RETURN, 1))
+
+    async def test_extra_tuple_resolves_label_slots(self):
+        """extra_tuple returns absolute targets for forward and backward
+        extra-row LABEL slots."""
+        nspec = NamespaceSpec(None, (), ())
+        instr = (
+            [OpCode.LABEL, "back"],
+            [OpCode.CONST, 0],
+            [OpCode.SWITCH_EQ_CONST, ("fwd", 1, 0, 0)],
+            [OpCode.SWITCH_EQ_CONST, ("back", 1, 0, 0)],
+            [OpCode.LABEL, "fwd"],
+            [OpCode.RETURN, 1],
+        )
+        code = Code(nspec, instr)
+        self.assertEqual(code.length(), 4)
+        self.assertEqual(code.oparg(1), (OpCode.SWITCH_EQ_CONST, 0))
+        self.assertEqual(code.oparg(2), (OpCode.SWITCH_EQ_CONST, 1))
+        # forward: row 0 owned by pc 1, targets "fwd" at pc 3
+        self.assertEqual(code.extra_tuple(0)[0], 3)
+        # backward: row 1 owned by pc 2, targets "back" at pc 0
+        self.assertEqual(code.extra_tuple(1)[0], 0)
 
     async def test_empty_instructions_rejected(self):
         """Code with empty instructions raises ValueError."""

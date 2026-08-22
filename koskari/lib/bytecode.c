@@ -232,9 +232,8 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
     KosOpStyle st = opcode_styles[op].style;
 
     if (st == KOSTYLE_LABEL) {
-      /* op.arg is a signed delta from this instruction */
-      if (soften_label_map_add_pc(label_map,
-                                  KosOp_LABEL_TARGET(i, code[i].arg))) {
+      /* op.arg is the destination instruction index */
+      if (soften_label_map_add_pc(label_map, code[i].arg)) {
         Py_DECREF(label_map);
         return NULL;
       }
@@ -256,8 +255,7 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
         KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
             (slot == 2) ? schema.f2 : schema.f3;
         if (fk == KOSTYLE_LABEL) {
-          if (soften_label_map_add_pc(label_map,
-                                      KosOp_LABEL_TARGET(i, raw[slot]))) {
+          if (soften_label_map_add_pc(label_map, raw[slot])) {
             Py_DECREF(label_map);
             return NULL;
           }
@@ -291,8 +289,7 @@ static PyObject *soften_extra_tuple(
     PyObject *self,
     KosOpCode op,
     KosExtra row,
-    PyObject *label_map,
-    uint32_t owner_pc) {
+    PyObject *label_map) {
 
   KosExtraSchema schema = kos_opcode_extra_schema(op);
   uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
@@ -326,8 +323,7 @@ static PyObject *soften_extra_tuple(
       items[slot] = v;
 
     } else if (fk == KOSTYLE_LABEL) {
-      uint32_t target = KosOp_LABEL_TARGET(owner_pc, raw[slot]);
-      PyObject *key = PyLong_FromUnsignedLong((unsigned long) target);
+      PyObject *key = PyLong_FromUnsignedLong((unsigned long) raw[slot]);
       if (! key) {
         for (int j = 0; j < slot; j++)
           Py_DECREF(items[j]);
@@ -339,7 +335,7 @@ static PyObject *soften_extra_tuple(
         for (int j = 0; j < slot; j++)
           Py_DECREF(items[j]);
         PyErr_Format(PyExc_RuntimeError,
-                     "label pc %u missing from label map", target);
+                     "label pc %u missing from label map", raw[slot]);
         return NULL;
       }
       Py_INCREF(lab);
@@ -787,20 +783,13 @@ static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
 
   KosOp op = KosCode_CODE(self)[i];
 
-  /* The Python surface speaks instruction indexes: LABEL operands are
-     stored as signed deltas, so resolve them against the owning
-     instruction before handing them out. */
-  long arg = (opcode_styles[op.op].style == KOSTYLE_LABEL)
-      ? (long) KosOp_LABEL_TARGET(i, op.arg)
-      : (long) op.arg;
-
   PyObject *p = PyTuple_New(2);
   if (! p) {
     return NULL;
   }
 
   PyTuple_SET_ITEM(p, 0, PyLong_FromLong((long) op.op));
-  PyTuple_SET_ITEM(p, 1, PyLong_FromLong(arg));
+  PyTuple_SET_ITEM(p, 1, PyLong_FromLong((long) op.arg));
 
   return p;
 }
@@ -917,34 +906,10 @@ static PyObject *code_m_extra_tuple(PyObject *self, PyObject *index) {
   }
 
   KosExtra row = KosCode_GetExtra(self, (uint32_t) i);
-  long vals[4] = { row.a0, row.a1, row.a2, row.a3 };
-
-  /* The Python surface speaks instruction indexes: resolve any LABEL
-     slots against the row's owning instruction. Rows are allocated one
-     per EXTRA-style instruction, so the owner is the instruction whose
-     arg names this row; the linear scan is fine for an introspection
-     accessor. */
-  {
-    uint32_t l = code_visible_len(self);
-    for (uint32_t pc = 0; pc < l; pc++) {
-      KosOp op = KosCode_CODE(self)[pc];
-      if (opcode_styles[op.op].style != KOSTYLE_EXTRA
-          || op.arg != (uint16_t) i)
-        continue;
-      {
-        KosExtraSchema schema = kos_opcode_extra_schema((KosOpCode) op.op);
-        const KosOpStyle fks[4] = { schema.f0, schema.f1, schema.f2,
-                                    schema.f3 };
-        for (int slot = 0; slot < 4; slot++) {
-          if (fks[slot] == KOSTYLE_LABEL)
-            vals[slot] = (long) KosOp_LABEL_TARGET(pc, vals[slot]);
-        }
-      }
-      break;
-    }
-  }
-
-  return Py_BuildValue("(llll)", vals[0], vals[1], vals[2], vals[3]);
+  return Py_BuildValue("(HHHH)", (unsigned short) row.a0,
+                       (unsigned short) row.a1,
+                       (unsigned short) row.a2,
+                       (unsigned short) row.a3);
 }
 
 
@@ -1064,10 +1029,8 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
       }
       pair = Py_BuildValue("(iO)", (int) op, val);
     } else if (st == KOSTYLE_LABEL) {
-      /* insn.arg is a signed delta; resolve the destination pc, then the
-         label string is label_map[target] */
-      uint32_t target = KosOp_LABEL_TARGET(i, insn.arg);
-      PyObject *key_d = PyLong_FromUnsignedLong((unsigned long) target);
+      /* insn.arg is destination PC; label string is label_map[insn.arg] */
+      PyObject *key_d = PyLong_FromUnsignedLong((unsigned long) insn.arg);
       if (! key_d) {
         Py_DECREF(out);
         Py_DECREF(label_map);
@@ -1079,7 +1042,7 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
         Py_DECREF(out);
         Py_DECREF(label_map);
         PyErr_Format(PyExc_RuntimeError,
-                     "label pc %u missing from label map", target);
+                     "label pc %u missing from label map", insn.arg);
         return NULL;
       }
       Py_INCREF(lab);
@@ -1092,8 +1055,7 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
         return NULL;
       }
       KosExtra row = KosCode_GetExtra(self, insn.arg);
-      PyObject *tup = soften_extra_tuple(self, op, row, label_map,
-                                         (uint32_t) i);
+      PyObject *tup = soften_extra_tuple(self, op, row, label_map);
       if (! tup) {
         Py_DECREF(out);
         Py_DECREF(label_map);
@@ -1625,25 +1587,19 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           }
           continue;
         }
-        /* LABEL: cannot resolve until pass 1 labels are complete; defer.
-           The owning instruction's output index rides along so the
-           resolver can compute the relative delta. */
+        /* LABEL: cannot resolve until pass 1 labels are complete; defer */
         if (fk == KOSTYLE_LABEL) {
           PyObject *idx_obj = PyLong_FromLong(extra_idx);
           PyObject *slot_obj = PyLong_FromLong(slot);
-          PyObject *owner_obj = PyLong_FromLong((long) di);
-          if (! idx_obj || ! slot_obj || ! owner_obj) {
+          if (! idx_obj || ! slot_obj) {
             Py_XDECREF(idx_obj);
             Py_XDECREF(slot_obj);
-            Py_XDECREF(owner_obj);
             goto failure;
           }
           /* PyTuple_Pack increfs each element; release our own refs after */
-          PyObject *pending = PyTuple_Pack(4, idx_obj, slot_obj, elem,
-                                           owner_obj);
+          PyObject *pending = PyTuple_Pack(3, idx_obj, slot_obj, elem);
           Py_DECREF(idx_obj);
           Py_DECREF(slot_obj);
-          Py_DECREF(owner_obj);
           if (! pending || PyList_Append(coll->pending_labels, pending) < 0) {
             Py_XDECREF(pending);
             goto failure;
@@ -1937,22 +1893,13 @@ static int code_emit(
       code[di].arg = idx;
 
     } else if (style == KOSTYLE_LABEL) {
-      /* Look up target pc from labels dict (label_name -> pc) and encode
-         it as a signed instruction-unit delta from this instruction. */
+      /* Look up target pc from labels dict (label_name -> pc) */
       PyObject *dest = PyDict_GetItem(coll->labels, b);
       if (! dest) {
         PyErr_Format(PyExc_RuntimeError, "opcode jump label missing %R", b);
         return -1;
       }
-      {
-        long delta = PyLong_AsLong(dest) - (long) di;
-        if (delta < INT16_MIN || delta > INT16_MAX) {
-          PyErr_Format(PyExc_RuntimeError, "jump delta %ld out of range"
-                       " at instruction %u", delta, (unsigned) di);
-          return -1;
-        }
-        code[di].arg = (uint16_t) (int16_t) delta;
-      }
+      code[di].arg = (uint16_t) PyLong_AsLong(dest);
     } else if (style == KOSTYLE_EXTRA) {
       /* Arg is index into extra table; copy row from collect */
       code[di].arg = (uint16_t) extra_idx;
@@ -2010,8 +1957,7 @@ static int code_emit(
     cpool[j] = val;
   }
 
-  /* Resolve LABEL placeholders in extra rows: replace name with a signed
-     instruction-unit delta from the owning instruction */
+  /* Resolve LABEL placeholders in extra rows: replace name with target pc */
   if (extra) {
     Py_ssize_t n_pending = PyList_GET_SIZE(coll->pending_labels);
     for (Py_ssize_t k = 0; k < n_pending; k++) {
@@ -2019,35 +1965,22 @@ static int code_emit(
       long eidx = PyLong_AsLong(PyTuple_GET_ITEM(pending, 0));
       long slot = PyLong_AsLong(PyTuple_GET_ITEM(pending, 1));
       PyObject *label_name = PyTuple_GET_ITEM(pending, 2);
-      long owner = PyLong_AsLong(PyTuple_GET_ITEM(pending, 3));
       PyObject *dest = PyDict_GetItem(coll->labels, label_name);
       if (! dest) {
         PyErr_Format(PyExc_RuntimeError, "opcode jump label missing %R",
                      label_name);
         return -1;
       }
-      {
-        long delta = PyLong_AsLong(dest) - owner;
-        uint16_t enc;
-
-        if (delta < INT16_MIN || delta > INT16_MAX) {
-          PyErr_Format(PyExc_RuntimeError, "jump delta %ld out of range"
-                       " at instruction %ld", delta, owner);
-          return -1;
-        }
-        enc = (uint16_t) (int16_t) delta;
-        {
-          KosExtra *row = &extra[eidx];
-          if (slot == 0) {
-            row->a0 = enc;
-          } else if (slot == 1) {
-            row->a1 = enc;
-          } else if (slot == 2) {
-            row->a2 = enc;
-          } else {
-            row->a3 = enc;
-          }
-        }
+      uint16_t pc = (uint16_t) PyLong_AsLong(dest);
+      KosExtra *row = &extra[eidx];
+      if (slot == 0) {
+        row->a0 = pc;
+      } else if (slot == 1) {
+        row->a1 = pc;
+      } else if (slot == 2) {
+        row->a2 = pc;
+      } else {
+        row->a3 = pc;
       }
     }
   }
@@ -2341,7 +2274,7 @@ static int validate_jump_locality(
       continue;
     }
 
-    uint32_t t = KosOp_LABEL_TARGET(src_pc, code[src_pc].arg);
+    uint32_t t = code[src_pc].arg;
     if (t >= code_len) {
       PyErr_Format(PyExc_RuntimeError,
                    "JUMP at pc %u targets out-of-range pc %u",

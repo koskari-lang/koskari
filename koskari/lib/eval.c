@@ -1403,7 +1403,7 @@ static int kos_check_nil(
   Py_DECREF(val);
 
   if (! is_nil)
-    KosEvalState_SET_PC(es, KosEvalState_JumpTarget(es, KosOp_ARG(insn)));
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
 
   return 0;
 }

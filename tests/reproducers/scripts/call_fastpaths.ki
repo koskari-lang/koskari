@@ -1,0 +1,98 @@
+;; This library is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This library is distributed in the hope that it will be useful, but
+;; WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+;; General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+;; Kernels for the call and return fast paths: self-tail in-place
+;; namespace rebind, plain returns delivered into loop / let / foreach
+;; extents, and unbound method calls through the parked-frame steal.
+
+
+;; Self-tail at simple arity: after the first promoted hop the frame's
+;; FN tag matches the callee, so every following hop rebinds the live
+;; namespace in place.
+
+define tail_sum [n acc]:
+    if (<= n 0):
+        acc
+    else:
+        (tail_sum (- n 1) (+ acc n))
+
+
+define add_one [x]:
+    (+ x 1)
+
+
+;; One helper call per while iteration: every return delivers into the
+;; LOOP extent above the caller's frame.
+
+define sum_calls_while [n]:
+    define total 0
+    define i 0
+    while (< i n):
+        incr! total (add_one i)
+        incr! i
+    total
+
+
+;; One helper call per foreach iteration: returns deliver into the
+;; FOREACH extent.
+
+define sum_calls_foreach [n]:
+    define total 0
+    for-each [i (range n)]:
+        incr! total (add_one i)
+    total
+
+
+;; A helper call under a let binding: the return delivers into the NS
+;; extent.
+
+define sum_calls_let [n]:
+    define total 0
+    define i 0
+    while (< i n):
+        let [[bump (add_one i)]]:
+            incr! total bump
+        incr! i
+    total
+
+
+define-class Counter []:
+
+    define __init__ [self]:
+        set! self.total 0
+
+    define bump [self v]:
+        set! self.total (+ self.total v)
+        self.total
+
+
+;; Unbound method calls at simple arity: the self-steal route with the
+;; parked frame.
+
+define bump_loop [c n]:
+    define i 0
+    while (< i n):
+        (c.bump i)
+        incr! i
+    c.total
+
+
+;; A single warm method-call site for the shadowing tests: the Python
+;; side warms it, then plants instance attributes that must shadow the
+;; class method on later calls through this same site.
+
+define call_bump [c v]:
+    (c.bump v)
+
+
+;; The end.

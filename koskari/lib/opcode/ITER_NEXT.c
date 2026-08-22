@@ -33,13 +33,12 @@ static KOS_NOINLINE KosOpResult iter_next_step_kos_agen(
 
   if (agen->closed || ! agen->ctx) {
     KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-    KosEvalState_SET_PC(es, KosEvalState_JumpTarget(es, KosOp_ARG(insn)));
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
     return EVAL_NORMAL();
   }
 
   agen->in_progress = 1;
-  KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) =
-      KosEvalState_JumpTarget(es, KosOp_ARG(insn));
+  KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) = KosOp_ARG(insn);
   kos_dyn_foreach_set_iter_step_phase(
       (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN);
 
@@ -86,7 +85,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
 
     case GET_NEXT_EXHAUSTED:
       KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-      KosEvalState_SET_PC(es, KosEvalState_JumpTarget(es, KosOp_ARG(insn)));
+      KosEvalState_SET_PC(es, KosOp_ARG(insn));
       return EVAL_NORMAL();
 
     case GET_NEXT_SUSPEND:
@@ -95,7 +94,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
          boundary and StopAsyncIteration from the parked step converts
          to exhaustion (branch to else) at the raise walk. */
       KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) =
-          KosEvalState_JumpTarget(es, KosOp_ARG(insn));
+          KosOp_ARG(insn);
       kos_dyn_foreach_set_iter_step_phase(
           (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_AWAITING_PY);
       return EVAL_AWAIT(_await);

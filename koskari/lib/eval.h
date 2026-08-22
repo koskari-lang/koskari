@@ -361,11 +361,6 @@ struct KosEvalState {
 #define KosEvalState_ACTING_PC(es) ((es)->acting_pc)
 #define KosEvalState_SET_PC(es, v) ((void)((es)->pc = (uint32_t)(v)))
 
-/** Resolve a LABEL operand (signed instruction-unit delta) against the
-    acting instruction's index. */
-#define KosEvalState_JumpTarget(es, raw) \
-  KosOp_LABEL_TARGET(KosEvalState_ACTING_PC(es), (raw))
-
 
 /**
   Operand stack head block for logging; NULL when no stack.

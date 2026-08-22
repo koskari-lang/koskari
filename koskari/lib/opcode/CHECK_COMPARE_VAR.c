@@ -60,7 +60,7 @@ KOS_OP_HANDLER_COLD(CHECK_COMPARE_VAR) {
     return EVAL_RAISE();
 
   if (res == 0)
-    KosEvalState_SET_PC(es, KosEvalState_JumpTarget(es, row.a3));
+    KosEvalState_SET_PC(es, row.a3);
 
   return EVAL_NORMAL();
 }
