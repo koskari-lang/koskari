@@ -342,22 +342,16 @@ venv-koslife: .venv/bin/koslife ## Install koslife example
 
 ##@ Performance
 
-PERF_LOG ?= design/perf/perf.tsv
-
-perf: venv  ## Collect per-kernel perf counters over churn; append to PERF_LOG
+perf:  ## Collect per-kernel perf counters over churn via tox; append to design/perf/perf.tsv
 	@$(call checkfor,perf)
-	@.venv/bin/python -B tools/perfstat.py stat --log $(PERF_LOG)
+	@$(call checkfor,tox)
+	@tox -qe perf -- $(PERF_ARGS)
 
 
-perf-opcodes:  ## Per-opcode cycle shares via a KOS_ALL_COLD sampling build (rebuilds the extension twice)
+perf-opcodes:  ## Per-opcode cycle shares from a KOS_ALL_COLD tox build sampled under perf record
 	@$(call checkfor,perf)
-	@$(MAKE) clean-built
-	@rm -f .venv/.koskari-srchash
-	@KOS_ALL_COLD=1 $(MAKE) venv
-	@.venv/bin/python -B tools/perfstat.py opcodes
-	@$(MAKE) clean-built
-	@rm -f .venv/.koskari-srchash
-	@$(MAKE) venv
+	@$(call checkfor,tox)
+	@tox -qe perf-opcodes -- $(PERF_ARGS)
 
 
 ##@ Corpus

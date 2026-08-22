@@ -72,11 +72,42 @@ static inline int kos_type_has_inline_values(PyTypeObject *tp) {
    dereferenced. Mirrors _PyObject_InlineValues for 3.14 (values at
    tp_basicsize).
 */
-static inline PyObject **kos_inline_value_slots(PyObject *obj, int *active) {
+static inline PyObject **kos_inline_value_slots(
+    PyObject *obj, int *active, uint32_t *capacity) {
   KosDictValues314 *v =
     (KosDictValues314 *) ((char *) obj + Py_TYPE(obj)->tp_basicsize);
   *active = v->valid;
+  /* 3.14 sizes each instance's values from the shared keys at creation
+     time, so a later-grown keys index can exceed this instance's
+     buffer; consumers must bound their index by this capacity */
+  *capacity = v->capacity;
   return v->values;
+}
+
+
+/* Does tp keep the instance dict in the managed pre-header slot? Peek is
+   GIL-only: the free-threaded pre-header differs, so the generic (and
+   possibly materializing) path stays correct there. */
+static inline int kos_type_has_managed_dict(PyTypeObject *tp) {
+#ifdef Py_GIL_DISABLED
+  (void) tp;
+  return 0;
+#else
+  return (tp->tp_flags & Py_TPFLAGS_MANAGED_DICT) != 0;
+#endif
+}
+
+
+/*
+   The managed dict, or NULL when none has been materialized. A peek only:
+   _PyObject_GetDictPtr materializes the dict of a values-mode instance as a
+   side effect, which kills the inline-values fast paths for that object, so
+   readers that merely want to consult the dict must come through here. On
+   3.14 the dict pointer sits three slots ahead of the object (a materialized
+   dict may coexist with still-valid inline values, which it shares).
+*/
+static inline PyObject *kos_managed_dict_peek(PyObject *obj) {
+  return *(((PyObject **) obj) - 3);
 }
 
 

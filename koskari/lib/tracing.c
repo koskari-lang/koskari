@@ -51,6 +51,10 @@ static const char *const kos_te_names[KOS_TE__COUNT] = {
   "retarget_walk_fallback",
   "parent_slot_walk",
   "live_rebuild",
+  "call_frame_cached",
+  "call_simple_steal",
+  "call_simple_vector",
+  "call_tail_inplace",
 };
 
 
@@ -74,6 +78,7 @@ static const char *const kos_oc_names[KOS_OC__COUNT] = {
   "field_hit",
   "field_generic",
   "field_miss",
+  "field_fallback",
 };
 
 

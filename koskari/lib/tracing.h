@@ -50,6 +50,14 @@ typedef enum KosTraceEventId {
   KOS_TE_RETARGET_WALK_FALLBACK,
   KOS_TE_PARENT_SLOT_WALK,
   KOS_TE_LIVE_REBUILD,
+  /* call-class routing: frame_cached = simple call served by a parked
+     frame; simple_steal = steal-bind into a fresh namespace; simple_vector
+     = simple call bound from a vector (no steal, no park eligibility);
+     tail_inplace = self-tail call rebinding the live frame's namespace. */
+  KOS_TE_CALL_FRAME_CACHED,
+  KOS_TE_CALL_SIMPLE_STEAL,
+  KOS_TE_CALL_SIMPLE_VECTOR,
+  KOS_TE_CALL_TAIL_INPLACE,
   KOS_TE__COUNT
 } KosTraceEventId;
 
@@ -71,10 +79,14 @@ typedef enum KosTraceOpCacheId {
   KOS_OC_METHOD_UNCACHED,
   /* field (attribute-storage location) cache: hit = guarded location-mode
      served (e.g. SLOT); generic = guard-free GENERIC verdict (fell to the
-     generic path); miss = cold classification (cold slot, guard miss). */
+     generic path); miss = cold classification (cold slot, guard miss);
+     fallback = guarded hit whose direct access then declined (values
+     inactive, unset slot) and fell to the generic protocol -- a healthy
+     workload keeps this near zero. */
   KOS_OC_FIELD_HIT,
   KOS_OC_FIELD_GENERIC,
   KOS_OC_FIELD_MISS,
+  KOS_OC_FIELD_FALLBACK,
   KOS_OC__COUNT
 } KosTraceOpCacheId;
 

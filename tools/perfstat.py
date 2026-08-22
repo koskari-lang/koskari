@@ -19,8 +19,10 @@ methodology in design/dispatch-sizing.md. The stat mode runs perf stat
 per kernel with the bootstrap floor subtracted from the deterministic
 instruction count and appends one row per kernel to a TSV log. The
 opcodes mode runs perf record over all kernels and reports per-opcode
-cycle shares; it expects the current build to be a KOS_ALL_COLD build,
-where every handler is its own symbol
+cycle shares; it expects the running build to be a KOS_ALL_COLD build,
+where every handler is its own symbol -- the perf-opcodes tox env
+provides one. Both modes are fronted by the perf and perf-opcodes tox
+envs, each with its own venv and build, leaving the dev venv alone
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -186,8 +188,8 @@ def main(argv=None):
         "names", nargs="*", metavar="NAME",
         help="kernels to run (default: all)")
     parser.add_argument(
-        "--python", default=os.path.join(".venv", "bin", "python"),
-        help="interpreter to run the harness with")
+        "--python", default=sys.executable,
+        help="interpreter to run the harness with (default: this one)")
     parser.add_argument(
         "--samples", type=int, default=1,
         help="measured batches per kernel (default: 1)")

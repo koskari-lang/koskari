@@ -95,18 +95,20 @@ define MODULE_GROUPS #{
     ; tools.corpus.quick pulls in tests.corpus, which is why this group
     ; costs more to load than the others.
     "tools": #(
-        "tools.tools"
-        "tools.opgrams"
-        "tools.matchbench"
-        "tools.editor_tokens.regen"
-        "tools.corpus.load"
         "tools.corpus.export"
+        "tools.corpus.load"
         "tools.corpus.quick"
         "tools.corpus.views"
         "tools.corpus.views._material"
         "tools.corpus.views.docs"
         "tools.corpus.views.full"
-        "tools.corpus.views.programs")}
+        "tools.corpus.views.programs"
+        "tools.editor_tokens.regen"
+        "tools.matchbench"
+        "tools.opgrams"
+        "tools.perfstat"
+        "tools.tools")
+    }
 
 ; Terminal opcodes with no label argument: control leaves the straight
 ; line here, so no sequence may continue past them. Ops that carry a

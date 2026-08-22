@@ -83,8 +83,8 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR_NAMES) {
   KosOpResult r = kos_call_invoke(es, resolved,
                                   (send_self == 0) ? obj : NULL,
                                   ptr, npos, nkwds ? names : NULL,
-                                  KOS_CALL_ARGV_WINDOW);
-  Py_DECREF(resolved);
+                                  KOS_CALL_ARGV_WINDOW
+                                  | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
   return r;
 }

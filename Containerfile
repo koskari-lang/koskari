@@ -1,8 +1,11 @@
-FROM python:3.14-alpine as builder
+FROM python:3.14-alpine AS builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_ROOT_USER_ACTION=ignore
 
 RUN apk add gcc musl-dev python3-dev && \
-    pip install --root-user-action=ignore --no-cache-dir --disable-pip-version-check \
-        uv
+    pip install uv
 
 WORKDIR /build
 COPY tools/regen_version.py /build/tools/
@@ -22,7 +25,15 @@ RUN mkdir .eggs && \
     uv build .
 
 
+# ================================
+# The actual runtime image
+
+
 FROM python:3.14-alpine
+
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_ROOT_USER_ACTION=ignore
 
 ARG KOSKARI_COMMIT=
 ARG KOSKARI_VERSION=
@@ -37,11 +48,11 @@ LABEL org.opencontainers.image.title="koskari" \
       org.opencontainers.image.revision="${KOSKARI_COMMIT}"
 
 ENTRYPOINT ["koskari"]
+
 # Raw runtime only: no extras. Consumers (the MCP images, the tools
 # image, an interactive REPL image) layer their own dependencies on top.
 COPY --from=builder /build/dist /dist
-RUN pip install --root-user-action=ignore --no-cache-dir --disable-pip-version-check \
-        --find-links=/dist/ koskari && \
+RUN pip install --find-links=/dist/ koskari && \
     rm -rf /dist
 
 

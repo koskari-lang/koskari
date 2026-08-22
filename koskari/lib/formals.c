@@ -1875,6 +1875,46 @@ int KosFormals_SimpleStealApplyBlock(
 }
 
 
+/**
+   Steal-bind positionals with an out-of-band receiver: slot 0 binds from
+   self (borrowed; a reference is taken here), and the top nargs block
+   references move into slots 1..nargs with the block length retracted in
+   the same step.  self never lives on the block, so the caller's window
+   accounting is untouched by the injection.  Same classification
+   contract as KosFormals_SimpleStealApply against a simple arity of
+   nargs + 1.
+
+   :return: 0 on success; -1 on underrun (error set, nothing moved)
+*/
+int KosFormals_SimpleStealApplySelfBlock(
+    PyObject *ns,
+    PyObject *self,
+    KosSegment *block,
+    Py_ssize_t nargs) {
+
+  if (unlikely(nargs
+               && (! block || (size_t) nargs > KosSegment_LEN(block)))) {
+    PyErr_Format(PyExc_RuntimeError, "formals steal underrun."
+                 " requested: %zu, available: %zu", (size_t) nargs,
+                 block ? KosSegment_LEN(block) : 0);
+    return -1;
+  }
+
+  Py_INCREF(self);
+  KosNamespace_GET_FAST_VAL(ns, 0) = self;
+
+  if (nargs) {
+    size_t base = KosSegment_LEN(block) - (size_t) nargs;
+    PyObject *const *args = &block->objs[base];
+
+    for (Py_ssize_t i = 0; i < nargs; i++)
+      KosNamespace_GET_FAST_VAL(ns, (size_t) i + 1) = args[i];
+    KosSegment_LEN(block) = base;
+  }
+  return 0;
+}
+
+
 /* === Unit lifecycle === */
 
 

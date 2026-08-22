@@ -73,14 +73,38 @@ static inline int kos_type_has_inline_values(PyTypeObject *tp) {
    Mirrors _PyObject_ValuesPointer: the values pointer sits four slots ahead of
    the object and is NULL once the dict is materialized.
 */
-static inline PyObject **kos_inline_value_slots(PyObject *obj, int *active) {
+static inline PyObject **kos_inline_value_slots(
+    PyObject *obj, int *active, uint32_t *capacity) {
   KosDictValues311 *v = *(((KosDictValues311 **) obj) - 4);
   if (! v) {
     *active = 0;
+    *capacity = 0;
     return NULL;
   }
   *active = 1;
+  /* every 3.11 instance's values buffer is sized to the keys object's
+     full capacity, so any keys-derived index is in range */
+  *capacity = UINT32_MAX;
   return v->values;
+}
+
+
+/* Does tp keep the instance dict in the managed pre-header slot? */
+static inline int kos_type_has_managed_dict(PyTypeObject *tp) {
+  return (tp->tp_flags & Py_TPFLAGS_MANAGED_DICT) != 0;
+}
+
+
+/*
+   The managed dict, or NULL when none has been materialized. A peek only:
+   _PyObject_GetDictPtr materializes the dict of a values-mode instance as a
+   side effect, which kills the inline-values fast paths for that object, so
+   readers that merely want to consult the dict must come through here. On
+   3.11 the dict pointer sits three slots ahead of the object, beside the
+   values pointer at obj[-4].
+*/
+static inline PyObject *kos_managed_dict_peek(PyObject *obj) {
+  return *(((PyObject **) obj) - 3);
 }
 
 

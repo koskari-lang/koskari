@@ -65,8 +65,8 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   KosOpResult r = kos_call_invoke(es, resolved,
                                   (send_self == 0) ? obj : NULL,
                                   argv, (Py_ssize_t) n, NULL,
-                                  KOS_CALL_ARGV_WINDOW);
-  Py_DECREF(resolved);
+                                  KOS_CALL_ARGV_WINDOW
+                                  | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
   return r;
 }

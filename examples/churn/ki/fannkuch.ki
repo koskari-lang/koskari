@@ -36,9 +36,9 @@ define fannkuch [n]:
             set! max-flips flips
 
         if (== 0 (% perm-count 2)):
-            set! checksum (+ checksum flips)
+            incr! checksum flips
         else:
-            set! checksum (- checksum flips)
+            decr! checksum flips
 
         ;; advance perm1 to the next permutation
         define advanced False
