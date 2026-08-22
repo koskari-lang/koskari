@@ -691,15 +691,27 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
             && kos_tail_ns_reusable(KosDynFrame_NS(frame))) {
           PyObject *ns = KosDynFrame_NS(frame);
 
-          KosNamespace_ClearRawFast(ns);
-          if (unlikely(KosFormals_SimpleStealApplyBlock(
-                  ns, *caller_slot, nargs) < 0)) {
+          /* Verify the arg span BEFORE releasing the raw locals: a
+             steal underrun after the clear would leave the still
+             installed frame with a wiped namespace.  Impossible by
+             classification; if it ever fires, the raise (delegated to
+             the formals checker so the report has one home) happens
+             with the namespace untouched. */
+          if (unlikely(nargs
+                       && (! *caller_slot
+                           || (size_t) nargs
+                               > KosSegment_LEN(*caller_slot)))) {
+            (void) KosFormals_SimpleStealApplyBlock(ns, *caller_slot,
+                                                    nargs);
             if (window)
               kos_stack_drop_noerr_fast(caller_slot, window);
             if (flags & KOS_CALL_CALLABLE_OWNED)
               Py_DECREF(callable);
             return EVAL_RAISE();
           }
+
+          KosNamespace_ClearRawFast(ns);
+          (void) KosFormals_SimpleStealApplyBlock(ns, *caller_slot, nargs);
           KosStack_Clear(&KosDynFrame_STACK(frame));
           KOS_TRACE_EVENTS_INC(KOS_TE_CALL_TAIL_INPLACE);
           es->pc = 0;
