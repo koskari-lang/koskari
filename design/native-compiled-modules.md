@@ -319,6 +319,70 @@ Estimated at 6-8 focused sessions to the success criteria. The estimate is
 short because the expensive 80% -- uniform handlers and the event-driven
 loop -- was paid for in advance, deliberately.
 
+## Interaction with threaded dispatch
+
+The function-pointer dispatch rework
+([interpreter/threaded-dispatch.md](interpreter/threaded-dispatch.md))
+reshapes the interpreter's own dispatch, and in doing so front-loads several
+of this design's prerequisites. Its phase 1 replaces the computed-goto loop
+with a per-instruction handler pointer resolved at finalize; its phase 2 is
+the `musttail` tail-threaded form. The overlaps, and the one thing that must
+be decided jointly:
+
+**The phase-1 handler table is the capsule table (work item 2).** Phase 1
+generates an `extern kos_op_handlers[]` from `opcodes.incl` and drops
+`always_inline` from `KOS_OP_HANDLER`, so the handlers become real
+single-definition symbols on one signature. That is exactly what the capsule
+must export; without it the capsule forces out-of-line clones of the
+`always_inline` handlers on the old signature. Building the capsule then means
+exporting the phase-1 array through the `PyCapsule`, not synthesizing a
+separate table.
+
+**The phase-1 slot region is the per-instruction operand record.** Phase 1
+adds a per-`pc` `KosSlot { fn; op; arg; cache; }` region to the unified block,
+parallel to `[code]`. The MVP's per-instruction call passes operands to the
+handler through it directly: `handler(es, &code->dispatch[pc])`, with consts
+and positions still read from the `Code` object as this design already
+specifies. The slot region is pc-indexed, so it aligns with the jump table
+(including v0's branch targets) at no cost.
+
+**The phase-1 dispatch seam is the emitter's control-edge vocabulary.** Phase
+1 routes every handler's normal and branch exits through
+`EVAL_DISPATCH_NORMAL` / `EVAL_DISPATCH_TO(target)` macros. Those name the
+exact edges the MVP epilogue plumbs (NORMAL falls through; a branch retargets
+pc; other kinds store pc and return). The subroutine-threaded MVP reads them
+at runtime off the returned `KosOpResult`; the later inlining tier expands the
+same edges to C (`NORMAL` -> fall through, `TO(target)` -> `goto L_target`).
+The emitter becomes a third consumer of the seam beside the loop and the
+tail-threaded form.
+
+**Phase 2's invariant is this design's segment-boundary invariant.** Phase 2
+requires that no continuation-relevant state live only in argument registers
+across a suspension point, draining the promoted facets to `KosEvalState`
+before returning, and it audits every control-event exit to confirm it. That
+is the same rule stated here as "no C-local state lives across a segment
+boundary" and "the heap stack stays canonical wherever capture or unwind can
+occur." The phase-2 audit hands this design a handler set already proven
+segment-safe, retiring part of the MVP's one real unknown (work item 1) and
+its multi-shot-through-a-compiled-frame test (work item 4).
+
+**No overlap on musttail or facet promotion.** This design does not use
+`musttail`: calls trampoline, and each `Code` emits as one C function with
+internal `goto`s, so there are no inter-function tail calls to guarantee.
+Phase 2's promotion of segment/namespace into argument registers is a
+threaded-interpreter optimization; the AOT equivalent is the write-through
+stack cache, a per-emitted-function choice unrelated to the handler signature.
+
+**The joint decision: one handler signature.** Phase 1 changes the opcode
+handler signature from `(KosEvalState *es, KosOp *insn)` to
+`(KosEvalState *es, KosSlot *cur)`. The capsule table's element type and the
+emitter's generated calls must match whatever phase 1 lands. The `(es, insn)`
+snippets in "The compilation model" and "What already exists" above, and the
+`KosNativeHandlerFn`-adjacent references, are written against the pre-phase-1
+signature and are updated to the slot form once phase 1 settles it. Deciding
+the signature once in phase 1 keeps the interpreter and the compiled form on a
+single handler ABI; letting them diverge yields two.
+
 ## Open questions
 
 - Exact per-iteration duty list from the audit, and whether any opcode
@@ -334,6 +398,10 @@ loop -- was paid for in advance, deliberately.
 
 ## Related
 
+- [interpreter/threaded-dispatch.md](interpreter/threaded-dispatch.md) -- the
+  interpreter dispatch rework whose phase 1 produces the handler table, slot
+  region, and dispatch seam this design reuses; see "Interaction with threaded
+  dispatch" above.
 - [interpreter/kio-format.md](interpreter/kio-format.md) -- the format this
   lowers one step past.
 - [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md) --
