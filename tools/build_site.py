@@ -50,8 +50,8 @@ LICENSE_LABEL = "GPLv3 licensed"
 # serves the custom domain from the deployed artifact.
 SITE_DOMAIN = "koskari.org"
 
-# Lockup (apple + "Koskari") is generated from koskari-icon.svg by
-# write_lockup_svg; keep placement and viewBox in sync here.
+# Lockup (apple + "Koskari") is generated from koskari/assets/koskari-icon.svg
+# by write_lockup_svg; keep placement and viewBox in sync here.
 ICON_WORDMARK_VIEWBOX = "-7 -10 500 114"
 ICON_WORDMARK_MARKUP = """
   <text x="110" y="92"
@@ -140,7 +140,7 @@ def write_lockup_svg(out_path, root=None):
     :return: None
     """
 
-    icon = project_root(root) / "docs" / "_static" / "koskari-icon.svg"
+    icon = project_root(root) / "koskari" / "assets" / "koskari-icon.svg"
     svg = icon.read_text(encoding="utf-8")
     svg = re.sub(
         r'\bviewBox="[^"]*"',
@@ -191,8 +191,9 @@ def render(src, out, root=None):
     (out / "index.html").write_text(page, encoding="utf-8")
 
     static = project_root(root) / "docs" / "_static"
+    assets = project_root(root) / "koskari" / "assets"
     shutil.copyfile(static / "style.css", out / "style.css")
-    shutil.copyfile(static / "koskari-icon.svg", out / "koskari-icon.svg")
+    shutil.copyfile(assets / "koskari-icon.svg", out / "koskari-icon.svg")
     lockup = static / "koskari-lockup.svg"
     if lockup.is_file():
         shutil.copyfile(lockup, out / "koskari-lockup.svg")

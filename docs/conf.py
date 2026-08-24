@@ -84,8 +84,8 @@ html_theme_options = {
     'includehidden': True,
 }
 html_static_path = ['_static']
-html_favicon = '_static/koskari-icon.svg'
-html_logo = '_static/koskari-lockup-64.png'
+html_favicon = '../koskari/assets/koskari-icon.svg'
+html_logo = '../koskari/assets/koskari-lockup-64.png'
 
 # The docs are published under the /docs/ subpath of koskari.org; the
 # landing page occupies the site root. This drives canonical URLs.
