@@ -32,11 +32,31 @@ or error. Any other lone name is an ordinary variable reference
 unless a syntax was defined with the `bare-syntax` kind; see
 [Name resolution](../reference/concepts/name-resolution-and-prefixes.md).
 
-## A bare form never continues onto the next line
+## Trailing `:` continues a call; its absence ends one
 
-An indented line under a header is a *child* form, never a
-continuation. To span lines, open a parenthesis -- inside `(`, `[`,
-or `{`, newlines and indentation are insignificant.
+A header line ending in `:` is not complete -- it keeps reading
+arguments from the following indented lines, one argument per line,
+recursively (a line ending in its own `:` opens a further nested
+continuation). This rule is uniform across every header: `define`,
+`set!`, `if`, `try`, `list-each`, any call at all. There is no
+distinct "block" construct; a colon-terminated header plus its
+indented lines *is* one parenthesized form, mechanically:
+
+```koskari
+define parts:
+    list-each [x (range 0 10)]:
+        + x 250
+```
+
+is identical to
+
+```koskari
+(define parts (list-each [x (range 0 10)] (+ x 250)))
+```
+
+A header line with **no** trailing `:` has already completed as its
+own form. An indented line beneath it is an unrelated sibling, not an
+argument -- this is the trap, not the colon:
 
 ```koskari
 ; WRONG: reads as (compile_file src dest) then (source_filename: name);
@@ -44,20 +64,27 @@ or `{`, newlines and indentation are insignificant.
 compile_file src dest
     source_filename: name
 
-; correct: parentheses span lines freely
+; WRONG: reads as (define parts) then a disconnected list-each form
+define parts
+    list-each [x (range 0 10)]:
+        + x 250
+
+; correct: parentheses span lines freely regardless of any colon
 (compile_file src dest
     source_filename: name)
 ```
 
-The same applies to `define`: `define x` followed by an indented value
-line reads as `(define x)` plus a separate expression, failing with
-`SyntaxMatchError` at compile.
+`define x` (bare, no colon, nothing after it) failing to attach a
+value on the next line is this same rule, not a `define`-specific
+exception: `define x` is already `(define x)`; the value has to be on
+that line, or the header needs the trailing `:` shown above.
 
 ## The block colon is layout-only
 
-A `:` opens an indented block only at the end of a layout line. Inside
-parentheses it reads as a bare symbol and corrupts the form's argument
-positions.
+The continuation rule above applies only to a `:` at the end of a
+layout line. Inside parentheses -- where newlines and indentation are
+already insignificant -- a `:` reads as an ordinary bare symbol
+instead, and corrupts the form's argument positions:
 
 ```koskari
 ; WRONG: `:` becomes an argument of unless
@@ -118,6 +145,18 @@ preferred spelling for calling a method on the result of a call:
 ```
 
 Both compile the same way; write the dot-suffix form.
+
+Chaining two method calls needs a paren around each call step, not
+around the whole chain. A dot with no enclosing parens is always an
+*attribute read*, never a call -- `x.strip.lower` reads as
+`(attr (attr x strip) lower)`: an attribute lookup on the unbound
+`strip` method object, calling nothing. Parenthesize each call and let
+the next dot suffix onto that call's *result*:
+
+```koskari
+((x.strip).lower)   ; correct: call strip, then call lower on its result
+(x.strip.lower)     ; WRONG: attribute access only, strip is never called
+```
 
 ## Subscripts use the bracket suffix
 

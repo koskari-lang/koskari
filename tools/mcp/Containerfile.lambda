@@ -38,7 +38,6 @@ RUN pip install --no-cache-dir --disable-pip-version-check \
 WORKDIR /srv
 COPY mcp_server.ki ./mcp_server.ki
 COPY index.html ./index.html
-COPY koskari-icon.svg ./koskari-icon.svg
 COPY data/ ./data/
 
 # buffered suits the small, sub-second stateless JSON responses; switch to

@@ -1,0 +1,167 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+koskari.cli.term_graphics
+
+Terminal graphics detection and encoding for the REPL banner. Supports
+the Kitty graphics protocol and the iTerm2 inline images protocol, both
+of which embed PNG bytes directly in an escape sequence with no image
+decoding required. Detection is heuristic (environment variables only,
+no interactive terminal query) and always declines on a non-tty stream,
+so redirected or piped output is never touched.
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
+"""
+
+
+import base64
+import os
+import sys
+
+import-from ..assets icon_png_bytes
+
+
+(declare-exports detect_protocol emit_icon render_iterm2_escape render_kitty_escape)
+
+
+define multiplexer-term-prefixes #("screen" "tmux")
+
+define override-protocols #("kitty" "iterm2" "none")
+
+define kitty-chunk-size 4096
+
+
+@demand
+define detect_protocol [env: None isatty: None]:
+  """
+  Detect which terminal graphics protocol, if any, the current
+  terminal is likely to support.
+
+  KOSKARI_TERM_GRAPHICS in the environment (kitty, iterm2, or none)
+  overrides detection entirely; this is the escape hatch for terminal
+  multiplexers that pass the escape sequences through and for anyone
+  who wants graphics off regardless of what is detected. Otherwise,
+  detection is by environment variable only, and declines inside
+  tmux/screen since they typically swallow these sequences.
+
+  :param env: environment mapping, defaults to os.environ
+  :param isatty: whether the target stream is a tty, defaults to
+      sys.stdout.isatty()
+  :return: 'kitty', 'iterm2', or None
+  """
+
+  when (None? env):
+    set! env os.environ
+
+  when (None? isatty):
+    set! isatty (sys.stdout.isatty)
+
+  unless isatty:
+    return None
+
+  define override (env.get "KOSKARI_TERM_GRAPHICS")
+  unless (None? override):
+    set! override ((override.strip).lower)
+    when (in override override-protocols):
+      return (unless (== override "none") override)
+
+  define term (env.get "TERM" "")
+  when (or (term.startswith multiplexer-term-prefixes) (env.get "TMUX")):
+    return None
+
+  when (or (in "KITTY_WINDOW_ID" env)
+           (term.startswith "xterm-kitty")
+           (in "GHOSTTY_RESOURCES_DIR" env)):
+    return "kitty"
+
+  when (in (env.get "TERM_PROGRAM") #("iTerm.app" "WezTerm")):
+    return "iterm2"
+
+  None
+
+
+@demand
+define render_kitty_escape [png_bytes]:
+  """
+  Encode PNG bytes as a Kitty graphics protocol transmit-and-display
+  sequence, base64-chunked at 4096 bytes per chunk as the protocol
+  requires. Responses are suppressed (q=2) so nothing leaks back into
+  the terminal's input stream.
+
+  :param png_bytes: PNG image bytes
+  :return: escape sequence text
+  """
+
+  define payload ((base64.b64encode png_bytes).decode "ascii")
+  define total (len payload)
+
+  define parts:
+    list-each [start (range 0 total kitty-chunk-size)]:
+      define stop (+ start kitty-chunk-size)
+      define chunk (item-slice payload start: start stop: stop)
+      define more (if (>= stop total) 0 1)
+      define keys (if (== start 0)
+        f"a=T,f=100,q=2,m={more}"
+         f"m={more}")
+      f"\x1b_G{keys};{chunk}\x1b\\"
+
+  ("".join parts)
+
+
+@demand
+define render_iterm2_escape [png_bytes name: "koskari-icon.png"]:
+  """
+  Encode PNG bytes as an iTerm2 inline image protocol sequence.
+
+  :param png_bytes: PNG image bytes
+  :param name: filename reported to the terminal
+  :return: escape sequence text
+  """
+
+  define encoded_name ((base64.b64encode (name.encode "utf-8")).decode "ascii")
+  define payload ((base64.b64encode png_bytes).decode "ascii")
+  define png_len (len png_bytes)
+  f"\x1b]1337;File=name={encoded_name};size={png_len};inline=1:{payload}\x07"
+
+
+define-demanding emit_icon [stream: None size: 32]:
+  """
+  Write the packaged icon to stream via whichever graphics protocol
+  detect_protocol() finds, if any.
+
+  :param stream: output stream, defaults to sys.stdout
+  :param size: PNG size to emit, one of koskari.assets.ICON_PNG_SIZES
+  :return: True if an escape sequence was written, False otherwise
+  """
+
+  set! stream (or stream sys.stdout)
+
+  define protocol (detect_protocol isatty: (stream.isatty))
+  when (None? protocol):
+    (return False)
+
+  define png_bytes (icon_png_bytes size)
+  define escape (if (== protocol "kitty")
+    (render_kitty_escape png_bytes)
+    (render_iterm2_escape png_bytes))
+
+  (stream.write escape)
+  (stream.write "\n")
+  (stream.flush)
+  True
+
+
+; The end.

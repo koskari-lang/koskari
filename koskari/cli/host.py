@@ -29,6 +29,7 @@ import sys
 
 import koskari
 
+# from . import term_graphics
 from ..exceptions import CodeBoundary, CompilerError, UncaughtCompilerError
 from ..lexer.discovery import special_names_for_repl
 
@@ -38,6 +39,7 @@ __all__ = (
     'REPL_INFRASTRUCTURE_MODULES',
     '_await_user_form',
     '_make_repl_prompter',
+    # 'maybe_print_logo',
     'startup_lines',
     'version_line',
 )
@@ -69,6 +71,18 @@ def startup_lines():
         'Koskari %s on %s' % (koskari.__version__, platform.system()),
         'Python %s' % (sys.version,),
     ]
+
+
+# def maybe_print_logo(stream=None):
+#     """
+#     Print the packaged icon to stream via a terminal graphics protocol,
+#     if one is detected. Silently does nothing otherwise.
+#
+#     :param stream: output stream, defaults to sys.stdout
+#     :return: None
+#     """
+#
+#     term_graphics.emit_icon(stream=stream)
 
 
 # ---------------------------------------------------------------------------

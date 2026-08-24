@@ -210,3 +210,23 @@ tags:
   - "surface:block"
   - invalid
 notes: "corrective: indent the continuation, any amount will do -- even less than the block's own body indent. a continuation belongs to the line that opened it, and column 0 ends the logical line before the gap skip can reach the segment"
+---
+id: reader-dot-attr-chained-call-invalid-001
+feature: reader/dot-attr
+source: |-
+  (begin (define x "  AB  ") (x.strip.lower))
+  
+verify:
+  read: (begin (define x "  AB  ") ((attr (attr x strip) lower)))
+  invalid: "a dot with no enclosing parens is an attribute read, never a call; x.strip.lower reads as (attr (attr x strip) lower), an attribute lookup for 'lower' on the unbound strip method object, and fails at runtime with AttributeError: 'builtin_function_or_method' object has no attribute 'lower'"
+references:
+  - reference/grammar.md
+  - reference/concepts/brackets-and-call-convention.md
+stability: evolving
+tags:
+  - object
+  - dot-attr
+  - python-interop
+  - invalid
+  - pitfall
+notes: "corrective: (begin (define x \"  AB  \") ((x.strip).lower))"

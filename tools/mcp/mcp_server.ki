@@ -34,6 +34,7 @@ import-from os getenv
 import-from os.path abspath basename dirname join
 import-from pathlib Path
 
+import-from koskari.assets icon_svg_text
 import-from mcp.server MCPServer
 import-from mcp.server.transport_security TransportSecuritySettings
 import-from mcp_types Icon
@@ -62,13 +63,11 @@ define PROGRAMS_VIEW "koskari-programs"
 define PAGE_PATH (getenv "KOSKARI_CORPUS_PAGE"
     (join (dirname (abspath __file__)) "index.html"))
 
-;; The project mark, ships beside this script for the same reason as
-;; the landing page. This is a short-term local copy of
-;; docs/_static/koskari-icon.svg (the container build context cannot
-;; reach docs/); once https://koskari.org publishes the canonical
-;; file, ICON_URL below should point there instead.
-define ICON_PATH (getenv "KOSKARI_CORPUS_ICON"
-    (join (dirname (abspath __file__)) "koskari-icon.svg"))
+;; The project mark comes from the installed koskari.assets package by
+;; default -- no local copy needed, since the image already installs
+;; koskari itself. KOSKARI_CORPUS_ICON overrides with a path to a
+;; different SVG file, for ops flexibility.
+define ICON_PATH_OVERRIDE (getenv "KOSKARI_CORPUS_ICON" None)
 define ICON_URL "https://corpus.koskari.org/koskari-icon.svg"
 
 define VERIFY_KEYS #(
@@ -241,10 +240,14 @@ define load-page! []:
         (logger.info "no landing page at %s: %s" PAGE_PATH exc)
 
     try:
-        set! STATE["icon"] ((Path ICON_PATH).read_text encoding: "utf-8")
-        (logger.info "loaded project icon from %s" ICON_PATH)
+        if (None? ICON_PATH_OVERRIDE):
+            set! STATE["icon"] (icon_svg_text)
+            (logger.info "loaded project icon from koskari.assets")
+        else:
+            set! STATE["icon"] ((Path ICON_PATH_OVERRIDE).read_text encoding: "utf-8")
+            (logger.info "loaded project icon from %s" ICON_PATH_OVERRIDE)
     except [OSError as: exc]:
-        (logger.info "no project icon at %s: %s" ICON_PATH exc)
+        (logger.info "no project icon available: %s" exc)
 
 
 ;; === Row shaping ===

@@ -135,3 +135,22 @@ tags:
   - surprising
   - pitfall
 notes: "corrective: #{\"ok\": True}. The payload-dict idiom is quoted string keys throughout: #{\"ok\": True \"msg\": \"pong\"}."
+---
+id: iter-tuple-vs-list-startswith-invalid-001
+feature: "reader/#tuple"
+source: |-
+  ("abc".startswith #["a" "b"])
+  
+verify:
+  read: "((attr \"abc\" startswith) (#list \"a\" \"b\"))"
+  invalid: "str.startswith requires a tuple of prefixes, not a list; #[...] and #(...) read with the same grammar but build different runtime types, and the list form fails at runtime with TypeError: startswith first arg must be str or a tuple of str, not list"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - iter
+  - tuple
+  - python-interop
+  - invalid
+  - pitfall
+notes: "corrective: (\"abc\".startswith #(\"a\" \"b\"))"

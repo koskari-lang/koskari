@@ -456,17 +456,22 @@ site-preview: site  ## Build the full site and serve build/site for local previe
 	@cd $(BUILD_DIR)/site && $(PYTHON) -m http.server 8000
 
 # Raster favicons / social assets regenerated from the canonical SVG.
-# Committed under docs/_static; re-run when the icon artwork changes.
-ICON_SVG := docs/_static/koskari-icon.svg
-ICON_PNG_DIR := docs/_static
+# koskari/assets/koskari-icon.svg is the source of truth -- it is also
+# the packaged runtime asset, so all three PNGs render straight into
+# that package. docs/_static carries only the generated wordmark
+# lockup SVG, used by the landing-page build. All outputs are
+# committed; re-run when the icon artwork changes.
+ICON_SVG := koskari/assets/koskari-icon.svg
+ICON_PNG_DIR := koskari/assets
+ICON_DOCS_DIR := docs/_static
 ICON_FONT_DIR := docs/_static/fonts
 ICON_SIZES := 32 256
 ICON_PNGS := $(foreach s,$(ICON_SIZES),$(ICON_PNG_DIR)/koskari-icon-$(s).png)
-ICON_LOCKUP_SVG := $(ICON_PNG_DIR)/koskari-lockup.svg
+ICON_LOCKUP_SVG := $(ICON_DOCS_DIR)/koskari-lockup.svg
 ICON_LOCKUP_PNG := $(ICON_PNG_DIR)/koskari-lockup-64.png
 ICON_FONTCONFIG := $(BUILD_DIR)/koskari-fonts.conf
 
-icons: $(ICON_PNGS) $(ICON_LOCKUP_SVG) $(ICON_LOCKUP_PNG)  ## Regenerate PNG/SVG lockup from koskari-icon.svg
+icons: $(ICON_PNGS) $(ICON_LOCKUP_SVG) $(ICON_LOCKUP_PNG)  ## Regenerate packaged icon PNGs and the docs lockup SVG from koskari/assets/koskari-icon.svg
 
 $(ICON_PNG_DIR)/koskari-icon-%.png: $(ICON_SVG)
 	@$(call checkfor,rsvg-convert)
