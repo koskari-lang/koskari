@@ -234,7 +234,7 @@ deferred until the next full prologue cycle.
 
 **Future work:** Domain-scoped **`maybe_cooperate()`** / **`ensure_gil()`** and
 cooperation inside dynchain walks are described in
-[interpreter/gil-cooperation.md](interpreter/gil-cooperation.md) (design
+[archive/gil-cooperation.md](archive/gil-cooperation.md) (design
 proposal; not yet the primary mechanism). See also [TODO.md](TODO.md) § GIL.
 
 ---
@@ -1814,7 +1814,7 @@ This matches Scheme's `dynamic-wind` semantics.
 
 ## 12. Related Documentation
 
-- [design/interpreter/gil-cooperation.md](interpreter/gil-cooperation.md) — eval-loop GIL polling (implemented); proposed domain-TLS **`maybe_cooperate()`** / **`ensure_gil()`**
+- [design/archive/gil-cooperation.md](archive/gil-cooperation.md) — eval-loop GIL polling (implemented); proposed domain-TLS **`maybe_cooperate()`** / **`ensure_gil()`**
 - [design/TODO.md](TODO.md) — open work including GIL expansion and async nested await during transfer
 - [design/archive/kos_eval_state_api_migration.md](archive/kos_eval_state_api_migration.md) — archived `KosEvalState_*` opcode migration ledger
 - [design/archive/eval-result-unification.md](archive/eval-result-unification.md) — archived `KosOpResult` landing record

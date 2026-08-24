@@ -28,5 +28,5 @@ tree location TBD when implemented).
 ## Related
 
 - [../api/tracing.md](../api/tracing.md) — existing tracing and timing hooks.
-- [../interpreter/gil-cooperation.md](../interpreter/gil-cooperation.md) —
+- [../archive/gil-cooperation.md](../archive/gil-cooperation.md) —
   cooperation and timing noise context.

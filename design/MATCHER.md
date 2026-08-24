@@ -17,7 +17,7 @@ runtime match/case: `koskari/compile/specials/conditionals.py`,
 - [api/pattern-matching.md](api/pattern-matching.md) — tagged-tuple IR and migration notes
 - [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md) — hygiene discovery goals and macro modes
 - [language/matcher-ng-rollup.md](language/matcher-ng-rollup.md) — rollout notes and as-built sketches
-- [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md) — `Datum` in macro expansion
+- [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) — `Datum` in macro expansion
 - [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — specials, syntax-rules, and shared finalize pipeline
 - [archive/match-pattern-language.md](archive/match-pattern-language.md) — runtime pattern-language design record
 - [archive/match-case-form.md](archive/match-case-form.md) — MATCH_CASE opcode / cache design record

@@ -442,7 +442,7 @@ comes from before the module's own declaration speaks. Lowest to highest:
 1. **Built-in default** — what the registry declares as each feature's baseline.
 2. **Package pragma** — a package-wide baseline inherited by sub-packages and
    sub-modules, declared with `(package-pragma …)` in a package `__init__`.
-   See [pragma-package.md](language/pragma-package.md).
+   See [pragma-package.md](archive/pragma-package.md).
 3. **CLI / REPL session default** *(future)* — a pragma seeded for the entry or
    REPL module from flags or a settings file. See [pragma-cli.md](pragma-cli.md).
 4. **Module declaration** — `(pragma …)` in the module; always wins; forward-only.
@@ -464,7 +464,7 @@ Two guards fall out and are worth reserving namespace for:
 
 ## Package Pragma
 
-**Implemented.** Design doc: **[pragma-package.md](language/pragma-package.md)**
+**Implemented.** Design doc: **[pragma-package.md](archive/pragma-package.md)**
 (and the CLI seed in [pragma-cli.md](language/pragma-cli.md)). This mechanism
 was formerly called "meta-pragma"; the current names are `package-pragma` /
 `__package_pragma__`.
@@ -546,7 +546,7 @@ registry defaults in a follow-up.
    `(setq __pragma__ (.rebuild __pragma__ …))`; `rebuild` validates against the
    registry and announces at eval time.
 6. **Defer** — `.kio` pragma serialization, ~~the package pragma loader
-   integration~~ (landed; see [pragma-package.md](language/pragma-package.md)),
+   integration~~ (landed; see [pragma-package.md](archive/pragma-package.md)),
    CLI/REPL sources, profiles, and the reproducibility lint.
 
 ---

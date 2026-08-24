@@ -38,7 +38,7 @@ invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
 Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
 
 **Syntax boxes and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own syntax-rule expansion and template hygiene; macro output runs **`koskari.reader.layouts.apply_layout`** (module namespace) before binding-symbol discovery and the hygiene / Datum finalize passes; see
-[language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md),
+[archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md),
 [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md), and
 [MATCHER.md](MATCHER.md) ( **`Datum`**, **`DatumFrame`**, which matchers capture
 and which register hygiene regions).
@@ -3176,7 +3176,7 @@ resolve to, so the star already carries every feature's facets.
 recognizes triple-backtick fence syntax and lowers it to this form; the special
 resolves a handler, hands it the raw foreign source, and compiles the Koskari
 source the handler returns in place of the fence. Rarely written by hand -- the
-reader emits it. Design: [fenced-foreign-literal.md](fenced-foreign-literal.md).
+reader emits it. Design: [archive/fenced-foreign-literal.md](archive/fenced-foreign-literal.md).
 
 **Behaviour:** Source-to-source, parallel to layout expansion. This special
 emits no opcodes of its own; the bytecode comes from compiling the form the

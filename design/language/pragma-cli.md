@@ -20,7 +20,7 @@ The pragma **precedence chain** (see [../PRAGMA.md](../PRAGMA.md) § Sources and
 Precedence), lowest to highest:
 
 1. Built-in defaults (the registry baselines).
-2. Package pragma (inherited — see [pragma-package.md](pragma-package.md)).
+2. Package pragma (inherited — see [pragma-package.md](../archive/pragma-package.md)).
 3. **CLI / REPL session default** ← *this document*.
 4. The module's own `(pragma …)` declaration.
 
@@ -105,6 +105,6 @@ build_module_load_facets(module, filename=None, source_pragma=None)
 - A persistent, per-module record — the seed is a session default, discarded
   once the module's own declarations take over.
 - Package-wide defaults that travel with a distributed package — that is
-  [pragma-package.md](pragma-package.md).
+  [pragma-package.md](../archive/pragma-package.md).
 
-Ref: [../PRAGMA.md](../PRAGMA.md), [pragma-package.md](pragma-package.md).
+Ref: [../PRAGMA.md](../PRAGMA.md), [pragma-package.md](../archive/pragma-package.md).

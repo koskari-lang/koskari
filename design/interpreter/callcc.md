@@ -56,7 +56,7 @@ Wind/unwind hooks are **bytecode blocks**, not Python callables:
   **segmented transfer**: it clears the exception, unwinds all its own
   WITH/finally extents cleanly (exit handlers see `(None, None, None)`), then
   re-raises the original exception unchanged via a `KosDynCCRaise` sentinel at
-  the root of its chain (see [evaluator-token-continuation.md §5](evaluator-token-continuation.md))
+  the root of its chain (see [../archive/evaluator-token-continuation.md §5](../archive/evaluator-token-continuation.md))
 
 ## Implementation
 
@@ -371,7 +371,7 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 
 ## Related Documentation
 
-- [evaluator-token-continuation.md](evaluator-token-continuation.md) — Evaluator
+- [../archive/evaluator-token-continuation.md](../archive/evaluator-token-continuation.md) — Evaluator
   token, KosEvaluatorToken, KoskariContinuationApply, and continuation
   application model
 - [evaluator.md](evaluator.md) — Overall evaluation model and API

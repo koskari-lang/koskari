@@ -8,7 +8,7 @@ This directory documents the language-level features of Koskari, including synta
 - **special-forms.md**: All special forms (compile-time constructs)
 - **operators.md**: Operators and their compile-time optimizations
 - **macros.md**: Macro system (reader macros and compile-time macros) — see [archive/macros.md](../archive/macros.md)
-- **macro-hygiene-syntax-boxes.md**: Implemented syntax-box hygiene (`koskari.syntax.Syntax`, `koskari.hygiene`); archived full design note in [archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)
+- **[archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)** (archived): syntax-box hygiene design (`koskari.syntax.Syntax`, `koskari.hygiene`); implemented
 - **unified-matcher-transformer-model.md**: Shared Matcher IR and transformer pipeline for `define-syntax`, `macro-rules`, specials, and post-expand hygiene/unbox
 - **syntax.md**: Syntax elements, literals, and parsing rules
 - **Layout syntax (user docs):** [docs/reference/reader-layout.md](../docs/reference/reader-layout.md), [docs/reference/concepts/layout-and-s-expressions.md](../docs/reference/concepts/layout-and-s-expressions.md); archived drafts in [archive/layout-syntax.md](../archive/layout-syntax.md), [archive/layout-syntax-formal.md](../archive/layout-syntax-formal.md)

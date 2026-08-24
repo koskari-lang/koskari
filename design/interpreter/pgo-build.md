@@ -11,7 +11,7 @@ behavior rather than guesses. CPython ships PGO for the same reason.
 This document specifies the correct procedure for producing PGO builds and
 integrating them into the wheel build matrix.
 
-**See also:** [attr-lookup-cache.md](attr-lookup-cache.md) (the CALL_*_ATTR
+**See also:** [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md) (the CALL_*_ATTR
 dispatch-layout tax PGO is expected to dissolve),
 [kio-setuptools-build.md](kio-setuptools-build.md) (extension build plumbing).
 

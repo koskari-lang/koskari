@@ -41,7 +41,7 @@ real workload that shows the win:
 - **Jump / exception-type caches** — speculative; evaluate only if a workload
   demands them.
 
-Ref: [interpreter/attr-lookup-cache.md](interpreter/attr-lookup-cache.md)
+Ref: [archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
 (§Phase 5).
 
 ---

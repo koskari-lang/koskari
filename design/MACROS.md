@@ -86,7 +86,7 @@ implemented in `Compiler` (`compile_symbol`, `compile_pair`, `lower_head`):
   TODO.md § macro-expansion cycle checks.
 
 **Design:** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md),
-[MATCHER.md](MATCHER.md), [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md).
+[MATCHER.md](MATCHER.md), [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md).
 Local compile-time binding: [archive/let-syntax-and-inline-macro.md](archive/let-syntax-and-inline-macro.md) (archived).
 
 ### Block quasiquote and `:block:` layout expansion

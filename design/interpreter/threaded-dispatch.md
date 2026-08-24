@@ -13,7 +13,7 @@ form drop in later as a localized change.
 **Status:** Design proposal -- not yet implemented.
 
 **See also:** [bytecode-finalization.md](bytecode-finalization.md) (the
-finalize pipeline this lowering hooks into), [attr-lookup-cache.md](attr-lookup-cache.md)
+finalize pipeline this lowering hooks into), [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)
 (per-site cache index, the existing precedent for a load-time,
 never-serialized per-instruction annotation), [EVALUATOR.md](../EVALUATOR.md),
 [../native-compiled-modules.md](../native-compiled-modules.md) (AOT lowering to

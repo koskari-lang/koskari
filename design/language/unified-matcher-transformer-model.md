@@ -10,7 +10,7 @@
 `compile/macro-match` in `koskari/compile/specials/syntax.py`), **template hygiene**
 (`koskari/hygiene.py`), and **syntax boxes** (`koskari.syntax.Syntax`,
 **`finalize_macro_hygiene_unbox_one_pass`** and related helpers in **`hygiene`**) are implemented. Complements
-[macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md).
+[../archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md).
 
 **Terminology: RULE vs MATCH (macro pattern languages)**
 
@@ -61,7 +61,7 @@ embedded via a **`rule`** wrapper inside RULE columns.
 
 ## Related documents
 
-- **Syntax boxes / procedural hygiene**: [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md)
+- **Syntax boxes / procedural hygiene**: [../archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)
 - **Matcher hygiene metadata (current implementation)**: [matcher-hygiene-extensions.md](../api/matcher-hygiene-extensions.md)
 - **Pattern matching API (tagged tuples, `koskari.matcher` / `koskari.lib.Matcher`)**: [pattern-matching.md](../api/pattern-matching.md)
 - **Implemented compile-time macros**: [MACROS.md](../MACROS.md)
@@ -151,7 +151,7 @@ For every rule, after the worker returns:
 1. **Hygiene transform** — Matcher-informed gensym / binding isolation (reuse
    and extend `_collect_binding_symbols_matcher` and related paths for
    templates; boxed payloads skip renaming per
-   [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md)).
+   [../archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)).
 
 2. **Unboxing / splice** — Resolve **`Syntax`** boxes; merge call-site segments
    into the final tree (`finalize_macro_hygiene_unbox_one_pass` and related
@@ -372,7 +372,7 @@ preview heuristics.
 Single box type: preserves call-site segments, skips premature transformation,
 **unboxed** in the final post-expand phase. Primary consumer: **macro** workers
 mixing generated skeleton with user subforms. See
-[macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md).
+[../archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md).
 
 ---
 

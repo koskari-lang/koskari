@@ -82,7 +82,7 @@ gives the idiomatic direct form `(item-slice seq 1)` in place of
 ### Macros
 
 - **Reader macros** on `koskari.reader.parser` (quote, quasiquote, unquote, unquote-splicing, block quasiquote, `&` → ref, thunk `{…}`, etc.).
-- **Compile-time**: `syntax-rules`, `macro-rules`, `syntax-match`, `macro-match`, **`special-rules`**, **`special-match`**; hygiene via `koskari.syntax` / `koskari.hygiene` ([language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md), [MATCHER.md](MATCHER.md)).
+- **Compile-time**: `syntax-rules`, `macro-rules`, `syntax-match`, `macro-match`, **`special-rules`**, **`special-match`**; hygiene via `koskari.syntax` / `koskari.hygiene` ([archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md), [MATCHER.md](MATCHER.md)).
 - **Local compile-time binding**: **`let-syntax`**, **`inline-macro`** ([MACROS.md](MACROS.md); archived design [archive/let-syntax-and-inline-macro.md](archive/let-syntax-and-inline-macro.md)).
 - **`macroexpand-1`** in `bootstrap/basics.ki`.
 
@@ -104,7 +104,7 @@ namespace and compiles the Koskari source that handler returns. The transform
 is compile-time, parallel to layout expansion. **`fence/bash`** (lowering to
 `run-process`) ships as the sole built-in handler; `koskari/fences/`. A JSON
 fence was prototyped and dropped. See
-[fenced-foreign-literal.md](fenced-foreign-literal.md).
+[archive/fenced-foreign-literal.md](archive/fenced-foreign-literal.md).
 
 ### Functions and formals
 
@@ -266,4 +266,4 @@ wrappers, GC hooks.
 | Planned language surface | [language/special-forms.md](language/special-forms.md), [language/async.md](language/async.md) |
 | Import | [api/import-system.md](api/import-system.md) |
 | Installed scripts (`koskari_scripts`) | [archive/koskari-scripts-packaging.md](archive/koskari-scripts-packaging.md) |
-| GIL (future domain-TLS design) | [interpreter/gil-cooperation.md](interpreter/gil-cooperation.md) |
+| GIL (future domain-TLS design) | [archive/gil-cooperation.md](archive/gil-cooperation.md) |
