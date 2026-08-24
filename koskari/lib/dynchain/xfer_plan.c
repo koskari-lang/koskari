@@ -8,7 +8,7 @@
    Linear search from chain toward root for a stable node_id (graft fallback
    when LCA walk finds no intersection across disjoint templates).
 */
-static KosDynNode *kos_find_node_by_id(KosDynNode *chain, uint32_t id) {
+static KosDynNode *kos_dyn_find_by_id(KosDynNode *chain, uint32_t id) {
   KosDynNode *node = chain;
   while (node) {
     if (KosDynNode_NODE_ID(node) == id)
@@ -21,10 +21,10 @@ static KosDynNode *kos_find_node_by_id(KosDynNode *chain, uint32_t id) {
 
 /**
    Lowest common ancestor of two chain pointers via transient marks on chain a,
-   or kos_find_node_by_id(a, graft_point_id) when disjoint. Callers:
-   kos_build_transfer_plan and other builders that need unwind vs install split.
+   or kos_dyn_find_by_id(a, graft_point_id) when disjoint. Callers:
+   kos_dyn_plan_transfer and other builders that need unwind vs install split.
 */
-KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id) {
+KosDynNode *kos_dyn_find_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id) {
   if (! a || ! b)
     return NULL;
 
@@ -49,7 +49,7 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_i
     KosDynNode_FLAGS(n) &= ~KOS_DYNF_LCA_VISITED;
 
   if (! lca && graft_point_id)
-    return kos_find_node_by_id(orig_a, graft_point_id);
+    return kos_dyn_find_by_id(orig_a, graft_point_id);
   return lca;
 }
 
@@ -102,7 +102,7 @@ static KosTransferPlan *kos_transfer_plan_alloc(
 }
 
 
-/* Transfer plan counting and filling helpers.  Used by kos_build_transfer_plan. */
+/* Transfer plan counting and filling helpers.  Used by kos_dyn_plan_transfer. */
 
 
 /**
@@ -252,7 +252,7 @@ static int xfer_plan_fill_wind_actions(
   KosDynWind **wind_nodes = PyMem_Malloc(sizeof(KosDynWind *) * wind_count);
   if (! wind_nodes) {
     /* Ownership inversion: this function frees plan on failure so that callers
-       (kos_build_transfer_plan, kos_build_delimited_push_plan, etc.) can do a
+       (kos_dyn_plan_transfer, kos_dyn_plan_delimited_push, etc.) can do a
        single unconditional "return -1" without a separate free on this path. */
     PyMem_Free(plan);
     PyErr_NoMemory();
@@ -351,14 +351,14 @@ typedef struct KosXferPlanOptions {
 /**
    LCA for wind sizing; optional disjoint fallback or reachability error.
 */
-static KosDynNode *kos_xfer_resolve_lca(
+static KosDynNode *kos_dyn_resolve_lca(
     KosDynNode *current,
     KosDynNode *target,
     uint32_t graft_point_id,
     int disjoint_ok,
     int require_reachable) {
 
-  KosDynNode *lca = kos_compute_lca(current, target, graft_point_id);
+  KosDynNode *lca = kos_dyn_find_lca(current, target, graft_point_id);
 
   if (! lca) {
     KosDynNode *n = current;
@@ -459,7 +459,7 @@ static int kos_build_xfer_plan(
    the plan by repeatedly calling kos_run_transfer_step until it returns 1.
    Returns 0 on success, -1 on error (e.g. allocation failure).
 */
-int kos_build_transfer_plan(
+int kos_dyn_plan_transfer(
     KosEvalState *es,
     KosDynNode *target,
     PyObject *value,
@@ -473,7 +473,7 @@ int kos_build_transfer_plan(
 
   KOS_TRACE_EVENTS_INC(KOS_TE_TRANSFER_PLAN_BUILD);
 
-  lca = kos_compute_lca(current, target, graft_point_id);
+  lca = kos_dyn_find_lca(current, target, graft_point_id);
   if (KOS_XFER_TRACE)
     SAYF("[xfer] build_plan current=%p target=%p lca=%p",
          (void *) current, (void *) target, (void *) lca);
@@ -496,7 +496,7 @@ int kos_build_transfer_plan(
    Build a PUSH plan for delimited continuation invoke.  Segment is the
    continuation's frames (first child of prompt in captured_chain).
 */
-int kos_build_delimited_push_plan(
+int kos_dyn_plan_delimited_push(
     KosEvalState *es,
     KosDynNode *segment,
     PyObject *value,
@@ -535,7 +535,7 @@ int kos_build_delimited_push_plan(
    Caller must set RESUME_PC, RESUME_STACK on the plan.
    Returns 0 on success, -1 on error.
 */
-int kos_build_direct_install_plan(
+int kos_dyn_plan_direct_install(
     KosEvalState *es,
     KosDynNode *target,
     PyObject *value,
@@ -547,7 +547,7 @@ int kos_build_direct_install_plan(
   KosDynNode *current = KosEvalState_DYN_TOP(es);
   KosDynNode *lca;
 
-  lca = kos_xfer_resolve_lca(current, target, graft_point_id, 1, 0);
+  lca = kos_dyn_resolve_lca(current, target, graft_point_id, 1, 0);
   if (KOS_XFER_TRACE)
     SAYF("[xfer] direct_install_plan current=%p target=%p lca=%p",
          (void *) current, (void *) target, (void *) lca);
@@ -571,7 +571,7 @@ int kos_build_direct_install_plan(
    NULL target so unwind runs teardown then re-raises via sentinel. Callers:
    foreign continuation apply error path.
 */
-int kos_build_cc_unwind_plan(
+int kos_dyn_plan_cc_unwind(
     KosEvalState *es,
     PyObject *exc_type,
     PyObject *exc_val,
@@ -598,14 +598,14 @@ int kos_build_cc_unwind_plan(
   }
 
   /* Build a plan that unwinds from dyn_top all the way to NULL, running
-     WITH/finally teardowns along the way.  kos_build_transfer_plan with
+     WITH/finally teardowns along the way.  kos_dyn_plan_transfer with
      target=NULL treats lca=NULL, so it emits EXTENT_ACTION steps for every
      node that has NEEDS_UNWIND_ACTION (including our sentinel at the bottom),
      then INSTALL(NULL), then INJECT.  When the plan reaches the KosDynCCRaise
      EXTENT_ACTION, cc_raise_unwind sets PyErr and returns -1; eval_chain.c
      special-cases that sentinel step (not generic plan failure) and packages
      it as KOS_RES_RAISE for the parent eval loop. */
-  return kos_build_transfer_plan(es, NULL, Py_None, 0, 0, out_plan);
+  return kos_dyn_plan_transfer(es, NULL, Py_None, 0, 0, out_plan);
 }
 
 
@@ -613,7 +613,7 @@ int kos_build_cc_unwind_plan(
    Plan: unwind extent actions to prompt, then TRUNCATE_AND_INJECT value at
    prompt (shift result delivery). Callers: POP_SHIFT completion.
 */
-int kos_dyn_build_pop_shift_plan(KosEvalState *es, KosDynPrompt *prompt,
+int kos_dyn_plan_pop_shift(KosEvalState *es, KosDynPrompt *prompt,
                                  PyObject *value, KosTransferPlan **out_plan) {
 
   KosXferPlanOptions options;
@@ -639,7 +639,7 @@ int kos_dyn_build_pop_shift_plan(KosEvalState *es, KosDynPrompt *prompt,
    after the plan runs.  Skips unwind entirely, so safe when path crosses
    PROMPT.  Returns 0 on success.
 */
-int kos_build_install_only_plan(
+int kos_dyn_plan_install_only(
     KosEvalState *es,
     KosDynNode *target,
     uint32_t graft_point_id,
@@ -649,7 +649,7 @@ int kos_build_install_only_plan(
   KosDynNode *current = KosEvalState_DYN_TOP(es);
   KosDynNode *lca;
 
-  lca = kos_xfer_resolve_lca(current, target, graft_point_id, 0, 1);
+  lca = kos_dyn_resolve_lca(current, target, graft_point_id, 0, 1);
   if (! lca)
     return -1;
   if (KOS_XFER_TRACE)
@@ -784,7 +784,7 @@ KOS_OP_INLINE void xfer_plan_apply_resume_state(
 
       if (old_stack && old_stack != new_stack)
         KosStack_Release(old_stack);
-      kos_dyn_rebuild_live_from_chain(es);
+      kos_dyn_resync_chain(es);
     } else {
       KosStack_Release(new_stack);
       KosTransferPlan_RESUME_STACK(plan) = NULL;
@@ -939,7 +939,7 @@ KOS_OP_INLINE int xfer_step_land_segment(
   if (! graft_parent) {
     KosDynNode *old_top = KosEvalState_DYN_TOP(es);
     KosEvalState_DYN_TOP(es) = seg;
-    kos_dyn_rebuild_live_from_chain(es);
+    kos_dyn_resync_chain(es);
     if (old_top)
       kos_dynchain_free(old_top, NULL);
   } else {
@@ -948,7 +948,7 @@ KOS_OP_INLINE int xfer_step_land_segment(
     if (seg_bottom)
       KosDynNode_PARENT(seg_bottom) = graft_parent;
     KosEvalState_DYN_TOP(es) = seg;
-    kos_dyn_rebuild_live_from_chain(es);
+    kos_dyn_resync_chain(es);
   }
 
   xfer_plan_apply_resume_state(es, plan);
@@ -991,7 +991,7 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action) {
   KosDynNode *seg;
 
   kos_chain_segment_bounds(template_seg, NULL, &stop);
-  seg = kos_clone_chain_segment(template_seg, stop);
+  seg = kos_dyn_clone_segment(template_seg, stop);
   if (! seg && template_seg) {
     SAY("[xfer] INSTALL clone segment failed");
     KosTransferPlan_ACTION_INDEX(plan)--;
@@ -1042,7 +1042,7 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action) {
   KosDynNode *current_top;
 
   kos_chain_segment_bounds(template_seg, NULL, &stop);
-  seg = kos_clone_chain_segment(template_seg, stop);
+  seg = kos_dyn_clone_segment(template_seg, stop);
   if (! seg && template_seg) {
     if (KOS_XFER_TRACE)
       SAY("[xfer] PUSH clone segment failed");
@@ -1276,7 +1276,7 @@ int kos_run_transfer_step(KosEvalState *es) {
 
   /* Advance only when step completed normally (no early return -1 or
      KOS_XFER_SUSPENDED_AWAIT).  No SyncFromContext here: each xfer_step_*
-     leaves es coherent (kos_dyn_rebuild_live_from_chain on INSTALL/PUSH, wind/unwind
+     leaves es coherent (kos_dyn_resync_chain on INSTALL/PUSH, wind/unwind
      tails on EXTENT, in-place inject or pop paths that already refreshed). */
   KosTransferPlan_ACTION_INDEX(KosEvalState_PLAN(es))++;
   if (KosTransferPlan_ACTION_INDEX(KosEvalState_PLAN(es)) >= KosTransferPlan_ACTION_COUNT(KosEvalState_PLAN(es)))
@@ -1294,7 +1294,7 @@ int kos_run_transfer_step(KosEvalState *es) {
    a transfer is already in progress (e.g. from a dynamic-wind thunk).
    After the inner transfer completes, run_transfer_plan_to_completion calls
    kos_resume_transfer_plan and rebuilds the remaining steps via
-   kos_build_direct_install_plan.
+   kos_dyn_plan_direct_install.
 */
 void kos_suspend_transfer_plan(KosEvalState *es) {
 
@@ -1627,10 +1627,10 @@ static int kos_delimited_invoke_inplace(
   KosContinuation_LIVE_SLICE_CONSUMED(k) = 1;
 
   kos_dyn_commit_dyn_top(es, slice_top);
-  kos_dyn_rebuild_live_from_chain(es);
+  kos_dyn_resync_chain(es);
   /* rebuild leaves live PCs alone when the frame is unchanged (invoke
    * frame == resume frame); load them from the displaced frame state. */
-  kos_dyn_load_live_regs_from_frame(es, resume_frame);
+  kos_dyn_resync_load_regs(es, resume_frame);
 
   Py_INCREF(value);
   /* StackPUSH consumes the value reference, on failure as well. */
@@ -1738,17 +1738,17 @@ int kos_invoke_continuation(
   int res;
   if (is_delimited) {
     #if KOS_XFER_TRACE
-      SAYF("[xfer] kos_build_delimited_push_plan (delimited) segment=%p",
+      SAYF("[xfer] kos_dyn_plan_delimited_push (delimited) segment=%p",
            (void *) push_segment);
     #endif
-    res = kos_build_delimited_push_plan(es, push_segment, value, is_throw,
+    res = kos_dyn_plan_delimited_push(es, push_segment, value, is_throw,
                                         &plan);
   } else {
     #if KOS_XFER_TRACE
-      SAYF("[xfer] kos_build_transfer_plan current=%p target=%p (template)",
+      SAYF("[xfer] kos_dyn_plan_transfer current=%p target=%p (template)",
            (void *) KosEvalState_DYN_TOP(es), (void *) to_use->captured_chain);
     #endif
-    res = kos_build_transfer_plan(es, to_use->captured_chain,
+    res = kos_dyn_plan_transfer(es, to_use->captured_chain,
                                   value, is_throw,
                                   KosContinuation_GRAFT_POINT_ID(to_use),
                                   &plan);

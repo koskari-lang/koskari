@@ -209,7 +209,7 @@ int kos_dyn_yield_from_deliver_inner_return(
 
   /* dyn_top must be the delegate gen frame; free it and the GEN node,
      restore dyn_top to the YIELD_FROM consumer. */
-  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
+  if (kos_dyn_teardown_gen_exhausted(es) < 0) {
     Py_XDECREF(val);
     return -1;
   }
@@ -248,7 +248,7 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
       break;
     }
   }
-  kos_dyn_rebuild_live_from_chain(es);
+  kos_dyn_resync_chain(es);
   KosDynNode_PARENT(node) = NULL;
   kos_yieldfrom_close_delegate(yf);
   kos_dynyieldfrom_free(yf);

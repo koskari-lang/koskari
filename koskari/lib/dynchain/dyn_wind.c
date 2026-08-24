@@ -184,16 +184,6 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
 }
 
 
-static int kos_dyn_wind_is_on_chain(KosEvalState *es, KosDynWind *wind) {
-
-  for (KosDynNode *n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n)) {
-    if (n == (KosDynNode *) wind)
-      return 1;
-  }
-  return 0;
-}
-
-
 /**
    Resume after async before/after thunk: advance phase, pop junk, maybe unlink.
 */
@@ -201,7 +191,7 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
 
   /* A nested transfer can replace the chain while a wind thunk is still
      unwinding; ignore stale control-returned for a detached wind node. */
-  if (! kos_dyn_wind_is_on_chain(es, wind))
+  if (! kos_dyn_reaches(es, (KosDynNode *) wind))
     return 0;
 
   if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)

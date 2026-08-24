@@ -105,7 +105,7 @@ KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_
 
 
 /**
-   Pop FOREACH when top. Callers: abort_push_region, kos_dyn_transfer_to_loop.
+   Pop FOREACH when top. Callers: abort_push_region, kos_dyn_unwind_to_loop.
 */
 int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
@@ -174,7 +174,7 @@ int kos_dyn_foreach_deliver_return_kos_agen(
     KosDynForeach *fe,
     PyObject *val) {
 
-  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
+  if (kos_dyn_teardown_gen_exhausted(es) < 0) {
     Py_DECREF(val);
     return -1;
   }

@@ -148,7 +148,7 @@ KosDynFrame *kos_dyn_push_frame(
   if (cur)
     KosDynFrame_FLAGS(frame) |= (KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND);
 
-  /* Inline retarget, specialized from kos_dyn_retarget_after_push for a
+  /* Inline retarget, specialized from kos_dyn_resync_after_push for a
      fresh FRAME node: flush the outgoing frame's live PCs, then load
      every live register directly from the new frame (PC/ACTING are 0
      from kos_dynframe_new).  Mirror of the return-side inline retarget
@@ -224,7 +224,7 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
 
    :return: 0 on success (DYN_TOP == frame), -1 with an exception set
 */
-int kos_dyn_drop_discardable_to_frame(KosEvalState *es, KosDynFrame *frame) {
+int kos_dyn_teardown_to_frame(KosEvalState *es, KosDynFrame *frame) {
   KosDynNode *top = KosEvalState_DYN_TOP(es);
 
   while (top && top != (KosDynNode *) frame) {

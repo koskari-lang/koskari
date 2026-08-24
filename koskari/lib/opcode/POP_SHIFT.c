@@ -114,7 +114,7 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
     return EVAL_RAISE();
   }
 
-  if (kos_dyn_build_pop_shift_plan(es, prompt, result, &plan) < 0) {
+  if (kos_dyn_plan_pop_shift(es, prompt, result, &plan) < 0) {
     Py_DECREF(result);
     return EVAL_RAISE();
   }

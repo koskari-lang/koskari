@@ -4,7 +4,7 @@
 
 /**
    Sentinel holding exception for foreign apply; unwind sets PyErr. Callers:
-   kos_build_cc_unwind_plan.
+   kos_dyn_plan_cc_unwind.
 */
 static KosDynCCRaise *kos_dyn_cc_raise_new(KosDynNode *parent, PyObject *exc_type, PyObject *exc_val) {
   KosDynCCRaise *node = (KosDynCCRaise *) kos_dynnode_alloc();

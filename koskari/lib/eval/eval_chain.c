@@ -24,130 +24,6 @@
 */
 
 
-/**
-   Single entry for eval-driven chain transitions: return walk, unwind, yield
-   walk, loop transfer, local raise. Fills out status and raw result codes.
-   Callers: eval.c opcode and event dispatch.
-
-   Error paths return -1; caller propagates PyErr.
-*/
-static inline int kos_dyn_transition_internal(
-    KosEvalState *es,
-    const KosTransitionReq *req,
-    KosTransitionResult *out) {
-
-  if (! es || ! req || ! out) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_transition: invalid arguments");
-    return -1;
-  }
-
-  out->status = KOS_TRANS_STATUS_OK;
-  out->raw = 0;
-
-  switch (req->kind) {
-  case KOS_TRANS_WALK_RETURN_TO_FRAME: {
-    if (! req->target_frame || ! req->payload) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "kos_dyn_transition: WALK_RETURN_TO_FRAME needs "
-                      "target_frame and payload");
-      return -1;
-    }
-    int r = kos_dyn_walk_return_to_frame(es, req->target_frame,
-                                        req->payload);
-    out->raw = r;
-    if (r == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN)
-      out->status = KOS_TRANS_STATUS_FINALLY_TAKING_RETURN;
-    else if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
-    else if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      return -1;
-    }
-    return 0;
-  }
-  case KOS_TRANS_UNWIND_TO_FRAME: {
-    if (! req->target_frame) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "kos_dyn_transition: UNWIND_TO_FRAME needs "
-                      "target_frame");
-      return -1;
-    }
-    int r = kos_dyn_unwind_to_frame(es, req->target_frame,
-                                    req->xfer_event);
-    out->raw = r;
-    if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
-    else if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      return -1;
-    }
-    return 0;
-  }
-  case KOS_TRANS_UNWIND_TO_NODE: {
-    if (! req->target_node) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "kos_dyn_transition: UNWIND_TO_NODE needs "
-                      "target_node");
-      return -1;
-    }
-    int r = kos_dyn_unwind_to_node(es, req->target_node,
-                                  req->xfer_event);
-    out->raw = r;
-    if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
-    else if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      return -1;
-    }
-    return 0;
-  }
-  case KOS_TRANS_WALK_HANDLE_YIELD: {
-    int r = kos_dyn_walk_handle_yield(es);
-    out->raw = r;
-    if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      return -1;
-    }
-    return 0;
-  }
-  case KOS_TRANS_TRANSFER_TO_LOOP: {
-    if (! req->payload) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "kos_dyn_transition: TRANSFER_TO_LOOP needs "
-                      "payload");
-      return -1;
-    }
-    int r = kos_dyn_transfer_to_loop(es, req->xfer_event, req->payload);
-    out->raw = r;
-    if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
-    else if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      return -1;
-    }
-    return 0;
-  }
-  default:
-    PyErr_Format(PyExc_RuntimeError,
-                "kos_dyn_transition: unknown kind %d",
-                (int) req->kind);
-    out->status = KOS_TRANS_STATUS_ERROR;
-    return -1;
-  }
-}
-
-
-int KosEvalState_Transition(
-    KosEvalState *es,
-    const KosTransitionReq *req,
-    KosTransitionResult *out) {
-
-  return kos_dyn_transition_internal(es, req, out);
-}
-
-
-
 /* --- Transfer plan and delimited return --- */
 
 /**
@@ -303,7 +179,7 @@ static inline int KosEvalState_HasActiveTransferPlan(const KosEvalState *es) {
 
 /**
   True when the current (failed) plan step is a KosDynCCRaise sentinel
-  re-emit from kos_build_cc_unwind_plan (foreign apply signal delivery).
+  re-emit from kos_dyn_plan_cc_unwind (foreign apply signal delivery).
 */
 static int xfer_plan_step_is_cc_raise_reemit(KosEvalState *es) {
 
@@ -397,7 +273,7 @@ static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
     /* An outer transfer was suspended when a wind thunk invoked a nested
        continuation.  That inner transfer just completed.  Rebuild a fresh
        plan from the current chain position to the outer plan's
-       original_target using kos_build_direct_install_plan, then continue
+       original_target using kos_dyn_plan_direct_install, then continue
        draining the new plan. */
     kos_resume_transfer_plan(es);
     {
@@ -431,7 +307,7 @@ static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
         while (bottom && KosDynNode_PARENT(bottom))
           bottom = KosDynNode_PARENT(bottom);
         stop = bottom ? KosDynNode_PARENT(bottom) : NULL;
-        target_keep = kos_clone_chain_segment(target, stop);
+        target_keep = kos_dyn_clone_segment(target, stop);
         if (! target_keep) {
           Py_XDECREF(inject_val);
           if (rstack)
@@ -454,7 +330,7 @@ static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
       }
 
       KosTransferPlan *new_plan = NULL;
-      if (kos_build_direct_install_plan(es, target_keep, inject_val,
+      if (kos_dyn_plan_direct_install(es, target_keep, inject_val,
                                           inject_throw, graft_id,
                                           &new_plan) < 0) {
         Py_XDECREF(inject_val);

@@ -70,7 +70,7 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
         break;
       }
     }
-    kos_dyn_rebuild_live_from_chain(es);
+    kos_dyn_resync_chain(es);
   }
 
   KosDynNode_PARENT(node) = NULL;
@@ -144,7 +144,7 @@ int kos_dyn_next_deliver_return_node(
     KosDynNext *next,
     PyObject *val) {
 
-  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
+  if (kos_dyn_teardown_gen_exhausted(es) < 0) {
     Py_DECREF(val);
     return -1;
   }

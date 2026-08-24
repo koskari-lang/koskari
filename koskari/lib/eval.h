@@ -326,7 +326,7 @@ struct KosContext {
   snapshots from ctx onto es (NULL on ctx). While RUN, es owns chain and plan;
   KosEvalState_DYN_TOP and KosEvalState_PLAN never read ctx. Freeze restores
   onto ctx and NULLs es. Chain shape changes refresh live fields via
-  kos_dyn_retarget_after_push/pop or kos_dyn_rebuild_live_from_chain.
+  kos_dyn_resync_after_push/pop or kos_dyn_resync_chain.
 
   With KOS_TRACE_EVAL_SYNC, call counts and total wall time per sync API are
   recorded for kos_trace_report / get_trace_report under eval_state_sync.
@@ -560,38 +560,6 @@ int KosEvalState_SetFrameCodeAndNamespace(
     PyObject *ns);
 
 KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es);
-
-/**
-  Eval-facing dynamic-chain transition dispatcher; implemented in
-  eval/eval_chain.c included into eval.c. On -1, propagates PyErr.
-*/
-int KosEvalState_Transition(
-    KosEvalState *es,
-    const KosTransitionReq *req,
-    KosTransitionResult *out);
-
-
-/**
-  Opcode-facing wrapper for KosEvalState_Transition: internalizes the
-  KosTransitionResult and returns KosOpResult.  Use from opcode handlers
-  that trigger TRANSFER_TO_LOOP, UNWIND_TO_FRAME, or UNWIND_TO_NODE.
-  REPROLOGUE when async unwind (wind-thunk subroutine started); RAISE on
-  error; NORMAL on sync completion.
-*/
-static inline KosOpResult KosEvalState_TransitionOp(
-    KosEvalState *es,
-    const KosTransitionReq *req) {
-
-  KosTransitionResult tres = {0};
-  if (KosEvalState_Transition(es, req, &tres) < 0) {
-    return EVAL_RAISE();
-  }
-  if (tres.raw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    return EVAL_REPROLOGUE();
-  }
-  return EVAL_NORMAL();
-}
-
 
 /**
   Innermost dyn node that owns a non-NULL operand stack (from dyn_top toward

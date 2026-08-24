@@ -239,7 +239,7 @@ primary_success:
 
     KosEvalState_Init(&es, ctx);
     KosEvalState_ThawFromContext(&es);
-    if (kos_dyn_gen_unwind_exhausted(&es) < 0) {
+    if (kos_dyn_teardown_gen_exhausted(&es) < 0) {
       KosEvalState_FreezeToContext(&es);
       goto fallback;
     }

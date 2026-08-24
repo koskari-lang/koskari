@@ -757,7 +757,7 @@ own_fail:
 
   /* Foreign-token path: unwind this context to null and re-raise. */
   KosTransferPlan *plan = NULL;
-  if (kos_build_cc_unwind_plan(es, typ, val, &plan) < 0) {
+  if (kos_dyn_plan_cc_unwind(es, typ, val, &plan) < 0) {
     Py_DECREF(typ);
     Py_DECREF(val);
     return EVAL_RAISE();
@@ -794,7 +794,7 @@ own_fail:
                        REPROLOGUE re-enters the loop with a plan armed
      5. agen clear   - clear_kos_agen_boundary_on_error before the
                        exception can escape an async-gen boundary step
-     6. try_local    - kos_dyn_try_local_raise_body walks TRY / FINALLY /
+     6. try_local    - kos_dyn_unwind_raise walks TRY / FINALLY /
                        WITH / unwind extents
      7. outcome map  - REPROLOGUE: handler applied, restart prologue.
                        AWAIT: async unwind started; tag KOS_SUSP_AWAIT,
@@ -832,7 +832,7 @@ static KosOpResult process_raise(KosEvalState *es) {
   clear_kos_agen_boundary_on_error(es);
 
   {
-    KosOpResult tl = kos_dyn_try_local_raise_body(es);
+    KosOpResult tl = kos_dyn_unwind_raise(es);
     switch (tl.kind) {
     case KOS_RES_REPROLOGUE:
       return EVAL_REPROLOGUE();
@@ -1063,7 +1063,7 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
     KosEvalState_Init(&es, ctx);
     KosEvalState_ThawFromContext(&es);
-    kos_dyn_rebuild_live_from_chain(&es);
+    kos_dyn_resync_chain(&es);
     KosEvalState_FreezeToContext(&es);
   }
 
@@ -1557,29 +1557,20 @@ static KosOpResult kos_eval_route_delim_return(
        (void *) KosDynDelim_RETURN_FRAME(ret_delim),
        (void *) KosDynDelim_RETURN_NODE(ret_delim));
 
-  KosTransitionReq treq;
-  if (KosDynDelim_RETURN_NODE(ret_delim) != NULL) {
-    treq = (KosTransitionReq) {
-      .kind = KOS_TRANS_UNWIND_TO_NODE,
-      .xfer_event = KOS_XFER_EVENT_SHIFT,
-      .target_node = KosDynDelim_RETURN_NODE(ret_delim),
-    };
-  } else {
-    treq = (KosTransitionReq) {
-      .kind = KOS_TRANS_UNWIND_TO_FRAME,
-      .xfer_event = KOS_XFER_EVENT_SHIFT,
-      .target_frame = KosDynDelim_RETURN_FRAME(ret_delim),
-    };
-  }
   {
-    KosOpResult _kr = KosEvalState_TransitionOp(es, &treq);
-    if (_kr.kind == KOS_RES_RAISE) {
+    KosWalkStatus ws;
+    if (KosDynDelim_RETURN_NODE(ret_delim) != NULL)
+      ws = kos_dyn_unwind_to_node(es, KosDynDelim_RETURN_NODE(ret_delim),
+                                  KOS_XFER_EVENT_SHIFT);
+    else
+      ws = kos_dyn_unwind_to_frame(es, KosDynDelim_RETURN_FRAME(ret_delim),
+                                   KOS_XFER_EVENT_SHIFT);
+    if (ws == KOS_WALK_ERROR) {
       Py_DECREF(val);
       return EVAL_RAISE();
     }
-    if (_kr.kind != KOS_RES_NORMAL) {
-      /* REPROLOGUE or AWAIT: async unwind started; stage pending return */
-      Py_XDECREF(_kr.val);
+    if (ws != KOS_WALK_OK) {
+      /* KOS_WALK_ASYNC_UNWIND: async unwind started; stage pending return */
       KosEvalState_SetPendingReturn(es, val, 0);
       return EVAL_NORMAL();
     }
@@ -1866,7 +1857,7 @@ static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
 
 /**
    YIELD half of dispatch_boundary_event. Caller already ran
-   KOS_TRANS_WALK_HANDLE_YIELD.  val is a new ref; ownership is transferred to
+   kos_dyn_unwind_yield.  val is a new ref; ownership is transferred to
    the boundary consumer (NEXT / FOREACH / YIELD_FROM).  Every boundary kind
    hands off and returns control here; the eval loop resumes the receiver in
    normal mode, which drives any further hop (a YIELD_FROM receiver re-emits the
@@ -1886,12 +1877,8 @@ static KosOpResult eval_event_yield_deliver_to_boundary(
    Stage A of post-opcode YIELD: transition walk only (freeze is walk side).
 */
 static KosOpResult eval_yield_handle_walk_and_freeze(KosEvalState *es) {
-  KosTransitionReq treq = { .kind = KOS_TRANS_WALK_HANDLE_YIELD };
-  KosTransitionResult tres = {0};
-
-  if (KosEvalState_Transition(es, &treq, &tres) < 0) {
+  if (kos_dyn_unwind_yield(es) == KOS_WALK_ERROR)
     return EVAL_FATAL();
-  }
   return EVAL_NORMAL();
 }
 
@@ -1959,25 +1946,19 @@ static inline KosOpResult eval_event_return(
   KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
   int has_parent = (parent != NULL && ! KosDynNode_IS_GEN(parent));
 
-  KosTransitionReq treq = {
-    .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
-    .target_frame = KosEvalState_FRAME(es),
-    .payload = val,
-  };
-  KosTransitionResult tres = {0};
-  if (KosEvalState_Transition(es, &treq, &tres) < 0) {
+  KosWalkStatus unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es), val);
+  if (unw == KOS_WALK_ERROR) {
     Py_DECREF(val);
     return EVAL_FATAL();
   }
-  int unw = tres.raw;
-  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+  if (unw == KOS_WALK_ASYNC_UNWIND) {
     KosEvalState_SetPendingReturn(es, val, has_parent);
     return EVAL_REPROLOGUE();
   }
-  if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
+  if (unw == KOS_WALK_FINALLY_TAKING_RETURN) {
     return EVAL_REPROLOGUE();
   }
-  if (unw == KOS_DYN_UNWIND_DELIM_TAKING_RETURN) {
+  if (unw == KOS_WALK_DELIM_TAKING_RETURN) {
     /* The return crossed a reset boundary: the walk stopped at a DELIM
        with a live invoke bookmark (at dyn_top).  Deliver val to the
        k-invocation site instead of the frame's parent. */
@@ -1986,10 +1967,6 @@ static inline KosOpResult eval_event_return(
     if (rr.kind == KOS_RES_NORMAL)
       return EVAL_REPROLOGUE();
     return rr;
-  }
-  if (unw < 0) {
-    Py_DECREF(val);
-    return EVAL_FATAL();
   }
 
   return eval_event_return_at_frame(es, val);
@@ -2108,7 +2085,7 @@ static KosOpResult eval_ng_plain_return(
    straight retarget plus push, and the control-returned hook is a no-op
    for these node kinds (kos_dynnode_on_control_returned's default arm).
    Any missing fact falls through to the general path, mirroring the
-   cache-or-walk split in kos_dyn_retarget_after_pop.
+   cache-or-walk split in kos_dyn_resync_after_pop.
 */
 static inline int kos_return_is_extent_plain(
     KosEvalState *es,
@@ -2190,7 +2167,7 @@ static KosOpResult eval_ng_extent_return(
    nodes above it (either naturally, or after the unwind walk completes).
 
    Reads PARENT(FRAME) and dispatches to the correct terminus.  GEN is
-   transparent: kos_dyn_gen_unwind_exhausted pops the frame and GEN together,
+   transparent: kos_dyn_teardown_gen_exhausted pops the frame and GEN together,
    then the consumer node above the GEN is the real terminus.  val consumed.
 */
 static KosOpResult eval_event_return_at_frame(
@@ -2711,7 +2688,7 @@ KosOpResult koskari_eval(
   KosEvalState_Init(&es, ctx);
   KosEvalState_ThawFromContext(&es);
   if (KosEvalState_DYN_TOP(&es))
-    kos_dyn_rebuild_live_from_chain(&es);
+    kos_dyn_resync_chain(&es);
 
   /* On fresh entry, verify that FAST-slot code runs in a capable namespace.
      Resumes are safe: the namespace was already validated on first entry. */

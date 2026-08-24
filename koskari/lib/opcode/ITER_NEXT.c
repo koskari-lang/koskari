@@ -59,7 +59,7 @@ static KOS_NOINLINE KosOpResult iter_next_step_kos_agen(
   exhaustion. Must be inside PUSH_FOREACH block. Auto-await.
 */
 KOS_OP_HANDLER(ITER_NEXT) {
-  KosDynNode *region = kos_find_node_for_loop(es);
+  KosDynNode *region = kos_dyn_find_loop(es);
 
   if (unlikely(! region || ! KosDynNode_IS_FOREACH(region))) {
     PyErr_SetString(PyExc_RuntimeError,

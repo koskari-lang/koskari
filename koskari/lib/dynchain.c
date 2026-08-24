@@ -20,7 +20,7 @@
    Implements the unified dynamic chain: a single parent-linked stack of
    KosDynNode values (frames, prompts, regions, winds, continuations, etc.)
    replacing separate frame and handler chains. Transfer plans (see
-   kos_build_transfer_plan, kos_run_transfer_step) move control for delimited
+   kos_dyn_plan_transfer, kos_run_transfer_step) move control for delimited
    and undelimited continuation invoke. Types and macros live in dynchain.h.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -44,22 +44,23 @@ static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
+static int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
 
-static void kos_dyn_apply_live(
+static void kos_dyn_resync_apply(
     KosEvalState *es,
     KosDynFrame *ft,
     KosSegment **bl,
     PyObject *ns,
     int flush);
-static void kos_dyn_walk_live_from(
+static void kos_dyn_resync_from(
     KosDynNode *start,
     KosDynFrame **ft_out,
     KosSegment ***bl_out,
     PyObject **ns_out);
-static void kos_dyn_retarget_after_push(
+static void kos_dyn_resync_after_push(
     KosEvalState *es,
     KosDynNode *new_node);
-static void kos_dyn_retarget_after_pop(
+static void kos_dyn_resync_after_pop(
     KosEvalState *es,
     KosDynNode *removed,
     KosDynNode *new_top);
@@ -618,7 +619,7 @@ static void kos_dyn_debug_check_walk(
   KosSegment **bl_dbg = NULL;
   PyObject *ns_dbg = NULL;
 
-  kos_dyn_walk_live_from(anchor, &ft_dbg, &bl_dbg, &ns_dbg);
+  kos_dyn_resync_from(anchor, &ft_dbg, &bl_dbg, &ns_dbg);
 
   if ((check_ft && expect_ft != ft_dbg)
       || (check_bl && expect_bl != bl_dbg)
@@ -1054,7 +1055,7 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop) {
    the clone's innermost parent set to stop. Used for continuation capture and
    INSTALL/PUSH segments. On failure, frees partial clone.
 */
-KosDynNode *kos_clone_chain_segment(
+KosDynNode *kos_dyn_clone_segment(
     KosDynNode *top,
     KosDynNode *stop) {
 
@@ -1119,15 +1120,15 @@ KosDynNode *kos_clone_chain_segment(
 /**
    Write frame, operand-segment slot, and namespace onto KosEvalState.
 
-   Call only from kos_dyn_retarget_after_push, kos_dyn_retarget_after_pop, or
-   kos_dyn_rebuild_live_from_chain after dyn_top is already correct. When the
+   Call only from kos_dyn_resync_after_push, kos_dyn_resync_after_pop, or
+   kos_dyn_resync_chain after dyn_top is already correct. When the
    frame pointer changes and flush is non-zero, flushes live pc and acting_pc
    onto the outgoing frame before loading code and PCs from the new frame.
    Pass flush=0 when the outgoing frame is about to be freed (return path) so
    the write is skipped. When only block or namespace change, updates those
    slots without clobbering live PCs.
 */
-static void kos_dyn_apply_live(
+static void kos_dyn_resync_apply(
     KosEvalState *es,
     KosDynFrame *ft,
     KosSegment **bl,
@@ -1165,7 +1166,7 @@ static void kos_dyn_apply_live(
    Load live frame, code, and PCs from a heap frame without flushing or
    changing block/namespace. Call when block/ns were already retargeted.
 */
-static void kos_dyn_load_live_regs_from_frame(
+static void kos_dyn_resync_load_regs(
     KosEvalState *es,
     KosDynFrame *ft) {
 
@@ -1184,10 +1185,10 @@ static void kos_dyn_load_live_regs_from_frame(
 
    Walks parent links from start toward older nodes. Stops when all three
    pointers are resolved or the chain ends. Any output pointer may be NULL to
-   skip that result. Used by kos_dyn_retarget_after_pop when a popped node
+   skip that result. Used by kos_dyn_resync_after_pop when a popped node
    owned one or more live slots, and by the same walk logic as rebuild.
 */
-static void kos_dyn_walk_live_from(
+static void kos_dyn_resync_from(
     KosDynNode *start,
     KosDynFrame **ft_out,
     KosSegment ***bl_out,
@@ -1235,12 +1236,12 @@ static void kos_dyn_walk_live_from(
    Call from kos_dyn_push and kos_dyn_push_noinstall immediately after
    new_node is KosEvalState_DYN_TOP(es) (and kos_dyn_install has run for push).
    Frame nodes replace frame, code, block, and namespace; other nodes update
-   only the slots they carry. Passes flush=1 to kos_dyn_apply_live so the
+   only the slots they carry. Passes flush=1 to kos_dyn_resync_apply so the
    outgoing frame's PCs are saved before the new frame is loaded. Do not use
    after splices, gen install, or
-   xfer INSTALL/PUSH; use kos_dyn_rebuild_live_from_chain instead.
+   xfer INSTALL/PUSH; use kos_dyn_resync_chain instead.
 */
-static void kos_dyn_retarget_after_push(
+static void kos_dyn_resync_after_push(
     KosEvalState *es,
     KosDynNode *new_node) {
 
@@ -1279,7 +1280,7 @@ static void kos_dyn_retarget_after_push(
   if (bl != KosEvalState_BLOCK(es) && *bl)
     kos_dyn_stamp_installed_segment(*bl, KosEvalState_BLOCK(es));
 
-  kos_dyn_apply_live(es, ft, bl, ns, 1);
+  kos_dyn_resync_apply(es, ft, bl, ns, 1);
 
 #if KOS_DEBUG_PATCH_DYN_CACHES
   {
@@ -1287,12 +1288,12 @@ static void kos_dyn_retarget_after_push(
     KosSegment **bl_dbg = KosEvalState_BLOCK(es);
     PyObject *ns_dbg = KosEvalState_NAMESPACE(es);
 
-    kos_dyn_rebuild_live_from_chain(es);
+    kos_dyn_resync_chain(es);
     if (ft_dbg != KosEvalState_FRAME(es)
         || bl_dbg != KosEvalState_BLOCK(es)
         || ns_dbg != KosEvalState_NAMESPACE(es)) {
       PyErr_SetString(PyExc_SystemError,
-                      "kos_dyn_retarget_after_push: live drift vs rebuild");
+                      "kos_dyn_resync_after_push: live drift vs rebuild");
     }
   }
 #endif
@@ -1307,14 +1308,14 @@ done:
 
    Call from kos_dyn_commit_dyn_top only. Caller must pass the previous
    dyn_top as removed and the new head as new_top. Passes flush=0 to
-   kos_dyn_apply_live — the outgoing frame's PCs were already saved when it was
+   kos_dyn_resync_apply — the outgoing frame's PCs were already saved when it was
    pushed, and on the return path the frame is about to be freed. When new_top
    does not equal parent(removed) (splice/gen replace), delegates to
-   kos_dyn_rebuild_live_from_chain. For a normal single-head pop, updates only
+   kos_dyn_resync_chain. For a normal single-head pop, updates only
    the live slots the removed node owned; returns
    without work when the pop did not own frame, block, or namespace on es.
 */
-static void kos_dyn_retarget_after_pop(
+static void kos_dyn_resync_after_pop(
     KosEvalState *es,
     KosDynNode *removed,
     KosDynNode *new_top) {
@@ -1331,7 +1332,7 @@ static void kos_dyn_retarget_after_pop(
     return;
 
   if (! removed || new_top != KosDynNode_PARENT(removed)) {
-    kos_dyn_rebuild_live_from_chain(es);
+    kos_dyn_resync_chain(es);
     return;
   }
 
@@ -1363,7 +1364,7 @@ static void kos_dyn_retarget_after_pop(
 
   if (! need_frame && ! need_block && ! walk_ns) {
     if (ns_new != KosEvalState_NAMESPACE(es))
-      kos_dyn_apply_live(es, KosEvalState_FRAME(es), KosEvalState_BLOCK(es),
+      kos_dyn_resync_apply(es, KosEvalState_FRAME(es), KosEvalState_BLOCK(es),
                          ns_new, 0);
     return;
   }
@@ -1379,7 +1380,7 @@ static void kos_dyn_retarget_after_pop(
       slot = &KosDynNode_STACK(new_top);
     if (slot) {
       KOS_DYN_DEBUG_CHECK_WALK(new_top, NULL, 0, slot, 1, NULL, 0);
-      kos_dyn_apply_live(es, KosEvalState_FRAME(es), slot, ns_new, 0);
+      kos_dyn_resync_apply(es, KosEvalState_FRAME(es), slot, ns_new, 0);
       return;
     }
   }
@@ -1400,7 +1401,7 @@ static void kos_dyn_retarget_after_pop(
         : KosEvalState_BLOCK(es);
     KOS_DYN_DEBUG_CHECK_WALK(new_top, cached_ft, 1, cached_bl, need_block,
                              ns_new, 1);
-    kos_dyn_apply_live(es, cached_ft, cached_bl, ns_new, 0);
+    kos_dyn_resync_apply(es, cached_ft, cached_bl, ns_new, 0);
     return;
   }
 
@@ -1411,7 +1412,7 @@ static void kos_dyn_retarget_after_pop(
      measured zero across the full benchmark battery -- so the walk is
      a diagnostic for model violations, not a code path. */
   KOS_TRACE_EVENTS_INC(KOS_TE_RETARGET_WALK_FALLBACK);
-  kos_dyn_walk_live_from(new_top, &ft, &bl, &ns);
+  kos_dyn_resync_from(new_top, &ft, &bl, &ns);
 
   if (! need_frame)
     ft = KosEvalState_FRAME(es);
@@ -1420,7 +1421,7 @@ static void kos_dyn_retarget_after_pop(
   if (! walk_ns)
     ns = ns_new;
 
-  kos_dyn_apply_live(es, ft, bl, ns, 0);
+  kos_dyn_resync_apply(es, ft, bl, ns, 0);
 #else
   /* The cache model is authoritative: apply whatever the caches hold.
      A model violation lands NULL facts here and fails fast nearby;
@@ -1428,7 +1429,7 @@ static void kos_dyn_retarget_after_pop(
   (void) ft;
   (void) bl;
   (void) ns;
-  kos_dyn_apply_live(
+  kos_dyn_resync_apply(
       es,
       need_frame
           ? (KosDynFrame *) KosDynFrame_BACK_FRAME(removed)
@@ -1449,8 +1450,8 @@ static void kos_dyn_retarget_after_pop(
    INSTALL or PUSH, kos_dyn_gen_install, KosContext_New bootstrap, tail koscall
    frame replacement, opcode paths that assign a segment after push, or any
    time dyn_top was published without new_top == parent(removed). Walks from
-   ctx->dyn_top toward parents, then kos_dyn_apply_live on es.
-   Prefer kos_dyn_retarget_after_push or kos_dyn_retarget_after_pop inside
+   ctx->dyn_top toward parents, then kos_dyn_resync_apply on es.
+   Prefer kos_dyn_resync_after_push or kos_dyn_resync_after_pop inside
    kos_dyn_push and kos_dyn_commit_dyn_top when the edit is a single-head push
    or parent pop.
 */
@@ -1532,7 +1533,7 @@ static void kos_dyn_restamp_spliced_prefix(KosEvalState *es) {
     KosDynFrame *rft = NULL;
     KosSegment **rbl = NULL;
     PyObject *rns = NULL;
-    kos_dyn_walk_live_from(node, &rft, &rbl, &rns);
+    kos_dyn_resync_from(node, &rft, &rbl, &rns);
 
     /* stamp rootward-first, threading the running facts upward */
     for (size_t i = len; i--; ) {
@@ -1569,7 +1570,7 @@ out:
 }
 
 
-void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
+void kos_dyn_resync_chain(KosEvalState *es) {
 
   KOS_TRACE_EVENTS_INC(KOS_TE_LIVE_REBUILD);
 
@@ -1609,7 +1610,7 @@ void kos_dyn_rebuild_live_from_chain(KosEvalState *es) {
     SAYF("[gen] rebuild_live_from_chain dyn_top=%p -> frame_top=NULL (no frame)\n",
          (void *) KosEvalState_DYN_TOP(es));
 
-  kos_dyn_apply_live(es, ft, bl, ns, 1);
+  kos_dyn_resync_apply(es, ft, bl, ns, 1);
 
   kos_dyn_restamp_spliced_prefix(es);
 
@@ -1621,8 +1622,8 @@ done:
 /**
    Link node as DYN_TOP, run install, retarget live fields.
 
-   kos_dyn_retarget_after_push updates es; frame-boundary flush runs in
-   kos_dyn_apply_live when the pushed node is a frame.
+   kos_dyn_resync_after_push updates es; frame-boundary flush runs in
+   kos_dyn_resync_apply when the pushed node is a frame.
 */
 int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   // CONTEXT: dirty, touches context directly
@@ -1640,7 +1641,7 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
     KosEvalState_DYN_TOP(es) = prev;
     return -1;
   }
-  kos_dyn_retarget_after_push(es, node);
+  kos_dyn_resync_after_push(es, node);
   return 0;
 }
 
@@ -1649,10 +1650,10 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
    Flush live PCs, set dyn_top to new_top, retarget live fields on es.
 
    Central commit for pops and any dyn_top publish that is not a push. Captures
-   the old dyn_top as removed and calls kos_dyn_retarget_after_pop. Use for
+   the old dyn_top as removed and calls kos_dyn_resync_after_pop. Use for
    kos_dyn_uninstall_core, fast kos_dyn_pop_* paths, gen install, and manual
    splices.
-   Do not use for kos_dyn_push; use kos_dyn_retarget_after_push via push instead.
+   Do not use for kos_dyn_push; use kos_dyn_resync_after_push via push instead.
 */
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
 
@@ -1660,7 +1661,7 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
 
   removed = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = new_top;
-  kos_dyn_retarget_after_pop(es, removed, new_top);
+  kos_dyn_resync_after_pop(es, removed, new_top);
 }
 
 
@@ -1675,7 +1676,7 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
   kos_dyn_prepare_push(es, node);
 
   KosEvalState_DYN_TOP(es) = node;
-  kos_dyn_retarget_after_push(es, node);
+  kos_dyn_resync_after_push(es, node);
   return 0;
 }
 
@@ -1833,7 +1834,7 @@ KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
       KosOpResult wr = kos_dyn_with_unwind(es, (KosDynWith *) node);
       /* REPROLOGUE: exception swallowed; resume_pc set and Py_None pushed to
          parent stack by dyn_with_unwind.  Map to NORMAL so kos_dyn_uninstall_core
-         pops the WITH node and commits the stack — then kos_dyn_try_local_raise_body's
+         pops the WITH node and commits the stack — then kos_dyn_unwind_raise's
          top_may_swallow check returns REPROLOGUE to restart past POP_WITH.
          An exit still pending means the opposite: __exit__ has not run
          yet, so the node must survive for kos_dynnode_on_control_returned
@@ -1864,8 +1865,8 @@ KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
    Offer a control transit to dyn_top without unlinking: PASS, CONSUMED,
    DEFERRED, or ERROR. Central dispatch for exception/return/yield/shift
    semantics (TRY/FINALLY except/finally PCs, GEN boundary, PROMPT shift).
-   Callers: kos_dyn_transition walks, kos_dyn_try_local_raise_body,
-   kos_dyn_walk_handle_yield, unwind_to_frame, shift walk.
+   Callers: the kos_dyn_unwind_* walks (raise, return, yield, to_frame),
+   shift walk.
 
    TRY: CONSUMED when RAISE, enabled, PyErr set, and extent has except_pc.
    FINALLY: CONSUMED when RAISE or RETURN and finally enabled.
@@ -1935,7 +1936,7 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
 
 /**
    Handler PC for a TRY or FINALLY region, merged with extent table lookup on
-   the current frame. Callers: kos_dyn_try_local_raise_body when routing RAISE
+   the current frame. Callers: kos_dyn_unwind_raise when routing RAISE
    into except/finally.
 */
 uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
@@ -2121,25 +2122,20 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
 
 
 /**
-   Ensure target lies on the chain from dyn_top; errmsg names the miss.
-*/
-static int kos_chain_contains(
-    KosEvalState *es,
-    const KosDynNode *target,
-    const char *errmsg) {
+   Predicate: does the chain from dyn_top reach target?  Read-only; never
+   sets PyErr.  Callers: kos_validate_capture_cc, kos_dyn_wind_on_control_returned,
+   the NEXT and YIELD_FROM still-on-chain checks.
 
+   :return: 1 if target is on the chain from dyn_top, 0 otherwise
+*/
+static int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);
 
   while (node && node != target) {
     node = KosDynNode_PARENT(node);
   }
 
-  if (! node) {
-    PyErr_SetString(PyExc_RuntimeError, errmsg);
-    return -1;
-  }
-
-  return 0;
+  return node != NULL;
 }
 
 
@@ -2148,7 +2144,7 @@ static int kos_chain_contains(
 /**
    Innermost CC node from dyn_top. Callers: kos_capture_cc.
 */
-KosDynCC *kos_find_cc(KosEvalState *es) {
+KosDynCC *kos_dyn_find_cc(KosEvalState *es) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);
 
   while (node) {
@@ -2163,10 +2159,14 @@ KosDynCC *kos_find_cc(KosEvalState *es) {
 
 /**
    Ensure cc lies on the chain from dyn_top (call/cc capture precondition).
+   The one raising wrapper over kos_dyn_reaches.
 */
 static int kos_validate_capture_cc(KosEvalState *es, KosDynCC *cc) {
-  return kos_chain_contains(es, (KosDynNode *) cc,
-                            "CC block not found in chain");
+  if (! kos_dyn_reaches(es, (KosDynNode *) cc)) {
+    PyErr_SetString(PyExc_RuntimeError, "CC block not found in chain");
+    return -1;
+  }
+  return 0;
 }
 
 
@@ -2232,7 +2232,7 @@ static KosContinuation *kos_continuation_create(
 /**
    Clear the parent link at the bottom of a cloned template chain.
 
-   kos_clone_chain_segment leaves the clone's innermost parent pointing
+   kos_dyn_clone_segment leaves the clone's innermost parent pointing
    at stop -- a node on the live chain -- so the seam must be severed
    here or the template stays attached to storage it does not own:
    freeing or traversing the captured chain would then run past the
@@ -2329,7 +2329,7 @@ static KosContinuation *kos_continuation_capture_segment(
   KosContinuation *k;
   PyObject *token;
 
-  captured_chain = kos_clone_chain_segment(segment_top, stop);
+  captured_chain = kos_dyn_clone_segment(segment_top, stop);
   if (! captured_chain && segment_top != stop)
     return NULL;
   if (captured_chain)
@@ -2605,7 +2605,7 @@ int kos_shift_capture(
 */
 int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
 
-  KosDynCC *cc = kos_find_cc(es);
+  KosDynCC *cc = kos_dyn_find_cc(es);
   if (! cc) {
     PyErr_SetString(PyExc_RuntimeError, "CAPTURE_CC: no CC block on dynamic chain");
     return -1;
@@ -2699,7 +2699,7 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
     bottom = bottom->parent;
   KosDynNode *stop = bottom ? bottom->parent : NULL;
 
-  KosDynNode *cloned_chain = kos_clone_chain_segment(KosContinuation_CAPTURED_CHAIN(k), stop);
+  KosDynNode *cloned_chain = kos_dyn_clone_segment(KosContinuation_CAPTURED_CHAIN(k), stop);
   if (! cloned_chain && KosContinuation_CAPTURED_CHAIN(k)) {
     SAYF("[xfer] continuation_clone failed captured_chain=%p stop=%p pyerr=%d",
          (void *) KosContinuation_CAPTURED_CHAIN(k), (void *) stop,
@@ -3070,12 +3070,12 @@ int kos_dyn_finish_delimited_pop_return(
     if (kos_dyn_pop_delim(es, delim) < 0)
       return -1;
     if (KosEvalState_FRAME(es) == ret_frame)
-      kos_dyn_load_live_regs_from_frame(es, ret_frame);
+      kos_dyn_resync_load_regs(es, ret_frame);
     else
-      kos_dyn_rebuild_live_from_chain(es);
+      kos_dyn_resync_chain(es);
   } else {
     /* DELIM not dyn_top: pop already done; full rebuild for live coherence. */
-    kos_dyn_rebuild_live_from_chain(es);
+    kos_dyn_resync_chain(es);
   }
   return 0;
 }
@@ -3188,11 +3188,11 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
   KosDynNode_PARENT((KosDynNode *) delim) = NULL;
   kos_dyndelim_free(delim);
 
-  kos_dyn_rebuild_live_from_chain(es);
+  kos_dyn_resync_chain(es);
   /* rebuild leaves live PCs alone when the frame is unchanged; load the
    * invoke-site return pc explicitly. */
   if (KosEvalState_FRAME(es) == ret_frame)
-    kos_dyn_load_live_regs_from_frame(es, ret_frame);
+    kos_dyn_resync_load_regs(es, ret_frame);
 
   return 0;
 }

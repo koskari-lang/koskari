@@ -57,7 +57,7 @@ KOS_OP_HANDLER(RETURN) {
   /* === Phase 2: centralized in eval_event_return ===
      RETURN only signals; the unwind walk runs incrementally from
      dyn_top and stops at the frame or at a live delimited-invoke
-     bookmark (KOS_DYN_UNWIND_DELIM_TAKING_RETURN), which routes the
+     bookmark (KOS_WALK_DELIM_TAKING_RETURN), which routes the
      value to the k-invocation site.  No pre-walk. */
   return EVAL_RETURN(val);
 }

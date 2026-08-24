@@ -44,12 +44,11 @@ KOS_OP_HANDLER(CONTINUE) {
   }
 
   {
-    KosTransitionReq treq = {
-      .kind = KOS_TRANS_TRANSFER_TO_LOOP,
-      .xfer_event = KOS_XFER_EVENT_CONTINUE,
-      .payload = result,
-    };
-    KosOpResult kr = KosEvalState_TransitionOp(es, &treq);
+    KosWalkStatus ws = kos_dyn_unwind_to_loop(es, KOS_XFER_EVENT_CONTINUE,
+                                              result);
+    KosOpResult kr = (ws == KOS_WALK_ERROR) ? EVAL_RAISE()
+                   : (ws == KOS_WALK_ASYNC_UNWIND) ? EVAL_REPROLOGUE()
+                   : EVAL_NORMAL();
     if (kr.kind == KOS_RES_RAISE)
       Py_DECREF(result);
     return kr;

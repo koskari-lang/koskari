@@ -256,7 +256,7 @@ static int test_chain_clone_segment(void) {
     TEST_ASSERT_NOT_NULL(p3, "create prompt 3");
 
     /* Clone from p3 down to (but not including) p1 */
-    KosDynNode *cloned = kos_clone_chain_segment((KosDynNode *) p3,
+    KosDynNode *cloned = kos_dyn_clone_segment((KosDynNode *) p3,
                                                  (KosDynNode *) p1);
     TEST_ASSERT_NOT_NULL(cloned, "clone segment");
 
@@ -298,11 +298,11 @@ static int test_compute_lca(void) {
     TEST_ASSERT_NOT_NULL(b2, "create b2");
 
     /* LCA of a2 and b2 should be root */
-    KosDynNode *lca = kos_compute_lca((KosDynNode *) a2, (KosDynNode *) b2, 0);
+    KosDynNode *lca = kos_dyn_find_lca((KosDynNode *) a2, (KosDynNode *) b2, 0);
     TEST_ASSERT_SAME(lca, root, "LCA is root");
 
     /* LCA of a2 and a1 should be a1 */
-    lca = kos_compute_lca((KosDynNode *) a2, (KosDynNode *) a1, 0);
+    lca = kos_dyn_find_lca((KosDynNode *) a2, (KosDynNode *) a1, 0);
     TEST_ASSERT_SAME(lca, a1, "LCA of a2 and a1 is a1");
 
     /* Free all nodes */
@@ -358,10 +358,10 @@ static int test_transfer_plan_free_with_inject_exc_type(void) {
     TEST_ASSERT_NOT_NULL(value, "create value for throw");
 
     KosTransferPlan *plan = NULL;
-    int res = kos_build_transfer_plan(&es, (KosDynNode *) frame, value, 1, 0,
+    int res = kos_dyn_plan_transfer(&es, (KosDynNode *) frame, value, 1, 0,
                                       &plan);
     Py_DECREF(value);
-    TEST_ASSERT(res == 0, "kos_build_transfer_plan succeeded");
+    TEST_ASSERT(res == 0, "kos_dyn_plan_transfer succeeded");
     TEST_ASSERT_NOT_NULL(plan, "plan allocated");
 
     kos_free_transfer_plan(plan);

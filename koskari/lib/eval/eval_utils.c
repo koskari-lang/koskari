@@ -430,7 +430,7 @@ static inline int do_frame_prep(
   if (wants && tail_call) {
     /* Uninstall discardable extents left open above the frame before
        the reuse; their POP_* rows are unreachable on the tail path. */
-    if (kos_dyn_drop_discardable_to_frame(es, frame) < 0)
+    if (kos_dyn_teardown_to_frame(es, frame) < 0)
       return -1;
     kos_dynframe_reset_for_tail(frame);
     KosEvalState_CODE(es) = NULL;
@@ -668,7 +668,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
            inside let / loop / foreach) uninstall now: the reused frame
            never reaches their POP_* rows.  The window is unaffected --
            the guard above pins it to the frame's own block. */
-        if (unlikely(kos_dyn_drop_discardable_to_frame(es, frame) < 0)) {
+        if (unlikely(kos_dyn_teardown_to_frame(es, frame) < 0)) {
           if (window)
             kos_stack_drop_noerr_fast(caller_slot, window);
           if (flags & KOS_CALL_CALLABLE_OWNED)

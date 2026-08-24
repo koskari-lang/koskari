@@ -118,7 +118,7 @@ typedef enum KosDynFlags {
                                    re-parents the frame onto the chain.
                                    Traversal and teardown must cover it
                                    while held */
-  KOS_DYNF_LCA_VISITED = (int) 0x80000000u,  /* transient: set during kos_compute_lca */
+  KOS_DYNF_LCA_VISITED = (int) 0x80000000u,  /* transient: set during kos_dyn_find_lca */
 } KosDynFlags;
 
 
@@ -400,72 +400,49 @@ typedef struct KosDynNode KosDynFrame;
 
 
 /**
-   KosTransitionKind selects which existing dynchain walk or transfer
-   kos_dyn_transition dispatches to.  Payload and target fields in
-   KosTransitionReq are interpreted per kind.
+   KosWalkStatus is the outcome of a dynchain unwind walk.  Every
+   kos_dyn_unwind_* traversal returns it, except kos_dyn_unwind_raise,
+   which returns KosOpResult because it is the boundary to the eval loop
+   (process_raise) and must speak that loop's result vocabulary.
 
-   Continuation transfer plans (kos_run_transfer_step,
-   run_transfer_plan_to_completion, continuation return) remain orchestrated
-   from eval.c; they are
-   not yet modeled as transition kinds.  A future phase may map install or
-   resume steps to dedicated request values without changing plan semantics.
+   KOS_WALK_OK                    - walk completed; caller proceeds
+   KOS_WALK_ERROR                 - PyErr set; caller faults
+   KOS_WALK_ASYNC_UNWIND          - an extent wind/unwind started async work
+                                    (wind after-hook, or WITH __exit__
+                                    returning an awaitable); caller stages
+                                    resume state and reprologues
+   KOS_WALK_FINALLY_TAKING_RETURN - a FINALLY consumed the RETURN; the value
+                                    was delivered to the finally block and the
+                                    caller reprologues at its handler
+   KOS_WALK_DELIM_TAKING_RETURN   - the RETURN walk stopped at a DELIM invoke
+                                    bookmark (left at dyn_top); the caller
+                                    routes the value to the k-invocation site
+                                    (the value is NOT consumed by the walk)
 */
-typedef enum KosTransitionKind {
-  KOS_TRANS_WALK_RETURN_TO_FRAME = 0,
-  KOS_TRANS_UNWIND_TO_FRAME,
-  KOS_TRANS_UNWIND_TO_NODE,
-  KOS_TRANS_WALK_HANDLE_YIELD,
-  KOS_TRANS_TRANSFER_TO_LOOP,
-} KosTransitionKind;
+typedef enum KosWalkStatus {
+  KOS_WALK_OK = 0,
+  KOS_WALK_ERROR,
+  KOS_WALK_ASYNC_UNWIND,
+  KOS_WALK_FINALLY_TAKING_RETURN,
+  KOS_WALK_DELIM_TAKING_RETURN,
+} KosWalkStatus;
 
 
 /**
-   Normalized outcome from kos_dyn_transition for callers that should not
-   branch on raw helper return codes.
+   RAISE unwind walk: from dyn_top toward the frame boundary, offer
+   handle(RAISE) to each node then pop, delivering to the first TRY or
+   FINALLY that consumes and crossing frame and generator boundaries as
+   the exception propagates.
+
+   This is the boundary to the eval loop, so it returns KosOpResult (not
+   KosWalkStatus): EVAL_REPROLOGUE when a handler applied, EVAL_RAISE when
+   no handler remains (PyErr set, boundary raise prepared), EVAL_AWAIT when
+   an async unwind started.
+
+   Callers: process_raise (the unified RAISE ingress in eval.c).
+   Implemented in dynchain.c (dyn_walk).
 */
-typedef enum KosTransitionStatus {
-  KOS_TRANS_STATUS_OK = 0,
-  KOS_TRANS_STATUS_ERROR,
-  KOS_TRANS_STATUS_ASYNC_UNWIND,
-  KOS_TRANS_STATUS_FINALLY_TAKING_RETURN,
-} KosTransitionStatus;
-
-
-/**
-   Request for kos_dyn_transition.  Unused pointer fields must be NULL.
-
-   :param kind: which operation to run
-   :param xfer_event: for UNWIND_TO_FRAME, UNWIND_TO_NODE, TRANSFER_TO_LOOP
-   :param target_frame: WALK_RETURN_TO_FRAME, UNWIND_TO_FRAME
-   :param target_node: UNWIND_TO_NODE
-   :param payload: borrowed reference for WALK_RETURN_TO_FRAME (return
-     value); TRANSFER_TO_LOOP steals or uses per kos_dyn_transfer_to_loop
-*/
-typedef struct KosTransitionReq {
-  KosTransitionKind kind;
-  KosXferEvent xfer_event;
-  KosDynFrame *target_frame;
-  KosDynNode *target_node;
-  PyObject *payload;
-} KosTransitionReq;
-
-
-/**
-   Result from kos_dyn_transition.  :c:member:`raw` holds the legacy int
-   return from the underlying helper when useful for debugging.
-*/
-typedef struct KosTransitionResult {
-  KosTransitionStatus status;
-  int raw;
-} KosTransitionResult;
-
-
-/**
-   TRY/FINALLY handler walk used by process_raise (the unified RAISE
-   ingress in eval.c). Implemented in dynchain.c.
-*/
-
-KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es);
+KosOpResult kos_dyn_unwind_raise(KosEvalState *es);
 
 
 typedef struct KosDynNode KosDynPrompt;
@@ -742,7 +719,7 @@ KosDynFrame *kos_dynframe_new(
    Clone a frame node for continuation capture.
 
    Clones the frame's stack using DeepCopy. Does NOT clone
-   the parent chain; use kos_clone_chain_segment for that.
+   the parent chain; use kos_dyn_clone_segment for that.
 
    :param frame: frame to clone
 
@@ -916,7 +893,7 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop);
 
    :return: cloned chain top, or NULL on error
 */
-KosDynNode *kos_clone_chain_segment(
+KosDynNode *kos_dyn_clone_segment(
    KosDynNode *top,
    KosDynNode *stop);
 
@@ -948,7 +925,7 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 
    Use for pops, splices, gen install, and any dyn_top change that is not
    kos_dyn_push. Internally captures the previous dyn_top and calls
-   kos_dyn_retarget_after_pop (incremental parent pop or full rebuild).
+   kos_dyn_resync_after_pop (incremental parent pop or full rebuild).
    Ordinary pushes must use kos_dyn_push or kos_dyn_push_noinstall instead.
 */
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
@@ -961,12 +938,12 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
    Call from outside the dynchain TU when eval lifecycle or opcodes must refresh
    live fields after a non-standard chain edit (KosContext_New bootstrap, tail
    koscall, stack assigned on dyn_top after push). Inside dynchain.c, xfer
-   INSTALL/PUSH, gen install fallback, and kos_dyn_retarget_after_pop when the
+   INSTALL/PUSH, gen install fallback, and kos_dyn_resync_after_pop when the
    edit is not a single-head parent pop use this instead of incremental retarget.
    Do not call on every opcode; ordinary pushes and pops go through
    kos_dyn_push and kos_dyn_commit_dyn_top.
 */
-void kos_dyn_rebuild_live_from_chain(KosEvalState *es);
+void kos_dyn_resync_chain(KosEvalState *es);
 
 
 /**
@@ -1019,7 +996,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame);
 
 /* Drop discardable extent nodes (NS, LOOP, FOREACH) above frame before
    tail-call frame reuse; errors on any other open node kind. */
-int kos_dyn_drop_discardable_to_frame(KosEvalState *es, KosDynFrame *frame);
+int kos_dyn_teardown_to_frame(KosEvalState *es, KosDynFrame *frame);
 
 
 /**
@@ -1082,7 +1059,7 @@ int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *gen);
    Unwind an exhausted gen from the chain. Call when gen's frame returns
    (parent is GEN). Frees frame and restores consumer.
 */
-int kos_dyn_gen_unwind_exhausted(KosEvalState *es);
+int kos_dyn_teardown_gen_exhausted(KosEvalState *es);
 
 
 /**
@@ -1175,7 +1152,7 @@ int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim);
 
 
 /**
-   Complete a delimited POP_PROMPT return after kos_dyn_transition succeeds
+   Complete a delimited POP_PROMPT return after the unwind walk succeeds
    (non-async). Pushes value onto the delimited return frame's stack, sets
    PC and frame_top, clears invocation and delimited-return fields.
 
@@ -1278,7 +1255,7 @@ int kos_dyn_push_shift(KosEvalState *es, uint32_t prompt_node_id);
 
    :return: 0 on success, -1 on error
 */
-int kos_build_cc_unwind_plan(
+int kos_dyn_plan_cc_unwind(
     KosEvalState *es,
     PyObject *exc_type,
     PyObject *exc_val,
@@ -1681,43 +1658,65 @@ KosOpResult kos_dyn_pop_top_allow_barrier(
 KosOpResult kos_dyn_pop_top(KosEvalState *es, KosXferEvent event);
 
 
-int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
-                            KosXferEvent event);
+/**
+   Generic unwind walk toward a frame: pop from dyn_top to frame, offering
+   handle(event) to each node before popping.  The event is a diagnostic
+   tag; nodes react through their unwind semantics.  A node that CONSUMES
+   (other than the FINALLY case, which uses kos_dyn_unwind_return) is an
+   error.
+
+   Callers: eval.c delimited-return routing (route_delim_return via SHIFT).
+
+   :return: KOS_WALK_OK, KOS_WALK_ERROR, or KOS_WALK_ASYNC_UNWIND
+*/
+KosWalkStatus kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
+                                      KosXferEvent event);
 
 
 /**
-   Walk RETURN to frame, offering handle(RETURN) to each node. When FINALLY
-   consumes, deliver (push value to block, set PC to finally), set
-   handling_return, and return KOS_DYN_UNWIND_FINALLY_TAKING_RETURN. Caller
-   must return 0; eval continues at finally. When finally does return,
-   inner RETURN completes; when finally falls through, POP_FINALLY promotes
-   value and bytecode continues (typically RETURN pops it).
+   RETURN unwind walk to frame: offer handle(RETURN) to each node then pop.
+   When a FINALLY consumes, deliver (push value to block, set PC to finally,
+   set handling_return) and return KOS_WALK_FINALLY_TAKING_RETURN; the
+   caller reprologues at the finally.  When the walk's top is a DELIM
+   carrying a live invoke bookmark (RETURN_FRAME + RETURN_PC), the return
+   has reached a reset boundary: the walk stops with the DELIM at dyn_top
+   and returns KOS_WALK_DELIM_TAKING_RETURN, leaving val unconsumed for the
+   caller to route to the k-invocation site.
 
-   When the walk's top is a DELIM carrying a live invoke bookmark
-   (RETURN_FRAME + RETURN_PC), the return has reached a reset boundary:
-   the walk stops with the DELIM at dyn_top and returns
-   KOS_DYN_UNWIND_DELIM_TAKING_RETURN; the caller routes val to the
-   k-invocation site.
+   Callers: eval.c eval_event_return (RETURN plumbing), utils.c native
+   apply return.
 
-   :param val: return value; ownership transferred when FINALLY_TAKING
-   :return: 0 (walk done), KOS_DYN_UNWIND_ASYNC_STARTED, -1,
-     KOS_DYN_UNWIND_FINALLY_TAKING_RETURN, or
-     KOS_DYN_UNWIND_DELIM_TAKING_RETURN
+   :param val: return value; ownership transferred to the finally block on
+     KOS_WALK_FINALLY_TAKING_RETURN, left with the caller on
+     KOS_WALK_DELIM_TAKING_RETURN
+   :return: KOS_WALK_OK, KOS_WALK_ERROR, KOS_WALK_ASYNC_UNWIND,
+     KOS_WALK_FINALLY_TAKING_RETURN, or KOS_WALK_DELIM_TAKING_RETURN
 */
-int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
-                                  PyObject *val);
+KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
+                                    PyObject *val);
 
 
-int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
-                           KosXferEvent event);
+/**
+   Generic unwind walk toward a target node: pop from dyn_top to target,
+   crossing barriers and delimiters (PROMPT pops via the barrier-crossing
+   policy), offering handle(event) as a diagnostic tag.
+
+   Callers: eval.c delimited-return routing (route_delim_return via SHIFT),
+   continuation transfer helpers.
+
+   :return: KOS_WALK_OK, KOS_WALK_ERROR, or KOS_WALK_ASYNC_UNWIND
+*/
+KosWalkStatus kos_dyn_unwind_to_node(KosEvalState *es,
+                                     const KosDynNode *target,
+                                     KosXferEvent event);
 
 
 /**
    Internal xfer-layer status: extent wind/unwind started async work (e.g.
    wind after hook, WITH __exit__ returning awaitable).  Caller must not
    pop the node yet; the evaluator runs the hook or awaits the exit then
-   resumes unwinding.  Eval boundaries map this to EVAL_AWAIT(awaitable)
-   or EVAL_REPROLOGUE() via KosEvalState_TransitionOp / kos_dyn_pop_top.
+   resumes unwinding.  The unwind walks surface it as KOS_WALK_ASYNC_UNWIND;
+   kos_dyn_pop_top maps it to EVAL_REPROLOGUE().
 */
 #define KOS_DYN_UNWIND_ASYNC_STARTED 1
 
@@ -1725,17 +1724,8 @@ int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
     push None); caller must return 0 without further action. */
 #define KOS_DYN_UNWIND_SWALLOWED 2
 
-/** When FINALLY consumed handle(RETURN): delivered to finally block, value
-    pushed to block. Caller must return 0 (eval continues at finally). */
-#define KOS_DYN_UNWIND_FINALLY_TAKING_RETURN 3
-
 /** WITH skipped __exit__ (single-shot already consumed); not an error */
 #define KOS_DYN_UNWIND_PROTOCOL_SKIPPED 4
-
-/** When the return walk stopped at a DELIM with a live invoke bookmark
-    (left at dyn_top).  Caller routes the return value to the
-    k-invocation site; the value payload is NOT consumed by the walk. */
-#define KOS_DYN_UNWIND_DELIM_TAKING_RETURN 5
 
 
 /**
@@ -1830,14 +1820,17 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
 
 
 /**
-   Walk the dynamic chain from DYN_TOP upward, offering handle(YIELD) to
-   each node. Stops when a node returns CONSUMED (generator boundary).
-   Used for YIELD transit: freezes the GEN node when found.
+   YIELD unwind walk: from dyn_top upward, offer handle(YIELD) to each node,
+   stopping at the first that CONSUMES (the generator boundary), whose GEN
+   node is then frozen and detached from the live chain.  A CONSUME by a
+   non-GEN node completes the walk without freezing.
 
-   :return: 0 when GEN consumed (valid yield; caller may return),
-     -1 on error or if no generator boundary found
+   Callers: eval.c eval_event_yield (post-opcode YIELD dispatch).
+
+   :return: KOS_WALK_OK when a node consumed the yield (valid yield),
+     KOS_WALK_ERROR on error or when no generator boundary was found
 */
-int kos_dyn_walk_handle_yield(KosEvalState *es);
+KosWalkStatus kos_dyn_unwind_yield(KosEvalState *es);
 
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
@@ -1857,32 +1850,35 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
 
 
 /**
-   Find the innermost LOOP or FOREACH region on the dynamic chain,
-   walking from dyn_top toward root. Used for break/continue.
+   Find the innermost LOOP or FOREACH region on the dynamic chain, walking
+   from dyn_top toward root.  Read-only; never sets PyErr.
+
+   Callers: opcode/ITER_NEXT.c, kos_dyn_unwind_to_loop.
 
    :param es: eval state
 
    :return: the topmost LOOP or FOREACH region, or NULL if none found
  */
-KosDynNode *kos_find_node_for_loop(KosEvalState *es);
+KosDynNode *kos_dyn_find_loop(KosEvalState *es);
 
 
 /**
-   Transfer control to the innermost loop for BREAK or CONTINUE.
-   Pops nodes from dyn_top toward the loop with unwind(event), delivers
-   the event to the loop, and resumes at break_pc (BREAK) or
-   continue_pc (CONTINUE).
+   BREAK/CONTINUE unwind walk to the innermost loop: locate the loop region
+   in the current frame, pop from dyn_top toward it with unwind(event), then
+   deliver the event -- resuming at continue_pc (CONTINUE) or popping the
+   region and resuming at break_pc (BREAK).
 
-   :param ctx: execution context
+   Callers: opcode/BREAK.c, opcode/CONTINUE.c.
+
    :param event: KOS_XFER_EVENT_BREAK or KOS_XFER_EVENT_CONTINUE
    :param result: loop result value (transferred; caller loses ownership)
 
-   :return: 0 on success, -1 on error (break/continue outside loop,
-     same-frame check failed), KOS_DYN_UNWIND_ASYNC_STARTED when async
-     unwind started
+   :return: KOS_WALK_OK, KOS_WALK_ERROR (break/continue outside loop, or
+     same-frame check failed), or KOS_WALK_ASYNC_UNWIND when an async unwind
+     started
 */
-int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
-                             PyObject *result);
+KosWalkStatus kos_dyn_unwind_to_loop(KosEvalState *es, KosXferEvent event,
+                                     PyObject *result);
 
 
 /**
@@ -1981,7 +1977,7 @@ int kos_ctx_exc_stash_chain_top(
 
    :return: topmost KosDynCC, or NULL if none
 */
-KosDynCC *kos_find_cc(KosEvalState *es);
+KosDynCC *kos_dyn_find_cc(KosEvalState *es);
 
 
 /**
@@ -2057,7 +2053,7 @@ KosContinuation *kos_continuation_clone(KosContinuation *k);
 
    :return: LCA node, or NULL if chains don't share an ancestor
 */
-KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id);
+KosDynNode *kos_dyn_find_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id);
 
 
 /**
@@ -2078,7 +2074,7 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_i
 
    :return: 0 on success, -1 on error
 */
-int kos_build_transfer_plan(
+int kos_dyn_plan_transfer(
    KosEvalState *es,
    KosDynNode *target,
    PyObject *value,
@@ -2097,7 +2093,7 @@ int kos_build_transfer_plan(
 
    :return: 0 on success, -1 on error
 */
-int kos_build_direct_install_plan(
+int kos_dyn_plan_direct_install(
    KosEvalState *es,
    KosDynNode *target,
    PyObject *value,
@@ -2112,7 +2108,7 @@ int kos_build_direct_install_plan(
    (wind) for PARAM nodes in the segment if any, PUSH, INJECT.  Caller must
    set RESUME_PC, RESUME_STACK after return.
 */
-int kos_build_delimited_push_plan(
+int kos_dyn_plan_delimited_push(
    KosEvalState *es,
    KosDynNode *segment,
    PyObject *value,
@@ -2126,7 +2122,7 @@ int kos_build_delimited_push_plan(
 
    :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
 */
-int kos_build_install_only_plan(
+int kos_dyn_plan_install_only(
    KosEvalState *es,
    KosDynNode *target,
    uint32_t graft_point_id,
@@ -2152,7 +2148,7 @@ int kos_run_transfer_step(KosEvalState *es);
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_build_pop_shift_plan(KosEvalState *es, KosDynPrompt *prompt,
+int kos_dyn_plan_pop_shift(KosEvalState *es, KosDynPrompt *prompt,
                                  PyObject *value, KosTransferPlan **out_plan);
 
 

@@ -313,17 +313,17 @@ int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *g) {
    Assumes ctx->dyn_top is the gen's frame, frame->parent is gen.
    Frees the chain from frame down to gen, restores consumer, releases gen.
 */
-int kos_dyn_gen_unwind_exhausted(KosEvalState *es) {
+int kos_dyn_teardown_gen_exhausted(KosEvalState *es) {
   KosDynNode *frame = KosEvalState_DYN_TOP(es);
   if (! frame || ! KosDynNode_IS_FRAME(frame)) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_gen_unwind_exhausted: dyn_top is not a frame");
+                    "kos_dyn_teardown_gen_exhausted: dyn_top is not a frame");
     return -1;
   }
   KosDynGen *gen = (KosDynGen *) KosDynNode_PARENT(frame);
   if (! gen || ! KosDynNode_IS_GEN((KosDynNode *) gen)) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_gen_unwind_exhausted: frame parent is not GEN");
+                    "kos_dyn_teardown_gen_exhausted: frame parent is not GEN");
     return -1;
   }
   KosDynNode *consumer = KosDynNode_PARENT(gen);

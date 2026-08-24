@@ -59,7 +59,7 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
 
   /* 3. Put GEN's old parent onto ctx's active */
   KosEvalState_DYN_TOP(es) = saved_parent;
-  kos_dyn_rebuild_live_from_chain(es);
+  kos_dyn_resync_chain(es);
 
   owner = KosDynGen_OWNER(gen);
   if (owner && KosPyAsyncGen_Check(owner))
@@ -86,28 +86,33 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
 }
 
 
-int kos_dyn_walk_handle_yield(KosEvalState *es) {
+/**
+   YIELD unwind walk. See dynchain.h for the contract. Offers handle(YIELD)
+   up from dyn_top; freezes and detaches the GEN node that consumes.
+   Callers: eval.c eval_event_yield.
+*/
+KosWalkStatus kos_dyn_unwind_yield(KosEvalState *es) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);
 
-  SAYF("[gen] walk_handle_yield ENTER dyn_top=%p\n", (void *) node);
+  SAYF("[gen] unwind_yield ENTER dyn_top=%p\n", (void *) node);
   while (node) {
     KosHandleResult hr = kos_dyn_handle(es, node, KOS_XFER_EVENT_YIELD);
-    SAYF("[gen] walk_handle_yield node=%p kind=%s hr=%d\n",
+    SAYF("[gen] unwind_yield node=%p kind=%s hr=%d\n",
          (void *) node, kos_dynnode_kind_name(KosDynNode_KIND(node)),
          (int) hr);
 
     if (hr == KOS_HANDLE_CONSUMED) {
       if (KosDynNode_IS_GEN(node)) {
-        SAYF("[gen] walk_handle_yield -> freeze at gen %p\n", (void *) node);
+        SAYF("[gen] unwind_yield -> freeze at gen %p\n", (void *) node);
         int fr = kos_dyn_gen_freeze_and_release(es, (KosDynGen *) node);
-        return fr;
+        return (fr < 0) ? KOS_WALK_ERROR : KOS_WALK_OK;
       }
-      SAY("[gen] walk_handle_yield -> consumed (non-GEN), return 0");
-      return 0;
+      SAY("[gen] unwind_yield -> consumed (non-GEN)");
+      return KOS_WALK_OK;
     }
 
     if (hr == KOS_HANDLE_ERROR) {
-      return -1;
+      return KOS_WALK_ERROR;
     }
 
     node = KosDynNode_PARENT(node);
@@ -115,7 +120,7 @@ int kos_dyn_walk_handle_yield(KosEvalState *es) {
 
   PyErr_SetString(PyExc_RuntimeError,
                   "yield outside generator: no generator boundary on chain");
-  return -1;
+  return KOS_WALK_ERROR;
 }
 
 
@@ -189,13 +194,15 @@ KosOpResult kos_dyn_pop_top(KosEvalState *es, KosXferEvent event) {
 
 
 /**
-   Pop until dyn_top == target or empty. PROMPT uses kos_dyn_pop_prompt so
-   walks can cross delimiters. Barriers are popped here because these walks
-   deliberately unwind through delimited prompt boundaries. Callers:
-   transfer helpers, targeted unwind.
+   Generic unwind walk toward a target node. See dynchain.h for the
+   contract. Pops until dyn_top == target or empty, crossing barriers and
+   delimiters (PROMPT pops via kos_dyn_pop_prompt) since these walks
+   deliberately unwind through delimited prompt boundaries. Callers: eval.c
+   route_delim_return, continuation transfer helpers.
 */
-int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
-                           KosXferEvent event) {
+KosWalkStatus kos_dyn_unwind_to_node(KosEvalState *es,
+                                     const KosDynNode *target,
+                                     KosXferEvent event) {
 
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_node: target=%p kind=%s",
@@ -214,24 +221,26 @@ int kos_dyn_unwind_to_node(KosEvalState *es, const KosDynNode *target,
     KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
     int m = kos_map_pop_result(kos_dyn_pop_top_allow_barrier(es, event));
     if (m)
-      return m;
+      return (m < 0) ? KOS_WALK_ERROR : KOS_WALK_ASYNC_UNWIND;
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_node: done, dyn_top=%p", (void *) KosEvalState_DYN_TOP(es));
-  return 0;
+  return KOS_WALK_OK;
 }
 
 
 /**
-   Unwind toward frame, offering RETURN to each top (FINALLY can consume and
-   branch). Sets async unwind target frame when WITH exits suspend. Callers:
-   kos_dyn_transition WALK_RETURN_TO_FRAME, RETURN opcode plumbing.
+   RETURN unwind walk to frame. See dynchain.h for the contract. Offers
+   handle(RETURN) to each top; a FINALLY consumes and branches to its
+   handler, a live DELIM invoke bookmark stops the walk for the caller to
+   route the value. Callers: eval.c eval_event_return, utils.c native apply
+   return.
 */
-int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
-                                  PyObject *val) {
+KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
+                                    PyObject *val) {
 
   if (KOS_XFER_TRACE)
-    SAYF("[xfer] walk_return_to_frame: target frame=%p", (void *) frame);
+    SAYF("[xfer] unwind_return: target frame=%p", (void *) frame);
 
   while (KosEvalState_DYN_TOP(es) != NULL
          && KosEvalState_DYN_TOP(es) != (KosDynNode *) frame) {
@@ -244,9 +253,9 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
         && KosDynDelim_RETURN_FRAME((KosDynDelim *) top) != NULL
         && KosDynDelim_RETURN_PC((KosDynDelim *) top) != (uint32_t) -1) {
       if (KOS_XFER_TRACE)
-        SAYF("[xfer] walk_return: stopped at DELIM bookmark node=%p",
+        SAYF("[xfer] unwind_return: stopped at DELIM bookmark node=%p",
              (void *) top);
-      return KOS_DYN_UNWIND_DELIM_TAKING_RETURN;
+      return KOS_WALK_DELIM_TAKING_RETURN;
     }
 
     /* Handle phase: offer RETURN before unwind */
@@ -259,11 +268,11 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
           {
             if (KosEvalState_StackClear(es) < 0) {
               Py_DECREF(val);
-              return -1;
+              return KOS_WALK_ERROR;
             }
             if (KosEvalState_StackPushRef(es, val) < 0) {
               Py_DECREF(val);
-              return -1;
+              return KOS_WALK_ERROR;
             }
           }
           Py_DECREF(val);
@@ -273,47 +282,48 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
           KosDynFinally_ENABLED(fin) = 0;
           KosDynFinally_HANDLING_RETURN(fin) = 1;
           if (KOS_XFER_TRACE)
-            SAYF("[xfer] walk_return: delivered to FINALLY, pc=%u",
+            SAYF("[xfer] unwind_return: delivered to FINALLY, pc=%u",
                  (unsigned) KosDynFinally_HANDLER_PC(fin));
-          return KOS_DYN_UNWIND_FINALLY_TAKING_RETURN;
+          return KOS_WALK_FINALLY_TAKING_RETURN;
         }
         /* Other CONSUMED (e.g. GEN) not expected for RETURN walk */
         PyErr_SetString(PyExc_RuntimeError,
                         "handle(CONSUMED) during return walk: unexpected node");
         Py_DECREF(val);
-        return -1;
+        return KOS_WALK_ERROR;
       }
       if (hr == KOS_HANDLE_ERROR) {
         Py_DECREF(val);
-        return -1;
+        return KOS_WALK_ERROR;
       }
     }
 
     if (KOS_XFER_TRACE)
-      SAYF("[xfer] walk_return: popping node=%p kind=%s",
+      SAYF("[xfer] unwind_return: popping node=%p kind=%s",
            (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
     KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
     int m = kos_map_pop_result(
         kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_RETURN));
     if (m) {
       Py_DECREF(val);
-      return m;
+      return (m < 0) ? KOS_WALK_ERROR : KOS_WALK_ASYNC_UNWIND;
     }
   }
   if (KOS_XFER_TRACE)
-    SAYF("[xfer] walk_return: done, dyn_top=%p",
+    SAYF("[xfer] unwind_return: done, dyn_top=%p",
          (void *) KosEvalState_DYN_TOP(es));
-  return 0;
+  return KOS_WALK_OK;
 }
 
 
 /**
-   Pop toward frame with handle(event) before each pop. CONSUMED for non-
-   FINALLY is currently an error (see message). Callers: kos_dyn_transition
-   UNWIND_TO_FRAME.
+   Generic unwind walk toward a frame. See dynchain.h for the contract.
+   Pops toward frame with handle(event) before each pop; a CONSUME (other
+   than the FINALLY case, handled by kos_dyn_unwind_return) is an error.
+   Callers: eval.c route_delim_return.
 */
-int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
-                            KosXferEvent event) {
+KosWalkStatus kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
+                                      KosXferEvent event) {
 
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_frame: target frame=%p", (void *) frame);
@@ -326,13 +336,13 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
     {
       KosHandleResult hr = kos_dyn_handle(es, top, event);
       if (hr == KOS_HANDLE_CONSUMED) {
-        /* RETURN: use kos_dyn_walk_return_to_frame. RAISE: use try_local. */
+        /* RETURN: use kos_dyn_unwind_return. RAISE: use kos_dyn_unwind_raise. */
         PyErr_SetString(PyExc_RuntimeError,
                         "handle(CONSUMED) during unwind_to_frame not implemented");
-        return -1;
+        return KOS_WALK_ERROR;
       }
       if (hr == KOS_HANDLE_ERROR) {
-        return -1;
+        return KOS_WALK_ERROR;
       }
     }
 
@@ -342,19 +352,20 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
     KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
     int m = kos_map_pop_result(kos_dyn_pop_top_allow_barrier(es, event));
     if (m)
-      return m;
+      return (m < 0) ? KOS_WALK_ERROR : KOS_WALK_ASYNC_UNWIND;
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_frame: done, dyn_top=%p", (void *) KosEvalState_DYN_TOP(es));
-  return 0;
+  return KOS_WALK_OK;
 }
 
 
 /**
-   Nearest LOOP or FOREACH from dyn_top. Callers: ITER_NEXT opcode and the
-   transfer-to-loop walk serving BREAK/CONTINUE transitions.
+   Find the nearest LOOP or FOREACH from dyn_top. Read-only; never sets
+   PyErr. Callers: opcode/ITER_NEXT.c and kos_dyn_unwind_to_loop serving
+   BREAK/CONTINUE.
 */
-KosDynNode *kos_find_node_for_loop(KosEvalState *es) {
+KosDynNode *kos_dyn_find_loop(KosEvalState *es) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);
   while (node) {
     if (KosDynNode_IS_LOOP(node) || KosDynNode_IS_FOREACH(node))
@@ -366,19 +377,20 @@ KosDynNode *kos_find_node_for_loop(KosEvalState *es) {
 
 
 /**
-   Implement break/continue: find loop region in current frame, unwind to it,
-   set PC and stack per event. Callers: kos_dyn_transition TRANSFER_TO_LOOP.
+   BREAK/CONTINUE unwind walk to the innermost loop. See dynchain.h for the
+   contract. Finds the loop region in the current frame, unwinds to it, then
+   sets PC and stack per event. Callers: opcode/BREAK.c, opcode/CONTINUE.c.
 */
-int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
-                             PyObject *result) {
+KosWalkStatus kos_dyn_unwind_to_loop(KosEvalState *es, KosXferEvent event,
+                                     PyObject *result) {
 
-  KosDynNode *region = kos_find_node_for_loop(es);
+  KosDynNode *region = kos_dyn_find_loop(es);
   if (! region) {
     PyErr_SetString(PyExc_RuntimeError,
                     (event == KOS_XFER_EVENT_BREAK)
                         ? "break outside loop"
                         : "continue outside loop");
-    return -1;
+    return KOS_WALK_ERROR;
   }
 
   /* Same-frame check: loop must be in current frame (frame is ancestor) */
@@ -396,7 +408,7 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
                       (event == KOS_XFER_EVENT_BREAK)
                           ? "break outside loop"
                           : "continue outside loop");
-      return -1;
+      return KOS_WALK_ERROR;
     }
   }
 
@@ -404,7 +416,7 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
   while (KosEvalState_DYN_TOP(es) != (KosDynNode *) region) {
     int m = kos_map_pop_result(kos_dyn_pop_nonbarrier_top(es, event));
     if (m)
-      return m;
+      return (m < 0) ? KOS_WALK_ERROR : KOS_WALK_ASYNC_UNWIND;
   }
 
   if (event == KOS_XFER_EVENT_CONTINUE) {
@@ -422,11 +434,11 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
         : KosDynForeach_CONTINUE_PC((KosDynForeach *) region);
 
     if (KosEvalState_StackClear(es) < 0) {
-      return -1;
+      return KOS_WALK_ERROR;
     }
 
     KosEvalState_SET_PC(es, continue_pc);
-    return 0;
+    return KOS_WALK_OK;
   }
 
   /* KOS_XFER_EVENT_BREAK: read break_pc before popping, then pop, drop block,
@@ -437,30 +449,32 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
 
   if (KosDynNode_IS_LOOP(region)) {
     if (kos_dyn_pop_loop(es, (KosDynLoop *) region) < 0)
-      return -1;
+      return KOS_WALK_ERROR;
   } else if (kos_dyn_pop_foreach(es, (KosDynForeach *) region) < 0) {
-    return -1;
+    return KOS_WALK_ERROR;
   }
 
   if (KosEvalState_StackPushRef(es, result) < 0) {
     Py_DECREF(result);
-    return -1;
+    return KOS_WALK_ERROR;
   }
   Py_DECREF(result);
 
   KosEvalState_SET_PC(es, break_pc);
-  return 0;
+  return KOS_WALK_OK;
 }
 
 
 /**
-   Walk dyn_top down toward frame_top, handle(RAISE) then pop until a TRY or
-   FINALLY consumes (jump to handler) or no handler remains.
-   Returns EVAL_REPROLOGUE if a handler was applied, EVAL_RAISE if no handler
-   (PyErr set and boundary raise prepared), EVAL_AWAIT if async unwind started.
-   Callers: process_raise (the unified RAISE ingress in eval.c).
+   RAISE unwind walk. See dynchain.h for the contract. Walks dyn_top down
+   toward the frame boundary, offering handle(RAISE) then popping until a
+   TRY or FINALLY consumes (jump to handler) or no handler remains, crossing
+   frame and generator boundaries as the exception propagates. Returns
+   KosOpResult (the eval-loop boundary type): EVAL_REPROLOGUE when a handler
+   applied, EVAL_RAISE when none remains, EVAL_AWAIT when an async unwind
+   started. Callers: process_raise (the unified RAISE ingress in eval.c).
 */
-KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
+KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   #if VERBOSE_DEBUG
   if (! ctx) {
@@ -527,7 +541,7 @@ KosOpResult kos_dyn_try_local_raise_body(KosEvalState *es) {
           {
             PyObject *typ = NULL, *val = NULL, *tb = NULL;
             PyErr_Fetch(&typ, &val, &tb);
-            if (kos_dyn_gen_unwind_exhausted(es) < 0) {
+            if (kos_dyn_teardown_gen_exhausted(es) < 0) {
               Py_XDECREF(typ);
               Py_XDECREF(val);
               Py_XDECREF(tb);
