@@ -12,6 +12,7 @@ recipes/countdown
 recipes/script-main
 recipes/packaging-installed-scripts
 recipes/embedding-host
+recipes/default-app-icon
 recipes/point-class
 recipes/property-accessors
 recipes/fibonacci

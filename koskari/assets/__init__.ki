@@ -1,0 +1,110 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+
+"""
+koskari.assets
+
+Packaged brand assets, distributed with the wheel so any koskari-written
+program can use them as a default icon or favicon without depending on
+the docs tree. Currently just the apple-mark logo, as an SVG and two
+pre-rendered PNG sizes.
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
+"""
+
+
+import importlib.resources
+
+
+(declare-exports ICON_PNG_SIZES icon_path icon_png_bytes icon_svg_bytes icon_svg_text)
+
+
+define ICON_PNG_SIZES #(32 256)
+
+
+define icon-filename [size]:
+  """
+  Resolve a PNG size to its packaged filename
+
+  :param size: pixel dimension, must be a member of ICON_PNG_SIZES
+  :return: filename of the packaged PNG
+  :raises ValueError: if size is not a packaged PNG size
+  """
+
+  unless (in size ICON_PNG_SIZES):
+    (raise (ValueError f"no packaged icon at size {size}, have {ICON_PNG_SIZES}"))
+  f"koskari-icon-{size}.png"
+
+
+@demand
+define icon_svg_bytes []:
+  """
+  The apple-mark logo as SVG source bytes
+
+  :return: SVG document bytes
+  """
+
+  define ref ((importlib.resources.files __package__).joinpath "koskari-icon.svg")
+  (ref.read_bytes)
+
+
+@demand
+define icon_svg_text []:
+  """
+  The apple-mark logo as SVG source text
+
+  :return: SVG document text
+  """
+
+  ((icon_svg_bytes).decode "utf-8")
+
+
+@demand
+define icon_png_bytes [size: 32]:
+  """
+  The apple-mark logo as PNG bytes at one of the packaged sizes
+
+  :param size: pixel dimension, one of ICON_PNG_SIZES (default 32)
+  :return: PNG image bytes
+  :raises ValueError: if size is not a packaged PNG size
+  """
+
+  define ref ((importlib.resources.files __package__).joinpath (icon-filename size))
+  (ref.read_bytes)
+
+
+@demand
+define icon_path [size: None]:
+  """
+  A real filesystem path to the icon, for callers that need a path
+  rather than bytes (a GUI toolkit's window icon, a web framework's
+  favicon route, and so on).
+
+  Use as a context manager; the yielded path is only guaranteed to
+  exist for the duration of the with block, since the package may be
+  installed as a zip.
+
+  :param size: pixel dimension for a PNG, one of ICON_PNG_SIZES, or
+      None for the SVG (default None)
+  :return: context manager yielding a Path
+  :raises ValueError: if size is not a packaged PNG size
+  """
+
+  define name (if (None? size) "koskari-icon.svg" (icon-filename size))
+  define ref ((importlib.resources.files __package__).joinpath name)
+  (importlib.resources.as_file ref)
+
+
+; The end.

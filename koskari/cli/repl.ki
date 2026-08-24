@@ -30,7 +30,9 @@ import sys
 
 import-from .host:
   _await_user_form _make_repl_prompter
-  REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES startup_lines
+  REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES
+  startup_lines
+; maybe_print_logo startup_lines  -- logo emission disabled for now
 import-from ..exceptions:
   format_code_boundary_exception format_exception_with_koskari_trace
   apply_sys_last_exc CompilerError UncaughtCompilerError
@@ -187,6 +189,7 @@ define repl [
     set! prompter (_make_repl_prompter histfile ns)
 
   unless quiet:
+    ; (maybe_print_logo stdout)
     for-each [line (startup_lines)]:
       print line file: stdout
     print "" file: stdout

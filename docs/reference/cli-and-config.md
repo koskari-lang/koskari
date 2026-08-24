@@ -60,6 +60,24 @@ Read as layout, that same line would be `((print "a") (print "b"))` -- both
 forms evaluate, then the result of the first is called. For a layout program
 from the command line, use `-`.
 
+## Terminal graphics
+
+On a terminal that supports the Kitty or iTerm2 inline-image protocols
+(Kitty, Ghostty, iTerm2, WezTerm, and similar), the REPL banner renders
+the koskari icon inline above the version lines. Detection is
+environment-variable based, with no interactive terminal query, and
+never fires when stdout isn't a tty or when `--quiet` suppresses the
+banner. It also declines automatically inside `tmux`/`screen`, since
+those typically swallow the escape sequences.
+
+Set `KOSKARI_TERM_GRAPHICS` to override detection: `kitty` or `iterm2`
+forces that protocol (useful behind a multiplexer that does pass the
+sequences through), and `none` turns the icon off entirely. Any other
+value is ignored and detection proceeds normally.
+
+The same icon is available to any koskari-written program; see
+[Using the default app icon](../patterns/recipes/default-app-icon.md).
+
 ## Related commands
 
 | Command | Purpose |
