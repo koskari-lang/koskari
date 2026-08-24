@@ -61,6 +61,3 @@ Don't hold on to the path after the `with` block exits.
 
 - [Hosting Koskari in a Python app](embedding-host.md) — the broader
   Python/Koskari interop story
-- [CLI and configuration](../../reference/cli-and-config.md) — the same
-  icon appears in the REPL banner on terminals that support inline
-  graphics
