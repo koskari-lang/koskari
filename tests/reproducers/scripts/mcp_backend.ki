@@ -19,7 +19,8 @@ test into KOSKARI_CORPUS_DATA, then exercises every tool and emits tagged
 JSON lines the test asserts against.
 """
 
-import-from mcp_server load-tables! search_examples get_example search_docs get_reference list_features list_tags corpus_version
+import-from mcp_server load-tables! load-page! STATE search_examples get_example search_docs get_reference list_features list_tags corpus_version
+import-from koskari.assets icon_svg_text
 import json
 
 
@@ -38,6 +39,11 @@ define emit [tag value]:
 (load-tables!)
 
 (emit "version" (json.loads (corpus_version)))
+
+;; the served icon comes from the packaged koskari.assets SVG, not a
+;; local copy shipped beside this script -- see mcp_server.ki
+(load-page!)
+(emit "icon_matches_packaged_asset" (== STATE["icon"] (icon_svg_text)))
 
 ; token ranking: a content word matches exactly one row
 (emit "map" (ids (search_examples "map" limit: 10)))

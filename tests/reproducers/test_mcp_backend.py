@@ -218,6 +218,9 @@ class TestMcpBakedBackend(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved[0]['path'], 'guide/intro.md')
         self.assertEqual(resolved[0]['title'], 'Intro')
 
+        # the served icon is sourced from koskari.assets, not a local copy
+        self.assertTrue(out['icon_matches_packaged_asset'])
+
         # doc vs program routing
         self.assertEqual(out['docs_loops'], ['guide/intro.md'])
         self.assertEqual(out['prog_greet'], ['examples/hello.ki'])
