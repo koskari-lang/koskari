@@ -629,7 +629,7 @@ bottom to top matches push order).
 
 - **Style**: COUNT. Arg = number of values to leave on stack as return value (typically 1).
 - **Status**: Implemented.
-- **Stack**: Pops the return value(s) per `arg`. The opcode returns **`EVAL_RETURN(val)`**; **`apply_kos_op_result`** routes to **`eval_event_return`**, which runs **`KOS_TRANS_WALK_RETURN_TO_FRAME`**, **`kos_dyn_pop_frame`**, iterator-boundary delivery, native-handler delivery, or stack push onto the caller, then **`kos_dynnode_on_control_returned`**. **Top-level** or **GEN** parent: **`KOS_RES_RETURN`** from **`koskari_eval`**. **Delimited** continuation returns use **`KosEvalState_KReturnDelimited`** in the opcode.
+- **Stack**: Pops the return value(s) per `arg`. The opcode returns **`EVAL_RETURN(val)`**; **`apply_kos_op_result`** routes to **`eval_event_return`**, which runs **`kos_dyn_unwind_return`**, **`kos_dyn_pop_frame`**, iterator-boundary delivery, native-handler delivery, or stack push onto the caller, then **`kos_dynnode_on_control_returned`**. **Top-level** or **GEN** parent: **`KOS_RES_RETURN`** from **`koskari_eval`**. **Delimited** continuation returns use **`KosEvalState_KReturnDelimited`** in the opcode.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.
 - **See also**: [compile/return](../specials/compile-return.md); **`koskari/lib/opcode/RETURN.c`**.
 
@@ -646,7 +646,7 @@ bottom to top matches push order).
 
 - **Style**: COUNT. Arg = number of values to yield (typically 1).
 - **Status**: Implemented.
-- **Stack**: Pops the yielded value(s). Sets **`KOS_CODE_YIELDS`** on the code object. Opcode returns **`EVAL_YIELD(val)`**; **`apply_kos_op_result`** routes to **`eval_event_yield`**, which runs **`eval_yield_handle_walk_and_freeze`** (**`kos_dyn_walk_handle_yield`** via **`kos_dyn_transition`**), then either **`eval_event_yield_deliver_to_boundary`** when **`kos_dyn_need_kos_agen_boundary_deliver`** (flattened **NEXT** / **FOREACH** / **YIELD_FROM**, often **`EVAL_REPROLOGUE()`** without stopping **`koskari_eval`**) or **`KOS_RES_YIELD`** with **`KOS_SUSP_YIELD`** for the outer driver.
+- **Stack**: Pops the yielded value(s). Sets **`KOS_CODE_YIELDS`** on the code object. Opcode returns **`EVAL_YIELD(val)`**; **`apply_kos_op_result`** routes to **`eval_event_yield`**, which runs **`eval_yield_handle_walk_and_freeze`** (**`kos_dyn_unwind_yield`**), then either **`eval_event_yield_deliver_to_boundary`** when **`kos_dyn_need_kos_agen_boundary_deliver`** (flattened **NEXT** / **FOREACH** / **YIELD_FROM**, often **`EVAL_REPROLOGUE()`** without stopping **`koskari_eval`**) or **`KOS_RES_YIELD`** with **`KOS_SUSP_YIELD`** for the outer driver.
 - **Invariants**: Code is treated as async generator when YIELDS flag set.
 - **See also**: [compile/yield](../specials/compile-yield.md); **`koskari/lib/opcode/YIELD.c`**.
 
