@@ -19,17 +19,39 @@ intended, see [Writing Koskari source files](writing-ki-files.md).
 
 **Dashes are not folded to underscores on Python attributes.** Python
 names are used verbatim: `(asyncio.get_running_loop)`, not
-`get-running-loop`. Koskari-defined names keep their dashes.
+`get-running-loop`. Koskari-defined names keep their dashes -- except
+a name a Python caller must import or access by exact identifier
+(`from mod import name`, a module attribute read from Python). Python
+identifiers cannot contain `-`; any Koskari name crossing that
+boundary by name has to be underscore-cased, dashes reserved for names
+that stay Koskari-internal.
 
-**Koskari functions handed to Python callers need `demand`.** Koskari
-runs ambiently async; a plain lambda passed to a synchronous Python
-higher-order function (`map`, `filter`, a Python API taking a
-callback) hands back an un-awaited coroutine object instead of a
-value. Wrap the callable:
+**Any direct call from Python needs `demand`, not only callback
+arguments.** Koskari runs ambiently async. This applies to every call
+made from plain Python code, not only a lambda handed to a Python
+higher-order function -- calling a plain `define`d top-level function
+directly from Python (`mod.some_fn(x)`, no `await`, no event loop)
+returns an un-awaited `koskari.lib.Coroutine`, not the value, exactly
+like the callback case:
 
 ```koskari
-(list (map (demand {(* %1 %1)}) numbers))
+(list (map (demand {(* %1 %1)}) numbers))   ; callback argument
 ```
+
+```koskari
+(define-demanding some_fn [x] (+ x 1))      ; direct-call entry point
+; equivalent: (define some_fn (demand (function some_fn [x] (+ x 1))))
+; equivalent: @demand \n define some_fn [x]: (+ x 1)
+```
+
+`define-demanding NAME FORMALS BODY...` and `@demand` above a plain
+`define` are equivalent; both wrap the function so a synchronous
+Python caller with no event loop gets the resolved value. Any
+top-level function meant to be imported and called directly by Python
+(a module boundary a Python package will call into, a test harness)
+needs one of these forms. A function called only from other Koskari
+code does not -- ambient async resolves those calls without help, and
+wrapping them anyway is harmless but unnecessary.
 
 `sorted` is a known exception: Koskari's `sorted` demand-wraps a
 callable `key:` itself, so no wrap is needed there.
