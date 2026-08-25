@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 @.claude/rules/git.md
 @.claude/rules/python-style.md
 @.claude/rules/docs-boundaries.md
+@.claude/rules/brevity.md
 
 C style lives in [koskari/lib/CLAUDE.md](koskari/lib/CLAUDE.md) and loads when working in the native extension. It applies to `tests/native/` too.
 
