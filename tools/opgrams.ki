@@ -60,8 +60,10 @@ define MODULE_GROUPS #{
     "bootstrap": #("koskari.builtins")
 
     "modules": #(
+        "koskari.assets"
         "koskari.cli.launch"
         "koskari.cli.repl"
+        "koskari.cli.term_graphics"
         "koskari.dis"
         "koskari.help"
         "koskari.help.layout"
