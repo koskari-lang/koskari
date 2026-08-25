@@ -1,8 +1,8 @@
 # Development and provenance
 
-Koskari is developed with help from various AI coding agents, and this page
-states plainly how that works. The project treats the practice as a matter of
-transparency rather than something to obscure.
+Koskari is developed with help from various AI coding agents. The project
+treats the practice as a matter of transparency rather than something to
+obscure.
 
 ---
 

@@ -3,9 +3,7 @@
 Koskari bytecode runs on an **async-native** evaluator: suspension and resumption
 are normal, and many Python calls that return coroutines or awaitables are
 **auto-awaited** at call boundaries. How you **host** that evaluator (with or
-without an asyncio event loop) is a separate choice. This page explains the
-**ambient async** execution model, **demand evaluation**, **defer**, and how
-they relate to Python.
+without an asyncio event loop) is a separate choice.
 
 ## Ambient async execution
 
@@ -26,7 +24,7 @@ In practice:
 - Suspension propagates through the evaluator rather than through coroutine
   objects at every call site.
 
-A useful shorthand:
+Shorthand:
 
 > Python often defaults to returning awaitables; Koskari defaults to returning
 > values when it can.

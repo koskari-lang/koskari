@@ -1,8 +1,5 @@
 # Release and versioning
 
-This page describes the user-visible release story for Koskari documentation and
-packages.
-
 ---
 
 ## Current version

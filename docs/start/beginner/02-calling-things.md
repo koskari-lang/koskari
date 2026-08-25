@@ -1,7 +1,6 @@
 # Calling things
 
-Most of Koskari work is **calling** something with inputs. This chapter states
-the rule in plain language and practices it.
+Most of Koskari work is **calling** something with inputs.
 
 ---
 

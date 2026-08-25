@@ -191,8 +191,8 @@ closures behave like Python’s nested functions.
 > **A:** Koskari’s evaluator is async-native. Many Python calls that return
 > awaitables are auto-awaited at call sites. Use **`await`** when you need
 > explicit control; **`define-coroutine`** marks coroutine definitions. See
-> [await](../../reference/specials/compile-await.md) when you build async apps
-> when you build async HTTP services or other `asyncio` apps.
+> [await](../../reference/specials/compile-await.md) when you build async HTTP
+> services or other `asyncio` apps.
 
 ---
 

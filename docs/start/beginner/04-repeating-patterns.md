@@ -1,7 +1,6 @@
 # Repeating patterns
 
-The same rules appear again and again. This chapter repeats them with small
-variations so the pattern sticks.
+The same rules appear again and again.
 
 ---
 

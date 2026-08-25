@@ -5,9 +5,6 @@ ending with a colon, then an indented body. The reader turns those **layout
 blocks** into the same forms the compiler already understands. You do not need
 to memorize s-expressions to be productive.
 
-This chapter covers top-level blocks, calls, definitions, and `if` chains. The
-next chapters add loops, classes, and full programs.
-
 ---
 
 ## Top level vs inside parentheses

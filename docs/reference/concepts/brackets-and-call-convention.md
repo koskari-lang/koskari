@@ -3,8 +3,6 @@
 Koskari reads `( )` and `[ ]` with the **same grammar**. A `[ ]` form is **not**
 a vector, array, or "literal list" that behaves differently from `( )`. Both
 read into ordinary pair chains, and **by default both compile the same way**.
-This page explains the convention that gives `[ ]` its meaning, and how to turn
-that convention into an enforced check.
 
 ## Same grammar, same default compilation
 

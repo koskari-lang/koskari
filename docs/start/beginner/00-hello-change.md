@@ -1,7 +1,6 @@
 # Hello and change
 
-This chapter introduces the **edit → run → read** loop. That loop is the basic
-skill every other chapter builds on.
+This chapter introduces the **edit → run → read** loop.
 
 ---
 

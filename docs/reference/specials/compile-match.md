@@ -35,7 +35,7 @@ after the pattern binds; `unless:` inverts the sense. A failed guard
 advances to the next arm with the subject intact, and the bound captures
 persist (Python-consistent).
 
-Contracts worth knowing (details in
+Contracts (details in
 [Match patterns](../concepts/match-patterns.md)): captures are sparse — an
 unbound optional slot raises `NameError` when read; bindings persist after
 the form; `str` / `bytes` never destructure under sequence patterns;

@@ -1,9 +1,5 @@
 # Special forms
 
-This document describes the special forms currently implemented in the Koskari
-compiler. It is the reference for use-cases, syntax, and examples when adding or
-changing specials.
-
 Specials are registered in the compiler's module namespace; the compiler
 dispatches on the head symbol of a list form. The forms below are implemented in
 `koskari/compile/specials/` and use helpers from `koskari/compile/helpers.py`

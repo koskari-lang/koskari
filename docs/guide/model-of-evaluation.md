@@ -1,8 +1,7 @@
 # Model of evaluation
 
-Both tutorial on-ramps meet here. This chapter states the evaluation story in
-plain language. Later guide chapters add detail; reference pages give exact
-rules per form.
+Both tutorial on-ramps meet here. Later guide chapters add detail; reference
+pages give exact rules per form.
 
 ---
 

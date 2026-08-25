@@ -1,8 +1,7 @@
 # Runtime and tooling
 
 Python developers already have a workflow: venv, `python script.py`, REPL,
-tests. This chapter maps that workflow to Koskari for **writing and running
-`.ki` programs**.
+tests.
 
 ---
 

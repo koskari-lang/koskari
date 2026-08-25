@@ -8,10 +8,6 @@ Python**: a file is a module, a directory is a package, a directory with an
 **no `__init__`** is an implicit **namespace package**. Dotted names, `as`
 aliases, and relative imports all behave as they do in Python.
 
-This page is the model for how the filesystem maps to importable names, so you
-can lay files out on disk and have them work without reverse-engineering the
-import hook.
-
 ## How the augmentation works
 
 Importing `koskari` installs a meta-path finder ahead of CPython's. That finder

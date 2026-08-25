@@ -1,8 +1,8 @@
 # Interop
 
-Koskari and Python share one process. This chapter covers calling across the
-boundary in both directions — the workflow you need when mixing `.ki` with
-Python libraries or hosting Koskari inside an app.
+Koskari and Python share one process. Calling across the boundary works in
+both directions — the workflow you need when mixing `.ki` with Python
+libraries or hosting Koskari inside an app.
 
 ---
 

@@ -49,5 +49,3 @@ else:
 **Implementation:** `koskari/reader/layouts/loops.layout_loop` (registered as
 `layout/while` and `layout/for-each` via `add_builtin`)
 
-See also layout/while above; for-each uses the same handler family with different head routing.
-

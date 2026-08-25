@@ -2,8 +2,7 @@
 
 Koskari gives you direct, named forms for common operations. Code ported
 mechanically from Python often reaches those operations by assembling them from
-primitives, which stays correct but reads as a translation. This page collects
-the cases where a native form says the same thing more plainly. Every pair below
+primitives, which stays correct but reads as a translation. Every pair below
 is behavior-equivalent; the right-hand form is the idiomatic spelling.
 
 The single rule: **prefer the direct form over the same result built out of

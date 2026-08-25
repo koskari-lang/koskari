@@ -19,8 +19,10 @@ Do not open with: This matters, It's important, Note that, Keep in mind,
 As we'll see, The point is, It helps to, In other words, Simply put,
 Worth noting, Let's, We can.
 
-Do not intensify with: cleanly, precisely the, exactly the — unless you
+Do not intensify with: cleanly, precisely the, exactly the -- unless you
 are stating a measurement or an identity.
+
+Use `--`, not the em dash character, in prose.
 
 Bad: "Two phases, cleanly separated:" then a list.
 Good: "Two phases:" then the list.

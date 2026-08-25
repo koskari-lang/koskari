@@ -98,8 +98,7 @@ be explicit when they need a variation.
 
 A parameter marked with a leading `&` (e.g. `[a &result]`) does **not** receive
 a copy of its argument — it shares storage with the caller's binding, so a
-`set!` inside the function writes back to the caller. Because this is really a
-story about refs and storage indirection, it has its own chapter:
+`set!` inside the function writes back to the caller. It has its own chapter:
 [References and storage indirection](references-and-storage-indirection.md).
 
 ---

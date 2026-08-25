@@ -2,8 +2,7 @@
 
 Koskari names do not hold values directly. Each binding in a **namespace**
 maps a name to a **ref** (reference cell). Reading and writing go through that
-cell. This page explains the vocabulary used across assignment, macros, and the
-VM.
+cell.
 
 ## Namespace
 
@@ -75,7 +74,7 @@ updates the caller.
 ; value is now 101
 ```
 
-Note the two distinct uses of `&`:
+Two distinct uses of `&`:
 
 - `&result` in the **formals list** marks the parameter as by-ref.
 - `&value` at the **call site** is the ref reader shorthand (see the **Ref**

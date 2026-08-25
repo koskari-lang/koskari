@@ -4,7 +4,7 @@ Koskari resolves ordinary calls to values automatically (see [Demand, async,
 and defer](demand-async-and-defer.md)), so most code needs none of these. Reach
 for one only when you want to *override* that default — run without a loop, hold
 a result instead of resolving it, or hand Koskari async work to a raw asyncio
-API. This page is a chooser; the linked pages are the full rules.
+API. The linked pages are the full rules.
 
 ## Decision table
 

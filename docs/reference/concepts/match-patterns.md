@@ -18,7 +18,7 @@ match msg:
     (ignore msg)
 ```
 
-This page is the pattern-language reference. The `match` form itself is
+The `match` form itself is
 documented at [`compile/match`](../specials/compile-match.md) and
 [`layout/match`](../layouts/layout-match.md).
 

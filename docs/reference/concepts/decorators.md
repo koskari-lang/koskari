@@ -36,9 +36,6 @@ define tick []:
 program as a `let` block containing the definition, without the indentation
 and without `define-global` to push the name back out.
 
-The rest of this page follows one decorated definition through the pipeline:
-pragma, reader, expansion, extension.
-
 ---
 
 ## Stage 0: the pragma

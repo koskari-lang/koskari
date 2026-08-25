@@ -1,7 +1,6 @@
 # Bytecode mental model
 
-You can use Koskari without knowing bytecode. This optional chapter gives a
-simple picture for readers who are curious about what happens after reading.
+You can use Koskari without knowing bytecode.
 
 ---
 
@@ -21,7 +20,7 @@ roughly means:
 3. Call with two inputs.
 4. Leave the result where the surrounding form can use it.
 
-The exact instruction names belong in the VM reference; the important mental
+The exact instruction names belong in the VM reference; the mental
 model is “evaluate pieces, keep intermediate values on a stack, then combine.”
 
 ---

@@ -1,9 +1,8 @@
 # Querying the Koskari corpus MCP
 
-How to search this corpus effectively: the tool flow, feature paths,
-valid/invalid polarity, and the tag vocabulary. The corpus holds
-verified example records (machine-checked at the read, expand, eval,
-and error phases), documentation pages, and complete example programs;
+The corpus holds verified example records (machine-checked at the read,
+expand, eval, and error phases), documentation pages, and complete
+example programs;
 search is token-based, so query phrasing determines what you find.
 
 ---

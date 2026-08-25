@@ -99,7 +99,7 @@ define-fence fence/bash [raw meta]:
       raise (FenceError f"fence/bash got unknown exec_now: {exec_now}")
 ```
 
-Points worth noting:
+Notes:
 
 - **`immediate:` is matched as a literal.** The `switch` compares the source
   value against the `True` / `False` literals, not for truthiness, so only an

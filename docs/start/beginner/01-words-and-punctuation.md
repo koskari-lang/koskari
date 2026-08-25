@@ -1,7 +1,6 @@
 # Words and punctuation
 
-Programs are made of **words** and **punctuation**. This chapter names the
-pieces you will see in almost every Koskari program.
+Programs are made of **words** and **punctuation**.
 
 ---
 

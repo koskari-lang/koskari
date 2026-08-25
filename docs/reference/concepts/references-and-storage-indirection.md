@@ -1,10 +1,9 @@
 # References and storage indirection
 
 This page assumes you are comfortable with `define` and `set!` — you know
-that defining a name lets you refer to it and assign new values into it. We
-build on that one idea: that a name is attached to a **storage location**, and
-that you can get hold of that location itself. Koskari calls such a handle a
-**ref**.
+that defining a name lets you refer to it and assign new values into it. A name
+is attached to a **storage location**, and you can get hold of that location
+itself. Koskari calls such a handle a **ref**.
 
 If you have met pointers in C, a ref will feel familiar — but a ref is *safer*:
 it points at exactly one storage location, you cannot do arithmetic on it, and
@@ -101,8 +100,7 @@ Every snippet here is exercised in [examples/refs.ki](https://github.com/obrienc
 
 > **Q:** Then `(set! r 20)` — same thing?
 >
-> **A:** Predict before reading on... No, and this is the one thing to get
-> straight: the **target** of `set!` matters. `(set! (deref r) 20)` writes
+> **A:** No — the **target** of `set!` matters. `(set! (deref r) 20)` writes
 > *through* the ref. But `(set! r 20)` assigns to the **name** `r` — it throws
 > the ref away and puts `20` in `r`:
 >

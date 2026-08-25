@@ -25,7 +25,7 @@ For normative syntax rules, see [Reader and layout syntax](../reader-layout.md).
 
 ## YAML and JSON
 
-A useful mental model compares layout mode to YAML and s-expression mode to JSON.
+Layout mode compares to YAML and s-expression mode to JSON.
 
 At the **document level**, Koskari layout behaves like YAML: indentation
 matters, block headers end with `:`, and bodies sit on following indented lines.

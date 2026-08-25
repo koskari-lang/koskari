@@ -157,8 +157,8 @@ When a macro surprises you, ask Koskari what it produced:
 (macroexpand '(unless ready (return "not ready")))
 ```
 
-For layout-style macros, it can help to keep one parenthesized example next to
-the layout example while you learn. Layout is for humans; s-expressions are great
+For layout-style macros, keep one parenthesized example next to the layout
+example while you learn. Layout is for humans; s-expressions are great
 for seeing the tree.
 
 ---

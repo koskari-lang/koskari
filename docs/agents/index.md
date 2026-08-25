@@ -3,10 +3,6 @@
 Koskari is a LISP dialect for Python: `.ki` source files combine an
 indentation-based layout syntax with s-expressions, expanded through
 macros and compiled to bytecode that runs alongside ordinary Python.
-This page is the agent quick reference for the language -- a cheat
-sheet index of where syntax, grammar (BNF-level rules), and file
-format questions are answered, how to write a Koskari file that reads
-correctly, and how to query this corpus effectively.
 
 Before generating any Koskari source, read
 [Writing Koskari source files](writing-ki-files.md) for the parse-level

@@ -3,8 +3,8 @@
 A single name in Koskari can mean up to three different things, chosen by a
 **prefix** and by **where the name appears**. This is what lets `(+ 1 2)`
 compile to fast arithmetic opcodes while `+` is still an ordinary function you
-can pass around. The mechanism is powerful and used everywhere, but the prefixes
-(`compile/`, `layout/`) trip people up. This page is the full model.
+can pass around. The prefixes
+(`compile/`, `layout/`) trip people up.
 
 ## The three slots
 

@@ -2,8 +2,7 @@
 
 Common mistakes and gotchas: Koskari code that parses fine but means
 the wrong thing, usually because a Python or Scheme habit was carried
-over. Each pitfall states the wrong assumption, the rule, and the
-correct form. For rules about source that fails to *parse* as
+over. For rules about source that fails to *parse* as
 intended, see [Writing Koskari source files](writing-ki-files.md).
 
 ---
