@@ -16,7 +16,15 @@
 # The GHCR :latest tag only moves in the manifest job, so a failed build
 # leg leaves the previous multi-arch :latest intact. It does leave the
 # successful leg's untagged digest behind in GHCR, which is inert but
-# accumulates; prune untagged versions periodically.
+# accumulates; prune_container.yml prunes stale tags and orphaned digests
+# on a schedule.
+#
+# The default tag is the dated dev snapshot <version>.devYYYYMMDD (same
+# convention as the weekly wheels), or the bare version on a release
+# build. Same-day rebuilds reuse the tag, so the last push wins. Dev
+# builds also move a floating undated <version>.dev tag onto the newest
+# snapshot; release builds carry no floating tag. An explicit image-tag
+# override replaces the dated tag and suppresses the floating one.
 
 name: Deploy container
 
@@ -47,6 +55,7 @@ jobs:
       exact_tag: ${{ steps.version.outputs.exact_tag }}
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      floating: ${{ steps.version.outputs.floating }}
       image: ${{ steps.version.outputs.image }}
     steps:
       - name: Checkout
@@ -61,10 +70,15 @@ jobs:
           echo "exact_tag=$KOSKARI_EXACT_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$KOSKARI_VERSION" >> "$GITHUB_OUTPUT"
           tag="${{ inputs.image-tag }}"
+          floating=""
           if [ -z "$tag" ]; then
             tag="$(python3 -B tools/regen_version.py --report tag)"
+            # Undated floating dev tag; empty on a release build. An
+            # explicit image-tag override suppresses it.
+            floating="$(python3 -B tools/regen_version.py --report dev-tag)"
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "floating=$floating" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
   image:
@@ -154,10 +168,14 @@ jobs:
         env:
           IMAGE: ${{ needs.prep.outputs.image }}
           TAG: ${{ needs.prep.outputs.tag }}
+          FLOATING: ${{ needs.prep.outputs.floating }}
         run: |
+          tags=(-t "$IMAGE:$TAG" -t "$IMAGE:latest")
+          if [ -n "$FLOATING" ]; then
+            tags+=(-t "$IMAGE:$FLOATING")
+          fi
           docker buildx imagetools create \
-            -t "$IMAGE:$TAG" \
-            -t "$IMAGE:latest" \
+            "${tags[@]}" \
             $(printf "$IMAGE@sha256:%s " *)
 
       - name: Inspect the pushed manifest

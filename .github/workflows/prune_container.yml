@@ -1,0 +1,46 @@
+# Prune the GHCR koskari runtime image so it does not grow unbounded.
+#
+# deploy_container.yml pushes a dated dev snapshot tag on every relevant
+# master push, plus the two per-arch child manifests each build leaves
+# untagged. Without pruning both accumulate forever. This keeps the
+# newest keep-n-tagged snapshots, always spares :latest, and removes
+# untagged digests that no retained manifest references (the action is
+# multi-arch aware, so child manifests of a kept tag survive).
+#
+# Forward path for the "one of each release, none of the devs leading up
+# to them" heuristic: turn on use-regex and add the bare-semver pattern
+# to exclude-tags so every X.Y.Z release tag is spared while keep-n-tagged
+# continues to age out the dev snapshots.
+
+name: Prune container images
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 2 */10 * *"
+
+permissions:
+  packages: write
+
+env:
+  package: koskari
+  keep: 10
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Prune old images, keep the newest tagged snapshots
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          owner: ${{ github.repository_owner }}
+          package: ${{ env.package }}
+          keep-n-tagged: ${{ env.keep }}
+          exclude-tags: latest
+          delete-untagged: true
+          delete-partial-images: true
+
+# The end.

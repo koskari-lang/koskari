@@ -200,18 +200,69 @@ def report_env(root=None):
     return '\n'.join(lines)
 
 
+def image_tag(info, now=None):
+    """
+    Render an OCI-safe image tag from assembled version metadata
+
+    A release build (HEAD on its version tag, clean tree) tags the bare
+    setup.cfg version. Every other build tags a dated dev snapshot,
+    <version>.devYYYYMMDD, matching the weekly wheel convention. Same-day
+    rebuilds resolve to the same tag, so the last push wins.
+
+    :param info: dict from assemble_version
+    :param now: optional datetime for the dev date stamp (tests)
+    :return: OCI-safe image tag
+    """
+
+    if info['build_kind'] == 'release':
+        return info['version']
+    if now is None:
+        now = datetime.now(timezone.utc)
+    return info['version'] + '.dev' + now.strftime('%Y%m%d')
+
+
+def floating_tag(info):
+    """
+    Render the undated floating dev image tag, or empty for a release
+
+    Dev builds also carry an undated <version>.dev tag that always tracks
+    the newest dev snapshot. Release builds carry no floating tag.
+
+    :param info: dict from assemble_version
+    :return: floating tag, or empty string on a release build
+    """
+
+    if info['build_kind'] == 'release':
+        return ''
+    return info['version'] + '.dev'
+
+
 def report_tag(root=None):
     """
     Render an OCI-safe image tag from git-derived version metadata
 
     :param root: repository root path
-    :return: tag string with plus signs replaced by hyphens
+    :return: image tag from image_tag
     """
 
     root = project_root(root)
     version = read_version(root)
     info = assemble_version(version, git_state(root))
-    return full_version(info).replace('+', '-')
+    return image_tag(info)
+
+
+def report_dev_tag(root=None):
+    """
+    Render the floating dev image tag from git-derived version metadata
+
+    :param root: repository root path
+    :return: floating tag from floating_tag, or empty string on a release
+    """
+
+    root = project_root(root)
+    version = read_version(root)
+    info = assemble_version(version, git_state(root))
+    return floating_tag(info)
 
 
 def assemble_version(version, state, now=None):
@@ -333,15 +384,17 @@ def main(argv=None):
         '--report',
         nargs='?',
         const='env',
-        choices=['env', 'tag'],
+        choices=['env', 'tag', 'dev-tag'],
         metavar='MODE',
-        help='Print version metadata (env assignments or OCI tag) '
-        'instead of writing _version.py')
+        help='Print version metadata (env assignments, the OCI tag, or '
+        'the floating dev tag) instead of writing _version.py')
     args = parser.parse_args(argv)
 
     if args.report is not None:
         if args.report == 'tag':
             sys.stdout.write(report_tag())
+        elif args.report == 'dev-tag':
+            sys.stdout.write(report_dev_tag())
         else:
             sys.stdout.write(report_env())
         return 0

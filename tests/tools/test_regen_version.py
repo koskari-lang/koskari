@@ -170,24 +170,50 @@ class TestReport(unittest.TestCase):
         })
         self.assertEqual(regen.full_version(info), '0.1.0+dev+abc1234')
 
-    def test_report_tag_replaces_plus(self):
+    def test_report_tag_oci_safe(self):
         tag = regen.report_tag(ROOT)
 
         self.assertNotIn('+', tag)
         self.assertRegex(tag, r'^[a-zA-Z0-9_.-]+$')
         self.assertTrue(tag.startswith('0.1.0'))
 
-    def test_report_tag_dev_shape(self):
+    def test_image_tag_dev_shape(self):
         state = {
             'commit': 'abc1234',
             'exact_tag': None,
             'dirty': True,
         }
         fixed = datetime(2026, 6, 5, 18, 55, 53, tzinfo=timezone.utc)
-        info = regen.assemble_version('0.1.0', state, now=fixed)
-        full = info['version'] + '+' + info['release']
-        tag = full.replace('+', '-')
-        self.assertEqual(tag, '0.1.0-dev-abc1234-20260605T185553')
+        info = regen.assemble_version('0.1.0', state)
+        tag = regen.image_tag(info, now=fixed)
+        self.assertEqual(tag, '0.1.0.dev20260605')
+
+    def test_image_tag_release_is_bare_version(self):
+        state = {
+            'commit': 'abc1234',
+            'exact_tag': 'v0.1.0',
+            'dirty': False,
+        }
+        info = regen.assemble_version('0.1.0', state)
+        self.assertEqual(regen.image_tag(info), '0.1.0')
+
+    def test_floating_tag_dev(self):
+        state = {
+            'commit': 'abc1234',
+            'exact_tag': None,
+            'dirty': False,
+        }
+        info = regen.assemble_version('0.1.0', state)
+        self.assertEqual(regen.floating_tag(info), '0.1.0.dev')
+
+    def test_floating_tag_release_is_empty(self):
+        state = {
+            'commit': 'abc1234',
+            'exact_tag': 'v0.1.0',
+            'dirty': False,
+        }
+        info = regen.assemble_version('0.1.0', state)
+        self.assertEqual(regen.floating_tag(info), '')
 
 
 class TestParseBool(unittest.TestCase):
