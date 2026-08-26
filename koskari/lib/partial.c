@@ -27,7 +27,7 @@
 
    Unlike functools.partial it is not in that type's inheritance tree -- the
    match is by duck typing, not isinstance. The payoff is that it is a static
-   KosCallableTypeObject: when koskari bytecode calls it and the inner callable
+   KosEvaluatedTypeObject: when koskari bytecode calls it and the inner callable
    is a flattenable KosCallable, the install slot merges args and tail-calls
    straight through, reusing the single frame do_frame_prep prepared, with no
    intermediate KosContext.
@@ -129,10 +129,12 @@ static int kospartial_merge_kwds(
 
 
 /**
-   tp_call: merge bound args with call args and invoke func. Returns whatever
-   func returns (a coroutine for an async Koskari callable; a value otherwise).
+   Python-call worker: merge bound args with call args and invoke func.
+   Returns whatever func returns (a coroutine for an async Koskari callable;
+   a value otherwise). Serves as KosCallAdapt_CallAsync's KosPartial case
+   and the non-flattenable install fallback.
 */
-static PyObject *kospartial_call(
+PyObject *KosPartial_Call(
     PyObject *self,
     PyObject *args,
     PyObject *kwds) {
@@ -172,12 +174,7 @@ static int kospartial_inner_is_flattenable(PyObject *inner) {
   if (! KosCallable_Check(inner))
     return 0;
 
-  KosCallableTypeObject *ctyp = (KosCallableTypeObject *) Py_TYPE(inner);
-
-  if (ctyp->tp_kos_wants_frame_fn)
-    return ctyp->tp_kos_wants_frame_fn(inner);
-
-  return ctyp->tp_kos_wants_frame;
+  return KosCallable_WantsFrame(inner);
 }
 
 
@@ -197,7 +194,7 @@ static int kospartial_wants_frame(PyObject *self) {
    wants_frame (which delegates to func), so func's install slot fills exactly
    that frame.
 
-   Otherwise: invoke via the Python call path (kospartial_call merges) and push
+   Otherwise: invoke via the Python call path (KosPartial_Call merges) and push
    the result, mirroring the plain-Python call fallback.
 */
 static KosOpResult kospartial_kos_install(
@@ -220,7 +217,7 @@ static KosOpResult kospartial_kos_install(
       call_args = empty;
     }
 
-    PyObject *result = kospartial_call(callable, call_args, kwds_dict);
+    PyObject *result = KosPartial_Call(callable, call_args, kwds_dict);
     Py_XDECREF(empty);
     if (! result)
       return EVAL_RAISE();
@@ -622,7 +619,15 @@ static PyMethodDef kospartial_methods[] = {
 };
 
 
-KosCallableTypeObject KosPartialCallableType = {
+static KosCallSlots kospartial_call_slots = {
+  .ki_install = kospartial_kos_install,
+  .ki_vinstall = NULL,
+  .ki_wants_frame = 0,
+  .ki_wants_frame_fn = kospartial_wants_frame,
+};
+
+
+KosEvaluatedTypeObject KosPartialCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -631,7 +636,7 @@ KosCallableTypeObject KosPartialCallableType = {
     .tp_itemsize = 0,
     .tp_dealloc = kospartial_dealloc,
     .tp_repr = kospartial_repr,
-    .tp_call = kospartial_call,
+    .tp_call = KosCallAdapt_CallAsync,
     .tp_getattro = PyObject_GenericGetAttr,
     .tp_setattro = PyObject_GenericSetAttr,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_BASETYPE,
@@ -645,12 +650,9 @@ KosCallableTypeObject KosPartialCallableType = {
     .tp_getset = kospartial_getset,
     .tp_dictoffset = offsetof(KosPartialObject, dict),
     .tp_new = kospartial_new,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = kospartial_kos_install,
-  .tp_kos_vinstall = NULL,
-  .tp_kos_wants_frame = 0,
-  .tp_kos_wants_frame_fn = kospartial_wants_frame,
+  .tp_kos_call = &kospartial_call_slots,
 };
 
 
@@ -659,11 +661,11 @@ KosCallableTypeObject KosPartialCallableType = {
 
 int koskari_partial_init(PyObject *mod) {
 
-  if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosPartialCallableType)) < 0)
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosPartialCallableType)) < 0)
     return -1;
 
   if (KosUtils_ReprRegisterBuiltin(
-          (PyObject *) KOS_CALLABLE_PYTYPE(KosPartialCallableType)) < 0)
+          (PyObject *) KOS_EVALUATED_PYTYPE(KosPartialCallableType)) < 0)
     return -1;
 
   PyObject *dict = PyModule_GetDict(mod);
@@ -671,7 +673,7 @@ int koskari_partial_init(PyObject *mod) {
     return -1;
 
   if (PyDict_SetItemString(dict, "KosPartial",
-                           (PyObject *) KOS_CALLABLE_PYTYPE(KosPartialCallableType)) < 0)
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosPartialCallableType)) < 0)
     return -1;
 
   return 0;

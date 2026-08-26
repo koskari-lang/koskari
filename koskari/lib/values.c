@@ -251,12 +251,7 @@ static int values_target_is_flattenable(PyObject *target) {
   if (! KosCallable_Check(target))
     return 0;
 
-  KosCallableTypeObject *ctyp = (KosCallableTypeObject *) Py_TYPE(target);
-
-  if (ctyp->tp_kos_wants_frame_fn)
-    return ctyp->tp_kos_wants_frame_fn(target);
-
-  return ctyp->tp_kos_wants_frame;
+  return KosCallable_WantsFrame(target);
 }
 
 
@@ -736,7 +731,15 @@ static PyMappingMethods values_as_mapping = {
 };
 
 
-KosCallableTypeObject KosValuesType = {
+static KosCallSlots values_call_slots = {
+  .ki_install = values_kos_install,
+  .ki_vinstall = values_kos_vinstall,
+  .ki_wants_frame = 1,
+  .ki_wants_frame_fn = NULL,
+};
+
+
+KosEvaluatedTypeObject KosValuesType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -760,12 +763,9 @@ KosCallableTypeObject KosValuesType = {
     .tp_call = values_call,
     .tp_repr = values_repr,
     .tp_richcompare = values_richcomp,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = values_kos_install,
-  .tp_kos_vinstall = values_kos_vinstall,
-  .tp_kos_wants_frame = 1,
-  .tp_kos_wants_frame_fn = NULL,
+  .tp_kos_call = &values_call_slots,
 };
 
 
@@ -777,7 +777,7 @@ PyObject *KosValues_New(PyObject *args, PyObject *kwds) {
         return NULL;
     }
 
-    self = PyObject_GC_New(KosValues, KOS_CALLABLE_PYTYPE(KosValuesType));
+    self = PyObject_GC_New(KosValues, KOS_EVALUATED_PYTYPE(KosValuesType));
     if (! self)
         return NULL;
 
@@ -815,12 +815,12 @@ int koskari_values_init(PyObject *mod) {
     STR_CONST(_str_equals, "=");
     STR_CONST(_str_empty, "");
 
-    if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosValuesType)))
+    if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosValuesType)))
         return -1;
 
     PyObject *dict = PyModule_GetDict(mod);
     PyDict_SetItemString(dict, "values",
-                         (PyObject *) KOS_CALLABLE_PYTYPE(KosValuesType));
+                         (PyObject *) KOS_EVALUATED_PYTYPE(KosValuesType));
 
     return 0;
 }

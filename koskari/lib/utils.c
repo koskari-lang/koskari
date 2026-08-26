@@ -240,7 +240,8 @@ static KosOpResult kos_apply_install_core(
 
   /* Flattening: delegate to inner callable's install */
   if (KosCallable_Check(fn)) {
-    KosInstallFunc inner = KosCallableType_INSTALL(Py_TYPE(fn));
+    KosCallSlots *fn_slots = KosEvaluated_CallSlots(Py_TYPE(fn));
+    KosInstallFunc inner = fn_slots ? fn_slots->ki_install : NULL;
     if (inner) {
       KosOpResult r = inner(es, fn, seq_args, kwds, tail_call);
       Py_DECREF(seq_args);
@@ -336,7 +337,15 @@ static PyObject *apply_call(
 }
 
 
-static KosCallableTypeObject KosApplyType = {
+static KosCallSlots apply_call_slots = {
+  .ki_install = kos_install_apply,
+  .ki_vinstall = kos_vinstall_apply,
+  .ki_wants_frame = 1,
+  .ki_wants_frame_fn = NULL,
+};
+
+
+static KosEvaluatedTypeObject KosApplyType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "koskari.lib.ApplyHelper",
@@ -346,12 +355,9 @@ static KosCallableTypeObject KosApplyType = {
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_doc = "Callable helper implementing apply(func, args=(), kwargs=None)",
     .tp_new = PyType_GenericNew,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = kos_install_apply,
-  .tp_kos_vinstall = kos_vinstall_apply,
-  .tp_kos_wants_frame = 1,
-  .tp_kos_wants_frame_fn = NULL,
+  .tp_kos_call = &apply_call_slots,
 };
 
 
@@ -1541,7 +1547,7 @@ int koskari_utils_init(PyObject *mod) {
   }
 
   if (PyType_Ready(&KosConstantlyType) < 0 ||
-      PyType_Ready(KOS_CALLABLE_PYTYPE(KosApplyType)) < 0)
+      PyType_Ready(KOS_EVALUATED_PYTYPE(KosApplyType)) < 0)
     return -1;
 
   for (PyMethodDef *mdef = utils_methods; mdef->ml_name; mdef++) {
@@ -1557,7 +1563,7 @@ int koskari_utils_init(PyObject *mod) {
   }
 
   Py_CLEAR(KosApplyObject);
-  KosApplyObject = PyObject_CallNoArgs((PyObject *) KOS_CALLABLE_PYTYPE(KosApplyType));
+  KosApplyObject = PyObject_CallNoArgs((PyObject *) KOS_EVALUATED_PYTYPE(KosApplyType));
   if (! KosApplyObject)
     return -1;
 

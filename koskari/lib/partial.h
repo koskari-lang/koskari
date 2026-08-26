@@ -30,15 +30,26 @@
 
    It does NOT inherit functools.partial, so isinstance(x, functools.partial)
    is False -- the match is by duck typing only. In exchange it is a static
-   KosCallableTypeObject, so koskari bytecode calls dispatch straight through
+   KosEvaluatedTypeObject, so koskari bytecode calls dispatch straight through
    the install slot (merge bound + call args, tail-call the inner callable)
    with no intermediate KosContext.
 */
-extern KosCallableTypeObject KosPartialCallableType;
+extern KosEvaluatedTypeObject KosPartialCallableType;
 
 
 #define KosPartial_CheckExact(obj) \
-  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosPartialCallableType)))
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosPartialCallableType)))
+
+#define KosPartial_Check(obj) \
+  ((obj) && PyObject_TypeCheck((obj), KOS_EVALUATED_PYTYPE(KosPartialCallableType)))
+
+
+/**
+   Python-call worker: merge bound args/keywords with the call-site args
+   and invoke the inner callable. self must be a KosPartial; args and
+   kwds are borrowed (both may be NULL).
+*/
+PyObject *KosPartial_Call(PyObject *self, PyObject *args, PyObject *kwds);
 
 
 int koskari_partial_init(PyObject *mod);

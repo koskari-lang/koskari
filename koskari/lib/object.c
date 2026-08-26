@@ -223,7 +223,15 @@ static KosOpResult procedure_kos_install(
 }
 
 
-static KosCallableTypeObject KosProcedureCallableType = {
+static KosCallSlots procedure_call_slots = {
+  .ki_install = procedure_kos_install,
+  .ki_vinstall = NULL,
+  .ki_wants_frame = 0,
+  .ki_wants_frame_fn = NULL,
+};
+
+
+static KosEvaluatedTypeObject KosProcedureCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -235,19 +243,16 @@ static KosCallableTypeObject KosProcedureCallableType = {
               "demand path and returns None",
     .tp_repr = procedure_repr,
     .tp_call = procedure_tp_call,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosDemandCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosDemandCallableType),
   },
-  .tp_kos_install = procedure_kos_install,
-  .tp_kos_vinstall = NULL,
-  .tp_kos_wants_frame = 0,
-  .tp_kos_wants_frame_fn = NULL,
+  .tp_kos_call = &procedure_call_slots,
 };
 
 
 static PyObject *KosProcedure_New(PyObject *wrapped) {
 
   return PyObject_CallOneArg(
-      (PyObject *) KOS_CALLABLE_PYTYPE(KosProcedureCallableType), wrapped);
+      (PyObject *) KOS_EVALUATED_PYTYPE(KosProcedureCallableType), wrapped);
 }
 
 
@@ -650,7 +655,7 @@ int koskari_object_init(PyObject *mod) {
 
   /* Demand must be ready first: koskari_demand_init runs earlier in the
      unit order (see lib.c). */
-  if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosProcedureCallableType)) < 0)
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosProcedureCallableType)) < 0)
     return -1;
 
   return 0;

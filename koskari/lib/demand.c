@@ -643,7 +643,7 @@ PyObject *KosDemand_GetWrapped(PyObject *obj) {
 PyObject *KosDemand_New(PyObject *wrapped) {
 
   return PyObject_CallOneArg(
-      (PyObject *) KOS_CALLABLE_PYTYPE(KosDemandCallableType), wrapped);
+      (PyObject *) KOS_EVALUATED_PYTYPE(KosDemandCallableType), wrapped);
 }
 
 
@@ -707,19 +707,6 @@ static PyGetSetDef demand_getset[] = {
 };
 
 
-static PyObject *demand_tp_call(
-    PyObject *self,
-    PyObject *args,
-    PyObject *kwargs) {
-
-  KosDemandObject *d = (KosDemandObject *) self;
-
-  if (! d->wrapped) {
-    PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
-    return NULL;
-  }
-  return Koskari_DemandSync(d->wrapped, args, kwargs);
-}
 
 
 static PyObject *demand_repr(PyObject *self) {
@@ -782,12 +769,7 @@ static int demand_inner_is_flattenable(PyObject *inner) {
   if (! KosCallable_Check(inner))
     return 0;
 
-  KosCallableTypeObject *ctyp = (KosCallableTypeObject *) Py_TYPE(inner);
-
-  if (ctyp->tp_kos_wants_frame_fn)
-    return ctyp->tp_kos_wants_frame_fn(inner);
-
-  return ctyp->tp_kos_wants_frame;
+  return KosCallable_WantsFrame(inner);
 }
 
 
@@ -918,7 +900,15 @@ static KosOpResult demand_kos_vinstall(
 }
 
 
-KosCallableTypeObject KosDemandCallableType = {
+static KosCallSlots demand_call_slots = {
+  .ki_install = demand_kos_install,
+  .ki_vinstall = demand_kos_vinstall,
+  .ki_wants_frame = 0,
+  .ki_wants_frame_fn = demand_wants_frame,
+};
+
+
+KosEvaluatedTypeObject KosDemandCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -933,16 +923,13 @@ KosCallableTypeObject KosDemandCallableType = {
     .tp_members = demand_members,
     .tp_getset = demand_getset,
     .tp_repr = demand_repr,
-    .tp_call = demand_tp_call,
+    .tp_call = KosCallAdapt_CallDemand,
     .tp_descr_get = demand_descr_get,
     .tp_new = demand_new,
     .tp_init = demand_init,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = demand_kos_install,
-  .tp_kos_vinstall = demand_kos_vinstall,
-  .tp_kos_wants_frame = 0,
-  .tp_kos_wants_frame_fn = demand_wants_frame,
+  .tp_kos_call = &demand_call_slots,
 };
 
 
@@ -1414,7 +1401,7 @@ int koskari_demand_init(PyObject *mod) {
   if (PyType_Ready(&KosDemandGeneratorType) < 0)
     return -1;
 
-  if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosDemandCallableType)) < 0)
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosDemandCallableType)) < 0)
     return -1;
 
   demand_call_func = PyCFunction_New(&demand_call_methoddef, mod);
@@ -1436,7 +1423,7 @@ int koskari_demand_init(PyObject *mod) {
   Py_DECREF(demand_apply_func);
 
   if (PyDict_SetItemString(dict, "demand",
-                          (PyObject *) KOS_CALLABLE_PYTYPE(KosDemandCallableType)) < 0)
+                          (PyObject *) KOS_EVALUATED_PYTYPE(KosDemandCallableType)) < 0)
     return -1;
 
   /* Native test harness uses _koskari_test; no koskari package available */

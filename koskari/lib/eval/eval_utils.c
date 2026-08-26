@@ -416,13 +416,15 @@ static inline int do_frame_prep(
     PyTypeObject *typ,
     int tail_call) {
 
-  KosCallableTypeObject *ctyp = (KosCallableTypeObject *) typ;
+  KosCallSlots *slots = KosEvaluated_CallSlots(typ);
   int wants;
 
-  if (ctyp->tp_kos_wants_frame_fn)
-    wants = ctyp->tp_kos_wants_frame_fn(callable);
+  if (! slots)
+    wants = 0;
+  else if (slots->ki_wants_frame_fn)
+    wants = slots->ki_wants_frame_fn(callable);
   else
-    wants = ctyp->tp_kos_wants_frame;
+    wants = slots->ki_wants_frame;
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
   KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
@@ -656,7 +658,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
   if (unlikely(flags & KOS_CALL_TAIL)) {
     KosDynFrame *frame = KosEvalState_FRAME(es);
 
-    if (Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType)
+    if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
         && frame
         && caller_slot == &KosDynFrame_STACK(frame)) {
       KosCode *code = (KosCode *) KosFunction_CODE(callable);
@@ -759,7 +761,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
   }
 
   /* Class: exact KosFunction -- the dominant call target. */
-  if (likely(Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType))) {
+  if (likely(Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType))) {
     KosCode *code = (KosCode *) KosFunction_CODE(callable);
     PyObject *frame_ns;
 
@@ -1093,7 +1095,7 @@ static inline KosOpResult kos_call_invoke(
   if (likely((flags & KOS_CALL_ARGV_WINDOW))
       && ! (flags & KOS_CALL_TAIL)
       && ! kwnames
-      && Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType)
+      && Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
       && nargs + 2 == KosFunction_SIMPLE_ARITY1(callable)
       && KosFunction_BIND_SELF_STATE(callable) == 2)
     return kos_call_invoke_self_steal(es, caller_slot, window, callable,

@@ -23,14 +23,14 @@
 #include "callable.h"
 
 
-extern KosCallableTypeObject KosDemandCallableType;
+extern KosEvaluatedTypeObject KosDemandCallableType;
 
 
 #define KosDemand_CheckExact(obj) \
-  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosDemandCallableType)))
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosDemandCallableType)))
 
 #define KosDemand_Check(obj) \
-  ((obj) && PyObject_TypeCheck((obj), KOS_CALLABLE_PYTYPE(KosDemandCallableType)))
+  ((obj) && PyObject_TypeCheck((obj), KOS_EVALUATED_PYTYPE(KosDemandCallableType)))
 
 
 /**
