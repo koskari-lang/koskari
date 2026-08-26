@@ -1240,7 +1240,7 @@ KosOpResult KosEvalState_CallNoArgs(
 */
 static PyObject *kos_iter_acquire(PyObject *iterable) {
 
-  if (KosPyAsyncGen_Check(iterable)) {
+  if (KosIter_Check(iterable)) {
     Py_INCREF(iterable);
     return iterable;
   }

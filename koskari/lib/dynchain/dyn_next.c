@@ -89,8 +89,11 @@ int kos_dyn_next_deliver_yield(
   Py_DECREF(val);
 
   iter_obj = KosDynNext_AGEN_OBJ((KosDynNode *) next);
-  if (KosPyAsyncGen_Check(iter_obj))
-    ((KosPyAsyncGen *) iter_obj)->in_progress = 0;
+  {
+    KosIterSlots *islots;
+    if (KosIter_CheckSlots(iter_obj, &islots))
+      islots->ki_finish(iter_obj, 0);
+  }
 
   kos_dyn_unlink_next_node(es, next);
   return 0;
@@ -112,9 +115,10 @@ int kos_dyn_next_deliver_exhausted(
   int nn = KosDynNext_N((KosDynNode *) next);
 
   iter_obj = KosDynNext_AGEN_OBJ((KosDynNode *) next);
-  if (KosPyAsyncGen_Check(iter_obj)) {
-    ((KosPyAsyncGen *) iter_obj)->closed = 1;
-    ((KosPyAsyncGen *) iter_obj)->in_progress = 0;
+  {
+    KosIterSlots *islots;
+    if (KosIter_CheckSlots(iter_obj, &islots))
+      islots->ki_finish(iter_obj, 1);
   }
 
   if (nn == 2 && KosDynNext_DEFAULT_VAL((KosDynNode *) next)) {

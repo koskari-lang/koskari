@@ -100,9 +100,71 @@ typedef struct KosCallSlots {
 } KosCallSlots;
 
 
+/**
+   Outcomes of an in-eval iterator step or throw.
+
+   VALUE and EXHAUSTED complete synchronously; the site proceeds (push,
+   branch to else pc, default, StopIteration per site rules). AWAIT
+   parks the site on a Python awaitable with its boundary armed.
+   INSTALLED means the provider spliced its frames onto the consumer
+   context; the site returns EVAL_NORMAL and the result is delivered
+   later at the site's dyn node by the return/raise walks, which call
+   ki_finish. ERROR leaves PyErr set; on any non-INSTALLED outcome the
+   provider has fully undone its own partial state.
+*/
+typedef enum {
+  KOS_ITER_VALUE = 0,   /* *out: the element (new ref) */
+  KOS_ITER_EXHAUSTED,   /* *out: return payload (new ref) or NULL */
+  KOS_ITER_AWAIT,       /* *out: awaitable (new ref); site parks */
+  KOS_ITER_INSTALLED,   /* spliced into consumer eval; deferred delivery */
+  KOS_ITER_ERROR,       /* PyErr set; *out untouched */
+} KosIterStepResult;
+
+
+typedef KosIterStepResult (*KosIterStepFunc)(
+    KosEvalState *es,
+    PyObject *self,
+    PyObject *send_val,        /* borrowed; NULL for plain next */
+    PyObject **out);
+
+typedef KosIterStepResult (*KosIterThrowFunc)(
+    KosEvalState *es,
+    PyObject *self,
+    PyObject *throw_typ,       /* borrowed */
+    PyObject *throw_exc,       /* borrowed */
+    PyObject **out);
+
+/**
+   Demand-path close with GeneratorExit semantics; 0 ok, -1 with PyErr
+   set. Callable outside any eval (dealloc, aclose adapters).
+*/
+typedef int (*KosIterCloseFunc)(PyObject *self);
+
+/**
+   Completion bookkeeping after an INSTALLED step delivers: clear busy
+   state; exhausted also marks the provider closed
+*/
+typedef void (*KosIterFinishFunc)(PyObject *self, int exhausted);
+
+
+/**
+   The iter suite: the in-eval iteration interface. A type whose suite
+   carries ki_step is a KosIter provider; NEXT, ITER_NEXT, and
+   YIELD_FROM dispatch it for flattened stepping, and the dynchain
+   delivery walks report completion through ki_finish.
+*/
+typedef struct KosIterSlots {
+  KosIterStepFunc ki_step;
+  KosIterThrowFunc ki_throw;
+  KosIterCloseFunc ki_close;
+  KosIterFinishFunc ki_finish;
+} KosIterSlots;
+
+
 typedef struct {
   PyTypeObject type;
   KosCallSlots kos_call;
+  KosIterSlots kos_iter;
 } KosEvaluatedTypeObject;
 
 
@@ -135,6 +197,37 @@ static inline KosCallSlots *KosEvaluated_CallSlots(PyTypeObject *t) {
   KosEvaluatedTypeObject *et = KosEvaluated_Resolve(t);
   return et ? &et->kos_call : NULL;
 }
+
+
+/**
+   Check-and-resolve in one: when obj is a KosIter provider (a
+   KosEvaluated whose suite carries a step slot), store the resolved
+   suite into *out_slots and return 1; otherwise return 0 with
+   *out_slots untouched.
+*/
+static inline int KosIter_CheckSlots(
+    PyObject *obj,
+    KosIterSlots **out_slots) {
+
+  if (! obj || ! KosEvaluated_Check(obj))
+    return 0;
+
+  KosEvaluatedTypeObject *et = KosEvaluated_Resolve(Py_TYPE(obj));
+  if (! et || ! et->kos_iter.ki_step)
+    return 0;
+
+  *out_slots = &et->kos_iter;
+  return 1;
+}
+
+
+static inline int kos_iter_check(PyObject *obj) {
+
+  KosIterSlots *slots;
+  return KosIter_CheckSlots(obj, &slots);
+}
+
+#define KosIter_Check(obj) kos_iter_check(obj)
 
 
 int koskari_evaluated_init(PyObject *mod);

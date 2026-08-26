@@ -1,44 +1,42 @@
 # KosEvaluated type and the in-eval iterator interface
 
-Status: draft
-Scope: new `KosEvaluatedTypeObject` unifying the call and iter in-eval
+Status: substrate, call suite, agen iter suite, and site dispatch are
+landed; Python-surface iter adapters and KosMap remain.
+Scope: `KosEvaluatedTypeObject` unifying the call and iter in-eval
 interfaces; migration of `KosPyAsyncGen` and the iteration opcodes onto
 the iter suite; `KosMap` as the second iter provider.
 
 ## Motivation
 
-The evaluator has a detectable in-eval interface for calls
-(`KosCallableTypeObject.tp_kos_install`) but none for iteration. Every
-site that flattens a generator into the running eval dispatches on the
-concrete type instead:
+The evaluator had a detectable in-eval interface for calls
+(`tp_kos_install`) but none for iteration: every site that flattened a
+generator into the running eval dispatched on the concrete
+`KosPyAsyncGen` type -- the step sites (`ITER_NEXT`, `OBJECT_NEXT`,
+`YIELD_FROM`), the acquisition passthrough (`kos_iter_acquire`), and
+the dynchain completion bookkeeping, which downcast to reset
+`in_progress` and mark `closed`. A new native iterable wanting in-eval
+stepping (awaits passing through the consumer's eval, no intermediary
+coroutines) had no surface to adopt.
 
-- `opcode/ITER_NEXT.c:71`, `opcode/OBJECT_NEXT.c:48`,
-  `opcode/YIELD_FROM.c:33` -- step dispatch
-- `eval/eval_utils.c:1243` (`kos_iter_acquire`) -- iterator acquisition
-  passthrough
-- `dynchain/dyn_foreach.c:140,158`, `dynchain/dyn_next.c:92,115`,
-  `dynchain/dyn_walk.c:538,622`, `dynchain/dyn_boundary.c:145,164` --
-  completion bookkeeping (`in_progress` reset, `closed` marking),
-  downcasting to `KosPyAsyncGen`
+## The extended type (landed)
 
-Any new native iterable that wants in-eval stepping (awaits passing
-through the consumer's eval, no intermediary coroutines) has no surface
-to adopt. The generator's flattening privilege is hardcoded to its type.
-
-## The extended type
-
-One extended type object, suite pointers per interface family, mirroring
-CPython's `tp_as_*` design. Lives in a new unit `evaluated.h/c`.
+One extended type object with the interface suites embedded inline,
+CPython's `tp_as_*` family design without the pointer hop. Lives in
+`evaluated.h/c`; the abstract root `_KosEvaluated` has
+`tp_basicsize == sizeof(PyObject)`, so adopting it constrains no
+instance layout.
 
 ```c
-typedef struct {
+typedef struct KosCallSlots {
   KosInstallFunc ki_install;              /* tuple+dict; may be NULL */
   KosVectorInstallFunc ki_vinstall;       /* vectorcall; may be NULL */
   int ki_wants_frame;                     /* default when fn is NULL */
   KosCallableWantsFrameFunc ki_wants_frame_fn;
+  ternaryfunc ki_pycall;                  /* Python-boundary call worker */
+  vectorcallfunc ki_pyvectorcall;         /* vector variant; may be NULL */
 } KosCallSlots;
 
-typedef struct {
+typedef struct KosIterSlots {
   KosIterStepFunc ki_step;
   KosIterThrowFunc ki_throw;
   KosIterCloseFunc ki_close;
@@ -47,198 +45,152 @@ typedef struct {
 
 typedef struct {
   PyTypeObject type;
-  KosCallSlots *tp_kos_call;   /* NULL: not in-eval callable */
-  KosIterSlots *tp_kos_iter;   /* NULL: not in-eval iterable */
+  KosCallSlots kos_call;
+  KosIterSlots kos_iter;
 } KosEvaluatedTypeObject;
-
-extern KosEvaluatedTypeObject KosEvaluatedType;   /* abstract root */
 ```
 
-Detection is the existing marker-base pattern: one subtype check against
-the root, then a null test on the suite pointer. The root's
-`tp_basicsize` is `sizeof(PyObject)`, so adopting it constrains no
-instance layout.
+Membership in a family is by its defining slot, not pointer presence: a
+callable carries `ki_install` or `ki_vinstall`; an iter provider
+carries `ki_step`. The root's zeroed suites make it neither.
+
+Detection and resolution:
+
+- `KosEvaluated_Check`: subtype test against the root.
+- `KosEvaluated_Resolve`: walk `tp_base` past heap types to the first
+  static type. A Python-level subclass of a `BASETYPE` adopter is a
+  plain `PyHeapTypeObject` without the extended fields; before the
+  migration, call dispatch cast `Py_TYPE()` directly and read garbage
+  for such subclasses. The loop body never runs for the static types on
+  the hot paths.
+- `KosCallable_CheckSlots(obj, &slots)` / `KosIter_CheckSlots(obj,
+  &slots)`: check-and-resolve in one, storing the suite out-param on
+  success. The single resolve serves the whole call sequence:
+  `KosEvalState_Call*` thread the resolved suite through
+  `do_frame_prep` and the `KosCallable_CallSlots` /
+  `KosCallable_CallArgsSlots` dispatch cores, one resolve where the
+  pre-interface code did one direct cast and the first migration cut
+  did three resolves.
+
+## Call suite (landed)
+
+All ten adopters (Function, Expression, BoundMethod, KosPartial,
+Demand, Procedure, both continuations, Values, Apply) embed their suite
+inline in the type initializer and chain to the root; the old
+`_KosCallable` root and `KosCallableTypeObject` are gone. The
+duplicated wants-frame resolvers collapsed onto
+`KosCallable_WantsFrame` / `KosCallSlots_WantsFrame`.
+
+`ki_pycall` / `ki_pyvectorcall` are the Python-boundary workers: how
+the callable is invoked from outside any running eval, returning
+whatever its surface dictates (Coroutine or AsyncGenerator for
+async-surface types, a completed value for demand-surface types). Each
+type fills them with the worker it already had -- `KosFunction_Call` /
+`KosFunction_VectorCall`, `expression_pycall`, `boundmethod_pycall`
+(prepend self, recurse through the generic entry), `KosPartial_Call`
+(merge, follow inner through the generic entry), the demand adapters
+for Demand, `procedure_tp_call`, and so on.
+
+The Python-slot adapters are pure suite dispatch with no per-type
+knowledge:
 
 ```c
-#define KosEvaluated_Check(obj) \
-  (PyType_IsSubtype(Py_TYPE(obj), &KosEvaluatedType.type))
-
-#define KosIter_Check(obj) \
-  (KosEvaluated_Check(obj) && KosEvaluated_ITER_SLOTS(Py_TYPE(obj)))
+PyObject *Koskari_AsyncCall(callable, args, kwds);
+    /* resolve suite -> ki_pycall; PyObject_Call fallback */
+PyObject *KosCallAdapt_CallAsync(self, args, kwds);      /* tp_call */
+PyObject *KosCallAdapt_VectorAsync(self, args, nargsf, kwnames);
+    /* ki_pyvectorcall when present, else tuple+dict -> AsyncCall */
+PyObject *KosCallAdapt_CallDemand(self, args, kwds);
+    /* Koskari_DemandSync: forced demand surface */
+PyObject *KosCallAdapt_VectorDemand(self, args, nargsf, kwnames);
 ```
 
-### Slot resolution and heap subclasses
+Function, Expression, BoundMethod, and KosPartial wire the async pair
+into `tp_call` / the per-instance `vectorcall` field
+(`PyVectorcall_Call` convention per func.c); Demand wires CallDemand.
+Subtype overrides need no special casing -- Demand-wins and Procedure's
+result discard fall out of each type's own `ki_pycall`, and heap
+subclasses resolve to the right suite.
 
-Today's call dispatch casts `Py_TYPE(callable)` to
-`KosCallableTypeObject` directly (`callable.c:107,120`,
-`utils.c:243`). A Python-level subclass of a `Py_TPFLAGS_BASETYPE`
-adopter (KosPartial allows this) produces a plain `PyHeapTypeObject`;
-the cast then reads past the end of `PyTypeObject` into heap-type
-fields. The subtype check passes and the read is garbage. This hazard is
-pre-existing; the migration is the moment to close it.
+`Koskari_DemandSync` (`demand_sync_ex`) retains its internal type
+switch; re-expressing it over the suite is open work.
 
-`KosEvaluated_ITER_SLOTS` / `KosEvaluated_CALL_SLOTS` resolve through
-the first static type in the `tp_base` chain:
-
-```c
-static inline KosEvaluatedTypeObject *kos_evaluated_resolve(PyTypeObject *t) {
-  while (t && (t->tp_flags & Py_TPFLAGS_HEAPTYPE))
-    t = t->tp_base;
-  return (KosEvaluatedTypeObject *) t;   /* caller checked subtype */
-}
-```
-
-For the exact static types on the hot paths the loop body never runs.
-
-## Iter suite signatures
+## Iter suite (landed for the generator)
 
 ```c
 typedef enum {
-  KOS_ITER_VALUE,       /* *out set: the element (new ref) */
+  KOS_ITER_VALUE,       /* *out: the element (new ref) */
   KOS_ITER_EXHAUSTED,   /* *out: return payload (new ref) or NULL */
-  KOS_ITER_AWAIT,       /* *out: awaitable (new ref); site parks on it */
-  KOS_ITER_INSTALLED,   /* work spliced into consumer eval; delivery
-                           arrives later through the site's dyn node */
+  KOS_ITER_AWAIT,       /* *out: awaitable (new ref); site parks */
+  KOS_ITER_INSTALLED,   /* spliced into consumer eval; deferred delivery */
   KOS_ITER_ERROR,       /* PyErr set; *out untouched */
 } KosIterStepResult;
 
-typedef KosIterStepResult (*KosIterStepFunc)(
-    KosEvalState *es,
-    PyObject *self,
-    PyObject *send_val,        /* borrowed; NULL for plain next */
-    PyObject **out);
-
-typedef KosIterStepResult (*KosIterThrowFunc)(
-    KosEvalState *es,
-    PyObject *self,
-    PyObject *throw_typ,       /* borrowed */
-    PyObject *throw_exc,       /* borrowed */
-    PyObject **out);
-
-typedef int (*KosIterCloseFunc)(PyObject *self);
-    /* demand-path close, GeneratorExit semantics; 0 ok, -1 PyErr.
-       Callable outside any eval (dealloc, aclose adapters). */
-
-typedef void (*KosIterFinishFunc)(PyObject *self, int exhausted);
-    /* completion bookkeeping after an INSTALLED step delivers:
-       clear busy state; exhausted also marks the provider closed.
-       Replaces the KosPyAsyncGen downcasts in dynchain. */
+KosIterStepResult ki_step(es, self, send_val /* borrowed */, &out);
+KosIterStepResult ki_throw(es, self, throw_typ, throw_exc, &out);
+int ki_close(self);        /* demand close, GeneratorExit semantics;
+                              callable outside any eval */
+void ki_finish(self, exhausted);  /* completion bookkeeping after an
+                              INSTALLED delivery */
 ```
 
 Contract:
 
-- The caller (opcode site) arms its own boundary state before calling
-  `ki_step` -- FOREACH phase, NEXT boundary node, YIELD_FROM node --
-  exactly as it does today. The provider never touches site state.
+- The site arms its own boundary state before calling `ki_step` --
+  FOREACH phase, NEXT boundary node, YIELD_FROM node -- and undoes it
+  on any non-INSTALLED, non-AWAIT outcome. The provider never touches
+  site state.
 - `KOS_ITER_VALUE` / `KOS_ITER_EXHAUSTED` complete synchronously; the
   site disarms and proceeds (push, branch to else pc, default, raise
   StopIteration per site rules).
 - `KOS_ITER_AWAIT` parks the site on a Python awaitable and promises
-  re-entry: the site returns `EVAL_AWAIT(*out)` with its boundary
-  armed, and on revive calls `ki_step(es, self, send_val=result)`
-  again -- the provider's own phase state knows what the value is. An
-  exception from the parked awaitable re-enters through `ki_throw`, so
-  the provider mediates its own conversions (a mid-fetch
-  StopAsyncIteration becomes `KOS_ITER_EXHAUSTED` inside the map, not
-  at the site's raise walk). Sites therefore carry a phase
-  discriminator in their boundary nodes: the legacy awaited-value-is-
-  the-element phase for plain Python async iterators, and a
-  provider-resume phase that feeds the value back into the suite.
-- `KOS_ITER_INSTALLED` means the provider spliced work (frames, its own
-  dyn node) onto the consumer context; the site returns `EVAL_NORMAL`
-  and the result is delivered later at the site's dyn node by the
-  return/raise walks. `ki_finish` is called at that delivery.
-- Re-entrancy guarding (`in_progress` today) is the provider's own
-  business, inside `ki_step` / `ki_throw`.
+  re-entry: on revive the site calls `ki_step(es, self,
+  send_val=result)` again -- the provider's own phase state knows what
+  the value is. An exception from the parked awaitable re-enters
+  through `ki_throw`, so the provider mediates its own conversions (a
+  mid-fetch StopAsyncIteration becomes `KOS_ITER_EXHAUSTED` inside the
+  map, not at the site's raise walk). The sites already return
+  `EVAL_AWAIT` on this result; the resume-side phase discriminator
+  (provider-resume vs legacy awaited-value-is-the-element) is NOT yet
+  built -- it lands with the first provider that returns AWAIT.
+- `KOS_ITER_INSTALLED` means the provider spliced its frames onto the
+  consumer context; the site returns `EVAL_NORMAL` and the result is
+  delivered later at the site's dyn node by the return/raise walks,
+  which call `ki_finish`.
+- On any non-INSTALLED outcome the provider has fully undone its own
+  partial state; re-entrancy guarding (`in_progress`) is the provider's
+  business.
 
-The step-may-complete-later shape is not new design; it is the current
-agen contract (`iter_next_step_kos_agen` returns `EVAL_NORMAL` after
-attach, delivery happens in `kos_dyn_foreach_deliver_yield_kos_agen`)
-promoted from hardcoded type dispatch to an interface.
+`KosPyAsyncGen` adopts (iter.c): the attach core moved in from eval.c
+as `agen_iter_drive` (guards, busy-mark, `agen_attach_gen_flatten`
+graft, send-val placeholder swap), `ki_throw` as the exception-primed
+variant of the same drive, `ki_close` over `KosPyAsyncGen_Teardown`,
+`ki_finish` as the two-line completion. eval.c's three `op_attach_*`
+wrappers and shared attach helpers are deleted.
 
-## Migration: call suite
+Site dispatch: `ITER_NEXT` and `OBJECT_NEXT` (shared VAR/FAST core) arm
+their boundary and map all five step results; `YIELD_FROM`'s drive is
+`yield_from_drive_kos_iter` over `ki_step`/`ki_throw` with the kind
+renamed `KOS_YF_KOS_ITER` (VALUE/AWAIT are a SystemError placeholder
+there until non-frame providers exist); `kos_iter_acquire` passes
+providers through; both `dyn_boundary` discriminations, the six
+dynchain completion downcasts, the eval.c fatal-abort site, and the
+yield-from unwind close-delegate hook all go through `KosIter_Check` /
+`ki_finish`. `dyn_walk.c`'s GEN owner walk stays generator-specific:
+GEN nodes belong to gen-backed providers; other providers bring their
+own node types. No dispatch path names the concrete agen type; the
+remaining `KosPyAsyncGen` internals are its own asend/demand-gen
+machinery, replaced by the adapters below.
 
-Mechanical re-expression, no behavior change.
+Unifications made during the swap (deliberate, not drift): `started`
+is set on any in-eval drive (was YF-only); dead no-chain states report
+EXHAUSTED instead of RuntimeError (YF's quiet-pop semantics
+generalized); YF attach-failure closure happens at node unwind via
+`ki_finish` instead of a direct `closed` write; OBJECT_NEXT pushes its
+boundary before the guards and aborts it on non-INSTALLED; an
+inflight-send-val leak in the YF drive is fixed.
 
-1. Add `evaluated.h/c`: structs above, abstract root type, resolution
-   helpers. Root registers before `callable` in module init order.
-2. `KosCallableTypeObject` becomes `KosEvaluatedTypeObject` +
-   `KosCallSlots`. Adopters (`callable.c`, `func.c/h`, `partial.c/h`,
-   `demand.c/h`, `cont.c/h`, `object.c`, `values.c/h`) convert their
-   static initializers: the four flat fields move into a
-   `static KosCallSlots`, referenced from `tp_kos_call`.
-3. `KosCallable_Check` becomes subtype-of-root plus call-suite null
-   test. Slot readers (`callable.c:74-120`, `utils.c:243`,
-   `eval/eval_utils.c` call paths) go through the resolving accessors.
-4. `tp_base` values are unchanged where adopters already chain to
-   `KosCallableType`; `KosCallableType` itself chains to the new root
-   (or is renamed to it -- decide during implementation, alias the old
-   name either way).
-
-## Migration: agen onto the iter suite
-
-`KosPyAsyncGenType` becomes a `KosEvaluatedTypeObject` with
-`tp_kos_iter` set and `tp_base` the root. Instance struct unchanged.
-
-Slot implementations factor code that already exists:
-
-- `ki_step`: the guard + attach sequence currently duplicated per site.
-  Closed/no-ctx returns `KOS_ITER_EXHAUSTED`; `in_progress` returns
-  `KOS_ITER_ERROR` (RuntimeError); otherwise set `in_progress`, run
-  `attach_agen_gen_checked` (`eval.c:1454`), return
-  `KOS_ITER_INSTALLED`. `send_val`, when present, replaces the install
-  placeholder on TOS (the YIELD_FROM send path today,
-  `yield_from_drive_kos_async_gen`). Attach failure: reset
-  `in_progress`, return `KOS_ITER_ERROR`; the site runs its own undo,
-  as the three `op_attach_..._for_*` variants do today.
-- `ki_throw`: set the pending exception, attach, `KOS_ITER_INSTALLED`
-  (the YF throw ingress pattern).
-- `ki_close`: `KosPyAsyncGen_Teardown` / `asyncgen_close_drive`
-  (iter.c), already demand-path and exception-fenced.
-- `ki_finish`: `in_progress = 0; if (exhausted) closed = 1;` -- the two
-  lines every dynchain delivery site currently writes by downcast.
-
-`attach_agen_gen_checked` and the flatten helpers move from `eval.c`
-into the agen's unit (they become provider implementation detail); the
-per-site undo helpers stay with the sites.
-
-## Migration: opcode and dynchain sites
-
-Each site swaps `KosPyAsyncGen_Check` for `KosIter_Check` and its
-inlined agen logic for slot dispatch. Fallback for non-providers is the
-existing CPython-protocol path, unchanged.
-
-- `ITER_NEXT` (`opcode/ITER_NEXT.c`): provider branch arms the FOREACH
-  phase (`KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN`, renamed
-  `..._AWAITING_KOS_ITER`), calls `ki_step`, maps VALUE -> push,
-  EXHAUSTED -> exhausted+else-pc, AWAIT -> `EVAL_AWAIT` with
-  `..._AWAITING_PY` phase, INSTALLED -> `EVAL_NORMAL`, ERROR -> undo
-  phase + `EVAL_RAISE`.
-- `OBJECT_NEXT` core (`object_next_step`, shared by VAR_NEXT/FAST_NEXT):
-  same mapping; EXHAUSTED honors the n==2 default before StopIteration.
-  The NEXT boundary push precedes the step call, as today.
-- `YIELD_FROM`: `yield_from_classify` gains `KosIter_Check` as the
-  first (flattening-preference) case, replacing the agen check; the
-  drive function calls `ki_step` / `ki_throw` / `ki_close` for
-  send/throw/close actions. `KOS_YF_KOS_ASYNC_GEN` kind renames to
-  `KOS_YF_KOS_ITER`.
-- `kos_iter_acquire` (`eval/eval_utils.c:1243`): passthrough condition
-  becomes `KosIter_Check`.
-- Dynchain delivery (`dyn_foreach.c`, `dyn_next.c`, `dyn_walk.c`):
-  replace the `KosPyAsyncGen` downcasts with
-  `KosIter_Check(obj) -> ki_finish(obj, exhausted)`.
-- `dyn_boundary.c:145,164`: the is-this-a-kos-iter-step vs
-  python-awaitable discrimination becomes `KosIter_Check`.
-- `dyn_walk.c:65` (GEN node owner walk) stays generator-specific: GEN
-  nodes belong to gen-backed providers; other providers bring their own
-  node types with their own walk handlers.
-
-Order of work: call-suite phases land first (pure refactor, full suite
-green), then agen slots + site dispatch in one change (behavior-neutral,
-the corpus and phase 1-8 suites are the check), then adapters, then
-KosMap.
-
-## Python-surface adapters (reusable fillers, not base behavior)
+## Python-surface iter adapters (planned)
 
 The extended type supplies nothing Python-facing. A provider builds its
 own `PyAsyncMethods` / method table from exported adapter functions, so
@@ -250,18 +202,6 @@ PyObject *KosIterAdapt_Asend(PyObject *self, PyObject *v);
 PyObject *KosIterAdapt_Athrow(PyObject *self, PyObject *args);
 PyObject *KosIterAdapt_Aclose(PyObject *self, PyObject *ignored);
 PyObject *KosIterAdapt_DemandIter(PyObject *self);      /* tp_iter */
-
-PyObject *KosCallAdapt_CallAsync(                       /* tp_call */
-    PyObject *self, PyObject *args, PyObject *kwds);
-PyObject *KosCallAdapt_CallDemand(                      /* tp_call */
-    PyObject *self, PyObject *args, PyObject *kwds);
-
-PyObject *KosCallAdapt_VectorAsync(                     /* vectorcallfunc */
-    PyObject *self, PyObject *const *args, size_t nargsf,
-    PyObject *kwnames);
-PyObject *KosCallAdapt_VectorDemand(                    /* vectorcallfunc */
-    PyObject *self, PyObject *const *args, size_t nargsf,
-    PyObject *kwnames);
 ```
 
 Implementation generalizes the two drivers that exist. The async
@@ -306,51 +246,16 @@ park has no frame to carry the demand bit); INSTALLED forces
 `demand_gen_step` move) so in-eval suspension denies at the existing
 deny sites; YIELD -> value, RETURN -> `StopIteration(payload)`.
 
-The two `KosCallAdapt_*` entries do the same for the call suite,
-generalizing the two `tp_call` behaviors that exist:
+`KosPyAsyncGen` then swaps its hand-rolled `am_anext` / `asend` /
+`athrow` / `aclose` / `tp_iter` entries for the adapters, and
+`KosPyAsyncGenASend` / `KosDemandGenerator` become the shared stepper
+types rather than agen-private ones.
 
-- `KosCallAdapt_CallAsync` is the KosFunction `tp_call` shape: prepare
-  a frame on a fresh context, dispatch the call suite's install into
-  it, and wrap the context for the Python caller -- `KosCoroutine`, or
-  the async-generator wrapper when the installed code yields (the
-  `KosCoroutine_NewFromCode` branch). Going through `ki_install`
-  rather than code-plus-namespace directly means any call-suite
-  provider gets it, partial chains included, with the install-slot
-  flattening intact.
-- `KosCallAdapt_CallDemand` is the Demand `tp_call` shape:
-  `demand_sync_ex` generalized -- install onto a demand-flagged root
-  frame, drive to completion, `KoskariSyncViolation` on real
-  suspension, yielding callables returning a DemandGenerator (which
-  becomes `KosIterAdapt_DemandIter` over the resulting provider).
-
-The `Vector*` pair carries the same two behaviors as `vectorcallfunc`
-implementations, dispatching `ki_vinstall` when the suite provides it
-and falling back to tuple+dict `ki_install` otherwise. The wiring
-convention is the one `KosFunction` already implements (func.c:2250):
-a per-instance `vectorcallfunc` field, `tp_vectorcall_offset` naming
-it, `Py_TPFLAGS_HAVE_VECTORCALL`, the field assigned at construction.
-
-A call-suite provider fills its Python call surface with whichever
-pair matches: async-by-default types take `CallAsync` /
-`VectorAsync`, demand-surface types take `CallDemand` /
-`VectorDemand`. A type wiring the vector pair sets `tp_call` to
-`PyVectorcall_Call` so tuple+dict calls route through the same path;
-a type skipping vectorcall wires the `Call*` adapter directly. The
-existing function, expression, and partial objects migrate onto these
-during the call-suite phase.
-- `KosPyAsyncGen` then swaps its hand-rolled `am_anext` / `asend` /
-  `athrow` / `aclose` / `tp_iter` entries for the adapters, and
-  `KosPyAsyncGenASend` / `KosDemandGenerator` become the shared stepper
-  types rather than agen-private ones.
-
-Adapter migration can trail the opcode migration; the agen's existing
-Python surface keeps working against its own machinery until the swap.
-
-## KosMap
+## KosMap (planned)
 
 The goal object: `(map f seq)` as a native in-eval iterable. Duck-typed,
-no `builtins.map` inheritance. A `KosEvaluatedTypeObject` with
-`tp_kos_iter` (and `tp_kos_call` NULL).
+no `builtins.map` inheritance. A `KosEvaluatedTypeObject` with the iter
+suite filled (call suite zeroed).
 
 Instance state:
 
@@ -445,12 +350,11 @@ shortest-source termination; deferred until the unary machine is in.
 
 ## Open questions
 
-- Whether `KosCallableType` survives as an intermediate base or the
-  root replaces it outright; pure naming, decide at implementation.
 - The AWAIT re-entry contract needs the boundary revive path
   (`revive_await` election, `dyn_boundary` discrimination) to
   distinguish value-is-element parks from provider-resume parks;
   verify the phase discriminator covers the YIELD_FROM node the same
-  way as FOREACH/NEXT.
+  way as FOREACH/NEXT. Lands with the first AWAIT-returning provider.
 - The mid-delivery `EVAL_AWAIT` escape for S3xF2 (see Edges): confirm
   the delivery walk call sites can propagate a KosOpResult.
+- Re-expressing `demand_sync_ex`'s type switch over the call suite.

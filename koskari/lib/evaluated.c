@@ -44,6 +44,7 @@ KosEvaluatedTypeObject KosEvaluatedType = {
     .tp_new = NULL,
   },
   .kos_call = { 0 },
+  .kos_iter = { 0 },
 };
 
 

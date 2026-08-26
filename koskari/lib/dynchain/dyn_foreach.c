@@ -137,8 +137,11 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
 
   kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
   iter = KosDynForeach_ITER(fe);
-  if (KosPyAsyncGen_Check(iter))
-    ((KosPyAsyncGen *) iter)->in_progress = 0;
+  {
+    KosIterSlots *islots;
+    if (KosIter_CheckSlots(iter, &islots))
+      islots->ki_finish(iter, 0);
+  }
   return 0;
 }
 
@@ -155,9 +158,10 @@ int kos_dyn_foreach_deliver_exhausted(
     PyObject *val) {
 
   PyObject *iter = KosDynForeach_ITER(fe);
-  if (KosPyAsyncGen_Check(iter)) {
-    ((KosPyAsyncGen *) iter)->closed = 1;
-    ((KosPyAsyncGen *) iter)->in_progress = 0;
+  {
+    KosIterSlots *islots;
+    if (KosIter_CheckSlots(iter, &islots))
+      islots->ki_finish(iter, 1);
   }
 
   KosDynForeach_EXHAUSTED(fe) = 1;

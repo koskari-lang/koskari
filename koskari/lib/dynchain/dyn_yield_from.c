@@ -37,7 +37,7 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   }
 
   caps = KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP;
-  /* KOS_YF_KOS_ASYNC_GEN (4): flattened iterator boundary with main eval loop */
+  /* KOS_YF_KOS_ITER (4): flattened iterator boundary with main eval loop */
   if (kind == (uint8_t) 4)
     caps |= KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY;
 
@@ -296,10 +296,12 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
     KosDynYieldFrom_INFLIGHT(node) = NULL;
     break;
 
-  case KOS_YF_KOS_ASYNC_GEN:
-    if (KosPyAsyncGen_Check(delegate))
-      ((KosPyAsyncGen *) delegate)->closed = 1;
+  case KOS_YF_KOS_ITER: {
+    KosIterSlots *islots;
+    if (KosIter_CheckSlots(delegate, &islots))
+      islots->ki_finish(delegate, 1);
     break;
+  }
 
   default:
     break;

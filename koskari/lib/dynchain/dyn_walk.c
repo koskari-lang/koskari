@@ -531,12 +531,10 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
              walk so the consumer's regions can catch. */
           kos_eval_note_crossed_frame(es);
           {
-            struct KosPyAsyncGen *agen =
-                (struct KosPyAsyncGen *) KosDynGen_OWNER(parent);
-            if (agen) {
-              agen->closed = 1;
-              agen->in_progress = 0;
-            }
+            PyObject *owner = KosDynGen_OWNER(parent);
+            KosIterSlots *islots;
+            if (owner && KosIter_CheckSlots(owner, &islots))
+              islots->ki_finish(owner, 1);
           }
           {
             PyObject *typ = NULL, *val = NULL, *tb = NULL;
@@ -615,12 +613,10 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
              -- and continue the walk so the raise propagates into the
              consumer's regions, per Python generator semantics. */
           {
-            struct KosPyAsyncGen *agen =
-                (struct KosPyAsyncGen *) KosDynGen_OWNER(top);
-            if (agen) {
-              agen->closed = 1;
-              agen->in_progress = 0;
-            }
+            PyObject *owner = KosDynGen_OWNER(top);
+            KosIterSlots *islots;
+            if (owner && KosIter_CheckSlots(owner, &islots))
+              islots->ki_finish(owner, 1);
           }
           {
             PyObject *typ = NULL, *val = NULL, *tb = NULL;

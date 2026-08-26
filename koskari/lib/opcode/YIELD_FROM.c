@@ -28,10 +28,10 @@
 */
 static int yield_from_classify(PyObject *obj) {
 
-  /* Koskari async gen: flattened into the same eval loop
-     (see yield_from_drive_kos_async_gen). */
-  if (KosPyAsyncGen_Check(obj))
-    return KOS_YF_KOS_ASYNC_GEN;
+  /* KosIter provider: flattened into the same eval loop
+     (see yield_from_drive_kos_iter). */
+  if (KosIter_Check(obj))
+    return KOS_YF_KOS_ITER;
 
   /* Python sync generator: send/throw/close; send(None) steps. */
   if (PyGen_Check(obj))
@@ -516,20 +516,20 @@ static KosOpResult yield_from_drive_py_async(
 
 
 /**
-  Drive one step of a Koskari async-generator delegate (flattened into the
-  same koskari_eval).  Handles resume-from-await inject, close,
-  throw(StopAsyncIteration), and stepping.  Returns 0 on success, -1 on
-  error (PyErr set).  Never emits YIELD or AWAIT directly; those surface
-  through the inner koskari_eval flattening path.
+  Drive one step of a KosIter provider delegate through its iter suite
+  (flattened into the same koskari_eval).  Handles resume-from-await
+  inject, close, throw(StopAsyncIteration), and stepping.  Returns 0 on
+  success, -1 on error (PyErr set).  Never emits YIELD or AWAIT
+  directly; those surface through the inner koskari_eval flattening
+  path.
 */
-static int yield_from_drive_kos_async_gen(
+static int yield_from_drive_kos_iter(
     KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *delegate,
+    KosIterSlots *islots,
     uint8_t action,
     KosOp *insn) {
-
-  KosPyAsyncGen *agen = (KosPyAsyncGen *) delegate;
 
   PyObject *yf_send_val = NULL;
   PyObject *yf_throw_exc = NULL;
@@ -545,7 +545,7 @@ static int yield_from_drive_kos_async_gen(
   }
 
   if (action == KOS_YF_CLOSE) {
-    agen->closed = 1;
+    islots->ki_finish(delegate, 1);
     Py_XDECREF(yf_send_val);
     kos_dyn_pop_yield_from(es, yf);
     PyErr_SetNone(PyExc_GeneratorExit);
@@ -558,26 +558,8 @@ static int yield_from_drive_kos_async_gen(
     return 0;
   }
 
-  if (agen->closed || ! agen->gen) {
-    Py_XDECREF(yf_send_val);
-    if (kos_dyn_pop_yield_from(es, yf) < 0)
-      return -1;
-    return 0;
-  }
-
-  {
-    KosDynGen *dgen = (KosDynGen *) agen->gen;
-
-    if (! KosDynGen_ACTIVE(dgen)
-        && (! agen->ctx || ! KosContext_DYN_TOP(agen->ctx))) {
-      Py_XDECREF(yf_send_val);
-      if (kos_dyn_pop_yield_from(es, yf) < 0)
-        return -1;
-      return 0;
-    }
-  }
-
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf)) {
+    Py_XDECREF(yf_send_val);
     yf_send_val = KosDynYieldFrom_PENDING_ARG(yf);
     Py_INCREF(yf_send_val);
   }
@@ -592,47 +574,47 @@ static int yield_from_drive_kos_async_gen(
 
   yield_from_clear_pending(yf);
 
-  agen->in_progress = 1;
+  {
+    PyObject *out = NULL;
+    KosIterStepResult r;
 
-  if (yf_throw_exc)
-    PyErr_SetObject(yf_throw_typ, yf_throw_exc);
+    if (yf_throw_exc)
+      r = islots->ki_throw(es, delegate, yf_throw_typ, yf_throw_exc, &out);
+    else
+      r = islots->ki_step(es, delegate, yf_send_val, &out);
 
-  if (op_attach_koskari_agen_frame_for_yield_from(es, agen, yf) < 0) {
     Py_XDECREF(yf_send_val);
     if (yf_throw_typ) {
       Py_DECREF(yf_throw_typ);
       Py_DECREF(yf_throw_exc);
     }
-    agen->in_progress = 0;
-    agen->closed = 1;
-    return -1;
-  }
 
-  if (yf_throw_typ) {
-    Py_DECREF(yf_throw_typ);
-    Py_DECREF(yf_throw_exc);
-  }
+    switch (r) {
+      case KOS_ITER_INSTALLED:
+        return 0;
 
-  agen->started = 1;
+      case KOS_ITER_EXHAUSTED:
+        Py_XDECREF(out);
+        if (kos_dyn_pop_yield_from(es, yf) < 0)
+          return -1;
+        return 0;
 
-  if (! PyErr_Occurred()) {
-    PyObject *popped = KosEvalState_StackPopRef(es);
-    PyObject *pushv;
+      case KOS_ITER_ERROR:
+        /* PyErr set. The raise walk unwinds the yield-from node and its
+           close-delegate hook marks the provider closed (ki_finish). */
+        return -1;
 
-    if (! popped)
-      return -1;
-    Py_DECREF(popped);
-    pushv = yf_send_val ? yf_send_val : Py_None;
-    if (KosEvalState_StackPushRef(es, pushv) < 0) {
-      Py_XDECREF(yf_send_val);
-      return -1;
+      case KOS_ITER_VALUE:
+      case KOS_ITER_AWAIT:
+      default:
+        /* No provider produces these under yield-from yet; the direct
+           value/park shapes arrive with non-frame providers. */
+        Py_XDECREF(out);
+        PyErr_SetString(PyExc_SystemError,
+                        "yield-from: unsupported KosIter step result");
+        return -1;
     }
-    Py_XDECREF(yf_send_val);
-  } else {
-    Py_XDECREF(yf_send_val);
   }
-
-  return 0;
 }
 
 
@@ -747,8 +729,14 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
     return yield_from_drive_sync_gen(es, yf, delegate, action, insn);
   if (kind == KOS_YF_PY_ASYNC_ITER || kind == KOS_YF_PY_ASYNC_GEN)
     return yield_from_drive_py_async(es, yf, delegate, kind, action, insn);
-  if (kind == KOS_YF_KOS_ASYNC_GEN) {
-    int r = yield_from_drive_kos_async_gen(es, yf, delegate, action, insn);
+  if (kind == KOS_YF_KOS_ITER) {
+    KosIterSlots *islots;
+    if (! KosIter_CheckSlots(delegate, &islots)) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "yield-from delegate lost its iter suite");
+      return EVAL_RAISE();
+    }
+    int r = yield_from_drive_kos_iter(es, yf, delegate, islots, action, insn);
     return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
   }
 

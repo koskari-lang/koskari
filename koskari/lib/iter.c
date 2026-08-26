@@ -438,27 +438,174 @@ static PyAsyncMethods asyncgen_async_methods = {
 };
 
 
-PyTypeObject KosPyAsyncGenType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+/* === KosIter suite === */
 
-  .tp_name = "koskari.lib.AsyncGenerator",
-  .tp_basicsize = sizeof(KosPyAsyncGen),
-  .tp_itemsize = 0,
-  .tp_dealloc = asyncgen_dealloc,
-  .tp_repr = asyncgen_repr,
-  .tp_as_async = &asyncgen_async_methods,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Koskari async generator wrapper",
-  .tp_traverse = asyncgen_traverse,
-  .tp_clear = asyncgen_clear,
-  .tp_iter = asyncgen_tp_iter,
-  .tp_methods = asyncgen_methods,
+
+/**
+   Clear agen->ctx dyn/frame head and graft gen onto the consumer
+   (KosEvalState_CONTEXT(es)). Frozen gens use ACTIVE; bootstrap gens use
+   agen->ctx dyn_top only.
+*/
+static int agen_attach_gen_flatten(
+    KosEvalState *es,
+    KosPyAsyncGen *agen,
+    KosDynGen *gen) {
+
+  if (KosDynGen_ACTIVE(gen)) {
+    KosContext_DYN_TOP(agen->ctx) = NULL;
+    KosContext_FRAME_TOP(agen->ctx) = NULL;
+    return kos_dyn_gen_install(es, gen);
+  }
+
+  if (agen->ctx && KosContext_DYN_TOP(agen->ctx))
+    return kos_dyn_gen_install_bootstrap(es, agen->ctx, gen);
+
+  PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
+  return -1;
+}
+
+
+/**
+   Shared core of ki_step and ki_throw: guard, mark busy, splice the
+   generator's frames onto the consumer context. On success the drive is
+   in flight (KOS_ITER_INSTALLED); any pending exception set by the
+   caller (the throw ingress) is delivered at resume. send_val, when
+   given, replaces the install placeholder on TOS as the value of the
+   suspended yield expression.
+*/
+static KosIterStepResult agen_iter_drive(
+    KosEvalState *es,
+    KosPyAsyncGen *agen,
+    PyObject *send_val,
+    PyObject **out) {
+
+  if (agen->in_progress) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator already being iterated");
+    return KOS_ITER_ERROR;
+  }
+
+  if (agen->closed || ! agen->ctx || ! agen->gen) {
+    *out = NULL;
+    return KOS_ITER_EXHAUSTED;
+  }
+
+  {
+    KosDynGen *gen = (KosDynGen *) agen->gen;
+
+    if (! KosDynGen_ACTIVE(gen) && ! KosContext_DYN_TOP(agen->ctx)) {
+      /* No frozen chain and nothing live on the context: spent. */
+      *out = NULL;
+      return KOS_ITER_EXHAUSTED;
+    }
+
+    agen->in_progress = 1;
+    if (agen_attach_gen_flatten(es, agen, gen) < 0) {
+      agen->in_progress = 0;
+      return KOS_ITER_ERROR;
+    }
+  }
+
+  agen->started = 1;
+
+  if (send_val && ! PyErr_Occurred()) {
+    PyObject *popped = KosEvalState_StackPopRef(es);
+    if (! popped)
+      return KOS_ITER_ERROR;
+    Py_DECREF(popped);
+    if (KosEvalState_StackPushRef(es, send_val) < 0)
+      return KOS_ITER_ERROR;
+  }
+
+  return KOS_ITER_INSTALLED;
+}
+
+
+static KosIterStepResult agen_iter_step(
+    KosEvalState *es,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return agen_iter_drive(es, (KosPyAsyncGen *) self, send_val, out);
+}
+
+
+static KosIterStepResult agen_iter_throw(
+    KosEvalState *es,
+    PyObject *self,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    PyObject **out) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  if (agen->in_progress) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator already being iterated");
+    return KOS_ITER_ERROR;
+  }
+
+  if (agen->closed || ! agen->ctx || ! agen->gen) {
+    *out = NULL;
+    return KOS_ITER_EXHAUSTED;
+  }
+
+  /* Throw ingress: prime the exception, then attach; the pending error
+     is delivered at the resume point inside the flattened drive. */
+  PyErr_SetObject(throw_typ, throw_exc);
+  return agen_iter_drive(es, agen, NULL, out);
+}
+
+
+static int agen_iter_close(PyObject *self) {
+
+  KosPyAsyncGen_Teardown((KosPyAsyncGen *) self);
+  ((KosPyAsyncGen *) self)->closed = 1;
+  return 0;
+}
+
+
+static void agen_iter_finish(PyObject *self, int exhausted) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  agen->in_progress = 0;
+  if (exhausted)
+    agen->closed = 1;
+}
+
+
+KosEvaluatedTypeObject KosPyAsyncGenType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+
+    .tp_name = "koskari.lib.AsyncGenerator",
+    .tp_basicsize = sizeof(KosPyAsyncGen),
+    .tp_itemsize = 0,
+    .tp_dealloc = asyncgen_dealloc,
+    .tp_repr = asyncgen_repr,
+    .tp_as_async = &asyncgen_async_methods,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_doc = "Koskari async generator wrapper",
+    .tp_traverse = asyncgen_traverse,
+    .tp_clear = asyncgen_clear,
+    .tp_iter = asyncgen_tp_iter,
+    .tp_methods = asyncgen_methods,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_iter = {
+    .ki_step = agen_iter_step,
+    .ki_throw = agen_iter_throw,
+    .ki_close = agen_iter_close,
+    .ki_finish = agen_iter_finish,
+  },
 };
 
 
 PyObject *KosPyAsyncGen_New(KosContext *ctx) {
 
-  KosPyAsyncGen *agen = PyObject_GC_New(KosPyAsyncGen, &KosPyAsyncGenType);
+  KosPyAsyncGen *agen = PyObject_GC_New(KosPyAsyncGen, KOS_EVALUATED_PYTYPE(KosPyAsyncGenType));
   if (! agen) {
     KosContext_Free(ctx);
     return NULL;
@@ -964,12 +1111,12 @@ int koskari_iter_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  if (PyType_Ready(&KosPyAsyncGenType) ||
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosPyAsyncGenType)) ||
       PyType_Ready(&KosPyAsyncGenASendType))
     return -1;
 
   if (PyDict_SetItemString(dict, "AsyncGenerator",
-                           (PyObject *) &KosPyAsyncGenType))
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosPyAsyncGenType)))
     return -1;
 
   return 0;

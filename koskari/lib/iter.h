@@ -20,6 +20,8 @@
 
 #include <Python.h>
 
+#include "evaluated.h"
+
 
 /* === KosPyAsyncGen === */
 
@@ -27,10 +29,13 @@
 /**
    KosPyAsyncGen wraps a KosContext for Python's async generator protocol.
 
-   Similar to KosCoroutine but yields values via __anext__.
+   Similar to KosCoroutine but yields values via __anext__. A KosIter
+   provider: its kos_iter suite steps by splicing the generator's frames
+   onto the consumer context (KOS_ITER_INSTALLED), with delivery through
+   the site's boundary node.
 */
 
-extern PyTypeObject KosPyAsyncGenType;
+extern KosEvaluatedTypeObject KosPyAsyncGenType;
 
 
 struct KosPyAsyncGen {
@@ -45,10 +50,11 @@ struct KosPyAsyncGen {
 
 
 #define KosPyAsyncGen_Check(obj)                                        \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyAsyncGenType))
+  ((obj) && PyType_IsSubtype((obj)->ob_type,                            \
+                             KOS_EVALUATED_PYTYPE(KosPyAsyncGenType)))
 
-#define KosPyAsyncGen_CheckExact(obj)                   \
-  ((obj) && ((obj)->ob_type == &KosPyAsyncGenType))
+#define KosPyAsyncGen_CheckExact(obj)                                   \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosPyAsyncGenType)))
 
 
 PyObject *KosPyAsyncGen_New(KosContext *ctx);
