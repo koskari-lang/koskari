@@ -272,12 +272,26 @@ static KosOpResult kos_vinstall_function(
 }
 
 
-static KosCallSlots expression_call_slots = {
-  .ki_install = kos_install_expression,
-  .ki_vinstall = kos_vinstall_expression,
-  .ki_wants_frame = 1,
-  .ki_wants_frame_fn = kos_expression_wants_frame,
-};
+/**
+   ki_pycall worker: an Expression takes no arguments; evaluate it.
+*/
+static PyObject *expression_pycall(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwargs) {
+
+  if (args && PyTuple_GET_SIZE(args) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression() takes no arguments");
+    return NULL;
+  }
+
+  if (kwargs && PyDict_Size(kwargs) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
+    return NULL;
+  }
+
+  return KosExpression_Eval(self);
+}
 
 
 KosEvaluatedTypeObject KosExpressionType = {
@@ -295,7 +309,14 @@ KosEvaluatedTypeObject KosExpressionType = {
   .tp_members = expression_members,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_call = &expression_call_slots,
+  .kos_call = {
+    .ki_install = kos_install_expression,
+    .ki_vinstall = kos_vinstall_expression,
+    .ki_wants_frame = 1,
+    .ki_wants_frame_fn = kos_expression_wants_frame,
+    .ki_pycall = expression_pycall,
+    .ki_pyvectorcall = NULL,
+  },
 };
 
 
@@ -1500,12 +1521,35 @@ static PyObject *boundmethod_repr(PyObject *self) {
 }
 
 
-static KosCallSlots boundmethod_call_slots = {
-  .ki_install = kos_install_boundmethod,
-  .ki_vinstall = kos_vinstall_boundmethod,
-  .ki_wants_frame = 1,
-  .ki_wants_frame_fn = kos_boundmethod_wants_frame,
-};
+/**
+   ki_pycall worker: prepend self and follow the wrapped callable
+   through the generic boundary entry.
+*/
+static PyObject *boundmethod_pycall(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwargs) {
+
+  PyObject *bound_self = KosBoundMethod_SELF(self);
+  PyObject *bound_args;
+  Py_ssize_t n = args ? PyTuple_GET_SIZE(args) : 0;
+
+  bound_args = PyTuple_New(1 + n);
+  if (! bound_args)
+    return NULL;
+  Py_INCREF(bound_self);
+  PyTuple_SET_ITEM(bound_args, 0, bound_self);
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *item = PyTuple_GET_ITEM(args, i);
+    Py_INCREF(item);
+    PyTuple_SET_ITEM(bound_args, 1 + i, item);
+  }
+
+  PyObject *result = Koskari_AsyncCall(
+      KosBoundMethod_FUNC(self), bound_args, kwargs);
+  Py_DECREF(bound_args);
+  return result;
+}
 
 
 KosEvaluatedTypeObject KosBoundMethodType = {
@@ -1523,7 +1567,14 @@ KosEvaluatedTypeObject KosBoundMethodType = {
     .tp_getset = boundmethod_getsets,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_call = &boundmethod_call_slots,
+  .kos_call = {
+    .ki_install = kos_install_boundmethod,
+    .ki_vinstall = kos_vinstall_boundmethod,
+    .ki_wants_frame = 1,
+    .ki_wants_frame_fn = kos_boundmethod_wants_frame,
+    .ki_pycall = boundmethod_pycall,
+    .ki_pyvectorcall = NULL,
+  },
 };
 
 
@@ -2165,14 +2216,6 @@ static PyMemberDef function_members[] = {
 };
 
 
-static KosCallSlots function_call_slots = {
-  .ki_install = kos_install_function,
-  .ki_vinstall = kos_vinstall_function,
-  .ki_wants_frame = 1,
-  .ki_wants_frame_fn = kos_function_wants_frame,
-};
-
-
 KosEvaluatedTypeObject KosFunctionType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -2195,7 +2238,14 @@ KosEvaluatedTypeObject KosFunctionType = {
   .tp_getset = function_getsets,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_call = &function_call_slots,
+  .kos_call = {
+    .ki_install = kos_install_function,
+    .ki_vinstall = kos_vinstall_function,
+    .ki_wants_frame = 1,
+    .ki_wants_frame_fn = kos_function_wants_frame,
+    .ki_pycall = KosFunction_Call,
+    .ki_pyvectorcall = KosFunction_VectorCall,
+  },
 };
 
 

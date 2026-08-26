@@ -43,8 +43,7 @@ KosEvaluatedTypeObject KosEvaluatedType = {
               " dispatches to directly",
     .tp_new = NULL,
   },
-  .tp_kos_call = NULL,
-  .tp_kos_iter = NULL,
+  .kos_call = { 0 },
 };
 
 

@@ -413,18 +413,10 @@ static inline KosOpResult kos_op_result_PUSH_OR_AWAIT(
 static inline int do_frame_prep(
     KosEvalState *es,
     PyObject *callable,
-    PyTypeObject *typ,
+    KosCallSlots *slots,
     int tail_call) {
 
-  KosCallSlots *slots = KosEvaluated_CallSlots(typ);
-  int wants;
-
-  if (! slots)
-    wants = 0;
-  else if (slots->ki_wants_frame_fn)
-    wants = slots->ki_wants_frame_fn(callable);
-  else
-    wants = slots->ki_wants_frame;
+  int wants = KosCallSlots_WantsFrame(slots, callable);
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
   KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
@@ -522,7 +514,9 @@ KosOpResult KosEvalState_Call(
     PyObject *kwnames,
     int tail_call) {
 
-  if (! KosCallable_Check(callable)) {
+  KosCallSlots *slots;
+
+  if (! KosCallable_CheckSlots(callable, &slots)) {
     if (KosInstanceCall_Check(callable)) {
       /* Instance with a KosCallable __call__: dispatch the unbound __call__
          with self injected as the first positional -- no bound-method,
@@ -561,11 +555,11 @@ KosOpResult KosEvalState_Call(
     return deliver_py_call_result(es, result, tail_call, tail_defer_return);
   }
 
-  PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(es, callable, typ, tail_call) < 0)
+  if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();
 
-  return KosCallable_Call(es, callable, args, nargs, kwnames, tail_call);
+  return KosCallable_CallSlots(es, slots, callable, args, nargs, kwnames,
+                               tail_call);
 }
 
 
@@ -1139,7 +1133,9 @@ KosOpResult KosEvalState_CallArgs(
     PyObject *kwds_dict,
     int tail_call) {
 
-  if (! KosCallable_Check(callable)) {
+  KosCallSlots *slots;
+
+  if (! KosCallable_CheckSlots(callable, &slots)) {
     if (KosInstanceCall_Check(callable)) {
       PyObject *call_fn = kos_instance_call_target(callable);
       if (call_fn) {
@@ -1188,11 +1184,11 @@ KosOpResult KosEvalState_CallArgs(
     return deliver_py_call_result(es, result, tail_call, tail_defer_return);
   }
 
-  PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(es, callable, typ, tail_call) < 0)
+  if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();
 
-  return KosCallable_CallArgs(es, callable, args_tuple, kwds_dict, tail_call);
+  return KosCallable_CallArgsSlots(es, slots, callable, args_tuple,
+                                   kwds_dict, tail_call);
 }
 
 
@@ -1201,7 +1197,9 @@ KosOpResult KosEvalState_CallNoArgs(
     PyObject *callable,
     int tail_call) {
 
-  if (! KosCallable_Check(callable)) {
+  KosCallSlots *slots;
+
+  if (! KosCallable_CheckSlots(callable, &slots)) {
     if (KosInstanceCall_Check(callable)) {
       PyObject *call_fn = kos_instance_call_target(callable);
       if (call_fn) {
@@ -1218,11 +1216,11 @@ KosOpResult KosEvalState_CallNoArgs(
     return deliver_py_call_result(es, result, tail_call, tail_defer_return);
   }
 
-  PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(es, callable, typ, tail_call) < 0)
+  if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();
 
-  return KosCallable_CallNoArgs(es, callable, tail_call);
+  return KosCallable_CallArgsSlots(es, slots, callable, NULL, NULL,
+                                   tail_call);
 }
 
 

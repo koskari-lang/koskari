@@ -20,15 +20,18 @@
 
 #include <Python.h>
 
+#include "eval.h"
+
 
 /**
    KosEvaluatedTypeObject: the extended type object for native types
    the evaluator dispatches to directly.
 
-   Each in-eval interface family is a nullable suite pointer, mirroring
-   CPython's tp_as_* design: the call suite (install slots; defined in
-   callable.h) and the iter suite (step slots). A NULL suite means the
-   type does not implement that family.
+   Each in-eval interface family is a suite embedded inline, mirroring
+   CPython's tp_as_* design without the indirection: the call suite
+   here, the iter suite when it lands. Membership in a family is by its
+   defining slot (a callable has ki_install or ki_vinstall), not by a
+   pointer being non-NULL.
 
    Detection is a marker-base subtype check against KosEvaluatedType,
    whose tp_basicsize is sizeof(PyObject), so adopting it constrains no
@@ -39,14 +42,67 @@
 */
 
 
-struct KosCallSlots;
-struct KosIterSlots;
+/**
+   Install functions receive borrowed references. callable, args_tuple,
+   kwds_dict (or args, kwnames for vector) must not be DECREF'd by the
+   implementation.
+
+   es must be the same live KosEvalState that KosEvalState_Call* prepared via
+   do_frame_prep. Use KosEvalState_CONTEXT(es) when the heap context is needed.
+
+   tail_call: 1 if this is a tail call; 0 otherwise. Most implementations
+   ignore this; frame behavior is handled by the caller (KosEvalState_Call*).
+*/
+typedef KosOpResult (*KosInstallFunc)(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    int tail_call);
+
+
+typedef KosOpResult (*KosVectorInstallFunc)(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call);
+
+
+/**
+   Optional per-instance wants_frame. If non-NULL, called with the callable
+   instance; return 1 if the call needs a frame (push or reset), 0 if not.
+   Overrides ki_wants_frame when present.
+*/
+typedef int (*KosCallableWantsFrameFunc)(PyObject *callable);
+
+
+/**
+   The call suite: the in-eval call interface plus the Python-boundary
+   workers. A type whose suite carries ki_install or ki_vinstall is a
+   KosCallable.
+
+   ki_pycall is the Python-boundary worker: how this callable is invoked
+   from outside any running eval, returning whatever its surface dictates
+   (a Coroutine or AsyncGenerator for async-surface types, a completed
+   value for demand-surface types). ki_pyvectorcall is its optional
+   vector-optimized variant. Koskari_AsyncCall and the KosCallAdapt_*
+   fillers dispatch through these; no caller needs per-type knowledge.
+*/
+typedef struct KosCallSlots {
+  KosInstallFunc ki_install;              /* tuple+dict; may be NULL */
+  KosVectorInstallFunc ki_vinstall;       /* vectorcall; may be NULL */
+  int ki_wants_frame;                     /* default when fn is NULL */
+  KosCallableWantsFrameFunc ki_wants_frame_fn;  /* if non-NULL, overrides */
+  ternaryfunc ki_pycall;                  /* Python-boundary call worker */
+  vectorcallfunc ki_pyvectorcall;         /* vector variant; may be NULL */
+} KosCallSlots;
 
 
 typedef struct {
   PyTypeObject type;
-  struct KosCallSlots *tp_kos_call;  /* NULL: not in-eval callable */
-  struct KosIterSlots *tp_kos_iter;  /* NULL: not in-eval iterable */
+  KosCallSlots kos_call;
 } KosEvaluatedTypeObject;
 
 
@@ -74,17 +130,10 @@ static inline KosEvaluatedTypeObject *KosEvaluated_Resolve(PyTypeObject *t) {
 }
 
 
-static inline struct KosCallSlots *KosEvaluated_CallSlots(PyTypeObject *t) {
+static inline KosCallSlots *KosEvaluated_CallSlots(PyTypeObject *t) {
 
   KosEvaluatedTypeObject *et = KosEvaluated_Resolve(t);
-  return et ? et->tp_kos_call : NULL;
-}
-
-
-static inline struct KosIterSlots *KosEvaluated_IterSlots(PyTypeObject *t) {
-
-  KosEvaluatedTypeObject *et = KosEvaluated_Resolve(t);
-  return et ? et->tp_kos_iter : NULL;
+  return et ? &et->kos_call : NULL;
 }
 
 

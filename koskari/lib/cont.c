@@ -208,14 +208,6 @@ static KosOpResult kos_vinstall_continuation(
 }
 
 
-static KosCallSlots continuation_call_slots = {
-  .ki_install = kos_install_continuation,
-  .ki_vinstall = kos_vinstall_continuation,
-  .ki_wants_frame = 0,
-  .ki_wants_frame_fn = NULL,
-};
-
-
 KosEvaluatedTypeObject KosPyDelimitedContinuationType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -232,7 +224,14 @@ KosEvaluatedTypeObject KosPyDelimitedContinuationType = {
     .tp_clear = delimited_continuation_clear,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_call = &continuation_call_slots,
+  .kos_call = {
+    .ki_install = kos_install_continuation,
+    .ki_vinstall = kos_vinstall_continuation,
+    .ki_wants_frame = 0,
+    .ki_wants_frame_fn = NULL,
+    .ki_pycall = delimited_continuation_call,
+    .ki_pyvectorcall = NULL,
+  },
 };
 
 
@@ -400,7 +399,14 @@ KosEvaluatedTypeObject KosPyContinuationType = {
     .tp_clear = continuation_clear,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_call = &continuation_call_slots,
+  .kos_call = {
+    .ki_install = kos_install_continuation,
+    .ki_vinstall = kos_vinstall_continuation,
+    .ki_wants_frame = 0,
+    .ki_wants_frame_fn = NULL,
+    .ki_pycall = continuation_call,
+    .ki_pyvectorcall = NULL,
+  },
 };
 
 

@@ -223,14 +223,6 @@ static KosOpResult procedure_kos_install(
 }
 
 
-static KosCallSlots procedure_call_slots = {
-  .ki_install = procedure_kos_install,
-  .ki_vinstall = NULL,
-  .ki_wants_frame = 0,
-  .ki_wants_frame_fn = NULL,
-};
-
-
 static KosEvaluatedTypeObject KosProcedureCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -245,7 +237,14 @@ static KosEvaluatedTypeObject KosProcedureCallableType = {
     .tp_call = procedure_tp_call,
     .tp_base = KOS_EVALUATED_PYTYPE(KosDemandCallableType),
   },
-  .tp_kos_call = &procedure_call_slots,
+  .kos_call = {
+    .ki_install = procedure_kos_install,
+    .ki_vinstall = NULL,
+    .ki_wants_frame = 0,
+    .ki_wants_frame_fn = NULL,
+    .ki_pycall = procedure_tp_call,
+    .ki_pyvectorcall = NULL,
+  },
 };
 
 

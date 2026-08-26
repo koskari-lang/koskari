@@ -151,7 +151,7 @@ PyObject *KosPartial_Call(
     return NULL;
   }
 
-  PyObject *result = PyObject_Call(p->func, merged_args, merged_kw);
+  PyObject *result = Koskari_AsyncCall(p->func, merged_args, merged_kw);
   Py_DECREF(merged_args);
   Py_XDECREF(merged_kw);
   return result;
@@ -619,14 +619,6 @@ static PyMethodDef kospartial_methods[] = {
 };
 
 
-static KosCallSlots kospartial_call_slots = {
-  .ki_install = kospartial_kos_install,
-  .ki_vinstall = NULL,
-  .ki_wants_frame = 0,
-  .ki_wants_frame_fn = kospartial_wants_frame,
-};
-
-
 KosEvaluatedTypeObject KosPartialCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -652,7 +644,14 @@ KosEvaluatedTypeObject KosPartialCallableType = {
     .tp_new = kospartial_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_call = &kospartial_call_slots,
+  .kos_call = {
+    .ki_install = kospartial_kos_install,
+    .ki_vinstall = NULL,
+    .ki_wants_frame = 0,
+    .ki_wants_frame_fn = kospartial_wants_frame,
+    .ki_pycall = KosPartial_Call,
+    .ki_pyvectorcall = NULL,
+  },
 };
 
 

@@ -900,14 +900,6 @@ static KosOpResult demand_kos_vinstall(
 }
 
 
-static KosCallSlots demand_call_slots = {
-  .ki_install = demand_kos_install,
-  .ki_vinstall = demand_kos_vinstall,
-  .ki_wants_frame = 0,
-  .ki_wants_frame_fn = demand_wants_frame,
-};
-
-
 KosEvaluatedTypeObject KosDemandCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -929,7 +921,14 @@ KosEvaluatedTypeObject KosDemandCallableType = {
     .tp_init = demand_init,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_call = &demand_call_slots,
+  .kos_call = {
+    .ki_install = demand_kos_install,
+    .ki_vinstall = demand_kos_vinstall,
+    .ki_wants_frame = 0,
+    .ki_wants_frame_fn = demand_wants_frame,
+    .ki_pycall = KosCallAdapt_CallDemand,
+    .ki_pyvectorcall = KosCallAdapt_VectorDemand,
+  },
 };
 
 

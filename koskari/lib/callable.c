@@ -18,7 +18,7 @@
    koskari/lib/callable.c
 
    The call suite: KosCallable dispatch into the install slots of a
-   KosEvaluatedTypeObject's tp_kos_call, and the reusable Python-slot
+   KosEvaluatedTypeObject's kos_call suite, and the reusable Python-slot
    adapters for demand-surface callables.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
@@ -77,18 +77,16 @@ static KosOpResult callable_promote_normal(KosEvalState *es, KosOpResult r) {
 }
 
 
-KosOpResult KosCallable_Call(KosEvalState *es,
-    PyObject *callable,
+KosOpResult KosCallable_CallSlots(KosEvalState *es,
+    KosCallSlots *slots, PyObject *callable,
     PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
     int tail_call) {
 
-  KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
-
-  if (slots && slots->ki_vinstall)
+  if (slots->ki_vinstall)
     return callable_promote_normal(
         es, slots->ki_vinstall(es, callable, args, nargs, kwnames, tail_call));
 
-  if (! slots || ! slots->ki_install) {
+  if (! slots->ki_install) {
     PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
     return EVAL_RAISE();
   }
@@ -111,18 +109,48 @@ KosOpResult KosCallable_Call(KosEvalState *es,
 }
 
 
+KosOpResult KosCallable_CallArgsSlots(KosEvalState *es,
+    KosCallSlots *slots, PyObject *callable,
+    PyObject *args_tuple, PyObject *kwds_dict,
+    int tail_call) {
+
+  if (! slots->ki_install) {
+    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
+    return EVAL_RAISE();
+  }
+  return callable_promote_normal(
+      es, slots->ki_install(es, callable, args_tuple, kwds_dict, tail_call));
+}
+
+
+KosOpResult KosCallable_Call(KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
+    int tail_call) {
+
+  KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
+
+  if (! slots) {
+    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
+    return EVAL_RAISE();
+  }
+  return KosCallable_CallSlots(es, slots, callable, args, nargs, kwnames,
+                               tail_call);
+}
+
+
 KosOpResult KosCallable_CallArgs(KosEvalState *es,
     PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
     int tail_call) {
 
   KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
 
-  if (! slots || ! slots->ki_install) {
+  if (! slots) {
     PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
     return EVAL_RAISE();
   }
-  return callable_promote_normal(
-      es, slots->ki_install(es, callable, args_tuple, kwds_dict, tail_call));
+  return KosCallable_CallArgsSlots(es, slots, callable, args_tuple,
+                                   kwds_dict, tail_call);
 }
 
 
@@ -148,68 +176,14 @@ PyObject *Koskari_AsyncCall(
     PyObject *args,
     PyObject *kwds) {
 
-  /* Demand (or a subtype such as Procedure): the demand surface wins
-     over the async one. Dispatch through tp_call so subtype overrides
-     (Procedure's result discard) are honored. */
-  if (KosDemand_Check(callable)) {
-    PyObject *empty = NULL;
-    if (! args) {
-      empty = PyTuple_New(0);
-      if (! empty)
-        return NULL;
-      args = empty;
-    }
-    PyObject *result = PyObject_Call(callable, args, kwds);
-    Py_XDECREF(empty);
-    return result;
+  /* The kos call interface: the type's Python-boundary worker. */
+  if (KosEvaluated_Check(callable)) {
+    KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
+    if (slots && slots->ki_pycall)
+      return slots->ki_pycall(callable, args, kwds);
   }
 
-  /* BoundMethod: prepend self and follow the wrapped callable. */
-  if (KosBoundMethod_CheckExact(callable)) {
-    PyObject *bound_self = KosBoundMethod_SELF(callable);
-    PyObject *bound_args;
-    Py_ssize_t n = args ? PyTuple_GET_SIZE(args) : 0;
-
-    bound_args = PyTuple_New(1 + n);
-    if (! bound_args)
-      return NULL;
-    Py_INCREF(bound_self);
-    PyTuple_SET_ITEM(bound_args, 0, bound_self);
-    for (Py_ssize_t i = 0; i < n; i++) {
-      PyObject *item = PyTuple_GET_ITEM(args, i);
-      Py_INCREF(item);
-      PyTuple_SET_ITEM(bound_args, 1 + i, item);
-    }
-
-    PyObject *result = Koskari_AsyncCall(
-        KosBoundMethod_FUNC(callable), bound_args, kwds);
-    Py_DECREF(bound_args);
-    return result;
-  }
-
-  if (KosFunction_CheckExact(callable))
-    return KosFunction_Call(callable, args, kwds);
-
-  if (KosExpression_CheckExact(callable)) {
-    if (args && PyTuple_GET_SIZE(args) != 0) {
-      PyErr_SetString(PyExc_TypeError, "Expression() takes no arguments");
-      return NULL;
-    }
-    if (kwds && PyDict_Size(kwds) != 0) {
-      PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
-      return NULL;
-    }
-    return KosExpression_Eval(callable);
-  }
-
-  /* KosPartial (or a subtype -- its tp_call is this adapter, so the
-     fallback would recurse): merge bound args and follow the inner
-     callable. */
-  if (KosPartial_Check(callable))
-    return KosPartial_Call(callable, args, kwds);
-
-  /* Everything else (continuations, values, plain Python) speaks for
-     itself through its own tp_call. */
+  /* No suite worker: the callable speaks for itself. */
   {
     PyObject *empty = NULL;
     if (! args) {
@@ -240,8 +214,11 @@ PyObject *KosCallAdapt_VectorAsync(
     size_t nargsf,
     PyObject *kwnames) {
 
-  if (KosFunction_CheckExact(self))
-    return KosFunction_VectorCall(self, args, nargsf, kwnames);
+  if (KosEvaluated_Check(self)) {
+    KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(self));
+    if (slots && slots->ki_pyvectorcall)
+      return slots->ki_pyvectorcall(self, args, nargsf, kwnames);
+  }
 
   Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
   PyObject *tup = vcall_build_args_tuple(args, nargs);

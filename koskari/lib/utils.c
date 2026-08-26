@@ -239,11 +239,10 @@ static KosOpResult kos_apply_install_core(
   }
 
   /* Flattening: delegate to inner callable's install */
-  if (KosCallable_Check(fn)) {
-    KosCallSlots *fn_slots = KosEvaluated_CallSlots(Py_TYPE(fn));
-    KosInstallFunc inner = fn_slots ? fn_slots->ki_install : NULL;
-    if (inner) {
-      KosOpResult r = inner(es, fn, seq_args, kwds, tail_call);
+  {
+    KosCallSlots *fn_slots;
+    if (KosCallable_CheckSlots(fn, &fn_slots) && fn_slots->ki_install) {
+      KosOpResult r = fn_slots->ki_install(es, fn, seq_args, kwds, tail_call);
       Py_DECREF(seq_args);
       return r;
     }
@@ -337,14 +336,6 @@ static PyObject *apply_call(
 }
 
 
-static KosCallSlots apply_call_slots = {
-  .ki_install = kos_install_apply,
-  .ki_vinstall = kos_vinstall_apply,
-  .ki_wants_frame = 1,
-  .ki_wants_frame_fn = NULL,
-};
-
-
 static KosEvaluatedTypeObject KosApplyType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -357,7 +348,14 @@ static KosEvaluatedTypeObject KosApplyType = {
     .tp_new = PyType_GenericNew,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_call = &apply_call_slots,
+  .kos_call = {
+    .ki_install = kos_install_apply,
+    .ki_vinstall = kos_vinstall_apply,
+    .ki_wants_frame = 1,
+    .ki_wants_frame_fn = NULL,
+    .ki_pycall = apply_call,
+    .ki_pyvectorcall = NULL,
+  },
 };
 
 

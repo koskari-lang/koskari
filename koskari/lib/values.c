@@ -731,14 +731,6 @@ static PyMappingMethods values_as_mapping = {
 };
 
 
-static KosCallSlots values_call_slots = {
-  .ki_install = values_kos_install,
-  .ki_vinstall = values_kos_vinstall,
-  .ki_wants_frame = 1,
-  .ki_wants_frame_fn = NULL,
-};
-
-
 KosEvaluatedTypeObject KosValuesType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -765,7 +757,14 @@ KosEvaluatedTypeObject KosValuesType = {
     .tp_richcompare = values_richcomp,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_call = &values_call_slots,
+  .kos_call = {
+    .ki_install = values_kos_install,
+    .ki_vinstall = values_kos_vinstall,
+    .ki_wants_frame = 1,
+    .ki_wants_frame_fn = NULL,
+    .ki_pycall = values_call,
+    .ki_pyvectorcall = NULL,
+  },
 };
 
 
