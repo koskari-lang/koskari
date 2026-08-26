@@ -72,13 +72,6 @@ int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
 
 
 /**
-   Build a DemandGenerator for tp_iter: new KosContext, GEN installed from
-   agen (kos_dyn_gen_install). Caller must not overlap with async iteration
-*/
-PyObject *KosDemandGenerator_FromAsyncGen(struct KosPyAsyncGen *agen);
-
-
-/**
    Set KoskariSyncViolation on PyErr with msg as the message string.
 
    Called from eval guard sites (kos_eval_demand_deny_suspend) to raise the

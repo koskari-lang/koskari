@@ -79,44 +79,6 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen);
 PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns);
 
 
-/* === KosPyAsyncGenASend === */
-
-
-/**
-   KosPyAsyncGenASend is the awaitable returned by __anext__ on an async gen.
-
-   Each __anext__ call creates one of these, which drives the generator
-   context until a yield or completion.
-*/
-
-extern PyTypeObject KosPyAsyncGenASendType;
-
-
-typedef struct {
-  PyObject_HEAD
-  KosPyAsyncGen *agen;
-  PyObject *send_value;   /* value to send into generator */
-  int is_throw;           /* if true, throw into generator */
-  int closing;            /* close-flavored drive: GeneratorExit with the
-                             aclose result mapping at terminal outcomes */
-  PyObject *throw_typ;    /* exception type (if is_throw) */
-  PyObject *throw_exc;    /* exception value (if is_throw) */
-  int awaiting;           /* mid-step await in flight: this asend owns the
-                             generator's in_progress mark and resumes by
-                             driving ctx->py_await_iter */
-} KosPyAsyncGenASend;
-
-
-#define KosPyAsyncGenASend_Check(obj)                                   \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyAsyncGenASendType))
-
-#define KosPyAsyncGenASend_CheckExact(obj)              \
-  ((obj) && ((obj)->ob_type == &KosPyAsyncGenASendType))
-
-
-PyObject *KosPyAsyncGenASend_New(KosPyAsyncGen *agen, PyObject *send_value);
-
-
 /* === Unit lifecycle === */
 
 

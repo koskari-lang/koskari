@@ -54,6 +54,7 @@ struct KosStackSteal;       typedef struct KosStackSteal       KosStackSteal;
 #include "coro.h"
 #include "cont.h"
 #include "iter.h"
+#include "iterate.h"
 #include "matcher.h"
 #include "namespace.h"
 #include "object.h"

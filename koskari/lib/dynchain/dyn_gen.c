@@ -283,9 +283,10 @@ int kos_dyn_gen_install_bootstrap(
     }
   }
 
-  if (KosEvalState_StackPushRef(es, Py_None) < 0)
-    return -1;
-
+  /* No resume placeholder: a bootstrap install is the generator's first
+     drive, entering fresh code rather than reviving a suspended yield.
+     Only the frozen install (kos_dyn_gen_install) pushes the Py_None the
+     revive machinery pops. */
   return 0;
 }
 

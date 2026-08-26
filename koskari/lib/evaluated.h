@@ -146,18 +146,28 @@ typedef int (*KosIterCloseFunc)(PyObject *self);
 */
 typedef void (*KosIterFinishFunc)(PyObject *self, int exhausted);
 
+/**
+   The provider's durable Python-boundary drive context, when it owns
+   one: context-level state (parameterize extents, the in-flight await
+   iterator) lives across steps there. NULL slot or NULL return means
+   the adapter owns its own host context.
+*/
+typedef struct KosContext *(*KosIterPyCtxFunc)(PyObject *self);
+
 
 /**
    The iter suite: the in-eval iteration interface. A type whose suite
    carries ki_step is a KosIter provider; NEXT, ITER_NEXT, and
    YIELD_FROM dispatch it for flattened stepping, and the dynchain
-   delivery walks report completion through ki_finish.
+   delivery walks report completion through ki_finish. The Python
+   adapters (iterate.c) drive ki_step against the ki_pyctx context.
 */
 typedef struct KosIterSlots {
   KosIterStepFunc ki_step;
   KosIterThrowFunc ki_throw;
   KosIterCloseFunc ki_close;
   KosIterFinishFunc ki_finish;
+  KosIterPyCtxFunc ki_pyctx;
 } KosIterSlots;
 
 
