@@ -42,6 +42,7 @@ struct KosStackSteal;       typedef struct KosStackSteal       KosStackSteal;
 #include "arena.h"
 #include "atom.h"
 #include "bytecode.h"
+#include "evaluated.h"
 #include "callable.h"
 #include "compat.h"
 #include "domain.h"
