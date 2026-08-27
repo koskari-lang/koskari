@@ -145,6 +145,11 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 #include "eval/eval_state.c"
 #include "eval/eval_utils.c"
 #include "eval/eval_obj.c"
+
+
+int KosEval_IsFuture(PyObject *val) {
+  return kos_isfuture(val);
+}
 #include "eval/eval_gil.c"
 #include "eval/eval_cache.c"
 
@@ -236,6 +241,125 @@ static KosEvalMode revive_plan(
 
    :return: EVAL_NORMAL, EVAL_AWAIT (with re-suspend value), or EVAL_RAISE
 */
+/* === KosIter provider step drive === */
+
+
+typedef enum {
+  KID_VALUE = 0,     /* *out: the element (new ref) */
+  KID_EXHAUSTED,     /* *out: return payload (new ref) or NULL */
+  KID_PARKED,        /* *out: pre-stepped yield item for EVAL_AWAIT;
+                        py_await_iter armed on the context */
+  KID_INSTALLED,     /* provider spliced frames; deferred delivery */
+  KID_ERROR,         /* PyErr set */
+} KosIterDriveOutcome;
+
+
+/**
+   Drive one provider step to a terminal outcome: ki_step, with every
+   KOS_ITER_AWAIT eager-stepped in place -- immediate completions feed
+   back into ki_step under the re-entry contract, failures mediate
+   through ki_throw (a mid-fetch StopAsyncIteration becomes provider
+   exhaustion), and a true suspension parks with a pre-stepped yield
+   item, per the EVAL_AWAIT payload convention. At most one of send
+   (protocol send for the first ki_step), resume (owner-only awaited
+   result for a parked provider, first drive via ki_resume), and the
+   throw pair may be set; all are owned when non-NULL and consumed.
+   On KID_PARKED, *parked_aw (when requested) receives the suspended
+   awaitable, for sites whose park state keeps it (YIELD_FROM's
+   INFLIGHT).
+*/
+static KosIterDriveOutcome kos_iter_drive_step(
+    KosEvalState *es,
+    PyObject *iter_obj,
+    KosIterSlots *islots,
+    PyObject *send,
+    PyObject *resume,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    PyObject **out,
+    PyObject **parked_aw) {
+
+  for (;;) {
+    PyObject *step_out = NULL;
+    KosIterStepResult r;
+
+    if (throw_exc) {
+      r = islots->ki_throw(es, iter_obj, throw_typ, throw_exc, &step_out);
+      Py_CLEAR(throw_typ);
+      Py_CLEAR(throw_exc);
+    } else if (resume) {
+      if (! islots->ki_resume) {
+        Py_DECREF(resume);
+        PyErr_SetString(PyExc_SystemError,
+                        "iter drive: provider has no resume entry");
+        return KID_ERROR;
+      }
+      r = islots->ki_resume(es, iter_obj, resume, &step_out);
+      Py_CLEAR(resume);
+    } else {
+      r = islots->ki_step(es, iter_obj, send, &step_out);
+      Py_CLEAR(send);
+    }
+
+    switch (r) {
+      case KOS_ITER_VALUE:
+        *out = step_out;
+        return KID_VALUE;
+
+      case KOS_ITER_EXHAUSTED:
+        *out = step_out;
+        return KID_EXHAUSTED;
+
+      case KOS_ITER_INSTALLED:
+        return KID_INSTALLED;
+
+      case KOS_ITER_AWAIT: {
+        int suspended = 0;
+        PyObject *yielded = NULL;
+        PyObject *done = KosEvalState_EagerStepAwaitable(
+            es, step_out, &suspended, &yielded);
+
+        if (done) {
+          Py_DECREF(step_out);
+          resume = done;
+          continue;
+        }
+        if (suspended && yielded) {
+          if (parked_aw)
+            *parked_aw = step_out;  /* transfer */
+          else
+            Py_DECREF(step_out);
+          *out = yielded;
+          return KID_PARKED;
+        }
+        Py_DECREF(step_out);
+        /* The awaitable failed: mediate through ki_throw. */
+        {
+          PyObject *tb = NULL;
+          PyErr_Fetch(&throw_typ, &throw_exc, &tb);
+          PyErr_NormalizeException(&throw_typ, &throw_exc, &tb);
+          if (throw_exc && tb)
+            PyException_SetTraceback(throw_exc, tb);
+          Py_XDECREF(tb);
+          if (! throw_exc) {
+            Py_XDECREF(throw_typ);
+            throw_typ = NULL;
+            PyErr_SetString(PyExc_SystemError,
+                            "iter drive: awaitable failed without error");
+            return KID_ERROR;
+          }
+          continue;
+        }
+      }
+
+      case KOS_ITER_ERROR:
+      default:
+        return KID_ERROR;
+    }
+  }
+}
+
+
 static KosOpResult revive_await(
         KosEvalState *es,
         PyObject *send_val,
@@ -322,6 +446,56 @@ static KosOpResult revive_await(
   }
   if (to_push != NULL && KosEvalState_FRAME(es)) {
     KosDynNode *boundary = kos_dyn_find_iter_boundary(es);
+    if (boundary && kos_dyn_iter_boundary_resume_park(boundary)) {
+      /* The pending await was parked by a KosIter provider under the
+         re-entry contract: the awaited value feeds back into ki_step
+         and the provider's phase state routes it. The step outcome
+         then completes the boundary. */
+      PyObject *iter_obj = kos_dyn_iter_boundary_iter_obj(boundary);
+      KosIterSlots *islots;
+      PyObject *out = NULL;
+
+      if (! iter_obj || ! KosIter_CheckSlots(iter_obj, &islots)) {
+        if (owned)
+          Py_DECREF(to_push);
+        PyErr_SetString(PyExc_RuntimeError,
+                        "parked boundary lost its iter provider");
+        return EVAL_RAISE();
+      }
+
+      if (! owned)
+        Py_INCREF(to_push);
+
+      switch (kos_iter_drive_step(es, iter_obj, islots, NULL, to_push,
+                                  NULL, NULL, &out, NULL)) {
+        case KID_VALUE:
+          if (kos_dyn_iter_boundary_deliver_yield(es, boundary, out) < 0)
+            return EVAL_RAISE();
+          break;
+
+        case KID_EXHAUSTED:
+          if (kos_dyn_iter_boundary_deliver_exhausted(es, boundary,
+                                                      out) < 0)
+            return EVAL_RAISE();
+          break;
+
+        case KID_PARKED:
+          /* Re-park; the boundary stays armed. */
+          return EVAL_AWAIT(out);
+
+        case KID_INSTALLED:
+          break;
+
+        case KID_ERROR:
+        default:
+          return EVAL_RAISE();
+      }
+
+      if (kos_dyn_complete_pending_exit(es, 1) < 0)
+        return EVAL_RAISE();
+      return EVAL_NORMAL();
+    }
+
     if (boundary && kos_dyn_iter_boundary_awaiting_py(boundary)) {
       /* The pending await was a suspended python iterator step
          (OBJECT_NEXT / ITER_NEXT): its result is the step value,

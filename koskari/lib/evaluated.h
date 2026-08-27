@@ -124,7 +124,24 @@ typedef enum {
 typedef KosIterStepResult (*KosIterStepFunc)(
     KosEvalState *es,
     PyObject *self,
-    PyObject *send_val,        /* borrowed; NULL for plain next */
+    PyObject *send_val,        /* borrowed; NULL for plain next. A
+                                  PROTOCOL send only (a generator's
+                                  sent value); never the awaited-result
+                                  feed, which enters through ki_resume */
+    PyObject **out);
+
+/**
+   Owner-only re-entry after a KOS_ITER_AWAIT park: value is the
+   completed awaitable's result. Only the park's owner may call this --
+   the armed boundary in-eval, the parked stepper Python-side. A
+   provider that never parks implements it as an error; a busy provider
+   refuses ki_step entirely, so the two entry kinds are never inferred
+   from context.
+*/
+typedef KosIterStepResult (*KosIterResumeFunc)(
+    KosEvalState *es,
+    PyObject *self,
+    PyObject *value,           /* borrowed; the awaited result */
     PyObject **out);
 
 typedef KosIterStepResult (*KosIterThrowFunc)(
@@ -164,6 +181,7 @@ typedef struct KosContext *(*KosIterPyCtxFunc)(PyObject *self);
 */
 typedef struct KosIterSlots {
   KosIterStepFunc ki_step;
+  KosIterResumeFunc ki_resume;
   KosIterThrowFunc ki_throw;
   KosIterCloseFunc ki_close;
   KosIterFinishFunc ki_finish;

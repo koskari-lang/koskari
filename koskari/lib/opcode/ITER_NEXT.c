@@ -35,29 +35,31 @@ static KOS_NOINLINE KosOpResult iter_next_step_kos_iter(
   kos_dyn_foreach_set_iter_step_phase(
       fe, KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN);
 
-  switch (islots->ki_step(es, iter, NULL, &out)) {
-    case KOS_ITER_INSTALLED:
+  switch (kos_iter_drive_step(es, iter, islots, NULL, NULL, NULL, NULL, &out, NULL)) {
+    case KID_INSTALLED:
       return EVAL_NORMAL();
 
-    case KOS_ITER_VALUE:
+    case KID_VALUE:
       kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
       if (KosEvalState_StackPUSH(es, out) < 0)
         return EVAL_RAISE();
       return EVAL_NORMAL();
 
-    case KOS_ITER_EXHAUSTED:
+    case KID_EXHAUSTED:
       kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
       Py_XDECREF(out);
       KosDynForeach_EXHAUSTED(fe) = 1;
       KosEvalState_SET_PC(es, KosOp_ARG(insn));
       return EVAL_NORMAL();
 
-    case KOS_ITER_AWAIT:
+    case KID_PARKED:
+      /* Provider park under the re-entry contract: the awaited value
+         feeds back into ki_step at revive. */
       kos_dyn_foreach_set_iter_step_phase(
-          fe, KOS_FOREACH_ITER_STEP_AWAITING_PY);
+          fe, KOS_FOREACH_ITER_STEP_AWAITING_KOS_ITER);
       return EVAL_AWAIT(out);
 
-    case KOS_ITER_ERROR:
+    case KID_ERROR:
     default:
       kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
       return EVAL_RAISE();

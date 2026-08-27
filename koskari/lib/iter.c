@@ -491,6 +491,25 @@ static KosIterStepResult agen_iter_step(
 }
 
 
+static KosIterStepResult agen_iter_resume(
+    KosEvalState *es,
+    PyObject *self,
+    PyObject *value,
+    PyObject **out) {
+
+  (void) es;
+  (void) self;
+  (void) value;
+  (void) out;
+
+  /* The generator never parks (its steps graft); a resume entry means
+     a caller violated the park-ownership contract. */
+  PyErr_SetString(PyExc_RuntimeError,
+                  "async generator was not parked");
+  return KOS_ITER_ERROR;
+}
+
+
 static KosIterStepResult agen_iter_throw(
     KosEvalState *es,
     PyObject *self,
@@ -570,6 +589,7 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
   },
   .kos_iter = {
     .ki_step = agen_iter_step,
+    .ki_resume = agen_iter_resume,
     .ki_throw = agen_iter_throw,
     .ki_close = agen_iter_close,
     .ki_finish = agen_iter_finish,

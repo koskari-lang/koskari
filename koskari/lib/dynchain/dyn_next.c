@@ -30,6 +30,7 @@ int kos_dyn_push_next_boundary(
     KosDynNext_DEFAULT_VAL(node) = NULL;
   }
   KosDynNext_N(node) = n;
+  KosDynNext_RESUME(node) = 0;
 
   if (kos_dyn_push_noinstall(es, node) < 0) {
     kos_dyn_next_free_payload(node);

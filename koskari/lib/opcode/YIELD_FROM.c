@@ -517,13 +517,13 @@ static KosOpResult yield_from_drive_py_async(
 
 /**
   Drive one step of a KosIter provider delegate through its iter suite
-  (flattened into the same koskari_eval).  Handles resume-from-await
-  inject, close, throw(StopAsyncIteration), and stepping.  Returns 0 on
-  success, -1 on error (PyErr set).  Never emits YIELD or AWAIT
-  directly; those surface through the inner koskari_eval flattening
-  path.
+  (flattened into the same koskari_eval where the provider grafts;
+  otherwise stepped in place, yielding elements out of the delegating
+  generator and parking on true suspensions like the py-async drive).
+  Handles resume-from-await inject, close, throw(StopAsyncIteration),
+  stepping, and element re-emission.
 */
-static int yield_from_drive_kos_iter(
+static KosOpResult yield_from_drive_kos_iter(
     KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *delegate,
@@ -532,34 +532,35 @@ static int yield_from_drive_kos_iter(
     KosOp *insn) {
 
   PyObject *yf_send_val = NULL;
+  PyObject *yf_resume_val = NULL;
   PyObject *yf_throw_exc = NULL;
   PyObject *yf_throw_typ = NULL;
 
   (void) insn;
 
-  /* Resuming from await: pass the result as send_val to the inner context */
+  /* Resuming from await: the result re-enters through the provider's
+     resume entry (this site owns the park). */
   if (KosDynYieldFrom_INFLIGHT(yf)) {
-    yf_send_val = yield_from_take_await_result(yf);
-    if (! yf_send_val)
-      return -1;
+    yf_resume_val = yield_from_take_await_result(yf);
+    if (! yf_resume_val)
+      return EVAL_RAISE();
   }
 
   if (action == KOS_YF_CLOSE) {
     islots->ki_finish(delegate, 1);
-    Py_XDECREF(yf_send_val);
+    Py_XDECREF(yf_resume_val);
     kos_dyn_pop_yield_from(es, yf);
     PyErr_SetNone(PyExc_GeneratorExit);
-    return -1;
+    return EVAL_RAISE();
   }
 
   if (action == KOS_YF_THROW
       && yield_from_throw_stop_async_finish(es, yf)) {
-    Py_XDECREF(yf_send_val);
-    return 0;
+    Py_XDECREF(yf_resume_val);
+    return EVAL_NORMAL();
   }
 
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf)) {
-    Py_XDECREF(yf_send_val);
     yf_send_val = KosDynYieldFrom_PENDING_ARG(yf);
     Py_INCREF(yf_send_val);
   }
@@ -576,43 +577,44 @@ static int yield_from_drive_kos_iter(
 
   {
     PyObject *out = NULL;
-    KosIterStepResult r;
+    PyObject *parked_aw = NULL;
 
-    if (yf_throw_exc)
-      r = islots->ki_throw(es, delegate, yf_throw_typ, yf_throw_exc, &out);
-    else
-      r = islots->ki_step(es, delegate, yf_send_val, &out);
+    switch (kos_iter_drive_step(es, delegate, islots, yf_send_val,
+                                yf_resume_val, yf_throw_typ, yf_throw_exc,
+                                &out, &parked_aw)) {
+      case KID_INSTALLED:
+        return EVAL_NORMAL();
 
-    Py_XDECREF(yf_send_val);
-    if (yf_throw_typ) {
-      Py_DECREF(yf_throw_typ);
-      Py_DECREF(yf_throw_exc);
-    }
+      case KID_VALUE:
+        /* The delegate produced an element without grafting: re-emit
+           it as the delegating generator's own yield. */
+        return yield_from_yield_value(es, yf, out);
 
-    switch (r) {
-      case KOS_ITER_INSTALLED:
-        return 0;
-
-      case KOS_ITER_EXHAUSTED:
+      case KID_EXHAUSTED:
         Py_XDECREF(out);
-        if (kos_dyn_pop_yield_from(es, yf) < 0)
-          return -1;
-        return 0;
+        return yield_from_finish(es, yf);
 
-      case KOS_ITER_ERROR:
-        /* PyErr set. The raise walk unwinds the yield-from node and its
-           close-delegate hook marks the provider closed (ki_finish). */
-        return -1;
+      case KID_PARKED:
+        /* True suspension: park PC-stable with the awaitable held in
+           INFLIGHT, mirroring the py-async drive. */
+        if (kos_eval_demand_deny_suspend(es,
+            "async suspension is not allowed in demand_sync")) {
+          Py_XDECREF(out);
+          Py_XDECREF(parked_aw);
+          return EVAL_RAISE();
+        }
+        KosDynYieldFrom_INFLIGHT(yf) = parked_aw;  /* transfer */
+        KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_AWAIT);
+        KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
+        KosEvalState_FlushLiveRegsToFrame(es);
+        KosEvalState_MarkDeadAfterYield(es);
+        return EVAL_AWAIT(out);
 
-      case KOS_ITER_VALUE:
-      case KOS_ITER_AWAIT:
+      case KID_ERROR:
       default:
-        /* No provider produces these under yield-from yet; the direct
-           value/park shapes arrive with non-frame providers. */
-        Py_XDECREF(out);
-        PyErr_SetString(PyExc_SystemError,
-                        "yield-from: unsupported KosIter step result");
-        return -1;
+        /* The raise walk unwinds the yield-from node and its
+           close-delegate hook marks the provider closed. */
+        return EVAL_RAISE();
     }
   }
 }
@@ -736,8 +738,7 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
                       "yield-from delegate lost its iter suite");
       return EVAL_RAISE();
     }
-    int r = yield_from_drive_kos_iter(es, yf, delegate, islots, action, insn);
-    return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    return yield_from_drive_kos_iter(es, yf, delegate, islots, action, insn);
   }
 
   PyErr_SetString(PyExc_RuntimeError, "unexpected delegate kind");

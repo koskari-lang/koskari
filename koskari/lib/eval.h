@@ -648,6 +648,15 @@ void KosContext_Free(KosContext *ctx);
   transferred). Caller must not use them after the call. Pass NULL to
   borrow nothing.
 */
+/**
+   Duck-typed asyncio.isfuture: futures and tasks are handles by
+   convention, exempt from ambient auto-await at implicit sites.
+
+   :return: 1 (future), 0 (not a future), -1 (error; PyErr set)
+*/
+int KosEval_IsFuture(PyObject *val);
+
+
 KosOpResult koskari_eval(
     KosContext *ctx,
     PyObject *send_val,

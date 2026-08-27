@@ -173,6 +173,7 @@ typedef enum KosRegionStyle {
 #define KOS_FOREACH_ITER_STEP_IDLE               0u
 #define KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN  1u
 #define KOS_FOREACH_ITER_STEP_AWAITING_PY        2u
+#define KOS_FOREACH_ITER_STEP_AWAITING_KOS_ITER  3u
 
 
 /**
@@ -359,9 +360,12 @@ struct KosDynNode {
       uintptr_t refcount;  /* reference count; init 1; release decrements; free when 0 */
     } gen;
     struct {
-      PyObject *agen_obj;   /* KosPyAsyncGen, strong ref */
+      PyObject *agen_obj;   /* KosIter provider or iterator, strong ref */
       PyObject *default_val; /* owned; 2-arg NEXT */
       int n;                 /* 1 or 2 */
+      uint8_t resume;        /* parked provider step: awaited value
+                                re-enters ki_step rather than being the
+                                element */
     } next;
   } u;
 
@@ -1413,6 +1417,21 @@ int kos_dyn_iter_boundary_deliver_exhausted(
 */
 PyObject *kos_dyn_iter_boundary_exhaustion_exc(KosDynNode *node);
 
+
+/**
+   True when the boundary's in-flight step is a parked KosIter provider
+   under the re-entry contract: the awaited value feeds back into the
+   provider's ki_step rather than delivering as the element.
+*/
+int kos_dyn_iter_boundary_resume_park(KosDynNode *node);
+
+
+/**
+   The iterator object a parked boundary is stepping (borrowed): the
+   FOREACH iter or the NEXT node's object.
+*/
+PyObject *kos_dyn_iter_boundary_iter_obj(KosDynNode *node);
+
 /**
    True when the boundary's in-flight step is a suspended python async
    iterator being driven through the pending context await.
@@ -2420,6 +2439,7 @@ static inline void kos_dyn_foreach_set_iter_step_phase(
 #define KosDynNext_AGEN_OBJ(nd) (((KosDynNode *)(nd))->u.next.agen_obj)
 #define KosDynNext_DEFAULT_VAL(nd) (((KosDynNode *)(nd))->u.next.default_val)
 #define KosDynNext_N(nd) (((KosDynNode *)(nd))->u.next.n)
+#define KosDynNext_RESUME(nd) (((KosDynNode *)(nd))->u.next.resume)
 
 /* KosYfPhase: state machine for stack-based resume inject consumption */
 typedef enum KosYfPhase {

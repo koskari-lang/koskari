@@ -37,10 +37,12 @@ typedef struct KosCallSlots {
 } KosCallSlots;
 
 typedef struct KosIterSlots {
-  KosIterStepFunc ki_step;
+  KosIterStepFunc ki_step;      /* fresh step; send_val = protocol send */
+  KosIterResumeFunc ki_resume;  /* owner-only awaited-result re-entry */
   KosIterThrowFunc ki_throw;
   KosIterCloseFunc ki_close;
   KosIterFinishFunc ki_finish;
+  KosIterPyCtxFunc ki_pyctx;    /* durable Python-boundary drive ctx */
 } KosIterSlots;
 
 typedef struct {
@@ -126,7 +128,8 @@ typedef enum {
   KOS_ITER_ERROR,       /* PyErr set; *out untouched */
 } KosIterStepResult;
 
-KosIterStepResult ki_step(es, self, send_val /* borrowed */, &out);
+KosIterStepResult ki_step(es, self, send_val /* protocol send */, &out);
+KosIterStepResult ki_resume(es, self, value /* awaited result */, &out);
 KosIterStepResult ki_throw(es, self, throw_typ, throw_exc, &out);
 int ki_close(self);        /* demand close, GeneratorExit semantics;
                               callable outside any eval */
@@ -144,15 +147,17 @@ Contract:
   site disarms and proceeds (push, branch to else pc, default, raise
   StopIteration per site rules).
 - `KOS_ITER_AWAIT` parks the site on a Python awaitable and promises
-  re-entry: on revive the site calls `ki_step(es, self,
-  send_val=result)` again -- the provider's own phase state knows what
-  the value is. An exception from the parked awaitable re-enters
-  through `ki_throw`, so the provider mediates its own conversions (a
-  mid-fetch StopAsyncIteration becomes `KOS_ITER_EXHAUSTED` inside the
-  map, not at the site's raise walk). The sites already return
-  `EVAL_AWAIT` on this result; the resume-side phase discriminator
-  (provider-resume vs legacy awaited-value-is-the-element) is NOT yet
-  built -- it lands with the first provider that returns AWAIT.
+  owner-only re-entry: on revive the park's owner (the armed boundary
+  in-eval, the parked stepper Python-side) calls `ki_resume(es, self,
+  value)` -- a distinct entry, so a parked provider refuses every
+  fresh `ki_step` outright and the two entry kinds are never inferred
+  from a value. `ki_step`'s send_val is exclusively the protocol send.
+  An exception from the parked awaitable re-enters through `ki_throw`,
+  so the provider mediates its own conversions (a mid-fetch
+  StopAsyncIteration becomes `KOS_ITER_EXHAUSTED` inside the map, not
+  at the site's raise walk). The site machinery (`kos_iter_drive_step`,
+  the FOREACH `AWAITING_KOS_ITER` phase, the NEXT resume flag, the
+  yield-from INFLIGHT park) is landed.
 - `KOS_ITER_INSTALLED` means the provider spliced its frames onto the
   consumer context; the site returns `EVAL_NORMAL` and the result is
   delivered later at the site's dyn node by the return/raise walks,
@@ -330,8 +335,9 @@ Edges:
   means the delivery path must escape as `EVAL_AWAIT` mid-walk.
   Implementation-sensitive; the delivery handlers must be able to
   produce a KosOpResult, not only success/failure.
-- Source `EXHAUSTED` payload (a gen's return value) forwards as map's
-  `EXHAUSTED` payload.
+- Source exhaustion discards any return payload, matching builtins.map:
+  a source generator's return value ends the iteration and nothing
+  more.
 - Sync/demand consumption of every cell: grafts inherit the demand bit
   at install (drive-state, as today), so koskari cells run under sync
   iteration until something genuinely suspends -- then

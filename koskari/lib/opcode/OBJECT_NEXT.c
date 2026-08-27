@@ -39,13 +39,13 @@ static KosOpResult object_next_step(
       return EVAL_RAISE();
     }
 
-    switch (islots->ki_step(es, iter, NULL, &out)) {
-      case KOS_ITER_INSTALLED:
+    switch (kos_iter_drive_step(es, iter, islots, NULL, NULL, NULL, NULL, &out, NULL)) {
+      case KID_INSTALLED:
         Py_DECREF(iter);
         Py_XDECREF(default_val);
         return EVAL_NORMAL();
 
-      case KOS_ITER_VALUE:
+      case KID_VALUE:
         kos_dyn_next_abort_after_failed_attach(es);
         Py_DECREF(iter);
         Py_XDECREF(default_val);
@@ -53,7 +53,7 @@ static KosOpResult object_next_step(
           return EVAL_RAISE();
         return EVAL_NORMAL();
 
-      case KOS_ITER_EXHAUSTED:
+      case KID_EXHAUSTED:
         kos_dyn_next_abort_after_failed_attach(es);
         Py_XDECREF(out);
         Py_DECREF(iter);
@@ -69,13 +69,18 @@ static KosOpResult object_next_step(
         PyErr_SetNone(PyExc_StopIteration);
         return EVAL_RAISE();
 
-      case KOS_ITER_AWAIT:
-        /* Boundary stays armed; the awaited value revives through it. */
+      case KID_PARKED: {
+        /* Provider park under the re-entry contract: mark the boundary
+           so the awaited value feeds back into ki_step at revive. */
+        KosDynNode *bnode = KosEvalState_DYN_TOP(es);
+        if (bnode && KosDynNode_IS_NEXT(bnode))
+          KosDynNext_RESUME(bnode) = 1;
         Py_DECREF(iter);
         Py_XDECREF(default_val);
         return EVAL_AWAIT(out);
+      }
 
-      case KOS_ITER_ERROR:
+      case KID_ERROR:
       default:
         kos_dyn_next_abort_after_failed_attach(es);
         Py_DECREF(iter);
