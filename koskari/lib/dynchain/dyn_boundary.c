@@ -187,6 +187,8 @@ int kos_dyn_iter_boundary_resume_park(KosDynNode *node) {
   if (KosDynNode_IS_FOREACH(node))
     return KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) node)
         == KOS_FOREACH_ITER_STEP_AWAITING_KOS_ITER;
+  if (KosDynNode_IS_YIELD_FROM(node))
+    return KosDynYieldFrom_PHASE(node) == KOS_YF_PHASE_EXPECT_RESUME;
   return 0;
 }
 

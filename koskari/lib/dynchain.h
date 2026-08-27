@@ -2461,6 +2461,7 @@ typedef enum KosYfPhase {
   KOS_YF_PHASE_EXPECT_SEND,
   KOS_YF_PHASE_EXPECT_AWAIT,
   KOS_YF_PHASE_EXPECT_VALUE,
+  KOS_YF_PHASE_EXPECT_RESUME,
   /* A flattened koskari-gen delegate handed us a value at the iterator
      boundary; the next handler dispatch re-emits it as this generator's own
      yield (see kos_dyn_yield_from_deliver_inner_yield). */

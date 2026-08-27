@@ -121,6 +121,13 @@ typedef enum {
                                element: the site arms its boundary in
                                value mode and the return delivers as
                                the step value */
+  KOS_ITER_INSTALLED_RESUME, /* spliced work mediated by the provider:
+                               the site arms its boundary in resume
+                               mode, and every delivery -- a grafted
+                               source's yield, its return, an awaited
+                               value -- feeds the provider's
+                               ki_resume/ki_throw instead of
+                               completing the site */
   KOS_ITER_ERROR,       /* PyErr set; *out untouched */
 } KosIterStepResult;
 

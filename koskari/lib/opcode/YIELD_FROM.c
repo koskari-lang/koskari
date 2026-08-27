@@ -589,6 +589,10 @@ static KosOpResult yield_from_drive_kos_iter(
         KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_VALUE);
         return EVAL_NORMAL();
 
+      case KID_INSTALLED_RESUME:
+        KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_RESUME);
+        return EVAL_NORMAL();
+
       case KID_VALUE:
         /* The delegate produced an element without grafting: re-emit
            it as the delegating generator's own yield. */

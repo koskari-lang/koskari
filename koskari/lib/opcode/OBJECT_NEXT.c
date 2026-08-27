@@ -39,19 +39,25 @@ static KosOpResult object_next_step(
       return EVAL_RAISE();
     }
 
-    switch (kos_iter_drive_step(es, iter, islots, NULL, NULL, NULL, NULL, &out, NULL)) {
+    KosIterDriveOutcome kid = kos_iter_drive_step(
+        es, iter, islots, NULL, NULL, NULL, NULL, &out, NULL);
+    switch (kid) {
       case KID_INSTALLED:
         Py_DECREF(iter);
         Py_XDECREF(default_val);
         return EVAL_NORMAL();
 
-      case KID_INSTALLED_VALUE: {
+      case KID_INSTALLED_VALUE:
+      case KID_INSTALLED_RESUME: {
+        /* dyn_top may be a grafted frame; the boundary is on its
+           parent chain */
         KosDynNode *bnode = KosEvalState_DYN_TOP(es);
-        /* dyn_top is now the grafted frame; the boundary is its parent */
         while (bnode && ! KosDynNode_IS_NEXT(bnode))
           bnode = KosDynNode_PARENT(bnode);
         if (bnode)
-          KosDynNext_RESUME(bnode) = KOS_DYN_NEXT_MODE_VALUE;
+          KosDynNext_RESUME(bnode) =
+              (kid == KID_INSTALLED_VALUE) ? KOS_DYN_NEXT_MODE_VALUE
+                                           : KOS_DYN_NEXT_MODE_RESUME;
         Py_DECREF(iter);
         Py_XDECREF(default_val);
         return EVAL_NORMAL();

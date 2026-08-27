@@ -112,6 +112,10 @@ typedef enum KosContextFlags {
   KOS_CTX_FROZEN          = 0x02,
   KOS_CTX_DEAD            = 0x04,
   KOS_CTX_IN_TRANSFER     = 0x10,  /* executing a transfer plan */
+  KOS_CTX_GEN_ROOT_RETURN = 0x20,  /* the eval's RETURN came from a gen
+                                      completing at the root: a hosted
+                                      mediated drive feeds end, not the
+                                      value */
 } KosContextFlags;
 
 
@@ -655,6 +659,55 @@ void KosContext_Free(KosContext *ctx);
    :return: 1 (future), 0 (not a future), -1 (error; PyErr set)
 */
 int KosEval_IsFuture(PyObject *val);
+
+
+/**
+   One three-protocol iterator step -- the shared source step behind
+   NEXT, ITER_NEXT, YIELD_FROM, and a provider's own sub-iteration
+   (KosMap's fetch): a KosIter provider steps through its suite
+   (graft-capable), a sync iterator through tp_iternext, a python async
+   iterator through its eager-stepped __anext__.
+*/
+typedef enum KosSourceStepResult {
+  KOS_SRC_VALUE = 0,   /* *out: the element (new ref) */
+  KOS_SRC_EXHAUSTED,   /* *out: payload (new ref) or NULL */
+  KOS_SRC_PARKED,      /* *out: pre-stepped yield item; py_await_iter
+                          armed on the context; the awaited completion
+                          IS the element */
+  KOS_SRC_PARKED_PROVIDER, /* *out: park payload from inside a KosIter
+                              provider; the awaited completion resumes
+                              the provider via KosEval_SourceResume */
+  KOS_SRC_INSTALLED,   /* the provider installed its own frame; the
+                          mediated deliveries are its step outcomes */
+  KOS_SRC_INSTALLED_RESUME, /* the provider armed mediation for its own
+                               source; deliveries forward into it */
+  KOS_SRC_INSTALLED_VALUE,  /* the provider grafted a value frame; the
+                               next mediated delivery is its element */
+  KOS_SRC_ERROR,       /* PyErr set */
+} KosSourceStepResult;
+
+KosSourceStepResult KosEval_SourceStep(
+    KosEvalState *es, PyObject *iter, PyObject **out);
+
+
+/**
+   Resume a KosIter provider source whose step parked
+   (KOS_SRC_PARKED_PROVIDER) with the awaited value. value is borrowed.
+*/
+KosSourceStepResult KosEval_SourceResume(
+    KosEvalState *es, PyObject *iter, PyObject *value, PyObject **out);
+
+
+/**
+   Throw into a KosIter provider source whose step parked
+   (KOS_SRC_PARKED_PROVIDER). throw_typ and throw_exc are borrowed.
+*/
+KosSourceStepResult KosEval_SourceThrow(
+    KosEvalState *es,
+    PyObject *iter,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    PyObject **out);
 
 
 KosOpResult koskari_eval(

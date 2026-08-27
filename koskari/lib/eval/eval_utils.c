@@ -419,7 +419,8 @@ static inline int do_frame_prep(
   int wants = KosCallSlots_WantsFrame(slots, callable);
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
-  KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
+  KosDynNode *const parent =
+      frame ? KosDynNode_PARENT((KosDynNode *) frame) : NULL;
 
   if (wants && tail_call) {
     /* Uninstall discardable extents left open above the frame before

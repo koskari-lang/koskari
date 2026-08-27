@@ -252,6 +252,8 @@ typedef enum {
   KID_INSTALLED,     /* provider spliced frames; deferred delivery */
   KID_INSTALLED_VALUE, /* spliced frames whose frame return is the
                         element; the site arms value mode */
+  KID_INSTALLED_RESUME, /* spliced work mediated by the provider; the
+                        site arms resume mode */
   KID_ERROR,         /* PyErr set */
 } KosIterDriveOutcome;
 
@@ -318,6 +320,9 @@ static KosIterDriveOutcome kos_iter_drive_step(
       case KOS_ITER_INSTALLED_VALUE:
         return KID_INSTALLED_VALUE;
 
+      case KOS_ITER_INSTALLED_RESUME:
+        return KID_INSTALLED_RESUME;
+
       case KOS_ITER_AWAIT: {
         int suspended = 0;
         PyObject *yielded = NULL;
@@ -361,6 +366,183 @@ static KosIterDriveOutcome kos_iter_drive_step(
       default:
         return KID_ERROR;
     }
+  }
+}
+
+
+static KosSourceStepResult kos_source_map_kid(KosIterDriveOutcome kid) {
+
+  switch (kid) {
+    case KID_VALUE:
+      return KOS_SRC_VALUE;
+    case KID_EXHAUSTED:
+      return KOS_SRC_EXHAUSTED;
+    case KID_PARKED:
+      return KOS_SRC_PARKED_PROVIDER;
+    case KID_INSTALLED:
+      return KOS_SRC_INSTALLED;
+    case KID_INSTALLED_RESUME:
+      return KOS_SRC_INSTALLED_RESUME;
+    case KID_INSTALLED_VALUE:
+      return KOS_SRC_INSTALLED_VALUE;
+    case KID_ERROR:
+    default:
+      return KOS_SRC_ERROR;
+  }
+}
+
+
+KosSourceStepResult KosEval_SourceStep(
+    KosEvalState *es, PyObject *iter, PyObject **out) {
+
+  KosIterSlots *islots;
+
+  if (KosIter_CheckSlots(iter, &islots))
+    return kos_source_map_kid(
+        kos_iter_drive_step(es, iter, islots, NULL, NULL, NULL, NULL,
+                            out, NULL));
+
+  {
+    PyObject *value = NULL;
+    PyObject *_await = NULL;
+
+    switch (op_get_next_from_iter(es, &_await, iter, &value)) {
+      case GET_NEXT_VALUE:
+        *out = value;
+        return KOS_SRC_VALUE;
+      case GET_NEXT_EXHAUSTED:
+        *out = NULL;
+        return KOS_SRC_EXHAUSTED;
+      case GET_NEXT_SUSPEND:
+        *out = _await;
+        return KOS_SRC_PARKED;
+      case GET_NEXT_ERROR:
+      default:
+        return KOS_SRC_ERROR;
+    }
+  }
+}
+
+
+KosSourceStepResult KosEval_SourceResume(
+    KosEvalState *es, PyObject *iter, PyObject *value, PyObject **out) {
+
+  KosIterSlots *islots;
+
+  if (! KosIter_CheckSlots(iter, &islots)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "source resume: not a KosIter provider");
+    return KOS_SRC_ERROR;
+  }
+
+  Py_INCREF(value);
+  return kos_source_map_kid(
+      kos_iter_drive_step(es, iter, islots, NULL, value, NULL, NULL,
+                          out, NULL));
+}
+
+
+KosSourceStepResult KosEval_SourceThrow(
+    KosEvalState *es,
+    PyObject *iter,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    PyObject **out) {
+
+  KosIterSlots *islots;
+
+  if (! KosIter_CheckSlots(iter, &islots)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "source throw: not a KosIter provider");
+    return KOS_SRC_ERROR;
+  }
+
+  Py_INCREF(throw_typ);
+  Py_INCREF(throw_exc);
+  return kos_source_map_kid(
+      kos_iter_drive_step(es, iter, islots, NULL, NULL, throw_typ,
+                          throw_exc, out, NULL));
+}
+
+
+/**
+   Feed a boundary-mediated delivery into the armed provider: value
+   (owned, a grafted source's yield or a frame return) enters through
+   ki_resume; end (a grafted source's completion) enters as a
+   StopAsyncIteration throw, which the provider converts per its own
+   protocol. The provider's outcome then completes the boundary: an
+   element delivers, exhaustion delivers, a fresh park re-arms, further
+   installed work continues in place.
+
+   :return: EVAL_NORMAL when the boundary completed or work continues
+            in-eval, EVAL_AWAIT on a fresh park, EVAL_RAISE on error
+*/
+static KosOpResult kos_eval_boundary_feed(
+    KosEvalState *es,
+    KosDynNode *boundary,
+    PyObject *value,
+    int is_end) {
+
+  PyObject *iter_obj = kos_dyn_iter_boundary_iter_obj(boundary);
+  KosIterSlots *islots;
+  PyObject *out = NULL;
+  KosIterDriveOutcome outcome;
+
+  if (! iter_obj || ! KosIter_CheckSlots(iter_obj, &islots)) {
+    Py_XDECREF(value);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "mediated boundary lost its iter provider");
+    return EVAL_RAISE();
+  }
+
+  if (is_end) {
+    PyObject *exc = PyObject_CallNoArgs(PyExc_StopAsyncIteration);
+    Py_XDECREF(value);
+    if (! exc)
+      return EVAL_RAISE();
+    Py_INCREF(PyExc_StopAsyncIteration);
+    outcome = kos_iter_drive_step(es, iter_obj, islots, NULL, NULL,
+                                  PyExc_StopAsyncIteration, exc, &out,
+                                  NULL);
+  } else {
+    outcome = kos_iter_drive_step(es, iter_obj, islots, NULL, value,
+                                  NULL, NULL, &out, NULL);
+  }
+
+  switch (outcome) {
+    case KID_VALUE:
+      if (kos_dyn_iter_boundary_deliver_yield(es, boundary, out) < 0)
+        return EVAL_RAISE();
+      return EVAL_NORMAL();
+
+    case KID_EXHAUSTED:
+      if (kos_dyn_iter_boundary_deliver_exhausted(es, boundary, out) < 0)
+        return EVAL_RAISE();
+      return EVAL_NORMAL();
+
+    case KID_PARKED:
+      return EVAL_AWAIT(out);
+
+    case KID_INSTALLED:
+    case KID_INSTALLED_RESUME:
+      return EVAL_NORMAL();
+
+    case KID_INSTALLED_VALUE:
+      /* the provider grafted a value-returning frame mid-feed: flip
+         the boundary to value mode for that frame's return */
+      if (KosDynNode_IS_FOREACH(boundary))
+        kos_dyn_foreach_set_iter_step_phase(
+            (KosDynForeach *) boundary,
+            KOS_FOREACH_ITER_STEP_AWAITING_KOS_VALUE);
+      else if (KosDynNode_IS_NEXT(boundary))
+        KosDynNext_RESUME(boundary) = KOS_DYN_NEXT_MODE_VALUE;
+      else if (KosDynNode_IS_YIELD_FROM(boundary))
+        KosDynYieldFrom_PHASE_SET(boundary, KOS_YF_PHASE_EXPECT_VALUE);
+      return EVAL_NORMAL();
+
+    case KID_ERROR:
+    default:
+      return EVAL_RAISE();
   }
 }
 
@@ -458,7 +640,6 @@ static KosOpResult revive_await(
          then completes the boundary. */
       PyObject *iter_obj = kos_dyn_iter_boundary_iter_obj(boundary);
       KosIterSlots *islots;
-      PyObject *out = NULL;
 
       if (! iter_obj || ! KosIter_CheckSlots(iter_obj, &islots)) {
         if (owned)
@@ -471,38 +652,10 @@ static KosOpResult revive_await(
       if (! owned)
         Py_INCREF(to_push);
 
-      switch (kos_iter_drive_step(es, iter_obj, islots, NULL, to_push,
-                                  NULL, NULL, &out, NULL)) {
-        case KID_VALUE:
-          if (kos_dyn_iter_boundary_deliver_yield(es, boundary, out) < 0)
-            return EVAL_RAISE();
-          break;
-
-        case KID_EXHAUSTED:
-          if (kos_dyn_iter_boundary_deliver_exhausted(es, boundary,
-                                                      out) < 0)
-            return EVAL_RAISE();
-          break;
-
-        case KID_PARKED:
-          /* Re-park; the boundary stays armed. */
-          return EVAL_AWAIT(out);
-
-        case KID_INSTALLED:
-          break;
-
-        case KID_INSTALLED_VALUE:
-          if (KosDynNode_IS_FOREACH(boundary))
-            kos_dyn_foreach_set_iter_step_phase(
-                (KosDynForeach *) boundary,
-                KOS_FOREACH_ITER_STEP_AWAITING_KOS_VALUE);
-          else if (KosDynNode_IS_NEXT(boundary))
-            KosDynNext_RESUME(boundary) = KOS_DYN_NEXT_MODE_VALUE;
-          break;
-
-        case KID_ERROR:
-        default:
-          return EVAL_RAISE();
+      {
+        KosOpResult fr = kos_eval_boundary_feed(es, boundary, to_push, 0);
+        if (fr.kind != KOS_RES_NORMAL)
+          return fr;
       }
 
       if (kos_dyn_complete_pending_exit(es, 1) < 0)
@@ -1977,8 +2130,25 @@ static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
   }
   {
     KosDynNode *boundary = kos_dyn_find_iter_boundary(es);
-    if (boundary)
+    if (boundary) {
+      if (kos_dyn_iter_boundary_resume_park(boundary)) {
+        /* Mediated boundary: the yield feeds the armed provider. */
+        KosOpResult fr = kos_eval_boundary_feed(es, boundary, val, 0);
+        if (fr.kind == KOS_RES_NORMAL)
+          return EVAL_REPROLOGUE();
+        if (fr.kind == KOS_RES_AWAIT) {
+          KosEvalState_MarkSuspendedNotRunning(es);
+          KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+          return fr;
+        }
+        {
+          KosOpResult rs;
+          KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
+          return rs;
+        }
+      }
       return eval_event_yield_deliver_to_boundary(es, boundary, val);
+    }
   }
   KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
   return EVAL_YIELD(val);
@@ -2277,10 +2447,34 @@ static KosOpResult eval_event_return_at_frame(
 
     if (! consumer) {
       KosEvalState_MarkDeadAfterReturn(es);
+      KosContext_FLAGS(KosEvalState_CONTEXT(es)) |= KOS_CTX_GEN_ROOT_RETURN;
       return EVAL_RETURN(val);
     }
 
     if (KosDynNode_HAS_CAP(consumer, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)) {
+      if (kos_dyn_iter_boundary_resume_park(consumer)) {
+        /* Mediated boundary: the grafted source completed; unwind it
+           and feed the end into the armed provider. */
+        Py_XDECREF(val);
+        if (kos_dyn_teardown_gen_exhausted(es) < 0)
+          return EVAL_FATAL();
+        {
+          KosOpResult fr = kos_eval_boundary_feed(es, consumer, NULL, 1);
+          if (fr.kind == KOS_RES_NORMAL)
+            return EVAL_REPROLOGUE();
+          if (fr.kind == KOS_RES_AWAIT) {
+            KosEvalState_MarkSuspendedNotRunning(es);
+            KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+            return fr;
+          }
+          {
+            KosOpResult rs;
+            KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
+            return rs;
+          }
+        }
+      }
+
       int r = kos_dyn_iter_boundary_deliver_return(es, consumer, val);
       if (r == KOS_ITER_BOUNDARY_RAISE) {
         KosOpResult rs;
@@ -2305,14 +2499,36 @@ static KosOpResult eval_event_return_at_frame(
      (push, disarm, ki_finish). */
   if (parent
       && KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
-      && kos_dyn_iter_boundary_value_mode(parent)) {
+      && (kos_dyn_iter_boundary_value_mode(parent)
+          || kos_dyn_iter_boundary_resume_park(parent))) {
+    int mediated = kos_dyn_iter_boundary_resume_park(parent);
+
     if (unlikely(kos_dyn_pop_frame(es) < 0)) {
       Py_DECREF(val);
       return EVAL_FATAL();
     }
-    if (kos_dyn_iter_boundary_deliver_yield(es, parent, val) < 0)
-      return EVAL_FATAL();
-    return EVAL_REPROLOGUE();
+
+    if (! mediated) {
+      if (kos_dyn_iter_boundary_deliver_yield(es, parent, val) < 0)
+        return EVAL_FATAL();
+      return EVAL_REPROLOGUE();
+    }
+
+    {
+      KosOpResult fr = kos_eval_boundary_feed(es, parent, val, 0);
+      if (fr.kind == KOS_RES_NORMAL)
+        return EVAL_REPROLOGUE();
+      if (fr.kind == KOS_RES_AWAIT) {
+        KosEvalState_MarkSuspendedNotRunning(es);
+        KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+        return fr;
+      }
+      {
+        KosOpResult rs;
+        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
+        return rs;
+      }
+    }
   }
 
   /* Case 3: any other non-NULL, non-GEN parent (WIND, TRY, WITH, native
