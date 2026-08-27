@@ -58,6 +58,9 @@ typedef struct {
 } KosMapObject;
 
 
+static void map_close_source(KosMapObject *m);
+
+
 /* === step machine === */
 
 
@@ -279,10 +282,75 @@ static KosIterStepResult map_iter_throw(
     return KOS_ITER_EXHAUSTED;
   }
 
+  if (PyErr_GivenExceptionMatches(throw_typ, PyExc_GeneratorExit)) {
+    /* Generator close semantics: run the source's cleanup, mark
+       closed, and let GeneratorExit propagate as the success shape. */
+    m->phase = KOS_MAP_CLOSED;
+    m->busy = 0;
+    map_close_source(m);
+    PyErr_SetObject(throw_typ, throw_exc);
+    return KOS_ITER_ERROR;
+  }
+
   m->phase = (m->phase == KOS_MAP_CLOSED) ? KOS_MAP_CLOSED : KOS_MAP_IDLE;
   m->busy = 0;
   PyErr_SetObject(throw_typ, throw_exc);
   return KOS_ITER_ERROR;
+}
+
+
+/**
+   Close the source, best-effort and exception-fenced. A provider
+   closes through its suite; a sync iterator through close(); an async
+   iterator through aclose(), whose awaitable is demand-driven -- an
+   immediate completion honors the cleanup, a genuine suspension takes
+   the cannot-honor fallback of closing the in-flight iterator (its
+   GeneratorExit runs the cleanup synchronously where possible), the
+   same posture the generator's demand-path teardown takes.
+*/
+static void map_close_source(KosMapObject *m) {
+
+  PyObject *ftyp, *fval, *ftb;
+
+  if (! m->source)
+    return;
+
+  PyErr_Fetch(&ftyp, &fval, &ftb);
+
+  {
+    KosIterSlots *islots;
+
+    if (KosIter_CheckSlots(m->source, &islots)) {
+      (void) islots->ki_close(m->source);
+      PyErr_Clear();
+
+    } else if (Py_TYPE(m->source)->tp_iternext) {
+      PyObject *r = PyObject_CallMethod(m->source, "close", NULL);
+      Py_XDECREF(r);
+      PyErr_Clear();
+
+    } else {
+      PyObject *aw = PyObject_CallMethod(m->source, "aclose", NULL);
+      if (aw) {
+        PyObject *it = PyObject_GetAwaitable(aw);
+        Py_DECREF(aw);
+        if (it) {
+          PyObject *step = PyObject_CallMethod(it, "send", "O", Py_None);
+          if (step) {
+            /* Suspend attempt during close; cannot honor further --
+               close the iterator so its GeneratorExit cleanup runs. */
+            Py_DECREF(step);
+            PyObject *r = PyObject_CallMethod(it, "close", NULL);
+            Py_XDECREF(r);
+          }
+          Py_DECREF(it);
+        }
+      }
+      PyErr_Clear();
+    }
+  }
+
+  PyErr_Restore(ftyp, fval, ftb);
 }
 
 
@@ -295,18 +363,7 @@ static int map_iter_close(PyObject *self) {
 
   m->phase = KOS_MAP_CLOSED;
   m->busy = 0;
-
-  if (m->source) {
-    KosIterSlots *islots;
-    if (KosIter_CheckSlots(m->source, &islots)) {
-      (void) islots->ki_close(m->source);
-      PyErr_Clear();
-    } else {
-      PyObject *r = PyObject_CallMethod(m->source, "close", NULL);
-      Py_XDECREF(r);
-      PyErr_Clear();
-    }
-  }
+  map_close_source(m);
 
   return 0;
 }

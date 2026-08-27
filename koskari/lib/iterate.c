@@ -478,6 +478,13 @@ static PyObject *stepper_park_drive(
         return stepper_finish_exhausted(st, out, st->is_throw);
 
       case KOS_ITER_ERROR:
+        /* Closing drive: GeneratorExit propagating out is the success
+           shape -- awaiting aclose yields None. */
+        if (st->closing && PyErr_Occurred()
+            && PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
+          PyErr_Clear();
+          PyErr_SetNone(PyExc_StopIteration);
+        }
         return NULL;
 
       case KOS_ITER_AWAIT: {

@@ -84,4 +84,60 @@ class TestKosMapParkOwnership(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await m.__anext__(), 1)
 
 
+class TestKosMapSourceCleanup(unittest.IsolatedAsyncioTestCase):
+    """
+    Closing a map runs its source's cleanup: aclose for async sources,
+    close for sync generators, in both the async and demand surfaces
+    """
+
+    def make_async_source(self, log):
+        async def src():
+            try:
+                yield 1
+                yield 2
+            finally:
+                log.append("cleaned")
+        return src()
+
+    async def test_aclose_runs_async_source_finally(self):
+        log = []
+        m = KosMap(str, self.make_async_source(log))
+        self.assertEqual(await m.__anext__(), "1")
+        self.assertIsNone(await m.aclose())
+        self.assertEqual(log, ["cleaned"])
+
+    async def test_aclose_idempotent(self):
+        log = []
+        m = KosMap(str, self.make_async_source(log))
+        self.assertEqual(await m.__anext__(), "1")
+        self.assertIsNone(await m.aclose())
+        self.assertIsNone(await m.aclose())
+        self.assertEqual(log, ["cleaned"])
+        with self.assertRaises(StopAsyncIteration):
+            await m.__anext__()
+
+    async def test_sync_close_runs_async_source_finally(self):
+        log = []
+        m = KosMap(str, self.make_async_source(log))
+        self.assertEqual(await m.__anext__(), "1")
+        dgen = iter(m)
+        dgen.close()
+        self.assertEqual(log, ["cleaned"])
+
+    async def test_close_runs_sync_generator_close(self):
+        log = []
+
+        def src():
+            try:
+                yield 1
+                yield 2
+            finally:
+                log.append("cleaned")
+
+        m = KosMap(str, src())
+        self.assertEqual(await m.__anext__(), "1")
+        self.assertIsNone(await m.aclose())
+        self.assertEqual(log, ["cleaned"])
+
+
 # The end.
