@@ -20,15 +20,17 @@
    KosMap: a native lazy map over one source, duck-typed against
    builtins.map, implemented as a KosIter provider.
 
-   ki_step is a two-phase machine: FETCH pulls the next source element,
-   INVOKE applies the function through the kos call interface. Both
-   phases complete synchronously in C on the fast path (sync source,
-   non-suspending function: KOS_ITER_VALUE with the evaluator
-   untouched). An asynchronous sub-operation -- a foreign __anext__ in
-   FETCH, an awaitable function result in INVOKE -- parks the step on
-   the site's await boundary as KOS_ITER_AWAIT; the awaited value
-   re-enters through ki_resume (owner-only) and the phase field routes
-   it. While parked, every fresh ki_step entry is refused.
+   The fast path is pure C: a sync source element and a non-suspending
+   function result complete as KOS_ITER_VALUE with the evaluator
+   untouched. Anything asynchronous installs one native frame whose
+   handler runs the two-phase machine -- FETCH requests the next source
+   element through its own NEXT boundary (KosIterRequest_Next, all
+   three protocols), INVOKE applies the function through the call path
+   -- and completes by returning the element, delivered to the
+   consumer's boundary as the step value. Exhaustion and errors leave
+   the frame as exceptions; the consumer's boundary converts
+   StopIteration per its own rules, which also gives a mapped
+   function's StopIteration builtins.map truncation parity.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -42,233 +44,227 @@
 
 
 typedef enum {
-  KOS_MAP_IDLE = 0,     /* between steps */
-  KOS_MAP_FETCHING,     /* parked on the source's __anext__ awaitable */
-  KOS_MAP_INVOKING,     /* parked on the function result awaitable */
-  KOS_MAP_CLOSED,       /* exhausted or closed */
-} KosMapPhase;
+  KOS_MAP_NF_FETCH = 0,   /* next wake starts a fetch */
+  KOS_MAP_NF_WAIT_ELEM,   /* fetch in flight; element arrives by stack
+                             push (boundary delivery) or AWAITED */
+  KOS_MAP_NF_WAIT_RESULT, /* invoke in flight; result arrives by
+                             CALL_VALUE, AWAITED, or stack push */
+} KosMapNfPhase;
 
 
 typedef struct {
   PyObject_HEAD
   PyObject *func;        /* callable applied per element */
   PyObject *source;      /* acquired iterator (sync or async) */
-  uint8_t phase;         /* KosMapPhase */
+  uint8_t closed;        /* exhausted or closed */
   uint8_t busy;          /* a step is in flight; ki_finish clears */
-  uint8_t fetch_grafted; /* the in-flight fetch grafted a provider
-                            source; its busy mark is ours to clear when
-                            the mediated delivery arrives */
-  uint8_t fetch_parked;  /* the in-flight fetch parked inside a provider
-                            source; awaited values resume it through
-                            KosEval_SourceResume */
-  uint8_t fetch_graft_mode; /* KosMapGraftMode: how mediated deliveries
-                               land while fetch_grafted */
+  uint8_t nf_phase;      /* KosMapNfPhase while the frame is live */
 } KosMapObject;
-
-
-/* How the grafted source expects its mediated deliveries. */
-enum KosMapGraftMode {
-  KOS_MAP_GRAFT_OWN = 0,   /* source installed its own frame: a
-                              delivery is its step outcome -- consume */
-  KOS_MAP_GRAFT_FWD = 1,   /* source armed deeper mediation: forward
-                              deliveries through KosEval_SourceResume */
-  KOS_MAP_GRAFT_VALUE = 2, /* source grafted a value frame: the next
-                              delivery is its element -- consume */
-};
 
 
 static void map_close_source(KosMapObject *m);
 
 
-/* === step machine === */
+/* === the step's native frame program === */
 
 
 /**
-   Classify and complete the invoke result: a plain value (or an
-   ambient-await-exempt Defer/future handle) is the element; any other
-   awaitable parks the step. result is consumed.
+   Classify a function result: a plain value (or an ambient-await-exempt
+   Defer/future handle) is the element; NULL means awaitable (the
+   caller parks). result borrowed.
+
+   :return: 1 element, 0 awaitable, -1 error (PyErr set)
 */
-static KosIterStepResult map_take_invoke_result(
-    KosMapObject *m,
-    PyObject *result,
-    PyObject **out) {
+static int map_result_is_element(PyObject *result) {
 
   PyTypeObject *typ = Py_TYPE(result);
 
-  if (! typ->tp_as_async || ! typ->tp_as_async->am_await) {
-    m->phase = KOS_MAP_IDLE;
-    m->busy = 0;
-    *out = result;
-    return KOS_ITER_VALUE;
-  }
-
-  if (KosDefer_Check(result)) {
-    m->phase = KOS_MAP_IDLE;
-    m->busy = 0;
-    *out = result;
-    return KOS_ITER_VALUE;
-  }
-
-  {
-    int isfut = KosEval_IsFuture(result);
-    if (isfut < 0) {
-      Py_DECREF(result);
-      m->phase = KOS_MAP_IDLE;
-      m->busy = 0;
-      return KOS_ITER_ERROR;
-    }
-    if (isfut) {
-      m->phase = KOS_MAP_IDLE;
-      m->busy = 0;
-      *out = result;
-      return KOS_ITER_VALUE;
-    }
-  }
-
-  /* Awaitable function result: park until it completes. */
-  m->phase = KOS_MAP_INVOKING;
-  m->busy = 1;
-  *out = result;
-  return KOS_ITER_AWAIT;
+  if (! typ->tp_as_async || ! typ->tp_as_async->am_await)
+    return 1;
+  if (KosDefer_Check(result))
+    return 1;
+  return KosEval_IsFuture(result);
 }
 
 
 /**
-   INVOKE: apply func to the element. A frame-wanting KosCallable is
-   grafted in-eval when a live eval state is available: its frame runs
-   as a child of the site's armed boundary and its return IS the
-   element (KOS_ITER_INSTALLED_VALUE) -- no coroutine, ambient awaits
-   inside the frame. Otherwise the call goes through the kos call
-   interface at the Python boundary; an awaitable result (a koskari
-   function's coroutine included) parks the step. element is consumed.
+   INVOKE from inside the frame program: apply func to element and
+   either complete the frame (EVAL_RETURN delivers the element through
+   the consumer's boundary) or leave the invoke in flight. element is
+   consumed.
 */
-static KosIterStepResult map_invoke(
+static KosOpResult map_nf_invoke(
     KosEvalState *es,
     KosMapObject *m,
-    PyObject *element,
-    PyObject **out) {
+    PyObject *element) {
 
-  PyObject *args = PyTuple_Pack(1, element);
-  Py_DECREF(element);
-  if (! args) {
-    m->phase = KOS_MAP_IDLE;
-    m->busy = 0;
-    return KOS_ITER_ERROR;
-  }
-
-  if (es) {
+  /* A frame-wanting KosCallable grafts as a child frame; its return
+     arrives as the CALL_VALUE wake. */
+  {
     KosCallSlots *cslots;
     if (KosCallable_CheckSlots(m->func, &cslots)
         && KosCallSlots_WantsFrame(cslots, m->func)) {
-      /* The graft pushes a callee frame mid-dispatch: flush the
-         consumer's live registers first so its stored pc is the
-         resume point after delivery, exactly as the CALL path does. */
-      KosEvalState_FlushLiveRegsToFrame(es);
-      KosOpResult r = KosEvalState_CallArgs(es, m->func, args, NULL, 0);
-      Py_DECREF(args);
-      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
-        m->phase = KOS_MAP_INVOKING;
-        m->busy = 1;
-        return KOS_ITER_INSTALLED_VALUE;
+      PyObject *args = PyTuple_Pack(1, element);
+      Py_DECREF(element);
+      if (! args)
+        return EVAL_RAISE();
+      m->nf_phase = KOS_MAP_NF_WAIT_RESULT;
+      {
+        KosOpResult r = KosEvalState_CallArgs(es, m->func, args, NULL, 0);
+        Py_DECREF(args);
+        if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
+          return EVAL_REPROLOGUE();
+        return r;
       }
-      m->phase = KOS_MAP_IDLE;
-      m->busy = 0;
-      if (! PyErr_Occurred())
-        PyErr_SetString(PyExc_SystemError,
-                        "map invoke graft: unexpected install result");
-      return KOS_ITER_ERROR;
     }
   }
 
-  PyObject *result = Koskari_AsyncCall(m->func, args, NULL);
-  Py_DECREF(args);
-  if (! result) {
-    m->phase = KOS_MAP_IDLE;
-    m->busy = 0;
-    return KOS_ITER_ERROR;
-  }
+  {
+    PyObject *args = PyTuple_Pack(1, element);
+    Py_DECREF(element);
+    if (! args)
+      return EVAL_RAISE();
+    {
+      PyObject *result = Koskari_AsyncCall(m->func, args, NULL);
+      Py_DECREF(args);
+      if (! result)
+        return EVAL_RAISE();
 
-  return map_take_invoke_result(m, result, out);
+      switch (map_result_is_element(result)) {
+        case 1:
+          KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) = NULL;
+          return EVAL_RETURN(result);
+        case 0: {
+          /* Awaitable result: park; the completion wakes as AWAITED
+             (or lands on the stack when it finishes eagerly). */
+          m->nf_phase = KOS_MAP_NF_WAIT_RESULT;
+          {
+            KosOpResult pr = KosEvalState_PushOrAwait(es, result);
+            if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
+              return EVAL_REPROLOGUE();
+            return pr;
+          }
+        }
+        default:
+          Py_DECREF(result);
+          return EVAL_RAISE();
+      }
+    }
+  }
 }
 
 
 /**
-   FETCH: one shared three-protocol source step (KosEval_SourceStep) --
-   the same operation NEXT/ITER_NEXT/YIELD_FROM perform. A provider
-   source grafts onto the consumer chain and its deliveries are
-   boundary-mediated back into this map; a sync iterator completes
-   immediately; a python async iterator parks on its eager-stepped
-   __anext__.
+   FETCH from inside the frame program: one request against the map's
+   own NEXT boundary. A completed element goes straight to INVOKE; a
+   grafted or parked source leaves the fetch in flight (the element
+   arrives by boundary delivery); exhaustion raises StopIteration for
+   the consumer's boundary to convert.
 */
-static uint8_t map_graft_mode_for(KosSourceStepResult r) {
+static KosOpResult map_nf_fetch(KosEvalState *es, KosMapObject *m) {
 
-  if (r == KOS_SRC_INSTALLED_RESUME)
-    return KOS_MAP_GRAFT_FWD;
-  if (r == KOS_SRC_INSTALLED_VALUE)
-    return KOS_MAP_GRAFT_VALUE;
-  return KOS_MAP_GRAFT_OWN;
-}
+  PyObject *out = NULL;
 
+  if (kos_dyn_push_next_boundary(es, m->source, NULL, 1) < 0)
+    return EVAL_RAISE();
 
-static KosIterStepResult map_fetch(
-    KosEvalState *es,
-    KosMapObject *m,
-    PyObject **out) {
+  switch (KosIterRequest_Next(es, KosEvalState_DYN_TOP(es), NULL, &out)) {
+    case KOS_IREQ_DELIVERED:
+      kos_dyn_next_abort_after_failed_attach(es);
+      return map_nf_invoke(es, m, out);
 
-  PyObject *fetched = NULL;
+    case KOS_IREQ_EXHAUSTED:
+      Py_XDECREF(out);
+      kos_dyn_next_abort_after_failed_attach(es);
+      KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) = NULL;
+      PyErr_SetNone(PyExc_StopIteration);
+      return EVAL_RAISE();
 
-  if (! es) {
-    m->phase = KOS_MAP_IDLE;
-    m->busy = 0;
-    PyErr_SetString(PyExc_SystemError,
-                    "map fetch requires a live eval state");
-    return KOS_ITER_ERROR;
-  }
+    case KOS_IREQ_CONTINUES:
+      m->nf_phase = KOS_MAP_NF_WAIT_ELEM;
+      return EVAL_REPROLOGUE();
 
-  KosSourceStepResult r = KosEval_SourceStep(es, m->source, &fetched);
+    case KOS_IREQ_EXIT:
+      m->nf_phase = KOS_MAP_NF_WAIT_ELEM;
+      return EVAL_AWAIT(out);
 
-  switch (r) {
-    case KOS_SRC_VALUE:
-      return map_invoke(es, m, fetched, out);
-
-    case KOS_SRC_EXHAUSTED:
-      Py_XDECREF(fetched);
-      m->phase = KOS_MAP_CLOSED;
-      m->busy = 0;
-      *out = NULL;
-      return KOS_ITER_EXHAUSTED;
-
-    case KOS_SRC_PARKED:
-      m->phase = KOS_MAP_FETCHING;
-      m->busy = 1;
-      *out = fetched;
-      return KOS_ITER_AWAIT;
-
-    case KOS_SRC_PARKED_PROVIDER:
-      m->phase = KOS_MAP_FETCHING;
-      m->busy = 1;
-      m->fetch_parked = 1;
-      *out = fetched;
-      return KOS_ITER_AWAIT;
-
-    case KOS_SRC_INSTALLED:
-    case KOS_SRC_INSTALLED_RESUME:
-    case KOS_SRC_INSTALLED_VALUE:
-      /* The source grafted; its yields, completion, and awaited
-         values arrive boundary-mediated through ki_resume/ki_throw. */
-      m->phase = KOS_MAP_FETCHING;
-      m->busy = 1;
-      m->fetch_grafted = 1;
-      m->fetch_graft_mode = map_graft_mode_for(r);
-      return KOS_ITER_INSTALLED_RESUME;
-
-    case KOS_SRC_ERROR:
+    case KOS_IREQ_ERROR:
     default:
-      m->phase = KOS_MAP_IDLE;
-      m->busy = 0;
-      return KOS_ITER_ERROR;
+      kos_dyn_next_abort_after_failed_attach(es);
+      return EVAL_RAISE();
   }
 }
+
+
+/**
+   The step's native frame handler: the FETCH/INVOKE machine, woken by
+   the eval loop's cadence, boundary deliveries landing on the frame
+   stack, awaited resumes, and callee-frame returns. Exceptions are
+   always declined -- the raise walk pops the frame and the consumer's
+   boundary converts protocol exceptions to exhaustion.
+*/
+static KosOpResult map_nf_handler(
+    KosEvalState *es,
+    KosNativeFrameEvent ev,
+    PyObject *value) {
+
+  KosMapObject *m =
+      (KosMapObject *) KosDynFrame_NATIVE_STATE(KosEvalState_FRAME(es));
+
+  if (! m) {
+    Py_XDECREF(value);
+    PyErr_SetString(PyExc_SystemError, "map frame lost its state");
+    return EVAL_RAISE();
+  }
+
+  switch (ev) {
+    case KOS_NFRAME_EXCEPTION:
+      /* Decline: the frame pops and the consumer's boundary owns the
+         conversion (StopIteration truncation parity included). */
+      return EVAL_RAISE();
+
+    case KOS_NFRAME_ITERATE:
+      if (m->nf_phase == KOS_MAP_NF_FETCH)
+        return map_nf_fetch(es, m);
+      /* A delivery landed on the frame stack: pop it and route. */
+      value = KosEvalState_StackPopRef(es);
+      if (! value)
+        return EVAL_RAISE();
+      break;
+
+    case KOS_NFRAME_CALL_VALUE:
+    case KOS_NFRAME_AWAITED:
+      break;
+
+    default:
+      Py_XDECREF(value);
+      PyErr_SetString(PyExc_SystemError, "map frame: unexpected wake");
+      return EVAL_RAISE();
+  }
+
+  if (m->nf_phase == KOS_MAP_NF_WAIT_ELEM)
+    return map_nf_invoke(es, m, value);
+
+  /* KOS_MAP_NF_WAIT_RESULT: the invoke completed -- or handed back
+     another awaitable (a koskari function's coroutine); reclassify. */
+  switch (map_result_is_element(value)) {
+    case 1:
+      KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) = NULL;
+      return EVAL_RETURN(value);
+    case 0: {
+      KosOpResult pr = KosEvalState_PushOrAwait(es, value);
+      if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
+        return EVAL_REPROLOGUE();
+      return pr;
+    }
+    default:
+      Py_DECREF(value);
+      return EVAL_RAISE();
+  }
+}
+
+
+/* === the iter suite === */
 
 
 static KosIterStepResult map_iter_step(
@@ -279,14 +275,12 @@ static KosIterStepResult map_iter_step(
 
   KosMapObject *m = (KosMapObject *) self;
 
-  if (m->phase == KOS_MAP_CLOSED) {
+  if (m->closed) {
     *out = NULL;
     return KOS_ITER_EXHAUSTED;
   }
 
   if (m->busy) {
-    /* A parked step is resumed only through ki_resume by the park's
-       owner; every fresh entry is refused. */
     PyErr_SetString(PyExc_RuntimeError, "map is already being iterated");
     return KOS_ITER_ERROR;
   }
@@ -297,97 +291,88 @@ static KosIterStepResult map_iter_step(
     return KOS_ITER_ERROR;
   }
 
-  return map_fetch(es, m, out);
-}
+  /* Fast path: a sync non-provider source and a non-suspending
+     function result complete with the evaluator untouched. Anything
+     else stages its progress on a fresh native frame and returns
+     KOS_ITER_INSTALLED_VALUE -- the frame program owns every
+     suspension, and its return delivers the element through the
+     consumer's boundary. */
+  {
+    PyObject *element = NULL;
+    PyObject *staged = NULL;      /* pushed onto the frame stack */
+    uint8_t staged_phase = KOS_MAP_NF_FETCH;
 
+    if (! KosIter_Check(m->source) && PyIter_Check(m->source)) {
+      element = PyIter_Next(m->source);
+      if (! element) {
+        if (PyErr_Occurred())
+          return KOS_ITER_ERROR;
+        m->closed = 1;
+        *out = NULL;
+        return KOS_ITER_EXHAUSTED;
+      }
 
-/**
-   Land the outcome of a resumed or thrown-into provider-source step:
-   the same protocol map_fetch applies, entered from the parked state
-*/
-static KosIterStepResult map_source_landing(
-    KosEvalState *es,
-    KosMapObject *m,
-    KosSourceStepResult r,
-    PyObject *fetched,
-    PyObject **out) {
-
-  switch (r) {
-    case KOS_SRC_VALUE:
-      m->fetch_parked = 0;
-      m->busy = 0;
-      return map_invoke(es, m, fetched, out);
-
-    case KOS_SRC_EXHAUSTED:
-      Py_XDECREF(fetched);
-      m->fetch_parked = 0;
-      m->phase = KOS_MAP_CLOSED;
-      m->busy = 0;
-      *out = NULL;
-      return KOS_ITER_EXHAUSTED;
-
-    case KOS_SRC_PARKED:
-    case KOS_SRC_PARKED_PROVIDER:
-      *out = fetched;
-      return KOS_ITER_AWAIT;
-
-    case KOS_SRC_INSTALLED:
-    case KOS_SRC_INSTALLED_RESUME:
-    case KOS_SRC_INSTALLED_VALUE:
-      m->fetch_parked = 0;
-      m->fetch_grafted = 1;
-      m->fetch_graft_mode = map_graft_mode_for(r);
-      return KOS_ITER_INSTALLED_RESUME;
-
-    case KOS_SRC_ERROR:
-    default:
-      m->fetch_parked = 0;
-      m->phase = KOS_MAP_IDLE;
-      m->busy = 0;
-      return KOS_ITER_ERROR;
-  }
-}
-
-
-static KosIterStepResult map_iter_resume(
-    KosEvalState *es,
-    PyObject *self,
-    PyObject *value,
-    PyObject **out) {
-
-  KosMapObject *m = (KosMapObject *) self;
-
-  if (! m->busy || m->phase == KOS_MAP_CLOSED) {
-    PyErr_SetString(PyExc_RuntimeError, "map was not parked");
-    return KOS_ITER_ERROR;
-  }
-
-  if (m->phase == KOS_MAP_FETCHING) {
-    if (m->fetch_parked
-        || (m->fetch_grafted
-            && m->fetch_graft_mode == KOS_MAP_GRAFT_FWD)) {
-      PyObject *fetched = NULL;
-      KosSourceStepResult r =
-          KosEval_SourceResume(es, m->source, value, &fetched);
-      return map_source_landing(es, m, r, fetched, out);
+      {
+        KosCallSlots *cslots;
+        if (KosCallable_CheckSlots(m->func, &cslots)
+            && KosCallSlots_WantsFrame(cslots, m->func)) {
+          /* Frame-wanting function: stage the element; the frame
+             program invokes it. */
+          staged = element;
+          staged_phase = KOS_MAP_NF_WAIT_ELEM;
+        } else {
+          PyObject *args = PyTuple_Pack(1, element);
+          Py_DECREF(element);
+          if (! args)
+            return KOS_ITER_ERROR;
+          {
+            PyObject *result = Koskari_AsyncCall(m->func, args, NULL);
+            Py_DECREF(args);
+            if (! result)
+              return KOS_ITER_ERROR;
+            switch (map_result_is_element(result)) {
+              case 1:
+                *out = result;
+                return KOS_ITER_VALUE;
+              case 0:
+                /* Awaitable function result: stage it; the frame
+                   program awaits it. */
+                staged = result;
+                staged_phase = KOS_MAP_NF_WAIT_RESULT;
+                break;
+              default:
+                Py_DECREF(result);
+                return KOS_ITER_ERROR;
+            }
+          }
+        }
+      }
     }
-    if (m->fetch_grafted) {
-      KosIterSlots *sslots;
-      if (KosIter_CheckSlots(m->source, &sslots))
-        sslots->ki_finish(m->source, 0);
-      m->fetch_grafted = 0;
-  m->fetch_parked = 0;
-    }
-    Py_INCREF(value);
-    m->busy = 0;
-    return map_invoke(es, m, value, out);
-  }
 
-  /* KOS_MAP_INVOKING: the awaited result may itself be awaitable
-     (a koskari fn returning a coroutine); reclassify. */
-  Py_INCREF(value);
-  return map_take_invoke_result(m, value, out);
+    {
+      KosDynFrame *frame = kos_dyn_push_frame_empty(es);
+      if (! frame) {
+        Py_XDECREF(staged);
+        return KOS_ITER_ERROR;
+      }
+      KosDynFrame_NATIVE_HANDLER(frame) = (void *) map_nf_handler;
+      KosDynFrame_NATIVE_STATE(frame) = (void *) m;
+
+      if (staged) {
+        if (KosEvalState_StackPushRef(es, staged) < 0) {
+          Py_DECREF(staged);
+          return KOS_ITER_ERROR;
+        }
+        Py_DECREF(staged);
+      }
+
+      m->busy = 1;
+      m->nf_phase = staged_phase;
+      return KOS_ITER_INSTALLED_VALUE;
+    }
+  }
 }
+
 
 
 static KosIterStepResult map_iter_throw(
@@ -399,50 +384,17 @@ static KosIterStepResult map_iter_throw(
 
   KosMapObject *m = (KosMapObject *) self;
 
-  if (m->busy && m->phase == KOS_MAP_FETCHING
-      && (m->fetch_parked
-          || (m->fetch_grafted
-              && m->fetch_graft_mode == KOS_MAP_GRAFT_FWD))
-      && ! PyErr_GivenExceptionMatches(throw_typ, PyExc_GeneratorExit)) {
-    /* The park lives inside the provider source: the failure belongs
-       to its extent -- it converts or propagates per its own
-       protocol. */
-    PyObject *fetched = NULL;
-    KosSourceStepResult r =
-        KosEval_SourceThrow(es, m->source, throw_typ, throw_exc, &fetched);
-    return map_source_landing(es, m, r, fetched, out);
-  }
-
-  if (m->busy && m->phase == KOS_MAP_FETCHING
-      && (PyErr_GivenExceptionMatches(throw_typ, PyExc_StopAsyncIteration)
-          || PyErr_GivenExceptionMatches(throw_typ, PyExc_StopIteration))) {
-    /* Mid-fetch end-of-source: the map is exhausted, mediated here
-       rather than at the site's raise walk. */
-    if (m->fetch_grafted) {
-      KosIterSlots *sslots;
-      if (KosIter_CheckSlots(m->source, &sslots))
-        sslots->ki_finish(m->source, 1);
-      m->fetch_grafted = 0;
-  m->fetch_parked = 0;
-    }
-    m->phase = KOS_MAP_CLOSED;
-    m->busy = 0;
-    *out = NULL;
-    return KOS_ITER_EXHAUSTED;
-  }
+  (void) es;
+  (void) out;
 
   if (PyErr_GivenExceptionMatches(throw_typ, PyExc_GeneratorExit)) {
     /* Generator close semantics: run the source's cleanup, mark
        closed, and let GeneratorExit propagate as the success shape. */
-    m->phase = KOS_MAP_CLOSED;
+    m->closed = 1;
     m->busy = 0;
     map_close_source(m);
-    PyErr_SetObject(throw_typ, throw_exc);
-    return KOS_ITER_ERROR;
   }
 
-  m->phase = (m->phase == KOS_MAP_CLOSED) ? KOS_MAP_CLOSED : KOS_MAP_IDLE;
-  m->busy = 0;
   PyErr_SetObject(throw_typ, throw_exc);
   return KOS_ITER_ERROR;
 }
@@ -453,9 +405,7 @@ static KosIterStepResult map_iter_throw(
    closes through its suite; a sync iterator through close(); an async
    iterator through aclose(), whose awaitable is demand-driven -- an
    immediate completion honors the cleanup, a genuine suspension takes
-   the cannot-honor fallback of closing the in-flight iterator (its
-   GeneratorExit runs the cleanup synchronously where possible), the
-   same posture the generator's demand-path teardown takes.
+   the cannot-honor fallback of closing the in-flight iterator.
 */
 static void map_close_source(KosMapObject *m) {
 
@@ -507,10 +457,10 @@ static int map_iter_close(PyObject *self) {
 
   KosMapObject *m = (KosMapObject *) self;
 
-  if (m->phase == KOS_MAP_CLOSED)
+  if (m->closed)
     return 0;
 
-  m->phase = KOS_MAP_CLOSED;
+  m->closed = 1;
   m->busy = 0;
   map_close_source(m);
 
@@ -523,12 +473,8 @@ static void map_iter_finish(PyObject *self, int exhausted) {
   KosMapObject *m = (KosMapObject *) self;
 
   m->busy = 0;
-  m->fetch_grafted = 0;
-  m->fetch_parked = 0;
   if (exhausted)
-    m->phase = KOS_MAP_CLOSED;
-  else if (m->phase != KOS_MAP_CLOSED)
-    m->phase = KOS_MAP_IDLE;
+    m->closed = 1;
 }
 
 
@@ -584,10 +530,9 @@ static PyObject *kosmap_new(
   Py_INCREF(func);
   m->func = func;
   m->source = source;
-  m->phase = KOS_MAP_IDLE;
+  m->closed = 0;
   m->busy = 0;
-  m->fetch_grafted = 0;
-  m->fetch_parked = 0;
+  m->nf_phase = KOS_MAP_NF_FETCH;
   return (PyObject *) m;
 }
 
@@ -682,7 +627,6 @@ KosEvaluatedTypeObject KosMapType = {
   },
   .kos_iter = {
     .ki_step = map_iter_step,
-    .ki_resume = map_iter_resume,
     .ki_throw = map_iter_throw,
     .ki_close = map_iter_close,
     .ki_finish = map_iter_finish,

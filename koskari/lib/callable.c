@@ -82,11 +82,11 @@ KosOpResult KosCallable_CallSlots(KosEvalState *es,
     PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
     int tail_call) {
 
-  if (slots->ki_vinstall)
+  if (slots->kc_vinstall)
     return callable_promote_normal(
-        es, slots->ki_vinstall(es, callable, args, nargs, kwnames, tail_call));
+        es, slots->kc_vinstall(es, callable, args, nargs, kwnames, tail_call));
 
-  if (! slots->ki_install) {
+  if (! slots->kc_install) {
     PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
     return EVAL_RAISE();
   }
@@ -102,7 +102,7 @@ KosOpResult KosCallable_CallSlots(KosEvalState *es,
       return EVAL_RAISE();
     }
   }
-  KosOpResult r = slots->ki_install(es, callable, tup, kwds, tail_call);
+  KosOpResult r = slots->kc_install(es, callable, tup, kwds, tail_call);
   Py_XDECREF(tup);
   Py_XDECREF(kwds);
   return callable_promote_normal(es, r);
@@ -114,12 +114,12 @@ KosOpResult KosCallable_CallArgsSlots(KosEvalState *es,
     PyObject *args_tuple, PyObject *kwds_dict,
     int tail_call) {
 
-  if (! slots->ki_install) {
+  if (! slots->kc_install) {
     PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
     return EVAL_RAISE();
   }
   return callable_promote_normal(
-      es, slots->ki_install(es, callable, args_tuple, kwds_dict, tail_call));
+      es, slots->kc_install(es, callable, args_tuple, kwds_dict, tail_call));
 }
 
 
@@ -159,12 +159,12 @@ KosOpResult KosCallable_CallNoArgs(KosEvalState *es,
 
   KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
 
-  if (! slots || ! slots->ki_install) {
+  if (! slots || ! slots->kc_install) {
     PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
     return EVAL_RAISE();
   }
   return callable_promote_normal(
-      es, slots->ki_install(es, callable, NULL, NULL, tail_call));
+      es, slots->kc_install(es, callable, NULL, NULL, tail_call));
 }
 
 
@@ -179,8 +179,8 @@ PyObject *Koskari_AsyncCall(
   /* The kos call interface: the type's Python-boundary worker. */
   if (KosEvaluated_Check(callable)) {
     KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
-    if (slots && slots->ki_pycall)
-      return slots->ki_pycall(callable, args, kwds);
+    if (slots && slots->kc_pycall)
+      return slots->kc_pycall(callable, args, kwds);
   }
 
   /* No suite worker: the callable speaks for itself. */
@@ -216,8 +216,8 @@ PyObject *KosCallAdapt_VectorAsync(
 
   if (KosEvaluated_Check(self)) {
     KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(self));
-    if (slots && slots->ki_pyvectorcall)
-      return slots->ki_pyvectorcall(self, args, nargsf, kwnames);
+    if (slots && slots->kc_pyvectorcall)
+      return slots->kc_pyvectorcall(self, args, nargsf, kwnames);
   }
 
   Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);

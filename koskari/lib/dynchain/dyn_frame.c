@@ -28,6 +28,7 @@ KosDynFrame *kos_dynframe_new(
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
+  KosDynFrame_NATIVE_STATE(frame) = NULL;
   KosDynFrame_FN(frame) = NULL;
   KosDynFrame_BACK_FRAME(frame) = NULL;
   return frame;
@@ -278,6 +279,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
+  KosDynFrame_NATIVE_STATE(frame) = NULL;
   /* the frame is being repurposed for a different function */
   Py_CLEAR(KosDynFrame_FN(frame));
 }

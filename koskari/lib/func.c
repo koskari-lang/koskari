@@ -273,7 +273,7 @@ static KosOpResult kos_vinstall_function(
 
 
 /**
-   ki_pycall worker: an Expression takes no arguments; evaluate it.
+   kc_pycall worker: an Expression takes no arguments; evaluate it.
 */
 static PyObject *expression_pycall(
     PyObject *self,
@@ -310,12 +310,12 @@ KosEvaluatedTypeObject KosExpressionType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .ki_install = kos_install_expression,
-    .ki_vinstall = kos_vinstall_expression,
-    .ki_wants_frame = 1,
-    .ki_wants_frame_fn = kos_expression_wants_frame,
-    .ki_pycall = expression_pycall,
-    .ki_pyvectorcall = NULL,
+    .kc_install = kos_install_expression,
+    .kc_vinstall = kos_vinstall_expression,
+    .kc_wants_frame = 1,
+    .kc_wants_frame_fn = kos_expression_wants_frame,
+    .kc_pycall = expression_pycall,
+    .kc_pyvectorcall = NULL,
   },
 };
 
@@ -1522,7 +1522,7 @@ static PyObject *boundmethod_repr(PyObject *self) {
 
 
 /**
-   ki_pycall worker: prepend self and follow the wrapped callable
+   kc_pycall worker: prepend self and follow the wrapped callable
    through the generic boundary entry.
 */
 static PyObject *boundmethod_pycall(
@@ -1568,12 +1568,12 @@ KosEvaluatedTypeObject KosBoundMethodType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .ki_install = kos_install_boundmethod,
-    .ki_vinstall = kos_vinstall_boundmethod,
-    .ki_wants_frame = 1,
-    .ki_wants_frame_fn = kos_boundmethod_wants_frame,
-    .ki_pycall = boundmethod_pycall,
-    .ki_pyvectorcall = NULL,
+    .kc_install = kos_install_boundmethod,
+    .kc_vinstall = kos_vinstall_boundmethod,
+    .kc_wants_frame = 1,
+    .kc_wants_frame_fn = kos_boundmethod_wants_frame,
+    .kc_pycall = boundmethod_pycall,
+    .kc_pyvectorcall = NULL,
   },
 };
 
@@ -2239,12 +2239,12 @@ KosEvaluatedTypeObject KosFunctionType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .ki_install = kos_install_function,
-    .ki_vinstall = kos_vinstall_function,
-    .ki_wants_frame = 1,
-    .ki_wants_frame_fn = kos_function_wants_frame,
-    .ki_pycall = KosFunction_Call,
-    .ki_pyvectorcall = KosFunction_VectorCall,
+    .kc_install = kos_install_function,
+    .kc_vinstall = kos_vinstall_function,
+    .kc_wants_frame = 1,
+    .kc_wants_frame_fn = kos_function_wants_frame,
+    .kc_pycall = KosFunction_Call,
+    .kc_pyvectorcall = KosFunction_VectorCall,
   },
 };
 

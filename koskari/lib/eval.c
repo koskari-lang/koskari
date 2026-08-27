@@ -180,7 +180,7 @@ static void clear_kos_agen_boundary_on_error(KosEvalState *es) {
   if (! boundary)
     return;
 
-  agen = (KosPyAsyncGen *) kos_dyn_iter_boundary_agen(boundary);
+  agen = (KosPyAsyncGen *) kos_dyn_iter_boundary_iter_obj(boundary);
   if (! agen)
     return;
 
@@ -227,6 +227,153 @@ static KosEvalMode revive_plan(
 }
 
 
+/* === KosIter provider step drive === */
+
+
+/**
+   One iteration request against a boundary node's armed record: the
+   single site API for "give me the next element of this thing". A
+   KosIter provider drives through its suite (graft-capable, mode
+   updates recorded); a sync iterator steps through tp_iternext; a
+   python async iterator through its eager-stepped __anext__. send_val
+   is borrowed (protocol send); *fast_out receives a new reference on
+   DELIVERED/EXHAUSTED, and the awaitable payload on EXIT.
+*/
+KosIterRequestStatus KosIterRequest_Next(
+    KosEvalState *es,
+    KosDynNode *node,
+    PyObject *send_val,
+    PyObject **fast_out) {
+
+  KosIterRequest *req = kos_dyn_iter_request(node);
+  PyObject *iter = req->iter;
+  KosIterSlots *islots;
+
+  if (KosIter_CheckSlots(iter, &islots)) {
+    PyObject *out = NULL;
+
+    /* Armed before the step: an INSTALLED outcome delivers through the
+       boundary, and deliveries can elect it mid-step. */
+    kos_dyn_iter_request_set_mode(node, KOS_IREQ_INSTALLED);
+
+    switch (islots->ki_step(es, iter, send_val, &out)) {
+      case KOS_ITER_VALUE:
+        kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
+        *fast_out = out;
+        return KOS_IREQ_DELIVERED;
+
+      case KOS_ITER_EXHAUSTED:
+        kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
+        *fast_out = out;
+        return KOS_IREQ_EXHAUSTED;
+
+      case KOS_ITER_INSTALLED:
+        return KOS_IREQ_CONTINUES;
+
+      case KOS_ITER_INSTALLED_VALUE:
+        kos_dyn_iter_request_set_mode(node, KOS_IREQ_GRAFT_VALUE);
+        return KOS_IREQ_CONTINUES;
+
+      case KOS_ITER_ERROR:
+      default:
+        kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
+        return KOS_IREQ_ERROR;
+    }
+  }
+
+  {
+    PyObject *value = NULL;
+    PyObject *_await = NULL;
+
+    switch (op_get_next_from_iter(es, &_await, iter, &value)) {
+      case GET_NEXT_VALUE:
+        *fast_out = value;
+        return KOS_IREQ_DELIVERED;
+
+      case GET_NEXT_EXHAUSTED:
+        *fast_out = NULL;
+        return KOS_IREQ_EXHAUSTED;
+
+      case GET_NEXT_SUSPEND:
+        /* Parked python async step: the awaited completion IS the
+           element, delivered through the boundary at revive. */
+        kos_dyn_iter_request_set_mode(node, KOS_IREQ_AWAITING_PY);
+        *fast_out = _await;
+        return KOS_IREQ_EXIT;
+
+      case GET_NEXT_ERROR:
+      default:
+        return KOS_IREQ_ERROR;
+    }
+  }
+}
+
+
+/**
+   Deliver a typed event into a boundary node's request: the one entry
+   the eval's delivery points call; the site completes through its
+   delivery tail. value is consumed.
+
+   :return: EVAL_NORMAL when the site completed and eval continues,
+            EVAL_RAISE with PyErr set, EVAL_FATAL on delivery failure
+*/
+KosOpResult KosIterRequest_Deliver(
+    KosEvalState *es,
+    KosDynNode *node,
+    KosIterWakeEvent ev,
+    PyObject *value) {
+
+  KosIterRequest *req = kos_dyn_iter_request(node);
+
+  if (! req) {
+    Py_XDECREF(value);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "iter request delivery to a non-boundary node");
+    return EVAL_RAISE();
+  }
+
+  switch (ev) {
+    case KOS_IWAKE_VALUE:
+      if (kos_dyn_iter_boundary_deliver_yield(es, node, value) < 0)
+        return EVAL_FATAL();
+      return EVAL_NORMAL();
+
+    case KOS_IWAKE_END: {
+      /* A generator completing at the site's boundary arrives with its
+         frame chain still installed; unwind it before delivering. */
+      KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
+      if (child && KosEvalState_DYN_TOP(es) == child) {
+        KosDynNode *parent = KosDynNode_PARENT(child);
+        if (parent && KosDynNode_IS_GEN(parent)) {
+          if (kos_dyn_teardown_gen_exhausted(es) < 0) {
+            Py_XDECREF(value);
+            return EVAL_FATAL();
+          }
+        }
+      }
+
+      if (kos_dyn_iter_boundary_deliver_exhausted(es, node, value) < 0) {
+        /* A re-emitting site (1-arg NEXT) completes by raising; a
+           delivery failure without an exception is fatal. */
+        if (KosDynNode_IS_YIELD_FROM(node) || PyErr_Occurred())
+          return EVAL_RAISE();
+        return EVAL_FATAL();
+      }
+      return EVAL_NORMAL();
+    }
+
+    case KOS_IWAKE_EXCEPTION:
+    default:
+      /* The raise walk owns exception routing until the wake layer
+         lands; nothing calls this yet. */
+      Py_XDECREF(value);
+      PyErr_SetString(PyExc_SystemError,
+                      "iter request exception delivery not yet routed");
+      return EVAL_RAISE();
+  }
+}
+
+
 /**
    Revive from AWAIT: push await result or set throw_exc. Use PY_RESUME_INJECT
    when set (driver pre-stored await result, e.g. coro.c
@@ -241,302 +388,6 @@ static KosEvalMode revive_plan(
 
    :return: EVAL_NORMAL, EVAL_AWAIT (with re-suspend value), or EVAL_RAISE
 */
-/* === KosIter provider step drive === */
-
-
-/**
-   Drive one provider step to a terminal outcome: ki_step, with every
-   KOS_ITER_AWAIT eager-stepped in place -- immediate completions feed
-   back into ki_step under the re-entry contract, failures mediate
-   through ki_throw (a mid-fetch StopAsyncIteration becomes provider
-   exhaustion), and a true suspension parks with a pre-stepped yield
-   item, per the EVAL_AWAIT payload convention. The return is the
-   suite's own result type; a returned KOS_ITER_AWAIT is a true park,
-   *out holding the pre-stepped yield item rather than a raw
-   awaitable. At most one of send
-   (protocol send for the first ki_step), resume (owner-only awaited
-   result for a parked provider, first drive via ki_resume), and the
-   throw pair may be set; all are owned when non-NULL and consumed.
-   On KOS_ITER_AWAIT, *parked_aw (when requested) receives the suspended
-   awaitable, for sites whose park state keeps it (YIELD_FROM's
-   INFLIGHT).
-*/
-static KosIterStepResult kos_iter_drive_step(
-    KosEvalState *es,
-    PyObject *iter_obj,
-    KosIterSlots *islots,
-    PyObject *send,
-    PyObject *resume,
-    PyObject *throw_typ,
-    PyObject *throw_exc,
-    PyObject **out,
-    PyObject **parked_aw) {
-
-  for (;;) {
-    PyObject *step_out = NULL;
-    KosIterStepResult r;
-
-    if (throw_exc) {
-      r = islots->ki_throw(es, iter_obj, throw_typ, throw_exc, &step_out);
-      Py_CLEAR(throw_typ);
-      Py_CLEAR(throw_exc);
-    } else if (resume) {
-      if (! islots->ki_resume) {
-        Py_DECREF(resume);
-        PyErr_SetString(PyExc_SystemError,
-                        "iter drive: provider has no resume entry");
-        return KOS_ITER_ERROR;
-      }
-      r = islots->ki_resume(es, iter_obj, resume, &step_out);
-      Py_CLEAR(resume);
-    } else {
-      r = islots->ki_step(es, iter_obj, send, &step_out);
-      Py_CLEAR(send);
-    }
-
-    switch (r) {
-      case KOS_ITER_VALUE:
-        *out = step_out;
-        return KOS_ITER_VALUE;
-
-      case KOS_ITER_EXHAUSTED:
-        *out = step_out;
-        return KOS_ITER_EXHAUSTED;
-
-      case KOS_ITER_INSTALLED:
-        return KOS_ITER_INSTALLED;
-
-      case KOS_ITER_INSTALLED_VALUE:
-        return KOS_ITER_INSTALLED_VALUE;
-
-      case KOS_ITER_INSTALLED_RESUME:
-        return KOS_ITER_INSTALLED_RESUME;
-
-      case KOS_ITER_AWAIT: {
-        int suspended = 0;
-        PyObject *yielded = NULL;
-        PyObject *done = KosEvalState_EagerStepAwaitable(
-            es, step_out, &suspended, &yielded);
-
-        if (done) {
-          Py_DECREF(step_out);
-          resume = done;
-          continue;
-        }
-        if (suspended && yielded) {
-          if (parked_aw)
-            *parked_aw = step_out;  /* transfer */
-          else
-            Py_DECREF(step_out);
-          *out = yielded;
-          return KOS_ITER_AWAIT;
-        }
-        Py_DECREF(step_out);
-        /* The awaitable failed: mediate through ki_throw. */
-        {
-          PyObject *tb = NULL;
-          PyErr_Fetch(&throw_typ, &throw_exc, &tb);
-          PyErr_NormalizeException(&throw_typ, &throw_exc, &tb);
-          if (throw_exc && tb)
-            PyException_SetTraceback(throw_exc, tb);
-          Py_XDECREF(tb);
-          if (! throw_exc) {
-            Py_XDECREF(throw_typ);
-            throw_typ = NULL;
-            PyErr_SetString(PyExc_SystemError,
-                            "iter drive: awaitable failed without error");
-            return KOS_ITER_ERROR;
-          }
-          continue;
-        }
-      }
-
-      case KOS_ITER_ERROR:
-      default:
-        return KOS_ITER_ERROR;
-    }
-  }
-}
-
-
-static KosSourceStepResult kos_source_map_step(KosIterStepResult r) {
-
-  switch (r) {
-    case KOS_ITER_VALUE:
-      return KOS_SRC_VALUE;
-    case KOS_ITER_EXHAUSTED:
-      return KOS_SRC_EXHAUSTED;
-    case KOS_ITER_AWAIT:
-      /* from the drive: a true park, payload pre-stepped */
-      return KOS_SRC_PARKED_PROVIDER;
-    case KOS_ITER_INSTALLED:
-      return KOS_SRC_INSTALLED;
-    case KOS_ITER_INSTALLED_RESUME:
-      return KOS_SRC_INSTALLED_RESUME;
-    case KOS_ITER_INSTALLED_VALUE:
-      return KOS_SRC_INSTALLED_VALUE;
-    case KOS_ITER_ERROR:
-    default:
-      return KOS_SRC_ERROR;
-  }
-}
-
-
-KosSourceStepResult KosEval_SourceStep(
-    KosEvalState *es, PyObject *iter, PyObject **out) {
-
-  KosIterSlots *islots;
-
-  if (KosIter_CheckSlots(iter, &islots))
-    return kos_source_map_step(
-        kos_iter_drive_step(es, iter, islots, NULL, NULL, NULL, NULL,
-                            out, NULL));
-
-  {
-    PyObject *value = NULL;
-    PyObject *_await = NULL;
-
-    switch (op_get_next_from_iter(es, &_await, iter, &value)) {
-      case GET_NEXT_VALUE:
-        *out = value;
-        return KOS_SRC_VALUE;
-      case GET_NEXT_EXHAUSTED:
-        *out = NULL;
-        return KOS_SRC_EXHAUSTED;
-      case GET_NEXT_SUSPEND:
-        *out = _await;
-        return KOS_SRC_PARKED;
-      case GET_NEXT_ERROR:
-      default:
-        return KOS_SRC_ERROR;
-    }
-  }
-}
-
-
-KosSourceStepResult KosEval_SourceResume(
-    KosEvalState *es, PyObject *iter, PyObject *value, PyObject **out) {
-
-  KosIterSlots *islots;
-
-  if (! KosIter_CheckSlots(iter, &islots)) {
-    PyErr_SetString(PyExc_SystemError,
-                    "source resume: not a KosIter provider");
-    return KOS_SRC_ERROR;
-  }
-
-  Py_INCREF(value);
-  return kos_source_map_step(
-      kos_iter_drive_step(es, iter, islots, NULL, value, NULL, NULL,
-                          out, NULL));
-}
-
-
-KosSourceStepResult KosEval_SourceThrow(
-    KosEvalState *es,
-    PyObject *iter,
-    PyObject *throw_typ,
-    PyObject *throw_exc,
-    PyObject **out) {
-
-  KosIterSlots *islots;
-
-  if (! KosIter_CheckSlots(iter, &islots)) {
-    PyErr_SetString(PyExc_SystemError,
-                    "source throw: not a KosIter provider");
-    return KOS_SRC_ERROR;
-  }
-
-  Py_INCREF(throw_typ);
-  Py_INCREF(throw_exc);
-  return kos_source_map_step(
-      kos_iter_drive_step(es, iter, islots, NULL, NULL, throw_typ,
-                          throw_exc, out, NULL));
-}
-
-
-/**
-   Feed a boundary-mediated delivery into the armed provider: value
-   (owned, a grafted source's yield or a frame return) enters through
-   ki_resume; end (a grafted source's completion) enters as a
-   StopAsyncIteration throw, which the provider converts per its own
-   protocol. The provider's outcome then completes the boundary: an
-   element delivers, exhaustion delivers, a fresh park re-arms, further
-   installed work continues in place.
-
-   :return: EVAL_NORMAL when the boundary completed or work continues
-            in-eval, EVAL_AWAIT on a fresh park, EVAL_RAISE on error
-*/
-static KosOpResult kos_eval_boundary_feed(
-    KosEvalState *es,
-    KosDynNode *boundary,
-    PyObject *value,
-    int is_end) {
-
-  PyObject *iter_obj = kos_dyn_iter_boundary_iter_obj(boundary);
-  KosIterSlots *islots;
-  PyObject *out = NULL;
-  KosIterStepResult outcome;
-
-  if (! iter_obj || ! KosIter_CheckSlots(iter_obj, &islots)) {
-    Py_XDECREF(value);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "mediated boundary lost its iter provider");
-    return EVAL_RAISE();
-  }
-
-  if (is_end) {
-    PyObject *exc = PyObject_CallNoArgs(PyExc_StopAsyncIteration);
-    Py_XDECREF(value);
-    if (! exc)
-      return EVAL_RAISE();
-    Py_INCREF(PyExc_StopAsyncIteration);
-    outcome = kos_iter_drive_step(es, iter_obj, islots, NULL, NULL,
-                                  PyExc_StopAsyncIteration, exc, &out,
-                                  NULL);
-  } else {
-    outcome = kos_iter_drive_step(es, iter_obj, islots, NULL, value,
-                                  NULL, NULL, &out, NULL);
-  }
-
-  switch (outcome) {
-    case KOS_ITER_VALUE:
-      if (kos_dyn_iter_boundary_deliver_yield(es, boundary, out) < 0)
-        return EVAL_RAISE();
-      return EVAL_NORMAL();
-
-    case KOS_ITER_EXHAUSTED:
-      if (kos_dyn_iter_boundary_deliver_exhausted(es, boundary, out) < 0)
-        return EVAL_RAISE();
-      return EVAL_NORMAL();
-
-    case KOS_ITER_AWAIT:
-      return EVAL_AWAIT(out);
-
-    case KOS_ITER_INSTALLED:
-    case KOS_ITER_INSTALLED_RESUME:
-      return EVAL_NORMAL();
-
-    case KOS_ITER_INSTALLED_VALUE:
-      /* the provider grafted a value-returning frame mid-feed: flip
-         the boundary to value mode for that frame's return */
-      if (KosDynNode_IS_FOREACH(boundary))
-        kos_dyn_foreach_set_iter_step_phase(
-            (KosDynForeach *) boundary,
-            KOS_FOREACH_ITER_STEP_AWAITING_KOS_VALUE);
-      else if (KosDynNode_IS_NEXT(boundary))
-        KosDynNext_RESUME(boundary) = KOS_DYN_NEXT_MODE_VALUE;
-      else if (KosDynNode_IS_YIELD_FROM(boundary))
-        KosDynYieldFrom_PHASE_SET(boundary, KOS_YF_PHASE_EXPECT_VALUE);
-      return EVAL_NORMAL();
-
-    case KOS_ITER_ERROR:
-    default:
-      return EVAL_RAISE();
-  }
-}
-
-
 static KosOpResult revive_await(
         KosEvalState *es,
         PyObject *send_val,
@@ -623,48 +474,29 @@ static KosOpResult revive_await(
   }
   if (to_push != NULL && KosEvalState_FRAME(es)) {
     KosDynNode *boundary = kos_dyn_find_iter_boundary(es);
-    if (boundary && kos_dyn_iter_boundary_resume_park(boundary)) {
-      /* The pending await was parked by a KosIter provider under the
-         re-entry contract: the awaited value feeds back into ki_step
-         and the provider's phase state routes it. The step outcome
-         then completes the boundary. */
-      PyObject *iter_obj = kos_dyn_iter_boundary_iter_obj(boundary);
-      KosIterSlots *islots;
-
-      if (! iter_obj || ! KosIter_CheckSlots(iter_obj, &islots)) {
-        if (owned)
-          Py_DECREF(to_push);
-        PyErr_SetString(PyExc_RuntimeError,
-                        "parked boundary lost its iter provider");
-        return EVAL_RAISE();
-      }
+    if (boundary && kos_dyn_iter_boundary_awaiting_py(boundary)) {
+      /* The pending await belongs to the armed boundary: a python
+         async step's awaited result IS the element. */
+      KosOpResult dr;
 
       if (! owned)
         Py_INCREF(to_push);
-
-      {
-        KosOpResult fr = kos_eval_boundary_feed(es, boundary, to_push, 0);
-        if (fr.kind != KOS_RES_NORMAL)
-          return fr;
+      dr = KosIterRequest_Deliver(es, boundary, KOS_IWAKE_VALUE, to_push);
+      if (dr.kind == KOS_RES_FATAL) {
+        if (! PyErr_Occurred())
+          PyErr_SetString(PyExc_RuntimeError,
+                          "boundary delivery failed at revive");
+        return EVAL_RAISE();
       }
+      if (dr.kind != KOS_RES_NORMAL)
+        return dr;
 
       if (kos_dyn_complete_pending_exit(es, 1) < 0)
         return EVAL_RAISE();
       return EVAL_NORMAL();
     }
 
-    if (boundary && kos_dyn_iter_boundary_awaiting_py(boundary)) {
-      /* The pending await was a suspended python iterator step
-         (OBJECT_NEXT / ITER_NEXT): its result is the step value,
-         delivered through the boundary -- push plus disarm -- rather
-         than the bare inject push. */
-      Py_INCREF(to_push);
-      if (kos_dyn_iter_boundary_deliver_yield(es, boundary, to_push) < 0) {
-        if (owned)
-          Py_DECREF(to_push);
-        return EVAL_RAISE();
-      }
-    } else if (KosEvalState_StackPushRef(es, to_push) < 0) {
+    if (KosEvalState_StackPushRef(es, to_push) < 0) {
       if (owned)
         Py_DECREF(to_push);
       return EVAL_RAISE();
@@ -1870,6 +1702,7 @@ static KosOpResult object_next_step(
 */
 static KosOpResult kos_eval_invoke_native_handler(
     KosEvalState *es,
+    KosNativeFrameEvent ev,
     PyObject *val) {
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
@@ -1879,7 +1712,55 @@ static KosOpResult kos_eval_invoke_native_handler(
   }
 
   KosNativeHandlerFn fn = (KosNativeHandlerFn) KosDynFrame_NATIVE_HANDLER(frame);
-  return fn(es, val);
+  return fn(es, ev, val);
+}
+
+
+/**
+   Complete a native frame with a return value: the return unwind walk
+   from the frame, FINALLY/async-unwind outcomes honored, frame
+   detached and freed, value delivered to the parent (push-or-await).
+   The handler slot must already be cleared. value consumed.
+*/
+KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value) {
+
+  KosDynFrame *detached = NULL;
+  KosWalkStatus unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es),
+                                            value);
+
+  if (unw == KOS_WALK_ERROR) {
+    Py_DECREF(value);
+    return EVAL_RAISE();
+  }
+  if (unw == KOS_WALK_FINALLY_TAKING_RETURN)
+    return EVAL_REPROLOGUE();
+  if (unw == KOS_WALK_ASYNC_UNWIND) {
+    KosEvalState_SetPendingReturn(es, value, 1);
+    return EVAL_REPROLOGUE();
+  }
+  if (unw == KOS_WALK_DELIM_TAKING_RETURN) {
+    /* A native frame runs no bytecode, so no delimited-invoke bookmark
+       can sit above it. Fail loudly rather than mis-deliver. */
+    Py_DECREF(value);
+    PyErr_SetString(PyExc_SystemError,
+                    "native frame return walk stopped at a"
+                    " delimited-invoke bookmark");
+    return EVAL_RAISE();
+  }
+
+  if (kos_dyn_detach_top_frame(es, &detached) < 0) {
+    Py_DECREF(value);
+    return EVAL_RAISE();
+  }
+  if (detached)
+    kos_dynframe_free(detached);
+
+  {
+    KosOpResult pr = KosEvalState_PushOrAwait(es, value);
+    if (pr.kind == KOS_RES_NORMAL)
+      return EVAL_REPROLOGUE();
+    return pr;
+  }
 }
 
 
@@ -2008,7 +1889,8 @@ entry_mode_dispatch:
     PyObject *val = KosEvalState_StackPopRef(es);
     if (val) {
       /* val is a new ref; handler takes ownership */
-      KosOpResult hr = kos_eval_invoke_native_handler(es, val);
+      KosOpResult hr = kos_eval_invoke_native_handler(
+          es, KOS_NFRAME_AWAITED, val);
       KosOpResult hs = apply_kos_op_result(es, hr);
       if (hs.kind != KOS_RES_NORMAL
           && hs.kind != KOS_RES_REPROLOGUE
@@ -2081,15 +1963,6 @@ static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
    normal mode, which drives any further hop (a YIELD_FROM receiver re-emits the
    value as its own yield on its next dispatch).
 */
-static KosOpResult eval_event_yield_deliver_to_boundary(
-    KosEvalState *es, KosDynNode *boundary, PyObject *val) {
-
-  if (kos_dyn_iter_boundary_deliver_yield(es, boundary, val) < 0)
-    return EVAL_FATAL();
-  return EVAL_REPROLOGUE();
-}
-
-
 
 /**
    Stage A of post-opcode YIELD: transition walk only (freeze is walk side).
@@ -2121,23 +1994,16 @@ static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
   {
     KosDynNode *boundary = kos_dyn_find_iter_boundary(es);
     if (boundary) {
-      if (kos_dyn_iter_boundary_resume_park(boundary)) {
-        /* Mediated boundary: the yield feeds the armed provider. */
-        KosOpResult fr = kos_eval_boundary_feed(es, boundary, val, 0);
-        if (fr.kind == KOS_RES_NORMAL)
-          return EVAL_REPROLOGUE();
-        if (fr.kind == KOS_RES_AWAIT) {
-          KosEvalState_MarkSuspendedNotRunning(es);
-          KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-          return fr;
-        }
-        {
-          KosOpResult rs;
-          KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
-          return rs;
-        }
+      KosOpResult dr = KosIterRequest_Deliver(es, boundary,
+                                              KOS_IWAKE_VALUE, val);
+      if (dr.kind == KOS_RES_NORMAL)
+        return EVAL_REPROLOGUE();
+      if (dr.kind == KOS_RES_RAISE) {
+        KosOpResult rs;
+        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
+        return rs;
       }
-      return eval_event_yield_deliver_to_boundary(es, boundary, val);
+      return dr;
     }
   }
   KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
@@ -2437,43 +2303,20 @@ static KosOpResult eval_event_return_at_frame(
 
     if (! consumer) {
       KosEvalState_MarkDeadAfterReturn(es);
-      KosContext_FLAGS(KosEvalState_CONTEXT(es)) |= KOS_CTX_GEN_ROOT_RETURN;
       return EVAL_RETURN(val);
     }
 
     if (KosDynNode_HAS_CAP(consumer, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)) {
-      if (kos_dyn_iter_boundary_resume_park(consumer)) {
-        /* Mediated boundary: the grafted source completed; unwind it
-           and feed the end into the armed provider. */
-        Py_XDECREF(val);
-        if (kos_dyn_teardown_gen_exhausted(es) < 0)
-          return EVAL_FATAL();
-        {
-          KosOpResult fr = kos_eval_boundary_feed(es, consumer, NULL, 1);
-          if (fr.kind == KOS_RES_NORMAL)
-            return EVAL_REPROLOGUE();
-          if (fr.kind == KOS_RES_AWAIT) {
-            KosEvalState_MarkSuspendedNotRunning(es);
-            KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-            return fr;
-          }
-          {
-            KosOpResult rs;
-            KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
-            return rs;
-          }
-        }
-      }
-
-      int r = kos_dyn_iter_boundary_deliver_return(es, consumer, val);
-      if (r == KOS_ITER_BOUNDARY_RAISE) {
+      KosOpResult dr = KosIterRequest_Deliver(es, consumer,
+                                              KOS_IWAKE_END, val);
+      if (dr.kind == KOS_RES_NORMAL)
+        return EVAL_REPROLOGUE();
+      if (dr.kind == KOS_RES_RAISE) {
         KosOpResult rs;
         KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
         return rs;
       }
-      if (r == KOS_ITER_BOUNDARY_ERROR)
-        return EVAL_FATAL();
-      return EVAL_REPROLOGUE();
+      return dr;
     }
 
     PyErr_Format(PyExc_RuntimeError,
@@ -2489,35 +2332,24 @@ static KosOpResult eval_event_return_at_frame(
      (push, disarm, ki_finish). */
   if (parent
       && KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
-      && (kos_dyn_iter_boundary_value_mode(parent)
-          || kos_dyn_iter_boundary_resume_park(parent))) {
-    int mediated = kos_dyn_iter_boundary_resume_park(parent);
+      && kos_dyn_iter_boundary_value_mode(parent)) {
 
     if (unlikely(kos_dyn_pop_frame(es) < 0)) {
       Py_DECREF(val);
       return EVAL_FATAL();
     }
 
-    if (! mediated) {
-      if (kos_dyn_iter_boundary_deliver_yield(es, parent, val) < 0)
-        return EVAL_FATAL();
-      return EVAL_REPROLOGUE();
-    }
-
     {
-      KosOpResult fr = kos_eval_boundary_feed(es, parent, val, 0);
-      if (fr.kind == KOS_RES_NORMAL)
+      KosOpResult dr = KosIterRequest_Deliver(es, parent,
+                                              KOS_IWAKE_VALUE, val);
+      if (dr.kind == KOS_RES_NORMAL)
         return EVAL_REPROLOGUE();
-      if (fr.kind == KOS_RES_AWAIT) {
-        KosEvalState_MarkSuspendedNotRunning(es);
-        KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-        return fr;
-      }
-      {
+      if (dr.kind == KOS_RES_RAISE) {
         KosOpResult rs;
         KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
         return rs;
       }
+      return dr;
     }
   }
 
@@ -2595,7 +2427,8 @@ static inline KosOpResult eval_parent_return_deliver_impl(
     KosEvalState *es, PyObject *val) {
 
   if (unlikely(KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) != NULL)) {
-    KosOpResult hr = kos_eval_invoke_native_handler(es, val);
+    KosOpResult hr = kos_eval_invoke_native_handler(
+        es, KOS_NFRAME_CALL_VALUE, val);
     return apply_kos_op_result(es, hr);
   }
 
@@ -2637,7 +2470,8 @@ static KosOpResult eval_step_drain_transfer_plan(KosEvalState *es) {
    Caller must only invoke when the eval frame has NATIVE_HANDLER.
 */
 static KosOpResult eval_step_native_iteration(KosEvalState *es) {
-  KosOpResult res = kos_eval_invoke_native_handler(es, NULL);
+  KosOpResult res = kos_eval_invoke_native_handler(
+      es, KOS_NFRAME_ITERATE, NULL);
   if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE)
     return EVAL_REPROLOGUE();
   {
@@ -2995,8 +2829,9 @@ KosOpResult koskari_eval(
     kos_dyn_resync_chain(&es);
 
   /* On fresh entry, verify that FAST-slot code runs in a capable namespace.
-     Resumes are safe: the namespace was already validated on first entry. */
-  if (KosCode_USES_FAST(KosEvalState_CODE(&es))) {
+     Resumes are safe: the namespace was already validated on first entry.
+     A native frame carries no code. */
+  if (KosEvalState_CODE(&es) && KosCode_USES_FAST(KosEvalState_CODE(&es))) {
     PyObject *ns = KosEvalState_NAMESPACE(&es);
     if (! KosNamespace_SupportsFast(ns)) {
       PyErr_Format(PyExc_RuntimeError,

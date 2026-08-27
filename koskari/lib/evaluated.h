@@ -30,7 +30,7 @@
    Each in-eval interface family is a suite embedded inline, mirroring
    CPython's tp_as_* design without the indirection: the call suite
    here, the iter suite when it lands. Membership in a family is by its
-   defining slot (a callable has ki_install or ki_vinstall), not by a
+   defining slot (a callable has kc_install or kc_vinstall), not by a
    pointer being non-NULL.
 
    Detection is a marker-base subtype check against KosEvaluatedType,
@@ -73,30 +73,30 @@ typedef KosOpResult (*KosVectorInstallFunc)(
 /**
    Optional per-instance wants_frame. If non-NULL, called with the callable
    instance; return 1 if the call needs a frame (push or reset), 0 if not.
-   Overrides ki_wants_frame when present.
+   Overrides kc_wants_frame when present.
 */
 typedef int (*KosCallableWantsFrameFunc)(PyObject *callable);
 
 
 /**
    The call suite: the in-eval call interface plus the Python-boundary
-   workers. A type whose suite carries ki_install or ki_vinstall is a
+   workers. A type whose suite carries kc_install or kc_vinstall is a
    KosCallable.
 
-   ki_pycall is the Python-boundary worker: how this callable is invoked
+   kc_pycall is the Python-boundary worker: how this callable is invoked
    from outside any running eval, returning whatever its surface dictates
    (a Coroutine or AsyncGenerator for async-surface types, a completed
-   value for demand-surface types). ki_pyvectorcall is its optional
+   value for demand-surface types). kc_pyvectorcall is its optional
    vector-optimized variant. Koskari_AsyncCall and the KosCallAdapt_*
    fillers dispatch through these; no caller needs per-type knowledge.
 */
 typedef struct KosCallSlots {
-  KosInstallFunc ki_install;              /* tuple+dict; may be NULL */
-  KosVectorInstallFunc ki_vinstall;       /* vectorcall; may be NULL */
-  int ki_wants_frame;                     /* default when fn is NULL */
-  KosCallableWantsFrameFunc ki_wants_frame_fn;  /* if non-NULL, overrides */
-  ternaryfunc ki_pycall;                  /* Python-boundary call worker */
-  vectorcallfunc ki_pyvectorcall;         /* vector variant; may be NULL */
+  KosInstallFunc kc_install;              /* tuple+dict; may be NULL */
+  KosVectorInstallFunc kc_vinstall;       /* vectorcall; may be NULL */
+  int kc_wants_frame;                     /* default when fn is NULL */
+  KosCallableWantsFrameFunc kc_wants_frame_fn;  /* if non-NULL, overrides */
+  ternaryfunc kc_pycall;                  /* Python-boundary call worker */
+  vectorcallfunc kc_pyvectorcall;         /* vector variant; may be NULL */
 } KosCallSlots;
 
 
@@ -104,30 +104,22 @@ typedef struct KosCallSlots {
    Outcomes of an in-eval iterator step or throw.
 
    VALUE and EXHAUSTED complete synchronously; the site proceeds (push,
-   branch to else pc, default, StopIteration per site rules). AWAIT
-   parks the site on a Python awaitable with its boundary armed.
-   INSTALLED means the provider spliced its frames onto the consumer
-   context; the site returns EVAL_NORMAL and the result is delivered
-   later at the site's dyn node by the return/raise walks, which call
-   ki_finish. ERROR leaves PyErr set; on any non-INSTALLED outcome the
-   provider has fully undone its own partial state.
+   branch to else pc, default, StopIteration per site rules). The
+   INSTALLED pair means the provider spliced work onto the consumer
+   context; the site re-enters the prologue and the result is delivered
+   later at the site's boundary node. ERROR leaves PyErr set; on any
+   non-INSTALLED outcome the provider has fully undone its own partial
+   state. A provider whose step needs its own suspensions or
+   sub-iteration runs them as a native frame program (see
+   KosNativeHandlerFn); the suite itself never parks.
 */
 typedef enum {
   KOS_ITER_VALUE = 0,   /* *out: the element (new ref) */
   KOS_ITER_EXHAUSTED,   /* *out: return payload (new ref) or NULL */
-  KOS_ITER_AWAIT,       /* *out: awaitable (new ref); site parks */
-  KOS_ITER_INSTALLED,   /* spliced into consumer eval; deferred delivery */
-  KOS_ITER_INSTALLED_VALUE, /* spliced frames whose frame return IS the
+  KOS_ITER_INSTALLED,   /* spliced own frames; deferred delivery */
+  KOS_ITER_INSTALLED_VALUE, /* spliced a frame whose return IS the
                                element: the site arms its boundary in
-                               value mode and the return delivers as
-                               the step value */
-  KOS_ITER_INSTALLED_RESUME, /* spliced work mediated by the provider:
-                               the site arms its boundary in resume
-                               mode, and every delivery -- a grafted
-                               source's yield, its return, an awaited
-                               value -- feeds the provider's
-                               ki_resume/ki_throw instead of
-                               completing the site */
+                               value mode */
   KOS_ITER_ERROR,       /* PyErr set; *out untouched */
 } KosIterStepResult;
 
@@ -137,22 +129,7 @@ typedef KosIterStepResult (*KosIterStepFunc)(
     PyObject *self,
     PyObject *send_val,        /* borrowed; NULL for plain next. A
                                   PROTOCOL send only (a generator's
-                                  sent value); never the awaited-result
-                                  feed, which enters through ki_resume */
-    PyObject **out);
-
-/**
-   Owner-only re-entry after a KOS_ITER_AWAIT park: value is the
-   completed awaitable's result. Only the park's owner may call this --
-   the armed boundary in-eval, the parked stepper Python-side. A
-   provider that never parks implements it as an error; a busy provider
-   refuses ki_step entirely, so the two entry kinds are never inferred
-   from context.
-*/
-typedef KosIterStepResult (*KosIterResumeFunc)(
-    KosEvalState *es,
-    PyObject *self,
-    PyObject *value,           /* borrowed; the awaited result */
+                                  sent value) */
     PyObject **out);
 
 typedef KosIterStepResult (*KosIterThrowFunc)(
@@ -192,7 +169,6 @@ typedef struct KosContext *(*KosIterPyCtxFunc)(PyObject *self);
 */
 typedef struct KosIterSlots {
   KosIterStepFunc ki_step;
-  KosIterResumeFunc ki_resume;
   KosIterThrowFunc ki_throw;
   KosIterCloseFunc ki_close;
   KosIterFinishFunc ki_finish;

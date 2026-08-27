@@ -238,12 +238,12 @@ static KosEvaluatedTypeObject KosProcedureCallableType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosDemandCallableType),
   },
   .kos_call = {
-    .ki_install = procedure_kos_install,
-    .ki_vinstall = NULL,
-    .ki_wants_frame = 0,
-    .ki_wants_frame_fn = NULL,
-    .ki_pycall = procedure_tp_call,
-    .ki_pyvectorcall = NULL,
+    .kc_install = procedure_kos_install,
+    .kc_vinstall = NULL,
+    .kc_wants_frame = 0,
+    .kc_wants_frame_fn = NULL,
+    .kc_pycall = procedure_tp_call,
+    .kc_pyvectorcall = NULL,
   },
 };
 

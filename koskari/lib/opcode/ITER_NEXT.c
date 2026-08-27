@@ -15,72 +15,11 @@
 
 
 /**
-  ITER_NEXT over a KosIter provider: arm the FOREACH step phase and
-  dispatch the provider's step slot.  Out of line -- this runs once per
-  flattened provider step, never on the sync iteration fast path.
-*/
-static KOS_NOINLINE KosOpResult iter_next_step_kos_iter(
-    KosEvalState *es,
-    KosOp *insn,
-    KosDynNode *region,
-    PyObject *iter,
-    KosIterSlots *islots) {
-
-  KosDynForeach *fe = (KosDynForeach *) region;
-  PyObject *out = NULL;
-
-  /* Arm the boundary before stepping: an INSTALLED drive delivers
-     through it, and the provider never touches site state. */
-  KosDynForeach_ITER_NEXT_ELSE_PC(fe) = KosOp_ARG(insn);
-  kos_dyn_foreach_set_iter_step_phase(
-      fe, KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN);
-
-  switch (kos_iter_drive_step(es, iter, islots, NULL, NULL, NULL, NULL, &out, NULL)) {
-    case KOS_ITER_INSTALLED:
-      return EVAL_NORMAL();
-
-    case KOS_ITER_INSTALLED_VALUE:
-      kos_dyn_foreach_set_iter_step_phase(
-          fe, KOS_FOREACH_ITER_STEP_AWAITING_KOS_VALUE);
-      return EVAL_NORMAL();
-
-    case KOS_ITER_INSTALLED_RESUME:
-      kos_dyn_foreach_set_iter_step_phase(
-          fe, KOS_FOREACH_ITER_STEP_AWAITING_KOS_ITER);
-      return EVAL_NORMAL();
-
-    case KOS_ITER_VALUE:
-      kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
-      if (KosEvalState_StackPUSH(es, out) < 0)
-        return EVAL_RAISE();
-      return EVAL_NORMAL();
-
-    case KOS_ITER_EXHAUSTED:
-      kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
-      Py_XDECREF(out);
-      KosDynForeach_EXHAUSTED(fe) = 1;
-      KosEvalState_SET_PC(es, KosOp_ARG(insn));
-      return EVAL_NORMAL();
-
-    case KOS_ITER_AWAIT:
-      /* Provider park under the re-entry contract: the awaited value
-         feeds back into ki_step at revive. */
-      kos_dyn_foreach_set_iter_step_phase(
-          fe, KOS_FOREACH_ITER_STEP_AWAITING_KOS_ITER);
-      return EVAL_AWAIT(out);
-
-    case KOS_ITER_ERROR:
-    default:
-      kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
-      return EVAL_RAISE();
-  }
-}
-
-
-/**
-  ITER_NEXT: region-based loop step; arg = else PC. Same KosIter vs
-  Python async vs sync iterator dispatch as NEXT. Branch to else_pc on
-  exhaustion. Must be inside PUSH_FOREACH block. Auto-await.
+  ITER_NEXT: region-based loop step; arg = else PC. One iteration
+  request against the FOREACH node's armed record -- provider, python
+  async, and sync iterators all step through KosIterRequest_Next.
+  Branch to else_pc on exhaustion. Must be inside PUSH_FOREACH block.
+  Auto-await.
 */
 KOS_OP_HANDLER(ITER_NEXT) {
   KosDynNode *region = kos_dyn_find_loop(es);
@@ -91,44 +30,38 @@ KOS_OP_HANDLER(ITER_NEXT) {
     return EVAL_RAISE();
   }
 
-  PyObject *iter = KosDynForeach_ITER((KosDynForeach *) region);
-  KosIterSlots *islots;
-  if (unlikely(KosIter_CheckSlots(iter, &islots)))
-    return iter_next_step_kos_iter(es, insn, region, iter, islots);
+  /* The else pc is armed before the step so a delivery or a raise-walk
+     exhaustion conversion lands on the right resume point. */
+  KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) =
+      KosOp_ARG(insn);
 
-  PyObject *value = NULL;
-  PyObject *_await = NULL;
-  KosGetNextResult get_res = op_get_next_from_iter(es, &_await, iter, &value);
-  switch (get_res) {
-    case GET_NEXT_VALUE:
-      if (unlikely(KosEvalState_StackPushRef(es, value) < 0)) {
-        Py_DECREF(value);
+  {
+    PyObject *out = NULL;
+
+    switch (KosIterRequest_Next(es, region, NULL, &out)) {
+      case KOS_IREQ_DELIVERED:
+        if (unlikely(KosEvalState_StackPUSH(es, out) < 0))
+          return EVAL_RAISE();
+        return EVAL_NORMAL();
+
+      case KOS_IREQ_EXHAUSTED:
+        Py_XDECREF(out);
+        KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
+        KosEvalState_SET_PC(es, KosOp_ARG(insn));
+        return EVAL_NORMAL();
+
+      case KOS_IREQ_CONTINUES:
+        /* Installed work may be a code-less native frame: re-enter
+           the prologue rather than dispatching from stale registers. */
+        return EVAL_REPROLOGUE();
+
+      case KOS_IREQ_EXIT:
+        return EVAL_AWAIT(out);
+
+      case KOS_IREQ_ERROR:
+      default:
         return EVAL_RAISE();
-      }
-      Py_DECREF(value);
-      return EVAL_NORMAL();
-
-    case GET_NEXT_EXHAUSTED:
-      KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-      KosEvalState_SET_PC(es, KosOp_ARG(insn));
-      return EVAL_NORMAL();
-
-    case GET_NEXT_SUSPEND:
-      /* The step is parked on its await: arm the else pc and the
-         in-flight phase so the awaited value revives through the
-         boundary and StopAsyncIteration from the parked step converts
-         to exhaustion (branch to else) at the raise walk. */
-      KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) =
-          KosOp_ARG(insn);
-      kos_dyn_foreach_set_iter_step_phase(
-          (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_AWAITING_PY);
-      return EVAL_AWAIT(_await);
-
-    case GET_NEXT_ERROR:
-      return EVAL_RAISE();
-
-    default:
-      return EVAL_RAISE();
+    }
   }
 }
 

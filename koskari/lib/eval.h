@@ -112,10 +112,6 @@ typedef enum KosContextFlags {
   KOS_CTX_FROZEN          = 0x02,
   KOS_CTX_DEAD            = 0x04,
   KOS_CTX_IN_TRANSFER     = 0x10,  /* executing a transfer plan */
-  KOS_CTX_GEN_ROOT_RETURN = 0x20,  /* the eval's RETURN came from a gen
-                                      completing at the root: a hosted
-                                      mediated drive feeds end, not the
-                                      value */
 } KosContextFlags;
 
 
@@ -179,12 +175,40 @@ typedef enum KosGetNextResult {
 
 
 /**
-   Function-pointer type for native frame handlers: receives the eval state
-   and an optional delivered value (new reference; handler takes ownership;
-   NULL for the iteration call with no delivery).  Returns a KosOpResult
-   describing the outcome; EVAL_REPROLOGUE() means "handled, continue normally".
+   Typed wake events for a native frame handler: the same delivery
+   facility extent nodes have, for a native program on the chain.
+
+   ITERATE is the eval loop's cadence call (no value); CALL_VALUE is a
+   callee frame's return; AWAITED is an awaited resume's value;
+   EXCEPTION offers the pending PyErr during the raise walk -- a
+   handler that does not consume it returns EVAL_RAISE() and the walk
+   pops the frame.
 */
-typedef KosOpResult (*KosNativeHandlerFn)(KosEvalState *, PyObject *);
+typedef enum KosNativeFrameEvent {
+  KOS_NFRAME_ITERATE = 0,
+  KOS_NFRAME_CALL_VALUE,
+  KOS_NFRAME_AWAITED,
+  KOS_NFRAME_EXCEPTION,
+} KosNativeFrameEvent;
+
+
+/**
+   Function-pointer type for native frame handlers. value is a new
+   reference the handler owns (NULL for ITERATE and EXCEPTION).
+   Returns a KosOpResult describing the outcome; EVAL_REPROLOGUE()
+   means "handled, continue normally".
+*/
+typedef KosOpResult (*KosNativeHandlerFn)(
+    KosEvalState *, KosNativeFrameEvent, PyObject *);
+
+
+/**
+   Complete a native frame with a return value: run the return unwind
+   walk from the frame, honor FINALLY/async-unwind outcomes, detach
+   and free the frame, and deliver the value to the parent. The native
+   handler slot must already be cleared. value is consumed.
+*/
+KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value);
 
 
 /* === KosContext: VM execution context === */
@@ -633,6 +657,39 @@ void KosContext_Free(KosContext *ctx);
 /* === Drive loop === */
 
 /**
+   Duck-typed asyncio.isfuture: futures and tasks are handles by
+   convention, exempt from ambient auto-await at implicit sites.
+
+   :return: 1 (future), 0 (not a future), -1 (error; PyErr set)
+*/
+int KosEval_IsFuture(PyObject *val);
+
+
+/**
+   One iteration request against a boundary node's armed record: the
+   single site API for stepping the node's iterator over all three
+   protocols. send_val borrowed; *fast_out new ref on
+   DELIVERED/EXHAUSTED, the awaitable payload on EXIT.
+*/
+KosIterRequestStatus KosIterRequest_Next(
+    KosEvalState *es,
+    KosDynNode *node,
+    PyObject *send_val,
+    PyObject **fast_out);
+
+
+/**
+   Deliver a typed event into a boundary node's iteration request: the
+   one entry the eval delivery points call. value is consumed.
+*/
+KosOpResult KosIterRequest_Deliver(
+    KosEvalState *es,
+    KosDynNode *node,
+    KosIterWakeEvent ev,
+    PyObject *value);
+
+
+/**
   Execute the VM until a boundary event occurs.
 
   This is the main entry point for driving execution. The function
@@ -645,71 +702,15 @@ void KosContext_Free(KosContext *ctx);
   The caller owns the reference in the returned KosOpResult.val.
 
   :param ctx: the execution context
-  :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM; NULL on first call or when N/A
-  :param throw_exc: exception to inject when resuming with throw; NULL when resuming with value or on first call
+  :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM;
+      NULL on first call or when N/A
+  :param throw_exc: exception to inject when resuming with throw; NULL when
+      resuming with value or on first call
 
-  When non-NULL, send_val and throw_typ/throw_exc are consumed (ownership
-  transferred). Caller must not use them after the call. Pass NULL to
-  borrow nothing.
+  send_val and the throw pair are borrowed: the entry phase takes its
+  own references for whatever it delivers, and the caller releases its
+  own afterward.
 */
-/**
-   Duck-typed asyncio.isfuture: futures and tasks are handles by
-   convention, exempt from ambient auto-await at implicit sites.
-
-   :return: 1 (future), 0 (not a future), -1 (error; PyErr set)
-*/
-int KosEval_IsFuture(PyObject *val);
-
-
-/**
-   One three-protocol iterator step -- the shared source step behind
-   NEXT, ITER_NEXT, YIELD_FROM, and a provider's own sub-iteration
-   (KosMap's fetch): a KosIter provider steps through its suite
-   (graft-capable), a sync iterator through tp_iternext, a python async
-   iterator through its eager-stepped __anext__.
-*/
-typedef enum KosSourceStepResult {
-  KOS_SRC_VALUE = 0,   /* *out: the element (new ref) */
-  KOS_SRC_EXHAUSTED,   /* *out: payload (new ref) or NULL */
-  KOS_SRC_PARKED,      /* *out: pre-stepped yield item; py_await_iter
-                          armed on the context; the awaited completion
-                          IS the element */
-  KOS_SRC_PARKED_PROVIDER, /* *out: park payload from inside a KosIter
-                              provider; the awaited completion resumes
-                              the provider via KosEval_SourceResume */
-  KOS_SRC_INSTALLED,   /* the provider installed its own frame; the
-                          mediated deliveries are its step outcomes */
-  KOS_SRC_INSTALLED_RESUME, /* the provider armed mediation for its own
-                               source; deliveries forward into it */
-  KOS_SRC_INSTALLED_VALUE,  /* the provider grafted a value frame; the
-                               next mediated delivery is its element */
-  KOS_SRC_ERROR,       /* PyErr set */
-} KosSourceStepResult;
-
-KosSourceStepResult KosEval_SourceStep(
-    KosEvalState *es, PyObject *iter, PyObject **out);
-
-
-/**
-   Resume a KosIter provider source whose step parked
-   (KOS_SRC_PARKED_PROVIDER) with the awaited value. value is borrowed.
-*/
-KosSourceStepResult KosEval_SourceResume(
-    KosEvalState *es, PyObject *iter, PyObject *value, PyObject **out);
-
-
-/**
-   Throw into a KosIter provider source whose step parked
-   (KOS_SRC_PARKED_PROVIDER). throw_typ and throw_exc are borrowed.
-*/
-KosSourceStepResult KosEval_SourceThrow(
-    KosEvalState *es,
-    PyObject *iter,
-    PyObject *throw_typ,
-    PyObject *throw_exc,
-    PyObject **out);
-
-
 KosOpResult koskari_eval(
     KosContext *ctx,
     PyObject *send_val,

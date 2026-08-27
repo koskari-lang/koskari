@@ -811,12 +811,12 @@ KosEvaluatedTypeObject KosDemandCallableType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .ki_install = demand_kos_install,
-    .ki_vinstall = demand_kos_vinstall,
-    .ki_wants_frame = 0,
-    .ki_wants_frame_fn = demand_wants_frame,
-    .ki_pycall = KosCallAdapt_CallDemand,
-    .ki_pyvectorcall = KosCallAdapt_VectorDemand,
+    .kc_install = demand_kos_install,
+    .kc_vinstall = demand_kos_vinstall,
+    .kc_wants_frame = 0,
+    .kc_wants_frame_fn = demand_wants_frame,
+    .kc_pycall = KosCallAdapt_CallDemand,
+    .kc_pyvectorcall = KosCallAdapt_VectorDemand,
   },
 };
 

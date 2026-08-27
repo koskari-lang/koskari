@@ -645,12 +645,12 @@ KosEvaluatedTypeObject KosPartialCallableType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .ki_install = kospartial_kos_install,
-    .ki_vinstall = NULL,
-    .ki_wants_frame = 0,
-    .ki_wants_frame_fn = kospartial_wants_frame,
-    .ki_pycall = KosPartial_Call,
-    .ki_pyvectorcall = NULL,
+    .kc_install = kospartial_kos_install,
+    .kc_vinstall = NULL,
+    .kc_wants_frame = 0,
+    .kc_wants_frame_fn = kospartial_wants_frame,
+    .kc_pycall = KosPartial_Call,
+    .kc_pyvectorcall = NULL,
   },
 };
 

@@ -1898,13 +1898,7 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
       KosIterSlots *islots;
       if (iter_obj && KosIter_CheckSlots(iter_obj, &islots))
         islots->ki_finish(iter_obj, 0);
-      if (KosDynNode_IS_FOREACH(node))
-        kos_dyn_foreach_set_iter_step_phase(
-            (KosDynForeach *) node, KOS_FOREACH_ITER_STEP_IDLE);
-      else if (KosDynNode_IS_NEXT(node))
-        KosDynNext_RESUME(node) = KOS_DYN_NEXT_MODE_STEP;
-      else if (KosDynNode_IS_YIELD_FROM(node))
-        KosDynYieldFrom_PHASE_SET(node, KOS_YF_PHASE_DRIVING);
+      kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
     }
   }
 

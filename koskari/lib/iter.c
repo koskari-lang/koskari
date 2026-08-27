@@ -456,10 +456,8 @@ static KosIterStepResult agen_iter_drive(
     }
 
     agen->in_progress = 1;
-    if (agen_attach_gen_flatten(es, agen, gen) < 0) {
-      agen->in_progress = 0;
-      return KOS_ITER_ERROR;
-    }
+    if (agen_attach_gen_flatten(es, agen, gen) < 0)
+      goto drive_error;
 
     agen->started = 1;
 
@@ -470,14 +468,20 @@ static KosIterStepResult agen_iter_drive(
     if (frozen && send_val && ! PyErr_Occurred()) {
       PyObject *popped = KosEvalState_StackPopRef(es);
       if (! popped)
-        return KOS_ITER_ERROR;
+        goto drive_error;
       Py_DECREF(popped);
       if (KosEvalState_StackPushRef(es, send_val) < 0)
-        return KOS_ITER_ERROR;
+        goto drive_error;
     }
   }
 
   return KOS_ITER_INSTALLED;
+
+drive_error:
+  /* Every failed drive releases the busy mark; a wedged in_progress
+     would refuse all further iteration of a still-live generator. */
+  agen->in_progress = 0;
+  return KOS_ITER_ERROR;
 }
 
 
@@ -488,25 +492,6 @@ static KosIterStepResult agen_iter_step(
     PyObject **out) {
 
   return agen_iter_drive(es, (KosPyAsyncGen *) self, send_val, out);
-}
-
-
-static KosIterStepResult agen_iter_resume(
-    KosEvalState *es,
-    PyObject *self,
-    PyObject *value,
-    PyObject **out) {
-
-  (void) es;
-  (void) self;
-  (void) value;
-  (void) out;
-
-  /* The generator never parks (its steps graft); a resume entry means
-     a caller violated the park-ownership contract. */
-  PyErr_SetString(PyExc_RuntimeError,
-                  "async generator was not parked");
-  return KOS_ITER_ERROR;
 }
 
 
@@ -589,7 +574,6 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
   },
   .kos_iter = {
     .ki_step = agen_iter_step,
-    .ki_resume = agen_iter_resume,
     .ki_throw = agen_iter_throw,
     .ki_close = agen_iter_close,
     .ki_finish = agen_iter_finish,

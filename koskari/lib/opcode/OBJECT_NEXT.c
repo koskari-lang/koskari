@@ -27,10 +27,10 @@ static KosOpResult object_next_step(
     PyObject *default_val,
     uint16_t n) {
 
-  /* KosIter provider: flatten into the same eval loop via its step
-     slot, with the NEXT boundary node armed for delivery. */
-  KosIterSlots *islots;
-  if (KosIter_CheckSlots(iter, &islots)) {
+  /* KosIter provider: push the NEXT boundary node and run one request
+     against it; the drive flattens into the same eval loop. */
+  if (KosIter_Check(iter)) {
+    KosDynNode *bnode;
     PyObject *out = NULL;
 
     if (kos_dyn_push_next_boundary(es, iter, default_val, (int) n) < 0) {
@@ -38,71 +38,43 @@ static KosOpResult object_next_step(
       Py_XDECREF(default_val);
       return EVAL_RAISE();
     }
+    bnode = KosEvalState_DYN_TOP(es);
+    Py_DECREF(iter);
+    Py_XDECREF(default_val);
 
-    KosIterStepResult step = kos_iter_drive_step(
-        es, iter, islots, NULL, NULL, NULL, NULL, &out, NULL);
-    switch (step) {
-      case KOS_ITER_INSTALLED:
-        Py_DECREF(iter);
-        Py_XDECREF(default_val);
-        return EVAL_NORMAL();
-
-      case KOS_ITER_INSTALLED_VALUE:
-      case KOS_ITER_INSTALLED_RESUME: {
-        /* dyn_top may be a grafted frame; the boundary is on its
-           parent chain */
-        KosDynNode *bnode = KosEvalState_DYN_TOP(es);
-        while (bnode && ! KosDynNode_IS_NEXT(bnode))
-          bnode = KosDynNode_PARENT(bnode);
-        if (bnode)
-          KosDynNext_RESUME(bnode) =
-              (step == KOS_ITER_INSTALLED_VALUE) ? KOS_DYN_NEXT_MODE_VALUE
-                                           : KOS_DYN_NEXT_MODE_RESUME;
-        Py_DECREF(iter);
-        Py_XDECREF(default_val);
-        return EVAL_NORMAL();
-      }
-
-      case KOS_ITER_VALUE:
+    switch (KosIterRequest_Next(es, bnode, NULL, &out)) {
+      case KOS_IREQ_DELIVERED:
         kos_dyn_next_abort_after_failed_attach(es);
-        Py_DECREF(iter);
-        Py_XDECREF(default_val);
         if (KosEvalState_StackPUSH(es, out) < 0)
           return EVAL_RAISE();
         return EVAL_NORMAL();
 
-      case KOS_ITER_EXHAUSTED:
-        kos_dyn_next_abort_after_failed_attach(es);
+      case KOS_IREQ_EXHAUSTED:
         Py_XDECREF(out);
-        Py_DECREF(iter);
-        if (n == 2 && default_val) {
-          if (KosEvalState_StackPushRef(es, default_val) < 0) {
-            Py_XDECREF(default_val);
+        if (n == 2) {
+          PyObject *dv = KosDynNext_DEFAULT_VAL(bnode);
+          if (dv && KosEvalState_StackPushRef(es, dv) < 0) {
+            kos_dyn_next_abort_after_failed_attach(es);
             return EVAL_RAISE();
           }
-          Py_XDECREF(default_val);
+          kos_dyn_next_abort_after_failed_attach(es);
           return EVAL_NORMAL();
         }
-        Py_XDECREF(default_val);
+        kos_dyn_next_abort_after_failed_attach(es);
         PyErr_SetNone(PyExc_StopIteration);
         return EVAL_RAISE();
 
-      case KOS_ITER_AWAIT: {
-        /* Provider park under the re-entry contract: mark the boundary
-           so the awaited value feeds back into ki_step at revive. */
-        KosDynNode *bnode = KosEvalState_DYN_TOP(es);
-        if (bnode && KosDynNode_IS_NEXT(bnode))
-          KosDynNext_RESUME(bnode) = 1;
-        Py_DECREF(iter);
-        Py_XDECREF(default_val);
-        return EVAL_AWAIT(out);
-      }
+      case KOS_IREQ_CONTINUES:
+        /* Installed work may be a code-less native frame: re-enter
+           the prologue rather than dispatching from stale registers. */
+        return EVAL_REPROLOGUE();
 
-      case KOS_ITER_ERROR:
+      case KOS_IREQ_EXIT:
+        return EVAL_AWAIT(out);
+
+      case KOS_IREQ_ERROR:
       default:
         kos_dyn_next_abort_after_failed_attach(es);
-        Py_DECREF(iter);
-        Py_XDECREF(default_val);
         return EVAL_RAISE();
     }
   }
@@ -149,6 +121,8 @@ static KosOpResult object_next_step(
         Py_XDECREF(_await);
         return EVAL_RAISE();
       }
+      kos_dyn_iter_request_set_mode(
+          KosEvalState_DYN_TOP(es), KOS_IREQ_AWAITING_PY);
       Py_DECREF(iter);
       Py_XDECREF(default_val);
       return EVAL_AWAIT(_await);

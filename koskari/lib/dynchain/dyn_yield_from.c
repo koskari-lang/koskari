@@ -50,6 +50,10 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_PENDING_ARG(node) = NULL;
   KosDynYieldFrom_PENDING_ARG_TYPE(node) = NULL;
   KosDynYieldFrom_INFLIGHT(node) = NULL;
+  KosDynYieldFrom_REQ(node)->iter = NULL;
+  KosDynYieldFrom_REQ(node)->mode = KOS_IREQ_IDLE;
+  KosDynYieldFrom_REQ(node)->wake = NULL;
+  KosDynYieldFrom_REQ(node)->owner = NULL;
   return node;
 }
 
@@ -65,6 +69,7 @@ static void kos_dynyieldfrom_free(KosDynYieldFrom *node) {
   Py_XDECREF(KosDynYieldFrom_PENDING_ARG(node));
   Py_XDECREF(KosDynYieldFrom_PENDING_ARG_TYPE(node));
   Py_XDECREF(KosDynYieldFrom_INFLIGHT(node));
+  Py_XDECREF(KosDynYieldFrom_REQ(node)->iter);
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 
@@ -129,6 +134,9 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
   if (KosDynYieldFrom_INFLIGHT(clone))
     Py_INCREF(KosDynYieldFrom_INFLIGHT(clone));
 
+  *KosDynYieldFrom_REQ(clone) = *KosDynYieldFrom_REQ(node);
+  Py_XINCREF(KosDynYieldFrom_REQ(clone)->iter);
+
   return clone;
 }
 
@@ -161,7 +169,13 @@ int kos_dyn_yield_from_deliver_inner_yield(
   }
   Py_DECREF(inner_val);
 
-  ((KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf))->in_progress = 0;
+  {
+    PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
+    KosIterSlots *islots;
+    if (delegate && KosIter_CheckSlots(delegate, &islots))
+      islots->ki_finish(delegate, 0);
+  }
+  kos_dyn_iter_request_set_mode((KosDynNode *) yf, KOS_IREQ_IDLE);
 
   KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EMIT);
   KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
@@ -184,15 +198,17 @@ int kos_dyn_yield_from_deliver_exhausted(
 
   KosDynFrame *df;
   KosCode *code;
-  KosPyAsyncGen *delegate_agen;
 
   Py_XDECREF(val);
 
   df = KosEvalState_FRAME(es);
 
-  delegate_agen = (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
-  if (delegate_agen)
-    delegate_agen->in_progress = 0;
+  {
+    PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
+    KosIterSlots *islots;
+    if (delegate && KosIter_CheckSlots(delegate, &islots))
+      islots->ki_finish(delegate, 1);
+  }
 
   code = df ? KosDynFrame_CODE(df) : NULL;
   if (df && code && KosEvalState_ACTING_PC(es) + 1u < KosCode_CODE_LEN(code))
@@ -201,20 +217,6 @@ int kos_dyn_yield_from_deliver_exhausted(
   if (kos_dyn_pop_yield_from(es, yf) < 0)
     return -1;
   return 0;
-}
-
-
-int kos_dyn_yield_from_deliver_inner_return(
-    KosEvalState *es, KosDynYieldFrom *yf, PyObject *val) {
-
-  /* dyn_top must be the delegate gen frame; free it and the GEN node,
-     restore dyn_top to the YIELD_FROM consumer. */
-  if (kos_dyn_teardown_gen_exhausted(es) < 0) {
-    Py_XDECREF(val);
-    return -1;
-  }
-
-  return kos_dyn_yield_from_deliver_exhausted(es, yf, val);
 }
 
 
@@ -331,6 +333,7 @@ static int dynnode_traverse_yield_from(KosDynNode *node, visitproc visit, void *
   Py_VISIT(KosDynYieldFrom_PENDING_ARG(yf));
   Py_VISIT(KosDynYieldFrom_PENDING_ARG_TYPE(yf));
   Py_VISIT(KosDynYieldFrom_INFLIGHT(yf));
+  Py_VISIT(KosDynYieldFrom_REQ(yf)->iter);
   return 0;
 }
 

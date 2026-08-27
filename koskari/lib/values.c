@@ -758,12 +758,12 @@ KosEvaluatedTypeObject KosValuesType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .ki_install = values_kos_install,
-    .ki_vinstall = values_kos_vinstall,
-    .ki_wants_frame = 1,
-    .ki_wants_frame_fn = NULL,
-    .ki_pycall = values_call,
-    .ki_pyvectorcall = NULL,
+    .kc_install = values_kos_install,
+    .kc_vinstall = values_kos_vinstall,
+    .kc_wants_frame = 1,
+    .kc_wants_frame_fn = NULL,
+    .kc_pycall = values_call,
+    .kc_pyvectorcall = NULL,
   },
 };
 

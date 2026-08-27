@@ -166,34 +166,6 @@ static KosIterStepResult iterate_suite_step(
 }
 
 
-static KosIterStepResult iterate_suite_resume(
-    KosContext **host,
-    int *host_owned,
-    KosIterSlots *islots,
-    PyObject *provider,
-    PyObject *value,
-    PyObject **out) {
-
-  if (iterate_acquire_host(islots, provider, host, host_owned) < 0)
-    return KOS_ITER_ERROR;
-  if (! islots->ki_resume) {
-    PyErr_SetString(PyExc_SystemError, "provider has no resume entry");
-    return KOS_ITER_ERROR;
-  }
-
-  {
-    KosEvalState es;
-    KosIterStepResult r;
-
-    KosEvalState_Init(&es, *host);
-    KosEvalState_ThawFromContext(&es);
-    r = islots->ki_resume(&es, provider, value, out);
-    KosEvalState_FreezeToContext(&es);
-    return r;
-  }
-}
-
-
 static KosIterStepResult iterate_suite_throw(
     KosContext **host,
     int *host_owned,
@@ -257,12 +229,10 @@ typedef struct {
   int awaiting;           /* mid-step await in flight: this stepper owns
                              the provider's busy mark and resumes by
                              driving host->py_await_iter */
-  int parked;             /* park-flavor provider awaiting: resume
-                             re-enters the suite with the awaited value */
-  PyObject *park_iter;    /* __await__ iterator of the parked awaitable */
-  int drive_mode;         /* in-flight host graft: 0 none, 1 value
-                             (frame return is the element), 2 mediated
-                             (host outcomes feed the provider) */
+  int drive_mode;         /* in-flight host work: 0 provider-flavor
+                             (yield is the element, return is
+                             exhaustion), 1 value graft (the frame
+                             return is the element) */
 } KosIterStepper;
 
 
@@ -317,23 +287,6 @@ static void stepper_release_state(KosIterStepper *st) {
   if (st->awaiting && st->host)
     stepper_abandon_drive(st);
 
-  if (st->parked && st->provider) {
-    /* Abandoned provider park: close the in-flight awaitable and
-       release the provider's busy mark. */
-    KosIterSlots *islots;
-    PyObject *ftyp, *fval, *ftb;
-    PyErr_Fetch(&ftyp, &fval, &ftb);
-    if (st->park_iter) {
-      PyObject *r = PyObject_CallMethod(st->park_iter, "close", NULL);
-      Py_XDECREF(r);
-      PyErr_Clear();
-    }
-    if (KosIter_CheckSlots(st->provider, &islots))
-      islots->ki_finish(st->provider, 0);
-    st->parked = 0;
-    PyErr_Restore(ftyp, fval, ftb);
-  }
-
   if (st->host) {
     if (st->host_owned)
       KosContext_Free(st->host);
@@ -345,8 +298,6 @@ static void stepper_release_state(KosIterStepper *st) {
   Py_CLEAR(st->send_value);
   Py_CLEAR(st->throw_typ);
   Py_CLEAR(st->throw_exc);
-  Py_CLEAR(st->park_iter);
-  st->parked = 0;
   st->drive_mode = 0;
 }
 
@@ -367,7 +318,6 @@ static int stepper_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(st->send_value);
   Py_VISIT(st->throw_typ);
   Py_VISIT(st->throw_exc);
-  Py_VISIT(st->park_iter);
 
   if (st->host && st->host_owned)
     return KosContext_Traverse(st->host, visit, arg);
@@ -441,14 +391,83 @@ static PyObject *stepper_finish_yield(PyObject *val) {
 
 
 /**
-   Drive a park-flavor provider (no durable ki_pyctx). Suite entries run
-   against the adapter-owned host context; parks on plain awaitables are
-   eager-stepped and resumed here; grafted work (a value-returning
-   function frame, a mediated source) runs on the host via koskari_eval,
-   with terminals routed by the drive mode -- a value graft's return is
-   the element, a mediated graft's yields and completion feed back into
-   the provider's suite. send_val, throw_typ, and throw_exc are owned
-   and consumed.
+   Resume the host's in-flight __await__ iterator with the sent value.
+   Outcomes: 1 with *still set -- the awaitable yielded again (hand
+   *still to the event loop); 0 -- completed or failed, awaiting
+   cleared, with the completion in *hsend or the failure in the
+   httyp/htexc pair for the eval ingress; -1 -- hard failure (PyErr
+   set, provider finished). send_val is consumed.
+*/
+static int stepper_resume_await(
+    KosIterStepper *st,
+    KosIterSlots *islots,
+    PyObject *send_val,
+    PyObject **still,
+    PyObject **hsend,
+    PyObject **httyp,
+    PyObject **htexc) {
+
+  PyObject *it = KosContext_PY_AWAIT_ITER(st->host);
+  PyObject *step;
+
+  if (! it) {
+    /* stale flag with no iterator in flight */
+    st->awaiting = 0;
+    Py_XDECREF(send_val);
+    return 0;
+  }
+
+  step = PyObject_CallMethodObjArgs(
+      it, iterate_str_send, send_val ? send_val : Py_None, NULL);
+  Py_XDECREF(send_val);
+
+  if (step) {
+    *still = step;
+    return 1;
+  }
+
+  if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
+    /* the awaitable failed: deliver the exception into the provider
+       at the await point (raise-at-await shape) */
+    PyObject *tb = NULL;
+    PyErr_Fetch(httyp, htexc, &tb);
+    PyErr_NormalizeException(httyp, htexc, &tb);
+    if (*htexc && tb)
+      PyException_SetTraceback(*htexc, tb);
+    Py_XDECREF(tb);
+    Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
+    st->awaiting = 0;
+    return 0;
+  }
+
+  {
+    PyObject *await_result = NULL;
+    if (PyGen_FetchStopIterationValue(&await_result) < 0) {
+      islots->ki_finish(st->provider, 0);
+      st->awaiting = 0;
+      return -1;
+    }
+    if (! await_result) {
+      await_result = Py_None;
+      Py_INCREF(await_result);
+    }
+    Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
+    st->awaiting = 0;
+    *hsend = await_result;
+    PyErr_Clear();
+    return 0;
+  }
+}
+
+
+/**
+   Drive a provider with no durable ki_pyctx: suite entries run against
+   the adapter-owned host context, and installed work runs there via
+   koskari_eval. The drive mode routes host terminals -- a value
+   graft's return is the element; provider-flavor work yields elements
+   and returns exhaustion. Mid-work awaits are resumed by driving the
+   host's in-flight await iterator. send_val, throw_typ, and throw_exc
+   are owned and consumed.
 */
 static PyObject *stepper_park_drive(
     KosIterStepper *st,
@@ -457,122 +476,31 @@ static PyObject *stepper_park_drive(
     PyObject *throw_typ,
     PyObject *throw_exc) {
 
-  PyObject *resume_val = NULL;   /* owned; value feeding the suite */
-  int have_resume = 0;
   PyObject *hsend = NULL;        /* owned; host eval ingress */
   PyObject *httyp = NULL;
   PyObject *htexc = NULL;
   int host_pending = 0;          /* enter host eval before suite entry */
 
-  /* Resume a parked plain awaitable with the sent value or the thrown
-     exception. */
-  if (st->parked && st->park_iter) {
-    PyObject *step;
-
-    if (throw_exc) {
-      PyObject *throw_meth = PyObject_GetAttrString(st->park_iter, "throw");
-      if (throw_meth) {
-        step = PyObject_CallOneArg(throw_meth, throw_exc);
-        Py_DECREF(throw_meth);
-      } else {
-        PyErr_Clear();
-        step = NULL;
-        PyErr_SetObject(throw_typ, throw_exc);
-      }
-    } else {
-      step = PyObject_CallMethodObjArgs(
-          st->park_iter, iterate_str_send,
-          send_val ? send_val : Py_None, NULL);
-    }
-    Py_XDECREF(send_val);
-    send_val = NULL;
-
-    if (step) {
-      Py_XDECREF(throw_typ);
-      Py_XDECREF(throw_exc);
-      return step;
-    }
-
-    Py_CLEAR(st->park_iter);
-    st->parked = 0;
-
-    if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      if (PyGen_FetchStopIterationValue(&resume_val) < 0) {
-        Py_XDECREF(throw_typ);
-        Py_XDECREF(throw_exc);
-        islots->ki_finish(st->provider, 0);
-        return NULL;
-      }
-      if (! resume_val) {
-        resume_val = Py_None;
-        Py_INCREF(resume_val);
-      }
-      have_resume = 1;
-      Py_CLEAR(throw_typ);
-      Py_CLEAR(throw_exc);
-      PyErr_Clear();
-    } else {
-      PyObject *tb = NULL;
-      Py_XDECREF(throw_typ);
-      Py_XDECREF(throw_exc);
-      PyErr_Fetch(&throw_typ, &throw_exc, &tb);
-      PyErr_NormalizeException(&throw_typ, &throw_exc, &tb);
-      if (throw_exc && tb)
-        PyException_SetTraceback(throw_exc, tb);
-      Py_XDECREF(tb);
-    }
-
-  } else if (st->awaiting && st->host) {
-    /* Mid-graft await: drive the host's in-flight awaitable; its
+  if (st->awaiting && st->host) {
+    /* Mid-work await: drive the host's in-flight awaitable; its
        completion re-enters the host eval, its failure enters through
        the eval throw ingress. */
-    PyObject *it = KosContext_PY_AWAIT_ITER(st->host);
-
-    if (it && ! throw_typ) {
-      PyObject *step = PyObject_CallMethodObjArgs(
-          it, iterate_str_send, send_val ? send_val : Py_None, NULL);
-      Py_XDECREF(send_val);
+    if (! throw_typ) {
+      PyObject *still = NULL;
+      int rr = stepper_resume_await(st, islots, send_val, &still,
+                                    &hsend, &httyp, &htexc);
       send_val = NULL;
-
-      if (step) {
-        Py_XDECREF(throw_typ);
+      if (rr > 0) {
         Py_XDECREF(throw_exc);
-        return step;
+        return still;
       }
-
-      if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
-        PyObject *tb = NULL;
-        PyErr_Fetch(&httyp, &htexc, &tb);
-        PyErr_NormalizeException(&httyp, &htexc, &tb);
-        if (htexc && tb)
-          PyException_SetTraceback(htexc, tb);
-        Py_XDECREF(tb);
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
-        st->awaiting = 0;
-        host_pending = 1;
-      } else {
-        PyObject *await_result = NULL;
-        if (PyGen_FetchStopIterationValue(&await_result) < 0) {
-          islots->ki_finish(st->provider, 0);
-          st->awaiting = 0;
-          Py_XDECREF(throw_typ);
-          Py_XDECREF(throw_exc);
-          return NULL;
-        }
-        if (! await_result) {
-          await_result = Py_None;
-          Py_INCREF(await_result);
-        }
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
-        st->awaiting = 0;
-        hsend = await_result;
-        host_pending = 1;
-        PyErr_Clear();
+      if (rr < 0) {
+        Py_XDECREF(throw_exc);
+        return NULL;
       }
-      Py_CLEAR(throw_typ);
-      Py_CLEAR(throw_exc);
+      host_pending = 1;
     } else {
-      /* throw into a mid-graft await: eval ingress delivers it */
+      /* throw into a mid-work await: eval ingress delivers it */
       st->awaiting = 0;
       httyp = throw_typ;
       htexc = throw_exc;
@@ -584,25 +512,15 @@ static PyObject *stepper_park_drive(
     }
   }
 
-  for (;;) {
+  if (! host_pending) {
     PyObject *out = NULL;
     KosIterStepResult r;
-
-    if (host_pending) {
-      host_pending = 0;
-      goto host_eval;
-    }
 
     if (throw_exc) {
       r = iterate_suite_throw(&st->host, &st->host_owned, islots,
                               st->provider, throw_typ, throw_exc, &out);
       Py_CLEAR(throw_typ);
       Py_CLEAR(throw_exc);
-    } else if (have_resume) {
-      r = iterate_suite_resume(&st->host, &st->host_owned, islots,
-                               st->provider, resume_val, &out);
-      Py_CLEAR(resume_val);
-      have_resume = 0;
     } else {
       r = iterate_suite_step(&st->host, &st->host_owned, islots,
                              st->provider, send_val, &out);
@@ -624,169 +542,87 @@ static PyObject *stepper_park_drive(
         }
         return NULL;
 
-      case KOS_ITER_AWAIT: {
-        PyObject *inflight =
-            st->host ? KosContext_PY_AWAIT_ITER(st->host) : NULL;
-        if (inflight) {
-          /* Pre-stepped park (the eval-side eager step already ran):
-             adopt the in-flight iterator; out is the payload the eager
-             step yielded, handed to the event loop as-is. */
-          KosContext_PY_AWAIT_ITER(st->host) = NULL;
-          st->park_iter = inflight;
-          st->parked = 1;
-          return out;
-        }
-        PyObject *it = PyObject_GetAwaitable(out);
-        Py_DECREF(out);
-        if (! it) {
-          islots->ki_finish(st->provider, 0);
-          return NULL;
-        }
-        {
-          PyObject *step = PyObject_CallMethodObjArgs(
-              it, iterate_str_send, Py_None, NULL);
-          if (step) {
-            st->park_iter = it;
-            st->parked = 1;
-            return step;
-          }
-          if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-            if (PyGen_FetchStopIterationValue(&resume_val) < 0) {
-              Py_DECREF(it);
-              islots->ki_finish(st->provider, 0);
-              return NULL;
-            }
-            if (! resume_val) {
-              resume_val = Py_None;
-              Py_INCREF(resume_val);
-            }
-            have_resume = 1;
-            Py_DECREF(it);
-            PyErr_Clear();
-            continue;
-          }
-          {
-            PyObject *tb = NULL;
-            Py_DECREF(it);
-            PyErr_Fetch(&throw_typ, &throw_exc, &tb);
-            PyErr_NormalizeException(&throw_typ, &throw_exc, &tb);
-            if (throw_exc && tb)
-              PyException_SetTraceback(throw_exc, tb);
-            Py_XDECREF(tb);
-            continue;
-          }
-        }
-      }
+      case KOS_ITER_INSTALLED:
+        st->drive_mode = 0;
+        break;
 
       case KOS_ITER_INSTALLED_VALUE:
         st->drive_mode = 1;
-        goto host_eval;
+        break;
 
-      case KOS_ITER_INSTALLED_RESUME:
-        st->drive_mode = 2;
-        goto host_eval;
-
-      case KOS_ITER_INSTALLED:
       default:
         Py_XDECREF(out);
         PyErr_SetString(PyExc_SystemError,
-                        "park-flavor provider returned INSTALLED");
+                        "provider returned an unexpected step result");
         return NULL;
     }
+  }
 
-host_eval:
-    {
-      KosOpResult res = koskari_eval(st->host, hsend, httyp, htexc);
-      Py_CLEAR(hsend);
-      Py_CLEAR(httyp);
-      Py_CLEAR(htexc);
+  {
+    KosOpResult res = koskari_eval(st->host, hsend, httyp, htexc);
+    Py_CLEAR(hsend);
+    Py_CLEAR(httyp);
+    Py_CLEAR(htexc);
 
-      if (res.kind == KOS_RES_AWAIT) {
-        st->awaiting = 1;   /* drive_mode persists across the await */
-        return res.val;
-      }
+    if (res.kind == KOS_RES_AWAIT) {
+      st->awaiting = 1;   /* drive_mode persists across the await */
+      return res.val;
+    }
 
-      switch (res.kind) {
-        case KOS_RES_RETURN:
-          if (st->drive_mode == 1) {
-            st->drive_mode = 0;
-            islots->ki_finish(st->provider, 0);
-            iterate_reset_owned_host(&st->host, &st->host_owned);
-            return stepper_finish_yield(res.val);
-          }
-          if (st->drive_mode == 2) {
-            st->drive_mode = 0;
-            if (KosContext_FLAGS(st->host) & KOS_CTX_GEN_ROOT_RETURN) {
-              /* the mediated source completed at the host root: feed
-                 end */
-              KosContext_FLAGS(st->host) &= ~KOS_CTX_GEN_ROOT_RETURN;
-              Py_XDECREF(res.val);
-              iterate_reset_owned_host(&st->host, &st->host_owned);
-              {
-                PyObject *exc =
-                    PyObject_CallNoArgs(PyExc_StopAsyncIteration);
-                if (! exc)
-                  return NULL;
-                throw_typ = PyExc_StopAsyncIteration;
-                Py_INCREF(throw_typ);
-                throw_exc = exc;
-              }
-              continue;
-            }
-            /* a nested value graft returned at the root: its value
-               feeds the provider chain */
-            iterate_reset_owned_host(&st->host, &st->host_owned);
-            resume_val = res.val;
-            have_resume = 1;
-            continue;
-          }
+    switch (res.kind) {
+      case KOS_RES_RETURN:
+        if (st->drive_mode == 1) {
           st->drive_mode = 0;
-          islots->ki_finish(st->provider, 1);
-          return stepper_finish_exhausted(st, res.val, 0);
-
-        case KOS_RES_YIELD:
-          if (st->drive_mode == 2) {
-            /* mediated source yielded at the host root: the outcome is
-               consumed here, so clear the suspension event -- the next
-               host entry installs fresh work, it does not revive */
-            st->drive_mode = 0;
-            KosContext_SUSPENSION_EVENT(st->host) = KOS_SUSP_NONE;
-            resume_val = res.val;
-            have_resume = 1;
-            continue;
-          }
-          st->drive_mode = 0;
-          if (st->closing) {
-            islots->ki_finish(st->provider, 1);
-            Py_XDECREF(res.val);
-            PyErr_SetString(PyExc_RuntimeError,
-                            "async generator ignored GeneratorExit");
-            return NULL;
-          }
           islots->ki_finish(st->provider, 0);
+          iterate_reset_owned_host(&st->host, &st->host_owned);
           return stepper_finish_yield(res.val);
+        }
+        st->drive_mode = 0;
+        islots->ki_finish(st->provider, 1);
+        iterate_reset_owned_host(&st->host, &st->host_owned);
+        return stepper_finish_exhausted(st, res.val, 0);
 
-        case KOS_RES_RAISE:
-        case KOS_RES_FATAL:
-        default:
-          st->drive_mode = 0;
-          {
-            PyObject *ftyp, *fval, *ftb;
-            PyErr_Fetch(&ftyp, &fval, &ftb);
-            islots->ki_finish(st->provider, 0);
-            iterate_reset_owned_host(&st->host, &st->host_owned);
-            PyErr_Restore(ftyp, fval, ftb);
-          }
-          if (st->closing && PyErr_Occurred()
-              && PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
-            PyErr_Clear();
-            PyErr_SetNone(PyExc_StopIteration);
-            return NULL;
-          }
-          if (! PyErr_Occurred())
-            PyErr_SetNone(PyExc_StopAsyncIteration);
+      case KOS_RES_YIELD:
+        st->drive_mode = 0;
+        if (st->closing) {
+          islots->ki_finish(st->provider, 1);
+          Py_XDECREF(res.val);
+          PyErr_SetString(PyExc_RuntimeError,
+                          "async generator ignored GeneratorExit");
           return NULL;
-      }
+        }
+        islots->ki_finish(st->provider, 0);
+        return stepper_finish_yield(res.val);
+
+      case KOS_RES_RAISE:
+      case KOS_RES_FATAL:
+      default:
+        st->drive_mode = 0;
+        if (PyErr_Occurred()
+            && PyErr_ExceptionMatches(PyExc_StopIteration)) {
+          /* Exhaustion surfacing at the host root: the provider's
+             step ended its iteration. */
+          PyErr_Clear();
+          islots->ki_finish(st->provider, 1);
+          iterate_reset_owned_host(&st->host, &st->host_owned);
+          return stepper_finish_exhausted(st, NULL, st->is_throw);
+        }
+        {
+          PyObject *ftyp, *fval, *ftb;
+          PyErr_Fetch(&ftyp, &fval, &ftb);
+          islots->ki_finish(st->provider, 0);
+          iterate_reset_owned_host(&st->host, &st->host_owned);
+          PyErr_Restore(ftyp, fval, ftb);
+        }
+        if (st->closing && PyErr_Occurred()
+            && PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
+          PyErr_Clear();
+          PyErr_SetNone(PyExc_StopIteration);
+          return NULL;
+        }
+        if (! PyErr_Occurred())
+          PyErr_SetNone(PyExc_StopAsyncIteration);
+        return NULL;
     }
   }
 }
@@ -815,10 +651,8 @@ static PyObject *stepper_iternext(PyObject *self) {
   st->throw_typ = NULL;
   st->throw_exc = NULL;
 
-  /* Park-flavor providers (no durable ki_pyctx: the step parks on
-     awaitables instead of grafting frames) run the re-entry contract
-     here: drive the parked __await__ iterator, feed completions back
-     into ki_step, and eager-step fresh awaitables the same way. */
+  /* Providers without a durable ki_pyctx run against the
+     adapter-owned host context. */
   if (! islots->ki_pyctx || ! islots->ki_pyctx(st->provider))
     return stepper_park_drive(st, islots, send_val, throw_typ, throw_exc);
 
@@ -832,49 +666,14 @@ static PyObject *stepper_iternext(PyObject *self) {
      ki_step. */
   int resume_await = st->awaiting;
 
-  if (st->awaiting && ! throw_typ) {
-    PyObject *it = st->host ? KosContext_PY_AWAIT_ITER(st->host) : NULL;
-    if (it) {
-      PyObject *step = PyObject_CallMethodObjArgs(
-          it, iterate_str_send, send_val ? send_val : Py_None, NULL);
-      Py_XDECREF(send_val);
-      send_val = NULL;
-
-      if (step)
-        /* still awaiting: hand the next item to the loop */
-        return step;
-
-      if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
-        /* the awaitable failed: deliver the exception into the
-           provider so its handlers see it (raise-at-await shape) */
-        PyObject *tb = NULL;
-        PyErr_Fetch(&throw_typ, &throw_exc, &tb);
-        PyErr_NormalizeException(&throw_typ, &throw_exc, &tb);
-        if (throw_exc && tb)
-          PyException_SetTraceback(throw_exc, tb);
-        Py_XDECREF(tb);
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
-        st->awaiting = 0;
-      } else {
-        /* awaitable completed: its value becomes the await result */
-        PyObject *await_result = NULL;
-        if (PyGen_FetchStopIterationValue(&await_result) < 0) {
-          islots->ki_finish(st->provider, 0);
-          st->awaiting = 0;
-          return NULL;
-        }
-        if (! await_result) {
-          await_result = Py_None;
-          Py_INCREF(await_result);
-        }
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
-        st->awaiting = 0;
-        send_val = await_result;
-      }
-    } else {
-      /* stale flag with no iterator in flight */
-      st->awaiting = 0;
-    }
+  if (st->awaiting && ! throw_typ && st->host) {
+    PyObject *still = NULL;
+    int rr = stepper_resume_await(st, islots, send_val, &still,
+                                  &send_val, &throw_typ, &throw_exc);
+    if (rr > 0)
+      return still;
+    if (rr < 0)
+      return NULL;
   }
 
   /* Attach the provider's work onto the host. AWAIT is unreachable
@@ -902,15 +701,6 @@ static PyObject *stepper_iternext(PyObject *self) {
         Py_XDECREF(throw_typ);
         Py_XDECREF(throw_exc);
         return stepper_finish_exhausted(st, out, st->is_throw);
-
-      case KOS_ITER_AWAIT:
-        Py_XDECREF(out);
-        Py_XDECREF(send_val);
-        Py_XDECREF(throw_typ);
-        Py_XDECREF(throw_exc);
-        PyErr_SetString(PyExc_SystemError,
-                        "stepper: unsupported KosIter AWAIT result");
-        return NULL;
 
       case KOS_ITER_ERROR:
       default:
@@ -1125,8 +915,6 @@ static PyObject *stepper_new_ex(
   st->throw_exc = throw_exc;
 
   st->awaiting = 0;
-  st->parked = 0;
-  st->park_iter = NULL;
   st->drive_mode = 0;
 
   PyObject_GC_Track((PyObject *) st);
@@ -1238,100 +1026,6 @@ static int demandgen_clear(PyObject *self) {
 }
 
 
-/**
-   Demand rendering of a park awaitable: eager-step it; on immediate
-   completion store the value. On suspension inject KoskariSyncViolation
-   via throw -- the awaitable may catch it and complete -- and deny if
-   it stays suspended. awaitable consumed.
-
-   :return: 0 with *out_value set (new ref), -1 with PyErr set
-*/
-static int demand_violate_inflight(PyObject *it, PyObject **out_value);
-
-
-static int demand_eager_await(PyObject *awaitable, PyObject **out_value) {
-
-  PyObject *it = PyObject_GetAwaitable(awaitable);
-  Py_DECREF(awaitable);
-  if (! it)
-    return -1;
-
-  PyObject *step = PyObject_CallMethodObjArgs(
-      it, iterate_str_send, Py_None, NULL);
-
-  if (! step) {
-    if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      Py_DECREF(it);
-      return -1;
-    }
-    PyObject *value = NULL;
-    if (PyGen_FetchStopIterationValue(&value) < 0) {
-      Py_DECREF(it);
-      return -1;
-    }
-    Py_DECREF(it);
-    *out_value = value ? value : (Py_INCREF(Py_None), Py_None);
-    return 0;
-  }
-
-  /* Suspended: inject the violation; the callee may catch and return. */
-  Py_DECREF(step);
-  return demand_violate_inflight(it, out_value);
-}
-
-
-/**
-   A demand drive found an awaitable already suspended: inject
-   KoskariSyncViolation into its in-flight iterator. The callee may
-   catch it and complete (0, *out_value set); anything else denies
-   (-1, PyErr set). it is consumed.
-*/
-static int demand_violate_inflight(PyObject *it, PyObject **out_value) {
-
-  PyObject *step = NULL;
-
-  {
-    PyObject *exc;
-    kos_demand_set_sync_violation(
-        "async suspension is not allowed in demand generator");
-    PyErr_Fetch(&exc, &step, NULL);  /* reuse step slot for value */
-    PyObject *vio = step ? step : exc;
-    PyObject *throw_meth = PyObject_GetAttrString(it, "throw");
-    PyObject *res = NULL;
-    if (throw_meth) {
-      res = PyObject_CallOneArg(throw_meth, vio);
-      Py_DECREF(throw_meth);
-    }
-    Py_XDECREF(exc);
-    Py_XDECREF(step);
-
-    if (! res) {
-      Py_DECREF(it);
-      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-        PyObject *value = NULL;
-        if (PyGen_FetchStopIterationValue(&value) < 0)
-          return -1;
-        *out_value = value ? value : (Py_INCREF(Py_None), Py_None);
-        return 0;
-      }
-      return -1;
-    }
-
-    /* still suspended after the violation: deny */
-    Py_DECREF(res);
-    {
-      PyObject *r = PyObject_CallMethod(it, "close", NULL);
-      Py_XDECREF(r);
-      PyErr_Clear();
-    }
-    Py_DECREF(it);
-    kos_demand_set_sync_violation(
-        "async suspension is not allowed in demand generator");
-    return -1;
-  }
-}
-
-
 static PyObject *demandgen_step(
     KosIterDemandGen *gen,
     PyObject *send_val,
@@ -1354,36 +1048,22 @@ static PyObject *demandgen_step(
   /* Park-flavor provider: complete every park by demand-eager
      stepping, feeding results back into ki_step. */
   if (! islots->ki_pyctx || ! islots->ki_pyctx(gen->provider)) {
-    PyObject *resume_val = NULL;
-    int have_resume = 0;
-
     /* Uniform ownership: the caller's borrowed throw pair is held for
-       the loop; fetched pairs from failed awaitables replace it. */
+       the loop. */
     Py_XINCREF(throw_typ);
     Py_XINCREF(throw_exc);
 
-    int drive_mode = 0;   /* 1 value graft, 2 mediated graft */
-    int host_pending = 0;
+    int drive_mode = 0;   /* 1: value graft (frame return is element) */
 
-    for (;;) {
+    {
       PyObject *out = NULL;
       KosIterStepResult r;
-
-      if (host_pending) {
-        host_pending = 0;
-        goto host_eval;
-      }
 
       if (throw_exc) {
         r = iterate_suite_throw(&gen->host, &gen->host_owned, islots,
                                 gen->provider, throw_typ, throw_exc, &out);
         Py_CLEAR(throw_typ);
         Py_CLEAR(throw_exc);
-      } else if (have_resume) {
-        r = iterate_suite_resume(&gen->host, &gen->host_owned, islots,
-                                 gen->provider, resume_val, &out);
-        Py_CLEAR(resume_val);
-        have_resume = 0;
       } else {
         r = iterate_suite_step(&gen->host, &gen->host_owned, islots,
                                gen->provider, send_val, &out);
@@ -1408,55 +1088,24 @@ static PyObject *demandgen_step(
           return NULL;
         }
 
-        case KOS_ITER_AWAIT: {
-          PyObject *inflight =
-              gen->host ? KosContext_PY_AWAIT_ITER(gen->host) : NULL;
-          int rc;
-          if (inflight) {
-            /* Pre-stepped park: the eval-side eager step already ran
-               and suspended -- violate the in-flight iterator. */
-            KosContext_PY_AWAIT_ITER(gen->host) = NULL;
-            Py_XDECREF(out);
-            rc = demand_violate_inflight(inflight, &resume_val);
-          } else {
-            rc = demand_eager_await(out, &resume_val);
-          }
-          if (rc < 0) {
-            /* The awaitable failed: mediate through ki_throw so the
-               provider converts its own protocol exceptions (a
-               mid-fetch StopAsyncIteration becomes map exhaustion). */
-            PyObject *tb = NULL;
-            PyErr_Fetch(&throw_typ, &throw_exc, &tb);
-            PyErr_NormalizeException(&throw_typ, &throw_exc, &tb);
-            if (throw_exc && tb)
-              PyException_SetTraceback(throw_exc, tb);
-            Py_XDECREF(tb);
-            continue;
-          }
-          have_resume = 1;
-          continue;
-        }
-
         case KOS_ITER_ERROR:
           return NULL;
 
+        case KOS_ITER_INSTALLED:
+          drive_mode = 0;
+          break;
+
         case KOS_ITER_INSTALLED_VALUE:
           drive_mode = 1;
-          goto host_eval;
+          break;
 
-        case KOS_ITER_INSTALLED_RESUME:
-          drive_mode = 2;
-          goto host_eval;
-
-        case KOS_ITER_INSTALLED:
         default:
           Py_XDECREF(out);
           PyErr_SetString(PyExc_SystemError,
-                          "park-flavor provider returned INSTALLED");
+                          "provider returned an unexpected step result");
           return NULL;
       }
 
-host_eval:
       {
         /* Demand intent: the grafted frame carries KOS_FRAME_DEMAND so
            real suspension denies in-eval as KoskariSyncViolation. */
@@ -1475,30 +1124,6 @@ host_eval:
               iterate_reset_owned_host(&gen->host, &gen->host_owned);
               return res.val;
             }
-            if (drive_mode == 2) {
-              drive_mode = 0;
-              if (KosContext_FLAGS(gen->host) & KOS_CTX_GEN_ROOT_RETURN) {
-                KosContext_FLAGS(gen->host) &= ~KOS_CTX_GEN_ROOT_RETURN;
-                Py_XDECREF(res.val);
-                iterate_reset_owned_host(&gen->host, &gen->host_owned);
-                {
-                  PyObject *exc = PyObject_CallNoArgs(
-                      PyExc_StopAsyncIteration);
-                  if (! exc)
-                    return NULL;
-                  throw_typ = PyExc_StopAsyncIteration;
-                  Py_INCREF(throw_typ);
-                  throw_exc = exc;
-                }
-                continue;
-              }
-              /* a nested value graft returned at the root: its value
-                 feeds the provider chain */
-              iterate_reset_owned_host(&gen->host, &gen->host_owned);
-              resume_val = res.val;
-              have_resume = 1;
-              continue;
-            }
             drive_mode = 0;
             islots->ki_finish(gen->provider, 1);
             {
@@ -1516,14 +1141,6 @@ host_eval:
             }
 
           case KOS_RES_YIELD:
-            if (drive_mode == 2) {
-              /* consumed here; the next host entry installs fresh work */
-              drive_mode = 0;
-              KosContext_SUSPENSION_EVENT(gen->host) = KOS_SUSP_NONE;
-              resume_val = res.val;
-              have_resume = 1;
-              continue;
-            }
             drive_mode = 0;
             islots->ki_finish(gen->provider, 0);
             return res.val;
@@ -1540,6 +1157,16 @@ host_eval:
           case KOS_RES_FATAL:
           default:
             drive_mode = 0;
+            if (PyErr_Occurred()
+                && PyErr_ExceptionMatches(PyExc_StopIteration)) {
+              /* Exhaustion surfacing at the host root: mark the
+                 provider closed; StopIteration is already the sync
+                 protocol's end signal. */
+              islots->ki_finish(gen->provider, 1);
+              iterate_reset_owned_host(&gen->host, &gen->host_owned);
+              demandgen_release_state(gen);
+              return NULL;
+            }
             {
               PyObject *ftyp, *fval, *ftb;
               PyErr_Fetch(&ftyp, &fval, &ftb);
@@ -1577,12 +1204,6 @@ host_eval:
         }
         return NULL;
       }
-
-      case KOS_ITER_AWAIT:
-        Py_XDECREF(out);
-        kos_demand_set_sync_violation(
-            "async suspension is not allowed in demand generator");
-        return NULL;
 
       case KOS_ITER_ERROR:
       default:

@@ -516,12 +516,10 @@ static KosOpResult yield_from_drive_py_async(
 
 
 /**
-  Drive one step of a KosIter provider delegate through its iter suite
-  (flattened into the same koskari_eval where the provider grafts;
-  otherwise stepped in place, yielding elements out of the delegating
-  generator and parking on true suspensions like the py-async drive).
-  Handles resume-from-await inject, close, throw(StopAsyncIteration),
-  stepping, and element re-emission.
+  Drive one step of a KosIter provider delegate through its iter
+  suite: close, throw(StopAsyncIteration), send, and stepping. The
+  suite never parks -- installed work runs flattened in the same
+  koskari_eval and delivers at this node's boundary record.
 */
 static KosOpResult yield_from_drive_kos_iter(
     KosEvalState *es,
@@ -532,23 +530,11 @@ static KosOpResult yield_from_drive_kos_iter(
     KosOp *insn) {
 
   PyObject *yf_send_val = NULL;
-  PyObject *yf_resume_val = NULL;
-  PyObject *yf_throw_exc = NULL;
-  PyObject *yf_throw_typ = NULL;
 
   (void) insn;
 
-  /* Resuming from await: the result re-enters through the provider's
-     resume entry (this site owns the park). */
-  if (KosDynYieldFrom_INFLIGHT(yf)) {
-    yf_resume_val = yield_from_take_await_result(yf);
-    if (! yf_resume_val)
-      return EVAL_RAISE();
-  }
-
   if (action == KOS_YF_CLOSE) {
     islots->ki_finish(delegate, 1);
-    Py_XDECREF(yf_resume_val);
     kos_dyn_pop_yield_from(es, yf);
     PyErr_SetNone(PyExc_GeneratorExit);
     return EVAL_RAISE();
@@ -556,8 +542,41 @@ static KosOpResult yield_from_drive_kos_iter(
 
   if (action == KOS_YF_THROW
       && yield_from_throw_stop_async_finish(es, yf)) {
-    Py_XDECREF(yf_resume_val);
     return EVAL_NORMAL();
+  }
+
+  if (action == KOS_YF_THROW && KosDynYieldFrom_PENDING_ARG(yf)) {
+    PyObject *out = NULL;
+    PyObject *typ = KosDynYieldFrom_PENDING_ARG_TYPE(yf);
+    PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
+    KosIterStepResult tr;
+
+    Py_XINCREF(typ);
+    Py_INCREF(exc);
+    yield_from_clear_pending(yf);
+    tr = islots->ki_throw(es, delegate,
+                          typ ? typ : (PyObject *) Py_TYPE(exc), exc, &out);
+    Py_XDECREF(typ);
+    Py_DECREF(exc);
+
+    switch (tr) {
+      case KOS_ITER_INSTALLED:
+        kos_dyn_iter_request_arm((KosDynNode *) yf, delegate,
+                                 KOS_IREQ_INSTALLED);
+        return EVAL_REPROLOGUE();
+      case KOS_ITER_INSTALLED_VALUE:
+        kos_dyn_iter_request_arm((KosDynNode *) yf, delegate,
+                                 KOS_IREQ_GRAFT_VALUE);
+        return EVAL_REPROLOGUE();
+      case KOS_ITER_VALUE:
+        return yield_from_yield_value(es, yf, out);
+      case KOS_ITER_EXHAUSTED:
+        Py_XDECREF(out);
+        return yield_from_finish(es, yf);
+      case KOS_ITER_ERROR:
+      default:
+        return EVAL_RAISE();
+    }
   }
 
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf)) {
@@ -565,33 +584,26 @@ static KosOpResult yield_from_drive_kos_iter(
     Py_INCREF(yf_send_val);
   }
 
-  if (action == KOS_YF_THROW && KosDynYieldFrom_PENDING_ARG(yf)) {
-    yf_throw_typ = KosDynYieldFrom_PENDING_ARG_TYPE(yf);
-    yf_throw_exc = KosDynYieldFrom_PENDING_ARG(yf);
-    if (yf_throw_typ)
-      Py_INCREF(yf_throw_typ);
-    Py_INCREF(yf_throw_exc);
-  }
-
   yield_from_clear_pending(yf);
 
   {
     PyObject *out = NULL;
-    PyObject *parked_aw = NULL;
+    KosIterStepResult sr = islots->ki_step(es, delegate, yf_send_val, &out);
 
-    switch (kos_iter_drive_step(es, delegate, islots, yf_send_val,
-                                yf_resume_val, yf_throw_typ, yf_throw_exc,
-                                &out, &parked_aw)) {
+    Py_XDECREF(yf_send_val);
+
+    switch (sr) {
       case KOS_ITER_INSTALLED:
+        kos_dyn_iter_request_arm((KosDynNode *) yf, delegate,
+                                 KOS_IREQ_INSTALLED);
         return EVAL_NORMAL();
 
       case KOS_ITER_INSTALLED_VALUE:
-        KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_VALUE);
-        return EVAL_NORMAL();
-
-      case KOS_ITER_INSTALLED_RESUME:
-        KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_RESUME);
-        return EVAL_NORMAL();
+        /* The installed work may be a code-less native frame: re-enter
+           the prologue rather than dispatching from stale registers. */
+        kos_dyn_iter_request_arm((KosDynNode *) yf, delegate,
+                                 KOS_IREQ_GRAFT_VALUE);
+        return EVAL_REPROLOGUE();
 
       case KOS_ITER_VALUE:
         /* The delegate produced an element without grafting: re-emit
@@ -601,22 +613,6 @@ static KosOpResult yield_from_drive_kos_iter(
       case KOS_ITER_EXHAUSTED:
         Py_XDECREF(out);
         return yield_from_finish(es, yf);
-
-      case KOS_ITER_AWAIT:
-        /* True suspension: park PC-stable with the awaitable held in
-           INFLIGHT, mirroring the py-async drive. */
-        if (kos_eval_demand_deny_suspend(es,
-            "async suspension is not allowed in demand_sync")) {
-          Py_XDECREF(out);
-          Py_XDECREF(parked_aw);
-          return EVAL_RAISE();
-        }
-        KosDynYieldFrom_INFLIGHT(yf) = parked_aw;  /* transfer */
-        KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_AWAIT);
-        KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
-        KosEvalState_FlushLiveRegsToFrame(es);
-        KosEvalState_MarkDeadAfterYield(es);
-        return EVAL_AWAIT(out);
 
       case KOS_ITER_ERROR:
       default:

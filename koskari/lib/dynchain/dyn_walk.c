@@ -702,6 +702,21 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
 
     }  /* KOS_DYN_CAP_INTERCEPTS_RAISE */
 
+    /* A native frame is offered the pending exception before it is
+       torn through: its handler may consume (REPROLOGUE) or decline
+       (EVAL_RAISE), in which case the pop below proceeds. */
+    if (KosDynNode_IS_FRAME(top)
+        && KosDynFrame_NATIVE_HANDLER((KosDynFrame *) top)) {
+      KosNativeHandlerFn fn =
+          (KosNativeHandlerFn) KosDynFrame_NATIVE_HANDLER((KosDynFrame *) top);
+      KosOpResult hr = fn(es, KOS_NFRAME_EXCEPTION, NULL);
+      if (hr.kind == KOS_RES_NORMAL || hr.kind == KOS_RES_REPROLOGUE)
+        return EVAL_REPROLOGUE();
+      if (hr.kind == KOS_RES_FATAL)
+        return EVAL_FATAL();
+      /* declined: fall through to the pop */
+    }
+
     /* PASS: unwind and pop */
     {
       int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));

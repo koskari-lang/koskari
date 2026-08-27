@@ -67,6 +67,11 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   KosDynForeach_ITER((KosDynForeach *) region) = iter;
   KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 0;
 
+  /* Arm the request record for the loop's lifetime; per-step drives
+     only touch the mode. */
+  Py_INCREF(iter);
+  KosDynForeach_REQ(region)->iter = iter;
+
   return EVAL_NORMAL();
 }
 

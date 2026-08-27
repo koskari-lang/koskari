@@ -225,12 +225,12 @@ KosEvaluatedTypeObject KosPyDelimitedContinuationType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .ki_install = kos_install_continuation,
-    .ki_vinstall = kos_vinstall_continuation,
-    .ki_wants_frame = 0,
-    .ki_wants_frame_fn = NULL,
-    .ki_pycall = delimited_continuation_call,
-    .ki_pyvectorcall = NULL,
+    .kc_install = kos_install_continuation,
+    .kc_vinstall = kos_vinstall_continuation,
+    .kc_wants_frame = 0,
+    .kc_wants_frame_fn = NULL,
+    .kc_pycall = delimited_continuation_call,
+    .kc_pyvectorcall = NULL,
   },
 };
 
@@ -400,12 +400,12 @@ KosEvaluatedTypeObject KosPyContinuationType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .ki_install = kos_install_continuation,
-    .ki_vinstall = kos_vinstall_continuation,
-    .ki_wants_frame = 0,
-    .ki_wants_frame_fn = NULL,
-    .ki_pycall = continuation_call,
-    .ki_pyvectorcall = NULL,
+    .kc_install = kos_install_continuation,
+    .kc_vinstall = kos_vinstall_continuation,
+    .kc_wants_frame = 0,
+    .kc_wants_frame_fn = NULL,
+    .kc_pycall = continuation_call,
+    .kc_pyvectorcall = NULL,
   },
 };
 
