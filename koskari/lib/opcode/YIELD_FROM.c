@@ -582,27 +582,27 @@ static KosOpResult yield_from_drive_kos_iter(
     switch (kos_iter_drive_step(es, delegate, islots, yf_send_val,
                                 yf_resume_val, yf_throw_typ, yf_throw_exc,
                                 &out, &parked_aw)) {
-      case KID_INSTALLED:
+      case KOS_ITER_INSTALLED:
         return EVAL_NORMAL();
 
-      case KID_INSTALLED_VALUE:
+      case KOS_ITER_INSTALLED_VALUE:
         KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_VALUE);
         return EVAL_NORMAL();
 
-      case KID_INSTALLED_RESUME:
+      case KOS_ITER_INSTALLED_RESUME:
         KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_RESUME);
         return EVAL_NORMAL();
 
-      case KID_VALUE:
+      case KOS_ITER_VALUE:
         /* The delegate produced an element without grafting: re-emit
            it as the delegating generator's own yield. */
         return yield_from_yield_value(es, yf, out);
 
-      case KID_EXHAUSTED:
+      case KOS_ITER_EXHAUSTED:
         Py_XDECREF(out);
         return yield_from_finish(es, yf);
 
-      case KID_PARKED:
+      case KOS_ITER_AWAIT:
         /* True suspension: park PC-stable with the awaitable held in
            INFLIGHT, mirroring the py-async drive. */
         if (kos_eval_demand_deny_suspend(es,
@@ -618,7 +618,7 @@ static KosOpResult yield_from_drive_kos_iter(
         KosEvalState_MarkDeadAfterYield(es);
         return EVAL_AWAIT(out);
 
-      case KID_ERROR:
+      case KOS_ITER_ERROR:
       default:
         /* The raise walk unwinds the yield-from node and its
            close-delegate hook marks the provider closed. */

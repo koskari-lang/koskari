@@ -39,16 +39,16 @@ static KosOpResult object_next_step(
       return EVAL_RAISE();
     }
 
-    KosIterDriveOutcome kid = kos_iter_drive_step(
+    KosIterStepResult step = kos_iter_drive_step(
         es, iter, islots, NULL, NULL, NULL, NULL, &out, NULL);
-    switch (kid) {
-      case KID_INSTALLED:
+    switch (step) {
+      case KOS_ITER_INSTALLED:
         Py_DECREF(iter);
         Py_XDECREF(default_val);
         return EVAL_NORMAL();
 
-      case KID_INSTALLED_VALUE:
-      case KID_INSTALLED_RESUME: {
+      case KOS_ITER_INSTALLED_VALUE:
+      case KOS_ITER_INSTALLED_RESUME: {
         /* dyn_top may be a grafted frame; the boundary is on its
            parent chain */
         KosDynNode *bnode = KosEvalState_DYN_TOP(es);
@@ -56,14 +56,14 @@ static KosOpResult object_next_step(
           bnode = KosDynNode_PARENT(bnode);
         if (bnode)
           KosDynNext_RESUME(bnode) =
-              (kid == KID_INSTALLED_VALUE) ? KOS_DYN_NEXT_MODE_VALUE
+              (step == KOS_ITER_INSTALLED_VALUE) ? KOS_DYN_NEXT_MODE_VALUE
                                            : KOS_DYN_NEXT_MODE_RESUME;
         Py_DECREF(iter);
         Py_XDECREF(default_val);
         return EVAL_NORMAL();
       }
 
-      case KID_VALUE:
+      case KOS_ITER_VALUE:
         kos_dyn_next_abort_after_failed_attach(es);
         Py_DECREF(iter);
         Py_XDECREF(default_val);
@@ -71,7 +71,7 @@ static KosOpResult object_next_step(
           return EVAL_RAISE();
         return EVAL_NORMAL();
 
-      case KID_EXHAUSTED:
+      case KOS_ITER_EXHAUSTED:
         kos_dyn_next_abort_after_failed_attach(es);
         Py_XDECREF(out);
         Py_DECREF(iter);
@@ -87,7 +87,7 @@ static KosOpResult object_next_step(
         PyErr_SetNone(PyExc_StopIteration);
         return EVAL_RAISE();
 
-      case KID_PARKED: {
+      case KOS_ITER_AWAIT: {
         /* Provider park under the re-entry contract: mark the boundary
            so the awaited value feeds back into ki_step at revive. */
         KosDynNode *bnode = KosEvalState_DYN_TOP(es);
@@ -98,7 +98,7 @@ static KosOpResult object_next_step(
         return EVAL_AWAIT(out);
       }
 
-      case KID_ERROR:
+      case KOS_ITER_ERROR:
       default:
         kos_dyn_next_abort_after_failed_attach(es);
         Py_DECREF(iter);

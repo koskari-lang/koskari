@@ -244,35 +244,24 @@ static KosEvalMode revive_plan(
 /* === KosIter provider step drive === */
 
 
-typedef enum {
-  KID_VALUE = 0,     /* *out: the element (new ref) */
-  KID_EXHAUSTED,     /* *out: return payload (new ref) or NULL */
-  KID_PARKED,        /* *out: pre-stepped yield item for EVAL_AWAIT;
-                        py_await_iter armed on the context */
-  KID_INSTALLED,     /* provider spliced frames; deferred delivery */
-  KID_INSTALLED_VALUE, /* spliced frames whose frame return is the
-                        element; the site arms value mode */
-  KID_INSTALLED_RESUME, /* spliced work mediated by the provider; the
-                        site arms resume mode */
-  KID_ERROR,         /* PyErr set */
-} KosIterDriveOutcome;
-
-
 /**
    Drive one provider step to a terminal outcome: ki_step, with every
    KOS_ITER_AWAIT eager-stepped in place -- immediate completions feed
    back into ki_step under the re-entry contract, failures mediate
    through ki_throw (a mid-fetch StopAsyncIteration becomes provider
    exhaustion), and a true suspension parks with a pre-stepped yield
-   item, per the EVAL_AWAIT payload convention. At most one of send
+   item, per the EVAL_AWAIT payload convention. The return is the
+   suite's own result type; a returned KOS_ITER_AWAIT is a true park,
+   *out holding the pre-stepped yield item rather than a raw
+   awaitable. At most one of send
    (protocol send for the first ki_step), resume (owner-only awaited
    result for a parked provider, first drive via ki_resume), and the
    throw pair may be set; all are owned when non-NULL and consumed.
-   On KID_PARKED, *parked_aw (when requested) receives the suspended
+   On KOS_ITER_AWAIT, *parked_aw (when requested) receives the suspended
    awaitable, for sites whose park state keeps it (YIELD_FROM's
    INFLIGHT).
 */
-static KosIterDriveOutcome kos_iter_drive_step(
+static KosIterStepResult kos_iter_drive_step(
     KosEvalState *es,
     PyObject *iter_obj,
     KosIterSlots *islots,
@@ -296,7 +285,7 @@ static KosIterDriveOutcome kos_iter_drive_step(
         Py_DECREF(resume);
         PyErr_SetString(PyExc_SystemError,
                         "iter drive: provider has no resume entry");
-        return KID_ERROR;
+        return KOS_ITER_ERROR;
       }
       r = islots->ki_resume(es, iter_obj, resume, &step_out);
       Py_CLEAR(resume);
@@ -308,20 +297,20 @@ static KosIterDriveOutcome kos_iter_drive_step(
     switch (r) {
       case KOS_ITER_VALUE:
         *out = step_out;
-        return KID_VALUE;
+        return KOS_ITER_VALUE;
 
       case KOS_ITER_EXHAUSTED:
         *out = step_out;
-        return KID_EXHAUSTED;
+        return KOS_ITER_EXHAUSTED;
 
       case KOS_ITER_INSTALLED:
-        return KID_INSTALLED;
+        return KOS_ITER_INSTALLED;
 
       case KOS_ITER_INSTALLED_VALUE:
-        return KID_INSTALLED_VALUE;
+        return KOS_ITER_INSTALLED_VALUE;
 
       case KOS_ITER_INSTALLED_RESUME:
-        return KID_INSTALLED_RESUME;
+        return KOS_ITER_INSTALLED_RESUME;
 
       case KOS_ITER_AWAIT: {
         int suspended = 0;
@@ -340,7 +329,7 @@ static KosIterDriveOutcome kos_iter_drive_step(
           else
             Py_DECREF(step_out);
           *out = yielded;
-          return KID_PARKED;
+          return KOS_ITER_AWAIT;
         }
         Py_DECREF(step_out);
         /* The awaitable failed: mediate through ki_throw. */
@@ -356,7 +345,7 @@ static KosIterDriveOutcome kos_iter_drive_step(
             throw_typ = NULL;
             PyErr_SetString(PyExc_SystemError,
                             "iter drive: awaitable failed without error");
-            return KID_ERROR;
+            return KOS_ITER_ERROR;
           }
           continue;
         }
@@ -364,28 +353,29 @@ static KosIterDriveOutcome kos_iter_drive_step(
 
       case KOS_ITER_ERROR:
       default:
-        return KID_ERROR;
+        return KOS_ITER_ERROR;
     }
   }
 }
 
 
-static KosSourceStepResult kos_source_map_kid(KosIterDriveOutcome kid) {
+static KosSourceStepResult kos_source_map_step(KosIterStepResult r) {
 
-  switch (kid) {
-    case KID_VALUE:
+  switch (r) {
+    case KOS_ITER_VALUE:
       return KOS_SRC_VALUE;
-    case KID_EXHAUSTED:
+    case KOS_ITER_EXHAUSTED:
       return KOS_SRC_EXHAUSTED;
-    case KID_PARKED:
+    case KOS_ITER_AWAIT:
+      /* from the drive: a true park, payload pre-stepped */
       return KOS_SRC_PARKED_PROVIDER;
-    case KID_INSTALLED:
+    case KOS_ITER_INSTALLED:
       return KOS_SRC_INSTALLED;
-    case KID_INSTALLED_RESUME:
+    case KOS_ITER_INSTALLED_RESUME:
       return KOS_SRC_INSTALLED_RESUME;
-    case KID_INSTALLED_VALUE:
+    case KOS_ITER_INSTALLED_VALUE:
       return KOS_SRC_INSTALLED_VALUE;
-    case KID_ERROR:
+    case KOS_ITER_ERROR:
     default:
       return KOS_SRC_ERROR;
   }
@@ -398,7 +388,7 @@ KosSourceStepResult KosEval_SourceStep(
   KosIterSlots *islots;
 
   if (KosIter_CheckSlots(iter, &islots))
-    return kos_source_map_kid(
+    return kos_source_map_step(
         kos_iter_drive_step(es, iter, islots, NULL, NULL, NULL, NULL,
                             out, NULL));
 
@@ -436,7 +426,7 @@ KosSourceStepResult KosEval_SourceResume(
   }
 
   Py_INCREF(value);
-  return kos_source_map_kid(
+  return kos_source_map_step(
       kos_iter_drive_step(es, iter, islots, NULL, value, NULL, NULL,
                           out, NULL));
 }
@@ -459,7 +449,7 @@ KosSourceStepResult KosEval_SourceThrow(
 
   Py_INCREF(throw_typ);
   Py_INCREF(throw_exc);
-  return kos_source_map_kid(
+  return kos_source_map_step(
       kos_iter_drive_step(es, iter, islots, NULL, NULL, throw_typ,
                           throw_exc, out, NULL));
 }
@@ -486,7 +476,7 @@ static KosOpResult kos_eval_boundary_feed(
   PyObject *iter_obj = kos_dyn_iter_boundary_iter_obj(boundary);
   KosIterSlots *islots;
   PyObject *out = NULL;
-  KosIterDriveOutcome outcome;
+  KosIterStepResult outcome;
 
   if (! iter_obj || ! KosIter_CheckSlots(iter_obj, &islots)) {
     Py_XDECREF(value);
@@ -510,24 +500,24 @@ static KosOpResult kos_eval_boundary_feed(
   }
 
   switch (outcome) {
-    case KID_VALUE:
+    case KOS_ITER_VALUE:
       if (kos_dyn_iter_boundary_deliver_yield(es, boundary, out) < 0)
         return EVAL_RAISE();
       return EVAL_NORMAL();
 
-    case KID_EXHAUSTED:
+    case KOS_ITER_EXHAUSTED:
       if (kos_dyn_iter_boundary_deliver_exhausted(es, boundary, out) < 0)
         return EVAL_RAISE();
       return EVAL_NORMAL();
 
-    case KID_PARKED:
+    case KOS_ITER_AWAIT:
       return EVAL_AWAIT(out);
 
-    case KID_INSTALLED:
-    case KID_INSTALLED_RESUME:
+    case KOS_ITER_INSTALLED:
+    case KOS_ITER_INSTALLED_RESUME:
       return EVAL_NORMAL();
 
-    case KID_INSTALLED_VALUE:
+    case KOS_ITER_INSTALLED_VALUE:
       /* the provider grafted a value-returning frame mid-feed: flip
          the boundary to value mode for that frame's return */
       if (KosDynNode_IS_FOREACH(boundary))
@@ -540,7 +530,7 @@ static KosOpResult kos_eval_boundary_feed(
         KosDynYieldFrom_PHASE_SET(boundary, KOS_YF_PHASE_EXPECT_VALUE);
       return EVAL_NORMAL();
 
-    case KID_ERROR:
+    case KOS_ITER_ERROR:
     default:
       return EVAL_RAISE();
   }
