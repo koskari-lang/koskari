@@ -1886,9 +1886,27 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
      passes through. */
   if (event == KOS_XFER_EVENT_RAISE
       && KosDynNode_HAS_CAP(node, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
-      && PyErr_Occurred()
-      && PyErr_ExceptionMatches(kos_dyn_iter_boundary_exhaustion_exc(node)))
-    return KOS_HANDLE_CONSUMED;
+      && PyErr_Occurred()) {
+    if (PyErr_ExceptionMatches(kos_dyn_iter_boundary_exhaustion_exc(node)))
+      return KOS_HANDLE_CONSUMED;
+
+    if (kos_dyn_iter_boundary_value_mode(node)) {
+      /* A non-protocol error escaping a value-grafted invoke: release
+         the provider's busy mark and disarm before the raise passes to
+         the consumer's own handlers. */
+      PyObject *iter_obj = kos_dyn_iter_boundary_iter_obj(node);
+      KosIterSlots *islots;
+      if (iter_obj && KosIter_CheckSlots(iter_obj, &islots))
+        islots->ki_finish(iter_obj, 0);
+      if (KosDynNode_IS_FOREACH(node))
+        kos_dyn_foreach_set_iter_step_phase(
+            (KosDynForeach *) node, KOS_FOREACH_ITER_STEP_IDLE);
+      else if (KosDynNode_IS_NEXT(node))
+        KosDynNext_RESUME(node) = KOS_DYN_NEXT_MODE_STEP;
+      else if (KosDynNode_IS_YIELD_FROM(node))
+        KosDynYieldFrom_PHASE_SET(node, KOS_YF_PHASE_DRIVING);
+    }
+  }
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_TRY:

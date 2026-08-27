@@ -117,6 +117,10 @@ typedef enum {
   KOS_ITER_EXHAUSTED,   /* *out: return payload (new ref) or NULL */
   KOS_ITER_AWAIT,       /* *out: awaitable (new ref); site parks */
   KOS_ITER_INSTALLED,   /* spliced into consumer eval; deferred delivery */
+  KOS_ITER_INSTALLED_VALUE, /* spliced frames whose frame return IS the
+                               element: the site arms its boundary in
+                               value mode and the return delivers as
+                               the step value */
   KOS_ITER_ERROR,       /* PyErr set; *out untouched */
 } KosIterStepResult;
 

@@ -250,6 +250,8 @@ typedef enum {
   KID_PARKED,        /* *out: pre-stepped yield item for EVAL_AWAIT;
                         py_await_iter armed on the context */
   KID_INSTALLED,     /* provider spliced frames; deferred delivery */
+  KID_INSTALLED_VALUE, /* spliced frames whose frame return is the
+                        element; the site arms value mode */
   KID_ERROR,         /* PyErr set */
 } KosIterDriveOutcome;
 
@@ -312,6 +314,9 @@ static KosIterDriveOutcome kos_iter_drive_step(
 
       case KOS_ITER_INSTALLED:
         return KID_INSTALLED;
+
+      case KOS_ITER_INSTALLED_VALUE:
+        return KID_INSTALLED_VALUE;
 
       case KOS_ITER_AWAIT: {
         int suspended = 0;
@@ -484,6 +489,15 @@ static KosOpResult revive_await(
           return EVAL_AWAIT(out);
 
         case KID_INSTALLED:
+          break;
+
+        case KID_INSTALLED_VALUE:
+          if (KosDynNode_IS_FOREACH(boundary))
+            kos_dyn_foreach_set_iter_step_phase(
+                (KosDynForeach *) boundary,
+                KOS_FOREACH_ITER_STEP_AWAITING_KOS_VALUE);
+          else if (KosDynNode_IS_NEXT(boundary))
+            KosDynNext_RESUME(boundary) = KOS_DYN_NEXT_MODE_VALUE;
           break;
 
         case KID_ERROR:
@@ -2167,7 +2181,14 @@ static inline int kos_return_is_extent_plain(
   switch (KosDynNode_KIND(parent)) {
   case KOS_DYN_NS:
   case KOS_DYN_LOOP:
+    break;
   case KOS_DYN_FOREACH:
+    /* An armed iterator boundary is a return terminus (a value-grafted
+       invoke delivering its element), never a discardable extent; the
+       capability is held exactly while a step is in flight, so plain
+       body calls keep the fast retarget. */
+    if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY))
+      return 0;
     break;
   default:
     return 0;
@@ -2276,6 +2297,22 @@ static KosOpResult eval_event_return_at_frame(
                  (unsigned) KosDynNode_KIND(consumer));
     Py_DECREF(val);
     return EVAL_FATAL();
+  }
+
+  /* Case 2b: value-graft parent — an iterator boundary armed in value
+     mode: the returning frame is a provider's grafted invoke, and its
+     return value is the step element, delivered through the boundary
+     (push, disarm, ki_finish). */
+  if (parent
+      && KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
+      && kos_dyn_iter_boundary_value_mode(parent)) {
+    if (unlikely(kos_dyn_pop_frame(es) < 0)) {
+      Py_DECREF(val);
+      return EVAL_FATAL();
+    }
+    if (kos_dyn_iter_boundary_deliver_yield(es, parent, val) < 0)
+      return EVAL_FATAL();
+    return EVAL_REPROLOGUE();
   }
 
   /* Case 3: any other non-NULL, non-GEN parent (WIND, TRY, WITH, native

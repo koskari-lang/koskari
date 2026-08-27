@@ -234,7 +234,7 @@ static KosEvaluatedTypeObject KosProcedureCallableType = {
     .tp_doc = "A Demand with no result: runs its wrapped callable on the "
               "demand path and returns None",
     .tp_repr = procedure_repr,
-    .tp_call = procedure_tp_call,
+    .tp_call = KosCallAdapt_CallAsync,
     .tp_base = KOS_EVALUATED_PYTYPE(KosDemandCallableType),
   },
   .kos_call = {

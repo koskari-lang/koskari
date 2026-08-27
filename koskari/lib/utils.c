@@ -342,7 +342,7 @@ static KosEvaluatedTypeObject KosApplyType = {
     .tp_name = "koskari.lib.ApplyHelper",
     .tp_basicsize = sizeof(PyObject),
     .tp_dealloc = (destructor) PyObject_Del,
-    .tp_call = apply_call,
+    .tp_call = KosCallAdapt_CallAsync,
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_doc = "Callable helper implementing apply(func, args=(), kwargs=None)",
     .tp_new = PyType_GenericNew,

@@ -39,6 +39,11 @@ static KOS_NOINLINE KosOpResult iter_next_step_kos_iter(
     case KID_INSTALLED:
       return EVAL_NORMAL();
 
+    case KID_INSTALLED_VALUE:
+      kos_dyn_foreach_set_iter_step_phase(
+          fe, KOS_FOREACH_ITER_STEP_AWAITING_KOS_VALUE);
+      return EVAL_NORMAL();
+
     case KID_VALUE:
       kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
       if (KosEvalState_StackPUSH(es, out) < 0)

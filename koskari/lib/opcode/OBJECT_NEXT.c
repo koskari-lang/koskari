@@ -45,6 +45,18 @@ static KosOpResult object_next_step(
         Py_XDECREF(default_val);
         return EVAL_NORMAL();
 
+      case KID_INSTALLED_VALUE: {
+        KosDynNode *bnode = KosEvalState_DYN_TOP(es);
+        /* dyn_top is now the grafted frame; the boundary is its parent */
+        while (bnode && ! KosDynNode_IS_NEXT(bnode))
+          bnode = KosDynNode_PARENT(bnode);
+        if (bnode)
+          KosDynNext_RESUME(bnode) = KOS_DYN_NEXT_MODE_VALUE;
+        Py_DECREF(iter);
+        Py_XDECREF(default_val);
+        return EVAL_NORMAL();
+      }
+
       case KID_VALUE:
         kos_dyn_next_abort_after_failed_attach(es);
         Py_DECREF(iter);

@@ -115,11 +115,16 @@ static KosIterStepResult map_take_invoke_result(
 
 
 /**
-   INVOKE: apply func to the element through the kos call interface (a
-   koskari function comes back as its coroutine, which parks like any
-   awaitable). element is consumed.
+   INVOKE: apply func to the element. A frame-wanting KosCallable is
+   grafted in-eval when a live eval state is available: its frame runs
+   as a child of the site's armed boundary and its return IS the
+   element (KOS_ITER_INSTALLED_VALUE) -- no coroutine, ambient awaits
+   inside the frame. Otherwise the call goes through the kos call
+   interface at the Python boundary; an awaitable result (a koskari
+   function's coroutine included) parks the step. element is consumed.
 */
 static KosIterStepResult map_invoke(
+    KosEvalState *es,
     KosMapObject *m,
     PyObject *element,
     PyObject **out) {
@@ -130,6 +135,30 @@ static KosIterStepResult map_invoke(
     m->phase = KOS_MAP_IDLE;
     m->busy = 0;
     return KOS_ITER_ERROR;
+  }
+
+  if (es) {
+    KosCallSlots *cslots;
+    if (KosCallable_CheckSlots(m->func, &cslots)
+        && KosCallSlots_WantsFrame(cslots, m->func)) {
+      /* The graft pushes a callee frame mid-dispatch: flush the
+         consumer's live registers first so its stored pc is the
+         resume point after delivery, exactly as the CALL path does. */
+      KosEvalState_FlushLiveRegsToFrame(es);
+      KosOpResult r = KosEvalState_CallArgs(es, m->func, args, NULL, 0);
+      Py_DECREF(args);
+      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
+        m->phase = KOS_MAP_INVOKING;
+        m->busy = 1;
+        return KOS_ITER_INSTALLED_VALUE;
+      }
+      m->phase = KOS_MAP_IDLE;
+      m->busy = 0;
+      if (! PyErr_Occurred())
+        PyErr_SetString(PyExc_SystemError,
+                        "map invoke graft: unexpected install result");
+      return KOS_ITER_ERROR;
+    }
   }
 
   PyObject *result = Koskari_AsyncCall(m->func, args, NULL);
@@ -149,6 +178,7 @@ static KosIterStepResult map_invoke(
    immediately; an async iterator parks on its __anext__ awaitable.
 */
 static KosIterStepResult map_fetch(
+    KosEvalState *es,
     KosMapObject *m,
     PyObject **out) {
 
@@ -157,7 +187,7 @@ static KosIterStepResult map_fetch(
   if (styp->tp_iternext) {
     PyObject *element = styp->tp_iternext(m->source);
     if (element)
-      return map_invoke(m, element, out);
+      return map_invoke(es, m, element, out);
 
     if (PyErr_Occurred()
         && ! PyErr_ExceptionMatches(PyExc_StopIteration)) {
@@ -209,8 +239,6 @@ static KosIterStepResult map_iter_step(
 
   KosMapObject *m = (KosMapObject *) self;
 
-  (void) es;
-
   if (m->phase == KOS_MAP_CLOSED) {
     *out = NULL;
     return KOS_ITER_EXHAUSTED;
@@ -229,7 +257,7 @@ static KosIterStepResult map_iter_step(
     return KOS_ITER_ERROR;
   }
 
-  return map_fetch(m, out);
+  return map_fetch(es, m, out);
 }
 
 
@@ -241,8 +269,6 @@ static KosIterStepResult map_iter_resume(
 
   KosMapObject *m = (KosMapObject *) self;
 
-  (void) es;
-
   if (! m->busy || m->phase == KOS_MAP_CLOSED) {
     PyErr_SetString(PyExc_RuntimeError, "map was not parked");
     return KOS_ITER_ERROR;
@@ -250,7 +276,8 @@ static KosIterStepResult map_iter_resume(
 
   if (m->phase == KOS_MAP_FETCHING) {
     Py_INCREF(value);
-    return map_invoke(m, value, out);
+    m->busy = 0;
+    return map_invoke(es, m, value, out);
   }
 
   /* KOS_MAP_INVOKING: the awaited result may itself be awaitable

@@ -142,8 +142,10 @@ int kos_dyn_iter_boundary_deliver_exhausted(
 PyObject *kos_dyn_iter_boundary_exhaustion_exc(KosDynNode *node) {
 
   if (KosDynNode_IS_NEXT(node)) {
-    if (KosDynNext_RESUME(node))
+    if (KosDynNext_RESUME(node) == KOS_DYN_NEXT_MODE_RESUME)
       return PyExc_StopAsyncIteration;
+    if (KosDynNext_RESUME(node) == KOS_DYN_NEXT_MODE_VALUE)
+      return PyExc_StopIteration;
     return KosIter_Check(KosDynNext_AGEN_OBJ(node))
         ? PyExc_StopIteration : PyExc_StopAsyncIteration;
   }
@@ -166,8 +168,9 @@ PyObject *kos_dyn_iter_boundary_exhaustion_exc(KosDynNode *node) {
 int kos_dyn_iter_boundary_awaiting_py(KosDynNode *node) {
 
   if (KosDynNode_IS_NEXT(node))
-    return KosDynNext_RESUME(node)
-        || ! KosIter_Check(KosDynNext_AGEN_OBJ(node));
+    return KosDynNext_RESUME(node) == KOS_DYN_NEXT_MODE_RESUME
+        || (KosDynNext_RESUME(node) == KOS_DYN_NEXT_MODE_STEP
+            && ! KosIter_Check(KosDynNext_AGEN_OBJ(node)));
   if (KosDynNode_IS_FOREACH(node)) {
     uint8_t phase = KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) node);
     return phase == KOS_FOREACH_ITER_STEP_AWAITING_PY
@@ -180,10 +183,23 @@ int kos_dyn_iter_boundary_awaiting_py(KosDynNode *node) {
 int kos_dyn_iter_boundary_resume_park(KosDynNode *node) {
 
   if (KosDynNode_IS_NEXT(node))
-    return KosDynNext_RESUME(node);
+    return KosDynNext_RESUME(node) == KOS_DYN_NEXT_MODE_RESUME;
   if (KosDynNode_IS_FOREACH(node))
     return KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) node)
         == KOS_FOREACH_ITER_STEP_AWAITING_KOS_ITER;
+  return 0;
+}
+
+
+int kos_dyn_iter_boundary_value_mode(KosDynNode *node) {
+
+  if (KosDynNode_IS_NEXT(node))
+    return KosDynNext_RESUME(node) == KOS_DYN_NEXT_MODE_VALUE;
+  if (KosDynNode_IS_FOREACH(node))
+    return KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) node)
+        == KOS_FOREACH_ITER_STEP_AWAITING_KOS_VALUE;
+  if (KosDynNode_IS_YIELD_FROM(node))
+    return KosDynYieldFrom_PHASE(node) == KOS_YF_PHASE_EXPECT_VALUE;
   return 0;
 }
 

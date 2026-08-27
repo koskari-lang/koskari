@@ -174,6 +174,7 @@ typedef enum KosRegionStyle {
 #define KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN  1u
 #define KOS_FOREACH_ITER_STEP_AWAITING_PY        2u
 #define KOS_FOREACH_ITER_STEP_AWAITING_KOS_ITER  3u
+#define KOS_FOREACH_ITER_STEP_AWAITING_KOS_VALUE 4u
 
 
 /**
@@ -363,9 +364,8 @@ struct KosDynNode {
       PyObject *agen_obj;   /* KosIter provider or iterator, strong ref */
       PyObject *default_val; /* owned; 2-arg NEXT */
       int n;                 /* 1 or 2 */
-      uint8_t resume;        /* parked provider step: awaited value
-                                re-enters ki_step rather than being the
-                                element */
+      uint8_t resume;        /* KOS_DYN_NEXT_MODE_*: how the in-flight
+                                step completes */
     } next;
   } u;
 
@@ -1427,6 +1427,13 @@ int kos_dyn_iter_boundary_resume_park(KosDynNode *node);
 
 
 /**
+   True when the boundary's in-flight step is a value graft: the next
+   frame return below delivers as the step element.
+*/
+int kos_dyn_iter_boundary_value_mode(KosDynNode *node);
+
+
+/**
    The iterator object a parked boundary is stepping (borrowed): the
    FOREACH iter or the NEXT node's object.
 */
@@ -2441,11 +2448,19 @@ static inline void kos_dyn_foreach_set_iter_step_phase(
 #define KosDynNext_N(nd) (((KosDynNode *)(nd))->u.next.n)
 #define KosDynNext_RESUME(nd) (((KosDynNode *)(nd))->u.next.resume)
 
+/* NEXT boundary in-flight step modes (the resume byte) */
+#define KOS_DYN_NEXT_MODE_STEP    0u  /* agen graft / python awaitable */
+#define KOS_DYN_NEXT_MODE_RESUME  1u  /* parked provider: value re-enters
+                                         ki_resume */
+#define KOS_DYN_NEXT_MODE_VALUE   2u  /* value graft: the frame return is
+                                         the element */
+
 /* KosYfPhase: state machine for stack-based resume inject consumption */
 typedef enum KosYfPhase {
   KOS_YF_PHASE_DRIVING = 0,
   KOS_YF_PHASE_EXPECT_SEND,
   KOS_YF_PHASE_EXPECT_AWAIT,
+  KOS_YF_PHASE_EXPECT_VALUE,
   /* A flattened koskari-gen delegate handed us a value at the iterator
      boundary; the next handler dispatch re-emits it as this generator's own
      yield (see kos_dyn_yield_from_deliver_inner_yield). */

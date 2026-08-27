@@ -752,7 +752,7 @@ KosEvaluatedTypeObject KosValuesType = {
     .tp_as_sequence = &values_as_sequence,
     .tp_as_mapping = &values_as_mapping,
 
-    .tp_call = values_call,
+    .tp_call = KosCallAdapt_CallAsync,
     .tp_repr = values_repr,
     .tp_richcompare = values_richcomp,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
