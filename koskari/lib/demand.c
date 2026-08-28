@@ -604,15 +604,15 @@ static PyObject *demand_repr(PyObject *self) {
   PyObject *result = NULL;
 
   if (! d->wrapped)
-    return PyUnicode_FromString("<Demand ?>");
+    return PyUnicode_FromString("<koskari demand ?>");
 
   name = PyObject_GetAttrString(d->wrapped, "__name__");
   if (! name) {
     PyErr_Clear();
-    return PyUnicode_FromString("<Demand <lambda>>");
+    return PyUnicode_FromString("<koskari demand <lambda>>");
   }
 
-  result = PyUnicode_FromFormat("<Demand %R>", name);
+  result = PyUnicode_FromFormat("<koskari demand %R>", name);
   Py_DECREF(name);
   return result;
 }
@@ -793,7 +793,7 @@ KosEvaluatedTypeObject KosDemandCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
-    .tp_name = "koskari.lib.Demand",
+    .tp_name = "koskari.lib.demand",
     .tp_basicsize = sizeof(KosDemandObject),
     .tp_itemsize = 0,
     .tp_dealloc = demand_dealloc,

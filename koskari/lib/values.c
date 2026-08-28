@@ -705,9 +705,93 @@ static PyObject *values_keys(PyObject *self, PyObject *_noargs) {
 }
 
 
+/**
+   __kos_repr__: the constructing s-expression, "(values 1 2 kwd: 3)",
+   with the elements rendered through the recursive kos form and
+   keywords as name-plus-colon tokens
+*/
+static PyObject *values_kos_repr(
+        PyObject *self,
+        PyObject *Py_UNUSED(ignored)) {
+
+    KosValues *s = (KosValues *) self;
+
+    int status = Py_ReprEnter(self);
+    if (status != 0)
+        return (status < 0) ? NULL : PyUnicode_FromString("...");
+
+    PyObject *result = NULL;
+    PyObject *parts = PyList_New(0);
+    if (! parts)
+        goto done;
+
+    {
+        PyObject *head = PyUnicode_FromString("values");
+        if (! head || PyList_Append(parts, head) < 0) {
+            Py_XDECREF(head);
+            goto done;
+        }
+        Py_DECREF(head);
+    }
+
+    {
+        Py_ssize_t na = PyTuple_GET_SIZE(KosValues_ARGS(s));
+        for (Py_ssize_t i = 0; i < na; i++) {
+            PyObject *ar = KosUtils_Repr(PyTuple_GET_ITEM(KosValues_ARGS(s), i));
+            if (! ar || PyList_Append(parts, ar) < 0) {
+                Py_XDECREF(ar);
+                goto done;
+            }
+            Py_DECREF(ar);
+        }
+    }
+
+    if (KosValues_KWDS(s)) {
+        PyObject *k, *v;
+        Py_ssize_t pos = 0;
+        while (PyDict_Next(KosValues_KWDS(s), &pos, &k, &v)) {
+            PyObject *kwd = PyUnicode_FromFormat("%U:", k);
+            if (! kwd || PyList_Append(parts, kwd) < 0) {
+                Py_XDECREF(kwd);
+                goto done;
+            }
+            Py_DECREF(kwd);
+
+            PyObject *vr = KosUtils_Repr(v);
+            if (! vr || PyList_Append(parts, vr) < 0) {
+                Py_XDECREF(vr);
+                goto done;
+            }
+            Py_DECREF(vr);
+        }
+    }
+
+    {
+        PyObject *sep = PyUnicode_FromString(" ");
+        if (! sep)
+            goto done;
+        PyObject *joined = PyUnicode_Join(sep, parts);
+        Py_DECREF(sep);
+        if (! joined)
+            goto done;
+        result = PyUnicode_FromFormat("(%U)", joined);
+        Py_DECREF(joined);
+    }
+
+done:
+    Py_XDECREF(parts);
+    Py_ReprLeave(self);
+    return result;
+}
+
+
 static PyMethodDef values_methods[] = {
     { "keys", (PyCFunction) values_keys, METH_NOARGS,
       "V.keys()" },
+
+    { "__kos_repr__", values_kos_repr, METH_NOARGS,
+      "V.__kos_repr__() -> str\n"
+      "The constructing s-expression form" },
 
     { NULL, NULL, 0, NULL },
 };
@@ -735,7 +819,7 @@ KosEvaluatedTypeObject KosValuesType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
-    .tp_name = "values",
+    .tp_name = "koskari.lib.values",
     .tp_basicsize = sizeof(KosValues),
     .tp_itemsize = 0,
 

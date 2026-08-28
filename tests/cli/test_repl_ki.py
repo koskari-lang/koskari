@@ -152,7 +152,7 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         out, _ = await self._run_repl(
             ['(defer (lambda [] 42))',
              '(await _)'])
-        self.assertIn('<defer delegating', out)
+        self.assertIn('<koskari defer delegating', out)
         self.assertIn('42', out)
 
 

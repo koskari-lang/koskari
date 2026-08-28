@@ -2358,6 +2358,11 @@ int koskari_matcher_init(PyObject *mod) {
                            (PyObject *) &KosDatumType))
     return -1;
 
+  /* short alias matching the class __name__ */
+  if (PyDict_SetItemString(dict, "datum",
+                           (PyObject *) &KosDatumType))
+    return -1;
+
   if (PyDict_SetItemString(dict, "DatumFrame",
                            (PyObject *) &KosDatumFrameType))
     return -1;

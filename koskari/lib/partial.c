@@ -385,7 +385,11 @@ static PyObject *kospartial_repr(PyObject *self) {
     Py_DECREF(sep);
     if (! joined)
       goto done;
-    result = PyUnicode_FromFormat("koskari.lib.KosPartial(%U)", joined);
+    {
+      const char *tn = Py_TYPE(self)->tp_name;
+      const char *dot = strrchr(tn, '.');
+      result = PyUnicode_FromFormat("%s(%U)", dot ? dot + 1 : tn, joined);
+    }
     Py_DECREF(joined);
   }
 
@@ -623,7 +627,7 @@ KosEvaluatedTypeObject KosPartialCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
-    .tp_name = "koskari.lib.KosPartial",
+    .tp_name = "koskari.lib.partial",
     .tp_basicsize = sizeof(KosPartialObject),
     .tp_itemsize = 0,
     .tp_dealloc = kospartial_dealloc,
@@ -672,6 +676,12 @@ int koskari_partial_init(PyObject *mod) {
     return -1;
 
   if (PyDict_SetItemString(dict, "KosPartial",
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosPartialCallableType)) < 0)
+    return -1;
+
+  /* short alias matching the class __name__, so pickle and koskari
+     both resolve the type by its own name */
+  if (PyDict_SetItemString(dict, "partial",
                            (PyObject *) KOS_EVALUATED_PYTYPE(KosPartialCallableType)) < 0)
     return -1;
 

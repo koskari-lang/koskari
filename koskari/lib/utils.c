@@ -330,12 +330,20 @@ static PyObject *apply_call(
 }
 
 
+static PyObject *apply_repr(PyObject *self) {
+
+  (void) self;
+  return PyUnicode_FromString("<koskari apply>");
+}
+
+
 static KosEvaluatedTypeObject KosApplyType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "koskari.lib.ApplyHelper",
+    .tp_name = "koskari.lib.apply",
     .tp_basicsize = sizeof(PyObject),
     .tp_dealloc = (destructor) PyObject_Del,
+    .tp_repr = apply_repr,
     .tp_call = KosCallAdapt_CallAsync,
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_doc = "Callable helper implementing apply(func, args=(), kwargs=None)",

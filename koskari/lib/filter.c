@@ -654,7 +654,7 @@ static void kosfilter_dealloc(PyObject *self) {
 
 static PyObject *kosfilter_repr(PyObject *self) {
 
-  return PyUnicode_FromFormat("<KosFilter at %p>", self);
+  return PyUnicode_FromFormat("<koskari filter object at %p>", self);
 }
 
 
@@ -692,7 +692,7 @@ KosEvaluatedTypeObject KosFilterType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
-    .tp_name = "koskari.lib.KosFilter",
+    .tp_name = "koskari.lib.filter",
     .tp_basicsize = sizeof(KosFilterObject),
     .tp_itemsize = 0,
     .tp_dealloc = kosfilter_dealloc,
@@ -735,6 +735,12 @@ int koskari_filter_init(PyObject *mod) {
 
   if (PyDict_SetItemString(
           dict, "KosFilter",
+          (PyObject *) KOS_EVALUATED_PYTYPE(KosFilterType)))
+    return -1;
+
+  /* short alias matching the class __name__ */
+  if (PyDict_SetItemString(
+          dict, "filter",
           (PyObject *) KOS_EVALUATED_PYTYPE(KosFilterType)))
     return -1;
 

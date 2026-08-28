@@ -2197,12 +2197,11 @@ static PyObject *function_repr(PyObject *self) {
 
   /* display follows a __name__ override (wraps); self-binding does not */
   name = fn->name_override ? fn->name_override : KosFunction_NAME(fn);
+  if (name == NULL)
+    name = KosCode_NAME(KosFunction_CODE(fn));
   if (name != NULL)
-    return PyUnicode_FromFormat("<Function %R>", name);
-  name = KosCode_NAME(KosFunction_CODE(fn));
-  if (name != NULL)
-    return PyUnicode_FromFormat("<Function %R>", name);
-  return PyUnicode_FromString("<Function <lambda>>");
+    return PyUnicode_FromFormat("<koskari function %R at %p>", name, self);
+  return PyUnicode_FromFormat("<koskari function <lambda> at %p>", self);
 }
 
 
@@ -2219,7 +2218,7 @@ static PyMemberDef function_members[] = {
 KosEvaluatedTypeObject KosFunctionType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
-  .tp_name = "koskari.lib.Function",
+  .tp_name = "koskari.lib.function",
   .tp_basicsize = sizeof(KosFunction),
   .tp_dealloc = function_dealloc,
   .tp_repr = function_repr,
@@ -2411,6 +2410,11 @@ int koskari_func_init(PyObject *mod) {
     return -1;
 
   if (PyDict_SetItemString(dict, "Function",
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosFunctionType)))
+    return -1;
+
+  /* short alias matching the class __name__ */
+  if (PyDict_SetItemString(dict, "function",
                            (PyObject *) KOS_EVALUATED_PYTYPE(KosFunctionType)))
     return -1;
 

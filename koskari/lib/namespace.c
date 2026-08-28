@@ -2399,7 +2399,7 @@ static PyMethodDef mdl_ns_methods[] = {
 PyTypeObject KosModuleNamespaceType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  "ModuleNamespace",
+  "koskari.lib.ModuleNamespace",
   sizeof(KosModuleNamespace),
   0,
 
@@ -2610,7 +2610,7 @@ static int mdl_clear(PyObject *self) {
 PyTypeObject KosModuleType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  "Module",
+  "koskari.lib.Module",
   sizeof(KosModule),
   0,
 

@@ -131,12 +131,36 @@ static int kosproperty_init(
 }
 
 
+static PyObject *kosproperty_repr(PyObject *self) {
+
+  PyObject *fget = PyObject_GetAttrString(self, "fget");
+  PyObject *name = NULL;
+  PyObject *out;
+
+  if (fget) {
+    if (fget != Py_None)
+      name = PyObject_GetAttrString(fget, "__name__");
+    Py_DECREF(fget);
+  }
+  PyErr_Clear();
+
+  if (name) {
+    out = PyUnicode_FromFormat("<koskari property %R at %p>", name, self);
+    Py_DECREF(name);
+  } else {
+    out = PyUnicode_FromFormat("<koskari property object at %p>", self);
+  }
+  return out;
+}
+
+
 PyTypeObject KosPropertyType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  .tp_name    = "koskari.lib.KosProperty",
+  .tp_name    = "koskari.lib.property",
   .tp_basicsize = 0,   /* inherited from builtins.property at PyType_Ready */
   .tp_flags   = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+  .tp_repr    = kosproperty_repr,
   .tp_init    = kosproperty_init,
   /* tp_base set dynamically in koskari_property_init before PyType_Ready */
 };
@@ -220,6 +244,11 @@ int koskari_property_init(PyObject *mod) {
     return -1;
 
   if (PyDict_SetItemString(dict, "KosProperty",
+                           (PyObject *) &KosPropertyType) < 0)
+    return -1;
+
+  /* short alias matching the class __name__ */
+  if (PyDict_SetItemString(dict, "property",
                            (PyObject *) &KosPropertyType) < 0)
     return -1;
 

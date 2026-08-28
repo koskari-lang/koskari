@@ -519,7 +519,7 @@ static void kosmap_dealloc(PyObject *self) {
 
 static PyObject *kosmap_repr(PyObject *self) {
 
-  return PyUnicode_FromFormat("<KosMap at %p>", self);
+  return PyUnicode_FromFormat("<koskari map object at %p>", self);
 }
 
 
@@ -557,7 +557,7 @@ KosEvaluatedTypeObject KosMapType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
-    .tp_name = "koskari.lib.KosMap",
+    .tp_name = "koskari.lib.map",
     .tp_basicsize = sizeof(KosMapObject),
     .tp_itemsize = 0,
     .tp_dealloc = kosmap_dealloc,
@@ -598,6 +598,11 @@ int koskari_map_init(PyObject *mod) {
     return -1;
 
   if (PyDict_SetItemString(dict, "KosMap",
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosMapType)))
+    return -1;
+
+  /* short alias matching the class __name__ */
+  if (PyDict_SetItemString(dict, "map",
                            (PyObject *) KOS_EVALUATED_PYTYPE(KosMapType)))
     return -1;
 

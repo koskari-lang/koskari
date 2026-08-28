@@ -349,7 +349,7 @@ class TestKosPartialKosRepr(unittest.TestCase):
 
         kp = KosPartial(print, 1)
         self.assertNotEqual(kos_repr(kp), repr(kp))
-        self.assertIn("KosPartial", repr(kp))
+        self.assertIn("partial(", repr(kp))
 
 
 class TestKosReprRegistry(unittest.TestCase):
