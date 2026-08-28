@@ -192,18 +192,39 @@ static KosIterStepResult iterate_suite_throw(
 
 
 /**
-   Drop an adapter-owned host after a graft terminal: the root return
-   marked the context dead, so the next suite entry must build a fresh
-   one. A durable provider context is left alone -- its lifecycle
-   belongs to the provider.
+   Make an adapter-owned host reusable after a completion at its root:
+   the finished frame chain is dropped and the completion residue
+   (dead flag, suspension tag, in-flight await iterator, resume
+   inject) cleared, so the next step reuses the same context instead
+   of freeing and reallocating one per element. A context holding
+   state this reset cannot account for (an armed transfer plan) is
+   freed instead. A durable provider context is left alone -- its
+   lifecycle belongs to the provider.
 */
 static void iterate_reset_owned_host(KosContext **host, int *owned) {
 
-  if (*host && *owned) {
-    KosContext_Free(*host);
+  KosContext *ctx = *host;
+
+  if (! ctx || ! *owned)
+    return;
+
+  if (KosContext_PLAN(ctx)) {
+    KosContext_Free(ctx);
     *host = NULL;
     *owned = 0;
+    return;
   }
+
+  if (KosContext_DYN_TOP(ctx))
+    kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
+  KosContext_DYN_TOP(ctx) = NULL;
+  KosContext_FRAME_TOP(ctx) = NULL;
+
+  KosContext_FLAGS(ctx) &= ~(KOS_CTX_DEAD | KOS_CTX_RUNNING);
+  KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
+  Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+  Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
+  KosContext_PY_RESUME_KIND(ctx) = 0;
 }
 
 
@@ -219,6 +240,7 @@ static void iterate_reset_owned_host(KosContext **host, int *owned) {
 typedef struct {
   PyObject_HEAD
   PyObject *provider;     /* KosIter provider; NULL once spent */
+  KosIterSlots *islots;   /* provider's suite; resolved once (static) */
   KosContext *host;       /* drive context (see iterate_acquire_host) */
   int host_owned;         /* host is adapter-owned; free on release */
   PyObject *send_value;   /* value to send into the provider */
@@ -665,16 +687,11 @@ static PyObject *stepper_drive(
 static PyObject *stepper_iternext(PyObject *self) {
 
   KosIterStepper *st = (KosIterStepper *) self;
-  KosIterSlots *islots;
+  KosIterSlots *islots = st->islots;
 
   if (! st->provider) {
     PyErr_SetString(PyExc_RuntimeError,
                     "cannot reuse already awaited __anext__()/asend()");
-    return NULL;
-  }
-
-  if (! KosIter_CheckSlots(st->provider, &islots)) {
-    PyErr_SetString(PyExc_TypeError, "stepper provider lost its iter suite");
     return NULL;
   }
 
@@ -823,6 +840,12 @@ static PyObject *stepper_new_ex(
 
   Py_INCREF(provider);
   st->provider = provider;
+  if (! KosIter_CheckSlots(provider, &st->islots)) {
+    Py_DECREF(provider);
+    PyObject_GC_Del(st);
+    PyErr_SetString(PyExc_TypeError, "not a KosIter provider");
+    return NULL;
+  }
   st->host = NULL;
   st->host_owned = 0;
 
@@ -856,6 +879,7 @@ static PyObject *stepper_new_ex(
 typedef struct {
   PyObject_HEAD
   PyObject *provider;      /* KosIter provider; NULL once closed */
+  KosIterSlots *islots;    /* provider's suite; resolved once (static) */
   KosContext *host;        /* drive context (see iterate_acquire_host) */
   int host_owned;          /* host is adapter-owned; free on release */
   PyObject *display_name;  /* provider __name__ for repr; may be NULL */
@@ -993,18 +1017,12 @@ static PyObject *demandgen_step(
     PyObject *throw_typ,
     PyObject *throw_exc) {
 
-  KosIterSlots *islots;
+  KosIterSlots *islots = gen->islots;
   int durable;
   int drive_mode = 0;   /* 1: value graft (frame return is element) */
 
   if (! gen->provider) {
     PyErr_SetNone(PyExc_StopIteration);
-    return NULL;
-  }
-
-  if (! KosIter_CheckSlots(gen->provider, &islots)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "DemandGenerator provider lost its iter suite");
     return NULL;
   }
 
@@ -1317,6 +1335,7 @@ PyObject *KosIterAdapt_DemandIter(PyObject *self) {
 
   Py_INCREF(self);
   gen->provider = self;
+  gen->islots = islots;
   gen->host = NULL;
   gen->host_owned = 0;
   gen->display_name = iterate_display_name(self);

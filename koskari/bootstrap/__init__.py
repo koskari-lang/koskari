@@ -29,7 +29,7 @@ from os.path import dirname, join
 from typing import Any, Dict
 
 from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
-                   KosPartial, KosProperty, MemoizedRef, Module,
+                   KosMap, KosPartial, KosProperty, MemoizedRef, Module,
                    ModuleNamespace,
                    ParamRef, Ref, apply, build_dict, build_list, build_set,
                    build_tuple, car, cdr, cons, defer, demand, demand_apply,
@@ -153,6 +153,7 @@ def make_bootstrap():
 
     # types from koskari.lib
     _ty('defer', defer)
+    _ty('map', KosMap)
     _ty('demand', demand)
     _ty('partial', KosPartial)
     _ty('keyword', keyword)
@@ -247,7 +248,7 @@ def make_bootstrap():
     _bind('instance?', isinstance)
     _bind('iter', iter)
     _bind('len', len)
-    _bind('map', map)
+    _bind('py-map', map)
     _bind('max', max)
     _bind('min', min)
     _bind('next', next)

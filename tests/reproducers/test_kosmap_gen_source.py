@@ -154,14 +154,16 @@ class TestKosMapGenSource(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(KoskariSyncViolation):
             list(m)
 
-    async def test_capture_across_map_frame_refused(self):
+    async def test_capture_across_map_helper_frame_refused(self):
         """
-        a continuation captured while a map step's frame is live is
-        refused with an error naming the native program
+        a continuation captured while the map's helper frame is live (a
+        driven source keeps it on the chain) is refused with an error
+        naming the native program; a sync-source step installs only the
+        function's own frame and captures like any call
         """
         mod = await self.load("kmgs_capture")
         v = vars(mod)
-        m = KosMap(v["grab"], [1, 2])
+        m = KosMap(v["grab"], v["gen-plain"]())
         with self.assertRaises(RuntimeError) as ctx:
             await v["capture-attempt"](m)
         self.assertIn("native frame 'map-step'", str(ctx.exception))

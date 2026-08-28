@@ -507,6 +507,17 @@ static KosOpResult deliver_py_call_result(
 }
 
 
+static KOS_NOINLINE KosOpResult kos_call_invoke_body(
+    KosEvalState *es,
+    KosSegment **caller_slot,
+    size_t window,
+    PyObject *callable,
+    PyObject *const *argv,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    unsigned flags);
+
+
 KosOpResult KosEvalState_Call(
     KosEvalState *es,
     PyObject *callable,
@@ -516,6 +527,25 @@ KosOpResult KosEvalState_Call(
     int tail_call) {
 
   KosCallSlots *slots;
+
+  /* Exact simple-arity KosFunction: the shared call core, whose
+     parked-frame reuse the legacy install path lacks. */
+  if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
+      && ! tail_call && ! kwnames
+      && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
+      && KosFunction_BIND_SELF_STATE(callable) == 2) {
+    KosSegment *dummy = NULL;
+    KosOpResult r = kos_call_invoke_body(es, &dummy, 0, callable, args,
+                                         nargs, kwnames, 0);
+    if (r.kind != KOS_RES_NORMAL)
+      return r;
+    if (KosEvalState_PLAN(es))
+      return EVAL_REPROLOGUE();
+    if (KosEvalState_FRAME(es)
+        && KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)))
+      return EVAL_REPROLOGUE();
+    return EVAL_NORMAL();
+  }
 
   if (! KosCallable_CheckSlots(callable, &slots)) {
     if (KosInstanceCall_Check(callable)) {
@@ -831,6 +861,50 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
           KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_STEAL);
           if (window)
             kos_stack_drop_noerr_fast(caller_slot, window);
+          return EVAL_NORMAL();
+        }
+      }
+
+      /* Plain vector (no stack window), no self-bind: the parked
+         frame binds directly from argv -- references taken, slots
+         filled, ready-push. A miss installs and tags the frame so its
+         release parks it. */
+      if (likely(! (flags & KOS_CALL_ARGV_WINDOW)
+                 && KosFunction_BIND_SELF_STATE(callable) == 2)) {
+        KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
+
+        if (likely(cached)) {
+          for (Py_ssize_t i = 0; i < nargs; i++)
+            Py_INCREF(argv[i]);
+          (void) KosFormals_SimpleStealApply(
+              KosDynFrame_NS(cached), argv, nargs);
+          KosFunction_CACHED_FRAME(callable) = NULL;
+          kos_dyn_push_ready_frame(es, cached);
+          if (! (flags & KOS_CALL_CALLABLE_OWNED))
+            Py_INCREF(callable);
+          KosDynFrame_FN(cached) = callable;
+          KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+          return EVAL_NORMAL();
+        }
+
+        frame_ns = KosFunction_SimpleCallNamespaceFromVector(
+            callable, argv, nargs);
+        if (unlikely(! frame_ns)) {
+          if (flags & KOS_CALL_CALLABLE_OWNED)
+            Py_DECREF(callable);
+          return EVAL_RAISE();
+        }
+        KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
+        {
+          KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
+          if (unlikely(! frame)) {
+            if (flags & KOS_CALL_CALLABLE_OWNED)
+              Py_DECREF(callable);
+            return EVAL_RAISE();
+          }
+          if (! (flags & KOS_CALL_CALLABLE_OWNED))
+            Py_INCREF(callable);
+          KosDynFrame_FN(frame) = callable;
           return EVAL_NORMAL();
         }
       }
