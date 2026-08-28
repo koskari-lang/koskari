@@ -52,8 +52,6 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_INFLIGHT(node) = NULL;
   KosDynYieldFrom_REQ(node)->iter = NULL;
   KosDynYieldFrom_REQ(node)->mode = KOS_IREQ_IDLE;
-  KosDynYieldFrom_REQ(node)->wake = NULL;
-  KosDynYieldFrom_REQ(node)->owner = NULL;
   return node;
 }
 

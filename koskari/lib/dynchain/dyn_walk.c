@@ -706,10 +706,10 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
        torn through: its handler may consume (REPROLOGUE) or decline
        (EVAL_RAISE), in which case the pop below proceeds. */
     if (KosDynNode_IS_FRAME(top)
-        && KosDynFrame_NATIVE_HANDLER((KosDynFrame *) top)) {
-      KosNativeHandlerFn fn =
-          (KosNativeHandlerFn) KosDynFrame_NATIVE_HANDLER((KosDynFrame *) top);
-      KosOpResult hr = fn(es, KOS_NFRAME_EXCEPTION, NULL);
+        && KosDynFrame_NATIVE_PROG((KosDynFrame *) top)) {
+      const KosNativeProgram *prog = (const KosNativeProgram *)
+          KosDynFrame_NATIVE_PROG((KosDynFrame *) top);
+      KosOpResult hr = prog->np_handler(es, KOS_NFRAME_EXCEPTION, NULL);
       if (hr.kind == KOS_RES_NORMAL || hr.kind == KOS_RES_REPROLOGUE)
         return EVAL_REPROLOGUE();
       if (hr.kind == KOS_RES_FATAL)

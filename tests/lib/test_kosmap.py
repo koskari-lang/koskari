@@ -77,6 +77,28 @@ class TestKosMapParkOwnership(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(StopAsyncIteration):
             await m.__anext__()
 
+    async def test_concurrent_athrow_refused(self):
+        m, release = self.make_parked()
+        first = asyncio.ensure_future(m.__anext__())
+        await asyncio.sleep(0)
+
+        with self.assertRaises(RuntimeError):
+            await m.athrow(ValueError("intruder"))
+
+        release.set()
+        self.assertEqual(await first, 2)
+
+    async def test_concurrent_aclose_refused(self):
+        m, release = self.make_parked()
+        first = asyncio.ensure_future(m.__anext__())
+        await asyncio.sleep(0)
+
+        with self.assertRaises(RuntimeError):
+            await m.aclose()
+
+        release.set()
+        self.assertEqual(await first, 2)
+
     async def test_fresh_asend_non_none_rejected(self):
         m = KosMap(abs, [-1])
         with self.assertRaises(TypeError):

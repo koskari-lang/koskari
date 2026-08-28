@@ -1706,13 +1706,16 @@ static KosOpResult kos_eval_invoke_native_handler(
     PyObject *val) {
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
-  if (! frame || ! KosDynFrame_NATIVE_HANDLER(frame)) {
+  if (! frame || ! KosDynFrame_NATIVE_PROG(frame)) {
     Py_XDECREF(val);
     return EVAL_FATAL();
   }
 
-  KosNativeHandlerFn fn = (KosNativeHandlerFn) KosDynFrame_NATIVE_HANDLER(frame);
-  return fn(es, ev, val);
+  {
+    const KosNativeProgram *prog =
+        (const KosNativeProgram *) KosDynFrame_NATIVE_PROG(frame);
+    return prog->np_handler(es, ev, val);
+  }
 }
 
 
@@ -1884,7 +1887,7 @@ entry_mode_dispatch:
   if (send_val != NULL
       && mode == KOS_MODE_NORMAL
       && KosEvalState_FRAME(es)
-      && KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es))) {
+      && KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es))) {
 
     PyObject *val = KosEvalState_StackPopRef(es);
     if (val) {
@@ -2083,7 +2086,7 @@ static inline KosOpResult eval_event_return(
 static inline int kos_return_parent_is_plain(KosDynNode *parent) {
   return parent
       && KosDynNode_IS_FRAME(parent)
-      && ! KosDynFrame_NATIVE_HANDLER((KosDynFrame *) parent);
+      && ! KosDynFrame_NATIVE_PROG((KosDynFrame *) parent);
 }
 
 
@@ -2223,7 +2226,7 @@ static inline int kos_return_is_extent_plain(
   ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
   if (! ft
       || ! KosDynNode_IS_FRAME((KosDynNode *) ft)
-      || KosDynFrame_NATIVE_HANDLER(ft))
+      || KosDynFrame_NATIVE_PROG(ft))
     return 0;
 
   if (! KosDynNode_STACK(child)
@@ -2426,7 +2429,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 static inline KosOpResult eval_parent_return_deliver_impl(
     KosEvalState *es, PyObject *val) {
 
-  if (unlikely(KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) != NULL)) {
+  if (unlikely(KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) != NULL)) {
     KosOpResult hr = kos_eval_invoke_native_handler(
         es, KOS_NFRAME_CALL_VALUE, val);
     return apply_kos_op_result(es, hr);
@@ -2677,7 +2680,7 @@ cg_prologue:
   }
 
   if (KosEvalState_FRAME(es)
-      && KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) != NULL) {
+      && KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) != NULL) {
     KosOpResult ns = eval_step_native_iteration(es);
     if (ns.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
     return ns;

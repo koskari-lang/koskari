@@ -132,7 +132,7 @@ static KosOpResult map_nf_invoke(
 
       switch (map_result_is_element(result)) {
         case 1:
-          KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) = NULL;
+          KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
           return EVAL_RETURN(result);
         case 0: {
           /* Awaitable result: park; the completion wakes as AWAITED
@@ -176,7 +176,7 @@ static KosOpResult map_nf_fetch(KosEvalState *es, KosMapObject *m) {
     case KOS_IREQ_EXHAUSTED:
       Py_XDECREF(out);
       kos_dyn_next_abort_after_failed_attach(es);
-      KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) = NULL;
+      KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
       PyErr_SetNone(PyExc_StopIteration);
       return EVAL_RAISE();
 
@@ -203,6 +203,22 @@ static KosOpResult map_nf_fetch(KosEvalState *es, KosMapObject *m) {
    always declined -- the raise walk pops the frame and the consumer's
    boundary converts protocol exceptions to exhaustion.
 */
+static KosOpResult map_nf_handler(
+    KosEvalState *es,
+    KosNativeFrameEvent ev,
+    PyObject *value);
+
+
+/* No clone entry: replaying a captured step would re-consume source
+   elements, so continuation capture across a map step is refused. */
+static const KosNativeProgram kos_map_program = {
+  .np_name = "map-step",
+  .np_handler = map_nf_handler,
+  .np_clone_state = NULL,
+  .np_free_state = NULL,
+};
+
+
 static KosOpResult map_nf_handler(
     KosEvalState *es,
     KosNativeFrameEvent ev,
@@ -249,7 +265,7 @@ static KosOpResult map_nf_handler(
      another awaitable (a koskari function's coroutine); reclassify. */
   switch (map_result_is_element(value)) {
     case 1:
-      KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) = NULL;
+      KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
       return EVAL_RETURN(value);
     case 0: {
       KosOpResult pr = KosEvalState_PushOrAwait(es, value);
@@ -355,7 +371,7 @@ static KosIterStepResult map_iter_step(
         Py_XDECREF(staged);
         return KOS_ITER_ERROR;
       }
-      KosDynFrame_NATIVE_HANDLER(frame) = (void *) map_nf_handler;
+      KosDynFrame_NATIVE_PROG(frame) = (void *) &kos_map_program;
       KosDynFrame_NATIVE_STATE(frame) = (void *) m;
 
       if (staged) {
@@ -386,6 +402,14 @@ static KosIterStepResult map_iter_throw(
 
   (void) es;
   (void) out;
+
+  if (m->busy) {
+    /* A step is in flight and its driver owns the map's state: every
+       second caller is refused, GeneratorExit included -- the same
+       rule CPython applies to a running async generator. */
+    PyErr_SetString(PyExc_RuntimeError, "map is already being iterated");
+    return KOS_ITER_ERROR;
+  }
 
   if (PyErr_GivenExceptionMatches(throw_typ, PyExc_GeneratorExit)) {
     /* Generator close semantics: run the source's cleanup, mark
@@ -458,6 +482,11 @@ static int map_iter_close(PyObject *self) {
   KosMapObject *m = (KosMapObject *) self;
 
   if (m->closed)
+    return 0;
+
+  /* Declined while a step is in flight; that drive's completion owns
+     the state. Reached from teardown paths, so no error is raised. */
+  if (m->busy)
     return 0;
 
   m->closed = 1;

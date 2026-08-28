@@ -135,7 +135,7 @@ typedef KosDynFrame KosFrame;
 #define KosFrame_ACTING_PC(f)  KosDynFrame_ACTING_PC(f)
 #define KosFrame_STACK(f)      KosDynFrame_STACK(f)
 #define KosFrame_NS(f)         KosDynFrame_NS(f)
-#define KosFrame_NATIVE_HANDLER(f) KosDynFrame_NATIVE_HANDLER(f)
+#define KosFrame_NATIVE_PROG(f) KosDynFrame_NATIVE_PROG(f)
 
 
 /**
@@ -200,6 +200,23 @@ typedef enum KosNativeFrameEvent {
 */
 typedef KosOpResult (*KosNativeHandlerFn)(
     KosEvalState *, KosNativeFrameEvent, PyObject *);
+
+
+/**
+   A native program: the static descriptor a native frame carries in
+   its native_prog slot. np_handler is the wake entry. np_clone_state
+   makes the frame capturable by continuations: it produces an owned
+   copy of the program's state (0 with *out set; -1 with PyErr on
+   failure), released later through np_free_state; a NULL
+   np_clone_state means capture across this frame fails with an error
+   naming np_name.
+*/
+typedef struct KosNativeProgram {
+  const char *np_name;
+  KosNativeHandlerFn np_handler;
+  int (*np_clone_state)(void *state, void **out);
+  void (*np_free_state)(void *state);
+} KosNativeProgram;
 
 
 /**

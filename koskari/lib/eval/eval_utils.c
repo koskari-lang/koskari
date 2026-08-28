@@ -684,7 +684,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
             && ! (flags & KOS_CALL_ARGV_PREPENDED)
             && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
             && KosFunction_BIND_SELF_STATE(callable) == 2
-            && ! KosDynFrame_NATIVE_HANDLER(frame)
+            && ! KosDynFrame_NATIVE_PROG(frame)
             && kos_tail_ns_reusable(KosDynFrame_NS(frame))) {
           PyObject *ns = KosDynFrame_NS(frame);
 

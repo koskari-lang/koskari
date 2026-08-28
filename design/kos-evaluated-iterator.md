@@ -119,8 +119,6 @@ are all requestors with the same three words.
 typedef struct KosIterRequest {
   PyObject *iter;       /* stepped iterator; strong ref while armed */
   uint8_t mode;         /* KOS_IREQ_* */
-  KosIterWakeFn wake;   /* reserved for non-node requestors */
-  void *owner;
 } KosIterRequest;
 ```
 
@@ -222,11 +220,28 @@ typedef KosOpResult (*KosNativeHandlerFn)(
     KosEvalState *, KosNativeFrameEvent, PyObject *);
 ```
 
-The native frame gained `native_state` beside `native_handler`: a
-borrowed pointer meaningful only to the handler, whose owner
-guarantees the lifetime spans the frame's. The raise walk offers
-EXCEPTION to a native frame before tearing through it; a handler that
-declines returns `EVAL_RAISE()` and the walk pops the frame.
+A native frame carries a pointer to a static per-program descriptor
+plus a state pointer:
+
+```c
+typedef struct KosNativeProgram {
+  const char *np_name;
+  KosNativeHandlerFn np_handler;
+  int (*np_clone_state)(void *state, void **out);
+  void (*np_free_state)(void *state);
+} KosNativeProgram;
+```
+
+A live frame's state is borrowed; its owner guarantees the lifetime
+spans the frame's. Continuation capture across the frame uses
+`np_clone_state` when the program provides one -- the copy owns the
+cloned state (`KOS_FRAME_OWNS_NATIVE_STATE`) and frees it through
+`np_free_state` -- and otherwise fails with an error naming
+`np_name`. Apply provides a trivial clone and stays capturable; map
+provides none, since replaying a captured step would re-consume
+source elements. The raise walk offers EXCEPTION to a native frame
+before tearing through it; a handler that declines returns
+`EVAL_RAISE()` and the walk pops the frame.
 `KosNativeFrame_Return(es, value)` performs the return unwind walk,
 FINALLY/async-unwind outcomes, frame detach/free, and parent delivery;
 apply uses it. Boundary deliveries that land while a native frame is
@@ -293,7 +308,11 @@ The handler is the two-phase machine:
    `ki_finish(map, 0)`.
 
 Exceptions are always declined: the frame pops and the consumer's
-boundary owns every conversion. Nested maps need no forwarding code --
+boundary owns every conversion. While a step is in flight, `ki_throw`
+refuses every second caller (RuntimeError, GeneratorExit included --
+the rule CPython applies to a running async generator) and `ki_close`
+declines silently, since it is reached from teardown paths where the
+live drive owns the state. Nested maps need no forwarding code --
 each level is one more frame + boundary pair on the chain, and the
 walks already compose them.
 
@@ -326,10 +345,11 @@ Hard-won; violating any of these reproduces a fixed bug.
 - A root frame return marks the context dead and leaves the frame in
   place; an adapter-owned host must be discarded after a root
   completion.
-- After installing work that may be a code-less native frame, re-enter
-  the prologue (`EVAL_REPROLOGUE`); dispatching from stale registers
-  reads a NULL code. The fresh-entry FAST-namespace check also
-  tolerates a NULL code for the same reason.
+- After an install, a frame carrying bytecode (a generator attached)
+  continues dispatch directly; a code-less native frame must take
+  `EVAL_REPROLOGUE` -- dispatching into it reads a NULL code. The
+  fresh-entry FAST-namespace check also tolerates a NULL code for the
+  same reason.
 - Demand extents deny genuine suspension via `KOS_FRAME_DEMAND`
   inherited at frame push; eager-completing awaitables pass.
 - `do_frame_prep` and `kos_dyn_push_frame_empty` support an empty
@@ -349,10 +369,12 @@ spell their namespace.
 
 ## Open questions
 
-- The record's `wake`/`owner` fields are unused until a requestor that
-  is not a chain node needs them; remove or employ when that arrives.
+- The map's state after a demand-drive denial: the aborted step
+  abandons the source's in-flight awaitable, so the map cannot
+  meaningfully continue, yet today it is left open and a redrive
+  surfaces the wedged source's own complaint. Whether the denial
+  should instead finish the map (matching the generator's
+  demand-denial state) is undecided; the denial tests assert only the
+  violation.
 - The call-suite single-install collapse and the `tp_flags` membership
   bit: both independent of this arc, sequenced after it.
-- The stepper and demand-generator drives now share their shape; a
-  full merge of the frame-flavor and adapter-owned paths is the
-  remaining dedup.

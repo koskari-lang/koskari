@@ -2111,7 +2111,7 @@ int KosFunction_TryParkFrame(PyObject *self, KosDynFrame *frame) {
       || Py_REFCNT(ns) != 1
       || PyObject_GC_IsTracked(ns)
       || KosNamespace_BINDS(ns) != NULL
-      || KosDynFrame_NATIVE_HANDLER(frame)
+      || KosDynFrame_NATIVE_PROG(frame)
       || ! KosDynFrame_STACK(frame))
     return 0;
 

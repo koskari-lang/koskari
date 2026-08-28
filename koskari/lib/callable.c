@@ -71,7 +71,7 @@ static KosOpResult callable_promote_normal(KosEvalState *es, KosOpResult r) {
   if (KosEvalState_PLAN(es))
     return EVAL_REPROLOGUE();
   if (KosEvalState_FRAME(es)
-      && KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)))
+      && KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)))
     return EVAL_REPROLOGUE();
   return EVAL_NORMAL();
 }

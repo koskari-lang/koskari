@@ -561,13 +561,17 @@ static KosOpResult yield_from_drive_kos_iter(
 
     switch (tr) {
       case KOS_ITER_INSTALLED:
-        kos_dyn_iter_request_arm((KosDynNode *) yf, delegate,
-                                 KOS_IREQ_INSTALLED);
+      case KOS_ITER_INSTALLED_VALUE: {
+        KosDynFrame *nf;
+        kos_dyn_iter_request_arm(
+            (KosDynNode *) yf, delegate,
+            (tr == KOS_ITER_INSTALLED) ? KOS_IREQ_INSTALLED
+                                       : KOS_IREQ_GRAFT_VALUE);
+        nf = KosEvalState_FRAME(es);
+        if (nf && KosDynFrame_CODE(nf))
+          return EVAL_NORMAL();
         return EVAL_REPROLOGUE();
-      case KOS_ITER_INSTALLED_VALUE:
-        kos_dyn_iter_request_arm((KosDynNode *) yf, delegate,
-                                 KOS_IREQ_GRAFT_VALUE);
-        return EVAL_REPROLOGUE();
+      }
       case KOS_ITER_VALUE:
         return yield_from_yield_value(es, yf, out);
       case KOS_ITER_EXHAUSTED:
@@ -598,12 +602,17 @@ static KosOpResult yield_from_drive_kos_iter(
                                  KOS_IREQ_INSTALLED);
         return EVAL_NORMAL();
 
-      case KOS_ITER_INSTALLED_VALUE:
-        /* The installed work may be a code-less native frame: re-enter
-           the prologue rather than dispatching from stale registers. */
+      case KOS_ITER_INSTALLED_VALUE: {
+        /* A frame with bytecode continues dispatch directly; only a
+           code-less native frame takes the entry sequence. */
+        KosDynFrame *nf;
         kos_dyn_iter_request_arm((KosDynNode *) yf, delegate,
                                  KOS_IREQ_GRAFT_VALUE);
+        nf = KosEvalState_FRAME(es);
+        if (nf && KosDynFrame_CODE(nf))
+          return EVAL_NORMAL();
         return EVAL_REPROLOGUE();
+      }
 
       case KOS_ITER_VALUE:
         /* The delegate produced an element without grafting: re-emit

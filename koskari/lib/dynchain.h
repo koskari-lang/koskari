@@ -182,10 +182,6 @@ typedef enum {
 } KosIterWakeEvent;
 
 
-typedef KosOpResult (*KosIterWakeFn)(
-    KosEvalState *es, void *owner, KosIterWakeEvent ev, PyObject *value);
-
-
 /** In-flight step modes; private to the sidecar and the boundary
     delivery machinery -- sites and providers never read them */
 #define KOS_IREQ_IDLE         0u
@@ -205,8 +201,6 @@ typedef KosOpResult (*KosIterWakeFn)(
 typedef struct KosIterRequest {
   PyObject *iter;       /* stepped iterator; strong ref while armed */
   uint8_t mode;         /* KOS_IREQ_* */
-  KosIterWakeFn wake;   /* requestor's wake entry; NULL until stage 3 */
-  void *owner;          /* wake's first argument */
 } KosIterRequest;
 
 
@@ -285,9 +279,10 @@ struct KosDynNode {
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
       uint32_t frame_flags;
-      /* Native frame evaluator: KosNativeHandlerFn (see eval.h); void * to
-         avoid the include-order constraint of naming KosOpResult here. */
-      void *native_handler;
+      /* Native program descriptor (const KosNativeProgram *, see
+         eval.h); void * to avoid the include-order constraint of
+         naming KosOpResult here. NULL for ordinary bytecode frames. */
+      void *native_prog;
       /* The native program's own state (borrowed; meaningful only to
          native_handler, which guarantees its lifetime spans the
          frame's). Never read outside the handler's own dispatch. */
@@ -2379,7 +2374,11 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KOS_FRAME_DEMAND          (1u << 0)  /* frame is a demand-sync root */
-#define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
+#define KOS_FRAME_OWNS_NATIVE_STATE (1u << 1) /* native_state came from
+                                                 np_clone_state; free
+                                                 releases it through
+                                                 np_free_state */
+#define KosDynFrame_NATIVE_PROG(f)  (((KosDynNode *)(f))->u.frame.native_prog)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
 

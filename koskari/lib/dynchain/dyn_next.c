@@ -24,8 +24,6 @@ int kos_dyn_push_next_boundary(
   Py_INCREF(iter_obj);
   KosDynNext_REQ(node)->iter = iter_obj;
   KosDynNext_REQ(node)->mode = KOS_IREQ_IDLE;
-  KosDynNext_REQ(node)->wake = NULL;
-  KosDynNext_REQ(node)->owner = NULL;
   if (default_val) {
     Py_INCREF(default_val);
     KosDynNext_DEFAULT_VAL(node) = default_val;

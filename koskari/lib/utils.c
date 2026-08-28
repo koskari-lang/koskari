@@ -149,6 +149,29 @@ static int kos_apply_build_args_tuple(
 static KosOpResult apply_native_handler(
     KosEvalState *es,
     KosNativeFrameEvent ev,
+    PyObject *delivered_value);
+
+
+/* Apply's state is its frame stack; a capture needs nothing copied. */
+static int apply_clone_state(void *state, void **out) {
+
+  (void) state;
+  *out = NULL;
+  return 0;
+}
+
+
+static const KosNativeProgram kos_apply_program = {
+  .np_name = "apply",
+  .np_handler = apply_native_handler,
+  .np_clone_state = apply_clone_state,
+  .np_free_state = NULL,
+};
+
+
+static KosOpResult apply_native_handler(
+    KosEvalState *es,
+    KosNativeFrameEvent ev,
     PyObject *delivered_value) {
 
   if (ev == KOS_NFRAME_EXCEPTION)
@@ -175,7 +198,7 @@ static KosOpResult apply_native_handler(
   if (kwds == Py_None)
     kwds = NULL;
 
-  KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) = NULL;
+  KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
   PyObject *result = PyObject_Call(fn, seq_args, kwds);
   Py_DECREF(fn);
   Py_DECREF(seq_args);
@@ -221,7 +244,7 @@ static KosOpResult kos_apply_install_core(
 
   /* Non-flattening: configure frame with native handler, fn, seq_args, kwds */
   KosDynFrame *frame = KosEvalState_FRAME(es);
-  KosDynFrame_NATIVE_HANDLER(frame) = (void *) apply_native_handler;
+  KosDynFrame_NATIVE_PROG(frame) = (void *) &kos_apply_program;
 
   if (KosEvalState_StackPushRef(es, fn) < 0
       || KosEvalState_StackPushRef(es, seq_args) < 0) {

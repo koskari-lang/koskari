@@ -27,7 +27,7 @@ KosDynFrame *kos_dynframe_new(
   kos_dynnode_use_inline_segment((KosDynNode *) frame);
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
-  KosDynFrame_NATIVE_HANDLER(frame) = NULL;
+  KosDynFrame_NATIVE_PROG(frame) = NULL;
   KosDynFrame_NATIVE_STATE(frame) = NULL;
   KosDynFrame_FN(frame) = NULL;
   KosDynFrame_BACK_FRAME(frame) = NULL;
@@ -68,12 +68,40 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
      frame's namespace chain to the cyclic collector */
   KosDynFrame_NS(clone) = KosNamespace_Reveal(KosDynFrame_NS(frame));
 
-  KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame);
-  KosDynFrame_NATIVE_HANDLER(clone) = KosDynFrame_NATIVE_HANDLER(frame);
+  KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame)
+      & ~KOS_FRAME_OWNS_NATIVE_STATE;
+  KosDynFrame_NATIVE_PROG(clone) = KosDynFrame_NATIVE_PROG(frame);
+  KosDynFrame_NATIVE_STATE(clone) = NULL;
   /* clones opt out of the per-function frame cache */
   KosDynFrame_FN(clone) = NULL;
   /* borrowed unwind cache is meaningless off the source's chain */
   KosDynFrame_BACK_FRAME(clone) = NULL;
+
+  /* A native program's frame clones only when the program says how to
+     copy its state; the copy owns the cloned state. A program without
+     a clone entry refuses capture by name. */
+  {
+    const KosNativeProgram *prog =
+        (const KosNativeProgram *) KosDynFrame_NATIVE_PROG(frame);
+    if (prog) {
+      void *copied = NULL;
+      if (! prog->np_clone_state) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "cannot capture a continuation across native"
+                     " frame '%s'", prog->np_name);
+        kos_dynframe_free(clone);
+        return NULL;
+      }
+      if (prog->np_clone_state(KosDynFrame_NATIVE_STATE(frame),
+                               &copied) < 0) {
+        kos_dynframe_free(clone);
+        return NULL;
+      }
+      KosDynFrame_NATIVE_STATE(clone) = copied;
+      if (copied)
+        KosDynFrame_FLAGS(clone) |= KOS_FRAME_OWNS_NATIVE_STATE;
+    }
+  }
   return clone;
 }
 
@@ -90,6 +118,15 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
+
+  if (KosDynFrame_FLAGS(frame) & KOS_FRAME_OWNS_NATIVE_STATE) {
+    const KosNativeProgram *prog =
+        (const KosNativeProgram *) KosDynFrame_NATIVE_PROG(frame);
+    if (prog && prog->np_free_state)
+      prog->np_free_state(KosDynFrame_NATIVE_STATE(frame));
+    KosDynFrame_NATIVE_STATE(frame) = NULL;
+    KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_OWNS_NATIVE_STATE;
+  }
 
   {
     PyObject *fn = KosDynFrame_FN(frame);
@@ -121,9 +158,18 @@ static int dynnode_to_dict_frame(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_obj(data, "code", (PyObject *) KosDynFrame_CODE((KosDynFrame *) node)) < 0)
     return -1;
-  if (snapshot_set_int(data, "has_native_handler",
-                       KosDynFrame_NATIVE_HANDLER((KosDynFrame *) node) ? 1 : 0) < 0)
-    return -1;
+  {
+    const KosNativeProgram *prog = (const KosNativeProgram *)
+        KosDynFrame_NATIVE_PROG((KosDynFrame *) node);
+    PyObject *name = prog ? PyUnicode_FromString(prog->np_name) : NULL;
+    int r;
+    if (prog && ! name)
+      return -1;
+    r = snapshot_set_obj(data, "native_program", name);
+    Py_XDECREF(name);
+    if (r < 0)
+      return -1;
+  }
   return 0;
 }
 
@@ -278,7 +324,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
-  KosDynFrame_NATIVE_HANDLER(frame) = NULL;
+  KosDynFrame_NATIVE_PROG(frame) = NULL;
   KosDynFrame_NATIVE_STATE(frame) = NULL;
   /* the frame is being repurposed for a different function */
   Py_CLEAR(KosDynFrame_FN(frame));

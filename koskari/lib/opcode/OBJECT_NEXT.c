@@ -64,10 +64,15 @@ static KosOpResult object_next_step(
         PyErr_SetNone(PyExc_StopIteration);
         return EVAL_RAISE();
 
-      case KOS_IREQ_CONTINUES:
-        /* Installed work may be a code-less native frame: re-enter
-           the prologue rather than dispatching from stale registers. */
+      case KOS_IREQ_CONTINUES: {
+        /* A frame with bytecode (a generator attached) continues
+           dispatch directly; only a code-less native frame takes the
+           entry sequence, which exists for it. */
+        KosDynFrame *nf = KosEvalState_FRAME(es);
+        if (nf && KosDynFrame_CODE(nf))
+          return EVAL_NORMAL();
         return EVAL_REPROLOGUE();
+      }
 
       case KOS_IREQ_EXIT:
         return EVAL_AWAIT(out);

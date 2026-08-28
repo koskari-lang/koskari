@@ -57,6 +57,12 @@ define consume [it]:
     for-each [v it]:
         set! total (+ total v)
     total
+
+define grab [x]:
+    (shift k x)
+
+define capture-attempt [m]:
+    (reset (consume m))
 """
 
 
@@ -115,6 +121,50 @@ class TestKosMapGenSource(unittest.IsolatedAsyncioTestCase):
         inner = KosMap(v["inc"], [1, 2])
         result = [x async for x in KosMap(v["inc"], inner)]
         self.assertEqual(result, [3, 4])
+
+    async def test_demand_drive_over_async_source_denied(self):
+        """
+        a synchronous drive over a genuinely suspending python async
+        source raises KoskariSyncViolation
+        """
+        import asyncio
+        from koskari.lib import KoskariSyncViolation
+
+        async def pysrc():
+            await asyncio.sleep(0)
+            yield 1
+            yield 2
+
+        mod = await self.load("kmgs_demand_py_async")
+        v = vars(mod)
+        m = KosMap(v["inc"], pysrc())
+        with self.assertRaises(KoskariSyncViolation):
+            list(m)
+
+    async def test_demand_drive_over_awaiting_gen_denied(self):
+        """
+        a synchronous drive over a koskari generator that awaits raises
+        KoskariSyncViolation
+        """
+        from koskari.lib import KoskariSyncViolation
+
+        mod = await self.load("kmgs_demand_await")
+        v = vars(mod)
+        m = KosMap(v["inc"], v["gen-await"]())
+        with self.assertRaises(KoskariSyncViolation):
+            list(m)
+
+    async def test_capture_across_map_frame_refused(self):
+        """
+        a continuation captured while a map step's frame is live is
+        refused with an error naming the native program
+        """
+        mod = await self.load("kmgs_capture")
+        v = vars(mod)
+        m = KosMap(v["grab"], [1, 2])
+        with self.assertRaises(RuntimeError) as ctx:
+            await v["capture-attempt"](m)
+        self.assertIn("native frame 'map-step'", str(ctx.exception))
 
     async def test_gen_source_exhaustion_is_clean(self):
         """
