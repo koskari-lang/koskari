@@ -334,7 +334,9 @@ it drove the generic pieces into APIs both use:
   evaluator involvement.
 - `KosNativeFrame_Install` / `KosNativeFrame_RequestNext` /
   `KosNativeFrame_ReturnPark` -- the native-program install, fetch,
-  and complete trio (EVALUATOR.md §8.2).
+  and complete trio (EVALUATOR.md §8.2). The installed frame carries
+  an owned fill of the live namespace (`kos_dyn_push_frame_native`),
+  keeping the owned-fill rule true over the program's extent.
 - `kos_iter_close` -- best-effort exception-fenced close of an
   acquired iterator, beside `kos_iter_acquire`.
 - `KosContext_Recycle` -- reset a context after a completion at its

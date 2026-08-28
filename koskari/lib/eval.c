@@ -1823,7 +1823,11 @@ KosOpResult KosNativeFrame_ReturnPark(
 
 /**
    Push a code-less frame carrying a native program, reusing a parked
-   frame from cache when one is available. staged (borrowed, may be
+   frame from cache when one is available. Either way the frame gets
+   an owned fill of the live namespace (kos_dyn_push_frame_native's
+   contract): the parked frame was stripped of its fill at park, so
+   the reinstall attaches a fresh one before the push publishes the
+   frame's namespace to the live register. staged (borrowed, may be
    NULL) lands on the new frame's stack for the first ITERATE wake.
 */
 KosDynFrame *KosNativeFrame_Install(
@@ -1836,11 +1840,15 @@ KosDynFrame *KosNativeFrame_Install(
   KosDynFrame *frame;
 
   if (cache && *cache) {
+    PyObject *live_ns = KosEvalState_NAMESPACE(es);
+
     frame = *cache;
     *cache = NULL;
+    Py_XINCREF(live_ns);
+    KosDynFrame_NS(frame) = live_ns;
     kos_dyn_push_ready_frame(es, frame);
   } else {
-    frame = kos_dyn_push_frame_empty(es);
+    frame = kos_dyn_push_frame_native(es);
     if (! frame)
       return NULL;
   }

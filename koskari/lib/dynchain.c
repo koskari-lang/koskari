@@ -1425,13 +1425,15 @@ static void kos_dyn_resync_after_pop(
 #else
   /* The cache model is authoritative for frame and block. The one
      question it cannot answer is the namespace when the survivor
-     carries no fill and the dying node held the live one -- a return
-     into a code-less native frame -- so that case recomputes by walk;
-     applying ns_new there would republish the dying frame's
-     namespace, which the pop is about to release. A model violation
-     in the frame or block facts lands NULL here and fails fast
-     nearby; build with -DKOS_EVAL_SAFETYNET=1 to diagnose by walk
-     instead. */
+     carries no fill and the dying node held the live one; native
+     frames carry the owned fill (kos_dyn_push_frame_native), so this
+     arises only when the surviving extent genuinely has no namespace
+     anywhere -- a native frame at the root of an adapter host whose
+     fill was NULL. Recompute by walk; applying ns_new there would
+     republish the dying frame's namespace, which the pop is about to
+     release. A model violation in the frame or block facts lands NULL
+     here and fails fast nearby; build with -DKOS_EVAL_SAFETYNET=1 to
+     diagnose by walk instead. */
   (void) ft;
   (void) bl;
   (void) ns;

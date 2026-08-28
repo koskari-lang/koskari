@@ -1189,8 +1189,16 @@ Installation:
 **`KosNativeFrame_Install(es, prog, state, staged, cache)`** pushes a
 code-less frame carrying the program (inheriting `KOS_FRAME_DEMAND`),
 optionally staging one value on its stack for the first ITERATE wake
-to pop. When `cache` (a caller-owned one-frame slot) holds a parked
-frame, it is reinstalled in place of a fresh allocation. The installer
+to pop. The frame's namespace slot holds an owned fill of the live
+namespace (`kos_dyn_push_frame_native`): a frame introducing its own
+namespace is exempt from the owned-fill rule, but a native frame
+introduces none, so it carries the fill like any other non-introducer
+node -- a pop into it answers the namespace question from the
+survivor, and the live register is never spuriously NULL over the
+program's extent. When `cache` (a caller-owned one-frame slot) holds
+a parked frame, it is reinstalled in place of a fresh allocation,
+with a fresh fill attached (the park stripped the old one). The
+installer
 must return a result that reaches the prologue (`EVAL_REPROLOGUE`
 from an opcode, `KOS_ITER_INSTALLED*` from a provider step): the
 frame has no bytecode, so continuing instruction dispatch into it
@@ -1271,11 +1279,12 @@ program's frame, and deliver to the parent frame — valid only where a
 parent frame is guaranteed, which is why the providers complete
 through the return machinery instead.
 
-The pop of a callee frame back into a code-less program frame is also
-where the namespace-retarget cache model has its one hole: the
-surviving frame carries no namespace, so `kos_dyn_resync_after_pop`
-recomputes the live namespace by walk for exactly that case (applying
-the cached value there would republish the dying frame's namespace).
+The namespace fill is what keeps the pop of a callee frame back into
+a program frame on the O(1) retarget path: the survivor answers.
+`kos_dyn_resync_after_pop` retains a walk fallback for the one case
+with no answer anywhere -- a program frame at the root of an adapter
+host whose fill was NULL -- where applying the cached value would
+republish the dying frame's namespace.
 
 #### Interaction with the rest of the machinery
 

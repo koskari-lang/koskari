@@ -1028,6 +1028,18 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es);
 
 
 /**
+   Push a frame for a native program: no code, and the namespace slot
+   holds an owned fill of the live namespace -- a native frame
+   introduces no namespace of its own, so it carries the fill like any
+   other non-introducer node and the live register stays truthful over
+   the program's extent.
+
+   :return: new frame, or NULL on error
+*/
+KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es);
+
+
+/**
    Push a prepared frame -- code, namespace, and cleared stack already
    attached, node base normalized by KosFunction_TryParkFrame -- as
    DYN_TOP and FRAME_TOP.  The install mirrors kos_dyn_push_frame minus

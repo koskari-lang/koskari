@@ -239,6 +239,24 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es) {
 
 
 /**
+   Push a frame for a native program: no code, and the namespace slot
+   holds an owned fill of the live namespace. A frame introducing its
+   own namespace is exempt from the owned-fill rule; a native frame
+   introduces none, so it carries the fill like any other
+   non-introducer node -- on a pop into it the survivor answers the
+   namespace question, and nodes the program pushes fill from a live
+   register that is never spuriously NULL.
+*/
+KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es) {
+
+  PyObject *live_ns = KosEvalState_NAMESPACE(es);
+
+  Py_XINCREF(live_ns);
+  return kos_dyn_push_frame(es, NULL, live_ns);
+}
+
+
+/**
    Push a prepared frame from the per-function cache as DYN_TOP and
    FRAME_TOP.  Code, namespace, and cleared stack are already attached
    and the node base was normalized at park time
@@ -274,19 +292,20 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
 /**
    Offer a detached native-program frame to a holder's one-frame
    cache: strip it to an inert allocation and store it in *cache when
-   the slot is empty. Only a frame with no python attachments -- no
-   code, namespace, or cache-participation fn -- parks; anything else
-   takes the ordinary free so its references release properly.
+   the slot is empty. The namespace slot holds only the owned fill of
+   the live namespace (kos_dyn_push_frame_native) and is released
+   here; a frame with code or a cache-participation fn is not a
+   native-program frame and takes the ordinary free instead.
 */
 int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache) {
 
   if (*cache
       || KosDynFrame_CODE(frame)
-      || KosDynFrame_NS(frame)
       || KosDynFrame_FN(frame)
       || ! KosDynFrame_STACK(frame))
     return 0;
 
+  Py_CLEAR(KosDynFrame_NS(frame));
   KosDynFrame_NATIVE_PROG(frame) = NULL;
   KosDynFrame_NATIVE_STATE(frame) = NULL;
 
