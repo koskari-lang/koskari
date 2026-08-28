@@ -16,6 +16,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **language/**: Language features, syntax, special forms, operators, and built-in constructs
 - **api/**: Runtime API, types, functions, interfaces, and [package layout and import policy](api/package-layout.md)
 - **[EVALUATOR.md](EVALUATOR.md)**: Evaluator operation—phase flow diagrams, opcode signaling, exceptions, transfer plans, tail calls, call installs, play-by-play scenarios
+- **[JARGON.md](JARGON.md)**: The project's admitted jargon with unwrappable definitions, and the admission rule for new terms
 - **[archive/eval-state-live-authority.md](archive/eval-state-live-authority.md)** (archived): `KosEvalState` live authority during RUN (Phase 1 landed); Tier-2 xfer incremental retarget; see [archive/kos_eval_state_api_migration.md](archive/kos_eval_state_api_migration.md) (archived opcode migration ledger)
 - **interpreter/**: Interpreter architecture, bytecode format, compiler design,
   evaluation model, continuation application (including evaluator-token model),
