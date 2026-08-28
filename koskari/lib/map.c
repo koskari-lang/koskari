@@ -60,6 +60,7 @@ typedef struct {
   KosContext *ctx;       /* durable drive context (ki_pyctx), created
                             lazily; adapter-recycled, freed with
                             the map */
+  KosDynFrame *cached_frame; /* inert frame parked between steps */
   uint8_t src_sync;      /* source steps through tp_iternext alone */
   uint8_t closed;        /* exhausted or closed */
   uint8_t busy;          /* a step is in flight; ki_finish clears */
@@ -104,8 +105,7 @@ static KosOpResult map_nf_invoke(
 
     switch (KosEval_ResultIsValue(result)) {
       case 1:
-        KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
-        return EVAL_RETURN(result);
+        return KosNativeFrame_ReturnPark(es, result, &m->cached_frame);
       case 0: {
         /* Awaitable result: park; the completion wakes as AWAITED
            (or lands on the stack when it finishes eagerly). */
@@ -229,8 +229,7 @@ static KosOpResult map_nf_handler(
      another awaitable (a koskari function's coroutine); reclassify. */
   switch (KosEval_ResultIsValue(value)) {
     case 1:
-      KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
-      return EVAL_RETURN(value);
+      return KosNativeFrame_ReturnPark(es, value, &m->cached_frame);
     case 0: {
       KosOpResult pr = KosEvalState_PushOrAwait(es, value);
       if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
@@ -318,7 +317,7 @@ static KosIterStepResult map_iter_step(
 
       {
         KosDynFrame *frame = KosNativeFrame_Install(
-            es, &kos_map_program, m, result, NULL);
+            es, &kos_map_program, m, result, &m->cached_frame);
         Py_DECREF(result);
         if (! frame)
           return KOS_ITER_ERROR;
@@ -331,7 +330,8 @@ static KosIterStepResult map_iter_step(
 
   /* Driven source (KosIter provider or python async iterator): the
      whole step runs as the frame program, starting at FETCH. */
-  if (! KosNativeFrame_Install(es, &kos_map_program, m, NULL, NULL))
+  if (! KosNativeFrame_Install(es, &kos_map_program, m, NULL,
+                               &m->cached_frame))
     return KOS_ITER_ERROR;
   m->busy = 1;
   m->nf_phase = KOS_MAP_NF_FETCH;
@@ -472,6 +472,7 @@ static PyObject *kosmap_new(
   m->src_sync = KosIter_CheckSync(source);
 
   m->ctx = NULL;
+  m->cached_frame = NULL;
   m->closed = 0;
   m->busy = 0;
   m->nf_phase = KOS_MAP_NF_FETCH;
@@ -511,7 +512,13 @@ static int kosmap_clear(PyObject *self) {
 
 static void kosmap_dealloc(PyObject *self) {
 
+  KosMapObject *m = (KosMapObject *) self;
+
   PyObject_GC_UnTrack(self);
+  if (m->cached_frame) {
+    kos_dynframe_free(m->cached_frame);
+    m->cached_frame = NULL;
+  }
   kosmap_clear(self);
   Py_TYPE(self)->tp_free(self);
 }

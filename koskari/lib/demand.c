@@ -192,8 +192,6 @@ static int demand_sync_ex(
     PyObject *kwargs,
     PyObject **out_result) {
 
-  PyObject *frame_ns = NULL;
-  KosDynFrame *frame = NULL;
   KosContext *ctx = NULL;
   PyObject *result = NULL;
 
@@ -287,100 +285,80 @@ static int demand_sync_ex(
     return result ? 0 : -1;
   }
 
-  /* KosExpression */
-  if (KosExpression_CheckExact(callable)) {
-    if ((call_args && PyTuple_GET_SIZE(call_args) != 0)
-        || (kwargs && PyDict_Size(kwargs) != 0)) {
-      PyErr_SetString(PyExc_TypeError,
-                      "Expression takes no arguments");
-      goto ret_fail;
-    }
-    PyObject *code = KosExpression_CODE(callable);
-    PyObject *ns = KosExpression_NS(callable);
-    Py_INCREF(ns);
-    if (KosCode_YIELDS((KosCode *) code)) {
-      PyObject *agen_obj = KosAsyncGen_NewFromCodeAndNs((KosCode *) code, ns);
-      if (! agen_obj)
-        goto ret_fail;
-      PyObject *gen_out = KosIterAdapt_DemandIter(agen_obj);
-      Py_DECREF(agen_obj);
-      if (! gen_out)
-        goto ret_fail;
-      Py_XDECREF(call_args);
-      *out_result = gen_out;
-      return 0;
-    }
-
-    frame = kos_dynframe_new(NULL, (KosCode *) code, ns);
-    if (! frame) {
-      Py_DECREF(ns);
-      goto ret_fail;
-    }
-    goto run_eval;
-  }
-
-  /* KosFunction */
-  if (KosFunction_CheckExact(callable)) {
-    frame_ns = KosFunction_PrepareCallNamespace(callable, call_args, kwargs);
-    if (! frame_ns)
-      goto ret_fail;
-    SAYF("[demand_sync] frame_ns from PrepareCallNamespace: ptr=%p type=%s "
-         "repr=%R is_namespace=%d",
-         (void *) frame_ns,
-         frame_ns ? Py_TYPE(frame_ns)->tp_name : "NULL",
-         frame_ns,
-         frame_ns ? KosNamespace_Check(frame_ns) : 0);
-
-    PyObject *code = KosFunction_CODE(callable);
-
-    if (KosCode_YIELDS((KosCode *) code)) {
-      PyObject *agen_obj = KosAsyncGen_NewFromCodeAndNs(
-          (KosCode *) code, frame_ns);
-      frame_ns = NULL;
-      if (! agen_obj)
-        goto ret_fail;
-      PyObject *gen_out = KosIterAdapt_DemandIter(agen_obj);
-      Py_DECREF(agen_obj);
-      if (! gen_out)
-        goto ret_fail;
-      Py_XDECREF(call_args);
-      *out_result = gen_out;
-      return 0;
-    }
-
-    frame = kos_dynframe_new(NULL, (KosCode *) code, frame_ns);
-    if (! frame)
-      goto ret_fail;
-    SAYF("[demand_sync] frame=%p KosDynFrame_NS(frame): ptr=%p type=%s "
-         "repr=%R is_namespace=%d",
-         (void *) frame,
-         (void *) KosDynFrame_NS(frame),
-         KosDynFrame_NS(frame) ? Py_TYPE(KosDynFrame_NS(frame))->tp_name : "NULL",
-         KosDynFrame_NS(frame),
-         KosDynFrame_NS(frame) ? KosNamespace_Check(KosDynFrame_NS(frame)) : 0);
-
-    goto run_eval;
-  }
-
-  /* Other KosCallable - not supported for demand_sync yet */
-  PyErr_Format(PyExc_TypeError,
-               "demand_sync does not support %s",
-               Py_TYPE(callable)->tp_name);
-  goto ret_fail;
-
-run_eval:
-  /* Mark this frame as a demand root; in-eval deny guards will detect it
-     when walking ancestors and convert any AWAIT/YIELD into an in-eval
-     KoskariSyncViolation before koskari_eval returns. */
-  KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
-
-  ctx = KosContext_New(frame);
-  if (! ctx) {
-    kos_dynframe_free(frame);
-    frame = NULL;
+  /* Other KosCallable kinds (partial, continuations, procedures) are
+     not supported for demand_sync yet: their installs assume a caller
+     frame to deliver into, which a demand root does not have. */
+  if (! KosExpression_CheckExact(callable)
+      && ! KosFunction_CheckExact(callable)) {
+    PyErr_Format(PyExc_TypeError,
+                 "demand_sync does not support %s",
+                 Py_TYPE(callable)->tp_name);
     goto ret_fail;
   }
-  frame = NULL;
+
+  /* A yielding callable: a call constructs its generator without
+     evaluating anything. The ordinary python-boundary call binds the
+     arguments and returns the async-surface generator; re-surface it
+     for demand. No context is involved. */
+  {
+    KosCallSlots *slots;
+
+    if (KosCallable_CheckSlots(callable, &slots)
+        && ! KosCallSlots_WantsFrame(slots, callable)) {
+      PyObject *agen_obj = Koskari_AsyncCall(callable, call_args, kwargs);
+      if (! agen_obj)
+        goto ret_fail;
+      {
+        PyObject *gen_out = KosIterAdapt_DemandIter(agen_obj);
+        Py_DECREF(agen_obj);
+        if (! gen_out)
+          goto ret_fail;
+        Py_XDECREF(call_args);
+        *out_result = gen_out;
+        return 0;
+      }
+    }
+  }
+
+  /* Non-yielding Expression or Function: install through the shared
+     call entry -- the same frame prep and install-slot dispatch every
+     other call site uses -- on a fresh context, and run the installed
+     frame to completion. */
+  ctx = KosContext_New(NULL);
+  if (! ctx)
+    goto ret_fail;
+
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    KosEvalState_ThawFromContext(&es);
+
+    {
+      KosOpResult ir = KosEvalState_CallArgs(&es, callable, call_args,
+                                             kwargs, 0);
+      if (ir.kind != KOS_RES_NORMAL && ir.kind != KOS_RES_REPROLOGUE) {
+        KosEvalState_FreezeToContext(&es);
+        KosContext_Free(ctx);
+        ctx = NULL;
+        goto ret_fail;
+      }
+    }
+
+    if (! KosEvalState_CODE(&es)) {
+      KosEvalState_FreezeToContext(&es);
+      KosContext_Free(ctx);
+      ctx = NULL;
+      PyErr_SetString(PyExc_SystemError,
+                      "demand_sync: install left no code to run");
+      goto ret_fail;
+    }
+
+    /* Mark the installed frame as the demand root; children inherit
+       the flag, and the in-eval deny guards convert any AWAIT/YIELD
+       into KoskariSyncViolation before koskari_eval returns. */
+    KosDynFrame_FLAGS(KosEvalState_FRAME(&es)) |= KOS_FRAME_DEMAND;
+    KosEvalState_FreezeToContext(&es);
+  }
 
   {
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
