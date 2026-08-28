@@ -683,6 +683,19 @@ int KosEval_IsFuture(PyObject *val);
 
 
 /**
+   Acquire an iterator from an iterable, uniform over both protocols
+   and shared by every acquisition site (PUSH_FOREACH, the *_ITER
+   opcodes, KosMap): a KosIter provider passes through as itself, an
+   object with am_aiter yields its async iterator, otherwise the sync
+   protocol (PyObject_GetIter, including the sequence fallback).
+
+   :param iterable: borrowed
+   :return: new iterator reference, or NULL with PyErr set
+*/
+PyObject *kos_iter_acquire(PyObject *iterable);
+
+
+/**
    One iteration request against a boundary node's armed record: the
    single site API for stepping the node's iterator over all three
    protocols. send_val borrowed; *fast_out new ref on

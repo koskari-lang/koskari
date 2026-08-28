@@ -1239,7 +1239,7 @@ KosOpResult KosEvalState_CallNoArgs(
    :param iterable: borrowed
    :return: new iterator reference, or NULL with PyErr set
 */
-static PyObject *kos_iter_acquire(PyObject *iterable) {
+PyObject *kos_iter_acquire(PyObject *iterable) {
 
   if (KosIter_Check(iterable)) {
     Py_INCREF(iterable);

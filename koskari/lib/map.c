@@ -536,17 +536,7 @@ static PyObject *kosmap_new(
     return NULL;
   }
 
-  PyObject *source = NULL;
-  PyTypeObject *ityp = Py_TYPE(iterable);
-
-  if (KosIter_Check(iterable) || PyIter_Check(iterable)) {
-    Py_INCREF(iterable);
-    source = iterable;
-  } else if (ityp->tp_as_async && ityp->tp_as_async->am_aiter) {
-    source = ityp->tp_as_async->am_aiter(iterable);
-  } else {
-    source = PyObject_GetIter(iterable);
-  }
+  PyObject *source = kos_iter_acquire(iterable);
   if (! source)
     return NULL;
 

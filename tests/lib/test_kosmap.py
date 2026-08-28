@@ -106,6 +106,61 @@ class TestKosMapParkOwnership(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await m.__anext__(), 1)
 
 
+class TestKosMapSourceErrors(unittest.IsolatedAsyncioTestCase):
+    """
+    A source error propagates out of the map like any other exception;
+    the map keeps its state, and whether a retry works is the source's
+    own business
+    """
+
+    class FlakyIter:
+        def __init__(self):
+            self.pulls = 0
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            self.pulls += 1
+            if self.pulls == 1:
+                raise ValueError("transient")
+            if self.pulls <= 3:
+                return self.pulls
+            raise StopIteration
+
+    async def test_source_error_propagates_and_retry_is_sources_call(self):
+        m = KosMap(str, self.FlakyIter())
+        with self.assertRaises(ValueError):
+            await m.__anext__()
+        # the source recovered; the map simply asks it again
+        self.assertEqual(await m.__anext__(), "2")
+        self.assertEqual(await m.__anext__(), "3")
+        with self.assertRaises(StopAsyncIteration):
+            await m.__anext__()
+
+    async def test_shared_iterator_interleaves_with_direct_pulls(self):
+        """
+        the map holds a plain reference to its acquired iterator; a
+        consumer pulling the same iterator directly interleaves with
+        pulls through the map, one step at a time
+        """
+        it = iter([1, 2, 3, 4])
+        m = KosMap(str, it)
+        self.assertEqual(await m.__anext__(), "1")
+        self.assertEqual(next(it), 2)
+        self.assertEqual(await m.__anext__(), "3")
+        self.assertEqual(next(it), 4)
+        with self.assertRaises(StopAsyncIteration):
+            await m.__anext__()
+
+    async def test_source_error_propagates_on_demand_drive(self):
+        m = KosMap(str, self.FlakyIter())
+        it = iter(m)
+        with self.assertRaises(ValueError):
+            next(it)
+        self.assertEqual(next(it), "2")
+
+
 class TestKosMapSourceCleanup(unittest.IsolatedAsyncioTestCase):
     """
     Closing a map runs its source's cleanup: aclose for async sources,

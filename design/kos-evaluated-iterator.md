@@ -367,14 +367,19 @@ Hard-won; violating any of these reproduces a fixed bug.
 `kc_` prefix, the iter suite `ki_`. No initialism prefixes; enums
 spell their namespace.
 
+## Error semantics (settled)
+
+An error from the source or the function propagates out of the map
+like any other exception -- a demand-denial KoskariSyncViolation
+included. The map does not destroy its inner state on error: it holds
+its acquired iterator (obtained through the shared `kos_iter_acquire`,
+the same acquisition PUSH_FOREACH and the *_ITER opcodes use), and
+whether a later step can succeed is the source's own decision -- a
+source built to recover may; one wedged mid-await surfaces its own
+complaint. Cleanup happens when the map loses its final reference and
+is destroyed, which releases the function and the iterator.
+
 ## Open questions
 
-- The map's state after a demand-drive denial: the aborted step
-  abandons the source's in-flight awaitable, so the map cannot
-  meaningfully continue, yet today it is left open and a redrive
-  surfaces the wedged source's own complaint. Whether the denial
-  should instead finish the map (matching the generator's
-  demand-denial state) is undecided; the denial tests assert only the
-  violation.
 - The call-suite single-install collapse and the `tp_flags` membership
   bit: both independent of this arc, sequenced after it.
