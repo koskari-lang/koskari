@@ -1153,9 +1153,9 @@ If `throw_typ`/`throw_exc` are set, any revive path calls `PyErr_SetObject` and 
 
 A **native program** is C code that owns a whole frame on the chain
 instead of one opcode: the frame runs no bytecode, and the eval loop
-invokes the program's handler in place of instruction dispatch. Two
-exist: **apply**'s non-flattening call (`utils.c`) and the **map
-step** (`map.c`).
+invokes the program's handler in place of instruction dispatch. Three
+exist: **apply**'s non-flattening call (`utils.c`), the **map step**
+(`map.c`), and the **filter step** (`filter.c`).
 
 #### The descriptor and the frame slots
 
@@ -1185,14 +1185,32 @@ by the requestor or adapter) guarantees it outlives the frame. The map
 stores its `KosMapObject *` there; apply uses no state (the values it
 works with are held on the frame's operand stack).
 
-Installation: push a frame (typically `kos_dyn_push_frame_empty`,
-which works on an empty context and inherits `KOS_FRAME_DEMAND`), set
-`native_prog` and `native_state`, optionally stage values on the frame
-stack. The installer must return a result that reaches the prologue
-(`EVAL_REPROLOGUE` from an opcode, `KOS_ITER_INSTALLED*` from a
-provider step): the frame has no bytecode, so continuing instruction
-dispatch into it reads a NULL code, and the fresh-entry FAST-namespace
-check in `koskari_eval` likewise tolerates a NULL code.
+Installation:
+**`KosNativeFrame_Install(es, prog, state, staged, cache)`** pushes a
+code-less frame carrying the program (inheriting `KOS_FRAME_DEMAND`),
+optionally staging one value on its stack for the first ITERATE wake
+to pop. When `cache` (a caller-owned one-frame slot) holds a parked
+frame, it is reinstalled in place of a fresh allocation. The installer
+must return a result that reaches the prologue (`EVAL_REPROLOGUE`
+from an opcode, `KOS_ITER_INSTALLED*` from a provider step): the
+frame has no bytecode, so continuing instruction dispatch into it
+reads a NULL code, and the fresh-entry FAST-namespace check in
+`koskari_eval` likewise tolerates a NULL code. (Apply differs: it
+configures the already-prepared call frame rather than pushing one.)
+
+Fetching:
+**`KosNativeFrame_RequestNext(es, iter, &out)`** is the request-side
+helper for a program that consumes an iterator: it pushes a
+one-request tracking node for `iter`, runs one request through
+`KosIterRequest_Next`, and cleans the node up on every
+immediately-final outcome. DELIVERED hands back the element;
+EXHAUSTED and ERROR come back with the node already gone; on
+CONTINUES the node remains under installed work, and on EXIT `out` is
+the awaitable to suspend on (`EVAL_AWAIT`) -- in both of those the
+element later lands on the program frame's stack and an ITERATE wake
+pops it. A program whose source is a plain sync iterator may bypass
+the helper entirely and call `tp_iternext` -- the filter's
+rejected-element loop does.
 
 #### Handler events (`KosNativeFrameEvent`)
 
@@ -1231,14 +1249,33 @@ evaluator is invoking the handler; there are four:
 
 A program completes by clearing its `native_prog` slot and returning
 `EVAL_RETURN(value)` — the frame then goes through the ordinary return
-machinery. When the frame's parent is an iteration node whose request
-record is in value mode (`KOS_IREQ_GRAFT_VALUE`, meaning "this frame's
-return is the next element"), the value is delivered as that element —
-the map's path. When the parent is an ordinary frame, the value is
-delivered as a call result. **`KosNativeFrame_Return(es, value)`**
-wraps the alternative manual completion apply uses: run the return
-unwind walk (honoring FINALLY and async-unwind outcomes), detach and
-free the program's frame, and deliver the value to the parent.
+machinery, which owns every delivery terminus. When the frame's parent
+is an iteration node whose request record is in value mode
+(`KOS_IREQ_GRAFT_VALUE`, meaning "this frame's return is the next
+element"), the value is delivered as that element — the map's path.
+When the parent is an ordinary frame, the value is delivered as a call
+result; with no parent it is the drive's final result.
+**`KosNativeFrame_ReturnPark(es, value, cache)`** wraps that
+completion and additionally arms the frame to park itself into a
+caller-owned one-frame cache when the return path frees it
+(`KOS_FRAME_PARK_TO_CACHE`; `native_state` becomes the cache slot,
+and `kos_dynframe_free` offers the frame through
+`kos_dynframe_park_inert`, which strips it to an inert allocation --
+no references of any kind -- so the holder cannot form a reference
+cycle through its cache). The filter parks its step frame this way;
+the exception path never parks, so an error simply leaves the cache
+empty for the next install. **`KosNativeFrame_Return(es, value)`** is
+the manual completion apply uses: run the return unwind walk
+(honoring FINALLY and async-unwind outcomes), detach and free the
+program's frame, and deliver to the parent frame — valid only where a
+parent frame is guaranteed, which is why the providers complete
+through the return machinery instead.
+
+The pop of a callee frame back into a code-less program frame is also
+where the namespace-retarget cache model has its one hole: the
+surviving frame carries no namespace, so `kos_dyn_resync_after_pop`
+recomputes the live namespace by walk for exactly that case (applying
+the cached value there would republish the dying frame's namespace).
 
 #### Interaction with the rest of the machinery
 
@@ -1261,9 +1298,22 @@ free the program's frame, and deliver the value to the parent.
   frame's ordinary teardown — the hook touches only the state, never
   the frame. A program without a clone entry makes capture fail:
   `cannot capture a continuation across native frame '<np_name>'`.
-  Apply supplies a trivial clone and stays capturable; the map
-  supplies none, since replaying a captured step would re-consume
+  Apply supplies a trivial clone and stays capturable; the map and
+  filter supply none, since replaying a captured step would re-consume
   source elements.
+- **Python-adapter drives**: a provider may expose a durable drive
+  context through its suite's `ki_pyctx`, so the adapters host work
+  there across steps instead of allocating a context per element. A
+  suite that also sets `ki_pyctx_recyclable` declares the context
+  stateless between completed steps: the adapters recycle it
+  (`KosContext_Recycle`) at their completion points exactly like an
+  owned host, and the drive keeps fresh-step semantics (throws through
+  `ki_throw`, root StopIteration as exhaustion, value-graft returns).
+  Without the flag the context is generator-style -- suspended state
+  lives inside it between steps -- and the drive delivers sends and
+  throws into the chain through the eval entry ingress. The map and
+  filter carry recyclable durable contexts; the generator's is not
+  recyclable.
 - **Snapshots** record `native_program` (the descriptor's name, or
   None).
 

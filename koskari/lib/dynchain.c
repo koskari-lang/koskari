@@ -1423,12 +1423,22 @@ static void kos_dyn_resync_after_pop(
 
   kos_dyn_resync_apply(es, ft, bl, ns, 0);
 #else
-  /* The cache model is authoritative: apply whatever the caches hold.
-     A model violation lands NULL facts here and fails fast nearby;
-     build with -DKOS_EVAL_SAFETYNET=1 to diagnose by walk instead. */
+  /* The cache model is authoritative for frame and block. The one
+     question it cannot answer is the namespace when the survivor
+     carries no fill and the dying node held the live one -- a return
+     into a code-less native frame -- so that case recomputes by walk;
+     applying ns_new there would republish the dying frame's
+     namespace, which the pop is about to release. A model violation
+     in the frame or block facts lands NULL here and fails fast
+     nearby; build with -DKOS_EVAL_SAFETYNET=1 to diagnose by walk
+     instead. */
   (void) ft;
   (void) bl;
   (void) ns;
+  if (walk_ns) {
+    ns_new = NULL;
+    kos_dyn_resync_from(new_top, NULL, NULL, &ns_new);
+  }
   kos_dyn_resync_apply(
       es,
       need_frame

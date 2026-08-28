@@ -192,39 +192,35 @@ static KosIterStepResult iterate_suite_throw(
 
 
 /**
-   Make an adapter-owned host reusable after a completion at its root:
-   the finished frame chain is dropped and the completion residue
-   (dead flag, suspension tag, in-flight await iterator, resume
-   inject) cleared, so the next step reuses the same context instead
-   of freeing and reallocating one per element. A context holding
-   state this reset cannot account for (an armed transfer plan) is
-   freed instead. A durable provider context is left alone -- its
-   lifecycle belongs to the provider.
+   Make the drive context reusable after a completion at its root
+   (KosContext_Recycle), so the next step reuses the same context
+   instead of freeing and reallocating one per element. An owned host
+   the recycle cannot account for is freed instead. A durable provider
+   context is recycled only when its suite declares it stateless
+   between steps (ki_pyctx_recyclable); otherwise it is left alone --
+   its lifecycle belongs to the provider.
 */
-static void iterate_reset_owned_host(KosContext **host, int *owned) {
+static void iterate_reset_host(
+    KosIterSlots *islots,
+    KosContext **host,
+    int *owned) {
 
   KosContext *ctx = *host;
 
-  if (! ctx || ! *owned)
+  if (! ctx)
     return;
 
-  if (KosContext_PLAN(ctx)) {
-    KosContext_Free(ctx);
-    *host = NULL;
-    *owned = 0;
+  if (! *owned) {
+    if (islots->ki_pyctx_recyclable)
+      (void) KosContext_Recycle(ctx);
     return;
   }
 
-  if (KosContext_DYN_TOP(ctx))
-    kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
-  KosContext_DYN_TOP(ctx) = NULL;
-  KosContext_FRAME_TOP(ctx) = NULL;
-
-  KosContext_FLAGS(ctx) &= ~(KOS_CTX_DEAD | KOS_CTX_RUNNING);
-  KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
-  Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
-  Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
-  KosContext_PY_RESUME_KIND(ctx) = 0;
+  if (KosContext_Recycle(ctx) < 0) {
+    KosContext_Free(ctx);
+    *host = NULL;
+    *owned = 0;
+  }
 }
 
 
@@ -631,11 +627,11 @@ static PyObject *stepper_drive(
         if (st->drive_mode == 1) {
           st->drive_mode = 0;
           islots->ki_finish(st->provider, 0);
-          iterate_reset_owned_host(&st->host, &st->host_owned);
+          iterate_reset_host(islots, &st->host, &st->host_owned);
           return stepper_finish_yield(res.val);
         }
         islots->ki_finish(st->provider, 1);
-        iterate_reset_owned_host(&st->host, &st->host_owned);
+        iterate_reset_host(islots, &st->host, &st->host_owned);
         return stepper_finish_exhausted(st, res.val, 0);
 
       case KOS_RES_YIELD:
@@ -660,14 +656,14 @@ static PyObject *stepper_drive(
              step ended its iteration. */
           PyErr_Clear();
           islots->ki_finish(st->provider, 1);
-          iterate_reset_owned_host(&st->host, &st->host_owned);
+          iterate_reset_host(islots, &st->host, &st->host_owned);
           return stepper_finish_exhausted(st, NULL, st->is_throw);
         }
         {
           PyObject *ftyp, *fval, *ftb;
           PyErr_Fetch(&ftyp, &fval, &ftb);
           islots->ki_finish(st->provider, durable ? 1 : 0);
-          iterate_reset_owned_host(&st->host, &st->host_owned);
+          iterate_reset_host(islots, &st->host, &st->host_owned);
           PyErr_Restore(ftyp, fval, ftb);
         }
         if (st->closing && PyErr_Occurred()
@@ -699,7 +695,13 @@ static PyObject *stepper_iternext(PyObject *self) {
     PyObject *send_val = st->send_value;
     PyObject *throw_typ = st->throw_typ;
     PyObject *throw_exc = st->throw_exc;
+    /* Durable here means generator-style: suspended state lives in
+       the provider's context between steps. A provider whose durable
+       context is recyclable is stateless between steps and keeps the
+       fresh-step drive semantics (ki_throw ingress, StopIteration
+       exhaustion, value-graft returns). */
     int durable = (islots->ki_pyctx
+                   && ! islots->ki_pyctx_recyclable
                    && islots->ki_pyctx(st->provider) != NULL);
 
     st->send_value = NULL;
@@ -1026,7 +1028,9 @@ static PyObject *demandgen_step(
     return NULL;
   }
 
-  durable = (islots->ki_pyctx && islots->ki_pyctx(gen->provider) != NULL);
+  durable = (islots->ki_pyctx
+             && ! islots->ki_pyctx_recyclable
+             && islots->ki_pyctx(gen->provider) != NULL);
 
   {
     PyObject *out = NULL;
@@ -1094,11 +1098,11 @@ static PyObject *demandgen_step(
       case KOS_RES_RETURN:
         if (drive_mode == 1) {
           islots->ki_finish(gen->provider, 0);
-          iterate_reset_owned_host(&gen->host, &gen->host_owned);
+          iterate_reset_host(islots, &gen->host, &gen->host_owned);
           return res.val;
         }
         islots->ki_finish(gen->provider, 1);
-        iterate_reset_owned_host(&gen->host, &gen->host_owned);
+        iterate_reset_host(islots, &gen->host, &gen->host_owned);
         return demandgen_finish_exhausted(gen, res.val);
 
       case KOS_RES_AWAIT:
@@ -1122,7 +1126,7 @@ static PyObject *demandgen_step(
              closed; StopIteration is already the sync protocol's end
              signal. */
           islots->ki_finish(gen->provider, 1);
-          iterate_reset_owned_host(&gen->host, &gen->host_owned);
+          iterate_reset_host(islots, &gen->host, &gen->host_owned);
           demandgen_release_state(gen);
           return NULL;
         }
@@ -1132,7 +1136,7 @@ static PyObject *demandgen_step(
           PyObject *ftyp, *fval, *ftb;
           PyErr_Fetch(&ftyp, &fval, &ftb);
           islots->ki_finish(gen->provider, durable ? 1 : 0);
-          iterate_reset_owned_host(&gen->host, &gen->host_owned);
+          iterate_reset_host(islots, &gen->host, &gen->host_owned);
           if (durable)
             demandgen_release_state(gen);
           PyErr_Restore(ftyp, fval, ftb);

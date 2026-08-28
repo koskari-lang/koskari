@@ -52,88 +52,22 @@ typedef enum {
 } KosMapNfPhase;
 
 
-/* The function's calling shape, resolved once at construction. */
-typedef enum {
-  KOS_MAP_FN_KOS_FRAME = 0, /* frame-wanting KosCallable: its frame
-                               installs and its return is the element */
-  KOS_MAP_FN_KOS_BOXED,     /* KosCallable with a python-boundary
-                               worker, no frame */
-  KOS_MAP_FN_PY_PLAIN,      /* ordinary python callable */
-} KosMapFnKind;
-
-
-/* The source's protocol, resolved once at acquisition. */
-typedef enum {
-  KOS_MAP_SRC_SYNC = 0,     /* plain sync iterator: tp_iternext */
-  KOS_MAP_SRC_DRIVEN,       /* KosIter provider or python async
-                               iterator: stepped by the frame program */
-} KosMapSrcKind;
-
-
 typedef struct {
   PyObject_HEAD
-  PyObject *func;        /* callable applied per element */
+  KosCallShape fn;       /* callable applied per element, shape
+                            resolved at construction */
   PyObject *source;      /* acquired iterator (sync or async) */
-  KosCallSlots *fn_slots; /* static-type suite when func is a
-                             KosCallable; borrowed, stable */
-  uint8_t fn_kind;       /* KosMapFnKind */
-  uint8_t src_kind;      /* KosMapSrcKind */
+  KosContext *ctx;       /* durable drive context (ki_pyctx), created
+                            lazily; adapter-recycled, freed with
+                            the map */
+  uint8_t src_sync;      /* source steps through tp_iternext alone */
   uint8_t closed;        /* exhausted or closed */
   uint8_t busy;          /* a step is in flight; ki_finish clears */
   uint8_t nf_phase;      /* KosMapNfPhase while the frame is live */
 } KosMapObject;
 
 
-static void map_close_source(KosMapObject *m);
-
-
 /* === the step's native frame program === */
-
-
-/**
-   Classify a function result: a plain value (or an ambient-await-exempt
-   Defer/future handle) is the element; NULL means awaitable (the
-   caller parks). result borrowed.
-
-   :return: 1 element, 0 awaitable, -1 error (PyErr set)
-*/
-static int map_result_is_element(PyObject *result) {
-
-  PyTypeObject *typ = Py_TYPE(result);
-
-  if (! typ->tp_as_async || ! typ->tp_as_async->am_await)
-    return 1;
-  if (KosDefer_Check(result))
-    return 1;
-  return KosEval_IsFuture(result);
-}
-
-
-/**
-   Call func on element through its resolved shape at the python
-   boundary: a plain callable directly, a boxed KosCallable through its
-   python-boundary worker. element is borrowed.
-
-   :return: the result (new ref) or NULL with PyErr set
-*/
-static PyObject *map_call_boxed(KosMapObject *m, PyObject *element) {
-
-  if (m->fn_kind == KOS_MAP_FN_PY_PLAIN)
-    return PyObject_CallOneArg(m->func, element);
-
-  if (m->fn_slots->kc_pyvectorcall)
-    return m->fn_slots->kc_pyvectorcall(m->func, &element, 1, NULL);
-
-  {
-    PyObject *args = PyTuple_Pack(1, element);
-    PyObject *result;
-    if (! args)
-      return NULL;
-    result = m->fn_slots->kc_pycall(m->func, args, NULL);
-    Py_DECREF(args);
-    return result;
-  }
-}
 
 
 /**
@@ -150,10 +84,11 @@ static KosOpResult map_nf_invoke(
   /* A frame-wanting KosCallable installs as a child frame; its return
      arrives as the CALL_VALUE wake. The element's own address is the
      argument vector. */
-  if (m->fn_kind == KOS_MAP_FN_KOS_FRAME) {
+  if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
     m->nf_phase = KOS_MAP_NF_WAIT_RESULT;
     {
-      KosOpResult r = KosEvalState_Call(es, m->func, &element, 1, NULL, 0);
+      KosOpResult r = KosEvalState_Call(es, m->fn.cs_callable,
+                                        &element, 1, NULL, 0);
       Py_DECREF(element);
       if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
         return EVAL_REPROLOGUE();
@@ -162,12 +97,12 @@ static KosOpResult map_nf_invoke(
   }
 
   {
-    PyObject *result = map_call_boxed(m, element);
+    PyObject *result = KosCallShape_PyCallOne(&m->fn, element);
     Py_DECREF(element);
     if (! result)
       return EVAL_RAISE();
 
-    switch (map_result_is_element(result)) {
+    switch (KosEval_ResultIsValue(result)) {
       case 1:
         KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
         return EVAL_RETURN(result);
@@ -191,27 +126,21 @@ static KosOpResult map_nf_invoke(
 
 
 /**
-   FETCH from inside the frame program: one request against the map's
-   own NEXT boundary. A completed element goes straight to INVOKE; a
-   grafted or parked source leaves the fetch in flight (the element
-   arrives by boundary delivery); exhaustion raises StopIteration for
-   the consumer's boundary to convert.
+   FETCH from inside the frame program: one request for the next
+   source element (KosNativeFrame_RequestNext). A completed element
+   goes straight to INVOKE; installed or suspended work leaves the
+   fetch in flight, the element arriving by stack delivery; exhaustion
+   raises StopIteration for the consumer's tracking node to convert.
 */
 static KosOpResult map_nf_fetch(KosEvalState *es, KosMapObject *m) {
 
   PyObject *out = NULL;
 
-  if (kos_dyn_push_next_boundary(es, m->source, NULL, 1) < 0)
-    return EVAL_RAISE();
-
-  switch (KosIterRequest_Next(es, KosEvalState_DYN_TOP(es), NULL, &out)) {
+  switch (KosNativeFrame_RequestNext(es, m->source, &out)) {
     case KOS_IREQ_DELIVERED:
-      kos_dyn_next_abort_after_failed_attach(es);
       return map_nf_invoke(es, m, out);
 
     case KOS_IREQ_EXHAUSTED:
-      Py_XDECREF(out);
-      kos_dyn_next_abort_after_failed_attach(es);
       KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
       PyErr_SetNone(PyExc_StopIteration);
       return EVAL_RAISE();
@@ -226,7 +155,6 @@ static KosOpResult map_nf_fetch(KosEvalState *es, KosMapObject *m) {
 
     case KOS_IREQ_ERROR:
     default:
-      kos_dyn_next_abort_after_failed_attach(es);
       return EVAL_RAISE();
   }
 }
@@ -299,7 +227,7 @@ static KosOpResult map_nf_handler(
 
   /* KOS_MAP_NF_WAIT_RESULT: the invoke completed -- or handed back
      another awaitable (a koskari function's coroutine); reclassify. */
-  switch (map_result_is_element(value)) {
+  switch (KosEval_ResultIsValue(value)) {
     case 1:
       KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
       return EVAL_RETURN(value);
@@ -343,7 +271,7 @@ static KosIterStepResult map_iter_step(
     return KOS_ITER_ERROR;
   }
 
-  if (m->src_kind == KOS_MAP_SRC_SYNC) {
+  if (m->src_sync) {
     PyObject *element = PyIter_Next(m->source);
 
     if (! element) {
@@ -358,8 +286,9 @@ static KosIterStepResult map_iter_step(
        generic call entry -- cached frame, the element's own address as
        the argument vector -- and its return delivers as the element.
        No helper frame is involved. */
-    if (m->fn_kind == KOS_MAP_FN_KOS_FRAME) {
-      KosOpResult r = KosEvalState_Call(es, m->func, &element, 1, NULL, 0);
+    if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
+      KosOpResult r = KosEvalState_Call(es, m->fn.cs_callable,
+                                        &element, 1, NULL, 0);
       Py_DECREF(element);
       if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
         m->busy = 1;
@@ -369,12 +298,12 @@ static KosIterStepResult map_iter_step(
     }
 
     {
-      PyObject *result = map_call_boxed(m, element);
+      PyObject *result = KosCallShape_PyCallOne(&m->fn, element);
       Py_DECREF(element);
       if (! result)
         return KOS_ITER_ERROR;
 
-      switch (map_result_is_element(result)) {
+      switch (KosEval_ResultIsValue(result)) {
         case 1:
           *out = result;
           return KOS_ITER_VALUE;
@@ -388,18 +317,11 @@ static KosIterStepResult map_iter_step(
       }
 
       {
-        KosDynFrame *frame = kos_dyn_push_frame_empty(es);
-        if (! frame) {
-          Py_DECREF(result);
-          return KOS_ITER_ERROR;
-        }
-        KosDynFrame_NATIVE_PROG(frame) = (void *) &kos_map_program;
-        KosDynFrame_NATIVE_STATE(frame) = (void *) m;
-        if (KosEvalState_StackPushRef(es, result) < 0) {
-          Py_DECREF(result);
-          return KOS_ITER_ERROR;
-        }
+        KosDynFrame *frame = KosNativeFrame_Install(
+            es, &kos_map_program, m, result, NULL);
         Py_DECREF(result);
+        if (! frame)
+          return KOS_ITER_ERROR;
         m->busy = 1;
         m->nf_phase = KOS_MAP_NF_WAIT_RESULT;
         return KOS_ITER_INSTALLED_VALUE;
@@ -409,16 +331,11 @@ static KosIterStepResult map_iter_step(
 
   /* Driven source (KosIter provider or python async iterator): the
      whole step runs as the frame program, starting at FETCH. */
-  {
-    KosDynFrame *frame = kos_dyn_push_frame_empty(es);
-    if (! frame)
-      return KOS_ITER_ERROR;
-    KosDynFrame_NATIVE_PROG(frame) = (void *) &kos_map_program;
-    KosDynFrame_NATIVE_STATE(frame) = (void *) m;
-    m->busy = 1;
-    m->nf_phase = KOS_MAP_NF_FETCH;
-    return KOS_ITER_INSTALLED_VALUE;
-  }
+  if (! KosNativeFrame_Install(es, &kos_map_program, m, NULL, NULL))
+    return KOS_ITER_ERROR;
+  m->busy = 1;
+  m->nf_phase = KOS_MAP_NF_FETCH;
+  return KOS_ITER_INSTALLED_VALUE;
 }
 
 
@@ -449,64 +366,11 @@ static KosIterStepResult map_iter_throw(
        closed, and let GeneratorExit propagate as the success shape. */
     m->closed = 1;
     m->busy = 0;
-    map_close_source(m);
+    kos_iter_close(m->source);
   }
 
   PyErr_SetObject(throw_typ, throw_exc);
   return KOS_ITER_ERROR;
-}
-
-
-/**
-   Close the source, best-effort and exception-fenced. A provider
-   closes through its suite; a sync iterator through close(); an async
-   iterator through aclose(), whose awaitable is demand-driven -- an
-   immediate completion honors the cleanup, a genuine suspension takes
-   the cannot-honor fallback of closing the in-flight iterator.
-*/
-static void map_close_source(KosMapObject *m) {
-
-  PyObject *ftyp, *fval, *ftb;
-
-  if (! m->source)
-    return;
-
-  PyErr_Fetch(&ftyp, &fval, &ftb);
-
-  {
-    KosIterSlots *islots;
-
-    if (KosIter_CheckSlots(m->source, &islots)) {
-      (void) islots->ki_close(m->source);
-      PyErr_Clear();
-
-    } else if (Py_TYPE(m->source)->tp_iternext) {
-      PyObject *r = PyObject_CallMethod(m->source, "close", NULL);
-      Py_XDECREF(r);
-      PyErr_Clear();
-
-    } else {
-      PyObject *aw = PyObject_CallMethod(m->source, "aclose", NULL);
-      if (aw) {
-        PyObject *it = PyObject_GetAwaitable(aw);
-        Py_DECREF(aw);
-        if (it) {
-          PyObject *step = PyObject_CallMethod(it, "send", "O", Py_None);
-          if (step) {
-            /* Suspend attempt during close; cannot honor further --
-               close the iterator so its GeneratorExit cleanup runs. */
-            Py_DECREF(step);
-            PyObject *r = PyObject_CallMethod(it, "close", NULL);
-            Py_XDECREF(r);
-          }
-          Py_DECREF(it);
-        }
-      }
-      PyErr_Clear();
-    }
-  }
-
-  PyErr_Restore(ftyp, fval, ftb);
 }
 
 
@@ -524,7 +388,7 @@ static int map_iter_close(PyObject *self) {
 
   m->closed = 1;
   m->busy = 0;
-  map_close_source(m);
+  kos_iter_close(m->source);
 
   return 0;
 }
@@ -537,6 +401,27 @@ static void map_iter_finish(PyObject *self, int exhausted) {
   m->busy = 0;
   if (exhausted)
     m->closed = 1;
+
+}
+
+
+/**
+   The map's durable drive context, created lazily: python-adapter
+   drives host their work here across steps instead of allocating a
+   context per element. The suite marks it recyclable, so the adapters
+   reset it at their completion points; a creation failure falls back
+   to an adapter-owned host.
+*/
+static KosContext *map_iter_pyctx(PyObject *self) {
+
+  KosMapObject *m = (KosMapObject *) self;
+
+  if (! m->ctx) {
+    m->ctx = KosContext_New(NULL);
+    if (! m->ctx)
+      PyErr_Clear();
+  }
+  return m->ctx;
 }
 
 
@@ -579,22 +464,14 @@ static PyObject *kosmap_new(
     return NULL;
   }
 
-  Py_INCREF(func);
-  m->func = func;
   m->source = source;
 
   /* Resolve the function's calling shape and the source's protocol
      once; both are fixed for the map's lifetime. */
-  if (KosCallable_CheckSlots(func, &m->fn_slots)) {
-    m->fn_kind = KosCallSlots_WantsFrame(m->fn_slots, func)
-        ? KOS_MAP_FN_KOS_FRAME : KOS_MAP_FN_KOS_BOXED;
-  } else {
-    m->fn_slots = NULL;
-    m->fn_kind = KOS_MAP_FN_PY_PLAIN;
-  }
-  m->src_kind = (! KosIter_Check(source) && PyIter_Check(source))
-      ? KOS_MAP_SRC_SYNC : KOS_MAP_SRC_DRIVEN;
+  KosCallShape_Init(&m->fn, func);
+  m->src_sync = KosIter_CheckSync(source);
 
+  m->ctx = NULL;
   m->closed = 0;
   m->busy = 0;
   m->nf_phase = KOS_MAP_NF_FETCH;
@@ -609,8 +486,10 @@ static int kosmap_traverse(PyObject *self, visitproc visit, void *arg) {
 
   KosMapObject *m = (KosMapObject *) self;
 
-  Py_VISIT(m->func);
+  Py_VISIT(m->fn.cs_callable);
   Py_VISIT(m->source);
+  if (m->ctx)
+    return KosContext_Traverse(m->ctx, visit, arg);
   return 0;
 }
 
@@ -619,8 +498,13 @@ static int kosmap_clear(PyObject *self) {
 
   KosMapObject *m = (KosMapObject *) self;
 
-  Py_CLEAR(m->func);
+  KosCallShape_Clear(&m->fn);
   Py_CLEAR(m->source);
+  if (m->ctx) {
+    KosContext *ctx = m->ctx;
+    m->ctx = NULL;
+    KosContext_Free(ctx);
+  }
   return 0;
 }
 
@@ -695,7 +579,8 @@ KosEvaluatedTypeObject KosMapType = {
     .ki_throw = map_iter_throw,
     .ki_close = map_iter_close,
     .ki_finish = map_iter_finish,
-    .ki_pyctx = NULL,
+    .ki_pyctx = map_iter_pyctx,
+    .ki_pyctx_recyclable = 1,
   },
 };
 

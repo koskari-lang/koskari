@@ -1327,6 +1327,77 @@ PyObject *kos_iter_acquire(PyObject *iterable) {
   return PyObject_GetIter(iterable);
 }
 
+
+/**
+   Close an acquired iterator, best-effort and exception-fenced: a
+   provider through its suite's ki_close, a sync iterator through
+   close(), an async iterator through aclose() with its awaitable
+   demand-driven -- an immediate completion honors the cleanup, a
+   genuine suspension takes the cannot-honor fallback of closing the
+   in-flight iterator. Any pending exception is preserved.
+*/
+void kos_iter_close(PyObject *iter) {
+
+  PyObject *ftyp, *fval, *ftb;
+
+  if (! iter)
+    return;
+
+  PyErr_Fetch(&ftyp, &fval, &ftb);
+
+  {
+    KosIterSlots *islots;
+
+    if (KosIter_CheckSlots(iter, &islots)) {
+      (void) islots->ki_close(iter);
+      PyErr_Clear();
+
+    } else if (Py_TYPE(iter)->tp_iternext) {
+      PyObject *r = PyObject_CallMethod(iter, "close", NULL);
+      Py_XDECREF(r);
+      PyErr_Clear();
+
+    } else {
+      PyObject *aw = PyObject_CallMethod(iter, "aclose", NULL);
+      if (aw) {
+        PyObject *it = PyObject_GetAwaitable(aw);
+        Py_DECREF(aw);
+        if (it) {
+          PyObject *step = PyObject_CallMethod(it, "send", "O", Py_None);
+          if (step) {
+            /* Suspend attempt during close; cannot honor further --
+               close the iterator so its GeneratorExit cleanup runs. */
+            Py_DECREF(step);
+            PyObject *r = PyObject_CallMethod(it, "close", NULL);
+            Py_XDECREF(r);
+          }
+          Py_DECREF(it);
+        }
+      }
+      PyErr_Clear();
+    }
+  }
+
+  PyErr_Restore(ftyp, fval, ftb);
+}
+
+
+/**
+   Classify a produced result under ambient async: a non-awaitable, a
+   Defer, or a future/task handle is a completed value; anything else
+   awaitable must be awaited before use.
+*/
+int KosEval_ResultIsValue(PyObject *result) {
+
+  PyTypeObject *typ = Py_TYPE(result);
+
+  if (! typ->tp_as_async || ! typ->tp_as_async->am_await)
+    return 1;
+  if (KosDefer_Check(result))
+    return 1;
+  return KosEval_IsFuture(result);
+}
+
 /**
    Get next value from a Python async iterator using the given __anext__
    awaitable. Caller must have obtained awaitable via get_await_next(iter);

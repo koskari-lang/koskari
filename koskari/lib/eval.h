@@ -228,6 +228,58 @@ typedef struct KosNativeProgram {
 KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value);
 
 
+/**
+   Complete a native frame by handing value to the eval loop's return
+   machinery, which owns every delivery terminus (parent frame,
+   tracking node, drive root). Clears the program slot and, when cache
+   is given, arms the frame to park itself into that caller-owned
+   one-frame cache when the return path frees it
+   (kos_dynframe_park_inert); a NULL or occupied cache frees as usual.
+   The exception path never parks -- a frame popped by the raise walk
+   is freed, and the cache simply stays empty for the next install.
+   The caller returns this result from its handler. value is consumed.
+*/
+KosOpResult KosNativeFrame_ReturnPark(
+    KosEvalState *es,
+    PyObject *value,
+    KosDynFrame **cache);
+
+
+/**
+   Push a code-less frame carrying a native program onto the chain.
+   When cache holds a parked frame it is reinstalled in place of a
+   fresh allocation and *cache is emptied. staged (borrowed, may be
+   NULL) is pushed onto the new frame's stack; the program's first
+   ITERATE wake pops it. Returns the frame, or NULL with PyErr set --
+   on a staged-push failure the frame is already on the chain and the
+   caller's error propagation pops it through the raise walk.
+*/
+KosDynFrame *KosNativeFrame_Install(
+    KosEvalState *es,
+    const KosNativeProgram *prog,
+    void *state,
+    PyObject *staged,
+    KosDynFrame **cache);
+
+
+/**
+   Request the next element of iter from inside a native frame handler:
+   push a one-request tracking node for iter and run one request
+   through KosIterRequest_Next. On DELIVERED *out is the element (new
+   ref) and the node is already cleaned up; on EXHAUSTED and ERROR the
+   node is cleaned up and *out is NULL (no exception is set for
+   EXHAUSTED; ERROR leaves PyErr set). On CONTINUES the node remains
+   with installed work above it and the element later lands on the
+   native frame's stack (an ITERATE wake pops it); on EXIT the node
+   remains and *out is the awaitable to suspend on (EVAL_AWAIT), the
+   element arriving the same way.
+*/
+KosIterRequestStatus KosNativeFrame_RequestNext(
+    KosEvalState *es,
+    PyObject *iter,
+    PyObject **out);
+
+
 /* === KosContext: VM execution context === */
 
 /**
@@ -664,6 +716,19 @@ KosContext *KosContext_New(KosDynFrame *top);
 void KosContext_Free(KosContext *ctx);
 
 
+/**
+   Make a context reusable after a completion at its root: drop the
+   finished frame chain and clear the completion residue -- dead and
+   running flags, suspension tag, in-flight await iterator, resume
+   inject. A context holding state this reset cannot account for (an
+   armed transfer plan) is left untouched and the caller must free it
+   instead.
+
+   :return: 0 recycled; -1 the context cannot be recycled
+*/
+int KosContext_Recycle(KosContext *ctx);
+
+
 /* === Frame management === */
 
 /**
@@ -683,6 +748,17 @@ int KosEval_IsFuture(PyObject *val);
 
 
 /**
+   Classify a produced result under ambient async: a non-awaitable, a
+   Defer, or a future/task handle is a completed value; anything else
+   awaitable must be awaited before use.
+
+   :param result: borrowed
+   :return: 1 (value), 0 (awaitable), -1 (error; PyErr set)
+*/
+int KosEval_ResultIsValue(PyObject *result);
+
+
+/**
    Acquire an iterator from an iterable, uniform over both protocols
    and shared by every acquisition site (PUSH_FOREACH, the *_ITER
    opcodes, KosMap): a KosIter provider passes through as itself, an
@@ -693,6 +769,20 @@ int KosEval_IsFuture(PyObject *val);
    :return: new iterator reference, or NULL with PyErr set
 */
 PyObject *kos_iter_acquire(PyObject *iterable);
+
+
+/**
+   Close an acquired iterator, best-effort and exception-fenced: a
+   KosIter provider through its suite's ki_close, a sync iterator
+   through close(), an async iterator through aclose() -- the aclose
+   awaitable is demand-driven, so an immediate completion honors the
+   cleanup and a genuine suspension takes the cannot-honor fallback of
+   closing the in-flight iterator. A missing close method is ignored.
+   Any pending exception is preserved across the close.
+
+   :param iter: borrowed; NULL is a no-op
+*/
+void kos_iter_close(PyObject *iter);
 
 
 /**

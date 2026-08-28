@@ -83,8 +83,13 @@ ambient async.
 A provider's own `KosContext` that persists across its steps, reported
 through the iter suite's `ki_pyctx` slot -- the generator keeps one, so
 its suspended frames and context-level state (parameterize extents, an
-in-flight await iterator) survive between steps. A provider without one
-is driven against an adapter-owned host context instead.
+in-flight await iterator) survive between steps. A durable context the
+suite marks recyclable (`ki_pyctx_recyclable`: KosMap, KosFilter)
+holds no state between completed steps -- the adapters reset it at
+their completion points and drive it with fresh-step semantics; it
+exists to avoid a context allocation per element. A provider without
+a durable context is driven against an adapter-owned host context
+instead.
 
 ## eager step
 
@@ -154,7 +159,7 @@ program's handler in place of instruction dispatch, delivering typed
 events (regular invocation, a callee's return, an awaited value, an
 offered exception). Described by a static `KosNativeProgram`
 descriptor. Current programs: apply's non-flattening call, the map
-step. Reference: EVALUATOR.md §8.2.
+step, the filter step. Reference: EVALUATOR.md §8.2.
 
 ## park (parked exception)
 
@@ -168,7 +173,7 @@ or await suspension; say "suspended" or name the mechanism.
 
 A KosIter provider: a type whose `kos_iter` suite carries `ki_step`,
 making it steppable in-eval by the iteration opcodes and the python
-adapters. Current providers: the koskari generator, KosMap.
+adapters. Current providers: the koskari generator, KosMap, KosFilter.
 
 ## special (special form)
 

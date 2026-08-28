@@ -1288,6 +1288,32 @@ void KosContext_Free(KosContext *ctx) {
 }
 
 
+/**
+   Make a context reusable after a completion at its root: drop the
+   finished frame chain and clear the completion residue. A context
+   with an armed transfer plan is left untouched -- the caller frees
+   it instead.
+*/
+int KosContext_Recycle(KosContext *ctx) {
+
+  if (KosContext_PLAN(ctx))
+    return -1;
+
+  if (KosContext_DYN_TOP(ctx))
+    kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
+  KosContext_DYN_TOP(ctx) = NULL;
+  KosContext_FRAME_TOP(ctx) = NULL;
+
+  KosContext_FLAGS(ctx) &= ~(KOS_CTX_DEAD | KOS_CTX_RUNNING);
+  KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
+  Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+  Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
+  KosContext_PY_RESUME_KIND(ctx) = 0;
+
+  return 0;
+}
+
+
 int KosContext_Traverse(
     KosContext *ctx,
     visitproc visit,
@@ -1763,6 +1789,108 @@ KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value) {
     if (pr.kind == KOS_RES_NORMAL)
       return EVAL_REPROLOGUE();
     return pr;
+  }
+}
+
+
+/**
+   Complete a native frame by handing value to the eval loop's return
+   machinery, which owns every delivery terminus (parent frame,
+   tracking node, drive root). Clears the program slot and, when cache
+   is given, arms the frame to park itself there when the return path
+   frees it (KOS_FRAME_PARK_TO_CACHE; native_state becomes the cache
+   slot). The caller returns this result from its handler. value is
+   consumed.
+*/
+KosOpResult KosNativeFrame_ReturnPark(
+    KosEvalState *es,
+    PyObject *value,
+    KosDynFrame **cache) {
+
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+
+  KosDynFrame_NATIVE_PROG(frame) = NULL;
+  if (cache) {
+    KosDynFrame_NATIVE_STATE(frame) = (void *) cache;
+    KosDynFrame_FLAGS(frame) |= KOS_FRAME_PARK_TO_CACHE;
+  } else {
+    KosDynFrame_NATIVE_STATE(frame) = NULL;
+  }
+
+  return EVAL_RETURN(value);
+}
+
+
+/**
+   Push a code-less frame carrying a native program, reusing a parked
+   frame from cache when one is available. staged (borrowed, may be
+   NULL) lands on the new frame's stack for the first ITERATE wake.
+*/
+KosDynFrame *KosNativeFrame_Install(
+    KosEvalState *es,
+    const KosNativeProgram *prog,
+    void *state,
+    PyObject *staged,
+    KosDynFrame **cache) {
+
+  KosDynFrame *frame;
+
+  if (cache && *cache) {
+    frame = *cache;
+    *cache = NULL;
+    kos_dyn_push_ready_frame(es, frame);
+  } else {
+    frame = kos_dyn_push_frame_empty(es);
+    if (! frame)
+      return NULL;
+  }
+
+  KosDynFrame_NATIVE_PROG(frame) = (void *) prog;
+  KosDynFrame_NATIVE_STATE(frame) = state;
+
+  if (staged && KosEvalState_StackPushRef(es, staged) < 0)
+    return NULL;
+
+  return frame;
+}
+
+
+/**
+   One next-element request against iter from inside a native frame
+   handler: push the tracking node, run the request, and clean the
+   node up on every immediately-final outcome. See eval.h for the
+   per-status contract.
+*/
+KosIterRequestStatus KosNativeFrame_RequestNext(
+    KosEvalState *es,
+    PyObject *iter,
+    PyObject **out) {
+
+  *out = NULL;
+
+  if (kos_dyn_push_next_boundary(es, iter, NULL, 1) < 0)
+    return KOS_IREQ_ERROR;
+
+  switch (KosIterRequest_Next(es, KosEvalState_DYN_TOP(es), NULL, out)) {
+    case KOS_IREQ_DELIVERED:
+      kos_dyn_next_abort_after_failed_attach(es);
+      return KOS_IREQ_DELIVERED;
+
+    case KOS_IREQ_EXHAUSTED:
+      Py_CLEAR(*out);
+      kos_dyn_next_abort_after_failed_attach(es);
+      return KOS_IREQ_EXHAUSTED;
+
+    case KOS_IREQ_CONTINUES:
+      return KOS_IREQ_CONTINUES;
+
+    case KOS_IREQ_EXIT:
+      return KOS_IREQ_EXIT;
+
+    case KOS_IREQ_ERROR:
+    default:
+      kos_dyn_next_abort_after_failed_attach(es);
+      return KOS_IREQ_ERROR;
   }
 }
 

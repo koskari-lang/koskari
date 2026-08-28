@@ -29,7 +29,8 @@ from os.path import dirname, join
 from typing import Any, Dict
 
 from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
-                   KosMap, KosPartial, KosProperty, MemoizedRef, Module,
+                   KosFilter, KosMap, KosPartial, KosProperty,
+                   MemoizedRef, Module,
                    ModuleNamespace,
                    ParamRef, Ref, apply, build_dict, build_list, build_set,
                    build_tuple, car, cdr, cons, defer, demand, demand_apply,
@@ -153,6 +154,7 @@ def make_bootstrap():
 
     # types from koskari.lib
     _ty('defer', defer)
+    _ty('filter', KosFilter)
     _ty('map', KosMap)
     _ty('demand', demand)
     _ty('partial', KosPartial)
@@ -234,7 +236,7 @@ def make_bootstrap():
     _bind('chr', chr)
     _bind('dir', dir)
     _bind('enumerate', enumerate)
-    _bind('filter', filter)
+    _bind('py-filter', filter)
     _bind('format', format)
     _bind('getattr', getattr)
     _bind('getattr*', getattr_star)

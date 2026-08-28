@@ -128,6 +128,18 @@ void kos_dynframe_free(KosDynFrame *frame) {
     KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_OWNS_NATIVE_STATE;
   }
 
+  /* A completing native frame armed by KosNativeFrame_ReturnPark:
+     native_state is the holder's cache slot; offer the frame there
+     before the ordinary teardown. */
+  if (KosDynFrame_FLAGS(frame) & KOS_FRAME_PARK_TO_CACHE) {
+    KosDynFrame **cache =
+        (KosDynFrame **) KosDynFrame_NATIVE_STATE(frame);
+    KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_PARK_TO_CACHE;
+    KosDynFrame_NATIVE_STATE(frame) = NULL;
+    if (cache && kos_dynframe_park_inert(frame, cache))
+      return;
+  }
+
   {
     PyObject *fn = KosDynFrame_FN(frame);
     if (fn) {
@@ -256,6 +268,43 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
   KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
   es->pc = 0;
   es->acting_pc = 0;
+}
+
+
+/**
+   Offer a detached native-program frame to a holder's one-frame
+   cache: strip it to an inert allocation and store it in *cache when
+   the slot is empty. Only a frame with no python attachments -- no
+   code, namespace, or cache-participation fn -- parks; anything else
+   takes the ordinary free so its references release properly.
+*/
+int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache) {
+
+  if (*cache
+      || KosDynFrame_CODE(frame)
+      || KosDynFrame_NS(frame)
+      || KosDynFrame_FN(frame)
+      || ! KosDynFrame_STACK(frame))
+    return 0;
+
+  KosDynFrame_NATIVE_PROG(frame) = NULL;
+  KosDynFrame_NATIVE_STATE(frame) = NULL;
+
+  KosStack_Clear(&KosDynFrame_STACK(frame));
+  KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
+  KosDynFrame_BACK_FRAME(frame) = NULL;
+
+  KosDynNode_PARENT(frame) = NULL;
+  KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
+  /* The caps a fresh FRAME node gets from kos_dynframe_new, so the
+     reinstall is indistinguishable from a new allocation. */
+  KosDynNode_CAPS(frame) = KOS_DYN_CAP_BINDS_NS;
+  KosDynFrame_PC(frame) = 0;
+  KosDynFrame_ACTING_PC(frame) = 0;
+  KosDynFrame_FLAGS(frame) = 0;
+
+  *cache = frame;
+  return 1;
 }
 
 

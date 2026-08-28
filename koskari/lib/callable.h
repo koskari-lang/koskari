@@ -91,6 +91,77 @@ static inline int KosCallSlots_WantsFrame(
 }
 
 
+/* === KosCallShape: a callable held for repeated invocation === */
+
+/**
+   How a held callable is invoked, resolved once:
+
+   FRAME -- a frame-wanting KosCallable; invoke through the evaluator
+   (KosEvalState_Call), its frame installing on the chain and its
+   return arriving as the callee-return delivery.
+   BOXED -- a KosCallable with a python-boundary worker and no frame;
+   invoke through KosCallShape_PyCallOne.
+   PLAIN -- an ordinary python callable; invoke through
+   KosCallShape_PyCallOne.
+*/
+typedef enum KosCallShapeKind {
+  KOS_CALL_SHAPE_FRAME = 0,
+  KOS_CALL_SHAPE_BOXED,
+  KOS_CALL_SHAPE_PLAIN,
+} KosCallShapeKind;
+
+
+/**
+   A callable an object holds and invokes repeatedly, with its calling
+   shape resolved at construction rather than per call. cs_callable is
+   owned -- the holder's traverse visits it and its clear releases it
+   through KosCallShape_Clear. cs_slots is the borrowed static-type
+   suite, NULL for PLAIN.
+*/
+typedef struct KosCallShape {
+  PyObject *cs_callable;
+  KosCallSlots *cs_slots;
+  uint8_t cs_kind;
+} KosCallShape;
+
+
+/**
+   Resolve callable's shape into *shape, taking a reference.
+*/
+static inline void KosCallShape_Init(
+    KosCallShape *shape,
+    PyObject *callable) {
+
+  Py_INCREF(callable);
+  shape->cs_callable = callable;
+
+  if (KosCallable_CheckSlots(callable, &shape->cs_slots)) {
+    shape->cs_kind = KosCallSlots_WantsFrame(shape->cs_slots, callable)
+        ? KOS_CALL_SHAPE_FRAME : KOS_CALL_SHAPE_BOXED;
+  } else {
+    shape->cs_slots = NULL;
+    shape->cs_kind = KOS_CALL_SHAPE_PLAIN;
+  }
+}
+
+
+static inline void KosCallShape_Clear(KosCallShape *shape) {
+
+  Py_CLEAR(shape->cs_callable);
+  shape->cs_slots = NULL;
+}
+
+
+/**
+   One-argument call at the python boundary through the resolved
+   shape: a PLAIN callable directly, otherwise the suite's
+   python-boundary worker. arg is borrowed.
+
+   :return: the result (new ref) or NULL with PyErr set
+*/
+PyObject *KosCallShape_PyCallOne(KosCallShape *shape, PyObject *arg);
+
+
 /* === KosCallable_* : KosCallable-only invocation (no type check, no frame prep) === */
 
 /**

@@ -1036,6 +1036,19 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es);
 void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame);
 
 
+/**
+   Offer a detached native-program frame to a holder's one-frame cache:
+   strip it to an inert allocation -- program, state, stack contents,
+   and links all cleared, so the parked frame holds no references of
+   any kind -- and store it in *cache when the slot is empty. A holder
+   that parks frames this way cannot form a reference cycle through
+   its cache, and frees a parked frame with kos_dynframe_free.
+
+   :return: 1 when parked; 0 when the caller must free the frame
+*/
+int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache);
+
+
 void kos_dynframe_reset_for_tail(KosDynFrame *frame);
 
 /* Drop discardable extent nodes (NS, LOOP, FOREACH) above frame before
@@ -2378,6 +2391,14 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
                                                  np_clone_state; free
                                                  releases it through
                                                  np_free_state */
+#define KOS_FRAME_PARK_TO_CACHE   (1u << 2)  /* completing native frame;
+                                                native_state is the
+                                                holder's cache slot
+                                                (KosDynFrame **) and free
+                                                offers the frame there
+                                                (kos_dynframe_park_inert).
+                                                Armed only by
+                                                KosNativeFrame_ReturnPark */
 #define KosDynFrame_NATIVE_PROG(f)  (((KosDynNode *)(f))->u.frame.native_prog)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)

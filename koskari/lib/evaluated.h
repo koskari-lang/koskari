@@ -173,6 +173,10 @@ typedef struct KosIterSlots {
   KosIterCloseFunc ki_close;
   KosIterFinishFunc ki_finish;
   KosIterPyCtxFunc ki_pyctx;
+  uint8_t ki_pyctx_recyclable;  /* the durable context holds no state
+                                   between completed steps; the adapters
+                                   recycle it at their reset points
+                                   exactly like an owned host */
 } KosIterSlots;
 
 
@@ -243,6 +247,18 @@ static inline int kos_iter_check(PyObject *obj) {
 }
 
 #define KosIter_Check(obj) kos_iter_check(obj)
+
+
+/**
+   An acquired iterator that steps through tp_iternext alone, with no
+   evaluator involvement: a plain sync iterator that is not a KosIter
+   provider. Anything else -- a provider, a python async iterator --
+   must be driven through the evaluator.
+*/
+static inline int KosIter_CheckSync(PyObject *iter) {
+
+  return ! KosIter_Check(iter) && PyIter_Check(iter);
+}
 
 
 int koskari_evaluated_init(PyObject *mod);

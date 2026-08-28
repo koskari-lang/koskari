@@ -277,6 +277,10 @@ The suite is what a provider is:
 - `ki_finish(self, exhausted)` -- completion bookkeeping, called from
   the delivery tails and the adapters' terminals.
 - `ki_pyctx(self)` -- durable drive context when the provider owns one.
+- `ki_pyctx_recyclable` -- the durable context holds no state between
+  completed steps: the adapters recycle it at their completion points
+  and keep fresh-step drive semantics (map, filter); unset means
+  generator-style, with suspended state living in the context.
 
 `ki_resume` is gone (nothing parks at the suite layer), and with it
 the owner-only-resume contract, the mediated boundary mode, the feed
@@ -316,6 +320,41 @@ live drive owns the state. Nested maps need no forwarding code --
 each level is one more frame + boundary pair on the chain, and the
 walks already compose them.
 
+### KosFilter, and the pieces shared with KosMap
+
+KosFilter is the second callable-over-a-source provider, and building
+it drove the generic pieces into APIs both use:
+
+- `KosCallShape` (callable.h) -- a held callable's calling shape
+  (FRAME / BOXED / PLAIN), resolved once at construction, with
+  `KosCallShape_PyCallOne` as the python-boundary invoke.
+- `KosEval_ResultIsValue` -- the ambient-await classification of a
+  produced result (Defer/future handles exempt).
+- `KosIter_CheckSync` -- iterates through tp_iternext alone, with no
+  evaluator involvement.
+- `KosNativeFrame_Install` / `KosNativeFrame_RequestNext` /
+  `KosNativeFrame_ReturnPark` -- the native-program install, fetch,
+  and complete trio (EVALUATOR.md §8.2).
+- `kos_iter_close` -- best-effort exception-fenced close of an
+  acquired iterator, beside `kos_iter_acquire`.
+- `KosContext_Recycle` -- reset a context after a completion at its
+  root; the adapters use it for owned hosts and recyclable durable
+  contexts alike.
+
+The filter's machine has one more phase than the map's -- FETCH,
+INVOKE, VERDICT -- because a predicate's return is a verdict about a
+retained element (held on the filter as `pending`), not the element
+itself: a true verdict completes the frame with the held element, a
+false one loops back to FETCH inside the same activation. That loop is
+why the sync fast path matters twice over: with a None or non-frame
+predicate, skipped elements never leave the C loop in `ki_step`, and
+inside the frame program a sync source refetches through bare
+tp_iternext. The frame-wanting-predicate case cannot use the map's
+frameless direct install (the value-graft delivery would emit the
+verdict), so the program frame always hosts it -- parked on the filter
+between steps via `KosNativeFrame_ReturnPark`, stripped inert so the
+cache holds no references and no cycle can form.
+
 ### Python adapters
 
 Provider parks no longer exist, so the stepper's park machinery
@@ -326,8 +365,9 @@ adapters share one drive shape: suite entry against the host (durable
 `drive_mode` survives as one bit: a value graft's root return is the
 element; anything else's return is exhaustion. A StopIteration
 surfacing at the host root is the provider's exhaustion (converted to
-the surface protocol and `ki_finish(provider, 1)`); an adapter-owned
-host is discarded after a root completion. The demand generator forces
+the surface protocol and `ki_finish(provider, 1)`); after a root
+completion the drive context is recycled -- an adapter-owned host and
+a recyclable durable context alike. The demand generator forces
 `KOS_FRAME_DEMAND` onto installed frames so genuine suspension denies
 in-eval.
 
