@@ -75,8 +75,13 @@ static KosOpResult callable_promote_normal(KosEvalState *es, KosOpResult r) {
     return r;
   if (KosEvalState_PLAN(es))
     return EVAL_REPROLOGUE();
+  /* An install that left work on the frame rather than bytecode --
+     a native program, or a CPS resume -- must go through the
+     prologue, which is where either one is picked up. NORMAL here
+     would resume instruction dispatch on a frame that has no code. */
   if (KosEvalState_FRAME(es)
-      && KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)))
+      && (KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es))
+          || KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))))
     return EVAL_REPROLOGUE();
   return EVAL_NORMAL();
 }
