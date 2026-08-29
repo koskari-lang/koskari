@@ -37,8 +37,8 @@ the system being designed can no longer reach. Python calling into
 koskari crosses a boundary (tp_call, `__anext__`, the adapters);
 koskari calling out to a plain python callable crosses one the other
 way. Reserve the word for that seam. (The dynchain's iteration nodes
-were once called "boundary nodes"; prefer "iteration node" or the node
-kind's name.)
+were once called "boundary nodes"; the code now says "iteration
+node" or the node kind's name.)
 
 ## bootstrap
 
@@ -51,7 +51,7 @@ construction, before its first step.
 
 The unified parent-linked list of dynamic-extent nodes -- frames,
 try/finally regions, with and wind extents, loop and foreach regions,
-prompts, generator boundaries -- that replaces separate frame and
+prompts, generator nodes -- that replaces separate frame and
 handler stacks. "On the chain" means installed in the running
 context's dynamic extent. Reference: EVALUATOR.md §5, `dynchain.h`.
 

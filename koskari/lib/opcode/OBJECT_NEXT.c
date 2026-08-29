@@ -27,13 +27,13 @@ static KosOpResult object_next_step(
     PyObject *default_val,
     uint16_t n) {
 
-  /* KosIter provider: push the NEXT boundary node and run one request
+  /* KosIter provider: push the NEXT node and run one request
      against it; the drive flattens into the same eval loop. */
   if (KosIter_Check(iter)) {
     KosDynNode *bnode;
     PyObject *out = NULL;
 
-    if (kos_dyn_push_next_boundary(es, iter, default_val, (int) n) < 0) {
+    if (kos_dyn_push_next_node(es, iter, default_val, (int) n) < 0) {
       Py_DECREF(iter);
       Py_XDECREF(default_val);
       return EVAL_RAISE();
@@ -115,12 +115,12 @@ static KosOpResult object_next_step(
       return EVAL_RAISE();
 
     case GET_NEXT_SUSPEND:
-      /* The step is parked on its await: arm the NEXT boundary node to
+      /* The step is parked on its await: arm the NEXT node to
          carry the arity contract across the suspension. The awaited
-         value revives through the boundary (revive_await election);
+         value revives through the iteration node (revive_await election);
          StopAsyncIteration from the parked step converts to exhaustion
          at the raise walk. Nothing rides the operand stack. */
-      if (kos_dyn_push_next_boundary(es, iter, default_val, (int) n) < 0) {
+      if (kos_dyn_push_next_node(es, iter, default_val, (int) n) < 0) {
         Py_DECREF(iter);
         Py_XDECREF(default_val);
         Py_XDECREF(_await);

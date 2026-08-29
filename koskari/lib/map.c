@@ -24,11 +24,11 @@
    function result complete as KOS_ITER_VALUE with the evaluator
    untouched. Anything asynchronous installs one native frame whose
    handler runs the two-phase machine -- FETCH requests the next source
-   element through its own NEXT boundary (KosIterRequest_Next, all
+   element through its own NEXT node (KosIterRequest_Next, all
    three protocols), INVOKE applies the function through the call path
    -- and completes by returning the element, delivered to the
-   consumer's boundary as the step value. Exhaustion and errors leave
-   the frame as exceptions; the consumer's boundary converts
+   consumer's iteration node as the step value. Exhaustion and errors leave
+   the frame as exceptions; the consumer's iteration node converts
    StopIteration per its own rules, which also gives a mapped
    function's StopIteration builtins.map truncation parity.
 
@@ -46,7 +46,7 @@
 typedef enum {
   KOS_MAP_NF_FETCH = 0,   /* next wake starts a fetch */
   KOS_MAP_NF_WAIT_ELEM,   /* fetch in flight; element arrives by stack
-                             push (boundary delivery) or AWAITED */
+                             push (node delivery) or AWAITED */
   KOS_MAP_NF_WAIT_RESULT, /* invoke in flight; result arrives by
                              CALL_VALUE, AWAITED, or stack push */
 } KosMapNfPhase;
@@ -74,7 +74,7 @@ typedef struct {
 /**
    INVOKE from inside the frame program: apply func to element and
    either complete the frame (EVAL_RETURN delivers the element through
-   the consumer's boundary) or leave the invoke in flight. element is
+   the consumer's iteration node) or leave the invoke in flight. element is
    consumed.
 */
 static KosOpResult map_nf_invoke(
@@ -130,7 +130,7 @@ static KosOpResult map_nf_invoke(
    source element (KosNativeFrame_RequestNext). A completed element
    goes straight to INVOKE; installed or suspended work leaves the
    fetch in flight, the element arriving by stack delivery; exhaustion
-   raises StopIteration for the consumer's tracking node to convert.
+   raises StopIteration for the consumer's iteration node to convert.
 */
 static KosOpResult map_nf_fetch(KosEvalState *es, KosMapObject *m) {
 
@@ -162,10 +162,10 @@ static KosOpResult map_nf_fetch(KosEvalState *es, KosMapObject *m) {
 
 /**
    The step's native frame handler: the FETCH/INVOKE machine, woken by
-   the eval loop's cadence, boundary deliveries landing on the frame
+   the eval loop's cadence, node deliveries landing on the frame
    stack, awaited resumes, and callee-frame returns. Exceptions are
    always declined -- the raise walk pops the frame and the consumer's
-   boundary converts protocol exceptions to exhaustion.
+   node converts protocol exceptions to exhaustion.
 */
 static KosOpResult map_nf_handler(
     KosEvalState *es,
@@ -199,7 +199,7 @@ static KosOpResult map_nf_handler(
 
   switch (ev) {
     case KOS_NFRAME_EXCEPTION:
-      /* Decline: the frame pops and the consumer's boundary owns the
+      /* Decline: the frame pops and the consumer's iteration node owns the
          conversion (StopIteration truncation parity included). */
       return EVAL_RAISE();
 

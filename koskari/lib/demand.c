@@ -27,13 +27,13 @@
 
    Yielding KosFunctions return DemandGenerator instead of raising.
    DemandGenerator stepping forces KOS_FRAME_DEMAND onto the generator's
-   frame at each entry (demand intent, embodied by the boundary), so
+   frame at each entry (demand intent, embodied by the driving node), so
    AWAIT denies in-eval exactly as in demand functions -- catchable by
    the generator body for sync fallback; uncaught, it unwinds and exits
    as KOS_RES_RAISE. YIELD is untouched: it surfaces as iteration. The
    demand bit is drive-state: kos_dyn_gen_install assigns it from the
    frame below the splice at every entry, so flattened iteration
-   inherits the consumer's demand state and async boundary drives force
+   inherits the consumer's demand state and async node drives force
    it off.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>

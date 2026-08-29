@@ -519,7 +519,7 @@ static KosOpResult yield_from_drive_py_async(
   Drive one step of a KosIter provider delegate through its iter
   suite: close, throw(StopAsyncIteration), send, and stepping. The
   suite never parks -- installed work runs flattened in the same
-  koskari_eval and delivers at this node's boundary record.
+  koskari_eval and delivers at this node's request record.
 */
 static KosOpResult yield_from_drive_kos_iter(
     KosEvalState *es,
@@ -683,7 +683,7 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
   uint8_t kind = KosDynYieldFrom_KIND(yf);
 
   /* EMIT: a flattened koskari-gen delegate handed us a value at the iterator
-     boundary (kos_dyn_yield_from_deliver_inner_yield).  Re-emit it as this
+     iteration node (kos_dyn_yield_from_deliver_inner_yield).  Re-emit it as this
      generator's own yield.  yield_from_emit_yield reads TOS and leaves us in
      EXPECT_SEND, so the next resume drives the delegate for its next value. */
   if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EMIT)

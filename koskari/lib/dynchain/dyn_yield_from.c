@@ -37,9 +37,9 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   }
 
   caps = KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP;
-  /* KOS_YF_KOS_ITER (4): flattened iterator boundary with main eval loop */
+  /* KOS_YF_KOS_ITER (4): flattened iteration node with main eval loop */
   if (kind == (uint8_t) 4)
-    caps |= KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY;
+    caps |= KOS_DYN_CAP_ITER_RECEIVER;
 
   kos_dynnode_init((KosDynNode *) node, KOS_DYN_YIELD_FROM, parent, caps);
   Py_INCREF(delegate);
@@ -141,11 +141,11 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 
 /**
    Flattened koskari async gen delegate yielded a value at the iterator
-   boundary.  Hand the value to the delegating generator's frame and stop:
+   iteration node.  Hand the value to the delegating generator's frame and stop:
    control returns to the eval loop, which re-dispatches the YIELD_FROM opcode
    in EMIT phase.  The handler then re-emits the value as this generator's own
    yield (yield_from_emit_yield), and the normal yield walk freezes this
-   generator's GEN node and delivers onward to the next boundary.  Each hop is
+   generator's GEN node and delivers onward to the next receiver.  Each hop is
    one walk plus one delivery, so nested for-each / yield-from / generator
    stacks compose to arbitrary depth.
 */

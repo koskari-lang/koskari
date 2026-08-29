@@ -32,7 +32,7 @@
    Similar to KosCoroutine but yields values via __anext__. A KosIter
    provider: its kos_iter suite steps by splicing the generator's frames
    onto the consumer context (KOS_ITER_INSTALLED), with delivery through
-   the site's boundary node.
+   the site's iteration node.
 */
 
 extern KosEvaluatedTypeObject KosPyAsyncGenType;

@@ -854,7 +854,7 @@ static int kos_dyn_pop_transparent_deliver(
 #include "dynchain/dyn_yield_from.c"
 #include "dynchain/dyn_param.c"
 #include "dynchain/dyn_with.c"
-#include "dynchain/dyn_boundary.c"
+#include "dynchain/dyn_iter_node.c"
 
 
 /**
@@ -866,7 +866,7 @@ KosOpResult kos_dynnode_on_control_returned(
     KosDynNode *node) {
 
   int r = 0;
-  /* Iterator-boundary yield/return uses eval dispatch_boundary_event /
+  /* Iteration-node yield/return uses eval dispatch_iter_node_event /
      kos_dyn_deliver_* instead of this hook. */
   /* When node is a frame, check if parent is WITH in pending phase. */
   if (KosDynNode_IS_FRAME(node)) {
@@ -1634,7 +1634,7 @@ done:
 /**
    Link node as DYN_TOP, run install, retarget live fields.
 
-   kos_dyn_resync_after_push updates es; frame-boundary flush runs in
+   kos_dyn_resync_after_push updates es; the frame-crossing flush runs in
    kos_dyn_resync_apply when the pushed node is a frame.
 */
 int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
@@ -1876,7 +1876,7 @@ KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
 /**
    Offer a control transit to dyn_top without unlinking: PASS, CONSUMED,
    DEFERRED, or ERROR. Central dispatch for exception/return/yield/shift
-   semantics (TRY/FINALLY except/finally PCs, GEN boundary, PROMPT shift).
+   semantics (TRY/FINALLY except/finally PCs, GEN node, PROMPT shift).
    Callers: the kos_dyn_unwind_* walks (raise, return, yield, to_frame),
    shift walk.
 
@@ -1888,25 +1888,25 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
 
   KOS_TRACE_EVENTS_INC(KOS_TE_DYN_HANDLE_ENTER);
 
-  /* A receiving iterator boundary interprets the step-ending exception
+  /* A receiving iteration node interprets the step-ending exception
      from its in-flight step as end-of-iteration -- StopIteration from a
      flattened generator, StopAsyncIteration from a suspended python
      async iterator -- the same protocol judgment the eager step path
      makes when classifying GET_NEXT_EXHAUSTED. The capability is the
      routing key and is held exactly while a step is in flight, so the
-     same exception raised by the consumer's own body (boundary idle)
+     same exception raised by the consumer's own body (iteration node idle)
      passes through. */
   if (event == KOS_XFER_EVENT_RAISE
-      && KosDynNode_HAS_CAP(node, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
+      && KosDynNode_HAS_CAP(node, KOS_DYN_CAP_ITER_RECEIVER)
       && PyErr_Occurred()) {
-    if (PyErr_ExceptionMatches(kos_dyn_iter_boundary_exhaustion_exc(node)))
+    if (PyErr_ExceptionMatches(kos_dyn_iter_node_exhaustion_exc(node)))
       return KOS_HANDLE_CONSUMED;
 
-    if (kos_dyn_iter_boundary_value_mode(node)) {
+    if (kos_dyn_iter_node_value_mode(node)) {
       /* A non-protocol error escaping a value-grafted invoke: release
          the provider's busy mark and disarm before the raise passes to
          the consumer's own handlers. */
-      PyObject *iter_obj = kos_dyn_iter_boundary_iter_obj(node);
+      PyObject *iter_obj = kos_dyn_iter_node_iter_obj(node);
       KosIterSlots *islots;
       if (iter_obj && KosIter_CheckSlots(iter_obj, &islots))
         islots->ki_finish(iter_obj, 0);
@@ -2035,7 +2035,7 @@ static KosDynNode *kos_dyn_clone_dispatch(KosDynNode *node) {
       return NULL;
     case KOS_DYN_GEN:
       PyErr_SetString(PyExc_RuntimeError,
-                      "cannot clone generator boundary node");
+                      "cannot clone generator node node");
       return NULL;
     case KOS_DYN_NEXT:
       return (KosDynNode *) kos_dyn_next_clone((KosDynNext *) node);
@@ -2329,7 +2329,7 @@ static inline KosSegment *kos_chain_resume_stack(
    bottom, below the prompt clone; baseline_ns, when non-NULL, replaces
    that clone's namespace with the one live at the capture bound. It is the compressed region bottom for
    a capture bounded at an invocation prompt: the frame executing the
-   region's own code lies below the capture boundary and must not be
+   region's own code lies below the capture point and must not be
    captured in place, but the graft needs its code, namespace, and
    mid-region pc so a return falling through the invocation prompt lands
    in the copy and runs the remaining region bytecode to POP_PROMPT.
@@ -2424,7 +2424,7 @@ int kos_shift_capture(
 
   /* One walk from dyn_top locates the nearest matching prompt while
      offering handle(SHIFT) to every node crossed: GEN denies (a shift
-     cannot cross a generator boundary), a PROMPT consumes -- the match
+     cannot cross a generator node), a PROMPT consumes -- the match
      when its tag agrees, a topology error otherwise. Reachability is
      implied by the walk itself. */
   KosDynPrompt *prompt = NULL;
@@ -2585,7 +2585,7 @@ int kos_shift_capture(
        * renumbering. Grafts of the same k share these ids; that is safe
        * because grafts land at dyn_top and capture bounds at the
        * nearest prompt, so a same-id instance can never sit between a
-       * SHIFT and its true delimiter. Beyond the boundary prompt, the
+       * SHIFT and its true delimiter. Beyond the delimiting prompt, the
        * walk to the owning frame can pass heritage prompts (a reset
        * inside an outer shift's handler) whose clones ride below as
        * never-executed padding; their originals stay live, so they must

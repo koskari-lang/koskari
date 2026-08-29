@@ -1,5 +1,5 @@
 /* Included by dynchain.c — dyn_next */
-/* === KOS_DYN_NEXT: standalone NEXT opcode boundary for Koskari async gen === */
+/* === KOS_DYN_NEXT: standalone NEXT opcode iteration node for Koskari async gen === */
 
 
 void kos_dyn_next_free_payload(KosDynNode *node) {
@@ -10,7 +10,7 @@ void kos_dyn_next_free_payload(KosDynNode *node) {
 }
 
 
-int kos_dyn_push_next_boundary(
+int kos_dyn_push_next_node(
     KosEvalState *es, PyObject *iter_obj, PyObject *default_val, int n) {
 
   // CONTEXT: dirty, touches context directly
@@ -20,7 +20,7 @@ int kos_dyn_push_next_boundary(
   }
 
   kos_dynnode_init(
-      node, KOS_DYN_NEXT, KosEvalState_DYN_TOP(es), KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY);
+      node, KOS_DYN_NEXT, KosEvalState_DYN_TOP(es), KOS_DYN_CAP_ITER_RECEIVER);
   Py_INCREF(iter_obj);
   KosDynNext_REQ(node)->iter = iter_obj;
   KosDynNext_REQ(node)->mode = KOS_IREQ_IDLE;

@@ -156,13 +156,13 @@ int KosEval_IsFuture(PyObject *val) {
 
 /**
    On exception: if we are inside a Koskari async gen step (NEXT or ITER_NEXT),
-   detach the gen frame, close the gen, and clear NEXT / FOREACH boundary state.
+   detach the gen frame, close the gen, and clear NEXT / FOREACH node state.
 */
-static void clear_kos_agen_boundary_on_error(KosEvalState *es) {
+static void clear_kos_agen_iter_node_on_error(KosEvalState *es) {
 
   KosDynFrame *cf;
   KosDynNode *top;
-  KosDynNode *boundary;
+  KosDynNode *node;
   KosPyAsyncGen *agen;
 
   cf = KosEvalState_FRAME(es);
@@ -176,11 +176,11 @@ static void clear_kos_agen_boundary_on_error(KosEvalState *es) {
       return;
   }
 
-  boundary = kos_dyn_find_iter_boundary(es);
-  if (! boundary)
+  node = kos_dyn_find_iter_node(es);
+  if (! node)
     return;
 
-  agen = (KosPyAsyncGen *) kos_dyn_iter_boundary_iter_obj(boundary);
+  agen = (KosPyAsyncGen *) kos_dyn_iter_node_iter_obj(node);
   if (! agen)
     return;
 
@@ -194,7 +194,7 @@ static void clear_kos_agen_boundary_on_error(KosEvalState *es) {
     }
   }
 
-  kos_dyn_iter_boundary_abort(es, boundary);
+  kos_dyn_iter_node_abort(es, node);
 }
 
 
@@ -231,7 +231,7 @@ static KosEvalMode revive_plan(
 
 
 /**
-   One iteration request against a boundary node's armed record: the
+   One iteration request against a iteration node's armed record: the
    single site API for "give me the next element of this thing". A
    KosIter provider drives through its suite (graft-capable, mode
    updates recorded); a sync iterator steps through tp_iternext; a
@@ -253,7 +253,7 @@ KosIterRequestStatus KosIterRequest_Next(
     PyObject *out = NULL;
 
     /* Armed before the step: an INSTALLED outcome delivers through the
-       boundary, and deliveries can elect it mid-step. */
+       iteration node, and deliveries can elect it mid-step. */
     kos_dyn_iter_request_set_mode(node, KOS_IREQ_INSTALLED);
 
     switch (islots->ki_step(es, iter, send_val, &out)) {
@@ -296,7 +296,7 @@ KosIterRequestStatus KosIterRequest_Next(
 
       case GET_NEXT_SUSPEND:
         /* Parked python async step: the awaited completion IS the
-           element, delivered through the boundary at revive. */
+           element, delivered through the iteration node at revive. */
         kos_dyn_iter_request_set_mode(node, KOS_IREQ_AWAITING_PY);
         *fast_out = _await;
         return KOS_IREQ_EXIT;
@@ -310,7 +310,7 @@ KosIterRequestStatus KosIterRequest_Next(
 
 
 /**
-   Deliver a typed event into a boundary node's request: the one entry
+   Deliver a typed event into a iteration node's request: the one entry
    the eval's delivery points call; the site completes through its
    delivery tail. value is consumed.
 
@@ -328,18 +328,18 @@ KosOpResult KosIterRequest_Deliver(
   if (! req) {
     Py_XDECREF(value);
     PyErr_SetString(PyExc_RuntimeError,
-                    "iter request delivery to a non-boundary node");
+                    "iter request delivery to a non-iteration node");
     return EVAL_RAISE();
   }
 
   switch (ev) {
     case KOS_IWAKE_VALUE:
-      if (kos_dyn_iter_boundary_deliver_yield(es, node, value) < 0)
+      if (kos_dyn_iter_node_deliver_yield(es, node, value) < 0)
         return EVAL_FATAL();
       return EVAL_NORMAL();
 
     case KOS_IWAKE_END: {
-      /* A generator completing at the site's boundary arrives with its
+      /* A generator completing at the site's iteration node arrives with its
          frame chain still installed; unwind it before delivering. */
       KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
       if (child && KosEvalState_DYN_TOP(es) == child) {
@@ -352,7 +352,7 @@ KosOpResult KosIterRequest_Deliver(
         }
       }
 
-      if (kos_dyn_iter_boundary_deliver_exhausted(es, node, value) < 0) {
+      if (kos_dyn_iter_node_deliver_exhausted(es, node, value) < 0) {
         /* A re-emitting site (1-arg NEXT) completes by raising; a
            delivery failure without an exception is fatal. */
         if (KosDynNode_IS_YIELD_FROM(node) || PyErr_Occurred())
@@ -473,19 +473,19 @@ static KosOpResult revive_await(
     to_push = send_val;
   }
   if (to_push != NULL && KosEvalState_FRAME(es)) {
-    KosDynNode *boundary = kos_dyn_find_iter_boundary(es);
-    if (boundary && kos_dyn_iter_boundary_awaiting_py(boundary)) {
-      /* The pending await belongs to the armed boundary: a python
+    KosDynNode *node = kos_dyn_find_iter_node(es);
+    if (node && kos_dyn_iter_node_awaiting_py(node)) {
+      /* The pending await belongs to the armed iteration node: a python
          async step's awaited result IS the element. */
       KosOpResult dr;
 
       if (! owned)
         Py_INCREF(to_push);
-      dr = KosIterRequest_Deliver(es, boundary, KOS_IWAKE_VALUE, to_push);
+      dr = KosIterRequest_Deliver(es, node, KOS_IWAKE_VALUE, to_push);
       if (dr.kind == KOS_RES_FATAL) {
         if (! PyErr_Occurred())
           PyErr_SetString(PyExc_RuntimeError,
-                          "boundary delivery failed at revive");
+                          "node delivery failed at revive");
         return EVAL_RAISE();
       }
       if (dr.kind != KOS_RES_NORMAL)
@@ -956,8 +956,8 @@ own_fail:
      4. cc dispatch  - continuation signal: handle_continuation_apply
                        (own token: invoke; foreign: cc-unwind plan);
                        REPROLOGUE re-enters the loop with a plan armed
-     5. agen clear   - clear_kos_agen_boundary_on_error before the
-                       exception can escape an async-gen boundary step
+     5. agen clear   - clear_kos_agen_iter_node_on_error before the
+                       exception can escape an async-gen node step
      6. try_local    - kos_dyn_unwind_raise walks TRY / FINALLY /
                        WITH / unwind extents
      7. outcome map  - REPROLOGUE: handler applied, restart prologue.
@@ -966,7 +966,7 @@ own_fail:
                        tl.val).
                        RAISE: propagate; kos_eval_prepare_boundary_raise
                        already ran inside try_local - never call it again
-                       (boundary-control-reemit.md invariant 7.4).
+                       (archive boundary-control-reemit.md invariant 7.4).
                        FATAL: mark context dead, EVAL_FATAL.
 
    :return: EVAL_REPROLOGUE to continue, EVAL_AWAIT on async unwind,
@@ -993,7 +993,7 @@ static KosOpResult process_raise(KosEvalState *es) {
   if (is_cc_apply)
     return handle_continuation_apply(es);
 
-  clear_kos_agen_boundary_on_error(es);
+  clear_kos_agen_iter_node_on_error(es);
 
   {
     KosOpResult tl = kos_dyn_unwind_raise(es);
@@ -1617,7 +1617,7 @@ static int kos_check_nil(
    carrying RETURN_FRAME + RETURN_PC (POP_PROMPT-mode push-graft or
    INPLACE-mode in-place invoke).  Shared by the POP_PROMPT opcode (the
    reset body completed normally) and the RETURN unwind walk (a return
-   crossed the reset boundary); both deliver val to the k-invocation
+   crossed the delimiting reset); both deliver val to the k-invocation
    site.  val is a new reference, consumed on every path.
 
    :return: EVAL_NORMAL when routed (execution resumes at the invoke
@@ -1796,7 +1796,7 @@ KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value) {
 /**
    Complete a native frame by handing value to the eval loop's return
    machinery, which owns every delivery terminus (parent frame,
-   tracking node, drive root). Clears the program slot and, when cache
+   iteration node, drive root). Clears the program slot and, when cache
    is given, arms the frame to park itself there when the return path
    frees it (KOS_FRAME_PARK_TO_CACHE; native_state becomes the cache
    slot). The caller returns this result from its handler. value is
@@ -1865,7 +1865,7 @@ KosDynFrame *KosNativeFrame_Install(
 
 /**
    One next-element request against iter from inside a native frame
-   handler: push the tracking node, run the request, and clean the
+   handler: push the iteration node, run the request, and clean the
    node up on every immediately-final outcome. See eval.h for the
    per-status contract.
 */
@@ -1876,7 +1876,7 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 
   *out = NULL;
 
-  if (kos_dyn_push_next_boundary(es, iter, NULL, 1) < 0)
+  if (kos_dyn_push_next_node(es, iter, NULL, 1) < 0)
     return KOS_IREQ_ERROR;
 
   switch (KosIterRequest_Next(es, KosEvalState_DYN_TOP(es), NULL, out)) {
@@ -2095,9 +2095,9 @@ static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
 
 
 /**
-   YIELD half of dispatch_boundary_event. Caller already ran
+   YIELD half of dispatch_iter_node_event. Caller already ran
    kos_dyn_unwind_yield.  val is a new ref; ownership is transferred to
-   the boundary consumer (NEXT / FOREACH / YIELD_FROM).  Every boundary kind
+   the consuming iteration node (NEXT / FOREACH / YIELD_FROM).  Every receiver kind
    hands off and returns control here; the eval loop resumes the receiver in
    normal mode, which drives any further hop (a YIELD_FROM receiver re-emits the
    value as its own yield on its next dispatch).
@@ -2116,8 +2116,8 @@ static KosOpResult eval_yield_handle_walk_and_freeze(KosEvalState *es) {
 /**
    Centralized YIELD handler.  Flushes live registers to the frame, marks the
    generator dead-after-yield, walks the dynchain, handles optional async-gen
-   boundary delivery, and tags the suspension event.  val is a new reference;
-   ownership transfers to the caller or boundary consumer.
+   node delivery, and tags the suspension event.  val is a new reference;
+   ownership transfers to the caller or consuming iteration node.
 */
 static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
   KosEvalState_FlushLiveRegsToFrame(es);
@@ -2131,9 +2131,9 @@ static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
       return ws;
   }
   {
-    KosDynNode *boundary = kos_dyn_find_iter_boundary(es);
-    if (boundary) {
-      KosOpResult dr = KosIterRequest_Deliver(es, boundary,
+    KosDynNode *node = kos_dyn_find_iter_node(es);
+    if (node) {
+      KosOpResult dr = KosIterRequest_Deliver(es, node,
                                               KOS_IWAKE_VALUE, val);
       if (dr.kind == KOS_RES_NORMAL)
         return EVAL_REPROLOGUE();
@@ -2199,7 +2199,7 @@ static inline KosOpResult eval_event_return(
     return EVAL_REPROLOGUE();
   }
   if (unw == KOS_WALK_DELIM_TAKING_RETURN) {
-    /* The return crossed a reset boundary: the walk stopped at a DELIM
+    /* The return crossed a delimiting reset: the walk stopped at a DELIM
        with a live invoke bookmark (at dyn_top).  Deliver val to the
        k-invocation site instead of the frame's parent. */
     KosOpResult rr = kos_eval_route_delim_return(
@@ -2215,7 +2215,7 @@ static inline KosOpResult eval_event_return(
 
 /**
    Case-1 return predicate: parent is a plain Koskari frame, so the return
-   is a straight frame-to-frame pop with no boundary work.  Assumes
+   is a straight frame-to-frame pop with no node deliveries.  Assumes
    DYN_TOP == FRAME is already established.  The single definition, shared
    by eval_event_return_at_frame and kos_return_is_plain.
 */
@@ -2278,7 +2278,7 @@ static inline void kos_eval_resume_clear_if_armed(KosEvalState *es) {
    NG fast path: plain Koskari frame-to-frame return.
 
    Inline retarget from child (being freed) to parent.  Skips the chain
-   walk, the flush (frame is freed), and the agen boundary check (not
+   walk, the flush (frame is freed), and the agen iteration-node check (not
    reachable from a frame whose parent is itself a frame).  val consumed.
 */
 static KosOpResult eval_ng_plain_return(
@@ -2348,11 +2348,11 @@ static inline int kos_return_is_extent_plain(
   case KOS_DYN_LOOP:
     break;
   case KOS_DYN_FOREACH:
-    /* An armed iterator boundary is a return terminus (a value-grafted
+    /* An armed iteration node is a return terminus (a value-grafted
        invoke delivering its element), never a discardable extent; the
        capability is held exactly while a step is in flight, so plain
        body calls keep the fast retarget. */
-    if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY))
+    if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_ITER_RECEIVER))
       return 0;
     break;
   default:
@@ -2427,7 +2427,7 @@ static KosOpResult eval_event_return_at_frame(
   /* Case 1: plain frame-to-frame — the dominant hot path.  Normally taken
      by the dispatch-loop fast arm before reaching here; this remains the
      terminus for producers that arrive by other routes (the unwind walk,
-     the boundary drivers). */
+     the python adapters). */
   if (likely(kos_return_parent_is_plain(parent))) {
     KosOpResult r;
     KOS_TRACE_POST_OP_WRAP(parent_return,
@@ -2435,7 +2435,7 @@ static KosOpResult eval_event_return_at_frame(
     return r;
   }
 
-  /* Case 2: gen parent — deliver to the receiving boundary above the GEN.
+  /* Case 2: gen parent — deliver to the receiving iteration node above the GEN.
      The receiver is the true terminus; GEN is unwound on the way out. */
   if (parent && KosDynNode_IS_GEN(parent)) {
     KosDynNode *consumer = KosDynNode_PARENT(parent);
@@ -2445,7 +2445,7 @@ static KosOpResult eval_event_return_at_frame(
       return EVAL_RETURN(val);
     }
 
-    if (KosDynNode_HAS_CAP(consumer, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)) {
+    if (KosDynNode_HAS_CAP(consumer, KOS_DYN_CAP_ITER_RECEIVER)) {
       KosOpResult dr = KosIterRequest_Deliver(es, consumer,
                                               KOS_IWAKE_END, val);
       if (dr.kind == KOS_RES_NORMAL)
@@ -2465,13 +2465,13 @@ static KosOpResult eval_event_return_at_frame(
     return EVAL_FATAL();
   }
 
-  /* Case 2b: value-graft parent — an iterator boundary armed in value
+  /* Case 2b: value-graft parent — an iteration node armed in value
      mode: the returning frame is a provider's grafted invoke, and its
-     return value is the step element, delivered through the boundary
+     return value is the step element, delivered through the iteration node
      (push, disarm, ki_finish). */
   if (parent
-      && KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
-      && kos_dyn_iter_boundary_value_mode(parent)) {
+      && KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_ITER_RECEIVER)
+      && kos_dyn_iter_node_value_mode(parent)) {
 
     if (unlikely(kos_dyn_pop_frame(es) < 0)) {
       Py_DECREF(val);
@@ -2558,7 +2558,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 
 
 /**
-   After RETURN opcode pop: iterator boundary, native handler or stack push,
+   After RETURN opcode pop: iteration node, native handler or stack push,
    then kos_dynnode_on_control_returned (WIND/WITH).  val is a new ref;
    ownership is consumed by this function.
 */
@@ -2654,7 +2654,7 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
 
   case KOS_RES_RETURN: {
     KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(return_boundary, r = eval_event_return_ng(es, res.val));
+    KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return_ng(es, res.val));
     return r;
   }
 

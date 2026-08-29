@@ -231,7 +231,7 @@ KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value);
 /**
    Complete a native frame by handing value to the eval loop's return
    machinery, which owns every delivery terminus (parent frame,
-   tracking node, drive root). Clears the program slot and, when cache
+   iteration node, drive root). Clears the program slot and, when cache
    is given, arms the frame to park itself into that caller-owned
    one-frame cache when the return path frees it
    (kos_dynframe_park_inert); a NULL or occupied cache frees as usual.
@@ -264,7 +264,7 @@ KosDynFrame *KosNativeFrame_Install(
 
 /**
    Request the next element of iter from inside a native frame handler:
-   push a one-request tracking node for iter and run one request
+   push a one-request iteration node for iter and run one request
    through KosIterRequest_Next. On DELIVERED *out is the element (new
    ref) and the node is already cleaned up; on EXHAUSTED and ERROR the
    node is cleaned up and *out is NULL (no exception is set for
@@ -786,7 +786,7 @@ void kos_iter_close(PyObject *iter);
 
 
 /**
-   One iteration request against a boundary node's armed record: the
+   One iteration request against a iteration node's armed record: the
    single site API for stepping the node's iterator over all three
    protocols. send_val borrowed; *fast_out new ref on
    DELIVERED/EXHAUSTED, the awaitable payload on EXIT.
@@ -799,7 +799,7 @@ KosIterRequestStatus KosIterRequest_Next(
 
 
 /**
-   Deliver a typed event into a boundary node's iteration request: the
+   Deliver a typed event into a iteration node's iteration request: the
    one entry the eval delivery points call. value is consumed.
 */
 KosOpResult KosIterRequest_Deliver(

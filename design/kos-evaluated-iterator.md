@@ -80,7 +80,7 @@ in-flight step mean" existed in six cooperating copies:
    `awaiting_py`) that decode those encodings, with overlapping truth
    sets whose correctness depends on caller check-order;
 3. the eval delivery forks (yield event, return-at-frame Cases 2/2b,
-   the revive-await fork, the raise walk's boundary block) consulting
+   the revive-await fork, the raise walk's iteration-node block) consulting
    the predicates;
 4. `kos_eval_boundary_feed` translating deliveries into suite entries;
 5. per-provider routing flags (map's `fetch_parked`, `fetch_grafted`,
@@ -91,8 +91,8 @@ in-flight step mean" existed in six cooperating copies:
 
 Every review defect was a disagreement between two copies:
 
-- D1: `kos_dyn_iter_boundary_iter_obj` has no YIELD_FROM arm, so a
-  mediated provider under `yield-from` raises "mediated boundary lost
+- D1: `kos_dyn_iter_node_iter_obj` has no YIELD_FROM arm, so a
+  mediated provider under `yield-from` raises "mediated iteration node lost
   its iter provider" (reproduced).
 - D2: the same NULL reaches the raise walk's value-mode cleanup, so an
   error escaping a YF value graft skips `ki_finish` and wedges the
@@ -127,7 +127,7 @@ Embedded in the FOREACH, NEXT, and YIELD_FROM union arms, replacing
 phases. The iterator lives in exactly one field, read through
 `kos_dyn_iter_request(node)`; arming and mode changes go through
 `kos_dyn_iter_request_arm` / `_set_mode`, which keep the FOREACH
-boundary capability in lockstep.
+receiver capability in lockstep.
 
 Modes (sidecar-private): `IDLE`, `INSTALLED` (provider frames in-eval),
 `AWAITING_PY` (parked python async step; the awaited completion IS the
@@ -175,7 +175,7 @@ KosOpResult KosIterRequest_Deliver(
 
 `Next` performs one three-protocol step against the node's armed
 iterator: a KosIter provider through `ki_step` (arming INSTALLED
-first, so mid-step deliveries can elect the boundary), a sync iterator
+first, so mid-step deliveries can elect the node), a sync iterator
 through `tp_iternext`, a python async iterator through its
 eager-stepped `__anext__`. DELIVERED and EXHAUSTED complete
 synchronously with no mode written beyond the provider arm; CONTINUES
@@ -195,14 +195,14 @@ gen-return case, the value-graft frame-return case, and the
 revive-await fork -- each reduce to one Deliver call. The raise walk's
 exhaustion conversion keeps its single copy in `dyn_walk.c` +
 `kos_dyn_handle` (the walk's control flow differs from the eval-side
-mappings); `kos_dyn_iter_boundary_exhaustion_exc` reads the record
+mappings); `kos_dyn_iter_node_exhaustion_exc` reads the record
 mode.
 
 Completion needs no third entry: in-flight work reports upward through
 the machinery that already exists. A value graft completes by
-returning -- the frame's parent is the boundary armed GRAFT_VALUE, and
+returning -- the frame's parent is the iteration node armed GRAFT_VALUE, and
 the return case Delivers the value. Exhaustion completes by raising
-StopIteration and declining, and the consumer's boundary converts it;
+StopIteration and declining, and the consumer's iteration node converts it;
 this is also what gives a mapped function's StopIteration builtins.map
 truncation parity for free.
 
@@ -244,7 +244,7 @@ before tearing through it; a handler that declines returns
 `EVAL_RAISE()` and the walk pops the frame.
 `KosNativeFrame_Return(es, value)` performs the return unwind walk,
 FINALLY/async-unwind outcomes, frame detach/free, and parent delivery;
-apply uses it. Boundary deliveries that land while a native frame is
+apply uses it. Node deliveries that land while a native frame is
 current arrive by stack push, and the entry-phase resume delivery
 hands a revive value to the handler as AWAITED.
 
@@ -252,7 +252,7 @@ hands a revive value to the handler as AWAITED.
 
 ITER_NEXT routes every protocol through one `Next` call on the FOREACH
 node (armed for the loop's lifetime at PUSH_FOREACH); OBJECT_NEXT
-pushes its NEXT boundary for providers and parked async steps and
+pushes its NEXT node for providers and parked async steps and
 keeps the bare-iterator fast arm; YIELD_FROM's KOS_ITER drive is
 `ki_step`/`ki_throw` plus record arming. CONTINUES always maps to
 `EVAL_REPROLOGUE`. The per-kind delivery tails in
@@ -283,7 +283,7 @@ The suite is what a provider is:
   generator-style, with suspended state living in the context.
 
 `ki_resume` is gone (nothing parks at the suite layer), and with it
-the owner-only-resume contract, the mediated boundary mode, the feed
+the owner-only-resume contract, the mediated node mode, the feed
 loop, and the whole KOS_ITER_AWAIT/INSTALLED_RESUME surface.
 
 ### KosMap as a native frame program
@@ -297,27 +297,27 @@ code-less native frame and returns `KOS_ITER_INSTALLED_VALUE`.
 
 The handler is the two-phase machine:
 
-1. FETCH: push a 1-arg NEXT boundary on the map's own frame and call
+1. FETCH: push a 1-arg NEXT node on the map's own frame and call
    `Next(source)`. DELIVERED goes straight to INVOKE; CONTINUES/EXIT
-   leave the fetch in flight -- the element arrives by boundary
+   leave the fetch in flight -- the element arrives by node
    delivery onto the frame stack (ITERATE pops it) or as AWAITED;
-   exhaustion raises StopIteration for the consumer's boundary to
+   exhaustion raises StopIteration for the consumer's iteration node to
    convert.
 2. INVOKE: a frame-wanting KosCallable grafts as a callee frame
    (CALL_VALUE wake); a python callable goes through
    `Koskari_AsyncCall`, with Defer/future handles ambient-await-exempt
    and awaitable results parked via `KosEvalState_PushOrAwait`.
 3. Complete by `EVAL_RETURN(element)` -- the consumer's GRAFT_VALUE
-   boundary delivers it as the step value and calls
+   node delivers it as the step value and calls
    `ki_finish(map, 0)`.
 
 Exceptions are always declined: the frame pops and the consumer's
-boundary owns every conversion. While a step is in flight, `ki_throw`
+node owns every conversion. While a step is in flight, `ki_throw`
 refuses every second caller (RuntimeError, GeneratorExit included --
 the rule CPython applies to a running async generator) and `ki_close`
 declines silently, since it is reached from teardown paths where the
 live drive owns the state. Nested maps need no forwarding code --
-each level is one more frame + boundary pair on the chain, and the
+each level is one more frame + iteration-node pair on the chain, and the
 walks already compose them.
 
 ### KosFilter, and the pieces shared with KosMap

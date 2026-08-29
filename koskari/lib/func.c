@@ -1523,7 +1523,7 @@ static PyObject *boundmethod_repr(PyObject *self) {
 
 /**
    kc_pycall worker: prepend self and follow the wrapped callable
-   through the generic boundary entry.
+   through the generic iteration-node entry.
 */
 static PyObject *boundmethod_pycall(
     PyObject *self,

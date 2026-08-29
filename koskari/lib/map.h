@@ -27,7 +27,7 @@
    KosMapType: a native lazy map over one source, duck-typed against
    builtins.map. A KosIter provider: its steps run as C when both the
    fetch and the invoke complete synchronously, and park on the site's
-   await boundary (the re-entry contract) when either goes
+   await suspension (the re-entry contract) when either goes
    asynchronous. Carries both the async and the demand Python surfaces
    through the KosIterAdapt fillers.
 */

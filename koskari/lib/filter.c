@@ -32,7 +32,7 @@
    to FETCH. The frame is parked on the filter between steps
    (KosNativeFrame_ReturnPark), stripped inert so the cache holds no
    references. Exhaustion and errors leave the frame as exceptions;
-   the consumer's tracking node converts StopIteration per its own
+   the consumer's iteration node converts StopIteration per its own
    rules.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
@@ -201,12 +201,12 @@ static KosOpResult filter_nf_invoke(
 
 /**
    FETCH from inside the frame program: the next source element. A
-   sync source pulls directly through tp_iternext -- no tracking node
+   sync source pulls directly through tp_iternext -- no iteration node
    -- so the rejected-element loop stays cheap. A driven source runs
    one request (KosNativeFrame_RequestNext): a completed element goes
    straight to INVOKE; installed or suspended work leaves the fetch in
    flight, the element arriving by stack delivery. Exhaustion raises
-   StopIteration for the consumer's tracking node to convert.
+   StopIteration for the consumer's iteration node to convert.
 */
 static KosOpResult filter_nf_fetch(KosEvalState *es, KosFilterObject *f) {
 
@@ -253,7 +253,7 @@ static KosOpResult filter_nf_fetch(KosEvalState *es, KosFilterObject *f) {
    The step's native frame handler: the FETCH/INVOKE/VERDICT machine,
    woken by the eval loop's iteration call, stack deliveries, awaited
    resumes, and callee-frame returns. Exceptions are always declined
-   -- the raise walk pops the frame and the consumer's tracking node
+   -- the raise walk pops the frame and the consumer's iteration node
    converts protocol exceptions to exhaustion.
 */
 static KosOpResult filter_nf_handler(
@@ -272,7 +272,7 @@ static KosOpResult filter_nf_handler(
 
   switch (ev) {
     case KOS_NFRAME_EXCEPTION:
-      /* Decline: the frame pops and the consumer's tracking node owns
+      /* Decline: the frame pops and the consumer's iteration node owns
          the conversion. */
       return EVAL_RAISE();
 

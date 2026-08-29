@@ -1,11 +1,11 @@
-/* Included by dynchain.c — dyn_boundary */
-/* === Generic iterator-boundary dispatch === */
+/* Included by dynchain.c — dyn_iter_node */
+/* === Generic iteration-node dispatch === */
 
 /*
   One capability-driven dispatch surface for the consumers of a flattened
-  Koskari generator's boundary events: NEXT, an awaiting FOREACH, and a
+  Koskari generator's iteration events: NEXT, an awaiting FOREACH, and a
   flattened-delegate YIELD_FROM.  Routing keys on
-  KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY only; the per-kind delivery
+  KOS_DYN_CAP_ITER_RECEIVER only; the per-kind delivery
   semantics stay in dyn_next.c / dyn_foreach.c / dyn_yield_from.c.
 
   Future receiver kinds join by carrying the capability and adding a
@@ -15,16 +15,16 @@
 */
 
 
-KosDynNode *kos_dyn_find_iter_boundary(KosEvalState *es) {
+KosDynNode *kos_dyn_find_iter_node(KosEvalState *es) {
 
   /* Prefer dyn_top.  After the yield freeze the yielding generator's GEN
-     node has detached, so its parent — the boundary that was directly
+     node has detached, so its parent — the receiver that was directly
      driving it — sits at dyn_top and is the structurally nearest
      receiver.  It must win: a YIELD_FROM delegating to this generator
      beats an outer FOREACH awaiting an *enclosing* generator, otherwise
      the delegate's yields are misrouted and the delegate is torn down. */
   KosDynNode *const top = KosEvalState_DYN_TOP(es);
-  if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY))
+  if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_ITER_RECEIVER))
     return top;
 
   /* Otherwise (the gen frame is still installed) walk outward from the
@@ -35,7 +35,7 @@ KosDynNode *kos_dyn_find_iter_boundary(KosEvalState *es) {
     if (! cf)
       return NULL;
     for (n = KosDynNode_PARENT((KosDynNode *) cf); n; n = KosDynNode_PARENT(n)) {
-      if (KosDynNode_HAS_CAP(n, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY))
+      if (KosDynNode_HAS_CAP(n, KOS_DYN_CAP_ITER_RECEIVER))
         return n;
     }
   }
@@ -43,7 +43,7 @@ KosDynNode *kos_dyn_find_iter_boundary(KosEvalState *es) {
 }
 
 
-int kos_dyn_iter_boundary_deliver_yield(
+int kos_dyn_iter_node_deliver_yield(
     KosEvalState *es, KosDynNode *node, PyObject *val) {
 
   if (KosDynNode_IS_NEXT(node))
@@ -60,14 +60,14 @@ int kos_dyn_iter_boundary_deliver_yield(
         es, (KosDynYieldFrom *) node, val);
 
   PyErr_Format(PyExc_RuntimeError,
-               "iterator boundary yield to unexpected receiver kind %u",
+               "iteration-node yield to unexpected receiver kind %u",
                (unsigned) KosDynNode_KIND(node));
   Py_DECREF(val);
   return -1;
 }
 
 
-int kos_dyn_iter_boundary_deliver_exhausted(
+int kos_dyn_iter_node_deliver_exhausted(
     KosEvalState *es, KosDynNode *node, PyObject *val) {
 
   if (KosDynNode_IS_NEXT(node))
@@ -82,14 +82,14 @@ int kos_dyn_iter_boundary_deliver_exhausted(
         es, (KosDynYieldFrom *) node, val);
 
   PyErr_Format(PyExc_RuntimeError,
-               "iterator boundary exhaustion to unexpected receiver kind %u",
+               "iteration-node exhaustion to unexpected receiver kind %u",
                (unsigned) KosDynNode_KIND(node));
   Py_XDECREF(val);
   return -1;
 }
 
 
-PyObject *kos_dyn_iter_boundary_exhaustion_exc(KosDynNode *node) {
+PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node) {
 
   KosIterRequest *req = kos_dyn_iter_request(node);
 
@@ -106,31 +106,31 @@ PyObject *kos_dyn_iter_boundary_exhaustion_exc(KosDynNode *node) {
 
 
 /**
-   True when the boundary's in-flight step is a suspended python async
+   True when the node's in-flight step is a suspended python async
    iterator being driven through the pending context await.
 */
-int kos_dyn_iter_boundary_awaiting_py(KosDynNode *node) {
+int kos_dyn_iter_node_awaiting_py(KosDynNode *node) {
 
   KosIterRequest *req = kos_dyn_iter_request(node);
   return req && req->mode == KOS_IREQ_AWAITING_PY;
 }
 
 
-int kos_dyn_iter_boundary_value_mode(KosDynNode *node) {
+int kos_dyn_iter_node_value_mode(KosDynNode *node) {
 
   KosIterRequest *req = kos_dyn_iter_request(node);
   return req && req->mode == KOS_IREQ_GRAFT_VALUE;
 }
 
 
-PyObject *kos_dyn_iter_boundary_iter_obj(KosDynNode *node) {
+PyObject *kos_dyn_iter_node_iter_obj(KosDynNode *node) {
 
   KosIterRequest *req = kos_dyn_iter_request(node);
   return req ? req->iter : NULL;
 }
 
 
-void kos_dyn_iter_boundary_abort(KosEvalState *es, KosDynNode *node) {
+void kos_dyn_iter_node_abort(KosEvalState *es, KosDynNode *node) {
 
   if (KosDynNode_IS_NEXT(node)) {
     kos_dyn_unlink_next_node(es, (KosDynNext *) node);

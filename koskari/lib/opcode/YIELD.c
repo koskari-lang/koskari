@@ -17,7 +17,7 @@
 /**
   YIELD: arg = 0 (None), 1 (single value), or N (tuple of N values).
   Pop the value(s) from the stack and return EVAL_YIELD(val); apply_kos_op_result
-  routes to eval_event_yield for walk/freeze and boundary delivery.
+  routes to eval_event_yield for walk/freeze and node delivery.
   Resumption (send value) is handled by py_resume_inject at re-entry.
 */
 KOS_OP_HANDLER(YIELD) {

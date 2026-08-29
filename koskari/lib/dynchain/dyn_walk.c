@@ -119,7 +119,7 @@ KosWalkStatus kos_dyn_unwind_yield(KosEvalState *es) {
   }
 
   PyErr_SetString(PyExc_RuntimeError,
-                  "yield outside generator: no generator boundary on chain");
+                  "yield outside generator: no generator node on chain");
   return KOS_WALK_ERROR;
 }
 
@@ -138,7 +138,7 @@ KosOpResult kos_dyn_exception_unwind(
             && kr.kind != KOS_RES_AWAIT)
           return kr;
       }
-      /* Exception propagates past the prompt boundary; continue unwinding */
+      /* Exception propagates past the prompt; continue unwinding */
       return EVAL_NORMAL();
     case KOS_DYN_DELIM: {
       int r = kos_dyn_pop_delim(es, (KosDynDelim *) node);
@@ -247,7 +247,7 @@ KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
     KosDynNode *top = KosEvalState_DYN_TOP(es);
 
     /* Stopping node: a live delimited-invoke bookmark.  The return has
-       reached the reset boundary; leave the DELIM at dyn_top and let the
+       reached the delimiting reset; leave the DELIM at dyn_top and let the
        caller route val to the k-invocation site.  val is NOT consumed. */
     if (KosDynNode_IS_DELIM(top)
         && KosDynDelim_RETURN_FRAME((KosDynDelim *) top) != NULL
@@ -467,7 +467,7 @@ KosWalkStatus kos_dyn_unwind_to_loop(KosEvalState *es, KosXferEvent event,
 
 /**
    RAISE unwind walk. See dynchain.h for the contract. Walks dyn_top down
-   toward the frame boundary, offering handle(RAISE) then popping until a
+   toward the innermost frame, offering handle(RAISE) then popping until a
    TRY or FINALLY consumes (jump to handler) or no handler remains, crossing
    frame and generator boundaries as the exception propagates. Returns
    KosOpResult (the eval-loop boundary type): EVAL_REPROLOGUE when a handler
@@ -502,11 +502,11 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
 
   while (KosEvalState_FRAME(es) && KosEvalState_DYN_TOP(es) != NULL) {
 
-    /* Frame boundary: cross into the caller section and keep walking.
+    /* Frame crossing: cross into the caller section and keep walking.
        Handler discovery is node-authoritative - a live TRY/FINALLY node
        consumes via handle(); the extent table only supplies jump
        positions at node push time. The raise leaves the loop only at
-       the chain root (NULL parent) or a generator boundary. */
+       the chain root (NULL parent) or a generator node. */
     if (KosEvalState_DYN_TOP(es) == (KosDynNode *) KosEvalState_FRAME(es)) {
       if (! PyErr_Occurred())
         break;
@@ -517,7 +517,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
           break;
         if (KosDynNode_IS_GEN(parent)) {
           if (! KosDynNode_PARENT(parent))
-            /* Boundary-driven generator: the GEN is the context root and
+            /* Adapter-driven generator: the GEN is the context root and
                the raise exits to the Python driver, which translates it
                (anext / demand step). */
             break;
@@ -570,7 +570,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
        flattened step), are dispatched to the handle phase; everything
        else goes straight to unwind/pop. */
     if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPTS_RAISE)
-        || KosDynNode_HAS_CAP(top, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)) {
+        || KosDynNode_HAS_CAP(top, KOS_DYN_CAP_ITER_RECEIVER)) {
 
     /* In-place delimited return bookmark: the slice raised. Restitch the
        invoke span and continue the raise from the invoke site. */
@@ -601,7 +601,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
       if (hr == KOS_HANDLE_CONSUMED) {
         if (KosDynNode_IS_GEN(top)) {
           if (! KosDynNode_PARENT(top)) {
-            /* Boundary-driven generator: the GEN is the context root and
+            /* Adapter-driven generator: the GEN is the context root and
                the raise exits to the Python driver, which translates it. */
             kos_eval_prepare_boundary_raise(ctx, es);
             return EVAL_RAISE();
@@ -632,8 +632,8 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
           continue;
         }
 
-        if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)) {
-          /* The boundary consumed the step-ending exception from its
+        if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_ITER_RECEIVER)) {
+          /* The iteration node consumed the step-ending exception from its
              in-flight step as end-of-iteration: convert to exhaustion
              delivery. StopIteration carries the flattened generator's
              return value (coroutine protocol equation);
@@ -650,9 +650,9 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
             stop_val = Py_None;
             Py_INCREF(stop_val);
           }
-          if (kos_dyn_iter_boundary_deliver_exhausted(es, top, stop_val) < 0) {
+          if (kos_dyn_iter_node_deliver_exhausted(es, top, stop_val) < 0) {
             if (PyErr_Occurred())
-              /* the boundary re-emitted (e.g. 1-arg NEXT re-raising
+              /* the iteration node re-emitted (e.g. 1-arg NEXT re-raising
                  StopIteration): keep propagating */
               continue;
             return EVAL_FATAL();

@@ -107,7 +107,7 @@ typedef struct KosCallSlots {
    branch to else pc, default, StopIteration per site rules). The
    INSTALLED pair means the provider spliced work onto the consumer
    context; the site re-enters the prologue and the result is delivered
-   later at the site's boundary node. ERROR leaves PyErr set; on any
+   later at the site's iteration node. ERROR leaves PyErr set; on any
    non-INSTALLED outcome the provider has fully undone its own partial
    state. A provider whose step needs its own suspensions or
    sub-iteration runs them as a native frame program (see
@@ -118,7 +118,7 @@ typedef enum {
   KOS_ITER_EXHAUSTED,   /* *out: return payload (new ref) or NULL */
   KOS_ITER_INSTALLED,   /* spliced own frames; deferred delivery */
   KOS_ITER_INSTALLED_VALUE, /* spliced a frame whose return IS the
-                               element: the site arms its boundary in
+                               element: the site arms its iteration node in
                                value mode */
   KOS_ITER_ERROR,       /* PyErr set; *out untouched */
 } KosIterStepResult;
