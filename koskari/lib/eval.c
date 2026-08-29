@@ -277,6 +277,18 @@ KosIterRequestStatus KosIterRequest_Next(
       case KOS_ITER_ERROR:
       default:
         kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
+        /* A StopIteration ending a provider step is that provider's
+           exhaustion -- builtins.map truncation parity for a mapped
+           function's StopIteration included. Converting here keeps
+           the semantics the raise walk applies at armed nodes, which
+           the mode reset above would otherwise bypass. */
+        if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+          PyObject *payload = NULL;
+          if (PyGen_FetchStopIterationValue(&payload) < 0)
+            return KOS_IREQ_ERROR;
+          *fast_out = payload;
+          return KOS_IREQ_EXHAUSTED;
+        }
         return KOS_IREQ_ERROR;
     }
   }
@@ -1808,6 +1820,17 @@ KosOpResult KosNativeFrame_ReturnPark(
     KosDynFrame **cache) {
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
+
+  /* A cloned-and-resumed program owns its state: release it through
+     the descriptor before the slot is repurposed below. */
+  if (KosDynFrame_FLAGS(frame) & KOS_FRAME_OWNS_NATIVE_STATE) {
+    const KosNativeProgram *prog =
+        (const KosNativeProgram *) KosDynFrame_NATIVE_PROG(frame);
+    if (prog && prog->np_free_state)
+      prog->np_free_state(KosDynFrame_NATIVE_STATE(frame));
+    KosDynFrame_NATIVE_STATE(frame) = NULL;
+    KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_OWNS_NATIVE_STATE;
+  }
 
   KosDynFrame_NATIVE_PROG(frame) = NULL;
   if (cache) {

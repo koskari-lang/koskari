@@ -246,6 +246,29 @@ static KosOpResult map_nf_handler(
 /* === the iter suite === */
 
 
+
+/**
+   Undo a partially installed step before reporting KOS_ITER_ERROR:
+   pop everything pushed since the step began (the program frame, a
+   failed call's prepped frame), so the suite contract -- a
+   non-INSTALLED outcome leaves no partial state -- holds on every
+   error exit. The step's real exception is fenced across the unwind.
+*/
+static KosIterStepResult map_step_abort(
+    KosEvalState *es,
+    KosDynNode *pre_top) {
+
+  if (KosEvalState_DYN_TOP(es) != pre_top) {
+    PyObject *ftyp, *fval, *ftb;
+
+    PyErr_Fetch(&ftyp, &fval, &ftb);
+    (void) kos_dyn_unwind_to_node(es, pre_top, KOS_XFER_EVENT_RAISE);
+    PyErr_Restore(ftyp, fval, ftb);
+  }
+  return KOS_ITER_ERROR;
+}
+
+
 static KosIterStepResult map_iter_step(
     KosEvalState *es,
     PyObject *self,
@@ -253,6 +276,7 @@ static KosIterStepResult map_iter_step(
     PyObject **out) {
 
   KosMapObject *m = (KosMapObject *) self;
+  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
 
   if (m->closed) {
     *out = NULL;
@@ -281,11 +305,11 @@ static KosIterStepResult map_iter_step(
       return KOS_ITER_EXHAUSTED;
     }
 
-    /* A frame-wanting koskari function installs directly through the
-       generic call entry -- cached frame, the element's own address as
-       the argument vector -- and its return delivers as the element.
-       No helper frame is involved. */
-    if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
+    /* A direct-delivery koskari function (cs_direct: its install
+       fills a frame whose return IS the element) installs through the
+       generic call entry -- cached frame, the element's own address
+       as the argument vector -- with no helper frame. */
+    if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME && m->fn.cs_direct) {
       KosOpResult r = KosEvalState_Call(es, m->fn.cs_callable,
                                         &element, 1, NULL, 0);
       Py_DECREF(element);
@@ -293,7 +317,30 @@ static KosIterStepResult map_iter_step(
         m->busy = 1;
         return KOS_ITER_INSTALLED_VALUE;
       }
-      return KOS_ITER_ERROR;
+      return map_step_abort(es, pre_top);
+    }
+
+    /* A FRAME shape without the frame-return guarantee (values, a
+       bound method): host the call under the map's own frame program,
+       so an install that completes inline delivers onto the program
+       frame's stack and the WAIT_RESULT delivery handles it. */
+    if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
+      if (! KosNativeFrame_Install(es, &kos_map_program, m, NULL,
+                                   &m->cached_frame)) {
+        Py_DECREF(element);
+        return map_step_abort(es, pre_top);
+      }
+      m->nf_phase = KOS_MAP_NF_WAIT_RESULT;
+      {
+        KosOpResult r = KosEvalState_Call(es, m->fn.cs_callable,
+                                          &element, 1, NULL, 0);
+        Py_DECREF(element);
+        if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
+          m->busy = 1;
+          return KOS_ITER_INSTALLED_VALUE;
+        }
+        return map_step_abort(es, pre_top);
+      }
     }
 
     {
@@ -320,7 +367,7 @@ static KosIterStepResult map_iter_step(
             es, &kos_map_program, m, result, &m->cached_frame);
         Py_DECREF(result);
         if (! frame)
-          return KOS_ITER_ERROR;
+          return map_step_abort(es, pre_top);
         m->busy = 1;
         m->nf_phase = KOS_MAP_NF_WAIT_RESULT;
         return KOS_ITER_INSTALLED_VALUE;
@@ -332,7 +379,7 @@ static KosIterStepResult map_iter_step(
      whole step runs as the frame program, starting at FETCH. */
   if (! KosNativeFrame_Install(es, &kos_map_program, m, NULL,
                                &m->cached_frame))
-    return KOS_ITER_ERROR;
+    return map_step_abort(es, pre_top);
   m->busy = 1;
   m->nf_phase = KOS_MAP_NF_FETCH;
   return KOS_ITER_INSTALLED_VALUE;

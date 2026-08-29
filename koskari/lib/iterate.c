@@ -573,6 +573,17 @@ static PyObject *stepper_drive(
         Py_XDECREF(send_val);
         Py_XDECREF(throw_typ);
         Py_XDECREF(throw_exc);
+        if (! durable && PyErr_Occurred()
+            && PyErr_ExceptionMatches(PyExc_StopIteration)) {
+          /* The provider's step ended its iteration (a mapped
+             function's StopIteration included): exhaustion, exactly
+             as the eval-driven arm below converts it -- never a
+             fabricated None element through the coroutine surface. */
+          PyErr_Clear();
+          islots->ki_finish(st->provider, 1);
+          iterate_reset_host(islots, &st->host, &st->host_owned);
+          return stepper_finish_exhausted(st, NULL, st->is_throw);
+        }
         if (st->closing && PyErr_Occurred()
             && PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
           PyErr_Clear();

@@ -233,13 +233,34 @@ static KosOpResult kos_apply_install_core(
   }
 
   /* Flattening: delegate to inner callable's install through the
-     central tuple-to-vector spread */
+     central tuple-to-vector spread. Some installs complete by
+     delivering a VALUE instead of filling the prepped frame -- a
+     generator function's AsyncGenerator, partial's or demand's
+     non-flattenable results -- which would leave apply's code-less
+     frame current for instruction dispatch. Detect that (same frame,
+     still no code, no program) and complete the frame with the
+     delivered value. */
   {
     KosCallSlots *fn_slots;
     if (KosCallable_CheckSlots(fn, &fn_slots)) {
+      KosDynFrame *apply_frame = KosEvalState_FRAME(es);
       KosOpResult r = KosCallable_CallArgsSlots(es, fn_slots, fn,
                                                 seq_args, kwds, tail_call);
       Py_DECREF(seq_args);
+
+      if (r.kind == KOS_RES_NORMAL
+          && KosEvalState_FRAME(es) == apply_frame
+          && ! KosDynFrame_CODE(apply_frame)
+          && ! KosDynFrame_NATIVE_PROG(apply_frame)) {
+        /* Complete through the eval loop's return machinery, which
+           owns every delivery terminus -- a tail apply's reused
+           frame can be the context root, where a direct parent-frame
+           delivery has nowhere to land. */
+        PyObject *value = KosEvalState_StackPopRef(es);
+        if (! value)
+          return EVAL_RAISE();
+        return EVAL_RETURN(value);
+      }
       return r;
     }
   }

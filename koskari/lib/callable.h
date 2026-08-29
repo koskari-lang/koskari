@@ -122,7 +122,18 @@ typedef struct KosCallShape {
   PyObject *cs_callable;
   KosCallSlots *cs_slots;
   uint8_t cs_kind;
+  uint8_t cs_direct;   /* FRAME only: the install fills a frame whose
+                          return is the call's value, guaranteed --
+                          true for an exact non-yielding KosFunction.
+                          Other FRAME shapes (values, bound methods)
+                          may complete inline instead, so a caller
+                          relying on frame-return delivery must host
+                          them under a frame of its own. */
 } KosCallShape;
+
+
+/* exactness check for cs_direct; the full declaration is in func.h */
+extern KosEvaluatedTypeObject KosFunctionType;
 
 
 /**
@@ -142,6 +153,10 @@ static inline void KosCallShape_Init(
     shape->cs_slots = NULL;
     shape->cs_kind = KOS_CALL_SHAPE_PLAIN;
   }
+
+  shape->cs_direct =
+      (shape->cs_kind == KOS_CALL_SHAPE_FRAME
+       && Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType));
 }
 
 
