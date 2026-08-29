@@ -215,7 +215,7 @@ static KosOpResult kos_apply_install_core(
       if (r.kind == KOS_RES_NORMAL
           && KosEvalState_FRAME(es) == apply_frame
           && ! KosDynFrame_CODE(apply_frame)
-          && ! KosDynFrame_NATIVE_PROG(apply_frame)) {
+          && ! KosDynFrame_RESUME_FN(apply_frame)) {
         /* Complete through the eval loop's return machinery, which
            owns every delivery terminus -- a tail apply's reused
            frame can be the context root, where a direct parent-frame

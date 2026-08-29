@@ -17,10 +17,11 @@
 /**
    tests/native/test_iter_request.c
 
-   C-level tests for the iteration request API and the native-frame
-   helpers: iterator acquisition and close, KosNativeFrame_Install
-   with and without a parked frame, the inert park, the request-next
-   node lifecycle over a sync iterator, and KosContext_Recycle.
+   C-level tests for the iteration request API and the code-less
+   frame helpers: iterator acquisition and close,
+   KosResumeFrame_Install with and without a parked frame, the inert
+   park, the request-next node lifecycle over a sync iterator, and
+   KosContext_Recycle.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -29,28 +30,6 @@
 
 #include "test_harness.h"
 #include "../../koskari/lib/lib.h"
-
-
-/* A descriptor whose handler must never run in these tests. */
-static KosOpResult iterreq_dummy_handler(
-    KosEvalState *es,
-    KosNativeFrameEvent ev,
-    PyObject *value) {
-
-  (void) es;
-  (void) ev;
-  Py_XDECREF(value);
-  PyErr_SetString(PyExc_SystemError, "dummy native handler invoked");
-  return EVAL_RAISE();
-}
-
-
-static const KosNativeProgram iterreq_dummy_program = {
-  .np_name = "iterreq-test",
-  .np_handler = iterreq_dummy_handler,
-  .np_clone_state = NULL,
-  .np_free_state = NULL,
-};
 
 
 static PyObject *make_list123(void) {
@@ -128,14 +107,14 @@ static int test_park_inert_strips_and_parks(void) {
 
   KosDynFrame *frame = kos_dynframe_new(NULL, NULL, NULL);
   TEST_ASSERT_NOT_NULL(frame, "create code-less frame");
-  KosDynFrame_NATIVE_PROG(frame) = (void *) &iterreq_dummy_program;
-  KosDynFrame_NATIVE_STATE(frame) = (void *) frame;
+  KosDynFrame_PARK_CACHE(frame) = (void *) frame;
+  KosDynFrame_RESUME_NAME(frame) = "iterreq-test";
 
   int parked = kos_dynframe_park_inert(frame, &cache);
   TEST_ASSERT_EQ(parked, 1, "frame parks into the empty cache");
   TEST_ASSERT_SAME(cache, frame, "cache holds the frame");
-  TEST_ASSERT_NULL(KosDynFrame_NATIVE_PROG(frame), "program stripped");
-  TEST_ASSERT_NULL(KosDynFrame_NATIVE_STATE(frame), "state stripped");
+  TEST_ASSERT_NULL(KosDynFrame_PARK_CACHE(frame), "park cache stripped");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_NAME(frame), "resume name stripped");
   TEST_ASSERT_NULL(KosDynNode_PARENT(frame), "parent cleared");
   TEST_ASSERT_EQ(KosDynFrame_FLAGS(frame), 0, "frame flags cleared");
 
@@ -176,7 +155,7 @@ static int test_park_inert_refuses_code(void) {
 }
 
 
-/* === KosNativeFrame_Install === */
+/* === KosResumeFrame_Install === */
 
 
 static int test_native_install_fresh_and_cached(void) {
@@ -197,13 +176,13 @@ static int test_native_install_fresh_and_cached(void) {
   PyObject *staged = PyLong_FromLong(42);
   TEST_ASSERT_NOT_NULL(staged, "create staged value");
 
-  KosDynFrame *frame = KosNativeFrame_Install(
-      &es, &iterreq_dummy_program, (void *) ctx, staged, NULL);
-  TEST_ASSERT_NOT_NULL(frame, "install native frame");
-  TEST_ASSERT_SAME(KosDynFrame_NATIVE_PROG(frame),
-                   (void *) &iterreq_dummy_program, "program set");
-  TEST_ASSERT_SAME(KosDynFrame_NATIVE_STATE(frame), (void *) ctx,
-                   "state set");
+  KosDynFrame *frame = KosResumeFrame_Install(&es, "iterreq-test", NULL);
+  TEST_ASSERT_NOT_NULL(frame, "install code-less frame");
+  TEST_ASSERT(KosDynFrame_RESUME_NAME(frame)
+              && ! strcmp(KosDynFrame_RESUME_NAME(frame), "iterreq-test"),
+              "resume name set");
+  TEST_ASSERT(KosEvalState_StackPushRef(&es, staged) >= 0,
+              "stage a value on the new frame");
   TEST_ASSERT_SAME(KosDynFrame_NS(frame), ns,
                    "frame carries the owned fill of the live namespace");
   TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(&es), frame,
@@ -223,8 +202,8 @@ static int test_native_install_fresh_and_cached(void) {
     TEST_ASSERT_NOT_NULL(spare, "create spare frame");
     TEST_ASSERT_EQ(kos_dynframe_park_inert(spare, &cache), 1, "park spare");
 
-    KosDynFrame *reused = KosNativeFrame_Install(
-        &es, &iterreq_dummy_program, (void *) ctx, NULL, &cache);
+    KosDynFrame *reused = KosResumeFrame_Install(
+        &es, "iterreq-test", &cache);
     TEST_ASSERT_SAME(reused, spare, "cached frame is reinstalled");
     TEST_ASSERT_NULL(cache, "cache emptied by the reinstall");
     TEST_ASSERT_SAME(KosDynFrame_NS(reused), ns,
@@ -249,9 +228,8 @@ static int test_request_next_sync_lifecycle(void) {
   KosEvalState_Init(&es, ctx);
   KosEvalState_ThawFromContext(&es);
 
-  KosDynFrame *frame = KosNativeFrame_Install(
-      &es, &iterreq_dummy_program, NULL, NULL, NULL);
-  TEST_ASSERT_NOT_NULL(frame, "install native frame");
+  KosDynFrame *frame = KosResumeFrame_Install(&es, "iterreq-test", NULL);
+  TEST_ASSERT_NOT_NULL(frame, "install code-less frame");
 
   PyObject *lst = make_list123();
   TEST_ASSERT_NOT_NULL(lst, "create list");

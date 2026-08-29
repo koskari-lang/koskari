@@ -1738,31 +1738,6 @@ static KosOpResult object_next_step(
 
 
 /**
-   Invoke the native frame handler on the current eval frame.  val is a new
-   reference transferred to the handler (val may be NULL for the iteration
-   call; delivery call passes the return value).  Returns EVAL_FATAL() if no
-   handler is installed.
-*/
-static KosOpResult kos_eval_invoke_native_handler(
-    KosEvalState *es,
-    KosNativeFrameEvent ev,
-    PyObject *val) {
-
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  if (! frame || ! KosDynFrame_NATIVE_PROG(frame)) {
-    Py_XDECREF(val);
-    return EVAL_FATAL();
-  }
-
-  {
-    const KosNativeProgram *prog =
-        (const KosNativeProgram *) KosDynFrame_NATIVE_PROG(frame);
-    return prog->np_handler(es, ev, val);
-  }
-}
-
-
-/**
    Complete a native frame with a return value: the return unwind walk
    from the frame, FINALLY/async-unwind outcomes honored, frame
    detached and freed, value delivered to the parent (push-or-await).
@@ -1826,23 +1801,11 @@ KosOpResult KosNativeFrame_ReturnPark(
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
 
-  /* A cloned-and-resumed program owns its state: release it through
-     the descriptor before the slot is repurposed below. */
-  if (KosDynFrame_FLAGS(frame) & KOS_FRAME_OWNS_NATIVE_STATE) {
-    const KosNativeProgram *prog =
-        (const KosNativeProgram *) KosDynFrame_NATIVE_PROG(frame);
-    if (prog && prog->np_free_state)
-      prog->np_free_state(KosDynFrame_NATIVE_STATE(frame));
-    KosDynFrame_NATIVE_STATE(frame) = NULL;
-    KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_OWNS_NATIVE_STATE;
-  }
-
-  KosDynFrame_NATIVE_PROG(frame) = NULL;
   if (cache) {
-    KosDynFrame_NATIVE_STATE(frame) = (void *) cache;
+    KosDynFrame_PARK_CACHE(frame) = (void *) cache;
     KosDynFrame_FLAGS(frame) |= KOS_FRAME_PARK_TO_CACHE;
   } else {
-    KosDynFrame_NATIVE_STATE(frame) = NULL;
+    KosDynFrame_PARK_CACHE(frame) = NULL;
   }
 
   return EVAL_RETURN(value);
@@ -1855,9 +1818,7 @@ KosOpResult KosNativeFrame_ReturnPark(
    namespace (kos_dyn_push_frame_native's contract): the parked frame
    was stripped of its fill at park, so the reinstall attaches a fresh
    one before the push publishes the frame's namespace to the live
-   register. Shared by KosNativeFrame_Install and
-   KosResumeFrame_Install; callers fill native_prog/native_state or
-   resume_name themselves.
+   register. The caller fills resume_name itself.
 */
 static KosDynFrame *kos_push_or_reuse_codeless_frame(
     KosEvalState *es,
@@ -1875,32 +1836,6 @@ static KosDynFrame *kos_push_or_reuse_codeless_frame(
   }
 
   return kos_dyn_push_frame_native(es);
-}
-
-
-/**
-   Push a code-less frame carrying a native program, reusing a parked
-   frame from cache when one is available. staged (borrowed, may be
-   NULL) lands on the new frame's stack for the first ITERATE wake.
-*/
-KosDynFrame *KosNativeFrame_Install(
-    KosEvalState *es,
-    const KosNativeProgram *prog,
-    void *state,
-    PyObject *staged,
-    KosDynFrame **cache) {
-
-  KosDynFrame *frame = kos_push_or_reuse_codeless_frame(es, cache);
-  if (! frame)
-    return NULL;
-
-  KosDynFrame_NATIVE_PROG(frame) = (void *) prog;
-  KosDynFrame_NATIVE_STATE(frame) = state;
-
-  if (staged && KosEvalState_StackPushRef(es, staged) < 0)
-    return NULL;
-
-  return frame;
 }
 
 
@@ -2015,10 +1950,10 @@ KosOpResult KosEvalState_NextResume(
 }
 
 
-/* Forward declaration: defined after eval_step_native_iteration. */
+/* Forward declaration: defined after the delivery step. */
 static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res);
 
-/* Forward declaration: defined beside eval_step_native_iteration. */
+/* Forward declaration: defined below. */
 static KosOpResult eval_step_resume_delivery(KosEvalState *es);
 
 
@@ -2134,29 +2069,11 @@ entry_mode_dispatch:
     return pr;
   }
 
-  /* Resume delivery: if we revived with a value and top frame has native_handler, deliver to it */
+  /* Revived with a value and the top frame is waiting on one: deliver. */
   if (send_val != NULL
       && mode == KOS_MODE_NORMAL
       && KosEvalState_FRAME(es)
-      && KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es))) {
-
-    PyObject *val = KosEvalState_StackPopRef(es);
-    if (val) {
-      /* val is a new ref; handler takes ownership */
-      KosOpResult hr = kos_eval_invoke_native_handler(
-          es, KOS_NFRAME_AWAITED, val);
-      KosOpResult hs = apply_kos_op_result(es, hr);
-      if (hs.kind != KOS_RES_NORMAL
-          && hs.kind != KOS_RES_REPROLOGUE
-          && hs.kind != KOS_RES_DISPATCH)
-        return hs;
-      /* NORMAL / REPROLOGUE / DISPATCH: handler finished cleanly; proceed
-         into dispatch (DISPATCH is loop-internal and must not escape) */
-    }
-  } else if (send_val != NULL
-             && mode == KOS_MODE_NORMAL
-             && KosEvalState_FRAME(es)
-             && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
 
     KosOpResult rs = eval_step_resume_delivery(es);
     if (rs.kind != KOS_RES_NORMAL
@@ -2356,7 +2273,6 @@ static inline KosOpResult eval_event_return(
 static inline int kos_return_parent_is_plain(KosDynNode *parent) {
   return parent
       && KosDynNode_IS_FRAME(parent)
-      && ! KosDynFrame_NATIVE_PROG((KosDynFrame *) parent)
       && ! KosDynFrame_RESUME_FN((KosDynFrame *) parent);
 }
 
@@ -2497,7 +2413,6 @@ static inline int kos_return_is_extent_plain(
   ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
   if (! ft
       || ! KosDynNode_IS_FRAME((KosDynNode *) ft)
-      || KosDynFrame_NATIVE_PROG(ft)
       || KosDynFrame_RESUME_FN(ft))
     return 0;
 
@@ -2694,18 +2609,13 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 
 
 /**
-   After RETURN opcode pop: iteration node, native handler or stack push,
-   then kos_dynnode_on_control_returned (WIND/WITH).  val is a new ref;
-   ownership is consumed by this function.
+   After RETURN opcode pop: push onto the parent's stack, then
+   kos_dynnode_on_control_returned (WIND/WITH). A parent waiting on a
+   resume picks the value up from that stack on the next prologue pass.
+   val is a new ref; ownership is consumed by this function.
 */
 static inline KosOpResult eval_parent_return_deliver_impl(
     KosEvalState *es, PyObject *val) {
-
-  if (unlikely(KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) != NULL)) {
-    KosOpResult hr = kos_eval_invoke_native_handler(
-        es, KOS_NFRAME_CALL_VALUE, val);
-    return apply_kos_op_result(es, hr);
-  }
 
   if (KosEvalState_StackPushRef(es, val) < 0) {
     Py_DECREF(val);
@@ -2737,26 +2647,6 @@ static KosOpResult eval_step_drain_transfer_plan(KosEvalState *es) {
       return xfer;  /* REPROLOGUE / AWAIT / RAISE / FATAL */
   }
   return EVAL_NORMAL();
-}
-
-
-/**
-   One native-frame iteration: run handler with no delivery (val=NULL).
-   Caller must only invoke when the eval frame has NATIVE_HANDLER.
-*/
-static KosOpResult eval_step_native_iteration(KosEvalState *es) {
-  KosOpResult res = kos_eval_invoke_native_handler(
-      es, KOS_NFRAME_ITERATE, NULL);
-  if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE)
-    return EVAL_REPROLOGUE();
-  {
-    KosOpResult ar = apply_kos_op_result(es, res);
-    /* DISPATCH is loop-internal; this path returns into the prologue, so
-       normalize it (the prologue re-checks are harmless here). */
-    if (ar.kind == KOS_RES_DISPATCH)
-      return EVAL_REPROLOGUE();
-    return ar;
-  }
 }
 
 
@@ -3029,23 +2919,6 @@ cg_prologue:
       if (xfer.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
       return xfer;
     }
-  }
-
-  #if KOS_EVAL_SAFETYNET
-  if (KosEvalState_FRAME(es)
-      && kos_dynframe_resume_native_conflict(KosEvalState_FRAME(es))) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "frame carries both a native program and a CPS"
-                    " resume");
-    return EVAL_FATAL();
-  }
-  #endif
-
-  if (KosEvalState_FRAME(es)
-      && KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) != NULL) {
-    KosOpResult ns = eval_step_native_iteration(es);
-    if (ns.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-    return ns;
   }
 
   if (KosEvalState_FRAME(es)

@@ -20,9 +20,8 @@
    C-level tests for the per-frame CPS resume plumbing: the
    resume_fn/resume_state/resume_name fields on KosDynFrame, the
    cg_prologue delivery path, the raise-walk offer, and clone/park/
-   tail-reset clearing. No public setter exists yet at this phase, so
-   these tests set the fields directly, the same way
-   test_iter_request.c pokes native_prog/native_state directly.
+   tail-reset clearing. These tests set the frame fields directly,
+   below the KosEvalState_CallResume / NextResume entries.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -378,49 +377,6 @@ static int test_next_resume_null_pushes_and_continues(void) {
 }
 
 
-/* === native_prog / resume_fn mutual exclusion ===
-
-   Only meaningful under -DKOS_EVAL_SAFETYNET=1; the default native
-   test build does not set it (see tests.mk), so this test is compiled
-   out rather than silently skipped at run time. */
-
-
-#if KOS_EVAL_SAFETYNET
-
-
-static int test_resume_native_prog_conflict_is_fatal(void) {
-  KosContext *ctx = KosContext_New(NULL);
-  TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx);
-  KosEvalState_ThawFromContext(&es);
-
-  PyObject *ns = PyDict_New();
-  TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
-  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
-
-  /* Never dereferenced: the safetynet check fires on non-NULL alone. */
-  KosDynFrame_NATIVE_PROG(frame) = (void *) 0x1;
-  KosDynFrame_RESUME_FN(frame) = (void *) resume_probe;
-
-  KosEvalState_FreezeToContext(&es);
-
-  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
-  TEST_ASSERT_EQ(ev.kind, KOS_RES_FATAL,
-                 "native_prog and resume_fn together is a fatal invariant"
-                 " violation");
-  PyErr_Clear();
-
-  KosContext_Free(ctx);
-  return 0;
-}
-
-
-#endif  /* KOS_EVAL_SAFETYNET */
-
-
 /* === Suite === */
 
 
@@ -435,9 +391,6 @@ int run_resume_tests(void) {
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
   RUN_TEST(test_call_resume_null_pushes_normal_result);
   RUN_TEST(test_next_resume_null_pushes_and_continues);
-  #if KOS_EVAL_SAFETYNET
-  RUN_TEST(test_resume_native_prog_conflict_is_fatal);
-  #endif
 
   return 0;
 }
