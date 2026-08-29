@@ -1497,3 +1497,168 @@ tags:
   - bare-syntax
   - control-flow
 notes: the bare symbol continue expands to (continue) through the bootstrap bare form; same for break
+---
+id: iter-map-range-source-002
+feature: builtin/map
+source: (list (map (lambda [x] (+ x 1)) (range 4)))
+verify:
+  read: (list (map (lambda [x] (+ x 1)) (range 4)))
+  eval: "list:[1,2,3,4]"
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - map
+  - higher-order
+  - iterate
+notes: "map accepts any iterable source: a sequence, a range, a generator, or an async iterator. The source is acquired eagerly; elements are pulled lazily as the map is drained."
+---
+id: iter-map-native-lambda-001
+feature: builtin/map
+source: "(list (map (lambda [x] (* x 10)) #[1 2 3]))"
+verify:
+  read: "(list (map (lambda [x] (* x 10)) (#list 1 2 3)))"
+  eval: "list:[10,20,30]"
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - map
+  - higher-order
+  - iterate
+notes: "map is the NATIVE koskari type (koskari.lib.map), not python's builtin: a koskari lambda passed to it runs directly, no demand wrapping needed. Lazy; (list ...) drains it. python's builtin remains available as py-map."
+---
+id: iter-map-partial-fn-003
+feature: builtin/map
+source: "(list (map (partial + 10) #[1 2]))"
+verify:
+  read: "(list (map (partial + 10) (#list 1 2)))"
+  eval: "list:[11,12]"
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - map
+  - partial
+  - higher-order
+  - iterate
+notes: any callable works as the mapper; here the native partial fixes + at 10. Both map and partial are the koskari-native types.
+---
+id: iter-filter-native-lambda-001
+feature: builtin/filter
+source: "(list (filter (lambda [x] (> x 1)) #[1 2 3]))"
+verify:
+  read: "(list (filter (lambda [x] (> x 1)) (#list 1 2 3)))"
+  eval: "list:[2,3]"
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - filter
+  - higher-order
+  - iterate
+notes: "filter is the NATIVE koskari type (koskari.lib.filter): a koskari lambda predicate runs directly with its real truth value deciding, no demand wrapping needed. python's builtin remains available as py-filter."
+---
+id: iter-filter-none-predicate-002
+feature: builtin/filter
+source: "(list (filter None #[0 1 \"\" \"x\"]))"
+verify:
+  read: "(list (filter None (#list 0 1 \"\" \"x\")))"
+  eval: "list:[1,\"x\"]"
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - filter
+  - iterate
+notes: a None predicate keeps the truthy elements, the same convention as python's filter(None, ...).
+---
+id: iter-map-type-predicates-004
+feature: builtin/map
+source: "#[(map? (map str #[1])) (map? (py-map str #[1])) (py-map? (py-map str #[1]))]"
+verify:
+  read: "(#list (map? (map str (#list 1))) (map? (py-map str (#list 1))) (py-map? (py-map str (#list 1))))"
+  eval: "list:[true,false,true]"
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - map
+  - predicate
+  - iterate
+notes: map? tests for the native type and py-map? for python's builtin; they are disjoint. filter?/py-filter? behave the same way.
+---
+id: iter-py-filter-bare-lambda-truthy-001
+feature: builtin/py-filter
+source: "(len (list (py-filter (lambda [x] False) #[1 2 3])))"
+verify:
+  read: "(len (list (py-filter (lambda [x] False) (#list 1 2 3))))"
+  eval: "3"
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - filter
+  - pitfall
+  - surprising
+  - demand
+  - iterate
+notes: "PITFALL: a bare koskari lambda through python's py-filter keeps EVERYTHING, even with an always-False body -- the python calling convention returns an un-awaited coroutine per call, and coroutines are truthy. Use the native (filter pred seq), which runs the lambda directly, or wrap the lambda in demand when py-filter is genuinely required."
+---
+id: iter-filter-lambda-false-drops-all-003
+feature: builtin/filter
+source: "(len (list (filter (lambda [x] False) #[1 2 3])))"
+verify:
+  read: "(len (list (filter (lambda [x] False) (#list 1 2 3))))"
+  eval: "0"
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - filter
+  - higher-order
+  - iterate
+notes: "the corrective pair to the py-filter pitfall: the native filter drives the koskari lambda directly, so an always-False predicate drops every element as written."
+---
+id: iter-py-map-bare-lambda-coroutine-002
+feature: builtin/py-map
+source: "(getattr (type (next (py-map (lambda [x] (* x 2)) #[1]))) \"__name__\")"
+verify:
+  read: "(getattr (type (next (py-map (lambda [x] (* x 2)) (#list 1)))) \"__name__\")"
+  eval: '"Coroutine"'
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - map
+  - pitfall
+  - surprising
+  - demand
+  - iterate
+notes: "PITFALL: a bare koskari lambda through python's py-map emits un-awaited Coroutine objects, not results -- the python calling convention constructs, it does not drive. Use the native (map fn seq), or wrap the lambda in demand when py-map is genuinely required."
+---
+id: iter-py-map-demand-wrapped-003
+feature: builtin/py-map
+source: "(list (py-map (demand (lambda [x] (* x 2))) #[1 2]))"
+verify:
+  read: "(list (py-map (demand (lambda [x] (* x 2))) (#list 1 2)))"
+  eval: "list:[2,4]"
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - iter
+  - map
+  - demand
+  - higher-order
+  - iterate
+notes: "the demand wrap makes a koskari lambda usable by python higher-order functions: each call completes synchronously to a value. Only needed for the py- variants and other python HOFs; the native map and filter need no wrapping."

@@ -246,6 +246,86 @@ static KosOpResult kospartial_kos_install(
 }
 
 
+static KosOpResult kospartial_kos_vinstall(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  KosPartialObject *p = (KosPartialObject *) callable;
+  PyObject *inner = p->func;
+  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+
+  /* Flattenable inner with no keywords on either side: splice the
+     bound and call positionals into one borrowed vector, so the
+     inner's vector fast paths stay engaged. */
+  if (kospartial_inner_is_flattenable(inner)
+      && ! nkw
+      && (! p->keywords || ! PyDict_Size(p->keywords))) {
+    Py_ssize_t nb = PyTuple_GET_SIZE(p->args);
+    Py_ssize_t total = nb + nargs;
+    PyObject *small[16];
+    PyObject **vec = small;
+    KosOpResult r;
+
+    if (total > (Py_ssize_t) (sizeof(small) / sizeof(small[0]))) {
+      vec = PyMem_Malloc((size_t) total * sizeof(PyObject *));
+      if (! vec) {
+        PyErr_NoMemory();
+        return EVAL_RAISE();
+      }
+    }
+    for (Py_ssize_t i = 0; i < nb; i++)
+      vec[i] = PyTuple_GET_ITEM(p->args, i);
+    for (Py_ssize_t i = 0; i < nargs; i++)
+      vec[nb + i] = args[i];
+
+    r = KosCallable_Call(es, inner, vec, total, NULL, tail_call);
+    if (vec != small)
+      PyMem_Free(vec);
+    return r;
+  }
+
+  /* Keywords or a non-flattenable inner: pack to tuple + dict and
+     take the tuple arm. */
+  {
+    PyObject *tup = PyTuple_New(nargs);
+    PyObject *kwargs = NULL;
+    KosOpResult r;
+
+    if (! tup)
+      return EVAL_RAISE();
+    for (Py_ssize_t i = 0; i < nargs; i++) {
+      PyObject *v = args[i];
+      Py_INCREF(v);
+      PyTuple_SET_ITEM(tup, i, v);
+    }
+    if (nkw) {
+      kwargs = PyDict_New();
+      if (! kwargs) {
+        Py_DECREF(tup);
+        return EVAL_RAISE();
+      }
+      for (Py_ssize_t i = 0; i < nkw; i++) {
+        if (PyDict_SetItem(kwargs, PyTuple_GET_ITEM(kwnames, i),
+                           args[nargs + i]) < 0) {
+          Py_DECREF(tup);
+          Py_DECREF(kwargs);
+          return EVAL_RAISE();
+        }
+      }
+    }
+
+    r = kospartial_kos_install(es, callable, tup, kwargs, tail_call);
+    Py_DECREF(tup);
+    Py_XDECREF(kwargs);
+    return r;
+  }
+}
+
+
 /* === construction === */
 
 
@@ -650,7 +730,7 @@ KosEvaluatedTypeObject KosPartialCallableType = {
   },
   .kos_call = {
     .kc_install = kospartial_kos_install,
-    .kc_vinstall = NULL,
+    .kc_vinstall = kospartial_kos_vinstall,
     .kc_wants_frame = 0,
     .kc_wants_frame_fn = kospartial_wants_frame,
     .kc_pycall = KosPartial_Call,

@@ -223,6 +223,51 @@ static KosOpResult procedure_kos_install(
 }
 
 
+static KosOpResult procedure_kos_vinstall(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  PyObject *tup = NULL;
+  PyObject *kwargs = NULL;
+  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  KosOpResult r;
+
+  tup = PyTuple_New(nargs);
+  if (! tup)
+    return EVAL_RAISE();
+  for (Py_ssize_t i = 0; i < nargs; i++) {
+    PyObject *v = args[i];
+    Py_INCREF(v);
+    PyTuple_SET_ITEM(tup, i, v);
+  }
+
+  if (nkw) {
+    kwargs = PyDict_New();
+    if (! kwargs) {
+      Py_DECREF(tup);
+      return EVAL_RAISE();
+    }
+    for (Py_ssize_t i = 0; i < nkw; i++) {
+      if (PyDict_SetItem(kwargs, PyTuple_GET_ITEM(kwnames, i),
+                         args[nargs + i]) < 0) {
+        Py_DECREF(tup);
+        Py_DECREF(kwargs);
+        return EVAL_RAISE();
+      }
+    }
+  }
+
+  r = procedure_kos_install(es, callable, tup, kwargs, tail_call);
+  Py_DECREF(tup);
+  Py_XDECREF(kwargs);
+  return r;
+}
+
+
 static KosEvaluatedTypeObject KosProcedureCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -239,7 +284,7 @@ static KosEvaluatedTypeObject KosProcedureCallableType = {
   },
   .kos_call = {
     .kc_install = procedure_kos_install,
-    .kc_vinstall = NULL,
+    .kc_vinstall = procedure_kos_vinstall,
     .kc_wants_frame = 0,
     .kc_wants_frame_fn = NULL,
     .kc_pycall = procedure_tp_call,
