@@ -547,6 +547,48 @@ intercept at the *classify* boundary instead -- one shared classifier
 called synchronously, not a resume. The CPS entry points are
 deliberately unused here.
 
+### Apply keeps its guard
+
+Two things this document originally asked of apply are not achievable,
+established while converting filter and demand:
+
+**The frame-identity check is load-bearing.** `kos_vinstall_function`
+never pushes a frame -- it fills the current one in place, and its
+generator-function branch pushes a value and returns `KOS_RES_NORMAL`.
+So a `NORMAL` out of apply's inner install is ambiguous: either "frame
+filled, real bytecode to run" or "value delivered, apply's code-less
+frame has nothing to dispatch." Only apply can tell them apart, by
+checking `CODE`/`NATIVE_PROG` on its own captured frame pointer. No
+generic entry point can absorb that, because every other caller reaches
+`kc_vinstall` through `do_frame_prep` and is guaranteed a frame with
+code.
+
+**Apply must not set a resume on its own frame.** The prologue checks
+`resume_fn` before dispatching bytecode, so a resume set on a frame the
+callee just filled would run *instead of* that callee's body. And
+`values_dispatch` pops apply's frame before re-installing, so after
+some calls the captured pointer is freed -- comparing it (what the
+guard does) is fine, writing to it is not.
+
+Apply's completion is therefore synchronous in every reachable case,
+which leaves nothing for a resume to do. Its remaining arms -- relaying
+`RETURN`, `RAISE`, and `FATAL` -- are correct as they stand, not
+divergent interpretations to unify. Apply was measured against a direct
+call for a partial over a coroutine function and behaves identically,
+confirming it adds no ambient-await divergence of its own.
+
+### Demand classifies, it does not resume
+
+`demand_sync_ex` installs on a fresh context where there is no caller
+frame, then drives `koskari_eval` itself. A `KosResumeFn` runs at the
+*delivery* boundary, after a suspension has already been permitted;
+`KosEvalState_CallResume`'s AWAIT arm sets a resume and relays
+`EVAL_AWAIT` rather than offering the caller a veto. A demand root must
+never suspend and has no channel to carry `AWAIT` out, so it has to
+intercept at the *classify* boundary instead -- one shared classifier
+called synchronously, not a resume. The CPS entry points are
+deliberately unused here.
+
 ## Pitfalls and solutions
 
 - Inline invocation reintroduces unbounded recursion. Solution: the

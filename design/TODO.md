@@ -319,10 +319,23 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 
 Unify the call and iteration consumer surfaces on continuation
 passing: entries take a resume fn + state pointer, invoked
-trampolined with the CPython value-or-NULL contract; the armed resume
-lives on the frame; eager await interposes once at the delivery
-point. Deletes the typed wake, the phase enums, and the four
-hand-rolled drive epilogues. Fresh branch after native-map merges.
+trampolined with the CPython value-or-NULL contract; the resume set
+on the frame carries the progression; eager await interposes once at
+the delivery point. Deletes the typed wake, the phase enums, and the
+hand-rolled drive epilogues.
+
+**In progress.** Landed: the per-frame resume slot and its delivery
+points, `KosEvalState_CallResume` / `NextResume` /
+`KosResumeFrame_Install` (with `resume == NULL` meaning "behave like an
+ordinary CALL/NEXT opcode"), KosMap and KosFilter converted, and
+demand's settled-value classification. Apply is **not** a conversion
+target -- its frame-identity guard is load-bearing and it must not set
+a resume on its own frame; see the doc's "Apply keeps its guard".
+
+Remaining: the stepper and demandgen adapters onto the Next entry;
+centralizing eager await at the staging point; the demolition pass
+(typed wake, `np_handler`, non-CPS entries); and bytecode's own resume,
+which is the shared boundary with the musttail work.
 
 Ref: [cps-consumer-api.md](cps-consumer-api.md).
 
