@@ -29,6 +29,9 @@ KosDynFrame *kos_dynframe_new(
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_NATIVE_PROG(frame) = NULL;
   KosDynFrame_NATIVE_STATE(frame) = NULL;
+  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  KosDynFrame_RESUME_NAME(frame) = NULL;
   KosDynFrame_FN(frame) = NULL;
   KosDynFrame_BACK_FRAME(frame) = NULL;
   return frame;
@@ -102,6 +105,24 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
         KosDynFrame_FLAGS(clone) |= KOS_FRAME_OWNS_NATIVE_STATE;
     }
   }
+
+  /* A CPS resume has no clone story yet -- no caller ever produces a
+     resume_state a clone could copy, so capture across a resume-carrying
+     frame refuses by name, the same way an un-clonable native program
+     does. */
+  if (KosDynFrame_RESUME_FN(frame)) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "cannot capture a continuation across native"
+                 " frame '%s'",
+                 KosDynFrame_RESUME_NAME(frame)
+                     ? KosDynFrame_RESUME_NAME(frame) : "?");
+    kos_dynframe_free(clone);
+    return NULL;
+  }
+  KosDynFrame_RESUME_FN(clone) = NULL;
+  KosDynFrame_RESUME_STATE(clone) = NULL;
+  KosDynFrame_RESUME_NAME(clone) = NULL;
+
   return clone;
 }
 
@@ -118,6 +139,10 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
+
+  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  KosDynFrame_RESUME_NAME(frame) = NULL;
 
   if (KosDynFrame_FLAGS(frame) & KOS_FRAME_OWNS_NATIVE_STATE) {
     const KosNativeProgram *prog =
@@ -308,6 +333,9 @@ int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache) {
   Py_CLEAR(KosDynFrame_NS(frame));
   KosDynFrame_NATIVE_PROG(frame) = NULL;
   KosDynFrame_NATIVE_STATE(frame) = NULL;
+  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  KosDynFrame_RESUME_NAME(frame) = NULL;
 
   KosStack_Clear(&KosDynFrame_STACK(frame));
   KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
@@ -394,6 +422,9 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
   KosDynFrame_NATIVE_PROG(frame) = NULL;
   KosDynFrame_NATIVE_STATE(frame) = NULL;
+  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  KosDynFrame_RESUME_NAME(frame) = NULL;
   /* the frame is being repurposed for a different function */
   Py_CLEAR(KosDynFrame_FN(frame));
 }

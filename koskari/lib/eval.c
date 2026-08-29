@@ -1934,6 +1934,9 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 /* Forward declaration: defined after eval_step_native_iteration. */
 static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res);
 
+/* Forward declaration: defined beside eval_step_native_iteration. */
+static KosOpResult eval_step_resume_delivery(KosEvalState *es);
+
 
 /**
    Run revive_await and normalize its outcome for eval_phase_entry: on
@@ -2066,6 +2069,18 @@ entry_mode_dispatch:
       /* NORMAL / REPROLOGUE / DISPATCH: handler finished cleanly; proceed
          into dispatch (DISPATCH is loop-internal and must not escape) */
     }
+  } else if (send_val != NULL
+             && mode == KOS_MODE_NORMAL
+             && KosEvalState_FRAME(es)
+             && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+
+    KosOpResult rs = eval_step_resume_delivery(es);
+    if (rs.kind != KOS_RES_NORMAL
+        && rs.kind != KOS_RES_REPROLOGUE
+        && rs.kind != KOS_RES_DISPATCH)
+      return rs;
+    /* NORMAL / REPROLOGUE / DISPATCH: resume finished cleanly; proceed
+       into dispatch (DISPATCH is loop-internal and must not escape) */
   }
 
   *mode_out = mode;
@@ -2653,6 +2668,40 @@ static KosOpResult eval_step_native_iteration(KosEvalState *es) {
 
 
 /**
+   One CPS resume delivery: pop the value staged on the current frame's
+   own stack, clear the frame's resume, and invoke it. Caller must only
+   invoke when the eval frame has RESUME_FN set. Exhaustion and errors
+   are never delivered through this channel -- see the raise-walk offer
+   in dyn_walk.c for those.
+*/
+static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosResumeFn resume = (KosResumeFn) KosDynFrame_RESUME_FN(frame);
+  void *state = KosDynFrame_RESUME_STATE(frame);
+  PyObject *val;
+
+  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+
+  val = KosEvalState_StackPopRef(es);
+  if (! val)
+    return EVAL_RAISE();
+
+  {
+    KosOpResult res = resume(es, state, val);
+    if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE)
+      return EVAL_REPROLOGUE();
+    {
+      KosOpResult ar = apply_kos_op_result(es, res);
+      if (ar.kind == KOS_RES_DISPATCH)
+        return EVAL_REPROLOGUE();
+      return ar;
+    }
+  }
+}
+
+
+/**
    Route a non-NORMAL opcode result through the appropriate event handler.
    NORMAL and REPROLOGUE both map to EVAL_REPROLOGUE (restart cg_prologue).
 */
@@ -2843,11 +2892,28 @@ cg_prologue:
     }
   }
 
+  #if KOS_EVAL_SAFETYNET
+  if (KosEvalState_FRAME(es)
+      && kos_dynframe_resume_native_conflict(KosEvalState_FRAME(es))) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "frame carries both a native program and a CPS"
+                    " resume");
+    return EVAL_FATAL();
+  }
+  #endif
+
   if (KosEvalState_FRAME(es)
       && KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) != NULL) {
     KosOpResult ns = eval_step_native_iteration(es);
     if (ns.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
     return ns;
+  }
+
+  if (KosEvalState_FRAME(es)
+      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)) != NULL) {
+    KosOpResult rs = eval_step_resume_delivery(es);
+    if (rs.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
+    return rs;
   }
 
   #if KOS_STACK_TRACE

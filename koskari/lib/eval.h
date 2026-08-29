@@ -220,6 +220,22 @@ typedef struct KosNativeProgram {
 
 
 /**
+   A per-frame CPS resume: the callback a consumer sets on a frame via
+   KosEvalState_CallResume / KosEvalState_NextResume to receive exactly
+   one settled delivery -- a call's result, a callee frame's return, a
+   Next request's element, or an awaited value, however it was
+   produced. value is a new reference the resume owns; NULL with PyErr
+   set means the operation failed (the resume may recover, or relay by
+   returning EVAL_RAISE(), exactly as if it had received the NULL from
+   an inline call). Returns a KosOpResult naming the next signal to the
+   loop: another CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT,
+   or EVAL_REPROLOGUE.
+*/
+typedef KosOpResult (*KosResumeFn)(
+    KosEvalState *es, void *state, PyObject *value);
+
+
+/**
    Complete a native frame with a return value: run the return unwind
    walk from the frame, honor FINALLY/async-unwind outcomes, detach
    and free the frame, and deliver the value to the parent. The native

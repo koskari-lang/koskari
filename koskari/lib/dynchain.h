@@ -287,6 +287,18 @@ struct KosDynNode {
          native_handler, which guarantees its lifetime spans the
          frame's). Never read outside the handler's own dispatch. */
       void *native_state;
+      /* CPS consumer resume (see eval.h, KosResumeFn): the trampoline
+         entry to invoke on the next value staged to this frame, and
+         the state it receives. void * to avoid the same include-order
+         constraint as native_prog. Set and cleared together; never
+         both this and native_prog non-NULL on the same frame. NULL
+         means nothing is set. */
+      void *resume_fn;
+      void *resume_state;
+      /* Borrowed static string naming the resume's installer, used
+         only to name the frame in a capture-refusal message (mirrors
+         KosNativeProgram::np_name). NULL whenever resume_fn is NULL. */
+      const char *resume_name;
       /* Owning KosFunction (strong) when this frame participates in the
          per-function frame cache; NULL opts out (clones, placeholder,
          native-handler, and generator frames never set it).  Released --
@@ -2414,6 +2426,22 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynFrame_NATIVE_PROG(f)  (((KosDynNode *)(f))->u.frame.native_prog)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
+
+#define KosDynFrame_RESUME_FN(f)    (((KosDynNode *)(f))->u.frame.resume_fn)
+#define KosDynFrame_RESUME_STATE(f) (((KosDynNode *)(f))->u.frame.resume_state)
+#define KosDynFrame_RESUME_NAME(f)  (((KosDynNode *)(f))->u.frame.resume_name)
+
+/**
+   True when a frame has both a native program and a CPS resume set at
+   once -- an internal-invariant violation the two mechanisms must
+   never share a frame under. Callers wrap this in the
+   KOS_EVAL_SAFETYNET idiom; see eval.c and dyn_walk.c.
+*/
+static inline int kos_dynframe_resume_native_conflict(
+        const KosDynNode *frame) {
+  return KosDynFrame_NATIVE_PROG(frame) != NULL
+      && KosDynFrame_RESUME_FN(frame) != NULL;
+}
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
 #define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)
