@@ -340,11 +340,17 @@ themselves and have no frame to stage on; what they duplicate is the
 drive epilogue, and that is what gets extracted. See the doc's
 "A note on this document's prescriptions".
 
-Remaining: extract the shared drive epilogue from `stepper_drive` and
-`demandgen_iternext`; the demolition pass (typed wake, `np_handler`,
-non-CPS entries); and bytecode's own resume, which is the shared
-boundary with the musttail work and where the trampoline's staging
-gets tightened.
+The demolition pass has landed: nothing installs a native program, so
+`KosNativeProgram`, `KosNativeFrameEvent`, the typed wake,
+`KosNativeHandlerFn` and `KosNativeFrame_Install` are gone, along with
+the frame's `native_prog` slot. Apply's non-flattening path became a
+resume; the stepper's two copies of the truncation check and error
+mapping became one pair of helpers (demandgen keeps its own, being
+the sync surface).
+
+Remaining: bytecode's own resume, the shared boundary with the
+musttail work, and where the trampoline's staging gets tightened --
+today the frame stack is the transit slot for every delivery.
 
 Ref: [cps-consumer-api.md](cps-consumer-api.md).
 
