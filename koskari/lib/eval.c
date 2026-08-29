@@ -2263,16 +2263,19 @@ static inline KosOpResult eval_event_return(
    DYN_TOP == FRAME is already established.  The single definition, shared
    by eval_event_return_at_frame and kos_return_is_plain.
 
-   A CPS resume-carrying parent is excluded even though it has no
-   native program: eval_ng_plain_return sets es->code from the parent
-   and returns EVAL_DISPATCH() (bypassing cg_prologue entirely), which
-   is only safe when that code is real bytecode. A resume-carrying
-   parent is codeless -- it must fall through to the general path so
-   cg_prologue's own resume check gets a chance to run.
+   eval_ng_plain_return sets es->code from the parent, pushes the value
+   and returns EVAL_DISPATCH(), bypassing cg_prologue entirely. Both
+   conjuncts below guard that, for separate reasons: without code there
+   is nothing to dispatch, and with a resume pending the prologue is
+   what would have delivered the value to it. Only codeless frames
+   carry resumes today, so either check alone would do; they are
+   written out because a bytecode frame with a call in flight would
+   satisfy one and not the other.
 */
 static inline int kos_return_parent_is_plain(KosDynNode *parent) {
   return parent
       && KosDynNode_IS_FRAME(parent)
+      && KosDynFrame_CODE((KosDynFrame *) parent)
       && ! KosDynFrame_RESUME_FN((KosDynFrame *) parent);
 }
 
@@ -2410,9 +2413,12 @@ static inline int kos_return_is_extent_plain(
     return 0;
   }
 
+  /* Same two conjuncts as kos_return_parent_is_plain, for the frame
+     eval_ng_extent_return will dispatch on. */
   ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
   if (! ft
       || ! KosDynNode_IS_FRAME((KosDynNode *) ft)
+      || ! KosDynFrame_CODE(ft)
       || KosDynFrame_RESUME_FN(ft))
     return 0;
 
