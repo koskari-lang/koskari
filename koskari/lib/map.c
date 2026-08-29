@@ -68,34 +68,6 @@ typedef struct {
    sites below and kos_dynframe_clone's resume refusal). */
 
 
-static KosOpResult map_resume_after_result(
-    KosEvalState *es, void *state, PyObject *value);
-
-
-/**
-   Hand a raw call result to the trampoline: stage it and set the
-   result resume. The delivery point settles it -- awaiting is the
-   evaluator's job, not this consumer's -- so map_resume_after_result
-   only ever sees a finished value. value is consumed.
-*/
-static KosOpResult map_stage_result(
-    KosEvalState *es,
-    KosMapObject *m,
-    PyObject *value) {
-
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  int pushed = KosEvalState_StackPushRef(es, value);
-
-  Py_DECREF(value);
-  if (pushed < 0)
-    return EVAL_RAISE();
-
-  KosDynFrame_RESUME_FN(frame) = (void *) map_resume_after_result;
-  KosDynFrame_RESUME_STATE(frame) = m;
-  return EVAL_REPROLOGUE();
-}
-
-
 /**
    The invoke completed. The value is settled by contract, so the step
    completes with it directly. value is consumed.
@@ -116,33 +88,25 @@ static KosOpResult map_resume_after_result(
 
 
 /**
-   INVOKE: apply func to element via CallResume (a frame-wanting
-   callable) or directly (a plain callable), handing the result to the
-   trampoline either way. element is consumed.
+   INVOKE: apply func to element. Every calling shape goes through the
+   one entry -- KosEvalState_Call resolves the callable and prepares
+   (or declines to prepare) a frame per its own suite, so a callable
+   that wants no frame still runs in this evaluator rather than
+   through the Python boundary. element is consumed.
 */
 static KosOpResult map_resume_after_fetch(
     KosEvalState *es, void *state, PyObject *element) {
 
   KosMapObject *m = (KosMapObject *) state;
+  KosOpResult r;
 
   if (! element)
     return EVAL_RAISE();
 
-  if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
-    KosOpResult r = KosEvalState_CallResume(
-        es, m->fn.cs_callable, &element, 1, NULL,
-        map_resume_after_result, m);
-    Py_DECREF(element);
-    return r;
-  }
-
-  {
-    PyObject *result = KosCallShape_PyCallOne(&m->fn, element);
-    Py_DECREF(element);
-    if (! result)
-      return EVAL_RAISE();
-    return map_stage_result(es, m, result);
-  }
+  r = KosEvalState_CallResume(es, m->fn.cs_callable, &element, 1, NULL,
+                              map_resume_after_result, m);
+  Py_DECREF(element);
+  return r;
 }
 
 
@@ -243,13 +207,15 @@ static KosIterStepResult map_iter_step(
       return map_step_abort(es, pre_top);
     }
 
-    /* A FRAME shape without the frame-return guarantee (values, a
-       bound method): stage the element on a resume-carrying frame and
-       defer the actual call to map_resume_after_fetch. map_iter_step
-       runs before koskari_eval drives this chain (see stepper_step),
-       so the call itself -- which can install a callee or need an
-       await -- must happen from inside that later dispatch, not here. */
-    if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
+    /* Any other KosCallable -- a values or bound-method FRAME shape
+       without the frame-return guarantee, or one wanting no frame at
+       all: stage the element on a resume-carrying frame and defer the
+       call to map_resume_after_fetch, which runs it in this evaluator.
+       map_iter_step runs before koskari_eval drives this chain (see
+       stepper_step), so the call itself -- which can install a callee
+       or need an await -- must happen from inside that later dispatch,
+       not here. */
+    if (m->fn.cs_kind != KOS_CALL_SHAPE_PLAIN) {
       KosDynFrame *frame = KosResumeFrame_Install(
           es, "map-step", &m->cached_frame);
       if (! frame) {
@@ -267,8 +233,9 @@ static KosIterStepResult map_iter_step(
       return KOS_ITER_INSTALLED_VALUE;
     }
 
+    /* A plain python callable needs no evaluator at all. */
     {
-      PyObject *result = KosCallShape_PyCallOne(&m->fn, element);
+      PyObject *result = PyObject_CallOneArg(m->fn.cs_callable, element);
       Py_DECREF(element);
       if (! result)
         return KOS_ITER_ERROR;

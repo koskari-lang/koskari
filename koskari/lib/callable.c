@@ -210,31 +210,6 @@ KosOpResult KosCallable_CallNoArgs(KosEvalState *es,
 }
 
 
-/* === KosCallShape === */
-
-
-PyObject *KosCallShape_PyCallOne(KosCallShape *shape, PyObject *arg) {
-
-  if (shape->cs_kind == KOS_CALL_SHAPE_PLAIN)
-    return PyObject_CallOneArg(shape->cs_callable, arg);
-
-  if (shape->cs_slots->kc_pyvectorcall)
-    return shape->cs_slots->kc_pyvectorcall(
-        shape->cs_callable, &arg, 1, NULL);
-
-  {
-    PyObject *args = PyTuple_Pack(1, arg);
-    PyObject *result;
-
-    if (! args)
-      return NULL;
-    result = shape->cs_slots->kc_pycall(shape->cs_callable, args, NULL);
-    Py_DECREF(args);
-    return result;
-  }
-}
-
-
 /* === Python-slot adapters === */
 
 

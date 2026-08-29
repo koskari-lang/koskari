@@ -96,17 +96,17 @@ static inline int KosCallSlots_WantsFrame(
 /**
    How a held callable is invoked, resolved once:
 
-   FRAME -- a frame-wanting KosCallable; invoke through the evaluator
-   (KosEvalState_Call), its frame installing on the chain and its
-   return arriving as the callee-return delivery.
-   BOXED -- a KosCallable with a python-boundary worker and no frame;
-   invoke through KosCallShape_PyCallOne.
-   PLAIN -- an ordinary python callable; invoke through
-   KosCallShape_PyCallOne.
+   FRAME -- a KosCallable; invoke through the evaluator
+   (KosEvalState_Call), which asks its suite whether to prepare a
+   frame. A callable that wants none still installs in the running
+   evaluator; wanting no frame says nothing about needing a Python
+   boundary, and routing one across that boundary would force a fresh
+   context and a nested loop for a call the current one can make.
+   PLAIN -- an ordinary python callable, needing no evaluator at all;
+   invoke directly.
 */
 typedef enum KosCallShapeKind {
   KOS_CALL_SHAPE_FRAME = 0,
-  KOS_CALL_SHAPE_BOXED,
   KOS_CALL_SHAPE_PLAIN,
 } KosCallShapeKind;
 
@@ -147,8 +147,7 @@ static inline void KosCallShape_Init(
   shape->cs_callable = callable;
 
   if (KosCallable_CheckSlots(callable, &shape->cs_slots)) {
-    shape->cs_kind = KosCallSlots_WantsFrame(shape->cs_slots, callable)
-        ? KOS_CALL_SHAPE_FRAME : KOS_CALL_SHAPE_BOXED;
+    shape->cs_kind = KOS_CALL_SHAPE_FRAME;
   } else {
     shape->cs_slots = NULL;
     shape->cs_kind = KOS_CALL_SHAPE_PLAIN;
@@ -165,16 +164,6 @@ static inline void KosCallShape_Clear(KosCallShape *shape) {
   Py_CLEAR(shape->cs_callable);
   shape->cs_slots = NULL;
 }
-
-
-/**
-   One-argument call at the python boundary through the resolved
-   shape: a PLAIN callable directly, otherwise the suite's
-   python-boundary worker. arg is borrowed.
-
-   :return: the result (new ref) or NULL with PyErr set
-*/
-PyObject *KosCallShape_PyCallOne(KosCallShape *shape, PyObject *arg);
 
 
 /* === KosCallable_* : KosCallable-only invocation (no type check, no frame prep) === */

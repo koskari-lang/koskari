@@ -88,31 +88,6 @@ static KosOpResult filter_resume_after_verdict(
 
 
 /**
-   Hand a raw predicate result to the trampoline: stage it and set the
-   verdict resume. The delivery point settles it -- awaiting is the
-   evaluator's job, not this consumer's -- so filter_resume_after_verdict
-   only ever sees a finished verdict. value is consumed; f->pending
-   already holds the element under test.
-*/
-static KosOpResult filter_stage_verdict(
-    KosEvalState *es,
-    KosFilterObject *f,
-    PyObject *value) {
-
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  int pushed = KosEvalState_StackPushRef(es, value);
-
-  Py_DECREF(value);
-  if (pushed < 0)
-    return EVAL_RAISE();
-
-  KosDynFrame_RESUME_FN(frame) = (void *) filter_resume_after_verdict;
-  KosDynFrame_RESUME_STATE(frame) = f;
-  return EVAL_REPROLOGUE();
-}
-
-
-/**
    Loop back to FETCH after a rejected element: set the fetch resume
    and bounce. The bounce is what keeps an arbitrarily long reject run
    flat -- returning through the trampoline rather than calling the
@@ -194,25 +169,17 @@ static KosOpResult filter_resume_do_invoke(
     return filter_refetch(es, f);
   }
 
-  if (f->pred.cs_kind == KOS_CALL_SHAPE_FRAME) {
-    /* pending steals the element's reference and holds it across the
-       call; the argument vector borrows it for the call's duration. */
-    f->pending = element;
-    return KosEvalState_CallResume(es, f->pred.cs_callable,
-                                   &element, 1, NULL,
-                                   filter_resume_after_verdict, f);
-  }
-
-  {
-    PyObject *result = KosCallShape_PyCallOne(&f->pred, element);
-
-    if (! result) {
-      Py_DECREF(element);
-      return EVAL_RAISE();
-    }
-    f->pending = element;  /* steals */
-    return filter_stage_verdict(es, f, result);
-  }
+  /* Every calling shape goes through the one entry --
+     KosEvalState_Call resolves the predicate and prepares (or declines
+     to prepare) a frame per its own suite, so a predicate that wants
+     no frame still runs in this evaluator rather than through the
+     Python boundary. pending steals the element's reference and holds
+     it across the call; the argument vector borrows it for the call's
+     duration. */
+  f->pending = element;
+  return KosEvalState_CallResume(es, f->pred.cs_callable,
+                                 &element, 1, NULL,
+                                 filter_resume_after_verdict, f);
 }
 
 
@@ -331,14 +298,14 @@ static KosIterStepResult filter_iter_step(
         continue;
       }
 
-      /* A frame-wanting predicate's verdict must come back to this
+      /* Any KosCallable predicate's verdict must come back to this
          step, so a resume-carrying frame installs here and the element
          is staged raw for filter_resume_do_invoke, which makes the
-         call. filter_iter_step runs before koskari_eval drives this
-         chain (see stepper_step), so the call itself -- which can
-         install a callee or need an await -- must happen from inside
-         that later dispatch, not here. */
-      if (f->pred.cs_kind == KOS_CALL_SHAPE_FRAME) {
+         call in this evaluator. filter_iter_step runs before
+         koskari_eval drives this chain (see stepper_step), so the call
+         itself -- which can install a callee or need an await -- must
+         happen from inside that later dispatch, not here. */
+      if (f->pred.cs_kind != KOS_CALL_SHAPE_PLAIN) {
         KosDynFrame *frame = KosResumeFrame_Install(
             es, "filter-step", &f->cached_frame);
 
@@ -357,8 +324,9 @@ static KosIterStepResult filter_iter_step(
         return KOS_ITER_INSTALLED_VALUE;
       }
 
+      /* A plain python predicate needs no evaluator at all. */
       {
-        PyObject *result = KosCallShape_PyCallOne(&f->pred, element);
+        PyObject *result = PyObject_CallOneArg(f->pred.cs_callable, element);
 
         if (! result) {
           Py_DECREF(element);

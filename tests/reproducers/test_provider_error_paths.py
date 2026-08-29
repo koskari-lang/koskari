@@ -36,7 +36,7 @@ import weakref
 
 from functools import partial
 
-from koskari.lib import KosFilter, KosMap, values
+from koskari.lib import KosFilter, KosMap, KosPartial, demand, values
 from koskari.module import load_module_source_async, new_module
 
 import pytest
@@ -45,6 +45,12 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
+define add [a b]:
+    (+ a b)
+
+define big-sum? [a b]:
+    (> (+ a b) 3)
+
 define two-args [a b]:
     a
 
@@ -322,6 +328,29 @@ class TestProviderErrorPaths(unittest.IsolatedAsyncioTestCase):
         gc.collect()
         # the generator's own binding of the sent value remains live
         self.assertLessEqual(sys.getrefcount(token) - base, 1)
+
+    # === a KosCallable wanting no frame still runs in this evaluator ===
+
+    async def test_partial_mapper_runs_in_eval(self):
+        """
+        KosPartial declares no frame of its own; it is still invoked
+        through the evaluator rather than the python boundary
+        """
+
+        p = KosPartial(self.v["add"], 10)
+        self.assertEqual(list(KosMap(p, [1, 2, 3])), [11, 12, 13])
+        self.assertEqual(
+            [x async for x in KosMap(p, self.agen_123())], [11, 12, 13])
+
+    async def test_partial_predicate_runs_in_eval(self):
+        p = KosPartial(self.v["big-sum?"], 1)
+        self.assertEqual(list(KosFilter(p, [1, 2, 3])), [3])
+        self.assertEqual(
+            [x async for x in KosFilter(p, self.agen_123())], [3])
+
+    async def test_demand_wrapped_mapper_runs_in_eval(self):
+        p = KosPartial(demand(self.v["add"]), 100)
+        self.assertEqual(list(KosMap(p, [1, 2, 3])), [101, 102, 103])
 
     # === the CPS delivery point settles before the resume runs ===
 
