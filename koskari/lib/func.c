@@ -1862,10 +1862,12 @@ static int formals_field_empty(PyObject *o) {
 /**
   Classify a function for the simple-call fast path: positionally
   fillable runs only (pos and kwd; no pos-only / kwd-only / star /
-  starstar / by-refs) on non-yielding code.  Slot i of the call
-  namespace is positional i, so a FULL-supply call binds by index --
-  defaults may exist but are never consulted at full supply, which is
-  the only shape the fast path accepts.
+  starstar / by-refs).  Slot i of the call namespace is positional i,
+  so a FULL-supply call binds by index -- defaults may exist but are
+  never consulted at full supply, which is the only shape the fast
+  path accepts.  Yielding code classifies too: the generator gate in
+  the call core peels those calls off before any install arm, and
+  their namespaces get the same simple bind on the construction path.
 
   :return: the exact full-supply arity, or -1 when not simple
 */
@@ -1875,7 +1877,7 @@ static Py_ssize_t function_compute_simple_arity(
 
   Py_ssize_t arity = 0;
 
-  if (! code || ! formals || KosCode_YIELDS(code))
+  if (! code || ! formals)
     return -1;
 
   if (! formals_field_empty(KosFormals_POS_ONLY(formals))
@@ -1956,6 +1958,14 @@ PyObject *KosFunction_Call(PyObject *self,
   KosFunction *fn = (KosFunction *) self;
   PyObject *frame_ns = NULL;
   PyObject *coro = NULL;
+
+  /* No keywords: ride the vector entry and its simple-bind arm. */
+  if (! kwds) {
+    PyObject *const *argv =
+        args ? &PyTuple_GET_ITEM(args, 0) : NULL;
+    Py_ssize_t nargs = args ? PyTuple_GET_SIZE(args) : 0;
+    return KosFunction_VectorCall(self, argv, (size_t) nargs, NULL);
+  }
 
   frame_ns = func_obtain_call_namespace(fn);
   if (! frame_ns)
@@ -2145,11 +2155,25 @@ PyObject *KosFunction_VectorCall(
   PyObject *frame_ns = NULL;
   PyObject *coro = NULL;
 
+  Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
+
+  /* Simple call: bind by slot index, skipping the general formals
+     machine -- the same classification the in-eval call core uses. */
+  if (! kwnames
+      && nargs + 1 == KosFunction_SIMPLE_ARITY1(self)
+      && KosFunction_BIND_SELF_STATE(self) == 2) {
+    frame_ns = KosFunction_SimpleCallNamespaceFromVector(self, args, nargs);
+    if (! frame_ns)
+      return NULL;
+    coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
+    Py_DECREF(frame_ns);
+    return coro;
+  }
+
   frame_ns = func_obtain_call_namespace(fn);
   if (! frame_ns)
     goto fail;
 
-  Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
   if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), frame_ns,
                                  args, (size_t) nargs, kwnames) < 0)
     goto fail;

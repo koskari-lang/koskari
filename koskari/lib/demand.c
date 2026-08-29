@@ -334,8 +334,21 @@ static int demand_sync_ex(
     KosEvalState_ThawFromContext(&es);
 
     {
-      KosOpResult ir = KosEvalState_CallArgs(&es, callable, call_args,
-                                             kwargs, 0);
+      KosOpResult ir;
+
+      if (! kwargs) {
+        /* No keywords: ride the vector entry, whose simple-bind and
+           parked-frame arms skip the namespace build when the call
+           classifies -- the demand root frame parks back into the
+           function's cache when the context is released. */
+        PyObject *const *argv =
+            call_args ? &PyTuple_GET_ITEM(call_args, 0) : NULL;
+        Py_ssize_t na = call_args ? PyTuple_GET_SIZE(call_args) : 0;
+        ir = KosEvalState_Call(&es, callable, argv, na, NULL, 0);
+      } else {
+        ir = KosEvalState_CallArgs(&es, callable, call_args, kwargs, 0);
+      }
+
       if (ir.kind != KOS_RES_NORMAL && ir.kind != KOS_RES_REPROLOGUE) {
         KosEvalState_FreezeToContext(&es);
         KosContext_Free(ctx);

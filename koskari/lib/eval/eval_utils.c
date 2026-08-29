@@ -790,12 +790,49 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
     KosCode *code = (KosCode *) KosFunction_CODE(callable);
     PyObject *frame_ns;
 
+    /* A generator function call NEVER begins evaluating its code: it
+       binds the arguments and completes immediately with the new
+       AsyncGenerator as the call's value.  This gate stands ahead of
+       every install arm below, so none of them can see yielding code
+       no matter how the call classifies.  The agen lands on the
+       caller's block, so the window drops first; NewFromCodeAndNs
+       steals frame_ns. */
+    if (unlikely(code && KosCode_YIELDS(code))) {
+      if (! kwnames
+          && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
+          && KosFunction_BIND_SELF_STATE(callable) == 2) {
+        frame_ns = KosFunction_SimpleCallNamespaceFromVector(
+            callable, argv, nargs);
+      } else {
+        frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+            callable, argv, nargs, kwnames);
+      }
+      if (unlikely(! frame_ns)) {
+        if (window)
+          kos_stack_drop_noerr_fast(caller_slot, window);
+        if (flags & KOS_CALL_CALLABLE_OWNED)
+          Py_DECREF(callable);
+        return EVAL_RAISE();
+      }
+      {
+        PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
+        if (window)
+          kos_stack_drop_noerr_fast(caller_slot, window);
+        if (flags & KOS_CALL_CALLABLE_OWNED)
+          Py_DECREF(callable);
+        if (unlikely(! agen))
+          return EVAL_RAISE();
+        return KosEvalState_StackPUSH(es, agen) < 0
+            ? EVAL_RAISE() : EVAL_NORMAL();
+      }
+    }
+
     if (likely(! kwnames
                && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
       /* Simple call: exact arity against plain positional formals on
-         non-yielding code (classified at construction).  Binds by slot
-         index; the general formals machine is bypassed, and the
-         generator branch below is unreachable by classification.  Any
+         non-yielding code (classified at construction, and the
+         generator gate above stands regardless).  Binds by slot
+         index; the general formals machine is bypassed.  Any
          mismatch falls through to the general path, which owns the
          arity error messages.
 
@@ -922,6 +959,8 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
       goto fn_frame_install;
     }
 
+    /* General path: the generator gate above already peeled yielding
+       code off, so this always installs a frame. */
     frame_ns = KosFunction_PrepareCallNamespaceFromVector(
         callable, argv, nargs, kwnames);
 
@@ -931,20 +970,6 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
       if (flags & KOS_CALL_CALLABLE_OWNED)
         Py_DECREF(callable);
       return EVAL_RAISE();
-    }
-
-    if (unlikely(code && KosCode_YIELDS(code))) {
-      /* Generator: no frame; the agen lands on the caller's block, so
-         the window drops first.  NewFromCodeAndNs steals frame_ns. */
-      PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
-      if (window)
-        kos_stack_drop_noerr_fast(caller_slot, window);
-      if (flags & KOS_CALL_CALLABLE_OWNED)
-        Py_DECREF(callable);
-      if (unlikely(! agen))
-        return EVAL_RAISE();
-      return KosEvalState_StackPUSH(es, agen) < 0
-          ? EVAL_RAISE() : EVAL_NORMAL();
     }
 
 fn_frame_install:
@@ -1166,6 +1191,10 @@ static inline KosOpResult kos_call_invoke(
       && ! kwnames
       && Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
       && nargs + 2 == KosFunction_SIMPLE_ARITY1(callable)
+      /* a generator function never takes a frame-install arm; its
+         call constructs the AsyncGenerator through the generator gate
+         in kos_call_invoke_body instead */
+      && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable))
       && KosFunction_BIND_SELF_STATE(callable) == 2)
     return kos_call_invoke_self_steal(es, caller_slot, window, callable,
                                       self_arg, nargs, flags);
