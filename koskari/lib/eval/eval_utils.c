@@ -606,6 +606,25 @@ KosOpResult KosEvalState_CallResume(
   KosDynFrame *caller = KosEvalState_FRAME(es);
   KosOpResult r = KosEvalState_Call(es, callable, args, nargs, kwnames, 0);
 
+  if (! resume) {
+    /* No continuation: behave exactly like an ordinary CALL opcode --
+       land the settled value on the caller's own stack (normal ambient
+       await included) and let dispatch continue from there. NORMAL and
+       REPROLOGUE already mean "installed, or already delivered onto
+       this stack by Call itself"; only a synchronous RETURN (apply's
+       flatten, a KosCallable install that short-circuits) needs
+       converting from frame-return semantics into a push. Never valid
+       from a codeless caller -- exactly as unsafe as any other plain
+       frame receiving a return today, not a new contract. */
+    if (r.kind != KOS_RES_RETURN)
+      return r;
+    switch (KosEval_ResultIsValue(r.val)) {
+      case 1:  return kos_op_result_PUSH(es, r.val);
+      case 0:  return KosEvalState_PushOrAwait(es, r.val);
+      default: Py_DECREF(r.val); return EVAL_RAISE();
+    }
+  }
+
   switch (r.kind) {
     case KOS_RES_NORMAL:
     case KOS_RES_REPROLOGUE:

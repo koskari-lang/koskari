@@ -1978,16 +1978,28 @@ KosOpResult KosEvalState_NextResume(
         return EVAL_RAISE();
       }
       Py_DECREF(out);
+      if (! resume)
+        return EVAL_NORMAL();
       KosDynFrame_RESUME_FN(frame) = (void *) resume;
       KosDynFrame_RESUME_STATE(frame) = state;
       return EVAL_REPROLOGUE();
 
     case KOS_IREQ_CONTINUES:
+      if (! resume) {
+        /* No continuation: match OBJECT_NEXT's own default exactly --
+           if the install left a real bytecode frame current (e.g. a
+           generator attached), dispatch continues there directly with
+           no trampoline hop; only a codeless result needs the bounce. */
+        KosDynFrame *cur = KosEvalState_FRAME(es);
+        return (cur && KosDynFrame_CODE(cur)) ? EVAL_NORMAL() : EVAL_REPROLOGUE();
+      }
       KosDynFrame_RESUME_FN(frame) = (void *) resume;
       KosDynFrame_RESUME_STATE(frame) = state;
       return EVAL_REPROLOGUE();
 
     case KOS_IREQ_EXIT:
+      if (! resume)
+        return EVAL_AWAIT(out);
       KosDynFrame_RESUME_FN(frame) = (void *) resume;
       KosDynFrame_RESUME_STATE(frame) = state;
       return EVAL_AWAIT(out);

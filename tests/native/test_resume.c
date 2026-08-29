@@ -286,6 +286,98 @@ static int test_reset_for_tail_clears_resume_triple(void) {
 }
 
 
+/* === resume == NULL: opcode-shaped default === */
+
+
+static int test_call_resume_null_pushes_normal_result(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  PyObject *builtins = PyImport_ImportModule("builtins");
+  TEST_ASSERT_NOT_NULL(builtins, "import builtins");
+  PyObject *abs_fn = PyObject_GetAttrString(builtins, "abs");
+  Py_DECREF(builtins);
+  TEST_ASSERT_NOT_NULL(abs_fn, "get abs()");
+
+  PyObject *neg5 = PyLong_FromLong(-5);
+  TEST_ASSERT_NOT_NULL(neg5, "create -5");
+
+  /* a plain Python callable's result is already pushed by
+     KosEvalState_Call itself (push_or_await_plain); resume == NULL
+     relays that NORMAL untouched -- no separate push needed here. */
+  KosOpResult r = KosEvalState_CallResume(
+      &es, abs_fn, &neg5, 1, NULL, NULL, NULL);
+
+  Py_DECREF(neg5);
+  Py_DECREF(abs_fn);
+
+  TEST_ASSERT_EQ(r.kind, KOS_RES_NORMAL,
+                 "plain callable's NORMAL relays untouched");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_FN(frame), "no resume set on the caller");
+
+  {
+    PyObject *popped = KosEvalState_StackPopRef(&es);
+    TEST_ASSERT_NOT_NULL(popped, "value landed on the caller's stack");
+    TEST_ASSERT_EQ(PyLong_AsLong(popped), 5, "abs(-5) == 5");
+    Py_DECREF(popped);
+  }
+
+  KosEvalState_FreezeToContext(&es);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
+static int test_next_resume_null_pushes_and_continues(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  PyObject *lst = PyList_New(1);
+  TEST_ASSERT_NOT_NULL(lst, "create list");
+  PyList_SET_ITEM(lst, 0, PyLong_FromLong(42));
+  PyObject *it = kos_iter_acquire(lst);
+  TEST_ASSERT_NOT_NULL(it, "acquire iterator");
+
+  KosOpResult r = KosEvalState_NextResume(&es, it, NULL, NULL, NULL);
+
+  TEST_ASSERT_EQ(r.kind, KOS_RES_NORMAL,
+                 "delivered element with no resume: NORMAL, matching"
+                 " OBJECT_NEXT's own default");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_FN(frame), "no resume set");
+
+  {
+    PyObject *popped = KosEvalState_StackPopRef(&es);
+    TEST_ASSERT_NOT_NULL(popped, "element landed on the caller's stack");
+    TEST_ASSERT_EQ(PyLong_AsLong(popped), 42, "element value");
+    Py_DECREF(popped);
+  }
+
+  Py_DECREF(it);
+  Py_DECREF(lst);
+  KosEvalState_FreezeToContext(&es);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
 /* === native_prog / resume_fn mutual exclusion ===
 
    Only meaningful under -DKOS_EVAL_SAFETYNET=1; the default native
@@ -341,6 +433,8 @@ int run_resume_tests(void) {
   RUN_TEST(test_clone_refuses_resume_frame);
   RUN_TEST(test_park_inert_clears_resume_triple);
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
+  RUN_TEST(test_call_resume_null_pushes_normal_result);
+  RUN_TEST(test_next_resume_null_pushes_and_continues);
   #if KOS_EVAL_SAFETYNET
   RUN_TEST(test_resume_native_prog_conflict_is_fatal);
   #endif
