@@ -2,6 +2,18 @@
 
 ## Status
 
+**Superseded and archived.** The emit-C-and-invoke-a-platform-compiler
+toolchain described here is obsolete. The replacement is direct
+copy-and-patch stencil compilation at load time, with no external
+compiler in the loop: see
+[interpreter/stencil-compilation.md](../interpreter/stencil-compilation.md).
+This document is retained for the design rationale it worked out along
+the way -- native-frame ABI reuse, pc as the universal resume
+coordinate, the segment-boundary invariant, the loop-duties audit -- all
+of which the stencil design carries forward; only the toolchain and
+distribution sections (capsule PyCapsule table, `cc` driver, abi3/wheel
+workflow) do not survive.
+
 Direction record. Not scheduled; deliberately kept off the TODO. This
 captures the design conversation so the ideas and their rationale survive
 until an MVP is attempted.
@@ -30,7 +42,7 @@ dynamic chain.
 ## The compilation model
 
 A compiled function is a C function with the `KosNativeHandlerFn` signature
-([koskari/lib/eval.h](../koskari/lib/eval.h), `KosNativeHandlerFn`). Its body
+([koskari/lib/eval.h](../../koskari/lib/eval.h), `KosNativeHandlerFn`). Its body
 is a jump table over resume points followed by segments of straight-line
 code:
 
@@ -56,7 +68,7 @@ bearing:
 machinery addresses resumption exclusively by pc: `handler_pc` on TRY and
 FINALLY nodes, `pop_pc` on prompts, `resume_pc` on cc nodes, and the
 `saved_pc` / `saved_acting_pc` pair in the delimited-continuation INPLACE
-surgery ([koskari/lib/dynchain.h](../koskari/lib/dynchain.h)). Compiled code
+surgery ([koskari/lib/dynchain.h](../../koskari/lib/dynchain.h)). Compiled code
 keeps the same pc numbering; the entry switch maps pc to label. Consequences:
 
 - Continuation clone, restitch, the raise walk, and frozen GEN resume work
@@ -131,16 +143,16 @@ exercised, not hypothetical:
 
 - **The native-frame ABI is complete.** `KosDynFrame` carries a
   `native_handler` slot beside `pc` / `acting_pc`
-  ([koskari/lib/dynchain.h](../koskari/lib/dynchain.h)). The loop invokes it
+  ([koskari/lib/dynchain.h](../../koskari/lib/dynchain.h)). The loop invokes it
   at every entry point the design needs: fresh iteration
   (`eval_step_native_iteration`), return delivery from a callee
   (`eval_parent_return_deliver_impl`), and revive-with-value after
-  suspension ([koskari/lib/eval.c](../koskari/lib/eval.c)). Frame clone
+  suspension ([koskari/lib/eval.c](../../koskari/lib/eval.c)). Frame clone
   copies the handler pointer; snapshots record it. `apply_native_handler`
-  in [koskari/lib/utils.c](../koskari/lib/utils.c) is a live in-tree
+  in [koskari/lib/utils.c](../../koskari/lib/utils.c) is a live in-tree
   consumer proving the pattern round-trips.
 - **All opcodes are standalone uniform handlers.** One file per opcode in
-  [koskari/lib/opcode/](../koskari/lib/opcode/), `KOS_OP_HANDLER(NAME)`
+  [koskari/lib/opcode/](../../koskari/lib/opcode/), `KOS_OP_HANDLER(NAME)`
   taking `(es, insn)` and returning `KosOpResult`. The v0 emitter is
   therefore generic over the whole opcode set from day one; there is no
   per-opcode porting backlog.
@@ -149,7 +161,7 @@ exercised, not hypothetical:
   emitter becomes a second consumer of the same source of truth, so the
   compiled form cannot drift semantically from the interpreter.
 - **`KosCallableTypeObject.tp_kos_install`**
-  ([koskari/lib/callable.h](../koskari/lib/callable.h)) is the hook a
+  ([koskari/lib/callable.h](../../koskari/lib/callable.h)) is the hook a
   compiled function uses to install itself into the eval state.
 
 ## Toolchain
@@ -322,7 +334,7 @@ loop -- was paid for in advance, deliberately.
 ## Interaction with threaded dispatch
 
 The function-pointer dispatch rework
-([interpreter/threaded-dispatch.md](interpreter/threaded-dispatch.md))
+([interpreter/threaded-dispatch.md](../interpreter/threaded-dispatch.md))
 reshapes the interpreter's own dispatch, and in doing so front-loads several
 of this design's prerequisites. Its phase 1 replaces the computed-goto loop
 with a per-instruction handler pointer resolved at finalize; its phase 2 is
@@ -398,13 +410,13 @@ single handler ABI; letting them diverge yields two.
 
 ## Related
 
-- [interpreter/threaded-dispatch.md](interpreter/threaded-dispatch.md) -- the
+- [interpreter/threaded-dispatch.md](../interpreter/threaded-dispatch.md) -- the
   interpreter dispatch rework whose phase 1 produces the handler table, slot
   region, and dispatch seam this design reuses; see "Interaction with threaded
   dispatch" above.
-- [interpreter/kio-format.md](interpreter/kio-format.md) -- the format this
+- [interpreter/kio-format.md](../interpreter/kio-format.md) -- the format this
   lowers one step past.
-- [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md) --
+- [self-hosted-compiler-bootstrap.md](../self-hosted-compiler-bootstrap.md) --
   the staged-bootstrap pattern the build step reuses.
-- [OPCODES.md](OPCODES.md), `tools/opimpl.py`, `koskari/lib/opcodes.incl` --
+- [OPCODES.md](../OPCODES.md), `tools/opimpl.py`, `koskari/lib/opcodes.incl` --
   the single source of truth the emitter consumes.
