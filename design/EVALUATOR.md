@@ -1079,10 +1079,12 @@ delegates to `demand_inner_is_flattenable`: 1 for a non-yielding
   frames).
 
 - **Fallback path (wants_frame=0):** `demand_sync_ex` drives the
-  callable synchronously and pushes the result. Yielding callables
-  produce a `DemandGenerator`; non-yielding callables run to
-  `KOS_RES_RETURN`. (Its internal concrete-type switch is open work;
-  see design/kos-evaluated-iterator.md.)
+  callable synchronously and pushes the result, riding the unified
+  call machinery: yielding callables construct their demand iterator
+  through `Koskari_AsyncCall` without evaluating any body code, and
+  non-yielding callables run through `KosEvalState_Call` to
+  `KOS_RES_RETURN`. (History:
+  [archive/kos-evaluated-iterator.md](archive/kos-evaluated-iterator.md).)
 
 **Demand denial is centralized in `eval_event_await`.** When an opcode
 returns `EVAL_AWAIT(v)` and `kos_eval_in_demand(es)` is true (i.e.
