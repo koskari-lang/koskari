@@ -28,6 +28,12 @@ PyObject *koskari_List_ExtendRet(PyObject *list, PyObject *iterable);
 PyObject *koskari_DictView_New(PyObject *dict, PyTypeObject *type);
 #define _PyDictView_New(dict, type) koskari_DictView_New((dict), (type))
 
+/* _PyErr_FormatFromCause moved to Python's internal-only header in 3.13;
+   extensions can no longer see it.  Provide our own copy. */
+PyObject *koskari_Err_FormatFromCause(PyObject *exception,
+                                       const char *format, ...);
+#define _PyErr_FormatFromCause koskari_Err_FormatFromCause
+
 
 /* === Inline-values instance attributes (3.13) === */
 
