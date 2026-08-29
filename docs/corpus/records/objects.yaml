@@ -1611,7 +1611,7 @@ source: |-
 verify:
   read: (str (type (ref-attr obj count)))
   expand: (str (type (ref-attr obj count)))
-  eval: '"<class ''AttributeRef''>"'
+  eval: '"<class ''koskari.lib.AttributeRef''>"'
 references:
   - reference/specials/compile-ref-attr.md
 stability: evolving

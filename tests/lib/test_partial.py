@@ -178,7 +178,7 @@ class TestKosPartialBehavior(unittest.TestCase):
 
         kp = KosPartial(_pyadd, 1, b=2)
         r = repr(kp)
-        self.assertIn("KosPartial", r)
+        self.assertIn("partial(", r)
         self.assertIn("b=2", r)
 
 

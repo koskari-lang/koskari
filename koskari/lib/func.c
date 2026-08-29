@@ -54,25 +54,13 @@ static Py_ssize_t function_compute_simple_arity(
 static int kos_boundmethod_wants_frame(PyObject *callable) {
 
   PyObject *func = KosBoundMethod_FUNC(callable);
-  KosCallableTypeObject *ctyp;
 
   if (! KosCallable_Check(func))
     return 1;
 
-  ctyp = (KosCallableTypeObject *) Py_TYPE(func);
-  if (ctyp->tp_kos_wants_frame_fn)
-    return ctyp->tp_kos_wants_frame_fn(func);
-
-  return ctyp->tp_kos_wants_frame;
+  return KosCallable_WantsFrame(func);
 }
 
-
-/* forward declaration; defined below before KosFunctionType */
-static PyObject *kos_function_vectorcall(
-    PyObject *self,
-    PyObject *const *args,
-    size_t nargsf,
-    PyObject *kwnames);
 
 static PyObject *func_build_template_ns(PyObject *code, PyObject *formals,
                                         PyObject *parent_ns);
@@ -141,25 +129,6 @@ PyObject *KosExpression_GetNs(PyObject *self) {
 }
 
 
-static PyObject *expression_call(
-    PyObject *self,
-    PyObject *args,
-    PyObject *kwargs) {
-
-  if (args && PyTuple_GET_SIZE(args) != 0) {
-    PyErr_SetString(PyExc_TypeError, "Expression() takes no arguments");
-    return NULL;
-  }
-
-  if (kwargs && PyDict_Size(kwargs) != 0) {
-    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
-    return NULL;
-  }
-
-  return KosExpression_Eval(self);
-}
-
-
 static PyMemberDef expression_members[] = {
   { "code", T_OBJECT, offsetof(KosExpression, code), READONLY, NULL },
   { "ns", T_OBJECT, offsetof(KosExpression, ns), READONLY, NULL },
@@ -193,28 +162,6 @@ static KosOpResult kos_expression_install_core(
 }
 
 
-static KosOpResult kos_install_expression(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  (void) tail_call;
-
-  if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
-    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
-    return EVAL_RAISE();
-  }
-  if (kwds_dict && PyDict_Size(kwds_dict) != 0) {
-    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
-    return EVAL_RAISE();
-  }
-
-  return kos_expression_install_core(es, callable);
-}
-
-
 static KosOpResult kos_vinstall_expression(
     KosEvalState *es,
     PyObject *callable,
@@ -240,36 +187,6 @@ static KosOpResult kos_vinstall_expression(
 
 
 /* === KosFunction install slots === */
-
-
-static KosOpResult kos_install_function(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  (void) tail_call;
-  KosCode *code = (KosCode *) KosFunction_CODE(callable);
-  PyObject *frame_ns = KosFunction_PrepareCallNamespace(
-      callable, args_tuple, kwds_dict);
-  if (! frame_ns)
-    return EVAL_RAISE();
-  if (code && KosCode_YIELDS(code)) {
-    PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
-    if (! agen)
-      return EVAL_RAISE();
-    /* Steal our owned reference onto the stack; StackPUSH consumes agen on
-       both success and failure (no separate DECREF). */
-    if (KosEvalState_StackPUSH(es, agen) < 0)
-      return EVAL_RAISE();
-    return EVAL_NORMAL();
-  }
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  if (KosEvalState_SetFrameCodeAndNamespace(es, frame, code, frame_ns) < 0)
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
-}
 
 
 static KosOpResult kos_vinstall_function(
@@ -303,25 +220,50 @@ static KosOpResult kos_vinstall_function(
 }
 
 
-KosCallableTypeObject KosExpressionType = {
+/**
+   kc_pycall worker: an Expression takes no arguments; evaluate it.
+*/
+static PyObject *expression_pycall(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwargs) {
+
+  if (args && PyTuple_GET_SIZE(args) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression() takes no arguments");
+    return NULL;
+  }
+
+  if (kwargs && PyDict_Size(kwargs) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
+    return NULL;
+  }
+
+  return KosExpression_Eval(self);
+}
+
+
+KosEvaluatedTypeObject KosExpressionType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
   .tp_name = "koskari.lib.Expression",
   .tp_basicsize = sizeof(KosExpression),
   .tp_dealloc = expression_dealloc,
   .tp_repr = (reprfunc) NULL,
-  .tp_call = expression_call,
+  .tp_call = KosCallAdapt_CallAsync,
   .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_doc = "Callable(Code, namespace). Calling with () returns a Coroutine.",
   .tp_init = (initproc) expression_init,
   .tp_new = PyType_GenericNew,
   .tp_members = expression_members,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = kos_install_expression,
-  .tp_kos_vinstall = kos_vinstall_expression,
-  .tp_kos_wants_frame = 1,
-  .tp_kos_wants_frame_fn = kos_expression_wants_frame,
+  .kos_call = {
+    .kc_vinstall = kos_vinstall_expression,
+    .kc_wants_frame = 1,
+    .kc_wants_frame_fn = kos_expression_wants_frame,
+    .kc_pycall = expression_pycall,
+    .kc_pyvectorcall = NULL,
+  },
 };
 
 
@@ -1416,42 +1358,6 @@ static PyObject *boundmethod_resolve_function(PyObject *func) {
 }
 
 
-static KosOpResult kos_install_boundmethod(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  PyObject *func = KosBoundMethod_FUNC(callable);
-  PyObject *self = KosBoundMethod_SELF(callable);
-  Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
-  PyObject *bound_args = NULL;
-  KosOpResult r;
-
-  if (! KosCallable_Check(func)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "KosBoundMethod eval requires a KosCallable func");
-    return EVAL_RAISE();
-  }
-
-  bound_args = PyTuple_New(1 + n);
-  if (! bound_args)
-    return EVAL_RAISE();
-
-  Py_INCREF(self);
-  PyTuple_SET_ITEM(bound_args, 0, self);
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *item = PyTuple_GET_ITEM(args_tuple, i);
-    Py_INCREF(item);
-    PyTuple_SET_ITEM(bound_args, 1 + i, item);
-  }
-  r = KosCallable_CallArgs(es, func, bound_args, kwds_dict, tail_call);
-  Py_DECREF(bound_args);
-  return r;
-}
-
-
 static KosOpResult kos_vinstall_boundmethod(
     KosEvalState *es,
     PyObject *callable,
@@ -1489,39 +1395,6 @@ static KosOpResult kos_vinstall_boundmethod(
 }
 
 
-static PyObject *boundmethod_call(
-    PyObject *self,
-    PyObject *args,
-    PyObject *kwargs) {
-
-  PyObject *func = KosBoundMethod_FUNC(self);
-  PyObject *bound_self = KosBoundMethod_SELF(self);
-  PyObject *bound_args = NULL;
-  PyObject *result = NULL;
-
-  if (! args || PyTuple_GET_SIZE(args) == 0) {
-    bound_args = PyTuple_Pack(1, bound_self);
-  } else {
-    Py_ssize_t n = PyTuple_GET_SIZE(args);
-    bound_args = PyTuple_New(1 + n);
-    if (! bound_args)
-      return NULL;
-    Py_INCREF(bound_self);
-    PyTuple_SET_ITEM(bound_args, 0, bound_self);
-    for (Py_ssize_t i = 0; i < n; i++) {
-      PyObject *item = PyTuple_GET_ITEM(args, i);
-      Py_INCREF(item);
-      PyTuple_SET_ITEM(bound_args, 1 + i, item);
-    }
-  }
-  if (! bound_args)
-    return NULL;
-
-  result = PyObject_Call(func, bound_args, kwargs);
-
-  Py_DECREF(bound_args);
-  return result;
-}
 
 
 static void boundmethod_dealloc(PyObject *self) {
@@ -1559,25 +1432,59 @@ static PyObject *boundmethod_repr(PyObject *self) {
 }
 
 
-KosCallableTypeObject KosBoundMethodType = {
+/**
+   kc_pycall worker: prepend self and follow the wrapped callable
+   through the generic iteration-node entry.
+*/
+static PyObject *boundmethod_pycall(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwargs) {
+
+  PyObject *bound_self = KosBoundMethod_SELF(self);
+  PyObject *bound_args;
+  Py_ssize_t n = args ? PyTuple_GET_SIZE(args) : 0;
+
+  bound_args = PyTuple_New(1 + n);
+  if (! bound_args)
+    return NULL;
+  Py_INCREF(bound_self);
+  PyTuple_SET_ITEM(bound_args, 0, bound_self);
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *item = PyTuple_GET_ITEM(args, i);
+    Py_INCREF(item);
+    PyTuple_SET_ITEM(bound_args, 1 + i, item);
+  }
+
+  PyObject *result = Koskari_AsyncCall(
+      KosBoundMethod_FUNC(self), bound_args, kwargs);
+  Py_DECREF(bound_args);
+  return result;
+}
+
+
+KosEvaluatedTypeObject KosBoundMethodType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "koskari.lib.BoundMethod",
     .tp_basicsize = sizeof(KosBoundMethod),
     .tp_dealloc = boundmethod_dealloc,
     .tp_repr = boundmethod_repr,
-    .tp_call = boundmethod_call,
+    .tp_call = KosCallAdapt_CallAsync,
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_doc = "Bound method wrapper. Implements KosCallable by prepending"
               " self to call arguments.",
     .tp_members = boundmethod_members,
     .tp_getset = boundmethod_getsets,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = kos_install_boundmethod,
-  .tp_kos_vinstall = kos_vinstall_boundmethod,
-  .tp_kos_wants_frame = 1,
-  .tp_kos_wants_frame_fn = kos_boundmethod_wants_frame,
+  .kos_call = {
+    .kc_vinstall = kos_vinstall_boundmethod,
+    .kc_wants_frame = 1,
+    .kc_wants_frame_fn = kos_boundmethod_wants_frame,
+    .kc_pycall = boundmethod_pycall,
+    .kc_pyvectorcall = NULL,
+  },
 };
 
 
@@ -1594,7 +1501,7 @@ PyObject *KosBoundMethod_New(PyObject *func, PyObject *self) {
     return NULL;
   }
   PyObject *bm = PyType_GenericNew(
-      KOS_CALLABLE_PYTYPE(KosBoundMethodType), NULL, NULL);
+      KOS_EVALUATED_PYTYPE(KosBoundMethodType), NULL, NULL);
   if (! bm)
     return NULL;
   Py_INCREF(func);
@@ -1720,7 +1627,7 @@ static int function_init(
      closure stored back into scope forms a collectable cycle */
   KosNamespace_TrackChain(template);
 
-  self->vectorcall = kos_function_vectorcall;
+  self->vectorcall = KosCallAdapt_VectorAsync;
   self->inspect_signature = NULL;
   self->creation_annotations = NULL;
   self->annotations_cache = NULL;
@@ -1865,10 +1772,12 @@ static int formals_field_empty(PyObject *o) {
 /**
   Classify a function for the simple-call fast path: positionally
   fillable runs only (pos and kwd; no pos-only / kwd-only / star /
-  starstar / by-refs) on non-yielding code.  Slot i of the call
-  namespace is positional i, so a FULL-supply call binds by index --
-  defaults may exist but are never consulted at full supply, which is
-  the only shape the fast path accepts.
+  starstar / by-refs).  Slot i of the call namespace is positional i,
+  so a FULL-supply call binds by index -- defaults may exist but are
+  never consulted at full supply, which is the only shape the fast
+  path accepts.  Yielding code classifies too: the generator gate in
+  the call core peels those calls off before any install arm, and
+  their namespaces get the same simple bind on the construction path.
 
   :return: the exact full-supply arity, or -1 when not simple
 */
@@ -1878,7 +1787,7 @@ static Py_ssize_t function_compute_simple_arity(
 
   Py_ssize_t arity = 0;
 
-  if (! code || ! formals || KosCode_YIELDS(code))
+  if (! code || ! formals)
     return -1;
 
   if (! formals_field_empty(KosFormals_POS_ONLY(formals))
@@ -1959,6 +1868,14 @@ PyObject *KosFunction_Call(PyObject *self,
   KosFunction *fn = (KosFunction *) self;
   PyObject *frame_ns = NULL;
   PyObject *coro = NULL;
+
+  /* No keywords: ride the vector entry and its simple-bind arm. */
+  if (! kwds) {
+    PyObject *const *argv =
+        args ? &PyTuple_GET_ITEM(args, 0) : NULL;
+    Py_ssize_t nargs = args ? PyTuple_GET_SIZE(args) : 0;
+    return KosFunction_VectorCall(self, argv, (size_t) nargs, NULL);
+  }
 
   frame_ns = func_obtain_call_namespace(fn);
   if (! frame_ns)
@@ -2114,7 +2031,7 @@ int KosFunction_TryParkFrame(PyObject *self, KosDynFrame *frame) {
       || Py_REFCNT(ns) != 1
       || PyObject_GC_IsTracked(ns)
       || KosNamespace_BINDS(ns) != NULL
-      || KosDynFrame_NATIVE_HANDLER(frame)
+      || KosDynFrame_NATIVE_PROG(frame)
       || ! KosDynFrame_STACK(frame))
     return 0;
 
@@ -2148,11 +2065,25 @@ PyObject *KosFunction_VectorCall(
   PyObject *frame_ns = NULL;
   PyObject *coro = NULL;
 
+  Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
+
+  /* Simple call: bind by slot index, skipping the general formals
+     machine -- the same classification the in-eval call core uses. */
+  if (! kwnames
+      && nargs + 1 == KosFunction_SIMPLE_ARITY1(self)
+      && KosFunction_BIND_SELF_STATE(self) == 2) {
+    frame_ns = KosFunction_SimpleCallNamespaceFromVector(self, args, nargs);
+    if (! frame_ns)
+      return NULL;
+    coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
+    Py_DECREF(frame_ns);
+    return coro;
+  }
+
   frame_ns = func_obtain_call_namespace(fn);
   if (! frame_ns)
     goto fail;
 
-  Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
   if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), frame_ns,
                                  args, (size_t) nargs, kwnames) < 0)
     goto fail;
@@ -2200,31 +2131,11 @@ static PyObject *function_repr(PyObject *self) {
 
   /* display follows a __name__ override (wraps); self-binding does not */
   name = fn->name_override ? fn->name_override : KosFunction_NAME(fn);
+  if (name == NULL)
+    name = KosCode_NAME(KosFunction_CODE(fn));
   if (name != NULL)
-    return PyUnicode_FromFormat("<Function %R>", name);
-  name = KosCode_NAME(KosFunction_CODE(fn));
-  if (name != NULL)
-    return PyUnicode_FromFormat("<Function %R>", name);
-  return PyUnicode_FromString("<Function <lambda>>");
-}
-
-
-static PyObject *function_call(
-    PyObject *self,
-    PyObject *args,
-    PyObject *kwargs) {
-
-  return KosFunction_Call(self, args, kwargs);
-}
-
-
-static PyObject *kos_function_vectorcall(
-    PyObject *self,
-    PyObject *const *args,
-    size_t nargsf,
-    PyObject *kwnames) {
-
-  return KosFunction_VectorCall(self, args, nargsf, kwnames);
+    return PyUnicode_FromFormat("<koskari function %R at %p>", name, self);
+  return PyUnicode_FromFormat("<koskari function <lambda> at %p>", self);
 }
 
 
@@ -2238,15 +2149,15 @@ static PyMemberDef function_members[] = {
 };
 
 
-KosCallableTypeObject KosFunctionType = {
+KosEvaluatedTypeObject KosFunctionType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
-  .tp_name = "koskari.lib.Function",
+  .tp_name = "koskari.lib.function",
   .tp_basicsize = sizeof(KosFunction),
   .tp_dealloc = function_dealloc,
   .tp_repr = function_repr,
   .tp_descr_get = function_descr_get,
-  .tp_call = function_call,
+  .tp_call = KosCallAdapt_CallAsync,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL | Py_TPFLAGS_HAVE_GC,
   .tp_vectorcall_offset = KosFunction_VECTORCALL_OFFSET,
   .tp_dictoffset = offsetof(KosFunction, dict),
@@ -2258,12 +2169,15 @@ KosCallableTypeObject KosFunctionType = {
   .tp_new = PyType_GenericNew,
   .tp_members = function_members,
   .tp_getset = function_getsets,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = kos_install_function,
-  .tp_kos_vinstall = kos_vinstall_function,
-  .tp_kos_wants_frame = 1,
-  .tp_kos_wants_frame_fn = kos_function_wants_frame,
+  .kos_call = {
+    .kc_vinstall = kos_vinstall_function,
+    .kc_wants_frame = 1,
+    .kc_wants_frame_fn = kos_function_wants_frame,
+    .kc_pycall = KosFunction_Call,
+    .kc_pyvectorcall = KosFunction_VectorCall,
+  },
 };
 
 
@@ -2283,7 +2197,7 @@ PyObject *KosExpression_New(PyObject *code, PyObject *ns) {
     return NULL;
   }
 
-  PyObject *self = PyType_GenericNew(KOS_CALLABLE_PYTYPE(KosExpressionType), NULL, NULL);
+  PyObject *self = PyType_GenericNew(KOS_EVALUATED_PYTYPE(KosExpressionType), NULL, NULL);
   if (! self)
     return NULL;
 
@@ -2321,7 +2235,7 @@ PyObject *KosFunction_NewFromFormals(
     return NULL;
   }
 
-  PyObject *self = PyType_GenericNew(KOS_CALLABLE_PYTYPE(KosFunctionType), NULL, NULL);
+  PyObject *self = PyType_GenericNew(KOS_EVALUATED_PYTYPE(KosFunctionType), NULL, NULL);
   if (! self)
     return NULL;
 
@@ -2340,7 +2254,7 @@ PyObject *KosFunction_NewFromFormals(
   KosNamespace_TrackChain(template);
 
   KosFunction_NAME(self) = NULL;
-  ((KosFunction *) self)->vectorcall = kos_function_vectorcall;
+  ((KosFunction *) self)->vectorcall = KosCallAdapt_VectorAsync;
   ((KosFunction *) self)->inspect_signature = NULL;
   ((KosFunction *) self)->creation_annotations = NULL;
   ((KosFunction *) self)->annotations_cache = NULL;
@@ -2414,14 +2328,14 @@ int koskari_func_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosExpressionType)) ||
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosExpressionType)) ||
       PyType_Ready(&KosFunctionSpecType) ||
-      PyType_Ready(KOS_CALLABLE_PYTYPE(KosBoundMethodType)) ||
-      PyType_Ready(KOS_CALLABLE_PYTYPE(KosFunctionType)))
+      PyType_Ready(KOS_EVALUATED_PYTYPE(KosBoundMethodType)) ||
+      PyType_Ready(KOS_EVALUATED_PYTYPE(KosFunctionType)))
     return -1;
 
   if (PyDict_SetItemString(dict, "Expression",
-                           (PyObject *) KOS_CALLABLE_PYTYPE(KosExpressionType)))
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosExpressionType)))
     return -1;
 
   if (PyDict_SetItemString(dict, "FunctionSpec",
@@ -2429,11 +2343,16 @@ int koskari_func_init(PyObject *mod) {
     return -1;
 
   if (PyDict_SetItemString(dict, "Function",
-                           (PyObject *) KOS_CALLABLE_PYTYPE(KosFunctionType)))
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosFunctionType)))
+    return -1;
+
+  /* short alias matching the class __name__ */
+  if (PyDict_SetItemString(dict, "function",
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosFunctionType)))
     return -1;
 
   if (PyDict_SetItemString(dict, "BoundMethod",
-                           (PyObject *) KOS_CALLABLE_PYTYPE(KosBoundMethodType)))
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosBoundMethodType)))
     return -1;
 
   return 0;

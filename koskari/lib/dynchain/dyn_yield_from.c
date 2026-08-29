@@ -37,9 +37,9 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   }
 
   caps = KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP;
-  /* KOS_YF_KOS_ASYNC_GEN (4): flattened iterator boundary with main eval loop */
+  /* KOS_YF_KOS_ITER (4): flattened iteration node with main eval loop */
   if (kind == (uint8_t) 4)
-    caps |= KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY;
+    caps |= KOS_DYN_CAP_ITER_RECEIVER;
 
   kos_dynnode_init((KosDynNode *) node, KOS_DYN_YIELD_FROM, parent, caps);
   Py_INCREF(delegate);
@@ -50,6 +50,8 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_PENDING_ARG(node) = NULL;
   KosDynYieldFrom_PENDING_ARG_TYPE(node) = NULL;
   KosDynYieldFrom_INFLIGHT(node) = NULL;
+  KosDynYieldFrom_REQ(node)->iter = NULL;
+  KosDynYieldFrom_REQ(node)->mode = KOS_IREQ_IDLE;
   return node;
 }
 
@@ -65,6 +67,7 @@ static void kos_dynyieldfrom_free(KosDynYieldFrom *node) {
   Py_XDECREF(KosDynYieldFrom_PENDING_ARG(node));
   Py_XDECREF(KosDynYieldFrom_PENDING_ARG_TYPE(node));
   Py_XDECREF(KosDynYieldFrom_INFLIGHT(node));
+  Py_XDECREF(KosDynYieldFrom_REQ(node)->iter);
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 
@@ -129,17 +132,20 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
   if (KosDynYieldFrom_INFLIGHT(clone))
     Py_INCREF(KosDynYieldFrom_INFLIGHT(clone));
 
+  *KosDynYieldFrom_REQ(clone) = *KosDynYieldFrom_REQ(node);
+  Py_XINCREF(KosDynYieldFrom_REQ(clone)->iter);
+
   return clone;
 }
 
 
 /**
    Flattened koskari async gen delegate yielded a value at the iterator
-   boundary.  Hand the value to the delegating generator's frame and stop:
+   iteration node.  Hand the value to the delegating generator's frame and stop:
    control returns to the eval loop, which re-dispatches the YIELD_FROM opcode
    in EMIT phase.  The handler then re-emits the value as this generator's own
    yield (yield_from_emit_yield), and the normal yield walk freezes this
-   generator's GEN node and delivers onward to the next boundary.  Each hop is
+   generator's GEN node and delivers onward to the next receiver.  Each hop is
    one walk plus one delivery, so nested for-each / yield-from / generator
    stacks compose to arbitrary depth.
 */
@@ -161,7 +167,13 @@ int kos_dyn_yield_from_deliver_inner_yield(
   }
   Py_DECREF(inner_val);
 
-  ((KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf))->in_progress = 0;
+  {
+    PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
+    KosIterSlots *islots;
+    if (delegate && KosIter_CheckSlots(delegate, &islots))
+      islots->ki_finish(delegate, 0);
+  }
+  kos_dyn_iter_request_set_mode((KosDynNode *) yf, KOS_IREQ_IDLE);
 
   KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EMIT);
   KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
@@ -184,15 +196,17 @@ int kos_dyn_yield_from_deliver_exhausted(
 
   KosDynFrame *df;
   KosCode *code;
-  KosPyAsyncGen *delegate_agen;
 
   Py_XDECREF(val);
 
   df = KosEvalState_FRAME(es);
 
-  delegate_agen = (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
-  if (delegate_agen)
-    delegate_agen->in_progress = 0;
+  {
+    PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
+    KosIterSlots *islots;
+    if (delegate && KosIter_CheckSlots(delegate, &islots))
+      islots->ki_finish(delegate, 1);
+  }
 
   code = df ? KosDynFrame_CODE(df) : NULL;
   if (df && code && KosEvalState_ACTING_PC(es) + 1u < KosCode_CODE_LEN(code))
@@ -201,20 +215,6 @@ int kos_dyn_yield_from_deliver_exhausted(
   if (kos_dyn_pop_yield_from(es, yf) < 0)
     return -1;
   return 0;
-}
-
-
-int kos_dyn_yield_from_deliver_inner_return(
-    KosEvalState *es, KosDynYieldFrom *yf, PyObject *val) {
-
-  /* dyn_top must be the delegate gen frame; free it and the GEN node,
-     restore dyn_top to the YIELD_FROM consumer. */
-  if (kos_dyn_teardown_gen_exhausted(es) < 0) {
-    Py_XDECREF(val);
-    return -1;
-  }
-
-  return kos_dyn_yield_from_deliver_exhausted(es, yf, val);
 }
 
 
@@ -296,10 +296,12 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
     KosDynYieldFrom_INFLIGHT(node) = NULL;
     break;
 
-  case KOS_YF_KOS_ASYNC_GEN:
-    if (KosPyAsyncGen_Check(delegate))
-      ((KosPyAsyncGen *) delegate)->closed = 1;
+  case KOS_YF_KOS_ITER: {
+    KosIterSlots *islots;
+    if (KosIter_CheckSlots(delegate, &islots))
+      islots->ki_finish(delegate, 1);
     break;
+  }
 
   default:
     break;
@@ -329,6 +331,7 @@ static int dynnode_traverse_yield_from(KosDynNode *node, visitproc visit, void *
   Py_VISIT(KosDynYieldFrom_PENDING_ARG(yf));
   Py_VISIT(KosDynYieldFrom_PENDING_ARG_TYPE(yf));
   Py_VISIT(KosDynYieldFrom_INFLIGHT(yf));
+  Py_VISIT(KosDynYieldFrom_REQ(yf)->iter);
   return 0;
 }
 

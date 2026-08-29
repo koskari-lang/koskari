@@ -194,36 +194,75 @@ static PyObject *procedure_repr(PyObject *self) {
    requested, so this mirrors Demand's cold sync fallback rather than
    its flattening install.
 */
-static KosOpResult procedure_kos_install(
+static KosOpResult procedure_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
     int tail_call) {
 
-  PyObject *wrapped = KosDemand_GetWrapped(callable);
-  PyObject *result = NULL;
+  PyObject *tup = NULL;
+  PyObject *kwargs = NULL;
+  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
 
-  (void) tail_call;
-
-  if (! wrapped) {
-    PyErr_SetString(PyExc_TypeError, "Procedure object is not initialized");
+  tup = PyTuple_New(nargs);
+  if (! tup)
     return EVAL_RAISE();
+  for (Py_ssize_t i = 0; i < nargs; i++) {
+    PyObject *v = args[i];
+    Py_INCREF(v);
+    PyTuple_SET_ITEM(tup, i, v);
   }
 
-  if (Koskari_DemandSyncEx(wrapped, args_tuple, kwds_dict, &result) < 0)
-    return EVAL_RAISE();
-  Py_XDECREF(result);
+  if (nkw) {
+    kwargs = PyDict_New();
+    if (! kwargs) {
+      Py_DECREF(tup);
+      return EVAL_RAISE();
+    }
+    for (Py_ssize_t i = 0; i < nkw; i++) {
+      if (PyDict_SetItem(kwargs, PyTuple_GET_ITEM(kwnames, i),
+                         args[nargs + i]) < 0) {
+        Py_DECREF(tup);
+        Py_DECREF(kwargs);
+        return EVAL_RAISE();
+      }
+    }
+  }
 
-  Py_INCREF(Py_None);
-  if (KosEvalState_StackPUSH(es, Py_None) < 0)
-    return EVAL_RAISE();
+  (void) tail_call;
+  {
+    PyObject *wrapped = KosDemand_GetWrapped(callable);
+    PyObject *result = NULL;
 
-  return EVAL_NORMAL();
+    if (! wrapped) {
+      Py_DECREF(tup);
+      Py_XDECREF(kwargs);
+      PyErr_SetString(PyExc_TypeError,
+                      "Procedure object is not initialized");
+      return EVAL_RAISE();
+    }
+
+    if (Koskari_DemandSyncEx(wrapped, tup, kwargs, &result) < 0) {
+      Py_DECREF(tup);
+      Py_XDECREF(kwargs);
+      return EVAL_RAISE();
+    }
+    Py_XDECREF(result);
+    Py_DECREF(tup);
+    Py_XDECREF(kwargs);
+
+    Py_INCREF(Py_None);
+    if (KosEvalState_StackPUSH(es, Py_None) < 0)
+      return EVAL_RAISE();
+
+    return EVAL_NORMAL();
+  }
 }
 
 
-static KosCallableTypeObject KosProcedureCallableType = {
+static KosEvaluatedTypeObject KosProcedureCallableType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -234,20 +273,23 @@ static KosCallableTypeObject KosProcedureCallableType = {
     .tp_doc = "A Demand with no result: runs its wrapped callable on the "
               "demand path and returns None",
     .tp_repr = procedure_repr,
-    .tp_call = procedure_tp_call,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosDemandCallableType),
+    .tp_call = KosCallAdapt_CallAsync,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosDemandCallableType),
   },
-  .tp_kos_install = procedure_kos_install,
-  .tp_kos_vinstall = NULL,
-  .tp_kos_wants_frame = 0,
-  .tp_kos_wants_frame_fn = NULL,
+  .kos_call = {
+    .kc_vinstall = procedure_kos_vinstall,
+    .kc_wants_frame = 0,
+    .kc_wants_frame_fn = NULL,
+    .kc_pycall = procedure_tp_call,
+    .kc_pyvectorcall = NULL,
+  },
 };
 
 
 static PyObject *KosProcedure_New(PyObject *wrapped) {
 
   return PyObject_CallOneArg(
-      (PyObject *) KOS_CALLABLE_PYTYPE(KosProcedureCallableType), wrapped);
+      (PyObject *) KOS_EVALUATED_PYTYPE(KosProcedureCallableType), wrapped);
 }
 
 
@@ -650,7 +692,7 @@ int koskari_object_init(PyObject *mod) {
 
   /* Demand must be ready first: koskari_demand_init runs earlier in the
      unit order (see lib.c). */
-  if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosProcedureCallableType)) < 0)
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosProcedureCallableType)) < 0)
     return -1;
 
   return 0;

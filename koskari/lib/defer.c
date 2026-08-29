@@ -234,15 +234,15 @@ static PyObject *defer_repr(PyObject *self) {
   KosDefer *d = (KosDefer *) self;
   switch (d->state) {
     case KOS_DEFER_DELEGATING:
-      return PyUnicode_FromFormat("<defer delegating inner=%R>", d->u.inner);
+      return PyUnicode_FromFormat("<koskari defer delegating inner=%R>", d->u.inner);
     case KOS_DEFER_DONE:
-      return PyUnicode_FromString("<defer done>");
+      return PyUnicode_FromString("<koskari defer done>");
     case KOS_DEFER_ITERATING:
-      return PyUnicode_FromString("<defer iterating>");
+      return PyUnicode_FromString("<koskari defer iterating>");
     case KOS_DEFER_SPENT:
-      return PyUnicode_FromString("<defer spent>");
+      return PyUnicode_FromString("<koskari defer spent>");
     case KOS_DEFER_MOVED_FROM:
-      return PyUnicode_FromString("<defer moved_from>");
+      return PyUnicode_FromString("<koskari defer moved_from>");
     default:
       return PyUnicode_FromString("<defer ?>");
   }
@@ -680,7 +680,7 @@ static PyAsyncMethods defer_async_methods = {
 
 PyTypeObject KosDeferType = {
   PyVarObject_HEAD_INIT(NULL, 0)
-  "defer",
+  "koskari.lib.defer",
   sizeof(KosDefer),
   0,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,

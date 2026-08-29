@@ -73,7 +73,7 @@ static PyObject *make_kospartial(
   }
 
   PyObject *kp = PyObject_Call(
-      (PyObject *) KOS_CALLABLE_PYTYPE(KosPartialCallableType), args, kwds);
+      (PyObject *) KOS_EVALUATED_PYTYPE(KosPartialCallableType), args, kwds);
   Py_DECREF(args);
   return kp;
 }
@@ -102,13 +102,13 @@ static int test_kospartial_is_koscallable(void) {
 
 static int test_kospartial_type_is_koscallable_subtype(void) {
   /*
-    KosPartialCallableType must be a subtype of _KosCallable so dispatch routes
-    through the install slot.
+    KosPartialCallableType must be a KosEvaluated with a call suite so
+    dispatch routes through the install slot.
   */
   TEST_ASSERT(
-      PyType_IsSubtype(KOS_CALLABLE_PYTYPE(KosPartialCallableType),
-                       KOS_CALLABLE_PYTYPE(KosCallableType)),
-      "KosPartial is subtype of _KosCallable");
+      PyType_IsSubtype(KOS_EVALUATED_PYTYPE(KosPartialCallableType),
+                       KOS_EVALUATED_PYTYPE(KosEvaluatedType)),
+      "KosPartial is subtype of _KosEvaluated");
   return 0;
 }
 

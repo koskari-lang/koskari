@@ -177,22 +177,6 @@ static KosOpResult call_call_continuation(
 }
 
 
-static KosOpResult kos_install_continuation(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  (void) kwds_dict;
-  (void) tail_call;
-  return call_call_continuation(
-      es, callable,
-      (args_tuple && PyTuple_GET_SIZE(args_tuple) > 0)
-          ? PyTuple_GET_ITEM(args_tuple, 0) : Py_None);
-}
-
-
 static KosOpResult kos_vinstall_continuation(
     KosEvalState *es,
     PyObject *callable,
@@ -208,7 +192,7 @@ static KosOpResult kos_vinstall_continuation(
 }
 
 
-KosCallableTypeObject KosPyDelimitedContinuationType = {
+KosEvaluatedTypeObject KosPyDelimitedContinuationType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -217,17 +201,20 @@ KosCallableTypeObject KosPyDelimitedContinuationType = {
     .tp_itemsize = 0,
     .tp_dealloc = delimited_continuation_dealloc,
     .tp_repr = delimited_continuation_repr,
-    .tp_call = delimited_continuation_call,
+    .tp_call = KosCallAdapt_CallAsync,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
     .tp_doc = "Captured delimited continuation",
     .tp_traverse = delimited_continuation_traverse,
     .tp_clear = delimited_continuation_clear,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = kos_install_continuation,
-  .tp_kos_vinstall = kos_vinstall_continuation,
-  .tp_kos_wants_frame = 0,
-  .tp_kos_wants_frame_fn = NULL,
+  .kos_call = {
+    .kc_vinstall = kos_vinstall_continuation,
+    .kc_wants_frame = 0,
+    .kc_wants_frame_fn = NULL,
+    .kc_pycall = delimited_continuation_call,
+    .kc_pyvectorcall = NULL,
+  },
 };
 
 
@@ -241,7 +228,7 @@ PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured) {
 
   KosPyDelimitedContinuation *cont = PyObject_GC_New(
     KosPyDelimitedContinuation,
-    KOS_CALLABLE_PYTYPE(KosPyDelimitedContinuationType));
+    KOS_EVALUATED_PYTYPE(KosPyDelimitedContinuationType));
 
   if (! cont)
     return NULL;
@@ -379,7 +366,7 @@ static PyObject *continuation_repr(PyObject *self) {
 }
 
 
-KosCallableTypeObject KosPyContinuationType = {
+KosEvaluatedTypeObject KosPyContinuationType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -388,17 +375,20 @@ KosCallableTypeObject KosPyContinuationType = {
     .tp_itemsize = 0,
     .tp_dealloc = continuation_dealloc,
     .tp_repr = continuation_repr,
-    .tp_call = continuation_call,
+    .tp_call = KosCallAdapt_CallAsync,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
     .tp_doc = "Captured undelimited continuation",
     .tp_traverse = continuation_traverse,
     .tp_clear = continuation_clear,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = kos_install_continuation,
-  .tp_kos_vinstall = kos_vinstall_continuation,
-  .tp_kos_wants_frame = 0,
-  .tp_kos_wants_frame_fn = NULL,
+  .kos_call = {
+    .kc_vinstall = kos_vinstall_continuation,
+    .kc_wants_frame = 0,
+    .kc_wants_frame_fn = NULL,
+    .kc_pycall = continuation_call,
+    .kc_pyvectorcall = NULL,
+  },
 };
 
 
@@ -412,7 +402,7 @@ PyObject *KosPyContinuation_New(KosContinuation *captured) {
 
   KosPyContinuation *cont = PyObject_GC_New(
     KosPyContinuation,
-    KOS_CALLABLE_PYTYPE(KosPyContinuationType));
+    KOS_EVALUATED_PYTYPE(KosPyContinuationType));
 
   if (! cont)
     return NULL;
@@ -438,16 +428,16 @@ int koskari_cont_init(PyObject *mod) {
   STR_CONST(str_continuation, "continuation");
   STR_CONST(str_target, "target");
 
-  if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosPyDelimitedContinuationType)) ||
-      PyType_Ready(KOS_CALLABLE_PYTYPE(KosPyContinuationType)))
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosPyDelimitedContinuationType)) ||
+      PyType_Ready(KOS_EVALUATED_PYTYPE(KosPyContinuationType)))
     return -1;
 
   if (PyDict_SetItemString(dict, "DelimitedContinuation",
-                           (PyObject *) KOS_CALLABLE_PYTYPE(KosPyDelimitedContinuationType)))
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosPyDelimitedContinuationType)))
     return -1;
 
   if (PyDict_SetItemString(dict, "Continuation",
-                           (PyObject *) KOS_CALLABLE_PYTYPE(KosPyContinuationType)))
+                           (PyObject *) KOS_EVALUATED_PYTYPE(KosPyContinuationType)))
     return -1;
 
   return 0;

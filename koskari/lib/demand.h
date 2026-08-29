@@ -23,14 +23,14 @@
 #include "callable.h"
 
 
-extern KosCallableTypeObject KosDemandCallableType;
+extern KosEvaluatedTypeObject KosDemandCallableType;
 
 
 #define KosDemand_CheckExact(obj) \
-  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosDemandCallableType)))
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosDemandCallableType)))
 
 #define KosDemand_Check(obj) \
-  ((obj) && PyObject_TypeCheck((obj), KOS_CALLABLE_PYTYPE(KosDemandCallableType)))
+  ((obj) && PyObject_TypeCheck((obj), KOS_EVALUATED_PYTYPE(KosDemandCallableType)))
 
 
 /**
@@ -69,13 +69,6 @@ PyObject *Koskari_DemandSync(PyObject *callable, PyObject *args, PyObject *kwarg
  */
 int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
                          PyObject **out_result);
-
-
-/**
-   Build a DemandGenerator for tp_iter: new KosContext, GEN installed from
-   agen (kos_dyn_gen_install). Caller must not overlap with async iteration
-*/
-PyObject *KosDemandGenerator_FromAsyncGen(struct KosPyAsyncGen *agen);
 
 
 /**

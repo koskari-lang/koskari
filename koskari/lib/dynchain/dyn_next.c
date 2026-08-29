@@ -1,16 +1,16 @@
 /* Included by dynchain.c — dyn_next */
-/* === KOS_DYN_NEXT: standalone NEXT opcode boundary for Koskari async gen === */
+/* === KOS_DYN_NEXT: standalone NEXT opcode iteration node for Koskari async gen === */
 
 
 void kos_dyn_next_free_payload(KosDynNode *node) {
 
-  Py_CLEAR(KosDynNext_AGEN_OBJ(node));
+  Py_CLEAR(KosDynNext_REQ(node)->iter);
   Py_CLEAR(KosDynNext_DEFAULT_VAL(node));
   kos_dynnode_return_to_freelist(node);
 }
 
 
-int kos_dyn_push_next_boundary(
+int kos_dyn_push_next_node(
     KosEvalState *es, PyObject *iter_obj, PyObject *default_val, int n) {
 
   // CONTEXT: dirty, touches context directly
@@ -20,9 +20,10 @@ int kos_dyn_push_next_boundary(
   }
 
   kos_dynnode_init(
-      node, KOS_DYN_NEXT, KosEvalState_DYN_TOP(es), KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY);
+      node, KOS_DYN_NEXT, KosEvalState_DYN_TOP(es), KOS_DYN_CAP_ITER_RECEIVER);
   Py_INCREF(iter_obj);
-  KosDynNext_AGEN_OBJ(node) = iter_obj;
+  KosDynNext_REQ(node)->iter = iter_obj;
+  KosDynNext_REQ(node)->mode = KOS_IREQ_IDLE;
   if (default_val) {
     Py_INCREF(default_val);
     KosDynNext_DEFAULT_VAL(node) = default_val;
@@ -88,9 +89,12 @@ int kos_dyn_next_deliver_yield(
   }
   Py_DECREF(val);
 
-  iter_obj = KosDynNext_AGEN_OBJ((KosDynNode *) next);
-  if (KosPyAsyncGen_Check(iter_obj))
-    ((KosPyAsyncGen *) iter_obj)->in_progress = 0;
+  iter_obj = KosDynNext_REQ(next)->iter;
+  {
+    KosIterSlots *islots;
+    if (iter_obj && KosIter_CheckSlots(iter_obj, &islots))
+      islots->ki_finish(iter_obj, 0);
+  }
 
   kos_dyn_unlink_next_node(es, next);
   return 0;
@@ -111,10 +115,14 @@ int kos_dyn_next_deliver_exhausted(
   PyObject *iter_obj;
   int nn = KosDynNext_N((KosDynNode *) next);
 
-  iter_obj = KosDynNext_AGEN_OBJ((KosDynNode *) next);
-  if (KosPyAsyncGen_Check(iter_obj)) {
-    ((KosPyAsyncGen *) iter_obj)->closed = 1;
-    ((KosPyAsyncGen *) iter_obj)->in_progress = 0;
+  iter_obj = KosDynNext_REQ(next)->iter;
+  {
+    KosIterSlots *islots;
+    if (iter_obj && KosIter_CheckSlots(iter_obj, &islots))
+      /* a recyclable durable provider re-derives exhaustion from its
+         source and stays open -- a mapped function's StopIteration is
+         a truncation that builtins.map resumes from */
+      islots->ki_finish(iter_obj, islots->ki_pyctx_recyclable ? 0 : 1);
   }
 
   if (nn == 2 && KosDynNext_DEFAULT_VAL((KosDynNode *) next)) {
@@ -139,20 +147,6 @@ int kos_dyn_next_deliver_exhausted(
 }
 
 
-int kos_dyn_next_deliver_return_node(
-    KosEvalState *es,
-    KosDynNext *next,
-    PyObject *val) {
-
-  if (kos_dyn_teardown_gen_exhausted(es) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
-
-  return kos_dyn_next_deliver_exhausted(es, next, val);
-}
-
-
 KosDynNext *kos_dyn_next_clone(KosDynNext *node) {
 
   KosDynNext *clone = (KosDynNext *) kos_dynnode_alloc();
@@ -163,8 +157,8 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node) {
   KosDynNode_FLAGS((KosDynNode *) clone) =
       KosDynNode_FLAGS((KosDynNode *) node) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID((KosDynNode *) clone) = KosDynNode_NODE_ID((KosDynNode *) node);
-  Py_XINCREF(KosDynNext_AGEN_OBJ((KosDynNode *) node));
-  KosDynNext_AGEN_OBJ((KosDynNode *) clone) = KosDynNext_AGEN_OBJ((KosDynNode *) node);
+  Py_XINCREF(KosDynNext_REQ(node)->iter);
+  *KosDynNext_REQ(clone) = *KosDynNext_REQ(node);
   Py_XINCREF(KosDynNext_DEFAULT_VAL((KosDynNode *) node));
   KosDynNext_DEFAULT_VAL((KosDynNode *) clone) = KosDynNext_DEFAULT_VAL((KosDynNode *) node);
   KosDynNext_N((KosDynNode *) clone) = KosDynNext_N((KosDynNode *) node);
@@ -174,7 +168,9 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node) {
 
 static int dynnode_to_dict_next(KosDynNode *node, PyObject *data) {
 
-  if (snapshot_set_obj(data, "agen_obj", KosDynNext_AGEN_OBJ(node)) < 0)
+  if (snapshot_set_obj(data, "iter", KosDynNext_REQ(node)->iter) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "req_mode", KosDynNext_REQ(node)->mode) < 0)
     return -1;
   if (snapshot_set_obj(data, "default_val", KosDynNext_DEFAULT_VAL(node)) < 0)
     return -1;
@@ -191,7 +187,7 @@ static int dynnode_to_dict_next(KosDynNode *node, PyObject *data) {
    GC traverse a KOS_DYN_NEXT: visit async gen object and optional default.
 */
 static int dynnode_traverse_next(KosDynNode *node, visitproc visit, void *arg) {
-  Py_VISIT(KosDynNext_AGEN_OBJ(node));
+  Py_VISIT(KosDynNext_REQ(node)->iter);
   Py_VISIT(KosDynNext_DEFAULT_VAL(node));
   return 0;
 }

@@ -135,7 +135,7 @@ typedef KosDynFrame KosFrame;
 #define KosFrame_ACTING_PC(f)  KosDynFrame_ACTING_PC(f)
 #define KosFrame_STACK(f)      KosDynFrame_STACK(f)
 #define KosFrame_NS(f)         KosDynFrame_NS(f)
-#define KosFrame_NATIVE_HANDLER(f) KosDynFrame_NATIVE_HANDLER(f)
+#define KosFrame_NATIVE_PROG(f) KosDynFrame_NATIVE_PROG(f)
 
 
 /**
@@ -175,12 +175,109 @@ typedef enum KosGetNextResult {
 
 
 /**
-   Function-pointer type for native frame handlers: receives the eval state
-   and an optional delivered value (new reference; handler takes ownership;
-   NULL for the iteration call with no delivery).  Returns a KosOpResult
-   describing the outcome; EVAL_REPROLOGUE() means "handled, continue normally".
+   Typed wake events for a native frame handler: the same delivery
+   facility extent nodes have, for a native program on the chain.
+
+   ITERATE is the eval loop's cadence call (no value); CALL_VALUE is a
+   callee frame's return; AWAITED is an awaited resume's value;
+   EXCEPTION offers the pending PyErr during the raise walk -- a
+   handler that does not consume it returns EVAL_RAISE() and the walk
+   pops the frame.
 */
-typedef KosOpResult (*KosNativeHandlerFn)(KosEvalState *, PyObject *);
+typedef enum KosNativeFrameEvent {
+  KOS_NFRAME_ITERATE = 0,
+  KOS_NFRAME_CALL_VALUE,
+  KOS_NFRAME_AWAITED,
+  KOS_NFRAME_EXCEPTION,
+} KosNativeFrameEvent;
+
+
+/**
+   Function-pointer type for native frame handlers. value is a new
+   reference the handler owns (NULL for ITERATE and EXCEPTION).
+   Returns a KosOpResult describing the outcome; EVAL_REPROLOGUE()
+   means "handled, continue normally".
+*/
+typedef KosOpResult (*KosNativeHandlerFn)(
+    KosEvalState *, KosNativeFrameEvent, PyObject *);
+
+
+/**
+   A native program: the static descriptor a native frame carries in
+   its native_prog slot. np_handler is the wake entry. np_clone_state
+   makes the frame capturable by continuations: it produces an owned
+   copy of the program's state (0 with *out set; -1 with PyErr on
+   failure), released later through np_free_state; a NULL
+   np_clone_state means capture across this frame fails with an error
+   naming np_name.
+*/
+typedef struct KosNativeProgram {
+  const char *np_name;
+  KosNativeHandlerFn np_handler;
+  int (*np_clone_state)(void *state, void **out);
+  void (*np_free_state)(void *state);
+} KosNativeProgram;
+
+
+/**
+   Complete a native frame with a return value: run the return unwind
+   walk from the frame, honor FINALLY/async-unwind outcomes, detach
+   and free the frame, and deliver the value to the parent. The native
+   handler slot must already be cleared. value is consumed.
+*/
+KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value);
+
+
+/**
+   Complete a native frame by handing value to the eval loop's return
+   machinery, which owns every delivery terminus (parent frame,
+   iteration node, drive root). Clears the program slot and, when cache
+   is given, arms the frame to park itself into that caller-owned
+   one-frame cache when the return path frees it
+   (kos_dynframe_park_inert); a NULL or occupied cache frees as usual.
+   The exception path never parks -- a frame popped by the raise walk
+   is freed, and the cache simply stays empty for the next install.
+   The caller returns this result from its handler. value is consumed.
+*/
+KosOpResult KosNativeFrame_ReturnPark(
+    KosEvalState *es,
+    PyObject *value,
+    KosDynFrame **cache);
+
+
+/**
+   Push a code-less frame carrying a native program onto the chain.
+   When cache holds a parked frame it is reinstalled in place of a
+   fresh allocation and *cache is emptied. staged (borrowed, may be
+   NULL) is pushed onto the new frame's stack; the program's first
+   ITERATE wake pops it. Returns the frame, or NULL with PyErr set --
+   on a staged-push failure the frame is already on the chain and the
+   caller's error propagation pops it through the raise walk.
+*/
+KosDynFrame *KosNativeFrame_Install(
+    KosEvalState *es,
+    const KosNativeProgram *prog,
+    void *state,
+    PyObject *staged,
+    KosDynFrame **cache);
+
+
+/**
+   Request the next element of iter from inside a native frame handler:
+   push a one-request iteration node for iter and run one request
+   through KosIterRequest_Next. On DELIVERED *out is the element (new
+   ref) and the node is already cleaned up; on EXHAUSTED and ERROR the
+   node is cleaned up and *out is NULL (no exception is set for
+   EXHAUSTED; ERROR leaves PyErr set). On CONTINUES the node remains
+   with installed work above it and the element later lands on the
+   native frame's stack (an ITERATE wake pops it); on EXIT the node
+   remains and *out is the awaitable to suspend on (EVAL_AWAIT), the
+   element arriving the same way.
+*/
+KosIterRequestStatus KosNativeFrame_RequestNext(
+    KosEvalState *es,
+    PyObject *iter,
+    PyObject **out);
 
 
 /* === KosContext: VM execution context === */
@@ -619,6 +716,19 @@ KosContext *KosContext_New(KosDynFrame *top);
 void KosContext_Free(KosContext *ctx);
 
 
+/**
+   Make a context reusable after a completion at its root: drop the
+   finished frame chain and clear the completion residue -- dead and
+   running flags, suspension tag, in-flight await iterator, resume
+   inject. A context holding state this reset cannot account for (an
+   armed transfer plan) is left untouched and the caller must free it
+   instead.
+
+   :return: 0 recycled; -1 the context cannot be recycled
+*/
+int KosContext_Recycle(KosContext *ctx);
+
+
 /* === Frame management === */
 
 /**
@@ -627,6 +737,77 @@ void KosContext_Free(KosContext *ctx);
 */
 
 /* === Drive loop === */
+
+/**
+   Duck-typed asyncio.isfuture: futures and tasks are handles by
+   convention, exempt from ambient auto-await at implicit sites.
+
+   :return: 1 (future), 0 (not a future), -1 (error; PyErr set)
+*/
+int KosEval_IsFuture(PyObject *val);
+
+
+/**
+   Classify a produced result under ambient async: a non-awaitable, a
+   Defer, or a future/task handle is a completed value; anything else
+   awaitable must be awaited before use.
+
+   :param result: borrowed
+   :return: 1 (value), 0 (awaitable), -1 (error; PyErr set)
+*/
+int KosEval_ResultIsValue(PyObject *result);
+
+
+/**
+   Acquire an iterator from an iterable, uniform over both protocols
+   and shared by every acquisition site (PUSH_FOREACH, the *_ITER
+   opcodes, KosMap): a KosIter provider passes through as itself, an
+   object with am_aiter yields its async iterator, otherwise the sync
+   protocol (PyObject_GetIter, including the sequence fallback).
+
+   :param iterable: borrowed
+   :return: new iterator reference, or NULL with PyErr set
+*/
+PyObject *kos_iter_acquire(PyObject *iterable);
+
+
+/**
+   Close an acquired iterator, best-effort and exception-fenced: a
+   KosIter provider through its suite's ki_close, a sync iterator
+   through close(), an async iterator through aclose() -- the aclose
+   awaitable is demand-driven, so an immediate completion honors the
+   cleanup and a genuine suspension takes the cannot-honor fallback of
+   closing the in-flight iterator. A missing close method is ignored.
+   Any pending exception is preserved across the close.
+
+   :param iter: borrowed; NULL is a no-op
+*/
+void kos_iter_close(PyObject *iter);
+
+
+/**
+   One iteration request against a iteration node's armed record: the
+   single site API for stepping the node's iterator over all three
+   protocols. send_val borrowed; *fast_out new ref on
+   DELIVERED/EXHAUSTED, the awaitable payload on EXIT.
+*/
+KosIterRequestStatus KosIterRequest_Next(
+    KosEvalState *es,
+    KosDynNode *node,
+    PyObject *send_val,
+    PyObject **fast_out);
+
+
+/**
+   Deliver a typed event into a iteration node's iteration request: the
+   one entry the eval delivery points call. value is consumed.
+*/
+KosOpResult KosIterRequest_Deliver(
+    KosEvalState *es,
+    KosDynNode *node,
+    KosIterWakeEvent ev,
+    PyObject *value);
+
 
 /**
   Execute the VM until a boundary event occurs.
@@ -641,12 +822,14 @@ void KosContext_Free(KosContext *ctx);
   The caller owns the reference in the returned KosOpResult.val.
 
   :param ctx: the execution context
-  :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM; NULL on first call or when N/A
-  :param throw_exc: exception to inject when resuming with throw; NULL when resuming with value or on first call
+  :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM;
+      NULL on first call or when N/A
+  :param throw_exc: exception to inject when resuming with throw; NULL when
+      resuming with value or on first call
 
-  When non-NULL, send_val and throw_typ/throw_exc are consumed (ownership
-  transferred). Caller must not use them after the call. Pass NULL to
-  borrow nothing.
+  send_val and the throw pair are borrowed: the entry phase takes its
+  own references for whatever it delivers, and the caller releases its
+  own afterward.
 */
 KosOpResult koskari_eval(
     KosContext *ctx,

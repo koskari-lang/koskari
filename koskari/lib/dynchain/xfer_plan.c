@@ -1555,7 +1555,7 @@ static int kos_delimited_invoke_inplace(
     KosDynNode_FLAGS((KosDynNode *) delim) |= KOS_DYNF_HOLDS_RETURN_FRAME;
 
   /* The invocation re-delimits: a shift firing inside the resumed slice
-     must capture up to THIS invocation's boundary, not the original
+     must capture up to THIS invocation's iteration node, not the original
      prompt, or its POP_SHIFT discards the remainder of the suspended
      handler (control semantics where shift was promised). The fresh
      instance sits between the delim and the slice; captures inside the

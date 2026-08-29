@@ -88,7 +88,7 @@ static int obj_op_reducing(
 
 /* The operator-selector dispatchers kos_operand_reduce / kos_inplace_reduce
    live in operator.c (declared in operator.h) alongside the per-operator cores
-   they switch into; the handlers below call across that boundary. */
+   they switch into; the handlers below dispatch through them. */
 
 
 /* Reduce `count` stack values through op and push the result. Peeks the count

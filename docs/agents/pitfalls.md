@@ -34,8 +34,13 @@ returns an un-awaited `koskari.lib.Coroutine`, not the value, exactly
 like the callback case:
 
 ```koskari
-(list (map (demand {(* %1 %1)}) numbers))   ; callback argument
+(list (py-map (demand {(* %1 %1)}) numbers))   ; python HOF callback
 ```
+
+The wrap is for PYTHON higher-order functions. The bootstrap `map`,
+`filter`, and `partial` are koskari-native types that take koskari
+callables directly -- `(list (map {(* %1 %1)} numbers))`, no wrap; see
+[Native builtins](native-builtins.md).
 
 ```koskari
 (define-demanding some_fn [x] (+ x 1))      ; direct-call entry point

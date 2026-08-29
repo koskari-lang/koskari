@@ -315,6 +315,19 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 
 ---
 
+## CPS consumer API (Call/Next/Send)
+
+Unify the call and iteration consumer surfaces on continuation
+passing: entries take a resume fn + state pointer, invoked
+trampolined with the CPython value-or-NULL contract; the armed resume
+lives on the frame; eager await interposes once at the delivery
+point. Deletes the typed wake, the phase enums, and the four
+hand-rolled drive epilogues. Fresh branch after native-map merges.
+
+Ref: [cps-consumer-api.md](cps-consumer-api.md).
+
+---
+
 ## Bootstrap and reader surface
 
 - **Reader macro dollars example** — bootstrap **`set-macro-character`** /

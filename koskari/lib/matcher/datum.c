@@ -87,7 +87,7 @@ static void datum_dealloc(PyObject *self) {
 static PyObject *datum_repr(PyObject *self) {
   KosDatum *d = (KosDatum *) self;
   return PyUnicode_FromFormat(
-      "<Datum datum=%R position=%R binding=%R>",
+      "<koskari datum %R position=%R binding=%R>",
       d->datum, d->position, d->binding);
 }
 
@@ -198,7 +198,7 @@ static PyGetSetDef datum_getset[] = {
 
 PyTypeObject KosDatumType = {
   PyVarObject_HEAD_INIT(NULL, 0)
-  .tp_name = "koskari.lib.Datum",
+  .tp_name = "koskari.lib.datum",
   .tp_basicsize = sizeof(KosDatum),
   .tp_dealloc = datum_dealloc,
   .tp_repr = datum_repr,

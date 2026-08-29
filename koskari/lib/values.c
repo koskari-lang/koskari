@@ -251,12 +251,7 @@ static int values_target_is_flattenable(PyObject *target) {
   if (! KosCallable_Check(target))
     return 0;
 
-  KosCallableTypeObject *ctyp = (KosCallableTypeObject *) Py_TYPE(target);
-
-  if (ctyp->tp_kos_wants_frame_fn)
-    return ctyp->tp_kos_wants_frame_fn(target);
-
-  return ctyp->tp_kos_wants_frame;
+  return KosCallable_WantsFrame(target);
 }
 
 
@@ -326,30 +321,6 @@ static KosOpResult values_dispatch(
   }
 
   return KosEvalState_CallArgs(es, target, merged_args, merged_kw, 1);
-}
-
-
-static KosOpResult values_kos_install(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  KosValues *s = (KosValues *) callable;
-  PyObject *target = NULL;
-  PyObject *merged_args = NULL;
-  PyObject *merged_kw = NULL;
-  KosOpResult r;
-
-  if (values_merge(s, args_tuple, kwds_dict, &target, &merged_args,
-                   &merged_kw) < 0)
-    return EVAL_RAISE();
-
-  r = values_dispatch(es, target, merged_args, merged_kw, tail_call);
-  Py_DECREF(merged_args);
-  Py_XDECREF(merged_kw);
-  return r;
 }
 
 
@@ -710,9 +681,93 @@ static PyObject *values_keys(PyObject *self, PyObject *_noargs) {
 }
 
 
+/**
+   __kos_repr__: the constructing s-expression, "(values 1 2 kwd: 3)",
+   with the elements rendered through the recursive kos form and
+   keywords as name-plus-colon tokens
+*/
+static PyObject *values_kos_repr(
+        PyObject *self,
+        PyObject *Py_UNUSED(ignored)) {
+
+    KosValues *s = (KosValues *) self;
+
+    int status = Py_ReprEnter(self);
+    if (status != 0)
+        return (status < 0) ? NULL : PyUnicode_FromString("...");
+
+    PyObject *result = NULL;
+    PyObject *parts = PyList_New(0);
+    if (! parts)
+        goto done;
+
+    {
+        PyObject *head = PyUnicode_FromString("values");
+        if (! head || PyList_Append(parts, head) < 0) {
+            Py_XDECREF(head);
+            goto done;
+        }
+        Py_DECREF(head);
+    }
+
+    {
+        Py_ssize_t na = PyTuple_GET_SIZE(KosValues_ARGS(s));
+        for (Py_ssize_t i = 0; i < na; i++) {
+            PyObject *ar = KosUtils_Repr(PyTuple_GET_ITEM(KosValues_ARGS(s), i));
+            if (! ar || PyList_Append(parts, ar) < 0) {
+                Py_XDECREF(ar);
+                goto done;
+            }
+            Py_DECREF(ar);
+        }
+    }
+
+    if (KosValues_KWDS(s)) {
+        PyObject *k, *v;
+        Py_ssize_t pos = 0;
+        while (PyDict_Next(KosValues_KWDS(s), &pos, &k, &v)) {
+            PyObject *kwd = PyUnicode_FromFormat("%U:", k);
+            if (! kwd || PyList_Append(parts, kwd) < 0) {
+                Py_XDECREF(kwd);
+                goto done;
+            }
+            Py_DECREF(kwd);
+
+            PyObject *vr = KosUtils_Repr(v);
+            if (! vr || PyList_Append(parts, vr) < 0) {
+                Py_XDECREF(vr);
+                goto done;
+            }
+            Py_DECREF(vr);
+        }
+    }
+
+    {
+        PyObject *sep = PyUnicode_FromString(" ");
+        if (! sep)
+            goto done;
+        PyObject *joined = PyUnicode_Join(sep, parts);
+        Py_DECREF(sep);
+        if (! joined)
+            goto done;
+        result = PyUnicode_FromFormat("(%U)", joined);
+        Py_DECREF(joined);
+    }
+
+done:
+    Py_XDECREF(parts);
+    Py_ReprLeave(self);
+    return result;
+}
+
+
 static PyMethodDef values_methods[] = {
     { "keys", (PyCFunction) values_keys, METH_NOARGS,
       "V.keys()" },
+
+    { "__kos_repr__", values_kos_repr, METH_NOARGS,
+      "V.__kos_repr__() -> str\n"
+      "The constructing s-expression form" },
 
     { NULL, NULL, 0, NULL },
 };
@@ -736,11 +791,11 @@ static PyMappingMethods values_as_mapping = {
 };
 
 
-KosCallableTypeObject KosValuesType = {
+KosEvaluatedTypeObject KosValuesType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
-    .tp_name = "values",
+    .tp_name = "koskari.lib.values",
     .tp_basicsize = sizeof(KosValues),
     .tp_itemsize = 0,
 
@@ -757,15 +812,18 @@ KosCallableTypeObject KosValuesType = {
     .tp_as_sequence = &values_as_sequence,
     .tp_as_mapping = &values_as_mapping,
 
-    .tp_call = values_call,
+    .tp_call = KosCallAdapt_CallAsync,
     .tp_repr = values_repr,
     .tp_richcompare = values_richcomp,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = values_kos_install,
-  .tp_kos_vinstall = values_kos_vinstall,
-  .tp_kos_wants_frame = 1,
-  .tp_kos_wants_frame_fn = NULL,
+  .kos_call = {
+    .kc_vinstall = values_kos_vinstall,
+    .kc_wants_frame = 1,
+    .kc_wants_frame_fn = NULL,
+    .kc_pycall = values_call,
+    .kc_pyvectorcall = NULL,
+  },
 };
 
 
@@ -777,7 +835,7 @@ PyObject *KosValues_New(PyObject *args, PyObject *kwds) {
         return NULL;
     }
 
-    self = PyObject_GC_New(KosValues, KOS_CALLABLE_PYTYPE(KosValuesType));
+    self = PyObject_GC_New(KosValues, KOS_EVALUATED_PYTYPE(KosValuesType));
     if (! self)
         return NULL;
 
@@ -815,12 +873,12 @@ int koskari_values_init(PyObject *mod) {
     STR_CONST(_str_equals, "=");
     STR_CONST(_str_empty, "");
 
-    if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosValuesType)))
+    if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosValuesType)))
         return -1;
 
     PyObject *dict = PyModule_GetDict(mod);
     PyDict_SetItemString(dict, "values",
-                         (PyObject *) KOS_CALLABLE_PYTYPE(KosValuesType));
+                         (PyObject *) KOS_EVALUATED_PYTYPE(KosValuesType));
 
     return 0;
 }

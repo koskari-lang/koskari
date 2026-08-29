@@ -867,7 +867,7 @@ source: |-
 verify:
   read: (let ((x 10)) (str (type (refq x))))
   expand: (let ((x 10)) (str (type (refq x))))
-  eval: '"<class ''Ref''>"'
+  eval: '"<class ''koskari.lib.Ref''>"'
 references:
   - reference/specials/compile-refq.md
 stability: evolving

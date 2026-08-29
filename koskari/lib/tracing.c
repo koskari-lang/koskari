@@ -749,7 +749,7 @@ static const char *const kos_tp_names[KOS_TP__COUNT] = {
   "event_raise",
   "event_await",
   "event_yield",
-  "return_boundary",
+  "return_event",
   "plain_return",
 };
 

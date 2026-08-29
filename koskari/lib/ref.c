@@ -200,15 +200,32 @@ static PyNumberMethods ref_as_number = {
 };
 
 
+/**
+   Shared repr for every ref kind: the type's short name and the
+   ref's own name. The held value is never touched -- a deref can
+   raise, and reprs stay safe.
+*/
+static PyObject *ref_generic_repr(PyObject *self) {
+
+  const char *tn = Py_TYPE(self)->tp_name;
+  const char *dot = strrchr(tn, '.');
+
+  return PyUnicode_FromFormat("<koskari %s %R at %p>",
+                              dot ? dot + 1 : tn,
+                              KosRef_NAME(self), self);
+}
+
+
 PyTypeObject KosRefType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  "Ref",
+  "koskari.lib.Ref",
   sizeof(KosRef),
   0,
 
   .tp_flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE
                | Py_TPFLAGS_HAVE_GC),
+  .tp_repr = ref_generic_repr,
   .tp_free = PyObject_GC_Del,
   .tp_getset = sym_ref_getset,
   .tp_methods = sym_ref_methods,
@@ -406,12 +423,13 @@ static void attr_ref_dealloc(PyObject *self) {
 PyTypeObject KosAttributeRefType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  "AttributeRef",
+  "koskari.lib.AttributeRef",
   sizeof(KosAttributeRef),
   0,
 
   .tp_base = &KosRefType,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_repr = ref_generic_repr,
   .tp_getset = attr_ref_getset,
   .tp_methods = attr_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -617,12 +635,13 @@ static void item_ref_dealloc(PyObject *self) {
 PyTypeObject KosItemRefType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  "ItemRef",
+  "koskari.lib.ItemRef",
   sizeof(KosItemRef),
   0,
 
   .tp_base = &KosRefType,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_repr = ref_generic_repr,
   .tp_getset = item_ref_getset,
   .tp_methods = item_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -827,12 +846,13 @@ static void dyn_ref_dealloc(PyObject *self) {
 PyTypeObject KosDynamicRefType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  "DynamicRef",
+  "koskari.lib.DynamicRef",
   sizeof(KosDynamicRef),
   0,
 
   .tp_base = &KosRefType,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_repr = ref_generic_repr,
   .tp_getset = dyn_ref_getset,
   .tp_methods = dyn_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -939,12 +959,13 @@ static int const_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
 PyTypeObject KosConstantRefType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  "ConstantRef",
+  "koskari.lib.ConstantRef",
   sizeof(KosConstantRef),
   0,
 
   .tp_base = &KosRefType,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_repr = ref_generic_repr,
   .tp_getset = sym_ref_getset,
   .tp_methods = const_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -1077,12 +1098,13 @@ static void memo_ref_dealloc(PyObject *self) {
 PyTypeObject KosMemoizedRefType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  "MemoizedRef",
+  "koskari.lib.MemoizedRef",
   sizeof(KosMemoizedRef),
   0,
 
   .tp_base = &KosRefType,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_repr = ref_generic_repr,
   .tp_getset = sym_ref_getset,
   .tp_methods = memo_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -1267,12 +1289,13 @@ static int weak_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
 PyTypeObject KosWeakRefType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  "WeakRef",
+  "koskari.lib.WeakRef",
   sizeof(KosWeakRef),
   0,
 
   .tp_base = &KosRefType,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_repr = ref_generic_repr,
   .tp_getset = weak_ref_getset,
   .tp_methods = weak_ref_methods,
   .tp_new = PyType_GenericNew,
@@ -1478,12 +1501,13 @@ static void param_ref_dealloc(PyObject *self) {
 PyTypeObject KosParamRefType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  "ParamRef",
+  "koskari.lib.ParamRef",
   sizeof(KosParamRef),
   0,
 
   .tp_base = &KosRefType,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_repr = ref_generic_repr,
   .tp_getset = param_ref_getset,
   .tp_methods = param_ref_methods,
   .tp_new = PyType_GenericNew,

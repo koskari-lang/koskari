@@ -25,7 +25,7 @@
 /* === Expression === */
 
 
-extern KosCallableTypeObject KosExpressionType;
+extern KosEvaluatedTypeObject KosExpressionType;
 
 
 typedef struct {
@@ -42,7 +42,7 @@ typedef struct {
 #define KosExpression_NS(expr)   (((KosExpression *) (expr))->ns)
 
 #define KosExpression_CheckExact(obj)                  \
-  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosExpressionType)))
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosExpressionType)))
 
 
 /**
@@ -155,7 +155,7 @@ PyObject *KosFunction_NewWithAnnotations(
 /* === Function === */
 
 
-extern KosCallableTypeObject KosFunctionType;
+extern KosEvaluatedTypeObject KosFunctionType;
 
 
 typedef struct {
@@ -275,13 +275,13 @@ PyObject *KosFunction_SimpleCallNamespaceStealSelfBlock(
 #define KosFunction_VECTORCALL_OFFSET offsetof(KosFunction, vectorcall)
 
 #define KosFunction_CheckExact(obj)                   \
-  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosFunctionType)))
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosFunctionType)))
 
 
 /* === KosBoundMethod === */
 
 
-extern KosCallableTypeObject KosBoundMethodType;
+extern KosEvaluatedTypeObject KosBoundMethodType;
 
 
 typedef struct {
@@ -295,7 +295,7 @@ typedef struct {
 #define KosBoundMethod_SELF(bm) (((KosBoundMethod *) (bm))->self)
 
 #define KosBoundMethod_CheckExact(obj)                           \
-  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosBoundMethodType)))
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosBoundMethodType)))
 
 
 /**

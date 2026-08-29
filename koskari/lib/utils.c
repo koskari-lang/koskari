@@ -148,10 +148,38 @@ static int kos_apply_build_args_tuple(
 */
 static KosOpResult apply_native_handler(
     KosEvalState *es,
+    KosNativeFrameEvent ev,
+    PyObject *delivered_value);
+
+
+/* Apply's state is its frame stack; a capture needs nothing copied. */
+static int apply_clone_state(void *state, void **out) {
+
+  (void) state;
+  *out = NULL;
+  return 0;
+}
+
+
+static const KosNativeProgram kos_apply_program = {
+  .np_name = "apply",
+  .np_handler = apply_native_handler,
+  .np_clone_state = apply_clone_state,
+  .np_free_state = NULL,
+};
+
+
+static KosOpResult apply_native_handler(
+    KosEvalState *es,
+    KosNativeFrameEvent ev,
     PyObject *delivered_value) {
 
-  if (unlikely(delivered_value != NULL)) {
-    Py_DECREF(delivered_value);
+  if (ev == KOS_NFRAME_EXCEPTION)
+    /* Nothing to intercept: decline and let the walk pop the frame. */
+    return EVAL_RAISE();
+
+  if (unlikely(ev != KOS_NFRAME_ITERATE)) {
+    Py_XDECREF(delivered_value);
     PyErr_SetString(
       PyExc_RuntimeError,
       "apply native handler: unexpected resume delivery");
@@ -170,7 +198,7 @@ static KosOpResult apply_native_handler(
   if (kwds == Py_None)
     kwds = NULL;
 
-  KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) = NULL;
+  KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
   PyObject *result = PyObject_Call(fn, seq_args, kwds);
   Py_DECREF(fn);
   Py_DECREF(seq_args);
@@ -178,41 +206,11 @@ static KosOpResult apply_native_handler(
   if (! result)
     return EVAL_RAISE();
 
-  /* Walk RETURN to frame (FINALLY may consume). */
-  KosDynFrame *detached = NULL;
-  KosWalkStatus unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es),
-                                            result);
-  if (unw == KOS_WALK_ERROR) {
-    Py_DECREF(result);
-    return EVAL_RAISE();
-  }
-  if (unw == KOS_WALK_FINALLY_TAKING_RETURN) {
-    return EVAL_REPROLOGUE();
-  }
-  if (unw == KOS_WALK_ASYNC_UNWIND) {
-    KosEvalState_SetPendingReturn(es, result, 1);
-    return EVAL_REPROLOGUE();
-  }
-  if (unw == KOS_WALK_DELIM_TAKING_RETURN) {
-    /* Unreachable: the native apply frame runs no bytecode, so no
-       delimited-invoke bookmark can sit above it.  Fail loudly rather
-       than mis-deliver the result. */
-    Py_DECREF(result);
-    PyErr_SetString(PyExc_SystemError,
-                    "apply: return walk stopped at a delimited-invoke"
-                    " bookmark");
-    return EVAL_RAISE();
-  }
-  if (kos_dyn_detach_top_frame(es, &detached) < 0) {
-    Py_DECREF(result);
-    return EVAL_RAISE();
-  }
-  if (detached)
-    kos_dynframe_free(detached);
-
-  KosOpResult pr = KosEvalState_PushOrAwait(es, result);
-  if (pr.kind == KOS_RES_NORMAL) return EVAL_REPROLOGUE();
-  return pr;
+  /* Complete through the eval loop's return machinery, which owns
+     every delivery terminus -- a tail apply's reused frame can be
+     the context root, where a direct parent-frame delivery has
+     nowhere to land. */
+  return EVAL_RETURN(result);
 }
 
 
@@ -238,19 +236,42 @@ static KosOpResult kos_apply_install_core(
     return EVAL_RAISE();
   }
 
-  /* Flattening: delegate to inner callable's install */
-  if (KosCallable_Check(fn)) {
-    KosInstallFunc inner = KosCallableType_INSTALL(Py_TYPE(fn));
-    if (inner) {
-      KosOpResult r = inner(es, fn, seq_args, kwds, tail_call);
+  /* Flattening: delegate to inner callable's install through the
+     central tuple-to-vector spread. Some installs complete by
+     delivering a VALUE instead of filling the prepped frame -- a
+     generator function's AsyncGenerator, partial's or demand's
+     non-flattenable results -- which would leave apply's code-less
+     frame current for instruction dispatch. Detect that (same frame,
+     still no code, no program) and complete the frame with the
+     delivered value. */
+  {
+    KosCallSlots *fn_slots;
+    if (KosCallable_CheckSlots(fn, &fn_slots)) {
+      KosDynFrame *apply_frame = KosEvalState_FRAME(es);
+      KosOpResult r = KosCallable_CallArgsSlots(es, fn_slots, fn,
+                                                seq_args, kwds, tail_call);
       Py_DECREF(seq_args);
+
+      if (r.kind == KOS_RES_NORMAL
+          && KosEvalState_FRAME(es) == apply_frame
+          && ! KosDynFrame_CODE(apply_frame)
+          && ! KosDynFrame_NATIVE_PROG(apply_frame)) {
+        /* Complete through the eval loop's return machinery, which
+           owns every delivery terminus -- a tail apply's reused
+           frame can be the context root, where a direct parent-frame
+           delivery has nowhere to land. */
+        PyObject *value = KosEvalState_StackPopRef(es);
+        if (! value)
+          return EVAL_RAISE();
+        return EVAL_RETURN(value);
+      }
       return r;
     }
   }
 
   /* Non-flattening: configure frame with native handler, fn, seq_args, kwds */
   KosDynFrame *frame = KosEvalState_FRAME(es);
-  KosDynFrame_NATIVE_HANDLER(frame) = (void *) apply_native_handler;
+  KosDynFrame_NATIVE_PROG(frame) = (void *) &kos_apply_program;
 
   if (KosEvalState_StackPushRef(es, fn) < 0
       || KosEvalState_StackPushRef(es, seq_args) < 0) {
@@ -264,30 +285,6 @@ static KosOpResult kos_apply_install_core(
     return EVAL_RAISE();
   }
   return EVAL_NORMAL();
-}
-
-
-static KosOpResult kos_install_apply(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  (void) callable;
-  (void) kwds_dict;
-  Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
-  if (n < 1 || n > 3) {
-    PyErr_SetString(PyExc_TypeError, "apply expects 1, 2, or 3 arguments");
-    return EVAL_RAISE();
-  }
-
-  return kos_apply_install_core(
-      es,
-      PyTuple_GET_ITEM(args_tuple, 0),
-      (n >= 2) ? PyTuple_GET_ITEM(args_tuple, 1) : NULL,
-      (n >= 3) ? PyTuple_GET_ITEM(args_tuple, 2) : NULL,
-      tail_call);
 }
 
 
@@ -336,22 +333,33 @@ static PyObject *apply_call(
 }
 
 
-static KosCallableTypeObject KosApplyType = {
+static PyObject *apply_repr(PyObject *self) {
+
+  (void) self;
+  return PyUnicode_FromString("<koskari apply>");
+}
+
+
+static KosEvaluatedTypeObject KosApplyType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "koskari.lib.ApplyHelper",
+    .tp_name = "koskari.lib.apply",
     .tp_basicsize = sizeof(PyObject),
     .tp_dealloc = (destructor) PyObject_Del,
-    .tp_call = apply_call,
+    .tp_repr = apply_repr,
+    .tp_call = KosCallAdapt_CallAsync,
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_doc = "Callable helper implementing apply(func, args=(), kwargs=None)",
     .tp_new = PyType_GenericNew,
-    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
-  .tp_kos_install = kos_install_apply,
-  .tp_kos_vinstall = kos_vinstall_apply,
-  .tp_kos_wants_frame = 1,
-  .tp_kos_wants_frame_fn = NULL,
+  .kos_call = {
+    .kc_vinstall = kos_vinstall_apply,
+    .kc_wants_frame = 1,
+    .kc_wants_frame_fn = NULL,
+    .kc_pycall = apply_call,
+    .kc_pyvectorcall = NULL,
+  },
 };
 
 
@@ -1541,7 +1549,7 @@ int koskari_utils_init(PyObject *mod) {
   }
 
   if (PyType_Ready(&KosConstantlyType) < 0 ||
-      PyType_Ready(KOS_CALLABLE_PYTYPE(KosApplyType)) < 0)
+      PyType_Ready(KOS_EVALUATED_PYTYPE(KosApplyType)) < 0)
     return -1;
 
   for (PyMethodDef *mdef = utils_methods; mdef->ml_name; mdef++) {
@@ -1557,7 +1565,7 @@ int koskari_utils_init(PyObject *mod) {
   }
 
   Py_CLEAR(KosApplyObject);
-  KosApplyObject = PyObject_CallNoArgs((PyObject *) KOS_CALLABLE_PYTYPE(KosApplyType));
+  KosApplyObject = PyObject_CallNoArgs((PyObject *) KOS_EVALUATED_PYTYPE(KosApplyType));
   if (! KosApplyObject)
     return -1;
 

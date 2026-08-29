@@ -27,61 +27,61 @@ static KosOpResult object_next_step(
     PyObject *default_val,
     uint16_t n) {
 
-  /* If not already an iterator, get one (OBJECT_NEXT allows iterables). */
-  /* this was a stupid idea, but I'm leaving it here for posterity */
-  // if (! KosPyAsyncGen_Check(iter)) {
-  //   PyObject *awaitable = get_await_next(iter);
-  //   if (awaitable) {
-  //     Py_DECREF(awaitable);
-  //   } else if (! PyIter_Check(iter)) {
-  //     PyObject *it = PyObject_GetIter(iter);
-  //     Py_DECREF(iter);
-  //     if (! it) {
-  //       Py_XDECREF(default_val);
-  //       return EVAL_RAISE();
-  //     }
-  //     iter = it;
-  //   }
-  // }
+  /* KosIter provider: push the NEXT node and run one request
+     against it; the drive flattens into the same eval loop. */
+  if (KosIter_Check(iter)) {
+    KosDynNode *bnode;
+    PyObject *out = NULL;
 
-  /* Koskari async gen: flatten into same eval loop (attach gen frame, return 0). */
-  if (KosPyAsyncGen_Check(iter)) {
-    KosPyAsyncGen *agen = (KosPyAsyncGen *) iter;
-    if (agen->in_progress) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "async generator already being iterated");
+    if (kos_dyn_push_next_node(es, iter, default_val, (int) n) < 0) {
       Py_DECREF(iter);
       Py_XDECREF(default_val);
       return EVAL_RAISE();
     }
-    if (agen->closed || ! agen->ctx) {
-      Py_DECREF(iter);
-      if (n == 2 && default_val) {
-        if (KosEvalState_StackPushRef(es, default_val) < 0) {
-          Py_XDECREF(default_val);
-          return EVAL_RAISE();
-        }
-        Py_XDECREF(default_val);
-        return EVAL_NORMAL();
-      }
-      Py_XDECREF(default_val);
-      PyErr_SetNone(PyExc_StopIteration);
-      return EVAL_RAISE();
-    }
-    agen->in_progress = 1;
-    if (kos_dyn_push_next_boundary(es, (PyObject *) agen, default_val,
-                                    (int) n)
-        < 0) {
-      agen->in_progress = 0;
-      Py_DECREF(iter);
-      Py_XDECREF(default_val);
-      return EVAL_RAISE();
-    }
-    if (op_attach_koskari_agen_frame(es, agen, iter, default_val) < 0)
-      return EVAL_RAISE();
+    bnode = KosEvalState_DYN_TOP(es);
     Py_DECREF(iter);
     Py_XDECREF(default_val);
-    return EVAL_NORMAL();
+
+    switch (KosIterRequest_Next(es, bnode, NULL, &out)) {
+      case KOS_IREQ_DELIVERED:
+        kos_dyn_next_abort_after_failed_attach(es);
+        if (KosEvalState_StackPUSH(es, out) < 0)
+          return EVAL_RAISE();
+        return EVAL_NORMAL();
+
+      case KOS_IREQ_EXHAUSTED:
+        Py_XDECREF(out);
+        if (n == 2) {
+          PyObject *dv = KosDynNext_DEFAULT_VAL(bnode);
+          if (dv && KosEvalState_StackPushRef(es, dv) < 0) {
+            kos_dyn_next_abort_after_failed_attach(es);
+            return EVAL_RAISE();
+          }
+          kos_dyn_next_abort_after_failed_attach(es);
+          return EVAL_NORMAL();
+        }
+        kos_dyn_next_abort_after_failed_attach(es);
+        PyErr_SetNone(PyExc_StopIteration);
+        return EVAL_RAISE();
+
+      case KOS_IREQ_CONTINUES: {
+        /* A frame with bytecode (a generator attached) continues
+           dispatch directly; only a code-less native frame takes the
+           entry sequence, which exists for it. */
+        KosDynFrame *nf = KosEvalState_FRAME(es);
+        if (nf && KosDynFrame_CODE(nf))
+          return EVAL_NORMAL();
+        return EVAL_REPROLOGUE();
+      }
+
+      case KOS_IREQ_EXIT:
+        return EVAL_AWAIT(out);
+
+      case KOS_IREQ_ERROR:
+      default:
+        kos_dyn_next_abort_after_failed_attach(es);
+        return EVAL_RAISE();
+    }
   }
 
   PyObject *value = NULL;
@@ -115,17 +115,19 @@ static KosOpResult object_next_step(
       return EVAL_RAISE();
 
     case GET_NEXT_SUSPEND:
-      /* The step is parked on its await: arm the NEXT boundary node to
+      /* The step is parked on its await: arm the NEXT node to
          carry the arity contract across the suspension. The awaited
-         value revives through the boundary (revive_await election);
+         value revives through the iteration node (revive_await election);
          StopAsyncIteration from the parked step converts to exhaustion
          at the raise walk. Nothing rides the operand stack. */
-      if (kos_dyn_push_next_boundary(es, iter, default_val, (int) n) < 0) {
+      if (kos_dyn_push_next_node(es, iter, default_val, (int) n) < 0) {
         Py_DECREF(iter);
         Py_XDECREF(default_val);
         Py_XDECREF(_await);
         return EVAL_RAISE();
       }
+      kos_dyn_iter_request_set_mode(
+          KosEvalState_DYN_TOP(es), KOS_IREQ_AWAITING_PY);
       Py_DECREF(iter);
       Py_XDECREF(default_val);
       return EVAL_AWAIT(_await);

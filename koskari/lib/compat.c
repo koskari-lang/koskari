@@ -270,6 +270,32 @@ PyObject *PyObject_GetAwaitable(PyObject *o) {
 }
 
 
+#if PY_MINOR_VERSION >= 13
+/**
+   Replace _PyErr_FormatFromCause (moved to Python's internal-only header
+   in 3.13+).  Fetches the current exception, formats a new one, chains
+   the old exception as __cause__ and __context__, and restores the new
+   one as current.  Used via macro in compat_313/314.h.
+*/
+PyObject *koskari_Err_FormatFromCause(PyObject *exception,
+                                       const char *format, ...) {
+  PyObject *exc = koskari_Err_GetRaisedException();
+
+  va_list vargs;
+  va_start(vargs, format);
+  PyErr_FormatV(exception, format, vargs);
+  va_end(vargs);
+
+  PyObject *exc2 = koskari_Err_GetRaisedException();
+  PyException_SetCause(exc2, Py_NewRef(exc));
+  PyException_SetContext(exc2, Py_NewRef(exc));
+  Py_DECREF(exc);
+  PyErr_SetRaisedException(exc2);
+  return NULL;
+}
+#endif
+
+
 /* === unit lifecycle === */
 
 

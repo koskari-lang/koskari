@@ -92,8 +92,8 @@ static int test_class_is_not_koscallable(void) {
       Koskari-built classes use plain type as their metaclass, which is
       not a KosCallable. (Foo) uses the default PyObject_Call path.
     */
-    PyTypeObject *koscallable = KOS_CALLABLE_PYTYPE(KosCallableType);
-    TEST_ASSERT(! PyType_IsSubtype(&PyType_Type, koscallable),
+    PyObject *pytype = (PyObject *) &PyType_Type;
+    TEST_ASSERT(! KosCallable_Check(pytype),
                 "type must not be KosCallable; (Foo) uses default PyCall path");
     return 0;
 }
@@ -566,7 +566,7 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
 
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
-    TEST_ASSERT(PyObject_TypeCheck(ev.val, KOS_CALLABLE_PYTYPE(KosPyContinuationType)),
+    TEST_ASSERT(PyObject_TypeCheck(ev.val, KOS_EVALUATED_PYTYPE(KosPyContinuationType)),
                 "result is Continuation");
 
     Py_XDECREF(ev.val);
@@ -1346,7 +1346,7 @@ static int test_eval_build_function_no_defaults(void) {
 
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
-    TEST_ASSERT(PyObject_TypeCheck(ev.val, KOS_CALLABLE_PYTYPE(KosFunctionType)),
+    TEST_ASSERT(PyObject_TypeCheck(ev.val, KOS_EVALUATED_PYTYPE(KosFunctionType)),
                 "result is Function");
 
     Py_XDECREF(ev.val);

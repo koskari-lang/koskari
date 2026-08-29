@@ -73,6 +73,7 @@ static int koskari_lib_init(PyObject *mod) {
   if (koskari_arena_init(mod) ||
       koskari_atom_init(mod) ||
       koskari_bytecode_init(mod) ||
+      koskari_evaluated_init(mod) ||
       koskari_callable_init(mod) ||
       koskari_compat_init(mod) ||
       koskari_demand_init(mod) ||
@@ -84,6 +85,9 @@ static int koskari_lib_init(PyObject *mod) {
       koskari_formals_init(mod) ||
       koskari_func_init(mod) ||
       koskari_iter_init(mod) ||
+      koskari_iterate_init(mod) ||
+      koskari_filter_init(mod) ||
+      koskari_map_init(mod) ||
       koskari_matcher_init(mod) ||
       koskari_namespace_init(mod) ||
       koskari_operator_init(mod) ||
@@ -112,6 +116,15 @@ int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   /* clear implementation units */
+  if (koskari_map_clear(mod))
+    return -1;
+
+  if (koskari_filter_clear(mod))
+    return -1;
+
+  if (koskari_iterate_clear(mod))
+    return -1;
+
   if (koskari_iter_clear(mod))
     return -1;
 
@@ -182,6 +195,9 @@ int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   if (koskari_callable_clear(mod))
+    return -1;
+
+  if (koskari_evaluated_clear(mod))
     return -1;
 
   if (koskari_atom_clear(mod))

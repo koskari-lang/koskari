@@ -31,7 +31,7 @@
    Cannot be called from Python; application only via CALL inside koskari_eval.
 */
 
-extern KosCallableTypeObject KosPyDelimitedContinuationType;
+extern KosEvaluatedTypeObject KosPyDelimitedContinuationType;
 
 
 typedef struct {
@@ -41,7 +41,7 @@ typedef struct {
 
 
 #define KosPyDelimitedContinuation_Check(obj)                           \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, KOS_CALLABLE_PYTYPE(KosPyDelimitedContinuationType)))
+  ((obj) && PyType_IsSubtype((obj)->ob_type, KOS_EVALUATED_PYTYPE(KosPyDelimitedContinuationType)))
 
 #define KosPyDelimitedContinuation_CAPTURED(pyc) \
   (((KosPyDelimitedContinuation *)(pyc))->captured)
@@ -59,7 +59,7 @@ PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured);
    Python-callable: raises KoskariContinuationDead or KoskariContinuationApply.
 */
 
-extern KosCallableTypeObject KosPyContinuationType;
+extern KosEvaluatedTypeObject KosPyContinuationType;
 
 
 typedef struct {
@@ -69,10 +69,10 @@ typedef struct {
 
 
 #define KosPyContinuation_Check(obj)                                    \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, KOS_CALLABLE_PYTYPE(KosPyContinuationType)))
+  ((obj) && PyType_IsSubtype((obj)->ob_type, KOS_EVALUATED_PYTYPE(KosPyContinuationType)))
 
 #define KosPyContinuation_CheckExact(obj)               \
-  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosPyContinuationType)))
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosPyContinuationType)))
 
 #define KosPyContinuation_CAPTURED(pyc) \
   (((KosPyContinuation *)(pyc))->captured)

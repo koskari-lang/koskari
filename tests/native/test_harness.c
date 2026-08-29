@@ -283,6 +283,7 @@ int main(int argc, char *argv[]) {
     run_matcher_tests();
     run_property_tests();
     run_partial_tests();
+    run_iter_request_tests();
 
     /* Future units:
     run_tco_tests();

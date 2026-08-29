@@ -413,19 +413,14 @@ static inline KosOpResult kos_op_result_PUSH_OR_AWAIT(
 static inline int do_frame_prep(
     KosEvalState *es,
     PyObject *callable,
-    PyTypeObject *typ,
+    KosCallSlots *slots,
     int tail_call) {
 
-  KosCallableTypeObject *ctyp = (KosCallableTypeObject *) typ;
-  int wants;
-
-  if (ctyp->tp_kos_wants_frame_fn)
-    wants = ctyp->tp_kos_wants_frame_fn(callable);
-  else
-    wants = ctyp->tp_kos_wants_frame;
+  int wants = KosCallSlots_WantsFrame(slots, callable);
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
-  KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
+  KosDynNode *const parent =
+      frame ? KosDynNode_PARENT((KosDynNode *) frame) : NULL;
 
   if (wants && tail_call) {
     /* Uninstall discardable extents left open above the frame before
@@ -512,6 +507,17 @@ static KosOpResult deliver_py_call_result(
 }
 
 
+static KOS_NOINLINE KosOpResult kos_call_invoke_body(
+    KosEvalState *es,
+    KosSegment **caller_slot,
+    size_t window,
+    PyObject *callable,
+    PyObject *const *argv,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    unsigned flags);
+
+
 KosOpResult KosEvalState_Call(
     KosEvalState *es,
     PyObject *callable,
@@ -520,7 +526,28 @@ KosOpResult KosEvalState_Call(
     PyObject *kwnames,
     int tail_call) {
 
-  if (! KosCallable_Check(callable)) {
+  KosCallSlots *slots;
+
+  /* Exact simple-arity KosFunction: the shared call core, whose
+     parked-frame reuse the legacy install path lacks. */
+  if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
+      && ! tail_call && ! kwnames
+      && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
+      && KosFunction_BIND_SELF_STATE(callable) == 2) {
+    KosSegment *dummy = NULL;
+    KosOpResult r = kos_call_invoke_body(es, &dummy, 0, callable, args,
+                                         nargs, kwnames, 0);
+    if (r.kind != KOS_RES_NORMAL)
+      return r;
+    if (KosEvalState_PLAN(es))
+      return EVAL_REPROLOGUE();
+    if (KosEvalState_FRAME(es)
+        && KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)))
+      return EVAL_REPROLOGUE();
+    return EVAL_NORMAL();
+  }
+
+  if (! KosCallable_CheckSlots(callable, &slots)) {
     if (KosInstanceCall_Check(callable)) {
       /* Instance with a KosCallable __call__: dispatch the unbound __call__
          with self injected as the first positional -- no bound-method,
@@ -559,11 +586,11 @@ KosOpResult KosEvalState_Call(
     return deliver_py_call_result(es, result, tail_call, tail_defer_return);
   }
 
-  PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(es, callable, typ, tail_call) < 0)
+  if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();
 
-  return KosCallable_Call(es, callable, args, nargs, kwnames, tail_call);
+  return KosCallable_CallSlots(es, slots, callable, args, nargs, kwnames,
+                               tail_call);
 }
 
 
@@ -656,7 +683,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
   if (unlikely(flags & KOS_CALL_TAIL)) {
     KosDynFrame *frame = KosEvalState_FRAME(es);
 
-    if (Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType)
+    if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
         && frame
         && caller_slot == &KosDynFrame_STACK(frame)) {
       KosCode *code = (KosCode *) KosFunction_CODE(callable);
@@ -687,7 +714,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
             && ! (flags & KOS_CALL_ARGV_PREPENDED)
             && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
             && KosFunction_BIND_SELF_STATE(callable) == 2
-            && ! KosDynFrame_NATIVE_HANDLER(frame)
+            && ! KosDynFrame_NATIVE_PROG(frame)
             && kos_tail_ns_reusable(KosDynFrame_NS(frame))) {
           PyObject *ns = KosDynFrame_NS(frame);
 
@@ -759,16 +786,53 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
   }
 
   /* Class: exact KosFunction -- the dominant call target. */
-  if (likely(Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType))) {
+  if (likely(Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType))) {
     KosCode *code = (KosCode *) KosFunction_CODE(callable);
     PyObject *frame_ns;
+
+    /* A generator function call NEVER begins evaluating its code: it
+       binds the arguments and completes immediately with the new
+       AsyncGenerator as the call's value.  This gate stands ahead of
+       every install arm below, so none of them can see yielding code
+       no matter how the call classifies.  The agen lands on the
+       caller's block, so the window drops first; NewFromCodeAndNs
+       steals frame_ns. */
+    if (unlikely(code && KosCode_YIELDS(code))) {
+      if (! kwnames
+          && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
+          && KosFunction_BIND_SELF_STATE(callable) == 2) {
+        frame_ns = KosFunction_SimpleCallNamespaceFromVector(
+            callable, argv, nargs);
+      } else {
+        frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+            callable, argv, nargs, kwnames);
+      }
+      if (unlikely(! frame_ns)) {
+        if (window)
+          kos_stack_drop_noerr_fast(caller_slot, window);
+        if (flags & KOS_CALL_CALLABLE_OWNED)
+          Py_DECREF(callable);
+        return EVAL_RAISE();
+      }
+      {
+        PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
+        if (window)
+          kos_stack_drop_noerr_fast(caller_slot, window);
+        if (flags & KOS_CALL_CALLABLE_OWNED)
+          Py_DECREF(callable);
+        if (unlikely(! agen))
+          return EVAL_RAISE();
+        return KosEvalState_StackPUSH(es, agen) < 0
+            ? EVAL_RAISE() : EVAL_NORMAL();
+      }
+    }
 
     if (likely(! kwnames
                && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
       /* Simple call: exact arity against plain positional formals on
-         non-yielding code (classified at construction).  Binds by slot
-         index; the general formals machine is bypassed, and the
-         generator branch below is unreachable by classification.  Any
+         non-yielding code (classified at construction, and the
+         generator gate above stands regardless).  Binds by slot
+         index; the general formals machine is bypassed.  Any
          mismatch falls through to the general path, which owns the
          arity error messages.
 
@@ -838,6 +902,50 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
         }
       }
 
+      /* Plain vector (no stack window), no self-bind: the parked
+         frame binds directly from argv -- references taken, slots
+         filled, ready-push. A miss installs and tags the frame so its
+         release parks it. */
+      if (likely(! (flags & KOS_CALL_ARGV_WINDOW)
+                 && KosFunction_BIND_SELF_STATE(callable) == 2)) {
+        KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
+
+        if (likely(cached)) {
+          for (Py_ssize_t i = 0; i < nargs; i++)
+            Py_INCREF(argv[i]);
+          (void) KosFormals_SimpleStealApply(
+              KosDynFrame_NS(cached), argv, nargs);
+          KosFunction_CACHED_FRAME(callable) = NULL;
+          kos_dyn_push_ready_frame(es, cached);
+          if (! (flags & KOS_CALL_CALLABLE_OWNED))
+            Py_INCREF(callable);
+          KosDynFrame_FN(cached) = callable;
+          KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+          return EVAL_NORMAL();
+        }
+
+        frame_ns = KosFunction_SimpleCallNamespaceFromVector(
+            callable, argv, nargs);
+        if (unlikely(! frame_ns)) {
+          if (flags & KOS_CALL_CALLABLE_OWNED)
+            Py_DECREF(callable);
+          return EVAL_RAISE();
+        }
+        KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
+        {
+          KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
+          if (unlikely(! frame)) {
+            if (flags & KOS_CALL_CALLABLE_OWNED)
+              Py_DECREF(callable);
+            return EVAL_RAISE();
+          }
+          if (! (flags & KOS_CALL_CALLABLE_OWNED))
+            Py_INCREF(callable);
+          KosDynFrame_FN(frame) = callable;
+          return EVAL_NORMAL();
+        }
+      }
+
       frame_ns = KosFunction_SimpleCallNamespaceFromVector(
           callable, argv, nargs);
       if (unlikely(! frame_ns)) {
@@ -851,6 +959,8 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
       goto fn_frame_install;
     }
 
+    /* General path: the generator gate above already peeled yielding
+       code off, so this always installs a frame. */
     frame_ns = KosFunction_PrepareCallNamespaceFromVector(
         callable, argv, nargs, kwnames);
 
@@ -860,20 +970,6 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_body(
       if (flags & KOS_CALL_CALLABLE_OWNED)
         Py_DECREF(callable);
       return EVAL_RAISE();
-    }
-
-    if (unlikely(code && KosCode_YIELDS(code))) {
-      /* Generator: no frame; the agen lands on the caller's block, so
-         the window drops first.  NewFromCodeAndNs steals frame_ns. */
-      PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
-      if (window)
-        kos_stack_drop_noerr_fast(caller_slot, window);
-      if (flags & KOS_CALL_CALLABLE_OWNED)
-        Py_DECREF(callable);
-      if (unlikely(! agen))
-        return EVAL_RAISE();
-      return KosEvalState_StackPUSH(es, agen) < 0
-          ? EVAL_RAISE() : EVAL_NORMAL();
     }
 
 fn_frame_install:
@@ -1093,8 +1189,12 @@ static inline KosOpResult kos_call_invoke(
   if (likely((flags & KOS_CALL_ARGV_WINDOW))
       && ! (flags & KOS_CALL_TAIL)
       && ! kwnames
-      && Py_TYPE(callable) == KOS_CALLABLE_PYTYPE(KosFunctionType)
+      && Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
       && nargs + 2 == KosFunction_SIMPLE_ARITY1(callable)
+      /* a generator function never takes a frame-install arm; its
+         call constructs the AsyncGenerator through the generator gate
+         in kos_call_invoke_body instead */
+      && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable))
       && KosFunction_BIND_SELF_STATE(callable) == 2)
     return kos_call_invoke_self_steal(es, caller_slot, window, callable,
                                       self_arg, nargs, flags);
@@ -1137,7 +1237,9 @@ KosOpResult KosEvalState_CallArgs(
     PyObject *kwds_dict,
     int tail_call) {
 
-  if (! KosCallable_Check(callable)) {
+  KosCallSlots *slots;
+
+  if (! KosCallable_CheckSlots(callable, &slots)) {
     if (KosInstanceCall_Check(callable)) {
       PyObject *call_fn = kos_instance_call_target(callable);
       if (call_fn) {
@@ -1186,11 +1288,11 @@ KosOpResult KosEvalState_CallArgs(
     return deliver_py_call_result(es, result, tail_call, tail_defer_return);
   }
 
-  PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(es, callable, typ, tail_call) < 0)
+  if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();
 
-  return KosCallable_CallArgs(es, callable, args_tuple, kwds_dict, tail_call);
+  return KosCallable_CallArgsSlots(es, slots, callable, args_tuple,
+                                   kwds_dict, tail_call);
 }
 
 
@@ -1199,7 +1301,9 @@ KosOpResult KosEvalState_CallNoArgs(
     PyObject *callable,
     int tail_call) {
 
-  if (! KosCallable_Check(callable)) {
+  KosCallSlots *slots;
+
+  if (! KosCallable_CheckSlots(callable, &slots)) {
     if (KosInstanceCall_Check(callable)) {
       PyObject *call_fn = kos_instance_call_target(callable);
       if (call_fn) {
@@ -1216,11 +1320,11 @@ KosOpResult KosEvalState_CallNoArgs(
     return deliver_py_call_result(es, result, tail_call, tail_defer_return);
   }
 
-  PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(es, callable, typ, tail_call) < 0)
+  if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();
 
-  return KosCallable_CallNoArgs(es, callable, tail_call);
+  return KosCallable_CallArgsSlots(es, slots, callable, NULL, NULL,
+                                   tail_call);
 }
 
 
@@ -1238,9 +1342,9 @@ KosOpResult KosEvalState_CallNoArgs(
    :param iterable: borrowed
    :return: new iterator reference, or NULL with PyErr set
 */
-static PyObject *kos_iter_acquire(PyObject *iterable) {
+PyObject *kos_iter_acquire(PyObject *iterable) {
 
-  if (KosPyAsyncGen_Check(iterable)) {
+  if (KosIter_Check(iterable)) {
     Py_INCREF(iterable);
     return iterable;
   }
@@ -1250,6 +1354,77 @@ static PyObject *kos_iter_acquire(PyObject *iterable) {
     return Py_TYPE(iterable)->tp_as_async->am_aiter(iterable);
 
   return PyObject_GetIter(iterable);
+}
+
+
+/**
+   Close an acquired iterator, best-effort and exception-fenced: a
+   provider through its suite's ki_close, a sync iterator through
+   close(), an async iterator through aclose() with its awaitable
+   demand-driven -- an immediate completion honors the cleanup, a
+   genuine suspension takes the cannot-honor fallback of closing the
+   in-flight iterator. Any pending exception is preserved.
+*/
+void kos_iter_close(PyObject *iter) {
+
+  PyObject *ftyp, *fval, *ftb;
+
+  if (! iter)
+    return;
+
+  PyErr_Fetch(&ftyp, &fval, &ftb);
+
+  {
+    KosIterSlots *islots;
+
+    if (KosIter_CheckSlots(iter, &islots)) {
+      (void) islots->ki_close(iter);
+      PyErr_Clear();
+
+    } else if (Py_TYPE(iter)->tp_iternext) {
+      PyObject *r = PyObject_CallMethod(iter, "close", NULL);
+      Py_XDECREF(r);
+      PyErr_Clear();
+
+    } else {
+      PyObject *aw = PyObject_CallMethod(iter, "aclose", NULL);
+      if (aw) {
+        PyObject *it = PyObject_GetAwaitable(aw);
+        Py_DECREF(aw);
+        if (it) {
+          PyObject *step = PyObject_CallMethod(it, "send", "O", Py_None);
+          if (step) {
+            /* Suspend attempt during close; cannot honor further --
+               close the iterator so its GeneratorExit cleanup runs. */
+            Py_DECREF(step);
+            PyObject *r = PyObject_CallMethod(it, "close", NULL);
+            Py_XDECREF(r);
+          }
+          Py_DECREF(it);
+        }
+      }
+      PyErr_Clear();
+    }
+  }
+
+  PyErr_Restore(ftyp, fval, ftb);
+}
+
+
+/**
+   Classify a produced result under ambient async: a non-awaitable, a
+   Defer, or a future/task handle is a completed value; anything else
+   awaitable must be awaited before use.
+*/
+int KosEval_ResultIsValue(PyObject *result) {
+
+  PyTypeObject *typ = Py_TYPE(result);
+
+  if (! typ->tp_as_async || ! typ->tp_as_async->am_await)
+    return 1;
+  if (KosDefer_Check(result))
+    return 1;
+  return KosEval_IsFuture(result);
 }
 
 /**

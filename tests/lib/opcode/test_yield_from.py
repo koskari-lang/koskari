@@ -765,4 +765,81 @@ class TestYieldFrom(CevalTest):
         self.assertEqual(result, 9)
 
 
+
+class TestYieldFromKosIterProvider(CevalTest):
+    """
+    YIELD_FROM over a KosIter provider that steps in place instead of
+    grafting frames (KosMap): elements re-emit as the delegating
+    generator's own yields, true suspensions park PC-stable, and
+    exhaustion completes the delegation
+    """
+
+    def make_yf_agen(self, delegate):
+        code_obj, ns = build_expr([
+            ["CONST", delegate],
+            ["YIELD_FROM", 0],
+            ["RETURN", 0],
+        ])
+        agen = make_callable(code_obj, ns)()
+        self.assertIsInstance(agen, AsyncGenerator)
+        return agen
+
+    async def test_yield_from_map_sync_elements(self):
+        """
+        map over a sync source with a sync function delegates its
+        elements through yield-from
+        """
+
+        from koskari.lib import KosMap
+
+        agen = self.make_yf_agen(KosMap(abs, [-1, -2, -3]))
+        self.assertEqual(await anext(agen), 1)
+        self.assertEqual(await anext(agen), 2)
+        self.assertEqual(await anext(agen), 3)
+        with self.assertRaises(StopAsyncIteration):
+            await anext(agen)
+
+    async def test_yield_from_map_parked_step(self):
+        """
+        map over an async function suspends the yield-from step on the
+        function's awaitable and resumes with its result
+        """
+
+        import asyncio
+        from koskari.lib import KosMap
+
+        async def ainc(x):
+            await asyncio.sleep(0)
+            return x + 1
+
+        agen = self.make_yf_agen(KosMap(ainc, [10, 20]))
+        self.assertEqual(await anext(agen), 11)
+        self.assertEqual(await anext(agen), 21)
+        with self.assertRaises(StopAsyncIteration):
+            await anext(agen)
+
+    async def test_yield_from_map_exhausted_delegate(self):
+        """
+        an exhausted map completes the delegation immediately
+        """
+
+        from koskari.lib import KosMap
+
+        exhausted = KosMap(abs, [])
+        agen = self.make_yf_agen(exhausted)
+        with self.assertRaises(StopAsyncIteration):
+            await anext(agen)
+
+    async def test_yield_from_map_demand_drive(self):
+        """
+        the demand path iterates a yield-from over a map with a sync
+        function; elements arrive synchronously
+        """
+
+        from koskari.lib import KosMap
+
+        agen = self.make_yf_agen(KosMap(str.upper, ["a", "b"]))
+        self.assertEqual(list(iter(agen)), ["A", "B"])
+
+
 # The end.

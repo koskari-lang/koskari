@@ -20,6 +20,8 @@
 
 #include <Python.h>
 
+#include "evaluated.h"
+
 
 /* === KosPyAsyncGen === */
 
@@ -27,10 +29,13 @@
 /**
    KosPyAsyncGen wraps a KosContext for Python's async generator protocol.
 
-   Similar to KosCoroutine but yields values via __anext__.
+   Similar to KosCoroutine but yields values via __anext__. A KosIter
+   provider: its kos_iter suite steps by splicing the generator's frames
+   onto the consumer context (KOS_ITER_INSTALLED), with delivery through
+   the site's iteration node.
 */
 
-extern PyTypeObject KosPyAsyncGenType;
+extern KosEvaluatedTypeObject KosPyAsyncGenType;
 
 
 struct KosPyAsyncGen {
@@ -45,10 +50,11 @@ struct KosPyAsyncGen {
 
 
 #define KosPyAsyncGen_Check(obj)                                        \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyAsyncGenType))
+  ((obj) && PyType_IsSubtype((obj)->ob_type,                            \
+                             KOS_EVALUATED_PYTYPE(KosPyAsyncGenType)))
 
-#define KosPyAsyncGen_CheckExact(obj)                   \
-  ((obj) && ((obj)->ob_type == &KosPyAsyncGenType))
+#define KosPyAsyncGen_CheckExact(obj)                                   \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosPyAsyncGenType)))
 
 
 PyObject *KosPyAsyncGen_New(KosContext *ctx);
@@ -71,44 +77,6 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen);
    :return: new KosPyAsyncGen or NULL on error
 */
 PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns);
-
-
-/* === KosPyAsyncGenASend === */
-
-
-/**
-   KosPyAsyncGenASend is the awaitable returned by __anext__ on an async gen.
-
-   Each __anext__ call creates one of these, which drives the generator
-   context until a yield or completion.
-*/
-
-extern PyTypeObject KosPyAsyncGenASendType;
-
-
-typedef struct {
-  PyObject_HEAD
-  KosPyAsyncGen *agen;
-  PyObject *send_value;   /* value to send into generator */
-  int is_throw;           /* if true, throw into generator */
-  int closing;            /* close-flavored drive: GeneratorExit with the
-                             aclose result mapping at terminal outcomes */
-  PyObject *throw_typ;    /* exception type (if is_throw) */
-  PyObject *throw_exc;    /* exception value (if is_throw) */
-  int awaiting;           /* mid-step await in flight: this asend owns the
-                             generator's in_progress mark and resumes by
-                             driving ctx->py_await_iter */
-} KosPyAsyncGenASend;
-
-
-#define KosPyAsyncGenASend_Check(obj)                                   \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyAsyncGenASendType))
-
-#define KosPyAsyncGenASend_CheckExact(obj)              \
-  ((obj) && ((obj)->ob_type == &KosPyAsyncGenASendType))
-
-
-PyObject *KosPyAsyncGenASend_New(KosPyAsyncGen *agen, PyObject *send_value);
 
 
 /* === Unit lifecycle === */

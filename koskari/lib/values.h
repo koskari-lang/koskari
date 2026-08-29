@@ -43,7 +43,7 @@ typedef struct KosValues {
 /* === type objects === */
 
 
-extern KosCallableTypeObject KosValuesType;
+extern KosEvaluatedTypeObject KosValuesType;
 
 
 /* === type check macros === */
@@ -51,10 +51,10 @@ extern KosCallableTypeObject KosValuesType;
 
 #define KosValues_Check(obj)                                            \
   ((obj) && PyType_IsSubtype((obj)->ob_type,                            \
-                             KOS_CALLABLE_PYTYPE(KosValuesType)))
+                             KOS_EVALUATED_PYTYPE(KosValuesType)))
 
 #define KosValues_CheckExact(obj)                                       \
-  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosValuesType)))
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosValuesType)))
 
 
 /* === public API === */

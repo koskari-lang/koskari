@@ -19,7 +19,8 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   KosDynForeach_ITER(node) = NULL;
   KosDynForeach_EXHAUSTED(node) = 0;
   KosDynForeach_ITER_NEXT_ELSE_PC(node) = 0;
-  KosDynForeach_ITER_STEP_PHASE(node) = KOS_FOREACH_ITER_STEP_IDLE;
+  KosDynForeach_REQ(node)->iter = NULL;
+  KosDynForeach_REQ(node)->mode = KOS_IREQ_IDLE;
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
 }
@@ -44,7 +45,8 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
   Py_XINCREF(KosDynForeach_ITER(clone));
   KosDynForeach_EXHAUSTED(clone) = KosDynForeach_EXHAUSTED(node);
   KosDynForeach_ITER_NEXT_ELSE_PC(clone) = KosDynForeach_ITER_NEXT_ELSE_PC(node);
-  KosDynForeach_ITER_STEP_PHASE(clone) = KosDynForeach_ITER_STEP_PHASE(node);
+  *KosDynForeach_REQ(clone) = *KosDynForeach_REQ(node);
+  Py_XINCREF(KosDynForeach_REQ(clone)->iter);
   return clone;
 }
 
@@ -55,6 +57,7 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
 void kos_dynforeach_free(KosDynForeach *node) {
   Py_XDECREF(KosDynForeach_RESULT(node));
   Py_XDECREF(KosDynForeach_ITER(node));
+  Py_XDECREF(KosDynForeach_REQ(node)->iter);
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 
@@ -82,8 +85,8 @@ static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
   if (snapshot_set_uint(data, "iter_next_else_pc",
       KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) node)) < 0)
     return -1;
-  if (snapshot_set_uint(data, "iter_step_phase",
-      KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) node)) < 0)
+  if (snapshot_set_uint(data, "req_mode",
+      KosDynForeach_REQ(node)->mode) < 0)
     return -1;
   return 0;
 }
@@ -135,10 +138,13 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
   }
   Py_DECREF(val);
 
-  kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
-  iter = KosDynForeach_ITER(fe);
-  if (KosPyAsyncGen_Check(iter))
-    ((KosPyAsyncGen *) iter)->in_progress = 0;
+  iter = KosDynForeach_REQ(fe)->iter;
+  {
+    KosIterSlots *islots;
+    if (iter && KosIter_CheckSlots(iter, &islots))
+      islots->ki_finish(iter, 0);
+  }
+  kos_dyn_iter_request_set_mode((KosDynNode *) fe, KOS_IREQ_IDLE);
   return 0;
 }
 
@@ -154,32 +160,22 @@ int kos_dyn_foreach_deliver_exhausted(
     KosDynForeach *fe,
     PyObject *val) {
 
-  PyObject *iter = KosDynForeach_ITER(fe);
-  if (KosPyAsyncGen_Check(iter)) {
-    ((KosPyAsyncGen *) iter)->closed = 1;
-    ((KosPyAsyncGen *) iter)->in_progress = 0;
+  PyObject *iter = KosDynForeach_REQ(fe)->iter;
+  {
+    KosIterSlots *islots;
+    if (iter && KosIter_CheckSlots(iter, &islots))
+      /* a recyclable durable provider re-derives exhaustion from its
+         source and stays open -- a mapped function's StopIteration is
+         a truncation that builtins.map resumes from */
+      islots->ki_finish(iter, islots->ki_pyctx_recyclable ? 0 : 1);
   }
 
   KosDynForeach_EXHAUSTED(fe) = 1;
   KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
-  kos_dyn_foreach_set_iter_step_phase(fe, KOS_FOREACH_ITER_STEP_IDLE);
+  kos_dyn_iter_request_set_mode((KosDynNode *) fe, KOS_IREQ_IDLE);
 
   Py_XDECREF(val);
   return 0;
-}
-
-
-int kos_dyn_foreach_deliver_return_kos_agen(
-    KosEvalState *es,
-    KosDynForeach *fe,
-    PyObject *val) {
-
-  if (kos_dyn_teardown_gen_exhausted(es) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
-
-  return kos_dyn_foreach_deliver_exhausted(es, fe, val);
 }
 
 
@@ -192,5 +188,6 @@ int kos_dyn_foreach_deliver_return_kos_agen(
 static int dynnode_traverse_foreach(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));
   Py_VISIT(KosDynForeach_ITER((KosDynForeach *) node));
+  Py_VISIT(KosDynForeach_REQ(node)->iter);
   return 0;
 }

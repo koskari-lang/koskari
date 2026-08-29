@@ -3,7 +3,7 @@
 
 
 /**
-   Allocate GEN boundary node; owner borrowed, refcount for sharing. Callers:
+   Allocate GEN iteration node; owner borrowed, refcount for sharing. Callers:
    generator object setup.
 */
 KosDynGen *kos_dyngen_new(PyObject *owner) {
@@ -13,7 +13,7 @@ KosDynGen *kos_dyngen_new(PyObject *owner) {
 
   kos_dynnode_init((KosDynNode *) gen, KOS_DYN_GEN, NULL,
                    KOS_DYN_CAP_INTERCEPTS_RAISE);
-  KosDynNode_FLAGS(gen) = KOS_DYNF_BOUNDARY;
+  KosDynNode_FLAGS(gen) = KOS_DYNF_WALK_LIMIT;
   KosDynGen_OWNER(gen) = owner;  /* borrowed */
   KosDynGen_ACTIVE(gen) = NULL;
   KosDynGen_REFCOUNT(gen) = 1;
@@ -143,7 +143,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
 
   /* The demand bit is drive-state: forcibly assigned to the generator's
      frame at every entry, inherited from the frame below the splice.
-     Boundary installs have no frame below (invoker 0), so an async
+     Adapter-driven installs have no frame below (invoker 0), so an async
      drive self-cleans any bit a prior demand drive left behind; the
      demand boundary ORs its forced bit in after this install. */
   invoker_frame = KosEvalState_FRAME(es);
@@ -283,9 +283,10 @@ int kos_dyn_gen_install_bootstrap(
     }
   }
 
-  if (KosEvalState_StackPushRef(es, Py_None) < 0)
-    return -1;
-
+  /* No resume placeholder: a bootstrap install is the generator's first
+     drive, entering fresh code rather than reviving a suspended yield.
+     Only the frozen install (kos_dyn_gen_install) pushes the Py_None the
+     revive machinery pops. */
   return 0;
 }
 

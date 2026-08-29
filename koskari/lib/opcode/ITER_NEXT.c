@@ -15,48 +15,11 @@
 
 
 /**
-  ITER_NEXT over a flattened Koskari async gen: arm the FOREACH step
-  phase and attach the gen frame.  Out of line — this runs once per
-  flattened agen step, never on the sync iteration fast path.
-*/
-static KOS_NOINLINE KosOpResult iter_next_step_kos_agen(
-    KosEvalState *es,
-    KosOp *insn,
-    KosDynNode *region,
-    KosPyAsyncGen *agen) {
-
-  if (unlikely(agen->in_progress)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "async generator already being iterated");
-    return EVAL_RAISE();
-  }
-
-  if (agen->closed || ! agen->ctx) {
-    KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
-    return EVAL_NORMAL();
-  }
-
-  agen->in_progress = 1;
-  KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) = KosOp_ARG(insn);
-  kos_dyn_foreach_set_iter_step_phase(
-      (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN);
-
-  if (op_attach_koskari_agen_frame_for_iter_next(es, agen, region) < 0) {
-    agen->in_progress = 0;
-    kos_dyn_foreach_set_iter_step_phase(
-        (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_IDLE);
-    return EVAL_RAISE();
-  }
-
-  return EVAL_NORMAL();
-}
-
-
-/**
-  ITER_NEXT: region-based loop step; arg = else PC. Same async-gen vs
-  Python async vs sync iterator dispatch as NEXT. Branch to else_pc on
-  exhaustion. Must be inside PUSH_FOREACH block. Auto-await.
+  ITER_NEXT: region-based loop step; arg = else PC. One iteration
+  request against the FOREACH node's armed record -- provider, python
+  async, and sync iterators all step through KosIterRequest_Next.
+  Branch to else_pc on exhaustion. Must be inside PUSH_FOREACH block.
+  Auto-await.
 */
 KOS_OP_HANDLER(ITER_NEXT) {
   KosDynNode *region = kos_dyn_find_loop(es);
@@ -67,43 +30,43 @@ KOS_OP_HANDLER(ITER_NEXT) {
     return EVAL_RAISE();
   }
 
-  PyObject *iter = KosDynForeach_ITER((KosDynForeach *) region);
-  if (unlikely(KosPyAsyncGen_Check(iter)))
-    return iter_next_step_kos_agen(es, insn, region, (KosPyAsyncGen *) iter);
+  /* The else pc is armed before the step so a delivery or a raise-walk
+     exhaustion conversion lands on the right resume point. */
+  KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) =
+      KosOp_ARG(insn);
 
-  PyObject *value = NULL;
-  PyObject *_await = NULL;
-  KosGetNextResult get_res = op_get_next_from_iter(es, &_await, iter, &value);
-  switch (get_res) {
-    case GET_NEXT_VALUE:
-      if (unlikely(KosEvalState_StackPushRef(es, value) < 0)) {
-        Py_DECREF(value);
-        return EVAL_RAISE();
+  {
+    PyObject *out = NULL;
+
+    switch (KosIterRequest_Next(es, region, NULL, &out)) {
+      case KOS_IREQ_DELIVERED:
+        if (unlikely(KosEvalState_StackPUSH(es, out) < 0))
+          return EVAL_RAISE();
+        return EVAL_NORMAL();
+
+      case KOS_IREQ_EXHAUSTED:
+        Py_XDECREF(out);
+        KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
+        KosEvalState_SET_PC(es, KosOp_ARG(insn));
+        return EVAL_NORMAL();
+
+      case KOS_IREQ_CONTINUES: {
+        /* A frame with bytecode (a generator attached) continues
+           dispatch directly; only a code-less native frame takes the
+           entry sequence, which exists for it. */
+        KosDynFrame *nf = KosEvalState_FRAME(es);
+        if (nf && KosDynFrame_CODE(nf))
+          return EVAL_NORMAL();
+        return EVAL_REPROLOGUE();
       }
-      Py_DECREF(value);
-      return EVAL_NORMAL();
 
-    case GET_NEXT_EXHAUSTED:
-      KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-      KosEvalState_SET_PC(es, KosOp_ARG(insn));
-      return EVAL_NORMAL();
+      case KOS_IREQ_EXIT:
+        return EVAL_AWAIT(out);
 
-    case GET_NEXT_SUSPEND:
-      /* The step is parked on its await: arm the else pc and the
-         in-flight phase so the awaited value revives through the
-         boundary and StopAsyncIteration from the parked step converts
-         to exhaustion (branch to else) at the raise walk. */
-      KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) =
-          KosOp_ARG(insn);
-      kos_dyn_foreach_set_iter_step_phase(
-          (KosDynForeach *) region, KOS_FOREACH_ITER_STEP_AWAITING_PY);
-      return EVAL_AWAIT(_await);
-
-    case GET_NEXT_ERROR:
-      return EVAL_RAISE();
-
-    default:
-      return EVAL_RAISE();
+      case KOS_IREQ_ERROR:
+      default:
+        return EVAL_RAISE();
+    }
   }
 }
 

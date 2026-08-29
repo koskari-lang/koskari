@@ -220,6 +220,17 @@ void koskari_Err_Format(PyObject *exc_type, const char *format, ...);
 void koskari_Err_SetObject(PyObject *exc_type, PyObject *value);
 
 
+/**
+   Replaces _PyErr_FormatFromCause, moved to Python's internal-only header
+   in 3.13+ and no longer visible to extensions.  Fetches the current
+   exception, formats a new one, chains the old as __cause__/__context__,
+   and restores the new one as current.  Used via macro in
+   compat_313/314.h.
+*/
+PyObject *koskari_Err_FormatFromCause(PyObject *exception,
+                                       const char *format, ...);
+
+
 #endif
 
 

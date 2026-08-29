@@ -652,7 +652,7 @@ class TestDemandDescriptor(unittest.TestCase):
 
         fn = self._self_add_one()
         wrapped = demand(fn)
-        self.assertEqual(repr(wrapped), "<Demand 'expr'>")
+        self.assertEqual(repr(wrapped), "<koskari demand 'expr'>")
 
 
     def test_demand_descr_get_class_returns_self(self):

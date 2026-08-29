@@ -63,7 +63,7 @@
    KOS_DYN_CC_RAISE  - Sentinel node holding a KoskariContinuationApply exception
                        for the foreign-token transfer path; its unwind re-raises the
                        stored exception so the eval loop exits with KOS_RES_RAISE
-   KOS_DYN_GEN       - Generator boundary; intercepts handle(YIELD/RETURN/RAISE),
+   KOS_DYN_GEN       - Generator node; intercepts handle(YIELD/RETURN/RAISE),
                        denies handle(SHIFT)
 */
 
@@ -86,7 +86,7 @@ typedef enum KosDynKind {
   KOS_DYN_CC_RAISE,
   KOS_DYN_GEN,
   /**
-   KOS_DYN_NEXT - Iterator boundary for standalone NEXT opcode over Koskari
+   KOS_DYN_NEXT - Iteration node for standalone NEXT opcode over Koskari
    async gen (flatten). Pushed at runtime from NEXT.c; self-pops after yield
    or return is delivered.
   */
@@ -106,7 +106,7 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
 typedef enum KosDynFlags {
   KOS_DYNF_NONE        = 0x00,
   KOS_DYNF_CLONED      = 0x01,  /* node was cloned for continuation capture */
-  KOS_DYNF_BOUNDARY    = 0x02,  /* node marks a non-resumable boundary */
+  KOS_DYNF_WALK_LIMIT    = 0x02,  /* walks must not pass this node */
   KOS_DYNF_GEN_KEEPALIVE = 0x04,  /* GEN: holds a counted ref on its KPAG owner while active */
   KOS_DYNF_INVOCATION  = 0x08,  /* PROMPT: instance created by a k-invocation
                                    (graft instantiation or in-place invoke);
@@ -134,8 +134,8 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_AWAITS_THUNK_RESULT      (1u << 5)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 #define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
-/** Iterator yield/return boundary (KOS_DYN_NEXT, extended FOREACH stepping) */
-#define KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY     (1u << 9)
+/** Iteration node (KOS_DYN_NEXT, extended FOREACH stepping) */
+#define KOS_DYN_CAP_ITER_RECEIVER     (1u << 9)
 /** Node participates in raise-walk dispatch (handle/restitch); the fast
    first check before kos_dyn_handle. Distinct from HANDLES_EXCEPTIONS,
    which marks failed-pop recovery (kos_dyn_exception_unwind). */
@@ -167,12 +167,50 @@ typedef enum KosRegionStyle {
 } KosRegionStyle;
 
 
-/** FOREACH: ITER_NEXT in-flight step (phase gating for boundary events):
-    a flattened Koskari async-gen step, or a suspended python async
-    iterator step being driven through the pending context await */
-#define KOS_FOREACH_ITER_STEP_IDLE               0u
-#define KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN  1u
-#define KOS_FOREACH_ITER_STEP_AWAITING_PY        2u
+/* === KosIterRequest: the iteration request sidecar === */
+
+
+/**
+   Wake events a requestor can receive: request completions only. The
+   sidecar consumes machinery-internal traffic (awaited values,
+   provider parks, mediated source yields) itself.
+*/
+typedef enum {
+  KOS_IWAKE_VALUE = 0,  /* the requested element arrived */
+  KOS_IWAKE_END,        /* the source is exhausted (payload or NULL) */
+  KOS_IWAKE_EXCEPTION,  /* the request failed; PyErr set */
+} KosIterWakeEvent;
+
+
+/** In-flight step modes; private to the sidecar and the iteration-node
+    delivery machinery -- sites and providers never read them */
+#define KOS_IREQ_IDLE         0u
+#define KOS_IREQ_INSTALLED    1u  /* provider's own frames are in-eval */
+#define KOS_IREQ_AWAITING_PY  2u  /* parked python async step; the
+                                     awaited completion is the element */
+#define KOS_IREQ_GRAFT_VALUE  3u  /* value graft: the next frame return
+                                     below is the element */
+
+
+/**
+   The iteration request record: the single home of an in-flight
+   step's state. Embedded in the FOREACH, NEXT, and YIELD_FROM node
+   arms; the delivery machinery reads the stepped iterator and the
+   mode from here and nowhere else.
+*/
+typedef struct KosIterRequest {
+  PyObject *iter;       /* stepped iterator; strong ref while armed */
+  uint8_t mode;         /* KOS_IREQ_* */
+} KosIterRequest;
+
+
+typedef enum {
+  KOS_IREQ_DELIVERED = 0, /* *fast_out: the element (new ref) */
+  KOS_IREQ_EXHAUSTED,     /* *fast_out: end payload (new ref) or NULL */
+  KOS_IREQ_CONTINUES,     /* work installed in-eval; wake comes later */
+  KOS_IREQ_EXIT,          /* suspension: propagate the eval result */
+  KOS_IREQ_ERROR,         /* PyErr set */
+} KosIterRequestStatus;
 
 
 /**
@@ -241,9 +279,14 @@ struct KosDynNode {
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
       uint32_t frame_flags;
-      /* Native frame evaluator: KosNativeHandlerFn (see eval.h); void * to
-         avoid the include-order constraint of naming KosOpResult here. */
-      void *native_handler;
+      /* Native program descriptor (const KosNativeProgram *, see
+         eval.h); void * to avoid the include-order constraint of
+         naming KosOpResult here. NULL for ordinary bytecode frames. */
+      void *native_prog;
+      /* The native program's own state (borrowed; meaningful only to
+         native_handler, which guarantees its lifetime spans the
+         frame's). Never read outside the handler's own dispatch. */
+      void *native_state;
       /* Owning KosFunction (strong) when this frame participates in the
          per-function frame cache; NULL opts out (clones, placeholder,
          native-handler, and generator frames never set it).  Released --
@@ -308,16 +351,17 @@ struct KosDynNode {
       PyObject *iter;
       uint8_t exhausted;
       uint32_t iter_next_else_pc;
-      uint8_t iter_step_phase;  /* KOS_FOREACH_ITER_STEP_* */
+      KosIterRequest req;    /* in-flight ITER_NEXT step state */
     } foreach;
     struct {
       PyObject *delegate;
       uint8_t kind;
       uint8_t pending_action;
-      uint8_t phase;  /* KosYfPhase: DRIVING, EXPECT_SEND, EXPECT_AWAIT */
+      uint8_t phase;  /* KosYfPhase */
       PyObject *pending_arg;
       PyObject *pending_arg_type;  /* for KOS_YF_THROW: exception type */
       PyObject *inflight;
+      KosIterRequest req;    /* in-flight KOS_ITER delegate step state */
     } yield_from;
     struct {
       PyObject *bindings;  /* PyDict: key -> value (what we bind; keys from ParamRef) */
@@ -359,7 +403,7 @@ struct KosDynNode {
       uintptr_t refcount;  /* reference count; init 1; release decrements; free when 0 */
     } gen;
     struct {
-      PyObject *agen_obj;   /* KosPyAsyncGen, strong ref */
+      KosIterRequest req;    /* the stepped object and in-flight mode */
       PyObject *default_val; /* owned; 2-arg NEXT */
       int n;                 /* 1 or 2 */
     } next;
@@ -429,14 +473,14 @@ typedef enum KosWalkStatus {
 
 
 /**
-   RAISE unwind walk: from dyn_top toward the frame boundary, offer
+   RAISE unwind walk: from dyn_top toward the innermost frame, offer
    handle(RAISE) to each node then pop, delivering to the first TRY or
    FINALLY that consumes and crossing frame and generator boundaries as
    the exception propagates.
 
    This is the boundary to the eval loop, so it returns KosOpResult (not
    KosWalkStatus): EVAL_REPROLOGUE when a handler applied, EVAL_RAISE when
-   no handler remains (PyErr set, boundary raise prepared), EVAL_AWAIT when
+   no handler remains (PyErr set, surfacing raise prepared), EVAL_AWAIT when
    an async unwind started.
 
    Callers: process_raise (the unified RAISE ingress in eval.c).
@@ -984,12 +1028,37 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es);
 
 
 /**
+   Push a frame for a native program: no code, and the namespace slot
+   holds an owned fill of the live namespace -- a native frame
+   introduces no namespace of its own, so it carries the fill like any
+   other non-introducer node and the live register stays truthful over
+   the program's extent.
+
+   :return: new frame, or NULL on error
+*/
+KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es);
+
+
+/**
    Push a prepared frame -- code, namespace, and cleared stack already
    attached, node base normalized by KosFunction_TryParkFrame -- as
    DYN_TOP and FRAME_TOP.  The install mirrors kos_dyn_push_frame minus
    the allocation; cannot fail.
 */
 void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame);
+
+
+/**
+   Offer a detached native-program frame to a holder's one-frame cache:
+   strip it to an inert allocation -- program, state, stack contents,
+   and links all cleared, so the parked frame holds no references of
+   any kind -- and store it in *cache when the slot is empty. A holder
+   that parks frames this way cannot form a reference cycle through
+   its cache, and frees a parked frame with kos_dynframe_free.
+
+   :return: 1 when parked; 0 when the caller must free the frame
+*/
+int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache);
 
 
 void kos_dynframe_reset_for_tail(KosDynFrame *frame);
@@ -1000,7 +1069,7 @@ int kos_dyn_teardown_to_frame(KosEvalState *es, KosDynFrame *frame);
 
 
 /**
-   Create a generator boundary node.  The generator object owns the node;
+   Create a generator node node.  The generator object owns the node;
    the dynchain borrows it during execution.  Caller links the frame under
    it (frame->parent = gen) before passing the frame to KosContext_New.
 
@@ -1307,7 +1376,7 @@ KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t cont
 KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc);
 
 
-int kos_dyn_push_next_boundary(
+int kos_dyn_push_next_node(
     KosEvalState *es, PyObject *iter_obj, PyObject *default_val, int n);
 
 void kos_dyn_next_abort_after_failed_attach(KosEvalState *es);
@@ -1317,20 +1386,12 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *node);
 int kos_dyn_next_deliver_yield(
     KosEvalState *es, KosDynNext *next, PyObject *val);
 
-int kos_dyn_next_deliver_return_node(
-    KosEvalState *es,
-    KosDynNext *next,
-    PyObject *val);
-
 int kos_dyn_next_deliver_exhausted(
     KosEvalState *es,
     KosDynNext *next,
     PyObject *val);
 
 int kos_dyn_foreach_deliver_yield_kos_agen(
-    KosEvalState *es, KosDynForeach *fe, PyObject *val);
-
-int kos_dyn_foreach_deliver_return_kos_agen(
     KosEvalState *es, KosDynForeach *fe, PyObject *val);
 
 int kos_dyn_foreach_deliver_exhausted(
@@ -1340,97 +1401,92 @@ int kos_dyn_yield_from_deliver_inner_yield(
     KosEvalState *es, KosDynYieldFrom *yf,
     PyObject *inner_val);
 
-int kos_dyn_yield_from_deliver_inner_return(
-    KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
-
 int kos_dyn_yield_from_deliver_exhausted(
     KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
 
 KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 
 
-/* === Generic iterator-boundary dispatch (dyn_boundary.c) === */
+/* === Generic iteration-node dispatch (dyn_iter_node.c) === */
 
-
-/* Result codes for kos_dyn_iter_boundary_deliver_return: how the eval
-   loop should proceed after a delegate-return delivery. */
-#define KOS_ITER_BOUNDARY_DELIVERED  0   /* delivered; REPROLOGUE */
-#define KOS_ITER_BOUNDARY_ERROR    (-1)  /* hard failure; PyErr set */
-#define KOS_ITER_BOUNDARY_RAISE      1   /* PyErr set; route to raise ingress */
 
 /**
-   Locate the nearest receiving iterator boundary from active chain state.
+   Locate the nearest receiving iteration node from active chain state.
 
-   A node is a receiving boundary iff it carries
-   KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY -- the capability is the single
+   A node is a receiving iteration node iff it carries
+   KOS_DYN_CAP_ITER_RECEIVER -- the capability is the single
    routing key; no node-kind checks.  NEXT and flattened-delegate
    YIELD_FROM nodes carry it for their whole lifetime; FOREACH toggles it
-   with the ITER_NEXT step phase (kos_dyn_foreach_set_iter_step_phase).
+   with the request mode (kos_dyn_iter_request_set_mode).
    Future receiver kinds (e.g. a GEN-carried yield-from passthru field)
    join by carrying the capability.
 
-   dyn_top is preferred: after a yield freeze the boundary that was
+   dyn_top is preferred: after a yield freeze the node that was
    directly driving the generator sits at dyn_top.  Otherwise walk
    outward from the running frame and return the nearest receiver.
 
    :return: borrowed node, or NULL when no receiver is active
 */
-KosDynNode *kos_dyn_find_iter_boundary(KosEvalState *es);
+KosDynNode *kos_dyn_find_iter_node(KosEvalState *es);
 
 /**
-   Deliver a boundary YIELD value to a receiver located by
-   kos_dyn_find_iter_boundary.  val ownership transfers to the consumer.
+   Deliver a flattened generator's YIELD value to a receiver located by
+   kos_dyn_find_iter_node.  val ownership transfers to the consumer.
 
    :return: 0 on delivery (caller should REPROLOGUE); -1 on error
 */
-int kos_dyn_iter_boundary_deliver_yield(
+int kos_dyn_iter_node_deliver_yield(
     KosEvalState *es, KosDynNode *node, PyObject *val);
 
 /**
-   Deliver a delegate-return (exhaustion) to the receiving boundary that
-   sits directly above the returning GEN.  val consumed.
-
-   :return: KOS_ITER_BOUNDARY_DELIVERED, _ERROR, or _RAISE
-*/
-int kos_dyn_iter_boundary_deliver_return(
-    KosEvalState *es, KosDynNode *node, PyObject *val);
-
-/**
-   Deliver exhaustion to a receiving boundary whose flattened generator
+   Deliver exhaustion to a receiving iteration node whose flattened generator
    was already finished (raise-walk StopIteration conversion): the
    node-specific exhaustion tail without the GEN unwind. val consumed.
 
-   :return: 0 delivered; -1 with PyErr set when the boundary re-emits
+   :return: 0 delivered; -1 with PyErr set when the node re-emits
        (e.g. 1-arg NEXT); -1 without PyErr on internal failure
 */
-int kos_dyn_iter_boundary_deliver_exhausted(
+int kos_dyn_iter_node_deliver_exhausted(
     KosEvalState *es, KosDynNode *node, PyObject *val);
 
 /**
-   The exception type that ends this boundary's in-flight step:
+   The exception type that ends this node's in-flight step:
    StopIteration for a flattened Koskari agen step, StopAsyncIteration
    for a suspended python async iterator step.
 */
-PyObject *kos_dyn_iter_boundary_exhaustion_exc(KosDynNode *node);
+PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node);
+
 
 /**
-   True when the boundary's in-flight step is a suspended python async
+   True when the node's in-flight step is a parked KosIter provider
+   under the re-entry contract: the awaited value feeds back into the
+   provider's ki_step rather than delivering as the element.
+*/
+
+/**
+   True when the node's in-flight step is a value graft: the next
+   frame return below delivers as the step element.
+*/
+int kos_dyn_iter_node_value_mode(KosDynNode *node);
+
+
+/**
+   The iterator object a parked iteration node is stepping (borrowed): the
+   FOREACH iter or the NEXT node's object.
+*/
+PyObject *kos_dyn_iter_node_iter_obj(KosDynNode *node);
+
+/**
+   True when the node's in-flight step is a suspended python async
    iterator being driven through the pending context await.
 */
-int kos_dyn_iter_boundary_awaiting_py(KosDynNode *node);
+int kos_dyn_iter_node_awaiting_py(KosDynNode *node);
 
 /**
-   The Koskari async generator object a receiving boundary is driving.
-
-   :return: borrowed KosPyAsyncGen reference as PyObject*
-*/
-PyObject *kos_dyn_iter_boundary_agen(KosDynNode *node);
-
-/**
-   Clear a receiving boundary after its driven generator was torn down on
+   Clear a receiving iteration node after its driven generator was torn down on
    an error path: unlink NEXT / YIELD_FROM nodes, idle a FOREACH step.
 */
-void kos_dyn_iter_boundary_abort(KosEvalState *es, KosDynNode *node);
+void kos_dyn_iter_node_abort(KosEvalState *es, KosDynNode *node);
 
 
 /**
@@ -1679,7 +1735,7 @@ KosWalkStatus kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
    set handling_return) and return KOS_WALK_FINALLY_TAKING_RETURN; the
    caller reprologues at the finally.  When the walk's top is a DELIM
    carrying a live invoke bookmark (RETURN_FRAME + RETURN_PC), the return
-   has reached a reset boundary: the walk stops with the DELIM at dyn_top
+   has reached a delimiting reset: the walk stops with the DELIM at dyn_top
    and returns KOS_WALK_DELIM_TAKING_RETURN, leaving val unconsumed for the
    caller to route to the k-invocation site.
 
@@ -1821,14 +1877,14 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
 
 /**
    YIELD unwind walk: from dyn_top upward, offer handle(YIELD) to each node,
-   stopping at the first that CONSUMES (the generator boundary), whose GEN
+   stopping at the first that CONSUMES (the generator node), whose GEN
    node is then frozen and detached from the live chain.  A CONSUME by a
    non-GEN node completes the walk without freezing.
 
    Callers: eval.c eval_event_yield (post-opcode YIELD dispatch).
 
    :return: KOS_WALK_OK when a node consumed the yield (valid yield),
-     KOS_WALK_ERROR on error or when no generator boundary was found
+     KOS_WALK_ERROR on error or when no generator node was found
 */
 KosWalkStatus kos_dyn_unwind_yield(KosEvalState *es);
 
@@ -2333,6 +2389,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
+#define KosDynFrame_NATIVE_STATE(f) (((KosDynNode *)(f))->u.frame.native_state)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
 #define KosDynFrame_ACTING_PC(f)  (((KosDynNode *)(f))->u.frame.acting_pc)
 #define KosDynNode_STACK(n)       (((KosDynNode *)(n))->stack)
@@ -2342,7 +2399,19 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KOS_FRAME_DEMAND          (1u << 0)  /* frame is a demand-sync root */
-#define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
+#define KOS_FRAME_OWNS_NATIVE_STATE (1u << 1) /* native_state came from
+                                                 np_clone_state; free
+                                                 releases it through
+                                                 np_free_state */
+#define KOS_FRAME_PARK_TO_CACHE   (1u << 2)  /* completing native frame;
+                                                native_state is the
+                                                holder's cache slot
+                                                (KosDynFrame **) and free
+                                                offers the frame there
+                                                (kos_dynframe_park_inert).
+                                                Armed only by
+                                                KosNativeFrame_ReturnPark */
+#define KosDynFrame_NATIVE_PROG(f)  (((KosDynNode *)(f))->u.frame.native_prog)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
 
@@ -2397,29 +2466,11 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynForeach_ITER(r)        (((KosDynNode *)(r))->u.foreach.iter)
 #define KosDynForeach_EXHAUSTED(r)   (((KosDynNode *)(r))->u.foreach.exhausted)
 #define KosDynForeach_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.foreach.iter_next_else_pc)
-#define KosDynForeach_ITER_STEP_PHASE(r) (((KosDynNode *)(r))->u.foreach.iter_step_phase)
+#define KosDynForeach_REQ(r)         (&((KosDynNode *)(r))->u.foreach.req)
 
-/**
-   Set a FOREACH node's ITER_NEXT step phase, keeping the
-   KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY capability in lockstep: the node is
-   a receiving iterator boundary exactly while a step is in flight
-   (flattened Koskari agen or suspended python async iterator).  All
-   phase writes must go through this so the capability stays the single
-   routing key for boundary dispatch.
-*/
-static inline void kos_dyn_foreach_set_iter_step_phase(
-    KosDynForeach *fe, uint8_t phase) {
-
-  KosDynForeach_ITER_STEP_PHASE(fe) = phase;
-  if (phase != KOS_FOREACH_ITER_STEP_IDLE)
-    KosDynNode_CAPS((KosDynNode *) fe) |= KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY;
-  else
-    KosDynNode_CAPS((KosDynNode *) fe) &= ~KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY;
-}
-
-#define KosDynNext_AGEN_OBJ(nd) (((KosDynNode *)(nd))->u.next.agen_obj)
 #define KosDynNext_DEFAULT_VAL(nd) (((KosDynNode *)(nd))->u.next.default_val)
 #define KosDynNext_N(nd) (((KosDynNode *)(nd))->u.next.n)
+#define KosDynNext_REQ(nd) (&((KosDynNode *)(nd))->u.next.req)
 
 /* KosYfPhase: state machine for stack-based resume inject consumption */
 typedef enum KosYfPhase {
@@ -2427,7 +2478,7 @@ typedef enum KosYfPhase {
   KOS_YF_PHASE_EXPECT_SEND,
   KOS_YF_PHASE_EXPECT_AWAIT,
   /* A flattened koskari-gen delegate handed us a value at the iterator
-     boundary; the next handler dispatch re-emits it as this generator's own
+     node; the next handler dispatch re-emits it as this generator's own
      yield (see kos_dyn_yield_from_deliver_inner_yield). */
   KOS_YF_PHASE_EMIT,
 } KosYfPhase;
@@ -2442,7 +2493,7 @@ enum {
   KOS_YF_SYNC_GEN = 1,
   KOS_YF_PY_ASYNC_ITER = 2,
   KOS_YF_PY_ASYNC_GEN = 3,
-  KOS_YF_KOS_ASYNC_GEN = 4,
+  KOS_YF_KOS_ITER = 4,
 };
 
 
@@ -2466,6 +2517,65 @@ enum {
 #define KosDynYieldFrom_PENDING_ARG(n) (((KosDynNode *)(n))->u.yield_from.pending_arg)
 #define KosDynYieldFrom_PENDING_ARG_TYPE(n) (((KosDynNode *)(n))->u.yield_from.pending_arg_type)
 #define KosDynYieldFrom_INFLIGHT(n)    (((KosDynNode *)(n))->u.yield_from.inflight)
+#define KosDynYieldFrom_REQ(n)         (&((KosDynNode *)(n))->u.yield_from.req)
+
+/**
+   The iteration request record embedded in a receiver-capable node, or
+   NULL for any other kind. The delivery machinery reads the stepped
+   iterator and the in-flight mode from here and nowhere else.
+*/
+static inline KosIterRequest *kos_dyn_iter_request(KosDynNode *node) {
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_FOREACH:
+      return KosDynForeach_REQ(node);
+    case KOS_DYN_NEXT:
+      return KosDynNext_REQ(node);
+    case KOS_DYN_YIELD_FROM:
+      return KosDynYieldFrom_REQ(node);
+    default:
+      return NULL;
+  }
+}
+
+
+/**
+   Set a iteration node's request mode. For FOREACH the
+   KOS_DYN_CAP_ITER_RECEIVER capability stays in lockstep: the
+   node is a receiving iteration node exactly while a step is in flight.
+   NEXT and YIELD_FROM (KOS_ITER kind) carry the capability for their
+   whole lifetime. All mode writes go through this.
+*/
+static inline void kos_dyn_iter_request_set_mode(
+    KosDynNode *node, uint8_t mode) {
+
+  KosIterRequest *req = kos_dyn_iter_request(node);
+
+  req->mode = mode;
+  if (KosDynNode_KIND(node) == KOS_DYN_FOREACH) {
+    if (mode != KOS_IREQ_IDLE)
+      KosDynNode_CAPS(node) |= KOS_DYN_CAP_ITER_RECEIVER;
+    else
+      KosDynNode_CAPS(node) &= ~KOS_DYN_CAP_ITER_RECEIVER;
+  }
+}
+
+
+/**
+   Arm a iteration node's request: record the stepped iterator (strong
+   ref) and the in-flight mode
+*/
+static inline void kos_dyn_iter_request_arm(
+    KosDynNode *node, PyObject *iter, uint8_t mode) {
+
+  KosIterRequest *req = kos_dyn_iter_request(node);
+
+  Py_XINCREF(iter);
+  Py_XDECREF(req->iter);
+  req->iter = iter;
+  kos_dyn_iter_request_set_mode(node, mode);
+}
+
 
 #define KosDynParam_BINDINGS(n)    (((KosDynNode *)(n))->u.param.bindings)
 #define KosDynParam_SAVED(n)       (((KosDynNode *)(n))->u.param.saved)

@@ -114,13 +114,13 @@ static int test_values_is_koscallable(void) {
 
 static int test_values_type_is_koscallable_subtype(void) {
     /*
-      KosValuesType must be a subtype of _KosCallable so bytecode dispatch
-      routes through the install slot.
+      KosValuesType must be a KosEvaluated with a call suite so bytecode
+      dispatch routes through the install slot.
     */
     TEST_ASSERT(
-        PyType_IsSubtype(KOS_CALLABLE_PYTYPE(KosValuesType),
-                         KOS_CALLABLE_PYTYPE(KosCallableType)),
-        "values is subtype of _KosCallable");
+        PyType_IsSubtype(KOS_EVALUATED_PYTYPE(KosValuesType),
+                         KOS_EVALUATED_PYTYPE(KosEvaluatedType)),
+        "values is subtype of _KosEvaluated");
     return 0;
 }
 
