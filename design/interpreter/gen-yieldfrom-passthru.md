@@ -10,6 +10,10 @@ Companion docs:
   (archived; the implemented boundary model this would extend)
 - [../dispatch-sizing.md](../dispatch-sizing.md) (YIELD_FROM size history)
 - [evaluator.md](evaluator.md)
+- [../cps-consumer-api.md](../cps-consumer-api.md) (the NEXT/ITER_NEXT
+  resume machinery this proposal's stepping unification lands on; see §10)
+- [stencil-compilation.md](stencil-compilation.md) (why shrinking YIELD_FROM
+  matters beyond this opcode)
 
 
 ## 1. The idea
@@ -224,5 +228,25 @@ current implementation.
 - No caching of the innermost delegate pointer across sends; the active
   chain and the field chain stay the source of truth (no stale-frame
   targeting, per the archived boundary doc's invariants).
+
+
+## 10. Relationship to CPS consumer API and stenciling
+
+The per-delegate-kind stepping this proposal unifies onto NEXT / ITER_NEXT
+machinery is the same stepping [../cps-consumer-api.md](../cps-consumer-api.md)
+formalizes as `KosEvalState_NextResume`: DELIVERED/EXHAUSTED/CONTINUES/ERROR
+handled once, at the entry, instead of once per delegate kind inside
+YIELD_FROM. Landing this proposal on top of that entry rather than the
+current hand-rolled phase machine is what makes §7's "YIELD_FROM shrinks to
+normalize/install + reconstruction target" literal, not aspirational.
+
+That shrink matters past this opcode. [stencil-compilation.md](stencil-compilation.md)
+excludes `KOS_OP_HANDLER_COLD` handlers from stenciling; YIELD_FROM's current
+size is why it carries that designation. Every opcode being stencilable is
+the stated end goal, and CPS-based slimming -- moving delegate-stepping into
+shared, already-stenciled infrastructure instead of reimplementing it
+in-opcode -- is the mechanism for getting YIELD_FROM (and any other COLD
+opcode carrying similar bulk for the same reason) off that list, not a
+special case argued for the stencil pipeline itself.
 
 <!-- The end. -->

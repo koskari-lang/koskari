@@ -250,7 +250,6 @@ recover it; that expectation is worth measuring, not assuming.
   stencil at generation time (fixed slot count assumption) versus a
   runtime lookup, given `[cpool]` is process-local and populated at
   finalize like the rest of the block.
-<<<<<<< HEAD
 - Every opcode stencilable is the goal, not a subset. `KOS_OP_HANDLER_COLD`
   handlers are excluded here because their current bulk makes stenciling
   them a poor first step, not because some opcodes are permanently
@@ -261,11 +260,6 @@ recover it; that expectation is worth measuring, not assuming.
   question this leaves open is whether any handler stays legitimately
   too large to stencil after that kind of slimming, or whether `_COLD`
   turns out to name a to-do list rather than a permanent category.
-=======
-- Whether cold-opcode tail-call-out (`KOS_OP_HANDLER_COLD` staying an
-  ordinary function) costs enough at native-code call boundaries to
-  warrant stenciling a subset of cold handlers anyway.
->>>>>>> 6f7e3f0b (Replace AOT-to-.so native compilation with copy-and-patch stencils)
 - Code-size and icache behavior of a per-module executable segment at
   scale (many small modules vs. few large ones); no measurement exists
   yet.
