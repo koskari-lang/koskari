@@ -173,10 +173,13 @@ arrives through the resume.
 
 ## Storage: the resume lives on the frame
 
+<<<<<<< HEAD
 Superseded by "Transport respec (normative)": the slot generalizes
 from frames to chain nodes. The placement reasoning below still
 binds -- read "the consumer's own chain node" for "frame".
 
+=======
+>>>>>>> f1947316 (Align the CPS design doc with what the code permits)
 The resume is a (KosResumeFn, void *) pair on the KosDynFrame,
 replacing what `np_handler` dispatch over an `nf_phase` enum encodes
 today. Frame placement is forced by three requirements:
@@ -229,12 +232,15 @@ evaluator's stacklessness by construction.
 
 ## Eager await at the delivery point
 
+<<<<<<< HEAD
 Superseded in part by "Transport respec (normative)": the
 one-convergence-point conclusion stands, the staging it converges
 through becomes the pending pair, and the settle broadens to every
 delivery, elements included
 ([ambient-await-handoffs.md](ambient-await-handoffs.md)).
 
+=======
+>>>>>>> f1947316 (Align the CPS design doc with what the code permits)
 Landed, though not at the staging point this section originally
 named. Staging happens in several places -- both entries, and any
 consumer deferring its own first step -- but every staged delivery
@@ -258,6 +264,7 @@ the compensating check got a raw coroutine as a mapped element, or an
 always-truthy coroutine as a filter verdict. One convergence point,
 not several staging points.
 
+<<<<<<< HEAD
 The per-pathway awaitable checks in map and filter are gone, and the
 demolition took the typed wake with them.
 
@@ -379,6 +386,11 @@ costs today, which needs the register pair and the slim bounce in
 place first. Order: transport rework, then the opcode roster
 ([ambient-await-handoffs.md](ambient-await-handoffs.md) step 3),
 then bytecode's builtin resume at the musttail boundary.
+=======
+The per-pathway awaitable checks in map and filter are gone. The
+`KOS_NFRAME_AWAITED` wake and the adapter await arms remain until the
+demolition phase.
+>>>>>>> f1947316 (Align the CPS design doc with what the code permits)
 
 ## State lifetime
 
@@ -402,12 +414,20 @@ resume-owned cleanup into a double free.
 
 ## Continuation capture
 
+<<<<<<< HEAD
 As implemented, capture across a frame carrying a resume refuses by
 name (`kos_dynframe_clone`): no caller produces a resume_state a
 clone could copy, so there is no clone story to get wrong. For map
 and filter this is behavior parity -- their native programs refused
 capture too, deliberately, since replaying a captured step would
 re-consume source elements.
+=======
+Capture clones frames. The resume slot clones as data, so every
+materialization carries the resume, and the trampoline's destructive
+clear is correct per materialization: the live copy spends its own,
+the snapshot keeps its own, and a continuation reinstated N times
+fires the resume N times with no once-only bookkeeping.
+>>>>>>> f1947316 (Align the CPS design doc with what the code permits)
 
 Clone-as-data remains the intended model for a resume whose state is
 clonable: the slot copies with the frame, every materialization
@@ -577,6 +597,33 @@ divergent interpretations to unify. Apply was measured against a direct
 call for a partial over a coroutine function and behaves identically,
 confirming it adds no ambient-await divergence of its own.
 
+### The drivers share an epilogue, not an entry
+
+`stepper_drive` and `demandgen_iternext` (koskari/lib/iterate.c) are
+Python-boundary drivers: each calls `ki_step`, then calls
+`koskari_eval` itself. They have no current frame, so
+`KosEvalState_NextResume` -- which stages onto one -- cannot be their
+entry, exactly as with demand.
+
+Their real duplication is the epilogue after `koskari_eval` returns:
+StopIteration-to-exhaustion conversion, truncation versus close,
+excluding a thrown StopIteration from truncation, and the "async
+generator raised StopIteration" RuntimeError wrap. Three near-identical
+copies. Extracting one helper both drivers call is the fix, and is what
+the motivation section means by the copies of the drive epilogue.
+
+### A note on this document's prescriptions
+
+Three of the per-consumer prescriptions above (apply, demand, the
+drivers) named a mechanism the code does not permit, while correctly
+naming the duplication to remove. The pattern in each case: a
+`KosResumeFn` runs at the delivery boundary, on a frame, inside the
+loop. A consumer that has no frame, or that must act before the loop
+starts, or that must refuse a suspension rather than receive its
+result, cannot be served by one no matter how the entry is shaped.
+Check that a consumer is actually in-eval with a frame before reaching
+for these entries.
+
 ### Demand classifies, it does not resume
 
 `demand_sync_ex` installs on a fresh context where there is no caller
@@ -643,6 +690,7 @@ Landed:
    "invoke through the Python boundary", forcing a fresh context and a
    nested loop for calls the running evaluator could make.
 
+<<<<<<< HEAD
 6. The stepper's truncation check and error mapping shared between its
    two sites. `demandgen_iternext` keeps its own: on the sync surface
    StopIteration is the protocol's end signal rather than something to
@@ -663,6 +711,19 @@ Remaining:
    ([ambient-await-handoffs.md](ambient-await-handoffs.md)), then
    bytecode's builtin resume and opcode unification -- the boundary
    with the musttail work.
+=======
+Remaining:
+
+6. The shared drive epilogue extracted from `stepper_drive` and
+   `demandgen_iternext`.
+7. Demolition: `KosNativeFrameEvent` and the typed wake, `np_handler`,
+   the non-CPS consumer entries. Apply's non-flattening path is the
+   last `np_handler` user.
+8. Bytecode's builtin resume and opcode unification -- the boundary
+   with the musttail work. Tightening the trampoline's staging (today
+   the frame stack is the transit slot for every delivery) belongs
+   here, once there is one delivery shape to design against.
+>>>>>>> f1947316 (Align the CPS design doc with what the code permits)
 
 Each phase lands green through the full gate set (suite, native,
 ASAN, valgrind, benchmarks) and stays under the review size cap so it

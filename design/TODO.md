@@ -327,15 +327,24 @@ hand-rolled drive epilogues.
 **In progress.** Landed: the per-frame resume slot and its delivery
 points, `KosEvalState_CallResume` / `NextResume` /
 `KosResumeFrame_Install` (with `resume == NULL` meaning "behave like an
-ordinary CALL/NEXT opcode"), KosMap and KosFilter converted, and
-demand's settled-value classification. Apply is **not** a conversion
-target -- its frame-identity guard is load-bearing and it must not set
-a resume on its own frame; see the doc's "Apply keeps its guard".
+ordinary CALL/NEXT opcode"), KosMap and KosFilter converted, eager
+await centralized at the delivery point so a resume only ever sees a
+settled value, demand's settled-value classification, and the BOXED
+call shape retired (`kc_wants_frame == 0` no longer forces a Python
+boundary round-trip for a call the running evaluator can make).
 
-Remaining: the stepper and demandgen adapters onto the Next entry;
-centralizing eager await at the staging point; the demolition pass
-(typed wake, `np_handler`, non-CPS entries); and bytecode's own resume,
-which is the shared boundary with the musttail work.
+Apply is **not** a conversion target -- its frame-identity guard is
+load-bearing and it must not set a resume on its own frame. Neither
+are the stepper and demandgen adapters, which call `koskari_eval`
+themselves and have no frame to stage on; what they duplicate is the
+drive epilogue, and that is what gets extracted. See the doc's
+"A note on this document's prescriptions".
+
+Remaining: extract the shared drive epilogue from `stepper_drive` and
+`demandgen_iternext`; the demolition pass (typed wake, `np_handler`,
+non-CPS entries); and bytecode's own resume, which is the shared
+boundary with the musttail work and where the trampoline's staging
+gets tightened.
 
 Ref: [cps-consumer-api.md](cps-consumer-api.md).
 
