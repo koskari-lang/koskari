@@ -395,6 +395,11 @@ static PyObject *stepper_finish_exhausted(
 /**
    Complete an __anext__ step: the yielded element wraps in a 1-tuple
    StopIteration so PyErr_SetObject does not unpack args. val consumed.
+
+   Passing a bare value instead, to let CPython defer building the
+   exception instance, was measured and does not help: the await
+   machinery normalizes it downstream, so the instance is built either
+   way.
 */
 static PyObject *stepper_finish_yield(PyObject *val) {
 
