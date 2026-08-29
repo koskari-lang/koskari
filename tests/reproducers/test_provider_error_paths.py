@@ -30,8 +30,11 @@ close the file
 
 import asyncio
 import gc
+import sys
 import unittest
 import weakref
+
+from functools import partial
 
 from koskari.lib import KosFilter, KosMap, values
 from koskari.module import load_module_source_async, new_module
@@ -75,6 +78,26 @@ define apply-gen-tail []:
 
 define apply-partial-gen []:
     (apply (partial gen2 1) #(2))
+
+define tail-py [f args]:
+    (apply f args)
+
+define apply-map [seq]:
+    (list (map apply seq))
+
+define apply-filter [seq]:
+    (list (filter apply seq))
+
+define ktrunc [x]:
+    if (== x 3):
+        raise StopIteration
+    else:
+        (* x 10)
+
+define echo []:
+    define x (yield None)
+    while True:
+        set! x (yield x)
 """
 
 
@@ -242,6 +265,63 @@ class TestProviderErrorPaths(unittest.IsolatedAsyncioTestCase):
         v = self.v
         stack = KosMap(v["inc"], KosFilter(v["odd?"], range(10)))
         self.assertEqual(await v["consume"](stack), 30)
+
+    # === round 2: apply's completed installs as mapper/predicate ===
+
+    async def test_apply_as_mapper(self):
+        ps = (partial(lambda: 11), partial(lambda: 22))
+        self.assertEqual(await self.v["apply-map"](ps), [11, 22])
+
+    async def test_apply_as_predicate(self):
+        keep = partial(lambda: True)
+        drop = partial(lambda: False)
+        result = await self.v["apply-filter"]((keep, drop, keep))
+        self.assertEqual(result, [keep, keep])
+
+    async def test_tail_apply_python_callable_at_root(self):
+        self.assertEqual(await self.v["tail-py"](max, (3, 4)), 4)
+        self.assertEqual(await self.v["tail-py"](len, ("abc",)), 3)
+
+    # === round 2: truncation resumes like builtins ===
+
+    async def test_map_truncation_resumes_demand(self):
+        m = KosMap(trunc, [1, 2, 3, 4, 5])
+        b = map(trunc, [1, 2, 3, 4, 5])
+        self.assertEqual(list(m), list(b))
+        self.assertEqual(list(m), list(b))
+
+    async def test_map_truncation_resumes_async(self):
+        m = KosMap(trunc, [1, 2, 3, 4, 5])
+        self.assertEqual([x async for x in m], [10, 20])
+        self.assertEqual([x async for x in m], [40, 50])
+
+    async def test_map_truncation_resumes_kos_fn_consumer(self):
+        m = KosMap(self.v["ktrunc"], [1, 2, 3, 4, 5])
+        self.assertEqual(await self.v["collect"](m), [10, 20])
+        self.assertEqual(await self.v["collect"](m), [40, 50])
+
+    # === round 2: athrow(StopIteration) is not a truncation ===
+
+    async def test_athrow_stopiteration_wraps(self):
+        g = self.v["echo"]()
+        await g.__anext__()
+        with self.assertRaises(RuntimeError) as caught:
+            await g.athrow(StopIteration)
+        self.assertIsInstance(caught.exception.__cause__, StopIteration)
+
+    # === round 2: asend holds no stray reference to the sent value ===
+
+    async def test_asend_refcount_flat(self):
+        g = self.v["echo"]()
+        await g.__anext__()
+
+        token = Elem()
+        base = sys.getrefcount(token)
+        for _ in range(50):
+            self.assertIs(await g.asend(token), token)
+        gc.collect()
+        # the generator's own binding of the sent value remains live
+        self.assertLessEqual(sys.getrefcount(token) - base, 1)
 
 
 # The end.

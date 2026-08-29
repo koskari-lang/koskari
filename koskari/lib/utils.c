@@ -206,7 +206,11 @@ static KosOpResult apply_native_handler(
   if (! result)
     return EVAL_RAISE();
 
-  return KosNativeFrame_Return(es, result);
+  /* Complete through the eval loop's return machinery, which owns
+     every delivery terminus -- a tail apply's reused frame can be
+     the context root, where a direct parent-frame delivery has
+     nowhere to land. */
+  return EVAL_RETURN(result);
 }
 
 

@@ -119,7 +119,10 @@ int kos_dyn_next_deliver_exhausted(
   {
     KosIterSlots *islots;
     if (iter_obj && KosIter_CheckSlots(iter_obj, &islots))
-      islots->ki_finish(iter_obj, 1);
+      /* a recyclable durable provider re-derives exhaustion from its
+         source and stays open -- a mapped function's StopIteration is
+         a truncation that builtins.map resumes from */
+      islots->ki_finish(iter_obj, islots->ki_pyctx_recyclable ? 0 : 1);
   }
 
   if (nn == 2 && KosDynNext_DEFAULT_VAL((KosDynNode *) next)) {

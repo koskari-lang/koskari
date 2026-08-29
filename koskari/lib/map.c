@@ -93,6 +93,22 @@ static KosOpResult map_nf_invoke(
       Py_DECREF(element);
       if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
         return EVAL_REPROLOGUE();
+      if (r.kind == KOS_RES_RETURN) {
+        /* the install completed with the element in hand */
+        switch (KosEval_ResultIsValue(r.val)) {
+          case 1:
+            return KosNativeFrame_ReturnPark(es, r.val, &m->cached_frame);
+          case 0: {
+            KosOpResult pr = KosEvalState_PushOrAwait(es, r.val);
+            if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
+              return EVAL_REPROLOGUE();
+            return pr;
+          }
+          default:
+            Py_DECREF(r.val);
+            return EVAL_RAISE();
+        }
+      }
       return r;
     }
   }
@@ -339,6 +355,17 @@ static KosIterStepResult map_iter_step(
           m->busy = 1;
           return KOS_ITER_INSTALLED_VALUE;
         }
+        if (r.kind == KOS_RES_RETURN) {
+          /* The install completed with the call's value (apply's
+             flatten of a value-delivering callee): stage it for the
+             WAIT_RESULT delivery. */
+          int pushed = KosEvalState_StackPushRef(es, r.val);
+          Py_DECREF(r.val);
+          if (pushed < 0)
+            return map_step_abort(es, pre_top);
+          m->busy = 1;
+          return KOS_ITER_INSTALLED_VALUE;
+        }
         return map_step_abort(es, pre_top);
       }
     }
@@ -562,11 +589,14 @@ static void kosmap_dealloc(PyObject *self) {
   KosMapObject *m = (KosMapObject *) self;
 
   PyObject_GC_UnTrack(self);
+  /* the context teardown runs first: a ReturnPark-armed frame still
+     on the chain parks into cached_frame, and the free below reclaims
+     it either way */
+  kosmap_clear(self);
   if (m->cached_frame) {
     kos_dynframe_free(m->cached_frame);
     m->cached_frame = NULL;
   }
-  kosmap_clear(self);
   Py_TYPE(self)->tp_free(self);
 }
 

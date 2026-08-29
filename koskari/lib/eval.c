@@ -286,6 +286,7 @@ KosIterRequestStatus KosIterRequest_Next(
           PyObject *payload = NULL;
           if (PyGen_FetchStopIterationValue(&payload) < 0)
             return KOS_IREQ_ERROR;
+          islots->ki_finish(iter, islots->ki_pyctx_recyclable ? 0 : 1);
           *fast_out = payload;
           return KOS_IREQ_EXHAUSTED;
         }
@@ -547,12 +548,16 @@ static KosEvalMode revive_yield(
 
   if (throw_exc != NULL) {
     if (KosEvalState_FRAME(es))
-      (void) KosEvalState_StackPopRef(es);
+      Py_XDECREF(KosEvalState_StackPopRef(es));
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_MODE_EXCEPTION;
   }
   if (KosEvalState_FRAME(es)) {
-    (void) KosEvalState_StackPopRef(es);
+    /* pop_ref hands back an owned reference: releasing it here is
+       what pays off the placeholder push -- a drive that staged the
+       sent value ahead of us leaves that value on top, and dropping
+       the reference silently leaked one per send. */
+    Py_XDECREF(KosEvalState_StackPopRef(es));
     to_push = (send_val != NULL) ? send_val : Py_None;
     if (KosEvalState_StackPushRef(es, to_push) < 0)
       return KOS_MODE_EXCEPTION;

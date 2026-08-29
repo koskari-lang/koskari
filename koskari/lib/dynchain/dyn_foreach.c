@@ -164,7 +164,10 @@ int kos_dyn_foreach_deliver_exhausted(
   {
     KosIterSlots *islots;
     if (iter && KosIter_CheckSlots(iter, &islots))
-      islots->ki_finish(iter, 1);
+      /* a recyclable durable provider re-derives exhaustion from its
+         source and stays open -- a mapped function's StopIteration is
+         a truncation that builtins.map resumes from */
+      islots->ki_finish(iter, islots->ki_pyctx_recyclable ? 0 : 1);
   }
 
   KosDynForeach_EXHAUSTED(fe) = 1;

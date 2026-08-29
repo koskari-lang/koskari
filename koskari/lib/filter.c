@@ -205,6 +205,12 @@ static KosOpResult filter_nf_advance(
                                             &value, 1, NULL, 0);
           if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
             return EVAL_REPROLOGUE();
+          if (r.kind == KOS_RES_RETURN) {
+            /* the install completed with the verdict in hand */
+            value = r.val;
+            state = KOS_FILTER_ADV_VERDICT;
+            continue;
+          }
           return r;
         }
       }
@@ -439,6 +445,17 @@ static KosIterStepResult filter_iter_step(
           KosOpResult r = KosEvalState_Call(es, f->pred.cs_callable,
                                             &element, 1, NULL, 0);
           if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
+            f->busy = 1;
+            return KOS_ITER_INSTALLED_VALUE;
+          }
+          if (r.kind == KOS_RES_RETURN) {
+            /* The install completed with the verdict (apply's flatten
+               of a value-delivering callee): stage it for the
+               WAIT_VERDICT delivery. */
+            int pushed = KosEvalState_StackPushRef(es, r.val);
+            Py_DECREF(r.val);
+            if (pushed < 0)
+              return filter_step_abort(es, f, pre_top);
             f->busy = 1;
             return KOS_ITER_INSTALLED_VALUE;
           }
@@ -693,11 +710,14 @@ static void kosfilter_dealloc(PyObject *self) {
   KosFilterObject *f = (KosFilterObject *) self;
 
   PyObject_GC_UnTrack(self);
+  /* the context teardown runs first: a ReturnPark-armed frame still
+     on the chain parks into cached_frame, and the free below reclaims
+     it either way */
+  kosfilter_clear(self);
   if (f->cached_frame) {
     kos_dynframe_free(f->cached_frame);
     f->cached_frame = NULL;
   }
-  kosfilter_clear(self);
   Py_TYPE(self)->tp_free(self);
 }
 
