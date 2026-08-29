@@ -83,10 +83,33 @@ static KosOpResult filter_resume_do_fetch(
     KosEvalState *es, void *state, PyObject *value);
 static KosOpResult filter_resume_do_invoke(
     KosEvalState *es, void *state, PyObject *element);
-static KosOpResult filter_resume_after_invoke(
-    KosEvalState *es, void *state, PyObject *verdict);
 static KosOpResult filter_resume_after_verdict(
     KosEvalState *es, void *state, PyObject *value);
+
+
+/**
+   Hand a raw predicate result to the trampoline: stage it and set the
+   verdict resume. The delivery point settles it -- awaiting is the
+   evaluator's job, not this consumer's -- so filter_resume_after_verdict
+   only ever sees a finished verdict. value is consumed; f->pending
+   already holds the element under test.
+*/
+static KosOpResult filter_stage_verdict(
+    KosEvalState *es,
+    KosFilterObject *f,
+    PyObject *value) {
+
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  int pushed = KosEvalState_StackPushRef(es, value);
+
+  Py_DECREF(value);
+  if (pushed < 0)
+    return EVAL_RAISE();
+
+  KosDynFrame_RESUME_FN(frame) = (void *) filter_resume_after_verdict;
+  KosDynFrame_RESUME_STATE(frame) = f;
+  return EVAL_REPROLOGUE();
+}
 
 
 /**
@@ -177,7 +200,7 @@ static KosOpResult filter_resume_do_invoke(
     f->pending = element;
     return KosEvalState_CallResume(es, f->pred.cs_callable,
                                    &element, 1, NULL,
-                                   filter_resume_after_invoke, f);
+                                   filter_resume_after_verdict, f);
   }
 
   {
@@ -188,43 +211,7 @@ static KosOpResult filter_resume_do_invoke(
       return EVAL_RAISE();
     }
     f->pending = element;  /* steals */
-    return filter_resume_after_invoke(es, f, result);
-  }
-}
-
-
-/**
-   The predicate's result settled -- or handed back another awaitable
-   (a koskari function's coroutine); reclassify. verdict is consumed.
-*/
-static KosOpResult filter_resume_after_invoke(
-    KosEvalState *es, void *state, PyObject *verdict) {
-
-  KosFilterObject *f = (KosFilterObject *) state;
-
-  if (! verdict)
-    return EVAL_RAISE();
-
-  switch (KosEval_ResultIsValue(verdict)) {
-    case 1:
-      return filter_resume_after_verdict(es, f, verdict);
-
-    case 0: {
-      KosDynFrame *frame = KosEvalState_FRAME(es);
-      KosOpResult pr;
-
-      KosDynFrame_RESUME_FN(frame) = (void *) filter_resume_after_verdict;
-      KosDynFrame_RESUME_STATE(frame) = f;
-
-      pr = KosEvalState_PushOrAwait(es, verdict);
-      if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
-        return EVAL_REPROLOGUE();
-      return pr;
-    }
-
-    default:
-      Py_DECREF(verdict);
-      return EVAL_RAISE();
+    return filter_stage_verdict(es, f, result);
   }
 }
 
@@ -414,7 +401,7 @@ static KosIterStepResult filter_iter_step(
             Py_DECREF(result);
             f->pending = element;  /* steals */
             KosDynFrame_RESUME_FN(frame) =
-                (void *) filter_resume_after_invoke;
+                (void *) filter_resume_after_verdict;
             KosDynFrame_RESUME_STATE(frame) = f;
             f->busy = 1;
             return KOS_ITER_INSTALLED_VALUE;

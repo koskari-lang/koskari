@@ -323,5 +323,56 @@ class TestProviderErrorPaths(unittest.IsolatedAsyncioTestCase):
         # the generator's own binding of the sent value remains live
         self.assertLessEqual(sys.getrefcount(token) - base, 1)
 
+    # === the CPS delivery point settles before the resume runs ===
+
+    async def agen_123(self):
+        for i in (1, 2, 3):
+            yield i
+
+    async def test_map_result_awaitable_is_settled(self):
+        """
+        a mapper returning an awaitable as its result delivers the
+        settled value, not the awaitable
+        """
+
+        async def inner(x):
+            await asyncio.sleep(0)
+            return x + 1
+
+        m = KosMap(lambda x: inner(x), self.agen_123())
+        self.assertEqual([x async for x in m], [2, 3, 4])
+
+    async def test_filter_verdict_awaitable_is_settled(self):
+        """
+        a predicate returning an awaitable verdict is settled before
+        the truthiness test
+        """
+
+        def pred(x):
+            async def verdict():
+                await asyncio.sleep(0)
+                return x >= 2
+            return verdict()
+
+        f = KosFilter(pred, self.agen_123())
+        self.assertEqual([x async for x in f], [2, 3])
+
+    async def test_map_result_settling_to_another_awaitable(self):
+        """
+        a result that settles to a further awaitable keeps settling;
+        the resume still sees only a finished value
+        """
+
+        async def deepest(x):
+            await asyncio.sleep(0)
+            return x * 10
+
+        async def outer(x):
+            await asyncio.sleep(0)
+            return deepest(x)
+
+        m = KosMap(outer, self.agen_123())
+        self.assertEqual([x async for x in m], [10, 20, 30])
+
 
 # The end.

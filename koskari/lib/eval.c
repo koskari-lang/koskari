@@ -2763,18 +2763,30 @@ static KosOpResult eval_step_native_iteration(KosEvalState *es) {
 /**
    One CPS resume delivery: pop the value staged on the current frame's
    own stack, clear the frame's resume, and invoke it. Caller must only
-   invoke when the eval frame has RESUME_FN set. A resume-carrying
-   frame's own stack holds nothing else, so an empty stack unambiguously
-   means no delivery was ever staged -- a consumer set the resume
-   directly (bypassing KosEvalState_CallResume/NextResume) to defer its
-   own first step to this trampoline, the way a cold KOS_ITER_INSTALLED
-   install must (koskari_eval runs as a separate step after install,
-   never nested inside it). That resume is invoked with NULL and no
-   exception set; its own contract, not this one, says what NULL means
-   -- KosEvalState_CallResume/NextResume never stage that combination
-   themselves, so no resume fed through them ever sees it. Exhaustion
-   and errors from an actual delivery are never delivered through this
-   channel either way -- see the raise-walk offer in dyn_walk.c.
+   invoke when the eval frame has RESUME_FN set.
+
+   This is the single point every staged delivery converges on -- a
+   callee's frame return, an iteration node's element, and an awaited
+   resume all reach a resume through here -- so it is also where the
+   ambient await interposes. A staged value that still needs awaiting
+   never reaches the resume: the same resume is set again and the value
+   goes to KosEvalState_PushOrAwait, which either settles it eagerly
+   (the prologue re-enters here and re-classifies) or suspends (the
+   revive re-enters here with the settled value). A resume is therefore
+   only ever invoked with a settled value, and a value that settles to
+   a further awaitable simply bounces again. Consumers do not classify;
+   that duplication is what this API exists to remove.
+
+   A resume-carrying frame's own stack holds nothing else, so an empty
+   stack unambiguously means no delivery was ever staged -- a consumer
+   set the resume directly (bypassing KosEvalState_CallResume /
+   NextResume) to defer its own first step to this trampoline, the way
+   a cold KOS_ITER_INSTALLED install must (koskari_eval runs as a
+   separate step after install, never nested inside it). That resume is
+   invoked with NULL and no exception set, carries no value to settle,
+   and its own contract says what NULL means. Errors are never
+   delivered through this channel -- see the raise-walk offer in
+   dyn_walk.c.
 */
 static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosDynFrame *frame = KosEvalState_FRAME(es);
@@ -2789,6 +2801,29 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
     val = KosEvalState_StackPopRef(es);
     if (! val)
       return EVAL_RAISE();
+
+    switch (KosEval_ResultIsValue(val)) {
+      case 1:
+        break;  /* settled: deliver it */
+
+      case 0: {
+        /* Not settled yet. Put the resume back and hand the value to
+           the await machinery; delivery happens on a later pass. */
+        KosOpResult pr;
+
+        KosDynFrame_RESUME_FN(frame) = (void *) resume;
+        KosDynFrame_RESUME_STATE(frame) = state;
+
+        pr = KosEvalState_PushOrAwait(es, val);
+        if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
+          return EVAL_REPROLOGUE();
+        return pr;
+      }
+
+      default:
+        Py_DECREF(val);
+        return EVAL_RAISE();
+    }
   }
 
   {

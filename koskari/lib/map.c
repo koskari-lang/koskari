@@ -68,50 +68,42 @@ typedef struct {
    sites below and kos_dynframe_clone's resume refusal). */
 
 
-/* Forward declaration: map_finish_invoke_result sets this as the
-   resume for a value that itself needs (re-)awaiting. */
 static KosOpResult map_resume_after_result(
     KosEvalState *es, void *state, PyObject *value);
 
 
 /**
-   Classify a settled invoke result and either complete the step
-   (KosNativeFrame_ReturnPark) or set map_resume_after_result to
-   reclassify whatever the awaitable eventually settles to -- a
-   koskari function's coroutine can hand back another awaitable.
-   value is consumed.
+   Hand a raw call result to the trampoline: stage it and set the
+   result resume. The delivery point settles it -- awaiting is the
+   evaluator's job, not this consumer's -- so map_resume_after_result
+   only ever sees a finished value. value is consumed.
 */
-static KosOpResult map_finish_invoke_result(
+static KosOpResult map_stage_result(
     KosEvalState *es,
     KosMapObject *m,
     PyObject *value) {
 
-  switch (KosEval_ResultIsValue(value)) {
-    case 1:
-      return KosNativeFrame_ReturnPark(es, value, &m->cached_frame);
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  int pushed = KosEvalState_StackPushRef(es, value);
 
-    case 0: {
-      KosDynFrame *frame = KosEvalState_FRAME(es);
-      KosOpResult pr;
+  Py_DECREF(value);
+  if (pushed < 0)
+    return EVAL_RAISE();
 
-      KosDynFrame_RESUME_FN(frame) = (void *) map_resume_after_result;
-      KosDynFrame_RESUME_STATE(frame) = m;
-
-      pr = KosEvalState_PushOrAwait(es, value);
-      if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
-        return EVAL_REPROLOGUE();
-      return pr;
-    }
-
-    default:
-      Py_DECREF(value);
-      return EVAL_RAISE();
-  }
+  KosDynFrame_RESUME_FN(frame) = (void *) map_resume_after_result;
+  KosDynFrame_RESUME_STATE(frame) = m;
+  return EVAL_REPROLOGUE();
 }
 
 
+/**
+   The invoke completed. The value is settled by contract, so the step
+   completes with it directly. value is consumed.
+*/
 static KosOpResult map_resume_after_result(
     KosEvalState *es, void *state, PyObject *value) {
+
+  KosMapObject *m = (KosMapObject *) state;
 
   /* Declined by the raise walk's default: the frame pops and the
      consumer's iteration node owns the conversion (StopIteration
@@ -119,14 +111,14 @@ static KosOpResult map_resume_after_result(
   if (! value)
     return EVAL_RAISE();
 
-  return map_finish_invoke_result(es, (KosMapObject *) state, value);
+  return KosNativeFrame_ReturnPark(es, value, &m->cached_frame);
 }
 
 
 /**
    INVOKE: apply func to element via CallResume (a frame-wanting
-   callable) or directly (a plain callable), then classify the result.
-   element is consumed.
+   callable) or directly (a plain callable), handing the result to the
+   trampoline either way. element is consumed.
 */
 static KosOpResult map_resume_after_fetch(
     KosEvalState *es, void *state, PyObject *element) {
@@ -149,7 +141,7 @@ static KosOpResult map_resume_after_fetch(
     Py_DECREF(element);
     if (! result)
       return EVAL_RAISE();
-    return map_finish_invoke_result(es, m, result);
+    return map_stage_result(es, m, result);
   }
 }
 

@@ -224,12 +224,20 @@ typedef struct KosNativeProgram {
    KosEvalState_CallResume / KosEvalState_NextResume to receive exactly
    one settled delivery -- a call's result, a callee frame's return, a
    Next request's element, or an awaited value, however it was
-   produced. value is a new reference the resume owns; NULL with PyErr
-   set means the operation failed (the resume may recover, or relay by
-   returning EVAL_RAISE(), exactly as if it had received the NULL from
-   an inline call). Returns a KosOpResult naming the next signal to the
-   loop: another CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT,
-   or EVAL_REPROLOGUE.
+   produced.
+
+   value is a new reference the resume owns, and is always settled: a
+   delivery that still needs awaiting is awaited by the delivery point
+   before the resume runs, however many times it takes. A resume never
+   awaits, and never inspects a value to decide whether it must --
+   that duplication across consumers is what these entries exist to
+   remove. NULL with PyErr set means the operation failed (the resume
+   may recover, or relay by returning EVAL_RAISE(), exactly as if it
+   had received the NULL from an inline call).
+
+   Returns a KosOpResult naming the next signal to the loop: another
+   CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT, or
+   EVAL_REPROLOGUE.
 */
 typedef KosOpResult (*KosResumeFn)(
     KosEvalState *es, void *state, PyObject *value);
