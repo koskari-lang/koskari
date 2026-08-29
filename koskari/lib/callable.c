@@ -32,6 +32,11 @@
 /* === Helpers === */
 
 
+/**
+   Vector-to-tuple packing for the python-boundary adapters, whose
+   workers (kc_pycall, Koskari_AsyncCall, Koskari_DemandSync) take the
+   tuple + dict shapes.
+*/
 static PyObject *vcall_build_args_tuple(PyObject *const *args, Py_ssize_t nargs) {
   PyObject *tup = PyTuple_New(nargs);
   if (! tup)
@@ -82,44 +87,81 @@ KosOpResult KosCallable_CallSlots(KosEvalState *es,
     PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
     int tail_call) {
 
-  if (slots->kc_vinstall)
-    return callable_promote_normal(
-        es, slots->kc_vinstall(es, callable, args, nargs, kwnames, tail_call));
-
-  if (! slots->kc_install) {
+  if (! slots->kc_vinstall) {
     PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
     return EVAL_RAISE();
   }
-
-  PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
-  if (nargs > 0 && ! tup)
-    return EVAL_RAISE();
-  PyObject *kwds = NULL;
-  if (kwnames) {
-    kwds = vcall_build_kwds_dict(args + nargs, kwnames);
-    if (! kwds) {
-      Py_XDECREF(tup);
-      return EVAL_RAISE();
-    }
-  }
-  KosOpResult r = slots->kc_install(es, callable, tup, kwds, tail_call);
-  Py_XDECREF(tup);
-  Py_XDECREF(kwds);
-  return callable_promote_normal(es, r);
+  return callable_promote_normal(
+      es, slots->kc_vinstall(es, callable, args, nargs, kwnames, tail_call));
 }
 
+
+#define KOS_CALLARGS_SPREAD_FAST 16
 
 KosOpResult KosCallable_CallArgsSlots(KosEvalState *es,
     KosCallSlots *slots, PyObject *callable,
     PyObject *args_tuple, PyObject *kwds_dict,
     int tail_call) {
 
-  if (! slots->kc_install) {
+  Py_ssize_t nargs = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
+  Py_ssize_t nkw = kwds_dict ? PyDict_Size(kwds_dict) : 0;
+
+  if (! slots->kc_vinstall) {
     PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
     return EVAL_RAISE();
   }
-  return callable_promote_normal(
-      es, slots->kc_install(es, callable, args_tuple, kwds_dict, tail_call));
+
+  /* No keywords: the tuple's item array IS the vector. */
+  if (! nkw) {
+    PyObject *const *argv =
+        nargs ? &PyTuple_GET_ITEM(args_tuple, 0) : NULL;
+    return callable_promote_normal(
+        es, slots->kc_vinstall(es, callable, argv, nargs, NULL, tail_call));
+  }
+
+  /* Keywords: extend the vector with the dict's values and name them
+     through a kwnames tuple. Every entry is borrowed -- the caller's
+     tuple and dict stay alive across the install. */
+  {
+    PyObject *small[KOS_CALLARGS_SPREAD_FAST];
+    PyObject **argv = small;
+    PyObject *kwnames = NULL;
+    KosOpResult r;
+
+    if (nargs + nkw > KOS_CALLARGS_SPREAD_FAST) {
+      argv = PyMem_Malloc((size_t) (nargs + nkw) * sizeof(PyObject *));
+      if (! argv) {
+        PyErr_NoMemory();
+        return EVAL_RAISE();
+      }
+    }
+
+    for (Py_ssize_t i = 0; i < nargs; i++)
+      argv[i] = PyTuple_GET_ITEM(args_tuple, i);
+
+    kwnames = PyTuple_New(nkw);
+    if (! kwnames) {
+      if (argv != small)
+        PyMem_Free(argv);
+      return EVAL_RAISE();
+    }
+    {
+      PyObject *k, *v;
+      Py_ssize_t pos = 0, i = 0;
+      while (PyDict_Next(kwds_dict, &pos, &k, &v)) {
+        Py_INCREF(k);
+        PyTuple_SET_ITEM(kwnames, i, k);
+        argv[nargs + i] = v;
+        i++;
+      }
+    }
+
+    r = slots->kc_vinstall(es, callable, argv, nargs, kwnames, tail_call);
+    Py_DECREF(kwnames);
+    if (argv != small)
+      PyMem_Free(argv);
+    return callable_promote_normal(es, r);
+  }
 }
 
 
@@ -159,12 +201,12 @@ KosOpResult KosCallable_CallNoArgs(KosEvalState *es,
 
   KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
 
-  if (! slots || ! slots->kc_install) {
+  if (! slots || ! slots->kc_vinstall) {
     PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
     return EVAL_RAISE();
   }
   return callable_promote_normal(
-      es, slots->kc_install(es, callable, NULL, NULL, tail_call));
+      es, slots->kc_vinstall(es, callable, NULL, 0, NULL, tail_call));
 }
 
 

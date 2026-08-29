@@ -194,35 +194,6 @@ static PyObject *procedure_repr(PyObject *self) {
    requested, so this mirrors Demand's cold sync fallback rather than
    its flattening install.
 */
-static KosOpResult procedure_kos_install(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  PyObject *wrapped = KosDemand_GetWrapped(callable);
-  PyObject *result = NULL;
-
-  (void) tail_call;
-
-  if (! wrapped) {
-    PyErr_SetString(PyExc_TypeError, "Procedure object is not initialized");
-    return EVAL_RAISE();
-  }
-
-  if (Koskari_DemandSyncEx(wrapped, args_tuple, kwds_dict, &result) < 0)
-    return EVAL_RAISE();
-  Py_XDECREF(result);
-
-  Py_INCREF(Py_None);
-  if (KosEvalState_StackPUSH(es, Py_None) < 0)
-    return EVAL_RAISE();
-
-  return EVAL_NORMAL();
-}
-
-
 static KosOpResult procedure_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -234,7 +205,6 @@ static KosOpResult procedure_kos_vinstall(
   PyObject *tup = NULL;
   PyObject *kwargs = NULL;
   Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
-  KosOpResult r;
 
   tup = PyTuple_New(nargs);
   if (! tup)
@@ -261,10 +231,34 @@ static KosOpResult procedure_kos_vinstall(
     }
   }
 
-  r = procedure_kos_install(es, callable, tup, kwargs, tail_call);
-  Py_DECREF(tup);
-  Py_XDECREF(kwargs);
-  return r;
+  (void) tail_call;
+  {
+    PyObject *wrapped = KosDemand_GetWrapped(callable);
+    PyObject *result = NULL;
+
+    if (! wrapped) {
+      Py_DECREF(tup);
+      Py_XDECREF(kwargs);
+      PyErr_SetString(PyExc_TypeError,
+                      "Procedure object is not initialized");
+      return EVAL_RAISE();
+    }
+
+    if (Koskari_DemandSyncEx(wrapped, tup, kwargs, &result) < 0) {
+      Py_DECREF(tup);
+      Py_XDECREF(kwargs);
+      return EVAL_RAISE();
+    }
+    Py_XDECREF(result);
+    Py_DECREF(tup);
+    Py_XDECREF(kwargs);
+
+    Py_INCREF(Py_None);
+    if (KosEvalState_StackPUSH(es, Py_None) < 0)
+      return EVAL_RAISE();
+
+    return EVAL_NORMAL();
+  }
 }
 
 
@@ -283,7 +277,6 @@ static KosEvaluatedTypeObject KosProcedureCallableType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosDemandCallableType),
   },
   .kos_call = {
-    .kc_install = procedure_kos_install,
     .kc_vinstall = procedure_kos_vinstall,
     .kc_wants_frame = 0,
     .kc_wants_frame_fn = NULL,

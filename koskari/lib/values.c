@@ -324,30 +324,6 @@ static KosOpResult values_dispatch(
 }
 
 
-static KosOpResult values_kos_install(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  KosValues *s = (KosValues *) callable;
-  PyObject *target = NULL;
-  PyObject *merged_args = NULL;
-  PyObject *merged_kw = NULL;
-  KosOpResult r;
-
-  if (values_merge(s, args_tuple, kwds_dict, &target, &merged_args,
-                   &merged_kw) < 0)
-    return EVAL_RAISE();
-
-  r = values_dispatch(es, target, merged_args, merged_kw, tail_call);
-  Py_DECREF(merged_args);
-  Py_XDECREF(merged_kw);
-  return r;
-}
-
-
 static KosOpResult values_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -842,7 +818,6 @@ KosEvaluatedTypeObject KosValuesType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .kc_install = values_kos_install,
     .kc_vinstall = values_kos_vinstall,
     .kc_wants_frame = 1,
     .kc_wants_frame_fn = NULL,

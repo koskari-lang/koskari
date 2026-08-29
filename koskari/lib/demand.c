@@ -660,51 +660,6 @@ static int demand_wants_frame(PyObject *callable) {
 }
 
 
-static KosOpResult demand_kos_install(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  KosDemandObject *d = (KosDemandObject *) callable;
-  PyObject *inner = d->wrapped;
-
-  if (! inner) {
-    PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
-    return EVAL_RAISE();
-  }
-
-  if (demand_inner_is_flattenable(inner)) {
-    /* Install inner directly into the frame prepared by do_frame_prep, then
-       mark that frame as the demand root so in-eval deny guards fire. */
-    KosOpResult r = KosCallable_CallArgs(es, inner, args_tuple, kwds_dict,
-                                        tail_call);
-    if (r.kind == KOS_RES_NORMAL) {
-      KosDynFrame *frame = KosEvalState_FRAME(es);
-      if (frame)
-        KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
-    }
-    return r;
-  }
-
-  /* Fallback: Python callable, yielding function, nested Demand, or
-     unsupported KosCallable.  demand_sync_ex creates its own context and
-     returns a concrete result (or DemandGenerator for yielding functions).
-     Push that result on the current frame's stack and return NORMAL so that
-     KosEvalState_Call handles tail-call conversion the same way
-     kos_install_function does for yielding KosFunctions. */
-  PyObject *result = NULL;
-  if (demand_sync_ex(inner, args_tuple, kwds_dict, &result) < 0)
-    return EVAL_RAISE();
-
-  if (KosEvalState_StackPUSH(es, result) < 0)
-    return EVAL_RAISE();  /* PUSH steals reference; already decremented on failure */
-
-  return EVAL_NORMAL();
-}
-
-
 static KosOpResult demand_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -802,7 +757,6 @@ KosEvaluatedTypeObject KosDemandCallableType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .kc_install = demand_kos_install,
     .kc_vinstall = demand_kos_vinstall,
     .kc_wants_frame = 0,
     .kc_wants_frame_fn = demand_wants_frame,

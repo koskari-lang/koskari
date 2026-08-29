@@ -139,7 +139,7 @@ its root.
 ## install
 
 Filling a prepared frame with runnable work. A callable's install slot
-(`kc_install` / `kc_vinstall`) fills the frame `do_frame_prep` set up;
+(`kc_vinstall`) fills the frame `do_frame_prep` set up;
 a generator install (`kos_dyn_gen_install`) re-splices a frozen chain;
 a native program install pushes a code-less frame carrying the
 program's descriptor. "Installed work" is work now runnable on the

@@ -185,67 +185,6 @@ static int kospartial_wants_frame(PyObject *self) {
 }
 
 
-/**
-   tp_kos_install.
-
-   Flattenable inner: merge bound + call args and tail-call through to func,
-   reusing the frame do_frame_prep prepared for this partial. tail_call is
-   forwarded unchanged -- the frame was prepared with this partial's
-   wants_frame (which delegates to func), so func's install slot fills exactly
-   that frame.
-
-   Otherwise: invoke via the Python call path (KosPartial_Call merges) and push
-   the result, mirroring the plain-Python call fallback.
-*/
-static KosOpResult kospartial_kos_install(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  KosPartialObject *p = (KosPartialObject *) callable;
-  PyObject *inner = p->func;
-
-  if (! kospartial_inner_is_flattenable(inner)) {
-    PyObject *empty = NULL;
-    PyObject *call_args = args_tuple;
-    if (! call_args) {
-      empty = PyTuple_New(0);
-      if (! empty)
-        return EVAL_RAISE();
-      call_args = empty;
-    }
-
-    PyObject *result = KosPartial_Call(callable, call_args, kwds_dict);
-    Py_XDECREF(empty);
-    if (! result)
-      return EVAL_RAISE();
-
-    if (KosEvalState_StackPUSH(es, result) < 0)
-      return EVAL_RAISE();  /* PUSH steals ref; already decremented on failure */
-
-    return EVAL_NORMAL();
-  }
-
-  PyObject *merged_args = kospartial_merge_args(p->args, args_tuple);
-  if (! merged_args)
-    return EVAL_RAISE();
-
-  PyObject *merged_kw = NULL;
-  if (kospartial_merge_kwds(p->keywords, kwds_dict, &merged_kw) < 0) {
-    Py_DECREF(merged_args);
-    return EVAL_RAISE();
-  }
-
-  KosOpResult r = KosCallable_CallArgs(es, inner, merged_args, merged_kw,
-                                       tail_call);
-  Py_DECREF(merged_args);
-  Py_XDECREF(merged_kw);
-  return r;
-}
-
-
 static KosOpResult kospartial_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -318,10 +257,39 @@ static KosOpResult kospartial_kos_vinstall(
       }
     }
 
-    r = kospartial_kos_install(es, callable, tup, kwargs, tail_call);
-    Py_DECREF(tup);
-    Py_XDECREF(kwargs);
-    return r;
+    if (! kospartial_inner_is_flattenable(inner)) {
+      PyObject *result = KosPartial_Call(callable, tup, kwargs);
+      Py_DECREF(tup);
+      Py_XDECREF(kwargs);
+      if (! result)
+        return EVAL_RAISE();
+      if (KosEvalState_StackPUSH(es, result) < 0)
+        return EVAL_RAISE();  /* PUSH steals ref; released on failure */
+      return EVAL_NORMAL();
+    }
+
+    {
+      PyObject *merged_args = kospartial_merge_args(p->args, tup);
+      PyObject *merged_kw = NULL;
+
+      Py_DECREF(tup);
+      if (! merged_args) {
+        Py_XDECREF(kwargs);
+        return EVAL_RAISE();
+      }
+      if (kospartial_merge_kwds(p->keywords, kwargs, &merged_kw) < 0) {
+        Py_XDECREF(kwargs);
+        Py_DECREF(merged_args);
+        return EVAL_RAISE();
+      }
+      Py_XDECREF(kwargs);
+
+      r = KosCallable_CallArgs(es, inner, merged_args, merged_kw,
+                               tail_call);
+      Py_DECREF(merged_args);
+      Py_XDECREF(merged_kw);
+      return r;
+    }
   }
 }
 
@@ -729,7 +697,6 @@ KosEvaluatedTypeObject KosPartialCallableType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .kc_install = kospartial_kos_install,
     .kc_vinstall = kospartial_kos_vinstall,
     .kc_wants_frame = 0,
     .kc_wants_frame_fn = kospartial_wants_frame,

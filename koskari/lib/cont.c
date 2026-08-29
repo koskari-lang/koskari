@@ -177,22 +177,6 @@ static KosOpResult call_call_continuation(
 }
 
 
-static KosOpResult kos_install_continuation(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  (void) kwds_dict;
-  (void) tail_call;
-  return call_call_continuation(
-      es, callable,
-      (args_tuple && PyTuple_GET_SIZE(args_tuple) > 0)
-          ? PyTuple_GET_ITEM(args_tuple, 0) : Py_None);
-}
-
-
 static KosOpResult kos_vinstall_continuation(
     KosEvalState *es,
     PyObject *callable,
@@ -225,7 +209,6 @@ KosEvaluatedTypeObject KosPyDelimitedContinuationType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .kc_install = kos_install_continuation,
     .kc_vinstall = kos_vinstall_continuation,
     .kc_wants_frame = 0,
     .kc_wants_frame_fn = NULL,
@@ -400,7 +383,6 @@ KosEvaluatedTypeObject KosPyContinuationType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .kc_install = kos_install_continuation,
     .kc_vinstall = kos_vinstall_continuation,
     .kc_wants_frame = 0,
     .kc_wants_frame_fn = NULL,

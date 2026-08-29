@@ -29,7 +29,7 @@ struct KosContext;
 
 /**
    Check-and-resolve in one: when obj is a KosCallable (a KosEvaluated
-   whose suite carries an install slot), store the resolved suite into
+   whose suite carries the install slot), store the resolved suite into
    *out_slots and return 1; otherwise return 0 with *out_slots
    untouched. The single resolve serves the whole call sequence --
    frame prep and dispatch take the suite from here rather than
@@ -47,7 +47,7 @@ static inline int KosCallable_CheckSlots(
     return 0;
 
   KosCallSlots *slots = &et->kos_call;
-  if (! slots->kc_install && ! slots->kc_vinstall)
+  if (! slots->kc_vinstall)
     return 0;
 
   *out_slots = slots;
@@ -165,9 +165,8 @@ PyObject *KosCallShape_PyCallOne(KosCallShape *shape, PyObject *arg);
 /* === KosCallable_* : KosCallable-only invocation (no type check, no frame prep) === */
 
 /**
-   KosCallable_CallSlots: invoke through an already-resolved suite with
-   vectorcall-style args. Prefers kc_vinstall when present; otherwise
-   builds tuple+dict and uses kc_install.
+   KosCallable_CallSlots: invoke kc_vinstall through an
+   already-resolved suite with vectorcall-style args.
 
    es must match the KosEvalState_Call* caller. callable, args, kwnames are
    borrowed.
@@ -178,8 +177,10 @@ KosOpResult KosCallable_CallSlots(KosEvalState *es,
     int tail_call);
 
 /**
-   KosCallable_CallArgsSlots: invoke kc_install through an
-   already-resolved suite with tuple+dict args.
+   KosCallable_CallArgsSlots: the central tuple-to-vector spread --
+   borrow the tuple's item array as the vector (extended with the
+   dict's values under a kwnames tuple when keywords are present) and
+   invoke kc_vinstall.
 */
 KosOpResult KosCallable_CallArgsSlots(KosEvalState *es,
     KosCallSlots *slots, PyObject *callable,
@@ -206,9 +207,8 @@ KosOpResult KosCallable_CallArgs(KosEvalState *es,
     int tail_call);
 
 /**
-   KosCallable_CallNoArgs: dispatch kc_install with NULL args_tuple and
-   NULL kwds_dict. callable MUST be a KosCallable; no type check is
-   performed.
+   KosCallable_CallNoArgs: dispatch kc_vinstall with no arguments.
+   callable MUST be a KosCallable; no type check is performed.
 */
 KosOpResult KosCallable_CallNoArgs(KosEvalState *es,
     PyObject *callable, int tail_call);

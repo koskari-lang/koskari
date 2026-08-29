@@ -59,14 +59,14 @@ inline and chain to the root. `ki_pycall` / `ki_pyvectorcall` are the
 Python-boundary workers; `Koskari_AsyncCall` and the `KosCallAdapt_*`
 fillers dispatch through them with no per-type knowledge.
 
-The call-suite slots carry the `kc_` prefix (`kc_install`,
-`kc_vinstall`, `kc_wants_frame`, `kc_wants_frame_fn`, `kc_pycall`,
+The call-suite slots carry the `kc_` prefix (`kc_vinstall`,
+`kc_wants_frame`, `kc_wants_frame_fn`, `kc_pycall`,
 `kc_pyvectorcall`); `ki_` is the iter-suite prefix.
 
-Known open work, independent of the iteration redesign: collapsing the
-dual install entries onto a single vector-shaped install with a central
-tuple spread, and re-expressing `demand_sync_ex`'s type switch over the
-suite.
+The two follow-ups once noted here have both landed: the dual install
+entries collapsed onto the single vector-shaped `kc_vinstall` with the
+central tuple spread in `KosCallable_CallArgsSlots`, and
+`demand_sync_ex` re-expressed over the shared call entries.
 
 ## History: the scattered first cut
 

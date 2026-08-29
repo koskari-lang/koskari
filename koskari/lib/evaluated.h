@@ -30,7 +30,7 @@
    Each in-eval interface family is a suite embedded inline, mirroring
    CPython's tp_as_* design without the indirection: the call suite
    here, the iter suite when it lands. Membership in a family is by its
-   defining slot (a callable has kc_install or kc_vinstall), not by a
+   defining slot (a callable has kc_vinstall), not by a
    pointer being non-NULL.
 
    Detection is a marker-base subtype check against KosEvaluatedType,
@@ -43,9 +43,11 @@
 
 
 /**
-   Install functions receive borrowed references. callable, args_tuple,
-   kwds_dict (or args, kwnames for vector) must not be DECREF'd by the
-   implementation.
+   Install functions receive borrowed references: callable, the argv
+   vector, and kwnames must not be DECREF'd by the implementation.
+   argv holds nargs positionals followed by one value per kwnames
+   entry (PEP 590 shape); tuple+dict callers are spread onto this
+   shape centrally by KosCallable_CallArgsSlots.
 
    es must be the same live KosEvalState that KosEvalState_Call* prepared via
    do_frame_prep. Use KosEvalState_CONTEXT(es) when the heap context is needed.
@@ -53,14 +55,6 @@
    tail_call: 1 if this is a tail call; 0 otherwise. Most implementations
    ignore this; frame behavior is handled by the caller (KosEvalState_Call*).
 */
-typedef KosOpResult (*KosInstallFunc)(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call);
-
-
 typedef KosOpResult (*KosVectorInstallFunc)(
     KosEvalState *es,
     PyObject *callable,
@@ -80,8 +74,7 @@ typedef int (*KosCallableWantsFrameFunc)(PyObject *callable);
 
 /**
    The call suite: the in-eval call interface plus the Python-boundary
-   workers. A type whose suite carries kc_install or kc_vinstall is a
-   KosCallable.
+   workers. A type whose suite carries kc_vinstall is a KosCallable.
 
    kc_pycall is the Python-boundary worker: how this callable is invoked
    from outside any running eval, returning whatever its surface dictates
@@ -91,8 +84,7 @@ typedef int (*KosCallableWantsFrameFunc)(PyObject *callable);
    fillers dispatch through these; no caller needs per-type knowledge.
 */
 typedef struct KosCallSlots {
-  KosInstallFunc kc_install;              /* tuple+dict; may be NULL */
-  KosVectorInstallFunc kc_vinstall;       /* vectorcall; may be NULL */
+  KosVectorInstallFunc kc_vinstall;       /* the install entry */
   int kc_wants_frame;                     /* default when fn is NULL */
   KosCallableWantsFrameFunc kc_wants_frame_fn;  /* if non-NULL, overrides */
   ternaryfunc kc_pycall;                  /* Python-boundary call worker */

@@ -232,11 +232,13 @@ static KosOpResult kos_apply_install_core(
     return EVAL_RAISE();
   }
 
-  /* Flattening: delegate to inner callable's install */
+  /* Flattening: delegate to inner callable's install through the
+     central tuple-to-vector spread */
   {
     KosCallSlots *fn_slots;
-    if (KosCallable_CheckSlots(fn, &fn_slots) && fn_slots->kc_install) {
-      KosOpResult r = fn_slots->kc_install(es, fn, seq_args, kwds, tail_call);
+    if (KosCallable_CheckSlots(fn, &fn_slots)) {
+      KosOpResult r = KosCallable_CallArgsSlots(es, fn_slots, fn,
+                                                seq_args, kwds, tail_call);
       Py_DECREF(seq_args);
       return r;
     }
@@ -258,30 +260,6 @@ static KosOpResult kos_apply_install_core(
     return EVAL_RAISE();
   }
   return EVAL_NORMAL();
-}
-
-
-static KosOpResult kos_install_apply(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call) {
-
-  (void) callable;
-  (void) kwds_dict;
-  Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
-  if (n < 1 || n > 3) {
-    PyErr_SetString(PyExc_TypeError, "apply expects 1, 2, or 3 arguments");
-    return EVAL_RAISE();
-  }
-
-  return kos_apply_install_core(
-      es,
-      PyTuple_GET_ITEM(args_tuple, 0),
-      (n >= 2) ? PyTuple_GET_ITEM(args_tuple, 1) : NULL,
-      (n >= 3) ? PyTuple_GET_ITEM(args_tuple, 2) : NULL,
-      tail_call);
 }
 
 
@@ -351,7 +329,6 @@ static KosEvaluatedTypeObject KosApplyType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .kc_install = kos_install_apply,
     .kc_vinstall = kos_vinstall_apply,
     .kc_wants_frame = 1,
     .kc_wants_frame_fn = NULL,

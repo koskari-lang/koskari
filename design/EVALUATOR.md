@@ -1042,8 +1042,9 @@ the call and iter suites embedded inline. The call suite:
 
 ```c
 typedef struct KosCallSlots {
-  KosInstallFunc kc_install;        // args tuple + kwds dict install
-  KosVectorInstallFunc kc_vinstall; // vectorcall install; may be NULL
+  KosVectorInstallFunc kc_vinstall; // the install entry (vector shape;
+                                    // tuple+dict callers are spread
+                                    // centrally by CallArgsSlots)
   int kc_wants_frame;               // static default
   KosCallableWantsFrameFunc kc_wants_frame_fn;  // per-instance override
   ternaryfunc kc_pycall;            // Python-boundary call worker
