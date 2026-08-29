@@ -1850,12 +1850,37 @@ KosOpResult KosNativeFrame_ReturnPark(
 
 
 /**
+   Push a code-less frame, reusing a parked frame from cache when one
+   is available. Either way the frame gets an owned fill of the live
+   namespace (kos_dyn_push_frame_native's contract): the parked frame
+   was stripped of its fill at park, so the reinstall attaches a fresh
+   one before the push publishes the frame's namespace to the live
+   register. Shared by KosNativeFrame_Install and
+   KosResumeFrame_Install; callers fill native_prog/native_state or
+   resume_name themselves.
+*/
+static KosDynFrame *kos_push_or_reuse_codeless_frame(
+    KosEvalState *es,
+    KosDynFrame **cache) {
+
+  if (cache && *cache) {
+    PyObject *live_ns = KosEvalState_NAMESPACE(es);
+    KosDynFrame *frame = *cache;
+
+    *cache = NULL;
+    Py_XINCREF(live_ns);
+    KosDynFrame_NS(frame) = live_ns;
+    kos_dyn_push_ready_frame(es, frame);
+    return frame;
+  }
+
+  return kos_dyn_push_frame_native(es);
+}
+
+
+/**
    Push a code-less frame carrying a native program, reusing a parked
-   frame from cache when one is available. Either way the frame gets
-   an owned fill of the live namespace (kos_dyn_push_frame_native's
-   contract): the parked frame was stripped of its fill at park, so
-   the reinstall attaches a fresh one before the push publishes the
-   frame's namespace to the live register. staged (borrowed, may be
+   frame from cache when one is available. staged (borrowed, may be
    NULL) lands on the new frame's stack for the first ITERATE wake.
 */
 KosDynFrame *KosNativeFrame_Install(
@@ -1865,21 +1890,9 @@ KosDynFrame *KosNativeFrame_Install(
     PyObject *staged,
     KosDynFrame **cache) {
 
-  KosDynFrame *frame;
-
-  if (cache && *cache) {
-    PyObject *live_ns = KosEvalState_NAMESPACE(es);
-
-    frame = *cache;
-    *cache = NULL;
-    Py_XINCREF(live_ns);
-    KosDynFrame_NS(frame) = live_ns;
-    kos_dyn_push_ready_frame(es, frame);
-  } else {
-    frame = kos_dyn_push_frame_native(es);
-    if (! frame)
-      return NULL;
-  }
+  KosDynFrame *frame = kos_push_or_reuse_codeless_frame(es, cache);
+  if (! frame)
+    return NULL;
 
   KosDynFrame_NATIVE_PROG(frame) = (void *) prog;
   KosDynFrame_NATIVE_STATE(frame) = state;
@@ -1887,6 +1900,20 @@ KosDynFrame *KosNativeFrame_Install(
   if (staged && KosEvalState_StackPushRef(es, staged) < 0)
     return NULL;
 
+  return frame;
+}
+
+
+KosDynFrame *KosResumeFrame_Install(
+    KosEvalState *es,
+    const char *name,
+    KosDynFrame **cache) {
+
+  KosDynFrame *frame = kos_push_or_reuse_codeless_frame(es, cache);
+  if (! frame)
+    return NULL;
+
+  KosDynFrame_RESUME_NAME(frame) = name;
   return frame;
 }
 
@@ -1927,6 +1954,51 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
     default:
       kos_dyn_next_abort_after_failed_attach(es);
       return KOS_IREQ_ERROR;
+  }
+}
+
+
+KosOpResult KosEvalState_NextResume(
+    KosEvalState *es,
+    PyObject *iter,
+    PyObject *send_val,
+    KosResumeFn resume,
+    void *state) {
+
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  PyObject *out = NULL;
+
+  (void) send_val;  /* no caller sends into Next yet; matches the
+                        design's future Send entry point */
+
+  switch (KosNativeFrame_RequestNext(es, iter, &out)) {
+    case KOS_IREQ_DELIVERED:
+      if (KosEvalState_StackPushRef(es, out) < 0) {
+        Py_DECREF(out);
+        return EVAL_RAISE();
+      }
+      Py_DECREF(out);
+      KosDynFrame_RESUME_FN(frame) = (void *) resume;
+      KosDynFrame_RESUME_STATE(frame) = state;
+      return EVAL_REPROLOGUE();
+
+    case KOS_IREQ_CONTINUES:
+      KosDynFrame_RESUME_FN(frame) = (void *) resume;
+      KosDynFrame_RESUME_STATE(frame) = state;
+      return EVAL_REPROLOGUE();
+
+    case KOS_IREQ_EXIT:
+      KosDynFrame_RESUME_FN(frame) = (void *) resume;
+      KosDynFrame_RESUME_STATE(frame) = state;
+      return EVAL_AWAIT(out);
+
+    case KOS_IREQ_EXHAUSTED:
+      PyErr_SetNone(PyExc_StopIteration);
+      return EVAL_RAISE();
+
+    case KOS_IREQ_ERROR:
+    default:
+      return EVAL_RAISE();
   }
 }
 
@@ -2261,11 +2333,19 @@ static inline KosOpResult eval_event_return(
    is a straight frame-to-frame pop with no node deliveries.  Assumes
    DYN_TOP == FRAME is already established.  The single definition, shared
    by eval_event_return_at_frame and kos_return_is_plain.
+
+   A CPS resume-carrying parent is excluded even though it has no
+   native program: eval_ng_plain_return sets es->code from the parent
+   and returns EVAL_DISPATCH() (bypassing cg_prologue entirely), which
+   is only safe when that code is real bytecode. A resume-carrying
+   parent is codeless -- it must fall through to the general path so
+   cg_prologue's own resume check gets a chance to run.
 */
 static inline int kos_return_parent_is_plain(KosDynNode *parent) {
   return parent
       && KosDynNode_IS_FRAME(parent)
-      && ! KosDynFrame_NATIVE_PROG((KosDynFrame *) parent);
+      && ! KosDynFrame_NATIVE_PROG((KosDynFrame *) parent)
+      && ! KosDynFrame_RESUME_FN((KosDynFrame *) parent);
 }
 
 
@@ -2405,7 +2485,8 @@ static inline int kos_return_is_extent_plain(
   ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
   if (! ft
       || ! KosDynNode_IS_FRAME((KosDynNode *) ft)
-      || KosDynFrame_NATIVE_PROG(ft))
+      || KosDynFrame_NATIVE_PROG(ft)
+      || KosDynFrame_RESUME_FN(ft))
     return 0;
 
   if (! KosDynNode_STACK(child)
@@ -2670,22 +2751,33 @@ static KosOpResult eval_step_native_iteration(KosEvalState *es) {
 /**
    One CPS resume delivery: pop the value staged on the current frame's
    own stack, clear the frame's resume, and invoke it. Caller must only
-   invoke when the eval frame has RESUME_FN set. Exhaustion and errors
-   are never delivered through this channel -- see the raise-walk offer
-   in dyn_walk.c for those.
+   invoke when the eval frame has RESUME_FN set. A resume-carrying
+   frame's own stack holds nothing else, so an empty stack unambiguously
+   means no delivery was ever staged -- a consumer set the resume
+   directly (bypassing KosEvalState_CallResume/NextResume) to defer its
+   own first step to this trampoline, the way a cold KOS_ITER_INSTALLED
+   install must (koskari_eval runs as a separate step after install,
+   never nested inside it). That resume is invoked with NULL and no
+   exception set; its own contract, not this one, says what NULL means
+   -- KosEvalState_CallResume/NextResume never stage that combination
+   themselves, so no resume fed through them ever sees it. Exhaustion
+   and errors from an actual delivery are never delivered through this
+   channel either way -- see the raise-walk offer in dyn_walk.c.
 */
 static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosDynFrame *frame = KosEvalState_FRAME(es);
   KosResumeFn resume = (KosResumeFn) KosDynFrame_RESUME_FN(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
-  PyObject *val;
+  PyObject *val = NULL;
 
   KosDynFrame_RESUME_FN(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
-  val = KosEvalState_StackPopRef(es);
-  if (! val)
-    return EVAL_RAISE();
+  if (KosEvalState_StackLen(es) > 0) {
+    val = KosEvalState_StackPopRef(es);
+    if (! val)
+      return EVAL_RAISE();
+  }
 
   {
     KosOpResult res = resume(es, state, val);

@@ -279,6 +279,21 @@ KosDynFrame *KosNativeFrame_Install(
 
 
 /**
+   Push a code-less frame onto the chain for CPS resume use, the
+   resume-model counterpart to KosNativeFrame_Install. When cache holds
+   a parked frame it is reinstalled in place of a fresh allocation and
+   *cache is emptied. The frame carries only name (for a capture
+   refusal message, see kos_dynframe_clone) -- it has no resume set
+   until the caller's next KosEvalState_CallResume / NextResume call
+   sets one. Returns the frame, or NULL with PyErr set.
+*/
+KosDynFrame *KosResumeFrame_Install(
+    KosEvalState *es,
+    const char *name,
+    KosDynFrame **cache);
+
+
+/**
    Request the next element of iter from inside a native frame handler:
    push a one-request iteration node for iter and run one request
    through KosIterRequest_Next. On DELIVERED *out is the element (new
@@ -294,6 +309,27 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
     KosEvalState *es,
     PyObject *iter,
     PyObject **out);
+
+
+/**
+   Request the next element of iter, delivering it (or the failure) to
+   resume instead of making the caller interpret KosIterRequestStatus
+   by hand. A delivered element and an in-flight CONTINUES both stage
+   through the current frame's own stack and set resume there, so the
+   delivery always bounces through the trampoline rather than calling
+   resume inline (constant stack across a synchronous run of many
+   elements). An awaitable in-flight (EXIT) sets resume the same way
+   and returns EVAL_AWAIT; the AWAITED revive delivers into it.
+   Exhaustion raises StopIteration, offered to resume via the raise
+   walk like any other failure. send_val is accepted for a future Send
+   entry point; unused today. Caller must have a current frame.
+*/
+KosOpResult KosEvalState_NextResume(
+    KosEvalState *es,
+    PyObject *iter,
+    PyObject *send_val,
+    KosResumeFn resume,
+    void *state);
 
 
 /* === KosContext: VM execution context === */
@@ -930,6 +966,29 @@ KosOpResult KosEvalState_Call(
     Py_ssize_t nargs,
     PyObject *kwnames,
     int tail_call);
+
+
+/**
+   Call callable, delivering the settled result (or failure) to resume
+   instead of making the caller interpret KosEvalState_Call's own
+   result by hand. Every arm sets resume on the current frame before
+   returning: an installed callee (NORMAL/REPROLOGUE) delivers by
+   frame return; a synchronous RETURN value stages onto the frame's
+   own stack and bounces through the trampoline the same way; a
+   RETURN value needing await, or the call's own result needing
+   await, both set resume and let the AWAITED revive deliver into it.
+   RAISE / FATAL relay untouched -- resume is offered the failure via
+   the raise walk instead. Caller must have a current frame; not a
+   tail call.
+*/
+KosOpResult KosEvalState_CallResume(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    KosResumeFn resume,
+    void *state);
 
 
 /**

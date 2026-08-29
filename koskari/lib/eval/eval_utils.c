@@ -594,6 +594,69 @@ KosOpResult KosEvalState_Call(
 }
 
 
+KosOpResult KosEvalState_CallResume(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    KosResumeFn resume,
+    void *state) {
+
+  KosDynFrame *caller = KosEvalState_FRAME(es);
+  KosOpResult r = KosEvalState_Call(es, callable, args, nargs, kwnames, 0);
+
+  switch (r.kind) {
+    case KOS_RES_NORMAL:
+    case KOS_RES_REPROLOGUE:
+      /* callee installed above caller, or already running in-eval;
+         caller's own frame is unchanged and still reachable -- its
+         eventual return delivers here. */
+      KosDynFrame_RESUME_FN(caller) = (void *) resume;
+      KosDynFrame_RESUME_STATE(caller) = state;
+      return EVAL_REPROLOGUE();
+
+    case KOS_RES_AWAIT:
+      /* the call's own result needed awaiting; the AWAITED revive
+         delivers into resume once it settles. */
+      KosDynFrame_RESUME_FN(caller) = (void *) resume;
+      KosDynFrame_RESUME_STATE(caller) = state;
+      return r;
+
+    case KOS_RES_RETURN:
+      switch (KosEval_ResultIsValue(r.val)) {
+        case 1:
+          if (KosEvalState_StackPushRef(es, r.val) < 0) {
+            Py_DECREF(r.val);
+            return EVAL_RAISE();
+          }
+          Py_DECREF(r.val);
+          KosDynFrame_RESUME_FN(caller) = (void *) resume;
+          KosDynFrame_RESUME_STATE(caller) = state;
+          return EVAL_REPROLOGUE();
+
+        case 0: {
+          KosOpResult pr = KosEvalState_PushOrAwait(es, r.val);
+          if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE
+              || pr.kind == KOS_RES_AWAIT) {
+            KosDynFrame_RESUME_FN(caller) = (void *) resume;
+            KosDynFrame_RESUME_STATE(caller) = state;
+            return (pr.kind == KOS_RES_AWAIT) ? pr : EVAL_REPROLOGUE();
+          }
+          return pr;
+        }
+
+        default:
+          Py_DECREF(r.val);
+          return EVAL_RAISE();
+      }
+
+    default:
+      return r;  /* RAISE / FATAL: relay untouched */
+  }
+}
+
+
 /* === kos_call_invoke: the shared call core (call-unification Phase 2) ===
 
    The entry for the CALL_* opcode prologues: kos_call_invoke inlines

@@ -20,14 +20,16 @@
    KosMap: a native lazy map over one source, duck-typed against
    builtins.map, implemented as a KosIter provider.
 
-   The fast path is pure C: a sync source element and a non-suspending
-   function result complete as KOS_ITER_VALUE with the evaluator
-   untouched. Anything asynchronous installs one native frame whose
-   handler runs the two-phase machine -- FETCH requests the next source
-   element through its own NEXT node (KosIterRequest_Next, all
-   three protocols), INVOKE applies the function through the call path
-   -- and completes by returning the element, delivered to the
-   consumer's iteration node as the step value. Exhaustion and errors leave
+   The fast path is pure C: a sync source element and a non-suspending,
+   direct-return-guaranteed koskari function complete as KOS_ITER_VALUE
+   or a graft install with the evaluator otherwise untouched (cs_direct,
+   still unconverted below pending a benchmark-driven decision -- see
+   design/cps-consumer-api.md). Anything else -- a driven source, or a
+   FRAME-shaped or awaitable-returning function without that guarantee
+   -- runs under one CPS resume-carrying frame: FETCH requests the next
+   source element via KosEvalState_NextResume, INVOKE applies the
+   function via KosEvalState_CallResume, and completion delivers the
+   element to the consumer's iteration node. Exhaustion and errors leave
    the frame as exceptions; the consumer's iteration node converts
    StopIteration per its own rules, which also gives a mapped
    function's StopIteration builtins.map truncation parity.
@@ -43,15 +45,6 @@
 /* === instance === */
 
 
-typedef enum {
-  KOS_MAP_NF_FETCH = 0,   /* next wake starts a fetch */
-  KOS_MAP_NF_WAIT_ELEM,   /* fetch in flight; element arrives by stack
-                             push (node delivery) or AWAITED */
-  KOS_MAP_NF_WAIT_RESULT, /* invoke in flight; result arrives by
-                             CALL_VALUE, AWAITED, or stack push */
-} KosMapNfPhase;
-
-
 typedef struct {
   PyObject_HEAD
   KosCallShape fn;       /* callable applied per element, shape
@@ -64,53 +57,91 @@ typedef struct {
   uint8_t src_sync;      /* source steps through tp_iternext alone */
   uint8_t closed;        /* exhausted or closed */
   uint8_t busy;          /* a step is in flight; ki_finish clears */
-  uint8_t nf_phase;      /* KosMapNfPhase while the frame is live */
 } KosMapObject;
 
 
-/* === the step's native frame program === */
+/* === the step's CPS resumes ===
+
+   No frame-carrying capture: replaying a captured step would
+   re-consume source elements, so continuation capture across a live
+   map-step frame refuses by name (see KosResumeFrame_Install call
+   sites below and kos_dynframe_clone's resume refusal). */
+
+
+/* Forward declaration: map_finish_invoke_result sets this as the
+   resume for a value that itself needs (re-)awaiting. */
+static KosOpResult map_resume_after_result(
+    KosEvalState *es, void *state, PyObject *value);
 
 
 /**
-   INVOKE from inside the frame program: apply func to element and
-   either complete the frame (EVAL_RETURN delivers the element through
-   the consumer's iteration node) or leave the invoke in flight. element is
-   consumed.
+   Classify a settled invoke result and either complete the step
+   (KosNativeFrame_ReturnPark) or set map_resume_after_result to
+   reclassify whatever the awaitable eventually settles to -- a
+   koskari function's coroutine can hand back another awaitable.
+   value is consumed.
 */
-static KosOpResult map_nf_invoke(
+static KosOpResult map_finish_invoke_result(
     KosEvalState *es,
     KosMapObject *m,
-    PyObject *element) {
+    PyObject *value) {
 
-  /* A frame-wanting KosCallable installs as a child frame; its return
-     arrives as the CALL_VALUE wake. The element's own address is the
-     argument vector. */
-  if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
-    m->nf_phase = KOS_MAP_NF_WAIT_RESULT;
-    {
-      KosOpResult r = KosEvalState_Call(es, m->fn.cs_callable,
-                                        &element, 1, NULL, 0);
-      Py_DECREF(element);
-      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
+  switch (KosEval_ResultIsValue(value)) {
+    case 1:
+      return KosNativeFrame_ReturnPark(es, value, &m->cached_frame);
+
+    case 0: {
+      KosDynFrame *frame = KosEvalState_FRAME(es);
+      KosOpResult pr;
+
+      KosDynFrame_RESUME_FN(frame) = (void *) map_resume_after_result;
+      KosDynFrame_RESUME_STATE(frame) = m;
+
+      pr = KosEvalState_PushOrAwait(es, value);
+      if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
         return EVAL_REPROLOGUE();
-      if (r.kind == KOS_RES_RETURN) {
-        /* the install completed with the element in hand */
-        switch (KosEval_ResultIsValue(r.val)) {
-          case 1:
-            return KosNativeFrame_ReturnPark(es, r.val, &m->cached_frame);
-          case 0: {
-            KosOpResult pr = KosEvalState_PushOrAwait(es, r.val);
-            if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
-              return EVAL_REPROLOGUE();
-            return pr;
-          }
-          default:
-            Py_DECREF(r.val);
-            return EVAL_RAISE();
-        }
-      }
-      return r;
+      return pr;
     }
+
+    default:
+      Py_DECREF(value);
+      return EVAL_RAISE();
+  }
+}
+
+
+static KosOpResult map_resume_after_result(
+    KosEvalState *es, void *state, PyObject *value) {
+
+  /* Declined by the raise walk's default: the frame pops and the
+     consumer's iteration node owns the conversion (StopIteration
+     truncation parity included). */
+  if (! value)
+    return EVAL_RAISE();
+
+  return map_finish_invoke_result(es, (KosMapObject *) state, value);
+}
+
+
+/**
+   INVOKE: apply func to element via CallResume (a frame-wanting
+   callable) or directly (a plain callable), then classify the result.
+   element is consumed.
+*/
+static KosOpResult map_resume_after_fetch(
+    KosEvalState *es, void *state, PyObject *element) {
+
+  KosMapObject *m = (KosMapObject *) state;
+
+  if (! element)
+    return EVAL_RAISE();
+
+  if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
+    KosOpResult r = KosEvalState_CallResume(
+        es, m->fn.cs_callable, &element, 1, NULL,
+        map_resume_after_result, m);
+    Py_DECREF(element);
+    return r;
   }
 
   {
@@ -118,144 +149,28 @@ static KosOpResult map_nf_invoke(
     Py_DECREF(element);
     if (! result)
       return EVAL_RAISE();
-
-    switch (KosEval_ResultIsValue(result)) {
-      case 1:
-        return KosNativeFrame_ReturnPark(es, result, &m->cached_frame);
-      case 0: {
-        /* Awaitable result: park; the completion wakes as AWAITED
-           (or lands on the stack when it finishes eagerly). */
-        m->nf_phase = KOS_MAP_NF_WAIT_RESULT;
-        {
-          KosOpResult pr = KosEvalState_PushOrAwait(es, result);
-          if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
-            return EVAL_REPROLOGUE();
-          return pr;
-        }
-      }
-      default:
-        Py_DECREF(result);
-        return EVAL_RAISE();
-    }
+    return map_finish_invoke_result(es, m, result);
   }
 }
 
 
 /**
-   FETCH from inside the frame program: one request for the next
-   source element (KosNativeFrame_RequestNext). A completed element
-   goes straight to INVOKE; installed or suspended work leaves the
-   fetch in flight, the element arriving by stack delivery; exhaustion
-   raises StopIteration for the consumer's iteration node to convert.
+   Cold-start kickoff for a driven source: the very first NextResume
+   call for a freshly installed step. map_iter_step cannot make this
+   call itself -- it runs outside koskari_eval, and koskari_eval runs
+   as a separate step after install (see stepper_step), never nested
+   inside map_iter_step's own C call -- so it just sets this resume and
+   lets the trampoline invoke it, from inside koskari_eval, once the
+   frame is actually dispatched. Always invoked with NULL.
 */
-static KosOpResult map_nf_fetch(KosEvalState *es, KosMapObject *m) {
+static KosOpResult map_resume_start_fetch(
+    KosEvalState *es, void *state, PyObject *value) {
 
-  PyObject *out = NULL;
+  (void) value;
 
-  switch (KosNativeFrame_RequestNext(es, m->source, &out)) {
-    case KOS_IREQ_DELIVERED:
-      return map_nf_invoke(es, m, out);
-
-    case KOS_IREQ_EXHAUSTED:
-      KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
-      PyErr_SetNone(PyExc_StopIteration);
-      return EVAL_RAISE();
-
-    case KOS_IREQ_CONTINUES:
-      m->nf_phase = KOS_MAP_NF_WAIT_ELEM;
-      return EVAL_REPROLOGUE();
-
-    case KOS_IREQ_EXIT:
-      m->nf_phase = KOS_MAP_NF_WAIT_ELEM;
-      return EVAL_AWAIT(out);
-
-    case KOS_IREQ_ERROR:
-    default:
-      return EVAL_RAISE();
-  }
-}
-
-
-/**
-   The step's native frame handler: the FETCH/INVOKE machine, woken by
-   the eval loop's cadence, node deliveries landing on the frame
-   stack, awaited resumes, and callee-frame returns. Exceptions are
-   always declined -- the raise walk pops the frame and the consumer's
-   node converts protocol exceptions to exhaustion.
-*/
-static KosOpResult map_nf_handler(
-    KosEvalState *es,
-    KosNativeFrameEvent ev,
-    PyObject *value);
-
-
-/* No clone entry: replaying a captured step would re-consume source
-   elements, so continuation capture across a map step is refused. */
-static const KosNativeProgram kos_map_program = {
-  .np_name = "map-step",
-  .np_handler = map_nf_handler,
-  .np_clone_state = NULL,
-  .np_free_state = NULL,
-};
-
-
-static KosOpResult map_nf_handler(
-    KosEvalState *es,
-    KosNativeFrameEvent ev,
-    PyObject *value) {
-
-  KosMapObject *m =
-      (KosMapObject *) KosDynFrame_NATIVE_STATE(KosEvalState_FRAME(es));
-
-  if (! m) {
-    Py_XDECREF(value);
-    PyErr_SetString(PyExc_SystemError, "map frame lost its state");
-    return EVAL_RAISE();
-  }
-
-  switch (ev) {
-    case KOS_NFRAME_EXCEPTION:
-      /* Decline: the frame pops and the consumer's iteration node owns the
-         conversion (StopIteration truncation parity included). */
-      return EVAL_RAISE();
-
-    case KOS_NFRAME_ITERATE:
-      if (m->nf_phase == KOS_MAP_NF_FETCH)
-        return map_nf_fetch(es, m);
-      /* A delivery landed on the frame stack: pop it and route. */
-      value = KosEvalState_StackPopRef(es);
-      if (! value)
-        return EVAL_RAISE();
-      break;
-
-    case KOS_NFRAME_CALL_VALUE:
-    case KOS_NFRAME_AWAITED:
-      break;
-
-    default:
-      Py_XDECREF(value);
-      PyErr_SetString(PyExc_SystemError, "map frame: unexpected wake");
-      return EVAL_RAISE();
-  }
-
-  if (m->nf_phase == KOS_MAP_NF_WAIT_ELEM)
-    return map_nf_invoke(es, m, value);
-
-  /* KOS_MAP_NF_WAIT_RESULT: the invoke completed -- or handed back
-     another awaitable (a koskari function's coroutine); reclassify. */
-  switch (KosEval_ResultIsValue(value)) {
-    case 1:
-      return KosNativeFrame_ReturnPark(es, value, &m->cached_frame);
-    case 0: {
-      KosOpResult pr = KosEvalState_PushOrAwait(es, value);
-      if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
-        return EVAL_REPROLOGUE();
-      return pr;
-    }
-    default:
-      Py_DECREF(value);
-      return EVAL_RAISE();
-  }
+  return KosEvalState_NextResume(
+      es, ((KosMapObject *) state)->source, NULL,
+      map_resume_after_fetch, state);
 }
 
 
@@ -337,37 +252,27 @@ static KosIterStepResult map_iter_step(
     }
 
     /* A FRAME shape without the frame-return guarantee (values, a
-       bound method): host the call under the map's own frame program,
-       so an install that completes inline delivers onto the program
-       frame's stack and the WAIT_RESULT delivery handles it. */
+       bound method): stage the element on a resume-carrying frame and
+       defer the actual call to map_resume_after_fetch. map_iter_step
+       runs before koskari_eval drives this chain (see stepper_step),
+       so the call itself -- which can install a callee or need an
+       await -- must happen from inside that later dispatch, not here. */
     if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
-      if (! KosNativeFrame_Install(es, &kos_map_program, m, NULL,
-                                   &m->cached_frame)) {
+      KosDynFrame *frame = KosResumeFrame_Install(
+          es, "map-step", &m->cached_frame);
+      if (! frame) {
         Py_DECREF(element);
         return map_step_abort(es, pre_top);
       }
-      m->nf_phase = KOS_MAP_NF_WAIT_RESULT;
-      {
-        KosOpResult r = KosEvalState_Call(es, m->fn.cs_callable,
-                                          &element, 1, NULL, 0);
+      if (KosEvalState_StackPushRef(es, element) < 0) {
         Py_DECREF(element);
-        if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
-          m->busy = 1;
-          return KOS_ITER_INSTALLED_VALUE;
-        }
-        if (r.kind == KOS_RES_RETURN) {
-          /* The install completed with the call's value (apply's
-             flatten of a value-delivering callee): stage it for the
-             WAIT_RESULT delivery. */
-          int pushed = KosEvalState_StackPushRef(es, r.val);
-          Py_DECREF(r.val);
-          if (pushed < 0)
-            return map_step_abort(es, pre_top);
-          m->busy = 1;
-          return KOS_ITER_INSTALLED_VALUE;
-        }
         return map_step_abort(es, pre_top);
       }
+      Py_DECREF(element);
+      KosDynFrame_RESUME_FN(frame) = (void *) map_resume_after_fetch;
+      KosDynFrame_RESUME_STATE(frame) = m;
+      m->busy = 1;
+      return KOS_ITER_INSTALLED_VALUE;
     }
 
     {
@@ -381,8 +286,10 @@ static KosIterStepResult map_iter_step(
           *out = result;
           return KOS_ITER_VALUE;
         case 0:
-          /* Awaitable function result: stage it on the frame program,
-             which owns every suspension. */
+          /* Awaitable function result: stage it, unclassified, and
+             defer to map_resume_after_result the same way -- the
+             await it needs must happen from inside koskari_eval's
+             own dispatch, not from map_iter_step. */
           break;
         default:
           Py_DECREF(result);
@@ -390,26 +297,39 @@ static KosIterStepResult map_iter_step(
       }
 
       {
-        KosDynFrame *frame = KosNativeFrame_Install(
-            es, &kos_map_program, m, result, &m->cached_frame);
-        Py_DECREF(result);
-        if (! frame)
+        KosDynFrame *frame = KosResumeFrame_Install(
+            es, "map-step", &m->cached_frame);
+        if (! frame) {
+          Py_DECREF(result);
           return map_step_abort(es, pre_top);
+        }
+        if (KosEvalState_StackPushRef(es, result) < 0) {
+          Py_DECREF(result);
+          return map_step_abort(es, pre_top);
+        }
+        Py_DECREF(result);
+        KosDynFrame_RESUME_FN(frame) = (void *) map_resume_after_result;
+        KosDynFrame_RESUME_STATE(frame) = m;
         m->busy = 1;
-        m->nf_phase = KOS_MAP_NF_WAIT_RESULT;
         return KOS_ITER_INSTALLED_VALUE;
       }
     }
   }
 
-  /* Driven source (KosIter provider or python async iterator): the
-     whole step runs as the frame program, starting at FETCH. */
-  if (! KosNativeFrame_Install(es, &kos_map_program, m, NULL,
-                               &m->cached_frame))
-    return map_step_abort(es, pre_top);
-  m->busy = 1;
-  m->nf_phase = KOS_MAP_NF_FETCH;
-  return KOS_ITER_INSTALLED_VALUE;
+  /* Driven source (KosIter provider or python async iterator): set the
+     cold-start kickoff resume and defer the first fetch entirely --
+     nothing is fetched yet to stage, and the request itself (which can
+     suspend) must run from inside koskari_eval's own dispatch. */
+  {
+    KosDynFrame *frame = KosResumeFrame_Install(
+        es, "map-step", &m->cached_frame);
+    if (! frame)
+      return map_step_abort(es, pre_top);
+    KosDynFrame_RESUME_FN(frame) = (void *) map_resume_start_fetch;
+    KosDynFrame_RESUME_STATE(frame) = m;
+    m->busy = 1;
+    return KOS_ITER_INSTALLED_VALUE;
+  }
 }
 
 
@@ -549,7 +469,6 @@ static PyObject *kosmap_new(
   m->cached_frame = NULL;
   m->closed = 0;
   m->busy = 0;
-  m->nf_phase = KOS_MAP_NF_FETCH;
   return (PyObject *) m;
 }
 
