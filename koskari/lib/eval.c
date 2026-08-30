@@ -2692,6 +2692,17 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosOpResult res = EVAL_NORMAL();
   int have_res = 0;
 
+#if KOS_EVAL_SAFETYNET
+  /* Interim invariant until bytecode's builtin resume exists: only
+     codeless frames carry resumes. The return fast paths and the
+     prologue ordering both lean on it. */
+  if (KosDynFrame_CODE(frame)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "resume set on a code-carrying frame");
+    return EVAL_RAISE();
+  }
+#endif
+
   KosDynFrame_RESUME_FN(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
@@ -2700,6 +2711,18 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
     if (! val) {
       res = EVAL_RAISE();
       have_res = 1;
+
+#if KOS_EVAL_SAFETYNET
+    } else if (KosEvalState_StackLen(es) > 0) {
+      /* The empty-stack test above is the cold-start discriminator;
+         a second staged value would make it lie. */
+      Py_DECREF(val);
+      val = NULL;
+      PyErr_SetString(PyExc_SystemError,
+                      "resume frame staged more than one value");
+      res = EVAL_RAISE();
+      have_res = 1;
+#endif
 
     } else {
       switch (KosEval_ResultIsValue(val)) {

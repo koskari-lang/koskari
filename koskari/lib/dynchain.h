@@ -292,8 +292,10 @@ struct KosDynNode {
       void *resume_fn;
       void *resume_state;
       /* Borrowed static string naming the resume's installer, used
-         only to name the frame in a capture-refusal message. NULL
-         whenever resume_fn is NULL. */
+         only to name the frame in a capture-refusal message. Set by
+         KosResumeFrame_Install and lives for the frame's occupancy
+         (cleared at free, park, and tail reset), so it may be non-NULL
+         while resume_fn is momentarily NULL between deliveries. */
       const char *resume_name;
       /* Owning KosFunction (strong) when this frame participates in the
          per-function frame cache; NULL opts out (clones, placeholder,
