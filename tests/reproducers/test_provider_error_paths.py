@@ -36,7 +36,8 @@ import weakref
 
 from functools import partial
 
-from koskari.lib import KosFilter, KosMap, KosPartial, demand, values
+from koskari.lib import (
+    KosFilter, KosMap, KosPartial, KoskariSyncViolation, demand, values)
 from koskari.module import load_module_source_async, new_module
 
 import pytest
@@ -59,6 +60,10 @@ define inc [x]:
 
 define odd? [x]:
     (== 1 (% x 2))
+
+define gen1 [x]:
+    yield x
+    yield (* x 2)
 
 define gen2 [a b]:
     yield a
@@ -402,6 +407,38 @@ class TestProviderErrorPaths(unittest.IsolatedAsyncioTestCase):
 
         m = KosMap(outer, self.agen_123())
         self.assertEqual([x async for x in m], [10, 20, 30])
+
+    # === a delivery-point suspension inside a demand root is denied ===
+
+    async def test_delivery_point_suspension_denied_in_demand(self):
+        """
+        a mapper result that genuinely suspends while settling at the
+        CPS delivery point, under a demand root, raises
+        KoskariSyncViolation
+        """
+
+        async def slow(x):
+            await asyncio.sleep(0)
+            return x
+
+        m = KosMap(lambda x: slow(x), [1, 2])
+        with self.assertRaises(KoskariSyncViolation):
+            demand(self.v["collect"])(m)
+
+    # === a yielding mapper constructs, never the direct-return path ===
+
+    async def test_yielding_mapper_constructs_generators(self):
+        """
+        a yielding KosFunction mapped over a sync source delivers one
+        constructed generator per element
+        """
+
+        m = KosMap(self.v["gen1"], [3, 4])
+        elems = [x async for x in m]
+        self.assertEqual(len(elems), 2)
+        self.assertEqual(type(elems[0]).__name__, "AsyncGenerator")
+        self.assertEqual([y async for y in elems[0]], [3, 6])
+        self.assertEqual([y async for y in elems[1]], [4, 8])
 
 
 # The end.

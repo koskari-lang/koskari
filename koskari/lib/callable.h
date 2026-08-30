@@ -153,9 +153,15 @@ static inline void KosCallShape_Init(
     shape->cs_kind = KOS_CALL_SHAPE_PLAIN;
   }
 
+  /* The frame-return guarantee needs the callable to actually take a
+     frame, not merely to be a KosCallable: a yielding KosFunction
+     wants none (its install builds an AsyncGenerator and pushes it),
+     so its return is never the call's value. cs_kind alone carried
+     that test until the BOXED shape was retired. */
   shape->cs_direct =
       (shape->cs_kind == KOS_CALL_SHAPE_FRAME
-       && Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType));
+       && Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
+       && KosCallSlots_WantsFrame(shape->cs_slots, callable));
 }
 
 

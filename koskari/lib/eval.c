@@ -2689,49 +2689,58 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosResumeFn resume = (KosResumeFn) KosDynFrame_RESUME_FN(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
   PyObject *val = NULL;
+  KosOpResult res = EVAL_NORMAL();
+  int have_res = 0;
 
   KosDynFrame_RESUME_FN(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
   if (KosEvalState_StackLen(es) > 0) {
     val = KosEvalState_StackPopRef(es);
-    if (! val)
-      return EVAL_RAISE();
+    if (! val) {
+      res = EVAL_RAISE();
+      have_res = 1;
 
-    switch (KosEval_ResultIsValue(val)) {
-      case 1:
-        break;  /* settled: deliver it */
+    } else {
+      switch (KosEval_ResultIsValue(val)) {
+        case 1:
+          break;  /* settled: deliver it below */
 
-      case 0: {
-        /* Not settled yet. Put the resume back and hand the value to
-           the await machinery; delivery happens on a later pass. */
-        KosOpResult pr;
+        case 0:
+          /* Not settled yet. Put the resume back and hand the value to
+             the await machinery; delivery happens on a later pass. */
+          KosDynFrame_RESUME_FN(frame) = (void *) resume;
+          KosDynFrame_RESUME_STATE(frame) = state;
+          res = KosEvalState_PushOrAwait(es, val);
+          have_res = 1;
+          break;
 
-        KosDynFrame_RESUME_FN(frame) = (void *) resume;
-        KosDynFrame_RESUME_STATE(frame) = state;
-
-        pr = KosEvalState_PushOrAwait(es, val);
-        if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE)
-          return EVAL_REPROLOGUE();
-        return pr;
+        default:
+          Py_DECREF(val);
+          res = EVAL_RAISE();
+          have_res = 1;
+          break;
       }
-
-      default:
-        Py_DECREF(val);
-        return EVAL_RAISE();
     }
   }
 
+  if (! have_res)
+    res = resume(es, state, val);
+
+  /* Every outcome routes through the one hub: a RAISE from here is an
+     ordinary in-eval raise and must run the unwind walk (try/finally
+     extents, node conversion), and an AWAIT must reach
+     eval_event_await, which is where a demand extent denies it and
+     where the suspension event is recorded. Returning either raw would
+     escape koskari_eval unprocessed. */
+  if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE)
+    return EVAL_REPROLOGUE();
+
   {
-    KosOpResult res = resume(es, state, val);
-    if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE)
+    KosOpResult ar = apply_kos_op_result(es, res);
+    if (ar.kind == KOS_RES_DISPATCH)
       return EVAL_REPROLOGUE();
-    {
-      KosOpResult ar = apply_kos_op_result(es, res);
-      if (ar.kind == KOS_RES_DISPATCH)
-        return EVAL_REPROLOGUE();
-      return ar;
-    }
+    return ar;
   }
 }
 
