@@ -10,15 +10,19 @@ proposal covers the intermediary that gets us most of the structure while
 staying on a portable loop, and specifies the seam that lets the tail-call
 form drop in later as a localized change.
 
-**Status:** Design proposal -- not yet implemented.
+**Status:** Design proposal -- not yet implemented. Decided: once phase 2
+implementation begins, musttail support (clang, or GCC 15+) is mandatory
+and the phase-1 loop is retired as a shipped fallback -- see §6.2. Until
+that work starts, the design stays flexible as scoped below.
 
 **See also:** [bytecode-finalization.md](bytecode-finalization.md) (the
 finalize pipeline this lowering hooks into), [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)
 (per-site cache index, the existing precedent for a load-time,
 never-serialized per-instruction annotation), [EVALUATOR.md](../EVALUATOR.md),
-[../native-compiled-modules.md](../native-compiled-modules.md) (AOT lowering to
-`.so`; its "Interaction with threaded dispatch" section records how phase 1's
-handler table, slot region, and dispatch seam feed the compiled form).
+[stencil-compilation.md](stencil-compilation.md) (copy-and-patch native
+lowering built directly on this proposal's phase 2 handler form; supersedes
+the AOT-to-`.so` direction record archived at
+[../archive/native-compiled-modules.md](../archive/native-compiled-modules.md)).
 
 ---
 
@@ -313,9 +317,9 @@ trajectory is monotonic; do not judge phase 1 by `churn`/`binary_trees`
 numbers.
 
 Portability improves in phase 1: fn-pointer dispatch is standard C, so the base
-build no longer depends on computed goto. Phase 2 reintroduces a
-compiler-feature gate (`musttail`), with the phase-1 loop form retained as the
-portable fallback backend behind the macro seam.
+build no longer depends on computed goto. Phase 2 reintroduces a musttail
+dependency; see §6.2 for the compiler mandate that takes effect once phase 2
+implementation begins.
 
 ---
 
@@ -326,8 +330,9 @@ Deferred. Recorded so phase 1 does not foreclose it.
 - Redefine `EVAL_DISPATCH_NORMAL` / `EVAL_DISPATCH_TO` to
   `KOS_MUSTTAIL return next->fn(es, next, ...)` where `next` is `cur + 1` or
   the branch target slot.
-- Gate on a `KOS_HAVE_MUSTTAIL` feature test; keep the phase-1 loop body as the
-  fallback backend selected when the attribute is absent.
+- Gate on a `KOS_HAVE_MUSTTAIL` feature test during phase-2 bring-up, with the
+  phase-1 loop body as the transitional fallback while the tail-call form is
+  landed and verified. §6.2 covers what ships once it is.
 - Enforce the §2 invariant: audit every control-event exit to confirm promoted
   facets are flushed to `KosEvalState` before returning to the trampoline.
 - Safety-net stack walks (`KOS_EVAL_SAFETYNET`) can only run at trampoline
@@ -361,6 +366,22 @@ call to call, and a mutation is just passing a different value to the next
 handler with writeback to `ev` deferred to control events. If phase 2
 measurement shows seg/ns reloads dominating, the promotion is introduced there
 and only there, again as a macro redefinition of the dispatch seam.
+
+### 6.2 Compiler mandate (decided)
+
+Once phase 2 implementation begins, musttail support is required, not
+feature-gated: clang, or GCC 15+. The phase-1 loop stops being a permanent
+fallback backend and becomes bring-up scaffolding only, per §5. This
+supersedes the "build-gated dispatch backend" framing in §2.
+
+This decision takes effect when phase 2 work starts, not before; phase 1
+and the current portable build stay as-is until then.
+
+Consequence for release engineering, to land alongside phase 2 rather than
+after: build scripts and the PyPI prebuilt wheel matrix must pin a
+musttail-capable compiler on every platform the wheel matrix covers. A
+platform whose toolchain cannot reach clang or GCC 15+ drops out of the
+prebuilt matrix rather than falling back to phase-1 dispatch at run time.
 
 ---
 

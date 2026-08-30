@@ -1,9 +1,14 @@
 # Continuation-passing consumer API for Call and Next/Send
 
-Status: design only. Nothing here is implemented. Target is a fresh
-branch after the native-map branch merges; that branch's provider
-suite, native frame programs, and call-shape machinery are the
-substrate this design assumes.
+Status: partially implemented. The resume slot, the two entry points,
+the delivery point, and the KosMap and KosFilter conversions have
+landed; see "Migration order" for what remains and for the
+prescriptions here that the code did not permit. Sections describing
+the original intent are kept where the reasoning still holds, and are
+marked where it does not. A transport respec was decided 2026-08-29
+after review of the landed state -- see "Transport respec
+(normative)", which supersedes the storage, trampoline, and
+eager-await sections where they conflict.
 
 ## Motivation
 
@@ -47,12 +52,22 @@ typedef KosOpResult (*KosResumeFn)(
 
 The value argument carries the CPython calling convention:
 
-- non-NULL: the operation's result, a new reference the handler owns.
+- non-NULL: the operation's result, a new reference the handler owns,
+  and **always settled**. A delivery that still needs awaiting is
+  awaited at the delivery point before the resume runs, however many
+  rounds that takes. A resume never awaits and never tests whether it
+  must; that per-consumer duplication is what these entries exist to
+  remove.
 - NULL with an exception set: the operation failed. The handler may
   recover, or relay by returning `EVAL_RAISE()`, exactly as if it had
-  received the NULL from an inline call.
-- NULL with no exception set (Next/Send deliveries only): exhaustion,
-  the `PyIter_Next` convention. Call deliveries never produce this.
+  received the NULL from an inline call. Exhaustion arrives this way
+  too, as a raised StopIteration.
+- NULL with no exception set: not a delivery. A consumer may set a
+  resume directly, with nothing staged, to defer its own first step to
+  the trampoline -- the cold start a `KOS_ITER_INSTALLED` install
+  needs, since `koskari_eval` runs as a separate step after the
+  install and never nested inside it. The entries never produce this
+  combination.
 
 The handler's return value is the next signal to the loop: another
 CPS entry call, `EVAL_RETURN`, `EVAL_RAISE`, `EVAL_AWAIT`, or
@@ -61,7 +76,48 @@ starts goes back through the loop.
 
 A consumer that passes no resume gets today's default behavior:
 errors propagate into the raise walk, values ride the existing
-delivery paths.
+delivery paths. Concretely, `resume == NULL` means "behave exactly
+like an ordinary opcode": `CallResume` relays `NORMAL`/`REPROLOGUE`
+untouched (an installed callee delivers by ordinary frame return; a
+plain callable's result was already pushed by `KosEvalState_Call`
+itself) and pushes a synchronous `RETURN` value instead of setting a
+resume, applying the same ambient-await check every push already
+gets. `NextResume` matches `OBJECT_NEXT`'s own existing default
+precisely: a delivered element pushes and returns `NORMAL`; an
+in-flight `CONTINUES` returns `NORMAL` only if the install already
+left a real bytecode frame current (no trampoline hop needed) and
+`REPROLOGUE` otherwise; an in-flight `EXIT` still returns `EVAL_AWAIT`,
+since revival for a plain frame with no resume set already works the
+way ordinary `AWAIT` revival always has -- nothing new is needed on
+the revive side. This makes `resume == NULL` a real, load-bearing
+calling convention, not just graceful degradation: it lets `CALL_*`,
+`NEXT`, and `FOREACH` opcodes route through these same entry points
+well before any bytecode-level resume work exists (see "Adoption in
+current code" below).
+
+Decided 2026-08-29: that routing is mandated, not optional. Opcodes
+use these entries so every delivery crosses the one delivery point --
+uniform delivery is how the ambient-await broadening lands
+([ambient-await-handoffs.md](ambient-await-handoffs.md)). The settle
+at the delivery point is part of the interface contract, so an opcode
+joining the entries adopts the broad await rule with it; the original
+"zero behavior change" framing of this paragraph holds only until
+that broadening is decided and in force.
+
+Never valid from a codeless caller -- exactly as unsafe as any other
+plain frame receiving a return or delivery today. `resume == NULL`
+asserts "I am (or behave like) a real bytecode frame with a PC to
+continue from"; it is a caller contract, not a new safety guarantee
+the API adds.
+
+One delivery shape this does *not* need to special-case: a callee
+installed directly as the child of a value-graft iteration node (the
+`cs_direct` shape `map_iter_step` still uses unconverted) delivers
+through `KosIterRequest_Deliver`/`KOS_IWAKE_VALUE` in
+`eval_event_return`'s own case 2b, keyed on the parent node's capability
+and mode -- entirely upstream of whether any caller has a resume set.
+A consumer built on that shape has no separate caller frame for
+`CallResume`'s default to intercept in the first place.
 
 ## Public entry points
 
@@ -90,7 +146,7 @@ Every arm of both entries converges on one of two outcomes:
 
 - value ready now: stage the delivery, return to the trampoline. The
   handler runs on the next loop iteration.
-- in flight: arm the resume on the calling frame and let the existing
+- in flight: set the resume on the calling frame and let the existing
   machinery deliver -- frame return for an installed callee,
   iteration-node delivery for a driven step, awaited-resume for a
   suspension.
@@ -98,14 +154,14 @@ Every arm of both entries converges on one of two outcomes:
 Call semantics by callable shape:
 
 - PLAIN/BOXED python callable: invoke now; stage result-or-NULL.
-- KosFunction: install the callee with the resume armed on the
+- KosFunction: install the callee with the resume set on the
   caller's frame; the frame return delivers.
 - generator function: construct the AsyncGenerator or demand iter
   immediately (the no-evaluation guarantee stands); stage it.
 
 Next/Send rides KosIterRequest underneath. DELIVERED stages the
-value, EXHAUSTED stages NULL-no-error, CONTINUES arms, ERROR stages
-NULL-plus-exception when a resume is armed and propagates when not.
+value, EXHAUSTED raises StopIteration, CONTINUES sets the resume,
+ERROR propagates.
 The StopIteration conversion, the recyclable close-versus-stay-open
 rule, and the async-generator RuntimeError wrap live inside this
 entry and its delivery path, once.
@@ -117,7 +173,11 @@ arrives through the resume.
 
 ## Storage: the resume lives on the frame
 
-The armed resume is a (KosResumeFn, void *) pair on the KosDynFrame,
+Superseded by "Transport respec (normative)": the slot generalizes
+from frames to chain nodes. The placement reasoning below still
+binds -- read "the consumer's own chain node" for "frame".
+
+The resume is a (KosResumeFn, void *) pair on the KosDynFrame,
 replacing what `np_handler` dispatch over an `nf_phase` enum encodes
 today. Frame placement is forced by three requirements:
 
@@ -125,7 +185,7 @@ today. Frame placement is forced by three requirements:
   is a stack of pending resumes, one per live call site. The frame
   chain is that stack. A single slot on the eval state or the context
   holds one.
-- Suspension. The armed resume must survive an await. The chain
+- Suspension. A set resume must survive an await. The chain
   freezes with the context; a resume on its frame is captured for
   free. The eval state is the transient register view and anything
   there must be written back into the chain at suspension anyway.
@@ -142,14 +202,19 @@ The eval state keeps one narrow role: the in-flight bounce, a
 (resume, value) pair handed off within a single trampoline iteration
 on the fully synchronous path. It is register state -- consumed in
 the same loop trip or converted by the await interposition into an
-armed frame resume, never live across a suspension. Whether it earns
+resume set on a frame, never live across a suspension. Whether it earns
 its keep over always staging through the frame stack is a phase-2
 benchmark question, not a design commitment.
 
 ## The trampoline
 
+Superseded by "Transport respec (normative)": delivery becomes a
+register pending pair consumed by a slim bounce; the frame-stack
+transit and full prologue pass described here are what the respec
+removes.
+
 The eval loop's prologue grows one step: entering a frame that has an
-armed resume and a staged delivery, clear the arm into a local,
+resume set and a staged delivery, clear it into a local,
 invoke the resume, and feed its returned signal into the same
 processing opcode results receive. REPROLOGUE re-runs the prologue,
 RETURN rides the return machinery, RAISE enters the walk, AWAIT
@@ -164,96 +229,323 @@ evaluator's stacklessness by construction.
 
 ## Eager await at the delivery point
 
-Any value about to be staged that is awaitable instead arms the
-resume and returns `EVAL_AWAIT`; the suspension surfaces to the
-adapter, and the awaited result is what finally reaches the handler.
-This interposition happens at the staging point and nowhere else.
+Superseded in part by "Transport respec (normative)": the
+one-convergence-point conclusion stands, the staging it converges
+through becomes the pending pair, and the settle broadens to every
+delivery, elements included
+([ambient-await-handoffs.md](ambient-await-handoffs.md)).
+
+Landed, though not at the staging point this section originally
+named. Staging happens in several places -- both entries, and any
+consumer deferring its own first step -- but every staged delivery
+converges on one function before a resume runs, so that is where the
+interposition belongs. `eval_step_resume_delivery` pops the staged
+value and, if it still needs awaiting, re-sets the same resume and
+hands it to `KosEvalState_PushOrAwait`: it settles eagerly and the
+prologue re-enters, or it suspends and the revive re-enters, and a
+value settling to a further awaitable simply bounces again.
+
 Whether the value came from a python call, a frame return, a
 generator step, or an awaitable a python callable handed back, the
 handler receives the settled value and never learns which path it
-took. The `KOS_NFRAME_AWAITED` wake, the adapter await arms, and the
-per-pathway awaitable checks collapse into this one site.
+took.
+
+Interposing at each staging site instead was tried first and was
+wrong: the entries handed unsettled values to resumes, map and filter
+compensated by re-classifying, and that per-consumer duplication is
+the exact defect this API exists to remove. A consumer written without
+the compensating check got a raw coroutine as a mapped element, or an
+always-truthy coroutine as a filter verdict. One convergence point,
+not several staging points.
+
+The per-pathway awaitable checks in map and filter are gone, and the
+demolition took the typed wake with them.
+
+## Transport respec (normative)
+
+Decided 2026-08-29, superseding the storage, trampoline, and
+eager-await sections above where they conflict. Review of the landed
+state found the transport routing deliveries by inference -- stack
+depth, PyErr state, `CODE`/`RESUME_FN` conjunctions -- and paying a
+stack round-trip plus a full prologue pass per delivery, with both
+return fast paths excluding resume-carrying parents outright. The
+respec makes the destination explicit and the transit
+register-borne.
+
+### Destinations
+
+Every operation's continuation is one declared field on the
+consumer's chain node, from a closed set:
+
+- PC -- a bytecode frame: push, dispatch at pc. The builtin default.
+- RESUME -- a native (fn, state) pair.
+- NODE -- an iteration node: the value emits as an element. This is
+  `cs_direct` generalized; a node with no resume set means emit.
+- ROOT -- koskari_eval returns the value.
+
+Destinations pass downward into the call and iteration machinery,
+which delivers to whichever one applies at the arm that materializes
+the value. No result kind is reinterpreted upward: the
+`KosEvalState_CallResume` switch over `KosEvalState_Call` outcomes
+and the NORMAL ambiguity behind apply's guard dissolve at the
+source.
+
+### Channels
+
+- The register pair (pending resume, pending value) on the eval
+  state: the only live transit, staged and consumed within one loop
+  trip.
+- Node stacks: storage across suspension only. Freeze converts a
+  pending pair to the stack; revive converts it back before anything
+  else runs. The stack never carries a live delivery.
+- PyErr: the failure channel. The raise walk offers it to RESUME
+  destinations as it does today.
+
+Cold start is a staged pair (resume, NULL) placed in the context's
+pending slot at install and thawed at entry like any register state.
+Every resume invocation is then a staged pair or a walk offer; the
+NULL-no-error overload, the StackLen discriminator, and the
+`PyErr_Occurred` probing inside resumes all go.
+
+### Flow table
+
+| event | destination | path |
+|---|---|---|
+| frame return | PC | retarget, push, `EVAL_DISPATCH`; guard is one field test |
+| frame return | RESUME | stage pair, slim bounce, invoke -- no stack, no full prologue |
+| frame return | NODE | emit as element |
+| frame return | ROOT | eval returns |
+| call result / element / awaited settle | PC / RESUME | settle (ambient await, exempt types pass), then as above |
+| exhaustion | any | StopIteration through the raise walk |
+| failure | RESUME | walk offer, NULL + PyErr |
+| yield | -- | transits without consulting destinations |
+
+The settle applies to every delivery through these entries, elements
+included -- interface contract, per
+[ambient-await-handoffs.md](ambient-await-handoffs.md). Opcodes are
+mandated onto the entries and adopt it as they join.
+
+Slim bounce: a staged pair with no PyErr and no plan jumps from
+staging to invocation without the full prologue.  Pending-exception
+and transfer-drain checks exist for chain surgery, and a staged
+handoff performs none.
+
+### No mandated frame nodes
+
+The resume slot generalizes from frames to chain nodes. Map and
+filter hang their resume on the iteration node they already have; the
+callee installs under the node, and the return walk reaching the node
+finds the destination there. The codeless frame, its namespace fill,
+and the park cache leave their steps, and every return and yield walk
+crosses one less node. `KosResumeFrame_Install` remains only for a
+consumer with no node of its own, which today is nobody -- apply
+keeps its frame for the reasons in "Apply keeps its guard". Open
+mechanical question: callee prep reads the live namespace register
+the codeless frame's fill supplied; the node-hosted form must name
+its namespace source.
+
+### Yield invariant
+
+A resume can intercept returns, deliveries, and failures, never
+YIELD. Yield transit cost is independent of resume presence, and the
+yield-from passthru work composes with node-hosted resumes instead
+of fighting per-step frames.
+
+### Axis rule
+
+A callable's properties are separate declared facts: who runs it (a
+KosCallable in the evaluator, a plain python callable without one),
+whether it wants a frame, whether its result carries the
+direct-return guarantee. No route derives from an unrelated axis --
+BOXED derived "python boundary" from "wants no frame" -- and the
+invocation route is chosen by the caller's context, never by the
+callable's shape. The same rule rejects resume-implies-codeless as a
+load-bearing coincidence: the destination is one declared field, not
+a conjunction of properties that happen to travel together.
+
+### Asserts
+
+Under `KOS_EVAL_SAFETYNET`: at most one pending pair, consumed
+in-trip or converted at freeze; capture never observes a live pair;
+a PC destination never carries a resume until bytecode's builtin
+resume replaces the implicit default; the destination field is valid
+for the node kind.
+
+### Sequencing
+
+The respec lands before any opcode migrates onto the entries: an
+element delivered through the interface must cost what its raw push
+costs today, which needs the register pair and the slim bounce in
+place first. Order: transport rework, then the opcode roster
+([ambient-await-handoffs.md](ambient-await-handoffs.md) step 3),
+then bytecode's builtin resume at the musttail boundary.
 
 ## State lifetime
 
-The void * is one of two classes, and nothing else:
+The void * is borrowed, and nothing else: a pointer into refcounted
+state the frame already keeps alive (the provider-object pattern --
+KosMap and KosFilter hold their state on objects reachable from the
+frame; apply passes NULL and stages its parts on the frame stack).
+The resume does no cleanup; abandonment is covered by refcounting.
 
-- Borrowed: a pointer into refcounted state the frame already keeps
-  alive (the provider-object pattern -- KosMap and KosFilter hold
-  their state on objects reachable from the frame). The handler does
-  no cleanup; abandonment and cloning are covered by refcounting.
-- Owned: rides `KOS_FRAME_OWNS_NATIVE_STATE`, freed by
-  `np_free_state`, cloned by `np_clone_state`. The handler treats a
-  NULL delivery as act-then-relay; teardown covers the paths the
-  handler never sees.
-
-Never a bare allocation the handler is trusted to free. The
-error-mode-cleans-up convention only covers paths where the handler
-runs; two paths bypass it. A parked continuation abandoned without
-resuming never invokes its handler (the coroutine tp_finalize
+The owned class this section originally defined
+(`KOS_FRAME_OWNS_NATIVE_STATE`, freed by `np_free_state`, cloned by
+`np_clone_state`) went with the native-program demolition; nothing
+used it by then. It is foreclosed until a consumer needs state the
+chain does not keep alive. Reintroduction means a descriptor with
+free and clone entries riding the resume -- never a bare allocation
+the resume is trusted to free, because two paths bypass any
+error-mode-cleans-up convention: a parked continuation abandoned
+without resuming never invokes its resume (the coroutine tp_finalize
 problem), and a cloned frame duplicates the pointer, turning
-handler-owned cleanup into a double free. Both are already handled by
-the descriptor slots; the rule routes all state through them.
+resume-owned cleanup into a double free.
 
 ## Continuation capture
 
-Capture clones frames. The resume slot clones as data, so every
-materialization carries the arm, and the trampoline's destructive
-clear is correct per materialization: the live copy spends its arm,
-the snapshot keeps its own, and a continuation reinstated N times
-fires the resume N times with no once-only bookkeeping.
+As implemented, capture across a frame carrying a resume refuses by
+name (`kos_dynframe_clone`): no caller produces a resume_state a
+clone could copy, so there is no clone story to get wrong. For map
+and filter this is behavior parity -- their native programs refused
+capture too, deliberately, since replaying a captured step would
+re-consume source elements.
 
-Consequences:
+Clone-as-data remains the intended model for a resume whose state is
+clonable: the slot copies with the frame, every materialization
+carries the resume, and the trampoline's destructive clear is correct
+per materialization -- the live copy spends its own, the snapshot
+keeps its own, and a continuation reinstated N times fires the resume
+N times with no once-only bookkeeping. Landing it requires the owned
+channel above for per-copy state, and these rules, which hold now and
+then:
 
 - Borrowed state is shared across reinstatements, not snapshotted.
   Resuming a captured continuation twice observes the provider state
   wherever the first run left it. The iteration nodes already clone
   with a shared `REQ->iter`, so multi-shot over stateful iteration is
   already observably stateful; this is the standing rule, stated.
-- Owned state is per-copy via `np_clone_state`; N materializations
-  mean N teardowns and N frees. A resume with owned state and no
-  clone hook refuses capture with an error at capture time (the NULL
-  `np_clone_state` rule today).
 - A staged-but-unconsumed delivery is a value on the frame stack; it
   clones with the frame and each reinstatement re-delivers it.
 - The eval-state bounce must be invisible to capture. Capture happens
   inside calls, by which point any bounce has settled into a consumed
-  delivery or an armed frame. Assert under `KOS_EVAL_SAFETYNET`.
+  delivery or a frame carrying a resume. Assert under
+  `KOS_EVAL_SAFETYNET`.
 - Resume functions are re-entrant with respect to their state: no
   already-ran flags outside cloned owned state.
 
 ## Adoption in current code
 
-- map and filter: `nf_phase` enums and the wake-dispatch switches in
-  the nf handlers become resume functions -- filter's
-  FETCH/INVOKE/VERDICT states are three resumes (or one loop driver
-  re-armed per step). The sync FRAME arms lose the three-way result
-  ladder; the step arms lose the RETURN staging added by the round-2
-  fixes.
-- apply: the flatten arm's frame-identity check and value pop
-  disappear; apply passes its own completion resume.
-- demand: `demand_sync_ex`'s post-call interpretation becomes a
-  resume; the DEMAND-flag frame drive is unchanged.
-- stepper and demandgen adapters: retarget onto the Next entry and
-  delete their hand-rolled ERROR/RAISE conversion arms; the epilogue
-  lives inside delivery.
+- map and filter: **landed as described.** The `nf_phase` enums and
+  the wake-dispatch switches became resume functions; filter's
+  FETCH/INVOKE/VERDICT progression is carried by which resume is set,
+  so the phase field disappeared rather than being translated. Both
+  lost the three-way result ladder and the RETURN staging. One thing
+  the description missed: a rejected element in filter loops by
+  bouncing through the trampoline once per element, where the wake
+  protocol looped in a flat C `for(;;)`. Stack safety is preserved --
+  the bounce is what preserves it -- but a long reject run does more
+  work per element.
+- apply: **superseded -- apply is not a conversion target.** The
+  flatten arm's frame-identity check cannot disappear, and apply must
+  not set a resume on its own frame at all. See "Apply keeps its
+  guard" below.
+- demand: `demand_sync_ex`'s post-call interpretation is consolidated,
+  but **not onto a `KosResumeFn`** -- see "Demand classifies, it does
+  not resume" below. The DEMAND-flag frame drive is unchanged, as
+  stated.
+- stepper and demandgen adapters: **the Next entry cannot serve them**
+  -- both call `koskari_eval` themselves and have no frame to stage a
+  delivery on, the same shape demand has. What they actually duplicate
+  is the drive epilogue, and that is what gets extracted. See "The
+  drivers share an epilogue, not an entry" below.
 - `KosIterRequest_Next` in-eval consumers (NEXT, foreach, native
   RequestNext): the request sidecar becomes the implementation layer
   under `KosEvalState_NextResume`; iteration nodes deliver into
-  armed resumes instead of through per-node-type deliver functions.
+  resumes set on frames instead of through per-node-type deliver
+  functions.
 - bytecode frames: a bytecode frame's resume is one builtin --
   push the value, re-enter dispatch at the PC. Once it exists, CALL
   and the await opcodes go through the same CPS entries native code
-  uses, and suspension arming is identical for bytecode and native
+  uses, and suspension handling is identical for bytecode and native
   frames. This is the boundary with the musttail branch: opcode
   handlers and resume functions share a calling convention, and
   converting dispatch from computed goto to tail calls becomes a
   calling-convention change.
 
-Deleted at the end: `KosNativeFrameEvent` and the typed wake,
-`np_handler`, the phase enums in map and filter, the non-CPS consumer
-entries, the four copies of the drive epilogue, and
-`KOS_RES_RETURN`'s consumer-facing role.
+Deleted: `KosNativeFrameEvent` and the typed wake, `np_handler`, the
+phase enums in map and filter, and `KosNativeFrame_Install`. The drive
+epilogue turned out to be two epilogues, not four copies of one --
+see "The drivers share an epilogue, not an entry". `KOS_RES_RETURN`
+still has a consumer-facing role: `CallResume` interprets it, and
+apply and values still return it.
+
+### Apply keeps its guard
+
+Two things this document originally asked of apply are not achievable,
+established while converting filter and demand:
+
+**The frame-identity check is load-bearing.** `kos_vinstall_function`
+never pushes a frame -- it fills the current one in place, and its
+generator-function branch pushes a value and returns `KOS_RES_NORMAL`.
+So a `NORMAL` out of apply's inner install is ambiguous: either "frame
+filled, real bytecode to run" or "value delivered, apply's code-less
+frame has nothing to dispatch." Only apply can tell them apart, by
+checking `CODE`/`NATIVE_PROG` on its own captured frame pointer. No
+generic entry point can absorb that, because every other caller reaches
+`kc_vinstall` through `do_frame_prep` and is guaranteed a frame with
+code.
+
+**Apply must not set a resume on its own frame.** The prologue checks
+`resume_fn` before dispatching bytecode, so a resume set on a frame the
+callee just filled would run *instead of* that callee's body. And
+`values_dispatch` pops apply's frame before re-installing, so after
+some calls the captured pointer is freed -- comparing it (what the
+guard does) is fine, writing to it is not.
+
+Apply's completion is therefore synchronous in every reachable case,
+which leaves nothing for a resume to do. Its remaining arms -- relaying
+`RETURN`, `RAISE`, and `FATAL` -- are correct as they stand, not
+divergent interpretations to unify. Apply was measured against a direct
+call for a partial over a coroutine function and behaves identically,
+confirming it adds no ambient-await divergence of its own.
+
+### The drivers share an epilogue, not an entry
+
+`stepper_drive` and `demandgen_iternext` (koskari/lib/iterate.c) are
+Python-boundary drivers: each calls `ki_step`, then calls
+`koskari_eval` itself. They have no current frame, so
+`KosEvalState_NextResume` -- which stages onto one -- cannot be their
+entry, exactly as with demand.
+
+Their real duplication is the epilogue after `koskari_eval` returns:
+StopIteration-to-exhaustion conversion, truncation versus close,
+excluding a thrown StopIteration from truncation, and the "async
+generator raised StopIteration" RuntimeError wrap. Three near-identical
+copies. Extracting one helper both drivers call is the fix, and is what
+the motivation section means by the copies of the drive epilogue.
+
+### A note on this document's prescriptions
+
+Three of the per-consumer prescriptions above (apply, demand, the
+drivers) named a mechanism the code does not permit, while correctly
+naming the duplication to remove. The pattern in each case: a
+`KosResumeFn` runs at the delivery boundary, on a frame, inside the
+loop. A consumer that has no frame, or that must act before the loop
+starts, or that must refuse a suspension rather than receive its
+result, cannot be served by one no matter how the entry is shaped.
+Check that a consumer is actually in-eval with a frame before reaching
+for these entries.
+
+### Demand classifies, it does not resume
+
+`demand_sync_ex` installs on a fresh context where there is no caller
+frame, then drives `koskari_eval` itself. A `KosResumeFn` runs at the
+*delivery* boundary, after a suspension has already been permitted;
+`KosEvalState_CallResume`'s AWAIT arm sets a resume and relays
+`EVAL_AWAIT` rather than offering the caller a veto. A demand root must
+never suspend and has no channel to carry `AWAIT` out, so it has to
+intercept at the *classify* boundary instead -- one shared classifier
+called synchronously, not a resume. The CPS entry points are
+deliberately unused here.
 
 ## Pitfalls and solutions
 
@@ -263,15 +555,19 @@ entries, the four copies of the drive epilogue, and
 - Handler-owned cleanup leaks on abandonment and double-frees on
   clone. Solution: the two state classes above; no third class
   exists.
-- The bounce fast path observable to capture. Solution: invariant
-  plus safetynet assert; the frame-staged path is the canonical
-  model and the bounce an optimization proven equivalent.
-- Hot-path regression. The cs_direct frameless map arm currently
-  delivers by plain frame return; the CPS path trades the phase
-  switch for an indirect call plus a loop bounce. Phase 2 benchmarks
-  (maptime, filtertime, churn) against the native-map baseline decide
-  whether the bounce fast path is needed. A regression beyond noise
-  on the sync map path blocks the migration until recovered.
+- The bounce fast path observable to capture. Moot: the fast path was
+  never built, so every delivery stages through the frame stack.
+- Hot-path regression. Measured, none found. The sync fast paths in
+  both providers are untouched, and the driven paths came in within
+  noise of the wake protocol. `cs_direct` stays unconverted, so map's
+  graft arm still delivers by plain frame return.
+- **A missed pitfall, found the hard way: a return fast path that
+  bypasses the prologue also bypasses the resume check.**
+  `kos_return_parent_is_plain` and `kos_return_is_extent_plain` return
+  `EVAL_DISPATCH` and jump straight to the next instruction, which for
+  a resume-carrying (and therefore codeless) parent meant dispatching
+  a NULL code pointer. Both now exclude such a parent. Any future
+  path that skips the prologue must do the same.
 - Two consumer models coexisting mid-migration. Solution: the wake
   protocol and the resume slot are orthogonal frame features; a frame
   uses one or the other, asserted never both. Migration order keeps
@@ -283,35 +579,71 @@ entries, the four copies of the drive epilogue, and
 
 ## Migration order
 
-1. Plumbing, inert: resume slot, arming API, trampoline invocation in
-   the prologue. Nothing armed; zero behavior change; safetynet
-   asserts in place.
-2. KosMap end-to-end as the proving ground, with benchmarks against
-   the native-map baseline. KosFilter stays on the wake protocol to
-   prove coexistence.
-3. KosFilter, apply, demand.
-4. Stepper and demandgen onto the Next entry; delete their epilogues.
-5. Eager-await centralization at the staging point; delete the
-   per-pathway awaitable interpretation.
-6. Demolition: typed wake, np_handler, phase enums, non-CPS entries.
-7. Bytecode's builtin resume and opcode unification -- either this
-   branch's last phase or the musttail branch's first.
+Landed:
+
+1. Plumbing, inert: resume slot, setting API, trampoline invocation in
+   the prologue and the raise-walk offer. Nothing set; zero behavior
+   change; safetynet assert that a frame never carries both a native
+   program and a resume.
+2. KosMap end-to-end. Two pre-existing return fast paths
+   (`kos_return_parent_is_plain`, `kos_return_is_extent_plain`) had to
+   learn to exclude a resume-carrying parent: both bypass the prologue
+   with `EVAL_DISPATCH`, which skipped the resume check and dispatched
+   a codeless frame.
+3. KosFilter. Apply and demand turned out not to be conversion
+   targets; see their sections above.
+4. Eager await centralized at the delivery point. This was a
+   correction, not planned work: the entries had been handing
+   unsettled values to resumes, and map and filter compensated by
+   re-classifying -- reproducing the very duplication these entries
+   exist to remove.
+5. The BOXED call shape retired. `kc_wants_frame == 0` had been read as
+   "invoke through the Python boundary", forcing a fresh context and a
+   nested loop for calls the running evaluator could make.
+
+6. The stepper's truncation check and error mapping shared between its
+   two sites. `demandgen_iternext` keeps its own: on the sync surface
+   StopIteration is the protocol's end signal rather than something to
+   wrap, and a root exhaustion closes the provider instead of
+   truncating one drive.
+7. Demolition. Apply's non-flattening path became a resume, which left
+   nothing installing a native program, so `KosNativeProgram`, the
+   typed wake, `KosNativeHandlerFn`, `KosNativeFrame_Install` and the
+   frame's `native_prog` slot are all gone. `native_state` survives as
+   `park_cache`, the role it had been reduced to.
+
+Remaining:
+
+8. The transport respec (normative section above): declared
+   destinations, the register pending pair, node-hosted resumes, the
+   slim bounce. Lands before any opcode migrates onto the entries.
+9. The opcode roster onto the entries
+   ([ambient-await-handoffs.md](ambient-await-handoffs.md)), then
+   bytecode's builtin resume and opcode unification -- the boundary
+   with the musttail work.
 
 Each phase lands green through the full gate set (suite, native,
-ASAN, valgrind, gdb env, benchmarks) and stays under the review size
-cap so it is reviewed as it lands.
+ASAN, valgrind, benchmarks) and stays under the review size cap so it
+is reviewed as it lands. gdb is diagnostic, never a gate.
 
 ## Open questions
 
-- Exhaustion via NULL-no-error mirrors `PyIter_Next` but makes "did
-  it end or fail" a `PyErr_Occurred()` check inside every Next
-  handler. An alternative is a separate exhaustion resume; that is a
-  second function pointer per arm and was rejected above for signal
-  count, but the ergonomics deserve one pass during phase 2.
-- Whether the bounce fast path earns its complexity (phase-2
-  benchmark decision).
-- Where the StopIteration payload (generator return value) surfaces
-  in the Next contract: today `KosIterRequest_Next` hands it through
-  `fast_out` on EXHAUSTED; NULL-no-error has no payload channel.
-  Candidates: a per-frame last-exhaustion slot, or accepting that
-  resumes needing the payload use a distinct arm.
+- Exhaustion never took the NULL-no-error shape this document
+  proposed. `KosEvalState_NextResume` raises StopIteration on
+  EXHAUSTED and lets the raise walk offer it, so a resume sees NULL
+  only with an exception set, and the "did it end or fail" check
+  inside every Next handler never appeared. The StopIteration payload
+  question goes with it: `KosIterRequest_Next` still hands the
+  generator return value through `fast_out`, and no resume needs a
+  payload channel yet. Revisit only if one does.
+- Whether the bounce fast path (a `(resume, value)` pair handed off
+  within one trampoline iteration, skipping the frame stack) earns
+  its complexity. Not built. Every delivery currently stages through
+  the frame stack, which is the canonical model this document
+  prescribes; the fast path stays a measured optimization if the
+  trampoline work in phase 8 wants it.
+- Whether `cs_direct` -- map's graft arm, where the callee's own frame
+  return is the emitted element -- should join the resume model. It
+  installs no frame of its own, so it would need a root-level slot
+  this document only gestures at. Unconverted, and correct as it
+  stands.
