@@ -44,7 +44,7 @@ define icon-filename [size]:
   """
 
   unless (in size ICON_PNG_SIZES):
-    (raise (ValueError f"no packaged icon at size {size}, have {ICON_PNG_SIZES}"))
+    raise (ValueError f"no packaged icon at size {size}, have {ICON_PNG_SIZES}")
   f"koskari-icon-{size}.png"
 
 

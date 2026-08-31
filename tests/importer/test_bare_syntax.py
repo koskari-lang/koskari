@@ -252,6 +252,13 @@ class TestBareControlWords(BareSyntaxHelpers):
         self.assertEqual(result, "caught")
 
 
+    async def test_bare_pass(self):
+        result = await self.run_forms(
+            "(define f (lambda f [] pass))",
+            "(f)")
+        self.assertIsNone(result)
+
+
 CALL_ATTR_FAMILY = (
     OpCode.CALL_ATTR,
     OpCode.CALL_ATTR_NAMES,

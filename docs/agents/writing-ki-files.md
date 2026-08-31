@@ -23,9 +23,10 @@ return               ; expands to (return) via its bare form
 total                ; a lone name with no bare form is a reference
 ```
 
-The statement words `return`, `continue`, `break`, `raise`, and
-`yield` carry a *bare form*: the lone symbol expands to its call
-form, so a `return` line returns None and a lone `raise` re-raises.
+The statement words `return`, `continue`, `break`, `raise`,
+`yield`, and `pass` carry a *bare form*: the lone symbol expands to its call
+form, so a `return` line returns None, a lone `raise` re-raises, and
+`pass` is a no-op that evaluates to None.
 Prefer the explicit `(return)` spelling anyway -- the
 `compiler/bare-control-words` pragma can make the bare spelling warn
 or error. Any other lone name is an ordinary variable reference

@@ -83,7 +83,6 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | `reader/string-segments` | reader | `True` | `True` | bool | a `-` attached to a string literal's closing quote continues it into the next quoted segment, joining into `(compile/#str ...)` |
 | `reader/layout` | reader | `True` | `True` | bool | layout (indentation) block reading |
 | `reader/implicit-calls` | reader | `True` | `True` | bool | multiple values on one layout line form an implicit call |
-| `reader/pass-none` | reader | `False` | `True` | bool | the `pass` symbol reads as the `None` literal (mention-to-enable) |
 | `reader/fences` | reader | `True` | `True` | bool | triple-backtick fences read into `compile/apply-fence` forms |
 | `reader/decorators` | reader | `True` | `True` | bool | leading `@` layout lines read as decorators, lowering to `compile/decorate`; a raw reader starts with this off, and `(compile/decorate ...)` stays available as a macro regardless |
 | `compiler/resolution` | compiler | `koskari` | *(required)* | `koskari` / `scheme` / `python` | name-resolution semantics for writes |
@@ -91,7 +90,7 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | `compiler/stray-colon` | compiler | `warn` | `warn` | `allow` / `warn` / `error` | policy when a bare `:` symbol is compiled as a name |
 | `compiler/keyword-literals` | compiler | `warn` | `warn` | `allow` / `warn` / `error` | policy when an unquoted keyword is compiled as a literal value |
 | `compiler/enable-asserts` | compiler | `True` | `True` | bool | `(assert …)` forms expand to their check; off, they compile away entirely (Python `-O` semantics) |
-| `compiler/bare-control-words` | compiler | `convert` | `convert` | `convert` / `warn` / `error` | policy when a bare `return`, `continue`, `break`, `raise`, or `yield` symbol is compiled: silently expand to the call form, warn and expand, or refuse |
+| `compiler/bare-control-words` | compiler | `convert` | `convert` | `convert` / `warn` / `error` | policy when a bare `return`, `continue`, `break`, `raise`, `yield`, or `pass` symbol is compiled: silently expand to the call form, warn and expand, or refuse |
 | `compiler/rewrite-limit` | compiler | `32` | `32` | int, `0` = unlimited | settling limit for the full_compile macro-expansion rewrite loop; a chain past the limit reports divergent growth, while `0` disables the limit and leaves the equality cycle check in force |
 | `compiler/tco-enable` | compiler | `True` | `True` | bool | tail-call optimization |
 | `compiler/convert-fast` | compiler | `True` | `True` | bool | VAR→FAST local-access lowering pass |
@@ -285,8 +284,8 @@ baseline `False` but parameter default `True`:
 
 That independence is the useful part: a feature can stay quiet until named, but
 the moment you opt in by naming it you get its sensible active value with no
-argument to recall: mention-to-enable (`reader/pass-none` and
-`compiler/cache-expression` work the same way). Most other settings keep the
+argument to recall: mention-to-enable (`compiler/cache-expression` works
+the same way). Most other settings keep the
 two aligned — e.g. `compiler/call-brackets` has baseline `warn` and parameter
 default `warn`, so bare mention is a no-op and only an explicit `'error` or
 `'ignore` moves it.

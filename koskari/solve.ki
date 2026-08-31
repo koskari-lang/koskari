@@ -41,12 +41,16 @@ define-class SearchError [KoskariContinuationError]:
   Base class for search errors raised by koskari.solve
   """
 
+  pass
+
 
 define-class NoActiveSearch [SearchError]:
   """
   amb, fail, or require was called with no enclosing solve or
   solve-first to delimit the search
   """
+
+  pass
 
 
 ; Dynamic stop marker for solve-first
@@ -73,14 +77,16 @@ define amb [choices]:
     shift k:
       let [[out #[]]]:
         for-each [c choices]:
-          when amb-stop-marker (break)
+          when amb-stop-marker:
+            break
           out.extend (k c)
         out
+
   except [e KoskariPromptNotFound]:
     if (== e.prompt_id search-prompt-tag):
       raise (NoActiveSearch "amb requires an enclosing solve or solve-first")
     else:
-      (raise)
+      raise
 
 
 define fail []:
@@ -96,7 +102,7 @@ define fail []:
     if (== e.prompt_id search-prompt-tag):
       raise (NoActiveSearch "fail requires an enclosing solve or solve-first")
     else:
-      (raise)
+      raise
 
 
 define require [test]:

@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-;; The statement words return, continue, break, raise, and yield are
+;; The statement words return, continue, break, raise, yield, and pass are
 ;; call forms, and a common error is expecting the bare symbol to behave
 ;; as it does in Python. Their bare forms expand the lone symbol through
 ;; the bare-control-word gate, whose behavior each module selects with
@@ -84,28 +84,73 @@ let []:
 
 
 extend-syntax return:
+  """
+  return supports use as a bare control word via the pragma
+  compiler/bare-control-words
+  """
+
   bare-syntax return:
     (bare-control-word return)
 
 
 extend-syntax continue:
+  """
+  continue supports use as a bare control word via the pragma
+  compiler/bare-control-words
+  """
+
   bare-syntax continue:
     (bare-control-word continue)
 
 
 extend-syntax break:
+  """
+  break supports use as a bare control word via the pragma
+  compiler/bare-control-words
+  """
+
   bare-syntax break:
     (bare-control-word break)
 
 
 extend-syntax raise:
+  """
+  raise supports use as a bare control word via the pragma
+  compiler/bare-control-words
+  """
+
   bare-syntax raise:
     (bare-control-word raise)
 
 
 extend-syntax yield:
+  """
+  yield supports use as a bare control word via the pragma
+  compiler/bare-control-words
+  """
+
   bare-syntax yield:
     (bare-control-word yield)
+
+
+define-syntax pass:
+  """
+  A no-op expression, evaluates to None
+  """
+
+  syntax-rules []:
+    case [pass]:
+      (begin)
+
+
+extend-syntax pass:
+  """
+  pass supports use as a bare control word via the pragma
+  compiler/bare-control-words
+  """
+
+  bare-syntax pass:
+    (bare-control-word pass)
 
 
 ;; The end.

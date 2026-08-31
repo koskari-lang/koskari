@@ -696,12 +696,13 @@ and filename. Diagnostics carry the position threaded through the bare
 capture.
 
 
-### bare forms: return, continue, break, raise, yield
+### bare forms: return, continue, break, raise, yield, pass
 
 **Behaviour:** `extend-syntax … bare-syntax` blocks give each statement
 word a bare form expanding through the gate, so the lone symbol becomes
-its call form — `raise` alone is Python's re-raise spelling. The
-deliberate cost: these five names always expand and can never name a
+its call form — `raise` alone is Python's re-raise spelling, and `pass`
+expands to `(begin)`. The
+deliberate cost: these six names always expand and can never name a
 variable.
 
 **Tests:** `tests/importer/test_bare_syntax.py`,

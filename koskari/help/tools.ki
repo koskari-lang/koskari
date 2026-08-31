@@ -60,10 +60,10 @@ define-class HelpFormatter []:
     """
 
     when (or self._paragraphs self._lines self._raw):
-      (return False)
+      return False
     for-each [child self._children]:
       unless (child.is_empty):
-        (return False)
+        return False
     True
 
 
@@ -74,7 +74,7 @@ define-class HelpFormatter []:
     """
 
     when text:
-      (self._paragraphs.append (str text))
+      self._paragraphs.append (str text)
 
 
   @demand
@@ -84,7 +84,7 @@ define-class HelpFormatter []:
     """
 
     when text:
-      (self._lines.append (str text))
+      self._lines.append (str text)
 
 
   @demand
@@ -94,10 +94,11 @@ define-class HelpFormatter []:
     """
 
     when (None? text):
-      (return None)
+      return None
+
     define stripped ((str text).rstrip)
     when stripped:
-      (self._raw.append stripped)
+      self._raw.append stripped
 
 
   @demand
@@ -118,16 +119,20 @@ define-class HelpFormatter []:
 
     define parts #[]
     for-each [chunk self._raw]:
-      (parts.append chunk)
+      parts.append chunk
+
     for-each [para self._paragraphs]:
-      (parts.append para)
+      parts.append para
+
     when self._lines:
-      (parts.append ("\n".join self._lines))
+      parts.append ("\n".join self._lines)
+
     for-each [child self._children]:
       define rendered (child.render)
       when rendered:
-        (parts.append (rendered.rstrip "\n"))
-    ("\n\n".join parts)
+        parts.append (rendered.rstrip "\n")
+
+    "\n\n".join parts
 
 
   @demand
@@ -142,8 +147,10 @@ define-class HelpFormatter []:
         (self._textdoc.section self.title body)
       else:
         ""
+
     elif body:
-      (+ body "\n")
+      f"{body}\n"
+
     else:
       ""
 
@@ -169,7 +176,6 @@ define help_register [typeobj handler]:
   """
 
   set! _registry[typeobj] handler
-  None
 
 
 define help_unregister [typeobj]:
@@ -213,7 +219,7 @@ define _help_protocol [obj formatter]:
   for-each [attrname #("__kos_help__" "__help__")]:
     define meth (getattr obj attrname None)
     unless (callable? meth):
-      (continue)
+      continue
 
     try:
       (meth formatter)
@@ -241,13 +247,12 @@ define help_into [formatter obj]:
     define handler (_registry.get ty)
     unless (None? handler):
       (handler obj formatter)
-      (return None)
+      return
 
   when (_help_protocol obj formatter):
-    (return None)
+    return
 
-  (_default_help obj formatter)
-  None
+  _default_help obj formatter
 
 
 define _help_lookup_keys [name]:
@@ -274,7 +279,7 @@ define _namespace_get [namespace key]:
     try:
       namespace[key]
     except [KeyError]:
-      None
+      pass
 
 
 define kos_help_text_object [obj heading: None]:

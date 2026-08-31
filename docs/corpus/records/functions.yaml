@@ -1120,3 +1120,23 @@ tags:
   - mutate
   - idiom
 notes: "stacked decorators peel outermost first: @let grafts a definition-time private binding while @call-parameterize enters the parameter extent per call; total persists across calls and scale is 100 only during each call. Requires reader/decorators (baseline on)."
+---
+id: function-define-pass-body-001
+feature: special/compile/define
+source: |-
+  define foo []:
+      pass
+  (foo)
+verify:
+  read: "(begin (define foo [] pass) (foo))"
+  eval: "null"
+references:
+  - reference/specials/compile-define.md
+  - reference/specials/compile-begin.md
+stability: evolving
+tags:
+  - function
+  - define
+  - "surface:block"
+  - idiom
+notes: "pass is a bootstrap no-op that expands to (begin) through its bare form; a function body of pass evaluates to None"

@@ -111,7 +111,8 @@ define reject_option_like_rest [parser rest]:
     ; A bare "-" names stdin as the script, so it is a filename here
     ; rather than a misplaced option.
     when (equal? it "-"):
-      (continue)
+      continue
+
     when (or (equal? it "--") (it.startswith "-")):
       parser.error f"unrecognized arguments: {it}"
 
@@ -165,6 +166,7 @@ define resolve_cli_target [parser options]:
     when rest:
       define joined (" ".join rest)
       parser.error f"unexpected extra arguments: {joined}"
+
     define-values [out_src src] options.compile_kio
     set! options.compile_kio out_src
     set! options.filename src
@@ -176,6 +178,7 @@ define resolve_cli_target [parser options]:
     when rest:
       define joined (" ".join rest)
       parser.error f"unexpected extra arguments: {joined}"
+
     set! options.execute_kio True
     set! options.filename options.execute_kio_file[0]
     set! options.args #[]

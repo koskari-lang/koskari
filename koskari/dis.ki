@@ -43,6 +43,7 @@ define _boundmethod_inner_function [bm]:
   :return: Function instance
   :raises TypeError: when __func__ is not Function or Demand(Function)
   """
+
   define func bm.__func__
   when (demand? func):
     set! func func.__wrapped__
@@ -62,6 +63,7 @@ define _get_code [x]:
   :param x: value to check
   :return: Code instance or None
   """
+
   if (instance? x Code):
     x
   elif (instance? x Expression):
@@ -77,6 +79,7 @@ define _format_constant [val]:
   :param val: constant pool value
   :return: string representation of the value
   """
+
   define r (repr val)
   if (> (len r) 60):
     f"{(item-slice r stop: 57)}..."
@@ -92,6 +95,7 @@ define _write_function_instance_section [file fn]:
   :param file: file-like object to write to
   :param fn: Function instance (KosFunction)
   """
+
   define name fn.name
   define name_repr (repr name)
 
@@ -124,6 +128,7 @@ define _write_bound_method_section [file bm]:
   :param file: file-like object to write to
   :param bm: BoundMethod instance
   """
+
   file.write "Bound method instance:\n"
   file.write f"  __self__: {(_format_constant bm.__self__)}\n"
   file.write "\n"
@@ -140,6 +145,7 @@ define _format_nspec_inline [cpool_idx nspec]:
   :param nspec: NamespaceSpec instance
   :return: inline annotation string
   """
+
   define ns_name nspec.name
   define name_repr (repr ns_name)
   return f"ns#{cpool_idx} {name_repr}"
@@ -179,19 +185,16 @@ define _build_ns_const_map [code]:
   :param code: Code instance
   :return: dict mapping instruction index -> constant pool index
   """
+
   define result #{}
   define i 0
   define n (code.length)
 
   while (< i n):
-    define oparg (code.oparg i)
-    define op_int oparg[0]
-    define arg oparg[1]
+    define-values [op_int arg] (code.oparg i)
     define op (OpCode op_int)
-
     if (equal? op OpCode.PUSH_NS):
-      define ext (code.extra_tuple arg)
-      set! result[i] ext[0]
+      set! result[i] (code.extra_tuple arg)[0]
     elif (equal? op OpCode.PUSH_COLLECT):
       set! result[i] arg
 
@@ -386,10 +389,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
       define sc (divmod arg 256)
       return f"{arg} ({(_compare_name sc[0])} x{sc[1]})"
 
-    case [OpStyle.COUNT
-          OpStyle.PAIR_COUNT
-          OpStyle.STAR]:
-
+    case [OpStyle.COUNT OpStyle.PAIR_COUNT OpStyle.STAR]:
       unless (None? ns_label):
         return f"{arg} ({ns_label})"
 
@@ -514,9 +514,7 @@ define dis [x file: None]:
   out.write f"Instructions ({n}):\n"
   define i 0
   while (< i n):
-    define oparg (code.oparg i)
-    define op_int oparg[0]
-    define arg oparg[1]
+    define-values [op_int arg] (code.oparg i)
     define op (OpCode op_int)
     define op_style op.style
     define extra_schema op.extra
@@ -525,20 +523,20 @@ define dis [x file: None]:
     when (in? i ns_const_map):
       define ns_idx ns_const_map[i]
       set! ns_label (_format_nspec_inline ns_idx cpool[ns_idx])
-    (define arg_str
-      (_format_arg code op_style arg cpool local_syms closure_syms
-                   ns_label: ns_label
-                   extra_schema: extra_schema))
+
+    define arg_str (_format_arg
+      code op_style arg cpool local_syms closure_syms
+      ns_label: ns_label
+      extra_schema: extra_schema)
+
     define pos_str ""
     try:
-      define pos (code.position i)
-      define line pos[0]
-      define col pos[1]
+      define-values [line col] (code.position i)
       set! pos_str f"  # line {line}, col {col}"
     except [#(IndexError TypeError)]:
-      None
+      pass
 
-    out.write f"""  {i "3d"}  {op.name "24s"} {arg_str}{pos_str}\n"""
+    out.write f"  {i:3d}  {op.name:24s} {arg_str}{pos_str}\n"
     incr! i
 
   out.write "\n"
@@ -550,17 +548,13 @@ define _get_instruction_lines [code]:
   """
 
   define cpool code.constants_pool
-  define lcs (_local_and_closure_syms code)
-  define local_syms lcs[0]
-  define closure_syms lcs[1]
+  define-values [local_syms closure_syms] (_local_and_closure_syms code)
   define ns_const_map (_build_ns_const_map code)
   define n (code.length)
 
   define i 0
   while (< i n):
-    define oparg (code.oparg i)
-    define op_int oparg[0]
-    define arg oparg[1]
+    define-values [op_int arg] (code.oparg i)
     define op (OpCode op_int)
     define op_style op.style
     define extra_schema op.extra

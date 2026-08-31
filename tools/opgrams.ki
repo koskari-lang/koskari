@@ -190,7 +190,7 @@ define closure_codes [fn]:
             define val cell.cell_contents
 
         except [ValueError]:
-            (continue)
+            continue
 
         define code (unwrap_code val)
         when code:
@@ -210,7 +210,7 @@ define syntax_codes [label syn]:
     for-each [[i transform] (enumerate syn.transforms)]:
         set! members (getattr transform "__dict__" None)
         unless members:
-            (continue)
+            continue
 
         for-each [[key val] (members.items)]:
             define code (unwrap_code val)
@@ -238,7 +238,7 @@ define collect_codes [modules]:
     for-each [mod modules]:
         for-each [[key val] (sorted ((vars mod).items))]:
             when (key.startswith "__"):
-                (continue)
+                continue
 
             define label f"{mod.__name__}.{key}"
             if (instance? val Syntax):
@@ -251,7 +251,7 @@ define collect_codes [modules]:
     while stack:
         define-values [label code] (stack.pop 0)
         when (in? (id code) seen):
-            (continue)
+            continue
         (seen.add (id code))
         (found.append #(label code))
 
@@ -286,10 +286,10 @@ define iter_blocks [code enders]:
             when block:
                 yield block
             set! block #[]
-            (continue)
+            continue
 
         elif (in? name TRANSPARENT_OPS):
-            (continue)
+            continue
 
         elif (in? name LOOP_PUSH_OPS):
             incr! depth
@@ -397,12 +397,12 @@ define print_markov [tally threshold file]:
 
     for-each [[op count] (tally.op_counts.most_common)]:
         when (< count threshold):
-            (break)
+            break
 
         define succs tally.successors[op]
         define total (sum (succs.values))
         unless total:
-            (continue)
+            continue
 
         define parts:
             list-each [[succ scount] (succs.most_common 4)]:

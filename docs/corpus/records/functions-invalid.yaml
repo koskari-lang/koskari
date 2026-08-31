@@ -48,27 +48,6 @@ tags:
   - pitfall
 notes: "agent mistake: [x 1] is one binding pair (x . 1) not a list of pairs; corrective: (let [[x 1]] x)"
 ---
-id: function-define-pass-body-invalid-001
-feature: special/compile/define
-source: |-
-  define foo []:
-      pass
-verify:
-  read: (define foo [] pass)
-  invalid: "no-op trap from Python: pass is a Python statement with no Koskari binding. It reads as a bare symbol, so (define foo [] pass) parses cleanly and even defines foo, but pass is an unbound reference — calling foo raises NameError: Empty reference: pass. Koskari has no pass; write a no-op body as None or a bare (begin)."
-references:
-  - reference/specials/compile-define.md
-  - reference/specials/compile-begin.md
-stability: evolving
-tags:
-  - function
-  - define
-  - "surface:block"
-  - invalid
-  - surprising
-  - pitfall
-notes: "agent mistake: Python pass as a no-op function body; corrective: (define foo [] None) or a bare (begin) / begin: body. pass is an unbound name, not a statement."
----
 id: functions-bare-multiline-call-kwarg-invalid-001
 feature: reader/layout
 source: |-

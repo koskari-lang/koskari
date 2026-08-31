@@ -17,7 +17,7 @@ koskari.reader.pragma
 Reader-side pragma settings, registered into the koskari.pragma registry at
 import: reader/brackets, reader/index-brackets, reader/dot-attrs,
 reader/string-segments, reader/layout, reader/implicit-calls,
-reader/pass-none, reader/fences, reader/decorators. Each setting's
+reader/fences, reader/decorators. Each setting's
 ``default`` is its baseline (value when undeclared); the function's argument
 defaults are the parameter defaults (value when declared but the arg is
 omitted).
@@ -86,16 +86,6 @@ def reader_implicit_calls(enabled: bool = True) -> bool:
     """
     Whether multiple values on one layout line form an implicit call
     (baseline on)
-    """
-
-    return enabled
-
-
-@pragma_setting("reader/pass-none", False)
-def reader_pass_none(enabled: bool = True) -> bool:
-    """
-    Whether the ``pass`` symbol reads as the None literal (baseline off), for
-    Python users who write ``pass`` as a branch no-op
     """
 
     return enabled

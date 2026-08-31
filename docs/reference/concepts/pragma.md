@@ -118,12 +118,6 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
 - **`reader/implicit-calls`** *(default on)* — whether several values on one
   layout line form an implicit call. Off makes more than one value on a line an
   error.
-- **`reader/pass-none`** *(default off)* — whether the bare symbol `pass` reads
-  as the `None` literal. Off — the baseline — `pass` is an ordinary symbol with
-  no special meaning. On, it is quietly rewritten to `None`, a concession for
-  arrivals from Python who cannot yet stop typing `pass` as a branch's
-  do-nothing; a bare `[reader/pass-none]` turns it on. The habit it accommodates
-  is one to grow out of, not into — write `None`.
 - **`reader/fences`** *(default on)* — whether triple-backtick fences read into
   `compile/apply-fence` forms. Off, backtick keeps only its quote and
   quasiquote readings. See
@@ -192,23 +186,25 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   affects only the asserts that appear after it. See
   [compile/assert](../macros/compile-assert.md).
 - **`compiler/bare-control-words`** *(default `convert`)* — what happens when
-  a bare `return`, `continue`, `break`, `raise`, or `yield` symbol is
+  a bare `return`, `continue`, `break`, `raise`, `yield`, or `pass` symbol is
   compiled. These
   statement words are call forms in Koskari, and their bare forms expand the
   lone symbol into its call form — `return` becomes `(return)` — matching the
-  Python-style spelling. One of:
+  Python-style spelling. `pass` expands to `(begin)`, a no-op that evaluates
+  to `None`. One of:
   - `convert` — expand silently.
   - `warn` — emit a `SyntaxWarning`, then expand.
   - `error` — refuse with a compile error naming the corrective spelling.
 
   Each module answers for its own setting: the gate reads the pragma of the
   module being compiled, so a strict module does not harden its neighbors.
-  The cost of conversion is that these five names always expand and can never
+  The cost of conversion is that these six names always expand and can never
   name a variable. See [compile/return](../specials/compile-return.md),
   [compile/continue](../specials/compile-continue.md),
   [compile/break](../specials/compile-break.md),
-  [compile/raise](../specials/compile-raise.md), and
-  [compile/yield](../specials/compile-yield.md).
+  [compile/raise](../specials/compile-raise.md),
+  [compile/yield](../specials/compile-yield.md), and
+  [compile/begin](../specials/compile-begin.md) (`pass`).
 - **`compiler/rewrite-limit`** *(default 32)* — how many macro-expansion
   rewrites a single form may take before the compiler reports it as
   divergent. A macro that expands into an ever-growing form stops with a

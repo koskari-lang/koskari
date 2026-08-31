@@ -205,7 +205,7 @@ define repl [
     except [EOFError]:
       print "" file: stderr
       (stderr.flush)
-      (break)
+      break
 
     except [KeyboardInterrupt]:
       print "" file: stderr
@@ -213,30 +213,30 @@ define repl [
       if (buffer.strip):
         set! buffer ""
         set! prompt ">>> "
-        (continue)
+        continue
       else:
-        (break)
+        break
 
     incr! buffer (if buffer (+ "\n" line) line)
 
     unless (buffer.strip):
       set! buffer ""
-      (continue)
+      continue
 
     when (line.strip):
       when ((buffer.rstrip).endswith ":"):
         set! prompt "... "
-        (continue)
+        continue
       when (block_body? buffer):
         set! prompt "... "
-        (continue)
+        continue
 
     try:
       define expr (eval_expression compiler buffer ns)
 
       if (incomplete? expr):
         set! prompt "... "
-        (continue)
+        continue
 
       ;; No explicit await here: the call boundary already auto-awaits
       ;; the shim coroutine, and an explicit await would collapse a
@@ -259,7 +259,7 @@ define repl [
     except [EOFError]:
       print "" file: stderr
       (stderr.flush)
-      (break)
+      break
 
     except [ReaderSyntaxError as: e]:
       define ename (type e).__name__

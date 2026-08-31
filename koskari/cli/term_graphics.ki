@@ -115,7 +115,7 @@ define render_kitty_escape [png_bytes]:
       define more (if (>= stop total) 0 1)
       define keys (if (== start 0)
         f"a=T,f=100,q=2,m={more}"
-         f"m={more}")
+        f"m={more}")
       f"\x1b_G{keys};{chunk}\x1b\\"
 
   ("".join parts)
@@ -151,7 +151,7 @@ define-demanding emit_icon [stream: None size: 32]:
 
   define protocol (detect_protocol isatty: (stream.isatty))
   when (None? protocol):
-    (return False)
+    return False
 
   define png_bytes (icon_png_bytes size)
   define escape (if (== protocol "kitty")

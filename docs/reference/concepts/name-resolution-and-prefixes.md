@@ -73,8 +73,8 @@ there is nothing in the runtime slot:
 One class of names never reaches value resolution at all: a syntax with a
 **bare form** expands its lone symbol before the runtime slot is ever
 consulted. The statement words carry bootstrap bare forms, so a lone
-`return`, `continue`, `break`, `raise`, or `yield` expands to its call form
-— the Python-style spelling works, and none of these five can ever name a
+`return`, `continue`, `break`, `raise`, `yield`, or `pass` expands to its call form
+— the Python-style spelling works, and none of these six can ever name a
 variable. The [`compiler/bare-control-words`](pragma.md#compiler) pragma
 selects whether that conversion is silent, warned, or refused. Any syntax
 can declare a bare form with the `bare-syntax` transformer kind — see

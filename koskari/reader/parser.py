@@ -102,7 +102,6 @@ _symbol_refq = symbol("refq")
 _symbol_splice = symbol("splice")
 _symbol_unquote = symbol("unquote")
 _symbol_unquote_splicing = symbol("unquote-splicing")
-_symbol_pass_none = symbol("reader/pass-none")
 _symbol_apply_fence = symbol("apply-fence")
 _symbol_colon = symbol(":")
 _symbol_tuple = symbol("#tuple")
@@ -161,7 +160,6 @@ _ATTR_NAME_HEAD = frozenset(
 _ATTR_NAME_REST = _ATTR_NAME_HEAD | frozenset("0123456789/-")
 _ellipsis_atom_re = regex(r"^\.\.\.$").match
 _py_singleton_atom_re = regex(r"^(None|True|False)$").match
-_pass_atom_re = regex(r"^pass$").match
 
 
 _as_integer = int
@@ -207,14 +205,6 @@ def _as_py_singleton(s):
     if s == "True":
         return True
     return False
-
-
-def _as_pass_none(_s):
-    """
-    Reader symbol macro converting the ``pass`` symbol into the None literal
-    """
-
-    return None
 
 
 def _as_float(s):
@@ -1744,7 +1734,7 @@ class Reader:
 
         Covers every setting a plain reader carries: reader/brackets,
         reader/index-brackets, reader/dot-attrs, reader/string-segments,
-        reader/pass-none, and reader/fences.
+        and reader/fences.
 
         Raw reader defaults are deliberately bare, so this is how a
         directly-constructed reader is brought up to the pragma's baseline.
@@ -1773,10 +1763,6 @@ class Reader:
         if string_segments is not None:
             self.string_segments = bool(string_segments)
 
-        pass_none = pragma.get("reader/pass-none")
-        if pass_none is not None:
-            self.set_pass_none(bool(pass_none))
-
         fences = pragma.get("reader/fences")
         if fences is not None:
             self.fences_enabled = bool(fences)
@@ -1796,21 +1782,6 @@ class Reader:
         """
 
         return self.dot_attrs and _dotted_attr_atom_re(atom)
-
-
-    def set_pass_none(self, enabled):
-        """
-        Install or remove the reader symbol macro that reads the ``pass``
-        symbol as the None literal
-
-        :param enabled: True to install the macro, False to remove it
-        """
-
-        if enabled:
-            self.set_atom_pattern(
-                _symbol_pass_none, _pass_atom_re, _as_pass_none)
-        else:
-            self.clear_atom_pattern(_symbol_pass_none)
 
 
     def set_atom_regex(self, namesym, regexstr, conversion_fn):
