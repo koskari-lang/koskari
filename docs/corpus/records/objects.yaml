@@ -35,19 +35,6 @@ tags:
   - object
   - comparison
 ---
-id: object-eq-arity-error-001
-feature: special/compile/==
-source: (== 1)
-verify:
-  error: "SpecialError: requires at least two arguments"
-references:
-  - reference/specials/compile-eqeq.md
-stability: evolving
-tags:
-  - object
-  - comparison
-  - error
----
 id: object-equal-alias-001
 feature: special/compile/equal?
 source: (equal? 1 1)
@@ -2104,23 +2091,6 @@ tags:
   - object
   - attr
 notes: "dotted-symbol method call on a BOUND name: obj.method lowers to (compile/attr obj method), which is then called. seq=(1,2,3) fixture; .index(2) is 1. Only works when the receiver is a symbol; for literals/expressions use the leading-dot form."
----
-id: object-format-braces-in-spec-invalid-001
-feature: special/compile/format
-source: "(format 255 \"{:x}\")"
-verify:
-  read: "(format 255 \"{:x}\")"
-  invalid: "compile/format calls Python format(OBJ, RULES). RULES is the spec token itself, so '{:x}' is not a replacement field and is an invalid int format specifier. The same mistake in an f-string would be f\"{255:{:x}}\", not f\"{255:x}\"."
-references:
-  - reference/specials/compile-format.md
-  - reference/specials/object-operators/index.md
-stability: evolving
-tags:
-  - object
-  - format
-  - invalid
-  - pitfall
-notes: "corrective: (format 255 \"x\") or f\"{255:x}\". see object-format-hex-003"
 ---
 id: object-format-default-001
 feature: special/compile/format
