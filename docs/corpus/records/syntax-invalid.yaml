@@ -230,3 +230,118 @@ tags:
   - invalid
   - pitfall
 notes: "corrective: (begin (define x \"  AB  \") ((x.strip).lower))"
+---
+id: reader-f-string-combined-prefix-invalid-006
+feature: reader/f-string
+source: rf"{z}"
+verify:
+  read: (begin rf "{z}")
+  invalid: string prefixes do not combine. rf"..." is the symbol rf followed by an ordinary string, so {z} is not a field. the same split happens for fr"...".
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: use f\"{z}\" or r\"...\" separately. there is no raw f-string prefix"
+---
+id: reader-f-string-conversion-suffix-invalid-001
+feature: reader/f-string
+source: f"{42!r}"
+verify:
+  read: "(#str (format 42!r))"
+  invalid: Koskari has no Python conversion suffix. !r is consumed as part of the atom 42!r, so eval looks up that name and fails with NameError. The same happens for !s, !a, and the debug suffix z=.
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: wrap the expression, f\"{(repr 42)}\" or f\"{(str 42)}\". see reader-f-string-repr-slot-021"
+---
+id: reader-f-string-empty-field-invalid-002
+feature: reader/f-string
+source: f"{}"
+verify:
+  error: "FormatStringSyntaxError: invalid format field"
+references:
+  - reference/grammar.md
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - invalid
+notes: "corrective: put an expression in the slot, f\"{z}\". an empty field is rejected at read time"
+---
+id: reader-f-string-mismatched-brace-invalid-003
+feature: reader/f-string
+source: f"hello}"
+verify:
+  error: "FormatStringSyntaxError: mis-matched closing } in f-string"
+references:
+  - reference/grammar.md
+  - reference/error-codes.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - invalid
+notes: "corrective: double the brace for a literal, f\"hello}}\", or open a field with {"
+---
+id: reader-f-string-nested-spec-not-interpolated-invalid-004
+feature: reader/f-string
+source: "f\"{42:{w}}\""
+verify:
+  read: "(#str (format 42 \"{w}\"))"
+  invalid: "curly braces inside a colon spec are literal text, not a nested interpolation. Python's f'{x:{w}}' does not carry over; the spec is the raw string '{w}', which is not a valid int format and fails at compile with ValueError."
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: bind a spec string and use the two-expression slot, (begin (define rules \"04d\") f\"{42 rules}\"). see reader-f-string-legacy-dynamic-spec-011"
+---
+id: reader-f-string-single-quote-invalid-007
+feature: reader/f-string
+source: f'{z}'
+verify:
+  error: "ReaderEOF: unexpected EOF"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - invalid
+  - pitfall
+notes: "corrective: f-strings only attach to double quotes, f\"{z}\". a single quote after f is not a format string; the reader treats f as a symbol and ' as quote syntax, then runs out of input"
+---
+id: reader-f-string-space-before-quote-invalid-005
+feature: reader/f-string
+source: f "{z}"
+verify:
+  read: (begin f "{z}")
+  invalid: the f prefix is recognised only when it sits immediately before the quote. a space splits this into two expressions -- the symbol f and the ordinary string '{z}' -- so nothing interpolates.
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: f\"{z}\" with no space. sibling of the string-segment rule that the hyphen must touch the closing quote"

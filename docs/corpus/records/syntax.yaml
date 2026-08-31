@@ -986,3 +986,396 @@ tags:
   - extend-syntax
   - bare-syntax
 notes: attaching a bare form to an existing transformer; a syntax carries at most one bare arm, and an extension's bare arm replaces the original's
+---
+id: reader-f-string-attr-slot-015
+feature: reader/f-string
+source: "f\"{obj.count:04d}\""
+verify:
+  read: "(#str (format (attr obj count) \"04d\"))"
+  expand: "(#str (format (attr obj count) \"04d\"))"
+  eval: '"0005"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - idiom
+  - "pragma:reader/dot-attrs"
+notes: requires reader/dot-attrs (baseline on). a dotted attribute in a slot is one expression; the colon still opens the spec. obj.count is the baked-in fixture 5
+---
+id: reader-f-string-basic-001
+feature: reader/f-string
+source: f"{z}"
+verify:
+  read: "(#str (format z))"
+  expand: "(#str (format z))"
+  eval: '"1"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+notes: an f-string slot with no spec lowers to (format OBJ). z is the baked-in fixture 1
+---
+id: reader-f-string-colon-align-005
+feature: reader/f-string
+source: "f\"{42:>5}\""
+verify:
+  read: "(#str (format 42 \">5\"))"
+  expand: "(#str (format 42 \">5\"))"
+  eval: '"   42"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+notes: alignment and width tokens are copied into RULES as-is; Python format(42, '>5') does the rest
+---
+id: reader-f-string-colon-hex-006
+feature: reader/f-string
+source: "f\"{255:x}\""
+verify:
+  read: "(#str (format 255 \"x\"))"
+  expand: "(#str (format 255 \"x\"))"
+  eval: '"ff"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+notes: "the spec is the format mini-language token itself (x), not a '{:x}' replacement field"
+---
+id: reader-f-string-colon-on-call-007
+feature: reader/f-string
+source: "f\"{(add 1 2):.2f}\""
+verify:
+  read: "(#str (format (add 1 2) \".2f\"))"
+  expand: "(#str (format (add 1 2) \".2f\"))"
+  eval: '"3.00"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - idiom
+notes: a colon after a parenthesized expression is still the format spec. add is the baked-in fixture
+---
+id: reader-f-string-colon-spec-003
+feature: reader/f-string
+source: "f\"{42:04d}\""
+verify:
+  read: "(#str (format 42 \"04d\"))"
+  expand: "(#str (format 42 \"04d\"))"
+  eval: '"0042"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - idiom
+notes: an unnested colon in a field takes the rest as a raw format spec, the same string (format OBJ RULES) would receive. this is valid Python-style syntax
+---
+id: reader-f-string-colon-width-004
+feature: reader/f-string
+source: "f\"{42:3d}\""
+verify:
+  read: "(#str (format 42 \"3d\"))"
+  expand: "(#str (format 42 \"3d\"))"
+  eval: '" 42"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - idiom
+notes: koskari/dis.ki uses this width spec for instruction indices. the leading space is padding from 3d, not a YAML artifact
+---
+id: reader-f-string-escape-before-field-014
+feature: reader/f-string
+source: f"a\nb{z}"
+verify:
+  read: |-
+    (#str "a
+    b" (format z))
+  expand: |-
+    (#str "a
+    b" (format z))
+  eval: '"a\nb1"'
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+notes: backslash escapes decode in the literal run; the following {z} is still a field. z is the baked-in fixture 1
+---
+id: reader-f-string-escaped-braces-012
+feature: reader/f-string
+source: f"{{literal}}"
+verify:
+  read: "(#str \"{\" \"literal\" \"}\")"
+  expand: "(#str \"{\" \"literal\" \"}\")"
+  eval: '"{literal}"'
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+notes: "{{ and }} are literal braces, flushed as their own #str parts rather than opening a field"
+---
+id: reader-f-string-hex-escape-not-field-013
+feature: reader/f-string
+source: f"\x7bx\x7d"
+verify:
+  read: "(#str \"{x}\")"
+  expand: "(#str \"{x}\")"
+  eval: '"{x}"'
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - pitfall
+notes: "\\x7b / \\x7d decode to { and } in literal text but must not act as field delimiters; the field/literal split sees source characters, not decoded braces"
+---
+id: reader-f-string-index-chain-017
+feature: reader/f-string
+source: "(begin (define grid #(#(10 20) #(30 40))) (define y 1) (define x 0) f\"{grid[y][x]}\")"
+verify:
+  read: "(begin (define grid (#tuple (#tuple 10 20) (#tuple 30 40))) (define y 1) (define x 0) (#str (format (item (item grid y) x))))"
+  expand: "(begin (define grid (#tuple (#tuple 10 20) (#tuple 30 40))) (define y 1) (define x 0) (#str (format (item (item grid y) x))))"
+  eval: '"30"'
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - index
+  - construct
+  - idiom
+  - "pragma:reader/index-brackets"
+notes: requires reader/index-brackets (baseline on). chained suffixes in a slot attach left to right as nested item forms
+---
+id: reader-f-string-index-legacy-spec-018
+feature: reader/f-string
+source: f"{seq[0] \"3d\"}"
+verify:
+  read: "(#str (format (item seq 0) \"3d\"))"
+  expand: "(#str (format (item seq 0) \"3d\"))"
+  eval: '"  1"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - index
+  - construct
+  - "pragma:reader/index-brackets"
+notes: requires reader/index-brackets (baseline on). the subscript attaches, and a following space-separated form is still the format spec. seq is the baked-in fixture
+---
+id: reader-f-string-index-slot-016
+feature: reader/f-string
+source: "f\"{seq[0]:04d}\""
+verify:
+  read: "(#str (format (item seq 0) \"04d\"))"
+  expand: "(#str (format (item seq 0) \"04d\"))"
+  eval: '"0001"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - index
+  - construct
+  - idiom
+  - "pragma:reader/index-brackets"
+notes: "requires reader/index-brackets (baseline on). a bracket suffix attaches to the slot expression before the colon splits off the spec, so {seq[0]:04d} is one subscript plus a spec, not a spec that starts with [0]. seq is the baked-in fixture"
+---
+id: reader-f-string-keyword-inside-expr-008
+feature: reader/f-string
+source: "f\"{(item-slice seq stop: 1)}\""
+verify:
+  read: "(#str (format (item-slice seq stop: 1)))"
+  expand: "(#str (format (item-slice seq stop: 1)))"
+  eval: '"(1,)"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - pitfall
+notes: "a colon inside parentheses is a keyword argument, not a format spec. the spec split only happens at an unnested colon after the expression. koskari/dis.ki uses this with item-slice stop:. seq is the baked-in fixture"
+---
+id: reader-f-string-legacy-dynamic-spec-011
+feature: reader/f-string
+source: (begin (define rules "04d") f"{42 rules}")
+verify:
+  read: "(begin (define rules \"04d\") (#str (format 42 rules)))"
+  expand: "(begin (define rules \"04d\") (#str (format 42 rules)))"
+  eval: '"0042"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+notes: a second field expression that is not a string literal is a dynamic spec. this is how to supply a width or style bound in a variable; a colon spec is always a raw string
+---
+id: reader-f-string-legacy-escaped-spec-009
+feature: reader/f-string
+source: f"{42 \"04d\"}"
+verify:
+  read: "(#str (format 42 \"04d\"))"
+  expand: "(#str (format 42 \"04d\"))"
+  eval: '"0042"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+notes: the two-expression slot {OBJ RULES} is the older spelling of a constant spec. quotes inside a double-quoted f-string must be escaped so they do not close the literal
+---
+id: reader-f-string-legacy-triple-quote-010
+feature: reader/f-string
+source: f"""{42 "04d"}"""
+verify:
+  read: "(#str (format 42 \"04d\"))"
+  expand: "(#str (format 42 \"04d\"))"
+  eval: '"0042"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - idiom
+notes: koskari/dis.ki writes the two-expression slot inside a triple-quoted f-string so the inner quotes need no backslash. same lowering as the colon spec
+---
+id: reader-f-string-literal-mix-002
+feature: reader/f-string
+source: f"n={z}"
+verify:
+  read: "(#str \"n=\" (format z))"
+  expand: "(#str \"n=\" (format z))"
+  eval: '"n=1"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+notes: "literal runs and format fields become sibling arguments of compile/#str"
+---
+id: reader-f-string-repr-slot-021
+feature: reader/f-string
+source: f"{(repr seq)}"
+verify:
+  read: "(#str (format (repr seq)))"
+  expand: "(#str (format (repr seq)))"
+  eval: '"#(1 2 3)"'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - idiom
+notes: there is no !r conversion suffix; wrap the expression in repr (or str). seq is the baked-in fixture
+---
+id: reader-f-string-slice-ellipsis-022
+feature: reader/f-string
+source: "f\"{(item-slice seq stop: 2)}...\""
+verify:
+  read: "(#str (format (item-slice seq stop: 2)) \"...\")"
+  expand: "(#str (format (item-slice seq stop: 2)) \"...\")"
+  eval: '"(1, 2)..."'
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - idiom
+notes: "koskari/dis.ki truncates a repr with f\"{(item-slice r stop: 57)}...\". the colon in stop: stays a keyword because it is nested in the call; the trailing dots are a literal run"
+---
+id: reader-f-string-two-slots-019
+feature: reader/f-string
+source: "(begin (define name \"PUSH_NS\") f\"{42:3d}  {name:24s}\")"
+verify:
+  read: "(begin (define name \"PUSH_NS\") (#str (format 42 \"3d\") \"  \" (format name \"24s\")))"
+  expand: "(begin (define name \"PUSH_NS\") (#str (format 42 \"3d\") \"  \" (format name \"24s\")))"
+  eval: '" 42  PUSH_NS                 "'
+references:
+  - reference/grammar.md
+  - reference/specials/compile-format.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - idiom
+notes: "koskari/dis.ki prints an instruction as f\"{i:3d}  {op.name:24s} ...\". two colon specs and an intervening literal share one #str"
+---
+id: reader-f-string-type-attr-020
+feature: reader/f-string
+source: f"{(type z).__name__}"
+verify:
+  read: "(#str (format (attr (type z) __name__)))"
+  expand: "(#str (format (attr (type z) __name__)))"
+  eval: '"int"'
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - f-string
+  - construct
+  - idiom
+  - "pragma:reader/dot-attrs"
+notes: requires reader/dot-attrs (baseline on). a dotted suffix on a parenthesized call is one slot expression. koskari/dis.ki uses this for (type x).__name__. z is the baked-in fixture 1
