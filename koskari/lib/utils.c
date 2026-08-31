@@ -140,41 +140,11 @@ static int kos_apply_build_args_tuple(
 
 
 /**
-   The non-flattening apply, deferred to the trampoline. Delivered the
-   (fn, args, kwds) triple staged at install; kwds is None when there
-   were none. Runs with apply's own code-less frame current, so the
-   return machinery owns popping it -- a tail apply's reused frame can
-   be the context root, where a direct parent-frame delivery has
-   nowhere to land. staged is consumed.
+   Shared apply install: fn/arglist/kwds already extracted (borrowed).
+   apply wants no frame of its own (see KosApplyType) -- fn's own Call
+   handles frame prep and tail reuse, and delivers straight to the
+   real caller, since apply never occupies anything in between.
 */
-static KosOpResult apply_resume_call(
-    KosEvalState *es, void *state, PyObject *staged) {
-
-  PyObject *fn, *seq_args, *kwds, *result;
-
-  (void) es;
-  (void) state;
-
-  /* Declined: the raise walk pops the frame. */
-  if (! staged)
-    return EVAL_RAISE();
-
-  fn = PyTuple_GET_ITEM(staged, 0);
-  seq_args = PyTuple_GET_ITEM(staged, 1);
-  kwds = PyTuple_GET_ITEM(staged, 2);
-  if (kwds == Py_None)
-    kwds = NULL;
-
-  result = PyObject_Call(fn, seq_args, kwds);
-  Py_DECREF(staged);
-  if (! result)
-    return EVAL_RAISE();
-
-  return EVAL_RETURN(result);
-}
-
-
-/** Shared apply install: fn/arglist/kwds already extracted (borrowed). */
 static KosOpResult kos_apply_install_core(
     KosEvalState *es,
     PyObject *fn,
@@ -183,6 +153,7 @@ static KosOpResult kos_apply_install_core(
     int tail_call) {
 
   PyObject *seq_args = NULL;
+  KosOpResult r;
 
   if (kos_apply_build_args_tuple(arglist, &seq_args) < 0)
     return EVAL_RAISE();
@@ -196,63 +167,9 @@ static KosOpResult kos_apply_install_core(
     return EVAL_RAISE();
   }
 
-  /* Flattening: delegate to inner callable's install through the
-     central tuple-to-vector spread. Some installs complete by
-     delivering a VALUE instead of filling the prepped frame -- a
-     generator function's AsyncGenerator, partial's or demand's
-     non-flattenable results -- which would leave apply's code-less
-     frame current for instruction dispatch. Detect that (same frame,
-     still no code, no program) and complete the frame with the
-     delivered value. */
-  {
-    KosCallSlots *fn_slots;
-    if (KosCallable_CheckSlots(fn, &fn_slots)) {
-      KosDynFrame *apply_frame = KosEvalState_FRAME(es);
-      KosOpResult r = KosCallable_CallArgsSlots(es, fn_slots, fn,
-                                                seq_args, kwds, tail_call);
-      Py_DECREF(seq_args);
-
-      if (r.kind == KOS_RES_NORMAL
-          && KosEvalState_FRAME(es) == apply_frame
-          && ! KosDynFrame_CODE(apply_frame)
-          && ! KosDynFrame_RESUME_FN(apply_frame)) {
-        /* Complete through the eval loop's return machinery, which
-           owns every delivery terminus -- a tail apply's reused
-           frame can be the context root, where a direct parent-frame
-           delivery has nowhere to land. */
-        PyObject *value = KosEvalState_StackPopRef(es);
-        if (! value)
-          return EVAL_RAISE();
-        return EVAL_RETURN(value);
-      }
-      return r;
-    }
-  }
-
-  /* Non-flattening: stage the call's parts on apply's own frame and
-     defer to apply_resume_call, so the call runs with that frame
-     current and its EVAL_RETURN goes through the return machinery.
-     Returning it from here instead would leave the code-less frame
-     current for whoever interprets the result. */
-  {
-    KosDynFrame *frame = KosEvalState_FRAME(es);
-    PyObject *staged = PyTuple_Pack(3, fn, seq_args,
-                                    kwds ? kwds : Py_None);
-    int pushed;
-
-    Py_DECREF(seq_args);
-    if (! staged)
-      return EVAL_RAISE();
-
-    pushed = KosEvalState_StackPushRef(es, staged);
-    Py_DECREF(staged);
-    if (pushed < 0)
-      return EVAL_RAISE();
-
-    KosDynFrame_RESUME_FN(frame) = (void *) apply_resume_call;
-    KosDynFrame_RESUME_STATE(frame) = NULL;
-    return EVAL_NORMAL();
-  }
+  r = KosEvalState_CallArgs(es, fn, seq_args, kwds, tail_call);
+  Py_DECREF(seq_args);
+  return r;
 }
 
 
@@ -323,7 +240,7 @@ static KosEvaluatedTypeObject KosApplyType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_apply,
-    .kc_wants_frame = 1,
+    .kc_wants_frame = 0,
     .kc_wants_frame_fn = NULL,
     .kc_pycall = apply_call,
     .kc_pyvectorcall = NULL,
