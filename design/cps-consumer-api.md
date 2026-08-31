@@ -402,11 +402,12 @@ resume-owned cleanup into a double free.
 
 ## Continuation capture
 
-Capture clones frames. The resume slot clones as data, so every
-materialization carries the resume, and the trampoline's destructive
-clear is correct per materialization: the live copy spends its own,
-the snapshot keeps its own, and a continuation reinstated N times
-fires the resume N times with no once-only bookkeeping.
+As implemented, capture across a frame carrying a resume refuses by
+name (`kos_dynframe_clone`): no caller produces a resume_state a
+clone could copy, so there is no clone story to get wrong. For map
+and filter this is behavior parity -- their native programs refused
+capture too, deliberately, since replaying a captured step would
+re-consume source elements.
 
 Clone-as-data remains the intended model for a resume whose state is
 clonable: the slot copies with the frame, every materialization
@@ -545,77 +546,6 @@ never suspend and has no channel to carry `AWAIT` out, so it has to
 intercept at the *classify* boundary instead -- one shared classifier
 called synchronously, not a resume. The CPS entry points are
 deliberately unused here.
-=======
->>>>>>> f3bb9fb5 (Record the demolition and what it actually removed)
-
-### Apply keeps its guard
-
-Two things this document originally asked of apply are not achievable,
-established while converting filter and demand:
-
-**The frame-identity check is load-bearing.** `kos_vinstall_function`
-never pushes a frame -- it fills the current one in place, and its
-generator-function branch pushes a value and returns `KOS_RES_NORMAL`.
-So a `NORMAL` out of apply's inner install is ambiguous: either "frame
-filled, real bytecode to run" or "value delivered, apply's code-less
-frame has nothing to dispatch." Only apply can tell them apart, by
-checking `CODE`/`NATIVE_PROG` on its own captured frame pointer. No
-generic entry point can absorb that, because every other caller reaches
-`kc_vinstall` through `do_frame_prep` and is guaranteed a frame with
-code.
-
-**Apply must not set a resume on its own frame.** The prologue checks
-`resume_fn` before dispatching bytecode, so a resume set on a frame the
-callee just filled would run *instead of* that callee's body. And
-`values_dispatch` pops apply's frame before re-installing, so after
-some calls the captured pointer is freed -- comparing it (what the
-guard does) is fine, writing to it is not.
-
-Apply's completion is therefore synchronous in every reachable case,
-which leaves nothing for a resume to do. Its remaining arms -- relaying
-`RETURN`, `RAISE`, and `FATAL` -- are correct as they stand, not
-divergent interpretations to unify. Apply was measured against a direct
-call for a partial over a coroutine function and behaves identically,
-confirming it adds no ambient-await divergence of its own.
-
-### The drivers share an epilogue, not an entry
-
-`stepper_drive` and `demandgen_iternext` (koskari/lib/iterate.c) are
-Python-boundary drivers: each calls `ki_step`, then calls
-`koskari_eval` itself. They have no current frame, so
-`KosEvalState_NextResume` -- which stages onto one -- cannot be their
-entry, exactly as with demand.
-
-Their real duplication is the epilogue after `koskari_eval` returns:
-StopIteration-to-exhaustion conversion, truncation versus close,
-excluding a thrown StopIteration from truncation, and the "async
-generator raised StopIteration" RuntimeError wrap. Three near-identical
-copies. Extracting one helper both drivers call is the fix, and is what
-the motivation section means by the copies of the drive epilogue.
-
-### A note on this document's prescriptions
-
-Three of the per-consumer prescriptions above (apply, demand, the
-drivers) named a mechanism the code does not permit, while correctly
-naming the duplication to remove. The pattern in each case: a
-`KosResumeFn` runs at the delivery boundary, on a frame, inside the
-loop. A consumer that has no frame, or that must act before the loop
-starts, or that must refuse a suspension rather than receive its
-result, cannot be served by one no matter how the entry is shaped.
-Check that a consumer is actually in-eval with a frame before reaching
-for these entries.
-
-### Demand classifies, it does not resume
-
-`demand_sync_ex` installs on a fresh context where there is no caller
-frame, then drives `koskari_eval` itself. A `KosResumeFn` runs at the
-*delivery* boundary, after a suspension has already been permitted;
-`KosEvalState_CallResume`'s AWAIT arm sets a resume and relays
-`EVAL_AWAIT` rather than offering the caller a veto. A demand root must
-never suspend and has no channel to carry `AWAIT` out, so it has to
-intercept at the *classify* boundary instead -- one shared classifier
-called synchronously, not a resume. The CPS entry points are
-deliberately unused here.
 
 ## Pitfalls and solutions
 
@@ -671,8 +601,6 @@ Landed:
    "invoke through the Python boundary", forcing a fresh context and a
    nested loop for calls the running evaluator could make.
 
-Remaining:
-
 6. The stepper's truncation check and error mapping shared between its
    two sites. `demandgen_iternext` keeps its own: on the sync surface
    StopIteration is the protocol's end signal rather than something to
@@ -683,6 +611,16 @@ Remaining:
    typed wake, `KosNativeHandlerFn`, `KosNativeFrame_Install` and the
    frame's `native_prog` slot are all gone. `native_state` survives as
    `park_cache`, the role it had been reduced to.
+
+Remaining:
+
+8. The transport respec (normative section above): declared
+   destinations, the register pending pair, node-hosted resumes, the
+   slim bounce. Lands before any opcode migrates onto the entries.
+9. The opcode roster onto the entries
+   ([ambient-await-handoffs.md](ambient-await-handoffs.md)), then
+   bytecode's builtin resume and opcode unification -- the boundary
+   with the musttail work.
 
 Each phase lands green through the full gate set (suite, native,
 ASAN, valgrind, benchmarks) and stays under the review size cap so it
