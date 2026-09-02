@@ -26,30 +26,30 @@ KOS_OP_HANDLER_COLD(VAR2) {
 
   PyObject *name = KosEvalState_CONST(es, row.a0);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *a = frame_ns_deref(es, name);
   if (unlikely(! a))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   name = KosEvalState_CONST(es, row.a1);
   if (unlikely(! name)) {
     Py_DECREF(a);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *b = frame_ns_deref(es, name);
   if (unlikely(! b)) {
     Py_DECREF(a);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (unlikely(KosEvalState_StackPUSH(es, a) < 0)) {
     Py_DECREF(b);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  return kos_op_result_PUSH(es, b);
+  RESULT_STEAL(es, b);
 }
 
 

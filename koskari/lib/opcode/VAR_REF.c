@@ -20,14 +20,13 @@
 KOS_OP_HANDLER_COLD(VAR_REF) {
   PyObject *name = get_name_from_insn(es, insn);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *ref = frame_ns_ref(es, name);
   if (unlikely(! ref))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  Py_INCREF(ref);
-  return kos_op_result_PUSH(es, ref);
+  RESULT_PUSH(es, ref);
 }
 
 

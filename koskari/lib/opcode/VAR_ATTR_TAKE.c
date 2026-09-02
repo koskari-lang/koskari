@@ -25,26 +25,26 @@ KOS_OP_HANDLER_COLD(VAR_ATTR_TAKE) {
   PyObject *var_name = KosEvalState_CONST(es, row.a0);
   PyObject *attr_name = KosEvalState_CONST(es, row.a1);
   if (! var_name || ! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *val = PyObject_GetAttr(obj, attr_name);
   if (! val) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   int res = PyObject_DelAttr(obj, attr_name);
   Py_DECREF(obj);
   if (res < 0) {
     Py_DECREF(val);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  return kos_op_result_PUSH(es, val);
+  RESULT_STEAL(es, val);
 }
 
 

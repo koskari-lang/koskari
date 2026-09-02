@@ -21,19 +21,19 @@
 KOS_OP_HANDLER_COLD(VAR_STORE) {
   PyObject *name = get_name_from_insn(es, insn);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (unlikely(frame_ns_store(es, name, val) < 0)) {
     Py_DECREF(val);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   Py_DECREF(val);
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

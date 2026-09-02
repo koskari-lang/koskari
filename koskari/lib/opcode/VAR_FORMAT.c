@@ -22,18 +22,18 @@
 KOS_OP_HANDLER_COLD(VAR_FORMAT) {
   PyObject *name = get_name_from_insn(es, insn);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *val = frame_ns_deref(es, name);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *res = PyObject_Format(val, NULL);
   Py_DECREF(val);
   if (unlikely(! res))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, res);
+  RESULT_STEAL(es, res);
 }
 
 

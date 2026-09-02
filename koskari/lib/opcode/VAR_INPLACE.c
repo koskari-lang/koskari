@@ -28,10 +28,11 @@ KOS_OP_HANDLER_COLD(VAR_INPLACE) {
   KosOperand op = (KosOperand) KosOpCount_TYPE(row.a0);
   PyObject *name = KosEvalState_CONST(es, row.a1);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_from_push_int(
-      kos_var_inplace_operand(es, op, name));
+  if (unlikely(kos_var_inplace_operand(es, op, name) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

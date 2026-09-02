@@ -23,34 +23,34 @@ KOS_OP_HANDLER_COLD(VAR_LIST_APPEND) {
 
   PyObject *name = get_name_from_insn(es, insn);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *list = frame_ns_deref(es, name);
   if (unlikely(! list))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (unlikely(! PyList_Check(list))) {
     PyErr_Format(PyExc_TypeError,
                  "VAR_LIST_APPEND requires list, not %R", list);
     Py_DECREF(list);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *value = KosEvalState_StackPopRef(es);
   if (unlikely(! value)) {
     Py_DECREF(list);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (unlikely(PyList_Append(list, value) < 0)) {
     Py_DECREF(list);
     Py_DECREF(value);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_DECREF(list);
   Py_DECREF(value);
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 
