@@ -27,18 +27,16 @@ KOS_OP_HANDLER(CONST2) {
 
   PyObject *a = KosEvalState_CONST(es, row.a0);
   if (unlikely(! a))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *b = KosEvalState_CONST(es, row.a1);
   if (unlikely(! b))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  Py_INCREF(a);
-  if (unlikely(KosEvalState_StackPUSH(es, a) < 0))
-    return EVAL_RAISE();
+  if (unlikely(KosEvalState_StackPushRef(es, a) < 0))
+    RESULT_RAISE();
 
-  Py_INCREF(b);
-  return kos_op_result_PUSH(es, b);
+  RESULT_PUSH(es, b);
 }
 
 

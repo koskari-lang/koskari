@@ -23,10 +23,9 @@
 KOS_OP_HANDLER(CONST) {
   PyObject *val = KosEvalState_CONST(es, KosOp_ARG(insn));
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  Py_INCREF(val);
-  return kos_op_result_PUSH(es, val);
+  RESULT_PUSH(es, val);
 }
 
 
