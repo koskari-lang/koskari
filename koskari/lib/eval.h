@@ -298,12 +298,18 @@ typedef KosThreadFn KosResumeFn;
 #if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
 
 /* Thread into the handler at es->pc: the fetch the dispatch loop does,
-   ending in a tail call instead of a computed goto. */
+   ending in a tail call instead of a computed goto. When the poll
+   counter trips, return NORMAL instead: the trampoline polls, zeroes
+   the counter, and threads again from es->pc. */
 # define KOS_THREAD_NEXT(es)                                            \
   do {                                                                  \
     KosEvalState *kos_thr_es_ = (es);                                   \
     uint32_t kos_thr_pc_ = KosEvalState_PC(kos_thr_es_);                \
-    KosSlot *kos_thr_next_ =                                            \
+    KosSlot *kos_thr_next_;                                             \
+    if (unlikely(++KosEvalState_POLL_OPS(kos_thr_es_)                   \
+                 > KOS_EVAL_GIL_POLL))                                  \
+      return EVAL_NORMAL();                                             \
+    kos_thr_next_ =                                                     \
         &KosCode_SLOTS(KosEvalState_CODE(kos_thr_es_))[kos_thr_pc_];    \
     kos_thr_es_->acting_pc = kos_thr_pc_;                               \
     kos_thr_es_->pc = kos_thr_pc_ + 1u;                                 \
@@ -642,7 +648,17 @@ struct KosEvalState {
                               Live transit only: freeze moves it onto
                               the frame stack, and the delivery step
                               takes it before the resume runs */
+  uint32_t poll_ops;  /* instructions since the last GIL / signal poll;
+                         the trampoline zeroes it at each poll and
+                         every continuing step increments it */
 };
+
+
+/* GIL / signal poll cadence: a poll runs once this many instructions
+   have run since the last one, and a GIL drop is offered at most once
+   per interval. */
+#define KOS_EVAL_GIL_POLL                1024u
+#define KOS_EVAL_GIL_POLL_INTERVAL_NS    5000000ULL  /* 5 ms */
 
 
 #define KosEvalState_CONTEXT(es) ((es)->ctx)
@@ -661,6 +677,8 @@ struct KosEvalState {
 #define KosEvalState_SET_PC(es, v) ((void)((es)->pc = (uint32_t)(v)))
 /** The staged CPS delivery, owned; NULL when nothing is staged. */
 #define KosEvalState_PENDING_VALUE(es) ((es)->pending_value)
+/** Instructions run since the last GIL / signal poll. */
+#define KosEvalState_POLL_OPS(es) ((es)->poll_ops)
 
 
 /**
@@ -1210,6 +1228,23 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val);
    outcome, per its own contract. val is consumed.
 */
 KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val);
+
+
+/**
+   The trampoline's re-entry: everything that must happen before the
+   next instruction is fetched, whenever control comes back to the
+   loop by a signal rather than by the fetch itself. In order: a
+   staged CPS delivery with no pending exception and no plan goes
+   straight to its resume; a pending exception runs the raise walk; an
+   armed transfer plan drains; a frame waiting on a resume takes its
+   delivery. Each of those may ask to run again, and this function
+   loops until none does.
+
+   :return: EVAL_NORMAL when instruction dispatch may proceed from
+       es->pc; otherwise the terminal result koskari_eval returns
+       (AWAIT, YIELD, RETURN, RAISE, FATAL)
+*/
+KosOpResult kos_prologue_reenter(KosEvalState *es);
 
 
 /**

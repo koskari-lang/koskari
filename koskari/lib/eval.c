@@ -2896,13 +2896,6 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
   reset cleared heap slot before es->code was updated).  On OOB, goto on_bad.
 */
 
-/* GIL poll: stack locals in dispatch loops only (not KosContext / KosEvalState). */
-#define KOS_EVAL_GIL_POLL           1024u
-
-// 5 milliseconds (5,000,000 nanoseconds)
-#define KOS_EVAL_GIL_POLL_INTERVAL_NS    5000000ULL
-
-
 static inline uint64_t kos_eval_gil_poll_now_ns(void) {
   struct timespec ts;
 
@@ -2946,10 +2939,97 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
   } while (0)
 
 
+KosOpResult kos_prologue_reenter(KosEvalState *es) {
+
+  /* es live fields via Init, kos_dyn_* retarget after chain surgery,
+     freeze at cleanup; chain errors propagate without rebuild. */
+  for (;;) {
+
+    #if KOS_STACK_TRACE
+    {
+      KosSegment **_kos_tr = KosEvalState_BLOCK(es);
+      trace_stack("  after ",
+                  (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
+    }
+    #endif
+
+    /* Slim bounce: a staged delivery with no pending exception and no
+       plan armed goes straight to its resume. The two checks below
+       exist for chain surgery, which a staged handoff performs none
+       of. */
+    if (KosEvalState_PENDING_VALUE(es)
+        && ! KosEvalState_PLAN(es)
+        && ! PyErr_Occurred()) {
+      KosOpResult rs = eval_step_resume_delivery(es);
+      if (rs.kind == KOS_RES_REPROLOGUE) continue;
+      return rs;
+    }
+
+    /* Pending PyErr from a suspended transfer thunk (e.g. RAISE in a
+       wind before-thunk) must run abandon + try_local before draining
+       the plan; otherwise the wind EXTENT_ACTION can complete while
+       PyErr is still set. */
+    {
+      KosOpResult pend = eval_phase_pending_exception(es);
+      if (pend.kind != KOS_RES_NORMAL) {
+        if (pend.kind == KOS_RES_REPROLOGUE) continue;
+        return pend;
+      }
+    }
+
+    {
+      KosOpResult xfer = eval_step_drain_transfer_plan(es);
+      if (xfer.kind != KOS_RES_NORMAL) {
+        if (xfer.kind == KOS_RES_REPROLOGUE) continue;
+        return xfer;
+      }
+    }
+
+    if (KosEvalState_FRAME(es)
+        && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)) != NULL) {
+      KosOpResult rs = eval_step_resume_delivery(es);
+      if (rs.kind == KOS_RES_REPROLOGUE) continue;
+      return rs;
+    }
+
+#if KOS_EVAL_SAFETYNET
+    /* Instruction dispatch never runs over a staged delivery: the slot
+       is consumed in the trip that staged it, so a capture made by an
+       opcode can never observe one. */
+    if (unlikely(KosEvalState_PENDING_VALUE(es))) {
+      Py_CLEAR(KosEvalState_PENDING_VALUE(es));
+      PyErr_SetString(PyExc_SystemError,
+                      "CPS delivery staged with no resume to take it");
+      return EVAL_FATAL();
+    }
+#endif
+
+    #if KOS_STACK_TRACE
+    {
+      KosSegment **_kos_tr = KosEvalState_BLOCK(es);
+      trace_stack("  before",
+                  (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
+    }
+    #endif
+
+    return EVAL_NORMAL();
+  }
+}
+
+
 /**
    Opcode loop for GCC/Clang: computed goto, tail-dispatch on RUN, prologue
    via cg_prologue.  Must be a single function: label addresses and optable
    live here only.
+
+   The loop's contract with a handler's result: NORMAL means "continue
+   at es->pc" -- fetch the slot there and dispatch it, polling first
+   when the poll counter has tripped. Every other kind is applied
+   through cg_handle_op_result, and whatever that yields either
+   resumes fetching (DISPATCH), re-enters through the prologue
+   (REPROLOGUE), or leaves koskari_eval. A threaded chain that ends
+   by returning NORMAL (an unconverted handler, a counter trip) is
+   picked up by the same rule.
 */
 static inline KosOpResult koskari_eval_dispatch_computed_goto(KosEvalState *es) {
 
@@ -2961,85 +3041,21 @@ static inline KosOpResult koskari_eval_dispatch_computed_goto(KosEvalState *es) 
 
   KosSlot *insn;
   KosOpResult op_res;
-  uint32_t gil_poll_ops = 0;
   uint64_t gil_poll_last_ns = kos_eval_gil_poll_now_ns();
 
   goto cg_prologue;
 
 cg_prologue:
-  /* es live fields via Init, kos_dyn_* retarget after chain surgery, freeze at
-     cleanup; chain errors propagate without rebuild. */
-
-  #if KOS_STACK_TRACE
   {
-    KosSegment **_kos_tr = KosEvalState_BLOCK(es);
-    trace_stack("  after ",
-                (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
+    KosOpResult pr = kos_prologue_reenter(es);
+    if (pr.kind != KOS_RES_NORMAL)
+      return pr;
   }
-  #endif
-
-  /* Slim bounce: a staged delivery with no pending exception and no
-     plan armed goes straight to its resume. The two checks below
-     exist for chain surgery, which a staged handoff performs none of. */
-  if (KosEvalState_PENDING_VALUE(es)
-      && ! KosEvalState_PLAN(es)
-      && ! PyErr_Occurred()) {
-    KosOpResult rs = eval_step_resume_delivery(es);
-    if (rs.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-    return rs;
-  }
-
-  /* Pending PyErr from a suspended transfer thunk (e.g. RAISE in a wind
-     before-thunk) must run abandon + try_local before draining the plan;
-     otherwise the wind EXTENT_ACTION can complete while PyErr is still set. */
-  {
-    KosOpResult pend = eval_phase_pending_exception(es);
-    if (pend.kind != KOS_RES_NORMAL) {
-      if (pend.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-      return pend;
-    }
-  }
-
-  {
-    KosOpResult xfer = eval_step_drain_transfer_plan(es);
-    if (xfer.kind != KOS_RES_NORMAL) {
-      if (xfer.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-      return xfer;
-    }
-  }
-
-  if (KosEvalState_FRAME(es)
-      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)) != NULL) {
-    KosOpResult rs = eval_step_resume_delivery(es);
-    if (rs.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-    return rs;
-  }
-
-#if KOS_EVAL_SAFETYNET
-  /* Instruction dispatch never runs over a staged delivery: the slot
-     is consumed in the trip that staged it, so a capture made by an
-     opcode can never observe one. */
-  if (unlikely(KosEvalState_PENDING_VALUE(es))) {
-    Py_CLEAR(KosEvalState_PENDING_VALUE(es));
-    PyErr_SetString(PyExc_SystemError,
-                    "CPS delivery staged with no resume to take it");
-    return EVAL_FATAL();
-  }
-#endif
-
-  #if KOS_STACK_TRACE
-  {
-    KosSegment **_kos_tr = KosEvalState_BLOCK(es);
-    trace_stack("  before",
-                (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
-  }
-  #endif
-
   goto cg_poll;
 
 cg_poll:
   {
-    gil_poll_ops = 0;
+    KosEvalState_POLL_OPS(es) = 0;
     if (koskari_gil_drop_requested()) {
       uint64_t now_ns = kos_eval_gil_poll_now_ns();
       if (gil_poll_last_ns && now_ns &&
@@ -3067,7 +3083,7 @@ cg_poll:
     cg_TARGET_##name:                                                 \
       KOS_TRACE_OP_WRAP(name, op_res = op_##name(es, insn, NULL));    \
       if (likely(op_res.kind == KOS_RES_NORMAL)) {                    \
-        if (unlikely((++gil_poll_ops > KOS_EVAL_GIL_POLL)))           \
+        if (unlikely(++KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL)) \
           goto cg_poll;                                               \
         KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);     \
         goto *optable[insn->op];                                      \
@@ -3122,7 +3138,7 @@ cg_have_result:
        pending PyErr / plan / native handler.  Skip the prologue and go
        straight back to instruction fetch; the poll counter still bounds
        signal-check latency via cg_poll. */
-    if (unlikely(++gil_poll_ops > KOS_EVAL_GIL_POLL))
+    if (unlikely(++KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL))
       goto cg_poll;
     KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
     goto *optable[insn->op];
