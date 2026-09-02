@@ -705,7 +705,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
     /* A frame carrying a CPS resume is offered the pending exception
        before it is torn through: the resume may consume (REPROLOGUE)
        or decline (EVAL_RAISE), in which case the pop below proceeds.
-       This is what makes CallResume's "NULL with exception set"
+       This is what makes CallResult's "NULL with exception set"
        delivery real -- without this offer a resume set on a frame that
        fails mid-call is never invoked at all. */
     if (KosDynNode_IS_FRAME(top)

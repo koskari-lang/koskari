@@ -28,7 +28,7 @@
    FRAME-shaped or awaitable-returning function without that guarantee
    -- runs under one CPS resume-carrying frame: FETCH requests the next
    source element via KosEvalState_NextResume, INVOKE applies the
-   function via KosEvalState_CallResume, and completion delivers the
+   function via KosEvalState_CallResult, and completion delivers the
    element to the consumer's iteration node. Exhaustion and errors leave
    the frame as exceptions; the consumer's iteration node converts
    StopIteration per its own rules, which also gives a mapped
@@ -103,8 +103,8 @@ static KosOpResult map_resume_after_fetch(
   if (! element)
     return EVAL_RAISE();
 
-  r = KosEvalState_CallResume(es, m->fn.cs_callable, &element, 1, NULL,
-                              map_resume_after_result, m);
+  r = KosEvalState_CallResult(es, m->fn.cs_callable, &element, 1, NULL,
+                              0, map_resume_after_result, m);
   Py_DECREF(element);
   return r;
 }

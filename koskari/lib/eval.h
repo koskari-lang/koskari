@@ -181,7 +181,7 @@ typedef enum KosGetNextResult {
 
 /**
    A per-frame CPS resume: the callback a consumer sets on a frame via
-   KosEvalState_CallResume / KosEvalState_NextResume to receive exactly
+   KosEvalState_CallResult / KosEvalState_NextResume to receive exactly
    one settled delivery -- a call's result, a callee frame's return, a
    Next request's element, or an awaited value, however it was
    produced.
@@ -375,6 +375,33 @@ typedef KosThreadFn KosResumeFn;
 #define RESULT_RAISE()  return EVAL_RAISE()
 #define RESULT_FAIL()   return EVAL_FATAL()
 
+/**
+   RESULT_RELAY(es, r): end a handler with the result of the helper
+   that settled its operation -- the call core, an iteration step, an
+   await, a dynamic node's transition. NORMAL means the helper left
+   the next instruction at es->pc (a callee's first instruction after
+   an install, the next instruction after a push), and continues
+   there; every other kind returns to the trampoline as it stands.
+   Trampoline mode returns r untouched. The helper itself keeps its
+   own prototype and return; the tail call happens here, in the
+   handler.
+*/
+#if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
+# define RESULT_RELAY(es, r)                                            \
+  do {                                                                  \
+    KosOpResult kos_rr_ = (r);                                          \
+    if (likely(kos_rr_.kind == KOS_RES_NORMAL))                         \
+      KOS_THREAD_NEXT(es);                                              \
+    return kos_rr_;                                                     \
+  } while (0)
+#else
+# define RESULT_RELAY(es, r)                                            \
+  do {                                                                  \
+    (void) (es);                                                        \
+    return (r);                                                         \
+  } while (0)
+#endif
+
 
 /* At most one delivery is staged at a time; a second is an internal
    sequencing bug, reported under the safety net instead of leaking. */
@@ -424,7 +451,7 @@ KosOpResult KosNativeFrame_ReturnPark(
    holds a parked frame it is reinstalled in place of a fresh
    allocation and *cache is emptied. The frame carries only name (for a
    capture refusal message, see kos_dynframe_clone) -- it has no resume
-   set until the caller's next KosEvalState_CallResume / NextResume
+   set until the caller's next KosEvalState_CallResult / NextResume
    call sets one. Returns the frame, or NULL with PyErr set.
 */
 KosDynFrame *KosResumeFrame_Install(
@@ -1139,32 +1166,32 @@ KosOpResult KosEvalState_Call(
 
 
 /**
-   Call callable, delivering the settled result (or failure) to resume
-   instead of making the caller interpret KosEvalState_Call's own
-   result by hand. Every arm sets resume on the current frame before
-   returning: an installed callee (NORMAL/REPROLOGUE) delivers by
-   frame return; a synchronous RETURN value stages onto the frame's
-   own stack and bounces through the trampoline the same way; a
-   RETURN value needing await, or the call's own result needing
-   await, both set resume and let the AWAITED revive deliver into it.
-   RAISE / FATAL relay untouched -- resume is offered the failure via
-   the raise walk instead. Caller must have a current frame; not a
-   tail call.
+   The call entry: call callable with vectorcall-style args, and say
+   where its result goes. tail_call and resume are independent.
 
-   resume may be NULL: no continuation, behave exactly like an
-   ordinary CALL opcode -- NORMAL/REPROLOGUE (installed, or already
-   pushed by Call's own plain-callable path) relay untouched; a
-   synchronous RETURN value pushes (with the same ambient-await check
-   every push already gets) instead of setting a resume. Never valid
-   from a codeless caller -- exactly as unsafe as any other plain
-   frame receiving a return today, not a new contract NULL introduces.
+   With resume set, the settled result (or failure) is delivered to
+   it instead of the caller interpreting KosEvalState_Call's own
+   result by hand: an installed callee (NORMAL/REPROLOGUE) arms resume
+   on the caller's frame and delivers by frame return; a synchronous
+   settled RETURN is a DISPATCH to resume; a RETURN needing await, or
+   the call's own result needing await, settles one step (or suspends)
+   and delivers on a later trip. RAISE / FATAL relay untouched --
+   resume is offered the failure via the raise walk instead. Caller
+   must have a current frame. A tail call replaces that frame, so it
+   has no caller to resume: tail_call with a resume is a caller error.
+
+   With resume NULL the call's result relays exactly as
+   KosEvalState_Call returns it, tail_call included: NORMAL or
+   REPROLOGUE for an installed callee or a value already pushed, RETURN
+   for a value settled in hand, AWAIT, RAISE, FATAL.
 */
-KosOpResult KosEvalState_CallResume(
+KosOpResult KosEvalState_CallResult(
     KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames,
+    int tail_call,
     KosResumeFn resume,
     void *state);
 

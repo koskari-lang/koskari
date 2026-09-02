@@ -610,36 +610,31 @@ KosOpResult KosEvalState_Call(
 }
 
 
-KosOpResult KosEvalState_CallResume(
+KosOpResult KosEvalState_CallResult(
     KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames,
+    int tail_call,
     KosResumeFn resume,
     void *state) {
 
   KosDynFrame *caller = KosEvalState_FRAME(es);
-  KosOpResult r = KosEvalState_Call(es, callable, args, nargs, kwnames, 0);
+  KosOpResult r;
 
-  if (! resume) {
-    /* No continuation: behave exactly like an ordinary CALL opcode --
-       land the settled value on the caller's own stack (normal ambient
-       await included) and let dispatch continue from there. NORMAL and
-       REPROLOGUE already mean "installed, or already delivered onto
-       this stack by Call itself"; only a synchronous RETURN (apply's
-       flatten, a KosCallable install that short-circuits) needs
-       converting from frame-return semantics into a push. Never valid
-       from a codeless caller -- exactly as unsafe as any other plain
-       frame receiving a return today, not a new contract. */
-    if (r.kind != KOS_RES_RETURN)
-      return r;
-    switch (KosEval_ResultIsValue(r.val)) {
-      case 1:  return kos_op_result_PUSH(es, r.val);
-      case 0:  return KosEvalState_PushOrAwait(es, r.val);
-      default: Py_DECREF(r.val); return EVAL_RAISE();
-    }
+#if KOS_EVAL_SAFETYNET
+  if (unlikely(tail_call && resume)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "tail call with a resume: no caller frame to resume");
+    return EVAL_RAISE();
   }
+#endif
+
+  r = KosEvalState_Call(es, callable, args, nargs, kwnames, tail_call);
+
+  if (! resume)
+    return r;
 
   switch (r.kind) {
     case KOS_RES_NORMAL:

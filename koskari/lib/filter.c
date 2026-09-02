@@ -27,7 +27,7 @@
    asynchronous runs under one CPS resume-carrying frame, whose
    resumes carry the three-phase progression -- FETCH requests the
    next source element (KosEvalState_NextResume), INVOKE applies the
-   predicate (KosEvalState_CallResume) with the element held on the
+   predicate (KosEvalState_CallResult) with the element held on the
    filter, VERDICT tests the predicate's result and either completes
    the frame with the held element or sets FETCH again. A rejected
    element loops by bouncing through the trampoline once, never by C
@@ -142,7 +142,7 @@ static KosOpResult filter_resume_do_fetch(
 
 /**
    INVOKE: test element against the predicate. An immediate verdict
-   resolves inline; a frame-wanting predicate goes through CallResume,
+   resolves inline; a frame-wanting predicate goes through CallResult,
    the element held on the filter until its verdict settles. element
    is consumed.
 */
@@ -177,8 +177,8 @@ static KosOpResult filter_resume_do_invoke(
      it across the call; the argument vector borrows it for the call's
      duration. */
   f->pending = element;
-  return KosEvalState_CallResume(es, f->pred.cs_callable,
-                                 &element, 1, NULL,
+  return KosEvalState_CallResult(es, f->pred.cs_callable,
+                                 &element, 1, NULL, 0,
                                  filter_resume_after_verdict, f);
 }
 
