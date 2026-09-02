@@ -14,7 +14,8 @@
 PYTHON ?= python3
 PYTHON_CONFIG ?= $(PYTHON)-config
 
-# Compiler
+# Compiler: CC from the environment (make test-native CC=clang passes it
+# into the container); make's own default otherwise
 CC ?= gcc
 
 # Test and library sources discovered via globs (stay in sync with tree)
@@ -113,12 +114,16 @@ all: normal asan valgrind  ## Run all test modes
 
 suite-asan:  ## Run the FULL unit test suite with an ASan-instrumented extension
 	@mkdir -p /build/tox
-	@ASAN_RT=$$(gcc -print-file-name=libasan.so.8); \
+	@case "$$($(CC) --version 2>/dev/null | head -n1)" in \
+	   *clang*) ASAN_RT=$$($(CC) -print-file-name=libclang_rt.asan.so) ;; \
+	   *) ASAN_RT=$$($(CC) -print-file-name=libasan.so.8) ;; \
+	 esac; \
 	 if [ ! -e "$$ASAN_RT" ]; then \
-	   echo "error: libasan runtime not found in container"; \
+	   echo "error: ASan runtime for $(CC) not found in container"; \
 	   exit 1; \
 	 fi; \
 	 cd /src && \
+	 CC=$(CC) \
 	 KOS_ASAN=1 \
 	 LD_PRELOAD="$$ASAN_RT" \
 	 ASAN_OPTIONS=detect_leaks=0:abort_on_error=1 \
@@ -126,7 +131,7 @@ suite-asan:  ## Run the FULL unit test suite with an ASan-instrumented extension
 
 suite-valgrind:  ## Run the FULL unit test suite under Valgrind (slow)
 	@mkdir -p /build/tox
-	@cd /src && tox --workdir /build/tox -re valgrind
+	@cd /src && CC=$(CC) tox --workdir /build/tox -re valgrind
 
 $(OBJDIR):
 	mkdir -p $@

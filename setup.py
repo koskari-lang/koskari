@@ -23,8 +23,12 @@ Koskari, a LISP dialect for Python
 
 
 import importlib.util
+import shlex
+import subprocess
+import sysconfig
 from os import environ
 from pathlib import Path
+from shutil import which
 
 from setuptools import Extension, setup
 from setuptools.command.build_py import build_py
@@ -53,7 +57,41 @@ baseline_args = (
 )
 
 
-def extra_compile_args(platform=None, debug=False):
+def compiler_command():
+    """
+    The C compiler the extension build uses. CC in the environment
+    wins; otherwise clang when it is on the PATH, exported as CC so
+    setuptools uses it for both compiling and linking; otherwise the
+    interpreter's own configured compiler
+    """
+
+    cc = environ.get("CC")
+    if cc:
+        return cc
+
+    if which("clang"):
+        environ["CC"] = "clang"
+        return "clang"
+
+    return sysconfig.get_config_var("CC") or "cc"
+
+
+def compiler_is_clang(cc):
+    """
+    Whether the compiler command identifies itself as clang
+    """
+
+    try:
+        proc = subprocess.run(
+            [*shlex.split(cc), "--version"],
+            capture_output=True, text=True, check=False)
+    except OSError:
+        return False
+
+    return "clang" in proc.stdout.lower()
+
+
+def extra_compile_args(platform=None, debug=False, clang=False):
     """
     Get compiler flags for C extensions
     """
@@ -83,8 +121,11 @@ def extra_compile_args(platform=None, debug=False):
         args.append("-g")
 
     if platform == "linux":
-        args.append("-fno-gcse")
         args.append("-ffat-lto-objects")
+        if not clang:
+            # GCC's global CSE merges the computed-goto dispatch jumps
+            # back into one; clang has no such pass and rejects the flag
+            args.append("-fno-gcse")
 
     return args
 
@@ -118,11 +159,13 @@ def extension(platform=None, debug=None):
     depends.extend(libdir.glob("opcode/*.c"))
     depends = sorted(map(str, depends))
 
+    clang = compiler_is_clang(compiler_command())
+
     return Extension(
         "koskari.lib",
         sources=sources,
         depends=depends,
-        extra_compile_args=extra_compile_args(platform, debug),
+        extra_compile_args=extra_compile_args(platform, debug, clang),
         extra_link_args=extra_link_args(),
     )
 

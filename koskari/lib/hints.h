@@ -55,6 +55,18 @@
 #endif
 
 
+/* Whether the compiler can enforce a tail call (clang, or GCC 15+).
+   A feature test only: nothing consults it yet. */
+#if defined(__has_attribute)
+# if __has_attribute(musttail)
+#  define KOS_HAVE_MUSTTAIL 1
+# endif
+#endif
+#ifndef KOS_HAVE_MUSTTAIL
+# define KOS_HAVE_MUSTTAIL 0
+#endif
+
+
 /* Dispatch: computed goto when available, else switch/case; no function table
    so the compiler can inline handler bodies. Both paths use tail-dispatch to
    next_insn. Build may override with -DKOS_USE_COMPUTED_GOTO=0 or =1. */
