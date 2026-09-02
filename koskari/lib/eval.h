@@ -202,6 +202,13 @@ typedef enum KosGetNextResult {
    through its iteration node. A consumer therefore cannot rely on
    seeing its own failures; it handles NULL by declining.
 
+   An offer is a plain call from inside the walk, which interprets the
+   reply: REPROLOGUE recovers (the walk stops), EVAL_RAISE declines
+   (the pop proceeds), EVAL_FATAL aborts. A resume answering an offer
+   must return one of those and never thread on -- no RESULT_ENTRY,
+   RESUME_HOP, or KOS_THREAD_NEXT -- since a chain run inside the
+   walk's frame would hand the walk a signal it cannot apply.
+
    Returns a KosOpResult naming the next signal to the loop: another
    CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT, or
    EVAL_REPROLOGUE.

@@ -725,6 +725,17 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
         return EVAL_REPROLOGUE();
       if (hr.kind == KOS_RES_FATAL)
         return EVAL_FATAL();
+#if KOS_EVAL_SAFETYNET
+      /* The offer is a plain call: a resume may recover or decline,
+         never thread on or produce a signal this walk cannot apply. */
+      if (hr.kind != KOS_RES_RAISE) {
+        Py_XDECREF(hr.val);
+        PyErr_SetString(PyExc_SystemError,
+                        "resume answered an exception offer with a"
+                        " signal other than REPROLOGUE or RAISE");
+        return EVAL_FATAL();
+      }
+#endif
       /* declined: fall through to the pop */
     }
 
