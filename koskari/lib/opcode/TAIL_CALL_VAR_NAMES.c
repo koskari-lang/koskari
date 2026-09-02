@@ -29,22 +29,22 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_VAR_NAMES) {
 
   PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *callable = frame_ns_deref(es, name);
   if (! callable)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
   if (! names) {
     Py_DECREF(callable);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_VAR_NAMES names must be"
                  " tuple, not %R", names);
     Py_DECREF(callable);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
@@ -55,7 +55,7 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_VAR_NAMES) {
     argv = KosEvalState_StackTailPtr(es, ntotal);
     if (! argv) {
       Py_DECREF(callable);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 

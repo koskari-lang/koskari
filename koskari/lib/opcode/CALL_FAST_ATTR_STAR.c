@@ -48,13 +48,13 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
 
   PyObject *attr_name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
   PyObject *obj = kos_ns_fast_deref(ns, (size_t) slot_idx);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *pos = NULL;
   PyObject *kwd = NULL;
@@ -63,49 +63,49 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
     kwd = KosEvalState_StackPopRef(es);
     if (! kwd) {
       Py_DECREF(obj);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     pos = KosEvalState_StackPopRef(es);
     if (! pos) {
       Py_DECREF(obj);
       Py_DECREF(kwd);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     if (ensure_tuple_fast_attr_star(&pos)) {
       Py_DECREF(obj);
       Py_DECREF(pos);
       Py_DECREF(kwd);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   } else if (opa & 2) {
     kwd = KosEvalState_StackPopRef(es);
     if (! kwd) {
       Py_DECREF(obj);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(obj);
       Py_DECREF(kwd);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   } else if (opa & 1) {
     pos = KosEvalState_StackPopRef(es);
     if (! pos) {
       Py_DECREF(obj);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     if (ensure_tuple_fast_attr_star(&pos)) {
       Py_DECREF(obj);
       Py_DECREF(pos);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     kwd = NULL;
   } else {
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(obj);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     kwd = NULL;
   }
@@ -119,7 +119,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
     Py_DECREF(obj);
     Py_DECREF(pos);
     Py_XDECREF(kwd);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *args_for_call = pos;
@@ -132,7 +132,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
       Py_DECREF(resolved);
       Py_DECREF(pos);
       Py_XDECREF(kwd);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     args_for_call = PySequence_Concat(combined, pos);
     Py_DECREF(combined);
@@ -141,7 +141,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
       Py_DECREF(resolved);
       Py_DECREF(pos);
       Py_XDECREF(kwd);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     Py_DECREF(pos);
   }

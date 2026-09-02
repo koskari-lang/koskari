@@ -28,19 +28,19 @@ KOS_OP_HANDLER_COLD(CALL_VAR) {
 
   PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *callable = frame_ns_deref(es, name);
   SAYF("CALL_VAR: callable=%R", callable);
   if (unlikely(! callable))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *argv = NULL;
   if (n) {
     argv = KosEvalState_StackTailPtr(es, n);
     if (unlikely(! argv)) {
       Py_DECREF(callable);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 

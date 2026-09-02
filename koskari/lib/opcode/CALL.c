@@ -24,7 +24,7 @@ KOS_OP_HANDLER(CALL) {
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
   if (unlikely(! ptr))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   SAYF("CALL: callable=%R", ptr[0]);
 

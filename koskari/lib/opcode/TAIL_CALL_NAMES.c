@@ -27,11 +27,11 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_NAMES) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *names = KosEvalState_StackPeek(es);
   if (! names)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_NAMES names must be tuple"
                  ", not %R", names);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
@@ -41,7 +41,7 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_NAMES) {
 
   KosStackSteal steal = { 0 };
   if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *callable = steal.vals[0];
   PyObject *const *args =

@@ -49,62 +49,62 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_STAR) {
   if ((opa & 3) == 3) {
     kwd = KosEvalState_StackPopRef(es);
     if (! kwd)
-      return EVAL_RAISE();
+      RESULT_RAISE();
     pos = KosEvalState_StackPopRef(es);
     if (! pos) {
       Py_DECREF(kwd);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     fun = KosEvalState_StackPopRef(es);
     if (! fun) {
       Py_DECREF(pos);
       Py_DECREF(kwd);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     if (ensure_tuple_star(&pos)) {
       Py_DECREF(fun);
       Py_DECREF(pos);
       Py_DECREF(kwd);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   } else if (opa & 2) {
     kwd = KosEvalState_StackPopRef(es);
     if (! kwd)
-      return EVAL_RAISE();
+      RESULT_RAISE();
     fun = KosEvalState_StackPopRef(es);
     if (! fun) {
       Py_DECREF(kwd);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(fun);
       Py_DECREF(kwd);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   } else if (opa & 1) {
     pos = KosEvalState_StackPopRef(es);
     if (! pos)
-      return EVAL_RAISE();
+      RESULT_RAISE();
     fun = KosEvalState_StackPopRef(es);
     if (! fun) {
       Py_DECREF(pos);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     if (ensure_tuple_star(&pos)) {
       Py_DECREF(fun);
       Py_DECREF(pos);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     kwd = NULL;
   } else {
     fun = KosEvalState_StackPopRef(es);
     if (! fun)
-      return EVAL_RAISE();
+      RESULT_RAISE();
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(fun);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     kwd = NULL;
   }

@@ -31,14 +31,14 @@ KOS_OP_HANDLER(TAIL_CALL_FAST) {
 
   PyObject *callable = kos_ns_fast_deref(ns, (size_t) row.a0);
   if (unlikely(! callable))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *argv = NULL;
   if (n) {
     argv = KosEvalState_StackTailPtr(es, n);
     if (unlikely(! argv)) {
       Py_DECREF(callable);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 

@@ -27,7 +27,7 @@ KOS_OP_HANDLER(TAIL_CALL) {
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
   if (! ptr)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   /* Prologue only: the whole window (callable included) is borrowed;
      the core's tail subpath binds before the frame reset drops it. */
