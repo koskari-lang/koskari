@@ -509,7 +509,14 @@ static KosOpResult revive_await(
       return EVAL_NORMAL();
     }
 
-    if (KosEvalState_StackPushRef(es, to_push) < 0) {
+    if (KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+      /* the frame is waiting on a resume: the awaited value is its
+         delivery, staged for the entry's delivery step */
+      if (! owned)
+        Py_INCREF(to_push);
+      KosEvalState_PENDING_VALUE(es) = to_push;
+      owned = 0;
+    } else if (KosEvalState_StackPushRef(es, to_push) < 0) {
       if (owned)
         Py_DECREF(to_push);
       return EVAL_RAISE();
@@ -1358,10 +1365,10 @@ int KosContext_Traverse(
 
   dyn_top = KosContext_DYN_TOP(ctx);
   plan = KosContext_PLAN(ctx);
-  if ((! dyn_top || ! plan)
-      && (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING)) {
+  if (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING) {
     active_es = kos_tls_active_eval_for_ctx(ctx);
     if (active_es) {
+      Py_VISIT(KosEvalState_PENDING_VALUE(active_es));
       if (! dyn_top)
         dyn_top = KosEvalState_DYN_TOP(active_es);
       if (! plan)
@@ -1926,16 +1933,12 @@ KosOpResult KosEvalState_NextResume(
 
   switch (KosNativeFrame_RequestNext(es, iter, &out)) {
     case KOS_IREQ_DELIVERED:
-      if (KosEvalState_StackPushRef(es, out) < 0) {
-        Py_DECREF(out);
-        return EVAL_RAISE();
+      if (! resume) {
+        /* OBJECT_NEXT's own default: the element lands on the stack */
+        return KosEvalState_StackPUSH(es, out) < 0
+            ? EVAL_RAISE() : EVAL_NORMAL();
       }
-      Py_DECREF(out);
-      if (! resume)
-        return EVAL_NORMAL();
-      KosDynFrame_RESUME_FN(frame) = (void *) resume;
-      KosDynFrame_RESUME_STATE(frame) = state;
-      return EVAL_REPROLOGUE();
+      DISPATCH(resume, es, state, out);
 
     case KOS_IREQ_CONTINUES:
       if (! resume) {
@@ -2152,6 +2155,10 @@ static KosOpResult eval_phase_transfer(KosEvalState *es) {
 static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
   if (! PyErr_Occurred())
     return EVAL_NORMAL();
+  /* The raise supersedes any staged delivery: the walk offers the
+     resume the exception instead, and the frame it was staged for
+     may be popped. */
+  Py_CLEAR(KosEvalState_PENDING_VALUE(es));
   return process_raise(es);
 }
 
@@ -2641,12 +2648,17 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 static inline KosOpResult eval_parent_return_deliver_impl(
     KosEvalState *es, PyObject *val) {
 
-  if (KosEvalState_StackPushRef(es, val) < 0) {
-    Py_DECREF(val);
+  KosDynFrame *parent = KosEvalState_FRAME(es);
+
+  /* Destination by one field: a parent waiting on a resume takes the
+     value through the pending slot; a bytecode parent takes it on its
+     stack, where its next instruction finds it. */
+  if (parent && KosDynFrame_RESUME_FN(parent)) {
+    KosEvalState_PENDING_VALUE(es) = val;
+  } else if (KosEvalState_StackPUSH(es, val) < 0) {
     return EVAL_FATAL();
   }
 
-  Py_DECREF(val);
   return kos_eval_post_opcode_control_returned_after_hook(es);
 }
 
@@ -2706,7 +2718,7 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosDynFrame *frame = KosEvalState_FRAME(es);
   KosResumeFn resume = (KosResumeFn) KosDynFrame_RESUME_FN(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
-  PyObject *val = NULL;
+  PyObject *val;
   KosOpResult res = EVAL_NORMAL();
   int have_res = 0;
 
@@ -2724,7 +2736,14 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosDynFrame_RESUME_FN(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
-  if (KosEvalState_StackLen(es) > 0) {
+  /* The pending slot is the live transit. The frame stack carries a
+     delivery only as storage: across a suspension (freeze moved the
+     slot there), or from a landing site that still pushes -- an
+     iteration node's element, a native frame's return. */
+  val = KosEvalState_PENDING_VALUE(es);
+  KosEvalState_PENDING_VALUE(es) = NULL;
+
+  if (! val && KosEvalState_StackLen(es) > 0) {
     val = KosEvalState_StackPopRef(es);
     if (! val) {
       res = EVAL_RAISE();
@@ -2741,27 +2760,28 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
       res = EVAL_RAISE();
       have_res = 1;
 #endif
+    }
+  }
 
-    } else {
-      switch (KosEval_ResultIsValue(val)) {
-        case 1:
-          break;  /* settled: deliver it below */
+  if (val && ! have_res) {
+    switch (KosEval_ResultIsValue(val)) {
+      case 1:
+        break;  /* settled: deliver it below */
 
-        case 0:
-          /* Not settled yet. Put the resume back and hand the value to
-             the await machinery; delivery happens on a later pass. */
-          KosDynFrame_RESUME_FN(frame) = (void *) resume;
-          KosDynFrame_RESUME_STATE(frame) = state;
-          res = KosEvalState_PushOrAwait(es, val);
-          have_res = 1;
-          break;
+      case 0:
+        /* Not settled yet. Put the resume back and settle one step;
+           the staged outcome is delivered on a later pass. */
+        KosDynFrame_RESUME_FN(frame) = (void *) resume;
+        KosDynFrame_RESUME_STATE(frame) = state;
+        res = KosEvalState_SettleStage(es, val);
+        have_res = 1;
+        break;
 
-        default:
-          Py_DECREF(val);
-          res = EVAL_RAISE();
-          have_res = 1;
-          break;
-      }
+      default:
+        Py_DECREF(val);
+        res = EVAL_RAISE();
+        have_res = 1;
+        break;
     }
   }
 
@@ -2958,6 +2978,17 @@ cg_prologue:
   }
   #endif
 
+  /* Slim bounce: a staged delivery with no pending exception and no
+     plan armed goes straight to its resume. The two checks below
+     exist for chain surgery, which a staged handoff performs none of. */
+  if (KosEvalState_PENDING_VALUE(es)
+      && ! KosEvalState_PLAN(es)
+      && ! PyErr_Occurred()) {
+    KosOpResult rs = eval_step_resume_delivery(es);
+    if (rs.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
+    return rs;
+  }
+
   /* Pending PyErr from a suspended transfer thunk (e.g. RAISE in a wind
      before-thunk) must run abandon + try_local before draining the plan;
      otherwise the wind EXTENT_ACTION can complete while PyErr is still set. */
@@ -2983,6 +3014,18 @@ cg_prologue:
     if (rs.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
     return rs;
   }
+
+#if KOS_EVAL_SAFETYNET
+  /* Instruction dispatch never runs over a staged delivery: the slot
+     is consumed in the trip that staged it, so a capture made by an
+     opcode can never observe one. */
+  if (unlikely(KosEvalState_PENDING_VALUE(es))) {
+    Py_CLEAR(KosEvalState_PENDING_VALUE(es));
+    PyErr_SetString(PyExc_SystemError,
+                    "CPS delivery staged with no resume to take it");
+    return EVAL_FATAL();
+  }
+#endif
 
   #if KOS_STACK_TRACE
   {

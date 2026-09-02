@@ -103,6 +103,111 @@ static int test_cg_prologue_delivers_staged_resume(void) {
 }
 
 
+/* === DISPATCH stages into the pending slot, not the frame stack === */
+
+
+static KosOpResult stage_via_dispatch(
+    KosEvalState *es, KosResumeFn fn, void *state, PyObject *value) {
+
+  DISPATCH(fn, es, state, value);
+}
+
+
+static int test_dispatch_stages_into_pending_slot(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  PyObject *staged = PyLong_FromLong(11);
+  TEST_ASSERT_NOT_NULL(staged, "create staged value");
+  Py_INCREF(staged);  /* DISPATCH consumes one reference */
+
+  ResumeProbe probe = { 0, 0, 0, NULL };
+  KosOpResult r = stage_via_dispatch(&es, resume_probe, &probe, staged);
+
+  TEST_ASSERT_EQ(r.kind, KOS_RES_REPROLOGUE, "DISPATCH bounces to the prologue");
+  TEST_ASSERT_SAME(KosEvalState_PENDING_VALUE(&es), staged,
+                   "the value is staged in the pending slot");
+  TEST_ASSERT(! KosEvalState_StackHead(&es)
+              || KosEvalState_StackLen(&es) == 0,
+              "the frame stack was not touched");
+  TEST_ASSERT(KosDynFrame_RESUME_FN(frame) == (void *) resume_probe,
+              "the resume is set on the current frame");
+  TEST_ASSERT_SAME(KosDynFrame_RESUME_STATE(frame), &probe,
+                   "the resume state is set");
+  TEST_ASSERT_EQ(probe.calls, 0, "nothing invoked the resume inline");
+
+  /* freeze converts the live slot to storage on the frame stack */
+  KosEvalState_FreezeToContext(&es);
+  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(&es), "freeze empties the slot");
+  TEST_ASSERT_EQ(KosSegment_LEN(KosDynNode_STACK((KosDynNode *) frame)), 1,
+                 "the staged value sits on the frame stack across the freeze");
+
+  /* the next trip takes it back and delivers it */
+  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+
+  TEST_ASSERT_EQ(probe.calls, 1, "resume fired exactly once");
+  TEST_ASSERT_EQ(probe.seen_null, 0, "delivered a real value, not NULL");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_RETURN, "resume's result reaches the caller");
+  TEST_ASSERT_SAME(ev.val, staged, "delivered value is the staged value");
+
+  Py_XDECREF(ev.val);
+  Py_DECREF(staged);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
+static int test_next_resume_delivered_stages_slot(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  PyObject *lst = PyList_New(1);
+  TEST_ASSERT_NOT_NULL(lst, "create list");
+  PyList_SET_ITEM(lst, 0, PyLong_FromLong(42));
+  PyObject *it = kos_iter_acquire(lst);
+  TEST_ASSERT_NOT_NULL(it, "acquire iterator");
+
+  ResumeProbe probe = { 0, 0, 0, NULL };
+  KosOpResult r = KosEvalState_NextResume(&es, it, NULL, resume_probe, &probe);
+
+  TEST_ASSERT_EQ(r.kind, KOS_RES_REPROLOGUE, "a delivered element bounces");
+  TEST_ASSERT_NOT_NULL(KosEvalState_PENDING_VALUE(&es),
+                       "the element is staged in the pending slot");
+  TEST_ASSERT_EQ(PyLong_AsLong(KosEvalState_PENDING_VALUE(&es)), 42,
+                 "staged element value");
+  TEST_ASSERT(! KosEvalState_StackHead(&es)
+              || KosEvalState_StackLen(&es) == 0,
+              "the frame stack was not touched");
+  TEST_ASSERT(KosDynFrame_RESUME_FN(frame) == (void *) resume_probe,
+              "the resume is set");
+  TEST_ASSERT_EQ(probe.calls, 0, "nothing invoked the resume inline");
+
+  Py_DECREF(it);
+  Py_DECREF(lst);
+  KosEvalState_FreezeToContext(&es);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
 /* === raise-walk offers a pending exception to a set resume ===
 
    The offer at dyn_walk.c only fires for a FRAME that is dyn_top but
@@ -384,6 +489,8 @@ int run_resume_tests(void) {
   printf("\n=== CPS resume plumbing tests ===\n");
 
   RUN_TEST(test_cg_prologue_delivers_staged_resume);
+  RUN_TEST(test_dispatch_stages_into_pending_slot);
+  RUN_TEST(test_next_resume_delivered_stages_slot);
   RUN_TEST(test_raise_walk_offers_resume_declines);
   RUN_TEST(test_raise_walk_offers_resume_recovers);
   RUN_TEST(test_clone_refuses_resume_frame);

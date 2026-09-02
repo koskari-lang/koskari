@@ -293,6 +293,22 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
 }
 
 
+KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val) {
+
+  KosOpResult pr = KosEvalState_PushOrAwait(es, val);
+  PyObject *settled;
+
+  if (pr.kind != KOS_RES_NORMAL)
+    return pr;  /* AWAIT: the revive delivers; RAISE: the walk offers */
+
+  settled = KosEvalState_StackPopRef(es);
+  if (unlikely(! settled))
+    return EVAL_RAISE();
+  KosEvalState_PENDING_VALUE(es) = settled;
+  return EVAL_REPROLOGUE();
+}
+
+
 /**
    Opcode-only variant of push_or_await: same semantics, plus peephole elision
    when the next bytecode is POP with argument 1 (discard TOS). In that case
@@ -630,7 +646,8 @@ KosOpResult KosEvalState_CallResume(
     case KOS_RES_REPROLOGUE:
       /* callee installed above caller, or already running in-eval;
          caller's own frame is unchanged and still reachable -- its
-         eventual return delivers here. */
+         eventual return delivers here. An arm, not a dispatch: the
+         callee is the current frame, so nothing is staged. */
       KosDynFrame_RESUME_FN(caller) = (void *) resume;
       KosDynFrame_RESUME_STATE(caller) = state;
       return EVAL_REPROLOGUE();
@@ -645,22 +662,14 @@ KosOpResult KosEvalState_CallResume(
     case KOS_RES_RETURN:
       switch (KosEval_ResultIsValue(r.val)) {
         case 1:
-          if (KosEvalState_StackPushRef(es, r.val) < 0) {
-            Py_DECREF(r.val);
-            return EVAL_RAISE();
-          }
-          Py_DECREF(r.val);
-          KosDynFrame_RESUME_FN(caller) = (void *) resume;
-          KosDynFrame_RESUME_STATE(caller) = state;
-          return EVAL_REPROLOGUE();
+          /* settled in hand, caller still current: stage and bounce */
+          DISPATCH(resume, es, state, r.val);
 
         case 0: {
-          KosOpResult pr = KosEvalState_PushOrAwait(es, r.val);
-          if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_REPROLOGUE
-              || pr.kind == KOS_RES_AWAIT) {
+          KosOpResult pr = KosEvalState_SettleStage(es, r.val);
+          if (pr.kind == KOS_RES_REPROLOGUE || pr.kind == KOS_RES_AWAIT) {
             KosDynFrame_RESUME_FN(caller) = (void *) resume;
             KosDynFrame_RESUME_STATE(caller) = state;
-            return (pr.kind == KOS_RES_AWAIT) ? pr : EVAL_REPROLOGUE();
           }
           return pr;
         }

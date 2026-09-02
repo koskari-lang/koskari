@@ -241,12 +241,13 @@ typedef KosThreadFn KosResumeFn;
 /**
    DISPATCH(fn, es, arg, value): deliver value to fn, a KosThreadFn,
    with constant C stack however many times the chain runs. The
-   trampoline body stages the delivery the way KosEvalState_CallResume
-   does today -- fn and arg become the current frame's resume, value
-   (an owned reference, or NULL for a cold start with nothing staged)
-   goes onto the frame's own stack -- and returns EVAL_REPROLOGUE so
-   the prologue's delivery step invokes fn. The threaded body is the
-   same tail call TAILCALL makes. Caller must have a current frame.
+   trampoline body stages the delivery: fn and arg become the current
+   frame's resume, value (an owned reference, or NULL for a cold start
+   with nothing staged) goes into the eval state's pending slot, and
+   EVAL_REPROLOGUE returns to the prologue, whose delivery step takes
+   the slot and invokes fn. The frame stack is not touched. The
+   threaded body is the same tail call TAILCALL makes. Caller must
+   have a current frame, and nothing may already be staged.
 */
 #if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
 # define DISPATCH(fn, es, arg, value) \
@@ -257,13 +258,28 @@ typedef KosThreadFn KosResumeFn;
     KosEvalState *kos_dsp_es_ = (es);                                   \
     KosDynFrame *kos_dsp_frame_ = KosEvalState_FRAME(kos_dsp_es_);      \
     PyObject *kos_dsp_val_ = (value);                                   \
-    if (kos_dsp_val_                                                    \
-        && KosEvalState_StackPUSH(kos_dsp_es_, kos_dsp_val_) < 0)       \
-      return EVAL_RAISE();                                              \
+    KOS_DISPATCH_SAFETYNET(kos_dsp_es_, kos_dsp_val_);                  \
+    KosEvalState_PENDING_VALUE(kos_dsp_es_) = kos_dsp_val_;             \
     KosDynFrame_RESUME_FN(kos_dsp_frame_) = (void *) (fn);              \
     KosDynFrame_RESUME_STATE(kos_dsp_frame_) = (void *) (arg);          \
     return EVAL_REPROLOGUE();                                           \
   } while (0)
+#endif
+
+/* At most one delivery is staged at a time; a second is an internal
+   sequencing bug, reported under the safety net instead of leaking. */
+#if KOS_EVAL_SAFETYNET
+# define KOS_DISPATCH_SAFETYNET(es, val)                                \
+  do {                                                                  \
+    if (unlikely(KosEvalState_PENDING_VALUE(es))) {                     \
+      Py_XDECREF(val);                                                  \
+      PyErr_SetString(PyExc_SystemError,                                \
+                      "CPS delivery staged over a live one");           \
+      return EVAL_RAISE();                                              \
+    }                                                                   \
+  } while (0)
+#else
+# define KOS_DISPATCH_SAFETYNET(es, val)  ((void) 0)
 #endif
 
 
@@ -517,6 +533,11 @@ struct KosEvalState {
   PyObject *namespace; /* live namespace; borrowed */
   uint32_t pc;        /* live next-instruction PC (freeze copies to frame) */
   uint32_t acting_pc; /* live acting PC (freeze copies to frame) */
+  PyObject *pending_value; /* a staged CPS delivery (owned) awaiting the
+                              current frame's resume; NULL when none.
+                              Live transit only: freeze moves it onto
+                              the frame stack, and the delivery step
+                              takes it before the resume runs */
 };
 
 
@@ -534,6 +555,8 @@ struct KosEvalState {
 /** Instruction currently executing (last fetch); live on es only. */
 #define KosEvalState_ACTING_PC(es) ((es)->acting_pc)
 #define KosEvalState_SET_PC(es, v) ((void)((es)->pc = (uint32_t)(v)))
+/** The staged CPS delivery, owned; NULL when nothing is staged. */
+#define KosEvalState_PENDING_VALUE(es) ((es)->pending_value)
 
 
 /**
@@ -1069,6 +1092,20 @@ KosOpResult KosEvalState_CallNoArgs(
    val is consumed (ownership transferred).
 */
 KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val);
+
+
+/**
+   Settle a delivery that still needs awaiting and stage the outcome
+   for the current frame's resume: one eager step through
+   KosEvalState_PushOrAwait, then the settled result moves from the
+   frame stack into the pending slot and EVAL_REPROLOGUE returns to
+   the prologue, which classifies it again (a value that settles to a
+   further awaitable bounces again). A genuine suspension relays
+   EVAL_AWAIT; a failure relays EVAL_RAISE. Sets no resume itself --
+   the caller has set one, or sets one on the REPROLOGUE / AWAIT
+   outcome, per its own contract. val is consumed.
+*/
+KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val);
 
 
 /**

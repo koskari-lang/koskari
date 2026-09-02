@@ -94,6 +94,18 @@ void KosEvalState_FreezeToContext(KosEvalState *es) {
   if (! ctx)
     return;
 
+  /* A staged delivery outlives the eval state only as storage on the
+     frame it was staged for; the delivery step takes it back from the
+     stack on the next trip. */
+  if (KosEvalState_PENDING_VALUE(es)) {
+    PyObject *staged = KosEvalState_PENDING_VALUE(es);
+    KosEvalState_PENDING_VALUE(es) = NULL;
+    if (KosEvalState_BLOCK(es))
+      (void) KosEvalState_StackPUSH(es, staged);  /* consumes on failure */
+    else
+      Py_DECREF(staged);
+  }
+
   KosContext_DYN_TOP(ctx) = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = NULL;
 
