@@ -191,9 +191,16 @@ typedef enum KosGetNextResult {
    before the resume runs, however many times it takes. A resume never
    awaits, and never inspects a value to decide whether it must --
    that duplication across consumers is what these entries exist to
-   remove. NULL with PyErr set means the operation failed (the resume
-   may recover, or relay by returning EVAL_RAISE(), exactly as if it
-   had received the NULL from an inline call).
+   remove.
+
+   NULL with PyErr set is the raise walk's offer of a pending exception
+   to the frame the resume is set on. The walk makes that offer only
+   for a resume frame that is dyn_top above the live frame (a
+   flattened delegation); a step frame that is the live frame when an
+   operation fails is popped by the walk's frame-crossing branch
+   without an offer, and the failure reaches the step's consumer
+   through its iteration node. A consumer therefore cannot rely on
+   seeing its own failures; it handles NULL by declining.
 
    Returns a KosOpResult naming the next signal to the loop: another
    CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT, or

@@ -1322,12 +1322,16 @@ still needs awaiting is settled by the delivery step
 (`KosEvalState_SettleStage`, one eager step, or a real suspension with
 the resume re-armed) before the resume runs. Consumers never classify.
 
-Failure arrives through the raise walk: `kos_dyn_unwind_raise` offers a
-pending exception to a frame carrying a resume (NULL value, `PyErr`
-set) before tearing the frame through; the resume may recover
-(`REPROLOGUE`) or decline (`EVAL_RAISE`), in which case the pop
-proceeds. Exhaustion of an iterator is a raised `StopIteration` through
-the same offer; the consumer's iteration node owns the conversion.
+Failure reaches a resume, when it does, through the raise walk:
+`kos_dyn_unwind_raise` offers a pending exception (NULL value, `PyErr`
+set) to a resume-carrying frame that is `dyn_top` above the live frame
+(a flattened delegation) before tearing it through; the resume may
+recover (`REPROLOGUE`) or decline (`EVAL_RAISE`), in which case the pop
+proceeds. A step frame that is the live frame when its own operation
+fails is popped by the walk's frame-crossing branch with no offer, and
+the failure reaches the step's consumer through its iteration node,
+which owns the conversion (a raised `StopIteration` is exhaustion).
+Map and filter decline every offer, so both shapes end the same way.
 
 #### Frame slots and parking
 
