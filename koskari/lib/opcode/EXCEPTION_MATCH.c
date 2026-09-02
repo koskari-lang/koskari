@@ -22,7 +22,7 @@ KOS_OP_HANDLER_COLD(EXCEPTION_MATCH) {
 
   PyObject *match = KosEvalState_StackPopRef(es);
   if (! match)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   int ret = 0;
   PyObject *res = Py_False;
@@ -40,8 +40,7 @@ KOS_OP_HANDLER_COLD(EXCEPTION_MATCH) {
   if (ret)
     res = Py_True;
 
-  Py_INCREF(res);
-  return kos_op_result_PUSH(es, res);
+  RESULT_PUSH(es, res);
 }
 
 

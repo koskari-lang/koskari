@@ -79,16 +79,16 @@ KOS_OP_HANDLER_COLD(IMPORT_STAR) {
 
   PyObject *name = KosEvalState_CONST(es, row.a0);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *mod = kos_import_module(es, name, (long) row.a1, 1);
   if (! mod)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *names = kos_import_star_names(mod);
   if (! names) {
     Py_DECREF(mod);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *fast = PySequence_Fast(names,
@@ -96,7 +96,7 @@ KOS_OP_HANDLER_COLD(IMPORT_STAR) {
   Py_DECREF(names);
   if (! fast) {
     Py_DECREF(mod);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_ssize_t n = PySequence_Fast_GET_SIZE(fast);
@@ -122,12 +122,12 @@ KOS_OP_HANDLER_COLD(IMPORT_STAR) {
 
   Py_DECREF(fast);
   Py_DECREF(mod);
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 
  fail:
   Py_DECREF(fast);
   Py_DECREF(mod);
-  return EVAL_RAISE();
+  RESULT_RAISE();
 }
 
 

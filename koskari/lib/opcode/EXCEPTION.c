@@ -23,8 +23,7 @@ KOS_OP_HANDLER(EXCEPTION) {
   PyErr_GetExcInfo(&typ, &val, &tb);
 
   if (! typ) {
-    Py_INCREF(Py_None);
-    return kos_op_result_PUSH(es, Py_None);
+    RESULT_PUSH(es, Py_None);
   }
 
   if (! val)
@@ -33,7 +32,7 @@ KOS_OP_HANDLER(EXCEPTION) {
   Py_DECREF(typ);
   Py_XDECREF(tb);
 
-  return kos_op_result_PUSH(es, val);
+  RESULT_STEAL(es, val);
 }
 
 
