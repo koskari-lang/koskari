@@ -55,6 +55,11 @@ baseline_args = (
     "-Wall",
     "-Werror",
     "-flto=auto",
+    # Nothing outside the extension links against its symbols; the module
+    # init keeps default visibility through PyMODINIT_FUNC. Hidden
+    # visibility turns every intra-library call into a direct call and
+    # lets LTO inline single-caller helpers.
+    "-fvisibility=hidden",
 )
 
 
@@ -128,6 +133,11 @@ def extra_compile_args(platform=None, debug=False, clang=False, major=0):
         args.append("-fsanitize=address")
         args.append("-fno-omit-frame-pointer")
         args.append("-g")
+
+    if platform == "linux":
+        # calls into libpython bind through the GOT directly instead of
+        # a PLT stub
+        args.append("-fno-plt")
 
     if platform == "linux" and (not clang or major >= 17):
         # clang gained the flag in 17; older clangs reject it, and the
