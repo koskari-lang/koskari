@@ -25,21 +25,21 @@ KOS_OP_HANDLER(OBJECT_COMPARE) {
   if (unlikely(count < 2)) {
     PyErr_SetString(PyExc_TypeError,
                     "OBJECT_COMPARE requires at least 2 elements");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *const *args = KosEvalState_StackTailPtr(es, count);
   if (unlikely(! args))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *result = kos_compare_reduce(
       (KosCompare) KosCmpCount_SEL(arg), args, count);
   KosEvalState_StackDropNoErr(es, count);
 
   if (unlikely(! result))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, result);
+  RESULT_STEAL(es, result);
 }
 
 

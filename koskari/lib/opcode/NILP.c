@@ -20,12 +20,12 @@
 */
 KOS_OP_HANDLER(NILP) {
   PyObject *val = KosEvalState_StackPopRef(es);
-  if (! val) return EVAL_RAISE();
+  if (! val) RESULT_RAISE();
   PyObject *res = (KosNilP(val) ? Py_True : Py_False);
   Py_DECREF(val);
   Py_INCREF(res);
   (void) insn;
-  return kos_op_result_PUSH(es, res);
+  RESULT_STEAL(es, res);
 }
 
 

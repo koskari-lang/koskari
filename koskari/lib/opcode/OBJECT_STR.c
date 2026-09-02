@@ -19,7 +19,9 @@
   f-string), push result or await it.
 */
 KOS_OP_HANDLER(OBJECT_STR) {
-  return kos_op_result_from_push_int(obj_op_reducing(es, insn, KosOperator_BuildStr));
+  if (unlikely(obj_op_reducing(es, insn, KosOperator_BuildStr) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

@@ -26,8 +26,9 @@ KOS_OP_HANDLER(OBJECT_OPERAND) {
   KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
   int count = (int) KosOpCount_COUNT(arg);
 
-  return kos_op_result_from_push_int(
-      kos_object_operand(es, op, count));
+  if (unlikely(kos_object_operand(es, op, count) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

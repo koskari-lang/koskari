@@ -24,18 +24,18 @@ KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
   PyObject *res;
 
   if (! rules)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   obj = KosEvalState_StackPopRef(es);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   res = PyObject_Format(obj, rules);
   Py_DECREF(obj);
   if (! res)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, res);
+  RESULT_STEAL(es, res);
 }
 
 

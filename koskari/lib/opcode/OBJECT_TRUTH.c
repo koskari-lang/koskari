@@ -22,18 +22,16 @@ KOS_OP_HANDLER(OBJECT_TRUTH) {
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   int r = PyObject_IsTrue(val);
   Py_DECREF(val);
 
   if (unlikely(r < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *res = (r ? Py_True : Py_False);
-  Py_INCREF(res);
-
-  return kos_op_result_PUSH(es, res);
+  RESULT_PUSH(es, res);
 }
 
 
