@@ -114,8 +114,8 @@ WIND/WITH keep the deliberately separate
 
 - **CPS entries still bounce on two paths.** A resume tail-calls the
   next step when a value is in hand or a callee is installed (§8.2),
-  but a value that still needs settling and a cold start stage through
-  `DISPATCH` and one trampoline pass.
+  but a value that still needs settling and a driven source's cold
+  start stage for the prologue and cost one trampoline pass.
 
 - **Result-kind inspection in dynchain.** The WITH, WIND, and walk code
   still branches on a helper's `KosOpResult` and returns it for the
@@ -194,12 +194,15 @@ differs by version:
 
 **Where polling runs**
 
-The poll site is reached only when the counter has tripped, from three
+The poll site is reached only when the counter has tripped, from four
 places: a threaded step's **`KOS_THREAD_NEXT`** returning **`EVAL_NORMAL`**
-to the trampoline, a **prologue re-entry** (which counts as one step, so a
-run of bounces with no instruction between them still polls on the same
-cadence), and the plain-return **`DISPATCH`** arm. Between polls the chain
-runs without touching the poll machinery.
+to the trampoline, a resume-to-resume **`RESUME_HOP`** staging its delivery
+through `DISPATCH` (§8.2), a **prologue re-entry** (which counts as one
+step, so a run of bounces with no instruction between them still polls on
+the same cadence), and the plain-return **`DISPATCH`** arm. The re-entry
+polls before it delivers, so a staged delivery never runs ahead of a
+pending signal. Between polls the chain runs without touching the poll
+machinery.
 
 **Poll-site sequence** (straight-line from the **`poll`** label in **`eval.c`**;
 the signal-check and thread steps fall through without their own labels):
@@ -1285,22 +1288,29 @@ untouched, `tail_call` included; that is what partial, demand, and
 A delivery reaches a resume by one of three routes:
 
 - **Tail call from the producer.** A settled value in hand at an entry
-  (above), and a bytecode callee's `RETURN` into a resume-carrying
-  parent: `op_RETURN`'s resume arm pops the callee, takes the resume
-  pair off the parent, and `TAILCALL`s it with the value (§2.6).
+  (above), a bytecode callee's `RETURN` into a resume-carrying parent
+  (`op_RETURN`'s resume arm pops the callee and takes the resume pair
+  off the parent, §2.6), and a step's own phase hops (filter's fetch,
+  invoke, verdict) all go through **`RESUME_HOP(fn, es, state,
+  value)`**: a tail call counted like an instruction, which stages
+  through `DISPATCH` instead when the poll counter trips, so a chain of
+  resumes with no instruction between them still reaches the signal
+  check.
 - **The pending slot.** `DISPATCH(fn, es, arg, value)` stages a
-  delivery from a function that cannot tail-call: it sets the resume
-  on the current frame, stores the owned value in
-  `KosEvalState.pending_value`, and returns `EVAL_REPROLOGUE`. The
-  prologue's delivery step (`eval_step_resume_delivery`, run by
-  `kos_prologue_reenter`) takes the slot, clears the resume, classifies
-  the value, and invokes the resume; a staged delivery with no pending
-  exception and no plan armed is the first thing the prologue checks.
-  The slot is live transit only: `KosEvalState_FreezeToContext` moves a
-  live slot onto the frame stack, a pending exception drops it, and
-  under `KOS_EVAL_SAFETYNET` instruction dispatch refuses to start over
-  one. The remaining `DISPATCH` users are the unsettled-value path
-  (`KosEvalState_SettleStage`) and a cold start with `value == NULL`.
+  delivery for the trampoline: it sets the resume on the current
+  frame, stores the owned value in `KosEvalState.pending_value`, and
+  returns `EVAL_REPROLOGUE`. The trampoline polls if the counter has
+  tripped, then the prologue's delivery step (`eval_step_resume_delivery`,
+  run by `kos_prologue_reenter`) takes the slot, clears the resume,
+  classifies the value, and invokes the resume; a staged delivery with
+  no pending exception and no plan armed is the first thing the
+  prologue checks. The slot is live transit only:
+  `KosEvalState_FreezeToContext` moves a live slot onto the frame
+  stack, a pending exception drops it, and under `KOS_EVAL_SAFETYNET`
+  instruction dispatch refuses to start over one. Besides the counter
+  trip, the slot carries the unsettled-value path
+  (`KosEvalState_SettleStage`), an awaited value at revive, and a frame
+  return into a resume-carrying parent that the tail-call arm declined.
 - **The frame stack, as storage.** A frame return into a
   resume-carrying parent that does not fit the tail-call arm, an
   iteration node's element, and an awaited value at revive land on the

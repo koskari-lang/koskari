@@ -230,15 +230,15 @@ typedef KosThreadFn KosResumeFn;
 
 /**
    DISPATCH(fn, es, arg, value): deliver value to fn, a KosThreadFn,
-   from a function that cannot tail-call it -- the CPS entries, whose
-   prototypes are their own. It stages the delivery: fn and arg become
-   the current frame's resume, value (an owned reference, or NULL for
-   a cold start with nothing staged) goes into the eval state's
-   pending slot, and EVAL_REPROLOGUE returns to the trampoline, whose
-   re-entry takes the slot and invokes fn. The frame stack is not
-   touched. Caller must have a current frame, and nothing may already
-   be staged. A resume that already holds a settled value for another
-   resume, and has the KosThreadFn prototype, uses TAILCALL instead.
+   by way of the trampoline: fn and arg become the current frame's
+   resume, value (an owned reference, or NULL for a cold start with
+   nothing staged) goes into the eval state's pending slot, and
+   EVAL_REPROLOGUE returns to the trampoline, which polls if due and
+   whose re-entry then takes the slot and invokes fn. The frame stack
+   is not touched. Caller must have a current frame, and nothing may
+   already be staged. A resume handing a delivery to the next resume
+   uses RESUME_HOP, which tail-calls and falls back to this when the
+   poll counter trips.
 */
 #define DISPATCH(fn, es, arg, value)                                    \
   do {                                                                  \
@@ -360,12 +360,30 @@ typedef KosThreadFn KosResumeFn;
   do {                                                                  \
     KosOpResult kos_re_ = (r);                                          \
     if (likely(kos_re_.kind == KOS_RES_RETURN))                         \
-      TAILCALL((resume), (es), (state), kos_re_.val);                   \
+      RESUME_HOP((resume), (es), (state), kos_re_.val);                 \
     if (kos_re_.kind == KOS_RES_NORMAL)                                 \
       KOS_THREAD_NEXT(es);                                              \
     return kos_re_;                                                     \
   } while (0)
 
+
+/**
+   RESUME_HOP(fn, es, state, value): hand a delivery from one resume to
+   the next -- the hop a step's phases make, or a bytecode return into a
+   resume-carrying parent. A tail call, counted like an instruction:
+   when the poll counter trips it stages through DISPATCH instead, so
+   the trampoline polls before the prologue delivers. A chain of
+   resumes with no instruction between them (a filter rejecting every
+   element) therefore reaches the signal check on the same cadence a
+   straight-line chain does. The calling function must have the
+   KosThreadFn prototype, as for TAILCALL.
+*/
+#define RESUME_HOP(fn, es, state, value)                                \
+  do {                                                                  \
+    if (unlikely(++KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL))      \
+      DISPATCH((fn), (es), (state), (value));                           \
+    TAILCALL((fn), (es), (state), (value));                             \
+  } while (0)
 
 /* At most one delivery is staged at a time; a second is an internal
    sequencing bug, reported under the safety net instead of leaking. */

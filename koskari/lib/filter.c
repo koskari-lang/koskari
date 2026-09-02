@@ -94,7 +94,7 @@ static KOS_NOINLINE KosOpResult filter_resume_after_verdict(
    by a bounce through the trampoline.
 */
 #define filter_refetch(es, f) \
-  TAILCALL(filter_resume_do_fetch, (es), (f), NULL)
+  RESUME_HOP(filter_resume_do_fetch, (es), (f), NULL)
 
 
 /**
@@ -125,7 +125,7 @@ static KOS_NOINLINE KosOpResult filter_resume_do_fetch(
         PyErr_SetNone(PyExc_StopIteration);
       return EVAL_RAISE();
     }
-    TAILCALL(filter_resume_do_invoke, es, f, element);
+    RESUME_HOP(filter_resume_do_invoke, es, f, element);
   }
 
   {

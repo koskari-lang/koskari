@@ -101,6 +101,58 @@ class TestSignalPoll(SpecialsTestCase):
         self.assertEqual(await expr(), "caught")
 
 
+    async def test_filter_reject_loop_python_predicate(self):
+        """
+        A native filter rejecting every element of a sync source through
+        a Python predicate runs resume to resume with no instruction in
+        between, and still sees the signal
+        """
+
+        def never(x):
+            return False
+
+        src = """
+        (begin
+          (import itertools)
+          (import _thread)
+          (try
+            (begin
+              (_thread.interrupt_main)
+              (for-each [y (filter never (itertools.count))]
+                y))
+            ((e Interrupted) "caught")))
+        """
+
+        expr, _mod = self.compile_expr(
+            src, Interrupted=Interrupted, never=never)
+        self.assertEqual(await expr(), "caught")
+
+
+    async def test_filter_reject_loop_driven_source(self):
+        """
+        A native filter with a None predicate over a driven source that
+        yields only falsy elements loops resume to resume, and still
+        sees the signal
+        """
+
+        src = """
+        (begin
+          (import itertools)
+          (import operator)
+          (import _thread)
+          (try
+            (begin
+              (_thread.interrupt_main)
+              (for-each [y (filter None
+                                   (map operator.not_ (itertools.repeat 1)))]
+                y))
+            ((e Interrupted) "caught")))
+        """
+
+        expr, _mod = self.compile_expr(src, Interrupted=Interrupted)
+        self.assertEqual(await expr(), "caught")
+
+
     async def test_deep_recursion_through_call(self):
         """
         Deep non-tail recursion through Call sees the signal

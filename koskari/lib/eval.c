@@ -3224,6 +3224,15 @@ KosOpResult koskari_eval(
   /* === the trampoline === */
 
 prologue:
+  /* A re-entry counts as a step, so a run of bounces with no
+     instruction between them reaches the poll on the same cadence a
+     straight-line chain does.  The poll runs before the re-entry
+     delivers: a resume hop that tripped the counter staged its
+     delivery so that a pending signal is seen ahead of it. */
+  if (unlikely(++KosEvalState_POLL_OPS(&es) > KOS_EVAL_GIL_POLL))
+    goto poll;
+
+reenter:
   {
     KosOpResult pr = kos_prologue_reenter(&es);
     if (pr.kind != KOS_RES_NORMAL) {
@@ -3231,11 +3240,6 @@ prologue:
       goto koskari_eval_cleanup;
     }
   }
-  /* A re-entry counts as a step, so a run of bounces with no
-     instruction between them still reaches the poll on the same
-     cadence a straight-line chain does. */
-  if (unlikely(++KosEvalState_POLL_OPS(&es) > KOS_EVAL_GIL_POLL))
-    goto poll;
   goto thread;
 
 poll:
@@ -3252,16 +3256,10 @@ poll:
     }
   }
 
+  /* A signal raised here is taken by the re-entry's pending-exception
+     step, which drops any staged delivery before the raise walk. */
   PyErr_CheckSignals();
-  if (unlikely(PyErr_Occurred())) {
-    KosOpResult pend = eval_phase_pending_exception(&es);
-    if (pend.kind != KOS_RES_NORMAL) {
-      if (pend.kind == KOS_RES_REPROLOGUE) goto prologue;
-      eval_ret = pend;
-      goto koskari_eval_cleanup;
-    }
-  }
-  goto thread;
+  goto reenter;
 
 thread:
   KOS_EVAL_PREPARE_NEXT_INSN(&es, insn, pc_bounds_error);

@@ -93,7 +93,7 @@ KOS_OP_HANDLER(RETURN) {
 
       if (took > 0) {
         kos_eval_resume_clear_if_armed(es);
-        TAILCALL(resume, es, state, val);
+        RESUME_HOP(resume, es, state, val);
       }
       if (unlikely(took < 0))
         RESULT_RAISE();
