@@ -42,7 +42,7 @@ KOS_OP_HANDLER(RETURN) {
            (void *) KosEvalState_StackHead(es),
            (unsigned long) KosEvalState_StackLen(es));
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
   } else {
@@ -50,7 +50,7 @@ KOS_OP_HANDLER(RETURN) {
     if (unlikely(! val)) {
       SAY("[eval] RETURN PopTail underrun\n");
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 

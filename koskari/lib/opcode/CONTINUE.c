@@ -32,14 +32,14 @@ KOS_OP_HANDLER(CONTINUE) {
     result = KosEvalState_StackPopRef(es);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE pop underrun");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
   } else {
     result = KosEvalState_StackPopTail(es, (size_t) opa);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE PopTail underrun");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 

@@ -32,14 +32,14 @@ KOS_OP_HANDLER(YIELD) {
     val = KosEvalState_StackPopRef(es);
     if (unlikely(! val)) {
       SAY("[eval] YIELD pop underrun\n");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
   } else {
     val = KosEvalState_StackPopTail(es, (size_t) opa);
     if (unlikely(! val)) {
       SAY("[eval] YIELD PopTail underrun\n");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 

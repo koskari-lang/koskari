@@ -653,19 +653,19 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
        PHASE=DRIVING, PENDING_ACTION=STEP, roll back PC, return 0. */
     PyObject *subexpr = KosEvalState_StackPopRef(es);
     if (! subexpr)
-      return EVAL_RAISE();
+      RESULT_RAISE();
 
     PyObject *delegate = NULL;
     uint8_t kind = KOS_YF_SYNC_ITER; /* overwritten by yield_from_normalize */
     if (yield_from_normalize(subexpr, &delegate, &kind) < 0) {
       Py_DECREF(subexpr);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
     Py_DECREF(subexpr);
     if (! kos_dyn_push_yield_from(es, delegate, kind)) {
       Py_DECREF(delegate);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
     Py_DECREF(delegate);
@@ -675,7 +675,7 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
       KosDynYieldFrom_PHASE_SET(yf_new, KOS_YF_PHASE_DRIVING);
       KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
     }
-    return EVAL_NORMAL();
+    RESULT_NEXT(es);
   }
 
   KosDynYieldFrom *yf = (KosDynYieldFrom *) dyn_top;
@@ -707,7 +707,7 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
     } else if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EXPECT_SEND) {
       size_t sz = KosEvalState_StackLen(es);
       if (sz == 0)
-        return EVAL_RAISE();
+        RESULT_RAISE();
       PyObject *first = KosEvalState_StackPopRef(es);
       if (sz >= 2) {
         Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
@@ -725,7 +725,7 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
     } else if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EXPECT_AWAIT) {
       PyObject *aw_result = KosEvalState_StackPopRef(es);
       if (! aw_result)
-        return EVAL_RAISE();
+        RESULT_RAISE();
       Py_INCREF(aw_result);
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
       KosDynYieldFrom_PENDING_ARG(yf) = aw_result;
@@ -749,13 +749,13 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
     if (! KosIter_CheckSlots(delegate, &islots)) {
       PyErr_SetString(PyExc_RuntimeError,
                       "yield-from delegate lost its iter suite");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     return yield_from_drive_kos_iter(es, yf, delegate, islots, action, insn);
   }
 
   PyErr_SetString(PyExc_RuntimeError, "unexpected delegate kind");
-  return EVAL_RAISE();
+  RESULT_RAISE();
 }
 
 

@@ -27,7 +27,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
   if (unlikely(! region || ! KosDynNode_IS_FOREACH(region))) {
     PyErr_SetString(PyExc_RuntimeError,
                     "ITER_NEXT must be used inside a PUSH_FOREACH block");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* The else pc is armed before the step so a delivery or a raise-walk
@@ -41,14 +41,13 @@ KOS_OP_HANDLER(ITER_NEXT) {
     switch (KosIterRequest_Next(es, region, NULL, &out)) {
       case KOS_IREQ_DELIVERED:
         if (unlikely(KosEvalState_StackPUSH(es, out) < 0))
-          return EVAL_RAISE();
-        return EVAL_NORMAL();
+          RESULT_RAISE();
+        RESULT_NEXT(es);
 
       case KOS_IREQ_EXHAUSTED:
         Py_XDECREF(out);
         KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-        KosEvalState_SET_PC(es, KosOp_ARG(insn));
-        return EVAL_NORMAL();
+        RESULT_JUMP(es, KosOp_ARG(insn));
 
       case KOS_IREQ_CONTINUES: {
         /* A frame with bytecode (a generator attached) continues
@@ -56,7 +55,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
            entry sequence, which exists for it. */
         KosDynFrame *nf = KosEvalState_FRAME(es);
         if (nf && KosDynFrame_CODE(nf))
-          return EVAL_NORMAL();
+          RESULT_NEXT(es);
         return EVAL_REPROLOGUE();
       }
 
@@ -65,7 +64,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
 
       case KOS_IREQ_ERROR:
       default:
-        return EVAL_RAISE();
+        RESULT_RAISE();
     }
   }
 }
