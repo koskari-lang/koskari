@@ -1762,7 +1762,6 @@ KOS_OP_INLINE int kos_return_is_extent_plain(
     KosDynNode **out_child,
     KosDynNode **out_parent,
     KosDynFrame **out_ft);
-KOS_OP_INLINE void kos_eval_resume_clear_if_armed(KosEvalState *es);
 KOS_OP_INLINE KosOpResult eval_ng_plain_return(
     KosEvalState *es,
     KosDynNode *child,
@@ -2371,22 +2370,6 @@ static inline int kos_return_is_plain(
   *out_child = child;
   *out_parent = parent;
   return 1;
-}
-
-
-/**
-   Conditional form of the unconditional resume clear at the head of the
-   general post-opcode path, for use on the fast arm.  The slot is armed
-   only across an await revive, and PythonResumeTake clears INJECT while
-   leaving KIND, so both fields are tested to keep the post-condition
-   identical to the call this replaces.
-*/
-KOS_OP_INLINE void kos_eval_resume_clear_if_armed(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  if (unlikely(KosContext_PY_RESUME_INJECT(ctx)
-               || KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE))
-    KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
 }
 
 
@@ -3217,9 +3200,10 @@ KosOpResult koskari_eval(
     }
   }
 
-  /* Clear resume kind once before the trampoline; the result handler
-     clears it when applying a signal, so the threaded chain never
-     touches it. */
+  /* The Python resume slot is armed by a driver before an await revive
+     and taken by the revive; an entry that skipped the revive (an await
+     iterator still pending) clears it here, so the trampoline and the
+     chain never touch it. */
   KosEvalState_PythonResumeSet(&es, NULL, KOS_RESUME_NONE);
   gil_poll_last_ns = kos_eval_gil_poll_now_ns();
 
@@ -3293,7 +3277,6 @@ handle_result:
        transition. */
     KosOpResult ar;
 
-    KosEvalState_PythonResumeSet(&es, NULL, KOS_RESUME_NONE);
     ar = apply_kos_op_result(&es, r);
 
     if (ar.kind == KOS_RES_DISPATCH) {

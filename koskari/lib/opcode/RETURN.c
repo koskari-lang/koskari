@@ -69,7 +69,6 @@ KOS_OP_HANDLER(RETURN) {
     KosOpResult r;
 
     if (likely(kos_return_is_plain(es, &child, &parent))) {
-      kos_eval_resume_clear_if_armed(es);
       KOS_TRACE_POST_OP_WRAP(plain_return,
           r = eval_ng_plain_return(es, child, parent, val));
       if (likely(r.kind == KOS_RES_DISPATCH))
@@ -78,7 +77,6 @@ KOS_OP_HANDLER(RETURN) {
     }
 
     if (kos_return_is_extent_plain(es, &child, &parent, &ft)) {
-      kos_eval_resume_clear_if_armed(es);
       KOS_TRACE_POST_OP_WRAP(plain_return,
           r = eval_ng_extent_return(es, child, parent, ft, val));
       if (likely(r.kind == KOS_RES_DISPATCH))
@@ -92,7 +90,6 @@ KOS_OP_HANDLER(RETURN) {
       int took = kos_return_take_resume(es, parent, val, &resume, &state);
 
       if (took > 0) {
-        kos_eval_resume_clear_if_armed(es);
         RESUME_HOP(resume, es, state, val);
       }
       if (unlikely(took < 0))

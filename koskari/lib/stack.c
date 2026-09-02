@@ -144,6 +144,9 @@ int KosStack_Clear(KosSegment **block) {
 
   KosSegment *s = *block;
 
+  if (! s->len)
+    return 0;
+
   for (size_t i = s->len; i--; ) {
     Py_DECREF(s->objs[i]);
   }

@@ -139,6 +139,7 @@ static inline int KosEvalState_PythonResumeTake(
   if (out_kind)
     *out_kind = KosContext_PY_RESUME_KIND(ctx);
   KosContext_PY_RESUME_INJECT(ctx) = NULL;
+  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
   return (out_val && *out_val != NULL) ? 1 : 0;
 }
 
