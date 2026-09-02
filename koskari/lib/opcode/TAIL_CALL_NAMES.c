@@ -48,8 +48,9 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_NAMES) {
     (total > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
   PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
 
-  KosOpResult res = KosEvalState_Call(es, callable, args,
-                            npos, kwnames_arg, 1);
+  KosOpResult res = KosEvalState_CallResult(es, callable, args,
+                                            npos, kwnames_arg, 1,
+                                            NULL, NULL);
 
   KosStackSteal_Free(&steal);
   return res;

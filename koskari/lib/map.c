@@ -197,8 +197,9 @@ static KosIterStepResult map_iter_step(
        generic call entry -- cached frame, the element's own address
        as the argument vector -- with no helper frame. */
     if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME && m->fn.cs_direct) {
-      KosOpResult r = KosEvalState_Call(es, m->fn.cs_callable,
-                                        &element, 1, NULL, 0);
+      KosOpResult r = KosEvalState_CallResult(es, m->fn.cs_callable,
+                                              &element, 1, NULL, 0,
+                                              NULL, NULL);
       Py_DECREF(element);
       if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
         m->busy = 1;

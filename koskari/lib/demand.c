@@ -370,7 +370,8 @@ static int demand_sync_ex(
         PyObject *const *argv =
             call_args ? &PyTuple_GET_ITEM(call_args, 0) : NULL;
         Py_ssize_t na = call_args ? PyTuple_GET_SIZE(call_args) : 0;
-        ir = KosEvalState_Call(&es, callable, argv, na, NULL, 0);
+        ir = KosEvalState_CallResult(&es, callable, argv, na, NULL, 0,
+                                     NULL, NULL);
       } else {
         ir = KosEvalState_CallArgs(&es, callable, call_args, kwargs, 0);
       }
