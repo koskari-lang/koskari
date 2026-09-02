@@ -3126,109 +3126,18 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
 
 
 /**
-   The trampoline: the loop threaded dispatch returns to.  Enter by
-   threading from es->pc; a chain then runs handler to handler by tail
-   calls and comes back here only with a signal.  NORMAL means the
-   chain stopped with the next instruction at es->pc -- a poll-counter
-   trip, or a step with no way to continue -- so poll if due and thread
-   again.  RETURN takes the plain-return fast arms straight back to
-   threading.  Everything else is applied through apply_kos_op_result,
-   and whatever that yields either threads (DISPATCH), re-enters
-   through the prologue (REPROLOGUE), or leaves koskari_eval.
+   The evaluator entry: entry and revive normalization, transfer-plan
+   synchronization, then the trampoline that threaded dispatch returns
+   to.  Threading enters from es.pc; a chain then runs handler to
+   handler by tail calls and comes back here only with a signal.
+   NORMAL means the chain stopped with the next instruction at es.pc --
+   a poll-counter trip, or a step with no way to continue -- so poll if
+   due and thread again.  Everything else is applied through
+   apply_kos_op_result, and whatever that yields either threads
+   (DISPATCH), re-enters through the prologue (REPROLOGUE), or leaves
+   through the cleanup below.  The eval state is this function's own
+   local; handlers and helpers take its address.
 */
-static KosOpResult koskari_eval_trampoline(KosEvalState *es) {
-
-  KosSlot *insn;
-  KosOpResult r;
-  uint64_t gil_poll_last_ns = kos_eval_gil_poll_now_ns();
-
-  goto prologue;
-
-prologue:
-  {
-    KosOpResult pr = kos_prologue_reenter(es);
-    if (pr.kind != KOS_RES_NORMAL)
-      return pr;
-  }
-  /* A re-entry counts as a step, so a run of bounces with no
-     instruction between them still reaches the poll on the same
-     cadence a straight-line chain does. */
-  if (unlikely(++KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL))
-    goto poll;
-  goto thread;
-
-poll:
-  {
-    KosEvalState_POLL_OPS(es) = 0;
-    if (koskari_gil_drop_requested()) {
-      uint64_t now_ns = kos_eval_gil_poll_now_ns();
-      if (gil_poll_last_ns && now_ns &&
-          (now_ns - gil_poll_last_ns > KOS_EVAL_GIL_POLL_INTERVAL_NS)) {
-        Py_BEGIN_ALLOW_THREADS
-        gil_poll_last_ns = now_ns;
-        Py_END_ALLOW_THREADS
-      }
-    }
-  }
-
-  PyErr_CheckSignals();
-  if (unlikely(PyErr_Occurred())) {
-    KosOpResult pend = eval_phase_pending_exception(es);
-    if (pend.kind != KOS_RES_NORMAL) {
-      if (pend.kind == KOS_RES_REPROLOGUE) goto prologue;
-      return pend;
-    }
-  }
-  goto thread;
-
-thread:
-  KOS_EVAL_PREPARE_NEXT_INSN(es, insn, pc_bounds_error);
-  KOS_TRACE_THREAD_STEP(insn->op);
-  r = insn->fn(es, insn, NULL);
-
-  if (likely(r.kind == KOS_RES_NORMAL)) {
-    if (unlikely(KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL))
-      goto poll;
-    goto thread;
-  }
-  goto handle_result;
-
-#if KOS_EVAL_SAFETYNET
-pc_bounds_error:
-  kos_eval_report_pc_bounds_error(es);
-  return EVAL_FATAL();
-#endif
-
-handle_result: {
-  /* The plain-return fast arms live in op_RETURN, which threads
-     straight into the parent when they hold and signals RETURN only
-     when they do not; a RETURN arriving here has either already failed
-     them or comes from another producer (POP_PROMPT, the values.c and
-     eval_utils.c termini, a resume's completion), and takes the
-     general path, whose own plain case is the same transition. */
-  KosOpResult ar;
-
-  KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
-  ar = apply_kos_op_result(es, r);
-
-  if (ar.kind == KOS_RES_DISPATCH) {
-    /* Plain frame-to-frame return: live regs already retargeted, no
-       pending PyErr / plan / native handler.  Skip the prologue and go
-       straight back to threading; the poll counter still bounds
-       signal-check latency. */
-    if (unlikely(++KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL))
-      goto poll;
-    goto thread;
-  }
-  if (ar.kind == KOS_RES_REPROLOGUE) goto prologue;
-  return ar;
-}
-}
-
-
-#undef KOS_EVAL_PREPARE_NEXT_INSN
-
-
 KosOpResult koskari_eval(
     KosContext *ctx,
     PyObject *send_val,
@@ -3237,6 +3146,10 @@ KosOpResult koskari_eval(
 
   KosOpResult eval_ret = EVAL_RAISE();
   PyObject *host_exc_t = NULL, *host_exc_v = NULL, *host_exc_tb = NULL;
+  KosEvalState es;
+  KosSlot *insn;
+  KosOpResult r;
+  uint64_t gil_poll_last_ns;
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL context for koskari_eval");
@@ -3256,7 +3169,6 @@ KosOpResult koskari_eval(
     KosContext_EXC_INFO_TB(ctx) = NULL;
   }
 
-  KosEvalState es;
   KosEvalState_Init(&es, ctx);
   KosEvalState_ThawFromContext(&es);
   if (KosEvalState_DYN_TOP(&es))
@@ -3282,31 +3194,120 @@ KosOpResult koskari_eval(
   kos_tls_push_active_eval(&es);
 
   /* Phase 1: entry/revive normalization */
-  KosEvalMode mode = KOS_MODE_NORMAL;
   {
+    KosEvalMode mode = KOS_MODE_NORMAL;
     KosOpResult pe = eval_phase_entry(&es, send_val, throw_typ, throw_exc,
                                       &mode);
     if (pe.kind != KOS_RES_NORMAL && pe.kind != KOS_RES_REPROLOGUE) {
       eval_ret = pe;
       goto koskari_eval_cleanup;
     }
-  }
 
-  /* Phase 2: transfer-plan synchronization (only when mode warrants it) */
-  if (mode == KOS_MODE_NORMAL || mode == KOS_MODE_TRANSFER) {
-    if (unlikely(KosEvalState_PLAN(&es))) {
-      KosOpResult pt = eval_phase_transfer(&es);
-      if (pt.kind != KOS_RES_NORMAL && pt.kind != KOS_RES_REPROLOGUE) {
-        eval_ret = pt;
-        goto koskari_eval_cleanup;
+    /* Phase 2: transfer-plan synchronization (only when mode warrants it) */
+    if (mode == KOS_MODE_NORMAL || mode == KOS_MODE_TRANSFER) {
+      if (unlikely(KosEvalState_PLAN(&es))) {
+        KosOpResult pt = eval_phase_transfer(&es);
+        if (pt.kind != KOS_RES_NORMAL && pt.kind != KOS_RES_REPROLOGUE) {
+          eval_ret = pt;
+          goto koskari_eval_cleanup;
+        }
       }
     }
   }
 
-  /* Clear resume kind once before loop; post_opcode clears it when handling
-     non-zero results so the hot path (tail-dispatch) never touches it. */
+  /* Clear resume kind once before the trampoline; the result handler
+     clears it when applying a signal, so the threaded chain never
+     touches it. */
   KosEvalState_PythonResumeSet(&es, NULL, KOS_RESUME_NONE);
-  eval_ret = koskari_eval_trampoline(&es);
+  gil_poll_last_ns = kos_eval_gil_poll_now_ns();
+
+  /* === the trampoline === */
+
+prologue:
+  {
+    KosOpResult pr = kos_prologue_reenter(&es);
+    if (pr.kind != KOS_RES_NORMAL) {
+      eval_ret = pr;
+      goto koskari_eval_cleanup;
+    }
+  }
+  /* A re-entry counts as a step, so a run of bounces with no
+     instruction between them still reaches the poll on the same
+     cadence a straight-line chain does. */
+  if (unlikely(++KosEvalState_POLL_OPS(&es) > KOS_EVAL_GIL_POLL))
+    goto poll;
+  goto thread;
+
+poll:
+  {
+    KosEvalState_POLL_OPS(&es) = 0;
+    if (koskari_gil_drop_requested()) {
+      uint64_t now_ns = kos_eval_gil_poll_now_ns();
+      if (gil_poll_last_ns && now_ns &&
+          (now_ns - gil_poll_last_ns > KOS_EVAL_GIL_POLL_INTERVAL_NS)) {
+        Py_BEGIN_ALLOW_THREADS
+        gil_poll_last_ns = now_ns;
+        Py_END_ALLOW_THREADS
+      }
+    }
+  }
+
+  PyErr_CheckSignals();
+  if (unlikely(PyErr_Occurred())) {
+    KosOpResult pend = eval_phase_pending_exception(&es);
+    if (pend.kind != KOS_RES_NORMAL) {
+      if (pend.kind == KOS_RES_REPROLOGUE) goto prologue;
+      eval_ret = pend;
+      goto koskari_eval_cleanup;
+    }
+  }
+  goto thread;
+
+thread:
+  KOS_EVAL_PREPARE_NEXT_INSN(&es, insn, pc_bounds_error);
+  KOS_TRACE_THREAD_STEP(insn->op);
+  r = insn->fn(&es, insn, NULL);
+
+  if (likely(r.kind == KOS_RES_NORMAL)) {
+    if (unlikely(KosEvalState_POLL_OPS(&es) > KOS_EVAL_GIL_POLL))
+      goto poll;
+    goto thread;
+  }
+  goto handle_result;
+
+#if KOS_EVAL_SAFETYNET
+pc_bounds_error:
+  kos_eval_report_pc_bounds_error(&es);
+  eval_ret = EVAL_FATAL();
+  goto koskari_eval_cleanup;
+#endif
+
+handle_result:
+  {
+    /* The plain-return fast arms live in op_RETURN, which threads
+       straight into the parent when they hold and signals RETURN only
+       when they do not; a RETURN arriving here has either already
+       failed them or comes from another producer (POP_PROMPT, the
+       values.c and eval_utils.c termini, a resume's completion), and
+       takes the general path, whose own plain case is the same
+       transition. */
+    KosOpResult ar;
+
+    KosEvalState_PythonResumeSet(&es, NULL, KOS_RESUME_NONE);
+    ar = apply_kos_op_result(&es, r);
+
+    if (ar.kind == KOS_RES_DISPATCH) {
+      /* Plain frame-to-frame return: live regs already retargeted, no
+         pending PyErr / plan / native handler.  Skip the prologue and
+         go straight back to threading; the poll counter still bounds
+         signal-check latency. */
+      if (unlikely(++KosEvalState_POLL_OPS(&es) > KOS_EVAL_GIL_POLL))
+        goto poll;
+      goto thread;
+    }
+    if (ar.kind == KOS_RES_REPROLOGUE) goto prologue;
+    eval_ret = ar;
+  }
 
 koskari_eval_cleanup:
   kos_tls_pop_active_eval();
@@ -3336,6 +3337,9 @@ koskari_eval_cleanup:
   }
   return eval_ret;
 }
+
+
+#undef KOS_EVAL_PREPARE_NEXT_INSN
 
 
 /* === Unit lifecycle === */
