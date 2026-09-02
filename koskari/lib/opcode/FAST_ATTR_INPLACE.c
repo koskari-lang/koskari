@@ -36,19 +36,19 @@ KOS_OP_HANDLER(FAST_ATTR_INPLACE) {
   size_t idx = (size_t) row.a1;
   PyObject *attr = KosEvalState_CONST(es, row.a2);
   if (! attr)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *args =
       count ? KosEvalState_StackTailPtr(es, (size_t) count) : NULL;
   if (count && ! args) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   uint16_t cache_ix = KosOp_CACHE(insn);
@@ -58,7 +58,9 @@ KOS_OP_HANDLER(FAST_ATTR_INPLACE) {
   int res = kos_attr_inplace_cached(slot, obj, attr, op, args, count);
   KosEvalState_StackDropNoErr(es, (size_t) count);
   Py_DECREF(obj);
-  return kos_op_result_from_push_int(res);
+  if (unlikely(res < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

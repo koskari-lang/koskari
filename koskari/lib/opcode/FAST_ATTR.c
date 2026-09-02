@@ -25,11 +25,11 @@ KOS_OP_HANDLER(FAST_ATTR) {
   KOS_OP_REQUIRE_NS(ns);
   PyObject *attr_name = KosEvalState_CONST(es, row.a1);
   if (! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   size_t idx = (size_t) row.a0;
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   /* Per-site storage-location cache: a SLOT hit reads the __slots__ member,
      an INSTANCE_VALUE hit the inline attribute value, both directly; GENERIC,
@@ -49,7 +49,7 @@ KOS_OP_HANDLER(FAST_ATTR) {
     if (hit) {
       Py_INCREF(hit);
       Py_DECREF(obj);
-      return kos_op_result_PUSH(es, hit);
+      RESULT_STEAL(es, hit);
     }
     /* unset/materialized: fall through (AttributeError, __getattr__,
        materialized dict, or a shadowed class attribute). */
@@ -58,8 +58,8 @@ KOS_OP_HANDLER(FAST_ATTR) {
   PyObject *val = PyObject_GetAttr(obj, attr_name);
   Py_DECREF(obj);
   if (! val)
-    return EVAL_RAISE();
-  return kos_op_result_PUSH(es, val);
+    RESULT_RAISE();
+  RESULT_STEAL(es, val);
 }
 
 

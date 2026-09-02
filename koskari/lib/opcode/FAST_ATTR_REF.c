@@ -25,16 +25,16 @@ KOS_OP_HANDLER(FAST_ATTR_REF) {
   KOS_OP_REQUIRE_NS(ns);
   PyObject *attr_name = KosEvalState_CONST(es, row.a1);
   if (! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   size_t idx = (size_t) row.a0;
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   PyObject *ref = KosAttributeRef_New(attr_name, obj, attr_name);
   Py_DECREF(obj);
   if (! ref)
-    return EVAL_RAISE();
-  return kos_op_result_PUSH(es, ref);
+    RESULT_RAISE();
+  RESULT_STEAL(es, ref);
 }
 
 

@@ -25,16 +25,16 @@ KOS_OP_HANDLER(FAST_ATTR_CLEAR) {
   KOS_OP_REQUIRE_NS(ns);
   PyObject *attr_name = KosEvalState_CONST(es, row.a1);
   if (! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   size_t idx = (size_t) row.a0;
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   int res = PyObject_DelAttr(obj, attr_name);
   Py_DECREF(obj);
   if (res < 0)
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

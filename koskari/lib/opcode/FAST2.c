@@ -27,20 +27,20 @@ KOS_OP_HANDLER(FAST2) {
 
   PyObject *a = kos_ns_fast_deref(ns, (size_t) row.a0);
   if (unlikely(! a))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *b = kos_ns_fast_deref(ns, (size_t) row.a1);
   if (unlikely(! b)) {
     Py_DECREF(a);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (unlikely(KosEvalState_StackPUSH(es, a) < 0)) {
     Py_DECREF(b);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  return kos_op_result_PUSH(es, b);
+  RESULT_STEAL(es, b);
 }
 
 

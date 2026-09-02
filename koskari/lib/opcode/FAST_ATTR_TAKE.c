@@ -27,27 +27,27 @@ KOS_OP_HANDLER(FAST_ATTR_TAKE) {
 
   PyObject *attr_name = KosEvalState_CONST(es, row.a1);
   if (! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   size_t idx = (size_t) row.a0;
 
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *val = PyObject_GetAttr(obj, attr_name);
   if (! val) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   int res = PyObject_DelAttr(obj, attr_name);
   Py_DECREF(obj);
   if (res < 0) {
     Py_DECREF(val);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  return kos_op_result_PUSH(es, val);
+  RESULT_STEAL(es, val);
 }
 
 
