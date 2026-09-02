@@ -266,6 +266,110 @@ typedef KosThreadFn KosResumeFn;
   } while (0)
 #endif
 
+/* === Opcode result macros === */
+
+/*
+   The tails an opcode handler ends in. Each names what the handler
+   did and where control goes next, so the same body reads correctly
+   under both dispatch modes:
+
+   - RESULT_NEXT(es): continue at the next instruction, es->pc.
+   - RESULT_JUMP(es, target): continue at target.
+   - RESULT_PUSH(es, val): push a borrowed val, then continue. A
+     failed push leaves val with its caller.
+   - RESULT_STEAL(es, val): push an owned val (consumed, on failure
+     too; NULL raises), then continue.
+   - RESULT_RAISE(): PyErr is set; hand off to the raise machinery.
+   - RESULT_FAIL(): hard fault.
+
+   Trampoline bodies are today's idioms: push and return NORMAL or
+   RAISE, set pc and return NORMAL, return RAISE or FATAL. Threaded
+   bodies thread straight into the handler at es->pc's slot -- read
+   from es->pc rather than the handler's own slot plus one, since a
+   handler may have moved the pc before its tail (a jump, the fused
+   POP peephole) -- after advancing acting_pc and pc the way the
+   dispatch loop's fetch does. RAISE and FAIL return in both modes:
+   they are a real crossing back to the trampoline. Every threaded
+   step is a tail call, so a handler using these macros must have the
+   KosThreadFn prototype and must run any Py_DECREF it owes before
+   the macro.
+*/
+
+#if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
+
+/* Thread into the handler at es->pc: the fetch the dispatch loop does,
+   ending in a tail call instead of a computed goto. */
+# define KOS_THREAD_NEXT(es)                                            \
+  do {                                                                  \
+    KosEvalState *kos_thr_es_ = (es);                                   \
+    uint32_t kos_thr_pc_ = KosEvalState_PC(kos_thr_es_);                \
+    KosSlot *kos_thr_next_ =                                            \
+        &KosCode_SLOTS(KosEvalState_CODE(kos_thr_es_))[kos_thr_pc_];    \
+    kos_thr_es_->acting_pc = kos_thr_pc_;                               \
+    kos_thr_es_->pc = kos_thr_pc_ + 1u;                                 \
+    TAILCALL(kos_thr_next_->fn, kos_thr_es_, kos_thr_next_, NULL);      \
+  } while (0)
+
+# define RESULT_NEXT(es)  KOS_THREAD_NEXT(es)
+
+# define RESULT_JUMP(es, target)                                        \
+  do {                                                                  \
+    KosEvalState_SET_PC((es), (target));                                \
+    KOS_THREAD_NEXT(es);                                                \
+  } while (0)
+
+# define RESULT_PUSH(es, val)                                           \
+  do {                                                                  \
+    if (unlikely(KosEvalState_StackPushRef((es), (val)) < 0))           \
+      return EVAL_RAISE();                                              \
+    KOS_THREAD_NEXT(es);                                                \
+  } while (0)
+
+# define RESULT_STEAL(es, val)                                          \
+  do {                                                                  \
+    PyObject *kos_rs_val_ = (val);                                      \
+    if (unlikely(! kos_rs_val_))                                        \
+      return EVAL_RAISE();                                              \
+    if (unlikely(KosEvalState_StackPUSH((es), kos_rs_val_) < 0))        \
+      return EVAL_RAISE();                                              \
+    KOS_THREAD_NEXT(es);                                                \
+  } while (0)
+
+#else  /* trampoline */
+
+# define RESULT_NEXT(es)                                                \
+  do {                                                                  \
+    (void) (es);                                                        \
+    return EVAL_NORMAL();                                               \
+  } while (0)
+
+# define RESULT_JUMP(es, target)                                        \
+  do {                                                                  \
+    KosEvalState_SET_PC((es), (target));                                \
+    return EVAL_NORMAL();                                               \
+  } while (0)
+
+# define RESULT_PUSH(es, val)                                           \
+  do {                                                                  \
+    return (KosEvalState_StackPushRef((es), (val)) < 0)                 \
+        ? EVAL_RAISE() : EVAL_NORMAL();                                 \
+  } while (0)
+
+# define RESULT_STEAL(es, val)                                          \
+  do {                                                                  \
+    PyObject *kos_rs_val_ = (val);                                      \
+    if (unlikely(! kos_rs_val_))                                        \
+      return EVAL_RAISE();                                              \
+    return (KosEvalState_StackPUSH((es), kos_rs_val_) < 0)              \
+        ? EVAL_RAISE() : EVAL_NORMAL();                                 \
+  } while (0)
+
+#endif
+
+#define RESULT_RAISE()  return EVAL_RAISE()
+#define RESULT_FAIL()   return EVAL_FATAL()
+
+
 /* At most one delivery is staged at a time; a second is an internal
    sequencing bug, reported under the safety net instead of leaking. */
 #if KOS_EVAL_SAFETYNET
