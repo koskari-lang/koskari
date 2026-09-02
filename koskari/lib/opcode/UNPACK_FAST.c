@@ -31,17 +31,17 @@ KOS_OP_HANDLER_COLD(UNPACK_FAST) {
   if (unlikely(idx0 >= KosNamespace_FAST_COUNT(ns) || idx1 >= KosNamespace_FAST_COUNT(ns))) {
     PyErr_Format(PyExc_NameError,
                  "UNPACK_FAST fast index out of bounds");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *raw = KosEvalState_StackPopRef(es);
   if (unlikely(! raw))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (unlikely(! seq))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (unlikely(slen != 2)) {
@@ -49,18 +49,18 @@ KOS_OP_HANDLER_COLD(UNPACK_FAST) {
     PyErr_Format(PyExc_ValueError,
                  "UNPACK_FAST expected sequence of length 2, got %zd",
                  slen);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (unlikely(
       kos_ns_fast_store(ns, idx0, PySequence_Fast_GET_ITEM(seq, 0)) ||
       kos_ns_fast_store(ns, idx1, PySequence_Fast_GET_ITEM(seq, 1)))) {
     Py_DECREF(seq);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_DECREF(seq);
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

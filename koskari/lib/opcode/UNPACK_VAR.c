@@ -27,20 +27,20 @@ KOS_OP_HANDLER_COLD(UNPACK_VAR) {
 
   PyObject *name0 = KosEvalState_CONST(es, name0_idx);
   if (unlikely(! name0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *name1 = KosEvalState_CONST(es, name1_idx);
   if (unlikely(! name1))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *raw = KosEvalState_StackPopRef(es);
   if (unlikely(! raw))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (unlikely(! seq))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (unlikely(slen != 2)) {
@@ -48,18 +48,18 @@ KOS_OP_HANDLER_COLD(UNPACK_VAR) {
     PyErr_Format(PyExc_ValueError,
                  "UNPACK_VAR expected sequence of length 2, got %zd",
                  slen);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (unlikely(
       frame_ns_store(es, name0, PySequence_Fast_GET_ITEM(seq, 0)) ||
       frame_ns_store(es, name1, PySequence_Fast_GET_ITEM(seq, 1)))) {
     Py_DECREF(seq);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_DECREF(seq);
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

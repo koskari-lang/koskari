@@ -26,7 +26,7 @@
 KOS_OP_HANDLER_COLD(THEEND) {
   (void) insn;
   kos_eval_report_pc_bounds_error(es);
-  return EVAL_FATAL();
+  RESULT_FAIL();
 }
 
 

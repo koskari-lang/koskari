@@ -28,7 +28,7 @@ KOS_OP_HANDLER(PARAM) {
 
   PyObject *name = KosEvalState_CONST(es, row.a0);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *cell = kos_param_lookup(KosEvalState_CONTEXT(es), name);
   PyObject *value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
@@ -37,21 +37,21 @@ KOS_OP_HANDLER(PARAM) {
     Py_INCREF(value);
     if (row.a1 && unlikely(KosEvalState_StackDrop1(es) < 0)) {
       Py_DECREF(value);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
-    return kos_op_result_PUSH(es, value);
+    RESULT_STEAL(es, value);
   }
 
   if (likely(row.a1)) {
     // the stacked default is already in result position
-    return EVAL_NORMAL();
+    RESULT_NEXT(es);
 
   } else {
     PyErr_Format(
       PyExc_NameError,
       "Param %S has no binding and no default",
       name);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 }
 
