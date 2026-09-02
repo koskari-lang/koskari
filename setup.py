@@ -130,15 +130,25 @@ def extra_compile_args(platform=None, debug=False, clang=False):
     return args
 
 
-def extra_link_args():
+def extra_link_args(platform=None, clang=False):
     """
     Get linker flags for C extensions
     """
+
+    if platform is None:
+        from sys import platform as sys_platform
+        platform = sys_platform
 
     args = []
 
     if environ.get("KOS_ASAN") == "1":
         args.append("-fsanitize=address")
+
+    if platform == "linux" and clang and which("ld.lld"):
+        # clang's LTO objects need an LTO-aware linker; lld is that
+        # everywhere the containers and wheel images build, and the gold
+        # plugin is not
+        args.append("-fuse-ld=lld")
 
     return args
 
@@ -166,7 +176,7 @@ def extension(platform=None, debug=None):
         sources=sources,
         depends=depends,
         extra_compile_args=extra_compile_args(platform, debug, clang),
-        extra_link_args=extra_link_args(),
+        extra_link_args=extra_link_args(platform, clang),
     )
 
 
