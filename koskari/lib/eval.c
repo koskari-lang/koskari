@@ -3150,7 +3150,12 @@ prologue:
     if (pr.kind != KOS_RES_NORMAL)
       return pr;
   }
-  goto poll;
+  /* A re-entry counts as a step, so a run of bounces with no
+     instruction between them still reaches the poll on the same
+     cadence a straight-line chain does. */
+  if (unlikely(++KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL))
+    goto poll;
+  goto thread;
 
 poll:
   {
