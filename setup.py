@@ -23,6 +23,7 @@ Koskari, a LISP dialect for Python
 
 
 import importlib.util
+import re
 import shlex
 import subprocess
 import sysconfig
@@ -76,9 +77,12 @@ def compiler_command():
     return sysconfig.get_config_var("CC") or "cc"
 
 
-def compiler_is_clang(cc):
+def compiler_identity(cc):
     """
-    Whether the compiler command identifies itself as clang
+    Whether the compiler command identifies itself as clang, and its
+    major version when it does
+
+    :return: (is_clang, major); major is 0 when unknown
     """
 
     try:
@@ -86,12 +90,17 @@ def compiler_is_clang(cc):
             [*shlex.split(cc), "--version"],
             capture_output=True, text=True, check=False)
     except OSError:
-        return False
+        return False, 0
 
-    return "clang" in proc.stdout.lower()
+    banner = proc.stdout.lower()
+    if "clang" not in banner:
+        return False, 0
+
+    match = re.search(r"clang version (\d+)", banner)
+    return True, int(match.group(1)) if match else 0
 
 
-def extra_compile_args(platform=None, debug=False, clang=False):
+def extra_compile_args(platform=None, debug=False, clang=False, major=0):
     """
     Get compiler flags for C extensions
     """
@@ -120,12 +129,10 @@ def extra_compile_args(platform=None, debug=False, clang=False):
         args.append("-fno-omit-frame-pointer")
         args.append("-g")
 
-    if platform == "linux":
+    if platform == "linux" and (not clang or major >= 17):
+        # clang gained the flag in 17; older clangs reject it, and the
+        # LTO link goes through lld there anyway
         args.append("-ffat-lto-objects")
-        if not clang:
-            # GCC's global CSE merges the computed-goto dispatch jumps
-            # back into one; clang has no such pass and rejects the flag
-            args.append("-fno-gcse")
 
     return args
 
@@ -169,13 +176,13 @@ def extension(platform=None, debug=None):
     depends.extend(libdir.glob("opcode/*.c"))
     depends = sorted(map(str, depends))
 
-    clang = compiler_is_clang(compiler_command())
+    clang, major = compiler_identity(compiler_command())
 
     return Extension(
         "koskari.lib",
         sources=sources,
         depends=depends,
-        extra_compile_args=extra_compile_args(platform, debug, clang),
+        extra_compile_args=extra_compile_args(platform, debug, clang, major),
         extra_link_args=extra_link_args(platform, clang),
     )
 
