@@ -344,6 +344,28 @@ typedef KosThreadFn KosResumeFn;
     return kos_rr_;                                                     \
   } while (0)
 
+/**
+   RESULT_ENTRY(es, r, resume, state): end a resume with the outcome r
+   of a CPS entry (KosEvalState_CallResult, KosEvalState_NextResume)
+   it called with that same resume. NORMAL means a callee frame is
+   installed and current with resume armed on the caller: thread into
+   its first instruction. RETURN means the settled value is in hand
+   and nothing is armed: tail-call resume with it now. Anything else
+   (a suspension, a bounce the entry had to take, a failure) returns
+   to the trampoline as it stands. The calling resume must have the
+   KosThreadFn prototype and must run any Py_DECREF it owes before
+   the macro.
+*/
+#define RESULT_ENTRY(es, r, resume, state)                              \
+  do {                                                                  \
+    KosOpResult kos_re_ = (r);                                          \
+    if (likely(kos_re_.kind == KOS_RES_RETURN))                         \
+      TAILCALL((resume), (es), (state), kos_re_.val);                   \
+    if (kos_re_.kind == KOS_RES_NORMAL)                                 \
+      KOS_THREAD_NEXT(es);                                              \
+    return kos_re_;                                                     \
+  } while (0)
+
 
 /* At most one delivery is staged at a time; a second is an internal
    sequencing bug, reported under the safety net instead of leaking. */
@@ -423,15 +445,18 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 /**
    Request the next element of iter, delivering it (or the failure) to
    resume instead of making the caller interpret KosIterRequestStatus
-   by hand. A delivered element and an in-flight CONTINUES both stage
-   through the current frame's own stack and set resume there, so the
-   delivery always bounces through the trampoline rather than calling
-   resume inline (constant stack across a synchronous run of many
-   elements). An awaitable in-flight (EXIT) sets resume the same way
-   and returns EVAL_AWAIT; the AWAITED revive delivers into it.
-   Exhaustion raises StopIteration, offered to resume via the raise
-   walk like any other failure. send_val is accepted for a future Send
-   entry point; unused today. Caller must have a current frame.
+   by hand. Like KosEvalState_CallResult, the entry reports what
+   happened and the calling resume ends in RESULT_ENTRY: a delivered
+   element that is settled reports RETURN with it, nothing armed (the
+   resume is tail-called with it); one that needs settling settles one
+   step, arms resume, and reports REPROLOGUE or AWAIT; an in-flight
+   CONTINUES arms resume and reports NORMAL when the install left a
+   bytecode frame current (thread into it) or REPROLOGUE otherwise; an
+   awaitable in-flight (EXIT) arms resume and reports EVAL_AWAIT, and
+   the AWAITED revive delivers into it. Exhaustion raises
+   StopIteration, offered to resume via the raise walk like any other
+   failure. send_val is accepted for a future Send entry point; unused
+   today. Caller must have a current frame.
 
    resume may be NULL: no continuation, behave exactly like the
    OBJECT_NEXT opcode's own default -- push the delivered element and
@@ -1111,16 +1136,20 @@ KosOpResult KosEvalState_Call(
    The call entry: call callable with vectorcall-style args, and say
    where its result goes. tail_call and resume are independent.
 
-   With resume set, the settled result (or failure) is delivered to
-   it instead of the caller interpreting KosEvalState_Call's own
-   result by hand: an installed callee (NORMAL/REPROLOGUE) arms resume
-   on the caller's frame and delivers by frame return; a synchronous
-   settled RETURN is a DISPATCH to resume; a RETURN needing await, or
-   the call's own result needing await, settles one step (or suspends)
-   and delivers on a later trip. RAISE / FATAL relay untouched --
-   resume is offered the failure via the raise walk instead. Caller
-   must have a current frame. A tail call replaces that frame, so it
-   has no caller to resume: tail_call with a resume is a caller error.
+   With resume set, the entry reports what happened and leaves the
+   next hop to the calling resume, which ends in RESULT_ENTRY: an
+   installed callee arms resume on the caller's frame and reports
+   NORMAL (the callee is current; thread into it, and its return
+   delivers by tail call into resume); a value settled in hand --
+   a synchronous RETURN, or a plain callable's result -- reports
+   RETURN with the value, nothing armed (tail-call resume with it);
+   a value that still needs settling settles one step, arms resume,
+   and reports REPROLOGUE or AWAIT for the trampoline to deliver on a
+   later trip; a call whose own result needed awaiting arms resume and
+   reports AWAIT. RAISE / FATAL relay untouched -- resume is offered
+   the failure via the raise walk instead. Caller must have a current
+   frame. A tail call replaces that frame, so it has no caller to
+   resume: tail_call with a resume is a caller error.
 
    With resume NULL the call's result relays exactly as
    KosEvalState_Call returns it, tail_call included: NORMAL or

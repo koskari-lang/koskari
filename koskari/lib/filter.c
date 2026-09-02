@@ -29,8 +29,8 @@
    next source element (KosEvalState_NextResume), INVOKE applies the
    predicate (KosEvalState_CallResult) with the element held on the
    filter, VERDICT tests the predicate's result and either completes
-   the frame with the held element or sets FETCH again. A rejected
-   element loops by bouncing through the trampoline once, never by C
+   the frame with the held element or fetches again. A rejected
+   element loops by a tail call into FETCH, never by C
    recursion, so an arbitrarily long run of rejects stays flat. The
    frame is parked on the filter between steps
    (KosNativeFrame_ReturnPark), stripped inert so the cache holds no
@@ -79,29 +79,22 @@ typedef struct {
    resume function pointer is itself the state. */
 
 
-static KosOpResult filter_resume_do_fetch(
+static KOS_NOINLINE KosOpResult filter_resume_do_fetch(
     KosEvalState *es, void *state, PyObject *value);
-static KosOpResult filter_resume_do_invoke(
+static KOS_NOINLINE KosOpResult filter_resume_do_invoke(
     KosEvalState *es, void *state, PyObject *element);
-static KosOpResult filter_resume_after_verdict(
+static KOS_NOINLINE KosOpResult filter_resume_after_verdict(
     KosEvalState *es, void *state, PyObject *value);
 
 
 /**
-   Loop back to FETCH after a rejected element: set the fetch resume
-   and bounce. The bounce is what keeps an arbitrarily long reject run
-   flat -- returning through the trampoline rather than calling the
-   next fetch inline is the only thing standing between a 200k-element
-   reject run and 200k frames of C recursion.
+   Loop back to FETCH after a rejected element. A tail call, so an
+   arbitrarily long reject run stays flat: each rejection reaches the
+   next fetch by discarding its own frame, never by nesting, and never
+   by a bounce through the trampoline.
 */
-static KosOpResult filter_refetch(KosEvalState *es, KosFilterObject *f) {
-
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-
-  KosDynFrame_RESUME_FN(frame) = (void *) filter_resume_do_fetch;
-  KosDynFrame_RESUME_STATE(frame) = f;
-  return EVAL_REPROLOGUE();
-}
+#define filter_refetch(es, f) \
+  TAILCALL(filter_resume_do_fetch, (es), (f), NULL)
 
 
 /**
@@ -112,7 +105,7 @@ static KosOpResult filter_refetch(KosEvalState *es, KosFilterObject *f) {
    declines (the consumer's iteration node owns the conversion,
    StopIteration truncation parity included).
 */
-static KosOpResult filter_resume_do_fetch(
+static KOS_NOINLINE KosOpResult filter_resume_do_fetch(
     KosEvalState *es, void *state, PyObject *value) {
 
   KosFilterObject *f = (KosFilterObject *) state;
@@ -123,7 +116,7 @@ static KosOpResult filter_resume_do_fetch(
     return EVAL_RAISE();
 
   /* A sync source pulls directly through tp_iternext -- no iteration
-     node -- so a rejected element costs only the trampoline bounce. */
+     node -- so a rejected element costs one tail call. */
   if (f->src_sync) {
     PyObject *element = PyIter_Next(f->source);
 
@@ -132,11 +125,14 @@ static KosOpResult filter_resume_do_fetch(
         PyErr_SetNone(PyExc_StopIteration);
       return EVAL_RAISE();
     }
-    return filter_resume_do_invoke(es, f, element);
+    TAILCALL(filter_resume_do_invoke, es, f, element);
   }
 
-  return KosEvalState_NextResume(es, f->source, NULL,
-                                 filter_resume_do_invoke, f);
+  {
+    KosOpResult r = KosEvalState_NextResume(es, f->source, NULL,
+                                            filter_resume_do_invoke, f);
+    RESULT_ENTRY(es, r, filter_resume_do_invoke, f);
+  }
 }
 
 
@@ -146,7 +142,7 @@ static KosOpResult filter_resume_do_fetch(
    the element held on the filter until its verdict settles. element
    is consumed.
 */
-static KosOpResult filter_resume_do_invoke(
+static KOS_NOINLINE KosOpResult filter_resume_do_invoke(
     KosEvalState *es, void *state, PyObject *element) {
 
   KosFilterObject *f = (KosFilterObject *) state;
@@ -166,7 +162,7 @@ static KosOpResult filter_resume_do_invoke(
       return KosNativeFrame_ReturnPark(es, element, &f->cached_frame);
 
     Py_DECREF(element);
-    return filter_refetch(es, f);
+    filter_refetch(es, f);
   }
 
   /* Every calling shape goes through the one entry --
@@ -177,9 +173,12 @@ static KosOpResult filter_resume_do_invoke(
      it across the call; the argument vector borrows it for the call's
      duration. */
   f->pending = element;
-  return KosEvalState_CallResult(es, f->pred.cs_callable,
-                                 &element, 1, NULL, 0,
-                                 filter_resume_after_verdict, f);
+  {
+    KosOpResult r = KosEvalState_CallResult(es, f->pred.cs_callable,
+                                            &element, 1, NULL, 0,
+                                            filter_resume_after_verdict, f);
+    RESULT_ENTRY(es, r, filter_resume_after_verdict, f);
+  }
 }
 
 
@@ -187,7 +186,7 @@ static KosOpResult filter_resume_do_invoke(
    VERDICT: a true verdict completes the step with the held element, a
    false one releases it and fetches again. value is consumed.
 */
-static KosOpResult filter_resume_after_verdict(
+static KOS_NOINLINE KosOpResult filter_resume_after_verdict(
     KosEvalState *es, void *state, PyObject *value) {
 
   KosFilterObject *f = (KosFilterObject *) state;
@@ -209,7 +208,7 @@ static KosOpResult filter_resume_after_verdict(
   }
 
   Py_CLEAR(f->pending);
-  return filter_refetch(es, f);
+  filter_refetch(es, f);
 }
 
 

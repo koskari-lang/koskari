@@ -610,6 +610,40 @@ KosOpResult KosEvalState_Call(
 }
 
 
+/**
+   A CPS entry's value-in-hand outcome: settled, report RETURN with
+   val and arm nothing -- the calling resume tail-calls resume with
+   it; not yet settled, settle one step through KosEvalState_SettleStage
+   and arm resume on caller for the trip that delivers it. val is
+   consumed.
+*/
+static KosOpResult kos_entry_value(
+    KosEvalState *es,
+    KosDynFrame *caller,
+    PyObject *val,
+    KosResumeFn resume,
+    void *state) {
+
+  switch (KosEval_ResultIsValue(val)) {
+    case 1:
+      return EVAL_RETURN(val);
+
+    case 0: {
+      KosOpResult pr = KosEvalState_SettleStage(es, val);
+      if (pr.kind == KOS_RES_REPROLOGUE || pr.kind == KOS_RES_AWAIT) {
+        KosDynFrame_RESUME_FN(caller) = (void *) resume;
+        KosDynFrame_RESUME_STATE(caller) = state;
+      }
+      return pr;
+    }
+
+    default:
+      Py_DECREF(val);
+      return EVAL_RAISE();
+  }
+}
+
+
 KosOpResult KosEvalState_CallResult(
     KosEvalState *es,
     PyObject *callable,
@@ -638,14 +672,24 @@ KosOpResult KosEvalState_CallResult(
 
   switch (r.kind) {
     case KOS_RES_NORMAL:
+      if (KosEvalState_FRAME(es) == caller) {
+        /* Nothing was installed: the callable ran to a value that
+           Call landed on the caller's own stack (a plain callable's
+           result, a generator function's generator). Take it back
+           and report it in hand. */
+        PyObject *val = KosEvalState_StackPopRef(es);
+        if (unlikely(! val))
+          return EVAL_RAISE();
+        return kos_entry_value(es, caller, val, resume, state);
+      }
+      /* fall through: callee installed and current */
     case KOS_RES_REPROLOGUE:
-      /* callee installed above caller, or already running in-eval;
+      /* callee installed above caller, or a plan armed by the install;
          caller's own frame is unchanged and still reachable -- its
-         eventual return delivers here. An arm, not a dispatch: the
-         callee is the current frame, so nothing is staged. */
+         eventual return delivers here. */
       KosDynFrame_RESUME_FN(caller) = (void *) resume;
       KosDynFrame_RESUME_STATE(caller) = state;
-      return EVAL_REPROLOGUE();
+      return r;
 
     case KOS_RES_AWAIT:
       /* the call's own result needed awaiting; the AWAITED revive
@@ -655,24 +699,7 @@ KosOpResult KosEvalState_CallResult(
       return r;
 
     case KOS_RES_RETURN:
-      switch (KosEval_ResultIsValue(r.val)) {
-        case 1:
-          /* settled in hand, caller still current: stage and bounce */
-          DISPATCH(resume, es, state, r.val);
-
-        case 0: {
-          KosOpResult pr = KosEvalState_SettleStage(es, r.val);
-          if (pr.kind == KOS_RES_REPROLOGUE || pr.kind == KOS_RES_AWAIT) {
-            KosDynFrame_RESUME_FN(caller) = (void *) resume;
-            KosDynFrame_RESUME_STATE(caller) = state;
-          }
-          return pr;
-        }
-
-        default:
-          Py_DECREF(r.val);
-          return EVAL_RAISE();
-      }
+      return kos_entry_value(es, caller, r.val, resume, state);
 
     default:
       return r;  /* RAISE / FATAL: relay untouched */

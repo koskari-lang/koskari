@@ -188,18 +188,19 @@ static int test_next_resume_delivered_stages_slot(void) {
   ResumeProbe probe = { 0, 0, 0, NULL };
   KosOpResult r = KosEvalState_NextResume(&es, it, NULL, resume_probe, &probe);
 
-  TEST_ASSERT_EQ(r.kind, KOS_RES_REPROLOGUE, "a delivered element bounces");
-  TEST_ASSERT_NOT_NULL(KosEvalState_PENDING_VALUE(&es),
-                       "the element is staged in the pending slot");
-  TEST_ASSERT_EQ(PyLong_AsLong(KosEvalState_PENDING_VALUE(&es)), 42,
-                 "staged element value");
+  TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN,
+                 "a delivered, settled element is reported in hand");
+  TEST_ASSERT_NOT_NULL(r.val, "the element rides the result");
+  TEST_ASSERT_EQ(PyLong_AsLong(r.val), 42, "element value");
+  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(&es), "nothing staged");
   TEST_ASSERT(! KosEvalState_StackHead(&es)
               || KosEvalState_StackLen(&es) == 0,
               "the frame stack was not touched");
-  TEST_ASSERT(KosDynFrame_RESUME_FN(frame) == (void *) resume_probe,
-              "the resume is set");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_FN(frame),
+                   "nothing armed: the caller tail-calls the resume itself");
   TEST_ASSERT_EQ(probe.calls, 0, "nothing invoked the resume inline");
 
+  Py_DECREF(r.val);
   Py_DECREF(it);
   Py_DECREF(lst);
   KosEvalState_FreezeToContext(&es);

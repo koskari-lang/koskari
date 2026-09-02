@@ -1973,20 +1973,20 @@ KosOpResult KosEvalState_NextResume(
         return KosEvalState_StackPUSH(es, out) < 0
             ? EVAL_RAISE() : EVAL_NORMAL();
       }
-      DISPATCH(resume, es, state, out);
+      return kos_entry_value(es, frame, out, resume, state);
 
-    case KOS_IREQ_CONTINUES:
-      if (! resume) {
-        /* No continuation: match OBJECT_NEXT's own default exactly --
-           if the install left a real bytecode frame current (e.g. a
-           generator attached), dispatch continues there directly with
-           no trampoline hop; only a codeless result needs the bounce. */
-        KosDynFrame *cur = KosEvalState_FRAME(es);
-        return (cur && KosDynFrame_CODE(cur)) ? EVAL_NORMAL() : EVAL_REPROLOGUE();
+    case KOS_IREQ_CONTINUES: {
+      /* If the install left a real bytecode frame current (e.g. a
+         generator attached), dispatch continues there directly with
+         no trampoline hop; only a codeless result needs the bounce.
+         With a resume, it is armed for the delivery either way. */
+      KosDynFrame *cur = KosEvalState_FRAME(es);
+      if (resume) {
+        KosDynFrame_RESUME_FN(frame) = (void *) resume;
+        KosDynFrame_RESUME_STATE(frame) = state;
       }
-      KosDynFrame_RESUME_FN(frame) = (void *) resume;
-      KosDynFrame_RESUME_STATE(frame) = state;
-      return EVAL_REPROLOGUE();
+      return (cur && KosDynFrame_CODE(cur)) ? EVAL_NORMAL() : EVAL_REPROLOGUE();
+    }
 
     case KOS_IREQ_EXIT:
       if (! resume)
