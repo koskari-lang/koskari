@@ -14,9 +14,12 @@
 PYTHON ?= python3
 PYTHON_CONFIG ?= $(PYTHON)-config
 
-# Compiler: CC from the environment (make test-native CC=clang passes it
-# into the container); make's own default otherwise
-CC ?= gcc
+# Compiler: CC from the environment (make test-native CC=gcc passes it
+# into the container); clang otherwise, since the evaluator needs a
+# compiler with musttail and the container's gcc predates it
+ifeq ($(origin CC),default)
+CC := clang
+endif
 
 # Test and library sources discovered via globs (stay in sync with tree)
 LIB_DIR := ../../koskari/lib

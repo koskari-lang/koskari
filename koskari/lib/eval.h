@@ -206,54 +206,41 @@ typedef KosThreadFn KosResumeFn;
 
 
 /**
-   KOS_MUSTTAIL_ENABLED selects the threaded bodies of TAILCALL and
-   DISPATCH, in which every step reaches the next by a guaranteed tail
-   call. Off: the trampoline bodies, which are today's call and
-   stage-and-bounce. Hardcoded until the dispatch loop can accept a
-   threaded chain.
+   Dispatch is threaded: every opcode handler reaches the next by a
+   guaranteed tail call, and control returns to the trampoline only on
+   a signal. That needs a compiler that enforces the tail call.
 */
-#define KOS_MUSTTAIL_ENABLED 0
-
-#if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
-# define KOS_MUSTTAIL __attribute__((musttail))
-#else
-# define KOS_MUSTTAIL
+#if ! KOS_HAVE_MUSTTAIL
+# error "koskari requires a compiler with musttail (clang, or GCC 15+)"
 #endif
+
+#define KOS_MUSTTAIL __attribute__((musttail))
 
 
 /**
    TAILCALL(fn, es, arg, value): hand control to fn, a KosThreadFn, as
-   the calling function's last act. One bounded hop: the trampoline
-   body is a plain call, so a chain of TAILCALLs whose length depends
-   on data grows the C stack in that mode -- use DISPATCH for those.
-   Any Py_DECREF the caller owes runs before this, never after; the
-   threaded body discards the caller's frame.
+   the calling function's last act. The calling function must itself
+   have the KosThreadFn prototype (musttail refuses anything else), and
+   any Py_DECREF it owes runs before this, never after: its frame is
+   discarded.
 */
-#if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
-# define TAILCALL(fn, es, arg, value) \
+#define TAILCALL(fn, es, arg, value) \
   KOS_MUSTTAIL return (fn)((es), (arg), (value))
-#else
-# define TAILCALL(fn, es, arg, value) \
-  return (fn)((es), (arg), (value))
-#endif
 
 
 /**
    DISPATCH(fn, es, arg, value): deliver value to fn, a KosThreadFn,
-   with constant C stack however many times the chain runs. The
-   trampoline body stages the delivery: fn and arg become the current
-   frame's resume, value (an owned reference, or NULL for a cold start
-   with nothing staged) goes into the eval state's pending slot, and
-   EVAL_REPROLOGUE returns to the prologue, whose delivery step takes
-   the slot and invokes fn. The frame stack is not touched. The
-   threaded body is the same tail call TAILCALL makes. Caller must
-   have a current frame, and nothing may already be staged.
+   from a function that cannot tail-call it -- the CPS entries, whose
+   prototypes are their own. It stages the delivery: fn and arg become
+   the current frame's resume, value (an owned reference, or NULL for
+   a cold start with nothing staged) goes into the eval state's
+   pending slot, and EVAL_REPROLOGUE returns to the trampoline, whose
+   re-entry takes the slot and invokes fn. The frame stack is not
+   touched. Caller must have a current frame, and nothing may already
+   be staged. A resume that already holds a settled value for another
+   resume, and has the KosThreadFn prototype, uses TAILCALL instead.
 */
-#if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
-# define DISPATCH(fn, es, arg, value) \
-  KOS_MUSTTAIL return (fn)((es), (arg), (value))
-#else
-# define DISPATCH(fn, es, arg, value)                                   \
+#define DISPATCH(fn, es, arg, value)                                    \
   do {                                                                  \
     KosEvalState *kos_dsp_es_ = (es);                                   \
     KosDynFrame *kos_dsp_frame_ = KosEvalState_FRAME(kos_dsp_es_);      \
@@ -264,7 +251,6 @@ typedef KosThreadFn KosResumeFn;
     KosDynFrame_RESUME_STATE(kos_dsp_frame_) = (void *) (arg);          \
     return EVAL_REPROLOGUE();                                           \
   } while (0)
-#endif
 
 /* === Opcode result macros === */
 
@@ -282,26 +268,21 @@ typedef KosThreadFn KosResumeFn;
    - RESULT_RAISE(): PyErr is set; hand off to the raise machinery.
    - RESULT_FAIL(): hard fault.
 
-   Trampoline bodies are today's idioms: push and return NORMAL or
-   RAISE, set pc and return NORMAL, return RAISE or FATAL. Threaded
-   bodies thread straight into the handler at es->pc's slot -- read
-   from es->pc rather than the handler's own slot plus one, since a
-   handler may have moved the pc before its tail (a jump, the fused
-   POP peephole) -- after advancing acting_pc and pc the way the
-   dispatch loop's fetch does. RAISE and FAIL return in both modes:
-   they are a real crossing back to the trampoline. Every threaded
-   step is a tail call, so a handler using these macros must have the
-   KosThreadFn prototype and must run any Py_DECREF it owes before
-   the macro.
+   The continuing forms thread straight into the handler at es->pc's
+   slot -- read from es->pc rather than the handler's own slot plus
+   one, since a handler may have moved the pc before its tail (a jump,
+   the fused POP peephole) -- after advancing acting_pc and pc the way
+   the trampoline's fetch does. RAISE and FAIL return: they are a real
+   crossing back to the trampoline. Every continuing step is a tail
+   call, so a handler using these macros must have the KosThreadFn
+   prototype and must run any Py_DECREF it owes before the macro.
 */
 
-#if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
-
-/* Thread into the handler at es->pc: the fetch the dispatch loop does,
-   ending in a tail call instead of a computed goto. When the poll
-   counter trips, return NORMAL instead: the trampoline polls, zeroes
-   the counter, and threads again from es->pc. */
-# define KOS_THREAD_NEXT(es)                                            \
+/* Thread into the handler at es->pc: the fetch the trampoline does,
+   ending in a tail call. When the poll counter trips, return NORMAL
+   instead: the trampoline polls, zeroes the counter, and threads
+   again from es->pc. */
+#define KOS_THREAD_NEXT(es)                                             \
   do {                                                                  \
     KosEvalState *kos_thr_es_ = (es);                                   \
     uint32_t kos_thr_pc_ = KosEvalState_PC(kos_thr_es_);                \
@@ -313,25 +294,26 @@ typedef KosThreadFn KosResumeFn;
         &KosCode_SLOTS(KosEvalState_CODE(kos_thr_es_))[kos_thr_pc_];    \
     kos_thr_es_->acting_pc = kos_thr_pc_;                               \
     kos_thr_es_->pc = kos_thr_pc_ + 1u;                                 \
+    KOS_TRACE_THREAD_STEP(kos_thr_next_->op);                           \
     TAILCALL(kos_thr_next_->fn, kos_thr_es_, kos_thr_next_, NULL);      \
   } while (0)
 
-# define RESULT_NEXT(es)  KOS_THREAD_NEXT(es)
+#define RESULT_NEXT(es)  KOS_THREAD_NEXT(es)
 
-# define RESULT_JUMP(es, target)                                        \
+#define RESULT_JUMP(es, target)                                         \
   do {                                                                  \
     KosEvalState_SET_PC((es), (target));                                \
     KOS_THREAD_NEXT(es);                                                \
   } while (0)
 
-# define RESULT_PUSH(es, val)                                           \
+#define RESULT_PUSH(es, val)                                            \
   do {                                                                  \
     if (unlikely(KosEvalState_StackPushRef((es), (val)) < 0))           \
       return EVAL_RAISE();                                              \
     KOS_THREAD_NEXT(es);                                                \
   } while (0)
 
-# define RESULT_STEAL(es, val)                                          \
+#define RESULT_STEAL(es, val)                                           \
   do {                                                                  \
     PyObject *kos_rs_val_ = (val);                                      \
     if (unlikely(! kos_rs_val_))                                        \
@@ -340,37 +322,6 @@ typedef KosThreadFn KosResumeFn;
       return EVAL_RAISE();                                              \
     KOS_THREAD_NEXT(es);                                                \
   } while (0)
-
-#else  /* trampoline */
-
-# define RESULT_NEXT(es)                                                \
-  do {                                                                  \
-    (void) (es);                                                        \
-    return EVAL_NORMAL();                                               \
-  } while (0)
-
-# define RESULT_JUMP(es, target)                                        \
-  do {                                                                  \
-    KosEvalState_SET_PC((es), (target));                                \
-    return EVAL_NORMAL();                                               \
-  } while (0)
-
-# define RESULT_PUSH(es, val)                                           \
-  do {                                                                  \
-    return (KosEvalState_StackPushRef((es), (val)) < 0)                 \
-        ? EVAL_RAISE() : EVAL_NORMAL();                                 \
-  } while (0)
-
-# define RESULT_STEAL(es, val)                                          \
-  do {                                                                  \
-    PyObject *kos_rs_val_ = (val);                                      \
-    if (unlikely(! kos_rs_val_))                                        \
-      return EVAL_RAISE();                                              \
-    return (KosEvalState_StackPUSH((es), kos_rs_val_) < 0)              \
-        ? EVAL_RAISE() : EVAL_NORMAL();                                 \
-  } while (0)
-
-#endif
 
 #define RESULT_RAISE()  return EVAL_RAISE()
 #define RESULT_FAIL()   return EVAL_FATAL()
@@ -382,25 +333,16 @@ typedef KosThreadFn KosResumeFn;
    the next instruction at es->pc (a callee's first instruction after
    an install, the next instruction after a push), and continues
    there; every other kind returns to the trampoline as it stands.
-   Trampoline mode returns r untouched. The helper itself keeps its
-   own prototype and return; the tail call happens here, in the
-   handler.
+   The helper itself keeps its own prototype and return; the tail
+   call happens here, in the handler.
 */
-#if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
-# define RESULT_RELAY(es, r)                                            \
+#define RESULT_RELAY(es, r)                                             \
   do {                                                                  \
     KosOpResult kos_rr_ = (r);                                          \
     if (likely(kos_rr_.kind == KOS_RES_NORMAL))                         \
       KOS_THREAD_NEXT(es);                                              \
     return kos_rr_;                                                     \
   } while (0)
-#else
-# define RESULT_RELAY(es, r)                                            \
-  do {                                                                  \
-    (void) (es);                                                        \
-    return (r);                                                         \
-  } while (0)
-#endif
 
 
 /* At most one delivery is staged at a time; a second is an internal

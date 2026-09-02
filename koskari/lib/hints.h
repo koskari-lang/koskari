@@ -28,12 +28,11 @@
 */
 
 
-/* Opcode handlers are always inlined so the eval loop stays fast.
+/* KOS_OP_INLINE marks the small hot cores that must fold into their
+   callers (the operator cores, the chain-segment walk).
 
-   KOS_ALL_COLD=1 builds a measurement variant instead: every handler
-   is un-inlined so each op_<NAME> is its own symbol, for the
-   per-handler sizing sweep in design/dispatch-sizing.md. Never ship
-   this. */
+   KOS_ALL_COLD=1 builds a measurement variant instead: every such
+   core is un-inlined so each is its own symbol. Never ship this. */
 #ifndef KOS_ALL_COLD
 # define KOS_ALL_COLD 0
 #endif
@@ -56,7 +55,8 @@
 
 
 /* Whether the compiler can enforce a tail call (clang, or GCC 15+).
-   A feature test only: nothing consults it yet. */
+   Opcode dispatch is threaded through musttail, so eval.h refuses to
+   build without it. */
 #if defined(__has_attribute)
 # if __has_attribute(musttail)
 #  define KOS_HAVE_MUSTTAIL 1
@@ -64,19 +64,6 @@
 #endif
 #ifndef KOS_HAVE_MUSTTAIL
 # define KOS_HAVE_MUSTTAIL 0
-#endif
-
-
-/* Dispatch: computed goto when available, else switch/case; no function table
-   so the compiler can inline handler bodies. Both paths use tail-dispatch to
-   next_insn. Build may override with -DKOS_USE_COMPUTED_GOTO=0 or =1. */
-#ifndef KOS_USE_COMPUTED_GOTO
-# if (defined(__GNUC__) || defined(__clang__))
-#  define KOS_USE_COMPUTED_GOTO 1
-# else
-#  define KOS_USE_COMPUTED_GOTO 0
-#  error "Unsupported compiler, no computed goto"
-# endif
 #endif
 
 

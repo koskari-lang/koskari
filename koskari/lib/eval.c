@@ -1702,14 +1702,15 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 /* Every handler has the KosThreadFn prototype: insn is the handler's
    own KosSlot (read through KosOp_ARG / KosOp_CACHE), and the delivery
    argument is unused by an opcode.  The one shape lets a slot's fn
-   pointer reach any handler, and lets a handler be a musttail target. */
+   pointer reach any handler, and lets a handler be a musttail target.
+   Each handler is its own function, reached only through its slot. */
 #define KOS_OP_HANDLER(name)                                            \
-  KOS_OP_INLINE KosOpResult op_##name(                                  \
+  static KosOpResult op_##name(                                         \
       KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
 
-/* Cold variant of KOS_OP_HANDLER: same signature, but kept OUT of the inlined
-   dispatch function (the dispatch label calls it instead).  For large,
-   rarely-executed opcodes whose body would only bloat the hot loop. */
+/* The cold variant names a large, rarely-run opcode; under threaded
+   dispatch every handler is out of line, so it differs only in the
+   explicit noinline. */
 #define KOS_OP_HANDLER_COLD(name)                                       \
   static KOS_NOINLINE KosOpResult op_##name(                            \
       KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
@@ -2289,7 +2290,7 @@ static inline KosOpResult eval_event_return(
    by eval_event_return_at_frame and kos_return_is_plain.
 
    eval_ng_plain_return sets es->code from the parent, pushes the value
-   and returns EVAL_DISPATCH(), bypassing cg_prologue entirely. Both
+   and returns EVAL_DISPATCH(), bypassing the prologue entirely. Both
    conjuncts below guard that, for separate reasons: without code there
    is nothing to dispatch, and with a resume pending the prologue is
    what would have delivered the value to it. Only codeless frames
@@ -2808,7 +2809,7 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
 
 /**
    Route a non-NORMAL opcode result through the appropriate event handler.
-   NORMAL and REPROLOGUE both map to EVAL_REPROLOGUE (restart cg_prologue).
+   NORMAL and REPROLOGUE both map to EVAL_REPROLOGUE (re-enter through the prologue).
 */
 static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
   switch (res.kind) {
@@ -3018,42 +3019,33 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
 
 
 /**
-   Opcode loop for GCC/Clang: computed goto, tail-dispatch on RUN, prologue
-   via cg_prologue.  Must be a single function: label addresses and optable
-   live here only.
-
-   The loop's contract with a handler's result: NORMAL means "continue
-   at es->pc" -- fetch the slot there and dispatch it, polling first
-   when the poll counter has tripped. Every other kind is applied
-   through cg_handle_op_result, and whatever that yields either
-   resumes fetching (DISPATCH), re-enters through the prologue
-   (REPROLOGUE), or leaves koskari_eval. A threaded chain that ends
-   by returning NORMAL (an unconverted handler, a counter trip) is
-   picked up by the same rule.
+   The trampoline: the loop threaded dispatch returns to.  Enter by
+   threading from es->pc; a chain then runs handler to handler by tail
+   calls and comes back here only with a signal.  NORMAL means the
+   chain stopped with the next instruction at es->pc -- a poll-counter
+   trip, or a step with no way to continue -- so poll if due and thread
+   again.  RETURN takes the plain-return fast arms straight back to
+   threading.  Everything else is applied through apply_kos_op_result,
+   and whatever that yields either threads (DISPATCH), re-enters
+   through the prologue (REPROLOGUE), or leaves koskari_eval.
 */
-static inline KosOpResult koskari_eval_dispatch_computed_goto(KosEvalState *es) {
-
-  #define OP(name, ...)  &&cg_TARGET_##name,
-  static const void *const optable[] = {
-    #include "opcodes.incl"
-  };
-  #undef OP
+static KosOpResult koskari_eval_trampoline(KosEvalState *es) {
 
   KosSlot *insn;
-  KosOpResult op_res;
+  KosOpResult r;
   uint64_t gil_poll_last_ns = kos_eval_gil_poll_now_ns();
 
-  goto cg_prologue;
+  goto prologue;
 
-cg_prologue:
+prologue:
   {
     KosOpResult pr = kos_prologue_reenter(es);
     if (pr.kind != KOS_RES_NORMAL)
       return pr;
   }
-  goto cg_poll;
+  goto poll;
 
-cg_poll:
+poll:
   {
     KosEvalState_POLL_OPS(es) = 0;
     if (koskari_gil_drop_requested()) {
@@ -3071,84 +3063,77 @@ cg_poll:
   if (unlikely(PyErr_Occurred())) {
     KosOpResult pend = eval_phase_pending_exception(es);
     if (pend.kind != KOS_RES_NORMAL) {
-      if (pend.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
+      if (pend.kind == KOS_RES_REPROLOGUE) goto prologue;
       return pend;
     }
   }
+  goto thread;
 
-  KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
-  goto *optable[insn->op];
+thread:
+  KOS_EVAL_PREPARE_NEXT_INSN(es, insn, pc_bounds_error);
+  KOS_TRACE_THREAD_STEP(insn->op);
+  r = insn->fn(es, insn, NULL);
 
-  #define OP(name, ...)                                               \
-    cg_TARGET_##name:                                                 \
-      KOS_TRACE_OP_WRAP(name, op_res = op_##name(es, insn, NULL));    \
-      if (likely(op_res.kind == KOS_RES_NORMAL)) {                    \
-        if (unlikely(++KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL)) \
-          goto cg_poll;                                               \
-        KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);     \
-        goto *optable[insn->op];                                      \
-      }                                                               \
-      goto cg_handle_op_result;
-
-  #include "opcodes.incl"
-  #undef OP
+  if (likely(r.kind == KOS_RES_NORMAL)) {
+    if (unlikely(KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL))
+      goto poll;
+    goto thread;
+  }
+  goto handle_result;
 
 #if KOS_EVAL_SAFETYNET
-cg_pc_bounds_error:
+pc_bounds_error:
   kos_eval_report_pc_bounds_error(es);
   return EVAL_FATAL();
 #endif
 
-cg_handle_op_result: {
+handle_result: {
   /* Fast arm: a plain frame-to-frame return needs none of the machinery
-     below.  Route it straight into the transition and back to the fetch,
-     skipping the out-of-line apply_kos_op_result call, its switch, and
-     the guard chain it would walk to reach the same eval_ng_plain_return.
-     Sited here rather than in op_RETURN so every producer of the signal
-     benefits -- POP_PROMPT, the values.c and eval_utils.c termini, and
-     the coro/iter/demand boundary drivers, not just the opcode. */
-  KosOpResult r;
+     below.  Route it straight into the transition and back to
+     threading, skipping the out-of-line apply_kos_op_result call, its
+     switch, and the guard chain it would walk to reach the same
+     eval_ng_plain_return.  Sited here rather than in op_RETURN so every
+     producer of the signal benefits -- POP_PROMPT, the values.c and
+     eval_utils.c termini, and the coro/iter/demand boundary drivers,
+     not just the opcode. */
+  KosOpResult ar;
 
-  if (likely(op_res.kind == KOS_RES_RETURN)) {
+  if (likely(r.kind == KOS_RES_RETURN)) {
     KosDynNode *child, *parent;
 
     if (likely(kos_return_is_plain(es, &child, &parent))) {
       kos_eval_resume_clear_if_armed(es);
       KOS_TRACE_POST_OP_WRAP(plain_return,
-          r = eval_ng_plain_return(es, child, parent, op_res.val));
-      goto cg_have_result;
+          ar = eval_ng_plain_return(es, child, parent, r.val));
+      goto have_result;
     }
     {
       KosDynFrame *ft;
       if (kos_return_is_extent_plain(es, &child, &parent, &ft)) {
         kos_eval_resume_clear_if_armed(es);
         KOS_TRACE_POST_OP_WRAP(plain_return,
-            r = eval_ng_extent_return(es, child, parent, ft, op_res.val));
-        goto cg_have_result;
+            ar = eval_ng_extent_return(es, child, parent, ft, r.val));
+        goto have_result;
       }
     }
   }
 
   KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
-  r = apply_kos_op_result(es, op_res);
+  ar = apply_kos_op_result(es, r);
 
-cg_have_result:
-  if (r.kind == KOS_RES_DISPATCH) {
+have_result:
+  if (ar.kind == KOS_RES_DISPATCH) {
     /* Plain frame-to-frame return: live regs already retargeted, no
        pending PyErr / plan / native handler.  Skip the prologue and go
-       straight back to instruction fetch; the poll counter still bounds
-       signal-check latency via cg_poll. */
+       straight back to threading; the poll counter still bounds
+       signal-check latency. */
     if (unlikely(++KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL))
-      goto cg_poll;
-    KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
-    goto *optable[insn->op];
+      goto poll;
+    goto thread;
   }
-  if (r.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-  return r;
+  if (ar.kind == KOS_RES_REPROLOGUE) goto prologue;
+  return ar;
 }
-
-  /* Unreachable */
-  return EVAL_FATAL();
 }
 
 
@@ -3232,7 +3217,7 @@ KosOpResult koskari_eval(
   /* Clear resume kind once before loop; post_opcode clears it when handling
      non-zero results so the hot path (tail-dispatch) never touches it. */
   KosEvalState_PythonResumeSet(&es, NULL, KOS_RESUME_NONE);
-  eval_ret = koskari_eval_dispatch_computed_goto(&es);
+  eval_ret = koskari_eval_trampoline(&es);
 
 koskari_eval_cleanup:
   kos_tls_pop_active_eval();
