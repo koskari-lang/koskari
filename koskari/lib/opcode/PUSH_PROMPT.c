@@ -26,7 +26,7 @@ KOS_OP_HANDLER(PUSH_PROMPT) {
   uint32_t pop_pc;
 
   if (get_prompt_id_from_insn(es, insn, &prompt_id) < 0)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   {
     PyObject *code = (PyObject *) KosEvalState_CurrentCode(es);
@@ -37,17 +37,17 @@ KOS_OP_HANDLER(PUSH_PROMPT) {
     if (eid == KOS_EXTENT_NONE) {
       PyErr_SetString(PyExc_RuntimeError,
                       "PUSH_PROMPT: no PROMPT extent at pc");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     extent = kos_extent_desc(code, eid);
     if (! extent)
-      return EVAL_RAISE();
+      RESULT_RAISE();
     pop_pc = extent->pop_pc;
   }
 
   if (! kos_dyn_push_prompt(es, prompt_id, pop_pc))
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

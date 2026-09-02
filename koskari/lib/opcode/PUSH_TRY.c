@@ -22,9 +22,9 @@ KOS_OP_HANDLER(PUSH_TRY) {
   KosDynNode *const region = (KosDynNode *) kos_dyn_push_try(es, KosOp_ARG(insn));
   if (! region) {
     PyErr_NoMemory();
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

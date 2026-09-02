@@ -26,7 +26,7 @@ KOS_OP_HANDLER(POP_WITH) {
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (unlikely(! top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_WITH: dyn_top is NULL");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (unlikely(! KosDynNode_IS_WITH(top))) {
@@ -34,7 +34,7 @@ KOS_OP_HANDLER(POP_WITH) {
       PyExc_RuntimeError,
       "POP_WITH: top is %s (expected WITH), node=%p",
       kos_dynnode_kind_name(KosDynNode_KIND(top)), (void *) top);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* the unwind will pass the value to the upper stack */
@@ -42,7 +42,7 @@ KOS_OP_HANDLER(POP_WITH) {
 
   /* Error path, bail out. */
   if (kr.kind == KOS_RES_RAISE)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   /* Async path, need to suspend, we'll resume at this opcode when we
      wake back up. */
@@ -61,8 +61,8 @@ KOS_OP_HANDLER(POP_WITH) {
 
   /* all is well (NORMAL or REPROLOGUE/swallowed), pop the node and return */
   if (unlikely(kos_dyn_pop_with(es, (KosDynWith *) top) < 0))
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

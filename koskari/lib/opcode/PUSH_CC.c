@@ -25,18 +25,18 @@ KOS_OP_HANDLER(PUSH_CC) {
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_CC);
   if (eid == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_CC: no CC extent at this PC");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_CC: invalid extent");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   uint32_t resume_pc = ext->pop_pc + 1u;
   if (! kos_dyn_push_cc(es, resume_pc)) {
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

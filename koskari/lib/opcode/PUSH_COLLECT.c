@@ -28,26 +28,26 @@ KOS_OP_HANDLER(PUSH_COLLECT) {
 
   nspec = KosEvalState_CONST(es, cidx);
   if (! nspec) {
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (! KosNamespaceSpec_CheckExact(nspec)) {
     PyErr_Format(PyExc_RuntimeError,
                  "PUSH_COLLECT spec must be a NamespaceSpec, not %R", nspec);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *spec_parent = KosNamespace_Check(parent) ? parent : NULL;
   new_ns = KosCollectorNamespace_New(spec_parent, nspec);
   if (! new_ns) {
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   KosDynCollect *const col_node = kos_dyn_push_collect(es, new_ns);
   if (! col_node)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

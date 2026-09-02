@@ -24,9 +24,9 @@ KOS_OP_HANDLER(POP_CC) {
   KosDynNode *top = KosEvalState_CurrentNode(es);
 
   if (unlikely(kos_dyn_pop_cc(es, (KosDynCC *) top) < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 
