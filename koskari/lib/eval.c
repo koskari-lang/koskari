@@ -1007,6 +1007,12 @@ static KosOpResult process_raise(KosEvalState *es) {
     return EVAL_RAISE();
   }
 
+  /* The raise supersedes any staged delivery: the walk offers the
+     resume the exception instead, and the frame it was staged for may
+     be popped or replaced by a transfer. Every ingress into the raise
+     machinery passes here, so this is the one place the slot drops. */
+  Py_CLEAR(KosEvalState_PENDING_VALUE(es));
+
   int is_cc_apply = (KoskariContinuationApply
                      && PyErr_ExceptionMatches(KoskariContinuationApply));
 
@@ -2190,10 +2196,6 @@ static KosOpResult eval_phase_transfer(KosEvalState *es) {
 static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
   if (! PyErr_Occurred())
     return EVAL_NORMAL();
-  /* The raise supersedes any staged delivery: the walk offers the
-     resume the exception instead, and the frame it was staged for
-     may be popped. */
-  Py_CLEAR(KosEvalState_PENDING_VALUE(es));
   return process_raise(es);
 }
 
