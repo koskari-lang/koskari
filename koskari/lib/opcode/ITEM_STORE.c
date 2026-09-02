@@ -25,7 +25,7 @@ KOS_OP_HANDLER(ITEM_STORE) {
   } args = {0};
 
   if (unlikely(KOS_EVALSTATE_POP_ARGS(es, args)))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   int res = PyObject_SetItem(args.obj, args.key, args.val);
   Py_DECREF(args.obj);
@@ -33,9 +33,9 @@ KOS_OP_HANDLER(ITEM_STORE) {
   Py_DECREF(args.val);
 
   if (unlikely(res < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

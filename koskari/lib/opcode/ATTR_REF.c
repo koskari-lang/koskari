@@ -20,15 +20,15 @@
 KOS_OP_HANDLER(ATTR_REF) {
   PyObject *name = get_name_from_insn(es, insn);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   PyObject *ref = KosAttributeRef_New(name, obj, name);
   Py_DECREF(obj);
   if (! ref)
-    return EVAL_RAISE();
-  return kos_op_result_PUSH(es, ref);
+    RESULT_RAISE();
+  RESULT_STEAL(es, ref);
 }
 
 
