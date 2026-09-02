@@ -24,22 +24,19 @@ LABEL maintainer="obriencj@gmail.com" \
       description="Native memory test environment for koskari"
 
 # Install build dependencies:
-# - clang, lld: the compiler (musttail) and the LTO linker for the
-#   full-suite modes; clang carries its own ASan runtime
-# - gcc, libasan: the second compiler for the native harness only
-#   (CC=gcc; too old for the evaluator's musttail)
+# - clang, lld: the compiler (the evaluator needs musttail, which this
+#   image's gcc predates) and the LTO linker for the full-suite modes;
+#   clang carries its own ASan runtime
 # - make: build system
 # - python3-devel: Python headers for extension building
 # - python3-pip: for the tox install below
 # - valgrind: memory error detector
 RUN dnf install -y \
-    gcc \
     clang \
     lld \
     make \
     python3-devel \
     python3-pip \
-    libasan \
     valgrind \
     && dnf clean all
 

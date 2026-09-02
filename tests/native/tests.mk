@@ -14,9 +14,10 @@
 PYTHON ?= python3
 PYTHON_CONFIG ?= $(PYTHON)-config
 
-# Compiler: CC from the environment (make test-native CC=gcc passes it
-# into the container); clang otherwise, since the evaluator needs a
-# compiler with musttail and the container's gcc predates it
+# Compiler: CC from the environment when set (make test-native CC=...
+# passes it into the container); clang otherwise. The harness compiles
+# every koskari/lib source, evaluator included, so CC must support
+# musttail (clang, or GCC 15+); the container ships only clang.
 ifeq ($(origin CC),default)
 CC := clang
 endif
