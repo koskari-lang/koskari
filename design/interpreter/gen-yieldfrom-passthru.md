@@ -8,9 +8,9 @@ into staged implementation specs.
 Companion docs:
 - [../archive/boundary-control-reemit.md](../archive/boundary-control-reemit.md)
   (archived; the implemented boundary model this would extend)
-- [../dispatch-sizing.md](../dispatch-sizing.md) (YIELD_FROM size history)
+- [../archive/dispatch-sizing.md](../archive/dispatch-sizing.md) (YIELD_FROM size history)
 - [evaluator.md](evaluator.md)
-- [../cps-consumer-api.md](../cps-consumer-api.md) (the NEXT/ITER_NEXT
+- [../archive/cps-consumer-api.md](../archive/cps-consumer-api.md) (the NEXT/ITER_NEXT
   resume machinery this proposal's stepping unification lands on; see §10)
 - [stencil-compilation.md](stencil-compilation.md) (why shrinking YIELD_FROM
   matters beyond this opcode)
@@ -233,7 +233,7 @@ current implementation.
 ## 10. Relationship to CPS consumer API and stenciling
 
 The per-delegate-kind stepping this proposal unifies onto NEXT / ITER_NEXT
-machinery is the same stepping [../cps-consumer-api.md](../cps-consumer-api.md)
+machinery is the same stepping [../archive/cps-consumer-api.md](../archive/cps-consumer-api.md)
 formalizes as `KosEvalState_NextResume`: DELIVERED/EXHAUSTED/CONTINUES/ERROR
 handled once, at the entry, instead of once per delegate kind inside
 YIELD_FROM. Landing this proposal on top of that entry rather than the

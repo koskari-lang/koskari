@@ -292,8 +292,12 @@ Present when `flags.timing` is true. Keys are opcode name strings (same as
 `kos_opcode_name`). Values are [timing entries](#timing-entry). Only opcodes
 with at least one execution appear.
 
-Timing is recorded around each `op_*` call in both eval dispatch loops
-(computed goto and switch) via `KOS_TRACE_OP_WRAP` in **eval.c**.
+Under threaded dispatch a handler tail-calls the next and never returns
+between instructions, so a step can be counted but not timed:
+`KOS_TRACE_THREAD_STEP` in `KOS_THREAD_NEXT` (**eval.h**) and at the
+trampoline's thread entry (**eval.c**) records each step with a zero
+duration. The per-opcode counts are exact; the per-opcode times are not
+measured.
 
 ### `opcode_timing_summary`
 
@@ -385,8 +389,9 @@ Each freelist entry has four counters:
 **Eval state sync** — `KOS_TRACE_EVAL_SYNC_BEGIN` / `END` in **eval/eval_state.c**
 and `KosEvalState_FlushLiveRegsToFrame` in **eval.h**.
 
-**Opcode timing** — `KOS_TRACE_OP_WRAP` in **eval.c** dispatch
-(`koskari_eval_dispatch_computed_goto` and `koskari_eval_dispatch_switch`).
+**Opcode counting** — `KOS_TRACE_THREAD_STEP` in `KOS_THREAD_NEXT`
+(**eval.h**) and at `koskari_eval`'s thread entry (**eval.c**); counts
+only, since a threaded step cannot be timed.
 
 **Post-opcode handler timing** — `KOS_TRACE_POST_OP_ENTER` / `EXIT` and
 `KOS_TRACE_POST_OP_WRAP` in **eval.c**.

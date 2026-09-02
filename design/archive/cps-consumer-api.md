@@ -1,14 +1,18 @@
 # Continuation-passing consumer API for Call and Next/Send
 
-Status: partially implemented. The resume slot, the two entry points,
-the delivery point, and the KosMap and KosFilter conversions have
-landed; see "Migration order" for what remains and for the
-prescriptions here that the code did not permit. Sections describing
-the original intent are kept where the reasoning still holds, and are
-marked where it does not. A transport respec was decided 2026-08-29
-after review of the landed state -- see "Transport respec
-(normative)", which supersedes the storage, trampoline, and
-eager-await sections where they conflict.
+Status: archived, implemented 2026-09-02. The entries are
+`KosEvalState_CallResult` and `KosEvalState_NextResume`; a resume and
+an opcode handler share the `KosThreadFn` prototype; the live transit
+is the eval state's pending slot with the frame stack as suspension
+storage; an entry reports its outcome and the calling resume ends in
+`RESULT_ENTRY`, tail-calling the next resume with a settled value or
+threading into an installed callee; a bytecode child's return into a
+resume-carrying parent is a tail call from `op_RETURN`. Of the
+transport respec below, the declared-destination field and node-hosted
+resumes did not land: the resume stays on the frame, and the
+destination is read from it. The operational description is
+[../EVALUATOR.md](../EVALUATOR.md) §8. The text below is the design as
+it evolved, kept for its reasoning.
 
 ## Motivation
 

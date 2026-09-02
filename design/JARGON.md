@@ -141,9 +141,9 @@ its root.
 Filling a prepared frame with runnable work. A callable's install slot
 (`kc_vinstall`) fills the frame `do_frame_prep` set up;
 a generator install (`kos_dyn_gen_install`) re-splices a frozen chain;
-a native program install pushes a code-less frame carrying the
-program's descriptor. "Installed work" is work now runnable on the
-chain, as opposed to work completed synchronously.
+a resume-frame install (`KosResumeFrame_Install`) pushes a code-less
+frame for a resume to be set on. "Installed work" is work now runnable
+on the chain, as opposed to work completed synchronously.
 
 ## layout
 
@@ -151,15 +151,29 @@ The indentation-based surface syntax that the reader converts into
 s-expression forms (`koskari/reader/layouts/`). A layout block is the
 indented body under a form such as `if:`, `try:`, or `define`.
 
-## native program
+## native program (historical)
 
-C code that owns a whole frame on the chain instead of implementing one
-opcode: the frame runs no bytecode, and the evaluator invokes the
-program's handler in place of instruction dispatch, delivering typed
-events (regular invocation, a callee's return, an awaited value, an
-offered exception). Described by a static `KosNativeProgram`
-descriptor. Current programs: apply's non-flattening call, the map
-step, the filter step. Reference: EVALUATOR.md §8.2.
+C code that owned a whole frame on the chain through a static
+`KosNativeProgram` descriptor and a typed-event handler. Replaced by
+resumes (below); the term survives only in archived design notes.
+
+## resume
+
+A `KosThreadFn` set on a codeless frame (`resume_fn`, `resume_state`)
+to receive exactly one delivery: a call's settled result, a callee's
+return, an iteration element, or an awaited value. Invoked with the
+value, or with NULL and an exception set when the operation failed.
+Set through the CPS entries `KosEvalState_CallResult` and
+`KosEvalState_NextResume`; the map and filter steps are built from
+them. Reference: EVALUATOR.md §8.2.
+
+## threaded dispatch
+
+Opcode execution as a chain of guaranteed tail calls: each handler ends
+in a `RESULT_*` macro that tail-calls the handler recorded in the next
+instruction's `KosSlot`, and control returns to `koskari_eval`'s
+trampoline only on a signal. Requires a compiler with musttail (clang,
+or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
 
 ## park (parked exception)
 

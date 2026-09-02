@@ -1,5 +1,11 @@
 # Dispatch function sizing baseline
 
+Archived 2026-09-02: the single inlined dispatch function this analysis
+sized no longer exists. Dispatch is threaded through musttail and every
+handler is its own function, so the hot/cold split and the 64 KiB inline
+budget below are historical. The execution profile and emission n-gram
+sections remain useful as measurements of the workloads.
+
 Internal analysis for the effort to shrink `koskari_eval_dispatch_computed_goto`,
 the single computed-goto dispatch function into which every opcode handler is
 `always_inline`d.  As the opcode set grows, each handler's compiled size is

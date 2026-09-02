@@ -5,9 +5,9 @@ native execution of `.ki` and `.kio` modules, superseding the
 emit-C-and-invoke-a-compiler direction record archived at
 [../archive/native-compiled-modules.md](../archive/native-compiled-modules.md).
 
-**See also:** [threaded-dispatch.md](threaded-dispatch.md) (phase 2 defines
+**See also:** [../archive/threaded-dispatch.md](../archive/threaded-dispatch.md) (phase 2 defines
 the musttail handler form this design compiles ahead of time),
-[../cps-consumer-api.md](../cps-consumer-api.md) (the resume contract a
+[../archive/cps-consumer-api.md](../archive/cps-consumer-api.md) (the resume contract a
 stencil chain's suspension points arm into), [bytecode-finalization.md](bytecode-finalization.md)
 (the finalize pipeline this lowering extends), [../OPCODES.md](../OPCODES.md),
 `tools/opimpl.py`.
@@ -19,7 +19,7 @@ the handler's body as real instructions, with a small set of recorded
 patch sites (holes) where a constant, an operand, or a tail-call target
 needs to be written in. At module finalize -- the same pass that already
 builds the sealed `[code]` block and, under
-[threaded-dispatch.md](threaded-dispatch.md) phase 1, the `KosSlot`
+[../archive/threaded-dispatch.md](../archive/threaded-dispatch.md) phase 1, the `KosSlot`
 dispatch region -- walk the `(op, arg)` stream and copy each instruction's
 stencil into a growing per-module buffer, patching in its real operand and
 the address of the next instruction's stencil. The result is native code:
@@ -57,7 +57,7 @@ them and does not re-derive them.
 ## Stencil generation
 
 A stencil is produced per opcode handler, at koskari's own build time, from
-the musttail-threaded handler form ([threaded-dispatch.md](threaded-dispatch.md)
+the musttail-threaded handler form ([../archive/threaded-dispatch.md](../archive/threaded-dispatch.md)
 §2, §6): a function of `(KosEvalState *es, KosSlot *cur)` that ends by
 tail-calling the successor slot's handler. Each handler is compiled as its
 own translation unit; the compiled object's relocations against known
@@ -155,7 +155,7 @@ about stenciling changes that failure mode or its severity.
 
 ## Interaction with the CPS consumer API
 
-[../cps-consumer-api.md](../cps-consumer-api.md) already states that a
+[../archive/cps-consumer-api.md](../archive/cps-consumer-api.md) already states that a
 musttail-threaded opcode handler and a `KosResumeFn` share a calling
 convention, and names the boundary explicitly: bytecode's own resume
 becomes one builtin -- push the delivered value, re-enter dispatch at the
@@ -163,7 +163,7 @@ pc -- at which point CALL and the await opcodes go through the same CPS
 entries native code uses.
 
 Stenciling does not add a second resume mechanism. A stencil chain's call
-and await sites are ordinary `KosEvalState_CallResume` / `KosEvalState_NextResume`
+and await sites are ordinary `KosEvalState_CallResult` / `KosEvalState_NextResume`
 invocations, arming the resume on the frame exactly as an interpreted
 handler would; the trampoline never invokes a resume on the native code's
 own C stack any more than it invokes one on the interpreter's, for the
@@ -212,7 +212,7 @@ must still be done here.
 ## MVP scope
 
 1. **Stencil extraction tool.** Compile the musttail handler set (requires
-   [threaded-dispatch.md](threaded-dispatch.md) phase 2 to exist first --
+   [../archive/threaded-dispatch.md](../archive/threaded-dispatch.md) phase 2 to exist first --
    this design has no meaning against phase-1 handlers, which return to a
    loop rather than tail-calling a successor) as individual translation
    units; parse relocations into `(offset, kind)` patch records; emit
@@ -234,7 +234,7 @@ must still be done here.
 This is sequenced strictly after threaded-dispatch phase 2 lands and is
 measured against real handlers, not projected -- phase 2's own performance
 section already warns that a naive tail-call loop is not a foregone win
-over a computed-goto baseline; stenciling is the step that is expected to
+over the threaded-dispatch baseline; stenciling is the step that is expected to
 recover it; that expectation is worth measuring, not assuming.
 
 ## Open questions

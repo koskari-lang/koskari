@@ -10,10 +10,13 @@ proposal covers the intermediary that gets us most of the structure while
 staying on a portable loop, and specifies the seam that lets the tail-call
 form drop in later as a localized change.
 
-**Status:** Design proposal -- not yet implemented. Decided: once phase 2
-implementation begins, musttail support (clang, or GCC 15+) is mandatory
-and the phase-1 loop is retired as a shipped fallback -- see §6.2. Until
-that work starts, the design stays flexible as scoped below.
+**Status:** Archived, implemented 2026-09-02. The landed form skipped
+phase 1's function-pointer loop and went straight to tail-call threading:
+`KosSlot` per pc in the code block, `kos_op_handlers[]`, handlers with the
+`KosThreadFn` prototype `(es, void *arg, PyObject *value)` shared with CPS
+resumes, `RESULT_*` macros as the dispatch seam, and `koskari_eval` as the
+trampoline. The compiler mandate of §6.2 is enforced in `eval.h`. The
+operational description is [../EVALUATOR.md](../EVALUATOR.md).
 
 **See also:** [bytecode-finalization.md](bytecode-finalization.md) (the
 finalize pipeline this lowering hooks into), [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)

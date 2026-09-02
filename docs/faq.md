@@ -28,14 +28,16 @@ The `koskari` entry point is only on your PATH after installing the package.
 Run `make install` (system install) or `pip install -e .` (editable/development
 install). If you used a virtual environment, make sure it is activated.
 
-### Build fails: no C compiler found
+### Build fails: no C compiler found, or "koskari requires a compiler with musttail"
 
-Koskari requires a C compiler to build the native extension. Install one for your
-platform:
+Koskari's evaluator threads opcode dispatch through guaranteed tail calls,
+so the native extension needs clang, or GCC 15 or newer. The build picks
+clang when it is on the PATH; set `CC` to choose explicitly. Install one for
+your platform:
 
-- **Debian/Ubuntu**: `sudo apt install build-essential`
-- **Fedora/RHEL**: `sudo dnf install gcc`
-- **macOS**: `xcode-select --install`
+- **Debian/Ubuntu**: `sudo apt install clang lld`
+- **Fedora/RHEL**: `sudo dnf install clang lld` (or GCC 15+ from a toolset)
+- **macOS**: `xcode-select --install` (Apple clang)
 
 ### `tox: command not found`
 
