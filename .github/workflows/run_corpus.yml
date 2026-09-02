@@ -22,6 +22,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Install clang and lld
+        run: |
+          apt-get update -qq
+          apt-get install -qy --no-install-recommends clang lld
+
       - name: Install tox
         run: python -m pip install --disable-pip-version-check tox tox-uv
 
