@@ -18,8 +18,7 @@
   JUMP: arg = target PC. Unconditional branch.
 */
 KOS_OP_HANDLER(JUMP) {
-  KosEvalState_SET_PC(es, KosOp_ARG(insn));
-  return EVAL_NORMAL();
+  RESULT_JUMP(es, KosOp_ARG(insn));
 }
 
 

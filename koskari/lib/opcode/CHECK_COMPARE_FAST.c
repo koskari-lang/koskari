@@ -35,7 +35,7 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
   } else {
     ops[0] = kos_ns_fast_deref(ns, (size_t) row.a1);
     if (unlikely(! ops[0]))
-      return EVAL_RAISE();
+      RESULT_RAISE();
   }
 
   if (KosCmpSrc_Y_CONST(src)) {
@@ -46,7 +46,7 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
     if (unlikely(! ops[1])) {
       if (! KosCmpSrc_X_CONST(src))
         Py_DECREF(ops[0]);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -59,12 +59,12 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
     Py_DECREF(ops[1]);
 
   if (unlikely(res < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (res == 0)
     KosEvalState_SET_PC(es, row.a3);
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

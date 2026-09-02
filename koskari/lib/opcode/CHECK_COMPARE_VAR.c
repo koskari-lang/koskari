@@ -34,7 +34,7 @@ KOS_OP_HANDLER_COLD(CHECK_COMPARE_VAR) {
     PyObject *name = KosEvalState_CONST(es, row.a1);
     ops[0] = name ? frame_ns_deref(es, name) : NULL;
     if (! ops[0])
-      return EVAL_RAISE();
+      RESULT_RAISE();
   }
 
   if (KosCmpSrc_Y_CONST(src)) {
@@ -45,7 +45,7 @@ KOS_OP_HANDLER_COLD(CHECK_COMPARE_VAR) {
     if (! ops[1]) {
       if (! KosCmpSrc_X_CONST(src))
         Py_DECREF(ops[0]);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -57,12 +57,12 @@ KOS_OP_HANDLER_COLD(CHECK_COMPARE_VAR) {
     Py_DECREF(ops[1]);
 
   if (unlikely(res < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (res == 0)
     KosEvalState_SET_PC(es, row.a3);
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

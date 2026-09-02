@@ -23,7 +23,7 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
 
   PyObject *match = KosEvalState_StackPopRef(es);
   if (! match)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   int ret = 0;
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
@@ -41,7 +41,7 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
     KosEvalState_SET_PC(es, KosOp_ARG(insn));
   }
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

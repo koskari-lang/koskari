@@ -27,22 +27,22 @@ KOS_OP_HANDLER(SWITCH_EQ_CONST) {
 
   PyObject *rhs = KosEvalState_CONST(es, row.a1);
   if (unlikely(! rhs))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *value = KosEvalState_StackPeek(es);
   if (unlikely(! value))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   int res = PyObject_RichCompareBool(value, rhs, Py_EQ);
   if (unlikely(res < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
     KosEvalState_SET_PC(es, row.a0);
   }
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

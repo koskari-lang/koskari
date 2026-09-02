@@ -27,23 +27,23 @@ KOS_OP_HANDLER(CHECK_COMPARE) {
   if (unlikely(count < 2)) {
     PyErr_SetString(PyExc_TypeError,
                     "CHECK_COMPARE requires at least 2 elements");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *const *args = KosEvalState_StackTailPtr(es, count);
   if (unlikely(! args))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   int res = kos_compare_chain((KosCompare) row.a0, args, count);
   KosEvalState_StackDropNoErr(es, count);
 
   if (unlikely(res < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (res == 0)
     KosEvalState_SET_PC(es, row.a2);
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 
