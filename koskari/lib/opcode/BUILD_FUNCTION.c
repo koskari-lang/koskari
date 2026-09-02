@@ -33,28 +33,28 @@ KOS_OP_HANDLER_COLD(BUILD_FUNCTION) {
 
   PyObject *defnames = KosEvalState_CONST(es, row.a0);
   if (unlikely(! defnames))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *annnames = KosEvalState_CONST(es, row.a1);
   if (unlikely(! annnames))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (! PyTuple_CheckExact(defnames) || ! PyTuple_CheckExact(annnames)) {
     PyErr_Format(PyExc_TypeError, "BUILD_FUNCTION names must be tuples,"
                  " not %R and %R", defnames, annnames);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *fspec = KosEvalState_StackPopRef(es);
   if (unlikely(! fspec))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *defaults = NULL;
   if (PyTuple_GET_SIZE(defnames) > 0) {
     defaults = KosEvalState_StackPopTailDictFromNames(es, defnames);
     if (unlikely(! defaults)) {
       Py_DECREF(fspec);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -64,7 +64,7 @@ KOS_OP_HANDLER_COLD(BUILD_FUNCTION) {
     if (unlikely(! annotations)) {
       Py_DECREF(fspec);
       Py_XDECREF(defaults);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -80,15 +80,9 @@ KOS_OP_HANDLER_COLD(BUILD_FUNCTION) {
   Py_XDECREF(defaults);
   Py_XDECREF(annotations);
   if (unlikely(! fn))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  if (unlikely(KosEvalState_StackPushRef(es, fn) < 0)) {
-    Py_DECREF(fn);
-    return EVAL_RAISE();
-  }
-  Py_DECREF(fn);
-
-  return EVAL_NORMAL();
+  RESULT_STEAL(es, fn);
 }
 
 

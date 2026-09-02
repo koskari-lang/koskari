@@ -26,7 +26,7 @@ KOS_OP_HANDLER_COLD(BUILD_CLASS) {
   PyObject *ns = KosEvalState_StackPopRef(es);
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError, "BUILD_CLASS stack underrun (ns)");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   SAYF("BUILD_CLASS: ns=%R", ns);
@@ -35,7 +35,7 @@ KOS_OP_HANDLER_COLD(BUILD_CLASS) {
   if (unlikely(! pos)) {
     Py_DECREF(ns);
     PyErr_SetString(PyExc_RuntimeError, "BUILD_CLASS stack underrun (pos)");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   SAYF("BUILD_CLASS: pos=%R", pos);
@@ -46,7 +46,7 @@ KOS_OP_HANDLER_COLD(BUILD_CLASS) {
     pos = fixed;
     if (unlikely(! pos)) {
       Py_DECREF(ns);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -58,7 +58,7 @@ KOS_OP_HANDLER_COLD(BUILD_CLASS) {
         "OO|O:BUILD_CLASS", &name, &bases, &metaclass))) {
     Py_DECREF(pos);
     Py_DECREF(ns);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   Py_INCREF(name);
   Py_INCREF(bases);
@@ -79,14 +79,11 @@ KOS_OP_HANDLER_COLD(BUILD_CLASS) {
   Py_DECREF(ns);
 
   if (unlikely(! cls))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   SAYF("BUILD_CLASS: cls=%R", cls);
 
-  int res = KosEvalState_StackPushRef(es, cls);
-  Py_DECREF(cls);
-
-  return kos_op_result_from_push_int(res);
+  RESULT_STEAL(es, cls);
 }
 
 

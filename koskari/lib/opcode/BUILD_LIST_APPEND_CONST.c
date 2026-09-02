@@ -25,23 +25,23 @@
 KOS_OP_HANDLER(BUILD_LIST_APPEND_CONST) {
   PyObject *val = KosEvalState_CONST(es, KosOp_ARG(insn));
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, 1);
   if (unlikely(! ptr))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *list = ptr[0];
   if (unlikely(! PyList_Check(list))) {
     PyErr_Format(PyExc_TypeError,
                  "BUILD_LIST_APPEND_CONST requires list, not %R", list);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (unlikely(PyList_Append(list, val) < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

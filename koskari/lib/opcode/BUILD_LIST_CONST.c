@@ -25,13 +25,13 @@
 KOS_OP_HANDLER(BUILD_LIST_CONST) {
   PyObject *seq = KosEvalState_CONST(es, KosOp_ARG(insn));
   if (unlikely(! seq))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *built = PySequence_List(seq);
   if (unlikely(! built))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, built);
+  RESULT_STEAL(es, built);
 }
 
 
