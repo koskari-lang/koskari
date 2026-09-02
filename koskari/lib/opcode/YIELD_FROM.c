@@ -317,7 +317,7 @@ static KosOpResult yield_from_drive_sync_iter(
     KosDynYieldFrom *yf,
     PyObject *delegate,
     uint8_t action,
-    KosOp *insn) {
+    KosSlot *insn) {
 
   (void) insn;
 
@@ -363,7 +363,7 @@ static KosOpResult yield_from_drive_sync_gen(
     KosDynYieldFrom *yf,
     PyObject *delegate,
     uint8_t action,
-    KosOp *insn) {
+    KosSlot *insn) {
 
   (void) insn;
 
@@ -422,7 +422,7 @@ static KosOpResult yield_from_drive_py_async(
     PyObject *delegate,
     uint8_t kind,
     uint8_t action,
-    KosOp *insn) {
+    KosSlot *insn) {
 
   (void) insn;
 
@@ -527,7 +527,7 @@ static KosOpResult yield_from_drive_kos_iter(
     PyObject *delegate,
     KosIterSlots *islots,
     uint8_t action,
-    KosOp *insn) {
+    KosSlot *insn) {
 
   PyObject *yf_send_val = NULL;
 

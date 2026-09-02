@@ -61,10 +61,10 @@ typedef enum KosOpResultKind {
 } KosOpResultKind;
 
 
-typedef struct KosOpResult {
+struct KosOpResult {
   KosOpResultKind kind;
   PyObject *val;  /* strong ref where documented; NULL otherwise */
-} KosOpResult;
+};
 
 
 #define EVAL_NORMAL()           ((KosOpResult){ KOS_RES_NORMAL, NULL })
@@ -174,16 +174,9 @@ typedef enum KosGetNextResult {
 } KosGetNextResult;
 
 
-/**
-   The one prototype every threaded step shares: a CPS resume, and
-   once dispatch is threaded, an opcode handler too. musttail rejects a
-   tail call between functions of different prototypes, so anything a
-   TAILCALL or DISPATCH may reach has exactly this shape. arg is the
-   step's own state -- a resume's state pointer, a handler's
-   instruction -- and value is a delivery, NULL when there is none.
-*/
-typedef KosOpResult (*KosThreadFn)(
-    KosEvalState *es, void *arg, PyObject *value);
+/* KosThreadFn, the one prototype every threaded step shares (a CPS
+   resume, an opcode handler), is defined in bytecode.h beside KosSlot,
+   the instruction record that carries a handler pointer. */
 
 
 /**

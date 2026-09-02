@@ -312,7 +312,7 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
     KosCode *opfuse_code = KosEvalState_CODE(es);                             \
     uint32_t opfuse_pc = KosEvalState_PC(es);                                 \
     KosOp *opfuse_nx = &KosCode_CODE(opfuse_code)[opfuse_pc];                 \
-    if (KosOp_OP(opfuse_nx) == KOS_OP_POP && KosOp_ARG(opfuse_nx) == 1) {     \
+    if (opfuse_nx->op == KOS_OP_POP && opfuse_nx->arg == 1) {                 \
       Py_DECREF(val);                                                         \
       KosEvalState_SET_PC(es, opfuse_pc + 1u);                                \
       return EVAL_NORMAL();                                                   \

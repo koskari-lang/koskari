@@ -511,6 +511,46 @@ static int test_code_instruction_method(void) {
 }
 
 
+static int test_code_slots_resolve_handlers(void) {
+    /*
+      Every instruction's dispatch record carries the instruction's own
+      fields and the handler table entry for its opcode, including the
+      THEEND barrier appended at finalize.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *instr = PyList_New(3);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_CONST, 0));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_POP, 1));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 0));
+
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    TEST_ASSERT_NOT_NULL(code, "create Code");
+
+    uint32_t len = KosCode_CODE_LEN(code);
+    KosOp *ops = KosCode_CODE(code);
+    KosSlot *slots = KosCode_SLOTS(code);
+    TEST_ASSERT_NOT_NULL(slots, "slots region present");
+    TEST_ASSERT(len >= 4, "three instructions plus the THEEND barrier");
+
+    for (uint32_t pc = 0; pc < len; pc++) {
+        TEST_ASSERT_EQ(slots[pc].op, ops[pc].op, "slot op matches code");
+        TEST_ASSERT_EQ(slots[pc].arg, ops[pc].arg, "slot arg matches code");
+        TEST_ASSERT_EQ(slots[pc].cache, ops[pc].cache,
+                       "slot cache matches code");
+        TEST_ASSERT(slots[pc].fn == kos_op_handlers[ops[pc].op],
+                    "slot fn is the handler table entry for its op");
+    }
+    TEST_ASSERT_EQ(slots[len - 1].op, KOS_OP_THEEND, "last slot is THEEND");
+
+    Py_DECREF(code);
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+    return 0;
+}
+
+
 static int test_code_extent_derivation(void) {
     /*
       Test that PUSH_TRY/POP_TRY produces extent and kos_extent_top returns it.
@@ -668,6 +708,7 @@ int run_bytecode_tests(void) {
     RUN_TEST(test_code_var_in_cpool);
     RUN_TEST(test_code_opcode_style);
     RUN_TEST(test_code_instruction_method);
+    RUN_TEST(test_code_slots_resolve_handlers);
     RUN_TEST(test_code_extent_derivation);
     RUN_TEST(test_code_extent_find);
     RUN_TEST(test_code_loc_lookup);

@@ -411,6 +411,7 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
             'extra_bytes',
             'extent_bytes',
             'top_extent_bytes',
+            'slot_bytes',
         )
 
         for field in fields:

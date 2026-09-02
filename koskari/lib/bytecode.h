@@ -267,9 +267,56 @@ typedef struct KosOp {
 } KosOp;
 
 
-#define KosOp_OP(insn)    (((KosOp *) (insn))->op)
-#define KosOp_ARG(insn)   (((KosOp *) (insn))->arg)
-#define KosOp_CACHE(insn) (((KosOp *) (insn))->cache)
+/* === KosSlot: the dispatch record === */
+
+
+/**
+   The one prototype every threaded step shares: a CPS resume, and an
+   opcode handler. musttail rejects a tail call between functions of
+   different prototypes, so anything a TAILCALL or DISPATCH may reach
+   has exactly this shape. arg is the step's own state -- a resume's
+   state pointer, a handler's KosSlot -- and value is a delivery, NULL
+   when there is none.
+*/
+typedef KosOpResult (*KosThreadFn)(
+    KosEvalState *es, void *arg, PyObject *value);
+
+
+/**
+   The per-instruction dispatch record: the instruction's fields
+   decoded once at finalize, beside the handler that executes it,
+   resolved from kos_op_handlers by opcode. One per pc, parallel to
+   the KosOp array and indexed the same way. Written once in the
+   block's writable window before the seal, regenerated on every
+   load, never serialized -- the same contract the cache index has.
+   A handler receives a pointer to its own slot as its arg.
+*/
+typedef struct KosSlot {
+  KosThreadFn fn;   /* kos_op_handlers[op] */
+  uint16_t op;      /* KosOpCode */
+  uint16_t arg;     /* argument value */
+  uint16_t cache;   /* per-site cache slot index, or KOS_CACHE_UNSET */
+} KosSlot;
+
+
+#define KosSlot_FN(slot)    (((KosSlot *) (slot))->fn)
+#define KosSlot_OP(slot)    (((KosSlot *) (slot))->op)
+#define KosSlot_ARG(slot)   (((KosSlot *) (slot))->arg)
+#define KosSlot_CACHE(slot) (((KosSlot *) (slot))->cache)
+
+/* The instruction a handler receives is its KosSlot; these are the
+   handler-facing spellings of the slot accessors. */
+#define KosOp_OP(insn)    KosSlot_OP(insn)
+#define KosOp_ARG(insn)   KosSlot_ARG(insn)
+#define KosOp_CACHE(insn) KosSlot_CACHE(insn)
+
+
+/**
+   Handler table, one entry per opcode in opcodes.incl order (which is
+   also KOS_OP_* enum order). Defined in eval.c, where the handlers
+   are; finalize reads it to resolve each slot's fn.
+*/
+extern const KosThreadFn kos_op_handlers[];
 
 
 /* === KosPosition: position change entry === */
@@ -465,6 +512,7 @@ struct KosCode {
 
   uint32_t code_len;    /* instruction count */
   KosOp *code;          /* instruction array */
+  KosSlot *slots;       /* dispatch records, code_len of them */
 
   uint32_t pos_len;     /* position entry count */
   KosPosition *pos;     /* positions table */
@@ -681,6 +729,9 @@ uint8_t kos_opcode_cache_count(KosOpCode op);
 
 #define KosCode_CODE(c)                         \
   (((KosCode *) c)->code)
+
+#define KosCode_SLOTS(c)                        \
+  (((KosCode *) c)->slots)
 
 #define KosCode_GET_OP(c, i)                    \
   (KosCode_CODE(c)[i].op)

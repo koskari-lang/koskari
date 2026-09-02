@@ -1038,7 +1038,7 @@ static KosOpResult process_raise(KosEvalState *es) {
 */
 static int get_prompt_id_from_insn(
     KosEvalState *es,
-    KosOp *insn,
+    KosSlot *insn,
     uint32_t *out_prompt_id) {
 
   PyObject *cid = KosEvalState_CONST(es, KosOp_ARG(insn));
@@ -1387,7 +1387,7 @@ int KosContext_Traverse(
 /**
    Get the name constant for a VAR_* opcode. Borrowed reference.
 */
-static PyObject *get_name_from_insn(KosEvalState *es, KosOp *insn) {
+static PyObject *get_name_from_insn(KosEvalState *es, KosSlot *insn) {
   return KosEvalState_CONST(es, KosOp_ARG(insn));
 }
 
@@ -1600,7 +1600,7 @@ static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
    by JUMP_FALSE. */
 static int kos_check_nil(
     KosEvalState *es,
-    KosOp *insn) {
+    KosSlot *insn) {
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
@@ -1692,14 +1692,20 @@ static KosOpResult kos_eval_route_delim_return(
 /* The THEEND barrier handler reports the same fault as an off-the-end fetch;
    the reporter is defined below (with the dispatch loop). */
 static void kos_eval_report_pc_bounds_error(KosEvalState *es);
-#define KOS_OP_HANDLER(name) \
-  KOS_OP_INLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
+/* Every handler has the KosThreadFn prototype: insn is the handler's
+   own KosSlot (read through KosOp_ARG / KosOp_CACHE), and the delivery
+   argument is unused by an opcode.  The one shape lets a slot's fn
+   pointer reach any handler, and lets a handler be a musttail target. */
+#define KOS_OP_HANDLER(name)                                            \
+  KOS_OP_INLINE KosOpResult op_##name(                                  \
+      KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
 
 /* Cold variant of KOS_OP_HANDLER: same signature, but kept OUT of the inlined
    dispatch function (the dispatch label calls it instead).  For large,
    rarely-executed opcodes whose body would only bloat the hot loop. */
-#define KOS_OP_HANDLER_COLD(name) \
-  static KOS_NOINLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
+#define KOS_OP_HANDLER_COLD(name)                                       \
+  static KOS_NOINLINE KosOpResult op_##name(                            \
+      KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
 
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)
 
@@ -1735,6 +1741,18 @@ static KosOpResult object_next_step(
 #undef KOS_OP_REQUIRE_NS
 #undef KOS_OP_HANDLER_COLD
 #undef KOS_OP_HANDLER
+
+
+/* The handler table finalize resolves each KosSlot's fn from.  Position
+   is opcodes.incl order, which is also the KOS_OP_* enum order, so no
+   designated initializers are needed.  Taking a hot handler's address
+   gives it an out-of-line copy beside its inlined uses in the dispatch
+   loop; the loop keeps calling the inlined form. */
+#define OP(name, ...) op_##name,
+const KosThreadFn kos_op_handlers[] = {
+  #include "opcodes.incl"
+};
+#undef OP
 
 
 /**
@@ -2898,10 +2916,10 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
     KosCode *_kos_code = KosEvalState_CODE(es);                            \
     uint32_t _kos_pc = KosEvalState_PC(es);                                \
     KOS_EVAL_SAFETYNET_NULLCODE(_kos_code, on_bad);                        \
-    KosOp _kos_insn = KosCode_CODE(_kos_code)[_kos_pc];                    \
+    KosSlot *_kos_insn = &KosCode_SLOTS(_kos_code)[_kos_pc];               \
     SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
-         (unsigned) _kos_pc, kos_opcode_name(_kos_insn.op),                \
-         (unsigned) _kos_insn.arg);                                        \
+         (unsigned) _kos_pc, kos_opcode_name(_kos_insn->op),               \
+         (unsigned) _kos_insn->arg);                                       \
     (es)->acting_pc = _kos_pc;                                             \
     (es)->pc = _kos_pc + 1u;                                               \
     (insn_lvalue) = _kos_insn;                                             \
@@ -2921,7 +2939,7 @@ static inline KosOpResult koskari_eval_dispatch_computed_goto(KosEvalState *es) 
   };
   #undef OP
 
-  KosOp insn;
+  KosSlot *insn;
   KosOpResult op_res;
   uint32_t gil_poll_ops = 0;
   uint64_t gil_poll_last_ns = kos_eval_gil_poll_now_ns();
@@ -3000,16 +3018,16 @@ cg_poll:
   }
 
   KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
-  goto *optable[insn.op];
+  goto *optable[insn->op];
 
   #define OP(name, ...)                                               \
     cg_TARGET_##name:                                                 \
-      KOS_TRACE_OP_WRAP(name, op_res = op_##name(es, &insn));         \
+      KOS_TRACE_OP_WRAP(name, op_res = op_##name(es, insn, NULL));    \
       if (likely(op_res.kind == KOS_RES_NORMAL)) {                    \
         if (unlikely((++gil_poll_ops > KOS_EVAL_GIL_POLL)))           \
           goto cg_poll;                                               \
         KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);     \
-        goto *optable[insn.op];                                       \
+        goto *optable[insn->op];                                      \
       }                                                               \
       goto cg_handle_op_result;
 
@@ -3064,7 +3082,7 @@ cg_have_result:
     if (unlikely(++gil_poll_ops > KOS_EVAL_GIL_POLL))
       goto cg_poll;
     KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
-    goto *optable[insn.op];
+    goto *optable[insn->op];
   }
   if (r.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
   return r;
