@@ -1744,6 +1744,40 @@ static KosOpResult object_next_step(
     PyObject *default_val,
     uint16_t n);
 
+/* The return arms op_RETURN threads through directly (defined with the
+   return machinery below; the trampoline's own fast arm uses the same
+   functions for every other producer of a RETURN signal). */
+static inline int kos_return_is_plain(
+    KosEvalState *es,
+    KosDynNode **out_child,
+    KosDynNode **out_parent);
+KOS_OP_INLINE int kos_return_is_extent_plain(
+    KosEvalState *es,
+    KosDynNode **out_child,
+    KosDynNode **out_parent,
+    KosDynFrame **out_ft);
+KOS_OP_INLINE void kos_eval_resume_clear_if_armed(KosEvalState *es);
+KOS_OP_INLINE KosOpResult eval_ng_plain_return(
+    KosEvalState *es,
+    KosDynNode *child,
+    KosDynNode *parent,
+    PyObject *val);
+KOS_OP_INLINE KosOpResult eval_ng_extent_return(
+    KosEvalState *es,
+    KosDynNode *child,
+    KosDynNode *parent,
+    KosDynFrame *ft,
+    PyObject *val);
+KOS_OP_INLINE int kos_return_is_resume(
+    KosEvalState *es,
+    KosDynNode **out_parent);
+static int kos_return_take_resume(
+    KosEvalState *es,
+    KosDynNode *parent,
+    PyObject *val,
+    KosResumeFn *out_resume,
+    void **out_state);
+
 #include "handlers.incl"
 #undef CURRENT_NS
 #undef KOS_OP_REQUIRE_NS
@@ -2345,7 +2379,7 @@ static inline int kos_return_is_plain(
    leaving KIND, so both fields are tested to keep the post-condition
    identical to the call this replaces.
 */
-static inline void kos_eval_resume_clear_if_armed(KosEvalState *es) {
+KOS_OP_INLINE void kos_eval_resume_clear_if_armed(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (unlikely(KosContext_PY_RESUME_INJECT(ctx)
@@ -2361,7 +2395,7 @@ static inline void kos_eval_resume_clear_if_armed(KosEvalState *es) {
    walk, the flush (frame is freed), and the agen iteration-node check (not
    reachable from a frame whose parent is itself a frame).  val consumed.
 */
-static KosOpResult eval_ng_plain_return(
+KOS_OP_INLINE KosOpResult eval_ng_plain_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -2407,7 +2441,7 @@ static KosOpResult eval_ng_plain_return(
    Any missing fact falls through to the general path, mirroring the
    cache-or-walk split in kos_dyn_resync_after_pop.
 */
-static inline int kos_return_is_extent_plain(
+KOS_OP_INLINE int kos_return_is_extent_plain(
     KosEvalState *es,
     KosDynNode **out_child,
     KosDynNode **out_parent,
@@ -2467,7 +2501,7 @@ static inline int kos_return_is_extent_plain(
    load from the cached back frame and the block restores through the
    freed segment's displaced-slot record.  val consumed.
 */
-static KosOpResult eval_ng_extent_return(
+KOS_OP_INLINE KosOpResult eval_ng_extent_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -2489,6 +2523,79 @@ static KosOpResult eval_ng_extent_return(
     return EVAL_FATAL();
 
   return EVAL_DISPATCH();
+}
+
+
+/**
+   Resume-parent return predicate, for op_RETURN: the returning frame
+   is dyn_top, and its parent is a frame waiting on a resume with no
+   WITH beneath it to run a control-returned hook. Sets out_parent and
+   returns 1 when it holds.
+*/
+KOS_OP_INLINE int kos_return_is_resume(
+    KosEvalState *es,
+    KosDynNode **out_parent) {
+
+  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynNode *parent;
+  KosDynNode *pp;
+
+  if (! child || KosEvalState_DYN_TOP(es) != child)
+    return 0;
+
+  parent = KosDynNode_PARENT(child);
+  if (! parent
+      || ! KosDynNode_IS_FRAME(parent)
+      || ! KosDynFrame_RESUME_FN((KosDynFrame *) parent))
+    return 0;
+
+  pp = KosDynNode_PARENT(parent);
+  if (pp && KosDynNode_IS_WITH(pp))
+    return 0;
+
+  *out_parent = parent;
+  return 1;
+}
+
+
+/**
+   Resume-parent return transition, once kos_return_is_resume holds:
+   with val already settled, pop the returning frame, take the resume
+   pair off the parent (cleared, as the delivery step clears it), and
+   return 1: the caller tail-calls the resume with val, which is
+   exactly what the prologue's delivery step would have done after a
+   stage-and-bounce. Returns 0 when val still needs settling and
+   nothing was touched, so the general return path applies; returns
+   -1 with PyErr set and val released when the classification itself
+   fails or the pop does.
+*/
+static int kos_return_take_resume(
+    KosEvalState *es,
+    KosDynNode *parent,
+    PyObject *val,
+    KosResumeFn *out_resume,
+    void **out_state) {
+
+  switch (KosEval_ResultIsValue(val)) {
+    case 1:
+      break;
+    case 0:
+      return 0;  /* needs settling: the delivery step owns that */
+    default:
+      Py_DECREF(val);
+      return -1;
+  }
+
+  if (kos_dyn_pop_frame(es) < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+
+  *out_resume = (KosResumeFn) KosDynFrame_RESUME_FN((KosDynFrame *) parent);
+  *out_state = KosDynFrame_RESUME_STATE((KosDynFrame *) parent);
+  KosDynFrame_RESUME_FN((KosDynFrame *) parent) = NULL;
+  KosDynFrame_RESUME_STATE((KosDynFrame *) parent) = NULL;
+  return 1;
 }
 
 
@@ -3088,40 +3195,17 @@ pc_bounds_error:
 #endif
 
 handle_result: {
-  /* Fast arm: a plain frame-to-frame return needs none of the machinery
-     below.  Route it straight into the transition and back to
-     threading, skipping the out-of-line apply_kos_op_result call, its
-     switch, and the guard chain it would walk to reach the same
-     eval_ng_plain_return.  Sited here rather than in op_RETURN so every
-     producer of the signal benefits -- POP_PROMPT, the values.c and
-     eval_utils.c termini, and the coro/iter/demand boundary drivers,
-     not just the opcode. */
+  /* The plain-return fast arms live in op_RETURN, which threads
+     straight into the parent when they hold and signals RETURN only
+     when they do not; a RETURN arriving here has either already failed
+     them or comes from another producer (POP_PROMPT, the values.c and
+     eval_utils.c termini, a resume's completion), and takes the
+     general path, whose own plain case is the same transition. */
   KosOpResult ar;
-
-  if (likely(r.kind == KOS_RES_RETURN)) {
-    KosDynNode *child, *parent;
-
-    if (likely(kos_return_is_plain(es, &child, &parent))) {
-      kos_eval_resume_clear_if_armed(es);
-      KOS_TRACE_POST_OP_WRAP(plain_return,
-          ar = eval_ng_plain_return(es, child, parent, r.val));
-      goto have_result;
-    }
-    {
-      KosDynFrame *ft;
-      if (kos_return_is_extent_plain(es, &child, &parent, &ft)) {
-        kos_eval_resume_clear_if_armed(es);
-        KOS_TRACE_POST_OP_WRAP(plain_return,
-            ar = eval_ng_extent_return(es, child, parent, ft, r.val));
-        goto have_result;
-      }
-    }
-  }
 
   KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
   ar = apply_kos_op_result(es, r);
 
-have_result:
   if (ar.kind == KOS_RES_DISPATCH) {
     /* Plain frame-to-frame return: live regs already retargeted, no
        pending PyErr / plan / native handler.  Skip the prologue and go

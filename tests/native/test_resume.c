@@ -208,6 +208,92 @@ static int test_next_resume_delivered_stages_slot(void) {
 }
 
 
+/* === a bytecode child's RETURN delivers into a resume-carrying parent === */
+
+
+static PyObject *resume_test_nspec(void) {
+  PyObject *name = PyUnicode_FromString("test");
+  PyObject *locals = PyTuple_New(0);
+  PyObject *closures = PyTuple_New(0);
+  PyObject *nspec = KosNamespaceSpec_New(name, locals, closures, NULL);
+
+  Py_DECREF(name);
+  Py_DECREF(locals);
+  Py_DECREF(closures);
+  return nspec;
+}
+
+
+static PyObject *resume_test_instr(int op, PyObject *arg) {
+  PyObject *pair = PyTuple_New(2);
+
+  PyTuple_SET_ITEM(pair, 0, PyLong_FromLong(op));
+  Py_INCREF(arg);
+  PyTuple_SET_ITEM(pair, 1, arg);
+  return pair;
+}
+
+
+static int test_return_into_resume_parent(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  /* the parent: a codeless frame waiting on a resume */
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *parent = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(parent, "push codeless parent frame");
+
+  ResumeProbe probe = { 0, 0, 0, NULL };
+  KosDynFrame_RESUME_FN(parent) = (void *) resume_probe;
+  KosDynFrame_RESUME_STATE(parent) = (void *) &probe;
+
+  /* the child: bytecode that returns the constant 42 */
+  PyObject *forty_two = PyLong_FromLong(42);
+  PyObject *one = PyLong_FromLong(1);
+  PyObject *instr = PyList_New(2);
+  PyList_SET_ITEM(instr, 0, resume_test_instr(KOS_OP_CONST, forty_two));
+  PyList_SET_ITEM(instr, 1, resume_test_instr(KOS_OP_RETURN, one));
+  Py_DECREF(one);
+
+  PyObject *nspec = resume_test_nspec();
+  TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+  PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(code, "create child code");
+
+  PyObject *child_ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(child_ns, "create child ns");
+  KosDynFrame *child = kos_dyn_push_frame(&es, (KosCode *) code, child_ns);
+  TEST_ASSERT_NOT_NULL(child, "push bytecode child frame");
+
+  KosEvalState_FreezeToContext(&es);
+
+  /* run: the child returns 42; the parent's resume receives it and
+     hands it back as the eval's result */
+  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+
+  TEST_ASSERT_EQ(probe.calls, 1, "resume fired exactly once");
+  TEST_ASSERT_EQ(probe.seen_null, 0, "with the returned value, not NULL");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_RETURN, "resume's result reaches the caller");
+  TEST_ASSERT_NOT_NULL(ev.val, "a value came back");
+  TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "the child's return value");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_FN(parent),
+                   "the resume was consumed off the parent");
+
+  Py_XDECREF(ev.val);
+  Py_DECREF(forty_two);
+  Py_DECREF(code);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
 /* === kos_prologue_reenter: the trampoline's re-entry === */
 
 
@@ -589,6 +675,7 @@ int run_resume_tests(void) {
   RUN_TEST(test_cg_prologue_delivers_staged_resume);
   RUN_TEST(test_dispatch_stages_into_pending_slot);
   RUN_TEST(test_next_resume_delivered_stages_slot);
+  RUN_TEST(test_return_into_resume_parent);
   RUN_TEST(test_prologue_reenter_idle_proceeds);
   RUN_TEST(test_prologue_reenter_delivers_staged);
   RUN_TEST(test_prologue_reenter_runs_pending_exception);
