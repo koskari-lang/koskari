@@ -319,10 +319,38 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 
 Unify the call and iteration consumer surfaces on continuation
 passing: entries take a resume fn + state pointer, invoked
-trampolined with the CPython value-or-NULL contract; the armed resume
-lives on the frame; eager await interposes once at the delivery
-point. Deletes the typed wake, the phase enums, and the four
-hand-rolled drive epilogues. Fresh branch after native-map merges.
+trampolined with the CPython value-or-NULL contract; the resume set
+on the frame carries the progression; eager await interposes once at
+the delivery point. Deletes the typed wake, the phase enums, and the
+hand-rolled drive epilogues.
+
+**In progress.** Landed: the per-frame resume slot and its delivery
+points, `KosEvalState_CallResume` / `NextResume` /
+`KosResumeFrame_Install` (with `resume == NULL` meaning "behave like an
+ordinary CALL/NEXT opcode"), KosMap and KosFilter converted, eager
+await centralized at the delivery point so a resume only ever sees a
+settled value, demand's settled-value classification, and the BOXED
+call shape retired (`kc_wants_frame == 0` no longer forces a Python
+boundary round-trip for a call the running evaluator can make).
+
+Apply is **not** a conversion target -- its frame-identity guard is
+load-bearing and it must not set a resume on its own frame. Neither
+are the stepper and demandgen adapters, which call `koskari_eval`
+themselves and have no frame to stage on; what they duplicate is the
+drive epilogue, and that is what gets extracted. See the doc's
+"A note on this document's prescriptions".
+
+The demolition pass has landed: nothing installs a native program, so
+`KosNativeProgram`, `KosNativeFrameEvent`, the typed wake,
+`KosNativeHandlerFn` and `KosNativeFrame_Install` are gone, along with
+the frame's `native_prog` slot. Apply's non-flattening path became a
+resume; the stepper's two copies of the truncation check and error
+mapping became one pair of helpers (demandgen keeps its own, being
+the sync surface).
+
+Remaining: bytecode's own resume, the shared boundary with the
+musttail work, and where the trampoline's staging gets tightened --
+today the frame stack is the transit slot for every delivery.
 
 Ref: [cps-consumer-api.md](cps-consumer-api.md).
 

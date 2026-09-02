@@ -172,6 +172,32 @@ steal_fail:
 }
 
 
+/**
+   Classify a value a koskari install or eval reports as settled. A
+   plain value passes through; one that genuinely needs awaiting is
+   eagerly stepped (and denied as a sync violation if it suspends)
+   through the same machinery a plain Python callable's result already
+   takes. KosEval_ResultIsValue is the gate rather than
+   demand_step_python_result's own __await__ probe, so a Defer or a
+   future -- both exempt from ambient await -- passes through as the
+   value it is instead of being stepped.
+
+   Steals value. Returns a new reference, or NULL with PyErr set.
+*/
+static PyObject *demand_finish_koskari_value(PyObject *value) {
+
+  switch (KosEval_ResultIsValue(value)) {
+    case 1:
+      return value;
+    case 0:
+      return demand_step_python_result(value);
+    default:
+      Py_DECREF(value);
+      return NULL;
+  }
+}
+
+
 /* === Demand core (demand_sync_ex) === */
 
 
@@ -349,10 +375,33 @@ static int demand_sync_ex(
         ir = KosEvalState_CallArgs(&es, callable, call_args, kwargs, 0);
       }
 
+      /* The install either filled the root frame (NORMAL/REPROLOGUE,
+         the only outcomes an Expression or a non-yielding Function
+         produces here today) or settled without one. The settled
+         arms are classified rather than relayed: a demand root has no
+         later delivery point, so an unclassified value or a permitted
+         suspension would have nowhere to go. */
       if (ir.kind != KOS_RES_NORMAL && ir.kind != KOS_RES_REPROLOGUE) {
         KosEvalState_FreezeToContext(&es);
         KosContext_Free(ctx);
         ctx = NULL;
+
+        if (ir.kind == KOS_RES_RETURN) {
+          result = demand_finish_koskari_value(ir.val);
+          goto done;
+        }
+
+        if (ir.kind == KOS_RES_AWAIT) {
+          /* koskari_eval has not started; nothing could ever service
+             this suspension. Deny it here, where the in-eval guards
+             would have denied it had it happened one step later. */
+          Py_XDECREF(ir.val);
+          kos_demand_set_sync_violation(
+              "async suspension is not allowed in demand_sync");
+          goto ret_fail;
+        }
+
+        /* RAISE / FATAL: PyErr already set. */
         goto ret_fail;
       }
     }
@@ -381,7 +430,12 @@ static int demand_sync_ex(
 
     switch (ev.kind) {
       case KOS_RES_RETURN:
-        result = ev.val;
+        /* The returned value is classified like any other settled
+           result: a function that returns an awaitable as data gets
+           the same eager-step-or-deny treatment a plain Python
+           callable's result already gets, instead of leaking an
+           unstepped awaitable out of the demand boundary. */
+        result = demand_finish_koskari_value(ev.val);
         break;
 
       case KOS_RES_RAISE:

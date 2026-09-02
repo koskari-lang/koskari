@@ -170,6 +170,7 @@ int run_matcher_tests(void);
 int run_property_tests(void);
 int run_partial_tests(void);
 int run_iter_request_tests(void);
+int run_resume_tests(void);
 
 /* Future units:
 int run_tco_tests(void);

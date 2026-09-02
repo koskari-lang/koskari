@@ -41,6 +41,8 @@ The VM behaviour is the same either way; only the binding lookup differs.
 :license: GNU General Public License v3
 """
 
+from koskari.lib import apply, partial
+
 from tests.compile.specials import SpecialsTestCase
 
 import pytest
@@ -173,5 +175,39 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
         expr, _mod = self.compile_expr(src)
         self.assertEqual(await expr(), [101, 102, 103])
+
+
+    async def test_shift_through_apply_flattening(self):
+        """
+        Capture across a koskari function invoked via apply succeeds --
+        apply pushes no frame of its own to refuse it
+        """
+
+        src = """
+        (begin
+          (define-global f (lambda []
+                              (shift k (call k 1))))
+          (reset (apply f #())))
+        """
+
+        expr, _mod = self.compile_expr(src, apply=apply)
+        self.assertEqual(await expr(), 1)
+
+
+    async def test_shift_through_partial_invocation(self):
+        """
+        Capture across a partial-wrapped koskari function succeeds --
+        partial pushes no frame of its own to refuse it
+        """
+
+        src = """
+        (begin
+          (define-global f (lambda [a]
+                              (shift k (call k (+ a 1)))))
+          (reset (call (partial f 10))))
+        """
+
+        expr, _mod = self.compile_expr(src, partial=partial)
+        self.assertEqual(await expr(), 11)
 
 # The end.

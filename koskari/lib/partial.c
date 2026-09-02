@@ -162,9 +162,9 @@ PyObject *KosPartial_Call(
 
 
 /**
-   Return 1 if inner is a KosCallable that wants a frame (so it can be installed
-   directly into the frame prepared for this partial), 0 otherwise. Delegates to
-   the inner callable's per-instance wants_frame hook when present.
+   Return 1 if inner is a KosCallable that wants a frame, 0 otherwise --
+   the arg-packing choice in kospartial_kos_vinstall: a flattenable
+   inner takes the vector splice, others take the tuple+dict pack.
 */
 static int kospartial_inner_is_flattenable(PyObject *inner) {
 
@@ -175,13 +175,6 @@ static int kospartial_inner_is_flattenable(PyObject *inner) {
     return 0;
 
   return KosCallable_WantsFrame(inner);
-}
-
-
-static int kospartial_wants_frame(PyObject *self) {
-
-  KosPartialObject *p = (KosPartialObject *) self;
-  return kospartial_inner_is_flattenable(p->func);
 }
 
 
@@ -221,7 +214,7 @@ static KosOpResult kospartial_kos_vinstall(
     for (Py_ssize_t i = 0; i < nargs; i++)
       vec[nb + i] = args[i];
 
-    r = KosCallable_Call(es, inner, vec, total, NULL, tail_call);
+    r = KosEvalState_Call(es, inner, vec, total, NULL, tail_call);
     if (vec != small)
       PyMem_Free(vec);
     return r;
@@ -284,8 +277,8 @@ static KosOpResult kospartial_kos_vinstall(
       }
       Py_XDECREF(kwargs);
 
-      r = KosCallable_CallArgs(es, inner, merged_args, merged_kw,
-                               tail_call);
+      r = KosEvalState_CallArgs(es, inner, merged_args, merged_kw,
+                                tail_call);
       Py_DECREF(merged_args);
       Py_XDECREF(merged_kw);
       return r;
@@ -699,7 +692,7 @@ KosEvaluatedTypeObject KosPartialCallableType = {
   .kos_call = {
     .kc_vinstall = kospartial_kos_vinstall,
     .kc_wants_frame = 0,
-    .kc_wants_frame_fn = kospartial_wants_frame,
+    .kc_wants_frame_fn = NULL,
     .kc_pycall = KosPartial_Call,
     .kc_pyvectorcall = NULL,
   },

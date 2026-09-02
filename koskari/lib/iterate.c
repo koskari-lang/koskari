@@ -395,6 +395,11 @@ static PyObject *stepper_finish_exhausted(
 /**
    Complete an __anext__ step: the yielded element wraps in a 1-tuple
    StopIteration so PyErr_SetObject does not unpack args. val consumed.
+
+   Passing a bare value instead, to let CPython defer building the
+   exception instance, was measured and does not help: the await
+   machinery normalizes it downstream, so the instance is built either
+   way.
 */
 static PyObject *stepper_finish_yield(PyObject *val) {
 
@@ -499,6 +504,65 @@ static PyObject *stepper_drive(
     int durable,
     PyObject *send_val,
     PyObject *throw_typ,
+    PyObject *throw_exc);
+
+
+/**
+   A mapped function's StopIteration truncates THIS drive -- never a
+   fabricated None element through the coroutine surface -- but does
+   not close the provider: builtins.map resumes from the next source
+   element, and so does the sync surface, where the StopIteration
+   rides the iteration protocol untouched. A thrown StopIteration
+   (athrow) is not a truncation and propagates.
+
+   :return: 1 when the pending error was a truncation, with *out set
+            to the drive's result; 0 to leave the error to the caller
+*/
+static int stepper_take_truncation(
+    KosIterStepper *st,
+    KosIterSlots *islots,
+    int durable,
+    PyObject **out) {
+
+  if (durable || st->is_throw || ! PyErr_Occurred()
+      || ! PyErr_ExceptionMatches(PyExc_StopIteration))
+    return 0;
+
+  PyErr_Clear();
+  islots->ki_finish(st->provider, 0);
+  iterate_reset_host(islots, &st->host, &st->host_owned);
+  *out = stepper_finish_exhausted(st, NULL, st->is_throw);
+  return 1;
+}
+
+
+/**
+   Map a pending exception onto the async-generator surface: a close
+   that reached its GeneratorExit completes, and a StopIteration
+   escaping into the await machinery would read as a clean return of
+   its value, so the protocol wraps it with the cause preserved.
+*/
+static void stepper_map_pending_error(KosIterStepper *st) {
+
+  if (st->closing && PyErr_Occurred()
+      && PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
+    PyErr_Clear();
+    PyErr_SetNone(PyExc_StopIteration);
+    return;
+  }
+
+  if (PyErr_Occurred() && PyErr_ExceptionMatches(PyExc_StopIteration))
+    _PyErr_FormatFromCause(PyExc_RuntimeError,
+                           "async generator raised StopIteration");
+}
+
+
+static PyObject *stepper_drive(
+    KosIterStepper *st,
+    KosIterSlots *islots,
+    int durable,
+    PyObject *send_val,
+    PyObject *throw_typ,
     PyObject *throw_exc) {
 
   PyObject *hsend = NULL;        /* owned; host eval ingress */
@@ -569,37 +633,17 @@ static PyObject *stepper_drive(
         Py_XDECREF(throw_exc);
         return stepper_finish_exhausted(st, out, st->is_throw);
 
-      case KOS_ITER_ERROR:
+      case KOS_ITER_ERROR: {
+        PyObject *truncated = NULL;
+
         Py_XDECREF(send_val);
         Py_XDECREF(throw_typ);
         Py_XDECREF(throw_exc);
-        if (! durable && ! st->is_throw && PyErr_Occurred()
-            && PyErr_ExceptionMatches(PyExc_StopIteration)) {
-          /* A mapped function's StopIteration truncates THIS drive --
-             never a fabricated None element through the coroutine
-             surface -- but does not close the provider: builtins.map
-             resumes from the next source element, and so does the
-             sync surface, where the StopIteration rides the
-             iteration protocol untouched. A thrown StopIteration
-             (athrow) is not a truncation and propagates. */
-          PyErr_Clear();
-          islots->ki_finish(st->provider, 0);
-          iterate_reset_host(islots, &st->host, &st->host_owned);
-          return stepper_finish_exhausted(st, NULL, st->is_throw);
-        }
-        if (st->closing && PyErr_Occurred()
-            && PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
-          PyErr_Clear();
-          PyErr_SetNone(PyExc_StopIteration);
-        } else if (PyErr_Occurred()
-            && PyErr_ExceptionMatches(PyExc_StopIteration)) {
-          /* StopIteration escaping into the await machinery would
-             read as a clean return of its value: async generator
-             protocol wraps it, cause preserved. */
-          _PyErr_FormatFromCause(PyExc_RuntimeError,
-                                 "async generator raised StopIteration");
-        }
+        if (stepper_take_truncation(st, islots, durable, &truncated))
+          return truncated;
+        stepper_map_pending_error(st);
         return NULL;
+      }
 
       case KOS_ITER_INSTALLED:
         st->drive_mode = 0;
@@ -669,43 +713,30 @@ static PyObject *stepper_drive(
 
       case KOS_RES_RAISE:
       case KOS_RES_FATAL:
-      default:
+      default: {
+        PyObject *truncated = NULL;
+
         st->drive_mode = 0;
-        if (! durable && ! st->is_throw && PyErr_Occurred()
-            && PyErr_ExceptionMatches(PyExc_StopIteration)) {
-          /* Exhaustion surfacing at the host root: the provider's
-             step ended its iteration. Truncation only ends this
-             drive; the provider resumes like builtins.map. A thrown
-             StopIteration (athrow) is not a truncation. */
-          PyErr_Clear();
-          islots->ki_finish(st->provider, 0);
-          iterate_reset_host(islots, &st->host, &st->host_owned);
-          return stepper_finish_exhausted(st, NULL, st->is_throw);
-        }
+        /* Exhaustion surfacing at the host root: the provider's step
+           ended its iteration. */
+        if (stepper_take_truncation(st, islots, durable, &truncated))
+          return truncated;
+
         {
+          /* The teardown runs Python code; fence the surfaced
+             exception across it. */
           PyObject *ftyp, *fval, *ftb;
           PyErr_Fetch(&ftyp, &fval, &ftb);
           islots->ki_finish(st->provider, durable ? 1 : 0);
           iterate_reset_host(islots, &st->host, &st->host_owned);
           PyErr_Restore(ftyp, fval, ftb);
         }
-        if (st->closing && PyErr_Occurred()
-            && PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
-          PyErr_Clear();
-          PyErr_SetNone(PyExc_StopIteration);
-          return NULL;
-        }
-        if (PyErr_Occurred()
-            && PyErr_ExceptionMatches(PyExc_StopIteration)) {
-          /* StopIteration escaping into the await machinery would
-             read as a clean return of its value: async generator
-             protocol wraps it, cause preserved. */
-          _PyErr_FormatFromCause(PyExc_RuntimeError,
-                                 "async generator raised StopIteration");
-        }
+
+        stepper_map_pending_error(st);
         if (! PyErr_Occurred())
           PyErr_SetNone(PyExc_StopAsyncIteration);
         return NULL;
+      }
     }
   }
 }

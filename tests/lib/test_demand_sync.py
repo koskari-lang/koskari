@@ -71,6 +71,52 @@ class TestDemandSyncExpression(unittest.TestCase):
         self.assertEqual(ctx.exception.args, ("demand_call raise test",))
 
 
+    def test_returned_awaitable_is_stepped(self):
+        """
+        an awaitable returned as data is eagerly stepped, not handed back
+        unstepped
+        """
+
+        async def settles():
+            return 7
+
+        code, ns = build_expr(
+            [
+                ["VAR", "coro"],
+                ["RETURN", 1],
+            ],
+            values={"coro": settles()},
+        )
+        expr = make_callable(code, ns)
+        self.assertEqual(demand_call(expr), 7)
+
+
+    def test_returned_awaitable_that_suspends_is_denied(self):
+        """
+        an awaitable returned as data that suspends raises
+        KoskariSyncViolation rather than escaping the demand boundary
+        """
+
+        import asyncio
+
+        async def suspends():
+            await asyncio.sleep(0)
+            return 7
+
+        coro = suspends()
+        code, ns = build_expr(
+            [
+                ["VAR", "coro"],
+                ["RETURN", 1],
+            ],
+            values={"coro": coro},
+        )
+        expr = make_callable(code, ns)
+        with self.assertRaises(KoskariSyncViolation):
+            demand_call(expr)
+        coro.close()
+
+
     def test_yield_produces_demand_generator(self):
         """
         demand_call(expr) on a yielding expression returns a DemandGenerator

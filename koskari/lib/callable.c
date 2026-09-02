@@ -75,8 +75,12 @@ static KosOpResult callable_promote_normal(KosEvalState *es, KosOpResult r) {
     return r;
   if (KosEvalState_PLAN(es))
     return EVAL_REPROLOGUE();
+  /* An install that left a resume on the frame rather than bytecode
+     must go through the prologue, which is where it is picked up.
+     NORMAL here would resume instruction dispatch on a frame that has
+     no code. */
   if (KosEvalState_FRAME(es)
-      && KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)))
+      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)))
     return EVAL_REPROLOGUE();
   return EVAL_NORMAL();
 }
@@ -207,31 +211,6 @@ KosOpResult KosCallable_CallNoArgs(KosEvalState *es,
   }
   return callable_promote_normal(
       es, slots->kc_vinstall(es, callable, NULL, 0, NULL, tail_call));
-}
-
-
-/* === KosCallShape === */
-
-
-PyObject *KosCallShape_PyCallOne(KosCallShape *shape, PyObject *arg) {
-
-  if (shape->cs_kind == KOS_CALL_SHAPE_PLAIN)
-    return PyObject_CallOneArg(shape->cs_callable, arg);
-
-  if (shape->cs_slots->kc_pyvectorcall)
-    return shape->cs_slots->kc_pyvectorcall(
-        shape->cs_callable, &arg, 1, NULL);
-
-  {
-    PyObject *args = PyTuple_Pack(1, arg);
-    PyObject *result;
-
-    if (! args)
-      return NULL;
-    result = shape->cs_slots->kc_pycall(shape->cs_callable, args, NULL);
-    Py_DECREF(args);
-    return result;
-  }
 }
 
 

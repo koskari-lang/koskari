@@ -279,17 +279,27 @@ struct KosDynNode {
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
       uint32_t frame_flags;
-      /* Native program descriptor (const KosNativeProgram *, see
-         eval.h); void * to avoid the include-order constraint of
-         naming KosOpResult here. NULL for ordinary bytecode frames. */
-      void *native_prog;
-      /* The native program's own state (borrowed; meaningful only to
-         native_handler, which guarantees its lifetime spans the
-         frame's). Never read outside the handler's own dispatch. */
-      void *native_state;
+      /* A caller-owned one-frame cache (KosDynFrame **) this frame
+         parks itself into when the return path frees it; meaningful
+         only while KOS_FRAME_PARK_TO_CACHE is set, which
+         KosNativeFrame_ReturnPark alone does. */
+      void *park_cache;
+      /* CPS consumer resume (see eval.h, KosResumeFn): the trampoline
+         entry to invoke on the next value staged to this frame, and
+         the state it receives. void * to avoid the include-order
+         constraint of naming KosOpResult here. Set and cleared
+         together; NULL means nothing is set. */
+      void *resume_fn;
+      void *resume_state;
+      /* Borrowed static string naming the resume's installer, used
+         only to name the frame in a capture-refusal message. Set by
+         KosResumeFrame_Install and lives for the frame's occupancy
+         (cleared at free, park, and tail reset), so it may be non-NULL
+         while resume_fn is momentarily NULL between deliveries. */
+      const char *resume_name;
       /* Owning KosFunction (strong) when this frame participates in the
          per-function frame cache; NULL opts out (clones, placeholder,
-         native-handler, and generator frames never set it).  Released --
+         code-less, and generator frames never set it).  Released --
          Py_CLEAR mandatory -- at free (after the park attempt) and at
          tail reuse. */
       PyObject *fn;
@@ -2389,7 +2399,6 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
-#define KosDynFrame_NATIVE_STATE(f) (((KosDynNode *)(f))->u.frame.native_state)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
 #define KosDynFrame_ACTING_PC(f)  (((KosDynNode *)(f))->u.frame.acting_pc)
 #define KosDynNode_STACK(n)       (((KosDynNode *)(n))->stack)
@@ -2399,21 +2408,21 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KOS_FRAME_DEMAND          (1u << 0)  /* frame is a demand-sync root */
-#define KOS_FRAME_OWNS_NATIVE_STATE (1u << 1) /* native_state came from
-                                                 np_clone_state; free
-                                                 releases it through
-                                                 np_free_state */
-#define KOS_FRAME_PARK_TO_CACHE   (1u << 2)  /* completing native frame;
-                                                native_state is the
+#define KOS_FRAME_PARK_TO_CACHE   (1u << 2)  /* a completing code-less
+                                                frame: park_cache is the
                                                 holder's cache slot
                                                 (KosDynFrame **) and free
                                                 offers the frame there
                                                 (kos_dynframe_park_inert).
-                                                Armed only by
+                                                Set only by
                                                 KosNativeFrame_ReturnPark */
-#define KosDynFrame_NATIVE_PROG(f)  (((KosDynNode *)(f))->u.frame.native_prog)
+#define KosDynFrame_PARK_CACHE(f) (((KosDynNode *)(f))->u.frame.park_cache)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
+
+#define KosDynFrame_RESUME_FN(f)    (((KosDynNode *)(f))->u.frame.resume_fn)
+#define KosDynFrame_RESUME_STATE(f) (((KosDynNode *)(f))->u.frame.resume_state)
+#define KosDynFrame_RESUME_NAME(f)  (((KosDynNode *)(f))->u.frame.resume_name)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
 #define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)

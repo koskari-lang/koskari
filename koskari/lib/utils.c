@@ -140,81 +140,11 @@ static int kos_apply_build_args_tuple(
 
 
 /**
-   Native handler for apply (non-flattening path). Stack has [fn, seq_args, kwds]
-   (kwds may be Py_None). Pops them, PyObject_Call, then pops the apply frame,
-   pushes result onto parent stack, and push_or_await. The apply frame has
-   code=NULL so we must detach it before continuing; otherwise the eval loop
-   would segfault in prepare_dispatch.
+   Shared apply install: fn/arglist/kwds already extracted (borrowed).
+   apply wants no frame of its own (see KosApplyType) -- fn's own Call
+   handles frame prep and tail reuse, and delivers straight to the
+   real caller, since apply never occupies anything in between.
 */
-static KosOpResult apply_native_handler(
-    KosEvalState *es,
-    KosNativeFrameEvent ev,
-    PyObject *delivered_value);
-
-
-/* Apply's state is its frame stack; a capture needs nothing copied. */
-static int apply_clone_state(void *state, void **out) {
-
-  (void) state;
-  *out = NULL;
-  return 0;
-}
-
-
-static const KosNativeProgram kos_apply_program = {
-  .np_name = "apply",
-  .np_handler = apply_native_handler,
-  .np_clone_state = apply_clone_state,
-  .np_free_state = NULL,
-};
-
-
-static KosOpResult apply_native_handler(
-    KosEvalState *es,
-    KosNativeFrameEvent ev,
-    PyObject *delivered_value) {
-
-  if (ev == KOS_NFRAME_EXCEPTION)
-    /* Nothing to intercept: decline and let the walk pop the frame. */
-    return EVAL_RAISE();
-
-  if (unlikely(ev != KOS_NFRAME_ITERATE)) {
-    Py_XDECREF(delivered_value);
-    PyErr_SetString(
-      PyExc_RuntimeError,
-      "apply native handler: unexpected resume delivery");
-    return EVAL_RAISE();
-  }
-
-  PyObject *kwds = KosEvalState_StackPopRef(es);
-  PyObject *seq_args = KosEvalState_StackPopRef(es);
-  PyObject *fn = KosEvalState_StackPopRef(es);
-  if (! fn || ! seq_args) {
-    Py_XDECREF(kwds);
-    Py_XDECREF(seq_args);
-    Py_XDECREF(fn);
-    return EVAL_RAISE();
-  }
-  if (kwds == Py_None)
-    kwds = NULL;
-
-  KosDynFrame_NATIVE_PROG(KosEvalState_FRAME(es)) = NULL;
-  PyObject *result = PyObject_Call(fn, seq_args, kwds);
-  Py_DECREF(fn);
-  Py_DECREF(seq_args);
-  Py_XDECREF(kwds);
-  if (! result)
-    return EVAL_RAISE();
-
-  /* Complete through the eval loop's return machinery, which owns
-     every delivery terminus -- a tail apply's reused frame can be
-     the context root, where a direct parent-frame delivery has
-     nowhere to land. */
-  return EVAL_RETURN(result);
-}
-
-
-/** Shared apply install: fn/arglist/kwds already extracted (borrowed). */
 static KosOpResult kos_apply_install_core(
     KosEvalState *es,
     PyObject *fn,
@@ -223,6 +153,7 @@ static KosOpResult kos_apply_install_core(
     int tail_call) {
 
   PyObject *seq_args = NULL;
+  KosOpResult r;
 
   if (kos_apply_build_args_tuple(arglist, &seq_args) < 0)
     return EVAL_RAISE();
@@ -236,55 +167,9 @@ static KosOpResult kos_apply_install_core(
     return EVAL_RAISE();
   }
 
-  /* Flattening: delegate to inner callable's install through the
-     central tuple-to-vector spread. Some installs complete by
-     delivering a VALUE instead of filling the prepped frame -- a
-     generator function's AsyncGenerator, partial's or demand's
-     non-flattenable results -- which would leave apply's code-less
-     frame current for instruction dispatch. Detect that (same frame,
-     still no code, no program) and complete the frame with the
-     delivered value. */
-  {
-    KosCallSlots *fn_slots;
-    if (KosCallable_CheckSlots(fn, &fn_slots)) {
-      KosDynFrame *apply_frame = KosEvalState_FRAME(es);
-      KosOpResult r = KosCallable_CallArgsSlots(es, fn_slots, fn,
-                                                seq_args, kwds, tail_call);
-      Py_DECREF(seq_args);
-
-      if (r.kind == KOS_RES_NORMAL
-          && KosEvalState_FRAME(es) == apply_frame
-          && ! KosDynFrame_CODE(apply_frame)
-          && ! KosDynFrame_NATIVE_PROG(apply_frame)) {
-        /* Complete through the eval loop's return machinery, which
-           owns every delivery terminus -- a tail apply's reused
-           frame can be the context root, where a direct parent-frame
-           delivery has nowhere to land. */
-        PyObject *value = KosEvalState_StackPopRef(es);
-        if (! value)
-          return EVAL_RAISE();
-        return EVAL_RETURN(value);
-      }
-      return r;
-    }
-  }
-
-  /* Non-flattening: configure frame with native handler, fn, seq_args, kwds */
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  KosDynFrame_NATIVE_PROG(frame) = (void *) &kos_apply_program;
-
-  if (KosEvalState_StackPushRef(es, fn) < 0
-      || KosEvalState_StackPushRef(es, seq_args) < 0) {
-    Py_DECREF(seq_args);
-    return EVAL_RAISE();
-  }
-  PyObject *kwds_push = kwds ? kwds : Py_None;
-  Py_INCREF(kwds_push);
-  if (KosEvalState_StackPushRef(es, kwds_push) < 0) {
-    Py_DECREF(kwds_push);
-    return EVAL_RAISE();
-  }
-  return EVAL_NORMAL();
+  r = KosEvalState_CallArgs(es, fn, seq_args, kwds, tail_call);
+  Py_DECREF(seq_args);
+  return r;
 }
 
 
@@ -355,7 +240,7 @@ static KosEvaluatedTypeObject KosApplyType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_apply,
-    .kc_wants_frame = 1,
+    .kc_wants_frame = 0,
     .kc_wants_frame_fn = NULL,
     .kc_pycall = apply_call,
     .kc_pyvectorcall = NULL,
