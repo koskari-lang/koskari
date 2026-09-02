@@ -79,6 +79,7 @@ typedef struct KosOpResult {
 
 
 #include "dynchain.h"
+#include "hints.h"
 #include "tracing.h"
 
 
@@ -174,6 +175,18 @@ typedef enum KosGetNextResult {
 
 
 /**
+   The one prototype every threaded step shares: a CPS resume, and
+   once dispatch is threaded, an opcode handler too. musttail rejects a
+   tail call between functions of different prototypes, so anything a
+   TAILCALL or DISPATCH may reach has exactly this shape. arg is the
+   step's own state -- a resume's state pointer, a handler's
+   instruction -- and value is a delivery, NULL when there is none.
+*/
+typedef KosOpResult (*KosThreadFn)(
+    KosEvalState *es, void *arg, PyObject *value);
+
+
+/**
    A per-frame CPS resume: the callback a consumer sets on a frame via
    KosEvalState_CallResume / KosEvalState_NextResume to receive exactly
    one settled delivery -- a call's result, a callee frame's return, a
@@ -193,8 +206,72 @@ typedef enum KosGetNextResult {
    CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT, or
    EVAL_REPROLOGUE.
 */
-typedef KosOpResult (*KosResumeFn)(
-    KosEvalState *es, void *state, PyObject *value);
+typedef KosThreadFn KosResumeFn;
+
+
+/* === Threaded control transfer === */
+
+
+/**
+   KOS_MUSTTAIL_ENABLED selects the threaded bodies of TAILCALL and
+   DISPATCH, in which every step reaches the next by a guaranteed tail
+   call. Off: the trampoline bodies, which are today's call and
+   stage-and-bounce. Hardcoded until the dispatch loop can accept a
+   threaded chain.
+*/
+#define KOS_MUSTTAIL_ENABLED 0
+
+#if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
+# define KOS_MUSTTAIL __attribute__((musttail))
+#else
+# define KOS_MUSTTAIL
+#endif
+
+
+/**
+   TAILCALL(fn, es, arg, value): hand control to fn, a KosThreadFn, as
+   the calling function's last act. One bounded hop: the trampoline
+   body is a plain call, so a chain of TAILCALLs whose length depends
+   on data grows the C stack in that mode -- use DISPATCH for those.
+   Any Py_DECREF the caller owes runs before this, never after; the
+   threaded body discards the caller's frame.
+*/
+#if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
+# define TAILCALL(fn, es, arg, value) \
+  KOS_MUSTTAIL return (fn)((es), (arg), (value))
+#else
+# define TAILCALL(fn, es, arg, value) \
+  return (fn)((es), (arg), (value))
+#endif
+
+
+/**
+   DISPATCH(fn, es, arg, value): deliver value to fn, a KosThreadFn,
+   with constant C stack however many times the chain runs. The
+   trampoline body stages the delivery the way KosEvalState_CallResume
+   does today -- fn and arg become the current frame's resume, value
+   (an owned reference, or NULL for a cold start with nothing staged)
+   goes onto the frame's own stack -- and returns EVAL_REPROLOGUE so
+   the prologue's delivery step invokes fn. The threaded body is the
+   same tail call TAILCALL makes. Caller must have a current frame.
+*/
+#if KOS_MUSTTAIL_ENABLED && KOS_HAVE_MUSTTAIL
+# define DISPATCH(fn, es, arg, value) \
+  KOS_MUSTTAIL return (fn)((es), (arg), (value))
+#else
+# define DISPATCH(fn, es, arg, value)                                   \
+  do {                                                                  \
+    KosEvalState *kos_dsp_es_ = (es);                                   \
+    KosDynFrame *kos_dsp_frame_ = KosEvalState_FRAME(kos_dsp_es_);      \
+    PyObject *kos_dsp_val_ = (value);                                   \
+    if (kos_dsp_val_                                                    \
+        && KosEvalState_StackPUSH(kos_dsp_es_, kos_dsp_val_) < 0)       \
+      return EVAL_RAISE();                                              \
+    KosDynFrame_RESUME_FN(kos_dsp_frame_) = (void *) (fn);              \
+    KosDynFrame_RESUME_STATE(kos_dsp_frame_) = (void *) (arg);          \
+    return EVAL_REPROLOGUE();                                           \
+  } while (0)
+#endif
 
 
 /**
