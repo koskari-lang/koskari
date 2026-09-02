@@ -110,7 +110,7 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_FAST_STAR) {
   Py_DECREF(callable);
   Py_DECREF(pos);
   Py_XDECREF(kwd);
-  return res;
+  RESULT_RELAY(es, res);
 }
 
 

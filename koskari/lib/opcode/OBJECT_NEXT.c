@@ -169,7 +169,7 @@ KOS_OP_HANDLER_COLD(OBJECT_NEXT) {
     RESULT_RAISE();
   }
 
-  return object_next_step(es, iter, default_val, n);
+  RESULT_RELAY(es, object_next_step(es, iter, default_val, n));
 }
 
 

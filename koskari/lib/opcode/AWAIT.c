@@ -37,7 +37,7 @@ KOS_OP_HANDLER(AWAIT) {
   if (unlikely(! val))
     RESULT_RAISE();
 
-  return kos_await_dispatch(es, val);
+  RESULT_RELAY(es, kos_await_dispatch(es, val));
 }
 
 

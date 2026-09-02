@@ -76,7 +76,7 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_ATTR_NAMES) {
                         KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
                         | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED);
   }
-  return r;
+  RESULT_RELAY(es, r);
 }
 
 

@@ -51,7 +51,7 @@ KOS_OP_HANDLER(BREAK) {
                    : EVAL_NORMAL();
     if (kr.kind == KOS_RES_RAISE)
       Py_DECREF(result);
-    return kr;
+    RESULT_RELAY(es, kr);
   }
 }
 

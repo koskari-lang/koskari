@@ -159,7 +159,7 @@ KOS_OP_HANDLER_COLD(CALL_ATTR_STAR) {
   Py_DECREF(resolved);
   Py_DECREF(args_for_call);
   Py_XDECREF(kwd);
-  return res;
+  RESULT_RELAY(es, res);
 }
 
 

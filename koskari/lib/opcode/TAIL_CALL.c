@@ -31,10 +31,9 @@ KOS_OP_HANDLER(TAIL_CALL) {
 
   /* Prologue only: the whole window (callable included) is borrowed;
      the core's tail subpath binds before the frame reset drops it. */
-  return kos_call_invoke(es, ptr[0], NULL, n ? ptr + 1 : NULL,
-                         (Py_ssize_t) n, NULL,
-                         KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE
-                         | KOS_CALL_TAIL);
+  RESULT_RELAY(es, kos_call_invoke(
+      es, ptr[0], NULL, n ? ptr + 1 : NULL, (Py_ssize_t) n, NULL,
+      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE | KOS_CALL_TAIL));
 }
 
 

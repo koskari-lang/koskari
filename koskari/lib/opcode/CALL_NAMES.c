@@ -53,7 +53,7 @@ KOS_OP_HANDLER_COLD(CALL_NAMES) {
                                   KOS_CALL_ARGV_WINDOW
                                   | KOS_CALL_WINDOW_CALLABLE);
   Py_DECREF(names);
-  return r;
+  RESULT_RELAY(es, r);
 }
 
 

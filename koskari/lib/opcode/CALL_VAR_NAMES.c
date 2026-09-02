@@ -59,8 +59,9 @@ KOS_OP_HANDLER_COLD(CALL_VAR_NAMES) {
     }
   }
 
-  return kos_call_invoke(es, callable, NULL, argv, npos, names,
-                         KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED);
+  RESULT_RELAY(es, kos_call_invoke(
+      es, callable, NULL, argv, npos, names,
+      KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED));
 }
 
 

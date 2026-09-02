@@ -101,7 +101,7 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
     SAYF("[POP_SHIFT] invocation prompt %u: delivering to paired delim %p",
          (unsigned) KosDynNode_NODE_ID((KosDynNode *) prompt),
          (void *) pair);
-    return kos_eval_route_delim_return(es, pair, result);
+    RESULT_RELAY(es, kos_eval_route_delim_return(es, pair, result));
   }
 
   /* Live reset: the prompt recorded its region's closing pc when

@@ -66,7 +66,7 @@ KOS_OP_HANDLER_COLD(POP_PROMPT) {
 
     if (KosDynDelim_RETURN_FRAME(ret_delim) != NULL
         && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1) {
-      return kos_eval_route_delim_return(es, ret_delim, val);
+      RESULT_RELAY(es, kos_eval_route_delim_return(es, ret_delim, val));
     }
 
     if (KosEvalState_CurrentNode(es) == (KosDynNode *) ret_delim) {

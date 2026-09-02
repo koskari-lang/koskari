@@ -53,7 +53,7 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_NAMES) {
                                             NULL, NULL);
 
   KosStackSteal_Free(&steal);
-  return res;
+  RESULT_RELAY(es, res);
 }
 
 

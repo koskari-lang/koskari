@@ -68,7 +68,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
                                   KOS_CALL_ARGV_WINDOW
                                   | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
-  return r;
+  RESULT_RELAY(es, r);
 }
 
 
