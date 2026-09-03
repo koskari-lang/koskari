@@ -67,11 +67,11 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
   }
 
   KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) with_node);
-  if (wr.kind == KOS_RES_AWAIT) {
-    uint32_t same_pc = KosEvalState_ACTING_PC(es);
-    KosEvalState_SET_PC(es, same_pc);
+  /* AWAIT: __enter__ returned an awaitable and the node stays
+     provisional; the revive binds the settled value
+     (kos_dyn_complete_pending_enter) and continues into the body. */
+  if (wr.kind == KOS_RES_AWAIT)
     return wr;
-  }
 
   if (wr.kind == KOS_RES_RAISE) {
     kos_dyn_pop_with(es, with_node);

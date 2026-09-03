@@ -867,33 +867,22 @@ KosOpResult kos_dynnode_on_control_returned(
 
   int r = 0;
   /* Iteration-node yield/return uses eval dispatch_iter_node_event /
-     kos_dyn_deliver_* instead of this hook. */
-  /* When node is a frame, check if parent is WITH in pending phase. */
-  if (KosDynNode_IS_FRAME(node)) {
-    KosDynNode *parent = KosDynNode_PARENT(node);
-    if (parent && KosDynNode_IS_WITH(parent)) {
-      if (KosDynWith_EXIT_PENDING((KosDynWith *) parent))
-        r = kos_dyn_with_on_control_returned(es, (KosDynWith *) parent, 1);
-      else if (KosDynWith_ENTER_PENDING((KosDynWith *) parent))
-        r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) parent);
-    }
-  } else {
-    switch (KosDynNode_KIND(node)) {
-      case KOS_DYN_WIND:
-        r = kos_dyn_wind_on_control_returned(es, (KosDynWind *) node);
-        break;
-      case KOS_DYN_WITH:
-        /* An installed __enter__/__exit__ frame has already popped by the
-           time we get here, so the WITH node itself is current; the frame
-           branch above only sees the await-resume shape. */
-        if (KosDynWith_EXIT_PENDING((KosDynWith *) node))
-          r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node, 1);
-        else if (KosDynWith_ENTER_PENDING((KosDynWith *) node))
-          r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) node);
-        break;
-      default:
-        break;
-    }
+     kos_dyn_deliver_* instead of this hook. A frame node has no hook
+     work: the installed __enter__/__exit__/thunk frame has already
+     popped by the time the hook runs, so the WITH or WIND node itself
+     is current. */
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_WIND:
+      r = kos_dyn_wind_on_control_returned(es, (KosDynWind *) node);
+      break;
+    case KOS_DYN_WITH:
+      if (KosDynWith_EXIT_PENDING((KosDynWith *) node))
+        r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node, 1);
+      else if (KosDynWith_ENTER_PENDING((KosDynWith *) node))
+        r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) node);
+      break;
+    default:
+      break;
   }
   return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
 }
@@ -957,6 +946,21 @@ int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node) {
   if (! n)
     return 0;
   return kos_dyn_with_on_control_returned(es, (KosDynWith *) n, do_pop_node);
+}
+
+
+/**
+   Resume control after an awaited __enter__ settles: the awaited value
+   sits on the frame stack and dyn_top is the provisional WITH node
+   (the awaitable installed no frame). Binds the value and clears the
+   pending phase. Callers: eval loop at await revive.
+*/
+int kos_dyn_complete_pending_enter(KosEvalState *es) {
+  KosDynNode *top = KosEvalState_DYN_TOP(es);
+  if (! top || ! KosDynNode_IS_WITH(top)
+      || ! KosDynWith_ENTER_PENDING((KosDynWith *) top))
+    return 0;
+  return kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) top);
 }
 
 

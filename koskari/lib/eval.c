@@ -524,6 +524,8 @@ static KosOpResult revive_await(
   if (owned)
     Py_DECREF(to_push);
   {
+    if (kos_dyn_complete_pending_enter(es) < 0)
+      return EVAL_RAISE();
     if (kos_dyn_complete_pending_exit(es, 1) < 0)
       return EVAL_RAISE();
   }
@@ -1843,7 +1845,7 @@ KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value) {
 
   {
     KosOpResult pr = KosEvalState_PushOrAwait(es, value);
-    if (pr.kind == KOS_RES_NORMAL)
+    if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_DISPATCH)
       return EVAL_REPROLOGUE();
     return pr;
   }
@@ -2401,17 +2403,12 @@ KOS_OP_INLINE KosOpResult eval_ng_plain_return(
   if (KosEvalState_StackPUSH(es, val) < 0)
     return EVAL_FATAL();
 
-  /* Control-returned hook fast-exit, inlined: parent (now dyn_top) is a
-     FRAME; only a WITH directly beneath it can demand the hook.  On this
-     path no PyErr is set, no plan is armed, and parent has no native
-     handler (checked by the case-1 guard), so the dispatch loop can
-     resume fetching directly — no prologue re-entry. */
-  {
-    KosDynNode *pp = KosDynNode_PARENT(parent);
-    if (likely(! pp || ! KosDynNode_IS_WITH(pp)))
-      return EVAL_DISPATCH();
-  }
-  return kos_eval_post_opcode_control_returned_after_hook(es);
+  /* No control-returned hook: parent (now dyn_top) is a frame, and a
+     WITH beneath it is parent's own extent, pending or not, whose hook
+     runs when parent itself returns. No PyErr is set, no plan is armed,
+     and parent has no resume (the case-1 guard), so the trampoline can
+     thread directly -- no prologue re-entry. */
+  return EVAL_DISPATCH();
 }
 
 
@@ -2703,22 +2700,41 @@ static inline KosOpResult eval_event_return_ng(
 
 
 /**
+   The signal that ends a control-returned delivery. The hook left a
+   plain bytecode frame current with nothing staged, no error, and no
+   plan armed: DISPATCH, so the trampoline threads from es->pc without
+   a prologue pass. Anything else (a value staged for a resume, a
+   codeless frame, a plan) is the prologue's to deliver.
+*/
+static inline KosOpResult kos_eval_control_returned_done(KosEvalState *es) {
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+
+  if (likely(frame
+             && KosDynFrame_CODE(frame)
+             && ! KosDynFrame_RESUME_FN(frame)
+             && ! KosEvalState_PENDING_VALUE(es)
+             && ! KosEvalState_PLAN(es)
+             && ! PyErr_Occurred()))
+    return EVAL_DISPATCH();
+  return EVAL_REPROLOGUE();
+}
+
+
+/**
    Run WIND/WITH control hook after a CONTROL_RETURNED delivery.
 
-   Inline early exit: a FRAME node only has hook work when its parent is a
-   WITH in a pending await phase.  Any other frame-topped chain — the
-   dominant plain-return case — skips the dispatch (and its trace wrap)
-   entirely.  Mirrors the first branch of kos_dynnode_on_control_returned.
+   Inline early exit: a frame-topped chain has no hook work. The hook
+   belongs to the WITH or WIND node that is current once its installed
+   callee (an __enter__, an __exit__, a thunk) has popped; a frame whose
+   parent is a pending WITH is that callee itself, and a return into it
+   from its own callees must leave the pending phase alone.
 */
 static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
     KosEvalState *es) {
 
   KosDynNode *node = KosEvalState_CurrentNode(es);
-  if (likely(node && KosDynNode_IS_FRAME(node))) {
-    KosDynNode *parent = KosDynNode_PARENT(node);
-    if (likely(! parent || ! KosDynNode_IS_WITH(parent)))
-      return EVAL_REPROLOGUE();
-  }
+  if (likely(! node || KosDynNode_IS_FRAME(node)))
+    return kos_eval_control_returned_done(es);
 
   KosOpResult r;
   KOS_TRACE_POST_OP_WRAP(control_returned,
@@ -2728,7 +2744,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
     KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
     return rs;
   }
-  return EVAL_REPROLOGUE();
+  return kos_eval_control_returned_done(es);
 }
 
 
