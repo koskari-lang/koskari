@@ -34,6 +34,7 @@ a type with neither protocol is a TypeError.
 
 import asyncio
 
+from koskari.lib import KosPartial as partial
 from tests.compile.specials import SpecialsTestCase
 
 import pytest
@@ -107,6 +108,29 @@ class DescriptorManager:
 
 class NoProtocol:
     pass
+
+
+PARTIAL_CALLS = []
+
+
+def partial_enter():
+    PARTIAL_CALLS.append("enter")
+    return "partial-enter"
+
+
+def partial_exit(typ, val, tb):
+    PARTIAL_CALLS.append(("exit", typ))
+    return False
+
+
+class PartialManager:
+    """
+    The protocol methods are Koskari partials over Python functions: a
+    Koskari callable that completes in place without installing a frame
+    """
+
+    __enter__ = partial(partial_enter)
+    __exit__ = partial(partial_exit)
 
 
 class TestWithHookShapes(SpecialsTestCase):
@@ -282,6 +306,29 @@ class TestWithHookShapes(SpecialsTestCase):
         with self.assertRaises(TypeError) as caught:
             await expr()
         self.assertIn("context manager protocol", str(caught.exception))
+
+
+    async def test_partial_manager_completes_in_place(self):
+        """
+        A Koskari callable that returns without a frame of its own has
+        completed: the binding and the exit verdict are its results,
+        not a pending call
+        """
+
+        PARTIAL_CALLS.clear()
+        expr, _ = self.compile_expr("(with [c ctx] #(c 7))",
+                                    ctx=PartialManager())
+        self.assertEqual(await expr(), ("partial-enter", 7))
+        self.assertEqual(PARTIAL_CALLS, ["enter", ("exit", None)])
+
+
+    async def test_partial_manager_exception(self):
+        PARTIAL_CALLS.clear()
+        expr, _ = self.compile_expr("(with [c ctx] (boom))",
+                                    ctx=PartialManager(), boom=boom)
+        with self.assertRaises(Boom):
+            await expr()
+        self.assertEqual(PARTIAL_CALLS, ["enter", ("exit", Boom)])
 
 
     async def test_python_async_manager_binding(self):

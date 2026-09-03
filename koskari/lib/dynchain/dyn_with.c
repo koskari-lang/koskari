@@ -218,50 +218,6 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Push WITH as DYN_TOP with ENTERED=1 after sync __enter__.
-*/
-KosDynWith *kos_dyn_push_with(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    uint8_t self_bind,
-    PyObject *name,
-    uint32_t resume_pc,
-    uint8_t shot) {
-
-  // CONTEXT: dirty, touches context directly
-  KosDynWith *node = kos_dyn_with_allocate(
-      KosEvalState_DYN_TOP(es), mgr, enter, exit, self_bind, name,
-      resume_pc, shot);
-  if (! node)
-    return NULL;
-
-  KosDynWith_ENTERED(node) = 1;
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
-    kos_dynwith_free(node);
-    return NULL;
-  }
-  return node;
-}
-
-
-KosDynWith *kos_dyn_push_dyn_with(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    uint8_t self_bind,
-    PyObject *name,
-    uint32_t resume_pc) {
-
-  return kos_dyn_push_with(
-      es, mgr, enter, exit, self_bind, name, resume_pc,
-      KOS_DYN_WITH_SHOT_MULTI);
-}
-
-
-/**
    Push provisional node before async __enter__ completes (PENDING_ENTER_AWAIT).
 */
 KosDynWith *kos_dyn_push_with_provisional(
@@ -287,21 +243,6 @@ KosDynWith *kos_dyn_push_with_provisional(
     return NULL;
   }
   return node;
-}
-
-
-KosDynWith *kos_dyn_push_dyn_with_provisional(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    uint8_t self_bind,
-    PyObject *name,
-    uint32_t resume_pc) {
-
-  return kos_dyn_push_with_provisional(
-      es, mgr, enter, exit, self_bind, name, resume_pc,
-      KOS_DYN_WITH_SHOT_MULTI);
 }
 
 
@@ -460,11 +401,7 @@ static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
   }
 
   PyObject *enter_fn = KosDynWith_ENTER(node);
-
-  /* A KosCallable does not run here: its install configures a frame that
-     the dispatch loop enters once we hand control back, so nothing has
-     been pushed and the completion below must not run. */
-  const int installs_frame = KosCallable_Check(enter_fn);
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
 
   /* A plain function resolved on the type is called with the manager as
      its receiver; anything else was bound at resolution. */
@@ -474,7 +411,11 @@ static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
   if (kr.kind == KOS_RES_RAISE) {
     return EVAL_RAISE();
   }
-  if (kr.kind != KOS_RES_NORMAL || installs_frame) {
+  /* A callee whose frame is now current has not run: the dispatch loop
+     enters it once we hand control back, nothing has been pushed, and
+     the completion below must not run. A callable that completed in
+     place, KosCallable or not, has pushed its value. */
+  if (kr.kind != KOS_RES_NORMAL || KosEvalState_FRAME(es) != caller) {
     /* __enter__ has not returned: it suspended, or its frame is installed
        and pending. Leave the node in PENDING_ENTER_AWAIT for
        kos_dynnode_on_control_returned, which binds the result when the
@@ -555,7 +496,7 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
   }
 
   PyObject *exit_fn = KosDynWith_EXIT(node);
-  const int installs_frame = KosCallable_Check(exit_fn);
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
   PyObject *typ = NULL;
   PyObject *val = NULL;
   PyObject *tb = NULL;
@@ -592,9 +533,9 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
     return EVAL_RAISE();
   }
 
-  if (kr.kind != KOS_RES_NORMAL || installs_frame) {
-    /* __exit__ has not returned: suspended, or its frame is installed and
-       pending. The node keeps the exception triple and stays on the
+  if (kr.kind != KOS_RES_NORMAL || KosEvalState_FRAME(es) != caller) {
+    /* __exit__ has not returned: suspended, or its frame is installed
+       and current. The node keeps the exception triple and stays on the
        chain; kos_dynnode_on_control_returned merges the result and pops
        it once the call actually returns. */
     KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;

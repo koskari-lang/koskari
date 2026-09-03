@@ -1953,7 +1953,7 @@ KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value) {
 
   {
     KosOpResult pr = KosEvalState_PushOrAwait(es, value);
-    if (pr.kind == KOS_RES_NORMAL || pr.kind == KOS_RES_DISPATCH)
+    if (pr.kind == KOS_RES_NORMAL)
       return EVAL_REPROLOGUE();
     return pr;
   }
@@ -2330,7 +2330,6 @@ static KosOpResult eval_event_yield(
     PyObject *val) {
 
   KosEvalState_FlushLiveRegsToFrame(es);
-  KosEvalState_MarkDeadAfterYield(es);
 
   SAYF("[eval] post_opcode KOS_RES_YIELD -> freeze gen=%p dyn_top=%p\n",
        (void *) gen, (void *) KosEvalState_CurrentNode(es));
@@ -2353,6 +2352,10 @@ static KosOpResult eval_event_yield(
       return dr;
     }
   }
+  /* Only a yield that stops the evaluator leaves the context not
+     running; a delivered yield keeps threading, and the context stays
+     RUNNING so KosContext_Traverse keeps visiting the live state. */
+  KosEvalState_MarkDeadAfterYield(es);
   KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
   return EVAL_YIELD(val);
 }

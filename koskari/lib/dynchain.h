@@ -1649,7 +1649,7 @@ int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
 
 
 /**
-   Push a with (context manager) extent onto the dynamic chain after sync
+   Push a provisional WITH node (phase PENDING_ENTER_AWAIT) before calling
    enter. :c:member:`shot` is KOS_DYN_WITH_SHOT_MULTI or
    KOS_DYN_WITH_SHOT_SINGLE_ACTIVE. self_bind carries KOS_WITH_SELF_ENTER
    and KOS_WITH_SELF_EXIT for the protocol methods that were resolved on
@@ -1657,35 +1657,6 @@ int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
    argument; the others are already bound or need no receiver.
 
    :return: new KosDynWith node, or NULL on error
-*/
-KosDynWith *kos_dyn_push_with(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    uint8_t self_bind,
-    PyObject *name,
-    uint32_t resume_pc,
-    uint8_t shot);
-
-
-/**
-   Push a dyn-with (multi-shot) extent; same as kos_dyn_push_with with
-   KOS_DYN_WITH_SHOT_MULTI.
-*/
-KosDynWith *kos_dyn_push_dyn_with(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    uint8_t self_bind,
-    PyObject *name,
-    uint32_t resume_pc);
-
-
-/**
-   Push a provisional WITH node (phase PENDING_ENTER_AWAIT) before calling
-   enter. :c:member:`shot` selects multi vs single-shot caps.
 */
 KosDynWith *kos_dyn_push_with_provisional(
     KosEvalState *es,
@@ -1696,20 +1667,6 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *name,
     uint32_t resume_pc,
     uint8_t shot);
-
-
-/**
-   Push provisional dyn-with; same as kos_dyn_push_with_provisional with
-   KOS_DYN_WITH_SHOT_MULTI.
-*/
-KosDynWith *kos_dyn_push_dyn_with_provisional(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    uint8_t self_bind,
-    PyObject *name,
-    uint32_t resume_pc);
 
 
 /**
@@ -2459,14 +2416,6 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 #define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
-#define KosDynGen_HOST_TOP(n)     (((KosDynNode *)(n))->u.gen.host_top)
-#define KosDynGen_HOST_FRAME(n)   (((KosDynNode *)(n))->u.gen.host_frame)
-#define KosDynGen_HOST_BLOCK(n)   (((KosDynNode *)(n))->u.gen.host_block)
-#define KosDynGen_HOST_NS(n)      (((KosDynNode *)(n))->u.gen.host_ns)
-#define KosDynGen_FROZEN_HEAD(n)  (((KosDynNode *)(n))->u.gen.frozen_head)
-#define KosDynGen_FROZEN_FRAME(n) (((KosDynNode *)(n))->u.gen.frozen_frame)
-#define KosDynGen_FROZEN_BLOCK(n) (((KosDynNode *)(n))->u.gen.frozen_block)
-#define KosDynGen_FROZEN_NS(n)    (((KosDynNode *)(n))->u.gen.frozen_ns)
 #define KosDynGen_HOST_TOP(n)     (((KosDynNode *)(n))->u.gen.host_top)
 #define KosDynGen_HOST_FRAME(n)   (((KosDynNode *)(n))->u.gen.host_frame)
 #define KosDynGen_HOST_BLOCK(n)   (((KosDynNode *)(n))->u.gen.host_block)

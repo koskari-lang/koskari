@@ -56,8 +56,9 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
   PyObject *name_obj = get_name_from_insn(es, insn);
   Py_XINCREF(name_obj);
 
-  KosDynWith *with_node = kos_dyn_push_dyn_with_provisional(
-      es, mgr, enter, exit, self_bind, name_obj, resume_pc);
+  KosDynWith *with_node = kos_dyn_push_with_provisional(
+      es, mgr, enter, exit, self_bind, name_obj, resume_pc,
+      KOS_DYN_WITH_SHOT_MULTI);
   if (! with_node) {
     Py_DECREF(name_obj);
     Py_DECREF(exit);
