@@ -45,6 +45,7 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
 static int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
+static void kos_dyn_restamp_spliced_prefix(KosEvalState *es);
 
 static void kos_dyn_resync_apply(
     KosEvalState *es,

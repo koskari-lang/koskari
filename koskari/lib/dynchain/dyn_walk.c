@@ -49,9 +49,14 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
   saved_parent = KosDynNode_PARENT(gen);
   KosDynNode_PARENT(gen) = NULL;
 
-  /* 2. Remove ctx's active node and store it in GEN */
+  /* 2. Remove ctx's active node and store it in GEN, with the live
+     registers the next install of this head applies directly. */
   ctx_active = KosEvalState_DYN_TOP(es);
   KosDynGen_ACTIVE(gen) = ctx_active;
+  KosDynGen_FROZEN_HEAD(gen) = ctx_active;
+  KosDynGen_FROZEN_FRAME(gen) = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynGen_FROZEN_BLOCK(gen) = KosEvalState_BLOCK(es);
+  KosDynGen_FROZEN_NS(gen) = KosEvalState_NAMESPACE(es);
 
   /* The frozen span leaves the live chain; its segments' unwind-cache
      back links cannot survive the detach. */
@@ -62,9 +67,20 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
     SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
   SAY("(end)");
 
-  /* 3. Put GEN's old parent onto ctx's active */
+  /* 3. Put GEN's old parent onto ctx's active. The consumer below the
+     GEN has not run since the install recorded its registers, so they
+     are restored as recorded when the GEN still sits where it was
+     installed; anything else rebuilds from the chain. */
   KosEvalState_DYN_TOP(es) = saved_parent;
-  kos_dyn_resync_chain(es);
+  if (saved_parent && saved_parent == KosDynGen_HOST_TOP(gen)
+      && KosDynGen_HOST_FRAME(gen)) {
+    kos_dyn_resync_apply(es, (KosDynFrame *) KosDynGen_HOST_FRAME(gen),
+                         KosDynGen_HOST_BLOCK(gen),
+                         KosDynGen_HOST_NS(gen), 1);
+  } else {
+    kos_dyn_resync_chain(es);
+  }
+  KosDynGen_HOST_TOP(gen) = NULL;
 
   owner = KosDynGen_OWNER(gen);
   if (owner && KosPyAsyncGen_Check(owner))

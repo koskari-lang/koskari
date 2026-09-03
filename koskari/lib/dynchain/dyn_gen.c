@@ -137,6 +137,19 @@ KosDynGen *kos_dyn_find_gen(KosEvalState *es) {
 
 
 /**
+   Record the consumer's live registers on gen before it is spliced in,
+   so the freeze can restore them without a chain rebuild. Valid while
+   the GEN's parent is still the node recorded as host_top.
+*/
+static void kos_dyn_gen_record_host(KosEvalState *es, KosDynGen *gen) {
+  KosDynGen_HOST_TOP(gen) = KosEvalState_DYN_TOP(es);
+  KosDynGen_HOST_FRAME(gen) = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynGen_HOST_BLOCK(gen) = KosEvalState_BLOCK(es);
+  KosDynGen_HOST_NS(gen) = KosEvalState_NAMESPACE(es);
+}
+
+
+/**
    Resume generator: graft GEN under ctx, swap in frozen active chain, push
    None. Callers: eval when entering generator body from consumer.
 */
@@ -191,6 +204,9 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
     return -1;
   }
 
+  /* The consumer's registers, restored at the next freeze. */
+  kos_dyn_gen_record_host(es, gen);
+
   /* 1. GEN's parent = current ctx's active node */
   KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
   /* 2. Incref GEN */
@@ -200,7 +216,19 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
    * is already intact (e.g. YIELD_FROM -> FRAME -> GEN). Overwriting
    * would sever links when active is not a direct child of gen. */
   KosDynGen_ACTIVE(gen) = NULL;
-  kos_dyn_commit_dyn_top(es, active);
+  if (KosDynGen_FROZEN_HEAD(gen) == active && KosDynGen_FROZEN_FRAME(gen)) {
+    /* The registers the freeze recorded for this very head: apply them
+       and restamp the spliced span's unwind caches, which the freeze
+       cleared. Same outcome as the rebuild without its find walk. */
+    KosEvalState_DYN_TOP(es) = active;
+    kos_dyn_resync_apply(es, (KosDynFrame *) KosDynGen_FROZEN_FRAME(gen),
+                         KosDynGen_FROZEN_BLOCK(gen),
+                         KosDynGen_FROZEN_NS(gen), 1);
+    kos_dyn_restamp_spliced_prefix(es);
+  } else {
+    kos_dyn_commit_dyn_top(es, active);
+  }
+  KosDynGen_FROZEN_HEAD(gen) = NULL;
   /* GEN is now live on the chain: keep its owner (KPAG) alive while running. */
   kos_dyngen_keepalive_acquire(gen);
 
@@ -272,6 +300,9 @@ int kos_dyn_gen_install_bootstrap(
                     "kos_dyn_gen_install_bootstrap: GEN not on source chain");
     return -1;
   }
+
+  /* The consumer's registers, restored at the first freeze. */
+  kos_dyn_gen_record_host(es, gen);
 
   KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
   /* The GEN's chain-membership reference transfers from src to es along with

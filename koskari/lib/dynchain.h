@@ -413,6 +413,20 @@ struct KosDynNode {
       PyObject *owner;     /* owning generator object (borrowed) or NULL */
       struct KosDynNode *active; /* suspended frame when released; NULL when running */
       uintptr_t refcount;  /* reference count; init 1; release decrements; free when 0 */
+      /* Register snapshots for the flattened step cycle, all borrowed.
+         The host set is the consumer's live registers taken at install,
+         restored at freeze while the GEN's parent is still host_top. The
+         frozen set is the generator's live registers taken at freeze,
+         applied at install while active is still frozen_head. A guard
+         mismatch falls back to the chain rebuild. */
+      struct KosDynNode *host_top;
+      struct KosDynNode *host_frame;
+      KosSegment **host_block;
+      PyObject *host_ns;
+      struct KosDynNode *frozen_head;
+      struct KosDynNode *frozen_frame;
+      KosSegment **frozen_block;
+      PyObject *frozen_ns;
     } gen;
     struct {
       KosIterRequest req;    /* the stepped object and in-flight mode */
@@ -2417,6 +2431,22 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 #define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
+#define KosDynGen_HOST_TOP(n)     (((KosDynNode *)(n))->u.gen.host_top)
+#define KosDynGen_HOST_FRAME(n)   (((KosDynNode *)(n))->u.gen.host_frame)
+#define KosDynGen_HOST_BLOCK(n)   (((KosDynNode *)(n))->u.gen.host_block)
+#define KosDynGen_HOST_NS(n)      (((KosDynNode *)(n))->u.gen.host_ns)
+#define KosDynGen_FROZEN_HEAD(n)  (((KosDynNode *)(n))->u.gen.frozen_head)
+#define KosDynGen_FROZEN_FRAME(n) (((KosDynNode *)(n))->u.gen.frozen_frame)
+#define KosDynGen_FROZEN_BLOCK(n) (((KosDynNode *)(n))->u.gen.frozen_block)
+#define KosDynGen_FROZEN_NS(n)    (((KosDynNode *)(n))->u.gen.frozen_ns)
+#define KosDynGen_HOST_TOP(n)     (((KosDynNode *)(n))->u.gen.host_top)
+#define KosDynGen_HOST_FRAME(n)   (((KosDynNode *)(n))->u.gen.host_frame)
+#define KosDynGen_HOST_BLOCK(n)   (((KosDynNode *)(n))->u.gen.host_block)
+#define KosDynGen_HOST_NS(n)      (((KosDynNode *)(n))->u.gen.host_ns)
+#define KosDynGen_FROZEN_HEAD(n)  (((KosDynNode *)(n))->u.gen.frozen_head)
+#define KosDynGen_FROZEN_FRAME(n) (((KosDynNode *)(n))->u.gen.frozen_frame)
+#define KosDynGen_FROZEN_BLOCK(n) (((KosDynNode *)(n))->u.gen.frozen_block)
+#define KosDynGen_FROZEN_NS(n)    (((KosDynNode *)(n))->u.gen.frozen_ns)
 /** a GEN with a parent is flattened: its yields deliver to a consumer
     on this chain; a GEN at the chain root surfaces them to an adapter */
 #define KosDynGen_IS_FLATTENED(n) (KosDynNode_PARENT(n) != NULL)
