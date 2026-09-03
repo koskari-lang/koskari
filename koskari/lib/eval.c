@@ -1711,14 +1711,14 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
    pointer reach any handler, and lets a handler be a musttail target.
    Each handler is its own function, reached only through its slot. */
 #define KOS_OP_HANDLER(name)                                            \
-  static KosOpResult op_##name(                                         \
+  static KOS_PRESERVE_NONE KosOpResult op_##name(                                         \
       KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
 
 /* The cold variant names a large, rarely-run opcode; under threaded
    dispatch every handler is out of line, so it differs only in the
    explicit noinline. */
 #define KOS_OP_HANDLER_COLD(name)                                       \
-  static KOS_NOINLINE KosOpResult op_##name(                            \
+  static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult op_##name(                            \
       KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
 
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)

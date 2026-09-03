@@ -67,6 +67,22 @@
 #endif
 
 
+/* Calling convention for threaded steps (clang 19+): the function
+   preserves no registers for its caller and takes its arguments in
+   the registers a normal callee would have to save. A step never
+   returns into a frame that wants registers kept, and the trampoline
+   is the one plain caller, so the tail chain sheds every register
+   spill. Empty where the attribute is unknown. */
+#if defined(__has_attribute)
+# if __has_attribute(preserve_none)
+#  define KOS_PRESERVE_NONE __attribute__((preserve_none))
+# endif
+#endif
+#ifndef KOS_PRESERVE_NONE
+# define KOS_PRESERVE_NONE
+#endif
+
+
 /* Internal-invariant safety net. Distinct from user-input validation: these
    guards catch koskari's own state-machine bugs. Off by default -- past
    assembly the evaluator trusts its own state. Build with

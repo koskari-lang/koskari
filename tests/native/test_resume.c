@@ -43,7 +43,7 @@ typedef struct {
 } ResumeProbe;
 
 
-static KosOpResult resume_probe(
+static KOS_PRESERVE_NONE KosOpResult resume_probe(
     KosEvalState *es, void *state, PyObject *value) {
 
   (void) es;

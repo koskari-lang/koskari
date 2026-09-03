@@ -35,6 +35,7 @@
 
 #include <Python.h>
 #include <stdint.h>
+#include "hints.h"
 
 
 /* === Opcode style enum === */
@@ -278,7 +279,7 @@ typedef struct KosOp {
    state pointer, a handler's KosSlot -- and value is a delivery, NULL
    when there is none.
 */
-typedef KosOpResult (*KosThreadFn)(
+typedef KosOpResult (KOS_PRESERVE_NONE *KosThreadFn)(
     KosEvalState *es, void *arg, PyObject *value);
 
 

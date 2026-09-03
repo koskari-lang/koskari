@@ -79,11 +79,11 @@ typedef struct {
    resume function pointer is itself the state. */
 
 
-static KOS_NOINLINE KosOpResult filter_resume_do_fetch(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
     KosEvalState *es, void *state, PyObject *value);
-static KOS_NOINLINE KosOpResult filter_resume_do_invoke(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
     KosEvalState *es, void *state, PyObject *element);
-static KOS_NOINLINE KosOpResult filter_resume_after_verdict(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
     KosEvalState *es, void *state, PyObject *value);
 
 
@@ -105,7 +105,7 @@ static KOS_NOINLINE KosOpResult filter_resume_after_verdict(
    declines (the consumer's iteration node owns the conversion,
    StopIteration truncation parity included).
 */
-static KOS_NOINLINE KosOpResult filter_resume_do_fetch(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
     KosEvalState *es, void *state, PyObject *value) {
 
   KosFilterObject *f = (KosFilterObject *) state;
@@ -142,7 +142,7 @@ static KOS_NOINLINE KosOpResult filter_resume_do_fetch(
    the element held on the filter until its verdict settles. element
    is consumed.
 */
-static KOS_NOINLINE KosOpResult filter_resume_do_invoke(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
     KosEvalState *es, void *state, PyObject *element) {
 
   KosFilterObject *f = (KosFilterObject *) state;
@@ -186,7 +186,7 @@ static KOS_NOINLINE KosOpResult filter_resume_do_invoke(
    VERDICT: a true verdict completes the step with the held element, a
    false one releases it and fetches again. value is consumed.
 */
-static KOS_NOINLINE KosOpResult filter_resume_after_verdict(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
     KosEvalState *es, void *state, PyObject *value) {
 
   KosFilterObject *f = (KosFilterObject *) state;

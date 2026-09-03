@@ -72,7 +72,7 @@ typedef struct {
    The invoke completed. The value is settled by contract, so the step
    completes with it directly. value is consumed.
 */
-static KOS_NOINLINE KosOpResult map_resume_after_result(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
     KosEvalState *es, void *state, PyObject *value) {
 
   KosMapObject *m = (KosMapObject *) state;
@@ -94,7 +94,7 @@ static KOS_NOINLINE KosOpResult map_resume_after_result(
    that wants no frame still runs in this evaluator rather than
    through the Python boundary. element is consumed.
 */
-static KOS_NOINLINE KosOpResult map_resume_after_fetch(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
     KosEvalState *es, void *state, PyObject *element) {
 
   KosMapObject *m = (KosMapObject *) state;
@@ -119,7 +119,7 @@ static KOS_NOINLINE KosOpResult map_resume_after_fetch(
    lets the trampoline invoke it, from inside koskari_eval, once the
    frame is actually dispatched. Always invoked with NULL.
 */
-static KOS_NOINLINE KosOpResult map_resume_start_fetch(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
     KosEvalState *es, void *state, PyObject *value) {
 
   KosOpResult r;
