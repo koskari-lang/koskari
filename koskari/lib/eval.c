@@ -126,7 +126,10 @@ static KosOpResult process_raise(KosEvalState *es);
 
 static KosOpResult eval_parent_return_deliver(KosEvalState *es, PyObject *val);
 
-static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val);
+static KosOpResult eval_event_yield(
+    KosEvalState *es,
+    KosDynGen *gen,
+    PyObject *val);
 
 static KosOpResult eval_event_await(KosEvalState *es, PyObject *val);
 
@@ -2295,29 +2298,13 @@ static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
 
 
 /**
-   YIELD half of dispatch_iter_node_event. Caller already ran
-   kos_dyn_unwind_yield.  val is a new ref; ownership is transferred to
-   the consuming iteration node (NEXT / FOREACH / YIELD_FROM).  Every receiver kind
-   hands off and returns control here; the eval loop resumes the receiver in
-   normal mode, which drives any further hop (a YIELD_FROM receiver re-emits the
-   value as its own yield on its next dispatch).
-*/
-
-/**
-   Stage A of post-opcode YIELD: transition walk only (freeze is walk side).
-*/
-static KosOpResult eval_yield_handle_walk_and_freeze(KosEvalState *es) {
-  if (kos_dyn_unwind_yield(es) == KOS_WALK_ERROR)
-    return EVAL_FATAL();
-  return EVAL_NORMAL();
-}
-
-
-/**
    Centralized YIELD handler.  Flushes live registers to the frame, marks the
-   generator dead-after-yield, walks the dynchain, handles optional async-gen
-   node delivery, and tags the suspension event.  val is a new reference;
-   ownership transfers to the caller or consuming iteration node.
+   generator dead-after-yield, freezes gen (the running frame's GEN, from
+   kos_dyn_find_gen), delivers to the consuming iteration node (NEXT /
+   FOREACH / YIELD_FROM) when there is one, and otherwise tags the
+   suspension event.  val is a new reference; ownership transfers to the
+   caller or consuming iteration node.  A YIELD_FROM receiver re-emits
+   the value as its own yield on its next dispatch.
 
    A yield delivered to a flattened consumer ends in kos_eval_delivery_done:
    DISPATCH when the consumer is a plain bytecode frame, which op_YIELD
@@ -2325,16 +2312,19 @@ static KosOpResult eval_yield_handle_walk_and_freeze(KosEvalState *es) {
    consumer waiting on a resume). A yield with no consumer on the chain
    is the terminal EVAL_YIELD the adapters drive.
 */
-static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
+static KosOpResult eval_event_yield(
+    KosEvalState *es,
+    KosDynGen *gen,
+    PyObject *val) {
+
   KosEvalState_FlushLiveRegsToFrame(es);
   KosEvalState_MarkDeadAfterYield(es);
 
-  SAYF("[eval] post_opcode KOS_RES_YIELD -> walk_handle_yield dyn_top=%p\n",
-       (void *) KosEvalState_CurrentNode(es));
-  {
-    KosOpResult ws = eval_yield_handle_walk_and_freeze(es);
-    if (ws.kind != KOS_RES_NORMAL)
-      return ws;
+  SAYF("[eval] post_opcode KOS_RES_YIELD -> freeze gen=%p dyn_top=%p\n",
+       (void *) gen, (void *) KosEvalState_CurrentNode(es));
+  if (kos_dyn_gen_freeze(es, gen) < 0) {
+    Py_DECREF(val);
+    return EVAL_FATAL();
   }
   {
     KosDynNode *node = kos_dyn_find_iter_node(es);
@@ -3011,7 +3001,16 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
 
   case KOS_RES_YIELD: {
     KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, res.val));
+    KosDynGen *gen = kos_dyn_find_gen(es);
+
+    if (unlikely(! gen)) {
+      Py_DECREF(res.val);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "yield outside generator: no generator node on chain");
+      return EVAL_FATAL();
+    }
+    KOS_TRACE_POST_OP_WRAP(event_yield,
+        r = eval_event_yield(es, gen, res.val));
     return r;
   }
 

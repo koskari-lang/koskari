@@ -44,13 +44,15 @@ KOS_OP_HANDLER(YIELD) {
   }
 
   /* A flattened generator delivers to its consumer here and threads
-     into it: the same walk and delivery the trampoline would run for
+     into it: the same freeze and delivery the trampoline would run for
      the YIELD signal, minus the trip. A generator an adapter drives
      surfaces the value as the terminal YIELD. */
-  if (kos_dyn_gen_is_flattened(es)) {
+  KosDynGen *gen = kos_dyn_find_gen(es);
+
+  if (gen && KosDynGen_IS_FLATTENED(gen)) {
     KosOpResult r;
 
-    KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, val));
+    KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, gen, val));
     if (likely(r.kind == KOS_RES_DISPATCH))
       RESULT_NEXT(es);
     if (unlikely(r.kind == KOS_RES_YIELD)) {

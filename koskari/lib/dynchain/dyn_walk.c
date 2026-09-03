@@ -1,10 +1,9 @@
 /* Included by dynchain.c — dyn_walk */
 /* === Dynamic chain walk and pop primitives === */
 
-static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
+int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
   KosDynNode *saved_parent;
   KosDynNode *ctx_active;
-  KosDynNode *node;
   KosDynNode *n;
   PyObject *owner;
 
@@ -29,16 +28,22 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
     return -1;
   }
 
-  for (node = KosEvalState_DYN_TOP(es); node; node = KosDynNode_PARENT(node)) {
-    if (node == (KosDynNode *) gen)
-      break;
+#if KOS_EVAL_SAFETYNET
+  {
+    /* gen came from kos_dyn_find_gen on the running frame, which sits
+       on dyn_top's path; the span from dyn_top must reach it. */
+    KosDynNode *node;
+    for (node = KosEvalState_DYN_TOP(es); node; node = KosDynNode_PARENT(node)) {
+      if (node == (KosDynNode *) gen)
+        break;
+    }
+    if (! node) {
+      PyErr_SetString(PyExc_SystemError,
+                      "kos_dyn_gen_freeze: gen not in chain from dyn_top");
+      return -1;
+    }
   }
-
-  if (! node) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_gen_freeze: gen not in chain from dyn_top");
-    return -1;
-  }
+#endif
 
   /* 1. Record GEN's parent, then remove the GEN->parent link */
   saved_parent = KosDynNode_PARENT(gen);
@@ -83,44 +88,6 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen) {
      generator cleans up here).  No reads of gen/owner follow. */
   kos_dyngen_keepalive_release(gen);
   return 0;
-}
-
-
-/**
-   YIELD unwind walk. See dynchain.h for the contract. Offers handle(YIELD)
-   up from dyn_top; freezes and detaches the GEN node that consumes.
-   Callers: eval.c eval_event_yield.
-*/
-KosWalkStatus kos_dyn_unwind_yield(KosEvalState *es) {
-  KosDynNode *node = KosEvalState_DYN_TOP(es);
-
-  SAYF("[gen] unwind_yield ENTER dyn_top=%p\n", (void *) node);
-  while (node) {
-    KosHandleResult hr = kos_dyn_handle(es, node, KOS_XFER_EVENT_YIELD);
-    SAYF("[gen] unwind_yield node=%p kind=%s hr=%d\n",
-         (void *) node, kos_dynnode_kind_name(KosDynNode_KIND(node)),
-         (int) hr);
-
-    if (hr == KOS_HANDLE_CONSUMED) {
-      if (KosDynNode_IS_GEN(node)) {
-        SAYF("[gen] unwind_yield -> freeze at gen %p\n", (void *) node);
-        int fr = kos_dyn_gen_freeze_and_release(es, (KosDynGen *) node);
-        return (fr < 0) ? KOS_WALK_ERROR : KOS_WALK_OK;
-      }
-      SAY("[gen] unwind_yield -> consumed (non-GEN)");
-      return KOS_WALK_OK;
-    }
-
-    if (hr == KOS_HANDLE_ERROR) {
-      return KOS_WALK_ERROR;
-    }
-
-    node = KosDynNode_PARENT(node);
-  }
-
-  PyErr_SetString(PyExc_RuntimeError,
-                  "yield outside generator: no generator node on chain");
-  return KOS_WALK_ERROR;
 }
 
 

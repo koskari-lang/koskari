@@ -125,14 +125,14 @@ static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
 }
 
 
-int kos_dyn_gen_is_flattened(KosEvalState *es) {
+KosDynGen *kos_dyn_find_gen(KosEvalState *es) {
   KosDynNode *n = (KosDynNode *) KosEvalState_FRAME(es);
 
   for (; n; n = KosDynNode_PARENT(n)) {
     if (KosDynNode_IS_GEN(n))
-      return KosDynNode_PARENT(n) != NULL;
+      return (KosDynGen *) n;
   }
-  return 0;
+  return NULL;
 }
 
 

@@ -1442,13 +1442,12 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 KosDynNode *kos_dyn_find_iter_node(KosEvalState *es);
 
 /**
-   True when the generator the running frame belongs to is flattened:
-   its GEN node has a parent, so a yield is delivered in-eval to a
-   consumer on this chain rather than surfacing to an adapter. Walks
-   outward from the running frame to the nearest GEN; false when there
-   is none.
+   The GEN node of the generator the running frame belongs to: the
+   nearest GEN walking outward from the frame, or NULL when the frame
+   is not in a generator. Callers: op_YIELD and the trampoline's YIELD
+   arm, which then freeze it through kos_dyn_gen_freeze.
 */
-int kos_dyn_gen_is_flattened(KosEvalState *es);
+KosDynGen *kos_dyn_find_gen(KosEvalState *es);
 
 /**
    Deliver a flattened generator's YIELD value to a receiver located by
@@ -1905,17 +1904,19 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
 
 
 /**
-   YIELD unwind walk: from dyn_top upward, offer handle(YIELD) to each node,
-   stopping at the first that CONSUMES (the generator node), whose GEN
-   node is then frozen and detached from the live chain.  A CONSUME by a
-   non-GEN node completes the walk without freezing.
+   Freeze gen at a yield: the span from dyn_top down to gen leaves the
+   live chain into gen's active slot, gen's parent becomes dyn_top, and
+   the live registers retarget to it. A yield is not an unwind: no node
+   between the frame and its GEN acts on it (no finally, no __exit__),
+   so the open extents freeze with the chain and return on the next
+   install. gen is the node kos_dyn_find_gen returned for the running
+   frame.
 
-   Callers: eval.c eval_event_yield (post-opcode YIELD dispatch).
+   Callers: eval.c eval_event_yield.
 
-   :return: KOS_WALK_OK when a node consumed the yield (valid yield),
-     KOS_WALK_ERROR on error or when no generator node was found
+   :return: 0, or -1 with PyErr set
 */
-KosWalkStatus kos_dyn_unwind_yield(KosEvalState *es);
+int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen);
 
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
@@ -2416,6 +2417,9 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 #define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
+/** a GEN with a parent is flattened: its yields deliver to a consumer
+    on this chain; a GEN at the chain root surfaces them to an adapter */
+#define KosDynGen_IS_FLATTENED(n) (KosDynNode_PARENT(n) != NULL)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
