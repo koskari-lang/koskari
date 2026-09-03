@@ -86,10 +86,10 @@ int KosEvalState_SetFrameCodeAndNamespace(
   KosDynFrame_NS(frame) = ns;
   Py_XINCREF(code);
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
-  KosDynFrame_SET_CODE(frame, code);
+  KosDynFrame_CODE(frame) = code;
   if (KosEvalState_FRAME(es) == frame) {
     KosEvalState_NAMESPACE(es) = ns;
-    KosEvalState_TAKE_FRAME_CODE(es, frame);
+    KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
     KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
   }
   return 0;

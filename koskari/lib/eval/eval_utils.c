@@ -325,9 +325,8 @@ KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val) {
 
 #define OP_TRY_FUSE_POP1_AFTER_PUSH(es, val)                                  \
   do {                                                                        \
-    KosCode *opfuse_code = KosEvalState_CODE(es);                             \
     uint32_t opfuse_pc = KosEvalState_PC(es);                                 \
-    KosOp *opfuse_nx = &KosCode_CODE(opfuse_code)[opfuse_pc];                 \
+    KosOp *opfuse_nx = &KosEvalState_OPS(es)[opfuse_pc];                      \
     if (opfuse_nx->op == KOS_OP_POP && opfuse_nx->arg == 1) {                 \
       Py_DECREF(val);                                                         \
       KosEvalState_SET_PC(es, opfuse_pc + 1u);                                \
@@ -444,7 +443,7 @@ static inline int do_frame_prep(
     if (kos_dyn_teardown_to_frame(es, frame) < 0)
       return -1;
     kos_dynframe_reset_for_tail(frame);
-    KosEvalState_SET_CODE(es, NULL);
+    KosEvalState_CODE(es) = NULL;
     KosEvalState_NAMESPACE(es) = NULL;
     KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
     (es)->pc = 0;

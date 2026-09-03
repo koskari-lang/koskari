@@ -255,61 +255,40 @@ typedef enum KosCodeFlag {
 
 
 /**
-   A single bytecode instruction: 6 bytes total.
-   Opcode, argument, and per-site cache index are all 16-bit unsigned
-   integers. ``cache`` is the index of this site's reserved cache slot on the
-   owning KosCode, or KOS_CACHE_UNSET when the site has no slot. The index is
-   assigned at assembly and never serialized; soften emits only (op, arg).
-*/
-typedef struct KosOp {
-  uint16_t op;    /* KosOpCode */
-  uint16_t arg;   /* argument value */
-  uint16_t cache; /* per-site cache slot index, or KOS_CACHE_UNSET */
-} KosOp;
-
-
-/* === KosSlot: the dispatch record === */
-
-
-/**
    The one prototype every threaded step shares: a CPS resume, and an
    opcode handler. musttail rejects a tail call between functions of
    different prototypes, so anything a TAILCALL or DISPATCH may reach
    has exactly this shape. arg is the step's own state -- a resume's
-   state pointer, a handler's KosSlot -- and value is a delivery, NULL
-   when there is none.
+   state pointer, a handler's own KosOp -- and value is a delivery,
+   NULL when there is none.
 */
 typedef KosOpResult (KOS_PRESERVE_NONE *KosThreadFn)(
     KosEvalState *es, void *arg, PyObject *value);
 
 
 /**
-   The per-instruction dispatch record: the instruction's fields
-   decoded once at finalize, beside the handler that executes it,
-   resolved from kos_op_handlers by opcode. One per pc, parallel to
-   the KosOp array and indexed the same way. Written once in the
-   block's writable window before the seal, regenerated on every
-   load, never serialized -- the same contract the cache index has.
-   A handler receives a pointer to its own slot as its arg.
+   A single bytecode instruction: the handler that executes it beside
+   its decoded fields, 16 bytes with padding. Opcode, argument, and
+   per-site cache index are 16-bit unsigned integers. ``cache`` is the
+   index of this site's reserved cache slot on the owning KosCode, or
+   KOS_CACHE_UNSET when the site has no slot. ``fn`` is
+   kos_op_handlers[op], resolved once in the block's writable window
+   before the seal. Both are assigned at assembly, regenerated on
+   every load, and never serialized; soften emits only (op, arg).
+   A handler receives a pointer to its own instruction as its arg.
 */
-struct KosSlot {
+typedef struct KosOp {
   KosThreadFn fn;   /* kos_op_handlers[op] */
   uint16_t op;      /* KosOpCode */
   uint16_t arg;     /* argument value */
   uint16_t cache;   /* per-site cache slot index, or KOS_CACHE_UNSET */
-};
+} KosOp;
 
 
-#define KosSlot_FN(slot)    (((KosSlot *) (slot))->fn)
-#define KosSlot_OP(slot)    (((KosSlot *) (slot))->op)
-#define KosSlot_ARG(slot)   (((KosSlot *) (slot))->arg)
-#define KosSlot_CACHE(slot) (((KosSlot *) (slot))->cache)
-
-/* The instruction a handler receives is its KosSlot; these are the
-   handler-facing spellings of the slot accessors. */
-#define KosOp_OP(insn)    KosSlot_OP(insn)
-#define KosOp_ARG(insn)   KosSlot_ARG(insn)
-#define KosOp_CACHE(insn) KosSlot_CACHE(insn)
+#define KosOp_FN(insn)    (((KosOp *) (insn))->fn)
+#define KosOp_OP(insn)    (((KosOp *) (insn))->op)
+#define KosOp_ARG(insn)   (((KosOp *) (insn))->arg)
+#define KosOp_CACHE(insn) (((KosOp *) (insn))->cache)
 
 
 /**
@@ -513,7 +492,6 @@ struct KosCode {
 
   uint32_t code_len;    /* instruction count */
   KosOp *code;          /* instruction array */
-  KosSlot *slots;       /* dispatch records, code_len of them */
 
   uint32_t pos_len;     /* position entry count */
   KosPosition *pos;     /* positions table */
@@ -730,9 +708,6 @@ uint8_t kos_opcode_cache_count(KosOpCode op);
 
 #define KosCode_CODE(c)                         \
   (((KosCode *) c)->code)
-
-#define KosCode_SLOTS(c)                        \
-  (((KosCode *) c)->slots)
 
 #define KosCode_GET_OP(c, i)                    \
   (KosCode_CODE(c)[i].op)

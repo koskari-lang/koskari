@@ -21,7 +21,7 @@ KosDynFrame *kos_dynframe_new(
 
   kos_dynnode_init(frame, KOS_DYN_FRAME, parent, KOS_DYN_CAP_BINDS_NS);
   Py_XINCREF(code);
-  KosDynFrame_SET_CODE(frame, code);  /* owned */
+  KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
   kos_dynnode_use_inline_segment((KosDynNode *) frame);
@@ -61,7 +61,7 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
     return NULL;
   }
 
-  KosDynFrame_SET_CODE(clone, KosDynFrame_CODE(frame));  /* owned */
+  KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* owned */
   Py_XINCREF(KosDynFrame_CODE(clone));
   KosDynFrame_PC(clone) = KosDynFrame_PC(frame);
   KosDynFrame_ACTING_PC(clone) = KosDynFrame_ACTING_PC(frame);
@@ -139,7 +139,7 @@ void kos_dynframe_free(KosDynFrame *frame) {
   }
 
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
-  KosDynFrame_SET_CODE(frame, NULL);
+  KosDynFrame_CODE(frame) = NULL;
 
   kos_dynnode_return_to_freelist(frame);
 }
@@ -207,7 +207,7 @@ KosDynFrame *kos_dyn_push_frame(
   KosEvalState_FRAME(es) = frame;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
   KosEvalState_NAMESPACE(es) = KosDynNode_NS((KosDynNode *) frame);
-  KosEvalState_TAKE_FRAME_CODE(es, frame);
+  KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
   es->pc = KosDynFrame_PC(frame);
   es->acting_pc = KosDynFrame_ACTING_PC(frame);
 
@@ -269,7 +269,7 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
   KosEvalState_FRAME(es) = frame;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
   KosEvalState_NAMESPACE(es) = KosDynNode_NS((KosDynNode *) frame);
-  KosEvalState_TAKE_FRAME_CODE(es, frame);
+  KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
   es->pc = 0;
   es->acting_pc = 0;
 }
@@ -376,7 +376,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_NS(frame) = NULL;
 
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
-  KosDynFrame_SET_CODE(frame, NULL);
+  KosDynFrame_CODE(frame) = NULL;
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */

@@ -511,11 +511,10 @@ static int test_code_instruction_method(void) {
 }
 
 
-static int test_code_slots_resolve_handlers(void) {
+static int test_code_instructions_resolve_handlers(void) {
     /*
-      Every instruction's dispatch record carries the instruction's own
-      fields and the handler table entry for its opcode, including the
-      THEEND barrier appended at finalize.
+      Every instruction carries the handler table entry for its opcode,
+      including the THEEND barrier appended at finalize.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -530,19 +529,15 @@ static int test_code_slots_resolve_handlers(void) {
 
     uint32_t len = KosCode_CODE_LEN(code);
     KosOp *ops = KosCode_CODE(code);
-    KosSlot *slots = KosCode_SLOTS(code);
-    TEST_ASSERT_NOT_NULL(slots, "slots region present");
+    TEST_ASSERT_NOT_NULL(ops, "instruction array present");
     TEST_ASSERT(len >= 4, "three instructions plus the THEEND barrier");
 
     for (uint32_t pc = 0; pc < len; pc++) {
-        TEST_ASSERT_EQ(slots[pc].op, ops[pc].op, "slot op matches code");
-        TEST_ASSERT_EQ(slots[pc].arg, ops[pc].arg, "slot arg matches code");
-        TEST_ASSERT_EQ(slots[pc].cache, ops[pc].cache,
-                       "slot cache matches code");
-        TEST_ASSERT(slots[pc].fn == kos_op_handlers[ops[pc].op],
-                    "slot fn is the handler table entry for its op");
+        TEST_ASSERT(ops[pc].fn == kos_op_handlers[ops[pc].op],
+                    "instruction fn is the handler table entry for its op");
     }
-    TEST_ASSERT_EQ(slots[len - 1].op, KOS_OP_THEEND, "last slot is THEEND");
+    TEST_ASSERT_EQ(ops[len - 1].op, KOS_OP_THEEND,
+                   "last instruction is THEEND");
 
     Py_DECREF(code);
     Py_DECREF(instr);
@@ -708,7 +703,7 @@ int run_bytecode_tests(void) {
     RUN_TEST(test_code_var_in_cpool);
     RUN_TEST(test_code_opcode_style);
     RUN_TEST(test_code_instruction_method);
-    RUN_TEST(test_code_slots_resolve_handlers);
+    RUN_TEST(test_code_instructions_resolve_handlers);
     RUN_TEST(test_code_extent_derivation);
     RUN_TEST(test_code_extent_find);
     RUN_TEST(test_code_loc_lookup);

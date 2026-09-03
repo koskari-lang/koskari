@@ -370,7 +370,6 @@ typedef struct {
   size_t extra_bytes;
   size_t extent_bytes;
   size_t top_extent_bytes;
-  size_t slot_bytes;
 } CodeAllocStats;
 
 
@@ -402,14 +401,12 @@ typedef struct KosBlockLayout {
   size_t extra_bytes;
   size_t extent_bytes;
   size_t top_bytes;
-  size_t slot_bytes;
 
   size_t pos_offset;
   size_t cpool_offset;
   size_t extra_offset;
   size_t extent_offset;
   size_t top_offset;
-  size_t slot_offset;
 
   size_t total_unrounded;
 } KosBlockLayout;
@@ -431,7 +428,6 @@ static void code_block_layout(
   out->extra_bytes = sizeof(KosExtra) * (size_t) extra_len;
   out->extent_bytes = sizeof(KosExtentDesc) * (size_t) extent_count;
   out->top_bytes = sizeof(uint16_t) * (size_t) code_len;
-  out->slot_bytes = sizeof(KosSlot) * (size_t) code_len;
 
   out->pos_offset = align_size(out->code_bytes, ptr_size);
   out->cpool_offset = out->pos_offset
@@ -441,10 +437,8 @@ static void code_block_layout(
   out->extent_offset = out->extra_offset
       + align_size(out->extra_bytes, sizeof(uint32_t));
   out->top_offset = out->extent_offset + out->extent_bytes;
-  out->slot_offset = align_size(out->top_offset + out->top_bytes,
-                                ptr_size);
 
-  out->total_unrounded = out->slot_offset + out->slot_bytes;
+  out->total_unrounded = out->top_offset + out->top_bytes;
 }
 
 
@@ -478,10 +472,8 @@ static void code_calc_alloc_stats(PyObject *self, CodeAllocStats *out) {
   out->extra_bytes = lay.extra_bytes;
   out->extent_bytes = lay.extent_bytes;
   out->top_extent_bytes = lay.top_bytes;
-  out->slot_bytes = lay.slot_bytes;
   out->payload_bytes = lay.code_bytes + lay.pos_bytes + lay.cpool_bytes
-      + lay.extra_bytes + lay.extent_bytes + lay.top_bytes
-      + lay.slot_bytes;
+      + lay.extra_bytes + lay.extent_bytes + lay.top_bytes;
 
   out->padding_bytes = lay.total_unrounded - out->payload_bytes;
 
@@ -598,15 +590,6 @@ static PyObject *code_get_top_extent_bytes(PyObject *self, void *_unused) {
 }
 
 
-static PyObject *code_get_slot_bytes(PyObject *self, void *_unused) {
-
-  CodeAllocStats stats;
-  (void) _unused;
-  code_calc_alloc_stats(self, &stats);
-  return PyLong_FromSize_t(stats.slot_bytes);
-}
-
-
 static PyObject *code_get_yields(PyObject *self, void *_unused) {
 
   return PyBool_FromLong(KosCode_YIELDS(self));
@@ -693,10 +676,6 @@ static PyGetSetDef code_getset[] = {
 
   { "top_extent_bytes", code_get_top_extent_bytes, NULL,
     "int; bytes reserved for top-extent lookup table",
-    NULL },
-
-  { "slot_bytes", code_get_slot_bytes, NULL,
-    "int; bytes used by the per-instruction dispatch records",
     NULL },
 
   { "yields", code_get_yields, NULL,
@@ -1160,7 +1139,6 @@ static PyObject *code_m_pack_into(PyObject *self, PyObject *arena) {
       ? (KosExtentDesc *) ((char *) dst + lay.extent_offset) : NULL;
   KosCode_TOP_EXTENT_ID(self) = KosCode_TOP_EXTENT_ID(self)
       ? (uint16_t *) ((char *) dst + lay.top_offset) : NULL;
-  KosCode_SLOTS(self) = (KosSlot *) ((char *) dst + lay.slot_offset);
 
   Py_INCREF(arena);
   KosCode_ARENA(self) = arena;
@@ -1786,8 +1764,7 @@ static int code_alloc_unified(
     PyObject ***out_cpool,
     KosExtra **out_extra,
     KosExtentDesc **out_extents,
-    uint16_t **out_top_extent_id,
-    KosSlot **out_slots) {
+    uint16_t **out_top_extent_id) {
 
   /* Compute region sizes and offsets from collect-phase counts (all
      exact, no oversizing) */
@@ -1829,30 +1806,20 @@ static int code_alloc_unified(
       ? (KosExtentDesc *) ((char *) base + lay.extent_offset) : NULL;
   *out_top_extent_id = coll->extent_count
       ? (uint16_t *) ((char *) base + lay.top_offset) : NULL;
-  *out_slots = (KosSlot *) ((char *) base + lay.slot_offset);
 
   return 0;
 }
 
 
 /**
-   Fill the dispatch records from the emitted instructions: each slot
-   carries its instruction's decoded fields and the handler resolved
-   for its opcode. Runs after emit (which settles op, arg, and the
-   cache index) and validation, in the block's writable window.
+   Resolve each instruction's handler from its opcode. Runs after emit
+   (which settles op, arg, and the cache index) and validation, in the
+   block's writable window.
 */
-static void code_fill_slots(
-    const KosOp *code,
-    uint32_t code_len,
-    KosSlot *slots) {
+static void code_fill_handlers(KosOp *code, uint32_t code_len) {
 
-  for (uint32_t pc = 0; pc < code_len; pc++) {
-    KosOp o = code[pc];
-    slots[pc].fn = kos_op_handlers[o.op];
-    slots[pc].op = o.op;
-    slots[pc].arg = o.arg;
-    slots[pc].cache = o.cache;
-  }
+  for (uint32_t pc = 0; pc < code_len; pc++)
+    code[pc].fn = kos_op_handlers[code[pc].op];
 }
 
 
@@ -2739,11 +2706,10 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   KosExtra *extra = NULL;
   KosExtentDesc *extents = NULL;
   uint16_t *top_extent_id = NULL;
-  KosSlot *slots = NULL;
 
   if (code_alloc_unified(&coll, protect, &base, &alloc_size,
                          &code, &pos, &cpool, &extra,
-                         &extents, &top_extent_id, &slots)) {
+                         &extents, &top_extent_id)) {
     code_collect_clear(&coll);
     Py_DECREF(instr_fast);
     return -1;
@@ -2797,7 +2763,7 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
     return -1;
   }
 
-  code_fill_slots(code, code_len, slots);
+  code_fill_handlers(code, code_len);
 
   /* Seal block read-only; single mprotect for entire allocation */
   if (protect) {
@@ -2822,7 +2788,6 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   KosCode_EXTENT_LEN(self) = extent_count;
   KosCode_EXTENTS(self) = extents;
   KosCode_TOP_EXTENT_ID(self) = top_extent_id;
-  KosCode_SLOTS(self) = slots;
 
   return 0;
 }
@@ -2938,7 +2903,6 @@ static void code_dealloc(PyObject *self) {
   KosCode_EXTENT_LEN(self) = 0;
   KosCode_EXTENTS(self) = NULL;
   KosCode_TOP_EXTENT_ID(self) = NULL;
-  KosCode_SLOTS(self) = NULL;
 
   /* Drop owned references held by cache slots, per-kind. The slots
      themselves are part of the object allocation and are released by
@@ -3105,7 +3069,6 @@ PyObject *KosCode_New(
   KosCode_EXTENT_LEN(self) = 0;
   KosCode_EXTENTS(self) = NULL;
   KosCode_TOP_EXTENT_ID(self) = NULL;
-  KosCode_SLOTS(self) = NULL;
 
   KosCode_EXTRA_LEN(self) = 0;
   KosCode_EXTRA(self) = NULL;

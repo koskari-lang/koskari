@@ -1051,7 +1051,7 @@ static KosOpResult process_raise(KosEvalState *es) {
 */
 static int get_prompt_id_from_insn(
     KosEvalState *es,
-    KosSlot *insn,
+    KosOp *insn,
     uint32_t *out_prompt_id) {
 
   PyObject *cid = KosEvalState_CONST(es, KosOp_ARG(insn));
@@ -1400,7 +1400,7 @@ int KosContext_Traverse(
 /**
    Get the name constant for a VAR_* opcode. Borrowed reference.
 */
-static PyObject *get_name_from_insn(KosEvalState *es, KosSlot *insn) {
+static PyObject *get_name_from_insn(KosEvalState *es, KosOp *insn) {
   return KosEvalState_CONST(es, KosOp_ARG(insn));
 }
 
@@ -1613,7 +1613,7 @@ static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
    by JUMP_FALSE. */
 static int kos_check_nil(
     KosEvalState *es,
-    KosSlot *insn) {
+    KosOp *insn) {
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
@@ -1706,19 +1706,20 @@ static KosOpResult kos_eval_route_delim_return(
    the reporter is defined below (with the dispatch loop). */
 static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 /* Every handler has the KosThreadFn prototype: insn is the handler's
-   own KosSlot (read through KosOp_ARG / KosOp_CACHE), and the delivery
-   argument is unused by an opcode.  The one shape lets a slot's fn
-   pointer reach any handler, and lets a handler be a musttail target.
-   Each handler is its own function, reached only through its slot. */
+   own KosOp (read through KosOp_ARG / KosOp_CACHE), and the delivery
+   argument is unused by an opcode.  The one shape lets an instruction's
+   fn pointer reach any handler, and lets a handler be a musttail
+   target.  Each handler is its own function, reached only through the
+   instructions that name it. */
 #define KOS_OP_HANDLER(name)                                            \
-  static KOS_PRESERVE_NONE KosOpResult op_##name(                                         \
+  static KOS_PRESERVE_NONE KosOpResult op_##name(                       \
       KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
 
 /* The cold variant names a large, rarely-run opcode; under threaded
    dispatch every handler is out of line, so it differs only in the
    explicit noinline. */
 #define KOS_OP_HANDLER_COLD(name)                                       \
-  static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult op_##name(                            \
+  static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult op_##name(         \
       KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
 
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)
@@ -1790,7 +1791,7 @@ static int kos_return_take_resume(
 #undef KOS_OP_HANDLER
 
 
-/* The handler table finalize resolves each KosSlot's fn from.  Position
+/* The handler table finalize resolves each KosOp's fn from.  Position
    is opcodes.incl order, which is also the KOS_OP_* enum order, so no
    designated initializers are needed.  Taking a hot handler's address
    gives it an out-of-line copy beside its inlined uses in the dispatch
@@ -2393,7 +2394,7 @@ KOS_OP_INLINE KosOpResult eval_ng_plain_return(
   KosEvalState_FRAME(es) = (KosDynFrame *) parent;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK(parent);
   KosEvalState_NAMESPACE(es) = KosDynNode_NS(parent);
-  KosEvalState_TAKE_FRAME_CODE(es, (KosDynFrame *) parent);
+  KosEvalState_CODE(es) = KosDynFrame_CODE((KosDynFrame *) parent);
   es->pc = KosDynFrame_PC((KosDynFrame *) parent);
   es->acting_pc = KosDynFrame_ACTING_PC((KosDynFrame *) parent);
   kos_dynframe_free((KosDynFrame *) child);
@@ -2499,7 +2500,7 @@ KOS_OP_INLINE KosOpResult eval_ng_extent_return(
   KosEvalState_FRAME(es) = ft;
   KosEvalState_BLOCK(es) = bl;
   KosEvalState_NAMESPACE(es) = KosDynNode_NS(parent);
-  KosEvalState_TAKE_FRAME_CODE(es, ft);
+  KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
   es->pc = KosDynFrame_PC(ft);
   es->acting_pc = KosDynFrame_ACTING_PC(ft);
   kos_dynframe_free((KosDynFrame *) child);
@@ -3003,28 +3004,28 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
    Build with -DKOS_EVAL_SAFETYNET=1 to turn a would-be segfault from such an
    internal misfire into a clean diagnostic while tracking down the cause. */
 #if KOS_EVAL_SAFETYNET
-/* es->slots can be transiently NULL only through an internal bug (e.g. a
-   tail reset that failed to retarget code); guard the fetch against
+/* es->code can be transiently NULL only through an internal bug (e.g. a
+   tail reset that failed to retarget it); guard the fetch against
    dereferencing it. */
-# define KOS_EVAL_SAFETYNET_NULLCODE(slots, on_bad)                        \
-    do { if (unlikely(! (slots))) goto on_bad; } while (0)
+# define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)                         \
+    do { if (unlikely(! (code))) goto on_bad; } while (0)
 #else
-# define KOS_EVAL_SAFETYNET_NULLCODE(slots, on_bad)  ((void) 0)
+# define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)  ((void) 0)
 #endif
 
 /* No per-opcode PC bounds check: every code object ends in a THEEND barrier
    (appended in KosCode_New), and jump targets are validated in-bounds, so
    straight-line dispatch always hits a terminal RETURN or THEEND before pc
    could reach code_len -- arr[pc] is provably valid. THEEND faults exactly as
-   an off-the-end fetch would. The es->slots null check is an
+   an off-the-end fetch would. The es->code null check is an
    internal-invariant guard, gated behind KOS_EVAL_SAFETYNET (off by
    default). */
 #define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
   do {                                                                     \
-    KosSlot *_kos_slots = KosEvalState_SLOTS(es);                          \
+    KosCode *_kos_code = KosEvalState_CODE(es);                            \
     uint32_t _kos_pc = KosEvalState_PC(es);                                \
-    KOS_EVAL_SAFETYNET_NULLCODE(_kos_slots, on_bad);                       \
-    KosSlot *_kos_insn = &_kos_slots[_kos_pc];                             \
+    KOS_EVAL_SAFETYNET_NULLCODE(_kos_code, on_bad);                        \
+    KosOp *_kos_insn = &KosCode_CODE(_kos_code)[_kos_pc];                  \
     SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
          (unsigned) _kos_pc, kos_opcode_name(_kos_insn->op),               \
          (unsigned) _kos_insn->arg);                                       \
@@ -3134,7 +3135,7 @@ KosOpResult koskari_eval(
   KosOpResult eval_ret = EVAL_RAISE();
   PyObject *host_exc_t = NULL, *host_exc_v = NULL, *host_exc_tb = NULL;
   KosEvalState es;
-  KosSlot *insn;
+  KosOp *insn;
   KosOpResult r;
   uint64_t gil_poll_last_ns;
 

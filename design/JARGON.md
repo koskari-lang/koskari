@@ -171,7 +171,7 @@ them. Reference: EVALUATOR.md §8.2.
 
 Opcode execution as a chain of guaranteed tail calls: each handler ends
 in a `RESULT_*` macro that tail-calls the handler recorded in the next
-instruction's `KosSlot`, and control returns to `koskari_eval`'s
+instruction (`KosOp.fn`), and control returns to `koskari_eval`'s
 trampoline only on a signal. Requires a compiler with musttail (clang,
 or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
 

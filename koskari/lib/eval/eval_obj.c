@@ -79,7 +79,7 @@ static int obj_op_reduce_n(
    OBJECT_STR / KosOperator_BuildStr). */
 static int obj_op_reducing(
     KosEvalState *es,
-    KosSlot *insn,
+    KosOp *insn,
     KosOperatorReducing *fn) {
 
   return obj_op_reduce_n(es, (int) KosOp_ARG(insn), fn);

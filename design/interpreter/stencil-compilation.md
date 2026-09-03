@@ -18,9 +18,8 @@ Compile every opcode handler, once, into a relocatable machine-code stencil:
 the handler's body as real instructions, with a small set of recorded
 patch sites (holes) where a constant, an operand, or a tail-call target
 needs to be written in. At module finalize -- the same pass that already
-builds the sealed `[code]` block and, under
-[../archive/threaded-dispatch.md](../archive/threaded-dispatch.md) phase 1, the `KosSlot`
-dispatch region -- walk the `(op, arg)` stream and copy each instruction's
+builds the sealed `[code]` block and resolves each instruction's handler
+pointer (`KosOp.fn`) -- walk the `(op, arg)` stream and copy each instruction's
 stencil into a growing per-module buffer, patching in its real operand and
 the address of the next instruction's stencil. The result is native code:
 no interpreter loop, no indirect dispatch through a handler table, no
@@ -58,10 +57,11 @@ them and does not re-derive them.
 
 A stencil is produced per opcode handler, at koskari's own build time, from
 the musttail-threaded handler form ([../archive/threaded-dispatch.md](../archive/threaded-dispatch.md)
-§2, §6): a function of `(KosEvalState *es, KosSlot *cur)` that ends by
-tail-calling the successor slot's handler. Each handler is compiled as its
-own translation unit; the compiled object's relocations against known
-symbols -- the operand read (`cur->arg`), the cache slot, the tail-call
+§2, §6): a function of `(KosEvalState *es, void *insn, PyObject *value)`
+that ends by tail-calling the successor instruction's handler. Each
+handler is compiled as its own translation unit; the compiled object's
+relocations against known symbols -- the operand read (`KosOp_ARG(insn)`),
+the cache slot, the tail-call
 target -- are exactly the holes. This mirrors CPython's `Tools/jit`:
 compile normally, then read the object file's relocation table instead of
 hand-writing a patching format.
@@ -86,8 +86,8 @@ document's cold-path exemption for large opcodes applies here unchanged.
 ## Finalize: copy-and-patch
 
 The lowering runs in the same finalize window that populates `[cpool]`
-and, under phase 1, the `KosSlot` region -- after emit and jump-target
-validation, before the block's `mprotect` seal:
+and resolves `KosOp.fn` -- after emit and jump-target validation, before
+the block's `mprotect` seal:
 
 ```c
 for (uint32_t pc = 0; pc < code_len; pc++) {
@@ -105,11 +105,11 @@ for (uint32_t pc = 0; pc < code_len; pc++) {
 Each instruction's stencil is patched with a direct address to the next
 instruction's copy -- not an indirect load through a handler table.
 Sequential opcodes chain via a baked-in tail jump; this is strictly
-cheaper than phase 2's `musttail return next->fn(es, next)`, which still
-computes `next` from the slot array at run time. Branch operands (`JUMP`,
-`CHECK_NIL`'s not-nil arm) patch to `offsets[target]` once the whole
-buffer's offsets are known, exactly as phase 1's `KosSlot.arg` is filled
-after decode. A forward branch requires the two-pass shape the copy loop
+cheaper than the threaded `KOS_THREAD_NEXT`, which still computes the
+next instruction from the code array at run time. Branch operands
+(`JUMP`, `CHECK_NIL`'s not-nil arm) patch to `offsets[target]` once the
+whole buffer's offsets are known, exactly as `KosOp.arg` is filled after
+decode. A forward branch requires the two-pass shape the copy loop
 already implies: lay out and copy first, resolve branch and call-out
 patches second.
 
@@ -119,16 +119,15 @@ preserving the barrier semantics phase 1 relies on.
 ## Storage: the executable arena segment
 
 The unified bytecode block already carries `[code][positions][cpool][extra][extents][top]`
-(and, under phase 1, the `KosSlot` dispatch region) as one arena
-allocation, sealed read-only after finalize populates it. The native form
+as one arena allocation, sealed read-only after finalize populates it. The native form
 is a second, per-module arena segment with the same lifecycle -- populated
 in a writable window, then sealed -- but `mprotect`'d executable
 (`PROT_READ | PROT_EXEC`, not `PROT_WRITE`) instead of read-only.
 
 This segment is not serialized. The `(op, arg)` stream in `[code]` remains
 the sole source of truth that `.kio` persists and `soften` strips down to;
-the native segment, like phase 1's `KosSlot.fn` and the per-site `cache`
-index before it, is regenerated from that stream on every load. A koskari
+the native segment, like `KosOp.fn` and the per-site `cache` index
+before it, is regenerated from that stream on every load. A koskari
 upgrade or a stencil-set change never needs a migration story for stored
 modules -- it just changes what finalize produces from bytecode that
 hasn't moved. `pack_into`'s block relocation extends to this segment: a

@@ -175,7 +175,7 @@ typedef enum KosGetNextResult {
 
 
 /* KosThreadFn, the one prototype every threaded step shares (a CPS
-   resume, an opcode handler), is defined in bytecode.h beside KosSlot,
+   resume, an opcode handler), is defined in bytecode.h beside KosOp,
    the instruction record that carries a handler pointer. */
 
 
@@ -300,11 +300,11 @@ typedef KosThreadFn KosResumeFn;
   do {                                                                  \
     KosEvalState *kos_thr_es_ = (es);                                   \
     uint32_t kos_thr_pc_ = KosEvalState_PC(kos_thr_es_);                \
-    KosSlot *kos_thr_next_;                                             \
+    KosOp *kos_thr_next_;                                               \
     if (unlikely(++KosEvalState_POLL_OPS(kos_thr_es_)                   \
                  > KOS_EVAL_GIL_POLL))                                  \
       return EVAL_NORMAL();                                             \
-    kos_thr_next_ = &KosEvalState_SLOTS(kos_thr_es_)[kos_thr_pc_];      \
+    kos_thr_next_ = &KosEvalState_OPS(kos_thr_es_)[kos_thr_pc_];        \
     kos_thr_es_->acting_pc = kos_thr_pc_;                               \
     kos_thr_es_->pc = kos_thr_pc_ + 1u;                                 \
     KOS_TRACE_THREAD_STEP(kos_thr_next_->op);                           \
@@ -664,8 +664,6 @@ struct KosEvalState {
   KosTransferPlan *plan_stack; /* RUN: suspended plans (via plan->suspended) */
   KosDynFrame *frame; /* live top frame; thaw and kos_dyn_* retarget */
   KosCode *code;      /* live code from frame */
-  KosSlot *slots;     /* live code's dispatch records, retargeted with
-                         code (KosEvalState_SET_CODE); NULL with it */
   KosSegment **block; /* live innermost stack slot; non-owning */
   PyObject *namespace; /* live namespace; borrowed */
   uint32_t pc;        /* live next-instruction PC (freeze copies to frame) */
@@ -694,24 +692,12 @@ struct KosEvalState {
 #define KosEvalState_PLAN_STACK(es)  ((es)->plan_stack)
 #define KosEvalState_FRAME(es) ((es)->frame)
 #define KosEvalState_CODE(es) ((es)->code)
-#define KosEvalState_SLOTS(es) ((es)->slots)
-
-/** Retarget the live code register, and with it the slot array the
-    threaded fetch indexes; NULL clears both. */
-#define KosEvalState_SET_CODE(es, c)                                    \
-  do {                                                                  \
-    KosCode *kos_sc_code_ = (c);                                        \
-    (es)->code = kos_sc_code_;                                          \
-    (es)->slots = kos_sc_code_ ? KosCode_SLOTS(kos_sc_code_) : NULL;    \
-  } while (0)
-
-/** Retarget the live code register from a frame: two plain copies, the
-    frame having cached its slot array when its code was assigned. */
-#define KosEvalState_TAKE_FRAME_CODE(es, f)                             \
-  do {                                                                  \
-    (es)->code = KosDynFrame_CODE(f);                                   \
-    (es)->slots = KosDynFrame_SLOTS(f);                                 \
-  } while (0)
+/** The live code's instruction array. Read through the code object on
+    every fetch, never cached on the state or a frame: packing a code
+    object into an arena relocates its block, and a parked frame (a
+    defer, a generator, a function's cached frame) may hold the code
+    across that move. */
+#define KosEvalState_OPS(es) KosCode_CODE(KosEvalState_CODE(es))
 #define KosEvalState_BLOCK(es) ((es)->block)
 #define KosEvalState_NAMESPACE(es) ((es)->namespace)
 
