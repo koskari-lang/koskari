@@ -291,12 +291,12 @@ typedef KosOpResult (*KosThreadFn)(
    load, never serialized -- the same contract the cache index has.
    A handler receives a pointer to its own slot as its arg.
 */
-typedef struct KosSlot {
+struct KosSlot {
   KosThreadFn fn;   /* kos_op_handlers[op] */
   uint16_t op;      /* KosOpCode */
   uint16_t arg;     /* argument value */
   uint16_t cache;   /* per-site cache slot index, or KOS_CACHE_UNSET */
-} KosSlot;
+};
 
 
 #define KosSlot_FN(slot)    (((KosSlot *) (slot))->fn)

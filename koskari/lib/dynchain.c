@@ -1146,11 +1146,11 @@ static void kos_dyn_resync_apply(
     KosEvalState_BLOCK(es) = bl;
     KosEvalState_NAMESPACE(es) = ns;
     if (ft) {
-      KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
+      KosEvalState_TAKE_FRAME_CODE(es, ft);
       es->pc = KosDynFrame_PC(ft);
       es->acting_pc = KosDynFrame_ACTING_PC(ft);
     } else {
-      KosEvalState_CODE(es) = NULL;
+      KosEvalState_SET_CODE(es, NULL);
       es->pc = 0;
       es->acting_pc = 0;
     }
@@ -1174,7 +1174,7 @@ static void kos_dyn_resync_load_regs(
     return;
 
   KosEvalState_FRAME(es) = ft;
-  KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
+  KosEvalState_TAKE_FRAME_CODE(es, ft);
   es->pc = KosDynFrame_PC(ft);
   es->acting_pc = KosDynFrame_ACTING_PC(ft);
 }

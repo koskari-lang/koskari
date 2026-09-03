@@ -444,7 +444,7 @@ static inline int do_frame_prep(
     if (kos_dyn_teardown_to_frame(es, frame) < 0)
       return -1;
     kos_dynframe_reset_for_tail(frame);
-    KosEvalState_CODE(es) = NULL;
+    KosEvalState_SET_CODE(es, NULL);
     KosEvalState_NAMESPACE(es) = NULL;
     KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
     (es)->pc = 0;

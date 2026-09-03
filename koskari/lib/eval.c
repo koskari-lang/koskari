@@ -2393,7 +2393,7 @@ KOS_OP_INLINE KosOpResult eval_ng_plain_return(
   KosEvalState_FRAME(es) = (KosDynFrame *) parent;
   KosEvalState_BLOCK(es) = &KosDynNode_STACK(parent);
   KosEvalState_NAMESPACE(es) = KosDynNode_NS(parent);
-  KosEvalState_CODE(es) = KosDynFrame_CODE((KosDynFrame *) parent);
+  KosEvalState_TAKE_FRAME_CODE(es, (KosDynFrame *) parent);
   es->pc = KosDynFrame_PC((KosDynFrame *) parent);
   es->acting_pc = KosDynFrame_ACTING_PC((KosDynFrame *) parent);
   kos_dynframe_free((KosDynFrame *) child);
@@ -2499,7 +2499,7 @@ KOS_OP_INLINE KosOpResult eval_ng_extent_return(
   KosEvalState_FRAME(es) = ft;
   KosEvalState_BLOCK(es) = bl;
   KosEvalState_NAMESPACE(es) = KosDynNode_NS(parent);
-  KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
+  KosEvalState_TAKE_FRAME_CODE(es, ft);
   es->pc = KosDynFrame_PC(ft);
   es->acting_pc = KosDynFrame_ACTING_PC(ft);
   kos_dynframe_free((KosDynFrame *) child);
@@ -3003,26 +3003,28 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
    Build with -DKOS_EVAL_SAFETYNET=1 to turn a would-be segfault from such an
    internal misfire into a clean diagnostic while tracking down the cause. */
 #if KOS_EVAL_SAFETYNET
-/* es->code can be transiently NULL only through an internal bug (e.g. a tail
-   reset that failed to retarget it); guard the fetch against dereferencing it. */
-# define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)                         \
-    do { if (unlikely(! (code))) goto on_bad; } while (0)
+/* es->slots can be transiently NULL only through an internal bug (e.g. a
+   tail reset that failed to retarget code); guard the fetch against
+   dereferencing it. */
+# define KOS_EVAL_SAFETYNET_NULLCODE(slots, on_bad)                        \
+    do { if (unlikely(! (slots))) goto on_bad; } while (0)
 #else
-# define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)  ((void) 0)
+# define KOS_EVAL_SAFETYNET_NULLCODE(slots, on_bad)  ((void) 0)
 #endif
 
 /* No per-opcode PC bounds check: every code object ends in a THEEND barrier
    (appended in KosCode_New), and jump targets are validated in-bounds, so
    straight-line dispatch always hits a terminal RETURN or THEEND before pc
    could reach code_len -- arr[pc] is provably valid. THEEND faults exactly as
-   an off-the-end fetch would. The es->code null check is an internal-invariant
-   guard, gated behind KOS_EVAL_SAFETYNET (off by default). */
+   an off-the-end fetch would. The es->slots null check is an
+   internal-invariant guard, gated behind KOS_EVAL_SAFETYNET (off by
+   default). */
 #define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
   do {                                                                     \
-    KosCode *_kos_code = KosEvalState_CODE(es);                            \
+    KosSlot *_kos_slots = KosEvalState_SLOTS(es);                          \
     uint32_t _kos_pc = KosEvalState_PC(es);                                \
-    KOS_EVAL_SAFETYNET_NULLCODE(_kos_code, on_bad);                        \
-    KosSlot *_kos_insn = &KosCode_SLOTS(_kos_code)[_kos_pc];               \
+    KOS_EVAL_SAFETYNET_NULLCODE(_kos_slots, on_bad);                       \
+    KosSlot *_kos_insn = &_kos_slots[_kos_pc];                             \
     SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
          (unsigned) _kos_pc, kos_opcode_name(_kos_insn->op),               \
          (unsigned) _kos_insn->arg);                                       \

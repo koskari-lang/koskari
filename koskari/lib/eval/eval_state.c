@@ -70,11 +70,11 @@ void KosEvalState_ThawFromContext(KosEvalState *es) {
     KosEvalState_NAMESPACE(es) = KosDynFrame_NS(KosEvalState_FRAME(es));
 
   if (KosEvalState_FRAME(es)) {
-    KosEvalState_CODE(es) = KosDynFrame_CODE(KosEvalState_FRAME(es));
+    KosEvalState_TAKE_FRAME_CODE(es, KosEvalState_FRAME(es));
     (es)->pc = KosDynFrame_PC(KosEvalState_FRAME(es));
     (es)->acting_pc = KosDynFrame_ACTING_PC(KosEvalState_FRAME(es));
   } else {
-    KosEvalState_CODE(es) = NULL;
+    KosEvalState_SET_CODE(es, NULL);
     (es)->pc = 0;
     (es)->acting_pc = 0;
   }
@@ -124,7 +124,7 @@ void KosEvalState_FreezeToContext(KosEvalState *es) {
   KosContext_NAMESPACE(ctx) = KosEvalState_NAMESPACE(es);
   KosEvalState_NAMESPACE(es) = NULL;
 
-  KosEvalState_CODE(es) = NULL;
+  KosEvalState_SET_CODE(es, NULL);
   (es)->pc = 0;
   (es)->acting_pc = 0;
 

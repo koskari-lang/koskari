@@ -276,6 +276,8 @@ struct KosDynNode {
   union {
     struct {
       KosCode *code;      /* strong reference; NULL only for placeholder frames */
+      KosSlot *slots;     /* KosCode_SLOTS(code), or NULL with it; the
+                             live-register retarget copies it unbranched */
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
       uint32_t frame_flags;
@@ -2399,7 +2401,18 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
+#define KosDynFrame_SLOTS(f)      (((KosDynNode *)(f))->u.frame.slots)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
+
+/** Assign a frame's code (no refcount traffic) and cache its dispatch
+    records alongside; NULL clears both. */
+#define KosDynFrame_SET_CODE(f, c)                                      \
+  do {                                                                  \
+    KosCode *kos_fsc_code_ = (c);                                       \
+    KosDynFrame_CODE(f) = kos_fsc_code_;                                \
+    KosDynFrame_SLOTS(f) =                                              \
+        kos_fsc_code_ ? KosCode_SLOTS(kos_fsc_code_) : NULL;            \
+  } while (0)
 #define KosDynFrame_ACTING_PC(f)  (((KosDynNode *)(f))->u.frame.acting_pc)
 #define KosDynNode_STACK(n)       (((KosDynNode *)(n))->stack)
 #define KosDynNode_NS(n)          (((KosDynNode *)(n))->ns)
