@@ -187,15 +187,17 @@ that same handler body.
 
 ## Loop duties
 
-Between the interpreter's opcode dispatches, the loop does more than
-fetch: transfer-plan drain, pending-exception poll, GIL poll at back-edges,
-`acting_pc` maintenance, trace/safetynet wraps. A stencil chain runs
-without returning to that loop between instructions, so each duty is
-either:
+The threaded chain already runs without returning to the trampoline
+between instructions; what the trampoline's prologue does (transfer-plan
+drain, pending-exception check, the poll) happens only at a re-entry,
+and the eval breaker is tested at the cooperation points inside the
+chain: `CONTINUE`, a frame install, a resume hop. A stencil chain
+inherits that shape, so each remaining duty (`acting_pc` maintenance,
+trace/safetynet wraps) is either:
 
-- folded into specific stencils (a GIL poll stencil spliced in at back-edges
-  -- loop-closing branch targets, identifiable at copy time from the same
-  jump-target information finalize already validates), or
+- folded into specific stencils (the `CONTINUE` stencil carries the
+  breaker test as the handler does today; the call stencils chain into
+  the call core, which carries the install's), or
 - deliberately skipped, matching the archived design's stance: native
   execution bypasses `KOS_EVAL_SAFETYNET` and verbose-debug tracing;
   debug builds fall back to interpreting the `[code]` stream the stencil
@@ -210,10 +212,11 @@ must still be done here.
 
 ## MVP scope
 
-1. **Stencil extraction tool.** Compile the musttail handler set (requires
-   [../archive/threaded-dispatch.md](../archive/threaded-dispatch.md) phase 2 to exist first --
-   this design has no meaning against phase-1 handlers, which return to a
-   loop rather than tail-calling a successor) as individual translation
+1. **Stencil extraction tool.** Compile the musttail handler set (the
+   threaded form that landed with
+   [../archive/threaded-dispatch.md](../archive/threaded-dispatch.md);
+   this design has no meaning against handlers that return to a loop
+   rather than tail-calling a successor) as individual translation
    units; parse relocations into `(offset, kind)` patch records; emit
    `kos_op_stencils[]` generated from `opcodes.incl`, alongside
    `handlers.incl`.
@@ -230,9 +233,9 @@ must still be done here.
    twice through clone (the delim INPLACE worked example from the archived
    design is the right first hand-verified scenario here too).
 
-This is sequenced strictly after threaded-dispatch phase 2 lands and is
-measured against real handlers, not projected -- phase 2's own performance
-section already warns that a naive tail-call loop is not a foregone win
+This is measured against the real threaded handlers, not projected --
+the archived design's own performance section already warns that a
+naive tail-call loop is not a foregone win
 over the threaded-dispatch baseline; stenciling is the step that is expected to
 recover it; that expectation is worth measuring, not assuming.
 

@@ -268,7 +268,7 @@ typedef KosOpResult (KOS_PRESERVE_NONE *KosThreadFn)(
 
 /**
    A single bytecode instruction: the handler that executes it beside
-   its decoded fields, 16 bytes with padding. Opcode, argument, and
+   its decoded fields, 16 bytes on LP64 (two of them padding). Opcode, argument, and
    per-site cache index are 16-bit unsigned integers. ``cache`` is the
    index of this site's reserved cache slot on the owning KosCode, or
    KOS_CACHE_UNSET when the site has no slot. ``fn`` is

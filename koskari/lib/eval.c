@@ -3139,8 +3139,8 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
    to.  Threading enters from es.pc; a chain then runs handler to
    handler by tail calls and comes back here only with a signal.
    NORMAL means the chain stopped with the next instruction at es.pc --
-   a poll-counter trip, or a step with no way to continue -- so poll if
-   due and thread again.  Everything else is applied through
+   a cooperation point that found the eval breaker up, or a step with
+   no way to continue -- so poll if the breaker is up and thread again.  Everything else is applied through
    apply_kos_op_result, and whatever that yields either threads
    (DISPATCH), re-enters through the prologue (REPROLOGUE), or leaves
    through the cleanup below.  The eval state is this function's own

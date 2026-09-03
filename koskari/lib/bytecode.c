@@ -1747,9 +1747,9 @@ static void code_collect_clear(CodeCollect *coll) {
    between regions):
 
      [code][pad][positions][pad][cpool][pad][extra][pad][extents]
-     [top_extent_id][pad][slots]
+     [top_extent_id]
 
-   All offsets use natural alignment: pointer size for cpool and slots,
+   All offsets use natural alignment: pointer size for cpool,
    4-byte for KosExtra. With protect, the block is page-aligned and the total is
    rounded up to page size for the later mprotect seal; without, it is a
    plain writable malloc of the exact unrounded total.

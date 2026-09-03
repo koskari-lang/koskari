@@ -255,7 +255,7 @@ typedef KosThreadFn KosResumeFn;
    is not touched. Caller must have a current frame, and nothing may
    already be staged. A resume handing a delivery to the next resume
    uses RESUME_HOP, which tail-calls and falls back to this when the
-   poll counter trips.
+   eval breaker is up.
 */
 #define DISPATCH(fn, es, arg, value)                                    \
   do {                                                                  \
@@ -296,9 +296,9 @@ typedef KosThreadFn KosResumeFn;
 */
 
 /* Thread into the handler at es->pc: the fetch the trampoline does,
-   ending in a tail call. When the poll counter trips, return NORMAL
-   instead: the trampoline polls, zeroes the counter, and threads
-   again from es->pc. */
+   ending in a tail call. A bare fetch and jump; the eval breaker is
+   tested at the cooperation points (RESULT_NEXT_POLL, a frame
+   install, RESUME_HOP, the prologue), not here. */
 #define KOS_THREAD_NEXT(es)                                             \
   do {                                                                  \
     KosEvalState *kos_thr_es_ = (es);                                   \
@@ -737,7 +737,6 @@ static inline KosOpResult kos_call_installed(KosEvalState *es) {
 #define KosEvalState_SET_PC(es, v) ((void)((es)->pc = (uint32_t)(v)))
 /** The staged CPS delivery, owned; NULL when nothing is staged. */
 #define KosEvalState_PENDING_VALUE(es) ((es)->pending_value)
-/** Instructions run since the last GIL / signal poll. */
 
 
 /**

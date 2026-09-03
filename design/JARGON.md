@@ -58,7 +58,7 @@ install in the call core, a resume hop, and the prologue re-entry. On
 a trip `CONTINUE` returns `EVAL_NORMAL`, the call core returns
 `EVAL_REPROLOGUE`, and a resume hop stages through `DISPATCH`; each
 lands in the trampoline's poll, which yields the GIL if requested,
-runs `PyErr_CheckSignals`, and re-enters where the point left off.
+runs `Py_MakePendingCalls`, and re-enters where the point left off.
 With the breaker down the point threads straight on. Reference:
 EVALUATOR.md §1.6.
 
@@ -172,24 +172,6 @@ C code that owned a whole frame on the chain through a static
 `KosNativeProgram` descriptor and a typed-event handler. Replaced by
 resumes (below); the term survives only in archived design notes.
 
-## resume
-
-A `KosThreadFn` set on a codeless frame (`resume_fn`, `resume_state`)
-to receive exactly one delivery: a call's settled result, a callee's
-return, an iteration element, or an awaited value. Invoked with the
-value, or with NULL and an exception set when the operation failed.
-Set through the CPS entries `KosEvalState_CallResult` and
-`KosEvalState_NextResume`; the map and filter steps are built from
-them. Reference: EVALUATOR.md §8.2.
-
-## threaded dispatch
-
-Opcode execution as a chain of guaranteed tail calls: each handler ends
-in a `RESULT_*` macro that tail-calls the handler recorded in the next
-instruction (`KosOp.fn`), and control returns to `koskari_eval`'s
-trampoline only on a signal. Requires a compiler with musttail (clang,
-or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
-
 ## park (parked exception)
 
 Exception-stash vocabulary: an exception set aside on the context's
@@ -204,6 +186,16 @@ A KosIter provider: a type whose `kos_iter` suite carries `ki_step`,
 making it steppable in-eval by the iteration opcodes and the python
 adapters. Current providers: the koskari generator, KosMap, KosFilter.
 
+## resume
+
+A `KosThreadFn` set on a codeless frame (`resume_fn`, `resume_state`)
+to receive exactly one delivery: a call's settled result, a callee's
+return, an iteration element, or an awaited value. Invoked with the
+value, or with NULL and an exception set when the operation failed.
+Set through the CPS entries `KosEvalState_CallResult` and
+`KosEvalState_NextResume`; the map and filter steps are built from
+them. Reference: EVALUATOR.md §8.2.
+
 ## special (special form)
 
 A form the compiler handles structurally rather than as a call
@@ -216,6 +208,14 @@ One of the inline interface structures embedded in a
 `KosEvaluatedTypeObject`: the call suite (`KosCallSlots`, `kc_` slots)
 or the iter suite (`KosIterSlots`, `ki_` slots). Membership in a family
 is by its defining slot, not by pointer presence.
+
+## threaded dispatch
+
+Opcode execution as a chain of guaranteed tail calls: each handler ends
+in a `RESULT_*` macro that tail-calls the handler recorded in the next
+instruction (`KosOp.fn`), and control returns to `koskari_eval`'s
+trampoline only on a signal. Requires a compiler with musttail (clang,
+or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
 
 ## transfer plan
 

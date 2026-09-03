@@ -7,7 +7,7 @@ stage.
 
 ## Which Python versions are supported?
 
-Python 3.9 through 3.13 are tested in CI. Python 3.14 is listed as a target
+Python 3.9 through 3.14 are tested in CI. Python 3.14 is a target
 classifier but is not yet released; compatibility is aspirational.
 
 ## Is free-threading supported?

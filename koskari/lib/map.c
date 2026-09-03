@@ -24,7 +24,7 @@
    direct-return-guaranteed koskari function complete as KOS_ITER_VALUE
    or a graft install with the evaluator otherwise untouched (cs_direct,
    still unconverted below pending a benchmark-driven decision -- see
-   design/cps-consumer-api.md). Anything else -- a driven source, or a
+   design/archive/cps-consumer-api.md). Anything else -- a driven source, or a
    FRAME-shaped or awaitable-returning function without that guarantee
    -- runs under one CPS resume-carrying frame: FETCH requests the next
    source element via KosEvalState_NextResume, INVOKE applies the
@@ -77,9 +77,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
 
   KosMapObject *m = (KosMapObject *) state;
 
-  /* Declined by the raise walk's default: the frame pops and the
-     consumer's iteration node owns the conversion (StopIteration
-     truncation parity included). */
+  /* The raise walk is propagating an exception: let it, so the frame
+     pops and the consumer's iteration node owns the conversion
+     (StopIteration truncation parity included). */
   if (! value)
     return EVAL_RAISE();
 
