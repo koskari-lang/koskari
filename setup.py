@@ -194,6 +194,18 @@ def extension(platform=None, debug=None):
 
     clang, major = compiler_identity(compiler_command())
 
+    if platform is None:
+        from sys import platform as sys_platform
+        platform = sys_platform
+
+    if (platform == "linux" and clang and major and major < 17
+            and not which("ld.lld")):
+        # such a clang cannot emit fat LTO objects, so every object is
+        # bitcode and only an LTO-aware linker can take it
+        raise SystemExit(
+            f"koskari: clang {major} needs lld to link its LTO objects;"
+            " install lld, or build with clang 17 or newer")
+
     return Extension(
         "koskari.lib",
         sources=sources,
