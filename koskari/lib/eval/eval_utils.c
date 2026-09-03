@@ -523,7 +523,7 @@ static KosOpResult deliver_py_call_result(
 }
 
 
-static KOS_NOINLINE KosOpResult kos_call_invoke_body(
+static inline KosOpResult kos_call_invoke_body(
     KosEvalState *es,
     KosSegment **caller_slot,
     size_t window,
@@ -711,7 +711,8 @@ KosOpResult KosEvalState_CallResult(
 
    The entry for the CALL_* opcode prologues: kos_call_invoke inlines
    into each handler (window math and self-arg prepend), delegating to
-   the noinline kos_call_invoke_body for the class dispatch.  argv is
+   kos_call_invoke_body, which picks the out-of-line class dispatch
+   specialised for the handler's flags word.  argv is
    always a BORROWED read vector (vectorcall convention).  With
    KOS_CALL_ARGV_WINDOW, argv additionally names the caller's stack tail
    (nargs + kwname values, plus the callable itself under
@@ -775,7 +776,10 @@ static inline int kos_tail_ns_reusable(PyObject *ns) {
 }
 
 
-static KOS_NOINLINE KosOpResult kos_call_invoke_body(
+/* The class dispatch proper.  Always inlined into the per-flag bodies
+   below, each of which passes a literal flags word, so every flag test
+   in here folds away and each body carries only its own arms. */
+KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         KosEvalState *es,
         KosSegment **caller_slot,
         size_t window,
@@ -1183,6 +1187,122 @@ legacy:
     if (flags & KOS_CALL_CALLABLE_OWNED)
       Py_DECREF(callable);
     return r;
+  }
+}
+
+
+/* One out-of-line body per flags word the call sites use.  A handler
+   passes its flags as a literal, so the dispatcher in
+   kos_call_invoke_body folds to a direct call of the matching body,
+   and the body itself is the class dispatch specialised for that word.
+   Any other word takes the generic body, which keeps flags live. */
+#define KOS_CALL_BODY_VARIANT(name, FLAGS)                              \
+  static KOS_NOINLINE KosOpResult name(                                 \
+      KosEvalState *es,                                                 \
+      KosSegment **caller_slot,                                         \
+      size_t window,                                                    \
+      PyObject *callable,                                               \
+      PyObject *const *argv,                                            \
+      Py_ssize_t nargs,                                                 \
+      PyObject *kwnames) {                                              \
+    return kos_call_invoke_impl(es, caller_slot, window, callable,      \
+                                argv, nargs, kwnames, (FLAGS));         \
+  }
+
+KOS_CALL_BODY_VARIANT(kos_call_body_plain, KOS_CALL_PLAIN)
+KOS_CALL_BODY_VARIANT(kos_call_body_window_callable,
+                      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE)
+KOS_CALL_BODY_VARIANT(kos_call_body_window_callable_tail,
+                      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE
+                      | KOS_CALL_TAIL)
+KOS_CALL_BODY_VARIANT(kos_call_body_window_owned,
+                      KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED)
+KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_under,
+                      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
+                      | KOS_CALL_CALLABLE_OWNED)
+KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_prepended,
+                      KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED
+                      | KOS_CALL_ARGV_PREPENDED)
+KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_tail,
+                      KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL
+                      | KOS_CALL_CALLABLE_OWNED)
+KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_tail_under,
+                      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
+                      | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED)
+KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_tail_prepended,
+                      KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL
+                      | KOS_CALL_CALLABLE_OWNED | KOS_CALL_ARGV_PREPENDED)
+
+#undef KOS_CALL_BODY_VARIANT
+
+
+static KOS_NOINLINE KosOpResult kos_call_body_any(
+        KosEvalState *es,
+        KosSegment **caller_slot,
+        size_t window,
+        PyObject *callable,
+        PyObject *const *argv,
+        Py_ssize_t nargs,
+        PyObject *kwnames,
+        unsigned flags) {
+
+  return kos_call_invoke_impl(es, caller_slot, window, callable,
+                              argv, nargs, kwnames, flags);
+}
+
+
+static inline KosOpResult kos_call_invoke_body(
+        KosEvalState *es,
+        KosSegment **caller_slot,
+        size_t window,
+        PyObject *callable,
+        PyObject *const *argv,
+        Py_ssize_t nargs,
+        PyObject *kwnames,
+        unsigned flags) {
+
+  switch (flags) {
+    case KOS_CALL_PLAIN:
+      return kos_call_body_plain(es, caller_slot, window, callable,
+                                 argv, nargs, kwnames);
+    case KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE:
+      return kos_call_body_window_callable(es, caller_slot, window,
+                                           callable, argv, nargs, kwnames);
+    case KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE | KOS_CALL_TAIL:
+      return kos_call_body_window_callable_tail(es, caller_slot, window,
+                                                callable, argv, nargs,
+                                                kwnames);
+    case KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED:
+      return kos_call_body_window_owned(es, caller_slot, window,
+                                        callable, argv, nargs, kwnames);
+    case KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
+        | KOS_CALL_CALLABLE_OWNED:
+      return kos_call_body_window_owned_under(es, caller_slot, window,
+                                              callable, argv, nargs,
+                                              kwnames);
+    case KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED
+        | KOS_CALL_ARGV_PREPENDED:
+      return kos_call_body_window_owned_prepended(es, caller_slot, window,
+                                                  callable, argv, nargs,
+                                                  kwnames);
+    case KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED:
+      return kos_call_body_window_owned_tail(es, caller_slot, window,
+                                             callable, argv, nargs,
+                                             kwnames);
+    case KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER | KOS_CALL_TAIL
+        | KOS_CALL_CALLABLE_OWNED:
+      return kos_call_body_window_owned_tail_under(es, caller_slot, window,
+                                                   callable, argv, nargs,
+                                                   kwnames);
+    case KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED
+        | KOS_CALL_ARGV_PREPENDED:
+      return kos_call_body_window_owned_tail_prepended(es, caller_slot,
+                                                       window, callable,
+                                                       argv, nargs,
+                                                       kwnames);
+    default:
+      return kos_call_body_any(es, caller_slot, window, callable,
+                               argv, nargs, kwnames, flags);
   }
 }
 
