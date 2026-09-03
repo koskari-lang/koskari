@@ -47,6 +47,21 @@ compiled and loaded at package import time. "A bootstrap chain" on a
 generator is the not-yet-run frame set created at generator
 construction, before its first step.
 
+## breaker trip
+
+A cooperation point finding CPython's eval breaker up and diverting to
+the trampoline instead of threading on. The eval breaker is the word
+CPython's own loop tests for a GIL request or a pending signal; the
+evaluator reads the same word through the compat headers and tests it
+at four points, the places that close a cycle: `CONTINUE`, a frame
+install in the call core, a resume hop, and the prologue re-entry. On
+a trip `CONTINUE` returns `EVAL_NORMAL`, the call core returns
+`EVAL_REPROLOGUE`, and a resume hop stages through `DISPATCH`; each
+lands in the trampoline's poll, which yields the GIL if requested,
+runs `PyErr_CheckSignals`, and re-enters where the point left off.
+With the breaker down the point threads straight on. Reference:
+EVALUATOR.md §1.6.
+
 ## chain (dynchain, dyn node)
 
 The unified parent-linked list of dynamic-extent nodes -- frames,
