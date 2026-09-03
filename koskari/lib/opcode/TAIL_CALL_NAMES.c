@@ -16,43 +16,46 @@
 /**
    TAIL_CALL_NAMES: arg = N (number of positional arguments). Same stack
    layout as CALL_NAMES: [callable, pos_0, ..., pos_{N-1}, kwd_val_0, ...,
-   kwd_val_{M-1}, names]. Tail call: do not push a new frame; remove or
-   recycle the current one.
-
-   Extracts args via KosStackSteal before call; KosEvalState_Call handles frame
-   behavior and dispatch.
+   kwd_val_{M-1}, names] with names at TOS. Tail call: the caller's frame
+   is reused or popped by the call core, which reads the window in place.
 */
 
 KOS_OP_HANDLER_COLD(TAIL_CALL_NAMES) {
   unsigned opa = KosOp_ARG(insn);
+
   PyObject *names = KosEvalState_StackPeek(es);
   if (! names)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_NAMES names must be tuple"
                  ", not %R", names);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
   Py_ssize_t total = npos + nkwds;
-  size_t ntotal = (size_t)(total + 2);
 
-  KosStackSteal steal = { 0 };
-  if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0)
-    return EVAL_RAISE();
+  /* Pop the names tuple off the top; the remaining window is the
+     standard [callable, pos..., kw_vals...] shape for the core. */
+  names = KosEvalState_StackPopRef(es);
+  if (! names)
+    RESULT_RAISE();
 
-  PyObject *callable = steal.vals[0];
-  PyObject *const *args =
-    (total > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
-  PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, (size_t) total + 1);
+  if (! ptr) {
+    Py_DECREF(names);
+    RESULT_RAISE();
+  }
 
-  KosOpResult res = KosEvalState_Call(es, callable, args,
-                            npos, kwnames_arg, 1);
-
-  KosStackSteal_Free(&steal);
-  return res;
+  KosOpResult r = kos_call_invoke(es, ptr[0], NULL,
+                                  total ? ptr + 1 : NULL, npos,
+                                  nkwds ? names : NULL,
+                                  KOS_CALL_ARGV_WINDOW
+                                  | KOS_CALL_WINDOW_CALLABLE
+                                  | KOS_CALL_TAIL);
+  Py_DECREF(names);
+  RESULT_RELAY(es, r);
 }
 
 

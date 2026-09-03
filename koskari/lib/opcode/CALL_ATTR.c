@@ -28,11 +28,11 @@ KOS_OP_HANDLER_COLD(CALL_ATTR) {
 
   PyObject *name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
   if (! ptr)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *obj = ptr[0];
 
@@ -42,7 +42,7 @@ KOS_OP_HANDLER_COLD(CALL_ATTR) {
       ? NULL : &KosCode_CACHE(code)[cache_ix];
   int send_self = kos_resolve_named_attr(obj, name, cache, &resolved);
   if (send_self < 0)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   /* Unbound: obj is already argv[0] in the window.  Bound: obj is the
      under-slot, dropped with the window but not passed. */
@@ -57,7 +57,7 @@ KOS_OP_HANDLER_COLD(CALL_ATTR) {
                         KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
                         | KOS_CALL_CALLABLE_OWNED);
   }
-  return r;
+  RESULT_RELAY(es, r);
 }
 
 

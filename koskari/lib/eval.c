@@ -150,7 +150,6 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 int KosEval_IsFuture(PyObject *val) {
   return kos_isfuture(val);
 }
-#include "eval/eval_gil.c"
 #include "eval/eval_cache.c"
 
 
@@ -509,7 +508,14 @@ static KosOpResult revive_await(
       return EVAL_NORMAL();
     }
 
-    if (KosEvalState_StackPushRef(es, to_push) < 0) {
+    if (KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+      /* the frame is waiting on a resume: the awaited value is its
+         delivery, staged for the entry's delivery step */
+      if (! owned)
+        Py_INCREF(to_push);
+      KosEvalState_PENDING_VALUE(es) = to_push;
+      owned = 0;
+    } else if (KosEvalState_StackPushRef(es, to_push) < 0) {
       if (owned)
         Py_DECREF(to_push);
       return EVAL_RAISE();
@@ -1000,6 +1006,12 @@ static KosOpResult process_raise(KosEvalState *es) {
     return EVAL_RAISE();
   }
 
+  /* The raise supersedes any staged delivery: the walk propagates the
+     exception through the resume instead, and the frame it was staged for may
+     be popped or replaced by a transfer. Every ingress into the raise
+     machinery passes here, so this is the one place the slot drops. */
+  Py_CLEAR(KosEvalState_PENDING_VALUE(es));
+
   int is_cc_apply = (KoskariContinuationApply
                      && PyErr_ExceptionMatches(KoskariContinuationApply));
 
@@ -1358,10 +1370,10 @@ int KosContext_Traverse(
 
   dyn_top = KosContext_DYN_TOP(ctx);
   plan = KosContext_PLAN(ctx);
-  if ((! dyn_top || ! plan)
-      && (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING)) {
+  if (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING) {
     active_es = kos_tls_active_eval_for_ctx(ctx);
     if (active_es) {
+      Py_VISIT(KosEvalState_PENDING_VALUE(active_es));
       if (! dyn_top)
         dyn_top = KosEvalState_DYN_TOP(active_es);
       if (! plan)
@@ -1692,14 +1704,22 @@ static KosOpResult kos_eval_route_delim_return(
 /* The THEEND barrier handler reports the same fault as an off-the-end fetch;
    the reporter is defined below (with the dispatch loop). */
 static void kos_eval_report_pc_bounds_error(KosEvalState *es);
-#define KOS_OP_HANDLER(name) \
-  KOS_OP_INLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
+/* Every handler has the KosThreadFn prototype: insn is the handler's
+   own KosOp (read through KosOp_ARG / KosOp_CACHE), and the delivery
+   argument is unused by an opcode.  The one shape lets an instruction's
+   fn pointer reach any handler, and lets a handler be a musttail
+   target.  Each handler is its own function, reached only through the
+   instructions that name it. */
+#define KOS_OP_HANDLER(name)                                            \
+  static KOS_PRESERVE_NONE KosOpResult op_##name(                       \
+      KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
 
-/* Cold variant of KOS_OP_HANDLER: same signature, but kept OUT of the inlined
-   dispatch function (the dispatch label calls it instead).  For large,
-   rarely-executed opcodes whose body would only bloat the hot loop. */
-#define KOS_OP_HANDLER_COLD(name) \
-  static KOS_NOINLINE KosOpResult op_##name(KosEvalState *es, KosOp *insn)
+/* The cold variant names a large, rarely-run opcode; under threaded
+   dispatch every handler is out of line, so it differs only in the
+   explicit noinline. */
+#define KOS_OP_HANDLER_COLD(name)                                       \
+  static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult op_##name(         \
+      KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
 
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)
 
@@ -1730,11 +1750,56 @@ static KosOpResult object_next_step(
     PyObject *default_val,
     uint16_t n);
 
+/* The return arms op_RETURN threads through directly (defined with the
+   return machinery below; the trampoline's own fast arm uses the same
+   functions for every other producer of a RETURN signal). */
+static inline int kos_return_is_plain(
+    KosEvalState *es,
+    KosDynNode **out_child,
+    KosDynNode **out_parent);
+KOS_OP_INLINE int kos_return_is_extent_plain(
+    KosEvalState *es,
+    KosDynNode **out_child,
+    KosDynNode **out_parent,
+    KosDynFrame **out_ft);
+KOS_OP_INLINE KosOpResult eval_ng_plain_return(
+    KosEvalState *es,
+    KosDynNode *child,
+    KosDynNode *parent,
+    PyObject *val);
+KOS_OP_INLINE KosOpResult eval_ng_extent_return(
+    KosEvalState *es,
+    KosDynNode *child,
+    KosDynNode *parent,
+    KosDynFrame *ft,
+    PyObject *val);
+KOS_OP_INLINE int kos_return_is_resume(
+    KosEvalState *es,
+    KosDynNode **out_parent);
+static int kos_return_take_resume(
+    KosEvalState *es,
+    KosDynNode *parent,
+    PyObject *val,
+    KosResumeFn *out_resume,
+    void **out_state);
+
 #include "handlers.incl"
 #undef CURRENT_NS
 #undef KOS_OP_REQUIRE_NS
 #undef KOS_OP_HANDLER_COLD
 #undef KOS_OP_HANDLER
+
+
+/* The handler table finalize resolves each KosOp's fn from.  Position
+   is opcodes.incl order, which is also the KOS_OP_* enum order, so no
+   designated initializers are needed.  Taking a hot handler's address
+   gives it an out-of-line copy beside its inlined uses in the dispatch
+   loop; the loop keeps calling the inlined form. */
+#define OP(name, ...) op_##name,
+const KosThreadFn kos_op_handlers[] = {
+  #include "opcodes.incl"
+};
+#undef OP
 
 
 /**
@@ -1908,29 +1973,25 @@ KosOpResult KosEvalState_NextResume(
 
   switch (KosNativeFrame_RequestNext(es, iter, &out)) {
     case KOS_IREQ_DELIVERED:
-      if (KosEvalState_StackPushRef(es, out) < 0) {
-        Py_DECREF(out);
-        return EVAL_RAISE();
-      }
-      Py_DECREF(out);
-      if (! resume)
-        return EVAL_NORMAL();
-      KosDynFrame_RESUME_FN(frame) = (void *) resume;
-      KosDynFrame_RESUME_STATE(frame) = state;
-      return EVAL_REPROLOGUE();
-
-    case KOS_IREQ_CONTINUES:
       if (! resume) {
-        /* No continuation: match OBJECT_NEXT's own default exactly --
-           if the install left a real bytecode frame current (e.g. a
-           generator attached), dispatch continues there directly with
-           no trampoline hop; only a codeless result needs the bounce. */
-        KosDynFrame *cur = KosEvalState_FRAME(es);
-        return (cur && KosDynFrame_CODE(cur)) ? EVAL_NORMAL() : EVAL_REPROLOGUE();
+        /* OBJECT_NEXT's own default: the element lands on the stack */
+        return KosEvalState_StackPUSH(es, out) < 0
+            ? EVAL_RAISE() : EVAL_NORMAL();
       }
-      KosDynFrame_RESUME_FN(frame) = (void *) resume;
-      KosDynFrame_RESUME_STATE(frame) = state;
-      return EVAL_REPROLOGUE();
+      return kos_entry_value(es, frame, out, resume, state);
+
+    case KOS_IREQ_CONTINUES: {
+      /* If the install left a real bytecode frame current (e.g. a
+         generator attached), dispatch continues there directly with
+         no trampoline hop; only a codeless result needs the bounce.
+         With a resume, it is armed for the delivery either way. */
+      KosDynFrame *cur = KosEvalState_FRAME(es);
+      if (resume) {
+        KosDynFrame_RESUME_FN(frame) = (void *) resume;
+        KosDynFrame_RESUME_STATE(frame) = state;
+      }
+      return (cur && KosDynFrame_CODE(cur)) ? EVAL_NORMAL() : EVAL_REPROLOGUE();
+    }
 
     case KOS_IREQ_EXIT:
       if (! resume)
@@ -2264,7 +2325,7 @@ static inline KosOpResult eval_event_return(
    by eval_event_return_at_frame and kos_return_is_plain.
 
    eval_ng_plain_return sets es->code from the parent, pushes the value
-   and returns EVAL_DISPATCH(), bypassing cg_prologue entirely. Both
+   and returns EVAL_DISPATCH(), bypassing the prologue entirely. Both
    conjuncts below guard that, for separate reasons: without code there
    is nothing to dispatch, and with a resume pending the prologue is
    what would have delivered the value to it. Only codeless frames
@@ -2313,29 +2374,13 @@ static inline int kos_return_is_plain(
 
 
 /**
-   Conditional form of the unconditional resume clear at the head of the
-   general post-opcode path, for use on the fast arm.  The slot is armed
-   only across an await revive, and PythonResumeTake clears INJECT while
-   leaving KIND, so both fields are tested to keep the post-condition
-   identical to the call this replaces.
-*/
-static inline void kos_eval_resume_clear_if_armed(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  if (unlikely(KosContext_PY_RESUME_INJECT(ctx)
-               || KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE))
-    KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
-}
-
-
-/**
    NG fast path: plain Koskari frame-to-frame return.
 
    Inline retarget from child (being freed) to parent.  Skips the chain
    walk, the flush (frame is freed), and the agen iteration-node check (not
    reachable from a frame whose parent is itself a frame).  val consumed.
 */
-static KosOpResult eval_ng_plain_return(
+KOS_OP_INLINE KosOpResult eval_ng_plain_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -2381,7 +2426,7 @@ static KosOpResult eval_ng_plain_return(
    Any missing fact falls through to the general path, mirroring the
    cache-or-walk split in kos_dyn_resync_after_pop.
 */
-static inline int kos_return_is_extent_plain(
+KOS_OP_INLINE int kos_return_is_extent_plain(
     KosEvalState *es,
     KosDynNode **out_child,
     KosDynNode **out_parent,
@@ -2441,7 +2486,7 @@ static inline int kos_return_is_extent_plain(
    load from the cached back frame and the block restores through the
    freed segment's displaced-slot record.  val consumed.
 */
-static KosOpResult eval_ng_extent_return(
+KOS_OP_INLINE KosOpResult eval_ng_extent_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -2463,6 +2508,79 @@ static KosOpResult eval_ng_extent_return(
     return EVAL_FATAL();
 
   return EVAL_DISPATCH();
+}
+
+
+/**
+   Resume-parent return predicate, for op_RETURN: the returning frame
+   is dyn_top, and its parent is a frame waiting on a resume with no
+   WITH beneath it to run a control-returned hook. Sets out_parent and
+   returns 1 when it holds.
+*/
+KOS_OP_INLINE int kos_return_is_resume(
+    KosEvalState *es,
+    KosDynNode **out_parent) {
+
+  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynNode *parent;
+  KosDynNode *pp;
+
+  if (! child || KosEvalState_DYN_TOP(es) != child)
+    return 0;
+
+  parent = KosDynNode_PARENT(child);
+  if (! parent
+      || ! KosDynNode_IS_FRAME(parent)
+      || ! KosDynFrame_RESUME_FN((KosDynFrame *) parent))
+    return 0;
+
+  pp = KosDynNode_PARENT(parent);
+  if (pp && KosDynNode_IS_WITH(pp))
+    return 0;
+
+  *out_parent = parent;
+  return 1;
+}
+
+
+/**
+   Resume-parent return transition, once kos_return_is_resume holds:
+   with val already settled, pop the returning frame, take the resume
+   pair off the parent (cleared, as the delivery step clears it), and
+   return 1: the caller tail-calls the resume with val, which is
+   exactly what the prologue's delivery step would have done after a
+   stage-and-bounce. Returns 0 when val still needs settling and
+   nothing was touched, so the general return path applies; returns
+   -1 with PyErr set and val released when the classification itself
+   fails or the pop does.
+*/
+static int kos_return_take_resume(
+    KosEvalState *es,
+    KosDynNode *parent,
+    PyObject *val,
+    KosResumeFn *out_resume,
+    void **out_state) {
+
+  switch (KosEval_ResultIsValue(val)) {
+    case 1:
+      break;
+    case 0:
+      return 0;  /* needs settling: the delivery step owns that */
+    default:
+      Py_DECREF(val);
+      return -1;
+  }
+
+  if (kos_dyn_pop_frame(es) < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+
+  *out_resume = (KosResumeFn) KosDynFrame_RESUME_FN((KosDynFrame *) parent);
+  *out_state = KosDynFrame_RESUME_STATE((KosDynFrame *) parent);
+  KosDynFrame_RESUME_FN((KosDynFrame *) parent) = NULL;
+  KosDynFrame_RESUME_STATE((KosDynFrame *) parent) = NULL;
+  return 1;
 }
 
 
@@ -2623,12 +2741,17 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 static inline KosOpResult eval_parent_return_deliver_impl(
     KosEvalState *es, PyObject *val) {
 
-  if (KosEvalState_StackPushRef(es, val) < 0) {
-    Py_DECREF(val);
+  KosDynFrame *parent = KosEvalState_FRAME(es);
+
+  /* Destination by one field: a parent waiting on a resume takes the
+     value through the pending slot; a bytecode parent takes it on its
+     stack, where its next instruction finds it. */
+  if (parent && KosDynFrame_RESUME_FN(parent)) {
+    KosEvalState_PENDING_VALUE(es) = val;
+  } else if (KosEvalState_StackPUSH(es, val) < 0) {
     return EVAL_FATAL();
   }
 
-  Py_DECREF(val);
   return kos_eval_post_opcode_control_returned_after_hook(es);
 }
 
@@ -2675,20 +2798,20 @@ static KosOpResult eval_step_drain_transfer_plan(KosEvalState *es) {
 
    A resume-carrying frame's own stack holds nothing else, so an empty
    stack unambiguously means no delivery was ever staged -- a consumer
-   set the resume directly (bypassing KosEvalState_CallResume /
+   set the resume directly (bypassing KosEvalState_CallResult /
    NextResume) to defer its own first step to this trampoline, the way
    a cold KOS_ITER_INSTALLED install must (koskari_eval runs as a
    separate step after install, never nested inside it). That resume is
    invoked with NULL and no exception set, carries no value to settle,
    and its own contract says what NULL means. Errors are never
-   delivered through this channel -- see the raise-walk offer in
-   dyn_walk.c.
+   delivered through this channel -- see the raise walk's resume call
+   in dyn_walk.c.
 */
 static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosDynFrame *frame = KosEvalState_FRAME(es);
   KosResumeFn resume = (KosResumeFn) KosDynFrame_RESUME_FN(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
-  PyObject *val = NULL;
+  PyObject *val;
   KosOpResult res = EVAL_NORMAL();
   int have_res = 0;
 
@@ -2706,7 +2829,14 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosDynFrame_RESUME_FN(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
-  if (KosEvalState_StackLen(es) > 0) {
+  /* The pending slot is the live transit. The frame stack carries a
+     delivery only as storage: across a suspension (freeze moved the
+     slot there), or from a landing site that still pushes -- an
+     iteration node's element, a native frame's return. */
+  val = KosEvalState_PENDING_VALUE(es);
+  KosEvalState_PENDING_VALUE(es) = NULL;
+
+  if (! val && KosEvalState_StackLen(es) > 0) {
     val = KosEvalState_StackPopRef(es);
     if (! val) {
       res = EVAL_RAISE();
@@ -2723,27 +2853,28 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
       res = EVAL_RAISE();
       have_res = 1;
 #endif
+    }
+  }
 
-    } else {
-      switch (KosEval_ResultIsValue(val)) {
-        case 1:
-          break;  /* settled: deliver it below */
+  if (val && ! have_res) {
+    switch (KosEval_ResultIsValue(val)) {
+      case 1:
+        break;  /* settled: deliver it below */
 
-        case 0:
-          /* Not settled yet. Put the resume back and hand the value to
-             the await machinery; delivery happens on a later pass. */
-          KosDynFrame_RESUME_FN(frame) = (void *) resume;
-          KosDynFrame_RESUME_STATE(frame) = state;
-          res = KosEvalState_PushOrAwait(es, val);
-          have_res = 1;
-          break;
+      case 0:
+        /* Not settled yet. Put the resume back and settle one step;
+           the staged outcome is delivered on a later pass. */
+        KosDynFrame_RESUME_FN(frame) = (void *) resume;
+        KosDynFrame_RESUME_STATE(frame) = state;
+        res = KosEvalState_SettleStage(es, val);
+        have_res = 1;
+        break;
 
-        default:
-          Py_DECREF(val);
-          res = EVAL_RAISE();
-          have_res = 1;
-          break;
-      }
+      default:
+        Py_DECREF(val);
+        res = EVAL_RAISE();
+        have_res = 1;
+        break;
     }
   }
 
@@ -2770,7 +2901,7 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
 
 /**
    Route a non-NORMAL opcode result through the appropriate event handler.
-   NORMAL and REPROLOGUE both map to EVAL_REPROLOGUE (restart cg_prologue).
+   NORMAL and REPROLOGUE both map to EVAL_REPROLOGUE (re-enter through the prologue).
 */
 static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
   switch (res.kind) {
@@ -2858,29 +2989,15 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
   reset cleared heap slot before es->code was updated).  On OOB, goto on_bad.
 */
 
-/* GIL poll: stack locals in dispatch loops only (not KosContext / KosEvalState). */
-#define KOS_EVAL_GIL_POLL           1024u
-
-// 5 milliseconds (5,000,000 nanoseconds)
-#define KOS_EVAL_GIL_POLL_INTERVAL_NS    5000000ULL
-
-
-static inline uint64_t kos_eval_gil_poll_now_ns(void) {
-  struct timespec ts;
-
-  if (unlikely(clock_gettime(CLOCK_MONOTONIC, &ts) != 0))
-    return 0;
-  return (uint64_t) ts.tv_sec * 1000000000ULL + (uint64_t) ts.tv_nsec;
-}
-
 
 
 /* Internal-invariant safety net. See KOS_EVAL_SAFETYNET in hints.h.
    Build with -DKOS_EVAL_SAFETYNET=1 to turn a would-be segfault from such an
    internal misfire into a clean diagnostic while tracking down the cause. */
 #if KOS_EVAL_SAFETYNET
-/* es->code can be transiently NULL only through an internal bug (e.g. a tail
-   reset that failed to retarget it); guard the fetch against dereferencing it. */
+/* es->code can be transiently NULL only through an internal bug (e.g. a
+   tail reset that failed to retarget it); guard the fetch against
+   dereferencing it. */
 # define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)                         \
     do { if (unlikely(! (code))) goto on_bad; } while (0)
 #else
@@ -2891,193 +3008,144 @@ static inline uint64_t kos_eval_gil_poll_now_ns(void) {
    (appended in KosCode_New), and jump targets are validated in-bounds, so
    straight-line dispatch always hits a terminal RETURN or THEEND before pc
    could reach code_len -- arr[pc] is provably valid. THEEND faults exactly as
-   an off-the-end fetch would. The es->code null check is an internal-invariant
-   guard, gated behind KOS_EVAL_SAFETYNET (off by default). */
+   an off-the-end fetch would. The es->code null check is an
+   internal-invariant guard, gated behind KOS_EVAL_SAFETYNET (off by
+   default). */
 #define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
   do {                                                                     \
     KosCode *_kos_code = KosEvalState_CODE(es);                            \
     uint32_t _kos_pc = KosEvalState_PC(es);                                \
     KOS_EVAL_SAFETYNET_NULLCODE(_kos_code, on_bad);                        \
-    KosOp _kos_insn = KosCode_CODE(_kos_code)[_kos_pc];                    \
+    KosOp *_kos_insn = &KosCode_CODE(_kos_code)[_kos_pc];                  \
     SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
-         (unsigned) _kos_pc, kos_opcode_name(_kos_insn.op),                \
-         (unsigned) _kos_insn.arg);                                        \
+         (unsigned) _kos_pc, kos_opcode_name(_kos_insn->op),               \
+         (unsigned) _kos_insn->arg);                                       \
     (es)->acting_pc = _kos_pc;                                             \
     (es)->pc = _kos_pc + 1u;                                               \
     (insn_lvalue) = _kos_insn;                                             \
   } while (0)
 
 
-/**
-   Opcode loop for GCC/Clang: computed goto, tail-dispatch on RUN, prologue
-   via cg_prologue.  Must be a single function: label addresses and optable
-   live here only.
-*/
-static inline KosOpResult koskari_eval_dispatch_computed_goto(KosEvalState *es) {
-
-  #define OP(name, ...)  &&cg_TARGET_##name,
-  static const void *const optable[] = {
-    #include "opcodes.incl"
-  };
-  #undef OP
-
-  KosOp insn;
-  KosOpResult op_res;
-  uint32_t gil_poll_ops = 0;
-  uint64_t gil_poll_last_ns = kos_eval_gil_poll_now_ns();
-
-  goto cg_prologue;
-
-cg_prologue:
-  /* es live fields via Init, kos_dyn_* retarget after chain surgery, freeze at
-     cleanup; chain errors propagate without rebuild. */
-
-  #if KOS_STACK_TRACE
-  {
-    KosSegment **_kos_tr = KosEvalState_BLOCK(es);
-    trace_stack("  after ",
-                (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
+/* A re-entry step that asks for another pass of the loop below. A
+   pass is a cooperation point: a resume hop that found the breaker up
+   staged its delivery and answered REPROLOGUE expecting a poll, and a
+   loop that simply went round again would deliver, hop, and stage
+   forever with the word still up. So when the breaker is up the
+   re-entry hands REPROLOGUE back to the trampoline, whose prologue
+   polls and re-enters. Not a do-while: the continue must reach the
+   enclosing for. */
+#define KOS_REENTER_AGAIN(es)                                           \
+  {                                                                     \
+    if (KOS_EVAL_BREAKER_UP(es))                                        \
+      return EVAL_REPROLOGUE();                                         \
+    continue;                                                           \
   }
-  #endif
 
-  /* Pending PyErr from a suspended transfer thunk (e.g. RAISE in a wind
-     before-thunk) must run abandon + try_local before draining the plan;
-     otherwise the wind EXTENT_ACTION can complete while PyErr is still set. */
-  {
-    KosOpResult pend = eval_phase_pending_exception(es);
-    if (pend.kind != KOS_RES_NORMAL) {
-      if (pend.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-      return pend;
+
+KosOpResult kos_prologue_reenter(KosEvalState *es) {
+
+  /* es live fields via Init, kos_dyn_* retarget after chain surgery,
+     freeze at cleanup; chain errors propagate without rebuild. */
+  for (;;) {
+
+    #if KOS_STACK_TRACE
+    {
+      KosSegment **_kos_tr = KosEvalState_BLOCK(es);
+      trace_stack("  after ",
+                  (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
     }
-  }
+    #endif
 
-  {
-    KosOpResult xfer = eval_step_drain_transfer_plan(es);
-    if (xfer.kind != KOS_RES_NORMAL) {
-      if (xfer.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-      return xfer;
+    /* Slim bounce: a staged delivery with no pending exception and no
+       plan armed goes straight to its resume. The two checks below
+       exist for chain surgery, which a staged handoff performs none
+       of. */
+    if (KosEvalState_PENDING_VALUE(es)
+        && ! KosEvalState_PLAN(es)
+        && ! PyErr_Occurred()) {
+      KosOpResult rs = eval_step_resume_delivery(es);
+      if (rs.kind == KOS_RES_REPROLOGUE)
+        KOS_REENTER_AGAIN(es);
+      return rs;
     }
-  }
 
-  if (KosEvalState_FRAME(es)
-      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)) != NULL) {
-    KosOpResult rs = eval_step_resume_delivery(es);
-    if (rs.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-    return rs;
-  }
-
-  #if KOS_STACK_TRACE
-  {
-    KosSegment **_kos_tr = KosEvalState_BLOCK(es);
-    trace_stack("  before",
-                (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
-  }
-  #endif
-
-  goto cg_poll;
-
-cg_poll:
-  {
-    gil_poll_ops = 0;
-    if (koskari_gil_drop_requested()) {
-      uint64_t now_ns = kos_eval_gil_poll_now_ns();
-      if (gil_poll_last_ns && now_ns &&
-          (now_ns - gil_poll_last_ns > KOS_EVAL_GIL_POLL_INTERVAL_NS)) {
-        Py_BEGIN_ALLOW_THREADS
-        gil_poll_last_ns = now_ns;
-        Py_END_ALLOW_THREADS
+    /* Pending PyErr from a suspended transfer thunk (e.g. RAISE in a
+       wind before-thunk) must run abandon + try_local before draining
+       the plan; otherwise the wind EXTENT_ACTION can complete while
+       PyErr is still set. */
+    {
+      KosOpResult pend = eval_phase_pending_exception(es);
+      if (pend.kind != KOS_RES_NORMAL) {
+        if (pend.kind == KOS_RES_REPROLOGUE)
+        KOS_REENTER_AGAIN(es);
+        return pend;
       }
     }
-  }
 
-  PyErr_CheckSignals();
-  if (unlikely(PyErr_Occurred())) {
-    KosOpResult pend = eval_phase_pending_exception(es);
-    if (pend.kind != KOS_RES_NORMAL) {
-      if (pend.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-      return pend;
+    /* A transfer plan replaces the control path a staged delivery was
+       waiting on: the frame it was staged for may be gone once the
+       plan lands, and the plan's own INJECT is the delivery the
+       landing frame expects. Drop the stale slot ahead of the drain so
+       it can neither shadow that injection nor reach a resume it was
+       never meant for. */
+    if (KosEvalState_PLAN(es))
+      Py_CLEAR(KosEvalState_PENDING_VALUE(es));
+
+    {
+      KosOpResult xfer = eval_step_drain_transfer_plan(es);
+      if (xfer.kind != KOS_RES_NORMAL) {
+        if (xfer.kind == KOS_RES_REPROLOGUE)
+        KOS_REENTER_AGAIN(es);
+        return xfer;
+      }
     }
-  }
 
-  KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
-  goto *optable[insn.op];
-
-  #define OP(name, ...)                                               \
-    cg_TARGET_##name:                                                 \
-      KOS_TRACE_OP_WRAP(name, op_res = op_##name(es, &insn));         \
-      if (likely(op_res.kind == KOS_RES_NORMAL)) {                    \
-        if (unlikely((++gil_poll_ops > KOS_EVAL_GIL_POLL)))           \
-          goto cg_poll;                                               \
-        KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);     \
-        goto *optable[insn.op];                                       \
-      }                                                               \
-      goto cg_handle_op_result;
-
-  #include "opcodes.incl"
-  #undef OP
+    if (KosEvalState_FRAME(es)
+        && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)) != NULL) {
+      KosOpResult rs = eval_step_resume_delivery(es);
+      if (rs.kind == KOS_RES_REPROLOGUE)
+        KOS_REENTER_AGAIN(es);
+      return rs;
+    }
 
 #if KOS_EVAL_SAFETYNET
-cg_pc_bounds_error:
-  kos_eval_report_pc_bounds_error(es);
-  return EVAL_FATAL();
+    /* Instruction dispatch never runs over a staged delivery: the slot
+       is consumed in the trip that staged it, so a capture made by an
+       opcode can never observe one. */
+    if (unlikely(KosEvalState_PENDING_VALUE(es))) {
+      Py_CLEAR(KosEvalState_PENDING_VALUE(es));
+      PyErr_SetString(PyExc_SystemError,
+                      "CPS delivery staged with no resume to take it");
+      return EVAL_FATAL();
+    }
 #endif
 
-cg_handle_op_result: {
-  /* Fast arm: a plain frame-to-frame return needs none of the machinery
-     below.  Route it straight into the transition and back to the fetch,
-     skipping the out-of-line apply_kos_op_result call, its switch, and
-     the guard chain it would walk to reach the same eval_ng_plain_return.
-     Sited here rather than in op_RETURN so every producer of the signal
-     benefits -- POP_PROMPT, the values.c and eval_utils.c termini, and
-     the coro/iter/demand boundary drivers, not just the opcode. */
-  KosOpResult r;
-
-  if (likely(op_res.kind == KOS_RES_RETURN)) {
-    KosDynNode *child, *parent;
-
-    if (likely(kos_return_is_plain(es, &child, &parent))) {
-      kos_eval_resume_clear_if_armed(es);
-      KOS_TRACE_POST_OP_WRAP(plain_return,
-          r = eval_ng_plain_return(es, child, parent, op_res.val));
-      goto cg_have_result;
-    }
+    #if KOS_STACK_TRACE
     {
-      KosDynFrame *ft;
-      if (kos_return_is_extent_plain(es, &child, &parent, &ft)) {
-        kos_eval_resume_clear_if_armed(es);
-        KOS_TRACE_POST_OP_WRAP(plain_return,
-            r = eval_ng_extent_return(es, child, parent, ft, op_res.val));
-        goto cg_have_result;
-      }
+      KosSegment **_kos_tr = KosEvalState_BLOCK(es);
+      trace_stack("  before",
+                  (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
     }
+    #endif
+
+    return EVAL_NORMAL();
   }
-
-  KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
-  r = apply_kos_op_result(es, op_res);
-
-cg_have_result:
-  if (r.kind == KOS_RES_DISPATCH) {
-    /* Plain frame-to-frame return: live regs already retargeted, no
-       pending PyErr / plan / native handler.  Skip the prologue and go
-       straight back to instruction fetch; the poll counter still bounds
-       signal-check latency via cg_poll. */
-    if (unlikely(++gil_poll_ops > KOS_EVAL_GIL_POLL))
-      goto cg_poll;
-    KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
-    goto *optable[insn.op];
-  }
-  if (r.kind == KOS_RES_REPROLOGUE) goto cg_prologue;
-  return r;
-}
-
-  /* Unreachable */
-  return EVAL_FATAL();
 }
 
 
-#undef KOS_EVAL_PREPARE_NEXT_INSN
-
-
+/**
+   The evaluator entry: entry and revive normalization, transfer-plan
+   synchronization, then the trampoline that threaded dispatch returns
+   to.  Threading enters from es.pc; a chain then runs handler to
+   handler by tail calls and comes back here only with a signal.
+   NORMAL means the chain stopped with the next instruction at es.pc --
+   a cooperation point that found the eval breaker up, or a step with
+   no way to continue -- so poll if the breaker is up and thread again.  Everything else is applied through
+   apply_kos_op_result, and whatever that yields either threads
+   (DISPATCH), re-enters through the prologue (REPROLOGUE), or leaves
+   through the cleanup below.  The eval state is this function's own
+   local; handlers and helpers take its address.
+*/
 KosOpResult koskari_eval(
     KosContext *ctx,
     PyObject *send_val,
@@ -3086,6 +3154,9 @@ KosOpResult koskari_eval(
 
   KosOpResult eval_ret = EVAL_RAISE();
   PyObject *host_exc_t = NULL, *host_exc_v = NULL, *host_exc_tb = NULL;
+  KosEvalState es;
+  KosOp *insn;
+  KosOpResult r;
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL context for koskari_eval");
@@ -3105,7 +3176,6 @@ KosOpResult koskari_eval(
     KosContext_EXC_INFO_TB(ctx) = NULL;
   }
 
-  KosEvalState es;
   KosEvalState_Init(&es, ctx);
   KosEvalState_ThawFromContext(&es);
   if (KosEvalState_DYN_TOP(&es))
@@ -3131,31 +3201,116 @@ KosOpResult koskari_eval(
   kos_tls_push_active_eval(&es);
 
   /* Phase 1: entry/revive normalization */
-  KosEvalMode mode = KOS_MODE_NORMAL;
   {
+    KosEvalMode mode = KOS_MODE_NORMAL;
     KosOpResult pe = eval_phase_entry(&es, send_val, throw_typ, throw_exc,
                                       &mode);
     if (pe.kind != KOS_RES_NORMAL && pe.kind != KOS_RES_REPROLOGUE) {
       eval_ret = pe;
       goto koskari_eval_cleanup;
     }
-  }
 
-  /* Phase 2: transfer-plan synchronization (only when mode warrants it) */
-  if (mode == KOS_MODE_NORMAL || mode == KOS_MODE_TRANSFER) {
-    if (unlikely(KosEvalState_PLAN(&es))) {
-      KosOpResult pt = eval_phase_transfer(&es);
-      if (pt.kind != KOS_RES_NORMAL && pt.kind != KOS_RES_REPROLOGUE) {
-        eval_ret = pt;
-        goto koskari_eval_cleanup;
+    /* Phase 2: transfer-plan synchronization (only when mode warrants it) */
+    if (mode == KOS_MODE_NORMAL || mode == KOS_MODE_TRANSFER) {
+      if (unlikely(KosEvalState_PLAN(&es))) {
+        KosOpResult pt = eval_phase_transfer(&es);
+        if (pt.kind != KOS_RES_NORMAL && pt.kind != KOS_RES_REPROLOGUE) {
+          eval_ret = pt;
+          goto koskari_eval_cleanup;
+        }
       }
     }
   }
 
-  /* Clear resume kind once before loop; post_opcode clears it when handling
-     non-zero results so the hot path (tail-dispatch) never touches it. */
+  /* The Python resume slot is armed by a driver before an await revive
+     and taken by the revive; an entry that skipped the revive (an await
+     iterator still pending) clears it here, so the trampoline and the
+     chain never touch it. */
   KosEvalState_PythonResumeSet(&es, NULL, KOS_RESUME_NONE);
-  eval_ret = koskari_eval_dispatch_computed_goto(&es);
+
+  /* === the trampoline === */
+
+prologue:
+  /* A re-entry is a cooperation point: a raise walk, a plan transfer,
+     a continuation replay, or a call install that found the breaker
+     up all arrive here.  The poll runs before the re-entry delivers: a
+     resume hop that found the breaker up staged its delivery so that
+     a pending signal is seen ahead of it. */
+  if (KOS_EVAL_BREAKER_UP(&es))
+    goto poll;
+
+reenter:
+  {
+    KosOpResult pr = kos_prologue_reenter(&es);
+    if (pr.kind == KOS_RES_REPROLOGUE)
+      goto prologue;  /* a pass found the breaker up: poll first */
+    if (pr.kind != KOS_RES_NORMAL) {
+      eval_ret = pr;
+      goto koskari_eval_cleanup;
+    }
+  }
+  goto thread;
+
+poll:
+  /* The breaker is up.  Another thread waiting on the GIL has already
+     outlasted the interpreter's switch interval, so yield it now, as
+     Python's own loop would; then take any pending signal.
+     Py_MakePendingCalls is the public entry that runs the
+     interpreter's own signal handling, which is what clears the
+     breaker's signal input: PyErr_CheckSignals alone would leave it up
+     and every later cooperation point polling.  A signal raised here
+     is taken by the re-entry's pending-exception step, which drops
+     any staged delivery before the raise walk. */
+  if (koskari_gil_drop_requested()) {
+    Py_BEGIN_ALLOW_THREADS
+    Py_END_ALLOW_THREADS
+  }
+  Py_MakePendingCalls();
+  goto reenter;
+
+thread:
+  KOS_EVAL_PREPARE_NEXT_INSN(&es, insn, pc_bounds_error);
+  KOS_TRACE_THREAD_STEP(insn->op);
+  r = insn->fn(&es, insn, NULL);
+
+  if (likely(r.kind == KOS_RES_NORMAL)) {
+    /* A chain hands back NORMAL only from a cooperation point that
+       found the breaker up (or a handler with no chain to run). */
+    if (KOS_EVAL_BREAKER_UP(&es))
+      goto poll;
+    goto thread;
+  }
+  goto handle_result;
+
+#if KOS_EVAL_SAFETYNET
+pc_bounds_error:
+  kos_eval_report_pc_bounds_error(&es);
+  eval_ret = EVAL_FATAL();
+  goto koskari_eval_cleanup;
+#endif
+
+handle_result:
+  {
+    /* The plain-return fast arms live in op_RETURN, which threads
+       straight into the parent when they hold and signals RETURN only
+       when they do not; a RETURN arriving here has either already
+       failed them or comes from another producer (POP_PROMPT, the
+       values.c and eval_utils.c termini, a resume's completion), and
+       takes the general path, whose own plain case is the same
+       transition. */
+    KosOpResult ar;
+
+    ar = apply_kos_op_result(&es, r);
+
+    if (ar.kind == KOS_RES_DISPATCH) {
+      /* Plain frame-to-frame return: live regs already retargeted, no
+         pending PyErr / plan / native handler.  Skip the prologue and
+         go straight back to threading. */
+      goto thread;
+    }
+    if (ar.kind == KOS_RES_REPROLOGUE) goto prologue;
+    eval_ret = ar;
+  }
 
 koskari_eval_cleanup:
   kos_tls_pop_active_eval();
@@ -3185,6 +3340,9 @@ koskari_eval_cleanup:
   }
   return eval_ret;
 }
+
+
+#undef KOS_EVAL_PREPARE_NEXT_INSN
 
 
 /* === Unit lifecycle === */

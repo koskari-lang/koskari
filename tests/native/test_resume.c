@@ -19,9 +19,9 @@
 
    C-level tests for the per-frame CPS resume plumbing: the
    resume_fn/resume_state/resume_name fields on KosDynFrame, the
-   cg_prologue delivery path, the raise-walk offer, and clone/park/
+   cg_prologue delivery path, the raise walk reaching a resume, and clone/park/
    tail-reset clearing. These tests set the frame fields directly,
-   below the KosEvalState_CallResume / NextResume entries.
+   below the KosEvalState_CallResult / NextResume entries.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -38,12 +38,12 @@
 typedef struct {
   int calls;
   int seen_null;
-  int decline;         /* return EVAL_RAISE() instead of EVAL_REPROLOGUE() */
+  int propagate;       /* return EVAL_RAISE() instead of EVAL_REPROLOGUE() */
   PyObject *returned;  /* borrowed: what to hand back via EVAL_RETURN */
 } ResumeProbe;
 
 
-static KosOpResult resume_probe(
+static KOS_PRESERVE_NONE KosOpResult resume_probe(
     KosEvalState *es, void *state, PyObject *value) {
 
   (void) es;
@@ -52,7 +52,7 @@ static KosOpResult resume_probe(
 
   if (! value) {
     p->seen_null = 1;
-    if (p->decline)
+    if (p->propagate)
       return EVAL_RAISE();
     PyErr_Clear();
     return EVAL_REPROLOGUE();
@@ -103,19 +103,309 @@ static int test_cg_prologue_delivers_staged_resume(void) {
 }
 
 
-/* === raise-walk offers a pending exception to a set resume ===
+/* === DISPATCH stages into the pending slot, not the frame stack === */
 
-   The offer at dyn_walk.c only fires for a FRAME that is dyn_top but
-   is NOT also the currently active frame_top (the common single-frame
-   case takes the frame-crossing branch instead and never reaches the
-   offer at all -- true of the pre-existing native_prog offer too, not
-   a resume-specific quirk). Building that shape directly: a resume-
+
+static KosOpResult stage_via_dispatch(
+    KosEvalState *es, KosResumeFn fn, void *state, PyObject *value) {
+
+  DISPATCH(fn, es, state, value);
+}
+
+
+static int test_dispatch_stages_into_pending_slot(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  PyObject *staged = PyLong_FromLong(11);
+  TEST_ASSERT_NOT_NULL(staged, "create staged value");
+  Py_INCREF(staged);  /* DISPATCH consumes one reference */
+
+  ResumeProbe probe = { 0, 0, 0, NULL };
+  KosOpResult r = stage_via_dispatch(&es, resume_probe, &probe, staged);
+
+  TEST_ASSERT_EQ(r.kind, KOS_RES_REPROLOGUE, "DISPATCH bounces to the prologue");
+  TEST_ASSERT_SAME(KosEvalState_PENDING_VALUE(&es), staged,
+                   "the value is staged in the pending slot");
+  TEST_ASSERT(! KosEvalState_StackHead(&es)
+              || KosEvalState_StackLen(&es) == 0,
+              "the frame stack was not touched");
+  TEST_ASSERT(KosDynFrame_RESUME_FN(frame) == (void *) resume_probe,
+              "the resume is set on the current frame");
+  TEST_ASSERT_SAME(KosDynFrame_RESUME_STATE(frame), &probe,
+                   "the resume state is set");
+  TEST_ASSERT_EQ(probe.calls, 0, "nothing invoked the resume inline");
+
+  /* freeze converts the live slot to storage on the frame stack */
+  KosEvalState_FreezeToContext(&es);
+  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(&es), "freeze empties the slot");
+  TEST_ASSERT_EQ(KosSegment_LEN(KosDynNode_STACK((KosDynNode *) frame)), 1,
+                 "the staged value sits on the frame stack across the freeze");
+
+  /* the next trip takes it back and delivers it */
+  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+
+  TEST_ASSERT_EQ(probe.calls, 1, "resume fired exactly once");
+  TEST_ASSERT_EQ(probe.seen_null, 0, "delivered a real value, not NULL");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_RETURN, "resume's result reaches the caller");
+  TEST_ASSERT_SAME(ev.val, staged, "delivered value is the staged value");
+
+  Py_XDECREF(ev.val);
+  Py_DECREF(staged);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
+static int test_next_resume_delivered_reports_in_hand(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  PyObject *lst = PyList_New(1);
+  TEST_ASSERT_NOT_NULL(lst, "create list");
+  PyList_SET_ITEM(lst, 0, PyLong_FromLong(42));
+  PyObject *it = kos_iter_acquire(lst);
+  TEST_ASSERT_NOT_NULL(it, "acquire iterator");
+
+  ResumeProbe probe = { 0, 0, 0, NULL };
+  KosOpResult r = KosEvalState_NextResume(&es, it, NULL, resume_probe, &probe);
+
+  TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN,
+                 "a delivered, settled element is reported in hand");
+  TEST_ASSERT_NOT_NULL(r.val, "the element rides the result");
+  TEST_ASSERT_EQ(PyLong_AsLong(r.val), 42, "element value");
+  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(&es), "nothing staged");
+  TEST_ASSERT(! KosEvalState_StackHead(&es)
+              || KosEvalState_StackLen(&es) == 0,
+              "the frame stack was not touched");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_FN(frame),
+                   "nothing armed: the caller tail-calls the resume itself");
+  TEST_ASSERT_EQ(probe.calls, 0, "nothing invoked the resume inline");
+
+  Py_DECREF(r.val);
+  Py_DECREF(it);
+  Py_DECREF(lst);
+  KosEvalState_FreezeToContext(&es);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
+/* === a bytecode child's RETURN delivers into a resume-carrying parent === */
+
+
+static PyObject *resume_test_nspec(void) {
+  PyObject *name = PyUnicode_FromString("test");
+  PyObject *locals = PyTuple_New(0);
+  PyObject *closures = PyTuple_New(0);
+  PyObject *nspec = KosNamespaceSpec_New(name, locals, closures, NULL);
+
+  Py_DECREF(name);
+  Py_DECREF(locals);
+  Py_DECREF(closures);
+  return nspec;
+}
+
+
+static PyObject *resume_test_instr(int op, PyObject *arg) {
+  PyObject *pair = PyTuple_New(2);
+
+  PyTuple_SET_ITEM(pair, 0, PyLong_FromLong(op));
+  Py_INCREF(arg);
+  PyTuple_SET_ITEM(pair, 1, arg);
+  return pair;
+}
+
+
+static int test_return_into_resume_parent(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  /* the parent: a codeless frame waiting on a resume */
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *parent = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(parent, "push codeless parent frame");
+
+  ResumeProbe probe = { 0, 0, 0, NULL };
+  KosDynFrame_RESUME_FN(parent) = (void *) resume_probe;
+  KosDynFrame_RESUME_STATE(parent) = (void *) &probe;
+
+  /* the child: bytecode that returns the constant 42 */
+  PyObject *forty_two = PyLong_FromLong(42);
+  PyObject *one = PyLong_FromLong(1);
+  PyObject *instr = PyList_New(2);
+  PyList_SET_ITEM(instr, 0, resume_test_instr(KOS_OP_CONST, forty_two));
+  PyList_SET_ITEM(instr, 1, resume_test_instr(KOS_OP_RETURN, one));
+  Py_DECREF(one);
+
+  PyObject *nspec = resume_test_nspec();
+  TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+  PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(code, "create child code");
+
+  PyObject *child_ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(child_ns, "create child ns");
+  KosDynFrame *child = kos_dyn_push_frame(&es, (KosCode *) code, child_ns);
+  TEST_ASSERT_NOT_NULL(child, "push bytecode child frame");
+
+  KosEvalState_FreezeToContext(&es);
+
+  /* run: the child returns 42; the parent's resume receives it and
+     hands it back as the eval's result */
+  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+
+  TEST_ASSERT_EQ(probe.calls, 1, "resume fired exactly once");
+  TEST_ASSERT_EQ(probe.seen_null, 0, "with the returned value, not NULL");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_RETURN, "resume's result reaches the caller");
+  TEST_ASSERT_NOT_NULL(ev.val, "a value came back");
+  TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "the child's return value");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_FN(parent),
+                   "the resume was consumed off the parent");
+
+  Py_XDECREF(ev.val);
+  Py_DECREF(forty_two);
+  Py_DECREF(code);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
+/* === kos_prologue_reenter: the trampoline's re-entry === */
+
+
+static int test_prologue_reenter_idle_proceeds(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  KosOpResult r = kos_prologue_reenter(&es);
+  TEST_ASSERT_EQ(r.kind, KOS_RES_NORMAL,
+                 "nothing staged, pending, or armed: dispatch may proceed");
+
+  KosEvalState_FreezeToContext(&es);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
+static int test_prologue_reenter_delivers_staged(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  PyObject *staged = PyLong_FromLong(23);
+  TEST_ASSERT_NOT_NULL(staged, "create staged value");
+  Py_INCREF(staged);
+
+  ResumeProbe probe = { 0, 0, 0, NULL };
+  KosOpResult st = stage_via_dispatch(&es, resume_probe, &probe, staged);
+  TEST_ASSERT_EQ(st.kind, KOS_RES_REPROLOGUE, "staged");
+
+  /* the probe returns EVAL_RETURN(value); with a root frame that is
+     the terminal result the re-entry hands back */
+  KosOpResult r = kos_prologue_reenter(&es);
+  TEST_ASSERT_EQ(probe.calls, 1, "the staged delivery reached the resume");
+  TEST_ASSERT_EQ(probe.seen_null, 0, "with its value");
+  TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN, "resume's terminal result relayed");
+  TEST_ASSERT_SAME(r.val, staged, "delivered value");
+  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(&es), "slot consumed");
+
+  Py_XDECREF(r.val);
+  Py_DECREF(staged);
+  KosEvalState_FreezeToContext(&es);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
+static int test_prologue_reenter_runs_pending_exception(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  /* a staged delivery under a pending exception is dropped, and the
+     raise walk runs; with no handler on the chain it propagates */
+  PyObject *staged = PyLong_FromLong(5);
+  TEST_ASSERT_NOT_NULL(staged, "create staged value");
+  KosEvalState_PENDING_VALUE(&es) = staged;
+  PyErr_SetString(PyExc_ValueError, "pending");
+
+  KosOpResult r = kos_prologue_reenter(&es);
+  TEST_ASSERT_EQ(r.kind, KOS_RES_RAISE, "unhandled exception propagates");
+  TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
+              "the pending exception is the one propagating");
+  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(&es),
+                   "the staged delivery was dropped");
+
+  PyErr_Clear();
+  KosEvalState_FreezeToContext(&es);
+  KosContext_Free(ctx);
+  return 0;
+}
+
+
+/* === the raise walk propagates a pending exception through a resume ===
+
+   The walk calls the resume at dyn_walk.c only for a FRAME that is
+   dyn_top but is NOT also the currently active frame_top (the common
+   single-frame case takes the frame-crossing branch instead and never
+   calls the resume at all -- true of the pre-existing native_prog path
+   too, not a resume-specific quirk). Building that shape directly: a resume-
    carrying frame installed as dyn_top, parented under a distinct
    frame_top, mirrors how a frame that isn't the dispatch-active one
    sits on the chain (e.g. flattened generator delegation). */
 
 
-static int test_raise_walk_offers_resume_declines(void) {
+static int test_raise_walk_resume_propagates(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
@@ -133,7 +423,7 @@ static int test_raise_walk_offers_resume_declines(void) {
   KosDynFrame *frame = kos_dynframe_new(bottom, NULL, top_ns);
   TEST_ASSERT_NOT_NULL(frame, "create resume-carrying frame");
 
-  ResumeProbe probe = { 0, 0, 1, NULL };  /* decline */
+  ResumeProbe probe = { 0, 0, 1, NULL };  /* propagate */
   KosDynFrame_RESUME_FN(frame) = (void *) resume_probe;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
 
@@ -144,11 +434,11 @@ static int test_raise_walk_offers_resume_declines(void) {
 
   KosOpResult ev = kos_dyn_unwind_raise(&es);
 
-  TEST_ASSERT_EQ(probe.calls, 1, "resume was offered the raise");
-  TEST_ASSERT_EQ(probe.seen_null, 1, "offer delivered NULL (exception, not a value)");
-  TEST_ASSERT_EQ(ev.kind, KOS_RES_RAISE, "declined offer: walk pops and propagates");
+  TEST_ASSERT_EQ(probe.calls, 1, "the walk called the resume");
+  TEST_ASSERT_EQ(probe.seen_null, 1, "the resume received NULL (an exception, not a value)");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_RAISE, "propagated: the walk pops and the exception continues");
   TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
-              "the original exception survives a declined offer");
+              "the original exception is the one propagating");
 
   /* frame was popped and freed by the walk's own pop path */
   PyErr_Clear();
@@ -158,7 +448,7 @@ static int test_raise_walk_offers_resume_declines(void) {
 }
 
 
-static int test_raise_walk_offers_resume_recovers(void) {
+static int test_raise_walk_resume_handles(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
@@ -187,9 +477,9 @@ static int test_raise_walk_offers_resume_recovers(void) {
 
   KosOpResult ev = kos_dyn_unwind_raise(&es);
 
-  TEST_ASSERT_EQ(probe.calls, 1, "resume was offered the raise");
-  TEST_ASSERT_EQ(probe.seen_null, 1, "offer delivered NULL (exception, not a value)");
-  TEST_ASSERT_EQ(ev.kind, KOS_RES_REPROLOGUE, "recovering offer resumes normally");
+  TEST_ASSERT_EQ(probe.calls, 1, "the walk called the resume");
+  TEST_ASSERT_EQ(probe.seen_null, 1, "the resume received NULL (an exception, not a value)");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_REPROLOGUE, "handled: execution resumes normally");
   TEST_ASSERT(! PyErr_Occurred(), "the resume cleared the exception");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_FN(frame),
                    "resume is cleared before invocation, stays cleared");
@@ -313,8 +603,8 @@ static int test_call_resume_null_pushes_normal_result(void) {
   /* a plain Python callable's result is already pushed by
      KosEvalState_Call itself (push_or_await_plain); resume == NULL
      relays that NORMAL untouched -- no separate push needed here. */
-  KosOpResult r = KosEvalState_CallResume(
-      &es, abs_fn, &neg5, 1, NULL, NULL, NULL);
+  KosOpResult r = KosEvalState_CallResult(
+      &es, abs_fn, &neg5, 1, NULL, 0, NULL, NULL);
 
   Py_DECREF(neg5);
   Py_DECREF(abs_fn);
@@ -384,8 +674,14 @@ int run_resume_tests(void) {
   printf("\n=== CPS resume plumbing tests ===\n");
 
   RUN_TEST(test_cg_prologue_delivers_staged_resume);
-  RUN_TEST(test_raise_walk_offers_resume_declines);
-  RUN_TEST(test_raise_walk_offers_resume_recovers);
+  RUN_TEST(test_dispatch_stages_into_pending_slot);
+  RUN_TEST(test_next_resume_delivered_reports_in_hand);
+  RUN_TEST(test_return_into_resume_parent);
+  RUN_TEST(test_prologue_reenter_idle_proceeds);
+  RUN_TEST(test_prologue_reenter_delivers_staged);
+  RUN_TEST(test_prologue_reenter_runs_pending_exception);
+  RUN_TEST(test_raise_walk_resume_propagates);
+  RUN_TEST(test_raise_walk_resume_handles);
   RUN_TEST(test_clone_refuses_resume_frame);
   RUN_TEST(test_park_inert_clears_resume_triple);
   RUN_TEST(test_reset_for_tail_clears_resume_triple);

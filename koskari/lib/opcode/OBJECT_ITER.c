@@ -25,15 +25,15 @@ KOS_OP_HANDLER(OBJECT_ITER) {
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *res = kos_iter_acquire(val);
   Py_DECREF(val);
 
   if (unlikely(! res))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, res);
+  RESULT_STEAL(es, res);
 }
 
 

@@ -25,32 +25,32 @@
 KOS_OP_HANDLER(BUILD_LIST_EXTEND_CONST) {
   PyObject *seq = KosEvalState_CONST(es, KosOp_ARG(insn));
   if (unlikely(! seq))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, 1);
   if (unlikely(! ptr))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *list = ptr[0];
   if (unlikely(! PyList_Check(list))) {
     PyErr_Format(PyExc_TypeError,
                  "BUILD_LIST_EXTEND_CONST requires list, not %R", list);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (likely(PyTuple_CheckExact(seq))) {
     Py_ssize_t n = PyTuple_GET_SIZE(seq);
     for (Py_ssize_t i = 0; i < n; i++) {
       if (unlikely(PyList_Append(list, PyTuple_GET_ITEM(seq, i)) < 0))
-        return EVAL_RAISE();
+        RESULT_RAISE();
     }
-    return EVAL_NORMAL();
+    RESULT_NEXT(es);
   }
 
   {
     PyObject *it = PyObject_GetIter(seq);
     if (unlikely(! it))
-      return EVAL_RAISE();
+      RESULT_RAISE();
 
     PyObject *item;
     while ((item = PyIter_Next(it))) {
@@ -58,15 +58,15 @@ KOS_OP_HANDLER(BUILD_LIST_EXTEND_CONST) {
       Py_DECREF(item);
       if (unlikely(rc < 0)) {
         Py_DECREF(it);
-        return EVAL_RAISE();
+        RESULT_RAISE();
       }
     }
     Py_DECREF(it);
     if (unlikely(PyErr_Occurred()))
-      return EVAL_RAISE();
+      RESULT_RAISE();
   }
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

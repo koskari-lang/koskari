@@ -26,18 +26,18 @@ KOS_OP_HANDLER_COLD(VAR_FORMAT_CONST) {
   PyObject *name = KosEvalState_CONST(es, row.a0);
   PyObject *rules = KosEvalState_CONST(es, row.a1);
   if (unlikely(! name || ! rules))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *val = frame_ns_deref(es, name);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *res = PyObject_Format(val, rules);
   Py_DECREF(val);
   if (unlikely(! res))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, res);
+  RESULT_STEAL(es, res);
 }
 
 

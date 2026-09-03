@@ -58,7 +58,7 @@ KOS_OP_HANDLER_COLD(POP_PROMPT) {
     PyObject *val = KosEvalState_StackPopRef(es);
     if (! val) {
       SAY("[eval] POP_PROMPT (invoke) pop underrun\n");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     if (PyLong_Check(val))
       SAYF("[eval] POP_PROMPT return to invoker value=%ld\n",
@@ -66,13 +66,13 @@ KOS_OP_HANDLER_COLD(POP_PROMPT) {
 
     if (KosDynDelim_RETURN_FRAME(ret_delim) != NULL
         && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1) {
-      return kos_eval_route_delim_return(es, ret_delim, val);
+      RESULT_RELAY(es, kos_eval_route_delim_return(es, ret_delim, val));
     }
 
     if (KosEvalState_CurrentNode(es) == (KosDynNode *) ret_delim) {
       if (unlikely(kos_dyn_pop_delim(es, ret_delim) < 0)) {
         Py_DECREF(val);
-        return EVAL_RAISE();
+        RESULT_RAISE();
       }
     }
     KosEvalState_MarkSuspendedNotRunning(es);
@@ -82,7 +82,7 @@ KOS_OP_HANDLER_COLD(POP_PROMPT) {
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (! top || ! KosDynNode_IS_PROMPT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_PROMPT: top is not a prompt");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   SAYF("[eval] POP_PROMPT (normal): popping prompt, frame=%p stack_len=%zu",
        (void *) KosEvalState_FRAME(es),
@@ -91,22 +91,19 @@ KOS_OP_HANDLER_COLD(POP_PROMPT) {
   PyObject *result = KosEvalState_StackPopRef(es);
   if (! result) {
     SAY("[eval] POP_PROMPT (normal): stack underrun");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (kos_dyn_pop_prompt(es, (KosDynPrompt *) top) < 0) {
     Py_XDECREF(result);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   SAYF("[eval] POP_PROMPT (normal): after pop, frame=%p stack_len=%zu",
        (void *) KosEvalState_FRAME(es),
        KosEvalState_StackLen(es));
 
-  if (KosEvalState_StackPUSH(es, result) < 0) {
-    return EVAL_RAISE();
-  }
-  return EVAL_NORMAL();
+  RESULT_STEAL(es, result);
 }
 
 

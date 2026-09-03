@@ -31,30 +31,30 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR_NAMES) {
   // borrow reference
   PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   // owned reference
   PyObject *obj = frame_ns_deref(es, name);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   // borrowed reference
   PyObject *attr_name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   // borrowed reference
   PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
   if (! names) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_VAR_ATTR_NAMES names must be tuple"
                  ", not %R", names);
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
@@ -64,7 +64,7 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR_NAMES) {
     ptr = KosEvalState_StackTailPtr(es, (size_t)(npos + nkwds));
     if (! ptr) {
       Py_DECREF(obj);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -75,7 +75,7 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR_NAMES) {
   int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
   if (send_self < 0) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Prologue only: kos_call_invoke owns the window drop; an unbound
@@ -86,7 +86,7 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR_NAMES) {
                                   KOS_CALL_ARGV_WINDOW
                                   | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
-  return r;
+  RESULT_RELAY(es, r);
 }
 
 

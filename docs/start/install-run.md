@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Python 3.9 or newer (CPython)
-- A C compiler for building native extensions
+- A C compiler with musttail support for the native extension: clang, or GCC 15 or newer
 - [tox](https://tox.wiki/) for running tests and building docs (recommended)
 
 ## Build

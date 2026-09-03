@@ -24,12 +24,12 @@ KOS_OP_HANDLER(CAR) {
   if (unlikely(opa <= 0)) {
     PyErr_Format(PyExc_RuntimeError, "CAR invoked with invalid"
                  " argument count: %i", opa);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *cur = KosEvalState_StackPopRef(es);
   if (unlikely(! cur))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   for (int i = 0; i < opa; i++) {
     if (! KosPair_Check(cur) || KosNilP(cur)) {
@@ -41,7 +41,7 @@ KOS_OP_HANDLER(CAR) {
       PyErr_Format(PyExc_TypeError,
                    "CAR at index %d of %d requires a non-nil pair, got %s",
                    i, opa, got);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
     PyObject *next = KosPair_CAR(cur);
@@ -50,7 +50,7 @@ KOS_OP_HANDLER(CAR) {
     cur = next;
   }
 
-  return kos_op_result_PUSH(es, cur);
+  RESULT_STEAL(es, cur);
 }
 
 

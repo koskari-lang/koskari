@@ -20,15 +20,15 @@
 KOS_OP_HANDLER(ATTR_CLEAR) {
   PyObject *name = get_name_from_insn(es, insn);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   int res = PyObject_DelAttr(obj, name);
   Py_DECREF(obj);
   if (res < 0)
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

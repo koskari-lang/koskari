@@ -24,14 +24,14 @@ KOS_OP_HANDLER_COLD(VAR_ATTR_STORE) {
   PyObject *var_name = KosEvalState_CONST(es, row.a0);
   PyObject *attr_name = KosEvalState_CONST(es, row.a1);
   if (! var_name || ! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj) {
     Py_DECREF(val);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Per-site storage-location cache: a SLOT hit writes the __slots__ member,
@@ -47,14 +47,14 @@ KOS_OP_HANDLER_COLD(VAR_ATTR_STORE) {
       field_slot_store(obj, off, val);
       Py_DECREF(obj);
       Py_DECREF(val);
-      return EVAL_NORMAL();
+      RESULT_NEXT(es);
     }
 #if PY_MINOR_VERSION >= 11
     if (m == KOS_FIELD_INSTANCE_VALUE
         && field_instance_value_store(obj, off, val)) {
       Py_DECREF(obj);
       Py_DECREF(val);
-      return EVAL_NORMAL();
+      RESULT_NEXT(es);
     }
 #endif
   }
@@ -63,8 +63,8 @@ KOS_OP_HANDLER_COLD(VAR_ATTR_STORE) {
   Py_DECREF(obj);
   Py_DECREF(val);
   if (res < 0)
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

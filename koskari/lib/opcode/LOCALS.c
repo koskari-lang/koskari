@@ -21,7 +21,7 @@
 */
 KOS_OP_HANDLER(LOCALS) {
   PyObject *ns = KosEvalState_RevealNamespace(es);
-  return kos_op_result_PUSH(es, ns);
+  RESULT_STEAL(es, ns);
 }
 
 

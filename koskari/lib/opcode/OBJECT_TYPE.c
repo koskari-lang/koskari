@@ -22,13 +22,13 @@ KOS_OP_HANDLER(OBJECT_TYPE) {
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *res = (PyObject *) Py_TYPE(val);
   Py_INCREF(res);
   Py_DECREF(val);
 
-  return kos_op_result_PUSH(es, res);
+  RESULT_STEAL(es, res);
 }
 
 

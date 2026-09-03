@@ -29,8 +29,10 @@ This version aims to be a perfect playground -- a language with all the useful f
 
 ## Quick Start
 
-**Prerequisites:** Python 3.9+, a C compiler, and [uv](https://docs.astral.sh/uv/) for
-the virtual-environment workflow below.
+**Prerequisites:** Python 3.9+, a C compiler with musttail support (clang, or
+GCC 15 or newer; the evaluator threads opcode dispatch through guaranteed tail
+calls, and the build picks clang when it is on the PATH or honors `CC`), and
+[uv](https://docs.astral.sh/uv/) for the virtual-environment workflow below.
 
 ### Virtual environment
 

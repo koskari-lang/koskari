@@ -24,11 +24,11 @@ KOS_OP_HANDLER_COLD(CALL_NAMES) {
 
   PyObject *names = KosEvalState_StackPeek(es);
   if (! names)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_NAMES names must be tuple"
                  ", not %R", names);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
@@ -39,12 +39,12 @@ KOS_OP_HANDLER_COLD(CALL_NAMES) {
      standard [callable, pos..., kw_vals...] shape for the core. */
   names = KosEvalState_StackPopRef(es);
   if (! names)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, (size_t) total + 1);
   if (! ptr) {
     Py_DECREF(names);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   KosOpResult r = kos_call_invoke(es, ptr[0], NULL,
@@ -53,7 +53,7 @@ KOS_OP_HANDLER_COLD(CALL_NAMES) {
                                   KOS_CALL_ARGV_WINDOW
                                   | KOS_CALL_WINDOW_CALLABLE);
   Py_DECREF(names);
-  return r;
+  RESULT_RELAY(es, r);
 }
 
 

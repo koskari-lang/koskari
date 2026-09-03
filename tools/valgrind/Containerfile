@@ -23,7 +23,8 @@ LABEL maintainer="obriencj@gmail.com" \
       description="Valgrind environment for koskari memory leak analysis"
 
 RUN dnf install -y \
-    gcc \
+    clang \
+    lld \
     python3-devel \
     python3-pip \
     valgrind \
@@ -31,8 +32,9 @@ RUN dnf install -y \
 
 WORKDIR /build
 
-# Build and install koskari from source.  The C extension requires gcc
-# and python3-devel; a plain pip install handles both in one step.
+# Build and install koskari from source.  The C extension threads its
+# dispatch through musttail, so it requires clang (or GCC 15+) and
+# python3-devel; a plain pip install handles both in one step.
 COPY tools/regen_version.py /build/tools/
 COPY setup.py setup.cfg pyproject.toml MANIFEST.in \
      LICENSE README.md koskari.pth ./

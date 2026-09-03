@@ -58,10 +58,10 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
   if (! matcher) {
     PyObject *frozen = KosEvalState_CONST(es, row.a1);
     if (unlikely(! frozen))
-      return EVAL_RAISE();
+      RESULT_RAISE();
     matcher = KosMatcher_FromTuple(frozen);
     if (unlikely(! matcher))
-      return EVAL_RAISE();
+      RESULT_RAISE();
     if (slot) {
       slot->kind = KOS_CACHE_MATCHER;
       slot->u.matcher.matcher = matcher;   /* slot takes ownership */
@@ -86,7 +86,7 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
                     "MATCH_CASE stack underflow");
     if (matcher_owned)
       Py_DECREF(matcher);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   KosMatchSubject subj;
@@ -101,15 +101,14 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
     Py_DECREF(matcher);
 
   if (unlikely(matched < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   /* Consume the stacked externs; the subject returns to TOS. */
   if (n)
     KosEvalState_StackDropNoErr(es, (size_t) n);
 
   if (! matched) {
-    KosEvalState_SET_PC(es, row.a0);
-    return EVAL_NORMAL();
+    RESULT_JUMP(es, row.a0);
   }
 
   /* Matched: push the capture dict for the arm's MATCH_STORE_NAMES (or
@@ -118,7 +117,7 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
      beneath the dict for the guard's advance-or-commit. */
   if (! row.a3)
     KosEvalState_StackDropNoErr(es, 1);
-  return kos_op_result_PUSH(es, caps);
+  RESULT_STEAL(es, caps);
 }
 
 

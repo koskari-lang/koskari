@@ -24,9 +24,9 @@ KOS_OP_HANDLER(FAST) {
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *val = kos_ns_fast_deref(ns, idx);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, val);
+  RESULT_STEAL(es, val);
 }
 
 

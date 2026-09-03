@@ -24,11 +24,11 @@
    direct-return-guaranteed koskari function complete as KOS_ITER_VALUE
    or a graft install with the evaluator otherwise untouched (cs_direct,
    still unconverted below pending a benchmark-driven decision -- see
-   design/cps-consumer-api.md). Anything else -- a driven source, or a
+   design/archive/cps-consumer-api.md). Anything else -- a driven source, or a
    FRAME-shaped or awaitable-returning function without that guarantee
    -- runs under one CPS resume-carrying frame: FETCH requests the next
    source element via KosEvalState_NextResume, INVOKE applies the
-   function via KosEvalState_CallResume, and completion delivers the
+   function via KosEvalState_CallResult, and completion delivers the
    element to the consumer's iteration node. Exhaustion and errors leave
    the frame as exceptions; the consumer's iteration node converts
    StopIteration per its own rules, which also gives a mapped
@@ -72,14 +72,14 @@ typedef struct {
    The invoke completed. The value is settled by contract, so the step
    completes with it directly. value is consumed.
 */
-static KosOpResult map_resume_after_result(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
     KosEvalState *es, void *state, PyObject *value) {
 
   KosMapObject *m = (KosMapObject *) state;
 
-  /* Declined by the raise walk's default: the frame pops and the
-     consumer's iteration node owns the conversion (StopIteration
-     truncation parity included). */
+  /* The raise walk is propagating an exception: let it, so the frame
+     pops and the consumer's iteration node owns the conversion
+     (StopIteration truncation parity included). */
   if (! value)
     return EVAL_RAISE();
 
@@ -94,7 +94,7 @@ static KosOpResult map_resume_after_result(
    that wants no frame still runs in this evaluator rather than
    through the Python boundary. element is consumed.
 */
-static KosOpResult map_resume_after_fetch(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
     KosEvalState *es, void *state, PyObject *element) {
 
   KosMapObject *m = (KosMapObject *) state;
@@ -103,10 +103,10 @@ static KosOpResult map_resume_after_fetch(
   if (! element)
     return EVAL_RAISE();
 
-  r = KosEvalState_CallResume(es, m->fn.cs_callable, &element, 1, NULL,
-                              map_resume_after_result, m);
+  r = KosEvalState_CallResult(es, m->fn.cs_callable, &element, 1, NULL,
+                              0, map_resume_after_result, m);
   Py_DECREF(element);
-  return r;
+  RESULT_ENTRY(es, r, map_resume_after_result, m);
 }
 
 
@@ -119,14 +119,22 @@ static KosOpResult map_resume_after_fetch(
    lets the trampoline invoke it, from inside koskari_eval, once the
    frame is actually dispatched. Always invoked with NULL.
 */
-static KosOpResult map_resume_start_fetch(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
     KosEvalState *es, void *state, PyObject *value) {
+
+  KosOpResult r;
 
   (void) value;
 
-  return KosEvalState_NextResume(
+  /* The raise walk is propagating an exception: let it, as every
+     resume does. */
+  if (PyErr_Occurred())
+    return EVAL_RAISE();
+
+  r = KosEvalState_NextResume(
       es, ((KosMapObject *) state)->source, NULL,
       map_resume_after_fetch, state);
+  RESULT_ENTRY(es, r, map_resume_after_fetch, state);
 }
 
 
@@ -197,8 +205,9 @@ static KosIterStepResult map_iter_step(
        generic call entry -- cached frame, the element's own address
        as the argument vector -- with no helper frame. */
     if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME && m->fn.cs_direct) {
-      KosOpResult r = KosEvalState_Call(es, m->fn.cs_callable,
-                                        &element, 1, NULL, 0);
+      KosOpResult r = KosEvalState_CallResult(es, m->fn.cs_callable,
+                                              &element, 1, NULL, 0,
+                                              NULL, NULL);
       Py_DECREF(element);
       if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
         m->busy = 1;

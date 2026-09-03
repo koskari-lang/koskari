@@ -76,23 +76,21 @@ static int pair_splice_extend(PyObject *coll, PyObject *item) {
 KOS_OP_HANDLER_COLD(PAIR_SPLICE) {
   size_t count = (size_t) KosOp_ARG(insn);
 
-  if (count == 0) {
-    Py_INCREF(KosNil);
-    return kos_op_result_PUSH(es, KosNil);
-  }
+  if (count == 0)
+    RESULT_PUSH(es, KosNil);
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
   if (unlikely(! ptr))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *coll = PyList_New(0);
   if (unlikely(! coll))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   for (size_t i = 0; i < count; i++) {
     if (unlikely(pair_splice_extend(coll, ptr[i]) < 0)) {
       Py_DECREF(coll);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -107,20 +105,20 @@ KOS_OP_HANDLER_COLD(PAIR_SPLICE) {
     /* Append nil to make the result a proper list. */
     if (PyList_Append(coll, KosNil) < 0) {
       Py_DECREF(coll);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     result = KosPair_Cons(coll);
     Py_DECREF(coll);
     if (! result)
-      return EVAL_RAISE();
+      RESULT_RAISE();
   }
 
   if (unlikely(KosEvalState_StackDrop(es, count) < 0)) {
     Py_DECREF(result);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  return kos_op_result_PUSH(es, result);
+  RESULT_STEAL(es, result);
 }
 
 

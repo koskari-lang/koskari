@@ -30,14 +30,14 @@ KOS_OP_HANDLER(AWAIT) {
     PyErr_Format(PyExc_RuntimeError,
                  "AWAIT: arg must be 0 or 1 (stack count), got %u",
                  (unsigned) arg);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_await_dispatch(es, val);
+  RESULT_RELAY(es, kos_await_dispatch(es, val));
 }
 
 

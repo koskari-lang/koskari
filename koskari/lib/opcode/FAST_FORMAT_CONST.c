@@ -27,19 +27,19 @@ KOS_OP_HANDLER(FAST_FORMAT_CONST) {
 
   PyObject *rules = KosEvalState_CONST(es, row.a1);
   if (unlikely(! rules))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   size_t idx = (size_t) row.a0;
   PyObject *val = kos_ns_fast_deref(ns, idx);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *res = PyObject_Format(val, rules);
   Py_DECREF(val);
   if (unlikely(! res))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, res);
+  RESULT_STEAL(es, res);
 }
 
 

@@ -24,10 +24,9 @@ KOS_OP_HANDLER(FAST_REF) {
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *ref = KosNamespace_FastRef(ns, idx);
   if (unlikely(! ref))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  Py_INCREF(ref);
-  return kos_op_result_PUSH(es, ref);
+  RESULT_PUSH(es, ref);
 }
 
 

@@ -20,10 +20,10 @@
 KOS_OP_HANDLER_COLD(VAR_CLEAR) {
   PyObject *name = get_name_from_insn(es, insn);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   if (frame_ns_clear(es, name) < 0)
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

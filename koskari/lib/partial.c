@@ -214,7 +214,8 @@ static KosOpResult kospartial_kos_vinstall(
     for (Py_ssize_t i = 0; i < nargs; i++)
       vec[nb + i] = args[i];
 
-    r = KosEvalState_Call(es, inner, vec, total, NULL, tail_call);
+    r = KosEvalState_CallResult(es, inner, vec, total, NULL, tail_call,
+                                NULL, NULL);
     if (vec != small)
       PyMem_Free(vec);
     return r;

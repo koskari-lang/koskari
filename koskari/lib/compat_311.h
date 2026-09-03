@@ -108,4 +108,53 @@ static inline PyObject *kos_managed_dict_peek(PyObject *obj) {
 }
 
 
+
+/* === The eval breaker === */
+
+
+/*
+   CPython's eval breaker on 3.11: an aggregate int on the interpreter's
+   ceval state, with the GIL drop request beside it. Replicated under
+   our own name (no internal header, no unexported symbol); compat.h
+   builds the probes on these.
+*/
+
+
+/* struct _ceval_state and struct _is prefixes:
+   https://github.com/python/cpython/blob/v3.11.0/Include/internal/pycore_interp.h */
+/* The trailing pending-calls lock gives the struct the pointer
+   alignment the real one has, so it lands at the same offset after
+   the interpreter prefix's final _Bool. */
+typedef struct {
+  int recursion_limit;
+  int eval_breaker;
+  int gil_drop_request;
+  void *pending_lock;
+} KosCevalState311;
+
+typedef struct {
+  uint64_t next_unique_id;
+  PyThreadState *head;
+  long count;
+  size_t stacksize;
+} KosPyThreads311;
+
+typedef struct {
+  PyInterpreterState *next;
+  KosPyThreads311 threads;
+  void *runtime;
+  int64_t id;
+  int64_t id_refcount;
+  int requires_idref;
+  void *id_mutex;
+  int _initialized;
+  int finalizing;
+  _Bool _static;
+  KosCevalState311 ceval;
+} KosInterpreterState311;
+
+#define KOS_CEVAL_STATE(interp)                         \
+  (&((KosInterpreterState311 *) (interp))->ceval)
+
+
 // The end.

@@ -19,7 +19,7 @@
 */
 KOS_OP_HANDLER_COLD(POSITION) {
   (void) insn;
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

@@ -47,6 +47,21 @@ compiled and loaded at package import time. "A bootstrap chain" on a
 generator is the not-yet-run frame set created at generator
 construction, before its first step.
 
+## breaker trip
+
+A cooperation point finding CPython's eval breaker up and diverting to
+the trampoline instead of threading on. The eval breaker is the word
+CPython's own loop tests for a GIL request or a pending signal; the
+evaluator reads the same word through the compat headers and tests it
+at four points, the places that close a cycle: `CONTINUE`, a frame
+install in the call core, a resume hop, and the prologue re-entry. On
+a trip `CONTINUE` returns `EVAL_NORMAL`, the call core returns
+`EVAL_REPROLOGUE`, and a resume hop stages through `DISPATCH`; each
+lands in the trampoline's poll, which yields the GIL if requested,
+runs `Py_MakePendingCalls`, and re-enters where the point left off.
+With the breaker down the point threads straight on. Reference:
+EVALUATOR.md §1.6.
+
 ## chain (dynchain, dyn node)
 
 The unified parent-linked list of dynamic-extent nodes -- frames,
@@ -141,9 +156,9 @@ its root.
 Filling a prepared frame with runnable work. A callable's install slot
 (`kc_vinstall`) fills the frame `do_frame_prep` set up;
 a generator install (`kos_dyn_gen_install`) re-splices a frozen chain;
-a native program install pushes a code-less frame carrying the
-program's descriptor. "Installed work" is work now runnable on the
-chain, as opposed to work completed synchronously.
+a resume-frame install (`KosResumeFrame_Install`) pushes a code-less
+frame for a resume to be set on. "Installed work" is work now runnable
+on the chain, as opposed to work completed synchronously.
 
 ## layout
 
@@ -151,15 +166,11 @@ The indentation-based surface syntax that the reader converts into
 s-expression forms (`koskari/reader/layouts/`). A layout block is the
 indented body under a form such as `if:`, `try:`, or `define`.
 
-## native program
+## native program (historical)
 
-C code that owns a whole frame on the chain instead of implementing one
-opcode: the frame runs no bytecode, and the evaluator invokes the
-program's handler in place of instruction dispatch, delivering typed
-events (regular invocation, a callee's return, an awaited value, an
-offered exception). Described by a static `KosNativeProgram`
-descriptor. Current programs: apply's non-flattening call, the map
-step, the filter step. Reference: EVALUATOR.md §8.2.
+C code that owned a whole frame on the chain through a static
+`KosNativeProgram` descriptor and a typed-event handler. Replaced by
+resumes (below); the term survives only in archived design notes.
 
 ## park (parked exception)
 
@@ -175,6 +186,16 @@ A KosIter provider: a type whose `kos_iter` suite carries `ki_step`,
 making it steppable in-eval by the iteration opcodes and the python
 adapters. Current providers: the koskari generator, KosMap, KosFilter.
 
+## resume
+
+A `KosThreadFn` set on a codeless frame (`resume_fn`, `resume_state`)
+to receive exactly one delivery: a call's settled result, a callee's
+return, an iteration element, or an awaited value. Invoked with the
+value, or with NULL and an exception set when the operation failed.
+Set through the CPS entries `KosEvalState_CallResult` and
+`KosEvalState_NextResume`; the map and filter steps are built from
+them. Reference: EVALUATOR.md §8.2.
+
 ## special (special form)
 
 A form the compiler handles structurally rather than as a call
@@ -187,6 +208,14 @@ One of the inline interface structures embedded in a
 `KosEvaluatedTypeObject`: the call suite (`KosCallSlots`, `kc_` slots)
 or the iter suite (`KosIterSlots`, `ki_` slots). Membership in a family
 is by its defining slot, not by pointer presence.
+
+## threaded dispatch
+
+Opcode execution as a chain of guaranteed tail calls: each handler ends
+in a `RESULT_*` macro that tail-calls the handler recorded in the next
+instruction (`KosOp.fn`), and control returns to `koskari_eval`'s
+trampoline only on a signal. Requires a compiler with musttail (clang,
+or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
 
 ## transfer plan
 

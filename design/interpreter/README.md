@@ -19,7 +19,8 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`); extent/location tables — archived spec [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
 - **bytecode-finalization.md**: Final form phase design — collect/size/allocate/emit pipeline, identity-based cpool dedup, unified block with extra table; **design proposal**
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
-- **[EVALUATOR.md](../EVALUATOR.md)**: Evaluator operation diagrams, phase flow, opcode signaling, exceptions, transfer plans, tail calls, call installs, and play-by-play scenarios
+- **[EVALUATOR.md](../EVALUATOR.md)**: Evaluator operation diagrams, threaded dispatch and the trampoline, opcode signaling, exceptions, transfer plans, tail calls, call installs, CPS resumes, and play-by-play scenarios
+- **[archive/threaded-dispatch.md](../archive/threaded-dispatch.md)** (archived): the musttail-threaded dispatch design, implemented; **[archive/cps-consumer-api.md](../archive/cps-consumer-api.md)** (archived): the continuation-passing Call/Next entries, implemented; **stencil-compilation.md** builds on both
 - **[archive/iteration-yield-boundaries.md](../archive/iteration-yield-boundaries.md)** (archived): YIELD vs YIELD_FROM vs PUSH_FOREACH/ITER_NEXT — implementation map, underlying calls, consolidation proposals
 - **[archive/opcode-eval-helpers-inventory.md](../archive/opcode-eval-helpers-inventory.md)** (archived): Static helpers in `eval.c` and opcode `.c` files — opcode cross-reference, redundancies, suggested public names for native/runtime API
 - **execution-invariants.md**: Koskari execution model invariants and design commitments

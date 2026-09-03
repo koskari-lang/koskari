@@ -24,9 +24,9 @@ KOS_OP_HANDLER(FAST_TAKE) {
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *val = KosNamespace_FastTake(ns, idx);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, val);
+  RESULT_STEAL(es, val);
 }
 
 

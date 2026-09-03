@@ -31,6 +31,9 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
   if (es)
     memset(es, 0, sizeof(KosEvalState));
   KosEvalState_CONTEXT(es) = ctx;
+  KosEvalState_BREAKER(es) = koskari_eval_breaker_locate();
+  if (! KosEvalState_BREAKER(es))
+    KosEvalState_BREAKER(es) = &koskari_breaker_always;
 
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_init);
 }
@@ -93,6 +96,18 @@ void KosEvalState_FreezeToContext(KosEvalState *es) {
   ctx = KosEvalState_CONTEXT(es);
   if (! ctx)
     return;
+
+  /* A staged delivery outlives the eval state only as storage on the
+     frame it was staged for; the delivery step takes it back from the
+     stack on the next trip. */
+  if (KosEvalState_PENDING_VALUE(es)) {
+    PyObject *staged = KosEvalState_PENDING_VALUE(es);
+    KosEvalState_PENDING_VALUE(es) = NULL;
+    if (KosEvalState_BLOCK(es))
+      (void) KosEvalState_StackPUSH(es, staged);  /* consumes on failure */
+    else
+      Py_DECREF(staged);
+  }
 
   KosContext_DYN_TOP(ctx) = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = NULL;

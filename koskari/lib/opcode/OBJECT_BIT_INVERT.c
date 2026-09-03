@@ -22,15 +22,15 @@ KOS_OP_HANDLER(OBJECT_BIT_INVERT) {
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *res = PyNumber_Invert(val);
   Py_DECREF(val);
 
   if (unlikely(! res))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, res);
+  RESULT_STEAL(es, res);
 }
 
 

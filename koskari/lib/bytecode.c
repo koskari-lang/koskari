@@ -1746,10 +1746,11 @@ static void code_collect_clear(CodeCollect *coll) {
    from CodeCollect; no over-allocation. Layout (with alignment padding
    between regions):
 
-     [code][pad][positions][pad][cpool][pad][extra][pad][extents][top_extent_id]
+     [code][pad][positions][pad][cpool][pad][extra][pad][extents]
+     [top_extent_id]
 
-   All offsets use natural alignment: pointer size for cpool, 4-byte for
-   KosExtra. With protect, the block is page-aligned and the total is
+   All offsets use natural alignment: pointer size for cpool,
+   4-byte for KosExtra. With protect, the block is page-aligned and the total is
    rounded up to page size for the later mprotect seal; without, it is a
    plain writable malloc of the exact unrounded total.
 */
@@ -1807,6 +1808,18 @@ static int code_alloc_unified(
       ? (uint16_t *) ((char *) base + lay.top_offset) : NULL;
 
   return 0;
+}
+
+
+/**
+   Resolve each instruction's handler from its opcode. Runs after emit
+   (which settles op, arg, and the cache index) and validation, in the
+   block's writable window.
+*/
+static void code_fill_handlers(KosOp *code, uint32_t code_len) {
+
+  for (uint32_t pc = 0; pc < code_len; pc++)
+    code[pc].fn = kos_op_handlers[code[pc].op];
 }
 
 
@@ -2749,6 +2762,8 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
     free(base);
     return -1;
   }
+
+  code_fill_handlers(code, code_len);
 
   /* Seal block read-only; single mprotect for entire allocation */
   if (protect) {

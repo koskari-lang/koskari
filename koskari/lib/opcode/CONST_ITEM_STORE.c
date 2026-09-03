@@ -20,16 +20,16 @@
 KOS_OP_HANDLER(CONST_ITEM_STORE) {
   PyObject *key = KosEvalState_CONST(es, KosOp_ARG(insn));
   if (unlikely(! key))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (unlikely(! obj)) {
     Py_DECREF(val);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   int res = PyObject_SetItem(obj, key, val);
@@ -37,9 +37,9 @@ KOS_OP_HANDLER(CONST_ITEM_STORE) {
   Py_DECREF(val);
 
   if (unlikely(res < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

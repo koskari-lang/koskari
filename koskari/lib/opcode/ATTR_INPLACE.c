@@ -34,11 +34,11 @@ KOS_OP_HANDLER_COLD(ATTR_INPLACE) {
   int count = (int) KosOpCount_COUNT(row.a0);
   PyObject *attr = KosEvalState_CONST(es, row.a1);
   if (! attr)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *tail = KosEvalState_StackTailPtr(es, (size_t) (count + 1));
   if (! tail)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   uint16_t cache_ix = KosOp_CACHE(insn);
   KosCacheSlot *slot =
@@ -46,7 +46,9 @@ KOS_OP_HANDLER_COLD(ATTR_INPLACE) {
 
   int res = kos_attr_inplace_cached(slot, tail[0], attr, op, &tail[1], count);
   KosEvalState_StackDropNoErr(es, (size_t) (count + 1));
-  return kos_op_result_from_push_int(res);
+  if (unlikely(res < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

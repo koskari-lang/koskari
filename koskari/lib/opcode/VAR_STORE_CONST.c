@@ -26,13 +26,13 @@ KOS_OP_HANDLER_COLD(VAR_STORE_CONST) {
     PyObject *val = KosEvalState_CONST(es, row.a1);
 
     if (unlikely(! name || ! val))
-      return EVAL_RAISE();
+      RESULT_RAISE();
 
     if (unlikely(frame_ns_store(es, name, val) < 0)) {
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
-    return EVAL_NORMAL();
+    RESULT_NEXT(es);
   }
 
 

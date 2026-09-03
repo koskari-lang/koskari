@@ -33,7 +33,7 @@ KOS_OP_HANDLER_COLD(VAR4) {
     if (unlikely(! vals[i])) {
       while (i)
         Py_DECREF(vals[--i]);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -42,11 +42,11 @@ KOS_OP_HANDLER_COLD(VAR4) {
       /* PUSH consumes vals[i] even on failure; free the rest */
       while (++i < 4)
         Py_DECREF(vals[i]);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

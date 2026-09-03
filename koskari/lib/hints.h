@@ -28,12 +28,11 @@
 */
 
 
-/* Opcode handlers are always inlined so the eval loop stays fast.
+/* KOS_OP_INLINE marks the small hot cores that must fold into their
+   callers (the operator cores, the chain-segment walk).
 
-   KOS_ALL_COLD=1 builds a measurement variant instead: every handler
-   is un-inlined so each op_<NAME> is its own symbol, for the
-   per-handler sizing sweep in design/dispatch-sizing.md. Never ship
-   this. */
+   KOS_ALL_COLD=1 builds a measurement variant instead: every such
+   core is un-inlined so each is its own symbol. Never ship this. */
 #ifndef KOS_ALL_COLD
 # define KOS_ALL_COLD 0
 #endif
@@ -55,16 +54,38 @@
 #endif
 
 
-/* Dispatch: computed goto when available, else switch/case; no function table
-   so the compiler can inline handler bodies. Both paths use tail-dispatch to
-   next_insn. Build may override with -DKOS_USE_COMPUTED_GOTO=0 or =1. */
-#ifndef KOS_USE_COMPUTED_GOTO
-# if (defined(__GNUC__) || defined(__clang__))
-#  define KOS_USE_COMPUTED_GOTO 1
-# else
-#  define KOS_USE_COMPUTED_GOTO 0
-#  error "Unsupported compiler, no computed goto"
+/* Whether the compiler can enforce a tail call (clang, or GCC 15+).
+   Opcode dispatch is threaded through musttail, so eval.h refuses to
+   build without it. */
+#if defined(__has_attribute)
+# if __has_attribute(musttail)
+#  define KOS_HAVE_MUSTTAIL 1
 # endif
+#endif
+#ifndef KOS_HAVE_MUSTTAIL
+# define KOS_HAVE_MUSTTAIL 0
+#endif
+
+
+/* Calling convention for threaded steps (clang 19+): the function
+   preserves no registers for its caller and takes its arguments in
+   the registers a normal callee would have to save. A step never
+   returns into a frame that wants registers kept, and the trampoline
+   is the one plain caller, so the tail chain sheds every register
+   spill. Empty where the attribute is unknown or the target cannot
+   honor it: clang knows the attribute on every target but emits the
+   convention only on x86-64, and on AArch64 from clang 19; elsewhere
+   it warns, which -Werror turns into a failed build. */
+#if defined(__has_attribute) \
+    && (defined(__x86_64__) \
+        || (defined(__aarch64__) && defined(__clang_major__) \
+            && __clang_major__ >= 19))
+# if __has_attribute(preserve_none)
+#  define KOS_PRESERVE_NONE __attribute__((preserve_none))
+# endif
+#endif
+#ifndef KOS_PRESERVE_NONE
+# define KOS_PRESERVE_NONE
 #endif
 
 

@@ -24,7 +24,7 @@ KOS_OP_HANDLER(POP_FOREACH) {
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_FOREACH: top is not a FOREACH region");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   KosDynForeach *fe = (KosDynForeach *) region;
@@ -35,12 +35,10 @@ KOS_OP_HANDLER(POP_FOREACH) {
 
   if (unlikely(kos_dyn_pop_foreach(es, fe) < 0)) {
     Py_DECREF(result);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  if (unlikely(KosEvalState_StackPUSH(es, result) < 0))
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+  RESULT_STEAL(es, result);
 }
 
 

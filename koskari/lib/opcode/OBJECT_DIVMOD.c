@@ -20,17 +20,17 @@
 KOS_OP_HANDLER_COLD(OBJECT_DIVMOD) {
   if (unlikely(KosOp_ARG(insn) != 2)) {
     PyErr_SetString(PyExc_RuntimeError, "OBJECT_DIVMOD: only arg 2 supported");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *right = KosEvalState_StackPopRef(es);
   if (unlikely(! right))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *left = KosEvalState_StackPopRef(es);
   if (unlikely(! left)) {
     Py_DECREF(right);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *res = PyNumber_Divmod(left, right);
@@ -38,9 +38,9 @@ KOS_OP_HANDLER_COLD(OBJECT_DIVMOD) {
   Py_DECREF(right);
 
   if (unlikely(! res))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, res);
+  RESULT_STEAL(es, res);
 }
 
 

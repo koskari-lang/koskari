@@ -35,23 +35,23 @@ KOS_OP_HANDLER(IMPORT) {
 
   PyObject *name = KosEvalState_CONST(es, row.a0);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *bind = KosEvalState_CONST(es, row.a3);
   if (unlikely(! bind))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *mod = kos_import_module(es, name, (long) row.a1, row.a2);
   if (unlikely(! mod))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (unlikely(frame_ns_store(es, bind, mod) < 0)) {
     Py_DECREF(mod);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   Py_DECREF(mod);
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

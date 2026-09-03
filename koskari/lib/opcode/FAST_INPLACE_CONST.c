@@ -30,22 +30,24 @@ KOS_OP_HANDLER(FAST_INPLACE_CONST) {
 
   PyObject *operand = KosEvalState_CONST(es, row.a2);   /* borrowed */
   if (unlikely(! operand))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   size_t idx = (size_t) row.a1;
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (unlikely(! obj))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *pair[2] = { obj, operand };
   PyObject *result = kos_inplace_reduce((KosOperand) row.a0, pair, 2);
   Py_DECREF(obj);
   if (unlikely(! result))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   int res = kos_ns_fast_store(ns, idx, result);
   Py_DECREF(result);
-  return kos_op_result_from_push_int(res);
+  if (unlikely(res < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

@@ -27,7 +27,7 @@ KOS_OP_HANDLER_COLD(FAST_NEXT) {
   uint16_t n = (uint16_t) row.a1;
   if (unlikely(n != 1 && n != 2)) {
     PyErr_Format(PyExc_ValueError, "FAST_NEXT arg must be 1 or 2, got %u", n);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *ns = CURRENT_NS();
@@ -37,16 +37,16 @@ KOS_OP_HANDLER_COLD(FAST_NEXT) {
   if (n == 2) {
     default_val = KosEvalState_StackPopRef(es);
     if (unlikely(! default_val))
-      return EVAL_RAISE();
+      RESULT_RAISE();
   }
 
   PyObject *iter = kos_ns_fast_deref(ns, (size_t) row.a0);
   if (unlikely(! iter)) {
     Py_XDECREF(default_val);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  return object_next_step(es, iter, default_val, n);
+  RESULT_RELAY(es, object_next_step(es, iter, default_val, n));
 }
 
 

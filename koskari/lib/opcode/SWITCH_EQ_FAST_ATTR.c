@@ -30,34 +30,34 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST_ATTR) {
   KOS_OP_REQUIRE_NS(ns);
   PyObject *attr_name = KosEvalState_CONST(es, row.a2);
   if (unlikely(! attr_name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *obj = kos_ns_fast_deref(ns, (size_t) row.a1);
   if (unlikely(! obj))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *rhs = PyObject_GetAttr(obj, attr_name);
   Py_DECREF(obj);
   if (unlikely(! rhs))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *value = KosEvalState_StackPeek(es);
   if (unlikely(! value)) {
     Py_DECREF(rhs);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   int res = PyObject_RichCompareBool(value, rhs, Py_EQ);
   Py_DECREF(rhs);
   if (unlikely(res < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
     KosEvalState_SET_PC(es, row.a0);
   }
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

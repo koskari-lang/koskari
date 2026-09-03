@@ -21,8 +21,8 @@ KOS_OP_HANDLER(FAST_CLEAR) {
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
   if (KosNamespace_FastClear(ns, (size_t) KosOp_ARG(insn)) < 0)
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

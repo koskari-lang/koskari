@@ -89,7 +89,7 @@ int KosEvalState_SetFrameCodeAndNamespace(
   KosDynFrame_CODE(frame) = code;
   if (KosEvalState_FRAME(es) == frame) {
     KosEvalState_NAMESPACE(es) = ns;
-    KosEvalState_CODE(es) = code;
+    KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
     KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
   }
   return 0;
@@ -139,6 +139,7 @@ static inline int KosEvalState_PythonResumeTake(
   if (out_kind)
     *out_kind = KosContext_PY_RESUME_KIND(ctx);
   KosContext_PY_RESUME_INJECT(ctx) = NULL;
+  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
   return (out_val && *out_val != NULL) ? 1 : 0;
 }
 

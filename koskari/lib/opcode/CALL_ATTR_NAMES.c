@@ -29,16 +29,16 @@ KOS_OP_HANDLER_COLD(CALL_ATTR_NAMES) {
 
   PyObject *name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
   if (! names)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_ATTR_NAMES names must be tuple"
                  ", not %R", names);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
@@ -48,7 +48,7 @@ KOS_OP_HANDLER_COLD(CALL_ATTR_NAMES) {
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, ntotal);
   if (! ptr)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *obj = ptr[0];
 
@@ -58,7 +58,7 @@ KOS_OP_HANDLER_COLD(CALL_ATTR_NAMES) {
       ? NULL : &KosCode_CACHE(code)[cache_ix];
   int send_self = kos_resolve_named_attr(obj, name, cache, &resolved);
   if (send_self < 0)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   /* Unbound: obj is already argv[0] in the window.  Bound: obj is the
      under-slot, dropped with the window but not passed. */
@@ -74,7 +74,7 @@ KOS_OP_HANDLER_COLD(CALL_ATTR_NAMES) {
                         KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
                         | KOS_CALL_CALLABLE_OWNED);
   }
-  return r;
+  RESULT_RELAY(es, r);
 }
 
 

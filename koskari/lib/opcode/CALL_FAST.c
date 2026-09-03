@@ -30,19 +30,20 @@ KOS_OP_HANDLER(CALL_FAST) {
 
   PyObject *callable = kos_ns_fast_deref(ns, (size_t) row.a0);
   if (unlikely(! callable))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *argv = NULL;
   if (n) {
     argv = KosEvalState_StackTailPtr(es, n);
     if (unlikely(! argv)) {
       Py_DECREF(callable);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
-  return kos_call_invoke(es, callable, NULL, argv, (Py_ssize_t) n, NULL,
-                         KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED);
+  RESULT_RELAY(es, kos_call_invoke(
+      es, callable, NULL, argv, (Py_ssize_t) n, NULL,
+      KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED));
 }
 
 

@@ -20,21 +20,21 @@
 KOS_OP_HANDLER(ATTR_STORE) {
   PyObject *name = get_name_from_insn(es, insn);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj) {
     Py_DECREF(val);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   int res = PyObject_SetAttr(obj, name, val);
   Py_DECREF(obj);
   Py_DECREF(val);
   if (res < 0)
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

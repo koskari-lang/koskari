@@ -2,7 +2,9 @@
 # Invoke via workflow_call, workflow_dispatch, or from ci-*.yml triggers.
 #
 # Linux jobs use the official python:*-bookworm images (buildpack-deps:
-# gcc, git, headers, and a non-distro pip already present).
+# git, headers, and a non-distro pip already present). The evaluator
+# threads dispatch through musttail, so the test job adds clang and lld;
+# the image's gcc predates musttail.
 
 name: Run tests
 
@@ -47,6 +49,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Install clang and lld
+        run: |
+          apt-get update -qq
+          apt-get install -qy --no-install-recommends clang lld
 
       - name: Install tox
         run: python -m pip install --disable-pip-version-check tox tox-uv

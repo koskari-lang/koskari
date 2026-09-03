@@ -702,12 +702,14 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
 
     }  /* KOS_DYN_CAP_INTERCEPTS_RAISE */
 
-    /* A frame carrying a CPS resume is offered the pending exception
-       before it is torn through: the resume may consume (REPROLOGUE)
-       or decline (EVAL_RAISE), in which case the pop below proceeds.
-       This is what makes CallResume's "NULL with exception set"
-       delivery real -- without this offer a resume set on a frame that
-       fails mid-call is never invoked at all. */
+    /* A frame carrying a CPS resume sees the pending exception before
+       it is torn through: the resume either handles it (REPROLOGUE)
+       or propagates it (EVAL_RAISE), in which case the pop below
+       proceeds. Only a resume frame sitting at dyn_top above the live
+       frame is called; a step frame that is the live frame when its
+       operation fails takes the frame-crossing branch above and is
+       popped without its resume running, so its consumer's iteration
+       node sees the failure instead. */
     if (KosDynNode_IS_FRAME(top)
         && KosDynFrame_RESUME_FN((KosDynFrame *) top)) {
       KosDynFrame *frame = (KosDynFrame *) top;
@@ -723,6 +725,18 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
         return EVAL_REPROLOGUE();
       if (hr.kind == KOS_RES_FATAL)
         return EVAL_FATAL();
+#if KOS_EVAL_SAFETYNET
+      /* The resume ran as a plain call: it may handle the exception
+         or propagate it, never thread on or produce a signal this
+         walk cannot apply. */
+      if (hr.kind != KOS_RES_RAISE) {
+        Py_XDECREF(hr.val);
+        PyErr_SetString(PyExc_SystemError,
+                        "resume answered a propagating exception with"
+                        " a signal other than REPROLOGUE or RAISE");
+        return EVAL_FATAL();
+      }
+#endif
       /* declined: fall through to the pop */
     }
 

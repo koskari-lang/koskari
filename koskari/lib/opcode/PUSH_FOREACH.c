@@ -27,7 +27,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   PyObject *iterable = KosEvalState_StackPopRef(es);
   if (! iterable) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing iterable");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Derive break target from the extent table (pop_pc + 1) */
@@ -38,14 +38,14 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
     Py_DECREF(iterable);
     PyErr_SetString(PyExc_RuntimeError,
                     "PUSH_FOREACH: no FOREACH extent at this PC");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
     Py_DECREF(iterable);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: invalid extent");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   uint32_t break_pc = ext->pop_pc + 1u;
 
@@ -53,7 +53,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   PyObject *iter = kos_iter_acquire(iterable);
   Py_DECREF(iterable);
   if (! iter)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   /* Push region */
   KosDynNode *region = (KosDynNode *) kos_dyn_push_foreach(
@@ -61,7 +61,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   if (! region) {
     Py_DECREF(iter);
     PyErr_NoMemory();
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   KosDynForeach_ITER((KosDynForeach *) region) = iter;
@@ -72,7 +72,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   Py_INCREF(iter);
   KosDynForeach_REQ(region)->iter = iter;
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

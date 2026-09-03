@@ -114,4 +114,31 @@ static inline PyObject *kos_managed_dict_peek(PyObject *obj) {
 }
 
 
+
+/* === The eval breaker === */
+
+
+/*
+   CPython's eval breaker on 3.13: a bit set on the thread state
+   (pycore_ceval.h names the bits). Replicated under our own name (no
+   internal header, no unexported symbol); compat.h builds the probes
+   on these.
+*/
+
+
+/* struct _ts through eval_breaker:
+   https://github.com/python/cpython/blob/v3.13.0/Include/cpython/pystate.h */
+typedef struct {
+  PyThreadState *prev;
+  PyThreadState *next;
+  PyInterpreterState *interp;
+  uintptr_t eval_breaker;
+} KosThreadState313;
+
+#define KOS_BREAKER_WORD(tstate)                        \
+  (((KosThreadState313 *) (tstate))->eval_breaker)
+#define KOS_BREAKER_GIL_DROP (1U << 0)  /* _PY_GIL_DROP_REQUEST_BIT */
+#define KOS_BREAKER_SIGNALS  (1U << 1)  /* _PY_SIGNALS_PENDING_BIT */
+
+
 // The end.

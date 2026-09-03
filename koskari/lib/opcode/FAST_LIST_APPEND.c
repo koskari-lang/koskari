@@ -27,30 +27,30 @@ KOS_OP_HANDLER(FAST_LIST_APPEND) {
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *list = kos_ns_fast_deref(ns, idx);
   if (unlikely(! list))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (unlikely(! PyList_Check(list))) {
     PyErr_Format(PyExc_TypeError,
                  "FAST_LIST_APPEND requires list, not %R", list);
     Py_DECREF(list);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *value = KosEvalState_StackPopRef(es);
   if (unlikely(! value)) {
     Py_DECREF(list);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (unlikely(PyList_Append(list, value) < 0)) {
     Py_DECREF(list);
     Py_DECREF(value);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_DECREF(list);
   Py_DECREF(value);
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

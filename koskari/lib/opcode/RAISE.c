@@ -29,7 +29,7 @@ KOS_OP_HANDLER_COLD(RAISE) {
       Py_XDECREF(typ);
       Py_XDECREF(val);
       Py_XDECREF(tb);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
     PyErr_Restore(typ, val, tb);
@@ -38,7 +38,7 @@ KOS_OP_HANDLER_COLD(RAISE) {
   } else if (n == 1) {
     PyObject *exc = KosEvalState_StackPopRef(es);
     if (unlikely(! exc))
-      return EVAL_RAISE();
+      RESULT_RAISE();
 
     if (PyExceptionInstance_Check(exc)) {
       PyObject *typ = (PyObject *) Py_TYPE(exc);
@@ -52,18 +52,18 @@ KOS_OP_HANDLER_COLD(RAISE) {
       }
       Py_DECREF(exc);
       if (PyErr_Occurred())
-        return EVAL_RAISE();
+        RESULT_RAISE();
 
     } else {
       Py_DECREF(exc);
       PyErr_SetString(PyExc_TypeError, "exceptions must derive from BaseException");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     Py_DECREF(exc);
 
   } else {
     PyErr_Format(PyExc_RuntimeError, "RAISE with unsupported arg count %u", n);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   return EVAL_REPROLOGUE();

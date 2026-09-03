@@ -29,12 +29,12 @@ KOS_OP_HANDLER(FAST_STORE_CONST) {
     PyObject *val = KosEvalState_CONST(es, row.a1);
 
     if (unlikely(! val))
-      return EVAL_RAISE();
+      RESULT_RAISE();
 
     if (unlikely(kos_ns_fast_store(ns, idx, val) < 0))
-      return EVAL_RAISE();
+      RESULT_RAISE();
 
-    return EVAL_NORMAL();
+    RESULT_NEXT(es);
   }
 
 

@@ -26,17 +26,19 @@ KOS_OP_HANDLER(FAST_BIND) {
   if (unlikely(idx >= KosNamespace_FAST_COUNT(ns))) {
     PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %zu",
                  idx);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   int res = KosNamespace_FastBind(ns, idx, val);
   Py_DECREF(val);
 
-  return kos_op_result_from_push_int(res);
+  if (unlikely(res < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

@@ -36,17 +36,17 @@ KOS_OP_HANDLER_COLD(VAR_ATTR_INPLACE) {
   PyObject *name = KosEvalState_CONST(es, row.a1);
   PyObject *attr = KosEvalState_CONST(es, row.a2);
   if (! name || ! attr)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *obj = frame_ns_deref(es, name);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *args =
       count ? KosEvalState_StackTailPtr(es, (size_t) count) : NULL;
   if (count && ! args) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   uint16_t cache_ix = KosOp_CACHE(insn);
@@ -56,7 +56,9 @@ KOS_OP_HANDLER_COLD(VAR_ATTR_INPLACE) {
   int res = kos_attr_inplace_cached(slot, obj, attr, op, args, count);
   KosEvalState_StackDropNoErr(es, (size_t) count);
   Py_DECREF(obj);
-  return kos_op_result_from_push_int(res);
+  if (unlikely(res < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

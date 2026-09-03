@@ -28,28 +28,28 @@ KOS_OP_HANDLER(OBJECT_FORMAT) {
   if (opa != 1 && opa != 2) {
     PyErr_SetString(PyExc_RuntimeError,
                     "OBJECT_FORMAT: only arg 1 or 2 supported");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (opa == 2) {
     rules = KosEvalState_StackPopRef(es);
     if (! rules)
-      return EVAL_RAISE();
+      RESULT_RAISE();
   }
 
   obj = KosEvalState_StackPopRef(es);
   if (! obj) {
     Py_XDECREF(rules);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   res = PyObject_Format(obj, rules);
   Py_DECREF(obj);
   Py_XDECREF(rules);
   if (! res)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, res);
+  RESULT_STEAL(es, res);
 }
 
 

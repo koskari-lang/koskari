@@ -21,26 +21,26 @@ KOS_OP_HANDLER(CONST_ITEM_TAKE) {
   PyObject *key = KosEvalState_CONST(es, KosOp_ARG(insn));
 
   if (unlikely(! key))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (unlikely(! obj))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *item = PyObject_GetItem(obj, key);
   if (unlikely(! item)) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   int res = PyObject_DelItem(obj, key);
   Py_DECREF(obj);
   if (unlikely(res < 0)) {
     Py_DECREF(item);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  return kos_op_result_PUSH(es, item);
+  RESULT_STEAL(es, item);
 }
 
 

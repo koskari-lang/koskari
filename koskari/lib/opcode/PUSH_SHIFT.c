@@ -30,28 +30,28 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   uint32_t shift_body_pc;
 
   if (get_prompt_id_from_insn(es, insn, &prompt_id) < 0)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
                                KosEvalState_ACTING_PC(es));
   if (resume_pc == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (kos_shift_capture(es, prompt_id, resume_pc, &k) < 0)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *wrapper = KosPyDelimitedContinuation_New(k);
   if (! wrapper) {
     kos_continuation_free(k);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   shift_body_pc = KosEvalState_ACTING_PC(es) + 1;
   if (kos_dyn_push_shift(es, KosContinuation_LIVE_PROMPT_NODE_ID(k)) < 0) {
     Py_DECREF(wrapper);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Record the live SHIFT node identity for in-place (Path A) invoke
@@ -63,7 +63,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   }
 
   KosEvalState_SET_PC(es, shift_body_pc);
-  return kos_op_result_PUSH(es, wrapper);
+  RESULT_STEAL(es, wrapper);
 }
 
 

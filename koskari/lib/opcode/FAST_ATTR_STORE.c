@@ -25,15 +25,15 @@ KOS_OP_HANDLER(FAST_ATTR_STORE) {
   KOS_OP_REQUIRE_NS(ns);
   PyObject *attr_name = KosEvalState_CONST(es, row.a1);
   if (! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   size_t idx = (size_t) row.a0;
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (! obj) {
     Py_DECREF(val);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Per-site storage-location cache: a SLOT hit writes the __slots__ member,
@@ -49,14 +49,14 @@ KOS_OP_HANDLER(FAST_ATTR_STORE) {
       field_slot_store(obj, off, val);
       Py_DECREF(obj);
       Py_DECREF(val);
-      return EVAL_NORMAL();
+      RESULT_NEXT(es);
     }
 #if PY_MINOR_VERSION >= 11
     if (m == KOS_FIELD_INSTANCE_VALUE
         && field_instance_value_store(obj, off, val)) {
       Py_DECREF(obj);
       Py_DECREF(val);
-      return EVAL_NORMAL();
+      RESULT_NEXT(es);
     }
 #endif
   }
@@ -65,8 +65,8 @@ KOS_OP_HANDLER(FAST_ATTR_STORE) {
   Py_DECREF(obj);
   Py_DECREF(val);
   if (res < 0)
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

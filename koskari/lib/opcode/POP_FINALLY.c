@@ -25,7 +25,7 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
   if (! region || ! KosDynNode_IS_FINALLY(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_FINALLY: top is not a FINALLY region");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (KosDynFinally_HANDLING_RAISE((KosDynFinally *) region)) {
@@ -39,7 +39,7 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
        there is no promoted value; pop the region and let the restored
        exception continue through the prologue. */
     if (unlikely(kos_dyn_pop_finally(es, (KosDynFinally *) region) < 0))
-      return EVAL_RAISE();
+      RESULT_RAISE();
     return EVAL_REPROLOGUE();
   }
 
@@ -49,14 +49,14 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
   {
     PyObject *promoted = KosStack_PopRef(&KosDynNode_STACK(region));
     if (! promoted)
-      return EVAL_RAISE();
+      RESULT_RAISE();
     if (unlikely(kos_dyn_pop_finally(es, (KosDynFinally *) region) < 0)) {
       Py_DECREF(promoted);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     if (KosEvalState_StackPushRef(es, promoted) < 0) {
       Py_DECREF(promoted);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     Py_DECREF(promoted);
   }
@@ -65,7 +65,7 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
      eval_phase_pending_exception observes PyErr before the next opcode. */
   if (PyErr_Occurred())
     return EVAL_REPROLOGUE();
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

@@ -23,8 +23,13 @@ Koskari, a LISP dialect for Python
 
 
 import importlib.util
+import re
+import shlex
+import subprocess
+import sysconfig
 from os import environ
 from pathlib import Path
+from shutil import which
 
 from setuptools import Extension, setup
 from setuptools.command.build_py import build_py
@@ -50,10 +55,57 @@ baseline_args = (
     "-Wall",
     "-Werror",
     "-flto=auto",
+    # Nothing outside the extension links against its symbols; the module
+    # init keeps default visibility through PyMODINIT_FUNC. Hidden
+    # visibility turns every intra-library call into a direct call and
+    # lets LTO inline single-caller helpers.
+    "-fvisibility=hidden",
 )
 
 
-def extra_compile_args(platform=None, debug=False):
+def compiler_command():
+    """
+    The C compiler the extension build uses. CC in the environment
+    wins; otherwise clang when it is on the PATH, exported as CC so
+    setuptools uses it for both compiling and linking; otherwise the
+    interpreter's own configured compiler
+    """
+
+    cc = environ.get("CC")
+    if cc:
+        return cc
+
+    if which("clang"):
+        environ["CC"] = "clang"
+        return "clang"
+
+    return sysconfig.get_config_var("CC") or "cc"
+
+
+def compiler_identity(cc):
+    """
+    Whether the compiler command identifies itself as clang, and its
+    major version when it does
+
+    :return: (is_clang, major); major is 0 when unknown
+    """
+
+    try:
+        proc = subprocess.run(
+            [*shlex.split(cc), "--version"],
+            capture_output=True, text=True, check=False)
+    except OSError:
+        return False, 0
+
+    banner = proc.stdout.lower()
+    if "clang" not in banner:
+        return False, 0
+
+    match = re.search(r"clang version (\d+)", banner)
+    return True, int(match.group(1)) if match else 0
+
+
+def extra_compile_args(platform=None, debug=False, clang=False, major=0):
     """
     Get compiler flags for C extensions
     """
@@ -77,27 +129,49 @@ def extra_compile_args(platform=None, debug=False):
         if environ.get(env) == "1":
             args.append(f"-D{env}=1")
 
-    if environ.get("KOS_ASAN") == "1":
+    asan = environ.get("KOS_ASAN") == "1"
+
+    if asan:
         args.append("-fsanitize=address")
         args.append("-fno-omit-frame-pointer")
         args.append("-g")
 
     if platform == "linux":
-        args.append("-fno-gcse")
+        # calls into libpython bind through the GOT directly instead of
+        # a PLT stub
+        args.append("-fno-plt")
+
+    if platform == "linux" and (not clang or major >= 17) and not asan:
+        # clang gained the flag in 17; older clangs reject it, and the
+        # LTO link goes through lld there anyway. Under ASan the fat
+        # object's native sections carry the sanitizer's module
+        # constructors, which lld discards after the LTO link while the
+        # init array still refers to them, so the ASan build links from
+        # the bitcode alone.
         args.append("-ffat-lto-objects")
 
     return args
 
 
-def extra_link_args():
+def extra_link_args(platform=None, clang=False):
     """
     Get linker flags for C extensions
     """
+
+    if platform is None:
+        from sys import platform as sys_platform
+        platform = sys_platform
 
     args = []
 
     if environ.get("KOS_ASAN") == "1":
         args.append("-fsanitize=address")
+
+    if platform == "linux" and clang and which("ld.lld"):
+        # clang's LTO objects need an LTO-aware linker; lld is that
+        # everywhere the containers and wheel images build, and the gold
+        # plugin is not
+        args.append("-fuse-ld=lld")
 
     return args
 
@@ -118,12 +192,26 @@ def extension(platform=None, debug=None):
     depends.extend(libdir.glob("opcode/*.c"))
     depends = sorted(map(str, depends))
 
+    clang, major = compiler_identity(compiler_command())
+
+    if platform is None:
+        from sys import platform as sys_platform
+        platform = sys_platform
+
+    if (platform == "linux" and clang and major and major < 17
+            and not which("ld.lld")):
+        # such a clang cannot emit fat LTO objects, so every object is
+        # bitcode and only an LTO-aware linker can take it
+        raise SystemExit(
+            f"koskari: clang {major} needs lld to link its LTO objects;"
+            " install lld, or build with clang 17 or newer")
+
     return Extension(
         "koskari.lib",
         sources=sources,
         depends=depends,
-        extra_compile_args=extra_compile_args(platform, debug),
-        extra_link_args=extra_link_args(),
+        extra_compile_args=extra_compile_args(platform, debug, clang, major),
+        extra_link_args=extra_link_args(platform, clang),
     )
 
 

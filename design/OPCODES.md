@@ -311,7 +311,7 @@ When adding or changing an opcode:
 | BREAK | COUNT | Jump to loop break target | [§6](#kos_op_break) |
 | CONTINUE | COUNT | Jump to loop continue target | [§6](#kos_op_continue) |
 | RAISE | COUNT | Pop N, raise exception | [§6](#kos_op_raise) |
-| RETURN | COUNT | Pop return value; `EVAL_RETURN(val)` → **`eval_event_return`** (unwind/pop/delivery); **`KOS_RES_RETURN`** at driver boundary | [§6](#kos_op_return) |
+| RETURN | COUNT | Pop return value; threads the plain, extent, and resume-parent shapes itself, else `EVAL_RETURN(val)` → **`eval_event_return_ng`** (unwind/pop/delivery); **`KOS_RES_RETURN`** at driver boundary | [§6](#kos_op_return) |
 | YIELD | COUNT | Pop value; `EVAL_YIELD(val)` → **`apply_kos_op_result`** → **`eval_event_yield`** (walk/freeze, optional boundary deliver) | [§6](#kos_op_yield) |
 | YIELD_FROM | NOARG | Delegate to sub-iterator/gen; PC-stable; send/throw/close | [§6](#kos_op_yield_from) |
 | ITER_NEXT | LABEL | Next from region iterator; else jump | [§7](#kos_op_iter_next) |
@@ -783,7 +783,7 @@ bottom to top matches push order).
 - **Style**: COUNT. Arg = number of stack elements to pop before jumping.
 - **Status**: Implemented.
 - **Stack**: Pops `arg` elements; control transfers to continue target of innermost LOOP/FOREACH extent.
-- **Invariants**: Must be inside a LOOP or FOREACH extent.
+- **Invariants**: Must be inside a LOOP or FOREACH extent. The compiler's one back-edge, and so a cooperation point: the handler ends in **`RESULT_NEXT_POLL`**, which hands the trampoline the next step instead of threading when the eval breaker is up (EVALUATOR.md §1.6).
 
 **Example:** Inside a loop; pop 0 and jump to extent continue_pc (e.g. loop head).
 
@@ -814,7 +814,7 @@ bottom to top matches push order).
 
 - **Style**: COUNT. Arg = number of values to leave on stack as return value (typically 1).
 - **Status**: Implemented.
-- **Stack**: Pops the return value(s) per `arg`. The opcode returns **`EVAL_RETURN(val)`**; **`apply_kos_op_result`** routes to **`eval_event_return`**, which runs **`kos_dyn_unwind_return`**, **`kos_dyn_pop_frame`**, iterator-boundary delivery, native-handler delivery, or stack push onto the caller, then **`kos_dynnode_on_control_returned`**. **Top-level** or **GEN** parent: **`KOS_RES_RETURN`** from **`koskari_eval`**. **Delimited** continuation returns (`RETURN_TARGET_CHAIN`) use **`KosEvalState_KReturnDelimited`** in the opcode.
+- **Stack**: Pops the return value(s) per `arg`. The handler threads its own common shapes: a **plain bytecode parent** (**`kos_return_is_plain`** → **`eval_ng_plain_return`**: retarget the live registers, free the callee, push `val`, tail-call the parent's next instruction), a **discardable extent** over such a parent (**`eval_ng_extent_return`**), and a **resume-carrying parent** (**`kos_return_take_resume`** → **`RESUME_HOP`** into the resume). Only the shapes that need an unwind walk signal **`EVAL_RETURN(val)`**, which **`apply_kos_op_result`** routes to **`eval_event_return_ng`** (**`kos_dyn_unwind_return`**, pop, iterator-boundary or parent delivery, then **`kos_dynnode_on_control_returned`**). **Top-level** or **GEN** parent: **`KOS_RES_RETURN`** from **`koskari_eval`**.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.
 - **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6–3; **`koskari/lib/opcode/RETURN.c`**.
 

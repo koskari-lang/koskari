@@ -29,20 +29,20 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
 
   PyObject *attr_name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
   PyObject *obj = kos_ns_fast_deref(ns, (size_t) slot_idx);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *argv = NULL;
   if (n > 0) {
     argv = KosEvalState_StackTailPtr(es, (size_t) n);
     if (! argv) {
       Py_DECREF(obj);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -57,7 +57,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
   if (send_self < 0) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Prologue only: kos_call_invoke owns the window drop; an unbound
@@ -68,7 +68,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
                                   KOS_CALL_ARGV_WINDOW
                                   | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
-  return r;
+  RESULT_RELAY(es, r);
 }
 
 

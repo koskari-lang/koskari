@@ -19,7 +19,7 @@
 */
 KOS_OP_HANDLER_COLD(NOOP) {
   (void) insn;
-  return EVAL_NORMAL();  /* continue */
+  RESULT_NEXT(es);  /* continue */
 }
 
 

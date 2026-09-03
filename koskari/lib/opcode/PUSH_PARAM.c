@@ -22,20 +22,20 @@
 KOS_OP_HANDLER(PUSH_PARAM) {
   PyObject *names = KosEvalState_CONST(es, KosOp_ARG(insn));
   if (! names) {
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *bindings = KosEvalState_StackPopTailDictFromNames(es, names);
   if (! bindings)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   /* the node wraps each value in a fresh cell; bindings stays ours */
   KosDynParam *node = kos_dyn_push_param_dict(es, bindings);
   Py_DECREF(bindings);
   if (! node)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

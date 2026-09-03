@@ -29,22 +29,22 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR) {
 
   PyObject *var_name = KosEvalState_CONST(es, name_cpool_idx);
   if (! var_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *attr_name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! attr_name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *ptr = NULL;
   if (n > 0) {
     ptr = KosEvalState_StackTailPtr(es, (size_t) n);
     if (! ptr) {
       Py_DECREF(obj);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -55,7 +55,7 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR) {
   int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
   if (send_self < 0) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Prologue only: kos_call_invoke owns the window drop; an unbound
@@ -66,7 +66,7 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR) {
                                   KOS_CALL_ARGV_WINDOW
                                   | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
-  return r;
+  RESULT_RELAY(es, r);
 }
 
 

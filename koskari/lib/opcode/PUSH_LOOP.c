@@ -29,25 +29,25 @@ KOS_OP_HANDLER(PUSH_LOOP) {
   if (eid == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError,
                     "PUSH_LOOP: no LOOP extent at this PC");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_LOOP: invalid extent");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   uint32_t break_pc = ext->pop_pc + 1u;
 
   KosDynNode *region = (KosDynNode *) kos_dyn_push_loop(es,                                              break_pc, continue_pc);
   if (! region) {
     PyErr_NoMemory();
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Initialize loop result to None */
   Py_INCREF(Py_None);
   KosDynLoop_RESULT((KosDynLoop *) region) = Py_None;
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

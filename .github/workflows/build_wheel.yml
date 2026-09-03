@@ -78,11 +78,18 @@ jobs:
         if: ${{ inputs.version != '' }}
         run: sed -i.bak "s/^version = .*/version = ${{ inputs.version }}/" setup.cfg
 
+      # The evaluator threads dispatch through musttail, so the Linux
+      # images (manylinux: dnf; musllinux: apk) get clang and lld before
+      # building, and CC selects clang. macOS builds with Apple clang.
       - name: Build wheels
         uses: pypa/cibuildwheel@v4.2
         env:
           CIBW_BUILD: cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*
           CIBW_ARCHS: ${{ matrix.archs }}
+          CIBW_BEFORE_ALL_LINUX: >-
+            (command -v dnf && dnf install -y clang lld)
+            || (command -v apk && apk add clang lld)
+          CIBW_ENVIRONMENT_LINUX: CC=clang
           CIBW_TEST_COMMAND: python -c "import koskari"
           MACOSX_DEPLOYMENT_TARGET: "11.0"
 

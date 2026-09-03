@@ -24,27 +24,27 @@ KOS_OP_HANDLER(POP_WIND) {
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (! top || ! KosDynNode_IS_WIND(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_WIND: top is not a wind node");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   KosDynWind *wind = (KosDynWind *) top;
   PyObject *body_result = KosEvalState_StackPopRef(es);
   if (! body_result)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   KosDynWind_BODY_RESULT(wind) = body_result;
 
   KosOpResult kr = kos_dyn_pop_top(es, KOS_XFER_EVENT_RETURN);
   if (kr.kind == KOS_RES_REPROLOGUE) {
     /* after-thunk frame started; eval continues in thunk; RETURN resumes unwind */
-    return EVAL_NORMAL();
+    RESULT_NEXT(es);
   }
   if (kr.kind == KOS_RES_RAISE) {
     KosDynWind_BODY_RESULT(wind) = NULL;
     if (KosEvalState_StackPushRef(es, body_result) < 0)
       Py_DECREF(body_result);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

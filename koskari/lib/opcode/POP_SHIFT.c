@@ -31,7 +31,7 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (! top || ! KosDynNode_IS_SHIFT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: top is not a shift node");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* PC already advanced: we are post-INSN, so resume will run instruction at
@@ -44,7 +44,7 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
   result = KosEvalState_StackPopRef(es);
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Resolve the delimiter by the instance the shift captured against
@@ -69,7 +69,7 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_SHIFT: captured prompt instance not on chain");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Invocation prompt: created by a k-invocation, so no POP_PROMPT
@@ -96,12 +96,12 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
       Py_DECREF(result);
       PyErr_SetString(PyExc_RuntimeError,
                       "POP_SHIFT: invocation prompt has no paired delim");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     SAYF("[POP_SHIFT] invocation prompt %u: delivering to paired delim %p",
          (unsigned) KosDynNode_NODE_ID((KosDynNode *) prompt),
          (void *) pair);
-    return kos_eval_route_delim_return(es, pair, result);
+    RESULT_RELAY(es, kos_eval_route_delim_return(es, pair, result));
   }
 
   /* Live reset: the prompt recorded its region's closing pc when
@@ -111,12 +111,12 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_SHIFT: prompt has no recorded pop pc");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (kos_dyn_plan_pop_shift(es, prompt, result, &plan) < 0) {
     Py_DECREF(result);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   Py_DECREF(result);
 

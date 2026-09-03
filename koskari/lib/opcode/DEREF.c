@@ -23,15 +23,15 @@ KOS_OP_HANDLER(DEREF) {
 
   PyObject *ref = KosEvalState_StackPopRef(es);
   if (unlikely(! ref))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *val = KosRef_Deref(ref);
   Py_DECREF(ref);
 
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, val);
+  RESULT_STEAL(es, val);
 }
 
 

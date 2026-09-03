@@ -28,8 +28,9 @@ KOS_OP_HANDLER(FAST_INPLACE) {
   KosOperand op = (KosOperand) KosOpCount_TYPE(row.a0);
   size_t idx = (size_t) row.a1;
 
-  return kos_op_result_from_push_int(
-      kos_fast_inplace_operand(es, op, idx));
+  if (unlikely(kos_fast_inplace_operand(es, op, idx) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

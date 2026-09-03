@@ -31,25 +31,25 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
   KOS_OP_REQUIRE_NS(ns);
   PyObject *obj = kos_ns_fast_deref(ns, (size_t) slot_idx);
   if (! obj)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *name = KosEvalState_CONST(es, attr_cpool_idx);
   if (! name) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
   if (! names) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR_NAMES names must be tuple"
                  ", not %R", names);
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
@@ -61,7 +61,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
     argv = KosEvalState_StackTailPtr(es, ntotal);
     if (! argv) {
       Py_DECREF(obj);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -72,7 +72,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
   int send_self = kos_resolve_named_attr(obj, name, cache, &resolved);
   if (send_self < 0) {
     Py_DECREF(obj);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   /* Prologue only: kos_call_invoke owns the window drop; an unbound
@@ -83,7 +83,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
                                   KOS_CALL_ARGV_WINDOW
                                   | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
-  return r;
+  RESULT_RELAY(es, r);
 }
 
 

@@ -28,16 +28,14 @@ KOS_OP_HANDLER(POP_TRY) {
 
   PyObject *value = KosEvalState_StackPopRef(es);
   if (unlikely(! value))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (unlikely(kos_dyn_pop_try(es, (KosDynTry *) top) < 0)) {
     Py_DECREF(value);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  if (unlikely(KosEvalState_StackPUSH(es, value) < 0))
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+  RESULT_STEAL(es, value);
 }
 
 

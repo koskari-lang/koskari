@@ -25,17 +25,17 @@ KOS_OP_HANDLER(BUILD_LIST) {
 
   PyObject *built = PyList_New((Py_ssize_t) count);
   if (unlikely(! built))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (count) {
     if (unlikely(KosEvalState_StackPopTailPtr(
           es, count, &PyList_GET_ITEM(built, 0)) < 0)) {
       Py_DECREF(built);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
-  return kos_op_result_PUSH(es, built);
+  RESULT_STEAL(es, built);
 }
 
 

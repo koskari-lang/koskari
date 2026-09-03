@@ -30,7 +30,7 @@ KOS_OP_HANDLER_COLD(MATCH_STORE_NAMES) {
 
   PyObject *caps = KosEvalState_StackPopRef(es);
   if (unlikely(! caps))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   /* Reveal Datum boxes in place; the dict is freshly owned and value
      replacement of existing keys is iteration-safe. Only pair-spine
@@ -43,7 +43,7 @@ KOS_OP_HANDLER_COLD(MATCH_STORE_NAMES) {
       PyObject *inner = ((KosDatum *) val)->datum;
       if (inner && unlikely(PyDict_SetItem(caps, key, inner))) {
         Py_DECREF(caps);
-        return EVAL_RAISE();
+        RESULT_RAISE();
       }
     }
   }
@@ -51,8 +51,8 @@ KOS_OP_HANDLER_COLD(MATCH_STORE_NAMES) {
   int r = KosNamespace_StoreDict(ns, caps);
   Py_DECREF(caps);
   if (unlikely(r < 0))
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

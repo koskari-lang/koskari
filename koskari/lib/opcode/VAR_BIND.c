@@ -22,16 +22,18 @@ KOS_OP_HANDLER_COLD(VAR_BIND) {
 
   PyObject *name = get_name_from_insn(es, insn);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   int res = frame_ns_bind(es, name, val);
   Py_DECREF(val);
 
-  return kos_op_result_from_push_int(res);
+  if (unlikely(res < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

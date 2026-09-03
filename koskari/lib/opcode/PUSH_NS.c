@@ -35,7 +35,7 @@ KOS_OP_HANDLER(PUSH_NS) {
   if (unlikely(eidx >= KosCode_EXTRA_LEN(code))) {
     PyErr_Format(PyExc_IndexError, "PUSH_NS extra index out of bounds: %u",
                  (unsigned) eidx);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   {
@@ -45,14 +45,14 @@ KOS_OP_HANDLER(PUSH_NS) {
 
     nspec = KosEvalState_CONST(es, i0);
     if (unlikely(! nspec)) {
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     Py_INCREF(nspec);
 
     names = KosEvalState_CONST(es, i1);
     if (unlikely(! names)) {
       Py_DECREF(nspec);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -60,7 +60,7 @@ KOS_OP_HANDLER(PUSH_NS) {
     PyErr_Format(PyExc_RuntimeError,
                  "PUSH_NS spec must be a NamespaceSpec, not %R", nspec);
     Py_DECREF(nspec);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (unlikely(names == Py_None)) {
@@ -72,7 +72,7 @@ KOS_OP_HANDLER(PUSH_NS) {
       PyErr_Format(PyExc_RuntimeError,
                    "PUSH_NS names must be tuple or None, not %R", names);
       Py_DECREF(nspec);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     opa = (int) PyTuple_GET_SIZE(names);
   }
@@ -82,7 +82,7 @@ KOS_OP_HANDLER(PUSH_NS) {
     if (unlikely(! args)) {
       Py_DECREF(nspec);
       PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
@@ -95,7 +95,7 @@ KOS_OP_HANDLER(PUSH_NS) {
   new_ns = KosNamespace_FromSpec(nspec, spec_parent);
   Py_DECREF(nspec);
   if (unlikely(! new_ns)) {
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (opa > 0) {
@@ -104,7 +104,7 @@ KOS_OP_HANDLER(PUSH_NS) {
       PyObject *val = args[i];
       if (unlikely(KosNamespace_Store(new_ns, name, val) < 0)) {
         Py_DECREF(new_ns);
-        return EVAL_RAISE();
+        RESULT_RAISE();
       }
     }
     KosEvalState_StackDropNoErr(es, (size_t) opa);
@@ -112,10 +112,10 @@ KOS_OP_HANDLER(PUSH_NS) {
 
   KosDynNs *const ns_node = kos_dyn_push_ns(es, new_ns);
   if (unlikely(! ns_node)) {
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

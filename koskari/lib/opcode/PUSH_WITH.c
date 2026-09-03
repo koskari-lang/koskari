@@ -23,13 +23,13 @@
 KOS_OP_HANDLER_COLD(PUSH_WITH) {
   PyObject *mgr = KosEvalState_StackPopRef(es);
   if (! mgr)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *enter = NULL;
   PyObject *exit = NULL;
   if (resolve_context_enter_exit(mgr, &enter, &exit) < 0) {
     Py_DECREF(mgr);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   KosCode *code = KosEvalState_CurrentCode(es);
@@ -40,7 +40,7 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
     Py_DECREF(enter);
     Py_DECREF(mgr);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WITH: no WITH extent at this PC");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
@@ -48,7 +48,7 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
     Py_DECREF(enter);
     Py_DECREF(mgr);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WITH: invalid extent");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   uint32_t resume_pc = ext->pop_pc + 1u;
 
@@ -62,14 +62,14 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) with_node);
 
   if (wr.kind == KOS_RES_RAISE) {
     kos_dyn_pop_with(es, with_node);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (wr.kind == KOS_RES_AWAIT) {
@@ -86,7 +86,7 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
   if (wr.kind != KOS_RES_NORMAL)
     return wr;
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

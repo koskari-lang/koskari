@@ -62,26 +62,26 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
 
   PyObject *name = KosEvalState_CONST(es, row.a0);
   if (! name)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *stems = KosEvalState_CONST(es, row.a2);
   if (! stems)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *binds = KosEvalState_CONST(es, row.a3);
   if (! binds)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (! PyTuple_CheckExact(stems) || ! PyTuple_CheckExact(binds) ||
       PyTuple_GET_SIZE(stems) != PyTuple_GET_SIZE(binds)) {
     PyErr_SetString(PyExc_TypeError, "IMPORT_USE names must be parallel"
                     " tuples");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *mod = kos_import_module(es, name, (long) row.a1, 1);
   if (! mod)
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   Py_ssize_t n = PyTuple_GET_SIZE(stems);
   for (Py_ssize_t i = 0; i < n; i++) {
@@ -94,7 +94,7 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
       if (! PyErr_Occurred())
         PyErr_Format(PyExc_TypeError, "invalid use stem %R", stem);
       Py_DECREF(mod);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
     const char *rawbind = PyUnicode_Check(bind)?
@@ -103,7 +103,7 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
       if (! PyErr_Occurred())
         PyErr_Format(PyExc_TypeError, "invalid use bind %R", bind);
       Py_DECREF(mod);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
     int hits = 0;
@@ -115,7 +115,7 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
       Py_DECREF(val);
       if (stored < 0) {
         Py_DECREF(mod);
-        return EVAL_RAISE();
+        RESULT_RAISE();
       }
       hits++;
 
@@ -128,7 +128,7 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
 
     } else {
       Py_DECREF(mod);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
     /* facet candidates, unless the stem or its bind is already a
@@ -142,7 +142,7 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
         PyObject *attr = PyUnicode_FromFormat("%s%U", *pre, stem);
         if (! attr) {
           Py_DECREF(mod);
-          return EVAL_RAISE();
+          RESULT_RAISE();
         }
 
         val = PyObject_GetAttr(mod, attr);
@@ -150,7 +150,7 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
         if (! val) {
           if (! PyErr_ExceptionMatches(PyExc_AttributeError)) {
             Py_DECREF(mod);
-            return EVAL_RAISE();
+            RESULT_RAISE();
           }
           PyErr_Clear();
           continue;
@@ -160,7 +160,7 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
         if (! bound) {
           Py_DECREF(val);
           Py_DECREF(mod);
-          return EVAL_RAISE();
+          RESULT_RAISE();
         }
 
         int stored = frame_ns_store(es, bound, val);
@@ -168,7 +168,7 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
         Py_DECREF(val);
         if (stored < 0) {
           Py_DECREF(mod);
-          return EVAL_RAISE();
+          RESULT_RAISE();
         }
         hits++;
       }
@@ -184,12 +184,12 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
                      " (tried %U, compile/%U, layout/%U)",
                      mod, stem, stem, stem, stem);
       Py_DECREF(mod);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
   Py_DECREF(mod);
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

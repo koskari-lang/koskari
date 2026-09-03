@@ -28,25 +28,27 @@ KOS_OP_HANDLER_COLD(VAR_INPLACE_CONST) {
 
   PyObject *name = KosEvalState_CONST(es, row.a1);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *operand = KosEvalState_CONST(es, row.a2);   /* borrowed */
   if (unlikely(! operand))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *obj = frame_ns_deref(es, name);
   if (unlikely(! obj))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *pair[2] = { obj, operand };
   PyObject *result = kos_inplace_reduce((KosOperand) row.a0, pair, 2);
   Py_DECREF(obj);
   if (unlikely(! result))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   int res = frame_ns_store(es, name, result);
   Py_DECREF(result);
-  return kos_op_result_from_push_int(res);
+  if (unlikely(res < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

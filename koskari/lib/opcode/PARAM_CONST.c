@@ -27,7 +27,7 @@ KOS_OP_HANDLER(PARAM_CONST) {
 
   PyObject *name = KosEvalState_CONST(es, row.a0);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *cell = kos_param_lookup(KosEvalState_CONTEXT(es), name);
   PyObject *value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
@@ -35,11 +35,10 @@ KOS_OP_HANDLER(PARAM_CONST) {
   if (! value) {
     value = KosEvalState_CONST(es, row.a1);
     if (unlikely(! value))
-      return EVAL_RAISE();
+      RESULT_RAISE();
   }
 
-  Py_INCREF(value);
-  return kos_op_result_PUSH(es, value);
+  RESULT_PUSH(es, value);
 }
 
 

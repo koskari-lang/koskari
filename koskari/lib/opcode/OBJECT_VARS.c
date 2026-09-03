@@ -22,7 +22,7 @@ KOS_OP_HANDLER(OBJECT_VARS) {
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *d = PyObject_GetAttrString(val, "__dict__");
   Py_DECREF(val);
@@ -31,10 +31,10 @@ KOS_OP_HANDLER(OBJECT_VARS) {
     PyErr_Clear();
     PyErr_SetString(PyExc_TypeError,
                     "vars argument must have __dict__ attribute");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
-  return kos_op_result_PUSH(es, d);
+  RESULT_STEAL(es, d);
 }
 
 

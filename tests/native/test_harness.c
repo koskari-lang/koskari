@@ -285,6 +285,7 @@ int main(int argc, char *argv[]) {
     run_partial_tests();
     run_iter_request_tests();
     run_resume_tests();
+    run_breaker_tests();
 
     /* Future units:
     run_tco_tests();

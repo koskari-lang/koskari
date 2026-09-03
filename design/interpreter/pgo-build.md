@@ -1,9 +1,10 @@
 # Profile-Guided Optimization for the Native Build
 
-The C extension in `koskari/lib` is a computed-goto bytecode interpreter: a
-near-ideal target for profile-guided optimization (PGO). The hot path is
-data-dependent branching — which opcode dispatches next, which arm of each
-handler runs — which `-O2`'s static heuristics cannot see. A profile gives the
+The C extension in `koskari/lib` is a tail-call-threaded bytecode
+interpreter, every opcode handler its own function: a near-ideal target for
+profile-guided optimization (PGO). The hot path is data-dependent branching
+— which handler is tail-called next, which arm of each handler runs — which
+`-O2`'s static heuristics cannot see. A profile gives the
 compiler real edge frequencies, so it orders blocks (hot blocks contiguous for
 I-cache), lays out branches, and makes inlining decisions from measured
 behavior rather than guesses. CPython ships PGO for the same reason.
@@ -18,12 +19,10 @@ dispatch-layout tax PGO is expected to dissolve),
 
 ## Build modes
 
-- **Dev / default — `-O2`.** The baseline: `-O2 -flto=auto` as today, with
-  opcode handlers forced `always_inline`. Fast to build, and the correct
-  default when no profile is available.
+- **Dev / default — `-O2`.** The baseline: `-O2 -flto=auto` as today. Fast
+  to build, and the correct default when no profile is available.
 - **Release — PGO.** A three-pass PGO build (below) plus LTO, used for
-  published wheels. Handlers become inline *hints* so the profile drives
-  inlining.
+  published wheels.
 
 PGO is opt-in and reserved for release artifacts. Dev builds and CI test runs
 stay on `-O2` for build speed.
@@ -31,11 +30,12 @@ stay on `-O2` for build speed.
 
 ## The `always_inline` gate
 
-Opcode handlers are declared `KOS_OP_INLINE`. Under PGO the profile knows which
-handlers are hot, so forcing every one inline is counterproductive — it bloats
-the dispatch function and denies the compiler the ability to outline cold
-opcodes for I-cache relief. Gate the attribute on a `KOS_PGO` define that both
-PGO passes set:
+Opcode handlers are separate functions under threaded dispatch, each its own
+profile-counted symbol, so nothing needs un-inlining for the instrument pass.
+`KOS_OP_INLINE` (forced inline) still marks the small hot cores handlers
+call -- the operator cores in `operator.c`, the chain-segment walk -- and
+under PGO the profile knows which of those callers are hot, so gate the
+attribute on a `KOS_PGO` define that both PGO passes set:
 
 ```c
 #if defined(KOS_PGO)
@@ -46,9 +46,9 @@ PGO passes set:
 ```
 
 Set `KOS_PGO` in **both** the instrument and use passes: the instrument build
-needs distinct handler functions for the profile to count, and the use build
-needs the freedom to inline per that profile. The non-PGO branch keeps the
-forced inline, which is the correct default without a profile.
+needs distinct functions for the profile to count, and the use build needs
+the freedom to inline per that profile. The non-PGO branch keeps the forced
+inline, which is the correct default without a profile.
 
 
 ## Three-pass procedure (per target)

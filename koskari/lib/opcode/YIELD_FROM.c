@@ -653,19 +653,19 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
        PHASE=DRIVING, PENDING_ACTION=STEP, roll back PC, return 0. */
     PyObject *subexpr = KosEvalState_StackPopRef(es);
     if (! subexpr)
-      return EVAL_RAISE();
+      RESULT_RAISE();
 
     PyObject *delegate = NULL;
     uint8_t kind = KOS_YF_SYNC_ITER; /* overwritten by yield_from_normalize */
     if (yield_from_normalize(subexpr, &delegate, &kind) < 0) {
       Py_DECREF(subexpr);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
     Py_DECREF(subexpr);
     if (! kos_dyn_push_yield_from(es, delegate, kind)) {
       Py_DECREF(delegate);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
     Py_DECREF(delegate);
@@ -675,7 +675,7 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
       KosDynYieldFrom_PHASE_SET(yf_new, KOS_YF_PHASE_DRIVING);
       KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
     }
-    return EVAL_NORMAL();
+    RESULT_NEXT(es);
   }
 
   KosDynYieldFrom *yf = (KosDynYieldFrom *) dyn_top;
@@ -687,7 +687,7 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
      generator's own yield.  yield_from_emit_yield reads TOS and leaves us in
      EXPECT_SEND, so the next resume drives the delegate for its next value. */
   if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EMIT)
-    return yield_from_emit_yield(es, yf);
+    RESULT_RELAY(es, yield_from_emit_yield(es, yf));
 
   /* 2. INJECT_MODE == KOS_INJECT_THROW: consume inject, set PENDING_ACTION=THROW,
      fall through to drive. */
@@ -707,7 +707,7 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
     } else if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EXPECT_SEND) {
       size_t sz = KosEvalState_StackLen(es);
       if (sz == 0)
-        return EVAL_RAISE();
+        RESULT_RAISE();
       PyObject *first = KosEvalState_StackPopRef(es);
       if (sz >= 2) {
         Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
@@ -725,7 +725,7 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
     } else if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EXPECT_AWAIT) {
       PyObject *aw_result = KosEvalState_StackPopRef(es);
       if (! aw_result)
-        return EVAL_RAISE();
+        RESULT_RAISE();
       Py_INCREF(aw_result);
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
       KosDynYieldFrom_PENDING_ARG(yf) = aw_result;
@@ -739,23 +739,27 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
   PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
 
   if (kind == KOS_YF_SYNC_ITER)
-    return yield_from_drive_sync_iter(es, yf, delegate, action, insn);
+    RESULT_RELAY(es, yield_from_drive_sync_iter(
+        es, yf, delegate, action, insn));
   if (kind == KOS_YF_SYNC_GEN)
-    return yield_from_drive_sync_gen(es, yf, delegate, action, insn);
+    RESULT_RELAY(es, yield_from_drive_sync_gen(
+        es, yf, delegate, action, insn));
   if (kind == KOS_YF_PY_ASYNC_ITER || kind == KOS_YF_PY_ASYNC_GEN)
-    return yield_from_drive_py_async(es, yf, delegate, kind, action, insn);
+    RESULT_RELAY(es, yield_from_drive_py_async(
+        es, yf, delegate, kind, action, insn));
   if (kind == KOS_YF_KOS_ITER) {
     KosIterSlots *islots;
     if (! KosIter_CheckSlots(delegate, &islots)) {
       PyErr_SetString(PyExc_RuntimeError,
                       "yield-from delegate lost its iter suite");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
-    return yield_from_drive_kos_iter(es, yf, delegate, islots, action, insn);
+    RESULT_RELAY(es, yield_from_drive_kos_iter(
+        es, yf, delegate, islots, action, insn));
   }
 
   PyErr_SetString(PyExc_RuntimeError, "unexpected delegate kind");
-  return EVAL_RAISE();
+  RESULT_RAISE();
 }
 
 

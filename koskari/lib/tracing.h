@@ -231,6 +231,11 @@ void kos_trace_fl_return(const char *name, int overrun);
                             kos_trace_now_ns() - _kos_t0);                   \
   } while (0)
 
+/* Threaded dispatch never returns between handlers, so a step can be
+   counted but not timed: the per-opcode timing table records each
+   threaded step with a zero duration. */
+#define KOS_TRACE_THREAD_STEP(op) kos_trace_opcode_record((unsigned)(op), 0)
+
 #define KOS_TRACE_POST_OP_ENTER() kos_trace_post_op_enter()
 #define KOS_TRACE_POST_OP_EXIT() kos_trace_post_op_exit()
 #define KOS_TRACE_POST_OP_WRAP(name, stmt)                                  \
@@ -242,6 +247,7 @@ void kos_trace_fl_return(const char *name, int overrun);
   } while (0)
 #else
 #define KOS_TRACE_OP_WRAP(name, stmt) do { stmt; } while (0)
+#define KOS_TRACE_THREAD_STEP(op) ((void) 0)
 #define KOS_TRACE_POST_OP_ENTER() ((void)0)
 #define KOS_TRACE_POST_OP_EXIT() ((void)0)
 #define KOS_TRACE_POST_OP_WRAP(name, stmt) do { stmt; } while (0)

@@ -29,24 +29,24 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_VAR) {
 
   PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *callable = frame_ns_deref(es, name);
   if (unlikely(! callable))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *argv = NULL;
   if (n) {
     argv = KosEvalState_StackTailPtr(es, n);
     if (unlikely(! argv)) {
       Py_DECREF(callable);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
 
-  return kos_call_invoke(es, callable, NULL, argv, (Py_ssize_t) n, NULL,
-                         KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL
-                         | KOS_CALL_CALLABLE_OWNED);
+  RESULT_RELAY(es, kos_call_invoke(
+      es, callable, NULL, argv, (Py_ssize_t) n, NULL,
+      KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED));
 }
 
 

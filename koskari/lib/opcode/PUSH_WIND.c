@@ -27,34 +27,34 @@ KOS_OP_HANDLER_COLD(PUSH_WIND) {
   if (count != 1 && count != 2) {
     PyErr_Format(PyExc_ValueError,
                  "PUSH_WIND: COUNT must be 1 or 2, got %u", count);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (count == 2) {
     after = KosEvalState_StackPopRef(es);
     if (! after) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (after)");
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
   }
   before = KosEvalState_StackPopRef(es);
   if (! before) {
     Py_XDECREF(after);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (before)");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   if (before != Py_None && ! KosCallable_Check(before)) {
     Py_DECREF(before);
     Py_XDECREF(after);
     PyErr_SetString(PyExc_TypeError, "PUSH_WIND: before thunk must be callable or nil");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   if (after && after != Py_None && ! KosCallable_Check(after)) {
     Py_DECREF(before);
     Py_DECREF(after);
     PyErr_SetString(PyExc_TypeError, "PUSH_WIND: after thunk must be callable or nil");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *b = (before == Py_None) ? NULL : before;
@@ -68,7 +68,7 @@ KOS_OP_HANDLER_COLD(PUSH_WIND) {
   if (! wind) {
     Py_XDECREF(b);
     Py_XDECREF(a);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
   if (b)
     Py_DECREF(b);
@@ -77,12 +77,12 @@ KOS_OP_HANDLER_COLD(PUSH_WIND) {
 
   KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) wind);
   if (wr.kind == KOS_RES_RAISE)
-    return EVAL_RAISE();
+    RESULT_RAISE();
   /* REPROLOGUE = before-thunk frame started; NORMAL = no thunk or sync done */
   if (wr.kind == KOS_RES_NORMAL)
     KosDynWind_ENTERED(wind) = 1;
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

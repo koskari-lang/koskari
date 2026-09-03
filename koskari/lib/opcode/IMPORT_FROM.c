@@ -129,45 +129,45 @@ KOS_OP_HANDLER_COLD(IMPORT_FROM) {
 
   PyObject *name = KosEvalState_CONST(es, row.a0);
   if (unlikely(! name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *attrs = KosEvalState_CONST(es, row.a2);
   if (unlikely(! attrs))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *binds = KosEvalState_CONST(es, row.a3);
   if (unlikely(! binds))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (unlikely(! PyTuple_CheckExact(attrs) || ! PyTuple_CheckExact(binds) ||
       PyTuple_GET_SIZE(attrs) != PyTuple_GET_SIZE(binds))) {
     PyErr_SetString(PyExc_TypeError, "IMPORT_FROM names must be parallel"
                     " tuples");
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *mod = kos_import_module(es, name, (long) row.a1, 1);
   if (unlikely(! mod))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   Py_ssize_t n = PyTuple_GET_SIZE(attrs);
   for (Py_ssize_t i = 0; i < n; i++) {
     PyObject *val = kos_import_from_member(mod, PyTuple_GET_ITEM(attrs, i));
     if (unlikely(! val)) {
       Py_DECREF(mod);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
 
     if (unlikely(frame_ns_store(es, PyTuple_GET_ITEM(binds, i), val) < 0)) {
       Py_DECREF(val);
       Py_DECREF(mod);
-      return EVAL_RAISE();
+      RESULT_RAISE();
     }
     Py_DECREF(val);
   }
   Py_DECREF(mod);
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

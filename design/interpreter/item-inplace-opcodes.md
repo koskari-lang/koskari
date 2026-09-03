@@ -176,7 +176,7 @@ reference.
 ## Costs and obligations
 
 - **Dispatch sizing**: +6 opcodes against the budget tracked in
-  [../dispatch-sizing.md](../dispatch-sizing.md). All six are cold
+  [../archive/dispatch-sizing.md](../archive/dispatch-sizing.md). All six are cold
   handlers, so the hot dispatch loop does not grow.
 - **`.kio` ABI**: inserting the rows shifts subsequent opcode values;
   `BYTECODE_ABI_MINOR` bump in `koskari/serialize/constants.py`
@@ -231,4 +231,4 @@ reference.
   `FAST_ATTR_INPLACE.c` -- the fused attr family this mirrors.
 - `koskari/lib/operator.c/h` -- `kos_inplace_reduce`,
   `kos_attr_inplace_cached`.
-- [../dispatch-sizing.md](../dispatch-sizing.md) -- opcode-count budget.
+- [../archive/dispatch-sizing.md](../archive/dispatch-sizing.md) -- opcode-count budget.

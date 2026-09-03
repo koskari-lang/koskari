@@ -31,15 +31,15 @@ KOS_OP_HANDLER_COLD(OBJECT_COMPARE_VAR) {
   PyObject *name = KosEvalState_CONST(es, row.a2);
   ops[1] = name ? frame_ns_deref(es, name) : NULL;
   if (! ops[1])
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *result = kos_compare_reduce((KosCompare) row.a0, ops, 3);
   Py_DECREF(ops[1]);
 
   if (unlikely(! result))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return kos_op_result_PUSH(es, result);
+  RESULT_STEAL(es, result);
 }
 
 

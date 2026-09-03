@@ -21,13 +21,13 @@ KOS_OP_HANDLER(OBJECT_DIR) {
   (void) insn;
 
   PyObject *val = KosEvalState_StackPopRef(es);
-  if (! val) return EVAL_RAISE();
+  if (! val) RESULT_RAISE();
 
   PyObject *res = PyObject_Dir(val);
   Py_DECREF(val);
 
-  if (! res) return EVAL_RAISE();
-  return kos_op_result_PUSH(es, res);
+  if (! res) RESULT_RAISE();
+  RESULT_STEAL(es, res);
 }
 
 

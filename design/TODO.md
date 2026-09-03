@@ -59,21 +59,19 @@ Ref: [api/tracing.md](api/tracing.md).
 
 ### Profile-guided optimization (PGO) build
 
-Evaluate the PGO procedure and stand it up for release wheels. The computed-goto
-interpreter is a near-ideal PGO target, and a profile should dissolve the
-CALL_*_ATTR dispatch-layout tax the per-site cache currently pays (handlers
-grow, the shared dispatch function bloats, `-O2` mis-lays-out the hot blocks).
+Evaluate the PGO procedure and stand it up for release wheels. Under
+threaded dispatch every opcode handler is its own function reached by tail
+call, so a profile's value is in laying out the hot handlers and helpers
+together and in the inlining decisions inside them.
 Design: [interpreter/pgo-build.md](interpreter/pgo-build.md).
 
 Two pieces of work:
 
 - **Evaluate the procedure.** Prototype `make build-pgo` (three-pass:
-  instrument → run harness → optimize with `-DKOS_PGO` un-forcing
-  `always_inline`) and measure the delta vs `-O2 + always_inline` on
-  `churn --all`, machine-normalized. Confirm PGO recovers (ideally erases) the
-  all-sites cache tax and that un-forcing inline under a profile beats forcing
-  it. Then wire the per-cell three-pass build into cibuildwheel (GCC/gcov on
-  Linux, Clang/llvm-profdata on macOS), profile regenerated per
+  instrument → run harness → optimize) and measure the delta vs `-O2` on
+  `churn --all`, machine-normalized. Then wire the per-cell three-pass
+  build into cibuildwheel (clang/llvm-profdata on every platform, since
+  the extension builds with clang), profile regenerated per
   `os × Python-version` cell.
 
 - **Synthesize the profiling run set.** Author the harness as a representative
@@ -296,6 +294,16 @@ transposer use-case.
 
 Ref: [language/formal-default-modes.md](language/formal-default-modes.md).
 
+### Instruction-record flags: finalize-time "result discarded" bit
+
+Fill the two padding bytes of `KosOp` with a `flags` word assigned in
+`code_fill_handlers`, and record there that an instruction's pushed value
+is consumed by the following `POP,1`. The call core tests the bit on its
+own record instead of loading and comparing the next one on every settled
+result. The remaining bits are room for other finalize-derived facts.
+
+Ref: [interpreter/insn-flags-discard.md](interpreter/insn-flags-discard.md).
+
 ---
 
 ## Concurrent async (`async` form)
@@ -312,47 +320,6 @@ Implement in order: **`gather`** builtin, **`with-limit`** / **`async-each`**,
 
 Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 [defer-coroutine.md](api/defer-coroutine.md).
-
----
-
-## CPS consumer API (Call/Next/Send)
-
-Unify the call and iteration consumer surfaces on continuation
-passing: entries take a resume fn + state pointer, invoked
-trampolined with the CPython value-or-NULL contract; the resume set
-on the frame carries the progression; eager await interposes once at
-the delivery point. Deletes the typed wake, the phase enums, and the
-hand-rolled drive epilogues.
-
-**In progress.** Landed: the per-frame resume slot and its delivery
-points, `KosEvalState_CallResume` / `NextResume` /
-`KosResumeFrame_Install` (with `resume == NULL` meaning "behave like an
-ordinary CALL/NEXT opcode"), KosMap and KosFilter converted, eager
-await centralized at the delivery point so a resume only ever sees a
-settled value, demand's settled-value classification, and the BOXED
-call shape retired (`kc_wants_frame == 0` no longer forces a Python
-boundary round-trip for a call the running evaluator can make).
-
-Apply is **not** a conversion target -- its frame-identity guard is
-load-bearing and it must not set a resume on its own frame. Neither
-are the stepper and demandgen adapters, which call `koskari_eval`
-themselves and have no frame to stage on; what they duplicate is the
-drive epilogue, and that is what gets extracted. See the doc's
-"A note on this document's prescriptions".
-
-The demolition pass has landed: nothing installs a native program, so
-`KosNativeProgram`, `KosNativeFrameEvent`, the typed wake,
-`KosNativeHandlerFn` and `KosNativeFrame_Install` are gone, along with
-the frame's `native_prog` slot. Apply's non-flattening path became a
-resume; the stepper's two copies of the truncation check and error
-mapping became one pair of helpers (demandgen keeps its own, being
-the sync surface).
-
-Remaining: bytecode's own resume, the shared boundary with the
-musttail work, and where the trampoline's staging gets tightened --
-today the frame stack is the transit slot for every delivery.
-
-Ref: [cps-consumer-api.md](cps-consumer-api.md).
 
 ---
 

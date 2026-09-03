@@ -24,16 +24,16 @@ KOS_OP_HANDLER(FAST_STORE) {
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   size_t idx = (size_t) KosOp_ARG(insn);
   int res = kos_ns_fast_store(ns, idx, val);
   Py_DECREF(val);
 
   if (unlikely(res < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

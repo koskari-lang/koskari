@@ -27,12 +27,12 @@ KOS_OP_HANDLER(BUILD_LIST_EXTEND) {
 
   PyObject *iterable = KosEvalState_StackPopRef(es);
   if (unlikely(! iterable))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, 1);
   if (unlikely(! ptr)) {
     Py_DECREF(iterable);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *list = ptr[0];
@@ -40,16 +40,16 @@ KOS_OP_HANDLER(BUILD_LIST_EXTEND) {
     Py_DECREF(iterable);
     PyErr_Format(PyExc_TypeError,
                  "BUILD_LIST_EXTEND requires list, not %R", list);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   PyObject *result = PySequence_InPlaceConcat(list, iterable);
   Py_DECREF(iterable);
   if (unlikely(! result))
-    return EVAL_RAISE();
+    RESULT_RAISE();
   Py_DECREF(result);
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

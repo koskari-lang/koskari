@@ -103,4 +103,56 @@ static inline PyObject *kos_managed_dict_peek(PyObject *obj) {
 }
 
 
+
+/* === The eval breaker === */
+
+
+/*
+   CPython's eval breaker on 3.12: an aggregate int at the head of the
+   interpreter's ceval state, with the GIL drop request beside it.
+   Replicated under our own name (no internal header, no unexported
+   symbol); compat.h builds the probes on these.
+*/
+
+
+/* struct _ceval_state and struct _is prefixes (gc_opaque spans struct
+   _gc_runtime_state):
+   https://github.com/python/cpython/blob/v3.12.0/Include/internal/pycore_ceval_state.h
+   https://github.com/python/cpython/blob/v3.12.0/Include/internal/pycore_interp.h
+   https://github.com/python/cpython/blob/v3.12.0/Include/internal/pycore_gc.h */
+typedef struct {
+  int eval_breaker;
+  int gil_drop_request;
+} KosCevalState312;
+
+typedef struct {
+  uint64_t next_unique_id;
+  PyThreadState *head;
+  long count;
+  size_t stacksize;
+} KosPyThreads312;
+
+typedef struct {
+  PyInterpreterState *next;
+  int64_t id;
+  int64_t id_refcount;
+  int requires_idref;
+  void *id_mutex;
+  int _initialized;
+  int finalizing;
+  uint64_t monitoring_version;
+  uint64_t last_restart_version;
+  KosPyThreads312 threads;
+  void *runtime;
+  uintptr_t _finalizing;
+  unsigned char gc_opaque[240];
+  PyObject *sysdict;
+  PyObject *builtins;
+  KosCevalState312 ceval;
+} KosInterpreterState312;
+
+#define KOS_CEVAL_STATE(interp)                         \
+  (&((KosInterpreterState312 *) (interp))->ceval)
+
+
 // The end.

@@ -17,9 +17,12 @@ FROM python:${PYTHON_VERSION}-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# The evaluator threads dispatch through musttail, which needs clang
+# (or GCC 15+); lld does the LTO link.
 RUN apt-get update -qq && \
     apt-get install -qy --no-install-recommends \
-        gcc \
+        clang \
+        lld \
         gdb \
         make \
         python3-dev \

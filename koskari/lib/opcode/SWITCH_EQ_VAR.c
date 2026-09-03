@@ -27,29 +27,29 @@ KOS_OP_HANDLER_COLD(SWITCH_EQ_VAR) {
 
   PyObject *var_name = KosEvalState_CONST(es, row.a1);
   if (unlikely(! var_name))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *rhs = frame_ns_deref(es, var_name);
   if (unlikely(! rhs))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   PyObject *value = KosEvalState_StackPeek(es);
   if (unlikely(! value)) {
     Py_DECREF(rhs);
-    return EVAL_RAISE();
+    RESULT_RAISE();
   }
 
   int res = PyObject_RichCompareBool(value, rhs, Py_EQ);
   Py_DECREF(rhs);
   if (unlikely(res < 0))
-    return EVAL_RAISE();
+    RESULT_RAISE();
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
     KosEvalState_SET_PC(es, row.a0);
   }
 
-  return EVAL_NORMAL();
+  RESULT_NEXT(es);
 }
 
 

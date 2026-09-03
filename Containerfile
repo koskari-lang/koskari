@@ -4,7 +4,10 @@ ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_ROOT_USER_ACTION=ignore
 
-RUN apk add gcc musl-dev python3-dev && \
+# The evaluator threads dispatch through musttail, which needs clang
+# (or GCC 15+); lld does the LTO link, and gcc supplies the runtime
+# objects and libgcc that clang links against on musl.
+RUN apk add clang lld gcc musl-dev python3-dev && \
     pip install uv
 
 WORKDIR /build

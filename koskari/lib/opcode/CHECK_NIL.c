@@ -20,7 +20,9 @@
   JUMP_FALSE.
 */
 KOS_OP_HANDLER(CHECK_NIL) {
-  return kos_op_result_from_push_int(kos_check_nil(es, insn));
+  if (unlikely(kos_check_nil(es, insn) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 
