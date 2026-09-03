@@ -126,6 +126,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
 
   (void) value;
 
+  /* The raise walk is propagating an exception: let it, as every
+     resume does. */
+  if (PyErr_Occurred())
+    return EVAL_RAISE();
+
   r = KosEvalState_NextResume(
       es, ((KosMapObject *) state)->source, NULL,
       map_resume_after_fetch, state);
