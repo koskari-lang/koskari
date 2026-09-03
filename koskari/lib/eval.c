@@ -3082,6 +3082,15 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
       }
     }
 
+    /* A transfer plan replaces the control path a staged delivery was
+       waiting on: the frame it was staged for may be gone once the
+       plan lands, and the plan's own INJECT is the delivery the
+       landing frame expects. Drop the stale slot ahead of the drain so
+       it can neither shadow that injection nor reach a resume it was
+       never meant for. */
+    if (KosEvalState_PLAN(es))
+      Py_CLEAR(KosEvalState_PENDING_VALUE(es));
+
     {
       KosOpResult xfer = eval_step_drain_transfer_plan(es);
       if (xfer.kind != KOS_RES_NORMAL) {
