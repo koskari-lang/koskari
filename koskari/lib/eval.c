@@ -150,7 +150,6 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 int KosEval_IsFuture(PyObject *val) {
   return kos_isfuture(val);
 }
-#include "eval/eval_gil.c"
 #include "eval/eval_cache.c"
 
 
@@ -2990,14 +2989,6 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
   reset cleared heap slot before es->code was updated).  On OOB, goto on_bad.
 */
 
-static inline uint64_t kos_eval_gil_poll_now_ns(void) {
-  struct timespec ts;
-
-  if (unlikely(clock_gettime(CLOCK_MONOTONIC, &ts) != 0))
-    return 0;
-  return (uint64_t) ts.tv_sec * 1000000000ULL + (uint64_t) ts.tv_nsec;
-}
-
 
 
 /* Internal-invariant safety net. See KOS_EVAL_SAFETYNET in hints.h.
@@ -3137,7 +3128,6 @@ KosOpResult koskari_eval(
   KosEvalState es;
   KosOp *insn;
   KosOpResult r;
-  uint64_t gil_poll_last_ns;
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL context for koskari_eval");
@@ -3208,17 +3198,16 @@ KosOpResult koskari_eval(
      iterator still pending) clears it here, so the trampoline and the
      chain never touch it. */
   KosEvalState_PythonResumeSet(&es, NULL, KOS_RESUME_NONE);
-  gil_poll_last_ns = kos_eval_gil_poll_now_ns();
 
   /* === the trampoline === */
 
 prologue:
-  /* A re-entry counts as a step, so a run of bounces with no
-     instruction between them reaches the poll on the same cadence a
-     straight-line chain does.  The poll runs before the re-entry
-     delivers: a resume hop that tripped the counter staged its
-     delivery so that a pending signal is seen ahead of it. */
-  if (unlikely(++KosEvalState_POLL_OPS(&es) > KOS_EVAL_GIL_POLL))
+  /* A re-entry is a cooperation point: a raise walk, a plan transfer,
+     a continuation replay, or a call install that found the breaker
+     up all arrive here.  The poll runs before the re-entry delivers: a
+     resume hop that found the breaker up staged its delivery so that
+     a pending signal is seen ahead of it. */
+  if (KOS_EVAL_BREAKER_UP(&es))
     goto poll;
 
 reenter:
@@ -3232,21 +3221,15 @@ reenter:
   goto thread;
 
 poll:
-  {
-    KosEvalState_POLL_OPS(&es) = 0;
-    if (koskari_gil_drop_requested()) {
-      uint64_t now_ns = kos_eval_gil_poll_now_ns();
-      if (gil_poll_last_ns && now_ns &&
-          (now_ns - gil_poll_last_ns > KOS_EVAL_GIL_POLL_INTERVAL_NS)) {
-        Py_BEGIN_ALLOW_THREADS
-        gil_poll_last_ns = now_ns;
-        Py_END_ALLOW_THREADS
-      }
-    }
+  /* The breaker is up.  Another thread waiting on the GIL has already
+     outlasted the interpreter's switch interval, so yield it now, as
+     Python's own loop would; then take any pending signal.  A signal
+     raised here is taken by the re-entry's pending-exception step,
+     which drops any staged delivery before the raise walk. */
+  if (koskari_gil_drop_requested()) {
+    Py_BEGIN_ALLOW_THREADS
+    Py_END_ALLOW_THREADS
   }
-
-  /* A signal raised here is taken by the re-entry's pending-exception
-     step, which drops any staged delivery before the raise walk. */
   PyErr_CheckSignals();
   goto reenter;
 
@@ -3256,7 +3239,9 @@ thread:
   r = insn->fn(&es, insn, NULL);
 
   if (likely(r.kind == KOS_RES_NORMAL)) {
-    if (unlikely(KosEvalState_POLL_OPS(&es) > KOS_EVAL_GIL_POLL))
+    /* A chain hands back NORMAL only from a cooperation point that
+       found the breaker up (or a handler with no chain to run). */
+    if (KOS_EVAL_BREAKER_UP(&es))
       goto poll;
     goto thread;
   }
@@ -3285,10 +3270,7 @@ handle_result:
     if (ar.kind == KOS_RES_DISPATCH) {
       /* Plain frame-to-frame return: live regs already retargeted, no
          pending PyErr / plan / native handler.  Skip the prologue and
-         go straight back to threading; the poll counter still bounds
-         signal-check latency. */
-      if (unlikely(++KosEvalState_POLL_OPS(&es) > KOS_EVAL_GIL_POLL))
-        goto poll;
+         go straight back to threading. */
       goto thread;
     }
     if (ar.kind == KOS_RES_REPROLOGUE) goto prologue;

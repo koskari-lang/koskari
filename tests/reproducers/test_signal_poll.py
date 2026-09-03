@@ -15,15 +15,17 @@
 """
 Signal polling inside the evaluator
 
-The evaluator checks for pending signals on a counter of executed
-instructions, so a signal raised while Koskari code runs interrupts it
-even when the code makes no call, jump, return, or yield between the
-signal and its check. Each test arms the interrupt from inside the
-running code and then runs a stretch with no other reason to poll: a
-long straight line of stores, a tight counting loop, and a deep
-non-tail recursion. The Koskari code catches the interrupt itself, so
-a signal the evaluator failed to poll would surface only after the
-stretch completed, on return to Python, and fail the test.
+The evaluator tests the interpreter's eval breaker at its cooperation
+points -- a loop's back-edge, a frame install, a resume hop, and every
+re-entry through the prologue -- so a signal raised while Koskari code
+runs interrupts any stretch that cycles through one of them. Each test
+arms the interrupt from inside the running code and then runs such a
+stretch: a tight counting loop, a deep non-tail recursion, and two
+native filters looping resume to resume. The Koskari code catches the
+interrupt itself, so a signal the evaluator failed to poll would
+surface only after the stretch completed, on return to Python, and
+fail the test. A straight line with no cooperation point in it runs to
+its end first; the signal is then taken at the next point after it.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -58,20 +60,22 @@ class TestSignalPoll(SpecialsTestCase):
         super().tearDown()
 
 
-    async def test_straight_line(self):
+    async def test_straight_line_then_loop(self):
         """
-        A straight-line stretch longer than the poll cadence, with no
-        call, jump, return, or yield in it, still sees the signal
+        A straight-line stretch with no cooperation point in it runs to
+        its end; the signal is taken at the first back-edge after it
         """
 
         stores = " ".join("(setq x 0)" for _ in range(3000))
         src = f"""
-        (let [[x 1]]
+        (let [[x 1] [n 0]]
           (import _thread)
           (try
             (begin
               (_thread.interrupt_main)
               {stores}
+              (while (< n 1)
+                (setq n (+ n 1)))
               x)
             ((e Interrupted) "caught")))
         """

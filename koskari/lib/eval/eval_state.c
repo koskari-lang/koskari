@@ -31,6 +31,9 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
   if (es)
     memset(es, 0, sizeof(KosEvalState));
   KosEvalState_CONTEXT(es) = ctx;
+  KosEvalState_BREAKER(es) = koskari_eval_breaker_locate();
+  if (! KosEvalState_BREAKER(es))
+    KosEvalState_BREAKER(es) = &koskari_breaker_always;
 
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_init);
 }

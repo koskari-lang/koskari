@@ -41,6 +41,96 @@
 #endif
 
 
+/* === The eval breaker === */
+
+/*
+   CPython's eval breaker is the word its own loop tests at every
+   cooperation point (a backward jump, a call, a resume) to learn that
+   another thread wants the GIL or a signal is pending; the evaluator
+   tests the same word at the same kinds of points. The version headers
+   above replicate the layout that reaches it, in one of two shapes:
+
+   - KOS_BREAKER_WORD(tstate), 3.13 and later: a bit set on the thread
+     state. The two bits acted on are KOS_BREAKER_GIL_DROP and
+     KOS_BREAKER_SIGNALS; the rest (pending calls, async exception, GC
+     scheduled, stop requests) only Python's loop can service and are
+     masked out.
+   - KOS_CEVAL_STATE(interp), before 3.13: the interpreter's ceval
+     state, whose eval_breaker is one aggregate int tested whole, with
+     gil_drop_request beside it.
+
+   A version defining neither gets a word that always reads up, so
+   every cooperation point polls, and a GIL drop answered as always
+   requested: correct, and slow only until the layout is mapped.
+*/
+#if defined(KOS_BREAKER_WORD)
+
+typedef uintptr_t KosBreakerWord;
+# define KOS_BREAKER_MASK \
+  ((KosBreakerWord) (KOS_BREAKER_GIL_DROP | KOS_BREAKER_SIGNALS))
+
+/* The address of this thread's eval breaker; NULL without a thread state */
+static inline const volatile KosBreakerWord *koskari_eval_breaker_locate(void) {
+  PyThreadState *const tstate = PyThreadState_Get();
+  return tstate
+      ? (const volatile KosBreakerWord *) &KOS_BREAKER_WORD(tstate) : NULL;
+}
+
+/* Whether another thread asked this one to drop the GIL */
+static inline int koskari_gil_drop_requested(void) {
+# ifdef Py_GIL_DISABLED
+  return 0;
+# else
+  const volatile KosBreakerWord *w = koskari_eval_breaker_locate();
+  return w && (*w & KOS_BREAKER_GIL_DROP) != 0;
+# endif
+}
+
+#elif defined(KOS_CEVAL_STATE)
+
+typedef int KosBreakerWord;
+# define KOS_BREAKER_MASK ((KosBreakerWord) ~0)
+
+/* The address of the interpreter's eval breaker; NULL without a thread */
+static inline const volatile KosBreakerWord *koskari_eval_breaker_locate(void) {
+  PyThreadState *const tstate = PyThreadState_Get();
+  if (! tstate || ! tstate->interp)
+    return NULL;
+  return (const volatile KosBreakerWord *)
+      &KOS_CEVAL_STATE(tstate->interp)->eval_breaker;
+}
+
+/* Whether another thread asked this one to drop the GIL */
+static inline int koskari_gil_drop_requested(void) {
+  PyThreadState *const tstate = PyThreadState_Get();
+  if (! tstate || ! tstate->interp)
+    return 0;
+  return KOS_CEVAL_STATE(tstate->interp)->gil_drop_request != 0;
+}
+
+#else
+
+typedef int KosBreakerWord;
+# define KOS_BREAKER_MASK ((KosBreakerWord) ~0)
+# define KOS_BREAKER_UNMAPPED 1
+
+#endif
+
+/* A word that never reads clear: the unmapped default, and the stand-in
+   when a version's locate finds no thread state. */
+static const volatile KosBreakerWord koskari_breaker_always = 1;
+
+#ifdef KOS_BREAKER_UNMAPPED
+static inline const volatile KosBreakerWord *koskari_eval_breaker_locate(void) {
+  return &koskari_breaker_always;
+}
+
+static inline int koskari_gil_drop_requested(void) {
+  return 1;
+}
+#endif
+
+
 /* === macros for all versions === */
 
 #if PY_MINOR_VERSION < 13

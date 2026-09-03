@@ -78,6 +78,7 @@ struct KosOpResult {
 #define EVAL_FATAL()            ((KosOpResult){ KOS_RES_FATAL, NULL })
 
 
+#include "compat.h"
 #include "dynchain.h"
 #include "hints.h"
 #include "tracing.h"
@@ -301,9 +302,6 @@ typedef KosThreadFn KosResumeFn;
     KosEvalState *kos_thr_es_ = (es);                                   \
     uint32_t kos_thr_pc_ = KosEvalState_PC(kos_thr_es_);                \
     KosOp *kos_thr_next_;                                               \
-    if (unlikely(++KosEvalState_POLL_OPS(kos_thr_es_)                   \
-                 > KOS_EVAL_GIL_POLL))                                  \
-      return EVAL_NORMAL();                                             \
     kos_thr_next_ = &KosEvalState_OPS(kos_thr_es_)[kos_thr_pc_];        \
     kos_thr_es_->acting_pc = kos_thr_pc_;                               \
     kos_thr_es_->pc = kos_thr_pc_ + 1u;                                 \
@@ -383,19 +381,33 @@ typedef KosThreadFn KosResumeFn;
 /**
    RESUME_HOP(fn, es, state, value): hand a delivery from one resume to
    the next -- the hop a step's phases make, or a bytecode return into a
-   resume-carrying parent. A tail call, counted like an instruction:
-   when the poll counter trips it stages through DISPATCH instead, so
-   the trampoline polls before the prologue delivers. A chain of
-   resumes with no instruction between them (a filter rejecting every
-   element) therefore reaches the signal check on the same cadence a
-   straight-line chain does. The calling function must have the
+   resume-carrying parent. A tail call that is also a cooperation
+   point: when the eval breaker is up it stages through DISPATCH
+   instead, so the trampoline polls before the prologue delivers. A
+   chain of resumes with no instruction between them (a filter
+   rejecting every element) therefore sees a signal or a GIL request
+   as promptly as a loop does. The calling function must have the
    KosThreadFn prototype, as for TAILCALL.
 */
 #define RESUME_HOP(fn, es, state, value)                                \
   do {                                                                  \
-    if (unlikely(++KosEvalState_POLL_OPS(es) > KOS_EVAL_GIL_POLL))      \
+    if (KOS_EVAL_BREAKER_UP(es))                                        \
       DISPATCH((fn), (es), (state), (value));                           \
     TAILCALL((fn), (es), (state), (value));                             \
+  } while (0)
+
+
+/**
+   RESULT_NEXT_POLL(es): thread on to the instruction at es->pc, unless
+   the eval breaker is up, in which case hand the trampoline that same
+   step so it polls first. The cooperation point for an opcode that
+   closes a cycle on its own (CONTINUE, the compiler's one back-edge).
+*/
+#define RESULT_NEXT_POLL(es)                                            \
+  do {                                                                  \
+    if (KOS_EVAL_BREAKER_UP(es))                                        \
+      return EVAL_NORMAL();                                             \
+    RESULT_NEXT(es);                                                    \
   } while (0)
 
 /* At most one delivery is staged at a time; a second is an internal
@@ -673,17 +685,32 @@ struct KosEvalState {
                               Live transit only: freeze moves it onto
                               the frame stack, and the delivery step
                               takes it before the resume runs */
-  uint32_t poll_ops;  /* instructions since the last GIL / signal poll;
-                         the trampoline zeroes it at each poll and
-                         every continuing step increments it */
+  const volatile KosBreakerWord *breaker; /* this thread's eval breaker
+                         (compat.h), resolved at Init; the cooperation
+                         points test it and the trampoline polls when
+                         it is up */
 };
 
 
-/* GIL / signal poll cadence: a poll runs once this many instructions
-   have run since the last one, and a GIL drop is offered at most once
-   per interval. */
-#define KOS_EVAL_GIL_POLL                1024u
-#define KOS_EVAL_GIL_POLL_INTERVAL_NS    5000000ULL  /* 5 ms */
+#define KosEvalState_BREAKER(es) ((es)->breaker)
+
+/* The eval breaker test at a cooperation point: one load, one branch.
+   Up means another thread wants the GIL or a signal is pending, and the
+   trampoline's poll section answers both before threading resumes. */
+#define KOS_EVAL_BREAKER_UP(es)                                         \
+  unlikely((*KosEvalState_BREAKER(es) & KOS_BREAKER_MASK) != 0)
+
+
+/**
+   The result a call-core install arm returns once the callee frame is
+   live at pc 0: thread on, or when the eval breaker is up restart
+   through the prologue so the trampoline polls before the callee's
+   first instruction. Frame entry is a cooperation point because a
+   tail-recursive loop has no CONTINUE.
+*/
+static inline KosOpResult kos_call_installed(KosEvalState *es) {
+  return KOS_EVAL_BREAKER_UP(es) ? EVAL_REPROLOGUE() : EVAL_NORMAL();
+}
 
 
 #define KosEvalState_CONTEXT(es) ((es)->ctx)
@@ -709,7 +736,6 @@ struct KosEvalState {
 /** The staged CPS delivery, owned; NULL when nothing is staged. */
 #define KosEvalState_PENDING_VALUE(es) ((es)->pending_value)
 /** Instructions run since the last GIL / signal poll. */
-#define KosEvalState_POLL_OPS(es) ((es)->poll_ops)
 
 
 /**

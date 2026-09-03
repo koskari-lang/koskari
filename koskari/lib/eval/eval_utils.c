@@ -862,7 +862,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
           /* the frame's FN reference keeps callable alive */
           if (flags & KOS_CALL_CALLABLE_OWNED)
             Py_DECREF(callable);
-          return EVAL_NORMAL();
+          return kos_call_installed(es);
         }
 
         if (likely(! kwnames
@@ -895,7 +895,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         KosDynFrame_FN(frame) = callable;
         es->pc = 0;
         es->acting_pc = 0;
-        return EVAL_NORMAL();
+        return kos_call_installed(es);
       }
     }
     goto legacy;
@@ -982,7 +982,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
           KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
           if (window)
             kos_stack_drop_noerr_fast(caller_slot, window);
-          return EVAL_NORMAL();
+          return kos_call_installed(es);
         }
 
         frame_ns = KosFunction_SimpleCallNamespaceStealBlock(
@@ -1014,7 +1014,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
           KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_STEAL);
           if (window)
             kos_stack_drop_noerr_fast(caller_slot, window);
-          return EVAL_NORMAL();
+          return kos_call_installed(es);
         }
       }
 
@@ -1037,7 +1037,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
             Py_INCREF(callable);
           KosDynFrame_FN(cached) = callable;
           KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
-          return EVAL_NORMAL();
+          return kos_call_installed(es);
         }
 
         frame_ns = KosFunction_SimpleCallNamespaceFromVector(
@@ -1058,7 +1058,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
           if (! (flags & KOS_CALL_CALLABLE_OWNED))
             Py_INCREF(callable);
           KosDynFrame_FN(frame) = callable;
-          return EVAL_NORMAL();
+          return kos_call_installed(es);
         }
       }
 
@@ -1108,7 +1108,7 @@ fn_frame_install:
         kos_stack_drop_noerr_fast(caller_slot, window);
       if (flags & KOS_CALL_CALLABLE_OWNED)
         Py_DECREF(callable);
-      return EVAL_NORMAL();
+      return kos_call_installed(es);
     }
   }
 
@@ -1349,7 +1349,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
     KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
     if (window)
       kos_stack_drop_noerr_fast(caller_slot, window);
-    return EVAL_NORMAL();
+    return kos_call_installed(es);
   }
 
   frame_ns = KosFunction_SimpleCallNamespaceStealSelfBlock(
@@ -1381,7 +1381,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
     KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_STEAL);
     if (window)
       kos_stack_drop_noerr_fast(caller_slot, window);
-    return EVAL_NORMAL();
+    return kos_call_installed(es);
   }
 }
 

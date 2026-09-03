@@ -21,4 +21,41 @@
 /* PyErr_GetRaisedException added in 3.12 */
 #define PyErr_GetRaisedException koskari_Err_GetRaisedException
 
+
+
+/* === The eval breaker === */
+
+
+/*
+   CPython's eval breaker on 3.10: an aggregate int on the interpreter's
+   ceval state, with the GIL drop request beside it. Replicated under
+   our own name (no internal header, no unexported symbol); compat.h
+   builds the probes on these.
+*/
+
+
+/* struct _ceval_state and struct _is prefixes:
+   https://github.com/python/cpython/blob/v3.10.0/Include/internal/pycore_interp.h */
+typedef struct {
+  int recursion_limit;
+  int eval_breaker;
+  int gil_drop_request;
+} KosCevalState310;
+
+typedef struct {
+  PyInterpreterState *next;
+  PyThreadState *tstate_head;
+  void *runtime;
+  int64_t id;
+  int64_t id_refcount;
+  int requires_idref;
+  void *id_mutex;
+  int finalizing;
+  KosCevalState310 ceval;
+} KosInterpreterState310;
+
+#define KOS_CEVAL_STATE(interp)                         \
+  (&((KosInterpreterState310 *) (interp))->ceval)
+
+
 // The end.

@@ -46,12 +46,18 @@ KOS_OP_HANDLER(CONTINUE) {
   {
     KosWalkStatus ws = kos_dyn_unwind_to_loop(es, KOS_XFER_EVENT_CONTINUE,
                                               result);
-    KosOpResult kr = (ws == KOS_WALK_ERROR) ? EVAL_RAISE()
-                   : (ws == KOS_WALK_ASYNC_UNWIND) ? EVAL_REPROLOGUE()
-                   : EVAL_NORMAL();
-    if (kr.kind == KOS_RES_RAISE)
+    if (unlikely(ws == KOS_WALK_ERROR)) {
       Py_DECREF(result);
-    RESULT_RELAY(es, kr);
+      RESULT_RAISE();
+    }
+    if (unlikely(ws == KOS_WALK_ASYNC_UNWIND))
+      return EVAL_REPROLOGUE();
+
+    /* The loop's back-edge is the one cycle the compiler closes with
+       an instruction, so it is where a running loop cooperates: a GIL
+       request or a pending signal is polled here before the next
+       iteration. */
+    RESULT_NEXT_POLL(es);
   }
 }
 
