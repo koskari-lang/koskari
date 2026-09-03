@@ -172,6 +172,33 @@ class TestSignalPoll(SpecialsTestCase):
         self.assertGreaterEqual(len(seen), 500)
 
 
+    async def test_tail_call_inside_let(self):
+        """
+        A tail-recursive loop whose call sits inside a let has no
+        back-edge and its argument window lives on the let's segment,
+        so the call core's tail arm declines it and the install runs
+        through the call slot; that install is still a cooperation
+        point. The signal is armed from a C builtin partway through, so
+        no Python frame can take it first
+        """
+
+        src = """
+        (begin
+          (import _thread)
+          (define-global spin
+            (lambda [n]
+              (let [[m (+ n 1)]]
+                (when (== m 500) (_thread.interrupt_main))
+                (if (< m 100000) then: (spin m) else: m))))
+          (try
+            (spin 0)
+            ((e Interrupted) "caught")))
+        """
+
+        expr, _mod = self.compile_expr(src, Interrupted=Interrupted)
+        self.assertEqual(await expr(), "caught")
+
+
     async def test_deep_recursion_through_call(self):
         """
         Deep non-tail recursion through Call sees the signal

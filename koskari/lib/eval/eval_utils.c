@@ -466,6 +466,24 @@ static inline int do_frame_prep(
 
 
 /**
+   The result of an install slot that ran on a prepared frame: a frame
+   the slot filled is a callee entry, and so a cooperation point
+   (kos_call_installed); a slot that wanted no frame delivered a value
+   and its result stands
+*/
+static inline KosOpResult kos_call_slot_result(
+    KosEvalState *es,
+    KosCallSlots *slots,
+    PyObject *callable,
+    KosOpResult r) {
+
+  if (r.kind == KOS_RES_NORMAL && KosCallSlots_WantsFrame(slots, callable))
+    return kos_call_installed(es);
+  return r;
+}
+
+
+/**
    Tail-call preamble for a plain-Python callable: pop the frame when it
    is dyn_top, or defer delivery to a normal RETURN when extent nodes are
    still open above it.  Sets *tail_defer_return accordingly.
@@ -604,8 +622,10 @@ KosOpResult KosEvalState_Call(
   if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();
 
-  return KosCallable_CallSlots(es, slots, callable, args, nargs, kwnames,
-                               tail_call);
+  return kos_call_slot_result(
+      es, slots, callable,
+      KosCallable_CallSlots(es, slots, callable, args, nargs, kwnames,
+                            tail_call));
 }
 
 
@@ -1527,8 +1547,10 @@ KosOpResult KosEvalState_CallArgs(
   if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();
 
-  return KosCallable_CallArgsSlots(es, slots, callable, args_tuple,
-                                   kwds_dict, tail_call);
+  return kos_call_slot_result(
+      es, slots, callable,
+      KosCallable_CallArgsSlots(es, slots, callable, args_tuple,
+                                kwds_dict, tail_call));
 }
 
 
@@ -1559,8 +1581,10 @@ KosOpResult KosEvalState_CallNoArgs(
   if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();
 
-  return KosCallable_CallArgsSlots(es, slots, callable, NULL, NULL,
-                                   tail_call);
+  return kos_call_slot_result(
+      es, slots, callable,
+      KosCallable_CallArgsSlots(es, slots, callable, NULL, NULL,
+                                tail_call));
 }
 
 
