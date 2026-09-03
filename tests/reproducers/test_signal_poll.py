@@ -31,8 +31,12 @@ its end first; the signal is then taken at the next point after it.
 :license: GNU General Public License v3
 """
 
+import _thread
+import itertools
+import operator
 import signal
 
+from koskari.lib import KosFilter, KosMap
 from tests.compile.specials import SpecialsTestCase
 
 import pytest
@@ -109,52 +113,63 @@ class TestSignalPoll(SpecialsTestCase):
         """
         A native filter rejecting every element of a sync source through
         a Python predicate runs resume to resume with no instruction in
-        between, and still sees the signal
+        between, and still sees the signal. The predicate raises the
+        signal itself partway through, so the loop is proven to have run
+        and the signal to have been taken from inside it
         """
 
+        seen = []
+
         def never(x):
+            seen.append(x)
+            if len(seen) == 500:
+                _thread.interrupt_main()
             return False
 
         src = """
-        (begin
-          (import itertools)
-          (import _thread)
-          (try
-            (begin
-              (_thread.interrupt_main)
-              (for-each [y (filter never (itertools.count))]
-                y))
-            ((e Interrupted) "caught")))
+        (try
+          (for-each [y (filter never (itertools.count))]
+            y)
+          ((e Interrupted) "caught"))
         """
 
         expr, _mod = self.compile_expr(
-            src, Interrupted=Interrupted, never=never)
+            src, Interrupted=Interrupted, never=never,
+            filter=KosFilter, itertools=itertools)
         self.assertEqual(await expr(), "caught")
+        self.assertGreaterEqual(len(seen), 500)
 
 
     async def test_filter_reject_loop_driven_source(self):
         """
         A native filter with a None predicate over a driven source that
         yields only falsy elements loops resume to resume, and still
-        sees the signal
+        sees the signal. The source raises the signal itself partway
+        through, so the loop is proven to have run and the signal to
+        have been taken from inside it
         """
+
+        seen = []
+
+        def ones():
+            while True:
+                seen.append(1)
+                if len(seen) == 500:
+                    _thread.interrupt_main()
+                yield 1
 
         src = """
-        (begin
-          (import itertools)
-          (import operator)
-          (import _thread)
-          (try
-            (begin
-              (_thread.interrupt_main)
-              (for-each [y (filter None
-                                   (map operator.not_ (itertools.repeat 1)))]
-                y))
-            ((e Interrupted) "caught")))
+        (try
+          (for-each [y (filter None (map operator.not_ (ones)))]
+            y)
+          ((e Interrupted) "caught"))
         """
 
-        expr, _mod = self.compile_expr(src, Interrupted=Interrupted)
+        expr, _mod = self.compile_expr(
+            src, Interrupted=Interrupted, ones=ones,
+            filter=KosFilter, map=KosMap, operator=operator)
         self.assertEqual(await expr(), "caught")
+        self.assertGreaterEqual(len(seen), 500)
 
 
     async def test_deep_recursion_through_call(self):
