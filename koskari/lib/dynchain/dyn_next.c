@@ -107,12 +107,7 @@ int kos_dyn_next_deliver_exhausted(
 
   int nn = KosDynNext_N((KosDynNode *) next);
 
-  /* a recyclable durable provider re-derives exhaustion from its
-     source and stays open -- a mapped function's StopIteration is a
-     truncation that builtins.map resumes from */
-  kos_dyn_iter_request_finish(
-      (KosDynNode *) next,
-      kos_dyn_iter_request_exhausted_flag((KosDynNode *) next));
+  kos_dyn_iter_request_finish((KosDynNode *) next, 1);
 
   if (nn == 2 && KosDynNext_DEFAULT_VAL((KosDynNode *) next)) {
     if (KosEvalState_StackPushRef(

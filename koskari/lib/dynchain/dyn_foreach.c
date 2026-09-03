@@ -153,11 +153,7 @@ int kos_dyn_foreach_deliver_exhausted(
     KosDynForeach *fe,
     PyObject *val) {
 
-  /* a recyclable durable provider re-derives exhaustion from its
-     source and stays open -- a mapped function's StopIteration is a
-     truncation that builtins.map resumes from */
-  kos_dyn_iter_request_finish(
-      (KosDynNode *) fe, kos_dyn_iter_request_exhausted_flag((KosDynNode *) fe));
+  kos_dyn_iter_request_finish((KosDynNode *) fe, 1);
 
   KosDynForeach_EXHAUSTED(fe) = 1;
   KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));

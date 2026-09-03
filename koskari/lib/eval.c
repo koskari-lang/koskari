@@ -300,7 +300,7 @@ KosIterRequestStatus KosIterRequest_Next(
           PyObject *payload = NULL;
           if (PyGen_FetchStopIterationValue(&payload) < 0)
             return KOS_IREQ_ERROR;
-          islots->ki_finish(iter, islots->ki_pyctx_recyclable ? 0 : 1);
+          kos_dyn_iter_request_finish(node, 1);
           *fast_out = payload;
           return KOS_IREQ_EXHAUSTED;
         }

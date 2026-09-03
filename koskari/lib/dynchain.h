@@ -219,17 +219,12 @@ void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter);
 /**
    Tell the request's provider its step is over: ki_finish on the bound
    suite, a no-op for a plain iterator. exhausted marks the provider
-   closed; for an exhaustion pass kos_dyn_iter_request_exhausted_flag,
-   which keeps a recyclable durable provider open.
+   closed, unless it recycles its durable context and re-derives
+   exhaustion from its source, in which case it stays open (a mapped
+   function's StopIteration is a truncation that builtins.map resumes
+   from).
 */
 void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted);
-
-/**
-   The ki_finish flag for an exhaustion: closed, unless the provider
-   recycles its durable context and re-derives exhaustion from its
-   source, so it stays open
-*/
-int kos_dyn_iter_request_exhausted_flag(KosDynNode *node);
 
 
 typedef enum {
