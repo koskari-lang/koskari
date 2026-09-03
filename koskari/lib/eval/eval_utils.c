@@ -1152,9 +1152,11 @@ legacy:
       return EVAL_RAISE();
     }
 
-    /* vals is the ownership ledger for the spilled window entries; the
-       pointer VALUES are identical to the window's, so argv (which may
-       be a prepend buffer aliasing them) stays valid for the call. */
+    /* vals is the ownership ledger for the spilled window entries and
+       the vector the call reads: a tail call pops the caller's frame
+       before the callee runs, and the block storage argv points into
+       goes with it. A prepend buffer is the handler's own local, so it
+       stays valid, and the objects it names are held by vals. */
     {
       PyObject *target;
       PyObject *const *call_argv;
@@ -1163,7 +1165,9 @@ legacy:
         call_argv = vals + 1;
       } else {
         target = callable;
-        call_argv = argv;
+        call_argv = (flags & KOS_CALL_ARGV_PREPENDED)
+            ? argv
+            : vals + ((flags & KOS_CALL_WINDOW_UNDER) ? 1 : 0);
       }
       r = KosEvalState_Call(es, target,
                             (nargs + nkw) ? call_argv : NULL,
