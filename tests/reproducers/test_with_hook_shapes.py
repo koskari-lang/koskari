@@ -61,6 +61,7 @@ class AsyncManager:
         self.enter_raises = enter_raises
 
     async def __aenter__(self):
+        self.calls.append("enter-start")
         await asyncio.sleep(0)
         self.calls.append("enter")
         if self.enter_raises:
@@ -68,6 +69,7 @@ class AsyncManager:
         return "aenter-result"
 
     async def __aexit__(self, typ, val, tb):
+        self.calls.append("exit-start")
         await asyncio.sleep(0)
         self.calls.append("exit")
         return True
@@ -259,7 +261,7 @@ class TestWithHookShapes(SpecialsTestCase):
         expr, _ = self.compile_expr("(with [c ctx] c)", ctx=mgr)
         with self.assertRaises(Boom):
             await expr()
-        self.assertEqual(mgr.calls, ["enter"])
+        self.assertEqual(mgr.calls, ["enter-start", "enter"])
 
 
     async def test_python_plain_manager(self):
@@ -340,14 +342,49 @@ class TestWithHookShapes(SpecialsTestCase):
         mgr = AsyncManager()
         expr, _ = self.compile_expr("(with [c ctx] c)", ctx=mgr)
         self.assertEqual(await expr(), "aenter-result")
-        self.assertEqual(mgr.calls, ["enter", "exit"])
+        self.assertEqual(mgr.calls,
+                         ["enter-start", "enter", "exit-start", "exit"])
 
 
     async def test_python_async_manager_dyn_with(self):
         mgr = AsyncManager()
         expr, _ = self.compile_expr("(dyn-with [c ctx] c)", ctx=mgr)
         self.assertEqual(await expr(), "aenter-result")
-        self.assertEqual(mgr.calls, ["enter", "exit"])
+        self.assertEqual(mgr.calls,
+                         ["enter-start", "enter", "exit-start", "exit"])
+
+
+    def test_throw_into_awaiting_aenter(self):
+        """
+        A throw at the revive of a suspended __aenter__ reaches the
+        pending node: the manager was never entered, so __aexit__ does
+        not run and the exception propagates
+        """
+
+        mgr = AsyncManager()
+        expr, _ = self.compile_expr("(with [c ctx] c)", ctx=mgr)
+        coro = expr()
+        coro.send(None)
+        with self.assertRaises(Boom):
+            coro.throw(Boom("thrown"))
+        self.assertEqual(mgr.calls, ["enter-start"])
+
+
+    def test_throw_into_awaiting_aexit(self):
+        """
+        A throw at the revive of a suspended __aexit__ discharges the
+        manager: __aexit__ does not run again and the thrown exception
+        propagates
+        """
+
+        mgr = AsyncManager()
+        expr, _ = self.compile_expr("(with [c ctx] c)", ctx=mgr)
+        coro = expr()
+        coro.send(None)
+        coro.send(None)
+        with self.assertRaises(Boom):
+            coro.throw(Boom("thrown"))
+        self.assertEqual(mgr.calls, ["enter-start", "enter", "exit-start"])
 
 
 # The end.

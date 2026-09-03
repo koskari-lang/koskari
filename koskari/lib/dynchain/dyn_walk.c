@@ -72,6 +72,10 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
      are restored as recorded when the GEN still sits where it was
      installed; anything else rebuilds from the chain. */
   KosEvalState_DYN_TOP(es) = saved_parent;
+  /* HOST_TOP always equals saved_parent here: both installs record the
+     host and set the GEN's parent from the same dyn_top, and nothing
+     re-parents a running GEN. The compare is kept for the same reason
+     as the FROZEN_HEAD compare in kos_dyn_gen_install. */
   if (saved_parent && saved_parent == KosDynGen_HOST_TOP(gen)
       && KosDynGen_HOST_FRAME(gen)) {
     kos_dyn_resync_apply(es, (KosDynFrame *) KosDynGen_HOST_FRAME(gen),

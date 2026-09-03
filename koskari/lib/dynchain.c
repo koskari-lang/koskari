@@ -911,57 +911,29 @@ int kos_dyn_abort_push_region(KosEvalState *es, KosDynNode *region) {
 }
 
 
-/* === Generic pending-exit APIs === */
+/* === Pending protocol completion at await revive === */
 
 
 /**
-   Walk ancestors from node for a WITH awaiting async __exit__.
+   Complete a with node whose awaited __aenter__ or __aexit__ has
+   settled: the awaited value sits on the frame stack and dyn_top is the
+   pending WITH node itself. An awaitable installs no frame; the pending
+   phase is set only on dyn_top, by the push and pop opcodes or by a
+   walk popping through dyn_top, and the walk returns on the AWAIT with
+   the node in place; nothing runs between that AWAIT and this revive.
+   A pending enter binds the value; a pending exit merges it and pops
+   the node. Callers: eval loop at await revive.
 */
-static KosDynWith *find_pending_exit_with(KosDynNode *node) {
-  for (; node; node = KosDynNode_PARENT(node)) {
-    if (KosDynNode_IS_WITH(node)
-        && KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-      return (KosDynWith *) node;
-  }
-  return NULL;
-}
-
-
-/**
-   Exposed form of find_pending_exit_with; returns the node or NULL.
-   Callers: eval when resuming after await inside __exit__.
-*/
-KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node) {
-  KosDynWith *w = find_pending_exit_with(node);
-  return w ? (KosDynNode *) w : NULL;
-}
-
-
-/**
-   Resume control after async WITH exit completes: runs
-   kos_dyn_with_on_control_returned for the pending node. Callers: eval loop
-   when finishing a suspended unwind.
-*/
-int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node) {
-  KosDynNode *n = kos_dyn_find_pending_exit(KosEvalState_DYN_TOP(es));
-  if (! n)
-    return 0;
-  return kos_dyn_with_on_control_returned(es, (KosDynWith *) n, do_pop_node);
-}
-
-
-/**
-   Resume control after an awaited __enter__ settles: the awaited value
-   sits on the frame stack and dyn_top is the provisional WITH node
-   (the awaitable installed no frame). Binds the value and clears the
-   pending phase. Callers: eval loop at await revive.
-*/
-int kos_dyn_complete_pending_enter(KosEvalState *es) {
+int kos_dyn_complete_pending(KosEvalState *es) {
   KosDynNode *top = KosEvalState_DYN_TOP(es);
-  if (! top || ! KosDynNode_IS_WITH(top)
-      || ! KosDynWith_ENTER_PENDING((KosDynWith *) top))
+
+  if (! top || ! KosDynNode_IS_WITH(top))
     return 0;
-  return kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) top);
+  if (KosDynWith_ENTER_PENDING((KosDynWith *) top))
+    return kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) top);
+  if (KosDynWith_EXIT_PENDING((KosDynWith *) top))
+    return kos_dyn_with_on_control_returned(es, (KosDynWith *) top, 1);
+  return 0;
 }
 
 

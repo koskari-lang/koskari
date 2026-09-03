@@ -77,7 +77,7 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
 
   /* AWAIT: __enter__ returned an awaitable and the node stays
      provisional; the revive binds the settled value
-     (kos_dyn_complete_pending_enter) and continues into the body. */
+     (kos_dyn_complete_pending) and continues into the body. */
   if (wr.kind == KOS_RES_AWAIT)
     return wr;
 

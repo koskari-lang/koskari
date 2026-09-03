@@ -1512,7 +1512,7 @@ Tests: **`TestDynWindContinuations`** in `tests/compile/specials/test_dyn_wind.p
 1. Plan is draining. `kos_run_transfer_step` returns < 0 (e.g. sync failure in extent action, **`CallNoArgs`** error, or cc-unwind sentinel re-emit).
 2. **Foreign cc-unwind** (`KOS_DYN_CC_RAISE` `EXTENT_ACTION`): **`xfer_emit_cc_unwind_signal`** returns `EVAL_RAISE()` and disarms the nest -- no **`try_local`** (dyn-with teardown already ran with PyErr clear).
 3. **Ordinary failure:** **`process_raise`** (unified ingress) abandons the nest and runs **`kos_dyn_unwind_raise`**. `EVAL_REPROLOGUE()` continues the loop when a handler applies; `EVAL_RAISE()` propagates when unhandled.
-4. **Async unwind during abandonment:** when `try_local` pops an extent whose exit is async (e.g. a dyn-with `__aexit__` coroutine), `process_raise` tags `KOS_SUSP_AWAIT` and the `EVAL_AWAIT` propagates through `run_transfer_plan_to_completion` to the driver; the driver awaits the exit, then resumes via `revive_await` → `kos_dyn_complete_pending_exit`, and the exception walk continues.
+4. **Async unwind during abandonment:** when `try_local` pops an extent whose exit is async (e.g. a dyn-with `__aexit__` coroutine), `process_raise` tags `KOS_SUSP_AWAIT` and the `EVAL_AWAIT` propagates through `run_transfer_plan_to_completion` to the driver; the driver awaits the exit, then resumes via `revive_await` → `kos_dyn_complete_pending`, and the exception walk continues.
 5. **Thunk bytecode raise** under **`KOS_XFER_SUSPENDED_AWAIT`**: prologue **`eval_phase_pending_exception`** runs **`process_raise`** (which abandons the plan) before plan drain; same **`try_local`** path.
 6. Manifested dyn chain is left wherever steps got to; no transactional rollback to the invoke site.
 
@@ -1636,7 +1636,7 @@ and `flags`. Delimited **invoke return** metadata lives on **`KOS_DYN_DELIM`**
 nodes (`kos_dyndelim_*`, `KosDynDelim_*`), not in separate context slots.
 Async **WITH** enter/exit suspension does **not** use separate `KosContext`
 slots: state lives on the `KosDynWith` node (`phase`, `exc_*`, `normal_exit`, etc.);
-see `kos_dyn_complete_pending_exit` in `dynchain.c` and `revive_await` in `eval.c`.
+see `kos_dyn_complete_pending` in `dynchain.c` and `revive_await` in `eval.c`.
 
 ```c
 /* Abbreviated; see eval.h for full struct KosContext */
@@ -1894,24 +1894,20 @@ When `koskari_eval` returns `KOS_RES_AWAIT`, the driver (e.g. KosCoroutine.send 
 the sync adapter) sends the await result and calls `koskari_eval` again. On
 re-entry, **revive** runs before the next opcode is dispatched. **`revive_await`**
 (in `eval.c`) pushes the await result (from `py_resume_inject` or the send value)
-onto the current frame stack, then calls **`kos_dyn_complete_pending_enter`**
-and **`kos_dyn_complete_pending_exit(ctx, 1)`**. The first binds the pushed
-value when dyn_top is a `KosDynWith` in `KOS_WITH_PHASE_PENDING_ENTER_AWAIT`
-(an awaitable `__aenter__` had suspended; `PUSH_WITH` leaves the pc past
-itself, so the body runs once). The second walks the dynamic chain for a
-`KosDynWith` whose **`phase`** is
-`KOS_WITH_PHASE_PENDING_EXIT_AWAIT` (async `__aexit__` had suspended) and runs
-`kos_dyn_with_on_control_returned`: it pops TOS (the `__aexit__` return), applies
-swallow logic (exception and truthy ⇒ swallow), drops the WITH stack block,
-optionally pops the node, sets frame PC to the post-`POP_WITH` instruction, and
-pushes `None` or the body value as appropriate. Thus the with-expression value is
-always `None` on swallow/normal paths; the `__aexit__` return is not left on the
-stack for RETURN to use.
-
-Wrappers: **`kos_complete_pending_with_exit(ctx)`** / **`kos_complete_pending_with_exit_semantic(ctx)`**
-delegate to `kos_dyn_complete_pending_exit` with `do_pop_node` 1 or 0 (full unlink
-vs semantic-only for paths where the caller unlinks). See
-[with-dyn-with.md](with-dyn-with.md) for the full async exit flow.
+onto the current frame stack, then calls **`kos_dyn_complete_pending`**. An
+awaitable protocol call installs no frame and the pending phase is set only
+on dyn_top, so the check is a dyn_top test: a `KosDynWith` in
+`KOS_WITH_PHASE_PENDING_ENTER_AWAIT` (an awaitable `__aenter__` had
+suspended; `PUSH_WITH` leaves the pc past itself, so the body runs once)
+binds the pushed value through `kos_dyn_with_on_enter_control_returned`; one
+in `KOS_WITH_PHASE_PENDING_EXIT_AWAIT` (async `__aexit__` had suspended) runs
+`kos_dyn_with_on_control_returned`: it pops TOS (the `__aexit__` return),
+applies swallow logic (exception and truthy ⇒ swallow), drops the WITH stack
+block, pops the node, sets frame PC to the post-`POP_WITH` instruction, and
+pushes `None` or the body value as appropriate. Thus the with-expression value
+is always `None` on swallow/normal paths; the `__aexit__` return is not left
+on the stack for RETURN to use. See [with-dyn-with.md](with-dyn-with.md) for
+the full async exit flow.
 
 ### Public C API
 

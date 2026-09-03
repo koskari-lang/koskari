@@ -517,9 +517,6 @@ static KosOpResult revive_await(
       }
       if (dr.kind != KOS_RES_NORMAL)
         return dr;
-
-      if (kos_dyn_complete_pending_exit(es, 1) < 0)
-        return EVAL_RAISE();
       return EVAL_NORMAL();
     }
 
@@ -538,12 +535,8 @@ static KosOpResult revive_await(
   }
   if (owned)
     Py_DECREF(to_push);
-  {
-    if (kos_dyn_complete_pending_enter(es) < 0)
-      return EVAL_RAISE();
-    if (kos_dyn_complete_pending_exit(es, 1) < 0)
-      return EVAL_RAISE();
-  }
+  if (kos_dyn_complete_pending(es) < 0)
+    return EVAL_RAISE();
   return EVAL_NORMAL();
 }
 

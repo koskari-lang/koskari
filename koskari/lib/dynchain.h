@@ -1832,9 +1832,7 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node);
 
 KosOpResult kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node);
 
-KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node);
-int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node);
-int kos_dyn_complete_pending_enter(KosEvalState *es);
+int kos_dyn_complete_pending(KosEvalState *es);
 
 
 /**

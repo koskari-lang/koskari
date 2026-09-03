@@ -216,6 +216,11 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
    * is already intact (e.g. YIELD_FROM -> FRAME -> GEN). Overwriting
    * would sever links when active is not a direct child of gen. */
   KosDynGen_ACTIVE(gen) = NULL;
+  /* FROZEN_HEAD always equals the active head here: kos_dyn_gen_freeze
+     writes ACTIVE and FROZEN_HEAD together and nothing else sets ACTIVE
+     non-NULL. The compare is kept so a future freeze path that records
+     one without the other lands on the rebuild instead of stale
+     registers; the same holds for HOST_TOP at the freeze. */
   if (KosDynGen_FROZEN_HEAD(gen) == active && KosDynGen_FROZEN_FRAME(gen)) {
     /* The registers the freeze recorded for this very head: apply them
        and restamp the spliced span's unwind caches, which the freeze

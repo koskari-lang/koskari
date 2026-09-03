@@ -67,10 +67,11 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
     RESULT_RAISE();
   }
 
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
   KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) with_node);
   /* AWAIT: __enter__ returned an awaitable and the node stays
      provisional; the revive binds the settled value
-     (kos_dyn_complete_pending_enter) and continues into the body. */
+     (kos_dyn_complete_pending) and continues into the body. */
   if (wr.kind == KOS_RES_AWAIT)
     return wr;
 
@@ -78,6 +79,17 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
     kos_dyn_pop_with(es, with_node);
     RESULT_RAISE();
   }
+
+  /* REPROLOGUE means one of two things. Either __enter__ is a Koskari
+     function whose frame is now the current frame: run it by
+     continuing at the current pc, which is the start of that frame.
+     Or the call left work for the trampoline (a transfer plan armed by
+     the callee): return so the trampoline drains it first. Continuing
+     in that second case would run the with body before the transfer
+     it was meant to make. */
+  if (wr.kind == KOS_RES_REPROLOGUE
+      && (KosEvalState_FRAME(es) == caller || KosEvalState_PLAN(es)))
+    return wr;
 
   RESULT_NEXT(es);
 }
