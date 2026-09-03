@@ -279,6 +279,30 @@ static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val) {
 
 
 /**
+   Complete an __enter__ whose result is TOS: pop it, bind the with name
+   when there is one, and mark the node entered and idle.
+*/
+static int kos_dyn_with_bind_entered(KosEvalState *es, KosDynWith *node) {
+  PyObject *result = KosEvalState_StackPopRef(es);
+  PyObject *name;
+
+  if (! result)
+    return -1;
+
+  name = KosDynWith_NAME(node);
+  if (name && name != Py_None && frame_ns_store(es, name, result) < 0) {
+    Py_DECREF(result);
+    return -1;
+  }
+  Py_DECREF(result);
+
+  KosDynWith_ENTERED(node) = 1;
+  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+  return 0;
+}
+
+
+/**
    Resume after awaitable __enter__: bind name, clear PENDING_ENTER_AWAIT.
 */
 static int kos_dyn_with_on_enter_control_returned(KosEvalState *es, KosDynWith *with_node) {
@@ -291,25 +315,7 @@ static int kos_dyn_with_on_enter_control_returned(KosEvalState *es, KosDynWith *
     return -1;
   }
 
-  {
-    PyObject *result = KosEvalState_StackPopRef(es);
-    if (! result) {
-      return -1;
-    }
-
-    PyObject *name = KosDynWith_NAME(with_node);
-    if (name && name != Py_None) {
-      if (frame_ns_store(es, name, result) < 0) {
-        Py_DECREF(result);
-        return -1;
-      }
-    }
-    Py_DECREF(result);
-  }
-
-  KosDynWith_ENTERED(with_node) = 1;
-  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-  return 0;
+  return kos_dyn_with_bind_entered(es, with_node);
 }
 
 
@@ -420,25 +426,7 @@ static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
     return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
   }
 
-  {
-    PyObject *result = KosEvalState_StackPopRef(es);
-    if (! result) {
-      return EVAL_RAISE();
-    }
-
-    PyObject *name = KosDynWith_NAME(node);
-    if (name && name != Py_None) {
-      if (frame_ns_store(es, name, result) < 0) {
-        Py_DECREF(result);
-        return EVAL_RAISE();
-      }
-    }
-    Py_DECREF(result);
-  }
-
-  KosDynWith_ENTERED(node) = 1;
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
-  return EVAL_NORMAL();
+  return kos_dyn_with_bind_entered(es, node) < 0 ? EVAL_RAISE() : EVAL_NORMAL();
 }
 
 
