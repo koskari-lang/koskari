@@ -3223,14 +3223,18 @@ reenter:
 poll:
   /* The breaker is up.  Another thread waiting on the GIL has already
      outlasted the interpreter's switch interval, so yield it now, as
-     Python's own loop would; then take any pending signal.  A signal
-     raised here is taken by the re-entry's pending-exception step,
-     which drops any staged delivery before the raise walk. */
+     Python's own loop would; then take any pending signal.
+     Py_MakePendingCalls is the public entry that runs the
+     interpreter's own signal handling, which is what clears the
+     breaker's signal input: PyErr_CheckSignals alone would leave it up
+     and every later cooperation point polling.  A signal raised here
+     is taken by the re-entry's pending-exception step, which drops
+     any staged delivery before the raise walk. */
   if (koskari_gil_drop_requested()) {
     Py_BEGIN_ALLOW_THREADS
     Py_END_ALLOW_THREADS
   }
-  PyErr_CheckSignals();
+  Py_MakePendingCalls();
   goto reenter;
 
 thread:
