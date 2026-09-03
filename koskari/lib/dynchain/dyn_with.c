@@ -513,6 +513,17 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
     return EVAL_NORMAL();
   }
 
+  if (KosDynWith_ENTER_PENDING(node)) {
+    /* __enter__ never returned: its installed frame raised and has
+       been popped by the raise walk, or its awaitable failed. The
+       manager was never entered, so __exit__ does not run; the node
+       pops with the error left pending, as Python leaves an __enter__
+       failure to the enclosing handlers. */
+    KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+    kos_dyn_with_shot_after_exit_done(node);
+    return EVAL_NORMAL();
+  }
+
   if (kos_dyn_with_single_exit_done(node)) {
     /* __exit__ already ran, possibly on a twin sharing the exit-done
        cell; complete the extent without re-firing it. */

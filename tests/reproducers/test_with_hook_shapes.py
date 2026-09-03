@@ -21,7 +21,8 @@ merges the exit verdict) only when that frame returns. A call made
 inside that method returns into the method's own frame and must not
 complete the node early. A Python awaitable __aenter__ installs no
 frame; the awaited value must bind on revive and the body must then
-run once.
+run once. An __enter__ that raises leaves the manager unentered, so
+__exit__ never runs and the exception reaches the enclosing handlers.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -50,18 +51,21 @@ def helper():
 
 class AsyncManager:
 
-    def __init__(self):
+    def __init__(self, enter_raises=False):
         self.calls = []
+        self.enter_raises = enter_raises
 
     async def __aenter__(self):
         await asyncio.sleep(0)
         self.calls.append("enter")
+        if self.enter_raises:
+            raise Boom("enter")
         return "aenter-result"
 
     async def __aexit__(self, typ, val, tb):
         await asyncio.sleep(0)
         self.calls.append("exit")
-        return False
+        return True
 
 
 class TestWithHookShapes(SpecialsTestCase):
@@ -132,6 +136,65 @@ class TestWithHookShapes(SpecialsTestCase):
         manager = await self.koskari_manager(swallow=False)
         expr, _ = self.compile_expr("(with [c ctx] 7)", ctx=manager())
         self.assertEqual(await expr(), 7)
+
+
+    async def raising_enter_manager(self, calls):
+        """
+        A class whose Koskari __enter__ raises and whose Koskari
+        __exit__ records that it ran and would swallow anything
+        """
+
+        enter_src = """
+        (lambda [self]
+          (calls.append "enter")
+          (boom))
+        """
+        exit_src = """
+        (lambda [self typ val tb]
+          (calls.append "exit")
+          True)
+        """
+
+        enter_expr, _ = self.compile_expr(enter_src, calls=calls, boom=boom)
+        exit_expr, _ = self.compile_expr(exit_src, calls=calls)
+        return type("Manager", (), {
+            "__enter__": await enter_expr(),
+            "__exit__": await exit_expr(),
+        })
+
+
+    async def test_enter_raises_skips_exit(self):
+        """
+        An __enter__ that raises leaves the manager unentered: the
+        exception propagates and __exit__ never runs
+        """
+
+        calls = []
+        manager = await self.raising_enter_manager(calls)
+        expr, _ = self.compile_expr("(with [c ctx] (calls.append \"body\"))",
+                                    ctx=manager(), calls=calls)
+        with self.assertRaises(Boom):
+            await expr()
+        self.assertEqual(calls, ["enter"])
+
+
+    async def test_enter_raises_skips_exit_dyn_with(self):
+        calls = []
+        manager = await self.raising_enter_manager(calls)
+        expr, _ = self.compile_expr(
+            "(dyn-with [c ctx] (calls.append \"body\"))",
+            ctx=manager(), calls=calls)
+        with self.assertRaises(Boom):
+            await expr()
+        self.assertEqual(calls, ["enter"])
+
+
+    async def test_python_async_enter_raises_skips_exit(self):
+        mgr = AsyncManager(enter_raises=True)
+        expr, _ = self.compile_expr("(with [c ctx] c)", ctx=mgr)
+        with self.assertRaises(Boom):
+            await expr()
+        self.assertEqual(mgr.calls, ["enter"])
 
 
     async def test_python_async_manager_binding(self):
