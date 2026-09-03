@@ -294,6 +294,16 @@ transposer use-case.
 
 Ref: [language/formal-default-modes.md](language/formal-default-modes.md).
 
+### Instruction-record flags: finalize-time "result discarded" bit
+
+Fill the two padding bytes of `KosOp` with a `flags` word assigned in
+`code_fill_handlers`, and record there that an instruction's pushed value
+is consumed by the following `POP,1`. The call core tests the bit on its
+own record instead of loading and comparing the next one on every settled
+result. The remaining bits are room for other finalize-derived facts.
+
+Ref: [interpreter/insn-flags-discard.md](interpreter/insn-flags-discard.md).
+
 ---
 
 ## Concurrent async (`async` form)
