@@ -334,7 +334,7 @@ At each **prologue re-entry** (`kos_prologue_reenter`), after the
 staged-delivery bounce (§8.2), **eval_phase_pending_exception** handles
 `PyErr_Occurred()` (opcode failure, continuation apply, async exception, etc.);
 a pending exception drops any staged delivery first, since the raise walk
-offers the resume the exception instead. The same helper is what takes a
+propagates the exception through the resume instead. The same helper is what takes a
 pending interrupt after **`PyErr_CheckSignals()`** at the **`poll`** section
 (see §1.6).
 
@@ -1358,7 +1358,7 @@ goes by ending in **`RESULT_ENTRY(es, r, resume, state)`**:
 | `NORMAL` | a callee (or a generator's frame) is installed and current, resume armed on the caller | `KOS_THREAD_NEXT` into the callee's first instruction |
 | `REPROLOGUE` | the value still needed settling: one eager step ran, the outcome is staged, resume armed | return to the trampoline |
 | `AWAIT` | a genuine suspension, resume armed | return to the trampoline |
-| `RAISE` / `FATAL` | failure; the raise walk offers it to the resume | return to the trampoline |
+| `RAISE` / `FATAL` | failure; the raise walk propagates it through the resume | return to the trampoline |
 
 `CallResult` with `resume == NULL` relays `KosEvalState_Call`'s result
 untouched, `tail_call` included; that is what partial, demand, and
@@ -1405,15 +1405,16 @@ still needs awaiting is settled by the delivery step
 the resume re-armed) before the resume runs. Consumers never classify.
 
 Failure reaches a resume, when it does, through the raise walk:
-`kos_dyn_unwind_raise` offers a pending exception (NULL value, `PyErr`
-set) to a resume-carrying frame that is `dyn_top` above the live frame
-(a flattened delegation) before tearing it through; the resume may
-recover (`REPROLOGUE`) or decline (`EVAL_RAISE`), in which case the pop
-proceeds. A step frame that is the live frame when its own operation
-fails is popped by the walk's frame-crossing branch with no offer, and
-the failure reaches the step's consumer through its iteration node,
-which owns the conversion (a raised `StopIteration` is exhaustion).
-Map and filter decline every offer, so both shapes end the same way.
+`kos_dyn_unwind_raise` calls the resume of a frame that is `dyn_top`
+above the live frame (a flattened delegation) with a NULL value and
+`PyErr` set before tearing the frame through; the resume either
+handles the exception (`REPROLOGUE`) or propagates it (`EVAL_RAISE`),
+in which case the pop proceeds. A step frame that is the live frame
+when its own operation fails is popped by the walk's frame-crossing
+branch without its resume running, and the failure reaches the step's
+consumer through its iteration node, which owns the conversion (a
+raised `StopIteration` is exhaustion). Map and filter always
+propagate, so both shapes end the same way.
 
 #### Frame slots and parking
 

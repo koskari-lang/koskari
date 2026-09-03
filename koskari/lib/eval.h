@@ -194,21 +194,23 @@ typedef enum KosGetNextResult {
    that duplication across consumers is what these entries exist to
    remove.
 
-   NULL with PyErr set is the raise walk's offer of a pending exception
-   to the frame the resume is set on. The walk makes that offer only
-   for a resume frame that is dyn_top above the live frame (a
-   flattened delegation); a step frame that is the live frame when an
-   operation fails is popped by the walk's frame-crossing branch
-   without an offer, and the failure reaches the step's consumer
-   through its iteration node. A consumer therefore cannot rely on
-   seeing its own failures; it handles NULL by declining.
+   NULL with PyErr set means the raise walk is propagating a pending
+   exception through the frame the resume is set on. The walk hands
+   the exception to the resume only for a resume frame that is dyn_top
+   above the live frame (a flattened delegation); a step frame that is
+   the live frame when an operation fails is popped by the walk's
+   frame-crossing branch without its resume seeing the exception, and
+   the failure reaches the step's consumer through its iteration node.
+   A consumer therefore cannot rely on seeing its own failures; on
+   NULL it propagates the exception.
 
-   An offer is a plain call from inside the walk, which interprets the
-   reply: REPROLOGUE recovers (the walk stops), EVAL_RAISE declines
-   (the pop proceeds), EVAL_FATAL aborts. A resume answering an offer
-   must return one of those and never thread on -- no RESULT_ENTRY,
-   RESUME_HOP, or KOS_THREAD_NEXT -- since a chain run inside the
-   walk's frame would hand the walk a signal it cannot apply.
+   The walk calls the resume as a plain call and reads the result:
+   REPROLOGUE means the resume handled the exception (the walk stops),
+   EVAL_RAISE means it is propagating it (the pop proceeds), EVAL_FATAL
+   aborts. A resume called by the walk must return one of those and
+   never thread on -- no RESULT_ENTRY, RESUME_HOP, or KOS_THREAD_NEXT
+   -- since a chain run inside the walk's frame would hand the walk a
+   signal it cannot apply.
 
    Returns a KosOpResult naming the next signal to the loop: another
    CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT, or
@@ -497,8 +499,8 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
    bytecode frame current (thread into it) or REPROLOGUE otherwise; an
    awaitable in-flight (EXIT) arms resume and reports EVAL_AWAIT, and
    the AWAITED revive delivers into it. Exhaustion raises
-   StopIteration, offered to resume via the raise walk like any other
-   failure. send_val is accepted for a future Send entry point; unused
+   StopIteration, which reaches resume through the raise walk like any
+   other failure. send_val is accepted for a future Send entry point; unused
    today. Caller must have a current frame.
 
    resume may be NULL: no continuation, behave exactly like the
@@ -1209,8 +1211,8 @@ KosOpResult KosEvalState_Call(
    a value that still needs settling settles one step, arms resume,
    and reports REPROLOGUE or AWAIT for the trampoline to deliver on a
    later trip; a call whose own result needed awaiting arms resume and
-   reports AWAIT. RAISE / FATAL relay untouched -- resume is offered
-   the failure via the raise walk instead. Caller must have a current
+   reports AWAIT. RAISE / FATAL relay untouched -- the failure reaches
+   resume through the raise walk instead. Caller must have a current
    frame. A tail call replaces that frame, so it has no caller to
    resume: tail_call with a resume is a caller error.
 

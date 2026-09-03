@@ -299,7 +299,7 @@ KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val) {
   PyObject *settled;
 
   if (pr.kind != KOS_RES_NORMAL)
-    return pr;  /* AWAIT: the revive delivers; RAISE: the walk offers */
+    return pr;  /* AWAIT: the revive delivers; RAISE: the walk propagates */
 
   settled = KosEvalState_StackPopRef(es);
   if (unlikely(! settled))

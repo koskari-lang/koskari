@@ -101,9 +101,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
    FETCH: request the next source element. Always entered with a NULL
    value -- either cold, from the driven-source install, or from
    filter_refetch after a rejected element. A NULL with an exception
-   already set is the raise walk's own offer, which this step always
-   declines (the consumer's iteration node owns the conversion,
-   StopIteration truncation parity included).
+   already set is the raise walk propagating that exception; this step
+   always lets it propagate (the consumer's iteration node owns the
+   conversion, StopIteration truncation parity included).
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
     KosEvalState *es, void *state, PyObject *value) {

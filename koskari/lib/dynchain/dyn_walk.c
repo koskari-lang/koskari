@@ -702,14 +702,14 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
 
     }  /* KOS_DYN_CAP_INTERCEPTS_RAISE */
 
-    /* A frame carrying a CPS resume is offered the pending exception
-       before it is torn through: the resume may consume (REPROLOGUE)
-       or decline (EVAL_RAISE), in which case the pop below proceeds.
-       The offer reaches only a resume frame sitting at dyn_top above
-       the live frame; a step frame that is the live frame when its
+    /* A frame carrying a CPS resume sees the pending exception before
+       it is torn through: the resume either handles it (REPROLOGUE)
+       or propagates it (EVAL_RAISE), in which case the pop below
+       proceeds. Only a resume frame sitting at dyn_top above the live
+       frame is called; a step frame that is the live frame when its
        operation fails takes the frame-crossing branch above and is
-       popped without one, so its consumer's iteration node sees the
-       failure instead. */
+       popped without its resume running, so its consumer's iteration
+       node sees the failure instead. */
     if (KosDynNode_IS_FRAME(top)
         && KosDynFrame_RESUME_FN((KosDynFrame *) top)) {
       KosDynFrame *frame = (KosDynFrame *) top;
@@ -726,13 +726,14 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
       if (hr.kind == KOS_RES_FATAL)
         return EVAL_FATAL();
 #if KOS_EVAL_SAFETYNET
-      /* The offer is a plain call: a resume may recover or decline,
-         never thread on or produce a signal this walk cannot apply. */
+      /* The resume ran as a plain call: it may handle the exception
+         or propagate it, never thread on or produce a signal this
+         walk cannot apply. */
       if (hr.kind != KOS_RES_RAISE) {
         Py_XDECREF(hr.val);
         PyErr_SetString(PyExc_SystemError,
-                        "resume answered an exception offer with a"
-                        " signal other than REPROLOGUE or RAISE");
+                        "resume answered a propagating exception with"
+                        " a signal other than REPROLOGUE or RAISE");
         return EVAL_FATAL();
       }
 #endif

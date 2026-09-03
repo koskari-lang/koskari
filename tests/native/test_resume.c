@@ -19,7 +19,7 @@
 
    C-level tests for the per-frame CPS resume plumbing: the
    resume_fn/resume_state/resume_name fields on KosDynFrame, the
-   cg_prologue delivery path, the raise-walk offer, and clone/park/
+   cg_prologue delivery path, the raise walk reaching a resume, and clone/park/
    tail-reset clearing. These tests set the frame fields directly,
    below the KosEvalState_CallResult / NextResume entries.
 
@@ -38,7 +38,7 @@
 typedef struct {
   int calls;
   int seen_null;
-  int decline;         /* return EVAL_RAISE() instead of EVAL_REPROLOGUE() */
+  int propagate;       /* return EVAL_RAISE() instead of EVAL_REPROLOGUE() */
   PyObject *returned;  /* borrowed: what to hand back via EVAL_RETURN */
 } ResumeProbe;
 
@@ -52,7 +52,7 @@ static KOS_PRESERVE_NONE KosOpResult resume_probe(
 
   if (! value) {
     p->seen_null = 1;
-    if (p->decline)
+    if (p->propagate)
       return EVAL_RAISE();
     PyErr_Clear();
     return EVAL_REPROLOGUE();
@@ -166,7 +166,7 @@ static int test_dispatch_stages_into_pending_slot(void) {
 }
 
 
-static int test_next_resume_delivered_stages_slot(void) {
+static int test_next_resume_delivered_reports_in_hand(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
@@ -393,19 +393,19 @@ static int test_prologue_reenter_runs_pending_exception(void) {
 }
 
 
-/* === raise-walk offers a pending exception to a set resume ===
+/* === the raise walk propagates a pending exception through a resume ===
 
-   The offer at dyn_walk.c only fires for a FRAME that is dyn_top but
-   is NOT also the currently active frame_top (the common single-frame
-   case takes the frame-crossing branch instead and never reaches the
-   offer at all -- true of the pre-existing native_prog offer too, not
-   a resume-specific quirk). Building that shape directly: a resume-
+   The walk calls the resume at dyn_walk.c only for a FRAME that is
+   dyn_top but is NOT also the currently active frame_top (the common
+   single-frame case takes the frame-crossing branch instead and never
+   calls the resume at all -- true of the pre-existing native_prog path
+   too, not a resume-specific quirk). Building that shape directly: a resume-
    carrying frame installed as dyn_top, parented under a distinct
    frame_top, mirrors how a frame that isn't the dispatch-active one
    sits on the chain (e.g. flattened generator delegation). */
 
 
-static int test_raise_walk_offers_resume_declines(void) {
+static int test_raise_walk_resume_propagates(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
@@ -423,7 +423,7 @@ static int test_raise_walk_offers_resume_declines(void) {
   KosDynFrame *frame = kos_dynframe_new(bottom, NULL, top_ns);
   TEST_ASSERT_NOT_NULL(frame, "create resume-carrying frame");
 
-  ResumeProbe probe = { 0, 0, 1, NULL };  /* decline */
+  ResumeProbe probe = { 0, 0, 1, NULL };  /* propagate */
   KosDynFrame_RESUME_FN(frame) = (void *) resume_probe;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
 
@@ -434,11 +434,11 @@ static int test_raise_walk_offers_resume_declines(void) {
 
   KosOpResult ev = kos_dyn_unwind_raise(&es);
 
-  TEST_ASSERT_EQ(probe.calls, 1, "resume was offered the raise");
-  TEST_ASSERT_EQ(probe.seen_null, 1, "offer delivered NULL (exception, not a value)");
-  TEST_ASSERT_EQ(ev.kind, KOS_RES_RAISE, "declined offer: walk pops and propagates");
+  TEST_ASSERT_EQ(probe.calls, 1, "the walk called the resume");
+  TEST_ASSERT_EQ(probe.seen_null, 1, "the resume received NULL (an exception, not a value)");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_RAISE, "propagated: the walk pops and the exception continues");
   TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
-              "the original exception survives a declined offer");
+              "the original exception is the one propagating");
 
   /* frame was popped and freed by the walk's own pop path */
   PyErr_Clear();
@@ -448,7 +448,7 @@ static int test_raise_walk_offers_resume_declines(void) {
 }
 
 
-static int test_raise_walk_offers_resume_recovers(void) {
+static int test_raise_walk_resume_handles(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
@@ -477,9 +477,9 @@ static int test_raise_walk_offers_resume_recovers(void) {
 
   KosOpResult ev = kos_dyn_unwind_raise(&es);
 
-  TEST_ASSERT_EQ(probe.calls, 1, "resume was offered the raise");
-  TEST_ASSERT_EQ(probe.seen_null, 1, "offer delivered NULL (exception, not a value)");
-  TEST_ASSERT_EQ(ev.kind, KOS_RES_REPROLOGUE, "recovering offer resumes normally");
+  TEST_ASSERT_EQ(probe.calls, 1, "the walk called the resume");
+  TEST_ASSERT_EQ(probe.seen_null, 1, "the resume received NULL (an exception, not a value)");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_REPROLOGUE, "handled: execution resumes normally");
   TEST_ASSERT(! PyErr_Occurred(), "the resume cleared the exception");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_FN(frame),
                    "resume is cleared before invocation, stays cleared");
@@ -675,13 +675,13 @@ int run_resume_tests(void) {
 
   RUN_TEST(test_cg_prologue_delivers_staged_resume);
   RUN_TEST(test_dispatch_stages_into_pending_slot);
-  RUN_TEST(test_next_resume_delivered_stages_slot);
+  RUN_TEST(test_next_resume_delivered_reports_in_hand);
   RUN_TEST(test_return_into_resume_parent);
   RUN_TEST(test_prologue_reenter_idle_proceeds);
   RUN_TEST(test_prologue_reenter_delivers_staged);
   RUN_TEST(test_prologue_reenter_runs_pending_exception);
-  RUN_TEST(test_raise_walk_offers_resume_declines);
-  RUN_TEST(test_raise_walk_offers_resume_recovers);
+  RUN_TEST(test_raise_walk_resume_propagates);
+  RUN_TEST(test_raise_walk_resume_handles);
   RUN_TEST(test_clone_refuses_resume_frame);
   RUN_TEST(test_park_inert_clears_resume_triple);
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
