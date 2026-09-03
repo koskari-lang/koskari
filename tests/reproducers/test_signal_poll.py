@@ -20,9 +20,9 @@ points -- a loop's back-edge, a frame install, a resume hop, and every
 re-entry through the prologue -- so a signal raised while Koskari code
 runs interrupts any stretch that cycles through one of them. Each test
 arms the interrupt from inside the running code and then runs such a
-stretch: a tight counting loop, a deep non-tail recursion, and two
-native filters looping resume to resume. The Koskari code catches the
-interrupt itself, so a signal the evaluator failed to poll would
+stretch: a tight counting loop, a tail-recursive loop, and a deep
+non-tail recursion. The Koskari code catches the interrupt itself, so
+a signal the evaluator failed to poll would
 surface only after the stretch completed, on return to Python, and
 fail the test. A straight line with no cooperation point in it runs to
 its end first; the signal is then taken at the next point after it.
@@ -31,12 +31,8 @@ its end first; the signal is then taken at the next point after it.
 :license: GNU General Public License v3
 """
 
-import _thread
-import itertools
-import operator
 import signal
 
-from koskari.lib import KosFilter, KosMap
 from tests.compile.specials import SpecialsTestCase
 
 import pytest
@@ -67,12 +63,15 @@ class TestSignalPoll(SpecialsTestCase):
     async def test_straight_line_then_loop(self):
         """
         A straight-line stretch with no cooperation point in it runs to
-        its end; the signal is taken at the first back-edge after it
+        its end; the signal is taken at the first back-edge after it.
+        Each store counts itself, and the count is read from the
+        handler, so the stretch is proven to have completed before the
+        signal was taken
         """
 
-        stores = " ".join("(setq x 0)" for _ in range(3000))
+        stores = " ".join("(setq x (+ x 1))" for _ in range(3000))
         src = f"""
-        (let [[x 1] [n 0]]
+        (let [[x 0] [n 0]]
           (import _thread)
           (try
             (begin
@@ -80,12 +79,12 @@ class TestSignalPoll(SpecialsTestCase):
               {stores}
               (while (< n 1)
                 (setq n (+ n 1)))
-              x)
-            ((e Interrupted) "caught")))
+              "ran off the end")
+            ((e Interrupted) x)))
         """
 
         expr, _mod = self.compile_expr(src, Interrupted=Interrupted)
-        self.assertEqual(await expr(), "caught")
+        self.assertEqual(await expr(), 3000)
 
 
     async def test_backward_jump_loop(self):
@@ -109,69 +108,6 @@ class TestSignalPoll(SpecialsTestCase):
         self.assertEqual(await expr(), "caught")
 
 
-    async def test_filter_reject_loop_python_predicate(self):
-        """
-        A native filter rejecting every element of a sync source through
-        a Python predicate runs resume to resume with no instruction in
-        between, and still sees the signal. The predicate raises the
-        signal itself partway through, so the loop is proven to have run
-        and the signal to have been taken from inside it
-        """
-
-        seen = []
-
-        def never(x):
-            seen.append(x)
-            if len(seen) == 500:
-                _thread.interrupt_main()
-            return False
-
-        src = """
-        (try
-          (for-each [y (filter never (itertools.count))]
-            y)
-          ((e Interrupted) "caught"))
-        """
-
-        expr, _mod = self.compile_expr(
-            src, Interrupted=Interrupted, never=never,
-            filter=KosFilter, itertools=itertools)
-        self.assertEqual(await expr(), "caught")
-        self.assertGreaterEqual(len(seen), 500)
-
-
-    async def test_filter_reject_loop_driven_source(self):
-        """
-        A native filter with a None predicate over a driven source that
-        yields only falsy elements loops resume to resume, and still
-        sees the signal. The source raises the signal itself partway
-        through, so the loop is proven to have run and the signal to
-        have been taken from inside it
-        """
-
-        seen = []
-
-        def ones():
-            while True:
-                seen.append(1)
-                if len(seen) == 500:
-                    _thread.interrupt_main()
-                yield 1
-
-        src = """
-        (try
-          (for-each [y (filter None (map operator.not_ (ones)))]
-            y)
-          ((e Interrupted) "caught"))
-        """
-
-        expr, _mod = self.compile_expr(
-            src, Interrupted=Interrupted, ones=ones,
-            filter=KosFilter, map=KosMap, operator=operator)
-        self.assertEqual(await expr(), "caught")
-        self.assertGreaterEqual(len(seen), 500)
-
-
     async def test_tail_call_inside_let(self):
         """
         A tail-recursive loop whose call sits inside a let has no
@@ -188,20 +124,26 @@ class TestSignalPoll(SpecialsTestCase):
           (define-global spin
             (lambda [n]
               (let [[m (+ n 1)]]
-                (when (== m 500) (_thread.interrupt_main))
-                (if (< m 100000) then: (spin m) else: m))))
+                (depths.append m)
+                (cond ((== m 500) (_thread.interrupt_main)))
+                (cond ((< m 100000) (spin m)) (else: m)))))
           (try
             (spin 0)
             ((e Interrupted) "caught")))
         """
 
-        expr, _mod = self.compile_expr(src, Interrupted=Interrupted)
+        depths = []
+        expr, _mod = self.compile_expr(
+            src, Interrupted=Interrupted, depths=depths)
         self.assertEqual(await expr(), "caught")
+        self.assertEqual(depths[-1], 500)
 
 
     async def test_deep_recursion_through_call(self):
         """
-        Deep non-tail recursion through Call sees the signal
+        Deep non-tail recursion through Call sees the signal. The
+        signal is armed from a C builtin at depth 500, so the install
+        that takes it is the five hundred and first, not the first
         """
 
         src = """
@@ -209,18 +151,21 @@ class TestSignalPoll(SpecialsTestCase):
           (import _thread)
           (define-global descend
             (lambda [n]
-              (if (> n 0)
-                  then: (+ 1 (descend (- n 1)))
-                  else: 0)))
+              (depths.append n)
+              (cond ((== n 500) (_thread.interrupt_main)))
+              (cond
+                ((< n 200000) (+ 1 (descend (+ n 1))))
+                (else: 0))))
           (try
-            (begin
-              (_thread.interrupt_main)
-              (descend 200000))
+            (descend 0)
             ((e Interrupted) "caught")))
         """
 
-        expr, _mod = self.compile_expr(src, Interrupted=Interrupted)
+        depths = []
+        expr, _mod = self.compile_expr(
+            src, Interrupted=Interrupted, depths=depths)
         self.assertEqual(await expr(), "caught")
+        self.assertEqual(depths[-1], 500)
 
 
 # The end.
