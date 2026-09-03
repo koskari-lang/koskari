@@ -53,10 +53,7 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
      registers the next install of this head applies directly. */
   ctx_active = KosEvalState_DYN_TOP(es);
   KosDynGen_ACTIVE(gen) = ctx_active;
-  KosDynGen_FROZEN_HEAD(gen) = ctx_active;
-  KosDynGen_FROZEN_FRAME(gen) = (KosDynNode *) KosEvalState_FRAME(es);
-  KosDynGen_FROZEN_BLOCK(gen) = KosEvalState_BLOCK(es);
-  KosDynGen_FROZEN_NS(gen) = KosEvalState_NAMESPACE(es);
+  kos_live_regs_capture(es, KosDynGen_FROZEN(gen));
 
   /* The frozen span leaves the live chain; its segments' unwind-cache
      back links cannot survive the detach. */
@@ -71,20 +68,18 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
      GEN has not run since the install recorded its registers, so they
      are restored as recorded when the GEN still sits where it was
      installed; anything else rebuilds from the chain. */
-  KosEvalState_DYN_TOP(es) = saved_parent;
-  /* HOST_TOP always equals saved_parent here: both installs record the
+  /* host.top always equals saved_parent here: both installs record the
      host and set the GEN's parent from the same dyn_top, and nothing
      re-parents a running GEN. The compare is kept for the same reason
-     as the FROZEN_HEAD compare in kos_dyn_gen_install. */
-  if (saved_parent && saved_parent == KosDynGen_HOST_TOP(gen)
-      && KosDynGen_HOST_FRAME(gen)) {
-    kos_dyn_resync_apply(es, (KosDynFrame *) KosDynGen_HOST_FRAME(gen),
-                         KosDynGen_HOST_BLOCK(gen),
-                         KosDynGen_HOST_NS(gen), 1);
+     as the frozen.top compare in kos_dyn_gen_install. */
+  if (saved_parent && saved_parent == KosDynGen_HOST(gen)->top
+      && KosDynGen_HOST(gen)->frame) {
+    kos_live_regs_apply(es, KosDynGen_HOST(gen));
   } else {
+    KosEvalState_DYN_TOP(es) = saved_parent;
     kos_dyn_resync_chain(es);
   }
-  KosDynGen_HOST_TOP(gen) = NULL;
+  KosDynGen_HOST(gen)->top = NULL;
 
   owner = KosDynGen_OWNER(gen);
   if (owner && KosPyAsyncGen_Check(owner))

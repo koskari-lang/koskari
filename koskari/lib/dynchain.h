@@ -193,6 +193,21 @@ typedef enum {
 
 
 /**
+   A snapshot of the live registers at one chain top: the frame, the
+   owning stack slot, and the namespace that a resync would derive by
+   walking from top. Borrowed pointers, valid while the chain below
+   top is unchanged. The GEN node keeps two, one per end of the
+   flattened step cycle (see KosDynGen_HOST / KosDynGen_FROZEN).
+*/
+typedef struct KosLiveRegs {
+  struct KosDynNode *top;
+  struct KosDynNode *frame;
+  KosSegment **block;
+  PyObject *ns;
+} KosLiveRegs;
+
+
+/**
    The iteration request record: the single home of an in-flight
    step's state. Embedded in the FOREACH, NEXT, and YIELD_FROM node
    arms; the delivery machinery reads the stepped iterator and the
@@ -436,20 +451,14 @@ struct KosDynNode {
       PyObject *owner;     /* owning generator object (borrowed) or NULL */
       struct KosDynNode *active; /* suspended frame when released; NULL when running */
       uintptr_t refcount;  /* reference count; init 1; release decrements; free when 0 */
-      /* Register snapshots for the flattened step cycle, all borrowed.
-         The host set is the consumer's live registers taken at install,
-         restored at freeze while the GEN's parent is still host_top. The
-         frozen set is the generator's live registers taken at freeze,
-         applied at install while active is still frozen_head. A guard
-         mismatch falls back to the chain rebuild. */
-      struct KosDynNode *host_top;
-      struct KosDynNode *host_frame;
-      KosSegment **host_block;
-      PyObject *host_ns;
-      struct KosDynNode *frozen_head;
-      struct KosDynNode *frozen_frame;
-      KosSegment **frozen_block;
-      PyObject *frozen_ns;
+      /* Register snapshots for the flattened step cycle. host is the
+         consumer's registers taken at install, restored at freeze while
+         the GEN's parent is still host.top. frozen is the generator's
+         registers taken at freeze, applied at install while active is
+         still frozen.top. A guard mismatch falls back to the chain
+         rebuild. */
+      KosLiveRegs host;
+      KosLiveRegs frozen;
     } gen;
     struct {
       KosIterRequest req;    /* the stepped object and in-flight mode */
@@ -2409,14 +2418,8 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 #define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
-#define KosDynGen_HOST_TOP(n)     (((KosDynNode *)(n))->u.gen.host_top)
-#define KosDynGen_HOST_FRAME(n)   (((KosDynNode *)(n))->u.gen.host_frame)
-#define KosDynGen_HOST_BLOCK(n)   (((KosDynNode *)(n))->u.gen.host_block)
-#define KosDynGen_HOST_NS(n)      (((KosDynNode *)(n))->u.gen.host_ns)
-#define KosDynGen_FROZEN_HEAD(n)  (((KosDynNode *)(n))->u.gen.frozen_head)
-#define KosDynGen_FROZEN_FRAME(n) (((KosDynNode *)(n))->u.gen.frozen_frame)
-#define KosDynGen_FROZEN_BLOCK(n) (((KosDynNode *)(n))->u.gen.frozen_block)
-#define KosDynGen_FROZEN_NS(n)    (((KosDynNode *)(n))->u.gen.frozen_ns)
+#define KosDynGen_HOST(n)         (&((KosDynNode *)(n))->u.gen.host)
+#define KosDynGen_FROZEN(n)       (&((KosDynNode *)(n))->u.gen.frozen)
 /** a GEN with a parent is flattened: its yields deliver to a consumer
     on this chain; a GEN at the chain root surfaces them to an adapter */
 #define KosDynGen_IS_FLATTENED(n) (KosDynNode_PARENT(n) != NULL)
