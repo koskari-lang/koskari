@@ -36,10 +36,14 @@
 
 /* struct _ceval_state and struct _is prefixes:
    https://github.com/python/cpython/blob/v3.10.0/Include/internal/pycore_interp.h */
+/* The trailing pending-calls lock gives the struct the pointer
+   alignment the real one has, so it lands at the same offset after
+   the interpreter prefix's final int. */
 typedef struct {
   int recursion_limit;
   int eval_breaker;
   int gil_drop_request;
+  void *pending_lock;
 } KosCevalState310;
 
 typedef struct {
