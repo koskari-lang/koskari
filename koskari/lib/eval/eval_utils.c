@@ -1185,9 +1185,12 @@ legacy:
         call_argv = vals + 1;
       } else {
         target = callable;
+        /* whatever sits below the arguments in the window (a receiver
+           slot) is skipped by size, so the body need not read the
+           flag that put it there */
         call_argv = (flags & KOS_CALL_ARGV_PREPENDED)
             ? argv
-            : vals + ((flags & KOS_CALL_WINDOW_UNDER) ? 1 : 0);
+            : vals + (window - (size_t) (nargs + nkw));
       }
       r = KosEvalState_Call(es, target,
                             (nargs + nkw) ? call_argv : NULL,
@@ -1218,7 +1221,10 @@ legacy:
    passes its flags as a literal, so the dispatcher in
    kos_call_invoke_body folds to a direct call of the matching body,
    and the body itself is the class dispatch specialised for that word.
-   Any other word takes the generic body, which keeps flags live. */
+   KOS_CALL_WINDOW_UNDER shapes only the window arithmetic in
+   kos_call_invoke and is never read by the body, so a word carrying
+   it shares the body of the word without it.  Any other word takes
+   the generic body, which keeps flags live. */
 #define KOS_CALL_BODY_VARIANT(name, FLAGS)                              \
   static KOS_NOINLINE KosOpResult name(                                 \
       KosEvalState *es,                                                 \
@@ -1240,18 +1246,12 @@ KOS_CALL_BODY_VARIANT(kos_call_body_window_callable_tail,
                       | KOS_CALL_TAIL)
 KOS_CALL_BODY_VARIANT(kos_call_body_window_owned,
                       KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED)
-KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_under,
-                      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
-                      | KOS_CALL_CALLABLE_OWNED)
 KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_prepended,
                       KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED
                       | KOS_CALL_ARGV_PREPENDED)
 KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_tail,
                       KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL
                       | KOS_CALL_CALLABLE_OWNED)
-KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_tail_under,
-                      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
-                      | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED)
 KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_tail_prepended,
                       KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL
                       | KOS_CALL_CALLABLE_OWNED | KOS_CALL_ARGV_PREPENDED)
@@ -1300,9 +1300,8 @@ static inline KosOpResult kos_call_invoke_body(
                                         callable, argv, nargs, kwnames);
     case KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
         | KOS_CALL_CALLABLE_OWNED:
-      return kos_call_body_window_owned_under(es, caller_slot, window,
-                                              callable, argv, nargs,
-                                              kwnames);
+      return kos_call_body_window_owned(es, caller_slot, window,
+                                        callable, argv, nargs, kwnames);
     case KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED
         | KOS_CALL_ARGV_PREPENDED:
       return kos_call_body_window_owned_prepended(es, caller_slot, window,
@@ -1314,9 +1313,9 @@ static inline KosOpResult kos_call_invoke_body(
                                              kwnames);
     case KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER | KOS_CALL_TAIL
         | KOS_CALL_CALLABLE_OWNED:
-      return kos_call_body_window_owned_tail_under(es, caller_slot, window,
-                                                   callable, argv, nargs,
-                                                   kwnames);
+      return kos_call_body_window_owned_tail(es, caller_slot, window,
+                                             callable, argv, nargs,
+                                             kwnames);
     case KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED
         | KOS_CALL_ARGV_PREPENDED:
       return kos_call_body_window_owned_tail_prepended(es, caller_slot,
