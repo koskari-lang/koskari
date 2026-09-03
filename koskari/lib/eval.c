@@ -1006,8 +1006,8 @@ static KosOpResult process_raise(KosEvalState *es) {
     return EVAL_RAISE();
   }
 
-  /* The raise supersedes any staged delivery: the walk offers the
-     resume the exception instead, and the frame it was staged for may
+  /* The raise supersedes any staged delivery: the walk propagates the
+     exception through the resume instead, and the frame it was staged for may
      be popped or replaced by a transfer. Every ingress into the raise
      machinery passes here, so this is the one place the slot drops. */
   Py_CLEAR(KosEvalState_PENDING_VALUE(es));
@@ -2804,8 +2804,8 @@ static KosOpResult eval_step_drain_transfer_plan(KosEvalState *es) {
    separate step after install, never nested inside it). That resume is
    invoked with NULL and no exception set, carries no value to settle,
    and its own contract says what NULL means. Errors are never
-   delivered through this channel -- see the raise-walk offer in
-   dyn_walk.c.
+   delivered through this channel -- see the raise walk's resume call
+   in dyn_walk.c.
 */
 static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosDynFrame *frame = KosEvalState_FRAME(es);
@@ -3026,6 +3026,22 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
   } while (0)
 
 
+/* A re-entry step that asks for another pass of the loop below. A
+   pass is a cooperation point: a resume hop that found the breaker up
+   staged its delivery and answered REPROLOGUE expecting a poll, and a
+   loop that simply went round again would deliver, hop, and stage
+   forever with the word still up. So when the breaker is up the
+   re-entry hands REPROLOGUE back to the trampoline, whose prologue
+   polls and re-enters. Not a do-while: the continue must reach the
+   enclosing for. */
+#define KOS_REENTER_AGAIN(es)                                           \
+  {                                                                     \
+    if (KOS_EVAL_BREAKER_UP(es))                                        \
+      return EVAL_REPROLOGUE();                                         \
+    continue;                                                           \
+  }
+
+
 KosOpResult kos_prologue_reenter(KosEvalState *es) {
 
   /* es live fields via Init, kos_dyn_* retarget after chain surgery,
@@ -3048,7 +3064,8 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
         && ! KosEvalState_PLAN(es)
         && ! PyErr_Occurred()) {
       KosOpResult rs = eval_step_resume_delivery(es);
-      if (rs.kind == KOS_RES_REPROLOGUE) continue;
+      if (rs.kind == KOS_RES_REPROLOGUE)
+        KOS_REENTER_AGAIN(es);
       return rs;
     }
 
@@ -3059,7 +3076,8 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
     {
       KosOpResult pend = eval_phase_pending_exception(es);
       if (pend.kind != KOS_RES_NORMAL) {
-        if (pend.kind == KOS_RES_REPROLOGUE) continue;
+        if (pend.kind == KOS_RES_REPROLOGUE)
+        KOS_REENTER_AGAIN(es);
         return pend;
       }
     }
@@ -3067,7 +3085,8 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
     {
       KosOpResult xfer = eval_step_drain_transfer_plan(es);
       if (xfer.kind != KOS_RES_NORMAL) {
-        if (xfer.kind == KOS_RES_REPROLOGUE) continue;
+        if (xfer.kind == KOS_RES_REPROLOGUE)
+        KOS_REENTER_AGAIN(es);
         return xfer;
       }
     }
@@ -3075,7 +3094,8 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
     if (KosEvalState_FRAME(es)
         && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)) != NULL) {
       KosOpResult rs = eval_step_resume_delivery(es);
-      if (rs.kind == KOS_RES_REPROLOGUE) continue;
+      if (rs.kind == KOS_RES_REPROLOGUE)
+        KOS_REENTER_AGAIN(es);
       return rs;
     }
 
@@ -3213,6 +3233,8 @@ prologue:
 reenter:
   {
     KosOpResult pr = kos_prologue_reenter(&es);
+    if (pr.kind == KOS_RES_REPROLOGUE)
+      goto prologue;  /* a pass found the breaker up: poll first */
     if (pr.kind != KOS_RES_NORMAL) {
       eval_ret = pr;
       goto koskari_eval_cleanup;
