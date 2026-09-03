@@ -72,8 +72,14 @@
    the registers a normal callee would have to save. A step never
    returns into a frame that wants registers kept, and the trampoline
    is the one plain caller, so the tail chain sheds every register
-   spill. Empty where the attribute is unknown. */
-#if defined(__has_attribute)
+   spill. Empty where the attribute is unknown or the target cannot
+   honor it: clang knows the attribute on every target but emits the
+   convention only on x86-64, and on AArch64 from clang 19; elsewhere
+   it warns, which -Werror turns into a failed build. */
+#if defined(__has_attribute) \
+    && (defined(__x86_64__) \
+        || (defined(__aarch64__) && defined(__clang_major__) \
+            && __clang_major__ >= 19))
 # if __has_attribute(preserve_none)
 #  define KOS_PRESERVE_NONE __attribute__((preserve_none))
 # endif
