@@ -129,7 +129,9 @@ def extra_compile_args(platform=None, debug=False, clang=False, major=0):
         if environ.get(env) == "1":
             args.append(f"-D{env}=1")
 
-    if environ.get("KOS_ASAN") == "1":
+    asan = environ.get("KOS_ASAN") == "1"
+
+    if asan:
         args.append("-fsanitize=address")
         args.append("-fno-omit-frame-pointer")
         args.append("-g")
@@ -139,9 +141,13 @@ def extra_compile_args(platform=None, debug=False, clang=False, major=0):
         # a PLT stub
         args.append("-fno-plt")
 
-    if platform == "linux" and (not clang or major >= 17):
+    if platform == "linux" and (not clang or major >= 17) and not asan:
         # clang gained the flag in 17; older clangs reject it, and the
-        # LTO link goes through lld there anyway
+        # LTO link goes through lld there anyway. Under ASan the fat
+        # object's native sections carry the sanitizer's module
+        # constructors, which lld discards after the LTO link while the
+        # init array still refers to them, so the ASan build links from
+        # the bitcode alone.
         args.append("-ffat-lto-objects")
 
     return args
