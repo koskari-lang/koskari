@@ -314,10 +314,12 @@ static int kos_dyn_with_on_enter_control_returned(KosEvalState *es, KosDynWith *
 
 
 /**
-   Resume after awaitable __exit__: merge result with exc triple, maybe pop node.
+   Resume after __exit__ returned: merge its result with the saved
+   exception triple, then pop the node.
 */
-static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_node,
-                                            int do_pop_node) {
+static int kos_dyn_with_on_control_returned(
+    KosEvalState *es,
+    KosDynWith *with_node) {
 
   if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
     return 0;
@@ -350,14 +352,12 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
     Py_XDECREF(tb);
     if (KosEvalState_FRAME(es))
       KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(with_node));
-    if (do_pop_node) {
-      kos_dyn_with_shot_after_exit_done(with_node);
-      if (kos_dyn_pop_with(es, with_node) < 0)
-        return -1;
-    }
-    /* Every caller pops, so the node is gone and its owning frame's
-       block is the current stack; a parent-stack push would walk past
-       the very frame that is about to receive the value. */
+    kos_dyn_with_shot_after_exit_done(with_node);
+    if (kos_dyn_pop_with(es, with_node) < 0)
+      return -1;
+    /* The node is gone and its owning frame's block is the current
+       stack; a parent-stack push would walk past the very frame that
+       is about to receive the value. */
     if (KosEvalState_StackPushRef(es, Py_None) < 0)
       return -1;
     return 0;
@@ -365,11 +365,9 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
 
   if (had_exception) {
     Py_DECREF(result);
-    if (do_pop_node) {
-      kos_dyn_with_shot_after_exit_done(with_node);
-      if (kos_dyn_pop_with(es, with_node) < 0)
-        return -1;
-    }
+    kos_dyn_with_shot_after_exit_done(with_node);
+    if (kos_dyn_pop_with(es, with_node) < 0)
+      return -1;
     PyErr_Restore(typ, val, tb);
     return -1;
   }
@@ -383,11 +381,9 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
   }
   if (KosEvalState_FRAME(es))
     KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(with_node));
-  if (do_pop_node) {
-    kos_dyn_with_shot_after_exit_done(with_node);
-    if (kos_dyn_pop_with(es, with_node) < 0)
-      return -1;
-  }
+  kos_dyn_with_shot_after_exit_done(with_node);
+  if (kos_dyn_pop_with(es, with_node) < 0)
+    return -1;
   return 0;
 }
 

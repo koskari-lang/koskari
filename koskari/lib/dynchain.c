@@ -878,7 +878,7 @@ KosOpResult kos_dynnode_on_control_returned(
       break;
     case KOS_DYN_WITH:
       if (KosDynWith_EXIT_PENDING((KosDynWith *) node))
-        r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node, 1);
+        r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node);
       else if (KosDynWith_ENTER_PENDING((KosDynWith *) node))
         r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) node);
       break;
@@ -932,7 +932,7 @@ int kos_dyn_complete_pending(KosEvalState *es) {
   if (KosDynWith_ENTER_PENDING((KosDynWith *) top))
     return kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) top);
   if (KosDynWith_EXIT_PENDING((KosDynWith *) top))
-    return kos_dyn_with_on_control_returned(es, (KosDynWith *) top, 1);
+    return kos_dyn_with_on_control_returned(es, (KosDynWith *) top);
   return 0;
 }
 
