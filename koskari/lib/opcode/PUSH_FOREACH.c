@@ -70,7 +70,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   /* Arm the request record for the loop's lifetime; per-step drives
      only touch the mode. */
   Py_INCREF(iter);
-  KosDynForeach_REQ(region)->iter = iter;
+  kos_dyn_iter_request_bind_iter(KosDynForeach_REQ(region), iter);
 
   RESULT_NEXT(es);
 }

@@ -1911,10 +1911,7 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
       /* A non-protocol error escaping a value-grafted invoke: release
          the provider's busy mark and disarm before the raise passes to
          the consumer's own handlers. */
-      PyObject *iter_obj = kos_dyn_iter_node_iter_obj(node);
-      KosIterSlots *islots;
-      if (iter_obj && KosIter_CheckSlots(iter_obj, &islots))
-        islots->ki_finish(iter_obj, 0);
+      kos_dyn_iter_request_finish(node, 0);
       kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
     }
   }

@@ -200,8 +200,36 @@ typedef enum {
 */
 typedef struct KosIterRequest {
   PyObject *iter;       /* stepped iterator; strong ref while armed */
+  struct KosIterSlots *islots; /* iter's provider suite when iter is a
+                                  KosIter provider, else NULL; bound with
+                                  iter through kos_dyn_iter_request_bind_iter,
+                                  so the step and delivery paths never
+                                  re-derive it */
   uint8_t mode;         /* KOS_IREQ_* */
 } KosIterRequest;
+
+
+/**
+   Bind iter (a reference the caller already owns, or NULL) as the
+   request's stepped iterator and resolve its provider suite once. Every
+   write of req->iter goes through here.
+*/
+void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter);
+
+/**
+   Tell the request's provider its step is over: ki_finish on the bound
+   suite, a no-op for a plain iterator. exhausted marks the provider
+   closed; for an exhaustion pass kos_dyn_iter_request_exhausted_flag,
+   which keeps a recyclable durable provider open.
+*/
+void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted);
+
+/**
+   The ki_finish flag for an exhaustion: closed, unless the provider
+   recycles its durable context and re-derives exhaustion from its
+   source, so it stays open
+*/
+int kos_dyn_iter_request_exhausted_flag(KosDynNode *node);
 
 
 typedef enum {
@@ -2631,10 +2659,11 @@ static inline void kos_dyn_iter_request_arm(
     KosDynNode *node, PyObject *iter, uint8_t mode) {
 
   KosIterRequest *req = kos_dyn_iter_request(node);
+  PyObject *prior = req->iter;
 
   Py_XINCREF(iter);
-  Py_XDECREF(req->iter);
-  req->iter = iter;
+  kos_dyn_iter_request_bind_iter(req, iter);
+  Py_XDECREF(prior);
   kos_dyn_iter_request_set_mode(node, mode);
 }
 

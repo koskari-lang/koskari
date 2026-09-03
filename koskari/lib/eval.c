@@ -249,9 +249,21 @@ KosIterRequestStatus KosIterRequest_Next(
 
   KosIterRequest *req = kos_dyn_iter_request(node);
   PyObject *iter = req->iter;
-  KosIterSlots *islots;
+  KosIterSlots *islots = req->islots;
 
-  if (KosIter_CheckSlots(iter, &islots)) {
+#if KOS_EVAL_SAFETYNET
+  {
+    KosIterSlots *fresh = NULL;
+    int is_provider = KosIter_CheckSlots(iter, &fresh);
+    if ((is_provider ? fresh : NULL) != islots) {
+      PyErr_SetString(PyExc_SystemError,
+                      "iteration request suite does not match its iterator");
+      return KOS_IREQ_ERROR;
+    }
+  }
+#endif
+
+  if (islots) {
     PyObject *out = NULL;
 
     /* Armed before the step: an INSTALLED outcome delivers through the
