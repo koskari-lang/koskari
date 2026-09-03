@@ -27,7 +27,8 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
 
   PyObject *enter = NULL;
   PyObject *exit = NULL;
-  if (resolve_context_enter_exit(mgr, &enter, &exit) < 0) {
+  uint8_t self_bind = 0;
+  if (resolve_context_enter_exit(mgr, &enter, &exit, &self_bind) < 0) {
     Py_DECREF(mgr);
     RESULT_RAISE();
   }
@@ -56,7 +57,8 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
   Py_XINCREF(name_obj);
 
   KosDynWith *with_node = kos_dyn_push_with_provisional(
-      es, mgr, enter, exit, name_obj, resume_pc, KOS_DYN_WITH_SHOT_SINGLE_ACTIVE);
+      es, mgr, enter, exit, self_bind, name_obj, resume_pc,
+      KOS_DYN_WITH_SHOT_SINGLE_ACTIVE);
   if (! with_node) {
     Py_DECREF(name_obj);
     Py_DECREF(exit);

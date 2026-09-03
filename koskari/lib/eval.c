@@ -1090,40 +1090,110 @@ static void trace_stack(const char *prefix, KosSegment *stack) {
 
 
 /**
+   Resolve one protocol method of mgr the way Python resolves a special
+   method: on the type, never on the instance. A plain function
+   (KosFunction or PyFunction) is returned unbound with *self_bind set,
+   so the caller passes mgr as the first argument and no bound-method
+   object is built; any other descriptor is bound through its __get__;
+   a plain class attribute is returned as is.
+
+   :return: 1 found (*out is a new ref), 0 absent with no error set,
+     -1 on error
+*/
+static int resolve_special_method(
+    PyObject *mgr,
+    PyObject *name,
+    PyObject **out,
+    int *self_bind) {
+
+  PyTypeObject *tp = Py_TYPE(mgr);
+  PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
+
+  *self_bind = 0;
+  if (! descr)
+    return 0;
+
+  if (is_plain_instance_method(descr)) {
+    Py_INCREF(descr);
+    *out = descr;
+    *self_bind = 1;
+    return 1;
+  }
+  if (Py_TYPE(descr)->tp_descr_get) {
+    PyObject *bound = Py_TYPE(descr)->tp_descr_get(descr, mgr, (PyObject *) tp);
+    if (! bound)
+      return -1;
+    *out = bound;
+    return 1;
+  }
+  Py_INCREF(descr);
+  *out = descr;
+  return 1;
+}
+
+
+/**
    Resolve enter/exit on mgr. Prefer __aenter__/__aexit__ if present (async
    protocol), else __enter__/__exit__ (sync). Returns new refs in *out_enter
-   and *out_exit.
+   and *out_exit, and the KOS_WITH_SELF_* word for the pair in *out_self.
 
-   :return: 0 on success, -1 on error
+   :return: 0 on success, -1 on error (TypeError when mgr supports
+     neither protocol)
 */
 static int resolve_context_enter_exit(
     PyObject *mgr,
     PyObject **out_enter,
-    PyObject **out_exit) {
+    PyObject **out_exit,
+    uint8_t *out_self) {
 
-  PyObject *enter = PyObject_GetAttr(mgr, str_aenter);
+  PyObject *enter = NULL;
   PyObject *exit = NULL;
-  if (enter) {
-    exit = PyObject_GetAttr(mgr, str_aexit);
+  int enter_self = 0;
+  int exit_self = 0;
+  int r;
+
+  r = resolve_special_method(mgr, str_aenter, &enter, &enter_self);
+  if (r < 0)
+    return -1;
+  if (r > 0) {
+    r = resolve_special_method(mgr, str_aexit, &exit, &exit_self);
+    if (r < 0) {
+      Py_DECREF(enter);
+      return -1;
+    }
+    if (r == 0)
+      Py_CLEAR(enter);
   }
 
-  if (! enter || ! exit) {
-    Py_XDECREF(enter);
-    PyErr_Clear();
-
-    enter = PyObject_GetAttr(mgr, str_enter);
-    if (! enter)
+  if (! enter) {
+    r = resolve_special_method(mgr, str_enter, &enter, &enter_self);
+    if (r < 0)
       return -1;
-
-    exit = PyObject_GetAttr(mgr, str_exit);
-    if (! exit) {
+    if (r == 0) {
+      PyErr_Format(PyExc_TypeError,
+                   "'%.200s' object does not support the context manager"
+                   " protocol", Py_TYPE(mgr)->tp_name);
+      return -1;
+    }
+    r = resolve_special_method(mgr, str_exit, &exit, &exit_self);
+    if (r < 0) {
       Py_DECREF(enter);
+      return -1;
+    }
+    if (r == 0) {
+      Py_DECREF(enter);
+      PyErr_Format(PyExc_TypeError,
+                   "'%.200s' object does not support the context manager"
+                   " protocol (missed __exit__ method)",
+                   Py_TYPE(mgr)->tp_name);
       return -1;
     }
   }
 
   *out_enter = enter;
   *out_exit = exit;
+  *out_self = (uint8_t) ((enter_self ? KOS_WITH_SELF_ENTER : 0)
+                         | (exit_self ? KOS_WITH_SELF_EXIT : 0));
   return 0;
 }
 

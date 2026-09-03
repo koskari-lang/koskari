@@ -13,6 +13,7 @@ static KosDynWith *kos_dyn_with_allocate(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc,
     uint8_t shot) {
@@ -37,6 +38,7 @@ static KosDynWith *kos_dyn_with_allocate(
   KosDynWith_MGR(node) = mgr;
   KosDynWith_ENTER(node) = enter;
   KosDynWith_EXIT(node) = exit;
+  KosDynWith_SELF_BIND(node) = self_bind;
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_SHOT(node) = shot;
@@ -131,6 +133,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   Py_XINCREF(KosDynWith_ENTER(node));
   KosDynWith_EXIT(node) = KosDynWith_EXIT(src);
   Py_XINCREF(KosDynWith_EXIT(node));
+  KosDynWith_SELF_BIND(node) = KosDynWith_SELF_BIND(src);
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_SHOT(node) = KosDynWith_SHOT(src);
@@ -194,6 +197,9 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_int(data, "shot", (int) KosDynWith_SHOT(with_node)) < 0)
     return -1;
+  if (snapshot_set_int(data, "self_bind",
+      (int) KosDynWith_SELF_BIND(with_node)) < 0)
+    return -1;
   if (snapshot_set_int(data, "exit_done",
       kos_dyn_with_single_exit_done(with_node)) < 0)
     return -1;
@@ -219,13 +225,15 @@ KosDynWith *kos_dyn_push_with(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc,
     uint8_t shot) {
 
   // CONTEXT: dirty, touches context directly
   KosDynWith *node = kos_dyn_with_allocate(
-      KosEvalState_DYN_TOP(es), mgr, enter, exit, name, resume_pc, shot);
+      KosEvalState_DYN_TOP(es), mgr, enter, exit, self_bind, name,
+      resume_pc, shot);
   if (! node)
     return NULL;
 
@@ -243,11 +251,13 @@ KosDynWith *kos_dyn_push_dyn_with(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc) {
 
   return kos_dyn_push_with(
-      es, mgr, enter, exit, name, resume_pc, KOS_DYN_WITH_SHOT_MULTI);
+      es, mgr, enter, exit, self_bind, name, resume_pc,
+      KOS_DYN_WITH_SHOT_MULTI);
 }
 
 
@@ -259,12 +269,14 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc,
     uint8_t shot) {
 
   KosDynWith *node = kos_dyn_with_allocate(
-      KosEvalState_DYN_TOP(es), mgr, enter, exit, name, resume_pc, shot);
+      KosEvalState_DYN_TOP(es), mgr, enter, exit, self_bind, name,
+      resume_pc, shot);
   if (! node)
     return NULL;
 
@@ -283,11 +295,13 @@ KosDynWith *kos_dyn_push_dyn_with_provisional(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc) {
 
   return kos_dyn_push_with_provisional(
-      es, mgr, enter, exit, name, resume_pc, KOS_DYN_WITH_SHOT_MULTI);
+      es, mgr, enter, exit, self_bind, name, resume_pc,
+      KOS_DYN_WITH_SHOT_MULTI);
 }
 
 
@@ -452,7 +466,11 @@ static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
      been pushed and the completion below must not run. */
   const int installs_frame = KosCallable_Check(enter_fn);
 
-  KosOpResult kr = KosEvalState_CallNoArgs(es, enter_fn, 0);
+  /* A plain function resolved on the type is called with the manager as
+     its receiver; anything else was bound at resolution. */
+  KosOpResult kr = (KosDynWith_SELF_BIND(node) & KOS_WITH_SELF_ENTER)
+      ? KosEvalState_Call(es, enter_fn, &KosDynWith_MGR(node), 1, NULL, 0)
+      : KosEvalState_CallNoArgs(es, enter_fn, 0);
   if (kr.kind == KOS_RES_RAISE) {
     return EVAL_RAISE();
   }
@@ -555,16 +573,17 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
     Py_INCREF(Py_None); tb  = Py_None;
   }
 
-  PyObject *args = PyTuple_Pack(3, typ, val, tb);
-  if (! args) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
-    return EVAL_RAISE();
-  }
+  /* The exception triple as a vector, with the manager in front when
+     __exit__ is a plain function resolved on the type. */
+  PyObject *argv[4];
+  Py_ssize_t argc = 0;
+  if (KosDynWith_SELF_BIND(node) & KOS_WITH_SELF_EXIT)
+    argv[argc++] = KosDynWith_MGR(node);
+  argv[argc++] = typ;
+  argv[argc++] = val;
+  argv[argc++] = tb;
 
-  KosOpResult kr = KosEvalState_CallArgs(es, exit_fn, args, NULL, 0);
-  Py_DECREF(args);
+  KosOpResult kr = KosEvalState_Call(es, exit_fn, argv, argc, NULL, 0);
 
   if (kr.kind == KOS_RES_RAISE) {
     Py_DECREF(typ);

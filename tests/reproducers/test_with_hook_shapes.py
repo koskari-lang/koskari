@@ -23,6 +23,10 @@ complete the node early. A Python awaitable __aenter__ installs no
 frame; the awaited value must bind on revive and the body must then
 run once. An __enter__ that raises leaves the manager unentered, so
 __exit__ never runs and the exception reaches the enclosing handlers.
+The protocol methods resolve on the manager's type the way Python
+resolves special methods: an instance attribute is not consulted, a
+descriptor other than a plain function binds through its __get__, and
+a type with neither protocol is a TypeError.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -66,6 +70,43 @@ class AsyncManager:
         await asyncio.sleep(0)
         self.calls.append("exit")
         return True
+
+
+class PlainManager:
+
+    def __init__(self):
+        self.calls = []
+
+    def __enter__(self):
+        self.calls.append("enter")
+        return self
+
+    def __exit__(self, typ, val, tb):
+        self.calls.append(("exit", typ))
+        return False
+
+
+class DescriptorManager:
+    """
+    __enter__ is a staticmethod and __exit__ a classmethod, so both go
+    through a descriptor's __get__ rather than the plain-function path
+    """
+
+    calls = []
+
+    @staticmethod
+    def __enter__():
+        DescriptorManager.calls.append("enter")
+        return "static-enter"
+
+    @classmethod
+    def __exit__(cls, typ, val, tb):
+        cls.calls.append(("exit", cls.__name__))
+        return False
+
+
+class NoProtocol:
+    pass
 
 
 class TestWithHookShapes(SpecialsTestCase):
@@ -195,6 +236,52 @@ class TestWithHookShapes(SpecialsTestCase):
         with self.assertRaises(Boom):
             await expr()
         self.assertEqual(mgr.calls, ["enter"])
+
+
+    async def test_python_plain_manager(self):
+        mgr = PlainManager()
+        expr, _ = self.compile_expr("(with [c ctx] c)", ctx=mgr)
+        self.assertIs(await expr(), mgr)
+        self.assertEqual(mgr.calls, ["enter", ("exit", None)])
+
+
+    async def test_python_plain_manager_exception(self):
+        mgr = PlainManager()
+        expr, _ = self.compile_expr("(with [c ctx] (boom))",
+                                    ctx=mgr, boom=boom)
+        with self.assertRaises(Boom):
+            await expr()
+        self.assertEqual(mgr.calls, ["enter", ("exit", Boom)])
+
+
+    async def test_descriptor_manager(self):
+        DescriptorManager.calls.clear()
+        expr, _ = self.compile_expr("(with [c ctx] c)",
+                                    ctx=DescriptorManager())
+        self.assertEqual(await expr(), "static-enter")
+        self.assertEqual(DescriptorManager.calls,
+                         ["enter", ("exit", "DescriptorManager")])
+
+
+    async def test_instance_attribute_not_a_protocol(self):
+        """
+        Special methods resolve on the type: an __enter__ set on the
+        instance does not make it a context manager
+        """
+
+        mgr = NoProtocol()
+        mgr.__enter__ = lambda: "instance"
+        mgr.__exit__ = lambda typ, val, tb: False
+        expr, _ = self.compile_expr("(with [c ctx] c)", ctx=mgr)
+        with self.assertRaises(TypeError):
+            await expr()
+
+
+    async def test_no_protocol_is_type_error(self):
+        expr, _ = self.compile_expr("(with [c ctx] c)", ctx=NoProtocol())
+        with self.assertRaises(TypeError) as caught:
+            await expr()
+        self.assertIn("context manager protocol", str(caught.exception))
 
 
     async def test_python_async_manager_binding(self):

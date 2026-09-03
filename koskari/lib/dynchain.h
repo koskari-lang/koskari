@@ -379,8 +379,10 @@ struct KosDynNode {
     } param;
     struct {
       PyObject *mgr;       /* context manager (owned) */
-      PyObject *enter;     /* resolved enter callable (owned; NULL if not cached) */
+      PyObject *enter;     /* resolved enter callable (owned) */
       PyObject *exit;      /* resolved exit callable (owned) */
+      uint8_t self_bind;   /* KOS_WITH_SELF_*: which of enter/exit is a plain
+                              function kept unbound, called with mgr first */
       uint8_t entered;     /* 1 after enter succeeded */
       uint8_t phase;       /* KOS_WITH_PHASE_IDLE, PENDING_EXIT_AWAIT, or PENDING_ENTER_AWAIT */
       uint8_t shot;        /* KOS_DYN_WITH_SHOT_*; internal to dyn_with only */
@@ -1599,7 +1601,10 @@ int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
 /**
    Push a with (context manager) extent onto the dynamic chain after sync
    enter. :c:member:`shot` is KOS_DYN_WITH_SHOT_MULTI or
-   KOS_DYN_WITH_SHOT_SINGLE_ACTIVE.
+   KOS_DYN_WITH_SHOT_SINGLE_ACTIVE. self_bind carries KOS_WITH_SELF_ENTER
+   and KOS_WITH_SELF_EXIT for the protocol methods that were resolved on
+   the type as plain functions and are called with mgr as their first
+   argument; the others are already bound or need no receiver.
 
    :return: new KosDynWith node, or NULL on error
 */
@@ -1608,6 +1613,7 @@ KosDynWith *kos_dyn_push_with(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc,
     uint8_t shot);
@@ -1622,6 +1628,7 @@ KosDynWith *kos_dyn_push_dyn_with(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc);
 
@@ -1635,6 +1642,7 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc,
     uint8_t shot);
@@ -1649,6 +1657,7 @@ KosDynWith *kos_dyn_push_dyn_with_provisional(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc);
 
@@ -2604,9 +2613,15 @@ static inline void kos_dyn_iter_request_arm(
 /** Single-shot; __exit__ already consumed; ignore further protocol */
 #define KOS_DYN_WITH_SHOT_SINGLE_DONE 2u
 
+/** enter is a plain function: call it with mgr as the first argument */
+#define KOS_WITH_SELF_ENTER 1u
+/** exit is a plain function: call it with mgr as the first argument */
+#define KOS_WITH_SELF_EXIT  2u
+
 #define KosDynWith_MGR(n)          (((KosDynNode *)(n))->u.with.mgr)
 #define KosDynWith_ENTER(n)        (((KosDynNode *)(n))->u.with.enter)
 #define KosDynWith_EXIT(n)         (((KosDynNode *)(n))->u.with.exit)
+#define KosDynWith_SELF_BIND(n)    (((KosDynNode *)(n))->u.with.self_bind)
 #define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
 #define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.phase)
 #define KosDynWith_SHOT(n)         (((KosDynNode *)(n))->u.with.shot)
