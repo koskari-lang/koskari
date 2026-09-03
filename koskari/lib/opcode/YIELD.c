@@ -43,8 +43,26 @@ KOS_OP_HANDLER(YIELD) {
     }
   }
 
-  /* Frame has parent (not GEN): return into parent in same loop
-     (CALL return or async gen step).  Parent is GEN => top-level yield. */
+  /* A flattened generator delivers to its consumer here and threads
+     into it: the same walk and delivery the trampoline would run for
+     the YIELD signal, minus the trip. A generator an adapter drives
+     surfaces the value as the terminal YIELD. */
+  if (kos_dyn_gen_is_flattened(es)) {
+    KosOpResult r;
+
+    KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, val));
+    if (likely(r.kind == KOS_RES_DISPATCH))
+      RESULT_NEXT(es);
+    if (unlikely(r.kind == KOS_RES_YIELD)) {
+      /* The freeze found no consumer for a generator that had one:
+         never hand the trampoline a YIELD it would deliver again. */
+      Py_DECREF(r.val);
+      PyErr_SetString(PyExc_SystemError,
+                      "flattened generator yield found no consumer");
+      RESULT_RAISE();
+    }
+    return r;
+  }
 
   return EVAL_YIELD(val);
 }

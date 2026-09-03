@@ -1812,6 +1812,29 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 #define KOS_OP_REQUIRE_NS(ns)  ((void) 0)
 #endif
 
+/**
+   The signal that ends an in-eval delivery (a control-returned hook, a
+   flattened generator's yield landing on its consumer). The delivery
+   left a plain bytecode frame current with nothing staged, no error,
+   and no plan armed: DISPATCH, so the trampoline threads from es->pc
+   without a prologue pass, and a handler that ran the delivery itself
+   threads on directly. Anything else (a value staged for a resume, a
+   codeless frame, a plan) is the prologue's to deliver.
+*/
+static inline KosOpResult kos_eval_delivery_done(KosEvalState *es) {
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+
+  if (likely(frame
+             && KosDynFrame_CODE(frame)
+             && ! KosDynFrame_RESUME_FN(frame)
+             && ! KosEvalState_PENDING_VALUE(es)
+             && ! KosEvalState_PLAN(es)
+             && ! PyErr_Occurred()))
+    return EVAL_DISPATCH();
+  return EVAL_REPROLOGUE();
+}
+
+
 /* Cross-handler helpers defined inside handlers.incl after some of
    their users (the include follows opcodes.incl order): the shared
    OBJECT_NEXT step core lives in OBJECT_NEXT.c but VAR_NEXT / FAST_NEXT
@@ -2295,6 +2318,12 @@ static KosOpResult eval_yield_handle_walk_and_freeze(KosEvalState *es) {
    generator dead-after-yield, walks the dynchain, handles optional async-gen
    node delivery, and tags the suspension event.  val is a new reference;
    ownership transfers to the caller or consuming iteration node.
+
+   A yield delivered to a flattened consumer ends in kos_eval_delivery_done:
+   DISPATCH when the consumer is a plain bytecode frame, which op_YIELD
+   threads into directly; REPROLOGUE when the prologue must deliver (a
+   consumer waiting on a resume). A yield with no consumer on the chain
+   is the terminal EVAL_YIELD the adapters drive.
 */
 static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
   KosEvalState_FlushLiveRegsToFrame(es);
@@ -2313,7 +2342,7 @@ static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
       KosOpResult dr = KosIterRequest_Deliver(es, node,
                                               KOS_IWAKE_VALUE, val);
       if (dr.kind == KOS_RES_NORMAL)
-        return EVAL_REPROLOGUE();
+        return kos_eval_delivery_done(es);
       if (dr.kind == KOS_RES_RAISE) {
         KosOpResult rs;
         KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
@@ -2770,27 +2799,6 @@ static inline KosOpResult eval_event_return_ng(
 
 
 /**
-   The signal that ends a control-returned delivery. The hook left a
-   plain bytecode frame current with nothing staged, no error, and no
-   plan armed: DISPATCH, so the trampoline threads from es->pc without
-   a prologue pass. Anything else (a value staged for a resume, a
-   codeless frame, a plan) is the prologue's to deliver.
-*/
-static inline KosOpResult kos_eval_control_returned_done(KosEvalState *es) {
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-
-  if (likely(frame
-             && KosDynFrame_CODE(frame)
-             && ! KosDynFrame_RESUME_FN(frame)
-             && ! KosEvalState_PENDING_VALUE(es)
-             && ! KosEvalState_PLAN(es)
-             && ! PyErr_Occurred()))
-    return EVAL_DISPATCH();
-  return EVAL_REPROLOGUE();
-}
-
-
-/**
    Run WIND/WITH control hook after a CONTROL_RETURNED delivery.
 
    Inline early exit: a frame-topped chain has no hook work. The hook
@@ -2804,7 +2812,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 
   KosDynNode *node = KosEvalState_CurrentNode(es);
   if (likely(! node || KosDynNode_IS_FRAME(node)))
-    return kos_eval_control_returned_done(es);
+    return kos_eval_delivery_done(es);
 
   KosOpResult r;
   KOS_TRACE_POST_OP_WRAP(control_returned,
@@ -2814,7 +2822,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
     KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
     return rs;
   }
-  return kos_eval_control_returned_done(es);
+  return kos_eval_delivery_done(es);
 }
 
 

@@ -1442,6 +1442,15 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 KosDynNode *kos_dyn_find_iter_node(KosEvalState *es);
 
 /**
+   True when the generator the running frame belongs to is flattened:
+   its GEN node has a parent, so a yield is delivered in-eval to a
+   consumer on this chain rather than surfacing to an adapter. Walks
+   outward from the running frame to the nearest GEN; false when there
+   is none.
+*/
+int kos_dyn_gen_is_flattened(KosEvalState *es);
+
+/**
    Deliver a flattened generator's YIELD value to a receiver located by
    kos_dyn_find_iter_node.  val ownership transfers to the consumer.
 
