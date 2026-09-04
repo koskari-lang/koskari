@@ -98,6 +98,7 @@ jobs:
       - name: Publish parquet to Hugging Face Hub
         env:
           HF_OIDC_RESOURCE: datasets/koskari/koskari
+          HF_DEBUG: 1
         run: |
           hf upload koskari/koskari build/corpus/datasets . \
             --repo-type dataset
@@ -105,6 +106,7 @@ jobs:
       - name: Publish dataset card
         env:
           HF_OIDC_RESOURCE: datasets/koskari/koskari
+          HF_DEBUG: 1
         run: |
           hf upload koskari/koskari tools/corpus/dataset_card.md README.md \
             --repo-type dataset
