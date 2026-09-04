@@ -1,13 +1,25 @@
 # Resolved operands: pointers in the instruction record and the extras row
 
-**Status:** Design proposal -- not implemented. Precedes the elector work
-in [electors.md](electors.md), whose measured cost it removes.
+**Status:** Implemented (2026-09-04, branch
+`claude/opcode-electors-caching-c8142d`): 8fa4b90b the record and the
+row, 3311feb6 the fetch and the jump, 0faf04f4 a row's LABEL fields as
+target records. Two decisions taken during the work and not in the
+text below: the reserved `flags` word became the record's own `pc`, so
+every pointer to an instruction names its index and a code object is
+bounded at 65535 instructions; and the `.kio` ABI was not bumped, since
+opcode values and the softened stream are unchanged. Measured on the
+tree kernel against the branch base, 2.1% fewer instructions and 1.3%
+fewer cycles; on the call-free loop kernel, 2.0% fewer instructions
+and 5.0% fewer cycles. The permanent description is
+[../interpreter/bytecode.md](../interpreter/bytecode.md) and
+[../EVALUATOR.md](../EVALUATOR.md) §2.4 and §2.5.
 
-**See also:** [bytecode-finalization.md](bytecode-finalization.md) (the
-finalize pass that derives the pointers), [insn-flags-discard.md](insn-flags-discard.md)
-(the flags word this layout reserves), [stencil-compilation.md](stencil-compilation.md)
-(the same values as patched immediates), [../archive/threaded-dispatch.md](../archive/threaded-dispatch.md)
-(the `KosOp` record and the fetch), [electors.md](electors.md).
+**See also:** [../interpreter/bytecode-finalization.md](../interpreter/bytecode-finalization.md)
+(the finalize pass that derives the pointers),
+[insn-flags-discard.md](insn-flags-discard.md) (superseded: the padding
+it wanted is the pc), [../interpreter/stencil-compilation.md](../interpreter/stencil-compilation.md)
+(the same values as patched immediates), [threaded-dispatch.md](threaded-dispatch.md)
+(the `KosOp` record and the fetch), [../interpreter/electors.md](../interpreter/electors.md).
 
 ## Summary
 
@@ -36,7 +48,7 @@ one load; a row is one load, and a constant inside a row is two.
 | jump target | `es->code`, `code->code`, `+target` | 2 |
 | cache slot | `es->code`, arithmetic, the slot | 1, then the slot |
 
-The elector measurement in [electors.md](electors.md) put a number on
+The elector measurement in [../interpreter/electors.md](../interpreter/electors.md) put a number on
 one of these: a CALL_FAST elector that re-read its row at entry ran
 0.5% fewer instructions than the ladder it replaced and 1.3% more
 cycles, the difference being the three-load walk to `nargs` at the head
@@ -152,7 +164,7 @@ target code mid-dispatch. Nothing that outlives that point may hold a
 pointer into a block. Frames, continuations, defers, and parked frames
 hold pc indices, as they do now; a handler holds `insn` only for its
 own execution. This is written into
-[execution-invariants.md](execution-invariants.md) when the work lands.
+[../interpreter/execution-invariants.md](../interpreter/execution-invariants.md) §20.
 
 ## Serialization and tooling
 
@@ -173,7 +185,7 @@ A cache-style elector reads its site through two loads that the fetch
 already warmed: `insn->u.row` for the site's constants and `insn->slot`
 for the guard and the body. The row walk that cost the CALL_FAST elector
 its cycles is gone, and the pass-through contract in
-[electors.md](electors.md) stands without amendment: `value` is the
+[../interpreter/electors.md](../interpreter/electors.md) stands without amendment: `value` is the
 guarded operand, and everything else is one load off the record.
 
 ## Order of work

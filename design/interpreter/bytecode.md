@@ -1,8 +1,6 @@
 # Bytecode Format
 
-**OPEN (not settled)**: Bytecode word size and encoding details beyond tentative
-(uint16 op, uint16 arg) format; exact taxonomy of continuation-related
-exceptions.
+**OPEN (not settled)**: exact taxonomy of continuation-related exceptions.
 
 **Per-opcode reference**: Authoritative opcode semantics, use cases, and
 invariants are documented in [../OPCODES.md](../OPCODES.md), organized by
@@ -11,27 +9,67 @@ category.
 ## Koskari Bytecode (KosCode)
 
 Koskari uses a custom bytecode format optimized for:
-- Compact instruction representation (4 bytes per instruction)
+- A serialized instruction of (op, arg), resolved at load into a record
+  that carries its operand as a pointer
 - Delta-encoded position tracking for efficient source mapping
 - Read-only memory protection after initialization
 - Async-first design (all code is async by default)
 
 ### Instruction Format
 
-Each instruction is 4 bytes:
+Each instruction is a 32-byte record, two to a cache line. Its
+serialized half is what `soften` emits and `.kio` stores; its derived
+half is resolved at finalize and on every load, never serialized, and
+re-derived when `pack_into` relocates the block.
 
 ```c
-typedef struct KosOp {
-    uint16_t op;    /* opcode (0-65535) */
-    uint16_t arg;   /* argument (0-65535) */
-} KosOp;
+struct KosOp {
+    KosThreadFn fn;      /* derived: kos_op_handlers[op] */
+    uint16_t op;         /* KosOpCode */
+    uint16_t arg;        /* index or immediate, by style; the target pc for LABEL */
+    uint16_t cache;      /* per-site cache slot index, or KOS_CACHE_UNSET */
+    uint16_t pc;         /* this record's own index */
+    union {              /* derived; selected by style */
+        PyObject *obj;   /* CONST, VAR: the pool object, borrowed */
+        KosOp *target;   /* LABEL: the target record */
+        KosExtra *row;   /* EXTRA: the operand row */
+    } u;
+    KosCacheSlot *slot;  /* derived: the site's cache slot, or NULL */
+};
 ```
 
-This compact format supports:
-- Up to 65,536 unique opcodes
-- Constants pool indices up to 65,535
-- Jump targets up to 65,535 instructions
-- Stack counts and other arguments up to 65,535
+`pc` makes every pointer to an instruction self-describing: a jump lands
+through `target` and reads the landing pc off it, and a handler's
+straight-line step is `insn + 1`. Jump targets and `pc` are 16-bit, so a
+code object holds at most 65,535 instructions and finalize enforces it.
+`obj` and `slot` point out of the block and are stable; `target` and
+`row` point into it and the fill pass re-derives them after a move.
+The instruction array, the extras table, and arena placements are
+32-aligned so no record straddles a line.
+
+### Extended Operand Rows
+
+An EXTRA opcode's `arg` names a row, one per EXTRA instruction and
+never shared; the record reaches it through `u.row`. Each field is 8
+bytes, read through the member the opcode's schema names:
+
+```c
+typedef union KosExtraField {
+    uint32_t imm;        /* COUNT, FASTVAR, OPCOUNT, CMP, CMPSRC, STAR, OPERAND */
+    PyObject *obj;       /* CONST, VAR: the pool object, borrowed */
+    KosOp *target;       /* LABEL: the target record */
+} KosExtraField;
+
+typedef struct KosExtra {
+    KosExtraField f[4];  /* 32 bytes */
+} KosExtra;
+```
+
+Collect builds the row in index form (four 16-bit fields); emit
+resolves it. A row keeps no index: `soften` and `extra_tuple` recover
+a constant's index by identity against the pool and a label's pc off
+the target, so the Python-facing view is unchanged. The design record
+is [../archive/resolved-operands.md](../archive/resolved-operands.md).
 
 ### Position Table
 
@@ -68,6 +106,9 @@ struct KosCode {
 
     uint32_t cpool_len;   /* constant pool size */
     PyObject **cpool;     /* constant pool (read-only) */
+
+    uint32_t extra_len;   /* extended operand row count */
+    KosExtra *extra;      /* extended operand rows (read-only) */
 
     uint32_t extent_len;  /* extent descriptor count */
     KosExtentDesc *extents;     /* extent table, tagged-union descriptors (read-only; NULL if none) */

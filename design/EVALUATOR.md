@@ -366,7 +366,7 @@ emits from `opcodes.incl`) at finalize in the block's writable window,
 and, like the cache index, is regenerated on every load and never
 serialized; soften emits only `(op, arg)`.
 
-**`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) sets a local **`KosOp *insn`** to `&KosCode_CODE(code)[pc]`, sets `acting_pc`, and pre-advances `pc`. It assumes a valid frame, in-range `pc`, and valid bytecode; every code object ends in a `THEEND` barrier, so no per-instruction bounds check is needed (the `es->code` null check is a `KOS_EVAL_SAFETYNET` guard). The trampoline's **`thread`** section runs it once to enter a chain; inside a chain the same fetch is **`KOS_THREAD_NEXT`** (`eval.h`), which reads the instruction at `es->pc` -- not the handler's own instruction plus one, since a jump or the fused-POP peephole may have moved the pc -- and tail-calls its `fn`. Both fetches index through `es->code` on every step; the instruction array is never cached on the eval state or a frame, because `pack_into` relocates the block and a parked frame (a defer, a generator, a function's cached frame) may hold the code across that move.
+**`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) sets a local **`KosOp *insn`** to `&KosCode_CODE(code)[pc]`, sets `acting_pc`, and pre-advances `pc`. It assumes a valid frame, in-range `pc`, and valid bytecode; every code object ends in a `THEEND` barrier, so no per-instruction bounds check is needed (the `es->code` null check is a `KOS_EVAL_SAFETYNET` guard). The trampoline's **`thread`** section runs it once to enter a chain. Inside a chain a handler threads through **`KOS_THREAD_AT(es, next)`** (`eval.h`), which takes `acting_pc` and `pc` off the record's own `pc` field and tail-calls its `fn`. A straight-line tail steps to `insn + 1`, its own record plus one, with no walk through `es->code`; a jump goes through the record's resolved `target`; a tail after a frame change or a stored pc fetches from `es->pc` through `es->code` (**`KOS_THREAD_NEXT`**). The instruction base is never cached on a frame: `pack_into` relocates the block at a quiescent point, and a parked frame (a defer, a generator, a function's cached frame) holds the code object and an integer pc across that move ([interpreter/execution-invariants.md](interpreter/execution-invariants.md) §20).
 
 Opcode handlers have the **`KosThreadFn`** prototype: `op_NAME(KosEvalState *es, void *insn, PyObject *value)`, declared through **`KOS_OP_HANDLER`**; `insn` is the handler's own instruction (read through `KosOp_ARG` / `KosOp_CACHE`) and `value` is unused by an opcode. **`es`** carries the cached **`frame`**, **`code`**, operand-stack **`block`**, and live **`pc`** / **`acting_pc`** registers for the eval slice, aligned with **`KosEvalState_CONTEXT(es)`** via **`kos_dyn_resync_after_push`** / **`kos_dyn_commit_dyn_top`** / **`kos_dyn_resync_chain`** (and **`KosEvalState_ThawFromContext`** / **`FreezeToContext`** at the invocation boundary) as summarized in section 1.5 above.
 
@@ -424,7 +424,7 @@ value-mode frame, or an awaited result at resume.
 flowchart LR
     thread["thread: insn->fn(&es, insn, NULL)"]
     handler["op_XXX"]
-    next["RESULT_NEXT / JUMP / PUSH / STEAL / RELAY:<br/>KOS_THREAD_NEXT → musttail insn->fn"]
+    next["RESULT_NEXT / PUSH / STEAL: insn + 1<br/>RESULT_JUMP_AT: the target record<br/>RESULT_CONTINUE / RELAY: from es->pc<br/>→ musttail next->fn"]
     trip["cooperation point (CONTINUE, a frame install,<br/>a resume hop) with the breaker up:<br/>return EVAL_NORMAL / REPROLOGUE to the trampoline"]
     signal["RESULT_RAISE / FAIL, EVAL_RETURN / YIELD / AWAIT / ...:<br/>return the signal to the trampoline"]
 
@@ -438,14 +438,18 @@ A handler ends in one of the **`RESULT_*`** macros (`eval.h`):
 
 | Macro | Does |
 |-------|------|
-| `RESULT_NEXT(es)` | Continue at `es->pc`: `KOS_THREAD_NEXT`. |
-| `RESULT_JUMP(es, target)` | Set the pc, then continue. |
+| `RESULT_NEXT(es)` | Continue at `insn + 1`, the handler's own record plus one: `KOS_THREAD_AT`. For a handler that left the frame and the pc alone. |
+| `RESULT_CONTINUE(es)` | Continue at `es->pc` through `es->code`: `KOS_THREAD_NEXT`. For a tail after a callee install, a return to a parent, or a stored pc. |
+| `RESULT_JUMP_AT(es, target)` | Continue at a resolved target record (`KosOp_TARGET`, or a row's `KosExtra_TARGET`). |
+| `RESULT_JUMP(es, pc)` | Set the pc, then continue through `es->code`. |
 | `RESULT_PUSH(es, val)` | Push a borrowed value, then continue; a failed push leaves the value with the caller. |
 | `RESULT_STEAL(es, val)` | Push an owned value (consumed on failure too; NULL raises), then continue. |
 | `RESULT_RELAY(es, r)` | End with a helper's result: NORMAL continues at `es->pc` (a callee's first instruction after an install, the next instruction after a push); anything else returns. Used by the call handlers, the NEXT handlers, AWAIT, and the delimited-return sites. |
 | `RESULT_RAISE()` / `RESULT_FAIL()` | Return `EVAL_RAISE` / `EVAL_FATAL`: a real crossing back to the trampoline. |
 
-**`KOS_THREAD_NEXT`** is a bare fetch and tail call. The cooperation
+**`KOS_THREAD_AT`** and **`KOS_THREAD_NEXT`** are bare fetches and tail
+calls. The macros read the handler's own record through the name `insn`,
+which `KOS_OP_HANDLER` and `KOS_ELECTOR` declare. The cooperation
 points (§1.6) are the handlers that close a cycle: `CONTINUE` ends in
 **`RESULT_NEXT_POLL`**, which returns **`EVAL_NORMAL`** instead of
 threading when the eval breaker is up, so the trampoline polls and threads
@@ -608,7 +612,7 @@ state)`** ends a resume with a CPS entry's outcome (§8.2).
 
 ### 3.2 What Opcodes Signal and When
 
-- **Continuing** (`RESULT_NEXT` / `JUMP` / `PUSH` / `STEAL` / `RELAY`): the next handler runs by tail call. Used by almost all opcodes on the success path, and by the call handlers after an install (the callee's first instruction is at `es->pc`).
+- **Continuing** (`RESULT_NEXT` / `PUSH` / `STEAL` / `JUMP_AT` / `JUMP` / `CONTINUE` / `RELAY`): the next handler runs by tail call. Used by almost all opcodes on the success path, and by the call handlers after an install (the callee's first instruction is at `es->pc`, so those end in `RELAY` or `CONTINUE`).
 - **`EVAL_REPROLOGUE()`**: Used after arming a transfer plan or leaving a code-less frame current, so the prologue can drain or deliver before the next instruction.
 - **`EVAL_YIELD(v)` / `EVAL_AWAIT(v)`**: Emitted from YIELD, YIELD_FROM, AWAIT, and auto-await after CALL. A yield that is **in-loop** (non-GEN parent delivers directly without a driver-visible boundary) continues instead.
 - **`EVAL_RETURN(v)`**: RETURN threads its own plain, extent, and resume-parent shapes (§2.6); it signals only when a walk or another parent kind is involved, and `eval_event_return_ng` then owns unwind, frame pop, and delivery.

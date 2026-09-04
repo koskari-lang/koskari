@@ -328,6 +328,25 @@ suspended along with the context.
 
 ---
 
+## 20. Code Blocks Move Only at Quiescence (Invariant)
+
+* A code object's unified block (instructions, positions, pool, extras
+  rows, extents) may be relocated once, by `pack_into`, at a quiescent
+  point: the module body has completed and no frame of that code is
+  mid-dispatch.
+* The instruction record and the extras row carry pointers into the
+  block (a jump's target, an EXTRA's row, a row's LABEL target); the
+  fill pass re-derives them after the move.
+* Nothing that outlives the quiescent point may hold a pointer into a
+  block. Frames, continuations, defers, and parked frames hold the code
+  object and an integer pc; a handler holds its own record only for its
+  own execution, and a resume's state never names a record.
+* The instruction base is therefore never cached on a frame; the
+  handler's own record is the base for its straight-line step, and a
+  fetch after a frame change or a stored pc goes through `es->code`.
+
+---
+
 ## 21. Non-Goals / Explicit Exclusions
 
 * No implicit event loop creation on normal calls.

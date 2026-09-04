@@ -1,6 +1,14 @@
 # Electors: elected handlers on cache slots and dyn nodes
 
-**Status:** Design proposal -- not implemented.
+**Status:** Proposal, with one measured fixture. The CALL_FAST elector
+(`KOS_CACHE_ELECTOR`, `eval/eval_electors.c`, commit b73d9499) is in
+the tree as the measurement fixture for this design, not as a finished
+change: on the tree kernel it ran 0.5% fewer instructions and 1.3% more
+cycles than the ladder, the gap being the walk from the record to its
+extras row at the head of every elected call. That walk was removed by
+[../archive/resolved-operands.md](../archive/resolved-operands.md);
+the elector has not been re-measured on the new record yet, and the
+next step is that measurement.
 
 **See also:** [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)
 (the per-site cache framework this extends),
@@ -8,8 +16,7 @@
 `KosThreadFn` prototype and musttail rules), [../EVALUATOR.md](../EVALUATOR.md)
 §8.2 (CPS resumes), [stencil-compilation.md](stencil-compilation.md) (the
 consumer that copies handler bodies per site),
-[insn-flags-discard.md](insn-flags-discard.md) (the other finalize-derived
-per-record fact), [gen-yieldfrom-passthru.md](gen-yieldfrom-passthru.md)
+[../archive/insn-flags-discard.md](../archive/insn-flags-discard.md) (superseded), [gen-yieldfrom-passthru.md](gen-yieldfrom-passthru.md)
 (the YIELD_FROM follow-up this subsumes).
 
 ## Summary
@@ -94,28 +101,28 @@ type version the method cache already reads.
 
 ```c
 KOS_OP_HANDLER(CALL_FAST) {
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  PyObject *callable = kos_ns_fast_deref(ns, row.a0);       /* owned */
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *callable = kos_ns_fast_deref(ns, KosExtra_IMM(row, 0)); /* owned */
   if (unlikely(! callable))
     RESULT_RAISE();
-  KosCacheSlot *slot = KOS_OP_CACHE_SLOT(es, insn);         /* NULL when ungated */
+  KosCacheSlot *slot = KosOp_SLOT(insn);                    /* NULL when ungated */
   if (likely(slot && slot->kind == KOS_CACHE_ELECTOR
-             && slot->elector.type == Py_TYPE(callable)))
-    TAILCALL(slot->elector.fn, es, insn, callable);
-  TAILCALL(kos_call_elect_owned, es, insn, callable);       /* ladder, populate, dispatch */
+             && slot->u.elector.type == Py_TYPE(callable)))
+    TAILCALL(slot->u.elector.fn, es, insn, callable);
+  TAILCALL(el_call_fast_elect, es, insn, callable);         /* ladder, populate, dispatch */
 }
 
-KOS_ELECTOR(call_simple_owned) {                            /* value: the callable, owned */
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));   /* nargs; the window */
-  PyObject *const *argv = KosEvalState_StackTailPtr(es, row.a1);
+KOS_ELECTOR(call_fast_kosfunction_simple) {                 /* value: the callable, owned */
+  const KosExtra *row = KosOp_ROW(insn);                    /* nargs; the window */
+  Py_ssize_t nargs = (Py_ssize_t) KosExtra_IMM(row, 1);
   ...
 }
 ```
 
 The handler fetches the guarded operand once and passes it through as
 `value`, ownership transferring with it. The elector's `arg` is the site's
-`KosOp`, so the row, the fast slot, the cache index, and the stack window
-are one decode away; a site with a secondary operand (the receiver of
+`KosOp`, so the row, the fast slot, the cache slot, and the stack window
+are one load off the record; a site with a secondary operand (the receiver of
 `CALL_FAST_ATTR`) passes the guarded one and re-reads the other from the
 site. The rule for every elector, in both homes: `value` is the object the
 elector was chosen to handle, and everything else is read from the site

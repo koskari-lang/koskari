@@ -2,7 +2,10 @@
 
 ## Status
 
-Proposal -- not implemented.
+Superseded (2026-09-04). The two padding bytes this proposal wanted
+became the record's own `pc` under [resolved-operands.md](resolved-operands.md),
+and the lookahead it set out to avoid is `insn[1].op` now that a
+handler steps from its own record. Kept for the record.
 
 ## Summary
 

@@ -44,6 +44,16 @@ real workload that shows the win:
 Ref: [archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
 (§Phase 5).
 
+### Electors: elected handlers on cache slots and dyn nodes
+
+A `KosThreadFn` chosen once for a site's guarded operand (a cache slot
+kind) or an extent's fixed fact (a dyn node field) and tail-called on
+every later execution. The CALL_FAST fixture is in the tree; re-measure
+it on the resolved record, then the plain-vectorcall arm, then
+YIELD_FROM node-style.
+
+Ref: [interpreter/electors.md](interpreter/electors.md).
+
 ---
 
 ## Profiling / instrumentation
@@ -293,18 +303,6 @@ operation applied at each application that omits the argument*: `value:`
 transposer use-case.
 
 Ref: [language/formal-default-modes.md](language/formal-default-modes.md).
-
-### Instruction-record flags: finalize-time "result discarded" bit
-
-Fill the two padding bytes of `KosOp` with a `flags` word assigned in
-`code_fill_handlers`, and record there that an instruction's pushed value
-is consumed by the following `POP,1`. The call core tests the bit on its
-own record instead of loading and comparing the next one on every settled
-result. The remaining bits are room for other finalize-derived facts.
-
-Ref: [interpreter/insn-flags-discard.md](interpreter/insn-flags-discard.md).
-
----
 
 ## Concurrent async (`async` form)
 

@@ -16,7 +16,8 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 
 ## Contents
 
-- **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`); extent/location tables — archived spec [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
+- **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`): the 32-byte instruction record and the resolved extras row -- design record [archive/resolved-operands.md](../archive/resolved-operands.md); extent/location tables — archived spec [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
+- **electors.md**: Electors — handlers elected once for a site's guarded operand (cache slot) or an extent's fixed fact (dyn node) and tail-called thereafter; **design proposal** with a measured CALL_FAST fixture
 - **bytecode-finalization.md**: Final form phase design — collect/size/allocate/emit pipeline, identity-based cpool dedup, unified block with extra table; **design proposal**
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
 - **[EVALUATOR.md](../EVALUATOR.md)**: Evaluator operation diagrams, threaded dispatch and the trampoline, opcode signaling, exceptions, transfer plans, tail calls, call installs, CPS resumes, and play-by-play scenarios
