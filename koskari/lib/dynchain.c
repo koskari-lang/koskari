@@ -46,6 +46,16 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
 static int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
 static void kos_dyn_restamp_spliced_prefix(KosEvalState *es);
+static void kos_dyn_stamp_span(
+    KosDynNode **span,
+    size_t len,
+    KosDynFrame *rft,
+    KosSegment **rbl,
+    PyObject *rns);
+static void kos_dyn_restamp_span(
+    KosDynNode *from,
+    KosDynNode *stop,
+    const KosLiveRegs *base);
 
 static void kos_dyn_resync_apply(
     KosEvalState *es,
@@ -1523,35 +1533,102 @@ static void kos_dyn_restamp_spliced_prefix(KosEvalState *es) {
     KosSegment **rbl = NULL;
     PyObject *rns = NULL;
     kos_dyn_resync_from(node, &rft, &rbl, &rns);
+    kos_dyn_stamp_span(span, len, rft, rbl, rns);
+  }
 
-    /* stamp rootward-first, threading the running facts upward */
-    for (size_t i = len; i--; ) {
-      KosDynNode *n = span[i];
+out:
+  if (span != fixed)
+    PyMem_Free(span);
+}
 
-      if (! KosDynNode_NS(n)) {
-        /* fill non-frames only; a frame's NULL ns is the placeholder
-           window and stays NULL until its real namespace is bound */
-        if (rns && ! KosDynNode_IS_FRAME(n)) {
-          Py_INCREF(rns);
-          KosDynNode_NS(n) = rns;
-        }
-      } else {
-        rns = KosDynNode_NS(n);
+
+/**
+   Stamp the collected nodes span[0..len), span[0] nearest dyn_top,
+   rootward-first from the facts live at their base, threading the
+   running facts upward: a frame's back link, a segment's displaced
+   owning slot, and a non-frame node's namespace fill. Stamps never
+   overwrite.
+*/
+static void kos_dyn_stamp_span(
+    KosDynNode **span,
+    size_t len,
+    KosDynFrame *rft,
+    KosSegment **rbl,
+    PyObject *rns) {
+
+  for (size_t i = len; i--; ) {
+    KosDynNode *n = span[i];
+
+    if (! KosDynNode_NS(n)) {
+      /* fill non-frames only; a frame's NULL ns is the placeholder
+         window and stays NULL until its real namespace is bound */
+      if (rns && ! KosDynNode_IS_FRAME(n)) {
+        Py_INCREF(rns);
+        KosDynNode_NS(n) = rns;
       }
+    } else {
+      rns = KosDynNode_NS(n);
+    }
 
-      if (KosDynNode_IS_FRAME(n)) {
-        if (! KosDynFrame_BACK_FRAME(n))
-          KosDynFrame_BACK_FRAME(n) = (KosDynNode *) rft;
-        rft = (KosDynFrame *) n;
-      }
+    if (KosDynNode_IS_FRAME(n)) {
+      if (! KosDynFrame_BACK_FRAME(n))
+        KosDynFrame_BACK_FRAME(n) = (KosDynNode *) rft;
+      rft = (KosDynFrame *) n;
+    }
 
-      if (KosDynNode_STACK(n)) {
-        if (! KosSegment_BACK(KosDynNode_STACK(n)))
-          KosSegment_BACK(KosDynNode_STACK(n)) = rbl;
-        rbl = &KosDynNode_STACK(n);
-      }
+    if (KosDynNode_STACK(n)) {
+      if (! KosSegment_BACK(KosDynNode_STACK(n)))
+        KosSegment_BACK(KosDynNode_STACK(n)) = rbl;
+      rbl = &KosDynNode_STACK(n);
     }
   }
+}
+
+
+/**
+   Restamp the unwind caches of a span just spliced back onto the
+   chain: the nodes from from down to stop, both included, with the
+   facts live at stop's parent supplied by the caller (a resync of
+   that parent derives the same three). The prefix restamp's scan for
+   stamped evidence and its walk for the base facts are skipped; the
+   caller knows the span's ends and holds the facts. Callers:
+   kos_dyn_gen_install, where the consumer's registers recorded at the
+   install are those facts.
+*/
+static void kos_dyn_restamp_span(
+    KosDynNode *from,
+    KosDynNode *stop,
+    const KosLiveRegs *base) {
+
+  KosDynNode *fixed[KOS_RESTAMP_FIXED];
+  KosDynNode **span = fixed;
+  size_t cap = KOS_RESTAMP_FIXED;
+  size_t len = 0;
+  KosDynNode *node;
+
+  for (node = from; node; node = KosDynNode_PARENT(node)) {
+    if (len == cap) {
+      size_t ncap = cap * 2;
+      KosDynNode **grown;
+      if (span == fixed) {
+        grown = PyMem_Malloc(ncap * sizeof(KosDynNode *));
+        if (grown)
+          memcpy(grown, span, len * sizeof(KosDynNode *));
+      } else {
+        grown = PyMem_Realloc(span, ncap * sizeof(KosDynNode *));
+      }
+      if (! grown)
+        goto out;
+      span = grown;
+      cap = ncap;
+    }
+    span[len++] = node;
+    if (node == stop)
+      break;
+  }
+
+  kos_dyn_stamp_span(span, len, (KosDynFrame *) base->frame, base->block,
+                     base->ns);
 
 out:
   if (span != fixed)

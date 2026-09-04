@@ -231,11 +231,13 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
      that records one without the other lands on the rebuild instead of
      stale registers; the same holds for host.top at the freeze. */
   if (KosDynGen_FROZEN(gen)->top == active && KosDynGen_FROZEN(gen)->frame) {
-    /* The registers the freeze recorded for this very head: apply them
-       and restamp the spliced span's unwind caches, which the freeze
-       cleared. Same outcome as the rebuild without its find walk. */
+    /* The registers the freeze recorded for this very head: apply
+       them, then restamp the spliced span's unwind caches, which the
+       freeze cleared, from the consumer's registers just recorded:
+       they are the facts live at the GEN's parent. Same outcome as
+       the rebuild without its find walk or the restamp's scan. */
     kos_live_regs_apply(es, KosDynGen_FROZEN(gen));
-    kos_dyn_restamp_spliced_prefix(es);
+    kos_dyn_restamp_span(active, (KosDynNode *) gen, KosDynGen_HOST(gen));
   } else {
     kos_dyn_commit_dyn_top(es, active);
   }
