@@ -26,6 +26,27 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 
+  /* Exact-int pair under a richcompare selector: settle on the
+     extracted values with no refcount traffic, peeking the slots
+     borrowed. Nothing runs between the peek and the compare that could
+     rebind a slot, so the borrow is sound; any other shape takes the
+     owned path below. */
+  if (likely(KosCmpSrc_SEL(src) <= KOS_COMPARE_GE)) {
+    PyObject *x = KosCmpSrc_X_CONST(src)
+        ? KosExtra_OBJ(row, 1)
+        : kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 1));
+    PyObject *y = KosCmpSrc_Y_CONST(src)
+        ? KosExtra_OBJ(row, 2)
+        : kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 2));
+    long long a, b;
+
+    if (x && y && kos_as_ll2(x, y, &a, &b)) {
+      if (kos_ll_compare((KosCompare) KosCmpSrc_SEL(src), a, b))
+        RESULT_NEXT(es);
+      RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+    }
+  }
+
   PyObject *ops[2];
 
   if (KosCmpSrc_X_CONST(src)) {

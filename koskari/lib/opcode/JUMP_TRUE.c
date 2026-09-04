@@ -22,7 +22,7 @@ KOS_OP_HANDLER(JUMP_TRUE) {
   if (unlikely(! val))
     RESULT_RAISE();
 
-  int res = PyObject_IsTrue(val);
+  int res = kos_object_truth(val);
   Py_DECREF(val);
 
   if (unlikely(res < 0))

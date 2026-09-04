@@ -55,6 +55,17 @@ NEXT node, then the frame's return arm.
 
 Ref: [interpreter/electors.md](interpreter/electors.md).
 
+### Dispatch tweaks to investigate
+
+Every record now carries its own pc, so the `acting_pc` store in
+`KOS_THREAD_AT` may be redundant (readers could take `insn->pc`); a
+call install could return the callee's first record instead of
+re-fetching through `es->code`; and the fused POP peephole could read
+`insn[1]` rather than walk the code. Each is under 1% on the churn
+kernels; measure before taking any.
+
+Ref: [archive/resolved-operands.md](archive/resolved-operands.md).
+
 ---
 
 ## Profiling / instrumentation

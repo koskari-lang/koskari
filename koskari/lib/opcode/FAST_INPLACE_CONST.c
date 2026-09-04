@@ -40,9 +40,7 @@ KOS_OP_HANDLER(FAST_INPLACE_CONST) {
   if (unlikely(! result))
     RESULT_RAISE();
 
-  int res = kos_ns_fast_store(ns, idx, result);
-  Py_DECREF(result);
-  if (unlikely(res < 0))
+  if (unlikely(kos_ns_fast_store_steal(ns, idx, result) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }

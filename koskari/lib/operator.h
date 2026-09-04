@@ -24,8 +24,49 @@
 #include "hints.h"
 
 
-/* === PyLong two-operand fast path === */
+/* === Truthiness === */
 
+
+/* Zero test for an exact int without the general conversion: a compact
+   int reads its one digit, and an int that is not compact is nonzero
+   by construction (3.12 and later); before 3.12 the size word is zero
+   exactly for zero. */
+static inline int kos_long_is_zero(PyObject *v) {
+#if PY_VERSION_HEX >= 0x030C0000
+  return PyUnstable_Long_IsCompact((PyLongObject *) v)
+      && PyUnstable_Long_CompactValue((PyLongObject *) v) == 0;
+#else
+  return Py_SIZE(v) == 0;
+#endif
+}
+
+
+/* PyObject_IsTrue with the common cases inline: the two bools, None,
+   and an exact int. Same contract: 1, 0, or -1 with an error set. */
+static inline int kos_object_truth(PyObject *v) {
+  if (v == Py_True)
+    return 1;
+  if (v == Py_False || v == Py_None)
+    return 0;
+  if (PyLong_CheckExact(v))
+    return ! kos_long_is_zero(v);
+  return PyObject_IsTrue(v);
+}
+
+
+/* PyObject_Not with the same inline cases. */
+static inline int kos_object_not(PyObject *v) {
+  if (v == Py_True)
+    return 0;
+  if (v == Py_False || v == Py_None)
+    return 1;
+  if (PyLong_CheckExact(v))
+    return kos_long_is_zero(v);
+  return PyObject_Not(v);
+}
+
+
+/* === PyLong two-operand fast path === */
 
 /* Both operands exact ints that fit in a C long long.  Mechanical extraction
    only, with no operator knowledge, so it never re-branches on op.  Returns 1

@@ -23,7 +23,7 @@ KOS_OP_HANDLER(JUMP_AND) {
   if (unlikely(! val))
     RESULT_RAISE();
 
-  int res = PyObject_Not(val);
+  int res = kos_object_not(val);
   if (unlikely(res < 0)) {
     Py_DECREF(val);
     RESULT_RAISE();

@@ -27,10 +27,7 @@ KOS_OP_HANDLER(FAST_STORE) {
     RESULT_RAISE();
 
   size_t idx = (size_t) KosOp_ARG(insn);
-  int res = kos_ns_fast_store(ns, idx, val);
-  Py_DECREF(val);
-
-  if (unlikely(res < 0))
+  if (unlikely(kos_ns_fast_store_steal(ns, idx, val) < 0))
     RESULT_RAISE();
 
   RESULT_NEXT(es);
