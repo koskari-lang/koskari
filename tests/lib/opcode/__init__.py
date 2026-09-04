@@ -110,7 +110,7 @@ def _lower_instr(op, arg):
     return [_op(op), arg]
 
 
-def build_code(code, local_syms=None, closure_syms=None, name="expr"):
+def build_code(code, local_syms=None, closure_syms=None, name="expr", cache=True):
     """
     Build Code from a list of [opname, arg] with string opcode names
 
@@ -123,6 +123,7 @@ def build_code(code, local_syms=None, closure_syms=None, name="expr"):
     :param closure_syms: Optional sequence of closure names (slot indices after
         local_syms)
     :param name: Code name for debugging
+    :param cache: whether the Code allocates per-site cache slots
     :return: Code instance
     """
 
@@ -136,7 +137,7 @@ def build_code(code, local_syms=None, closure_syms=None, name="expr"):
         closure_syms = (closure_syms,)
     nspec = NamespaceSpec(None, tuple(local_syms), tuple(closure_syms))
     instr = tuple(_lower_instr(op, arg) for op, arg in code)
-    return Code(nspec, instr, name)
+    return Code(nspec, instr, name, cache=cache)
 
 
 def build_expr(code, local_syms=None, closure_syms=None, values=None, name="expr"):
