@@ -66,6 +66,10 @@ define SORT_KEYS #{
     "count": "count"
     "net": "net_ns"}
 
+define VIEW_COLUMNS #("opcode" "bytes" "count" "avg_ns" "net_ns" "time_pct")
+
+define VIEW_HEADINGS #("opcode" "bytes" "count" "avg_ns" "net_ns" "time%")
+
 ;; one nm --print-size line for a handler symbol: address, size, type,
 ;; op_ plus the opcode name, then any compiler suffix such as
 ;; .lto_priv.0 or .cold
@@ -88,7 +92,7 @@ define parse_sizes [text]:
     :return: dict of opcode name to byte count
     """
 
-    define sizes (dict)
+    define sizes #{}
     for-each [line (text.splitlines)]:
         define found (SYMBOL.match line)
         when found:
@@ -188,7 +192,7 @@ define trace_parts [report]:
     """
 
     define tr (report.get "trace" report)
-    return #((tr.get "opcode_timing" (dict)) (tr.get "opcode_timing_summary" (dict)))
+    return #((tr.get "opcode_timing" #{}) (tr.get "opcode_timing_summary" #{}))
 
 
 ;; === the join ===
@@ -233,7 +237,7 @@ define join_rows [opcodes sizes timing overhead]:
 
         (rows.append row)
 
-    (rows.sort key: (demand {(item %1 "opcode")}))
+    (rows.sort key: (itemgetter "opcode"))
     return rows
 
 
@@ -279,6 +283,15 @@ define git_sha []:
     return (if (== proc.returncode 0) (proc.stdout.strip) "unknown")
 
 
+define format_line [cells]:
+    """
+    One console line: the opcode left-aligned, the figures right-aligned
+    """
+
+    define-values [opcode bytes count avg net time] cells
+    return f"{opcode:<24}{bytes:>8}{count:>14}{avg:>9}{net:>9}{time:>8}"
+
+
 define print_top [rows sort top]:
     """
     A console view of the rows with a value in the sort column,
@@ -288,22 +301,14 @@ define print_top [rows sort top]:
     define key SORT_KEYS[sort]
     define picked:
         list-each [row rows]:
-            when (not (None? row[key])):
+            unless (None? row[key]):
                 row
-    (picked.sort key: (demand {(item %1 key)}) reverse: True)
+    (picked.sort key: (itemgetter key) reverse: True)
 
     print f"\ntop {top} by {sort}:"
-    (print
-        (+ ("opcode".ljust 24) ("bytes".rjust 8) ("count".rjust 14)
-           ("avg_ns".rjust 9) ("net_ns".rjust 9) ("time%".rjust 8)))
+    print (format_line VIEW_HEADINGS)
     for-each [row (item-slice picked 0 top)]:
-        (print
-            (+ (row["opcode"].ljust 24)
-               ((format_cell row["bytes"]).rjust 8)
-               ((format_cell row["count"]).rjust 14)
-               ((format_cell row["avg_ns"]).rjust 9)
-               ((format_cell row["net_ns"]).rjust 9)
-               ((format_cell row["time_pct"]).rjust 8)))
+        print (format_line (list-each [column VIEW_COLUMNS] (format_cell row[column])))
 
 
 ;; === entry point ===
