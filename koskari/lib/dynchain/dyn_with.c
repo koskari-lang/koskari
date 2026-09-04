@@ -27,9 +27,10 @@ static KosDynWith *kos_dyn_with_allocate(
     uint32_t caps;
     if (shot == KOS_DYN_WITH_SHOT_MULTI)
       caps = KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION | KOS_DYN_CAP_NEEDS_UNWIND_ACTION
-          | KOS_DYN_CAP_NEEDS_INSTALL_WIND;
+          | KOS_DYN_CAP_NEEDS_INSTALL_WIND | KOS_DYN_CAP_CONTROL_HOOK;
     else
-      caps = KOS_DYN_CAP_CATCH | KOS_DYN_CAP_NEEDS_UNWIND_ACTION;
+      caps = KOS_DYN_CAP_CATCH | KOS_DYN_CAP_NEEDS_UNWIND_ACTION
+          | KOS_DYN_CAP_CONTROL_HOOK;
 
     kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent, caps);
   }

@@ -1860,7 +1860,7 @@ static inline int kos_return_is_plain(
     KosEvalState *es,
     KosDynNode **out_child,
     KosDynNode **out_parent);
-KOS_OP_INLINE int kos_return_is_extent_plain(
+KOS_OP_INLINE int kos_return_is_region(
     KosEvalState *es,
     KosDynNode **out_child,
     KosDynNode **out_parent,
@@ -1870,7 +1870,7 @@ KOS_OP_INLINE KosOpResult eval_ng_plain_return(
     KosDynNode *child,
     KosDynNode *parent,
     PyObject *val);
-KOS_OP_INLINE KosOpResult eval_ng_extent_return(
+KOS_OP_INLINE KosOpResult eval_ng_region_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -2510,17 +2510,19 @@ KOS_OP_INLINE KosOpResult eval_ng_plain_return(
 
 
 /**
-   Extent-plain return predicate: the frame returns into a discardable
-   lexical extent (LOOP, NS, FOREACH) whose owning frame is a plain
-   Koskari frame.  Every retarget fact is cache-available — the back
-   frame recorded at install, the freed segment's displaced owning slot,
-   and the survivor-carried namespace — so the delivery reduces to a
-   straight retarget plus push, and the control-returned hook is a no-op
-   for these node kinds (kos_dynnode_on_control_returned's default arm).
-   Any missing fact falls through to the general path, mirroring the
-   cache-or-walk split in kos_dyn_resync_after_pop.
+   Region-parent return predicate: the frame returns into a chain node
+   that passes a callee's value through to the frame beneath it -- any
+   node that is not itself a frame, a generator, or an iteration node
+   with a step in flight (the receiving side of a value-grafted invoke,
+   which is a return terminus). Every retarget fact is cache-available:
+   the back frame recorded at install, the freed segment's displaced
+   owning slot, and the node's namespace fill. A node that reacts to
+   control returning into it says so with KOS_DYN_CAP_CONTROL_HOOK and
+   the transition runs its hook; the rest take the value and nothing
+   more. Any missing fact falls through to the general path, mirroring
+   the cache-or-walk split in kos_dyn_resync_after_pop.
 */
-KOS_OP_INLINE int kos_return_is_extent_plain(
+KOS_OP_INLINE int kos_return_is_region(
     KosEvalState *es,
     KosDynNode **out_child,
     KosDynNode **out_parent,
@@ -2534,26 +2536,14 @@ KOS_OP_INLINE int kos_return_is_extent_plain(
     return 0;
 
   parent = KosDynNode_PARENT(child);
-  if (! parent)
+  if (! parent
+      || KosDynNode_IS_FRAME(parent)
+      || KosDynNode_IS_GEN(parent)
+      || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_ITER_RECEIVER))
     return 0;
-  switch (KosDynNode_KIND(parent)) {
-  case KOS_DYN_NS:
-  case KOS_DYN_LOOP:
-    break;
-  case KOS_DYN_FOREACH:
-    /* An armed iteration node is a return terminus (a value-grafted
-       invoke delivering its element), never a discardable extent; the
-       capability is held exactly while a step is in flight, so plain
-       body calls keep the fast retarget. */
-    if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_ITER_RECEIVER))
-      return 0;
-    break;
-  default:
-    return 0;
-  }
 
   /* Same two conjuncts as kos_return_parent_is_plain, for the frame
-     eval_ng_extent_return will dispatch on. */
+     eval_ng_region_return will dispatch on. */
   ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
   if (! ft
       || ! KosDynNode_IS_FRAME((KosDynNode *) ft)
@@ -2574,13 +2564,13 @@ KOS_OP_INLINE int kos_return_is_extent_plain(
 
 
 /**
-   NG fast path: return into a discardable extent above a plain frame.
-   Same inline retarget as eval_ng_plain_return, except the extent node
-   (which stays installed) becomes dyn_top, while the frame registers
-   load from the cached back frame and the block restores through the
-   freed segment's displaced-slot record.  val consumed.
+   Region-parent return transition, once kos_return_is_region holds:
+   retarget straight from the cached facts, free the callee, push the
+   value on the region's segment, then let a node that hooks control
+   returns react (the hook ends in kos_eval_delivery_done); a node
+   without the hook dispatches directly. val consumed.
 */
-KOS_OP_INLINE KosOpResult eval_ng_extent_return(
+KOS_OP_INLINE KosOpResult eval_ng_region_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -2601,7 +2591,9 @@ KOS_OP_INLINE KosOpResult eval_ng_extent_return(
   if (KosEvalState_StackPUSH(es, val) < 0)
     return EVAL_FATAL();
 
-  return EVAL_DISPATCH();
+  if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
+    return kos_eval_post_opcode_control_returned_after_hook(es);
+  return kos_eval_delivery_done(es);
 }
 
 

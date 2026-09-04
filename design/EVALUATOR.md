@@ -510,14 +510,18 @@ denial, it raises a sync-violation exception. On normal suspension it calls
 and threads them itself, so most returns never reach this section: a
 **plain bytecode parent** (`kos_return_is_plain` → `eval_ng_plain_return`:
 inline retarget, push, then `KOS_THREAD_NEXT` into the parent's instruction at its
-saved pc -- the bytecode frame's own resume); a **discardable extent**
-(LOOP, NS, FOREACH) over such a parent (`kos_return_is_extent_plain` →
-`eval_ng_extent_return`, likewise); and a **resume-carrying parent**
+saved pc -- the bytecode frame's own resume); a **region** over such a
+parent (`kos_return_is_region` → `eval_ng_region_return`: any parent that is
+not a frame, a GEN, or a receiving iteration node, retargeted from the same
+cached facts; the value lands on the region's segment, and a region that
+carries `KOS_DYN_CAP_CONTROL_HOOK` (WITH, WIND) reacts through
+`kos_dynnode_on_control_returned` before `kos_eval_delivery_done`, the rest
+dispatch directly); and a **resume-carrying parent**
 (`kos_return_is_resume` → `kos_return_take_resume`: pop the callee, take the
 resume pair off the parent, `TAILCALL` the resume with the settled value,
-§8.2). Anything else -- a try/with/wind above the frame, a generator or
-iteration-node parent, a delimited-invoke bookmark, an unsettled value --
-signals **`EVAL_RETURN`**, as do the other producers of the signal
+§8.2). Anything else -- an extent above the returning frame, a generator or
+receiving iteration-node parent, a missing retarget cache, an unsettled
+value -- signals **`EVAL_RETURN`**, as do the other producers of the signal
 (POP_PROMPT, the values.c and eval_utils.c termini, a resume's completion).
 
 **`eval_event_return_ng`** handles such a frame return.  When try/with/wind nodes

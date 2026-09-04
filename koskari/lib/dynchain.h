@@ -132,6 +132,10 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION (1u << 3)
 #define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
 #define KOS_DYN_CAP_AWAITS_THUNK_RESULT      (1u << 5)
+/* the node reacts when control returns into it from a frame it owns:
+   kos_dynnode_on_control_returned has work for it (WITH, WIND); a node
+   without it takes a callee's value on its segment and nothing more */
+#define KOS_DYN_CAP_CONTROL_HOOK             (1u << 6)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 #define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
 /** Iteration node (KOS_DYN_NEXT, extended FOREACH stepping) */
