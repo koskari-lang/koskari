@@ -1010,3 +1010,26 @@ tags:
   - macro
   - bool
 notes: bool 0 is falsy; bool expands to compile/truth
+---
+id: conditional-when-not-spell-as-unless-001
+feature: macro/compile/when
+source: |-
+  (begin (define x False) (when (not x) "ran"))
+  
+verify:
+  read: (begin (define x False) (when (not x) "ran"))
+  eval: '"ran"'
+references:
+  - reference/macros/compile-unless.md
+  - reference/macros/compile-when.md
+  - reference/concepts/idiomatic-koskari.md
+stability: evolving
+tags:
+  - conditional
+  - macro
+  - when
+  - unless
+  - branch
+  - surprising
+  - idiom
+notes: "works, but is not the idiom: (when (not EXPR) ...) is spelled (unless EXPR ...). corrective: (unless x \"ran\"). This includes the whole-body filter of list-each, where (unless cond body) is the negated filter."

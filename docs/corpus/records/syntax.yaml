@@ -1379,3 +1379,82 @@ tags:
   - idiom
   - "pragma:reader/dot-attrs"
 notes: requires reader/dot-attrs (baseline on). a dotted suffix on a parenthesized call is one slot expression. koskari/dis.ki uses this for (type x).__name__. z is the baked-in fixture 1
+---
+id: layout-line-many-elements-call-001
+feature: reader/layout
+source: |-
+  f x
+  
+verify:
+  read: (f x)
+references:
+  - reference/reader-layout.md
+  - reference/concepts/layout-and-s-expressions.md
+stability: stable
+tags:
+  - layout
+  - reader
+  - "surface:line"
+  - idiom
+notes: "the layout line rule, half one: a line with MORE THAN ONE element is an implicit call form, so f x is (f x). Half two is layout-line-single-element-attr-002: one element is that expression alone."
+---
+id: layout-line-single-element-attr-002
+feature: reader/layout
+source: |-
+  x.strip
+  
+verify:
+  read: (attr x strip)
+references:
+  - reference/reader-layout.md
+  - reference/concepts/brackets-and-call-convention.md
+stability: stable
+tags:
+  - layout
+  - reader
+  - dot-attr
+  - "surface:line"
+  - surprising
+  - pitfall
+notes: "the layout line rule, half two: a line with exactly ONE element is that expression alone, never a call. x.strip is one element (a dotted name), so it reads as the attribute lookup (attr x strip) and strip is not called. corrective: (x.strip). The same holds for a lone name or a lone literal; only a line with two or more elements becomes a call (layout-line-many-elements-call-001)."
+---
+id: layout-header-lines-join-as-arguments-001
+feature: reader/layout
+source: |-
+  print:
+    foo
+    bar
+    baz
+  
+verify:
+  read: (print foo bar baz)
+references:
+  - reference/reader-layout.md
+  - reference/concepts/layout-and-s-expressions.md
+stability: stable
+tags:
+  - layout
+  - reader
+  - "surface:block"
+  - idiom
+notes: "a header ending in a colon joins its indented lines to itself as arguments, one per line: three single-element lines give (print foo bar baz). Contrast layout-header-inner-line-is-call-002, where the same three elements on ONE inner line are a call."
+---
+id: layout-header-inner-line-is-call-002
+feature: reader/layout
+source: |-
+  print:
+    foo bar baz
+  
+verify:
+  read: (print (foo bar baz))
+references:
+  - reference/reader-layout.md
+  - reference/concepts/layout-and-s-expressions.md
+stability: stable
+tags:
+  - layout
+  - reader
+  - "surface:block"
+  - surprising
+  - pitfall
+notes: "each inner line under a header still follows the line rule: foo bar baz has more than one element, so it is the call (foo bar baz), and print receives ONE argument. To pass three arguments put each on its own line (layout-header-lines-join-as-arguments-001) or write (print foo bar baz)."

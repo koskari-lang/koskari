@@ -69,3 +69,10 @@ keywords (`if`, `and`, `while`) find examples at all.
 Practical query crafting: name the mechanism, use the language's own
 hyphenated names, and add one intent tag word. `for-each destructure`
 beats `how do I loop over pairs`.
+
+For a question about one form, query `search_examples` with that
+form's name alone before anything else: `list-each` returns its
+filter records, where `search_docs` with `list-each dict-each
+comprehension filter` ranks documentation pages that mention any of
+the four words and buries the records. Every extra token widens the
+match; add a second token only to narrow within one form's records.

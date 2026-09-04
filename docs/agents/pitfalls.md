@@ -58,7 +58,53 @@ code does not -- ambient async resolves those calls without help, and
 wrapping them anyway is harmless but unnecessary.
 
 `sorted` is a known exception: Koskari's `sorted` demand-wraps a
-callable `key:` itself, so no wrap is needed there.
+callable `key:` itself, so no wrap is needed there. The exception does
+not extend to `list.sort`, `min`, `max`, or any other python
+higher-order function; a bare lambda there yields coroutine keys and
+`TypeError: '<' not supported between instances of Coroutine`. For an
+item or attribute key, skip the lambda: `itemgetter` and `attrgetter`
+build plain python callables.
+
+```koskari
+(rows.sort key: (itemgetter "k"))          ; idiom
+(rows.sort key: (demand {(item %1 "k")}))  ; also correct
+(rows.sort key: {(item %1 "k")})           ; WRONG: coroutine keys
+(sorted rows key: {(item %1 "k")})         ; fine: sorted wraps
+```
+
+**Builtins that share a stdlib name need no import.** These names
+are bound in every module by the bootstrap; importing them is a
+python reflex, harmless but never needed:
+
+- from `operator`: `itemgetter`, `attrgetter`
+- the natives `map`, `filter`, `partial`, `demand` (see
+  [Native builtins](native-builtins.md))
+- python builtins: `abs`, `chr`, `dir`, `enumerate`, `format`,
+  `getattr`, `hash`, `id`, `input`, `iter`, `len`, `max`, `min`,
+  `next`, `open`, `ord`, `print`, `repr`, `reversed`, `round`,
+  `setattr`, `sorted`, `sum`, `super`, `vars`, `zip`
+- predicates with the `?` suffix in place of the python name:
+  `instance?`, `subclass?`, `callable?`, `hasattr?`, `all?`, `any?`,
+  `None?`, `nil?`
+
+Anything else from the standard library (`json`, `re`, `subprocess`,
+`os.path`, `functools.reduce`, ...) is imported as in python, with
+`import` or `import-from`.
+
+**Comprehensions are the `-each` family, and a whole-body `when` or
+`unless` is the filter.** `list-each`, `dict-each`, and `each` (the
+generator) take a `[var seq]` binding like `for-each`. A body that is
+a single `when` or `unless` form collects inside the conditional, so
+skipped elements leave no `None` gaps; `dict-each` takes the filter as
+a `when:`/`unless:` clause before `key:`/`value:`. The filter does not
+compose: a nested `when` is an ordinary expression whose `None` lands
+in the result, so write one composite condition.
+
+```koskari
+(list-each [x seq] (unless (None? x) x))                  ; filter
+(dict-each [w words] when: (& (len w) 1) key: w value: (len w))
+(list-each [x seq] (when a (when b x)))                    ; WRONG: None gaps
+```
 
 **Call methods on the binding.** When a dict (or any object) is bound
 to a name, call its method directly rather than routing through the
@@ -100,8 +146,9 @@ ride along. Details in
 [Name resolution](../reference/concepts/name-resolution-and-prefixes.md).
 
 **The idiomatic form is the direct one.** Koskari prefers `(when x
-...)` over `(if x ... None)` and direct forms over compositions of
-primitives; see [Idiomatic Koskari](../reference/concepts/idiomatic-koskari.md).
+...)` over `(if x ... None)`, `(unless x ...)` over `(when (not x)
+...)`, and direct forms over compositions of primitives; see
+[Idiomatic Koskari](../reference/concepts/idiomatic-koskari.md).
 
 ---
 
