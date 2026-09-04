@@ -91,6 +91,52 @@ class TestCorpusLoad(unittest.TestCase):
         self.assertIsInstance(loaded['verify']['eval'], str)
 
 
+    def test_yaml_shaped_evals_stay_strings(self):
+        """
+        An eval string that YAML would read as a collection, a date, a
+        number, a sequence entry, or a quoted scalar comes back as the
+        same string
+        """
+
+        shapes = [
+            '{}', '[]', '{"k": 1}', '2026-09-04', '- item', '"a" b',
+            "'x'", '1e3', '0o17', '.inf', '?', '- ', 'a #b',
+        ]
+        for shape in shapes:
+            record = {
+                'id': 'fixture-shape-001',
+                'feature': 'special/compile/cond',
+                'source': '(cond)',
+                'verify': {'eval': shape},
+            }
+            text = corpus_load.dump_record(record)
+            loaded = list(__import__('yaml').safe_load_all(text))[0]
+            self.assertEqual(loaded['verify']['eval'], shape)
+
+
+    def test_round_trip_guard_names_the_field(self):
+        """
+        check_round_trip rejects a document whose field loads back as
+        something other than the record's value
+        """
+
+        record = {
+            'id': 'fixture-guard-001',
+            'feature': 'special/compile/cond',
+            'source': '(cond)',
+            'verify': {'eval': '{}'},
+        }
+        text = (
+            'id: fixture-guard-001\n'
+            'feature: special/compile/cond\n'
+            'source: (cond)\n'
+            'verify:\n'
+            '  eval: {}\n')
+        with self.assertRaises(ValueError) as caught:
+            corpus_load.check_round_trip(record, text)
+        self.assertIn('verify.eval', str(caught.exception))
+
+
     def test_load_records_skips_blank_documents(self):
         """
         Empty YAML documents between separators are ignored
