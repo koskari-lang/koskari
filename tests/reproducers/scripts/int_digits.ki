@@ -1,0 +1,72 @@
+;; Full-stack reproducer: the int fast paths behind the arithmetic and
+;; comparison opcodes, reached through OBJECT_OPERAND and the compare
+;; family with both operands loaded from parameters, so nothing folds
+;; at compile time. The Python side walks a grid of values at the digit
+;; boundaries and compares each result with Python's own operator.
+
+
+define kos_add [a b]:
+    + a b
+
+
+define kos_sub [a b]:
+    - a b
+
+
+define kos_mul [a b]:
+    * a b
+
+
+define kos_mod [a b]:
+    % a b
+
+
+define kos_floordiv [a b]:
+    // a b
+
+
+define kos_and [a b]:
+    & a b
+
+
+define kos_or [a b]:
+    | a b
+
+
+define kos_xor [a b]:
+    ^ a b
+
+
+define kos_lshift [a b]:
+    << a b
+
+
+define kos_rshift [a b]:
+    >> a b
+
+
+define kos_lt [a b]:
+    < a b
+
+
+define kos_le [a b]:
+    <= a b
+
+
+define kos_eq [a b]:
+    == a b
+
+
+define kos_ne [a b]:
+    != a b
+
+
+define kos_gt [a b]:
+    > a b
+
+
+define kos_ge [a b]:
+    >= a b
+
+
+;; The end.

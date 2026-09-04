@@ -1851,6 +1851,8 @@ static inline KosOpResult kos_eval_delivery_done(KosEvalState *es) {
 }
 
 
+#include "eval/eval_electors.c"
+
 /* Cross-handler helpers defined inside handlers.incl after some of
    their users (the include follows opcodes.incl order): the shared
    OBJECT_NEXT step core lives in OBJECT_NEXT.c but VAR_NEXT / FAST_NEXT
@@ -1899,6 +1901,8 @@ static int kos_return_take_resume(
 #undef KOS_OP_REQUIRE_NS
 #undef KOS_OP_HANDLER_COLD
 #undef KOS_OP_HANDLER
+#undef KOS_ELECTOR
+#undef KOS_ELECTOR_PAIR_SAFETYNET
 
 
 /* The handler table finalize resolves each KosOp's fn from.  Position

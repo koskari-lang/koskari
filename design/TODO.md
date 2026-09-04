@@ -44,14 +44,13 @@ real workload that shows the win:
 Ref: [archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
 (§Phase 5).
 
-### Electors: elected handlers on cache slots and dyn nodes
+### Electors: remaining homes
 
-A `KosThreadFn` chosen once for a site's guarded operand (a cache slot
-kind) or an extent's fixed fact (a dyn node field) and tail-called on
-every later execution. The cache-style home measured flat on CALL_FAST
-and was removed; the node-style home is built on YIELD_FROM (drive
-elected at push, one resume per suspension). Next: the FOREACH step and
-NEXT node, then the frame's return arm.
+A `KosThreadFn` chosen once for a site's operands (a cache slot) or an
+extent's fixed fact (a dyn node field) and tail-called on every later
+execution. Open: node-style on the FOREACH step and NEXT node, then the
+frame's return arm; cache-style float and string bodies on the
+arithmetic slots, the compare family, and FAST_ATTR_INPLACE.
 
 Ref: [interpreter/electors.md](interpreter/electors.md).
 

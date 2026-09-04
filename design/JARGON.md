@@ -114,6 +114,21 @@ no suspension machinery. Only a genuine suspension records the
 in-flight iterator and suspends the evaluator. The payload that escapes
 to the event loop has therefore always been stepped once already.
 
+## elector
+
+A handler chosen once for a site or an extent and tail-called on every
+execution after, in place of the ladder the generic handler runs each
+time: the project's answer to CPython's adaptive interpreter, which
+rewrites the opcode in place. Here the instruction record is sealed
+and never changes; the elected body lives in a writable home, a cache
+slot on the code object (a cache-style elector, keyed on the operands
+a site keeps seeing) or a field on a dyn node (a node-style elector,
+fixed at the extent's push). The handler becomes a prologue that loads
+the home and tail-calls, and the body carries its own guard; a guard
+miss runs the generic body, counts toward a demotion, and a demoted
+site re-elects on an interval. "Elect" is the one-time choice,
+"the elected body" what runs. Reference: interpreter/electors.md.
+
 ## extent
 
 A dynamic extent: the span of execution during which a construct is

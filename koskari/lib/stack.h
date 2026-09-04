@@ -240,6 +240,14 @@ int KosStack_Drop1(KosSegment **self);
 
 
 /**
+   Replace the last two elements with val, an owned reference that the
+   stack takes: val holds the lower position before either old element
+   is released. Sets err on underrun.
+*/
+int KosStack_Replace2(KosSegment **self, PyObject *val);
+
+
+/**
    Remove the last count elements. Does not set err.
  */
 int KosStack_DropNoErr(KosSegment **self, size_t count);
@@ -285,6 +293,7 @@ int KosStack_PopTailPtr(KosSegment **self, size_t count, PyObject **dest);
 #define kos_stack_push_steal_fast   KosStack_PUSH
 #define kos_stack_pop_ref_fast      KosStack_PopRef
 #define kos_stack_drop1_fast        KosStack_Drop1
+#define kos_stack_replace2_fast     KosStack_Replace2
 #define kos_stack_drop_noerr_fast   KosStack_DropNoErr
 #define kos_stack_peek_fast         KosStack_Peek
 #define kos_stack_tail_ptr_fast     KosStack_TailPtr
@@ -336,6 +345,22 @@ static inline int kos_stack_drop1_fast(KosSegment **block) {
     return 0;
   }
   return KosStack_Drop1(block);
+}
+
+
+/* No underrun guard: a caller holding a tail pointer of two has
+   already proved the length. */
+static inline int kos_stack_replace2_fast(KosSegment **block, PyObject *val) {
+
+  KosSegment *s = *block;
+  PyObject *left = s->objs[s->len - 2];
+  PyObject *right = s->objs[s->len - 1];
+
+  s->objs[s->len - 2] = val;
+  s->len -= 1;
+  Py_DECREF(right);
+  Py_DECREF(left);
+  return 0;
 }
 
 

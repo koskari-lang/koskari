@@ -16,20 +16,18 @@
 /**
    FAST_INPLACE: arg = EXTRA row index. Row a0 = OPCOUNT
    (op-type high byte, reduce count low byte), a1 = fast slot. Reduce the
-   count operands from the stack into the slot with the operator. Hot: the
-   row decode is inlined; the op-type switch stays out of line in the shared
-   kos_fast_inplace_operand.
+   count operands from the stack into the slot with the operator. Hot.
+   Prologue only: tail-call the body the site's slot elected
+   (eval/eval_electors.c); an empty slot or an ungated site takes the
+   electing function. One cache slot: KOS_CACHE_ELECTOR.
 */
 
 KOS_OP_HANDLER(FAST_INPLACE) {
-  const KosExtra *row = KosOp_ROW(insn);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
 
-  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
-  size_t idx = (size_t) KosExtra_IMM(row, 1);
-
-  if (unlikely(kos_fast_inplace_operand(es, op, idx) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_fast_inplace_elect, es, insn, NULL);
 }
 
 

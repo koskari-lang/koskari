@@ -17,18 +17,18 @@
    OBJECT_OPERAND: arg = OPCOUNT (operator selector in the high byte, operand
    count in the low byte). Pop the count operands and apply the operator,
    pushing the result. Hot: the hottest opcode by both dispatch count and
-   total time, so the row decode is inlined; the op-type switch stays out
-   of line in the shared kos_object_operand.
+   total time. Prologue only: tail-call the body the site's slot elected
+   (eval/eval_electors.c), which carries its own guard; an empty slot or
+   an ungated site takes the electing function, which runs the ladder
+   once and settles the slot. One cache slot: KOS_CACHE_ELECTOR.
 */
 
 KOS_OP_HANDLER(OBJECT_OPERAND) {
-  uint16_t arg = KosOp_ARG(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
-  int count = (int) KosOpCount_COUNT(arg);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
 
-  if (unlikely(kos_object_operand(es, op, count) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_operand_elect, es, insn, NULL);
 }
 
 

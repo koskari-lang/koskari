@@ -19,6 +19,7 @@
 
 
 #include <Python.h>
+#include <limits.h>
 
 #include "bytecode.h"
 #include "hints.h"
@@ -68,10 +69,82 @@ static inline int kos_object_not(PyObject *v) {
 
 /* === PyLong two-operand fast path === */
 
+/* The digit layout of an exact int, read inline. 3.12 and later keep
+   the digit count and the sign in the tag word: the low two bits are
+   the sign (0 positive, 1 zero, 2 negative) and the count sits above
+   three flag bits. Before 3.12 the size word is the signed digit
+   count. Only builds with 30-bit digits take the inline read; a 15-bit
+   digit build goes through the conversion below. */
+#if PyLong_SHIFT == 30
+# define KOS_LONG_INLINE_DIGITS 1
+# if PY_VERSION_HEX >= 0x030C0000
+#  define KOS_LONG_NDIGITS(lo) \
+   ((size_t) ((lo)->long_value.lv_tag >> _PyLong_NON_SIZE_BITS))
+#  define KOS_LONG_NEGATIVE(lo) \
+   (((lo)->long_value.lv_tag & _PyLong_SIGN_MASK) == 2)
+#  define KOS_LONG_DIGITS(lo)   ((lo)->long_value.ob_digit)
+# else
+#  define KOS_LONG_NDIGITS(lo) \
+   ((size_t) (Py_SIZE(lo) < 0 ? -Py_SIZE(lo) : Py_SIZE(lo)))
+#  define KOS_LONG_NEGATIVE(lo) (Py_SIZE(lo) < 0)
+#  define KOS_LONG_DIGITS(lo)   ((lo)->ob_digit)
+# endif
+#else
+# define KOS_LONG_INLINE_DIGITS 0
+#endif
+
+
+/* Read an exact int of at most two digits straight from its digits.
+   Two 30-bit digits are at most 60 bits, so the value always fits and
+   there is no overflow test. Returns 1 with *out set, or 0 for a wider
+   int, which the caller converts the general way. */
+KOS_OP_INLINE int kos_long_as_ll_digits(PyObject *v, long long *out) {
+#if KOS_LONG_INLINE_DIGITS
+  PyLongObject *lo = (PyLongObject *) v;
+  const digit *digits = KOS_LONG_DIGITS(lo);
+  long long mag;
+
+  switch (KOS_LONG_NDIGITS(lo)) {
+    case 0:
+      mag = 0;
+      break;
+    case 1:
+      mag = digits[0];
+      break;
+    case 2:
+      mag = digits[0] | ((long long) digits[1] << PyLong_SHIFT);
+      break;
+    default:
+      return 0;
+  }
+
+  *out = KOS_LONG_NEGATIVE(lo) ? -mag : mag;
+  return 1;
+#else
+  (void) v;
+  (void) out;
+  return 0;
+#endif
+}
+
+
+/* An exact int as a C long long: the two-digit read first, then the
+   general conversion for anything wider. Returns 1 with *out set, or 0
+   when the value does not fit. */
+KOS_OP_INLINE int kos_long_as_ll(PyObject *v, long long *out) {
+  if (likely(kos_long_as_ll_digits(v, out)))
+    return 1;
+
+  int overflow;
+  *out = PyLong_AsLongLongAndOverflow(v, &overflow);
+  return ! overflow;
+}
+
+
 /* Both operands exact ints that fit in a C long long.  Mechanical extraction
    only, with no operator knowledge, so it never re-branches on op.  Returns 1
    with both *a and *b set, or 0 when either operand declines the fast path. */
-static inline int kos_as_ll2(
+KOS_OP_INLINE int kos_as_ll2(
     PyObject *l,
     PyObject *r,
     long long *a,
@@ -79,17 +152,122 @@ static inline int kos_as_ll2(
 
   if (! (PyLong_CheckExact(l) && PyLong_CheckExact(r)))
     return 0;
-
-  int overflow;
-  *a = PyLong_AsLongLongAndOverflow(l, &overflow);
-  if (unlikely(overflow))
+  if (unlikely(! kos_long_as_ll(l, a)) || unlikely(! kos_long_as_ll(r, b)))
     return 0;
-  *b = PyLong_AsLongLongAndOverflow(r, &overflow);
-  if (unlikely(overflow))
-    return 0;
-
   return 1;
 }
+
+
+/* Per-operator two-operand PyLong fast paths.  Each is self-contained and
+   written out explicitly -- no shared operator switch -- so a caller that
+   already knows its operator lands straight in the one arithmetic it needs.
+   When both operands are exact ints and the operation cannot lose precision,
+   compute it directly and skip the PyNumber slot dispatch and longobject digit
+   loops.
+
+   Each operator has two forms. The _ll form takes the two C values a
+   caller has already extracted (an elected int body, which guarded the
+   types itself); the object form runs kos_as_ll2 and then the _ll form,
+   for the operator cores.
+
+   Return convention (all of them): 1 with *out set (new ref) when handled, 0
+   when declined (*out untouched), -1 with an error set on allocation failure
+   (*out NULL).  Bitwise AND/OR/XOR on two's-complement match Python int
+   semantics for any in-range operands.  Shifts require non-negative operands
+   (C >> on a negative is implementation-defined; a negative count must raise).
+   Modulo requires a non-negative dividend and positive divisor so C % matches
+   Python remainder.  Overflow on +, -, *, << declines rather than widening.
+   Divide, floor-divide, matmul, and power have no fast path. */
+
+KOS_OP_INLINE int kos_long_fast_result(long long res, PyObject **out) {
+  *out = PyLong_FromLongLong(res);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+KOS_OP_INLINE int long_fast_add_ll(long long a, long long b, PyObject **out) {
+  long long res;
+  if (unlikely(__builtin_add_overflow(a, b, &res)))
+    return 0;
+  return kos_long_fast_result(res, out);
+}
+
+
+KOS_OP_INLINE int long_fast_subtract_ll(long long a, long long b, PyObject **out) {
+  long long res;
+  if (unlikely(__builtin_sub_overflow(a, b, &res)))
+    return 0;
+  return kos_long_fast_result(res, out);
+}
+
+
+KOS_OP_INLINE int long_fast_multiply_ll(long long a, long long b, PyObject **out) {
+  long long res;
+  if (unlikely(__builtin_mul_overflow(a, b, &res)))
+    return 0;
+  return kos_long_fast_result(res, out);
+}
+
+
+KOS_OP_INLINE int long_fast_modulo_ll(long long a, long long b, PyObject **out) {
+  if (unlikely(a < 0 || b <= 0))
+    return 0;
+  return kos_long_fast_result(a % b, out);
+}
+
+
+KOS_OP_INLINE int long_fast_bit_and_ll(long long a, long long b, PyObject **out) {
+  return kos_long_fast_result(a & b, out);
+}
+
+
+KOS_OP_INLINE int long_fast_bit_or_ll(long long a, long long b, PyObject **out) {
+  return kos_long_fast_result(a | b, out);
+}
+
+
+KOS_OP_INLINE int long_fast_bit_xor_ll(long long a, long long b, PyObject **out) {
+  return kos_long_fast_result(a ^ b, out);
+}
+
+
+KOS_OP_INLINE int long_fast_bit_left_ll(long long a, long long b, PyObject **out) {
+  if (unlikely(a < 0 || b < 0 || b >= 63))
+    return 0;
+  if (unlikely(a != 0 && a > (LLONG_MAX >> b)))
+    return 0;
+  return kos_long_fast_result(a << b, out);
+}
+
+
+KOS_OP_INLINE int long_fast_bit_right_ll(long long a, long long b, PyObject **out) {
+  if (unlikely(a < 0 || b < 0))
+    return 0;
+  return kos_long_fast_result((b >= 63) ? 0 : (a >> b), out);
+}
+
+
+/* The object forms: extract, then the _ll form. */
+#define KOS_LONG_FAST_OBJECT_FORM(NAME)                                 \
+  KOS_OP_INLINE int long_fast_##NAME(                                   \
+      PyObject *l, PyObject *r, PyObject **out) {                       \
+    long long a, b;                                                     \
+    if (! kos_as_ll2(l, r, &a, &b))                                     \
+      return 0;                                                         \
+    return long_fast_##NAME##_ll(a, b, out);                            \
+  }
+
+KOS_LONG_FAST_OBJECT_FORM(add)
+KOS_LONG_FAST_OBJECT_FORM(subtract)
+KOS_LONG_FAST_OBJECT_FORM(multiply)
+KOS_LONG_FAST_OBJECT_FORM(modulo)
+KOS_LONG_FAST_OBJECT_FORM(bit_and)
+KOS_LONG_FAST_OBJECT_FORM(bit_or)
+KOS_LONG_FAST_OBJECT_FORM(bit_xor)
+KOS_LONG_FAST_OBJECT_FORM(bit_left)
+KOS_LONG_FAST_OBJECT_FORM(bit_right)
+
+#undef KOS_LONG_FAST_OBJECT_FORM
 
 
 /**

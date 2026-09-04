@@ -143,32 +143,42 @@ static KOS_NOINLINE int kos_object_inplace(
 /* === In-place slot and name cores === */
 
 
-/* Augmented assignment to a fast-slot binding: obj = deref(slot); obj OP= rhs;
-   store back. Binary (the accumulator is the slot value, one rhs off the
-   stack). Routes through the in-place reducing operator. Returns 0/-1. */
-static KOS_NOINLINE int kos_fast_inplace_operand(
-    KosEvalState *es, KosOperand op, size_t idx) {
+/* Augmented assignment to a fast-slot binding with a borrowed rhs:
+   obj = deref(slot); obj OP= rhs; store back. Routes through the
+   in-place reducing operator. Returns 0/-1. The core behind
+   FAST_INPLACE (rhs popped off the stack) and FAST_INPLACE_CONST (rhs
+   a pool constant). */
+static KOS_NOINLINE int kos_fast_inplace_apply(
+    KosEvalState *es, KosOperand op, size_t idx, PyObject *rhs) {
 
   PyObject *ns = KosEvalState_NAMESPACE(es);
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (unlikely(! obj))
     return -1;
 
-  PyObject *rhs = KosEvalState_StackPopRef(es);
-  if (unlikely(! rhs)) {
-    Py_DECREF(obj);
-    return -1;
-  }
-
   PyObject *pair[2] = { obj, rhs };
   PyObject *result = kos_inplace_reduce(op, pair, 2);
 
   Py_DECREF(obj);
-  Py_DECREF(rhs);
   if (unlikely(! result))
     return -1;
 
   return kos_ns_fast_store_steal(ns, idx, result);
+}
+
+
+/* Augmented assignment to a fast-slot binding from the stack: one rhs
+   popped, then the apply. Returns 0/-1. */
+static KOS_NOINLINE int kos_fast_inplace_operand(
+    KosEvalState *es, KosOperand op, size_t idx) {
+
+  PyObject *rhs = KosEvalState_StackPopRef(es);
+  if (unlikely(! rhs))
+    return -1;
+
+  int res = kos_fast_inplace_apply(es, op, idx, rhs);
+  Py_DECREF(rhs);
+  return res;
 }
 
 

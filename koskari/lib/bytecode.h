@@ -422,6 +422,7 @@ typedef enum KosCacheKind {
   KOS_CACHE_METHOD,      /* method-resolution layout (attribute/method lookup) */
   KOS_CACHE_FIELD,       /* attribute-storage location (load/store/delete) */
   KOS_CACHE_MATCHER,     /* thawed Matcher for a MATCH_CASE arm */
+  KOS_CACHE_ELECTOR,     /* handler elected for the site */
 } KosCacheKind;
 
 
@@ -452,6 +453,18 @@ typedef enum KosFieldMode {
   KOS_FIELD_DICT_HINT,        /* materialized instance __dict__; index = keys hint */
   KOS_FIELD_MEGAMORPHIC,      /* churn bypass: skip guard, never populate */
 } KosFieldMode;
+
+
+/**
+   State of the KOS_CACHE_ELECTOR layout. ELECTED holds the body the
+   site's family chose. MEGAMORPHIC is the churn bypass: the body is the
+   family's generic one, which runs the ladder on every execution and
+   never re-elects. See design/interpreter/electors.md.
+*/
+typedef enum KosElectorMode {
+  KOS_ELECTOR_ELECTED = 0,
+  KOS_ELECTOR_MEGAMORPHIC,
+} KosElectorMode;
 
 
 /**
@@ -521,6 +534,16 @@ struct KosCacheSlot {
     struct {
       PyObject *matcher;       /* thawed KosMatcher; owned, may be NULL */
     } matcher;
+
+    /* KOS_CACHE_ELECTOR: the handler elected for the site. ``fn`` is a
+       static function that carries its own guard, so the handler's hot
+       path is the load and the tail call. There are NO owned references;
+       the teardown arm is a no-op. */
+    struct {
+      KosThreadFn fn;          /* elected body; the generic body once demoted */
+      uint8_t misses;          /* guard misses since the election */
+      uint8_t mode;            /* KosElectorMode */
+    } elector;
   } u;
 };
 
