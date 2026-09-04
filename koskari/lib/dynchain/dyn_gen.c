@@ -255,8 +255,15 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
     }
   }
 
-  if (KosEvalState_StackPushRef(es, Py_None) < 0)
-    return -1;
+  /* The suspended yield expression's placeholder, replaced by the sent
+     value at the drive. A frame waiting on a resume (a delegation in
+     flight) takes its delivery through the pending slot instead. */
+  {
+    KosDynFrame *surfaced = KosEvalState_FRAME(es);
+    if (! (surfaced && KosDynFrame_RESUME_FN(surfaced))
+        && KosEvalState_StackPushRef(es, Py_None) < 0)
+      return -1;
+  }
 
   SAYF("[gen] install DONE dyn_top=%p (%s) frame_top=%p chain: ",
        (void *) KosEvalState_DYN_TOP(es),

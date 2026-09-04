@@ -727,6 +727,17 @@ struct KosEvalState {
    first instruction. Frame entry is a cooperation point because a
    tail-recursive loop has no CONTINUE.
 */
+/**
+   True when a just-installed frame can be threaded into at its pc: it
+   has code and is not waiting on a resume. A frame suspended inside a
+   yield-from carries the node's phase resume, and its delivery must
+   run first, so the installer bounces through the prologue instead.
+*/
+static inline int kos_frame_threads(KosDynFrame *nf) {
+  return nf && KosDynFrame_CODE(nf) && ! KosDynFrame_RESUME_FN(nf);
+}
+
+
 static inline KosOpResult kos_call_installed(KosEvalState *es) {
   return KOS_EVAL_BREAKER_UP(es) ? EVAL_REPROLOGUE() : EVAL_NORMAL();
 }

@@ -53,6 +53,7 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_REQ(node)->iter = NULL;
   KosDynYieldFrom_REQ(node)->mode = KOS_IREQ_IDLE;
   KosDynYieldFrom_DRIVE(node) = NULL;
+  KosDynYieldFrom_RESUME(node) = NULL;
   return node;
 }
 
@@ -136,6 +137,7 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
   *KosDynYieldFrom_REQ(clone) = *KosDynYieldFrom_REQ(node);
   Py_XINCREF(KosDynYieldFrom_REQ(clone)->iter);
   KosDynYieldFrom_DRIVE(clone) = KosDynYieldFrom_DRIVE(node);
+  KosDynYieldFrom_RESUME(clone) = KosDynYieldFrom_RESUME(node);
 
   return clone;
 }
@@ -143,13 +145,13 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 
 /**
    Flattened koskari async gen delegate yielded a value at the iterator
-   iteration node.  Hand the value to the delegating generator's frame and stop:
-   control returns to the eval loop, which re-dispatches the YIELD_FROM opcode
-   in EMIT phase.  The handler then re-emits the value as this generator's own
-   yield (yield_from_emit_yield), and the normal yield walk freezes this
-   generator's GEN node and delivers onward to the next receiver.  Each hop is
-   one walk plus one delivery, so nested for-each / yield-from / generator
-   stacks compose to arbitrary depth.
+   iteration node.  Stage the value for the delegating frame's phase
+   resume and stop: the prologue's delivery step runs the resume in EMIT
+   phase, which re-emits the value as this generator's own yield, and
+   the normal yield walk freezes this generator's GEN node and delivers
+   onward to the next receiver.  Each hop is one walk plus one delivery,
+   so nested for-each / yield-from / generator stacks compose to
+   arbitrary depth.
 */
 int kos_dyn_yield_from_deliver_inner_yield(
     KosEvalState *es, KosDynYieldFrom *yf,
@@ -164,11 +166,12 @@ int kos_dyn_yield_from_deliver_inner_yield(
     return -1;
   }
 
-  if (KosEvalState_StackPushRef(es, inner_val) < 0) {
+  if (KosEvalState_PENDING_VALUE(es)) {
+    Py_DECREF(inner_val);
+    PyErr_SetString(PyExc_SystemError,
+                    "yield-from inner delivery over a staged one");
     return -1;
   }
-  Py_DECREF(inner_val);
-
   {
     PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
     KosIterSlots *islots;
@@ -176,9 +179,11 @@ int kos_dyn_yield_from_deliver_inner_yield(
       islots->ki_finish(delegate, 0);
   }
   kos_dyn_iter_request_set_mode((KosDynNode *) yf, KOS_IREQ_IDLE);
-
   KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EMIT);
-  KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
+  KosEvalState_PENDING_VALUE(es) = inner_val;
+  KosDynFrame_RESUME_FN(frame) = KosDynYieldFrom_RESUME(yf);
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  KosDynFrame_RESUME_NAME(frame) = "yield-from";
   return 0;
 }
 
@@ -315,8 +320,22 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
    Close delegate on pop (uninstall path). Callers: kos_dyn_uninstall_handler.
 */
 void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node) {
-  if (node)
+  if (node) {
+    kos_dyn_yield_from_disarm(es, node);
     kos_yieldfrom_close_delegate(node);
+  }
+}
+
+
+void kos_dyn_yield_from_disarm(KosEvalState *es, KosDynYieldFrom *node) {
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+
+  if (frame && node
+      && KosDynFrame_RESUME_FN(frame) == KosDynYieldFrom_RESUME(node)) {
+    KosDynFrame_RESUME_FN(frame) = NULL;
+    KosDynFrame_RESUME_STATE(frame) = NULL;
+    KosDynFrame_RESUME_NAME(frame) = NULL;
+  }
 }
 
 

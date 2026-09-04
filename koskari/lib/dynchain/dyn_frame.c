@@ -78,9 +78,16 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   /* borrowed unwind cache is meaningless off the source's chain */
   KosDynFrame_BACK_FRAME(clone) = NULL;
 
-  /* A CPS resume has no clone story yet -- no caller produces a
-     resume_state a clone could copy -- so capture across a
-     resume-carrying frame refuses by name. */
+  /* A node resume (NULL state: the node it serves is dyn_top above the
+     frame, cloned with the chain) copies as it is. A step resume's
+     state is the step's own and has no clone story, so capture across
+     that frame refuses by name. */
+  if (KosDynFrame_RESUME_FN(frame) && ! KosDynFrame_RESUME_STATE(frame)) {
+    KosDynFrame_RESUME_FN(clone) = KosDynFrame_RESUME_FN(frame);
+    KosDynFrame_RESUME_STATE(clone) = NULL;
+    KosDynFrame_RESUME_NAME(clone) = KosDynFrame_RESUME_NAME(frame);
+    return clone;
+  }
   if (KosDynFrame_RESUME_FN(frame)) {
     PyErr_Format(PyExc_RuntimeError,
                  "cannot capture a continuation across native"

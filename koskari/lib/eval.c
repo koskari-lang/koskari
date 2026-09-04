@@ -562,6 +562,22 @@ static KosEvalMode revive_yield(
        (void *) KosEvalState_DYN_TOP(es),
        (void *) KosEvalState_FRAME(es));
 
+  /* A frame waiting on a resume (a yield-from delegation in flight)
+     took no placeholder at install and takes its delivery through the
+     pending slot; a throw raises at the frame, and the raise walk
+     disarms the resume when it unwinds the delegation's node. */
+  if (KosEvalState_FRAME(es)
+      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+    if (throw_exc != NULL) {
+      PyErr_SetObject(throw_typ, throw_exc);
+      return KOS_MODE_EXCEPTION;
+    }
+    to_push = (send_val != NULL) ? send_val : Py_None;
+    Py_INCREF(to_push);
+    Py_XDECREF(KosEvalState_PENDING_VALUE(es));
+    KosEvalState_PENDING_VALUE(es) = to_push;
+    return KOS_MODE_NORMAL;
+  }
   if (throw_exc != NULL) {
     if (KosEvalState_FRAME(es))
       Py_XDECREF(KosEvalState_StackPopRef(es));
@@ -2234,8 +2250,9 @@ entry_mode_dispatch:
     return pr;
   }
 
-  /* Revived with a value and the top frame is waiting on one: deliver. */
-  if (send_val != NULL
+  /* Revived with a value (given, or staged by the revive) and the top
+     frame is waiting on one: deliver. */
+  if ((send_val != NULL || KosEvalState_PENDING_VALUE(es))
       && mode == KOS_MODE_NORMAL
       && KosEvalState_FRAME(es)
       && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
@@ -2900,17 +2917,6 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosOpResult res = EVAL_NORMAL();
   int have_res = 0;
 
-#if KOS_EVAL_SAFETYNET
-  /* Interim invariant until bytecode's builtin resume exists: only
-     codeless frames carry resumes. The return fast paths and the
-     prologue ordering both lean on it. */
-  if (KosDynFrame_CODE(frame)) {
-    PyErr_SetString(PyExc_SystemError,
-                    "resume set on a code-carrying frame");
-    return EVAL_RAISE();
-  }
-#endif
-
   KosDynFrame_RESUME_FN(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
@@ -2921,7 +2927,10 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   val = KosEvalState_PENDING_VALUE(es);
   KosEvalState_PENDING_VALUE(es) = NULL;
 
-  if (! val && KosEvalState_StackLen(es) > 0) {
+  /* Only a code-less step frame keeps its delivery on its stack; a
+     bytecode frame's stack holds its operands, and its delivery is
+     always the slot. */
+  if (! val && ! KosDynFrame_CODE(frame) && KosEvalState_StackLen(es) > 0) {
     val = KosEvalState_StackPopRef(es);
     if (! val) {
       res = EVAL_RAISE();
@@ -2941,7 +2950,9 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
     }
   }
 
-  if (val && ! have_res) {
+  /* A node resume (NULL state: a yield-from phase) takes its delivery
+     as it is: a delegate's yielded value is data, never awaited here. */
+  if (val && ! have_res && state) {
     switch (KosEval_ResultIsValue(val)) {
       case 1:
         break;  /* settled: deliver it below */

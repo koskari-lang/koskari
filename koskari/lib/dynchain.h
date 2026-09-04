@@ -420,6 +420,11 @@ struct KosDynNode {
          so no guard. Set by the YIELD_FROM handler, which owns the four
          bodies. See design/interpreter/electors.md. */
       void *drive;
+      /* KosThreadFn: the phase resume, armed on the delegating frame at
+         every suspension of the delegation (an emitted yield, an await,
+         a flattened inner yield) and run by the prologue's delivery
+         step with what arrived. Set beside drive. */
+      void *resume;
     } yield_from;
     struct {
       PyObject *bindings;  /* PyDict: key -> value (what we bind; keys from ParamRef) */
@@ -1935,6 +1940,13 @@ void kos_dyn_ns_unwind(KosEvalState *es, KosDynNs *node);
 
 void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
 
+/**
+   Clear the node's phase resume from the live frame when it is armed
+   there: the delegation is ending (finished, or unwound by a raise),
+   and the frame threads on from its pc. Idempotent.
+*/
+void kos_dyn_yield_from_disarm(KosEvalState *es, KosDynYieldFrom *node);
+
 
 /**
    Close the delegate of a YIELD_FROM dyn node (on unwind or error).
@@ -2517,14 +2529,15 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynNext_N(nd) (((KosDynNode *)(nd))->u.next.n)
 #define KosDynNext_REQ(nd) (&((KosDynNode *)(nd))->u.next.req)
 
-/* KosYfPhase: state machine for stack-based resume inject consumption */
+/* KosYfPhase: what the node's phase resume expects at the next delivery
+   to the delegating frame; set at each suspension of the delegation. */
 typedef enum KosYfPhase {
   KOS_YF_PHASE_DRIVING = 0,
   KOS_YF_PHASE_EXPECT_SEND,
   KOS_YF_PHASE_EXPECT_AWAIT,
   /* A flattened koskari-gen delegate handed us a value at the iterator
-     node; the next handler dispatch re-emits it as this generator's own
-     yield (see kos_dyn_yield_from_deliver_inner_yield). */
+     node; the phase resume re-emits it as this generator's own yield
+     (see kos_dyn_yield_from_deliver_inner_yield). */
   KOS_YF_PHASE_EMIT,
 } KosYfPhase;
 
@@ -2564,6 +2577,7 @@ enum {
 #define KosDynYieldFrom_INFLIGHT(n)    (((KosDynNode *)(n))->u.yield_from.inflight)
 #define KosDynYieldFrom_REQ(n)         (&((KosDynNode *)(n))->u.yield_from.req)
 #define KosDynYieldFrom_DRIVE(n)       (((KosDynNode *)(n))->u.yield_from.drive)
+#define KosDynYieldFrom_RESUME(n)      (((KosDynNode *)(n))->u.yield_from.resume)
 
 /**
    The iteration request record embedded in a receiver-capable node, or
