@@ -78,8 +78,10 @@ static inline int kos_object_not(PyObject *v) {
 #if PyLong_SHIFT == 30
 # define KOS_LONG_INLINE_DIGITS 1
 # if PY_VERSION_HEX >= 0x030C0000
-#  define KOS_LONG_NDIGITS(lo)  ((size_t) ((lo)->long_value.lv_tag >> 3))
-#  define KOS_LONG_NEGATIVE(lo) (((lo)->long_value.lv_tag & 3) == 2)
+#  define KOS_LONG_NDIGITS(lo) \
+   ((size_t) ((lo)->long_value.lv_tag >> _PyLong_NON_SIZE_BITS))
+#  define KOS_LONG_NEGATIVE(lo) \
+   (((lo)->long_value.lv_tag & _PyLong_SIGN_MASK) == 2)
 #  define KOS_LONG_DIGITS(lo)   ((lo)->long_value.ob_digit)
 # else
 #  define KOS_LONG_NDIGITS(lo) \
@@ -163,6 +165,11 @@ KOS_OP_INLINE int kos_as_ll2(
    compute it directly and skip the PyNumber slot dispatch and longobject digit
    loops.
 
+   Each operator has two forms. The _ll form takes the two C values a
+   caller has already extracted (an elected int body, which guarded the
+   types itself); the object form runs kos_as_ll2 and then the _ll form,
+   for the operator cores.
+
    Return convention (all of them): 1 with *out set (new ref) when handled, 0
    when declined (*out untouched), -1 with an error set on allocation failure
    (*out NULL).  Bitwise AND/OR/XOR on two's-complement match Python int
@@ -172,99 +179,95 @@ KOS_OP_INLINE int kos_as_ll2(
    Python remainder.  Overflow on +, -, *, << declines rather than widening.
    Divide, floor-divide, matmul, and power have no fast path. */
 
-KOS_OP_INLINE int long_fast_add(PyObject *l, PyObject *r, PyObject **out) {
-  long long a, b, res;
-  if (! kos_as_ll2(l, r, &a, &b))
-    return 0;
+KOS_OP_INLINE int kos_long_fast_result(long long res, PyObject **out) {
+  *out = PyLong_FromLongLong(res);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+KOS_OP_INLINE int long_fast_add_ll(long long a, long long b, PyObject **out) {
+  long long res;
   if (unlikely(__builtin_add_overflow(a, b, &res)))
     return 0;
-  *out = PyLong_FromLongLong(res);
-  return likely(*out != NULL) ? 1 : -1;
+  return kos_long_fast_result(res, out);
 }
 
 
-KOS_OP_INLINE int long_fast_subtract(PyObject *l, PyObject *r, PyObject **out) {
-  long long a, b, res;
-  if (! kos_as_ll2(l, r, &a, &b))
-    return 0;
+KOS_OP_INLINE int long_fast_subtract_ll(long long a, long long b, PyObject **out) {
+  long long res;
   if (unlikely(__builtin_sub_overflow(a, b, &res)))
     return 0;
-  *out = PyLong_FromLongLong(res);
-  return likely(*out != NULL) ? 1 : -1;
+  return kos_long_fast_result(res, out);
 }
 
 
-KOS_OP_INLINE int long_fast_multiply(PyObject *l, PyObject *r, PyObject **out) {
-  long long a, b, res;
-  if (! kos_as_ll2(l, r, &a, &b))
-    return 0;
+KOS_OP_INLINE int long_fast_multiply_ll(long long a, long long b, PyObject **out) {
+  long long res;
   if (unlikely(__builtin_mul_overflow(a, b, &res)))
     return 0;
-  *out = PyLong_FromLongLong(res);
-  return likely(*out != NULL) ? 1 : -1;
+  return kos_long_fast_result(res, out);
 }
 
 
-KOS_OP_INLINE int long_fast_modulo(PyObject *l, PyObject *r, PyObject **out) {
-  long long a, b;
-  if (! kos_as_ll2(l, r, &a, &b))
-    return 0;
+KOS_OP_INLINE int long_fast_modulo_ll(long long a, long long b, PyObject **out) {
   if (unlikely(a < 0 || b <= 0))
     return 0;
-  *out = PyLong_FromLongLong(a % b);
-  return likely(*out != NULL) ? 1 : -1;
+  return kos_long_fast_result(a % b, out);
 }
 
 
-KOS_OP_INLINE int long_fast_bit_and(PyObject *l, PyObject *r, PyObject **out) {
-  long long a, b;
-  if (! kos_as_ll2(l, r, &a, &b))
-    return 0;
-  *out = PyLong_FromLongLong(a & b);
-  return likely(*out != NULL) ? 1 : -1;
+KOS_OP_INLINE int long_fast_bit_and_ll(long long a, long long b, PyObject **out) {
+  return kos_long_fast_result(a & b, out);
 }
 
 
-KOS_OP_INLINE int long_fast_bit_or(PyObject *l, PyObject *r, PyObject **out) {
-  long long a, b;
-  if (! kos_as_ll2(l, r, &a, &b))
-    return 0;
-  *out = PyLong_FromLongLong(a | b);
-  return likely(*out != NULL) ? 1 : -1;
+KOS_OP_INLINE int long_fast_bit_or_ll(long long a, long long b, PyObject **out) {
+  return kos_long_fast_result(a | b, out);
 }
 
 
-KOS_OP_INLINE int long_fast_bit_xor(PyObject *l, PyObject *r, PyObject **out) {
-  long long a, b;
-  if (! kos_as_ll2(l, r, &a, &b))
-    return 0;
-  *out = PyLong_FromLongLong(a ^ b);
-  return likely(*out != NULL) ? 1 : -1;
+KOS_OP_INLINE int long_fast_bit_xor_ll(long long a, long long b, PyObject **out) {
+  return kos_long_fast_result(a ^ b, out);
 }
 
 
-KOS_OP_INLINE int long_fast_bit_left(PyObject *l, PyObject *r, PyObject **out) {
-  long long a, b;
-  if (! kos_as_ll2(l, r, &a, &b))
-    return 0;
+KOS_OP_INLINE int long_fast_bit_left_ll(long long a, long long b, PyObject **out) {
   if (unlikely(a < 0 || b < 0 || b >= 63))
     return 0;
   if (unlikely(a != 0 && a > (LLONG_MAX >> b)))
     return 0;
-  *out = PyLong_FromLongLong(a << b);
-  return likely(*out != NULL) ? 1 : -1;
+  return kos_long_fast_result(a << b, out);
 }
 
 
-KOS_OP_INLINE int long_fast_bit_right(PyObject *l, PyObject *r, PyObject **out) {
-  long long a, b;
-  if (! kos_as_ll2(l, r, &a, &b))
-    return 0;
+KOS_OP_INLINE int long_fast_bit_right_ll(long long a, long long b, PyObject **out) {
   if (unlikely(a < 0 || b < 0))
     return 0;
-  *out = PyLong_FromLongLong((b >= 63) ? 0 : (a >> b));
-  return likely(*out != NULL) ? 1 : -1;
+  return kos_long_fast_result((b >= 63) ? 0 : (a >> b), out);
 }
+
+
+/* The object forms: extract, then the _ll form. */
+#define KOS_LONG_FAST_OBJECT_FORM(NAME)                                 \
+  KOS_OP_INLINE int long_fast_##NAME(                                   \
+      PyObject *l, PyObject *r, PyObject **out) {                       \
+    long long a, b;                                                     \
+    if (! kos_as_ll2(l, r, &a, &b))                                     \
+      return 0;                                                         \
+    return long_fast_##NAME##_ll(a, b, out);                            \
+  }
+
+KOS_LONG_FAST_OBJECT_FORM(add)
+KOS_LONG_FAST_OBJECT_FORM(subtract)
+KOS_LONG_FAST_OBJECT_FORM(multiply)
+KOS_LONG_FAST_OBJECT_FORM(modulo)
+KOS_LONG_FAST_OBJECT_FORM(bit_and)
+KOS_LONG_FAST_OBJECT_FORM(bit_or)
+KOS_LONG_FAST_OBJECT_FORM(bit_xor)
+KOS_LONG_FAST_OBJECT_FORM(bit_left)
+KOS_LONG_FAST_OBJECT_FORM(bit_right)
+
+#undef KOS_LONG_FAST_OBJECT_FORM
 
 
 /**

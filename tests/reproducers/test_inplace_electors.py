@@ -91,6 +91,19 @@ class TestInplaceElectors(unittest.IsolatedAsyncioTestCase):
             await mod.mixed_site(['a', 'b'])
 
 
+    async def test_unbound_accumulator_after_election(self):
+        """
+        A site elected on a bound int raises NameError when the slot is
+        unbound on a later call, and serves the next bound call
+        """
+
+        mod = await self.load_module()
+        self.assertEqual(await mod.unbound_after(True), 11)
+        with self.assertRaises(NameError):
+            await mod.unbound_after(False)
+        self.assertEqual(await mod.unbound_after(True), 11)
+
+
     async def test_masked_accumulate(self):
         mod = await self.load_module()
         acc = 1

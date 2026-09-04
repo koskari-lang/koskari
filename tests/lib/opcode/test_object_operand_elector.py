@@ -181,14 +181,58 @@ class TestObjectOperandElector(CevalTest):
 
     async def test_site_elected_generic_serves_ints_later(self):
         """
-        A site whose first operands were not ints stays on the generic
-        body and still returns int results afterwards
+        A site whose first operands were not ints runs the generic body
+        and returns int results afterwards, across the interval at which
+        the generic body re-elects
         """
 
         site, _ = make_site()
         self.assertEqual(await site(0.5, 0.25), 0.75)
-        for i in range(10):
+        for i in range(600):
             self.assertEqual(await site(i, 1), i + 1)
+        self.assertEqual(await site(0.5, 0.25), 0.75)
+
+
+    async def test_demoted_site_re_elects_and_still_serves_every_type(self):
+        """
+        A site demoted by type misses keeps returning the right results
+        for ints and floats across the interval at which it re-elects
+        """
+
+        site, _ = make_site()
+        for _ in range(10):
+            self.assertEqual(await site(1, 2), 3)
+            self.assertEqual(await site(1.5, 2.0), 3.5)
+        for i in range(600):
+            self.assertEqual(await site(i, 2), i + 2)
+        self.assertEqual(await site(1.5, 2.0), 3.5)
+
+
+    async def test_bool_operand_at_an_elected_site(self):
+        """
+        A bool is not an exact int: it misses the guard and reduces
+        through the generic body to an int result, as the ladder does
+        """
+
+        site, _ = make_site()
+        self.assertEqual(await site(1, 2), 3)
+        result = await site(True, 1)
+        self.assertEqual(result, 2)
+        self.assertIs(type(result), int)
+        self.assertEqual(await site(3, 4), 7)
+
+
+    async def test_ungated_polymorphic_site(self):
+        """
+        With caching gated off a site alternating types returns the
+        right results; the miss path has no slot to count in
+        """
+
+        site, _ = make_site(cache=False)
+        for i in range(30):
+            self.assertEqual(await site(i, 1), i + 1)
+            self.assertEqual(await site(float(i), 0.5), i + 0.5)
+            self.assertEqual(await site('a', 'b'), 'ab')
 
 
     async def test_non_binary_site_reduces(self):

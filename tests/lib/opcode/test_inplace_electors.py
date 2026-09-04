@@ -62,19 +62,19 @@ POWER_PAIRS = [
 ]
 
 
-def make_object_site(opname='ADD', cache=True):
+def make_object_site(opname='ADD', cache=True, count=2):
     """
-    A function of (a, b) reducing them through one OBJECT_INPLACE site
+    A function of count positionals reducing them through one
+    OBJECT_INPLACE site
     """
 
-    code = build_code([
-        ['FAST', 0],
-        ['FAST', 1],
-        ['OBJECT_INPLACE_' + opname, 2],
-        ['RETURN', 1],
-    ], local_syms=('a', 'b'), name='site', cache=cache)
-    nspec = NamespaceSpec(None, ('a', 'b'), ())
-    fn = make_callable(code, nspec.get_namespace(None), FormalsSpec(('a', 'b')))
+    syms = tuple(f'v{i}' for i in range(count))
+    instr = [['FAST', i] for i in range(count)]
+    instr.append(['OBJECT_INPLACE_' + opname, count])
+    instr.append(['RETURN', 1])
+    code = build_code(instr, local_syms=syms, name='site', cache=cache)
+    nspec = NamespaceSpec(None, syms, ())
+    fn = make_callable(code, nspec.get_namespace(None), FormalsSpec(syms))
     return fn, code
 
 
@@ -183,6 +183,32 @@ class InplaceElectorMixin:
         self.assertEqual(await self.apply(site, 8, 3), 2)
 
 
+    async def test_bool_operand_at_an_elected_site(self):
+        site, _ = self.make('ADD')
+        self.assertEqual(await self.apply(site, 1, 2), 3)
+        result = await self.apply(site, True, 1)
+        self.assertEqual(result, 2)
+        self.assertIs(type(result), int)
+        self.assertEqual(await self.apply(site, 3, 4), 7)
+
+
+    async def test_ungated_polymorphic_site(self):
+        site, _ = self.make('ADD', cache=False)
+        for i in range(30):
+            self.assertEqual(await self.apply(site, i, 1), i + 1)
+            self.assertEqual(await self.apply(site, float(i), 0.5), i + 0.5)
+
+
+    async def test_demoted_site_re_elects_and_serves_every_type(self):
+        site, _ = self.make('ADD')
+        for _ in range(10):
+            self.assertEqual(await self.apply(site, 1, 2), 3)
+            self.assertEqual(await self.apply(site, 1.5, 2.0), 3.5)
+        for i in range(600):
+            self.assertEqual(await self.apply(site, i, 2), i + 2)
+        self.assertEqual(await self.apply(site, 1.5, 2.0), 3.5)
+
+
 class TestObjectInplaceElector(InplaceElectorMixin, CevalTest):
     """
     OBJECT_INPLACE: a stack pair reduced in place
@@ -196,6 +222,18 @@ class TestObjectInplaceElector(InplaceElectorMixin, CevalTest):
 
     def pairs_for(self, pairs):
         return pairs
+
+
+    async def test_non_binary_site_reduces(self):
+        """
+        A site of three operands is not electable and reduces in place
+        as before
+        """
+
+        site, _ = make_object_site(count=3)
+        for _ in range(5):
+            self.assertEqual(await site(1, 2, 3), 6)
+            self.assertEqual(await site([1], [2], [3]), [1, 2, 3])
 
 
 class TestFastInplaceElector(InplaceElectorMixin, CevalTest):
@@ -275,6 +313,31 @@ class TestFastInplaceConstElector(InplaceElectorMixin, CevalTest):
             self.assertEqual(await site(1.5), 4.5)
         for i in range(20):
             self.assertEqual(await site(i), i + 3)
+
+
+    async def test_bool_operand_at_an_elected_site(self):
+        site, _ = make_const_site('ADD', 3)
+        self.assertEqual(await site(1), 4)
+        result = await site(True)
+        self.assertEqual(result, 4)
+        self.assertIs(type(result), int)
+
+
+    async def test_ungated_polymorphic_site(self):
+        site, _ = make_const_site('ADD', 3, cache=False)
+        for i in range(30):
+            self.assertEqual(await site(i), i + 3)
+            self.assertEqual(await site(float(i)), i + 3.0)
+
+
+    async def test_demoted_site_re_elects_and_serves_every_type(self):
+        site, _ = make_const_site('ADD', 3)
+        for _ in range(10):
+            self.assertEqual(await site(1), 4)
+            self.assertEqual(await site(1.5), 4.5)
+        for i in range(600):
+            self.assertEqual(await site(i), i + 3)
+        self.assertEqual(await site(1.5), 4.5)
 
 
     async def test_error_at_an_elected_site_propagates(self):

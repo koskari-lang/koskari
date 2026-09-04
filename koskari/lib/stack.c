@@ -406,6 +406,27 @@ int KosStack_Drop1(KosSegment **self) {
 }
 
 
+int KosStack_Replace2(KosSegment **self, PyObject *val) {
+  KosSegment *s = *self;
+  if (unlikely(! s || KosSegment_LEN(s) < 2)) {
+    Py_DECREF(val);
+    PyErr_SetString(PyExc_RuntimeError, "stack replace underrun");
+    return -1;
+  }
+
+  size_t len = KosSegment_LEN(s);
+  PyObject *left = s->objs[len - 2];
+  PyObject *right = s->objs[len - 1];
+
+  s->objs[len - 2] = val;
+  KosSegment_LEN(s) = len - 1;
+  Py_DECREF(right);
+  Py_DECREF(left);
+
+  return 0;
+}
+
+
 int KosStack_Drop(KosSegment **self, size_t count) {
   if (unlikely(! count))
     return 0;

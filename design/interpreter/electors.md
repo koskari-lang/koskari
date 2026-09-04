@@ -165,17 +165,21 @@ The electing function has the elector contract and runs the family's
 classification once: an exact-int pair at a binary site (the peeked
 slot value and the operand, for the fast-slot families) elects the
 operator's int body; anything else elects the generic body, which is
-the former handler out of line and never re-elects. An empty slot and
-an ungated site take the same tail call, so populating a slot never
-changes what a body receives. A body's guard miss tail-calls the
-family's miss function, which counts and runs the generic body for
-that execution; an int the fast path declines (wider than a long long,
-an overflowing result, a negative shift count) takes the generic body
+the former handler out of line. An empty slot and an ungated site
+take the same tail call, so populating a slot never changes what a
+body receives. A body's guard miss tail-calls the shared miss
+function, which counts and runs the site's generic body for that
+execution; an int the fast path declines (wider than a long long, an
+overflowing result, a negative shift count) takes the generic body
 without counting, since the site is still an int site. Misses count
 since the election; the hit path takes no store. At
 `KOS_ELECTOR_MISS_LIMIT` (8, the method cache's) the slot demotes to
-`MEGAMORPHIC` with `fn` set to the generic body, a bypass that is never
-re-populated. The `KOS_TRACE_OPCACHE` counters `elector_hit`,
+`MEGAMORPHIC` with `fn` set to the generic body. The generic body is
+the slow path, so it can afford a count of its own: it ticks the same
+byte on every execution and empties the slot when the byte wraps, so
+a demoted site, or one whose first operands were not its steady type,
+classifies again every 256 executions rather than never. The
+`KOS_TRACE_OPCACHE` counters `elector_hit`,
 `elector_miss` (an election or a guard miss), `elector_bypass` (a
 demotion), and `elector_uncached` are shared by the families.
 Deoptimization for any other reason is a write of `kind =

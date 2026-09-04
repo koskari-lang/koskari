@@ -25,19 +25,21 @@
    A cache-style elector lives in a KOS_CACHE_ELECTOR slot. The handler
    loads the slot and tail-calls the elected body; the body carries its
    own guard, so the handler's hot path is one load and one indirect
-   jump. A guard miss tail-calls the family's miss function, which runs
-   the generic body for that execution and counts; at the family's
-   limit the slot demotes to the generic body for good, the method
-   cache's rule. An empty slot and an ungated site (no slot) take the
-   electing function, which classifies the operands once and settles
-   the slot.
+   jump. A guard miss tail-calls the shared miss function, which runs
+   the site's generic body for that execution and counts; at the limit
+   the slot demotes to the generic body, the method cache's rule. The
+   generic body counts its own executions and empties the slot every
+   256, so a demoted site, or one whose first operands were not its
+   steady type, re-elects on a bounded interval. An empty slot and an
+   ungated site (no slot) take the family's electing function, which
+   classifies the operands once and settles the slot.
 
    Four families share the shape: OBJECT_OPERAND and OBJECT_INPLACE
-   read a pair off the stack and replace it with the result;
-   FAST_INPLACE reads its accumulator from a fast slot and its operand
-   off the stack; FAST_INPLACE_CONST reads the accumulator from a fast
-   slot and its operand from the pool. Each has a generic body (the
-   former handler out of line), a miss function, one int body per
+   read a pair off the stack and replace it with the result, and share
+   their int bodies; FAST_INPLACE reads its accumulator from a fast slot
+   and its operand off the stack; FAST_INPLACE_CONST reads the
+   accumulator from a fast slot and its operand from the pool. Each has
+   a generic body (the former handler out of line), one int body per
    operator with an int fast path, and an electing function.
 
    See design/interpreter/electors.md.
@@ -57,6 +59,10 @@
 #define KOS_ELECTOR(name)                                               \
   static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult el_##name(          \
       KosEvalState *es, void *insn, PyObject *value)
+
+#define KOS_ELECTOR_DECL(name)                                          \
+  static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult el_##name(          \
+      KosEvalState *es, void *insn, PyObject *value);
 
 
 /* Guard misses since the election before a site demotes. */
@@ -83,7 +89,8 @@ static inline void kos_elector_elect(KosCacheSlot *slot, KosThreadFn fn) {
 
 /* Count a guard miss at an elected site. At limit the slot demotes:
    the generic body becomes the elected one, so the site runs its
-   family's ladder on every execution and never counts again. */
+   family's ladder on every execution until the generic body's own
+   count empties the slot for a re-election. */
 static inline void kos_elector_miss(KosCacheSlot *slot, KosThreadFn generic) {
   uint8_t n;
 
@@ -103,7 +110,119 @@ static inline void kos_elector_miss(KosCacheSlot *slot, KosThreadFn generic) {
 }
 
 
-/* === Shared int-body pieces === */
+/* One execution of a generic body: the slow path counts in the byte a
+   specialised body would use for misses, and when it wraps the slot
+   empties, so the next execution classifies again. */
+static inline void kos_elector_generic_tick(KosCacheSlot *slot) {
+  if (slot && slot->kind == KOS_CACHE_ELECTOR
+      && ++slot->u.elector.misses == 0)
+    slot->kind = KOS_CACHE_EMPTY;
+}
+
+
+/* === The families' generic bodies === */
+
+
+KOS_ELECTOR_DECL(operand_generic)
+KOS_ELECTOR_DECL(inplace_generic)
+KOS_ELECTOR_DECL(fast_inplace_generic)
+KOS_ELECTOR_DECL(fast_inplace_const_generic)
+
+
+/* The generic body of an elector site, by its opcode. Read on the
+   miss and decline paths only. */
+static inline KosThreadFn kos_elector_generic_of(void *insn) {
+  switch (KosOp_OP(insn)) {
+    case KOS_OP_OBJECT_OPERAND:
+      return el_operand_generic;
+    case KOS_OP_OBJECT_INPLACE:
+      return el_inplace_generic;
+    case KOS_OP_FAST_INPLACE:
+      return el_fast_inplace_generic;
+    default:
+      return el_fast_inplace_const_generic;
+  }
+}
+
+
+/**
+   OBJECT_OPERAND without an election: the operator switch and the
+   reduce out of line.
+*/
+KOS_ELECTOR(operand_generic) {
+  uint16_t arg = KosOp_ARG(insn);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
+  int count = (int) KosOpCount_COUNT(arg);
+
+  kos_elector_generic_tick(KosOp_SLOT(insn));
+  if (unlikely(kos_object_operand(es, op, count) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   OBJECT_INPLACE without an election: the in-place reduce out of line.
+*/
+KOS_ELECTOR(inplace_generic) {
+  uint16_t arg = KosOp_ARG(insn);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
+  int count = (int) KosOpCount_COUNT(arg);
+
+  kos_elector_generic_tick(KosOp_SLOT(insn));
+  if (unlikely(kos_object_inplace(es, op, count) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   FAST_INPLACE without an election: slot = slot OP top-of-stack through
+   the in-place reduce.
+*/
+KOS_ELECTOR(fast_inplace_generic) {
+  const KosExtra *row = KosOp_ROW(insn);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
+  size_t idx = (size_t) KosExtra_IMM(row, 1);
+
+  kos_elector_generic_tick(KosOp_SLOT(insn));
+  if (unlikely(kos_fast_inplace_operand(es, op, idx) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   FAST_INPLACE_CONST without an election: slot = slot OP constant
+   through the in-place reduce.
+*/
+KOS_ELECTOR(fast_inplace_const_generic) {
+  const KosExtra *row = KosOp_ROW(insn);
+  KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
+  size_t idx = (size_t) KosExtra_IMM(row, 1);
+
+  KOS_OP_REQUIRE_NS(KosEvalState_NAMESPACE(es));
+  kos_elector_generic_tick(KosOp_SLOT(insn));
+  if (unlikely(kos_fast_inplace_apply(es, op, idx, KosExtra_OBJ(row, 2)) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   The shared miss function: a type-guard miss at an elected int site
+   counts toward the demotion and runs the site's generic body for
+   this execution.
+*/
+KOS_ELECTOR(miss) {
+  KosThreadFn generic = kos_elector_generic_of(insn);
+
+  kos_elector_miss(KosOp_SLOT(insn), generic);
+  TAILCALL(generic, es, insn, value);
+}
+
+
+/* === Int bodies === */
 
 
 /* Under the safety net a stack-pair int body refuses a site whose
@@ -122,53 +241,47 @@ static inline void kos_elector_miss(KosCacheSlot *slot, KosThreadFn generic) {
 #endif
 
 
-/* Write the result over the left operand and drop the right one. Both
-   operands are the stack's references, released only after the
-   arithmetic that read them; the drop releases the right one. */
-KOS_OP_INLINE void kos_elector_replace2(
-    KosSegment **bl,
-    PyObject *const *args,
-    PyObject *out) {
+/* The tail of every int body once both operands are C values: the
+   operator's arithmetic, a decline (overflow, a negative shift, a zero
+   divisor) taking the generic body without counting since the site is
+   still an int site, an allocation failure raising. */
+#define KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, out)                      \
+  do {                                                                  \
+    int kos_ir_rc_ = FAST_LL((a), (b), &(out));                         \
+    if (unlikely(kos_ir_rc_ <= 0)) {                                    \
+      if (kos_ir_rc_ < 0)                                               \
+        RESULT_RAISE();                                                 \
+      TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
+    }                                                                   \
+    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
+  } while (0)
 
-  PyObject *left = args[0];
 
-  ((PyObject **) args)[0] = out;
-  kos_stack_drop1_fast(bl);
-  Py_DECREF(left);
-}
-
-
-/* One int body per operator for a family whose two operands are the
-   top of the stack: the guard is the two exact-int checks on the
-   peeked operands, then the operator's own fast path. A guard miss
-   counts toward the demotion; an int the fast path declines (wider
-   than a long long, an overflowing result, a negative shift count)
-   takes the generic body for this execution without counting, since
-   the site is still an int site. int OP= int is value-identical to
-   int OP int, so the in-place family shares the fast paths. */
-#define KOS_PAIR_INT_ELECTOR(FAMILY, NAME, FAST)                        \
-  KOS_ELECTOR(FAMILY##_int_##NAME) {                                    \
+/* One int body per operator for the two families whose operands are
+   the top pair of the stack, OBJECT_OPERAND and OBJECT_INPLACE (int OP=
+   int is value-identical to int OP int). The guard is the two exact-int
+   checks on the peeked pair; a miss counts. An int wider than two
+   digits and the long long range takes the generic body without
+   counting. The result replaces the pair. */
+#define KOS_PAIR_INT_ELECTOR(NAME, FAST_LL)                             \
+  KOS_ELECTOR(pair_int_##NAME) {                                        \
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
     PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);            \
+    long long a, b;                                                     \
     PyObject *out;                                                      \
-    int rc;                                                             \
                                                                         \
     KOS_ELECTOR_PAIR_SAFETYNET(insn);                                   \
     if (unlikely(! args))                                               \
       RESULT_RAISE();                                                   \
     if (unlikely(! (PyLong_CheckExact(args[0])                          \
                     && PyLong_CheckExact(args[1]))))                    \
-      TAILCALL(el_##FAMILY##_miss, es, insn, value);                    \
+      TAILCALL(el_miss, es, insn, value);                               \
+    if (unlikely(! kos_long_as_ll(args[0], &a)                          \
+                 || ! kos_long_as_ll(args[1], &b)))                     \
+      TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
                                                                         \
-    rc = FAST(args[0], args[1], &out);                                  \
-    if (unlikely(rc <= 0)) {                                            \
-      if (rc < 0)                                                       \
-        RESULT_RAISE();                                                 \
-      TAILCALL(el_##FAMILY##_generic, es, insn, value);                 \
-    }                                                                   \
-                                                                        \
-    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
-    kos_elector_replace2(bl, args, out);                                \
+    KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, out);                         \
+    kos_stack_replace2_fast(bl, out);                                   \
     RESULT_NEXT(es);                                                    \
   }
 
@@ -179,30 +292,28 @@ KOS_OP_INLINE void kos_elector_replace2(
    stolen into the slot after the family's operand release (DROP). A
    slot the peek cannot read (empty, or a ref kind that needs the
    general deref) is a miss; the generic body raises or resolves it. */
-#define KOS_SLOT_INT_ELECTOR(FAMILY, NAME, FAST, RHS, DROP)             \
+#define KOS_SLOT_INT_ELECTOR(FAMILY, NAME, FAST_LL, RHS, DROP)          \
   KOS_ELECTOR(FAMILY##_int_##NAME) {                                    \
     const KosExtra *row = KosOp_ROW(insn);                              \
     size_t idx = (size_t) KosExtra_IMM(row, 1);                         \
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
-    PyObject *acc = kos_ns_fast_peek(ns, idx);                          \
-    PyObject *rhs = (RHS);                                              \
+    PyObject *acc;                                                      \
+    PyObject *rhs;                                                      \
+    long long a, b;                                                     \
     PyObject *out;                                                      \
-    int rc;                                                             \
                                                                         \
+    KOS_OP_REQUIRE_NS(ns);                                              \
+    acc = kos_ns_fast_peek(ns, idx);                                    \
+    rhs = (RHS);                                                        \
     if (unlikely(! rhs))                                                \
       RESULT_RAISE();                                                   \
     if (unlikely(! acc || ! PyLong_CheckExact(acc)                      \
                  || ! PyLong_CheckExact(rhs)))                          \
-      TAILCALL(el_##FAMILY##_miss, es, insn, value);                    \
+      TAILCALL(el_miss, es, insn, value);                               \
+    if (unlikely(! kos_long_as_ll(acc, &a) || ! kos_long_as_ll(rhs, &b))) \
+      TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
                                                                         \
-    rc = FAST(acc, rhs, &out);                                          \
-    if (unlikely(rc <= 0)) {                                            \
-      if (rc < 0)                                                       \
-        RESULT_RAISE();                                                 \
-      TAILCALL(el_##FAMILY##_generic, es, insn, value);                 \
-    }                                                                   \
-                                                                        \
-    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
+    KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, out);                         \
     DROP;                                                               \
     if (unlikely(kos_ns_fast_store_steal(ns, idx, out) < 0))            \
       RESULT_RAISE();                                                   \
@@ -210,17 +321,18 @@ KOS_OP_INLINE void kos_elector_replace2(
   }
 
 
-/* The nine operators with an int fast path, applied to a body macro. */
+/* The nine operators with an int fast path, applied to a body macro
+   that takes (family, name, arithmetic). */
 #define KOS_INT_ELECTORS(BODY, FAMILY)                                  \
-  BODY(FAMILY, add, long_fast_add)                                      \
-  BODY(FAMILY, subtract, long_fast_subtract)                            \
-  BODY(FAMILY, multiply, long_fast_multiply)                            \
-  BODY(FAMILY, modulo, long_fast_modulo)                                \
-  BODY(FAMILY, bit_and, long_fast_bit_and)                              \
-  BODY(FAMILY, bit_or, long_fast_bit_or)                                \
-  BODY(FAMILY, bit_xor, long_fast_bit_xor)                              \
-  BODY(FAMILY, bit_left, long_fast_bit_left)                            \
-  BODY(FAMILY, bit_right, long_fast_bit_right)
+  BODY(FAMILY, add, long_fast_add_ll)                                   \
+  BODY(FAMILY, subtract, long_fast_subtract_ll)                         \
+  BODY(FAMILY, multiply, long_fast_multiply_ll)                         \
+  BODY(FAMILY, modulo, long_fast_modulo_ll)                             \
+  BODY(FAMILY, bit_and, long_fast_bit_and_ll)                           \
+  BODY(FAMILY, bit_or, long_fast_bit_or_ll)                             \
+  BODY(FAMILY, bit_xor, long_fast_bit_xor_ll)                           \
+  BODY(FAMILY, bit_left, long_fast_bit_left_ll)                         \
+  BODY(FAMILY, bit_right, long_fast_bit_right_ll)
 
 /* A family's table of int bodies by operator; NULL where the operator
    has no int fast path (divide, floor-divide, matrix multiply, power). */
@@ -238,165 +350,12 @@ KOS_OP_INLINE void kos_elector_replace2(
   };
 
 
-/* The int body a stack-pair site elects: the operator's entry in the
-   family's table when the site is binary and its two operands are
-   exact ints, else NULL. */
-static inline KosThreadFn kos_elector_pair_body(
-    KosEvalState *es,
-    uint16_t arg,
-    const KosThreadFn *table) {
+/* The pair bodies take no family: the macro's family slot names them. */
+#define KOS_PAIR_INT_BODY(FAMILY, NAME, FAST_LL) KOS_PAIR_INT_ELECTOR(NAME, FAST_LL)
 
-  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
-  KosSegment *s = *KosEvalState_BLOCK(es);
+KOS_INT_ELECTORS(KOS_PAIR_INT_BODY, pair)
+KOS_INT_ELECTOR_TABLE(pair)
 
-  if (KosOpCount_COUNT(arg) == 2 && op < KOS_OPERAND_COUNT
-      && s && s->len >= 2) {
-    PyObject *const *args = kos_stack_tail_ptr_fast(s, 2);
-    if (PyLong_CheckExact(args[0]) && PyLong_CheckExact(args[1]))
-      return table[op];
-  }
-  return NULL;
-}
-
-
-/* The int body a fast-slot site elects: the operator's entry in the
-   family's table when the peeked slot value and the operand are exact
-   ints, else NULL. */
-static inline KosThreadFn kos_elector_slot_body(
-    KosEvalState *es,
-    KosOperand op,
-    size_t idx,
-    PyObject *rhs,
-    const KosThreadFn *table) {
-
-  PyObject *acc = kos_ns_fast_peek(KosEvalState_NAMESPACE(es), idx);
-
-  if (op < KOS_OPERAND_COUNT && acc && rhs
-      && PyLong_CheckExact(acc) && PyLong_CheckExact(rhs))
-    return table[op];
-  return NULL;
-}
-
-
-/* === OBJECT_OPERAND family === */
-
-
-/**
-   The generic body: OBJECT_OPERAND as it stands without an election,
-   the operator switch and the reduce out of line.
-*/
-KOS_ELECTOR(operand_generic) {
-  uint16_t arg = KosOp_ARG(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
-  int count = (int) KosOpCount_COUNT(arg);
-
-  if (unlikely(kos_object_operand(es, op, count) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
-}
-
-
-/**
-   A type-guard miss at an elected int site: count it toward the
-   demotion and run the generic body for this execution.
-*/
-KOS_ELECTOR(operand_miss) {
-  kos_elector_miss(KosOp_SLOT(insn), el_operand_generic);
-  TAILCALL(el_operand_generic, es, insn, value);
-}
-
-
-KOS_INT_ELECTORS(KOS_PAIR_INT_ELECTOR, operand)
-KOS_INT_ELECTOR_TABLE(operand)
-
-
-/**
-   The electing function, reached from an empty slot or an ungated
-   site: classify the operands once and settle the slot. An exact-int
-   pair at a binary site elects the operator's int body; anything else
-   elects the generic body, which never re-elects.
-*/
-KOS_ELECTOR(operand_elect) {
-  KosThreadFn fn = kos_elector_pair_body(
-      es, KosOp_ARG(insn), kos_operand_int_bodies);
-
-  if (! fn)
-    fn = el_operand_generic;
-  kos_elector_elect(KosOp_SLOT(insn), fn);
-  TAILCALL(fn, es, insn, value);
-}
-
-
-/* === OBJECT_INPLACE family === */
-
-
-/**
-   The generic body: OBJECT_INPLACE as it stands without an election,
-   the in-place reduce out of line.
-*/
-KOS_ELECTOR(inplace_generic) {
-  uint16_t arg = KosOp_ARG(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
-  int count = (int) KosOpCount_COUNT(arg);
-
-  if (unlikely(kos_object_inplace(es, op, count) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
-}
-
-
-KOS_ELECTOR(inplace_miss) {
-  kos_elector_miss(KosOp_SLOT(insn), el_inplace_generic);
-  TAILCALL(el_inplace_generic, es, insn, value);
-}
-
-
-KOS_INT_ELECTORS(KOS_PAIR_INT_ELECTOR, inplace)
-KOS_INT_ELECTOR_TABLE(inplace)
-
-
-KOS_ELECTOR(inplace_elect) {
-  KosThreadFn fn = kos_elector_pair_body(
-      es, KosOp_ARG(insn), kos_inplace_int_bodies);
-
-  if (! fn)
-    fn = el_inplace_generic;
-  kos_elector_elect(KosOp_SLOT(insn), fn);
-  TAILCALL(fn, es, insn, value);
-}
-
-
-/* === FAST_INPLACE family === */
-
-
-/**
-   The generic body: FAST_INPLACE as it stands without an election,
-   slot = slot OP top-of-stack through the in-place reduce.
-*/
-KOS_ELECTOR(fast_inplace_generic) {
-  const KosExtra *row = KosOp_ROW(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
-  size_t idx = (size_t) KosExtra_IMM(row, 1);
-
-  if (unlikely(kos_fast_inplace_operand(es, op, idx) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
-}
-
-
-KOS_ELECTOR(fast_inplace_miss) {
-  kos_elector_miss(KosOp_SLOT(insn), el_fast_inplace_generic);
-  TAILCALL(el_fast_inplace_generic, es, insn, value);
-}
-
-
-/* The operand is the top of the stack, borrowed for the arithmetic and
-   dropped before the store. */
-#define KOS_FAST_INPLACE_INT_ELECTOR(FAMILY, NAME, FAST)                \
-  KOS_SLOT_INT_ELECTOR(                                                 \
-      FAMILY, NAME, FAST,                                               \
-      kos_stack_peek_top(es),                                           \
-      kos_stack_drop1_fast(KosEvalState_BLOCK(es)))
 
 /* The top of the stack, borrowed, or NULL with an error set. */
 KOS_OP_INLINE PyObject *kos_stack_peek_top(KosEvalState *es) {
@@ -404,96 +363,128 @@ KOS_OP_INLINE PyObject *kos_stack_peek_top(KosEvalState *es) {
   return top ? top[0] : NULL;
 }
 
-KOS_INT_ELECTORS(KOS_FAST_INPLACE_INT_ELECTOR, fast_inplace)
+/* FAST_INPLACE: the operand is the top of the stack, borrowed for the
+   arithmetic and dropped before the store. */
+#define KOS_FAST_INPLACE_INT_BODY(FAMILY, NAME, FAST_LL)                \
+  KOS_SLOT_INT_ELECTOR(                                                 \
+      FAMILY, NAME, FAST_LL,                                            \
+      kos_stack_peek_top(es),                                           \
+      kos_stack_drop1_fast(KosEvalState_BLOCK(es)))
+
+KOS_INT_ELECTORS(KOS_FAST_INPLACE_INT_BODY, fast_inplace)
 KOS_INT_ELECTOR_TABLE(fast_inplace)
 
 
-KOS_ELECTOR(fast_inplace_elect) {
-  const KosExtra *row = KosOp_ROW(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
-  size_t idx = (size_t) KosExtra_IMM(row, 1);
-  KosSegment *s = *KosEvalState_BLOCK(es);
-  PyObject *rhs = (s && s->len >= 1) ? kos_stack_tail_ptr_fast(s, 1)[0] : NULL;
-  KosThreadFn fn = kos_elector_slot_body(
-      es, op, idx, rhs, kos_fast_inplace_int_bodies);
-
-  if (! fn)
-    fn = el_fast_inplace_generic;
-  kos_elector_elect(KosOp_SLOT(insn), fn);
-  TAILCALL(fn, es, insn, value);
-}
-
-
-/* === FAST_INPLACE_CONST family === */
-
-
-/**
-   The generic body: FAST_INPLACE_CONST as it stands without an
-   election, slot = slot OP constant through the in-place reduce.
-*/
-KOS_ELECTOR(fast_inplace_const_generic) {
-  const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(es);
-  PyObject *operand = KosExtra_OBJ(row, 2);   /* borrowed */
-  size_t idx = (size_t) KosExtra_IMM(row, 1);
-  PyObject *obj = kos_ns_fast_deref(ns, idx);
-  PyObject *result;
-
-  if (unlikely(! obj))
-    RESULT_RAISE();
-
-  {
-    PyObject *pair[2] = { obj, operand };
-    result = kos_inplace_reduce((KosOperand) KosExtra_IMM(row, 0), pair, 2);
-  }
-  Py_DECREF(obj);
-  if (unlikely(! result))
-    RESULT_RAISE();
-
-  if (unlikely(kos_ns_fast_store_steal(ns, idx, result) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
-}
-
-
-KOS_ELECTOR(fast_inplace_const_miss) {
-  kos_elector_miss(KosOp_SLOT(insn), el_fast_inplace_const_generic);
-  TAILCALL(el_fast_inplace_const_generic, es, insn, value);
-}
-
-
-/* The operand is the pool constant on the row, borrowed; nothing to
-   drop. Its type was checked at the election and cannot change. */
-#define KOS_FAST_INPLACE_CONST_INT_ELECTOR(FAMILY, NAME, FAST)          \
+/* FAST_INPLACE_CONST: the operand is the pool constant on the row,
+   borrowed; nothing to drop. Its type was checked at the election and
+   cannot change. */
+#define KOS_FAST_INPLACE_CONST_INT_BODY(FAMILY, NAME, FAST_LL)          \
   KOS_SLOT_INT_ELECTOR(                                                 \
-      FAMILY, NAME, FAST,                                               \
+      FAMILY, NAME, FAST_LL,                                            \
       KosExtra_OBJ(row, 2),                                             \
       ((void) 0))
 
-KOS_INT_ELECTORS(KOS_FAST_INPLACE_CONST_INT_ELECTOR, fast_inplace_const)
+KOS_INT_ELECTORS(KOS_FAST_INPLACE_CONST_INT_BODY, fast_inplace_const)
 KOS_INT_ELECTOR_TABLE(fast_inplace_const)
 
 
-KOS_ELECTOR(fast_inplace_const_elect) {
-  const KosExtra *row = KosOp_ROW(insn);
-  KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
-  size_t idx = (size_t) KosExtra_IMM(row, 1);
-  KosThreadFn fn = kos_elector_slot_body(
-      es, op, idx, KosExtra_OBJ(row, 2), kos_fast_inplace_const_int_bodies);
+/* === Election === */
 
-  if (! fn)
-    fn = el_fast_inplace_const_generic;
-  kos_elector_elect(KosOp_SLOT(insn), fn);
-  TAILCALL(fn, es, insn, value);
+
+/* The int body a site elects for two borrowed operands: the operator's
+   entry in the family's table when both are exact ints, else NULL. */
+static inline KosThreadFn kos_elector_int_body(
+    KosOperand op,
+    PyObject *l,
+    PyObject *r,
+    const KosThreadFn *table) {
+
+  if (op < KOS_OPERAND_COUNT && l && r
+      && PyLong_CheckExact(l) && PyLong_CheckExact(r))
+    return table[op];
+  return NULL;
 }
 
 
-#undef KOS_FAST_INPLACE_CONST_INT_ELECTOR
-#undef KOS_FAST_INPLACE_INT_ELECTOR
+/* The classification of a stack-pair site: binary, with the pair on
+   the stack. */
+static inline KosThreadFn kos_elector_pair_classify(KosEvalState *es, void *insn) {
+  uint16_t arg = KosOp_ARG(insn);
+  KosSegment *s = *KosEvalState_BLOCK(es);
+  PyObject *const *args;
+
+  if (KosOpCount_COUNT(arg) != 2 || ! s || s->len < 2)
+    return NULL;
+  args = kos_stack_tail_ptr_fast(s, 2);
+  return kos_elector_int_body(
+      (KosOperand) KosOpCount_TYPE(arg), args[0], args[1],
+      kos_pair_int_bodies);
+}
+
+
+/* The classification of a FAST_INPLACE site: the peeked slot value and
+   the top of the stack. */
+static inline KosThreadFn kos_elector_fast_inplace_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+  KosSegment *s = *KosEvalState_BLOCK(es);
+  PyObject *acc = kos_ns_fast_peek(
+      KosEvalState_NAMESPACE(es), (size_t) KosExtra_IMM(row, 1));
+  PyObject *rhs = (s && s->len >= 1) ? kos_stack_tail_ptr_fast(s, 1)[0] : NULL;
+
+  return kos_elector_int_body(
+      (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)), acc, rhs,
+      kos_fast_inplace_int_bodies);
+}
+
+
+/* The classification of a FAST_INPLACE_CONST site: the peeked slot
+   value and the pool constant. */
+static inline KosThreadFn kos_elector_fast_inplace_const_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *acc = kos_ns_fast_peek(
+      KosEvalState_NAMESPACE(es), (size_t) KosExtra_IMM(row, 1));
+
+  return kos_elector_int_body(
+      (KosOperand) KosExtra_IMM(row, 0), acc, KosExtra_OBJ(row, 2),
+      kos_fast_inplace_const_int_bodies);
+}
+
+
+/* A family's electing function, reached from an empty slot or an
+   ungated site: classify the operands once, settle the slot with the
+   int body or the generic body, and dispatch. */
+#define KOS_ELECTOR_ELECT(FAMILY, CLASSIFY)                             \
+  KOS_ELECTOR(FAMILY##_elect) {                                         \
+    KosThreadFn fn = CLASSIFY(es, insn);                                \
+                                                                        \
+    if (! fn)                                                           \
+      fn = el_##FAMILY##_generic;                                       \
+    kos_elector_elect(KosOp_SLOT(insn), fn);                            \
+    TAILCALL(fn, es, insn, value);                                      \
+  }
+
+KOS_ELECTOR_ELECT(operand, kos_elector_pair_classify)
+KOS_ELECTOR_ELECT(inplace, kos_elector_pair_classify)
+KOS_ELECTOR_ELECT(fast_inplace, kos_elector_fast_inplace_classify)
+KOS_ELECTOR_ELECT(fast_inplace_const, kos_elector_fast_inplace_const_classify)
+
+
+#undef KOS_ELECTOR_ELECT
+#undef KOS_FAST_INPLACE_CONST_INT_BODY
+#undef KOS_FAST_INPLACE_INT_BODY
+#undef KOS_PAIR_INT_BODY
 #undef KOS_INT_ELECTOR_TABLE
 #undef KOS_INT_ELECTORS
 #undef KOS_SLOT_INT_ELECTOR
 #undef KOS_PAIR_INT_ELECTOR
+#undef KOS_ELECTOR_INT_RESULT
+#undef KOS_ELECTOR_DECL
 
 
 // The end.
