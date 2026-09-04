@@ -79,6 +79,10 @@ static const char *const kos_oc_names[KOS_OC__COUNT] = {
   "field_generic",
   "field_miss",
   "field_fallback",
+  "elector_hit",
+  "elector_miss",
+  "elector_bypass",
+  "elector_uncached",
 };
 
 

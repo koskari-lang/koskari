@@ -19,6 +19,7 @@
 
 
 #include <Python.h>
+#include <limits.h>
 
 #include "bytecode.h"
 #include "hints.h"
@@ -152,6 +153,117 @@ static inline int kos_as_ll2(
   if (unlikely(! kos_long_as_ll(l, a)) || unlikely(! kos_long_as_ll(r, b)))
     return 0;
   return 1;
+}
+
+
+/* Per-operator two-operand PyLong fast paths.  Each is self-contained and
+   written out explicitly -- no shared operator switch -- so a caller that
+   already knows its operator lands straight in the one arithmetic it needs.
+   When both operands are exact ints and the operation cannot lose precision,
+   compute it directly and skip the PyNumber slot dispatch and longobject digit
+   loops.
+
+   Return convention (all of them): 1 with *out set (new ref) when handled, 0
+   when declined (*out untouched), -1 with an error set on allocation failure
+   (*out NULL).  Bitwise AND/OR/XOR on two's-complement match Python int
+   semantics for any in-range operands.  Shifts require non-negative operands
+   (C >> on a negative is implementation-defined; a negative count must raise).
+   Modulo requires a non-negative dividend and positive divisor so C % matches
+   Python remainder.  Overflow on +, -, *, << declines rather than widening.
+   Divide, floor-divide, matmul, and power have no fast path. */
+
+static inline int long_fast_add(PyObject *l, PyObject *r, PyObject **out) {
+  long long a, b, res;
+  if (! kos_as_ll2(l, r, &a, &b))
+    return 0;
+  if (unlikely(__builtin_add_overflow(a, b, &res)))
+    return 0;
+  *out = PyLong_FromLongLong(res);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+static inline int long_fast_subtract(PyObject *l, PyObject *r, PyObject **out) {
+  long long a, b, res;
+  if (! kos_as_ll2(l, r, &a, &b))
+    return 0;
+  if (unlikely(__builtin_sub_overflow(a, b, &res)))
+    return 0;
+  *out = PyLong_FromLongLong(res);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+static inline int long_fast_multiply(PyObject *l, PyObject *r, PyObject **out) {
+  long long a, b, res;
+  if (! kos_as_ll2(l, r, &a, &b))
+    return 0;
+  if (unlikely(__builtin_mul_overflow(a, b, &res)))
+    return 0;
+  *out = PyLong_FromLongLong(res);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+static inline int long_fast_modulo(PyObject *l, PyObject *r, PyObject **out) {
+  long long a, b;
+  if (! kos_as_ll2(l, r, &a, &b))
+    return 0;
+  if (unlikely(a < 0 || b <= 0))
+    return 0;
+  *out = PyLong_FromLongLong(a % b);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+static inline int long_fast_bit_and(PyObject *l, PyObject *r, PyObject **out) {
+  long long a, b;
+  if (! kos_as_ll2(l, r, &a, &b))
+    return 0;
+  *out = PyLong_FromLongLong(a & b);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+static inline int long_fast_bit_or(PyObject *l, PyObject *r, PyObject **out) {
+  long long a, b;
+  if (! kos_as_ll2(l, r, &a, &b))
+    return 0;
+  *out = PyLong_FromLongLong(a | b);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+static inline int long_fast_bit_xor(PyObject *l, PyObject *r, PyObject **out) {
+  long long a, b;
+  if (! kos_as_ll2(l, r, &a, &b))
+    return 0;
+  *out = PyLong_FromLongLong(a ^ b);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+static inline int long_fast_bit_left(PyObject *l, PyObject *r, PyObject **out) {
+  long long a, b;
+  if (! kos_as_ll2(l, r, &a, &b))
+    return 0;
+  if (unlikely(a < 0 || b < 0 || b >= 63))
+    return 0;
+  if (unlikely(a != 0 && a > (LLONG_MAX >> b)))
+    return 0;
+  *out = PyLong_FromLongLong(a << b);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+static inline int long_fast_bit_right(PyObject *l, PyObject *r, PyObject **out) {
+  long long a, b;
+  if (! kos_as_ll2(l, r, &a, &b))
+    return 0;
+  if (unlikely(a < 0 || b < 0))
+    return 0;
+  *out = PyLong_FromLongLong((b >= 63) ? 0 : (a >> b));
+  return likely(*out != NULL) ? 1 : -1;
 }
 
 
