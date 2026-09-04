@@ -99,11 +99,20 @@ void KosEvalState_FreezeToContext(KosEvalState *es) {
 
   /* A staged delivery outlives the eval state only as storage on the
      frame it was staged for; the delivery step takes it back from the
-     stack on the next trip. */
+     stack on the next trip. That storage is a code-less step frame's
+     alone: a bytecode frame's stack holds its operands and the delivery
+     step never pops it, so every site that stages for a bytecode frame
+     delivers in the same trip and no freeze can see one. */
   if (KosEvalState_PENDING_VALUE(es)) {
     PyObject *staged = KosEvalState_PENDING_VALUE(es);
     KosEvalState_PENDING_VALUE(es) = NULL;
-    if (KosEvalState_BLOCK(es))
+    if (KOS_EVAL_SAFETYNET
+        && KosEvalState_FRAME(es)
+        && KosDynFrame_CODE(KosEvalState_FRAME(es))) {
+      Py_DECREF(staged);
+      PyErr_SetString(PyExc_SystemError,
+                      "delivery staged for a bytecode frame across a freeze");
+    } else if (KosEvalState_BLOCK(es))
       (void) KosEvalState_StackPUSH(es, staged);  /* consumes on failure */
     else
       Py_DECREF(staged);

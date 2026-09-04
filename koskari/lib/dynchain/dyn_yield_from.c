@@ -254,6 +254,7 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
   }
   kos_dyn_resync_chain(es);
   KosDynNode_PARENT(node) = NULL;
+  kos_dyn_yield_from_disarm(es, yf);
   kos_yieldfrom_close_delegate(yf);
   kos_dynyieldfrom_free(yf);
   return 0;
