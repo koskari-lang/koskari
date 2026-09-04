@@ -15,7 +15,7 @@ KosDynWind *kos_dynwind_new(
   if (! wind)
     return NULL;
 
-  uint32_t wind_caps = 0;
+  uint32_t wind_caps = KOS_DYN_CAP_CONTROL_HOOK;
   if (after_thunk)
     wind_caps |= KOS_DYN_CAP_NEEDS_UNWIND_ACTION;
   if (before_thunk)
@@ -188,6 +188,12 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
    Resume after async before/after thunk: advance phase, pop junk, maybe unlink.
 */
 static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) {
+
+  /* Only a thunk's own return has work here; a call returning into the
+     wind body between the thunks leaves the phase alone. */
+  if (KosDynWind_PHASE(wind) != KOS_WIND_PHASE_PRE_BEGIN
+      && KosDynWind_PHASE(wind) != KOS_WIND_PHASE_PRE_AFTER)
+    return 0;
 
   /* A nested transfer can replace the chain while a wind thunk is still
      unwinding; ignore stale control-returned for a detached wind node. */

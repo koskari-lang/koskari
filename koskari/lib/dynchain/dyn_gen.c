@@ -125,6 +125,39 @@ static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
 }
 
 
+KosDynGen *kos_dyn_find_gen(KosEvalState *es) {
+  KosDynNode *n = (KosDynNode *) KosEvalState_FRAME(es);
+
+  for (; n; n = KosDynNode_PARENT(n)) {
+    if (KosDynNode_IS_GEN(n))
+      return (KosDynGen *) n;
+  }
+  return NULL;
+}
+
+
+/**
+   Capture the live registers at the current dyn_top into regs.
+*/
+static void kos_live_regs_capture(KosEvalState *es, KosLiveRegs *regs) {
+  regs->top = KosEvalState_DYN_TOP(es);
+  regs->frame = (KosDynNode *) KosEvalState_FRAME(es);
+  regs->block = KosEvalState_BLOCK(es);
+  regs->ns = KosEvalState_NAMESPACE(es);
+}
+
+
+/**
+   Make regs the live registers: dyn_top and the retarget a resync from
+   that top would produce, with the outgoing frame's pc flushed.
+*/
+static void kos_live_regs_apply(KosEvalState *es, const KosLiveRegs *regs) {
+  KosEvalState_DYN_TOP(es) = regs->top;
+  kos_dyn_resync_apply(es, (KosDynFrame *) regs->frame, regs->block,
+                       regs->ns, 1);
+}
+
+
 /**
    Resume generator: graft GEN under ctx, swap in frozen active chain, push
    None. Callers: eval when entering generator body from consumer.
@@ -180,6 +213,9 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
     return -1;
   }
 
+  /* The consumer's registers, restored at the next freeze. */
+  kos_live_regs_capture(es, KosDynGen_HOST(gen));
+
   /* 1. GEN's parent = current ctx's active node */
   KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
   /* 2. Incref GEN */
@@ -189,7 +225,23 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
    * is already intact (e.g. YIELD_FROM -> FRAME -> GEN). Overwriting
    * would sever links when active is not a direct child of gen. */
   KosDynGen_ACTIVE(gen) = NULL;
-  kos_dyn_commit_dyn_top(es, active);
+  /* frozen.top always equals the active head here: kos_dyn_gen_freeze
+     writes ACTIVE and the frozen snapshot together and nothing else
+     sets ACTIVE non-NULL. The compare is kept so a future freeze path
+     that records one without the other lands on the rebuild instead of
+     stale registers; the same holds for host.top at the freeze. */
+  if (KosDynGen_FROZEN(gen)->top == active && KosDynGen_FROZEN(gen)->frame) {
+    /* The registers the freeze recorded for this very head: apply
+       them, then restamp the spliced span's unwind caches, which the
+       freeze cleared, from the consumer's registers just recorded:
+       they are the facts live at the GEN's parent. Same outcome as
+       the rebuild without its find walk or the restamp's scan. */
+    kos_live_regs_apply(es, KosDynGen_FROZEN(gen));
+    kos_dyn_restamp_span(active, (KosDynNode *) gen, KosDynGen_HOST(gen));
+  } else {
+    kos_dyn_commit_dyn_top(es, active);
+  }
+  KosDynGen_FROZEN(gen)->top = NULL;
   /* GEN is now live on the chain: keep its owner (KPAG) alive while running. */
   kos_dyngen_keepalive_acquire(gen);
 
@@ -261,6 +313,9 @@ int kos_dyn_gen_install_bootstrap(
                     "kos_dyn_gen_install_bootstrap: GEN not on source chain");
     return -1;
   }
+
+  /* The consumer's registers, restored at the first freeze. */
+  kos_live_regs_capture(es, KosDynGen_HOST(gen));
 
   KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
   /* The GEN's chain-membership reference transfers from src to es along with

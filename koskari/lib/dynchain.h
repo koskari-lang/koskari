@@ -132,6 +132,10 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION (1u << 3)
 #define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
 #define KOS_DYN_CAP_AWAITS_THUNK_RESULT      (1u << 5)
+/* the node reacts when control returns into it from a frame it owns:
+   kos_dynnode_on_control_returned has work for it (WITH, WIND); a node
+   without it takes a callee's value on its segment and nothing more */
+#define KOS_DYN_CAP_CONTROL_HOOK             (1u << 6)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 #define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
 /** Iteration node (KOS_DYN_NEXT, extended FOREACH stepping) */
@@ -193,6 +197,21 @@ typedef enum {
 
 
 /**
+   A snapshot of the live registers at one chain top: the frame, the
+   owning stack slot, and the namespace that a resync would derive by
+   walking from top. Borrowed pointers, valid while the chain below
+   top is unchanged. The GEN node keeps two, one per end of the
+   flattened step cycle (see KosDynGen_HOST / KosDynGen_FROZEN).
+*/
+typedef struct KosLiveRegs {
+  struct KosDynNode *top;
+  struct KosDynNode *frame;
+  KosSegment **block;
+  PyObject *ns;
+} KosLiveRegs;
+
+
+/**
    The iteration request record: the single home of an in-flight
    step's state. Embedded in the FOREACH, NEXT, and YIELD_FROM node
    arms; the delivery machinery reads the stepped iterator and the
@@ -200,8 +219,32 @@ typedef enum {
 */
 typedef struct KosIterRequest {
   PyObject *iter;       /* stepped iterator; strong ref while armed */
+  struct KosIterSlots *islots; /* iter's provider suite when iter is a
+                                  KosIter provider, else NULL; bound with
+                                  iter through kos_dyn_iter_request_bind_iter,
+                                  so the step and delivery paths never
+                                  re-derive it */
   uint8_t mode;         /* KOS_IREQ_* */
 } KosIterRequest;
+
+
+/**
+   Bind iter (a reference the caller already owns, or NULL) as the
+   request's stepped iterator and resolve its provider suite once. Every
+   write of req->iter goes through here.
+*/
+void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter);
+
+/**
+   Tell the request's provider its step is over: ki_finish on the bound
+   suite, a no-op for a plain iterator. exhausted marks the provider
+   closed, unless it recycles its durable context and re-derives
+   exhaustion from its source, in which case it stays open (a mapped
+   function's StopIteration is a truncation that builtins.map resumes
+   from).
+*/
+void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted);
+void kos_dyn_iter_request_finish_req(KosIterRequest *req, int exhausted);
 
 
 typedef enum {
@@ -379,8 +422,10 @@ struct KosDynNode {
     } param;
     struct {
       PyObject *mgr;       /* context manager (owned) */
-      PyObject *enter;     /* resolved enter callable (owned; NULL if not cached) */
+      PyObject *enter;     /* resolved enter callable (owned) */
       PyObject *exit;      /* resolved exit callable (owned) */
+      uint8_t self_bind;   /* KOS_WITH_SELF_*: which of enter/exit is a plain
+                              function kept unbound, called with mgr first */
       uint8_t entered;     /* 1 after enter succeeded */
       uint8_t phase;       /* KOS_WITH_PHASE_IDLE, PENDING_EXIT_AWAIT, or PENDING_ENTER_AWAIT */
       uint8_t shot;        /* KOS_DYN_WITH_SHOT_*; internal to dyn_with only */
@@ -411,6 +456,14 @@ struct KosDynNode {
       PyObject *owner;     /* owning generator object (borrowed) or NULL */
       struct KosDynNode *active; /* suspended frame when released; NULL when running */
       uintptr_t refcount;  /* reference count; init 1; release decrements; free when 0 */
+      /* Register snapshots for the flattened step cycle. host is the
+         consumer's registers taken at install, restored at freeze while
+         the GEN's parent is still host.top. frozen is the generator's
+         registers taken at freeze, applied at install while active is
+         still frozen.top. A guard mismatch falls back to the chain
+         rebuild. */
+      KosLiveRegs host;
+      KosLiveRegs frozen;
     } gen;
     struct {
       KosIterRequest req;    /* the stepped object and in-flight mode */
@@ -1440,6 +1493,14 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 KosDynNode *kos_dyn_find_iter_node(KosEvalState *es);
 
 /**
+   The GEN node of the generator the running frame belongs to: the
+   nearest GEN walking outward from the frame, or NULL when the frame
+   is not in a generator. Callers: op_YIELD and the trampoline's YIELD
+   arm, which then freeze it through kos_dyn_gen_freeze.
+*/
+KosDynGen *kos_dyn_find_gen(KosEvalState *es);
+
+/**
    Deliver a flattened generator's YIELD value to a receiver located by
    kos_dyn_find_iter_node.  val ownership transfers to the consumer.
 
@@ -1597,60 +1658,24 @@ int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
 
 
 /**
-   Push a with (context manager) extent onto the dynamic chain after sync
+   Push a provisional WITH node (phase PENDING_ENTER_AWAIT) before calling
    enter. :c:member:`shot` is KOS_DYN_WITH_SHOT_MULTI or
-   KOS_DYN_WITH_SHOT_SINGLE_ACTIVE.
+   KOS_DYN_WITH_SHOT_SINGLE_ACTIVE. self_bind carries KOS_WITH_SELF_ENTER
+   and KOS_WITH_SELF_EXIT for the protocol methods that were resolved on
+   the type as plain functions and are called with mgr as their first
+   argument; the others are already bound or need no receiver.
 
    :return: new KosDynWith node, or NULL on error
-*/
-KosDynWith *kos_dyn_push_with(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc,
-    uint8_t shot);
-
-
-/**
-   Push a dyn-with (multi-shot) extent; same as kos_dyn_push_with with
-   KOS_DYN_WITH_SHOT_MULTI.
-*/
-KosDynWith *kos_dyn_push_dyn_with(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc);
-
-
-/**
-   Push a provisional WITH node (phase PENDING_ENTER_AWAIT) before calling
-   enter. :c:member:`shot` selects multi vs single-shot caps.
 */
 KosDynWith *kos_dyn_push_with_provisional(
     KosEvalState *es,
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc,
     uint8_t shot);
-
-
-/**
-   Push provisional dyn-with; same as kos_dyn_push_with_provisional with
-   KOS_DYN_WITH_SHOT_MULTI.
-*/
-KosDynWith *kos_dyn_push_dyn_with_provisional(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc);
 
 
 /**
@@ -1816,8 +1841,7 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node);
 
 KosOpResult kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node);
 
-KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node);
-int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node);
+int kos_dyn_complete_pending(KosEvalState *es);
 
 
 /**
@@ -1886,17 +1910,19 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
 
 
 /**
-   YIELD unwind walk: from dyn_top upward, offer handle(YIELD) to each node,
-   stopping at the first that CONSUMES (the generator node), whose GEN
-   node is then frozen and detached from the live chain.  A CONSUME by a
-   non-GEN node completes the walk without freezing.
+   Freeze gen at a yield: the span from dyn_top down to gen leaves the
+   live chain into gen's active slot, gen's parent becomes dyn_top, and
+   the live registers retarget to it. A yield is not an unwind: no node
+   between the frame and its GEN acts on it (no finally, no __exit__),
+   so the open extents freeze with the chain and return on the next
+   install. gen is the node kos_dyn_find_gen returned for the running
+   frame.
 
-   Callers: eval.c eval_event_yield (post-opcode YIELD dispatch).
+   Callers: eval.c eval_event_yield.
 
-   :return: KOS_WALK_OK when a node consumed the yield (valid yield),
-     KOS_WALK_ERROR on error or when no generator node was found
+   :return: 0, or -1 with PyErr set
 */
-KosWalkStatus kos_dyn_unwind_yield(KosEvalState *es);
+int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen);
 
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
@@ -2397,6 +2423,11 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 #define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
+#define KosDynGen_HOST(n)         (&((KosDynNode *)(n))->u.gen.host)
+#define KosDynGen_FROZEN(n)       (&((KosDynNode *)(n))->u.gen.frozen)
+/** a GEN with a parent is flattened: its yields deliver to a consumer
+    on this chain; a GEN at the chain root surfaces them to an adapter */
+#define KosDynGen_IS_FLATTENED(n) (KosDynNode_PARENT(n) != NULL)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
@@ -2578,10 +2609,11 @@ static inline void kos_dyn_iter_request_arm(
     KosDynNode *node, PyObject *iter, uint8_t mode) {
 
   KosIterRequest *req = kos_dyn_iter_request(node);
+  PyObject *prior = req->iter;
 
   Py_XINCREF(iter);
-  Py_XDECREF(req->iter);
-  req->iter = iter;
+  kos_dyn_iter_request_bind_iter(req, iter);
+  Py_XDECREF(prior);
   kos_dyn_iter_request_set_mode(node, mode);
 }
 
@@ -2603,9 +2635,15 @@ static inline void kos_dyn_iter_request_arm(
 /** Single-shot; __exit__ already consumed; ignore further protocol */
 #define KOS_DYN_WITH_SHOT_SINGLE_DONE 2u
 
+/** enter is a plain function: call it with mgr as the first argument */
+#define KOS_WITH_SELF_ENTER 1u
+/** exit is a plain function: call it with mgr as the first argument */
+#define KOS_WITH_SELF_EXIT  2u
+
 #define KosDynWith_MGR(n)          (((KosDynNode *)(n))->u.with.mgr)
 #define KosDynWith_ENTER(n)        (((KosDynNode *)(n))->u.with.enter)
 #define KosDynWith_EXIT(n)         (((KosDynNode *)(n))->u.with.exit)
+#define KosDynWith_SELF_BIND(n)    (((KosDynNode *)(n))->u.with.self_bind)
 #define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
 #define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.phase)
 #define KosDynWith_SHOT(n)         (((KosDynNode *)(n))->u.with.shot)

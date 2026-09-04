@@ -126,7 +126,10 @@ static KosOpResult process_raise(KosEvalState *es);
 
 static KosOpResult eval_parent_return_deliver(KosEvalState *es, PyObject *val);
 
-static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val);
+static KosOpResult eval_event_yield(
+    KosEvalState *es,
+    KosDynGen *gen,
+    PyObject *val);
 
 static KosOpResult eval_event_await(KosEvalState *es, PyObject *val);
 
@@ -246,9 +249,21 @@ KosIterRequestStatus KosIterRequest_Next(
 
   KosIterRequest *req = kos_dyn_iter_request(node);
   PyObject *iter = req->iter;
-  KosIterSlots *islots;
+  KosIterSlots *islots = req->islots;
 
-  if (KosIter_CheckSlots(iter, &islots)) {
+#if KOS_EVAL_SAFETYNET
+  {
+    KosIterSlots *fresh = NULL;
+    int is_provider = KosIter_CheckSlots(iter, &fresh);
+    if ((is_provider ? fresh : NULL) != islots) {
+      PyErr_SetString(PyExc_SystemError,
+                      "iteration request suite does not match its iterator");
+      return KOS_IREQ_ERROR;
+    }
+  }
+#endif
+
+  if (islots) {
     PyObject *out = NULL;
 
     /* Armed before the step: an INSTALLED outcome delivers through the
@@ -285,7 +300,7 @@ KosIterRequestStatus KosIterRequest_Next(
           PyObject *payload = NULL;
           if (PyGen_FetchStopIterationValue(&payload) < 0)
             return KOS_IREQ_ERROR;
-          islots->ki_finish(iter, islots->ki_pyctx_recyclable ? 0 : 1);
+          kos_dyn_iter_request_finish(node, 1);
           *fast_out = payload;
           return KOS_IREQ_EXHAUSTED;
         }
@@ -502,9 +517,6 @@ static KosOpResult revive_await(
       }
       if (dr.kind != KOS_RES_NORMAL)
         return dr;
-
-      if (kos_dyn_complete_pending_exit(es, 1) < 0)
-        return EVAL_RAISE();
       return EVAL_NORMAL();
     }
 
@@ -523,10 +535,8 @@ static KosOpResult revive_await(
   }
   if (owned)
     Py_DECREF(to_push);
-  {
-    if (kos_dyn_complete_pending_exit(es, 1) < 0)
-      return EVAL_RAISE();
-  }
+  if (kos_dyn_complete_pending(es) < 0)
+    return EVAL_RAISE();
   return EVAL_NORMAL();
 }
 
@@ -1088,40 +1098,110 @@ static void trace_stack(const char *prefix, KosSegment *stack) {
 
 
 /**
+   Resolve one protocol method of mgr the way Python resolves a special
+   method: on the type, never on the instance. A plain function
+   (KosFunction or PyFunction) is returned unbound with *self_bind set,
+   so the caller passes mgr as the first argument and no bound-method
+   object is built; any other descriptor is bound through its __get__;
+   a plain class attribute is returned as is.
+
+   :return: 1 found (*out is a new ref), 0 absent with no error set,
+     -1 on error
+*/
+static int resolve_special_method(
+    PyObject *mgr,
+    PyObject *name,
+    PyObject **out,
+    int *self_bind) {
+
+  PyTypeObject *tp = Py_TYPE(mgr);
+  PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
+
+  *self_bind = 0;
+  if (! descr)
+    return 0;
+
+  if (is_plain_instance_method(descr)) {
+    Py_INCREF(descr);
+    *out = descr;
+    *self_bind = 1;
+    return 1;
+  }
+  if (Py_TYPE(descr)->tp_descr_get) {
+    PyObject *bound = Py_TYPE(descr)->tp_descr_get(descr, mgr, (PyObject *) tp);
+    if (! bound)
+      return -1;
+    *out = bound;
+    return 1;
+  }
+  Py_INCREF(descr);
+  *out = descr;
+  return 1;
+}
+
+
+/**
    Resolve enter/exit on mgr. Prefer __aenter__/__aexit__ if present (async
    protocol), else __enter__/__exit__ (sync). Returns new refs in *out_enter
-   and *out_exit.
+   and *out_exit, and the KOS_WITH_SELF_* word for the pair in *out_self.
 
-   :return: 0 on success, -1 on error
+   :return: 0 on success, -1 on error (TypeError when mgr supports
+     neither protocol)
 */
 static int resolve_context_enter_exit(
     PyObject *mgr,
     PyObject **out_enter,
-    PyObject **out_exit) {
+    PyObject **out_exit,
+    uint8_t *out_self) {
 
-  PyObject *enter = PyObject_GetAttr(mgr, str_aenter);
+  PyObject *enter = NULL;
   PyObject *exit = NULL;
-  if (enter) {
-    exit = PyObject_GetAttr(mgr, str_aexit);
+  int enter_self = 0;
+  int exit_self = 0;
+  int r;
+
+  r = resolve_special_method(mgr, str_aenter, &enter, &enter_self);
+  if (r < 0)
+    return -1;
+  if (r > 0) {
+    r = resolve_special_method(mgr, str_aexit, &exit, &exit_self);
+    if (r < 0) {
+      Py_DECREF(enter);
+      return -1;
+    }
+    if (r == 0)
+      Py_CLEAR(enter);
   }
 
-  if (! enter || ! exit) {
-    Py_XDECREF(enter);
-    PyErr_Clear();
-
-    enter = PyObject_GetAttr(mgr, str_enter);
-    if (! enter)
+  if (! enter) {
+    r = resolve_special_method(mgr, str_enter, &enter, &enter_self);
+    if (r < 0)
       return -1;
-
-    exit = PyObject_GetAttr(mgr, str_exit);
-    if (! exit) {
+    if (r == 0) {
+      PyErr_Format(PyExc_TypeError,
+                   "'%.200s' object does not support the context manager"
+                   " protocol", Py_TYPE(mgr)->tp_name);
+      return -1;
+    }
+    r = resolve_special_method(mgr, str_exit, &exit, &exit_self);
+    if (r < 0) {
       Py_DECREF(enter);
+      return -1;
+    }
+    if (r == 0) {
+      Py_DECREF(enter);
+      PyErr_Format(PyExc_TypeError,
+                   "'%.200s' object does not support the context manager"
+                   " protocol (missed __exit__ method)",
+                   Py_TYPE(mgr)->tp_name);
       return -1;
     }
   }
 
   *out_enter = enter;
   *out_exit = exit;
+  *out_self = (uint8_t) ((enter_self ? KOS_WITH_SELF_ENTER : 0)
+                         | (exit_self ? KOS_WITH_SELF_EXIT : 0));
   return 0;
 }
 
@@ -1740,6 +1820,29 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 #define KOS_OP_REQUIRE_NS(ns)  ((void) 0)
 #endif
 
+/**
+   The signal that ends an in-eval delivery (a control-returned hook, a
+   flattened generator's yield landing on its consumer). The delivery
+   left a plain bytecode frame current with nothing staged, no error,
+   and no plan armed: DISPATCH, so the trampoline threads from es->pc
+   without a prologue pass, and a handler that ran the delivery itself
+   threads on directly. Anything else (a value staged for a resume, a
+   codeless frame, a plan) is the prologue's to deliver.
+*/
+static inline KosOpResult kos_eval_delivery_done(KosEvalState *es) {
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+
+  if (likely(frame
+             && KosDynFrame_CODE(frame)
+             && ! KosDynFrame_RESUME_FN(frame)
+             && ! KosEvalState_PENDING_VALUE(es)
+             && ! KosEvalState_PLAN(es)
+             && ! PyErr_Occurred()))
+    return EVAL_DISPATCH();
+  return EVAL_REPROLOGUE();
+}
+
+
 /* Cross-handler helpers defined inside handlers.incl after some of
    their users (the include follows opcodes.incl order): the shared
    OBJECT_NEXT step core lives in OBJECT_NEXT.c but VAR_NEXT / FAST_NEXT
@@ -1757,7 +1860,7 @@ static inline int kos_return_is_plain(
     KosEvalState *es,
     KosDynNode **out_child,
     KosDynNode **out_parent);
-KOS_OP_INLINE int kos_return_is_extent_plain(
+KOS_OP_INLINE int kos_return_is_region(
     KosEvalState *es,
     KosDynNode **out_child,
     KosDynNode **out_parent,
@@ -1767,7 +1870,7 @@ KOS_OP_INLINE KosOpResult eval_ng_plain_return(
     KosDynNode *child,
     KosDynNode *parent,
     PyObject *val);
-KOS_OP_INLINE KosOpResult eval_ng_extent_return(
+KOS_OP_INLINE KosOpResult eval_ng_region_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -2200,40 +2303,32 @@ static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
 
 
 /**
-   YIELD half of dispatch_iter_node_event. Caller already ran
-   kos_dyn_unwind_yield.  val is a new ref; ownership is transferred to
-   the consuming iteration node (NEXT / FOREACH / YIELD_FROM).  Every receiver kind
-   hands off and returns control here; the eval loop resumes the receiver in
-   normal mode, which drives any further hop (a YIELD_FROM receiver re-emits the
-   value as its own yield on its next dispatch).
-*/
-
-/**
-   Stage A of post-opcode YIELD: transition walk only (freeze is walk side).
-*/
-static KosOpResult eval_yield_handle_walk_and_freeze(KosEvalState *es) {
-  if (kos_dyn_unwind_yield(es) == KOS_WALK_ERROR)
-    return EVAL_FATAL();
-  return EVAL_NORMAL();
-}
-
-
-/**
    Centralized YIELD handler.  Flushes live registers to the frame, marks the
-   generator dead-after-yield, walks the dynchain, handles optional async-gen
-   node delivery, and tags the suspension event.  val is a new reference;
-   ownership transfers to the caller or consuming iteration node.
-*/
-static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
-  KosEvalState_FlushLiveRegsToFrame(es);
-  KosEvalState_MarkDeadAfterYield(es);
+   generator dead-after-yield, freezes gen (the running frame's GEN, from
+   kos_dyn_find_gen), delivers to the consuming iteration node (NEXT /
+   FOREACH / YIELD_FROM) when there is one, and otherwise tags the
+   suspension event.  val is a new reference; ownership transfers to the
+   caller or consuming iteration node.  A YIELD_FROM receiver re-emits
+   the value as its own yield on its next dispatch.
 
-  SAYF("[eval] post_opcode KOS_RES_YIELD -> walk_handle_yield dyn_top=%p\n",
-       (void *) KosEvalState_CurrentNode(es));
-  {
-    KosOpResult ws = eval_yield_handle_walk_and_freeze(es);
-    if (ws.kind != KOS_RES_NORMAL)
-      return ws;
+   A yield delivered to a flattened consumer ends in kos_eval_delivery_done:
+   DISPATCH when the consumer is a plain bytecode frame, which op_YIELD
+   threads into directly; REPROLOGUE when the prologue must deliver (a
+   consumer waiting on a resume). A yield with no consumer on the chain
+   is the terminal EVAL_YIELD the adapters drive.
+*/
+static KosOpResult eval_event_yield(
+    KosEvalState *es,
+    KosDynGen *gen,
+    PyObject *val) {
+
+  /* No flush here: the freeze's retarget flushes the outgoing frame's
+     pcs when it switches to the consumer's. */
+  SAYF("[eval] post_opcode KOS_RES_YIELD -> freeze gen=%p dyn_top=%p\n",
+       (void *) gen, (void *) KosEvalState_CurrentNode(es));
+  if (kos_dyn_gen_freeze(es, gen) < 0) {
+    Py_DECREF(val);
+    return EVAL_FATAL();
   }
   {
     KosDynNode *node = kos_dyn_find_iter_node(es);
@@ -2241,7 +2336,7 @@ static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
       KosOpResult dr = KosIterRequest_Deliver(es, node,
                                               KOS_IWAKE_VALUE, val);
       if (dr.kind == KOS_RES_NORMAL)
-        return EVAL_REPROLOGUE();
+        return kos_eval_delivery_done(es);
       if (dr.kind == KOS_RES_RAISE) {
         KosOpResult rs;
         KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
@@ -2250,6 +2345,10 @@ static KosOpResult eval_event_yield(KosEvalState *es, PyObject *val) {
       return dr;
     }
   }
+  /* Only a yield that stops the evaluator leaves the context not
+     running; a delivered yield keeps threading, and the context stays
+     RUNNING so KosContext_Traverse keeps visiting the live state. */
+  KosEvalState_MarkDeadAfterYield(es);
   KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
   return EVAL_YIELD(val);
 }
@@ -2401,32 +2500,29 @@ KOS_OP_INLINE KosOpResult eval_ng_plain_return(
   if (KosEvalState_StackPUSH(es, val) < 0)
     return EVAL_FATAL();
 
-  /* Control-returned hook fast-exit, inlined: parent (now dyn_top) is a
-     FRAME; only a WITH directly beneath it can demand the hook.  On this
-     path no PyErr is set, no plan is armed, and parent has no native
-     handler (checked by the case-1 guard), so the dispatch loop can
-     resume fetching directly — no prologue re-entry. */
-  {
-    KosDynNode *pp = KosDynNode_PARENT(parent);
-    if (likely(! pp || ! KosDynNode_IS_WITH(pp)))
-      return EVAL_DISPATCH();
-  }
-  return kos_eval_post_opcode_control_returned_after_hook(es);
+  /* No control-returned hook: parent (now dyn_top) is a frame, and a
+     WITH beneath it is parent's own extent, pending or not, whose hook
+     runs when parent itself returns. No PyErr is set, no plan is armed,
+     and parent has no resume (the case-1 guard), so the trampoline can
+     thread directly -- no prologue re-entry. */
+  return EVAL_DISPATCH();
 }
 
 
 /**
-   Extent-plain return predicate: the frame returns into a discardable
-   lexical extent (LOOP, NS, FOREACH) whose owning frame is a plain
-   Koskari frame.  Every retarget fact is cache-available — the back
-   frame recorded at install, the freed segment's displaced owning slot,
-   and the survivor-carried namespace — so the delivery reduces to a
-   straight retarget plus push, and the control-returned hook is a no-op
-   for these node kinds (kos_dynnode_on_control_returned's default arm).
-   Any missing fact falls through to the general path, mirroring the
-   cache-or-walk split in kos_dyn_resync_after_pop.
+   Region-parent return predicate: the frame returns into a chain node
+   that passes a callee's value through to the frame beneath it -- any
+   node that is not itself a frame, a generator, or an iteration node
+   with a step in flight (the receiving side of a value-grafted invoke,
+   which is a return terminus). Every retarget fact is cache-available:
+   the back frame recorded at install, the freed segment's displaced
+   owning slot, and the node's namespace fill. A node that reacts to
+   control returning into it says so with KOS_DYN_CAP_CONTROL_HOOK and
+   the transition runs its hook; the rest take the value and nothing
+   more. Any missing fact falls through to the general path, mirroring
+   the cache-or-walk split in kos_dyn_resync_after_pop.
 */
-KOS_OP_INLINE int kos_return_is_extent_plain(
+KOS_OP_INLINE int kos_return_is_region(
     KosEvalState *es,
     KosDynNode **out_child,
     KosDynNode **out_parent,
@@ -2440,26 +2536,14 @@ KOS_OP_INLINE int kos_return_is_extent_plain(
     return 0;
 
   parent = KosDynNode_PARENT(child);
-  if (! parent)
+  if (! parent
+      || KosDynNode_IS_FRAME(parent)
+      || KosDynNode_IS_GEN(parent)
+      || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_ITER_RECEIVER))
     return 0;
-  switch (KosDynNode_KIND(parent)) {
-  case KOS_DYN_NS:
-  case KOS_DYN_LOOP:
-    break;
-  case KOS_DYN_FOREACH:
-    /* An armed iteration node is a return terminus (a value-grafted
-       invoke delivering its element), never a discardable extent; the
-       capability is held exactly while a step is in flight, so plain
-       body calls keep the fast retarget. */
-    if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_ITER_RECEIVER))
-      return 0;
-    break;
-  default:
-    return 0;
-  }
 
   /* Same two conjuncts as kos_return_parent_is_plain, for the frame
-     eval_ng_extent_return will dispatch on. */
+     eval_ng_region_return will dispatch on. */
   ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
   if (! ft
       || ! KosDynNode_IS_FRAME((KosDynNode *) ft)
@@ -2480,13 +2564,13 @@ KOS_OP_INLINE int kos_return_is_extent_plain(
 
 
 /**
-   NG fast path: return into a discardable extent above a plain frame.
-   Same inline retarget as eval_ng_plain_return, except the extent node
-   (which stays installed) becomes dyn_top, while the frame registers
-   load from the cached back frame and the block restores through the
-   freed segment's displaced-slot record.  val consumed.
+   Region-parent return transition, once kos_return_is_region holds:
+   retarget straight from the cached facts, free the callee, push the
+   value on the region's segment, then let a node that hooks control
+   returns react (the hook ends in kos_eval_delivery_done); a node
+   without the hook dispatches directly. val consumed.
 */
-KOS_OP_INLINE KosOpResult eval_ng_extent_return(
+KOS_OP_INLINE KosOpResult eval_ng_region_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -2507,7 +2591,9 @@ KOS_OP_INLINE KosOpResult eval_ng_extent_return(
   if (KosEvalState_StackPUSH(es, val) < 0)
     return EVAL_FATAL();
 
-  return EVAL_DISPATCH();
+  if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
+    return kos_eval_post_opcode_control_returned_after_hook(es);
+  return kos_eval_delivery_done(es);
 }
 
 
@@ -2705,20 +2791,18 @@ static inline KosOpResult eval_event_return_ng(
 /**
    Run WIND/WITH control hook after a CONTROL_RETURNED delivery.
 
-   Inline early exit: a FRAME node only has hook work when its parent is a
-   WITH in a pending await phase.  Any other frame-topped chain — the
-   dominant plain-return case — skips the dispatch (and its trace wrap)
-   entirely.  Mirrors the first branch of kos_dynnode_on_control_returned.
+   Inline early exit: a frame-topped chain has no hook work. The hook
+   belongs to the WITH or WIND node that is current once its installed
+   callee (an __enter__, an __exit__, a thunk) has popped; a frame whose
+   parent is a pending WITH is that callee itself, and a return into it
+   from its own callees must leave the pending phase alone.
 */
 static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
     KosEvalState *es) {
 
   KosDynNode *node = KosEvalState_CurrentNode(es);
-  if (likely(node && KosDynNode_IS_FRAME(node))) {
-    KosDynNode *parent = KosDynNode_PARENT(node);
-    if (likely(! parent || ! KosDynNode_IS_WITH(parent)))
-      return EVAL_REPROLOGUE();
-  }
+  if (likely(! node || KosDynNode_IS_FRAME(node)))
+    return kos_eval_delivery_done(es);
 
   KosOpResult r;
   KOS_TRACE_POST_OP_WRAP(control_returned,
@@ -2728,7 +2812,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
     KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
     return rs;
   }
-  return EVAL_REPROLOGUE();
+  return kos_eval_delivery_done(es);
 }
 
 
@@ -2917,7 +3001,16 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
 
   case KOS_RES_YIELD: {
     KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, res.val));
+    KosDynGen *gen = kos_dyn_find_gen(es);
+
+    if (unlikely(! gen)) {
+      Py_DECREF(res.val);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "yield outside generator: no generator node on chain");
+      return EVAL_FATAL();
+    }
+    KOS_TRACE_POST_OP_WRAP(event_yield,
+        r = eval_event_yield(es, gen, res.val));
     return r;
   }
 

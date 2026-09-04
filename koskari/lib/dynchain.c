@@ -45,6 +45,17 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
 static int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
+static void kos_dyn_restamp_spliced_prefix(KosEvalState *es);
+static void kos_dyn_stamp_span(
+    KosDynNode **span,
+    size_t len,
+    KosDynFrame *rft,
+    KosSegment **rbl,
+    PyObject *rns);
+static void kos_dyn_restamp_span(
+    KosDynNode *from,
+    KosDynNode *stop,
+    const KosLiveRegs *base);
 
 static void kos_dyn_resync_apply(
     KosEvalState *es,
@@ -867,33 +878,22 @@ KosOpResult kos_dynnode_on_control_returned(
 
   int r = 0;
   /* Iteration-node yield/return uses eval dispatch_iter_node_event /
-     kos_dyn_deliver_* instead of this hook. */
-  /* When node is a frame, check if parent is WITH in pending phase. */
-  if (KosDynNode_IS_FRAME(node)) {
-    KosDynNode *parent = KosDynNode_PARENT(node);
-    if (parent && KosDynNode_IS_WITH(parent)) {
-      if (KosDynWith_EXIT_PENDING((KosDynWith *) parent))
-        r = kos_dyn_with_on_control_returned(es, (KosDynWith *) parent, 1);
-      else if (KosDynWith_ENTER_PENDING((KosDynWith *) parent))
-        r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) parent);
-    }
-  } else {
-    switch (KosDynNode_KIND(node)) {
-      case KOS_DYN_WIND:
-        r = kos_dyn_wind_on_control_returned(es, (KosDynWind *) node);
-        break;
-      case KOS_DYN_WITH:
-        /* An installed __enter__/__exit__ frame has already popped by the
-           time we get here, so the WITH node itself is current; the frame
-           branch above only sees the await-resume shape. */
-        if (KosDynWith_EXIT_PENDING((KosDynWith *) node))
-          r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node, 1);
-        else if (KosDynWith_ENTER_PENDING((KosDynWith *) node))
-          r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) node);
-        break;
-      default:
-        break;
-    }
+     kos_dyn_deliver_* instead of this hook. A frame node has no hook
+     work: the installed __enter__/__exit__/thunk frame has already
+     popped by the time the hook runs, so the WITH or WIND node itself
+     is current. */
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_WIND:
+      r = kos_dyn_wind_on_control_returned(es, (KosDynWind *) node);
+      break;
+    case KOS_DYN_WITH:
+      if (KosDynWith_EXIT_PENDING((KosDynWith *) node))
+        r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node);
+      else if (KosDynWith_ENTER_PENDING((KosDynWith *) node))
+        r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) node);
+      break;
+    default:
+      break;
   }
   return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
 }
@@ -921,42 +921,29 @@ int kos_dyn_abort_push_region(KosEvalState *es, KosDynNode *region) {
 }
 
 
-/* === Generic pending-exit APIs === */
+/* === Pending protocol completion at await revive === */
 
 
 /**
-   Walk ancestors from node for a WITH awaiting async __exit__.
+   Complete a with node whose awaited __aenter__ or __aexit__ has
+   settled: the awaited value sits on the frame stack and dyn_top is the
+   pending WITH node itself. An awaitable installs no frame; the pending
+   phase is set only on dyn_top, by the push and pop opcodes or by a
+   walk popping through dyn_top, and the walk returns on the AWAIT with
+   the node in place; nothing runs between that AWAIT and this revive.
+   A pending enter binds the value; a pending exit merges it and pops
+   the node. Callers: eval loop at await revive.
 */
-static KosDynWith *find_pending_exit_with(KosDynNode *node) {
-  for (; node; node = KosDynNode_PARENT(node)) {
-    if (KosDynNode_IS_WITH(node)
-        && KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-      return (KosDynWith *) node;
-  }
-  return NULL;
-}
+int kos_dyn_complete_pending(KosEvalState *es) {
+  KosDynNode *top = KosEvalState_DYN_TOP(es);
 
-
-/**
-   Exposed form of find_pending_exit_with; returns the node or NULL.
-   Callers: eval when resuming after await inside __exit__.
-*/
-KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node) {
-  KosDynWith *w = find_pending_exit_with(node);
-  return w ? (KosDynNode *) w : NULL;
-}
-
-
-/**
-   Resume control after async WITH exit completes: runs
-   kos_dyn_with_on_control_returned for the pending node. Callers: eval loop
-   when finishing a suspended unwind.
-*/
-int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node) {
-  KosDynNode *n = kos_dyn_find_pending_exit(KosEvalState_DYN_TOP(es));
-  if (! n)
+  if (! top || ! KosDynNode_IS_WITH(top))
     return 0;
-  return kos_dyn_with_on_control_returned(es, (KosDynWith *) n, do_pop_node);
+  if (KosDynWith_ENTER_PENDING((KosDynWith *) top))
+    return kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) top);
+  if (KosDynWith_EXIT_PENDING((KosDynWith *) top))
+    return kos_dyn_with_on_control_returned(es, (KosDynWith *) top);
+  return 0;
 }
 
 
@@ -1546,35 +1533,102 @@ static void kos_dyn_restamp_spliced_prefix(KosEvalState *es) {
     KosSegment **rbl = NULL;
     PyObject *rns = NULL;
     kos_dyn_resync_from(node, &rft, &rbl, &rns);
+    kos_dyn_stamp_span(span, len, rft, rbl, rns);
+  }
 
-    /* stamp rootward-first, threading the running facts upward */
-    for (size_t i = len; i--; ) {
-      KosDynNode *n = span[i];
+out:
+  if (span != fixed)
+    PyMem_Free(span);
+}
 
-      if (! KosDynNode_NS(n)) {
-        /* fill non-frames only; a frame's NULL ns is the placeholder
-           window and stays NULL until its real namespace is bound */
-        if (rns && ! KosDynNode_IS_FRAME(n)) {
-          Py_INCREF(rns);
-          KosDynNode_NS(n) = rns;
-        }
-      } else {
-        rns = KosDynNode_NS(n);
+
+/**
+   Stamp the collected nodes span[0..len), span[0] nearest dyn_top,
+   rootward-first from the facts live at their base, threading the
+   running facts upward: a frame's back link, a segment's displaced
+   owning slot, and a non-frame node's namespace fill. Stamps never
+   overwrite.
+*/
+static void kos_dyn_stamp_span(
+    KosDynNode **span,
+    size_t len,
+    KosDynFrame *rft,
+    KosSegment **rbl,
+    PyObject *rns) {
+
+  for (size_t i = len; i--; ) {
+    KosDynNode *n = span[i];
+
+    if (! KosDynNode_NS(n)) {
+      /* fill non-frames only; a frame's NULL ns is the placeholder
+         window and stays NULL until its real namespace is bound */
+      if (rns && ! KosDynNode_IS_FRAME(n)) {
+        Py_INCREF(rns);
+        KosDynNode_NS(n) = rns;
       }
+    } else {
+      rns = KosDynNode_NS(n);
+    }
 
-      if (KosDynNode_IS_FRAME(n)) {
-        if (! KosDynFrame_BACK_FRAME(n))
-          KosDynFrame_BACK_FRAME(n) = (KosDynNode *) rft;
-        rft = (KosDynFrame *) n;
-      }
+    if (KosDynNode_IS_FRAME(n)) {
+      if (! KosDynFrame_BACK_FRAME(n))
+        KosDynFrame_BACK_FRAME(n) = (KosDynNode *) rft;
+      rft = (KosDynFrame *) n;
+    }
 
-      if (KosDynNode_STACK(n)) {
-        if (! KosSegment_BACK(KosDynNode_STACK(n)))
-          KosSegment_BACK(KosDynNode_STACK(n)) = rbl;
-        rbl = &KosDynNode_STACK(n);
-      }
+    if (KosDynNode_STACK(n)) {
+      if (! KosSegment_BACK(KosDynNode_STACK(n)))
+        KosSegment_BACK(KosDynNode_STACK(n)) = rbl;
+      rbl = &KosDynNode_STACK(n);
     }
   }
+}
+
+
+/**
+   Restamp the unwind caches of a span just spliced back onto the
+   chain: the nodes from from down to stop, both included, with the
+   facts live at stop's parent supplied by the caller (a resync of
+   that parent derives the same three). The prefix restamp's scan for
+   stamped evidence and its walk for the base facts are skipped; the
+   caller knows the span's ends and holds the facts. Callers:
+   kos_dyn_gen_install, where the consumer's registers recorded at the
+   install are those facts.
+*/
+static void kos_dyn_restamp_span(
+    KosDynNode *from,
+    KosDynNode *stop,
+    const KosLiveRegs *base) {
+
+  KosDynNode *fixed[KOS_RESTAMP_FIXED];
+  KosDynNode **span = fixed;
+  size_t cap = KOS_RESTAMP_FIXED;
+  size_t len = 0;
+  KosDynNode *node;
+
+  for (node = from; node; node = KosDynNode_PARENT(node)) {
+    if (len == cap) {
+      size_t ncap = cap * 2;
+      KosDynNode **grown;
+      if (span == fixed) {
+        grown = PyMem_Malloc(ncap * sizeof(KosDynNode *));
+        if (grown)
+          memcpy(grown, span, len * sizeof(KosDynNode *));
+      } else {
+        grown = PyMem_Realloc(span, ncap * sizeof(KosDynNode *));
+      }
+      if (! grown)
+        goto out;
+      span = grown;
+      cap = ncap;
+    }
+    span[len++] = node;
+    if (node == stop)
+      break;
+  }
+
+  kos_dyn_stamp_span(span, len, (KosDynFrame *) base->frame, base->block,
+                     base->ns);
 
 out:
   if (span != fixed)
@@ -1906,10 +1960,7 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
       /* A non-protocol error escaping a value-grafted invoke: release
          the provider's busy mark and disarm before the raise passes to
          the consumer's own handlers. */
-      PyObject *iter_obj = kos_dyn_iter_node_iter_obj(node);
-      KosIterSlots *islots;
-      if (iter_obj && KosIter_CheckSlots(iter_obj, &islots))
-        islots->ki_finish(iter_obj, 0);
+      kos_dyn_iter_request_finish(node, 0);
       kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
     }
   }

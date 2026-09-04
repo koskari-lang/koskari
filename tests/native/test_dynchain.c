@@ -495,7 +495,7 @@ static int test_dynwith_free_exc_unconditional(void) {
     TEST_ASSERT_NOT_NULL(exit, "exit");
 
     with_node = kos_dyn_push_with_provisional(
-        &es, mgr, enter, exit, NULL, 0, KOS_DYN_WITH_SHOT_MULTI);
+        &es, mgr, enter, exit, 0, NULL, 0, KOS_DYN_WITH_SHOT_MULTI);
     TEST_ASSERT_NOT_NULL(with_node, "push WITH provisional");
 
     KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;

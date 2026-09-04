@@ -168,17 +168,19 @@ class TestDynWithTransferWindReproducer(SpecialsTestCase):
             log.append(s)
             return s
 
-        def make_mgr():
-            mgr = SimpleMgr(42)
-            orig_enter = mgr.__enter__
+        class CountingMgr(SimpleMgr):
+            """
+            Counts enters on the type: the protocol methods resolve on
+            the manager's type, so an instance attribute would not do
+            """
 
-            def counting_enter():
+            def __enter__(self):
                 record("enter-%s" % enter_count[0])
                 enter_count[0] += 1
-                return orig_enter()
+                return SimpleMgr.__enter__(self)
 
-            mgr.__enter__ = counting_enter
-            return mgr
+        def make_mgr():
+            return CountingMgr(42)
 
         def stash(k):
             record("stash-py")

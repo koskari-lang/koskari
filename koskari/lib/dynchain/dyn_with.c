@@ -13,6 +13,7 @@ static KosDynWith *kos_dyn_with_allocate(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc,
     uint8_t shot) {
@@ -26,9 +27,10 @@ static KosDynWith *kos_dyn_with_allocate(
     uint32_t caps;
     if (shot == KOS_DYN_WITH_SHOT_MULTI)
       caps = KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION | KOS_DYN_CAP_NEEDS_UNWIND_ACTION
-          | KOS_DYN_CAP_NEEDS_INSTALL_WIND;
+          | KOS_DYN_CAP_NEEDS_INSTALL_WIND | KOS_DYN_CAP_CONTROL_HOOK;
     else
-      caps = KOS_DYN_CAP_CATCH | KOS_DYN_CAP_NEEDS_UNWIND_ACTION;
+      caps = KOS_DYN_CAP_CATCH | KOS_DYN_CAP_NEEDS_UNWIND_ACTION
+          | KOS_DYN_CAP_CONTROL_HOOK;
 
     kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent, caps);
   }
@@ -37,6 +39,7 @@ static KosDynWith *kos_dyn_with_allocate(
   KosDynWith_MGR(node) = mgr;
   KosDynWith_ENTER(node) = enter;
   KosDynWith_EXIT(node) = exit;
+  KosDynWith_SELF_BIND(node) = self_bind;
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_SHOT(node) = shot;
@@ -47,16 +50,9 @@ static KosDynWith *kos_dyn_with_allocate(
   KosDynWith_EXC_VAL(node) = NULL;
   KosDynWith_EXC_TB(node) = NULL;
 
-  /* Single-shot: the exit-done bit lives in a KosRef cell shared across
-     continuation clones (non-empty once __exit__ has run) so a captured
-     twin cannot re-run a discharged manager. */
-  if (shot == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE) {
-    KosDynWith_EXIT_DONE(node) = KosRef_New(NULL, NULL);
-    if (! KosDynWith_EXIT_DONE(node)) {
-      kos_dynnode_return_to_freelist((KosDynNode *) node);
-      return NULL;
-    }
-  }
+  /* Single-shot: the exit-done bit lives in the node's own shot field
+     until a continuation clones the node; the clone then makes the
+     shared cell (see kos_dyn_with_clone). */
   return node;
 }
 
@@ -131,11 +127,24 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   Py_XINCREF(KosDynWith_ENTER(node));
   KosDynWith_EXIT(node) = KosDynWith_EXIT(src);
   Py_XINCREF(KosDynWith_EXIT(node));
+  KosDynWith_SELF_BIND(node) = KosDynWith_SELF_BIND(src);
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_SHOT(node) = KosDynWith_SHOT(src);
-  /* Share (not copy) the single-shot exit-done cell: the live twin's exit
-     must be visible to every clone of this extent. */
+  /* A single-shot extent's exit-done fact is shared, not copied: the
+     live twin's exit must be visible to every clone. The cell is made
+     here, on first clone, so a with that is never captured (nearly all
+     of them) allocates nothing; every reader treats a missing cell as
+     not done and the node's own shot field still records the live
+     twin's exit. */
+  if (KosDynWith_SHOT(src) == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE
+      && ! KosDynWith_EXIT_DONE(src)) {
+    KosDynWith_EXIT_DONE(src) = KosRef_New(NULL, NULL);
+    if (! KosDynWith_EXIT_DONE(src)) {
+      kos_dynwith_free(node);
+      return NULL;
+    }
+  }
   KosDynWith_EXIT_DONE(node) = KosDynWith_EXIT_DONE(src);
   Py_XINCREF(KosDynWith_EXIT_DONE(node));
   KosDynWith_NAME(node) = KosDynWith_NAME(src);
@@ -194,6 +203,9 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_int(data, "shot", (int) KosDynWith_SHOT(with_node)) < 0)
     return -1;
+  if (snapshot_set_int(data, "self_bind",
+      (int) KosDynWith_SELF_BIND(with_node)) < 0)
+    return -1;
   if (snapshot_set_int(data, "exit_done",
       kos_dyn_with_single_exit_done(with_node)) < 0)
     return -1;
@@ -212,46 +224,6 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Push WITH as DYN_TOP with ENTERED=1 after sync __enter__.
-*/
-KosDynWith *kos_dyn_push_with(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc,
-    uint8_t shot) {
-
-  // CONTEXT: dirty, touches context directly
-  KosDynWith *node = kos_dyn_with_allocate(
-      KosEvalState_DYN_TOP(es), mgr, enter, exit, name, resume_pc, shot);
-  if (! node)
-    return NULL;
-
-  KosDynWith_ENTERED(node) = 1;
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
-    kos_dynwith_free(node);
-    return NULL;
-  }
-  return node;
-}
-
-
-KosDynWith *kos_dyn_push_dyn_with(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc) {
-
-  return kos_dyn_push_with(
-      es, mgr, enter, exit, name, resume_pc, KOS_DYN_WITH_SHOT_MULTI);
-}
-
-
-/**
    Push provisional node before async __enter__ completes (PENDING_ENTER_AWAIT).
 */
 KosDynWith *kos_dyn_push_with_provisional(
@@ -259,12 +231,14 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
+    uint8_t self_bind,
     PyObject *name,
     uint32_t resume_pc,
     uint8_t shot) {
 
   KosDynWith *node = kos_dyn_with_allocate(
-      KosEvalState_DYN_TOP(es), mgr, enter, exit, name, resume_pc, shot);
+      KosEvalState_DYN_TOP(es), mgr, enter, exit, self_bind, name,
+      resume_pc, shot);
   if (! node)
     return NULL;
 
@@ -275,19 +249,6 @@ KosDynWith *kos_dyn_push_with_provisional(
     return NULL;
   }
   return node;
-}
-
-
-KosDynWith *kos_dyn_push_dyn_with_provisional(
-    KosEvalState *es,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc) {
-
-  return kos_dyn_push_with_provisional(
-      es, mgr, enter, exit, name, resume_pc, KOS_DYN_WITH_SHOT_MULTI);
 }
 
 
@@ -324,6 +285,30 @@ static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val) {
 
 
 /**
+   Complete an __enter__ whose result is TOS: pop it, bind the with name
+   when there is one, and mark the node entered and idle.
+*/
+static int kos_dyn_with_bind_entered(KosEvalState *es, KosDynWith *node) {
+  PyObject *result = KosEvalState_StackPopRef(es);
+  PyObject *name;
+
+  if (! result)
+    return -1;
+
+  name = KosDynWith_NAME(node);
+  if (name && name != Py_None && frame_ns_store(es, name, result) < 0) {
+    Py_DECREF(result);
+    return -1;
+  }
+  Py_DECREF(result);
+
+  KosDynWith_ENTERED(node) = 1;
+  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+  return 0;
+}
+
+
+/**
    Resume after awaitable __enter__: bind name, clear PENDING_ENTER_AWAIT.
 */
 static int kos_dyn_with_on_enter_control_returned(KosEvalState *es, KosDynWith *with_node) {
@@ -336,33 +321,17 @@ static int kos_dyn_with_on_enter_control_returned(KosEvalState *es, KosDynWith *
     return -1;
   }
 
-  {
-    PyObject *result = KosEvalState_StackPopRef(es);
-    if (! result) {
-      return -1;
-    }
-
-    PyObject *name = KosDynWith_NAME(with_node);
-    if (name && name != Py_None) {
-      if (frame_ns_store(es, name, result) < 0) {
-        Py_DECREF(result);
-        return -1;
-      }
-    }
-    Py_DECREF(result);
-  }
-
-  KosDynWith_ENTERED(with_node) = 1;
-  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-  return 0;
+  return kos_dyn_with_bind_entered(es, with_node);
 }
 
 
 /**
-   Resume after awaitable __exit__: merge result with exc triple, maybe pop node.
+   Resume after __exit__ returned: merge its result with the saved
+   exception triple, then pop the node.
 */
-static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_node,
-                                            int do_pop_node) {
+static int kos_dyn_with_on_control_returned(
+    KosEvalState *es,
+    KosDynWith *with_node) {
 
   if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
     return 0;
@@ -385,7 +354,7 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
   KosDynWith_EXC_TB(with_node) = NULL;
   KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
 
-  int had_exception = (typ != Py_None);
+  int had_exception = (typ != NULL);
 
   if (had_exception && PyObject_IsTrue(result)) {
     PyErr_Clear();
@@ -395,14 +364,12 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
     Py_XDECREF(tb);
     if (KosEvalState_FRAME(es))
       KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(with_node));
-    if (do_pop_node) {
-      kos_dyn_with_shot_after_exit_done(with_node);
-      if (kos_dyn_pop_with(es, with_node) < 0)
-        return -1;
-    }
-    /* Every caller pops, so the node is gone and its owning frame's
-       block is the current stack; a parent-stack push would walk past
-       the very frame that is about to receive the value. */
+    kos_dyn_with_shot_after_exit_done(with_node);
+    if (kos_dyn_pop_with(es, with_node) < 0)
+      return -1;
+    /* The node is gone and its owning frame's block is the current
+       stack; a parent-stack push would walk past the very frame that
+       is about to receive the value. */
     if (KosEvalState_StackPushRef(es, Py_None) < 0)
       return -1;
     return 0;
@@ -410,28 +377,32 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
 
   if (had_exception) {
     Py_DECREF(result);
-    if (do_pop_node) {
-      kos_dyn_with_shot_after_exit_done(with_node);
-      if (kos_dyn_pop_with(es, with_node) < 0)
-        return -1;
-    }
+    kos_dyn_with_shot_after_exit_done(with_node);
+    if (kos_dyn_pop_with(es, with_node) < 0)
+      return -1;
     PyErr_Restore(typ, val, tb);
     return -1;
   }
 
   Py_DECREF(result);
-  Py_XDECREF(typ);
-  Py_XDECREF(val);
-  Py_XDECREF(tb);
-  if (kos_dyn_with_post_unwind_deliver(es, with_node) < 0) {
-    return -1;
-  }
-  if (KosEvalState_FRAME(es))
-    KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(with_node));
-  if (do_pop_node) {
+  {
+    /* The body value waits on the node's segment; the node pops first
+       and the value lands on the block that is then live, with no walk
+       through the back link. */
+    KosSegment *stack = KosDynNode_STACK((KosDynNode *) with_node);
+    PyObject *body_val = (stack && KosSegment_LEN(stack))
+        ? KosStack_PopRef(&KosDynNode_STACK((KosDynNode *) with_node))
+        : NULL;
+
+    if (KosEvalState_FRAME(es))
+      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(with_node));
     kos_dyn_with_shot_after_exit_done(with_node);
-    if (kos_dyn_pop_with(es, with_node) < 0)
+    if (kos_dyn_pop_with(es, with_node) < 0) {
+      Py_XDECREF(body_val);
       return -1;
+    }
+    if (body_val && KosEvalState_StackPUSH(es, body_val) < 0)
+      return -1;  /* the push consumed body_val, failure included */
   }
   return 0;
 }
@@ -446,17 +417,21 @@ static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
   }
 
   PyObject *enter_fn = KosDynWith_ENTER(node);
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
 
-  /* A KosCallable does not run here: its install configures a frame that
-     the dispatch loop enters once we hand control back, so nothing has
-     been pushed and the completion below must not run. */
-  const int installs_frame = KosCallable_Check(enter_fn);
-
-  KosOpResult kr = KosEvalState_CallNoArgs(es, enter_fn, 0);
+  /* A plain function resolved on the type is called with the manager as
+     its receiver; anything else was bound at resolution. */
+  KosOpResult kr = (KosDynWith_SELF_BIND(node) & KOS_WITH_SELF_ENTER)
+      ? KosEvalState_Call(es, enter_fn, &KosDynWith_MGR(node), 1, NULL, 0)
+      : KosEvalState_CallNoArgs(es, enter_fn, 0);
   if (kr.kind == KOS_RES_RAISE) {
     return EVAL_RAISE();
   }
-  if (kr.kind != KOS_RES_NORMAL || installs_frame) {
+  /* A callee whose frame is now current has not run: the dispatch loop
+     enters it once we hand control back, nothing has been pushed, and
+     the completion below must not run. A callable that completed in
+     place, KosCallable or not, has pushed its value. */
+  if (kr.kind != KOS_RES_NORMAL || KosEvalState_FRAME(es) != caller) {
     /* __enter__ has not returned: it suspended, or its frame is installed
        and pending. Leave the node in PENDING_ENTER_AWAIT for
        kos_dynnode_on_control_returned, which binds the result when the
@@ -465,25 +440,7 @@ static KosOpResult kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node) {
     return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
   }
 
-  {
-    PyObject *result = KosEvalState_StackPopRef(es);
-    if (! result) {
-      return EVAL_RAISE();
-    }
-
-    PyObject *name = KosDynWith_NAME(node);
-    if (name && name != Py_None) {
-      if (frame_ns_store(es, name, result) < 0) {
-        Py_DECREF(result);
-        return EVAL_RAISE();
-      }
-    }
-    Py_DECREF(result);
-  }
-
-  KosDynWith_ENTERED(node) = 1;
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
-  return EVAL_NORMAL();
+  return kos_dyn_with_bind_entered(es, node) < 0 ? EVAL_RAISE() : EVAL_NORMAL();
 }
 
 
@@ -513,6 +470,17 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
     return EVAL_NORMAL();
   }
 
+  if (KosDynWith_ENTER_PENDING(node)) {
+    /* __enter__ never returned: its installed frame raised and has
+       been popped by the raise walk, or its awaitable failed. The
+       manager was never entered, so __exit__ does not run; the node
+       pops with the error left pending, as Python leaves an __enter__
+       failure to the enclosing handlers. */
+    KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+    kos_dyn_with_shot_after_exit_done(node);
+    return EVAL_NORMAL();
+  }
+
   if (kos_dyn_with_single_exit_done(node)) {
     /* __exit__ already ran, possibly on a twin sharing the exit-done
        cell; complete the extent without re-firing it. */
@@ -526,73 +494,70 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
   }
 
   PyObject *exit_fn = KosDynWith_EXIT(node);
-  const int installs_frame = KosCallable_Check(exit_fn);
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
   PyObject *typ = NULL;
   PyObject *val = NULL;
   PyObject *tb = NULL;
 
+  /* The saved triple is owned only when there is an exception; a
+     normal exit passes None three times and owns nothing. */
   if (PyErr_Occurred()) {
     PyErr_Fetch(&typ, &val, &tb);
     PyErr_Clear();
-    if (! typ) { Py_INCREF(Py_None); typ = Py_None; }
     if (! val) { Py_INCREF(Py_None); val = Py_None; }
     if (! tb)  { Py_INCREF(Py_None); tb  = Py_None; }
-
-  } else {
-    Py_INCREF(Py_None); typ = Py_None;
-    Py_INCREF(Py_None); val = Py_None;
-    Py_INCREF(Py_None); tb  = Py_None;
   }
 
-  PyObject *args = PyTuple_Pack(3, typ, val, tb);
-  if (! args) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
-    return EVAL_RAISE();
-  }
+  /* The exception triple as a vector, with the manager in front when
+     __exit__ is a plain function resolved on the type. */
+  PyObject *argv[4];
+  Py_ssize_t argc = 0;
+  if (KosDynWith_SELF_BIND(node) & KOS_WITH_SELF_EXIT)
+    argv[argc++] = KosDynWith_MGR(node);
+  argv[argc++] = typ ? typ : Py_None;
+  argv[argc++] = val ? val : Py_None;
+  argv[argc++] = tb ? tb : Py_None;
 
-  KosOpResult kr = KosEvalState_CallArgs(es, exit_fn, args, NULL, 0);
-  Py_DECREF(args);
+  KosOpResult kr = KosEvalState_Call(es, exit_fn, argv, argc, NULL, 0);
 
   if (kr.kind == KOS_RES_RAISE) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
     return EVAL_RAISE();
   }
 
-  if (kr.kind != KOS_RES_NORMAL || installs_frame) {
-    /* __exit__ has not returned: suspended, or its frame is installed and
-       pending. The node keeps the exception triple and stays on the
+  if (kr.kind != KOS_RES_NORMAL || KosEvalState_FRAME(es) != caller) {
+    /* __exit__ has not returned: suspended, or its frame is installed
+       and current. The node keeps the exception triple and stays on the
        chain; kos_dynnode_on_control_returned merges the result and pops
        it once the call actually returns. */
     KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
     KosDynWith_EXC_TYP(node) = typ;
     KosDynWith_EXC_VAL(node) = val;
     KosDynWith_EXC_TB(node) = tb;
-    KosDynWith_NORMAL_EXIT(node) = (typ == Py_None);
+    KosDynWith_NORMAL_EXIT(node) = (typ == NULL);
     return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
   }
 
   if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
              ? *KosEvalState_BLOCK(es)
              : NULL)) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
     return EVAL_RAISE();
   }
 
   PyObject *result = KosEvalState_StackPopRef(es);
   if (! result) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
     return EVAL_RAISE();
   }
 
-  if (typ != Py_None && PyObject_IsTrue(result)) {
+  if (typ && PyObject_IsTrue(result)) {
     PyErr_Clear();
     Py_XDECREF(typ);
     Py_XDECREF(val);
@@ -609,13 +574,8 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
 
     return EVAL_REPROLOGUE();
 
-  } else if (typ != Py_None) {
+  } else if (typ) {
     PyErr_Restore(typ, val, tb);
-
-  } else {
-    Py_XDECREF(typ);
-    Py_XDECREF(val);
-    Py_XDECREF(tb);
   }
 
   Py_DECREF(result);

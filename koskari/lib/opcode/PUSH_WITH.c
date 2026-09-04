@@ -27,7 +27,8 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
 
   PyObject *enter = NULL;
   PyObject *exit = NULL;
-  if (resolve_context_enter_exit(mgr, &enter, &exit) < 0) {
+  uint8_t self_bind = 0;
+  if (resolve_context_enter_exit(mgr, &enter, &exit, &self_bind) < 0) {
     Py_DECREF(mgr);
     RESULT_RAISE();
   }
@@ -56,7 +57,8 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
   Py_XINCREF(name_obj);
 
   KosDynWith *with_node = kos_dyn_push_with_provisional(
-      es, mgr, enter, exit, name_obj, resume_pc, KOS_DYN_WITH_SHOT_SINGLE_ACTIVE);
+      es, mgr, enter, exit, self_bind, name_obj, resume_pc,
+      KOS_DYN_WITH_SHOT_SINGLE_ACTIVE);
   if (! with_node) {
     Py_DECREF(name_obj);
     Py_DECREF(exit);
@@ -65,6 +67,7 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
     RESULT_RAISE();
   }
 
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
   KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) with_node);
 
   if (wr.kind == KOS_RES_RAISE) {
@@ -72,19 +75,25 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
     RESULT_RAISE();
   }
 
-  if (wr.kind == KOS_RES_AWAIT) {
-    uint32_t same_pc = KosEvalState_ACTING_PC(es);
-    KosEvalState_SET_PC(es, same_pc);
+  /* AWAIT: __enter__ returned an awaitable and the node stays
+     provisional; the revive binds the settled value
+     (kos_dyn_complete_pending) and continues into the body. */
+  if (wr.kind == KOS_RES_AWAIT)
+    return wr;
+
+  /* REPROLOGUE: __enter__ is a KosCallable whose frame is installed.
+     Do not touch the pc here -- the current frame is now the callee's,
+     so threading on runs it; this frame's pc already sits past
+     PUSH_WITH, so the with body runs once the callee returns and
+     kos_dynnode_on_control_returned binds the result. A plan armed by
+     the install is the prologue's to drain. */
+  if (wr.kind != KOS_RES_NORMAL) {
+    if (wr.kind == KOS_RES_REPROLOGUE
+        && KosEvalState_FRAME(es) != caller
+        && ! KosEvalState_PLAN(es))
+      RESULT_NEXT(es);
     return wr;
   }
-
-  /* REPROLOGUE: __enter__ is a KosCallable whose frame is installed and
-     runs when we hand control back. Do not touch the pc here — the
-     current frame is now the callee's. This frame's pc already sits past
-     PUSH_WITH, so the with body runs once the callee returns and
-     kos_dynnode_on_control_returned binds the result. */
-  if (wr.kind != KOS_RES_NORMAL)
-    return wr;
 
   RESULT_NEXT(es);
 }

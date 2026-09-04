@@ -57,12 +57,14 @@ KOS_OP_HANDLER(RETURN) {
   /* === Phase 2: deliver ===
      The three shapes that need no walk thread straight on: a plain
      bytecode parent takes the value on its stack and continues at its
-     saved pc (the bytecode frame's own resume); a discardable extent
-     over such a parent likewise; a parent waiting on a resume takes
-     the value by a tail call into that resume. Anything else -- a
-     try/with/wind above the frame, a generator or iteration-node
-     parent, a delimited-invoke bookmark, an unsettled value -- signals
-     RETURN and the trampoline's return machinery walks it. */
+     saved pc (the bytecode frame's own resume); a region over such a
+     parent takes the value on its segment and reacts through its
+     control-returned hook if it has one; a parent waiting on a resume
+     takes the value by a tail call into that resume. Anything else --
+     an extent above the returning frame, a generator or a receiving
+     iteration-node parent, a missing retarget cache, an unsettled
+     value -- signals RETURN and the trampoline's return machinery
+     walks it. */
   {
     KosDynNode *child, *parent;
     KosDynFrame *ft;
@@ -76,9 +78,9 @@ KOS_OP_HANDLER(RETURN) {
       return r;
     }
 
-    if (kos_return_is_extent_plain(es, &child, &parent, &ft)) {
+    if (kos_return_is_region(es, &child, &parent, &ft)) {
       KOS_TRACE_POST_OP_WRAP(plain_return,
-          r = eval_ng_extent_return(es, child, parent, ft, val));
+          r = eval_ng_region_return(es, child, parent, ft, val));
       if (likely(r.kind == KOS_RES_DISPATCH))
         RESULT_NEXT(es);
       return r;

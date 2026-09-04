@@ -38,6 +38,7 @@ KOS_OP_HANDLER(POP_WITH) {
   }
 
   /* the unwind will pass the value to the upper stack */
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
   KosOpResult kr = kos_dyn_with_unwind(es, (KosDynWith *) top);
 
   /* Error path, bail out. */
@@ -54,10 +55,16 @@ KOS_OP_HANDLER(POP_WITH) {
 
   /* __exit__ is a KosCallable whose frame is installed and has yet to
      run. Leave the node on the chain and the pc alone (the current frame
-     is the callee's): kos_dynnode_on_control_returned completes the exit,
-     pops the node, and sets the pc past this opcode. */
-  if (KosDynWith_EXIT_PENDING((KosDynWith *) top))
+     is the callee's, so threading on runs it): kos_dynnode_on_control_returned
+     completes the exit, pops the node, and sets the pc past this opcode.
+     A plan armed by the install is the prologue's to drain. */
+  if (KosDynWith_EXIT_PENDING((KosDynWith *) top)) {
+    if (kr.kind == KOS_RES_REPROLOGUE
+        && KosEvalState_FRAME(es) != caller
+        && ! KosEvalState_PLAN(es))
+      RESULT_NEXT(es);
     return kr;
+  }
 
   /* all is well (NORMAL or REPROLOGUE/swallowed), pop the node and return */
   if (unlikely(kos_dyn_pop_with(es, (KosDynWith *) top) < 0))

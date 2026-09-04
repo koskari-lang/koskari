@@ -43,6 +43,26 @@ KosDynNode *kos_dyn_find_iter_node(KosEvalState *es) {
 }
 
 
+void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter) {
+  KosIterSlots *islots = NULL;
+
+  req->iter = iter;
+  req->islots = (iter && KosIter_CheckSlots(iter, &islots)) ? islots : NULL;
+}
+
+
+void kos_dyn_iter_request_finish_req(KosIterRequest *req, int exhausted) {
+  if (req->islots)
+    req->islots->ki_finish(req->iter,
+                           exhausted && ! req->islots->ki_pyctx_recyclable);
+}
+
+
+void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted) {
+  kos_dyn_iter_request_finish_req(kos_dyn_iter_request(node), exhausted);
+}
+
+
 int kos_dyn_iter_node_deliver_yield(
     KosEvalState *es, KosDynNode *node, PyObject *val) {
 

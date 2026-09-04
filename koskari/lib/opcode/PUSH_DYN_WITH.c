@@ -27,7 +27,8 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
 
   PyObject *enter = NULL;
   PyObject *exit = NULL;
-  if (resolve_context_enter_exit(mgr, &enter, &exit) < 0) {
+  uint8_t self_bind = 0;
+  if (resolve_context_enter_exit(mgr, &enter, &exit, &self_bind) < 0) {
     Py_DECREF(mgr);
     RESULT_RAISE();
   }
@@ -55,9 +56,9 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
   PyObject *name_obj = get_name_from_insn(es, insn);
   Py_XINCREF(name_obj);
 
-  KosDynWith *with_node = kos_dyn_push_dyn_with_provisional(es, mgr, enter,
-                                                            exit, name_obj,
-                                                            resume_pc);
+  KosDynWith *with_node = kos_dyn_push_with_provisional(
+      es, mgr, enter, exit, self_bind, name_obj, resume_pc,
+      KOS_DYN_WITH_SHOT_MULTI);
   if (! with_node) {
     Py_DECREF(name_obj);
     Py_DECREF(exit);
@@ -66,17 +67,29 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
     RESULT_RAISE();
   }
 
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
   KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) with_node);
-  if (wr.kind == KOS_RES_AWAIT) {
-    uint32_t same_pc = KosEvalState_ACTING_PC(es);
-    KosEvalState_SET_PC(es, same_pc);
+  /* AWAIT: __enter__ returned an awaitable and the node stays
+     provisional; the revive binds the settled value
+     (kos_dyn_complete_pending) and continues into the body. */
+  if (wr.kind == KOS_RES_AWAIT)
     return wr;
-  }
 
   if (wr.kind == KOS_RES_RAISE) {
     kos_dyn_pop_with(es, with_node);
     RESULT_RAISE();
   }
+
+  /* REPROLOGUE means one of two things. Either __enter__ is a Koskari
+     function whose frame is now the current frame: run it by
+     continuing at the current pc, which is the start of that frame.
+     Or the call left work for the trampoline (a transfer plan armed by
+     the callee): return so the trampoline drains it first. Continuing
+     in that second case would run the with body before the transfer
+     it was meant to make. */
+  if (wr.kind == KOS_RES_REPROLOGUE
+      && (KosEvalState_FRAME(es) == caller || KosEvalState_PLAN(es)))
+    return wr;
 
   RESULT_NEXT(es);
 }

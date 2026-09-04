@@ -131,19 +131,10 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
     KosDynForeach *fe,
     PyObject *val) {
 
-  PyObject *iter;
+  if (KosEvalState_StackPUSH(es, val) < 0)
+    return -1;  /* the push consumed val, failure included */
 
-  if (KosEvalState_StackPushRef(es, val) < 0) {
-    return -1;
-  }
-  Py_DECREF(val);
-
-  iter = KosDynForeach_REQ(fe)->iter;
-  {
-    KosIterSlots *islots;
-    if (iter && KosIter_CheckSlots(iter, &islots))
-      islots->ki_finish(iter, 0);
-  }
+  kos_dyn_iter_request_finish_req(KosDynForeach_REQ(fe), 0);
   kos_dyn_iter_request_set_mode((KosDynNode *) fe, KOS_IREQ_IDLE);
   return 0;
 }
@@ -160,15 +151,7 @@ int kos_dyn_foreach_deliver_exhausted(
     KosDynForeach *fe,
     PyObject *val) {
 
-  PyObject *iter = KosDynForeach_REQ(fe)->iter;
-  {
-    KosIterSlots *islots;
-    if (iter && KosIter_CheckSlots(iter, &islots))
-      /* a recyclable durable provider re-derives exhaustion from its
-         source and stays open -- a mapped function's StopIteration is
-         a truncation that builtins.map resumes from */
-      islots->ki_finish(iter, islots->ki_pyctx_recyclable ? 0 : 1);
-  }
+  kos_dyn_iter_request_finish_req(KosDynForeach_REQ(fe), 1);
 
   KosDynForeach_EXHAUSTED(fe) = 1;
   KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
