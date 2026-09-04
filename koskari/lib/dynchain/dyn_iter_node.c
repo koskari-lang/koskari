@@ -51,12 +51,15 @@ void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter) {
 }
 
 
-void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted) {
-  KosIterRequest *req = kos_dyn_iter_request(node);
-
+void kos_dyn_iter_request_finish_req(KosIterRequest *req, int exhausted) {
   if (req->islots)
     req->islots->ki_finish(req->iter,
                            exhausted && ! req->islots->ki_pyctx_recyclable);
+}
+
+
+void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted) {
+  kos_dyn_iter_request_finish_req(kos_dyn_iter_request(node), exhausted);
 }
 
 

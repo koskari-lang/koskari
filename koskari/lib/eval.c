@@ -2322,8 +2322,8 @@ static KosOpResult eval_event_yield(
     KosDynGen *gen,
     PyObject *val) {
 
-  KosEvalState_FlushLiveRegsToFrame(es);
-
+  /* No flush here: the freeze's retarget flushes the outgoing frame's
+     pcs when it switches to the consumer's. */
   SAYF("[eval] post_opcode KOS_RES_YIELD -> freeze gen=%p dyn_top=%p\n",
        (void *) gen, (void *) KosEvalState_CurrentNode(es));
   if (kos_dyn_gen_freeze(es, gen) < 0) {

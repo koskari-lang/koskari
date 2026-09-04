@@ -82,12 +82,10 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
 int kos_dyn_next_deliver_yield(
     KosEvalState *es, KosDynNext *next, PyObject *val) {
 
-  if (KosEvalState_StackPushRef(es, val) < 0) {
-    return -1;
-  }
-  Py_DECREF(val);
+  if (KosEvalState_StackPUSH(es, val) < 0)
+    return -1;  /* the push consumed val, failure included */
 
-  kos_dyn_iter_request_finish((KosDynNode *) next, 0);
+  kos_dyn_iter_request_finish_req(KosDynNext_REQ(next), 0);
 
   kos_dyn_unlink_next_node(es, next);
   return 0;
@@ -107,7 +105,7 @@ int kos_dyn_next_deliver_exhausted(
 
   int nn = KosDynNext_N((KosDynNode *) next);
 
-  kos_dyn_iter_request_finish((KosDynNode *) next, 1);
+  kos_dyn_iter_request_finish_req(KosDynNext_REQ(next), 1);
 
   if (nn == 2 && KosDynNext_DEFAULT_VAL((KosDynNode *) next)) {
     if (KosEvalState_StackPushRef(

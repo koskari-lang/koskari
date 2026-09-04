@@ -244,6 +244,7 @@ void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter);
    from).
 */
 void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted);
+void kos_dyn_iter_request_finish_req(KosIterRequest *req, int exhausted);
 
 
 typedef enum {

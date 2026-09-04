@@ -354,7 +354,7 @@ static int kos_dyn_with_on_control_returned(
   KosDynWith_EXC_TB(with_node) = NULL;
   KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
 
-  int had_exception = (typ != Py_None);
+  int had_exception = (typ != NULL);
 
   if (had_exception && PyObject_IsTrue(result)) {
     PyErr_Clear();
@@ -385,17 +385,25 @@ static int kos_dyn_with_on_control_returned(
   }
 
   Py_DECREF(result);
-  Py_XDECREF(typ);
-  Py_XDECREF(val);
-  Py_XDECREF(tb);
-  if (kos_dyn_with_post_unwind_deliver(es, with_node) < 0) {
-    return -1;
+  {
+    /* The body value waits on the node's segment; the node pops first
+       and the value lands on the block that is then live, with no walk
+       through the back link. */
+    KosSegment *stack = KosDynNode_STACK((KosDynNode *) with_node);
+    PyObject *body_val = (stack && KosSegment_LEN(stack))
+        ? KosStack_PopRef(&KosDynNode_STACK((KosDynNode *) with_node))
+        : NULL;
+
+    if (KosEvalState_FRAME(es))
+      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(with_node));
+    kos_dyn_with_shot_after_exit_done(with_node);
+    if (kos_dyn_pop_with(es, with_node) < 0) {
+      Py_XDECREF(body_val);
+      return -1;
+    }
+    if (body_val && KosEvalState_StackPUSH(es, body_val) < 0)
+      return -1;  /* the push consumed body_val, failure included */
   }
-  if (KosEvalState_FRAME(es))
-    KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(with_node));
-  kos_dyn_with_shot_after_exit_done(with_node);
-  if (kos_dyn_pop_with(es, with_node) < 0)
-    return -1;
   return 0;
 }
 
@@ -491,17 +499,13 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
   PyObject *val = NULL;
   PyObject *tb = NULL;
 
+  /* The saved triple is owned only when there is an exception; a
+     normal exit passes None three times and owns nothing. */
   if (PyErr_Occurred()) {
     PyErr_Fetch(&typ, &val, &tb);
     PyErr_Clear();
-    if (! typ) { Py_INCREF(Py_None); typ = Py_None; }
     if (! val) { Py_INCREF(Py_None); val = Py_None; }
     if (! tb)  { Py_INCREF(Py_None); tb  = Py_None; }
-
-  } else {
-    Py_INCREF(Py_None); typ = Py_None;
-    Py_INCREF(Py_None); val = Py_None;
-    Py_INCREF(Py_None); tb  = Py_None;
   }
 
   /* The exception triple as a vector, with the manager in front when
@@ -510,16 +514,16 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
   Py_ssize_t argc = 0;
   if (KosDynWith_SELF_BIND(node) & KOS_WITH_SELF_EXIT)
     argv[argc++] = KosDynWith_MGR(node);
-  argv[argc++] = typ;
-  argv[argc++] = val;
-  argv[argc++] = tb;
+  argv[argc++] = typ ? typ : Py_None;
+  argv[argc++] = val ? val : Py_None;
+  argv[argc++] = tb ? tb : Py_None;
 
   KosOpResult kr = KosEvalState_Call(es, exit_fn, argv, argc, NULL, 0);
 
   if (kr.kind == KOS_RES_RAISE) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
     return EVAL_RAISE();
   }
 
@@ -532,28 +536,28 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
     KosDynWith_EXC_TYP(node) = typ;
     KosDynWith_EXC_VAL(node) = val;
     KosDynWith_EXC_TB(node) = tb;
-    KosDynWith_NORMAL_EXIT(node) = (typ == Py_None);
+    KosDynWith_NORMAL_EXIT(node) = (typ == NULL);
     return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
   }
 
   if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
              ? *KosEvalState_BLOCK(es)
              : NULL)) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
     return EVAL_RAISE();
   }
 
   PyObject *result = KosEvalState_StackPopRef(es);
   if (! result) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
     return EVAL_RAISE();
   }
 
-  if (typ != Py_None && PyObject_IsTrue(result)) {
+  if (typ && PyObject_IsTrue(result)) {
     PyErr_Clear();
     Py_XDECREF(typ);
     Py_XDECREF(val);
@@ -570,13 +574,8 @@ KosOpResult kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node) {
 
     return EVAL_REPROLOGUE();
 
-  } else if (typ != Py_None) {
+  } else if (typ) {
     PyErr_Restore(typ, val, tb);
-
-  } else {
-    Py_XDECREF(typ);
-    Py_XDECREF(val);
-    Py_XDECREF(tb);
   }
 
   Py_DECREF(result);
