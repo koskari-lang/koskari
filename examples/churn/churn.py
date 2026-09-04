@@ -180,12 +180,13 @@ def run(opts):
 
 def print_trace_report_if_enabled():
     """
-    If the extension was built with KOS_TRACE_EVENTS, write get_trace_report()
-    JSON to trace.json.  Event values are cumulative counts, not wall time.
+    If the extension was built with any KOS_TRACE flag, write
+    get_trace_report() JSON to trace.json.  Event values are cumulative
+    counts, not wall time.
     """
 
     report = get_trace_report()
-    if not report.get("flags", {}).get("events"):
+    if not any(report.get("flags", {}).values()):
         return
     with open("trace.json", "w") as out:
         json.dump(report, out, sort_keys=True, indent=2, default=str)

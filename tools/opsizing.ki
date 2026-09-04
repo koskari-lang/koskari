@@ -1,0 +1,417 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+opsizing -- per-handler code size joined with per-opcode timing.
+
+Two measurement builds feed one table. The perf-opcodes tox env builds
+the extension with KOS_ALL_COLD, where every handler is its own
+symbol, and nm --print-size gives each handler's bytes. The
+churn-timing tox env builds with KOS_TRACE_TIMING, and a run of the
+churn kernels under it writes a trace JSON with per-opcode counts and
+average nanoseconds. The two are joined by opcode name into a
+tab-separated table beside the perf log, one row per opcode sorted by
+name so a regeneration diffs by row. The net column is the average
+with the trace's own step overhead removed; the small loads sit at
+that floor.
+
+Run from the repository root:
+
+    make opsizing
+    tox -qe opsizing -- --sweep loop nbody --top 30
+    tox -qe opsizing -- --trace design/trace/trace-20260904-1200.json
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
+"""
+
+
+import json
+import os
+import re
+import subprocess
+import sys
+
+import-from argparse ArgumentParser
+import-from datetime date datetime
+import-from glob glob
+import-from os.path basename dirname exists join
+
+import-from koskari.lib OpCode demand
+
+
+define CHURN (join "examples" "churn")
+
+define TRACE_DIR (join "design" "trace")
+
+define PSEUDO #("resume" "trampoline")
+
+define COLUMNS #(
+    "opcode" "bytes" "count" "avg_ns" "net_ns" "total_ns"
+    "time_pct" "exec_pct")
+
+define SORT_KEYS #{
+    "time": "total_ns"
+    "bytes": "bytes"
+    "count": "count"
+    "net": "net_ns"}
+
+;; one nm --print-size line for a handler symbol: address, size, type,
+;; op_ plus the opcode name, then any compiler suffix such as
+;; .lto_priv.0 or .cold
+define SYMBOL:
+    re.compile "^[0-9a-f]+ +([0-9a-f]+) +\\S+ +op_([A-Z][A-Z0-9_]*)(?:\\..*)?$"
+
+
+;; === sizes ===
+
+
+@demand
+define parse_sizes [text]:
+    """
+    Fold nm --print-size output into a mapping of opcode name to bytes.
+    Only handler symbols count, with every compiler suffix folded into
+    the base symbol. The operator cores in operator.c share the op_
+    prefix in lower case and are skipped
+
+    :param text: nm --print-size --defined-only output
+    :return: dict of opcode name to byte count
+    """
+
+    define sizes (dict)
+    for-each [line (text.splitlines)]:
+        define found (SYMBOL.match line)
+        when found:
+            define name (found.group 2)
+            set! sizes[name] (+ (sizes.get name 0) (int (found.group 1) 16))
+    return sizes
+
+
+define extension_path [python]:
+    """
+    Path of the koskari extension a tox env's interpreter imports.
+    Isolated mode keeps the working tree's package off its path
+
+    :param python: the env's interpreter
+    :return: path of the built extension
+    """
+
+    define proc (subprocess.run
+        #[python "-I" "-c" "import koskari.lib as m; print(m.__file__)"]
+        capture_output: True text: True check: True)
+    return (proc.stdout.strip)
+
+
+define handler_sizes [python]:
+    """
+    Per-handler sizes of the extension an interpreter imports
+
+    :param python: interpreter of a KOS_ALL_COLD build
+    :return: tuple of the extension path and the size mapping
+    """
+
+    define path (extension_path python)
+    define proc (subprocess.run
+        #["nm" "--print-size" "--defined-only" path]
+        capture_output: True text: True check: True)
+    return #(path (parse_sizes proc.stdout))
+
+
+;; === timing ===
+
+
+define run_sweep [python names samples warmup]:
+    """
+    Run the churn kernels under the timing build and file the trace
+    JSON it writes under design/trace with a timestamped name
+
+    :param python: interpreter of a KOS_TRACE_TIMING build
+    :param names: kernels to run, empty for all
+    :param samples: measured batches per kernel
+    :param warmup: warmup batches per kernel
+    :return: path of the filed trace JSON
+    """
+
+    define cmd #[
+        python "-B" (join CHURN "churn.py")
+        "--mode" "koskari"
+        "--samples" (str samples) "--warmup" (str warmup)
+        *: names]
+
+    (print "sweeping:" (or (" ".join names) "all kernels"))
+    (subprocess.run cmd check: True)
+
+    unless (exists "trace.json"):
+        raise (SystemExit
+            "the sweep wrote no trace.json; is the interpreter a"-
+            " KOS_TRACE_TIMING build?")
+
+    define stamp ((datetime.now).strftime "%Y%m%d-%H%M")
+    define dest (join TRACE_DIR f"trace-{stamp}.json")
+    (os.makedirs TRACE_DIR exist_ok: True)
+    (os.replace "trace.json" dest)
+    print f"trace filed as {dest}"
+    return dest
+
+
+define newest_trace []:
+    """
+    The most recently stamped trace JSON under design/trace
+    """
+
+    define found (sorted (glob (join TRACE_DIR "trace-*.json")))
+    unless found:
+        raise (SystemExit
+            f"no trace JSON under {TRACE_DIR}; run with --sweep or pass --trace")
+    return found[-1]
+
+
+@demand
+define trace_parts [report]:
+    """
+    The per-opcode timing table and its summary from a trace report,
+    whether the raw get_trace_report dict or one wrapped under a
+    trace key
+
+    :param report: parsed trace JSON
+    :return: tuple of the timing dict and the summary dict
+    """
+
+    define tr (report.get "trace" report)
+    return #((tr.get "opcode_timing" (dict)) (tr.get "opcode_timing_summary" (dict)))
+
+
+;; === the join ===
+
+
+@demand
+define join_rows [opcodes sizes timing overhead]:
+    """
+    One row per opcode, plus one per pseudo slot the trace reports,
+    sorted by name. Fields the trace or the size table lack are None
+
+    :param opcodes: every opcode name
+    :param sizes: opcode name to handler bytes
+    :param timing: opcode name to the trace's per-opcode entry
+    :param overhead: the trace's step overhead in nanoseconds
+    :return: list of row dicts keyed by COLUMNS
+    """
+
+    define rows #[]
+    for-each [name (+ (list opcodes) (list PSEUDO))]:
+        define entry (timing.get name)
+        when (and (in? name PSEUDO) (None? entry)):
+            (continue)
+
+        define row #{
+            "opcode": name
+            "bytes": (sizes.get name)
+            "count": None
+            "avg_ns": None
+            "net_ns": None
+            "total_ns": None
+            "time_pct": None
+            "exec_pct": None}
+
+        when entry:
+            set! row["count"] entry["count"]
+            set! row["avg_ns"] entry["avg_ns"]
+            set! row["net_ns"] (round (- entry["avg_ns"] overhead) 1)
+            set! row["total_ns"] entry["total_ns"]
+            set! row["time_pct"] (* 100.0 (entry.get "share_of_time" 0))
+            set! row["exec_pct"] (* 100.0 (entry.get "share_of_executions" 0))
+
+        (rows.append row)
+
+    (rows.sort key: (demand {(item %1 "opcode")}))
+    return rows
+
+
+define format_cell [value]:
+    """
+    One TSV cell: empty for None, three decimals for a float
+    """
+
+    when (None? value):
+        return ""
+    when (instance? value float):
+        return f"{value:.3f}"
+    return (str value)
+
+
+@demand
+define render_tsv [rows meta]:
+    """
+    The table text: one comment line per meta pair, the column header,
+    then one line per row
+
+    :param rows: row dicts from join_rows
+    :param meta: list of name and value pairs for the comment lines
+    :return: the TSV text
+    """
+
+    define lines (list-each [[key value] meta] f"# {key}: {value}")
+    (lines.append ("\t".join COLUMNS))
+    for-each [row rows]:
+        (lines.append
+            ("\t".join (list-each [column COLUMNS] (format_cell row[column]))))
+    return (+ ("\n".join lines) "\n")
+
+
+define git_sha []:
+    """
+    Short SHA of HEAD, or unknown if git fails
+    """
+
+    define proc (subprocess.run
+        #["git" "rev-parse" "--short" "HEAD"]
+        capture_output: True text: True)
+    return (if (== proc.returncode 0) (proc.stdout.strip) "unknown")
+
+
+define print_top [rows sort top]:
+    """
+    A console view of the rows with a value in the sort column,
+    largest first
+    """
+
+    define key SORT_KEYS[sort]
+    define picked:
+        list-each [row rows]:
+            when (not (None? row[key])):
+                row
+    (picked.sort key: (demand {(item %1 key)}) reverse: True)
+
+    print f"\ntop {top} by {sort}:"
+    (print
+        (+ ("opcode".ljust 24) ("bytes".rjust 8) ("count".rjust 14)
+           ("avg_ns".rjust 9) ("net_ns".rjust 9) ("time%".rjust 8)))
+    for-each [row (item-slice picked 0 top)]:
+        (print
+            (+ (row["opcode"].ljust 24)
+               ((format_cell row["bytes"]).rjust 8)
+               ((format_cell row["count"]).rjust 14)
+               ((format_cell row["avg_ns"]).rjust 9)
+               ((format_cell row["net_ns"]).rjust 9)
+               ((format_cell row["time_pct"]).rjust 8)))
+
+
+;; === entry point ===
+
+
+define build_arguments [parser]:
+    """
+    Register the opsizing options on a parser or subparser
+    """
+
+    (parser.add_argument "names"
+        nargs: "*" metavar: "NAME"
+        help: "kernels for --sweep (default: all)")
+    (parser.add_argument "--sweep"
+        action: "store_true"
+        help: "run the churn kernels under the timing build first")
+    (parser.add_argument "--trace"
+        default: None metavar: "PATH"
+        help: "trace JSON to read (default: newest under design/trace)")
+    (parser.add_argument "--timing-python"
+        default: (join ".tox" "churn-timing" "bin" "python")
+        help: "interpreter of the KOS_TRACE_TIMING build for --sweep")
+    (parser.add_argument "--cold-python"
+        default: (join ".tox" "perf-opcodes" "bin" "python")
+        help: "interpreter of the KOS_ALL_COLD build the sizes come from")
+    (parser.add_argument "--samples"
+        type: int default: 1
+        help: "measured batches per kernel for --sweep (default: 1)")
+    (parser.add_argument "--warmup"
+        type: int default: 1
+        help: "warmup batches per kernel for --sweep (default: 1)")
+    (parser.add_argument "--out"
+        default: (join "design" "perf" "opsizing.tsv")
+        help: "TSV to write")
+    (parser.add_argument "--top"
+        type: int default: 20
+        help: "rows in the console view (default: 20)")
+    (parser.add_argument "--sort"
+        choices: (list SORT_KEYS) default: "time"
+        help: "console view order (default: time)")
+    return parser
+
+
+define run [options]:
+    """
+    Produce the table described by parsed options
+
+    :param options: parsed argument namespace
+    :return: integer exit code
+    """
+
+    define trace_path:
+        if options.sweep:
+            run_sweep options.timing_python options.names options.samples options.warmup
+        else:
+            or options.trace (newest_trace)
+
+    define report:
+        with [fh (open trace_path)]:
+            json.load fh
+    define-values [timing summary] (trace_parts report)
+    define overhead (summary.get "step_overhead_ns" 0)
+
+    define-values [so_path sizes] (handler_sizes options.cold_python)
+    define opcodes (list-each [op OpCode] op.name)
+    define rows (join_rows opcodes sizes timing overhead)
+
+    define meta #[
+        #("date" ((date.today).isoformat))
+        #("sha" (git_sha))
+        #("trace" trace_path)
+        #("extension" so_path)
+        #("clock" (summary.get "clock" ""))
+        #("ns_per_tick" (summary.get "ns_per_tick" ""))
+        #("step_overhead_ns" overhead)]
+
+    (os.makedirs (dirname options.out) exist_ok: True)
+    with [fh (open options.out "w")]:
+        (fh.write (render_tsv rows meta))
+    print f"wrote {(len rows)} rows to {options.out}"
+
+    (print_top rows options.sort options.top)
+    return 0
+
+
+define main [argv: None]:
+    """
+    Parse arguments and produce the table
+
+    :param argv: optional argument vector; defaults to sys.argv
+    :return: integer exit code
+    """
+
+    when (None? argv):
+        set! argv sys.argv
+
+    define-values [name *: args] argv
+
+    define parser (ArgumentParser
+        prog: (basename name)
+        description: "Per-handler code size joined with per-opcode timing")
+
+    build_arguments parser
+    run (parser.parse_args args)
+
+
+when-main:
+    (sys.exit (main))
+
+
+; The end.
