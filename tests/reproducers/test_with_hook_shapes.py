@@ -354,6 +354,35 @@ class TestWithHookShapes(SpecialsTestCase):
                          ["enter-start", "enter", "exit-start", "exit"])
 
 
+    async def test_single_shot_exit_once_across_capture(self):
+        """
+        A continuation captured inside a with body and invoked after the
+        block completed re-enters the body through a clone of the node;
+        the clone shares the exit-done fact, so __exit__ runs once
+        """
+
+        mgr = PlainManager()
+        saved = []
+
+        def stash(k):
+            saved.append(k)
+
+        def invoke_saved():
+            k = saved.pop()
+            return k(99)
+
+        src = """
+        (begin
+          (define result
+            (with [c ctx] (capture/cc k (begin (stash k) 1))))
+          (cond [saved (invoke_saved)] [else: result]))
+        """
+        expr, _ = self.compile_expr(src, ctx=mgr, stash=stash,
+                                    invoke_saved=invoke_saved, saved=saved)
+        self.assertEqual(await expr(), 99)
+        self.assertEqual(mgr.calls, ["enter", ("exit", None)])
+
+
     def test_throw_into_awaiting_aenter(self):
         """
         A throw at the revive of a suspended __aenter__ reaches the
