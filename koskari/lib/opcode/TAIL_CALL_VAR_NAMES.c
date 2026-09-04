@@ -21,25 +21,16 @@
 */
 
 KOS_OP_HANDLER_COLD(TAIL_CALL_VAR_NAMES) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t name_cpool_idx = row.a0;
-  uint32_t names_cpool_idx = row.a1;
-  Py_ssize_t npos = (Py_ssize_t) row.a2;
+  const KosExtra *row = KosOp_ROW(insn);
+      Py_ssize_t npos = (Py_ssize_t) KosExtra_IMM(row, 2);
 
-  PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
-  if (! name)
-    RESULT_RAISE();
+  PyObject *name = KosExtra_OBJ(row, 0);
 
   PyObject *callable = frame_ns_deref(es, name);
   if (! callable)
     RESULT_RAISE();
 
-  PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
-  if (! names) {
-    Py_DECREF(callable);
-    RESULT_RAISE();
-  }
+  PyObject *names = KosExtra_OBJ(row, 1);
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_VAR_NAMES names must be"
                  " tuple, not %R", names);

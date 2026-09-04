@@ -18,12 +18,10 @@
   CONST: arg = constant index. Push the code object constant at that index
   onto the stack.
 
-  Pool trust follows KosEvalState_CONST / KOS_EVAL_SAFETYNET.
+  The pool object is resolved onto the record at finalize.
 */
 KOS_OP_HANDLER(CONST) {
-  PyObject *val = KosEvalState_CONST(es, KosOp_ARG(insn));
-  if (unlikely(! val))
-    RESULT_RAISE();
+  PyObject *val = KosOp_OBJ(insn);
 
   RESULT_PUSH(es, val);
 }

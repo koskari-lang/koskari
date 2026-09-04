@@ -18,9 +18,7 @@
   CONST_ITEM_STORE: arg = constant index (key). TOS1[key] = TOS; pop val then obj.
 */
 KOS_OP_HANDLER(CONST_ITEM_STORE) {
-  PyObject *key = KosEvalState_CONST(es, KosOp_ARG(insn));
-  if (unlikely(! key))
-    RESULT_RAISE();
+  PyObject *key = KosOp_OBJ(insn);
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))

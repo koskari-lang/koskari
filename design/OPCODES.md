@@ -263,7 +263,7 @@ When adding or changing an opcode:
 
 - [3. No-op and compile-time](#3-no-op-and-compile-time) — NOOP, LABEL, POSITION
 - [4. Stack](#4-stack) — DUP, POP, UNPACK, UNPACK_STAR, UNPACK_VAR, UNPACK_FAST
-- [5. Constants](#5-constants) — CONST
+- [5. Constants](#5-constants) — CONST, CONST2, CONST3, CONST4
 - [5.1 Pair construction and access](#51-pair-construction-and-access) — CAR, CDR, CONS, PROPER, PAIR_SPLICE
 - [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
@@ -272,8 +272,8 @@ When adding or changing an opcode:
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST
-- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST
+- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST
+- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_TAKE, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, ITEM_TAKE, CONST_ITEM, CONST_ITEM_TAKE, and variants
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
@@ -302,6 +302,9 @@ When adding or changing an opcode:
 | UNPACK_VAR | EXTRA | STORE seq[0], seq[1] into two VAR names | [§4](#kos_op_unpack_var) |
 | UNPACK_FAST | EXTRA | STORE seq[0], seq[1] into two fast slots | [§4](#kos_op_unpack_fast) |
 | CONST | CONST | Push constant from pool | [§5](#kos_op_const) |
+| CONST2 | EXTRA | Push two constants in row order | [§5](#kos_op_const2) |
+| CONST3 | EXTRA | Push three constants in row order | [§5](#kos_op_const3) |
+| CONST4 | EXTRA | Push four constants in row order | [§5](#kos_op_const4) |
 | CAR | COUNT | Apply car **n** times (**n** ≥ 1); **n** = 0 invalid | [§5.1](#kos_op_car) |
 | CDR | COUNT | Apply cdr **n** times (**n** ≥ 1); **n** = 0 invalid | [§5.1](#kos_op_cdr) |
 | CONS | COUNT | Pop N values; push (e_0 . ... . e_{N-1}) | [§5.1](#kos_op_cons) |
@@ -342,6 +345,7 @@ When adding or changing an opcode:
 | EXCEPTION_MATCH | NOARG | Pop type(s), push match result | [§11](#kos_op_exception_match) |
 | VAR | VAR | Load by name | [§12](#kos_op_var) |
 | VAR2 | EXTRA | Load two names, push in row order | [§12](#kos_op_var2) |
+| VAR3 | EXTRA | Load three names, push in row order | [§12](#kos_op_var3) |
 | VAR4 | EXTRA | Load four names, push in row order | [§12](#kos_op_var4) |
 | VAR_BIND | VAR | BIND: use TOS ref to resolve name | [§12](#kos_op_var_bind) |
 | VAR_TAKE | VAR | Deref name, clear binding, push value (errors if empty) | [§12](#kos_op_var_take) |
@@ -349,6 +353,7 @@ When adding or changing an opcode:
 | VAR_STORE_CONST | EXTRA | STORE: write constant into name (no stack) | [§12](#kos_op_var_store_const) |
 | FAST | FASTVAR | Load from slot | [§13](#kos_op_fast) |
 | FAST2 | EXTRA | Load two slots, push in row order | [§13](#kos_op_fast2) |
+| FAST3 | EXTRA | Load three slots, push in row order | [§13](#kos_op_fast3) |
 | FAST4 | EXTRA | Load four slots, push in row order | [§13](#kos_op_fast4) |
 | FAST_BIND | FASTVAR | BIND: use TOS ref to resolve slot | [§13](#kos_op_fast_bind) |
 | FAST_TAKE | FASTVAR | Deref slot, clear, push value (errors if empty) | [§13](#kos_op_fast_take) |
@@ -758,6 +763,81 @@ bottom to top matches push order).
 | 0     | CONST  | 0   | 0 (coro)  | stack: [..., awaitable] |
 | 1     | AWAIT  | 1   | 1        | pop one; suspend; on resume stack: [..., value] |
 | 2     | RETURN | 1   | 1        | |
+
+---
+
+### KOS_OP_CONST2 {#kos_op_const2}
+
+- **Style**: EXTRA (CONST, CONST, NOARG, NOARG). Row = two constant pool indices (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., a, b]`. Push the two constants in row order. A constant is
+  a borrowed pool reference, so a failed push leaves nothing to release.
+- **Invariants**: Indices in the constant pool.
+- **Compiler form:** Never emitted by specials. Produced only by
+  **`ByteCodeProcessor.pack_runs`** (the trailing pack phase), which combines a
+  run of consecutive bare CONST loads: quads, then one triple or one pair,
+  then a bare load for a remainder of one. Constant folding runs earlier,
+  so only loads the folder kept apart, such as a call's arguments, pack.
+- **Implementation**: `koskari/lib/opcode/CONST2.c`
+- **Covered by**: `tests/compile/test_combine_const.py`,
+  `tests/reproducers/test_var_pack.py`
+
+**Example:** Load constants a, b. Pool: 0 = a, 1 = b.
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | CONST2 | 0   | (0 (a), 1 (b), 0, 0) | stack: [..., a, b] |
+| 1     | RETURN | 1   | 1        | |
+
+---
+
+### KOS_OP_CONST3 {#kos_op_const3}
+
+- **Style**: EXTRA (CONST, CONST, CONST, NOARG). Row = three constant pool indices (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., a, b, c]`. Push the three constants in row order. A constant is
+  a borrowed pool reference, so a failed push leaves nothing to release.
+- **Invariants**: Indices in the constant pool.
+- **Compiler form:** Never emitted by specials. Produced only by
+  **`ByteCodeProcessor.pack_runs`** (the trailing pack phase), which combines a
+  run of consecutive bare CONST loads: quads, then one triple or one pair,
+  then a bare load for a remainder of one. Constant folding runs earlier,
+  so only loads the folder kept apart, such as a call's arguments, pack.
+- **Implementation**: `koskari/lib/opcode/CONST3.c`
+- **Covered by**: `tests/compile/test_combine_const.py`,
+  `tests/reproducers/test_var_pack.py`
+
+**Example:** Load constants a, b, c. Pool: 0 = a, 1 = b, 2 = c.
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | CONST3 | 0   | (0 (a), 1 (b), 2 (c), 0) | stack: [..., a, b, c] |
+| 1     | RETURN | 1   | 1        | |
+
+---
+
+### KOS_OP_CONST4 {#kos_op_const4}
+
+- **Style**: EXTRA (CONST, CONST, CONST, CONST). Row = four constant pool indices (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., a, b, c, d]`. Push the four constants in row order. A constant is
+  a borrowed pool reference, so a failed push leaves nothing to release.
+- **Invariants**: Indices in the constant pool.
+- **Compiler form:** Never emitted by specials. Produced only by
+  **`ByteCodeProcessor.pack_runs`** (the trailing pack phase), which combines a
+  run of consecutive bare CONST loads: quads, then one triple or one pair,
+  then a bare load for a remainder of one. Constant folding runs earlier,
+  so only loads the folder kept apart, such as a call's arguments, pack.
+- **Implementation**: `koskari/lib/opcode/CONST4.c`
+- **Covered by**: `tests/compile/test_combine_const.py`,
+  `tests/reproducers/test_var_pack.py`
+
+**Example:** Load constants a, b, c, d. Pool: 0 = a, 1 = b, 2 = c, 3 = d.
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | CONST4 | 0   | (0 (a), 1 (b), 2 (c), 3 (d)) | stack: [..., a, b, c, d] |
+| 1     | RETURN | 1   | 1        | |
 
 ---
 
@@ -1558,10 +1638,10 @@ Extra row: `("os.path", 0, 0, 0)`.
   name errors with nothing pushed.
 - **Invariants**: Names in constant pool.
 - **Compiler form:** Never emitted by specials. Produced only by
-  **`Compiler.pack_var_runs`** (the late `compress` sweep), which combines a
-  run of two consecutive bare **VAR** loads. **`convert_fast`** lowers to
-  **FAST2** when both names have fast slots (all-or-nothing; a
-  mixed-eligibility row stays VAR2).
+  **`ByteCodeProcessor.pack_runs`** (the trailing pack phase), which combines
+  a run of two consecutive bare **VAR** loads (quads first, then one triple
+  or one pair). **`convert_fast`** lowers to **FAST2** when both names have
+  fast slots (all-or-nothing; a mixed-eligibility row stays VAR2).
 - **Implementation**: `koskari/lib/opcode/VAR2.c` (cold handler)
 - **Covered by**: `tests/compile/test_pack_var_runs.py`,
   `tests/reproducers/test_var_pack.py`
@@ -1575,6 +1655,32 @@ Extra row: `("os.path", 0, 0, 0)`.
 
 ---
 
+### KOS_OP_VAR3 {#kos_op_var3}
+
+- **Style**: EXTRA (VAR, VAR, VAR, NOARG). Row = three constant pool name indices
+  (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., a, b, c]`. Load the three names from the frame namespace and
+  push in row order. Every name resolves before any push, so a missing name
+  errors with nothing pushed.
+- **Invariants**: Names in constant pool.
+- **Compiler form:** As VAR2: produced only by **`ByteCodeProcessor.pack_runs`**
+  from a run of three consecutive bare VAR loads (quads first, then one triple
+  or one pair). **`convert_fast`** lowers to FAST3 when all three names have fast
+  slots (all-or-nothing; a mixed-eligibility row stays VAR3).
+- **Implementation**: `koskari/lib/opcode/VAR3.c` (cold handler)
+- **Covered by**: `tests/compile/test_pack_var_runs.py`,
+  `tests/reproducers/test_var_pack.py`
+
+**Example:** Load "a", "b", "c". Pool: 0-2 = names.
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | VAR3   | 0   | (0 ('a'), 1 ('b'), 2 ('c'), 0) | stack: [..., a, b, c] |
+| 1     | RETURN | 1   | 1        | |
+
+---
+
 ### KOS_OP_VAR4 {#kos_op_var4}
 
 - **Style**: EXTRA (VAR, VAR, VAR, VAR). Row = four constant pool name
@@ -1584,8 +1690,8 @@ Extra row: `("os.path", 0, 0, 0)`.
   namespace and push in row order. All names resolve before any push, so a
   missing name errors with nothing pushed.
 - **Invariants**: Names in constant pool.
-- **Compiler form:** As **VAR2**: produced only by **`pack_var_runs`** from a
-  run of four (or more, greedily) consecutive bare **VAR** loads.
+- **Compiler form:** As **VAR2**: produced only by **`pack_runs`** from a run
+  of four (or more, greedily) consecutive bare **VAR** loads.
   **`convert_fast`** lowers to **FAST4** when all four names have fast slots.
 - **Implementation**: `koskari/lib/opcode/VAR4.c` (cold handler)
 - **Covered by**: `tests/compile/test_pack_var_runs.py`,
@@ -1799,6 +1905,30 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | FAST2  | 0   | (fast 0 (a), fast 1 (b), 0, 0) | stack: [..., a, b] |
+| 1     | RETURN | 1   | 1        | |
+
+---
+
+### KOS_OP_FAST3 {#kos_op_fast3}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, NOARG). Row = three fast local slot indices.
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., a, b, c]`. Load the three slots and push in row order. Every
+  slot resolves before any push, so an unbound slot errors with nothing
+  pushed.
+- **Invariants**: Slot indices in range for frame.
+- **Compiler form:** Post-compile only: **`convert_fast`** lowering of VAR3
+  when all three names have fast slots, or **`ByteCodeProcessor.pack_runs`** on a
+  run of three bare FAST loads.
+- **Implementation**: `koskari/lib/opcode/FAST3.c`
+- **Covered by**: `tests/compile/test_pack_var_runs.py`,
+  `tests/reproducers/test_var_pack.py`
+
+**Example:** Load fast locals 0-2.
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | FAST3  | 0   | (fast 0 (a), fast 1 (b), fast 2 (c), 0) | stack: [..., a, b, c] |
 | 1     | RETURN | 1   | 1        | |
 
 ---

@@ -22,17 +22,11 @@
 */
 
 KOS_OP_HANDLER_COLD(TAIL_CALL_VAR_ATTR_NAMES) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t name_cpool_idx = row.a0;
-  uint32_t attr_cpool_idx = row.a1;
-  uint32_t names_cpool_idx = row.a2;
-  unsigned opa = row.a3;
+  const KosExtra *row = KosOp_ROW(insn);
+        unsigned opa = KosExtra_IMM(row, 3);
 
   // borrow reference
-  PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
-  if (! name)
-    RESULT_RAISE();
+  PyObject *name = KosExtra_OBJ(row, 0);
 
   // owned reference
   PyObject *obj = frame_ns_deref(es, name);
@@ -40,16 +34,10 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_VAR_ATTR_NAMES) {
     RESULT_RAISE();
 
   // borrowed reference
-  PyObject *attr_name = KosEvalState_CONST(es, attr_cpool_idx);
-  if (! attr_name)
-    RESULT_RAISE();
+  PyObject *attr_name = KosExtra_OBJ(row, 1);
 
   // borrowed reference
-  PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
-  if (! names) {
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
+  PyObject *names = KosExtra_OBJ(row, 2);
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_VAR_ATTR_NAMES names must"
@@ -70,9 +58,7 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_VAR_ATTR_NAMES) {
   }
 
   PyObject *resolved;
-  uint16_t cache_ix = KosOp_CACHE(insn);
-  KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
-      ? NULL : &KosCode_CACHE(code)[cache_ix];
+  KosCacheSlot *cache = KosOp_SLOT(insn);
   int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
   if (send_self < 0) {
     Py_DECREF(obj);

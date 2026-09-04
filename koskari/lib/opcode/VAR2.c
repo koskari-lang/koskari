@@ -21,22 +21,15 @@
   raises with nothing pushed.
 */
 KOS_OP_HANDLER_COLD(VAR2) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *name = KosEvalState_CONST(es, row.a0);
-  if (unlikely(! name))
-    RESULT_RAISE();
+  PyObject *name = KosExtra_OBJ(row, 0);
 
   PyObject *a = frame_ns_deref(es, name);
   if (unlikely(! a))
     RESULT_RAISE();
 
-  name = KosEvalState_CONST(es, row.a1);
-  if (unlikely(! name)) {
-    Py_DECREF(a);
-    RESULT_RAISE();
-  }
+  name = KosExtra_OBJ(row, 1);
 
   PyObject *b = frame_ns_deref(es, name);
   if (unlikely(! b)) {

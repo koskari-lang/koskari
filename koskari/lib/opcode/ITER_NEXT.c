@@ -47,16 +47,13 @@ KOS_OP_HANDLER(ITER_NEXT) {
       case KOS_IREQ_EXHAUSTED:
         Py_XDECREF(out);
         KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-        RESULT_JUMP(es, KosOp_ARG(insn));
+        RESULT_JUMP_AT(es, KosOp_TARGET(insn));
 
       case KOS_IREQ_CONTINUES: {
         /* A frame with bytecode (a generator attached) continues
            dispatch directly; only a code-less native frame takes the
            entry sequence, which exists for it. */
-        KosDynFrame *nf = KosEvalState_FRAME(es);
-        if (nf && KosDynFrame_CODE(nf))
-          RESULT_NEXT(es);
-        return EVAL_REPROLOGUE();
+        RESULT_RELAY(es, kos_iter_installed(es));
       }
 
       case KOS_IREQ_EXIT:

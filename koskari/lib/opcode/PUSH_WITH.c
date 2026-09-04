@@ -53,7 +53,7 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
   }
   uint32_t resume_pc = ext->pop_pc + 1u;
 
-  PyObject *name_obj = get_name_from_insn(es, insn);
+  PyObject *name_obj = KosOp_OBJ(insn);
   Py_XINCREF(name_obj);
 
   KosDynWith *with_node = kos_dyn_push_with_provisional(
@@ -91,7 +91,7 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
     if (wr.kind == KOS_RES_REPROLOGUE
         && KosEvalState_FRAME(es) != caller
         && ! KosEvalState_PLAN(es))
-      RESULT_NEXT(es);
+      RESULT_CONTINUE(es);
     return wr;
   }
 

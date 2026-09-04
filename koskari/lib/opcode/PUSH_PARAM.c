@@ -20,10 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_PARAM) {
-  PyObject *names = KosEvalState_CONST(es, KosOp_ARG(insn));
-  if (! names) {
-    RESULT_RAISE();
-  }
+  PyObject *names = KosOp_OBJ(insn);
 
   PyObject *bindings = KosEvalState_StackPopTailDictFromNames(es, names);
   if (! bindings)

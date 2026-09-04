@@ -18,10 +18,7 @@
   CONST_ITEM_CLEAR: arg = constant index (key). del TOS[key].
 */
 KOS_OP_HANDLER(CONST_ITEM_CLEAR) {
-  PyObject *key = KosEvalState_CONST(es, KosOp_ARG(insn));
-
-  if (unlikely(! key))
-    RESULT_RAISE();
+  PyObject *key = KosOp_OBJ(insn);
 
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (unlikely(! obj))

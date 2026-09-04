@@ -10,17 +10,40 @@ semantic traps that parse fine, see [Pitfalls](pitfalls.md).
 
 ---
 
-## A line is one form
+## A line is one form: count its elements
 
 In layout (the default surface of a `.ki` file), each line is exactly
-one form. Multiple expressions on a line become an implicit call; a
-single expression stands alone.
+one form, and the number of elements on the line decides which form:
+
+- **More than one element**: the line is an implicit call form.
+  `f x` is `(f x)`.
+- **Exactly one element**: the line is that expression alone, never a
+  call. `x.strip` is one element, so it is the attribute read
+  `(attr x strip)`; calling it takes explicit parens, `(x.strip)`.
 
 ```koskari
-print "total:" n     ; reads as (print "total:" n)
-(process items)      ; a parenthesized form is itself
-return               ; expands to (return) via its bare form
+print "total:" n     ; two or more elements: (print "total:" n)
+f x                  ; (f x)
+(process items)      ; one element, a parenthesized form: itself
+x.strip              ; one element: the attribute, NOT a call
+(x.strip)            ; the call
 total                ; a lone name with no bare form is a reference
+return               ; expands to (return) via its bare form
+```
+
+The same count applies to every indented line under a header (next
+section). A header ending in `:` takes each of its indented lines as
+one argument, and each of those lines is still read by the rule
+above:
+
+```koskari
+print:               ; (print foo bar baz): three one-element lines,
+    foo              ; three arguments
+    bar
+    baz
+
+print:               ; (print (foo bar baz)): one three-element line,
+    foo bar baz      ; which is a call, so print gets ONE argument
 ```
 
 The statement words `return`, `continue`, `break`, `raise`,
@@ -109,6 +132,8 @@ hash forms.
 #[1 2 3]        ; list
 #(1 2 3)        ; tuple
 #{"a": 1}       ; dict
+#{}             ; empty dict; likewise #[] and #() -- prefer these
+                ; over (dict), (list), (tuple)
 ```
 
 See [Brackets and the call convention](../reference/concepts/brackets-and-call-convention.md).

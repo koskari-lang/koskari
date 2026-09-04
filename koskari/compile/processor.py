@@ -229,13 +229,13 @@ CALL_TO_TAIL_CALL = {
 }
 
 
-# The trailing pack phase's run kinds: bare load opcode -> (pair
-# twin, quad twin or None). A run is homogeneous; a load of another
-# kind breaks it.
+# The trailing pack phase's run kinds: bare load opcode -> its bulk
+# twins for two, three, and four loads. A run is homogeneous; a load
+# of another kind breaks it.
 PACK_SHAPES = {
-    OpCode.CONST: (OpCode.CONST2, None),
-    OpCode.VAR: (OpCode.VAR2, OpCode.VAR4),
-    OpCode.FAST: (OpCode.FAST2, OpCode.FAST4),
+    OpCode.CONST: (OpCode.CONST2, OpCode.CONST3, OpCode.CONST4),
+    OpCode.VAR: (OpCode.VAR2, OpCode.VAR3, OpCode.VAR4),
+    OpCode.FAST: (OpCode.FAST2, OpCode.FAST3, OpCode.FAST4),
 }
 
 
@@ -923,8 +923,10 @@ class ByteCodeProcessor:
         """
         The trailing pack phase, the very last pass of process:
         combine runs of consecutive bare CONST, VAR, or FAST loads
-        into their bulk twins (CONST2; VAR4/VAR2; FAST4/FAST2, greedy
-        quads then pairs). Runs after convert_fast, so no other pass
+        into their bulk twins, greedily: quads, then one triple or
+        one pair, then a bare load for the last one, so every run of
+        two to four is one instruction and a longer run is quads plus
+        one row for the remainder. Runs after convert_fast, so no other pass
         ever sees a packed row and FAST runs pack directly; the only
         consumers are the schema-driven finalize, dis, and codex. A
         run is homogeneous -- a load of another kind breaks it, as
@@ -942,14 +944,18 @@ class ByteCodeProcessor:
         def flush():
             nonlocal kind, trailing_pos
             if run:
-                op2, op4 = PACK_SHAPES[kind]
-                while op4 is not None and len(run) >= 4:
+                op2, op3, op4 = PACK_SHAPES[kind]
+                while len(run) >= 4:
                     a, b, c, d = run[:4]
                     del run[:4]
                     result.append((op4, (a, b, c, d)))
-                while len(run) >= 2:
-                    a, b = run[:2]
-                    del run[:2]
+                if len(run) == 3:
+                    a, b, c = run
+                    del run[:]
+                    result.append((op3, (a, b, c, None)))
+                elif len(run) == 2:
+                    a, b = run
+                    del run[:]
                     result.append((op2, (a, b, None, None)))
                 if run:
                     result.append((kind, run.pop()))

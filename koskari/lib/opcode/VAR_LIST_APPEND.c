@@ -21,9 +21,7 @@
 */
 KOS_OP_HANDLER_COLD(VAR_LIST_APPEND) {
 
-  PyObject *name = get_name_from_insn(es, insn);
-  if (unlikely(! name))
-    RESULT_RAISE();
+  PyObject *name = KosOp_OBJ(insn);
 
   PyObject *list = frame_ns_deref(es, name);
   if (unlikely(! list))

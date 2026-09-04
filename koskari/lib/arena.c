@@ -94,8 +94,9 @@ PyObject *KosArena_New(size_t nbytes) {
 int KosArena_Reserve(PyObject *arena, size_t nbytes, void **out) {
 
   KosArena *self = (KosArena *) arena;
-  size_t ptr_size = sizeof(void *);
-  size_t start = ((self->fill + ptr_size - 1) / ptr_size) * ptr_size;
+  /* Members hold 32-byte instruction records; keep each line-aligned. */
+  size_t unit = 32;
+  size_t start = ((self->fill + unit - 1) / unit) * unit;
 
   if (self->sealed) {
     PyErr_SetString(PyExc_ValueError,

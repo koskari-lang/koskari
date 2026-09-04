@@ -564,6 +564,12 @@ define cmd_insert [options]:
         print f"FAIL {record_id} verify: {kind}: {exc}"
         return 1
 
+    try:
+        (load.dump_record record)
+    except [Exception as: exc]:
+        print f"FAIL {record_id} serialize: {exc}"
+        return 1
+
     when options.dry_run:
         print f"OK {record_id} (validated, not written)"
         return 0

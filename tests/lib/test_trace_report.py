@@ -19,11 +19,14 @@ tracing flags
 :license: GNU General Public License v3
 """
 
+import asyncio
 import unittest
 
 import koskari.lib as lib
 
 import pytest
+
+from tests.compile.specials import SpecialsTestCase
 
 pytestmark = pytest.mark.phase_lib
 
@@ -210,6 +213,12 @@ class TestTraceReport(unittest.TestCase):
             self.skipTest(
                 "KOS_TRACE_TIMING not enabled; rebuild with KOS_TRACE_TIMING=1"
             )
+        # run some bytecode so the table has rows: a call, a few loads,
+        # and the trampoline passes around them
+        expr, _ = SpecialsTestCase("assertTrue").compile_expr(
+            "(begin (define f (lambda [a b] (+ a b))) (f 1 2))")
+        self.assertEqual(asyncio.run(expr()), 3)
+        report = lib.get_trace_report()
         self.assertIn("opcode_timing", report)
         self.assertIn("opcode_timing_summary", report)
         ot = report["opcode_timing"]
@@ -255,6 +264,14 @@ class TestTraceReport(unittest.TestCase):
         self.assertIsInstance(sm["max_avg_ns"], int)
         self.assertIsInstance(sm["top_by_total_ns"], list)
         self.assertIsInstance(sm["top_by_avg_ns"], list)
+        self.assertIn("clock", sm)
+        self.assertIn("ns_per_tick", sm)
+        self.assertIsInstance(sm["ns_per_tick"], float)
+        self.assertIn("step_overhead_ns", sm)
+        self.assertIsInstance(sm["step_overhead_ns"], float)
+        # the pseudo slots: a thread spends time in resumes and in the
+        # trampoline between chains, reported beside the opcodes
+        self.assertIn("trampoline", ot)
         self.assertLessEqual(len(sm["top_by_total_ns"]), 10)
         self.assertLessEqual(len(sm["top_by_avg_ns"]), 10)
         for row in sm["top_by_total_ns"]:

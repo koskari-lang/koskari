@@ -1662,3 +1662,156 @@ tags:
   - higher-order
   - iterate
 notes: "the demand wrap makes a koskari lambda usable by python higher-order functions: each call completes synchronously to a value. Only needed for the py- variants and other python HOFs; the native map and filter need no wrapping."
+---
+id: iter-dict-each-key-value-001
+feature: macro/compile/dict-each
+source: |-
+  (dict-each [w #["a" "bb" "ccc"]] key: w value: (len w))
+  
+verify:
+  read: "(dict-each [w (#list \"a\" \"bb\" \"ccc\")] key: w value: (len w))"
+  expand: "(dict (each [w (#list \"a\" \"bb\" \"ccc\")] (#tuple w (len w))))"
+  eval: "{\"a\": 1, \"bb\": 2, \"ccc\": 3}"
+references:
+  - reference/macros/compile-dict-each.md
+  - reference/macros/compile-each.md
+stability: evolving
+tags:
+  - iter
+  - dict-each
+  - comprehension
+  - dict
+  - construct
+  - iterate
+notes: "the dict comprehension: key: and value: clauses name the two halves of each entry; it lowers to dict over an each that yields (key value) tuples. Sibling of list-each; the same when:/unless: filter clauses apply (see iter-dict-each-when-filter-002)."
+---
+id: iter-dict-each-when-filter-002
+feature: macro/compile/dict-each
+source: |-
+  (dict-each [w #["a" "bb" "ccc"]] when: (& (len w) 1) key: w value: (len w))
+  
+verify:
+  read: "(dict-each [w (#list \"a\" \"bb\" \"ccc\")] when: (& (len w) 1) key: w value: (len w))"
+  expand: "(dict (each [w (#list \"a\" \"bb\" \"ccc\")] when: (& (len w) 1) (#tuple w (len w))))"
+  eval: "{\"a\": 1, \"ccc\": 3}"
+references:
+  - reference/macros/compile-dict-each.md
+stability: evolving
+tags:
+  - iter
+  - dict-each
+  - comprehension
+  - dict
+  - filter
+  - iterate
+notes: "the when: clause precedes key:/value: and skips entries whose condition is false; unless: is the negated twin. In the body spelling a whole-body (when ...) around the pair filters the same way, through each (see iter-dict-each-tuple-body-003)."
+---
+id: iter-dict-each-tuple-body-003
+feature: macro/compile/dict-each
+source: |-
+  (dict-each [w #["a" "bb"]] #(w (len w)))
+  
+verify:
+  read: "(dict-each [w (#list \"a\" \"bb\")] (#tuple w (len w)))"
+  expand: "(dict (each [w (#list \"a\" \"bb\")] (#tuple w (len w))))"
+  eval: "{\"a\": 1, \"bb\": 2}"
+references:
+  - reference/macros/compile-dict-each.md
+stability: evolving
+tags:
+  - iter
+  - dict-each
+  - comprehension
+  - dict
+  - construct
+  - iterate
+notes: "the body spelling: a single body expression must evaluate to a (key value) pair per element, exactly what dict accepts. Equivalent to the key:/value: form in iter-dict-each-key-value-001; prefer that one when the halves are separate expressions."
+---
+id: iter-literal-dict-empty-001
+feature: "reader/#dict"
+source: |-
+  #{}
+  
+verify:
+  read: "(#dict)"
+  expand: "(#dict)"
+  eval: "{}"
+references:
+  - start/from-python/data-and-control.md
+  - reference/grammar.md
+stability: stable
+tags:
+  - iter
+  - reader
+  - literal
+  - dict
+  - construct
+  - idiom
+notes: "the empty dict is the literal #{}; it is the idiom and the fastest spelling. (dict) works but is a call through the builtin. Likewise #[] and #() for an empty list and tuple."
+---
+id: iter-sort-key-itemgetter-001
+feature: builtin/itemgetter
+source: |-
+  (begin
+    (define rows #[#{"k": 2} #{"k": 1}])
+    (rows.sort key: (itemgetter "k"))
+    rows)
+  
+verify:
+  read: "(begin (define rows (#list (#dict (#tuple \"k\" 2)) (#dict (#tuple \"k\" 1)))) ((attr rows sort) key: (itemgetter \"k\")) rows)"
+  eval: "list:[{\"k\":1},{\"k\":2}]"
+references:
+  - agents/pitfalls.md
+  - agents/native-builtins.md
+stability: evolving
+tags:
+  - iter
+  - sort
+  - itemgetter
+  - higher-order
+  - index
+  - idiom
+notes: "itemgetter and attrgetter are bootstrap builtins: no import-from operator is needed. A key built from them is a plain python callable, so it works with list.sort, sorted, min, max and any other python higher-order function. This is the idiom for a sort key; a koskari lambda needs demand there (see iter-sort-key-koskari-lambda-invalid-001)."
+---
+id: iter-sort-key-demand-lambda-002
+feature: builtin/demand
+source: |-
+  (begin
+    (define xs #[3 1 2])
+    (xs.sort key: (demand {(- %1)}))
+    xs)
+  
+verify:
+  read: "(begin (define xs (#list 3 1 2)) ((attr xs sort) key: (demand (gensym-thunk (- %1)))) xs)"
+  eval: "list:[3,2,1]"
+references:
+  - agents/pitfalls.md
+  - reference/concepts/demand-async-and-defer.md
+stability: evolving
+tags:
+  - iter
+  - sort
+  - demand
+  - higher-order
+  - python-interop
+notes: "a koskari lambda as a list.sort key must be demand-wrapped: list.sort is a python method and calls the key from python, where a bare koskari function returns an un-awaited Coroutine. When the key is an item or attribute lookup, itemgetter or attrgetter is simpler (see iter-sort-key-itemgetter-001)."
+---
+id: iter-sorted-key-koskari-lambda-003
+feature: builtin/sorted
+source: |-
+  (sorted #[#{"k": 2} #{"k": 1}] key: {(item %1 "k")})
+  
+verify:
+  read: "(sorted (#list (#dict (#tuple \"k\" 2)) (#dict (#tuple \"k\" 1))) key: (gensym-thunk (item %1 \"k\")))"
+  eval: "list:[{\"k\":1},{\"k\":2}]"
+references:
+  - agents/pitfalls.md
+  - agents/native-builtins.md
+stability: evolving
+tags:
+  - iter
+  - sort
+  - sorted
+  - higher-order
+  - surprising
+notes: "sorted is the documented exception: koskari's sorted demand-wraps a callable key: itself, so a bare koskari lambda works here. The same lambda handed to list.sort fails (iter-sort-key-koskari-lambda-invalid-001); do not generalise from sorted to other python higher-order functions."

@@ -21,8 +21,6 @@ Load and dump Koskari corpus records as multi-document YAML shards.
 """
 
 
-import re
-
 import-from pathlib Path
 
 import yaml
@@ -45,27 +43,6 @@ define _VERIFY_KEY_ORDER #(
     "eval"
     "error"
     "invalid")
-
-define _YAML_BOOL_WORDS (frozenset #(
-    "null"
-    "true"
-    "false"
-    "yes"
-    "no"
-    "on"
-    "off"
-    "~"))
-
-define _NUMBER_RE:
-    (re.compile "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$")
-
-; Leading characters that carry YAML meaning in a plain scalar.
-define _LEADING_META "@`&*!|>\\%"
-
-; Whole-token scalars that YAML would read as an anchor, alias, or
-; complex-key marker rather than a string.
-define _BARE_META #("?" "*" "&")
-
 
 @demand
 define load_records [records_dir]:
@@ -116,27 +93,20 @@ define _escape_double_quoted [text]:
 
 define _yaml_needs_double_quotes [text]:
     """
-    Return True when text must be double-quoted to round-trip as a string
+    Return True when the bare text would not load back as the same
+    string. The loader itself is the test, so every YAML shape that
+    reads as something else (bool words, numbers, dates, comments,
+    nested mappings, flow collections, anchors, leading quotes) is
+    covered without a list to maintain
     """
 
-    unless text:
+    when (or (not text) (!= (text.strip) text)):
         return True
-    when (in? text _BARE_META):
+    try:
+        define back (yaml.safe_load f"k: {text}")
+    except [Exception]:
         return True
-    define lowered (text.lower)
-    when (in? lowered _YAML_BOOL_WORDS):
-        return True
-    when (_NUMBER_RE.match text):
-        return True
-    when (in? "#" text):
-        return True
-    when (in? ":" text):
-        return True
-    when (in? text[0] _LEADING_META):
-        return True
-    when (!= (text.strip) text):
-        return True
-    return False
+    return (not (and (instance? back dict) (== (back.get "k") text)))
 
 
 define _use_block_scalar [text]:
@@ -248,7 +218,58 @@ define dump_record [record]:
                 define scalar (_format_inline_scalar value)
                 lines.append f"{field}: {scalar}"
 
-    "\n".join lines
+    define text ("\n".join lines)
+    (check_round_trip record text)
+    return text
+
+
+define _same_value [want got]:
+    """
+    Field equality after a YAML round trip. A block scalar's trailing
+    newline is dropped by the |- form, so strings compare without one
+    """
+
+    when (and (instance? want str) (instance? got str)):
+        return (== (want.rstrip "\n") (got.rstrip "\n"))
+    return (== want got)
+
+
+@demand
+define check_round_trip [record text]:
+    """
+    Raise ValueError unless the YAML text loads back to the record's
+    fields, naming the first field that differs. Guards every writer
+    against a serializer gap, which would otherwise corrupt the shard
+    for every later append
+
+    :param record: the record that was serialized
+    :param text: the YAML document text
+    :raises ValueError: on the first field that does not load back
+    """
+
+    define rid (record.get "id" "<no-id>")
+    define back (yaml.safe_load text)
+    unless (instance? back dict):
+        raise (ValueError f"record {rid} did not load back as a mapping")
+
+    for-each [field _RECORD_FIELD_ORDER]:
+        unless (in? field record):
+            (continue)
+        define want record[field]
+        define got (back.get field)
+
+        if (== field "verify"):
+            define stages (or got #{})
+            for-each [[key value] (want.items)]:
+                unless (_same_value value (stages.get key)):
+                    raise (ValueError
+                        f"record {rid} field verify.{key} does not"-
+                        f" load back as written: {(repr value)}")
+        else:
+            unless (_same_value want got):
+                raise (ValueError
+                    f"record {rid} field {field} does not"-
+                    f" load back as written: {(repr want)}")
 
 
 @demand

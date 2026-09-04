@@ -18,14 +18,12 @@
    tuple of constant elements). Push a fresh list built from that sequence.
 
    Each evaluation allocates a new list, so the mutable result never aliases
-   the immutable pool constant. Pool trust follows KosEvalState_CONST /
-   KOS_EVAL_SAFETYNET.
+   the immutable pool constant, which is resolved onto the record at
+   finalize.
 */
 
 KOS_OP_HANDLER(BUILD_LIST_CONST) {
-  PyObject *seq = KosEvalState_CONST(es, KosOp_ARG(insn));
-  if (unlikely(! seq))
-    RESULT_RAISE();
+  PyObject *seq = KosOp_OBJ(insn);
 
   PyObject *built = PySequence_List(seq);
   if (unlikely(! built))

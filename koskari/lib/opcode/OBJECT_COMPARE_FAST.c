@@ -20,20 +20,19 @@
 */
 
 KOS_OP_HANDLER(OBJECT_COMPARE_FAST) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 
   PyObject *ops[3];
-  ops[0] = KosEvalState_CONST(es, row.a1);   /* borrowed */
-  ops[2] = KosEvalState_CONST(es, row.a3);   /* borrowed */
+  ops[0] = KosExtra_OBJ(row, 1);   /* borrowed */
+  ops[2] = KosExtra_OBJ(row, 3);   /* borrowed */
 
-  ops[1] = kos_ns_fast_deref(ns, (size_t) row.a2);
+  ops[1] = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 2));
   if (! ops[1])
     RESULT_RAISE();
 
-  PyObject *result = kos_compare_reduce((KosCompare) row.a0, ops, 3);
+  PyObject *result = kos_compare_reduce((KosCompare) KosExtra_IMM(row, 0), ops, 3);
   Py_DECREF(ops[1]);
 
   if (unlikely(! result))

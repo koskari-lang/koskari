@@ -276,8 +276,9 @@ typedef KosThreadFn KosResumeFn;
    did and where control goes next, so the same body reads correctly
    under both dispatch modes:
 
-   - RESULT_NEXT(es): continue at the next instruction, es->pc.
-   - RESULT_JUMP(es, target): continue at target.
+   - RESULT_NEXT(es): continue at the next instruction, insn + 1.
+   - RESULT_JUMP_AT(es, target): continue at the target record.
+   - RESULT_CONTINUE(es): continue at es->pc through es->code.
    - RESULT_PUSH(es, val): push a borrowed val, then continue. A
      failed push leaves val with its caller.
    - RESULT_STEAL(es, val): push an owned val (consumed, on failure
@@ -285,45 +286,55 @@ typedef KosThreadFn KosResumeFn;
    - RESULT_RAISE(): PyErr is set; hand off to the raise machinery.
    - RESULT_FAIL(): hard fault.
 
-   The continuing forms thread straight into the handler at es->pc's
-   slot -- read from es->pc rather than the handler's own slot plus
-   one, since a handler may have moved the pc before its tail (a jump,
-   the fused POP peephole) -- after advancing acting_pc and pc the way
-   the trampoline's fetch does. RAISE and FAIL return: they are a real
-   crossing back to the trampoline. Every continuing step is a tail
-   call, so a handler using these macros must have the KosThreadFn
-   prototype and must run any Py_DECREF it owes before the macro.
+   The straight-line forms (NEXT, PUSH, STEAL) step from the handler's
+   own record: the next instruction is insn + 1, and its pc comes off
+   that record, so no walk through es->code is needed. They are for a
+   handler that leaves the frame and the pc alone. A handler whose
+   helper installed a callee, returned to a parent, or stored a pc
+   ends in RESULT_CONTINUE, which fetches from es->pc the way the
+   trampoline does. A jump ends in RESULT_JUMP_AT with its resolved
+   target record. RAISE and FAIL
+   return: they are a real crossing back to the trampoline. Every
+   continuing step is a tail call, so a handler using these macros
+   must have the KosThreadFn prototype, must name its own record insn
+   (KOS_OP_HANDLER does), and must run any Py_DECREF it owes before
+   the macro.
 */
 
-/* Thread into the handler at es->pc: the fetch the trampoline does,
-   ending in a tail call. A bare fetch and jump; the eval breaker is
-   tested at the cooperation points (RESULT_NEXT_POLL, a frame
-   install, RESUME_HOP, the prologue), not here. */
-#define KOS_THREAD_NEXT(es)                                             \
+/* Thread into next, a record of the live frame's code: acting_pc and
+   pc come off the record, then a tail call. A bare jump; the eval
+   breaker is tested at the cooperation points (RESULT_NEXT_POLL, a
+   frame install, RESUME_HOP, the prologue), not here. */
+#define KOS_THREAD_AT(es, next)                                         \
   do {                                                                  \
     KosEvalState *kos_thr_es_ = (es);                                   \
-    uint32_t kos_thr_pc_ = KosEvalState_PC(kos_thr_es_);                \
-    KosOp *kos_thr_next_;                                               \
-    kos_thr_next_ = &KosEvalState_OPS(kos_thr_es_)[kos_thr_pc_];        \
+    KosOp *kos_thr_next_ = (next);                                      \
+    uint32_t kos_thr_pc_ = kos_thr_next_->pc;                           \
     kos_thr_es_->acting_pc = kos_thr_pc_;                               \
     kos_thr_es_->pc = kos_thr_pc_ + 1u;                                 \
     KOS_TRACE_THREAD_STEP(kos_thr_next_->op);                           \
     TAILCALL(kos_thr_next_->fn, kos_thr_es_, kos_thr_next_, NULL);      \
   } while (0)
 
-#define RESULT_NEXT(es)  KOS_THREAD_NEXT(es)
-
-#define RESULT_JUMP(es, target)                                         \
+/* Thread into the handler at es->pc: the fetch the trampoline does.
+   The form for a tail after a frame change or a stored pc. */
+#define KOS_THREAD_NEXT(es)                                             \
   do {                                                                  \
-    KosEvalState_SET_PC((es), (target));                                \
-    KOS_THREAD_NEXT(es);                                                \
+    KosEvalState *kos_thn_es_ = (es);                                   \
+    KOS_THREAD_AT(kos_thn_es_,                                          \
+                  &KosEvalState_OPS(kos_thn_es_)[KosEvalState_PC(kos_thn_es_)]); \
   } while (0)
+
+#define RESULT_NEXT(es)      KOS_THREAD_AT((es), ((KosOp *) insn) + 1)
+#define RESULT_CONTINUE(es)  KOS_THREAD_NEXT(es)
+
+#define RESULT_JUMP_AT(es, target)  KOS_THREAD_AT((es), (target))
 
 #define RESULT_PUSH(es, val)                                            \
   do {                                                                  \
     if (unlikely(KosEvalState_StackPushRef((es), (val)) < 0))           \
       return EVAL_RAISE();                                              \
-    KOS_THREAD_NEXT(es);                                                \
+    RESULT_NEXT(es);                                                    \
   } while (0)
 
 #define RESULT_STEAL(es, val)                                           \
@@ -333,7 +344,7 @@ typedef KosThreadFn KosResumeFn;
       return EVAL_RAISE();                                              \
     if (unlikely(KosEvalState_StackPUSH((es), kos_rs_val_) < 0))        \
       return EVAL_RAISE();                                              \
-    KOS_THREAD_NEXT(es);                                                \
+    RESULT_NEXT(es);                                                    \
   } while (0)
 
 #define RESULT_RAISE()  return EVAL_RAISE()
@@ -395,6 +406,7 @@ typedef KosThreadFn KosResumeFn;
   do {                                                                  \
     if (KOS_EVAL_BREAKER_UP(es))                                        \
       DISPATCH((fn), (es), (state), (value));                           \
+    KOS_TRACE_RESUME_STEP();                                            \
     TAILCALL((fn), (es), (state), (value));                             \
   } while (0)
 
@@ -409,7 +421,7 @@ typedef KosThreadFn KosResumeFn;
   do {                                                                  \
     if (KOS_EVAL_BREAKER_UP(es))                                        \
       return EVAL_NORMAL();                                             \
-    RESULT_NEXT(es);                                                    \
+    KOS_THREAD_NEXT(es);                                                \
   } while (0)
 
 /* At most one delivery is staged at a time; a second is an internal
@@ -710,6 +722,17 @@ struct KosEvalState {
    first instruction. Frame entry is a cooperation point because a
    tail-recursive loop has no CONTINUE.
 */
+/**
+   True when a just-installed frame can be threaded into at its pc: it
+   has code and is not waiting on a resume. A frame suspended inside a
+   yield-from carries the node's phase resume, and its delivery must
+   run first, so the installer bounces through the prologue instead.
+*/
+static inline int kos_frame_threads(KosDynFrame *nf) {
+  return nf && KosDynFrame_CODE(nf) && ! KosDynFrame_RESUME_FN(nf);
+}
+
+
 static inline KosOpResult kos_call_installed(KosEvalState *es) {
   return KOS_EVAL_BREAKER_UP(es) ? EVAL_REPROLOGUE() : EVAL_NORMAL();
 }
@@ -737,6 +760,25 @@ static inline KosOpResult kos_call_installed(KosEvalState *es) {
 #define KosEvalState_SET_PC(es, v) ((void)((es)->pc = (uint32_t)(v)))
 /** The staged CPS delivery, owned; NULL when nothing is staged. */
 #define KosEvalState_PENDING_VALUE(es) ((es)->pending_value)
+
+
+/** Stage an owned delivery for the current frame's resume, releasing
+    any earlier one still in the slot. */
+static inline void KosEvalState_StageDelivery(KosEvalState *es, PyObject *val) {
+  Py_XDECREF(KosEvalState_PENDING_VALUE(es));
+  KosEvalState_PENDING_VALUE(es) = val;
+}
+
+
+/**
+   The result of an iteration install: thread into the installed frame
+   when it can be threaded into, else bounce through the prologue, which
+   runs its resume or its entry sequence.
+*/
+static inline KosOpResult kos_iter_installed(KosEvalState *es) {
+  return kos_frame_threads(KosEvalState_FRAME(es))
+      ? EVAL_NORMAL() : EVAL_REPROLOGUE();
+}
 
 
 /**

@@ -22,12 +22,11 @@
 */
 
 KOS_OP_HANDLER(SWITCH_EQ_FAST) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
-  size_t idx = (size_t) row.a1;
+  size_t idx = (size_t) KosExtra_IMM(row, 1);
   PyObject *rhs = kos_ns_fast_deref(ns, idx);
   if (unlikely(! rhs))
     RESULT_RAISE();
@@ -45,7 +44,7 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
-    KosEvalState_SET_PC(es, row.a0);
+    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 0));
   }
 
   RESULT_NEXT(es);

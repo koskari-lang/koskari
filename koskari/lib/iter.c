@@ -466,12 +466,19 @@ static KosIterStepResult agen_iter_drive(
        it with the sent value. A bootstrap install enters fresh code
        with an empty stack -- nothing to swap. */
     if (frozen && send_val && ! PyErr_Occurred()) {
-      PyObject *popped = KosEvalState_StackPopRef(es);
-      if (! popped)
-        goto drive_error;
-      Py_DECREF(popped);
-      if (KosEvalState_StackPushRef(es, send_val) < 0)
-        goto drive_error;
+      KosDynFrame *frame = KosEvalState_FRAME(es);
+      if (frame && KosDynFrame_RESUME_FN(frame)) {
+        /* waiting on a resume: the sent value is its delivery */
+        Py_INCREF(send_val);
+        KosEvalState_StageDelivery(es, send_val);
+      } else {
+        PyObject *popped = KosEvalState_StackPopRef(es);
+        if (! popped)
+          goto drive_error;
+        Py_DECREF(popped);
+        if (KosEvalState_StackPushRef(es, send_val) < 0)
+          goto drive_error;
+      }
     }
   }
 

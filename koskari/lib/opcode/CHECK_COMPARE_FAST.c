@@ -21,28 +21,48 @@
   is set), compare under the selector, jump to LABEL on failure.
 */
 KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint16_t src = row.a0;
+  const KosExtra *row = KosOp_ROW(insn);
+  uint16_t src = KosExtra_IMM(row, 0);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
+
+  /* Exact-int pair under a richcompare selector: settle on the
+     extracted values with no refcount traffic, peeking the slots
+     borrowed. Nothing runs between the peek and the compare that could
+     rebind a slot, so the borrow is sound; any other shape takes the
+     owned path below. */
+  if (likely(KosCmpSrc_SEL(src) <= KOS_COMPARE_GE)) {
+    PyObject *x = KosCmpSrc_X_CONST(src)
+        ? KosExtra_OBJ(row, 1)
+        : kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 1));
+    PyObject *y = KosCmpSrc_Y_CONST(src)
+        ? KosExtra_OBJ(row, 2)
+        : kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 2));
+    long long a, b;
+
+    if (x && y && kos_as_ll2(x, y, &a, &b)) {
+      if (kos_ll_compare((KosCompare) KosCmpSrc_SEL(src), a, b))
+        RESULT_NEXT(es);
+      RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+    }
+  }
 
   PyObject *ops[2];
 
   if (KosCmpSrc_X_CONST(src)) {
-    ops[0] = KosEvalState_CONST(es, row.a1);   /* borrowed */
+    ops[0] = KosExtra_OBJ(row, 1);   /* borrowed */
 
   } else {
-    ops[0] = kos_ns_fast_deref(ns, (size_t) row.a1);
+    ops[0] = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 1));
     if (unlikely(! ops[0]))
       RESULT_RAISE();
   }
 
   if (KosCmpSrc_Y_CONST(src)) {
-    ops[1] = KosEvalState_CONST(es, row.a2);   /* borrowed */
+    ops[1] = KosExtra_OBJ(row, 2);   /* borrowed */
 
   } else {
-    ops[1] = kos_ns_fast_deref(ns, (size_t) row.a2);
+    ops[1] = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 2));
     if (unlikely(! ops[1])) {
       if (! KosCmpSrc_X_CONST(src))
         Py_DECREF(ops[0]);
@@ -62,7 +82,7 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
     RESULT_RAISE();
 
   if (res == 0)
-    KosEvalState_SET_PC(es, row.a3);
+    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
 
   RESULT_NEXT(es);
 }

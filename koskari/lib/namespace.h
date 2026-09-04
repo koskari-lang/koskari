@@ -461,18 +461,76 @@ static inline PyObject *kos_ns_fast_deref(PyObject *ns, size_t idx) {
     }
     return kos_ns_deref_empty_raw(ns, idx);
   }
+  /* The symbolic arm of KosRef_Deref, inline: a plain or constant ref
+     holds its value in the one field, and a bound one is the common
+     case for a closure slot. Everything else, an empty ref included,
+     takes the out-of-line dispatch. */
+  {
+    PyTypeObject *tp = Py_TYPE(slot);
+    if (likely(tp == &KosRefType || tp == &KosConstantRefType)) {
+      PyObject *value = KosSymbolicRef_VALUE(slot);
+      if (likely(value)) {
+        Py_INCREF(value);
+        return value;
+      }
+    }
+  }
   return KosRef_Deref(slot);
+}
+
+
+/**
+   Borrowed peek at a fast slot: the bound value of a raw slot or of a
+   plain or constant ref, or NULL when the slot would need the general
+   deref (empty, or another ref kind). For a handler that can act on the
+   value without running code that could rebind the slot.
+*/
+static inline PyObject *kos_ns_fast_peek(PyObject *ns, size_t idx) {
+  PyObject *slot = KosNamespace_GET_FAST_VAL(ns, idx);
+  if (kos_ns_is_raw(ns, idx))
+    return slot;
+  if (slot) {
+    PyTypeObject *tp = Py_TYPE(slot);
+    if (tp == &KosRefType || tp == &KosConstantRefType)
+      return KosSymbolicRef_VALUE(slot);
+  }
+  return NULL;
 }
 
 
 static inline int kos_ns_fast_store(PyObject *ns, size_t idx, PyObject *val) {
   if (kos_ns_is_raw(ns, idx)) {
+    PyObject *old = KosNamespace_GET_FAST_VAL(ns, idx);
     Py_INCREF(val);
-    Py_XDECREF(KosNamespace_GET_FAST_VAL(ns, idx));
     KosNamespace_GET_FAST_VAL(ns, idx) = val;
+    Py_XDECREF(old);
     return 0;
   } else {
     return KosRef_Store(KosNamespace_GET_FAST_VAL(ns, idx), val);
+  }
+}
+
+
+/**
+   Store an OWNED value into a fast slot, consuming the reference on
+   every path: a raw slot takes it without a refcount round trip, a ref
+   slot stores through the ref and releases it. The old value is
+   released after the slot holds the new one.
+*/
+static inline int kos_ns_fast_store_steal(
+    PyObject *ns,
+    size_t idx,
+    PyObject *val) {
+
+  if (kos_ns_is_raw(ns, idx)) {
+    PyObject *old = KosNamespace_GET_FAST_VAL(ns, idx);
+    KosNamespace_GET_FAST_VAL(ns, idx) = val;
+    Py_XDECREF(old);
+    return 0;
+  } else {
+    int res = KosRef_Store(KosNamespace_GET_FAST_VAL(ns, idx), val);
+    Py_DECREF(val);
+    return res;
   }
 }
 

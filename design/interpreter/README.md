@@ -16,7 +16,8 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 
 ## Contents
 
-- **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`); extent/location tables — archived spec [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
+- **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`): the 32-byte instruction record and the resolved extras row -- design record [archive/resolved-operands.md](../archive/resolved-operands.md); extent/location tables — archived spec [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
+- **electors.md**: Electors — handlers elected once for a site's guarded operand (cache slot) or an extent's fixed fact (dyn node) and tail-called thereafter; **design proposal**: the cache-style home measured flat on CALL_FAST and was removed, the node-style home is open
 - **bytecode-finalization.md**: Final form phase design — collect/size/allocate/emit pipeline, identity-based cpool dedup, unified block with extra table; **design proposal**
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
 - **[EVALUATOR.md](../EVALUATOR.md)**: Evaluator operation diagrams, threaded dispatch and the trampoline, opcode signaling, exceptions, transfer plans, tail calls, call installs, CPS resumes, and play-by-play scenarios
@@ -24,6 +25,7 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **[archive/iteration-yield-boundaries.md](../archive/iteration-yield-boundaries.md)** (archived): YIELD vs YIELD_FROM vs PUSH_FOREACH/ITER_NEXT — implementation map, underlying calls, consolidation proposals
 - **[archive/opcode-eval-helpers-inventory.md](../archive/opcode-eval-helpers-inventory.md)** (archived): Static helpers in `eval.c` and opcode `.c` files — opcode cross-reference, redundancies, suggested public names for native/runtime API
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
+- **opcode-sizing.md**: per-handler code size joined with per-opcode timing (`make opsizing`, `design/perf/opsizing.tsv`); how to read the table and how to measure a change
 - **demand-evalex-phase1.md** / **demand-evalex-phase2.md** (archived under [archive/](../archive/)): demand in-eval denial and call flattening — see [EVALUATOR.md](../EVALUATOR.md) §7 and [api/demand-wrapper.md](../api/demand-wrapper.md)
 - **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView; proposed CAPTURE_FRAME opcode is design-only, see that doc §5)
 - **callcc.md**: Call/cc implementation design (current PUSH delimited invoke)

@@ -22,14 +22,14 @@ KOS_OP_HANDLER(JUMP_FALSE) {
   if (unlikely(! val))
     RESULT_RAISE();
 
-  int res = PyObject_Not(val);
+  int res = kos_object_not(val);
   Py_DECREF(val);
 
   if (unlikely(res < 0))
     RESULT_RAISE();
 
   if (res)
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
+    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
 
   RESULT_NEXT(es);
 }

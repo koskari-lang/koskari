@@ -36,7 +36,7 @@ KOS_OP_HANDLER(POP_DYN_WITH) {
   }
   /* REPROLOGUE = exception swallowed; resume_pc already set, node stays on chain */
   if (kr.kind == KOS_RES_REPROLOGUE)
-    RESULT_NEXT(es);
+    RESULT_CONTINUE(es);
   if (kr.kind == KOS_RES_RAISE)
     RESULT_RAISE();
 

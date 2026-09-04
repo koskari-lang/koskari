@@ -7,8 +7,9 @@
   name errors with nothing pushed.
 - **Invariants**: Names in constant pool.
 - **Compiler form:** Never emitted by specials. Produced only by
-  `Compiler.pack_var_runs` (the late `compress` sweep), which combines a run
-  of two consecutive bare VAR loads. `convert_fast` lowers to FAST2 when
+  `ByteCodeProcessor.pack_runs` (the trailing pack phase), which combines a
+  run of two consecutive bare VAR loads (quads first, then one triple or one
+  pair). `convert_fast` lowers to FAST2 when
   both names have fast slots (all-or-nothing; a mixed-eligibility row stays
   VAR2).
 

@@ -19,9 +19,7 @@
   push value.
 */
 KOS_OP_HANDLER_COLD(VAR_TAKE) {
-  PyObject *name = get_name_from_insn(es, insn);
-  if (unlikely(! name))
-    RESULT_RAISE();
+  PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = frame_ns_take(es, name);
   if (unlikely(! val))

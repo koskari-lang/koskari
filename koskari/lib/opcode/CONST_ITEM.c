@@ -18,9 +18,7 @@
   CONST_ITEM: arg = constant index (key). Push TOS[key].
 */
 KOS_OP_HANDLER(CONST_ITEM) {
-  PyObject *key = KosEvalState_CONST(es, KosOp_ARG(insn));
-  if (unlikely(! key))
-    RESULT_RAISE();
+  PyObject *key = KosOp_OBJ(insn);
 
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (unlikely(! obj))

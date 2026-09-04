@@ -38,7 +38,7 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
   Py_DECREF(match);
 
   if (! ret) {
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
+    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
   }
 
   RESULT_NEXT(es);

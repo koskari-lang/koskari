@@ -15,38 +15,64 @@
 
 
 /**
-  VAR4: arg = extra index. Schema VAR x4 (name constants). Look up all
+  VAR4: arg = extra index. Schema VAR x4 (name constants). Look up the
   four names in the current frame namespace and push the values in row
-  order. All names resolve before any push, so a missing name raises
-  with nothing pushed.
+  order. Every name resolves before any push, so a missing name raises
+  with nothing pushed; a push failure releases what the handler still
+  holds, the failed value included by the push itself.
 */
 KOS_OP_HANDLER_COLD(VAR4) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *name;
 
-  uint16_t idx[4] = { row.a0, row.a1, row.a2, row.a3 };
-  PyObject *vals[4];
+  name = KosExtra_OBJ(row, 0);
+  PyObject *a = frame_ns_deref(es, name);
+  if (unlikely(! a))
+    RESULT_RAISE();
 
-  for (size_t i = 0; i < 4; i++) {
-    PyObject *name = KosEvalState_CONST(es, idx[i]);
-    vals[i] = name ? frame_ns_deref(es, name) : NULL;
-    if (unlikely(! vals[i])) {
-      while (i)
-        Py_DECREF(vals[--i]);
-      RESULT_RAISE();
-    }
+  name = KosExtra_OBJ(row, 1);
+  PyObject *b = frame_ns_deref(es, name);
+  if (unlikely(! b)) {
+    Py_DECREF(a);
+    RESULT_RAISE();
   }
 
-  for (size_t i = 0; i < 4; i++) {
-    if (unlikely(KosEvalState_StackPUSH(es, vals[i]) < 0)) {
-      /* PUSH consumes vals[i] even on failure; free the rest */
-      while (++i < 4)
-        Py_DECREF(vals[i]);
-      RESULT_RAISE();
-    }
+  name = KosExtra_OBJ(row, 2);
+  PyObject *c = frame_ns_deref(es, name);
+  if (unlikely(! c)) {
+    Py_DECREF(a);
+    Py_DECREF(b);
+    RESULT_RAISE();
   }
 
-  RESULT_NEXT(es);
+  name = KosExtra_OBJ(row, 3);
+  PyObject *d = frame_ns_deref(es, name);
+  if (unlikely(! d)) {
+    Py_DECREF(a);
+    Py_DECREF(b);
+    Py_DECREF(c);
+    RESULT_RAISE();
+  }
+
+  if (unlikely(KosEvalState_StackPUSH(es, a) < 0)) {
+    Py_DECREF(b);
+    Py_DECREF(c);
+    Py_DECREF(d);
+    RESULT_RAISE();
+  }
+
+  if (unlikely(KosEvalState_StackPUSH(es, b) < 0)) {
+    Py_DECREF(c);
+    Py_DECREF(d);
+    RESULT_RAISE();
+  }
+
+  if (unlikely(KosEvalState_StackPUSH(es, c) < 0)) {
+    Py_DECREF(d);
+    RESULT_RAISE();
+  }
+
+  RESULT_STEAL(es, d);
 }
 
 

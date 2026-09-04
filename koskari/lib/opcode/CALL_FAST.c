@@ -21,14 +21,13 @@
   delegate to kos_call_invoke (which owns the window drop).
 */
 KOS_OP_HANDLER(CALL_FAST) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  unsigned n = row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  unsigned n = KosExtra_IMM(row, 1);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 
-  PyObject *callable = kos_ns_fast_deref(ns, (size_t) row.a0);
+  PyObject *callable = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
   if (unlikely(! callable))
     RESULT_RAISE();
 

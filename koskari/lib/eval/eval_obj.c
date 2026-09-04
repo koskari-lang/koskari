@@ -168,9 +168,7 @@ static KOS_NOINLINE int kos_fast_inplace_operand(
   if (unlikely(! result))
     return -1;
 
-  int res = kos_ns_fast_store(ns, idx, result);
-  Py_DECREF(result);
-  return res;
+  return kos_ns_fast_store_steal(ns, idx, result);
 }
 
 

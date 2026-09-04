@@ -21,10 +21,9 @@
   prefix (left-1 .. 0) so first prefix is TOS.
 */
 KOS_OP_HANDLER_COLD(UNPACK_STAR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  unsigned left = row.a0;
-  unsigned right = row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  unsigned left = KosExtra_IMM(row, 0);
+  unsigned right = KosExtra_IMM(row, 1);
 
   if (unlikely(left + right == 0)) {
     PyErr_SetString(PyExc_ValueError,

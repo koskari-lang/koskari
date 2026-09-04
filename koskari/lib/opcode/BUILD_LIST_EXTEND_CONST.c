@@ -23,9 +23,7 @@
 */
 
 KOS_OP_HANDLER(BUILD_LIST_EXTEND_CONST) {
-  PyObject *seq = KosEvalState_CONST(es, KosOp_ARG(insn));
-  if (unlikely(! seq))
-    RESULT_RAISE();
+  PyObject *seq = KosOp_OBJ(insn);
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, 1);
   if (unlikely(! ptr))

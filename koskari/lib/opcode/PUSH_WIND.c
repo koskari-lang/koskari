@@ -82,7 +82,8 @@ KOS_OP_HANDLER_COLD(PUSH_WIND) {
   if (wr.kind == KOS_RES_NORMAL)
     KosDynWind_ENTERED(wind) = 1;
 
-  RESULT_NEXT(es);
+  /* a before-thunk frame may be current: continue from es->pc */
+  RESULT_CONTINUE(es);
 }
 
 

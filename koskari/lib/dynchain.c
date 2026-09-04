@@ -2177,6 +2177,7 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
                     "YIELD_FROM node is not at top of chain");
     return -1;
   }
+  kos_dyn_yield_from_disarm(es, node);
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 

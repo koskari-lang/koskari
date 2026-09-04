@@ -525,7 +525,7 @@ static KosOpResult revive_await(
          delivery, staged for the entry's delivery step */
       if (! owned)
         Py_INCREF(to_push);
-      KosEvalState_PENDING_VALUE(es) = to_push;
+      KosEvalState_StageDelivery(es, to_push);
       owned = 0;
     } else if (KosEvalState_StackPushRef(es, to_push) < 0) {
       if (owned)
@@ -562,6 +562,21 @@ static KosEvalMode revive_yield(
        (void *) KosEvalState_DYN_TOP(es),
        (void *) KosEvalState_FRAME(es));
 
+  /* A frame waiting on a resume (a yield-from delegation in flight)
+     took no placeholder at install and takes its delivery through the
+     pending slot; a throw raises at the frame, and the raise walk
+     disarms the resume when it unwinds the delegation's node. */
+  if (KosEvalState_FRAME(es)
+      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+    if (throw_exc != NULL) {
+      PyErr_SetObject(throw_typ, throw_exc);
+      return KOS_MODE_EXCEPTION;
+    }
+    to_push = (send_val != NULL) ? send_val : Py_None;
+    Py_INCREF(to_push);
+    KosEvalState_StageDelivery(es, to_push);
+    return KOS_MODE_NORMAL;
+  }
   if (throw_exc != NULL) {
     if (KosEvalState_FRAME(es))
       Py_XDECREF(KosEvalState_StackPopRef(es));
@@ -1063,7 +1078,7 @@ static int get_prompt_id_from_insn(
     KosOp *insn,
     uint32_t *out_prompt_id) {
 
-  PyObject *cid = KosEvalState_CONST(es, KosOp_ARG(insn));
+  PyObject *cid = KosOp_OBJ(insn);
   if (! cid)
     return -1;
 
@@ -1477,14 +1492,6 @@ int KosContext_Traverse(
 
 
 /**
-   Get the name constant for a VAR_* opcode. Borrowed reference.
-*/
-static PyObject *get_name_from_insn(KosEvalState *es, KosOp *insn) {
-  return KosEvalState_CONST(es, KosOp_ARG(insn));
-}
-
-
-/**
    Deref name in the current frame namespace. New reference or NULL.
 */
 static PyObject *frame_ns_deref(KosEvalState *es, PyObject *name) {
@@ -1785,7 +1792,8 @@ static KosOpResult kos_eval_route_delim_return(
    the reporter is defined below (with the dispatch loop). */
 static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 /* Every handler has the KosThreadFn prototype: insn is the handler's
-   own KosOp (read through KosOp_ARG / KosOp_CACHE), and the delivery
+   own KosOp (read through KosOp_ARG, KosOp_OBJ, KosOp_ROW, KosOp_SLOT),
+   and the delivery
    argument is unused by an opcode.  The one shape lets an instruction's
    fn pointer reach any handler, and lets a handler be a musttail
    target.  Each handler is its own function, reached only through the
@@ -2233,8 +2241,9 @@ entry_mode_dispatch:
     return pr;
   }
 
-  /* Revived with a value and the top frame is waiting on one: deliver. */
-  if (send_val != NULL
+  /* Revived with a value (given, or staged by the revive) and the top
+     frame is waiting on one: deliver. */
+  if ((send_val != NULL || KosEvalState_PENDING_VALUE(es))
       && mode == KOS_MODE_NORMAL
       && KosEvalState_FRAME(es)
       && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
@@ -2831,7 +2840,7 @@ static inline KosOpResult eval_parent_return_deliver_impl(
      value through the pending slot; a bytecode parent takes it on its
      stack, where its next instruction finds it. */
   if (parent && KosDynFrame_RESUME_FN(parent)) {
-    KosEvalState_PENDING_VALUE(es) = val;
+    KosEvalState_StageDelivery(es, val);
   } else if (KosEvalState_StackPUSH(es, val) < 0) {
     return EVAL_FATAL();
   }
@@ -2899,17 +2908,6 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosOpResult res = EVAL_NORMAL();
   int have_res = 0;
 
-#if KOS_EVAL_SAFETYNET
-  /* Interim invariant until bytecode's builtin resume exists: only
-     codeless frames carry resumes. The return fast paths and the
-     prologue ordering both lean on it. */
-  if (KosDynFrame_CODE(frame)) {
-    PyErr_SetString(PyExc_SystemError,
-                    "resume set on a code-carrying frame");
-    return EVAL_RAISE();
-  }
-#endif
-
   KosDynFrame_RESUME_FN(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
@@ -2920,7 +2918,10 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   val = KosEvalState_PENDING_VALUE(es);
   KosEvalState_PENDING_VALUE(es) = NULL;
 
-  if (! val && KosEvalState_StackLen(es) > 0) {
+  /* Only a code-less step frame keeps its delivery on its stack; a
+     bytecode frame's stack holds its operands, and its delivery is
+     always the slot. */
+  if (! val && ! KosDynFrame_CODE(frame) && KosEvalState_StackLen(es) > 0) {
     val = KosEvalState_StackPopRef(es);
     if (! val) {
       res = EVAL_RAISE();
@@ -2940,7 +2941,9 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
     }
   }
 
-  if (val && ! have_res) {
+  /* A node resume (NULL state: a yield-from phase) takes its delivery
+     as it is: a delegate's yielded value is data, never awaited here. */
+  if (val && ! have_res && state) {
     switch (KosEval_ResultIsValue(val)) {
       case 1:
         break;  /* settled: deliver it below */
@@ -2962,8 +2965,10 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
     }
   }
 
-  if (! have_res)
+  if (! have_res) {
+    KOS_TRACE_RESUME_STEP();
     res = resume(es, state, val);
+  }
 
   /* Every outcome routes through the one hub: a RAISE from here is an
      ordinary in-eval raise and must run the unwind walk (try/finally
@@ -3292,6 +3297,8 @@ KosOpResult koskari_eval(
 
   KosEvalState_EnterDomainScope(&es);
   kos_tls_push_active_eval(&es);
+  KOS_TRACE_EVAL_PUSH();
+  KOS_TRACE_TRAMPOLINE_STEP();
 
   /* Phase 1: entry/revive normalization */
   {
@@ -3345,6 +3352,7 @@ reenter:
   goto thread;
 
 poll:
+  KOS_TRACE_TRAMPOLINE_STEP();
   /* The breaker is up.  Another thread waiting on the GIL has already
      outlasted the interpreter's switch interval, so yield it now, as
      Python's own loop would; then take any pending signal.
@@ -3383,6 +3391,7 @@ pc_bounds_error:
 #endif
 
 handle_result:
+  KOS_TRACE_TRAMPOLINE_STEP();
   {
     /* The plain-return fast arms live in op_RETURN, which threads
        straight into the parent when they hold and signals RETURN only
@@ -3406,6 +3415,8 @@ handle_result:
   }
 
 koskari_eval_cleanup:
+  KOS_TRACE_OP_EXIT();
+  KOS_TRACE_EVAL_POP();
   kos_tls_pop_active_eval();
   KosEvalState_FlushLiveRegsToFrame(&es);
   KosEvalState_FreezeToContext(&es);

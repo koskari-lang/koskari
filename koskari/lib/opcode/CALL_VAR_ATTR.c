@@ -21,19 +21,12 @@
    Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
 KOS_OP_HANDLER_COLD(CALL_VAR_ATTR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t name_cpool_idx = row.a0;
-  uint32_t attr_cpool_idx = row.a1;
-  unsigned n = row.a2;
+  const KosExtra *row = KosOp_ROW(insn);
+      unsigned n = KosExtra_IMM(row, 2);
 
-  PyObject *var_name = KosEvalState_CONST(es, name_cpool_idx);
-  if (! var_name)
-    RESULT_RAISE();
+  PyObject *var_name = KosExtra_OBJ(row, 0);
 
-  PyObject *attr_name = KosEvalState_CONST(es, attr_cpool_idx);
-  if (! attr_name)
-    RESULT_RAISE();
+  PyObject *attr_name = KosExtra_OBJ(row, 1);
 
   PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj)
@@ -49,9 +42,7 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR) {
   }
 
   PyObject *resolved;
-  uint16_t cache_ix = KosOp_CACHE(insn);
-  KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
-      ? NULL : &KosCode_CACHE(code)[cache_ix];
+  KosCacheSlot *cache = KosOp_SLOT(insn);
   int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
   if (send_self < 0) {
     Py_DECREF(obj);

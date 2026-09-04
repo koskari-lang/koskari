@@ -39,10 +39,9 @@ static int ensure_tuple_fast_star(PyObject **val) {
 
 
 KOS_OP_HANDLER_COLD(CALL_FAST_STAR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t slot_idx = row.a0;
-  unsigned opa = row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  uint32_t slot_idx = KosExtra_IMM(row, 0);
+  unsigned opa = KosExtra_IMM(row, 1);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);

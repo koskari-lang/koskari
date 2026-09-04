@@ -22,11 +22,10 @@
 */
 
 KOS_OP_HANDLER(FAST_INPLACE) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  KosOperand op = (KosOperand) KosOpCount_TYPE(row.a0);
-  size_t idx = (size_t) row.a1;
+  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
+  size_t idx = (size_t) KosExtra_IMM(row, 1);
 
   if (unlikely(kos_fast_inplace_operand(es, op, idx) < 0))
     RESULT_RAISE();

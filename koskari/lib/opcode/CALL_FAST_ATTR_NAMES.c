@@ -20,12 +20,9 @@
 */
 
 KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t slot_idx = row.a0;
-  uint32_t attr_cpool_idx = row.a1;
-  uint32_t names_cpool_idx = row.a2;
-  unsigned opa = row.a3;
+  const KosExtra *row = KosOp_ROW(insn);
+  uint32_t slot_idx = KosExtra_IMM(row, 0);
+      unsigned opa = KosExtra_IMM(row, 3);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -33,17 +30,9 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
   if (! obj)
     RESULT_RAISE();
 
-  PyObject *name = KosEvalState_CONST(es, attr_cpool_idx);
-  if (! name) {
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
+  PyObject *name = KosExtra_OBJ(row, 1);
 
-  PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
-  if (! names) {
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
+  PyObject *names = KosExtra_OBJ(row, 2);
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR_NAMES names must be tuple"
@@ -66,9 +55,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
   }
 
   PyObject *resolved;
-  uint16_t cache_ix = KosOp_CACHE(insn);
-  KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
-      ? NULL : &KosCode_CACHE(code)[cache_ix];
+  KosCacheSlot *cache = KosOp_SLOT(insn);
   int send_self = kos_resolve_named_attr(obj, name, cache, &resolved);
   if (send_self < 0) {
     Py_DECREF(obj);

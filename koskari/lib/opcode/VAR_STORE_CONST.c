@@ -19,14 +19,10 @@
   Store the value into the name in the current frame namespace.
 */
 KOS_OP_HANDLER_COLD(VAR_STORE_CONST) {
-    KosCode *code = KosEvalState_CurrentCode(es);
-    KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+      const KosExtra *row = KosOp_ROW(insn);
 
-    PyObject *name = KosEvalState_CONST(es, row.a0);
-    PyObject *val = KosEvalState_CONST(es, row.a1);
-
-    if (unlikely(! name || ! val))
-      RESULT_RAISE();
+    PyObject *name = KosExtra_OBJ(row, 0);
+    PyObject *val = KosExtra_OBJ(row, 1);
 
     if (unlikely(frame_ns_store(es, name, val) < 0)) {
       RESULT_RAISE();

@@ -492,10 +492,12 @@ static int test_raise_walk_resume_handles(void) {
 }
 
 
-/* === kos_dynframe_clone refuses a resume-carrying frame === */
+/* === kos_dynframe_clone and the resume triple === */
 
 
-static int test_clone_refuses_resume_frame(void) {
+/* A node resume (NULL state: the node it serves is dyn_top above the
+   frame, cloned with the chain) copies with the frame. */
+static int test_clone_copies_node_resume(void) {
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
 
@@ -504,10 +506,39 @@ static int test_clone_refuses_resume_frame(void) {
 
   KosDynFrame_RESUME_FN(frame) = (void *) resume_probe;
   KosDynFrame_RESUME_STATE(frame) = NULL;
+  KosDynFrame_RESUME_NAME(frame) = "test-node-resume";
+
+  KosDynFrame *clone = kos_dynframe_clone(frame);
+  TEST_ASSERT_NOT_NULL(clone, "clone copies a node resume frame");
+  TEST_ASSERT(! PyErr_Occurred(), "no error raised");
+  TEST_ASSERT(KosDynFrame_RESUME_FN(clone) == (void *) resume_probe,
+              "the clone carries the resume function");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_STATE(clone),
+                   "the clone's state stays NULL");
+  TEST_ASSERT(KosDynFrame_RESUME_NAME(clone) == KosDynFrame_RESUME_NAME(frame),
+              "the clone carries the resume name");
+
+  kos_dynframe_free(clone);
+  kos_dynframe_free(frame);
+  return 0;
+}
+
+
+/* A step resume's state is the step's own and has no clone story, so
+   capture across that frame refuses by name. */
+static int test_clone_refuses_step_resume_frame(void) {
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+  KosDynFrame_RESUME_FN(frame) = (void *) resume_probe;
+  KosDynFrame_RESUME_STATE(frame) = (void *) frame;
   KosDynFrame_RESUME_NAME(frame) = "test-resume";
 
   KosDynFrame *clone = kos_dynframe_clone(frame);
-  TEST_ASSERT_NULL(clone, "clone refuses a resume-carrying frame");
+  TEST_ASSERT_NULL(clone, "clone refuses a step resume frame");
   TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
               "refusal raises RuntimeError");
 
@@ -682,7 +713,8 @@ int run_resume_tests(void) {
   RUN_TEST(test_prologue_reenter_runs_pending_exception);
   RUN_TEST(test_raise_walk_resume_propagates);
   RUN_TEST(test_raise_walk_resume_handles);
-  RUN_TEST(test_clone_refuses_resume_frame);
+  RUN_TEST(test_clone_copies_node_resume);
+  RUN_TEST(test_clone_refuses_step_resume_frame);
   RUN_TEST(test_park_inert_clears_resume_triple);
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
   RUN_TEST(test_call_resume_null_pushes_normal_result);

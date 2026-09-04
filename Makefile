@@ -354,6 +354,14 @@ perf-opcodes:  ## Per-opcode cycle shares from a KOS_ALL_COLD tox build sampled 
 	@tox -qe perf-opcodes -- $(PERF_ARGS)
 
 
+opsizing:  ## Per-handler code size joined with per-opcode timing; writes design/perf/opsizing.tsv
+	@$(call checkfor,nm)
+	@$(call checkfor,tox)
+	@tox -qe perf-opcodes --notest
+	@tox -qe churn-timing --notest
+	@tox -qe opsizing -- --sweep $(PERF_ARGS)
+
+
 ##@ Corpus
 
 corpus-parquet:  ## Export koskari-corpus parquet from corpus YAML via tox

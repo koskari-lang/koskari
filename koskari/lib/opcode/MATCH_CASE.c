@@ -23,7 +23,7 @@
 
   Stack [..., subject, e0..eN-1] with N = len(row.a2): the compiler
   emits one load per missing extern (VAR, lowered to FAST when a slot
-  exists) above the subject, pushed in row.a2 order. The opcode is
+  exists) above the subject, pushed in row field 2 order. The opcode is
   only the interface between the stack and the matcher API: the
   subject is presented as a length-1 spine and the stacked segment is
   handed with its names to KosMatcher_RunVectorcall, which does all
@@ -40,25 +40,18 @@
 */
 
 KOS_OP_HANDLER_COLD(MATCH_CASE) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
   /* Thaw the matcher once into this site's cache slot. A populated slot is
      permanently valid: the thaw is a pure function of the const. When the
      cache is gated off (no slot) we thaw locally and own the ref. */
   PyObject *matcher = NULL;
   int matcher_owned = 0;
-  uint16_t cache_ix = KosOp_CACHE(insn);
-  KosCacheSlot *slot = NULL;
-  if (cache_ix != KOS_CACHE_UNSET) {
-    slot = &KosCode_CACHE(code)[cache_ix];
-    if (slot->kind == KOS_CACHE_MATCHER)
-      matcher = slot->u.matcher.matcher;   /* borrowed */
-  }
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+  if (slot && slot->kind == KOS_CACHE_MATCHER)
+    matcher = slot->u.matcher.matcher;   /* borrowed */
   if (! matcher) {
-    PyObject *frozen = KosEvalState_CONST(es, row.a1);
-    if (unlikely(! frozen))
-      RESULT_RAISE();
+    PyObject *frozen = KosExtra_OBJ(row, 1);
     matcher = KosMatcher_FromTuple(frozen);
     if (unlikely(! matcher))
       RESULT_RAISE();
@@ -74,7 +67,7 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
      subject, tail[1..n] the values named by row.a2. The subject
      becomes a length-1 spine directly; no wrapper tuple is
      materialized. */
-  PyObject *names = KosEvalState_CONST(es, row.a2);
+  PyObject *names = KosExtra_OBJ(row, 2);
   Py_ssize_t n = 0;
   if (names && PyTuple_Check(names))
     n = PyTuple_GET_SIZE(names);
@@ -108,14 +101,14 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
     KosEvalState_StackDropNoErr(es, (size_t) n);
 
   if (! matched) {
-    RESULT_JUMP(es, row.a0);
+    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 0));
   }
 
   /* Matched: push the capture dict for the arm's MATCH_STORE_NAMES (or
      a following POP for a capture-less arm). Without the keep flag the
      subject is consumed here; with it (a guarded arm) the subject stays
      beneath the dict for the guard's advance-or-commit. */
-  if (! row.a3)
+  if (! KosExtra_IMM(row, 3))
     KosEvalState_StackDropNoErr(es, 1);
   RESULT_STEAL(es, caps);
 }

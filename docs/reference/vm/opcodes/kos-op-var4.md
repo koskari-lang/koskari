@@ -6,8 +6,8 @@
   namespace and push in row order. All names resolve before any push, so a
   missing name errors with nothing pushed.
 - **Invariants**: Names in constant pool.
-- **Compiler form:** As VAR2: produced only by `Compiler.pack_var_runs` from
-  a run of four (or more, greedily) consecutive bare VAR loads.
+- **Compiler form:** As VAR2: produced only by `ByteCodeProcessor.pack_runs`
+  from a run of four (or more, greedily) consecutive bare VAR loads.
   `convert_fast` lowers to FAST4 when all four names have fast slots.
 
 **Example:** Load "a", "b", "c", "d". Pool: 0-3 = names.

@@ -167,11 +167,22 @@ void kos_trace_opcache_inc(KosTraceOpCacheId id);
 
 
 #if KOS_TRACE_TIMING
+/* Timing slots: one per opcode, then the pseudo slots for the time a
+   thread spends in a resume chain and in the trampoline itself (the
+   prologue, the poll, and the result handling between two chains). */
+#define KOS_TRACE_SLOT_RESUME      ((unsigned) KOS_OP_THEEND + 1u)
+#define KOS_TRACE_SLOT_TRAMPOLINE  ((unsigned) KOS_OP_THEEND + 2u)
+#define KOS_TRACE_SLOT_COUNT       ((unsigned) KOS_OP_THEEND + 3u)
+
 uint64_t kos_trace_now_ns(void);
-void kos_trace_opcode_record(unsigned op, uint64_t delta_ns);
+uint64_t kos_trace_ticks(void);
+void kos_trace_step(unsigned slot);
+void kos_trace_exit(void);
+void kos_trace_eval_push(void);
+void kos_trace_eval_pop(void);
 void kos_trace_post_op_enter(void);
 void kos_trace_post_op_exit(void);
-void kos_trace_post_op_record(unsigned id, uint64_t delta_ns);
+void kos_trace_post_op_record(unsigned id, uint64_t delta);
 #endif
 
 
@@ -220,34 +231,46 @@ void kos_trace_fl_return(const char *name, int overrun);
 #endif
 
 
-/* === per-opcode timing (eval dispatch) === */
+/* === per-opcode timing (threaded dispatch) === */
+
+/*
+   Under threaded dispatch nothing returns between two handlers, so an
+   opcode is timed by its boundaries rather than around a call: one
+   timing slot is open per thread, and every transfer closes the open
+   slot and opens the next. The transfer macros carry the step (a fetch
+   knows the opcode it enters), a resume hop steps into the resume
+   slot, and the trampoline steps into its own slot at each landing
+   point (poll, result handling, entry), which is also what closes a
+   handler that returned a signal rather than threading. A nested
+   evaluator pushes the open slot at entry and pops it at exit, so each
+   opcode reads its exclusive time. The clock is a cycle counter where
+   one is available; the report calibrates it to nanoseconds.
+*/
 
 #if KOS_TRACE_TIMING
-#define KOS_TRACE_OP_WRAP(name, stmt)                                       \
-  do {                                                                      \
-    uint64_t _kos_t0 = kos_trace_now_ns();                                  \
-    stmt;                                                                   \
-    kos_trace_opcode_record((unsigned)(KOS_OP_##name),                        \
-                            kos_trace_now_ns() - _kos_t0);                   \
-  } while (0)
-
-/* Threaded dispatch never returns between handlers, so a step can be
-   counted but not timed: the per-opcode timing table records each
-   threaded step with a zero duration. */
-#define KOS_TRACE_THREAD_STEP(op) kos_trace_opcode_record((unsigned)(op), 0)
+#define KOS_TRACE_THREAD_STEP(op)     kos_trace_step((unsigned) (op))
+#define KOS_TRACE_RESUME_STEP()       kos_trace_step(KOS_TRACE_SLOT_RESUME)
+#define KOS_TRACE_TRAMPOLINE_STEP()   kos_trace_step(KOS_TRACE_SLOT_TRAMPOLINE)
+#define KOS_TRACE_OP_EXIT()           kos_trace_exit()
+#define KOS_TRACE_EVAL_PUSH()         kos_trace_eval_push()
+#define KOS_TRACE_EVAL_POP()          kos_trace_eval_pop()
 
 #define KOS_TRACE_POST_OP_ENTER() kos_trace_post_op_enter()
 #define KOS_TRACE_POST_OP_EXIT() kos_trace_post_op_exit()
 #define KOS_TRACE_POST_OP_WRAP(name, stmt)                                  \
   do {                                                                      \
-    uint64_t _kos_pt0 = kos_trace_now_ns();                                 \
+    uint64_t _kos_pt0 = kos_trace_ticks();                                  \
     stmt;                                                                   \
     kos_trace_post_op_record((unsigned)(KOS_TP_##name),                       \
-                             kos_trace_now_ns() - _kos_pt0);                 \
+                             kos_trace_ticks() - _kos_pt0);                  \
   } while (0)
 #else
-#define KOS_TRACE_OP_WRAP(name, stmt) do { stmt; } while (0)
-#define KOS_TRACE_THREAD_STEP(op) ((void) 0)
+#define KOS_TRACE_THREAD_STEP(op)     ((void) 0)
+#define KOS_TRACE_RESUME_STEP()       ((void) 0)
+#define KOS_TRACE_TRAMPOLINE_STEP()   ((void) 0)
+#define KOS_TRACE_OP_EXIT()           ((void) 0)
+#define KOS_TRACE_EVAL_PUSH()         ((void) 0)
+#define KOS_TRACE_EVAL_POP()          ((void) 0)
 #define KOS_TRACE_POST_OP_ENTER() ((void)0)
 #define KOS_TRACE_POST_OP_EXIT() ((void)0)
 #define KOS_TRACE_POST_OP_WRAP(name, stmt) do { stmt; } while (0)

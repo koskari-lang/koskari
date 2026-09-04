@@ -20,10 +20,7 @@
 */
 
 KOS_OP_HANDLER(BUILD_KWDS_NAMES) {
-  PyObject *names = KosEvalState_CONST(es, KosOp_ARG(insn));
-
-  if (! names)
-    RESULT_RAISE();
+  PyObject *names = KosOp_OBJ(insn);
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_TypeError, "BUILD_KWDS_NAMES names must be tuple, not %R",

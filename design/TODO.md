@@ -44,6 +44,28 @@ real workload that shows the win:
 Ref: [archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
 (§Phase 5).
 
+### Electors: elected handlers on cache slots and dyn nodes
+
+A `KosThreadFn` chosen once for a site's guarded operand (a cache slot
+kind) or an extent's fixed fact (a dyn node field) and tail-called on
+every later execution. The cache-style home measured flat on CALL_FAST
+and was removed; the node-style home is built on YIELD_FROM (drive
+elected at push, one resume per suspension). Next: the FOREACH step and
+NEXT node, then the frame's return arm.
+
+Ref: [interpreter/electors.md](interpreter/electors.md).
+
+### Dispatch tweaks to investigate
+
+Every record now carries its own pc, so the `acting_pc` store in
+`KOS_THREAD_AT` may be redundant (readers could take `insn->pc`); a
+call install could return the callee's first record instead of
+re-fetching through `es->code`; and the fused POP peephole could read
+`insn[1]` rather than walk the code. Each is under 1% on the churn
+kernels; measure before taking any.
+
+Ref: [archive/resolved-operands.md](archive/resolved-operands.md).
+
 ---
 
 ## Profiling / instrumentation
@@ -293,18 +315,6 @@ operation applied at each application that omits the argument*: `value:`
 transposer use-case.
 
 Ref: [language/formal-default-modes.md](language/formal-default-modes.md).
-
-### Instruction-record flags: finalize-time "result discarded" bit
-
-Fill the two padding bytes of `KosOp` with a `flags` word assigned in
-`code_fill_handlers`, and record there that an instruction's pushed value
-is consumed by the following `POP,1`. The call core tests the bit on its
-own record instead of loading and comparing the next one on every settled
-result. The remaining bits are room for other finalize-derived facts.
-
-Ref: [interpreter/insn-flags-discard.md](interpreter/insn-flags-discard.md).
-
----
 
 ## Concurrent async (`async` form)
 

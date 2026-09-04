@@ -20,9 +20,7 @@
 
 KOS_OP_HANDLER_COLD(VAR_BIND) {
 
-  PyObject *name = get_name_from_insn(es, insn);
-  if (! name)
-    RESULT_RAISE();
+  PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)

@@ -410,11 +410,24 @@ struct KosDynNode {
       PyObject *delegate;
       uint8_t kind;
       uint8_t pending_action;
-      uint8_t phase;  /* KosYfPhase */
       PyObject *pending_arg;
       PyObject *pending_arg_type;  /* for KOS_YF_THROW: exception type */
       PyObject *inflight;
       KosIterRequest req;    /* in-flight KOS_ITER delegate step state */
+      /* KosThreadFn: the drive body elected for kind when the node was
+         pushed, tail-called on every entry; the delegate never changes,
+         so no guard. Set by the YIELD_FROM handler, which owns the four
+         bodies. See design/interpreter/electors.md. */
+      void *drive;
+      /* KosThreadFn: the phase resume armed on the delegating frame for
+         the delegation's current suspension (the send that answers an
+         emitted yield, an awaited result, a flattened inner yield), run
+         by the prologue's delivery step with what arrived; NULL while
+         the drive runs. The disarm on pop and unwind compares against
+         it. resume_emit is the inner-yield phase, set beside drive at
+         push so the node's own delivery code can arm it. */
+      void *resume;
+      void *resume_emit;
     } yield_from;
     struct {
       PyObject *bindings;  /* PyDict: key -> value (what we bind; keys from ParamRef) */
@@ -1930,6 +1943,20 @@ void kos_dyn_ns_unwind(KosEvalState *es, KosDynNs *node);
 
 void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
 
+/**
+   Clear the node's phase resume from the live frame when it is armed
+   there: the delegation is ending (finished, or unwound by a raise),
+   and the frame threads on from its pc. Idempotent.
+*/
+/**
+   Arm resume, a KosThreadFn, as the node's phase resume on the live
+   frame: the frame's next delivery runs it instead of an instruction.
+   Every suspension of the delegation ends in this.
+*/
+void kos_dyn_yield_from_arm(KosEvalState *es, KosDynYieldFrom *node,
+                            void *resume);
+
+void kos_dyn_yield_from_disarm(KosEvalState *es, KosDynYieldFrom *node);
 
 /**
    Close the delegate of a YIELD_FROM dyn node (on unwind or error).
@@ -2512,18 +2539,6 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynNext_N(nd) (((KosDynNode *)(nd))->u.next.n)
 #define KosDynNext_REQ(nd) (&((KosDynNode *)(nd))->u.next.req)
 
-/* KosYfPhase: state machine for stack-based resume inject consumption */
-typedef enum KosYfPhase {
-  KOS_YF_PHASE_DRIVING = 0,
-  KOS_YF_PHASE_EXPECT_SEND,
-  KOS_YF_PHASE_EXPECT_AWAIT,
-  /* A flattened koskari-gen delegate handed us a value at the iterator
-     node; the next handler dispatch re-emits it as this generator's own
-     yield (see kos_dyn_yield_from_deliver_inner_yield). */
-  KOS_YF_PHASE_EMIT,
-} KosYfPhase;
-
-
 /**
    Yield-from delegate classification. Values stored in KosDynYieldFrom kind.
    Must stay aligned with yield_from_normalize in opcode/YIELD_FROM.c
@@ -2551,13 +2566,14 @@ enum {
 
 #define KosDynYieldFrom_DELEGATE(n)     (((KosDynNode *)(n))->u.yield_from.delegate)
 #define KosDynYieldFrom_KIND(n)         (((KosDynNode *)(n))->u.yield_from.kind)
-#define KosDynYieldFrom_PHASE(n)        (((KosDynNode *)(n))->u.yield_from.phase)
-#define KosDynYieldFrom_PHASE_SET(n, v) (((KosDynNode *)(n))->u.yield_from.phase = (v))
 #define KosDynYieldFrom_PENDING_ACTION(n) (((KosDynNode *)(n))->u.yield_from.pending_action)
 #define KosDynYieldFrom_PENDING_ARG(n) (((KosDynNode *)(n))->u.yield_from.pending_arg)
 #define KosDynYieldFrom_PENDING_ARG_TYPE(n) (((KosDynNode *)(n))->u.yield_from.pending_arg_type)
 #define KosDynYieldFrom_INFLIGHT(n)    (((KosDynNode *)(n))->u.yield_from.inflight)
 #define KosDynYieldFrom_REQ(n)         (&((KosDynNode *)(n))->u.yield_from.req)
+#define KosDynYieldFrom_DRIVE(n)       (((KosDynNode *)(n))->u.yield_from.drive)
+#define KosDynYieldFrom_RESUME(n)      (((KosDynNode *)(n))->u.yield_from.resume)
+#define KosDynYieldFrom_RESUME_EMIT(n) (((KosDynNode *)(n))->u.yield_from.resume_emit)
 
 /**
    The iteration request record embedded in a receiver-capable node, or

@@ -94,6 +94,15 @@ define cmd_matchbench [options]:
     run options
 
 
+define cmd_opsizing [options]:
+    """
+    Join per-handler code size with per-opcode timing into a TSV.
+    """
+
+    import-from tools.opsizing run
+    run options
+
+
 define build_parser [name]:
     """
     Construct the dispatcher argument parser.
@@ -128,7 +137,7 @@ define build_parser [name]:
     ; every unrelated invocation for about a quarter second, and it is
     ; the one tool driven interactively in a tight loop. It is run
     ; directly instead; see docs/corpus/CLAUDE.md.
-    import-from tools matchbench opgrams
+    import-from tools matchbench opgrams opsizing
     import-from tools.corpus export
 
     define po (sub.add_parser "opgrams"
@@ -145,6 +154,11 @@ define build_parser [name]:
         help: "matcher and match/case micro-benchmarks")
     (matchbench.build_arguments pm)
     (pm.set_defaults func: cmd_matchbench)
+
+    define pz (sub.add_parser "opsizing"
+        help: "per-handler code size joined with per-opcode timing")
+    (opsizing.build_arguments pz)
+    (pz.set_defaults func: cmd_opsizing)
 
     return parser
 

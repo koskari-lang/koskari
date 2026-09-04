@@ -19,14 +19,11 @@
 */
 
 KOS_OP_HANDLER(FAST_ATTR_REF) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
-  PyObject *attr_name = KosEvalState_CONST(es, row.a1);
-  if (! attr_name)
-    RESULT_RAISE();
-  size_t idx = (size_t) row.a0;
+  PyObject *attr_name = KosExtra_OBJ(row, 1);
+  size_t idx = (size_t) KosExtra_IMM(row, 0);
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (! obj)
     RESULT_RAISE();

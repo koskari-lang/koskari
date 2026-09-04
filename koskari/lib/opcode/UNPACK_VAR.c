@@ -20,18 +20,9 @@
   seq[1] into the two names (VAR_STORE semantics).
 */
 KOS_OP_HANDLER_COLD(UNPACK_VAR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t name0_idx = row.a0;
-  uint32_t name1_idx = row.a1;
-
-  PyObject *name0 = KosEvalState_CONST(es, name0_idx);
-  if (unlikely(! name0))
-    RESULT_RAISE();
-
-  PyObject *name1 = KosEvalState_CONST(es, name1_idx);
-  if (unlikely(! name1))
-    RESULT_RAISE();
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *name0 = KosExtra_OBJ(row, 0);
+  PyObject *name1 = KosExtra_OBJ(row, 1);
 
   PyObject *raw = KosEvalState_StackPopRef(es);
   if (unlikely(! raw))

@@ -19,13 +19,10 @@
 */
 
 KOS_OP_HANDLER_COLD(VAR_ATTR_TAKE) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *var_name = KosEvalState_CONST(es, row.a0);
-  PyObject *attr_name = KosEvalState_CONST(es, row.a1);
-  if (! var_name || ! attr_name)
-    RESULT_RAISE();
+  PyObject *var_name = KosExtra_OBJ(row, 0);
+  PyObject *attr_name = KosExtra_OBJ(row, 1);
 
   PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj)

@@ -19,19 +19,14 @@
   constants in row order. Both constants resolve before either push, so
   a bad index raises with nothing pushed.
 
-  Pool trust follows KosEvalState_CONST / KOS_EVAL_SAFETYNET.
+  The pool object is resolved onto the record at finalize.
 */
 KOS_OP_HANDLER(CONST2) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *a = KosEvalState_CONST(es, row.a0);
-  if (unlikely(! a))
-    RESULT_RAISE();
+  PyObject *a = KosExtra_OBJ(row, 0);
 
-  PyObject *b = KosEvalState_CONST(es, row.a1);
-  if (unlikely(! b))
-    RESULT_RAISE();
+  PyObject *b = KosExtra_OBJ(row, 1);
 
   if (unlikely(KosEvalState_StackPushRef(es, a) < 0))
     RESULT_RAISE();

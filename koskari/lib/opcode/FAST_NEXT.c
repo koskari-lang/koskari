@@ -22,9 +22,8 @@
   raises StopIteration, auto-await.
 */
 KOS_OP_HANDLER_COLD(FAST_NEXT) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint16_t n = (uint16_t) row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  uint16_t n = (uint16_t) KosExtra_IMM(row, 1);
   if (unlikely(n != 1 && n != 2)) {
     PyErr_Format(PyExc_ValueError, "FAST_NEXT arg must be 1 or 2, got %u", n);
     RESULT_RAISE();
@@ -40,7 +39,7 @@ KOS_OP_HANDLER_COLD(FAST_NEXT) {
       RESULT_RAISE();
   }
 
-  PyObject *iter = kos_ns_fast_deref(ns, (size_t) row.a0);
+  PyObject *iter = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
   if (unlikely(! iter)) {
     Py_XDECREF(default_val);
     RESULT_RAISE();

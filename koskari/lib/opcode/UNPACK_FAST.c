@@ -20,10 +20,9 @@
   and seq[1].
 */
 KOS_OP_HANDLER_COLD(UNPACK_FAST) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  size_t idx0 = (size_t) row.a0;
-  size_t idx1 = (size_t) row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  size_t idx0 = (size_t) KosExtra_IMM(row, 0);
+  size_t idx1 = (size_t) KosExtra_IMM(row, 1);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);

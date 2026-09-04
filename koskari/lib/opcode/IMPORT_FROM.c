@@ -124,20 +124,13 @@ static PyObject *kos_import_from_member(PyObject *mod, PyObject *attr) {
   exceptions propagate.
 */
 KOS_OP_HANDLER_COLD(IMPORT_FROM) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *name = KosEvalState_CONST(es, row.a0);
-  if (unlikely(! name))
-    RESULT_RAISE();
+  PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *attrs = KosEvalState_CONST(es, row.a2);
-  if (unlikely(! attrs))
-    RESULT_RAISE();
+  PyObject *attrs = KosExtra_OBJ(row, 2);
 
-  PyObject *binds = KosEvalState_CONST(es, row.a3);
-  if (unlikely(! binds))
-    RESULT_RAISE();
+  PyObject *binds = KosExtra_OBJ(row, 3);
 
   if (unlikely(! PyTuple_CheckExact(attrs) || ! PyTuple_CheckExact(binds) ||
       PyTuple_GET_SIZE(attrs) != PyTuple_GET_SIZE(binds))) {
@@ -146,7 +139,7 @@ KOS_OP_HANDLER_COLD(IMPORT_FROM) {
     RESULT_RAISE();
   }
 
-  PyObject *mod = kos_import_module(es, name, (long) row.a1, 1);
+  PyObject *mod = kos_import_module(es, name, (long) KosExtra_IMM(row, 1), 1);
   if (unlikely(! mod))
     RESULT_RAISE();
 
