@@ -14,9 +14,9 @@
 """
 tests.reproducers.test_var_pack
 
-Full-stack reproducer for bulk local loads: consecutive local loads
-compile to FAST2/FAST4 rows and evaluate in source order through the
-bulk handlers.
+Full-stack reproducer for bulk loads: consecutive local loads compile
+to FAST2/FAST3/FAST4 rows, consecutive constants to CONST2/CONST3/CONST4
+rows, and each evaluates in source order through the bulk handlers.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -59,10 +59,36 @@ class TestVarPack(unittest.IsolatedAsyncioTestCase):
         self.assertIn(OpCode.FAST2, opcodes_of(mod.verify_fast2))
 
 
+    async def test_fast3(self):
+        mod = await self.load_module()
+        self.assertTrue(await mod.verify_fast3())
+        self.assertIn(OpCode.FAST3, opcodes_of(mod.verify_fast3))
+
+
     async def test_fast4(self):
         mod = await self.load_module()
         self.assertTrue(await mod.verify_fast4())
         self.assertIn(OpCode.FAST4, opcodes_of(mod.verify_fast4))
+
+
+    async def test_fast4_fast3(self):
+        mod = await self.load_module()
+        self.assertTrue(await mod.verify_fast4_fast3())
+        ops = opcodes_of(mod.verify_fast4_fast3)
+        self.assertIn(OpCode.FAST4, ops)
+        self.assertIn(OpCode.FAST3, ops)
+
+
+    async def test_const3(self):
+        mod = await self.load_module()
+        self.assertTrue(await mod.verify_const3())
+        self.assertIn(OpCode.CONST3, opcodes_of(mod.verify_const3))
+
+
+    async def test_const4(self):
+        mod = await self.load_module()
+        self.assertTrue(await mod.verify_const4())
+        self.assertIn(OpCode.CONST4, opcodes_of(mod.verify_const4))
 
 
     async def test_fast4_fast2(self):

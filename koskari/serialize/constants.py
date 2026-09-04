@@ -39,7 +39,7 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # MINOR bumped: CONST2 bulk constant load inserted after CONST,
 # renumbering every opcode after it.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 14
+BYTECODE_ABI_MINOR = 15
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 0
 

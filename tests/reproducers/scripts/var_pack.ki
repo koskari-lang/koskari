@@ -1,13 +1,50 @@
 ;; Full-stack reproducer: runs of consecutive local loads pack into
-;; FAST2/FAST4 (VAR2/VAR4 before fast conversion) and push in source
-;; order through the bulk handlers. String concatenation keeps every
-;; check order-sensitive.
+;; FAST2/FAST3/FAST4 (VAR2/VAR3/VAR4 before fast conversion) and push
+;; in source order through the bulk handlers. String concatenation
+;; keeps every check order-sensitive.
 
 
 define verify_fast2 []:
     define a "a"
     define b "b"
     equal? (+ a b) "ab"
+
+
+define verify_fast3 []:
+    define a "a"
+    define b "b"
+    define c "c"
+    equal? (+ a b c) "abc"
+
+
+define verify_fast4_fast3 []:
+    define a "a"
+    define b "b"
+    define c "c"
+    define d "d"
+    define e "e"
+    define f "f"
+    define g "g"
+    equal? (+ a b c d e f g) "abcdefg"
+
+
+;; constant runs pack too; the arguments of a call keep the loads
+;; apart from constant folding
+
+define cat3 [a b c]:
+    (+ a b c)
+
+
+define cat4 [a b c d]:
+    (+ a b c d)
+
+
+define verify_const3 []:
+    equal? (cat3 "x" "y" "z") "xyz"
+
+
+define verify_const4 []:
+    equal? (cat4 "w" "x" "y" "z") "wxyz"
 
 
 define verify_fast4 []:

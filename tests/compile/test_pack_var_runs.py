@@ -12,9 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Unit tests for the VAR and FAST run packing in ByteCodeProcessor.pack_runs
-(the trailing pack phase) and the convert_fast lowering of VAR2/VAR4 to
-FAST2/FAST4
+Unit tests for the CONST, VAR, and FAST run packing in
+ByteCodeProcessor.pack_runs (the trailing pack phase) and the
+convert_fast lowering of the bulk VAR rows to their FAST twins
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -62,11 +62,10 @@ class TestPackVarRuns(unittest.TestCase):
             (OpCode.VAR2, ("a", "b", None, None)),
         ])
 
-    def test_three_run_packs_var2_var(self):
+    def test_three_run_packs_var3(self):
         out = pack_ops([(V, "a"), (V, "b"), (V, "c")])
         self.assertEqual(out, [
-            (OpCode.VAR2, ("a", "b", None, None)),
-            (V, "c"),
+            (OpCode.VAR3, ("a", "b", "c", None)),
         ])
 
     def test_four_run_packs_var4(self):
@@ -82,11 +81,38 @@ class TestPackVarRuns(unittest.TestCase):
             (V, "e"),
         ])
 
+    def test_six_run_packs_var4_var2(self):
+        out = pack_ops([(V, n) for n in "abcdef"])
+        self.assertEqual(out, [
+            (OpCode.VAR4, ("a", "b", "c", "d")),
+            (OpCode.VAR2, ("e", "f", None, None)),
+        ])
+
+    def test_seven_run_packs_var4_var3(self):
+        out = pack_ops([(V, n) for n in "abcdefg"])
+        self.assertEqual(out, [
+            (OpCode.VAR4, ("a", "b", "c", "d")),
+            (OpCode.VAR3, ("e", "f", "g", None)),
+        ])
+
     def test_eight_run_packs_var4_var4(self):
         out = pack_ops([(V, n) for n in "abcdefgh"])
         self.assertEqual(out, [
             (OpCode.VAR4, ("a", "b", "c", "d")),
             (OpCode.VAR4, ("e", "f", "g", "h")),
+        ])
+
+    def test_const_runs_pack_two_three_four(self):
+        C = OpCode.CONST
+        self.assertEqual(pack_ops([(C, 1), (C, 2)]), [
+            (OpCode.CONST2, (1, 2, None, None)),
+        ])
+        self.assertEqual(pack_ops([(C, 1), (C, 2), (C, 3)]), [
+            (OpCode.CONST3, (1, 2, 3, None)),
+        ])
+        self.assertEqual(pack_ops([(C, n) for n in range(5)]), [
+            (OpCode.CONST4, (0, 1, 2, 3)),
+            (C, 4),
         ])
 
     def test_single_var_unchanged(self):
@@ -148,6 +174,12 @@ class TestPackVarRuns(unittest.TestCase):
             (OpCode.FAST2, (4, 5, None, None)),
         ])
 
+    def test_fast_run_packs_fast3(self):
+        out = pack_ops([(OpCode.FAST, i) for i in range(3)])
+        self.assertEqual(out, [
+            (OpCode.FAST3, (0, 1, 2, None)),
+        ])
+
     def test_mixed_kinds_break_runs(self):
         instr = [
             (V, "a"),
@@ -180,6 +212,14 @@ class TestBulkLoadLowering(unittest.IsolatedAsyncioTestCase):
         result = convert_fast(nspec, instr)
         self.assertEqual(result, [
             (OpCode.FAST2, (0, 1, None, None)),
+        ])
+
+    async def test_var3_lowers_to_fast3(self):
+        nspec = NamespaceSpec(None, ("a", "b", "c"), ())
+        instr = [(OpCode.VAR3, ("a", "b", "c", None))]
+        result = convert_fast(nspec, instr)
+        self.assertEqual(result, [
+            (OpCode.FAST3, (0, 1, 2, None)),
         ])
 
     async def test_var4_lowers_to_fast4(self):

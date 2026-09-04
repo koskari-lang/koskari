@@ -53,18 +53,23 @@ class TestCombineConst(unittest.TestCase):
         out = combine_ops([(C, 1), (C, 2)])
         self.assertEqual(out, [(OpCode.CONST2, (1, 2, None, None))])
 
-    def test_odd_run_leaves_trailing_const(self):
+    def test_three_run_makes_a_triple(self):
         out = combine_ops([(C, 1), (C, 2), (C, 3)])
         self.assertEqual(out, [
-            (OpCode.CONST2, (1, 2, None, None)),
-            (C, 3),
+            (OpCode.CONST3, (1, 2, 3, None)),
         ])
 
-    def test_four_run_makes_two_pairs(self):
+    def test_five_run_leaves_trailing_const(self):
+        out = combine_ops([(C, 1), (C, 2), (C, 3), (C, 4), (C, 5)])
+        self.assertEqual(out, [
+            (OpCode.CONST4, (1, 2, 3, 4)),
+            (C, 5),
+        ])
+
+    def test_four_run_makes_a_quad(self):
         out = combine_ops([(C, 1), (C, 2), (C, 3), (C, 4)])
         self.assertEqual(out, [
-            (OpCode.CONST2, (1, 2, None, None)),
-            (OpCode.CONST2, (3, 4, None, None)),
+            (OpCode.CONST4, (1, 2, 3, 4)),
         ])
 
     def test_run_breaks_at_other_op(self):
