@@ -17,13 +17,12 @@
 /**
   CALL_FAST: arg = extra index. Schema FASTVAR (slot), COUNT (arg count).
   Call callable from fast local slot. Stack [arg_0, ..., arg_{N-1}].
-  Prologue only: deref the callable and hand it, owned, to the site's
-  elected body when the cache slot's guard holds, else to the family's
-  electing function (eval/eval_electors.c), which runs the call ladder
-  and settles the slot. One cache slot: KOS_CACHE_ELECTOR.
+  Prologue only: deref the callable, take the borrowed argv window, and
+  delegate to kos_call_invoke (which owns the window drop).
 */
 KOS_OP_HANDLER(CALL_FAST) {
   const KosExtra *row = KosOp_ROW(insn);
+  unsigned n = KosExtra_IMM(row, 1);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -32,15 +31,18 @@ KOS_OP_HANDLER(CALL_FAST) {
   if (unlikely(! callable))
     RESULT_RAISE();
 
-  KosCacheSlot *slot = KosOp_SLOT(insn);
-  if (likely(kos_elector_guard(slot, Py_TYPE(callable)))) {
-    KOS_ELECTOR_SAFETYNET(slot, call_fast_classify(Py_TYPE(callable)),
-                          callable);
-    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
-    TAILCALL(slot->u.elector.fn, es, insn, callable);
+  PyObject *const *argv = NULL;
+  if (n) {
+    argv = KosEvalState_StackTailPtr(es, n);
+    if (unlikely(! argv)) {
+      Py_DECREF(callable);
+      RESULT_RAISE();
+    }
   }
 
-  TAILCALL(el_call_fast_elect, es, insn, callable);
+  RESULT_RELAY(es, kos_call_invoke(
+      es, callable, NULL, argv, (Py_ssize_t) n, NULL,
+      KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED));
 }
 
 

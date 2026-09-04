@@ -48,9 +48,9 @@ Ref: [archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
 
 A `KosThreadFn` chosen once for a site's guarded operand (a cache slot
 kind) or an extent's fixed fact (a dyn node field) and tail-called on
-every later execution. The CALL_FAST fixture is in the tree; re-measure
-it on the resolved record, then the plain-vectorcall arm, then
-YIELD_FROM node-style.
+every later execution. The cache-style home measured flat on CALL_FAST
+and was removed; the node-style home, YIELD_FROM first (drive elected
+by delegate kind, phases as resumes), is the open work.
 
 Ref: [interpreter/electors.md](interpreter/electors.md).
 

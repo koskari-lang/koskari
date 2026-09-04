@@ -87,13 +87,6 @@ typedef enum KosTraceOpCacheId {
   KOS_OC_FIELD_GENERIC,
   KOS_OC_FIELD_MISS,
   KOS_OC_FIELD_FALLBACK,
-  /* elector: hit = guard held in the handler; miss = the electing function
-     ran under an empty or differently-typed slot; bypass = demoted site;
-     uncached = the site has no slot. */
-  KOS_OC_ELECTOR_HIT,
-  KOS_OC_ELECTOR_MISS,
-  KOS_OC_ELECTOR_BYPASS,
-  KOS_OC_ELECTOR_UNCACHED,
   KOS_OC__COUNT
 } KosTraceOpCacheId;
 

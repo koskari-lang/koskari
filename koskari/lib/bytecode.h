@@ -423,7 +423,6 @@ typedef enum KosCacheKind {
   KOS_CACHE_METHOD,      /* method-resolution layout (attribute/method lookup) */
   KOS_CACHE_FIELD,       /* attribute-storage location (load/store/delete) */
   KOS_CACHE_MATCHER,     /* thawed Matcher for a MATCH_CASE arm */
-  KOS_CACHE_ELECTOR,     /* elected handler for a site's guarded operand */
 } KosCacheKind;
 
 
@@ -454,19 +453,6 @@ typedef enum KosFieldMode {
   KOS_FIELD_DICT_HINT,        /* materialized instance __dict__; index = keys hint */
   KOS_FIELD_MEGAMORPHIC,      /* churn bypass: skip guard, never populate */
 } KosFieldMode;
-
-
-/**
-   State of the KOS_CACHE_ELECTOR layout. ELECTED holds a body for the
-   guard type. MEGAMORPHIC is the churn bypass: the guard type is NULL, so
-   the handler's test never matches and the site runs its family's
-   ladder on every execution, never re-populating.
-   See design/interpreter/electors.md.
-*/
-typedef enum KosElectorMode {
-  KOS_ELECTOR_ELECTED = 0,
-  KOS_ELECTOR_MEGAMORPHIC,
-} KosElectorMode;
 
 
 /**
@@ -536,20 +522,6 @@ struct KosCacheSlot {
     struct {
       PyObject *matcher;       /* thawed KosMatcher; owned, may be NULL */
     } matcher;
-
-    /* KOS_CACHE_ELECTOR: the handler elected for the site's guarded
-       operand. ``fn`` is a static function and ``type`` a BORROWED guard;
-       only static types are elected while the layout keeps no version
-       tag, and the operand keeps its type alive across the access. There
-       are NO owned references, so the teardown arm is a no-op. The
-       handler tests ``type`` alone on its hot path and tail-calls ``fn``
-       with the operand as its value. */
-    struct {
-      KosThreadFn fn;          /* elected body; NULL once demoted */
-      PyTypeObject *type;      /* guard operand type; borrowed; NULL once demoted */
-      uint8_t misses;          /* guard misses since the last population */
-      uint8_t mode;            /* KosElectorMode */
-    } elector;
   } u;
 };
 

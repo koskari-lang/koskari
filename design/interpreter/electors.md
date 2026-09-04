@@ -1,14 +1,20 @@
 # Electors: elected handlers on cache slots and dyn nodes
 
-**Status:** Proposal, with one measured fixture. The CALL_FAST elector
-(`KOS_CACHE_ELECTOR`, `eval/eval_electors.c`, commit b73d9499) is in
-the tree as the measurement fixture for this design, not as a finished
-change: on the tree kernel it ran 0.5% fewer instructions and 1.3% more
-cycles than the ladder, the gap being the walk from the record to its
-extras row at the head of every elected call. That walk was removed by
-[../archive/resolved-operands.md](../archive/resolved-operands.md);
-the elector has not been re-measured on the new record yet, and the
-next step is that measurement.
+**Status:** Proposal. The cache-style home was built and measured on
+CALL_FAST (commit b73d9499: a `KOS_CACHE_ELECTOR` slot kind, an
+electing function, one elector for the exact simple KosFunction) and
+then removed. On the original record it ran 0.5% fewer instructions and
+1.3% more cycles than the ladder, the gap being the walk from the record
+to its extras row at the head of every elected call; with that walk
+removed by [../archive/resolved-operands.md](../archive/resolved-operands.md)
+it re-measured at 0.6% fewer instructions and the same cycles. Flat on
+performance for added complexity, so it does not ship: a call site whose
+ladder is one type compare and three loads has nothing for an elector
+to remove, and the plain-vectorcall arm is the same shape. The
+cache-style home is worth revisiting only for an opcode with a long or
+mispredicting ladder (OBJECT_NEXT's provider-versus-Python split, the
+operand type pairs). The node-style home, YIELD_FROM first, is the open
+work.
 
 **See also:** [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)
 (the per-site cache framework this extends),
