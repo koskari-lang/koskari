@@ -415,6 +415,11 @@ struct KosDynNode {
       PyObject *pending_arg_type;  /* for KOS_YF_THROW: exception type */
       PyObject *inflight;
       KosIterRequest req;    /* in-flight KOS_ITER delegate step state */
+      /* KosThreadFn: the drive body elected for kind when the node was
+         pushed, tail-called on every entry; the delegate never changes,
+         so no guard. Set by the YIELD_FROM handler, which owns the four
+         bodies. See design/interpreter/electors.md. */
+      void *drive;
     } yield_from;
     struct {
       PyObject *bindings;  /* PyDict: key -> value (what we bind; keys from ParamRef) */
@@ -2558,6 +2563,7 @@ enum {
 #define KosDynYieldFrom_PENDING_ARG_TYPE(n) (((KosDynNode *)(n))->u.yield_from.pending_arg_type)
 #define KosDynYieldFrom_INFLIGHT(n)    (((KosDynNode *)(n))->u.yield_from.inflight)
 #define KosDynYieldFrom_REQ(n)         (&((KosDynNode *)(n))->u.yield_from.req)
+#define KosDynYieldFrom_DRIVE(n)       (((KosDynNode *)(n))->u.yield_from.drive)
 
 /**
    The iteration request record embedded in a receiver-capable node, or
