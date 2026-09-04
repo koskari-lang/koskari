@@ -204,16 +204,18 @@ typedef struct KosCacheSlot KosCacheSlot;
 /**
    One resolved field of an extended operand row, 8 bytes, read through
    the member the opcode's schema names: ``imm`` for COUNT, FASTVAR,
-   OPCOUNT, CMP, CMPSRC, STAR, OPERAND, and the target pc of a LABEL
-   field; ``obj`` for CONST and VAR, the pool object, borrowed (the
-   cpool keeps it alive for the life of the code). Resolved at finalize
-   and on every load, never serialized: soften recovers a constant's
-   index by identity against the pool.
+   OPCOUNT, CMP, CMPSRC, STAR, and OPERAND; ``obj`` for CONST and VAR,
+   the pool object, borrowed (the cpool keeps it alive for the life of
+   the code); ``target`` for LABEL, the target record, whose own pc
+   names the index. Resolved at finalize and on every load, never
+   serialized: soften recovers a constant's index by identity against
+   the pool and a label's pc off the target.
    See design/interpreter/resolved-operands.md.
 */
 typedef union KosExtraField {
   uint32_t imm;
   PyObject *obj;
+  KosOp *target;
 } KosExtraField;
 
 
@@ -227,8 +229,9 @@ typedef struct KosExtra {
 } KosExtra;
 
 
-#define KosExtra_IMM(row, i)  ((row)->f[i].imm)
-#define KosExtra_OBJ(row, i)  ((row)->f[i].obj)
+#define KosExtra_IMM(row, i)     ((row)->f[i].imm)
+#define KosExtra_OBJ(row, i)     ((row)->f[i].obj)
+#define KosExtra_TARGET(row, i)  ((row)->f[i].target)
 
 
 /* === Opcode enum === */

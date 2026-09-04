@@ -103,7 +103,7 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
     KosEvalState_StackDropNoErr(es, (size_t) n);
 
   if (! matched) {
-    RESULT_JUMP(es, KosExtra_IMM(row, 0));
+    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 0));
   }
 
   /* Matched: push the capture dict for the arm's MATCH_STORE_NAMES (or

@@ -59,7 +59,7 @@ KOS_OP_HANDLER_COLD(CHECK_COMPARE_VAR) {
     RESULT_RAISE();
 
   if (res == 0)
-    RESULT_JUMP(es, KosExtra_IMM(row, 3));
+    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
 
   RESULT_NEXT(es);
 }

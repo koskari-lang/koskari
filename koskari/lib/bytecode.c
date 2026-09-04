@@ -254,7 +254,8 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
         KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
             (slot == 2) ? schema.f2 : schema.f3;
         if (fk == KOSTYLE_LABEL) {
-          if (soften_label_map_add_pc(label_map, KosExtra_IMM(row, slot))) {
+          if (soften_label_map_add_pc(label_map,
+                                      KosExtra_TARGET(row, slot)->pc)) {
             Py_DECREF(label_map);
             return NULL;
           }
@@ -316,7 +317,8 @@ static PyObject *soften_extra_tuple(
       items[slot] = v;
 
     } else if (fk == KOSTYLE_LABEL) {
-      PyObject *key = PyLong_FromUnsignedLong((unsigned long) KosExtra_IMM(row, slot));
+      uint32_t dest_pc = KosExtra_TARGET(row, slot)->pc;
+      PyObject *key = PyLong_FromUnsignedLong((unsigned long) dest_pc);
       if (! key) {
         for (int j = 0; j < slot; j++)
           Py_DECREF(items[j]);
@@ -328,7 +330,7 @@ static PyObject *soften_extra_tuple(
         for (int j = 0; j < slot; j++)
           Py_DECREF(items[j]);
         PyErr_Format(PyExc_RuntimeError,
-                     "label pc %u missing from label map", KosExtra_IMM(row, slot));
+                     "label pc %u missing from label map", (unsigned) dest_pc);
         return NULL;
       }
       Py_INCREF(lab);
@@ -938,6 +940,8 @@ static int extra_row_indices(PyObject *self, uint32_t eidx, uint16_t out[4]) {
         return -1;
       }
       out[slot] = (uint16_t) ci;
+    } else if (fk == KOSTYLE_LABEL) {
+      out[slot] = KosExtra_TARGET(row, slot)->pc;
     } else {
       out[slot] = (uint16_t) KosExtra_IMM(row, slot);
     }
@@ -1142,8 +1146,11 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
 }
 
 
-static void code_fill_derived(KosOp *code, uint32_t code_len,
-                              KosExtra *extra);
+static void code_fill_derived(
+    KosOp *code,
+    uint32_t code_len,
+    KosExtra *extra,
+    const KosOp *old_code);
 
 
 /**
@@ -1207,7 +1214,7 @@ static PyObject *code_m_pack_into(PyObject *self, PyObject *arena) {
   /* The in-block operand pointers moved with the block; re-derive them
      (and fn) from the serialized indices in the arena's writable window. */
   code_fill_derived(KosCode_CODE(self), KosCode_CODE_LEN(self),
-                    KosCode_EXTRA(self));
+                    KosCode_EXTRA(self), (const KosOp *) old_base);
 
   Py_INCREF(arena);
   KosCode_ARENA(self) = arena;
@@ -1909,19 +1916,40 @@ static int code_alloc_unified(
    opcode, and the in-block operand pointers (a LABEL's target, an
    EXTRA's row) from the serialized index. Runs after emit and
    validation in the block's writable window, and again after pack
-   relocates the block. The out-of-block pointers (a pool object, a
-   cache slot) are stable and set once by emit.
+   relocates the block, when old_code is the base the block moved from:
+   a row's LABEL fields keep no index, so they shift by the delta
+   (emit's pending-label pass set them, and old_code is NULL then). The
+   out-of-block pointers (a pool object, a cache slot) are stable and
+   set once by emit.
 */
-static void code_fill_derived(KosOp *code, uint32_t code_len, KosExtra *extra) {
+static void code_fill_derived(
+    KosOp *code,
+    uint32_t code_len,
+    KosExtra *extra,
+    const KosOp *old_code) {
 
   for (uint32_t pc = 0; pc < code_len; pc++) {
-    KosOpStyle st = opcode_styles[code[pc].op].style;
+    KosOpCode op = (KosOpCode) code[pc].op;
+    KosOpStyle st = opcode_styles[op].style;
 
-    code[pc].fn = kos_op_handlers[code[pc].op];
-    if (st == KOSTYLE_LABEL)
+    code[pc].fn = kos_op_handlers[op];
+    if (st == KOSTYLE_LABEL) {
       code[pc].u.target = &code[code[pc].arg];
-    else if (st == KOSTYLE_EXTRA)
-      code[pc].u.row = &extra[code[pc].arg];
+
+    } else if (st == KOSTYLE_EXTRA) {
+      KosExtra *row = &extra[code[pc].arg];
+      KosExtraSchema schema = kos_opcode_extra_schema(op);
+
+      code[pc].u.row = row;
+      if (old_code) {
+        for (int slot = 0; slot < 4; slot++) {
+          KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
+              (slot == 2) ? schema.f2 : schema.f3;
+          if (fk == KOSTYLE_LABEL)
+            row->f[slot].target = code + (row->f[slot].target - old_code);
+        }
+      }
+    }
   }
 }
 
@@ -2132,7 +2160,7 @@ static int code_emit(
                      label_name);
         return -1;
       }
-      extra[eidx].f[slot].imm = (uint32_t) PyLong_AsLong(dest);
+      extra[eidx].f[slot].target = &code[PyLong_AsLong(dest)];
     }
   }
 
@@ -2893,7 +2921,7 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
     return -1;
   }
 
-  code_fill_derived(code, code_len, extra);
+  code_fill_derived(code, code_len, extra, NULL);
 
   /* Seal block read-only; single mprotect for entire allocation */
   if (protect) {
