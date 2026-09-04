@@ -68,6 +68,76 @@ static inline int kos_object_not(PyObject *v) {
 
 /* === PyLong two-operand fast path === */
 
+/* The digit layout of an exact int, read inline. 3.12 and later keep
+   the digit count and the sign in the tag word: the low two bits are
+   the sign (0 positive, 1 zero, 2 negative) and the count sits above
+   three flag bits. Before 3.12 the size word is the signed digit
+   count. Only builds with 30-bit digits take the inline read; a 15-bit
+   digit build goes through the conversion below. */
+#if PyLong_SHIFT == 30
+# define KOS_LONG_INLINE_DIGITS 1
+# if PY_VERSION_HEX >= 0x030C0000
+#  define KOS_LONG_NDIGITS(lo)  ((size_t) ((lo)->long_value.lv_tag >> 3))
+#  define KOS_LONG_NEGATIVE(lo) (((lo)->long_value.lv_tag & 3) == 2)
+#  define KOS_LONG_DIGITS(lo)   ((lo)->long_value.ob_digit)
+# else
+#  define KOS_LONG_NDIGITS(lo) \
+   ((size_t) (Py_SIZE(lo) < 0 ? -Py_SIZE(lo) : Py_SIZE(lo)))
+#  define KOS_LONG_NEGATIVE(lo) (Py_SIZE(lo) < 0)
+#  define KOS_LONG_DIGITS(lo)   ((lo)->ob_digit)
+# endif
+#else
+# define KOS_LONG_INLINE_DIGITS 0
+#endif
+
+
+/* Read an exact int of at most two digits straight from its digits.
+   Two 30-bit digits are at most 60 bits, so the value always fits and
+   there is no overflow test. Returns 1 with *out set, or 0 for a wider
+   int, which the caller converts the general way. */
+static inline int kos_long_as_ll_digits(PyObject *v, long long *out) {
+#if KOS_LONG_INLINE_DIGITS
+  PyLongObject *lo = (PyLongObject *) v;
+  const digit *digits = KOS_LONG_DIGITS(lo);
+  long long mag;
+
+  switch (KOS_LONG_NDIGITS(lo)) {
+    case 0:
+      mag = 0;
+      break;
+    case 1:
+      mag = digits[0];
+      break;
+    case 2:
+      mag = digits[0] | ((long long) digits[1] << PyLong_SHIFT);
+      break;
+    default:
+      return 0;
+  }
+
+  *out = KOS_LONG_NEGATIVE(lo) ? -mag : mag;
+  return 1;
+#else
+  (void) v;
+  (void) out;
+  return 0;
+#endif
+}
+
+
+/* An exact int as a C long long: the two-digit read first, then the
+   general conversion for anything wider. Returns 1 with *out set, or 0
+   when the value does not fit. */
+static inline int kos_long_as_ll(PyObject *v, long long *out) {
+  if (likely(kos_long_as_ll_digits(v, out)))
+    return 1;
+
+  int overflow;
+  *out = PyLong_AsLongLongAndOverflow(v, &overflow);
+  return ! overflow;
+}
+
+
 /* Both operands exact ints that fit in a C long long.  Mechanical extraction
    only, with no operator knowledge, so it never re-branches on op.  Returns 1
    with both *a and *b set, or 0 when either operand declines the fast path. */
@@ -79,15 +149,8 @@ static inline int kos_as_ll2(
 
   if (! (PyLong_CheckExact(l) && PyLong_CheckExact(r)))
     return 0;
-
-  int overflow;
-  *a = PyLong_AsLongLongAndOverflow(l, &overflow);
-  if (unlikely(overflow))
+  if (unlikely(! kos_long_as_ll(l, a)) || unlikely(! kos_long_as_ll(r, b)))
     return 0;
-  *b = PyLong_AsLongLongAndOverflow(r, &overflow);
-  if (unlikely(overflow))
-    return 0;
-
   return 1;
 }
 

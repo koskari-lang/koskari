@@ -20,6 +20,7 @@ Unit tests for reducing and special-case operators
 """
 
 
+import operator
 import unittest
 
 import koskari.lib as lib
@@ -27,6 +28,49 @@ import koskari.lib as lib
 import pytest
 
 pytestmark = pytest.mark.phase_lib
+
+
+# Values at and around the digit boundaries of the int fast path: one
+# 30-bit digit, two digits (60 bits), the long long limit, and beyond.
+DIGIT_EDGE_VALUES = [
+    0, 1, -1, 7, -7,
+    2 ** 30 - 1, 2 ** 30, -(2 ** 30), 2 ** 30 + 1,
+    2 ** 31 - 1, 2 ** 32 - 1, -(2 ** 32),
+    2 ** 60 - 1, 2 ** 60, -(2 ** 60), -(2 ** 60) + 1,
+    2 ** 62, 2 ** 63 - 1, -(2 ** 63), 2 ** 63, 2 ** 64, 2 ** 100,
+]
+
+BINARY_OPERATORS = [
+    ('+', operator.add), ('-', operator.sub), ('*', operator.mul),
+    ('//', operator.floordiv),
+    ('&', operator.and_), ('|', operator.or_), ('^', operator.xor),
+    ('<', operator.lt), ('<=', operator.le), ('==', operator.eq),
+    ('!=', operator.ne), ('>', operator.gt), ('>=', operator.ge),
+]
+
+
+class TestOperatorDigitEdges(unittest.TestCase):
+    """
+    The int fast paths agree with Python across the digit boundaries
+    """
+
+    def check_pair(self, name, pyop, a, b):
+        kosop = getattr(lib, name)
+        try:
+            expected = pyop(a, b)
+        except Exception as exc:
+            with self.assertRaises(type(exc)):
+                kosop(a, b)
+            return
+        result = kosop(a, b)
+        self.assertEqual(result, expected, (name, a, b))
+        self.assertIs(type(result), type(expected), (name, a, b))
+
+    def test_binary_operators_at_digit_edges(self):
+        for name, pyop in BINARY_OPERATORS:
+            for a in DIGIT_EDGE_VALUES:
+                for b in DIGIT_EDGE_VALUES:
+                    self.check_pair(name, pyop, a, b)
 
 
 class TestOperatorAdd(unittest.IsolatedAsyncioTestCase):
