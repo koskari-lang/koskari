@@ -1,0 +1,59 @@
+;; Full-stack reproducer: the in-place opcodes as the compiler emits
+;; them, run through their electors. A local counter (FAST_INPLACE_CONST
+;; and FAST_INPLACE), a closure cell updated from an inner function (a
+;; ref slot the elected body peeks through), a list element (the
+;; inplace-item form on OBJECT_INPLACE), and the same site fed ints,
+;; then floats, then ints again.
+
+
+define count_up [n step]:
+    define total 0
+    define i 0
+    while (< i n):
+        incr! total step
+        incr! i
+    total
+
+
+define count_down [n]:
+    define i n
+    define seen 0
+    while (> i 0):
+        decr! i
+        incr! seen
+    seen
+
+
+define closure_counter [n]:
+    define total 0
+    define bump [step]:
+        incr! total step
+    for-each [i (range n)]:
+        bump i
+    total
+
+
+define item_accumulate [n]:
+    define cells #[0 0]
+    for-each [i (range n)]:
+        incr! cells[0] i
+        incr! cells[1] 2
+    cells
+
+
+define mixed_site [values]:
+    define total 0
+    for-each [v values]:
+        incr! total v
+    total
+
+
+define masked_accumulate [n]:
+    define acc 1
+    for-each [i (range n)]:
+        set! acc (& (* acc 3) 0xffffffff)
+        incr! acc i
+    acc
+
+
+;; The end.

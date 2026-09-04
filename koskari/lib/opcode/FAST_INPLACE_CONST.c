@@ -19,30 +19,17 @@
    operand. Augmented assignment with a constant rhs, completely
    stack-free: obj = deref(slot); obj OP= const; store back. The
    compressed form of CONST + FAST_INPLACE (count 1) -- e.g.
-   (incr! i).
+   (incr! i). Prologue only: tail-call the body the site's slot elected
+   (eval/eval_electors.c); an empty slot or an ungated site takes the
+   electing function. One cache slot: KOS_CACHE_ELECTOR.
 */
 
 KOS_OP_HANDLER(FAST_INPLACE_CONST) {
-  const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = CURRENT_NS();
-  KOS_OP_REQUIRE_NS(ns);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
 
-  PyObject *operand = KosExtra_OBJ(row, 2);   /* borrowed */
-
-  size_t idx = (size_t) KosExtra_IMM(row, 1);
-  PyObject *obj = kos_ns_fast_deref(ns, idx);
-  if (unlikely(! obj))
-    RESULT_RAISE();
-
-  PyObject *pair[2] = { obj, operand };
-  PyObject *result = kos_inplace_reduce((KosOperand) KosExtra_IMM(row, 0), pair, 2);
-  Py_DECREF(obj);
-  if (unlikely(! result))
-    RESULT_RAISE();
-
-  if (unlikely(kos_ns_fast_store_steal(ns, idx, result) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_fast_inplace_const_elect, es, insn, NULL);
 }
 
 

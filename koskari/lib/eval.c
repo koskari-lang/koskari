@@ -1902,7 +1902,7 @@ static int kos_return_take_resume(
 #undef KOS_OP_HANDLER_COLD
 #undef KOS_OP_HANDLER
 #undef KOS_ELECTOR
-#undef KOS_ELECTOR_OPERAND_SAFETYNET
+#undef KOS_ELECTOR_PAIR_SAFETYNET
 
 
 /* The handler table finalize resolves each KosOp's fn from.  Position

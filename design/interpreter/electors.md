@@ -7,21 +7,28 @@ handler running once per delegation with the pc never rolled back. On
 the yieldfrom kernel over five samples that is 19.8% fewer cycles and
 42% fewer branch misses for 3.6% more instructions. The delivery
 contract it settled is recorded in [../EVALUATOR.md](../EVALUATOR.md)
-§8.2. The cache-style home was built and measured on
-CALL_FAST (commit b73d9499: a `KOS_CACHE_ELECTOR` slot kind, an
-electing function, one elector for the exact simple KosFunction) and
-then removed. On the original record it ran 0.5% fewer instructions and
-1.3% more cycles than the ladder, the gap being the walk from the record
-to its extras row at the head of every elected call; with that walk
-removed by [../archive/resolved-operands.md](../archive/resolved-operands.md)
-it re-measured at 0.6% fewer instructions and the same cycles. Flat on
-performance for added complexity, so it does not ship: a call site whose
-ladder is one type compare and three loads has nothing for an elector
-to remove, and the plain-vectorcall arm is the same shape. The
-cache-style home is worth revisiting only for an opcode with a long or
-mispredicting ladder (OBJECT_NEXT's provider-versus-Python split, the
-operand type pairs). The node-style home, YIELD_FROM first, is the open
-work.
+§8.2. The cache-style home is built on the arithmetic families:
+OBJECT_OPERAND, OBJECT_INPLACE, FAST_INPLACE, and FAST_INPLACE_CONST
+each own a `KOS_CACHE_ELECTOR` slot and a prologue handler, with one
+int body per operator elected on the site's first exact-int operands
+(`eval/eval_electors.c`). Measured on the churn kernels over the inline
+two-digit int read, the OBJECT_OPERAND elector ran 15.0% fewer
+instructions and 11.8% fewer cycles on `branch`, 13.4% and 14.2% on
+`loop`; against a control that hoisted the int pair ahead of the
+operator switch with no slot it ran 1.8% and 1.5% fewer instructions
+and 5.8% fewer `branch` cycles. The in-place families added 4.0% and
+4.1% on `fannkuch`, 5.1% and 3.2% on `loop`, with `branch` and
+`binary_trees` level. The same home was first tried on CALL_FAST
+(commit b73d9499) and removed as flat: 0.6% fewer instructions at the
+same cycles, because a call site whose ladder is one type compare and
+three loads has nothing for an elector to remove. The elector pays
+where the ladder it replaces is long: the operand path was a noinline
+call, a switch, a count check, two type checks, and two out-of-line
+conversions per execution. One finding from the in-place step: once
+four families used the `long_fast_*` paths the compiler stopped
+inlining them, costing 3.9% of `branch` instructions until they were
+marked `KOS_OP_INLINE`; a body macro that grows a family should be
+measured for that.
 
 **See also:** [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)
 (the per-site cache framework this extends),
@@ -89,57 +96,60 @@ drive), refactored into `KosThreadFn` entries.
 
 ### Layout
 
-A new slot kind in the `KosCacheSlot` union:
+The slot kind in the `KosCacheSlot` union, as built:
 
 ```c
-KOS_CACHE_ELECTOR,   /* elected handler for a stack- or slot-sourced operand */
+KOS_CACHE_ELECTOR,   /* handler elected for the site */
 
 struct {
-  KosThreadFn fn;          /* elected body, or the generic body when demoted */
-  PyTypeObject *type;      /* guard: operand type; borrowed */
-  uint64_t type_version;   /* guard for heap types; 0 when the type is static */
-  uint8_t misses;          /* consecutive guard misses; drives the demotion */
-  uint8_t mode;            /* EMPTY / ELECTED / MEGAMORPHIC */
+  KosThreadFn fn;          /* elected body; the generic body once demoted */
+  uint8_t misses;          /* guard misses since the election */
+  uint8_t mode;            /* ELECTED / MEGAMORPHIC */
 } elector;
 ```
 
-The guard is the field cache's guard: a borrowed type pointer, sound because
-the operand keeps its type alive during the access and a reused type address
-carries a fresh version. Static types (exact `KosFunction`, `PyLong`,
-`PyList`) need no version. Heap types whose behavior can change under an
-elector (`__call__` reassigned, a `__next__` shadowed) are guarded by the
-type version the method cache already reads.
+The slot holds no guard: each elected body carries its own, so the
+handler's hot path is the slot load and the tail call with no compare.
+The arithmetic bodies guard with `PyLong_CheckExact` on the peeked
+operands, a static type that needs no version. A family electing on a
+heap type whose behavior can change (`__call__` reassigned, a
+`__next__` shadowed) would guard in its body with the type version the
+method cache already reads.
 
 ### Handler shape
 
 ```c
-KOS_OP_HANDLER(CALL_FAST) {
-  const KosExtra *row = KosOp_ROW(insn);
-  PyObject *callable = kos_ns_fast_deref(ns, KosExtra_IMM(row, 0)); /* owned */
-  if (unlikely(! callable))
-    RESULT_RAISE();
+KOS_OP_HANDLER(OBJECT_OPERAND) {
   KosCacheSlot *slot = KosOp_SLOT(insn);                    /* NULL when ungated */
-  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR
-             && slot->u.elector.type == Py_TYPE(callable)))
-    TAILCALL(slot->u.elector.fn, es, insn, callable);
-  TAILCALL(el_call_fast_elect, es, insn, callable);         /* ladder, populate, dispatch */
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_operand_elect, es, insn, NULL);               /* classify, settle, dispatch */
 }
 
-KOS_ELECTOR(call_fast_kosfunction_simple) {                 /* value: the callable, owned */
-  const KosExtra *row = KosOp_ROW(insn);                    /* nargs; the window */
-  Py_ssize_t nargs = (Py_ssize_t) KosExtra_IMM(row, 1);
-  ...
+KOS_ELECTOR(operand_int_add) {                              /* one per operator, from a macro */
+  PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);  /* the pair, peeked */
+  if (! (PyLong_CheckExact(args[0]) && PyLong_CheckExact(args[1])))
+    TAILCALL(el_operand_miss, es, insn, value);             /* count; generic this once */
+  rc = long_fast_add(args[0], args[1], &out);
+  if (rc <= 0)                                              /* declined: generic, no count */
+    ...
+  kos_elector_replace2(bl, args, out);                      /* result over the left, drop the right */
+  RESULT_NEXT(es);
 }
 ```
 
-The handler fetches the guarded operand once and passes it through as
-`value`, ownership transferring with it. The elector's `arg` is the site's
-`KosOp`, so the row, the fast slot, the cache slot, and the stack window
-are one load off the record; a site with a secondary operand (the receiver of
-`CALL_FAST_ATTR`) passes the guarded one and re-reads the other from the
-site. The rule for every elector, in both homes: `value` is the object the
-elector was chosen to handle, and everything else is read from the site
-through `insn` or from the node through `arg`.
+The built families read their operands from the site: the stack pair
+through the block, the accumulator through `kos_ns_fast_peek`, the
+constant off the row. Their `value` is NULL. The elector's `arg` is the
+site's `KosOp`, so the row, the fast slot, the cache slot, and the
+stack window are one load off the record. A family whose guarded
+operand is owned by the handler (a call's callable) passes it through
+as `value`, ownership transferring with it; a site with a secondary
+operand (the receiver of `CALL_FAST_ATTR`) passes the guarded one and
+re-reads the other from the site. The rule for every elector, in both
+homes: `value` is the object the elector was chosen to handle, and
+everything else is read from the site through `insn` or from the node
+through `arg`.
 
 Pass-through is what makes the guard and the body provably act on one
 object, and it keeps the refcount round trip that `KOS_CALL_CALLABLE_OWNED`
@@ -151,27 +161,33 @@ word: a window-sourced elector receives the callable borrowed, a
 slot-sourced or resolver-sourced one receives it owned. Electors are the
 product of arm and flags word, as the body variants are today.
 
-The electing function has the elector contract and is the ladder as it
-exists today, with one addition per arm: on a hit it writes the slot before
-dispatching. A guard miss and an ungated site take the same tail call with
-the same argument, so populating a slot never changes what a body receives.
-Demotion follows the method cache (`eval_cache.c`): a guard miss under an
-elected slot increments `misses`, a hit resets it to zero, and at the limit
-the slot demotes to `MEGAMORPHIC` with `fn` set to the generic body and the
-guard disabled, a bypass that is never re-populated. The limit is a
-per-family literal handed to the electing function the way the flags word
-is, so one family tunes without touching the others; every family starts
-at the method cache's `KOS_METHOD_MISS_LIMIT` of 8. The `KOS_TRACE_OPCACHE`
-counters (hit, miss, bypass, uncached) gain an elector row per family.
-Deoptimization for any other reason is a write of `kind = KOS_CACHE_EMPTY`.
+The electing function has the elector contract and runs the family's
+classification once: an exact-int pair at a binary site (the peeked
+slot value and the operand, for the fast-slot families) elects the
+operator's int body; anything else elects the generic body, which is
+the former handler out of line and never re-elects. An empty slot and
+an ungated site take the same tail call, so populating a slot never
+changes what a body receives. A body's guard miss tail-calls the
+family's miss function, which counts and runs the generic body for
+that execution; an int the fast path declines (wider than a long long,
+an overflowing result, a negative shift count) takes the generic body
+without counting, since the site is still an int site. Misses count
+since the election; the hit path takes no store. At
+`KOS_ELECTOR_MISS_LIMIT` (8, the method cache's) the slot demotes to
+`MEGAMORPHIC` with `fn` set to the generic body, a bypass that is never
+re-populated. The `KOS_TRACE_OPCACHE` counters `elector_hit`,
+`elector_miss` (an election or a guard miss), `elector_bypass` (a
+demotion), and `elector_uncached` are shared by the families.
+Deoptimization for any other reason is a write of `kind =
+KOS_CACHE_EMPTY`.
 
-Under `KOS_EVAL_SAFETYNET` the handler re-runs the ladder on a guard hit and
-asserts it names the elected body before dispatching. Assert only; the
+Under `KOS_EVAL_SAFETYNET` a stack-pair int body refuses a site whose
+operand count is not the two it was elected for. Assert only; the
 dispatch is unchanged.
 
 An ungated site (`compiler/cache-expression` off, or `KOS_CACHE_UNSET`)
 tail-calls the electing function every time, which is today's ladder plus
-one branch.
+one classification.
 
 ### Where it pays: survey
 
@@ -211,14 +227,13 @@ probe, a future probe, and the eager step. Electors keyed on the awaited
 type: `KosCoroutine`, `KosDefer`, `PyCoro`, generic `am_await`. Moderate;
 the gate is already two loads.
 
-**OBJECT_OPERAND, OBJECT_INPLACE, FAST_INPLACE(_CONST), VAR_INPLACE(_CONST)**.
-The hottest opcode by dispatch count. `kos_operand_reduce` selects the
-operator from the arg, then each operator tries its `PyLong` two-operand
-fast path before the `PyNumber` slot. An elector keyed on (operator, left
-type, right type): exact `PyLong` pair, exact `PyFloat` pair, exact
-`PyUnicode` concatenation, generic slot. The operator is a site constant,
-so the elector table is indexed by it and the guard is on the two operand
-types. Two guards, both borrowed compares.
+**OBJECT_OPERAND, OBJECT_INPLACE, FAST_INPLACE, FAST_INPLACE_CONST**.
+Built: the exact `PyLong` pair per operator, the operator a site
+constant indexing the family's table, the guard two borrowed type
+compares in the body. Open on the same slots: the exact `PyFloat` pair
+(the `nbody` kernel is all floats through these sites) and exact
+`PyUnicode` concatenation. `VAR_INPLACE(_CONST)` stay on the ladder;
+hot code uses the fast forms.
 
 **OBJECT_COMPARE(_VAR/_FAST), CHECK_COMPARE(_VAR/_FAST), SWITCH_EQ\***.
 `kos_compare_chain` takes the selector and walks the operands; the extended
@@ -382,6 +397,8 @@ Ranked by expected benefit against risk:
 1. **YIELD_FROM, node-style.** Done. It retired the pc-rollback
    re-entry pattern and settled the node-resume rule.
 2. **CALL_FAST and CALL, cache-style.** Done and removed: flat.
+   **OBJECT_OPERAND and the in-place families, cache-style.** Done, see
+   the status above.
 3. **FOREACH `step` and the NEXT node, node-style.** Follows the
    YIELD_FROM shape on a simpler node, with the delivery contract
    already in place.
@@ -389,9 +406,14 @@ Ranked by expected benefit against risk:
    with three chain reads; the install knows the shape. A ladder is
    replaced rather than a call, which is where the CALL_FAST elector
    found nothing.
-5. **OBJECT_OPERAND and OBJECT_COMPARE, cache-style.** Only with a
-   kernel whose ladder mispredicts; the type-pair guard is the new
-   piece, and the arms exist as the `long_fast_*` functions.
+5. **Float and string bodies on the arithmetic slots.** The families
+   exist; a body per operator for the exact `PyFloat` pair and one for
+   `PyUnicode` concatenation, elected by the same classification.
+6. **OBJECT_COMPARE, CHECK_COMPARE and their twins, cache-style.** The
+   same int-pair shape with the branch fused into the body.
+7. **FAST_ATTR_INPLACE.** 9% of the churn time; the field cache already
+   guards the receiver, so the elected body is the fold on a peeked
+   attribute value.
 
 ## Sizing
 

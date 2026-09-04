@@ -96,7 +96,7 @@ static inline int kos_object_not(PyObject *v) {
    Two 30-bit digits are at most 60 bits, so the value always fits and
    there is no overflow test. Returns 1 with *out set, or 0 for a wider
    int, which the caller converts the general way. */
-static inline int kos_long_as_ll_digits(PyObject *v, long long *out) {
+KOS_OP_INLINE int kos_long_as_ll_digits(PyObject *v, long long *out) {
 #if KOS_LONG_INLINE_DIGITS
   PyLongObject *lo = (PyLongObject *) v;
   const digit *digits = KOS_LONG_DIGITS(lo);
@@ -129,7 +129,7 @@ static inline int kos_long_as_ll_digits(PyObject *v, long long *out) {
 /* An exact int as a C long long: the two-digit read first, then the
    general conversion for anything wider. Returns 1 with *out set, or 0
    when the value does not fit. */
-static inline int kos_long_as_ll(PyObject *v, long long *out) {
+KOS_OP_INLINE int kos_long_as_ll(PyObject *v, long long *out) {
   if (likely(kos_long_as_ll_digits(v, out)))
     return 1;
 
@@ -142,7 +142,7 @@ static inline int kos_long_as_ll(PyObject *v, long long *out) {
 /* Both operands exact ints that fit in a C long long.  Mechanical extraction
    only, with no operator knowledge, so it never re-branches on op.  Returns 1
    with both *a and *b set, or 0 when either operand declines the fast path. */
-static inline int kos_as_ll2(
+KOS_OP_INLINE int kos_as_ll2(
     PyObject *l,
     PyObject *r,
     long long *a,
@@ -172,7 +172,7 @@ static inline int kos_as_ll2(
    Python remainder.  Overflow on +, -, *, << declines rather than widening.
    Divide, floor-divide, matmul, and power have no fast path. */
 
-static inline int long_fast_add(PyObject *l, PyObject *r, PyObject **out) {
+KOS_OP_INLINE int long_fast_add(PyObject *l, PyObject *r, PyObject **out) {
   long long a, b, res;
   if (! kos_as_ll2(l, r, &a, &b))
     return 0;
@@ -183,7 +183,7 @@ static inline int long_fast_add(PyObject *l, PyObject *r, PyObject **out) {
 }
 
 
-static inline int long_fast_subtract(PyObject *l, PyObject *r, PyObject **out) {
+KOS_OP_INLINE int long_fast_subtract(PyObject *l, PyObject *r, PyObject **out) {
   long long a, b, res;
   if (! kos_as_ll2(l, r, &a, &b))
     return 0;
@@ -194,7 +194,7 @@ static inline int long_fast_subtract(PyObject *l, PyObject *r, PyObject **out) {
 }
 
 
-static inline int long_fast_multiply(PyObject *l, PyObject *r, PyObject **out) {
+KOS_OP_INLINE int long_fast_multiply(PyObject *l, PyObject *r, PyObject **out) {
   long long a, b, res;
   if (! kos_as_ll2(l, r, &a, &b))
     return 0;
@@ -205,7 +205,7 @@ static inline int long_fast_multiply(PyObject *l, PyObject *r, PyObject **out) {
 }
 
 
-static inline int long_fast_modulo(PyObject *l, PyObject *r, PyObject **out) {
+KOS_OP_INLINE int long_fast_modulo(PyObject *l, PyObject *r, PyObject **out) {
   long long a, b;
   if (! kos_as_ll2(l, r, &a, &b))
     return 0;
@@ -216,7 +216,7 @@ static inline int long_fast_modulo(PyObject *l, PyObject *r, PyObject **out) {
 }
 
 
-static inline int long_fast_bit_and(PyObject *l, PyObject *r, PyObject **out) {
+KOS_OP_INLINE int long_fast_bit_and(PyObject *l, PyObject *r, PyObject **out) {
   long long a, b;
   if (! kos_as_ll2(l, r, &a, &b))
     return 0;
@@ -225,7 +225,7 @@ static inline int long_fast_bit_and(PyObject *l, PyObject *r, PyObject **out) {
 }
 
 
-static inline int long_fast_bit_or(PyObject *l, PyObject *r, PyObject **out) {
+KOS_OP_INLINE int long_fast_bit_or(PyObject *l, PyObject *r, PyObject **out) {
   long long a, b;
   if (! kos_as_ll2(l, r, &a, &b))
     return 0;
@@ -234,7 +234,7 @@ static inline int long_fast_bit_or(PyObject *l, PyObject *r, PyObject **out) {
 }
 
 
-static inline int long_fast_bit_xor(PyObject *l, PyObject *r, PyObject **out) {
+KOS_OP_INLINE int long_fast_bit_xor(PyObject *l, PyObject *r, PyObject **out) {
   long long a, b;
   if (! kos_as_ll2(l, r, &a, &b))
     return 0;
@@ -243,7 +243,7 @@ static inline int long_fast_bit_xor(PyObject *l, PyObject *r, PyObject **out) {
 }
 
 
-static inline int long_fast_bit_left(PyObject *l, PyObject *r, PyObject **out) {
+KOS_OP_INLINE int long_fast_bit_left(PyObject *l, PyObject *r, PyObject **out) {
   long long a, b;
   if (! kos_as_ll2(l, r, &a, &b))
     return 0;
@@ -256,7 +256,7 @@ static inline int long_fast_bit_left(PyObject *l, PyObject *r, PyObject **out) {
 }
 
 
-static inline int long_fast_bit_right(PyObject *l, PyObject *r, PyObject **out) {
+KOS_OP_INLINE int long_fast_bit_right(PyObject *l, PyObject *r, PyObject **out) {
   long long a, b;
   if (! kos_as_ll2(l, r, &a, &b))
     return 0;

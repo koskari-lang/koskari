@@ -18,18 +18,17 @@
    count in the low byte). Reduce the count operands from the stack
    left-to-right through the operator's PyNumber_InPlace* protocol and push the
    result. The stack in-place op used by the inplace-item / inplace-attr
-   special forms. Cold: the op-type switch lives in the shared
-   kos_object_inplace, out of the inlined dispatch loop.
+   special forms. Prologue only: tail-call the body the site's slot
+   elected (eval/eval_electors.c); an empty slot or an ungated site takes
+   the electing function. One cache slot: KOS_CACHE_ELECTOR.
 */
 
-KOS_OP_HANDLER_COLD(OBJECT_INPLACE) {
-  uint16_t arg = KosOp_ARG(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
-  int count = (int) KosOpCount_COUNT(arg);
+KOS_OP_HANDLER(OBJECT_INPLACE) {
+  KosCacheSlot *slot = KosOp_SLOT(insn);
 
-  if (unlikely(kos_object_inplace(es, op, count) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_inplace_elect, es, insn, NULL);
 }
 
 
