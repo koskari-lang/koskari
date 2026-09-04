@@ -21,7 +21,7 @@ static void kos_dynyieldfrom_strings_clear(void) {
 
 
 /**
-   YIELD_FROM node: delegate iterator, phase state for close/send. Callers:
+   YIELD_FROM node: delegate iterator, pending action for close/send. Callers:
    kos_dyn_push_yield_from.
 */
 KosDynYieldFrom *kos_dynyieldfrom_new(
@@ -46,7 +46,6 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_DELEGATE(node) = delegate;
   KosDynYieldFrom_KIND(node) = kind;
   KosDynYieldFrom_PENDING_ACTION(node) = 0;
-  KosDynYieldFrom_PHASE_SET(node, KOS_YF_PHASE_DRIVING);
   KosDynYieldFrom_PENDING_ARG(node) = NULL;
   KosDynYieldFrom_PENDING_ARG_TYPE(node) = NULL;
   KosDynYieldFrom_INFLIGHT(node) = NULL;
@@ -54,6 +53,7 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_REQ(node)->mode = KOS_IREQ_IDLE;
   KosDynYieldFrom_DRIVE(node) = NULL;
   KosDynYieldFrom_RESUME(node) = NULL;
+  KosDynYieldFrom_RESUME_EMIT(node) = NULL;
   return node;
 }
 
@@ -81,9 +81,6 @@ static int dynnode_to_dict_yield_from(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_uint(data, "pending_action",
       KosDynYieldFrom_PENDING_ACTION((KosDynYieldFrom *) node)) < 0)
-    return -1;
-  if (snapshot_set_uint(data, "phase",
-      KosDynYieldFrom_PHASE((KosDynYieldFrom *) node)) < 0)
     return -1;
   if (snapshot_set_obj(data, "delegate",
       KosDynYieldFrom_DELEGATE((KosDynYieldFrom *) node)) < 0)
@@ -121,7 +118,6 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 
   KosDynYieldFrom_KIND(clone) = KosDynYieldFrom_KIND(node);
   KosDynYieldFrom_PENDING_ACTION(clone) = KosDynYieldFrom_PENDING_ACTION(node);
-  KosDynYieldFrom_PHASE_SET(clone, KosDynYieldFrom_PHASE(node));
   KosDynYieldFrom_PENDING_ARG(clone) = KosDynYieldFrom_PENDING_ARG(node);
   KosDynYieldFrom_PENDING_ARG_TYPE(clone) = KosDynYieldFrom_PENDING_ARG_TYPE(node);
 
@@ -138,6 +134,7 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
   Py_XINCREF(KosDynYieldFrom_REQ(clone)->iter);
   KosDynYieldFrom_DRIVE(clone) = KosDynYieldFrom_DRIVE(node);
   KosDynYieldFrom_RESUME(clone) = KosDynYieldFrom_RESUME(node);
+  KosDynYieldFrom_RESUME_EMIT(clone) = KosDynYieldFrom_RESUME_EMIT(node);
 
   return clone;
 }
@@ -145,9 +142,9 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 
 /**
    Flattened koskari async gen delegate yielded a value at the iterator
-   iteration node.  Stage the value for the delegating frame's phase
-   resume and stop: the prologue's delivery step runs the resume in EMIT
-   phase, which re-emits the value as this generator's own yield, and
+   iteration node.  Stage the value for the delegating frame and arm
+   the node's emit resume: the prologue's delivery step runs it, and it
+   re-emits the value as this generator's own yield, and
    the normal yield walk freezes this generator's GEN node and delivers
    onward to the next receiver.  Each hop is one walk plus one delivery,
    so nested for-each / yield-from / generator stacks compose to
@@ -179,9 +176,9 @@ int kos_dyn_yield_from_deliver_inner_yield(
       islots->ki_finish(delegate, 0);
   }
   kos_dyn_iter_request_set_mode((KosDynNode *) yf, KOS_IREQ_IDLE);
-  KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EMIT);
   KosEvalState_PENDING_VALUE(es) = inner_val;
-  KosDynFrame_RESUME_FN(frame) = KosDynYieldFrom_RESUME(yf);
+  KosDynYieldFrom_RESUME(yf) = KosDynYieldFrom_RESUME_EMIT(yf);
+  KosDynFrame_RESUME_FN(frame) = KosDynYieldFrom_RESUME_EMIT(yf);
   KosDynFrame_RESUME_STATE(frame) = NULL;
   KosDynFrame_RESUME_NAME(frame) = "yield-from";
   return 0;
