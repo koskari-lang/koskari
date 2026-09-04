@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(BUILD_KWDS_NAMES) {
-  PyObject *names = KosEvalState_CONST(es, KosOp_ARG(insn));
+  PyObject *names = KosOp_OBJ(insn);
 
   if (! names)
     RESULT_RAISE();

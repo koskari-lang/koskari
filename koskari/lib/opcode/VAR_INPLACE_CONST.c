@@ -23,14 +23,13 @@
 */
 
 KOS_OP_HANDLER_COLD(VAR_INPLACE_CONST) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *name = KosEvalState_CONST(es, row.a1);
+  PyObject *name = KosExtra_OBJ(row, 1);
   if (unlikely(! name))
     RESULT_RAISE();
 
-  PyObject *operand = KosEvalState_CONST(es, row.a2);   /* borrowed */
+  PyObject *operand = KosExtra_OBJ(row, 2);   /* borrowed */
   if (unlikely(! operand))
     RESULT_RAISE();
 
@@ -39,7 +38,7 @@ KOS_OP_HANDLER_COLD(VAR_INPLACE_CONST) {
     RESULT_RAISE();
 
   PyObject *pair[2] = { obj, operand };
-  PyObject *result = kos_inplace_reduce((KosOperand) row.a0, pair, 2);
+  PyObject *result = kos_inplace_reduce((KosOperand) KosExtra_IMM(row, 0), pair, 2);
   Py_DECREF(obj);
   if (unlikely(! result))
     RESULT_RAISE();

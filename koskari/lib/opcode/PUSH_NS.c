@@ -23,8 +23,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_NS) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  uint16_t eidx = (uint16_t) KosOp_ARG(insn);
+  const KosExtra *row = KosOp_ROW(insn);
   PyObject *nspec = NULL;
   PyObject *names = NULL;
   PyObject *const *args = NULL;
@@ -32,29 +31,9 @@ KOS_OP_HANDLER(PUSH_NS) {
   PyObject *new_ns = NULL;
   int opa = 0;
 
-  if (unlikely(eidx >= KosCode_EXTRA_LEN(code))) {
-    PyErr_Format(PyExc_IndexError, "PUSH_NS extra index out of bounds: %u",
-                 (unsigned) eidx);
-    RESULT_RAISE();
-  }
-
-  {
-    KosExtra row = KosCode_GetExtra(code, eidx);
-    uint32_t i0 = row.a0;
-    uint32_t i1 = row.a1;
-
-    nspec = KosEvalState_CONST(es, i0);
-    if (unlikely(! nspec)) {
-      RESULT_RAISE();
-    }
-    Py_INCREF(nspec);
-
-    names = KosEvalState_CONST(es, i1);
-    if (unlikely(! names)) {
-      Py_DECREF(nspec);
-      RESULT_RAISE();
-    }
-  }
+  nspec = KosExtra_OBJ(row, 0);
+  Py_INCREF(nspec);
+  names = KosExtra_OBJ(row, 1);
 
   if (unlikely(! KosNamespaceSpec_CheckExact(nspec))) {
     PyErr_Format(PyExc_RuntimeError,

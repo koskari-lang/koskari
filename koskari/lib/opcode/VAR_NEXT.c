@@ -22,15 +22,14 @@
   StopIteration, auto-await.
 */
 KOS_OP_HANDLER_COLD(VAR_NEXT) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint16_t n = (uint16_t) row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  uint16_t n = (uint16_t) KosExtra_IMM(row, 1);
   if (unlikely(n != 1 && n != 2)) {
     PyErr_Format(PyExc_ValueError, "VAR_NEXT arg must be 1 or 2, got %u", n);
     RESULT_RAISE();
   }
 
-  PyObject *var_name = KosEvalState_CONST(es, row.a0);
+  PyObject *var_name = KosExtra_OBJ(row, 0);
   if (unlikely(! var_name))
     RESULT_RAISE();
 

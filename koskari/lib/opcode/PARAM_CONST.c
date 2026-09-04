@@ -22,10 +22,9 @@
   the stack. Creates nothing in either store.
 */
 KOS_OP_HANDLER(PARAM_CONST) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *name = KosEvalState_CONST(es, row.a0);
+  PyObject *name = KosExtra_OBJ(row, 0);
   if (unlikely(! name))
     RESULT_RAISE();
 
@@ -33,7 +32,7 @@ KOS_OP_HANDLER(PARAM_CONST) {
   PyObject *value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
 
   if (! value) {
-    value = KosEvalState_CONST(es, row.a1);
+    value = KosExtra_OBJ(row, 1);
     if (unlikely(! value))
       RESULT_RAISE();
   }

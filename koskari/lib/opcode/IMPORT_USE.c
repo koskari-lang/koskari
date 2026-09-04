@@ -57,18 +57,17 @@ static int kos_use_stem_is_literal(const char *stem) {
 
 
 KOS_OP_HANDLER_COLD(IMPORT_USE) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *name = KosEvalState_CONST(es, row.a0);
+  PyObject *name = KosExtra_OBJ(row, 0);
   if (! name)
     RESULT_RAISE();
 
-  PyObject *stems = KosEvalState_CONST(es, row.a2);
+  PyObject *stems = KosExtra_OBJ(row, 2);
   if (! stems)
     RESULT_RAISE();
 
-  PyObject *binds = KosEvalState_CONST(es, row.a3);
+  PyObject *binds = KosExtra_OBJ(row, 3);
   if (! binds)
     RESULT_RAISE();
 
@@ -79,7 +78,7 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
     RESULT_RAISE();
   }
 
-  PyObject *mod = kos_import_module(es, name, (long) row.a1, 1);
+  PyObject *mod = kos_import_module(es, name, (long) KosExtra_IMM(row, 1), 1);
   if (! mod)
     RESULT_RAISE();
 

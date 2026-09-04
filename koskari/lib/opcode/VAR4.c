@@ -22,23 +22,22 @@
   holds, the failed value included by the push itself.
 */
 KOS_OP_HANDLER_COLD(VAR4) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
   PyObject *name;
 
-  name = KosEvalState_CONST(es, row.a0);
+  name = KosExtra_OBJ(row, 0);
   PyObject *a = name ? frame_ns_deref(es, name) : NULL;
   if (unlikely(! a))
     RESULT_RAISE();
 
-  name = KosEvalState_CONST(es, row.a1);
+  name = KosExtra_OBJ(row, 1);
   PyObject *b = name ? frame_ns_deref(es, name) : NULL;
   if (unlikely(! b)) {
     Py_DECREF(a);
     RESULT_RAISE();
   }
 
-  name = KosEvalState_CONST(es, row.a2);
+  name = KosExtra_OBJ(row, 2);
   PyObject *c = name ? frame_ns_deref(es, name) : NULL;
   if (unlikely(! c)) {
     Py_DECREF(a);
@@ -46,7 +45,7 @@ KOS_OP_HANDLER_COLD(VAR4) {
     RESULT_RAISE();
   }
 
-  name = KosEvalState_CONST(es, row.a3);
+  name = KosExtra_OBJ(row, 3);
   PyObject *d = name ? frame_ns_deref(es, name) : NULL;
   if (unlikely(! d)) {
     Py_DECREF(a);

@@ -21,17 +21,16 @@
    Resolve obj.name, then call like CALL_NAMES.
 */
 KOS_OP_HANDLER_COLD(CALL_ATTR_NAMES) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t attr_cpool_idx = row.a0;
-  uint32_t names_cpool_idx = row.a1;
-  unsigned opa = row.a2;
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *attr_obj = KosExtra_OBJ(row, 0);
+  PyObject *names_obj = KosExtra_OBJ(row, 1);
+  unsigned opa = KosExtra_IMM(row, 2);
 
-  PyObject *name = KosEvalState_CONST(es, attr_cpool_idx);
+  PyObject *name = attr_obj;
   if (! name)
     RESULT_RAISE();
 
-  PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
+  PyObject *names = names_obj;
   if (! names)
     RESULT_RAISE();
 
@@ -53,9 +52,7 @@ KOS_OP_HANDLER_COLD(CALL_ATTR_NAMES) {
   PyObject *obj = ptr[0];
 
   PyObject *resolved;
-  uint16_t cache_ix = KosOp_CACHE(insn);
-  KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
-      ? NULL : &KosCode_CACHE(code)[cache_ix];
+  KosCacheSlot *cache = KosOp_SLOT(insn);
   int send_self = kos_resolve_named_attr(obj, name, cache, &resolved);
   if (send_self < 0)
     RESULT_RAISE();

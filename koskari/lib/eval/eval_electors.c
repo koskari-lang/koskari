@@ -53,16 +53,6 @@
 
 
 /**
-   The per-site cache slot of insn on code, or NULL when the site got no
-   slot (caching gated off for the code object).
-*/
-static inline KosCacheSlot *kos_op_cache_slot(KosCode *code, void *insn) {
-  uint16_t ix = KosOp_CACHE(insn);
-  return (ix == KOS_CACHE_UNSET) ? NULL : &KosCode_CACHE(code)[ix];
-}
-
-
-/**
    The hot-path guard: the slot holds an elector for exactly tp. A
    demoted slot has a NULL guard type and never matches.
 */
@@ -163,9 +153,8 @@ static void kos_elector_settle(
    stack tail, and kos_call_invoke owns the window drop.
 */
 KOS_ELECTOR(call_fast_generic) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  unsigned n = row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  unsigned n = KosExtra_IMM(row, 1);
   PyObject *const *argv = NULL;
 
   if (n) {
@@ -192,9 +181,8 @@ KOS_ELECTOR(call_fast_generic) {
 */
 KOS_ELECTOR(call_fast_kosfunction_simple) {
   PyObject *callable = value;
-  KosExtra row = KosCode_GetExtra(KosEvalState_CurrentCode(es),
-                                  KosOp_ARG(insn));
-  Py_ssize_t nargs = (Py_ssize_t) row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  Py_ssize_t nargs = (Py_ssize_t) KosExtra_IMM(row, 1);
   KosCode *code = (KosCode *) KosFunction_CODE(callable);
   KosSegment **caller_slot = KosEvalState_BLOCK(es);
   KosDynFrame *frame;
@@ -265,7 +253,7 @@ static inline KosThreadFn call_fast_classify(PyTypeObject *tp) {
    no slot: classify the owned callable, settle the slot, and dispatch.
 */
 KOS_ELECTOR(call_fast_elect) {
-  KosCacheSlot *slot = kos_op_cache_slot(KosEvalState_CurrentCode(es), insn);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
   PyTypeObject *tp = Py_TYPE(value);
   KosThreadFn fn = call_fast_classify(tp);
 

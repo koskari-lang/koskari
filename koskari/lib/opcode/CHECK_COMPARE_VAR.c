@@ -22,25 +22,24 @@
 */
 
 KOS_OP_HANDLER_COLD(CHECK_COMPARE_VAR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint16_t src = row.a0;
+  const KosExtra *row = KosOp_ROW(insn);
+  uint16_t src = KosExtra_IMM(row, 0);
 
   PyObject *ops[2];
 
   if (KosCmpSrc_X_CONST(src)) {
-    ops[0] = KosEvalState_CONST(es, row.a1);   /* borrowed */
+    ops[0] = KosExtra_OBJ(row, 1);   /* borrowed */
   } else {
-    PyObject *name = KosEvalState_CONST(es, row.a1);
+    PyObject *name = KosExtra_OBJ(row, 1);
     ops[0] = name ? frame_ns_deref(es, name) : NULL;
     if (! ops[0])
       RESULT_RAISE();
   }
 
   if (KosCmpSrc_Y_CONST(src)) {
-    ops[1] = KosEvalState_CONST(es, row.a2);   /* borrowed */
+    ops[1] = KosExtra_OBJ(row, 2);   /* borrowed */
   } else {
-    PyObject *name = KosEvalState_CONST(es, row.a2);
+    PyObject *name = KosExtra_OBJ(row, 2);
     ops[1] = name ? frame_ns_deref(es, name) : NULL;
     if (! ops[1]) {
       if (! KosCmpSrc_X_CONST(src))
@@ -60,7 +59,7 @@ KOS_OP_HANDLER_COLD(CHECK_COMPARE_VAR) {
     RESULT_RAISE();
 
   if (res == 0)
-    KosEvalState_SET_PC(es, row.a3);
+    KosEvalState_SET_PC(es, KosExtra_IMM(row, 3));
 
   RESULT_NEXT(es);
 }

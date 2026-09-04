@@ -23,17 +23,16 @@
   and settles the slot. One cache slot: KOS_CACHE_ELECTOR.
 */
 KOS_OP_HANDLER(CALL_FAST) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 
-  PyObject *callable = kos_ns_fast_deref(ns, (size_t) row.a0);
+  PyObject *callable = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
   if (unlikely(! callable))
     RESULT_RAISE();
 
-  KosCacheSlot *slot = kos_op_cache_slot(code, insn);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
   if (likely(kos_elector_guard(slot, Py_TYPE(callable)))) {
     KOS_ELECTOR_SAFETYNET(slot, call_fast_classify(Py_TYPE(callable)),
                           callable);

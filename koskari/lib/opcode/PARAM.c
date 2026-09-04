@@ -23,10 +23,9 @@
   Creates nothing in either store.
 */
 KOS_OP_HANDLER(PARAM) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *name = KosEvalState_CONST(es, row.a0);
+  PyObject *name = KosExtra_OBJ(row, 0);
   if (unlikely(! name))
     RESULT_RAISE();
 
@@ -35,14 +34,14 @@ KOS_OP_HANDLER(PARAM) {
 
   if (value) {
     Py_INCREF(value);
-    if (row.a1 && unlikely(KosEvalState_StackDrop1(es) < 0)) {
+    if (KosExtra_IMM(row, 1) && unlikely(KosEvalState_StackDrop1(es) < 0)) {
       Py_DECREF(value);
       RESULT_RAISE();
     }
     RESULT_STEAL(es, value);
   }
 
-  if (likely(row.a1)) {
+  if (likely(KosExtra_IMM(row, 1))) {
     // the stacked default is already in result position
     RESULT_NEXT(es);
 

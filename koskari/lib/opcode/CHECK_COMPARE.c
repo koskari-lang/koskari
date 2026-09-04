@@ -20,9 +20,8 @@
 */
 
 KOS_OP_HANDLER(CHECK_COMPARE) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  size_t count = (size_t) row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  size_t count = (size_t) KosExtra_IMM(row, 1);
 
   if (unlikely(count < 2)) {
     PyErr_SetString(PyExc_TypeError,
@@ -34,14 +33,14 @@ KOS_OP_HANDLER(CHECK_COMPARE) {
   if (unlikely(! args))
     RESULT_RAISE();
 
-  int res = kos_compare_chain((KosCompare) row.a0, args, count);
+  int res = kos_compare_chain((KosCompare) KosExtra_IMM(row, 0), args, count);
   KosEvalState_StackDropNoErr(es, count);
 
   if (unlikely(res < 0))
     RESULT_RAISE();
 
   if (res == 0)
-    KosEvalState_SET_PC(es, row.a2);
+    KosEvalState_SET_PC(es, KosExtra_IMM(row, 2));
 
   RESULT_NEXT(es);
 }

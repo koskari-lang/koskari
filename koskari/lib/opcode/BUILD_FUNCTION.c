@@ -28,14 +28,13 @@
   push the result.
 */
 KOS_OP_HANDLER_COLD(BUILD_FUNCTION) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *defnames = KosEvalState_CONST(es, row.a0);
+  PyObject *defnames = KosExtra_OBJ(row, 0);
   if (unlikely(! defnames))
     RESULT_RAISE();
 
-  PyObject *annnames = KosEvalState_CONST(es, row.a1);
+  PyObject *annnames = KosExtra_OBJ(row, 1);
   if (unlikely(! annnames))
     RESULT_RAISE();
 

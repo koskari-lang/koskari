@@ -21,15 +21,9 @@
 */
 
 KOS_OP_HANDLER(PUSH_COLLECT) {
-  uint32_t cidx = KosOp_ARG(insn);
-  PyObject *nspec = NULL;
+  PyObject *nspec = KosOp_OBJ(insn);
   PyObject *parent = CURRENT_NS();
   PyObject *new_ns = NULL;
-
-  nspec = KosEvalState_CONST(es, cidx);
-  if (! nspec) {
-    RESULT_RAISE();
-  }
 
   if (! KosNamespaceSpec_CheckExact(nspec)) {
     PyErr_Format(PyExc_RuntimeError,

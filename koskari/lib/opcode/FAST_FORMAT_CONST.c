@@ -20,16 +20,15 @@
   PyObject_Format(obj, rules) where obj is the fast local's value.
 */
 KOS_OP_HANDLER(FAST_FORMAT_CONST) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 
-  PyObject *rules = KosEvalState_CONST(es, row.a1);
+  PyObject *rules = KosExtra_OBJ(row, 1);
   if (unlikely(! rules))
     RESULT_RAISE();
 
-  size_t idx = (size_t) row.a0;
+  size_t idx = (size_t) KosExtra_IMM(row, 0);
   PyObject *val = kos_ns_fast_deref(ns, idx);
   if (unlikely(! val))
     RESULT_RAISE();

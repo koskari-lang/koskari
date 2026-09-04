@@ -22,11 +22,10 @@ KOS_OP_HANDLER(FAST_STORE_CONST) {
 
     PyObject *ns = CURRENT_NS();
     KOS_OP_REQUIRE_NS(ns);
-    KosCode *code = KosEvalState_CurrentCode(es);
-    KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+      const KosExtra *row = KosOp_ROW(insn);
 
-    size_t idx = (size_t) row.a0;
-    PyObject *val = KosEvalState_CONST(es, row.a1);
+    size_t idx = (size_t) KosExtra_IMM(row, 0);
+    PyObject *val = KosExtra_OBJ(row, 1);
 
     if (unlikely(! val))
       RESULT_RAISE();

@@ -1063,7 +1063,7 @@ static int get_prompt_id_from_insn(
     KosOp *insn,
     uint32_t *out_prompt_id) {
 
-  PyObject *cid = KosEvalState_CONST(es, KosOp_ARG(insn));
+  PyObject *cid = KosOp_OBJ(insn);
   if (! cid)
     return -1;
 
@@ -1480,7 +1480,8 @@ int KosContext_Traverse(
    Get the name constant for a VAR_* opcode. Borrowed reference.
 */
 static PyObject *get_name_from_insn(KosEvalState *es, KosOp *insn) {
-  return KosEvalState_CONST(es, KosOp_ARG(insn));
+  (void) es;
+  return KosOp_OBJ(insn);
 }
 
 

@@ -22,22 +22,21 @@
   failed value included by the push itself.
 */
 KOS_OP_HANDLER(FAST3) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 
-  PyObject *a = kos_ns_fast_deref(ns, (size_t) row.a0);
+  PyObject *a = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
   if (unlikely(! a))
     RESULT_RAISE();
 
-  PyObject *b = kos_ns_fast_deref(ns, (size_t) row.a1);
+  PyObject *b = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 1));
   if (unlikely(! b)) {
     Py_DECREF(a);
     RESULT_RAISE();
   }
 
-  PyObject *c = kos_ns_fast_deref(ns, (size_t) row.a2);
+  PyObject *c = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 2));
   if (unlikely(! c)) {
     Py_DECREF(a);
     Py_DECREF(b);

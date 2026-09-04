@@ -39,12 +39,11 @@ static int ensure_tuple_var_star(PyObject **val) {
 
 
 KOS_OP_HANDLER_COLD(CALL_VAR_STAR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t name_cpool_idx = row.a0;
-  unsigned opa = row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *name_obj = KosExtra_OBJ(row, 0);
+  unsigned opa = KosExtra_IMM(row, 1);
 
-  PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
+  PyObject *name = name_obj;
   if (! name)
     RESULT_RAISE();
 

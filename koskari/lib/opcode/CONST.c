@@ -21,7 +21,7 @@
   Pool trust follows KosEvalState_CONST / KOS_EVAL_SAFETYNET.
 */
 KOS_OP_HANDLER(CONST) {
-  PyObject *val = KosEvalState_CONST(es, KosOp_ARG(insn));
+  PyObject *val = KosOp_OBJ(insn);
   if (unlikely(! val))
     RESULT_RAISE();
 

@@ -23,16 +23,15 @@
 */
 
 KOS_OP_HANDLER(SWITCH_EQ_FAST_ATTR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
-  PyObject *attr_name = KosEvalState_CONST(es, row.a2);
+  PyObject *attr_name = KosExtra_OBJ(row, 2);
   if (unlikely(! attr_name))
     RESULT_RAISE();
 
-  PyObject *obj = kos_ns_fast_deref(ns, (size_t) row.a1);
+  PyObject *obj = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 1));
   if (unlikely(! obj))
     RESULT_RAISE();
 
@@ -54,7 +53,7 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST_ATTR) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
-    KosEvalState_SET_PC(es, row.a0);
+    KosEvalState_SET_PC(es, KosExtra_IMM(row, 0));
   }
 
   RESULT_NEXT(es);

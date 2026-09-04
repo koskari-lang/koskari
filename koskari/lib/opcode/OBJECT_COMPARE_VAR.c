@@ -21,19 +21,18 @@
 */
 
 KOS_OP_HANDLER_COLD(OBJECT_COMPARE_VAR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *ops[3];
-  ops[0] = KosEvalState_CONST(es, row.a1);   /* borrowed */
-  ops[2] = KosEvalState_CONST(es, row.a3);   /* borrowed */
+  ops[0] = KosExtra_OBJ(row, 1);   /* borrowed */
+  ops[2] = KosExtra_OBJ(row, 3);   /* borrowed */
 
-  PyObject *name = KosEvalState_CONST(es, row.a2);
+  PyObject *name = KosExtra_OBJ(row, 2);
   ops[1] = name ? frame_ns_deref(es, name) : NULL;
   if (! ops[1])
     RESULT_RAISE();
 
-  PyObject *result = kos_compare_reduce((KosCompare) row.a0, ops, 3);
+  PyObject *result = kos_compare_reduce((KosCompare) KosExtra_IMM(row, 0), ops, 3);
   Py_DECREF(ops[1]);
 
   if (unlikely(! result))

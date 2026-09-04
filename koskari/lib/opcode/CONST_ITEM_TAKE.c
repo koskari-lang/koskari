@@ -18,7 +18,7 @@
   CONST_ITEM_TAKE: arg = constant index (key). getitem then del TOS[key].
 */
 KOS_OP_HANDLER(CONST_ITEM_TAKE) {
-  PyObject *key = KosEvalState_CONST(es, KosOp_ARG(insn));
+  PyObject *key = KosOp_OBJ(insn);
 
   if (unlikely(! key))
     RESULT_RAISE();

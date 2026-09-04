@@ -21,13 +21,12 @@
    Tail call: do not push a new frame; remove or recycle the current one.
 */
 KOS_OP_HANDLER_COLD(TAIL_CALL_ATTR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t attr_cpool_idx = row.a0;
-  unsigned n = row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *attr_obj = KosExtra_OBJ(row, 0);
+  unsigned n = KosExtra_IMM(row, 1);
   unsigned count = n + 1;
 
-  PyObject *name = KosEvalState_CONST(es, attr_cpool_idx);
+  PyObject *name = attr_obj;
   if (! name)
     RESULT_RAISE();
 
@@ -38,9 +37,7 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_ATTR) {
   PyObject *obj = ptr[0];
 
   PyObject *resolved;
-  uint16_t cache_ix = KosOp_CACHE(insn);
-  KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
-      ? NULL : &KosCode_CACHE(code)[cache_ix];
+  KosCacheSlot *cache = KosOp_SLOT(insn);
   int send_self = kos_resolve_named_attr(obj, name, cache, &resolved);
   if (send_self < 0)
     RESULT_RAISE();

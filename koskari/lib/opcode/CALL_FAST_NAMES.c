@@ -22,11 +22,10 @@
 */
 
 KOS_OP_HANDLER_COLD(CALL_FAST_NAMES) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t slot_idx = row.a0;
-  uint32_t names_cpool_idx = row.a1;
-  Py_ssize_t npos = (Py_ssize_t) row.a2;
+  const KosExtra *row = KosOp_ROW(insn);
+  uint32_t slot_idx = KosExtra_IMM(row, 0);
+  PyObject *names_obj = KosExtra_OBJ(row, 1);
+  Py_ssize_t npos = (Py_ssize_t) KosExtra_IMM(row, 2);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -34,7 +33,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_NAMES) {
   if (! callable)
     RESULT_RAISE();
 
-  PyObject *names = KosEvalState_CONST(es, names_cpool_idx);
+  PyObject *names = names_obj;
   if (! names) {
     Py_DECREF(callable);
     RESULT_RAISE();

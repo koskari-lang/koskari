@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_PARAM) {
-  PyObject *names = KosEvalState_CONST(es, KosOp_ARG(insn));
+  PyObject *names = KosOp_OBJ(insn);
   if (! names) {
     RESULT_RAISE();
   }

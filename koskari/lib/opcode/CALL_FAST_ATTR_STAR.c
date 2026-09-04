@@ -40,13 +40,12 @@ static int ensure_tuple_fast_attr_star(PyObject **val) {
 
 
 KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t slot_idx = row.a0;
-  uint32_t attr_cpool_idx = row.a1;
-  unsigned opa = row.a2;
+  const KosExtra *row = KosOp_ROW(insn);
+  uint32_t slot_idx = KosExtra_IMM(row, 0);
+  PyObject *attr_obj = KosExtra_OBJ(row, 1);
+  unsigned opa = KosExtra_IMM(row, 2);
 
-  PyObject *attr_name = KosEvalState_CONST(es, attr_cpool_idx);
+  PyObject *attr_name = attr_obj;
   if (! attr_name)
     RESULT_RAISE();
 
@@ -111,9 +110,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
   }
 
   PyObject *resolved;
-  uint16_t cache_ix = KosOp_CACHE(insn);
-  KosCacheSlot *cache = (cache_ix == KOS_CACHE_UNSET)
-      ? NULL : &KosCode_CACHE(code)[cache_ix];
+  KosCacheSlot *cache = KosOp_SLOT(insn);
   int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
   if (send_self < 0) {
     Py_DECREF(obj);

@@ -30,18 +30,17 @@
   "(import [foo.bar as: fbar])" member form).
 */
 KOS_OP_HANDLER(IMPORT) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *name = KosEvalState_CONST(es, row.a0);
+  PyObject *name = KosExtra_OBJ(row, 0);
   if (unlikely(! name))
     RESULT_RAISE();
 
-  PyObject *bind = KosEvalState_CONST(es, row.a3);
+  PyObject *bind = KosExtra_OBJ(row, 3);
   if (unlikely(! bind))
     RESULT_RAISE();
 
-  PyObject *mod = kos_import_module(es, name, (long) row.a1, row.a2);
+  PyObject *mod = kos_import_module(es, name, (long) KosExtra_IMM(row, 1), KosExtra_IMM(row, 2));
   if (unlikely(! mod))
     RESULT_RAISE();
 

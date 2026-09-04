@@ -195,16 +195,40 @@ typedef struct KosExtraSchema {
 } KosExtraSchema;
 
 
+/* Forward names: a row field may point at an instruction, an
+   instruction at a cache slot. Both structs are defined below. */
+typedef struct KosOp KosOp;
+typedef struct KosCacheSlot KosCacheSlot;
+
+
 /**
-   Extended operand row. For EXTRA opcodes, arg is an index into
-   KosExtra[]. Interpretation of a0..a3 is opcode-specific.
+   One resolved field of an extended operand row, 8 bytes, read through
+   the member the opcode's schema names: ``imm`` for COUNT, FASTVAR,
+   OPCOUNT, CMP, CMPSRC, STAR, OPERAND, and the target pc of a LABEL
+   field; ``obj`` for CONST and VAR, the pool object, borrowed (the
+   cpool keeps it alive for the life of the code). Resolved at finalize
+   and on every load, never serialized: soften recovers a constant's
+   index by identity against the pool.
+   See design/interpreter/resolved-operands.md.
+*/
+typedef union KosExtraField {
+  uint32_t imm;
+  PyObject *obj;
+} KosExtraField;
+
+
+/**
+   Extended operand row, 32 bytes, one per EXTRA instruction and never
+   shared between sites. The instruction reaches it through KosOp_ROW;
+   ``arg`` keeps the row's index for soften and introspection.
 */
 typedef struct KosExtra {
-  uint16_t a0;
-  uint16_t a1;
-  uint16_t a2;
-  uint16_t a3;
+  KosExtraField f[4];
 } KosExtra;
+
+
+#define KosExtra_IMM(row, i)  ((row)->f[i].imm)
+#define KosExtra_OBJ(row, i)  ((row)->f[i].obj)
 
 
 /* === Opcode enum === */
@@ -267,28 +291,52 @@ typedef KosOpResult (KOS_PRESERVE_NONE *KosThreadFn)(
 
 
 /**
-   A single bytecode instruction: the handler that executes it beside
-   its decoded fields, 16 bytes on LP64 (two of them padding). Opcode, argument, and
-   per-site cache index are 16-bit unsigned integers. ``cache`` is the
-   index of this site's reserved cache slot on the owning KosCode, or
-   KOS_CACHE_UNSET when the site has no slot. ``fn`` is
-   kos_op_handlers[op], resolved once in the block's writable window
-   before the seal. Both are assigned at assembly, regenerated on
-   every load, and never serialized; soften emits only (op, arg).
+   A single bytecode instruction, 32 bytes on LP64 and two to a cache
+   line. The serialized half is ``op``, ``arg``, and ``cache``: what
+   soften emits and .kio stores. ``arg`` is an index or immediate by
+   style (the target pc for LABEL), ``cache`` the index of the site's
+   cache slot run on the owning KosCode, or KOS_CACHE_UNSET. ``pc`` is
+   the record's own index, so any pointer to an instruction names its
+   pc without the code base; jump targets are 16-bit, so a code object
+   holds at most UINT16_MAX instructions and finalize enforces it. The
+   derived half is resolved at finalize and on every load, never
+   serialized, and re-derived when pack relocates the block: ``fn`` is kos_op_handlers[op]; ``u`` is the operand ``arg``
+   names, read through the member the style selects (``obj`` for CONST
+   and VAR, ``target`` for LABEL, ``row`` for EXTRA); ``slot`` is the
+   cache slot ``cache`` names, or NULL. ``obj`` and ``slot`` point out of
+   the block and are stable; ``target`` and ``row`` point into it.
    A handler receives a pointer to its own instruction as its arg.
+   See design/interpreter/resolved-operands.md.
 */
-typedef struct KosOp {
-  KosThreadFn fn;   /* kos_op_handlers[op] */
-  uint16_t op;      /* KosOpCode */
-  uint16_t arg;     /* argument value */
-  uint16_t cache;   /* per-site cache slot index, or KOS_CACHE_UNSET */
-} KosOp;
+struct KosOp {
+  KosThreadFn fn;      /* kos_op_handlers[op] */
+  uint16_t op;         /* KosOpCode */
+  uint16_t arg;        /* argument value: index or immediate, by style */
+  uint16_t cache;      /* per-site cache slot index, or KOS_CACHE_UNSET */
+  uint16_t pc;         /* this record's own index */
+  union {
+    PyObject *obj;     /* CONST, VAR: the pool object, borrowed */
+    KosOp *target;     /* LABEL: the target instruction */
+    KosExtra *row;     /* EXTRA: the operand row */
+  } u;
+  KosCacheSlot *slot;  /* the site's cache slot, or NULL */
+};
 
 
-#define KosOp_FN(insn)    (((KosOp *) (insn))->fn)
-#define KosOp_OP(insn)    (((KosOp *) (insn))->op)
-#define KosOp_ARG(insn)   (((KosOp *) (insn))->arg)
-#define KosOp_CACHE(insn) (((KosOp *) (insn))->cache)
+#define KosOp_FN(insn)     (((KosOp *) (insn))->fn)
+#define KosOp_OP(insn)     (((KosOp *) (insn))->op)
+#define KosOp_ARG(insn)    (((KosOp *) (insn))->arg)
+#define KosOp_CACHE(insn)  (((KosOp *) (insn))->cache)
+#define KosOp_PC(insn)     (((KosOp *) (insn))->pc)
+#define KosOp_OBJ(insn)    (((KosOp *) (insn))->u.obj)
+#define KosOp_TARGET(insn) (((KosOp *) (insn))->u.target)
+#define KosOp_ROW(insn)    (((KosOp *) (insn))->u.row)
+#define KosOp_SLOT(insn)   (((KosOp *) (insn))->slot)
+
+#if SIZEOF_VOID_P == 8
+_Static_assert(sizeof(KosOp) == 32, "KosOp is two to a cache line");
+_Static_assert(sizeof(KosExtra) == 32, "KosExtra is two to a cache line");
+#endif
 
 
 /**
@@ -431,7 +479,7 @@ typedef enum KosElectorMode {
    its own kind and its own union member; it never reshapes an existing one.
    See design/interpreter/attr-lookup-cache.md.
 */
-typedef struct KosCacheSlot {
+struct KosCacheSlot {
   KosCacheKind kind;         /* discriminant; KOS_CACHE_EMPTY (0) = unused */
 
   union {
@@ -499,7 +547,7 @@ typedef struct KosCacheSlot {
       uint8_t mode;            /* KosElectorMode */
     } elector;
   } u;
-} KosCacheSlot;
+};
 
 
 /* === KosCode: bytecode object === */
@@ -765,7 +813,7 @@ uint8_t kos_opcode_cache_count(KosOpCode op);
   (((KosCode *) c)->extra)
 
 #define KosCode_GetExtra(c, idx)                 \
-  (KosCode_EXTRA(c)[idx])
+  (&KosCode_EXTRA(c)[idx])
 
 #define KosCode_EXTENT_LEN(c)                    \
   (((KosCode *) c)->extent_len)

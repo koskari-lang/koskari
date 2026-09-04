@@ -20,18 +20,17 @@
   held across a failed push.
 */
 KOS_OP_HANDLER(CONST3) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *a = KosEvalState_CONST(es, row.a0);
+  PyObject *a = KosExtra_OBJ(row, 0);
   if (unlikely(! a))
     RESULT_RAISE();
 
-  PyObject *b = KosEvalState_CONST(es, row.a1);
+  PyObject *b = KosExtra_OBJ(row, 1);
   if (unlikely(! b))
     RESULT_RAISE();
 
-  PyObject *c = KosEvalState_CONST(es, row.a2);
+  PyObject *c = KosExtra_OBJ(row, 2);
   if (unlikely(! c))
     RESULT_RAISE();
 

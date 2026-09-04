@@ -22,11 +22,10 @@
 */
 
 KOS_OP_HANDLER_COLD(VAR_INPLACE) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  KosOperand op = (KosOperand) KosOpCount_TYPE(row.a0);
-  PyObject *name = KosEvalState_CONST(es, row.a1);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
+  PyObject *name = KosExtra_OBJ(row, 1);
   if (unlikely(! name))
     RESULT_RAISE();
 

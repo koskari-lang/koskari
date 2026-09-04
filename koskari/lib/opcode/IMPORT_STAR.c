@@ -74,14 +74,13 @@ static PyObject *kos_import_star_names(PyObject *mod) {
 
 
 KOS_OP_HANDLER_COLD(IMPORT_STAR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *name = KosEvalState_CONST(es, row.a0);
+  PyObject *name = KosExtra_OBJ(row, 0);
   if (! name)
     RESULT_RAISE();
 
-  PyObject *mod = kos_import_module(es, name, (long) row.a1, 1);
+  PyObject *mod = kos_import_module(es, name, (long) KosExtra_IMM(row, 1), 1);
   if (! mod)
     RESULT_RAISE();
 

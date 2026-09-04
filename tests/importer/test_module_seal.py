@@ -148,13 +148,14 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         arena = durable.code.arena
 
         # only the two durable functions were placed. The arena aligns each
-        # placed block's start to pointer size, so mirror its cumulative fill
-        # rather than a plain sum -- a code's footprint need not be aligned
-        # (e.g. the appended THEEND barrier can leave it off a boundary).
+        # placed block's start to 32 bytes, so its instruction records stay
+        # line-aligned; mirror its cumulative fill rather than a plain sum,
+        # since a code's footprint need not be aligned (e.g. the appended
+        # THEEND barrier can leave it off a boundary).
         def _arena_fill(codes):
             fill = 0
             for c in codes:
-                fill = (fill + 7) & ~7
+                fill = (fill + 31) & ~31
                 fill += c.payload_bytes + c.padding_bytes
             return fill
 

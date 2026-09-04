@@ -247,15 +247,14 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
         return NULL;
       }
 
-      KosExtra row = KosCode_GetExtra(self, eidx);
+      const KosExtra *row = KosCode_GetExtra(self, eidx);
       KosExtraSchema schema = kos_opcode_extra_schema(op);
-      const uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
 
       for (int slot = 0; slot < 4; slot++) {
         KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
             (slot == 2) ? schema.f2 : schema.f3;
         if (fk == KOSTYLE_LABEL) {
-          if (soften_label_map_add_pc(label_map, raw[slot])) {
+          if (soften_label_map_add_pc(label_map, KosExtra_IMM(row, slot))) {
             Py_DECREF(label_map);
             return NULL;
           }
@@ -271,8 +270,8 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
 /**
   Build a 4-tuple of Python soften arguments for one EXTRA opcode row.
 
-  Hardened EXTRA rows store uint16 indices (cpool, raw ints, or PCs). This
-  reverses emit: CONST/VAR become Python values from the pool; LABEL slots
+  A resolved row holds pool objects, immediates, and label pcs. This
+  reverses emit: CONST/VAR are the pool objects themselves; LABEL slots
   look up the destination PC in ``label_map``; other slots stay as integers
   (FAST,
   COUNT, STAR, etc.). NOARG schema slots become 0, matching the collect
@@ -280,7 +279,7 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
 
   :param self: KosCode (for constant pool lookup)
   :param op: opcode (selects EXTRA field schema)
-  :param row: raw a0..a3 from hardened extra table
+  :param row: the resolved row
   :param label_map: ``dict`` mapping target PC ``int`` to label ``str``
 
   :return: new tuple of length 4, or NULL on error
@@ -288,19 +287,18 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
 static PyObject *soften_extra_tuple(
     PyObject *self,
     KosOpCode op,
-    KosExtra row,
+    const KosExtra *row,
     PyObject *label_map) {
 
   KosExtraSchema schema = kos_opcode_extra_schema(op);
-  uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
   PyObject *items[4];
 
   /* CMPSRC rows: source bits in a0 override operand slots to CONST
      (mirror of the code_collect pre-step). */
   if (schema.f0 == KOSTYLE_CMPSRC) {
-    if (KosCmpSrc_X_CONST(row.a0))
+    if (KosCmpSrc_X_CONST(KosExtra_IMM(row, 0)))
       schema.f1 = KOSTYLE_CONST;
-    if (KosCmpSrc_Y_CONST(row.a0))
+    if (KosCmpSrc_Y_CONST(KosExtra_IMM(row, 0)))
       schema.f2 = KOSTYLE_CONST;
   }
 
@@ -313,17 +311,12 @@ static PyObject *soften_extra_tuple(
       items[slot] = PyLong_FromLong(0);
 
     } else if (fk == KOSTYLE_CONST || fk == KOSTYLE_VAR) {
-      PyObject *v = KosCode_GetConstant(self, raw[slot]);
-      if (! v) {
-        for (int j = 0; j < slot; j++)
-          Py_DECREF(items[j]);
-        return NULL;
-      }
+      PyObject *v = KosExtra_OBJ(row, slot);
       Py_INCREF(v);
       items[slot] = v;
 
     } else if (fk == KOSTYLE_LABEL) {
-      PyObject *key = PyLong_FromUnsignedLong((unsigned long) raw[slot]);
+      PyObject *key = PyLong_FromUnsignedLong((unsigned long) KosExtra_IMM(row, slot));
       if (! key) {
         for (int j = 0; j < slot; j++)
           Py_DECREF(items[j]);
@@ -335,14 +328,14 @@ static PyObject *soften_extra_tuple(
         for (int j = 0; j < slot; j++)
           Py_DECREF(items[j]);
         PyErr_Format(PyExc_RuntimeError,
-                     "label pc %u missing from label map", raw[slot]);
+                     "label pc %u missing from label map", KosExtra_IMM(row, slot));
         return NULL;
       }
       Py_INCREF(lab);
       items[slot] = lab;
 
     } else {
-      items[slot] = PyLong_FromLong((long) raw[slot]);
+      items[slot] = PyLong_FromLong((long) KosExtra_IMM(row, slot));
     }
 
     if (! items[slot]) {
@@ -371,6 +364,11 @@ typedef struct {
   size_t extent_bytes;
   size_t top_extent_bytes;
 } CodeAllocStats;
+
+
+/* Alignment of the instruction array and the extras table: a 32-byte
+   record never straddles a 64-byte line. */
+#define KOS_BLOCK_ROW_ALIGN 32
 
 
 static size_t align_size(size_t value, size_t unit) {
@@ -432,8 +430,9 @@ static void code_block_layout(
   out->pos_offset = align_size(out->code_bytes, ptr_size);
   out->cpool_offset = out->pos_offset
       + align_size(out->pos_bytes, ptr_size);
-  out->extra_offset = out->cpool_offset
-      + align_size(out->cpool_bytes, ptr_size);
+  /* Rows are two to a cache line; keep the table line-aligned. */
+  out->extra_offset = align_size(out->cpool_offset + out->cpool_bytes,
+                                 KOS_BLOCK_ROW_ALIGN);
   out->extent_offset = out->extra_offset
       + align_size(out->extra_bytes, sizeof(uint32_t));
   out->top_offset = out->extent_offset + out->extent_bytes;
@@ -888,6 +887,65 @@ static PyObject *code_m_function_spec(PyObject *self, PyObject *formals_spec) {
 }
 
 
+/**
+   The index view of a resolved row, for introspection and soften's
+   callers: a CONST or VAR field reports its pool index, recovered by
+   identity against the identity-deduplicated pool; every other field
+   reports its immediate. The owning instruction supplies the schema;
+   rows are one per instruction.
+*/
+static int extra_row_indices(PyObject *self, uint32_t eidx, uint16_t out[4]) {
+
+  KosOp *code = KosCode_CODE(self);
+  uint32_t code_len = KosCode_CODE_LEN(self);
+  const KosExtra *row = KosCode_GetExtra(self, eidx);
+  KosOpCode op = KOS_OP_THEEND;
+
+  for (uint32_t pc = 0; pc < code_len; pc++) {
+    if (opcode_styles[code[pc].op].style == KOSTYLE_EXTRA
+        && code[pc].arg == eidx) {
+      op = (KosOpCode) code[pc].op;
+      break;
+    }
+  }
+  if (op == KOS_OP_THEEND) {
+    PyErr_Format(PyExc_RuntimeError, "extra row %u has no owning"
+                 " instruction", (unsigned) eidx);
+    return -1;
+  }
+
+  KosExtraSchema schema = kos_opcode_extra_schema(op);
+  if (schema.f0 == KOSTYLE_CMPSRC) {
+    if (KosCmpSrc_X_CONST(KosExtra_IMM(row, 0)))
+      schema.f1 = KOSTYLE_CONST;
+    if (KosCmpSrc_Y_CONST(KosExtra_IMM(row, 0)))
+      schema.f2 = KOSTYLE_CONST;
+  }
+
+  for (int slot = 0; slot < 4; slot++) {
+    KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
+        (slot == 2) ? schema.f2 : schema.f3;
+
+    if (fk == KOSTYLE_CONST || fk == KOSTYLE_VAR) {
+      PyObject *obj = KosExtra_OBJ(row, slot);
+      uint32_t cpool_len = KosCode_CPOOL_LEN(self);
+      uint32_t ci = 0;
+      while (ci < cpool_len && KosCode_GET_CONST(self, ci) != obj)
+        ci++;
+      if (ci == cpool_len) {
+        PyErr_Format(PyExc_RuntimeError, "extra row %u field %d is not"
+                     " a pool constant", (unsigned) eidx, slot);
+        return -1;
+      }
+      out[slot] = (uint16_t) ci;
+    } else {
+      out[slot] = (uint16_t) KosExtra_IMM(row, slot);
+    }
+  }
+  return 0;
+}
+
+
 static PyObject *code_m_extra_tuple(PyObject *self, PyObject *index) {
 
   if (! PyLong_Check(index)) {
@@ -905,11 +963,13 @@ static PyObject *code_m_extra_tuple(PyObject *self, PyObject *index) {
     return NULL;
   }
 
-  KosExtra row = KosCode_GetExtra(self, (uint32_t) i);
-  return Py_BuildValue("(HHHH)", (unsigned short) row.a0,
-                       (unsigned short) row.a1,
-                       (unsigned short) row.a2,
-                       (unsigned short) row.a3);
+  uint16_t view[4];
+  if (extra_row_indices(self, (uint32_t) i, view))
+    return NULL;
+  return Py_BuildValue("(HHHH)", (unsigned short) view[0],
+                       (unsigned short) view[1],
+                       (unsigned short) view[2],
+                       (unsigned short) view[3]);
 }
 
 
@@ -1054,7 +1114,7 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
         PyErr_SetString(PyExc_RuntimeError, "EXTRA index out of bounds");
         return NULL;
       }
-      KosExtra row = KosCode_GetExtra(self, insn.arg);
+      const KosExtra *row = KosCode_GetExtra(self, insn.arg);
       PyObject *tup = soften_extra_tuple(self, op, row, label_map);
       if (! tup) {
         Py_DECREF(out);
@@ -1080,6 +1140,10 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
 
   return out;
 }
+
+
+static void code_fill_derived(KosOp *code, uint32_t code_len,
+                              KosExtra *extra);
 
 
 /**
@@ -1139,6 +1203,11 @@ static PyObject *code_m_pack_into(PyObject *self, PyObject *arena) {
       ? (KosExtentDesc *) ((char *) dst + lay.extent_offset) : NULL;
   KosCode_TOP_EXTENT_ID(self) = KosCode_TOP_EXTENT_ID(self)
       ? (uint16_t *) ((char *) dst + lay.top_offset) : NULL;
+
+  /* The in-block operand pointers moved with the block; re-derive them
+     (and fn) from the serialized indices in the arena's writable window. */
+  code_fill_derived(KosCode_CODE(self), KosCode_CODE_LEN(self),
+                    KosCode_EXTRA(self));
 
   Py_INCREF(arena);
   KosCode_ARENA(self) = arena;
@@ -1205,14 +1274,28 @@ static PyMethodDef code_methods[] = {
 
 
 /**
-   Collection state for the finalization pipeline. Built during the
+   The index form of an extended operand row, as collect builds it and
+   soften emits it: four 16-bit fields, each a cpool index, a label pc,
+   or an immediate by schema. Emit resolves it into the block's KosExtra.
+*/
+typedef struct KosExtraRaw {
+  uint16_t a0;
+  uint16_t a1;
+  uint16_t a2;
+  uint16_t a3;
+} KosExtraRaw;
+
+
+/**
+   Collection state for the finalization pipeline.
+ Built during the
    collect phase; used for sizing and by the emit phase. Lifetime:
    from code_collect through code_emit.
 */
 typedef struct {
   PyObject *cpool_list;       /* PyList: identity-based const internment (no dict) */
   PyObject *labels;           /* PyDict: label_name -> output_pc for jump resolution */
-  KosExtra *extra_rows;       /* growable array of KosExtra; CONST/VAR interned */
+  KosExtraRaw *extra_rows;    /* growable array of index-form rows; CONST/VAR interned */
   uint32_t extra_len;
   uint32_t extra_cap;
   KosPosition *pos_entries;   /* delta-encoded positions; index where (line,col) changes */
@@ -1484,7 +1567,15 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
   }
 
   /* Reserve one extra slot for the THEEND end-of-code barrier, appended by
-     code_emit. Every code object carries it as its final instruction. */
+     code_emit. Every code object carries it as its final instruction. A
+     record carries its own 16-bit pc, and jump targets are 16-bit, so the
+     count is bounded here. */
+  if (di >= UINT16_MAX) {
+    PyErr_Format(PyExc_OverflowError,
+                 "code exceeds 16-bit instruction limit (%u instructions)",
+                 (unsigned) di);
+    goto failure;
+  }
   coll->code_len = di + 1;
 
   /* Pass 2: Intern constants (identity-based dedup) and build extra rows.
@@ -1539,7 +1630,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           schema.f2 = KOSTYLE_CONST;
       }
 
-      KosExtra row = { 0, 0, 0, 0 };
+      KosExtraRaw row = { 0, 0, 0, 0 };
       for (int slot = 0; slot < 4; slot++) {
         KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
             (slot == 2) ? schema.f2 : schema.f3;
@@ -1642,7 +1733,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       /* Grow extra_rows if needed; append this row */
       if (coll->extra_len >= coll->extra_cap) {
         uint32_t new_cap = coll->extra_cap ? coll->extra_cap * 2 : 16;
-        KosExtra *n = PyMem_Resize(coll->extra_rows, KosExtra, new_cap);
+        KosExtraRaw *n = PyMem_Resize(coll->extra_rows, KosExtraRaw, new_cap);
         if (! n) {
           PyErr_NoMemory();
           goto failure;
@@ -1783,8 +1874,10 @@ static int code_alloc_unified(
       base = NULL;
     }
   } else {
-    /* Plain heap; malloc alignment satisfies every region */
-    base = malloc(total);
+    /* Plain heap, line-aligned for the instruction array */
+    if (posix_memalign(&base, KOS_BLOCK_ROW_ALIGN, total)) {
+      base = NULL;
+    }
   }
 
   if (! base) {
@@ -1812,14 +1905,24 @@ static int code_alloc_unified(
 
 
 /**
-   Resolve each instruction's handler from its opcode. Runs after emit
-   (which settles op, arg, and the cache index) and validation, in the
-   block's writable window.
+   Resolve the derived half of every instruction: the handler from its
+   opcode, and the in-block operand pointers (a LABEL's target, an
+   EXTRA's row) from the serialized index. Runs after emit and
+   validation in the block's writable window, and again after pack
+   relocates the block. The out-of-block pointers (a pool object, a
+   cache slot) are stable and set once by emit.
 */
-static void code_fill_handlers(KosOp *code, uint32_t code_len) {
+static void code_fill_derived(KosOp *code, uint32_t code_len, KosExtra *extra) {
 
-  for (uint32_t pc = 0; pc < code_len; pc++)
+  for (uint32_t pc = 0; pc < code_len; pc++) {
+    KosOpStyle st = opcode_styles[code[pc].op].style;
+
     code[pc].fn = kos_op_handlers[code[pc].op];
+    if (st == KOSTYLE_LABEL)
+      code[pc].u.target = &code[code[pc].arg];
+    else if (st == KOSTYLE_EXTRA)
+      code[pc].u.row = &extra[code[pc].arg];
+  }
 }
 
 
@@ -1832,6 +1935,41 @@ static void code_fill_handlers(KosOp *code, uint32_t code_len) {
    are skipped. Resolve label targets for KOSTYLE_LABEL and pending_labels.
    Copy cpool_list -> cpool, extra_rows -> extra, pos_entries -> pos.
 */
+/**
+   Resolve one row from collect's index form: CONST and VAR fields become
+   the pool object (borrowed; the cpool array holds the owned reference),
+   every other field its immediate. A LABEL field keeps its placeholder
+   for the pending-label pass. A CMPSRC row's source bits mark the
+   operand fields that hold constants.
+*/
+static void resolve_extra_row(
+    CodeCollect *coll,
+    KosOpCode op,
+    const KosExtraRaw *raw,
+    KosExtra *out) {
+
+  KosExtraSchema schema = kos_opcode_extra_schema(op);
+  const uint16_t idx[4] = { raw->a0, raw->a1, raw->a2, raw->a3 };
+
+  if (schema.f0 == KOSTYLE_CMPSRC) {
+    if (KosCmpSrc_X_CONST(raw->a0))
+      schema.f1 = KOSTYLE_CONST;
+    if (KosCmpSrc_Y_CONST(raw->a0))
+      schema.f2 = KOSTYLE_CONST;
+  }
+
+  for (int slot = 0; slot < 4; slot++) {
+    KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
+        (slot == 2) ? schema.f2 : schema.f3;
+
+    if (fk == KOSTYLE_CONST || fk == KOSTYLE_VAR)
+      out->f[slot].obj = PyList_GET_ITEM(coll->cpool_list, idx[slot]);
+    else
+      out->f[slot].imm = idx[slot];
+  }
+}
+
+
 static int code_emit(
     PyObject *self,
     PyObject *instr,
@@ -1872,6 +2010,7 @@ static int code_emit(
 
     code[di].op = (uint16_t) op;
     code[di].arg = 0;
+    code[di].pc = (uint16_t) di;
 
     /* Reserve this site's cache slot run. A cache-consuming opcode gets the
        next free index; the count_cache_slots pre-pass sized the trailing
@@ -1880,9 +2019,11 @@ static int code_emit(
     uint8_t ncache = cache_on ? kos_opcode_cache_count(op) : 0;
     if (ncache) {
       code[di].cache = next_slot;
+      code[di].slot = &KosCode_CACHE(self)[next_slot];
       next_slot += ncache;
     } else {
       code[di].cache = KOS_CACHE_UNSET;
+      code[di].slot = NULL;
     }
 
     /* Resolve arg from collect-phase data: cpool index, label pc, or raw */
@@ -1892,6 +2033,7 @@ static int code_emit(
         return -1;
       }
       code[di].arg = idx;
+      code[di].u.obj = PyList_GET_ITEM(coll->cpool_list, idx);
 
     } else if (style == KOSTYLE_VAR) {
       PyObject *name = PyObject_Str(b);
@@ -1904,6 +2046,7 @@ static int code_emit(
         return -1;
       }
       code[di].arg = idx;
+      code[di].u.obj = PyList_GET_ITEM(coll->cpool_list, idx);
 
     } else if (style == KOSTYLE_LABEL) {
       /* Look up target pc from labels dict (label_name -> pc) */
@@ -1913,12 +2056,15 @@ static int code_emit(
         return -1;
       }
       code[di].arg = (uint16_t) PyLong_AsLong(dest);
+      code[di].u.target = &code[code[di].arg];
     } else if (style == KOSTYLE_EXTRA) {
-      /* Arg is index into extra table; copy row from collect */
+      /* Arg is the row index; the row resolves from collect's index
+         form, and the record points at it. */
       code[di].arg = (uint16_t) extra_idx;
       if (extra) {
-        memcpy(&extra[extra_idx], &coll->extra_rows[extra_idx],
-               sizeof(KosExtra));
+        resolve_extra_row(coll, op, &coll->extra_rows[extra_idx],
+                          &extra[extra_idx]);
+        code[di].u.row = &extra[extra_idx];
       }
       extra_idx++;
     } else {
@@ -1950,6 +2096,8 @@ static int code_emit(
   code[di].op = (uint16_t) KOS_OP_THEEND;
   code[di].arg = 0;
   code[di].cache = KOS_CACHE_UNSET;
+  code[di].pc = (uint16_t) di;
+  code[di].slot = NULL;
   di++;
 
   /* The assigned slot run must exactly fill the trailing array that
@@ -1984,17 +2132,7 @@ static int code_emit(
                      label_name);
         return -1;
       }
-      uint16_t pc = (uint16_t) PyLong_AsLong(dest);
-      KosExtra *row = &extra[eidx];
-      if (slot == 0) {
-        row->a0 = pc;
-      } else if (slot == 1) {
-        row->a1 = pc;
-      } else if (slot == 2) {
-        row->a2 = pc;
-      } else {
-        row->a3 = pc;
-      }
+      extra[eidx].f[slot].imm = (uint32_t) PyLong_AsLong(dest);
     }
   }
 
@@ -2530,18 +2668,17 @@ static int validate_fast_slots(
         return -1;
       }
 
-      KosExtra row = extra[eidx];
+      const KosExtra *row = &extra[eidx];
       KosExtraSchema schema = kos_opcode_extra_schema(op);
-      uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
 
       /* CMPSRC rows: source bits in a0 override operand slots to CONST
          (mirror of soften_extra_tuple). A slot the bit marks as CONST
          holds a constant-pool index, not a fast slot, so it must not be
          range-checked against the namespace slot limit. */
       if (schema.f0 == KOSTYLE_CMPSRC) {
-        if (KosCmpSrc_X_CONST(row.a0))
+        if (KosCmpSrc_X_CONST(KosExtra_IMM(row, 0)))
           schema.f1 = KOSTYLE_CONST;
-        if (KosCmpSrc_Y_CONST(row.a0))
+        if (KosCmpSrc_Y_CONST(KosExtra_IMM(row, 0)))
           schema.f2 = KOSTYLE_CONST;
       }
 
@@ -2553,10 +2690,10 @@ static int validate_fast_slots(
           continue;
         }
 
-        if (active == 0 || raw[slot] >= active) {
+        if (active == 0 || KosExtra_IMM(row, slot) >= active) {
           PyErr_Format(PyExc_ValueError,
                        "FAST index %u out of bounds (limit %u)",
-                       (unsigned) raw[slot], (unsigned) active);
+                       (unsigned) KosExtra_IMM(row, slot), (unsigned) active);
           return -1;
         }
 
@@ -2583,14 +2720,7 @@ static int validate_fast_slots(
         PyErr_SetString(PyExc_RuntimeError, "EXTRA index out of bounds");
         return -1;
       }
-      KosExtra row = extra[eidx];
-      uint32_t ci = row.a0;
-      if (ci >= cpool_len) {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "CONST operand index out of bounds");
-        return -1;
-      }
-      PyObject *ns = cpool[ci];
+      PyObject *ns = KosExtra_OBJ(&extra[eidx], 0);
       if (ns && KosNamespaceSpec_CheckExact(ns)) {
         uint32_t lim = 0;
         if (namespace_spec_fast_slot_limit(ns, &lim)) {
@@ -2763,7 +2893,7 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
     return -1;
   }
 
-  code_fill_handlers(code, code_len);
+  code_fill_derived(code, code_len, extra);
 
   /* Seal block read-only; single mprotect for entire allocation */
   if (protect) {

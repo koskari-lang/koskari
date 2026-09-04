@@ -23,11 +23,10 @@
 */
 
 KOS_OP_HANDLER_COLD(SWITCH_EQ_VAR_ATTR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *var_name = KosEvalState_CONST(es, row.a1);
-  PyObject *attr_name = KosEvalState_CONST(es, row.a2);
+  PyObject *var_name = KosExtra_OBJ(row, 1);
+  PyObject *attr_name = KosExtra_OBJ(row, 2);
   if (unlikely(! var_name || ! attr_name))
     RESULT_RAISE();
 
@@ -53,7 +52,7 @@ KOS_OP_HANDLER_COLD(SWITCH_EQ_VAR_ATTR) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
-    KosEvalState_SET_PC(es, row.a0);
+    KosEvalState_SET_PC(es, KosExtra_IMM(row, 0));
   }
 
   RESULT_NEXT(es);

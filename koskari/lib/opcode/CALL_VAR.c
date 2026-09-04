@@ -21,12 +21,11 @@
   PyObject_Vectorcall + DropNoErr.
 */
 KOS_OP_HANDLER_COLD(CALL_VAR) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  uint32_t name_cpool_idx = row.a0;
-  unsigned n = row.a1;
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *name_obj = KosExtra_OBJ(row, 0);
+  unsigned n = KosExtra_IMM(row, 1);
 
-  PyObject *name = KosEvalState_CONST(es, name_cpool_idx);
+  PyObject *name = name_obj;
   if (unlikely(! name))
     RESULT_RAISE();
 

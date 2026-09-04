@@ -19,17 +19,16 @@
 */
 
 KOS_OP_HANDLER(FAST_ATTR_STORE) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
-  PyObject *attr_name = KosEvalState_CONST(es, row.a1);
+  PyObject *attr_name = KosExtra_OBJ(row, 1);
   if (! attr_name)
     RESULT_RAISE();
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     RESULT_RAISE();
-  size_t idx = (size_t) row.a0;
+  size_t idx = (size_t) KosExtra_IMM(row, 0);
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (! obj) {
     Py_DECREF(val);
@@ -40,9 +39,8 @@ KOS_OP_HANDLER(FAST_ATTR_STORE) {
      an INSTANCE_VALUE hit overwrites the inline attribute value, both
      directly; GENERIC (and a first/materialized store) fall through to
      PyObject_SetAttr. */
-  uint16_t cache_ix = KosOp_CACHE(insn);
-  if (cache_ix != KOS_CACHE_UNSET) {
-    KosCacheSlot *slot = &KosCode_CACHE(code)[cache_ix];
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+  if (slot) {
     uint32_t off;
     KosFieldMode m = kos_resolve_attr_location(obj, attr_name, slot, &off);
     if (m == KOS_FIELD_SLOT) {

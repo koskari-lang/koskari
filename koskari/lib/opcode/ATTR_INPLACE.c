@@ -28,11 +28,10 @@
 */
 
 KOS_OP_HANDLER_COLD(ATTR_INPLACE) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
-  KosOperand op = (KosOperand) KosOpCount_TYPE(row.a0);
-  int count = (int) KosOpCount_COUNT(row.a0);
-  PyObject *attr = KosEvalState_CONST(es, row.a1);
+  const KosExtra *row = KosOp_ROW(insn);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
+  int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
+  PyObject *attr = KosExtra_OBJ(row, 1);
   if (! attr)
     RESULT_RAISE();
 
@@ -40,9 +39,7 @@ KOS_OP_HANDLER_COLD(ATTR_INPLACE) {
   if (! tail)
     RESULT_RAISE();
 
-  uint16_t cache_ix = KosOp_CACHE(insn);
-  KosCacheSlot *slot =
-      (cache_ix != KOS_CACHE_UNSET) ? &KosCode_CACHE(code)[cache_ix] : NULL;
+  KosCacheSlot *slot = KosOp_SLOT(insn);
 
   int res = kos_attr_inplace_cached(slot, tail[0], attr, op, &tail[1], count);
   KosEvalState_StackDropNoErr(es, (size_t) (count + 1));
