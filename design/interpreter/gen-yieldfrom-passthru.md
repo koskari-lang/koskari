@@ -5,6 +5,13 @@ scheduled.**  This document evaluates the idea; nothing here is
 committed work.  If rejected, archive with a note; if accepted, split
 into staged implementation specs.
 
+**Note (2026-09-04):** the per-hop cost in section 2 predates the
+node-style yield-from in [electors.md](electors.md). The delegating
+frame no longer re-dispatches the YIELD_FROM opcode or decodes a phase
+machine; each hop is now the freeze, one prologue bounce, and the
+armed phase resume. What passthru would still remove is the freeze and
+the bounce themselves, so re-evaluate it against that residue.
+
 Companion docs:
 - [../archive/boundary-control-reemit.md](../archive/boundary-control-reemit.md)
   (archived; the implemented boundary model this would extend)

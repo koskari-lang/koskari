@@ -1,6 +1,13 @@
 # Electors: elected handlers on cache slots and dyn nodes
 
-**Status:** Proposal. The cache-style home was built and measured on
+**Status:** The node-style home is built on YIELD_FROM (commits
+d5b29ddc, f4719b9a, b9a116a0): the drive elected onto the node at push,
+one phase resume per suspension armed on the delegating frame, and the
+handler running once per delegation with the pc never rolled back. On
+the yieldfrom kernel over five samples that is 19.8% fewer cycles and
+42% fewer branch misses for 3.6% more instructions. The delivery
+contract it settled is recorded in [../EVALUATOR.md](../EVALUATOR.md)
+§8.2. The cache-style home was built and measured on
 CALL_FAST (commit b73d9499: a `KOS_CACHE_ELECTOR` slot kind, an
 electing function, one elector for the exact simple KosFunction) and
 then removed. On the original record it ran 0.5% fewer instructions and
@@ -286,14 +293,17 @@ and either arms the next phase or threads on past the opcode.
 That distinguishes two kinds of resume state, which the capture rule must
 tell apart. A step resume's state (map, filter) is owned by the step object
 and cannot be replayed, so `kos_dynframe_clone` refuses by name. A node
-resume's state is the node, which the clone already copies, so a frame
-carrying one is capturable. The frame's `resume_name` is the natural
-discriminator, or a flag beside it.
+resume needs no stored state: the node it serves is `dyn_top` above the
+frame, so it is armed with `resume_state` NULL, and that NULL is the
+discriminator. The clone copies such a resume, the delivery step hands
+it its value raw, and the node's pop and unwind disarm it. A bytecode
+frame's delivery is always the pending slot, never its operand stack,
+which is what lets a frame with live operands carry a resume at all.
 
 ### Where it pays: survey
 
-**YIELD_FROM**. The strongest case. Two axes are folded into one 766-line
-handler. The kind axis (`KOS_YF_SYNC_ITER`, `SYNC_GEN`, `PY_ASYNC_ITER` /
+**YIELD_FROM**. Built; the description below is what it replaced. Two
+axes were folded into one 766-line handler. The kind axis (`KOS_YF_SYNC_ITER`, `SYNC_GEN`, `PY_ASYNC_ITER` /
 `PY_ASYNC_GEN`, `KOS_ITER`) is fixed at push and re-decoded on every
 re-entry at the ladder near the handler's end; it becomes `drive`, elected
 in `yield_from_normalize`. The phase axis (`EMIT`, inject-throw,
@@ -369,20 +379,19 @@ dispatch is the slot address, which finalize already knows.
 
 Ranked by expected benefit against risk:
 
-1. **YIELD_FROM, node-style.** Largest structural change, no guard
-   machinery, and it retires the pc-rollback re-entry pattern that the
-   other node-style candidates share. It also settles the capturable
-   node-resume rule.
-2. **CALL_FAST and CALL, cache-style.** The hottest cache-style site,
-   with the arms already separated in the call core. Two electors first
-   (exact simple `KosFunction`, plain vectorcall), measured with the churn
-   bench, before the rest of the family.
-3. **FRAME `on_return`, node-style.** Small change, every call pays for
-   it today, and it pairs with item 2 (the install elects the return).
-4. **FOREACH `step`, node-style.** Follows the YIELD_FROM shape on a
-   simpler node.
-5. **OBJECT_OPERAND and OBJECT_COMPARE, cache-style.** The type-pair
-   guard is the new piece; the arms exist as the `long_fast_*` functions.
+1. **YIELD_FROM, node-style.** Done. It retired the pc-rollback
+   re-entry pattern and settled the node-resume rule.
+2. **CALL_FAST and CALL, cache-style.** Done and removed: flat.
+3. **FOREACH `step` and the NEXT node, node-style.** Follows the
+   YIELD_FROM shape on a simpler node, with the delivery contract
+   already in place.
+4. **FRAME `on_return`, node-style.** Every return classifies its parent
+   with three chain reads; the install knows the shape. A ladder is
+   replaced rather than a call, which is where the CALL_FAST elector
+   found nothing.
+5. **OBJECT_OPERAND and OBJECT_COMPARE, cache-style.** Only with a
+   kernel whose ladder mispredicts; the type-pair guard is the new
+   piece, and the arms exist as the `long_fast_*` functions.
 
 ## Sizing
 

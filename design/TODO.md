@@ -49,8 +49,9 @@ Ref: [archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
 A `KosThreadFn` chosen once for a site's guarded operand (a cache slot
 kind) or an extent's fixed fact (a dyn node field) and tail-called on
 every later execution. The cache-style home measured flat on CALL_FAST
-and was removed; the node-style home, YIELD_FROM first (drive elected
-by delegate kind, phases as resumes), is the open work.
+and was removed; the node-style home is built on YIELD_FROM (drive
+elected at push, one resume per suspension). Next: the FOREACH step and
+NEXT node, then the frame's return arm.
 
 Ref: [interpreter/electors.md](interpreter/electors.md).
 
