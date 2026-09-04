@@ -29,7 +29,7 @@ KOS_OP_HANDLER(JUMP_TRUE) {
     RESULT_RAISE();
 
   if (res)
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
+    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
 
   RESULT_NEXT(es);
 }

@@ -91,7 +91,7 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
       && (KosEvalState_FRAME(es) == caller || KosEvalState_PLAN(es)))
     return wr;
 
-  RESULT_NEXT(es);
+  RESULT_CONTINUE(es);
 }
 
 

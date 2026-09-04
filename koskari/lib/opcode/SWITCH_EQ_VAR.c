@@ -45,7 +45,7 @@ KOS_OP_HANDLER_COLD(SWITCH_EQ_VAR) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
-    KosEvalState_SET_PC(es, KosExtra_IMM(row, 0));
+    RESULT_JUMP(es, KosExtra_IMM(row, 0));
   }
 
   RESULT_NEXT(es);

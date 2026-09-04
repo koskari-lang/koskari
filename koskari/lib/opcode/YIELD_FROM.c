@@ -673,9 +673,8 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
       KosDynYieldFrom *yf_new = (KosDynYieldFrom *) KosEvalState_CurrentNode(es);
       KosDynYieldFrom_PENDING_ACTION(yf_new) = KOS_YF_STEP;
       KosDynYieldFrom_PHASE_SET(yf_new, KOS_YF_PHASE_DRIVING);
-      KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
     }
-    RESULT_NEXT(es);
+    RESULT_JUMP_AT(es, (KosOp *) insn);
   }
 
   KosDynYieldFrom *yf = (KosDynYieldFrom *) dyn_top;

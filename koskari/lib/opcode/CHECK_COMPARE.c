@@ -40,7 +40,7 @@ KOS_OP_HANDLER(CHECK_COMPARE) {
     RESULT_RAISE();
 
   if (res == 0)
-    KosEvalState_SET_PC(es, KosExtra_IMM(row, 2));
+    RESULT_JUMP(es, KosExtra_IMM(row, 2));
 
   RESULT_NEXT(es);
 }

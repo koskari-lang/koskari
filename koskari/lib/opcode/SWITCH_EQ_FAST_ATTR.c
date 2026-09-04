@@ -53,7 +53,7 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST_ATTR) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
-    KosEvalState_SET_PC(es, KosExtra_IMM(row, 0));
+    RESULT_JUMP(es, KosExtra_IMM(row, 0));
   }
 
   RESULT_NEXT(es);

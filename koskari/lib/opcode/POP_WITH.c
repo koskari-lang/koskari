@@ -62,7 +62,7 @@ KOS_OP_HANDLER(POP_WITH) {
     if (kr.kind == KOS_RES_REPROLOGUE
         && KosEvalState_FRAME(es) != caller
         && ! KosEvalState_PLAN(es))
-      RESULT_NEXT(es);
+      RESULT_CONTINUE(es);
     return kr;
   }
 

@@ -54,7 +54,7 @@ KOS_OP_HANDLER(YIELD) {
 
     KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, gen, val));
     if (likely(r.kind == KOS_RES_DISPATCH))
-      RESULT_NEXT(es);
+      RESULT_CONTINUE(es);
     if (unlikely(r.kind == KOS_RES_YIELD)) {
       /* The freeze found no consumer for a generator that had one:
          never hand the trampoline a YIELD it would deliver again. */

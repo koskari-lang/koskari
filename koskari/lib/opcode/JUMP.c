@@ -18,7 +18,7 @@
   JUMP: arg = target PC. Unconditional branch.
 */
 KOS_OP_HANDLER(JUMP) {
-  RESULT_JUMP(es, KosOp_ARG(insn));
+  RESULT_JUMP_AT(es, KosOp_TARGET(insn));
 }
 
 

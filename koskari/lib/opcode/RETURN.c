@@ -74,7 +74,7 @@ KOS_OP_HANDLER(RETURN) {
       KOS_TRACE_POST_OP_WRAP(plain_return,
           r = eval_ng_plain_return(es, child, parent, val));
       if (likely(r.kind == KOS_RES_DISPATCH))
-        RESULT_NEXT(es);
+        RESULT_CONTINUE(es);
       return r;
     }
 
@@ -82,7 +82,7 @@ KOS_OP_HANDLER(RETURN) {
       KOS_TRACE_POST_OP_WRAP(plain_return,
           r = eval_ng_region_return(es, child, parent, ft, val));
       if (likely(r.kind == KOS_RES_DISPATCH))
-        RESULT_NEXT(es);
+        RESULT_CONTINUE(es);
       return r;
     }
 

@@ -36,7 +36,7 @@ KOS_OP_HANDLER(JUMP_AND) {
     }
 
     Py_DECREF(val);
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
+    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
 
   } else {
     Py_DECREF(val);
