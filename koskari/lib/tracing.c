@@ -94,12 +94,31 @@ void kos_trace_opcache_inc(KosTraceOpCacheId id) {
 
 #if KOS_TRACE_TIMING
 
+/* Totals are in clock ticks; the report converts them to nanoseconds
+   with the calibration taken between init and report time. */
 typedef struct {
   uint64_t count;
-  uint64_t total_ns;
+  uint64_t total_ticks;
 } kos_trace_op_slot_t;
 
-static kos_trace_op_slot_t kos_op_timing[KOS_OP_THEEND + 1];
+static kos_trace_op_slot_t kos_op_timing[KOS_TRACE_SLOT_COUNT];
+
+/* calibration: wall time and ticks read together at init, and the
+   cost of one step (two clock reads and the bookkeeping) measured
+   there, so a report reader can subtract it from an opcode's average */
+static uint64_t kos_trace_cal_ns0;
+static uint64_t kos_trace_cal_ticks0;
+static uint64_t kos_trace_step_overhead_ticks;
+
+/* the one open slot per thread, and the slots suspended by nested
+   evaluator entries */
+#define KOS_TRACE_SLOT_NONE   ((unsigned) -1)
+#define KOS_TRACE_NEST_MAX    64
+
+static _Thread_local unsigned kos_trace_open = KOS_TRACE_SLOT_NONE;
+static _Thread_local uint64_t kos_trace_open_t0;
+static _Thread_local unsigned kos_trace_nest[KOS_TRACE_NEST_MAX];
+static _Thread_local unsigned kos_trace_depth;
 
 
 uint64_t kos_trace_now_ns(void) {
@@ -111,11 +130,139 @@ uint64_t kos_trace_now_ns(void) {
 }
 
 
-void kos_trace_opcode_record(unsigned op, uint64_t delta_ns) {
-  if (op > (unsigned) KOS_OP_THEEND)
+/**
+   The timing clock: the cycle counter where the compiler exposes one
+   (clang on every target, gcc on x86-64), else the monotonic clock in
+   nanoseconds, in which case the calibration ratio is 1.
+*/
+uint64_t kos_trace_ticks(void) {
+#if defined(__clang__)
+  return (uint64_t) __builtin_readcyclecounter();
+#elif defined(__x86_64__) && defined(__GNUC__)
+  return (uint64_t) __builtin_ia32_rdtsc();
+#else
+  return kos_trace_now_ns();
+#endif
+}
+
+
+static const char *kos_trace_clock_name(void) {
+#if defined(__clang__) || (defined(__x86_64__) && defined(__GNUC__))
+  return "cycle-counter";
+#else
+  return "clock_gettime";
+#endif
+}
+
+
+/**
+   Nanoseconds per tick, from the wall time and ticks elapsed since
+   init; 1.0 when too little has elapsed to measure.
+*/
+static double kos_trace_ns_per_tick(void) {
+  uint64_t ns = kos_trace_now_ns() - kos_trace_cal_ns0;
+  uint64_t ticks = kos_trace_ticks() - kos_trace_cal_ticks0;
+
+  if (ticks == 0 || ns == 0)
+    return 1.0;
+  return (double) ns / (double) ticks;
+}
+
+
+static inline void kos_trace_close_open(uint64_t now) {
+  if (kos_trace_open != KOS_TRACE_SLOT_NONE)
+    kos_op_timing[kos_trace_open].total_ticks += now - kos_trace_open_t0;
+}
+
+
+/**
+   Close the open slot and open slot: the transfer between two handlers,
+   from a handler to the trampoline, or into a resume. A slot's count
+   is the number of times it was opened.
+*/
+void kos_trace_step(unsigned slot) {
+  uint64_t now = kos_trace_ticks();
+
+  kos_trace_close_open(now);
+  if (slot >= KOS_TRACE_SLOT_COUNT)
+    slot = KOS_TRACE_SLOT_NONE;
+  else
+    kos_op_timing[slot].count++;
+  kos_trace_open = slot;
+  kos_trace_open_t0 = now;
+}
+
+
+void kos_trace_exit(void) {
+  kos_trace_close_open(kos_trace_ticks());
+  kos_trace_open = KOS_TRACE_SLOT_NONE;
+}
+
+
+/**
+   A nested evaluator starts: suspend the open slot (its time so far is
+   banked, its count already taken) so the nested run charges its own
+   slots. Beyond the nesting limit the outer slot is simply closed.
+*/
+void kos_trace_eval_push(void) {
+  uint64_t now = kos_trace_ticks();
+
+  kos_trace_close_open(now);
+  if (kos_trace_depth < KOS_TRACE_NEST_MAX)
+    kos_trace_nest[kos_trace_depth] = kos_trace_open;
+  kos_trace_depth++;
+  kos_trace_open = KOS_TRACE_SLOT_NONE;
+}
+
+
+/**
+   A nested evaluator ends: resume the slot it suspended, timing from
+   now, so the outer opcode's remaining work lands on it.
+*/
+void kos_trace_eval_pop(void) {
+  uint64_t now = kos_trace_ticks();
+
+  kos_trace_close_open(now);
+  kos_trace_open = KOS_TRACE_SLOT_NONE;
+  if (kos_trace_depth == 0)
     return;
-  kos_op_timing[op].count++;
-  kos_op_timing[op].total_ns += delta_ns;
+  kos_trace_depth--;
+  if (kos_trace_depth < KOS_TRACE_NEST_MAX)
+    kos_trace_open = kos_trace_nest[kos_trace_depth];
+  kos_trace_open_t0 = now;
+}
+
+
+/**
+   Measure the cost of one step: open and close the trampoline slot a
+   few thousand times and take the mean, then undo the counts.
+*/
+static void kos_trace_measure_step_overhead(void) {
+  const unsigned n = 4096;
+  uint64_t t0;
+  uint64_t t1;
+  unsigned i;
+
+  kos_trace_exit();
+  t0 = kos_trace_ticks();
+  for (i = 0; i < n; i++)
+    kos_trace_step(KOS_TRACE_SLOT_TRAMPOLINE);
+  kos_trace_exit();
+  t1 = kos_trace_ticks();
+  kos_trace_step_overhead_ticks = (t1 - t0) / n;
+  kos_op_timing[KOS_TRACE_SLOT_TRAMPOLINE].count = 0;
+  kos_op_timing[KOS_TRACE_SLOT_TRAMPOLINE].total_ticks = 0;
+}
+
+
+static const char *kos_trace_slot_name(unsigned slot) {
+  if (slot <= (unsigned) KOS_OP_THEEND)
+    return kos_opcode_name((KosOpCode) slot);
+  if (slot == KOS_TRACE_SLOT_RESUME)
+    return "resume";
+  if (slot == KOS_TRACE_SLOT_TRAMPOLINE)
+    return "trampoline";
+  return "UNKNOWN_SLOT";
 }
 
 
@@ -124,22 +271,22 @@ static kos_trace_op_slot_t kos_post_handler_timing[KOS_TP__COUNT];
 static _Thread_local uint64_t kos_tp_roll_t0;
 
 
-void kos_trace_post_op_record(unsigned id, uint64_t delta_ns) {
+void kos_trace_post_op_record(unsigned id, uint64_t delta) {
   if (id >= (unsigned) KOS_TP__COUNT)
     return;
   kos_post_handler_timing[id].count++;
-  kos_post_handler_timing[id].total_ns += delta_ns;
+  kos_post_handler_timing[id].total_ticks += delta;
 }
 
 
 void kos_trace_post_op_enter(void) {
-  kos_tp_roll_t0 = kos_trace_now_ns();
+  kos_tp_roll_t0 = kos_trace_ticks();
 }
 
 
 void kos_trace_post_op_exit(void) {
   kos_trace_post_op_record((unsigned) KOS_TP_rollup,
-                           kos_trace_now_ns() - kos_tp_roll_t0);
+                           kos_trace_ticks() - kos_tp_roll_t0);
 }
 
 #endif
@@ -268,6 +415,9 @@ void kos_trace_init(void) {
 #endif
 #if KOS_TRACE_TIMING
   memset(kos_op_timing, 0, sizeof(kos_op_timing));
+  kos_trace_cal_ns0 = kos_trace_now_ns();
+  kos_trace_cal_ticks0 = kos_trace_ticks();
+  kos_trace_measure_step_overhead();
   memset(kos_post_handler_timing, 0, sizeof(kos_post_handler_timing));
 #endif
 #if KOS_TRACE_EVAL_SYNC
@@ -475,8 +625,8 @@ static int add_opcode_timing_section(PyObject *report) {
 #if KOS_TRACE_TIMING
   PyObject *ot = NULL;
   PyObject *summary = NULL;
-  kos_trace_op_aggregate_t aggs[KOS_OP_THEEND + 1];
-  kos_trace_op_aggregate_t tmp[KOS_OP_THEEND + 1];
+  kos_trace_op_aggregate_t aggs[KOS_TRACE_SLOT_COUNT];
+  kos_trace_op_aggregate_t tmp[KOS_TRACE_SLOT_COUNT];
   unsigned i;
   size_t n_agg;
   uint64_t total_executions;
@@ -488,6 +638,7 @@ static int add_opcode_timing_section(PyObject *report) {
   const char *max_avg_ns_op;
   uint64_t max_avg_ns;
   int rc = -1;
+  const double ns_per_tick = kos_trace_ns_per_tick();
 
   ot = PyDict_New();
   if (! ot)
@@ -502,13 +653,13 @@ static int add_opcode_timing_section(PyObject *report) {
   max_avg_ns = 0;
   n_agg = 0;
 
-  for (i = 0; i <= (unsigned) KOS_OP_THEEND; i++) {
+  for (i = 0; i < KOS_TRACE_SLOT_COUNT; i++) {
     uint64_t c;
     uint64_t t;
     uint64_t avg;
 
     c = kos_op_timing[i].count;
-    t = kos_op_timing[i].total_ns;
+    t = (uint64_t) ((double) kos_op_timing[i].total_ticks * ns_per_tick);
     if (c == 0)
       continue;
 
@@ -518,13 +669,13 @@ static int add_opcode_timing_section(PyObject *report) {
 
     if (t > max_total_ns) {
       max_total_ns = t;
-      max_total_ns_op = kos_opcode_name((KosOpCode) i);
+      max_total_ns_op = kos_trace_slot_name(i);
     }
 
     avg = t / c;
     if (avg > max_avg_ns) {
       max_avg_ns = avg;
-      max_avg_ns_op = kos_opcode_name((KosOpCode) i);
+      max_avg_ns_op = kos_trace_slot_name(i);
     }
 
     aggs[n_agg].idx = i;
@@ -539,7 +690,7 @@ static int add_opcode_timing_section(PyObject *report) {
   else
     avg_ns_per_dispatch = 0;
 
-  for (i = 0; i <= (unsigned) KOS_OP_THEEND; i++) {
+  for (i = 0; i < KOS_TRACE_SLOT_COUNT; i++) {
     PyObject *entry;
     const char *name;
     uint64_t c;
@@ -550,7 +701,7 @@ static int add_opcode_timing_section(PyObject *report) {
     double ratio_mean;
 
     c = kos_op_timing[i].count;
-    t = kos_op_timing[i].total_ns;
+    t = (uint64_t) ((double) kos_op_timing[i].total_ticks * ns_per_tick);
     if (c == 0)
       continue;
 
@@ -587,7 +738,7 @@ static int add_opcode_timing_section(PyObject *report) {
       Py_DECREF(entry);
       goto fail;
     }
-    name = kos_opcode_name((KosOpCode) i);
+    name = kos_trace_slot_name(i);
     if (PyDict_SetItemString(ot, name, entry) < 0) {
       Py_DECREF(entry);
       goto fail;
@@ -599,7 +750,14 @@ static int add_opcode_timing_section(PyObject *report) {
   if (! summary)
     goto fail;
 
-  if (PyDict_SetItemString(summary, "total_executions",
+  if (PyDict_SetItemString(summary, "clock",
+          PyUnicode_FromString(kos_trace_clock_name())) < 0 ||
+      PyDict_SetItemString(summary, "ns_per_tick",
+          PyFloat_FromDouble(ns_per_tick)) < 0 ||
+      PyDict_SetItemString(summary, "step_overhead_ns",
+          PyFloat_FromDouble((double) kos_trace_step_overhead_ticks
+                             * ns_per_tick)) < 0 ||
+      PyDict_SetItemString(summary, "total_executions",
           PyLong_FromUnsignedLongLong(total_executions)) < 0 ||
       PyDict_SetItemString(summary, "total_ns",
           PyLong_FromUnsignedLongLong(total_ns_all)) < 0 ||
@@ -649,7 +807,7 @@ static int add_opcode_timing_section(PyObject *report) {
           Py_DECREF(top_avg);
           goto fail;
         }
-        opname = kos_opcode_name((KosOpCode) tmp[k].idx);
+        opname = kos_trace_slot_name(tmp[k].idx);
         if (PyDict_SetItemString(row, "op",
                 PyUnicode_FromString(opname)) < 0 ||
             PyDict_SetItemString(row, "total_ns",
@@ -684,7 +842,7 @@ static int add_opcode_timing_section(PyObject *report) {
           Py_DECREF(top_avg);
           goto fail;
         }
-        opname = kos_opcode_name((KosOpCode) tmp[k].idx);
+        opname = kos_trace_slot_name(tmp[k].idx);
         if (PyDict_SetItemString(row, "op",
                 PyUnicode_FromString(opname)) < 0 ||
             PyDict_SetItemString(row, "avg_ns",
@@ -797,6 +955,7 @@ static int add_post_handler_timing_section(PyObject *report) {
   uint64_t rollup_total_ns;
   uint64_t rollup_avg_ns;
   int rc = -1;
+  const double ns_per_tick = kos_trace_ns_per_tick();
 
   ph = PyDict_New();
   if (! ph)
@@ -817,7 +976,7 @@ static int add_post_handler_timing_section(PyObject *report) {
     uint64_t avg;
 
     c = kos_post_handler_timing[i].count;
-    t = kos_post_handler_timing[i].total_ns;
+    t = (uint64_t) ((double) kos_post_handler_timing[i].total_ticks * ns_per_tick);
     if (c == 0)
       continue;
 
@@ -849,7 +1008,8 @@ static int add_post_handler_timing_section(PyObject *report) {
     avg_ns_per_dispatch = 0;
 
   rollup_count = kos_post_handler_timing[KOS_TP_rollup].count;
-  rollup_total_ns = kos_post_handler_timing[KOS_TP_rollup].total_ns;
+  rollup_total_ns = (uint64_t) ((double)
+      kos_post_handler_timing[KOS_TP_rollup].total_ticks * ns_per_tick);
   if (rollup_count > 0)
     rollup_avg_ns = rollup_total_ns / rollup_count;
   else
@@ -866,7 +1026,7 @@ static int add_post_handler_timing_section(PyObject *report) {
     double ratio_mean;
 
     c = kos_post_handler_timing[i].count;
-    t = kos_post_handler_timing[i].total_ns;
+    t = (uint64_t) ((double) kos_post_handler_timing[i].total_ticks * ns_per_tick);
     if (c == 0)
       continue;
 

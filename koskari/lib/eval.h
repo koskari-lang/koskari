@@ -395,6 +395,7 @@ typedef KosThreadFn KosResumeFn;
   do {                                                                  \
     if (KOS_EVAL_BREAKER_UP(es))                                        \
       DISPATCH((fn), (es), (state), (value));                           \
+    KOS_TRACE_RESUME_STEP();                                            \
     TAILCALL((fn), (es), (state), (value));                             \
   } while (0)
 

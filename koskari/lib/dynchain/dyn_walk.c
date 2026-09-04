@@ -702,7 +702,9 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
       KosDynFrame_RESUME_FN(frame) = NULL;
       KosDynFrame_RESUME_STATE(frame) = NULL;
 
+      KOS_TRACE_RESUME_STEP();
       hr = resume(es, state, NULL);
+      KOS_TRACE_TRAMPOLINE_STEP();
       if (hr.kind == KOS_RES_NORMAL || hr.kind == KOS_RES_REPROLOGUE)
         return EVAL_REPROLOGUE();
       if (hr.kind == KOS_RES_FATAL)

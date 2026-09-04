@@ -2962,8 +2962,10 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
     }
   }
 
-  if (! have_res)
+  if (! have_res) {
+    KOS_TRACE_RESUME_STEP();
     res = resume(es, state, val);
+  }
 
   /* Every outcome routes through the one hub: a RAISE from here is an
      ordinary in-eval raise and must run the unwind walk (try/finally
@@ -3292,6 +3294,8 @@ KosOpResult koskari_eval(
 
   KosEvalState_EnterDomainScope(&es);
   kos_tls_push_active_eval(&es);
+  KOS_TRACE_EVAL_PUSH();
+  KOS_TRACE_TRAMPOLINE_STEP();
 
   /* Phase 1: entry/revive normalization */
   {
@@ -3345,6 +3349,7 @@ reenter:
   goto thread;
 
 poll:
+  KOS_TRACE_TRAMPOLINE_STEP();
   /* The breaker is up.  Another thread waiting on the GIL has already
      outlasted the interpreter's switch interval, so yield it now, as
      Python's own loop would; then take any pending signal.
@@ -3383,6 +3388,7 @@ pc_bounds_error:
 #endif
 
 handle_result:
+  KOS_TRACE_TRAMPOLINE_STEP();
   {
     /* The plain-return fast arms live in op_RETURN, which threads
        straight into the parent when they hold and signals RETURN only
@@ -3406,6 +3412,8 @@ handle_result:
   }
 
 koskari_eval_cleanup:
+  KOS_TRACE_OP_EXIT();
+  KOS_TRACE_EVAL_POP();
   kos_tls_pop_active_eval();
   KosEvalState_FlushLiveRegsToFrame(&es);
   KosEvalState_FreezeToContext(&es);
