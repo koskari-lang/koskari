@@ -1948,8 +1948,15 @@ void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
    there: the delegation is ending (finished, or unwound by a raise),
    and the frame threads on from its pc. Idempotent.
 */
-void kos_dyn_yield_from_disarm(KosEvalState *es, KosDynYieldFrom *node);
+/**
+   Arm resume, a KosThreadFn, as the node's phase resume on the live
+   frame: the frame's next delivery runs it instead of an instruction.
+   Every suspension of the delegation ends in this.
+*/
+void kos_dyn_yield_from_arm(KosEvalState *es, KosDynYieldFrom *node,
+                            void *resume);
 
+void kos_dyn_yield_from_disarm(KosEvalState *es, KosDynYieldFrom *node);
 
 /**
    Close the delegate of a YIELD_FROM dyn node (on unwind or error).

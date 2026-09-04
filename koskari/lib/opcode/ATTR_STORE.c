@@ -18,9 +18,7 @@
 */
 
 KOS_OP_HANDLER(ATTR_STORE) {
-  PyObject *name = get_name_from_insn(es, insn);
-  if (! name)
-    RESULT_RAISE();
+  PyObject *name = KosOp_OBJ(insn);
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     RESULT_RAISE();

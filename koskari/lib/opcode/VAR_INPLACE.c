@@ -26,8 +26,6 @@ KOS_OP_HANDLER_COLD(VAR_INPLACE) {
 
   KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
   PyObject *name = KosExtra_OBJ(row, 1);
-  if (unlikely(! name))
-    RESULT_RAISE();
 
   if (unlikely(kos_var_inplace_operand(es, op, name) < 0))
     RESULT_RAISE();

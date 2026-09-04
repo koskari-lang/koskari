@@ -27,9 +27,6 @@ KOS_OP_HANDLER(FAST_STORE_CONST) {
     size_t idx = (size_t) KosExtra_IMM(row, 0);
     PyObject *val = KosExtra_OBJ(row, 1);
 
-    if (unlikely(! val))
-      RESULT_RAISE();
-
     if (unlikely(kos_ns_fast_store(ns, idx, val) < 0))
       RESULT_RAISE();
 

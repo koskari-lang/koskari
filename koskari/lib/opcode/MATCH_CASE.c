@@ -52,8 +52,6 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
     matcher = slot->u.matcher.matcher;   /* borrowed */
   if (! matcher) {
     PyObject *frozen = KosExtra_OBJ(row, 1);
-    if (unlikely(! frozen))
-      RESULT_RAISE();
     matcher = KosMatcher_FromTuple(frozen);
     if (unlikely(! matcher))
       RESULT_RAISE();

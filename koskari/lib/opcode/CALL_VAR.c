@@ -22,12 +22,9 @@
 */
 KOS_OP_HANDLER_COLD(CALL_VAR) {
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *name_obj = KosExtra_OBJ(row, 0);
   unsigned n = KosExtra_IMM(row, 1);
 
-  PyObject *name = name_obj;
-  if (unlikely(! name))
-    RESULT_RAISE();
+  PyObject *name = KosExtra_OBJ(row, 0);
 
   PyObject *callable = frame_ns_deref(es, name);
   SAYF("CALL_VAR: callable=%R", callable);

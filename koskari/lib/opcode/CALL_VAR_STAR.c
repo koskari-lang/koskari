@@ -40,12 +40,9 @@ static int ensure_tuple_var_star(PyObject **val) {
 
 KOS_OP_HANDLER_COLD(CALL_VAR_STAR) {
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *name_obj = KosExtra_OBJ(row, 0);
   unsigned opa = KosExtra_IMM(row, 1);
 
-  PyObject *name = name_obj;
-  if (! name)
-    RESULT_RAISE();
+  PyObject *name = KosExtra_OBJ(row, 0);
 
   PyObject *callable = frame_ns_deref(es, name);
   if (! callable)

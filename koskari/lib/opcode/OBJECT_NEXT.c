@@ -68,9 +68,7 @@ static KosOpResult object_next_step(
         /* A frame with bytecode (a generator attached) continues
            dispatch directly; only a code-less native frame takes the
            entry sequence, which exists for it. */
-        if (kos_frame_threads(KosEvalState_FRAME(es)))
-          return EVAL_NORMAL();
-        return EVAL_REPROLOGUE();
+        return kos_iter_installed(es);
       }
 
       case KOS_IREQ_EXIT:

@@ -19,9 +19,7 @@
   the current frame namespace.
 */
 KOS_OP_HANDLER_COLD(VAR_STORE) {
-  PyObject *name = get_name_from_insn(es, insn);
-  if (unlikely(! name))
-    RESULT_RAISE();
+  PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))

@@ -19,9 +19,7 @@
   frame's namespace and push the value.
 */
 KOS_OP_HANDLER_COLD(VAR) {
-  PyObject *name = get_name_from_insn(es, insn);
-  if (unlikely(! name))
-    RESULT_RAISE();
+  PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = frame_ns_deref(es, name);
   if (unlikely(! val))

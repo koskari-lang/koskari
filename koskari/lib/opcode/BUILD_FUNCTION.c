@@ -31,12 +31,8 @@ KOS_OP_HANDLER_COLD(BUILD_FUNCTION) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *defnames = KosExtra_OBJ(row, 0);
-  if (unlikely(! defnames))
-    RESULT_RAISE();
 
   PyObject *annnames = KosExtra_OBJ(row, 1);
-  if (unlikely(! annnames))
-    RESULT_RAISE();
 
   if (! PyTuple_CheckExact(defnames) || ! PyTuple_CheckExact(annnames)) {
     PyErr_Format(PyExc_TypeError, "BUILD_FUNCTION names must be tuples,"

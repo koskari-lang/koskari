@@ -24,9 +24,7 @@
 KOS_OP_HANDLER_COLD(TAIL_CALL_FAST_ATTR_NAMES) {
   const KosExtra *row = KosOp_ROW(insn);
   uint32_t slot_idx = KosExtra_IMM(row, 0);
-  PyObject *attr_obj = KosExtra_OBJ(row, 1);
-  PyObject *names_obj = KosExtra_OBJ(row, 2);
-  unsigned opa = KosExtra_IMM(row, 3);
+      unsigned opa = KosExtra_IMM(row, 3);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -34,17 +32,9 @@ KOS_OP_HANDLER_COLD(TAIL_CALL_FAST_ATTR_NAMES) {
   if (! obj)
     RESULT_RAISE();
 
-  PyObject *name = attr_obj;
-  if (! name) {
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
+  PyObject *name = KosExtra_OBJ(row, 1);
 
-  PyObject *names = names_obj;
-  if (! names) {
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
+  PyObject *names = KosExtra_OBJ(row, 2);
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_FAST_ATTR_NAMES names must"

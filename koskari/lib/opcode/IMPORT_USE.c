@@ -60,16 +60,10 @@ KOS_OP_HANDLER_COLD(IMPORT_USE) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
-  if (! name)
-    RESULT_RAISE();
 
   PyObject *stems = KosExtra_OBJ(row, 2);
-  if (! stems)
-    RESULT_RAISE();
 
   PyObject *binds = KosExtra_OBJ(row, 3);
-  if (! binds)
-    RESULT_RAISE();
 
   if (! PyTuple_CheckExact(stems) || ! PyTuple_CheckExact(binds) ||
       PyTuple_GET_SIZE(stems) != PyTuple_GET_SIZE(binds)) {

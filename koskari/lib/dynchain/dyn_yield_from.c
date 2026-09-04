@@ -177,10 +177,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
   }
   kos_dyn_iter_request_set_mode((KosDynNode *) yf, KOS_IREQ_IDLE);
   KosEvalState_PENDING_VALUE(es) = inner_val;
-  KosDynYieldFrom_RESUME(yf) = KosDynYieldFrom_RESUME_EMIT(yf);
-  KosDynFrame_RESUME_FN(frame) = KosDynYieldFrom_RESUME_EMIT(yf);
-  KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = "yield-from";
+  kos_dyn_yield_from_arm(es, yf, KosDynYieldFrom_RESUME_EMIT(yf));
   return 0;
 }
 
@@ -322,6 +319,20 @@ void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node) {
     kos_dyn_yield_from_disarm(es, node);
     kos_yieldfrom_close_delegate(node);
   }
+}
+
+
+void kos_dyn_yield_from_arm(
+    KosEvalState *es,
+    KosDynYieldFrom *node,
+    void *resume) {
+
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+
+  KosDynYieldFrom_RESUME(node) = resume;
+  KosDynFrame_RESUME_FN(frame) = resume;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  KosDynFrame_RESUME_NAME(frame) = "yield-from";
 }
 
 

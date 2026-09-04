@@ -23,20 +23,12 @@ KOS_OP_HANDLER(CONST4) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *a = KosExtra_OBJ(row, 0);
-  if (unlikely(! a))
-    RESULT_RAISE();
 
   PyObject *b = KosExtra_OBJ(row, 1);
-  if (unlikely(! b))
-    RESULT_RAISE();
 
   PyObject *c = KosExtra_OBJ(row, 2);
-  if (unlikely(! c))
-    RESULT_RAISE();
 
   PyObject *d = KosExtra_OBJ(row, 3);
-  if (unlikely(! d))
-    RESULT_RAISE();
 
   if (unlikely(KosEvalState_StackPushRef(es, a) < 0))
     RESULT_RAISE();

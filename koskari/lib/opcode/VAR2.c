@@ -24,18 +24,12 @@ KOS_OP_HANDLER_COLD(VAR2) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
-  if (unlikely(! name))
-    RESULT_RAISE();
 
   PyObject *a = frame_ns_deref(es, name);
   if (unlikely(! a))
     RESULT_RAISE();
 
   name = KosExtra_OBJ(row, 1);
-  if (unlikely(! name)) {
-    Py_DECREF(a);
-    RESULT_RAISE();
-  }
 
   PyObject *b = frame_ns_deref(es, name);
   if (unlikely(! b)) {

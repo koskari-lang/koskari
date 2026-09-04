@@ -22,8 +22,6 @@ KOS_OP_HANDLER_COLD(VAR_ATTR_STORE) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *var_name = KosExtra_OBJ(row, 0);
   PyObject *attr_name = KosExtra_OBJ(row, 1);
-  if (! var_name || ! attr_name)
-    RESULT_RAISE();
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     RESULT_RAISE();

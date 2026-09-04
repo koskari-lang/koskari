@@ -42,12 +42,9 @@ static int ensure_tuple_fast_attr_star(PyObject **val) {
 KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
   const KosExtra *row = KosOp_ROW(insn);
   uint32_t slot_idx = KosExtra_IMM(row, 0);
-  PyObject *attr_obj = KosExtra_OBJ(row, 1);
   unsigned opa = KosExtra_IMM(row, 2);
 
-  PyObject *attr_name = attr_obj;
-  if (! attr_name)
-    RESULT_RAISE();
+  PyObject *attr_name = KosExtra_OBJ(row, 1);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);

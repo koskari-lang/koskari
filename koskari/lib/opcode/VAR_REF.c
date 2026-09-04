@@ -18,9 +18,7 @@
   VAR_REF: arg = constant index (name). Push name reference (for closure).
 */
 KOS_OP_HANDLER_COLD(VAR_REF) {
-  PyObject *name = get_name_from_insn(es, insn);
-  if (unlikely(! name))
-    RESULT_RAISE();
+  PyObject *name = KosOp_OBJ(insn);
 
   PyObject *ref = frame_ns_ref(es, name);
   if (unlikely(! ref))

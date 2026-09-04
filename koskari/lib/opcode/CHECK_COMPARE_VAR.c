@@ -31,7 +31,7 @@ KOS_OP_HANDLER_COLD(CHECK_COMPARE_VAR) {
     ops[0] = KosExtra_OBJ(row, 1);   /* borrowed */
   } else {
     PyObject *name = KosExtra_OBJ(row, 1);
-    ops[0] = name ? frame_ns_deref(es, name) : NULL;
+    ops[0] = frame_ns_deref(es, name);
     if (! ops[0])
       RESULT_RAISE();
   }
@@ -40,7 +40,7 @@ KOS_OP_HANDLER_COLD(CHECK_COMPARE_VAR) {
     ops[1] = KosExtra_OBJ(row, 2);   /* borrowed */
   } else {
     PyObject *name = KosExtra_OBJ(row, 2);
-    ops[1] = name ? frame_ns_deref(es, name) : NULL;
+    ops[1] = frame_ns_deref(es, name);
     if (! ops[1]) {
       if (! KosCmpSrc_X_CONST(src))
         Py_DECREF(ops[0]);

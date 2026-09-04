@@ -23,17 +23,11 @@
 */
 KOS_OP_HANDLER_COLD(TAIL_CALL_ATTR_NAMES) {
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *attr_obj = KosExtra_OBJ(row, 0);
-  PyObject *names_obj = KosExtra_OBJ(row, 1);
-  unsigned opa = KosExtra_IMM(row, 2);
+      unsigned opa = KosExtra_IMM(row, 2);
 
-  PyObject *name = attr_obj;
-  if (! name)
-    RESULT_RAISE();
+  PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *names = names_obj;
-  if (! names)
-    RESULT_RAISE();
+  PyObject *names = KosExtra_OBJ(row, 1);
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_ATTR_NAMES names must be"

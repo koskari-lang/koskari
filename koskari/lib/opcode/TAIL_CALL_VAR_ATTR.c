@@ -23,17 +23,11 @@
 */
 KOS_OP_HANDLER_COLD(TAIL_CALL_VAR_ATTR) {
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *name_obj = KosExtra_OBJ(row, 0);
-  PyObject *attr_obj = KosExtra_OBJ(row, 1);
-  unsigned n = KosExtra_IMM(row, 2);
+      unsigned n = KosExtra_IMM(row, 2);
 
-  PyObject *var_name = name_obj;
-  if (! var_name)
-    RESULT_RAISE();
+  PyObject *var_name = KosExtra_OBJ(row, 0);
 
-  PyObject *attr_name = attr_obj;
-  if (! attr_name)
-    RESULT_RAISE();
+  PyObject *attr_name = KosExtra_OBJ(row, 1);
 
   PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj)

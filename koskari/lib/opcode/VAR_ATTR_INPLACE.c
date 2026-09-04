@@ -34,8 +34,6 @@ KOS_OP_HANDLER_COLD(VAR_ATTR_INPLACE) {
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
   PyObject *name = KosExtra_OBJ(row, 1);
   PyObject *attr = KosExtra_OBJ(row, 2);
-  if (! name || ! attr)
-    RESULT_RAISE();
 
   PyObject *obj = frame_ns_deref(es, name);
   if (! obj)

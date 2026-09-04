@@ -25,8 +25,6 @@ KOS_OP_HANDLER(FAST_FORMAT_CONST) {
   KOS_OP_REQUIRE_NS(ns);
 
   PyObject *rules = KosExtra_OBJ(row, 1);
-  if (unlikely(! rules))
-    RESULT_RAISE();
 
   size_t idx = (size_t) KosExtra_IMM(row, 0);
   PyObject *val = kos_ns_fast_deref(ns, idx);

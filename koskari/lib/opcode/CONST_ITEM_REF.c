@@ -20,9 +20,6 @@
 KOS_OP_HANDLER(CONST_ITEM_REF) {
   PyObject *key = KosOp_OBJ(insn);
 
-  if (unlikely(! key))
-    RESULT_RAISE();
-
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (unlikely(! obj))
     RESULT_RAISE();

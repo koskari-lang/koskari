@@ -28,8 +28,6 @@ KOS_OP_HANDLER(FAST_INPLACE_CONST) {
   KOS_OP_REQUIRE_NS(ns);
 
   PyObject *operand = KosExtra_OBJ(row, 2);   /* borrowed */
-  if (unlikely(! operand))
-    RESULT_RAISE();
 
   size_t idx = (size_t) KosExtra_IMM(row, 1);
   PyObject *obj = kos_ns_fast_deref(ns, idx);

@@ -18,9 +18,7 @@
 */
 
 KOS_OP_HANDLER_COLD(VAR_CLEAR) {
-  PyObject *name = get_name_from_insn(es, insn);
-  if (! name)
-    RESULT_RAISE();
+  PyObject *name = KosOp_OBJ(insn);
   if (frame_ns_clear(es, name) < 0)
     RESULT_RAISE();
   RESULT_NEXT(es);

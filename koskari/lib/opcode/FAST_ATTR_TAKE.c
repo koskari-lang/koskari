@@ -25,8 +25,6 @@ KOS_OP_HANDLER(FAST_ATTR_TAKE) {
   KOS_OP_REQUIRE_NS(ns);
 
   PyObject *attr_name = KosExtra_OBJ(row, 1);
-  if (! attr_name)
-    RESULT_RAISE();
   size_t idx = (size_t) KosExtra_IMM(row, 0);
 
   PyObject *obj = kos_ns_fast_deref(ns, idx);

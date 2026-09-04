@@ -41,12 +41,9 @@ static int ensure_tuple_attr_star(PyObject **val) {
 
 KOS_OP_HANDLER_COLD(CALL_ATTR_STAR) {
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *attr_obj = KosExtra_OBJ(row, 0);
   unsigned opa = KosExtra_IMM(row, 1);
 
-  PyObject *name = attr_obj;
-  if (! name)
-    RESULT_RAISE();
+  PyObject *name = KosExtra_OBJ(row, 0);
 
   PyObject *obj = NULL;
   PyObject *pos = NULL;

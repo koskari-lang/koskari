@@ -24,9 +24,6 @@ KOS_OP_HANDLER_COLD(VAR_STORE_CONST) {
     PyObject *name = KosExtra_OBJ(row, 0);
     PyObject *val = KosExtra_OBJ(row, 1);
 
-    if (unlikely(! name || ! val))
-      RESULT_RAISE();
-
     if (unlikely(frame_ns_store(es, name, val) < 0)) {
       RESULT_RAISE();
     }

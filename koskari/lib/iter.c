@@ -469,9 +469,8 @@ static KosIterStepResult agen_iter_drive(
       KosDynFrame *frame = KosEvalState_FRAME(es);
       if (frame && KosDynFrame_RESUME_FN(frame)) {
         /* waiting on a resume: the sent value is its delivery */
-        Py_XDECREF(KosEvalState_PENDING_VALUE(es));
         Py_INCREF(send_val);
-        KosEvalState_PENDING_VALUE(es) = send_val;
+        KosEvalState_StageDelivery(es, send_val);
       } else {
         PyObject *popped = KosEvalState_StackPopRef(es);
         if (! popped)

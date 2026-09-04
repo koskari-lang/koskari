@@ -21,13 +21,10 @@
 */
 KOS_OP_HANDLER_COLD(CALL_ATTR) {
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *attr_obj = KosExtra_OBJ(row, 0);
   unsigned n = KosExtra_IMM(row, 1);
   unsigned count = n + 1;
 
-  PyObject *name = attr_obj;
-  if (! name)
-    RESULT_RAISE();
+  PyObject *name = KosExtra_OBJ(row, 0);
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
   if (! ptr)

@@ -178,27 +178,6 @@ static PyObject *yield_from_take_await_result(KosDynYieldFrom *yf) {
 }
 
 
-/**
-  Arm a phase resume on the delegating frame: the next delivery to this
-  frame (a sent value, an awaited result, a flattened inner yield) runs
-  it instead of an instruction, and the pc stays past the YIELD_FROM.
-  Every suspension of the delegation ends in this; the node's pop and
-  unwind disarm it.
-*/
-static void yield_from_arm(
-    KosEvalState *es,
-    KosDynYieldFrom *yf,
-    KosThreadFn resume) {
-
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-
-  KosDynYieldFrom_RESUME(yf) = (void *) resume;
-  KosDynFrame_RESUME_FN(frame) = (void *) resume;
-  KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = "yield-from";
-}
-
-
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_send(
     KosEvalState *es, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_await(
@@ -208,11 +187,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_emit(
 
 
 /**
-  Emit payload (owned, consumed) as this generator's own yield: arm the
-  send resume for the value that answers it and return EVAL_YIELD.
-  Nothing is left on the operand stack.
+  Yield value (owned, consumed) out of the delegating generator as this
+  generator's own yield: arm the send resume for the value that answers
+  it and return EVAL_YIELD. Nothing is left on the operand stack.
 */
-static KosOpResult yield_from_emit_yield(
+static KOS_NOINLINE KosOpResult yield_from_yield_value(
     KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *payload) {
@@ -224,7 +203,7 @@ static KosOpResult yield_from_emit_yield(
     generator; the await-shaped suspension below keeps its deny.
   */
 
-  yield_from_arm(es, yf, yield_from_resume_send);
+  kos_dyn_yield_from_arm(es, yf, (void *) yield_from_resume_send);
   SAYF("[yf] emit_yield dyn_top=%p frame=%p payload=%p -> KOS_RES_YIELD\n",
        (void *) KosEvalState_CurrentNode(es), (void *) KosEvalState_FRAME(es),
        (void *) payload);
@@ -232,18 +211,6 @@ static KosOpResult yield_from_emit_yield(
   return EVAL_YIELD(payload);
 }
 
-
-/**
-  Yield value (a new ref, consumed) out of the delegating generator as
-  this generator's own yield.
-*/
-static KOS_NOINLINE KosOpResult yield_from_yield_value(
-    KosEvalState *es,
-    KosDynYieldFrom *yf,
-    PyObject *value) {
-
-  return yield_from_emit_yield(es, yf, value);
-}
 
 
 /**
@@ -328,10 +295,7 @@ static KosOpResult yield_from_drive_sync_iter(
     KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *delegate,
-    uint8_t action,
-    KosOp *insn) {
-
-  (void) insn;
+    uint8_t action) {
 
   if (action != KOS_YF_STEP && action != KOS_YF_SEND) {
     if (action == KOS_YF_CLOSE)
@@ -374,10 +338,7 @@ static KosOpResult yield_from_drive_sync_gen(
     KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *delegate,
-    uint8_t action,
-    KosOp *insn) {
-
-  (void) insn;
+    uint8_t action) {
 
   PyObject *send_val = Py_None;
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf))
@@ -433,10 +394,7 @@ static KosOpResult yield_from_drive_py_async(
     KosDynYieldFrom *yf,
     PyObject *delegate,
     uint8_t kind,
-    uint8_t action,
-    KosOp *insn) {
-
-  (void) insn;
+    uint8_t action) {
 
   /* Resuming from await: we had suspended with INFLIGHT set; the
      result was stashed in PENDING_ARG. Push it and emit YIELD. */
@@ -508,7 +466,7 @@ static KosOpResult yield_from_drive_py_async(
       return EVAL_RAISE();
     }
     KosDynYieldFrom_INFLIGHT(yf) = awaitable;
-    yield_from_arm(es, yf, yield_from_resume_await);
+    kos_dyn_yield_from_arm(es, yf, (void *) yield_from_resume_await);
     KosEvalState_FlushLiveRegsToFrame(es);
     KosEvalState_MarkDeadAfterYield(es);
     return EVAL_AWAIT(yielded);
@@ -536,13 +494,16 @@ static KosOpResult yield_from_drive_kos_iter(
     KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *delegate,
-    KosIterSlots *islots,
-    uint8_t action,
-    KosOp *insn) {
+    uint8_t action) {
 
   PyObject *yf_send_val = NULL;
+  KosIterSlots *islots;
 
-  (void) insn;
+  if (! KosIter_CheckSlots(delegate, &islots)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "yield-from delegate lost its iter suite");
+    return EVAL_RAISE();
+  }
 
   if (action == KOS_YF_CLOSE) {
     islots->ki_finish(delegate, 1);
@@ -577,9 +538,7 @@ static KosOpResult yield_from_drive_kos_iter(
             (KosDynNode *) yf, delegate,
             (tr == KOS_ITER_INSTALLED) ? KOS_IREQ_INSTALLED
                                        : KOS_IREQ_GRAFT_VALUE);
-        if (kos_frame_threads(KosEvalState_FRAME(es)))
-          return EVAL_NORMAL();
-        return EVAL_REPROLOGUE();
+        return kos_iter_installed(es);
       }
       case KOS_ITER_VALUE:
         return yield_from_yield_value(es, yf, out);
@@ -607,21 +566,12 @@ static KosOpResult yield_from_drive_kos_iter(
 
     switch (sr) {
       case KOS_ITER_INSTALLED:
-        kos_dyn_iter_request_arm((KosDynNode *) yf, delegate,
-                                 KOS_IREQ_INSTALLED);
-        if (kos_frame_threads(KosEvalState_FRAME(es)))
-          return EVAL_NORMAL();
-        return EVAL_REPROLOGUE();
-
-      case KOS_ITER_INSTALLED_VALUE: {
-        /* A frame with bytecode continues dispatch directly; only a
-           code-less native frame takes the entry sequence. */
-        kos_dyn_iter_request_arm((KosDynNode *) yf, delegate,
-                                 KOS_IREQ_GRAFT_VALUE);
-        if (kos_frame_threads(KosEvalState_FRAME(es)))
-          return EVAL_NORMAL();
-        return EVAL_REPROLOGUE();
-      }
+      case KOS_ITER_INSTALLED_VALUE:
+        kos_dyn_iter_request_arm(
+            (KosDynNode *) yf, delegate,
+            (sr == KOS_ITER_INSTALLED) ? KOS_IREQ_INSTALLED
+                                       : KOS_IREQ_GRAFT_VALUE);
+        return kos_iter_installed(es);
 
       case KOS_ITER_VALUE:
         /* The delegate produced an element without grafting: re-emit
@@ -655,49 +605,21 @@ static KosOpResult yield_from_drive_kos_iter(
   node's pending action before the drive runs.
 */
 
-#define KOS_YF_DRIVE(name)                                              \
+#define KOS_YF_DRIVE(name, ...)                                         \
   static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_##name(   \
-      KosEvalState *es, void *insn, PyObject *value)
-
-KOS_YF_DRIVE(sync_iter) {
-  KosDynYieldFrom *yf = (KosDynYieldFrom *) KosEvalState_CurrentNode(es);
-  (void) value;
-  RESULT_RELAY(es, yield_from_drive_sync_iter(
-      es, yf, KosDynYieldFrom_DELEGATE(yf),
-      KosDynYieldFrom_PENDING_ACTION(yf), (KosOp *) insn));
-}
-
-KOS_YF_DRIVE(sync_gen) {
-  KosDynYieldFrom *yf = (KosDynYieldFrom *) KosEvalState_CurrentNode(es);
-  (void) value;
-  RESULT_RELAY(es, yield_from_drive_sync_gen(
-      es, yf, KosDynYieldFrom_DELEGATE(yf),
-      KosDynYieldFrom_PENDING_ACTION(yf), (KosOp *) insn));
-}
-
-KOS_YF_DRIVE(py_async) {
-  KosDynYieldFrom *yf = (KosDynYieldFrom *) KosEvalState_CurrentNode(es);
-  (void) value;
-  RESULT_RELAY(es, yield_from_drive_py_async(
-      es, yf, KosDynYieldFrom_DELEGATE(yf), KosDynYieldFrom_KIND(yf),
-      KosDynYieldFrom_PENDING_ACTION(yf), (KosOp *) insn));
-}
-
-KOS_YF_DRIVE(kos_iter) {
-  KosDynYieldFrom *yf = (KosDynYieldFrom *) KosEvalState_CurrentNode(es);
-  PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
-  KosIterSlots *islots;
-  (void) value;
-
-  if (! KosIter_CheckSlots(delegate, &islots)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "yield-from delegate lost its iter suite");
-    RESULT_RAISE();
+      KosEvalState *es, void *insn, PyObject *value) {                  \
+    KosDynYieldFrom *yf = (KosDynYieldFrom *) KosEvalState_CurrentNode(es); \
+    (void) insn;                                                        \
+    (void) value;                                                       \
+    RESULT_RELAY(es, yield_from_drive_##name(                           \
+        es, yf, KosDynYieldFrom_DELEGATE(yf), __VA_ARGS__               \
+        KosDynYieldFrom_PENDING_ACTION(yf)));                           \
   }
-  RESULT_RELAY(es, yield_from_drive_kos_iter(
-      es, yf, delegate, islots, KosDynYieldFrom_PENDING_ACTION(yf),
-      (KosOp *) insn));
-}
+
+KOS_YF_DRIVE(sync_iter, )
+KOS_YF_DRIVE(sync_gen, )
+KOS_YF_DRIVE(py_async, KosDynYieldFrom_KIND(yf),)
+KOS_YF_DRIVE(kos_iter, )
 
 #undef KOS_YF_DRIVE
 
@@ -785,6 +707,45 @@ static KosThreadFn yield_from_resume_drive(KosDynYieldFrom *yf) {
 
 
 /**
+  The shared front of a send or await resume: the node, a transfer
+  plan's throw injection, and otherwise the delivery consumed into the
+  pending action. value is owned and is released or transferred here.
+  A NULL delivery is a send of None when allowed, else an error.
+  :return: the elected drive, or NULL with PyErr set
+*/
+static KosThreadFn yield_from_resume_take(
+    KosEvalState *es,
+    PyObject *value,
+    uint8_t action,
+    int none_when_empty) {
+
+  KosDynYieldFrom *yf = yield_from_resume_node(es);
+
+  if (unlikely(! yf)) {
+    Py_XDECREF(value);
+    return NULL;
+  }
+  if (yield_from_take_throw(es, yf)) {
+    Py_XDECREF(value);
+    return yield_from_resume_drive(yf);
+  }
+  if (! value) {
+    if (! none_when_empty) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "yield-from resume with no delivery");
+      return NULL;
+    }
+    value = Py_None;
+    Py_INCREF(value);
+  }
+  Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
+  KosDynYieldFrom_PENDING_ARG(yf) = value;
+  KosDynYieldFrom_PENDING_ACTION(yf) = action;
+  return yield_from_resume_drive(yf);
+}
+
+
+/**
   After an emitted yield: value is what the consumer sent, or NULL when
   it only stepped, which is a send of None.
 */
@@ -793,26 +754,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_send(
     void *state,
     PyObject *value) {
 
-  KosDynYieldFrom *yf = yield_from_resume_node(es);
-  KosThreadFn drive;
+  KosThreadFn drive = yield_from_resume_take(es, value, KOS_YF_SEND, 1);
   (void) state;
 
-  if (unlikely(! yf)) {
-    Py_XDECREF(value);
-    return EVAL_RAISE();
-  }
-  if (yield_from_take_throw(es, yf)) {
-    Py_XDECREF(value);
-  } else {
-    if (! value) {
-      value = Py_None;
-      Py_INCREF(value);
-    }
-    Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
-    KosDynYieldFrom_PENDING_ARG(yf) = value;
-    KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_SEND;
-  }
-  drive = yield_from_resume_drive(yf);
   if (unlikely(! drive))
     return EVAL_RAISE();
   TAILCALL(drive, es, NULL, NULL);
@@ -828,27 +772,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_await(
     void *state,
     PyObject *value) {
 
-  KosDynYieldFrom *yf = yield_from_resume_node(es);
-  KosThreadFn drive;
+  KosThreadFn drive = yield_from_resume_take(es, value, KOS_YF_STEP, 0);
   (void) state;
 
-  if (unlikely(! yf)) {
-    Py_XDECREF(value);
-    return EVAL_RAISE();
-  }
-  if (yield_from_take_throw(es, yf)) {
-    Py_XDECREF(value);
-  } else {
-    if (unlikely(! value)) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "yield-from resume with no await result");
-      return EVAL_RAISE();
-    }
-    Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
-    KosDynYieldFrom_PENDING_ARG(yf) = value;
-    KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
-  }
-  drive = yield_from_resume_drive(yf);
   if (unlikely(! drive))
     return EVAL_RAISE();
   TAILCALL(drive, es, NULL, NULL);
@@ -929,7 +855,6 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
     KosDynYieldFrom *yf = (KosDynYieldFrom *) KosEvalState_CurrentNode(es);
     KosThreadFn drive = yield_from_drive_for_kind(kind);
 
-    KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
     KosDynYieldFrom_DRIVE(yf) = (void *) drive;
     KosDynYieldFrom_RESUME_EMIT(yf) = (void *) yield_from_resume_emit;
     /* es->pc already sits past this instruction, and acting_pc is it */

@@ -127,16 +127,10 @@ KOS_OP_HANDLER_COLD(IMPORT_FROM) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
-  if (unlikely(! name))
-    RESULT_RAISE();
 
   PyObject *attrs = KosExtra_OBJ(row, 2);
-  if (unlikely(! attrs))
-    RESULT_RAISE();
 
   PyObject *binds = KosExtra_OBJ(row, 3);
-  if (unlikely(! binds))
-    RESULT_RAISE();
 
   if (unlikely(! PyTuple_CheckExact(attrs) || ! PyTuple_CheckExact(binds) ||
       PyTuple_GET_SIZE(attrs) != PyTuple_GET_SIZE(binds))) {

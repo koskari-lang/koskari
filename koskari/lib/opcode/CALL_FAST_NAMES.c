@@ -24,7 +24,6 @@
 KOS_OP_HANDLER_COLD(CALL_FAST_NAMES) {
   const KosExtra *row = KosOp_ROW(insn);
   uint32_t slot_idx = KosExtra_IMM(row, 0);
-  PyObject *names_obj = KosExtra_OBJ(row, 1);
   Py_ssize_t npos = (Py_ssize_t) KosExtra_IMM(row, 2);
 
   PyObject *ns = CURRENT_NS();
@@ -33,11 +32,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_NAMES) {
   if (! callable)
     RESULT_RAISE();
 
-  PyObject *names = names_obj;
-  if (! names) {
-    Py_DECREF(callable);
-    RESULT_RAISE();
-  }
+  PyObject *names = KosExtra_OBJ(row, 1);
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_NAMES names must be tuple"
                  ", not %R", names);

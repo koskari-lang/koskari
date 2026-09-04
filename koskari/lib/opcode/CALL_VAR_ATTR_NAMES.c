@@ -22,15 +22,10 @@
 
 KOS_OP_HANDLER_COLD(CALL_VAR_ATTR_NAMES) {
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *name_obj = KosExtra_OBJ(row, 0);
-  PyObject *attr_obj = KosExtra_OBJ(row, 1);
-  PyObject *names_obj = KosExtra_OBJ(row, 2);
-  unsigned opa = KosExtra_IMM(row, 3);
+        unsigned opa = KosExtra_IMM(row, 3);
 
   // borrow reference
-  PyObject *name = name_obj;
-  if (! name)
-    RESULT_RAISE();
+  PyObject *name = KosExtra_OBJ(row, 0);
 
   // owned reference
   PyObject *obj = frame_ns_deref(es, name);
@@ -38,16 +33,10 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR_NAMES) {
     RESULT_RAISE();
 
   // borrowed reference
-  PyObject *attr_name = attr_obj;
-  if (! attr_name)
-    RESULT_RAISE();
+  PyObject *attr_name = KosExtra_OBJ(row, 1);
 
   // borrowed reference
-  PyObject *names = names_obj;
-  if (! names) {
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
+  PyObject *names = KosExtra_OBJ(row, 2);
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_VAR_ATTR_NAMES names must be tuple"

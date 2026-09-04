@@ -23,8 +23,6 @@ KOS_OP_HANDLER_COLD(VAR_ATTR_TAKE) {
 
   PyObject *var_name = KosExtra_OBJ(row, 0);
   PyObject *attr_name = KosExtra_OBJ(row, 1);
-  if (! var_name || ! attr_name)
-    RESULT_RAISE();
 
   PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj)

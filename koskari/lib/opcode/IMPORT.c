@@ -33,12 +33,8 @@ KOS_OP_HANDLER(IMPORT) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
-  if (unlikely(! name))
-    RESULT_RAISE();
 
   PyObject *bind = KosExtra_OBJ(row, 3);
-  if (unlikely(! bind))
-    RESULT_RAISE();
 
   PyObject *mod = kos_import_module(es, name, (long) KosExtra_IMM(row, 1), KosExtra_IMM(row, 2));
   if (unlikely(! mod))

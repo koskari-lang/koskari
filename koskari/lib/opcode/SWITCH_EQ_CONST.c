@@ -25,8 +25,6 @@ KOS_OP_HANDLER(SWITCH_EQ_CONST) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *rhs = KosExtra_OBJ(row, 1);
-  if (unlikely(! rhs))
-    RESULT_RAISE();
 
   PyObject *value = KosEvalState_StackPeek(es);
   if (unlikely(! value))

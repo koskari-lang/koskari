@@ -32,8 +32,6 @@ KOS_OP_HANDLER_COLD(ATTR_INPLACE) {
   KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
   PyObject *attr = KosExtra_OBJ(row, 1);
-  if (! attr)
-    RESULT_RAISE();
 
   PyObject *const *tail = KosEvalState_StackTailPtr(es, (size_t) (count + 1));
   if (! tail)

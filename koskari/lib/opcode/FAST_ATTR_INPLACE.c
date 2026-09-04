@@ -34,8 +34,6 @@ KOS_OP_HANDLER(FAST_ATTR_INPLACE) {
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
   size_t idx = (size_t) KosExtra_IMM(row, 1);
   PyObject *attr = KosExtra_OBJ(row, 2);
-  if (! attr)
-    RESULT_RAISE();
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);

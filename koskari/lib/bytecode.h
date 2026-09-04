@@ -330,7 +330,6 @@ struct KosOp {
 #define KosOp_FN(insn)     (((KosOp *) (insn))->fn)
 #define KosOp_OP(insn)     (((KosOp *) (insn))->op)
 #define KosOp_ARG(insn)    (((KosOp *) (insn))->arg)
-#define KosOp_CACHE(insn)  (((KosOp *) (insn))->cache)
 #define KosOp_PC(insn)     (((KosOp *) (insn))->pc)
 #define KosOp_OBJ(insn)    (((KosOp *) (insn))->u.obj)
 #define KosOp_TARGET(insn) (((KosOp *) (insn))->u.target)

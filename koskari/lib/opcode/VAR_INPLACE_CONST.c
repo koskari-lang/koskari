@@ -26,12 +26,8 @@ KOS_OP_HANDLER_COLD(VAR_INPLACE_CONST) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 1);
-  if (unlikely(! name))
-    RESULT_RAISE();
 
   PyObject *operand = KosExtra_OBJ(row, 2);   /* borrowed */
-  if (unlikely(! operand))
-    RESULT_RAISE();
 
   PyObject *obj = frame_ns_deref(es, name);
   if (unlikely(! obj))

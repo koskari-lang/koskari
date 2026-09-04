@@ -525,7 +525,7 @@ static KosOpResult revive_await(
          delivery, staged for the entry's delivery step */
       if (! owned)
         Py_INCREF(to_push);
-      KosEvalState_PENDING_VALUE(es) = to_push;
+      KosEvalState_StageDelivery(es, to_push);
       owned = 0;
     } else if (KosEvalState_StackPushRef(es, to_push) < 0) {
       if (owned)
@@ -574,8 +574,7 @@ static KosEvalMode revive_yield(
     }
     to_push = (send_val != NULL) ? send_val : Py_None;
     Py_INCREF(to_push);
-    Py_XDECREF(KosEvalState_PENDING_VALUE(es));
-    KosEvalState_PENDING_VALUE(es) = to_push;
+    KosEvalState_StageDelivery(es, to_push);
     return KOS_MODE_NORMAL;
   }
   if (throw_exc != NULL) {
@@ -1493,15 +1492,6 @@ int KosContext_Traverse(
 
 
 /**
-   Get the name constant for a VAR_* opcode. Borrowed reference.
-*/
-static PyObject *get_name_from_insn(KosEvalState *es, KosOp *insn) {
-  (void) es;
-  return KosOp_OBJ(insn);
-}
-
-
-/**
    Deref name in the current frame namespace. New reference or NULL.
 */
 static PyObject *frame_ns_deref(KosEvalState *es, PyObject *name) {
@@ -1802,7 +1792,8 @@ static KosOpResult kos_eval_route_delim_return(
    the reporter is defined below (with the dispatch loop). */
 static void kos_eval_report_pc_bounds_error(KosEvalState *es);
 /* Every handler has the KosThreadFn prototype: insn is the handler's
-   own KosOp (read through KosOp_ARG / KosOp_CACHE), and the delivery
+   own KosOp (read through KosOp_ARG, KosOp_OBJ, KosOp_ROW, KosOp_SLOT),
+   and the delivery
    argument is unused by an opcode.  The one shape lets an instruction's
    fn pointer reach any handler, and lets a handler be a musttail
    target.  Each handler is its own function, reached only through the
@@ -2849,7 +2840,7 @@ static inline KosOpResult eval_parent_return_deliver_impl(
      value through the pending slot; a bytecode parent takes it on its
      stack, where its next instruction finds it. */
   if (parent && KosDynFrame_RESUME_FN(parent)) {
-    KosEvalState_PENDING_VALUE(es) = val;
+    KosEvalState_StageDelivery(es, val);
   } else if (KosEvalState_StackPUSH(es, val) < 0) {
     return EVAL_FATAL();
   }

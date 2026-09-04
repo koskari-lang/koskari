@@ -77,8 +77,6 @@ KOS_OP_HANDLER_COLD(IMPORT_STAR) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
-  if (! name)
-    RESULT_RAISE();
 
   PyObject *mod = kos_import_module(es, name, (long) KosExtra_IMM(row, 1), 1);
   if (! mod)

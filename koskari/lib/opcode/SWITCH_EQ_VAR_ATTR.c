@@ -27,8 +27,6 @@ KOS_OP_HANDLER_COLD(SWITCH_EQ_VAR_ATTR) {
 
   PyObject *var_name = KosExtra_OBJ(row, 1);
   PyObject *attr_name = KosExtra_OBJ(row, 2);
-  if (unlikely(! var_name || ! attr_name))
-    RESULT_RAISE();
 
   PyObject *obj = frame_ns_deref(es, var_name);
   if (unlikely(! obj))

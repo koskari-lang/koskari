@@ -131,6 +131,34 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op) {
       KOSTYLE_NOARG, KOSTYLE_NOARG };
 }
 
+/* The kind of one field of a schema. */
+static inline KosOpStyle schema_field(KosExtraSchema schema, int slot) {
+  switch (slot) {
+    case 0: return schema.f0;
+    case 1: return schema.f1;
+    case 2: return schema.f2;
+    default: return schema.f3;
+  }
+}
+
+
+/**
+   The effective schema of one EXTRA row: the opcode's schema with the
+   CMPSRC override applied, where the source bits in field 0 mark the
+   operand fields that hold constants.
+*/
+static KosExtraSchema extra_row_schema(KosOpCode op, uint32_t src) {
+  KosExtraSchema schema = kos_opcode_extra_schema(op);
+
+  if (schema.f0 == KOSTYLE_CMPSRC) {
+    if (KosCmpSrc_X_CONST(src))
+      schema.f1 = KOSTYLE_CONST;
+    if (KosCmpSrc_Y_CONST(src))
+      schema.f2 = KOSTYLE_CONST;
+  }
+  return schema;
+}
+
 
 uint8_t kos_opcode_cache_count(KosOpCode op) {
 
@@ -251,8 +279,7 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
       KosExtraSchema schema = kos_opcode_extra_schema(op);
 
       for (int slot = 0; slot < 4; slot++) {
-        KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
-            (slot == 2) ? schema.f2 : schema.f3;
+        KosOpStyle fk = schema_field(schema, slot);
         if (fk == KOSTYLE_LABEL) {
           if (soften_label_map_add_pc(label_map,
                                       KosExtra_TARGET(row, slot)->pc)) {
@@ -291,21 +318,11 @@ static PyObject *soften_extra_tuple(
     const KosExtra *row,
     PyObject *label_map) {
 
-  KosExtraSchema schema = kos_opcode_extra_schema(op);
+  KosExtraSchema schema = extra_row_schema(op, KosExtra_IMM(row, 0));
   PyObject *items[4];
 
-  /* CMPSRC rows: source bits in a0 override operand slots to CONST
-     (mirror of the code_collect pre-step). */
-  if (schema.f0 == KOSTYLE_CMPSRC) {
-    if (KosCmpSrc_X_CONST(KosExtra_IMM(row, 0)))
-      schema.f1 = KOSTYLE_CONST;
-    if (KosCmpSrc_Y_CONST(KosExtra_IMM(row, 0)))
-      schema.f2 = KOSTYLE_CONST;
-  }
-
   for (int slot = 0; slot < 4; slot++) {
-    KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
-        (slot == 2) ? schema.f2 : schema.f3;
+    KosOpStyle fk = schema_field(schema, slot);
 
     /* Mirror code_collect: skip NOARG (emit uses 0); else decode by kind */
     if (fk == KOSTYLE_NOARG) {
@@ -916,17 +933,10 @@ static int extra_row_indices(PyObject *self, uint32_t eidx, uint16_t out[4]) {
     return -1;
   }
 
-  KosExtraSchema schema = kos_opcode_extra_schema(op);
-  if (schema.f0 == KOSTYLE_CMPSRC) {
-    if (KosCmpSrc_X_CONST(KosExtra_IMM(row, 0)))
-      schema.f1 = KOSTYLE_CONST;
-    if (KosCmpSrc_Y_CONST(KosExtra_IMM(row, 0)))
-      schema.f2 = KOSTYLE_CONST;
-  }
+  KosExtraSchema schema = extra_row_schema(op, KosExtra_IMM(row, 0));
 
   for (int slot = 0; slot < 4; slot++) {
-    KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
-        (slot == 2) ? schema.f2 : schema.f3;
+    KosOpStyle fk = schema_field(schema, slot);
 
     if (fk == KOSTYLE_CONST || fk == KOSTYLE_VAR) {
       PyObject *obj = KosExtra_OBJ(row, slot);
@@ -1630,17 +1640,12 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
                        "CMPSRC field expects int, got %R", srcv);
           goto failure;
         }
-        long src = PyLong_AsLong(srcv);
-        if (KosCmpSrc_X_CONST(src))
-          schema.f1 = KOSTYLE_CONST;
-        if (KosCmpSrc_Y_CONST(src))
-          schema.f2 = KOSTYLE_CONST;
+        schema = extra_row_schema(op, (uint32_t) PyLong_AsLong(srcv));
       }
 
       KosExtraRaw row = { 0, 0, 0, 0 };
       for (int slot = 0; slot < 4; slot++) {
-        KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
-            (slot == 2) ? schema.f2 : schema.f3;
+        KosOpStyle fk = schema_field(schema, slot);
         PyObject *elem = PyTuple_GET_ITEM(b, slot);
 
         if (fk == KOSTYLE_NOARG) {
@@ -1943,8 +1948,7 @@ static void code_fill_derived(
       code[pc].u.row = row;
       if (old_code) {
         for (int slot = 0; slot < 4; slot++) {
-          KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
-              (slot == 2) ? schema.f2 : schema.f3;
+          KosOpStyle fk = schema_field(schema, slot);
           if (fk == KOSTYLE_LABEL)
             row->f[slot].target = code + (row->f[slot].target - old_code);
         }
@@ -1976,19 +1980,11 @@ static void resolve_extra_row(
     const KosExtraRaw *raw,
     KosExtra *out) {
 
-  KosExtraSchema schema = kos_opcode_extra_schema(op);
+  KosExtraSchema schema = extra_row_schema(op, raw->a0);
   const uint16_t idx[4] = { raw->a0, raw->a1, raw->a2, raw->a3 };
 
-  if (schema.f0 == KOSTYLE_CMPSRC) {
-    if (KosCmpSrc_X_CONST(raw->a0))
-      schema.f1 = KOSTYLE_CONST;
-    if (KosCmpSrc_Y_CONST(raw->a0))
-      schema.f2 = KOSTYLE_CONST;
-  }
-
   for (int slot = 0; slot < 4; slot++) {
-    KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
-        (slot == 2) ? schema.f2 : schema.f3;
+    KosOpStyle fk = schema_field(schema, slot);
 
     if (fk == KOSTYLE_CONST || fk == KOSTYLE_VAR)
       out->f[slot].obj = PyList_GET_ITEM(coll->cpool_list, idx[slot]);
@@ -2697,22 +2693,13 @@ static int validate_fast_slots(
       }
 
       const KosExtra *row = &extra[eidx];
-      KosExtraSchema schema = kos_opcode_extra_schema(op);
-
-      /* CMPSRC rows: source bits in a0 override operand slots to CONST
-         (mirror of soften_extra_tuple). A slot the bit marks as CONST
-         holds a constant-pool index, not a fast slot, so it must not be
-         range-checked against the namespace slot limit. */
-      if (schema.f0 == KOSTYLE_CMPSRC) {
-        if (KosCmpSrc_X_CONST(KosExtra_IMM(row, 0)))
-          schema.f1 = KOSTYLE_CONST;
-        if (KosCmpSrc_Y_CONST(KosExtra_IMM(row, 0)))
-          schema.f2 = KOSTYLE_CONST;
-      }
+      /* A field the CMPSRC bits mark as CONST holds a pool object, not a
+         fast slot, so it must not be range-checked against the namespace
+         slot limit. */
+      KosExtraSchema schema = extra_row_schema(op, KosExtra_IMM(row, 0));
 
       for (int slot = 0; slot < 4; slot++) {
-        KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
-            (slot == 2) ? schema.f2 : schema.f3;
+        KosOpStyle fk = schema_field(schema, slot);
 
         if (fk != KOSTYLE_FASTVAR) {
           continue;

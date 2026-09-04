@@ -28,8 +28,6 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST_ATTR) {
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
   PyObject *attr_name = KosExtra_OBJ(row, 2);
-  if (unlikely(! attr_name))
-    RESULT_RAISE();
 
   PyObject *obj = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 1));
   if (unlikely(! obj))

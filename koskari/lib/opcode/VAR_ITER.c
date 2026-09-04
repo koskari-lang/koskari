@@ -20,9 +20,7 @@
   iterator, acquired uniformly over both protocols (kos_iter_acquire).
 */
 KOS_OP_HANDLER(VAR_ITER) {
-  PyObject *name = get_name_from_insn(es, insn);
-  if (unlikely(! name))
-    RESULT_RAISE();
+  PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = frame_ns_deref(es, name);
   if (unlikely(! val))

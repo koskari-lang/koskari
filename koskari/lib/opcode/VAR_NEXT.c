@@ -30,8 +30,6 @@ KOS_OP_HANDLER_COLD(VAR_NEXT) {
   }
 
   PyObject *var_name = KosExtra_OBJ(row, 0);
-  if (unlikely(! var_name))
-    RESULT_RAISE();
 
   PyObject *default_val = NULL;
   if (n == 2) {

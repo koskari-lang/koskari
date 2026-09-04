@@ -277,7 +277,8 @@ typedef KosThreadFn KosResumeFn;
    under both dispatch modes:
 
    - RESULT_NEXT(es): continue at the next instruction, insn + 1.
-   - RESULT_JUMP(es, target): continue at target.
+   - RESULT_JUMP_AT(es, target): continue at the target record.
+   - RESULT_CONTINUE(es): continue at es->pc through es->code.
    - RESULT_PUSH(es, val): push a borrowed val, then continue. A
      failed push leaves val with its caller.
    - RESULT_STEAL(es, val): push an owned val (consumed, on failure
@@ -292,7 +293,7 @@ typedef KosThreadFn KosResumeFn;
    helper installed a callee, returned to a parent, or stored a pc
    ends in RESULT_CONTINUE, which fetches from es->pc the way the
    trampoline does. A jump ends in RESULT_JUMP_AT with its resolved
-   target record, or RESULT_JUMP with a pc index. RAISE and FAIL
+   target record. RAISE and FAIL
    return: they are a real crossing back to the trampoline. Every
    continuing step is a tail call, so a handler using these macros
    must have the KosThreadFn prototype, must name its own record insn
@@ -328,12 +329,6 @@ typedef KosThreadFn KosResumeFn;
 #define RESULT_CONTINUE(es)  KOS_THREAD_NEXT(es)
 
 #define RESULT_JUMP_AT(es, target)  KOS_THREAD_AT((es), (target))
-
-#define RESULT_JUMP(es, target)                                         \
-  do {                                                                  \
-    KosEvalState_SET_PC((es), (target));                                \
-    KOS_THREAD_NEXT(es);                                                \
-  } while (0)
 
 #define RESULT_PUSH(es, val)                                            \
   do {                                                                  \
@@ -765,6 +760,25 @@ static inline KosOpResult kos_call_installed(KosEvalState *es) {
 #define KosEvalState_SET_PC(es, v) ((void)((es)->pc = (uint32_t)(v)))
 /** The staged CPS delivery, owned; NULL when nothing is staged. */
 #define KosEvalState_PENDING_VALUE(es) ((es)->pending_value)
+
+
+/** Stage an owned delivery for the current frame's resume, releasing
+    any earlier one still in the slot. */
+static inline void KosEvalState_StageDelivery(KosEvalState *es, PyObject *val) {
+  Py_XDECREF(KosEvalState_PENDING_VALUE(es));
+  KosEvalState_PENDING_VALUE(es) = val;
+}
+
+
+/**
+   The result of an iteration install: thread into the installed frame
+   when it can be threaded into, else bounce through the prologue, which
+   runs its resume or its entry sequence.
+*/
+static inline KosOpResult kos_iter_installed(KosEvalState *es) {
+  return kos_frame_threads(KosEvalState_FRAME(es))
+      ? EVAL_NORMAL() : EVAL_REPROLOGUE();
+}
 
 
 /**

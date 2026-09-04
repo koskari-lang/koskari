@@ -28,7 +28,7 @@ KOS_OP_HANDLER_COLD(OBJECT_COMPARE_VAR) {
   ops[2] = KosExtra_OBJ(row, 3);   /* borrowed */
 
   PyObject *name = KosExtra_OBJ(row, 2);
-  ops[1] = name ? frame_ns_deref(es, name) : NULL;
+  ops[1] = frame_ns_deref(es, name);
   if (! ops[1])
     RESULT_RAISE();
 
