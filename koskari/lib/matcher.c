@@ -940,6 +940,11 @@ static int matcher_isinstance(PyObject *inst, PyObject *cls) {
 /* === match engine === */
 
 
+/* Extern env entries resolved into a stack buffer by
+   KosMatcher_RunVectorcall before spilling to the heap. */
+#define KOS_MATCH_ENV_INLINE 8
+
+
 typedef struct {
   PyObject *dict;
   uint32_t slot_idx;
@@ -1828,22 +1833,31 @@ int KosMatcher_RunVectorcall(
   }
 
   /* General path: per table entry take the named value when present
-     (order-independent, kwargs semantics), else the inbuilt defaults. */
-  PyObject *env = PyTuple_New(n_ext);
-  if (! env)
-    return -1;
+     (order-independent, kwargs semantics), else the inbuilt defaults.
+     The env is a stack buffer (heap past KOS_MATCH_ENV_INLINE) holding
+     one strong ref per entry for the run, since an extern callable may
+     mutate or reset the defaults dict mid-match. */
+  PyObject *inline_env[KOS_MATCH_ENV_INLINE];
+  PyObject **env = inline_env;
+  if (n_ext > KOS_MATCH_ENV_INLINE) {
+    env = PyMem_Malloc((size_t) n_ext * sizeof(PyObject *));
+    if (! env) {
+      PyErr_NoMemory();
+      return -1;
+    }
+  }
 
-  for (Py_ssize_t i = 0; i < n_ext; i++) {
-    PyObject *name = PyTuple_GET_ITEM(m->externs, i);
+  Py_ssize_t filled = 0;
+  int matched = -1;
+  for (; filled < n_ext; filled++) {
+    PyObject *name = PyTuple_GET_ITEM(m->externs, filled);
     PyObject *val = NULL;
     for (Py_ssize_t j = 0; j < n_named; j++) {
       PyObject *nm = PyTuple_GET_ITEM(ext_names, j);
       if (nm != name) {
         int eq = PyObject_RichCompareBool(nm, name, Py_EQ);
-        if (eq < 0) {
-          Py_DECREF(env);
-          return -1;
-        }
+        if (eq < 0)
+          goto done;
         if (! eq)
           continue;
       }
@@ -1852,18 +1866,20 @@ int KosMatcher_RunVectorcall(
     }
     if (! val) {
       val = matcher_extern_default(name);
-      if (! val) {
-        Py_DECREF(env);
-        return -1;
-      }
+      if (! val)
+        goto done;
     }
     Py_INCREF(val);
-    PyTuple_SET_ITEM(env, i, val);
+    env[filled] = val;
   }
 
-  int matched = KosMatcher_Run(m, subj, &PyTuple_GET_ITEM(env, 0),
-                               n_ext, out_caps);
-  Py_DECREF(env);
+  matched = KosMatcher_Run(m, subj, env, n_ext, out_caps);
+
+ done:
+  for (Py_ssize_t i = 0; i < filled; i++)
+    Py_DECREF(env[i]);
+  if (env != inline_env)
+    PyMem_Free(env);
   return matched;
 }
 
