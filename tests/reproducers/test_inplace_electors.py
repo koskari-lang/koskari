@@ -66,6 +66,30 @@ class TestInplaceElectors(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await mod.count_up(3, 2 ** 62), 3 * 2 ** 62)
 
 
+    async def test_closure_cell_float_and_repeat(self):
+        mod = await self.load_module()
+        for n in (0, 1, 3, 300):
+            self.assertEqual(
+                await mod.closure_float(n), 0.5 + sum(i * 0.25 for i in range(n)))
+            self.assertEqual(await mod.closure_repeat(n), 1000 - 2 * n)
+
+
+    async def test_constant_ref_refuses_the_update(self):
+        mod = await self.load_module()
+        # the seed is doubled inside, so the ref alone holds the value
+        for seed in (0, 7, 1000, 2 ** 40, 1.5, 1e300):
+            for step in (1, 3, 0.5, 2 ** 40):
+                for _ in range(3):
+                    with self.assertRaises(ValueError):
+                        await mod.constant_incr(seed, step)
+                    self.assertEqual(
+                        await mod.constant_value_survives(seed, step),
+                        seed + seed)
+            for _ in range(3):
+                with self.assertRaises(ValueError):
+                    await mod.constant_incr_by_one(seed)
+
+
     async def test_closure_cell(self):
         mod = await self.load_module()
         self.assertEqual(await mod.closure_counter(100), sum(range(100)))

@@ -52,7 +52,7 @@
    FAST_ATTR_INPLACE reads its accumulator through the site's field
    cache, which is the first of its two slots; the elector is the
    second, and its bodies guard through the field slot on every
-   execution and write the result back through the same location.
+   execution and swap the result into the same location.
 
    See design/interpreter/electors.md.
 
@@ -259,14 +259,14 @@ KOS_ELECTOR(miss) {
 /* === Int bodies === */
 
 
-/* Under the safety net a stack-pair int body refuses a site whose
-   operand count is not the two it was elected for. */
+/* Under the safety net a stack-pair body refuses a site whose operand
+   count is not the two it was elected for. */
 #if KOS_EVAL_SAFETYNET
 # define KOS_ELECTOR_PAIR_SAFETYNET(insn)                               \
   do {                                                                  \
     if (unlikely(KosOpCount_COUNT(KosOp_ARG(insn)) != 2)) {             \
       PyErr_SetString(PyExc_SystemError,                                \
-                      "int elector on an operand site of count != 2");  \
+                      "pair elector on an operand site of count != 2"); \
       return EVAL_RAISE();                                              \
     }                                                                   \
   } while (0)
@@ -327,15 +327,18 @@ KOS_ELECTOR(miss) {
 
 
 /* One int body per operator for a family whose accumulator is a fast
-   slot: the guard is the exact-int check on the peeked slot value and
-   on the operand the family supplies (RHS, borrowed). The accumulator
-   is offered as the result's home: when the slot is its only owner the
-   result is written into it and no store follows; else the result is
-   stolen into the slot. Either way the family's operand release (DROP)
-   runs first. A slot the peek cannot read (empty, or a ref kind that
-   needs the general deref) is a miss; the generic body raises or
-   resolves it. */
-#define KOS_SLOT_INT_ELECTOR(FAMILY, NAME, FAST_LL, RHS, DROP)          \
+   slot: the guard is the exact-int check on the peeked slot value and,
+   when RHS_GUARDED, on the operand the family supplies (RHS, borrowed;
+   a pool constant's type was fixed at the election). The accumulator
+   is offered as the result's home when the slot is raw and its only
+   owner: the result is written into it and no store follows. A ref
+   slot's value is never written: its store may refuse (a constant
+   ref), so the result is stolen into the slot through the ref, as it
+   is into a raw slot the value is shared with. Either way the
+   family's operand release (DROP) runs first. A slot the peek cannot
+   read (empty, or a ref kind that needs the general deref) is a miss;
+   the generic body raises or resolves it. */
+#define KOS_SLOT_INT_ELECTOR(FAMILY, NAME, FAST_LL, RHS, RHS_GUARDED, DROP) \
   KOS_ELECTOR(FAMILY##_int_##NAME) {                                    \
     const KosExtra *row = KosOp_ROW(insn);                              \
     size_t idx = (size_t) KosExtra_IMM(row, 1);                         \
@@ -351,12 +354,13 @@ KOS_ELECTOR(miss) {
     if (unlikely(! rhs))                                                \
       RESULT_RAISE();                                                   \
     if (unlikely(! acc || ! PyLong_CheckExact(acc)                      \
-                 || ! PyLong_CheckExact(rhs)))                          \
+                 || (RHS_GUARDED && ! PyLong_CheckExact(rhs))))         \
       TAILCALL(el_miss, es, insn, value);                               \
     if (unlikely(! kos_long_as_ll(acc, &a) || ! kos_long_as_ll(rhs, &b))) \
       TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
                                                                         \
-    KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, acc, out);                    \
+    KOS_ELECTOR_INT_RESULT(FAST_LL, a, b,                               \
+                           kos_ns_is_raw(ns, idx) ? acc : NULL, out);   \
     DROP;                                                               \
     if (out != acc && unlikely(kos_ns_fast_store_steal(ns, idx, out) < 0)) \
       RESULT_RAISE();                                                   \
@@ -426,7 +430,7 @@ KOS_ELECTOR(miss) {
   }
 
 
-#define KOS_SLOT_FLOAT_ELECTOR(FAMILY, NAME, FAST_D, RHS, DROP)         \
+#define KOS_SLOT_FLOAT_ELECTOR(FAMILY, NAME, FAST_D, RHS, RHS_GUARDED, DROP) \
   KOS_ELECTOR(FAMILY##_float_##NAME) {                                  \
     const KosExtra *row = KosOp_ROW(insn);                              \
     size_t idx = (size_t) KosExtra_IMM(row, 1);                         \
@@ -441,11 +445,12 @@ KOS_ELECTOR(miss) {
     if (unlikely(! rhs))                                                \
       RESULT_RAISE();                                                   \
     if (unlikely(! acc || ! PyFloat_CheckExact(acc)                     \
-                 || ! PyFloat_CheckExact(rhs)))                         \
+                 || (RHS_GUARDED && ! PyFloat_CheckExact(rhs))))        \
       TAILCALL(el_miss, es, insn, value);                               \
                                                                         \
     KOS_ELECTOR_INT_RESULT(FAST_D, PyFloat_AS_DOUBLE(acc),              \
-                           PyFloat_AS_DOUBLE(rhs), acc, out);           \
+                           PyFloat_AS_DOUBLE(rhs),                      \
+                           kos_ns_is_raw(ns, idx) ? acc : NULL, out);   \
     DROP;                                                               \
     if (out != acc && unlikely(kos_ns_fast_store_steal(ns, idx, out) < 0)) \
       RESULT_RAISE();                                                   \
@@ -495,12 +500,12 @@ KOS_OP_INLINE PyObject *kos_stack_peek_top(KosEvalState *es) {
 #define KOS_FAST_INPLACE_INT_BODY(FAMILY, NAME, FAST_LL)                \
   KOS_SLOT_INT_ELECTOR(                                                 \
       FAMILY, NAME, FAST_LL,                                            \
-      kos_stack_peek_top(es),                                           \
+      kos_stack_peek_top(es), 1,                                        \
       kos_stack_drop1_fast(KosEvalState_BLOCK(es)))
 #define KOS_FAST_INPLACE_FLOAT_BODY(FAMILY, NAME, FAST_D)               \
   KOS_SLOT_FLOAT_ELECTOR(                                               \
       FAMILY, NAME, FAST_D,                                             \
-      kos_stack_peek_top(es),                                           \
+      kos_stack_peek_top(es), 1,                                        \
       kos_stack_drop1_fast(KosEvalState_BLOCK(es)))
 
 KOS_INT_ELECTORS(KOS_FAST_INPLACE_INT_BODY, fast_inplace)
@@ -511,16 +516,16 @@ KOS_FLOAT_ELECTOR_TABLE(fast_inplace)
 
 /* FAST_INPLACE_CONST: the operand is the pool constant on the row,
    borrowed; nothing to drop. Its type was checked at the election and
-   cannot change. */
+   cannot change, so the body does not guard it. */
 #define KOS_FAST_INPLACE_CONST_INT_BODY(FAMILY, NAME, FAST_LL)          \
   KOS_SLOT_INT_ELECTOR(                                                 \
       FAMILY, NAME, FAST_LL,                                            \
-      KosExtra_OBJ(row, 2),                                             \
+      KosExtra_OBJ(row, 2), 0,                                          \
       ((void) 0))
 #define KOS_FAST_INPLACE_CONST_FLOAT_BODY(FAMILY, NAME, FAST_D)         \
   KOS_SLOT_FLOAT_ELECTOR(                                               \
       FAMILY, NAME, FAST_D,                                             \
-      KosExtra_OBJ(row, 2),                                             \
+      KosExtra_OBJ(row, 2), 0,                                          \
       ((void) 0))
 
 KOS_INT_ELECTORS(KOS_FAST_INPLACE_CONST_INT_BODY, fast_inplace_const)
@@ -594,7 +599,7 @@ KOS_ELECTOR(pair_str_join) {
 /* The str body of a family whose accumulator is a fast slot: a raw
    slot's value is taken, so the append can grow it in place; a ref
    slot keeps its reference and the append concatenates. */
-#define KOS_SLOT_STR_ELECTOR(FAMILY, RHS, DROP)                         \
+#define KOS_SLOT_STR_ELECTOR(FAMILY, RHS, RHS_GUARDED, DROP)            \
   KOS_ELECTOR(FAMILY##_str_add) {                                       \
     const KosExtra *row = KosOp_ROW(insn);                              \
     size_t idx = (size_t) KosExtra_IMM(row, 1);                         \
@@ -610,7 +615,7 @@ KOS_ELECTOR(pair_str_join) {
     if (unlikely(! rhs))                                                \
       RESULT_RAISE();                                                   \
     if (unlikely(! acc || ! PyUnicode_CheckExact(acc)                   \
-                 || ! PyUnicode_CheckExact(rhs)))                       \
+                 || (RHS_GUARDED && ! PyUnicode_CheckExact(rhs))))      \
       TAILCALL(el_miss, es, insn, value);                               \
                                                                         \
     left = kos_ns_fast_take(ns, idx);                                   \
@@ -629,11 +634,11 @@ KOS_ELECTOR(pair_str_join) {
 
 KOS_SLOT_STR_ELECTOR(
     fast_inplace,
-    kos_stack_peek_top(es),
+    kos_stack_peek_top(es), 1,
     kos_stack_drop1_fast(KosEvalState_BLOCK(es)))
 KOS_SLOT_STR_ELECTOR(
     fast_inplace_const,
-    KosExtra_OBJ(row, 2),
+    KosExtra_OBJ(row, 2), 0,
     ((void) 0))
 
 
@@ -871,38 +876,33 @@ static inline KosThreadFn kos_elector_num_body(
 /* === FAST_ATTR_INPLACE family === */
 
 
-/* The accumulator of an attribute site, borrowed, straight from the
-   direct location the field slot resolved: a __slots__ member or an
-   inline instance value. NULL for any other mode, an unset member, or
-   an instance that has materialised its dict. */
-KOS_OP_INLINE PyObject *kos_field_direct_load(
+/* The address of the direct location the field slot resolved for an
+   attribute site: a __slots__ member or an inline instance value. NULL
+   for any other mode, for an inline value the instance no longer
+   holds (a materialised dict, an index past its capacity) and for an
+   unset location, so a non-NULL address holds a value. The type
+   guard the head re-checks is what makes the address valid: a type
+   with generic getattr and setattr and no descriptor over the name,
+   so a store through the address is what setattr would do. */
+KOS_OP_INLINE PyObject **kos_field_direct_addr(
     PyObject *obj, KosFieldMode mode, uint32_t index) {
 
-  if (mode == KOS_FIELD_SLOT)
-    return field_slot_load(obj, index);
-#if PY_MINOR_VERSION >= 11
-  if (mode == KOS_FIELD_INSTANCE_VALUE)
-    return field_instance_value_load(obj, index);
-#endif
-  return NULL;
-}
-
-
-/* Store val, borrowed, through the same location. Returns 1, or 0 when
-   the location cannot take it (an inline value slot that is unset or
-   whose instance materialised its dict), for the caller's setattr. */
-KOS_OP_INLINE int kos_field_direct_store(
-    PyObject *obj, KosFieldMode mode, uint32_t index, PyObject *val) {
+  PyObject **addr = NULL;
 
   if (mode == KOS_FIELD_SLOT) {
-    field_slot_store(obj, index, val);
-    return 1;
+    addr = (PyObject **) ((char *) obj + index);
   }
 #if PY_MINOR_VERSION >= 11
-  if (mode == KOS_FIELD_INSTANCE_VALUE)
-    return field_instance_value_store(obj, index, val);
+  else if (mode == KOS_FIELD_INSTANCE_VALUE) {
+    int active;
+    uint32_t cap;
+    PyObject **slots = kos_inline_value_slots(obj, &active, &cap);
+    if (! active || index >= cap)
+      return NULL;
+    addr = &slots[index];
+  }
 #endif
-  return 0;
+  return (addr && *addr) ? addr : NULL;
 }
 
 
@@ -945,65 +945,61 @@ KOS_ELECTOR(fast_attr_inplace_generic) {
 
 
 /* The tail of an attribute body once the result is in hand: the one
-   operand dropped, then the result written back through the location
-   unless it was written in place, with the setattr protocol for a
-   location that declines the store. */
-#define KOS_ATTR_ELECTOR_STORE(obj, mode, index, acc, out)               \
+   operand dropped, then the result, owned, swapped into the location
+   unless it was written in place. Nothing runs between the head's
+   load and this store, so the location is the one the head read. */
+#define KOS_ATTR_ELECTOR_STORE(addr, acc, out)                          \
   do {                                                                  \
     kos_stack_drop1_fast(KosEvalState_BLOCK(es));                       \
     if ((out) != (acc)) {                                               \
-      if (! kos_field_direct_store((obj), (mode), (index), (out))) {    \
-        int kos_as_rc_ = PyObject_SetAttr((obj), KosExtra_OBJ(row, 2), (out)); \
-        Py_DECREF(out);                                                 \
-        if (unlikely(kos_as_rc_ < 0))                                   \
-          RESULT_RAISE();                                               \
-      } else {                                                          \
-        Py_DECREF(out);                                                 \
-      }                                                                 \
+      *(addr) = (out);                                                  \
+      Py_DECREF(acc);                                                   \
     }                                                                   \
   } while (0)
 
 
 /* The head of an attribute body: the receiver peeked from its fast
    slot, the operand peeked from the stack, the field slot's guard
-   re-checked against the receiver's type, and the accumulator loaded
-   borrowed from the direct location. Any of those failing is a miss. */
-#define KOS_ATTR_ELECTOR_HEAD(obj, rhs, mode, index, acc)               \
+   re-checked against the receiver's type, and the direct location's
+   address taken with the accumulator borrowed from it. Any of those
+   failing is a miss. */
+#define KOS_ATTR_ELECTOR_HEAD(rhs, addr, acc)                           \
   do {                                                                  \
     KosCacheSlot *kos_ah_field_ = KosOp_SLOT(insn);                     \
     PyObject *kos_ah_ns_ = KosEvalState_NAMESPACE(es);                  \
+    PyObject *kos_ah_obj_;                                              \
     KOS_OP_REQUIRE_NS(kos_ah_ns_);                                      \
-    (obj) = kos_ns_fast_peek(kos_ah_ns_, (size_t) KosExtra_IMM(row, 1)); \
+    kos_ah_obj_ = kos_ns_fast_peek(kos_ah_ns_,                          \
+                                   (size_t) KosExtra_IMM(row, 1));      \
     (rhs) = kos_stack_peek_top(es);                                     \
     if (unlikely(! (rhs)))                                              \
       RESULT_RAISE();                                                   \
-    if (unlikely(! (obj) || kos_ah_field_->kind != KOS_CACHE_FIELD      \
-                 || ! field_guard_ok(Py_TYPE(obj), kos_ah_field_)))     \
+    if (unlikely(! kos_ah_obj_ || kos_ah_field_->kind != KOS_CACHE_FIELD \
+                 || ! field_guard_ok(Py_TYPE(kos_ah_obj_), kos_ah_field_))) \
       TAILCALL(el_miss, es, insn, value);                               \
-    (mode) = kos_ah_field_->u.field.mode;                               \
-    (index) = kos_ah_field_->u.field.index;                             \
-    (acc) = kos_field_direct_load((obj), (mode), (index));              \
-    if (unlikely(! (acc)))                                              \
+    (addr) = kos_field_direct_addr(kos_ah_obj_, kos_ah_field_->u.field.mode, \
+                                   kos_ah_field_->u.field.index);       \
+    if (unlikely(! (addr)))                                             \
       TAILCALL(el_miss, es, insn, value);                               \
+    (acc) = *(addr);                                                    \
   } while (0)
 
 
 #define KOS_ATTR_INT_ELECTOR(FAMILY, NAME, FAST_LL)                     \
   KOS_ELECTOR(fast_attr_inplace_int_##NAME) {                           \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    PyObject *obj, *rhs, *acc, *out;                                    \
-    KosFieldMode mode;                                                  \
-    uint32_t index;                                                     \
+    PyObject *rhs, *acc, *out;                                          \
+    PyObject **addr;                                                    \
     long long a, b;                                                     \
                                                                         \
-    KOS_ATTR_ELECTOR_HEAD(obj, rhs, mode, index, acc);                  \
+    KOS_ATTR_ELECTOR_HEAD(rhs, addr, acc);                              \
     if (unlikely(! PyLong_CheckExact(acc) || ! PyLong_CheckExact(rhs))) \
       TAILCALL(el_miss, es, insn, value);                               \
     if (unlikely(! kos_long_as_ll(acc, &a) || ! kos_long_as_ll(rhs, &b))) \
       TAILCALL(el_fast_attr_inplace_generic, es, insn, value);          \
                                                                         \
     KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, acc, out);                    \
-    KOS_ATTR_ELECTOR_STORE(obj, mode, index, acc, out);                 \
+    KOS_ATTR_ELECTOR_STORE(addr, acc, out);                             \
     RESULT_NEXT(es);                                                    \
   }
 
@@ -1011,17 +1007,16 @@ KOS_ELECTOR(fast_attr_inplace_generic) {
 #define KOS_ATTR_FLOAT_ELECTOR(FAMILY, NAME, FAST_D)                    \
   KOS_ELECTOR(fast_attr_inplace_float_##NAME) {                         \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    PyObject *obj, *rhs, *acc, *out;                                    \
-    KosFieldMode mode;                                                  \
-    uint32_t index;                                                     \
+    PyObject *rhs, *acc, *out;                                          \
+    PyObject **addr;                                                    \
                                                                         \
-    KOS_ATTR_ELECTOR_HEAD(obj, rhs, mode, index, acc);                  \
+    KOS_ATTR_ELECTOR_HEAD(rhs, addr, acc);                              \
     if (unlikely(! PyFloat_CheckExact(acc) || ! PyFloat_CheckExact(rhs))) \
       TAILCALL(el_miss, es, insn, value);                               \
                                                                         \
     KOS_ELECTOR_INT_RESULT(FAST_D, PyFloat_AS_DOUBLE(acc),              \
                            PyFloat_AS_DOUBLE(rhs), acc, out);           \
-    KOS_ATTR_ELECTOR_STORE(obj, mode, index, acc, out);                 \
+    KOS_ATTR_ELECTOR_STORE(addr, acc, out);                             \
     RESULT_NEXT(es);                                                    \
   }
 
@@ -1032,35 +1027,27 @@ KOS_FLOAT_ELECTOR_TABLE(fast_attr_inplace)
 
 
 /**
-   The str body of an attribute site: a __slots__ member is taken and
-   the append grows it in place when the instance held the only
-   reference; an inline value is concatenated and stored through the
-   location, since a vacated inline value would need the first-store
-   bookkeeping the direct store leaves to setattr.
+   The str body of an attribute site: the accumulator is taken from
+   its location and the append grows it in place when the instance
+   held the only reference; the result goes back through the same
+   address. A failed append leaves the location vacant, so the
+   attribute reads as unset, as a local does in CPython.
 */
 KOS_ELECTOR(fast_attr_inplace_str_add) {
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *obj, *rhs, *acc, *out;
-  KosFieldMode mode;
-  uint32_t index;
+  PyObject *rhs, *acc, *out;
+  PyObject **addr;
 
-  KOS_ATTR_ELECTOR_HEAD(obj, rhs, mode, index, acc);
+  KOS_ATTR_ELECTOR_HEAD(rhs, addr, acc);
   if (unlikely(! PyUnicode_CheckExact(acc) || ! PyUnicode_CheckExact(rhs)))
     TAILCALL(el_miss, es, insn, value);
 
-  if (mode == KOS_FIELD_SLOT) {
-    if (unlikely(str_fast_append(field_slot_take(obj, index), rhs, &out) < 0))
-      RESULT_RAISE();
-    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
-    field_slot_put(obj, index, out);
-    kos_stack_drop1_fast(KosEvalState_BLOCK(es));
-  } else {
-    out = PyUnicode_Concat(acc, rhs);
-    if (unlikely(! out))
-      RESULT_RAISE();
-    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
-    KOS_ATTR_ELECTOR_STORE(obj, mode, index, acc, out);
-  }
+  *addr = NULL;
+  if (unlikely(str_fast_append(acc, rhs, &out) < 0))
+    RESULT_RAISE();
+  KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
+  *addr = out;
+  kos_stack_drop1_fast(KosEvalState_BLOCK(es));
   RESULT_NEXT(es);
 }
 
@@ -1078,15 +1065,16 @@ static inline KosThreadFn kos_elector_fast_attr_inplace_classify(
   PyObject *obj = kos_ns_fast_peek(
       KosEvalState_NAMESPACE(es), (size_t) KosExtra_IMM(row, 1));
   PyObject *rhs = (s && s->len >= 1) ? kos_stack_tail_ptr_fast(s, 1)[0] : NULL;
-  PyObject *acc;
+  PyObject **addr;
 
   if (KosOpCount_COUNT(KosExtra_IMM(row, 0)) != 1 || ! obj || ! rhs
       || ! field || field->kind != KOS_CACHE_FIELD
       || ! field_guard_ok(Py_TYPE(obj), field))
     return NULL;
-  acc = kos_field_direct_load(obj, field->u.field.mode, field->u.field.index);
+  addr = kos_field_direct_addr(obj, field->u.field.mode, field->u.field.index);
   return kos_elector_num_body(
-      (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)), acc, rhs,
+      (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)),
+      addr ? *addr : NULL, rhs,
       kos_fast_attr_inplace_int_bodies, kos_fast_attr_inplace_float_bodies,
       el_fast_attr_inplace_str_add);
 }
