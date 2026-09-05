@@ -3475,9 +3475,10 @@ Augmented assignment: fetch the current value from a name (VAR) or fast slot
 value is pushed (the form evaluates to None). The operator is a KosOperand
 selector dispatched through `kos_inplace_reduce` (`operator.c`), the same
 selector set as OBJECT_OPERAND / OBJECT_INPLACE. OBJECT_OPERAND,
-OBJECT_INPLACE, FAST_INPLACE, and FAST_INPLACE_CONST each carry one cache
-slot of kind KOS_CACHE_ELECTOR holding the body the site elected on its
-first operands: an int body per operator, or the generic reduce; see
+OBJECT_INPLACE, FAST_INPLACE, FAST_INPLACE_CONST, CHECK_COMPARE, and
+OBJECT_COMPARE each carry one cache slot of kind KOS_CACHE_ELECTOR
+holding the body the site elected on its first operands: an int body
+per operator or selector, or the generic reduce; see
 [interpreter/electors.md](interpreter/electors.md).
 
 **VAR_INPLACE** -- EXTRA (OPCOUNT, VAR). Row a0 packs the operator

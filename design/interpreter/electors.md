@@ -28,7 +28,23 @@ conversions per execution. One finding from the in-place step: once
 four families used the `long_fast_*` paths the compiler stopped
 inlining them, costing 3.9% of `branch` instructions until they were
 marked `KOS_OP_INLINE`; a body macro that grows a family should be
-measured for that.
+measured for that. The compare family followed: CHECK_COMPARE and
+OBJECT_COMPARE each own a slot and elect one int body, the selector
+being a site constant the mask compare reads. That is 3.1% fewer
+instructions on `branch`, whose branch conditions are computed pairs,
+level on `fannkuch` and `binary_trees`, and 1.4% more on `loop` for a
+cause the code `loop` runs does not show: every function on its path
+is byte-identical between the two builds and a profile takes none of
+the changed cold paths. CHECK_COMPARE_FAST was tried with a slot and
+dropped: its handler already runs its int arm inline, so the slot
+only added the hop, 1.5% of `loop` instructions and 5.9% of `fannkuch`
+cycles. Two more findings from that step: the per-opcode generic-body
+lookup, inlined into every int body's decline tails, had grown each
+body by a fifth and cost cycles across the kernels until it was moved
+out of line; and the compare family's footprint on the churn kernels
+is small (370M CHECK_COMPARE executions against 12.3G for
+OBJECT_OPERAND on the trace), so its value is general rather than
+kernel-shaped.
 
 **See also:** [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)
 (the per-site cache framework this extends),
@@ -241,9 +257,11 @@ hot code uses the fast forms.
 
 **OBJECT_COMPARE(_VAR/_FAST), CHECK_COMPARE(_VAR/_FAST), SWITCH_EQ\***.
 `kos_compare_chain` takes the selector and walks the operands; the extended
-tail is out of line. Electors: exact `PyLong` pair, exact `PyUnicode` pair,
-identity selectors, generic rich compare. The `CHECK_*` forms fuse the jump,
-so the elector owns the branch too.
+tail is out of line. Built for CHECK_COMPARE and OBJECT_COMPARE: the
+exact `PyLong` pair, one body per opcode reading the selector off the
+site, the `CHECK_*` body owning the jump. CHECK_COMPARE_FAST keeps its
+inline int arm (a slot measured as a loss). Open on the same slots: the
+exact `PyUnicode` pair and the identity selectors.
 
 **OBJECT_FORMAT(_CONST), FAST_FORMAT(_CONST), VAR_FORMAT(_CONST)**. The
 fused format opcodes test `PyUnicode_CheckExact` and the spec shape per
@@ -413,8 +431,9 @@ Ranked by expected benefit against risk:
 5. **Float and string bodies on the arithmetic slots.** The families
    exist; a body per operator for the exact `PyFloat` pair and one for
    `PyUnicode` concatenation, elected by the same classification.
-6. **OBJECT_COMPARE, CHECK_COMPARE and their twins, cache-style.** The
-   same int-pair shape with the branch fused into the body.
+6. **CHECK_COMPARE and OBJECT_COMPARE, cache-style.** Done, see the
+   status above. CHECK_COMPARE_FAST stays on its inline arm, and the
+   `_VAR` twins and `SWITCH_EQ*` stay on their ladders.
 7. **FAST_ATTR_INPLACE.** 9% of the churn time; the field cache already
    guards the receiver, so the elected body is the fold on a peeked
    attribute value.
