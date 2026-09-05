@@ -971,10 +971,6 @@ static int matcher_isinstance(PyObject *inst, PyObject *cls) {
    entries before spilling to the heap. */
 #define KOS_MATCH_ENV_INLINE 8
 
-/* Root capture slots held in a stack buffer by the dict-building
-   entries before spilling to the heap. */
-#define KOS_MATCH_SLOTS_INLINE 8
-
 
 /* Rollback entries recorded inline before the change stack spills to
    the heap; a runtime arm rarely writes more than a few slots. */
@@ -1010,7 +1006,6 @@ typedef struct {
   PyObject *cur_captures;        /* GROUP frame dict, or NULL at root */
   PyObject *capture_parent;      /* enclosing GROUP frame dict, or NULL
                                     when the enclosing frame is root */
-  int group_depth;               /* GROUP frames above the root */
   Py_ssize_t slot_count;
   DictChange *change_stack;
   Py_ssize_t change_count;
@@ -1020,18 +1015,31 @@ typedef struct {
 } MatchEngine;
 
 
-static int capture_from_datum_flag(
-    const MatchEngine *e,
+/**
+   Whether a capture at cell_idx is substitution: the walk is inside a
+   substitution Datum, or the cell itself is one.
+*/
+static int cell_from_datum_flag(
+    int in_from_datum,
     KosMatchSubject *subj,
     Py_ssize_t cell_idx) {
 
-  if (e->in_from_datum)
+  if (in_from_datum)
     return 1;
   if (subj->kp_cars && cell_idx >= 0
       && cell_idx < subj->cached_length
       && KosDatum_Check(subj->kp_cars[cell_idx]))
     return 1;
   return 0;
+}
+
+
+static int capture_from_datum_flag(
+    const MatchEngine *e,
+    KosMatchSubject *subj,
+    Py_ssize_t cell_idx) {
+
+  return cell_from_datum_flag(e->in_from_datum, subj, cell_idx);
 }
 
 
@@ -1148,7 +1156,7 @@ static PyObject *source_from_spine_range(
 
 
 static int datum_frame_set_source(
-    MatchEngine *e,
+    int in_from_datum,
     PyObject *frame,
     KosMatchSubject *subj,
     Py_ssize_t start,
@@ -1174,7 +1182,7 @@ static int datum_frame_set_source(
   f->position = position;
   f->from_datum = 0;
   for (Py_ssize_t i = start; i < end; i++) {
-    if (capture_from_datum_flag(e, subj, i)) {
+    if (cell_from_datum_flag(in_from_datum, subj, i)) {
       f->from_datum = 1;
       break;
     }
@@ -1185,9 +1193,13 @@ static int datum_frame_set_source(
 }
 
 
-static PyObject *match_frame_new(const MatchEngine *e, Py_ssize_t start) {
-  (void) start;
-  if (e->subj->kp_tails)
+/**
+   A fresh capture frame for a walk over subj: a DatumFrame, which
+   carries whole-cell provenance, on a pair spine; a plain dict
+   otherwise.
+*/
+static PyObject *match_frame_new(const KosMatchSubject *subj) {
+  if (subj->kp_tails)
     return kos_datum_frame_new();
   return PyDict_New();
 }
@@ -1572,10 +1584,11 @@ static int match_node(
       return 0;
 
     /* depth 0 reads the current frame; depth 1 the enclosing one,
-       which is the root array when exactly one GROUP is open. */
+       which exists only inside a GROUP and is the root array when
+       that GROUP is the outermost. */
     PyObject *frame = e->cur_captures;
     if (n->as.same.depth == 1) {
-      if (e->group_depth == 0)
+      if (! e->cur_captures)
         return 0;
       frame = e->capture_parent;
     }
@@ -1681,28 +1694,26 @@ static void matcher_clear_slots(KosMatcher *m, PyObject **slots) {
    Run the matcher over the subject with an already-aligned extern env.
    ``slots`` is the caller's array of ``len(m->slots)`` entries,
    arriving all NULL; on a match (return 1) each slot that fired holds
-   a new ref, the rest stay NULL, and ``*out_cursor`` is the spine
-   position reached. On no match (0) or error (-1, exception set) the
-   array is all NULL again and nothing is owned. ``e`` is caller
-   storage the core initializes; it stays valid for the caller's
-   finalize step.
+   a new ref and the rest stay NULL. On no match (0) or error (-1,
+   exception set) the array is all NULL again and nothing is owned.
+   A match consumed the whole spine, so the cursor is the subject
+   length.
 */
 static int matcher_run_core(
-    MatchEngine *e,
     KosMatcher *m,
     KosMatchSubject *subj,
     PyObject *const *extern_env,
-    PyObject **slots,
-    Py_ssize_t *out_cursor) {
+    PyObject **slots) {
 
-  Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
+  MatchEngine engine;
+  MatchEngine *e = &engine;
 
   memset(e, 0, offsetof(MatchEngine, change_inline));
   e->m = m;
   e->subj = subj;
   e->extern_env = extern_env;
   e->root_slots = slots;
-  e->slot_count = n_slots;
+  e->slot_count = PyTuple_GET_SIZE(m->slots);
   e->change_stack = e->change_inline;
   e->change_capacity = KOS_MATCH_CHANGE_INLINE;
   e->in_from_datum = 0;
@@ -1726,8 +1737,6 @@ static int matcher_run_core(
     matcher_clear_slots(m, slots);
     return r < 0 ? -1 : 0;
   }
-
-  *out_cursor = cursor;
   return 1;
 }
 
@@ -1739,25 +1748,12 @@ int KosMatcher_Run(
     Py_ssize_t n_extern_env,
     PyObject **out_caps) {
 
-  if (! m || ! subj || ! out_caps) {
+  if (! m || ! out_caps) {
     PyErr_SetString(PyExc_ValueError,
-                    "KosMatcher_Run requires matcher, subject, and out");
+                    "KosMatcher_Run requires matcher and out");
     return -1;
   }
   *out_caps = NULL;
-
-  Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
-  if (n_extern_env != n_externs) {
-    PyErr_Format(PyExc_TypeError,
-                 "extern_env has %zd entries, expected %zd",
-                 n_extern_env, n_externs);
-    return -1;
-  }
-  if (n_externs > 0 && ! extern_env) {
-    PyErr_Format(PyExc_TypeError,
-                 "matcher requires %zd extern bindings", n_externs);
-    return -1;
-  }
 
   Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
 
@@ -1771,20 +1767,16 @@ int KosMatcher_Run(
     }
   }
 
-  for (Py_ssize_t i = 0; i < n_slots; i++)
-    slots[i] = NULL;
-
-  MatchEngine engine;
-  Py_ssize_t cursor = 0;
-  int matched = matcher_run_core(
-      &engine, m, subj, extern_env, slots, &cursor);
+  int matched = KosMatcher_RunSlots(
+      m, subj, extern_env, n_extern_env, slots);
 
   PyObject *root = NULL;
   if (matched == 1) {
     /* A capture-less match still materializes the frame: the caller
        contract (and the DatumFrame source/position it may carry) is
-       the same whether or not any slot fired. */
-    root = match_frame_new(&engine, 0);
+       the same whether or not any slot fired. The whole spine was
+       consumed, and the walk is back outside any substitution. */
+    root = match_frame_new(subj);
     if (! root) {
       matched = -1;
     } else {
@@ -1798,7 +1790,8 @@ int KosMatcher_Run(
         }
       }
       if (matched == 1
-          && datum_frame_set_source(&engine, root, subj, 0, cursor))
+          && datum_frame_set_source(
+              0, root, subj, 0, subj->vt->length(subj)))
         matched = -1;
       if (matched < 0)
         Py_CLEAR(root);
@@ -1847,10 +1840,7 @@ int KosMatcher_RunSlots(
     return -1;
   }
 
-  MatchEngine engine;
-  Py_ssize_t cursor = 0;
-  return matcher_run_core(
-      &engine, m, subj, extern_env, out_slots, &cursor);
+  return matcher_run_core(m, subj, extern_env, out_slots);
 }
 
 

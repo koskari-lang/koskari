@@ -1687,25 +1687,6 @@ int KosNamespace_Store(
 }
 
 
-int KosNamespace_StoreDict(PyObject *namespace, PyObject *dict) {
-
-  if (! dict || ! PyDict_Check(dict)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "StoreDict requires a dict");
-    return -1;
-  }
-
-  Py_ssize_t pos = 0;
-  PyObject *key = NULL;
-  PyObject *val = NULL;
-  while (PyDict_Next(dict, &pos, &key, &val)) {
-    if (ns_store_symbol(namespace, key, val))
-      return -1;
-  }
-  return 0;
-}
-
-
 int KosNamespace_StoreVector(
     PyObject *namespace,
     PyObject *names,

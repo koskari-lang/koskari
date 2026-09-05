@@ -214,20 +214,13 @@ int KosNamespace_Store(PyObject *ns, PyObject *key, PyObject *val);
 
 
 /**
-   Store every name:value in dict into the namespace's declared
-   bindings, exactly as per-name Store would: raw fast slots take a
-   direct write, celled bindings store through their Ref, and a name
-   with no declared binding raises NameError. Not transactional: on
-   error, entries already stored remain. Returns 0, or -1 with an
-   exception set.
- */
-int KosNamespace_StoreDict(PyObject *ns, PyObject *dict);
-
-
-/**
-   Vectorcall-style form of StoreDict: names is a tuple[str] and
-   values a borrowed value array aligned to it (a stack segment works
-   as-is). Same semantics per entry, in names order.
+   Store every name:value pair into the namespace's declared bindings,
+   exactly as per-name Store would: raw fast slots take a direct
+   write, celled bindings store through their Ref, and a name with no
+   declared binding raises NameError. names is a tuple[str] and values
+   a borrowed value array aligned to it (a stack segment works as-is),
+   stored in names order. Not transactional: on error, entries already
+   stored remain. Returns 0, or -1 with an exception set.
  */
 int KosNamespace_StoreVector(
     PyObject *ns,

@@ -154,9 +154,9 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
 
   /* The capture slot array: inline for the common small table. */
   Py_ssize_t n_slots = KosMatcher_SLOT_COUNT(matcher);
-  PyObject *inline_slots[8];
+  PyObject *inline_slots[KOS_MATCH_SLOTS_INLINE];
   PyObject **slots = inline_slots;
-  if (n_slots > 8) {
+  if (n_slots > KOS_MATCH_SLOTS_INLINE) {
     slots = PyMem_Malloc((size_t) n_slots * sizeof(PyObject *));
     if (unlikely(! slots)) {
       PyErr_NoMemory();

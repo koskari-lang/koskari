@@ -31,13 +31,12 @@ static int match_group(
   PyObject *parent_dict = e->cur_captures;
   PyObject *old_capture_parent = e->capture_parent;
   Py_ssize_t start = *cursor;
-  PyObject *sub = match_frame_new(e, start);
+  PyObject *sub = match_frame_new(e->subj);
   if (! sub)
     return -1;
 
   e->capture_parent = e->cur_captures;
   e->cur_captures = sub;
-  e->group_depth++;
 
   for (uint32_t cidx = n->as.group.first_child;
        cidx != KOS_MATCH_NO_INDEX;
@@ -55,7 +54,6 @@ static int match_group(
     if (r != 1) {
       e->cur_captures = parent_dict;
       e->capture_parent = old_capture_parent;
-      e->group_depth--;
       engine_rollback(e, snap);
       Py_DECREF(sub);
       return r;
@@ -64,8 +62,8 @@ static int match_group(
 
   e->cur_captures = parent_dict;
   e->capture_parent = old_capture_parent;
-  e->group_depth--;
-  if (datum_frame_set_source(e, sub, e->subj, start, *cursor)) {
+  if (datum_frame_set_source(
+          e->in_from_datum, sub, e->subj, start, *cursor)) {
     Py_DECREF(sub);
     return -1;
   }

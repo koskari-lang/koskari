@@ -431,6 +431,13 @@ int KosMatcher_RunVectorcall(
 
 
 /**
+   Slot-array entries a caller keeps in a stack buffer before spilling
+   to the heap; the common slot table is far smaller.
+ */
+#define KOS_MATCH_SLOTS_INLINE 8
+
+
+/**
    Frame-free core of ``KosMatcher_Run``: same arguments, but the
    captures land in ``out_slots``, the caller's array of
    ``KosMatcher_SLOT_COUNT`` entries aligned to the slot table. On a
