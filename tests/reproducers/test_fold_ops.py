@@ -90,7 +90,7 @@ class TestFoldOps(unittest.IsolatedAsyncioTestCase):
             fn = getattr(mod, name)
             for a in INTS:
                 for b in INTS[::3]:
-                    for c in (3, -3, 0, 2 ** 40):
+                    for c in (3, -3, 0, 2 ** 40, 2 ** 64):
                         await self.check_run(fn, pyop, (a, b, c))
 
 
@@ -106,12 +106,50 @@ class TestFoldOps(unittest.IsolatedAsyncioTestCase):
 
     async def test_longer_runs_and_the_runtime_operator(self):
         mod = await self.load_module()
-        for run in ((1, 2, 3, 4, 5), (2 ** 40, 2, 3, 4, 5), (0.5, 1.5, 2.5, 3.5, 4.5),
-                    (2 ** 62, 2, 2, 2, 2), (1e300, 1e10, 1.0, 1.0, 1.0)):
+        runs = (
+            (1, 2, 3, 4, 5), (2 ** 40, 2, 3, 4, 5), (0.5, 1.5, 2.5, 3.5, 4.5),
+            (2 ** 62, 2, 2, 2, 2), (1e300, 1e10, 1.0, 1.0, 1.0),
+        )
+        for run in runs:
             await self.check_run(mod.add5, operator.add, run)
             await self.check_run(mod.mul5, operator.mul, run)
-        for run in ((1, 2, 3), (1.5, 2.5, 3.5), ('a', 'b', 'c'), (2 ** 62, 2 ** 62, 1)):
+        runs = ((1, 2, 3), (1.5, 2.5, 3.5), ("a", "b", "c"),
+                (2 ** 62, 2 ** 62, 1))
+        for run in runs:
             await self.check_run(mod.add3_runtime, operator.add, run)
+
+
+    async def test_temporary_first_operand_is_reused(self):
+        mod = await self.load_module()
+        runs = ((30, 40, 5, 6), (2 ** 20, 2 ** 20, 1, 2),
+                (2 ** 40, 2 ** 20, 2 ** 62, 1), (7, 1000, 7, 7))
+        for a, b, c, d in runs:
+            for _ in range(3):
+                self.assertEqual(
+                    await mod.nested_int(a, b, c, d), a * b + c + d)
+        for a, b, c, d in ((30, 40, -1199, -1), (1000, 1000, -999_999, -1)):
+            for _ in range(3):
+                result = await mod.nested_int(a, b, c, d)
+                self.assertEqual(result, 0)
+                self.assertIs(result, 0)
+        for a, b, c, d in ((1.5, 2.0, 0.5, 0.25), (1e300, 1e10, 1.0, 1.0)):
+            for _ in range(3):
+                self.assertEqual(
+                    await mod.nested_float(a, b, c, d), a * b + c + d)
+
+
+    async def test_in_place_run_on_an_item(self):
+        mod = await self.load_module()
+        runs = (
+            (1, 2, 3), (1, 2 ** 62, 2 ** 62), (1.0, 0.5, 0.25),
+            ("a", "b", "c"), ([1], [2], [3]),
+        )
+        for seed, a, b in runs:
+            for _ in range(3):
+                cells = await mod.item_run(seed, a, b)
+                self.assertEqual(cells[0], seed + a + b)
+        with self.assertRaises(TypeError):
+            await mod.item_run(1, 1, "x")
 
 
     async def test_nbody_shaped_expression(self):

@@ -45,10 +45,9 @@
    function; the two stack families also elect, on a run of three or
    more operands of one kind, a fold body per operator and kind that
    folds the run in C and materialises once, and a join body on a run
-   of strs. The compare families have one int body and
-   one float body each, the selector being a site constant the body
-   reads:
-   CHECK_COMPARE takes the stack pair and jumps, OBJECT_COMPARE takes
+   of strs. The compare families have one body per kind each, the
+   selector being a site constant the body reads: CHECK_COMPARE takes
+   the stack pair and jumps, OBJECT_COMPARE takes
    it and pushes the bool. CHECK_COMPARE_FAST keeps its inline int arm
    in the handler: measured with a slot it lost what the hop cost.
    FAST_ATTR_INPLACE reads its accumulator through the site's field
@@ -160,7 +159,7 @@ static inline KosCacheSlot *kos_elector_slot_of(void *insn) {
 
 /* The generic body of an elector site, by its opcode. Read on the
    miss and decline paths only, and kept out of line so the switch
-   does not grow every int body. */
+   does not grow every body. */
 static KOS_NOINLINE KosThreadFn kos_elector_generic_of(void *insn) {
   switch (KosOp_OP(insn)) {
     case KOS_OP_OBJECT_OPERAND:
@@ -246,7 +245,7 @@ KOS_ELECTOR(fast_inplace_const_generic) {
 
 
 /**
-   The shared miss function: a type-guard miss at an elected int site
+   The shared miss function: a type-guard miss at an elected site
    counts toward the demotion and runs the site's generic body for
    this execution.
 */
@@ -282,9 +281,11 @@ KOS_ELECTOR(miss) {
    one borrowed object and the guard on two, the extraction of one or
    two C values (an int wider than the long long range declines to
    DECLINE, the family's generic body, without counting: the site is
-   still a site of that type), the compare over two C values, and the
-   materialisation of a C result into an object. A body macro takes
-   the kind in both spellings, KIND for these and kind for its name. */
+   still a site of that type), the compare over two C values, the
+   materialisation of a C result into an object, and an operator's
+   materialising fast path and its pure step by name. A body macro
+   takes the kind in both spellings, KIND for these and kind for its
+   name. */
 #define KOS_INT_TYPE            long long
 #define KOS_INT_VARS            long long a, b
 #define KOS_INT_CHECK(v)        PyLong_CheckExact(v)
@@ -301,6 +302,8 @@ KOS_ELECTOR(miss) {
   } while (0)
 #define KOS_INT_COMPARE         kos_ll_compare
 #define KOS_INT_MATERIALISE     kos_long_fast_result
+#define KOS_INT_FAST(NAME)      long_fast_##NAME##_ll
+#define KOS_INT_STEP(NAME)      kos_ll_##NAME
 
 #define KOS_FLOAT_TYPE          double
 #define KOS_FLOAT_VARS          double a, b
@@ -317,6 +320,8 @@ KOS_ELECTOR(miss) {
   } while (0)
 #define KOS_FLOAT_COMPARE       kos_double_compare
 #define KOS_FLOAT_MATERIALISE   kos_float_fast_result
+#define KOS_FLOAT_FAST(NAME)    float_fast_##NAME##_d
+#define KOS_FLOAT_STEP(NAME)    kos_d_##NAME
 
 
 /* The tail of every numeric body once both operands are C values: the
@@ -342,8 +347,8 @@ KOS_ELECTOR(miss) {
    offered as the result's home: when the stack is its only owner the
    result is written into it and the right operand alone is dropped;
    else the result replaces the pair. */
-#define KOS_PAIR_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND, FAST)       \
-  KOS_ELECTOR(pair_##kind##_##NAME) {                                   \
+#define KOS_PAIR_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND)             \
+  KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
     PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);            \
     KOS_##KIND##_VARS;                                                  \
@@ -356,7 +361,7 @@ KOS_ELECTOR(miss) {
       TAILCALL(el_miss, es, insn, value);                               \
     KOS_##KIND##_EXTRACT(args[0], args[1], kos_elector_generic_of(insn)); \
                                                                         \
-    KOS_ELECTOR_RESULT(FAST, a, b, args[0], out);                       \
+    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, args[0], out);    \
     if (out == args[0])                                                 \
       kos_stack_drop1_fast(bl);                                         \
     else                                                                \
@@ -377,19 +382,19 @@ KOS_ELECTOR(miss) {
    the family's operand release (DROP) runs first. A slot the peek
    cannot read (empty, or a ref kind that needs the general deref) is
    a miss; the generic body raises or resolves it. */
-#define KOS_SLOT_ELECTOR(FAMILY, KIND, kind, NAME, FAST,                \
-                         RHS, RHS_GUARDED, DROP)                        \
+#define KOS_SLOT_ELECTOR(FAMILY, KIND, kind, NAME, RHS, RHS_GUARDED, DROP) \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
     size_t idx = (size_t) KosExtra_IMM(row, 1);                         \
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
     PyObject *acc;                                                      \
     PyObject *rhs;                                                      \
+    int raw;                                                            \
     KOS_##KIND##_VARS;                                                  \
     PyObject *out;                                                      \
                                                                         \
     KOS_OP_REQUIRE_NS(ns);                                              \
-    acc = kos_ns_fast_peek(ns, idx);                                    \
+    acc = kos_ns_fast_peek_raw(ns, idx, &raw);                          \
     rhs = (RHS);                                                        \
     if (unlikely(! rhs))                                                \
       RESULT_RAISE();                                                   \
@@ -398,8 +403,8 @@ KOS_ELECTOR(miss) {
       TAILCALL(el_miss, es, insn, value);                               \
     KOS_##KIND##_EXTRACT(acc, rhs, kos_elector_generic_of(insn));       \
                                                                         \
-    KOS_ELECTOR_RESULT(FAST, a, b,                                      \
-                       kos_ns_is_raw(ns, idx) ? acc : NULL, out);       \
+    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b,                   \
+                       raw ? acc : NULL, out);                          \
     DROP;                                                               \
     if (out != acc && unlikely(kos_ns_fast_store_steal(ns, idx, out) < 0)) \
       RESULT_RAISE();                                                   \
@@ -408,59 +413,57 @@ KOS_ELECTOR(miss) {
 
 
 /* The operators with a fast path of each kind, applied to a body
-   macro that takes (family, KIND, kind, name, KOS_OPERAND_ suffix,
-   arithmetic): twelve for ints, six for floats. */
+   macro that takes (family, KIND, kind, name, KOS_OPERAND_ suffix):
+   twelve for ints, six for floats. The body names the operator's
+   arithmetic through the kind, KOS_INT_FAST(add) and so on. */
 #define KOS_INT_ELECTORS(BODY, FAMILY)                                  \
-  BODY(FAMILY, INT, int, add, ADD, long_fast_add_ll)                    \
-  BODY(FAMILY, INT, int, subtract, SUBTRACT, long_fast_subtract_ll)     \
-  BODY(FAMILY, INT, int, multiply, MULTIPLY, long_fast_multiply_ll)     \
-  BODY(FAMILY, INT, int, modulo, MODULO, long_fast_modulo_ll)           \
-  BODY(FAMILY, INT, int, bit_and, BIT_AND, long_fast_bit_and_ll)        \
-  BODY(FAMILY, INT, int, bit_or, BIT_OR, long_fast_bit_or_ll)           \
-  BODY(FAMILY, INT, int, bit_xor, BIT_XOR, long_fast_bit_xor_ll)        \
-  BODY(FAMILY, INT, int, bit_left, BIT_LEFT, long_fast_bit_left_ll)     \
-  BODY(FAMILY, INT, int, bit_right, BIT_RIGHT, long_fast_bit_right_ll)  \
-  BODY(FAMILY, INT, int, floor_divide, FLOOR_DIVIDE,                    \
-       long_fast_floor_divide_ll)                                       \
-  BODY(FAMILY, INT, int, true_divide, TRUE_DIVIDE,                      \
-       long_fast_true_divide_ll)                                        \
-  BODY(FAMILY, INT, int, power, POWER, long_fast_power_ll)
+  BODY(FAMILY, INT, int, add, ADD)                                      \
+  BODY(FAMILY, INT, int, subtract, SUBTRACT)                            \
+  BODY(FAMILY, INT, int, multiply, MULTIPLY)                            \
+  BODY(FAMILY, INT, int, modulo, MODULO)                                \
+  BODY(FAMILY, INT, int, bit_and, BIT_AND)                              \
+  BODY(FAMILY, INT, int, bit_or, BIT_OR)                                \
+  BODY(FAMILY, INT, int, bit_xor, BIT_XOR)                              \
+  BODY(FAMILY, INT, int, bit_left, BIT_LEFT)                            \
+  BODY(FAMILY, INT, int, bit_right, BIT_RIGHT)                          \
+  BODY(FAMILY, INT, int, floor_divide, FLOOR_DIVIDE)                    \
+  BODY(FAMILY, INT, int, true_divide, TRUE_DIVIDE)                      \
+  BODY(FAMILY, INT, int, power, POWER)
 
 #define KOS_FLOAT_ELECTORS(BODY, FAMILY)                                \
-  BODY(FAMILY, FLOAT, float, add, ADD, float_fast_add_d)                \
-  BODY(FAMILY, FLOAT, float, subtract, SUBTRACT, float_fast_subtract_d) \
-  BODY(FAMILY, FLOAT, float, multiply, MULTIPLY, float_fast_multiply_d) \
-  BODY(FAMILY, FLOAT, float, modulo, MODULO, float_fast_modulo_d)       \
-  BODY(FAMILY, FLOAT, float, true_divide, TRUE_DIVIDE,                  \
-       float_fast_true_divide_d)                                        \
-  BODY(FAMILY, FLOAT, float, floor_divide, FLOOR_DIVIDE,                \
-       float_fast_floor_divide_d)
+  BODY(FAMILY, FLOAT, float, add, ADD)                                  \
+  BODY(FAMILY, FLOAT, float, subtract, SUBTRACT)                        \
+  BODY(FAMILY, FLOAT, float, multiply, MULTIPLY)                        \
+  BODY(FAMILY, FLOAT, float, modulo, MODULO)                            \
+  BODY(FAMILY, FLOAT, float, true_divide, TRUE_DIVIDE)                  \
+  BODY(FAMILY, FLOAT, float, floor_divide, FLOOR_DIVIDE)
 
 /* The operators the compiler emits a run of more than two operands
-   for, as steps over C values for a fold. Remainder and the shifts
+   for, whose steps over C values a fold body names through the kind,
+   KOS_INT_STEP(add) and so on. Remainder and the shifts
    are binary forms; a third operand to power is a modulus, so a
    power site of three is never a fold; int true division has no int
    step, its first step being a float already. */
 #define KOS_INT_FOLD_ELECTORS(BODY, FAMILY)                             \
-  BODY(FAMILY, INT, int, add, ADD, kos_ll_add)                          \
-  BODY(FAMILY, INT, int, subtract, SUBTRACT, kos_ll_subtract)           \
-  BODY(FAMILY, INT, int, multiply, MULTIPLY, kos_ll_multiply)           \
-  BODY(FAMILY, INT, int, bit_and, BIT_AND, kos_ll_bit_and)              \
-  BODY(FAMILY, INT, int, bit_or, BIT_OR, kos_ll_bit_or)                 \
-  BODY(FAMILY, INT, int, bit_xor, BIT_XOR, kos_ll_bit_xor)              \
-  BODY(FAMILY, INT, int, floor_divide, FLOOR_DIVIDE, kos_ll_floor_divide)
+  BODY(FAMILY, INT, int, add, ADD)                                      \
+  BODY(FAMILY, INT, int, subtract, SUBTRACT)                            \
+  BODY(FAMILY, INT, int, multiply, MULTIPLY)                            \
+  BODY(FAMILY, INT, int, bit_and, BIT_AND)                              \
+  BODY(FAMILY, INT, int, bit_or, BIT_OR)                                \
+  BODY(FAMILY, INT, int, bit_xor, BIT_XOR)                              \
+  BODY(FAMILY, INT, int, floor_divide, FLOOR_DIVIDE)
 
 #define KOS_FLOAT_FOLD_ELECTORS(BODY, FAMILY)                           \
-  BODY(FAMILY, FLOAT, float, add, ADD, kos_d_add)                       \
-  BODY(FAMILY, FLOAT, float, subtract, SUBTRACT, kos_d_subtract)        \
-  BODY(FAMILY, FLOAT, float, multiply, MULTIPLY, kos_d_multiply)        \
-  BODY(FAMILY, FLOAT, float, true_divide, TRUE_DIVIDE, kos_d_true_divide) \
-  BODY(FAMILY, FLOAT, float, floor_divide, FLOOR_DIVIDE, kos_d_floor_divide)
+  BODY(FAMILY, FLOAT, float, add, ADD)                                  \
+  BODY(FAMILY, FLOAT, float, subtract, SUBTRACT)                        \
+  BODY(FAMILY, FLOAT, float, multiply, MULTIPLY)                        \
+  BODY(FAMILY, FLOAT, float, true_divide, TRUE_DIVIDE)                  \
+  BODY(FAMILY, FLOAT, float, floor_divide, FLOOR_DIVIDE)
 
 /* A family's table of bodies of one kind by operator, from the list
    that made them; NULL where the operator has no fast path of that
    kind. */
-#define KOS_ELECTOR_TABLE_ENTRY(FAMILY, KIND, kind, NAME, OPERAND, FAST)\
+#define KOS_ELECTOR_TABLE_ENTRY(FAMILY, KIND, kind, NAME, OPERAND)      \
   [KOS_OPERAND_##OPERAND] = el_##FAMILY##_##kind##_##NAME,
 
 #define KOS_ELECTOR_TABLE(FAMILY, LIST, kind)                           \
@@ -495,7 +498,7 @@ KOS_NUMERIC_ELECTORS(KOS_PAIR_ELECTOR, pair)
    before anything is materialised; then one materialisation, into
    the first operand when the stack is its only owner, in which case
    the rest of the run alone is dropped. */
-#define KOS_PAIR_FOLD_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND, STEP)  \
+#define KOS_PAIR_FOLD_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND)        \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
     size_t count = KosOpCount_COUNT(KosOp_ARG(insn));                   \
@@ -512,12 +515,12 @@ KOS_NUMERIC_ELECTORS(KOS_PAIR_ELECTOR, pair)
         TAILCALL(el_miss, es, insn, value);                             \
     }                                                                   \
     KOS_##KIND##_EXTRACT(args[0], args[1], kos_elector_generic_of(insn)); \
-    if (unlikely(! STEP(a, b, &res)))                                   \
+    if (unlikely(! KOS_##KIND##_STEP(NAME)(a, b, &res)))                \
       TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
     for (size_t i = 2; i < count; i++) {                                \
       a = res;                                                          \
       KOS_##KIND##_EXTRACT_ONE(args[i], b, kos_elector_generic_of(insn)); \
-      if (unlikely(! STEP(a, b, &res)))                                 \
+      if (unlikely(! KOS_##KIND##_STEP(NAME)(a, b, &res)))              \
         TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
     }                                                                   \
                                                                         \
@@ -546,9 +549,9 @@ KOS_OP_INLINE PyObject *kos_stack_peek_top(KosEvalState *es) {
 
 /* FAST_INPLACE: the operand is the top of the stack, borrowed for the
    arithmetic and dropped before the store. */
-#define KOS_FAST_INPLACE_BODY(FAMILY, KIND, kind, NAME, OPERAND, FAST)  \
+#define KOS_FAST_INPLACE_BODY(FAMILY, KIND, kind, NAME, OPERAND)        \
   KOS_SLOT_ELECTOR(                                                     \
-      FAMILY, KIND, kind, NAME, FAST,                                   \
+      FAMILY, KIND, kind, NAME,                                         \
       kos_stack_peek_top(es), 1,                                        \
       kos_stack_drop1_fast(KosEvalState_BLOCK(es)))
 
@@ -558,9 +561,9 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_BODY, fast_inplace)
 /* FAST_INPLACE_CONST: the operand is the pool constant on the row,
    borrowed; nothing to drop. Its type was checked at the election and
    cannot change, so the body does not guard it. */
-#define KOS_FAST_INPLACE_CONST_BODY(FAMILY, KIND, kind, NAME, OPERAND, FAST) \
+#define KOS_FAST_INPLACE_CONST_BODY(FAMILY, KIND, kind, NAME, OPERAND)  \
   KOS_SLOT_ELECTOR(                                                     \
-      FAMILY, KIND, kind, NAME, FAST,                                   \
+      FAMILY, KIND, kind, NAME,                                         \
       KosExtra_OBJ(row, 2), 0,                                          \
       ((void) 0))
 
@@ -630,8 +633,9 @@ KOS_ELECTOR(pair_str_join) {
 
 
 /* The str body of a family whose accumulator is a fast slot: a raw
-   slot's value is taken, so the append can grow it in place; a ref
-   slot keeps its reference and the append concatenates. */
+   slot's value is taken, the slot left empty until the store, so the
+   append can grow it in place; a ref slot keeps its reference and the
+   append concatenates. */
 #define KOS_SLOT_STR_ELECTOR(FAMILY, RHS, RHS_GUARDED, DROP)            \
   KOS_ELECTOR(FAMILY##_str_add) {                                       \
     const KosExtra *row = KosOp_ROW(insn);                              \
@@ -641,9 +645,10 @@ KOS_ELECTOR(pair_str_join) {
     PyObject *rhs;                                                      \
     PyObject *left;                                                     \
     PyObject *out;                                                      \
+    int raw;                                                            \
                                                                         \
     KOS_OP_REQUIRE_NS(ns);                                              \
-    acc = kos_ns_fast_peek(ns, idx);                                    \
+    acc = kos_ns_fast_peek_raw(ns, idx, &raw);                          \
     rhs = (RHS);                                                        \
     if (unlikely(! rhs))                                                \
       RESULT_RAISE();                                                   \
@@ -651,11 +656,11 @@ KOS_ELECTOR(pair_str_join) {
                  || (RHS_GUARDED && ! PyUnicode_CheckExact(rhs))))      \
       TAILCALL(el_miss, es, insn, value);                               \
                                                                         \
-    left = kos_ns_fast_take(ns, idx);                                   \
-    if (! left) {                                                       \
-      left = acc;                                                       \
+    left = acc;                                                         \
+    if (raw)                                                            \
+      KosNamespace_GET_FAST_VAL(ns, idx) = NULL;                        \
+    else                                                                \
       Py_INCREF(left);                                                  \
-    }                                                                   \
     if (unlikely(str_fast_append(left, rhs, &out) < 0))                 \
       RESULT_RAISE();                                                   \
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
@@ -965,7 +970,7 @@ KOS_ELECTOR(fast_attr_inplace_generic) {
    the kind's guard on the accumulator and the operand, the extraction
    declining to the family's generic body, the accumulator offered as
    the result's home, the store. */
-#define KOS_ATTR_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND, FAST)       \
+#define KOS_ATTR_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND)             \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
     PyObject *rhs, *acc, *out;                                          \
@@ -975,9 +980,9 @@ KOS_ELECTOR(fast_attr_inplace_generic) {
     KOS_ATTR_ELECTOR_HEAD(rhs, addr, acc);                              \
     if (unlikely(! KOS_##KIND##_GUARD(acc, rhs)))                       \
       TAILCALL(el_miss, es, insn, value);                               \
-    KOS_##KIND##_EXTRACT(acc, rhs, el_fast_attr_inplace_generic);       \
+    KOS_##KIND##_EXTRACT(acc, rhs, el_##FAMILY##_generic);              \
                                                                         \
-    KOS_ELECTOR_RESULT(FAST, a, b, acc, out);                           \
+    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, acc, out);        \
     KOS_ATTR_ELECTOR_STORE(addr, acc, out);                             \
     RESULT_NEXT(es);                                                    \
   }
@@ -986,11 +991,13 @@ KOS_NUMERIC_ELECTORS(KOS_ATTR_ELECTOR, fast_attr_inplace)
 
 
 /**
-   The str body of an attribute site: the accumulator is taken from
-   its location and the append grows it in place when the instance
-   held the only reference; the result goes back through the same
-   address. A failed append leaves the location vacant, so the
-   attribute reads as unset, as a local does in CPython.
+   The str body of an attribute site. A __slots__ member is taken and
+   the append grows it in place when the instance held the only
+   reference; a failed append leaves the member vacant, so the
+   attribute reads as unset. An inline instance value is concatenated
+   and swapped: a vacated inline value would leave the instance's
+   insertion order naming an empty cell, bookkeeping the direct store
+   does not keep.
 */
 KOS_ELECTOR(fast_attr_inplace_str_add) {
   const KosExtra *row = KosOp_ROW(insn);
@@ -1001,11 +1008,19 @@ KOS_ELECTOR(fast_attr_inplace_str_add) {
   if (unlikely(! PyUnicode_CheckExact(acc) || ! PyUnicode_CheckExact(rhs)))
     TAILCALL(el_miss, es, insn, value);
 
-  *addr = NULL;
-  if (unlikely(str_fast_append(acc, rhs, &out) < 0))
-    RESULT_RAISE();
+  if (KosOp_SLOT(insn)->u.field.mode == KOS_FIELD_SLOT) {
+    *addr = NULL;
+    if (unlikely(str_fast_append(acc, rhs, &out) < 0))
+      RESULT_RAISE();
+    *addr = out;
+  } else {
+    out = PyUnicode_Concat(acc, rhs);
+    if (unlikely(! out))
+      RESULT_RAISE();
+    *addr = out;
+    Py_DECREF(acc);
+  }
   KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
-  *addr = out;
   kos_stack_drop1_fast(KosEvalState_BLOCK(es));
   RESULT_NEXT(es);
 }
@@ -1013,7 +1028,7 @@ KOS_ELECTOR(fast_attr_inplace_str_add) {
 
 /* The classification of a FAST_ATTR_INPLACE site: one operand, the
    field slot resolved to a direct location for the receiver's type,
-   and the accumulator and operand an exact int or float pair. */
+   and the accumulator and operand an exact int, float, or str pair. */
 static inline KosThreadFn kos_elector_fast_attr_inplace_classify(
     KosEvalState *es,
     void *insn) {
@@ -1160,9 +1175,15 @@ static inline KosThreadFn kos_elector_fast_inplace_const_classify(
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *acc = kos_ns_fast_peek(
       KosEvalState_NAMESPACE(es), (size_t) KosExtra_IMM(row, 1));
+  PyObject *rhs = KosExtra_OBJ(row, 2);
+  long long b;
 
+  // a constant the int body could never read would decline on every
+  // execution; the site stays generic
+  if (PyLong_CheckExact(rhs) && ! kos_long_as_ll(rhs, &b))
+    return NULL;
   return kos_elector_num_body(
-      (KosOperand) KosExtra_IMM(row, 0), acc, KosExtra_OBJ(row, 2),
+      (KosOperand) KosExtra_IMM(row, 0), acc, rhs,
       kos_fast_inplace_const_int_bodies,
       kos_fast_inplace_const_float_bodies,
       el_fast_inplace_const_str_add);
@@ -1171,7 +1192,7 @@ static inline KosThreadFn kos_elector_fast_inplace_const_classify(
 
 /* A family's electing function, reached from an empty slot or an
    ungated site: classify the operands once, settle the slot with the
-   int body or the generic body, and dispatch. */
+   body classified or the generic body, and dispatch. */
 #define KOS_ELECTOR_ELECT(FAMILY, CLASSIFY)                             \
   KOS_ELECTOR(FAMILY##_elect) {                                         \
     KosThreadFn fn = CLASSIFY(es, insn);                                \
@@ -1214,6 +1235,8 @@ KOS_ELECTOR_ELECT(object_compare, kos_elector_object_compare_classify)
 #undef KOS_SLOT_ELECTOR
 #undef KOS_PAIR_ELECTOR
 #undef KOS_ELECTOR_RESULT
+#undef KOS_FLOAT_STEP
+#undef KOS_FLOAT_FAST
 #undef KOS_FLOAT_MATERIALISE
 #undef KOS_FLOAT_COMPARE
 #undef KOS_FLOAT_EXTRACT
@@ -1222,6 +1245,8 @@ KOS_ELECTOR_ELECT(object_compare, kos_elector_object_compare_classify)
 #undef KOS_FLOAT_CHECK
 #undef KOS_FLOAT_VARS
 #undef KOS_FLOAT_TYPE
+#undef KOS_INT_STEP
+#undef KOS_INT_FAST
 #undef KOS_INT_MATERIALISE
 #undef KOS_INT_COMPARE
 #undef KOS_INT_EXTRACT

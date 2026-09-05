@@ -53,4 +53,18 @@ define energy [x y z m]:
     * (+ (* x x) (* y y) (* z z)) m 0.5
 
 
+define nested_int [a b c d]:
+    + (* a b) c d
+
+
+define nested_float [a b c d]:
+    + (* a b) c d
+
+
+define item_run [seed a b]:
+    define cells #[seed seed]
+    inplace-item + cells 0 a b
+    cells
+
+
 ;; The end.

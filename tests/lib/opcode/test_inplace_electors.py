@@ -14,9 +14,9 @@
 
 """
 Tests for the in-place electors: OBJECT_INPLACE, FAST_INPLACE, and
-FAST_INPLACE_CONST sites elect their operator's int body on the first
-exact-int operands they see, fall to the generic body for operands the
-int fast path declines, count type-guard misses toward a demotion, and
+FAST_INPLACE_CONST sites elect their operator's body for the kind of
+the first operands they see, fall to the generic body for operands the
+fast path declines, count type-guard misses toward a demotion, and
 return the same results as the ladder alone throughout.
 
 :author: Christopher O'Brien <obriencj@gmail.com>

@@ -188,7 +188,9 @@ KOS_OP_INLINE int kos_as_ll2(
    caller has already extracted (an elected int body, which guarded the
    types itself) and an operand the caller owns outright that the
    result may be written into, or NULL; the object form runs kos_as_ll2
-   and then the _ll form with no candidate, for the operator cores.
+   and then the _ll form with the same candidate, for the operator
+   cores (which offer none) and the reduce fold (which offers its
+   accumulator).
 
    Return convention (all of them): 1 with *out set (new ref) when handled, 0
    when declined (*out untouched), -1 with an error set on allocation failure

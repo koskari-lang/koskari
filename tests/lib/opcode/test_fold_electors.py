@@ -58,6 +58,7 @@ INT_RUNS = [
     (1, 2, 3), (7, 3, 2), (-7, 3, 2), (7, -3, 2), (0, 5, 1),
     (2 ** 40, 2 ** 20, 3), (2 ** 62, 2, 2), (2 ** 100, 3, 5),
     (-(2 ** 60), 2 ** 61, 7), (1000, 3, 0), (3, 0, 4),
+    (1, 2, 2 ** 100), (1, 2, 3, 2 ** 64), (2 ** 62, 2 ** 62, 2 ** 62),
     (1, 2, 3, 4), (2 ** 30, 2 ** 30, 2 ** 30, 2 ** 30, 2 ** 30),
 ]
 
@@ -114,7 +115,8 @@ class FoldMixin:
             sites = {}
             for run in INT_RUNS * 2:
                 if len(run) not in sites:
-                    sites[len(run)] = make_site(self.opcode(opname), len(run))[0]
+                    site, _ = make_site(self.opcode(opname), len(run))
+                    sites[len(run)] = site
                 await self.check_run(sites[len(run)], pyop, run)
 
 
@@ -123,7 +125,8 @@ class FoldMixin:
             sites = {}
             for run in FLOAT_RUNS * 2:
                 if len(run) not in sites:
-                    sites[len(run)] = make_site(self.opcode(opname), len(run))[0]
+                    site, _ = make_site(self.opcode(opname), len(run))
+                    sites[len(run)] = site
                 await self.check_run(sites[len(run)], pyop, run)
 
 
@@ -131,7 +134,8 @@ class FoldMixin:
         site, _ = make_site(self.opcode('MULTIPLY'), 4)
         for _ in range(3):
             self.assertEqual(await site(2, 3, 4, 5), 120)
-            self.assertEqual(await site(2 ** 40, 2 ** 20, 2 ** 20, 3), 2 ** 80 * 3)
+            self.assertEqual(
+                await site(2 ** 40, 2 ** 20, 2 ** 20, 3), 2 ** 80 * 3)
             self.assertEqual(await site(2 ** 62, 2, 2, 2), 2 ** 65)
             self.assertEqual(await site(2, 3, 4, 5), 120)
 
@@ -144,9 +148,13 @@ class FoldMixin:
         with self.assertRaises(ZeroDivisionError):
             await site(100, 7, 0)
         self.assertEqual(await site(100, 7, 3), 100 // 7 // 3)
+        site, _ = make_site(self.opcode('FLOOR_DIVIDE'), 3)
         self.assertEqual(await site(100.0, 7.0, 3.0), 100.0 // 7.0 // 3.0)
         with self.assertRaises(ZeroDivisionError):
             await site(100.0, 7.0, 0.0)
+        with self.assertRaises(ZeroDivisionError):
+            await site(100.0, 0.0, 3.0)
+        self.assertEqual(await site(100.0, 7.0, 3.0), 100.0 // 7.0 // 3.0)
         site, _ = make_site(self.opcode('TRUE_DIVIDE'), 3)
         self.assertEqual(await site(8.0, 2.0, 2.0), 2.0)
         with self.assertRaises(ZeroDivisionError):
