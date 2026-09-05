@@ -194,11 +194,11 @@ static KOS_NOINLINE PyObject *reduce_slow(
 KOS_OP_INLINE PyObject *op_add(PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_add(args[0], args[1], &out) == 0)
+    if (num_fast_add(args[0], args[1], &out) == 0)
       out = PyNumber_Add(args[0], args[1]);
     return out;
   }
-  return reduce_slow("+", long_fast_add, PyNumber_Add, PyNumber_Positive,
+  return reduce_slow("+", num_fast_add, PyNumber_Add, PyNumber_Positive,
                      args, count);
 }
 
@@ -206,11 +206,11 @@ KOS_OP_INLINE PyObject *op_add(PyObject *const *args, size_t count) {
 KOS_OP_INLINE PyObject *op_subtract(PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_subtract(args[0], args[1], &out) == 0)
+    if (num_fast_subtract(args[0], args[1], &out) == 0)
       out = PyNumber_Subtract(args[0], args[1]);
     return out;
   }
-  return reduce_slow("-", long_fast_subtract, PyNumber_Subtract,
+  return reduce_slow("-", num_fast_subtract, PyNumber_Subtract,
                      PyNumber_Negative, args, count);
 }
 
@@ -218,11 +218,11 @@ KOS_OP_INLINE PyObject *op_subtract(PyObject *const *args, size_t count) {
 KOS_OP_INLINE PyObject *op_multiply(PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_multiply(args[0], args[1], &out) == 0)
+    if (num_fast_multiply(args[0], args[1], &out) == 0)
       out = PyNumber_Multiply(args[0], args[1]);
     return out;
   }
-  return reduce_slow("*", long_fast_multiply, PyNumber_Multiply, NULL,
+  return reduce_slow("*", num_fast_multiply, PyNumber_Multiply, NULL,
                      args, count);
 }
 
@@ -230,11 +230,11 @@ KOS_OP_INLINE PyObject *op_multiply(PyObject *const *args, size_t count) {
 KOS_OP_INLINE PyObject *op_modulo(PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_modulo(args[0], args[1], &out) == 0)
+    if (num_fast_modulo(args[0], args[1], &out) == 0)
       out = PyNumber_Remainder(args[0], args[1]);
     return out;
   }
-  return reduce_slow("%", long_fast_modulo, PyNumber_Remainder, NULL,
+  return reduce_slow("%", num_fast_modulo, PyNumber_Remainder, NULL,
                      args, count);
 }
 
@@ -299,11 +299,11 @@ KOS_OP_INLINE PyObject *op_bit_right(PyObject *const *args, size_t count) {
 KOS_OP_INLINE PyObject *op_true_divide(PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_true_divide(args[0], args[1], &out) == 0)
+    if (num_fast_true_divide(args[0], args[1], &out) == 0)
       out = PyNumber_TrueDivide(args[0], args[1]);
     return out;
   }
-  return reduce_slow("/", long_fast_true_divide, PyNumber_TrueDivide, NULL,
+  return reduce_slow("/", num_fast_true_divide, PyNumber_TrueDivide, NULL,
                      args, count);
 }
 
@@ -311,11 +311,11 @@ KOS_OP_INLINE PyObject *op_true_divide(PyObject *const *args, size_t count) {
 KOS_OP_INLINE PyObject *op_floor_divide(PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_floor_divide(args[0], args[1], &out) == 0)
+    if (num_fast_floor_divide(args[0], args[1], &out) == 0)
       out = PyNumber_FloorDivide(args[0], args[1]);
     return out;
   }
-  return reduce_slow("//", long_fast_floor_divide, PyNumber_FloorDivide,
+  return reduce_slow("//", num_fast_floor_divide, PyNumber_FloorDivide,
                      NULL, args, count);
 }
 
@@ -348,11 +348,11 @@ KOS_OP_INLINE PyObject *op_power(PyObject *const *args, size_t count) {
 KOS_OP_INLINE PyObject *op_inplace_add(PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_add(args[0], args[1], &out) == 0)
+    if (num_fast_add(args[0], args[1], &out) == 0)
       out = PyNumber_InPlaceAdd(args[0], args[1]);
     return out;
   }
-  return reduce_slow("+=", long_fast_add, PyNumber_InPlaceAdd, NULL,
+  return reduce_slow("+=", num_fast_add, PyNumber_InPlaceAdd, NULL,
                      args, count);
 }
 
@@ -361,11 +361,11 @@ KOS_OP_INLINE PyObject *op_inplace_subtract(
     PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_subtract(args[0], args[1], &out) == 0)
+    if (num_fast_subtract(args[0], args[1], &out) == 0)
       out = PyNumber_InPlaceSubtract(args[0], args[1]);
     return out;
   }
-  return reduce_slow("-=", long_fast_subtract, PyNumber_InPlaceSubtract, NULL,
+  return reduce_slow("-=", num_fast_subtract, PyNumber_InPlaceSubtract, NULL,
                      args, count);
 }
 
@@ -374,11 +374,11 @@ KOS_OP_INLINE PyObject *op_inplace_multiply(
     PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_multiply(args[0], args[1], &out) == 0)
+    if (num_fast_multiply(args[0], args[1], &out) == 0)
       out = PyNumber_InPlaceMultiply(args[0], args[1]);
     return out;
   }
-  return reduce_slow("*=", long_fast_multiply, PyNumber_InPlaceMultiply, NULL,
+  return reduce_slow("*=", num_fast_multiply, PyNumber_InPlaceMultiply, NULL,
                      args, count);
 }
 
@@ -386,11 +386,11 @@ KOS_OP_INLINE PyObject *op_inplace_multiply(
 KOS_OP_INLINE PyObject *op_inplace_modulo(PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_modulo(args[0], args[1], &out) == 0)
+    if (num_fast_modulo(args[0], args[1], &out) == 0)
       out = PyNumber_InPlaceRemainder(args[0], args[1]);
     return out;
   }
-  return reduce_slow("%=", long_fast_modulo, PyNumber_InPlaceRemainder, NULL,
+  return reduce_slow("%=", num_fast_modulo, PyNumber_InPlaceRemainder, NULL,
                      args, count);
 }
 
@@ -463,11 +463,11 @@ KOS_OP_INLINE PyObject *op_inplace_true_divide(
     PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_true_divide(args[0], args[1], &out) == 0)
+    if (num_fast_true_divide(args[0], args[1], &out) == 0)
       out = PyNumber_InPlaceTrueDivide(args[0], args[1]);
     return out;
   }
-  return reduce_slow("/=", long_fast_true_divide, PyNumber_InPlaceTrueDivide,
+  return reduce_slow("/=", num_fast_true_divide, PyNumber_InPlaceTrueDivide,
                      NULL, args, count);
 }
 
@@ -476,11 +476,11 @@ KOS_OP_INLINE PyObject *op_inplace_floor_divide(
     PyObject *const *args, size_t count) {
   if (likely(count == 2)) {
     PyObject *out = NULL;
-    if (long_fast_floor_divide(args[0], args[1], &out) == 0)
+    if (num_fast_floor_divide(args[0], args[1], &out) == 0)
       out = PyNumber_InPlaceFloorDivide(args[0], args[1]);
     return out;
   }
-  return reduce_slow("//=", long_fast_floor_divide,
+  return reduce_slow("//=", num_fast_floor_divide,
                      PyNumber_InPlaceFloorDivide, NULL, args, count);
 }
 

@@ -20,6 +20,7 @@
 
 #include <Python.h>
 #include <limits.h>
+#include <math.h>
 
 #include "bytecode.h"
 #include "hints.h"
@@ -100,6 +101,15 @@ static inline int kos_object_not(PyObject *v) {
 # define KOS_LONG_REUSE 1
 #else
 # define KOS_LONG_REUSE 0
+#endif
+
+/* A float result may likewise be written into an exact float the
+   caller owns outright; there is no cached float to keep the identity
+   of, so only the refcount rule applies. */
+#if ! defined(Py_GIL_DISABLED)
+# define KOS_FLOAT_REUSE 1
+#else
+# define KOS_FLOAT_REUSE 0
 #endif
 
 
@@ -432,6 +442,155 @@ KOS_LONG_FAST_OBJECT_FORM(true_divide)
 KOS_LONG_FAST_OBJECT_FORM(power)
 
 #undef KOS_LONG_FAST_OBJECT_FORM
+
+
+/* === PyFloat two-operand fast paths === */
+
+/* Per-operator two-operand float fast paths, the float analogue of the
+   PyLong paths above and shaped the same: a _d form taking the two
+   doubles and a candidate the result may be written into, an object
+   form that checks both operands are exact floats, and a num form
+   that tries the int path and then the float path, for the operator
+   cores. The arithmetic is what floatobject.c computes: add, subtract,
+   multiply, and true division are the IEEE operation (a zero divisor
+   declines, so the generic path raises), remainder and floor division
+   are ports of float_rem and float_divmod, so their signs and their
+   handling of infinities and NaN match. Power has no float fast path:
+   its special cases (a negative base with a fractional exponent gives
+   a complex, a zero base with a negative exponent raises) stay with
+   the generic path. */
+
+/* Materialise a double result: into reuse when the caller offered an
+   exact float it owns outright, in which case *out is that same
+   object and the caller's reference becomes the result reference;
+   else a fresh float. Returns 1, or -1 with an error set. */
+KOS_OP_INLINE int kos_float_fast_result(
+    double res, PyObject *reuse, PyObject **out) {
+
+#if KOS_FLOAT_REUSE
+  if (reuse && Py_REFCNT(reuse) == 1) {
+    ((PyFloatObject *) reuse)->ob_fval = res;
+    *out = reuse;
+    return 1;
+  }
+#else
+  (void) reuse;
+#endif
+  *out = PyFloat_FromDouble(res);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+KOS_OP_INLINE int float_fast_add_d(double a, double b, PyObject *reuse, PyObject **out) {
+  return kos_float_fast_result(a + b, reuse, out);
+}
+
+
+KOS_OP_INLINE int float_fast_subtract_d(double a, double b, PyObject *reuse, PyObject **out) {
+  return kos_float_fast_result(a - b, reuse, out);
+}
+
+
+KOS_OP_INLINE int float_fast_multiply_d(double a, double b, PyObject *reuse, PyObject **out) {
+  return kos_float_fast_result(a * b, reuse, out);
+}
+
+
+KOS_OP_INLINE int float_fast_true_divide_d(double a, double b, PyObject *reuse, PyObject **out) {
+  if (unlikely(b == 0.0))
+    return 0;
+  return kos_float_fast_result(a / b, reuse, out);
+}
+
+
+/* Python's float remainder: the sign of the divisor, a zero result
+   carrying the divisor's sign. */
+KOS_OP_INLINE int float_fast_modulo_d(double a, double b, PyObject *reuse, PyObject **out) {
+  double mod;
+
+  if (unlikely(b == 0.0))
+    return 0;
+  mod = fmod(a, b);
+  if (mod) {
+    if ((b < 0) != (mod < 0))
+      mod += b;
+  } else {
+    mod = copysign(0.0, b);
+  }
+  return kos_float_fast_result(mod, reuse, out);
+}
+
+
+/* Python's float floor division, the floordiv half of float_divmod:
+   the quotient of the divisor-signed remainder, floored, nudged up
+   where the division rounded it down past a half, and a zero result
+   carrying the quotient's sign. */
+KOS_OP_INLINE int float_fast_floor_divide_d(double a, double b, PyObject *reuse, PyObject **out) {
+  double mod, div, floordiv;
+
+  if (unlikely(b == 0.0))
+    return 0;
+  mod = fmod(a, b);
+  div = (a - mod) / b;
+  if (mod) {
+    if ((b < 0) != (mod < 0)) {
+      mod += b;
+      div -= 1.0;
+    }
+  } else {
+    mod = copysign(0.0, b);
+  }
+  if (div) {
+    floordiv = floor(div);
+    if (div - floordiv > 0.5)
+      floordiv += 1.0;
+  } else {
+    floordiv = copysign(0.0, a / b);
+  }
+  return kos_float_fast_result(floordiv, reuse, out);
+}
+
+
+/* The object forms: both exact floats, then the _d form; and the num
+   forms: the int path, then the float path. */
+#define KOS_FLOAT_FAST_OBJECT_FORM(NAME)                                \
+  KOS_OP_INLINE int float_fast_##NAME(                                  \
+      PyObject *l, PyObject *r, PyObject **out) {                       \
+    if (! (PyFloat_CheckExact(l) && PyFloat_CheckExact(r)))             \
+      return 0;                                                         \
+    return float_fast_##NAME##_d(                                       \
+        PyFloat_AS_DOUBLE(l), PyFloat_AS_DOUBLE(r), NULL, out);         \
+  }                                                                     \
+  KOS_OP_INLINE int num_fast_##NAME(                                    \
+      PyObject *l, PyObject *r, PyObject **out) {                       \
+    int rc = long_fast_##NAME(l, r, out);                               \
+    if (rc)                                                             \
+      return rc;                                                        \
+    return float_fast_##NAME(l, r, out);                                \
+  }
+
+KOS_FLOAT_FAST_OBJECT_FORM(add)
+KOS_FLOAT_FAST_OBJECT_FORM(subtract)
+KOS_FLOAT_FAST_OBJECT_FORM(multiply)
+KOS_FLOAT_FAST_OBJECT_FORM(true_divide)
+KOS_FLOAT_FAST_OBJECT_FORM(modulo)
+KOS_FLOAT_FAST_OBJECT_FORM(floor_divide)
+
+#undef KOS_FLOAT_FAST_OBJECT_FORM
+
+
+/* A richcompare selector over two doubles, with the C operators so a
+   NaN answers as Python does: false to everything but not-equal. */
+KOS_OP_INLINE int kos_double_compare(KosCompare sel, double a, double b) {
+  switch (sel) {
+    case KOS_COMPARE_LT: return a < b;
+    case KOS_COMPARE_LE: return a <= b;
+    case KOS_COMPARE_EQ: return a == b;
+    case KOS_COMPARE_NE: return a != b;
+    case KOS_COMPARE_GT: return a > b;
+    default: return a >= b;
+  }
+}
 
 
 /**
