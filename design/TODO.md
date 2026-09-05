@@ -49,8 +49,8 @@ Ref: [archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
 A `KosThreadFn` chosen once for a site's operands (a cache slot) or an
 extent's fixed fact (a dyn node field) and tail-called on every later
 execution. Open: node-style on the FOREACH step and NEXT node, then the
-frame's return arm; cache-style float and string bodies on the
-arithmetic and compare slots, and FAST_ATTR_INPLACE.
+frame's return arm; cache-style string concatenation on the arithmetic
+slots, and FAST_ATTR_INPLACE.
 
 Ref: [interpreter/electors.md](interpreter/electors.md).
 

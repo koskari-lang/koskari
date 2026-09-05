@@ -44,7 +44,26 @@ body by a fifth and cost cycles across the kernels until it was moved
 out of line; and the compare family's footprint on the churn kernels
 is small (370M CHECK_COMPARE executions against 12.3G for
 OBJECT_OPERAND on the trace), so its value is general rather than
-kernel-shaped.
+kernel-shaped. Two steps followed on the same bodies. A result is
+written into the operand the stack alone owns: when the left operand
+or the accumulator is an exact int with a refcount of one, the result
+lies outside the small-int range so the cached identities stay
+CPython's, and it needs no more digits than the object holds, the
+digits and tag are rewritten in place and no allocation or release
+runs; on `loop` that is 25.8% fewer instructions and 24.1% fewer
+cycles, on `branch` 9.2% fewer of both, and under `tox -e churn`
+`loop` runs at 0.79x of CPython and `tree` at 0.86x. Float bodies then
+joined the int bodies on every family, six operators each (add,
+subtract, multiply, true division, and ports of `float_rem` and
+`float_divmod`; power stays generic for its complex and zero-base
+cases), with the same in-place result rule and a float body on each
+compare family settling on the C comparisons so NaN answers as Python
+does; `nbody` runs 24.0% fewer instructions and 24.2% fewer cycles,
+1.91x of CPython under churn from 2.31x. The suite under ASan found
+that the elector tests shifted by 2^40, a 128 GiB int that raises
+MemoryError on a normal build and trips the sanitizer's allocator
+limit; the sanitizer gate belongs in every step that writes into live
+objects.
 
 **See also:** [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)
 (the per-site cache framework this extends),
@@ -248,20 +267,21 @@ type: `KosCoroutine`, `KosDefer`, `PyCoro`, generic `am_await`. Moderate;
 the gate is already two loads.
 
 **OBJECT_OPERAND, OBJECT_INPLACE, FAST_INPLACE, FAST_INPLACE_CONST**.
-Built: the exact `PyLong` pair per operator, the operator a site
-constant indexing the family's table, the guard two borrowed type
-compares in the body. Open on the same slots: the exact `PyFloat` pair
-(the `nbody` kernel is all floats through these sites) and exact
-`PyUnicode` concatenation. `VAR_INPLACE(_CONST)` stay on the ladder;
-hot code uses the fast forms.
+Built: the exact `PyLong` pair and the exact `PyFloat` pair per
+operator, the operator a site constant indexing the family's int or
+float table, the guard two borrowed type compares in the body, the
+result written into the operand the stack alone owns. Open on the
+same slots: exact `PyUnicode` concatenation. `VAR_INPLACE(_CONST)`
+stay on the ladder; hot code uses the fast forms.
 
 **OBJECT_COMPARE(_VAR/_FAST), CHECK_COMPARE(_VAR/_FAST), SWITCH_EQ\***.
 `kos_compare_chain` takes the selector and walks the operands; the extended
 tail is out of line. Built for CHECK_COMPARE and OBJECT_COMPARE: the
-exact `PyLong` pair, one body per opcode reading the selector off the
-site, the `CHECK_*` body owning the jump. CHECK_COMPARE_FAST keeps its
-inline int arm (a slot measured as a loss). Open on the same slots: the
-exact `PyUnicode` pair and the identity selectors.
+exact `PyLong` pair and the exact `PyFloat` pair, one body each per
+opcode reading the selector off the site, the `CHECK_*` body owning
+the jump. CHECK_COMPARE_FAST keeps its inline int arm (a slot measured
+as a loss). Open on the same slots: the exact `PyUnicode` pair and the
+identity selectors.
 
 **OBJECT_FORMAT(_CONST), FAST_FORMAT(_CONST), VAR_FORMAT(_CONST)**. The
 fused format opcodes test `PyUnicode_CheckExact` and the spec shape per
@@ -428,9 +448,9 @@ Ranked by expected benefit against risk:
    with three chain reads; the install knows the shape. A ladder is
    replaced rather than a call, which is where the CALL_FAST elector
    found nothing.
-5. **Float and string bodies on the arithmetic slots.** The families
-   exist; a body per operator for the exact `PyFloat` pair and one for
-   `PyUnicode` concatenation, elected by the same classification.
+5. **Float bodies on the arithmetic and compare slots.** Done, see the
+   status above. String concatenation remains: one body for the exact
+   `PyUnicode` pair, elected by the same classification.
 6. **CHECK_COMPARE and OBJECT_COMPARE, cache-style.** Done, see the
    status above. CHECK_COMPARE_FAST stays on its inline arm, and the
    `_VAR` twins and `SWITCH_EQ*` stay on their ladders.
