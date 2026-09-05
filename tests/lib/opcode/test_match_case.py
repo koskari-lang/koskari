@@ -23,8 +23,10 @@ Tests for the MATCH_CASE opcode (runtime match/case dispatch)
 from koskari.matcher import (
     MatchCompiler, MATCH, CAPTURE, LITERAL, ONEOF, OPTIONAL, TYPE)
 
+from koskari.lib import CollectorNamespace, Namespace
+
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr
+from tests.lib.opcode import CevalTest, build_code, build_expr
 
 import pytest
 
@@ -260,10 +262,12 @@ class TestMatchCaseOpcode(CevalTest):
 
     async def test_match_case_binds_name_without_fast_slot(self):
         """
-        A capture whose name has no fast slot is bound by name
+        A capture whose name has no fast slot in the namespace is
+        bound by name: a collector namespace declares nothing up front
+        and takes the binding on the store
         """
 
-        code, ns = build_expr([
+        code = build_code([
             ["CONST", 5],
             ["MATCH_CASE", ("elsebody", frozen(MATCH(CAPTURE("x"))), (), 0)],
             ["VAR", "x"],
@@ -272,9 +276,48 @@ class TestMatchCaseOpcode(CevalTest):
             ["POP", 1],
             ["CONST", 0],
             ["RETURN", 1],
-        ], values={"x": None})
+        ])
+        ns = CollectorNamespace("cn", None, (), ())
         result = await make_callable(code, ns)()
         self.assertEqual(result, 5)
+        self.assertEqual(ns["x"], 5)
+
+
+    async def test_match_case_rebinds_under_another_layout(self):
+        """
+        One code object run under namespaces of different layouts binds
+        the capture into the right slot each time: a same-contents
+        layout under another tuple is adopted, a different layout is
+        re-resolved
+        """
+
+        code = build_code([
+            ["CONST", 5],
+            ["MATCH_CASE", ("elsebody", frozen(MATCH(CAPTURE("x"))), (), 0)],
+            ["CONST", None],
+            ["RETURN", 1],
+            ["LABEL", "elsebody"],
+            ["POP", 1],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("x",))
+
+        first = Namespace("first", None, ("x",))
+        await make_callable(code, first)()
+        self.assertEqual(first["x"], 5)
+
+        sibling = Namespace("sibling", None, ("x",))
+        await make_callable(code, sibling)()
+        self.assertEqual(sibling["x"], 5)
+
+        shifted = Namespace("shifted", None, ("y", "x"))
+        await make_callable(code, shifted)()
+        self.assertEqual(shifted["x"], 5)
+        with self.assertRaises(NameError):
+            shifted["y"]
+
+        await make_callable(code, first)()
+        self.assertEqual(first["x"], 5)
 
 
 class TestMatchCaseKeepSubject(CevalTest):

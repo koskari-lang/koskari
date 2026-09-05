@@ -23,6 +23,7 @@ Tests for the koskari.compile match special form: delimiter clauses
 from dataclasses import dataclass
 
 from koskari.exceptions import SpecialError
+from koskari.lib import Datum, cons, nil
 
 from . import SpecialsTestCase
 
@@ -150,6 +151,32 @@ class TestMatchSpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src, data=(1, 2, 3))
         self.assertEqual(await expr(), (2, 3))
+
+
+    async def test_match_sequence_over_pair_binds_datum(self):
+        # a pair is source: walking it boxes each capture in a Datum
+        # carrying the cell, so the bound name is the box
+        src = """
+        (match data
+          [[#[a b c]] b]
+          [else: 0])
+        """
+        expr, mod = self.compile_expr(src, data=cons(1, 2, 3, nil))
+        result = await expr()
+        self.assertIsInstance(result, Datum)
+        self.assertEqual(result.datum, 2)
+
+
+    async def test_match_sequence_rest_over_pair_binds_datum(self):
+        src = """
+        (match data
+          [[#[a *: rest]] rest]
+          [else: 0])
+        """
+        expr, mod = self.compile_expr(src, data=cons(1, 2, 3, nil))
+        result = await expr()
+        self.assertIsInstance(result, Datum)
+        self.assertEqual(result.datum, cons(2, 3, nil))
 
 
     async def test_match_class(self):
