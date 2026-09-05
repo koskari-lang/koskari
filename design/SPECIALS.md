@@ -538,23 +538,23 @@ captured.
 
 The subject stays on the stack across the arm chain (same discipline as
 `compile/switch`). Each arm emits one **`MATCH_CASE`** EXTRA row (no-match
-label, frozen matcher, externs tuple, keep-subject flag) followed by
-**`MATCH_STORE_NAMES`** with the names tuple (or a plain `POP` of the
-captures dict when the pattern binds nothing). No match leaves the subject in
-place and jumps to the next arm; a match pushes the captures dict and
-consumes the subject unless the keep flag is set. `MATCH_STORE_NAMES` binds
-only the slots that actually captured — an unbound optional slot raises
-`NameError` when read. Binding names are `declare_var`'d in the enclosing
-scope; bindings persist after the form (arms are not isolated scopes).
+label, frozen matcher, externs tuple, keep-subject flag). No match leaves
+the subject in place and jumps to the next arm; a match binds the arm's
+captures into the namespace, pushes nothing, and consumes the subject unless
+the keep flag is set. The opcode resolves the slot names to namespace slots
+once per site through its cache and binds only the slots that actually
+captured -- an unbound optional slot raises `NameError` when read. Binding
+names are `declare_var`'d in the enclosing scope; bindings persist after the
+form (arms are not isolated scopes).
 
 A clause may carry a **guard** between the delimiter and the body:
 `[[PATTERN] when: COND BODY...]` (or `unless:`). A guard keyword with no
 expression raises `SpecialError` (`"match guard requires an expression"`).
-With a guard, `MATCH_CASE` keeps the subject under the captures; the guard
-expression compiles after the names bind and a `JUMP_FALSE` (`when:`) or
-`JUMP_TRUE` (`unless:`) falls to the next arm with the subject intact —
-captures persist across a failed guard. A passing guard pops the subject and
-commits to the body.
+With a guard, `MATCH_CASE` binds the captures and leaves the subject on the
+stack; the guard expression compiles after that bind and a `JUMP_FALSE`
+(`when:`) or `JUMP_TRUE` (`unless:`) falls to the next arm with the subject
+intact -- captures persist across a failed guard. A passing guard pops the
+subject and commits to the body.
 
 Clause bodies are compiled via `helper_begin`; after any successful arm,
 control jumps to a shared done label. Entering `else:` pops the retained

@@ -31,7 +31,7 @@ static int match_group(
   PyObject *parent_dict = e->cur_captures;
   PyObject *old_capture_parent = e->capture_parent;
   Py_ssize_t start = *cursor;
-  PyObject *sub = match_frame_new(e, start);
+  PyObject *sub = match_frame_new(e->subj);
   if (! sub)
     return -1;
 
@@ -62,7 +62,8 @@ static int match_group(
 
   e->cur_captures = parent_dict;
   e->capture_parent = old_capture_parent;
-  if (datum_frame_set_source(e, sub, e->subj, start, *cursor)) {
+  if (datum_frame_set_source(
+          e->in_from_datum, sub, e->subj, start, *cursor)) {
     Py_DECREF(sub);
     return -1;
   }

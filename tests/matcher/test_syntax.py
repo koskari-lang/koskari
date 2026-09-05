@@ -805,7 +805,7 @@ class TestRecursiveLowering(unittest.TestCase):
         result = m.match(
             (sa,), symbol=symbol, pair=pair)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["a"].datum, sa)
+        self.assertIs(result.captures["a"], sa)
         self.assertNotIn("b", result.captures)
 
 

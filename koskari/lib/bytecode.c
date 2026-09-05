@@ -3005,6 +3005,7 @@ static void cache_slot_release(KosCacheSlot *slot) {
     break;
   case KOS_CACHE_MATCHER:
     Py_XDECREF(slot->u.matcher.matcher);
+    Py_XDECREF(slot->u.matcher.slotmap);
     break;
   case KOS_CACHE_ELECTOR:
     /* ref-free: a static function and two counters. */

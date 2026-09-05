@@ -52,7 +52,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         b = symbol("b")
         r = m.match((a, b))
         self.assertTrue(r.matched)
-        self.assertEqual(r.captures["x"].datum, (a, b))
+        self.assertEqual(r.captures["x"], (a, b))
 
 
     def test_literal_symbol_top_level(self):
@@ -86,8 +86,8 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         arg = symbol("argval")
         r = matcher.match((alias, arg))
         self.assertTrue(r.matched)
-        self.assertIs(r.captures[str(m)].datum, alias)
-        self.assertIs(r.captures["v"].datum, arg)
+        self.assertIs(r.captures[str(m)], alias)
+        self.assertIs(r.captures["v"], arg)
 
 
     def test_list_pattern_head_in_literals_requires_exact_symbol(self):
@@ -130,8 +130,8 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         cap_a = r2.captures["a"]
         tail = cap_a.datum if isinstance(cap_a, Datum) else cap_a
         self.assertEqual(len(tail), 2)
-        self.assertEqual(tail[0].datum, s1)
-        self.assertEqual(tail[1].datum, s2)
+        self.assertEqual(tail[0], s1)
+        self.assertEqual(tail[1], s2)
 
 
     def test_nested_sublist_pattern(self):
@@ -167,7 +167,7 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         r = m.match((symbol("only"),))
         self.assertTrue(r.matched)
         self.assertEqual(
-            r.captures["x"].datum, symbol("only"))
+            r.captures["x"], symbol("only"))
 
 
 class TestSyntaxAdd(unittest.TestCase):

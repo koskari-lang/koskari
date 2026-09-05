@@ -151,6 +151,9 @@ typedef struct {
 typedef struct {
   uint32_t type_extern;   /* index into matcher->externs / extern_env */
   uint32_t first_field;   /* head of FIELD chain; NO_INDEX if empty */
+  uint32_t num_positional; /* POSITIONAL FIELDs on the chain, counted
+                              by the builder; 0 skips the
+                              __match_args__ lookup at match time */
 } KosMatchClass;
 
 
@@ -418,6 +421,51 @@ int KosMatcher_RunVectorcall(
     PyObject *const *ext_values,
     PyObject *ext_names,
     PyObject **out_caps);
+
+
+/**
+   Number of capture slots in the matcher's slot table; the length of
+   the array the slot-array entries below fill.
+ */
+#define KosMatcher_SLOT_COUNT(m)  PyTuple_GET_SIZE(((KosMatcher *) (m))->slots)
+
+
+/**
+   Slot-array entries a caller keeps in a stack buffer before spilling
+   to the heap; the common slot table is far smaller.
+ */
+#define KOS_MATCH_SLOTS_INLINE 8
+
+
+/**
+   Frame-free core of ``KosMatcher_Run``: same arguments, but the
+   captures land in ``out_slots``, the caller's array of
+   ``KosMatcher_SLOT_COUNT`` entries aligned to the slot table. On a
+   match (1) each slot that fired holds a new reference and the rest
+   are NULL; on no match (0) or error (-1, exception set) every entry
+   is NULL and nothing is owned, the one exception being a call
+   rejected for a NULL matcher or array, which touches nothing. The
+   array need not be cleared beforehand. No dict or frame is built.
+ */
+int KosMatcher_RunSlots(
+    KosMatcher *matcher,
+    KosMatchSubject *subject,
+    PyObject *const *extern_env,
+    Py_ssize_t n_extern_env,
+    PyObject **out_slots);
+
+
+/**
+   ``KosMatcher_RunVectorcall`` with the ``KosMatcher_RunSlots``
+   result contract: same extern resolution, captures into the caller's
+   slot array.
+ */
+int KosMatcher_RunSlotsVectorcall(
+    KosMatcher *matcher,
+    KosMatchSubject *subject,
+    PyObject *const *ext_values,
+    PyObject *ext_names,
+    PyObject **out_slots);
 
 
 /**

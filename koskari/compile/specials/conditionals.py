@@ -260,6 +260,9 @@ def special_match(compiler, source):
             fragment.request_var(extern)
             fragment.instruction(OpCode.VAR, extern)
 
+        # the opcode binds the arm's captures itself, resolving the
+        # slot names to namespace slots once per site through its
+        # cache; the names are declared here so they get slots
         next_label = gen_label()
         fragment.instruction(
             OpCode.MATCH_CASE,
@@ -270,11 +273,6 @@ def special_match(compiler, source):
             if name not in declared:
                 declared.add(name)
                 fragment.declare_var(name)
-
-        if names:
-            fragment.instruction(OpCode.MATCH_STORE_NAMES, tuple(names))
-        else:
-            fragment.instruction(OpCode.POP, 1)
 
         if guard_kw is not None:
             # the subject is still on the stack (keep flag); a failed

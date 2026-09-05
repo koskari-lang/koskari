@@ -374,9 +374,9 @@ class TestBuildAndMatch(unittest.TestCase):
         result = m.match(subj, symbol=symbol)
         self.assertIsInstance(result, MatchResult)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"].datum, subj[0])
+        self.assertIs(result.captures["name"], subj[0])
         self.assertEqual(
-            result.captures["body"].datum, ("b1", "b2"))
+            result.captures["body"], ("b1", "b2"))
 
 
     def test_oneof_omits_other_branch_slots(self):
@@ -392,13 +392,13 @@ class TestBuildAndMatch(unittest.TestCase):
         m = pat.build()
         r1 = m.match(["X"])
         self.assertTrue(r1.matched)
-        self.assertEqual(r1.captures["xs"].datum, "X")
+        self.assertEqual(r1.captures["xs"], "X")
         self.assertNotIn("ys", r1.captures)
 
         r2 = m.match(["Y"])
         self.assertTrue(r2.matched)
         self.assertNotIn("xs", r2.captures)
-        self.assertEqual(r2.captures["ys"].datum, "Y")
+        self.assertEqual(r2.captures["ys"], "Y")
 
 
     def test_rest_against_tuple_and_kospair(self):
@@ -412,9 +412,9 @@ class TestBuildAndMatch(unittest.TestCase):
 
         r_tuple = m.match((1, 2, 3))
         self.assertTrue(r_tuple.matched)
-        self.assertEqual(r_tuple.captures["head"].datum, 1)
+        self.assertEqual(r_tuple.captures["head"], 1)
         self.assertEqual(
-            r_tuple.captures["tail"].datum, (2, 3))
+            r_tuple.captures["tail"], (2, 3))
 
         r_pair = m.match(cons(1, 2, 3, nil))
         self.assertTrue(r_pair.matched)
@@ -446,8 +446,8 @@ class TestBuildAndMatch(unittest.TestCase):
 
         result = m.match((p,), Point=Point)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["x"].datum, 10)
-        self.assertEqual(result.captures["y"].datum, 20)
+        self.assertEqual(result.captures["x"], 10)
+        self.assertEqual(result.captures["y"], 20)
 
         result_bad = m.match((object(),), Point=Point)
         self.assertFalse(result_bad.matched)
@@ -467,7 +467,7 @@ class TestBuildAndMatch(unittest.TestCase):
 
         result = m.match(["Y"])
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["v"].datum, "Y")
+        self.assertEqual(result.captures["v"], "Y")
 
 
     def test_optional_omits_slot_when_inner_unmatched(self):
@@ -484,15 +484,15 @@ class TestBuildAndMatch(unittest.TestCase):
 
         r_present = m.match(["X", 1, 2])
         self.assertTrue(r_present.matched)
-        self.assertEqual(r_present.captures["opt"].datum, "X")
+        self.assertEqual(r_present.captures["opt"], "X")
         self.assertEqual(
-            r_present.captures["tail"].datum, (1, 2))
+            r_present.captures["tail"], (1, 2))
 
         r_absent = m.match([1, 2])
         self.assertTrue(r_absent.matched)
         self.assertNotIn("opt", r_absent.captures)
         self.assertEqual(
-            r_absent.captures["tail"].datum, (1, 2))
+            r_absent.captures["tail"], (1, 2))
 
 
     def test_repeat_zero_or_more_with_deterministic_suffix(self):
@@ -507,14 +507,14 @@ class TestBuildAndMatch(unittest.TestCase):
 
         r_many = m.match(["X", "X", "X", "Z"])
         self.assertTrue(r_many.matched)
-        self.assertEqual(r_many.captures["end"].datum, "Z")
+        self.assertEqual(r_many.captures["end"], "Z")
 
         r_one = m.match(["X", "Z"])
         self.assertTrue(r_one.matched)
 
         r_zero = m.match(["Z"])
         self.assertTrue(r_zero.matched)
-        self.assertEqual(r_zero.captures["end"].datum, "Z")
+        self.assertEqual(r_zero.captures["end"], "Z")
 
         self.assertFalse(m.match(["X", "X"]).matched)
 
@@ -759,7 +759,7 @@ class TestErgonomicShorthands(unittest.TestCase):
         r_ok = m.match([symbol("foo")], symbol=symbol)
         self.assertTrue(r_ok.matched)
         self.assertIs(
-            r_ok.captures["x"].datum, symbol("foo"))
+            r_ok.captures["x"], symbol("foo"))
 
         self.assertFalse(m.match([7], symbol=symbol).matched)
 
@@ -810,8 +810,8 @@ class TestErgonomicShorthands(unittest.TestCase):
 
         r = m.match([(1, 2)])
         self.assertTrue(r.matched)
-        self.assertEqual(r.captures["a"].datum, 1)
-        self.assertEqual(r.captures["b"].datum, 2)
+        self.assertEqual(r.captures["a"], 1)
+        self.assertEqual(r.captures["b"], 2)
 
 
     def test_list_with_key_captures_outer_list(self):
@@ -825,9 +825,9 @@ class TestErgonomicShorthands(unittest.TestCase):
 
         r = m.match([(1, 2)])
         self.assertTrue(r.matched)
-        self.assertEqual(r.captures["a"].datum, 1)
-        self.assertEqual(r.captures["b"].datum, 2)
-        self.assertEqual(r.captures["lst"].datum, (1, 2))
+        self.assertEqual(r.captures["a"], 1)
+        self.assertEqual(r.captures["b"], 2)
+        self.assertEqual(r.captures["lst"], (1, 2))
 
 
     def test_bind_and_value_produce_identical_freeze(self):
@@ -903,7 +903,7 @@ class TestCrossCutting(unittest.TestCase):
         result = m.match([1, 2])
         self.assertTrue(result.matched)
         self.assertEqual(
-            {k: v.datum for k, v in result.captures.items()},
+            dict(result.captures),
             {"a": 1, "b": 2})
 
 

@@ -49,8 +49,9 @@ Value-level pattern matching over the native matcher engine
 (`koskari.lib.Matcher`), the same engine that drives macro and special-form
 dispatch. **`compile/match`** (s-expr) and **`layout/match`** (block syntax)
 lower each arm's pattern to a frozen matcher constant and emit a
-`SWITCH_EQ`-style chain of **`MATCH_CASE`** / **`MATCH_STORE_NAMES`** opcodes,
-with a per-site `KOS_CACHE_MATCHER` slot (thaw-once).
+`SWITCH_EQ`-style chain of **`MATCH_CASE`** opcodes, each binding its arm's
+captures on a match, with a per-site `KOS_CACHE_MATCHER` slot (thaw-once
+matcher plus the capture slot indices).
 
 - **Case-pattern dialect**: capture symbols, literals, `x :: T` type
   constraints, sequence `#[…]` / `#(…)` (with `*:` rest), mapping `#{K: PAT}`,

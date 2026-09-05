@@ -525,14 +525,19 @@ struct KosCacheSlot {
     } field;
 
     /* KOS_CACHE_MATCHER: the native Matcher thawed once from a MATCH_CASE
-       arm's frozen 6-tuple const. One owned strong ref and no guard -- the
-       thaw is a pure function of the const, so a populated slot is
-       permanently valid for its site. An immutable Matcher cannot route a
-       reference cycle back to the KosCode (its consts hold literals and
-       sub-matchers, never this code), so KosCode stays GC-untracked; the
-       teardown arm decrefs the ref. */
+       arm's frozen 6-tuple const, plus the arm's capture slots resolved
+       against the namespace layout as a KosSlotMap. The matcher has no
+       guard -- the thaw is a pure function of the const, so it is
+       permanently valid for its site. The slot map carries its own
+       layout guard (KosSlotMap_Valid); a layout change replaces it.
+       Neither can route a reference cycle back to the KosCode (an
+       immutable Matcher's consts hold literals and sub-matchers, a
+       slot map holds str tuples), so KosCode stays GC-untracked; the
+       teardown arm decrefs both. */
     struct {
       PyObject *matcher;       /* thawed KosMatcher; owned, may be NULL */
+      PyObject *slotmap;       /* KosSlotMap over matcher->slots; owned,
+                                  may be NULL */
     } matcher;
 
     /* KOS_CACHE_ELECTOR: the handler elected for the site. ``fn`` is a

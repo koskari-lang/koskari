@@ -3,14 +3,14 @@
 Canonical reference for the native matcher (`koskari.lib.Matcher`), the Python
 pattern builders in `koskari.matcher`, freeze-time hygiene plans
 (`koskari.hygiene.Hygiene`), capture wrappers (`Datum`, `DatumFrame`), and the
-**runtime match/case system** (the case-pattern dialect, the `MATCH_CASE` /
-`MATCH_STORE_NAMES` opcodes, and `compile/match` / `layout/match`).
+**runtime match/case system** (the case-pattern dialect, the `MATCH_CASE`
+opcode, and `compile/match` / `layout/match`).
 
 **Implementation:** `koskari/matcher.py`, `koskari/hygiene.py`,
 `koskari/syntax.py`, `koskari/lib/matcher.{c,h}`;
 runtime match/case: `koskari/compile/specials/conditionals.py`,
 `koskari/reader/layouts/conditionals.py`,
-`koskari/lib/opcode/MATCH_CASE.c`, `koskari/lib/opcode/MATCH_STORE_NAMES.c`
+`koskari/lib/opcode/MATCH_CASE.c`
 
 **Related design (deeper or historical):**
 
@@ -86,6 +86,14 @@ Check membership before use.
 `koskari.lib.Datum` is the hygiene **syntax box**: a native wrapper around a
 captured value with optional source position and flags.
 
+Captures are boxed only on a walk over source: a `KosPair` spine (cell
+positions travel with the value) or a walk inside a substitution `Datum`
+(`from_datum` must travel). A tuple, list, or single-value subject yields
+raw values in `captures`, including REST tails, multi-cell slices, and
+REPEAT rows. The pattern parsers (`parse_matcher`, `parse_case_element`,
+`parse_case_pattern`) hand their source element in as a one-cell pair
+spine for this reason.
+
 | Field / property | Role |
 |------------------|------|
 | `.datum` | Wrapped value (symbol, pair spine, list, etc.) |
@@ -112,7 +120,7 @@ without gensymming substituted interiors.
 
 | Situation | Capture shape |
 |-----------|----------------|
-| Tuple/list runtime subject | Plain `dict` in `captures[slot]` |
+| Tuple/list runtime subject | Plain `dict` in `captures[slot]`; values are raw, never `Datum` |
 | KosPair root match | Entire `captures` may be a `DatumFrame` |
 | Named `GROUP` on KosPair | `captures[slot]` is a `DatumFrame` |
 | `repeat_capture` rows on KosPair | Each list element may be a `DatumFrame` |
@@ -528,10 +536,9 @@ The delimiter is a pure container: the special reads it with `pair`/`nil` only.
 
 | Piece | Behaviour |
 |-------|-----------|
-| `MATCH_CASE` | EXTRA row: no-match label, frozen matcher const, externs name tuple, keep-subject flag; one `KOS_CACHE_MATCHER` slot. Subject held on the stack across arms; wrapped as a length-1 sequence per attempt. No match: subject stays, jump. Match: push captures dict (subject consumed unless `keep`). |
-| `KOS_CACHE_MATCHER` | Per-site cache slot holding the thawed `Matcher` — thaw-once, no guard/version (thaw is a pure function of the const). |
-| `MATCH_STORE_NAMES` | Const names tuple; pops the captures dict and binds each present name into the namespace (one-level `Datum` reveal). **Absent names are skipped** — an unbound optional slot raises `NameError` when read. |
-| Guards | `[[PATTERN] when:/unless: COND BODY...]`. Keep-flagged `MATCH_CASE` leaves the subject under the captures; bind, evaluate guard, `JUMP_FALSE`/`JUMP_TRUE` to the next arm (subject intact) or `POP` and commit. Captures persist on guard failure. |
+| `MATCH_CASE` | EXTRA row: no-match label, frozen matcher const, externs name tuple, keep-subject flag; one `KOS_CACHE_MATCHER` slot. Subject held on the stack across arms; wrapped as a length-1 sequence per attempt. No match: subject stays, jump. Match: the engine fills a slot array aligned to the matcher's slot table (`KosMatcher_RunSlotsVectorcall`), the opcode binds each slot that fired into the namespace and pushes nothing (subject consumed unless `keep`). The subject is a single runtime value, never a source spine, so captures are raw. **Unfired slots are skipped** -- an unbound optional slot raises `NameError` when read. |
+| `KOS_CACHE_MATCHER` | Per-site cache slot holding the thawed `Matcher` -- thaw-once, no guard/version (thaw is a pure function of the const) -- and a `KosSlotMap` (namespace subsystem) over the matcher's slot table: per slot the fast index or -1 for bind-by-name, guarded by the namespace layout with adoption of a same-contents fast-names tuple, so sibling function objects of one code share the resolution and another layout re-resolves. |
+| Guards | `[[PATTERN] when:/unless: COND BODY...]`. Keep-flagged `MATCH_CASE` leaves the subject on the stack after binding; evaluate guard, `JUMP_FALSE`/`JUMP_TRUE` to the next arm (subject intact) or `POP` and commit. Captures persist on guard failure. |
 | Externs | The special collects the frozen matcher's externs, `request_var`s each (closure capture works), and the handler loads them from the frame namespace at match time. |
 
 Behavioural contracts: bindings land in the **enclosing scope** and persist
@@ -581,7 +588,7 @@ from koskari.compile.helpers import match, match_pattern_raw
 | Hygiene / finalize | `tests/hygiene/test_hygiene.py` |
 | Special patterns | `koskari/compile/specials/` |
 | Case-pattern dialect, `APP`, `MAP` | `tests/matcher/test_case_patterns.py` |
-| `MATCH_CASE` / `MATCH_STORE_NAMES` opcodes | `tests/lib/opcode/test_match_case.py` |
+| `MATCH_CASE` opcode | `tests/lib/opcode/test_match_case.py` |
 | `compile/match` (incl. guards, layout eval) | `tests/compile/specials/test_match.py` |
 | `layout/match` structure | `tests/reader/layouts/test_match_layout.py` |
 

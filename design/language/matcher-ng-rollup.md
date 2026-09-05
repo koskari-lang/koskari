@@ -1565,15 +1565,15 @@ shape decisions — all pattern classification is the matcher's, dispatched on
 head. `*: name` rest is a matcher-surface rule on the spine composites
 (`form_factory` / `match_factory`), not a match-only convenience.
 
-Two new opcodes carry the lowering, styled on the `SWITCH_EQ` chain: **`MATCH_CASE`**
-(run an arm's frozen matcher against the subject held on the stack; no-match keeps
-the subject and jumps, first match pops it and deposits the `MatchResult`) and
-**`MATCH_STORE_NAMES`** (bind the committed arm's captures into the arm namespace by
-name in one dispatch). The arm matcher rides as a frozen 6-tuple const; `MATCH_CASE`
-thaws it once into a new **`KOS_CACHE_MATCHER`** per-site cache slot (the simplest
-`KosCacheSlot` kind — one owned ref, no guard/version/miss, since the thaw is a pure
-function of the const). Arm binding is inlined per arm, so the seq-values-kwargs
-foundation is not on the critical path.
+One opcode carries the lowering, styled on the `SWITCH_EQ` chain: **`MATCH_CASE`**
+runs an arm's frozen matcher against the subject held on the stack; no-match keeps
+the subject and jumps, the first match pops it (unless a guard keeps it), binds the
+arm's captures into the namespace, and pushes nothing. The arm matcher rides as a
+frozen 6-tuple const; `MATCH_CASE` thaws it once into a **`KOS_CACHE_MATCHER`**
+per-site cache slot, which also holds a `KosSlotMap` of the capture slots resolved
+against the namespace layout (the thaw is a pure function of the const and needs no
+guard; the slot map carries its own layout guard). Arm binding is inlined per arm,
+so the seq-values-kwargs foundation is not on the critical path.
 
 Runtime flow:
 
@@ -1581,7 +1581,8 @@ Runtime flow:
 2. Per arm, `MATCH_CASE` re-adapts the subject and runs the arm matcher (adapt-once
    via a dynnode is a deferred optimization).
 3. Run case matchers in order.
-4. On the first match, `MATCH_STORE_NAMES` binds captures into the namespace.
+4. On the first match, `MATCH_CASE` binds the captures into the namespace through
+   the cached slot map.
 5. Execute the selected body.
 
 ### Phase 9 — Hygiene extraction migration *(partial)*
