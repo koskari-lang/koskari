@@ -22,40 +22,23 @@
    lookup are inlined; the op-type switch stays out of line in the shared
    kos_inplace_reduce.
 
-   Carries one per-site field cache (cache arity 1): a single resolved storage
-   location serves both the read of obj.attr and the write-back, so a hit skips
-   the getattr/setattr protocol on both ends. kos_attr_inplace_cached does the
-   read-modify-write; the op-type and count travel in the OPCOUNT slot.
+   Carries two per-site cache slots. The first is the field cache: a
+   single resolved storage location serves both the read of obj.attr and
+   the write-back, so a hit skips the getattr/setattr protocol on both
+   ends; kos_attr_inplace_cached does the read-modify-write on the
+   generic path. The second is the elector: prologue only, the handler
+   tail-calls the body it holds (eval/eval_electors.c), which guards
+   through the field slot and reads, computes, and stores through its
+   location; an empty elector slot or an ungated site takes the electing
+   function.
 */
 
 KOS_OP_HANDLER(FAST_ATTR_INPLACE) {
-  const KosExtra *row = KosOp_ROW(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
-  int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
-  size_t idx = (size_t) KosExtra_IMM(row, 1);
-  PyObject *attr = KosExtra_OBJ(row, 2);
-
-  PyObject *ns = CURRENT_NS();
-  KOS_OP_REQUIRE_NS(ns);
-  PyObject *obj = kos_ns_fast_deref(ns, idx);
-  if (! obj)
-    RESULT_RAISE();
-
-  PyObject *const *args =
-      count ? KosEvalState_StackTailPtr(es, (size_t) count) : NULL;
-  if (count && ! args) {
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
-
   KosCacheSlot *slot = KosOp_SLOT(insn);
 
-  int res = kos_attr_inplace_cached(slot, obj, attr, op, args, count);
-  KosEvalState_StackDropNoErr(es, (size_t) count);
-  Py_DECREF(obj);
-  if (unlikely(res < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  if (likely(slot && slot[1].kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot[1].u.elector.fn, es, insn, NULL);
+  TAILCALL(el_fast_attr_inplace_elect, es, insn, NULL);
 }
 
 

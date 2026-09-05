@@ -47,6 +47,10 @@
    CHECK_COMPARE takes the stack pair and jumps, OBJECT_COMPARE takes
    it and pushes the bool. CHECK_COMPARE_FAST keeps its inline int arm
    in the handler: measured with a slot it lost what the hop cost.
+   FAST_ATTR_INPLACE reads its accumulator through the site's field
+   cache, which is the first of its two slots; the elector is the
+   second, and its bodies guard through the field slot on every
+   execution and write the result back through the same location.
 
    See design/interpreter/electors.md.
 
@@ -135,6 +139,19 @@ KOS_ELECTOR_DECL(fast_inplace_generic)
 KOS_ELECTOR_DECL(fast_inplace_const_generic)
 KOS_ELECTOR_DECL(check_compare_generic)
 KOS_ELECTOR_DECL(object_compare_generic)
+KOS_ELECTOR_DECL(fast_attr_inplace_generic)
+
+
+/* The elector slot of a site: the site's slot, except FAST_ATTR_INPLACE,
+   whose first slot is its field cache and whose elector is the second.
+   Read on the miss path only; the handlers and bodies know their own. */
+static inline KosCacheSlot *kos_elector_slot_of(void *insn) {
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+
+  if (slot && KosOp_OP(insn) == KOS_OP_FAST_ATTR_INPLACE)
+    return slot + 1;
+  return slot;
+}
 
 
 /* The generic body of an elector site, by its opcode. Read on the
@@ -152,6 +169,8 @@ static KOS_NOINLINE KosThreadFn kos_elector_generic_of(void *insn) {
       return el_fast_inplace_const_generic;
     case KOS_OP_CHECK_COMPARE:
       return el_check_compare_generic;
+    case KOS_OP_FAST_ATTR_INPLACE:
+      return el_fast_attr_inplace_generic;
     default:
       return el_object_compare_generic;
   }
@@ -230,7 +249,7 @@ KOS_ELECTOR(fast_inplace_const_generic) {
 KOS_ELECTOR(miss) {
   KosThreadFn generic = kos_elector_generic_of(insn);
 
-  kos_elector_miss(KosOp_SLOT(insn), generic);
+  kos_elector_miss(kos_elector_slot_of(insn), generic);
   TAILCALL(generic, es, insn, value);
 }
 
@@ -730,6 +749,221 @@ static inline KosThreadFn kos_elector_object_compare_classify(
 }
 
 
+static inline KosThreadFn kos_elector_num_body(
+    KosOperand op,
+    PyObject *l,
+    PyObject *r,
+    const KosThreadFn *int_table,
+    const KosThreadFn *float_table);
+
+
+/* === FAST_ATTR_INPLACE family === */
+
+
+/* The accumulator of an attribute site, borrowed, straight from the
+   direct location the field slot resolved: a __slots__ member or an
+   inline instance value. NULL for any other mode, an unset member, or
+   an instance that has materialised its dict. */
+KOS_OP_INLINE PyObject *kos_field_direct_load(
+    PyObject *obj, KosFieldMode mode, uint32_t index) {
+
+  if (mode == KOS_FIELD_SLOT)
+    return field_slot_load(obj, index);
+#if PY_MINOR_VERSION >= 11
+  if (mode == KOS_FIELD_INSTANCE_VALUE)
+    return field_instance_value_load(obj, index);
+#endif
+  return NULL;
+}
+
+
+/* Store val, borrowed, through the same location. Returns 1, or 0 when
+   the location cannot take it (an inline value slot that is unset or
+   whose instance materialised its dict), for the caller's setattr. */
+KOS_OP_INLINE int kos_field_direct_store(
+    PyObject *obj, KosFieldMode mode, uint32_t index, PyObject *val) {
+
+  if (mode == KOS_FIELD_SLOT) {
+    field_slot_store(obj, index, val);
+    return 1;
+  }
+#if PY_MINOR_VERSION >= 11
+  if (mode == KOS_FIELD_INSTANCE_VALUE)
+    return field_instance_value_store(obj, index, val);
+#endif
+  return 0;
+}
+
+
+/**
+   FAST_ATTR_INPLACE without an election: the handler as it stood,
+   reducing obj.attr in place through the field cache.
+*/
+KOS_ELECTOR(fast_attr_inplace_generic) {
+  const KosExtra *row = KosOp_ROW(insn);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
+  int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
+  size_t idx = (size_t) KosExtra_IMM(row, 1);
+  PyObject *attr = KosExtra_OBJ(row, 2);
+  PyObject *ns = KosEvalState_NAMESPACE(es);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+  PyObject *obj;
+  PyObject *const *args;
+  int res;
+
+  KOS_OP_REQUIRE_NS(ns);
+  kos_elector_generic_tick(slot ? slot + 1 : NULL);
+
+  obj = kos_ns_fast_deref(ns, idx);
+  if (! obj)
+    RESULT_RAISE();
+
+  args = count ? KosEvalState_StackTailPtr(es, (size_t) count) : NULL;
+  if (count && ! args) {
+    Py_DECREF(obj);
+    RESULT_RAISE();
+  }
+
+  res = kos_attr_inplace_cached(slot, obj, attr, op, args, count);
+  KosEvalState_StackDropNoErr(es, (size_t) count);
+  Py_DECREF(obj);
+  if (unlikely(res < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/* The tail of an attribute body once the result is in hand: the one
+   operand dropped, then the result written back through the location
+   unless it was written in place, with the setattr protocol for a
+   location that declines the store. */
+#define KOS_ATTR_ELECTOR_STORE(obj, mode, index, acc, out)               \
+  do {                                                                  \
+    kos_stack_drop1_fast(KosEvalState_BLOCK(es));                       \
+    if ((out) != (acc)) {                                               \
+      if (! kos_field_direct_store((obj), (mode), (index), (out))) {    \
+        int kos_as_rc_ = PyObject_SetAttr((obj), KosExtra_OBJ(row, 2), (out)); \
+        Py_DECREF(out);                                                 \
+        if (unlikely(kos_as_rc_ < 0))                                   \
+          RESULT_RAISE();                                               \
+      } else {                                                          \
+        Py_DECREF(out);                                                 \
+      }                                                                 \
+    }                                                                   \
+  } while (0)
+
+
+/* The head of an attribute body: the receiver peeked from its fast
+   slot, the operand peeked from the stack, the field slot's guard
+   re-checked against the receiver's type, and the accumulator loaded
+   borrowed from the direct location. Any of those failing is a miss. */
+#define KOS_ATTR_ELECTOR_HEAD(obj, rhs, mode, index, acc)               \
+  do {                                                                  \
+    KosCacheSlot *kos_ah_field_ = KosOp_SLOT(insn);                     \
+    PyObject *kos_ah_ns_ = KosEvalState_NAMESPACE(es);                  \
+    KOS_OP_REQUIRE_NS(kos_ah_ns_);                                      \
+    (obj) = kos_ns_fast_peek(kos_ah_ns_, (size_t) KosExtra_IMM(row, 1)); \
+    (rhs) = kos_stack_peek_top(es);                                     \
+    if (unlikely(! (rhs)))                                              \
+      RESULT_RAISE();                                                   \
+    if (unlikely(! (obj) || kos_ah_field_->kind != KOS_CACHE_FIELD      \
+                 || ! field_guard_ok(Py_TYPE(obj), kos_ah_field_)))     \
+      TAILCALL(el_miss, es, insn, value);                               \
+    (mode) = kos_ah_field_->u.field.mode;                               \
+    (index) = kos_ah_field_->u.field.index;                             \
+    (acc) = kos_field_direct_load((obj), (mode), (index));              \
+    if (unlikely(! (acc)))                                              \
+      TAILCALL(el_miss, es, insn, value);                               \
+  } while (0)
+
+
+#define KOS_ATTR_INT_ELECTOR(FAMILY, NAME, FAST_LL)                     \
+  KOS_ELECTOR(fast_attr_inplace_int_##NAME) {                           \
+    const KosExtra *row = KosOp_ROW(insn);                              \
+    PyObject *obj, *rhs, *acc, *out;                                    \
+    KosFieldMode mode;                                                  \
+    uint32_t index;                                                     \
+    long long a, b;                                                     \
+                                                                        \
+    KOS_ATTR_ELECTOR_HEAD(obj, rhs, mode, index, acc);                  \
+    if (unlikely(! PyLong_CheckExact(acc) || ! PyLong_CheckExact(rhs))) \
+      TAILCALL(el_miss, es, insn, value);                               \
+    if (unlikely(! kos_long_as_ll(acc, &a) || ! kos_long_as_ll(rhs, &b))) \
+      TAILCALL(el_fast_attr_inplace_generic, es, insn, value);          \
+                                                                        \
+    KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, acc, out);                    \
+    KOS_ATTR_ELECTOR_STORE(obj, mode, index, acc, out);                 \
+    RESULT_NEXT(es);                                                    \
+  }
+
+
+#define KOS_ATTR_FLOAT_ELECTOR(FAMILY, NAME, FAST_D)                    \
+  KOS_ELECTOR(fast_attr_inplace_float_##NAME) {                         \
+    const KosExtra *row = KosOp_ROW(insn);                              \
+    PyObject *obj, *rhs, *acc, *out;                                    \
+    KosFieldMode mode;                                                  \
+    uint32_t index;                                                     \
+                                                                        \
+    KOS_ATTR_ELECTOR_HEAD(obj, rhs, mode, index, acc);                  \
+    if (unlikely(! PyFloat_CheckExact(acc) || ! PyFloat_CheckExact(rhs))) \
+      TAILCALL(el_miss, es, insn, value);                               \
+                                                                        \
+    KOS_ELECTOR_INT_RESULT(FAST_D, PyFloat_AS_DOUBLE(acc),              \
+                           PyFloat_AS_DOUBLE(rhs), acc, out);           \
+    KOS_ATTR_ELECTOR_STORE(obj, mode, index, acc, out);                 \
+    RESULT_NEXT(es);                                                    \
+  }
+
+KOS_INT_ELECTORS(KOS_ATTR_INT_ELECTOR, fast_attr_inplace)
+KOS_INT_ELECTOR_TABLE(fast_attr_inplace)
+KOS_FLOAT_ELECTORS(KOS_ATTR_FLOAT_ELECTOR, fast_attr_inplace)
+KOS_FLOAT_ELECTOR_TABLE(fast_attr_inplace)
+
+
+/* The classification of a FAST_ATTR_INPLACE site: one operand, the
+   field slot resolved to a direct location for the receiver's type,
+   and the accumulator and operand an exact int or float pair. */
+static inline KosThreadFn kos_elector_fast_attr_inplace_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+  KosCacheSlot *field = KosOp_SLOT(insn);
+  KosSegment *s = *KosEvalState_BLOCK(es);
+  PyObject *obj = kos_ns_fast_peek(
+      KosEvalState_NAMESPACE(es), (size_t) KosExtra_IMM(row, 1));
+  PyObject *rhs = (s && s->len >= 1) ? kos_stack_tail_ptr_fast(s, 1)[0] : NULL;
+  PyObject *acc;
+
+  if (KosOpCount_COUNT(KosExtra_IMM(row, 0)) != 1 || ! obj || ! rhs
+      || ! field || field->kind != KOS_CACHE_FIELD
+      || ! field_guard_ok(Py_TYPE(obj), field))
+    return NULL;
+  acc = kos_field_direct_load(obj, field->u.field.mode, field->u.field.index);
+  return kos_elector_num_body(
+      (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)), acc, rhs,
+      kos_fast_attr_inplace_int_bodies, kos_fast_attr_inplace_float_bodies);
+}
+
+
+/**
+   The electing function: the field slot must already hold a direct
+   location, which the generic body's first execution resolves, so a
+   fresh site runs generic once and elects on its second execution
+   through the tick; a site the classification declines elects the
+   generic body and tries again every 256 executions like the rest.
+*/
+KOS_ELECTOR(fast_attr_inplace_elect) {
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+  KosThreadFn fn = kos_elector_fast_attr_inplace_classify(es, insn);
+
+  if (! fn)
+    fn = el_fast_attr_inplace_generic;
+  kos_elector_elect(slot ? slot + 1 : NULL, fn);
+  TAILCALL(fn, es, insn, value);
+}
+
+
 /* === Election === */
 
 
@@ -826,6 +1060,10 @@ KOS_ELECTOR_ELECT(object_compare, kos_elector_object_compare_classify)
 
 
 #undef KOS_ELECTOR_ELECT
+#undef KOS_ATTR_FLOAT_ELECTOR
+#undef KOS_ATTR_INT_ELECTOR
+#undef KOS_ATTR_ELECTOR_HEAD
+#undef KOS_ATTR_ELECTOR_STORE
 #undef KOS_FAST_INPLACE_CONST_FLOAT_BODY
 #undef KOS_FAST_INPLACE_CONST_INT_BODY
 #undef KOS_FAST_INPLACE_FLOAT_BODY
