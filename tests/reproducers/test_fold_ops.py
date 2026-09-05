@@ -151,6 +151,8 @@ class TestFoldOps(unittest.IsolatedAsyncioTestCase):
                 expected = seed + a + b
                 cells = await mod.item_run(seed, a, b)
                 self.assertEqual(cells[0], expected)
+                if isinstance(seed, list):
+                    self.assertIs(cells[0], seed)
         with self.assertRaises(TypeError):
             await mod.item_run(1, 1, "x")
 

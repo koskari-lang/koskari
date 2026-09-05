@@ -22,7 +22,7 @@ settings, the compiler's minted-code registry, and Compiler.seal()
 import unittest
 
 from koskari.compile import Compiler
-from koskari.compile.compiler import CompilerMode
+from koskari.compile.compiler import CompilerMode, _arena_member_size
 from koskari.compile.pragma import PackModule
 from koskari.compile.pragma.settings import compiler_pack_module
 from koskari.lib import Arena, OpCode
@@ -155,17 +155,22 @@ class TestCompilerSeal(unittest.TestCase):
     def test_many_members_fit_their_arena(self):
         # every member starts on the arena's reservation unit, so a
         # segment of many members whose sizes are not multiples of it
-        # needs more than the sum of their sizes; the planner counts
-        # that, and the page-rounding slack is not relied on
+        # needs more than the sum of their sizes: enough members here
+        # that the difference passes the page-rounding slack, and the
+        # arena's fill compared with the plan member by member
         comp = Compiler("sealtest", {})
-        codes = [mint(comp, f"m{i}") for i in range(60)]
+        codes = [mint(comp, f"m{i}") for i in range(120)]
         size = codes[0].payload_bytes + codes[0].padding_bytes
         self.assertNotEqual(size % Arena.UNIT, 0)
+        planned = sum(_arena_member_size(c) for c in codes)
 
         arenas = comp.seal()
         self.assertEqual(len(arenas), 1)
         for code in codes:
             self.assertIs(code.arena, arenas[0])
+        # the last member's alignment tail is planned but never filled
+        self.assertEqual(
+            arenas[0].used, planned - (_arena_member_size(codes[-1]) - size))
         self.assertLessEqual(arenas[0].used, arenas[0].size)
 
     def test_max_bytes_soft_cap(self):

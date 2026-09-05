@@ -36,7 +36,7 @@
 
    The arithmetic families share the shape: OBJECT_OPERAND and
    OBJECT_INPLACE read a pair off the stack and replace it with the
-   result, and share their int bodies; FAST_INPLACE reads its
+   result, and share their bodies; FAST_INPLACE reads its
    accumulator from a fast slot and its operand off the stack;
    FAST_INPLACE_CONST reads the accumulator from a fast slot and its
    operand from the pool. Each has a generic body (the former handler

@@ -386,8 +386,10 @@ typedef struct {
 
 
 /* Alignment of the instruction array and the extras table: a 32-byte
-   record never straddles a 64-byte line. */
-#define KOS_BLOCK_ROW_ALIGN 32
+   record never straddles a 64-byte line. The arena reserves every
+   member on the same unit, which is what keeps that alignment inside
+   a packed segment. */
+#define KOS_BLOCK_ROW_ALIGN KOS_ARENA_UNIT
 
 
 static size_t align_size(size_t value, size_t unit) {
