@@ -42,7 +42,7 @@ DIGIT_EDGE_VALUES = [
 
 BINARY_OPERATORS = [
     ('+', operator.add), ('-', operator.sub), ('*', operator.mul),
-    ('//', operator.floordiv),
+    ('//', operator.floordiv), ('/', operator.truediv),
     ('&', operator.and_), ('|', operator.or_), ('^', operator.xor),
     ('<', operator.lt), ('<=', operator.le), ('==', operator.eq),
     ('!=', operator.ne), ('>', operator.gt), ('>=', operator.ge),
@@ -63,7 +63,7 @@ class TestOperatorDigitEdges(unittest.TestCase):
                 kosop(a, b)
             return
         result = kosop(a, b)
-        self.assertEqual(result, expected, (name, a, b))
+        self.assertEqual(repr(result), repr(expected), (name, a, b))
         self.assertIs(type(result), type(expected), (name, a, b))
 
     def test_binary_operators_at_digit_edges(self):

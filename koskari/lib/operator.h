@@ -173,11 +173,16 @@ KOS_OP_INLINE int kos_as_ll2(
    Return convention (all of them): 1 with *out set (new ref) when handled, 0
    when declined (*out untouched), -1 with an error set on allocation failure
    (*out NULL).  Bitwise AND/OR/XOR on two's-complement match Python int
-   semantics for any in-range operands.  Shifts require non-negative operands
-   (C >> on a negative is implementation-defined; a negative count must raise).
-   Modulo requires a non-negative dividend and positive divisor so C % matches
-   Python remainder.  Overflow on +, -, *, << declines rather than widening.
-   Divide, floor-divide, matmul, and power have no fast path. */
+   semantics for any in-range operands.  Floor division and remainder
+   round toward negative infinity as Python does; a zero divisor declines
+   so the generic path raises.  Shifts take a negative left operand
+   through its magnitude (left) or as a floor shift (right); a negative
+   count declines so the generic path raises.  True division of two ints
+   within 53 bits is the correctly rounded double, which is what
+   int.__truediv__ computes for them.  Power takes a non-negative
+   exponent by squaring; a negative one is a float and declines.
+   Overflow on +, -, *, <<, ** declines rather than widening.  Matrix
+   multiply has no fast path. */
 
 KOS_OP_INLINE int kos_long_fast_result(long long res, PyObject **out) {
   *out = PyLong_FromLongLong(res);
@@ -209,10 +214,69 @@ KOS_OP_INLINE int long_fast_multiply_ll(long long a, long long b, PyObject **out
 }
 
 
-KOS_OP_INLINE int long_fast_modulo_ll(long long a, long long b, PyObject **out) {
-  if (unlikely(a < 0 || b <= 0))
+/* Floor division and remainder with Python's rounding toward negative
+   infinity. A zero divisor declines, and so does the one overflowing
+   quotient, LLONG_MIN / -1. */
+KOS_OP_INLINE int kos_ll_floor_divmod(
+    long long a, long long b, long long *q, long long *r) {
+
+  if (unlikely(b == 0 || (a == LLONG_MIN && b == -1)))
     return 0;
-  return kos_long_fast_result(a % b, out);
+  *q = a / b;
+  *r = a % b;
+  if (*r != 0 && ((*r < 0) != (b < 0))) {
+    *q -= 1;
+    *r += b;
+  }
+  return 1;
+}
+
+
+KOS_OP_INLINE int long_fast_modulo_ll(long long a, long long b, PyObject **out) {
+  long long q, r;
+  if (unlikely(! kos_ll_floor_divmod(a, b, &q, &r)))
+    return 0;
+  return kos_long_fast_result(r, out);
+}
+
+
+KOS_OP_INLINE int long_fast_floor_divide_ll(long long a, long long b, PyObject **out) {
+  long long q, r;
+  if (unlikely(! kos_ll_floor_divmod(a, b, &q, &r)))
+    return 0;
+  return kos_long_fast_result(q, out);
+}
+
+
+/* Two ints within 53 bits divide exactly as doubles: IEEE division of
+   exactly represented values is correctly rounded, which is what
+   int.__truediv__ computes for them. Wider operands and a zero divisor
+   decline. */
+KOS_OP_INLINE int long_fast_true_divide_ll(long long a, long long b, PyObject **out) {
+  const long long lim = 1LL << 53;
+  if (unlikely(b == 0 || a <= -lim || a >= lim || b <= -lim || b >= lim))
+    return 0;
+  *out = PyFloat_FromDouble((double) a / (double) b);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+/* Non-negative exponents by squaring, declining on overflow; a
+   negative exponent is a float result and declines. */
+KOS_OP_INLINE int long_fast_power_ll(long long a, long long b, PyObject **out) {
+  long long res = 1;
+  long long base = a;
+
+  if (unlikely(b < 0))
+    return 0;
+  while (b) {
+    if ((b & 1) && unlikely(__builtin_mul_overflow(res, base, &res)))
+      return 0;
+    b >>= 1;
+    if (b && unlikely(__builtin_mul_overflow(base, base, &base)))
+      return 0;
+  }
+  return kos_long_fast_result(res, out);
 }
 
 
@@ -231,19 +295,36 @@ KOS_OP_INLINE int long_fast_bit_xor_ll(long long a, long long b, PyObject **out)
 }
 
 
+/* A negative left operand shifts through its magnitude, so the C shift
+   never sees a negative value; LLONG_MIN's magnitude does not fit and
+   declines. */
 KOS_OP_INLINE int long_fast_bit_left_ll(long long a, long long b, PyObject **out) {
-  if (unlikely(a < 0 || b < 0 || b >= 63))
+  long long mag;
+
+  if (unlikely(b < 0 || b >= 63))
     return 0;
-  if (unlikely(a != 0 && a > (LLONG_MAX >> b)))
+  if (a >= 0) {
+    if (unlikely(a > (LLONG_MAX >> b)))
+      return 0;
+    return kos_long_fast_result(a << b, out);
+  }
+  if (unlikely(a == LLONG_MIN))
     return 0;
-  return kos_long_fast_result(a << b, out);
+  mag = -a;
+  if (unlikely(mag > (LLONG_MAX >> b)))
+    return 0;
+  return kos_long_fast_result(-(mag << b), out);
 }
 
 
+/* A negative left operand takes the floor shift Python defines, spelled
+   through the complement so no negative value reaches the C shift. */
 KOS_OP_INLINE int long_fast_bit_right_ll(long long a, long long b, PyObject **out) {
-  if (unlikely(a < 0 || b < 0))
+  if (unlikely(b < 0))
     return 0;
-  return kos_long_fast_result((b >= 63) ? 0 : (a >> b), out);
+  if (b >= 63)
+    return kos_long_fast_result(a < 0 ? -1 : 0, out);
+  return kos_long_fast_result(a >= 0 ? (a >> b) : ~((~a) >> b), out);
 }
 
 
@@ -266,6 +347,9 @@ KOS_LONG_FAST_OBJECT_FORM(bit_or)
 KOS_LONG_FAST_OBJECT_FORM(bit_xor)
 KOS_LONG_FAST_OBJECT_FORM(bit_left)
 KOS_LONG_FAST_OBJECT_FORM(bit_right)
+KOS_LONG_FAST_OBJECT_FORM(floor_divide)
+KOS_LONG_FAST_OBJECT_FORM(true_divide)
+KOS_LONG_FAST_OBJECT_FORM(power)
 
 #undef KOS_LONG_FAST_OBJECT_FORM
 

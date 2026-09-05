@@ -297,16 +297,26 @@ KOS_OP_INLINE PyObject *op_bit_right(PyObject *const *args, size_t count) {
 
 
 KOS_OP_INLINE PyObject *op_true_divide(PyObject *const *args, size_t count) {
-  if (likely(count == 2))
-    return PyNumber_TrueDivide(args[0], args[1]);
-  return reduce_slow("/", NULL, PyNumber_TrueDivide, NULL, args, count);
+  if (likely(count == 2)) {
+    PyObject *out = NULL;
+    if (long_fast_true_divide(args[0], args[1], &out) == 0)
+      out = PyNumber_TrueDivide(args[0], args[1]);
+    return out;
+  }
+  return reduce_slow("/", long_fast_true_divide, PyNumber_TrueDivide, NULL,
+                     args, count);
 }
 
 
 KOS_OP_INLINE PyObject *op_floor_divide(PyObject *const *args, size_t count) {
-  if (likely(count == 2))
-    return PyNumber_FloorDivide(args[0], args[1]);
-  return reduce_slow("//", NULL, PyNumber_FloorDivide, NULL, args, count);
+  if (likely(count == 2)) {
+    PyObject *out = NULL;
+    if (long_fast_floor_divide(args[0], args[1], &out) == 0)
+      out = PyNumber_FloorDivide(args[0], args[1]);
+    return out;
+  }
+  return reduce_slow("//", long_fast_floor_divide, PyNumber_FloorDivide,
+                     NULL, args, count);
 }
 
 
@@ -318,11 +328,15 @@ KOS_OP_INLINE PyObject *op_matrix_multiply(
 }
 
 
-/* Power is 2-arg (base, exp) or 3-arg (base, exp, mod); not a reduce and no
-   PyLong fast path. */
+/* Power is 2-arg (base, exp) or 3-arg (base, exp, mod); not a reduce. The
+   PyLong fast path serves the 2-arg form. */
 KOS_OP_INLINE PyObject *op_power(PyObject *const *args, size_t count) {
-  if (count == 2)
-    return PyNumber_Power(args[0], args[1], Py_None);
+  if (count == 2) {
+    PyObject *out = NULL;
+    if (long_fast_power(args[0], args[1], &out) == 0)
+      out = PyNumber_Power(args[0], args[1], Py_None);
+    return out;
+  }
   if (count == 3)
     return PyNumber_Power(args[0], args[1], args[2]);
   PyErr_SetString(PyExc_TypeError,
@@ -447,18 +461,27 @@ KOS_OP_INLINE PyObject *op_inplace_bit_right(
 
 KOS_OP_INLINE PyObject *op_inplace_true_divide(
     PyObject *const *args, size_t count) {
-  if (likely(count == 2))
-    return PyNumber_InPlaceTrueDivide(args[0], args[1]);
-  return reduce_slow("/=", NULL, PyNumber_InPlaceTrueDivide, NULL, args, count);
+  if (likely(count == 2)) {
+    PyObject *out = NULL;
+    if (long_fast_true_divide(args[0], args[1], &out) == 0)
+      out = PyNumber_InPlaceTrueDivide(args[0], args[1]);
+    return out;
+  }
+  return reduce_slow("/=", long_fast_true_divide, PyNumber_InPlaceTrueDivide,
+                     NULL, args, count);
 }
 
 
 KOS_OP_INLINE PyObject *op_inplace_floor_divide(
     PyObject *const *args, size_t count) {
-  if (likely(count == 2))
-    return PyNumber_InPlaceFloorDivide(args[0], args[1]);
-  return reduce_slow("//=", NULL, PyNumber_InPlaceFloorDivide, NULL,
-                     args, count);
+  if (likely(count == 2)) {
+    PyObject *out = NULL;
+    if (long_fast_floor_divide(args[0], args[1], &out) == 0)
+      out = PyNumber_InPlaceFloorDivide(args[0], args[1]);
+    return out;
+  }
+  return reduce_slow("//=", long_fast_floor_divide,
+                     PyNumber_InPlaceFloorDivide, NULL, args, count);
 }
 
 
@@ -479,7 +502,10 @@ KOS_OP_INLINE PyObject *op_inplace_power(PyObject *const *args, size_t count) {
                     "**= requires exactly 2 positional arguments");
     return NULL;
   }
-  return PyNumber_InPlacePower(args[0], args[1], Py_None);
+  PyObject *out = NULL;
+  if (long_fast_power(args[0], args[1], &out) == 0)
+    out = PyNumber_InPlacePower(args[0], args[1], Py_None);
+  return out;
 }
 
 

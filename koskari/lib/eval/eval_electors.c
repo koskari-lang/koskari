@@ -321,7 +321,7 @@ KOS_ELECTOR(miss) {
   }
 
 
-/* The nine operators with an int fast path, applied to a body macro
+/* The twelve operators with an int fast path, applied to a body macro
    that takes (family, name, arithmetic). */
 #define KOS_INT_ELECTORS(BODY, FAMILY)                                  \
   BODY(FAMILY, add, long_fast_add_ll)                                   \
@@ -332,10 +332,13 @@ KOS_ELECTOR(miss) {
   BODY(FAMILY, bit_or, long_fast_bit_or_ll)                             \
   BODY(FAMILY, bit_xor, long_fast_bit_xor_ll)                           \
   BODY(FAMILY, bit_left, long_fast_bit_left_ll)                         \
-  BODY(FAMILY, bit_right, long_fast_bit_right_ll)
+  BODY(FAMILY, bit_right, long_fast_bit_right_ll)                       \
+  BODY(FAMILY, floor_divide, long_fast_floor_divide_ll)                 \
+  BODY(FAMILY, true_divide, long_fast_true_divide_ll)                   \
+  BODY(FAMILY, power, long_fast_power_ll)
 
 /* A family's table of int bodies by operator; NULL where the operator
-   has no int fast path (divide, floor-divide, matrix multiply, power). */
+   has no int fast path (matrix multiply). */
 #define KOS_INT_ELECTOR_TABLE(FAMILY)                                   \
   static const KosThreadFn kos_##FAMILY##_int_bodies[KOS_OPERAND_COUNT] = { \
     [KOS_OPERAND_ADD] = el_##FAMILY##_int_add,                          \
@@ -347,6 +350,9 @@ KOS_ELECTOR(miss) {
     [KOS_OPERAND_BIT_XOR] = el_##FAMILY##_int_bit_xor,                  \
     [KOS_OPERAND_BIT_LEFT] = el_##FAMILY##_int_bit_left,                \
     [KOS_OPERAND_BIT_RIGHT] = el_##FAMILY##_int_bit_right,              \
+    [KOS_OPERAND_FLOOR_DIVIDE] = el_##FAMILY##_int_floor_divide,        \
+    [KOS_OPERAND_TRUE_DIVIDE] = el_##FAMILY##_int_true_divide,          \
+    [KOS_OPERAND_POWER] = el_##FAMILY##_int_power,                      \
   };
 
 
