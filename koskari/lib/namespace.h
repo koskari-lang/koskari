@@ -362,6 +362,55 @@ void KosNamespace_TrackChain(PyObject *ns);
 PyObject *KosNamespace_Reveal(PyObject *ns);
 
 
+/* === SlotMap === */
+
+
+/**
+   A names tuple resolved once against a namespace layout: per name
+   the fast index, or -1 for a name the layout gives no fast slot,
+   which then binds by name. The layout is the namespace's fast-names
+   tuple (NULL for a namespace without fast slots). A caller that runs
+   the same code repeatedly keeps the map and revalidates it per use
+   with KosSlotMap_Valid, so the name scan happens once per layout.
+   The map is immutable apart from layout adoption (see Valid) and is
+   not GC-tracked: it references only str tuples.
+ */
+typedef struct KosSlotMap {
+  PyObject_VAR_HEAD        /* ob_size: name count */
+  PyObject *names;         /* tuple[str]; owned */
+  PyObject *layout;        /* fast-names tuple resolved against, or
+                              NULL; owned */
+  int32_t indices[1];      /* per name: fast index, or -1 */
+} KosSlotMap;
+
+
+extern PyTypeObject KosSlotMapType;
+
+
+#define KosSlotMap_Check(obj)                                   \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosSlotMapType))
+
+#define KosSlotMap_NAMES(map)  (((KosSlotMap *) (map))->names)
+#define KosSlotMap_INDEX(map, i)  (((KosSlotMap *) (map))->indices[(i)])
+
+
+/**
+   Resolve names (a tuple[str]) against the layout of ns. New
+   reference, or NULL with an exception set.
+ */
+PyObject *KosSlotMap_New(PyObject *ns, PyObject *names);
+
+
+/**
+   Whether map's indices hold for ns. 1 on the same layout; also 1
+   when ns carries another fast-names tuple with the same contents,
+   which sibling function objects built from one code do, in which
+   case the map adopts that tuple so the next check is an identity
+   hit. 0 when the layouts differ, -1 with an exception set.
+ */
+int KosSlotMap_Valid(PyObject *map, PyObject *ns);
+
+
 /* === CollectorNamespace === */
 
 
@@ -552,6 +601,63 @@ static inline int kos_ns_fast_store_steal(
     Py_DECREF(val);
     return res;
   }
+}
+
+
+/* Layout of ns as a KosSlotMap records it: the fast-names tuple, or
+   NULL for a namespace without fast slots. Borrowed. */
+static inline PyObject *kos_ns_layout(PyObject *ns) {
+  if (KosNamespace_SupportsFast(ns))
+    return KosNamespace_FAST_NAMES(ns);
+  return NULL;
+}
+
+
+/* KosSlotMap_Valid with the identity hit inline: the common case is
+   the same layout object every time. */
+static inline int kos_slotmap_holds(PyObject *map, PyObject *ns) {
+  if (((KosSlotMap *) map)->layout == kos_ns_layout(ns))
+    return 1;
+  return KosSlotMap_Valid(map, ns);
+}
+
+
+/**
+   Store values, an array aligned to map's names, into ns through the
+   resolved indices: a fast index takes the slot write (raw or through
+   the slot's Ref), -1 stores by name. Each non-NULL entry is stolen
+   and set to NULL; a NULL entry is skipped and its name left as it
+   was. map must hold for ns (kos_slotmap_holds). Not transactional:
+   on error the entries already stored remain, every entry is still
+   consumed, and -1 is returned with an exception set.
+*/
+static inline int kos_ns_store_slotmap(
+    PyObject *ns,
+    PyObject *map,
+    PyObject **values) {
+
+  KosSlotMap *m = (KosSlotMap *) map;
+  Py_ssize_t n = Py_SIZE(m);
+  int rc = 0;
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *val = values[i];
+    if (! val)
+      continue;
+    values[i] = NULL;
+    if (rc < 0) {
+      Py_DECREF(val);
+      continue;
+    }
+    int32_t idx = m->indices[i];
+    if (idx >= 0) {
+      rc = kos_ns_fast_store_steal(ns, (size_t) idx, val);
+    } else {
+      rc = KosNamespace_Store(ns, PyTuple_GET_ITEM(m->names, i), val);
+      Py_DECREF(val);
+    }
+  }
+  return rc;
 }
 
 

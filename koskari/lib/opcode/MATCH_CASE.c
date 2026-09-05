@@ -19,8 +19,8 @@
   index, row.a2 = missing-externs name tuple cpool index (the extern
   names not covered by the matcher extern defaults, in extern-table
   order), row.a3 = keep-subject flag. Cache: one KOS_CACHE_MATCHER
-  slot holding the Matcher thawed from row.a1 and the matcher's
-  capture slots resolved to namespace fast indices.
+  slot holding the Matcher thawed from row.a1 and a KosSlotMap of the
+  matcher's capture slots resolved against the namespace layout.
 
   Stack [..., subject, e0..eN-1] with N = len(row.a2): the compiler
   emits one load per missing extern (VAR, lowered to FAST when a slot
@@ -32,10 +32,11 @@
   its own errors, and fills a slot array aligned to the matcher's slot
   table. The stacked externs are consumed on both outcomes, returning
   the subject to TOS. On no match: leave the subject and jump to
-  row.a0. On the first match: bind each slot that fired into the
-  current namespace, by cached fast index or by name for a slot with
-  no fast index, leaving an unfired slot (an OPTIONAL that did not
-  fire, the other branch of a ONEOF) unbound; push nothing. When the
+  row.a0. On the first match: hand the slot array to
+  kos_ns_store_slotmap through the cached KosSlotMap, which binds
+  each slot that fired (by fast index, or by name for a slot without
+  one) and leaves an unfired slot (an OPTIONAL that did not fire, the
+  other branch of a ONEOF) unbound; push nothing. When the
   keep flag is clear the match consumes the subject; when set (a
   guarded arm) the subject stays on the stack, and the guard code is
   responsible for either jumping to row.a0 with the subject intact or
@@ -44,59 +45,38 @@
 
 
 /**
-   Fast-index table for the matcher's capture slots under ns: the
-   cached table when its guard is the namespace's fast-names tuple,
-   else a fresh resolution, stored into the cache slot when there is
-   one. ``*out_owned`` is set when the caller must free the table
-   (no cache slot). Returns 0, or -1 with an exception set.
+   The site's KosSlotMap for the matcher's capture slots under ns: the
+   cached map when it still holds for the namespace layout, else a
+   fresh resolution stored into the cache slot when there is one. New
+   reference, or NULL with an exception set. The caller holds this ref
+   across the bind, so a re-entry of the site that replaces the cached
+   map cannot free the one in use.
 */
-static int match_case_slot_indices(
+static PyObject *match_case_slot_map(
     KosCacheSlot *slot,
     KosMatcher *matcher,
-    PyObject *ns,
-    int32_t **out_table,
-    int *out_owned) {
-
-  *out_table = NULL;
-  *out_owned = 0;
-
-  PyObject *guard = NULL;
-  if (KosNamespace_SupportsFast(ns))
-    guard = KosNamespace_FAST_NAMES(ns);
+    PyObject *ns) {
 
   int cached = slot && slot->kind == KOS_CACHE_MATCHER;
-  if (cached && slot->u.matcher.indices
-      && slot->u.matcher.names_guard == guard) {
-    *out_table = slot->u.matcher.indices;
-    return 0;
-  }
-
-  Py_ssize_t n = KosMatcher_SLOT_COUNT(matcher);
-  int32_t *table = PyMem_Malloc((size_t) n * sizeof(int32_t));
-  if (! table) {
-    PyErr_NoMemory();
-    return -1;
-  }
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *name = PyTuple_GET_ITEM(matcher->slots, i);
-    int idx = KosNamespace_FastIndex(ns, name);
-    if (idx < 0 && PyErr_Occurred()) {
-      PyMem_Free(table);
-      return -1;
+  PyObject *map = cached ? slot->u.matcher.slotmap : NULL;
+  if (map) {
+    int holds = kos_slotmap_holds(map, ns);
+    if (holds < 0)
+      return NULL;
+    if (holds) {
+      Py_INCREF(map);
+      return map;
     }
-    table[i] = (int32_t) idx;
   }
 
+  map = KosSlotMap_New(ns, matcher->slots);
+  if (! map)
+    return NULL;
   if (cached) {
-    PyMem_Free(slot->u.matcher.indices);
-    slot->u.matcher.indices = table;
-    Py_XINCREF(guard);
-    Py_XSETREF(slot->u.matcher.names_guard, guard);
-  } else {
-    *out_owned = 1;
+    Py_INCREF(map);
+    Py_XSETREF(slot->u.matcher.slotmap, map);
   }
-  *out_table = table;
-  return 0;
+  return map;
 }
 
 
@@ -111,32 +91,16 @@ static int match_case_bind(
     PyObject *ns,
     PyObject **slots) {
 
-  Py_ssize_t n = KosMatcher_SLOT_COUNT(matcher);
-  int32_t *table = NULL;
-  int owned = 0;
-  int rc = match_case_slot_indices(slot, matcher, ns, &table, &owned);
-
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *val = slots[i];
-    if (! val)
-      continue;
-    slots[i] = NULL;
-    if (rc < 0) {
-      Py_DECREF(val);
-      continue;
-    }
-    int32_t idx = table[i];
-    if (idx >= 0) {
-      rc = kos_ns_fast_store_steal(ns, (size_t) idx, val);
-    } else {
-      PyObject *name = PyTuple_GET_ITEM(matcher->slots, i);
-      rc = KosNamespace_Store(ns, name, val);
-      Py_DECREF(val);
-    }
+  PyObject *map = match_case_slot_map(slot, matcher, ns);
+  if (! map) {
+    Py_ssize_t n = KosMatcher_SLOT_COUNT(matcher);
+    for (Py_ssize_t i = 0; i < n; i++)
+      Py_CLEAR(slots[i]);
+    return -1;
   }
 
-  if (owned)
-    PyMem_Free(table);
+  int rc = kos_ns_store_slotmap(ns, map, slots);
+  Py_DECREF(map);
   return rc;
 }
 
@@ -163,8 +127,7 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
     if (slot) {
       slot->kind = KOS_CACHE_MATCHER;
       slot->u.matcher.matcher = matcher;   /* slot takes ownership */
-      slot->u.matcher.names_guard = NULL;
-      slot->u.matcher.indices = NULL;
+      slot->u.matcher.slotmap = NULL;
     } else {
       matcher_owned = 1;
     }
