@@ -257,9 +257,9 @@ KOS_ELECTOR(miss) {
    operator's arithmetic, a decline (overflow, a negative shift, a zero
    divisor) taking the generic body without counting since the site is
    still an int site, an allocation failure raising. */
-#define KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, out)                      \
+#define KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, reuse, out)               \
   do {                                                                  \
-    int kos_ir_rc_ = FAST_LL((a), (b), &(out));                         \
+    int kos_ir_rc_ = FAST_LL((a), (b), (reuse), &(out));                \
     if (unlikely(kos_ir_rc_ <= 0)) {                                    \
       if (kos_ir_rc_ < 0)                                               \
         RESULT_RAISE();                                                 \
@@ -274,7 +274,9 @@ KOS_ELECTOR(miss) {
    int is value-identical to int OP int). The guard is the two exact-int
    checks on the peeked pair; a miss counts. An int wider than two
    digits and the long long range takes the generic body without
-   counting. The result replaces the pair. */
+   counting. The left operand is offered as the result's home: when
+   the stack is its only owner the result is written into it and the
+   right operand alone is dropped; else the result replaces the pair. */
 #define KOS_PAIR_INT_ELECTOR(NAME, FAST_LL)                             \
   KOS_ELECTOR(pair_int_##NAME) {                                        \
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
@@ -292,18 +294,24 @@ KOS_ELECTOR(miss) {
                  || ! kos_long_as_ll(args[1], &b)))                     \
       TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
                                                                         \
-    KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, out);                         \
-    kos_stack_replace2_fast(bl, out);                                   \
+    KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, args[0], out);                \
+    if (out == args[0])                                                 \
+      kos_stack_drop1_fast(bl);                                         \
+    else                                                                \
+      kos_stack_replace2_fast(bl, out);                                 \
     RESULT_NEXT(es);                                                    \
   }
 
 
 /* One int body per operator for a family whose accumulator is a fast
    slot: the guard is the exact-int check on the peeked slot value and
-   on the operand the family supplies (RHS, borrowed). The result is
-   stolen into the slot after the family's operand release (DROP). A
-   slot the peek cannot read (empty, or a ref kind that needs the
-   general deref) is a miss; the generic body raises or resolves it. */
+   on the operand the family supplies (RHS, borrowed). The accumulator
+   is offered as the result's home: when the slot is its only owner the
+   result is written into it and no store follows; else the result is
+   stolen into the slot. Either way the family's operand release (DROP)
+   runs first. A slot the peek cannot read (empty, or a ref kind that
+   needs the general deref) is a miss; the generic body raises or
+   resolves it. */
 #define KOS_SLOT_INT_ELECTOR(FAMILY, NAME, FAST_LL, RHS, DROP)          \
   KOS_ELECTOR(FAMILY##_int_##NAME) {                                    \
     const KosExtra *row = KosOp_ROW(insn);                              \
@@ -325,9 +333,9 @@ KOS_ELECTOR(miss) {
     if (unlikely(! kos_long_as_ll(acc, &a) || ! kos_long_as_ll(rhs, &b))) \
       TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
                                                                         \
-    KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, out);                         \
+    KOS_ELECTOR_INT_RESULT(FAST_LL, a, b, acc, out);                    \
     DROP;                                                               \
-    if (unlikely(kos_ns_fast_store_steal(ns, idx, out) < 0))            \
+    if (out != acc && unlikely(kos_ns_fast_store_steal(ns, idx, out) < 0)) \
       RESULT_RAISE();                                                   \
     RESULT_NEXT(es);                                                    \
   }

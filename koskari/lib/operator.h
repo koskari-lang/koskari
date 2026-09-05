@@ -93,6 +93,15 @@ static inline int kos_object_not(PyObject *v) {
 # define KOS_LONG_INLINE_DIGITS 0
 #endif
 
+/* An int result may be written into an operand the caller owns
+   outright instead of allocated, where the digit layout is known and
+   refcounts are exact (a free-threaded build biases them). */
+#if KOS_LONG_INLINE_DIGITS && ! defined(Py_GIL_DISABLED)
+# define KOS_LONG_REUSE 1
+#else
+# define KOS_LONG_REUSE 0
+#endif
+
 
 /* Read an exact int of at most two digits straight from its digits.
    Two 30-bit digits are at most 60 bits, so the value always fits and
@@ -167,8 +176,9 @@ KOS_OP_INLINE int kos_as_ll2(
 
    Each operator has two forms. The _ll form takes the two C values a
    caller has already extracted (an elected int body, which guarded the
-   types itself); the object form runs kos_as_ll2 and then the _ll form,
-   for the operator cores.
+   types itself) and an operand the caller owns outright that the
+   result may be written into, or NULL; the object form runs kos_as_ll2
+   and then the _ll form with no candidate, for the operator cores.
 
    Return convention (all of them): 1 with *out set (new ref) when handled, 0
    when declined (*out untouched), -1 with an error set on allocation failure
@@ -184,33 +194,102 @@ KOS_OP_INLINE int kos_as_ll2(
    Overflow on +, -, *, <<, ** declines rather than widening.  Matrix
    multiply has no fast path. */
 
-KOS_OP_INLINE int kos_long_fast_result(long long res, PyObject **out) {
+/* The digits an int of magnitude mag needs; the caller's values are at
+   most 63 bits, so three at most. */
+KOS_OP_INLINE size_t kos_long_digits_needed(unsigned long long mag) {
+  return 1 + (mag >> PyLong_SHIFT != 0) + (mag >> (2 * PyLong_SHIFT) != 0);
+}
+
+
+#if KOS_LONG_REUSE
+/* Write res into v, an exact int the caller owns outright with at
+   least the digits res needs. The digits are written low to high and
+   the tag last, its reserved flag bit kept. */
+KOS_OP_INLINE void kos_long_write(PyObject *v, long long res) {
+  PyLongObject *lo = (PyLongObject *) v;
+  digit *digits = KOS_LONG_DIGITS(lo);
+  unsigned long long mag = res < 0 ? 0ull - (unsigned long long) res
+                                   : (unsigned long long) res;
+  size_t n = kos_long_digits_needed(mag);
+
+  digits[0] = (digit) (mag & PyLong_MASK);
+  if (n > 1)
+    digits[1] = (digit) ((mag >> PyLong_SHIFT) & PyLong_MASK);
+  if (n > 2)
+    digits[2] = (digit) (mag >> (2 * PyLong_SHIFT));
+# if PY_VERSION_HEX >= 0x030C0000
+  {
+    uintptr_t flags = lo->long_value.lv_tag
+        & ((((uintptr_t) 1) << _PyLong_NON_SIZE_BITS) - 1)
+        & ~((uintptr_t) _PyLong_SIGN_MASK);
+    lo->long_value.lv_tag = (((uintptr_t) n) << _PyLong_NON_SIZE_BITS)
+        | flags | (res < 0 ? 2u : 0u);
+  }
+# else
+  Py_SET_SIZE(lo, res < 0 ? -(Py_ssize_t) n : (Py_ssize_t) n);
+# endif
+}
+
+
+/* Whether res can be written into v in place of an allocation: v is
+   an exact int (the caller checked) whose only reference is the
+   caller's, res lies outside the small-int range so the identity of
+   the cached ints stays CPython's, and res needs no more digits than
+   v holds. A small int is immortal on 3.12 and later and shared by the
+   cache before, so the refcount test alone excludes it as a target. */
+KOS_OP_INLINE int kos_long_reusable(PyObject *v, long long res) {
+  unsigned long long mag;
+
+  if (Py_REFCNT(v) != 1 || (res >= -5 && res <= 256))
+    return 0;
+  mag = res < 0 ? 0ull - (unsigned long long) res : (unsigned long long) res;
+  return kos_long_digits_needed(mag) <= KOS_LONG_NDIGITS((PyLongObject *) v);
+}
+#endif
+
+
+/* Materialise res: into reuse when the caller offered an operand it
+   owns outright and kos_long_reusable allows it, in which case *out is
+   that same object and the caller's reference to it becomes the result
+   reference; else a fresh int. Returns 1, or -1 with an error set. */
+KOS_OP_INLINE int kos_long_fast_result(
+    long long res, PyObject *reuse, PyObject **out) {
+
+#if KOS_LONG_REUSE
+  if (reuse && kos_long_reusable(reuse, res)) {
+    kos_long_write(reuse, res);
+    *out = reuse;
+    return 1;
+  }
+#else
+  (void) reuse;
+#endif
   *out = PyLong_FromLongLong(res);
   return likely(*out != NULL) ? 1 : -1;
 }
 
 
-KOS_OP_INLINE int long_fast_add_ll(long long a, long long b, PyObject **out) {
+KOS_OP_INLINE int long_fast_add_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
   long long res;
   if (unlikely(__builtin_add_overflow(a, b, &res)))
     return 0;
-  return kos_long_fast_result(res, out);
+  return kos_long_fast_result(res, reuse, out);
 }
 
 
-KOS_OP_INLINE int long_fast_subtract_ll(long long a, long long b, PyObject **out) {
+KOS_OP_INLINE int long_fast_subtract_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
   long long res;
   if (unlikely(__builtin_sub_overflow(a, b, &res)))
     return 0;
-  return kos_long_fast_result(res, out);
+  return kos_long_fast_result(res, reuse, out);
 }
 
 
-KOS_OP_INLINE int long_fast_multiply_ll(long long a, long long b, PyObject **out) {
+KOS_OP_INLINE int long_fast_multiply_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
   long long res;
   if (unlikely(__builtin_mul_overflow(a, b, &res)))
     return 0;
-  return kos_long_fast_result(res, out);
+  return kos_long_fast_result(res, reuse, out);
 }
 
 
@@ -232,19 +311,19 @@ KOS_OP_INLINE int kos_ll_floor_divmod(
 }
 
 
-KOS_OP_INLINE int long_fast_modulo_ll(long long a, long long b, PyObject **out) {
+KOS_OP_INLINE int long_fast_modulo_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
   long long q, r;
   if (unlikely(! kos_ll_floor_divmod(a, b, &q, &r)))
     return 0;
-  return kos_long_fast_result(r, out);
+  return kos_long_fast_result(r, reuse, out);
 }
 
 
-KOS_OP_INLINE int long_fast_floor_divide_ll(long long a, long long b, PyObject **out) {
+KOS_OP_INLINE int long_fast_floor_divide_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
   long long q, r;
   if (unlikely(! kos_ll_floor_divmod(a, b, &q, &r)))
     return 0;
-  return kos_long_fast_result(q, out);
+  return kos_long_fast_result(q, reuse, out);
 }
 
 
@@ -252,8 +331,9 @@ KOS_OP_INLINE int long_fast_floor_divide_ll(long long a, long long b, PyObject *
    exactly represented values is correctly rounded, which is what
    int.__truediv__ computes for them. Wider operands and a zero divisor
    decline. */
-KOS_OP_INLINE int long_fast_true_divide_ll(long long a, long long b, PyObject **out) {
+KOS_OP_INLINE int long_fast_true_divide_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
   const long long lim = 1LL << 53;
+  (void) reuse;
   if (unlikely(b == 0 || a <= -lim || a >= lim || b <= -lim || b >= lim))
     return 0;
   *out = PyFloat_FromDouble((double) a / (double) b);
@@ -263,7 +343,7 @@ KOS_OP_INLINE int long_fast_true_divide_ll(long long a, long long b, PyObject **
 
 /* Non-negative exponents by squaring, declining on overflow; a
    negative exponent is a float result and declines. */
-KOS_OP_INLINE int long_fast_power_ll(long long a, long long b, PyObject **out) {
+KOS_OP_INLINE int long_fast_power_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
   long long res = 1;
   long long base = a;
 
@@ -276,29 +356,29 @@ KOS_OP_INLINE int long_fast_power_ll(long long a, long long b, PyObject **out) {
     if (b && unlikely(__builtin_mul_overflow(base, base, &base)))
       return 0;
   }
-  return kos_long_fast_result(res, out);
+  return kos_long_fast_result(res, reuse, out);
 }
 
 
-KOS_OP_INLINE int long_fast_bit_and_ll(long long a, long long b, PyObject **out) {
-  return kos_long_fast_result(a & b, out);
+KOS_OP_INLINE int long_fast_bit_and_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
+  return kos_long_fast_result(a & b, reuse, out);
 }
 
 
-KOS_OP_INLINE int long_fast_bit_or_ll(long long a, long long b, PyObject **out) {
-  return kos_long_fast_result(a | b, out);
+KOS_OP_INLINE int long_fast_bit_or_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
+  return kos_long_fast_result(a | b, reuse, out);
 }
 
 
-KOS_OP_INLINE int long_fast_bit_xor_ll(long long a, long long b, PyObject **out) {
-  return kos_long_fast_result(a ^ b, out);
+KOS_OP_INLINE int long_fast_bit_xor_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
+  return kos_long_fast_result(a ^ b, reuse, out);
 }
 
 
 /* A negative left operand shifts through its magnitude, so the C shift
    never sees a negative value; LLONG_MIN's magnitude does not fit and
    declines. */
-KOS_OP_INLINE int long_fast_bit_left_ll(long long a, long long b, PyObject **out) {
+KOS_OP_INLINE int long_fast_bit_left_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
   long long mag;
 
   if (unlikely(b < 0 || b >= 63))
@@ -306,25 +386,25 @@ KOS_OP_INLINE int long_fast_bit_left_ll(long long a, long long b, PyObject **out
   if (a >= 0) {
     if (unlikely(a > (LLONG_MAX >> b)))
       return 0;
-    return kos_long_fast_result(a << b, out);
+    return kos_long_fast_result(a << b, reuse, out);
   }
   if (unlikely(a == LLONG_MIN))
     return 0;
   mag = -a;
   if (unlikely(mag > (LLONG_MAX >> b)))
     return 0;
-  return kos_long_fast_result(-(mag << b), out);
+  return kos_long_fast_result(-(mag << b), reuse, out);
 }
 
 
 /* A negative left operand takes the floor shift Python defines, spelled
    through the complement so no negative value reaches the C shift. */
-KOS_OP_INLINE int long_fast_bit_right_ll(long long a, long long b, PyObject **out) {
+KOS_OP_INLINE int long_fast_bit_right_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
   if (unlikely(b < 0))
     return 0;
   if (b >= 63)
-    return kos_long_fast_result(a < 0 ? -1 : 0, out);
-  return kos_long_fast_result(a >= 0 ? (a >> b) : ~((~a) >> b), out);
+    return kos_long_fast_result(a < 0 ? -1 : 0, reuse, out);
+  return kos_long_fast_result(a >= 0 ? (a >> b) : ~((~a) >> b), reuse, out);
 }
 
 
@@ -335,7 +415,7 @@ KOS_OP_INLINE int long_fast_bit_right_ll(long long a, long long b, PyObject **ou
     long long a, b;                                                     \
     if (! kos_as_ll2(l, r, &a, &b))                                     \
       return 0;                                                         \
-    return long_fast_##NAME##_ll(a, b, out);                            \
+    return long_fast_##NAME##_ll(a, b, NULL, out);                            \
   }
 
 KOS_LONG_FAST_OBJECT_FORM(add)

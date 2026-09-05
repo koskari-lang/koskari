@@ -1,0 +1,90 @@
+;; Full-stack reproducer for in-place int results: an operator whose
+;; left operand is a temporary the stack alone owns writes its result
+;; into that object. Each operator below is applied to a temporary
+;; made by (* a 1), which is a fresh int for any a outside the small
+;; int range, so the reuse arm runs on every pair of the digit grid
+;; and every digit-growth and decline case crosses it. The aliasing
+;; functions hold a second reference to the would-be target and show
+;; it untouched.
+
+
+define kos_add_t [a b]:
+    + (* a 1) b
+
+
+define kos_sub_t [a b]:
+    - (* a 1) b
+
+
+define kos_mul_t [a b]:
+    * (* a 1) b
+
+
+define kos_mod_t [a b]:
+    % (* a 1) b
+
+
+define kos_floordiv_t [a b]:
+    // (* a 1) b
+
+
+define kos_truediv_t [a b]:
+    / (* a 1) b
+
+
+define kos_pow_t [a b]:
+    ** (* a 1) b
+
+
+define kos_and_t [a b]:
+    & (* a 1) b
+
+
+define kos_or_t [a b]:
+    | (* a 1) b
+
+
+define kos_xor_t [a b]:
+    ^ (* a 1) b
+
+
+define kos_lshift_t [a b]:
+    << (* a 1) b
+
+
+define kos_rshift_t [a b]:
+    >> (* a 1) b
+
+
+define alias_binding [a]:
+    define t (* a 1)
+    define u t
+    define v (+ t 1)
+    #(t u v)
+
+
+define alias_list [a]:
+    define xs #[(* a 1)]
+    define y (+ xs[0] 1)
+    #(xs y)
+
+
+define alias_slot [a]:
+    define t (* a 1)
+    define u t
+    incr! t 1
+    #(t u)
+
+
+define chained [a n]:
+    define acc (* a 1)
+    for-each [i (range n)]:
+        set! acc (& (+ (* acc 3) i) 0xffffffff)
+    acc
+
+
+define small_result [a]:
+    - (* a 1) 256
+
+
+;; The end.

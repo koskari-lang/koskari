@@ -61,6 +61,22 @@ POWER_PAIRS = [
     (2 ** 62, 2), (2 ** 100, 3), (-(2 ** 60), 3),
 ]
 
+# Shift counts stay small: a count of 2 ** 40 asks Python for a
+# 128 GiB int, which raises MemoryError here and aborts a sanitizer
+# build's allocator.
+SHIFT_PAIRS = [
+    (7, 3), (-7, 3), (7, -3), (0, 5), (2 ** 40, 29),
+    (2 ** 62, 2), (2 ** 100, 3), (-(2 ** 60), 63),
+]
+
+
+def pairs_for_operator(opname):
+    if opname == 'POWER':
+        return POWER_PAIRS
+    if opname in ('BIT_LEFT', 'BIT_RIGHT'):
+        return SHIFT_PAIRS
+    return PAIRS
+
 
 def make_object_site(opname='ADD', cache=True, count=2):
     """
@@ -155,8 +171,8 @@ class InplaceElectorMixin:
 
     async def test_every_operator_through_an_elected_site(self):
         for opname, pyop in OPERATORS:
-            pairs = POWER_PAIRS if opname == 'POWER' else PAIRS
-            await self.check_operator(opname, pyop, self.pairs_for(pairs))
+            await self.check_operator(
+                opname, pyop, self.pairs_for(pairs_for_operator(opname)))
 
 
     async def test_polymorphic_site_serves_every_type(self):
