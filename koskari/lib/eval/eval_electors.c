@@ -42,8 +42,10 @@
    operand from the pool. Each has a generic body (the former handler
    out of line), one body per operator and operand kind (int, float)
    with a fast path of that kind, a str body for +, and an electing
-   function; the two stack families also elect a join body on a run
-   of three or more strs. The compare families have one int body and
+   function; the two stack families also elect, on a run of three or
+   more operands of one kind, a fold body per operator and kind that
+   folds the run in C and materialises once, and a join body on a run
+   of strs. The compare families have one int body and
    one float body each, the selector being a site constant the body
    reads:
    CHECK_COMPARE takes the stack pair and jumps, OBJECT_COMPARE takes
@@ -277,31 +279,44 @@ KOS_ELECTOR(miss) {
 
 /* The two operand kinds a numeric body is written for, INT and FLOAT.
    Each kind names the C type of its extracted operands, the check on
-   one borrowed object and the guard on two, the extraction of the two
-   C values (an int wider than the long long range declines to
+   one borrowed object and the guard on two, the extraction of one or
+   two C values (an int wider than the long long range declines to
    DECLINE, the family's generic body, without counting: the site is
-   still a site of that type), and the compare over two C values. A
-   body macro takes the kind in both spellings, KIND for these and
-   kind for its name. */
+   still a site of that type), the compare over two C values, and the
+   materialisation of a C result into an object. A body macro takes
+   the kind in both spellings, KIND for these and kind for its name. */
+#define KOS_INT_TYPE            long long
 #define KOS_INT_VARS            long long a, b
 #define KOS_INT_CHECK(v)        PyLong_CheckExact(v)
 #define KOS_INT_GUARD(l, r)     (KOS_INT_CHECK(l) && KOS_INT_CHECK(r))
+#define KOS_INT_EXTRACT_ONE(v, into, DECLINE)                           \
+  do {                                                                  \
+    if (unlikely(! kos_long_as_ll((v), &(into))))                       \
+      TAILCALL(DECLINE, es, insn, value);                               \
+  } while (0)
 #define KOS_INT_EXTRACT(l, r, DECLINE)                                  \
   do {                                                                  \
     if (unlikely(! kos_long_as_ll((l), &a) || ! kos_long_as_ll((r), &b))) \
       TAILCALL(DECLINE, es, insn, value);                               \
   } while (0)
 #define KOS_INT_COMPARE         kos_ll_compare
+#define KOS_INT_MATERIALISE     kos_long_fast_result
 
+#define KOS_FLOAT_TYPE          double
 #define KOS_FLOAT_VARS          double a, b
 #define KOS_FLOAT_CHECK(v)      PyFloat_CheckExact(v)
 #define KOS_FLOAT_GUARD(l, r)   (KOS_FLOAT_CHECK(l) && KOS_FLOAT_CHECK(r))
+#define KOS_FLOAT_EXTRACT_ONE(v, into, DECLINE)                         \
+  do {                                                                  \
+    (into) = PyFloat_AS_DOUBLE(v);                                      \
+  } while (0)
 #define KOS_FLOAT_EXTRACT(l, r, DECLINE)                                \
   do {                                                                  \
     a = PyFloat_AS_DOUBLE(l);                                           \
     b = PyFloat_AS_DOUBLE(r);                                           \
   } while (0)
 #define KOS_FLOAT_COMPARE       kos_double_compare
+#define KOS_FLOAT_MATERIALISE   kos_float_fast_result
 
 
 /* The tail of every numeric body once both operands are C values: the
@@ -421,28 +436,106 @@ KOS_ELECTOR(miss) {
   BODY(FAMILY, FLOAT, float, floor_divide, FLOOR_DIVIDE,                \
        float_fast_floor_divide_d)
 
-/* A family's table of bodies of one kind by operator, from the same
-   list; NULL where the operator has no fast path of that kind. */
+/* The operators the compiler emits a run of more than two operands
+   for, as steps over C values for a fold. Remainder and the shifts
+   are binary forms; a third operand to power is a modulus, so a
+   power site of three is never a fold; int true division has no int
+   step, its first step being a float already. */
+#define KOS_INT_FOLD_ELECTORS(BODY, FAMILY)                             \
+  BODY(FAMILY, INT, int, add, ADD, kos_ll_add)                          \
+  BODY(FAMILY, INT, int, subtract, SUBTRACT, kos_ll_subtract)           \
+  BODY(FAMILY, INT, int, multiply, MULTIPLY, kos_ll_multiply)           \
+  BODY(FAMILY, INT, int, bit_and, BIT_AND, kos_ll_bit_and)              \
+  BODY(FAMILY, INT, int, bit_or, BIT_OR, kos_ll_bit_or)                 \
+  BODY(FAMILY, INT, int, bit_xor, BIT_XOR, kos_ll_bit_xor)              \
+  BODY(FAMILY, INT, int, floor_divide, FLOOR_DIVIDE, kos_ll_floor_divide)
+
+#define KOS_FLOAT_FOLD_ELECTORS(BODY, FAMILY)                           \
+  BODY(FAMILY, FLOAT, float, add, ADD, kos_d_add)                       \
+  BODY(FAMILY, FLOAT, float, subtract, SUBTRACT, kos_d_subtract)        \
+  BODY(FAMILY, FLOAT, float, multiply, MULTIPLY, kos_d_multiply)        \
+  BODY(FAMILY, FLOAT, float, true_divide, TRUE_DIVIDE, kos_d_true_divide) \
+  BODY(FAMILY, FLOAT, float, floor_divide, FLOOR_DIVIDE, kos_d_floor_divide)
+
+/* A family's table of bodies of one kind by operator, from the list
+   that made them; NULL where the operator has no fast path of that
+   kind. */
 #define KOS_ELECTOR_TABLE_ENTRY(FAMILY, KIND, kind, NAME, OPERAND, FAST)\
   [KOS_OPERAND_##OPERAND] = el_##FAMILY##_##kind##_##NAME,
 
-#define KOS_ELECTOR_TABLE(FAMILY, KIND, kind)                           \
+#define KOS_ELECTOR_TABLE(FAMILY, LIST, kind)                           \
   static const KosThreadFn                                              \
   kos_##FAMILY##_##kind##_bodies[KOS_OPERAND_COUNT] = {                 \
-    KOS_##KIND##_ELECTORS(KOS_ELECTOR_TABLE_ENTRY, FAMILY)              \
+    LIST(KOS_ELECTOR_TABLE_ENTRY, FAMILY)                               \
   };
 
 /* Both kinds' bodies and tables for a family, through its body macro. */
 #define KOS_NUMERIC_ELECTORS(BODY, FAMILY)                              \
   KOS_INT_ELECTORS(BODY, FAMILY)                                        \
-  KOS_ELECTOR_TABLE(FAMILY, INT, int)                                   \
+  KOS_ELECTOR_TABLE(FAMILY, KOS_INT_ELECTORS, int)                      \
   KOS_FLOAT_ELECTORS(BODY, FAMILY)                                      \
-  KOS_ELECTOR_TABLE(FAMILY, FLOAT, float)
+  KOS_ELECTOR_TABLE(FAMILY, KOS_FLOAT_ELECTORS, float)
+
+#define KOS_NUMERIC_FOLD_ELECTORS(BODY, FAMILY)                         \
+  KOS_INT_FOLD_ELECTORS(BODY, FAMILY)                                   \
+  KOS_ELECTOR_TABLE(FAMILY, KOS_INT_FOLD_ELECTORS, int)                 \
+  KOS_FLOAT_FOLD_ELECTORS(BODY, FAMILY)                                 \
+  KOS_ELECTOR_TABLE(FAMILY, KOS_FLOAT_FOLD_ELECTORS, float)
 
 
 /* The pair bodies are shared by OBJECT_OPERAND and OBJECT_INPLACE
    under the family name pair. */
 KOS_NUMERIC_ELECTORS(KOS_PAIR_ELECTOR, pair)
+
+
+/* One fold body per operator and kind for the same two families at a
+   count above two: every operand of the run of the kind, or a miss;
+   the run folded left to right in C, a decline at any step (overflow,
+   a zero divisor, an int too wide to read) taking the generic body
+   before anything is materialised; then one materialisation, into
+   the first operand when the stack is its only owner, in which case
+   the rest of the run alone is dropped. */
+#define KOS_PAIR_FOLD_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND, STEP)  \
+  KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
+    KosSegment **bl = KosEvalState_BLOCK(es);                           \
+    size_t count = KosOpCount_COUNT(KosOp_ARG(insn));                   \
+    PyObject *const *args = kos_stack_tail_ptr_fast(*bl, count);        \
+    KOS_##KIND##_VARS;                                                  \
+    KOS_##KIND##_TYPE res;                                              \
+    PyObject *out;                                                      \
+    int rc;                                                             \
+                                                                        \
+    if (unlikely(! args))                                               \
+      RESULT_RAISE();                                                   \
+    for (size_t i = 0; i < count; i++) {                                \
+      if (unlikely(! KOS_##KIND##_CHECK(args[i])))                      \
+        TAILCALL(el_miss, es, insn, value);                             \
+    }                                                                   \
+    KOS_##KIND##_EXTRACT(args[0], args[1], kos_elector_generic_of(insn)); \
+    if (unlikely(! STEP(a, b, &res)))                                   \
+      TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
+    for (size_t i = 2; i < count; i++) {                                \
+      a = res;                                                          \
+      KOS_##KIND##_EXTRACT_ONE(args[i], b, kos_elector_generic_of(insn)); \
+      if (unlikely(! STEP(a, b, &res)))                                 \
+        TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
+    }                                                                   \
+                                                                        \
+    rc = KOS_##KIND##_MATERIALISE(res, args[0], &out);                  \
+    if (unlikely(rc < 0))                                               \
+      RESULT_RAISE();                                                   \
+    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
+    if (out == args[0]) {                                               \
+      kos_stack_drop_noerr_fast(bl, count - 1);                         \
+    } else {                                                            \
+      kos_stack_drop_noerr_fast(bl, count);                             \
+      if (unlikely(kos_stack_push_steal_fast(bl, out) < 0))             \
+        RESULT_RAISE();                                                 \
+    }                                                                   \
+    RESULT_NEXT(es);                                                    \
+  }
+
+KOS_NUMERIC_FOLD_ELECTORS(KOS_PAIR_FOLD_ELECTOR, pair_fold)
 
 
 /* The top of the stack, borrowed, or NULL with an error set. */
@@ -992,8 +1085,35 @@ static inline KosThreadFn kos_elector_num_body(
 }
 
 
+/* The body a stack site of more than two operands elects: the
+   operator's fold body of the kind every operand is, the str join
+   for + over exact strs, else NULL. */
+static inline KosThreadFn kos_elector_fold_body(
+    KosOperand op,
+    PyObject *const *args,
+    size_t count) {
+
+  const KosThreadFn *table = NULL;
+  PyTypeObject *tp = Py_TYPE(args[0]);
+
+  if (op >= KOS_OPERAND_COUNT)
+    return NULL;
+  if (tp == &PyLong_Type)
+    table = kos_pair_fold_int_bodies;
+  else if (tp == &PyFloat_Type)
+    table = kos_pair_fold_float_bodies;
+  else if (! (op == KOS_OPERAND_ADD && tp == &PyUnicode_Type))
+    return NULL;
+  for (size_t i = 1; i < count; i++) {
+    if (Py_TYPE(args[i]) != tp)
+      return NULL;
+  }
+  return table ? table[op] : el_pair_str_join;
+}
+
+
 /* The classification of a stack-pair site: binary with the pair on
-   the stack, or + over a run of exact strs. */
+   the stack, or a run of more than two of one kind. */
 static inline KosThreadFn kos_elector_pair_classify(KosEvalState *es, void *insn) {
   uint16_t arg = KosOp_ARG(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
@@ -1004,15 +1124,8 @@ static inline KosThreadFn kos_elector_pair_classify(KosEvalState *es, void *insn
   if (count < 2 || ! s || s->len < count)
     return NULL;
   args = kos_stack_tail_ptr_fast(s, count);
-  if (count > 2) {
-    if (op != KOS_OPERAND_ADD)
-      return NULL;
-    for (size_t i = 0; i < count; i++) {
-      if (! PyUnicode_CheckExact(args[i]))
-        return NULL;
-    }
-    return el_pair_str_join;
-  }
+  if (count > 2)
+    return kos_elector_fold_body(op, args, count);
   return kos_elector_num_body(
       op, args[0], args[1],
       kos_pair_int_bodies, kos_pair_float_bodies, el_pair_str_add);
@@ -1089,24 +1202,34 @@ KOS_ELECTOR_ELECT(object_compare, kos_elector_object_compare_classify)
 #undef KOS_SLOT_STR_ELECTOR
 #undef KOS_FAST_INPLACE_CONST_BODY
 #undef KOS_FAST_INPLACE_BODY
+#undef KOS_PAIR_FOLD_ELECTOR
+#undef KOS_NUMERIC_FOLD_ELECTORS
 #undef KOS_NUMERIC_ELECTORS
 #undef KOS_ELECTOR_TABLE
 #undef KOS_ELECTOR_TABLE_ENTRY
+#undef KOS_FLOAT_FOLD_ELECTORS
+#undef KOS_INT_FOLD_ELECTORS
 #undef KOS_FLOAT_ELECTORS
 #undef KOS_INT_ELECTORS
 #undef KOS_SLOT_ELECTOR
 #undef KOS_PAIR_ELECTOR
 #undef KOS_ELECTOR_RESULT
+#undef KOS_FLOAT_MATERIALISE
 #undef KOS_FLOAT_COMPARE
 #undef KOS_FLOAT_EXTRACT
+#undef KOS_FLOAT_EXTRACT_ONE
 #undef KOS_FLOAT_GUARD
 #undef KOS_FLOAT_CHECK
 #undef KOS_FLOAT_VARS
+#undef KOS_FLOAT_TYPE
+#undef KOS_INT_MATERIALISE
 #undef KOS_INT_COMPARE
 #undef KOS_INT_EXTRACT
+#undef KOS_INT_EXTRACT_ONE
 #undef KOS_INT_GUARD
 #undef KOS_INT_CHECK
 #undef KOS_INT_VARS
+#undef KOS_INT_TYPE
 #undef KOS_ELECTOR_PAIR_SAFETYNET
 #undef KOS_ELECTOR_DECL
 
