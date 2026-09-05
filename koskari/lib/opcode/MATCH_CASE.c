@@ -19,28 +19,133 @@
   index, row.a2 = missing-externs name tuple cpool index (the extern
   names not covered by the matcher extern defaults, in extern-table
   order), row.a3 = keep-subject flag. Cache: one KOS_CACHE_MATCHER
-  slot holding the Matcher thawed from row.a1.
+  slot holding the Matcher thawed from row.a1 and the matcher's
+  capture slots resolved to namespace fast indices.
 
   Stack [..., subject, e0..eN-1] with N = len(row.a2): the compiler
   emits one load per missing extern (VAR, lowered to FAST when a slot
   exists) above the subject, pushed in row field 2 order. The opcode is
-  only the interface between the stack and the matcher API: the
-  subject is presented as a length-1 spine and the stacked segment is
-  handed with its names to KosMatcher_RunVectorcall, which does all
-  extern resolution (inbuilt defaults included) and raises its own
-  errors. The stacked externs are consumed on both outcomes,
-  returning the subject to TOS. On no match: leave the subject and
-  jump to row.a0. On the first match: push the capture dict for the
-  arm's MATCH_STORE_NAMES (or a following POP for a capture-less
-  arm). When the keep flag is clear the match consumes the subject;
-  when set (a guarded arm) the subject stays beneath the capture
-  dict, and the guard code is responsible for either jumping to
-  row.a0 with the subject intact or popping it before the arm body
-  commits.
+  only the interface between the stack, the namespace, and the matcher
+  API: the subject is presented as a length-1 spine and the stacked
+  segment is handed with its names to KosMatcher_RunSlotsVectorcall,
+  which does all extern resolution (inbuilt defaults included), raises
+  its own errors, and fills a slot array aligned to the matcher's slot
+  table. The stacked externs are consumed on both outcomes, returning
+  the subject to TOS. On no match: leave the subject and jump to
+  row.a0. On the first match: bind each slot that fired into the
+  current namespace, by cached fast index or by name for a slot with
+  no fast index, leaving an unfired slot (an OPTIONAL that did not
+  fire, the other branch of a ONEOF) unbound; push nothing. When the
+  keep flag is clear the match consumes the subject; when set (a
+  guarded arm) the subject stays on the stack, and the guard code is
+  responsible for either jumping to row.a0 with the subject intact or
+  popping it before the arm body commits.
 */
+
+
+/**
+   Fast-index table for the matcher's capture slots under ns: the
+   cached table when its guard is the namespace's fast-names tuple,
+   else a fresh resolution, stored into the cache slot when there is
+   one. ``*out_owned`` is set when the caller must free the table
+   (no cache slot). Returns 0, or -1 with an exception set.
+*/
+static int match_case_slot_indices(
+    KosCacheSlot *slot,
+    KosMatcher *matcher,
+    PyObject *ns,
+    int32_t **out_table,
+    int *out_owned) {
+
+  *out_table = NULL;
+  *out_owned = 0;
+
+  PyObject *guard = NULL;
+  if (KosNamespace_SupportsFast(ns))
+    guard = KosNamespace_FAST_NAMES(ns);
+
+  int cached = slot && slot->kind == KOS_CACHE_MATCHER;
+  if (cached && slot->u.matcher.indices
+      && slot->u.matcher.names_guard == guard) {
+    *out_table = slot->u.matcher.indices;
+    return 0;
+  }
+
+  Py_ssize_t n = KosMatcher_SLOT_COUNT(matcher);
+  int32_t *table = PyMem_Malloc((size_t) n * sizeof(int32_t));
+  if (! table) {
+    PyErr_NoMemory();
+    return -1;
+  }
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *name = PyTuple_GET_ITEM(matcher->slots, i);
+    int idx = KosNamespace_FastIndex(ns, name);
+    if (idx < 0 && PyErr_Occurred()) {
+      PyMem_Free(table);
+      return -1;
+    }
+    table[i] = (int32_t) idx;
+  }
+
+  if (cached) {
+    PyMem_Free(slot->u.matcher.indices);
+    slot->u.matcher.indices = table;
+    Py_XINCREF(guard);
+    Py_XSETREF(slot->u.matcher.names_guard, guard);
+  } else {
+    *out_owned = 1;
+  }
+  *out_table = table;
+  return 0;
+}
+
+
+/**
+   Bind the fired slots into ns and consume them. Every entry of
+   ``slots`` is released on return, including on error. Returns 0, or
+   -1 with an exception set.
+*/
+static int match_case_bind(
+    KosCacheSlot *slot,
+    KosMatcher *matcher,
+    PyObject *ns,
+    PyObject **slots) {
+
+  Py_ssize_t n = KosMatcher_SLOT_COUNT(matcher);
+  int32_t *table = NULL;
+  int owned = 0;
+  int rc = match_case_slot_indices(slot, matcher, ns, &table, &owned);
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *val = slots[i];
+    if (! val)
+      continue;
+    slots[i] = NULL;
+    if (rc < 0) {
+      Py_DECREF(val);
+      continue;
+    }
+    int32_t idx = table[i];
+    if (idx >= 0) {
+      rc = kos_ns_fast_store_steal(ns, (size_t) idx, val);
+    } else {
+      PyObject *name = PyTuple_GET_ITEM(matcher->slots, i);
+      rc = KosNamespace_Store(ns, name, val);
+      Py_DECREF(val);
+    }
+  }
+
+  if (owned)
+    PyMem_Free(table);
+  return rc;
+}
+
 
 KOS_OP_HANDLER_COLD(MATCH_CASE) {
   const KosExtra *row = KosOp_ROW(insn);
+
+  PyObject *ns = CURRENT_NS();
+  KOS_OP_REQUIRE_NS(ns);
 
   /* Thaw the matcher once into this site's cache slot. A populated slot is
      permanently valid: the thaw is a pure function of the const. When the
@@ -58,6 +163,8 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
     if (slot) {
       slot->kind = KOS_CACHE_MATCHER;
       slot->u.matcher.matcher = matcher;   /* slot takes ownership */
+      slot->u.matcher.names_guard = NULL;
+      slot->u.matcher.indices = NULL;
     } else {
       matcher_owned = 1;
     }
@@ -82,35 +189,54 @@ KOS_OP_HANDLER_COLD(MATCH_CASE) {
     RESULT_RAISE();
   }
 
+  /* The capture slot array: inline for the common small table. */
+  Py_ssize_t n_slots = KosMatcher_SLOT_COUNT(matcher);
+  PyObject *inline_slots[8];
+  PyObject **slots = inline_slots;
+  if (n_slots > 8) {
+    slots = PyMem_Malloc((size_t) n_slots * sizeof(PyObject *));
+    if (unlikely(! slots)) {
+      PyErr_NoMemory();
+      if (matcher_owned)
+        Py_DECREF(matcher);
+      RESULT_RAISE();
+    }
+  }
+
   KosMatchSubject subj;
   KosMatchSubject_FromSingle(tail[0], &subj);
 
-  PyObject *caps = NULL;
-  int matched = KosMatcher_RunVectorcall(
+  int matched = KosMatcher_RunSlotsVectorcall(
       (KosMatcher *) matcher, &subj,
-      n ? tail + 1 : NULL, names, &caps);
+      n ? tail + 1 : NULL, names, slots);
   KosMatchSubject_Release(&subj);
+
+  int rc = 0;
+  if (matched > 0) {
+    /* Consume the stacked externs, and the subject unless kept, before
+       binding so a raise leaves a consistent stack. */
+    if (n)
+      KosEvalState_StackDropNoErr(es, (size_t) n);
+    if (! KosExtra_IMM(row, 3))
+      KosEvalState_StackDropNoErr(es, 1);
+    rc = match_case_bind(slot, (KosMatcher *) matcher, ns, slots);
+  } else if (matched == 0 && n) {
+    KosEvalState_StackDropNoErr(es, (size_t) n);
+  }
+
+  if (slots != inline_slots)
+    PyMem_Free(slots);
   if (matcher_owned)
     Py_DECREF(matcher);
 
-  if (unlikely(matched < 0))
+  if (unlikely(matched < 0 || rc < 0))
     RESULT_RAISE();
-
-  /* Consume the stacked externs; the subject returns to TOS. */
-  if (n)
-    KosEvalState_StackDropNoErr(es, (size_t) n);
 
   if (! matched) {
     RESULT_JUMP_AT(es, KosExtra_TARGET(row, 0));
   }
 
-  /* Matched: push the capture dict for the arm's MATCH_STORE_NAMES (or
-     a following POP for a capture-less arm). Without the keep flag the
-     subject is consumed here; with it (a guarded arm) the subject stays
-     beneath the dict for the guard's advance-or-commit. */
-  if (! KosExtra_IMM(row, 3))
-    KosEvalState_StackDropNoErr(es, 1);
-  RESULT_STEAL(es, caps);
+  RESULT_NEXT(es);
 }
 
 

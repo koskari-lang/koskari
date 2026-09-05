@@ -940,31 +940,55 @@ static int matcher_isinstance(PyObject *inst, PyObject *cls) {
 /* === match engine === */
 
 
-/* Extern env entries resolved into a stack buffer by
-   KosMatcher_RunVectorcall before spilling to the heap. */
+/* Extern env entries resolved into a stack buffer by the vectorcall
+   entries before spilling to the heap. */
 #define KOS_MATCH_ENV_INLINE 8
 
+/* Root capture slots held in a stack buffer by the dict-building
+   entries before spilling to the heap. */
+#define KOS_MATCH_SLOTS_INLINE 8
 
+
+/* Rollback entries recorded inline before the change stack spills to
+   the heap; a runtime arm rarely writes more than a few slots. */
+#define KOS_MATCH_CHANGE_INLINE 8
+
+
+/**
+   One recorded slot write, undone by engine_rollback. A root write
+   (dict NULL) moves the previous array entry into old_value; a GROUP
+   frame write holds a ref to the frame and the previous value, if the
+   key existed.
+*/
 typedef struct {
-  PyObject *dict;
+  PyObject *dict;        /* GROUP frame, or NULL for the root array */
   uint32_t slot_idx;
   int had_old;
   PyObject *old_value;
 } DictChange;
 
 
+/**
+   Root captures live in a slot array aligned to the matcher's slot
+   table, owned by the caller of the run core: an entry is a new ref
+   once the slot fires, NULL until then. A GROUP pushes a dict frame
+   over it; cur_captures is that frame, or NULL at the root.
+*/
 typedef struct {
   KosMatcher *m;
   KosMatchSubject *subj;
   PyObject *const *extern_env;   /* borrowed value array aligned to
                                     m->externs, or NULL */
-  PyObject *root_captures;
-  PyObject *cur_captures;
-  PyObject *capture_parent;
+  PyObject **root_slots;
+  PyObject *cur_captures;        /* GROUP frame dict, or NULL at root */
+  PyObject *capture_parent;      /* enclosing GROUP frame dict, or NULL
+                                    when the enclosing frame is root */
+  int group_depth;               /* GROUP frames above the root */
   Py_ssize_t slot_count;
   DictChange *change_stack;
   Py_ssize_t change_count;
   Py_ssize_t change_capacity;
+  DictChange change_inline[KOS_MATCH_CHANGE_INLINE];
   int in_from_datum;          /* matching inside unpacked substitution */
 } MatchEngine;
 
@@ -1143,21 +1167,19 @@ static PyObject *match_frame_new(const MatchEngine *e, Py_ssize_t start) {
 
 
 /**
-   Current capture frame, creating the lazy root on first use. The
-   root stays NULL until a slot actually fires, so failing attempts
-   allocate no frame at all; inside a GROUP the current frame is the
-   group's own sub-frame and already exists. Borrowed reference, or
-   NULL with an exception set.
+   Borrowed value of a slot in a frame: the root array when frame is
+   NULL, else the frame dict by slot name. NULL when unbound, or with an
+   exception set when the dict lookup fails (check PyErr_Occurred).
 */
-static PyObject *engine_captures_frame(MatchEngine *e) {
-  if (! e->cur_captures) {
-    PyObject *root = match_frame_new(e, 0);
-    if (! root)
-      return NULL;
-    e->root_captures = root;
-    e->cur_captures = root;
-  }
-  return e->cur_captures;
+static PyObject *engine_frame_get(
+    const MatchEngine *e,
+    PyObject *frame,
+    uint32_t slot) {
+
+  if (! frame)
+    return e->root_slots[slot];
+  PyObject *name = PyTuple_GET_ITEM(e->m->slots, slot);
+  return PyDict_GetItemWithError(frame, name);
 }
 
 
@@ -1192,11 +1214,18 @@ static PyObject *match_frame_copy(PyObject *frame) {
 static int engine_grow_changes(MatchEngine *e, Py_ssize_t need) {
   if (e->change_count + need <= e->change_capacity)
     return 0;
-  Py_ssize_t cap = e->change_capacity ? e->change_capacity * 2 : 16;
+  Py_ssize_t cap = e->change_capacity * 2;
   while (cap < e->change_count + need)
     cap *= 2;
-  DictChange *nn = PyMem_Realloc(e->change_stack,
-                                 cap * sizeof(DictChange));
+  DictChange *nn;
+  if (e->change_stack == e->change_inline) {
+    nn = PyMem_Malloc(cap * sizeof(DictChange));
+    if (nn)
+      memcpy(nn, e->change_inline,
+             e->change_count * sizeof(DictChange));
+  } else {
+    nn = PyMem_Realloc(e->change_stack, cap * sizeof(DictChange));
+  }
   if (! nn) {
     PyErr_NoMemory();
     return -1;
@@ -1220,19 +1249,29 @@ static int engine_set_slot(
   }
 
   PyObject *name = PyTuple_GET_ITEM(e->m->slots, slot);
-  PyObject *d = engine_captures_frame(e);
-  if (! d) {
-    Py_DECREF(value);
-    return -1;
-  }
-
-  PyObject *prev = PyDict_GetItemWithError(d, name);
-  if (! prev && PyErr_Occurred()) {
-    Py_DECREF(value);
-    return -1;
-  }
 
   if (engine_grow_changes(e, 1)) {
+    Py_DECREF(value);
+    return -1;
+  }
+
+  if (! e->cur_captures) {
+    /* Root: the previous entry moves into the change record and the
+       new value moves into the array. */
+    DictChange *ch = &e->change_stack[e->change_count];
+    ch->dict = NULL;
+    ch->slot_idx = slot;
+    ch->old_value = e->root_slots[slot];
+    ch->had_old = ch->old_value != NULL;
+    e->change_count++;
+    e->root_slots[slot] = value;
+    kos_datum_annotate_binding(value, name);
+    return 0;
+  }
+
+  PyObject *d = e->cur_captures;
+  PyObject *prev = PyDict_GetItemWithError(d, name);
+  if (! prev && PyErr_Occurred()) {
     Py_DECREF(value);
     return -1;
   }
@@ -1270,6 +1309,12 @@ static void engine_rollback(MatchEngine *e, Py_ssize_t snapshot) {
   while (e->change_count > snapshot) {
     e->change_count--;
     DictChange *c = &e->change_stack[e->change_count];
+    if (! c->dict) {
+      PyObject *cur = e->root_slots[c->slot_idx];
+      e->root_slots[c->slot_idx] = c->old_value;
+      Py_XDECREF(cur);
+      continue;
+    }
     PyObject *name = PyTuple_GET_ITEM(e->m->slots, c->slot_idx);
     if (! c->had_old) {
       if (PyDict_DelItem(c->dict, name)) {
@@ -1300,7 +1345,7 @@ static void engine_discard_pending_change_refs(MatchEngine *e) {
     DictChange *c = &e->change_stack[e->change_count];
     Py_XDECREF(c->old_value);
     c->old_value = NULL;
-    Py_DECREF(c->dict);
+    Py_XDECREF(c->dict);
   }
 }
 
@@ -1375,12 +1420,10 @@ static PyObject *engine_changes_to_dict(
   PyObject *d = PyDict_New();
   if (! d)
     return NULL;
-  if (! e->cur_captures)
-    return d;
   for (Py_ssize_t i = from_change; i < e->change_count; i++) {
     uint32_t slot = e->change_stack[i].slot_idx;
     PyObject *name = PyTuple_GET_ITEM(e->m->slots, slot);
-    PyObject *val = PyDict_GetItemWithError(e->cur_captures, name);
+    PyObject *val = engine_frame_get(e, e->cur_captures, slot);
     if (! val) {
       if (PyErr_Occurred()) {
         Py_DECREF(d);
@@ -1501,20 +1544,19 @@ static int match_node(
     if (n->as.same.depth > 1)
       return 0;
 
-    PyObject *dict = e->cur_captures;
+    /* depth 0 reads the current frame; depth 1 the enclosing one,
+       which is the root array when exactly one GROUP is open. */
+    PyObject *frame = e->cur_captures;
     if (n->as.same.depth == 1) {
-      if (! e->capture_parent)
+      if (e->group_depth == 0)
         return 0;
-      dict = e->capture_parent;
+      frame = e->capture_parent;
     }
-    if (! dict)
-      return 0;
 
     if ((Py_ssize_t) n->as.same.slot >= e->slot_count)
       return 0;
 
-    PyObject *name = PyTuple_GET_ITEM(e->m->slots, n->as.same.slot);
-    PyObject *prev = PyDict_GetItemWithError(dict, name);
+    PyObject *prev = engine_frame_get(e, frame, n->as.same.slot);
     if (! prev) {
       if (PyErr_Occurred())
         return -1;
@@ -1601,6 +1643,63 @@ static int match_node(
 }
 
 
+/**
+   Run the matcher over the subject with an already-aligned extern env.
+   ``slots`` is the caller's array of ``len(m->slots)`` entries; the
+   core clears it, and on a match (return 1) leaves a new ref in each
+   slot that fired, NULL elsewhere, with ``*out_cursor`` the spine
+   position reached. On no match (0) or error (-1, exception set) the
+   array is all NULL and nothing is owned. ``e`` is caller storage the
+   core initializes; it stays valid for the caller's finalize step.
+*/
+static int matcher_run_core(
+    MatchEngine *e,
+    KosMatcher *m,
+    KosMatchSubject *subj,
+    PyObject *const *extern_env,
+    PyObject **slots,
+    Py_ssize_t *out_cursor) {
+
+  Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
+  for (Py_ssize_t i = 0; i < n_slots; i++)
+    slots[i] = NULL;
+
+  memset(e, 0, offsetof(MatchEngine, change_inline));
+  e->m = m;
+  e->subj = subj;
+  e->extern_env = extern_env;
+  e->root_slots = slots;
+  e->slot_count = n_slots;
+  e->change_stack = e->change_inline;
+  e->change_capacity = KOS_MATCH_CHANGE_INLINE;
+  e->in_from_datum = 0;
+
+  Py_ssize_t cursor = 0;
+  int r = 1;
+  if (Py_SIZE(m) > 0)
+    r = match_node(e, m->entry, &cursor, 0);
+
+  int matched = 0;
+  if (r == 1 && cursor == subj->vt->length(subj))
+    matched = 1;
+
+  engine_discard_pending_change_refs(e);
+  if (e->change_stack != e->change_inline)
+    PyMem_Free(e->change_stack);
+  e->change_stack = e->change_inline;
+  e->change_capacity = KOS_MATCH_CHANGE_INLINE;
+
+  if (r < 0 || ! matched) {
+    for (Py_ssize_t i = 0; i < n_slots; i++)
+      Py_CLEAR(slots[i]);
+    return r < 0 ? -1 : 0;
+  }
+
+  *out_cursor = cursor;
+  return 1;
+}
+
+
 int KosMatcher_Run(
     KosMatcher *m,
     KosMatchSubject *subj,
@@ -1630,62 +1729,88 @@ int KosMatcher_Run(
 
   Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
 
-  MatchEngine engine = {0};
-  engine.m = m;
-  engine.subj = subj;
-  engine.extern_env = extern_env;
-  engine.slot_count = n_slots;
-
-  /* The root capture frame is created lazily by the first slot write
-     (engine_captures_frame), so an attempt that never captures -- in
-     particular every failing attempt -- allocates nothing here. */
-  engine.root_captures = NULL;
-  engine.cur_captures = NULL;
-  engine.capture_parent = NULL;
-
-  Py_ssize_t cursor = 0;
-  int r = -1;
-
-  if (Py_SIZE(m) > 0)
-    r = match_node(&engine, m->entry, &cursor, 0);
-  else
-    r = 1;
-
-  Py_ssize_t length = subj->vt->length(subj);
-  int matched = 0;
-  if (r == 1 && cursor == length)
-    matched = 1;
-
-  engine_discard_pending_change_refs(&engine);
-  PyMem_Free(engine.change_stack);
-
-  if (r < 0) {
-    Py_XDECREF(engine.root_captures);
-    return -1;
-  }
-
-  if (! matched) {
-    Py_XDECREF(engine.root_captures);
-    return 0;
-  }
-
-  /* A capture-less match still materializes the frame: the caller
-     contract (and the DatumFrame source/position it may carry) is the
-     same whether or not any slot fired. */
-  PyObject *root = engine.root_captures;
-  if (! root) {
-    root = match_frame_new(&engine, 0);
-    if (! root)
+  PyObject *inline_slots[KOS_MATCH_SLOTS_INLINE];
+  PyObject **slots = inline_slots;
+  if (n_slots > KOS_MATCH_SLOTS_INLINE) {
+    slots = PyMem_Malloc((size_t) n_slots * sizeof(PyObject *));
+    if (! slots) {
+      PyErr_NoMemory();
       return -1;
+    }
   }
 
-  if (datum_frame_set_source(&engine, root, subj, 0, cursor)) {
-    Py_DECREF(root);
-    return -1;
+  MatchEngine engine;
+  Py_ssize_t cursor = 0;
+  int matched = matcher_run_core(&engine, m, subj, extern_env, slots,
+                                 &cursor);
+
+  PyObject *root = NULL;
+  if (matched == 1) {
+    /* A capture-less match still materializes the frame: the caller
+       contract (and the DatumFrame source/position it may carry) is
+       the same whether or not any slot fired. */
+    root = match_frame_new(&engine, 0);
+    if (! root) {
+      matched = -1;
+    } else {
+      for (Py_ssize_t i = 0; i < n_slots; i++) {
+        if (! slots[i])
+          continue;
+        PyObject *name = PyTuple_GET_ITEM(m->slots, i);
+        if (PyDict_SetItem(root, name, slots[i])) {
+          matched = -1;
+          break;
+        }
+      }
+      if (matched == 1
+          && datum_frame_set_source(&engine, root, subj, 0, cursor))
+        matched = -1;
+      if (matched < 0)
+        Py_CLEAR(root);
+    }
   }
+
+  for (Py_ssize_t i = 0; i < n_slots; i++)
+    Py_XDECREF(slots[i]);
+  if (slots != inline_slots)
+    PyMem_Free(slots);
 
   *out_caps = root;
-  return 1;
+  return matched;
+}
+
+
+int KosMatcher_RunSlots(
+    KosMatcher *m,
+    KosMatchSubject *subj,
+    PyObject *const *extern_env,
+    Py_ssize_t n_extern_env,
+    PyObject **out_slots) {
+
+  if (! m || ! subj || ! out_slots) {
+    PyErr_SetString(PyExc_ValueError,
+                    "KosMatcher_RunSlots requires matcher, subject, "
+                    "and out");
+    return -1;
+  }
+
+  Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
+  if (n_extern_env != n_externs) {
+    PyErr_Format(PyExc_TypeError,
+                 "extern_env has %zd entries, expected %zd",
+                 n_extern_env, n_externs);
+    return -1;
+  }
+  if (n_externs > 0 && ! extern_env) {
+    PyErr_Format(PyExc_TypeError,
+                 "matcher requires %zd extern bindings", n_externs);
+    return -1;
+  }
+
+  MatchEngine engine;
+  Py_ssize_t cursor = 0;
+  return matcher_run_core(&engine, m, subj, extern_env, out_slots,
+                          &cursor);
 }
 
 
@@ -1809,27 +1934,54 @@ static int matcher_extern_env(
 }
 
 
-int KosMatcher_RunVectorcall(
+/**
+   Resolved extern env for a vectorcall-style entry. ``env`` is either
+   the caller's value array used directly (``owned`` 0) or a buffer of
+   strong refs the caller releases with matcher_env_release.
+*/
+typedef struct {
+  PyObject *const *env;
+  PyObject **buf;              /* heap buffer, or NULL when inline */
+  PyObject *inline_buf[KOS_MATCH_ENV_INLINE];
+  Py_ssize_t owned;            /* strong refs held in the buffer */
+} MatcherEnv;
+
+
+static void matcher_env_release(MatcherEnv *r) {
+  PyObject **buf = r->buf ? r->buf : r->inline_buf;
+  for (Py_ssize_t i = 0; i < r->owned; i++)
+    Py_DECREF(buf[i]);
+  PyMem_Free(r->buf);
+  r->buf = NULL;
+  r->owned = 0;
+}
+
+
+/**
+   Build the extern env named by ``ext_names`` over ``ext_values``.
+   Fast path: the names cover the whole extern table in order, so the
+   value array is the env as-is (identity-first compares: the common
+   caller feeds back the matcher's own names). General path: per table
+   entry take the named value when present (order-independent, kwargs
+   semantics), else the inbuilt defaults, holding one strong ref per
+   entry for the run since an extern callable may mutate or reset the
+   defaults dict mid-match. Returns 0, or -1 with an exception set.
+*/
+static int matcher_env_resolve(
     KosMatcher *m,
-    KosMatchSubject *subj,
     PyObject *const *ext_values,
     PyObject *ext_names,
-    PyObject **out_caps) {
+    MatcherEnv *r) {
 
-  if (! m) {
-    PyErr_SetString(PyExc_ValueError,
-                    "KosMatcher_RunVectorcall requires matcher");
-    return -1;
-  }
+  r->env = NULL;
+  r->buf = NULL;
+  r->owned = 0;
 
   Py_ssize_t n_named = 0;
   if (ext_names && PyTuple_Check(ext_names))
     n_named = PyTuple_GET_SIZE(ext_names);
   Py_ssize_t n_ext = PyTuple_GET_SIZE(m->externs);
 
-  /* Fast path: the names cover the whole extern table in order, so the
-     value array is the env as-is. Identity-first compares: the common
-     caller feeds back the matcher's own names. */
   if (n_named == n_ext) {
     Py_ssize_t i = 0;
     for (; i < n_ext; i++) {
@@ -1843,8 +1995,10 @@ int KosMatcher_RunVectorcall(
       if (! eq)
         break;
     }
-    if (i == n_ext)
-      return KosMatcher_Run(m, subj, ext_values, n_ext, out_caps);
+    if (i == n_ext) {
+      r->env = ext_values;
+      return 0;
+    }
   }
 
   if (n_ext == 0) {
@@ -1853,32 +2007,25 @@ int KosMatcher_RunVectorcall(
     return -1;
   }
 
-  /* General path: per table entry take the named value when present
-     (order-independent, kwargs semantics), else the inbuilt defaults.
-     The env is a stack buffer (heap past KOS_MATCH_ENV_INLINE) holding
-     one strong ref per entry for the run, since an extern callable may
-     mutate or reset the defaults dict mid-match. */
-  PyObject *inline_env[KOS_MATCH_ENV_INLINE];
-  PyObject **env = inline_env;
+  PyObject **env = r->inline_buf;
   if (n_ext > KOS_MATCH_ENV_INLINE) {
     env = PyMem_Malloc((size_t) n_ext * sizeof(PyObject *));
     if (! env) {
       PyErr_NoMemory();
       return -1;
     }
+    r->buf = env;
   }
 
-  Py_ssize_t filled = 0;
-  int matched = -1;
-  for (; filled < n_ext; filled++) {
-    PyObject *name = PyTuple_GET_ITEM(m->externs, filled);
+  for (Py_ssize_t i = 0; i < n_ext; i++) {
+    PyObject *name = PyTuple_GET_ITEM(m->externs, i);
     PyObject *val = NULL;
     for (Py_ssize_t j = 0; j < n_named; j++) {
       PyObject *nm = PyTuple_GET_ITEM(ext_names, j);
       if (nm != name) {
         int eq = PyObject_RichCompareBool(nm, name, Py_EQ);
         if (eq < 0)
-          goto done;
+          goto fail;
         if (! eq)
           continue;
       }
@@ -1888,19 +2035,65 @@ int KosMatcher_RunVectorcall(
     if (! val) {
       val = matcher_extern_default(name);
       if (! val)
-        goto done;
+        goto fail;
     }
     Py_INCREF(val);
-    env[filled] = val;
+    env[i] = val;
+    r->owned = i + 1;
   }
 
-  matched = KosMatcher_Run(m, subj, env, n_ext, out_caps);
+  r->env = env;
+  return 0;
 
- done:
-  for (Py_ssize_t i = 0; i < filled; i++)
-    Py_DECREF(env[i]);
-  if (env != inline_env)
-    PyMem_Free(env);
+ fail:
+  matcher_env_release(r);
+  return -1;
+}
+
+
+int KosMatcher_RunVectorcall(
+    KosMatcher *m,
+    KosMatchSubject *subj,
+    PyObject *const *ext_values,
+    PyObject *ext_names,
+    PyObject **out_caps) {
+
+  if (! m) {
+    PyErr_SetString(PyExc_ValueError,
+                    "KosMatcher_RunVectorcall requires matcher");
+    return -1;
+  }
+
+  MatcherEnv r;
+  if (matcher_env_resolve(m, ext_values, ext_names, &r))
+    return -1;
+  int matched = KosMatcher_Run(m, subj, r.env,
+                               PyTuple_GET_SIZE(m->externs), out_caps);
+  matcher_env_release(&r);
+  return matched;
+}
+
+
+int KosMatcher_RunSlotsVectorcall(
+    KosMatcher *m,
+    KosMatchSubject *subj,
+    PyObject *const *ext_values,
+    PyObject *ext_names,
+    PyObject **out_slots) {
+
+  if (! m) {
+    PyErr_SetString(PyExc_ValueError,
+                    "KosMatcher_RunSlotsVectorcall requires matcher");
+    return -1;
+  }
+
+  MatcherEnv r;
+  if (matcher_env_resolve(m, ext_values, ext_names, &r))
+    return -1;
+  int matched = KosMatcher_RunSlots(m, subj, r.env,
+                                    PyTuple_GET_SIZE(m->externs),
+                                    out_slots);
+  matcher_env_release(&r);
   return matched;
 }
 

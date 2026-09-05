@@ -424,6 +424,42 @@ int KosMatcher_RunVectorcall(
 
 
 /**
+   Number of capture slots in the matcher's slot table; the length of
+   the array the slot-array entries below fill.
+ */
+#define KosMatcher_SLOT_COUNT(m)  PyTuple_GET_SIZE(((KosMatcher *) (m))->slots)
+
+
+/**
+   Frame-free core of ``KosMatcher_Run``: same arguments, but the
+   captures land in ``out_slots``, the caller's array of
+   ``KosMatcher_SLOT_COUNT`` entries aligned to the slot table. On a
+   match (1) each slot that fired holds a new reference and the rest
+   are NULL; on no match (0) or error (-1, exception set) every entry
+   is NULL and nothing is owned. No dict or frame is built.
+ */
+int KosMatcher_RunSlots(
+    KosMatcher *matcher,
+    KosMatchSubject *subject,
+    PyObject *const *extern_env,
+    Py_ssize_t n_extern_env,
+    PyObject **out_slots);
+
+
+/**
+   ``KosMatcher_RunVectorcall`` with the ``KosMatcher_RunSlots``
+   result contract: same extern resolution, captures into the caller's
+   slot array.
+ */
+int KosMatcher_RunSlotsVectorcall(
+    KosMatcher *matcher,
+    KosMatchSubject *subject,
+    PyObject *const *ext_values,
+    PyObject *ext_names,
+    PyObject **out_slots);
+
+
+/**
    Thaw a frozen matcher 6-tuple (`("MATCHER", slots, externs, consts,
    nodes, entry)`) into a native Matcher. Same reconstruction as the
    `Matcher.from_tuple` classmethod. Returns a new reference on success;

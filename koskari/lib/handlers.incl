@@ -217,7 +217,6 @@
 #include "opcode/UNPACK_VAR.c"
 #include "opcode/UNPACK_FAST.c"
 #include "opcode/MATCH_CASE.c"
-#include "opcode/MATCH_STORE_NAMES.c"
 #include "opcode/THEEND.c"
 
 /* The end. */
