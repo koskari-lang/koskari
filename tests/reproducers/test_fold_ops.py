@@ -146,8 +146,11 @@ class TestFoldOps(unittest.IsolatedAsyncioTestCase):
         )
         for seed, a, b in runs:
             for _ in range(3):
+                # a list seed is extended in place, so the expectation
+                # is taken before the run
+                expected = seed + a + b
                 cells = await mod.item_run(seed, a, b)
-                self.assertEqual(cells[0], seed + a + b)
+                self.assertEqual(cells[0], expected)
         with self.assertRaises(TypeError):
             await mod.item_run(1, 1, "x")
 

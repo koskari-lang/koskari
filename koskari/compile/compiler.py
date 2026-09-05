@@ -21,7 +21,6 @@ The koskari compiler. Converts source forms into bytecode fragments.
 """
 
 
-import struct
 import warnings
 import weakref
 from abc import ABC, abstractmethod
@@ -118,20 +117,18 @@ def unique_append(lst, val):
         lst.append(val)
 
 
-_PTR_SIZE = struct.calcsize("P")
-
-
 def _arena_member_size(code):
     """
     The bytes a code object's unified block occupies inside an arena:
-    the unrounded block total, aligned up to pointer size to match the
-    arena's reservation alignment.
+    the unrounded block total, aligned up to the arena's reservation
+    unit, since each member starts on a unit boundary
 
     :param code: a Code object
     """
 
     size = code.payload_bytes + code.padding_bytes
-    return ((size + _PTR_SIZE - 1) // _PTR_SIZE) * _PTR_SIZE
+    unit = Arena.UNIT
+    return ((size + unit - 1) // unit) * unit
 
 
 class ByteCodeFragment:

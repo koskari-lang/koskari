@@ -25,7 +25,7 @@ from koskari.compile import Compiler
 from koskari.compile.compiler import CompilerMode
 from koskari.compile.pragma import PackModule
 from koskari.compile.pragma.settings import compiler_pack_module
-from koskari.lib import OpCode
+from koskari.lib import Arena, OpCode
 from koskari.pragma import ModulePragma
 
 import pytest
@@ -151,6 +151,22 @@ class TestCompilerSeal(unittest.TestCase):
         self.assertIs(codes[2].arena, arenas[1])
         self.assertIs(codes[3].arena, arenas[1])
         self.assertIs(codes[4].arena, arenas[2])
+
+    def test_many_members_fit_their_arena(self):
+        # every member starts on the arena's reservation unit, so a
+        # segment of many members whose sizes are not multiples of it
+        # needs more than the sum of their sizes; the planner counts
+        # that, and the page-rounding slack is not relied on
+        comp = Compiler("sealtest", {})
+        codes = [mint(comp, f"m{i}") for i in range(60)]
+        size = codes[0].payload_bytes + codes[0].padding_bytes
+        self.assertNotEqual(size % Arena.UNIT, 0)
+
+        arenas = comp.seal()
+        self.assertEqual(len(arenas), 1)
+        for code in codes:
+            self.assertIs(code.arena, arenas[0])
+        self.assertLessEqual(arenas[0].used, arenas[0].size)
 
     def test_max_bytes_soft_cap(self):
         comp = Compiler("sealtest", {})
