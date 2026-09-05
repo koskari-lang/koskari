@@ -436,7 +436,9 @@ int KosMatcher_RunVectorcall(
    ``KosMatcher_SLOT_COUNT`` entries aligned to the slot table. On a
    match (1) each slot that fired holds a new reference and the rest
    are NULL; on no match (0) or error (-1, exception set) every entry
-   is NULL and nothing is owned. No dict or frame is built.
+   is NULL and nothing is owned, the one exception being a call
+   rejected for a NULL matcher or array, which touches nothing. The
+   array need not be cleared beforehand. No dict or frame is built.
  */
 int KosMatcher_RunSlots(
     KosMatcher *matcher,

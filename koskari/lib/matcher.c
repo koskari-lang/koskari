@@ -1670,14 +1670,22 @@ static int match_node(
 }
 
 
+static void matcher_clear_slots(KosMatcher *m, PyObject **slots) {
+  Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
+  for (Py_ssize_t i = 0; i < n_slots; i++)
+    Py_CLEAR(slots[i]);
+}
+
+
 /**
    Run the matcher over the subject with an already-aligned extern env.
-   ``slots`` is the caller's array of ``len(m->slots)`` entries; the
-   core clears it, and on a match (return 1) leaves a new ref in each
-   slot that fired, NULL elsewhere, with ``*out_cursor`` the spine
+   ``slots`` is the caller's array of ``len(m->slots)`` entries,
+   arriving all NULL; on a match (return 1) each slot that fired holds
+   a new ref, the rest stay NULL, and ``*out_cursor`` is the spine
    position reached. On no match (0) or error (-1, exception set) the
-   array is all NULL and nothing is owned. ``e`` is caller storage the
-   core initializes; it stays valid for the caller's finalize step.
+   array is all NULL again and nothing is owned. ``e`` is caller
+   storage the core initializes; it stays valid for the caller's
+   finalize step.
 */
 static int matcher_run_core(
     MatchEngine *e,
@@ -1688,8 +1696,6 @@ static int matcher_run_core(
     Py_ssize_t *out_cursor) {
 
   Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
-  for (Py_ssize_t i = 0; i < n_slots; i++)
-    slots[i] = NULL;
 
   memset(e, 0, offsetof(MatchEngine, change_inline));
   e->m = m;
@@ -1717,8 +1723,7 @@ static int matcher_run_core(
   e->change_capacity = KOS_MATCH_CHANGE_INLINE;
 
   if (r < 0 || ! matched) {
-    for (Py_ssize_t i = 0; i < n_slots; i++)
-      Py_CLEAR(slots[i]);
+    matcher_clear_slots(m, slots);
     return r < 0 ? -1 : 0;
   }
 
@@ -1766,10 +1771,13 @@ int KosMatcher_Run(
     }
   }
 
+  for (Py_ssize_t i = 0; i < n_slots; i++)
+    slots[i] = NULL;
+
   MatchEngine engine;
   Py_ssize_t cursor = 0;
-  int matched = matcher_run_core(&engine, m, subj, extern_env, slots,
-                                 &cursor);
+  int matched = matcher_run_core(
+      &engine, m, subj, extern_env, slots, &cursor);
 
   PyObject *root = NULL;
   if (matched == 1) {
@@ -1821,6 +1829,11 @@ int KosMatcher_RunSlots(
     return -1;
   }
 
+  /* The array is all NULL from here on every return path. */
+  Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
+  for (Py_ssize_t i = 0; i < n_slots; i++)
+    out_slots[i] = NULL;
+
   Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
   if (n_extern_env != n_externs) {
     PyErr_Format(PyExc_TypeError,
@@ -1836,8 +1849,8 @@ int KosMatcher_RunSlots(
 
   MatchEngine engine;
   Py_ssize_t cursor = 0;
-  return matcher_run_core(&engine, m, subj, extern_env, out_slots,
-                          &cursor);
+  return matcher_run_core(
+      &engine, m, subj, extern_env, out_slots, &cursor);
 }
 
 
@@ -2108,18 +2121,22 @@ int KosMatcher_RunSlotsVectorcall(
     PyObject *ext_names,
     PyObject **out_slots) {
 
-  if (! m) {
+  if (! m || ! out_slots) {
     PyErr_SetString(PyExc_ValueError,
-                    "KosMatcher_RunSlotsVectorcall requires matcher");
+                    "KosMatcher_RunSlotsVectorcall requires matcher "
+                    "and out");
     return -1;
   }
 
   MatcherEnv r;
-  if (matcher_env_resolve(m, ext_values, ext_names, &r))
+  if (matcher_env_resolve(m, ext_values, ext_names, &r)) {
+    Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
+    for (Py_ssize_t i = 0; i < n_slots; i++)
+      out_slots[i] = NULL;
     return -1;
-  int matched = KosMatcher_RunSlots(m, subj, r.env,
-                                    PyTuple_GET_SIZE(m->externs),
-                                    out_slots);
+  }
+  int matched = KosMatcher_RunSlots(
+      m, subj, r.env, PyTuple_GET_SIZE(m->externs), out_slots);
   matcher_env_release(&r);
   return matched;
 }
