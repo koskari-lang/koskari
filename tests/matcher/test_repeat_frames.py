@@ -60,10 +60,10 @@ class TestRepeatCapture(unittest.TestCase):
         cap = result.captures["bindings"]
         frames = cap.datum if isinstance(cap, Datum) else cap
         self.assertEqual(len(frames), 2)
-        self.assertEqual(frames[0]["name"].datum, sa)
-        self.assertEqual(frames[0]["expr"].datum, 1)
-        self.assertEqual(frames[1]["name"].datum, sb)
-        self.assertEqual(frames[1]["expr"].datum, 2)
+        self.assertEqual(frames[0]["name"], sa)
+        self.assertEqual(frames[0]["expr"], 1)
+        self.assertEqual(frames[1]["name"], sb)
+        self.assertEqual(frames[1]["expr"], 2)
         self.assertNotIn("name", result.captures)
         self.assertNotIn("expr", result.captures)
 
@@ -84,8 +84,8 @@ class TestRepeatCapture(unittest.TestCase):
         cap = result.captures["rows"]
         frames = cap.datum if isinstance(cap, Datum) else cap
         self.assertEqual(len(frames), 1)
-        self.assertEqual(frames[0]["expr"].datum, 99)
-        self.assertEqual(frames[0]["name"].datum, sx)
+        self.assertEqual(frames[0]["expr"], 99)
+        self.assertEqual(frames[0]["name"], sx)
 
 
 class TestRepeatFramesThawRoundTrip(unittest.TestCase):
@@ -109,8 +109,8 @@ class TestRepeatFramesThawRoundTrip(unittest.TestCase):
         cap = result.captures["bindings"]
         frames = cap.datum if isinstance(cap, Datum) else cap
         self.assertEqual(len(frames), 2)
-        self.assertEqual(frames[0]["name"].datum, sa)
-        self.assertEqual(frames[0]["expr"].datum, 10)
+        self.assertEqual(frames[0]["name"], sa)
+        self.assertEqual(frames[0]["expr"], 10)
 
 
 class TestPatternSlotNames(unittest.TestCase):

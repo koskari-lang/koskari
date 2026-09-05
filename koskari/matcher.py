@@ -34,8 +34,8 @@ wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 from typing import Protocol, runtime_checkable
 
 from koskari.hygiene import Hygiene, HygieneEdge, HygieneNode
-from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, keyword,
-                         kos_repr, nil, pair, symbol)
+from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, cons,
+                         keyword, kos_repr, nil, pair, symbol)
 from koskari.types import is_nil, is_keyword, is_pair, is_proper, is_symbol, unpack
 
 
@@ -3067,8 +3067,10 @@ def parse_matcher(elem):
     if is_nil(elem):
         raise ValueError(
             "nil is not a valid matcher pattern element")
+    # the element is source, so it is walked as a one-cell spine:
+    # captures come back as Datum with position and from_datum intact
     result = META_MATCHER.match(
-        (elem,), symbol=symbol, keyword=keyword)
+        cons(elem, nil), symbol=symbol, keyword=keyword)
     if not result.matched:
         raise ValueError(
             f"not a valid matcher pattern: {elem!r}")
@@ -3933,7 +3935,7 @@ def parse_case_element(elem):
         raise ValueError(
             "nil is not a valid case pattern element")
     result = CASE_ELEMENT_MATCHER.match(
-        (elem,), symbol=symbol, keyword=keyword)
+        cons(elem, nil), symbol=symbol, keyword=keyword)
     if not result.matched:
         raise ValueError(
             f"not a valid case pattern: {elem!r}")
@@ -4031,7 +4033,7 @@ def parse_case_pattern(content):
     if is_nil(content):
         raise ValueError("empty case pattern")
     result = CASE_DELIM_MATCHER.match(
-        (content,), symbol=symbol, keyword=keyword)
+        cons(content, nil), symbol=symbol, keyword=keyword)
     if not result.matched:
         raise ValueError(
             f"invalid case pattern {content!r};"

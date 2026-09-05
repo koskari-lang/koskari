@@ -86,6 +86,14 @@ Check membership before use.
 `koskari.lib.Datum` is the hygiene **syntax box**: a native wrapper around a
 captured value with optional source position and flags.
 
+Captures are boxed only on a walk over source: a `KosPair` spine (cell
+positions travel with the value) or a walk inside a substitution `Datum`
+(`from_datum` must travel). A tuple, list, or single-value subject yields
+raw values in `captures`, including REST tails, multi-cell slices, and
+REPEAT rows. The pattern parsers (`parse_matcher`, `parse_case_element`,
+`parse_case_pattern`) hand their source element in as a one-cell pair
+spine for this reason.
+
 | Field / property | Role |
 |------------------|------|
 | `.datum` | Wrapped value (symbol, pair spine, list, etc.) |
@@ -112,7 +120,7 @@ without gensymming substituted interiors.
 
 | Situation | Capture shape |
 |-----------|----------------|
-| Tuple/list runtime subject | Plain `dict` in `captures[slot]` |
+| Tuple/list runtime subject | Plain `dict` in `captures[slot]`; values are raw, never `Datum` |
 | KosPair root match | Entire `captures` may be a `DatumFrame` |
 | Named `GROUP` on KosPair | `captures[slot]` is a `DatumFrame` |
 | `repeat_capture` rows on KosPair | Each list element may be a `DatumFrame` |
@@ -530,7 +538,7 @@ The delimiter is a pure container: the special reads it with `pair`/`nil` only.
 |-------|-----------|
 | `MATCH_CASE` | EXTRA row: no-match label, frozen matcher const, externs name tuple, keep-subject flag; one `KOS_CACHE_MATCHER` slot. Subject held on the stack across arms; wrapped as a length-1 sequence per attempt. No match: subject stays, jump. Match: push captures dict (subject consumed unless `keep`). |
 | `KOS_CACHE_MATCHER` | Per-site cache slot holding the thawed `Matcher` — thaw-once, no guard/version (thaw is a pure function of the const). |
-| `MATCH_STORE_NAMES` | Const names tuple; pops the captures dict and binds each present name into the namespace (one-level `Datum` reveal). **Absent names are skipped** — an unbound optional slot raises `NameError` when read. |
+| `MATCH_STORE_NAMES` | Const names tuple; pops the captures dict and binds each present name into the namespace. The subject is a single runtime value, never a source spine, so captures arrive raw. **Absent names are skipped** — an unbound optional slot raises `NameError` when read. |
 | Guards | `[[PATTERN] when:/unless: COND BODY...]`. Keep-flagged `MATCH_CASE` leaves the subject under the captures; bind, evaluate guard, `JUMP_FALSE`/`JUMP_TRUE` to the next arm (subject intact) or `POP` and commit. Captures persist on guard failure. |
 | Externs | The special collects the frozen matcher's externs, `request_var`s each (closure capture works), and the handler loads them from the frame namespace at match time. |
 

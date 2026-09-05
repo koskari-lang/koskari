@@ -77,7 +77,7 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         arg = symbol("argval")
         r = m.match((arg,))
         self.assertTrue(r.matched)
-        self.assertIs(r.captures["v"].datum, arg)
+        self.assertIs(r.captures["v"], arg)
 
 
     def test_ellipsis_rejected(self):
@@ -116,7 +116,7 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         m = Matcher.from_tuple(pat.freeze())
         res = m.match([1])
         self.assertTrue(res.matched)
-        self.assertEqual(res.captures["r"].datum, ())
+        self.assertEqual(res.captures["r"], ())
 
 
     def test_repeat_slot_min_freeze_thaw_match(self):

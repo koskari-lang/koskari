@@ -984,11 +984,29 @@ static int capture_from_datum_flag(
 }
 
 
+/**
+   Whether captures from this subject are boxed in Datum. Only a walk
+   over source cells boxes: a KosPair spine, whose cells carry
+   positions, or a walk inside a substitution Datum, whose captures
+   must carry from_datum. A tuple, list, or single-value subject
+   yields raw values.
+*/
+static int subject_boxes_captures(
+    const MatchEngine *e,
+    const KosMatchSubject *subj) {
+
+  return subj->kp_tails != NULL || e->in_from_datum;
+}
+
+
 static PyObject *kos_datum_from_spine_cell(
     MatchEngine *e,
     KosMatchSubject *subj,
     Py_ssize_t cell_idx,
     PyObject *datum_owned) {
+
+  if (! subject_boxes_captures(e, subj))
+    return datum_owned;
 
   PyObject *pos = Py_None;
   Py_INCREF(Py_None);
@@ -1023,14 +1041,17 @@ static PyObject *wrap_slice_datums(
   PyObject *t = PyTuple_New(n);
   if (! t)
     return NULL;
+  int boxes = subject_boxes_captures(e, subj);
   for (Py_ssize_t i = 0; i < n; i++) {
     PyObject *raw = subj->vt->get(subj, start + i);
     Py_INCREF(raw);
-    PyObject *cell = kos_datum_from_spine_cell(
-        e, subj, start + i, raw);
-    if (! cell) {
-      Py_DECREF(t);
-      return NULL;
+    PyObject *cell = raw;
+    if (boxes) {
+      cell = kos_datum_from_spine_cell(e, subj, start + i, raw);
+      if (! cell) {
+        Py_DECREF(t);
+        return NULL;
+      }
     }
     PyTuple_SET_ITEM(t, i, cell);
   }

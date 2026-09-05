@@ -67,9 +67,9 @@ class TestMatcherFromTuple(unittest.TestCase):
         result = m.match(subj, symbol=symbol)
         self.assertIsInstance(result, MatchResult)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"].datum, subj[0])
+        self.assertIs(result.captures["name"], subj[0])
         self.assertEqual(
-            result.captures["body"].datum, ("b1", "b2"))
+            result.captures["body"], ("b1", "b2"))
 
 
     def test_thaw_round_trips_dict_captures(self):
@@ -93,7 +93,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         result = m.match([7, 8])
         self.assertTrue(result.matched)
         self.assertEqual(
-            {k: v.datum for k, v in result.captures.items()},
+            dict(result.captures),
             {"a": 7, "b": 8})
 
 
@@ -148,13 +148,13 @@ class TestMatcherFromTuple(unittest.TestCase):
 
         r1 = m.match(["X"])
         self.assertTrue(r1.matched)
-        self.assertEqual(r1.captures["xs"].datum, "X")
+        self.assertEqual(r1.captures["xs"], "X")
         self.assertNotIn("ys", r1.captures)
 
         r2 = m.match(["Y"])
         self.assertTrue(r2.matched)
         self.assertNotIn("xs", r2.captures)
-        self.assertEqual(r2.captures["ys"].datum, "Y")
+        self.assertEqual(r2.captures["ys"], "Y")
 
 
     def test_thaw_raises_on_wrong_tuple_length(self):
@@ -188,7 +188,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         self.assertEqual(list(result.captures.keys()), ["outer"])
         inner = result.captures["outer"]
         self.assertIsInstance(inner, dict)
-        self.assertEqual(inner["inner"].datum, 42)
+        self.assertEqual(inner["inner"], 42)
 
 
     def test_thaw_raises_on_oob_slot_index(self):
@@ -256,7 +256,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         m = thaw(frozen)
         result = m.match([42])
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["x"].datum, 42)
+        self.assertEqual(result.captures["x"], 42)
 
 
     def test_thaw_class_kw_and_pos_round_trip(self):
@@ -292,8 +292,8 @@ class TestMatcherFromTuple(unittest.TestCase):
         p.y = 20
         result = m.match((p,), Point=Point)
         self.assertTrue(result.matched)
-        self.assertEqual(result.captures["x"].datum, 10)
-        self.assertEqual(result.captures["y"].datum, 20)
+        self.assertEqual(result.captures["x"], 10)
+        self.assertEqual(result.captures["y"], 20)
 
         not_point = object()
         result_bad = m.match((not_point,), Point=Point)

@@ -666,7 +666,7 @@ class TestAppMatching(unittest.TestCase):
         m = thaw(_frozen(pat))
         r = m.match((5,), f=afn)
         self.assertTrue(r.matched)
-        self.assertEqual(r.captures["x"].datum, 10)
+        self.assertEqual(r.captures["x"], 10)
 
     def test_suspending_extractor_raises_sync_violation(self):
         import asyncio
