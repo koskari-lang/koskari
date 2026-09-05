@@ -1,5 +1,5 @@
-# date: 2026-09-04
-# sha: 54572e23
+# date: 2026-09-05
+# sha: 7e939544
 # trace: design/trace/trace-20260904-0851.json
 # extension: /home/siege/koskari/.tox/perf-opcodes/lib64/python3.12/site-packages/koskari/lib.cpython-312-x86_64-linux-gnu.so
 # clock: cycle-counter
@@ -115,7 +115,6 @@ JUMP_TRUE	164	1369900	8	0.800	11012630	0.005	0.008
 LABEL	48						
 LOCALS	124						
 MATCH_CASE	846	16888760	60	52.800	1016023342	0.457	0.096
-MATCH_STORE_NAMES	420	3555520	125	117.800	446762878	0.201	0.020
 NILP	246						
 NOOP	48						
 OBJECT_BIT_INVERT	224						
