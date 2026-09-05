@@ -434,6 +434,45 @@ class TestCasePatternMatching(unittest.TestCase):
         self.assertEqual(caps["y"], 9)
         self.assertFalse(_match_value(pat, Point(1, 9), Point=Point)[0])
 
+    def test_virtual_class_still_matches(self):
+        """
+        A subject whose __class__ property reports another type is an
+        instance of that type for typed and class arms, as isinstance
+        says; a property reporting an unrelated type still misses
+        """
+
+        class Proxy(object):
+            def __init__(self, target, reported):
+                self.x = target.x
+                self.y = target.y
+                self._reported = reported
+
+            @property
+            def __class__(self):
+                return self._reported
+
+        class Other(object):
+            pass
+
+        typed = parse_case_pattern(
+            _delim(symbol("p"), keyword("::"), symbol("Point")))
+        klass = parse_case_pattern(_delim(
+            _list(symbol("item"), symbol("Point"),
+                  symbol("a"), symbol("b"))))
+
+        subject = Proxy(Point(3, 4), Point)
+        matched, caps = _match_value(typed, subject, Point=Point)
+        self.assertTrue(matched)
+        self.assertIs(caps["p"], subject)
+        matched, caps = _match_value(klass, subject, Point=Point)
+        self.assertTrue(matched)
+        self.assertEqual(caps["a"], 3)
+        self.assertEqual(caps["b"], 4)
+
+        unrelated = Proxy(Point(3, 4), Other)
+        self.assertFalse(_match_value(typed, unrelated, Point=Point)[0])
+        self.assertFalse(_match_value(klass, unrelated, Point=Point)[0])
+
     def test_or_alternation(self):
         pat = parse_case_pattern(_delim(_list(symbol("or"), 1, 2)))
         self.assertTrue(_match_value(pat, 1)[0])

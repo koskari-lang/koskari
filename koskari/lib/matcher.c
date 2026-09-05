@@ -926,12 +926,39 @@ PyObject *KosMatcherBuilder_Finalize(
    a virtual ``__class__``; any other metaclass) falls through to
    PyObject_IsInstance unchanged.
 */
+/* Interned "__class__" and object's own __class__ descriptor, created
+   by koskari_matcher_init and released by koskari_matcher_clear. */
+static PyObject *kos_class_name = NULL;
+static PyObject *kos_object_class_descr = NULL;
+
+
+/**
+   Whether isinstance's virtual-subclass fallback can change a nominal
+   miss for inst. object_isinstance reads inst.__class__ and accepts
+   when that is a subtype of cls, so the miss is final when the read
+   provably yields Py_TYPE(inst): the type resolves attributes
+   generically and __class__ on its MRO is object's own data
+   descriptor, which outranks any instance dict entry.
+*/
+static int matcher_nominal_miss_is_final(PyObject *inst) {
+  PyTypeObject *tp = Py_TYPE(inst);
+  if (tp->tp_getattro != PyObject_GenericGetAttr)
+    return 0;
+  if (! kos_object_class_descr)
+    return 0;
+  return PyType_Lookup(tp, kos_class_name) == kos_object_class_descr;
+}
+
+
 static int matcher_isinstance(PyObject *inst, PyObject *cls) {
   if (likely(PyType_Check(cls))) {
     PyTypeObject *meta = Py_TYPE(cls);
-    if (meta == &PyType_Type
-        && PyObject_TypeCheck(inst, (PyTypeObject *) cls))
-      return 1;
+    if (meta == &PyType_Type) {
+      if (PyObject_TypeCheck(inst, (PyTypeObject *) cls))
+        return 1;
+      if (matcher_nominal_miss_is_final(inst))
+        return 0;
+    }
   }
   return PyObject_IsInstance(inst, cls);
 }
@@ -2578,6 +2605,18 @@ int koskari_matcher_init(PyObject *mod) {
   if (! kos_match_args_name)
     return -1;
 
+  kos_class_name = PyUnicode_InternFromString("__class__");
+  if (! kos_class_name)
+    return -1;
+  kos_object_class_descr = PyType_Lookup(&PyBaseObject_Type,
+                                         kos_class_name);
+  if (! kos_object_class_descr) {
+    PyErr_SetString(PyExc_SystemError,
+                    "object.__class__ descriptor not found");
+    return -1;
+  }
+  Py_INCREF(kos_object_class_descr);
+
   if (PyDict_SetItemString(dict, "Matcher",
                            (PyObject *) &KosMatcherType))
     return -1;
@@ -2610,6 +2649,8 @@ int koskari_matcher_clear(PyObject *mod) {
   (void) mod;
   Py_CLEAR(kos_matcher_extern_defaults);
   Py_CLEAR(kos_match_args_name);
+  Py_CLEAR(kos_class_name);
+  Py_CLEAR(kos_object_class_descr);
   return 0;
 }
 
