@@ -63,7 +63,17 @@ does; `nbody` runs 24.0% fewer instructions and 24.2% fewer cycles,
 that the elector tests shifted by 2^40, a 128 GiB int that raises
 MemoryError on a normal build and trips the sanitizer's allocator
 limit; the sanitizer gate belongs in every step that writes into live
-objects.
+objects. FAST_ATTR_INPLACE followed as the first site with two slots:
+the field cache stays the first, untouched in layout, and the elector
+is the second. Its bodies re-check the field guard on every execution
+and take the mode and index from the field slot, load the accumulator
+borrowed from the slots member or the inline value, compute with it
+as the in-place candidate, and store through the same location only
+when a new object came back; a site elects on its second execution,
+once the generic body's first run has resolved the field slot. On
+the churn kernels against the merge baseline that is 47.7% fewer
+instructions and 43.2% fewer cycles on `field`, 46.8% and 44.8% on
+`field_slots`, 11.6% and 14.7% on `method`.
 
 **See also:** [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)
 (the per-site cache framework this extends),
@@ -454,9 +464,9 @@ Ranked by expected benefit against risk:
 6. **CHECK_COMPARE and OBJECT_COMPARE, cache-style.** Done, see the
    status above. CHECK_COMPARE_FAST stays on its inline arm, and the
    `_VAR` twins and `SWITCH_EQ*` stay on their ladders.
-7. **FAST_ATTR_INPLACE.** 9% of the churn time; the field cache already
-   guards the receiver, so the elected body is the fold on a peeked
-   attribute value.
+7. **FAST_ATTR_INPLACE.** Done, see the status above: the elector is
+   the site's second slot beside its field cache, and the body guards
+   through the field slot.
 
 ## Sizing
 
