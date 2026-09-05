@@ -34,13 +34,18 @@
    ungated site (no slot) take the family's electing function, which
    classifies the operands once and settles the slot.
 
-   Four families share the shape: OBJECT_OPERAND and OBJECT_INPLACE
-   read a pair off the stack and replace it with the result, and share
-   their int bodies; FAST_INPLACE reads its accumulator from a fast slot
-   and its operand off the stack; FAST_INPLACE_CONST reads the
-   accumulator from a fast slot and its operand from the pool. Each has
-   a generic body (the former handler out of line), one int body per
-   operator with an int fast path, and an electing function.
+   The arithmetic families share the shape: OBJECT_OPERAND and
+   OBJECT_INPLACE read a pair off the stack and replace it with the
+   result, and share their int bodies; FAST_INPLACE reads its
+   accumulator from a fast slot and its operand off the stack;
+   FAST_INPLACE_CONST reads the accumulator from a fast slot and its
+   operand from the pool. Each has a generic body (the former handler
+   out of line), one int body per operator with an int fast path, and
+   an electing function. The compare families have one int body each,
+   the selector being a site constant the mask compare reads:
+   CHECK_COMPARE takes the stack pair and jumps, OBJECT_COMPARE takes
+   it and pushes the bool. CHECK_COMPARE_FAST keeps its inline int arm
+   in the handler: measured with a slot it lost what the hop cost.
 
    See design/interpreter/electors.md.
 
@@ -127,11 +132,14 @@ KOS_ELECTOR_DECL(operand_generic)
 KOS_ELECTOR_DECL(inplace_generic)
 KOS_ELECTOR_DECL(fast_inplace_generic)
 KOS_ELECTOR_DECL(fast_inplace_const_generic)
+KOS_ELECTOR_DECL(check_compare_generic)
+KOS_ELECTOR_DECL(object_compare_generic)
 
 
 /* The generic body of an elector site, by its opcode. Read on the
-   miss and decline paths only. */
-static inline KosThreadFn kos_elector_generic_of(void *insn) {
+   miss and decline paths only, and kept out of line so the switch
+   does not grow every int body. */
+static KOS_NOINLINE KosThreadFn kos_elector_generic_of(void *insn) {
   switch (KosOp_OP(insn)) {
     case KOS_OP_OBJECT_OPERAND:
       return el_operand_generic;
@@ -139,8 +147,12 @@ static inline KosThreadFn kos_elector_generic_of(void *insn) {
       return el_inplace_generic;
     case KOS_OP_FAST_INPLACE:
       return el_fast_inplace_generic;
-    default:
+    case KOS_OP_FAST_INPLACE_CONST:
       return el_fast_inplace_const_generic;
+    case KOS_OP_CHECK_COMPARE:
+      return el_check_compare_generic;
+    default:
+      return el_object_compare_generic;
   }
 }
 
@@ -394,6 +406,173 @@ KOS_INT_ELECTORS(KOS_FAST_INPLACE_CONST_INT_BODY, fast_inplace_const)
 KOS_INT_ELECTOR_TABLE(fast_inplace_const)
 
 
+/* === Compare families === */
+
+
+/**
+   CHECK_COMPARE without an election: chain-compare the count operands
+   under the selector, drop them, jump on failure.
+*/
+KOS_ELECTOR(check_compare_generic) {
+  const KosExtra *row = KosOp_ROW(insn);
+  size_t count = (size_t) KosExtra_IMM(row, 1);
+  PyObject *const *args;
+  int res;
+
+  kos_elector_generic_tick(KosOp_SLOT(insn));
+  if (unlikely(count < 2)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "CHECK_COMPARE requires at least 2 elements");
+    RESULT_RAISE();
+  }
+
+  args = KosEvalState_StackTailPtr(es, count);
+  if (unlikely(! args))
+    RESULT_RAISE();
+
+  res = kos_compare_chain((KosCompare) KosExtra_IMM(row, 0), args, count);
+  KosEvalState_StackDropNoErr(es, count);
+  if (unlikely(res < 0))
+    RESULT_RAISE();
+  if (res == 0)
+    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 2));
+  RESULT_NEXT(es);
+}
+
+
+/**
+   CHECK_COMPARE's int body: the stack pair under a richcompare
+   selector, settled on the extracted values, dropped, then the jump.
+*/
+KOS_ELECTOR(check_compare_int) {
+  const KosExtra *row = KosOp_ROW(insn);
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);
+  long long a, b;
+  int held;
+
+  if (unlikely(! args))
+    RESULT_RAISE();
+  if (unlikely(! (PyLong_CheckExact(args[0])
+                  && PyLong_CheckExact(args[1]))))
+    TAILCALL(el_miss, es, insn, value);
+  if (unlikely(! kos_long_as_ll(args[0], &a)
+               || ! kos_long_as_ll(args[1], &b)))
+    TAILCALL(el_check_compare_generic, es, insn, value);
+
+  KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
+  held = kos_ll_compare((KosCompare) KosExtra_IMM(row, 0), a, b);
+  kos_stack_drop_noerr_fast(bl, 2);
+  if (held)
+    RESULT_NEXT(es);
+  RESULT_JUMP_AT(es, KosExtra_TARGET(row, 2));
+}
+
+
+/**
+   OBJECT_COMPARE without an election: chain-compare the count operands
+   under the selector and push the result.
+*/
+KOS_ELECTOR(object_compare_generic) {
+  uint16_t arg = KosOp_ARG(insn);
+  size_t count = (size_t) KosCmpCount_COUNT(arg);
+  PyObject *const *args;
+  PyObject *result;
+
+  kos_elector_generic_tick(KosOp_SLOT(insn));
+  if (unlikely(count < 2)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "OBJECT_COMPARE requires at least 2 elements");
+    RESULT_RAISE();
+  }
+
+  args = KosEvalState_StackTailPtr(es, count);
+  if (unlikely(! args))
+    RESULT_RAISE();
+
+  result = kos_compare_reduce((KosCompare) KosCmpCount_SEL(arg), args, count);
+  KosEvalState_StackDropNoErr(es, count);
+  if (unlikely(! result))
+    RESULT_RAISE();
+  RESULT_STEAL(es, result);
+}
+
+
+/**
+   OBJECT_COMPARE's int body: the stack pair under a richcompare
+   selector, replaced by the bool the mask compare settles on.
+*/
+KOS_ELECTOR(object_compare_int) {
+  uint16_t arg = KosOp_ARG(insn);
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);
+  long long a, b;
+
+  if (unlikely(! args))
+    RESULT_RAISE();
+  if (unlikely(! (PyLong_CheckExact(args[0])
+                  && PyLong_CheckExact(args[1]))))
+    TAILCALL(el_miss, es, insn, value);
+  if (unlikely(! kos_long_as_ll(args[0], &a)
+               || ! kos_long_as_ll(args[1], &b)))
+    TAILCALL(el_object_compare_generic, es, insn, value);
+
+  KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
+  kos_stack_replace2_fast(
+      bl, PyBool_FromLong(kos_ll_compare((KosCompare) KosCmpCount_SEL(arg), a, b)));
+  RESULT_NEXT(es);
+}
+
+
+/* A compare site elects its int body for a richcompare selector over
+   two exact ints, else NULL. */
+static inline KosThreadFn kos_elector_compare_body(
+    KosCompare sel,
+    PyObject *l,
+    PyObject *r,
+    KosThreadFn body) {
+
+  if (sel <= KOS_COMPARE_GE && l && r
+      && PyLong_CheckExact(l) && PyLong_CheckExact(r))
+    return body;
+  return NULL;
+}
+
+
+static inline KosThreadFn kos_elector_check_compare_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+  KosSegment *s = *KosEvalState_BLOCK(es);
+  PyObject *const *args;
+
+  if (KosExtra_IMM(row, 1) != 2 || ! s || s->len < 2)
+    return NULL;
+  args = kos_stack_tail_ptr_fast(s, 2);
+  return kos_elector_compare_body(
+      (KosCompare) KosExtra_IMM(row, 0), args[0], args[1],
+      el_check_compare_int);
+}
+
+
+static inline KosThreadFn kos_elector_object_compare_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  uint16_t arg = KosOp_ARG(insn);
+  KosSegment *s = *KosEvalState_BLOCK(es);
+  PyObject *const *args;
+
+  if (KosCmpCount_COUNT(arg) != 2 || ! s || s->len < 2)
+    return NULL;
+  args = kos_stack_tail_ptr_fast(s, 2);
+  return kos_elector_compare_body(
+      (KosCompare) KosCmpCount_SEL(arg), args[0], args[1],
+      el_object_compare_int);
+}
+
+
 /* === Election === */
 
 
@@ -479,6 +658,8 @@ KOS_ELECTOR_ELECT(operand, kos_elector_pair_classify)
 KOS_ELECTOR_ELECT(inplace, kos_elector_pair_classify)
 KOS_ELECTOR_ELECT(fast_inplace, kos_elector_fast_inplace_classify)
 KOS_ELECTOR_ELECT(fast_inplace_const, kos_elector_fast_inplace_const_classify)
+KOS_ELECTOR_ELECT(check_compare, kos_elector_check_compare_classify)
+KOS_ELECTOR_ELECT(object_compare, kos_elector_object_compare_classify)
 
 
 #undef KOS_ELECTOR_ELECT
