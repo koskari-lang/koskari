@@ -108,6 +108,7 @@ define MODULE_GROUPS #{
         "tools.editor_tokens.regen"
         "tools.matchbench"
         "tools.opgrams"
+        "tools.opsizing"
         "tools.perfstat"
         "tools.tools")
     }
