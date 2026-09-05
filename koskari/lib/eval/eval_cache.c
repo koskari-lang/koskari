@@ -688,6 +688,27 @@ static void field_slot_store(PyObject *obj, uint32_t offset, PyObject *val) {
 }
 
 
+/**
+   Take a __slots__ member at byte offset, which the caller has loaded
+   non-NULL: its reference becomes the caller's and the member reads as
+   unset until field_slot_put fills it.
+*/
+static PyObject *field_slot_take(PyObject *obj, uint32_t offset) {
+  PyObject **addr = (PyObject **) ((char *) obj + offset);
+  PyObject *val = *addr;
+  *addr = NULL;
+  return val;
+}
+
+
+/**
+   Fill a member vacated by field_slot_take with an OWNED val.
+*/
+static void field_slot_put(PyObject *obj, uint32_t offset, PyObject *val) {
+  *(PyObject **) ((char *) obj + offset) = val;
+}
+
+
 #if PY_MINOR_VERSION >= 11
 /**
    Read an inline instance value (KOS_FIELD_INSTANCE_VALUE) at its index.

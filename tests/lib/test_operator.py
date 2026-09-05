@@ -118,6 +118,57 @@ class TestOperatorAdd(unittest.IsolatedAsyncioTestCase):
         result = add("hello", " ", "world")
         self.assertEqual(result, "hello world")
 
+    async def test_strings_of_every_kind(self):
+        """+ joins pieces of every kind, at any count"""
+
+        add = getattr(lib, '+')
+        pieces = [
+            "", "ab", "caf\xe9", "\u4e2d\u6587", "\U0001f600!", "x" * 100]
+        for a in pieces:
+            for b in pieces:
+                self.assertEqual(add(a, b), a + b)
+                for c in pieces:
+                    result = add(a, b, c)
+                    self.assertEqual(result, a + b + c)
+                    self.assertIs(type(result), str)
+                    self.assertEqual(add(a, b, c, b, a), a + b + c + b + a)
+
+    async def test_strings_single_piece_join(self):
+        """+ over empties and one piece returns that piece"""
+
+        add = getattr(lib, '+')
+        piece = "only"
+        result = add("", piece, "")
+        self.assertIs(result, piece)
+        self.assertEqual(add("", "", ""), "")
+
+    async def test_string_subclass_keeps_its_add(self):
+        """a str subclass in the run folds through its own __add__"""
+
+        class Shout(str):
+            def __add__(self, other):
+                return Shout(str.__add__(self, other).upper())
+
+            def __radd__(self, other):
+                return Shout(str.__add__(other, self).upper())
+
+        add = getattr(lib, '+')
+        for args in (("a", Shout("b")), (Shout("a"), "b"),
+                     ("a", Shout("b"), "c"), (Shout("a"), "b", "c"),
+                     ("a", "b", Shout("c"))):
+            result = add(*args)
+            self.assertIs(type(result), Shout, args)
+            self.assertEqual(result, "".join(args).upper())
+
+    async def test_string_with_non_string_raises(self):
+        """+ over strs and a non-str raises TypeError at any count"""
+
+        add = getattr(lib, '+')
+        for args in (("a", 1), (1, "a"), ("a", "b", 1), ("a", 1, "b"),
+                     (1, "a", "b")):
+            with self.assertRaises(TypeError):
+                add(*args)
+
     async def test_lists(self):
         """+ concatenates lists"""
 
@@ -622,49 +673,82 @@ class TestOperatorComparisonChaining(unittest.IsolatedAsyncioTestCase):
 
 
 class TestOperatorBuildStr(unittest.IsolatedAsyncioTestCase):
-    """Tests for the build-str string concatenation operator"""
+    """Tests for the build_str string concatenation builder"""
 
     async def test_empty(self):
-        """build-str with no args returns empty string"""
+        """build_str with no args returns empty string"""
 
-        build_str = getattr(lib, 'build-str')
+        build_str = lib.build_str
         result = build_str()
         self.assertEqual(result, "")
 
     async def test_single_string(self):
-        """build-str with single string returns it"""
+        """build_str with single string returns it"""
 
-        build_str = getattr(lib, 'build-str')
+        build_str = lib.build_str
         result = build_str("hello")
         self.assertEqual(result, "hello")
 
     async def test_single_non_string(self):
-        """build-str converts non-string to string"""
+        """build_str converts non-string to string"""
 
-        build_str = getattr(lib, 'build-str')
+        build_str = lib.build_str
         result = build_str(42)
         self.assertEqual(result, "42")
 
     async def test_multiple_strings(self):
-        """build-str concatenates multiple strings"""
+        """build_str concatenates multiple strings"""
 
-        build_str = getattr(lib, 'build-str')
+        build_str = lib.build_str
         result = build_str("hello", " ", "world")
         self.assertEqual(result, "hello world")
 
     async def test_mixed_types(self):
-        """build-str concatenates mixed types"""
+        """build_str concatenates mixed types"""
 
-        build_str = getattr(lib, 'build-str')
+        build_str = lib.build_str
         result = build_str("value: ", 42, ", ratio: ", 3.14)
         self.assertEqual(result, "value: 42, ratio: 3.14")
 
     async def test_none_value(self):
-        """build-str handles None"""
+        """build_str handles None"""
 
-        build_str = getattr(lib, 'build-str')
+        build_str = lib.build_str
         result = build_str("prefix: ", None)
         self.assertEqual(result, "prefix: None")
+
+    async def test_every_kind(self):
+        """build_str joins pieces of every kind"""
+
+        build_str = lib.build_str
+        pieces = [
+            "", "ab", "caf\xe9", "\u4e2d\u6587", "\U0001f600!", "x" * 100]
+        for a in pieces:
+            for b in pieces:
+                for c in pieces:
+                    result = build_str(a, b, c)
+                    self.assertEqual(result, a + b + c)
+                    self.assertIs(type(result), str)
+                    self.assertEqual(
+                        build_str(a, 1, b, 2.5, c), f"{a}1{b}2.5{c}")
+
+    async def test_subclass_str_result(self):
+        """a __str__ returning a str subclass still joins"""
+
+        class Odd:
+            def __str__(self):
+                return Shout("odd")
+
+        class Shout(str):
+            pass
+
+        build_str = lib.build_str
+        result = build_str("a", Odd(), "b")
+        self.assertEqual(result, "aoddb")
+        self.assertIs(type(result), str)
+        result = build_str(Shout("a"), Shout("b"))
+        self.assertEqual(result, "ab")
+        self.assertIs(type(result), str)
 
 
 # The end.

@@ -498,6 +498,23 @@ static inline PyObject *kos_ns_fast_peek(PyObject *ns, size_t idx) {
 }
 
 
+/**
+   Take the bound value of a raw fast slot, leaving the slot empty: the
+   slot's reference becomes the caller's. NULL, with nothing touched,
+   for a ref slot or an empty one. For a handler that consumes the
+   value and stores a result back; a store that never comes leaves the
+   name unbound.
+*/
+static inline PyObject *kos_ns_fast_take(PyObject *ns, size_t idx) {
+  if (kos_ns_is_raw(ns, idx)) {
+    PyObject *val = KosNamespace_GET_FAST_VAL(ns, idx);
+    KosNamespace_GET_FAST_VAL(ns, idx) = NULL;
+    return val;
+  }
+  return NULL;
+}
+
+
 static inline int kos_ns_fast_store(PyObject *ns, size_t idx, PyObject *val) {
   if (kos_ns_is_raw(ns, idx)) {
     PyObject *old = KosNamespace_GET_FAST_VAL(ns, idx);

@@ -579,6 +579,114 @@ KOS_FLOAT_FAST_OBJECT_FORM(floor_divide)
 #undef KOS_FLOAT_FAST_OBJECT_FORM
 
 
+/* === PyUnicode fast paths === */
+
+/* Concatenation of exact strs, shaped like the numeric paths: a pair
+   form for the operator cores, an append form for a caller that owns
+   the left outright, and a join over any count for the reducing forms
+   of + and for build_str. A str subclass takes the generic path, so
+   its __add__ and __radd__ stay in charge. */
+
+/* str + str for two borrowed operands. Returns 1 with *out set, 0
+   when the pair is not two exact strs, -1 with an error set. */
+KOS_OP_INLINE int str_fast_add(PyObject *l, PyObject *r, PyObject **out) {
+  if (! (PyUnicode_CheckExact(l) && PyUnicode_CheckExact(r)))
+    return 0;
+  *out = PyUnicode_Concat(l, r);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+/* left += right for an OWNED exact str left and a borrowed exact str
+   right: the reference to left is consumed and *out is the result
+   reference. PyUnicode_Append grows the left in place under CPython's
+   own rule (a sole reference, no cached hash, not interned, the
+   right's kind no wider), so a loop growing one accumulator gets the
+   amortised resize that `s += x` gets in CPython, and concatenates
+   otherwise. The left may move, so the caller stores *out back to
+   wherever it lived. Returns 1, or -1 with an error set and the left
+   released. */
+KOS_OP_INLINE int str_fast_append(PyObject *left, PyObject *right, PyObject **out) {
+  *out = left;
+  PyUnicode_Append(out, right);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+/* The join of count borrowed operands: one allocation of the total
+   length at the widest kind, then each piece copied in; a single
+   non-empty piece is returned itself, as str.join does. Returns 1
+   with *out set, 0 when an operand is not an exact str (nothing
+   allocated), -1 with an error set. */
+static inline int str_fast_join(
+    PyObject *const *args, size_t count, PyObject **out) {
+
+  Py_ssize_t total = 0;
+  Py_UCS4 maxchar = 0;
+  PyObject *sole = NULL;
+  size_t pieces = 0;
+  PyObject *res;
+  Py_ssize_t pos = 0;
+
+  for (size_t i = 0; i < count; i++) {
+    PyObject *s = args[i];
+    Py_ssize_t n;
+    Py_UCS4 mc;
+
+    if (! PyUnicode_CheckExact(s))
+      return 0;
+#if PY_VERSION_HEX < 0x030c0000
+    if (unlikely(PyUnicode_READY(s) < 0))
+      return -1;
+#endif
+    n = PyUnicode_GET_LENGTH(s);
+    if (! n)
+      continue;
+    if (unlikely(n > PY_SSIZE_T_MAX - total)) {
+      PyErr_SetString(PyExc_OverflowError, "join() result is too long");
+      return -1;
+    }
+    total += n;
+    mc = PyUnicode_MAX_CHAR_VALUE(s);
+    if (mc > maxchar)
+      maxchar = mc;
+    sole = s;
+    pieces++;
+  }
+
+  if (pieces <= 1) {
+    if (sole) {
+      Py_INCREF(sole);
+      res = sole;
+    } else {
+      res = PyUnicode_New(0, 0);
+    }
+    *out = res;
+    return likely(res != NULL) ? 1 : -1;
+  }
+
+  res = PyUnicode_New(total, maxchar);
+  if (unlikely(! res))
+    return -1;
+
+  for (size_t i = 0; i < count; i++) {
+    PyObject *s = args[i];
+    Py_ssize_t n = PyUnicode_GET_LENGTH(s);
+
+    if (! n)
+      continue;
+    if (unlikely(PyUnicode_CopyCharacters(res, pos, s, 0, n) < 0)) {
+      Py_DECREF(res);
+      return -1;
+    }
+    pos += n;
+  }
+
+  *out = res;
+  return 1;
+}
+
+
 /* A richcompare selector over two doubles, with the C operators so a
    NaN answers as Python does: false to everything but not-equal. */
 KOS_OP_INLINE int kos_double_compare(KosCompare sel, double a, double b) {

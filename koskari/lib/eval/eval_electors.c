@@ -41,9 +41,11 @@
    FAST_INPLACE_CONST reads the accumulator from a fast slot and its
    operand from the pool. Each has a generic body (the former handler
    out of line), one int body per operator with an int fast path, one
-   float body per operator with a float fast path, and an electing
-   function. The compare families have one int body and one float
-   body each, the selector being a site constant the body reads:
+   float body per operator with a float fast path, a str body for +,
+   and an electing function; the two stack families also elect a join
+   body on a run of three or more strs. The compare families have one
+   int body and one float body each, the selector being a site
+   constant the body reads:
    CHECK_COMPARE takes the stack pair and jumps, OBJECT_COMPARE takes
    it and pushes the bool. CHECK_COMPARE_FAST keeps its inline int arm
    in the handler: measured with a slot it lost what the hop cost.
@@ -527,6 +529,114 @@ KOS_FLOAT_ELECTORS(KOS_FAST_INPLACE_CONST_FLOAT_BODY, fast_inplace_const)
 KOS_FLOAT_ELECTOR_TABLE(fast_inplace_const)
 
 
+/* === Str bodies === */
+
+
+/* One str body per family for + on an exact-str pair, and for the two
+   stack families a join body for a site of more than two operands.
+   The guard is the exact-str check, so a str subclass misses and
+   keeps its __add__. The left operand or the accumulator is taken
+   from its home and handed to str_fast_append, which grows it in
+   place when the home held the only reference and concatenates
+   otherwise; the result goes back to the same home. A failed append
+   has released the left and leaves the home vacant: the stack pair
+   shrinks to the right operand, a fast slot or a __slots__ member
+   reads as unbound, as a local does in CPython. */
+
+
+KOS_ELECTOR(pair_str_add) {
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);
+  PyObject *out;
+
+  KOS_ELECTOR_PAIR_SAFETYNET(insn);
+  if (unlikely(! args))
+    RESULT_RAISE();
+  if (unlikely(! (PyUnicode_CheckExact(args[0])
+                  && PyUnicode_CheckExact(args[1]))))
+    TAILCALL(el_miss, es, insn, value);
+
+  if (unlikely(str_fast_append(args[0], args[1], &out) < 0)) {
+    kos_stack_settle2_fast(bl, NULL);
+    RESULT_RAISE();
+  }
+  KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
+  kos_stack_settle2_fast(bl, out);
+  RESULT_NEXT(es);
+}
+
+
+/* The join body: every operand of the run an exact str, or a miss;
+   one allocation replaces the run. */
+KOS_ELECTOR(pair_str_join) {
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  size_t count = KosOpCount_COUNT(KosOp_ARG(insn));
+  PyObject *const *args = kos_stack_tail_ptr_fast(*bl, count);
+  PyObject *out;
+  int rc;
+
+  if (unlikely(! args))
+    RESULT_RAISE();
+  rc = str_fast_join(args, count, &out);
+  if (unlikely(rc <= 0)) {
+    if (rc < 0)
+      RESULT_RAISE();
+    TAILCALL(el_miss, es, insn, value);
+  }
+  KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
+  kos_stack_drop_noerr_fast(bl, count);
+  if (unlikely(kos_stack_push_steal_fast(bl, out) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/* The str body of a family whose accumulator is a fast slot: a raw
+   slot's value is taken, so the append can grow it in place; a ref
+   slot keeps its reference and the append concatenates. */
+#define KOS_SLOT_STR_ELECTOR(FAMILY, RHS, DROP)                         \
+  KOS_ELECTOR(FAMILY##_str_add) {                                       \
+    const KosExtra *row = KosOp_ROW(insn);                              \
+    size_t idx = (size_t) KosExtra_IMM(row, 1);                         \
+    PyObject *ns = KosEvalState_NAMESPACE(es);                          \
+    PyObject *acc;                                                      \
+    PyObject *rhs;                                                      \
+    PyObject *left;                                                     \
+    PyObject *out;                                                      \
+                                                                        \
+    KOS_OP_REQUIRE_NS(ns);                                              \
+    acc = kos_ns_fast_peek(ns, idx);                                    \
+    rhs = (RHS);                                                        \
+    if (unlikely(! rhs))                                                \
+      RESULT_RAISE();                                                   \
+    if (unlikely(! acc || ! PyUnicode_CheckExact(acc)                   \
+                 || ! PyUnicode_CheckExact(rhs)))                       \
+      TAILCALL(el_miss, es, insn, value);                               \
+                                                                        \
+    left = kos_ns_fast_take(ns, idx);                                   \
+    if (! left) {                                                       \
+      left = acc;                                                       \
+      Py_INCREF(left);                                                  \
+    }                                                                   \
+    if (unlikely(str_fast_append(left, rhs, &out) < 0))                 \
+      RESULT_RAISE();                                                   \
+    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
+    DROP;                                                               \
+    if (unlikely(kos_ns_fast_store_steal(ns, idx, out) < 0))            \
+      RESULT_RAISE();                                                   \
+    RESULT_NEXT(es);                                                    \
+  }
+
+KOS_SLOT_STR_ELECTOR(
+    fast_inplace,
+    kos_stack_peek_top(es),
+    kos_stack_drop1_fast(KosEvalState_BLOCK(es)))
+KOS_SLOT_STR_ELECTOR(
+    fast_inplace_const,
+    KosExtra_OBJ(row, 2),
+    ((void) 0))
+
+
 /* === Compare families === */
 
 
@@ -754,7 +864,8 @@ static inline KosThreadFn kos_elector_num_body(
     PyObject *l,
     PyObject *r,
     const KosThreadFn *int_table,
-    const KosThreadFn *float_table);
+    const KosThreadFn *float_table,
+    KosThreadFn str_add);
 
 
 /* === FAST_ATTR_INPLACE family === */
@@ -920,6 +1031,40 @@ KOS_FLOAT_ELECTORS(KOS_ATTR_FLOAT_ELECTOR, fast_attr_inplace)
 KOS_FLOAT_ELECTOR_TABLE(fast_attr_inplace)
 
 
+/**
+   The str body of an attribute site: a __slots__ member is taken and
+   the append grows it in place when the instance held the only
+   reference; an inline value is concatenated and stored through the
+   location, since a vacated inline value would need the first-store
+   bookkeeping the direct store leaves to setattr.
+*/
+KOS_ELECTOR(fast_attr_inplace_str_add) {
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *obj, *rhs, *acc, *out;
+  KosFieldMode mode;
+  uint32_t index;
+
+  KOS_ATTR_ELECTOR_HEAD(obj, rhs, mode, index, acc);
+  if (unlikely(! PyUnicode_CheckExact(acc) || ! PyUnicode_CheckExact(rhs)))
+    TAILCALL(el_miss, es, insn, value);
+
+  if (mode == KOS_FIELD_SLOT) {
+    if (unlikely(str_fast_append(field_slot_take(obj, index), rhs, &out) < 0))
+      RESULT_RAISE();
+    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
+    field_slot_put(obj, index, out);
+    kos_stack_drop1_fast(KosEvalState_BLOCK(es));
+  } else {
+    out = PyUnicode_Concat(acc, rhs);
+    if (unlikely(! out))
+      RESULT_RAISE();
+    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
+    KOS_ATTR_ELECTOR_STORE(obj, mode, index, acc, out);
+  }
+  RESULT_NEXT(es);
+}
+
+
 /* The classification of a FAST_ATTR_INPLACE site: one operand, the
    field slot resolved to a direct location for the receiver's type,
    and the accumulator and operand an exact int or float pair. */
@@ -942,7 +1087,8 @@ static inline KosThreadFn kos_elector_fast_attr_inplace_classify(
   acc = kos_field_direct_load(obj, field->u.field.mode, field->u.field.index);
   return kos_elector_num_body(
       (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)), acc, rhs,
-      kos_fast_attr_inplace_int_bodies, kos_fast_attr_inplace_float_bodies);
+      kos_fast_attr_inplace_int_bodies, kos_fast_attr_inplace_float_bodies,
+      el_fast_attr_inplace_str_add);
 }
 
 
@@ -969,13 +1115,15 @@ KOS_ELECTOR(fast_attr_inplace_elect) {
 
 /* The body a site elects for two borrowed operands: the operator's
    entry in the family's int table when both are exact ints, in its
-   float table when both are exact floats, else NULL. */
+   float table when both are exact floats, the family's str body for
+   + on two exact strs, else NULL. */
 static inline KosThreadFn kos_elector_num_body(
     KosOperand op,
     PyObject *l,
     PyObject *r,
     const KosThreadFn *int_table,
-    const KosThreadFn *float_table) {
+    const KosThreadFn *float_table,
+    KosThreadFn str_add) {
 
   if (op >= KOS_OPERAND_COUNT || ! l || ! r)
     return NULL;
@@ -983,23 +1131,37 @@ static inline KosThreadFn kos_elector_num_body(
     return int_table[op];
   if (PyFloat_CheckExact(l) && PyFloat_CheckExact(r))
     return float_table[op];
+  if (op == KOS_OPERAND_ADD
+      && PyUnicode_CheckExact(l) && PyUnicode_CheckExact(r))
+    return str_add;
   return NULL;
 }
 
 
-/* The classification of a stack-pair site: binary, with the pair on
-   the stack. */
+/* The classification of a stack-pair site: binary with the pair on
+   the stack, or + over a run of exact strs. */
 static inline KosThreadFn kos_elector_pair_classify(KosEvalState *es, void *insn) {
   uint16_t arg = KosOp_ARG(insn);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
+  size_t count = KosOpCount_COUNT(arg);
   KosSegment *s = *KosEvalState_BLOCK(es);
   PyObject *const *args;
 
-  if (KosOpCount_COUNT(arg) != 2 || ! s || s->len < 2)
+  if (count < 2 || ! s || s->len < count)
     return NULL;
-  args = kos_stack_tail_ptr_fast(s, 2);
+  args = kos_stack_tail_ptr_fast(s, count);
+  if (count > 2) {
+    if (op != KOS_OPERAND_ADD)
+      return NULL;
+    for (size_t i = 0; i < count; i++) {
+      if (! PyUnicode_CheckExact(args[i]))
+        return NULL;
+    }
+    return el_pair_str_join;
+  }
   return kos_elector_num_body(
-      (KosOperand) KosOpCount_TYPE(arg), args[0], args[1],
-      kos_pair_int_bodies, kos_pair_float_bodies);
+      op, args[0], args[1],
+      kos_pair_int_bodies, kos_pair_float_bodies, el_pair_str_add);
 }
 
 
@@ -1017,7 +1179,8 @@ static inline KosThreadFn kos_elector_fast_inplace_classify(
 
   return kos_elector_num_body(
       (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)), acc, rhs,
-      kos_fast_inplace_int_bodies, kos_fast_inplace_float_bodies);
+      kos_fast_inplace_int_bodies, kos_fast_inplace_float_bodies,
+      el_fast_inplace_str_add);
 }
 
 
@@ -1034,7 +1197,8 @@ static inline KosThreadFn kos_elector_fast_inplace_const_classify(
   return kos_elector_num_body(
       (KosOperand) KosExtra_IMM(row, 0), acc, KosExtra_OBJ(row, 2),
       kos_fast_inplace_const_int_bodies,
-      kos_fast_inplace_const_float_bodies);
+      kos_fast_inplace_const_float_bodies,
+      el_fast_inplace_const_str_add);
 }
 
 
@@ -1074,6 +1238,7 @@ KOS_ELECTOR_ELECT(object_compare, kos_elector_object_compare_classify)
 #undef KOS_FLOAT_ELECTORS
 #undef KOS_INT_ELECTOR_TABLE
 #undef KOS_INT_ELECTORS
+#undef KOS_SLOT_STR_ELECTOR
 #undef KOS_SLOT_FLOAT_ELECTOR
 #undef KOS_SLOT_INT_ELECTOR
 #undef KOS_PAIR_FLOAT_ELECTOR

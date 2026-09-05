@@ -427,6 +427,29 @@ int KosStack_Replace2(KosSegment **self, PyObject *val) {
 }
 
 
+int KosStack_Settle2(KosSegment **self, PyObject *val) {
+  KosSegment *s = *self;
+  if (unlikely(! s || KosSegment_LEN(s) < 2)) {
+    Py_XDECREF(val);
+    PyErr_SetString(PyExc_RuntimeError, "stack settle underrun");
+    return -1;
+  }
+
+  size_t len = KosSegment_LEN(s);
+  PyObject *right = s->objs[len - 1];
+
+  KosSegment_LEN(s) = len - 1;
+  if (val) {
+    s->objs[len - 2] = val;
+    Py_DECREF(right);
+  } else {
+    s->objs[len - 2] = right;
+  }
+
+  return 0;
+}
+
+
 int KosStack_Drop(KosSegment **self, size_t count) {
   if (unlikely(! count))
     return 0;
