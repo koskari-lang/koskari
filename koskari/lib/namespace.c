@@ -2702,6 +2702,9 @@ int KosSlotMap_Valid(PyObject *map, PyObject *ns) {
     PyObject *b = PyTuple_GET_ITEM(m->layout, i);
     if (a == b)
       continue;
+    /* An entry stays NULL for a global sym with no parent chain. */
+    if (! a || ! b)
+      return 0;
     int eq = PyObject_RichCompareBool(a, b, Py_EQ);
     if (eq < 0)
       return -1;

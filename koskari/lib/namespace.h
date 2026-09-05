@@ -380,13 +380,6 @@ typedef struct KosSlotMap {
 extern PyTypeObject KosSlotMapType;
 
 
-#define KosSlotMap_Check(obj)                                   \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosSlotMapType))
-
-#define KosSlotMap_NAMES(map)  (((KosSlotMap *) (map))->names)
-#define KosSlotMap_INDEX(map, i)  (((KosSlotMap *) (map))->indices[(i)])
-
-
 /**
    Resolve names (a tuple[str]) against the layout of ns. New
    reference, or NULL with an exception set.

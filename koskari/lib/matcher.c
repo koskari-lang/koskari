@@ -983,13 +983,12 @@ static int matcher_isinstance(PyObject *inst, PyObject *cls) {
 /**
    One recorded slot write, undone by engine_rollback. A root write
    (dict NULL) moves the previous array entry into old_value; a GROUP
-   frame write holds a ref to the frame and the previous value, if the
-   key existed.
+   frame write holds a ref to the frame and the previous value. A NULL
+   old_value means the slot was unbound before the write.
 */
 typedef struct {
   PyObject *dict;        /* GROUP frame, or NULL for the root array */
   uint32_t slot_idx;
-  int had_old;
   PyObject *old_value;
 } DictChange;
 
@@ -1304,7 +1303,6 @@ static int engine_set_slot(
     ch->dict = NULL;
     ch->slot_idx = slot;
     ch->old_value = e->root_slots[slot];
-    ch->had_old = ch->old_value != NULL;
     e->change_count++;
     e->root_slots[slot] = value;
     kos_datum_annotate_binding(value, name);
@@ -1322,14 +1320,8 @@ static int engine_set_slot(
   ch->dict = d;
   Py_INCREF(d);
   ch->slot_idx = slot;
-  if (prev) {
-    ch->had_old = 1;
-    ch->old_value = prev;
-    Py_INCREF(prev);
-  } else {
-    ch->had_old = 0;
-    ch->old_value = NULL;
-  }
+  Py_XINCREF(prev);
+  ch->old_value = prev;
   e->change_count++;
 
   if (PyDict_SetItem(d, name, value)) {
@@ -1358,7 +1350,7 @@ static void engine_rollback(MatchEngine *e, Py_ssize_t snapshot) {
       continue;
     }
     PyObject *name = PyTuple_GET_ITEM(e->m->slots, c->slot_idx);
-    if (! c->had_old) {
+    if (! c->old_value) {
       if (PyDict_DelItem(c->dict, name)) {
         if (PyErr_ExceptionMatches(PyExc_KeyError))
           PyErr_Clear();
@@ -1820,10 +1812,9 @@ int KosMatcher_RunSlots(
     Py_ssize_t n_extern_env,
     PyObject **out_slots) {
 
-  if (! m || ! subj || ! out_slots) {
+  if (! m || ! out_slots) {
     PyErr_SetString(PyExc_ValueError,
-                    "KosMatcher_RunSlots requires matcher, subject, "
-                    "and out");
+                    "KosMatcher_RunSlots requires matcher and out");
     return -1;
   }
 
@@ -1831,6 +1822,12 @@ int KosMatcher_RunSlots(
   Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
   for (Py_ssize_t i = 0; i < n_slots; i++)
     out_slots[i] = NULL;
+
+  if (! subj) {
+    PyErr_SetString(PyExc_ValueError,
+                    "KosMatcher_RunSlots requires a subject");
+    return -1;
+  }
 
   Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
   if (n_extern_env != n_externs) {
