@@ -2633,7 +2633,9 @@ PyObject *KosModule_New(PyObject *namespace) {
 
 
 static void slotmap_dealloc(PyObject *self) {
+
   KosSlotMap *m = (KosSlotMap *) self;
+
   Py_XDECREF(m->names);
   Py_XDECREF(m->layout);
   Py_TYPE(self)->tp_free(self);
@@ -2653,6 +2655,7 @@ PyTypeObject KosSlotMapType = {
 
 
 PyObject *KosSlotMap_New(PyObject *ns, PyObject *names) {
+
   if (! names || ! PyTuple_Check(names)) {
     PyErr_SetString(PyExc_TypeError, "SlotMap requires a names tuple");
     return NULL;
@@ -2680,6 +2683,7 @@ PyObject *KosSlotMap_New(PyObject *ns, PyObject *names) {
 
 
 int KosSlotMap_Valid(PyObject *map, PyObject *ns) {
+
   KosSlotMap *m = (KosSlotMap *) map;
   PyObject *layout = kos_ns_layout(ns);
 

@@ -917,17 +917,9 @@ PyObject *KosMatcherBuilder_Finalize(
 
 
 /**
-   isinstance for pattern tests: a dispatch-free shortcut for the
-   affirmative case. When cls is a type whose metaclass is exactly
-   ``type`` -- which cannot carry a custom ``__instancecheck__`` -- a
-   nominal identity/MRO hit is provably the same answer isinstance
-   would give, without the metaclass method dispatch. Everything the
-   shortcut cannot prove (a nominal miss, which may still match through
-   a virtual ``__class__``; any other metaclass) falls through to
-   PyObject_IsInstance unchanged.
+   Interned "__class__" and object's own __class__ descriptor, created
+   by koskari_matcher_init and released by koskari_matcher_clear.
 */
-/* Interned "__class__" and object's own __class__ descriptor, created
-   by koskari_matcher_init and released by koskari_matcher_clear. */
 static PyObject *kos_class_name = NULL;
 static PyObject *kos_object_class_descr = NULL;
 
@@ -941,7 +933,9 @@ static PyObject *kos_object_class_descr = NULL;
    descriptor, which outranks any instance dict entry.
 */
 static int matcher_nominal_miss_is_final(PyObject *inst) {
+
   PyTypeObject *tp = Py_TYPE(inst);
+
   if (tp->tp_getattro != PyObject_GenericGetAttr)
     return 0;
   if (! kos_object_class_descr)
@@ -950,6 +944,15 @@ static int matcher_nominal_miss_is_final(PyObject *inst) {
 }
 
 
+/**
+   isinstance for pattern tests, dispatch-free in both directions when
+   cls is a type whose metaclass is exactly ``type``, which cannot
+   carry a custom ``__instancecheck__``: a nominal identity/MRO hit is
+   the answer isinstance would give, and a nominal miss is final when
+   matcher_nominal_miss_is_final proves the virtual ``__class__`` read
+   cannot change it. Any other metaclass, and a miss the proof does
+   not cover, fall through to PyObject_IsInstance unchanged.
+*/
 static int matcher_isinstance(PyObject *inst, PyObject *cls) {
   if (likely(PyType_Check(cls))) {
     PyTypeObject *meta = Py_TYPE(cls);
@@ -1260,8 +1263,8 @@ static int engine_grow_changes(MatchEngine *e, Py_ssize_t need) {
   if (e->change_stack == e->change_inline) {
     nn = PyMem_Malloc(cap * sizeof(DictChange));
     if (nn)
-      memcpy(nn, e->change_inline,
-             e->change_count * sizeof(DictChange));
+      memcpy(
+          nn, e->change_inline, e->change_count * sizeof(DictChange));
   } else {
     nn = PyMem_Realloc(e->change_stack, cap * sizeof(DictChange));
   }
@@ -1684,7 +1687,9 @@ static int match_node(
 
 
 static void matcher_clear_slots(KosMatcher *m, PyObject **slots) {
+
   Py_ssize_t n_slots = PyTuple_GET_SIZE(m->slots);
+
   for (Py_ssize_t i = 0; i < n_slots; i++)
     Py_CLEAR(slots[i]);
 }
@@ -1978,7 +1983,9 @@ typedef struct {
 
 
 static void matcher_env_release(MatcherEnv *r) {
+
   PyObject **buf = r->buf ? r->buf : r->inline_buf;
+
   for (Py_ssize_t i = 0; i < r->owned; i++)
     Py_DECREF(buf[i]);
   PyMem_Free(r->buf);
@@ -2097,8 +2104,8 @@ int KosMatcher_RunVectorcall(
   MatcherEnv r;
   if (matcher_env_resolve(m, ext_values, ext_names, &r))
     return -1;
-  int matched = KosMatcher_Run(m, subj, r.env,
-                               PyTuple_GET_SIZE(m->externs), out_caps);
+  int matched = KosMatcher_Run(
+      m, subj, r.env, PyTuple_GET_SIZE(m->externs), out_caps);
   matcher_env_release(&r);
   return matched;
 }
@@ -2615,8 +2622,8 @@ int koskari_matcher_init(PyObject *mod) {
   kos_class_name = PyUnicode_InternFromString("__class__");
   if (! kos_class_name)
     return -1;
-  kos_object_class_descr = PyType_Lookup(&PyBaseObject_Type,
-                                         kos_class_name);
+  kos_object_class_descr = PyType_Lookup(
+      &PyBaseObject_Type, kos_class_name);
   if (! kos_object_class_descr) {
     PyErr_SetString(PyExc_SystemError,
                     "object.__class__ descriptor not found");
