@@ -642,8 +642,14 @@ int KosMatcherBuilder_AppendClass(
     }
   }
 
+  uint32_t num_positional = 0;
   for (Py_ssize_t i = 0; i + 1 < count; i++)
     b->nodes[fields[i]].next = fields[i + 1];
+  for (Py_ssize_t i = 0; i < count; i++) {
+    if (b->nodes[fields[i]].as.field.field_kind
+        == KOS_MATCH_FIELD_POSITIONAL)
+      num_positional++;
+  }
 
   if (builder_grow_nodes(b, 1))
     return -1;
@@ -658,6 +664,7 @@ int KosMatcherBuilder_AppendClass(
   n->as.class_.type_extern = type_extern;
   n->as.class_.first_field =
       (count > 0) ? fields[0] : KOS_MATCH_NO_INDEX;
+  n->as.class_.num_positional = num_positional;
   b->node_count++;
 
   if (off > (Py_ssize_t) 0x7FFFFFFE) {
@@ -1403,16 +1410,8 @@ static int match_projected_value(
   if (subnode == KOS_MATCH_NO_INDEX)
     return 1;
 
-  PyObject *one = PyTuple_Pack(1, val);
-  if (! one)
-    return -1;
-
   KosMatchSubject sub;
-  if (KosMatchSubject_FromPySequence(one, &sub)) {
-    Py_DECREF(one);
-    return -1;
-  }
-  Py_DECREF(one);
+  KosMatchSubject_FromSingle(val, &sub);
 
   KosMatchSubject *saved = e->subj;
   e->subj = &sub;
@@ -1420,13 +1419,12 @@ static int match_projected_value(
   Py_ssize_t sub_cursor = 0;
   int r = match_node(e, subnode, &sub_cursor, 0);
 
-  Py_ssize_t sub_length = sub.vt->length(&sub);
   e->subj = saved;
   KosMatchSubject_Release(&sub);
 
   if (r != 1)
     return r;
-  if (sub_cursor != sub_length)
+  if (sub_cursor != 1)
     return 0;
   return 1;
 }
@@ -2346,6 +2344,10 @@ int koskari_matcher_init(PyObject *mod) {
   if (PyType_Ready(&KosDatumFrameType))
     return -1;
 
+  kos_match_args_name = PyUnicode_InternFromString("__match_args__");
+  if (! kos_match_args_name)
+    return -1;
+
   if (PyDict_SetItemString(dict, "Matcher",
                            (PyObject *) &KosMatcherType))
     return -1;
@@ -2377,6 +2379,7 @@ int koskari_matcher_init(PyObject *mod) {
 int koskari_matcher_clear(PyObject *mod) {
   (void) mod;
   Py_CLEAR(kos_matcher_extern_defaults);
+  Py_CLEAR(kos_match_args_name);
   return 0;
 }
 

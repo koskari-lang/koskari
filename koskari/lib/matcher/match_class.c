@@ -2,6 +2,11 @@
 /* === CLASS / FIELD matching === */
 
 
+/* Interned "__match_args__", created by koskari_matcher_init and
+   released by koskari_matcher_clear. */
+static PyObject *kos_match_args_name = NULL;
+
+
 /**
    FIELDs are inert as outer-spine atoms; only meaningful as
    descendants of a CLASS chain. The structural validator rejects
@@ -181,18 +186,11 @@ static int match_class(
   if (! isinst)
     return 0;
 
-  Py_ssize_t num_positional = 0;
-  for (uint32_t fidx = n->as.class_.first_field;
-       fidx != KOS_MATCH_NO_INDEX;
-       fidx = e->m->nodes[fidx].next) {
-    KosMatchNode *fn = &e->m->nodes[fidx];
-    if (fn->as.field.field_kind == KOS_MATCH_FIELD_POSITIONAL)
-      num_positional++;
-  }
+  Py_ssize_t num_positional = (Py_ssize_t) n->as.class_.num_positional;
 
   PyObject *match_args = NULL;
   if (num_positional > 0) {
-    match_args = PyObject_GetAttrString(cls, "__match_args__");
+    match_args = PyObject_GetAttr(cls, kos_match_args_name);
     if (! match_args) {
       if (PyErr_ExceptionMatches(PyExc_AttributeError))
         PyErr_Clear();

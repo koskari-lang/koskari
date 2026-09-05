@@ -151,6 +151,9 @@ typedef struct {
 typedef struct {
   uint32_t type_extern;   /* index into matcher->externs / extern_env */
   uint32_t first_field;   /* head of FIELD chain; NO_INDEX if empty */
+  uint32_t num_positional; /* POSITIONAL FIELDs on the chain, counted
+                              by the builder; 0 skips the
+                              __match_args__ lookup at match time */
 } KosMatchClass;
 
 
