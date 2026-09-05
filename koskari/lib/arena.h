@@ -54,6 +54,12 @@ typedef struct KosArena {
 } KosArena;
 
 
+/* Every reservation starts on this boundary: members hold 32-byte
+   instruction records that must not straddle a cache line, and a
+   planner sizing an arena from its members' footprints aligns each
+   to it. Exposed to Python as Arena.UNIT. */
+#define KOS_ARENA_UNIT 32
+
 #define KosArena_BASE(a)    (((KosArena *)(a))->base)
 #define KosArena_SIZE(a)    (((KosArena *)(a))->size)
 #define KosArena_FILL(a)    (((KosArena *)(a))->fill)

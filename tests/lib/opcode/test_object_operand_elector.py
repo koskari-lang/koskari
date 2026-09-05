@@ -122,9 +122,21 @@ class TestObjectOperandElector(CevalTest):
             (7, 3), (-7, 3), (7, -3), (0, 5), (2 ** 40, 2),
             (2 ** 62, 2), (2 ** 100, 3), (-(2 ** 60), 3),
         ]
+        # shift counts stay small: a count of 2 ** 40 asks Python for
+        # a 128 GiB int, which raises MemoryError here and aborts a
+        # sanitizer build's allocator
+        shift_pairs = [
+            (7, 3), (-7, 3), (7, -3), (0, 5), (2 ** 40, 29),
+            (2 ** 62, 2), (2 ** 100, 3), (-(2 ** 60), 63),
+        ]
         for opname, pyop in OPERATORS:
             site, _ = make_site(opname)
-            chosen = power_pairs if opname == 'OBJECT_POWER' else pairs
+            if opname == 'OBJECT_POWER':
+                chosen = power_pairs
+            elif opname in ('OBJECT_BIT_LEFT', 'OBJECT_BIT_RIGHT'):
+                chosen = shift_pairs
+            else:
+                chosen = pairs
             for a, b in chosen:
                 try:
                     expected = pyop(a, b)

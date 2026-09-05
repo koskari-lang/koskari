@@ -52,7 +52,7 @@ SHIFT_COUNTS = [0, 1, 3, 29, 30, 31, 33, 60, 62, 63, 64, 100]
 OPERATORS = [
     ('kos_add', operator.add), ('kos_sub', operator.sub),
     ('kos_mul', operator.mul), ('kos_mod', operator.mod),
-    ('kos_floordiv', operator.floordiv),
+    ('kos_floordiv', operator.floordiv), ('kos_truediv', operator.truediv),
     ('kos_and', operator.and_), ('kos_or', operator.or_),
     ('kos_xor', operator.xor),
     ('kos_lt', operator.lt), ('kos_le', operator.le),
@@ -81,7 +81,7 @@ class TestIntDigits(unittest.IsolatedAsyncioTestCase):
                 await fn(a, b)
             return
         result = await fn(a, b)
-        self.assertEqual(result, expected, (fn.__name__, a, b))
+        self.assertEqual(repr(result), repr(expected), (fn.__name__, a, b))
         self.assertIs(type(result), type(expected), (fn.__name__, a, b))
 
 
@@ -92,6 +92,13 @@ class TestIntDigits(unittest.IsolatedAsyncioTestCase):
             for a in DIGIT_EDGE_VALUES:
                 for b in DIGIT_EDGE_VALUES:
                     await self.check_pair(fn, pyop, a, b)
+
+
+    async def test_powers_at_digit_edges(self):
+        mod = await self.load_module()
+        for a in DIGIT_EDGE_VALUES:
+            for b in (0, 1, 2, 3, 5, 7, -1, -2):
+                await self.check_pair(mod.kos_pow, operator.pow, a, b)
 
 
     async def test_shifts_at_digit_edges(self):

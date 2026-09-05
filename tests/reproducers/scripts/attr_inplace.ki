@@ -1,0 +1,76 @@
+;; Full-stack reproducer for attribute updates through the electors:
+;; the churn field kernels' shape on a dict-backed class and on a
+;; __slots__ class, with ints and with floats, and an accumulator held
+;; on the instance that outside code keeps a reference to.
+
+(define MASK32 0xffffffff)
+
+
+define-class DictBox []:
+
+    define __init__ [self]:
+        set! self.i 0
+        set! self.a 0
+        set! self.b 0
+
+
+define-class SlotBox []:
+
+    define __slots__ #("i" "a" "b")
+
+    define __init__ [self]:
+        set! self.i 0
+        set! self.a 0
+        set! self.b 0
+
+
+define churn [box n x]:
+    set! box.i 0
+    set! box.a (& x MASK32)
+    set! box.b 1
+    while (< box.i n):
+        set! box.a (+ box.a box.b)
+        set! box.a (& box.a MASK32)
+        set! box.b (^ box.b box.a)
+        set! box.i (+ box.i 1)
+    (& (^ box.a box.b) MASK32)
+
+
+define churn_dict [n x]:
+    churn (DictBox) n x
+
+
+define churn_slots [n x]:
+    churn (SlotBox) n x
+
+
+define churn_float [box n]:
+    set! box.i 0
+    set! box.a 1.5
+    set! box.b 0.25
+    while (< box.i n):
+        set! box.a (* box.a 1.0001)
+        set! box.b (+ box.b box.a)
+        set! box.a (- box.a (/ box.b 3.0))
+        set! box.i (+ box.i 1)
+    #(box.a box.b)
+
+
+define churn_float_dict [n]:
+    churn_float (DictBox) n
+
+
+define churn_float_slots [n]:
+    churn_float (SlotBox) n
+
+
+define shared_value [n]:
+    define box (SlotBox)
+    define seed (* n 1000)
+    set! box.a seed
+    incr! box.a 1
+    incr! box.a 1
+    #(seed box.a)
+
+
+;; The end.

@@ -17,32 +17,17 @@
    CHECK_COMPARE: arg = extra index. Schema CMP (KosCompare selector),
    COUNT, LABEL. Chain-compare the top COUNT operands under the selector;
    jump to LABEL if the chain fails. The operands are dropped either way.
+   Prologue only: tail-call the body the site's slot elected
+   (eval/eval_electors.c); an empty slot or an ungated site takes the
+   electing function. One cache slot: KOS_CACHE_ELECTOR.
 */
 
 KOS_OP_HANDLER(CHECK_COMPARE) {
-  const KosExtra *row = KosOp_ROW(insn);
-  size_t count = (size_t) KosExtra_IMM(row, 1);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
 
-  if (unlikely(count < 2)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "CHECK_COMPARE requires at least 2 elements");
-    RESULT_RAISE();
-  }
-
-  PyObject *const *args = KosEvalState_StackTailPtr(es, count);
-  if (unlikely(! args))
-    RESULT_RAISE();
-
-  int res = kos_compare_chain((KosCompare) KosExtra_IMM(row, 0), args, count);
-  KosEvalState_StackDropNoErr(es, count);
-
-  if (unlikely(res < 0))
-    RESULT_RAISE();
-
-  if (res == 0)
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 2));
-
-  RESULT_NEXT(es);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_check_compare_elect, es, insn, NULL);
 }
 
 

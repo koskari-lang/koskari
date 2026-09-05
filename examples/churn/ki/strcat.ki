@@ -1,0 +1,21 @@
+;; churn_strcat -- a string built the way + and incr! build one: each
+;; step joins three pieces with + and appends the result to one
+;; accumulator with incr!, which is emptied every 1024 steps so the
+;; join, the in-place append, and the per-piece str call dominate
+;; rather than the allocator's growth of one long string.
+
+
+define churn_strcat [n]:
+    define total 0
+    define s ""
+    define i 0
+    while (< i n):
+        incr! s (+ "k" (str (& i 0xff)) ",")
+        when (== (& i 0x3ff) 0x3ff):
+            incr! total (len s)
+            set! s ""
+        incr! i
+    (+ total (len s))
+
+
+;; The end.

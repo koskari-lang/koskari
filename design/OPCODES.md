@@ -3385,6 +3385,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Style**: COUNT.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+  The core is `KosOperator_BuildStr`, exported from lib as `build_str`
+  and bound to the runtime `#str`: an exact str is taken as it is,
+  any other piece through its `__str__`, and the pieces joined once.
 - **Implementation**: `koskari/lib/opcode/OBJECT_STR.c`
 
 ### KOS_OP_OBJECT_FORMAT {#kos_op_object_format}
@@ -3475,10 +3478,14 @@ Augmented assignment: fetch the current value from a name (VAR) or fast slot
 value is pushed (the form evaluates to None). The operator is a KosOperand
 selector dispatched through `kos_inplace_reduce` (`operator.c`), the same
 selector set as OBJECT_OPERAND / OBJECT_INPLACE. OBJECT_OPERAND,
-OBJECT_INPLACE, FAST_INPLACE, and FAST_INPLACE_CONST each carry one cache
-slot of kind KOS_CACHE_ELECTOR holding the body the site elected on its
-first operands: an int body per operator, or the generic reduce; see
-[interpreter/electors.md](interpreter/electors.md).
+OBJECT_INPLACE, FAST_INPLACE, FAST_INPLACE_CONST, CHECK_COMPARE, and
+OBJECT_COMPARE each carry one cache slot of kind KOS_CACHE_ELECTOR
+holding the body the site elected on its first operands: an int, a
+float, or (for `+`) a str body per operator or selector, on the two
+stack families a fold or join body for a run of three or more, or the
+generic reduce. FAST_ATTR_INPLACE carries two: its field cache first
+and an elector slot second, whose bodies guard through the field slot;
+see [interpreter/electors.md](interpreter/electors.md).
 
 **VAR_INPLACE** -- EXTRA (OPCOUNT, VAR). Row a0 packs the operator
 selector with the operand count (count is 1 in all compiler emission: one rhs

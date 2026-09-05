@@ -33,7 +33,8 @@ from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
                    MemoizedRef, Module,
                    ModuleNamespace,
                    ParamRef, Ref, apply, build_dict, build_list, build_set,
-                   build_tuple, car, cdr, cons, defer, demand, demand_apply,
+                   build_str, build_tuple, car, cdr, cons, defer, demand,
+                   demand_apply,
                    demand_call, deref, gensym, getattr_star, getitem_star,
                    hasattr_star, hasitem_star, keyword, kos_repr, list_append,
                    bracket_cons, bracket_nil, nil, pair, parameter,
@@ -186,7 +187,7 @@ def make_bootstrap():
     _bind('#list', build_list)
     _bind('#list-append', list_append)
     _bind('#set', build_set)
-    _bind('#str', lambda *args: "".join(map(str, args)))
+    _bind('#str', build_str)
     _bind('#tuple', build_tuple)
 
     # Python standard types available by default

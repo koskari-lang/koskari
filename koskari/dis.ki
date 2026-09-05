@@ -235,6 +235,16 @@ define _compare_name [sel]:
     (str sel)
 
 
+define _format_opcount [arg]:
+  """
+  Render a packed OPCOUNT value: the operator name from the high byte
+  and the reduce count from the low byte, e.g. 1026 -> "BIT_AND x2"
+  """
+
+  define sc (divmod arg 256)
+  f"{(_operand_name sc[0])} x{sc[1]}"
+
+
 define _operand_name [sel]:
   """
   Short display name for an Operand selector value (e.g. 0 -> "ADD")
@@ -344,6 +354,8 @@ define _format_arg [code op_style arg cpool local_names closure_names
                 (_compare_name val)
               case [OpStyle.OPERAND]:
                 (_operand_name val)
+              case [OpStyle.OPCOUNT]:
+                (_format_opcount val)
               case [OpStyle.LABEL]:
                 f"-> {val}"
               else:
@@ -388,6 +400,9 @@ define _format_arg [code op_style arg cpool local_names closure_names
     case [OpStyle.CMPCOUNT]:
       define sc (divmod arg 256)
       return f"{arg} ({(_compare_name sc[0])} x{sc[1]})"
+
+    case [OpStyle.OPCOUNT]:
+      return f"{arg} ({(_format_opcount arg)})"
 
     case [OpStyle.COUNT OpStyle.PAIR_COUNT OpStyle.STAR]:
       unless (None? ns_label):

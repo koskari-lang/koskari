@@ -63,4 +63,44 @@ define masked_accumulate [n]:
     acc
 
 
+define closure_float [n]:
+    define total 0.5
+    define bump [step]:
+        incr! total step
+    for-each [i (range n)]:
+        bump (* i 0.25)
+    total
+
+
+define closure_repeat [n]:
+    define total 1000
+    define bump []:
+        incr! total 1
+        decr! total 3
+    for-each [i (range n)]:
+        (bump)
+    total
+
+
+define constant_incr [seed step]:
+    bind! k (constant (+ seed seed))
+    incr! k step
+    k
+
+
+define constant_incr_by_one [seed]:
+    bind! k (constant (+ seed seed))
+    incr! k
+    k
+
+
+define constant_value_survives [seed step]:
+    bind! k (constant (+ seed seed))
+    try:
+        incr! k step
+    except [ValueError]:
+        None
+    k
+
+
 ;; The end.

@@ -498,6 +498,26 @@ static inline PyObject *kos_ns_fast_peek(PyObject *ns, size_t idx) {
 }
 
 
+/**
+   kos_ns_fast_peek with the slot's raw bit returned as well, for a
+   handler that goes on to store and wants the one read.
+*/
+static inline PyObject *kos_ns_fast_peek_raw(
+    PyObject *ns, size_t idx, int *raw) {
+
+  PyObject *slot = KosNamespace_GET_FAST_VAL(ns, idx);
+  *raw = kos_ns_is_raw(ns, idx);
+  if (*raw)
+    return slot;
+  if (slot) {
+    PyTypeObject *tp = Py_TYPE(slot);
+    if (tp == &KosRefType || tp == &KosConstantRefType)
+      return KosSymbolicRef_VALUE(slot);
+  }
+  return NULL;
+}
+
+
 static inline int kos_ns_fast_store(PyObject *ns, size_t idx, PyObject *val) {
   if (kos_ns_is_raw(ns, idx)) {
     PyObject *old = KosNamespace_GET_FAST_VAL(ns, idx);

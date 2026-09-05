@@ -1,0 +1,70 @@
+;; Full-stack reproducer for the reducing forms over three or more
+;; operands: the sites the compiler emits for (+ a b c) and its kin,
+;; reached through the fold electors on ints and floats, with every
+;; operand loaded from a parameter so nothing folds at compile time,
+;; and the runtime operator called on the same run.
+
+
+define add3 [a b c]:
+    + a b c
+
+
+define sub3 [a b c]:
+    - a b c
+
+
+define mul3 [a b c]:
+    * a b c
+
+
+define floordiv3 [a b c]:
+    // a b c
+
+
+define truediv3 [a b c]:
+    / a b c
+
+
+define and3 [a b c]:
+    & a b c
+
+
+define or3 [a b c]:
+    | a b c
+
+
+define xor3 [a b c]:
+    ^ a b c
+
+
+define add5 [a b c d e]:
+    + a b c d e
+
+
+define mul5 [a b c d e]:
+    * a b c d e
+
+
+define add3_runtime [a b c]:
+    apply + #(a b c)
+
+
+define energy [x y z m]:
+    * (+ (* x x) (* y y) (* z z)) m 0.5
+
+
+define nested_int [a b c d]:
+    + (* a b) c d
+
+
+define nested_float [a b c d]:
+    + (* a b) c d
+
+
+define item_run [seed a b]:
+    define cells #[seed seed]
+    inplace-item + cells 0 a b
+    cells
+
+
+;; The end.

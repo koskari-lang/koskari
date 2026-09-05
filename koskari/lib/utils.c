@@ -786,6 +786,11 @@ PyObject *KosUtils_BuildList(PyObject *const *args, Py_ssize_t nargs) {
 }
 
 
+PyObject *KosUtils_BuildStr(PyObject *const *args, Py_ssize_t nargs) {
+  return KosOperator_BuildStr(args, (size_t) nargs);
+}
+
+
 int KosUtils_ListAppend(PyObject *list, PyObject *item) {
 
   if (! PyList_Check(list)) {
@@ -1199,6 +1204,7 @@ static PyObject *m_pass(const PyObject *mod,
 FASTCALL_WRAPPER(BuildTuple);
 FASTCALL_WRAPPER(BuildList);
 FASTCALL_WRAPPER(BuildSet);
+FASTCALL_WRAPPER(BuildStr);
 
 
 static PyObject *m_ListAppend(
@@ -1366,6 +1372,10 @@ static PyMethodDef utils_methods[] = {
   { "build_set", (PyCFunction) m_BuildSet, FASTCALL_METHOD_TYPE,
     "build_set(*args) -> set\n"
     "Build a set from arguments." },
+
+  { "build_str", (PyCFunction) m_BuildStr, FASTCALL_METHOD_TYPE,
+    "build_str(*args) -> str\n"
+    "Join the str of each argument; an exact str is taken as it is." },
 
   { "getattr_star", (PyCFunction) m_getattr_star, METH_VARARGS,
     "getattr_star(obj, attrlist[, default]) -> value\n"

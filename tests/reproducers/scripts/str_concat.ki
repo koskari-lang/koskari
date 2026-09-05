@@ -1,0 +1,93 @@
+;; Full-stack reproducer for string concatenation through the electors:
+;; an accumulator grown by incr! in a local, in a captured local, on a
+;; __slots__ member and on a dict-backed attribute; the reducing forms
+;; of + over three and five operands; a nested + whose left is a
+;; temporary; a value the outside still holds; and #str through the
+;; opcode and through its runtime binding.
+
+
+define grow [n piece]:
+    define s ""
+    define i 0
+    while (< i n):
+        incr! s piece
+        incr! i
+    s
+
+
+define grow_captured [n piece]:
+    define s ""
+    define i 0
+    define step [] (incr! s piece)
+    while (< i n):
+        (step)
+        incr! i
+    s
+
+
+define-class DictBox []:
+
+    define __init__ [self]:
+        set! self.s ""
+
+
+define-class SlotBox []:
+
+    define __slots__ #("s")
+
+    define __init__ [self]:
+        set! self.s ""
+
+
+define grow_attr [box n piece]:
+    define i 0
+    while (< i n):
+        incr! box.s piece
+        incr! i
+    box.s
+
+
+define grow_dict [n piece]:
+    grow_attr (DictBox) n piece
+
+
+define grow_slots [n piece]:
+    grow_attr (SlotBox) n piece
+
+
+define join3 [a b c]:
+    + a b c
+
+
+define join5 [a b c d e]:
+    + a b c d e
+
+
+define nested [a b c]:
+    + (+ a b) c
+
+
+define build3 [a b c]:
+    #str a b c
+
+
+define build_splat [a rest]:
+    #str a *: rest
+
+
+define build_apply [pieces]:
+    apply #str pieces
+
+
+define build_value []:
+    #str
+
+
+define shared [seed piece]:
+    define s seed
+    incr! s piece
+    incr! s piece
+    #(seed s)
+
+
+;; The end.

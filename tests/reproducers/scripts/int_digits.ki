@@ -25,6 +25,14 @@ define kos_floordiv [a b]:
     // a b
 
 
+define kos_truediv [a b]:
+    / a b
+
+
+define kos_pow [a b]:
+    ** a b
+
+
 define kos_and [a b]:
     & a b
 

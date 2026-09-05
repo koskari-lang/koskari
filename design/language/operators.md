@@ -57,7 +57,7 @@ Operators in Koskari have both compile-time and runtime representations. They co
 - **`build-list`** / **`#list`**: Build list from values
 - **`build-set`** / **`#set`**: Build set from values
 - **`build-dict`** / **`#dict`**: Build dict from key-value pairs
-- **`build-str`** / **`#str`**: String concatenation (collapses adjacent literals)
+- **`build_str`** / **`#str`**: String concatenation (collapses adjacent literals)
 - **`build-slice`** / **`#slice`**: Create slice object (2 or 3 args)
 
 ### Other Operators
@@ -82,7 +82,7 @@ Operators in Koskari have both compile-time and runtime representations. They co
 ### Constant Folding
 
 - Arithmetic operations on compile-time constants
-- String literal concatenation in `build-str`
+- String literal concatenation in `#str`
 - Tuple/list/set building from constants
 
 ### Special Cases

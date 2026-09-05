@@ -92,7 +92,7 @@ OP(JUMP_OR, 0, LABEL)
 // forms absorb their operand feeders: CMPSRC packs the selector with
 // per-operand source bits (a set bit overrides that slot from its
 // declared kind to CONST).
-OP(CHECK_COMPARE, 0, EXTRA, CMP, COUNT, LABEL, NOARG)
+OP(CHECK_COMPARE, 1, EXTRA, CMP, COUNT, LABEL, NOARG)  // cache: elector
 OP(CHECK_COMPARE_VAR, 0,  EXTRA, CMPSRC, VAR,     VAR,     LABEL)
 OP(CHECK_COMPARE_FAST, 0, EXTRA, CMPSRC, FASTVAR, FASTVAR, LABEL)
 
@@ -165,7 +165,7 @@ OP(FAST_ATTR_CLEAR, 0, EXTRA, FASTVAR, CONST, NOARG, NOARG)
 OP(FAST_ATTR_TAKE, 0, EXTRA, FASTVAR, CONST, NOARG, NOARG)
 OP(FAST_ATTR_REF, 0, EXTRA, FASTVAR, CONST, NOARG, NOARG)
 OP(FAST_ATTR_STORE, 1, EXTRA, FASTVAR, CONST, NOARG, NOARG)
-OP(FAST_ATTR_INPLACE, 1, EXTRA, OPCOUNT, FASTVAR, CONST, NOARG)
+OP(FAST_ATTR_INPLACE, 2, EXTRA, OPCOUNT, FASTVAR, CONST, NOARG)  // cache: field, elector
 OP(FAST_ITER, 0, FASTVAR)
 OP(FAST_NEXT, 0, EXTRA, FASTVAR, COUNT, NOARG, NOARG)
 OP(FAST_FORMAT, 0, FASTVAR)
@@ -297,7 +297,7 @@ OP(POP_TRY, 0, NOARG)
 // (high byte) with the reducing count (low byte). The ternary fused
 // forms carry the bounds idiom (const < x < const) with a bare CMP
 // selector and schema-static slots, pushing the chain result.
-OP(OBJECT_COMPARE, 0, CMPCOUNT)
+OP(OBJECT_COMPARE, 1, CMPCOUNT)  // cache: elector
 OP(OBJECT_COMPARE_VAR, 0,  EXTRA, CMP, CONST, VAR,     CONST)
 OP(OBJECT_COMPARE_FAST, 0, EXTRA, CMP, CONST, FASTVAR, CONST)
 

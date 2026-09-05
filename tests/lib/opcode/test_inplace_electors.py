@@ -14,9 +14,9 @@
 
 """
 Tests for the in-place electors: OBJECT_INPLACE, FAST_INPLACE, and
-FAST_INPLACE_CONST sites elect their operator's int body on the first
-exact-int operands they see, fall to the generic body for operands the
-int fast path declines, count type-guard misses toward a demotion, and
+FAST_INPLACE_CONST sites elect their operator's body for the kind of
+the first operands they see, fall to the generic body for operands the
+fast path declines, count type-guard misses toward a demotion, and
 return the same results as the ladder alone throughout.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
@@ -25,6 +25,7 @@ return the same results as the ladder alone throughout.
 
 
 import operator
+import sys
 
 from koskari.lib import FormalsSpec, NamespaceSpec, Operand
 from tests import make_callable
@@ -60,6 +61,22 @@ POWER_PAIRS = [
     (7, 3), (-7, 3), (7, -3), (0, 5), (2 ** 40, 2),
     (2 ** 62, 2), (2 ** 100, 3), (-(2 ** 60), 3),
 ]
+
+# Shift counts stay small: a count of 2 ** 40 asks Python for a
+# 128 GiB int, which raises MemoryError here and aborts a sanitizer
+# build's allocator.
+SHIFT_PAIRS = [
+    (7, 3), (-7, 3), (7, -3), (0, 5), (2 ** 40, 29),
+    (2 ** 62, 2), (2 ** 100, 3), (-(2 ** 60), 63),
+]
+
+
+def pairs_for_operator(opname):
+    if opname == 'POWER':
+        return POWER_PAIRS
+    if opname in ('BIT_LEFT', 'BIT_RIGHT'):
+        return SHIFT_PAIRS
+    return PAIRS
 
 
 def make_object_site(opname='ADD', cache=True, count=2):
@@ -155,8 +172,8 @@ class InplaceElectorMixin:
 
     async def test_every_operator_through_an_elected_site(self):
         for opname, pyop in OPERATORS:
-            pairs = POWER_PAIRS if opname == 'POWER' else PAIRS
-            await self.check_operator(opname, pyop, self.pairs_for(pairs))
+            await self.check_operator(
+                opname, pyop, self.pairs_for(pairs_for_operator(opname)))
 
 
     async def test_polymorphic_site_serves_every_type(self):
@@ -226,14 +243,23 @@ class TestObjectInplaceElector(InplaceElectorMixin, CevalTest):
 
     async def test_non_binary_site_reduces(self):
         """
-        A site of three operands is not electable and reduces in place
-        as before
+        A site of three operands reduces in place through the fold
+        body on ints and through the in-place protocol on the rest,
+        and a protocol operand returning itself keeps its reference
+        count
         """
 
         site, _ = make_object_site(count=3)
         for _ in range(5):
             self.assertEqual(await site(1, 2, 3), 6)
             self.assertEqual(await site([1], [2], [3]), [1, 2, 3])
+        lst = [1]
+        before = sys.getrefcount(lst)
+        result = await site(lst, [2], [3])
+        self.assertIs(result, lst)
+        del result
+        self.assertEqual(sys.getrefcount(lst), before)
+        self.assertEqual(lst, [1, 2, 3])
 
 
 class TestFastInplaceElector(InplaceElectorMixin, CevalTest):

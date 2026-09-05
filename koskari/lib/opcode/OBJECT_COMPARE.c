@@ -16,30 +16,17 @@
 /**
   OBJECT_COMPARE: arg = CMPCOUNT (KosCompare selector high byte, reduce
   count low byte). Chain-compare the top COUNT operands under the
-  selector and push the result.
+  selector and push the result. Prologue only: tail-call the body the
+  site's slot elected (eval/eval_electors.c); an empty slot or an
+  ungated site takes the electing function. One cache slot:
+  KOS_CACHE_ELECTOR.
 */
 KOS_OP_HANDLER(OBJECT_COMPARE) {
-  uint16_t arg = KosOp_ARG(insn);
-  size_t count = (size_t) KosCmpCount_COUNT(arg);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
 
-  if (unlikely(count < 2)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "OBJECT_COMPARE requires at least 2 elements");
-    RESULT_RAISE();
-  }
-
-  PyObject *const *args = KosEvalState_StackTailPtr(es, count);
-  if (unlikely(! args))
-    RESULT_RAISE();
-
-  PyObject *result = kos_compare_reduce(
-      (KosCompare) KosCmpCount_SEL(arg), args, count);
-  KosEvalState_StackDropNoErr(es, count);
-
-  if (unlikely(! result))
-    RESULT_RAISE();
-
-  RESULT_STEAL(es, result);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_object_compare_elect, es, insn, NULL);
 }
 
 

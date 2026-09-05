@@ -28,7 +28,91 @@ conversions per execution. One finding from the in-place step: once
 four families used the `long_fast_*` paths the compiler stopped
 inlining them, costing 3.9% of `branch` instructions until they were
 marked `KOS_OP_INLINE`; a body macro that grows a family should be
-measured for that.
+measured for that. The compare family followed: CHECK_COMPARE and
+OBJECT_COMPARE each own a slot and elect one int body, the selector
+being a site constant the mask compare reads. That is 3.1% fewer
+instructions on `branch`, whose branch conditions are computed pairs,
+level on `fannkuch` and `binary_trees`, and 1.4% more on `loop` for a
+cause the code `loop` runs does not show: every function on its path
+is byte-identical between the two builds and a profile takes none of
+the changed cold paths. CHECK_COMPARE_FAST was tried with a slot and
+dropped: its handler already runs its int arm inline, so the slot
+only added the hop, 1.5% of `loop` instructions and 5.9% of `fannkuch`
+cycles. Two more findings from that step: the per-opcode generic-body
+lookup, inlined into every int body's decline tails, had grown each
+body by a fifth and cost cycles across the kernels until it was moved
+out of line; and the compare family's footprint on the churn kernels
+is small (370M CHECK_COMPARE executions against 12.3G for
+OBJECT_OPERAND on the trace), so its value is general rather than
+kernel-shaped. Two steps followed on the same bodies. A result is
+written into the operand the stack alone owns: when the left operand
+or the accumulator is an exact int with a refcount of one, the result
+lies outside the small-int range so the cached identities stay
+CPython's, and it needs no more digits than the object holds, the
+digits and tag are rewritten in place and no allocation or release
+runs; on `loop` that is 25.8% fewer instructions and 24.1% fewer
+cycles, on `branch` 9.2% fewer of both, and under `tox -e churn`
+`loop` runs at 0.79x of CPython and `tree` at 0.86x. Float bodies then
+joined the int bodies on every family, six operators each (add,
+subtract, multiply, true division, and ports of `float_rem` and
+`float_divmod`; power stays generic for its complex and zero-base
+cases), with the same in-place result rule and a float body on each
+compare family settling on the C comparisons so NaN answers as Python
+does; `nbody` runs 24.0% fewer instructions and 24.2% fewer cycles,
+1.91x of CPython under churn from 2.31x. The suite under ASan found
+that the elector tests shifted by 2^40, a 128 GiB int that raises
+MemoryError on a normal build and trips the sanitizer's allocator
+limit; the sanitizer gate belongs in every step that writes into live
+objects. FAST_ATTR_INPLACE followed as the first site with two slots:
+the field cache stays the first, untouched in layout, and the elector
+is the second. Its bodies re-check the field guard on every execution
+and take the mode and index from the field slot, load the accumulator
+borrowed from the slots member or the inline value, compute with it
+as the in-place candidate, and store through the same location only
+when a new object came back; a site elects on its second execution,
+once the generic body's first run has resolved the field slot. On
+the churn kernels against the merge baseline that is 47.7% fewer
+instructions and 43.2% fewer cycles on `field`, 46.8% and 44.8% on
+`field_slots`, 11.6% and 14.7% on `method`. Str bodies followed on
+every family for `+`: the left operand or the accumulator is taken
+from its home (the stack cell, the raw fast slot, the `__slots__`
+member) and appended through `PyUnicode_Append`, which grows it in
+place under CPython's own rule when that home held the only
+reference, so `incr!` on a str local grows it as `s += x` does in
+CPython; a stack site of three or more strs elects a join that
+allocates once at the widest kind. `build_str` became the native
+builder behind both OBJECT_STR and the runtime `#str`, replacing a
+Python lambda; measured against the join it was a wash, so it keeps
+its tuple and `str.join` for mixed pieces. A `strcat` churn kernel
+(a count-three `+` appended to an accumulator) runs at 1.23x of
+CPython. A review of that step found the one defect the electors
+have shipped so far: the slot bodies offered the peeked accumulator
+as the in-place home whenever its refcount was one, and the peek
+reads through a constant ref as well as a raw slot, so `incr!` on a
+`bind! x (constant ...)` name rewrote the constant's digits and never
+reached the store that raises; a result is now written in place only
+when the slot is raw. The same review dropped the attribute bodies'
+unreachable setattr arm (the head now takes the location's address
+and the store swaps the result into it), collapsed the int and float
+twins of every body into one macro per family parameterised on an
+operand kind, with byte-identical code, and added fold bodies:
+OBJECT_OPERAND and OBJECT_INPLACE sites of three or more operands of
+one kind fold the run in C, decline to the generic body before
+anything is materialised, and materialise once, into the first
+operand when the stack alone owns it; the reduce fold behind the
+runtime operators offers its accumulator for reuse the same way.
+The fold covers the operators the compiler emits runs for, since a
+third operand to power is a modulus and remainder and the shifts are
+binary forms. On `nbody`, whose inner loop has one count-three `+`,
+that is 2.4% fewer instructions. A second review caught a regression
+in the reduce fold (a protocol slot returning its left operand, as a
+list's `__iadd__` does, returns a new reference, which the reuse
+test had taken for an in-place write) and the fold reproducer
+surfaced a module-packer defect older than the branch: the segment
+plan summed members at pointer alignment while the arena reserves
+each on a 32-byte boundary, so a module of many small functions could
+overflow its own arena; the unit is now `Arena.UNIT` and the plan
+aligns to it.
 
 **See also:** [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)
 (the per-site cache framework this extends),
@@ -232,18 +316,24 @@ type: `KosCoroutine`, `KosDefer`, `PyCoro`, generic `am_await`. Moderate;
 the gate is already two loads.
 
 **OBJECT_OPERAND, OBJECT_INPLACE, FAST_INPLACE, FAST_INPLACE_CONST**.
-Built: the exact `PyLong` pair per operator, the operator a site
-constant indexing the family's table, the guard two borrowed type
-compares in the body. Open on the same slots: the exact `PyFloat` pair
-(the `nbody` kernel is all floats through these sites) and exact
-`PyUnicode` concatenation. `VAR_INPLACE(_CONST)` stay on the ladder;
-hot code uses the fast forms.
+Built: the exact `PyLong` pair and the exact `PyFloat` pair per
+operator, the operator a site constant indexing the family's int or
+float table, the guard two borrowed type compares in the body, the
+result written into the operand the stack or the raw slot alone owns;
+the exact `PyUnicode` pair for `+`, appended in place into the home
+that held the only reference; and on the two stack families a fold
+body per operator and kind for a run of three or more, and a join
+for a run of strs. `VAR_INPLACE(_CONST)` stay on the ladder; hot code
+uses the fast forms.
 
 **OBJECT_COMPARE(_VAR/_FAST), CHECK_COMPARE(_VAR/_FAST), SWITCH_EQ\***.
 `kos_compare_chain` takes the selector and walks the operands; the extended
-tail is out of line. Electors: exact `PyLong` pair, exact `PyUnicode` pair,
-identity selectors, generic rich compare. The `CHECK_*` forms fuse the jump,
-so the elector owns the branch too.
+tail is out of line. Built for CHECK_COMPARE and OBJECT_COMPARE: the
+exact `PyLong` pair and the exact `PyFloat` pair, one body each per
+opcode reading the selector off the site, the `CHECK_*` body owning
+the jump. CHECK_COMPARE_FAST keeps its inline int arm (a slot measured
+as a loss). Open on the same slots: the exact `PyUnicode` pair and the
+identity selectors.
 
 **OBJECT_FORMAT(_CONST), FAST_FORMAT(_CONST), VAR_FORMAT(_CONST)**. The
 fused format opcodes test `PyUnicode_CheckExact` and the spec shape per
@@ -410,14 +500,15 @@ Ranked by expected benefit against risk:
    with three chain reads; the install knows the shape. A ladder is
    replaced rather than a call, which is where the CALL_FAST elector
    found nothing.
-5. **Float and string bodies on the arithmetic slots.** The families
-   exist; a body per operator for the exact `PyFloat` pair and one for
-   `PyUnicode` concatenation, elected by the same classification.
-6. **OBJECT_COMPARE, CHECK_COMPARE and their twins, cache-style.** The
-   same int-pair shape with the branch fused into the body.
-7. **FAST_ATTR_INPLACE.** 9% of the churn time; the field cache already
-   guards the receiver, so the elected body is the fold on a peeked
-   attribute value.
+5. **Float bodies on the arithmetic and compare slots.** Done, see the
+   status above, as are the str bodies and the fold bodies on the
+   stack families.
+6. **CHECK_COMPARE and OBJECT_COMPARE, cache-style.** Done, see the
+   status above. CHECK_COMPARE_FAST stays on its inline arm, and the
+   `_VAR` twins and `SWITCH_EQ*` stay on their ladders.
+7. **FAST_ATTR_INPLACE.** Done, see the status above: the elector is
+   the site's second slot beside its field cache, and the body guards
+   through the field slot.
 
 ## Sizing
 

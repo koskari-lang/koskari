@@ -169,6 +169,18 @@ PyObject *KosUtils_BuildTuple(PyObject *const *args, Py_ssize_t nargs);
 PyObject *KosUtils_BuildList(PyObject *const *args, Py_ssize_t nargs);
 
 
+/**
+   Build a str from variadic arguments: an exact str is taken as it is,
+   anything else through its __str__, and the pieces joined. The core
+   of the OBJECT_STR opcode and of the runtime #str.
+
+   :param args: arguments to join
+   :param nargs: number of arguments
+   :return: new str
+*/
+PyObject *KosUtils_BuildStr(PyObject *const *args, Py_ssize_t nargs);
+
+
 int KosUtils_ListAppend(PyObject *list, PyObject *item);
 
 

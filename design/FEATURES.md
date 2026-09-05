@@ -230,9 +230,9 @@ Items below are **done** in koskari-ng unless noted in [TODO.md](TODO.md).
 
 **Types and refs** — atoms, pairs, namespaces, all ref kinds, formals, values, defer, stack, domain.
 
-**Operators (C)** — reducing arithmetic/bitwise, chained compares, membership, `build-str`.
+**Operators (C)** — reducing arithmetic/bitwise, chained compares, membership.
 
-**Utilities (C)** — `apply`, `reapply`, `identity`, `constantly`, collection builders.
+**Utilities (C)** — `apply`, `reapply`, `identity`, `constantly`, collection builders, `build_str`.
 
 **Evaluator core** — `KosContext`, dynamic chain (`KosDynNode`), transfer plans
 (including suspend/resume/replan on nested continuation invoke and abandon +

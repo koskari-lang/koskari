@@ -20,6 +20,7 @@
 
 #include <Python.h>
 #include <limits.h>
+#include <math.h>
 
 #include "bytecode.h"
 #include "hints.h"
@@ -91,6 +92,24 @@ static inline int kos_object_not(PyObject *v) {
 # endif
 #else
 # define KOS_LONG_INLINE_DIGITS 0
+#endif
+
+/* An int result may be written into an operand the caller owns
+   outright instead of allocated, where the digit layout is known and
+   refcounts are exact (a free-threaded build biases them). */
+#if KOS_LONG_INLINE_DIGITS && ! defined(Py_GIL_DISABLED)
+# define KOS_LONG_REUSE 1
+#else
+# define KOS_LONG_REUSE 0
+#endif
+
+/* A float result may likewise be written into an exact float the
+   caller owns outright; there is no cached float to keep the identity
+   of, so only the refcount rule applies. */
+#if ! defined(Py_GIL_DISABLED)
+# define KOS_FLOAT_REUSE 1
+#else
+# define KOS_FLOAT_REUSE 0
 #endif
 
 
@@ -167,94 +186,273 @@ KOS_OP_INLINE int kos_as_ll2(
 
    Each operator has two forms. The _ll form takes the two C values a
    caller has already extracted (an elected int body, which guarded the
-   types itself); the object form runs kos_as_ll2 and then the _ll form,
-   for the operator cores.
+   types itself) and an operand the caller owns outright that the
+   result may be written into, or NULL; the object form runs kos_as_ll2
+   and then the _ll form with the same candidate, for the operator
+   cores (which offer none) and the reduce fold (which offers its
+   accumulator).
 
    Return convention (all of them): 1 with *out set (new ref) when handled, 0
    when declined (*out untouched), -1 with an error set on allocation failure
    (*out NULL).  Bitwise AND/OR/XOR on two's-complement match Python int
-   semantics for any in-range operands.  Shifts require non-negative operands
-   (C >> on a negative is implementation-defined; a negative count must raise).
-   Modulo requires a non-negative dividend and positive divisor so C % matches
-   Python remainder.  Overflow on +, -, *, << declines rather than widening.
-   Divide, floor-divide, matmul, and power have no fast path. */
+   semantics for any in-range operands.  Floor division and remainder
+   round toward negative infinity as Python does; a zero divisor declines
+   so the generic path raises.  Shifts take a negative left operand
+   through its magnitude (left) or as a floor shift (right); a negative
+   count declines so the generic path raises.  True division of two ints
+   within 53 bits is the correctly rounded double, which is what
+   int.__truediv__ computes for them.  Power takes a non-negative
+   exponent by squaring; a negative one is a float and declines.
+   Overflow on +, -, *, <<, ** declines rather than widening.  Matrix
+   multiply has no fast path. */
 
-KOS_OP_INLINE int kos_long_fast_result(long long res, PyObject **out) {
+/* The digits an int of magnitude mag needs; the caller's values are at
+   most 63 bits, so three at most. */
+KOS_OP_INLINE size_t kos_long_digits_needed(unsigned long long mag) {
+  return 1 + (mag >> PyLong_SHIFT != 0) + (mag >> (2 * PyLong_SHIFT) != 0);
+}
+
+
+#if KOS_LONG_REUSE
+/* Write res into v, an exact int the caller owns outright with at
+   least the digits res needs. The digits are written low to high and
+   the tag last, its reserved flag bit kept. */
+KOS_OP_INLINE void kos_long_write(PyObject *v, long long res) {
+  PyLongObject *lo = (PyLongObject *) v;
+  digit *digits = KOS_LONG_DIGITS(lo);
+  unsigned long long mag = res < 0 ? 0ull - (unsigned long long) res
+                                   : (unsigned long long) res;
+  size_t n = kos_long_digits_needed(mag);
+
+  digits[0] = (digit) (mag & PyLong_MASK);
+  if (n > 1)
+    digits[1] = (digit) ((mag >> PyLong_SHIFT) & PyLong_MASK);
+  if (n > 2)
+    digits[2] = (digit) (mag >> (2 * PyLong_SHIFT));
+# if PY_VERSION_HEX >= 0x030C0000
+  {
+    uintptr_t flags = lo->long_value.lv_tag
+        & ((((uintptr_t) 1) << _PyLong_NON_SIZE_BITS) - 1)
+        & ~((uintptr_t) _PyLong_SIGN_MASK);
+    lo->long_value.lv_tag = (((uintptr_t) n) << _PyLong_NON_SIZE_BITS)
+        | flags | (res < 0 ? 2u : 0u);
+  }
+# else
+  Py_SET_SIZE(lo, res < 0 ? -(Py_ssize_t) n : (Py_ssize_t) n);
+# endif
+}
+
+
+/* Whether res can be written into v in place of an allocation: v is
+   an exact int (the caller checked) whose only reference is the
+   caller's, res lies outside the small-int range so the identity of
+   the cached ints stays CPython's, and res needs no more digits than
+   v holds. A small int is immortal on 3.12 and later and shared by the
+   cache before, so the refcount test alone excludes it as a target. */
+KOS_OP_INLINE int kos_long_reusable(PyObject *v, long long res) {
+  unsigned long long mag;
+
+  if (Py_REFCNT(v) != 1 || (res >= -5 && res <= 256))
+    return 0;
+  mag = res < 0 ? 0ull - (unsigned long long) res : (unsigned long long) res;
+  return kos_long_digits_needed(mag) <= KOS_LONG_NDIGITS((PyLongObject *) v);
+}
+#endif
+
+
+/* Materialise res: into reuse when the caller offered an operand it
+   owns outright and kos_long_reusable allows it, in which case *out is
+   that same object and the caller's reference to it becomes the result
+   reference; else a fresh int. Returns 1, or -1 with an error set. */
+KOS_OP_INLINE int kos_long_fast_result(
+    long long res, PyObject *reuse, PyObject **out) {
+
+#if KOS_LONG_REUSE
+  if (reuse && kos_long_reusable(reuse, res)) {
+    kos_long_write(reuse, res);
+    *out = reuse;
+    return 1;
+  }
+#else
+  (void) reuse;
+#endif
   *out = PyLong_FromLongLong(res);
   return likely(*out != NULL) ? 1 : -1;
 }
 
 
-KOS_OP_INLINE int long_fast_add_ll(long long a, long long b, PyObject **out) {
-  long long res;
-  if (unlikely(__builtin_add_overflow(a, b, &res)))
+/* The arithmetic of each int operator as a step over two long longs:
+   1 with *res set, 0 for a decline (overflow, a zero divisor, a
+   negative shift), nothing allocated. The _ll forms below materialise
+   one step; a fold runs the steps in C and materialises once. */
+KOS_OP_INLINE int kos_ll_add(long long a, long long b, long long *res) {
+  return ! __builtin_add_overflow(a, b, res);
+}
+
+
+KOS_OP_INLINE int kos_ll_subtract(long long a, long long b, long long *res) {
+  return ! __builtin_sub_overflow(a, b, res);
+}
+
+
+KOS_OP_INLINE int kos_ll_multiply(long long a, long long b, long long *res) {
+  return ! __builtin_mul_overflow(a, b, res);
+}
+
+
+/* Floor division and remainder with Python's rounding toward negative
+   infinity. A zero divisor declines, and so does the one overflowing
+   quotient, LLONG_MIN / -1. */
+KOS_OP_INLINE int kos_ll_floor_divmod(
+    long long a, long long b, long long *q, long long *r) {
+
+  if (unlikely(b == 0 || (a == LLONG_MIN && b == -1)))
     return 0;
-  return kos_long_fast_result(res, out);
+  *q = a / b;
+  *r = a % b;
+  if (*r != 0 && ((*r < 0) != (b < 0))) {
+    *q -= 1;
+    *r += b;
+  }
+  return 1;
 }
 
 
-KOS_OP_INLINE int long_fast_subtract_ll(long long a, long long b, PyObject **out) {
-  long long res;
-  if (unlikely(__builtin_sub_overflow(a, b, &res)))
+KOS_OP_INLINE int kos_ll_modulo(long long a, long long b, long long *res) {
+  long long q;
+  return kos_ll_floor_divmod(a, b, &q, res);
+}
+
+
+KOS_OP_INLINE int kos_ll_floor_divide(long long a, long long b, long long *res) {
+  long long r;
+  return kos_ll_floor_divmod(a, b, res, &r);
+}
+
+
+/* Non-negative exponents by squaring, declining on overflow; a
+   negative exponent is a float result and declines. */
+KOS_OP_INLINE int kos_ll_power(long long a, long long b, long long *res) {
+  long long acc = 1;
+  long long base = a;
+
+  if (unlikely(b < 0))
     return 0;
-  return kos_long_fast_result(res, out);
+  while (b) {
+    if ((b & 1) && unlikely(__builtin_mul_overflow(acc, base, &acc)))
+      return 0;
+    b >>= 1;
+    if (b && unlikely(__builtin_mul_overflow(base, base, &base)))
+      return 0;
+  }
+  *res = acc;
+  return 1;
 }
 
 
-KOS_OP_INLINE int long_fast_multiply_ll(long long a, long long b, PyObject **out) {
-  long long res;
-  if (unlikely(__builtin_mul_overflow(a, b, &res)))
+KOS_OP_INLINE int kos_ll_bit_and(long long a, long long b, long long *res) {
+  *res = a & b;
+  return 1;
+}
+
+
+KOS_OP_INLINE int kos_ll_bit_or(long long a, long long b, long long *res) {
+  *res = a | b;
+  return 1;
+}
+
+
+KOS_OP_INLINE int kos_ll_bit_xor(long long a, long long b, long long *res) {
+  *res = a ^ b;
+  return 1;
+}
+
+
+/* A negative left operand shifts through its magnitude, so the C shift
+   never sees a negative value; LLONG_MIN's magnitude does not fit and
+   declines. */
+KOS_OP_INLINE int kos_ll_bit_left(long long a, long long b, long long *res) {
+  long long mag;
+
+  if (unlikely(b < 0 || b >= 63))
     return 0;
-  return kos_long_fast_result(res, out);
-}
-
-
-KOS_OP_INLINE int long_fast_modulo_ll(long long a, long long b, PyObject **out) {
-  if (unlikely(a < 0 || b <= 0))
+  if (a >= 0) {
+    if (unlikely(a > (LLONG_MAX >> b)))
+      return 0;
+    *res = a << b;
+    return 1;
+  }
+  if (unlikely(a == LLONG_MIN))
     return 0;
-  return kos_long_fast_result(a % b, out);
-}
-
-
-KOS_OP_INLINE int long_fast_bit_and_ll(long long a, long long b, PyObject **out) {
-  return kos_long_fast_result(a & b, out);
-}
-
-
-KOS_OP_INLINE int long_fast_bit_or_ll(long long a, long long b, PyObject **out) {
-  return kos_long_fast_result(a | b, out);
-}
-
-
-KOS_OP_INLINE int long_fast_bit_xor_ll(long long a, long long b, PyObject **out) {
-  return kos_long_fast_result(a ^ b, out);
-}
-
-
-KOS_OP_INLINE int long_fast_bit_left_ll(long long a, long long b, PyObject **out) {
-  if (unlikely(a < 0 || b < 0 || b >= 63))
+  mag = -a;
+  if (unlikely(mag > (LLONG_MAX >> b)))
     return 0;
-  if (unlikely(a != 0 && a > (LLONG_MAX >> b)))
-    return 0;
-  return kos_long_fast_result(a << b, out);
+  *res = -(mag << b);
+  return 1;
 }
 
 
-KOS_OP_INLINE int long_fast_bit_right_ll(long long a, long long b, PyObject **out) {
-  if (unlikely(a < 0 || b < 0))
+/* A negative left operand takes the floor shift Python defines, spelled
+   through the complement so no negative value reaches the C shift. */
+KOS_OP_INLINE int kos_ll_bit_right(long long a, long long b, long long *res) {
+  if (unlikely(b < 0))
     return 0;
-  return kos_long_fast_result((b >= 63) ? 0 : (a >> b), out);
+  if (b >= 63)
+    *res = a < 0 ? -1 : 0;
+  else
+    *res = a >= 0 ? (a >> b) : ~((~a) >> b);
+  return 1;
 }
 
 
-/* The object forms: extract, then the _ll form. */
+/* The _ll forms: one step, materialised. */
+#define KOS_LONG_FAST_LL_FORM(NAME)                                     \
+  KOS_OP_INLINE int long_fast_##NAME##_ll(                              \
+      long long a, long long b, PyObject *reuse, PyObject **out) {      \
+    long long res;                                                      \
+    if (unlikely(! kos_ll_##NAME(a, b, &res)))                          \
+      return 0;                                                         \
+    return kos_long_fast_result(res, reuse, out);                       \
+  }
+
+KOS_LONG_FAST_LL_FORM(add)
+KOS_LONG_FAST_LL_FORM(subtract)
+KOS_LONG_FAST_LL_FORM(multiply)
+KOS_LONG_FAST_LL_FORM(modulo)
+KOS_LONG_FAST_LL_FORM(floor_divide)
+KOS_LONG_FAST_LL_FORM(power)
+KOS_LONG_FAST_LL_FORM(bit_and)
+KOS_LONG_FAST_LL_FORM(bit_or)
+KOS_LONG_FAST_LL_FORM(bit_xor)
+KOS_LONG_FAST_LL_FORM(bit_left)
+KOS_LONG_FAST_LL_FORM(bit_right)
+
+#undef KOS_LONG_FAST_LL_FORM
+
+
+/* Two ints within 53 bits divide exactly as doubles: IEEE division of
+   exactly represented values is correctly rounded, which is what
+   int.__truediv__ computes for them. Wider operands and a zero divisor
+   decline. The result is a float, so there is no int step to fold. */
+KOS_OP_INLINE int long_fast_true_divide_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
+  const long long lim = 1LL << 53;
+  (void) reuse;
+  if (unlikely(b == 0 || a <= -lim || a >= lim || b <= -lim || b >= lim))
+    return 0;
+  *out = PyFloat_FromDouble((double) a / (double) b);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+/* The object forms: extract, then the _ll form. reuse is the object
+   the result may be written into, as for the _ll form, or NULL. */
 #define KOS_LONG_FAST_OBJECT_FORM(NAME)                                 \
   KOS_OP_INLINE int long_fast_##NAME(                                   \
-      PyObject *l, PyObject *r, PyObject **out) {                       \
+      PyObject *l, PyObject *r, PyObject *reuse, PyObject **out) {      \
     long long a, b;                                                     \
     if (! kos_as_ll2(l, r, &a, &b))                                     \
       return 0;                                                         \
-    return long_fast_##NAME##_ll(a, b, out);                            \
+    return long_fast_##NAME##_ll(a, b, reuse, out);                     \
   }
 
 KOS_LONG_FAST_OBJECT_FORM(add)
@@ -266,8 +464,298 @@ KOS_LONG_FAST_OBJECT_FORM(bit_or)
 KOS_LONG_FAST_OBJECT_FORM(bit_xor)
 KOS_LONG_FAST_OBJECT_FORM(bit_left)
 KOS_LONG_FAST_OBJECT_FORM(bit_right)
+KOS_LONG_FAST_OBJECT_FORM(floor_divide)
+KOS_LONG_FAST_OBJECT_FORM(true_divide)
+KOS_LONG_FAST_OBJECT_FORM(power)
 
 #undef KOS_LONG_FAST_OBJECT_FORM
+
+
+/* === PyFloat two-operand fast paths === */
+
+/* Per-operator two-operand float fast paths, the float analogue of the
+   PyLong paths above and shaped the same: a _d form taking the two
+   doubles and a candidate the result may be written into, an object
+   form that checks both operands are exact floats, and a num form
+   that tries the int path and then the float path, for the operator
+   cores. The arithmetic is what floatobject.c computes: add, subtract,
+   multiply, and true division are the IEEE operation (a zero divisor
+   declines, so the generic path raises), remainder and floor division
+   are ports of float_rem and float_divmod, so their signs and their
+   handling of infinities and NaN match. Power has no float fast path:
+   its special cases (a negative base with a fractional exponent gives
+   a complex, a zero base with a negative exponent raises) stay with
+   the generic path. */
+
+/* Materialise a double result: into reuse when the caller offered an
+   exact float it owns outright, in which case *out is that same
+   object and the caller's reference becomes the result reference;
+   else a fresh float. Returns 1, or -1 with an error set. */
+KOS_OP_INLINE int kos_float_fast_result(
+    double res, PyObject *reuse, PyObject **out) {
+
+#if KOS_FLOAT_REUSE
+  if (reuse && Py_REFCNT(reuse) == 1) {
+    ((PyFloatObject *) reuse)->ob_fval = res;
+    *out = reuse;
+    return 1;
+  }
+#else
+  (void) reuse;
+#endif
+  *out = PyFloat_FromDouble(res);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+/* The arithmetic of each float operator as a step over two doubles:
+   1 with *res set, 0 for a zero divisor. */
+KOS_OP_INLINE int kos_d_add(double a, double b, double *res) {
+  *res = a + b;
+  return 1;
+}
+
+
+KOS_OP_INLINE int kos_d_subtract(double a, double b, double *res) {
+  *res = a - b;
+  return 1;
+}
+
+
+KOS_OP_INLINE int kos_d_multiply(double a, double b, double *res) {
+  *res = a * b;
+  return 1;
+}
+
+
+KOS_OP_INLINE int kos_d_true_divide(double a, double b, double *res) {
+  if (unlikely(b == 0.0))
+    return 0;
+  *res = a / b;
+  return 1;
+}
+
+
+/* Python's float remainder: the sign of the divisor, a zero result
+   carrying the divisor's sign. */
+KOS_OP_INLINE int kos_d_modulo(double a, double b, double *res) {
+  double mod;
+
+  if (unlikely(b == 0.0))
+    return 0;
+  mod = fmod(a, b);
+  if (mod) {
+    if ((b < 0) != (mod < 0))
+      mod += b;
+  } else {
+    mod = copysign(0.0, b);
+  }
+  *res = mod;
+  return 1;
+}
+
+
+/* Python's float floor division, the floordiv half of float_divmod:
+   the quotient of the divisor-signed remainder, floored, nudged up
+   where the division rounded it down past a half, and a zero result
+   carrying the quotient's sign. */
+KOS_OP_INLINE int kos_d_floor_divide(double a, double b, double *res) {
+  double mod, div, floordiv;
+
+  if (unlikely(b == 0.0))
+    return 0;
+  mod = fmod(a, b);
+  div = (a - mod) / b;
+  if (mod) {
+    if ((b < 0) != (mod < 0)) {
+      mod += b;
+      div -= 1.0;
+    }
+  } else {
+    mod = copysign(0.0, b);
+  }
+  if (div) {
+    floordiv = floor(div);
+    if (div - floordiv > 0.5)
+      floordiv += 1.0;
+  } else {
+    floordiv = copysign(0.0, a / b);
+  }
+  *res = floordiv;
+  return 1;
+}
+
+
+/* The _d forms: one step, materialised. */
+#define KOS_FLOAT_FAST_D_FORM(NAME)                                     \
+  KOS_OP_INLINE int float_fast_##NAME##_d(                              \
+      double a, double b, PyObject *reuse, PyObject **out) {            \
+    double res;                                                         \
+    if (unlikely(! kos_d_##NAME(a, b, &res)))                           \
+      return 0;                                                         \
+    return kos_float_fast_result(res, reuse, out);                      \
+  }
+
+KOS_FLOAT_FAST_D_FORM(add)
+KOS_FLOAT_FAST_D_FORM(subtract)
+KOS_FLOAT_FAST_D_FORM(multiply)
+KOS_FLOAT_FAST_D_FORM(true_divide)
+KOS_FLOAT_FAST_D_FORM(modulo)
+KOS_FLOAT_FAST_D_FORM(floor_divide)
+
+#undef KOS_FLOAT_FAST_D_FORM
+
+
+/* The object forms: both exact floats, then the _d form; and the num
+   forms: the int path, then the float path. */
+#define KOS_FLOAT_FAST_OBJECT_FORM(NAME)                                \
+  KOS_OP_INLINE int float_fast_##NAME(                                  \
+      PyObject *l, PyObject *r, PyObject *reuse, PyObject **out) {      \
+    if (! (PyFloat_CheckExact(l) && PyFloat_CheckExact(r)))             \
+      return 0;                                                         \
+    return float_fast_##NAME##_d(                                       \
+        PyFloat_AS_DOUBLE(l), PyFloat_AS_DOUBLE(r), reuse, out);        \
+  }                                                                     \
+  KOS_OP_INLINE int num_fast_##NAME(                                    \
+      PyObject *l, PyObject *r, PyObject *reuse, PyObject **out) {      \
+    int rc = long_fast_##NAME(l, r, reuse, out);                        \
+    if (rc)                                                             \
+      return rc;                                                        \
+    return float_fast_##NAME(l, r, reuse, out);                         \
+  }
+
+KOS_FLOAT_FAST_OBJECT_FORM(add)
+KOS_FLOAT_FAST_OBJECT_FORM(subtract)
+KOS_FLOAT_FAST_OBJECT_FORM(multiply)
+KOS_FLOAT_FAST_OBJECT_FORM(true_divide)
+KOS_FLOAT_FAST_OBJECT_FORM(modulo)
+KOS_FLOAT_FAST_OBJECT_FORM(floor_divide)
+
+#undef KOS_FLOAT_FAST_OBJECT_FORM
+
+
+/* === PyUnicode fast paths === */
+
+/* Concatenation of exact strs, shaped like the numeric paths: a pair
+   form for the operator cores, an append form for a caller that owns
+   the left outright, and a join over any count for the reducing forms
+   of + and for build_str. A str subclass takes the generic path, so
+   its __add__ and __radd__ stay in charge. */
+
+/* str + str for two borrowed operands. Returns 1 with *out set, 0
+   when the pair is not two exact strs, -1 with an error set. */
+KOS_OP_INLINE int str_fast_add(PyObject *l, PyObject *r, PyObject **out) {
+  if (! (PyUnicode_CheckExact(l) && PyUnicode_CheckExact(r)))
+    return 0;
+  *out = PyUnicode_Concat(l, r);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+/* left += right for an OWNED exact str left and a borrowed exact str
+   right: the reference to left is consumed and *out is the result
+   reference. PyUnicode_Append grows the left in place under CPython's
+   own rule (a sole reference, no cached hash, not interned, the
+   right's kind no wider), so a loop growing one accumulator gets the
+   amortised resize that `s += x` gets in CPython, and concatenates
+   otherwise. The left may move, so the caller stores *out back to
+   wherever it lived. Returns 1, or -1 with an error set and the left
+   released. */
+KOS_OP_INLINE int str_fast_append(
+    PyObject *left, PyObject *right, PyObject **out) {
+
+  *out = left;
+  PyUnicode_Append(out, right);
+  return likely(*out != NULL) ? 1 : -1;
+}
+
+
+/* The join of count borrowed operands: one allocation of the total
+   length at the widest kind, then each piece copied in; a single
+   non-empty piece is returned itself, as str.join does. Returns 1
+   with *out set, 0 when an operand is not an exact str (nothing
+   allocated), -1 with an error set. */
+static inline int str_fast_join(
+    PyObject *const *args, size_t count, PyObject **out) {
+
+  Py_ssize_t total = 0;
+  Py_UCS4 maxchar = 0;
+  PyObject *sole = NULL;
+  size_t pieces = 0;
+  PyObject *res;
+  Py_ssize_t pos = 0;
+
+  for (size_t i = 0; i < count; i++) {
+    PyObject *s = args[i];
+    Py_ssize_t n;
+    Py_UCS4 mc;
+
+    if (! PyUnicode_CheckExact(s))
+      return 0;
+#if PY_VERSION_HEX < 0x030c0000
+    if (unlikely(PyUnicode_READY(s) < 0))
+      return -1;
+#endif
+    n = PyUnicode_GET_LENGTH(s);
+    if (! n)
+      continue;
+    if (unlikely(n > PY_SSIZE_T_MAX - total)) {
+      PyErr_SetString(PyExc_OverflowError, "join() result is too long");
+      return -1;
+    }
+    total += n;
+    mc = PyUnicode_MAX_CHAR_VALUE(s);
+    if (mc > maxchar)
+      maxchar = mc;
+    sole = s;
+    pieces++;
+  }
+
+  if (pieces <= 1) {
+    if (sole) {
+      Py_INCREF(sole);
+      res = sole;
+    } else {
+      res = PyUnicode_New(0, 0);
+    }
+    *out = res;
+    return likely(res != NULL) ? 1 : -1;
+  }
+
+  res = PyUnicode_New(total, maxchar);
+  if (unlikely(! res))
+    return -1;
+
+  for (size_t i = 0; i < count; i++) {
+    PyObject *s = args[i];
+    Py_ssize_t n = PyUnicode_GET_LENGTH(s);
+
+    if (! n)
+      continue;
+    if (unlikely(PyUnicode_CopyCharacters(res, pos, s, 0, n) < 0)) {
+      Py_DECREF(res);
+      return -1;
+    }
+    pos += n;
+  }
+
+  *out = res;
+  return 1;
+}
+
+
+/* A richcompare selector over two doubles, with the C operators so a
+   NaN answers as Python does: false to everything but not-equal. */
+KOS_OP_INLINE int kos_double_compare(KosCompare sel, double a, double b) {
+  switch (sel) {
+    case KOS_COMPARE_LT: return a < b;
+    case KOS_COMPARE_LE: return a <= b;
+    case KOS_COMPARE_EQ: return a == b;
+    case KOS_COMPARE_NE: return a != b;
+    case KOS_COMPARE_GT: return a > b;
+    default: return a >= b;
+  }
+}
 
 
 /**

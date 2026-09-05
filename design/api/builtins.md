@@ -46,12 +46,6 @@ unary operations.
 | `in` | `(in val container)` | Check if val is in container |
 | `not-in` | `(not-in val container)` | Check if val is not in container |
 
-## String Operations
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `build-str` | `(build-str *args)` | Concatenate string representations |
-
 ## Collection Builders
 
 | Function | Signature | Description |
@@ -60,6 +54,7 @@ unary operations.
 | `build_list` | `build_list(*args)` | Build list from arguments |
 | `build_set` | `build_set(*args)` | Build set from arguments |
 | `build_dict` | `build_dict(*pairs, **kwargs)` | Build dict from key-value pairs |
+| `build_str` | `build_str(*args)` | Join the str of each argument; the runtime `#str` and the OBJECT_STR core |
 
 ## Utility Functions
 
@@ -138,12 +133,11 @@ All the following have been migrated from python-sibilant and sibilant-ceval:
 - Atom operations (`gensym`, `symbol`, `keyword`)
 - Values type
 - Utility functions (`reapply`, `_pass`, `apply`, `identity`, `constantly`)
-- Collection builders (`build_tuple`, `build_list`, `build_set`, `build_dict`)
+- Collection builders (`build_tuple`, `build_list`, `build_set`, `build_dict`, `build_str`)
 
 **From sibilant-ceval**:
 - Reducing operators (`+`, `-`, `*`, `/`, `//`, `@`, `&`, `|`, `^`)
 - Membership operators (`in`, `not-in`)
-- String builder (`build-str`)
 - Namespace types (`Namespace`, `NamespaceSpec`, `ModuleNamespace`, `CollectorNamespace`, `Module`)
 - Reference types (`Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`)
 - Formals types (`Formals`, `FormalsSpec`)

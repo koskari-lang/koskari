@@ -246,6 +246,13 @@ int KosStack_Drop1(KosSegment **self);
 */
 int KosStack_Replace2(KosSegment **self, PyObject *val);
 
+/* Settle a pair whose left reference the caller consumed: val, owned,
+   takes the left's cell and the right is released; or with val NULL
+   the right slides down into the left's cell. For an in-place append
+   on the left, whose result replaces it and whose failure has already
+   released it. */
+int KosStack_Settle2(KosSegment **self, PyObject *val);
+
 
 /**
    Remove the last count elements. Does not set err.
@@ -294,6 +301,7 @@ int KosStack_PopTailPtr(KosSegment **self, size_t count, PyObject **dest);
 #define kos_stack_pop_ref_fast      KosStack_PopRef
 #define kos_stack_drop1_fast        KosStack_Drop1
 #define kos_stack_replace2_fast     KosStack_Replace2
+#define kos_stack_settle2_fast      KosStack_Settle2
 #define kos_stack_drop_noerr_fast   KosStack_DropNoErr
 #define kos_stack_peek_fast         KosStack_Peek
 #define kos_stack_tail_ptr_fast     KosStack_TailPtr
@@ -360,6 +368,23 @@ static inline int kos_stack_replace2_fast(KosSegment **block, PyObject *val) {
   s->len -= 1;
   Py_DECREF(right);
   Py_DECREF(left);
+  return 0;
+}
+
+
+/* No underrun guard, as replace2. */
+static inline int kos_stack_settle2_fast(KosSegment **block, PyObject *val) {
+
+  KosSegment *s = *block;
+  PyObject *right = s->objs[s->len - 1];
+
+  s->len -= 1;
+  if (val) {
+    s->objs[s->len - 1] = val;
+    Py_DECREF(right);
+  } else {
+    s->objs[s->len - 1] = right;
+  }
   return 0;
 }
 

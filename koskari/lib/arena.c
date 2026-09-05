@@ -94,8 +94,7 @@ PyObject *KosArena_New(size_t nbytes) {
 int KosArena_Reserve(PyObject *arena, size_t nbytes, void **out) {
 
   KosArena *self = (KosArena *) arena;
-  /* Members hold 32-byte instruction records; keep each line-aligned. */
-  size_t unit = 32;
+  size_t unit = KOS_ARENA_UNIT;
   size_t start = ((self->fill + unit - 1) / unit) * unit;
 
   if (self->sealed) {
@@ -296,6 +295,21 @@ int koskari_arena_init(PyObject *mod) {
 
   if (PyDict_SetItemString(dict, "Arena", (PyObject *) &KosArenaType)) {
     return -1;
+  }
+
+  /* the reservation unit, for a planner sizing an arena from its
+     members' footprints */
+  {
+    PyObject *unit = PyLong_FromLong(KOS_ARENA_UNIT);
+    int res;
+    if (! unit) {
+      return -1;
+    }
+    res = PyDict_SetItemString(KosArenaType.tp_dict, "UNIT", unit);
+    Py_DECREF(unit);
+    if (res) {
+      return -1;
+    }
   }
 
   return 0;
