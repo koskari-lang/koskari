@@ -180,16 +180,22 @@ static KOS_NOINLINE PyObject *reduce_slow(
   // count > 2: fold left-to-right, value is the owned accumulator,
   // offered to the fast path as the next result's home: from the
   // second step on it is a fresh intermediate the fold alone holds,
-  // so an int or float run allocates once
+  // so an int or float run allocates once. Only the fast path hands
+  // value back as the result without a new reference; a protocol
+  // slot returning its left operand (a list's __iadd__) returns a
+  // new reference to it, so that arm always releases the old one.
   PyObject *value = args[0];
   Py_INCREF(value);
 
   for (size_t i = 1; i < count; i++) {
     PyObject *n = NULL;
-    if (! longfast || longfast(value, args[i], value, &n) == 0)
+    if (longfast && longfast(value, args[i], value, &n) != 0) {
+      if (n == value)
+        continue;
+    } else {
       n = func(value, args[i]);
-    if (n != value)
-      Py_DECREF(value);
+    }
+    Py_DECREF(value);
     value = n;
     if (! value)
       break;

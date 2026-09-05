@@ -25,6 +25,7 @@ return the same results as the ladder alone throughout.
 
 
 import operator
+import sys
 
 from koskari.lib import FormalsSpec, NamespaceSpec, Operand
 from tests import make_callable
@@ -242,14 +243,23 @@ class TestObjectInplaceElector(InplaceElectorMixin, CevalTest):
 
     async def test_non_binary_site_reduces(self):
         """
-        A site of three operands is not electable and reduces in place
-        as before
+        A site of three operands reduces in place through the fold
+        body on ints and through the in-place protocol on the rest,
+        and a protocol operand returning itself keeps its reference
+        count
         """
 
         site, _ = make_object_site(count=3)
         for _ in range(5):
             self.assertEqual(await site(1, 2, 3), 6)
             self.assertEqual(await site([1], [2], [3]), [1, 2, 3])
+        lst = [1]
+        before = sys.getrefcount(lst)
+        result = await site(lst, [2], [3])
+        self.assertIs(result, lst)
+        del result
+        self.assertEqual(sys.getrefcount(lst), before)
+        self.assertEqual(lst, [1, 2, 3])
 
 
 class TestFastInplaceElector(InplaceElectorMixin, CevalTest):
