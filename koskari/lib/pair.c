@@ -286,24 +286,23 @@ static PyObject *pair_getitem(PyObject *self, Py_ssize_t index) {
 }
 
 
+static int pair_write_car(PyObject *pair, PyObject *val);
+static int pair_write_cdr(PyObject *pair, PyObject *val);
+
+
 static int pair_setitem(PyObject *self, Py_ssize_t index, PyObject *val) {
-  int result = 0;
 
   switch(index) {
   case 0:
-    KosPair_SETCAR(self, val);
-    break;
+    return pair_write_car(self, val);
 
   case 1:
-    KosPair_SETCDR(self, val);
-    break;
+    return pair_write_cdr(self, val);
 
   default:
     PyErr_SetString(PyExc_IndexError, "pair index out of range");
-    result = -1;
+    return -1;
   }
-
-  return result;
 }
 
 
@@ -1442,10 +1441,19 @@ static PyObject *pair_read_position(PyObject *pair) {
 }
 
 
+/**
+   Store val as the car of pair. A NULL val is a deletion request, which
+   a car cannot honor: every cell carries a head
+*/
 static int pair_write_car(PyObject *pair, PyObject *val) {
 
   if (KosNilP(pair)) {
     PyErr_SetString(PyExc_TypeError, "cannot set car of nil");
+    return -1;
+  }
+
+  if (! val) {
+    PyErr_SetString(PyExc_TypeError, "cannot delete car of pair");
     return -1;
   }
 
@@ -1454,12 +1462,20 @@ static int pair_write_car(PyObject *pair, PyObject *val) {
 }
 
 
+/**
+   Store val as the cdr of pair. A NULL val is a deletion request, which
+   truncates the list: the cdr becomes the empty list matching the cell's
+   own style, bracket-nil for a bracket cell and nil otherwise
+*/
 static int pair_write_cdr(PyObject *pair, PyObject *val) {
 
   if (KosNilP(pair)) {
     PyErr_SetString(PyExc_TypeError, "cannot set cdr of nil");
     return -1;
   }
+
+  if (! val)
+    val = KosBracketPair_Check(pair) ? KosBracketNil : KosNil;
 
   KosPair_SETCDR(pair, val);
   return 0;
@@ -1485,12 +1501,6 @@ static PyObject *pair_get_car(PyObject *self, void *closure) {
 
 static int pair_set_car(PyObject *self, PyObject *value, void *closure) {
   (void) closure;
-
-  if (! value) {
-    PyErr_SetString(PyExc_TypeError, "cannot delete car");
-    return -1;
-  }
-
   return pair_write_car(self, value);
 }
 
@@ -1503,12 +1513,6 @@ static PyObject *pair_get_cdr(PyObject *self, void *closure) {
 
 static int pair_set_cdr(PyObject *self, PyObject *value, void *closure) {
   (void) closure;
-
-  if (! value) {
-    PyErr_SetString(PyExc_TypeError, "cannot delete cdr");
-    return -1;
-  }
-
   return pair_write_cdr(self, value);
 }
 

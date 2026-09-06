@@ -74,13 +74,51 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p.car, "a")
         self.assertEqual(p.cdr, "b")
 
-    async def test_car_cdr_delete_raises(self):
-        """del pair.car / del pair.cdr raises TypeError"""
+    async def test_car_delete_raises(self):
+        """del pair.car and del pair[0] raise TypeError and leave the car"""
         p = pair(1, 2)
         with self.assertRaises(TypeError):
             del p.car
         with self.assertRaises(TypeError):
-            del p.cdr
+            del p[0]
+        self.assertEqual(p.car, 1)
+        self.assertEqual(repr(p), "cons(1, 2)")
+
+    async def test_cdr_delete_truncates_to_nil(self):
+        """del pair.cdr and del pair[1] set the cdr to nil"""
+        p = cons(1, 2, 3, nil)
+        del p.cdr
+        self.assertIs(p.cdr, nil)
+        self.assertEqual(p.length(), 1)
+
+        q = cons(1, 2, 3, nil)
+        del q[1]
+        self.assertIs(q.cdr, nil)
+        self.assertEqual(list(q.unpack()), [1])
+
+    async def test_cdr_delete_releases_tail(self):
+        """truncating drops the reference to the old tail"""
+        import weakref
+
+        class Tail:
+            pass
+
+        t = Tail()
+        p = pair(1, t)
+        ref = weakref.ref(t)
+        del t
+        self.assertIsNotNone(ref())
+        del p.cdr
+        self.assertIsNone(ref())
+
+    async def test_cdr_delete_bracket_keeps_style(self):
+        """a bracket cell truncates to bracket-nil, not nil"""
+        from koskari.lib import bracket_nil
+        p = bracket_pair(1, bracket_pair(2, bracket_nil))
+        del p.cdr
+        self.assertIs(p.cdr, bracket_nil)
+        self.assertIsNot(p.cdr, nil)
+        self.assertEqual(p.cdr, nil)
 
     async def test_len(self):
         """len() always returns 2 for pairs"""
