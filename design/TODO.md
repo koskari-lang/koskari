@@ -232,6 +232,17 @@ From [FEATURES.md](FEATURES.md) and related docs:
 
 - Performance optimizations (general)
 
+### Recursion max depth (investigate)
+
+Runaway recursion ends in the OOM killer today: frames live on the heap,
+so nothing bounds chain depth, and no `Py_EnterRecursiveCall` guards the
+nested `koskari_eval` a Python-boundary re-entry puts on the C stack (a
+three-level `(super)` chain segfaults). Investigate two guards: a frame
+depth stored on the frame node at push, checked in `kos_dyn_push_frame`
+with a high, settable limit raising `RecursionError`; and CPython's
+recursion accounting around the boundary drivers that re-enter the eval.
+Ref: [EVALUATOR.md](EVALUATOR.md) §7 (installs and call paths).
+
 ---
 
 ## Recorded proposals (evaluate / implement)
