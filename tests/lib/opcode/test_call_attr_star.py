@@ -575,4 +575,60 @@ class TestStarCallNonIterable(CevalTest):
         self.assertEqual(await make_callable(code, ns)(), (0, 2, 4))
 
 
+class TestStarStarCallNonMapping(CevalTest):
+    """
+    A **: operand must be a mapping; a non-mapping raises TypeError naming
+    its type, and a non-dict mapping is accepted
+    """
+
+    async def test_call_star_kwargs_non_mapping(self):
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CONST", 5],
+            ["CALL_STAR", 2],
+            ["RETURN", 1],
+        ], values={"f": lambda **k: k})
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("argument after **: must be a mapping, not int",
+                      str(ctx.exception))
+
+
+    async def test_call_star_kwargs_python_callee_non_mapping(self):
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CONST", 5],
+            ["CALL_STAR", 2],
+            ["RETURN", 1],
+        ], values={"f": dict})
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("not int", str(ctx.exception))
+
+
+    async def test_call_star_kwargs_accepts_mapping_proxy(self):
+        import types
+        proxy = types.MappingProxyType({"a": 1, "b": 2})
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["VAR", "proxy"],
+            ["CALL_STAR", 2],
+            ["RETURN", 1],
+        ], values={"f": lambda **k: k, "proxy": proxy})
+        self.assertEqual(await make_callable(code, ns)(), {"a": 1, "b": 2})
+
+
+    async def test_combine_kwds_non_mapping(self):
+        code, ns = build_expr([
+            ["CONST", {"a": 1}],
+            ["CONST", 5],
+            ["COMBINE_KWDS", 2],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("argument after **: must be a mapping, not int",
+                      str(ctx.exception))
+
+
 # The end.

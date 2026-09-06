@@ -38,6 +38,12 @@ KOS_OP_HANDLER_COLD(COMBINE_KWDS) {
 
   for (unsigned i = 0; i < opa; i++) {
     if (PyDict_Merge(built, vals[i], 1) != 0) {
+      if (PyErr_ExceptionMatches(PyExc_TypeError)
+          || PyErr_ExceptionMatches(PyExc_AttributeError)) {
+        PyErr_Format(PyExc_TypeError,
+                     "argument after **: must be a mapping, not %.100s",
+                     Py_TYPE(vals[i])->tp_name);
+      }
       Py_DECREF(built);
       KosEvalState_StackDropNoErr(es, (size_t) opa);
       RESULT_RAISE();

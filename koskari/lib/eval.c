@@ -1906,8 +1906,9 @@ static int kos_return_take_resume(
    With attr_name NULL the subject is the callable. Otherwise the subject
    is the receiver: attr_name is resolved on it through cache and the
    receiver is prepended to the positional tuple when the resolution asks
-   for it. pos is coerced to a tuple; a non-iterable raises TypeError
-   naming its type. Returns the call result for RESULT_RELAY, or a raise.
+   for it. pos is coerced to a tuple and kwd to a dict; a non-iterable
+   or non-mapping operand raises TypeError naming its type. Returns the
+   call result for RESULT_RELAY, or a raise.
 */
 static KosOpResult kos_op_call_star(
     KosEvalState *es,
@@ -1957,6 +1958,23 @@ static KosOpResult kos_op_call_star(
       goto done;
     }
     Py_SETREF(pos, fixed);
+  }
+
+  if (kwd && ! PyDict_Check(kwd)) {
+    PyObject *fixed = PyDict_New();
+    if (! fixed)
+      goto done;
+    if (PyDict_Update(fixed, kwd) < 0) {
+      Py_DECREF(fixed);
+      if (PyErr_ExceptionMatches(PyExc_TypeError)
+          || PyErr_ExceptionMatches(PyExc_AttributeError)) {
+        PyErr_Format(PyExc_TypeError,
+                     "argument after **: must be a mapping, not %.100s",
+                     Py_TYPE(kwd)->tp_name);
+      }
+      goto done;
+    }
+    Py_SETREF(kwd, fixed);
   }
 
   if (! attr_name) {

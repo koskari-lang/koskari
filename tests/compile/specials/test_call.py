@@ -565,4 +565,42 @@ class TestStarArgNonIterable(SpecialsTestCase):
         self.assertEqual((0, 1, 2), await expr())
 
 
+class TestStarStarArgNonMapping(SpecialsTestCase):
+    """
+    (f **: x) with a non-mapping x raises TypeError at run time, for a
+    Koskari callee and a Python callee alike
+    """
+
+    async def test_koskari_callee(self):
+        expr, mod = self.compile_expr(
+            "((lambda [**: k] k) **: five)", five=5)
+        with self.assertRaises(TypeError) as ctx:
+            await expr()
+        self.assertIn("argument after **: must be a mapping, not int",
+                      str(ctx.exception))
+
+
+    async def test_python_callee(self):
+        expr, mod = self.compile_expr("(f **: five)", f=dict, five=5)
+        with self.assertRaises(TypeError) as ctx:
+            await expr()
+        self.assertIn("not int", str(ctx.exception))
+
+
+    async def test_two_chunks(self):
+        expr, mod = self.compile_expr(
+            '(f **: #{"a": 1} **: five)', f=dict, five=5)
+        with self.assertRaises(TypeError) as ctx:
+            await expr()
+        self.assertIn("not int", str(ctx.exception))
+
+
+    async def test_non_dict_mapping_is_accepted(self):
+        import types
+        expr, mod = self.compile_expr(
+            "(f **: proxy)", f=dict,
+            proxy=types.MappingProxyType({"a": 1}))
+        self.assertEqual({"a": 1}, await expr())
+
+
 # The end.
