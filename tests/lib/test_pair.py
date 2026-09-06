@@ -547,6 +547,52 @@ class TestPairRecursion(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(length, 2)
 
 
+class TestPairRenderErrors(unittest.IsolatedAsyncioTestCase):
+    """
+    repr() and str() propagate an error raised while rendering an element
+    instead of dereferencing the NULL result
+    """
+
+    class Boom:
+        def __repr__(self):
+            raise ValueError("no repr")
+
+        def __str__(self):
+            raise ValueError("no str")
+
+    async def test_repr_element_error_propagates(self):
+        p = cons(self.Boom(), nil)
+        with self.assertRaises(ValueError):
+            repr(p)
+
+    async def test_repr_improper_tail_error_propagates(self):
+        p = pair(1, self.Boom())
+        with self.assertRaises(ValueError):
+            repr(p)
+
+    async def test_str_element_error_propagates(self):
+        p = cons(1, self.Boom(), nil)
+        with self.assertRaises(ValueError):
+            str(p)
+
+    async def test_str_improper_tail_error_propagates(self):
+        p = pair(1, self.Boom())
+        with self.assertRaises(ValueError):
+            str(p)
+
+    async def test_car_cycle_raises_recursion_error(self):
+        """
+        A cycle through the car is not a spine cycle; the renderer recurses
+        into it and Python's recursion guard must surface as an exception
+        """
+        p = pair(1, nil)
+        setcar(p, p)
+        with self.assertRaises(RecursionError):
+            repr(p)
+        with self.assertRaises(RecursionError):
+            str(p)
+
+
 class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
     """Tests for append, extend, splice methods"""
 

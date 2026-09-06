@@ -329,6 +329,12 @@ static PyObject *pair_repr_inner(PyObject *self, PyObject *cons_open) {
   PyObject *rest = self;
   PyObject *rest_id;
 
+  if (! col || ! found) {
+    Py_XDECREF(col);
+    Py_XDECREF(found);
+    return NULL;
+  }
+
   PyList_Append(col, cons_open);
 
   while (KosPair_IsCell(rest)) {
@@ -355,6 +361,12 @@ static PyObject *pair_repr_inner(PyObject *self, PyObject *cons_open) {
       Py_DECREF(tmp);
 
       tmp = PyObject_Repr(KosPair_CAR(rest));
+      if (! tmp) {
+        Py_DECREF(rest_id);
+        Py_DECREF(col);
+        Py_DECREF(found);
+        return NULL;
+      }
       PyList_Append(col, tmp);
       PyList_Append(col, _str_comma_space);
       Py_DECREF(tmp);
@@ -366,6 +378,11 @@ static PyObject *pair_repr_inner(PyObject *self, PyObject *cons_open) {
 
   if (rest) {
     tmp = PyObject_Repr(rest);
+    if (! tmp) {
+      Py_DECREF(col);
+      Py_DECREF(found);
+      return NULL;
+    }
     PyList_Append(col, tmp);
     Py_DECREF(tmp);
   }
@@ -389,6 +406,9 @@ static PyObject *sib_quoted(PyObject *u) {
   /* quote a string for display in str() output */
 
   PyObject *escaped = PyUnicode_Replace(u, _str_quote, _str_esc_quote, -1);
+  if (! escaped)
+    return NULL;
+
   PyObject *result = PyUnicode_FromFormat("\"%U\"", escaped);
   Py_DECREF(escaped);
   return result;
@@ -407,6 +427,12 @@ static PyObject *pair_str_inner(
 
   PyObject *rest = self;
   PyObject *rest_id;
+
+  if (! col || ! found) {
+    Py_XDECREF(col);
+    Py_XDECREF(found);
+    return NULL;
+  }
 
   if (KosNilP(self)) {
     /* the empty list renders as its own open/close delimiters */
@@ -452,6 +478,11 @@ static PyObject *pair_str_inner(
       } else {
         tmp = PyObject_Str(tmp);
       }
+      if (! tmp) {
+        Py_DECREF(col);
+        Py_DECREF(found);
+        return NULL;
+      }
 
       PyList_Append(col, tmp);
       Py_DECREF(tmp);
@@ -474,6 +505,11 @@ static PyObject *pair_str_inner(
       tmp = sib_quoted(tmp);
     } else {
       tmp = PyObject_Str(tmp);
+    }
+    if (! tmp) {
+      Py_DECREF(col);
+      Py_DECREF(found);
+      return NULL;
     }
     PyList_Append(col, _str_dot_space);
     PyList_Append(col, tmp);
