@@ -599,8 +599,10 @@ class IndentAwareStream(SourceStream):
         When max_indent is None, delegates to the native C skip_whitespace.
 
         Otherwise, speculatively scans the upcoming whitespace and blank
-        lines to find the next content character. Blank lines are skipped.
-        The first non-blank content line is measured:
+        lines to find the next content character. Blank lines are skipped,
+        and a line holding only whitespace and a comment is a blank line:
+        a comment is never content and its column is never an indent. The
+        first non-blank content line is measured:
 
         - If the content is on the current line (no newline was crossed),
           the leading horizontal whitespace is consumed and the stream is
@@ -645,6 +647,11 @@ class IndentAwareStream(SourceStream):
                 elif c in ' \t':
                     indent += 1
                     consume += 1
+                elif c == ';':
+                    # a comment runs to the end of its line and counts as
+                    # blank: swallow it and let the newline be measured
+                    rest = self.read_until_chars('\n')
+                    consume += 1 + len(rest)
                 elif not saw_newline:
                     # Content on the current line: keep the horizontal
                     # whitespace already scanned.
@@ -3111,16 +3118,22 @@ class LayoutReader(Reader):
 
     def _consume_through_blank_lines_to_peer_column(self, stream, outer_indent):
         """
-        Consume from the newline ending the prior line across blank lines and
-        comment-only lines until the stream sits at the first content character
-        on a line indented to outer_indent (the peer block header).
+        Consume the rest of the prior line (trailing whitespace and a trailing
+        comment), then blank lines and comment-only lines, until the stream
+        sits at the first content character on a line indented to
+        outer_indent (the peer block header).
 
-        :param stream: IndentAwareStream with peek(1) the newline that ends the
-            previous logical line
+        :param stream: IndentAwareStream after the previous logical line's
+            last form, anywhere before its newline
         :param outer_indent: column of the peer head line's leading spaces
         :return: True if a peer header line was reached, False otherwise
         """
 
+        while stream.peek(1) in (' ', '\t'):
+            stream.read(1)
+        if stream.peek(1) == ';':
+            stream.read(1)
+            stream.read_until_chars('\n')
         if stream.peek(1) != '\n':
             return False
         stream.read(1)

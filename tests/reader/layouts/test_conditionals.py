@@ -80,6 +80,80 @@ class TestLayoutIfPeers(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
 
+    async def test_comment_lines_are_blank_for_block_structure(self):
+        """
+        A line holding only whitespace and a comment is a blank line: its
+        column is not an indent, so it neither ends a body nor blocks a
+        declared peer, wherever it sits
+        """
+
+        expected = pycons(
+            (_compile_cond,
+             (True, 1),
+             (keyword('else'), 2))
+        )
+
+        # column-0 comment inside the body used to end the block
+        self.assertEqual(parse_layout("""
+        if True:
+          1
+        ; a note at column zero
+        else:
+          2
+        """), expected)
+
+        # comment at body indent as the last body line before the peer
+        self.assertEqual(parse_layout("""
+        if True:
+          1
+          ;; last thing in the body
+        else:
+          2
+        """), expected)
+
+        # comment indented deeper than the body
+        self.assertEqual(parse_layout("""
+        if True:
+          1
+              ;; over-indented note
+        else:
+          2
+        """), expected)
+
+        # trailing comment on the last body line
+        self.assertEqual(parse_layout("""
+        if True:
+          1  ; trailing
+        else:
+          2
+        """), expected)
+
+        # comment on the header line itself
+        self.assertEqual(parse_layout("""
+        if True:  ; header note
+          1
+        else:
+          2
+        """), expected)
+
+
+    async def test_column_zero_comment_between_body_lines_keeps_body(self):
+        expected = pycons(
+            (_compile_cond,
+             (True, 1, 2),
+             (keyword('else'), 3))
+        )
+
+        self.assertEqual(parse_layout("""
+        if True:
+          1
+        ; not a dedent
+          2
+        else:
+          3
+        """), expected)
+
+
     async def test_if_with_else_peer_blank_line_and_comment_before_else(self):
         """
         Blank lines and comment-only lines before a declared else: peer should
