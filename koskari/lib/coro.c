@@ -327,13 +327,14 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 }
 
 
-static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
-
-  KosCoroutine *const coro = (KosCoroutine *) self;
-
-  PyObject *typ = NULL, *val = NULL, *tb = NULL;
-  if (! PyArg_ParseTuple(args, "O|OO:throw", &typ, &val, &tb))
-    return NULL;
+/**
+   Drive a throw of the normalized (class, instance) pair into the
+   coroutine. Borrows both; the caller releases them.
+*/
+static PyObject *coroutine_throw_pair(
+    KosCoroutine *coro,
+    PyObject *typ,
+    PyObject *exc) {
 
   if (coro->state == KOS_CORO_DONE) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -348,8 +349,7 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
     KosEvalState_Init(&coro_es, coro->ctx);
     if (KosEvalState_PythonAwaitIter(&coro_es)) {
       PyObject *result = PyObject_CallMethodObjArgs(
-          KosEvalState_PythonAwaitIter(&coro_es), coro_str_throw, typ, val, tb,
-          NULL);
+          KosEvalState_PythonAwaitIter(&coro_es), coro_str_throw, exc, NULL);
 
       if (result) {
         return result;
@@ -366,27 +366,32 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
         KosEvalState_PythonAwaitClearIter(&coro_es);
         coro->state = KOS_CORO_RUNNING;
         KosEvalState_PythonResumeSet(&coro_es, await_result, KOS_RESUME_AWAIT);
-        return coroutine_send(self, Py_None);
+        return coroutine_send((PyObject *) coro, Py_None);
       } else {
         return coroutine_raise_at_await(coro, &coro_es);
       }
     }
   }
 
-  /* Normalize exception; pass as throw_exc to evaluator */
-  PyErr_NormalizeException(&typ, &val, &tb);
-  PyObject *exc = val;
-  if (! exc)
-    exc = typ;
-  Py_XINCREF(exc);
-
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
   KosOpResult res = koskari_eval(coro->ctx, NULL, typ, exc);
-  Py_DECREF(exc);
   coro->in_send = 0;
 
   return coroutine_result(coro, res);
+}
+
+
+static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
+
+  PyObject *typ = NULL, *exc = NULL;
+  if (KosUtils_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
+    return NULL;
+
+  PyObject *result = coroutine_throw_pair((KosCoroutine *) self, typ, exc);
+  Py_DECREF(typ);
+  Py_DECREF(exc);
+  return result;
 }
 
 

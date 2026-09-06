@@ -328,6 +328,65 @@ PyObject *KosUtils_Apply(PyObject *func, PyObject *args, PyObject *kwargs) {
 }
 
 
+int KosUtils_NormalizeThrow(
+    PyObject *typ,
+    PyObject *val,
+    PyObject *tb,
+    PyObject **typ_out,
+    PyObject **exc_out) {
+
+  if (PyExceptionClass_Check(typ)) {
+    Py_INCREF(typ);
+    Py_XINCREF(val);
+    Py_XINCREF(tb);
+    PyErr_NormalizeException(&typ, &val, &tb);
+    Py_XDECREF(tb);
+    if (! typ)
+      return -1;
+    if (! val) {
+      val = typ;
+      Py_INCREF(val);
+    }
+    *typ_out = typ;
+    *exc_out = val;
+    return 0;
+  }
+
+  if (PyExceptionInstance_Check(typ)) {
+    if (val && val != Py_None) {
+      PyErr_SetString(PyExc_TypeError,
+                      "instance exception may not have a separate value");
+      return -1;
+    }
+    Py_INCREF(typ);
+    *exc_out = typ;
+    *typ_out = (PyObject *) Py_TYPE(typ);
+    Py_INCREF(*typ_out);
+    return 0;
+  }
+
+  PyErr_SetString(PyExc_TypeError,
+                  "exceptions must be classes or instances deriving "
+                  "from BaseException");
+  return -1;
+}
+
+
+int KosUtils_NormalizeThrowArgs(
+    PyObject *args,
+    const char *format,
+    PyObject **typ_out,
+    PyObject **exc_out) {
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+
+  if (! PyArg_ParseTuple(args, format, &typ, &val, &tb))
+    return -1;
+
+  return KosUtils_NormalizeThrow(typ, val, tb, typ_out, exc_out);
+}
+
+
 PyObject *KosUtils_Identity(PyObject *value) {
 
   Py_INCREF(value);

@@ -61,6 +61,41 @@ PyObject *KosUtils_Reapply(PyObject *func, PyObject *data, long count);
 PyObject *KosUtils_Apply(PyObject *func, PyObject *args, PyObject *kwargs);
 
 
+/**
+   Normalize the (typ[, val[, tb]]) triple of a generator-style throw
+   into an owned (exception class, exception instance) pair. typ may be
+   an exception class with an optional val, or a bare exception instance
+   with no val. tb is accepted for signature compatibility and dropped;
+   the evaluator's throw ingress carries no traceback.
+
+   :param typ: exception class or instance
+   :param val: value or instance for a class typ, or NULL/None
+   :param tb: traceback or NULL/None (ignored)
+   :param typ_out: receives a new reference to the exception class
+   :param exc_out: receives a new reference to the exception instance
+   :return: 0 on success, -1 with TypeError set on a malformed triple
+*/
+int KosUtils_NormalizeThrow(
+    PyObject *typ,
+    PyObject *val,
+    PyObject *tb,
+    PyObject **typ_out,
+    PyObject **exc_out);
+
+
+/**
+   Parse a throw method's args tuple with format (e.g. "O|OO:throw") and
+   normalize it through KosUtils_NormalizeThrow.
+
+   :return: 0 on success, -1 with an exception set
+*/
+int KosUtils_NormalizeThrowArgs(
+    PyObject *args,
+    const char *format,
+    PyObject **typ_out,
+    PyObject **exc_out);
+
+
 /* === functional primitives === */
 
 

@@ -92,4 +92,78 @@ class TestCoroutineReuse(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(coro.close())
 
 
+class TestCoroutineThrow(unittest.IsolatedAsyncioTestCase):
+    """
+    throw() and close() on a coroutine that has not completed
+    """
+
+    async def test_throw_class_raises_it(self):
+        coro = _const_coro()
+        with self.assertRaises(ValueError):
+            coro.throw(ValueError)
+
+
+    async def test_throw_class_and_value_raises_with_args(self):
+        coro = _const_coro()
+        with self.assertRaises(ValueError) as ctx:
+            coro.throw(ValueError, "boom")
+        self.assertEqual(ctx.exception.args, ("boom",))
+
+
+    async def test_throw_instance_raises_that_instance(self):
+        coro = _const_coro()
+        exc = ValueError("boom")
+        with self.assertRaises(ValueError) as ctx:
+            coro.throw(exc)
+        self.assertIs(ctx.exception, exc)
+
+
+    async def test_throw_does_not_leak_the_normalized_instance(self):
+        """
+        throw(Cls) instantiates Cls during normalization; the instance
+        must be released once the throw is over. It used to be leaked.
+        """
+
+        import gc
+        import weakref
+
+        class Exit(BaseException):
+            pass
+
+        coro = _const_coro()
+        try:
+            coro.throw(Exit)
+        except Exit as e:
+            ref = weakref.ref(e)
+            e = None
+        gc.collect()
+        self.assertIsNone(ref())
+
+
+    async def test_throw_keeps_the_value_alive(self):
+        """
+        throw(Cls, val) must not drop a reference to val it never took;
+        the raised exception still owns it after the throw
+        """
+
+        import sys
+
+        coro = _const_coro()
+        value = "a value object owned only by this test"
+        before = sys.getrefcount(value)
+        with self.assertRaises(ValueError) as ctx:
+            coro.throw(ValueError, value)
+        self.assertIs(ctx.exception.args[0], value)
+        del ctx
+        self.assertEqual(sys.getrefcount(value), before)
+
+
+    async def test_close_before_start_finishes_the_coroutine(self):
+        coro = _const_coro()
+        self.assertIsNone(coro.close())
+        with self.assertRaisesRegex(
+                RuntimeError, "cannot reuse already awaited coroutine"):
+            await coro
+
+
 # The end.

@@ -37,61 +37,6 @@ static PyObject *iterate_str_name = NULL;
 
 
 /**
-   Parse and normalize throw-method arguments (typ[, val[, tb]]) into an
-   owned (type, exception-instance) pair shaped for the evaluator's
-   throw ingress. Accepts an exception class with optional value, or a
-   bare exception instance. format carries the method name for error
-   messages, e.g. "O|OO:athrow".
-*/
-static int normalize_throw_args(
-    PyObject *args,
-    const char *format,
-    PyObject **typ_out,
-    PyObject **exc_out) {
-
-  PyObject *typ = NULL, *val = NULL, *tb = NULL;
-
-  if (! PyArg_ParseTuple(args, format, &typ, &val, &tb))
-    return -1;
-
-  if (PyExceptionClass_Check(typ)) {
-    Py_INCREF(typ);
-    Py_XINCREF(val);
-    Py_XINCREF(tb);
-    PyErr_NormalizeException(&typ, &val, &tb);
-    Py_XDECREF(tb);
-    if (! typ)
-      return -1;
-    if (! val) {
-      val = typ;
-      Py_INCREF(val);
-    }
-    *typ_out = typ;
-    *exc_out = val;
-    return 0;
-  }
-
-  if (PyExceptionInstance_Check(typ)) {
-    if (val && val != Py_None) {
-      PyErr_SetString(PyExc_TypeError,
-                      "instance exception may not have a separate value");
-      return -1;
-    }
-    Py_INCREF(typ);
-    *exc_out = typ;
-    *typ_out = (PyObject *) Py_TYPE(typ);
-    Py_INCREF(*typ_out);
-    return 0;
-  }
-
-  PyErr_SetString(PyExc_TypeError,
-                  "exceptions must be classes or instances deriving "
-                  "from BaseException");
-  return -1;
-}
-
-
-/**
    Provider display name for reprs: its __name__ when it has one, else
    NULL (no error left pending)
 */
@@ -796,7 +741,7 @@ static PyObject *stepper_throw(PyObject *self, PyObject *args) {
   KosIterStepper *st = (KosIterStepper *) self;
 
   PyObject *typ = NULL, *exc = NULL;
-  if (normalize_throw_args(args, "O|OO:throw", &typ, &exc) < 0)
+  if (KosUtils_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
     return NULL;
 
   st->is_throw = 1;
@@ -1232,7 +1177,7 @@ static PyObject *demandgen_throw(PyObject *self, PyObject *args) {
   KosIterDemandGen *gen = (KosIterDemandGen *) self;
 
   PyObject *typ = NULL, *exc = NULL;
-  if (normalize_throw_args(args, "O|OO:throw", &typ, &exc) < 0)
+  if (KosUtils_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
     return NULL;
 
   if (! gen->provider) {
@@ -1361,7 +1306,7 @@ PyObject *KosIterAdapt_Athrow(PyObject *self, PyObject *args) {
 
   PyObject *typ = NULL, *exc = NULL;
 
-  if (normalize_throw_args(args, "O|OO:athrow", &typ, &exc) < 0)
+  if (KosUtils_NormalizeThrowArgs(args, "O|OO:athrow", &typ, &exc) < 0)
     return NULL;
 
   PyObject *st = stepper_new_ex(self, NULL, typ, exc, 0);

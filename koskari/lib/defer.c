@@ -380,33 +380,18 @@ static PyObject *defer_finish_done(KosDefer *self) {
 
 
 /**
-   Raise the throw arguments at this point. Handles class-or-instance
-   typ and NULL/None val and tb, per generator throw() semantics.
+   Raise the throw arguments at this point, per generator throw()
+   semantics: class-or-instance typ, optional val, tb ignored.
 */
 static void defer_raise_thrown(PyObject *typ, PyObject *val, PyObject *tb) {
-  if (tb == Py_None) {
-    tb = NULL;
-  } else if (tb && ! PyTraceBack_Check(tb)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "throw() third argument must be a traceback object");
+  PyObject *cls = NULL, *exc = NULL;
+
+  if (KosUtils_NormalizeThrow(typ, val, tb, &cls, &exc) < 0)
     return;
-  }
 
-  if (PyExceptionInstance_Check(typ)) {
-    if (val && val != Py_None) {
-      PyErr_SetString(PyExc_TypeError,
-                      "instance exception may not have a separate value");
-      return;
-    }
-    val = typ;
-    typ = PyExceptionInstance_Class(typ);
-  }
-
-  Py_XINCREF(typ);
-  Py_XINCREF(val);
-  Py_XINCREF(tb);
-  PyErr_NormalizeException(&typ, &val, &tb);
-  PyErr_Restore(typ, val, tb);
+  PyErr_SetObject(cls, exc);
+  Py_DECREF(cls);
+  Py_DECREF(exc);
 }
 
 
