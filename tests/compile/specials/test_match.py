@@ -153,6 +153,21 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), (2, 3))
 
 
+    async def test_match_sequence_empty_rest_before_suffix(self):
+        # a mid-spine rest that consumes nothing binds the empty
+        # remainder, and the suffix still binds the last element
+        src = """
+        (match data
+          [[#[a *: mid b]] #(a mid b)]
+          [else: 0])
+        """
+        expr, mod = self.compile_expr(src, data=(1, 2))
+        self.assertEqual(await expr(), (1, (), 2))
+
+        expr, mod = self.compile_expr(src, data=(1, 2, 3))
+        self.assertEqual(await expr(), (1, (2,), 3))
+
+
     async def test_match_sequence_over_pair_binds_datum(self):
         # a pair is source: walking it boxes each capture in a Datum
         # carrying the cell, so the bound name is the box

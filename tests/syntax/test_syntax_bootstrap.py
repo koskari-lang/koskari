@@ -134,6 +134,40 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         self.assertEqual(tail[1], s2)
 
 
+    def test_ellipsis_before_suffix_can_match_nothing(self):
+        """
+        (a ... b) on a one-element spine binds a to the empty tail and b
+        to the element; the empty rest used to swallow the suffix
+        """
+
+        a = symbol("a")
+        b = symbol("b")
+        lit = frozenset()
+        pat = build_proper(a, Ellipsis, b)
+        p = parse_syntax_rules_pattern(pat, lit, None)
+        m = Matcher.from_tuple(p.freeze())
+
+        s1 = symbol("s1")
+        r = m.match(cons(s1, nil))
+        self.assertTrue(r.matched)
+        cap_a = r.captures["a"]
+        tail = cap_a.datum if isinstance(cap_a, Datum) else cap_a
+        self.assertEqual(len(tail), 0)
+        cap_b = r.captures["b"]
+        self.assertEqual(
+            cap_b.datum if isinstance(cap_b, Datum) else cap_b, s1)
+
+        s2 = symbol("s2")
+        r2 = m.match(cons(s1, s2, nil))
+        self.assertTrue(r2.matched)
+        cap_a = r2.captures["a"]
+        tail = cap_a.datum if isinstance(cap_a, Datum) else cap_a
+        self.assertEqual(len(tail), 1)
+        cap_b = r2.captures["b"]
+        self.assertEqual(
+            cap_b.datum if isinstance(cap_b, Datum) else cap_b, s2)
+
+
     def test_nested_sublist_pattern(self):
         """
         ((x)) matches one form whose interior is one capture x

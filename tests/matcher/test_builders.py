@@ -423,6 +423,32 @@ class TestBuildAndMatch(unittest.TestCase):
             r_pair.captures["tail"].datum, cons(2, 3, nil))
 
 
+    def test_empty_rest_before_suffix_binds_empty(self):
+        """
+        A REST that consumes nothing ahead of a fixed suffix binds the
+        empty remainder, not the suffix; it used to bind the whole tail
+        """
+
+        pat = MATCH(CAPTURE("a"), REST("mid"), CAPTURE("b"))
+        m = pat.build()
+
+        r_tuple = m.match((1, 2))
+        self.assertTrue(r_tuple.matched)
+        self.assertEqual(r_tuple.captures["a"], 1)
+        self.assertEqual(r_tuple.captures["mid"], ())
+        self.assertEqual(r_tuple.captures["b"], 2)
+
+        r_pair = m.match(cons(1, 2, nil))
+        self.assertTrue(r_pair.matched)
+        self.assertIs(r_pair.captures["mid"].datum, nil)
+        self.assertEqual(r_pair.captures["b"].datum, 2)
+
+        r_three = m.match((1, 2, 3))
+        self.assertTrue(r_three.matched)
+        self.assertEqual(len(r_three.captures["mid"]), 1)
+        self.assertEqual(r_three.captures["b"], 3)
+
+
     def test_class_round_trip(self):
         """
         CLASS with one positional and one keyword field matches an

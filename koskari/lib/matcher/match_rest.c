@@ -4,7 +4,9 @@
 
 /**
    Build the REST capture value for spine range [start, end) after a
-   successful REST match (consume == end - start).
+   successful REST match (consume == end - start). An empty REST binds
+   the subject's empty remainder, the terminator cell for a pair spine
+   and () for a sequence, whatever follows it on the spine.
 */
 static PyObject *
 rest_value_for_range(
@@ -15,10 +17,10 @@ rest_value_for_range(
     Py_ssize_t length) {
 
   if (consume == 0) {
-    PyObject *value = e->subj->vt->tail(e->subj, start);
+    PyObject *value = e->subj->vt->tail(e->subj, length);
     if (! value)
       return NULL;
-    return kos_datum_from_spine_cell(e, e->subj, start, value);
+    return kos_datum_from_spine_cell(e, e->subj, length, value);
   }
   if (end == length) {
     PyObject *value = e->subj->vt->tail(e->subj, start);
