@@ -130,14 +130,6 @@ int KosFormals_ApplyFast(
     PyObject *kwds);
 
 
-int KosFormals_VectorApply(
-    PyObject *self,
-    PyObject *namespace,
-    PyObject *const *args,
-    size_t nargs,
-    PyObject *names);
-
-
 int KosFormals_VectorApplyFast(
     PyObject *self,
     PyObject *namespace,
