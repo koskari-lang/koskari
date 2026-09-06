@@ -215,6 +215,27 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(child['y'], 42)
 
 
+    async def test_copy_returns_single_reference(self):
+        """copy() hands back exactly one reference to the new namespace"""
+        import sys
+        ns = Namespace("ns", None, ('a',))
+        base = sys.getrefcount(ns)
+        cp = ns.copy()
+        self.assertEqual(sys.getrefcount(cp), base)
+
+
+    async def test_constructor_failure_raises(self):
+        """
+        A Namespace constructor that cannot resolve its closure names, or
+        asks for too many slots, raises instead of crashing
+        """
+        with self.assertRaises(NameError):
+            Namespace("n", None, (), ("nope",))
+        too_many = tuple(f"v{i}" for i in range(129))
+        with self.assertRaises(ValueError):
+            Namespace("n", None, too_many)
+
+
     async def test_nested_namespaces(self):
         """Nested namespaces share closure bindings"""
         ns1 = Namespace("ns1", None, ('foo',))
@@ -396,6 +417,16 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertIs(type(mn), ModuleNamespace)
         self.assertIsInstance(mn, ModuleNamespace)
         self.assertIsInstance(mn, Namespace)
+
+
+    async def test_copy_rejected(self):
+        """
+        copy() has no fast slots to duplicate on a ModuleNamespace and must
+        raise TypeError rather than track a NULL result
+        """
+        mn = ModuleNamespace("mn", {})
+        with self.assertRaises(TypeError):
+            mn.copy()
 
 
     async def test_name_and_parent(self):

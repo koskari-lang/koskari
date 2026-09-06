@@ -1237,9 +1237,10 @@ static PyObject *ns_m_find(PyObject *self, PyObject *key) {
 
 static PyObject *ns_m_copy(PyObject *self) {
   PyObject *ns = KosNamespace_Copy(self);
-  // KosNamespace_TrackChain(ns);
+  if (! ns)
+    return NULL;
+
   PyObject_GC_Track(ns);
-  Py_INCREF(ns);
   return ns;
 }
 
@@ -1466,11 +1467,11 @@ static PyObject *ns_new(PyTypeObject *type,
 
   PyObject *ns = ns_newfull_type(type, name, parent, local_syms,
                                  closure_syms, global_syms);
+  if (! ns)
+    return NULL;
 
-  /* Note that we've received an incoming NS, so parent is already tracked,
-     and we don't want a new ref to ns. So just track ns. */
-  // KosNamespace_TrackChain(ns);
-
+  /* The parent arrived already tracked and we hold no new reference to
+     it, so only ns itself needs tracking. */
   PyObject_GC_Track(ns);
   return ns;
 }
