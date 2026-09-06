@@ -52,8 +52,15 @@
    es must be the same live KosEvalState that KosEvalState_Call* prepared via
    do_frame_prep. Use KosEvalState_CONTEXT(es) when the heap context is needed.
 
-   tail_call: 1 if this is a tail call; 0 otherwise. Most implementations
-   ignore this; frame behavior is handled by the caller (KosEvalState_Call*).
+   tail_call: 1 if this is a tail call; 0 otherwise. do_frame_prep has
+   acted on it before the install runs. A frame-wanting callable finds
+   its frame pushed or, on a tail call, the caller's frame reset for
+   reuse. A no-frame callable finds the caller's frame untouched either
+   way: it may deliver a value onto that frame's stack, and the RETURN
+   that follows every TAIL_CALL retires the frame, or it may forward the
+   call to another callable, passing tail_call through unchanged so the
+   target's own prep reuses the same frame. A no-frame callable never
+   pops or resets a frame itself.
 */
 typedef KosOpResult (*KosVectorInstallFunc)(
     KosEvalState *es,

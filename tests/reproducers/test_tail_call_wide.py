@@ -66,6 +66,25 @@ class TestTailCallWide(SpecialsTestCase):
         self.assertEqual(await expr(), tuple(range(20)))
 
 
+    async def test_tail_call_partial_wide_from_nested_caller(self):
+        """
+        The same tail call reached from a frame that has a parent, so
+        the pop the docstring above describes actually happens and the
+        result must still come back to that parent
+        """
+
+        src = f"""
+        (begin
+          (define target (lambda [*: xs] xs))
+          (define p (partial target))
+          (define inner (lambda [] (p {NUMS})))
+          (define outer (lambda [] (len (inner))))
+          (outer))
+        """
+        expr, mod = self.compile_expr(src, partial=partial, len=len)
+        self.assertEqual(20, await expr())
+
+
     async def test_tail_call_in_let_wide_positional(self):
         """
         A let-body tail call to a Koskari function: the window sits on

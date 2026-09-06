@@ -141,9 +141,9 @@ static int kos_apply_build_args_tuple(
 
 /**
    Shared apply install: fn/arglist/kwds already extracted (borrowed).
-   apply wants no frame of its own (see KosApplyType) -- fn's own Call
-   handles frame prep and tail reuse, and delivers straight to the
-   real caller, since apply never occupies anything in between.
+   apply wants no frame of its own (see KosApplyType), so do_frame_prep
+   left the caller's frame alone; the tail flag is forwarded unchanged
+   and fn's own prep makes the one frame decision against that frame.
 */
 static KosOpResult kos_apply_install_core(
     KosEvalState *es,

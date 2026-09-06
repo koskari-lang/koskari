@@ -424,6 +424,13 @@ static inline KosOpResult kos_op_result_PUSH_OR_AWAIT(
 /**
   Prepare frame stack for a KosCallable install per wants_frame / tail_call.
   Inlines effective wants_frame resolution (hook vs static flag).
+
+  A callable that wants no frame leaves the frame stack untouched, tail
+  call or not. It either delivers a value onto the caller's stack, and
+  the RETURN that follows every TAIL_CALL then retires the frame, or it
+  forwards the call with the tail flag intact to a target whose own
+  prep reuses this same frame. Popping the caller here would make that
+  forwarded prep act on the caller's parent instead.
 */
 static inline int do_frame_prep(
     KosEvalState *es,
@@ -434,8 +441,6 @@ static inline int do_frame_prep(
   int wants = KosCallSlots_WantsFrame(slots, callable);
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
-  KosDynNode *const parent =
-      frame ? KosDynNode_PARENT((KosDynNode *) frame) : NULL;
 
   if (wants && tail_call) {
     /* Uninstall discardable extents left open above the frame before
@@ -456,10 +461,6 @@ static inline int do_frame_prep(
       return -1;
     return 0;
   }
-
-  if (! wants && tail_call && parent
-      && KosEvalState_DYN_TOP(es) == (KosDynNode *) frame)
-    return kos_dyn_pop_frame(es);
 
   return 0;
 }
