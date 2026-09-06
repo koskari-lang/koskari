@@ -202,6 +202,40 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["foo"], 100)
         self.assertEqual(ns["bar"], 200)
 
+    async def test_apply_pre_star_default_called_short_binds_empty_star(self):
+        """apply() binds () to star when no positional reaches it"""
+
+        formals = Formals(
+            ("a",), (), ("b",), (), "rest", None, {"b": 1}, None)
+        for args, expect in (
+                ((1,), (1, 1, ())),
+                ((1, 2), (1, 2, ())),
+                ((1, 2, 3), (1, 2, (3,)))):
+            ns = Namespace("ns", None, ("a", "b", "rest"))
+            formals.apply(ns, args)
+            self.assertEqual((ns["a"], ns["b"], ns["rest"]), expect)
+
+    async def test_apply_pre_star_default_fills_before_star(self):
+        """
+        apply() fills a defaulted pre-* name from positionals before the
+        rest slurps, for keyword-only names sorting either side of it
+        """
+
+        for kwd, kwd_only in (("z", "c"), ("b", "x")):
+            formals = Formals(
+                ("a",), (), (kwd,), (kwd_only,), "more", None,
+                {kwd: 99}, None)
+            ns = Namespace("ns", None, ("a", kwd, "more", kwd_only))
+            formals.apply(ns, (1, 2, 3), {kwd_only: 0})
+            self.assertEqual(
+                (ns["a"], ns[kwd], ns["more"], ns[kwd_only]),
+                (1, 2, (3,), 0))
+            ns = Namespace("ns", None, ("a", kwd, "more", kwd_only))
+            formals.apply(ns, (1,), {kwd_only: 0})
+            self.assertEqual(
+                (ns["a"], ns[kwd], ns["more"], ns[kwd_only]),
+                (1, 99, (), 0))
+
     async def test_apply_with_star(self):
         """apply() collects extra positional args in star"""
 

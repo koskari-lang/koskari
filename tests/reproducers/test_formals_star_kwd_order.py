@@ -56,17 +56,18 @@ class TestFormalsStarBeforeKwdPositional(unittest.TestCase):
 
     def test_apply_star_before_keyword_default_positional(self):
         """
-        Positionals after required pos must go to *more before y (kwd default).
+        Positionals after required pos go to *more; y is keyword-only.
 
         Mirrors (foobar 1 2 3 4 x: \"ecks\") against define foobar with that
-        formal list.
+        formal list, encoded the way compile/lambda encodes it: every name
+        after * is keyword-only, defaulted or not.
         """
 
         formals = Formals(
             ("a", "b"),
             (),
-            ("y",),
-            ("x",),
+            (),
+            ("x", "y"),
             "more",
             "lol",
             {"y": 100},
@@ -93,6 +94,40 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
     Same scenario as TestFormalsStarBeforeKwdPositional via compile/define
     and a call, matching REPL-style ``define foobar [a b *: more x y: 100 **: lol]``.
     """
+
+    async def test_define_pre_star_default_left_to_default_binds_empty_star(self):
+        """
+        [a b: 1 *: rest] called short: rest is () and lands in its own
+        slot; it used to be stored at the argument count, b's slot
+        """
+        src = """
+        (begin
+          (define g [a b: 1 *: rest] (col a b rest))
+          #((g 1) (g 1 2) (g 1 2 3)))
+        """
+        expr, mod = self.compile_expr(src, col=lambda *a: a)
+        self.assertEqual(
+            await expr(),
+            ((1, 1, ()), (1, 2, ()), (1, 2, (3,))))
+
+
+    async def test_define_pre_star_default_fills_before_star_regardless_of_names(self):
+        """
+        Positionals fill a defaulted pre-* name before the rest slurps,
+        whatever the keyword-only names after * happen to be called
+        """
+        src = """
+        (begin
+          (define f [a z: 99 *: more c] (col a z more c))
+          (define h [a b: 99 *: more x] (col a b more x))
+          #((f 1 2 3 c: 0) (f 1 c: 0) (h 1 2 3 x: 0) (h 1 x: 0)))
+        """
+        expr, mod = self.compile_expr(src, col=lambda *a: a)
+        self.assertEqual(
+            await expr(),
+            ((1, 2, (3,), 0), (1, 99, (), 0),
+             (1, 2, (3,), 0), (1, 99, (), 0)))
+
 
     async def test_define_foobar_call_matches_python_formals_apply(self):
         src = """
