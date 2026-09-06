@@ -76,6 +76,19 @@ class TestKioRoundTrip(unittest.TestCase):
         """bracket-nil round-trips as bracket-nil, not collapsed to nil"""
         self.assertIs(self._const_roundtrip(bracket_nil), bracket_nil)
 
+    def test_int_const_roundtrip_at_byte_edges(self):
+        """
+        Every int survives, including positives whose magnitude fills the
+        top byte; those used to overflow the packer
+        """
+        for value in (0, 1, -1, 127, 128, 255, 256, -128, -129,
+                      32767, 32768, 65535, 65536, -32768, -32769,
+                      2 ** 31 - 1, 2 ** 31, 2 ** 63, -2 ** 63, 2 ** 64,
+                      2 ** 200, -2 ** 200):
+            got = self._const_roundtrip(value)
+            self.assertEqual(got, value)
+            self.assertIs(type(got), int)
+
 
     def test_function_spec_const_roundtrip(self):
         inner_code, ns_inner = build_expr([

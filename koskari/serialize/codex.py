@@ -759,12 +759,16 @@ def _unpack_string(buf, off):
 
 
 def _pack_int_big(n):
-    if n == 0:
-        nb = 1
-        payload = b'\x00'
-    else:
-        payload = n.to_bytes((n.bit_length() + 7 + (n < 0)) // 8, 'big', signed=True)
-        nb = len(payload)
+    """
+    Two's-complement big-endian payload behind a byte count. The width
+    is the magnitude's bit length plus one sign bit, rounded up to whole
+    bytes; for a negative value the magnitude is the bitwise complement,
+    so -128 fits one byte and -129 needs two
+    """
+
+    magnitude = n if n >= 0 else ~n
+    nb = (magnitude.bit_length() + 8) // 8
+    payload = n.to_bytes(nb, 'big', signed=True)
     return struct.pack('<I', nb) + payload
 
 
