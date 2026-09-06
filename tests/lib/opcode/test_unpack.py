@@ -207,4 +207,54 @@ class TestUnpackOpcodes(CevalTest):
         self.assertIn("FAST", str(ctx.exception))
 
 
+class TestUnpackNonIterable(CevalTest):
+    """
+    Every UNPACK opcode raises TypeError naming the subject's type when the
+    subject is not iterable; this used to segfault through a NULL message
+    """
+
+    async def test_unpack_non_iterable_raises(self):
+        code, ns = build_expr([
+            ["CONST", 5],
+            ["UNPACK", 2],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("non-iterable int", str(ctx.exception))
+
+
+    async def test_unpack_star_non_iterable_raises(self):
+        code, ns = build_expr([
+            ["CONST", None],
+            ["UNPACK_STAR", (1, 0, 0, 0)],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("non-iterable NoneType", str(ctx.exception))
+
+
+    async def test_unpack_var_non_iterable_raises(self):
+        code, ns = build_expr([
+            ["CONST", 5.5],
+            ["UNPACK_VAR", ("a", "b", 0, 0)],
+            ["RETURN", 0],
+        ])
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("non-iterable float", str(ctx.exception))
+
+
+    async def test_unpack_fast_non_iterable_raises(self):
+        code, ns = build_expr([
+            ["CONST", 5],
+            ["UNPACK_FAST", (0, 1, 0, 0)],
+            ["RETURN", 0],
+        ], local_syms=("a", "b"))
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("non-iterable int", str(ctx.exception))
+
+
 # The end.

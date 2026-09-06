@@ -31,23 +31,11 @@ KOS_OP_HANDLER_COLD(UNPACK_STAR) {
     RESULT_RAISE();
   }
 
-  PyObject *raw = KosEvalState_StackPopRef(es);
-  if (unlikely(! raw))
-    RESULT_RAISE();
-
-  PyObject *seq = PySequence_Fast(raw, NULL);
-  Py_DECREF(raw);
+  PyObject *seq = KosEvalState_PopUnpackSequence(
+      es, (Py_ssize_t) (left + right), 0, "UNPACK_STAR");
   if (unlikely(! seq))
     RESULT_RAISE();
-
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
-  if (unlikely(slen < (Py_ssize_t) (left + right))) {
-    Py_DECREF(seq);
-    PyErr_Format(PyExc_ValueError,
-                 "UNPACK_STAR needs at least %u elements, got %zd",
-                 left + right, slen);
-    RESULT_RAISE();
-  }
 
   Py_ssize_t k;
   /* suffix: deepest first (len-1 .. len-right) */

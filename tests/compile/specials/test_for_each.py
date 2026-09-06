@@ -64,6 +64,20 @@ class TestForEachSpecial(SpecialsTestCase):
         self.assertEqual(sums, [3, 7, 30])
 
 
+    async def test_foreach_unpack_non_iterable_raises(self):
+        src = """
+        (for-each [[a b] items]
+          (call use a b))
+        """
+        expr, mod = self.compile_expr(
+            src,
+            items=[5],
+            use=lambda a, b: None)
+        with self.assertRaises(TypeError) as ctx:
+            await expr()
+        self.assertIn("non-iterable int", str(ctx.exception))
+
+
     async def test_foreach_unused_else(self):
         col = []
         src = """

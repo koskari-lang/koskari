@@ -993,6 +993,19 @@ void KosEvalState_PythonResumeSet(KosEvalState *es, PyObject *val, uint8_t kind)
 int KosEvalState_ParentStackPushRef(KosEvalState *es, PyObject *val);
 int KosEvalState_ParentStackPUSH(KosEvalState *es, PyObject *val);
 
+/**
+   Pop TOS and materialize it as a fast sequence for the UNPACK family.
+   need is the required length; exact demands len == need, otherwise
+   len >= need. Returns a new reference, or NULL with TypeError (subject
+   not iterable) or ValueError (wrong length) set. who names the opcode
+   in the message.
+*/
+PyObject *KosEvalState_PopUnpackSequence(
+    KosEvalState *es,
+    Py_ssize_t need,
+    int exact,
+    const char *who);
+
 
 /**
   Pop tail PyObject * fields into aggregate agg (deepest first, TOS last).

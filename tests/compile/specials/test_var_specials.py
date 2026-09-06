@@ -128,6 +128,30 @@ class TestDefineValuesSpecial(SpecialsTestCase):
         self.assertEqual((1, 2, 3), result)
 
 
+    async def test_define_values_non_iterable_raises(self):
+        src_str = """
+        (begin
+          (define-values [a b c] seq)
+          a)
+        """
+        expr, mod = self.compile_expr(src_str, seq=None)
+        with self.assertRaises(TypeError) as ctx:
+            await expr()
+        self.assertIn("non-iterable NoneType", str(ctx.exception))
+
+
+    async def test_define_values_star_non_iterable_raises(self):
+        src_str = """
+        (begin
+          (define-values [a *: rest] seq)
+          a)
+        """
+        expr, mod = self.compile_expr(src_str, seq=7)
+        with self.assertRaises(TypeError) as ctx:
+            await expr()
+        self.assertIn("non-iterable int", str(ctx.exception))
+
+
     async def test_define_values_nested_back(self):
         src_str = """
         (begin

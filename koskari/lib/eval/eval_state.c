@@ -247,6 +247,41 @@ int KosEvalState_ParentStackPUSH(KosEvalState *es, PyObject *val) {
 }
 
 
+PyObject *KosEvalState_PopUnpackSequence(
+    KosEvalState *es,
+    Py_ssize_t need,
+    int exact,
+    const char *who) {
+
+  PyObject *raw = KosEvalState_StackPopRef(es);
+  if (unlikely(! raw))
+    return NULL;
+
+  PyObject *seq = PySequence_Fast(raw, "");
+  if (unlikely(! seq)) {
+    if (PyErr_ExceptionMatches(PyExc_TypeError)) {
+      PyErr_Format(PyExc_TypeError,
+                   "%s: cannot unpack non-iterable %.100s object",
+                   who, Py_TYPE(raw)->tp_name);
+    }
+    Py_DECREF(raw);
+    return NULL;
+  }
+  Py_DECREF(raw);
+
+  Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
+  if (unlikely(exact ? (slen != need) : (slen < need))) {
+    PyErr_Format(PyExc_ValueError,
+                 "%s: expected %s%zd elements, got %zd",
+                 who, exact ? "" : "at least ", need, slen);
+    Py_DECREF(seq);
+    return NULL;
+  }
+
+  return seq;
+}
+
+
 /* === KosEvaluatorToken type === */
 
 

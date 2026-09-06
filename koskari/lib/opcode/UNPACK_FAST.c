@@ -33,23 +33,9 @@ KOS_OP_HANDLER_COLD(UNPACK_FAST) {
     RESULT_RAISE();
   }
 
-  PyObject *raw = KosEvalState_StackPopRef(es);
-  if (unlikely(! raw))
-    RESULT_RAISE();
-
-  PyObject *seq = PySequence_Fast(raw, NULL);
-  Py_DECREF(raw);
+  PyObject *seq = KosEvalState_PopUnpackSequence(es, 2, 1, "UNPACK_FAST");
   if (unlikely(! seq))
     RESULT_RAISE();
-
-  Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
-  if (unlikely(slen != 2)) {
-    Py_DECREF(seq);
-    PyErr_Format(PyExc_ValueError,
-                 "UNPACK_FAST expected sequence of length 2, got %zd",
-                 slen);
-    RESULT_RAISE();
-  }
 
   if (unlikely(
       kos_ns_fast_store(ns, idx0, PySequence_Fast_GET_ITEM(seq, 0)) ||
