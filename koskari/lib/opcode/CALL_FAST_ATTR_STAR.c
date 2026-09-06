@@ -13,140 +13,24 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   CALL_FAST_ATTR_STAR: arg = extra index. Schema FASTVAR (slot), CONST (attr),
-   COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs).
-   Stack [pos, kwd] or subsets per flags; obj from fast local slot (owned
-   deref). Ensure pos is tuple, resolve obj.attr, prepend obj to args if
-   send_self, call via KosEvalState_CallArgs.
+   CALL_FAST_ATTR_STAR: arg = extra index. Schema FASTVAR (slot), CONST
+   (attr name), COUNT (bitflags). Receiver from the fast local slot;
+   stack [pos, kwd] per flags.
 */
-
-
-static int ensure_tuple_fast_attr_star(PyObject **val) {
-  if (! (val && *val))
-    return -1;
-
-  if (! PyTuple_CheckExact(*val)) {
-    PyObject *fixed = PySequence_Tuple(*val);
-    Py_DECREF(*val);
-    *val = fixed;
-
-    if (! fixed)
-      return -1;
-  }
-
-  return 0;
-}
-
-
 KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
   const KosExtra *row = KosOp_ROW(insn);
-  uint32_t slot_idx = KosExtra_IMM(row, 0);
-  unsigned opa = KosExtra_IMM(row, 2);
-
-  PyObject *attr_name = KosExtra_OBJ(row, 1);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
-  PyObject *obj = kos_ns_fast_deref(ns, (size_t) slot_idx);
+  PyObject *obj = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
   if (! obj)
     RESULT_RAISE();
 
-  PyObject *pos = NULL;
-  PyObject *kwd = NULL;
-
-  if ((opa & 3) == 3) {
-    kwd = KosEvalState_StackPopRef(es);
-    if (! kwd) {
-      Py_DECREF(obj);
-      RESULT_RAISE();
-    }
-    pos = KosEvalState_StackPopRef(es);
-    if (! pos) {
-      Py_DECREF(obj);
-      Py_DECREF(kwd);
-      RESULT_RAISE();
-    }
-    if (ensure_tuple_fast_attr_star(&pos)) {
-      Py_DECREF(obj);
-      Py_DECREF(pos);
-      Py_DECREF(kwd);
-      RESULT_RAISE();
-    }
-  } else if (opa & 2) {
-    kwd = KosEvalState_StackPopRef(es);
-    if (! kwd) {
-      Py_DECREF(obj);
-      RESULT_RAISE();
-    }
-    pos = PyTuple_New(0);
-    if (! pos) {
-      Py_DECREF(obj);
-      Py_DECREF(kwd);
-      RESULT_RAISE();
-    }
-  } else if (opa & 1) {
-    pos = KosEvalState_StackPopRef(es);
-    if (! pos) {
-      Py_DECREF(obj);
-      RESULT_RAISE();
-    }
-    if (ensure_tuple_fast_attr_star(&pos)) {
-      Py_DECREF(obj);
-      Py_DECREF(pos);
-      RESULT_RAISE();
-    }
-    kwd = NULL;
-  } else {
-    pos = PyTuple_New(0);
-    if (! pos) {
-      Py_DECREF(obj);
-      RESULT_RAISE();
-    }
-    kwd = NULL;
-  }
-
-  PyObject *resolved;
-  KosCacheSlot *cache = KosOp_SLOT(insn);
-  int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
-  if (send_self < 0) {
-    Py_DECREF(obj);
-    Py_DECREF(pos);
-    Py_XDECREF(kwd);
-    RESULT_RAISE();
-  }
-
-  PyObject *args_for_call = pos;
-  PyObject *combined = NULL;
-
-  if (send_self == 0) {
-    combined = PyTuple_Pack(1, obj);
-    if (! combined) {
-      Py_DECREF(obj);
-      Py_DECREF(resolved);
-      Py_DECREF(pos);
-      Py_XDECREF(kwd);
-      RESULT_RAISE();
-    }
-    args_for_call = PySequence_Concat(combined, pos);
-    Py_DECREF(combined);
-    if (! args_for_call) {
-      Py_DECREF(obj);
-      Py_DECREF(resolved);
-      Py_DECREF(pos);
-      Py_XDECREF(kwd);
-      RESULT_RAISE();
-    }
-    Py_DECREF(pos);
-  }
-
-  Py_DECREF(obj);
-
-  KosOpResult res = KosEvalState_CallArgs(es, resolved, args_for_call, kwd, 0);
-
-  Py_DECREF(resolved);
-  Py_DECREF(args_for_call);
-  Py_XDECREF(kwd);
+  KosOpResult res = kos_op_call_star(
+      es, obj, KosExtra_OBJ(row, 1), KosOp_SLOT(insn),
+      KosExtra_IMM(row, 2), 0);
   RESULT_RELAY(es, res);
 }
 

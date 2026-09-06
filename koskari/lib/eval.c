@@ -1896,6 +1896,113 @@ static int kos_return_take_resume(
     KosResumeFn *out_resume,
     void **out_state);
 
+
+/**
+   Finish a star-shaped call for the CALL_*STAR and TAIL_CALL_*STAR
+   handlers. Pops kwd (opa & 2) and pos (opa & 1) from the stack, then
+   the subject too when subject is NULL; otherwise subject is an owned
+   reference the handler sourced itself. Steals subject either way.
+
+   With attr_name NULL the subject is the callable. Otherwise the subject
+   is the receiver: attr_name is resolved on it through cache and the
+   receiver is prepended to the positional tuple when the resolution asks
+   for it. pos is coerced to a tuple; a non-iterable raises TypeError
+   naming its type. Returns the call result for RESULT_RELAY, or a raise.
+*/
+static KosOpResult kos_op_call_star(
+    KosEvalState *es,
+    PyObject *subject,
+    PyObject *attr_name,
+    KosCacheSlot *cache,
+    unsigned opa,
+    int tail) {
+
+  PyObject *kwd = NULL;
+  PyObject *pos = NULL;
+  PyObject *callable = NULL;
+  PyObject *args = NULL;
+  KosOpResult res = EVAL_RAISE();
+
+  if (opa & 2) {
+    kwd = KosEvalState_StackPopRef(es);
+    if (! kwd)
+      goto done;
+  }
+
+  if (opa & 1) {
+    pos = KosEvalState_StackPopRef(es);
+    if (! pos)
+      goto done;
+  }
+
+  if (! subject) {
+    subject = KosEvalState_StackPopRef(es);
+    if (! subject)
+      goto done;
+  }
+
+  if (! pos) {
+    pos = PyTuple_New(0);
+    if (! pos)
+      goto done;
+
+  } else if (! PyTuple_CheckExact(pos)) {
+    PyObject *fixed = PySequence_Tuple(pos);
+    if (! fixed) {
+      if (PyErr_ExceptionMatches(PyExc_TypeError)) {
+        PyErr_Format(PyExc_TypeError,
+                     "argument after *: must be an iterable, not %.100s",
+                     Py_TYPE(pos)->tp_name);
+      }
+      goto done;
+    }
+    Py_SETREF(pos, fixed);
+  }
+
+  if (! attr_name) {
+    callable = subject;
+    subject = NULL;
+    args = pos;
+    pos = NULL;
+
+  } else {
+    int send_self = kos_resolve_named_attr(subject, attr_name, cache,
+                                           &callable);
+    if (send_self < 0)
+      goto done;
+
+    if (send_self) {
+      args = pos;
+      pos = NULL;
+
+    } else {
+      Py_ssize_t n = PyTuple_GET_SIZE(pos);
+      args = PyTuple_New(n + 1);
+      if (! args)
+        goto done;
+
+      Py_INCREF(subject);
+      PyTuple_SET_ITEM(args, 0, subject);
+      for (Py_ssize_t i = 0; i < n; i++) {
+        PyObject *item = PyTuple_GET_ITEM(pos, i);
+        Py_INCREF(item);
+        PyTuple_SET_ITEM(args, i + 1, item);
+      }
+    }
+  }
+
+  res = KosEvalState_CallArgs(es, callable, args, kwd, tail);
+
+ done:
+  Py_XDECREF(kwd);
+  Py_XDECREF(pos);
+  Py_XDECREF(subject);
+  Py_XDECREF(callable);
+  Py_XDECREF(args);
+  return res;
+}
+
+
 #include "handlers.incl"
 #undef CURRENT_NS
 #undef KOS_OP_REQUIRE_NS

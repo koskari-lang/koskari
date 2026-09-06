@@ -497,4 +497,82 @@ class TestCallFastAttrStar(CevalTest):
         self.assertIn("nonexistent", str(ctx.exception))
 
 
+class TestStarCallNonIterable(CevalTest):
+    """
+    A *: operand that is not iterable raises TypeError naming its type in
+    every star-call shape; the handlers used to Py_DECREF the NULL left
+    behind by the failed tuple coercion
+    """
+
+    async def test_call_star_non_iterable(self):
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CONST", 5],
+            ["CALL_STAR", 1],
+            ["RETURN", 1],
+        ], values={"f": lambda *a: a})
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("argument after *: must be an iterable, not int",
+                      str(ctx.exception))
+
+
+    async def test_call_star_non_iterable_with_kwargs(self):
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CONST", None],
+            ["CONST", {}],
+            ["CALL_STAR", 3],
+            ["RETURN", 1],
+        ], values={"f": lambda *a, **k: (a, k)})
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("not NoneType", str(ctx.exception))
+
+
+    async def test_call_attr_star_non_iterable(self):
+        code, ns = build_expr([
+            ["CONST", "a-b-c"],
+            ["CONST", 5],
+            ["CALL_ATTR_STAR", ("split", 1, 0, 0)],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("not int", str(ctx.exception))
+
+
+    async def test_call_var_attr_star_non_iterable(self):
+        code, ns = build_expr([
+            ["CONST", 5],
+            ["CALL_VAR_ATTR_STAR", ("s", "split", 1, 0)],
+            ["RETURN", 1],
+        ], values={"s": "a-b-c"})
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("not int", str(ctx.exception))
+
+
+    async def test_tail_call_star_non_iterable(self):
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CONST", 5],
+            ["TAIL_CALL_STAR", 1],
+            ["RETURN", 1],
+        ], values={"f": lambda *a: a})
+        with self.assertRaises(TypeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("not int", str(ctx.exception))
+
+
+    async def test_star_still_accepts_any_iterable(self):
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["VAR", "gen"],
+            ["CALL_STAR", 1],
+            ["RETURN", 1],
+        ], values={"f": lambda *a: a, "gen": (x * 2 for x in range(3))})
+        self.assertEqual(await make_callable(code, ns)(), (0, 2, 4))
+
+
 # The end.

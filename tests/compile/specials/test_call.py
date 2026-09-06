@@ -529,4 +529,40 @@ class TestGeneratorTailCallDemotion(SpecialsTestCase):
                             for op in ops))
 
 
+class TestStarArgNonIterable(SpecialsTestCase):
+    """
+    (f *: x) with a non-iterable x raises TypeError at run time
+    """
+
+    async def test_direct_call(self):
+        expr, mod = self.compile_expr(
+            "(f *: five)", f=lambda *a: a, five=5)
+        with self.assertRaises(TypeError) as ctx:
+            await expr()
+        self.assertIn("argument after *: must be an iterable, not int",
+                      str(ctx.exception))
+
+
+    async def test_method_call(self):
+        expr, mod = self.compile_expr(
+            "(text.split *: nothing)", text="a-b", nothing=None)
+        with self.assertRaises(TypeError) as ctx:
+            await expr()
+        self.assertIn("not NoneType", str(ctx.exception))
+
+
+    async def test_tail_position(self):
+        expr, mod = self.compile_expr(
+            "((lambda [] (f *: five)))", f=lambda *a: a, five=5)
+        with self.assertRaises(TypeError) as ctx:
+            await expr()
+        self.assertIn("not int", str(ctx.exception))
+
+
+    async def test_iterable_star_still_works(self):
+        expr, mod = self.compile_expr(
+            "(f *: items)", f=lambda *a: a, items=range(3))
+        self.assertEqual((0, 1, 2), await expr())
+
+
 # The end.
