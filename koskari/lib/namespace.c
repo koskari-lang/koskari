@@ -62,15 +62,32 @@ static size_t ns_freecount = 0;
    KosNamespace_TrackChain for when a namespace is revealed to the
    collector. Freelist slabs are always untracked (dealloc untracks
    before recycling). */
+/* Zero the raw-flag words and point the overflow words at the trailing
+   area past the slots (which the caller sized for them), or NULL. */
+static void ns_init_raw_storage(KosNamespace *ns, size_t count) {
+  size_t words = kos_ns_raw_more_words(count);
+
+  ns->fast_raw[0] = 0;
+  ns->fast_raw[1] = 0;
+  ns->fast_raw_more = words ? (uint64_t *) &ns->fast[count] : NULL;
+  if (words)
+    memset(ns->fast_raw_more, 0, words * sizeof(uint64_t));
+}
+
+
 static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
 
   if (type != &KosNamespaceType || count > (size_t) KOS_NS_MIN_SLOTS) {
-    PyObject *p = PyObject_GC_NewVar(PyObject, type, (Py_ssize_t) count);
+    /* The overflow raw-flag words ride after the slots in the same
+       allocation; tp_itemsize is one pointer, the size of a word. */
+    size_t items = count + kos_ns_raw_more_words(count);
+    PyObject *p = PyObject_GC_NewVar(PyObject, type, (Py_ssize_t) items);
     if (! p)
       return NULL;
 
     if (count > 0)
       memset(((KosNamespace *) p)->fast, 0, count * sizeof(PyObject *));
+    ns_init_raw_storage((KosNamespace *) p, count);
 
     return p;
   }
@@ -85,6 +102,7 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
 
     PyObject *p = (PyObject *) ns;
     Py_SET_REFCNT(p, 1);
+    ns_init_raw_storage(ns, count);
     // Py_SET_TYPE(p, type);
     // Py_SET_SIZE(p, (Py_ssize_t) KOS_NS_MIN_SLOTS);
     return p;
@@ -98,7 +116,23 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
 
   memset(((KosNamespace *) p)->fast, 0,
          (size_t) KOS_NS_MIN_SLOTS * sizeof(PyObject *));
+  ns_init_raw_storage((KosNamespace *) p, count);
   return p;
+}
+
+
+/* Copy the raw-flag bits for count slots from one holder to another:
+   the two inline words, then the overflow words when count needs them. */
+static void ns_copy_raw_bits(
+    uint64_t *dst, uint64_t *dst_more,
+    const uint64_t *src, const uint64_t *src_more,
+    size_t count) {
+
+  dst[0] = src[0];
+  dst[1] = src[1];
+  size_t words = kos_ns_raw_more_words(count);
+  if (words)
+    memcpy(dst_more, src_more, words * sizeof(uint64_t));
 }
 
 
@@ -183,9 +217,12 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
   Py_XINCREF(fast_names);
   KosNamespace_FAST_NAMES(self) = fast_names;
 
-  // Copy raw-flag bitfields wholesale.
-  KosNamespace_FAST_RAW_LO(self) = KosNamespace_FAST_RAW_LO(template_ns);
-  KosNamespace_FAST_RAW_HI(self) = KosNamespace_FAST_RAW_HI(template_ns);
+  // Copy raw-flag bits wholesale.
+  ns_copy_raw_bits(KosNamespace_FAST_RAW(self),
+                   KosNamespace_FAST_RAW_MORE(self),
+                   KosNamespace_FAST_RAW(template_ns),
+                   KosNamespace_FAST_RAW_MORE(template_ns),
+                   count);
 
   // Only non-raw (closure/global) slots carry a Ref to copy; raw local slots
   // are already NULL from ns_alloc, so skip them.  The Ref lives in the fast
@@ -287,6 +324,8 @@ static void nspec_dealloc(PyObject *self) {
   Py_CLEAR(KosNamespaceSpec_CLOSURE_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_GLOBAL_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_FAST_NAMES(self));
+  PyMem_Free(KosNamespaceSpec_FAST_RAW_MORE(self));
+  KosNamespaceSpec_FAST_RAW_MORE(self) = NULL;
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -460,61 +499,60 @@ PyObject *KosNamespaceSpec_New(
   KosNamespaceSpec_CLOSURE_SYMS(self) = closure_syms;
   KosNamespaceSpec_GLOBAL_SYMS(self) = global_syms;
   KosNamespaceSpec_FAST_NAMES(self) = NULL;
-  KosNamespaceSpec_FAST_RAW_LO(self) = 0;
-  KosNamespaceSpec_FAST_RAW_HI(self) = 0;
+  KosNamespaceSpec_FAST_RAW(self)[0] = 0;
+  KosNamespaceSpec_FAST_RAW(self)[1] = 0;
+  KosNamespaceSpec_FAST_RAW_MORE(self) = NULL;
 
-  // Build cached fast_names tuple (local+closure+global, capped at FAST_SLOT_MAX).
+  // Build the cached fast_names tuple: every local, closure, and global
+  // symbol in that order. Storage is unbounded; the compiler decides
+  // which slots its FAST operands can reach.
   Py_ssize_t n_loc = PyTuple_GET_SIZE(local_syms);
   Py_ssize_t n_clo = PyTuple_GET_SIZE(closure_syms);
   Py_ssize_t n_glo = PyTuple_GET_SIZE(global_syms);
   Py_ssize_t total = n_loc + n_clo + n_glo;
-  Py_ssize_t fn_count = (total > (Py_ssize_t) KosNamespace_FAST_SLOT_MAX)
-                        ? (Py_ssize_t) KosNamespace_FAST_SLOT_MAX
-                        : total;
 
-  PyObject *fast_names = PyTuple_New(fn_count);
+  PyObject *fast_names = PyTuple_New(total);
   if (! fast_names) {
     Py_DECREF(self);
     return NULL;
   }
 
   Py_ssize_t fi = 0;
-  for (; fi < fn_count && fi < n_loc; fi++) {
-    PyObject *sym = PyTuple_GET_ITEM(local_syms, fi);
+  for (Py_ssize_t li = 0; li < n_loc; fi++, li++) {
+    PyObject *sym = PyTuple_GET_ITEM(local_syms, li);
     Py_INCREF(sym);
     PyTuple_SET_ITEM(fast_names, fi, sym);
   }
-
-  for (Py_ssize_t ci = 0; fi < fn_count && ci < n_clo; fi++, ci++) {
+  for (Py_ssize_t ci = 0; ci < n_clo; fi++, ci++) {
     PyObject *sym = PyTuple_GET_ITEM(closure_syms, ci);
     Py_INCREF(sym);
     PyTuple_SET_ITEM(fast_names, fi, sym);
   }
-
-  for (Py_ssize_t gi = 0; fi < fn_count && gi < n_glo; fi++, gi++) {
+  for (Py_ssize_t gi = 0; gi < n_glo; fi++, gi++) {
     PyObject *sym = PyTuple_GET_ITEM(global_syms, gi);
     Py_INCREF(sym);
     PyTuple_SET_ITEM(fast_names, fi, sym);
   }
   KosNamespaceSpec_FAST_NAMES(self) = fast_names;
 
-  // Precompute raw-flag bitmask: locals occupy raw slots, closures/globals
-  // do not. Bits 0..(n_fast_local-1) are set.
-  Py_ssize_t n_fast_local = (n_loc < fn_count) ? n_loc : fn_count;
-  uint64_t raw_lo = 0, raw_hi = 0;
-  if (n_fast_local > 0) {
-    if (n_fast_local <= 64) {
-      raw_lo = (n_fast_local < 64)
-               ? (1ULL << (uint64_t) n_fast_local) - 1ULL
-               : ~0ULL;
-    } else {
-      raw_lo = ~0ULL;
-      uint64_t hi = (uint64_t) (n_fast_local - 64);
-      raw_hi = (hi < 64) ? (1ULL << hi) - 1ULL : ~0ULL;
+  // Precompute the raw-flag bits: locals occupy raw slots, closures and
+  // globals hold refs. Bits 0..(n_loc-1) are set, across the inline
+  // words and, past 128 slots, the overflow words.
+  size_t words = kos_ns_raw_more_words((size_t) total);
+  if (words) {
+    uint64_t *more = PyMem_Calloc(words, sizeof(uint64_t));
+    if (! more) {
+      Py_DECREF(self);
+      return PyErr_NoMemory();
     }
+    KosNamespaceSpec_FAST_RAW_MORE(self) = more;
   }
-  KosNamespaceSpec_FAST_RAW_LO(self) = raw_lo;
-  KosNamespaceSpec_FAST_RAW_HI(self) = raw_hi;
+  for (Py_ssize_t li = 0; li < n_loc; li++) {
+    uint64_t *word = (li < KOS_NS_RAW_INLINE)
+        ? &KosNamespaceSpec_FAST_RAW(self)[li >> 6]
+        : &KosNamespaceSpec_FAST_RAW_MORE(self)[(li - KOS_NS_RAW_INLINE) >> 6];
+    *word |= 1ULL << (li & 63);
+  }
 
   // SAYF("KosNamespaceSpec_New -> %R", self);
   return self;
@@ -631,8 +669,11 @@ static int ns_init_syms_from_nspec(
   PyObject *fn = KosNamespaceSpec_FAST_NAMES(nspec);
   Py_XINCREF(fn);
   KosNamespace_FAST_NAMES(self) = fn;
-  KosNamespace_FAST_RAW_LO(self) = KosNamespaceSpec_FAST_RAW_LO(nspec);
-  KosNamespace_FAST_RAW_HI(self) = KosNamespaceSpec_FAST_RAW_HI(nspec);
+  ns_copy_raw_bits(KosNamespace_FAST_RAW(self),
+                   KosNamespace_FAST_RAW_MORE(self),
+                   KosNamespaceSpec_FAST_RAW(nspec),
+                   KosNamespaceSpec_FAST_RAW_MORE(nspec),
+                   fn ? (size_t) PyTuple_GET_SIZE(fn) : 0);
 
   // Local slots are already NULL (zeroed before this call) and their raw bits
   // are set in the bitmask above.  No dict entries for locals (sentinel-free).
@@ -740,8 +781,6 @@ static PyObject *ns_newfull_from_nspec(
   KosNamespace_BINDS(self) = binds;
   KosNamespace_FAST_COUNT(self) = count;
   KosNamespace_FAST_NAMES(self) = NULL;
-  KosNamespace_FAST_RAW_LO(self) = 0;
-  KosNamespace_FAST_RAW_HI(self) = 0;
 
   if (ns_init_syms_from_nspec(self, parent, nspec))
     Py_CLEAR(self);
@@ -1378,16 +1417,6 @@ static PyObject *ns_newfull_type(
     count += PySequence_Fast_GET_SIZE(global_syms);
   }
 
-  if (count > KosNamespace_FAST_SLOT_MAX) {
-    PyErr_Format(PyExc_ValueError,
-                 "namespace fast slot count %zu exceeds maximum %d",
-                 count, KosNamespace_FAST_SLOT_MAX);
-    Py_XDECREF(local_syms);
-    Py_XDECREF(closure_syms);
-    Py_XDECREF(global_syms);
-    return NULL;
-  }
-
   PyObject *binds = PyDict_New();
   if (! binds) {
     Py_XDECREF(local_syms);
@@ -1415,8 +1444,6 @@ static PyObject *ns_newfull_type(
 
   KosNamespace_FAST_COUNT(self) = count;
   KosNamespace_FAST_NAMES(self) = NULL;
-  KosNamespace_FAST_RAW_LO(self) = 0;
-  KosNamespace_FAST_RAW_HI(self) = 0;
 
   if (ns_init_syms(self, parent, local_syms, closure_syms, global_syms))
     Py_CLEAR(self);
@@ -1499,8 +1526,8 @@ static void ns_dealloc(PyObject *self) {
 
     // if the freelist is not full, add the namespace to the freelist.
     if (ns_freecount < KOS_NS_FREELIST_MAX) {
-      KosNamespace_FAST_RAW_LO(self) = 0;
-      KosNamespace_FAST_RAW_HI(self) = 0;
+      KosNamespace_FAST_RAW(self)[0] = 0;
+      KosNamespace_FAST_RAW(self)[1] = 0;
       KosNamespace_PARENT(self) = (PyObject *) ns_freelist;
       ns_freelist = (KosNamespace *) self;
       ns_freecount++;
@@ -2432,8 +2459,6 @@ PyObject *KosModuleNamespace_New(PyObject *name, PyObject *builtins) {
   KosNamespace_BINDS(self) = binds;
   KosNamespace_FAST_COUNT(self) = 0;
   KosNamespace_FAST_NAMES(self) = NULL;
-  KosNamespace_FAST_RAW_LO(self) = 0;
-  KosNamespace_FAST_RAW_HI(self) = 0;
 
   Py_INCREF(builtins);
   KosModuleNamespace_BUILTINS(self) = builtins;

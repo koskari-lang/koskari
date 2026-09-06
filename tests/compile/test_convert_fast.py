@@ -107,6 +107,27 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(arg, ("obj", "upper", (), 0))
 
 
+    async def test_slots_past_128_still_convert_to_fast(self):
+        """
+        Storage is unbounded, so a name at slot 150 gets a FAST operand;
+        128 used to be the cutoff
+        """
+        names = tuple(f"v{i}" for i in range(200))
+        nspec = NamespaceSpec(None, names, ())
+        instr = [(OpCode.VAR, "v150")]
+        result = convert_fast(nspec, instr)
+        self.assertEqual(result, [(OpCode.FAST, 150)])
+
+    async def test_slots_past_the_operand_width_stay_var(self):
+        """
+        A slot index the 16-bit FAST operand cannot encode stays a VAR
+        """
+        names = tuple(f"v{i}" for i in range(65540))
+        nspec = NamespaceSpec(None, names, ())
+        instr = [(OpCode.VAR, "v65535"), (OpCode.VAR, "v65536")]
+        result = convert_fast(nspec, instr)
+        self.assertEqual(result, [(OpCode.FAST, 65535), (OpCode.VAR, "v65536")])
+
     async def test_var_store_const_lowers_to_fast_store_const(self):
         """
         VAR_STORE_CONST with local name converts to FAST_STORE_CONST

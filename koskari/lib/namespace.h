@@ -37,9 +37,9 @@ typedef struct KosNamespaceSpec {
   PyObject *global_syms;
 
   /* Cached at construction time, shared across all calls via incref. */
-  PyObject *fast_names;  // tuple of local+closure+global syms (capped at FAST_SLOT_MAX)
-  uint64_t fast_raw_lo;  // initial raw-flag bits: locals 0-63 are set
-  uint64_t fast_raw_hi;  // initial raw-flag bits: locals 64-127 are set
+  PyObject *fast_names;      // tuple of local+closure+global syms, every name
+  uint64_t fast_raw[2];      // initial raw-flag bits for slots 0-127: locals set
+  uint64_t *fast_raw_more;   // bits for slots 128 and up, PyMem-owned, or NULL
 } KosNamespaceSpec;
 
 
@@ -65,11 +65,11 @@ PyObject *KosNamespaceSpec_New(
 #define KosNamespaceSpec_FAST_NAMES(nspec)      \
   (((KosNamespaceSpec *) nspec)->fast_names)
 
-#define KosNamespaceSpec_FAST_RAW_LO(nspec)     \
-  (((KosNamespaceSpec *) nspec)->fast_raw_lo)
+#define KosNamespaceSpec_FAST_RAW(nspec)        \
+  (((KosNamespaceSpec *) nspec)->fast_raw)
 
-#define KosNamespaceSpec_FAST_RAW_HI(nspec)     \
-  (((KosNamespaceSpec *) nspec)->fast_raw_hi)
+#define KosNamespaceSpec_FAST_RAW_MORE(nspec)   \
+  (((KosNamespaceSpec *) nspec)->fast_raw_more)
 
 #define KosNamespaceSpec_CheckExact(obj)                \
   ((obj) && ((obj)->ob_type == &KosNamespaceSpecType))
@@ -81,9 +81,22 @@ PyObject *KosNamespaceSpec_New(
 extern PyTypeObject KosNamespaceType;
 
 
-/* Maximum number of fast slots per namespace. Two uint64_t fields cover
-   bits 0-63 and 64-127 respectively. */
-#define KosNamespace_FAST_SLOT_MAX  128
+/* Fast slots a FAST-style operand can address: the immediates are 16
+   bits. Storage itself is unbounded; the compiler keeps a name whose slot
+   index would not fit as a VAR access. */
+#define KosNamespace_FAST_SLOT_MAX  65536
+
+/* Raw-flag bits held inline in the namespace and spec structs: two words
+   cover slots 0-127. Slots past that use fast_raw_more, which a
+   namespace keeps in its own allocation right after the slot array. */
+#define KOS_NS_RAW_INLINE  128
+
+/* Words of overflow raw-flag storage a namespace of count slots needs */
+static inline size_t kos_ns_raw_more_words(size_t count) {
+  return count > KOS_NS_RAW_INLINE
+      ? (count - KOS_NS_RAW_INLINE + 63) / 64
+      : 0;
+}
 
 /* Minimum allocation size for freelisted KosNamespace objects.  All
    namespaces with fast_count <= this value share one pool.  Tune by
@@ -104,11 +117,12 @@ typedef struct KosNamespace {
   PyObject *parent;     // KosNamespace
   PyObject *binds;      // PyDictObject
 
-  size_t fast_count;    // number of fast slots
-  PyObject *fast_names; // PyTupleObject of slot names, shared across copies
-  uint64_t fast_raw_lo; // raw-flag bits for slots 0-63
-  uint64_t fast_raw_hi; // raw-flag bits for slots 64-127
-  PyObject *fast[0];    // slot values: raw value (if raw bit set) or KosRef
+  size_t fast_count;       // number of fast slots
+  PyObject *fast_names;    // PyTupleObject of slot names, shared across copies
+  uint64_t fast_raw[2];    // raw-flag bits for slots 0-127
+  uint64_t *fast_raw_more; // bits for slots 128 and up: &fast[fast_count],
+                           // inside this allocation, or NULL when unneeded
+  PyObject *fast[0];       // slot values: raw value (if raw bit set) or KosRef
 } KosNamespace;
 
 
@@ -315,11 +329,11 @@ int KosNamespace_FastBind(
 #define KosNamespace_FAST_NAMES(ns)             \
   (((KosNamespace *) ns)->fast_names)
 
-#define KosNamespace_FAST_RAW_LO(ns)            \
-  (((KosNamespace *) ns)->fast_raw_lo)
+#define KosNamespace_FAST_RAW(ns)               \
+  (((KosNamespace *) ns)->fast_raw)
 
-#define KosNamespace_FAST_RAW_HI(ns)            \
-  (((KosNamespace *) ns)->fast_raw_hi)
+#define KosNamespace_FAST_RAW_MORE(ns)          \
+  (((KosNamespace *) ns)->fast_raw_more)
 
 #define KosNamespace_GET_FAST_VAL(ns, i)        \
   (((KosNamespace *) ns)->fast[(i)])
@@ -444,29 +458,27 @@ PyObject *KosCollectorNamespace_NewFull(
 /* === Raw-bit helpers (available to all includers) === */
 
 
+/* The word holding slot idx's raw bit: inline for the first 128 slots,
+   the trailing overflow area past that. */
+static inline uint64_t *kos_ns_raw_word(PyObject *ns, size_t idx) {
+  if (idx < KOS_NS_RAW_INLINE)
+    return &KosNamespace_FAST_RAW(ns)[idx >> 6];
+  return &KosNamespace_FAST_RAW_MORE(ns)[(idx - KOS_NS_RAW_INLINE) >> 6];
+}
+
+
 static inline int kos_ns_is_raw(PyObject *ns, size_t idx) {
-  if (idx < 64)
-    return (int) ((KosNamespace_FAST_RAW_LO(ns) >> idx) & 1ULL);
-  else
-    return (int) ((KosNamespace_FAST_RAW_HI(ns) >> (idx - 64)) & 1ULL);
+  return (int) ((*kos_ns_raw_word(ns, idx) >> (idx & 63)) & 1ULL);
 }
 
 
 static inline void kos_ns_set_raw(PyObject *ns, size_t idx, int raw) {
-  uint64_t bit;
-  if (idx < 64) {
-    bit = 1ULL << idx;
-    if (raw)
-      KosNamespace_FAST_RAW_LO(ns) |= bit;
-    else
-      KosNamespace_FAST_RAW_LO(ns) &= ~bit;
-  } else {
-    bit = 1ULL << (idx - 64);
-    if (raw)
-      KosNamespace_FAST_RAW_HI(ns) |= bit;
-    else
-      KosNamespace_FAST_RAW_HI(ns) &= ~bit;
-  }
+  uint64_t *word = kos_ns_raw_word(ns, idx);
+  uint64_t bit = 1ULL << (idx & 63);
+  if (raw)
+    *word |= bit;
+  else
+    *word &= ~bit;
 }
 
 

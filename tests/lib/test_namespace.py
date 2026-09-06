@@ -215,6 +215,46 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(child['y'], 42)
 
 
+    async def test_wide_scope_slots_are_unbounded(self):
+        """
+        Every declared name has a fast slot, past 128 included; the cap
+        used to truncate the slot table and lose the names beyond it
+        """
+        names = tuple(f"v{i}" for i in range(200))
+        spec = NamespaceSpec("wide", names, ())
+        ns = spec.get_namespace(None)
+        self.assertEqual(len(ns), 200)
+        ns["v0"] = 1
+        ns["v127"] = 2
+        ns["v128"] = 3
+        ns["v199"] = 4
+        self.assertEqual((ns["v0"], ns["v127"], ns["v128"], ns["v199"]),
+                         (1, 2, 3, 4))
+        with self.assertRaises(NameError):
+            ns.deref("v150")
+
+        # the Python constructor path accepts the same width
+        wide = Namespace("wide", None, names)
+        wide["v199"] = 9
+        self.assertEqual(wide["v199"], 9)
+
+    async def test_wide_scope_closures_land_after_the_locals(self):
+        """
+        Closure refs follow the locals in slot order even when the locals
+        alone pass 128; they used to be written past the allocation
+        """
+        parent = Namespace("parent", None, ("a", "b", "c"))
+        parent["a"], parent["b"], parent["c"] = 10, 20, 30
+        locals_ = tuple(f"v{i}" for i in range(130))
+        spec = NamespaceSpec("child", locals_, ("a", "b", "c"))
+        child = spec.get_namespace(parent)
+        self.assertEqual(len(child), 133)
+        self.assertEqual((child["a"], child["b"], child["c"]), (10, 20, 30))
+        child["v129"] = 7
+        self.assertEqual(child["v129"], 7)
+        child["c"] = 31
+        self.assertEqual(parent["c"], 31)
+
     async def test_copy_returns_single_reference(self):
         """copy() hands back exactly one reference to the new namespace"""
         import sys
@@ -226,14 +266,11 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
 
     async def test_constructor_failure_raises(self):
         """
-        A Namespace constructor that cannot resolve its closure names, or
-        asks for too many slots, raises instead of crashing
+        A Namespace constructor that cannot resolve its closure names
+        raises instead of crashing
         """
         with self.assertRaises(NameError):
             Namespace("n", None, (), ("nope",))
-        too_many = tuple(f"v{i}" for i in range(129))
-        with self.assertRaises(ValueError):
-            Namespace("n", None, too_many)
 
 
     async def test_nested_namespaces(self):
