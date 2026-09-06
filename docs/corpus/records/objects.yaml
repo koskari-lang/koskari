@@ -578,14 +578,15 @@ source: |-
 verify:
   read: (- 5)
   expand: (- 5)
-  eval: "5"
+  eval: "-5"
 references:
   - reference/specials/object-operators/index.md
 stability: stable
 tags:
   - object
   - arithmetic
-notes: single constant arg folds to CONST via constant-folding pass; no OBJECT_SUBTRACT emitted
+  - unary
+notes: a lone constant folds through the unary form (negation) at compile time; no OBJECT_OPERAND emitted
 ---
 id: object-multiply-three-002
 feature: special/compile/*

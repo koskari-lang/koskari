@@ -93,7 +93,13 @@ def _reduce_fold(py_fold, compiler, body):
     return (current, have_acc, acc, pending)
 
 
-def _reduce_op(op, py_fold, compiler, source, operand=None):
+def _reduce_op(
+        op,
+        py_fold,
+        compiler,
+        source,
+        operand=None,
+        py_unary=None):
     """
     Compile a variadic reducing operator (COUNT opcode style).
 
@@ -101,6 +107,12 @@ def _reduce_op(op, py_fold, compiler, source, operand=None):
     any leading constant arguments into a single CONST before compiling the
     remainder normally. When py_fold is None, all arguments are compiled
     without folding.
+
+    When py_unary is given the operator admits a single argument. A single
+    constant argument folds through py_unary at compile time; a single
+    non-constant argument emits the reduction with a count of one and the
+    runtime applies the operator's unary form. When py_unary is None a
+    single argument is a compile-time error.
 
     When operand is given, the reduction is emitted as the parameterized
     OBJECT_OPERAND instruction carrying (operand, count); otherwise the
@@ -111,13 +123,47 @@ def _reduce_op(op, py_fold, compiler, source, operand=None):
     :param compiler: active Compiler
     :param source: raw source pair (called_by . body)
     :param operand: Operand op-type for OBJECT_OPERAND, or None
+    :param py_unary: unary Python callable applied to a lone constant, or
+        None when the operator has no single-argument form
     :return: ByteCodeFragment
-    :raises SpecialError: when zero arguments are supplied
+    :raises SpecialError: when too few arguments are supplied, or when
+        py_unary rejects the lone constant
     """
 
     called_by, body = source
 
     frag = compiler.fragment(called_by)
+
+    if is_nil(body):
+        raise SpecialError(
+            f"{called_by} requires at least one argument",
+            source)
+
+    expr, rest = body
+    if is_nil(rest) and not is_keyword(expr):
+        if py_unary is None:
+            raise SpecialError(
+                f"{called_by} requires at least two arguments",
+                source)
+
+        frag.position_of(body)
+        expr_frag = compiler.full_compile(expr)
+        is_const, const_val = const_only_expr(expr_frag)
+
+        if is_const:
+            try:
+                value = py_unary(const_val)
+            except (TypeError, ValueError, ArithmeticError) as exc:
+                raise SpecialError(
+                    f"{called_by} cannot be applied to {const_val!r}: {exc}",
+                    source)
+            frag.instruction(OpCode.CONST, value)
+            return frag
+
+        frag.merge(expr_frag)
+        _emit_reduce(frag, op, operand, 1)
+        return frag
+
     count = 0
 
     have_acc = False
@@ -150,19 +196,24 @@ def _reduce_op(op, py_fold, compiler, source, operand=None):
         frag.merge(compiler.full_compile(expr))
         count += 1
 
-    if count == 0:
-        raise SpecialError(
-            "%s requires at least one argument" % called_by,
-            source)
-
     if count == 1 and is_nil(body):
+        # every argument folded into one constant
         return frag
+
+    _emit_reduce(frag, op, operand, count)
+    return frag
+
+
+def _emit_reduce(frag, op, operand, count):
+    """
+    Append the reducing instruction for count operands: OBJECT_OPERAND
+    carrying (operand, count) when operand is set, else op with count
+    """
 
     if operand is not None:
         frag.instruction(OpCode.OBJECT_OPERAND, (operand, count))
     else:
         frag.instruction(op, count)
-    return frag
 
 
 def _binary_op(op, compiler, source, opa=0, operand=None):
@@ -536,7 +587,7 @@ def special_add(compiler, source):
 
     return _reduce_op(
         None, _op.add, compiler, source,
-        operand=Operand.ADD)
+        operand=Operand.ADD, py_unary=_op.pos)
 
 
 @builtin("compile/-")
@@ -548,7 +599,7 @@ def special_subtract(compiler, source):
 
     return _reduce_op(
         None, _op.sub, compiler, source,
-        operand=Operand.SUBTRACT)
+        operand=Operand.SUBTRACT, py_unary=_op.neg)
 
 
 @builtin("compile/*")
@@ -825,7 +876,8 @@ def special_str(compiler, source):
         OpCode.OBJECT_STR,
         lambda a, b: str(a) + str(b),
         compiler,
-        source)
+        source,
+        py_unary=str)
 
 
 @builtin("compile/len")

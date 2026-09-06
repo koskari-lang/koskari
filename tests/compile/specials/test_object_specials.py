@@ -595,6 +595,96 @@ class TestObjectSubtract(SpecialsTestCase):
         self.assertIn(7, consts)
 
 
+    async def test_subtract_unary_const_negates(self):
+        # A lone constant must fold to its negation, matching the runtime
+        # unary form; it used to return the literal unchanged
+        code = self.compile_to_code("(- 5)")
+        self.assertIsNone(_find_operand(code, Operand.SUBTRACT))
+        consts = [
+            code.constant(arg)
+            for op, arg in _ops(code)
+            if op == OpCode.CONST
+        ]
+        self.assertIn(-5, consts)
+        self.assertNotIn(5, consts)
+
+        expr, mod = self.compile_expr("(- 5)")
+        self.assertEqual(-5, await expr())
+
+        expr, mod = self.compile_expr("(- 2.5)")
+        self.assertEqual(-2.5, await expr())
+
+
+    async def test_subtract_unary_var_negates(self):
+        code = self.compile_to_code("(- a)")
+        self.assertEqual(1, _find_operand(code, Operand.SUBTRACT))
+
+        expr, mod = self.compile_expr("(- a)", a=5)
+        self.assertEqual(-5, await expr())
+
+
+    async def test_subtract_unary_const_and_var_agree(self):
+        expr, mod = self.compile_expr("#((- 5) (- a))", a=5)
+        self.assertEqual((-5, -5), await expr())
+
+
+    async def test_subtract_unary_non_numeric_const_errors(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code('(- "a")')
+        with self.assertRaises(SpecialError):
+            self.compile_to_code("(- None)")
+
+
+class TestObjectUnaryReducers(SpecialsTestCase):
+    """
+    Operators with a unary form fold a lone constant through it; the
+    others reject a lone argument at compile time
+    """
+
+    async def test_add_unary_const_is_identity(self):
+        code = self.compile_to_code("(+ 5)")
+        self.assertIsNone(_find_operand(code, Operand.ADD))
+        expr, mod = self.compile_expr("(+ 5)")
+        self.assertEqual(5, await expr())
+
+
+    async def test_add_unary_var_emits_count_one(self):
+        code = self.compile_to_code("(+ a)")
+        self.assertEqual(1, _find_operand(code, Operand.ADD))
+        expr, mod = self.compile_expr("(+ a)", a=5)
+        self.assertEqual(5, await expr())
+
+
+    async def test_add_unary_non_numeric_const_errors(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code('(+ "a")')
+
+
+    async def test_str_unary_const_converts(self):
+        code = self.compile_to_code("(#str 5)")
+        self.assertIsNone(_find_op(code, OpCode.OBJECT_STR))
+        expr, mod = self.compile_expr("#((#str 5) (#str a))", a=5)
+        self.assertEqual(("5", "5"), await expr())
+
+
+    async def test_operators_without_unary_form_reject_one_arg(self):
+        for form in ("(* a)", "(/ 5)", "(// a)", "(& 5)", "(| a)", "(^ 5)",
+                     "(% a)", "(<< 5)", "(>> a)", "(** 5)", "(@ a)"):
+            with self.assertRaises(SpecialError, msg=form):
+                self.compile_to_code(form)
+
+
+    async def test_all_constants_still_fold_to_one_const(self):
+        code = self.compile_to_code("(- 10 3 2)")
+        self.assertIsNone(_find_operand(code, Operand.SUBTRACT))
+        consts = [
+            code.constant(arg)
+            for op, arg in _ops(code)
+            if op == OpCode.CONST
+        ]
+        self.assertIn(5, consts)
+
+
 class TestObjectMultiply(SpecialsTestCase):
 
     async def test_multiply_two_vars(self):
