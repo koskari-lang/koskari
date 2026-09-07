@@ -101,4 +101,24 @@ class TestWhileSpecial(SpecialsTestCase):
         self.assertEqual(mod.x, 0)
 
 
+    async def test_while_else_multiple_forms(self):
+        """
+        every form after the else marker runs, in order, and the last
+        one is the loop's value
+        """
+
+        c = []
+        src_str = """
+        (while x
+          (call append c x)
+          (setq x (call sub x 1))
+          [else: (call append c "first") (call append c "second") "done"])
+        """
+        expr, mod = self.compile_expr(
+            src_str, x=2, c=c, append=append, sub=operator.sub)
+        result = await expr()
+        self.assertEqual(result, "done")
+        self.assertEqual(c, [2, 1, "first", "second"])
+
+
 # The end.

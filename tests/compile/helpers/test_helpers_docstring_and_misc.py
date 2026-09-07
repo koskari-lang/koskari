@@ -82,9 +82,23 @@ class TestHelperElsebody(unittest.TestCase):
         else_kw = keyword("else")
         else_arm = cons(else_kw, symbol("e1"), nil)
         body = cons(main1, cons(main2, cons(else_arm, nil)))
-        stripped, else_expr = helper_elsebody(body)
+        stripped, else_body = helper_elsebody(body)
         self.assertEqual(stripped, cons(main1, cons(main2, nil)))
-        self.assertEqual(else_expr, symbol("e1"))
+        self.assertEqual(else_body, cons(symbol("e1"), nil))
+
+    def test_trailing_else_clause_keeps_every_form(self):
+        main1 = cons(symbol("m1"), nil)
+        else_arm = cons(keyword("else"), symbol("e1"), symbol("e2"), nil)
+        body = cons(main1, cons(else_arm, nil))
+        stripped, else_body = helper_elsebody(body)
+        self.assertEqual(stripped, cons(main1, nil))
+        self.assertEqual(else_body, cons(symbol("e1"), symbol("e2"), nil))
+
+    def test_empty_else_returns_none(self):
+        body = cons(symbol("only"), cons(cons(keyword("else"), nil), nil))
+        stripped, else_body = helper_elsebody(body)
+        self.assertEqual(stripped, cons(symbol("only"), nil))
+        self.assertIsNone(else_body)
 
     def test_no_else_returns_nil_else(self):
         body = cons(symbol("only"), nil)

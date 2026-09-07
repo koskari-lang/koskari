@@ -41,7 +41,7 @@ _WHILE_PATTERNS = [
 @special("compile/while", patterns=_WHILE_PATTERNS, unpack="kwargs")
 def special_while(compiler, _while, test, body):
     """
-    Compile (compile/while TEST BODY... [else: ELSEBODY]). Loop with break and continue support
+    Compile (compile/while TEST BODY... [else: ELSEBODY...]). Loop with break and continue support
     """
 
     called_by = str(_while.datum)
@@ -66,7 +66,7 @@ def special_while(compiler, _while, test, body):
 
     if has_elsebody:
         fragment.instruction(OpCode.CLEAR_LOOP, 0)
-        fragment.merge(compiler.full_compile(elsebody))
+        helper_begin(fragment, elsebody)
         fragment.instruction(OpCode.BREAK, 1)
 
     fragment.instruction(OpCode.POP_LOOP, 0)
@@ -137,7 +137,7 @@ def special_for_each(compiler, caps):
     fragment.instruction(OpCode.LABEL, loop_else)
     if has_elsebody:
         fragment.instruction(OpCode.CLEAR_FOREACH, 0)
-        fragment.merge(compiler.full_compile(elsebody))
+        helper_begin(fragment, elsebody)
         fragment.instruction(OpCode.BREAK, 1)
 
     fragment.instruction(OpCode.POP_FOREACH, 0)

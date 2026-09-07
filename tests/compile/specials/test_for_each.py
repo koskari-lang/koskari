@@ -155,4 +155,23 @@ class TestForEachSpecial(SpecialsTestCase):
         self.assertEqual(result, "found")
 
 
+    async def test_foreach_else_multiple_forms(self):
+        """
+        every form after the else marker runs, in order, and the last
+        one is the loop's value
+        """
+
+        col = []
+        src = """
+        (for-each [i x]
+          (call append col i)
+          [else: (call append col "first") (call append col "second") "done"])
+        """
+        expr, mod = self.compile_expr(
+            src, x=[1, 2], col=col, append=_append)
+        result = await expr()
+        self.assertEqual(result, "done")
+        self.assertEqual(col, [1, 2, "first", "second"])
+
+
 # The end.

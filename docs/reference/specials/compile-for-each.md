@@ -1,11 +1,11 @@
 # compile/for-each
 **Symbol:** `compile/for-each`
 
-**Syntax:** `(for-each [BINDING EXPR] BODY... [else: ELSEBODY])`
+**Syntax:** `(for-each [BINDING EXPR] BODY... [else: ELSEBODY...])`
 
 **Use-case:** Iterate over the sequence produced by EXPR, binding each element
 to BINDING and evaluating BODY on each iteration. Supports `compile/break` and
-`compile/continue` inside the body. An optional trailing **`[else: ELSEBODY]`**
+`compile/continue` inside the body. An optional trailing **`[else: ELSEBODY...]`**
 keyword clause runs only when the iterator is exhausted naturally (i.e. not via
 `compile/break`); its value becomes the loop's expression value. Without an
 else clause the loop evaluates to `None`. In block syntax, the same clause comes

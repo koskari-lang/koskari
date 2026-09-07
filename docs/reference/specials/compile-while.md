@@ -1,10 +1,10 @@
 # compile/while
 **Symbol:** `compile/while`
 
-**Syntax:** `(while TEST BODY... [else: ELSEBODY])`
+**Syntax:** `(while TEST BODY... [else: ELSEBODY...])`
 
 **Use-case:** Loop that runs body while TEST is truthy. Supports `compile/break`
-and `compile/continue` inside the body. An optional `[else: ELSEBODY]` clause
+and `compile/continue` inside the body. An optional `[else: ELSEBODY...]` clause
 runs only when the loop exits because TEST is false (i.e. not via
 `compile/break`); its value becomes the loop's expression value. Without an
 else clause the loop evaluates to `None`. In block syntax, the same clause comes

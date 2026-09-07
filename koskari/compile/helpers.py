@@ -749,7 +749,11 @@ _keyword_else = keyword("else")
 
 def helper_elsebody(source):
     """
-    Strip a trailing ``[else: EXPR]`` clause from a body list
+    Strip a trailing ``[else: BODY...]`` clause from a body list
+
+    :return: ``(body, elsebody)`` where elsebody is the list of forms
+        after the else marker, to be compiled as an implicit begin;
+        None when the clause is present but empty, nil when absent
     """
 
     collected = []
@@ -764,7 +768,7 @@ def helper_elsebody(source):
                 if is_nil(ebody):
                     return body_list, None
                 else:
-                    return body_list, ebody[0]
+                    return body_list, ebody
         collected.append(head)
         current = tail
 
