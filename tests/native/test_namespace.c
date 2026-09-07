@@ -819,7 +819,8 @@ static int test_modns_create(void) {
 
 static int test_modns_builtins_fallback(void) {
     /*
-      Test that ModuleNamespace falls back to builtins.
+      Resolve on a ModuleNamespace falls back to builtins (tier 1);
+      Deref is a tier 3 read and does not.
     */
     PyObject *name = PyUnicode_FromString("modns");
     PyObject *builtins = PyDict_New();
@@ -837,14 +838,72 @@ static int test_modns_builtins_fallback(void) {
     PyObject *modns = KosModuleNamespace_New(name, builtins);
     TEST_ASSERT_NOT_NULL(modns, "create ModuleNamespace");
 
-    /* Access should create a ref with builtin value */
-    PyObject *retrieved = KosNamespace_Deref(modns, key);
-    TEST_ASSERT_NOT_NULL(retrieved, "deref succeeded");
+    PyObject *retrieved = KosNamespace_Resolve(modns, key);
+    TEST_ASSERT_NOT_NULL(retrieved, "resolve succeeded");
     TEST_ASSERT_EQ(PyLong_AsLong(retrieved), 999, "builtin value");
-
     Py_DECREF(retrieved);
+
+    /* resolution does not bind the name */
+    TEST_ASSERT_EQ(KosNamespace_IsBound(modns, key), 0, "builtin not bound");
+    TEST_ASSERT_EQ(KosNamespace_HasValue(modns, key), 0, "builtin holds no module value");
+
+    PyObject *strict = KosNamespace_Deref(modns, key);
+    TEST_ASSERT_NULL(strict, "deref does not reach builtins");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_NameError), "deref miss is NameError");
+    PyErr_Clear();
+
     Py_DECREF(modns);
     Py_DECREF(builtin_val);
+    Py_DECREF(key);
+    Py_DECREF(builtins);
+    Py_DECREF(name);
+    return 0;
+}
+
+
+static int test_modns_is_bound_has_value(void) {
+    /*
+      IsBound answers at tier 2 and HasValue at tier 3: a stored name
+      is both, a cleared name stays bound but holds no value, an
+      unknown name is neither.
+    */
+    PyObject *name = PyUnicode_FromString("modns");
+    PyObject *builtins = PyDict_New();
+    PyObject *key = PyUnicode_FromString("x");
+    PyObject *other = PyUnicode_FromString("y");
+    PyObject *val = PyLong_FromLong(123456);
+
+    TEST_ASSERT_NOT_NULL(name, "create name");
+    TEST_ASSERT_NOT_NULL(builtins, "create builtins");
+    TEST_ASSERT_NOT_NULL(key, "create key");
+    TEST_ASSERT_NOT_NULL(other, "create other");
+    TEST_ASSERT_NOT_NULL(val, "create val");
+
+    PyObject *modns = KosModuleNamespace_New(name, builtins);
+    TEST_ASSERT_NOT_NULL(modns, "create ModuleNamespace");
+
+    TEST_ASSERT_EQ(KosNamespace_IsBound(modns, key), 0, "unknown not bound");
+    TEST_ASSERT_EQ(KosNamespace_HasValue(modns, key), 0, "unknown has no value");
+
+    TEST_ASSERT_EQ(KosNamespace_Store(modns, key, val), 0, "store x");
+    TEST_ASSERT_EQ(KosNamespace_IsBound(modns, key), 1, "stored is bound");
+    TEST_ASSERT_EQ(KosNamespace_HasValue(modns, key), 1, "stored has value");
+
+    TEST_ASSERT_EQ(KosNamespace_Clear(modns, key), 0, "clear x");
+    TEST_ASSERT_EQ(KosNamespace_IsBound(modns, key), 1, "cleared stays bound");
+    TEST_ASSERT_EQ(KosNamespace_HasValue(modns, key), 0, "cleared has no value");
+
+    PyObject *gone = KosNamespace_Deref(modns, key);
+    TEST_ASSERT_NULL(gone, "deref of cleared fails");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_NameError), "cleared deref is NameError");
+    PyErr_Clear();
+
+    TEST_ASSERT_EQ(KosNamespace_IsBound(modns, other), 0, "never stored not bound");
+    TEST_ASSERT_EQ(KosNamespace_HasValue(modns, other), 0, "never stored has no value");
+
+    Py_DECREF(modns);
+    Py_DECREF(val);
+    Py_DECREF(other);
     Py_DECREF(key);
     Py_DECREF(builtins);
     Py_DECREF(name);
@@ -1104,6 +1163,7 @@ int run_namespace_tests(void) {
     /* ModuleNamespace tests */
     RUN_TEST(test_modns_create);
     RUN_TEST(test_modns_builtins_fallback);
+    RUN_TEST(test_modns_is_bound_has_value);
     RUN_TEST(test_modns_refcount);
 
     /* Module tests */

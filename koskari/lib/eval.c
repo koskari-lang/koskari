@@ -1492,7 +1492,7 @@ static PyObject *frame_ns_deref(KosEvalState *es, PyObject *name) {
   PyObject *ns = KosEvalState_CurrentNamespace(es);
 
   if (KosNamespace_Check(ns))
-    return KosNamespace_Deref(ns, name);
+    return KosNamespace_Resolve(ns, name);
 
   PyErr_Format(PyExc_TypeError, "frame namespace must be Namespace,"
                " got %R", ns);

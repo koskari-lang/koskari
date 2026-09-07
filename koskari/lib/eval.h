@@ -815,7 +815,7 @@ static inline KosOpResult kos_iter_installed(KosEvalState *es) {
   KosNamespace_FastStore(KosEvalState_CurrentNamespace(es), (index), (value))
 
 #define KosEvalState_GetVar(es, key) \
-  KosNamespace_Deref(KosEvalState_CurrentNamespace(es), (key))
+  KosNamespace_Resolve(KosEvalState_CurrentNamespace(es), (key))
 
 #define KosEvalState_StackSteal_Tail(es, s, count) \
   KosStackSteal_Tail((s), (count), KosEvalState_BLOCK(es))

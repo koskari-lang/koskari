@@ -199,11 +199,23 @@ PyObject *KosNamespace_LOOSE_REF(PyObject *ns, PyObject *key);
 
 
 /**
-   Looks up Ref matching key. If it exists deref it.
+   Tier 3 read: the value stored in this namespace's own binding for
+   key. Never consults builtins and never creates a binding.
 
-   New reference, or NULL with error set
+   New reference, or NULL with NameError set when key is unbound here
+   or the binding is empty.
 */
 PyObject *KosNamespace_Deref(PyObject *ns, PyObject *key);
+
+
+/**
+   Resolution: the value a symbol evaluated in this namespace sees.
+   Tier 3 first; a module namespace miss falls through to its builtins
+   (tier 1). Never creates a binding.
+
+   New reference, or NULL with NameError set.
+*/
+PyObject *KosNamespace_Resolve(PyObject *ns, PyObject *key);
 
 
 /**
@@ -219,11 +231,21 @@ int KosNamespace_FindRef(PyObject *ns, PyObject *key, PyObject **found);
 
 
 /**
-   Test whether a Ref with the matching key is in this namespace.
+   Tier 2 test: is key bound in this namespace. An emptied Ref and a
+   raw fast slot both count; builtins do not.
 
-   0 if key is not in ns, 1 if it is.
+   1 if bound, 0 if not, -1 with an error set.
  */
-int KosNamespace_Contains(PyObject *ns, PyObject *key);
+int KosNamespace_IsBound(PyObject *ns, PyObject *key);
+
+
+/**
+   Tier 3 test: does this namespace's binding for key hold a value.
+   Builtins do not count.
+
+   1 if a value is held, 0 if not, -1 with an error set.
+ */
+int KosNamespace_HasValue(PyObject *ns, PyObject *key);
 
 
 int KosNamespace_Store(PyObject *ns, PyObject *key, PyObject *val);

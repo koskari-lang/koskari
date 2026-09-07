@@ -927,24 +927,12 @@ static int ns_fast_index(PyObject *self, PyObject *key) {
 }
 
 
-static PyObject *ns_deref_symbol(PyObject *self, PyObject *key) {
-
-  PyObject *ref = KosNamespace_LOOSE_REF(self, key);
-
-  if (! ref) {
-    if (PyErr_Occurred())
-      return NULL;
-
-    PyObject *val = mdl_ns_builtin(self, key);
-    if (val) {
-      Py_INCREF(val);
-      return val;
-    }
-
-    PyErr_Format(PyExc_NameError, "No such reference: %S", key);
-    return NULL;
-
-  } else if (ref == Py_None) {
+/* Deref through a loose ref already looked up for key: the Py_None
+   sentinel reads the raw fast slot, a Ref derefs. New reference, or
+   NULL with NameError when the binding is empty. */
+static PyObject *ns_deref_loose(PyObject *self, PyObject *key,
+                                PyObject *ref) {
+  if (ref == Py_None) {
     int index = ns_fast_index(self, key);
     if (index < 0) {
       PyErr_Format(PyExc_NameError, "No such reference: %S", key);
@@ -958,10 +946,45 @@ static PyObject *ns_deref_symbol(PyObject *self, PyObject *key) {
       PyErr_Format(PyExc_NameError, "Empty reference: %S", key);
     }
     return val;
-
-  } else {
-    return KosRef_Deref(ref);
   }
+
+  return KosRef_Deref(ref);
+}
+
+
+/* Tier 3 read: the value stored in this namespace's own binding for
+   key. Never consults builtins. New reference, or NULL with NameError
+   when key is unbound or the binding is empty. */
+static PyObject *ns_deref_symbol(PyObject *self, PyObject *key) {
+  PyObject *ref = KosNamespace_LOOSE_REF(self, key);
+  if (! ref) {
+    if (! PyErr_Occurred())
+      PyErr_Format(PyExc_NameError, "No such reference: %S", key);
+    return NULL;
+  }
+  return ns_deref_loose(self, key, ref);
+}
+
+
+/* Resolution: the value a symbol evaluated in this namespace sees.
+   Tier 3 first; a module namespace miss falls through to its builtins
+   (tier 1). Never creates a binding. New reference, or NULL with
+   NameError. */
+static PyObject *ns_resolve_symbol(PyObject *self, PyObject *key) {
+  PyObject *ref = KosNamespace_LOOSE_REF(self, key);
+  if (ref)
+    return ns_deref_loose(self, key, ref);
+  if (PyErr_Occurred())
+    return NULL;
+
+  PyObject *val = mdl_ns_builtin(self, key);
+  if (val) {
+    Py_INCREF(val);
+    return val;
+  }
+
+  PyErr_Format(PyExc_NameError, "No such reference: %S", key);
+  return NULL;
 }
 
 
@@ -1079,7 +1102,7 @@ static int ns_bind_ref(PyObject *self, PyObject *key, PyObject *ref) {
 
 static PyMappingMethods ns_as_mapping = {
   .mp_length = ns_len,
-  .mp_subscript = ns_deref_symbol,
+  .mp_subscript = ns_resolve_symbol,
   .mp_ass_subscript = ns_store_symbol,
 };
 
@@ -1095,14 +1118,38 @@ static PyObject *ns_m_ref(PyObject *self, PyObject *key) {
 }
 
 
-/* Membership without side effects: a bound Ref, or for a module
-   namespace a builtin the name would resolve to. */
-static int ns_has_name(PyObject *self, PyObject *key) {
-  PyObject *const ref = KosNamespace_REF(self, key);
+/* Tier 2: is key bound in this namespace. An emptied Ref and a raw
+   fast slot both count. 1, 0, or -1 with an error set. */
+static int ns_is_bound(PyObject *self, PyObject *key) {
+  PyObject *const ref = KosNamespace_LOOSE_REF(self, key);
   if (ref)
     return 1;
-  if (PyErr_Occurred())
-    return -1;
+  return PyErr_Occurred()? -1: 0;
+}
+
+
+/* Tier 3: does this namespace's binding for key hold a value. 1, 0,
+   or -1 with an error set. */
+static int ns_has_value(PyObject *self, PyObject *key) {
+  PyObject *const ref = KosNamespace_LOOSE_REF(self, key);
+  if (! ref)
+    return PyErr_Occurred()? -1: 0;
+  if (ref == Py_None) {
+    int index = ns_fast_index(self, key);
+    return index >= 0 &&
+      KosNamespace_GET_FAST_VAL(self, (size_t) index) != NULL;
+  }
+  return ! KosRef_IsEmpty(ref);
+}
+
+
+/* Python-facing membership as it stands today: a bound Ref, or for a
+   module namespace a builtin the name would resolve to. Serves the
+   mapping protocol until that protocol answers at tier 3 only. */
+static int ns_has_name(PyObject *self, PyObject *key) {
+  int bound = ns_is_bound(self, key);
+  if (bound)
+    return bound;
   return mdl_ns_builtin(self, key) != NULL;
 }
 
@@ -1118,7 +1165,7 @@ static PySequenceMethods ns_seq = {
 
 
 static PyObject *ns_m_deref(PyObject *self, PyObject *key) {
-  return ns_deref_symbol(self, key);
+  return ns_resolve_symbol(self, key);
 }
 
 
@@ -1231,7 +1278,10 @@ static PyObject *ns_m_get_parent(PyObject *self) {
 
 
 static PyObject *ns_m_contains(PyObject *self, PyObject *key) {
-  return PyLong_FromLong(KosNamespace_Contains(self, key));
+  int res = ns_has_name(self, key);
+  if (res < 0)
+    return NULL;
+  return PyBool_FromLong(res);
 }
 
 
@@ -1697,6 +1747,11 @@ PyObject *KosNamespace_Deref(PyObject *namespace, PyObject *key) {
 }
 
 
+PyObject *KosNamespace_Resolve(PyObject *namespace, PyObject *key) {
+  return ns_resolve_symbol(namespace, key);
+}
+
+
 int KosNamespace_FindRef(PyObject *namespace, PyObject *key,
                          PyObject **found) {
 
@@ -1739,14 +1794,25 @@ int KosNamespace_FindRef(PyObject *namespace, PyObject *key,
 }
 
 
-int KosNamespace_Contains(PyObject *namespace, PyObject *key) {
+int KosNamespace_IsBound(PyObject *namespace, PyObject *key) {
   if (! KosNamespace_Check(namespace)) {
     PyErr_Format(PyExc_TypeError, "expected Namespace instance,"
                  " found %R", namespace);
     return -1;
   }
 
-  return ns_has_name(namespace, key);
+  return ns_is_bound(namespace, key);
+}
+
+
+int KosNamespace_HasValue(PyObject *namespace, PyObject *key) {
+  if (! KosNamespace_Check(namespace)) {
+    PyErr_Format(PyExc_TypeError, "expected Namespace instance,"
+                 " found %R", namespace);
+    return -1;
+  }
+
+  return ns_has_value(namespace, key);
 }
 
 
@@ -2175,7 +2241,7 @@ static PyObject *collector_m_items(PyObject *self) {
 
 static PyMappingMethods collector_as_mapping = {
   .mp_length = collector_mp_length,
-  .mp_subscript = ns_deref_symbol,
+  .mp_subscript = ns_resolve_symbol,
   .mp_ass_subscript = ns_store_symbol,
 };
 
@@ -2401,7 +2467,7 @@ static Py_ssize_t mdl_ns_len(PyObject *self) {
 
 static PyMappingMethods mdl_ns_as_mapping = {
   .mp_length = mdl_ns_len,
-  .mp_subscript = ns_deref_symbol,
+  .mp_subscript = ns_resolve_symbol,
   .mp_ass_subscript = ns_store_symbol,
 };
 
