@@ -268,6 +268,29 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "other")
 
 
+    async def test_match_mapping_probes_without_inserting(self):
+        """
+        a mapping pattern reads the subject without changing it: a
+        defaultdict gains no key from a missed arm, and a key it does
+        hold still matches
+        """
+
+        from collections import defaultdict
+        src = """
+        (match data
+          [[#{"kind": k}] k]
+          [else: "other"])
+        """
+        data = defaultdict(lambda: "invented")
+        expr, mod = self.compile_expr(src, data=data)
+        self.assertEqual(await expr(), "other")
+        self.assertEqual(dict(data), {})
+
+        data["kind"] = "job"
+        expr, mod = self.compile_expr(src, data=data)
+        self.assertEqual(await expr(), "job")
+
+
     async def test_match_mapping_extern_key(self):
         src = """
         (match data
