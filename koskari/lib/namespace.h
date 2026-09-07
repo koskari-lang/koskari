@@ -164,7 +164,8 @@ void KosNamespace_ClearRawFast(PyObject *ns);
 
 
 /**
-   Looks up Ref matching key.
+   Looks up Ref matching key. A module namespace creates the binding
+   on a miss and keeps it; this is a request for a Ref to hold.
 
    Borrowed reference, or NULL with error set
  */
@@ -172,7 +173,8 @@ PyObject *KosNamespace_Ref(PyObject *ns, PyObject *key);
 
 
 /**
-   Looks up Ref matching key.
+   Looks up Ref matching key. Never creates a binding: a module
+   namespace miss yields NULL even when a builtin of that name exists.
 
    Borrowed reference, or NULL. Does not set error if no match is found,
    but may set an error if some other failure occured in the lookup.

@@ -602,15 +602,81 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_len_builtins_not_counted(self):
-        """Builtins alone do not contribute to len until materialized"""
+        """Builtins never contribute to len, before or after a read"""
         ns = ModuleNamespace("ns", {'x': 1})
         self.assertEqual(len(ns), 0)
         self.assertFalse(ns)
         self.assertEqual(list(ns.keys()), [])
 
-        ns.deref('x')
+        self.assertEqual(ns.deref('x'), 1)
+        self.assertEqual(len(ns), 0)
+        self.assertFalse(ns)
+        self.assertEqual(list(ns.keys()), [])
+
+
+    async def test_value_reads_do_not_bind(self):
+        """deref, subscript, and get of a builtin leave binds untouched"""
+        ns = ModuleNamespace("ns", {'x': 1})
+
+        self.assertEqual(ns.deref('x'), 1)
+        self.assertEqual(ns['x'], 1)
+        self.assertEqual(ns.get('x'), 1)
+        self.assertEqual(ns.get('zzz', 5), 5)
+
+        self.assertEqual(len(ns), 0)
+        self.assertEqual(list(ns.keys()), [])
+
+
+    async def test_missing_reads_do_not_bind(self):
+        """A NameError on a miss leaves no empty binding behind"""
+        ns = ModuleNamespace("ns", {})
+
+        with self.assertRaises(NameError):
+            ns.deref('zzz')
+        with self.assertRaises(NameError):
+            ns['zzz']
+
+        self.assertEqual(len(ns), 0)
+        self.assertNotIn('zzz', ns)
+
+
+    async def test_contains_does_not_bind(self):
+        """Membership follows binds and builtins without creating"""
+        ns = ModuleNamespace("ns", {'x': 1})
+
+        self.assertIn('x', ns)
+        self.assertNotIn('zzz', ns)
+        self.assertNotIn('zzz', ns)
+        self.assertEqual(len(ns), 0)
+
+        ns.store('a', 1)
+        self.assertIn('a', ns)
         self.assertEqual(len(ns), 1)
-        self.assertTrue(ns)
+
+
+    async def test_ref_request_binds_and_retains(self):
+        """ref() creates an empty binding on a miss and keeps it"""
+        ns = ModuleNamespace("ns", {})
+
+        r = ns.ref('zzz')
+        self.assertIn('zzz', ns)
+        self.assertEqual(len(ns), 1)
+        with self.assertRaises(NameError):
+            ns.deref('zzz')
+
+        r.store(7)
+        self.assertEqual(ns.deref('zzz'), 7)
+        self.assertIs(ns.ref('zzz'), r)
+
+
+    async def test_child_get_reaches_builtins(self):
+        """get() on a child namespace resolves module builtins"""
+        mod = ModuleNamespace("mod", {'x': 1})
+        ns = Namespace("ns", mod, ('a',), (), ())
+
+        self.assertEqual(ns.get('x'), 1)
+        self.assertEqual(ns.get('zzz', 5), 5)
+        self.assertEqual(len(mod), 0)
 
 
 class TestCollectorNamespace(unittest.IsolatedAsyncioTestCase):
@@ -725,6 +791,23 @@ class TestModule(unittest.IsolatedAsyncioTestCase):
             _ = m.z
 
 
+    async def test_module_ns_attribute_reads_do_not_bind(self):
+        """Module attribute reads over a ModuleNamespace never bind"""
+        ns = ModuleNamespace("ns", {'x': 1})
+        m = Module(ns)
+
+        self.assertEqual(m.x, 1)
+        with self.assertRaises(AttributeError):
+            _ = m.zzz
+
+        self.assertEqual(len(ns), 0)
+        self.assertNotIn('zzz', ns)
+
+        m.zzz = 2
+        self.assertEqual(ns.deref('zzz'), 2)
+        self.assertEqual(len(ns), 1)
+
+
     async def test_assign_missing_raises(self):
         """Assigning to missing attribute raises AttributeError"""
         ns = Namespace("ns", None, ('a',))
@@ -816,22 +899,20 @@ class TestModule(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_dir_after_access(self):
-        """dir() reflects accessed bindings"""
+        """dir() lists bound names; attribute reads bind nothing"""
         glbl = {'a': 123, 'b': "hello"}
         mod = ModuleNamespace('mod', glbl)
 
         m = Module(mod)
 
-        # Empty before any access
         self.assertEqual(dir(m), [])
 
-        # Access creates bindings
-        _ = m.a
-        _ = m.b
-        m.z = 999
+        self.assertEqual(m.a, 123)
+        self.assertEqual(m.b, "hello")
+        self.assertEqual(dir(m), [])
 
-        d = dir(m)
-        self.assertEqual(sorted(d), ['a', 'b', 'z'])
+        m.z = 999
+        self.assertEqual(dir(m), ['z'])
 
 
     async def test_requires_namespace(self):

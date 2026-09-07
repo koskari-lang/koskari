@@ -40,6 +40,7 @@ static PyObject *_module_str = NULL;     // "<module>"
 
 // forward declarations
 static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name);
+static PyObject *mdl_ns_builtin(PyObject *self, PyObject *name);
 static int ns_fast_index(PyObject *self, PyObject *key);
 static PyObject *ns_newfull_from_nspec(
     PyTypeObject *type, PyObject *parent, PyObject *nspec);
@@ -646,6 +647,26 @@ static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
 }
 
 
+/* The creating counterpart of KosNamespace_REF. A function, collector,
+   or module namespace yields the Ref bound to key; a module namespace
+   creates the binding on a miss and keeps it thereafter. Used by the
+   paths that request a Ref to hold on to (closure resolution, the
+   explicit ref forms, attribute stores); value reads and membership
+   tests go through KosNamespace_REF, which never creates. */
+static PyObject *ns_claim_ref(PyObject *namespace, PyObject *key) {
+  if (KosNamespace_CheckExact(namespace) ||
+      KosCollectorNamespace_CheckExact(namespace)) {
+    return ns_borrow_ref(namespace, key);
+
+  } else if (KosModuleNamespace_CheckExact(namespace)) {
+    return mdl_ns_borrow_ref(namespace, key);
+
+  } else {
+    return NULL;
+  }
+}
+
+
 static PyObject *find_module_in_chain(PyObject *ns) {
   while (ns) {
     if (KosModuleNamespace_CheckExact(ns))
@@ -911,8 +932,16 @@ static PyObject *ns_deref_symbol(PyObject *self, PyObject *key) {
   PyObject *ref = KosNamespace_LOOSE_REF(self, key);
 
   if (! ref) {
-    if (! PyErr_Occurred())
-      PyErr_Format(PyExc_NameError, "No such reference: %S", key);
+    if (PyErr_Occurred())
+      return NULL;
+
+    PyObject *val = mdl_ns_builtin(self, key);
+    if (val) {
+      Py_INCREF(val);
+      return val;
+    }
+
+    PyErr_Format(PyExc_NameError, "No such reference: %S", key);
     return NULL;
 
   } else if (ref == Py_None) {
@@ -1057,7 +1086,7 @@ static PyMappingMethods ns_as_mapping = {
 
 static PyObject *ns_m_ref(PyObject *self, PyObject *key) {
 
-  PyObject *result = KosNamespace_REF(self, key);
+  PyObject *result = ns_claim_ref(self, key);
   if (! result && ! PyErr_Occurred())
     PyErr_Format(PyExc_NameError, "no such reference: %R", key);
 
@@ -1066,13 +1095,20 @@ static PyObject *ns_m_ref(PyObject *self, PyObject *key) {
 }
 
 
-static int ns_contains(PyObject *self, PyObject *key) {
+/* Membership without side effects: a bound Ref, or for a module
+   namespace a builtin the name would resolve to. */
+static int ns_has_name(PyObject *self, PyObject *key) {
   PyObject *const ref = KosNamespace_REF(self, key);
-  if (! ref && PyErr_Occurred()) {
+  if (ref)
+    return 1;
+  if (PyErr_Occurred())
     return -1;
-  } else {
-    return !!ref;
-  }
+  return mdl_ns_builtin(self, key) != NULL;
+}
+
+
+static int ns_contains(PyObject *self, PyObject *key) {
+  return ns_has_name(self, key);
 }
 
 
@@ -1105,6 +1141,12 @@ static PyObject *ns_m_get(PyObject *self, PyObject *args) {
         Py_INCREF(def);
         return def;
       }
+      return val;
+    }
+
+    PyObject *val = mdl_ns_builtin(self, name);
+    if (val) {
+      Py_INCREF(val);
       return val;
     }
 
@@ -1618,7 +1660,7 @@ PyObject *KosNamespace_LOOSE_REF(PyObject *namespace, PyObject *key) {
     return ns_borrow_loose_ref(namespace, key);
 
   } else if (KosModuleNamespace_CheckExact(namespace)) {
-    return mdl_ns_borrow_ref(namespace, key);
+    return PyDict_GetItem(KosNamespace_BINDS(namespace), key);
 
   } else {
     return NULL;
@@ -1632,7 +1674,7 @@ PyObject *KosNamespace_REF(PyObject *namespace, PyObject *key) {
     return ns_borrow_ref(namespace, key);
 
   } else if (KosModuleNamespace_CheckExact(namespace)) {
-    return mdl_ns_borrow_ref(namespace, key);
+    return PyDict_GetItem(KosNamespace_BINDS(namespace), key);
 
   } else {
     return NULL;
@@ -1641,7 +1683,7 @@ PyObject *KosNamespace_REF(PyObject *namespace, PyObject *key) {
 
 
 PyObject *KosNamespace_Ref(PyObject *namespace, PyObject *key) {
-  PyObject *result = KosNamespace_REF(namespace, key);
+  PyObject *result = ns_claim_ref(namespace, key);
 
   if (! result && ! PyErr_Occurred())
     PyErr_Format(PyExc_NameError, "no such reference: %R", key);
@@ -1651,8 +1693,7 @@ PyObject *KosNamespace_Ref(PyObject *namespace, PyObject *key) {
 
 
 PyObject *KosNamespace_Deref(PyObject *namespace, PyObject *key) {
-  PyObject *ref = KosNamespace_Ref(namespace, key);
-  return ref? KosRef_Deref(ref): NULL;
+  return ns_deref_symbol(namespace, key);
 }
 
 
@@ -1680,7 +1721,7 @@ int KosNamespace_FindRef(PyObject *namespace, PyObject *key,
     if (! KosCollectorNamespace_Check(namespace)
         || PyUnicode_Equal(key, str_class_name)) {
 
-      PyObject *seek = KosNamespace_REF(namespace, key);
+      PyObject *seek = ns_claim_ref(namespace, key);
       if (! seek) {
         if (PyErr_Occurred())
           return -1;
@@ -1705,13 +1746,7 @@ int KosNamespace_Contains(PyObject *namespace, PyObject *key) {
     return -1;
   }
 
-  PyObject *const ref = KosNamespace_REF(namespace, key);
-
-  if (! ref && PyErr_Occurred()) {
-    return -1;
-  } else {
-    return !!ref;
-  }
+  return ns_has_name(namespace, key);
 }
 
 
@@ -2245,9 +2280,23 @@ PyObject *KosCollectorNamespace_NewFull(
 /* === ModuleNamespace === */
 
 
+/* The builtin a module namespace would resolve name to, or NULL. A
+   non-module namespace has no builtins and yields NULL. Borrowed. */
+static PyObject *mdl_ns_builtin(PyObject *self, PyObject *name) {
+  if (! KosModuleNamespace_CheckExact(self))
+    return NULL;
+  PyObject *blt = KosModuleNamespace_BUILTINS(self);
+  return blt? PyDict_GetItem(blt, name): NULL;
+}
+
+
+/* The Ref bound to name, created on a miss and kept in BINDS from then
+   on, seeded with the builtin of that name if there is one. This is the
+   creating lookup behind ns_claim_ref, global binding at namespace
+   init, and stores. Value reads and membership tests peek BINDS and
+   then the builtins dict directly, and leave nothing behind. */
 static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name) {
 
-  // SAYF("mdl_ns_borrow_ref(%R, %R)", self, name);
   PyObject *res = PyDict_GetItem(KosNamespace_BINDS(self), name);
 
   if (! res) {
@@ -2544,15 +2593,29 @@ static PyObject *mdl_getattro(PyObject *self, PyObject *name) {
       return fun(descr, self, (PyObject *) &KosModuleType);
   }
 
-  PyObject *ref = KosNamespace_REF(KosModule_NAMESPACE(self), name);
-  if (! ref || KosRef_IsEmpty(ref)) {
-    if (! PyErr_Occurred())
+  PyObject *ns = KosModule_NAMESPACE(self);
+  PyObject *ref = KosNamespace_REF(ns, name);
+  if (ref) {
+    if (KosRef_IsEmpty(ref)) {
       PyErr_Format(PyExc_AttributeError, "%R object has no attribute %R",
                    self, name);
-    return NULL;
+      return NULL;
+    }
+    return KosRef_Deref(ref);
   }
 
-  return KosRef_Deref(ref);
+  if (PyErr_Occurred())
+    return NULL;
+
+  PyObject *val = mdl_ns_builtin(ns, name);
+  if (val) {
+    Py_INCREF(val);
+    return val;
+  }
+
+  PyErr_Format(PyExc_AttributeError, "%R object has no attribute %R",
+               self, name);
+  return NULL;
 }
 
 
@@ -2576,7 +2639,7 @@ static int mdl_setattro(PyObject *self, PyObject *name, PyObject *value) {
     }
   }
 
-  PyObject *ref = KosNamespace_REF(KosModule_NAMESPACE(self), name);
+  PyObject *ref = ns_claim_ref(KosModule_NAMESPACE(self), name);
   if (! ref) {
     if (! PyErr_Occurred())
       PyErr_Format(PyExc_AttributeError, "%R object has no attribute %R",
