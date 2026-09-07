@@ -18,6 +18,7 @@ Unit tests for pair and nil types
 :license: GNU General Public License v3
 """
 
+import sys
 import unittest
 
 from koskari.lib import (
@@ -229,6 +230,16 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         p2 = p.copy()
         self.assertEqual(p, p2)
         self.assertIsNot(p, p2)
+
+    async def test_copy_releases_cells(self):
+        """dropping a copy frees every copied cell"""
+        val = object()
+        p = cons(val, val, val, nil)
+        before = sys.getrefcount(val)
+        p2 = p.copy()
+        self.assertEqual(p, p2)
+        del p2
+        self.assertEqual(sys.getrefcount(val), before)
 
     async def test_is_proper_true(self):
         """is_proper() returns True for nil-terminated list"""
@@ -697,6 +708,17 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
         self.assertTrue(p.is_proper())
         self.assertIsNot(cdr(cdr(p)), other)
+
+    async def test_extend_releases_copied_cells(self):
+        """dropping an extended pair frees the cells copied into it"""
+        val = object()
+        other = cons(val, val, nil)
+        before = sys.getrefcount(val)
+        p = cons("foo", nil)
+        p.extend(other)
+        self.assertEqual(list(p.unpack()), ["foo", val, val])
+        del p
+        self.assertEqual(sys.getrefcount(val), before)
 
     async def test_extend_with_improper_cons(self):
         """extend with improper cons preserves improper tail"""

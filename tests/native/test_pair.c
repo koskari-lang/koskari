@@ -143,6 +143,93 @@ static int test_pair_setcar_setcdr_refcount(void) {
 }
 
 
+static PyObject *make_triple(PyObject *val) {
+    /* (val val val) built from the tail up; each inner cell ends owned
+       only by the cell before it. */
+    PyObject *c = KosPair_New(val, KosNil);
+    if (! c) return NULL;
+    PyObject *b = KosPair_New(val, c);
+    Py_DECREF(c);
+    if (! b) return NULL;
+    PyObject *a = KosPair_New(val, b);
+    Py_DECREF(b);
+    return a;
+}
+
+
+static int test_pair_copy_releases_cells(void) {
+    /*
+      pair.copy() must leave every copied cell with exactly one owner.
+      A cell that keeps an extra reference never deallocates, and its
+      car stays alive after the copy is dropped.
+    */
+    PyObject *val = PyLong_FromLong(300000);
+    TEST_ASSERT_NOT_NULL(val, "create val");
+    Py_ssize_t initial = Py_REFCNT(val);
+
+    PyObject *orig = make_triple(val);
+    TEST_ASSERT_NOT_NULL(orig, "create original");
+    TEST_ASSERT_EQ(Py_REFCNT(val), initial + 3, "original holds val in three cells");
+
+    PyObject *copy = PyObject_CallMethod(orig, "copy", NULL);
+    TEST_ASSERT_NOT_NULL(copy, "copy original");
+    TEST_ASSERT_NOT_SAME(copy, orig, "copy is a new chain");
+    TEST_ASSERT_EQ(Py_REFCNT(val), initial + 6, "copy holds val in three more cells");
+
+    TEST_ASSERT_EQ(Py_REFCNT(copy), 1, "copied head cell has one owner");
+    TEST_ASSERT_EQ(Py_REFCNT(KosPair_CDR(copy)), 1, "copied second cell has one owner");
+    TEST_ASSERT_EQ(Py_REFCNT(KosPair_CDR(KosPair_CDR(copy))), 1, "copied third cell has one owner");
+    TEST_ASSERT_SAME(KosPair_CDR(KosPair_CDR(KosPair_CDR(copy))), KosNil, "copy keeps the nil tail");
+
+    Py_DECREF(copy);
+    TEST_ASSERT_EQ(Py_REFCNT(val), initial + 3, "dropping the copy releases every copied cell");
+
+    Py_DECREF(orig);
+    TEST_ASSERT_EQ(Py_REFCNT(val), initial, "dropping the original releases the rest");
+
+    Py_DECREF(val);
+    return 0;
+}
+
+
+static int test_pair_extend_releases_copied_cells(void) {
+    /*
+      pair.extend(other) copies the cells of a pair argument before
+      splicing them on; the spliced cells must be owned only by the
+      chain they were spliced into.
+    */
+    PyObject *val = PyLong_FromLong(400000);
+    TEST_ASSERT_NOT_NULL(val, "create val");
+    Py_ssize_t initial = Py_REFCNT(val);
+
+    PyObject *other = make_triple(val);
+    TEST_ASSERT_NOT_NULL(other, "create other");
+
+    PyObject *head = PyLong_FromLong(500000);
+    TEST_ASSERT_NOT_NULL(head, "create head");
+    PyObject *p = KosPair_New(head, KosNil);
+    TEST_ASSERT_NOT_NULL(p, "create p");
+
+    PyObject *res = PyObject_CallMethod(p, "extend", "O", other);
+    TEST_ASSERT_NOT_NULL(res, "extend p with other");
+    Py_DECREF(res);
+
+    TEST_ASSERT_NOT_SAME(KosPair_CDR(p), other, "extend spliced a copy, not other itself");
+    TEST_ASSERT_EQ(Py_REFCNT(val), initial + 6, "spliced copy holds val in three cells");
+    TEST_ASSERT_EQ(Py_REFCNT(KosPair_CDR(p)), 1, "first spliced cell has one owner");
+
+    Py_DECREF(p);
+    TEST_ASSERT_EQ(Py_REFCNT(val), initial + 3, "dropping p releases the spliced cells");
+
+    Py_DECREF(other);
+    TEST_ASSERT_EQ(Py_REFCNT(val), initial, "dropping other releases the rest");
+
+    Py_DECREF(head);
+    Py_DECREF(val);
+    return 0;
+}
+
+
 /* === pair free list tests === */
 
 
@@ -474,6 +561,8 @@ int run_pair_tests(void) {
     RUN_TEST(test_pair_create);
     RUN_TEST(test_pair_refcount_contents);
     RUN_TEST(test_pair_setcar_setcdr_refcount);
+    RUN_TEST(test_pair_copy_releases_cells);
+    RUN_TEST(test_pair_extend_releases_copied_cells);
 
     /* Free list tests */
     RUN_TEST(test_pair_freelist_basic);

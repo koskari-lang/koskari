@@ -822,7 +822,11 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
     if (last) {
       KosPair_SETCDR(last, tmp);
     }
+
+    /* the seen dict and the result chain now own the new cell; drop
+       the reference from creation so each cell ends with one owner. */
     last = tmp;
+    Py_DECREF(tmp);
   }
 
   /* done with loop, don't need the seen dict anymore. */
