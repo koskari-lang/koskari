@@ -44,6 +44,7 @@ from .reader import (READ_EOF, IndentAwareStream, LayoutReader, source_open,
 
 
 __all__ = (
+    'MODULE_DETACH_FACET_NAMES',
     'MODULE_LOAD_FACET_NAMES',
 
     'build_module_load_facets',
@@ -62,6 +63,13 @@ __all__ = (
 
 MODULE_LOAD_FACET_NAMES = (
     '__pragma__',
+    '__compiler__',
+    '__reader__',
+)
+
+# the facets detached after a load; __pragma__ stays bound as the
+# module's record so a compiler can be rebuilt from it later
+MODULE_DETACH_FACET_NAMES = (
     '__compiler__',
     '__reader__',
 )
@@ -154,8 +162,9 @@ async def load_module_async(module, *, seal=True, detach=True):
     :param seal: when True, seal the module on successful completion:
         the compiler packs its surviving code objects per the
         compiler/pack-module pragma
-    :param detach: when True, detach the load facets afterward (always,
-        even when the load raises).  Callers passing False own the
+    :param detach: when True, detach the compiler and reader facets
+        afterward (always, even when the load raises); ``__pragma__``
+        stays bound.  Callers passing False own the
         completion steps: an interactive session seals but retains
         facets; the bootstrap builtins loop defers both across its
         source files and performs them once at the end
@@ -221,8 +230,9 @@ def load_module_demand(module, *, seal=True, detach=True):
     :param seal: when True, seal the module on successful completion:
         the compiler packs its surviving code objects per the
         compiler/pack-module pragma
-    :param detach: when True, detach the load facets afterward (always,
-        even when the load raises).  Callers passing False own the
+    :param detach: when True, detach the compiler and reader facets
+        afterward (always, even when the load raises); ``__pragma__``
+        stays bound.  Callers passing False own the
         completion steps: an interactive session seals but retains
         facets; the bootstrap builtins loop defers both across its
         source files and performs them once at the end
@@ -291,8 +301,9 @@ async def load_module_source_async(
     :param seal: when True, seal the module on successful completion:
         the compiler packs its surviving code objects per the
         compiler/pack-module pragma
-    :param detach: when True, detach the load facets afterward (always,
-        even when the load raises).  Callers passing False own the
+    :param detach: when True, detach the compiler and reader facets
+        afterward (always, even when the load raises); ``__pragma__``
+        stays bound.  Callers passing False own the
         completion steps: an interactive session seals but retains
         facets; the bootstrap builtins loop defers both across its
         source files and performs them once at the end
@@ -427,11 +438,13 @@ def build_module_load_facets(module, filename=None):
     filename is refreshed so code minted by this load attributes
     backtrace positions to the current source file.
 
-    Otherwise a :class:`ModulePragma` is built and bound as
-    ``__pragma__`` first; the compiler and reader are then chained off
-    it via ``from_pragma`` (each subscribing for later pragma changes)
-    and bound as load facets.  This is the single chokepoint where the
-    pragma source is resolved: the nearest ancestor package's
+    Otherwise the module's bound ``__pragma__`` is kept when present (a
+    detached load leaves it as the module's record), or a
+    :class:`ModulePragma` is built and bound as ``__pragma__``; the
+    compiler and reader are then chained off it via ``from_pragma``
+    (each subscribing for later pragma changes) and bound as load
+    facets.  This is the single chokepoint where the pragma source is
+    resolved for a fresh pragma: the nearest ancestor package's
     ``__package_pragma__`` seeds the settings when one exists (a copy
     with a fresh watcher set -- watchers never cross modules), falling
     back to the built-in default.  A package additionally pulls the
@@ -456,12 +469,14 @@ def build_module_load_facets(module, filename=None):
 
     name = getattr(module, '__name__', '<module>')
 
-    inherited = find_package_pragma(module)
-    pragma = inherited.copy() if inherited is not None else ModulePragma()
+    pragma = ns.get('__pragma__')
+    if pragma is None:
+        inherited = find_package_pragma(module)
+        pragma = inherited.copy() if inherited is not None else ModulePragma()
 
-    if inherited is not None \
-            and getattr(module, '__path__', None) is not None:
-        ns['__package_pragma__'] = inherited.copy()
+        if inherited is not None \
+                and getattr(module, '__path__', None) is not None:
+            ns['__package_pragma__'] = inherited.copy()
 
     compiler = Compiler.from_pragma(name, module, filename=filename,
                                     pragma=pragma)
@@ -541,14 +556,15 @@ def detach_module_load_facets(module):
     """
     Remove load-time ``__compiler__`` and ``__reader__`` bindings.
 
-    Ignores names listed in :data:`MODULE_LOAD_FACET_NAMES` that are not
-    bound.
+    ``__pragma__`` stays bound as the module's record; the get-compiler
+    runtime function rebuilds a compiler from it on demand. Ignores names
+    listed in :data:`MODULE_DETACH_FACET_NAMES` that are not bound.
 
     :param module: koskari Module (or object whose ``vars()`` is the ns)
     """
 
     ns = vars(module)
-    for name in MODULE_LOAD_FACET_NAMES:
+    for name in MODULE_DETACH_FACET_NAMES:
         try:
             del ns[name]
         except KeyError:

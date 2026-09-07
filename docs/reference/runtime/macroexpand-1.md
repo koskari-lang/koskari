@@ -8,7 +8,8 @@
 debugging macros: see exactly one transformation before the compiler takes
 over. For full expansion to a non-macro form, use [macroexpand](macroexpand.md).
 
-**Behaviour:** Looks up **`__compiler__`** on **`ns`**, finds a compiled binding for
+**Behaviour:** Takes the module compiler for **`ns`** through
+[get-compiler](get-compiler.md), finds a compiled binding for
 the form's head, and if it is a **`Syntax`** transformer, runs one
 **`handle_expand`** pass. If the head is not a macro, or no transformer matches,
 the form is returned unchanged.

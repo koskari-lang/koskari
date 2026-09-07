@@ -16,8 +16,9 @@ called with `source` and `ns`, which returns an invokable expression (or
 expression is called, and its return value is the value of the **`evaluate`**
 call.
 
-The namespace must provide a **`__compiler__`** binding when compilation is
-required (the REPL and loaded modules set this up automatically).
+When compilation is required the compiler comes from
+[get-compiler](get-compiler.md): the module's bound **`__compiler__`**, or one
+rebuilt from its **`__pragma__`** after the load-time facets were detached.
 
 **Relation to the macro:** **`(evaluate form)`** and **`(evaluate form ns)`**
 are handled by the **`compile/evaluate`** macro, which expands to **`(call

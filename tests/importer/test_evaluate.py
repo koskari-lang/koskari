@@ -12,12 +12,14 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for the evaluate and compile runtime functions from basics.ki
+Tests for the evaluate, compile, and get-compiler runtime functions from
+basics.ki
 
 evaluate must accept a source form, a Code object, or an already
 compiled Expression, and return the value of running it in the given
-namespace. Requires import koskari.builtins so the functions and the
-compile/evaluate macro are present.
+namespace. get-compiler must hand back the module's bound compiler, or
+rebuild and bind one when the load-time facets are gone. Requires
+import koskari.builtins so the functions and their macros are present.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -25,7 +27,10 @@ compile/evaluate macro are present.
 
 
 from koskari.compile import Compiler
-from koskari.lib import Code, Expression, Module, ModuleNamespace
+from koskari.lib import (
+    Code, Expression, Module, ModuleNamespace, demand_call)
+from koskari.module import load_module_source_async, new_module
+from koskari.pragma import ModulePragma
 from koskari.reader import default_reader, source_str
 
 import pytest
@@ -49,7 +54,6 @@ class TestEvaluate(unittest.IsolatedAsyncioTestCase):
         source = default_reader.read(
             source_str(src_str, __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
-        mod_ns['__compiler__'] = compiler
         fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
 
@@ -123,6 +127,89 @@ class TestEvaluate(unittest.IsolatedAsyncioTestCase):
         compiled = await expr()
         self.assertIsInstance(compiled, Expression)
         self.assertIsInstance(compiled.code, Code)
+
+
+class TestGetCompiler(unittest.IsolatedAsyncioTestCase):
+
+    def compile_expr(self, src_str, lineno=1, **defns):
+        import koskari.builtins as builtins
+        bltns = vars(builtins)
+        if defns:
+            bltns = dict(bltns)
+            bltns.update(defns)
+
+        mod_ns = ModuleNamespace("test", bltns)
+        module = Module(mod_ns)
+        source = default_reader.read(
+            source_str(src_str, __file__, line_no=lineno))
+        compiler = Compiler("<unittest>", module, filename=__file__)
+        fragment = compiler.compile_expression(source)
+        return fragment.as_expression(mod_ns), module, compiler
+
+
+    async def test_returns_bound_compiler(self):
+        """
+        (get-compiler) hands back the module's __compiler__ when bound
+        """
+
+        expr, module, compiler = self.compile_expr("(get-compiler)")
+        vars(module)['__compiler__'] = compiler
+        self.assertIs(await expr(), compiler)
+
+
+    async def test_rebuilds_and_binds_when_missing(self):
+        """
+        without __compiler__ a fresh compiler is built, bound, and reused
+        """
+
+        expr, module, compiler = self.compile_expr("(get-compiler)")
+        ns = vars(module)
+        self.assertNotIn('__compiler__', ns)
+
+        rebuilt = await expr()
+        self.assertIsInstance(rebuilt, Compiler)
+        self.assertIsNot(rebuilt, compiler)
+        self.assertIs(ns['__compiler__'], rebuilt)
+        self.assertIsInstance(ns['__pragma__'], ModulePragma)
+
+        self.assertIs(await expr(), rebuilt)
+
+
+    async def test_walks_up_from_function_namespace(self):
+        """
+        (get-compiler) inside a function binds on the module, not locally
+        """
+
+        src_str = """
+        ((lambda [] (get-compiler)))
+        """
+        expr, module, _compiler = self.compile_expr(src_str)
+        ns = vars(module)
+        rebuilt = await expr()
+        self.assertIs(ns['__compiler__'], rebuilt)
+
+
+    async def test_evaluate_after_detached_load(self):
+        """
+        a function in a loaded module can evaluate after the load-time
+        facets were detached
+        """
+
+        src = """
+        (define run (lambda [] (evaluate (+ 20 22))))
+        """
+        module = new_module("evaltest")
+        ns = vars(module)
+        ns['__file__'] = "<evaltest>"
+        await load_module_source_async(module, src, seal=True, detach=True)
+
+        # detaching empties the binding rather than removing the name, so
+        # the namespace reports the name as bound with no value behind it
+        self.assertIsNone(ns.get('__compiler__'))
+        self.assertIsInstance(ns.get('__pragma__'), ModulePragma)
+
+        self.assertEqual(demand_call(ns['run']), 42)
+        self.assertIsInstance(ns.get('__compiler__'), Compiler)
 
 
 # The end.

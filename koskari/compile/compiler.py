@@ -1096,7 +1096,11 @@ class Compiler:
                 code, (), CompilerMode.FUNCTION, is_root=True)
 
         # finally, register the code with the minted registry so that it
-        # can potentially be sealed later.
+        # can potentially be sealed later. A compiler kept past its seal
+        # (one rebuilt by get-compiler) is never drained, so shed the
+        # dead entries now and then to keep the registry bounded.
+        if len(self._minted) % 1024 == 1023:
+            self._minted = [r for r in self._minted if r() is not None]
         self._minted.append(weakref.ref(code))
 
         return code

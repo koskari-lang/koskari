@@ -15,7 +15,7 @@ is not a macro, no transformer matches, or the binding is not **`Syntax`**.
 Single-expression **`begin`** wrappers are stripped after each step, same as
 **`macroexpand-1`**.
 
-The namespace must provide **`__compiler__`**.
+The compiler comes from [get-compiler](get-compiler.md) for **`ns`**.
 
 **Relation to the macro:** **`(macroexpand form)`** and **`(macroexpand form ns)`**
 are handled by the **`compile/macroexpand`** macro. The **`macroexpandq`** and

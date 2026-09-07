@@ -18,6 +18,47 @@ Portion of koskari.builtins
 
 
 let []:
+  import-from koskari.compile Compiler
+  import-from koskari.pragma ModulePragma
+  import-from koskari.module find_package_pragma
+
+
+  define-global get-compiler [ns]:
+    """
+    The compiler for the module owning ns. Returns the bound
+    __compiler__, or rebuilds one from __pragma__ and binds it when the
+    load-time facet was detached
+    """
+
+    ;; walk from a function or let namespace up to the module namespace
+    while (getattr ns "parent" None):
+      set! ns ns.parent
+
+    define compiler (ns.get "__compiler__")
+    when compiler:
+      return compiler
+
+    define pragma (ns.get "__pragma__")
+    when (None? pragma):
+      define inherited (find_package_pragma ns)
+      set! pragma (if inherited (inherited.copy) (ModulePragma))
+      set! ns["__pragma__"] pragma
+
+    set! compiler (Compiler.from_pragma (getattr ns "__name__" "<module>") ns
+                    filename: (ns.get "__file__") pragma: pragma)
+    set! ns["__compiler__"] compiler
+    compiler
+
+
+define-syntax get-compiler:
+  syntax-rules []:
+    case (get-compiler ns):
+      (call get-compiler ns)
+    case (get-compiler):
+      (call get-compiler (locals))
+
+
+let []:
   import-from koskari.syntax Syntax SyntaxTransform MacroTransform
 
 
@@ -26,7 +67,7 @@ let []:
     Apply an expansion step to a source form object in the given namespace.
     """
 
-    define compiler (item ns "__compiler__")
+    define compiler (get-compiler ns)
     define name (if (pair? form) (car form) form)
     define special (compiler.find_compiled name)
 
@@ -59,7 +100,7 @@ let []:
     result is no longer a macro.
     """
 
-    define compiler (item ns "__compiler__")
+    define compiler (get-compiler ns)
 
     while True:
       define name (if (pair? form) (car form) form)
@@ -150,10 +191,7 @@ let []:
     when (instance? source_obj #(Expression Function)):
       return source_obj
 
-    define compiler (ns.get "__compiler__" None)
-    unless compiler:
-      raise (ValueError "__compiler__ not found in namespace")
-
+    define compiler (get-compiler ns)
     define frag (compiler.compile_expression source_obj)
     frag.as_expression ns
 
