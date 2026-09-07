@@ -47,7 +47,8 @@ class TestCompileGlobals(SpecialsTestCase):
         expr, mod = self.compile_expr("(globals)", marker=42)
         result = await expr()
         self.assertIsInstance(result, ModuleNamespace)
-        self.assertEqual(42, result["marker"])
+        # the harness places marker in the builtins, below the module
+        self.assertEqual(42, result.resolve("marker"))
 
 
     async def test_globals_inside_let_returns_module_namespace(self):
@@ -56,7 +57,8 @@ class TestCompileGlobals(SpecialsTestCase):
             marker=42)
         result = await expr()
         self.assertIsInstance(result, ModuleNamespace)
-        self.assertEqual(42, result["marker"])
+        # the harness places marker in the builtins, below the module
+        self.assertEqual(42, result.resolve("marker"))
 
 
 class TestCompileLocals(SpecialsTestCase):
@@ -75,7 +77,8 @@ class TestCompileLocals(SpecialsTestCase):
         expr, mod = self.compile_expr("(locals)", marker=42)
         result = await expr()
         self.assertIsInstance(result, ModuleNamespace)
-        self.assertEqual(42, result["marker"])
+        # the harness places marker in the builtins, below the module
+        self.assertEqual(42, result.resolve("marker"))
 
 
 # The end.

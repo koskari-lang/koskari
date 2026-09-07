@@ -176,8 +176,8 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, add=add, seq=seq)
         # dis(expr.code)
 
-        self.assertIs(mod.add, add)
-        self.assertIs(mod.seq, seq)
+        self.assertIs(vars(mod).resolve("add"), add)
+        self.assertIs(vars(mod).resolve("seq"), seq)
 
         result = await expr()
         self.assertEqual(result, (None, 101, 110, 109, 102))

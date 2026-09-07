@@ -28,14 +28,12 @@ def _setup():
     glbls = globals()
     ns = vars(make_builtins_demand())
 
+    # items() ranges over the names holding a value, so emptied
+    # bindings are already left out
     for key, val in ns.items():
         if key.startswith('__'):
             continue
-
-        try:
-            glbls[key] = val.deref()
-        except Exception:
-            pass
+        glbls[key] = val
 
     del glbls["_setup"]
 

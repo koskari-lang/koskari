@@ -401,7 +401,8 @@ static int test_namespace_get_local_no_materialize(void) {
 
 static int test_namespace_get_parent_chain(void) {
     /*
-      Test Namespace.get walks up the parent chain.
+      Test Namespace.resolve walks up the parent chain; get stays
+      local to the namespace it is called on.
     */
     PyObject *parent_name = PyUnicode_FromString("parent");
     PyObject *child_name = PyUnicode_FromString("child");
@@ -426,8 +427,13 @@ static int test_namespace_get_parent_chain(void) {
     PyObject *child = KosNamespace_NewFull(child_name, parent, child_local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(child, "create child namespace");
 
-    PyObject *retrieved = PyObject_CallMethod(child, "get", "O", key_foo);
-    TEST_ASSERT_NOT_NULL(retrieved, "get parent value from child");
+    PyObject *local_get = PyObject_CallMethod(child, "get", "O", key_foo);
+    TEST_ASSERT_NOT_NULL(local_get, "get on child returns");
+    TEST_ASSERT_SAME(local_get, Py_None, "get does not walk to the parent");
+    Py_DECREF(local_get);
+
+    PyObject *retrieved = PyObject_CallMethod(child, "resolve", "O", key_foo);
+    TEST_ASSERT_NOT_NULL(retrieved, "resolve parent value from child");
     TEST_ASSERT_EQ(PyLong_AsLong(retrieved), 202, "parent value matches");
 
     Py_DECREF(retrieved);
@@ -769,12 +775,19 @@ static int test_collector_gathered_not_in_keys(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(val_y), 10, "gathered sym y value");
     Py_DECREF(val_y);
 
+    /* keys() lists the declared names holding a value */
+    key_x = PyUnicode_FromString("x");
+    val_store = PyLong_FromLong(11);
+    TEST_ASSERT_NOT_NULL(val_store, "create x value");
+    TEST_ASSERT_EQ(KosNamespace_Store(collector, key_x, val_store), 0,
+                   "store local sym x");
+    Py_DECREF(val_store);
+
     keys = PyObject_CallMethod(collector, "keys", NULL);
     TEST_ASSERT_NOT_NULL(keys, "collector keys()");
     has_key = PySequence_Contains(keys, key_y);
     TEST_ASSERT_EQ(has_key, 0, "gathered sym y not in keys()");
 
-    key_x = PyUnicode_FromString("x");
     has_key = PySequence_Contains(keys, key_x);
     TEST_ASSERT_EQ(has_key, 1, "local sym x in keys()");
     Py_DECREF(key_x);

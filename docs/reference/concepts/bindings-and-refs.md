@@ -10,6 +10,37 @@ A **namespace** is a lexical scope: a table of names, each tied to a ref.
 Modules, `let` bodies, and function frames each use namespaces (often chained
 to a parent). See the [Glossary](../glossary.md) entry for **namespace**.
 
+## Three tiers of a namespace
+
+A namespace answers questions at three tiers, and its Python-facing API keeps
+them apart.
+
+| Tier | What it holds | Reached through |
+|------|---------------|-----------------|
+| 1 | builtins: the names a module falls through to | `ns.builtins`, a read-only mapping (module namespaces only) |
+| 2 | refs: the names bound here, each to a ref | `ns.refs`, `ns.ref(name)`, `ns.bind(name, ref)`, `ns.bound(name)` |
+| 3 | values: what those refs currently hold | the mapping protocol: `name in ns`, `ns[name]`, `ns.get(name)`, `len(ns)`, `keys()`, `values()`, `items()`, iteration; also `ns.deref(name)` |
+
+Tier 2 is append-only. A name once bound is never unbound, only emptied,
+because closures may already hold its ref. `del ns[name]` and `ns.clear(name)`
+empty the ref; afterwards `name in ns` is false while `name in ns.refs` stays
+true. `ns.ref(name)` on a module namespace binds a fresh ref when the name is
+missing, so a request for a ref is the one read that creates. The new ref
+starts out holding the builtin of that name when there is one, and empty
+otherwise. That copy is the module's own: storing through it changes the name
+inside this module only, and later changes to the builtins are not seen
+through it.
+
+The mapping protocol never reaches tier 1. A builtin is not `in` a module
+namespace, `ns[name]` raises `KeyError` for it, and `ns.get(name)` returns the
+default. The lookup a symbol performs when evaluated, this namespace's value,
+then each enclosing namespace's, then the module's builtins, is
+`ns.resolve(name)`, with an optional default in place of `NameError`.
+
+A `Module` object's attributes are tier 3 of its namespace: `module.name`
+reads a value the module holds and `dir(module)` lists those names. Builtins
+are not attributes of a module.
+
 ## Ref
 
 A **ref** is a mutable handle: `deref` reads the current value, `store` writes,
@@ -121,4 +152,5 @@ assign each binder.
 | store | Value → through existing ref |
 | ref | Handle to a mutable location |
 | deref | Read through a ref |
+| resolve | What a symbol sees: this namespace, its parents, then builtins |
 | unpack | One value → many names via pattern |

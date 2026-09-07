@@ -113,6 +113,12 @@ with examples, see [Concepts](concepts/index.md).
 **REPL**
 : Read-eval-print loop started by `koskari` with no script argument.
 
+**resolve**
+: Look a symbol up the way evaluation does: the value held in the current
+  namespace, else in each enclosing namespace, else a module's builtins.
+  Contrast **deref**, which reads only the current namespace's own binding.
+  See [Bindings and refs](concepts/bindings-and-refs.md).
+
 **special form**
 : A form whose head is a compiler symbol such as `lambda`, or `cond`.
 

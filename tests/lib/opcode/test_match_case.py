@@ -312,7 +312,7 @@ class TestMatchCaseOpcode(CevalTest):
         shifted = Namespace("shifted", None, ("y", "x"))
         await make_callable(code, shifted)()
         self.assertEqual(shifted["x"], 5)
-        with self.assertRaises(NameError):
+        with self.assertRaises(KeyError):
             shifted["y"]
 
         await make_callable(code, first)()

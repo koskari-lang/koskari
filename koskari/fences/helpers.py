@@ -55,13 +55,17 @@ def find_fence(ns, name):
 
     name = str(name)
 
+    # fence handlers live in the builtins below a module namespace's
+    # own values; a plain dict has no resolve and answers as-is
+    lookup = getattr(ns, 'resolve', None) or ns.get
+
     if not name.startswith("fence/"):
-        found = ns.get(name)
+        found = lookup(name, None)
         if isinstance(found, FenceHandler):
             return found
         name = "fence/" + name
 
-    found = ns.get(name)
+    found = lookup(name, None)
     if isinstance(found, FenceHandler) or callable(found):
         return found
     return None

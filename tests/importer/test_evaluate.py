@@ -203,13 +203,14 @@ class TestGetCompiler(unittest.IsolatedAsyncioTestCase):
         ns['__file__'] = "<evaltest>"
         await load_module_source_async(module, src, seal=True, detach=True)
 
-        # detaching empties the binding rather than removing the name, so
-        # the namespace reports the name as bound with no value behind it
-        self.assertIsNone(ns.get('__compiler__'))
-        self.assertIsInstance(ns.get('__pragma__'), ModulePragma)
+        # detaching empties the binding: the name stays bound but holds
+        # no value, so it is out of the mapping
+        self.assertNotIn('__compiler__', ns)
+        self.assertIn('__compiler__', ns.refs)
+        self.assertIsInstance(ns['__pragma__'], ModulePragma)
 
         self.assertEqual(demand_call(ns['run']), 42)
-        self.assertIsInstance(ns.get('__compiler__'), Compiler)
+        self.assertIsInstance(ns['__compiler__'], Compiler)
 
 
 # The end.

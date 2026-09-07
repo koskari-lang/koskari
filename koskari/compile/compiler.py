@@ -617,8 +617,10 @@ class Compiler:
             if v and isinstance(v, Compiled):
                 return v
 
+        # compiled forms live in the builtins below the module's own
+        # values, so this is a resolution, not a read of the module
         ns = vars(self.module)
-        v = ns.get(name)
+        v = ns.resolve(name, None)
         if v and isinstance(v, Compiled):
             return v
         return None

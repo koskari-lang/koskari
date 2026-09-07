@@ -164,7 +164,7 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         r.clear()
         with self.assertRaises(NameError):
             ns.deref('a')
-        with self.assertRaises(NameError):
+        with self.assertRaises(KeyError):
             _ = ns['a']
 
 
@@ -189,7 +189,7 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         ns.clear('a')
         with self.assertRaises(NameError):
             ns.deref('a')
-        with self.assertRaises(NameError):
+        with self.assertRaises(KeyError):
             _ = ns['a']
 
 
@@ -206,8 +206,10 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertIsNot(cp, child)
         self.assertIs(cp.parent, parent)
         self.assertEqual(cp['x'], 100)
-        self.assertIn('y', cp)
-        with self.assertRaises(NameError):
+        # the copy carries the binding for y, but not child's value
+        self.assertIn('y', cp.refs)
+        self.assertNotIn('y', cp)
+        with self.assertRaises(KeyError):
             _ = cp['y']
 
         cp['y'] = 99
@@ -223,7 +225,8 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         names = tuple(f"v{i}" for i in range(200))
         spec = NamespaceSpec("wide", names, ())
         ns = spec.get_namespace(None)
-        self.assertEqual(len(ns), 200)
+        self.assertEqual(len(ns.refs), 200)
+        self.assertEqual(len(ns), 0)
         ns["v0"] = 1
         ns["v127"] = 2
         ns["v128"] = 3
@@ -248,7 +251,9 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         locals_ = tuple(f"v{i}" for i in range(130))
         spec = NamespaceSpec("child", locals_, ("a", "b", "c"))
         child = spec.get_namespace(parent)
-        self.assertEqual(len(child), 133)
+        self.assertEqual(len(child.refs), 133)
+        # only the three closures hold values so far
+        self.assertEqual(len(child), 3)
         self.assertEqual((child["a"], child["b"], child["c"]), (10, 20, 30))
         child["v129"] = 7
         self.assertEqual(child["v129"], 7)
@@ -298,14 +303,14 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(NameError):
             ns1.deref('bar')
-        with self.assertRaises(NameError):
+        with self.assertRaises(KeyError):
             _ = ns1['bar']
         with self.assertRaises(NameError):
             ns1.store('bar', 123)
 
         with self.assertRaises(NameError):
             ns2.deref('bar')
-        with self.assertRaises(NameError):
+        with self.assertRaises(KeyError):
             _ = ns2['bar']
 
         ns2.store('bar', 123)
@@ -381,17 +386,19 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         ns1 = Namespace("ns1", None, ('foo', 'bar', 'qux'))
         ns2 = Namespace("ns2", ns1, ('baz',), ('foo',))
 
-        self.assertIn('foo', ns1)
-        self.assertIn('bar', ns1)
-        self.assertNotIn('baz', ns1)
-        self.assertIn('qux', ns1)
+        # bound, though nothing holds a value yet
+        self.assertIn('foo', ns1.refs)
+        self.assertIn('bar', ns1.refs)
+        self.assertNotIn('baz', ns1.refs)
+        self.assertIn('qux', ns1.refs)
+        self.assertEqual(len(ns1), 0)
 
         self.assertTrue(ns2.raw('baz'))
 
-        self.assertIn('foo', ns2)
-        self.assertNotIn('bar', ns2)
-        self.assertIn('baz', ns2)
-        self.assertNotIn('qux', ns2)
+        self.assertIn('foo', ns2.refs)
+        self.assertNotIn('bar', ns2.refs)
+        self.assertIn('baz', ns2.refs)
+        self.assertNotIn('qux', ns2.refs)
 
         self.assertIs(ns1.ref('foo'), ns2.ref('foo'))
 
@@ -402,19 +409,25 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_keys(self):
-        """keys() returns list of binding names"""
+        """keys() lists the names holding a value; refs lists every binding"""
         ns = Namespace("ns", None, ('a', 'b', 'c'))
-        keys = ns.keys()
-        self.assertEqual(sorted(keys), ['a', 'b', 'c'])
+        self.assertEqual(ns.keys(), [])
+        self.assertEqual(sorted(ns.refs.keys()), ['a', 'b', 'c'])
+
+        ns['b'] = 2
+        self.assertEqual(ns.keys(), ['b'])
+        self.assertEqual(sorted(ns.refs.keys()), ['a', 'b', 'c'])
 
 
     async def test_items(self):
-        """items() returns list of (name, ref) pairs"""
-        ns = Namespace("ns", None, ('a', 'b'))
+        """items() returns (name, value) pairs for the names holding a value"""
+        ns = Namespace("ns", None, ('a', 'b', 'c'))
         ns['a'] = 1
         ns['b'] = 2
         items = ns.items()
-        self.assertEqual(len(items), 2)
+        self.assertEqual(sorted(items), [('a', 1), ('b', 2)])
+        self.assertEqual(sorted(ns.values()), [1, 2])
+        self.assertEqual(sorted(ns), ['a', 'b'])
 
 
     async def test_bound(self):
@@ -425,9 +438,14 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_len(self):
-        """len() returns number of bindings"""
+        """len() counts the names holding a value; refs counts bindings"""
         ns = Namespace("ns", None, ('a', 'b', 'c'))
-        self.assertEqual(len(ns), 3)
+        self.assertEqual(len(ns), 0)
+        self.assertEqual(len(ns.refs), 3)
+
+        ns['a'] = 1
+        self.assertEqual(len(ns), 1)
+        self.assertEqual(len(ns.refs), 3)
 
 
     async def test_default_name(self):
@@ -473,9 +491,17 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(ns.parent)
 
     async def test_builtins_fallback(self):
-        """ModuleNamespace falls back to builtins for undefined"""
+        """resolve() falls through to builtins; the module's own reads do not"""
         ns = ModuleNamespace("ns", {'b': 987})
-        self.assertEqual(ns.deref('b'), 987)
+        self.assertEqual(ns.resolve('b'), 987)
+        self.assertEqual(ns.builtins['b'], 987)
+
+        with self.assertRaises(NameError):
+            ns.deref('b')
+        with self.assertRaises(KeyError):
+            _ = ns['b']
+        self.assertIsNone(ns.get('b'))
+        self.assertNotIn('b', ns)
 
 
     async def test_store_and_deref(self):
@@ -519,12 +545,14 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         glbl = {'a': 123, 'b': "hello"}
         mod = ModuleNamespace("mod", glbl)
 
-        self.assertEqual(mod.deref('a'), 123)
+        self.assertEqual(mod.resolve('a'), 123)
         mod.store('a', 456)
         self.assertEqual(mod.deref('a'), 456)
+        self.assertEqual(mod.resolve('a'), 456)
 
         # Original dict unchanged
         self.assertEqual(glbl['a'], 123)
+        self.assertEqual(mod.builtins['a'], 123)
 
 
     async def test_nested_with_namespace(self):
@@ -564,7 +592,7 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         data = {'a': 1, 'b': 2}
 
         mod1 = ModuleNamespace("mod1", data)
-        self.assertEqual(mod1.deref('a'), 1)
+        self.assertEqual(mod1.resolve('a'), 1)
 
         ns1 = Namespace("ns1", mod1, ('z',), (), ('a',))
         self.assertEqual(ns1.deref('a'), 1)
@@ -576,7 +604,7 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
 
         mod2 = ModuleNamespace("mod2", data)
         # New ModuleNamespace sees original builtin value
-        self.assertEqual(mod2.deref('a'), 1)
+        self.assertEqual(mod2.resolve('a'), 1)
 
 
     async def test_default_name(self):
@@ -608,22 +636,28 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(ns)
         self.assertEqual(list(ns.keys()), [])
 
-        self.assertEqual(ns.deref('x'), 1)
+        self.assertEqual(ns.resolve('x'), 1)
         self.assertEqual(len(ns), 0)
         self.assertFalse(ns)
         self.assertEqual(list(ns.keys()), [])
+        self.assertEqual(len(ns.refs), 0)
 
 
     async def test_value_reads_do_not_bind(self):
-        """deref, subscript, and get of a builtin leave binds untouched"""
+        """resolve reaches a builtin; the module's own reads miss it; none bind"""
         ns = ModuleNamespace("ns", {'x': 1})
 
-        self.assertEqual(ns.deref('x'), 1)
-        self.assertEqual(ns['x'], 1)
-        self.assertEqual(ns.get('x'), 1)
+        self.assertEqual(ns.resolve('x'), 1)
+        self.assertEqual(ns.resolve('zzz', 5), 5)
+        with self.assertRaises(NameError):
+            ns.deref('x')
+        with self.assertRaises(KeyError):
+            _ = ns['x']
+        self.assertIsNone(ns.get('x'))
         self.assertEqual(ns.get('zzz', 5), 5)
 
         self.assertEqual(len(ns), 0)
+        self.assertEqual(len(ns.refs), 0)
         self.assertEqual(list(ns.keys()), [])
 
 
@@ -633,21 +667,27 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(NameError):
             ns.deref('zzz')
-        with self.assertRaises(NameError):
+        with self.assertRaises(KeyError):
             ns['zzz']
+        with self.assertRaises(NameError):
+            ns.resolve('zzz')
 
         self.assertEqual(len(ns), 0)
+        self.assertEqual(len(ns.refs), 0)
         self.assertNotIn('zzz', ns)
+        self.assertNotIn('zzz', ns.refs)
 
 
     async def test_contains_does_not_bind(self):
-        """Membership follows binds and builtins without creating"""
+        """Membership means a value held here; builtins are not members"""
         ns = ModuleNamespace("ns", {'x': 1})
 
-        self.assertIn('x', ns)
+        self.assertNotIn('x', ns)
+        self.assertIn('x', ns.builtins)
         self.assertNotIn('zzz', ns)
         self.assertNotIn('zzz', ns)
         self.assertEqual(len(ns), 0)
+        self.assertEqual(len(ns.refs), 0)
 
         ns.store('a', 1)
         self.assertIn('a', ns)
@@ -659,24 +699,133 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         ns = ModuleNamespace("ns", {})
 
         r = ns.ref('zzz')
-        self.assertIn('zzz', ns)
-        self.assertEqual(len(ns), 1)
+        self.assertIn('zzz', ns.refs)
+        self.assertIs(ns.refs['zzz'], r)
+        self.assertTrue(ns.bound('zzz'))
+        self.assertEqual(len(ns.refs), 1)
+        # bound, but holding nothing, so not yet in the mapping
+        self.assertNotIn('zzz', ns)
+        self.assertEqual(len(ns), 0)
         with self.assertRaises(NameError):
             ns.deref('zzz')
 
         r.store(7)
+        self.assertIn('zzz', ns)
+        self.assertEqual(len(ns), 1)
         self.assertEqual(ns.deref('zzz'), 7)
         self.assertIs(ns.ref('zzz'), r)
 
 
-    async def test_child_get_reaches_builtins(self):
-        """get() on a child namespace resolves module builtins"""
+    async def test_child_resolve_reaches_builtins(self):
+        """resolve() on a child walks to the module and its builtins; get() stays local"""
         mod = ModuleNamespace("mod", {'x': 1})
+        mod['m'] = 2
         ns = Namespace("ns", mod, ('a',), (), ())
+        ns['a'] = 3
 
-        self.assertEqual(ns.get('x'), 1)
+        self.assertEqual(ns.resolve('a'), 3)
+        self.assertEqual(ns.resolve('m'), 2)
+        self.assertEqual(ns.resolve('x'), 1)
+        self.assertEqual(ns.resolve('zzz', 5), 5)
+        with self.assertRaises(NameError):
+            ns.resolve('zzz')
+
+        self.assertEqual(ns.get('a'), 3)
+        self.assertIsNone(ns.get('m'))
+        self.assertIsNone(ns.get('x'))
         self.assertEqual(ns.get('zzz', 5), 5)
-        self.assertEqual(len(mod), 0)
+        self.assertEqual(len(mod), 1)
+
+
+class TestNamespaceTiers(unittest.IsolatedAsyncioTestCase):
+    """
+    The mapping protocol answers at the value tier, refs at the binding
+    tier, builtins at the builtins tier, and resolve across them
+    """
+
+    async def test_mapping_delete_empties_and_keeps_binding(self):
+        ns = ModuleNamespace("ns", {})
+        ns['a'] = 1
+        r = ns.ref('a')
+
+        del ns['a']
+        self.assertNotIn('a', ns)
+        self.assertIn('a', ns.refs)
+        self.assertIs(ns.refs['a'], r)
+        self.assertTrue(r.empty)
+
+        with self.assertRaises(KeyError):
+            del ns['never']
+
+
+    async def test_mapping_iteration_and_views(self):
+        ns = ModuleNamespace("ns", {'blt': 0})
+        ns['a'] = 1
+        ns['b'] = 2
+        ns.ref('c')
+
+        self.assertEqual(sorted(ns), ['a', 'b'])
+        self.assertEqual(sorted(ns.keys()), ['a', 'b'])
+        self.assertEqual(sorted(ns.values()), [1, 2])
+        self.assertEqual(sorted(ns.items()), [('a', 1), ('b', 2)])
+        self.assertEqual(dict(ns), {'a': 1, 'b': 2})
+        self.assertEqual(len(ns), 2)
+
+
+    async def test_refs_view(self):
+        ns = Namespace("ns", None, ('a', 'b'))
+        ns['a'] = 1
+        refs = ns.refs
+
+        self.assertEqual(sorted(refs), ['a', 'b'])
+        self.assertEqual(sorted(refs.keys()), ['a', 'b'])
+        self.assertEqual(len(refs), 2)
+        self.assertIn('b', refs)
+        self.assertNotIn('zzz', refs)
+        with self.assertRaises(KeyError):
+            _ = refs['zzz']
+
+        self.assertIsInstance(refs['a'], Ref)
+        self.assertEqual(refs['a'].deref(), 1)
+        self.assertTrue(refs['b'].empty)
+        for name, ref in refs.items():
+            self.assertIs(ref, ns.ref(name))
+        self.assertEqual(len(refs.values()), 2)
+
+        # the view is live
+        ns['b'] = 2
+        self.assertFalse(refs['b'].empty)
+
+
+    async def test_builtins_view_is_read_only(self):
+        blt = {'x': 1}
+        ns = ModuleNamespace("ns", blt)
+        self.assertEqual(ns.builtins['x'], 1)
+        with self.assertRaises(TypeError):
+            ns.builtins['y'] = 2
+        self.assertEqual(blt, {'x': 1})
+
+
+    async def test_bound_is_strict(self):
+        ns = ModuleNamespace("ns", {'x': 1})
+        self.assertFalse(ns.bound('x'))
+        self.assertFalse(ns.bound('zzz'))
+        ns.ref('zzz')
+        self.assertTrue(ns.bound('zzz'))
+
+
+    async def test_module_mapping_get_is_local(self):
+        ns = ModuleNamespace("ns", {'x': 1})
+        self.assertIsNone(ns.get('x'))
+        self.assertEqual(ns.get('x', 5), 5)
+        ns['x'] = 2
+        self.assertEqual(ns.get('x'), 2)
+        self.assertEqual(ns.resolve('x'), 2)
+        del ns['x']
+        self.assertIsNone(ns.get('x'))
+        # an emptied module binding shadows the builtin for resolution
+        with self.assertRaises(NameError):
+            ns.resolve('x')
 
 
 class TestCollectorNamespace(unittest.IsolatedAsyncioTestCase):
@@ -707,8 +856,14 @@ class TestCollectorNamespace(unittest.IsolatedAsyncioTestCase):
         cn['a'] = 456
         cn['b'] = "world"
 
+        # the mapping ranges over what the body declared; the captured
+        # b is reachable through the namespace, not the mapping
         self.assertEqual(cn['a'], 456)
-        self.assertEqual(cn['b'], "world")
+        self.assertEqual(cn.deref('b'), "world")
+        self.assertNotIn('b', cn)
+        self.assertIn('b', cn.refs)
+        with self.assertRaises(KeyError):
+            _ = cn['b']
 
         # Child of CollectorNamespace skips cn's refs, finds pn's
         ns = Namespace("ns", cn, (), ('a', 'b'))
@@ -796,11 +951,14 @@ class TestModule(unittest.IsolatedAsyncioTestCase):
         ns = ModuleNamespace("ns", {'x': 1})
         m = Module(ns)
 
-        self.assertEqual(m.x, 1)
+        # a builtin is not an attribute of the module
+        with self.assertRaises(AttributeError):
+            _ = m.x
         with self.assertRaises(AttributeError):
             _ = m.zzz
 
         self.assertEqual(len(ns), 0)
+        self.assertEqual(len(ns.refs), 0)
         self.assertNotIn('zzz', ns)
 
         m.zzz = 2
@@ -861,18 +1019,21 @@ class TestModule(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_module_namespace_access(self):
-        """Module with ModuleNamespace accesses builtins"""
+        """Module attributes are the module's own values, never its builtins"""
         glbl = {'a': 123, 'b': "hello"}
         mod = ModuleNamespace('mod', glbl)
 
         m = Module(mod)
 
-        self.assertEqual(m.a, 123)
-        self.assertEqual(m.b, "hello")
+        with self.assertRaises(AttributeError):
+            _ = m.a
+        self.assertEqual(mod.resolve('a'), 123)
 
         m.a = 456
         self.assertEqual(m.a, 456)
         self.assertEqual(mod['a'], 456)
+        with self.assertRaises(AttributeError):
+            _ = m.b
 
         # Original dict unchanged
         self.assertEqual(glbl['a'], 123)
@@ -899,7 +1060,7 @@ class TestModule(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_dir_after_access(self):
-        """dir() lists bound names; attribute reads bind nothing"""
+        """dir() lists the names holding a value; failed reads bind nothing"""
         glbl = {'a': 123, 'b': "hello"}
         mod = ModuleNamespace('mod', glbl)
 
@@ -907,12 +1068,18 @@ class TestModule(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(dir(m), [])
 
-        self.assertEqual(m.a, 123)
-        self.assertEqual(m.b, "hello")
+        with self.assertRaises(AttributeError):
+            _ = m.a
         self.assertEqual(dir(m), [])
+        self.assertEqual(len(mod.refs), 0)
 
         m.z = 999
         self.assertEqual(dir(m), ['z'])
+
+        # an emptied binding drops out of dir but stays bound
+        del mod['z']
+        self.assertEqual(dir(m), [])
+        self.assertIn('z', mod.refs)
 
 
     async def test_requires_namespace(self):

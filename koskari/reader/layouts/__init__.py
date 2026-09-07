@@ -78,7 +78,10 @@ __all__ = (
 
 
 def _find_layout(ns, name):
-    v = ns.get(name)
+    # layout handlers live in the builtins, below a module namespace's
+    # own values; a plain dict harness has no resolve and answers as-is
+    lookup = getattr(ns, 'resolve', None) or ns.get
+    v = lookup(name, None)
     if v and isinstance(v, LayoutHandler):
         return v
     return None
