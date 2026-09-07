@@ -9,10 +9,12 @@ the result. This is the programmatic equivalent of typing a form at the REPL:
 read a source object, compile it with the namespace's compiler, invoke the
 resulting expression, and return its value.
 
-**Behaviour:** If `source` is already compiled **`Code`**, it is used directly.
-Otherwise **`compile`** is called with `source` and `ns`. The resulting code is
-turned into an invokable expression via **`as_expression`**, called in `ns`, and
-its return value is the value of the **`evaluate`** call.
+**Behaviour:** If `source` is already compiled **`Code`**, its **`expression`**
+method turns it into an invokable expression in `ns`. Otherwise **`compile`** is
+called with `source` and `ns`, which returns an invokable expression (or
+`source` itself when it is already an **`Expression`** or **`Function`**). The
+expression is called, and its return value is the value of the **`evaluate`**
+call.
 
 The namespace must provide a **`__compiler__`** binding when compilation is
 required (the REPL and loaded modules set this up automatically).

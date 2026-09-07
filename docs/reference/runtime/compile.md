@@ -9,9 +9,9 @@ running it. Useful when you want to inspect or reuse compiled code separately
 from evaluation.
 
 **Behaviour:** If `source` is already an **`Expression`** or **`Function`**, it is
-returned unchanged. Otherwise the namespace's **`__compiler__`** is used to
-**`full_compile`** the source; the fragment is converted with **`as_expression`**
-and returned.
+returned unchanged. Otherwise the namespace's **`__compiler__`** compiles the
+source as a top-level expression with **`compile_expression`**; the fragment is
+converted with **`as_expression`** and returned.
 
 The namespace must provide **`__compiler__`** when compilation is required.
 

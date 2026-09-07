@@ -143,7 +143,7 @@ let []:
 
   define-global compile [source_obj ns]:
     """
-    Compile a source object into a code object via the compiler from
+    Compile a source object into an Expression via the compiler from
     the given namespace
     """
 
@@ -164,11 +164,11 @@ let []:
     namespace
     """
 
-    define code source_obj
-    unless (instance? source_obj Code):
-      set! code (compile source_obj ns)
-
-    define expr (code.as_expression ns)
+    define expr source_obj
+    if (instance? source_obj Code):
+      set! expr (source_obj.expression ns)
+    else:
+      set! expr (compile source_obj ns)
     (expr)
 
 
