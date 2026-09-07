@@ -18,7 +18,7 @@ Layout handler for layout/dyn-wind block syntax.
 """
 
 from ...exceptions import LayoutError
-from ...lib import cons, keyword, nil, symbol
+from ...lib import cons, nil, symbol
 from ...bootstrap import builtin
 from ...types import fill_position, is_nil, get_position
 from .helpers import layout
@@ -50,11 +50,7 @@ def layout_dyn_wind(ns, source, peers):
     ```
     """
 
-    (blk, (head, (body, _rest))) = source
-    if blk is not keyword("block") or _rest:
-        raise LayoutError(
-            'malformed dyn-wind block',
-            get_position(source))
+    head, body = source
 
     before_form = nil
     after_form = nil

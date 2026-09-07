@@ -718,4 +718,57 @@ class TestDynWindRaiseUnwind(SpecialsTestCase):
         self.assertEqual(result, "ValueError")
 
 
+class TestDynWindLayout(SpecialsTestCase):
+
+    async def test_block_form_runs_before_body_after(self):
+        """
+        the dyn-wind: block with before: and after: peers lowers to the
+        special and runs all three segments in order
+        """
+
+        log = []
+
+        def record(s):
+            log.append(s)
+
+        src_str = """
+        dyn-wind:
+          (call record "body")
+          42
+        before:
+          (call record "before")
+        after:
+          (call record "after")
+        """
+        expr, mod = self.compile_expr(src_str, record=record)
+
+        result = await expr()
+        self.assertEqual(result, 42)
+        self.assertEqual(log, ["before", "body", "after"])
+
+
+    async def test_block_form_after_only(self):
+        """
+        a dyn-wind: block with only an after: peer runs after on exit
+        """
+
+        log = []
+
+        def record(s):
+            log.append(s)
+
+        src_str = """
+        dyn-wind:
+          (call record "body")
+          1
+        after:
+          (call record "after")
+        """
+        expr, mod = self.compile_expr(src_str, record=record)
+
+        result = await expr()
+        self.assertEqual(result, 1)
+        self.assertEqual(log, ["body", "after"])
+
+
 # The end.
