@@ -103,9 +103,26 @@ static int expression_init(
 
 
 static void expression_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosExpression_CODE(self));
   Py_CLEAR(KosExpression_NS(self));
   Py_TYPE(self)->tp_free(self);
+}
+
+
+/* An expression holds a Code and a namespace, both of which can sit in
+   a cycle back to it, so it takes part in collection. */
+static int expression_traverse(PyObject *self, visitproc visit, void *arg) {
+  Py_VISIT(KosExpression_CODE(self));
+  Py_VISIT(KosExpression_NS(self));
+  return 0;
+}
+
+
+static int expression_clear(PyObject *self) {
+  Py_CLEAR(KosExpression_CODE(self));
+  Py_CLEAR(KosExpression_NS(self));
+  return 0;
 }
 
 
@@ -248,9 +265,11 @@ KosEvaluatedTypeObject KosExpressionType = {
   .tp_name = "koskari.lib.Expression",
   .tp_basicsize = sizeof(KosExpression),
   .tp_dealloc = expression_dealloc,
+  .tp_traverse = expression_traverse,
+  .tp_clear = expression_clear,
   .tp_repr = (reprfunc) NULL,
   .tp_call = KosCallAdapt_CallAsync,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "Callable(Code, namespace). Calling with () returns a Coroutine.",
   .tp_init = (initproc) expression_init,
   .tp_new = PyType_GenericNew,
@@ -333,6 +352,7 @@ static PyObject *function_spec_new(
 
 
 static void function_spec_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosFunctionSpec_NAME(self));
   Py_CLEAR(KosFunctionSpec_FORMALS_SPEC(self));
   Py_CLEAR(KosFunctionSpec_CODE(self));
@@ -360,7 +380,7 @@ PyTypeObject KosFunctionSpecType = {
   PyVarObject_HEAD_INIT(NULL, 0)
   .tp_name = "koskari.lib.FunctionSpec",
   .tp_basicsize = sizeof(KosFunctionSpec),
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_members = function_spec_members,
   .tp_new = (newfunc) function_spec_new,
   .tp_call = (ternaryfunc) function_spec_call,

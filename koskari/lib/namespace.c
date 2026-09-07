@@ -2915,6 +2915,7 @@ static PyObject *mdl_new(PyTypeObject *type,
 
 
 static void mdl_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosModule_NAMESPACE(self));
   Py_TYPE(self)->tp_free(self);
 }
@@ -2939,7 +2940,7 @@ PyTypeObject KosModuleType = {
   sizeof(KosModule),
   0,
 
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_new = mdl_new,
   .tp_dealloc = mdl_dealloc,
   .tp_traverse = mdl_traverse,
@@ -2962,12 +2963,13 @@ PyObject *KosModule_New(PyObject *namespace) {
     return NULL;
   }
 
-  PyObject *self = PyObject_New(PyObject, &KosModuleType);
+  PyObject *self = PyObject_GC_New(PyObject, &KosModuleType);
   if (! self)
     return NULL;
 
   Py_INCREF(namespace);
   KosModule_NAMESPACE(self) = namespace;
+  PyObject_GC_Track(self);
 
   return self;
 }

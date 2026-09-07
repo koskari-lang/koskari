@@ -118,11 +118,11 @@ class TestCodeProtect(unittest.TestCase):
 
 
 class TestCodeGC(unittest.TestCase):
-    """Code is weakref-able and not GC-tracked"""
+    """Code is weakref-able and GC-tracked for its cache slots"""
 
-    def test_not_gc_tracked(self):
-        code = make_code("untracked")
-        self.assertFalse(gc.is_tracked(code))
+    def test_gc_tracked(self):
+        code = make_code("tracked")
+        self.assertTrue(gc.is_tracked(code))
 
     def test_weakref_support(self):
         code = make_code("weak")

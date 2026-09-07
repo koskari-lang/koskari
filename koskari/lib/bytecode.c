@@ -2970,26 +2970,24 @@ static PyObject *code_new(
 
 
 /*
-   KosCode is not GC-tracked: everything a Code reaches was created
-   before the Code and is immutable from Python (cpool consts and
-   FunctionSpecs, READONLY nspec name tuples, the synthesized faux),
-   so a reference cycle cannot route through it. Cycles form through
-   KosFunction, which stays GC-tracked.
-
-   The trailing per-site cache slots do not change this while empty (the
-   framework state): they hold no references. Once a consumer stores owned
-   payloads (e.g. a cached KosFunction), a cycle could route KosCode -> slot
-   -> KosFunction -> code -> KosCode, and this invariant must be revisited --
-   either GC-track KosCode with a tp_traverse/tp_clear that covers the slot
-   array, or restrict cached payloads to objects that cannot close a cycle.
+   KosCode is GC-tracked for its trailing per-site cache slots alone.
+   Everything else a Code reaches was created before the Code and is
+   immutable from Python (cpool consts and FunctionSpecs, the resolved
+   operands inlined into instruction rows, READONLY nspec name tuples,
+   the synthesized faux), so a reference cycle cannot route through it
+   and tp_traverse does not walk it. A populated cache slot is
+   different: a method slot owns the receiver type and the resolved
+   function, so a class whose methods call through a cached site forms
+   type -> function -> code -> slot -> type. tp_traverse visits the
+   owned references of every populated slot and tp_clear releases them,
+   which is all the collector needs to break that cycle.
 */
 
 
 /**
-   Release the owned references held by one cache slot, dispatching on its
-   kind. An empty slot (KOS_CACHE_EMPTY -- the framework state) owns nothing.
-   This same per-kind dispatch will drive tp_traverse / tp_clear once KosCode
-   becomes GC-tracked at method-cache activation.
+   Release the owned references held by one cache slot, dispatching on
+   its kind, and return it to KOS_CACHE_EMPTY. An empty slot (the
+   framework state) owns nothing.
 */
 static void cache_slot_release(KosCacheSlot *slot) {
 
@@ -3011,10 +3009,55 @@ static void cache_slot_release(KosCacheSlot *slot) {
     /* ref-free: a static function and two counters. */
     break;
   }
+  memset(slot, 0, sizeof(*slot));
+}
+
+
+/**
+   Visit the owned references held by one cache slot, the traverse
+   counterpart of cache_slot_release.
+*/
+static int cache_slot_visit(KosCacheSlot *slot, visitproc visit, void *arg) {
+
+  switch (slot->kind) {
+  case KOS_CACHE_EMPTY:
+  case KOS_CACHE_FIELD:
+  case KOS_CACHE_ELECTOR:
+    break;
+  case KOS_CACHE_METHOD:
+    Py_VISIT(slot->u.method.type);
+    Py_VISIT(slot->u.method.resolved);
+    break;
+  case KOS_CACHE_MATCHER:
+    Py_VISIT(slot->u.matcher.matcher);
+    Py_VISIT(slot->u.matcher.slotmap);
+    break;
+  }
+  return 0;
+}
+
+
+static int code_traverse(PyObject *self, visitproc visit, void *arg) {
+  for (uint16_t i = KosCode_CACHE_LEN(self); i--; ) {
+    int res = cache_slot_visit(&KosCode_CACHE(self)[i], visit, arg);
+    if (res)
+      return res;
+  }
+  return 0;
+}
+
+
+static int code_clear(PyObject *self) {
+  for (uint16_t i = KosCode_CACHE_LEN(self); i--; ) {
+    cache_slot_release(&KosCode_CACHE(self)[i]);
+  }
+  return 0;
 }
 
 
 static void code_dealloc(PyObject *self) {
+
+  PyObject_GC_UnTrack(self);
 
   if (((KosCode *) self)->weakreflist) {
     PyObject_ClearWeakRefs(self);
@@ -3057,12 +3100,8 @@ static void code_dealloc(PyObject *self) {
 
   /* Drop owned references held by cache slots, per-kind. The slots
      themselves are part of the object allocation and are released by
-     tp_free; only the owned refs inside a live layout need dropping.
-     Framework slots are all KOS_CACHE_EMPTY, so this is a no-op until a
-     consumer populates them. */
-  for (uint16_t i = KosCode_CACHE_LEN(self); i--; ) {
-    cache_slot_release(&KosCode_CACHE(self)[i]);
-  }
+     tp_free; only the owned refs inside a live layout need dropping. */
+  code_clear(self);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -3085,7 +3124,9 @@ PyTypeObject KosCodeType = {
   sizeof(KosCode),
   sizeof(KosCacheSlot),   /* tp_itemsize: trailing per-site cache slots */
 
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_traverse = code_traverse,
+  .tp_clear = code_clear,
   .tp_repr = code_repr,
   .tp_getset = code_getset,
   .tp_members = code_members,
@@ -3184,7 +3225,9 @@ PyObject *KosCode_New(
 
   /* Var-length: the object allocation includes cache_slots trailing
      KosCacheSlot entries, zeroed by tp_alloc. Zero = UNCACHED, so the table
-     needs no init pass. ob_size holds the count (KosCode_CACHE_LEN). */
+     needs no init pass. ob_size holds the count (KosCode_CACHE_LEN). The
+     type is GC-tracked, so tp_alloc also tracks the object; traverse
+     reads only the (already zeroed) slots, which is safe from here on. */
   PyObject *self = PyType_GenericAlloc(&KosCodeType, (Py_ssize_t) cache_slots);
   if (! self) {
     Py_DECREF(instr);
