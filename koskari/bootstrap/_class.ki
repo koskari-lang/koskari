@@ -70,7 +70,7 @@ define-syntax define-dataclass:
 define-syntax super:
   syntax-rules []:
     case (super):
-      (call super (type self) self)
+      (call super __class__ self)
     case (super args ...):
       (call super args ...)
 

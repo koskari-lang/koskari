@@ -105,7 +105,7 @@ int koskari_lib_clear(PyObject *mod);
 
 #define STR_CONST(which, val) {                 \
     if (! (which))                              \
-      (which) = PyUnicode_FromString(val);      \
+      (which) = PyUnicode_InternFromString(val); \
   }
 
 static inline PyObject *kos_key_to_str(PyObject *key) {

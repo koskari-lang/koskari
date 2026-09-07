@@ -34,6 +34,7 @@
 
 
 static PyObject *_namespace_str = NULL;  // "<namespace>"
+static PyObject *str_class_name = NULL;  // "__class__", interned
 static PyObject *_module_str = NULL;     // "<module>"
 
 
@@ -1667,9 +1668,17 @@ int KosNamespace_FindRef(PyObject *namespace, PyObject *key,
       return -1;
     }
 
-    if (! KosCollectorNamespace_Check(namespace)) {
-      // the collectornamespace doesn't allow you to take a closure
-      // over its references. The rest can be searched though.
+    /* A class body (collector namespace) is not an enclosing scope for
+       the functions defined in it: a method never closes over a name
+       bound in its class body. There is one and only one exception,
+       the name __class__, and it exists for (super). The class special
+       declares __class__ in the body, methods that mention it (the
+       (super) expansion does) close over that slot here, and
+       kos_build_class fills it with the class object once the metaclass
+       returns. This is CPython's __class__ cell and __classcell__
+       protocol; no other name may cross this boundary. */
+    if (! KosCollectorNamespace_Check(namespace)
+        || PyUnicode_Equal(key, str_class_name)) {
 
       PyObject *seek = KosNamespace_REF(namespace, key);
       if (! seek) {
@@ -2764,6 +2773,9 @@ int koskari_namespace_init(PyObject *mod) {
     return -1;
 
   STR_CONST(_namespace_str, "<namespace>");
+  STR_CONST(str_class_name, "__class__");
+  if (! str_class_name)
+    return -1;
   STR_CONST(_module_str, "<module>");
 
   PyDict_SetItemString(dict, "Namespace",
@@ -2801,6 +2813,7 @@ int koskari_namespace_clear(PyObject *mod) {
   ns_freecount = 0;
 
   Py_CLEAR(_namespace_str);
+  Py_CLEAR(str_class_name);
   Py_CLEAR(_module_str);
 
   return 0;

@@ -19,6 +19,9 @@
 #define PyDict_NewPresized koskari_Dict_NewPresized
 #define PyGen_FetchStopIterationValue koskari_FetchStopIterationValue
 
+/* PyUnicode_Equal public from 3.14 */
+#define PyUnicode_Equal koskari_Unicode_Equal
+
 /* _PyList_Extend was removed in 3.13; PyList_Extend returns int.  Provide
    a wrapper that returns the list on success for code expecting the old API. */
 PyObject *koskari_List_ExtendRet(PyObject *list, PyObject *iterable);

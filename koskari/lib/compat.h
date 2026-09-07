@@ -286,6 +286,14 @@ PyObject *koskari_Err_GetRaisedException(void);
 
 
 /**
+   True when two str objects are equal, 0 otherwise: identity first, then
+   PyUnicode_Compare. Both operands must be str; there is no type check.
+   Replaces PyUnicode_Equal (public from 3.14).
+*/
+int koskari_Unicode_Equal(PyObject *a, PyObject *b);
+
+
+/**
    Set exception from type and message string.  On Python 3.10, wraps the
    string in exc_type(msg) so PyErr_Fetch returns the instance.  Shadowed
    via macro in compat_310.h.

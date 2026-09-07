@@ -413,6 +413,41 @@ tags:
   - define-type
 notes: Covers superclass list syntax and Python-style initializer chaining.
 ---
+id: class-layout-inheritance-super-002
+feature: layout/define-class
+source: |-
+  define-class A []:
+    define __init__ [self]:
+      (set-attr self a 1)
+
+  define-class B (A):
+    define __init__ [self]:
+      (.__init__ (super))
+      (set-attr self b 2)
+
+  define-class C (B):
+    define __init__ [self]:
+      (.__init__ (super))
+      (set-attr self c 3)
+
+  (vars (C))
+verify:
+  eval: "{\"a\": 1, \"b\": 2, \"c\": 3}"
+references:
+  - reference/layouts/layout-define-class.md
+  - reference/macros/compile-super.md
+  - reference/macros/compile-define-class.md
+stability: evolving
+tags:
+  - class
+  - define-class
+  - layout
+  - inheritance
+  - dunder
+  - super
+  - define-type
+notes: Three levels, each initializer chaining through (super); (super) names the defining class via __class__, so B's initializer reaches A even on a C instance.
+---
 id: class-layout-match-args-001
 feature: layout/define-class
 source: |-

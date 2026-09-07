@@ -123,6 +123,11 @@ def special_class(compiler, source):
         frag.instruction(OpCode.BUILD_ARGS, 2)
 
     with frag.collector_namespace(called_by) as body_frag:
+        # The class body scope owns __class__, as CPython's does: methods
+        # defined in the body close over this slot, and the class builder
+        # fills it once the class object exists, so (super) and a bare
+        # __class__ inside a method name the defining class.
+        body_frag.declare_var("__class__")
         helper_begin(body_frag, body)
 
         if doc and "__doc__" not in body_frag.declares:

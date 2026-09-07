@@ -182,6 +182,16 @@ int koskari_FetchStopIterationValue(PyObject **ptr) {
 
 
 /**
+   True when two str objects are equal, 0 otherwise: identity first, then
+   PyUnicode_Compare.  Both operands must be str; there is no type check.
+   Stands in for PyUnicode_Equal before 3.14.
+*/
+int koskari_Unicode_Equal(PyObject *a, PyObject *b) {
+  return a == b || PyUnicode_Compare(a, b) == 0;
+}
+
+
+/**
    Fetch and clear the current exception, return the exception instance
    (new ref).  Uses PyErr_GetRaisedException on 3.12+, PyErr_Fetch on older.
 */

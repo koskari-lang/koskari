@@ -43,6 +43,7 @@
 
 static PyObject *str_call_name = NULL;
 static PyObject *str_func_name = NULL;
+static PyObject *str_class_name = NULL;
 
 
 /**
@@ -296,27 +297,42 @@ static PyObject *KosProcedure_New(PyObject *wrapped) {
 /* === Namespace preparation === */
 
 
+/**
+   The class dict for type.__new__: every binding of the body namespace
+   except __class__, which the body declares for its methods to close
+   over and which stays empty until kos_build_class fills it after the
+   metaclass returns. It is skipped by name rather than merged and
+   removed because reading the empty slot would raise.
+*/
 static PyObject *build_default_namespace(PyObject *namespace) {
 
   PyObject *ns_dict = PyDict_New();
   if (! ns_dict)
     return NULL;
 
-  if (PyDict_Merge(ns_dict, namespace, 1) < 0) {
+  PyObject *keys = PyMapping_Keys(namespace);
+  if (! keys) {
     Py_DECREF(ns_dict);
     return NULL;
   }
 
-  /* __class__ is filled on the input namespace after the metaclass returns;
-     omit it from the mapping passed to type.__new__. */
-  if (PyDict_DelItemString(ns_dict, "__class__") < 0) {
-    if (! PyErr_ExceptionMatches(PyExc_KeyError)) {
+  Py_ssize_t n = PyList_GET_SIZE(keys);
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *key = PyList_GET_ITEM(keys, i);
+    if (PyUnicode_Equal(key, str_class_name))
+      continue;
+
+    PyObject *val = PyObject_GetItem(namespace, key);
+    if (! val || PyDict_SetItem(ns_dict, key, val) < 0) {
+      Py_XDECREF(val);
+      Py_DECREF(keys);
       Py_DECREF(ns_dict);
       return NULL;
     }
-    PyErr_Clear();
+    Py_DECREF(val);
   }
 
+  Py_DECREF(keys);
   return ns_dict;
 }
 
@@ -642,8 +658,27 @@ PyObject *kos_build_class(
   Py_DECREF(metaclass);
   Py_DECREF(bases_tuple);
 
-  if (cls && PyType_Check(cls))
+  if (! cls)
+    return NULL;
+
+  if (PyType_Check(cls))
     install_call_sentinel((PyTypeObject *) cls);
+
+  /* Fill __class__ on the body namespace, the way type.__new__ fills
+     the __classcell__ a class body created. Methods that mention
+     __class__, the (super) expansion included, closed over this binding
+     when they were defined; from here on they resolve it to their
+     defining class. build_default_namespace keeps the name out of the
+     class dict. */
+  {
+    int rc = KosNamespace_Check(namespace)
+        ? KosNamespace_Store(namespace, str_class_name, cls)
+        : PyObject_SetItem(namespace, str_class_name, cls);
+    if (rc < 0) {
+      Py_DECREF(cls);
+      return NULL;
+    }
+  }
 
   return cls;
 }
@@ -676,12 +711,10 @@ int koskari_object_init(PyObject *mod) {
 
   (void) mod;
 
-  str_call_name = PyUnicode_InternFromString("__call__");
-  if (! str_call_name)
-    return -1;
-
-  str_func_name = PyUnicode_InternFromString("__func__");
-  if (! str_func_name)
+  STR_CONST(str_call_name, "__call__");
+  STR_CONST(str_func_name, "__func__");
+  STR_CONST(str_class_name, "__class__");
+  if (! str_call_name || ! str_func_name || ! str_class_name)
     return -1;
 
   if (intern_name_list(procedure_dunders, procedure_names) < 0
@@ -703,6 +736,7 @@ int koskari_object_clear(PyObject *mod) {
 
   Py_CLEAR(str_call_name);
   Py_CLEAR(str_func_name);
+  Py_CLEAR(str_class_name);
   clear_name_list(procedure_names);
   clear_name_list(static_names);
   clear_name_list(class_names);

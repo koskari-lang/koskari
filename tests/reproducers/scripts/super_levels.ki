@@ -1,0 +1,72 @@
+;; Reproducer: (super) resolves to the defining class at every level of
+;; a hierarchy, from a nested closure, and beside a method that reads
+;; __class__ directly.
+
+
+define-class A []:
+    define __init__ [self]:
+        set! self.a 1
+    define defining_class [self]:
+        __class__
+    define via_closure [self]:
+        define inner [] (.defining_class (super))
+        (inner)
+
+
+define-class B (A):
+    define __init__ [self]:
+        (.__init__ (super))
+        set! self.b 2
+
+
+define-class C (B):
+    define __init__ [self]:
+        (.__init__ (super))
+        set! self.c 3
+
+
+define-class D (C):
+    define __init__ [self]:
+        (.__init__ (super))
+        set! self.d 4
+
+
+define-class Widen (A):
+    define defining_class [self]:
+        (.defining_class (super))
+
+
+define verify_levels []:
+    define d (D)
+    (and (equal? d.a 1) (equal? d.b 2) (equal? d.c 3) (equal? d.d 4))
+
+
+define verify_c_is_three_levels []:
+    define c (C)
+    (and (equal? c.a 1) (equal? c.b 2) (equal? c.c 3))
+
+
+define verify_class_is_defining_class []:
+    ;; A.defining_class returns A even on a D instance
+    (is? (.defining_class (D)) A)
+
+
+define verify_super_from_nested_closure []:
+    ;; Widen.via_closure is inherited from A; its inner lambda's (super)
+    ;; is A's super, so the chain reaches object and fails there
+    (try
+      (.via_closure (Widen))
+      (except: False))
+
+
+define verify_widen_chain []:
+    ;; Widen.defining_class calls A.defining_class through (super)
+    (is? (.defining_class (Widen)) A)
+
+
+define verify_explicit_form []:
+    define c (C)
+    (is? (type (super B c)) super)
+
+
+;; The end.

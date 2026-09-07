@@ -18,6 +18,9 @@
 #define PyGen_FetchStopIterationValue _PyGen_FetchStopIterationValue
 #define PyObject_LookupAttr _PyObject_LookupAttr
 
+/* PyUnicode_Equal public from 3.14 */
+#define PyUnicode_Equal koskari_Unicode_Equal
+
 /* PyErr_GetRaisedException added in 3.12 */
 #define PyErr_GetRaisedException koskari_Err_GetRaisedException
 

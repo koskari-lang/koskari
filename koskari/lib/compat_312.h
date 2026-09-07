@@ -19,6 +19,9 @@
 #define PyGen_FetchStopIterationValue _PyGen_FetchStopIterationValue
 #define PyObject_LookupAttr _PyObject_LookupAttr
 
+/* PyUnicode_Equal public from 3.14 */
+#define PyUnicode_Equal koskari_Unicode_Equal
+
 
 /* === Inline-values instance attributes (3.12) === */
 
