@@ -741,7 +741,7 @@ static PyObject *stepper_throw(PyObject *self, PyObject *args) {
   KosIterStepper *st = (KosIterStepper *) self;
 
   PyObject *typ = NULL, *exc = NULL;
-  if (KosUtils_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
+  if (KosExc_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
     return NULL;
 
   st->is_throw = 1;
@@ -1177,7 +1177,7 @@ static PyObject *demandgen_throw(PyObject *self, PyObject *args) {
   KosIterDemandGen *gen = (KosIterDemandGen *) self;
 
   PyObject *typ = NULL, *exc = NULL;
-  if (KosUtils_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
+  if (KosExc_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
     return NULL;
 
   if (! gen->provider) {
@@ -1306,7 +1306,7 @@ PyObject *KosIterAdapt_Athrow(PyObject *self, PyObject *args) {
 
   PyObject *typ = NULL, *exc = NULL;
 
-  if (KosUtils_NormalizeThrowArgs(args, "O|OO:athrow", &typ, &exc) < 0)
+  if (KosExc_NormalizeThrowArgs(args, "O|OO:athrow", &typ, &exc) < 0)
     return NULL;
 
   PyObject *st = stepper_new_ex(self, NULL, typ, exc, 0);

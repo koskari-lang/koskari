@@ -15,8 +15,9 @@
 
 /**
    POP_TRY: NOARG. Promote one value (TOS) from try block to parent before
-   dropping. Verify top of dynamic chain is a TRY region, clear exception
-   state, then pop the region.
+   dropping. Verify top of dynamic chain is a TRY region, then pop the
+   region; the pop gives back the handler-visible exception the region
+   displaced, if it consumed one.
 */
 
 KOS_OP_HANDLER(POP_TRY) {
@@ -24,7 +25,6 @@ KOS_OP_HANDLER(POP_TRY) {
   KosDynNode *top = KosEvalState_CurrentNode(es);
 
   PyErr_Clear();
-  PyErr_SetExcInfo(NULL, NULL, NULL);
 
   PyObject *value = KosEvalState_StackPopRef(es);
   if (unlikely(! value))

@@ -386,7 +386,7 @@ static PyObject *defer_finish_done(KosDefer *self) {
 static void defer_raise_thrown(PyObject *typ, PyObject *val, PyObject *tb) {
   PyObject *cls = NULL, *exc = NULL;
 
-  if (KosUtils_NormalizeThrow(typ, val, tb, &cls, &exc) < 0)
+  if (KosExc_NormalizeThrow(typ, val, tb, &cls, &exc) < 0)
     return;
 
   PyErr_SetObject(cls, exc);

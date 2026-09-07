@@ -32,6 +32,7 @@
 
 
 #include <Python.h>
+#include "exception.h"
 #include <stdint.h>
 
 #include "stack.h"
@@ -387,13 +388,21 @@ struct KosDynNode {
       uint8_t entered;
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
-    struct { uint32_t handler_pc; uint8_t enabled; } try_;
+    struct {
+      uint32_t handler_pc;
+      uint8_t enabled;
+      uint8_t exc_saved;      /* consumed a raise: saved is what it displaced */
+      KosExcState saved;      /* handler-visible state before this region */
+    } try_;
     struct {
       uint32_t handler_pc;
       uint8_t enabled;
       uint8_t handling_raise;
       uint8_t handling_return;
+      uint8_t exc_saved;      /* as for try_ */
       PyObject *handling_result;
+      KosExcState saved;      /* handler-visible state before this region */
+      KosExcState handling;   /* the raise being propagated through the body */
     } finally_;
     struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; } loop;
     struct {
@@ -2517,11 +2526,16 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 
 #define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
 #define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.enabled)
+#define KosDynTry_EXC_SAVED(r)       (((KosDynNode *)(r))->u.try_.exc_saved)
+#define KosDynTry_SAVED(r)           (&((KosDynNode *)(r))->u.try_.saved)
 #define KosDynFinally_HANDLER_PC(r)  (((KosDynNode *)(r))->u.finally_.handler_pc)
 #define KosDynFinally_ENABLED(r)     (((KosDynNode *)(r))->u.finally_.enabled)
 #define KosDynFinally_HANDLING_RAISE(r) (((KosDynNode *)(r))->u.finally_.handling_raise)
 #define KosDynFinally_HANDLING_RETURN(r) (((KosDynNode *)(r))->u.finally_.handling_return)
 #define KosDynFinally_HANDLING_RESULT(r) (((KosDynNode *)(r))->u.finally_.handling_result)
+#define KosDynFinally_EXC_SAVED(r)   (((KosDynNode *)(r))->u.finally_.exc_saved)
+#define KosDynFinally_SAVED(r)       (&((KosDynNode *)(r))->u.finally_.saved)
+#define KosDynFinally_HANDLING(r)    (&((KosDynNode *)(r))->u.finally_.handling)
 #define KosDynLoop_BREAK_PC(r)       (((KosDynNode *)(r))->u.loop.break_pc)
 #define KosDynLoop_CONTINUE_PC(r)    (((KosDynNode *)(r))->u.loop.continue_pc)
 #define KosDynLoop_ENABLED(r)        (((KosDynNode *)(r))->u.loop.enabled)

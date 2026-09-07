@@ -47,6 +47,7 @@ struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
 #include "callable.h"
 #include "compat.h"
 #include "domain.h"
+#include "exception.h"
 #include "dynchain.h"
 #include "eval.h"
 #include "formals.h"

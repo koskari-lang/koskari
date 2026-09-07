@@ -385,7 +385,7 @@ static PyObject *coroutine_throw_pair(
 static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
 
   PyObject *typ = NULL, *exc = NULL;
-  if (KosUtils_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
+  if (KosExc_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
     return NULL;
 
   PyObject *result = coroutine_throw_pair((KosCoroutine *) self, typ, exc);

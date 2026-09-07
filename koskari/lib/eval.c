@@ -1397,12 +1397,7 @@ void KosContext_Free(KosContext *ctx) {
          PyList_GET_SIZE(KosContext_EXC_STASH(ctx)));
     Py_CLEAR(KosContext_EXC_STASH(ctx));
   }
-  Py_XDECREF(KosContext_EXC_INFO_TYPE(ctx));
-  KosContext_EXC_INFO_TYPE(ctx) = NULL;
-  Py_XDECREF(KosContext_EXC_INFO_VALUE(ctx));
-  KosContext_EXC_INFO_VALUE(ctx) = NULL;
-  Py_XDECREF(KosContext_EXC_INFO_TB(ctx));
-  KosContext_EXC_INFO_TB(ctx) = NULL;
+  KosExc_Clear(KosContext_EXC_INFO(ctx));
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
   Py_XDECREF(KosContext_PARAM_REFS(ctx));
@@ -1459,9 +1454,8 @@ int KosContext_Traverse(
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
   Py_VISIT(KosContext_EXC_STASH(ctx));
-  Py_VISIT(KosContext_EXC_INFO_TYPE(ctx));
-  Py_VISIT(KosContext_EXC_INFO_VALUE(ctx));
-  Py_VISIT(KosContext_EXC_INFO_TB(ctx));
+  if (KosExc_Traverse(KosContext_EXC_INFO(ctx), visit, arg))
+    return -1;
 
   dyn_top = KosContext_DYN_TOP(ctx);
   plan = KosContext_PLAN(ctx);
@@ -3380,7 +3374,7 @@ KosOpResult koskari_eval(
     PyObject *throw_exc) {
 
   KosOpResult eval_ret = EVAL_RAISE();
-  PyObject *host_exc_t = NULL, *host_exc_v = NULL, *host_exc_tb = NULL;
+  KosExcState host_exc;
   KosEvalState es;
   KosOp *insn;
   KosOpResult r;
@@ -3393,15 +3387,10 @@ KosOpResult koskari_eval(
   /* Swap in this context's handler-visible exception state (sys.exc_info),
      saving the host's. Contexts interleaved on one thread must not see
      each other's handled exception; the reverse swap runs at cleanup. */
-  PyErr_GetExcInfo(&host_exc_t, &host_exc_v, &host_exc_tb);
-  if (host_exc_v || KosContext_EXC_INFO_VALUE(ctx)) {
-    PyErr_SetExcInfo(KosContext_EXC_INFO_TYPE(ctx),
-                     KosContext_EXC_INFO_VALUE(ctx),
-                     KosContext_EXC_INFO_TB(ctx));
-    KosContext_EXC_INFO_TYPE(ctx) = NULL;
-    KosContext_EXC_INFO_VALUE(ctx) = NULL;
-    KosContext_EXC_INFO_TB(ctx) = NULL;
-  }
+  KosExc_Init(&host_exc);
+  KosExc_Fetch(&host_exc);
+  if (KosExc_Held(&host_exc) || KosExc_Held(KosContext_EXC_INFO(ctx)))
+    KosExc_Install(KosContext_EXC_INFO(ctx));
 
   KosEvalState_Init(&es, ctx);
   KosEvalState_ThawFromContext(&es);
@@ -3555,20 +3544,16 @@ koskari_eval_cleanup:
   /* Save this context's handler-visible exception state and restore the
      host's (the reverse of the entry swap). */
   {
-    PyObject *ct = NULL, *cv = NULL, *ctb = NULL;
-    PyErr_GetExcInfo(&ct, &cv, &ctb);
-    if (cv || host_exc_v) {
-      KosContext_EXC_INFO_TYPE(ctx) = ct;
-      KosContext_EXC_INFO_VALUE(ctx) = cv;
-      KosContext_EXC_INFO_TB(ctx) = ctb;
-      PyErr_SetExcInfo(host_exc_t, host_exc_v, host_exc_tb);
+    KosExcState current;
+    KosExc_Init(&current);
+    KosExc_Fetch(&current);
+    if (KosExc_Held(&current) || KosExc_Held(&host_exc)) {
+      KosExc_Clear(KosContext_EXC_INFO(ctx));
+      KosExc_Move(KosContext_EXC_INFO(ctx), &current);
+      KosExc_Install(&host_exc);
     } else {
-      Py_XDECREF(ct);
-      Py_XDECREF(cv);
-      Py_XDECREF(ctb);
-      Py_XDECREF(host_exc_t);
-      Py_XDECREF(host_exc_v);
-      Py_XDECREF(host_exc_tb);
+      KosExc_Clear(&current);
+      KosExc_Clear(&host_exc);
     }
   }
   return eval_ret;

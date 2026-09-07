@@ -33,6 +33,7 @@
 
 
 #include <Python.h>
+#include "exception.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -613,9 +614,7 @@ struct KosContext {
      entry/exit so interleaved contexts on one thread cannot corrupt
      each other's view. Context-isolated: a fresh context starts with
      empty handler state (no fall-through to the host's). --- */
-  PyObject *exc_info_type;
-  PyObject *exc_info_value;
-  PyObject *exc_info_tb;
+  KosExcState exc_info;
 
   /* Last eval boundary reason for revive */
   uint8_t suspension_event;  /* KosSuspensionEvent */
@@ -650,9 +649,7 @@ struct KosContext {
 #define KosContext_INJECT_TYPE(c)            (((KosContext *)(c))->inject_type)
 #define KosContext_INJECT_VALUE(c)           (((KosContext *)(c))->inject_value)
 #define KosContext_EXC_STASH(c)              (((KosContext *)(c))->exc_stash)
-#define KosContext_EXC_INFO_TYPE(c)          (((KosContext *)(c))->exc_info_type)
-#define KosContext_EXC_INFO_VALUE(c)         (((KosContext *)(c))->exc_info_value)
-#define KosContext_EXC_INFO_TB(c)            (((KosContext *)(c))->exc_info_tb)
+#define KosContext_EXC_INFO(c)               (&((KosContext *)(c))->exc_info)
 
 #define KOS_INJECT_NONE   0
 #define KOS_INJECT_THROW  1

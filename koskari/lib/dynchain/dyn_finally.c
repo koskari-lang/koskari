@@ -19,6 +19,9 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynFinally_HANDLING_RAISE(node) = 0;
   KosDynFinally_HANDLING_RETURN(node) = 0;
   KosDynFinally_HANDLING_RESULT(node) = NULL;
+  KosDynFinally_EXC_SAVED(node) = 0;
+  KosExc_Init(KosDynFinally_SAVED(node));
+  KosExc_Init(KosDynFinally_HANDLING(node));
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
 }
@@ -40,15 +43,23 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   KosDynFinally_HANDLING_RETURN(clone) = KosDynFinally_HANDLING_RETURN(node);
   KosDynFinally_HANDLING_RESULT(clone) = KosDynFinally_HANDLING_RESULT(node);
   Py_XINCREF(KosDynFinally_HANDLING_RESULT(clone));
+  KosDynFinally_EXC_SAVED(clone) = KosDynFinally_EXC_SAVED(node);
+  KosExc_Init(KosDynFinally_SAVED(clone));
+  KosExc_Copy(KosDynFinally_SAVED(clone), KosDynFinally_SAVED(node));
+  KosExc_Init(KosDynFinally_HANDLING(clone));
+  KosExc_Copy(KosDynFinally_HANDLING(clone), KosDynFinally_HANDLING(node));
   return clone;
 }
 
 
 /**
-   DECREF handling result; return node to freelist.
+   Release the handling result and both exception states; return node
+   to freelist.
 */
 void kos_dynfinally_free(KosDynFinally *node) {
   Py_XDECREF(KosDynFinally_HANDLING_RESULT(node));
+  KosExc_Clear(KosDynFinally_SAVED(node));
+  KosExc_Clear(KosDynFinally_HANDLING(node));
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 
@@ -100,6 +111,7 @@ int kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node) {
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
+    kos_dyn_region_leave_exc((KosDynNode *) node);
     kos_dyn_commit_dyn_top(es, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dynfinally_free(node);
@@ -112,9 +124,13 @@ int kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node) {
 
 
 /**
-   GC traverse a KOS_DYN_FINALLY: visit handling result when present.
+   GC traverse a KOS_DYN_FINALLY: the handling result and both
+   exception states.
 */
 static int dynnode_traverse_finally(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynFinally_HANDLING_RESULT((KosDynFinally *) node));
-  return 0;
+  if (KosExc_Traverse(KosDynFinally_SAVED((KosDynFinally *) node), visit, arg))
+    return -1;
+  return KosExc_Traverse(KosDynFinally_HANDLING((KosDynFinally *) node),
+                         visit, arg);
 }

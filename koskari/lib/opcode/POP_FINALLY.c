@@ -29,10 +29,9 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
   }
 
   if (KosDynFinally_HANDLING_RAISE((KosDynFinally *) region)) {
-    PyObject *typ = NULL, *val = NULL, *tb = NULL;
-    PyErr_GetExcInfo(&typ, &val, &tb);
-    PyErr_Restore(typ, val, tb);
-    PyErr_SetExcInfo(NULL, NULL, NULL);
+    /* Re-raise the exception the region kept when it consumed it; the
+       pop below gives back the handler-visible state it displaced. */
+    KosExc_Reraise(KosDynFinally_HANDLING((KosDynFinally *) region));
     KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 0;
 
     /* Raise delivery cleared the region stack (dyn_walk consume), so

@@ -855,6 +855,35 @@ static int kos_dyn_pop_transparent_deliver(
 #include "dynchain/dyn_cc_raise.c"
 #include "dynchain/dyn_gen.c"
 #include "dynchain/dyn_wind.c"
+/**
+   A TRY or FINALLY region leaving the chain gives back the
+   handler-visible exception it displaced when it consumed a raise,
+   the way POP_EXCEPT restores the previous handled exception in
+   CPython. A region that consumed nothing changes nothing. Every path
+   off the chain runs this: the fast pops, and the uninstall the raise
+   walk and the return and break teardowns go through.
+*/
+static void kos_dyn_region_leave_exc(KosDynNode *node) {
+  uint8_t *saved_flag;
+  KosExcState *saved;
+
+  if (KosDynNode_IS_TRY(node)) {
+    saved_flag = &KosDynTry_EXC_SAVED((KosDynTry *) node);
+    saved = KosDynTry_SAVED((KosDynTry *) node);
+  } else {
+    saved_flag = &KosDynFinally_EXC_SAVED((KosDynFinally *) node);
+    saved = KosDynFinally_SAVED((KosDynFinally *) node);
+  }
+
+  if (*saved_flag) {
+    /* an empty saved state clears the thread's, which is right: the
+       region's exception stops being visible when the region goes */
+    KosExc_Install(saved);
+    *saved_flag = 0;
+  }
+}
+
+
 #include "dynchain/dyn_try.c"
 #include "dynchain/dyn_finally.c"
 #include "dynchain/dyn_loop.c"
@@ -1835,6 +1864,10 @@ static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
       return EVAL_NORMAL();
     case KOS_DYN_YIELD_FROM:
       kos_dyn_yieldfrom_unwind(es, (KosDynYieldFrom *) node);
+      return EVAL_NORMAL();
+    case KOS_DYN_TRY:
+    case KOS_DYN_FINALLY:
+      kos_dyn_region_leave_exc(node);
       return EVAL_NORMAL();
     default:
       return EVAL_NORMAL();

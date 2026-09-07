@@ -663,13 +663,25 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
           KosDynFinally_ENABLED((KosDynFinally *) region) = 0;
 
         {
-          PyObject *typ = NULL, *val = NULL, *tb = NULL;
-          PyErr_Fetch(&typ, &val, &tb);
-#if PY_MINOR_VERSION < 12
-          PyErr_NormalizeException(&typ, &val, &tb);
-#endif
-          PyErr_SetExcInfo(typ, val, tb);
-          PyErr_Clear();
+          /* The region now owns the handled exception. Save what the
+             thread state showed, to give back when the region leaves,
+             then make the raise handler-visible. A FINALLY also keeps
+             its own reference for the re-raise at POP_FINALLY, which a
+             region nested in the finally body must not disturb. */
+          KosExcState raised;
+          KosExc_Init(&raised);
+          KosExc_TakeRaised(&raised);
+          if (KosDynNode_IS_TRY(region)) {
+            KosExc_Fetch(KosDynTry_SAVED((KosDynTry *) region));
+            KosDynTry_EXC_SAVED((KosDynTry *) region) = 1;
+          } else {
+            KosExc_Fetch(KosDynFinally_SAVED((KosDynFinally *) region));
+            KosDynFinally_EXC_SAVED((KosDynFinally *) region) = 1;
+            KosExc_Clear(KosDynFinally_HANDLING((KosDynFinally *) region));
+            KosExc_Copy(KosDynFinally_HANDLING((KosDynFinally *) region),
+                        &raised);
+          }
+          KosExc_Install(&raised);
         }
 
         if (KosDynNode_IS_FINALLY(region))

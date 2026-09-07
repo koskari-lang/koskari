@@ -16,6 +16,8 @@ KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
                    | KOS_DYN_CAP_INTERCEPTS_RAISE);
   KosDynTry_HANDLER_PC(node) = handler_pc;
   KosDynTry_ENABLED(node) = 1;
+  KosDynTry_EXC_SAVED(node) = 0;
+  KosExc_Init(KosDynTry_SAVED(node));
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
 }
@@ -33,14 +35,18 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
   KosDynTry_HANDLER_PC(clone) = KosDynTry_HANDLER_PC(node);
   KosDynTry_ENABLED(clone) = KosDynTry_ENABLED(node);
+  KosDynTry_EXC_SAVED(clone) = KosDynTry_EXC_SAVED(node);
+  KosExc_Init(KosDynTry_SAVED(clone));
+  KosExc_Copy(KosDynTry_SAVED(clone), KosDynTry_SAVED(node));
   return clone;
 }
 
 
 /**
-   Return TRY node to freelist (no PyObject refs).
+   Release the saved exception state; return TRY node to freelist.
 */
 void kos_dyntry_free(KosDynTry *node) {
+  KosExc_Clear(KosDynTry_SAVED(node));
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 
@@ -85,6 +91,7 @@ int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
+    kos_dyn_region_leave_exc((KosDynNode *) node);
     kos_dyn_commit_dyn_top(es, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dyntry_free(node);
@@ -97,11 +104,8 @@ int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
 
 
 /**
-   GC traverse a KOS_DYN_TRY: operand stack only.
+   GC traverse a KOS_DYN_TRY: the saved exception state.
 */
 static int dynnode_traverse_try(KosDynNode *node, visitproc visit, void *arg) {
-  (void) node;
-  (void) visit;
-  (void) arg;
-  return 0;
+  return KosExc_Traverse(KosDynTry_SAVED((KosDynTry *) node), visit, arg);
 }
