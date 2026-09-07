@@ -94,4 +94,29 @@ class TestCodeCycleCollection(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(alive())
 
 
+    async def test_instance_holding_own_bound_method_is_collected(self):
+        """
+        an instance that stores one of its own bound methods forms a
+        cycle through the bound method and is collected
+        """
+
+        src = """
+        (begin
+          (define-class Holder []
+            (define m [self] 1))
+          (define o (Holder))
+          (set-attr o cb o.m)
+          o)
+        """
+        expr, mod = self.compile_expr(src)
+        inst = await expr()
+        self.assertEqual(type(inst.cb).__name__, "BoundMethod")
+        self.assertTrue(gc.is_tracked(inst.cb))
+        alive = weakref.ref(inst)
+
+        del inst, expr, mod
+        gc.collect()
+        self.assertIsNone(alive())
+
+
 # The end.

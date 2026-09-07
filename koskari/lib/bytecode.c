@@ -2995,15 +2995,15 @@ static void cache_slot_release(KosCacheSlot *slot) {
   case KOS_CACHE_EMPTY:
     break;
   case KOS_CACHE_METHOD:
-    Py_XDECREF(slot->u.method.type);
-    Py_XDECREF(slot->u.method.resolved);
+    Py_CLEAR(slot->u.method.type);
+    Py_CLEAR(slot->u.method.resolved);
     break;
   case KOS_CACHE_FIELD:
     /* ref-free: a borrowed guard type and an integer index. */
     break;
   case KOS_CACHE_MATCHER:
-    Py_XDECREF(slot->u.matcher.matcher);
-    Py_XDECREF(slot->u.matcher.slotmap);
+    Py_CLEAR(slot->u.matcher.matcher);
+    Py_CLEAR(slot->u.matcher.slotmap);
     break;
   case KOS_CACHE_ELECTOR:
     /* ref-free: a static function and two counters. */

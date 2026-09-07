@@ -1418,9 +1418,27 @@ static KosOpResult kos_vinstall_boundmethod(
 
 
 static void boundmethod_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosBoundMethod_FUNC(self));
   Py_CLEAR(KosBoundMethod_SELF(self));
   Py_TYPE(self)->tp_free(self);
+}
+
+
+/* A bound method owns its function and receiver; an instance that
+   stores one of its own bound methods is a cycle, so it takes part in
+   collection. */
+static int boundmethod_traverse(PyObject *self, visitproc visit, void *arg) {
+  Py_VISIT(KosBoundMethod_FUNC(self));
+  Py_VISIT(KosBoundMethod_SELF(self));
+  return 0;
+}
+
+
+static int boundmethod_clear(PyObject *self) {
+  Py_CLEAR(KosBoundMethod_FUNC(self));
+  Py_CLEAR(KosBoundMethod_SELF(self));
+  return 0;
 }
 
 
@@ -1489,9 +1507,11 @@ KosEvaluatedTypeObject KosBoundMethodType = {
     .tp_name = "koskari.lib.BoundMethod",
     .tp_basicsize = sizeof(KosBoundMethod),
     .tp_dealloc = boundmethod_dealloc,
+    .tp_traverse = boundmethod_traverse,
+    .tp_clear = boundmethod_clear,
     .tp_repr = boundmethod_repr,
     .tp_call = KosCallAdapt_CallAsync,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
     .tp_doc = "Bound method wrapper. Implements KosCallable by prepending"
               " self to call arguments.",
     .tp_members = boundmethod_members,

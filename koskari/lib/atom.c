@@ -572,11 +572,33 @@ int koskari_atom_init(PyObject *mod) {
 }
 
 
+/* Tear down an intern table. Its entries are uncounted, so letting
+   the dict simply decref its values would steal a real reference from
+   every atom still held elsewhere (a pair in a namespace torn down
+   later, say) and free it out from under that holder. Detach the table
+   first, so an atom dealloc during teardown does not reach back into
+   it, then give the dict one counted reference per entry to drop. */
+static void intern_release(PyObject **table) {
+  PyObject *dict = *table;
+  if (! dict)
+    return;
+  *table = NULL;
+
+  PyObject *key = NULL;
+  PyObject *val = NULL;
+  Py_ssize_t pos = 0;
+  while (PyDict_Next(dict, &pos, &key, &val))
+    Py_INCREF(val);
+
+  Py_DECREF(dict);
+}
+
+
 int koskari_atom_clear(PyObject *mod) {
 
   /* clear intern dictionaries */
-  Py_CLEAR(intern_syms);
-  Py_CLEAR(intern_kwds);
+  intern_release(&intern_syms);
+  intern_release(&intern_kwds);
 
   /* clear string constants */
   Py_CLEAR(_str_colon);

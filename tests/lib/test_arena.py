@@ -133,8 +133,8 @@ class TestCodeGC(unittest.TestCase):
 
     def test_code_dies_by_refcount(self):
         """
-        An untracked Code hanging off a function dies immediately by
-        refcount when the function does
+        A Code hanging off a function dies immediately by refcount when
+        the function does, without waiting for a collection
         """
 
         code, ns = build_expr([["CONST", None], ["RETURN", 1]])

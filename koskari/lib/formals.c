@@ -133,6 +133,7 @@ static PyObject *formals_spec_new(PyTypeObject *type,
 
 
 static void formals_spec_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosFormalsSpec_POS(self));
   Py_CLEAR(KosFormalsSpec_POS_ONLY(self));
   Py_CLEAR(KosFormalsSpec_KWD(self));
@@ -175,7 +176,7 @@ PyTypeObject KosFormalsSpecType = {
   sizeof(KosFormalsSpec),
   0,
 
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_members = formals_spec_members,
   .tp_methods = formals_spec_methods,
   .tp_call = (ternaryfunc) formals_spec_call,
@@ -242,7 +243,7 @@ PyObject *KosFormalsSpec_New(
     return NULL;
   }
 
-  PyObject *self = PyObject_New(PyObject, &KosFormalsSpecType);
+  PyObject *self = PyObject_GC_New(PyObject, &KosFormalsSpecType);
   if (! self)
     return NULL;
 
@@ -276,6 +277,8 @@ PyObject *KosFormalsSpec_New(
   TUPLE_OR_NULL(by_refs);
   KosFormalsSpec_BY_REFS(self) = by_refs;
 
+  /* fully built: reveal to the collector */
+  PyObject_GC_Track(self);
   return self;
 
  tuple_error:
@@ -539,6 +542,7 @@ static PyObject *formals_new(PyTypeObject *type,
 
 
 static void formals_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosFormals_POS(self));
   Py_CLEAR(KosFormals_POS_ONLY(self));
   Py_CLEAR(KosFormals_KWD(self));
@@ -584,7 +588,7 @@ PyTypeObject KosFormalsType = {
   sizeof(KosFormals),
   0,
 
-  .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC,
   .tp_members = formals_members,
   .tp_methods = formals_methods,
   .tp_call = (ternaryfunc) formals_call,
@@ -690,7 +694,7 @@ PyObject *KosFormals_NewFull(
     return NULL;
   }
 
-  self = PyObject_New(PyObject, &KosFormalsType);
+  self = PyObject_GC_New(PyObject, &KosFormalsType);
   if (! self)
     return NULL;
 
@@ -728,6 +732,8 @@ PyObject *KosFormals_NewFull(
   TUPLE_OR_NULL(by_refs);
   KosFormals_BY_REFS(self) = by_refs;
 
+  /* fully built: reveal to the collector */
+  PyObject_GC_Track(self);
   return self;
 
  tuple_error:

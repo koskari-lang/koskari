@@ -429,4 +429,34 @@ class TestFormals_PosOnly(unittest.IsolatedAsyncioTestCase):
             formals.apply(ns, (1,))
 
 
+class TestFormalsCollection(unittest.TestCase):
+
+    def test_formals_and_spec_are_gc_tracked(self):
+        import gc
+        formals = Formals(("a",), (), (), (), None, None, None, None)
+        self.assertTrue(gc.is_tracked(formals))
+        self.assertTrue(gc.is_tracked(FormalsSpec()))
+
+    def test_default_reaching_its_formals_is_collected(self):
+        """
+        a default value that refers back to the Formals holding it is a
+        cycle through the defaults dict, and is collected
+        """
+        import gc
+        import weakref
+
+        class Holder:
+            pass
+
+        holder = Holder()
+        formals = Formals(("a",), (), (), (), None, None, {"a": holder}, None)
+        holder.formals = formals
+        # Formals is not weak-referenceable; watch the holder in the cycle
+        alive = weakref.ref(holder)
+
+        del formals, holder
+        gc.collect()
+        self.assertIsNone(alive())
+
+
 # The end.
