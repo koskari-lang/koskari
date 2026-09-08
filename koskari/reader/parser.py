@@ -2186,9 +2186,26 @@ class Reader:
 
         if stream.peek(1) != '"':
             return DEFER, None
-        else:
-            event, val = self._read_string(stream, stream.read(1), True)
-            return event, val.encode('ascii')
+
+        pos = stream.position()
+        event, raw = self._read_string(stream, stream.read(1), False)
+
+        # as in Python, the literal text of a bytes string is ASCII; a
+        # byte above 127 is written as an escape
+        if not raw.isascii():
+            raise stream.error(
+                "bytes literal may only contain ASCII characters;"
+                " write other bytes as escapes", pos)
+
+        # escapes decode to code points, and a byte is a code point below
+        # 256, so latin-1 maps every escaped byte back one to one; an
+        # escape naming a code point past that has no byte value
+        val = _as_unicode(raw)
+        try:
+            return event, val.encode('latin-1')
+        except UnicodeEncodeError:
+            raise stream.error(
+                "bytes literal escape names a value above 255", pos) from None
 
 
     def _read_string(self, stream, char, with_escapes=True):

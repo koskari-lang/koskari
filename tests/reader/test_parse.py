@@ -337,6 +337,24 @@ class TestByteStrings(TestCase):
     def test_bstring_hex_escape_yields_byte(self):
         self.assertEqual(parse_source(r'b"\x41"'), b'A')
 
+    def test_bstring_high_byte_escapes(self):
+        self.assertEqual(parse_source(r'b"\xff"'), b'\xff')
+        self.assertEqual(parse_source(r'b"\x80\xfe\377"'), b'\x80\xfe\xff')
+        self.assertEqual(parse_source(r'b"a\xffb"'), b'a\xffb')
+
+    def test_bstring_literal_non_ascii_rejected(self):
+        # a literal character above 127 is not a byte, even when it
+        # would fit in one; the escape form is the byte
+        with self.assertRaises(ReaderSyntaxError):
+            parse_source('b"\u2603"')
+        with self.assertRaises(ReaderSyntaxError):
+            parse_source('b"caf\u00e9"')
+        self.assertEqual(parse_source(r'b"caf\xe9"'), b'caf\xe9')
+
+    def test_bstring_escape_above_byte_range_rejected(self):
+        with self.assertRaises(ReaderSyntaxError):
+            parse_source(r'b"\u2603"')
+
     def test_bstring_triple_quoted(self):
         src = r'b"""hello "x" """'
         self.assertEqual(parse_source(src), b'hello "x" ')

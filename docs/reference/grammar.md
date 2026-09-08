@@ -48,7 +48,7 @@ directly to the opening quote:
 | `"text"` | plain string |
 | `f"x is {x}"` | format string — interpolates `{…}` expressions |
 | `r"a\d+"` | raw string — no backslash escapes |
-| `b"bytes"` | bytes literal |
+| `b"bytes"` | bytes literal — ASCII text plus escapes for any byte (`b"\xff"`); a literal non-ASCII character is an error |
 
 A prefix is recognised only when it sits immediately before the quote (`f"…"`,
 not `f "…"`). A trailing hyphen continues a string into the next quoted segment;
