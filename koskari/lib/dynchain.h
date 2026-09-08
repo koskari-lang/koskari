@@ -1801,12 +1801,31 @@ KosWalkStatus kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
 
    :param val: return value; ownership transferred to the finally block on
      KOS_WALK_FINALLY_TAKING_RETURN, left with the caller on
-     KOS_WALK_DELIM_TAKING_RETURN
+     KOS_WALK_DELIM_TAKING_RETURN and on KOS_WALK_ASYNC_UNWIND (the
+     caller parks it on the context as the pending return, to resume
+     the walk once the suspended node's thunk has returned), released
+     on KOS_WALK_OK and KOS_WALK_ERROR
    :return: KOS_WALK_OK, KOS_WALK_ERROR, KOS_WALK_ASYNC_UNWIND,
      KOS_WALK_FINALLY_TAKING_RETURN, or KOS_WALK_DELIM_TAKING_RETURN
 */
 KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
                                     PyObject *val);
+
+
+/**
+   1 when target lies on the chain from dyn_top, 0 when not. Used to
+   validate a node pointer kept across a suspension before it is
+   dereferenced.
+*/
+int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
+
+
+/**
+   1 when a node carrying node_id lies on the chain from dyn_top, 0 when
+   not. Safe after the node may have been freed: the walk compares ids,
+   never the remembered pointer.
+*/
+int kos_dyn_chain_has_node_id(KosEvalState *es, uint32_t node_id);
 
 
 /**

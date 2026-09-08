@@ -1706,18 +1706,9 @@ static int function_traverse(
     int r = kos_dynnode_traverse((KosDynNode *) cached, visit, arg);
     if (r != 0)
       return r;
-    /* the parked namespace is GC-untracked (that is a park condition),
-       so its references -- notably parent, into the tracked base-ns
-       chain -- must be attributed through the function or cycles
-       involving a parked frame become uncollectable */
-    {
-      PyObject *pns = KosDynFrame_NS(cached);
-      if (pns) {
-        r = Py_TYPE(pns)->tp_traverse(pns, visit, arg);
-        if (r != 0)
-          return r;
-      }
-    }
+    /* the parked namespace is GC-untracked (that is a park condition);
+       kos_dynnode_traverse reports its contents through the frame node,
+       so a cycle involving a parked frame stays collectable */
   }
   Py_VISIT(KosFunction_NAME(self));
   Py_VISIT(KosFunction_CODE(self));

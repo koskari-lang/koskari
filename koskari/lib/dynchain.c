@@ -44,7 +44,7 @@ static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
-static int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
+int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
 static void kos_dyn_restamp_spliced_prefix(KosEvalState *es);
 static void kos_dyn_stamp_span(
     KosDynNode **span,
@@ -966,12 +966,27 @@ int kos_dyn_abort_push_region(KosEvalState *es, KosDynNode *region) {
 int kos_dyn_complete_pending(KosEvalState *es) {
   KosDynNode *top = KosEvalState_DYN_TOP(es);
 
-  if (! top || ! KosDynNode_IS_WITH(top))
+  if (! top)
     return 0;
-  if (KosDynWith_ENTER_PENDING((KosDynWith *) top))
-    return kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) top);
-  if (KosDynWith_EXIT_PENDING((KosDynWith *) top))
-    return kos_dyn_with_on_control_returned(es, (KosDynWith *) top);
+
+  if (KosDynNode_IS_WITH(top)) {
+    if (KosDynWith_ENTER_PENDING((KosDynWith *) top))
+      return kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) top);
+    if (KosDynWith_EXIT_PENDING((KosDynWith *) top))
+      return kos_dyn_with_on_control_returned(es, (KosDynWith *) top);
+    return 0;
+  }
+
+  /* A wind thunk that tail-called an awaitable has no frame of its own
+     left when the await settles: dyn_top is the wind in its pre phase
+     and the awaited value sits on the stack as the thunk's result. The
+     same hook a returning thunk frame would fire runs here. */
+  if (KosDynNode_IS_WIND(top)) {
+    KosDynWind *wind = (KosDynWind *) top;
+    if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
+        || KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER)
+      return kos_dyn_wind_on_control_returned(es, wind);
+  }
   return 0;
 }
 
@@ -2237,10 +2252,21 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
 
    :return: 1 if target is on the chain from dyn_top, 0 otherwise
 */
-static int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target) {
+int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);
 
   while (node && node != target) {
+    node = KosDynNode_PARENT(node);
+  }
+
+  return node != NULL;
+}
+
+
+int kos_dyn_chain_has_node_id(KosEvalState *es, uint32_t node_id) {
+  KosDynNode *node = KosEvalState_DYN_TOP(es);
+
+  while (node && KosDynNode_NODE_ID(node) != node_id) {
     node = KosDynNode_PARENT(node);
   }
 
@@ -2988,8 +3014,14 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
 
   /* The base ns and stack fields are uniformly owned; visit them
      here, once, for every kind. Per-kind traversals cover only their
-     payloads. */
+     payloads. A frame namespace that was never revealed is untracked,
+     so its contents are reported through this node. */
   Py_VISIT(KosDynNode_NS(node));
+  {
+    int tr = KosNamespace_TraverseUntracked(KosDynNode_NS(node), visit, arg);
+    if (tr != 0)
+      return tr;
+  }
   {
     int tr = KosStack_Traverse(KosDynNode_STACK(node), visit, arg);
     if (tr != 0)

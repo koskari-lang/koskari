@@ -134,6 +134,8 @@ static KosOpResult eval_event_yield(
 static KosOpResult eval_event_await(KosEvalState *es, PyObject *val);
 
 static KosOpResult eval_event_return(KosEvalState *es, PyObject *val);
+static KosOpResult eval_resume_pending_return(KosEvalState *es);
+static inline int eval_pending_return_ready(KosEvalState *es);
 
 static KosOpResult eval_event_return_at_frame(KosEvalState *es, PyObject *val);
 
@@ -1328,7 +1330,9 @@ KosContext *KosContext_New(KosDynFrame *top) {
   KosContext_FRAME_TOP(ctx) = top;
 
   KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
-  KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
+  KosContext_PENDING_RETURN_KIND(ctx) = KOS_PENDING_RETURN_NONE;
+  KosContext_PENDING_RETURN_DELIM(ctx) = NULL;
+  KosContext_PENDING_RETURN_NODE_ID(ctx) = 0;
 
   /* Initialize transfer plan state */
   KosContext_PLAN(ctx) = NULL;
@@ -1392,6 +1396,9 @@ void KosContext_Free(KosContext *ctx) {
   Py_XDECREF(KosContext_INJECT_VALUE(ctx));
   Py_XDECREF(KosContext_PENDING_RETURN_VALUE(ctx));
   KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
+  KosContext_PENDING_RETURN_KIND(ctx) = KOS_PENDING_RETURN_NONE;
+  KosContext_PENDING_RETURN_DELIM(ctx) = NULL;
+  KosContext_PENDING_RETURN_NODE_ID(ctx) = 0;
   if (KosContext_EXC_STASH(ctx)) {
     SAYF("[eval] context teardown dropping %zd parked exception(s)\n",
          PyList_GET_SIZE(KosContext_EXC_STASH(ctx)));
@@ -1440,6 +1447,7 @@ int KosContext_Traverse(
 
   KosDynNode *dyn_top;
   KosTransferPlan *plan;
+  KosTransferPlan *plan_stack;
   KosEvalState *active_es;
   int res;
 
@@ -1454,11 +1462,15 @@ int KosContext_Traverse(
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
   Py_VISIT(KosContext_EXC_STASH(ctx));
+  Py_VISIT(KosContext_PENDING_RETURN_VALUE(ctx));
   if (KosExc_Traverse(KosContext_EXC_INFO(ctx), visit, arg))
     return -1;
 
+  /* between drives the chain and plans rest on the context; while a
+     drive is running they have moved onto the active eval state */
   dyn_top = KosContext_DYN_TOP(ctx);
   plan = KosContext_PLAN(ctx);
+  plan_stack = KosContext_PLAN_STACK(ctx);
   if (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING) {
     active_es = kos_tls_active_eval_for_ctx(ctx);
     if (active_es) {
@@ -1467,6 +1479,8 @@ int KosContext_Traverse(
         dyn_top = KosEvalState_DYN_TOP(active_es);
       if (! plan)
         plan = KosEvalState_PLAN(active_es);
+      if (! plan_stack)
+        plan_stack = KosEvalState_PLAN_STACK(active_es);
     }
   }
 
@@ -1477,6 +1491,13 @@ int KosContext_Traverse(
   res = kos_transferplan_traverse(plan, visit, arg);
   if (res)
     return res;
+
+  /* plans suspended by a nested transfer, outermost last */
+  for (; plan_stack; plan_stack = KosTransferPlan_SUSPENDED(plan_stack)) {
+    res = kos_transferplan_traverse(plan_stack, visit, arg);
+    if (res)
+      return res;
+  }
 
   return 0;
 }
@@ -1756,8 +1777,10 @@ static KosOpResult kos_eval_route_delim_return(
       return EVAL_RAISE();
     }
     if (ws != KOS_WALK_OK) {
-      /* KOS_WALK_ASYNC_UNWIND: async unwind started; stage pending return */
-      KosEvalState_SetPendingReturn(es, val, 0);
+      /* KOS_WALK_ASYNC_UNWIND: a leave thunk suspended the walk; park
+         val and re-enter this route when the node has finished */
+      KosEvalState_SetPendingReturn(es, val, KOS_PENDING_RETURN_DELIM,
+                                    ret_delim);
       return EVAL_NORMAL();
     }
   }
@@ -2055,7 +2078,7 @@ KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value) {
   if (unw == KOS_WALK_FINALLY_TAKING_RETURN)
     return EVAL_REPROLOGUE();
   if (unw == KOS_WALK_ASYNC_UNWIND) {
-    KosEvalState_SetPendingReturn(es, value, 1);
+    KosEvalState_SetPendingReturn(es, value, KOS_PENDING_RETURN_NATIVE, NULL);
     return EVAL_REPROLOGUE();
   }
   if (unw == KOS_WALK_DELIM_TAKING_RETURN) {
@@ -2364,6 +2387,30 @@ entry_mode_dispatch:
     return pr;
   }
 
+  /* The revive may have completed the node whose leave thunk parked a
+     return (a wind whose after thunk tail-called the awaitable has no
+     frame to return through). With that node gone, the return continues
+     instead of the frame's bytecode; the outcomes map as a RETURN
+     opcode's would. */
+  if (mode == KOS_MODE_NORMAL && eval_pending_return_ready(es)) {
+    KosOpResult rr = eval_resume_pending_return(es);
+    switch (rr.kind) {
+    case KOS_RES_NORMAL:
+    case KOS_RES_REPROLOGUE:
+      *mode_out = KOS_MODE_NORMAL;
+      return EVAL_NORMAL();
+    case KOS_RES_RAISE:
+      mode = KOS_MODE_EXCEPTION;
+      goto entry_mode_dispatch;
+    case KOS_RES_AWAIT:
+      KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+      KosEvalState_MarkSuspendedNotRunning(es);
+      return rr;
+    default:
+      return rr;
+    }
+  }
+
   /* Revived with a value (given, or staged by the revive) and the top
      frame is waiting on one: deliver. */
   if ((send_val != NULL || KosEvalState_PENDING_VALUE(es))
@@ -2519,16 +2566,13 @@ static inline KosOpResult eval_event_return(
     KosEvalState *es,
     PyObject *val) {
 
-  KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
-  int has_parent = (parent != NULL && ! KosDynNode_IS_GEN(parent));
-
   KosWalkStatus unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es), val);
   if (unw == KOS_WALK_ERROR) {
     Py_DECREF(val);
     return EVAL_FATAL();
   }
   if (unw == KOS_WALK_ASYNC_UNWIND) {
-    KosEvalState_SetPendingReturn(es, val, has_parent);
+    KosEvalState_SetPendingReturn(es, val, KOS_PENDING_RETURN_FRAME, NULL);
     return EVAL_REPROLOGUE();
   }
   if (unw == KOS_WALK_FINALLY_TAKING_RETURN) {
@@ -2929,6 +2973,58 @@ static inline KosOpResult eval_event_return_ng(
    parent is a pending WITH is that callee itself, and a return into it
    from its own callees must leave the pending phase alone.
 */
+/**
+   1 when a return is parked on the context and the node whose leave
+   thunk suspended it has left the chain.
+*/
+static inline int eval_pending_return_ready(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosContext_PENDING_RETURN_VALUE(ctx) != NULL
+    && ! kos_dyn_chain_has_node_id(es, KosContext_PENDING_RETURN_NODE_ID(ctx));
+}
+
+
+/**
+   Re-enter a return whose unwind walk suspended in a node's leave
+   thunk. The node is gone now, so the walk from the returning frame
+   continues past it: further nodes may suspend again and park the
+   value once more, or the walk reaches the frame and delivers. Takes
+   the parked value off the context; the return path consumes it.
+*/
+static KosOpResult eval_resume_pending_return(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  PyObject *val = KosContext_PENDING_RETURN_VALUE(ctx);
+  KosPendingReturnKind kind = KosContext_PENDING_RETURN_KIND(ctx);
+  KosDynDelim *delim = KosContext_PENDING_RETURN_DELIM(ctx);
+
+  KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
+  KosContext_PENDING_RETURN_KIND(ctx) = KOS_PENDING_RETURN_NONE;
+  KosContext_PENDING_RETURN_DELIM(ctx) = NULL;
+  KosContext_PENDING_RETURN_NODE_ID(ctx) = 0;
+
+  switch (kind) {
+  case KOS_PENDING_RETURN_FRAME:
+    return eval_event_return_ng(es, val);
+
+  case KOS_PENDING_RETURN_NATIVE:
+    return KosNativeFrame_Return(es, val);
+
+  case KOS_PENDING_RETURN_DELIM:
+    if (delim && kos_dyn_reaches(es, (KosDynNode *) delim))
+      return kos_eval_route_delim_return(es, delim, val);
+    Py_DECREF(val);
+    PyErr_SetString(PyExc_SystemError,
+                    "pending return lost its delimited-invoke bookmark");
+    return EVAL_RAISE();
+
+  default:
+    Py_DECREF(val);
+    PyErr_SetString(PyExc_SystemError, "pending return with no return path");
+    return EVAL_RAISE();
+  }
+}
+
+
 static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
     KosEvalState *es) {
 
@@ -2938,12 +3034,20 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 
   KosOpResult r;
   KOS_TRACE_POST_OP_WRAP(control_returned,
-      r = kos_dynnode_on_control_returned(es, KosEvalState_CurrentNode(es)));
+      r = kos_dynnode_on_control_returned(es, node));
   if (r.kind == KOS_RES_RAISE) {
     KosOpResult rs;
     KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
     return rs;
   }
+
+  /* A return parked on the context is waiting for a node's leave
+     thunk. The hook unlinks the node once the thunk is done (it may
+     defer that behind a nested transfer), so that node leaving the
+     chain is the signal to resume the return. */
+  if (eval_pending_return_ready(es))
+    return eval_resume_pending_return(es);
+
   return kos_eval_delivery_done(es);
 }
 

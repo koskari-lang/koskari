@@ -43,12 +43,14 @@ static void KosEvalState_DisarmTransferPlan(KosEvalState *es) {
 void KosEvalState_SetPendingReturn(
     KosEvalState *es,
     PyObject *val,
-    int to_parent) {
+    KosPendingReturnKind kind,
+    KosDynDelim *delim) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
-  KosContext_PENDING_RETURN_VALUE(ctx) = val;
-  KosContext_PENDING_RETURN_TO_PARENT(ctx) = to_parent;
+  Py_XSETREF(KosContext_PENDING_RETURN_VALUE(ctx), val);
+  KosContext_PENDING_RETURN_KIND(ctx) = kind;
+  KosContext_PENDING_RETURN_DELIM(ctx) = delim;
 }
 
 

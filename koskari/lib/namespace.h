@@ -393,6 +393,18 @@ void KosNamespace_TrackChain(PyObject *ns);
 PyObject *KosNamespace_Reveal(PyObject *ns);
 
 
+/**
+   Attribute the references of an untracked namespace chain to the
+   holder being traversed. A namespace is born untracked, so a frame
+   or parked namespace that was never revealed is invisible to the
+   collector: its holder must report what it holds. Walks parents while
+   they too are untracked and stops at the first tracked one, which
+   the collector visits on its own. Returns the first non-zero visit
+   result, else 0.
+*/
+int KosNamespace_TraverseUntracked(PyObject *ns, visitproc visit, void *arg);
+
+
 /* === SlotMap === */
 
 

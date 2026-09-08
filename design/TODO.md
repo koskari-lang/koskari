@@ -15,6 +15,12 @@ design docs for detail.
   during undelimited nested interrupt (`let/cc` + `dyn-wind` + async Koskari
   await). Archived spec: [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §6.7.
 - **Full delimited PUSH replan** — deferred; §6.6 forbid remains until then.
+- **Pending return across a suspended leave thunk** — a `return` whose unwind
+  walk suspends in a wind after thunk or `with` `__aexit__` lost its value;
+  first cut on branch `transfer-plan-rework` parks it on the context and
+  resumes by node id, with eight listed defects (GC over-attribution, called
+  frame DISPATCH, single slot, raise walk, plan interaction) to close.
+  Ref: [interpreter/pending-return-across-suspension.md](interpreter/pending-return-across-suspension.md).
 
 Ref: [interpreter/callcc.md](interpreter/callcc.md),
 [archive/delimited-invoke-model.md](archive/delimited-invoke-model.md),

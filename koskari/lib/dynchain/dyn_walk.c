@@ -201,9 +201,16 @@ KosWalkStatus kos_dyn_unwind_to_node(KosEvalState *es,
     }
 #endif
     KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
+    KosDynNode *stepping = KosEvalState_DYN_TOP(es);
     int m = kos_map_pop_result(kos_dyn_pop_top_allow_barrier(es, event));
-    if (m)
-      return (m < 0) ? KOS_WALK_ERROR : KOS_WALK_ASYNC_UNWIND;
+    if (m < 0)
+      return KOS_WALK_ERROR;
+    if (m) {
+      /* as in kos_dyn_unwind_return: remember which node suspended */
+      KosContext_PENDING_RETURN_NODE_ID(KosEvalState_CONTEXT(es)) =
+        KosDynNode_NODE_ID(stepping);
+      return KOS_WALK_ASYNC_UNWIND;
+    }
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_node: done, dyn_top=%p", (void *) KosEvalState_DYN_TOP(es));
@@ -286,9 +293,18 @@ KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
     KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
     int m = kos_map_pop_result(
         kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_RETURN));
-    if (m) {
+    if (m < 0) {
       Py_DECREF(val);
-      return (m < 0) ? KOS_WALK_ERROR : KOS_WALK_ASYNC_UNWIND;
+      return KOS_WALK_ERROR;
+    }
+    if (m) {
+      /* The node's leave thunk started and will suspend; the walk
+         stops here with val still owned by the caller, who parks it as
+         the context's pending return. The node's id is recorded so the
+         return resumes once that node has left the chain. */
+      KosContext_PENDING_RETURN_NODE_ID(KosEvalState_CONTEXT(es)) =
+        KosDynNode_NODE_ID(top);
+      return KOS_WALK_ASYNC_UNWIND;
     }
   }
   if (KOS_XFER_TRACE)
@@ -332,9 +348,16 @@ KosWalkStatus kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
       SAYF("[xfer] unwind_to_frame: popping node=%p kind=%s",
            (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
     KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
+    KosDynNode *stepping = KosEvalState_DYN_TOP(es);
     int m = kos_map_pop_result(kos_dyn_pop_top_allow_barrier(es, event));
-    if (m)
-      return (m < 0) ? KOS_WALK_ERROR : KOS_WALK_ASYNC_UNWIND;
+    if (m < 0)
+      return KOS_WALK_ERROR;
+    if (m) {
+      /* as in kos_dyn_unwind_return: remember which node suspended */
+      KosContext_PENDING_RETURN_NODE_ID(KosEvalState_CONTEXT(es)) =
+        KosDynNode_NODE_ID(stepping);
+      return KOS_WALK_ASYNC_UNWIND;
+    }
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_frame: done, dyn_top=%p", (void *) KosEvalState_DYN_TOP(es));

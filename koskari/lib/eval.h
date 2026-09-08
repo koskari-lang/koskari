@@ -567,6 +567,18 @@ KosOpResult KosEvalState_NextResume(
   KosEvalState); see KosEvalState_ThawFromContext and KosEvalState_FreezeToContext.
 */
 
+/**
+   Which return path a parked pending return re-enters once the node
+   whose leave thunk suspended the unwind walk has finished.
+*/
+typedef enum KosPendingReturnKind {
+  KOS_PENDING_RETURN_NONE = 0,
+  KOS_PENDING_RETURN_FRAME,   /* a bytecode frame's RETURN: eval_event_return */
+  KOS_PENDING_RETURN_NATIVE,  /* a native frame's return: KosNativeFrame_Return */
+  KOS_PENDING_RETURN_DELIM,   /* a return routed to a delimited-invoke bookmark */
+} KosPendingReturnKind;
+
+
 struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
@@ -583,12 +595,22 @@ struct KosContext {
                                parameter cell table, forked (pointer-copied)
                                at creation. Lazy; NULL when empty. */
 
-  /* When unwind returns ASYNC_STARTED (wind after-thunk), RETURN stashes the
-     value here and resumes unwinding when the thunk returns.  If
-     pending_return_to_parent is set, push onto parent and detach; else
-     return KOS_RES_RETURN. */
+  /* A return in flight across a suspension. The unwind walk toward the
+     returning frame pops try, with, and wind nodes; when a node's leave
+     thunk (a wind's after thunk, a with's __exit__) suspends on an
+     awaitable, the walk stops and the return value has nowhere to sit:
+     the frame's operand stack is behind the thunk's frame and the
+     parent has not been reached. So the value parks here, owned by the
+     context, together with which return path to re-enter and, for a
+     delimited route, the bookmark node (a borrowed pointer into the
+     chain, validated on resume). The control-returned hook resumes the
+     return once the suspending node is gone; KosContext_Traverse visits
+     the value and KosContext_Free releases it if the coroutine is
+     abandoned mid-return. */
   PyObject *pending_return_value;
-  int pending_return_to_parent;
+  KosPendingReturnKind pending_return_kind;
+  KosDynDelim *pending_return_delim;
+  uint32_t pending_return_node_id;    /* the node whose pop suspended */
 
   /* Transfer plan state */
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
@@ -635,7 +657,9 @@ struct KosContext {
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
 #define KosContext_PARAM_REFS(c)            (((KosContext *)(c))->param_refs)
 #define KosContext_PENDING_RETURN_VALUE(c)   (((KosContext *)(c))->pending_return_value)
-#define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
+#define KosContext_PENDING_RETURN_KIND(c)    (((KosContext *)(c))->pending_return_kind)
+#define KosContext_PENDING_RETURN_DELIM(c)   (((KosContext *)(c))->pending_return_delim)
+#define KosContext_PENDING_RETURN_NODE_ID(c) (((KosContext *)(c))->pending_return_node_id)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
@@ -961,13 +985,16 @@ done:
 void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan);
 
 /**
-  Stage return value for async unwind / parent delivery. to_parent is 0 or 1.
-  Refcount semantics match direct assignments to ctx (no extra INCREF).
+  Park a return value whose unwind walk suspended in a node's leave
+  thunk. Consumes val: the context owns it until the return resumes.
+  kind names the return path to re-enter; delim is the bookmark for
+  KOS_PENDING_RETURN_DELIM and NULL otherwise.
 */
 void KosEvalState_SetPendingReturn(
     KosEvalState *es,
     PyObject *val,
-    int to_parent);
+    KosPendingReturnKind kind,
+    KosDynDelim *delim);
 
 int KosEvalState_SetFrameCodeAndNamespace(
     KosEvalState *es,
