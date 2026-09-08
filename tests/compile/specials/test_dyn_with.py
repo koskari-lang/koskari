@@ -180,6 +180,92 @@ class TestDynWithShiftUnwind(SpecialsTestCase):
         self.assertEqual(events, ["enter", "exit"])
 
 
+class Park:
+    """
+    An awaitable that yields once, then completes on the next send
+    """
+
+    def __await__(self):
+        yield self
+        return "parked"
+
+
+class TestDynWithShiftSuspendedExit(SpecialsTestCase):
+
+    def make_manager(self, events):
+        class Mgr:
+
+            async def __aenter__(self):
+                events.append("aenter")
+                return self
+
+            async def __aexit__(self, typ, val, tb):
+                events.append("aexit-start")
+                await Park()
+                events.append("aexit-done")
+                return False
+
+        return Mgr
+
+
+    async def test_shift_result_delivery_awaits_exit(self):
+        """
+        a shift body completing inside a dyn-with whose __aexit__
+        suspends parks the transfer; the second send finishes __aexit__
+        and delivers the shift result to the reset
+        """
+
+        events = []
+        src_str = """
+        (lambda []
+          (reset
+            (dyn-with [(call make_mgr)]
+              (shift k 5))))
+        """
+        expr, mod = self.compile_expr(
+            src_str, make_mgr=self.make_manager(events))
+        fn = await expr()
+
+        coro = fn()
+        self.assertIsInstance(coro.send(None), Park)
+        self.assertEqual(events, ["aenter", "aexit-start"])
+        with self.assertRaises(StopIteration) as caught:
+            coro.send(None)
+        self.assertEqual(caught.exception.value, 5)
+        self.assertEqual(events, ["aenter", "aexit-start", "aexit-done"])
+
+
+    async def test_abandoned_mid_transfer_collects(self):
+        """
+        a coroutine parked in a transfer's __aexit__ that refers back to
+        itself through the manager is a cycle, and is collected
+        """
+
+        import gc
+        import weakref
+
+        events = []
+        Mgr = self.make_manager(events)
+        src_str = """
+        (lambda []
+          (reset
+            (dyn-with [(call make_mgr)]
+              (shift k 5))))
+        """
+        expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
+        fn = await expr()
+
+        coro = fn()
+        self.assertIsInstance(coro.send(None), Park)
+        mgr = [m for m in gc.get_referrers(Mgr) if isinstance(m, Mgr)][0]
+        mgr.coro = coro
+        alive = weakref.ref(mgr)
+
+        del coro, mgr, fn, expr, mod
+        gc.collect()
+        self.assertIsNone(alive())
+
+
 class TestDynWithTransferWindReproducer(SpecialsTestCase):
     """
     Minimal reproducer: continuation invoke into a dyn-with body should

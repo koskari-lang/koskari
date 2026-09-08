@@ -1747,6 +1747,25 @@ static int kos_check_nil(
 
 
 /**
+   Route a walk's answer into the evaluator: a RAISE enters the raise
+   ingress so a local handler can take it, an AWAIT is tagged for the
+   driver, and everything else passes. Applied once, at the site that
+   consumes a walk's raw result; a result that has already been through
+   here must not come back.
+*/
+static KosOpResult kos_eval_walk_outcome(KosEvalState *es, KosOpResult r) {
+  if (r.kind == KOS_RES_RAISE) {
+    KosOpResult pr;
+    KOS_TRACE_POST_OP_WRAP(event_raise, pr = process_raise(es));
+    return pr;
+  }
+  if (r.kind == KOS_RES_AWAIT)
+    return eval_event_await(es, r.val);
+  return r;
+}
+
+
+/**
    Route a return value to a live delimited-invoke bookmark: a DELIM
    carrying RETURN_FRAME + RETURN_PC (POP_PROMPT-mode push-graft or
    INPLACE-mode in-place invoke).  Shared by the POP_PROMPT opcode (the
@@ -1768,23 +1787,23 @@ static KosOpResult kos_eval_route_delim_return(
        (void *) KosDynDelim_RETURN_NODE(ret_delim));
 
   {
-    KosWalkStatus ws;
+    KosOpResult wr;
     if (KosDynDelim_RETURN_NODE(ret_delim) != NULL)
-      ws = kos_dyn_unwind_to_node(es, KosDynDelim_RETURN_NODE(ret_delim),
+      wr = kos_dyn_unwind_to_node(es, KosDynDelim_RETURN_NODE(ret_delim),
                                   KOS_XFER_EVENT_SHIFT);
     else
-      ws = kos_dyn_unwind_to_frame(es, KosDynDelim_RETURN_FRAME(ret_delim),
+      wr = kos_dyn_unwind_to_frame(es, KosDynDelim_RETURN_FRAME(ret_delim),
                                    KOS_XFER_EVENT_SHIFT);
-    if (ws == KOS_WALK_ERROR) {
-      Py_DECREF(val);
-      return EVAL_RAISE();
-    }
-    if (ws != KOS_WALK_OK) {
-      /* KOS_WALK_ASYNC_UNWIND: a leave thunk suspended the walk; park
-         val and re-enter this route when the node has finished */
+    if (wr.kind == KOS_RES_REPROLOGUE || wr.kind == KOS_RES_AWAIT) {
+      /* a leave went into a thunk or onto an awaitable; park val and
+         re-enter this route when the node has finished */
       KosEvalState_SetPendingReturn(es, val, KOS_PENDING_RETURN_DELIM,
                                     ret_delim);
-      return EVAL_NORMAL();
+      return wr;
+    }
+    if (wr.kind != KOS_RES_NORMAL) {
+      Py_DECREF(val);
+      return wr;
     }
   }
 
@@ -2071,20 +2090,15 @@ const KosThreadFn kos_op_handlers[] = {
 KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value) {
 
   KosDynFrame *detached = NULL;
-  KosWalkStatus unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es),
-                                            value);
+  KosDynDelim *took = NULL;
+  KosOpResult unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es), value,
+                                          KOS_PENDING_RETURN_NATIVE, &took);
 
-  if (unw == KOS_WALK_ERROR) {
-    Py_DECREF(value);
-    return EVAL_RAISE();
-  }
-  if (unw == KOS_WALK_FINALLY_TAKING_RETURN)
-    return EVAL_REPROLOGUE();
-  if (unw == KOS_WALK_ASYNC_UNWIND) {
-    KosEvalState_SetPendingReturn(es, value, KOS_PENDING_RETURN_NATIVE, NULL);
-    return EVAL_REPROLOGUE();
-  }
-  if (unw == KOS_WALK_DELIM_TAKING_RETURN) {
+  /* a FINALLY took the return, a leave is in flight with the value
+     parked, or a leave raised; the walk consumed value on each */
+  if (unw.kind != KOS_RES_NORMAL)
+    return kos_eval_walk_outcome(es, unw);
+  if (took) {
     /* A native frame runs no bytecode, so no delimited-invoke bookmark
        can sit above it. Fail loudly rather than mis-deliver. */
     Py_DECREF(value);
@@ -2323,7 +2337,11 @@ static KosOpResult eval_phase_entry(
     KosEvalMode *mode_out) {
 
   KosEvalMode mode = KOS_MODE_NORMAL;
-  if (KosEvalState_PLAN(es)) {
+  if (KosEvalState_PLAN(es)
+      && KosEvalState_SuspensionEvent(es) != KOS_SUSP_AWAIT) {
+    /* a plan suspended on a Python awaitable revives like any other
+       await: the settled value lands on the block and the plan's step
+       takes it from there */
     mode = revive_plan(es, send_val, throw_typ, throw_exc);
     if (mode != KOS_MODE_NORMAL && mode != KOS_MODE_TRANSFER)
       goto entry_mode_dispatch;
@@ -2569,27 +2587,22 @@ static inline KosOpResult eval_event_return(
     KosEvalState *es,
     PyObject *val) {
 
-  KosWalkStatus unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es), val);
-  if (unw == KOS_WALK_ERROR) {
-    Py_DECREF(val);
-    return EVAL_FATAL();
-  }
-  if (unw == KOS_WALK_ASYNC_UNWIND) {
-    KosEvalState_SetPendingReturn(es, val, KOS_PENDING_RETURN_FRAME, NULL);
-    return EVAL_REPROLOGUE();
-  }
-  if (unw == KOS_WALK_FINALLY_TAKING_RETURN) {
-    return EVAL_REPROLOGUE();
-  }
-  if (unw == KOS_WALK_DELIM_TAKING_RETURN) {
+  KosDynDelim *took = NULL;
+  KosOpResult unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es), val,
+                                          KOS_PENDING_RETURN_FRAME, &took);
+
+  /* a FINALLY took the return, a leave is in flight with val parked, or
+     a leave raised; the walk consumed val on each */
+  if (unw.kind != KOS_RES_NORMAL)
+    return kos_eval_walk_outcome(es, unw);
+  if (took) {
     /* The return crossed a delimiting reset: the walk stopped at a DELIM
        with a live invoke bookmark (at dyn_top).  Deliver val to the
        k-invocation site instead of the frame's parent. */
-    KosOpResult rr = kos_eval_route_delim_return(
-        es, (KosDynDelim *) KosEvalState_DYN_TOP(es), val);
+    KosOpResult rr = kos_eval_route_delim_return(es, took, val);
     if (rr.kind == KOS_RES_NORMAL)
       return EVAL_REPROLOGUE();
-    return rr;
+    return kos_eval_walk_outcome(es, rr);
   }
 
   return eval_event_return_at_frame(es, val);
@@ -3014,16 +3027,17 @@ static KosOpResult eval_resume_pending_return(KosEvalState *es) {
 
   case KOS_PENDING_RETURN_DELIM:
     if (delim && kos_dyn_reaches(es, (KosDynNode *) delim))
-      return kos_eval_route_delim_return(es, delim, val);
+      return kos_eval_walk_outcome(
+          es, kos_eval_route_delim_return(es, delim, val));
     Py_DECREF(val);
     PyErr_SetString(PyExc_SystemError,
                     "pending return lost its delimited-invoke bookmark");
-    return EVAL_RAISE();
+    return kos_eval_walk_outcome(es, EVAL_RAISE());
 
   default:
     Py_DECREF(val);
     PyErr_SetString(PyExc_SystemError, "pending return with no return path");
-    return EVAL_RAISE();
+    return kos_eval_walk_outcome(es, EVAL_RAISE());
   }
 }
 

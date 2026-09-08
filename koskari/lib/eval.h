@@ -567,18 +567,6 @@ KosOpResult KosEvalState_NextResume(
   KosEvalState); see KosEvalState_ThawFromContext and KosEvalState_FreezeToContext.
 */
 
-/**
-   Which return path a parked pending return re-enters once the node
-   whose leave thunk suspended the unwind walk has finished.
-*/
-typedef enum KosPendingReturnKind {
-  KOS_PENDING_RETURN_NONE = 0,
-  KOS_PENDING_RETURN_FRAME,   /* a bytecode frame's RETURN: eval_event_return */
-  KOS_PENDING_RETURN_NATIVE,  /* a native frame's return: KosNativeFrame_Return */
-  KOS_PENDING_RETURN_DELIM,   /* a return routed to a delimited-invoke bookmark */
-} KosPendingReturnKind;
-
-
 struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */

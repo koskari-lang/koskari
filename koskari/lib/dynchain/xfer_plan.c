@@ -746,6 +746,25 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
 
 
 /**
+   Map a KosOpResult from an extent contract call or an unlink onto the
+   plan step protocol: 0 on NORMAL, -1 on RAISE or FATAL, and
+   KOS_DYN_UNWIND_ASYNC_STARTED when the node's leave or enter is in
+   flight. An AWAIT's payload is stashed on the plan for the drain to
+   hand to the driver; the step resumes at the await revive.
+*/
+static int xfer_map_result(KosTransferPlan *plan, KosOpResult r) {
+
+  if (r.kind == KOS_RES_AWAIT) {
+    Py_XSETREF(KosTransferPlan_STEP_AWAITABLE(plan), r.val);
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  }
+  if (r.kind == KOS_RES_REPROLOGUE)
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  return (r.kind == KOS_RES_NORMAL) ? 0 : -1;
+}
+
+
+/**
    Walk segment top to bottom; set stop to parent of bottom (clone bound).
 */
 KOS_OP_INLINE void kos_chain_segment_bounds(
@@ -835,7 +854,7 @@ static int xfer_step_extent_action(KosEvalState *es,
     kr = kos_dyn_extent_leave(es, node, KOS_XFER_EVENT_NONE);
   if (kr.kind == KOS_RES_NORMAL)
     KosTransferPlan_PARK_NODE(plan) = NULL;
-  return kos_map_pop_result(kr);
+  return xfer_map_result(plan, kr);
 }
 
 
@@ -893,7 +912,8 @@ static int kos_dyn_run_install_wind_span(
 
   /* Run wind in reverse order (outer nodes first) */
   for (size_t i = wind_count; i > 0; i--) {
-    int m = kos_map_pop_result(kos_dyn_extent_enter(es, wind_nodes[i - 1]));
+    int m = xfer_map_result(KosEvalState_PLAN(es),
+                            kos_dyn_extent_enter(es, wind_nodes[i - 1]));
     if (m) {
       if (m < 0 && KOS_XFER_TRACE)
         SAYF("[xfer] %s wind failed", xfer_fail_tag);
@@ -1169,7 +1189,8 @@ static int xfer_step_pop_one(KosEvalState *es) {
     PyErr_SetString(PyExc_RuntimeError, "POP_ONE: empty chain");
     return -1;
   }
-  return kos_map_pop_result(kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_NONE));
+  return xfer_map_result(KosEvalState_PLAN(es),
+                         kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0));
 }
 
 
@@ -1196,8 +1217,8 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
          (void *) current, (void *) stop_node, (void *) new_top);
 
   while (KosEvalState_DYN_TOP(es) && KosEvalState_DYN_TOP(es) != new_top) {
-    int m = kos_map_pop_result(
-        kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE));
+    int m = xfer_map_result(plan,
+                            kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 1));
     if (m)
       return m;
   }

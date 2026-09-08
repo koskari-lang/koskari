@@ -135,13 +135,13 @@ KosOpResult kos_dyn_exception_unwind(
 /**
    Generic unwind walk toward a target node. See dynchain.h for the
    contract. Pops until dyn_top == target or empty, crossing barriers and
-   delimiters (PROMPT pops via kos_dyn_pop_prompt) since these walks
-   deliberately unwind through delimited prompt boundaries. Callers: eval.c
-   route_delim_return, continuation transfer helpers.
+   delimiters since these walks deliberately unwind through delimited
+   prompt boundaries. Callers: eval.c route_delim_return.
 */
-KosWalkStatus kos_dyn_unwind_to_node(KosEvalState *es,
-                                     const KosDynNode *target,
-                                     KosXferEvent event) {
+KosOpResult kos_dyn_unwind_to_node(
+    KosEvalState *es,
+    const KosDynNode *target,
+    KosXferEvent event) {
 
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_node: target=%p kind=%s",
@@ -149,48 +149,50 @@ KosWalkStatus kos_dyn_unwind_to_node(KosEvalState *es,
 
   while (KosEvalState_DYN_TOP(es) != NULL
          && KosEvalState_DYN_TOP(es) != target) {
-#if KOS_XFER_TRACE
-    {
-      KosDynNode *trace_top = KosEvalState_DYN_TOP(es);
-      SAYF("[xfer] unwind_to_node: popping node=%p kind=%s",
-           (void *) trace_top,
-           kos_dynnode_kind_name(KosDynNode_KIND(trace_top)));
-    }
-#endif
-    KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
     KosDynNode *stepping = KosEvalState_DYN_TOP(es);
-    int m = kos_map_pop_result(kos_dyn_pop_top_allow_barrier(es, event));
-    if (m < 0)
-      return KOS_WALK_ERROR;
-    if (m) {
-      /* as in kos_dyn_unwind_return: remember which node suspended */
+    KosOpResult r;
+
+    if (KOS_XFER_TRACE)
+      SAYF("[xfer] unwind_to_node: popping node=%p kind=%s",
+           (void *) stepping,
+           kos_dynnode_kind_name(KosDynNode_KIND(stepping)));
+    KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
+    r = kos_dyn_unlink_top(es, event, 1);
+    if (r.kind == KOS_RES_NORMAL)
+      continue;
+    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
+      /* the node's leave is in flight; the caller parks what it carries
+         and the return resumes once the node has left the chain */
       KosContext_PENDING_RETURN_NODE_ID(KosEvalState_CONTEXT(es)) =
         KosDynNode_NODE_ID(stepping);
-      return KOS_WALK_ASYNC_UNWIND;
     }
+    return r;
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_node: done, dyn_top=%p", (void *) KosEvalState_DYN_TOP(es));
-  return KOS_WALK_OK;
+  return EVAL_NORMAL();
 }
 
 
 /**
-   RETURN unwind walk to frame. See dynchain.h for the contract. Offers
-   handle(RETURN) to each top; a FINALLY consumes and branches to its
-   handler, a live DELIM invoke bookmark stops the walk for the caller to
-   route the value. Callers: eval.c eval_event_return, utils.c native apply
-   return.
+   RETURN unwind walk to frame. See dynchain.h for the contract. Callers:
+   eval.c eval_event_return, KosNativeFrame_Return.
 */
-KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
-                                    PyObject *val) {
+KosOpResult kos_dyn_unwind_return(
+    KosEvalState *es,
+    KosDynFrame *frame,
+    PyObject *val,
+    KosPendingReturnKind kind,
+    KosDynDelim **took) {
 
+  *took = NULL;
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_return: target frame=%p", (void *) frame);
 
   while (KosEvalState_DYN_TOP(es) != NULL
          && KosEvalState_DYN_TOP(es) != (KosDynNode *) frame) {
     KosDynNode *top = KosEvalState_DYN_TOP(es);
+    KosOpResult r;
 
     /* Stopping node: a live delimited-invoke bookmark.  The return has
        reached the delimiting reset; leave the DELIM at dyn_top and let the
@@ -201,7 +203,8 @@ KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
       if (KOS_XFER_TRACE)
         SAYF("[xfer] unwind_return: stopped at DELIM bookmark node=%p",
              (void *) top);
-      return KOS_WALK_DELIM_TAKING_RETURN;
+      *took = (KosDynDelim *) top;
+      return EVAL_NORMAL();
     }
 
     /* Handle phase: offer RETURN before unwind */
@@ -211,36 +214,33 @@ KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
         if (KosDynNode_IS_FINALLY(top)) {
           /* Deliver to finally block: clear stack, push value, set PC */
           KosDynFinally *fin = (KosDynFinally *) top;
-          {
-            if (KosEvalState_StackClear(es) < 0) {
-              Py_DECREF(val);
-              return KOS_WALK_ERROR;
-            }
-            if (KosEvalState_StackPushRef(es, val) < 0) {
-              Py_DECREF(val);
-              return KOS_WALK_ERROR;
-            }
+          if (KosEvalState_StackClear(es) < 0) {
+            Py_DECREF(val);
+            return EVAL_RAISE();
+          }
+          if (KosEvalState_StackPushRef(es, val) < 0) {
+            Py_DECREF(val);
+            return EVAL_RAISE();
           }
           Py_DECREF(val);
-          if (KosEvalState_FRAME(es)) {
+          if (KosEvalState_FRAME(es))
             KosEvalState_SET_PC(es, KosDynFinally_HANDLER_PC(fin));
-          }
           KosDynFinally_ENABLED(fin) = 0;
           KosDynFinally_HANDLING_RETURN(fin) = 1;
           if (KOS_XFER_TRACE)
             SAYF("[xfer] unwind_return: delivered to FINALLY, pc=%u",
                  (unsigned) KosDynFinally_HANDLER_PC(fin));
-          return KOS_WALK_FINALLY_TAKING_RETURN;
+          return EVAL_REPROLOGUE();
         }
         /* Other CONSUMED (e.g. GEN) not expected for RETURN walk */
         PyErr_SetString(PyExc_RuntimeError,
                         "handle(CONSUMED) during return walk: unexpected node");
         Py_DECREF(val);
-        return KOS_WALK_ERROR;
+        return EVAL_RAISE();
       }
       if (hr == KOS_HANDLE_ERROR) {
         Py_DECREF(val);
-        return KOS_WALK_ERROR;
+        return EVAL_RAISE();
       }
     }
 
@@ -248,26 +248,25 @@ KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
       SAYF("[xfer] unwind_return: popping node=%p kind=%s",
            (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
     KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
-    int m = kos_map_pop_result(
-        kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_RETURN));
-    if (m < 0) {
-      Py_DECREF(val);
-      return KOS_WALK_ERROR;
-    }
-    if (m) {
-      /* The node's leave thunk started and will suspend; the walk
-         stops here with val still owned by the caller, who parks it as
-         the context's pending return. The node's id is recorded so the
-         return resumes once that node has left the chain. */
+    r = kos_dyn_unlink_top(es, KOS_XFER_EVENT_RETURN, 1);
+    if (r.kind == KOS_RES_NORMAL)
+      continue;
+    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
+      /* The node's leave thunk started and will suspend; val parks as
+         the context's pending return, and the node's id is recorded so
+         the return resumes once that node has left the chain. */
       KosContext_PENDING_RETURN_NODE_ID(KosEvalState_CONTEXT(es)) =
         KosDynNode_NODE_ID(top);
-      return KOS_WALK_ASYNC_UNWIND;
+      KosEvalState_SetPendingReturn(es, val, kind, NULL);
+      return r;
     }
+    Py_DECREF(val);
+    return r;
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_return: done, dyn_top=%p",
          (void *) KosEvalState_DYN_TOP(es));
-  return KOS_WALK_OK;
+  return EVAL_NORMAL();
 }
 
 
@@ -277,8 +276,10 @@ KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
    than the FINALLY case, handled by kos_dyn_unwind_return) is an error.
    Callers: eval.c route_delim_return.
 */
-KosWalkStatus kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
-                                      KosXferEvent event) {
+KosOpResult kos_dyn_unwind_to_frame(
+    KosEvalState *es,
+    KosDynFrame *frame,
+    KosXferEvent event) {
 
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_frame: target frame=%p", (void *) frame);
@@ -286,6 +287,7 @@ KosWalkStatus kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
   while (KosEvalState_DYN_TOP(es) != NULL
          && KosEvalState_DYN_TOP(es) != (KosDynNode *) frame) {
     KosDynNode *top = KosEvalState_DYN_TOP(es);
+    KosOpResult r;
 
     /* Handle phase: offer event before unwind */
     {
@@ -294,31 +296,28 @@ KosWalkStatus kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
         /* RETURN: use kos_dyn_unwind_return. RAISE: use kos_dyn_unwind_raise. */
         PyErr_SetString(PyExc_RuntimeError,
                         "handle(CONSUMED) during unwind_to_frame not implemented");
-        return KOS_WALK_ERROR;
+        return EVAL_RAISE();
       }
-      if (hr == KOS_HANDLE_ERROR) {
-        return KOS_WALK_ERROR;
-      }
+      if (hr == KOS_HANDLE_ERROR)
+        return EVAL_RAISE();
     }
 
     if (KOS_XFER_TRACE)
       SAYF("[xfer] unwind_to_frame: popping node=%p kind=%s",
            (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
     KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
-    KosDynNode *stepping = KosEvalState_DYN_TOP(es);
-    int m = kos_map_pop_result(kos_dyn_pop_top_allow_barrier(es, event));
-    if (m < 0)
-      return KOS_WALK_ERROR;
-    if (m) {
-      /* as in kos_dyn_unwind_return: remember which node suspended */
+    r = kos_dyn_unlink_top(es, event, 1);
+    if (r.kind == KOS_RES_NORMAL)
+      continue;
+    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
       KosContext_PENDING_RETURN_NODE_ID(KosEvalState_CONTEXT(es)) =
-        KosDynNode_NODE_ID(stepping);
-      return KOS_WALK_ASYNC_UNWIND;
+        KosDynNode_NODE_ID(top);
     }
+    return r;
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_frame: done, dyn_top=%p", (void *) KosEvalState_DYN_TOP(es));
-  return KOS_WALK_OK;
+  return EVAL_NORMAL();
 }
 
 
@@ -343,16 +342,19 @@ KosDynNode *kos_dyn_find_loop(KosEvalState *es) {
    contract. Finds the loop region in the current frame, unwinds to it, then
    sets PC and stack per event. Callers: opcode/BREAK.c, opcode/CONTINUE.c.
 */
-KosWalkStatus kos_dyn_unwind_to_loop(KosEvalState *es, KosXferEvent event,
-                                     PyObject *result) {
+KosOpResult kos_dyn_unwind_to_loop(
+    KosEvalState *es,
+    KosXferEvent event,
+    PyObject *result) {
 
   KosDynNode *region = kos_dyn_find_loop(es);
   if (! region) {
+    Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,
                     (event == KOS_XFER_EVENT_BREAK)
                         ? "break outside loop"
                         : "continue outside loop");
-    return KOS_WALK_ERROR;
+    return EVAL_RAISE();
   }
 
   /* Same-frame check: loop must be in current frame (frame is ancestor) */
@@ -366,19 +368,24 @@ KosWalkStatus kos_dyn_unwind_to_loop(KosEvalState *es, KosXferEvent event,
       }
     }
     if (! frame || ! in_frame) {
+      Py_DECREF(result);
       PyErr_SetString(PyExc_RuntimeError,
                       (event == KOS_XFER_EVENT_BREAK)
                           ? "break outside loop"
                           : "continue outside loop");
-      return KOS_WALK_ERROR;
+      return EVAL_RAISE();
     }
   }
 
   /* Walk from DYN_TOP toward region; unwind each node with event */
   while (KosEvalState_DYN_TOP(es) != (KosDynNode *) region) {
-    int m = kos_map_pop_result(kos_dyn_pop_nonbarrier_top(es, event));
-    if (m)
-      return (m < 0) ? KOS_WALK_ERROR : KOS_WALK_ASYNC_UNWIND;
+    KosOpResult r = kos_dyn_unlink_top(es, event, 0);
+    if (r.kind != KOS_RES_NORMAL) {
+      /* a leave in flight: the break or continue does not resume once
+         it settles, and result has no one to go to */
+      Py_DECREF(result);
+      return r;
+    }
   }
 
   if (event == KOS_XFER_EVENT_CONTINUE) {
@@ -395,12 +402,11 @@ KosWalkStatus kos_dyn_unwind_to_loop(KosEvalState *es, KosXferEvent event,
         ? KosDynLoop_CONTINUE_PC((KosDynLoop *) region)
         : KosDynForeach_CONTINUE_PC((KosDynForeach *) region);
 
-    if (KosEvalState_StackClear(es) < 0) {
-      return KOS_WALK_ERROR;
-    }
+    if (KosEvalState_StackClear(es) < 0)
+      return EVAL_RAISE();
 
     KosEvalState_SET_PC(es, continue_pc);
-    return KOS_WALK_OK;
+    return EVAL_NORMAL();
   }
 
   /* KOS_XFER_EVENT_BREAK: read break_pc before popping, then pop, drop block,
@@ -410,20 +416,23 @@ KosWalkStatus kos_dyn_unwind_to_loop(KosEvalState *es, KosXferEvent event,
       : KosDynForeach_BREAK_PC((KosDynForeach *) region);
 
   if (KosDynNode_IS_LOOP(region)) {
-    if (kos_dyn_pop_loop(es, (KosDynLoop *) region) < 0)
-      return KOS_WALK_ERROR;
+    if (kos_dyn_pop_loop(es, (KosDynLoop *) region) < 0) {
+      Py_DECREF(result);
+      return EVAL_RAISE();
+    }
   } else if (kos_dyn_pop_foreach(es, (KosDynForeach *) region) < 0) {
-    return KOS_WALK_ERROR;
+    Py_DECREF(result);
+    return EVAL_RAISE();
   }
 
   if (KosEvalState_StackPushRef(es, result) < 0) {
     Py_DECREF(result);
-    return KOS_WALK_ERROR;
+    return EVAL_RAISE();
   }
   Py_DECREF(result);
 
   KosEvalState_SET_PC(es, break_pc);
-  return KOS_WALK_OK;
+  return EVAL_NORMAL();
 }
 
 

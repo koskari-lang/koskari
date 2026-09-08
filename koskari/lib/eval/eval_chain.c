@@ -258,8 +258,19 @@ static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
     }
 
     if (plan_res == KOS_XFER_SUSPENDED_AWAIT) {
-      SAY("[eval] transfer step suspended on await\n");
-      /* do not clear plan; driver will resume and feed inject */
+      KosTransferPlan *plan = KosEvalState_PLAN(es);
+      PyObject *awaitable = KosTransferPlan_STEP_AWAITABLE(plan);
+
+      if (awaitable) {
+        /* the step suspended on a Python awaitable: the plan stays
+           armed and the driver gets the awaitable; the await revive
+           puts the settled value on the block for the step to take */
+        KosTransferPlan_STEP_AWAITABLE(plan) = NULL;
+        SAY("[eval] transfer step suspended on await -> driver\n");
+        return eval_event_await(es, awaitable);
+      }
+      /* the step handed control to a thunk frame: run it */
+      SAY("[eval] transfer step handed control to a thunk\n");
       return EVAL_NORMAL();
     }
 

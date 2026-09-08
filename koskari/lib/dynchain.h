@@ -531,44 +531,14 @@ typedef struct KosDynNode KosDynFrame;
 
 
 /**
-   KosWalkStatus is the outcome of a dynchain unwind walk.  Every
-   kos_dyn_unwind_* traversal returns it, except kos_dyn_unwind_raise,
-   which returns KosOpResult because it is the boundary to the eval loop
-   (process_raise) and must speak that loop's result vocabulary.
-
-   KOS_WALK_OK                    - walk completed; caller proceeds
-   KOS_WALK_ERROR                 - PyErr set; caller faults
-   KOS_WALK_ASYNC_UNWIND          - an extent wind/unwind started async work
-                                    (wind after-hook, or WITH __exit__
-                                    returning an awaitable); caller stages
-                                    resume state and reprologues
-   KOS_WALK_FINALLY_TAKING_RETURN - a FINALLY consumed the RETURN; the value
-                                    was delivered to the finally block and the
-                                    caller reprologues at its handler
-   KOS_WALK_DELIM_TAKING_RETURN   - the RETURN walk stopped at a DELIM invoke
-                                    bookmark (left at dyn_top); the caller
-                                    routes the value to the k-invocation site
-                                    (the value is NOT consumed by the walk)
-*/
-typedef enum KosWalkStatus {
-  KOS_WALK_OK = 0,
-  KOS_WALK_ERROR,
-  KOS_WALK_ASYNC_UNWIND,
-  KOS_WALK_FINALLY_TAKING_RETURN,
-  KOS_WALK_DELIM_TAKING_RETURN,
-} KosWalkStatus;
-
-
-/**
    RAISE unwind walk: from dyn_top toward the innermost frame, offer
    handle(RAISE) to each node then pop, delivering to the first TRY or
    FINALLY that consumes and crossing frame and generator boundaries as
    the exception propagates.
 
-   This is the boundary to the eval loop, so it returns KosOpResult (not
-   KosWalkStatus): EVAL_REPROLOGUE when a handler applied, EVAL_RAISE when
-   no handler remains (PyErr set, surfacing raise prepared), EVAL_AWAIT when
-   an async unwind started.
+   Like every walk it returns KosOpResult: EVAL_REPROLOGUE when a handler
+   applied, EVAL_RAISE when no handler remains (PyErr set, surfacing raise
+   prepared), EVAL_AWAIT when an async unwind started.
 
    Callers: process_raise (the unified RAISE ingress in eval.c).
    Implemented in dynchain.c (dyn_walk).
@@ -1760,44 +1730,66 @@ static inline KosOpResult kos_dyn_pop_top_allow_barrier(
 
 
 /**
-   Generic unwind walk toward a frame: pop from dyn_top to frame, offering
-   handle(event) to each node before popping.  The event is a diagnostic
-   tag; nodes react through their unwind semantics.  A node that CONSUMES
-   (other than the FINALLY case, which uses kos_dyn_unwind_return) is an
-   error.
-
-   Callers: eval.c delimited-return routing (route_delim_return via SHIFT).
-
-   :return: KOS_WALK_OK, KOS_WALK_ERROR, or KOS_WALK_ASYNC_UNWIND
+   Which return path a parked pending return re-enters once the node
+   whose leave thunk suspended the unwind walk has finished.
 */
-KosWalkStatus kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
-                                      KosXferEvent event);
+typedef enum KosPendingReturnKind {
+  KOS_PENDING_RETURN_NONE = 0,
+  KOS_PENDING_RETURN_FRAME,   /* a bytecode frame's RETURN */
+  KOS_PENDING_RETURN_NATIVE,  /* a native frame's return */
+  KOS_PENDING_RETURN_DELIM,   /* routed to a delimited-invoke bookmark */
+} KosPendingReturnKind;
 
 
 /**
-   RETURN unwind walk to frame: offer handle(RETURN) to each node then pop.
-   When a FINALLY consumes, deliver (push value to block, set PC to finally,
-   set handling_return) and return KOS_WALK_FINALLY_TAKING_RETURN; the
-   caller reprologues at the finally.  When the walk's top is a DELIM
-   carrying a live invoke bookmark (RETURN_FRAME + RETURN_PC), the return
-   has reached a delimiting reset: the walk stops with the DELIM at dyn_top
-   and returns KOS_WALK_DELIM_TAKING_RETURN, leaving val unconsumed for the
-   caller to route to the k-invocation site.
+   The unwind walks. Each pops from dyn_top toward its target through
+   kos_dyn_unlink_top and answers KosOpResult: EVAL_NORMAL when the
+   target is dyn_top; EVAL_REPROLOGUE or EVAL_AWAIT (payload in .val)
+   when a node's leave went into a thunk frame or onto an awaitable, the
+   node still at dyn_top for the hook to settle; EVAL_RAISE or EVAL_FATAL
+   with PyErr set.
 
-   Callers: eval.c eval_event_return (RETURN plumbing), utils.c native
-   apply return.
+   kos_dyn_unwind_to_frame and kos_dyn_unwind_to_node offer handle(event)
+   to each node before popping and cross barriers and delimiters; a node
+   that CONSUMES is an error for them. A suspension leaves the value the
+   caller is carrying with the caller, to park.
 
-   :param val: return value; ownership transferred to the finally block on
-     KOS_WALK_FINALLY_TAKING_RETURN, left with the caller on
-     KOS_WALK_DELIM_TAKING_RETURN and on KOS_WALK_ASYNC_UNWIND (the
-     caller parks it on the context as the pending return, to resume
-     the walk once the suspended node's thunk has returned), released
-     on KOS_WALK_OK and KOS_WALK_ERROR
-   :return: KOS_WALK_OK, KOS_WALK_ERROR, KOS_WALK_ASYNC_UNWIND,
-     KOS_WALK_FINALLY_TAKING_RETURN, or KOS_WALK_DELIM_TAKING_RETURN
+   kos_dyn_unwind_return is the RETURN walk. It offers handle(RETURN): a
+   FINALLY consumes the return, taking val onto its block and branching
+   to its handler, and the walk answers EVAL_REPROLOGUE. A live DELIM
+   invoke bookmark stops the walk: it is left at dyn_top, stored in
+   *took, and the walk answers EVAL_NORMAL with val still the caller's to
+   route. A suspension parks val as the context's pending return of the
+   given kind before answering. val is consumed on every answer but
+   EVAL_NORMAL.
+
+   kos_dyn_unwind_to_loop serves BREAK and CONTINUE: it finds the
+   innermost loop region in the current frame, pops to it, and on
+   EVAL_NORMAL has set the pc and either stored result on the region
+   (CONTINUE) or popped the region and pushed result (BREAK). result is
+   consumed on every answer.
 */
-KosWalkStatus kos_dyn_unwind_return(KosEvalState *es, KosDynFrame *frame,
-                                    PyObject *val);
+KosOpResult kos_dyn_unwind_to_frame(
+    KosEvalState *es,
+    KosDynFrame *frame,
+    KosXferEvent event);
+
+KosOpResult kos_dyn_unwind_to_node(
+    KosEvalState *es,
+    const KosDynNode *target,
+    KosXferEvent event);
+
+KosOpResult kos_dyn_unwind_return(
+    KosEvalState *es,
+    KosDynFrame *frame,
+    PyObject *val,
+    KosPendingReturnKind kind,
+    KosDynDelim **took);
+
+KosOpResult kos_dyn_unwind_to_loop(
+    KosEvalState *es,
+    KosXferEvent event,
+    PyObject *result);
 
 
 /**
@@ -1816,35 +1808,13 @@ int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
 int kos_dyn_chain_has_node_id(KosEvalState *es, uint32_t node_id);
 
 
-/**
-   Generic unwind walk toward a target node: pop from dyn_top to target,
-   crossing barriers and delimiters (PROMPT pops via the barrier-crossing
-   policy), offering handle(event) as a diagnostic tag.
-
-   Callers: eval.c delimited-return routing (route_delim_return via SHIFT),
-   continuation transfer helpers.
-
-   :return: KOS_WALK_OK, KOS_WALK_ERROR, or KOS_WALK_ASYNC_UNWIND
-*/
-KosWalkStatus kos_dyn_unwind_to_node(KosEvalState *es,
-                                     const KosDynNode *target,
-                                     KosXferEvent event);
-
 
 /**
-   Internal xfer-layer status: extent wind/unwind started async work (e.g.
-   wind after hook, WITH __exit__ returning awaitable).  Caller must not
-   pop the node yet; the evaluator runs the hook or awaits the exit then
-   resumes unwinding.  The unwind walks surface it as KOS_WALK_ASYNC_UNWIND.
+   Transfer plan step protocol: a step that handed control to a thunk
+   frame, or stashed an awaitable on the plan, answers this instead of 0.
+   The plan rework replaces this protocol with KosOpResult.
 */
 #define KOS_DYN_UNWIND_ASYNC_STARTED 1
-
-/** When exception swallowed: unwind did full cleanup (DropBlock, pop_with,
-    push None); caller must return 0 without further action. */
-#define KOS_DYN_UNWIND_SWALLOWED 2
-
-/** WITH skipped __exit__ (single-shot already consumed); not an error */
-#define KOS_DYN_UNWIND_PROTOCOL_SKIPPED 4
 
 
 int kos_dyn_param_wind(KosEvalState *es, KosDynParam *node);
@@ -2012,23 +1982,7 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
 KosDynNode *kos_dyn_find_loop(KosEvalState *es);
 
 
-/**
-   BREAK/CONTINUE unwind walk to the innermost loop: locate the loop region
-   in the current frame, pop from dyn_top toward it with unwind(event), then
-   deliver the event -- resuming at continue_pc (CONTINUE) or popping the
-   region and resuming at break_pc (BREAK).
 
-   Callers: opcode/BREAK.c, opcode/CONTINUE.c.
-
-   :param event: KOS_XFER_EVENT_BREAK or KOS_XFER_EVENT_CONTINUE
-   :param result: loop result value (transferred; caller loses ownership)
-
-   :return: KOS_WALK_OK, KOS_WALK_ERROR (break/continue outside loop, or
-     same-frame check failed), or KOS_WALK_ASYNC_UNWIND when an async unwind
-     started
-*/
-KosWalkStatus kos_dyn_unwind_to_loop(KosEvalState *es, KosXferEvent event,
-                                     PyObject *result);
 
 
 /**

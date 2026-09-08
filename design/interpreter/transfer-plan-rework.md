@@ -435,7 +435,14 @@ switches on `KosDynNode_KIND`.
    plan) and skips a node in flight for someone else, whose thunk the
    INSTALL replaces the chain under.
 2. Result currency. Closes D1 and, by making AWAIT reach the driver, D9;
-   verify D9 with the GC test in §6.
+   verify D9 with the GC test in §6. Bridge for the old driver, deleted in
+   step 4: an extent step's AWAIT payload rides in `step_awaitable` to the
+   drain, which hands it to the driver through `eval_event_await`; the
+   entry phase routes an AWAIT-suspended plan through the await revive, so
+   the settled value lands on the block for the step's `settle`. The
+   walks consume what they carry on every answer but NORMAL, and a leave
+   that raises during a return walk now reaches `process_raise` where it
+   was EVAL_FATAL.
 3. §3.6.
 4. §3.1, §3.2, §3.7, §3.8 as one change. Closes D2, D3, D8, D10.
 5. §3.9, §3.10. Closes D4, D5.

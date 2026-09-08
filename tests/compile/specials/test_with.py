@@ -155,6 +155,40 @@ class TestWithEnterFailure(SpecialsTestCase):
         self.assertEqual(mgr.events, ["enter"])
 
 
+class RaisingExitMgr:
+    """
+    __exit__ raises on every exit
+    """
+
+    def __enter__(self):
+        return self
+
+
+    def __exit__(self, typ, val, tb):
+        raise ValueError("exit refused")
+
+
+class TestWithExitRaisesOnReturn(SpecialsTestCase):
+
+    async def test_exit_raising_during_return_is_catchable(self):
+        """
+        a return crossing a with whose __exit__ raises reaches the
+        enclosing handler
+        """
+
+        src_str = """
+        (call
+          (lambda []
+            (try
+              (with [(call make_mgr)] (return 1))
+              ([ValueError] "caught"))))
+        """
+        expr, mod = self.compile_expr(
+            src_str, make_mgr=RaisingExitMgr, ValueError=ValueError)
+        result = await expr()
+        self.assertEqual(result, "caught")
+
+
 class TestWithSpecial(SpecialsTestCase):
 
     async def test_normal_enter_exit_expression_returns_none(self):

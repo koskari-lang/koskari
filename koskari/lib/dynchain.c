@@ -1955,22 +1955,6 @@ KosOpResult kos_dyn_unlink_top(
 
 
 /**
-   Map a pop/wind KosOpResult to the int unwind protocol: 0 on normal,
-   KOS_DYN_UNWIND_ASYNC_STARTED on AWAIT (releases r.val) or REPROLOGUE,
-   -1 on anything else (RAISE, FATAL).
-*/
-static inline int kos_map_pop_result(KosOpResult r) {
-  if (r.kind == KOS_RES_AWAIT) {
-    Py_XDECREF(r.val);
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  }
-  if (r.kind == KOS_RES_REPROLOGUE)
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  return (r.kind == KOS_RES_NORMAL) ? 0 : -1;
-}
-
-
-/**
    Clone node then kos_dyn_push the clone. Used when the source node is shared
    or must remain immutable on the template chain.
 */

@@ -122,18 +122,20 @@ KosDynPrompt *kos_dyn_push_prompt(
    Pop prompt via barrier-crossing policy API using shared uninstall machinery.
 */
 int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
+  KosOpResult kr;
+
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) prompt)
     return 0;
-  KosOpResult kr = kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE);
-  if (kr.kind == KOS_RES_AWAIT) {
-    Py_XDECREF(kr.val);
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  }
-  if (kr.kind == KOS_RES_REPROLOGUE)
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  if (kr.kind != KOS_RES_NORMAL)
-    return -1;
-  return 0;
+
+  /* a prompt's leave is synchronous: NORMAL or an error */
+  kr = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 1);
+  if (kr.kind == KOS_RES_NORMAL)
+    return 0;
+  Py_XDECREF(kr.val);
+  if (! PyErr_Occurred())
+    PyErr_SetString(PyExc_SystemError,
+                    "kos_dyn_pop_prompt: leave did not complete");
+  return -1;
 }
 
 
