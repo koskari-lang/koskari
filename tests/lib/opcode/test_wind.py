@@ -78,5 +78,34 @@ class TestWindOpcodes(CevalTest):
         self.assertEqual(result, 99)
         self.assertEqual(log, ['after'])
 
+    async def test_pop_wind_releases_body_result_when_after_thunk_raises(self):
+        """
+        An after thunk whose call raises synchronously, a partial over a
+        Python function here, leaves the wind's body result released
+        once the exception propagates
+        """
+
+        import sys
+        from koskari.lib import KosPartial
+
+        def boom():
+            raise RuntimeError("teardown")
+
+        marker = object()
+        code, ns = build_expr([
+            ['CONST', None],
+            ['VAR', 'boom'],
+            ['PUSH_WIND', 2],
+            ['VAR', 'marker'],
+            ['POP_WIND', 0],
+            ['RETURN', 1],
+        ], values={'boom': KosPartial(boom), 'marker': marker})
+
+        before = sys.getrefcount(marker)
+        for _ in range(3):
+            with self.assertRaises(RuntimeError):
+                await make_callable(code, ns)()
+        self.assertEqual(sys.getrefcount(marker), before)
+
 
 # The end.

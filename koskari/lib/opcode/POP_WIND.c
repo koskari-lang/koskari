@@ -39,9 +39,12 @@ KOS_OP_HANDLER(POP_WIND) {
     RESULT_CONTINUE(es);
   }
   if (kr.kind == KOS_RES_RAISE) {
+    /* the after thunk failed before it could run: take the body result
+       back from the wind and leave it on the stack for the raise walk
+       to clear. The push steals the reference, releasing it on failure,
+       so nothing is left owned here. */
     KosDynWind_BODY_RESULT(wind) = NULL;
-    if (KosEvalState_StackPushRef(es, body_result) < 0)
-      Py_DECREF(body_result);
+    (void) KosEvalState_StackPUSH(es, body_result);
     RESULT_RAISE();
   }
   RESULT_NEXT(es);
