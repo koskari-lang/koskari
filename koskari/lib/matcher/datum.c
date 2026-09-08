@@ -328,6 +328,25 @@ static PyObject *datum_frame_get_from_datum(PyObject *self, void *closure) {
 }
 
 
+/* Every DatumFrame starts with source and position set to None, from
+   whichever side constructs it: the getters and the frame writers in
+   matcher.c rely on both fields being real objects. */
+static PyObject *datum_frame_new(PyTypeObject *type, PyObject *args,
+                                 PyObject *kwds) {
+  PyObject *self = PyDict_Type.tp_new(type, args, kwds);
+  if (! self)
+    return NULL;
+
+  KosDatumFrame *f = (KosDatumFrame *) self;
+  Py_INCREF(Py_None);
+  f->source = Py_None;
+  Py_INCREF(Py_None);
+  f->position = Py_None;
+  f->from_datum = 0;
+  return self;
+}
+
+
 static PyGetSetDef datum_frame_getset[] = {
   { "source", datum_frame_get_source, NULL,
     "Matched source represented by this capture frame", NULL },
@@ -347,6 +366,7 @@ PyTypeObject KosDatumFrameType = {
   .tp_repr = datum_frame_repr,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "Capture dict with source provenance",
+  .tp_new = datum_frame_new,
   .tp_traverse = datum_frame_traverse,
   .tp_clear = datum_frame_clear,
   .tp_getset = datum_frame_getset,
@@ -355,18 +375,8 @@ PyTypeObject KosDatumFrameType = {
 
 
 static PyObject *kos_datum_frame_new(void) {
-
-  PyObject *self = PyObject_CallNoArgs((PyObject *) &KosDatumFrameType);
-  if (! self)
-    return NULL;
-
-  KosDatumFrame *f = (KosDatumFrame *) self;
-  Py_INCREF(Py_None);
-  Py_INCREF(Py_None);
-  f->source = Py_None;
-  f->position = Py_None;
-  f->from_datum = 0;
-  return self;
+  /* tp_new fills source and position */
+  return PyObject_CallNoArgs((PyObject *) &KosDatumFrameType);
 }
 
 

@@ -111,4 +111,35 @@ class TestDatumPosition(unittest.TestCase):
         self.assertIsNone(result.captures["head"].position)
 
 
+class TestDatumFrameConstruction(unittest.TestCase):
+    """
+    A DatumFrame built from Python is as well formed as one the matcher
+    builds: source and position are None, not unset
+    """
+
+    def test_empty_frame_fields(self):
+        frame = DatumFrame()
+        self.assertIsNone(frame.source)
+        self.assertIsNone(frame.position)
+        self.assertFalse(frame.from_datum)
+        self.assertEqual(dict(frame), {})
+        self.assertIn("source=None", repr(frame))
+        self.assertIn("position=None", repr(frame))
+
+    def test_dict_style_construction_keeps_fields(self):
+        frame = DatumFrame({"a": 1}, b=2)
+        self.assertEqual(dict(frame), {"a": 1, "b": 2})
+        self.assertIsNone(frame.source)
+        self.assertIsNone(frame.position)
+        self.assertEqual(frame["a"], 1)
+
+    def test_fields_survive_dict_mutation_and_copy(self):
+        frame = DatumFrame()
+        frame["x"] = symbol("x")
+        frame.clear()
+        self.assertIsNone(frame.source)
+        self.assertIsNone(frame.position)
+        self.assertIsNone(DatumFrame(frame).position)
+
+
 # The end.
