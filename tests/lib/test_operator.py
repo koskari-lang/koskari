@@ -751,4 +751,45 @@ class TestOperatorBuildStr(unittest.IsolatedAsyncioTestCase):
         self.assertIs(type(result), str)
 
 
+class Ambiguous:
+    """
+    Compares to a result whose truth cannot be taken, as an array does
+    """
+
+    def __init__(self, tag):
+        self.tag = tag
+
+    def __eq__(self, other):
+        return Ambiguous(f"{self.tag}=={other.tag}")
+
+    def __lt__(self, other):
+        return Ambiguous(f"{self.tag}<{other.tag}")
+
+    def __bool__(self):
+        raise ValueError("truth value is ambiguous")
+
+
+class TestChainedCompare(unittest.TestCase):
+
+    def test_two_operands_return_the_rich_compare_result(self):
+        eq = getattr(lib, '==')
+        result = eq(Ambiguous("a"), Ambiguous("b"))
+        self.assertIsInstance(result, Ambiguous)
+        self.assertEqual(result.tag, "a==b")
+
+        lt = getattr(lib, '<')
+        self.assertEqual(lt(Ambiguous("a"), Ambiguous("b")).tag, "a<b")
+
+    def test_chain_truth_error_propagates_without_a_value(self):
+        eq = getattr(lib, '==')
+        with self.assertRaises(ValueError):
+            eq(Ambiguous("a"), Ambiguous("b"), Ambiguous("c"))
+
+    def test_chain_stops_at_first_false_step(self):
+        lt = getattr(lib, '<')
+        self.assertIs(lt(1, 2, 3), True)
+        self.assertIs(lt(1, 3, 2), False)
+        self.assertIs(lt(3, 1, Ambiguous("never")), False)
+
+
 # The end.

@@ -92,14 +92,21 @@ static inline PyObject *chain_compare(
   }
 
   PyObject *value = chain_compare_step(opid, args[0], args[1]);
-  if (unlikely(! value) || PyObject_Not(value))
-    return value;
 
-  for (size_t i = 2; i < (size_t) count; i++) {
+  /* Two operands are one comparison: hand back whatever the rich
+     compare produced, untested, as Python does for a == b. Only a
+     chain needs each step's truth to decide whether to go on. */
+  for (size_t i = 2; value && i < (size_t) count; i++) {
+    int falsy = PyObject_Not(value);
+    if (falsy) {
+      /* a false step ends the chain with its value; an error (-1)
+         from the truth test ends it with nothing */
+      if (falsy < 0)
+        Py_CLEAR(value);
+      return value;
+    }
     Py_DECREF(value);
     value = chain_compare_step(opid, args[i - 1], args[i]);
-    if (unlikely(! value) || PyObject_Not(value))
-      return value;
   }
 
   return value;
