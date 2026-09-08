@@ -41,7 +41,7 @@ class TestTheEndBarrier(CevalTest):
         it is the barrier the assembler appends itself.
         """
 
-        with self.assertRaises(RuntimeError) as ctx:
+        with self.assertRaises(ValueError) as ctx:
             build_expr([
                 ["THEEND", 0],
                 ["RETURN", 1],

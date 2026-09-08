@@ -1501,31 +1501,11 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
      into labels dict and pos_entries. */
   uint32_t di = 0;
   for (Py_ssize_t i = 0; i < instr_l; i++) {
+    /* shape and opcode range were checked by validate_instructions
+       before anything read the items */
     PyObject *pair = PySequence_Fast_GET_ITEM(instr, i);
-    if (! PySequence_Check(pair) || PySequence_Fast_GET_SIZE(pair) < 2) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "Code instructions must be pairs of 2");
-      goto failure;
-    }
-
-    PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
     PyObject *b = PySequence_Fast_GET_ITEM(pair, 1);
-    if (! PyLong_Check(a)) {
-      PyErr_Format(PyExc_RuntimeError, "Code instruction undefined %R:%R",
-                   a, b);
-      goto failure;
-    }
-
-    long lop = PyLong_AsLong(a);
-    if (lop < (long) KOS_OP_NOOP || lop >= (long) KOS_OP_THEEND) {
-      /* THEEND is the end-of-code barrier we append ourselves; it is not a
-         valid user-supplied instruction. */
-      PyErr_Format(PyExc_RuntimeError, "Code instruction undefined %R:%R",
-                   a, b);
-      goto failure;
-    }
-
-    KosOpCode op = (KosOpCode) lop;
+    KosOpCode op = (KosOpCode) PyLong_AsLong(PySequence_Fast_GET_ITEM(pair, 0));
 
     if (op == KOS_OP_LABEL) {
       /* Record label name -> output pc; LABEL itself is not emitted */
@@ -3162,6 +3142,56 @@ PyTypeObject KosCodeType = {
    :return: 0 on success; -1 (with exception) if the total would exceed the
      index range (KOS_CACHE_UNSET is reserved as the unset sentinel)
 */
+/* The one shape check for user-supplied instructions, run before any
+   reader touches the items: every item is a list or tuple (the only
+   types the PySequence_Fast item macros are defined for) of at least
+   two elements whose first is an int in the opcode range. THEEND is
+   the end-of-code barrier appended by finalize and is not accepted. */
+static int validate_instructions(PyObject *instr) {
+  Py_ssize_t n = PySequence_Fast_GET_SIZE(instr);
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *pair = PySequence_Fast_GET_ITEM(instr, i);
+
+    if (! (PyList_Check(pair) || PyTuple_Check(pair))) {
+      PyErr_Format(PyExc_TypeError, "Code instruction %zd must be a list or"
+                   " tuple, not %.100s", i, Py_TYPE(pair)->tp_name);
+      return -1;
+    }
+    if (PySequence_Fast_GET_SIZE(pair) < 2) {
+      PyErr_Format(PyExc_ValueError, "Code instruction %zd must have an"
+                   " opcode and an argument", i);
+      return -1;
+    }
+
+    PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
+    if (! PyLong_Check(a)) {
+      PyErr_Format(PyExc_TypeError, "Code instruction %zd opcode must be an"
+                   " int, not %.100s", i, Py_TYPE(a)->tp_name);
+      return -1;
+    }
+
+    long lop = PyLong_AsLong(a);
+    if (lop == (long) KOS_OP_THEEND) {
+      /* the end-of-code barrier is appended by finalize; it is not an
+         instruction a caller may supply */
+      PyErr_Format(PyExc_ValueError, "Code instruction %zd is THEEND, the"
+                   " end-of-code barrier the assembler appends itself", i);
+      return -1;
+    }
+    if ((lop == -1 && PyErr_Occurred())
+        || lop < (long) KOS_OP_NOOP || lop > (long) KOS_OP_THEEND) {
+      PyErr_Clear();
+      PyErr_Format(PyExc_ValueError, "Code instruction %zd opcode %R is"
+                   " undefined", i, a);
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+
 static int count_cache_slots(PyObject *instr, uint16_t *out) {
 
   Py_ssize_t n = PySequence_Fast_GET_SIZE(instr);
@@ -3221,6 +3251,11 @@ PyObject *KosCode_New(
 
   instr = PySequence_Fast(instr, "Code instructions must be a sequence");
   if (! instr) {
+    return NULL;
+  }
+
+  if (validate_instructions(instr)) {
+    Py_DECREF(instr);
     return NULL;
   }
 
