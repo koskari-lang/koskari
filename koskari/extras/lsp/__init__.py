@@ -21,7 +21,13 @@ LSP server for Koskari source. Requires koskari[lsp] (pygls).
 # prompt_toolkit LSP enhancements.
 
 
-from koskari.extras.lsp.server import create_server, main
+try:
+    from .server import create_server, main
+
+except ImportError:
+    raise ImportError(
+        "koskari.extras.lsp requires koskari[lsp]. "
+        "Install with: pip install koskari[lsp]") from None
 
 
 __all__ = (

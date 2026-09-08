@@ -17,9 +17,6 @@ koskari.extras.lsp.handlers
 LSP request/notification handlers for diagnostics, hover, and completion.
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit LSP enhancements.
-
 
 from lsprotocol.types import (
     CompletionItem,
@@ -31,17 +28,29 @@ from lsprotocol.types import (
     MarkupContent,
     MarkupKind,
     PublishDiagnosticsParams,
+    Position,
+    Range,
 )
 
-from koskari.exceptions import ReaderError
-from koskari.lexer import (
+from ...exceptions import ReaderError
+from ...lexer import (
     LAYOUT_BLOCK_NAMES,
     SPECIAL_NAMES,
     make_layout_reader,
     parse_all,
     tokenize,
 )
-from koskari.extras.lsp.utils import get_word_at_position, koskari_to_lsp_range
+
+from .utils import get_word_at_position, koskari_to_lsp_range
+
+
+__all__ = (
+    'collect_diagnostics',
+    'handle_completion',
+    'handle_did_change',
+    'handle_did_open',
+    'handle_hover',
+)
 
 
 def collect_diagnostics(source, uri):
@@ -63,6 +72,7 @@ def collect_diagnostics(source, uri):
     try:
         for _ in parse_all(source, uri, reader=reader):
             pass
+
     except ReaderError as exc:
         location = getattr(exc, 'location', None)
         message = getattr(exc, 'message', str(exc))
@@ -71,11 +81,13 @@ def collect_diagnostics(source, uri):
             lines = source.splitlines()
             if 1 <= location[0] <= len(lines):
                 line_content = lines[location[0] - 1]
+
         rng = koskari_to_lsp_range(location, line_content)
         diagnostics.append(Diagnostic(
             range=rng,
             message=message,
             severity=DiagnosticSeverity.Error))
+
     except Exception:
         diagnostics.append(Diagnostic(
             range=koskari_to_lsp_range((1, 0)),
@@ -86,11 +98,14 @@ def collect_diagnostics(source, uri):
 
 
 def _publish_diagnostics(ls, params):
-    """Parse the referenced document and publish its diagnostics."""
+    """
+    Parse the referenced document and publish its diagnostics
+    """
 
     doc = ls.workspace.get_text_document(_get_uri(params.text_document))
     if doc is None:
         return
+
     diagnostics = collect_diagnostics(doc.source, doc.uri)
     ls.diagnostics[doc.uri] = (doc.version, diagnostics)
     ls.text_document_publish_diagnostics(
@@ -101,13 +116,17 @@ def _publish_diagnostics(ls, params):
 
 
 def handle_did_open(ls, params):
-    """Handle textDocument/didOpen: parse and publish diagnostics."""
+    """
+    Handle textDocument/didOpen: parse and publish diagnostics
+    """
 
     _publish_diagnostics(ls, params)
 
 
 def handle_did_change(ls, params):
-    """Handle textDocument/didChange: parse and publish diagnostics."""
+    """
+    Handle textDocument/didChange: parse and publish diagnostics
+    """
 
     _publish_diagnostics(ls, params)
 
@@ -115,13 +134,16 @@ def handle_did_change(ls, params):
 def _get_uri(text_document):
     if hasattr(text_document, 'uri'):
         return text_document.uri
+
     if isinstance(text_document, dict):
         return text_document.get('uri')
     return None
 
 
 def handle_completion(ls, params):
-    """Handle textDocument/completion: return special forms and layout heads."""
+    """
+    Handle textDocument/completion: return special forms and layout heads
+    """
 
     doc = ls.workspace.get_text_document(_get_uri(params.text_document))
     if doc is None:
@@ -136,9 +158,8 @@ def handle_completion(ls, params):
 
     return CompletionList(
         is_incomplete=False,
-        items=[
-            CompletionItem(label=c, kind=CompletionItemKind.Function)
-            for c in matching])
+        items=[CompletionItem(label=c, kind=CompletionItemKind.Function)
+               for c in matching])
 
 
 def _token_at_position(source, line_1, col_1):
@@ -153,25 +174,33 @@ def _token_at_position(source, line_1, col_1):
             return tok
         if tok.start_line > line_1:
             break
+
     return None
 
 
 def _hover_for_symbol(name):
-    """Return hover content for a special or layout name."""
+    """
+    Return hover content for a special or layout name
+    """
 
     if name in SPECIAL_NAMES:
         return 'Special form: `' + name + '`'
+
     if name in LAYOUT_BLOCK_NAMES:
         return 'Layout: `' + name + '`'
+
     return None
 
 
 def handle_hover(ls, params):
-    """Handle textDocument/hover: return doc for special/layout at position."""
+    """
+    Handle textDocument/hover: return doc for special/layout at position
+    """
 
     doc = ls.workspace.get_text_document(_get_uri(params.text_document))
     if doc is None:
         return None
+
     pos = params.position
     line_1 = pos.line + 1
     col_1 = pos.character + 1
@@ -184,8 +213,6 @@ def handle_hover(ls, params):
     if content is None:
         return None
 
-    from lsprotocol.types import Position, Range
-
     rng = Range(
         start=Position(line=tok.start_line - 1, character=tok.start_col - 1),
         end=Position(line=tok.end_line - 1, character=tok.end_col - 1))
@@ -193,15 +220,6 @@ def handle_hover(ls, params):
     return Hover(
         contents=MarkupContent(kind=MarkupKind.Markdown, value=content),
         range=rng)
-
-
-__all__ = (
-    'collect_diagnostics',
-    'handle_completion',
-    'handle_did_change',
-    'handle_did_open',
-    'handle_hover',
-)
 
 
 # The end.

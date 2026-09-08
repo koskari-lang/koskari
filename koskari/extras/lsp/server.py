@@ -17,9 +17,6 @@ koskari.extras.lsp.server
 LSP server entry point and registration.
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit LSP enhancements.
-
 
 from lsprotocol.types import (
     TEXT_DOCUMENT_COMPLETION,
@@ -28,13 +25,21 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_HOVER,
 )
 
+from pygls.cli import start_server
 from pygls.lsp.server import LanguageServer
 
-from koskari.extras.lsp.handlers import (
+from .handlers import (
     handle_completion,
     handle_did_change,
     handle_did_open,
     handle_hover,
+)
+
+
+__all__ = (
+    'KoskariLanguageServer',
+    'create_server',
+    'main',
 )
 
 
@@ -66,23 +71,11 @@ def create_server():
 
 
 def main():
-    """Entry point for koskari-lsp console script."""
+    """
+    Entry point for koskari-lsp console script
+    """
 
-    import sys
-    try:
-        from pygls.cli import start_server
-        start_server(create_server())
-    except ImportError:
-        print('koskari-lsp requires koskari[lsp]. Install with: pip install koskari[lsp]',
-              file=sys.stderr)
-        sys.exit(1)
-
-
-__all__ = (
-    'KoskariLanguageServer',
-    'create_server',
-    'main',
-)
+    start_server(create_server())
 
 
 # The end.

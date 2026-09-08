@@ -17,8 +17,14 @@ koskari.extras.lsp.utils
 Position conversion and document utilities for LSP handlers.
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit LSP enhancements.
+
+from lsprotocol.types import Position, Range
+
+
+__all__ = (
+    'koskari_to_lsp_range',
+    'get_word_at_position',
+)
 
 
 def koskari_to_lsp_range(location, line_content=None):
@@ -29,8 +35,6 @@ def koskari_to_lsp_range(location, line_content=None):
     :param line_content: optional full line string for end character
     :return: lsprotocol.types.Range
     """
-
-    from lsprotocol.types import Position, Range
 
     if location is None:
         return Range(start=Position(line=0, character=0),
@@ -81,12 +85,6 @@ def get_word_at_position(document, position):
 
 def _is_symbol_char(c):
     return c.isalnum() or c in '-_./:'
-
-
-__all__ = (
-    'koskari_to_lsp_range',
-    'get_word_at_position',
-)
 
 
 # The end.
