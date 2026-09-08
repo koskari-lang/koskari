@@ -872,4 +872,18 @@ class TestSuffixesCompose(SuffixReaderMixin, unittest.TestCase):
             '(attr (item (#str "ab" "cd") 1) x)')
 
 
+class TestTemporarySuffixMacroCleanup(unittest.TestCase):
+
+    def test_temporary_suffix_removed_when_body_raises(self):
+        reader = Reader()
+
+        def suffix(stream, value, position):
+            return DEFER
+
+        with self.assertRaises(RuntimeError):
+            with reader.temporary_suffix_macro('~', suffix):
+                raise RuntimeError("mid-form")
+        self.assertNotIn('~', reader.suffix_macros)
+
+
 # The end.

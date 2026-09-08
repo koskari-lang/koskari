@@ -71,5 +71,36 @@ class TestStackedMacros(IsolatedAsyncioTestCase):
         self.assertEqual(len(reader.get_event_macros('z')), 1)
         self.assertEqual(len(reader.get_event_macros('z')[0]), 3)
 
+    async def test_temporary_removed_when_body_raises(self):
+        reader = Reader()
+
+        def temp(stream, c):
+            return VALUE, symbol('temp')
+
+        with self.assertRaises(RuntimeError):
+            with reader.temporary_event_macro('z', temp, False):
+                raise RuntimeError("mid-form")
+        self.assertEqual(reader.get_event_macros('z'), [])
+        self.assertEqual(reader.read(source_str('zw', '<t>')), symbol('zw'))
+
+    async def test_incomplete_quasiquote_does_not_leave_unquote_installed(self):
+        """
+        A quasiquote cut short by end of input raises ReaderEOF from inside
+        the temporary unquote macro; a later read on the same reader must
+        see a comma as ordinary text again
+        """
+
+        from koskari.reader import ReaderEOF
+
+        reader = Reader()
+        before = reader.get_event_macros(',')
+        with self.assertRaises(ReaderEOF):
+            reader.read(source_str('`(a ,', '<t>'))
+        self.assertEqual(reader.get_event_macros(','), before)
+
+        complete = reader.read(source_str('`(a ,b)', '<t>'))
+        plain = reader.read(source_str('(a ,b)', '<t>'))
+        self.assertNotEqual(str(complete), str(plain))
+
 
 # The end.

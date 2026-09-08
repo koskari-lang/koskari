@@ -1501,15 +1501,19 @@ class Reader:
             self.reader_macros.setdefault(c, []).insert(0, triplet)
         self._sync_terms_from_macros()
 
-        yield self
-
-        for c in char:
-            lst = self.reader_macros.get(c)
-            if lst and lst[0] is triplet:
-                lst.pop(0)
-                if not lst:
-                    del self.reader_macros[c]
-        self._sync_terms_from_macros()
+        # the removal must run however the body ends: an incomplete form
+        # raising ReaderEOF out of the body would otherwise leave the
+        # macro installed on a long-lived reader, the REPL's for one
+        try:
+            yield self
+        finally:
+            for c in char:
+                lst = self.reader_macros.get(c)
+                if lst and lst[0] is triplet:
+                    lst.pop(0)
+                    if not lst:
+                        del self.reader_macros[c]
+            self._sync_terms_from_macros()
 
 
     def add_suffix_macro(self, char, macro_fn, predicate=None):
@@ -1606,14 +1610,15 @@ class Reader:
         for c in char:
             self.suffix_macros.setdefault(c, []).insert(0, entry)
 
-        yield self
-
-        for c in char:
-            lst = self.suffix_macros.get(c)
-            if lst and lst[0] is entry:
-                lst.pop(0)
-                if not lst:
-                    del self.suffix_macros[c]
+        try:
+            yield self
+        finally:
+            for c in char:
+                lst = self.suffix_macros.get(c)
+                if lst and lst[0] is entry:
+                    lst.pop(0)
+                    if not lst:
+                        del self.suffix_macros[c]
 
 
     def add_macro_character(
