@@ -271,7 +271,43 @@ typedef enum KosXferEvent {
   KOS_XFER_EVENT_BREAK,
   KOS_XFER_EVENT_CONTINUE,
   KOS_XFER_EVENT_SHIFT,
+  KOS_XFER_EVENT_TRANSFER,   /* a transfer is tearing the node down */
 } KosXferEvent;
+
+
+/* === Obligations === */
+
+
+/**
+   What a WIND or WITH node holds for after its leave completes: a value
+   waiting for the revealed block, an exception waiting to resume
+   propagating, or a return waiting to resume. Parked by the walk that
+   stopped at the node (or by the node's own leave), released by the
+   unlink once the node is gone, and discarded with the node when a
+   raise or a transfer tears it down. One slot: a node never holds two,
+   because a raise inside a thunk supersedes what the thunk was running
+   for.
+*/
+typedef enum KosObligationKind {
+  KOS_OB_NONE = 0,
+  KOS_OB_VALUE,
+  KOS_OB_EXCEPTION,
+  KOS_OB_RETURN,
+} KosObligationKind;
+
+
+typedef struct KosObligation {
+  uint8_t kind;
+  union {
+    PyObject *value;               /* KOS_OB_VALUE: owned */
+    KosExcState exc;               /* KOS_OB_EXCEPTION: owned triple */
+    struct {
+      PyObject *value;             /* owned */
+      uint8_t path;                /* KosPendingReturnKind */
+      struct KosDynNode *delim;    /* borrowed bookmark, delimited path */
+    } ret;
+  } u;
+} KosObligation;
 
 
 /**
@@ -384,7 +420,8 @@ struct KosDynNode {
     struct {
       PyObject *before_thunk;  /* callable (owned) or NULL */
       PyObject *after_thunk;   /* callable (owned) or NULL */
-      PyObject *body_result;   /* TOS at POP_WIND (owned) or NULL; error/bypass path */
+      KosObligation ob;        /* the body result at POP_WIND, or what a
+                                  walk parked while the after-thunk runs */
       uint8_t entered;
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
@@ -458,10 +495,8 @@ struct KosDynNode {
                               multi-shot */
       PyObject *name;      /* binding name or NULL (owned) */
       uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
-      PyObject *exc_typ;   /* owned; only when phase == PENDING_EXIT_AWAIT */
-      PyObject *exc_val;
-      PyObject *exc_tb;
-      int normal_exit;     /* 1 = exit(None,None,None); only when phase == PENDING_EXIT_AWAIT */
+      KosObligation ob;    /* the exception __exit__ is handling, or what
+                              a walk parked while __exit__ runs */
     } with;
     struct {
       /* shift: marker delimiting the handler body; owns no block, so
@@ -1694,14 +1729,17 @@ int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
       again later.
    2. The synchronous per-kind teardown runs (PARAM restore, YIELD_FROM
       close, TRY/FINALLY exception-state restore).
-   3. What the node was holding for after its departure is detached: a
-      wind's body result, a with's swallow flag, saved triple, and body
-      value.
+   3. The node's obligation is detached, with a with's swallow flag and
+      body value.
    4. The parent becomes dyn_top; the node is freed.
-   5. The detached state is acted on: the body value is delivered onto
-      the revealed block when ev is KOS_XFER_EVENT_NONE and discarded
-      otherwise; a saved triple is re-raised; a parked exception the
-      raise walk left for this node resumes propagating.
+   5. The obligation is acted on, by its kind and by ev. Under
+      KOS_XFER_EVENT_NONE (a plain pop, or the hook finishing a leave):
+      a VALUE and a with's body value go onto the revealed block, an
+      EXCEPTION is re-raised, a RETURN is a caller error (only
+      kos_dyn_settle_top can receive one). Under KOS_XFER_EVENT_RAISE:
+      an EXCEPTION is chained as __context__ of the exception in
+      flight, everything else is discarded. Under any other event a
+      walk or a transfer crossed the node: everything is discarded.
 
    :param ev: why the node is leaving; KOS_XFER_EVENT_NONE for a plain pop
    :param allow_barrier: 0 refuses a KOS_DYN_CAP_BARRIER node with
@@ -1752,7 +1790,10 @@ typedef enum KosPendingReturnKind {
    kos_dyn_unwind_to_frame and kos_dyn_unwind_to_node offer handle(event)
    to each node before popping and cross barriers and delimiters; a node
    that CONSUMES is an error for them. A suspension leaves the value the
-   caller is carrying with the caller, to park.
+   caller is carrying with the caller, to park on the node whose leave
+   is in flight, which is stored in *out_pending (NULL otherwise; the
+   out-param itself may be NULL when the caller carries nothing). That
+   node is not dyn_top when the leave installed a frame.
 
    kos_dyn_unwind_return is the RETURN walk. It offers handle(RETURN): a
    FINALLY consumes the return, taking val onto its block and branching
@@ -1772,12 +1813,14 @@ typedef enum KosPendingReturnKind {
 KosOpResult kos_dyn_unwind_to_frame(
     KosEvalState *es,
     KosDynFrame *frame,
-    KosXferEvent event);
+    KosXferEvent event,
+    KosDynNode **out_pending);
 
 KosOpResult kos_dyn_unwind_to_node(
     KosEvalState *es,
     const KosDynNode *target,
-    KosXferEvent event);
+    KosXferEvent event,
+    KosDynNode **out_pending);
 
 KosOpResult kos_dyn_unwind_return(
     KosEvalState *es,
@@ -1798,15 +1841,6 @@ KosOpResult kos_dyn_unwind_to_loop(
    dereferenced.
 */
 int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
-
-
-/**
-   1 when a node carrying node_id lies on the chain from dyn_top, 0 when
-   not. Safe after the node may have been freed: the walk compares ids,
-   never the remembered pointer.
-*/
-int kos_dyn_chain_has_node_id(KosEvalState *es, uint32_t node_id);
-
 
 
 /**
@@ -1863,9 +1897,41 @@ int kos_dyn_extent_in_flight(const KosDynNode *node);
    frame return delivers into a non-frame node, and at an await revive
    with the awaited value already on the block.
 
-   :return: EVAL_NORMAL, or the unlink's result
+   A parked return the unlink detaches is handed back in *out_return
+   (kind KOS_OB_RETURN, owning its value) for the caller to resume
+   through KosEval_ResumeReturn; the caller passes it in empty.
+
+   :return: EVAL_NORMAL, or the unlink's result: EVAL_RAISE with the
+     parked exception re-raised, or a settle failure
 */
-KosOpResult kos_dyn_settle_top(KosEvalState *es);
+KosOpResult kos_dyn_settle_top(KosEvalState *es, KosObligation *out_return);
+
+
+/**
+   The obligation slot of a WIND or WITH node; NULL for any other kind.
+*/
+KosObligation *kos_dyn_node_ob(KosDynNode *node);
+
+void kos_dyn_ob_clear(KosObligation *ob);
+int kos_dyn_ob_traverse(KosObligation *ob, visitproc visit, void *arg);
+
+/**
+   Park on node. Each consumes what it is given, on failure as well; the
+   slot must be empty, and node must carry one (see kos_dyn_node_ob).
+
+   :return: 0, or -1 with PyErr set
+*/
+int kos_dyn_ob_park_value(KosDynNode *node, PyObject *val);
+int kos_dyn_ob_park_exception(
+    KosDynNode *node,
+    PyObject *typ,
+    PyObject *val,
+    PyObject *tb);
+int kos_dyn_ob_park_return(
+    KosDynNode *node,
+    PyObject *val,
+    uint8_t path,
+    KosDynNode *delim);
 
 
 /**
@@ -2027,51 +2093,6 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf);
 
 
 /* === Context exception stash === */
-
-
-/**
-   Park an exception triple on the context's LIFO exception stash, tagged
-   with the parking node's id. Normalizes and attaches the traceback to
-   the instance; consumes the triple.
-
-   :return: 0 on success, -1 on error
-*/
-int kos_ctx_exc_stash_push(
-   KosEvalState *es,
-   uint32_t node_id,
-   PyObject *typ,
-   PyObject *val,
-   PyObject *tb);
-
-
-/**
-   True when the stash top entry was parked by node_id.
-*/
-int kos_ctx_exc_stash_top_is(KosEvalState *es, uint32_t node_id);
-
-
-/**
-   Pop the top parked exception and restore it into PyErr to continue
-   propagation.
-
-   :return: 0 on success, -1 when the stash is empty
-*/
-int kos_ctx_exc_stash_reraise(KosEvalState *es, uint32_t node_id);
-
-
-/**
-   Pop the top parked exception and chain it as __context__ of the
-   superseding triple (caller-owned, normalized in place). No-op on an
-   empty stash.
-
-   :return: 0 on success
-*/
-int kos_ctx_exc_stash_chain_top(
-   KosEvalState *es,
-   uint32_t node_id,
-   PyObject **typ,
-   PyObject **val,
-   PyObject **tb);
 
 
 /**
@@ -2496,7 +2517,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 
 #define KosDynWind_BEFORE_THUNK(w) (((KosDynNode *)(w))->u.wind.before_thunk)
 #define KosDynWind_AFTER_THUNK(w)  (((KosDynNode *)(w))->u.wind.after_thunk)
-#define KosDynWind_BODY_RESULT(w)  (((KosDynNode *)(w))->u.wind.body_result)
+#define KosDynWind_OB(w)           (&((KosDynNode *)(w))->u.wind.ob)
 #define KosDynWind_ENTERED(w)      (((KosDynNode *)(w))->u.wind.entered)
 #define KosDynWind_PHASE(w)        (((KosDynNode *)(w))->u.wind.phase)
 
@@ -2658,10 +2679,7 @@ static inline void kos_dyn_iter_request_arm(
 #define KosDynWith_EXIT_DONE(n)    (((KosDynNode *)(n))->u.with.exit_done)
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
-#define KosDynWith_EXC_TYP(n)      (((KosDynNode *)(n))->u.with.exc_typ)
-#define KosDynWith_EXC_VAL(n)      (((KosDynNode *)(n))->u.with.exc_val)
-#define KosDynWith_EXC_TB(n)       (((KosDynNode *)(n))->u.with.exc_tb)
-#define KosDynWith_NORMAL_EXIT(n)  (((KosDynNode *)(n))->u.with.normal_exit)
+#define KosDynWith_OB(n)           (&((KosDynNode *)(n))->u.with.ob)
 #define KosDynWith_SWALLOWED(n)    (((KosDynNode *)(n))->u.with.swallowed)
 
 /**

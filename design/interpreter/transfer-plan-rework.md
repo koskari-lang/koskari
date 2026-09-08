@@ -272,12 +272,17 @@ the same job (WITH's `exc_typ`/`exc_val`/`exc_tb`/`normal_exit`; WIND's
 `body_result`).
 
 ```c
-uint8_t ob_kind;              /* NONE | EXCEPTION | RETURN */
+uint8_t ob_kind;              /* NONE | VALUE | EXCEPTION | RETURN */
 union {
+  PyObject *value;                                   /* VALUE */
   KosExcState exc;                                   /* EXCEPTION */
   struct { PyObject *value; uint8_t path; KosDynDelim *delim; } ret;  /* RETURN */
 } ob;
 ```
+
+`VALUE` is a wind's body result, parked by `POP_WIND` for the unlink to
+deliver; it is a kind rather than a separate field so the release table
+below is the whole story.
 
 `RETURN.path` is the return kind (bytecode frame, native frame, delimited
 route); `delim` is the bookmark for the delimited route, borrowed, below the
@@ -296,19 +301,35 @@ return); an occupied slot is an assertion.
 **Release**, at §3.5 step 5, by obligation kind and the event that unlinked
 the node:
 
-| obligation | `RAISE` (thunk raised) | `NONE` (thunk finished) | `LEAVING` (crossed by a goal) |
+| obligation | `RAISE` (thunk raised) | `NONE` (thunk finished) | `TRANSFER` (crossed by a goal) |
 |---|---|---|---|
 | RETURN | discard | continue the return via `path` | discard |
-| EXCEPTION | chain as `__context__` of the in-flight one, discard | re-raise: RAISE | discard |
-| WIND `body_result` | discard | push onto the revealed block | discard |
+| EXCEPTION | resume: with another exception in flight, chain as its `__context__`; else re-raise | resume | discard |
+| VALUE | discard | push onto the revealed block | discard |
+
+`RAISE` and `NONE` share the EXCEPTION rule because a with's `leave` parks
+the in-flight exception itself before firing `__exit__`: when `__exit__`
+returns falsy synchronously the unlink runs under `RAISE` with `PyErr`
+clear and the parked exception is the one propagating.
+
+A RETURN under `NONE` is handed back to the caller of the unlink rather
+than acted on inside it: the return paths live in the evaluator, and
+`kos_dyn_settle_top` is the only caller that can receive one. Its two
+sites (the post-return hook and the await revive, which passes it up to
+the entry phase) resume it through `KosEval_ResumeReturn`.
 
 `RETURN` or `EXCEPTION` under `ev == RETURN` is unreachable: a walk from
 inside a thunk stops at the thunk frame. Assert.
 
 The walks own parking: a walk that gets REPROLOGUE or AWAIT back from
 `unlink_top` writes its payload into `dyn_top`'s slot and returns the answer.
-The raise walk keeps fetching `PyErr` before the pop so the thunk runs clean,
-and restores it when the pop answers NORMAL. The driver parks nothing on
+The raise walk fetches `PyErr` before popping a wind that is about to fire
+its after-thunk, so the thunk runs clean, and parks it on the wind once the
+thunk has started; a wind or with whose call is already dead (in flight at
+`dyn_top`) is aborted by the unlink and never fires, so the exception stays
+pending for step 5 to chain what the node held. A leave that raises
+synchronously leaves its node in place; the raise walk unlinks it again
+under `RAISE`, which aborts it and chains. The driver parks nothing on
 nodes; its payload lives in the goal.
 
 Sizing: `with` is 88 bytes, tying `yield_from` and `gen` for the widest arm.

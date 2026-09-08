@@ -41,6 +41,11 @@
 
 static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
                                              KosXferEvent event);
+static KosOpResult kos_dyn_unlink_top_take(
+    KosEvalState *es,
+    KosXferEvent ev,
+    int allow_barrier,
+    KosObligation *out_return);
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
@@ -310,169 +315,6 @@ static void kos_exc_supersede_chain(
 
   Py_XDECREF(old_typ);
   Py_XDECREF(old_tb);
-}
-
-
-/**
-   Pop the top stash entry. Returns the owned entry tuple (exc, node_id)
-   with *out_id set, or NULL when the stash is empty.
-*/
-static PyObject *exc_stash_pop_entry(KosContext *ctx, uint32_t *out_id) {
-
-  PyObject *stash = KosContext_EXC_STASH(ctx);
-  Py_ssize_t n = stash ? PyList_GET_SIZE(stash) : 0;
-  PyObject *entry;
-
-  if (! n)
-    return NULL;
-
-  entry = PyList_GET_ITEM(stash, n - 1);
-  Py_INCREF(entry);
-  if (PyList_SetSlice(stash, n - 1, n, NULL) < 0) {
-    Py_DECREF(entry);
-    return NULL;
-  }
-  *out_id = (uint32_t) PyLong_AsUnsignedLong(PyTuple_GET_ITEM(entry, 1));
-  return entry;
-}
-
-
-/**
-   Park an exception triple on the context stash, tagged with the parking
-   node's id. Normalizes the triple and attaches the traceback to the
-   instance; consumes all three references. See dynchain.h.
-*/
-int kos_ctx_exc_stash_push(
-    KosEvalState *es,
-    uint32_t node_id,
-    PyObject *typ,
-    PyObject *val,
-    PyObject *tb) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *entry = NULL;
-  PyObject *id_obj = NULL;
-
-  PyErr_NormalizeException(&typ, &val, &tb);
-  if (! val) {
-    Py_XDECREF(typ);
-    Py_XDECREF(tb);
-    PyErr_SetString(PyExc_SystemError,
-                    "exc_stash_push: no exception value");
-    return -1;
-  }
-  if (tb)
-    PyException_SetTraceback(val, tb);
-  Py_XDECREF(typ);
-  Py_XDECREF(tb);
-
-  if (! KosContext_EXC_STASH(ctx)) {
-    KosContext_EXC_STASH(ctx) = PyList_New(0);
-    if (! KosContext_EXC_STASH(ctx)) {
-      Py_DECREF(val);
-      return -1;
-    }
-  }
-
-  id_obj = PyLong_FromUnsignedLong((unsigned long) node_id);
-  if (id_obj)
-    entry = PyTuple_Pack(2, val, id_obj);
-  Py_XDECREF(id_obj);
-  Py_DECREF(val);
-  if (! entry)
-    return -1;
-
-  {
-    int r = PyList_Append(KosContext_EXC_STASH(ctx), entry);
-    Py_DECREF(entry);
-    return r;
-  }
-}
-
-
-/**
-   True when the stash top entry was parked by node_id.
-*/
-int kos_ctx_exc_stash_top_is(KosEvalState *es, uint32_t node_id) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *stash = KosContext_EXC_STASH(ctx);
-  Py_ssize_t n = stash ? PyList_GET_SIZE(stash) : 0;
-
-  if (! n)
-    return 0;
-  {
-    PyObject *entry = PyList_GET_ITEM(stash, n - 1);
-    return (uint32_t) PyLong_AsUnsignedLong(PyTuple_GET_ITEM(entry, 1))
-        == node_id;
-  }
-}
-
-
-/**
-   Pop the top parked exception and restore it into PyErr to continue
-   propagation. A node_id mismatch is loudly traced but still pops (the
-   alternative leaks the entry). See dynchain.h.
-*/
-int kos_ctx_exc_stash_reraise(KosEvalState *es, uint32_t node_id) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  uint32_t got_id = 0;
-  PyObject *entry = exc_stash_pop_entry(ctx, &got_id);
-
-  if (! entry) {
-    PyErr_SetString(PyExc_SystemError,
-                    "exc_stash_reraise: stash is empty");
-    return -1;
-  }
-  if (got_id != node_id)
-    SAYF("[eval] exc_stash_reraise: node_id mismatch (parked=%u, "
-         "resumer=%u)\n", (unsigned) got_id, (unsigned) node_id);
-
-  {
-    PyObject *exc = PyTuple_GET_ITEM(entry, 0);
-    PyObject *tb = PyException_GetTraceback(exc);
-    Py_INCREF(exc);
-    PyErr_Restore(Py_NewRef((PyObject *) Py_TYPE(exc)), exc, tb);
-  }
-  Py_DECREF(entry);
-  return 0;
-}
-
-
-/**
-   Pop the top parked exception and chain it as __context__ of the
-   superseding triple (caller-owned, normalized in place). Used when a
-   teardown's own exception replaces the one it was parked for. No-op on
-   an empty stash.
-*/
-int kos_ctx_exc_stash_chain_top(
-    KosEvalState *es,
-    uint32_t node_id,
-    PyObject **typ,
-    PyObject **val,
-    PyObject **tb) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  uint32_t got_id = 0;
-  PyObject *entry = exc_stash_pop_entry(ctx, &got_id);
-
-  if (! entry)
-    return 0;
-  if (got_id != node_id)
-    SAYF("[eval] exc_stash_chain_top: node_id mismatch (parked=%u, "
-         "superseder=%u)\n", (unsigned) got_id, (unsigned) node_id);
-
-  {
-    PyObject *exc = PyTuple_GET_ITEM(entry, 0);
-    Py_INCREF(exc);
-    kos_exc_supersede_chain(typ, val, tb,
-                            Py_NewRef((PyObject *) Py_TYPE(exc)),
-                            exc,
-                            PyException_GetTraceback(exc));
-  }
-  Py_DECREF(entry);
-  return 0;
 }
 
 
@@ -919,6 +761,164 @@ int kos_dyn_abort_push_region(KosEvalState *es, KosDynNode *region) {
 }
 
 
+/* === Obligations === */
+
+
+KosObligation *kos_dyn_node_ob(KosDynNode *node) {
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_WIND:
+      return KosDynWind_OB(node);
+    case KOS_DYN_WITH:
+      return KosDynWith_OB(node);
+    default:
+      return NULL;
+  }
+}
+
+
+void kos_dyn_ob_clear(KosObligation *ob) {
+  switch (ob->kind) {
+    case KOS_OB_VALUE:
+      Py_CLEAR(ob->u.value);
+      break;
+    case KOS_OB_EXCEPTION:
+      KosExc_Clear(&ob->u.exc);
+      break;
+    case KOS_OB_RETURN:
+      Py_CLEAR(ob->u.ret.value);
+      ob->u.ret.delim = NULL;
+      break;
+    default:
+      break;
+  }
+  ob->kind = KOS_OB_NONE;
+}
+
+
+int kos_dyn_ob_traverse(KosObligation *ob, visitproc visit, void *arg) {
+  switch (ob->kind) {
+    case KOS_OB_VALUE:
+      Py_VISIT(ob->u.value);
+      break;
+    case KOS_OB_EXCEPTION:
+      return KosExc_Traverse(&ob->u.exc, visit, arg);
+    case KOS_OB_RETURN:
+      Py_VISIT(ob->u.ret.value);
+      break;
+    default:
+      break;
+  }
+  return 0;
+}
+
+
+/**
+   The empty slot of a node that carries one, or NULL with PyErr set.
+*/
+static KosObligation *kos_dyn_ob_slot_for(KosDynNode *node) {
+  KosObligation *ob = kos_dyn_node_ob(node);
+
+  if (! ob) {
+    PyErr_Format(PyExc_SystemError,
+                 "obligation parked on a %s node, which carries none",
+                 kos_dynnode_kind_name(KosDynNode_KIND(node)));
+    return NULL;
+  }
+  if (ob->kind != KOS_OB_NONE) {
+    PyErr_Format(PyExc_SystemError,
+                 "obligation parked on a %s node already holding one",
+                 kos_dynnode_kind_name(KosDynNode_KIND(node)));
+    return NULL;
+  }
+  return ob;
+}
+
+
+int kos_dyn_ob_park_value(KosDynNode *node, PyObject *val) {
+  KosObligation *ob = kos_dyn_ob_slot_for(node);
+
+  if (! ob) {
+    Py_XDECREF(val);
+    return -1;
+  }
+  ob->kind = KOS_OB_VALUE;
+  ob->u.value = val;
+  return 0;
+}
+
+
+int kos_dyn_ob_park_exception(
+    KosDynNode *node,
+    PyObject *typ,
+    PyObject *val,
+    PyObject *tb) {
+
+  KosObligation *ob = kos_dyn_ob_slot_for(node);
+
+  if (! ob) {
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
+    return -1;
+  }
+  PyErr_NormalizeException(&typ, &val, &tb);
+  if (val && tb)
+    PyException_SetTraceback(val, tb);
+  ob->kind = KOS_OB_EXCEPTION;
+  ob->u.exc.type = typ;
+  ob->u.exc.value = val;
+  ob->u.exc.tb = tb;
+  return 0;
+}
+
+
+int kos_dyn_ob_park_return(
+    KosDynNode *node,
+    PyObject *val,
+    uint8_t path,
+    KosDynNode *delim) {
+
+  KosObligation *ob = kos_dyn_ob_slot_for(node);
+
+  if (! ob) {
+    Py_XDECREF(val);
+    return -1;
+  }
+  ob->kind = KOS_OB_RETURN;
+  ob->u.ret.value = val;
+  ob->u.ret.path = path;
+  ob->u.ret.delim = delim;
+  return 0;
+}
+
+
+/**
+   Resume a parked exception's propagation. With another exception
+   already in flight (PyErr set) the parked one has been superseded and
+   becomes its __context__; otherwise the parked one is raised again.
+   The obligation is released either way.
+
+   :return: EVAL_RAISE
+*/
+static KosOpResult kos_dyn_ob_resume_exception(KosObligation *ob) {
+
+  PyObject *ntyp = NULL, *nval = NULL, *ntb = NULL;
+
+  if (! PyErr_Occurred()) {
+    KosExc_Reraise(&ob->u.exc);
+    ob->kind = KOS_OB_NONE;
+    return EVAL_RAISE();
+  }
+  PyErr_Fetch(&ntyp, &nval, &ntb);
+  kos_exc_supersede_chain(&ntyp, &nval, &ntb,
+                          ob->u.exc.type, ob->u.exc.value, ob->u.exc.tb);
+  KosExc_Init(&ob->u.exc);
+  ob->kind = KOS_OB_NONE;
+  PyErr_Restore(ntyp, nval, ntb);
+  return EVAL_RAISE();
+}
+
+
 /* === The extent contract === */
 
 
@@ -1028,7 +1028,7 @@ static int kos_dyn_plan_step_waits_on(KosEvalState *es, KosDynNode *node) {
 }
 
 
-KosOpResult kos_dyn_settle_top(KosEvalState *es) {
+KosOpResult kos_dyn_settle_top(KosEvalState *es, KosObligation *out_return) {
   KosDynNode *top = KosEvalState_DYN_TOP(es);
   int was_leave;
 
@@ -1048,7 +1048,7 @@ KosOpResult kos_dyn_settle_top(KosEvalState *es) {
   if (! was_leave)
     return EVAL_NORMAL();
 
-  return kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
+  return kos_dyn_unlink_top_take(es, KOS_XFER_EVENT_NONE, 0, out_return);
 }
 
 
@@ -1852,20 +1852,27 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
 }
 
 
-KosOpResult kos_dyn_unlink_top(
+/**
+   kos_dyn_unlink_top with a slot for a detached RETURN obligation: the
+   hook passes one, so a return parked on the node it settled resumes
+   through the caller; every other caller passes NULL and a RETURN
+   under KOS_XFER_EVENT_NONE is a fault.
+*/
+static KosOpResult kos_dyn_unlink_top_take(
     KosEvalState *es,
     KosXferEvent ev,
-    int allow_barrier) {
+    int allow_barrier,
+    KosObligation *out_return) {
 
   KosDynNode *node = KosEvalState_DYN_TOP(es);
   KosDynNode *parent;
-  uint32_t node_id;
+  KosObligation ob;
 
   /* detached state, acted on once the node is gone */
-  PyObject *deliver = NULL;   /* body value */
-  PyObject *exc_typ = NULL, *exc_val = NULL, *exc_tb = NULL;
-  int had_park = 0;
+  PyObject *deliver = NULL;   /* a with's body value */
   int swallowed = 0;
+
+  ob.kind = KOS_OB_NONE;
 
   if (! node) {
     PyErr_SetString(PyExc_RuntimeError, "cannot pop from empty dynamic chain");
@@ -1886,20 +1893,17 @@ KosOpResult kos_dyn_unlink_top(
       return r;
   }
 
-  node_id = KosDynNode_NODE_ID(node);
-  if (KosDynNode_IS_WIND(node)) {
-    had_park = kos_ctx_exc_stash_top_is(es, node_id);
-    deliver = KosDynWind_BODY_RESULT(node);
-    KosDynWind_BODY_RESULT(node) = NULL;
-  } else if (KosDynNode_IS_WITH(node)) {
-    exc_typ = KosDynWith_EXC_TYP(node);
-    exc_val = KosDynWith_EXC_VAL(node);
-    exc_tb = KosDynWith_EXC_TB(node);
-    KosDynWith_EXC_TYP(node) = NULL;
-    KosDynWith_EXC_VAL(node) = NULL;
-    KosDynWith_EXC_TB(node) = NULL;
+  {
+    KosObligation *slot = kos_dyn_node_ob(node);
+    if (slot) {
+      ob = *slot;
+      slot->kind = KOS_OB_NONE;
+    }
+  }
+  if (KosDynNode_IS_WITH(node)) {
     swallowed = KosDynWith_SWALLOWED(node);
-    if (! swallowed && ! exc_typ && ev == KOS_XFER_EVENT_NONE) {
+    if (! swallowed && ob.kind == KOS_OB_NONE
+        && ev == KOS_XFER_EVENT_NONE) {
       KosSegment *seg = KosDynNode_STACK(node);
       if (seg && KosSegment_LEN(seg)) {
         deliver = KosStack_PopRef(&KosDynNode_STACK(node));
@@ -1914,21 +1918,44 @@ KosOpResult kos_dyn_unlink_top(
   KosDynNode_PARENT(node) = NULL;
   kos_dynnode_free(node);
 
-  if (had_park) {
-    /* the raise walk parked its exception for this wind's after-thunk;
-       the thunk is done, so propagation continues */
-    Py_XDECREF(deliver);
-    Py_XDECREF(exc_typ);
-    Py_XDECREF(exc_val);
-    Py_XDECREF(exc_tb);
-    kos_ctx_exc_stash_reraise(es, node_id);
-    return EVAL_RAISE();
+  /* Step 5: act on the obligation by kind and event. */
+  switch (ob.kind) {
+    case KOS_OB_EXCEPTION:
+      Py_XDECREF(deliver);
+      if (ev == KOS_XFER_EVENT_NONE || ev == KOS_XFER_EVENT_RAISE) {
+        /* the leave that ran under this exception is done, or died:
+           propagation continues, chained under whatever superseded it */
+        return kos_dyn_ob_resume_exception(&ob);
+      }
+      kos_dyn_ob_clear(&ob);
+      return EVAL_NORMAL();
+
+    case KOS_OB_RETURN:
+      Py_XDECREF(deliver);
+      if (ev != KOS_XFER_EVENT_NONE) {
+        /* a raise or a transfer crossed the return: it is void */
+        kos_dyn_ob_clear(&ob);
+        return EVAL_NORMAL();
+      }
+      if (! out_return) {
+        kos_dyn_ob_clear(&ob);
+        PyErr_SetString(PyExc_SystemError,
+                        "a parked return was unlinked with no one to"
+                        " resume it");
+        return EVAL_RAISE();
+      }
+      *out_return = ob;
+      return EVAL_NORMAL();
+
+    case KOS_OB_VALUE:
+      Py_XDECREF(deliver);
+      deliver = ob.u.value;
+      break;
+
+    default:
+      break;
   }
-  if (exc_typ) {
-    Py_XDECREF(deliver);
-    PyErr_Restore(exc_typ, exc_val, exc_tb);
-    return EVAL_RAISE();
-  }
+
   if (swallowed) {
     /* __exit__ consumed the raise: None stands in for the body value
        at the with's resume pc, whatever event brought the raise */
@@ -1951,6 +1978,15 @@ KosOpResult kos_dyn_unlink_top(
     Py_DECREF(deliver);
   }
   return EVAL_NORMAL();
+}
+
+
+KosOpResult kos_dyn_unlink_top(
+    KosEvalState *es,
+    KosXferEvent ev,
+    int allow_barrier) {
+
+  return kos_dyn_unlink_top_take(es, ev, allow_barrier, NULL);
 }
 
 
@@ -2300,17 +2336,6 @@ int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);
 
   while (node && node != target) {
-    node = KosDynNode_PARENT(node);
-  }
-
-  return node != NULL;
-}
-
-
-int kos_dyn_chain_has_node_id(KosEvalState *es, uint32_t node_id) {
-  KosDynNode *node = KosEvalState_DYN_TOP(es);
-
-  while (node && KosDynNode_NODE_ID(node) != node_id) {
     node = KosDynNode_PARENT(node);
   }
 

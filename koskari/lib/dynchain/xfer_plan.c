@@ -1190,7 +1190,7 @@ static int xfer_step_pop_one(KosEvalState *es) {
     return -1;
   }
   return xfer_map_result(KosEvalState_PLAN(es),
-                         kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0));
+                         kos_dyn_unlink_top(es, KOS_XFER_EVENT_TRANSFER, 0));
 }
 
 
@@ -1217,8 +1217,8 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
          (void *) current, (void *) stop_node, (void *) new_top);
 
   while (KosEvalState_DYN_TOP(es) && KosEvalState_DYN_TOP(es) != new_top) {
-    int m = xfer_map_result(plan,
-                            kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 1));
+    int m = xfer_map_result(
+        plan, kos_dyn_unlink_top(es, KOS_XFER_EVENT_TRANSFER, 1));
     if (m)
       return m;
   }
@@ -1396,14 +1396,6 @@ void kos_abandon_transfer_nest(KosEvalState *es) {
   KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
   kos_free_transfer_plan(p);
   kos_free_transfer_plan_stack(es);
-
-  /* Parked exceptions are not dropped here (they may belong to an
-     unrelated in-flight raise); surface any survivors loudly so a stale
-     entry can never fail silently. */
-  if (KosContext_EXC_STASH(ctx)
-      && PyList_GET_SIZE(KosContext_EXC_STASH(ctx)))
-    SAYF("[xfer] abandon_transfer_nest: %zd parked exception(s) remain\n",
-         PyList_GET_SIZE(KosContext_EXC_STASH(ctx)));
 }
 
 

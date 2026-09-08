@@ -27,11 +27,12 @@ KOS_OP_HANDLER(POP_WIND) {
     RESULT_RAISE();
   }
 
-  KosDynWind *wind = (KosDynWind *) top;
   PyObject *body_result = KosEvalState_StackPopRef(es);
   if (! body_result)
     RESULT_RAISE();
-  KosDynWind_BODY_RESULT(wind) = body_result;
+  /* the body value waits on the node for the unlink to deliver */
+  if (kos_dyn_ob_park_value(top, body_result) < 0)
+    RESULT_RAISE();
 
   KosOpResult kr = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
   if (kr.kind == KOS_RES_REPROLOGUE) {

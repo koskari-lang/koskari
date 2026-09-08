@@ -168,6 +168,24 @@ class RaisingExitMgr:
         raise ValueError("exit refused")
 
 
+class TestWithExitRaisesWhileHandling(SpecialsTestCase):
+
+    async def test_exit_exception_chains_the_handled_one(self):
+        """
+        an __exit__ that raises while handling an exception replaces it,
+        and the replaced exception is the new one's __context__
+        """
+
+        src_str = """
+        (with [(call make_mgr)] (raise (call KeyError "body")))
+        """
+        expr, mod = self.compile_expr(
+            src_str, make_mgr=RaisingExitMgr, KeyError=KeyError)
+        with self.assertRaises(ValueError) as caught:
+            await expr()
+        self.assertIsInstance(caught.exception.__context__, KeyError)
+
+
 class TestWithExitRaisesOnReturn(SpecialsTestCase):
 
     async def test_exit_raising_during_return_is_catchable(self):

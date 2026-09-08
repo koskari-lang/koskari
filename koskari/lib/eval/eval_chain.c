@@ -40,20 +40,6 @@ static void KosEvalState_DisarmTransferPlan(KosEvalState *es) {
 }
 
 
-void KosEvalState_SetPendingReturn(
-    KosEvalState *es,
-    PyObject *val,
-    KosPendingReturnKind kind,
-    KosDynDelim *delim) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  Py_XSETREF(KosContext_PENDING_RETURN_VALUE(ctx), val);
-  KosContext_PENDING_RETURN_KIND(ctx) = kind;
-  KosContext_PENDING_RETURN_DELIM(ctx) = delim;
-}
-
-
 /**
   Consume a pending KOS_INJECT_THROW: ownership of both refs transfers
   to the caller (slots are nulled without decref).

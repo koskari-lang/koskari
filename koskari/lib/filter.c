@@ -238,7 +238,7 @@ static KosIterStepResult filter_step_abort(
     {
       /* a leave in flight here is abandoned with the step */
       KosOpResult wr = kos_dyn_unwind_to_node(es, pre_top,
-                                              KOS_XFER_EVENT_RAISE);
+                                              KOS_XFER_EVENT_RAISE, NULL);
       if (wr.kind == KOS_RES_AWAIT)
         Py_XDECREF(wr.val);
     }

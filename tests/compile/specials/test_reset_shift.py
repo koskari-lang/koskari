@@ -301,6 +301,37 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertEqual(events, ["before", "after", "before", "after"])
 
 
+    async def test_remote_invoke_after_thunk_with_frame(self):
+        """
+        a remote invoke whose slice completes through a dyn-wind after
+        thunk that installs a frame delivers the value once the thunk
+        returns
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        src_str = """
+        (let [[captured nil]
+              [helper (lambda [] (rec "after"))]]
+          (begin
+            (setq captured
+              (reset
+                (dyn-wind
+                  (rec "before")
+                  (shift k k)
+                  (call helper))))
+            (call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["before", "after", "before", "after"])
+
+
     async def test_param_in_caller_frame_uses_invoke_scope(self):
         """
         A parameterize established in a caller frame outside the reset's

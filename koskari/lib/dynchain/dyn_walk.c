@@ -141,31 +141,32 @@ KosOpResult kos_dyn_exception_unwind(
 KosOpResult kos_dyn_unwind_to_node(
     KosEvalState *es,
     const KosDynNode *target,
-    KosXferEvent event) {
+    KosXferEvent event,
+    KosDynNode **out_pending) {
 
+  if (out_pending)
+    *out_pending = NULL;
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_node: target=%p kind=%s",
          (void *) target, target ? kos_dynnode_kind_name(KosDynNode_KIND(target)) : "NULL");
 
   while (KosEvalState_DYN_TOP(es) != NULL
          && KosEvalState_DYN_TOP(es) != target) {
-    KosDynNode *stepping = KosEvalState_DYN_TOP(es);
+    KosDynNode *top = KosEvalState_DYN_TOP(es);
     KosOpResult r;
 
     if (KOS_XFER_TRACE)
       SAYF("[xfer] unwind_to_node: popping node=%p kind=%s",
-           (void *) stepping,
-           kos_dynnode_kind_name(KosDynNode_KIND(stepping)));
+           (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
     KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
     r = kos_dyn_unlink_top(es, event, 1);
     if (r.kind == KOS_RES_NORMAL)
       continue;
-    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
-      /* the node's leave is in flight; the caller parks what it carries
-         and the return resumes once the node has left the chain */
-      KosContext_PENDING_RETURN_NODE_ID(KosEvalState_CONTEXT(es)) =
-        KosDynNode_NODE_ID(stepping);
-    }
+    /* the node's leave is in flight: the caller parks what it carries
+       on it, and that resumes once the node has left the chain */
+    if (out_pending
+        && (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT))
+      *out_pending = top;
     return r;
   }
   if (KOS_XFER_TRACE)
@@ -252,12 +253,12 @@ KosOpResult kos_dyn_unwind_return(
     if (r.kind == KOS_RES_NORMAL)
       continue;
     if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
-      /* The node's leave thunk started and will suspend; val parks as
-         the context's pending return, and the node's id is recorded so
-         the return resumes once that node has left the chain. */
-      KosContext_PENDING_RETURN_NODE_ID(KosEvalState_CONTEXT(es)) =
-        KosDynNode_NODE_ID(top);
-      KosEvalState_SetPendingReturn(es, val, kind, NULL);
+      /* The node's leave started and will suspend; val parks on the node
+         and the return resumes once the node has left the chain. */
+      if (kos_dyn_ob_park_return(top, val, (uint8_t) kind, NULL) < 0) {
+        Py_XDECREF(r.val);
+        return EVAL_RAISE();
+      }
       return r;
     }
     Py_DECREF(val);
@@ -279,8 +280,11 @@ KosOpResult kos_dyn_unwind_return(
 KosOpResult kos_dyn_unwind_to_frame(
     KosEvalState *es,
     KosDynFrame *frame,
-    KosXferEvent event) {
+    KosXferEvent event,
+    KosDynNode **out_pending) {
 
+  if (out_pending)
+    *out_pending = NULL;
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_frame: target frame=%p", (void *) frame);
 
@@ -309,10 +313,9 @@ KosOpResult kos_dyn_unwind_to_frame(
     r = kos_dyn_unlink_top(es, event, 1);
     if (r.kind == KOS_RES_NORMAL)
       continue;
-    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
-      KosContext_PENDING_RETURN_NODE_ID(KosEvalState_CONTEXT(es)) =
-        KosDynNode_NODE_ID(top);
-    }
+    if (out_pending
+        && (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT))
+      *out_pending = top;
     return r;
   }
   if (KOS_XFER_TRACE)
@@ -730,33 +733,30 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
       int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
       uint32_t catch_resume_pc = kos_dynnode_catch_resume_pc(top);
       int top_is_wind = (top && KosDynNode_IS_WIND(top));
+      /* A wind about to fire its after-thunk runs it clean: the
+         exception in flight is held here and parked on the node once
+         the thunk has started. A wind (or with) whose thunk is dead is
+         aborted by the unlink and never fires, so the exception stays
+         pending for the unlink to chain what the node was holding. A
+         with fires __exit__ with the exception as its argument and
+         parks it itself. */
       int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
           || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER))
-          || top_is_wind;
+          || (top_is_wind && ! kos_dyn_extent_in_flight(top));
       if (needs_preserve && PyErr_Occurred())
         PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);
-
-      /* A wind whose parked exception is being superseded by the
-         in-flight one (its thunk raised, or it never resumed): chain the
-         parked original as __context__ before the pop discards the node. */
-      if (top_is_wind && saved_exc_typ != NULL
-          && kos_ctx_exc_stash_top_is(es, KosDynNode_NODE_ID(top))) {
-        kos_ctx_exc_stash_chain_top(es, KosDynNode_NODE_ID(top),
-                                    &saved_exc_typ, &saved_exc_val,
-                                    &saved_exc_tb);
-      }
 
       KosOpResult pop_res = kos_dyn_pop_nonbarrier_top(es, KOS_XFER_EVENT_RAISE);
       if (saved_exc_typ != NULL) {
         if (top_is_wind
             && (pop_res.kind == KOS_RES_REPROLOGUE
                 || pop_res.kind == KOS_RES_AWAIT)) {
-          /* After-thunk started: park the exception on the context stash
-             so the thunk runs with no pending error; on_control_returned
-             re-raises it once the thunk completes. */
-          if (kos_ctx_exc_stash_push(es, KosDynNode_NODE_ID(top),
-                                     saved_exc_typ, saved_exc_val,
-                                     saved_exc_tb) < 0) {
+          /* After-thunk started: park the exception on the wind so the
+             thunk runs with no pending error; the unlink re-raises it
+             once the thunk completes. */
+          if (kos_dyn_ob_park_exception(top, saved_exc_typ, saved_exc_val,
+                                        saved_exc_tb) < 0) {
+            Py_XDECREF(pop_res.val);
             return EVAL_FATAL();
           }
         } else if (PyErr_Occurred()
@@ -805,15 +805,22 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
           kos_eval_prepare_boundary_raise(ctx, es);
           return EVAL_RAISE();
         }
-        /* User teardown raised: the superseding exception (original
-           chained above) keeps walking. If the failing pop left the node
-           in place, discard it without re-running its teardown - it had
-           its chance - so the walk always makes progress. */
+        /* A leave raised: the superseding exception keeps walking. The
+           failing node is still in place, its call dead at dyn_top, so
+           the unlink aborts it without re-running anything and chains
+           what it was holding under the new exception. */
         if (KosEvalState_DYN_TOP(es) == top) {
-          KosDynNode *parent = KosDynNode_PARENT(top);
-          kos_dyn_commit_dyn_top(es, parent);
-          KosDynNode_PARENT(top) = NULL;
-          kos_dynnode_free(top);
+          KosOpResult again = kos_dyn_unlink_top(es, KOS_XFER_EVENT_RAISE, 1);
+          if (again.kind != KOS_RES_NORMAL && again.kind != KOS_RES_RAISE) {
+            Py_XDECREF(again.val);
+            return EVAL_FATAL();
+          }
+          if (KosEvalState_DYN_TOP(es) == top) {
+            /* the node refused to leave twice: no progress possible */
+            PyErr_SetString(PyExc_SystemError,
+                            "raise walk: a node's leave keeps failing");
+            return EVAL_FATAL();
+          }
         }
         continue;
       }

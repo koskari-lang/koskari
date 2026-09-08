@@ -452,6 +452,16 @@ KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value);
 
 
 /**
+   Resume a return that parked on a node whose leave went asynchronous,
+   now that the node has left the chain: re-enter the return path the
+   obligation names with its value. ob is a KOS_OB_RETURN obligation
+   handed back by kos_dyn_settle_top; it is consumed. The answer has
+   been through the raise ingress or the await tag as a walk's would.
+*/
+KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob);
+
+
+/**
    Complete a code-less frame by handing value to the eval loop's
    return machinery, which owns every delivery terminus (parent frame,
    iteration node, drive root). When cache is given, sets the frame to
@@ -583,23 +593,6 @@ struct KosContext {
                                parameter cell table, forked (pointer-copied)
                                at creation. Lazy; NULL when empty. */
 
-  /* A return in flight across a suspension. The unwind walk toward the
-     returning frame pops try, with, and wind nodes; when a node's leave
-     thunk (a wind's after thunk, a with's __exit__) suspends on an
-     awaitable, the walk stops and the return value has nowhere to sit:
-     the frame's operand stack is behind the thunk's frame and the
-     parent has not been reached. So the value parks here, owned by the
-     context, together with which return path to re-enter and, for a
-     delimited route, the bookmark node (a borrowed pointer into the
-     chain, validated on resume). The control-returned hook resumes the
-     return once the suspending node is gone; KosContext_Traverse visits
-     the value and KosContext_Free releases it if the coroutine is
-     abandoned mid-return. */
-  PyObject *pending_return_value;
-  KosPendingReturnKind pending_return_kind;
-  KosDynDelim *pending_return_delim;
-  uint32_t pending_return_node_id;    /* the node whose pop suspended */
-
   /* Transfer plan state */
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
   KosTransferPlan *plan_stack;  /* suspended plans stack */
@@ -613,11 +606,6 @@ struct KosContext {
   int inject_mode;         /* 0=none, 1=pending_throw */
   PyObject *inject_type;   /* exception type when inject_mode==KOS_INJECT_THROW */
   PyObject *inject_value;  /* exception object when inject_mode==1 */
-
-  /* --- Exception stash: LIFO of exceptions parked while a teardown or
-     handler works (propagation state; survives chain surgery). PyList of
-     (exception instance, parking node_id) tuples, or NULL when empty. --- */
-  PyObject *exc_stash;
 
   /* --- Handler-visible exception state (sys.exc_info) saved across
      suspensions: swapped with the thread state at koskari_eval
@@ -644,10 +632,6 @@ struct KosContext {
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
 #define KosContext_PARAM_REFS(c)            (((KosContext *)(c))->param_refs)
-#define KosContext_PENDING_RETURN_VALUE(c)   (((KosContext *)(c))->pending_return_value)
-#define KosContext_PENDING_RETURN_KIND(c)    (((KosContext *)(c))->pending_return_kind)
-#define KosContext_PENDING_RETURN_DELIM(c)   (((KosContext *)(c))->pending_return_delim)
-#define KosContext_PENDING_RETURN_NODE_ID(c) (((KosContext *)(c))->pending_return_node_id)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
@@ -660,7 +644,6 @@ struct KosContext {
 #define KosContext_INJECT_MODE(c)            (((KosContext *)(c))->inject_mode)
 #define KosContext_INJECT_TYPE(c)            (((KosContext *)(c))->inject_type)
 #define KosContext_INJECT_VALUE(c)           (((KosContext *)(c))->inject_value)
-#define KosContext_EXC_STASH(c)              (((KosContext *)(c))->exc_stash)
 #define KosContext_EXC_INFO(c)               (&((KosContext *)(c))->exc_info)
 
 #define KOS_INJECT_NONE   0
@@ -971,18 +954,6 @@ done:
   plan must be non-NULL. Frees the previous plan if present.
 */
 void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan);
-
-/**
-  Park a return value whose unwind walk suspended in a node's leave
-  thunk. Consumes val: the context owns it until the return resumes.
-  kind names the return path to re-enter; delim is the bookmark for
-  KOS_PENDING_RETURN_DELIM and NULL otherwise.
-*/
-void KosEvalState_SetPendingReturn(
-    KosEvalState *es,
-    PyObject *val,
-    KosPendingReturnKind kind,
-    KosDynDelim *delim);
 
 int KosEvalState_SetFrameCodeAndNamespace(
     KosEvalState *es,

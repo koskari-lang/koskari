@@ -29,6 +29,7 @@ KosDynWind *kos_dynwind_new(
   KosDynWind_AFTER_THUNK(wind) = after_thunk;
   if (after_thunk)
     Py_INCREF(after_thunk);
+  KosDynWind_OB(wind)->kind = KOS_OB_NONE;
   KosDynWind_ENTERED(wind) = 0;
   KosDynWind_PHASE(wind) = KOS_WIND_PHASE_IDLE;
   return wind;
@@ -41,6 +42,17 @@ KosDynWind *kos_dynwind_new(
 KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   if (! wind)
     return NULL;
+
+  /* A thunk in flight, or a value, exception or return parked for its
+     completion, belongs to this node's one run and to no template. */
+  if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
+      || KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER
+      || KosDynWind_OB(wind)->kind != KOS_OB_NONE) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cannot capture a continuation across a dyn-wind whose"
+                    " thunk is in flight");
+    return NULL;
+  }
 
   KosDynWind *clone = kos_dynnode_alloc();
   if (! clone)
@@ -55,7 +67,7 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   KosDynWind_AFTER_THUNK(clone) = KosDynWind_AFTER_THUNK(wind);
   if (KosDynWind_AFTER_THUNK(clone))
     Py_INCREF(KosDynWind_AFTER_THUNK(clone));
-  KosDynWind_BODY_RESULT(clone) = NULL;
+  KosDynWind_OB(clone)->kind = KOS_OB_NONE;
   KosDynWind_ENTERED(clone) = 0;
   KosDynWind_PHASE(clone) = KOS_WIND_PHASE_IDLE;
   return clone;
@@ -73,8 +85,7 @@ void kos_dynwind_free(KosDynWind *wind) {
   KosDynWind_BEFORE_THUNK(wind) = NULL;
   Py_XDECREF(KosDynWind_AFTER_THUNK(wind));
   KosDynWind_AFTER_THUNK(wind) = NULL;
-  Py_XDECREF(KosDynWind_BODY_RESULT(wind));
-  KosDynWind_BODY_RESULT(wind) = NULL;
+  kos_dyn_ob_clear(KosDynWind_OB(wind));
   kos_dynnode_return_to_freelist(wind);
 }
 
@@ -91,8 +102,8 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
   if (snapshot_set_obj(data, "after_thunk",
       KosDynWind_AFTER_THUNK((KosDynWind *) node)) < 0)
     return -1;
-  if (snapshot_set_obj(data, "body_result",
-      KosDynWind_BODY_RESULT((KosDynWind *) node)) < 0)
+  if (snapshot_set_int(data, "obligation",
+      (int) KosDynWind_OB((KosDynWind *) node)->kind) < 0)
     return -1;
   return 0;
 }
@@ -276,8 +287,7 @@ static int dynnode_traverse_wind(KosDynNode *node, visitproc visit, void *arg) {
   KosDynWind *wind = (KosDynWind *) node;
   Py_VISIT(KosDynWind_BEFORE_THUNK(wind));
   Py_VISIT(KosDynWind_AFTER_THUNK(wind));
-  Py_VISIT(KosDynWind_BODY_RESULT(wind));
-  return 0;
+  return kos_dyn_ob_traverse(KosDynWind_OB(wind), visit, arg);
 }
 
 

@@ -129,4 +129,53 @@ class TestSuspendedContextCollection(SpecialsTestCase):
         self.assertIs(caught.exception.value, box)
 
 
+class TestObligationsAcrossSuspension(SpecialsTestCase):
+
+    async def test_raise_survives_suspended_after_thunk(self):
+        """
+        an exception unwinding through a dyn-wind whose after thunk
+        suspends is parked on the wind and propagates once the thunk
+        completes
+        """
+
+        src_str = """
+        (lambda []
+          (dyn-wind []
+            (raise (call ValueError "body"))
+            (call park)))
+        """
+        expr, mod = self.compile_expr(src_str, park=Park, ValueError=ValueError)
+        fn = await expr()
+
+        coro = fn()
+        self.assertIsInstance(coro.send(None), Park)
+        with self.assertRaises(ValueError) as caught:
+            coro.send(None)
+        self.assertEqual(str(caught.exception), "body")
+
+
+    async def test_raising_after_thunk_voids_the_parked_return(self):
+        """
+        a return parked on a dyn-wind whose after thunk then raises is
+        discarded; the thunk's exception propagates to the handler
+        """
+
+        src_str = """
+        (lambda []
+          (try
+            (dyn-wind []
+              (return 1)
+              (begin (call park) (raise (call ValueError "after"))))
+            ([ValueError] "caught")))
+        """
+        expr, mod = self.compile_expr(src_str, park=Park, ValueError=ValueError)
+        fn = await expr()
+
+        coro = fn()
+        self.assertIsInstance(coro.send(None), Park)
+        with self.assertRaises(StopIteration) as caught:
+            coro.send(None)
+        self.assertEqual(caught.exception.value, "caught")
+
+
 # The end.
