@@ -563,6 +563,32 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         self.assertEqual(caught.exception.prompt_id, 0)
         self.assertEqual(caught.exception.operation, "shift")
 
+    async def test_shift_inside_enter_refuses_with_message(self):
+        """
+        a shift from inside a Koskari __enter__ would capture a with node
+        whose enter is in flight; the capture refuses with a message
+        """
+
+        enter_expr, _ = self.compile_expr("(lambda [self] (shift k k))")
+        enter_fn = await enter_expr()
+
+        class Mgr:
+
+            __enter__ = enter_fn
+
+            def __exit__(self, typ, val, tb):
+                return False
+
+        src_str = """
+        (reset
+          (with [(call make_mgr)] 1))
+        """
+        expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
+        with self.assertRaises(RuntimeError) as caught:
+            await expr()
+        self.assertIn("in flight", str(caught.exception))
+
+
     async def test_shift_across_generator_raises_prompt_unreachable(self):
         """
         A reset exists outside the generator, but the shift inside the

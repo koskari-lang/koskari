@@ -14,10 +14,9 @@
 */
 
 /**
-   POP_WITH: arg unused. Pop single-shot with context. Call exit(typ, val, tb);
-   auto-await if exit returns awaitable. If exception and exit returns true,
-   swallow; else re-raise. Pop body value from block, drop block, pop
-   KOS_DYN_WITH node (single-shot), push body value.
+   POP_WITH: arg unused. Unlink the single-shot with node: __exit__ runs
+   (auto-awaited when it returns an awaitable), the node leaves the chain,
+   and the body value lands on the revealed block.
 */
 
 KOS_OP_HANDLER(POP_WITH) {
@@ -37,16 +36,14 @@ KOS_OP_HANDLER(POP_WITH) {
     RESULT_RAISE();
   }
 
-  /* the unwind will pass the value to the upper stack */
   KosDynFrame *const caller = KosEvalState_FRAME(es);
-  KosOpResult kr = kos_dyn_with_unwind(es, (KosDynWith *) top);
+  KosOpResult kr = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
 
-  /* Error path, bail out. */
   if (kr.kind == KOS_RES_RAISE)
     RESULT_RAISE();
 
-  /* Async path, need to suspend, we'll resume at this opcode when we
-     wake back up. */
+  /* __exit__ suspended on an awaitable; the revive settles and unlinks
+     the node and continues past this opcode. */
   if (kr.kind == KOS_RES_AWAIT) {
     uint32_t same_pc = KosEvalState_ACTING_PC(es);
     KosEvalState_SET_PC(es, same_pc);
@@ -54,21 +51,16 @@ KOS_OP_HANDLER(POP_WITH) {
   }
 
   /* __exit__ is a KosCallable whose frame is installed and has yet to
-     run. Leave the node on the chain and the pc alone (the current frame
-     is the callee's, so threading on runs it): kos_dynnode_on_control_returned
-     completes the exit, pops the node, and sets the pc past this opcode.
-     A plan armed by the install is the prologue's to drain. */
-  if (KosDynWith_EXIT_PENDING((KosDynWith *) top)) {
-    if (kr.kind == KOS_RES_REPROLOGUE
-        && KosEvalState_FRAME(es) != caller
-        && ! KosEvalState_PLAN(es))
+     run. The node stays on the chain and the pc alone (the current frame
+     is the callee's, so threading on runs it): the callee's return
+     settles and unlinks the node and sets the pc past this opcode. A
+     plan armed by the install is the prologue's to drain. */
+  if (kr.kind == KOS_RES_REPROLOGUE) {
+    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_PLAN(es))
       RESULT_CONTINUE(es);
     return kr;
   }
 
-  /* all is well (NORMAL or REPROLOGUE/swallowed), pop the node and return */
-  if (unlikely(kos_dyn_pop_with(es, (KosDynWith *) top) < 0))
-    RESULT_RAISE();
   RESULT_NEXT(es);
 }
 

@@ -434,6 +434,85 @@ class TestDynWindTransferWindReproducer(SpecialsTestCase):
         ])
 
 
+class TestDynWindBeforeThunkWithFrame(SpecialsTestCase):
+    """
+    A before-thunk that installs a frame (it calls a Koskari function)
+    re-enters the evaluator's prologue mid-thunk. On a continuation
+    re-entry the transfer must wait for that thunk rather than fire it
+    again.
+    """
+
+    def make_bindings(self):
+        log = []
+        saved = []
+
+        def record(s):
+            log.append(s)
+            return s
+
+        def stash(k):
+            saved.append(k)
+
+        def invoke_saved():
+            k = saved[0]
+            saved.clear()
+            return k(99)
+
+        return log, saved, dict(record=record, stash=stash,
+                                invoke_saved=invoke_saved, saved=saved)
+
+
+    async def test_wind_at_template_top(self):
+        """
+        capture directly in the wind body: the wind is the top of the
+        captured segment
+        """
+
+        log, saved, bindings = self.make_bindings()
+
+        src_str = """
+        (begin
+          (define helper (lambda [] (call record "helper")))
+          (define result
+            (dyn-wind
+              (begin (call helper) (call record "before"))
+              (capture/cc k
+                (begin (call stash k) 42))
+              nil))
+          (cond [saved (invoke_saved)] [else: result]))
+        """
+        expr, mod = self.compile_expr(src_str, **bindings)
+        result = await expr()
+        self.assertEqual(result, 99, msg=f"log={log}")
+        self.assertEqual(log, ["helper", "before", "helper", "before"])
+
+
+    async def test_wind_below_a_frame(self):
+        """
+        capture inside a function called from the wind body: a frame sits
+        above the wind in the captured segment
+        """
+
+        log, saved, bindings = self.make_bindings()
+
+        src_str = """
+        (begin
+          (define helper (lambda [] (call record "helper")))
+          (define result
+            (dyn-wind
+              (begin (call helper) (call record "before"))
+              (call (lambda []
+                      (capture/cc k
+                        (begin (call stash k) 42))))
+              nil))
+          (cond [saved (invoke_saved)] [else: result]))
+        """
+        expr, mod = self.compile_expr(src_str, **bindings)
+        result = await expr()
+        self.assertEqual(result, 99, msg=f"log={log}")
+        self.assertEqual(log, ["helper", "before", "helper", "before"])
+
+
 class TestDynWindTransferFailures(SpecialsTestCase):
     """
     Failed transfer abandonment: when a transfer plan step raises during

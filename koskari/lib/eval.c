@@ -537,8 +537,11 @@ static KosOpResult revive_await(
   }
   if (owned)
     Py_DECREF(to_push);
-  if (kos_dyn_complete_pending(es) < 0)
-    return EVAL_RAISE();
+  {
+    KosOpResult sr = kos_dyn_settle_top(es);
+    if (sr.kind != KOS_RES_NORMAL)
+      return sr;
+  }
   return EVAL_NORMAL();
 }
 
@@ -3033,8 +3036,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
     return kos_eval_delivery_done(es);
 
   KosOpResult r;
-  KOS_TRACE_POST_OP_WRAP(control_returned,
-      r = kos_dynnode_on_control_returned(es, node));
+  KOS_TRACE_POST_OP_WRAP(control_returned, r = kos_dyn_settle_top(es));
   if (r.kind == KOS_RES_RAISE) {
     KosOpResult rs;
     KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
@@ -3054,7 +3056,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 
 /**
    After RETURN opcode pop: push onto the parent's stack, then
-   kos_dynnode_on_control_returned (WIND/WITH). A parent waiting on a
+   kos_dyn_settle_top (WIND/WITH). A parent waiting on a
    resume picks the value up from that stack on the next prologue pass.
    val is a new ref; ownership is consumed by this function.
 */

@@ -75,14 +75,17 @@ KOS_OP_HANDLER_COLD(PUSH_WIND) {
   if (a)
     Py_DECREF(a);
 
-  KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) wind);
+  KosOpResult wr = kos_dyn_extent_enter(es, (KosDynNode *) wind);
   if (wr.kind == KOS_RES_RAISE)
     RESULT_RAISE();
-  /* REPROLOGUE = before-thunk frame started; NORMAL = no thunk or sync done */
-  if (wr.kind == KOS_RES_NORMAL)
-    KosDynWind_ENTERED(wind) = 1;
+  /* the before-thunk suspended on an awaitable; the revive settles the
+     wind with the awaited value and continues into the body */
+  if (wr.kind == KOS_RES_AWAIT)
+    return wr;
 
-  /* a before-thunk frame may be current: continue from es->pc */
+  /* NORMAL: no thunk, or it ran in place. REPROLOGUE: the thunk's frame
+     is current; continue from es->pc runs it, and its return settles
+     the wind. */
   RESULT_CONTINUE(es);
 }
 

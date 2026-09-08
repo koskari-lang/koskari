@@ -132,49 +132,6 @@ KosOpResult kos_dyn_exception_unwind(
 }
 
 
-KosOpResult kos_dyn_pop_nonbarrier_top(
-    KosEvalState *es,
-    KosXferEvent event) {
-
-  KosDynNode *top = KosEvalState_DYN_TOP(es);
-  if (! top) {
-    PyErr_SetString(PyExc_RuntimeError, "cannot pop from empty dynamic chain");
-    return EVAL_RAISE();
-  }
-
-  if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER)) {
-    PyErr_SetString(PyExc_RuntimeError, "cannot unwind past barrier node");
-    return EVAL_RAISE();
-  }
-
-  return kos_dyn_uninstall_core(es, top, event);
-}
-
-
-KosOpResult kos_dyn_pop_top_allow_barrier(
-    KosEvalState *es,
-    KosXferEvent event) {
-
-  KosDynNode *top = KosEvalState_DYN_TOP(es);
-  if (! top) {
-    PyErr_SetString(PyExc_RuntimeError, "cannot pop from empty dynamic chain");
-    return EVAL_RAISE();
-  }
-
-  return kos_dyn_uninstall_core(es, top, event);
-}
-
-
-KosOpResult kos_dyn_pop_top(KosEvalState *es, KosXferEvent event) {
-  KosOpResult kr = kos_dyn_pop_nonbarrier_top(es, event);
-  if (kr.kind == KOS_RES_AWAIT) {
-    Py_XDECREF(kr.val);
-    return EVAL_REPROLOGUE();
-  }
-  return kr;
-}
-
-
 /**
    Generic unwind walk toward a target node. See dynchain.h for the
    contract. Pops until dyn_top == target or empty, crossing barriers and

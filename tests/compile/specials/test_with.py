@@ -115,6 +115,46 @@ class FutureEnterMgr:
         return self.exit_fut
 
 
+class FailingEnterMgr:
+    """
+    __enter__ raises; __exit__ must then never run
+    """
+
+    def __init__(self):
+        self.events = []
+
+
+    def __enter__(self):
+        self.events.append("enter")
+        raise ValueError("refused")
+
+
+    def __exit__(self, typ, val, tb):
+        self.events.append("exit")
+        return False
+
+
+class TestWithEnterFailure(SpecialsTestCase):
+
+    async def test_failing_enter_runs_no_exit(self):
+        """
+        a manager whose __enter__ raises is unlinked without __exit__
+        """
+
+        mgr = FailingEnterMgr()
+
+        src_str = """
+        (try
+          (with [(call get_mgr)] 1)
+          ([ValueError] "caught"))
+        """
+        expr, mod = self.compile_expr(
+            src_str, get_mgr=lambda: mgr, ValueError=ValueError)
+        result = await expr()
+        self.assertEqual(result, "caught")
+        self.assertEqual(mgr.events, ["enter"])
+
+
 class TestWithSpecial(SpecialsTestCase):
 
     async def test_normal_enter_exit_expression_returns_none(self):

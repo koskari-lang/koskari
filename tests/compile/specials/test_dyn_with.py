@@ -149,6 +149,37 @@ class TestDynWithSpecial(SpecialsTestCase):
         self.assertTrue(mgr.exited)
 
 
+class TestDynWithShiftUnwind(SpecialsTestCase):
+
+    async def test_shift_result_delivery_runs_exit_once(self):
+        """
+        a shift body completing inside a dyn-with delivers its value to
+        the reset and runs the manager's __exit__ exactly once
+        """
+
+        events = []
+
+        class Mgr:
+
+            def __enter__(self):
+                events.append("enter")
+                return self
+
+            def __exit__(self, typ, val, tb):
+                events.append("exit")
+                return False
+
+        src_str = """
+        (reset
+          (dyn-with [(call make_mgr)]
+            (shift k 5)))
+        """
+        expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["enter", "exit"])
+
+
 class TestDynWithTransferWindReproducer(SpecialsTestCase):
     """
     Minimal reproducer: continuation invoke into a dyn-with body should
@@ -238,7 +269,8 @@ class TestDynWithTransferFailures(SpecialsTestCase):
         __aenter__/__aexit__, the inner manager's sync __enter__ raises on
         transfer re-entry (a synchronous plan-step failure).  The abandon
         path must run the outer manager's async __aexit__ to completion
-        before the enclosing try/except catches.
+        before the enclosing try/except catches. The inner manager's
+        __exit__ does not run: its __enter__ never returned.
         """
 
         import asyncio
@@ -336,7 +368,6 @@ class TestDynWithTransferFailures(SpecialsTestCase):
             "invoke-saved-py saved=True",
             "aenter",
             "enter-1",
-            "exit",
             "aexit-start-1",
             "aexit-done-1",
             "caught",

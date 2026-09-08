@@ -68,25 +68,25 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
   }
 
   KosDynFrame *const caller = KosEvalState_FRAME(es);
-  KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) with_node);
+  KosOpResult wr = kos_dyn_extent_enter(es, (KosDynNode *) with_node);
 
   if (wr.kind == KOS_RES_RAISE) {
     kos_dyn_pop_with(es, with_node);
     RESULT_RAISE();
   }
 
-  /* AWAIT: __enter__ returned an awaitable and the node stays
-     provisional; the revive binds the settled value
-     (kos_dyn_complete_pending) and continues into the body. */
+  /* AWAIT: __enter__ returned an awaitable and the node stays pending;
+     the revive settles it with the awaited value and continues into
+     the body. */
   if (wr.kind == KOS_RES_AWAIT)
     return wr;
 
   /* REPROLOGUE: __enter__ is a KosCallable whose frame is installed.
      Do not touch the pc here -- the current frame is now the callee's,
      so threading on runs it; this frame's pc already sits past
-     PUSH_WITH, so the with body runs once the callee returns and
-     kos_dynnode_on_control_returned binds the result. A plan armed by
-     the install is the prologue's to drain. */
+     PUSH_WITH, so the with body runs once the callee returns and its
+     return settles the node. A plan armed by the install is the
+     prologue's to drain. */
   if (wr.kind != KOS_RES_NORMAL) {
     if (wr.kind == KOS_RES_REPROLOGUE
         && KosEvalState_FRAME(es) != caller

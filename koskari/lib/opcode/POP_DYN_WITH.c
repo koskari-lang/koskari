@@ -14,10 +14,9 @@
 */
 
 /**
-   POP_DYN_WITH: arg unused. Pop multi-shot dyn-with context. Call exit(typ, val, tb);
-   auto-await if exit returns awaitable. If exception and exit returns true,
-   swallow; else re-raise. Pop body value from block, drop block, pop
-   KOS_DYN_WITH node (multi-shot), push body value.
+   POP_DYN_WITH: arg unused. Unlink the multi-shot dyn-with node: __exit__
+   runs (auto-awaited when it returns an awaitable), the node leaves the
+   chain, and the body value lands on the revealed block.
 */
 
 KOS_OP_HANDLER(POP_DYN_WITH) {
@@ -26,40 +25,24 @@ KOS_OP_HANDLER(POP_DYN_WITH) {
     PyErr_SetString(PyExc_RuntimeError, "POP_DYN_WITH: top is not a with node");
     RESULT_RAISE();
   }
-  KosDynWith *with_node = (KosDynWith *) top;
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
+  KosOpResult kr = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
 
-  KosOpResult kr = kos_dyn_with_unwind(es, with_node);
+  if (kr.kind == KOS_RES_RAISE)
+    RESULT_RAISE();
   if (kr.kind == KOS_RES_AWAIT) {
     uint32_t same_pc = KosEvalState_ACTING_PC(es);
     KosEvalState_SET_PC(es, same_pc);
     return kr;
   }
-  /* REPROLOGUE = exception swallowed; resume_pc already set, node stays on chain */
-  if (kr.kind == KOS_RES_REPROLOGUE)
-    RESULT_CONTINUE(es);
-  if (kr.kind == KOS_RES_RAISE)
-    RESULT_RAISE();
-
-  if (KosDynNode_STACK((KosDynNode *) with_node)
-      && KosSegment_LEN(KosDynNode_STACK((KosDynNode *) with_node)) > 0) {
-    PyObject *body_val = KosEvalState_StackPopRef(es);
-    if (! body_val)
-      RESULT_RAISE();
-    if (unlikely(kos_dyn_pop_with(es, with_node) < 0)) {
-      Py_DECREF(body_val);
-      RESULT_RAISE();
-    }
-    if (KosEvalState_StackPushRef(es, body_val) < 0) {
-      Py_DECREF(body_val);
-      RESULT_RAISE();
-    }
-    Py_DECREF(body_val);
-  } else {
-    if (unlikely(kos_dyn_pop_with(es, with_node) < 0))
-      RESULT_RAISE();
+  /* __exit__'s frame is current: run it; its return settles and
+     unlinks the node. A plan armed by the install drains first. */
+  if (kr.kind == KOS_RES_REPROLOGUE) {
+    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_PLAN(es))
+      RESULT_CONTINUE(es);
+    return kr;
   }
 
-  (void) insn;
   RESULT_NEXT(es);
 }
 

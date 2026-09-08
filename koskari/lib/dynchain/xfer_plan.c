@@ -806,14 +806,35 @@ KOS_OP_INLINE void xfer_plan_apply_resume_state(
 */
 static int xfer_step_extent_action(KosEvalState *es,
                                    KosTransferAction *action) {
+  KosTransferPlan *plan = KosEvalState_PLAN(es);
   KosDynNode *node = KosTransferAction_EXTENT_NODE(action);
   int phase = KosTransferAction_EXTENT_PHASE(action);
   KosOpResult kr;
 
+  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK)
+      && kos_dyn_extent_in_flight(node)) {
+    /* In flight for someone else: this plan was built from inside that
+       thunk, and its INSTALL replaces the chain under it. Skip. */
+    if (KosTransferPlan_PARK_NODE(plan) != node)
+      return 0;
+    /* This step fired it: resume only once dyn_top is back to what it
+       was at the firing, which means the thunk's frame came and went.
+       Anything above belongs to the thunk. */
+    if (KosEvalState_DYN_TOP(es) != KosTransferPlan_PARK_TOP(plan))
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    if (kos_dyn_extent_settle(es, node) < 0)
+      return -1;
+    KosTransferPlan_PARK_NODE(plan) = NULL;
+  }
+
+  KosTransferPlan_PARK_NODE(plan) = node;
+  KosTransferPlan_PARK_TOP(plan) = KosEvalState_DYN_TOP(es);
   if (phase == KOS_XFER_EXTENT_PHASE_WIND)
-    kr = kos_dyn_wind(es, node);
+    kr = kos_dyn_extent_enter(es, node);
   else
-    kr = kos_dyn_unwind(es, node, KOS_XFER_EVENT_NONE);
+    kr = kos_dyn_extent_leave(es, node, KOS_XFER_EVENT_NONE);
+  if (kr.kind == KOS_RES_NORMAL)
+    KosTransferPlan_PARK_NODE(plan) = NULL;
   return kos_map_pop_result(kr);
 }
 
@@ -872,7 +893,7 @@ static int kos_dyn_run_install_wind_span(
 
   /* Run wind in reverse order (outer nodes first) */
   for (size_t i = wind_count; i > 0; i--) {
-    int m = kos_map_pop_result(kos_dyn_wind(es, wind_nodes[i - 1]));
+    int m = kos_map_pop_result(kos_dyn_extent_enter(es, wind_nodes[i - 1]));
     if (m) {
       if (m < 0 && KOS_XFER_TRACE)
         SAYF("[xfer] %s wind failed", xfer_fail_tag);

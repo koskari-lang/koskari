@@ -898,37 +898,6 @@ static void kos_dyn_region_leave_exc(KosDynNode *node) {
 
 
 /**
-   Dispatch post-await resume: WITH phases, WIND phases. Callers: eval after
-   KosEvalState_CallArgs returns.
-*/
-KosOpResult kos_dynnode_on_control_returned(
-    KosEvalState *es,
-    KosDynNode *node) {
-
-  int r = 0;
-  /* Iteration-node yield/return uses eval dispatch_iter_node_event /
-     kos_dyn_deliver_* instead of this hook. A frame node has no hook
-     work: the installed __enter__/__exit__/thunk frame has already
-     popped by the time the hook runs, so the WITH or WIND node itself
-     is current. */
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WIND:
-      r = kos_dyn_wind_on_control_returned(es, (KosDynWind *) node);
-      break;
-    case KOS_DYN_WITH:
-      if (KosDynWith_EXIT_PENDING((KosDynWith *) node))
-        r = kos_dyn_with_on_control_returned(es, (KosDynWith *) node);
-      else if (KosDynWith_ENTER_PENDING((KosDynWith *) node))
-        r = kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) node);
-      break;
-    default:
-      break;
-  }
-  return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-}
-
-
-/**
    Pop a region node without going through normal opcode POP_* when a push
    must be rolled back (e.g. setup failure). Dispatches to the matching
    kos_dyn_pop_* for TRY, FINALLY, LOOP, FOREACH only.
@@ -950,44 +919,136 @@ int kos_dyn_abort_push_region(KosEvalState *es, KosDynNode *region) {
 }
 
 
-/* === Pending protocol completion at await revive === */
+/* === The extent contract === */
+
+
+KosOpResult kos_dyn_extent_enter(KosEvalState *es, KosDynNode *node) {
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_PARAM: {
+      /* install-wind span of the transfer plan; the plan rework routes
+         PARAM through the unlink primitive instead */
+      int r = kos_dyn_param_wind(es, (KosDynParam *) node);
+      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    }
+    case KOS_DYN_WITH:
+      return kos_dyn_with_enter(es, (KosDynWith *) node);
+    case KOS_DYN_WIND:
+      return kos_dyn_wind_enter(es, (KosDynWind *) node);
+    default:
+      PyErr_Format(PyExc_RuntimeError,
+                   "kos_dyn_extent_enter: node kind %u has no enter",
+                   (unsigned) KosDynNode_KIND(node));
+      return EVAL_RAISE();
+  }
+}
+
+
+KosOpResult kos_dyn_extent_leave(
+    KosEvalState *es,
+    KosDynNode *node,
+    KosXferEvent ev) {
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_WIND:
+      return kos_dyn_wind_leave(es, (KosDynWind *) node, ev);
+    case KOS_DYN_WITH:
+      return kos_dyn_with_leave(es, (KosDynWith *) node, ev);
+    case KOS_DYN_PARAM:
+      kos_dyn_param_unwind(es, (KosDynParam *) node);
+      return EVAL_NORMAL();
+    case KOS_DYN_CC_RAISE: {
+      int r = cc_raise_unwind(KosEvalState_CONTEXT(es), node);
+      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+    }
+    case KOS_DYN_DELIM:
+    case KOS_DYN_SHIFT:
+    case KOS_DYN_GEN:
+    case KOS_DYN_NEXT:
+      return EVAL_NORMAL();
+    default:
+      PyErr_Format(PyExc_RuntimeError,
+                   "kos_dyn_extent_leave: node kind %u has no leave",
+                   (unsigned) KosDynNode_KIND(node));
+      return EVAL_RAISE();
+  }
+}
+
+
+int kos_dyn_extent_settle(KosEvalState *es, KosDynNode *node) {
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_WIND:
+      return kos_dyn_wind_settle(es, (KosDynWind *) node);
+    case KOS_DYN_WITH:
+      return kos_dyn_with_settle(es, (KosDynWith *) node);
+    default:
+      return 0;
+  }
+}
+
+
+void kos_dyn_extent_abort(KosDynNode *node) {
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_WIND:
+      kos_dyn_wind_abort((KosDynWind *) node);
+      break;
+    case KOS_DYN_WITH:
+      kos_dyn_with_abort((KosDynWith *) node);
+      break;
+    default:
+      break;
+  }
+}
+
+
+int kos_dyn_extent_in_flight(const KosDynNode *node) {
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_WIND:
+      return KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_BEGIN
+          || KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_AFTER;
+    case KOS_DYN_WITH:
+      return KosDynWith_ENTER_PENDING(node) || KosDynWith_EXIT_PENDING(node);
+    default:
+      return 0;
+  }
+}
 
 
 /**
-   Complete a with node whose awaited __aenter__ or __aexit__ has
-   settled: the awaited value sits on the frame stack and dyn_top is the
-   pending WITH node itself. An awaitable installs no frame; the pending
-   phase is set only on dyn_top, by the push and pop opcodes or by a
-   walk popping through dyn_top, and the walk returns on the AWAIT with
-   the node in place; nothing runs between that AWAIT and this revive.
-   A pending enter binds the value; a pending exit merges it and pops
-   the node. Callers: eval loop at await revive.
+   True when the armed transfer plan's extent step fired node: the
+   step, not the hook, settles and advances it.
 */
-int kos_dyn_complete_pending(KosEvalState *es) {
+static int kos_dyn_plan_step_waits_on(KosEvalState *es, KosDynNode *node) {
+  KosTransferPlan *plan = KosEvalState_PLAN(es);
+
+  return plan && KosTransferPlan_PARK_NODE(plan) == node;
+}
+
+
+KosOpResult kos_dyn_settle_top(KosEvalState *es) {
   KosDynNode *top = KosEvalState_DYN_TOP(es);
+  int was_leave;
 
-  if (! top)
-    return 0;
+  if (! top || ! KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CONTROL_HOOK))
+    return EVAL_NORMAL();
+  if (! kos_dyn_extent_in_flight(top))
+    return EVAL_NORMAL();
+  if (kos_dyn_plan_step_waits_on(es, top))
+    return EVAL_NORMAL();
 
-  if (KosDynNode_IS_WITH(top)) {
-    if (KosDynWith_ENTER_PENDING((KosDynWith *) top))
-      return kos_dyn_with_on_enter_control_returned(es, (KosDynWith *) top);
-    if (KosDynWith_EXIT_PENDING((KosDynWith *) top))
-      return kos_dyn_with_on_control_returned(es, (KosDynWith *) top);
-    return 0;
-  }
+  was_leave = KosDynNode_IS_WIND(top)
+      ? KosDynWind_PHASE(top) == KOS_WIND_PHASE_PRE_AFTER
+      : KosDynWith_EXIT_PENDING(top);
 
-  /* A wind thunk that tail-called an awaitable has no frame of its own
-     left when the await settles: dyn_top is the wind in its pre phase
-     and the awaited value sits on the stack as the thunk's result. The
-     same hook a returning thunk frame would fire runs here. */
-  if (KosDynNode_IS_WIND(top)) {
-    KosDynWind *wind = (KosDynWind *) top;
-    if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
-        || KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER)
-      return kos_dyn_wind_on_control_returned(es, wind);
-  }
-  return 0;
+  if (kos_dyn_extent_settle(es, top) < 0)
+    return EVAL_RAISE();
+  if (! was_leave)
+    return EVAL_NORMAL();
+
+  return kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
 }
 
 
@@ -1791,18 +1852,104 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
 }
 
 
-static KosOpResult kos_dyn_uninstall_core(
+KosOpResult kos_dyn_unlink_top(
     KosEvalState *es,
-    KosDynNode *node,
-    KosXferEvent event) {
+    KosXferEvent ev,
+    int allow_barrier) {
 
-  KosOpResult kr = kos_dyn_uninstall_handler(es, node, event);
-  if (kr.kind != KOS_RES_NORMAL)
-    return kr;
+  KosDynNode *node = KosEvalState_DYN_TOP(es);
+  KosDynNode *parent;
+  uint32_t node_id;
 
-  kos_dyn_commit_dyn_top(es, KosDynNode_PARENT(node));
+  /* detached state, acted on once the node is gone */
+  PyObject *deliver = NULL;   /* body value */
+  PyObject *exc_typ = NULL, *exc_val = NULL, *exc_tb = NULL;
+  int had_park = 0;
+  int swallowed = 0;
+
+  if (! node) {
+    PyErr_SetString(PyExc_RuntimeError, "cannot pop from empty dynamic chain");
+    return EVAL_RAISE();
+  }
+  if (! allow_barrier && KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BARRIER)) {
+    PyErr_SetString(PyExc_RuntimeError, "cannot unwind past barrier node");
+    return EVAL_RAISE();
+  }
+
+  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK)) {
+    KosOpResult r = kos_dyn_extent_leave(es, node, ev);
+    if (r.kind != KOS_RES_NORMAL)
+      return r;
+  } else {
+    KosOpResult r = kos_dyn_uninstall_handler(es, node, ev);
+    if (r.kind != KOS_RES_NORMAL)
+      return r;
+  }
+
+  node_id = KosDynNode_NODE_ID(node);
+  if (KosDynNode_IS_WIND(node)) {
+    had_park = kos_ctx_exc_stash_top_is(es, node_id);
+    deliver = KosDynWind_BODY_RESULT(node);
+    KosDynWind_BODY_RESULT(node) = NULL;
+  } else if (KosDynNode_IS_WITH(node)) {
+    exc_typ = KosDynWith_EXC_TYP(node);
+    exc_val = KosDynWith_EXC_VAL(node);
+    exc_tb = KosDynWith_EXC_TB(node);
+    KosDynWith_EXC_TYP(node) = NULL;
+    KosDynWith_EXC_VAL(node) = NULL;
+    KosDynWith_EXC_TB(node) = NULL;
+    swallowed = KosDynWith_SWALLOWED(node);
+    if (! swallowed && ! exc_typ && ev == KOS_XFER_EVENT_NONE) {
+      KosSegment *seg = KosDynNode_STACK(node);
+      if (seg && KosSegment_LEN(seg)) {
+        deliver = KosStack_PopRef(&KosDynNode_STACK(node));
+        if (! deliver)
+          return EVAL_RAISE();
+      }
+    }
+  }
+
+  parent = KosDynNode_PARENT(node);
+  kos_dyn_commit_dyn_top(es, parent);
   KosDynNode_PARENT(node) = NULL;
   kos_dynnode_free(node);
+
+  if (had_park) {
+    /* the raise walk parked its exception for this wind's after-thunk;
+       the thunk is done, so propagation continues */
+    Py_XDECREF(deliver);
+    Py_XDECREF(exc_typ);
+    Py_XDECREF(exc_val);
+    Py_XDECREF(exc_tb);
+    kos_ctx_exc_stash_reraise(es, node_id);
+    return EVAL_RAISE();
+  }
+  if (exc_typ) {
+    Py_XDECREF(deliver);
+    PyErr_Restore(exc_typ, exc_val, exc_tb);
+    return EVAL_RAISE();
+  }
+  if (swallowed) {
+    /* __exit__ consumed the raise: None stands in for the body value
+       at the with's resume pc, whatever event brought the raise */
+    Py_XDECREF(deliver);
+    if (KosEvalState_StackPushRef(es, Py_None) < 0)
+      return EVAL_RAISE();
+    return EVAL_NORMAL();
+  }
+  if (deliver) {
+    if (ev != KOS_XFER_EVENT_NONE) {
+      /* a return, raise, or transfer crossed the extent: the body
+         value is not the value of anything */
+      Py_DECREF(deliver);
+      return EVAL_NORMAL();
+    }
+    if (KosEvalState_StackPushRef(es, deliver) < 0) {
+      Py_DECREF(deliver);
+      return EVAL_RAISE();
+    }
+    Py_DECREF(deliver);
+  }
   return EVAL_NORMAL();
 }
 
@@ -1870,10 +2017,8 @@ int kos_dyn_install(KosEvalState *es, KosDynNode *node) {
 */
 static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
                                               KosXferEvent event) {
+  (void) event;
   switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WIND:
-    case KOS_DYN_WITH:
-      return kos_dyn_unwind(es, node, event);
     case KOS_DYN_PARAM:
       kos_dyn_param_unwind(es, (KosDynParam *) node);
       return EVAL_NORMAL();
@@ -1886,91 +2031,6 @@ static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
       return EVAL_NORMAL();
     default:
       return EVAL_NORMAL();
-  }
-}
-
-
-/**
-   Run wind (enter) for an extent node during continuation transfer.
-   Only called for kinds that have wind semantics; returns error for
-   others.
-
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
-*/
-KosOpResult kos_dyn_wind(KosEvalState *es, KosDynNode *node) {
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_PARAM: {
-      int r = kos_dyn_param_wind(es, (KosDynParam *) node);
-      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-    }
-    case KOS_DYN_WITH:
-      return kos_dyn_dyn_with_wind(es, (KosDynWith *) node);
-    case KOS_DYN_WIND: {
-      int r = kos_dyn_wind_wind(es, (KosDynWind *) node);
-      if (r == KOS_DYN_UNWIND_ASYNC_STARTED) return EVAL_REPROLOGUE();
-      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-    }
-    default:
-      PyErr_Format(PyExc_RuntimeError,
-                   "kos_dyn_wind: node kind %u has no wind",
-                   (unsigned) KosDynNode_KIND(node));
-      return EVAL_RAISE();
-  }
-}
-
-
-/**
-   Run unwind (exit) for an extent node.  May start async for WITH.
-
-   :param event: transfer event; nodes can distinguish RETURN, RAISE, etc.
-   :return: EVAL_NORMAL on success, EVAL_RAISE on error,
-     EVAL_AWAIT when WITH __exit__ returned awaitable,
-     EVAL_REPROLOGUE when WITH swallowed the exception
-*/
-KosOpResult kos_dyn_unwind(KosEvalState *es, KosDynNode *node,
-                            KosXferEvent event) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_DELIM:
-      return EVAL_NORMAL();
-    case KOS_DYN_SHIFT:
-      return EVAL_NORMAL();
-    case KOS_DYN_PARAM:
-      kos_dyn_param_unwind(es, (KosDynParam *) node);
-      return EVAL_NORMAL();
-    case KOS_DYN_WIND: {
-      int r = kos_dyn_wind_unwind(es, (KosDynWind *) node);
-      return (r < 0) ? EVAL_RAISE()
-           : (r == KOS_DYN_UNWIND_ASYNC_STARTED) ? EVAL_REPROLOGUE()
-           : EVAL_NORMAL();
-    }
-    case KOS_DYN_WITH: {
-      KosOpResult wr = kos_dyn_with_unwind(es, (KosDynWith *) node);
-      /* REPROLOGUE: exception swallowed; resume_pc set and Py_None pushed to
-         parent stack by dyn_with_unwind.  Map to NORMAL so kos_dyn_uninstall_core
-         pops the WITH node and commits the stack — then kos_dyn_unwind_raise's
-         top_may_swallow check returns REPROLOGUE to restart past POP_WITH.
-         An exit still pending means the opposite: __exit__ has not run
-         yet, so the node must survive for kos_dynnode_on_control_returned
-         to complete and pop it. */
-      if (wr.kind == KOS_RES_REPROLOGUE
-          && ! KosDynWith_EXIT_PENDING((KosDynWith *) node))
-        return EVAL_NORMAL();
-      return wr;
-    }
-    case KOS_DYN_CC_RAISE: {
-      int r = cc_raise_unwind(ctx, node);
-      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-    }
-    case KOS_DYN_GEN:
-      return EVAL_NORMAL();
-    case KOS_DYN_NEXT:
-      return EVAL_NORMAL();
-    default:
-      PyErr_Format(PyExc_RuntimeError,
-                   "kos_dyn_unwind: node kind %u has no unwind",
-                   (unsigned) KosDynNode_KIND(node));
-      return EVAL_RAISE();
   }
 }
 
