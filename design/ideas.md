@@ -34,8 +34,6 @@ v1 **`koskari_scripts`** packaging is implemented. Optional hardening work:
 
 - End-to-end pip-install integration test (build wheel, install in venv, run
   installed command).
-- Native binary dispatch for **`koskari_scripts`** entry points (Phase A native
-  **`koskari`** embed exists via **`make koskari-bin`**; not wired as installed
-  command shebang).
+- Native binary dispatch for **`koskari_scripts`** entry points.
 
 See [archive/koskari-scripts-packaging.md](archive/koskari-scripts-packaging.md).
