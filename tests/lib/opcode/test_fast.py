@@ -54,6 +54,25 @@ def test_fast_out_of_bounds_rejected_at_construction(code_list):
     assert "limit" in str(ctx.value)
 
 
+def test_rejected_code_releases_its_constants():
+    """
+    A Code rejected after its constant pool is built releases every
+    pool entry; the constants' refcounts return to where they started
+    """
+
+    import sys
+    marker = object()
+    before = sys.getrefcount(marker)
+    with pytest.raises(ValueError):
+        build_code([["CONST", marker], ["FAST", 0], ["RETURN", 1]])
+    assert sys.getrefcount(marker) == before
+
+    # a rejection in a later validation pass takes the same exit
+    with pytest.raises(RuntimeError):
+        build_code([["CONST", marker], ["POP_LOOP", 0], ["RETURN", 1]])
+    assert sys.getrefcount(marker) == before
+
+
 def test_fast_uses_fast_flag():
     """
     Code with a root-scope FAST opcode sets uses_fast; code without does not

@@ -2136,14 +2136,6 @@ static int code_emit(
     return -1;
   }
 
-  /* Transfer cpool: INCREF each item, store in pre-allocated array */
-  Py_ssize_t cpool_n = PyList_GET_SIZE(coll->cpool_list);
-  for (Py_ssize_t j = 0; j < cpool_n; j++) {
-    PyObject *val = PyList_GET_ITEM(coll->cpool_list, j);
-    Py_INCREF(val);
-    cpool[j] = val;
-  }
-
   /* Resolve LABEL placeholders in extra rows: replace name with target pc */
   if (extra) {
     Py_ssize_t n_pending = PyList_GET_SIZE(coll->pending_labels);
@@ -2162,7 +2154,27 @@ static int code_emit(
     }
   }
 
+  /* Transfer cpool last, once nothing in this pass can fail: INCREF
+     each item into the pre-allocated array. From here the entries are
+     owned references; a rejection after emit must release them
+     (code_release_cpool) and success hands them to the Code, whose
+     dealloc releases them. */
+  Py_ssize_t cpool_n = PyList_GET_SIZE(coll->cpool_list);
+  for (Py_ssize_t j = 0; j < cpool_n; j++) {
+    PyObject *val = PyList_GET_ITEM(coll->cpool_list, j);
+    Py_INCREF(val);
+    cpool[j] = val;
+  }
+
   return 0;
+}
+
+
+/* Release the owned pool entries a successful code_emit filled, for a
+   finalize that rejects the code afterwards. */
+static void code_release_cpool(PyObject **cpool, uint32_t cpool_len) {
+  for (uint32_t j = cpool_len; j--; )
+    Py_DECREF(cpool[j]);
 }
 
 
@@ -2874,9 +2886,8 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   if (validate_fast_slots(self, code, code_len, extra, extra_len,
                           cpool, cpool_len)) {
     code_collect_clear(&coll);
-    free(base);
     Py_DECREF(instr_fast);
-    return -1;
+    goto reject;
   }
 
   code_collect_clear(&coll);
@@ -2885,39 +2896,31 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   /* Phase 4: Finalize — fill extent table, validate, seal */
   if (extent_count > 0) {
     if (derive_extents_fill(code, code_len, extents, extent_count,
-                            top_extent_id)) {
-      free(base);
-      return -1;
-    }
+                            top_extent_id))
+      goto reject;
   }
   else if (validate_extents(code, code_len)) {
     /* No PUSH_* but has POP_*: reject malformed bytecode */
-    free(base);
-    return -1;
+    goto reject;
   }
 
   if (extents && top_extent_id &&
       validate_jump_locality(code, code_len, extents, extent_count,
-                             top_extent_id)) {
-    free(base);
-    return -1;
-  }
+                             top_extent_id))
+    goto reject;
 
   if (extents && top_extent_id &&
       validate_iter_next_in_foreach(code, code_len, extents,
-                                    extent_count, top_extent_id)) {
-    free(base);
-    return -1;
-  }
+                                    extent_count, top_extent_id))
+    goto reject;
 
   code_fill_derived(code, code_len, extra, NULL);
 
   /* Seal block read-only; single mprotect for entire allocation */
   if (protect) {
     if (mprotect(base, alloc_size, PROT_READ)) {
-      free(base);
       PyErr_SetFromErrno(PyExc_OSError);
-      return -1;
+      goto reject;
     }
     KosCode_FLAGS(self) |= KOS_CODE_PROTECTED;
   }
@@ -2937,6 +2940,13 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   KosCode_TOP_EXTENT_ID(self) = top_extent_id;
 
   return 0;
+
+ reject:
+  /* a rejection after emit: the pool entries are owned and the block
+     is still writable */
+  code_release_cpool(cpool, cpool_len);
+  free(base);
+  return -1;
 }
 
 
