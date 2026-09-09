@@ -2076,7 +2076,9 @@ int KosFunction_TryParkFrame(PyObject *self, KosDynFrame *frame) {
 
   KosDynNode_PARENT(frame) = NULL;
   KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
-  KosDynNode_CAPS(frame) = 0;
+  /* The parked frame keeps the namespace it introduced, so it keeps
+     the cap that tells the collector to look inside it. */
+  KosDynNode_CAPS(frame) = KOS_DYN_CAP_BINDS_NS;
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) = 0;

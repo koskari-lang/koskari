@@ -19,7 +19,11 @@ KosDynFrame *kos_dynframe_new(
     return NULL;
   }
 
-  kos_dynnode_init(frame, KOS_DYN_FRAME, parent, KOS_DYN_CAP_BINDS_NS);
+  /* A frame with code introduces its namespace; a native or
+     placeholder frame carries the live namespace as an owned fill, as
+     any non-introducer node does, and must not report it as its own. */
+  kos_dynnode_init(frame, KOS_DYN_FRAME, parent,
+                   code ? KOS_DYN_CAP_BINDS_NS : 0);
   Py_XINCREF(code);
   KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = 0;
@@ -328,9 +332,10 @@ int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache) {
 
   KosDynNode_PARENT(frame) = NULL;
   KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
-  /* The caps a fresh FRAME node gets from kos_dynframe_new, so the
+  /* The caps a fresh code-less FRAME node gets from kos_dynframe_new
+     (none: the fill it will carry is not an introduced scope), so the
      reinstall is indistinguishable from a new allocation. */
-  KosDynNode_CAPS(frame) = KOS_DYN_CAP_BINDS_NS;
+  KosDynNode_CAPS(frame) = 0;
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) = 0;

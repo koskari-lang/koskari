@@ -61,6 +61,12 @@ int KosEvalState_SetFrameCodeAndNamespace(
   Py_XINCREF(code);
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
   KosDynFrame_CODE(frame) = code;
+  /* A placeholder became a code frame introducing ns, or a tail reset
+     is being refilled: the cap follows the code, as at construction. */
+  if (code)
+    KosDynNode_CAPS(frame) |= KOS_DYN_CAP_BINDS_NS;
+  else
+    KosDynNode_CAPS(frame) &= ~KOS_DYN_CAP_BINDS_NS;
   if (KosEvalState_FRAME(es) == frame) {
     KosEvalState_NAMESPACE(es) = ns;
     KosEvalState_CODE(es) = KosDynFrame_CODE(frame);

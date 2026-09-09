@@ -165,6 +165,44 @@ class TestSuspendedNamespaceAttribution(SpecialsTestCase):
         self.assertIs(caught.exception.value, box)
 
 
+    async def test_native_frame_does_not_report_the_caller_namespace(self):
+        """
+        a native map step suspended above a Koskari frame carries that
+        frame's namespace as a fill, not as its own scope; the collector
+        must see the frame's references once, from the frame, so a cycle
+        through the argument list and the suspended coroutine leaves a
+        list the caller still holds intact
+        """
+
+        src_str = """
+        (lambda [seq] (for-each [x (map park seq)] x))
+        """
+        from koskari.lib import KosMap
+
+        expr, mod = self.compile_expr(
+            src_str, park=lambda x: Park(), map=KosMap)
+        fn = await expr()
+
+        xs = [1, 2, 3]
+        coro = fn(xs)
+        self.assertIsInstance(coro.send(None), Park)
+
+        xs.append(coro)
+        del coro
+        gc.collect()
+        self.assertEqual(xs[:3], [1, 2, 3])
+
+        coro = xs.pop()
+        parks = 0
+        while True:
+            try:
+                self.assertIsInstance(coro.send(None), Park)
+                parks += 1
+            except StopIteration:
+                break
+        self.assertGreaterEqual(parks, 1)
+
+
 class TestObligationsAcrossSuspension(SpecialsTestCase):
 
     async def test_raise_survives_suspended_after_thunk(self):
