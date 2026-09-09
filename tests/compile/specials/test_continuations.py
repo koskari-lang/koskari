@@ -96,4 +96,187 @@ class TestDelimitedTransferNested(SpecialsTestCase):
             await expr()
 
 
+class TestUndelimitedSeam(SpecialsTestCase):
+    """
+    An undelimited invoke leaves and re-enters only the extents between
+    the invoke point and the lowest common ancestor of the live chain
+    and the captured one. A dyn-wind, parameterize, or with that both
+    points sit inside is the same extent and runs no thunk; the operands
+    those shared nodes held at capture come back.
+    """
+
+    def wind_source(self, limit):
+        return f"""
+        (let [[saved nil] [n 0]]
+          (dyn-wind
+            (call record "before")
+            (begin
+              (let/cc k (setq saved k))
+              (setq n (+ n 1))
+              (call record (+ "body" (str n)))
+              (cond ((< n {limit}) (call saved 0)) (else: nil))
+              n)
+            (call record "after")))
+        """
+
+
+    async def test_shared_wind_runs_no_thunk(self):
+        """
+        capture and invoke inside the same dyn-wind body: neither thunk
+        runs on the re-entry
+        """
+
+        log = []
+        expr, mod = self.compile_expr(
+            self.wind_source(3), record=log.append, str=str)
+        result = await expr()
+        self.assertEqual(result, 3)
+        self.assertEqual(
+            log, ["before", "body1", "body2", "body3", "after"])
+
+
+    async def test_unshared_wind_above_shared_one_fires_alone(self):
+        """
+        a dyn-wind entered after the capture leaves on the invoke; the
+        one both points sit inside does not
+        """
+
+        src_str = """
+        (let [[saved nil] [n 0]]
+          (dyn-wind
+            (call record "b1")
+            (begin
+              (let/cc k (setq saved k))
+              (setq n (+ n 1))
+              (cond
+                ((< n 2)
+                 (dyn-wind
+                   (call record "b2")
+                   (call saved 0)
+                   (call record "a2")))
+                (else: nil))
+              n)
+            (call record "a1")))
+        """
+        log = []
+        expr, mod = self.compile_expr(src_str, record=log.append)
+        result = await expr()
+        self.assertEqual(result, 2)
+        self.assertEqual(log, ["b1", "b2", "a2", "a1"])
+
+
+    async def test_landed_clone_counts_as_shared(self):
+        """
+        an invoke from outside a left dyn-wind lands and enters it; a
+        second invoke from inside that landed body finds it shared and
+        runs no thunk
+        """
+
+        src_str = """
+        (let [[saved nil] [n 0]]
+          (begin
+            (dyn-wind
+              (call record "b")
+              (begin
+                (let/cc k (setq saved k))
+                (setq n (+ n 1))
+                (call record (+ "body" (str n)))
+                (cond ((== n 2) (call saved 0)) (else: nil)))
+              (call record "a"))
+            (cond ((== n 1) (call saved 0)) (else: nil))
+            n))
+        """
+        log = []
+        expr, mod = self.compile_expr(src_str, record=log.append, str=str)
+        result = await expr()
+        self.assertEqual(result, 3)
+        self.assertEqual(
+            log, ["b", "body1", "a", "b", "body2", "body3", "a"])
+
+
+    async def test_shared_parameterize_keeps_its_binding(self):
+        """
+        a parameterize both points sit inside is neither unwound nor
+        re-bound; the binding is in force after every re-entry
+        """
+
+        from koskari.lib import ParamRef
+
+        def read():
+            return ParamRef('amt', 0).deref()
+
+        src_str = """
+        (let [[saved nil] [n 0]]
+          (parameterize [[amt 7]]
+            (begin
+              (let/cc k (setq saved k))
+              (setq n (+ n 1))
+              (call record (call read))
+              (cond ((< n 3) (call saved 0)) (else: nil))
+              n)))
+        """
+        log = []
+        expr, mod = self.compile_expr(src_str, record=log.append, read=read)
+        result = await expr()
+        self.assertEqual(result, 3)
+        self.assertEqual(log, [7, 7, 7])
+
+
+    async def test_shared_single_shot_with_exits_once(self):
+        """
+        a with both points sit inside runs __enter__ once and __exit__
+        once, at the end
+        """
+
+        log = []
+
+        class Mgr:
+            def __enter__(self):
+                log.append("enter")
+                return self
+            def __exit__(self, *exc):
+                log.append("exit")
+                return False
+
+        src_str = """
+        (let [[saved nil] [n 0]]
+          (with [(call mgr)]
+            (begin
+              (let/cc k (setq saved k))
+              (setq n (+ n 1))
+              (call record (+ "body" (str n)))
+              (cond ((< n 3) (call saved 0)) (else: nil))
+              n)))
+        """
+        expr, mod = self.compile_expr(
+            src_str, mgr=Mgr, record=log.append, str=str)
+        result = await expr()
+        self.assertEqual(result, 3)
+        self.assertEqual(
+            log, ["enter", "body1", "body2", "body3", "exit"])
+
+
+    async def test_shared_frame_operands_come_back(self):
+        """
+        the operands pending in the shared frame at capture, 10 here,
+        are what the delivered value lands on, whatever the frame held
+        at the invoke
+        """
+
+        src_str = """
+        (let [[saved nil] [n 0] [acc nil]]
+          (begin
+            (setq acc (+ 10 (let/cc k (setq saved k) 1)))
+            (call record acc)
+            (setq n (+ n 1))
+            (cond ((< n 3) (+ 100 (call saved (* n 100)))) (else: nil))
+            acc))
+        """
+        log = []
+        expr, mod = self.compile_expr(src_str, record=log.append)
+        result = await expr()
+        self.assertEqual(result, 210)
+        self.assertEqual(log, [11, 110, 210])
+
+
 # The end.

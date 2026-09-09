@@ -815,14 +815,15 @@ int kos_dyn_ob_traverse(KosObligation *ob, visitproc visit, void *arg) {
    The empty slot of a node that carries one, or NULL with PyErr set.
 */
 static KosObligation *kos_dyn_ob_slot_for(KosDynNode *node) {
-  KosObligation *ob = kos_dyn_node_ob(node);
+  KosObligation *ob;
 
-  if (! ob) {
+  if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_HOLDS_OBLIGATION)) {
     PyErr_Format(PyExc_SystemError,
                  "obligation parked on a %s node, which carries none",
                  kos_dynnode_kind_name(KosDynNode_KIND(node)));
     return NULL;
   }
+  ob = kos_dyn_node_ob(node);
   if (ob->kind != KOS_OB_NONE) {
     PyErr_Format(PyExc_SystemError,
                  "obligation parked on a %s node already holding one",
@@ -1870,12 +1871,10 @@ static KosOpResult kos_dyn_unlink_top_take(
       return r;
   }
 
-  {
+  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_HOLDS_OBLIGATION)) {
     KosObligation *slot = kos_dyn_node_ob(node);
-    if (slot) {
-      ob = *slot;
-      slot->kind = KOS_OB_NONE;
-    }
+    ob = *slot;
+    slot->kind = KOS_OB_NONE;
   }
   if (KosDynNode_IS_WITH(node)) {
     swallowed = KosDynWith_SWALLOWED(node);

@@ -145,6 +145,12 @@ typedef enum KosDynFlags {
    fill every other pushed node carries. */
 #define KOS_DYN_CAP_BINDS_NS                 (1u << 11)
 
+/* This kind carries an obligation slot (KosObligation): what it owes
+   when it is unlinked -- a body value, an exception parked while its
+   after thunk or __exit__ runs, or a return crossing a leave in flight.
+   kos_dyn_node_ob is the generic accessor behind this cap. */
+#define KOS_DYN_CAP_HOLDS_OBLIGATION         (1u << 12)
+
 /* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
 #define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
 
@@ -1738,7 +1744,8 @@ KosOpResult kos_dyn_settle_top(KosEvalState *es, KosObligation *out_return);
 
 
 /**
-   The obligation slot of a WIND or WITH node; NULL for any other kind.
+   The obligation slot of a KOS_DYN_CAP_HOLDS_OBLIGATION node. Callers
+   test the cap first; this is the per-kind dispatch behind it.
 */
 KosObligation *kos_dyn_node_ob(KosDynNode *node);
 
@@ -1999,6 +2006,17 @@ void kos_continuation_free(KosContinuation *k);
 
    :return: 0 on success, -1 on error
 */
+/**
+   The lowest common ancestor of the live chain and a template segment
+   (matched by node id from the roots): *out_live on the chain,
+   *out_tmpl its counterpart; both NULL when the roots differ.
+*/
+int kos_chain_common_ancestor(
+    KosEvalState *es,
+    KosDynNode *tmpl,
+    KosDynNode **out_live,
+    KosDynNode **out_tmpl);
+
 int kos_invoke_continuation(
    KosEvalState *es,
    KosContinuation *k,

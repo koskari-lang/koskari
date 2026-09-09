@@ -15,7 +15,7 @@ KosDynWind *kos_dynwind_new(
   if (! wind)
     return NULL;
 
-  uint32_t wind_caps = KOS_DYN_CAP_CONTROL_HOOK;
+  uint32_t wind_caps = KOS_DYN_CAP_CONTROL_HOOK | KOS_DYN_CAP_HOLDS_OBLIGATION;
   if (after_thunk)
     wind_caps |= KOS_DYN_CAP_NEEDS_UNWIND_ACTION;
   if (before_thunk)

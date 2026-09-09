@@ -61,6 +61,8 @@ KosXferGoal *kos_xfer_goal_new(
   goal->payload = Py_XNewRef(payload);
   goal->continuation_ref = Py_XNewRef(continuation_ref);
   goal->resume_pc = resume_pc;
+  goal->restore = NULL;
+  goal->restore_count = 0;
   goal->phase = KOS_GOAL_LEAVING;
   goal->is_throw = (uint8_t) (is_throw != 0);
   goal->is_cc_unwind = (uint8_t) (is_cc_unwind != 0);
@@ -78,7 +80,131 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
   }
   Py_CLEAR(goal->payload);
   Py_CLEAR(goal->continuation_ref);
+  if (goal->restore) {
+    for (size_t i = 0; i < goal->restore_count; i++) {
+      if (goal->restore[i].stack)
+        KosStack_Release(goal->restore[i].stack);
+    }
+    PyMem_Free(goal->restore);
+    goal->restore = NULL;
+    goal->restore_count = 0;
+  }
   PyMem_Free(goal);
+}
+
+
+int kos_xfer_goal_capture_restore(
+    KosXferGoal *goal,
+    KosDynNode *live_seam,
+    KosDynNode *tmpl_seam) {
+
+  KosDynNode *live;
+  KosDynNode *tmpl;
+  size_t count = 0;
+  KosXferRestore *recs;
+
+  /* The run is the seam down to and including its frame. */
+  for (live = live_seam; live; live = KosDynNode_PARENT(live)) {
+    count++;
+    if (KosDynNode_IS_FRAME(live))
+      break;
+  }
+  if (! live) {
+    PyErr_SetString(PyExc_SystemError,
+                    "transfer: no frame at or below the seam");
+    return -1;
+  }
+
+  recs = PyMem_Calloc(count, sizeof(KosXferRestore));
+  if (! recs) {
+    PyErr_NoMemory();
+    return -1;
+  }
+
+  live = live_seam;
+  tmpl = tmpl_seam;
+  for (size_t i = 0; i < count; i++) {
+    KosXferRestore *r = &recs[i];
+
+    if (! tmpl || KosDynNode_NODE_ID(tmpl) != KosDynNode_NODE_ID(live)) {
+      PyErr_SetString(PyExc_SystemError,
+                      "transfer: the template does not mirror the chain"
+                      " below the seam");
+      goto fail;
+    }
+    r->node = live;
+    r->node_id = KosDynNode_NODE_ID(live);
+    if (KosDynNode_STACK(tmpl)) {
+      r->stack = KosStack_DeepCopy(KosDynNode_STACK(tmpl));
+      if (! r->stack)
+        goto fail;
+    }
+    if (KosDynNode_IS_FRAME(live)) {
+      r->pc = KosDynFrame_PC(tmpl);
+      r->acting_pc = KosDynFrame_ACTING_PC(tmpl);
+      r->resume_fn = KosDynFrame_RESUME_FN(tmpl);
+      r->resume_state = KosDynFrame_RESUME_STATE(tmpl);
+      r->resume_name = KosDynFrame_RESUME_NAME(tmpl);
+    }
+    live = KosDynNode_PARENT(live);
+    tmpl = KosDynNode_PARENT(tmpl);
+  }
+
+  goal->restore = recs;
+  goal->restore_count = count;
+  return 0;
+
+fail:
+  for (size_t i = 0; i < count; i++) {
+    if (recs[i].stack)
+      KosStack_Release(recs[i].stack);
+  }
+  PyMem_Free(recs);
+  return -1;
+}
+
+
+/**
+   Put the captured operands back on the nodes below the seam. The
+   node's segment slot keeps its address, so every unwind cache aimed at
+   it stays valid; the copy inherits the displaced segment's back link.
+   An inline segment cannot leave its node: it is emptied and left
+   dormant, as a spill leaves it.
+*/
+static int goal_apply_restore(KosXferGoal *goal) {
+
+  for (size_t i = 0; i < goal->restore_count; i++) {
+    KosXferRestore *r = &goal->restore[i];
+    KosDynNode *node = r->node;
+
+#if KOS_EVAL_SAFETYNET
+    if (KosDynNode_NODE_ID(node) != r->node_id) {
+      PyErr_SetString(PyExc_SystemError,
+                      "transfer: a restored node left the chain");
+      return -1;
+    }
+#endif
+    if (r->stack) {
+      KosSegment *old = KosDynNode_STACK(node);
+
+      KosSegment_BACK(r->stack) = old ? KosSegment_BACK(old) : NULL;
+      if (old) {
+        KosStack_Clear(&KosDynNode_STACK(node));
+        if (! KosSegment_IS_INLINE(old))
+          KosStack_Release(old);
+      }
+      KosDynNode_STACK(node) = r->stack;
+      r->stack = NULL;
+    }
+    if (KosDynNode_IS_FRAME(node)) {
+      KosDynFrame_PC(node) = r->pc;
+      KosDynFrame_ACTING_PC(node) = r->acting_pc;
+      KosDynFrame_RESUME_FN(node) = r->resume_fn;
+      KosDynFrame_RESUME_STATE(node) = r->resume_state;
+      KosDynFrame_RESUME_NAME(node) = r->resume_name;
+    }
+  }
+  return 0;
 }
 
 
@@ -124,6 +250,11 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
 
   Py_VISIT(goal->payload);
   Py_VISIT(goal->continuation_ref);
+  for (size_t i = 0; i < goal->restore_count; i++) {
+    int r = KosStack_Traverse(goal->restore[i].stack, visit, arg);
+    if (r)
+      return r;
+  }
   if (goal->target)
     return kos_dynchain_traverse(goal->target, NULL, visit, arg);
   return 0;
@@ -203,6 +334,13 @@ static KosOpResult goal_leave(KosEvalState *es, KosXferGoal *goal) {
 */
 static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
 
+  int had_target = goal->target != NULL;
+
+  /* Below the seam the extents are the ones the capture ran in; only
+     the operands they held come back. */
+  if (goal->restore && goal_apply_restore(goal) < 0)
+    return EVAL_RAISE();
+
   if (goal->target) {
     KosDynNode *bottom = goal->target;
 
@@ -218,6 +356,10 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
     kos_dyn_resync_chain(es);
   }
 
+  /* A landed target already resynced; a restore with no target changed
+     a live node's stack and still needs one. */
+  if (goal->restore && ! had_target)
+    kos_dyn_resync_chain(es);
   if (goal->resume_pc != (uint32_t) -1 && KosEvalState_FRAME(es))
     KosEvalState_SET_PC(es, goal->resume_pc);
 

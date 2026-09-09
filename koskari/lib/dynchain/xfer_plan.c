@@ -312,27 +312,50 @@ int kos_invoke_continuation(
   int is_delimited =
       (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED);
 
-  /* The landed frames sit above the invoker's frame (delimited) or
-     form the whole chain (undelimited); refuse here, before anything
-     moves, so RecursionError raises at the invoke site. */
-  if (kos_eval_check_frame_room(
-          es, is_delimited ? KosEvalState_FRAME(es) : NULL,
-          kos_dyn_frame_count(KosContinuation_CAPTURED_CHAIN(k), NULL)) < 0)
+  /* Undelimited: the seam is the lowest common ancestor of the live
+     chain and the template, so nothing at or below it leaves or
+     re-enters, and only the template above its counterpart lands. */
+  KosDynNode *seam = NULL;
+  KosDynNode *tmpl_stop = NULL;
+  if (! is_delimited
+      && kos_chain_common_ancestor(
+          es, KosContinuation_CAPTURED_CHAIN(k), &seam, &tmpl_stop) < 0)
     return -1;
+
+  /* The landed frames sit above the invoker's frame (delimited) or
+     above the seam's frame (undelimited); refuse here, before anything
+     moves, so RecursionError raises at the invoke site. */
+  {
+    KosDynNode *base = is_delimited
+        ? (KosDynNode *) KosEvalState_FRAME(es) : seam;
+
+    while (base && ! KosDynNode_IS_FRAME(base))
+      base = KosDynNode_PARENT(base);
+    if (kos_eval_check_frame_room(
+            es, (KosDynFrame *) base,
+            kos_dyn_frame_count(KosContinuation_CAPTURED_CHAIN(k),
+                                tmpl_stop)) < 0)
+      return -1;
+  }
 
   /* The landed segment is a fresh clone of the captured template, so
      each invoke instantiates the template anew (multi-shot, e.g.
      (sum (k 0) (k 1))); the template itself is never landed. */
   KosDynNode *target = kos_dyn_clone_segment(
-      KosContinuation_CAPTURED_CHAIN(k), NULL);
-  if (! target && KosContinuation_CAPTURED_CHAIN(k)) {
+      KosContinuation_CAPTURED_CHAIN(k), tmpl_stop);
+  if (! target && KosContinuation_CAPTURED_CHAIN(k) != tmpl_stop) {
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
                       "continuation template clone failed without PyErr");
     return -1;
   }
+  /* kos_dyn_clone_segment leaves the clone's bottom parented at
+     tmpl_stop; sever it so goal_land's walk to the bottom stops at the
+     clone and re-parents it to the seam, rather than following into the
+     template and moving the template's own root onto the live chain. */
+  if (target && tmpl_stop)
+    kos_chain_detach_template(target, tmpl_stop);
 
-  KosDynNode *seam = NULL;
   if (is_delimited) {
     KosDynDelim *ret_delim = kos_dyn_push_delim(
         es,
@@ -362,11 +385,75 @@ int kos_invoke_continuation(
         target, seam, value, is_throw, KosContinuation_RESUME_PC(k),
         continuation_ref, 0);
     if (! goal) {
-      if (seam && kos_dyn_pop_delim(es, (KosDynDelim *) seam) < 0)
-        return -1;
+      /* target is freed by kos_xfer_goal_new on failure. Undo only the
+         DELIM this call pushed; an undelimited seam is a live node. */
+      if (is_delimited && seam)
+        (void) kos_dyn_pop_delim(es, (KosDynDelim *) seam);
+      return -1;
+    }
+    if (tmpl_stop
+        && kos_xfer_goal_capture_restore(goal, seam, tmpl_stop) < 0) {
+      kos_xfer_goal_free(goal);
       return -1;
     }
     kos_xfer_goal_arm(es, goal);
   }
+  return 0;
+}
+
+
+/**
+   The lowest common ancestor of the live chain and a template: walking
+   both from their roots, the last pair of nodes with the same id. NULL
+   on both sides when the roots differ. Clones keep their source's id,
+   so a landed clone of this template counts as the same extent.
+
+   :return: 0, or -1 with PyErr set
+*/
+int kos_chain_common_ancestor(
+    KosEvalState *es,
+    KosDynNode *tmpl,
+    KosDynNode **out_live,
+    KosDynNode **out_tmpl) {
+
+  size_t n_live = 0;
+  size_t n_tmpl = 0;
+  KosDynNode *node;
+  KosDynNode **live_arr;
+  KosDynNode **tmpl_arr;
+  size_t i;
+
+  *out_live = NULL;
+  *out_tmpl = NULL;
+  for (node = KosEvalState_DYN_TOP(es); node; node = KosDynNode_PARENT(node))
+    n_live++;
+  for (node = tmpl; node; node = KosDynNode_PARENT(node))
+    n_tmpl++;
+  if (! n_live || ! n_tmpl)
+    return 0;
+
+  live_arr = PyMem_Malloc((n_live + n_tmpl) * sizeof(KosDynNode *));
+  if (! live_arr) {
+    PyErr_NoMemory();
+    return -1;
+  }
+  tmpl_arr = live_arr + n_live;
+
+  /* root first */
+  i = n_live;
+  for (node = KosEvalState_DYN_TOP(es); node; node = KosDynNode_PARENT(node))
+    live_arr[--i] = node;
+  i = n_tmpl;
+  for (node = tmpl; node; node = KosDynNode_PARENT(node))
+    tmpl_arr[--i] = node;
+
+  for (i = 0; i < n_live && i < n_tmpl; i++) {
+    if (KosDynNode_NODE_ID(live_arr[i]) != KosDynNode_NODE_ID(tmpl_arr[i]))
+      break;
+    *out_live = live_arr[i];
+    *out_tmpl = tmpl_arr[i];
+  }
+
+  PyMem_Free(live_arr);
   return 0;
 }

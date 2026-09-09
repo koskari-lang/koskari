@@ -63,6 +63,26 @@ typedef enum KosXferGoalPhase {
 } KosXferGoalPhase;
 
 
+/**
+   A node from the seam down to the seam's frame whose captured operand
+   segment (and, for the frame, registers) LANDING puts back. The node
+   itself keeps its identity and extent state: it is the same extent at
+   the capture point and the invoke point, only the operands it held
+   differ.
+*/
+typedef struct KosXferRestore {
+  KosDynNode *node;            /* borrowed live node */
+  uint32_t node_id;
+  KosSegment *stack;           /* owned copy of the captured segment (NULL:
+                                  none) */
+  uint32_t pc;                 /* frame only */
+  uint32_t acting_pc;
+  void *resume_fn;
+  void *resume_state;
+  const char *resume_name;
+} KosXferRestore;
+
+
 struct KosXferGoal {
   KosXferGoal *outer;          /* parked enclosing goal, or NULL */
 
@@ -78,6 +98,8 @@ struct KosXferGoal {
   PyObject *payload;           /* owned: the value, or the exception */
   PyObject *continuation_ref;  /* owned, or NULL: keeps the wrapper alive */
   uint32_t resume_pc;          /* UINT32_MAX when unset */
+  KosXferRestore *restore;     /* owned array, or NULL */
+  size_t restore_count;
 
   uint8_t phase;               /* KosXferGoalPhase */
   uint8_t is_throw;            /* payload is raised at delivery */
@@ -108,9 +130,23 @@ KosXferGoal *kos_xfer_goal_new(
 
 /**
    Release a goal's own resources: an unlanded target, the payload, the
-   continuation reference. Does not touch outer.
+   continuation reference, the restore records. Does not touch outer.
 */
 void kos_xfer_goal_free(KosXferGoal *goal);
+
+/**
+   Record what LANDING puts back below the seam: for each node from the
+   live seam down to and including the nearest frame, paired in step
+   with its template counterpart from tmpl_seam down, a copy of the
+   counterpart's operand segment and, for the frame, its registers.
+   The two runs must match by node id.
+
+   :return: 0, or -1 with PyErr set
+*/
+int kos_xfer_goal_capture_restore(
+    KosXferGoal *goal,
+    KosDynNode *live_seam,
+    KosDynNode *tmpl_seam);
 
 
 /**
