@@ -2988,10 +2988,17 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
 
   /* The base ns and stack fields are uniformly owned; visit them
      here, once, for every kind. Per-kind traversals cover only their
-     payloads. A frame namespace that was never revealed is untracked,
-     so its contents are reported through this node. */
+     payloads. A namespace that was never revealed is untracked, so its
+     contents are reported through the node that introduced it, and
+     only there: every other node holds that same namespace as its
+     live-ns fill, and reporting it again would count each of its
+     references once per holder. Its parent is either revealed or
+     introduced by another node on the chain, which reports it. A frame
+     introduces its namespace by definition; a parked frame has had its
+     caps cleared, so the kind is the test for it. */
   Py_VISIT(KosDynNode_NS(node));
-  {
+  if (KosDynNode_IS_FRAME(node)
+      || KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BINDS_NS)) {
     int tr = KosNamespace_TraverseUntracked(KosDynNode_NS(node), visit, arg);
     if (tr != 0)
       return tr;

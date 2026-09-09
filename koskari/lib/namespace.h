@@ -394,12 +394,14 @@ PyObject *KosNamespace_Reveal(PyObject *ns);
 
 
 /**
-   Attribute the references of an untracked namespace chain to the
-   holder being traversed. A namespace is born untracked, so a frame
-   or parked namespace that was never revealed is invisible to the
-   collector: its holder must report what it holds. Walks parents while
-   they too are untracked and stops at the first tracked one, which
-   the collector visits on its own. Returns the first non-zero visit
+   Attribute the references of an untracked namespace to the holder
+   being traversed. A namespace is born untracked, so a frame or parked
+   namespace that was never revealed is invisible to the collector: the
+   holder that introduced it must report what it holds. One level only:
+   the parent is either revealed, and the collector visits it on its
+   own, or introduced by another holder, which reports it. Reporting a
+   namespace from more than one holder counts its references once per
+   holder and frees live objects. Returns the first non-zero visit
    result, else 0.
 */
 int KosNamespace_TraverseUntracked(PyObject *ns, visitproc visit, void *arg);

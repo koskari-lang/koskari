@@ -129,6 +129,42 @@ class TestSuspendedContextCollection(SpecialsTestCase):
         self.assertIs(caught.exception.value, box)
 
 
+class TestSuspendedNamespaceAttribution(SpecialsTestCase):
+
+    async def test_object_bound_in_suspended_scopes_survives_collection(self):
+        """
+        an object bound in a let inside a dyn-wind body, with the
+        coroutine parked in that body, is held by the frame's namespace,
+        the let's, and the wind's fill of the let's; the collector must
+        see each reference once, so a live external reference keeps the
+        object alive across a collection
+        """
+
+        src_str = """
+        (lambda [box]
+          (let [[held box]]
+            (dyn-wind []
+              (begin (call park) held)
+              nil)))
+        """
+        expr, mod = self.compile_expr(src_str, park=Park)
+        fn = await expr()
+
+        box = Box()
+        box.tag = "still here"
+        alive = weakref.ref(box)
+        coro = fn(box)
+        self.assertIsInstance(coro.send(None), Park)
+
+        gc.collect()
+        self.assertIsNotNone(alive())
+        self.assertEqual(box.tag, "still here")
+
+        with self.assertRaises(StopIteration) as caught:
+            coro.send(None)
+        self.assertIs(caught.exception.value, box)
+
+
 class TestObligationsAcrossSuspension(SpecialsTestCase):
 
     async def test_raise_survives_suspended_after_thunk(self):
