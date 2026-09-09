@@ -246,9 +246,10 @@ or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
 
 The node a transfer goal leaves down to and lands on: the DELIM a
 delimited invoke pushed (nothing below the invoker leaves), the prompt's
-parent for POP_SHIFT, the root GEN for a foreign cc-unwind, or NULL for
-an undelimited invoke (the whole chain is replaced). Reference:
-EVALUATOR.md §6.2.
+parent for POP_SHIFT, the root GEN for a foreign cc-unwind, an
+undelimited invoke's lowest common ancestor with the template (matched
+by node id), or NULL when an undelimited invoke's chains share no node
+and the whole chain is replaced. Reference: EVALUATOR.md §6.2, §6.4.
 
 ## transfer goal
 

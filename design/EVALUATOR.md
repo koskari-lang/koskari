@@ -947,8 +947,8 @@ flowchart LR
 
 | Field | Role |
 |-------|------|
-| `target` | owned clone to land; NULL until landed or when nothing lands (POP_SHIFT, cc-unwind) |
-| `seam` (+ `seam_id`) | borrowed node on the live chain: leave down to it and land on it; NULL means the root (undelimited) |
+| `target` | owned clone of the template above the seam's counterpart to land; NULL until landed or when nothing lands (POP_SHIFT, cc-unwind, or nothing above the ancestor) |
+| `seam` (+ `seam_id`) | borrowed node on the live chain: leave down to it and land on it. A delimited invoke's DELIM; an undelimited invoke's lowest common ancestor with the template; NULL means the root (undelimited invoke whose chains share no node) |
 | `frontier` (+ id), `park_top` | the node whose thunk the goal waits on, and `dyn_top` when it fired |
 | `payload`, `is_throw`, `is_cc_unwind` | what delivery does: push, raise into the landed frame, or a boundary raise of a foreign continuation signal |
 | `resume_pc`, `continuation_ref` | pc installed at landing; keeps the Python wrapper alive |
@@ -962,7 +962,7 @@ flowchart LR
 4. **Re-derive.** LEAVING and ENTERING re-walk from the live chain each pass; a node already entered answers NORMAL, and a node another goal is waiting on is skipped.
 5. **Raise frees the stack.** A step failure enters `process_raise`, which abandons every goal; the chain a walk left behind is a chain to raise through.
 
-Seam and target per caller: a delimited invoke pushes a `KOS_DYN_DELIM` (POP_PROMPT mode) as the seam and lands the cloned slice on it; an undelimited invoke has seam NULL and replaces the chain; `POP_SHIFT` arms a goal with no target whose seam is the prompt's parent and whose resume pc is the prompt's `pop_pc + 1`; a foreign continuation signal arms a cc-unwind goal with no target whose seam is the root GEN (the driver boundary) or NULL.
+Seam and target per caller: a delimited invoke pushes a `KOS_DYN_DELIM` (POP_PROMPT mode) as the seam and lands the cloned slice on it; an undelimited invoke's seam is the lowest common ancestor of the live chain and the captured template (matched by node id from both roots), so nothing at or below it leaves or re-enters and only the template above the ancestor's counterpart lands (§6.4); the whole chain is replaced only when the chains share no node (seam NULL); `POP_SHIFT` arms a goal with no target whose seam is the prompt's parent and whose resume pc is the prompt's `pop_pc + 1`; a foreign continuation signal arms a cc-unwind goal with no target whose seam is the root GEN (the driver boundary) or NULL.
 
 ### 6.3 Unlink and obligations
 
@@ -981,6 +981,8 @@ The **extent contract** for WIND and WITH is total and re-entrant: `enter` / `le
 **In place (Path A):** when the capture-time prompt and SHIFT nodes are both still live, the SHIFT lies above the prompt, no barrier sits between `dyn_top` and the SHIFT, no goal is armed, the invoke is not a throw, and the live slice is unconsumed, `kos_delimited_invoke_inplace` detaches the invoke span onto a `KOS_DYN_DELIM_MODE_INPLACE` delim above the prompt and continues on the live chain: no clone, no goal, no enter replay. Only the first invoke runs in place. The slice's `POP_PROMPT` restitches the stashed span (`kos_dyn_inplace_restitch`).
 
 **Landing (Path B):** `kos_invoke_continuation` checks the recursion limit against the template's frame count, clones the template, pushes the POP_PROMPT-mode DELIM as the seam, and arms a goal with the clone as target. When the slice reaches `POP_PROMPT`, the return walk hands the DELIM back (`took`) and the value lands at the invoke site.
+
+**Undelimited landing:** `kos_chain_common_ancestor` finds the lowest common ancestor of the live chain and the template by node id (clones keep their source's id, so a landed clone of this template counts as the same extent). The ancestor is the seam; `kos_dyn_clone_segment` clones only the template above the ancestor's counterpart, then `kos_chain_detach_template` severs the clone's bottom from the template so LANDING's splice cannot follow into it. LEAVING runs the after thunks and `__exit__`s above the seam, LANDING restores the captured operand stacks of the shared nodes from the seam down to its frame (`kos_xfer_goal_capture_restore` records them at invoke, `goal_apply_restore` puts them back), and ENTERING runs the before thunks above the seam. The chains share no node only when the capture context is gone; then the seam is NULL and the whole chain is replaced.
 
 
 ## 7. Tail Calls and Call Installs
@@ -1455,7 +1457,7 @@ carry recyclable durable contexts.
 2. The thunk invokes a second continuation. `kos_invoke_continuation` arms an inner goal; the outer stays parked with `park_top` recorded.
 3. The inner goal drives to delivery on the chain above `park_top`; a delimited inner invoke returns its reset's value to the thunk, which then returns.
 4. The thunk's return settles the wind (`kos_dyn_settle_top`); `dyn_top` is `park_top` again, and the drive resumes the outer goal where it left off.
-5. Had the inner landing been undelimited, LANDING would have freed the outer goal along with the chain it was moving.
+5. Had the inner landing been an undelimited one that reached the root, LANDING would have freed the outer goal along with the chain it was moving.
 
 Tests: `TestDelimitedTransferNested` in `tests/compile/specials/test_continuations.py` and `TestDynWindContinuations` in `tests/compile/specials/test_dyn_wind.py`.
 
@@ -1772,8 +1774,10 @@ layout compiles to a single `dynchain.o`; the public C API is
 retires into. Per phase: `goal_leave` unlinks `dyn_top` through
 `kos_dyn_unlink_top` with `KOS_XFER_EVENT_TRANSFER` until the seam is
 `dyn_top` (a root GEN as seam stops there; a missing seam is a `SystemError`);
-`goal_land` splices the target onto the seam, renumbers the landed frames,
-installs the resume pc, and frees the outers when the seam is NULL;
+`goal_land` restores the captured operand stacks of the live nodes from the
+seam down to its frame (and that frame's registers), splices the target onto
+the seam, renumbers the landed frames, installs the resume pc, and frees the
+outers when the seam is NULL;
 `goal_enter` collects the landed span and asks `kos_dyn_extent_enter` of each
 `CONTROL_HOOK` node outermost first (single-shot withs are skipped, PARAM
 extents re-bound); `goal_deliver` pushes the payload, arms the throw slots,
@@ -2118,8 +2122,11 @@ On continuation transfer from the current chain to a target segment:
    re-bind; multi-shot withs re-enter, single-shot withs do not.
 
 The seam is the node both chains share: the DELIM a delimited invoke pushed
-(so nothing below the invoker leaves), or the root for an undelimited one.
-This matches Scheme's `dynamic-wind` semantics.
+(so nothing below the invoker leaves), or the lowest common ancestor for an
+undelimited one, so a wind, parameterize, or with that encloses both the
+capture point and the invoke point neither leaves nor re-enters. LANDING
+restores the captured operands of the shared nodes down to the ancestor's
+frame. This matches Scheme's `dynamic-wind` semantics.
 
 ---
 

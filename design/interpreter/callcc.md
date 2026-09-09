@@ -169,19 +169,25 @@ int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
    stashed span (`kos_dyn_inplace_restitch`); an exception raised in the
    slice restitches likewise and continues the raise from the invoke site.
 
-1. **Recursion limit**: the template's frame count must fit above the
-   invoker's frame (delimited) or above the root (undelimited);
-   `kos_eval_check_frame_room` refuses with `RecursionError` before anything
-   moves, so the error raises at the invoke site.
+1. **Seam**: a delimited invoke pushes a **`KOS_DYN_DELIM`** in
+   `KOS_DYN_DELIM_MODE_POP_PROMPT` at dyn_top as the seam. An undelimited
+   invoke's seam is the lowest common ancestor of the live chain and the
+   captured template (`kos_chain_common_ancestor`, matched by node id from
+   both roots; clones keep their source's id), so nothing at or below it
+   leaves or re-enters; the chains share no node only when the capture
+   context is gone, and then the seam is NULL and the whole chain is
+   replaced.
 
-2. **Clone the template**: every landing instantiates the template anew
-   (`kos_dyn_clone_segment`), so multi-shot invokes never share nodes.
+2. **Recursion limit**: the template's frame count above the ancestor must
+   fit above the seam's frame (undelimited) or above the invoker's frame
+   (delimited); `kos_eval_check_frame_room` refuses with `RecursionError`
+   before anything moves, so the error raises at the invoke site.
 
-3. **Seam**: a delimited invoke pushes a **`KOS_DYN_DELIM`** in
-   `KOS_DYN_DELIM_MODE_POP_PROMPT` at dyn_top as the seam; the caller stays
-   below it and the slice lands on it. When the slice reaches `POP_PROMPT`,
-   the return walk hands the delim back and the value lands at the invoke
-   site. An undelimited invoke has a NULL seam: the whole chain is replaced.
+3. **Clone the template**: `kos_dyn_clone_segment` instantiates the template
+   above the ancestor's counterpart anew, so multi-shot invokes never share
+   nodes; `kos_chain_detach_template` severs the clone's bottom from the
+   template. When the slice reaches `POP_PROMPT` (delimited), the return
+   walk hands the delim back and the value lands at the invoke site.
 
 4. **Arm a goal** (`kos_xfer_goal_new` + `kos_xfer_goal_arm`) with the clone
    as target and the value (or exception, `is_throw`) as payload; answer
@@ -239,15 +245,20 @@ struct KosXferGoal {
 5. `POP_PROMPT` in the slice returns through the DELIM to the invoke site.
 
 **Undelimited landing** (call/cc):
-1. LEAVING: unlink from dyn_top to the root through `kos_dyn_unlink_top`
-   with `KOS_XFER_EVENT_TRANSFER`: `after` thunks and `__exit__`s run,
-   innermost first; obligations the nodes held are dropped.
-2. LANDING: the clone becomes the chain; every outer goal is freed, since
-   the chain it was moving is gone.
-3. ENTERING and DELIVERING as above.
+1. LEAVING: unlink from dyn_top down to the seam (the lowest common
+   ancestor) through `kos_dyn_unlink_top` with `KOS_XFER_EVENT_TRANSFER`:
+   `after` thunks and `__exit__`s above the seam run, innermost first;
+   obligations the nodes held are dropped. Nothing at or below the seam
+   leaves.
+2. LANDING: restore the captured operand stacks of the shared nodes from the
+   seam down to its frame (and that frame's registers), then splice the
+   clone onto the seam. When the seam is NULL (the chains share no node)
+   the clone becomes the whole chain and every outer goal is freed.
+3. ENTERING and DELIVERING as above, over the landed nodes only.
 
-There is no lowest-common-ancestor computation: the seam is the node both
-chains share by construction, and LEAVING always runs down to it.
+A wind, parameterize, or with that encloses both the capture point and the
+invoke point is at or below the ancestor, so it neither leaves nor
+re-enters, matching Scheme's `dynamic-wind`.
 
 ### Re-Entrant Transfers
 
@@ -263,7 +274,7 @@ came and went. Everything above `park_top` belongs to the thunk:
    invoke returns its reset's value to the thunk, which then returns.
 3. The thunk's return settles the node (`kos_dyn_settle_top`); dyn_top is
    `park_top` again and the drive resumes the outer goal where it left off.
-4. An undelimited inner landing frees the outer goal along with the chain.
+4. An undelimited inner landing that reaches the root frees the outer goal along with the chain.
 
 A step that raises enters `process_raise`, which frees the whole goal stack
 (`kos_xfer_goal_abandon_all`) and raises through the chain as the driver
