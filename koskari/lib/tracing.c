@@ -44,7 +44,7 @@ static uint64_t kos_te_counters[KOS_TE__COUNT];
 static const char *const kos_te_names[KOS_TE__COUNT] = {
   "dyn_handle_enter",
   "dyn_unwind_step",
-  "transfer_plan_build",
+  "transfer_goal_new",
   "raise_local_walk_iter",
   "seg_inline_install",
   "seg_inline_spill",

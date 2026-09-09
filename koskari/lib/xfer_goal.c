@@ -43,7 +43,7 @@ KosXferGoal *kos_xfer_goal_new(
 
   KosXferGoal *goal = PyMem_Malloc(sizeof(KosXferGoal));
 
-  KOS_TRACE_EVENTS_INC(KOS_TE_TRANSFER_PLAN_BUILD);
+  KOS_TRACE_EVENTS_INC(KOS_TE_TRANSFER_GOAL_NEW);
   if (! goal) {
     if (target)
       kos_dynchain_free(target, NULL);

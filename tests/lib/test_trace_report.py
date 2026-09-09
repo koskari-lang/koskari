@@ -100,7 +100,7 @@ class TestTraceReport(unittest.TestCase):
         expected = (
             "dyn_handle_enter",
             "dyn_unwind_step",
-            "transfer_plan_build",
+            "transfer_goal_new",
             "raise_local_walk_iter",
         )
         for key in expected:
