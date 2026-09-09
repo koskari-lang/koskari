@@ -280,4 +280,84 @@ class TestKoskariInstallScripts(unittest.TestCase):
         self.assertTrue(issubclass(KoskariInstallScripts, install_scripts))
 
 
+class TestHookReach(unittest.TestCase):
+    """
+    The finalize hook runs for every distribution built where koskari is
+    installed, so a distribution without koskari_scripts must see no
+    setuptools internals loaded and no shared state changed
+    """
+
+    def test_importing_the_hook_loads_no_setuptools_internals(self):
+        import subprocess
+        code = (
+            "import sys\n"
+            "import koskari.extras.setuptools.plugin\n"
+            "loaded = [m for m in sys.modules if m in ("
+            "'setuptools._scripts', 'setuptools.command.easy_install',"
+            " 'setuptools.command.editable_wheel',"
+            " 'koskari.extras.setuptools.commands')]\n"
+            "print(loaded)\n")
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True,
+            check=True)
+        self.assertEqual(out.stdout.strip(), "[]")
+
+    def test_plain_distribution_leaves_the_class_and_dist_alone(self):
+        from setuptools.dist import Distribution
+        before = Distribution.__dict__['parse_config_files']
+        dist = Distribution({'name': 'plain', 'version': '0'})
+        configure_koskari_scripts(dist)
+        self.assertIs(Distribution.__dict__['parse_config_files'], before)
+        self.assertNotIn('install_scripts', dist.cmdclass or {})
+        self.assertFalse(getattr(dist, '_koskari_scripts_configured', False))
+
+    def test_declarative_koskari_scripts_seen_after_config_parse(self):
+        import os
+        import tempfile
+        from setuptools.dist import Distribution
+
+        cfg = (
+            "[metadata]\n"
+            "name = declared\n"
+            "version = 0.1\n"
+            "[options]\n"
+            "packages = declared\n"
+            "install_requires = koskari\n"
+            "[options.entry_points]\n"
+            "koskari_scripts =\n"
+            "  hello = declared.cli:main\n")
+
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, 'declared'))
+            with open(os.path.join(tmp, 'declared', '__init__.py'), 'w'):
+                pass
+            with open(os.path.join(tmp, 'setup.cfg'), 'w') as f:
+                f.write(cfg)
+            os.chdir(tmp)
+            try:
+                dist = Distribution({'name': 'declared'})
+                configure_koskari_scripts(dist)
+                self.assertNotIn('install_scripts', dist.cmdclass or {})
+                dist.parse_config_files()
+            finally:
+                os.chdir(cwd)
+
+        self.assertIs(dist.cmdclass['install_scripts'], KoskariInstallScripts)
+        self.assertTrue(dist._koskari_scripts_configured)
+
+    def test_second_look_is_scoped_to_that_distribution(self):
+        from setuptools.dist import Distribution
+        class_fn = Distribution.__dict__['parse_config_files']
+        first = Distribution({'name': 'first', 'version': '0'})
+        configure_koskari_scripts(first)
+        # a repeat arms nothing further
+        configure_koskari_scripts(first)
+        second = Distribution({'name': 'second', 'version': '0'})
+        self.assertIs(Distribution.__dict__['parse_config_files'], class_fn)
+        self.assertIn('parse_config_files', vars(first))
+        self.assertIsNot(vars(first)['parse_config_files'],
+                         vars(second).get('parse_config_files'))
+
+
 # The end.
