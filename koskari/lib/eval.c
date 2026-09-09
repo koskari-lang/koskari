@@ -3384,6 +3384,29 @@ KosOpResult koskari_eval(
     return EVAL_RAISE();
   }
 
+  /* FAST-slot code needs a namespace with fast slots. Checked here,
+     before anything below is set up, so a refusal returns with nothing
+     to unwind: the cleanup label pops the thread-local eval, context,
+     and token entries that only the pushes below create, and reaching
+     it from an earlier point would pop an enclosing eval's entries
+     instead. A resume was checked on its first entry, and a native
+     frame carries no code. */
+  {
+    KosDynFrame *top = KosContext_FRAME_TOP(ctx);
+    KosCode *code = top ? KosDynFrame_CODE(top) : NULL;
+    if (code && KosCode_USES_FAST(code)) {
+      PyObject *ns = KosContext_NAMESPACE(ctx);
+      if (! ns)
+        ns = KosDynFrame_NS(top);
+      if (! KosNamespace_SupportsFast(ns)) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "code uses fast slots but namespace does not support"
+                     " them: %R", ns ? ns : Py_None);
+        return EVAL_RAISE();
+      }
+    }
+  }
+
   /* Swap in this context's handler-visible exception state (sys.exc_info),
      saving the host's. Contexts interleaved on one thread must not see
      each other's handled exception; the reverse swap runs at cleanup. */
@@ -3396,20 +3419,6 @@ KosOpResult koskari_eval(
   KosEvalState_ThawFromContext(&es);
   if (KosEvalState_DYN_TOP(&es))
     kos_dyn_resync_chain(&es);
-
-  /* On fresh entry, verify that FAST-slot code runs in a capable namespace.
-     Resumes are safe: the namespace was already validated on first entry.
-     A native frame carries no code. */
-  if (KosEvalState_CODE(&es) && KosCode_USES_FAST(KosEvalState_CODE(&es))) {
-    PyObject *ns = KosEvalState_NAMESPACE(&es);
-    if (! KosNamespace_SupportsFast(ns)) {
-      PyErr_Format(PyExc_RuntimeError,
-                   "code uses fast slots but namespace does not support"
-                   " them: %R", ns);
-      eval_ret = EVAL_RAISE();
-      goto koskari_eval_cleanup;
-    }
-  }
 
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
 
