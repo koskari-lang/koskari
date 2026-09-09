@@ -20,7 +20,7 @@ exception). Uses PUSH_DYN_WITH/POP_DYN_WITH. Participates in transfer plans.
 
 import pytest
 
-from . import SpecialsTestCase
+from . import Park, SpecialsTestCase
 
 
 pytestmark = pytest.mark.phase_specials
@@ -178,16 +178,6 @@ class TestDynWithShiftUnwind(SpecialsTestCase):
         result = await expr()
         self.assertEqual(result, 5)
         self.assertEqual(events, ["enter", "exit"])
-
-
-class Park:
-    """
-    An awaitable that yields once, then completes on the next send
-    """
-
-    def __await__(self):
-        yield self
-        return "parked"
 
 
 class TestDynWithShiftSuspendedExit(SpecialsTestCase):

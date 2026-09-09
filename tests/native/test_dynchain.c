@@ -423,14 +423,14 @@ static int test_dynwith_free_exc_unconditional(void) {
        is unlinked normally: the pop answers -1 with it pending, and the
        three references end up owned by the error indicator */
     TEST_ASSERT(kos_dyn_ob_park_exception(
-                    (KosDynNode *) with_node,
-                    Py_NewRef(PyExc_ValueError),
-                    PyUnicode_FromString("parked"),
-                    NULL) == 0,
-                "park exception on WITH");
+        (KosDynNode *) with_node,
+        Py_NewRef(PyExc_ValueError),
+        PyUnicode_FromString("parked"),
+        NULL) == 0,
+        "park exception on WITH");
 
     TEST_ASSERT(kos_dyn_pop_with(&es, with_node) == -1,
-                "pop WITH re-raises the parked exception");
+        "pop WITH re-raises the parked exception");
     TEST_ASSERT(PyErr_Occurred() != NULL, "parked exception pending");
     PyErr_Clear();
 

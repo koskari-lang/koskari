@@ -45,6 +45,16 @@ def _register_specials(ns, specials):
     ns.store("#dict", build_dict)
 
 
+class Park:
+    """
+    An awaitable that yields once, then completes on the next send
+    """
+
+    def __await__(self):
+        yield self
+        return "parked"
+
+
 class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
     """
     TestCase subclass with helpers for compiling koskari lisp into expressions

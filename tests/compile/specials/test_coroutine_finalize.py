@@ -28,20 +28,10 @@ import sys
 
 import pytest
 
-from . import SpecialsTestCase
+from . import Park, SpecialsTestCase
 
 
 pytestmark = pytest.mark.phase_specials
-
-
-class Park:
-    """
-    An awaitable that yields once and completes on the next send
-    """
-
-    def __await__(self):
-        yield self
-        return "parked"
 
 
 class Recorder:

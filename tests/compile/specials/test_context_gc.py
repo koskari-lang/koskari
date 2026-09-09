@@ -28,22 +28,12 @@ through it never collects.
 import gc
 import weakref
 
-from . import SpecialsTestCase
+from . import Park, SpecialsTestCase
 
 import pytest
 
 
 pytestmark = pytest.mark.phase_specials
-
-
-class Park:
-    """
-    An awaitable that yields once, then completes on the next send
-    """
-
-    def __await__(self):
-        yield self
-        return "parked"
 
 
 class Box:
