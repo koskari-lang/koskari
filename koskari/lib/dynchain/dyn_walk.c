@@ -176,8 +176,8 @@ KosOpResult kos_dyn_unwind_to_node(
 
 
 /**
-   RETURN unwind walk to frame. See dynchain.h for the contract. Callers:
-   eval.c eval_event_return, KosNativeFrame_Return.
+   RETURN unwind walk to frame. See dynchain.h for the contract. Caller:
+   eval.c eval_event_return.
 */
 KosOpResult kos_dyn_unwind_return(
     KosEvalState *es,

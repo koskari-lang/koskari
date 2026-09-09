@@ -643,4 +643,27 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         self.assertEqual(caught.exception.prompt_id, 0)
 
 
+class TestDelimitedReturnAcrossLeave(SpecialsTestCase):
+    """
+    A delimited return that meets an after thunk on its way to the
+    invoke site parks on the wind and finishes once the thunk returns,
+    landing the value at the invoke site inside the evaluator; it must
+    never surface at the boundary as a bare result.
+    """
+
+    async def test_second_shift_value_reaches_first_invoke_site(self):
+        src_str = """
+        (reset
+          (dyn-wind
+            None
+            (+ (shift k (call k 1)) (shift k2 10))
+            (call record "cleanup")))
+        """
+        log = []
+        expr, mod = self.compile_expr(src_str, record=log.append)
+        result = await expr()
+        self.assertEqual(result, 10)
+        self.assertEqual(log, ["cleanup"])
+
+
 # The end.

@@ -1616,7 +1616,6 @@ static inline KosOpResult kos_dyn_pop_top_allow_barrier(
 typedef enum KosPendingReturnKind {
   KOS_PENDING_RETURN_NONE = 0,
   KOS_PENDING_RETURN_FRAME,     /* a bytecode frame's RETURN */
-  KOS_PENDING_RETURN_NATIVE,    /* a native frame's return */
   KOS_PENDING_RETURN_DELIM,     /* routed to a delimited-invoke bookmark */
   KOS_PENDING_RETURN_BREAK,     /* a loop's BREAK, value in hand */
   KOS_PENDING_RETURN_CONTINUE,  /* a loop's CONTINUE, value in hand */

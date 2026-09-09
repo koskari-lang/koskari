@@ -2032,51 +2032,6 @@ const KosThreadFn kos_op_handlers[] = {
 
 
 /**
-   Complete a native frame with a return value: the return unwind walk
-   from the frame, FINALLY/async-unwind outcomes honored, frame
-   detached and freed, value delivered to the parent (push-or-await).
-   The handler slot must already be cleared. value consumed.
-*/
-KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value) {
-
-  KosDynFrame *detached = NULL;
-  KosDynDelim *took = NULL;
-  KosOpResult unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es), value,
-                                          KOS_PENDING_RETURN_NATIVE, &took);
-
-  /* a FINALLY took the return, a leave is in flight with the value
-     parked, or a leave raised; the walk consumed value on each. Every
-     answer here is raw: the trampoline, or KosEval_ResumeReturn, routes
-     it. */
-  if (unw.kind != KOS_RES_NORMAL)
-    return unw;
-  if (took) {
-    /* A native frame runs no bytecode, so no delimited-invoke bookmark
-       can sit above it. Fail loudly rather than mis-deliver. */
-    Py_DECREF(value);
-    PyErr_SetString(PyExc_SystemError,
-                    "native frame return walk stopped at a"
-                    " delimited-invoke bookmark");
-    return EVAL_RAISE();
-  }
-
-  if (kos_dyn_detach_top_frame(es, &detached) < 0) {
-    Py_DECREF(value);
-    return EVAL_RAISE();
-  }
-  if (detached)
-    kos_dynframe_free(detached);
-
-  {
-    KosOpResult pr = KosEvalState_PushOrAwait(es, value);
-    if (pr.kind == KOS_RES_NORMAL)
-      return EVAL_REPROLOGUE();
-    return pr;
-  }
-}
-
-
-/**
    Complete a native frame by handing value to the eval loop's return
    machinery, which owns every delivery terminus (parent frame,
    iteration node, drive root). Clears the program slot and, when cache
@@ -2945,13 +2900,17 @@ KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob) {
   case KOS_PENDING_RETURN_FRAME:
     return eval_event_return_ng(es, val);
 
-  case KOS_PENDING_RETURN_NATIVE:
-    return kos_eval_walk_outcome(es, KosNativeFrame_Return(es, val));
-
   case KOS_PENDING_RETURN_DELIM:
-    if (delim && kos_dyn_reaches(es, (KosDynNode *) delim))
-      return kos_eval_walk_outcome(
+    if (delim && kos_dyn_reaches(es, (KosDynNode *) delim)) {
+      /* The route lands val at the invoke site inside the evaluator;
+         its NORMAL is a re-entry there, as eval_event_return maps it,
+         never a boundary result. */
+      KosOpResult rr = kos_eval_walk_outcome(
           es, kos_eval_route_delim_return(es, delim, val));
+      if (rr.kind == KOS_RES_NORMAL)
+        return EVAL_REPROLOGUE();
+      return rr;
+    }
     Py_DECREF(val);
     PyErr_SetString(PyExc_SystemError,
                     "pending return lost its delimited-invoke bookmark");

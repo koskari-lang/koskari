@@ -442,15 +442,6 @@ typedef KosThreadFn KosResumeFn;
 
 
 /**
-   Complete a code-less frame with a return value: run the return
-   unwind walk from the frame, honor FINALLY/async-unwind outcomes,
-   detach and free the frame, and deliver the value to the parent.
-   value is consumed.
-*/
-KosOpResult KosNativeFrame_Return(KosEvalState *es, PyObject *value);
-
-
-/**
    Resume a return that parked on a node whose leave went asynchronous,
    now that the node has left the chain: re-enter the return path the
    obligation names with its value. ob is a KOS_OB_RETURN obligation
