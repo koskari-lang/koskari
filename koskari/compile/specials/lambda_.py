@@ -109,8 +109,10 @@ def helper_function(compiler, caps, selfref):
 
     lamb.doc = discover_docstring(body_src)
 
-    with compiler.resolution_scope():
+    with compiler.resolution_scope(lamb, function=True):
         lamb = helper_begin(lamb, body_src)
+    # completed outside the body's scope: the lexical stack now holds the
+    # chain enclosing this lambda, which the Code records as its ancestry
     code = compiler.complete(lamb, CompilerMode.FUNCTION)
     fspec = FunctionSpec(proper_name, FormalsSpec(
         tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),

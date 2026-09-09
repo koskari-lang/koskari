@@ -137,6 +137,14 @@ class KoskariPragma:
 
         # Map code_id -> tuple of names requiring write (compile-time only)
         self._code_request_for_write = {}
+        # Map code_id -> fragments lexically enclosing the Code, outermost
+        # first, recorded when it was completed
+        self._code_ancestors = {}
+        # Map id(function fragment) -> [(inline scope fragment, ancestors)]
+        # for the let and class bodies compiled inline into that
+        # function, validated alongside its Code; inline scopes with no
+        # enclosing function are module level and skipped like the root
+        self._inline_scopes = {}
 
 
     def on_write(self, fragment, name: str, *, position=None):
@@ -242,6 +250,12 @@ class KoskariPragma:
         """
         Recursively validate that all writes are satisfied.
         Root (module-level) skips validation to allow implicit global.
+
+        A nested Code's enclosing scopes are the fragments that were open
+        when it was completed, recorded by register_code_fragment; the
+        constant pool says nothing about nesting, since a let's namespace
+        spec sits in its enclosing code's pool beside lambdas the let does
+        not enclose. ancestor_nspecs is unused and kept for the signature.
         """
 
         from ..compiler import CompilerMode
@@ -253,44 +267,68 @@ class KoskariPragma:
         if nspec is None:
             return
 
-        # Names that satisfy writes: local or global in this or ancestor scopes
+        # Names that satisfy writes: declared or explicitly global in this
+        # scope or one that lexically encloses it. Ancestors are read now,
+        # not when the Code was built, so a define later in an enclosing
+        # body still counts.
         accum = []
         accum.extend(nspec.local_syms)
         accum.extend(nspec.global_syms)
-        for ans in ancestor_nspecs:
-            accum.extend(ans.local_syms)
-            accum.extend(ans.global_syms)
+        for ancestor in self._code_ancestors.get(id(code), ()):
+            accum.extend(ancestor.declares)
+            accum.extend(ancestor._request_global)
         satisfied = set(accum)
 
+        source_frag = self._code_to_fragment.get(id(code))
+
         if not is_root:
-            request_for_write_syms = self.get_request_for_write_syms(code)
-            for name in request_for_write_syms:
+            for name in self.get_request_for_write_syms(code):
                 if name not in satisfied:
-                    source_frag = self._code_to_fragment.get(id(code))
-                    pos = self.get_write_position(source_frag, name)
-                    raise CompilerError(
-                        f"Cannot write to {name!r}: not declared in this scope"
-                        " or any enclosing scope. Use define for a local or"
-                        " define-global for a global.",
-                        name,
-                        position=pos)
+                    self._raise_unsatisfied_write(source_frag, name)
 
-        # Recurse into nested function Codes
-        cpool_nspecs = tuple(
-            c for c in (code.constants_pool or ())
-            if isinstance(c, NamespaceSpec))
-        next_ancestors = ancestor_nspecs + (nspec,) + cpool_nspecs
+        # the let and class bodies compiled inline into this function:
+        # their writes originate there and are checked against the scope
+        # itself and its own chain, which this function is part of
+        if source_frag is not None:
+            for scope, ancestors in self._inline_scopes.get(id(source_frag), ()):
+                scope_satisfied = set(scope.declares)
+                scope_satisfied.update(scope._request_global)
+                for ancestor in ancestors:
+                    scope_satisfied.update(ancestor.declares)
+                    scope_satisfied.update(ancestor._request_global)
+                for name in scope.requests_for_write:
+                    if name in scope.propagated_writes:
+                        continue
+                    if name not in scope_satisfied:
+                        self._raise_unsatisfied_write(scope, name)
 
+        # Recurse into nested function Codes; the pool is only how they
+        # are found, each carries its own recorded ancestry
         for const in (code.constants_pool or ()):
             if isinstance(const, FunctionSpec) and const.code is not None:
-                self.validate_tree(
-                    const.code, next_ancestors, mode, is_root=False)
+                self.validate_tree(const.code, (), mode, is_root=False)
+
+
+    def _raise_unsatisfied_write(self, fragment, name):
+        pos = self.get_write_position(fragment, name)
+        raise CompilerError(
+            f"Cannot write to {name!r}: not declared in this scope"
+            " or any enclosing scope. Use define for a local or"
+            " define-global for a global.",
+            name,
+            position=pos)
 
 
     def cpool_merge(self, fragment, inner_nspec, inner_write_syms):
         """
         Merge inner Code's closure and write needs into outer fragment.
         Called during complete() when scanning for nested FunctionSpecs.
+
+        A write copied up this way keeps the closure chain honest but is
+        validated where it originated, against that Code's own lexical
+        chain; here it is marked propagated so the outer validation skips
+        it. A name the outer body also writes itself stays a write of the
+        outer's own.
         """
 
         closure_syms = inner_nspec.closure_syms
@@ -299,6 +337,8 @@ class KoskariPragma:
                 _unique_append(fragment.requests, name)
 
         for name in (inner_write_syms or ()):
+            if name not in fragment.requests_for_write:
+                _unique_append(fragment.propagated_writes, name)
             self.on_write(fragment, name)
 
 
@@ -321,13 +361,34 @@ class KoskariPragma:
         return self._code_request_for_write.get(id(code), ())
 
 
-    def register_code_fragment(self, code, fragment):
+    def register_code_fragment(self, code, fragment, ancestors=()):
         """
-        Register source fragment for a Code (position lookup during validation)
+        Register source fragment for a Code (position lookup during
+        validation) and the fragments lexically enclosing it, outermost
+        first, as they stood open when the Code was completed
         """
 
         self._code_to_fragment[id(code)] = fragment
-        self._code_request_for_write[id(code)] = tuple(fragment.requests_for_write)
+        self._code_request_for_write[id(code)] = tuple(
+            n for n in fragment.requests_for_write
+            if n not in fragment.propagated_writes)
+        self._code_ancestors[id(code)] = tuple(ancestors)
+
+
+    def register_scope_fragment(self, fragment, ancestors=()):
+        """
+        Register an inline scope (a let or class body) that closed with
+        ``ancestors`` open around it, outermost first. Its own writes are
+        validated with the Code of the innermost enclosing function; a
+        scope with no enclosing function is module level, where writes
+        may be implicit globals, and is not registered
+        """
+
+        for ancestor in reversed(ancestors):
+            if ancestor.function_scope:
+                self._inline_scopes.setdefault(id(ancestor), []).append(
+                    (fragment, tuple(ancestors)))
+                return
 
 
 class SchemePragma(KoskariPragma):
@@ -354,15 +415,9 @@ class SchemePragma(KoskariPragma):
         # at runtime via ns_init_syms fallback to mdl_ns_borrow_ref
 
         # Recurse into nested function Codes
-        cpool_nspecs = tuple(
-            c for c in (code.constants_pool or ())
-            if isinstance(c, NamespaceSpec))
-        next_ancestors = ancestor_nspecs + (nspec,) + cpool_nspecs
-
         for const in (code.constants_pool or ()):
             if isinstance(const, FunctionSpec) and const.code is not None:
-                self.validate_tree(
-                    const.code, next_ancestors, mode, is_root=False)
+                self.validate_tree(const.code, (), mode, is_root=False)
 
 
 class PythonPragma(KoskariPragma):

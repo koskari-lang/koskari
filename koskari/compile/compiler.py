@@ -158,6 +158,16 @@ class ByteCodeFragment:
         self.annotation_bindings = []
         self.doc = None
 
+        # write requests copied up from inner Codes at completion; they
+        # are validated where they originate, so the validator skips
+        # them here (see KoskariPragma.cpool_merge)
+        self.propagated_writes = []
+
+        # set by Compiler.resolution_scope for a function body: the
+        # scope a Code is built from, as opposed to an inline let or
+        # class body compiled into its enclosing Code
+        self.function_scope = False
+
 
     def as_namespace_spec(self):
         """
@@ -299,10 +309,9 @@ class ByteCodeFragment:
         """
 
         compiler = self.compiler
-        with compiler.resolution_scope():
-            ns_name = str(ns_name)
-            child = compiler.fragment(ns_name)
-
+        ns_name = str(ns_name)
+        child = compiler.fragment(ns_name)
+        with compiler.resolution_scope(child):
             names = tuple(map(str, names))
             if len(names) != len(values):
                 raise CompilerError(
@@ -318,6 +327,8 @@ class ByteCodeFragment:
 
             yield child
             nspec = child.as_namespace_spec()
+            child.resolution.register_scope_fragment(
+                child, tuple(f for f in compiler.lexical_stack if f is not child))
 
             if names:
                 self.merge(valfrag)
@@ -342,12 +353,13 @@ class ByteCodeFragment:
         """
 
         compiler = self.compiler
-        with compiler.resolution_scope():
-            ns_name = str(ns_name)
-            child = compiler.fragment(ns_name)
-
+        ns_name = str(ns_name)
+        child = compiler.fragment(ns_name)
+        with compiler.resolution_scope(child):
             yield child
             nspec = child.as_namespace_spec()
+            child.resolution.register_scope_fragment(
+                child, tuple(f for f in compiler.lexical_stack if f is not child))
 
             self.instruction(OpCode.PUSH_COLLECT, nspec)
             self.instructions.extend(child.instructions)
@@ -434,6 +446,13 @@ class Compiler:
         # top level. Maintained by resolution_scope; consulted by
         # specials restricted to module level (e.g. import-all-from)
         self.scope_depth = 0
+
+        # the fragments whose bodies are open right now, outermost
+        # first: the lexical chain enclosing whatever is being compiled.
+        # resolution_scope pushes the fragment of each nested scope; a
+        # nested Code completed while the chain is open records it as
+        # its ancestry for write validation at the root
+        self.lexical_stack = []
 
         if module is None:
             module = Module(ModuleNamespace(name, {}))
@@ -595,14 +614,30 @@ class Compiler:
 
 
     @contextmanager
-    def resolution_scope(self):
+    def resolution_scope(self, fragment=None, function=False):
+        """
+        Bracket the compilation of a nested scope's body
+
+        :param fragment: the fragment the body compiles into; while the
+            body is open it sits on the lexical stack as an enclosing
+            scope of anything completed inside it
+        :param function: the fragment is a function body, the kind of
+            scope a Code is built from
+        """
+
         reso = self._resolution_instance
         if reso is not None:
             reso.enter_scope()
         self.scope_depth += 1
+        if fragment is not None:
+            if function:
+                fragment.function_scope = True
+            self.lexical_stack.append(fragment)
         try:
             yield
         finally:
+            if fragment is not None:
+                self.lexical_stack.pop()
             self.scope_depth -= 1
             if reso is not None:
                 reso.exit_scope()
@@ -760,8 +795,14 @@ class Compiler:
         :return: compiled ByteCodeFragment
         """
 
-        with parameterize(**{ACTIVE_PRAGMA_PARAM: self.pragma}):
-            return self.full_compile(source_obj)
+        # a turn starts with no open scopes, whatever compilation a macro
+        # body may have started this one from
+        saved, self.lexical_stack = self.lexical_stack, []
+        try:
+            with parameterize(**{ACTIVE_PRAGMA_PARAM: self.pragma}):
+                return self.full_compile(source_obj)
+        finally:
+            self.lexical_stack = saved
 
 
     def compile_expr(self, fragment, source_obj, position=None):
@@ -1086,7 +1127,7 @@ class Compiler:
                     protect=self.protect_code, cache=cache)
         if fragment.doc is not None:
             code.extras['doc'] = fragment.doc
-        reso.register_code_fragment(code, fragment)
+        reso.register_code_fragment(code, fragment, tuple(self.lexical_stack))
 
         # Recursively validate that all writes are satisfied.
         # Only validate from root complete(); inner complete() calls skip so

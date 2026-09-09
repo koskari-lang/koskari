@@ -259,4 +259,119 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
                       'x should be in global_syms')
 
 
+class TestResolutionLexicalAncestry(SpecialsTestCase):
+    """
+    A nested function's writes are checked against the scopes that
+    lexically enclose it, not against every scope in the same function
+    """
+
+    async def test_write_to_sibling_let_binding_is_refused(self):
+        src_str = """
+        (lambda []
+          (let [[x 1]] x)
+          (lambda [] (setq x 2)))
+        """
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("'x'", str(caught.exception))
+
+    async def test_write_from_inside_the_let_reaches_its_binding(self):
+        src_str = """
+        ((lambda []
+           (let [[x 1]]
+             ((lambda [] (setq x 2)))
+             x)))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(2, await expr())
+
+    async def test_outer_functions_let_does_not_cover_inner_function(self):
+        src_str = """
+        (lambda []
+          (let [[x 1]] x)
+          (lambda []
+            (lambda [] (setq x 3))))
+        """
+        with self.assertRaises(CompilerError):
+            self.compile_expr(src_str)
+
+    async def test_let_enclosing_both_functions_covers_the_inner(self):
+        src_str = """
+        ((lambda []
+           (let [[x 1]]
+             (((lambda []
+                 (lambda [] (setq x 3) x)))))))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(3, await expr())
+
+    async def test_later_define_in_enclosing_body_still_satisfies(self):
+        src_str = """
+        ((lambda []
+           (define bump (lambda [] (setq x (+ x 1))))
+           (define x 10)
+           (bump)
+           x))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(11, await expr())
+
+    async def test_undeclared_write_inside_let_in_function_is_refused(self):
+        """
+        a let body is checked where it is, not through the copy of its
+        write that reaches the enclosing function
+        """
+
+        src_str = """
+        (lambda []
+          (let [[a 1]]
+            (setq zzz 2)))
+        """
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("'zzz'", str(caught.exception))
+
+    async def test_let_body_write_to_enclosing_functions_later_define(self):
+        """
+        the let body is compiled before the define appears in the
+        enclosing body, and still writes the enclosing binding
+        """
+
+        src_str = """
+        ((lambda []
+           (define bump
+             (lambda []
+               (let [[a 1]]
+                 (setq total (+ total a)))))
+           (define total 10)
+           (bump)
+           total))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(11, await expr())
+
+    async def test_module_level_let_may_still_write_a_global(self):
+        src_str = """
+        (begin
+          (let [[a 1]]
+            (setq module_level_written a))
+          module_level_written)
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(1, await expr())
+
+    async def test_sibling_let_leak_does_not_reach_the_module(self):
+        """
+        the refused write never runs, so no module binding appears
+        """
+
+        src_str = """
+        (lambda []
+          (let [[leaked 1]] leaked)
+          (lambda [] (setq leaked 2)))
+        """
+        with self.assertRaises(CompilerError):
+            self.compile_expr(src_str)
+
+
 # The end.

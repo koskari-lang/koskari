@@ -26,6 +26,7 @@ expansion end to end: the per-binding body is captured under two ``...``.
 
 
 from koskari.compile import Compiler
+from koskari.exceptions import CompilerError
 from koskari.lib import Module, ModuleNamespace
 from koskari.reader import default_reader, source_str
 
@@ -93,14 +94,33 @@ class TestFletMacro(unittest.IsolatedAsyncioTestCase):
         """
 
         src_str = """
+        (let [[acc 0]]
+          (flet [[stash [x]
+                   (setq acc x)
+                   (* acc 3)]]
+            (stash 4)))
+        """
+        expr, _mod = self.compile_expr(src_str)
+        self.assertEqual(12, await expr())
+
+    async def test_flet_body_cannot_write_a_sibling_let_binding(self):
+        """
+        A flet binding's lambda is made in the enclosing scope, so a let
+        opened in the flet body does not enclose it; a write to that
+        let's name from the lambda is undeclared and refused at compile
+        time instead of reaching a module global
+        """
+
+        src_str = """
         (flet [[stash [x]
                  (setq acc x)
                  (* acc 3)]]
           (let [[acc 0]]
             (stash 4)))
         """
-        expr, _mod = self.compile_expr(src_str)
-        self.assertEqual(12, await expr())
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("acc", str(caught.exception))
 
 
     async def test_flet_shadows_outer_without_forward_reference(self):
