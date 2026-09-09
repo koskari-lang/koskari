@@ -352,7 +352,7 @@ Clone-or-refuse, at `kos_dyn_clone`, with a `PyErr` on every refusal (D7):
 
 Deleted: `KosContext.pending_return_*`, `kos_ctx_exc_stash_*`,
 `kos_dyn_chain_has_node_id`, `kos_dyn_reaches` in its guard role. This
-subsumes [pending-return-across-suspension.md](pending-return-across-suspension.md):
+subsumes [pending-return-across-suspension.md](../archive/pending-return-across-suspension.md):
 its defects 3, 4, 7 and 8 stop existing. Its defect 2 (`DISPATCH` unmapped
 in the entry phase) closed when the entry phase's resume block was rewritten
 around `KosEval_ResumeReturn`. Its defect 1 (GC over-attribution:
@@ -514,5 +514,5 @@ per-kind table is replaced by §3.4.
 Related: [callcc.md](callcc.md),
 [extent-wind-unwind.md](extent-wind-unwind.md),
 [with-dyn-with.md](with-dyn-with.md),
-[pending-return-across-suspension.md](pending-return-across-suspension.md),
+[pending-return-across-suspension.md](../archive/pending-return-across-suspension.md),
 [archive/interrupted-transfer-plans.md](../archive/interrupted-transfer-plans.md).

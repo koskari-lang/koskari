@@ -170,9 +170,9 @@
 - Hooks terminate with `END_WIND` opcode
 
 **Ordering during continuation transfer**:
-1. Unwind: AFTER hooks from current toward LCA (inner-to-outer)
-2. Install: Splice target chain
-3. Wind: BEFORE hooks from LCA toward target (outer-to-inner)
+1. Leaving: AFTER hooks from the current top down to the seam the two chains share (inner-to-outer)
+2. Landing: splice the target segment onto the seam
+3. Entering: BEFORE hooks from the seam up to the target top (outer-to-inner)
 
 **Example**:
 ```scheme

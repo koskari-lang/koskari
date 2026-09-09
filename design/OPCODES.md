@@ -61,10 +61,10 @@ linking from design notes, PRs, or other docs.
   KOS_EXT_PROMPT, KOS_EXT_NS, KOS_EXT_COLLECT, etc.), enter/exit pcs, and
   kind-specific targets; see [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md).
 - **dynamic chain / chain node**: At runtime, the evaluator maintains a chain of
-  nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_TRY, KOS_DYN_FINALLY, KOS_DYN_LOOP,
-  KOS_DYN_FOREACH, KOS_DYN_NS, KOS_DYN_COLLECT, KOS_DYN_PROMPT, KOS_DYN_CC,
-  KOS_DYN_CC_RAISE, KOS_DYN_WIND, KOS_DYN_WITH, KOS_DYN_DYN_WITH, KOS_DYN_YIELD_FROM,
-  KOS_DYN_PARAM, KOS_DYN_SHIFT). PUSH_* opcodes push a node onto this chain;
+  nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_PROMPT, KOS_DYN_DELIM,
+  KOS_DYN_WIND, KOS_DYN_TRY, KOS_DYN_FINALLY, KOS_DYN_LOOP, KOS_DYN_FOREACH,
+  KOS_DYN_NS, KOS_DYN_COLLECT, KOS_DYN_CC, KOS_DYN_YIELD_FROM, KOS_DYN_PARAM,
+  KOS_DYN_WITH, KOS_DYN_SHIFT, KOS_DYN_GEN, KOS_DYN_NEXT). PUSH_* opcodes push a node onto this chain;
   POP_* opcodes pop it.
   Each opcode section that pushes onto the chain states **Pushes:** the chain node
   type and, when relevant, the static extent kind.
@@ -2981,7 +2981,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: NOARG (or COUNT per existing opcodes.incl; design assumes no arg).
 - **Status**: Implemented (sync and async exit; VM auto-awaits when exit returns awaitable).
-- **Behaviour:** Call exit (no-exception form); auto-await if needed; pop the owned segment; pop dyn node; push `None`. When exit returns an awaitable: step via `kos_with_exit_start_await`; on sync completion (r==0) call `kos_complete_pending_with_exit` to consume the exit result and push `None`; on suspend returns **`EVAL_AWAIT(awaitable)`**; on resume, revive calls `kos_complete_pending_with_exit` so the with-expression value is always `None` (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
+- **Behaviour:** Call exit (no-exception form); auto-await if needed; pop the owned segment; pop dyn node; push `None`. The pop is `kos_dyn_unlink_top`: the node's leave calls exit; when exit returns an awaitable the leave answers AWAIT and the node stays in `KOS_WITH_PHASE_PENDING_EXIT_AWAIT`; on resume, revive settles it (`kos_dyn_settle_top`) and the unlink finishes, so the with-expression value is always `None` (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
 - **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is always `None`; exit return is used only for swallow logic and is never the value seen by RETURN.
 - **Covered by:** `tests/lib/opcode/test_with.py`, `tests/compile/specials/test_with.py` (sync and async).
 
@@ -2989,7 +2989,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
 - **Status**: Implemented (multi-shot dyn-with; sync and async enter/exit; VM auto-awaits when enter returns awaitable).
-- **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. Node participates in continuation transfer plans (wind/unwind on non-local transfer).
+- **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. Node carries `KOS_DYN_CAP_NEEDS_INSTALL_WIND`: a transfer goal leaves through it and re-enters it when it lands the extent.
 - **Pushes:** KOS_DYN_DYN_WITH.
 
 ### KOS_OP_POP_DYN_WITH {#kos_op_pop_dyn_with}
@@ -3554,7 +3554,7 @@ the paired DELIM bookmark to the invoke site.
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
-- **Stack**: Captures the continuation: one walk from `dyn_top` locates the nearest matching prompt while offering `handle(SHIFT)` to each node crossed (GEN denies -- a shift cannot cross a generator boundary). Clones the chain segment from `dyn_top` through the prompt and its owning FRAME (including heritage nodes such as WIND); a capture bounded at an *invocation* prompt stops at the prompt and appends a compressed baseline frame instead. Prompt clones in the template are falsified -- fresh instance node_id plus KOS_DYNF_INVOCATION, with in-template SHIFT records remapped -- so grafted instances never collide with the live original. Pushes a KOS_DYN_SHIFT marker recording the captured prompt's node_id, pushes the captured continuation wrapper on stack, and enters the shift block. Does **not** peel nodes above the prompt via a transfer plan.
+- **Stack**: Captures the continuation: one walk from `dyn_top` locates the nearest matching prompt while offering `handle(SHIFT)` to each node crossed (GEN denies -- a shift cannot cross a generator boundary). Clones the chain segment from `dyn_top` through the prompt and its owning FRAME (including heritage nodes such as WIND); a capture bounded at an *invocation* prompt stops at the prompt and appends a compressed baseline frame instead. Prompt clones in the template are falsified -- fresh instance node_id plus KOS_DYNF_INVOCATION, with in-template SHIFT records remapped -- so grafted instances never collide with the live original. Pushes a KOS_DYN_SHIFT marker recording the captured prompt's node_id, pushes the captured continuation wrapper on stack, and enters the shift block. Does **not** peel nodes above the prompt.
 - **Pushes:** KOS_DYN_SHIFT (transparent bookmark recording the captured prompt instance: no segment of its own, no handlers).
 - **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
 - **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies `handle(SHIFT)` (GEN) raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `prompt_id` and `operation` (see `koskari.exceptions`, [archive/continuation-capture-errors.md](archive/continuation-capture-errors.md)).
@@ -3572,7 +3572,7 @@ the paired DELIM bookmark to the invoke site.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Pops TOS as result and resolves the delimiter by the instance id recorded on the SHIFT node -- never by chain position or the current code object's extent tree. Live reset: builds a transfer plan that unwinds through the SHIFT and PROMPT (TRUNCATE_AND_INJECT drops both and the PROMPT's segment), injects the result onto the outer frame's stack, and resumes at the pop_pc the prompt recorded at push, + 1. Invocation prompt (created by a k-invoke; no POP_PROMPT pairs with it): the result is the value of that k-invocation and is delivered at the invoke site through the paired DELIM bookmark below the prompt.
+- **Stack**: Pops TOS as result and resolves the delimiter by the instance id recorded on the SHIFT node -- never by chain position or the current code object's extent tree. Live reset: arms a transfer goal with no target whose seam is the prompt's parent; LEAVING unlinks through the SHIFT and the PROMPT (crossing the barrier), DELIVERING pushes the result onto the outer frame's stack, and execution resumes at the pop_pc the prompt recorded at push, + 1. Invocation prompt (created by a k-invoke; no POP_PROMPT pairs with it): the result is the value of that k-invocation and is delivered at the invoke site through the paired DELIM bookmark below the prompt.
 - **Invariants**: Must be inside a PUSH_SHIFT extent. The resolved prompt carries everything the resume needs; no extent lookup happens at pop time.
 - **Compiler form:** No argument.
 
@@ -3663,13 +3663,13 @@ PUSH_CC resume target).
 
 ## 22. Dynamic wind
 
-Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md). The unified API (`kos_extent_run_wind`, `kos_extent_run_unwind`) dispatches by node kind for simple pop and transfer plans.
+The extent contract and the single unlink site are described in [interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md): `kos_dyn_extent_enter` / `kos_dyn_extent_leave` on WIND and WITH, `kos_dyn_unlink_top` for every pop, walk, and transfer goal.
 
 ### KOS_OP_PUSH_WIND
 
 - **Style**: COUNT. Arg = 1 (before only) or 2 (both before and after).
 - **Status**: Implemented.
-- **Stack**: For arg=2: `[..., before, after]` (before below, after above). Pops thunks; each must be callable or nil. For arg=1: `[..., before]`. Pushes KOS_DYN_WIND extent; runs before thunk on entry (via normal call path; may return KOS_DYN_UNWIND_ASYNC_STARTED).
+- **Stack**: For arg=2: `[..., before, after]` (before below, after above). Pops thunks; each must be callable or nil. For arg=1: `[..., before]`. Pushes KOS_DYN_WIND extent and asks it to enter (`kos_dyn_extent_enter`): the before thunk runs as a normal frame, and its return settles the node (`kos_dyn_settle_top`) before the body runs.
 - **Pushes:** KOS_DYN_WIND (static extent KOS_EXT_WIND).
 - **Example:** See extent-wind-unwind.md; thunks are invoked via kos_callable_call.
 
@@ -3679,7 +3679,7 @@ Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](i
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Pops TOS (the body result) into the wind node, pops wind from the dynamic chain, and runs the after thunk (if entered and non-null) via kos_dyn_wind_unwind; the body result is delivered to the revealed segment when the thunk completes (or immediately when there is none). May return KOS_DYN_UNWIND_ASYNC_STARTED when the thunk pushes a frame.
+- **Stack**: Parks TOS (the body result) on the wind node as a VALUE obligation (`kos_dyn_ob_park_value`) and unlinks it (`kos_dyn_unlink_top`): the leave runs the after thunk (if entered and non-null) as a normal frame, and the unlink delivers the body result to the revealed segment once the thunk has returned and settled (or at once when there is none). Answers REPROLOGUE while the thunk's frame is current, AWAIT when its call suspended.
 - **Invariants**: Dyn top must be KOS_DYN_WIND; otherwise RuntimeError.
 
 

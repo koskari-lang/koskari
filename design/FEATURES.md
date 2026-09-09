@@ -211,17 +211,17 @@ Both invoke the same idempotent **`configure_koskari_scripts`**.
 - **Delimited**: `compile/reset`, `compile/shift`; **INVOKE_K** / graft model ([interpreter/callcc.md](interpreter/callcc.md)).
 - **Undelimited**: `compile/call/cc`, `compile/let/cc`, `compile/capture/cc`; Python invoke via **`KoskariContinuationApply`**.
 - **Dynamic wind**: `compile/dyn-wind`; **PUSH_WIND** / **POP_WIND** on transfer.
-- **Nested interrupt during transfer (done):** when a wind thunk invokes another
-  continuation while a transfer plan is active, the outer plan is suspended on
-  **`plan_stack`**, the inner transfer completes, then the outer is replanned via
-  **`kos_build_direct_install_plan`**. See
-  [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §5;
-  tests in **`TestDynWindContinuations`**.
-- **Failed transfer abandonment (done):** on exception during a transfer step,
-  abandon plan + **`plan_stack`** and dispatch via **`try_local`** on the
-  manifested chain (in-place migration; no scratch-space transfer). Foreign
-  cc-unwind sentinel re-emit is carved out (signal delivery, not failure). See
-  [archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) §4.
+- **Transfer goals (done):** a continuation invoke arms a goal recording
+  where control is going; the prologue re-derives each step from the live
+  chain, parks while a thunk or `__exit__` runs, nests when a thunk invokes
+  another continuation, and frees every goal on a failed step before the
+  raise walks the chain as it stands. See [EVALUATOR.md §6](EVALUATOR.md)
+  and [interpreter/transfer-plan-rework.md](interpreter/transfer-plan-rework.md);
+  tests in **`TestDynWindContinuations`** and **`TestDelimitedTransferNested`**.
+- **Recursion limit (done):** frame depth per context is bounded by
+  `sys.getrecursionlimit()`; an install, a continuation landing, or a
+  generator resume that would exceed it raises `RecursionError` into the
+  calling frame. See [EVALUATOR.md §7.7](EVALUATOR.md).
 
 ---
 
@@ -235,9 +235,9 @@ Items below are **done** in koskari-ng unless noted in [TODO.md](TODO.md).
 
 **Utilities (C)** — `apply`, `reapply`, `identity`, `constantly`, collection builders, `build_str`.
 
-**Evaluator core** — `KosContext`, dynamic chain (`KosDynNode`), transfer plans
-(including suspend/resume/replan on nested continuation invoke and abandon +
-**`try_local`** on failed steps), wind/unwind, `koskari_eval`, coroutine/async-gen
+**Evaluator core** — `KosContext`, dynamic chain (`KosDynNode`), transfer goals
+(parked across thunks and awaits, nested on a thunk's invoke, freed on a
+failed step before **`try_local`**), the extent contract and obligations, `koskari_eval`, coroutine/async-gen
 wrappers, GC hooks.
 
 **Bytecode** — `Code`, full opcode surface per [OPCODES.md](OPCODES.md) §1.6 (runtime implementations for all shipped opcodes except compile-time labels and **THEEND**).

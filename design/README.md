@@ -15,7 +15,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **[PRAGMA.md](PRAGMA.md)**: Module pragma rollup — how to set a pragma, the available `reader/*`, `compiler/*`, and `pragma/*` settings, and the model (registry, watchers, meta-pragma)
 - **language/**: Language features, syntax, special forms, operators, and built-in constructs
 - **api/**: Runtime API, types, functions, interfaces, and [package layout and import policy](api/package-layout.md)
-- **[EVALUATOR.md](EVALUATOR.md)**: Evaluator operation—threaded dispatch and the trampoline, opcode signaling, exceptions, transfer plans, tail calls, call installs, CPS resumes, play-by-play scenarios
+- **[EVALUATOR.md](EVALUATOR.md)**: Evaluator operation—threaded dispatch and the trampoline, opcode signaling, exceptions, transfer goals, tail calls, call installs, CPS resumes, play-by-play scenarios
 - **Archived**: [archive/threaded-dispatch.md](archive/threaded-dispatch.md) — musttail-threaded opcode dispatch (implemented); [archive/cps-consumer-api.md](archive/cps-consumer-api.md) — continuation-passing Call/Next entries and resumes (implemented); [archive/dispatch-sizing.md](archive/dispatch-sizing.md) — sizing analysis of the former inlined dispatch function
 - **[JARGON.md](JARGON.md)**: The project's admitted jargon with unwrappable definitions, and the admission rule for new terms
 - **[archive/eval-state-live-authority.md](archive/eval-state-live-authority.md)** (archived): `KosEvalState` live authority during RUN (Phase 1 landed); Tier-2 xfer incremental retarget; see [archive/kos_eval_state_api_migration.md](archive/kos_eval_state_api_migration.md) (archived opcode migration ledger)

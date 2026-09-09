@@ -252,7 +252,7 @@ counts (`uint64_t` in C).
 |-----|---------|
 | **dyn_handle_enter** | Calls to `kos_dyn_handle` (control transfer offer to a chain node). |
 | **dyn_unwind_step** | Steps in `kos_dyn_pop_one_unwind_walk` (unwind/return walks that pop one node). |
-| **transfer_plan_build** | Calls to `kos_build_transfer_plan`. |
+| **transfer_plan_build** | Transfer goals created (`kos_xfer_goal_new`); the counter keeps its old name. |
 | **raise_local_walk_iter** | Iterations of the walk in `kos_dyn_try_local_raise_body` (local exception handler search). |
 
 Add new counters in `tracing.h` (`KosTraceEventId`) and `tracing.c` (`kos_te_names`)

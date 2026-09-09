@@ -112,7 +112,7 @@ delegating generator stays frozen.  Two options:
 
 - **(a) Frozen-on-chain passthru nodes**: intermediate GENs sit on the
   active chain in a new "installed but frozen" state.  Every chain
-  walker (freeze walk, unwind, transfer plans, snapshot, dyn_walk) must
+  walker (freeze walk, unwind, transfer goals, snapshot, dyn_walk) must
   learn the state.  Rejected direction: it is exactly the half-alive
   node state the evaluator has been eliminating.
 - **(b) Direct attach + side bookkeeping** (preferred): attach the
@@ -205,7 +205,7 @@ Cons / costs:
   delegate still thaws per value); the full win needs nesting or
   foreign delegates.
 - Testing burden: delegation x {send, throw, close, await, callcc,
-  transfer plans} x {passthru, fallback} matrix.
+  transfer goals} x {passthru, fallback} matrix.
 
 
 ## 8. Staging (if accepted)

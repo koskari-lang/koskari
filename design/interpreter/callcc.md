@@ -72,18 +72,23 @@ state does not permit invocation. Attempting to invoke an unusable continuation
 
 ```c
 struct KosContinuation {
-  KosDynNode *captured_chain;   /* cloned chain segment */
-  KosDynFrame *resume_frame;    /* frame to resume into */
-  uint32_t resume_pc;           /* pc to resume at */
-  KosSegment *resume_stack;  /* stack state (COW reference) */
+  KosDynNode *captured_chain;   /* cloned chain segment (the template) */
+  uint32_t resume_pc;           /* pc to resume at; the frame is resolved
+                                   from the landed chain at invoke time */
+  KosSegment *resume_stack;     /* aliases a node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag (KOS_PROMPT_ID_UNDELIMITED for call/cc) */
-  uint32_t graft_point_id;      /* node_id of graft point for LCA fallback; 0 for capture-cc */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
-  PyObject *token_ref;          /* KosEvaluatorToken (ownership); NULL for legacy undelimited */
+  uint8_t live_slice_consumed;  /* 1 = an in-place invoke consumed the live slice */
+  PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
+  /* capture-time live prompt and shift identities for in-place invoke
+     detection; borrowed, confirmed by pointer + node_id ancestry from
+     dyn_top before use; zero for undelimited continuations */
+  KosDynNode *live_prompt_node;  uint32_t live_prompt_node_id;
+  KosDynNode *live_shift_node;   uint32_t live_shift_node_id;
 };
 ```
 
-Both delimited and undelimited continuations use this structure. Undelimited capture (`kos_capture_cc`) sets `prompt_id` to `KOS_PROMPT_ID_UNDELIMITED` and stores the owning context’s token in `token_ref`. Invocation (via the CALL opcode or from Python) checks the current evaluator token against `token_ref`; mismatch raises `KoskariContinuationApply`.
+Both delimited and undelimited continuations use this structure. Undelimited capture (`kos_capture_cc`) sets `prompt_id` to `KOS_PROMPT_ID_UNDELIMITED` and stores the owning context's token in `token_ref`; the template is never landed itself, each invoke clones it.
 
 ### KosPyContinuation Python Type
 
@@ -151,131 +156,118 @@ int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
 
 0. **Delimited in-place (Path A)**: when the capture-time live prompt and
    SHIFT nodes are still on the chain (pointer + node_id ancestry match from
-   dyn_top), no barrier (foreign DELIM/GEN/NEXT/PROMPT/CC_RAISE) sits above
-   the SHIFT node, no transfer plan is in flight, the invoke is not a throw,
-   and the live slice has not already been consumed:
-   `kos_delimited_invoke_inplace` detaches the invoke span (dyn_top through
-   the SHIFT node) onto a **`KOS_DYN_DELIM_MODE_INPLACE`** delim inserted
-   directly above the live prompt, displaces the resume frame's stack/pc
-   with the captured resume state, and continues on the live chain — no
-   plan, no clone, no wind replay. Only the first invoke runs in place;
-   re-invokes fall through to the PUSH graft (multi-shot). Exceptions raised
-   in the slice restitch at the delim and continue the raise from the
-   invoke site (`kos_dyn_inplace_restitch`).
+   dyn_top), the SHIFT lies above the prompt, no barrier (foreign
+   DELIM/GEN/NEXT/PROMPT) sits between dyn_top and the SHIFT node, no
+   transfer goal is armed, the invoke is not a throw, and the live slice has
+   not already been consumed: `kos_delimited_invoke_inplace` detaches the
+   invoke span (dyn_top through the SHIFT node) onto a
+   **`KOS_DYN_DELIM_MODE_INPLACE`** delim inserted directly above the live
+   prompt, displaces the resume frame's stack/pc with the captured resume
+   state, and continues on the live chain: no clone, no goal, no enter
+   replay. Only the first invoke runs in place; re-invokes fall through to
+   the landing path (multi-shot). The slice's `POP_PROMPT` restitches the
+   stashed span (`kos_dyn_inplace_restitch`); an exception raised in the
+   slice restitches likewise and continues the raise from the invoke site.
 
-1. **Clone if multi-shot**: For multi-shot continuations, clone before use
+1. **Recursion limit**: the template's frame count must fit above the
+   invoker's frame (delimited) or above the root (undelimited);
+   `kos_eval_check_frame_room` refuses with `RecursionError` before anything
+   moves, so the error raises at the invoke site.
 
-2. **Build transfer plan**:
-   - **Delimited (push model, Path B)**: Use `kos_build_delimited_push_plan()`.
-     The prompt need not be in the current chain; invoke grafts the bounded
-     continuation segment onto the current chain and installs a
-     **`KOS_DYN_DELIM`** marker (`KOS_DYN_DELIM_MODE_POP_PROMPT`) holding
-     return frame/PC/chain metadata so that when the continuation hits
-     `POP_PROMPT`, control unwinds to the call site and resumes with the
-     value.
-   - **Undelimited**: Use `kos_build_transfer_plan()` with INSTALL:
-     ```c
-     int kos_build_transfer_plan(KosEvalState *es, KosDynNode *target,
-             PyObject *value, int is_throw, uint32_t graft_point_id,
-             KosTransferPlan **out_plan);
-     ```
+2. **Clone the template**: every landing instantiates the template anew
+   (`kos_dyn_clone_segment`), so multi-shot invokes never share nodes.
 
-3. **Execute transfer**: Run the plan to completion
-   ```c
-   KosOpResult kos_run_transfer_step(KosEvalState *es);
-   ```
+3. **Seam**: a delimited invoke pushes a **`KOS_DYN_DELIM`** in
+   `KOS_DYN_DELIM_MODE_POP_PROMPT` at dyn_top as the seam; the caller stays
+   below it and the slice lands on it. When the slice reaches `POP_PROMPT`,
+   the return walk hands the delim back and the value lands at the invoke
+   site. An undelimited invoke has a NULL seam: the whole chain is replaced.
 
-### KosDynCCRaise Sentinel
+4. **Arm a goal** (`kos_xfer_goal_new` + `kos_xfer_goal_arm`) with the clone
+   as target and the value (or exception, `is_throw`) as payload; answer
+   REPROLOGUE. The evaluator's prologue drives it (§ Transfer goal).
 
-`KosDynCCRaise` (kind `KOS_DYN_CC_RAISE = 12`) is a dynamic chain node used
-exclusively on the foreign-token transfer path. It holds a reference to a
-`KoskariContinuationApply` exception value and carries the
-`KOS_DYN_CAP_NEEDS_UNWIND_ACTION` capability.
+### Foreign-token unwind
 
-`kos_build_cc_unwind_plan` inserts it at the **root** of the chain (below all
-existing nodes) before building a NULL-target transfer plan. As the plan
-unwinds from innermost to outermost, normal WITH/dyn-with/finally extents run
-their exit handlers first (with no active exception). When the sentinel is
-reached last, its `cc_raise_unwind` callback calls `PyErr_SetObject` with the
-stored exception and returns `-1`, causing the transfer to exit with
-`KOS_RES_RAISE` and propagate the exception upward.
+A continuation applied from a context that does not own it (a different
+evaluator token) reaches `process_raise` as a `KoskariContinuationApply`
+signal. `handle_continuation_apply` arms a **cc-unwind goal**: no target, the
+seam is the root GEN (the driver boundary) when the chain is a generator's,
+otherwise NULL, and `is_cc_unwind` is set. LEAVING runs every extent's leave
+with `KOS_XFER_EVENT_TRANSFER` (after thunks and `__exit__`s see no active
+exception); DELIVERING then raises the stored signal as a **boundary raise**
+(`kos_eval_prepare_boundary_raise`), frees every goal, and reports it through
+`kos_xfer_goal_drive`'s `out_boundary` so the drain returns it to the driver
+as it stands, never through `try_local`. The owning context catches the
+signal on its own boundary and invokes for real.
 
-The sentinel is never cloned (cloning raises `RuntimeError`) and is freed by
-`kos_dynnode_free` via the standard freelist.
+### Transfer goal
 
-
-### Transfer Plan
-
-Transfer plans orchestrate continuation application with proper hook execution:
+Landing a continuation is a **`KosXferGoal`** (`xfer_goal.h`): a record of
+where control is going, never what to do. `kos_xfer_goal_drive` re-derives
+its next step from the live chain on every pass.
 
 ```c
-typedef enum KosTransferStep {
-  KOS_XFER_EXTENT_ACTION,  /* execute extent wind or unwind for a node */
-  KOS_XFER_PUSH,      /* append continuation segment to current chain (delimited) */
-  KOS_XFER_INSTALL,   /* splice target chain segment */
-  KOS_XFER_INJECT,    /* push resume value onto stack */
-} KosTransferStep;
+typedef enum KosXferGoalPhase {
+  KOS_GOAL_LEAVING,     /* unlink dyn_top down to the seam */
+  KOS_GOAL_LANDING,     /* splice the target on the seam, set the resume pc */
+  KOS_GOAL_ENTERING,    /* enter each landed node, outermost first */
+  KOS_GOAL_DELIVERING,  /* push the payload or arm the throw; retire */
+} KosXferGoalPhase;
 
-struct KosTransferPlan {
-  KosTransferPlan *suspended;   /* outer plan if nested */
-  KosTransferAction *actions;   /* action array */
-  size_t action_count;          /* total actions */
-  size_t action_index;          /* next action index */
-  KosDynNode *original_target;  /* template chain; cloned before replan */
-  uint32_t graft_point_id;      /* LCA fallback when chains are disjoint */
+struct KosXferGoal {
+  KosXferGoal *outer;          /* parked enclosing goal, or NULL */
+  KosDynNode *target;          /* owned clone to land; NULL once landed */
+  KosDynNode *seam;            /* borrowed; NULL means the root */
+  uint32_t seam_id;
+  KosDynNode *frontier;        /* node whose thunk we wait on, or NULL */
+  uint32_t frontier_id;
+  KosDynNode *park_top;        /* dyn_top as it was when frontier fired */
+  PyObject *payload;
+  PyObject *continuation_ref;
+  uint32_t resume_pc;
+  uint8_t phase, is_throw, is_cc_unwind;
 };
 ```
 
-**Plan structure** (undelimited / INSTALL):
-1. `EXTENT_ACTION` (unwind) for WIND after hooks and PARAM/DYN_WITH from current to LCA (inner-to-outer)
-2. `INSTALL` action to splice target chain
-3. `EXTENT_ACTION` (wind) for WIND before hooks from LCA to target (outer-to-inner)
-4. `INJECT` action to push resume value
+**Delimited landing** (Path B):
+1. LEAVING: nothing leaves; the seam (the fresh DELIM) is already dyn_top.
+2. LANDING: splice the cloned slice onto the DELIM; renumber its frames.
+3. ENTERING: `before` thunks of the slice's WIND nodes, outermost first;
+   PARAM extents re-bind; multi-shot withs re-enter.
+4. DELIVERING: push the value (or raise it into the landed frame).
+5. `POP_PROMPT` in the slice returns through the DELIM to the invoke site.
 
-**Plan structure** (delimited / PUSH, Path B only — Path A builds no plan):
-1. `EXTENT_ACTION` (wind) for WIND/PARAM nodes in the continuation segment,
-   if any
-2. `PUSH` action to graft the bounded continuation segment onto the current
-   chain (caller stays below; no INSTALL)
-3. `INJECT` action to push resume value
-4. When the continuation runs and hits `POP_PROMPT`, use the nearest
-   POP_PROMPT- or INPLACE-mode **`KOS_DYN_DELIM`** to unwind to the
-   invocation site, push the value, set PC from the delim node, and continue
-   the eval loop (INPLACE delims restitch the stashed invoke span instead)
+**Undelimited landing** (call/cc):
+1. LEAVING: unlink from dyn_top to the root through `kos_dyn_unlink_top`
+   with `KOS_XFER_EVENT_TRANSFER`: `after` thunks and `__exit__`s run,
+   innermost first; obligations the nodes held are dropped.
+2. LANDING: the clone becomes the chain; every outer goal is freed, since
+   the chain it was moving is gone.
+3. ENTERING and DELIVERING as above.
 
-### LCA Computation
-
-```c
-KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id);
-```
-
-Finds the lowest common ancestor between two chain positions. Uses pointer
-equality first; when chains are disjoint (e.g. template vs current), a nonzero
-`graft_point_id` triggers an ID-based fallback to locate the graft point in the
-first chain. Used to determine which hooks need to run during transfer.
+There is no lowest-common-ancestor computation: the seam is the node both
+chains share by construction, and LEAVING always runs down to it.
 
 ### Re-Entrant Transfers
 
-When a hook invokes another continuation:
+A thunk or `__exit__` run by LEAVING or ENTERING is an ordinary frame. When
+its call installs a frame (REPROLOGUE) or suspends (AWAIT), the goal
+**parks** on that node with `park_top = dyn_top`, and the driver does
+nothing until `dyn_top` is `park_top` again, which means the thunk's frame
+came and went. Everything above `park_top` belongs to the thunk:
 
-1. **Suspend current plan**: Push onto `ctx->plan_stack`
-2. **Create new plan**: Build transfer plan for new continuation
-3. **Execute new plan**: Run to completion (may recurse)
-4. **Resume suspended plan**: Pop and continue remaining actions
-5. **Replan if needed**: Clone `original_target` before disarm, then rebuild
-   remaining actions with `kos_build_direct_install_plan` (preserves
-   `graft_point_id` and inject/resume PC/stack)
+1. A continuation invoked from inside the thunk arms an **inner goal** whose
+   `outer` is the parked one.
+2. The inner goal drives on the chain above `park_top`; a delimited inner
+   invoke returns its reset's value to the thunk, which then returns.
+3. The thunk's return settles the node (`kos_dyn_settle_top`); dyn_top is
+   `park_top` again and the drive resumes the outer goal where it left off.
+4. An undelimited inner landing frees the outer goal along with the chain.
 
-```c
-void kos_suspend_transfer_plan(KosEvalState *es);
-int kos_resume_transfer_plan(KosEvalState *es);
-```
-
-### Chain-Change Detection
-
-After a nested transfer completes, the dynamic chain may have changed.
-`original_target` on the suspended plan is cloned before disarm and passed to
-`kos_build_direct_install_plan`; there is no version counter.
+A step that raises enters `process_raise`, which frees the whole goal stack
+(`kos_xfer_goal_abandon_all`) and raises through the chain as the driver
+left it; there is no rollback to the invoke site.
 
 ## Wind/Unwind Semantics
 
@@ -292,9 +284,11 @@ After a nested transfer completes, the dynamic chain may have changed.
 
 ### Thunk Execution
 
-Before/after thunks are null-arity Koskari callables invoked via
-`kos_callable_call`. They run as normal frames; when a thunk returns, the
-RETURN opcode clears `IN_WIND_THUNK` and resumes unwinding or the transfer plan.
+Before/after thunks are null-arity Koskari callables invoked through the
+extent contract (`kos_dyn_extent_enter` / `kos_dyn_extent_leave` on the WIND
+node). They run as normal frames; when a thunk returns into the WIND,
+`kos_dyn_settle_top` advances the node's phase, a finished leave unlinks it,
+and a walk or a transfer goal that was parked on it continues.
 
 ### Thunk Ordering
 
@@ -345,7 +339,8 @@ It does NOT contain:
 Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 - Frame chain: namespace, stack values
 - Continuation: captured chain
-- Context: await iterator, pending exception, transfer plan values
+- Context: await iterator, exception inject slots, the armed transfer goal (target clone, payload, continuation reference, and each parked outer goal)
+- Node obligations: a WIND or WITH's parked body value, exception, or return
 
 ## Opcodes
 
@@ -374,7 +369,7 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 - [../archive/evaluator-token-continuation.md](../archive/evaluator-token-continuation.md) — Evaluator
   token, KosEvaluatorToken, KoskariContinuationApply, and continuation
   application model
-- [evaluator.md](evaluator.md) — Overall evaluation model and API
+- [../EVALUATOR.md](../EVALUATOR.md) — Overall evaluation model and API
 - [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
   the DynNode chain restructure (implemented; archived)
 - [execution-invariants.md](execution-invariants.md) — Semantic commitments
