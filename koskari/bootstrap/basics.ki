@@ -236,7 +236,7 @@ define-syntax inline-macro:
       define source `(let [] ,@(each [b body] b.datum))
       define frag (c.full_compile source)
       define expr (frag.as_expression (vars c.module))
-      (or (expr) None)
+      (expr)
 
 
 ;; The end.

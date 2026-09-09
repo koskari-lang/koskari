@@ -679,10 +679,7 @@ class Compiler:
 
         try:
             fragment = self.fragment(self.name)
-            ret = self.compile_expr(fragment, source_obj, position)
-            # None is the emitted-into-fragment sentinel; a falsy
-            # form (an expansion to False, 0, "") is a real result
-            return fragment if ret is None else ret
+            return self.compile_expr(fragment, source_obj, position)
         finally:
             if tmp:
                 self._resolution_instance = None
@@ -786,10 +783,11 @@ class Compiler:
             raise CompilerError("Unsupported source object", source_obj)
 
         try:
-            ret = dispatch(fragment, source_obj, position)
-            # None is the emitted-into-fragment sentinel; a falsy form
-            # (an expansion to False, 0, "") is a real result
-            return fragment if ret is None else ret
+            # every dispatch returns the fragment it emitted into or a
+            # rewritten form for the caller to compile in its place; None
+            # is that form when a special or macro expands to the
+            # constant None, and compiles as such on the next pass
+            return dispatch(fragment, source_obj, position)
         except CompilerError:
             raise
         except Exception as ex:

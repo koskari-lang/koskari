@@ -571,7 +571,8 @@ def _promote_repeat_frame_bindings(bindings):
 def _finalize_macro_output(compiler, form):
     """
     Discover binding symbols on ``form`` then run the shared in-place hygiene
-    and ``Datum`` peel pass
+    and ``Datum`` peel pass. None is a form like any other: an expansion to
+    None compiles to the constant None
     """
 
     form = apply_layout(form, vars(compiler.module))
