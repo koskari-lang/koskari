@@ -18,7 +18,7 @@ static KosDynCollect *kos_dyncollect_new(
   }
 
   kos_dynnode_init((KosDynNode *) col_node, KOS_DYN_COLLECT, parent,
-                   KOS_DYN_CAP_BINDS_NS);
+                   KOS_DYN_CAP_OWNS_NS);
   KosDynNode_NS((KosDynNode *) col_node) = ns;
   /* segment attaches at push (kos_dyn_ensure_region_segment): a clone
      built through this constructor must arrive stackless so the

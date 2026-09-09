@@ -64,9 +64,9 @@ int KosEvalState_SetFrameCodeAndNamespace(
   /* A placeholder became a code frame introducing ns, or a tail reset
      is being refilled: the cap follows the code, as at construction. */
   if (code)
-    KosDynNode_CAPS(frame) |= KOS_DYN_CAP_BINDS_NS;
+    KosDynNode_CAPS(frame) |= KOS_DYN_CAP_OWNS_NS;
   else
-    KosDynNode_CAPS(frame) &= ~KOS_DYN_CAP_BINDS_NS;
+    KosDynNode_CAPS(frame) &= ~KOS_DYN_CAP_OWNS_NS;
   if (KosEvalState_FRAME(es) == frame) {
     KosEvalState_NAMESPACE(es) = ns;
     KosEvalState_CODE(es) = KosDynFrame_CODE(frame);

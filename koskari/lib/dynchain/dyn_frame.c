@@ -23,7 +23,7 @@ KosDynFrame *kos_dynframe_new(
      placeholder frame carries the live namespace as an owned fill, as
      any non-introducer node does, and must not report it as its own. */
   kos_dynnode_init(frame, KOS_DYN_FRAME, parent,
-                   code ? KOS_DYN_CAP_BINDS_NS : 0);
+                   code ? KOS_DYN_CAP_OWNS_NS : 0);
   Py_XINCREF(code);
   KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = 0;

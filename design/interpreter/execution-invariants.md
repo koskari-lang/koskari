@@ -268,7 +268,7 @@ the boundary constraint.
 * `KOS_DYN_CAP_CONTROL_HOOK` — node answers the extent contract (enter, leave, settle, abort): WIND, WITH
 * `KOS_DYN_CAP_HOLDS_OBLIGATION` — node carries an obligation slot: WIND, WITH
 * `KOS_DYN_CAP_NEEDS_INSTALL_WIND` — node re-enters when a transfer lands it (PARAM, multi-shot WITH)
-* `KOS_DYN_CAP_BINDS_NS` — node introduced its own namespace, which the collector reaches through it (code FRAME, NS, COLLECT)
+* `KOS_DYN_CAP_OWNS_NS` — node introduced its own namespace, which the collector reaches through it (code FRAME, NS, COLLECT)
 * `KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP` — preserve exception across pop (YIELD_FROM)
 
 ---

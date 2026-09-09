@@ -1559,7 +1559,7 @@ Region kinds always own a segment -- aimed at `iseg` at construction or push and
 spilled to a heap segment on growth -- so **`stack == NULL` marks a transfer
 bookmark** (cc, cc_raise, delim, shift, gen, next, yield_from), which inherits
 the enclosing extent's segment. The **`ns`** field is uniformly owned: an
-introduced scope for `KOS_DYN_CAP_BINDS_NS` kinds (frame, ns, collect),
+introduced scope for `KOS_DYN_CAP_OWNS_NS` kinds (frame, ns, collect),
 otherwise the live-namespace fill taken at push, so the active namespace is
 always readable from the top node. Frames additionally record the displaced
 frame (**`back_frame`**, borrowed) as an unwind cache. Payload variants live in

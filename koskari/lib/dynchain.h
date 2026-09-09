@@ -120,7 +120,7 @@ typedef enum KosDynFlags {
 /**
    KosDynNode capability bits. Generic code checks these for behavior
    instead of node type. Set at creation and copied on clone; a frame's
-   BINDS_NS follows its code object and moves with it (a placeholder
+   OWNS_NS follows its code object and moves with it (a placeholder
    filled with code gains it, a parked function frame keeps it).
 */
 #define KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION    (1u << 0)
@@ -139,12 +139,13 @@ typedef enum KosDynFlags {
    which marks failed-pop recovery (kos_dyn_exception_unwind). */
 #define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
 
-/* This node introduced its own namespace extent (a frame with code, a
-   let, a collect); the ns field holds an introduced scope rather than
-   the owned live-ns fill every other pushed node carries, and the
-   collector reaches an untracked scope through this node alone. A
+/* The namespace in this node's ns field is its own: a scope the node
+   introduced (a frame with code, a let, a collect), as opposed to the
+   fill of the live namespace every other pushed node carries. The
+   reference is owned either way; the cap says whose scope it is, and
+   the collector reaches an untracked scope through its owner alone. A
    native or code-less frame carries a fill and does not have it. */
-#define KOS_DYN_CAP_BINDS_NS                 (1u << 11)
+#define KOS_DYN_CAP_OWNS_NS                 (1u << 11)
 
 /* This kind carries an obligation slot (KosObligation): what it owes
    when it is unlinked -- a body value, an exception parked while its
@@ -352,9 +353,10 @@ struct KosDynNode {
      marks a transfer bookmark, which inherits the enclosing extent's
      segment. */
   KosSegment *stack;
-  /* Owned namespace: an introduced scope for a KOS_DYN_CAP_BINDS_NS
-     node, otherwise the owned live-ns fill taken at push. NULL only
-     in the placeholder-frame window and on unfilled splices. */
+  /* Namespace (reference owned): the node's own scope when it has
+     KOS_DYN_CAP_OWNS_NS, otherwise a fill of the live namespace taken
+     at push. NULL only in the placeholder-frame window and on unfilled
+     splices. */
   PyObject *ns;
 
   union {
@@ -556,14 +558,14 @@ static inline KosSegment *kos_dynnode_use_inline_segment(
 
 /**
    True when node introduces its own namespace extent: it carries
-   KOS_DYN_CAP_BINDS_NS and one is attached.  Introspection-only:
+   KOS_DYN_CAP_OWNS_NS and one is attached.  Introspection-only:
    under the namespace owned-fill every pushed node carries an ns and
    the live-value question is answered by reading it, so retarget
    logic never needs this distinction -- only displays that report
    scope structure do.
 */
 static inline int kos_dynnode_introduces_ns(const struct KosDynNode *node) {
-  return (node->caps & KOS_DYN_CAP_BINDS_NS) && node->ns != NULL;
+  return (node->caps & KOS_DYN_CAP_OWNS_NS) && node->ns != NULL;
 }
 
 typedef struct KosDynNode KosDynFrame;

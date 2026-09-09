@@ -2967,12 +2967,12 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
      live-ns fill, and reporting it again would count each of its
      references once per holder. Its parent is either revealed or
      introduced by another node on the chain, which reports it. Only a
-     KOS_DYN_CAP_BINDS_NS node introduces one: a code frame, a let, a
+     KOS_DYN_CAP_OWNS_NS node introduces one: a code frame, a let, a
      collect. A native or code-less frame carries a fill of the live
      namespace like any other non-introducer, and a parked function
      frame keeps the cap with the namespace it still holds. */
   Py_VISIT(KosDynNode_NS(node));
-  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BINDS_NS)) {
+  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_OWNS_NS)) {
     int tr = KosNamespace_TraverseUntracked(KosDynNode_NS(node), visit, arg);
     if (tr != 0)
       return tr;
