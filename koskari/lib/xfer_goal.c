@@ -328,9 +328,10 @@ static KosOpResult goal_leave(KosEvalState *es, KosXferGoal *goal) {
 
 /**
    LANDING: splice the target onto the seam and install the resume pc.
-   Synchronous and infallible; runs once. An undelimited landing (seam
-   NULL) has replaced the chain every outer goal was moving through, so
-   those are void.
+   Synchronous and infallible; runs once. An outer goal whose frontier
+   LEAVING unlinked is void: the node it waited on and everything above
+   it are gone, and the extent it was moving through no longer exists.
+   With a NULL seam that is every outer.
 */
 static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
 
@@ -363,12 +364,31 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
   if (goal->resume_pc != (uint32_t) -1 && KosEvalState_FRAME(es))
     KosEvalState_SET_PC(es, goal->resume_pc);
 
-  if (! goal->seam) {
-    while (goal->outer) {
-      KosXferGoal *outer = goal->outer;
-      goal->outer = outer->outer;
-      outer->outer = NULL;
-      kos_xfer_goal_free(outer);
+  /* Retire every parked outer whose frontier LEAVING unlinked. An
+     outer is parked on a node whose thunk this transfer started from;
+     if that node left the chain, the extent the outer was moving
+     through no longer exists, and resuming it later would act on
+     whatever node came to occupy the same address. With a NULL seam
+     the whole chain went, so every outer goes. Pointer reach plus id,
+     as goal_leave checks its seam, so a recycled address cannot pass. */
+  {
+    KosXferGoal **link = &goal->outer;
+
+    while (*link) {
+      KosXferGoal *outer = *link;
+      int gone = ! goal->seam
+          || (outer->frontier
+              && (! kos_dyn_reaches(es, outer->frontier)
+                  || KosDynNode_NODE_ID(outer->frontier)
+                     != outer->frontier_id));
+
+      if (gone) {
+        *link = outer->outer;
+        outer->outer = NULL;
+        kos_xfer_goal_free(outer);
+      } else {
+        link = &outer->outer;
+      }
     }
   }
   return EVAL_NORMAL();

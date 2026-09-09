@@ -21,6 +21,8 @@ Tests for continuation special forms and delimited transfer policy.
 
 import pytest
 
+import asyncio
+
 from . import SpecialsTestCase
 
 
@@ -277,6 +279,90 @@ class TestUndelimitedSeam(SpecialsTestCase):
         result = await expr()
         self.assertEqual(result, 210)
         self.assertEqual(log, [11, 110, 210])
+
+
+class TestNestedUndelimitedVoidsOuter(SpecialsTestCase):
+    """
+    A goal parked on a wind's after thunk is void once an inner
+    undelimited invoke from that thunk unlinks the wind: the extent the
+    outer was moving through is gone, so the outer must not resume on a
+    later node that happens to sit where the wind was.
+    """
+
+    async def test_after_thunk_invoke_voids_the_parked_outer(self):
+        """
+        the body invokes k; leaving runs the after thunk, which invokes
+        k again; the second landing wins and the first never delivers.
+        The call to bump after the transfer allocates a frame where the
+        unlinked wind stood and awaits in it, which is where a surviving
+        outer would wrongly resume
+        """
+
+        src_str = """
+        (let [[k nil] [n 0]]
+          (let [[bump (lambda [] (begin (await (call pause)) (setq n (+ n 10))))]]
+            (begin
+              (let/cc c (setq k c))
+              (setq n (+ n 1))
+              (call record n)
+              (cond
+                ((== n 1)
+                 (dyn-wind
+                   None
+                   (call k 1)
+                   (call k 2)))
+                (else: nil))
+              (call bump)
+              n)))
+        """
+        log = []
+        expr, mod = self.compile_expr(
+            src_str, record=log.append, pause=lambda: asyncio.sleep(0))
+        result = await expr()
+        self.assertEqual(log, [1, 2])
+        self.assertEqual(result, 12)
+
+
+    async def test_after_thunk_invoke_voids_outer_parked_on_dyn_with(self):
+        """
+        same shape with the outer parked on a dyn-with __exit__
+        """
+
+        seen = []
+
+        class Mgr:
+            def __enter__(self):
+                seen.append("enter")
+                return self
+            def __exit__(self, *exc):
+                seen.append("exit")
+                return False
+
+        src_str = """
+        (let [[k nil] [n 0]]
+          (let [[bump (lambda [] (begin (await (call pause)) (setq n (+ n 10))))]]
+            (begin
+              (let/cc c (setq k c))
+              (setq n (+ n 1))
+              (call record n)
+              (cond
+                ((== n 1)
+                 (dyn-wind
+                   None
+                   (dyn-with [(call mgr)] (call k 1))
+                   (call k 2)))
+                (else: nil))
+              (call bump)
+              n)))
+        """
+        log = []
+        expr, mod = self.compile_expr(
+            src_str, record=log.append, mgr=Mgr,
+            pause=lambda: asyncio.sleep(0))
+        result = await expr()
+        self.assertEqual(log, [1, 2])
+        self.assertEqual(result, 12)
+        self.assertEqual(seen, ["enter", "exit"])
 
 
 # The end.

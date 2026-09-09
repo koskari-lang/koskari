@@ -366,7 +366,7 @@ cleared, or a `KOS_DYN_CAP_BINDS_NS` node -- and one level only.
 
 | operation | target | seam |
 |---|---|---|
-| undelimited call/cc invoke | clone of the captured template | NULL (root) |
+| undelimited call/cc invoke | clone of the template above the common ancestor's counterpart | the lowest common ancestor of the live chain and the template by node id; NULL when they share no node |
 | delimited push invoke | clone of the captured template | the DELIM this invoke pushed |
 | `POP_SHIFT` | NULL | the prompt's parent |
 | cc-unwind | NULL | the root GEN if the context has one, else NULL |
@@ -414,11 +414,14 @@ holds, which for a delimited inner is after the inner's slice has routed back
 through the inner DELIM and the thunk returned. A delimited goal is finished
 at `DELIVERING`; the slice's completion is the DELIM bookmark's business.
 
-An undelimited inner `LANDING` frees the whole `outer` stack: its `LEAVING`
-to the root has already unlinked the outer's landed nodes, frontier and
-seam, and a full continuation replacing the chain is what voids the outer
-invocation. A delimited inner never unlinks below its own DELIM and cannot
-invalidate an outer. A raise frees the stack (rule 5).
+An inner `LANDING` frees every outer whose frontier its `LEAVING`
+unlinked (pointer reach and id, as the seam check): the node the outer
+waited on and everything above it are gone, so the extent it was moving
+through no longer exists. An undelimited inner whose seam is the common
+ancestor frees the outers parked above that ancestor and leaves one parked
+at or below it; a NULL seam (no shared node) frees them all. A delimited
+inner never unlinks below its own DELIM and cannot invalidate an outer. A
+raise frees the stack (rule 5).
 
 Deleted: the replan block (`eval_chain.c:270-350`),
 `kos_dyn_plan_direct_install`, `kos_xfer_plan_is_delimited_push`, both

@@ -36,8 +36,9 @@
    above belongs to the thunk.
 
    Goals nest: a continuation invoked from inside a thunk arms an inner
-   goal while the outer stays parked. An undelimited landing voids every
-   outer goal, since it has replaced the chain they were moving. A raise
+   goal while the outer stays parked. A landing voids every outer goal
+   whose frontier the inner's LEAVING unlinked, since the extent it was
+   moving through is gone; with a NULL seam that is every outer. A raise
    frees the whole stack; the chain a walk left behind is a chain to
    raise through.
 

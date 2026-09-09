@@ -235,7 +235,7 @@ Items below are **done** in koskari-ng unless noted in [TODO.md](TODO.md).
 
 **Utilities (C)** — `apply`, `reapply`, `identity`, `constantly`, collection builders, `build_str`.
 
-**Evaluator core** — `KosContext`, dynamic chain (`KosDynNode`), transfer goals
+**Evaluator core** -- `KosContext`, dynamic chain (`KosDynNode`), transfer goals
 (parked across thunks and awaits, nested on a thunk's invoke, freed on a
 failed step before **`try_local`**), the extent contract and obligations, `koskari_eval`, coroutine/async-gen
 wrappers, GC hooks.

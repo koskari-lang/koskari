@@ -958,7 +958,7 @@ flowchart LR
 
 1. **Park.** A leave or enter answering REPROLOGUE or AWAIT parks the goal on that node with `park_top = dyn_top`; the driver returns and the thunk runs as an ordinary frame.
 2. **Resume.** The driver acts again only when `dyn_top == park_top`: the thunk's frame came and went. Everything above `park_top` belongs to the thunk, including any nested goal it arms.
-3. **LANDING is total.** Splice, resume pc, and (for an undelimited landing) freeing the outer goals happen in one synchronous step; the landed frames are renumbered for the recursion limit (§7.7).
+3. **LANDING is total.** Splice, resume pc, and voiding every outer goal whose frontier LEAVING unlinked (all of them when the seam is NULL) happen in one synchronous step; the landed frames are renumbered for the recursion limit (§7.7).
 4. **Re-derive.** LEAVING and ENTERING re-walk from the live chain each pass; a node already entered answers NORMAL, and a node another goal is waiting on is skipped.
 5. **Raise frees the stack.** A step failure enters `process_raise`, which abandons every goal; the chain a walk left behind is a chain to raise through.
 
@@ -1457,7 +1457,7 @@ carry recyclable durable contexts.
 2. The thunk invokes a second continuation. `kos_invoke_continuation` arms an inner goal; the outer stays parked with `park_top` recorded.
 3. The inner goal drives to delivery on the chain above `park_top`; a delimited inner invoke returns its reset's value to the thunk, which then returns.
 4. The thunk's return settles the wind (`kos_dyn_settle_top`); `dyn_top` is `park_top` again, and the drive resumes the outer goal where it left off.
-5. Had the inner landing been an undelimited one that reached the root, LANDING would have freed the outer goal along with the chain it was moving.
+5. Had the inner LEAVING unlinked the wind the outer was parked on (an undelimited inner whose common ancestor lies below it), LANDING would have freed the outer goal along with the extent it was moving through.
 
 Tests: `TestDelimitedTransferNested` in `tests/compile/specials/test_continuations.py` and `TestDynWindContinuations` in `tests/compile/specials/test_dyn_wind.py`.
 

@@ -274,7 +274,7 @@ came and went. Everything above `park_top` belongs to the thunk:
    invoke returns its reset's value to the thunk, which then returns.
 3. The thunk's return settles the node (`kos_dyn_settle_top`); dyn_top is
    `park_top` again and the drive resumes the outer goal where it left off.
-4. An undelimited inner landing that reaches the root frees the outer goal along with the chain.
+4. An inner landing whose LEAVING unlinked the node the outer was parked on frees the outer goal along with that extent.
 
 A step that raises enters `process_raise`, which frees the whole goal stack
 (`kos_xfer_goal_abandon_all`) and raises through the chain as the driver
@@ -380,7 +380,7 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 - [../archive/evaluator-token-continuation.md](../archive/evaluator-token-continuation.md) — Evaluator
   token, KosEvaluatorToken, KoskariContinuationApply, and continuation
   application model
-- [../EVALUATOR.md](../EVALUATOR.md) — Overall evaluation model and API
+- [../EVALUATOR.md](../EVALUATOR.md) -- Overall evaluation model and API
 - [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
   the DynNode chain restructure (implemented; archived)
 - [execution-invariants.md](execution-invariants.md) — Semantic commitments
