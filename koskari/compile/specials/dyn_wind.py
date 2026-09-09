@@ -83,7 +83,7 @@ def _find_segments(source):
 
     if is_nil(before_src) and is_nil(after_src):
         raise SpecialError(
-            "dyn-wind requires at least one of before, body, and after",
+            "dyn-wind requires at least one of before and after",
             source)
 
     return (before_src, body_src, after_src)
