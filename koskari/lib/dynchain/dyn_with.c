@@ -254,21 +254,12 @@ int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node) {
 
 
 /**
-   Bind name in frame namespace for `as` targets.
-*/
-static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val) {
-  PyObject *ns = KosEvalState_CurrentNamespace(es);
-  if (KosNamespace_Check(ns))
-    return KosNamespace_Store(ns, name, val);
-  PyErr_Format(PyExc_TypeError,
-               "frame namespace must be Namespace, got %R", ns);
-  return -1;
-}
-
-
-/**
    Complete an __enter__ whose result is TOS: pop it, bind the with name
-   when there is one, and mark the node entered and idle.
+   when there is one, and mark the node entered and idle. The name binds
+   in the node's own namespace, the one the with was pushed in: on a
+   plain push that is the live namespace too, but a transfer re-enters
+   the node with the landed frame above it current, and the binding
+   belongs to the with's scope, not to whatever frame sits at dyn_top.
 */
 static int kos_dyn_with_bind_entered(KosEvalState *es, KosDynWith *node) {
   PyObject *result = KosEvalState_StackPopRef(es);
@@ -278,9 +269,19 @@ static int kos_dyn_with_bind_entered(KosEvalState *es, KosDynWith *node) {
     return -1;
 
   name = KosDynWith_NAME(node);
-  if (name && name != Py_None && frame_ns_store(es, name, result) < 0) {
-    Py_DECREF(result);
-    return -1;
+  if (name && name != Py_None) {
+    PyObject *ns = KosDynNode_NS((KosDynNode *) node);
+
+    if (! KosNamespace_Check(ns)) {
+      PyErr_Format(PyExc_TypeError,
+                   "with namespace must be Namespace, got %R", ns);
+      Py_DECREF(result);
+      return -1;
+    }
+    if (KosNamespace_Store(ns, name, result) < 0) {
+      Py_DECREF(result);
+      return -1;
+    }
   }
   Py_DECREF(result);
 

@@ -171,7 +171,7 @@ fail:
    An inline segment cannot leave its node: it is emptied and left
    dormant, as a spill leaves it.
 */
-static int goal_apply_restore(KosXferGoal *goal) {
+static int goal_apply_restore(KosEvalState *es, KosXferGoal *goal) {
 
   for (size_t i = 0; i < goal->restore_count; i++) {
     KosXferRestore *r = &goal->restore[i];
@@ -202,6 +202,13 @@ static int goal_apply_restore(KosXferGoal *goal) {
       KosDynFrame_RESUME_FN(node) = r->resume_fn;
       KosDynFrame_RESUME_STATE(node) = r->resume_state;
       KosDynFrame_RESUME_NAME(node) = r->resume_name;
+      /* The live registers are the authority for the current frame
+         and are flushed back into it whenever the frame changes; a
+         restore of that frame must land in them too. */
+      if ((KosDynFrame *) node == KosEvalState_FRAME(es)) {
+        KosEvalState_SET_PC(es, r->pc);
+        es->acting_pc = r->acting_pc;
+      }
     }
   }
   return 0;
@@ -347,11 +354,6 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
 
   int had_target = goal->target != NULL;
 
-  /* Below the seam the extents are the ones the capture ran in; only
-     the operands they held come back. */
-  if (goal->restore && goal_apply_restore(goal) < 0)
-    return EVAL_RAISE();
-
   if (goal->target) {
     KosDynNode *bottom = goal->target;
 
@@ -367,10 +369,16 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
     kos_dyn_resync_chain(es);
   }
 
-  /* A landed target already resynced; a restore with no target changed
-     a live node's stack and still needs one. */
-  if (goal->restore && ! had_target)
-    kos_dyn_resync_chain(es);
+  /* Below the seam the extents are the ones the capture ran in; only
+     the operands they held come back. This runs after the splice and
+     its resync: retargeting the live frame flushes the live pc into
+     the frame it leaves, which would overwrite a restore done first. */
+  if (goal->restore) {
+    if (goal_apply_restore(es, goal) < 0)
+      return EVAL_RAISE();
+    if (! had_target)
+      kos_dyn_resync_chain(es);
+  }
   if (goal->resume_pc != (uint32_t) -1 && KosEvalState_FRAME(es))
     KosEvalState_SET_PC(es, goal->resume_pc);
 

@@ -464,4 +464,54 @@ class TestDynWithTransferFailures(SpecialsTestCase):
         self.assertEqual(aexit_count[0], 2)
 
 
+class TestReenteredWithBindsItsOwnScope(SpecialsTestCase):
+    """
+    When a transfer re-enters a dyn-with, __enter__ runs while the
+    landed frame above the with is current. The result must bind into
+    the with's own scope, the namespace the with was pushed in, not the
+    namespace that happens to be live at dyn_top.
+    """
+
+    async def test_reentered_with_binds_manager_in_its_own_frame(self):
+        managers = []
+
+        class Mgr:
+            def __enter__(self):
+                managers.append(self)
+                return self
+            def __exit__(self, *exc):
+                return False
+
+        saved = []
+        helper_expr, mod = self.compile_expr(
+            "(lambda [] (let/cc k (begin (call stash k) 0)))",
+            stash=saved.append)
+        helper = await helper_expr()
+
+        src_str = """
+        (let [[n 0]]
+          (begin
+            (dyn-with [x (call mgr)]
+              (begin
+                (call helper)
+                (setq n (+ n 1))
+                (call record x)))
+            (call record "after-with")
+            (cond ((== n 1) (call (call take) 0)) (else: nil))
+            (call record "after-cond")
+            n))
+        """
+        log = []
+        expr, mod = self.compile_expr(
+            src_str, mgr=Mgr, helper=helper, record=log.append,
+            take=lambda: saved[-1])
+        result = await expr()
+        self.assertEqual(result, 2)
+        self.assertEqual(len(managers), 2)
+        self.assertEqual(
+            log,
+            [managers[0], "after-with", managers[1], "after-with",
+             "after-cond"])
+
+
 # The end.
