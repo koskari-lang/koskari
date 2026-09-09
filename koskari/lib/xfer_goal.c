@@ -219,7 +219,6 @@ void kos_xfer_goal_arm(KosEvalState *es, KosXferGoal *goal) {
 
   goal->outer = KosEvalState_GOAL(es);
   KosEvalState_GOAL(es) = goal;
-  KosContext_FLAGS(KosEvalState_CONTEXT(es)) |= KOS_CTX_IN_TRANSFER;
 }
 
 
@@ -233,8 +232,6 @@ static void kos_xfer_goal_pop(KosEvalState *es) {
   KosEvalState_GOAL(es) = goal->outer;
   goal->outer = NULL;
   kos_xfer_goal_free(goal);
-  if (! KosEvalState_GOAL(es))
-    KosContext_FLAGS(KosEvalState_CONTEXT(es)) &= ~KOS_CTX_IN_TRANSFER;
 }
 
 

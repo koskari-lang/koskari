@@ -948,15 +948,6 @@ KosOpResult kos_dyn_extent_leave(
       return kos_dyn_wind_leave(es, (KosDynWind *) node, ev);
     case KOS_DYN_WITH:
       return kos_dyn_with_leave(es, (KosDynWith *) node, ev);
-    case KOS_DYN_PARAM:
-      kos_dyn_param_unwind(es, (KosDynParam *) node);
-      return EVAL_NORMAL();
-
-    case KOS_DYN_DELIM:
-    case KOS_DYN_SHIFT:
-    case KOS_DYN_GEN:
-    case KOS_DYN_NEXT:
-      return EVAL_NORMAL();
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dyn_extent_leave: node kind %u has no leave",

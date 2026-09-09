@@ -123,10 +123,7 @@ typedef enum KosDynFlags {
 */
 #define KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION    (1u << 0)
 #define KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP  (1u << 1)
-#define KOS_DYN_CAP_NEEDS_UNWIND_ACTION      (1u << 2)
-#define KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION (1u << 3)
 #define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
-#define KOS_DYN_CAP_AWAITS_THUNK_RESULT      (1u << 5)
 /* the node reacts when control returns into it from a frame it owns:
    the extent contract has work for it (WITH, WIND); a node
    without it takes a callee's value on its segment and nothing more */

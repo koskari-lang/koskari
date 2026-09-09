@@ -1035,7 +1035,7 @@ for frameless KosCallables).
 
 ### 7.4 Transfer Goal Integration
 
-An install that invokes a continuation arms a goal with **`kos_xfer_goal_arm`** (**`ctx->goal`** on freeze, **`KosEvalState_GOAL(es)`** while running, plus **`KOS_CTX_IN_TRANSFER`**) and answers REPROLOGUE; the prologue drives it. No recursion. A continuation invoked while a goal is parked (from a wind thunk, for example) arms an inner goal whose `outer` is the parked one; the drive retires into the outer when the inner delivers.
+An install that invokes a continuation arms a goal with **`kos_xfer_goal_arm`** (**`ctx->goal`** on freeze, **`KosEvalState_GOAL(es)`** while running) and answers REPROLOGUE; the prologue drives it. No recursion. A continuation invoked while a goal is parked (from a wind thunk, for example) arms an inner goal whose `outer` is the parked one; the drive retires into the outer when the inner delivers.
 
 ### 7.5 `KosEvaluatedTypeObject`, the call suite, and Demand
 

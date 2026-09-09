@@ -149,11 +149,6 @@ void KosEvalState_FreezeToContext(KosEvalState *es) {
   KosEvalState_CODE(es) = NULL;
   (es)->pc = 0;
   (es)->acting_pc = 0;
-
-  if (KosContext_GOAL(ctx))
-    KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
-  else
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
 }
 
 

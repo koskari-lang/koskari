@@ -114,7 +114,6 @@ typedef enum KosContextFlags {
   KOS_CTX_RUNNING         = 0x01,
   KOS_CTX_FROZEN          = 0x02,
   KOS_CTX_DEAD            = 0x04,
-  KOS_CTX_IN_TRANSFER     = 0x10,  /* a transfer goal is armed */
 } KosContextFlags;
 
 
@@ -928,8 +927,7 @@ void KosEvalState_ThawFromContext(KosEvalState *es);
 
 /**
   Restore dyn_top, goal, and derived snapshots from es onto ctx and NULL
-  es. Call from koskari_eval_cleanup after FlushLiveRegsToFrame. Updates
-  KOS_CTX_IN_TRANSFER from the restored goal.
+  es. Call from koskari_eval_cleanup after FlushLiveRegsToFrame.
 */
 
 void KosEvalState_FreezeToContext(KosEvalState *es);

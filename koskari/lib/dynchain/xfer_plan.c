@@ -3,25 +3,6 @@
 
 
 /**
-   Walk segment top to bottom; set stop to parent of bottom (clone bound).
-*/
-KOS_OP_INLINE void kos_chain_segment_bounds(
-    KosDynNode *top,
-    KosDynNode **bottom_out,
-    KosDynNode **stop_out) {
-
-  KosDynNode *bottom = top;
-
-  while (bottom && KosDynNode_PARENT(bottom))
-    bottom = KosDynNode_PARENT(bottom);
-  if (bottom_out)
-    *bottom_out = bottom;
-  if (stop_out)
-    *stop_out = bottom ? KosDynNode_PARENT(bottom) : NULL;
-}
-
-
-/**
    In-place (Path A) invoke readiness: the capture-time live prompt and
    shift nodes are both still on the current chain (pointer + node_id
    match), the shift node lies above the prompt, no barrier node (foreign

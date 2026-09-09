@@ -124,6 +124,8 @@ static void kos_eval_mark_context_dead(KosContext *ctx);
 
 static KosOpResult process_raise(KosEvalState *es);
 
+static KosOpResult kos_eval_walk_outcome(KosEvalState *es, KosOpResult r);
+
 static KosOpResult eval_parent_return_deliver(KosEvalState *es, PyObject *val);
 
 static KosOpResult eval_event_yield(

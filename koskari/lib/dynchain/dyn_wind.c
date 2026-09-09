@@ -15,14 +15,8 @@ KosDynWind *kos_dynwind_new(
   if (! wind)
     return NULL;
 
-  uint32_t wind_caps = KOS_DYN_CAP_CONTROL_HOOK | KOS_DYN_CAP_HOLDS_OBLIGATION;
-  if (after_thunk)
-    wind_caps |= KOS_DYN_CAP_NEEDS_UNWIND_ACTION;
-  if (before_thunk)
-    wind_caps |= KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION;
-  if (before_thunk || after_thunk)
-    wind_caps |= KOS_DYN_CAP_AWAITS_THUNK_RESULT;
-  kos_dynnode_init(wind, KOS_DYN_WIND, parent, wind_caps);
+  kos_dynnode_init(wind, KOS_DYN_WIND, parent,
+                   KOS_DYN_CAP_CONTROL_HOOK | KOS_DYN_CAP_HOLDS_OBLIGATION);
   KosDynWind_BEFORE_THUNK(wind) = before_thunk;
   if (before_thunk)
     Py_INCREF(before_thunk);

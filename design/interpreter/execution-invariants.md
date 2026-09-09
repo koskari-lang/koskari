@@ -259,17 +259,16 @@ the boundary constraint.
 * `KOS_DYN_CC` — call/cc extent (PUSH_CC/POP_CC)
 * `KOS_DYN_YIELD_FROM` — yield-from delegation state (see [EVALUATOR.md](../EVALUATOR.md) §5; [archive/yield-from-execution-model.md](../archive/yield-from-execution-model.md))
 * `KOS_DYN_PARAM` — parameterize extent (PUSH_PARAM/POP_PARAM); binds/restores dynamic param
-* `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH); CATCH
-* `KOS_DYN_DYN_WITH` — multi-shot with extent (PUSH_DYN_WITH/POP_DYN_WITH); CATCH
+* `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH, PUSH_DYN_WITH/POP_DYN_WITH for the multi-shot shot); CATCH, CONTROL_HOOK, HOLDS_OBLIGATION
 
 **Capability bits** govern behavior without kind checks in generic handlers:
 * `KOS_DYN_CAP_CATCH` — node may swallow exception (WITH, DYN_WITH)
 * `KOS_DYN_CAP_BARRIER` — normal pop refused (PROMPT)
 * `KOS_DYN_CAP_HANDLES_EXCEPTIONS` — node has `unwind_on_exception` handler invoked during exception unwind when pop is refused (PROMPT)
-* `KOS_DYN_CAP_NEEDS_UNWIND_ACTION` — node has transfer-plan unwind handler (WIND, WITH, DYN_WITH, PARAM)
-* `KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION` — node has transfer-plan wind handler (WIND)
-* `KOS_DYN_CAP_NEEDS_INSTALL_WIND` — node runs wind on segment install (PARAM, DYN_WITH)
-* `KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN` — node needs post-unwind teardown (DYN_WITH, PROMPT)
+* `KOS_DYN_CAP_CONTROL_HOOK` — node answers the extent contract (enter, leave, settle, abort): WIND, WITH
+* `KOS_DYN_CAP_HOLDS_OBLIGATION` — node carries an obligation slot: WIND, WITH
+* `KOS_DYN_CAP_NEEDS_INSTALL_WIND` — node re-enters when a transfer lands it (PARAM, multi-shot WITH)
+* `KOS_DYN_CAP_BINDS_NS` — node introduced its own namespace, which the collector reaches through it (code FRAME, NS, COLLECT)
 * `KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP` — preserve exception across pop (YIELD_FROM)
 
 ---

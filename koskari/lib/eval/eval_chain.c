@@ -154,11 +154,9 @@ static KosOpResult kos_eval_drain_goal(KosEvalState *es) {
   int boundary = 0;
   KosOpResult r = kos_xfer_goal_drive(es, &boundary);
 
-  if (r.kind == KOS_RES_RAISE && ! boundary)
-    return process_raise(es);
-  if (r.kind == KOS_RES_AWAIT)
-    return eval_event_await(es, r.val);
-  return r;
+  if (boundary)
+    return r;
+  return kos_eval_walk_outcome(es, r);
 }
 
 
