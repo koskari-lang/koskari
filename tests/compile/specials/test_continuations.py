@@ -67,4 +67,33 @@ class TestDelimitedTransferNested(SpecialsTestCase):
         self.assertEqual(passes, 3)
 
 
+    async def test_unbounded_nested_invoke_raises_recursion_error(self):
+        """
+        every re-entry of the cloned before-thunk invokes k again, so
+        each pass lands another slice above the last. Each landing adds
+        frames, so the recursion limit refuses an invoke once the chain
+        is as deep as sys.getrecursionlimit() and RecursionError raises
+        at that invoke site instead of the chain growing without bound
+        """
+
+        src_str = """
+        (let [[pass 0] [k nil]]
+          (begin
+            (setq k
+              (reset
+                (dyn-wind
+                  (begin
+                    (setq pass (+ pass 1))
+                    (cond
+                      ((> pass 1) (call k 99))
+                      (else: nil)))
+                  (shift k k)
+                  nil)))
+            (call k 0)))
+        """
+        expr, mod = self.compile_expr(src_str)
+        with self.assertRaises(RecursionError):
+            await expr()
+
+
 # The end.

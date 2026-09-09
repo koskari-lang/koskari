@@ -35,7 +35,23 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
   if (! KosEvalState_BREAKER(es))
     KosEvalState_BREAKER(es) = &koskari_breaker_always;
 
+  {
+    int limit = Py_GetRecursionLimit();
+    if (limit < 1)
+      limit = 1;
+    else if (limit > KOS_FRAME_DEPTH_MAX)
+      limit = KOS_FRAME_DEPTH_MAX;
+    KosEvalState_RECURSION_LIMIT(es) = (uint16_t) limit;
+  }
+
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_init);
+}
+
+
+int kos_eval_recursion_error(void) {
+  PyErr_SetString(PyExc_RecursionError,
+                  "maximum recursion depth exceeded");
+  return -1;
 }
 
 

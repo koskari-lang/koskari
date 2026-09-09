@@ -209,6 +209,10 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
     while (KosDynNode_PARENT(bottom))
       bottom = KosDynNode_PARENT(bottom);
     KosDynNode_PARENT(bottom) = goal->seam;
+    /* The clone's frames carry capture-time depths; the invoke checked
+       that they fit above the seam before arming. */
+    kos_dyn_renumber_frames(goal->target, goal->seam,
+                            kos_dyn_frame_depth_at(goal->seam));
     KosEvalState_DYN_TOP(es) = goal->target;
     goal->target = NULL;
     kos_dyn_resync_chain(es);

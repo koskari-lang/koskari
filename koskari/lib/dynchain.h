@@ -353,6 +353,12 @@ struct KosDynNode {
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
       uint32_t frame_flags;
+      /* Frame nesting depth on this context's chain: the enclosing
+         frame's depth + 1, the root frame at 1. Set at install and
+         renumbered whenever a segment carrying frames is spliced in
+         (continuation landing, generator install), so the recursion
+         limit test at install is one load and one compare. */
+      uint16_t depth;
       /* A caller-owned one-frame cache (KosDynFrame **) this frame
          parks itself into when the return path frees it; meaningful
          only while KOS_FRAME_PARK_TO_CACHE is set, which
@@ -963,6 +969,30 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es);
    :return: new frame, or NULL on error
 */
 KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es);
+
+/**
+   The depth of the nearest frame at or below node, 0 when the chain
+   under node holds no frame (or node is NULL).
+*/
+unsigned kos_dyn_frame_depth_at(KosDynNode *node);
+
+/**
+   Count the FRAME nodes on the segment from top down to but excluding
+   base (NULL: the whole chain).
+*/
+unsigned kos_dyn_frame_count(KosDynNode *top, KosDynNode *base);
+
+/**
+   Renumber the frames on the segment from top down to but excluding
+   base so the lowest sits at base_depth + 1 and each frame above it is
+   one deeper. Called after a segment carrying frames is spliced onto a
+   chain; the caller has already established that the result fits the
+   recursion limit.
+*/
+void kos_dyn_renumber_frames(
+    KosDynNode *top,
+    KosDynNode *base,
+    unsigned base_depth);
 
 
 /**
@@ -2087,6 +2117,10 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynFrame_NS(f)         KosDynNode_NS((KosDynNode *)(f))
 
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
+#define KosDynFrame_DEPTH(f)      (((KosDynNode *)(f))->u.frame.depth)
+/* The widest depth a frame can record, and so the ceiling on the
+   per-context recursion limit whatever sys.setrecursionlimit says. */
+#define KOS_FRAME_DEPTH_MAX       UINT16_MAX
 #define KOS_FRAME_DEMAND          (1u << 0)  /* frame is a demand-sync root */
 #define KOS_FRAME_PARK_TO_CACHE   (1u << 2)  /* a completing code-less
                                                 frame: park_cache is the

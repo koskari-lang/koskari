@@ -2119,6 +2119,8 @@ static KosDynFrame *kos_push_or_reuse_codeless_frame(
     PyObject *live_ns = KosEvalState_NAMESPACE(es);
     KosDynFrame *frame = *cache;
 
+    if (kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)
+      return NULL;
     *cache = NULL;
     Py_XINCREF(live_ns);
     KosDynFrame_NS(frame) = live_ns;

@@ -306,6 +306,20 @@ int kos_invoke_continuation(
       return kos_delimited_invoke_inplace(es, k, value, nested_frame);
   }
 
+  /* Delimited k(value): the caller stays on the chain and the segment
+     lands on a DELIM bookmark that routes the slice's completion back
+     to this invoke site. Undelimited: the whole chain is replaced. */
+  int is_delimited =
+      (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED);
+
+  /* The landed frames sit above the invoker's frame (delimited) or
+     form the whole chain (undelimited); refuse here, before anything
+     moves, so RecursionError raises at the invoke site. */
+  if (kos_eval_check_frame_room(
+          es, is_delimited ? KosEvalState_FRAME(es) : NULL,
+          kos_dyn_frame_count(KosContinuation_CAPTURED_CHAIN(k), NULL)) < 0)
+    return -1;
+
   /* The landed segment is a fresh clone of the captured template, so
      each invoke instantiates the template anew (multi-shot, e.g.
      (sum (k 0) (k 1))); the template itself is never landed. */
@@ -318,10 +332,6 @@ int kos_invoke_continuation(
     return -1;
   }
 
-  /* Delimited k(value): the caller stays on the chain and the segment
-     lands on a DELIM bookmark that routes the slice's completion back
-     to this invoke site. Undelimited: the whole chain is replaced. */
-  int is_delimited = (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED);
   KosDynNode *seam = NULL;
   if (is_delimited) {
     KosDynDelim *ret_delim = kos_dyn_push_delim(

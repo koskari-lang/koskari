@@ -230,6 +230,16 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
     return -1;
   }
 
+  /* The resumed frames sit above the consumer's frame; a resume that
+     would not fit raises RecursionError at the request, as Python's
+     next() does, with the generator left suspended. */
+  if (kos_eval_check_frame_room(
+          es, KosEvalState_FRAME(es),
+          kos_dyn_frame_count(active, (KosDynNode *) gen)) < 0)
+    return -1;
+  kos_dyn_renumber_frames(active, (KosDynNode *) gen,
+                          kos_dyn_frame_depth_at(KosEvalState_DYN_TOP(es)));
+
   /* The consumer's registers, restored at the next freeze. */
   kos_live_regs_capture(es, KosDynGen_HOST(gen));
 
@@ -337,6 +347,13 @@ int kos_dyn_gen_install_bootstrap(
                     "kos_dyn_gen_install_bootstrap: GEN not on source chain");
     return -1;
   }
+
+  if (kos_eval_check_frame_room(
+          es, KosEvalState_FRAME(es),
+          kos_dyn_frame_count(chain_head, (KosDynNode *) gen)) < 0)
+    return -1;
+  kos_dyn_renumber_frames(chain_head, (KosDynNode *) gen,
+                          kos_dyn_frame_depth_at(KosEvalState_DYN_TOP(es)));
 
   /* The consumer's registers, restored at the first freeze. */
   kos_live_regs_capture(es, KosDynGen_HOST(gen));

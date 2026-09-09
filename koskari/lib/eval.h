@@ -691,6 +691,9 @@ struct KosEvalState {
                          (compat.h), resolved at Init; the cooperation
                          points test it and the trampoline polls when
                          it is up */
+  uint16_t recursion_limit; /* the deepest frame this context may
+                         install: sys.getrecursionlimit() read at Init
+                         and clamped to KOS_FRAME_DEPTH_MAX */
 };
 
 
@@ -730,6 +733,33 @@ static inline KosOpResult kos_call_installed(KosEvalState *es) {
 #define KosEvalState_DYN_TOP(es)     ((es)->dyn_top)
 #define KosEvalState_GOAL(es)        ((es)->goal)
 #define KosEvalState_FRAME(es) ((es)->frame)
+#define KosEvalState_RECURSION_LIMIT(es) ((es)->recursion_limit)
+
+/**
+   Raise RecursionError; the cold half of kos_eval_check_frame_room.
+   Always returns -1.
+*/
+int kos_eval_recursion_error(void);
+
+/**
+   Test whether count more frames fit above base (a frame on the live
+   chain, or NULL for the chain root) under the recursion limit. 0 when
+   they fit; -1 with RecursionError set when they do not. Every site
+   that installs or splices frames asks before touching the chain, so a
+   refused install leaves the chain and the caller's state unchanged and
+   the exception is raised into the caller's frame like any other.
+*/
+static inline int kos_eval_check_frame_room(
+    KosEvalState *es,
+    KosDynFrame *base,
+    unsigned count) {
+
+  unsigned depth = base ? KosDynFrame_DEPTH(base) : 0u;
+
+  if (likely(depth + count <= KosEvalState_RECURSION_LIMIT(es)))
+    return 0;
+  return kos_eval_recursion_error();
+}
 #define KosEvalState_CODE(es) ((es)->code)
 /** The live code's instruction array. Read through the code object on
     every fetch, never cached on the state or a frame: packing a code

@@ -3258,6 +3258,11 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
         & KOS_DYNF_HOLDS_RETURN_FRAME) {
       KosDynNode_FLAGS((KosDynNode *) delim) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
       KosDynNode_PARENT((KosDynNode *) ret_frame) = prompt;
+      /* The snapshot was taken of the frame nearest the shift, which
+         may have sat above other frames in the region; here it stands
+         directly above the prompt. */
+      KosDynFrame_DEPTH(ret_frame) =
+          (uint16_t) (kos_dyn_frame_depth_at(prompt) + 1);
       base = (KosDynNode *) ret_frame;
     }
 
