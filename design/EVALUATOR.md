@@ -934,7 +934,7 @@ leave down to and land on, an owned clone to land, a payload, a resume pc)
 and never what to do: **`kos_xfer_goal_drive`** derives the next step from the
 live chain on every pass, so a chain that moved under a suspension is its
 input rather than a hazard. The design record is
-[interpreter/transfer-plan-rework.md](interpreter/transfer-plan-rework.md).
+[archive/transfer-plan-rework.md](archive/transfer-plan-rework.md).
 
 ```mermaid
 flowchart LR
@@ -2144,7 +2144,7 @@ frame. This matches Scheme's `dynamic-wind` semantics.
 - [design/archive/boundary-control-reemit.md](archive/boundary-control-reemit.md) -- Boundary staging and remaining dynnode dispatch work
 - [design/api/special-call-protocol.md](api/special-call-protocol.md) -- Install slots and invocation
 - [design/interpreter/callcc.md](interpreter/callcc.md) -- Delimited continuation implementation details
-- [design/interpreter/transfer-plan-rework.md](interpreter/transfer-plan-rework.md) -- the goal, extent contract, unlink, and obligation design record
+- [design/archive/transfer-plan-rework.md](archive/transfer-plan-rework.md) -- the goal, extent contract, unlink, and obligation design record
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) -- Execution model invariants
 - [design/interpreter/bytecode.md](interpreter/bytecode.md) -- Bytecode format and opcodes
 - [design/interpreter/introspection-trace.md](interpreter/introspection-trace.md) -- Read-only introspection and trace snapshot design

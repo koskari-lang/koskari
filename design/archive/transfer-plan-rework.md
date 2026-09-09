@@ -1,6 +1,11 @@
 # Transfer plan rework
 
-Status: design, settled for implementation. Branch `transfer-plan-rework`.
+Status: archived. Implemented on branch `transfer-plan-rework` (2026-09-09),
+followed by the per-context recursion limit, the common-ancestor seam for
+undelimited invokes, and the review fixes recorded in the branch history.
+The permanent description is [EVALUATOR.md](../EVALUATOR.md) §6 and
+[interpreter/extent-wind-unwind.md](../interpreter/extent-wind-unwind.md);
+this is the design record as it stood when the work landed.
 Line numbers are against that branch.
 
 Transfer plans move control from the current dynamic chain to a target chain
@@ -119,8 +124,9 @@ Rules:
 3. **`LANDING` is total.** Splice and pc install: no allocation, no
    suspension. The clone happens at construction, so a clone failure raises
    with the chain untouched. `LANDING` runs once; the phase byte records it.
-   For an undelimited goal (seam NULL) `LEAVING` has already emptied the
-   chain and `LANDING` also frees every `outer` goal (§3.10).
+   `LANDING` also restores the captured operands of the shared nodes from
+   the seam down to its frame and retires every `outer` goal whose
+   frontier `LEAVING` unlinked, all of them when the seam is NULL (§3.10).
 4. **`LEAVING` and `ENTERING` are re-derived.** A node that has left is off
    the chain; a node that has entered has `ENTERED`. `settle` and `abort`
    advance node state only; nothing advances the goal but the driver.
@@ -352,7 +358,7 @@ Clone-or-refuse, at `kos_dyn_clone`, with a `PyErr` on every refusal (D7):
 
 Deleted: `KosContext.pending_return_*`, `kos_ctx_exc_stash_*`,
 `kos_dyn_chain_has_node_id`, `kos_dyn_reaches` in its guard role. This
-subsumes [pending-return-across-suspension.md](../archive/pending-return-across-suspension.md):
+subsumes [pending-return-across-suspension.md](pending-return-across-suspension.md):
 its defects 3, 4, 7 and 8 stop existing. Its defect 2 (`DISPATCH` unmapped
 in the entry phase) closed when the entry phase's resume block was rewritten
 around `KosEval_ResumeReturn`. Its defect 1 (GC over-attribution:
@@ -517,5 +523,5 @@ per-kind table is replaced by §3.4.
 Related: [callcc.md](callcc.md),
 [extent-wind-unwind.md](extent-wind-unwind.md),
 [with-dyn-with.md](with-dyn-with.md),
-[pending-return-across-suspension.md](../archive/pending-return-across-suspension.md),
+[pending-return-across-suspension.md](pending-return-across-suspension.md),
 [archive/interrupted-transfer-plans.md](../archive/interrupted-transfer-plans.md).

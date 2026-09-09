@@ -5,7 +5,7 @@ obligation design: the parked return lives on the node that owes it as a
 `KOS_OB_RETURN` obligation, the unlink hands it back through
 `kos_dyn_settle_top`, and `KosEval_ResumeReturn` resumes it. Every defect
 listed below is closed there. See
-[../interpreter/transfer-plan-rework.md](../interpreter/transfer-plan-rework.md)
+[transfer-plan-rework.md](transfer-plan-rework.md)
 and EVALUATOR.md §6.3. The text below is the first cut as written.
 
 ## The defect

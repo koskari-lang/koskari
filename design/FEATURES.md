@@ -216,7 +216,7 @@ Both invoke the same idempotent **`configure_koskari_scripts`**.
   chain, parks while a thunk or `__exit__` runs, nests when a thunk invokes
   another continuation, and frees every goal on a failed step before the
   raise walks the chain as it stands. See [EVALUATOR.md §6](EVALUATOR.md)
-  and [interpreter/transfer-plan-rework.md](interpreter/transfer-plan-rework.md);
+  and [archive/transfer-plan-rework.md](archive/transfer-plan-rework.md);
   tests in **`TestDynWindContinuations`** and **`TestDelimitedTransferNested`**.
 - **Recursion limit (done):** frame depth per context is bounded by
   `sys.getrecursionlimit()`; an install, a continuation landing, or a

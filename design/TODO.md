@@ -10,7 +10,7 @@ design docs for detail.
 No open items. The transfer goal, extent contract, unlink site, and
 obligation design landed on branch `transfer-plan-rework` together with
 the per-context recursion limit; see
-[interpreter/transfer-plan-rework.md](interpreter/transfer-plan-rework.md)
+[archive/transfer-plan-rework.md](archive/transfer-plan-rework.md)
 and [EVALUATOR.md §6](EVALUATOR.md).
 
 Ref: [interpreter/callcc.md](interpreter/callcc.md),
