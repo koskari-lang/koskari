@@ -34,10 +34,11 @@ a type with neither protocol is a TypeError.
 
 import asyncio
 
+import pytest
+
 from koskari.lib import KosPartial as partial
 from tests.compile.specials import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

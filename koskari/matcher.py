@@ -34,9 +34,11 @@ wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 from typing import Protocol, runtime_checkable
 
 from koskari.hygiene import Hygiene, HygieneEdge, HygieneNode
-from koskari.lib import (Datum, DatumFrame, Matcher, MatchResult, cons,
-                         keyword, kos_repr, nil, pair, symbol)
-from koskari.types import is_nil, is_keyword, is_pair, is_proper, is_symbol, unpack
+from koskari.lib import (
+    Datum, DatumFrame, Matcher, MatchResult, cons, keyword, kos_repr, nil,
+    pair, symbol)
+from koskari.types import (
+    is_keyword, is_nil, is_pair, is_proper, is_symbol, unpack)
 
 
 __all__ = (

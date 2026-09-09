@@ -21,6 +21,8 @@ in call position.
 
 import unittest
 
+import pytest
+
 from koskari.bootstrap import make_bootstrap
 from koskari.compile import Compiler
 from koskari.compile.pragma import BracketCalls
@@ -28,7 +30,6 @@ from koskari.exceptions import CompilerError
 from koskari.lib import Module, ModuleNamespace
 from koskari.reader import Reader, source_str
 
-import pytest
 
 pytestmark = pytest.mark.phase_compile
 

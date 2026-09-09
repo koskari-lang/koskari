@@ -27,10 +27,7 @@ import pytest
 
 from koskari.compile.compiler import Compiler
 from koskari.compile.helpers import (
-    const_only_expr,
-    helper_begin,
-    using_unpack_helper,
-)
+    const_only_expr, helper_begin, using_unpack_helper)
 from koskari.exceptions import SpecialError
 from koskari.lib import OpCode, cons, keyword, nil, symbol
 

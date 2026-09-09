@@ -33,14 +33,14 @@ import gc
 import sys
 import unittest
 import weakref
-
 from functools import partial
 
+import pytest
+
 from koskari.lib import (
-    KosFilter, KosMap, KosPartial, KoskariSyncViolation, demand, values)
+    KosFilter, KoskariSyncViolation, KosMap, KosPartial, demand, values)
 from koskari.module import load_module_source_async, new_module
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

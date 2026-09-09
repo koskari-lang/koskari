@@ -27,11 +27,11 @@ operand with its own in-place protocol, and a count above one.
 
 import operator
 
+import pytest
+
 from koskari.lib import FormalsSpec, NamespaceSpec, Operand
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, opcount
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_lib

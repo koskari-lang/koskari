@@ -24,11 +24,11 @@ square brackets. See design/bracket-pair.md.
 
 import unittest
 
-from koskari.lib import (
-    bracket_cons, bracket_nil, bracket_pair, cons, kos_repr, nil, nilp, pair,
-)
-
 import pytest
+
+from koskari.lib import (
+    bracket_cons, bracket_nil, bracket_pair, cons, kos_repr, nil, nilp, pair)
+
 
 pytestmark = pytest.mark.phase_lib
 

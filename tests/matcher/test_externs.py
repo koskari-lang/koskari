@@ -21,13 +21,7 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    get_extern_defaults,
-    keyword,
-    nil,
-    pair,
-    reset_extern_defaults,
-    symbol,
-)
+    get_extern_defaults, keyword, nil, pair, reset_extern_defaults, symbol)
 from koskari.matcher import Matcher, MatchResult, thaw
 
 

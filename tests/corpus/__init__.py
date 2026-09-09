@@ -32,21 +32,12 @@ from types import SimpleNamespace
 import jsonschema
 
 import koskari.builtins  # noqa: F401
-
 from koskari import exceptions
 from koskari.compile import Compiler, CompilerMode
-from koskari.lib import (
-    car,
-    cdr,
-    cons,
-    demand_call,
-    nil,
-    symbol,
-)
+from koskari.lib import car, cdr, cons, demand_call, nil, symbol
 from koskari.module import new_module, public_vars
 from koskari.pragma import ModulePragma
-from koskari.reader import (READ_EOF, LayoutReader, Reader,
-                            source_str)
+from koskari.reader import READ_EOF, LayoutReader, Reader, source_str
 from koskari.syntax import MacroTransform, Syntax, SyntaxTransform
 from koskari.types import is_pair, is_proper, is_symbol, unpack
 
@@ -154,7 +145,6 @@ def load_records(records_dir):
     """
 
     import koskari  # noqa: F401  (activates the .ki import hook)
-
     from tools.corpus.load import load_records as _load_records
 
     return _load_records(records_dir)

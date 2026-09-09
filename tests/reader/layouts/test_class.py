@@ -20,11 +20,13 @@ class block syntax with optional superclass list.
 
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.lib import symbol
+import pytest
+
 from koskari.compile.helpers import pycons
+from koskari.lib import symbol
+
 from .. import parse_layout
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

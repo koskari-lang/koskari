@@ -25,9 +25,10 @@ step ownership, source error propagation, and source cleanup
 import asyncio
 import unittest
 
+import pytest
+
 from koskari.lib import KosFilter
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

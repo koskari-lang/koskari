@@ -23,18 +23,14 @@ Sphinx directive for partitioned koskari.builtins API documentation
 
 
 from docutils import nodes
-
 from sphinx.ext.autodoc import ModuleDocumenter
 from sphinx.ext.autodoc.directive import (
-    DocumenterBridge,
-    parse_generated_content,
-    process_documenter_options,
-)
+    DocumenterBridge, parse_generated_content, process_documenter_options)
 from sphinx.util.docutils import SphinxDirective
 
 from .autodoc import bind_builtin_member, pick_documenter
-from .partition import (collect_builtins_members, member_display_name,
-                        partition_builtins)
+from .partition import (
+    collect_builtins_members, member_display_name, partition_builtins)
 
 
 _BUILTINS_MODULE = 'koskari.builtins'

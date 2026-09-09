@@ -22,7 +22,7 @@ Corpus record verification tests.
 
 import pytest
 
-from tests.corpus import CorpusTestCase, HANDLERS
+from tests.corpus import HANDLERS, CorpusTestCase
 
 
 pytestmark = pytest.mark.phase_corpus

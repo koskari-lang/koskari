@@ -31,12 +31,7 @@ tests that drive it are koskari, like the rest of the suite.
 import asyncio
 
 from stompman.frames import (
-    ConnectFrame,
-    ConnectedFrame,
-    DisconnectFrame,
-    MessageFrame,
-    ReceiptFrame,
-)
+    ConnectedFrame, ConnectFrame, DisconnectFrame, MessageFrame, ReceiptFrame)
 
 
 class FakeBroker:

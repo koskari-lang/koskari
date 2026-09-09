@@ -24,11 +24,11 @@ import tempfile
 import types
 import unittest
 
-from koskari.importer import install, uninstall
-from koskari.importer import KoskariSourceFileLoader
+import pytest
+
+from koskari.importer import KoskariSourceFileLoader, install, uninstall
 from koskari.serialize.incremental import compile_ki_file_to_kio
 
-import pytest
 
 pytestmark = pytest.mark.phase_importer
 

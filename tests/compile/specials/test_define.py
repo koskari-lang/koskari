@@ -16,13 +16,15 @@ Tests for koskari.compile define special form.
 """
 
 
-from koskari.compile import Compiler
+import pytest
+
 from koskari.bootstrap import _BUILTIN_REGISTRY
+from koskari.compile import Compiler
 from koskari.lib import Module, symbol
 from koskari.reader import LayoutReader, source_str
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

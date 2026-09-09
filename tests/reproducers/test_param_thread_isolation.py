@@ -34,11 +34,12 @@ import asyncio
 import threading
 import unittest
 
+import pytest
+
 import koskari.asyncio
 from koskari.lib import Domain, ParamRef
 from koskari.module import load_module_source_async, new_module
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

@@ -25,10 +25,12 @@ import tempfile
 import types
 import unittest
 
-from koskari.importer import install, is_installed, uninstall
-from koskari.importer import KoskariPathFinder, KoskariSourceFileLoader
-
 import pytest
+
+from koskari.importer import (
+    KoskariPathFinder, KoskariSourceFileLoader, install, is_installed,
+    uninstall)
+
 
 pytestmark = pytest.mark.phase_importer
 

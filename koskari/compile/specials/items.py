@@ -21,12 +21,12 @@ Special form handlers for compile/item, compile/del-item, and compile/set-item.
 """
 
 
-from ...lib import OpCode
-from ...types import is_nil, is_pair
-from ...exceptions import SpecialError
-from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
+from ...lib import OpCode
+from ...matcher import CALLEDBY, MATCH, REST
 from ...syntax import special
+from ...types import is_nil, is_pair
 from ..helpers import const_only_expr
 
 

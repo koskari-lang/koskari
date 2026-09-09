@@ -18,10 +18,12 @@ Unit tests for koskari.lexer.prompt_toolkit.
 """
 
 from unittest import IsolatedAsyncioTestCase
-from prompt_toolkit.document import Document
-from koskari.lexer.prompt_toolkit import KoskariLexer, koskari_style
 
 import pytest
+from prompt_toolkit.document import Document
+
+from koskari.lexer.prompt_toolkit import KoskariLexer, koskari_style
+
 
 pytestmark = pytest.mark.phase_infra
 

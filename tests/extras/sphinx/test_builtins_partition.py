@@ -23,18 +23,13 @@ import unittest
 import pytest
 
 from koskari.extras.sphinx.partition import (
-    _classify_member,
-    collect_builtins_members,
-    member_display_name,
-    partition_builtins,
-    should_omit_member,
-    should_skip_type_documentation,
-)
+    _classify_member, collect_builtins_members, member_display_name,
+    partition_builtins, should_omit_member, should_skip_type_documentation)
 from koskari.lib import FormalsSpec, nil, pair
+from koskari.matcher import CALLEDBY, MATCH, VALUE
 from koskari.reader.layouts import layout_if
 from koskari.syntax import special
 from koskari.types import TypePredicate
-from koskari.matcher import CALLEDBY, MATCH, VALUE
 from tests import make_callable
 from tests.lib.opcode import build_expr
 

@@ -16,9 +16,10 @@ Tests for koskari.compile setq and delq special forms.
 """
 
 
+import pytest
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

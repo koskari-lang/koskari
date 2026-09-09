@@ -27,11 +27,7 @@ import unittest
 import pytest
 
 from koskari.compile.helpers import (
-    FORMALS,
-    gather_formals,
-    gather_parameters,
-    match_pattern_raw,
-)
+    FORMALS, gather_formals, gather_parameters, match_pattern_raw)
 from koskari.exceptions import ParametersError, SpecialError
 from koskari.lib import Datum, cons, keyword, nil, symbol
 

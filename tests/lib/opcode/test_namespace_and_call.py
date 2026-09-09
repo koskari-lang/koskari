@@ -21,11 +21,12 @@ opcodes.
 
 import builtins
 
+import pytest
+
 from koskari.lib import FormalsSpec, NamespaceSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

@@ -17,13 +17,14 @@ implicit global reads, define-global, and typo detection.
 """
 
 
-from . import SpecialsTestCase
+import pytest
 
 from koskari.compile.pragma import KoskariPragma, ResolutionMode
 from koskari.exceptions import CompilerError
 from koskari.lib import FunctionSpec
 
-import pytest
+from . import SpecialsTestCase
+
 
 pytestmark = pytest.mark.phase_specials
 

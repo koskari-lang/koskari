@@ -29,10 +29,11 @@ violation, never dressed as StopIteration.
 
 import unittest
 
+import pytest
+
 from koskari.lib import KoskariSyncViolation, demand_call
 from koskari.module import load_module_source_async, new_module
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

@@ -18,9 +18,10 @@ These tests intentionally validate ordering, not just final values, to catch
 misrouting in nested delimited-control flows.
 """
 
+import pytest
+
 from tests.compile.specials import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

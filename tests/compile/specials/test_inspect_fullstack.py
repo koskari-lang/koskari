@@ -27,9 +27,10 @@ assert that the resulting callables expose that exact surface.
 
 import inspect
 
+import pytest
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

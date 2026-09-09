@@ -134,6 +134,7 @@ class KoskariLexer(Lexer):
 
 def _make_style():
     from prompt_toolkit.styles import Style
+
     # Special and layout share one color so mixed block lines (e.g. try/except)
     # are not blue vs purple in the REPL.
     _special_layout = '#268bd2'

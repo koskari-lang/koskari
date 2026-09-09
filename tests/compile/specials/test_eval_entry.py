@@ -20,13 +20,12 @@ slots, and that refusal leaves an enclosing evaluation untouched
 """
 
 
-from koskari.lib import ModuleNamespace, parameter
+import pytest
 
+from koskari.lib import ModuleNamespace, parameter
 from tests.lib.opcode import build_code
 
 from . import SpecialsTestCase
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_specials

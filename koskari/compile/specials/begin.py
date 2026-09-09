@@ -21,12 +21,12 @@ Special form handler for compile/begin.
 """
 
 
-from ...lib import pair
-from ..compiler import ByteCodeFragment, Compiler
-from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
+from ...lib import pair
+from ...matcher import CALLEDBY, MATCH, REST
 from ...syntax import special
 from ...types import get_position, is_nil, is_pair
+from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import helper_begin
 
 

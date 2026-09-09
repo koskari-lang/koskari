@@ -31,8 +31,9 @@ __self__ in a leading section).
 """
 
 
-from koskari.lib import (BoundMethod, Code, Expression, Function, demand,
-                         NamespaceSpec, OpCode, OpStyle)
+from koskari.lib import (
+    BoundMethod, Code, Expression, Function, NamespaceSpec, OpCode, OpStyle,
+    demand)
 
 
 def _boundmethod_inner_function(bm):

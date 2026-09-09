@@ -141,8 +141,9 @@ class TestMcpBakedBackend(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         import tempfile
-        from koskari.importer import install
+
         from koskari.cli.host import run_file_async
+        from koskari.importer import install
         from koskari.module import new_module
 
         self._run_file_async = run_file_async

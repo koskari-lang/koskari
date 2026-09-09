@@ -25,9 +25,10 @@ nor loses the exception a finally is propagating.
 
 import sys
 
+import pytest
+
 from tests.compile.specials import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

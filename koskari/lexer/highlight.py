@@ -91,14 +91,7 @@ def pygments_token_type(tok_type):
     """
 
     from pygments.token import (
-        Comment,
-        Keyword,
-        Name,
-        Number,
-        Punctuation,
-        String,
-        Text,
-    )
+        Comment, Keyword, Name, Number, Punctuation, String, Text)
 
     mapping = {
         'symbol': Name,

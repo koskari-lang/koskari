@@ -25,11 +25,8 @@ import unittest
 import pytest
 
 from tests.corpus import (
-    CorpusTestCase,
-    eval_values_equal,
-    parse_eval_expected,
-    run_marked_eval_check,
-)
+    CorpusTestCase, eval_values_equal, parse_eval_expected,
+    run_marked_eval_check)
 
 
 pytestmark = pytest.mark.phase_corpus

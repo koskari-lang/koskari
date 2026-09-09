@@ -22,12 +22,12 @@ compile/ref-item, compile/refq, and compile/bindq.
 """
 
 
+from ...bootstrap import builtin
+from ...exceptions import SpecialError
 from ...lib import OpCode
 from ...matcher import CALLEDBY, DEFINE, MATCH, REST, VALUE
-from ...types import is_nil, is_pair
-from ...exceptions import SpecialError
-from ...bootstrap import builtin
 from ...syntax import special
+from ...types import is_nil, is_pair
 from ..helpers import const_only_expr
 
 

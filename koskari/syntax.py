@@ -26,22 +26,21 @@ from abc import ABC, abstractmethod
 from functools import wraps
 from typing import Any
 
+from koskari.bootstrap import builtin
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SyntaxMatchError
-from koskari.types import is_nil
-from koskari.hygiene import (Hygiene, collect_binding_symbols,
-                             expand_template_with_hygiene,
-                             finalize_macro_hygiene_unbox_one_pass)
-from koskari.lib import (Datum, Matcher, cons, demand_call, gensym,
-                         match_select, nil, symbol)
-from koskari.matcher import (BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME,
-                             TEST_ANY, HygienicMatchCompiler, Pattern,
-                             check_pattern_arg, parse_explicit_rule_pattern,
-                             repeat_capture)
+from koskari.hygiene import (
+    Hygiene, collect_binding_symbols, expand_template_with_hygiene,
+    finalize_macro_hygiene_unbox_one_pass)
+from koskari.lib import (
+    Datum, Matcher, cons, demand_call, gensym, match_select, nil, symbol)
+from koskari.matcher import (
+    BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME, TEST_ANY,
+    HygienicMatchCompiler, Pattern, check_pattern_arg,
+    parse_explicit_rule_pattern, repeat_capture)
 from koskari.reader.layouts import apply_layout
-from koskari.bootstrap import builtin
-from koskari.types import (fill_position, get_position, is_pair, is_proper,
-                           is_symbol, unpack)
+from koskari.types import (
+    fill_position, get_position, is_nil, is_pair, is_proper, is_symbol, unpack)
 
 
 __all__ = (

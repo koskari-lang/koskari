@@ -24,14 +24,13 @@ style parse and compile correctly.
 
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.lib import nil
-from koskari.lib import keyword, symbol
-from koskari.compile.helpers import pycons
+import pytest
 
+from koskari.compile.helpers import pycons
+from koskari.lib import keyword, nil, symbol
 
 from .. import parse_layout
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

@@ -27,8 +27,9 @@ for Code construction
 
 import operator
 
-from ..lib import (Compare, FunctionSpec, NAMESPACE_FAST_SLOT_MAX,
-                   NamespaceSpec, OpCode, Operand, OpStyle)
+from ..lib import (
+    NAMESPACE_FAST_SLOT_MAX, Compare, FunctionSpec, NamespaceSpec, OpCode,
+    Operand, OpStyle)
 
 
 OPERAND_COUNT = len(Operand)

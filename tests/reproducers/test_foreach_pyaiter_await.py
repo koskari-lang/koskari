@@ -30,11 +30,11 @@ classify correctly, which is how the gap stayed hidden.
 
 import unittest
 
-from koskari.module import load_module_source_async, new_module
+import pytest
 
+from koskari.module import load_module_source_async, new_module
 from tests import SlowAIter
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

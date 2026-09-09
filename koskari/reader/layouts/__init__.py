@@ -26,15 +26,15 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 from ...bootstrap import builtin
 from ...lib import cons, keyword, nil
 from ...types import fill_position, get_position, is_pair, is_symbol
-from .basics import (layout_block, layout_block_begin, layout_call,
-                     layout_inline_block,
-                     layout_keyword_block, layout_quasiquote, layout_quote)
+from .basics import (
+    layout_block, layout_block_begin, layout_call, layout_inline_block,
+    layout_keyword_block, layout_quasiquote, layout_quote)
 from .classes import layout_class, layout_define_class
 from .conditionals import layout_if, layout_match, layout_switch
-from .define_syntax import (layout_bare_syntax, layout_macro_match,
-                            layout_macro_rules, layout_special_match,
-                            layout_special_rules, layout_syntax_match,
-                            layout_syntax_rules)
+from .define_syntax import (
+    layout_bare_syntax, layout_macro_match, layout_macro_rules,
+    layout_special_match, layout_special_rules, layout_syntax_match,
+    layout_syntax_rules)
 from .dyn_wind import layout_dyn_wind
 from .exceptions import layout_try
 from .helpers import LayoutHandler, layout

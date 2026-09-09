@@ -24,11 +24,10 @@ import unittest
 import pytest
 
 from koskari.lib import Datum, cons, keyword, nil, symbol
-from koskari.matcher import (BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE,
-                                DatumFrame, FORMALS, LITERAL, MATCH, TYPE, USING,
-                                VALUE, Hygiene, HygienicMatchCompiler,
-                                MatchCompiler, Matcher, MatchResult,
-                                make_matcher)
+from koskari.matcher import (
+    BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORMALS, LITERAL, MATCH,
+    TYPE, USING, VALUE, DatumFrame, Hygiene, HygienicMatchCompiler,
+    MatchCompiler, Matcher, MatchResult, make_matcher)
 from koskari.types import build_proper
 
 

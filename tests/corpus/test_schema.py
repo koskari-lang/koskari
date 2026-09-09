@@ -25,13 +25,8 @@ import unittest
 import pytest
 
 from tests.corpus import (
-    default_records_dir,
-    default_schema_path,
-    load_corpus_index,
-    load_records,
-    load_schema,
-    validate_records_schema,
-)
+    default_records_dir, default_schema_path, load_corpus_index, load_records,
+    load_schema, validate_records_schema)
 
 
 pytestmark = pytest.mark.phase_corpus

@@ -27,11 +27,11 @@ through nesting, and the keyword clause forms are unchanged.
 
 import unittest
 
+import pytest
+
 from koskari.compile import Compiler
 from koskari.lib import Module, ModuleNamespace
 from koskari.reader import default_reader, source_str
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_basics

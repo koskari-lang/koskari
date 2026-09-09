@@ -25,9 +25,8 @@ from unittest import mock
 
 import pytest
 
-from koskari.cli.term_graphics import (detect_protocol, emit_icon,
-                                       render_iterm2_escape,
-                                       render_kitty_escape)
+from koskari.cli.term_graphics import (
+    detect_protocol, emit_icon, render_iterm2_escape, render_kitty_escape)
 
 
 pytestmark = pytest.mark.phase_cli

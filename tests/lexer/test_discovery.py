@@ -17,14 +17,13 @@ tests.lexer.test_discovery
 Unit tests for koskari.lexer.discovery.
 """
 
-from koskari.lexer.discovery import (
-    collect_special_like_names_from_builtins,
-    special_names_for_repl,
-)
-
 from unittest import TestCase
 
 import pytest
+
+from koskari.lexer.discovery import (
+    collect_special_like_names_from_builtins, special_names_for_repl)
+
 
 pytestmark = pytest.mark.phase_infra
 

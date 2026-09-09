@@ -32,12 +32,11 @@ import argparse
 import json
 from time import perf_counter
 
-import koskari  # noqa: F401  (activates the .ki import hook)
-
-from koskari.lib import clear_trace_counters, demand, get_trace_report
-
 import registry
 import reporter
+
+import koskari  # noqa: F401  (activates the .ki import hook)
+from koskari.lib import clear_trace_counters, demand, get_trace_report
 
 
 def measure(fn, args, runs, samples, warmup):

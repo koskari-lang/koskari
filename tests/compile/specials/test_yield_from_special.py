@@ -23,12 +23,13 @@ lambda Function, then call it so the body runs with fast-local frames.
 :license: GNU General Public License v3
 """
 
+import pytest
+
 from koskari.exceptions import SpecialError
 from koskari.lib import OpCode
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

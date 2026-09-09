@@ -20,12 +20,13 @@ then convert_fast lowers matching opcodes to CALL_FAST_ATTR* in the final Code.
 """
 
 
-from koskari.lib import OpCode
+import pytest
+
 from koskari.exceptions import SpecialError, SyntaxMatchError
+from koskari.lib import OpCode
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

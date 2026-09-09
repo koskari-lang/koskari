@@ -22,12 +22,13 @@ Special form compile/gensym-thunk: placeholder-driven thunk lambda sugar.
 
 
 import re
-from ...exceptions import SpecialError
-from ...lib import cons, keyword, nil, symbol, gensym
-from ...matcher import CALLEDBY, MATCH, REST
+
 from ...bootstrap import builtin
-from ...types import is_nil, is_pair, is_symbol
+from ...exceptions import SpecialError
+from ...lib import cons, gensym, keyword, nil, symbol
+from ...matcher import CALLEDBY, MATCH, REST
 from ...syntax import special
+from ...types import is_nil, is_pair, is_symbol
 from ..compiler import ByteCodeFragment, Compiler
 
 

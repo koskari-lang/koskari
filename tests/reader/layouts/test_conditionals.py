@@ -1,11 +1,12 @@
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.lib import keyword, symbol
+import pytest
+
 from koskari.compile.helpers import pycons
+from koskari.lib import keyword, symbol
 
 from .. import parse_layout
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

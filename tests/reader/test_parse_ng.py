@@ -28,16 +28,17 @@ Tests focus on the new interface contracts introduced in parser_ng:
 from io import StringIO
 from unittest import IsolatedAsyncioTestCase
 
+import pytest
+
 import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
-from koskari.compile.helpers import pycons
 from koskari.bootstrap import _BUILTIN_REGISTRY
-from koskari.reader.parser import (READ_EOF, IndentAwareStream, LayoutReader,
-                                   Reader, SourceStream, default_reader,
-                                   source_str)
+from koskari.compile.helpers import pycons
 from koskari.lib import BaseSourceStream, cons, keyword, nil, symbol
+from koskari.reader.parser import (
+    READ_EOF, IndentAwareStream, LayoutReader, Reader, SourceStream,
+    default_reader, source_str)
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

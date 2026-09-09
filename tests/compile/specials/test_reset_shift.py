@@ -18,15 +18,14 @@ reset establishes a prompt; shift captures the continuation and runs a
 handler. Mirrors the semantics in design/language/control-flow.md.
 """
 
-from . import SpecialsTestCase
-from koskari.exceptions import (
-    KoskariPromptNotFound,
-    KoskariPromptUnreachable,
-)
+import pytest
+
+from koskari.exceptions import KoskariPromptNotFound, KoskariPromptUnreachable
 from koskari.lib import DelimitedContinuation, ParamRef
 from tests.dis.dis import dis
 
-import pytest
+from . import SpecialsTestCase
+
 
 pytestmark = pytest.mark.phase_specials
 

@@ -26,9 +26,9 @@ Explicit AWAIT still drives futures.
 import asyncio
 import unittest
 
-import koskari.lib as lib
 import pytest
 
+import koskari.lib as lib
 from tests import make_callable
 from tests.lib.opcode import build_expr
 

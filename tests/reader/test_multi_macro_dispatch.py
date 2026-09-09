@@ -22,11 +22,12 @@ Tests for stacked reader macros
 
 from unittest import IsolatedAsyncioTestCase
 
+import pytest
+
 from koskari.lib import symbol
 from koskari.reader import DEFER, Reader, source_str
 from koskari.reader.parser import VALUE
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

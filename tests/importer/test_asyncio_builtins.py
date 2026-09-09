@@ -25,15 +25,14 @@ satisfy asyncio's strict type checks.
 
 
 import asyncio
-
 from subprocess import CalledProcessError
 
-from koskari.asyncio import (ProcessResult, as_coroutine, coroutine_fn,
-                             create_task, run_process)
+import pytest
+
+from koskari.asyncio import (
+    ProcessResult, as_coroutine, coroutine_fn, create_task, run_process)
 from koskari.lib import defer
 from tests.compile.specials import SpecialsTestCase
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_basics

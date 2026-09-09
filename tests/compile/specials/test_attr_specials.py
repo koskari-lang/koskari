@@ -19,9 +19,10 @@ special forms.
 
 from types import SimpleNamespace
 
+import pytest
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

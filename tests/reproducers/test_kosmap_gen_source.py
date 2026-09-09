@@ -28,10 +28,11 @@ the bottom), and source exhaustion cleanup.
 
 import unittest
 
+import pytest
+
 from koskari.lib import KosMap
 from koskari.module import load_module_source_async, new_module
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 
@@ -129,6 +130,7 @@ class TestKosMapGenSource(unittest.IsolatedAsyncioTestCase):
         source raises KoskariSyncViolation
         """
         import asyncio
+
         from koskari.lib import KoskariSyncViolation
 
         async def pysrc():

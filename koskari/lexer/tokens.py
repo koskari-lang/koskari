@@ -31,17 +31,8 @@ without compilation.
 from collections import namedtuple
 
 from ..reader.patterns import (
-    BIN_RE,
-    COMPLEX_RE,
-    DECIMAL_RE,
-    FLOAT_RE,
-    FRACTION_RE,
-    HEX_RE,
-    INTEGER_RE,
-    KEYWORD_RE,
-    OCT_RE,
-    STRING_PREFIXES,
-)
+    BIN_RE, COMPLEX_RE, DECIMAL_RE, FLOAT_RE, FRACTION_RE, HEX_RE, INTEGER_RE,
+    KEYWORD_RE, OCT_RE, STRING_PREFIXES)
 
 
 __all__ = (
@@ -62,6 +53,7 @@ Token = namedtuple(
 
 def _make_special_names():
     import koskari.builtins as builtins
+
     from ..compile.compiler import Compiled
     return frozenset(n for n, v in vars(builtins).items()
                      if isinstance(v, Compiled))
@@ -69,6 +61,7 @@ def _make_special_names():
 
 def _make_layout_names():
     import koskari.builtins as builtins
+
     from ..reader.layouts.helpers import LayoutHandler
     return frozenset(n for n, v in vars(builtins).items()
                      if isinstance(v, LayoutHandler))

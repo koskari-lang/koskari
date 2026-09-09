@@ -18,11 +18,12 @@ Tests for YIELD_FROM opcode.
 :license: GNU General Public License v3
 """
 
+import pytest
+
 from koskari.lib import AsyncGenerator, FormalsSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 
@@ -806,6 +807,7 @@ class TestYieldFromKosIterProvider(CevalTest):
         """
 
         import asyncio
+
         from koskari.lib import KosMap
 
         async def ainc(x):

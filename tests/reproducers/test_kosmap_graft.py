@@ -29,10 +29,11 @@ exhaustion parity with builtins.map.
 import asyncio
 import unittest
 
+import pytest
+
 from koskari.lib import KosMap
 from koskari.module import load_module_source_async, new_module
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

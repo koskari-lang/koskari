@@ -21,10 +21,10 @@ Special form handler for compile/call and compile/call-attr
 """
 
 
+from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, pair, symbol
-from ...matcher import CALLEDBY, LIST, LITERAL_SYM, MATCH, BODY, SYMBOL, VALUE
-from ...bootstrap import builtin
+from ...matcher import BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, SYMBOL, VALUE
 from ...syntax import special
 from ...types import fill_position, is_symbol
 from ..compiler import ByteCodeFragment, Compiler

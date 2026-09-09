@@ -21,10 +21,10 @@ Special form handler for compile/let.
 """
 
 
+from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, symbol
 from ...matcher import BINDINGS, BODY, CALLEDBY, MATCH, SYMBOL
-from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_pair
 from ..compiler import Compiler

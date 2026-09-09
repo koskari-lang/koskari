@@ -19,15 +19,14 @@ Tests for the MATCH_CASE opcode (runtime match/case dispatch)
 """
 
 
-from koskari.matcher import (
-    MatchCompiler, MATCH, CAPTURE, LITERAL, ONEOF, OPTIONAL, TYPE)
+import pytest
 
 from koskari.lib import CollectorNamespace, Namespace
-
+from koskari.matcher import (
+    CAPTURE, LITERAL, MATCH, ONEOF, OPTIONAL, TYPE, MatchCompiler)
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

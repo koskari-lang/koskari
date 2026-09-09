@@ -23,20 +23,20 @@ from unittest.mock import MagicMock
 
 import pytest
 
+
 pytest.importorskip('sphinx')
 
+from sphinx.ext.autodoc import (
+    DataDocumenter, FunctionDocumenter, ModuleDocumenter)
+
+from koskari.extras.sphinx.autodoc import (
+    KosFunctionDocumenter, KosLayoutDocumenter, KosSyntaxDocumenter,
+    pick_documenter)
 from koskari.lib import FormalsSpec
 from koskari.matcher import CALLEDBY, MATCH, VALUE
 from koskari.reader.layouts import layout_if
 from koskari.reader.layouts.helpers import layout
-from koskari.extras.sphinx.autodoc import (
-    KosFunctionDocumenter,
-    KosLayoutDocumenter,
-    KosSyntaxDocumenter,
-    pick_documenter,
-)
 from koskari.syntax import special
-from sphinx.ext.autodoc import DataDocumenter, FunctionDocumenter, ModuleDocumenter
 from tests import make_callable
 from tests.lib.opcode import build_expr
 

@@ -19,10 +19,12 @@ exception). Uses PUSH_WITH/POP_WITH. Covers sync and async __enter__/__exit__
 (auto-await).
 """
 
-from . import SpecialsTestCase
+import pytest
+
 from tests.dis.dis import dis
 
-import pytest
+from . import SpecialsTestCase
+
 
 pytestmark = pytest.mark.phase_specials
 

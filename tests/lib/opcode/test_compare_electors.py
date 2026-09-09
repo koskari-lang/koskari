@@ -26,11 +26,11 @@ branches as the ladder alone.
 
 import operator
 
+import pytest
+
 from koskari.lib import Compare, FormalsSpec, NamespaceSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_lib

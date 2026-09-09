@@ -37,10 +37,10 @@ from dataclasses import dataclass, field
 from typing import Optional, Tuple, Union
 
 from koskari.exceptions import CompilerError
-from koskari.lib import (Datum, bracket_cons, bracket_nil, bracket_pair, cons,
-                         gensym, nil)
-from koskari.types import (build_proper, is_keyword, is_nil, is_pair,
-                           is_symbol, unpack)
+from koskari.lib import (
+    Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym, nil)
+from koskari.types import (
+    build_proper, is_keyword, is_nil, is_pair, is_symbol, unpack)
 
 
 __all__ = (

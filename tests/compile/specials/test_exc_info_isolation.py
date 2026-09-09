@@ -19,10 +19,12 @@ exc_info for handler bytecode; that state must be per-context, surviving
 suspension and interleaving with other contexts on the same thread.
 """
 
+import asyncio
+
+import pytest
+
 from . import SpecialsTestCase
 
-import asyncio
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

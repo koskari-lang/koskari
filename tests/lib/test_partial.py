@@ -29,11 +29,12 @@ import gc
 import pickle
 import unittest
 
+import pytest
+
 from koskari.lib import FormalsSpec, KosPartial, demand_call
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

@@ -25,15 +25,14 @@ handlers, mirroring scenarios formerly covered via compile/apply-layout.
 
 import unittest
 
-from koskari.compile import Compiler
+import pytest
+
 from koskari.bootstrap import _BUILTIN_REGISTRY
+from koskari.compile import Compiler
 from koskari.lib import Module, ModuleNamespace, cons, keyword, nil, symbol
 from koskari.reader.layouts import apply_layout, apply_layouts
 from koskari.types import unpack
-
 from tests.compile.specials import _register_specials
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_infra

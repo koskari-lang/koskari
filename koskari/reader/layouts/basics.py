@@ -18,10 +18,10 @@ Layout handlers for basic block syntax.
 """
 
 
+from ...bootstrap import add_builtin, builtin
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...bootstrap import builtin, add_builtin
-from ...types import is_nil, get_position, is_pair, is_keyword
+from ...types import get_position, is_keyword, is_nil, is_pair
 from .helpers import layout
 
 

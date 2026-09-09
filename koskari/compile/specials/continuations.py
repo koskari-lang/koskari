@@ -23,12 +23,12 @@ compile/yield, and compile/await.
 """
 
 
-from ...exceptions import SpecialError
-from ...lib import OpCode, nil, symbol, cons
-from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
+from ...lib import OpCode, cons, nil, symbol
+from ...matcher import CALLEDBY, MATCH, REST
 from ...syntax import special
-from ...types import is_nil, is_pair, is_keyword
+from ...types import is_keyword, is_nil, is_pair
 from ..helpers import helper_begin, is_symbolish
 
 

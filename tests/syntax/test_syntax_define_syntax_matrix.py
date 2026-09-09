@@ -26,15 +26,9 @@ import pytest
 from koskari.lib import Module, ModuleNamespace, cons, nil, symbol
 from koskari.matcher import parse_explicit_rule_pattern
 from koskari.types import build_proper
-
 from tests.syntax.datum_syntax_helpers import (
-    macro_from_match_rows,
-    macro_from_rule_rows,
-    special_from_match_rows,
-    special_from_rule_rows,
-    syntax_from_match_datums,
-    syntax_from_rule_datums,
-)
+    macro_from_match_rows, macro_from_rule_rows, special_from_match_rows,
+    special_from_rule_rows, syntax_from_match_datums, syntax_from_rule_datums)
 
 
 pytestmark = pytest.mark.phase_infra

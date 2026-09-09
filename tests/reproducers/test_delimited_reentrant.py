@@ -38,9 +38,10 @@ The VM behaviour is the same either way; only the binding lookup differs.
 :license: GNU General Public License v3
 """
 
+import pytest
+
 from tests.compile.specials import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

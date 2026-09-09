@@ -19,28 +19,13 @@ LSP request/notification handlers for diagnostics, hover, and completion.
 
 
 from lsprotocol.types import (
-    CompletionItem,
-    CompletionItemKind,
-    CompletionList,
-    Diagnostic,
-    DiagnosticSeverity,
-    Hover,
-    MarkupContent,
-    MarkupKind,
-    PublishDiagnosticsParams,
-    Position,
-    Range,
-)
+    CompletionItem, CompletionItemKind, CompletionList, Diagnostic,
+    DiagnosticSeverity, Hover, MarkupContent, MarkupKind, Position,
+    PublishDiagnosticsParams, Range)
 
 from ...exceptions import ReaderError
 from ...lexer import (
-    LAYOUT_BLOCK_NAMES,
-    SPECIAL_NAMES,
-    make_layout_reader,
-    parse_all,
-    tokenize,
-)
-
+    LAYOUT_BLOCK_NAMES, SPECIAL_NAMES, make_layout_reader, parse_all, tokenize)
 from .utils import get_word_at_position, koskari_to_lsp_range
 
 

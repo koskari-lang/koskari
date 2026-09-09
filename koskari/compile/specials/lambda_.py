@@ -21,11 +21,12 @@ Special form handler for compile/lambda.
 """
 
 
-from ...lib import FormalsSpec, FunctionSpec, OpCode
-from ...types import is_nil
-from ...matcher import BODY, CALLEDBY, FORMALS, LITERAL_KW, MATCH, SYMBOL, VALUE
 from ...bootstrap import builtin
+from ...lib import FormalsSpec, FunctionSpec, OpCode
+from ...matcher import (
+    BODY, CALLEDBY, FORMALS, LITERAL_KW, MATCH, SYMBOL, VALUE)
 from ...syntax import special
+from ...types import is_nil
 from ..compiler import ByteCodeFragment, CompilerMode
 from ..helpers import discover_docstring, gather_formals, helper_begin
 

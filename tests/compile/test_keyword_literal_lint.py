@@ -21,13 +21,14 @@ keyword compiled as a literal value.
 
 import unittest
 
+import pytest
+
 from koskari.compile.pragma import KeywordLiterals
 from koskari.exceptions import CompilerError
 from koskari.lib import Module, ModuleNamespace
 from koskari.module import build_module_load_facets
 from koskari.reader import source_str
 
-import pytest
 
 pytestmark = pytest.mark.phase_compile
 

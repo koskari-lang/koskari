@@ -20,17 +20,18 @@ Unit tests for koskari.parse LayoutReader and block syntax.
 
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.lib import Module, ModuleNamespace, car, cdr, keyword, symbol
-from koskari.types import is_pair, unpack
+import pytest
+
 import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
-from koskari.reader import READ_EOF, LayoutReader, source_str
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
+from koskari.lib import Module, ModuleNamespace, car, cdr, keyword, symbol
+from koskari.reader import READ_EOF, LayoutReader, source_str
+from koskari.types import is_pair, unpack
 
 from . import parse_layout
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

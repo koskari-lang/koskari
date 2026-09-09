@@ -30,10 +30,10 @@ import os
 import sys
 import unittest
 
+import pytest
+
 from koskari.cli.host import run_file_async
 from koskari.module import new_module
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_reproducers

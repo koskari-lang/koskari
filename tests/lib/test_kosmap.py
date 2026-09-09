@@ -22,9 +22,10 @@ entry, and only the park's owner resumes it
 import asyncio
 import unittest
 
+import pytest
+
 from koskari.lib import KosMap
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

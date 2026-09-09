@@ -19,9 +19,10 @@ section (and onward) rather than leaving the eval loop; it only exits at
 the chain root or a generator boundary.
 """
 
+import pytest
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

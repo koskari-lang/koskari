@@ -22,10 +22,11 @@ import importlib
 import sys
 import unittest
 
+import pytest
+
 from koskari.lexer.highlight import token_start_index
 from koskari.lexer.tokens import tokenize
 
-import pytest
 
 pytestmark = pytest.mark.phase_extras
 

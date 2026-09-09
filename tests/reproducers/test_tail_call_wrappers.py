@@ -26,10 +26,12 @@ the result landed one frame too high.
 
 import contextlib
 
-from koskari.lib import KosPartial as partial, apply
+import pytest
+
+from koskari.lib import KosPartial as partial
+from koskari.lib import apply
 from tests.compile.specials import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

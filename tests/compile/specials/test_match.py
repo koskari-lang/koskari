@@ -22,12 +22,13 @@ Tests for the koskari.compile match special form: delimiter clauses
 
 from dataclasses import dataclass
 
+import pytest
+
 from koskari.exceptions import SpecialError
 from koskari.lib import Datum, cons, nil
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

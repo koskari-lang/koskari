@@ -20,11 +20,12 @@ Unit tests for parameter
 
 import unittest
 
+import pytest
+
 from koskari.lib import ParamRef, parameter, symbol
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

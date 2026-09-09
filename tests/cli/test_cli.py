@@ -28,11 +28,12 @@ import unittest
 import pytest
 
 from koskari.cli import main
-from koskari.cli.host import (REPL_INFRASTRUCTURE_MODULES, REPLCodeBoundary,
-                              run_command_async, run_file_async)
-from koskari.exceptions import (CodeBoundary, _filter_infrastructure_tb,
-                                format_code_boundary_exception,
-                                format_exception_with_koskari_trace)
+from koskari.cli.host import (
+    REPL_INFRASTRUCTURE_MODULES, REPLCodeBoundary, run_command_async,
+    run_file_async)
+from koskari.exceptions import (
+    CodeBoundary, _filter_infrastructure_tb, format_code_boundary_exception,
+    format_exception_with_koskari_trace)
 from koskari.importer import install
 from koskari.module import new_module
 

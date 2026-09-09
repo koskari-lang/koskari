@@ -26,9 +26,9 @@ dropped the last reference.
 import gc
 import sys
 
-from . import SpecialsTestCase
-
 import pytest
+
+from . import SpecialsTestCase
 
 
 pytestmark = pytest.mark.phase_specials

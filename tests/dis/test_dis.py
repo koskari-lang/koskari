@@ -30,8 +30,7 @@ import unittest
 import pytest
 
 from koskari.importer import install
-from koskari.lib import BoundMethod, Code
-from koskari.lib import FormalsSpec, NamespaceSpec, OpCode
+from koskari.lib import BoundMethod, Code, FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
 
 

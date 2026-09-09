@@ -29,12 +29,13 @@ preserve dunder dispatch semantics.
 
 import operator as _op
 
-from ...lib import Compare, Operand, OpCode, symbol, cons
-from ...exceptions import SpecialError
-from ...matcher import CALLEDBY, MATCH, REST, VALUE
-from ...types import is_nil, get_position, is_pair, is_symbol, is_keyword, unpack
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
+from ...lib import Compare, OpCode, Operand, cons, symbol
+from ...matcher import CALLEDBY, MATCH, REST, VALUE
 from ...syntax import special
+from ...types import (
+    get_position, is_keyword, is_nil, is_pair, is_symbol, unpack)
 from ..helpers import const_only_expr, is_symbolish, match, splat_call_form
 
 

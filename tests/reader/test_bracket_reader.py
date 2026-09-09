@@ -21,11 +21,11 @@ The reader builds bracket-pair cells from ``[ ]`` and plain pairs from
 
 import unittest
 
-from koskari.lib import bracket_nil, bracket_pair, kos_repr, nil, pair
+import pytest
 
+from koskari.lib import bracket_nil, bracket_pair, kos_repr, nil, pair
 from koskari.reader import Reader, source_str
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

@@ -21,10 +21,12 @@ normalisation mis-classifies the clause and behaviour diverges (bad tracebacks,
 wrong branch, etc.).
 """
 
-from tests.compile.specials import SpecialsTestCase
-from tests.compile.specials.test_try import make_accumulator, make_raise_accumulator
-
 import pytest
+
+from tests.compile.specials import SpecialsTestCase
+from tests.compile.specials.test_try import (
+    make_accumulator, make_raise_accumulator)
+
 
 pytestmark = pytest.mark.phase_reproducers
 

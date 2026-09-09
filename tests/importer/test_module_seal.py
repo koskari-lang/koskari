@@ -25,11 +25,12 @@ import resource
 import unittest
 import weakref
 
-from koskari.lib import demand_call
-from koskari.module import (detach_module_load_facets,
-                            load_module_source_async, new_module)
-
 import pytest
+
+from koskari.lib import demand_call
+from koskari.module import (
+    detach_module_load_facets, load_module_source_async, new_module)
+
 
 pytestmark = pytest.mark.phase_importer
 

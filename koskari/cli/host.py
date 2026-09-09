@@ -111,9 +111,9 @@ def _make_repl_prompter(histfile, ns):
         from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
         from prompt_toolkit.history import FileHistory
 
-        from ..lexer.prompt_toolkit import (KoskariCompleter, KoskariLexer,
-                                            koskari_style,
-                                            load_koskari_key_bindings)
+        from ..lexer.prompt_toolkit import (
+            KoskariCompleter, KoskariLexer, koskari_style,
+            load_koskari_key_bindings)
 
         repl_special_names = special_names_for_repl()
         history = FileHistory(histfile) if histfile else None

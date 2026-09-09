@@ -22,14 +22,8 @@ import pytest
 
 from koskari.lib import Datum, cons, keyword, symbol
 from koskari.matcher import (
-    CAPTURE,
-    LITERAL,
-    MATCH,
-    Matcher,
-    REPEAT,
-    REST,
-    parse_explicit_rule_pattern,
-)
+    CAPTURE, LITERAL, MATCH, REPEAT, REST, Matcher,
+    parse_explicit_rule_pattern)
 from koskari.types import build_proper
 
 

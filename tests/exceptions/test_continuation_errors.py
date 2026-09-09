@@ -20,14 +20,12 @@ Tests for the KoskariContinuationError family.
 
 import unittest
 
-from koskari.exceptions import (
-    KoskariContinuationError,
-    KoskariException,
-    KoskariPromptNotFound,
-    KoskariPromptUnreachable,
-)
-
 import pytest
+
+from koskari.exceptions import (
+    KoskariContinuationError, KoskariException, KoskariPromptNotFound,
+    KoskariPromptUnreachable)
+
 
 pytestmark = pytest.mark.phase_infra
 

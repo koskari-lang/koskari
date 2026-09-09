@@ -23,6 +23,7 @@ Entry point for python -m koskari
 
 if __name__ == "__main__":
     import sys
+
     from koskari.cli import main
 
     sys.exit(main())

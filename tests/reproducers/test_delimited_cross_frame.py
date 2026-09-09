@@ -41,11 +41,11 @@ The VM behaviour is the same either way; only the binding lookup differs.
 :license: GNU General Public License v3
 """
 
-from koskari.lib import apply, partial
+import pytest
 
+from koskari.lib import apply, partial
 from tests.compile.specials import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

@@ -21,10 +21,11 @@ Runtime tests for the IMPORT, IMPORT_FROM, and IMPORT_STAR opcodes.
 import sys
 import types
 
+import pytest
+
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

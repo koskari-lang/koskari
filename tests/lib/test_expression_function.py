@@ -27,12 +27,14 @@ namespace (VAR); callables are not put in CONST.
 import asyncio
 import unittest
 
-from koskari.lib import BoundMethod, Code, Expression, Function
-from koskari.lib import FormalsSpec, NamespaceSpec, OpCode
+import pytest
+
+from koskari.lib import (
+    BoundMethod, Code, Expression, FormalsSpec, Function, NamespaceSpec,
+    OpCode)
 from tests import make_callable
 from tests.lib.opcode import _lower_instr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

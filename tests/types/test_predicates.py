@@ -20,25 +20,14 @@ Unit tests for type predicates and helper functions
 
 import unittest
 
+import pytest
+
 from koskari.lib import cons, demand_call, keyword, nil, pair, symbol
 from koskari.types import (
-    BuiltinPredicate,
-    TypePredicate,
-    build_proper,
-    fill_position,
-    get_position,
-    is_keyword,
-    is_nil,
-    is_on_demand,
-    is_pair,
-    is_proper,
-    is_recursive,
-    is_symbol,
-    set_position,
-    unpack,
-)
+    BuiltinPredicate, TypePredicate, build_proper, fill_position, get_position,
+    is_keyword, is_nil, is_on_demand, is_pair, is_proper, is_recursive,
+    is_symbol, set_position, unpack)
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

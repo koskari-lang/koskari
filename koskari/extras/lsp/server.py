@@ -19,21 +19,13 @@ LSP server entry point and registration.
 
 
 from lsprotocol.types import (
-    TEXT_DOCUMENT_COMPLETION,
-    TEXT_DOCUMENT_DID_CHANGE,
-    TEXT_DOCUMENT_DID_OPEN,
-    TEXT_DOCUMENT_HOVER,
-)
-
+    TEXT_DOCUMENT_COMPLETION, TEXT_DOCUMENT_DID_CHANGE, TEXT_DOCUMENT_DID_OPEN,
+    TEXT_DOCUMENT_HOVER)
 from pygls.cli import start_server
 from pygls.lsp.server import LanguageServer
 
 from .handlers import (
-    handle_completion,
-    handle_did_change,
-    handle_did_open,
-    handle_hover,
-)
+    handle_completion, handle_did_change, handle_did_open, handle_hover)
 
 
 __all__ = (

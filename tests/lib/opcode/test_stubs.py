@@ -23,9 +23,10 @@ be supplied as an instruction.
 :license: GNU General Public License v3
 """
 
+import pytest
+
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

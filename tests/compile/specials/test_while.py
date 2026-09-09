@@ -20,9 +20,10 @@ Tests for koskari.compile while, break, continue.
 
 import operator
 
+import pytest
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

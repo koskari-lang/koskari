@@ -21,12 +21,12 @@ Special form handler for compile/bytecode.
 """
 
 
-from ...lib import keyword, OpCode, pair, symbol
-from ...types import is_nil
-from ...matcher import CALLEDBY, MATCH, REST
-from ..compiler import ByteCodeFragment, Compiler
 from ...bootstrap import builtin
+from ...lib import OpCode, keyword, pair, symbol
+from ...matcher import CALLEDBY, MATCH, REST
 from ...syntax import special
+from ...types import is_nil
+from ..compiler import ByteCodeFragment, Compiler
 
 
 _DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)

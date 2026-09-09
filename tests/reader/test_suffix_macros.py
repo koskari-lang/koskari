@@ -26,17 +26,17 @@ others.
 
 import unittest
 
+import pytest
+
 import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
-
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import kos_repr
-
 from koskari.pragma import ModulePragma
-from koskari.reader import (DEFER, READ_EOF, LayoutReader, Reader, ReaderEOF,
-                            ReaderSyntaxError, source_str)
+from koskari.reader import (
+    DEFER, READ_EOF, LayoutReader, Reader, ReaderEOF, ReaderSyntaxError,
+    source_str)
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

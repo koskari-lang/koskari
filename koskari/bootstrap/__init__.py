@@ -28,20 +28,17 @@ from fractions import Fraction as fraction
 from os.path import dirname, join
 from typing import Any, Dict
 
-from ..lib import (AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef,
-                   KosFilter, KosMap, KosPartial, KosProperty,
-                   MemoizedRef, Module,
-                   ModuleNamespace,
-                   ParamRef, Ref, apply, build_dict, build_list, build_set,
-                   build_str, build_tuple, car, cdr, cons, defer, demand,
-                   demand_apply,
-                   demand_call, deref, gensym, getattr_star, getitem_star,
-                   hasattr_star, hasitem_star, keyword, kos_repr, list_append,
-                   bracket_cons, bracket_nil, nil, pair, parameter,
-                   setcar, setcdr, symbol, values)
-
-from ..types import (TypePredicate, is_nil, is_None, is_proper, is_recursive,
-                     build_proper, bracket_splice, unpack)
+from ..lib import (
+    AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef, KosFilter, KosMap,
+    KosPartial, KosProperty, MemoizedRef, Module, ModuleNamespace, ParamRef,
+    Ref, apply, bracket_cons, bracket_nil, build_dict, build_list, build_set,
+    build_str, build_tuple, car, cdr, cons, defer, demand, demand_apply,
+    demand_call, deref, gensym, getattr_star, getitem_star, hasattr_star,
+    hasitem_star, keyword, kos_repr, list_append, nil, pair, parameter, setcar,
+    setcdr, symbol, values)
+from ..types import (
+    TypePredicate, bracket_splice, build_proper, is_nil, is_None, is_proper,
+    is_recursive, unpack)
 
 
 __all__ = (
@@ -129,8 +126,8 @@ def make_bootstrap():
 
     from .. import asyncio as _koskari_asyncio  # noqa: F401
     from .. import exceptions as _koskari_exceptions  # noqa: F401
-    from .. import syntax as _koskari_syntax  # noqa: F401
     from .. import fences as _koskari_fences  # noqa: F401
+    from .. import syntax as _koskari_syntax  # noqa: F401
     from ..compile import specials as _koskari_compile_specials  # noqa: F401
     from ..reader import layouts as _koskari_reader_layouts  # noqa: F401
 

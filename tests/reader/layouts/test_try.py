@@ -20,13 +20,15 @@ try/except/else/finally block syntax parsing.
 
 from unittest import IsolatedAsyncioTestCase
 
+import pytest
+
+from koskari.compile.helpers import pycons
 from koskari.exceptions import LayoutError
 from koskari.lib import car, cdr, cons, keyword, nil, symbol
-from koskari.compile.helpers import pycons
 from koskari.types import get_position
+
 from .. import parse_layout
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

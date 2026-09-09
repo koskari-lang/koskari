@@ -23,9 +23,10 @@ Unit tests for reducing and special-case operators
 import operator
 import unittest
 
+import pytest
+
 import koskari.lib as lib
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

@@ -30,6 +30,7 @@ import pytest
 
 from tests.compile.specials import SpecialsTestCase
 
+
 pytestmark = pytest.mark.phase_reproducers
 
 

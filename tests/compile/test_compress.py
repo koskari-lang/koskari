@@ -23,7 +23,7 @@ import unittest
 
 import pytest
 
-from koskari.compile.processor import ByteCodeProcessor, CHECK_SQUASHES
+from koskari.compile.processor import CHECK_SQUASHES, ByteCodeProcessor
 from koskari.lib import Compare, OpCode, Operand
 
 from . import make_fragment

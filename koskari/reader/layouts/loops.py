@@ -22,8 +22,8 @@ Layout decorator for reader block syntax.
 """
 
 from ...bootstrap import builtin
-from ...lib import cons, keyword, symbol
 from ...exceptions import LayoutError
+from ...lib import cons, keyword, symbol
 from ...types import fill_position, get_position
 from .helpers import layout
 

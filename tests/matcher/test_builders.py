@@ -25,33 +25,9 @@ import pytest
 
 from koskari.lib import cons, keyword, nil, pair, symbol
 from koskari.matcher import (
-    BIND,
-    CAPTURE,
-    CLASS,
-    FIELD,
-    FORM,
-    GROUP,
-    LIST,
-    LITERAL,
-    LITERAL_KW,
-    LITERAL_SYM,
-    MATCH,
-    Matcher,
-    MatchResult,
-    NOT,
-    ONEOF,
-    OPTIONAL,
-    PAIR,
-    PREDICATE,
-    REPEAT,
-    REST,
-    SYMBOL,
-    TEST_ANY,
-    TYPE,
-    VALUE,
-    make_matcher,
-    thaw,
-)
+    BIND, CAPTURE, CLASS, FIELD, FORM, GROUP, LIST, LITERAL, LITERAL_KW,
+    LITERAL_SYM, MATCH, NOT, ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST,
+    SYMBOL, TEST_ANY, TYPE, VALUE, Matcher, MatchResult, make_matcher, thaw)
 
 
 pytestmark = pytest.mark.phase_infra

@@ -18,10 +18,12 @@ Tests for koskari.compile try/except/finally special form.
 
 from types import SimpleNamespace
 
-from . import SpecialsTestCase
+import pytest
+
 from tests.dis.dis import dis
 
-import pytest
+from . import SpecialsTestCase
+
 
 pytestmark = pytest.mark.phase_specials
 

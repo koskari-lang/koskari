@@ -26,15 +26,15 @@ import koskari.builtins so the functions and their macros are present.
 """
 
 
+import unittest
+
+import pytest
+
 from koskari.compile import Compiler
-from koskari.lib import (
-    Code, Expression, Module, ModuleNamespace, demand_call)
+from koskari.lib import Code, Expression, Module, ModuleNamespace, demand_call
 from koskari.module import load_module_source_async, new_module
 from koskari.pragma import ModulePragma
 from koskari.reader import default_reader, source_str
-
-import pytest
-import unittest
 
 
 pytestmark = pytest.mark.phase_basics

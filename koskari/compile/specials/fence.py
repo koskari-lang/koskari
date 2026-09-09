@@ -30,9 +30,9 @@ from ...exceptions import SpecialError
 from ...fences import FenceHandler, find_fence, meta_plist_to_dict
 from ...lib import demand_call, nil
 from ...matcher import CALLEDBY, CAPTURE, MATCH, PAIR, SYMBOL, TYPE
+from ...reader.layouts import apply_layout
 from ...syntax import special
 from ...types import fill_position, is_keyword, is_pair, is_symbol
-from ...reader.layouts import apply_layout
 
 
 _APPLY_FENCE_PATTERNS = [

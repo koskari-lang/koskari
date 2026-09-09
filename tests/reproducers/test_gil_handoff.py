@@ -31,9 +31,10 @@ before the loop starts or after it ends.
 import threading
 import time
 
+import pytest
+
 from tests.compile.specials import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

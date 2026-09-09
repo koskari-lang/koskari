@@ -47,12 +47,12 @@ Opcode sequences produced
 """
 
 
+from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, REST
-from ...bootstrap import builtin
 from ...syntax import special
-from ...types import is_nil, is_keyword, is_pair, is_symbol, unpack
+from ...types import is_keyword, is_nil, is_pair, is_symbol, unpack
 from ..helpers import helper_using, is_symbolish
 
 

@@ -23,8 +23,8 @@ That matches deferring evaluation of those forms (e.g. ``{foo}`` as
 
 import pytest
 
-from tests.dis.dis import dis
 from koskari.exceptions import SpecialError
+from tests.dis.dis import dis
 
 from . import SpecialsTestCase
 

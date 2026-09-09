@@ -19,12 +19,12 @@ Tests for the CHECK_COMPARE opcode across its Compare selectors.
 """
 
 
-from koskari.lib import Compare
+import pytest
 
+from koskari.lib import Compare
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

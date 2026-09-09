@@ -21,15 +21,16 @@ body_list, not gain an extra list wrapper at read time.
 
 from unittest import TestCase
 
+import pytest
+
 import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
-from koskari.lib import cons, keyword, nil, symbol, kos_repr
+from koskari.lib import cons, keyword, kos_repr, nil, symbol
 from koskari.reader import LayoutReader, source_str
 from koskari.reader.parser import IndentAwareStream
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

@@ -18,9 +18,9 @@ Layout handlers for conditional block syntax.
 """
 
 
+from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
-from ...bootstrap import builtin
 from ...types import fill_position, get_position, is_nil, is_pair, unpack
 from .helpers import block_source_from_cons, layout, match_block_source
 

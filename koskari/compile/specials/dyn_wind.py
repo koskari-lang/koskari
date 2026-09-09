@@ -21,22 +21,13 @@ Special form handler for compile/dyn-wind (dynamic-wind).
 """
 
 
-from ...exceptions import SpecialError
-from ...lib import (FormalsSpec, FunctionSpec, OpCode, cons, nil, pair,
-                    symbol)
-from ...types import is_nil, is_pair
-from ...matcher import (
-    CALLEDBY,
-    LITERAL_KW,
-    LIST,
-    MATCH,
-    ONEOF,
-    REST,
-    VALUE,
-)
-from ..compiler import ByteCodeFragment, Compiler, CompilerMode
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
+from ...lib import FormalsSpec, FunctionSpec, OpCode, cons, nil, pair, symbol
+from ...matcher import CALLEDBY, LIST, LITERAL_KW, MATCH, ONEOF, REST, VALUE
 from ...syntax import special
+from ...types import is_nil, is_pair
+from ..compiler import ByteCodeFragment, Compiler, CompilerMode
 from ..helpers import match
 
 

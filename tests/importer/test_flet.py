@@ -25,13 +25,14 @@ expansion end to end: the per-binding body is captured under two ``...``.
 """
 
 
+import unittest
+
+import pytest
+
 from koskari.compile import Compiler
 from koskari.exceptions import CompilerError
 from koskari.lib import Module, ModuleNamespace
 from koskari.reader import default_reader, source_str
-
-import pytest
-import unittest
 
 
 pytestmark = pytest.mark.phase_basics

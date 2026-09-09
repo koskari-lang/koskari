@@ -27,9 +27,9 @@ koskari_scripts.
 """
 
 
-from .metadata import (KOSKARI_SCRIPTS_GROUP, augment_koskari_packages,
-                       entry_points_group_lines, validate_koskari_scripts,
-                       warn_koskari_scripts_metadata)
+from .metadata import (
+    KOSKARI_SCRIPTS_GROUP, augment_koskari_packages, entry_points_group_lines,
+    validate_koskari_scripts, warn_koskari_scripts_metadata)
 
 
 __all__ = (

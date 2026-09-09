@@ -23,15 +23,16 @@ compile/globals, and compile/locals.
 """
 
 
+from ...bootstrap import builtin
 from ...exceptions import CompilerError, SpecialError
 from ...lib import Datum, OpCode, cons, keyword, symbol
-from ...matcher import (BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH,
-                        PAIR, REST, SYMBOL, VALUE)
-from ...bootstrap import builtin
+from ...matcher import (
+    BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR, REST,
+    SYMBOL, VALUE)
 from ...syntax import special
 from ...types import is_nil, is_pair
-from ..helpers import (_parse_decl_tail, parse_decl, unpack_lhs_bind_symbols,
-                       using_unpack_helper)
+from ..helpers import (
+    _parse_decl_tail, parse_decl, unpack_lhs_bind_symbols, using_unpack_helper)
 
 
 def _define_name_type_pos_from_match(matched):

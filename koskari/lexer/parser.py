@@ -26,8 +26,8 @@ into s-expressions without compilation or evaluation.
 # This file was entirely generated via prompt, as the basis for the
 # prompt_toolkit REPL enhancements.
 
-from koskari.reader.parser import READ_EOF
 from koskari.reader import source_str
+from koskari.reader.parser import READ_EOF
 
 
 _default_reader = None
@@ -47,8 +47,8 @@ def make_layout_reader():
 
     import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
     import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
-    from koskari.reader import LayoutReader
     from koskari.bootstrap import _BUILTIN_REGISTRY
+    from koskari.reader import LayoutReader
     ns = dict(_BUILTIN_REGISTRY)
 
     # pragma-built, not raw: token classification should see the same

@@ -22,12 +22,13 @@ clear-exception, load-exception, and raise.
 """
 
 
-from ...lib import cons, keyword, nil, OpCode, symbol
-from ...types import is_nil, fill_position, get_position, is_keyword, is_pair, unpack
-from ...exceptions import SpecialError
-from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
+from ...lib import OpCode, cons, keyword, nil, symbol
+from ...matcher import CALLEDBY, MATCH, REST
 from ...syntax import special
+from ...types import (
+    fill_position, get_position, is_keyword, is_nil, is_pair, unpack)
 from ..helpers import helper_begin, helper_using, pycons
 
 

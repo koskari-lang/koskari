@@ -26,10 +26,12 @@ import struct
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 
-from ..lib import (Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode,
-                   OpStyle, bracket_nil, keyword, nil, symbol)
-from .constants import (BYTECODE_ABI_MAJOR, BYTECODE_ABI_MICRO,
-                        BYTECODE_ABI_MINOR, BYTECODE_ABI_PATCH, KIO_MAGIC)
+from ..lib import (
+    Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, OpStyle,
+    bracket_nil, keyword, nil, symbol)
+from .constants import (
+    BYTECODE_ABI_MAJOR, BYTECODE_ABI_MICRO, BYTECODE_ABI_MINOR,
+    BYTECODE_ABI_PATCH, KIO_MAGIC)
 
 
 def binary_read_all(source):

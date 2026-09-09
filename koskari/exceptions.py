@@ -25,7 +25,7 @@ import sys
 import traceback
 from traceback import format_exception_only
 
-from .bootstrap import builtin, add_builtin
+from .bootstrap import add_builtin, builtin
 from .lib import KoskariSyncViolation, car, kos_repr
 from .types import is_pair
 

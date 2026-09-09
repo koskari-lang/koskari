@@ -27,9 +27,9 @@ through (super) __init__.
 import os
 import unittest
 
-from koskari.module import init_module, load_module_async, new_module
-
 import pytest
+
+from koskari.module import init_module, load_module_async, new_module
 
 
 pytestmark = pytest.mark.phase_reproducers

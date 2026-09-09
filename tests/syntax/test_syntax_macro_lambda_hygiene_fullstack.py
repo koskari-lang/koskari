@@ -20,19 +20,14 @@ renamed; runtime matches expanded lambda behavior.
 
 import pytest
 
-from koskari.compile import Compiler
 from koskari.bootstrap import _BUILTIN_REGISTRY
+from koskari.compile import Compiler
 from koskari.lib import Datum, Module, car, cdr, cons, nil, symbol
 from koskari.reader import LayoutReader, source_str
 from koskari.types import build_proper, is_pair, is_symbol
-
-from tests.syntax.datum_syntax_helpers import (
-    macro_from_rule_rows,
-    syntax_from_match_datums,
-    syntax_from_rule_datums,
-)
-
 from tests.compile.specials import _register_specials
+from tests.syntax.datum_syntax_helpers import (
+    macro_from_rule_rows, syntax_from_match_datums, syntax_from_rule_datums)
 
 from .test_syntax_lambda_fullstack import LambdaNgFullStackBase
 

@@ -23,10 +23,11 @@ import unittest
 
 import pytest
 
-from koskari.compile import Compiler
 from koskari.bootstrap import _BUILTIN_REGISTRY
+from koskari.compile import Compiler
 # BUILTINS are Syntax values; legacy koskari.hygiene expects Special.forms.
-from koskari.hygiene import collect_binding_symbols, expand_template_with_hygiene
+from koskari.hygiene import (
+    collect_binding_symbols, expand_template_with_hygiene)
 from koskari.lib import Module, ModuleNamespace, car, cdr, symbol
 from koskari.reader import LayoutReader, source_str
 from koskari.types import is_pair, is_symbol

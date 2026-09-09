@@ -19,12 +19,13 @@ special forms.
 
 from types import SimpleNamespace
 
+import pytest
+
 from koskari.exceptions import SpecialError
 from koskari.lib import OpCode, Operand
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

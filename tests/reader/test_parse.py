@@ -23,11 +23,12 @@ Unit tests for koskari.parse
 from io import StringIO
 from unittest import IsolatedAsyncioTestCase, TestCase
 
+import pytest
+
 from koskari.exceptions import ReaderSyntaxError
 from koskari.lib import BaseSourceStream, car, cdr, cons, keyword, nil, symbol
 from koskari.reader import READ_EOF, default_reader, source_str
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 
@@ -594,7 +595,7 @@ class TestCollections(IsolatedAsyncioTestCase):
 class TestReader(IsolatedAsyncioTestCase):
 
     async def test_read_atom(self):
-        from koskari.reader import Reader, Atom
+        from koskari.reader import Atom, Reader
 
         reader = Reader()
         stream = source_str("hello", "<unittest>")

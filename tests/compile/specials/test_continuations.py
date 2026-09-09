@@ -19,9 +19,10 @@ Tests for continuation special forms and delimited transfer policy.
 """
 
 
+import pytest
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

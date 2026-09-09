@@ -24,12 +24,13 @@ the round-trip.
 
 import unittest
 
+import pytest
+
 from koskari.bootstrap import make_bootstrap
 from koskari.compile import Compiler
 from koskari.lib import Module, ModuleNamespace, bracket_pair, kos_repr, pair
 from koskari.reader import Reader, source_str
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

@@ -26,10 +26,11 @@ AsyncGenerator instance, with the body untouched until the first step
 
 import unittest
 
+import pytest
+
 from koskari.lib import demand
 from koskari.module import load_module_source_async, new_module
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

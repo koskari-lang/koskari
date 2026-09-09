@@ -20,13 +20,13 @@ Unit tests for koskari.lexer.parser.
 
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.lib import car, cdr, symbol
-from koskari.types import is_pair
-from koskari.reader import LayoutReader
+import pytest
 
 from koskari.lexer import READ_EOF, default_layout_reader, parse, parse_all
+from koskari.lib import car, cdr, symbol
+from koskari.reader import LayoutReader
+from koskari.types import is_pair
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

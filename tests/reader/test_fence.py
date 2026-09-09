@@ -23,16 +23,17 @@ fenced foreign source to (apply-fence NAME RAW META) forms.
 
 from unittest import IsolatedAsyncioTestCase
 
+import pytest
+
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
 from koskari.exceptions import ReaderEOF, ReaderSyntaxError
 from koskari.lib import keyword, symbol
 from koskari.pragma import ModulePragma
-from koskari.reader import (READ_EOF, LayoutReader, Reader, default_reader,
-                            source_str)
+from koskari.reader import (
+    READ_EOF, LayoutReader, Reader, default_reader, source_str)
 from koskari.types import get_position
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

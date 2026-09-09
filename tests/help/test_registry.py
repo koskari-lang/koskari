@@ -51,13 +51,8 @@ def setUpModule():
     install()
 
     from koskari.help import (
-        HelpFormatter,
-        help_into,
-        help_register,
-        help_registry_clear,
-        help_registry_snapshot,
-        help_unregister,
-    )
+        HelpFormatter, help_into, help_register, help_registry_clear,
+        help_registry_snapshot, help_unregister)
 
 
 def _plain_help(text):

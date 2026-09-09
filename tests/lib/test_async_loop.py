@@ -27,6 +27,7 @@ import pytest
 
 from koskari.lib import drive_async_loop
 
+
 pytestmark = pytest.mark.phase_lib
 
 

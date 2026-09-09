@@ -23,11 +23,10 @@ Compile .ki sources into .kio bodies and drive evaluation from loaded .kio.
 
 from ..compile.compiler import CompilerMode
 from ..lib import demand_call
-from ..module import (build_module_load_facets, detach_module_load_facets,
-                      materialize_exports,
-                      init_module, new_module)
-from ..reader import (READ_EOF, IndentAwareStream, source_open,
-                      source_str)
+from ..module import (
+    build_module_load_facets, detach_module_load_facets, init_module,
+    materialize_exports, new_module)
+from ..reader import READ_EOF, IndentAwareStream, source_open, source_str
 from .codex import KioFile
 
 

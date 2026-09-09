@@ -20,17 +20,12 @@ Unit tests for koskari.lexer.tokens.
 
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.lexer import (
-    Token,
-    tokenize,
-    SPECIAL_NAMES,
-    LAYOUT_NAMES,
-    LAYOUT_HEAD_NAMES,
-    LAYOUT_PEER_NAMES,
-    LAYOUT_BLOCK_NAMES,
-)
-
 import pytest
+
+from koskari.lexer import (
+    LAYOUT_BLOCK_NAMES, LAYOUT_HEAD_NAMES, LAYOUT_NAMES, LAYOUT_PEER_NAMES,
+    SPECIAL_NAMES, Token, tokenize)
+
 
 pytestmark = pytest.mark.phase_infra
 

@@ -20,10 +20,11 @@ enter/exit (auto-await). Participates in transfer plans (exit on unwind,
 enter on wind).
 """
 
+import pytest
+
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

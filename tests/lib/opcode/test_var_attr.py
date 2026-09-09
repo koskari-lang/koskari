@@ -18,12 +18,12 @@ FAST_ATTR, FAST_ATTR_CLEAR, FAST_ATTR_REF, FAST_ATTR_STORE opcodes.
 EXTRA schema (VAR, CONST, NOARG, NOARG) or (FASTVAR, CONST, NOARG, NOARG).
 """
 
-from koskari.lib import FormalsSpec
+import pytest
 
+from koskari.lib import FormalsSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

@@ -20,9 +20,9 @@ Unit tests for defer (single-shot await-handle) type.
 
 import unittest
 
-import koskari.lib as lib
 import pytest
 
+import koskari.lib as lib
 from tests import make_callable
 from tests.lib.opcode import build_expr
 

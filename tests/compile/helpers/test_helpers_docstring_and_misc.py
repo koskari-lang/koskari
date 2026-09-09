@@ -27,12 +27,8 @@ import unittest
 import pytest
 
 from koskari.compile.helpers import (
-    discover_docstring,
-    helper_elsebody,
-    pycons,
-    requote,
-    strip_leading_docstring,
-)
+    discover_docstring, helper_elsebody, pycons, requote,
+    strip_leading_docstring)
 from koskari.lib import car, cdr, cons, keyword, nil, symbol
 
 

@@ -24,8 +24,8 @@ import unittest
 import pytest
 
 from koskari.lib import FormalsSpec, Function
-
 from tests.lib.test_expression_function import build_expr
+
 
 pytestmark = pytest.mark.phase_lib
 

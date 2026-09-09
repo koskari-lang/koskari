@@ -22,12 +22,13 @@ Reader and eval tests for f-string format fields
 
 from unittest import IsolatedAsyncioTestCase
 
+import pytest
+
 from koskari.lib import keyword, symbol
 from koskari.pragma import ModulePragma
 from koskari.reader import Reader, source_str
 from koskari.types import unpack
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

@@ -39,8 +39,8 @@ from os.path import split
 from .compile import Compiler
 from .lib import Module, ModuleNamespace, demand_call
 from .pragma import ModulePragma
-from .reader import (READ_EOF, IndentAwareStream, LayoutReader, source_open,
-                     source_str)
+from .reader import (
+    READ_EOF, IndentAwareStream, LayoutReader, source_open, source_str)
 
 
 __all__ = (

@@ -22,9 +22,9 @@ it, so malformed input raises instead of reading memory it should not
 
 import unittest
 
-from koskari.lib import Code, NamespaceSpec, OpCode
-
 import pytest
+
+from koskari.lib import Code, NamespaceSpec, OpCode
 
 
 pytestmark = pytest.mark.phase_lib

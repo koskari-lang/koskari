@@ -24,13 +24,13 @@ Base class and helpers for testing koskari.compile.specials handlers.
 import unittest
 
 import koskari.compile.specials  # noqa: F401 - populate _BUILTIN_REGISTRY
-
-from koskari.compile import Compiler, CompilerMode
 from koskari.bootstrap import _BUILTIN_REGISTRY
-from koskari.lib import FunctionSpec, OpCode, bracket_cons, build_dict
+from koskari.compile import Compiler, CompilerMode
+from koskari.lib import (
+    FunctionSpec, Module, ModuleNamespace, OpCode, bracket_cons, build_dict)
 from koskari.reader import LayoutReader, default_reader, source_str
-from koskari.lib import Module, ModuleNamespace
 from koskari.types import bracket_splice
+
 
 def _register_specials(ns, specials):
     for sym, fn in specials.items():

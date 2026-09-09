@@ -22,12 +22,12 @@ compile/cons.
 """
 
 
-from ...lib import OpCode, symbol, cons
-from ...types import get_position, is_nil, is_pair, is_keyword
-from ...exceptions import SpecialError
-from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
+from ...lib import OpCode, cons, symbol
+from ...matcher import CALLEDBY, MATCH, REST
 from ...syntax import special
+from ...types import get_position, is_keyword, is_nil, is_pair
 from ..helpers import requote
 
 

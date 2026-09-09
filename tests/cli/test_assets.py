@@ -20,8 +20,8 @@ import unittest
 
 import pytest
 
-from koskari.assets import (ICON_PNG_SIZES, icon_path, icon_png_bytes,
-                            icon_svg_bytes, icon_svg_text)
+from koskari.assets import (
+    ICON_PNG_SIZES, icon_path, icon_png_bytes, icon_svg_bytes, icon_svg_text)
 
 
 pytestmark = pytest.mark.phase_cli

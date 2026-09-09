@@ -23,13 +23,7 @@ run_asyncio_in_thread for tests under tests.lib.opcode.
 
 import unittest
 
-from koskari.lib import (
-    Code,
-    Compare,
-    NamespaceSpec,
-    OpCode,
-    Operand,
-)
+from koskari.lib import Code, Compare, NamespaceSpec, OpCode, Operand
 from tests import make_callable
 
 

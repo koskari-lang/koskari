@@ -7,14 +7,10 @@ The koskari compiler. Converts source forms into bytecode fragments.
 :license: GNU General Public License v3
 """
 
-from .compiler import ByteCodeFragment, Compiler, CompilerMode
 from ..exceptions import (
-    CompilerError,
-    ParametersError,
-    SpecialError,
-    SyntaxMatchError,
-    UncaughtCompilerError,
-)
+    CompilerError, ParametersError, SpecialError, SyntaxMatchError,
+    UncaughtCompilerError)
+from .compiler import ByteCodeFragment, Compiler, CompilerMode
 
 
 __all__ = (

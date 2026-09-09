@@ -18,10 +18,11 @@ Tests for JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR opcodes.
 :license: GNU General Public License v3
 """
 
+import pytest
+
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

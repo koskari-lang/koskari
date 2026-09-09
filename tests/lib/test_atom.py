@@ -22,7 +22,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import symbol, keyword, gensym
+from koskari.lib import gensym, keyword, symbol
 
 
 pytestmark = pytest.mark.phase_lib

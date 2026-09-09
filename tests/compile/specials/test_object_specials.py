@@ -25,14 +25,15 @@ not, repr, truth, iter, ~,
 """
 
 
+import pytest
+
 from koskari.exceptions import SpecialError, SyntaxMatchError
-from koskari.lib import Compare, OpCode, OpStyle, Operand
+from koskari.lib import Compare, OpCode, Operand, OpStyle
 from tests import SlowAIter
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

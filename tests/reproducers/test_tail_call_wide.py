@@ -30,10 +30,11 @@ proof under ASan, where a read from the freed segment faults.
 :license: GNU General Public License v3
 """
 
+import pytest
+
 from koskari.lib import KosPartial as partial
 from tests.compile.specials import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

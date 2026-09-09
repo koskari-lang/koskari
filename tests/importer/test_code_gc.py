@@ -26,14 +26,14 @@ define-class macro.
 
 
 import gc
+import unittest
 import weakref
+
+import pytest
 
 from koskari.compile import Compiler
 from koskari.lib import Code, Module, ModuleNamespace
 from koskari.reader import default_reader, source_str
-
-import pytest
-import unittest
 
 
 pytestmark = pytest.mark.phase_basics

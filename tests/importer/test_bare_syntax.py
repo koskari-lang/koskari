@@ -23,13 +23,13 @@ Requires import koskari.builtins so bootstrap definitions are loaded.
 """
 
 
-import pytest
 import unittest
+
+import pytest
 
 from koskari.compile import Compiler, CompilerMode
 from koskari.exceptions import SyntaxMatchError
-from koskari.lib import OpCode
-from koskari.lib import Module, ModuleNamespace
+from koskari.lib import Module, ModuleNamespace, OpCode
 from koskari.reader import default_reader, source_str
 
 

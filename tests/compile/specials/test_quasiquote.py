@@ -27,12 +27,13 @@ Tests for koskari.compile quasiquote special form, covering:
 
 import unittest
 
+import pytest
+
 from koskari.exceptions import SpecialError
 from koskari.lib import cons, nil, symbol
 
 from . import SpecialsTestCase, _register_specials
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 
@@ -451,12 +452,14 @@ class TestQuasiquoteErrors(SpecialsTestCase):
             "(unquote-splicing x)")
 
 
-from koskari.compile import Compiler
 from koskari.bootstrap import _BUILTIN_REGISTRY
+from koskari.compile import Compiler
+from koskari.lib import Module, ModuleNamespace
+from koskari.lib import keyword as _kw_type
 from koskari.reader import LayoutReader, source_str
-from koskari.lib import Module, ModuleNamespace, keyword as _kw_type
 from koskari.reader.layouts import apply_layout as _apply_layout_macro
 from koskari.types import is_pair
+
 
 _keyword_block = _kw_type(':block:')
 

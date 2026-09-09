@@ -19,14 +19,13 @@ Unit tests for koskari.extras.lsp handlers.
 
 
 from unittest import IsolatedAsyncioTestCase
-from lsprotocol.types import CompletionParams, HoverParams, Position
-from koskari.extras.lsp.handlers import (
-    collect_diagnostics,
-    handle_completion,
-    handle_hover,
-)
 
 import pytest
+from lsprotocol.types import CompletionParams, HoverParams, Position
+
+from koskari.extras.lsp.handlers import (
+    collect_diagnostics, handle_completion, handle_hover)
+
 
 pytestmark = pytest.mark.phase_extras
 

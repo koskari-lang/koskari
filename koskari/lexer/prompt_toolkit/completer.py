@@ -25,7 +25,7 @@ Tab completion for Koskari REPL.
 
 
 try:
-    from prompt_toolkit.completion import Completion, Completer
+    from prompt_toolkit.completion import Completer, Completion
 except ImportError:
     Completion = object
     Completer = object

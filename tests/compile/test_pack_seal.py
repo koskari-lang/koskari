@@ -21,6 +21,8 @@ settings, the compiler's minted-code registry, and Compiler.seal()
 
 import unittest
 
+import pytest
+
 from koskari.compile import Compiler
 from koskari.compile.compiler import CompilerMode, _arena_member_size
 from koskari.compile.pragma import PackModule
@@ -28,7 +30,6 @@ from koskari.compile.pragma.settings import compiler_pack_module
 from koskari.lib import Arena, OpCode
 from koskari.pragma import ModulePragma
 
-import pytest
 
 pytestmark = pytest.mark.phase_compile
 

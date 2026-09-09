@@ -22,16 +22,14 @@ import unittest
 from itertools import count
 from unittest.mock import Mock
 
+import pytest
+
 from koskari.lib import (
-    Ref, AttributeRef, ItemRef, DynamicRef, ConstantRef, MemoizedRef,
-    WeakRef,
-    symbol,
-)
-from koskari.lib import FormalsSpec
+    AttributeRef, ConstantRef, DynamicRef, FormalsSpec, ItemRef, MemoizedRef,
+    Ref, WeakRef, symbol)
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

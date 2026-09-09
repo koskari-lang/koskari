@@ -22,12 +22,12 @@ import pytest
 
 from koskari.exceptions import SyntaxMatchError
 from koskari.lib import Datum, Matcher, cons, nil, symbol
-from koskari.matcher import (FORM, GROUP, MATCH, VALUE, DatumFrame,
-                             HygienicMatchCompiler,
-                             repeat_capture)
-from koskari.syntax import (MacroTransform, SpecialTransform, Syntax,
-                            SyntaxTransform, Transform,
-                            parse_syntax_rules_pattern, special)
+from koskari.matcher import (
+    FORM, GROUP, MATCH, VALUE, DatumFrame, HygienicMatchCompiler,
+    repeat_capture)
+from koskari.syntax import (
+    MacroTransform, SpecialTransform, Syntax, SyntaxTransform, Transform,
+    parse_syntax_rules_pattern, special)
 from koskari.types import build_proper, set_position
 
 

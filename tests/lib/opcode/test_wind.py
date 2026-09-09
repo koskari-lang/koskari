@@ -17,10 +17,11 @@ Tests for PUSH_WIND, POP_WIND opcodes.
 Dynamic wind runs before/after thunks on extent entry and exit.
 """
 
+import pytest
+
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 
@@ -86,6 +87,7 @@ class TestWindOpcodes(CevalTest):
         """
 
         import sys
+
         from koskari.lib import KosPartial
 
         def boom():

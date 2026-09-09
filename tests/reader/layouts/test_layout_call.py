@@ -20,12 +20,13 @@ interleaved in the block body.
 
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.lib import keyword, symbol, kos_repr
+import pytest
+
 from koskari.compile.helpers import pycons
+from koskari.lib import keyword, kos_repr, symbol
 
 from .. import parse_layout
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

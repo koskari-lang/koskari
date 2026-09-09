@@ -16,13 +16,13 @@ Tests for globals and locals specials
 """
 
 
+import pytest
+
 from koskari.exceptions import SpecialError
-from koskari.lib import OpCode
-from koskari.lib import ModuleNamespace
+from koskari.lib import ModuleNamespace, OpCode
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

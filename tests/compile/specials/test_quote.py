@@ -16,11 +16,12 @@ Tests for koskari.compile quote special form.
 """
 
 
+import pytest
+
 from koskari.lib import symbol
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

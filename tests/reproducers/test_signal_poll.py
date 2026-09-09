@@ -33,9 +33,10 @@ its end first; the signal is then taken at the next point after it.
 
 import signal
 
+import pytest
+
 from tests.compile.specials import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

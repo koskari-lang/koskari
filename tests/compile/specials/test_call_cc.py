@@ -28,13 +28,13 @@ current (ambient) namespace, then runs a body.
 
 import unittest
 
-import koskari.lib as lib
+import pytest
 
+import koskari.lib as lib
 from koskari.exceptions import SpecialError
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

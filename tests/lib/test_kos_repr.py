@@ -22,10 +22,10 @@ import unittest
 
 import pytest
 
-from koskari.lib import (KosPartial, cons, keyword, kos_repr,
-                         kos_repr_register, kos_repr_registry_clear,
-                         kos_repr_registry_snapshot, kos_repr_unregister, nil,
-                         pair, setcdr, symbol)
+from koskari.lib import (
+    KosPartial, cons, keyword, kos_repr, kos_repr_register,
+    kos_repr_registry_clear, kos_repr_registry_snapshot, kos_repr_unregister,
+    nil, pair, setcdr, symbol)
 
 
 pytestmark = pytest.mark.phase_lib

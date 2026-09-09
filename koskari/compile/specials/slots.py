@@ -22,9 +22,9 @@ and compile/set-attr.
 """
 
 
+from ...bootstrap import builtin
 from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, SYMBOL, VALUE
-from ...bootstrap import builtin
 from ...syntax import special
 from ...types import is_symbol
 

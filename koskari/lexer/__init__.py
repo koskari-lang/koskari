@@ -28,25 +28,12 @@ for editor integration (syntax highlighting, completion).
 
 
 from .discovery import (
-    collect_special_like_names_from_builtins,
-    special_names_for_repl,
-)
+    collect_special_like_names_from_builtins, special_names_for_repl)
 from .parser import (
-    READ_EOF,
-    default_layout_reader,
-    make_layout_reader,
-    parse,
-    parse_all,
-)
+    READ_EOF, default_layout_reader, make_layout_reader, parse, parse_all)
 from .tokens import (
-    Token,
-    tokenize,
-    SPECIAL_NAMES,
-    LAYOUT_NAMES,
-    LAYOUT_HEAD_NAMES,
-    LAYOUT_PEER_NAMES,
-    LAYOUT_BLOCK_NAMES,
-)
+    LAYOUT_BLOCK_NAMES, LAYOUT_HEAD_NAMES, LAYOUT_NAMES, LAYOUT_PEER_NAMES,
+    SPECIAL_NAMES, Token, tokenize)
 
 
 __all__ = (

@@ -44,9 +44,10 @@ def main(argv=None):
     """
 
     import sys
+
+    from koskari.exceptions import apply_sys_last_exc, format_run_exception
     from koskari.importer import install
     from koskari.launcher import drive_async_loop, hosted_run
-    from koskari.exceptions import apply_sys_last_exc, format_run_exception
 
     install()
 

@@ -19,12 +19,12 @@ classes carrying Koskari callables.
 
 import unittest
 
-from koskari.lib import build_class
-from koskari.lib import FormalsSpec
+import pytest
+
+from koskari.lib import FormalsSpec, build_class
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

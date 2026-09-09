@@ -23,13 +23,13 @@ the same shape an s-expr author writes directly.
 
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.exceptions import LayoutError
-from koskari.lib import cons, keyword, symbol, nil
+import pytest
+
 from koskari.compile.helpers import pycons
+from koskari.exceptions import LayoutError
+from koskari.lib import cons, keyword, nil, symbol
 
 from .. import parse_layout
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_infra

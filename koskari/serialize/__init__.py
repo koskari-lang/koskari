@@ -24,8 +24,8 @@ source bytes required).
 """
 
 
-from .incremental import compile_ki_file_to_kio, compile_ki_source_to_kio
 from .codex import KioFile, KioHeader, KioMeta, dump_kio, load_kio
+from .incremental import compile_ki_file_to_kio, compile_ki_source_to_kio
 
 
 __all__ = (

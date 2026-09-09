@@ -23,15 +23,9 @@ Custom Sphinx autodocumenters for Koskari object instances
 
 
 from sphinx.ext.autodoc import (
-    AttributeDocumenter,
-    ClassDocumenter,
-    DataDocumenter,
-    DecoratorDocumenter,
-    ExceptionDocumenter,
-    FunctionDocumenter,
-    MethodDocumenter,
-    PropertyDocumenter,
-)
+    AttributeDocumenter, ClassDocumenter, DataDocumenter, DecoratorDocumenter,
+    ExceptionDocumenter, FunctionDocumenter, MethodDocumenter,
+    PropertyDocumenter)
 
 from .rst import layout_peers_lines, syntax_accepts_lines
 

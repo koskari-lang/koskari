@@ -28,12 +28,12 @@ import unittest
 
 import pytest
 
-from koskari.compile import Compiler
 from koskari.bootstrap import _BUILTIN_REGISTRY
+from koskari.compile import Compiler
 from koskari.lib import Module, ModuleNamespace, car, cdr, cons, symbol
 from koskari.matcher import make_matcher, parse_explicit_rule_pattern
-from koskari.syntax import (Syntax, SyntaxTransform, build_syntax,
-                            parse_syntax_rules_pattern)
+from koskari.syntax import (
+    Syntax, SyntaxTransform, build_syntax, parse_syntax_rules_pattern)
 from koskari.types import build_proper, is_symbol, unpack
 
 

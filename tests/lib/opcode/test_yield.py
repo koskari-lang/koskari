@@ -18,12 +18,12 @@ Tests for YIELD and async gen opcodes.
 :license: GNU General Public License v3
 """
 
-from koskari.lib import AsyncGenerator, demand_call
-from koskari.lib import FormalsSpec
+import pytest
+
+from koskari.lib import AsyncGenerator, FormalsSpec, demand_call
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

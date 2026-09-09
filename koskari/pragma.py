@@ -24,8 +24,8 @@ pragma produces a new immutable copy and announces it to the watchers.
 
 
 from types import MappingProxyType
-from typing import (Any, Callable, Dict, Iterator, Optional, Protocol,
-                    Sequence, Tuple, Union)
+from typing import (
+    Any, Callable, Dict, Iterator, Optional, Protocol, Sequence, Tuple, Union)
 from warnings import warn
 from weakref import WeakSet
 

@@ -18,12 +18,12 @@ Tests for PROPER, PAIR_SPLICE, CAR, and CDR
 :license: GNU General Public License v3
 """
 
-from koskari.lib import cons, nil, symbol
+import pytest
 
+from koskari.lib import cons, nil, symbol
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

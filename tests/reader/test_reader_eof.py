@@ -23,11 +23,12 @@ ReaderEOF vs READ_EOF and ReaderSyntaxError during parse.
 
 from unittest import TestCase
 
+import pytest
+
 from koskari.exceptions import ReaderEOF, ReaderSyntaxError
 from koskari.lib import ModuleNamespace
 from koskari.reader import READ_EOF, LayoutReader, default_reader, source_str
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

@@ -23,11 +23,13 @@ dyn-wind/before/after block syntax parsing
 
 from unittest import IsolatedAsyncioTestCase
 
+import pytest
+
 from koskari.exceptions import LayoutError
 from koskari.lib import cons, nil, symbol
+
 from .. import parse_layout
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

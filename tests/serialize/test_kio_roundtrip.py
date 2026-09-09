@@ -24,12 +24,14 @@ import unittest
 
 import pytest
 
-from koskari.lib import (Code, FormalsSpec, FunctionSpec, NamespaceSpec,
-                         OpCode, bracket_nil, demand_call, nil)
+from koskari.lib import (
+    Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, bracket_nil,
+    demand_call, nil)
 from koskari.serialize import compile_ki_source_to_kio, dump_kio, load_kio
 
 from .. import make_callable
 from ..lib.opcode import build_expr
+
 
 pytestmark = pytest.mark.phase_compile
 

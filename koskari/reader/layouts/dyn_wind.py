@@ -17,10 +17,10 @@ koskari.reader.layouts.dyn_wind
 Layout handler for layout/dyn-wind block syntax.
 """
 
+from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...bootstrap import builtin
-from ...types import fill_position, is_nil, get_position
+from ...types import fill_position, get_position, is_nil
 from .helpers import layout
 
 

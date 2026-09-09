@@ -21,12 +21,13 @@ Unit tests for convert_fast VAR to FAST lowering in the compiler.
 
 import unittest
 
+import pytest
+
 from koskari.compile.processor import ByteCodeProcessor
-from koskari.lib import OpCode, NamespaceSpec
+from koskari.lib import NamespaceSpec, OpCode
 
 from . import make_fragment
 
-import pytest
 
 pytestmark = pytest.mark.phase_compile
 

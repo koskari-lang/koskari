@@ -20,18 +20,14 @@ Tests for demand_call: invoke Koskari callables synchronously without suspension
 
 import unittest
 
+import pytest
+
 from koskari.lib import (
-    BoundMethod,
-    KoskariSyncViolation,
-    demand,
-    demand_apply,
-    demand_call,
-)
-from koskari.lib import FormalsSpec
+    BoundMethod, FormalsSpec, KoskariSyncViolation, demand, demand_apply,
+    demand_call)
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

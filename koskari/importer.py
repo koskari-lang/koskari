@@ -106,11 +106,7 @@ class KoskariSourceFileLoader(FileLoader):
 
     async def exec_module_async(self, module):
         from koskari.module import (
-            init_module,
-            load_module_async,
-            load_module_kio_async,
-            new_module,
-        )
+            init_module, load_module_async, load_module_kio_async, new_module)
 
         filename = self.get_filename(module.__name__)
 
@@ -146,11 +142,8 @@ class KoskariSourceFileLoader(FileLoader):
         """
 
         from koskari.module import (
-            init_module,
-            load_module_demand,
-            load_module_kio_demand,
-            new_module,
-        )
+            init_module, load_module_demand, load_module_kio_demand,
+            new_module)
 
         filename = self.get_filename(module.__name__)
 

@@ -28,8 +28,9 @@ from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_nil, is_pair
-from ..helpers import (call_form_reroute, gather_parameters, is_symbolish,
-                       partition_collection_runs)
+from ..helpers import (
+    call_form_reroute, gather_parameters, is_symbolish,
+    partition_collection_runs)
 
 
 _DEFAULT_LIST_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)

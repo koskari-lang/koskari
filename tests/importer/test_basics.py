@@ -19,14 +19,14 @@ macros that require import koskari.builtins so basics.ki has been loaded.
 """
 
 
+import unittest
 from types import SimpleNamespace
+
+import pytest
 
 from koskari.compile import Compiler
 from koskari.lib import Module, ModuleNamespace, cons, nil
 from koskari.reader import default_reader, source_str
-
-import pytest
-import unittest
 
 
 pytestmark = pytest.mark.phase_basics

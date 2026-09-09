@@ -45,11 +45,12 @@ from io import StringIO
 from re import UNICODE, VERBOSE
 from re import compile as regex
 
-from ..exceptions import (FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError)
-from ..lib import (BaseSourceStream, Module, bracket_nil, bracket_pair, cons,
-                   keyword, nil, pair, setcdr, symbol)
-from ..matcher import (BIND, KEYWORD, LITERAL_KW, LITERAL_SYM, MATCH, ONEOF,
-                       repeat_capture)
+from ..exceptions import FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError
+from ..lib import (
+    BaseSourceStream, Module, bracket_nil, bracket_pair, cons, keyword, nil,
+    pair, setcdr, symbol)
+from ..matcher import (
+    BIND, KEYWORD, LITERAL_KW, LITERAL_SYM, MATCH, ONEOF, repeat_capture)
 from ..types import fill_position, is_keyword, is_nil, is_pair
 from . import patterns as _patterns
 from .layouts import apply_layout, apply_layouts, find_layout

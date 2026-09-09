@@ -24,7 +24,7 @@ import pytest
 
 from koskari.compile import Compiler
 from koskari.lib import Module
-from koskari.module import (init_module, load_module_demand, new_module)
+from koskari.module import init_module, load_module_demand, new_module
 from koskari.reader import LayoutReader
 
 

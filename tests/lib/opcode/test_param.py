@@ -18,11 +18,12 @@ Tests for the PARAM and PARAM_CONST opcodes
 :license: GNU General Public License v3
 """
 
+import pytest
+
 from koskari.lib import Domain, ParamRef
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

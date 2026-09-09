@@ -26,12 +26,8 @@ rows, using the same lowering as ``define-syntax`` compile surfaces.
 
 from koskari.matcher import parse_explicit_rule_pattern
 from koskari.syntax import (
-    MacroTransform,
-    SpecialTransform,
-    Syntax,
-    SyntaxTransform,
-    parse_syntax_rules_pattern,
-)
+    MacroTransform, SpecialTransform, Syntax, SyntaxTransform,
+    parse_syntax_rules_pattern)
 
 
 def syntax_from_rule_datums(name, literals, rules, source_ctx=None):

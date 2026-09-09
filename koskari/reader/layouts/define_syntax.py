@@ -22,12 +22,12 @@ macro-rules, special-rules, syntax-match, macro-match, special-match).
 """
 
 
+from ...bootstrap import builtin
 from ...compile.helpers import match1
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
 from ...matcher import BIND, CALLEDBY, LIST, LITERAL, MATCH, SYMBOL
-from ...bootstrap import builtin
-from ...types import is_nil, is_pair, get_position, unpack
+from ...types import get_position, is_nil, is_pair, unpack
 from .helpers import block_source_from_cons, layout, match_block_source
 
 

@@ -25,19 +25,14 @@ import types
 import unittest
 from importlib import import_module
 
-from koskari.extras.setuptools.metadata import (
-    KOSKARI_SCRIPTS_GROUP,
-    KoskariScriptsSetupError,
-)
-from koskari.extras.setuptools.plugin import (
-    KoskariEditableWheel,
-    KoskariInstallScripts,
-    configure_koskari_scripts,
-    iter_koskari_script_args,
-    koskari_script_source,
-)
-
 import pytest
+
+from koskari.extras.setuptools.metadata import (
+    KOSKARI_SCRIPTS_GROUP, KoskariScriptsSetupError)
+from koskari.extras.setuptools.plugin import (
+    KoskariEditableWheel, KoskariInstallScripts, configure_koskari_scripts,
+    iter_koskari_script_args, koskari_script_source)
+
 
 pytestmark = pytest.mark.phase_extras
 
@@ -314,6 +309,7 @@ class TestHookReach(unittest.TestCase):
     def test_declarative_koskari_scripts_seen_after_config_parse(self):
         import os
         import tempfile
+
         from setuptools.dist import Distribution
 
         cfg = (

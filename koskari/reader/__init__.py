@@ -21,22 +21,11 @@ Koskari s-expression reader and layout block parsing.
 """
 
 
-from ..exceptions import ReaderEOF, ReaderSyntaxError, FormatStringSyntaxError
+from ..exceptions import FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError
 from . import pragma as _pragma  # noqa: F401
 from .parser import (
-    DEFER,
-    LINE_END,
-    SourceStream,
-    IndentAwareStream,
-    source_open,
-    source_str,
-    source_stream,
-    Atom,
-    Reader,
-    LayoutReader,
-    default_reader,
-    READ_EOF,
-)
+    DEFER, LINE_END, READ_EOF, Atom, IndentAwareStream, LayoutReader, Reader,
+    SourceStream, default_reader, source_open, source_str, source_stream)
 
 
 __all__ = (

@@ -18,9 +18,10 @@ Multi-shot context manager: enter runs before body, exit runs after (or on
 exception). Uses PUSH_DYN_WITH/POP_DYN_WITH. Participates in transfer plans.
 """
 
+import pytest
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

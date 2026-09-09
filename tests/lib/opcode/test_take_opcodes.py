@@ -22,10 +22,11 @@ CONST_ITEM_TAKE, VAR_ATTR_TAKE.
 
 from types import SimpleNamespace
 
+import pytest
+
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

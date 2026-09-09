@@ -25,12 +25,13 @@ instruction stream resolves EXTRA rows to their 4-tuples, which is what
 these tests assert against.
 """
 
-from koskari.lib import OpCode
+import pytest
+
 from koskari.exceptions import SpecialError
+from koskari.lib import OpCode
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

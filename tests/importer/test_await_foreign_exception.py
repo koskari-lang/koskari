@@ -31,10 +31,10 @@ the evaluator with it.
 
 import asyncio
 
+import pytest
+
 from koskari.lib import drive_async_loop
 from tests.compile.specials import SpecialsTestCase
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_basics

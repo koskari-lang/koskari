@@ -22,10 +22,10 @@ that determine how the compiler operates on code.
 """
 
 
-from .resolution import (KoskariPragma, PythonPragma, ResolutionPragma,
-                         SchemePragma)
-from .settings import (BracketCalls, KeywordLiterals, PackModule,
-                       ResolutionMode, StrayColon)
+from .resolution import (
+    KoskariPragma, PythonPragma, ResolutionPragma, SchemePragma)
+from .settings import (
+    BracketCalls, KeywordLiterals, PackModule, ResolutionMode, StrayColon)
 
 
 __all__ = (

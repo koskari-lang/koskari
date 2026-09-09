@@ -23,8 +23,9 @@ Requires import koskari.builtins so bootstrap definitions are loaded.
 """
 
 
-import pytest
 import unittest
+
+import pytest
 
 from koskari.lib import Module, ModuleNamespace, symbol
 from koskari.module import build_module_load_facets

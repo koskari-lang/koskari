@@ -22,10 +22,9 @@ BUILD_LIST_APPEND_CONST, BUILD_LIST_EXTEND, BUILD_LIST_EXTEND_CONST.
 
 import pytest
 
+import koskari.lib as lib
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
-
-import koskari.lib as lib
 
 
 pytestmark = pytest.mark.phase_lib

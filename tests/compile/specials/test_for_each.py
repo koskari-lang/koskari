@@ -19,9 +19,10 @@ Tests for koskari.compile for-each.
 """
 
 
+import pytest
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

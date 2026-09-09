@@ -20,12 +20,12 @@ Unit tests for ParamRef
 
 import unittest
 
-from koskari.lib import Domain, ParamRef, Ref, parameter
-from koskari.lib import symbol
+import pytest
+
+from koskari.lib import Domain, ParamRef, Ref, parameter, symbol
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

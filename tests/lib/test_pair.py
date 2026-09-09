@@ -21,12 +21,12 @@ Unit tests for pair and nil types
 import sys
 import unittest
 
-from koskari.lib import (
-    pair, nil, cons, car, cdr, setcar, setcdr, build_unpack_pair,
-    make_recursive, break_recursive, bracket_pair,
-)
-
 import pytest
+
+from koskari.lib import (
+    bracket_pair, break_recursive, build_unpack_pair, car, cdr, cons,
+    make_recursive, nil, pair, setcar, setcdr)
+
 
 pytestmark = pytest.mark.phase_lib
 

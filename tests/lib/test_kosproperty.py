@@ -22,11 +22,12 @@ accessors in Demand at registration time.
 
 import unittest
 
+import pytest
+
 from koskari.lib import FormalsSpec, KosProperty, demand
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

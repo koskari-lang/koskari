@@ -24,12 +24,13 @@ Compile helpers for matcher FORMALS captures (GROUP dict payload)
 from typing import List
 
 from ..exceptions import ParametersError, SpecialError
-from ..lib import (DatumFrame, Matcher, OpCode, bracket_nil, bracket_pair, car,
-                   cdr, cons, keyword, nil, pair, symbol)
-from ..matcher import (BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH,
-                       REST, SYMBOL, USING, USING_UNPACK, VALUE,
-                       HygienicMatchCompiler, Pattern, frame_formal_name)
-from ..types import is_nil, is_keyword, is_pair, is_proper, is_symbol, unpack
+from ..lib import (
+    DatumFrame, Matcher, OpCode, bracket_nil, bracket_pair, car, cdr, cons,
+    keyword, nil, pair, symbol)
+from ..matcher import (
+    BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH, REST, SYMBOL, USING,
+    USING_UNPACK, VALUE, HygienicMatchCompiler, Pattern, frame_formal_name)
+from ..types import is_keyword, is_nil, is_pair, is_proper, is_symbol, unpack
 from .compiler import ByteCodeFragment, _is_const
 
 

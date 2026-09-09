@@ -31,10 +31,10 @@ loop.run_until_complete, which cannot run on an already-running loop.)
 import asyncio
 import unittest
 
+import pytest
+
 import koskari.asyncio
 from koskari.lib import defer
-
-import pytest
 
 
 pytestmark = pytest.mark.phase_reproducers

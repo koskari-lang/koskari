@@ -27,12 +27,8 @@ import unittest
 import pytest
 
 from koskari.compile.helpers import (
-    convert_bindings,
-    gather_bindings,
-    helper_binding,
-    helper_using,
-    unpack_lhs_bind_symbols,
-)
+    convert_bindings, gather_bindings, helper_binding, helper_using,
+    unpack_lhs_bind_symbols)
 from koskari.exceptions import SpecialError
 from koskari.lib import cons, keyword, nil, symbol
 from koskari.types import unpack

@@ -24,11 +24,11 @@ the matcher itself just walks either.
 
 import unittest
 
-from koskari.lib import bracket_nil, bracket_pair, cons, nil
+import pytest
 
+from koskari.lib import bracket_nil, bracket_pair, cons, nil
 from koskari.matcher import CAPTURE, MATCH, REST
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

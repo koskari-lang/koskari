@@ -28,9 +28,10 @@ focus on type registration, protocol compliance, and basic behavior.
 import asyncio
 import unittest
 
-from koskari.lib import Continuation, Coroutine, AsyncGenerator
-
 import pytest
+
+from koskari.lib import AsyncGenerator, Continuation, Coroutine
+
 
 pytestmark = pytest.mark.phase_lib
 

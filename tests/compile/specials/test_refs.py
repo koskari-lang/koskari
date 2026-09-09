@@ -19,11 +19,12 @@ refq, and bindq special forms.
 
 from types import SimpleNamespace
 
+import pytest
+
 from koskari.lib import OpCode, deref
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

@@ -28,15 +28,16 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..lib import (Arena, Datum, Code, FormalsSpec,
-                   FunctionSpec, Module, ModuleNamespace,
-                   Namespace, NamespaceSpec, OpCode,
-                   bracket_nil, bracket_pair, cons, keyword,
-                   kos_repr, nil, symbol)
-from ..types import (fill_position, is_nil, get_position, is_keyword,
-                     is_pair, is_proper, is_symbol, parameterize)
-from .pragma import (BracketCalls, KeywordLiterals, KoskariPragma,
-                     PackModule, ResolutionMode, StrayColon)
+from ..lib import (
+    Arena, Code, Datum, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
+    Namespace, NamespaceSpec, OpCode, bracket_nil, bracket_pair, cons, keyword,
+    kos_repr, nil, symbol)
+from ..types import (
+    fill_position, get_position, is_keyword, is_nil, is_pair, is_proper,
+    is_symbol, parameterize)
+from .pragma import (
+    BracketCalls, KeywordLiterals, KoskariPragma, PackModule, ResolutionMode,
+    StrayColon)
 from .processor import ByteCodeProcessor
 
 

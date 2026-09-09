@@ -22,11 +22,10 @@ Unit tests for Formals and FormalsSpec types
 
 import unittest
 
-from koskari.lib import (
-    Formals, FormalsSpec, Namespace, NamespaceSpec,
-)
-
 import pytest
+
+from koskari.lib import Formals, FormalsSpec, Namespace, NamespaceSpec
+
 
 pytestmark = pytest.mark.phase_lib
 

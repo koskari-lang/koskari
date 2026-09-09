@@ -20,12 +20,12 @@ VAR_INPLACE_CONST and FAST_INPLACE_CONST
 """
 
 
-from koskari.lib import Operand
+import pytest
 
+from koskari.lib import Operand
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

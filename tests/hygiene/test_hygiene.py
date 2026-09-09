@@ -22,17 +22,12 @@ import pytest
 
 from koskari.exceptions import CompilerError
 from koskari.hygiene import (
-    Hygiene,
-    apply_syntax_rules_hygiene,
-    binder_recurse_targets,
-    collect_binding_symbols,
-    expand_template_with_hygiene,
-    finalize_macro_hygiene_unbox_one_pass,
-    introduced_symbols_from_match,
-    walk_hygiene_tree,
-)
-from koskari.lib import (Datum, bracket_nil, bracket_pair, cons, kos_repr, nil,
-                         pair, symbol)
+    Hygiene, apply_syntax_rules_hygiene, binder_recurse_targets,
+    collect_binding_symbols, expand_template_with_hygiene,
+    finalize_macro_hygiene_unbox_one_pass, introduced_symbols_from_match,
+    walk_hygiene_tree)
+from koskari.lib import (
+    Datum, bracket_nil, bracket_pair, cons, kos_repr, nil, pair, symbol)
 from koskari.types import build_proper, is_pair, is_symbol
 
 
@@ -441,8 +436,8 @@ class TestCollectAndApply(unittest.TestCase):
 
 
 def _make_hygiene_compiler():
-    from koskari.compile import Compiler
     from koskari.bootstrap import _BUILTIN_REGISTRY
+    from koskari.compile import Compiler
     from koskari.lib import Module, ModuleNamespace
 
     mod_ns = ModuleNamespace("test", {})

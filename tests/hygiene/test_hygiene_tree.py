@@ -24,15 +24,8 @@ import pytest
 from koskari.hygiene import Hygiene, validate_hygiene_tree, walk_hygiene_tree
 from koskari.lib import Datum, symbol
 from koskari.matcher import (
-    BINDINGS,
-    BODY,
-    DEFINE,
-    MATCH,
-    VALUE,
-    HygienicMatchCompiler,
-    repeat_capture,
-    binding_inner_pattern,
-)
+    BINDINGS, BODY, DEFINE, MATCH, VALUE, HygienicMatchCompiler,
+    binding_inner_pattern, repeat_capture)
 
 
 pytestmark = pytest.mark.phase_infra

@@ -38,13 +38,14 @@ accepts tuples as segments natively.
 """
 
 
-from ...lib import bracket_nil, bracket_pair, nil, OpCode, symbol
-from ...types import is_nil, is_pair
-from ...exceptions import SpecialError
-from ..compiler import _is_const
-from ...matcher import CALLEDBY, MATCH, REST
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
+from ...lib import OpCode, bracket_nil, bracket_pair, nil, symbol
+from ...matcher import CALLEDBY, MATCH, REST
 from ...syntax import special
+from ...types import is_nil, is_pair
+from ..compiler import _is_const
+
 
 _symbol_quasiquote = symbol("quasiquote")
 _symbol_quote = symbol("quote")

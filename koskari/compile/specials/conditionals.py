@@ -22,11 +22,10 @@ compile/when, and compile/unless.
 """
 
 
+from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import Matcher, OpCode, keyword
-from ...matcher import (
-    CALLEDBY, MATCH, MatchCompiler, REST, parse_case_pattern)
-from ...bootstrap import builtin
+from ...matcher import CALLEDBY, MATCH, REST, MatchCompiler, parse_case_pattern
 from ...syntax import special
 from ...types import get_position, is_pair
 from ..helpers import helper_begin

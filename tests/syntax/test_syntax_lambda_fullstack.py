@@ -21,8 +21,8 @@ surface as koskari.compile.specials.lambda_.
 import pytest
 
 from koskari.compile.compiler import CompilerMode
-from koskari.compile.helpers import (discover_docstring, gather_formals,
-                                        helper_begin)
+from koskari.compile.helpers import (
+    discover_docstring, gather_formals, helper_begin)
 from koskari.compile.specials.lambda_ import _LAMBDA_PATTERNS
 from koskari.exceptions import SyntaxMatchError
 from koskari.lib import FormalsSpec, FunctionSpec, OpCode, nil

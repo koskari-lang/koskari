@@ -33,9 +33,10 @@ typed consumer (BUILD_LIST_APPEND) rejects the displaced operand.
 :license: GNU General Public License v3
 """
 
+import pytest
+
 from tests.compile.specials import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

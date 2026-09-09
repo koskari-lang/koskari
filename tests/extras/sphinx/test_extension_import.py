@@ -21,8 +21,8 @@ Import koskari.extras.sphinx without requiring Sphinx at import time
 import importlib
 import unittest
 
-
 import pytest
+
 
 pytestmark = pytest.mark.phase_extras
 

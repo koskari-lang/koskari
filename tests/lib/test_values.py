@@ -20,9 +20,10 @@ Unit tests for values type
 
 import unittest
 
+import pytest
+
 from koskari.lib import values
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

@@ -19,9 +19,11 @@ Unit tests for koskari.extras.lsp server.
 
 
 from unittest import IsolatedAsyncioTestCase
-from koskari.extras.lsp import create_server
 
 import pytest
+
+from koskari.extras.lsp import create_server
+
 
 pytestmark = pytest.mark.phase_extras
 

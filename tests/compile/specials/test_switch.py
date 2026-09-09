@@ -19,9 +19,10 @@ Tests for koskari.compile switch special form
 """
 
 
+import pytest
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

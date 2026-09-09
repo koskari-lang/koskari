@@ -29,7 +29,8 @@ import unittest
 import pytest
 
 from koskari.compile import ByteCodeFragment
-from koskari.lib import Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, symbol
+from koskari.lib import (
+    Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, symbol)
 
 
 pytestmark = pytest.mark.phase_compile

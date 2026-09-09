@@ -18,10 +18,12 @@ Dynamic-wind runs before/after thunks on extent entry and exit.
 """
 
 
+import pytest
+
 from tests.dis.dis import dis
+
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 

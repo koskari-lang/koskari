@@ -24,11 +24,12 @@ evaluator (inverse of KosPartial).
 
 import unittest
 
+import pytest
+
 from koskari.lib import BoundMethod, FormalsSpec, demand_call, values
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

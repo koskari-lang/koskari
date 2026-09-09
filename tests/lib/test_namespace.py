@@ -22,12 +22,11 @@ Unit tests for namespace types
 import unittest
 from operator import itemgetter
 
-from koskari.lib import (
-    CollectorNamespace, Module, ModuleNamespace,
-    Namespace, NamespaceSpec,     Ref,
-)
-
 import pytest
+
+from koskari.lib import (
+    CollectorNamespace, Module, ModuleNamespace, Namespace, NamespaceSpec, Ref)
+
 
 pytestmark = pytest.mark.phase_lib
 

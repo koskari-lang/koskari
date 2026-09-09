@@ -22,11 +22,11 @@ tracing flags
 import asyncio
 import unittest
 
-import koskari.lib as lib
-
 import pytest
 
+import koskari.lib as lib
 from tests.compile.specials import SpecialsTestCase
+
 
 pytestmark = pytest.mark.phase_lib
 

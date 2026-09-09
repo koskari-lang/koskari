@@ -26,17 +26,17 @@ the Python-registered ones.
 """
 
 
+import unittest
 from subprocess import CalledProcessError
+
+import pytest
 
 from koskari.asyncio import ProcessResult
 from koskari.compile import Compiler
 from koskari.exceptions import FenceError, SpecialError
-from koskari.lib import Module, ModuleNamespace
 from koskari.importer import install
+from koskari.lib import Module, ModuleNamespace
 from koskari.reader import default_reader, source_str
-
-import pytest
-import unittest
 
 
 pytestmark = pytest.mark.phase_basics

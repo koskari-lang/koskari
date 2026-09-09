@@ -16,12 +16,13 @@ Tests for the resolution pragma system: KoskariPragma, PythonPragma, SchemePragm
 """
 
 
-from . import SpecialsTestCase
+import pytest
 
 from koskari.compile.pragma import ResolutionMode
 from koskari.exceptions import CompilerError
 
-import pytest
+from . import SpecialsTestCase
+
 
 pytestmark = pytest.mark.phase_specials
 

@@ -20,28 +20,21 @@ Unit tests for koskari_scripts metadata helpers.
 
 import os
 import shutil
-import sys
 import subprocess
+import sys
 import tempfile
 import unittest
 import warnings
 
-from koskari.extras.setuptools.metadata import (
-    EntryTargetError,
-    KOSKARI_SCRIPTS_GROUP,
-    KoskariScriptsSetupError,
-    augment_koskari_packages,
-    packages_for_module_name,
-    packages_from_koskari_scripts,
-    parse_entry_point_line,
-    parse_entry_target,
-    validate_entry_point_value,
-    validate_koskari_scripts,
-    warn_koskari_scripts_metadata,
-    warn_undeclared_script_packages,
-)
-
 import pytest
+
+from koskari.extras.setuptools.metadata import (
+    KOSKARI_SCRIPTS_GROUP, EntryTargetError, KoskariScriptsSetupError,
+    augment_koskari_packages, packages_for_module_name,
+    packages_from_koskari_scripts, parse_entry_point_line, parse_entry_target,
+    validate_entry_point_value, validate_koskari_scripts,
+    warn_koskari_scripts_metadata, warn_undeclared_script_packages)
+
 
 pytestmark = pytest.mark.phase_extras
 

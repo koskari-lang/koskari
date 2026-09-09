@@ -28,10 +28,11 @@ through list), plus construction of the providers from koskari itself
 
 import unittest
 
+import pytest
+
 from koskari.lib import KosFilter, KosMap
 from koskari.module import load_module_source_async, new_module
 
-import pytest
 
 pytestmark = pytest.mark.phase_reproducers
 

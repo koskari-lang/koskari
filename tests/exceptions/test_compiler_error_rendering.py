@@ -21,9 +21,10 @@ Tests for rich CompilerError rendering.
 import unittest
 from tempfile import NamedTemporaryFile
 
+import pytest
+
 from koskari.exceptions import CompilerError
 
-import pytest
 
 pytestmark = pytest.mark.phase_infra
 

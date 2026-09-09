@@ -24,30 +24,15 @@ end-to-end matching of the classified patterns against runtime values
 
 import sys
 import unittest
+from dataclasses import dataclass
 
 import pytest
 
-from dataclasses import dataclass
-
 from koskari.lib import cons, keyword, nil, symbol
 from koskari.matcher import (
-    APP,
-    CAPTURE,
-    CLASS,
-    FORM,
-    LITERAL,
-    MAP,
-    MATCH,
-    MatchCompiler,
-    NOT,
-    ONEOF,
-    PREDICATE,
-    REST,
-    parse_case_element,
-    parse_case_pattern,
-    parse_matcher,
-    thaw,
-)
+    APP, CAPTURE, CLASS, FORM, LITERAL, MAP, MATCH, NOT, ONEOF, PREDICATE,
+    REST, MatchCompiler, parse_case_element, parse_case_pattern, parse_matcher,
+    thaw)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -709,6 +694,7 @@ class TestAppMatching(unittest.TestCase):
 
     def test_suspending_extractor_raises_sync_violation(self):
         import asyncio
+
         from koskari.lib import KoskariSyncViolation
 
         async def afn(v):

@@ -18,11 +18,12 @@ Tests for the nil? special: NILP emission and CHECK_NIL squash.
 :license: GNU General Public License v3
 """
 
-from . import SpecialsTestCase
+import pytest
 
 from koskari.lib import OpCode
 
-import pytest
+from . import SpecialsTestCase
+
 
 pytestmark = pytest.mark.phase_specials
 

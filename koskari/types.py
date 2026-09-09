@@ -24,8 +24,9 @@ import operator
 from contextlib import contextmanager
 from functools import partial
 
-from .lib import (Domain, KoskariSyncViolation, ParamRef, bracket_nil,
-                  bracket_pair, cons, keyword, nil, nilp, pair, symbol)
+from .lib import (
+    Domain, KoskariSyncViolation, ParamRef, bracket_nil, bracket_pair, cons,
+    keyword, nil, nilp, pair, symbol)
 
 
 __all__ = (

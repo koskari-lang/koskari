@@ -18,7 +18,7 @@ Test suite for koskari.
 
 import asyncio
 
-from koskari.lib import Expression, Function, FormalsSpec
+from koskari.lib import Expression, FormalsSpec, Function
 
 
 class SlowAIter:

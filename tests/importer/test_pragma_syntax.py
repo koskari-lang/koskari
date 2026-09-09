@@ -20,11 +20,12 @@ Requires import koskari.builtins so bootstrap definitions are loaded.
 """
 
 
-import pytest
 import unittest
 
-from koskari.compile.pragma import (BracketCalls, KeywordLiterals,
-                                    ResolutionMode, StrayColon)
+import pytest
+
+from koskari.compile.pragma import (
+    BracketCalls, KeywordLiterals, ResolutionMode, StrayColon)
 from koskari.lib import Module, ModuleNamespace
 from koskari.module import build_module_load_facets
 from koskari.pragma import ModulePragma

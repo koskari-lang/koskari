@@ -19,11 +19,12 @@ exception). Uses KOS_DYN_WITH (single-shot) on the dynamic chain. Supports async
 enter/exit (auto-await).
 """
 
-from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr
-from tests.dis.dis import dis
-
 import pytest
+
+from tests import make_callable
+from tests.dis.dis import dis
+from tests.lib.opcode import CevalTest, build_expr
+
 
 pytestmark = pytest.mark.phase_lib
 

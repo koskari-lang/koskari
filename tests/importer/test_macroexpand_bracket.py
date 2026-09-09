@@ -28,6 +28,7 @@ from koskari.compile import Compiler
 from koskari.lib import Module, ModuleNamespace, kos_repr
 from koskari.reader import default_reader, source_str
 
+
 pytestmark = pytest.mark.phase_basics
 
 

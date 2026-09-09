@@ -41,8 +41,8 @@ import unittest
 import pytest
 
 from koskari.lib import Formals, Namespace
-
 from tests.compile.specials import SpecialsTestCase
+
 
 pytestmark = pytest.mark.phase_reproducers
 

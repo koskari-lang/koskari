@@ -27,10 +27,7 @@ import sys
 from importlib import metadata
 
 from koskari.extras.setuptools.metadata import (
-    EntryTargetError,
-    KOSKARI_SCRIPTS_GROUP,
-    parse_entry_target,
-)
+    KOSKARI_SCRIPTS_GROUP, EntryTargetError, parse_entry_target)
 from koskari.importer import import_module_async
 from koskari.lib import Domain, drive_async_loop
 

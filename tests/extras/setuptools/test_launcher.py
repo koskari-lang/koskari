@@ -26,15 +26,13 @@ import unittest
 from importlib import metadata
 from unittest.mock import patch
 
+import pytest
+
 from koskari.importer import install, uninstall
 from koskari.launcher import (
-    EntryNotFoundError,
-    hosted_run,
-    resolve_koskari_script_value,
-    run_resolved_script,
-    run_target,)
+    EntryNotFoundError, hosted_run, resolve_koskari_script_value,
+    run_resolved_script, run_target)
 
-import pytest
 
 pytestmark = pytest.mark.phase_extras
 

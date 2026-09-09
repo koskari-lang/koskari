@@ -24,10 +24,11 @@ whose uninstall behavior must run
 """
 
 
+import pytest
+
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
-import pytest
 
 pytestmark = pytest.mark.phase_lib
 

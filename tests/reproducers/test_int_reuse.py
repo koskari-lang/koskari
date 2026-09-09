@@ -31,7 +31,6 @@ import unittest
 import pytest
 
 from koskari.module import init_module, load_module_async, new_module
-
 from tests.reproducers.test_int_digits import DIGIT_EDGE_VALUES, SHIFT_COUNTS
 
 
