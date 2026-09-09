@@ -293,6 +293,9 @@ typedef enum KosObligationKind {
   KOS_OB_VALUE,
   KOS_OB_EXCEPTION,
   KOS_OB_RETURN,
+  KOS_OB_SWALLOWED,  /* a with's __exit__ consumed the raise: None
+                        stands in for the body value, whatever event
+                        brought the raise */
 } KosObligationKind;
 
 
@@ -494,8 +497,6 @@ struct KosDynNode {
       uint8_t entered;     /* 1 after enter succeeded */
       uint8_t phase;       /* KOS_WITH_PHASE_* */
       uint8_t shot;        /* KOS_DYN_WITH_SHOT_*; internal to dyn_with only */
-      uint8_t swallowed;   /* __exit__ answered true to a raise; the unlink
-                              delivers None in place of the body value */
       PyObject *exit_done; /* KosRef shared across clones (owned); non-empty
                               once the single-shot __exit__ has run. NULL for
                               multi-shot */
@@ -1571,17 +1572,18 @@ int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
       again later.
    2. The synchronous per-kind teardown runs (PARAM restore, YIELD_FROM
       close, TRY/FINALLY exception-state restore).
-   3. The node's obligation is detached, with a with's swallow flag and
-      body value.
+   3. The node's obligation is detached.
    4. The parent becomes dyn_top; the node is freed.
    5. The obligation is acted on, by its kind and by ev. Under
       KOS_XFER_EVENT_NONE (a plain pop, or the hook finishing a leave):
-      a VALUE and a with's body value go onto the revealed block, an
-      EXCEPTION is re-raised, a RETURN is a caller error (only
-      kos_dyn_settle_top can receive one). Under KOS_XFER_EVENT_RAISE:
-      an EXCEPTION is chained as __context__ of the exception in
-      flight, everything else is discarded. Under any other event a
-      walk or a transfer crossed the node: everything is discarded.
+      a VALUE goes onto the revealed block, an EXCEPTION is re-raised,
+      a RETURN is a caller error (only kos_dyn_settle_top can receive
+      one). Under KOS_XFER_EVENT_RAISE: an EXCEPTION is chained as
+      __context__ of the exception in flight, everything else is
+      discarded. Under any other event a walk or a transfer crossed
+      the node: everything is discarded. A SWALLOWED (a with's
+      __exit__ consumed the raise) puts None on the revealed block
+      under every event.
 
    :param ev: why the node is leaving; KOS_XFER_EVENT_NONE for a plain pop
    :param allow_barrier: 0 refuses a KOS_DYN_CAP_BARRIER node with
@@ -2347,7 +2349,6 @@ static inline void kos_dyn_iter_request_arm(
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
 #define KosDynWith_OB(n)           (&((KosDynNode *)(n))->u.with.ob)
-#define KosDynWith_SWALLOWED(n)    (((KosDynNode *)(n))->u.with.swallowed)
 
 /**
    True while __enter__ or __exit__ has been started but has not

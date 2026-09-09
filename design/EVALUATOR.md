@@ -973,6 +973,7 @@ Every node leaves the chain through **`kos_dyn_unlink_top(es, ev, allow_barrier)
 | VALUE | pushed onto the revealed block | dropped | dropped |
 | EXCEPTION | re-raised | chained as `__context__` of the exception in flight | dropped |
 | RETURN | caller error; only `kos_dyn_settle_top` receives one, handing it back for `KosEval_ResumeReturn` | dropped | dropped |
+| SWALLOWED | None pushed (a with's `__exit__` consumed the raise) | None pushed | None pushed |
 
 The **extent contract** for WIND and WITH is total and re-entrant: `enter` / `leave` answer NORMAL when discharged, REPROLOGUE when a thunk or `__enter__`/`__exit__` frame was installed, AWAIT when the call suspended, RAISE when the node's own code raised; a node in a pending phase is in flight, answers REPROLOGUE while its thunk frame sits above it, and is aborted by a leave once it is `dyn_top` with the thunk gone. `settle` takes the returned call result off the block and advances the phase; `abort` advances without one. The node never unlinks itself and never reads the transfer state.
 
@@ -1595,10 +1596,10 @@ See [with-dyn-with.md](interpreter/with-dyn-with.md) and `dynchain.h`.
 - **Ns** (u.ns): saved_ns. Macro: KosDynNs_SAVED_NS.
 - **With** (u.with): context manager enter/exit, optional `as` name, `resume_pc`,
   phases (`KOS_WITH_PHASE_*`: IDLE, PENDING_ENTER_AWAIT, PENDING_EXIT_AWAIT, LEFT),
-  **`shot`** (`KOS_DYN_WITH_SHOT_*`), `swallowed` (`__exit__` answered true),
+  **`shot`** (`KOS_DYN_WITH_SHOT_*`),
   and ob (`KosObligation`: the exception `__exit__` is handling, or what a
   walk parked while it runs).
-  Macros: `KosDynWith_MGR`, `KosDynWith_ENTER`, `KosDynWith_EXIT`, `KosDynWith_SHOT`, `KosDynWith_OB`, `KosDynWith_SWALLOWED`, `KosDynWith_LEFT`, etc.
+  Macros: `KosDynWith_MGR`, `KosDynWith_ENTER`, `KosDynWith_EXIT`, `KosDynWith_SHOT`, `KosDynWith_OB`, `KosDynWith_LEFT`, etc.
 - **CC** (u.cc): resume_pc. Macro: KosDynCC_RESUME_PC.
 
 All nodes are allocated from a single-size pool in dynchain.c (one freelist for
@@ -1615,7 +1616,7 @@ the armed transfer goal (`goal`), Python await bridge (`py_await_iter`,
 and `flags`. Delimited **invoke return** metadata lives on **`KOS_DYN_DELIM`**
 nodes (`kos_dyndelim_*`, `KosDynDelim_*`), not in separate context slots.
 Async **WITH** enter/exit suspension does **not** use separate `KosContext`
-slots: state lives on the `KosDynWith` node (`phase`, `ob`, `swallowed`);
+slots: state lives on the `KosDynWith` node (`phase`, `ob`);
 see `kos_dyn_settle_top` in `dynchain.c` and `revive_await` in `eval.c`.
 
 ```c
@@ -1858,7 +1859,7 @@ protocol call installs no frame and the pending phase is set only on
 dyn_top, so the check is a dyn_top test: a WIND or WITH in a pending phase
 is settled (`kos_dyn_extent_settle` takes the value off the block and
 advances the phase: a with's `__enter__` result binds the `as` name, its
-`__exit__` result sets `swallowed`), and when what settled was a leave the
+`__exit__` result that swallowed a raise leaves a SWALLOWED obligation), and when what settled was a leave the
 node is unlinked through `kos_dyn_unlink_top`, which delivers the body value
 or `None` on swallow, re-raises a parked exception, or hands a parked return
 back for `KosEval_ResumeReturn`. The `__aexit__` return is never left on the

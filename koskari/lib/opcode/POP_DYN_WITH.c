@@ -14,36 +14,13 @@
 */
 
 /**
-   POP_DYN_WITH: arg unused. Unlink the multi-shot dyn-with node: __exit__
-   runs (auto-awaited when it returns an awaitable), the node leaves the
-   chain, and the body value lands on the revealed block.
+   POP_DYN_WITH: arg unused. The multi-shot with pops exactly as the
+   single-shot one does; the node kind is the same and the shot is the
+   node's own affair. Defined after POP_WITH in handlers.incl.
 */
 
 KOS_OP_HANDLER(POP_DYN_WITH) {
-  KosDynNode *top = KosEvalState_CurrentNode(es);
-  if (! top || ! KosDynNode_IS_WITH(top)) {
-    PyErr_SetString(PyExc_RuntimeError, "POP_DYN_WITH: top is not a with node");
-    RESULT_RAISE();
-  }
-  KosDynFrame *const caller = KosEvalState_FRAME(es);
-  KosOpResult kr = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
-
-  if (kr.kind == KOS_RES_RAISE)
-    RESULT_RAISE();
-  if (kr.kind == KOS_RES_AWAIT) {
-    uint32_t same_pc = KosEvalState_ACTING_PC(es);
-    KosEvalState_SET_PC(es, same_pc);
-    return kr;
-  }
-  /* __exit__'s frame is current: run it; its return settles and
-     unlinks the node. A plan armed by the install drains first. */
-  if (kr.kind == KOS_RES_REPROLOGUE) {
-    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_GOAL(es))
-      RESULT_CONTINUE(es);
-    return kr;
-  }
-
-  RESULT_NEXT(es);
+  TAILCALL(op_POP_WITH, es, insn, kos_op_delivery_);
 }
 
 

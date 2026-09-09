@@ -54,8 +54,7 @@ Every node leaves through **`kos_dyn_unlink_top(es, ev, allow_barrier)`**:
 1. A `CONTROL_HOOK` node is asked to leave; any answer but NORMAL returns
    with the node still on the chain, and the caller parks and asks again.
 2. The synchronous per-kind teardown runs.
-3. The node's obligation is detached (with a with's swallow flag and body
-   value).
+3. The node's obligation is detached.
 4. The parent becomes `dyn_top`; the node is freed.
 5. The obligation is acted on by its kind and by `ev` (see Obligations).
 
@@ -82,9 +81,10 @@ the node owes when it is unlinked.
 
 | Kind | What it holds | Who parks it |
 |---|---|---|
-| `KOS_OB_VALUE` | the wind body result at `POP_WIND`; a with's body value | the pop opcode |
+| `KOS_OB_VALUE` | the body value at `POP_WIND` or `POP_WITH` | the pop opcode |
 | `KOS_OB_EXCEPTION` | the exception `__exit__` is handling, or one parked while the after thunk runs | the raise walk, `POP_WITH` on a raise |
-| `KOS_OB_RETURN` | a return value crossing a leave in flight, with its path and delimiter bookmark | the return walk |
+| `KOS_OB_RETURN` | a return, break, or continue value crossing a leave in flight, with its path and delimiter bookmark | the return and loop walks |
+| `KOS_OB_SWALLOWED` | nothing: `__exit__` consumed the raise and None stands in for the body value | the with's exit classification |
 
 Release at unlink, by kind and by event:
 
@@ -93,10 +93,11 @@ Release at unlink, by kind and by event:
 | VALUE | pushed onto the revealed block | dropped | dropped |
 | EXCEPTION | re-raised | chained as `__context__` of the exception in flight | dropped |
 | RETURN | handed back through `kos_dyn_settle_top` for `KosEval_ResumeReturn` | dropped | dropped |
+| SWALLOWED | None pushed | None pushed | None pushed |
 
-A with that swallowed (`__exit__` answered true) delivers `None` in place of
-its body value whatever event brought the raise. The GC traverses the slot
-through the node.
+A with whose `__exit__` swallowed a raise owes `KOS_OB_SWALLOWED`, and the
+unlink puts `None` in place of its body value whatever event brought the
+raise. The GC traverses the slot through the node.
 
 ---
 

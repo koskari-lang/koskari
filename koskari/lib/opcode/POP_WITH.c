@@ -14,9 +14,10 @@
 */
 
 /**
-   POP_WITH: arg unused. Unlink the single-shot with node: __exit__ runs
-   (auto-awaited when it returns an awaitable), the node leaves the chain,
-   and the body value lands on the revealed block.
+   POP_WITH: arg unused. Park TOS (the body value) on the with node and
+   unlink it: __exit__ runs (auto-awaited when it returns an awaitable),
+   the node leaves the chain, and the unlink delivers the body value to
+   the revealed block. POP_DYN_WITH is this handler under another name.
 */
 
 KOS_OP_HANDLER(POP_WITH) {
@@ -37,6 +38,19 @@ KOS_OP_HANDLER(POP_WITH) {
   }
 
   KosDynFrame *const caller = KosEvalState_FRAME(es);
+  /* the body value, when the body left one, waits on the node for the
+     unlink to deliver; a with in statement position leaves none */
+  {
+    KosSegment *seg = *KosEvalState_BLOCK(es);
+
+    if (seg && KosSegment_LEN(seg)) {
+      PyObject *body_result = KosEvalState_StackPopRef(es);
+
+      if (! body_result || kos_dyn_ob_park_value(top, body_result) < 0)
+        RESULT_RAISE();
+    }
+  }
+
   KosOpResult kr = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
 
   if (kr.kind == KOS_RES_RAISE)

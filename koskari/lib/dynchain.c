@@ -1848,7 +1848,6 @@ static KosOpResult kos_dyn_unlink_top_take(
 
   /* detached state, acted on once the node is gone */
   PyObject *deliver = NULL;   /* a with's body value */
-  int swallowed = 0;
 
   ob.kind = KOS_OB_NONE;
 
@@ -1876,18 +1875,6 @@ static KosOpResult kos_dyn_unlink_top_take(
     ob = *slot;
     slot->kind = KOS_OB_NONE;
   }
-  if (KosDynNode_IS_WITH(node)) {
-    swallowed = KosDynWith_SWALLOWED(node);
-    if (! swallowed && ob.kind == KOS_OB_NONE
-        && ev == KOS_XFER_EVENT_NONE) {
-      KosSegment *seg = KosDynNode_STACK(node);
-      if (seg && KosSegment_LEN(seg)) {
-        deliver = KosStack_PopRef(&KosDynNode_STACK(node));
-        if (! deliver)
-          return EVAL_RAISE();
-      }
-    }
-  }
 
   parent = KosDynNode_PARENT(node);
   kos_dyn_commit_dyn_top(es, parent);
@@ -1897,7 +1884,6 @@ static KosOpResult kos_dyn_unlink_top_take(
   /* Step 5: act on the obligation by kind and event. */
   switch (ob.kind) {
     case KOS_OB_EXCEPTION:
-      Py_XDECREF(deliver);
       if (ev == KOS_XFER_EVENT_NONE || ev == KOS_XFER_EVENT_RAISE) {
         /* the leave that ran under this exception is done, or died:
            propagation continues, chained under whatever superseded it */
@@ -1907,7 +1893,6 @@ static KosOpResult kos_dyn_unlink_top_take(
       return EVAL_NORMAL();
 
     case KOS_OB_RETURN:
-      Py_XDECREF(deliver);
       if (ev != KOS_XFER_EVENT_NONE) {
         /* a raise or a transfer crossed the return: it is void */
         kos_dyn_ob_clear(&ob);
@@ -1924,22 +1909,20 @@ static KosOpResult kos_dyn_unlink_top_take(
       return EVAL_NORMAL();
 
     case KOS_OB_VALUE:
-      Py_XDECREF(deliver);
       deliver = ob.u.value;
       break;
+
+    case KOS_OB_SWALLOWED:
+      /* __exit__ consumed the raise: None stands in for the body value
+         at the with's resume pc, whatever event brought the raise */
+      if (KosEvalState_StackPushRef(es, Py_None) < 0)
+        return EVAL_RAISE();
+      return EVAL_NORMAL();
 
     default:
       break;
   }
 
-  if (swallowed) {
-    /* __exit__ consumed the raise: None stands in for the body value
-       at the with's resume pc, whatever event brought the raise */
-    Py_XDECREF(deliver);
-    if (KosEvalState_StackPushRef(es, Py_None) < 0)
-      return EVAL_RAISE();
-    return EVAL_NORMAL();
-  }
   if (deliver) {
     if (ev != KOS_XFER_EVENT_NONE) {
       /* a return, raise, or transfer crossed the extent: the body

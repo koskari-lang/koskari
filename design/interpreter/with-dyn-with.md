@@ -218,7 +218,7 @@ when it completes; that value must **not** become the with-expression value.
 
 - **Sync completion (r==0):** The awaitable completed in one step, so the exit
   result was pushed. The node's leave settles it at once
-  (`kos_dyn_extent_settle` pops it and sets `swallowed`), and the unlink
+  (`kos_dyn_extent_settle` pops it; a swallow leaves a SWALLOWED obligation), and the unlink
   (`kos_dyn_unlink_top`) drops the owned segment, pops the WITH node, sets
   the frame PC to `resume_pc`, and pushes `None`.
 - **Suspend:** The leave answers AWAIT; the node stays on the chain in

@@ -49,7 +49,6 @@ static KosDynWith *kos_dyn_with_allocate(
   KosDynWith_NAME(node) = name;
   KosDynWith_RESUME_PC(node) = resume_pc;
   KosDynWith_OB(node)->kind = KOS_OB_NONE;
-  KosDynWith_SWALLOWED(node) = 0;
 
   /* Single-shot: the exit-done bit lives in the node's own shot field
      until a continuation clones the node; the clone then makes the
@@ -138,7 +137,6 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
     Py_INCREF(KosDynWith_NAME(node));
   KosDynWith_RESUME_PC(node) = KosDynWith_RESUME_PC(src);
   KosDynWith_OB(node)->kind = KOS_OB_NONE;
-  KosDynWith_SWALLOWED(node) = 0;
   return node;
 }
 
@@ -191,7 +189,8 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_uint(data, "resume_pc", KosDynWith_RESUME_PC(with_node)) < 0)
     return -1;
-  if (snapshot_set_int(data, "swallowed", KosDynWith_SWALLOWED(with_node)) < 0)
+  if (snapshot_set_int(data, "swallowed",
+      KosDynWith_OB(with_node)->kind == KOS_OB_SWALLOWED) < 0)
     return -1;
   if (snapshot_set_int(data, "obligation",
       (int) KosDynWith_OB(with_node)->kind) < 0)
@@ -294,7 +293,7 @@ static int kos_dyn_with_bind_entered(KosEvalState *es, KosDynWith *node) {
 /**
    Classify __exit__'s result against the triple parked on the node. A
    truthy result against an exception swallows it: the triple is
-   released and the node remembers to deliver None. Any other outcome
+   released and the node now owes None in its place. Any other outcome
    leaves the triple where it is for the unlink to re-raise.
 */
 static void kos_dyn_with_classify_exit(
@@ -308,7 +307,7 @@ static void kos_dyn_with_classify_exit(
   if (handling && PyObject_IsTrue(result)) {
     PyErr_Clear();
     kos_dyn_ob_clear(ob);
-    KosDynWith_SWALLOWED(node) = 1;
+    ob->kind = KOS_OB_SWALLOWED;
     if (KosEvalState_FRAME(es))
       KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
   } else if (! handling) {
