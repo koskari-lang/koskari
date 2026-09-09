@@ -9,7 +9,7 @@ This directory documents the runtime API of Koskari, including types, functions,
 - **builtins.md**: Built-in functions and utilities
 - **defer-coroutine.md**: DeferCoroutine (`defer`) — single-shot await-handle, excluded from implicit auto-await
 - **async-form.md**: **`async`** macro — concurrent fan-out/join on the asyncio loop (`defer` + `create-task` + `gather`; streaming **`each`** variant)
-- **special-call-protocol.md**: Special call protocol (kos call) — install and tail_install slots, invocation entry points (kos_callable_call, kos_callable_tail_call), per-type behavior (Function, Expression, Continuation, Apply), native handler as frame evaluator, transfer plan model, flattening apply
+- **special-call-protocol.md**: Special call protocol (kos call) -- install and tail_install slots, invocation entry points (kos_callable_call, kos_callable_tail_call), per-type behavior (Function, Expression, Continuation, Apply), native handler as frame evaluator, transfer goal model, flattening apply
 - **runtime.md**: Runtime system and module loading
 - **OBJECT-MODEL.md**: Koskari object model (KosType, class creation, synchronous `kostype_tp_call`, composite metaclass bases, method binding)
 - **dunder-adapter.md**: Dunder adapter design — demand_sync and demand_next for Python slot interop, no-suspend sync bridge, slot wiring for KosType, `__init__` via `kostype_tp_call` (§5.4)

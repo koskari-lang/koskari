@@ -15,20 +15,15 @@ KosDynWind *kos_dynwind_new(
   if (! wind)
     return NULL;
 
-  uint32_t wind_caps = KOS_DYN_CAP_CONTROL_HOOK;
-  if (after_thunk)
-    wind_caps |= KOS_DYN_CAP_NEEDS_UNWIND_ACTION;
-  if (before_thunk)
-    wind_caps |= KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION;
-  if (before_thunk || after_thunk)
-    wind_caps |= KOS_DYN_CAP_AWAITS_THUNK_RESULT;
-  kos_dynnode_init(wind, KOS_DYN_WIND, parent, wind_caps);
+  kos_dynnode_init(wind, KOS_DYN_WIND, parent,
+                   KOS_DYN_CAP_CONTROL_HOOK | KOS_DYN_CAP_HOLDS_OBLIGATION);
   KosDynWind_BEFORE_THUNK(wind) = before_thunk;
   if (before_thunk)
     Py_INCREF(before_thunk);
   KosDynWind_AFTER_THUNK(wind) = after_thunk;
   if (after_thunk)
     Py_INCREF(after_thunk);
+  KosDynWind_OB(wind)->kind = KOS_OB_NONE;
   KosDynWind_ENTERED(wind) = 0;
   KosDynWind_PHASE(wind) = KOS_WIND_PHASE_IDLE;
   return wind;
@@ -41,6 +36,17 @@ KosDynWind *kos_dynwind_new(
 KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   if (! wind)
     return NULL;
+
+  /* A thunk in flight, or a value, exception or return parked for its
+     completion, belongs to this node's one run and to no template. */
+  if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
+      || KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER
+      || KosDynWind_OB(wind)->kind != KOS_OB_NONE) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cannot capture a continuation across a dyn-wind whose"
+                    " thunk is in flight");
+    return NULL;
+  }
 
   KosDynWind *clone = kos_dynnode_alloc();
   if (! clone)
@@ -55,7 +61,7 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   KosDynWind_AFTER_THUNK(clone) = KosDynWind_AFTER_THUNK(wind);
   if (KosDynWind_AFTER_THUNK(clone))
     Py_INCREF(KosDynWind_AFTER_THUNK(clone));
-  KosDynWind_BODY_RESULT(clone) = NULL;
+  KosDynWind_OB(clone)->kind = KOS_OB_NONE;
   KosDynWind_ENTERED(clone) = 0;
   KosDynWind_PHASE(clone) = KOS_WIND_PHASE_IDLE;
   return clone;
@@ -73,8 +79,7 @@ void kos_dynwind_free(KosDynWind *wind) {
   KosDynWind_BEFORE_THUNK(wind) = NULL;
   Py_XDECREF(KosDynWind_AFTER_THUNK(wind));
   KosDynWind_AFTER_THUNK(wind) = NULL;
-  Py_XDECREF(KosDynWind_BODY_RESULT(wind));
-  KosDynWind_BODY_RESULT(wind) = NULL;
+  kos_dyn_ob_clear(KosDynWind_OB(wind));
   kos_dynnode_return_to_freelist(wind);
 }
 
@@ -91,233 +96,155 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
   if (snapshot_set_obj(data, "after_thunk",
       KosDynWind_AFTER_THUNK((KosDynWind *) node)) < 0)
     return -1;
-  if (snapshot_set_obj(data, "body_result",
-      KosDynWind_BODY_RESULT((KosDynWind *) node)) < 0)
+  if (snapshot_set_int(data, "obligation",
+      (int) KosDynWind_OB((KosDynWind *) node)->kind) < 0)
     return -1;
   return 0;
 }
 
 
 /**
-   Run before-thunk (enter path); may suspend async. Callers: kos_dyn_wind,
-   install wind span.
-*/
-int kos_dyn_wind_wind(KosEvalState *es, KosDynWind *node) {
-  if (! node || ! KosDynWind_BEFORE_THUNK(node)) {
-    return 0;
-  }
+   Fire thunk with no arguments and classify what happened. The phase
+   has already been set to the pending value by the caller.
 
-  if (KosDynWind_ENTERED(node)) {
-    return 0;
+   :return: EVAL_RAISE; EVAL_AWAIT with the awaitable; EVAL_REPROLOGUE
+     when the thunk's frame is installed; EVAL_NORMAL when the thunk ran
+     to completion in place, its result already dropped
+*/
+static KosOpResult kos_dyn_wind_fire(KosEvalState *es, PyObject *thunk) {
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
+  KosOpResult wr = KosEvalState_CallNoArgs(es, thunk, 0);
+
+  if (wr.kind == KOS_RES_RAISE)
+    return wr;
+  if (wr.kind == KOS_RES_AWAIT)
+    return wr;
+  if (wr.kind != KOS_RES_NORMAL || KosEvalState_FRAME(es) != caller)
+    return EVAL_REPROLOGUE();
+
+  /* completed in place: the result is on the live block and is not
+     the wind's business */
+  if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
+      && KosSegment_LEN(*KosEvalState_BLOCK(es))) {
+    PyObject *val = KosEvalState_StackPopRef(es);
+    if (! val)
+      return EVAL_RAISE();
+    Py_DECREF(val);
+  }
+  return EVAL_NORMAL();
+}
+
+
+/**
+   Enter: run the before-thunk once. See the extent contract in
+   dynchain.h.
+*/
+static KosOpResult kos_dyn_wind_enter(KosEvalState *es, KosDynWind *node) {
+
+  if (KosDynWind_ENTERED(node))
+    return EVAL_NORMAL();
+  if (KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_BEGIN)
+    return EVAL_REPROLOGUE();  /* before-thunk in flight */
+
+  if (! KosDynWind_BEFORE_THUNK(node)) {
+    KosDynWind_ENTERED(node) = 1;
+    return EVAL_NORMAL();
   }
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_BEGIN;
   {
-    KosOpResult wr = KosEvalState_CallNoArgs(es, KosDynWind_BEFORE_THUNK(node), 0);
-    if (wr.kind == KOS_RES_RAISE)
-      return -1;
-    Py_XDECREF(wr.val);  /* drop any AWAIT payload; wind thunk is Koskari-synchronous */
+    KosOpResult wr = kos_dyn_wind_fire(es, KosDynWind_BEFORE_THUNK(node));
+    if (wr.kind != KOS_RES_NORMAL)
+      return wr;
   }
-
-  return KOS_DYN_UNWIND_ASYNC_STARTED;
+  KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_BEGIN;
+  KosDynWind_ENTERED(node) = 1;
+  return EVAL_NORMAL();
 }
 
 
 /**
-   Run after-thunk or push body_result when leaving extent. Callers:
-   kos_dyn_unwind, uninstall_handler.
+   Leave: run the after-thunk once. See the extent contract in
+   dynchain.h. The body result is not delivered here; the unlink does
+   that after the node is gone.
 */
-int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
-  if (! node || ! KosDynWind_ENTERED(node)) {
-    return 0;
+static KosOpResult kos_dyn_wind_leave(
+    KosEvalState *es,
+    KosDynWind *node,
+    KosXferEvent ev) {
+
+  (void) ev;
+
+  switch (KosDynWind_PHASE(node)) {
+    case KOS_WIND_PHASE_POST_AFTER:
+      return EVAL_NORMAL();
+
+    case KOS_WIND_PHASE_PRE_AFTER:
+    case KOS_WIND_PHASE_PRE_BEGIN:
+      /* A thunk in flight sits in a frame above this node. If this
+         node is dyn_top, that frame is gone (it raised, or the walk
+         crossed it) and the thunk is dead: nothing to wait for and,
+         for a before-thunk, never entered. */
+      if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node)
+        return EVAL_REPROLOGUE();
+      KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
+      return EVAL_NORMAL();
+
+    default:
+      break;
   }
 
-  /* After-thunk is already executing (PRE_AFTER); treat the node as already
-     exiting so a nested transfer plan does not re-fire the thunk. */
-  if (KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_AFTER) {
-    return 0;
-  }
-
-  if (! KosDynWind_AFTER_THUNK(node)) {
-    /* No after-thunk: deliver the stored body result and finish
-       uninstall. The wind owns the live segment and is mid-pop, so the
-       result goes to the enclosing owner's segment (parent delivery,
-       through the owning slot supplied by the wind's own unwind
-       cache); pushing onto the live segment would free the value with
-       the node. Walk only on a cache miss (splice-installed node). */
-    PyObject *body_result = KosDynWind_BODY_RESULT(node);
-    KosDynWind_BODY_RESULT(node) = NULL;
-    if (body_result) {
-      KosSegment **slot = KosDynNode_STACK((KosDynNode *) node)
-          ? KosSegment_BACK(KosDynNode_STACK((KosDynNode *) node))
-          : NULL;
-      if (! slot) {
-        KosDynNode *p = KosDynNode_PARENT((KosDynNode *) node);
-        while (p && ! KosDynNode_STACK(p))
-          p = KosDynNode_PARENT(p);
-        slot = p ? &KosDynNode_STACK(p) : NULL;
-      }
-      if (slot) {
-        if (KosStack_PushRef(slot, body_result) < 0) {
-          KosDynWind_BODY_RESULT(node) = body_result;
-          return -1;
-        }
-      }
-      Py_DECREF(body_result);
-    }
-    return 0;
+  if (! KosDynWind_ENTERED(node) || ! KosDynWind_AFTER_THUNK(node)) {
+    KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
+    return EVAL_NORMAL();
   }
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_AFTER;
   {
-    PyObject *args = PyTuple_New(0);
-    if (! args) {
-      return -1;
-    }
-    KosOpResult wr = KosEvalState_CallArgs(es, KosDynWind_AFTER_THUNK(node), args, NULL, 0);
-    Py_DECREF(args);
-    if (wr.kind == KOS_RES_RAISE)
-      return -1;
-    Py_XDECREF(wr.val);  /* drop any AWAIT payload; wind thunk is Koskari-synchronous */
+    KosOpResult wr = kos_dyn_wind_fire(es, KosDynWind_AFTER_THUNK(node));
+    if (wr.kind != KOS_RES_NORMAL)
+      return wr;
   }
-  return KOS_DYN_UNWIND_ASYNC_STARTED;
+  KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
+  return EVAL_NORMAL();
 }
 
 
 /**
-   Resume after async before/after thunk: advance phase, pop junk, maybe unlink.
+   The pending thunk returned; its result is the top of the live block.
 */
-static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) {
+static int kos_dyn_wind_settle(KosEvalState *es, KosDynWind *node) {
 
-  /* Only a thunk's own return has work here; a call returning into the
-     wind body between the thunks leaves the phase alone. */
-  if (KosDynWind_PHASE(wind) != KOS_WIND_PHASE_PRE_BEGIN
-      && KosDynWind_PHASE(wind) != KOS_WIND_PHASE_PRE_AFTER)
+  if (KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_BEGIN
+      && KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_AFTER)
     return 0;
 
-  /* A nested transfer can replace the chain while a wind thunk is still
-     unwinding; ignore stale control-returned for a detached wind node. */
-  if (! kos_dyn_reaches(es, (KosDynNode *) wind))
-    return 0;
-
-  if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-             ? *KosEvalState_BLOCK(es)
-             : NULL)) {
-    return 0;
-  }
-
-  if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN) {
-    if (! KosDynWind_BEFORE_THUNK(wind))
-      return 0;
-
-    if (KosEvalState_PLAN(es)) {
-      KosTransferPlan *plan = KosEvalState_PLAN(es);
-      size_t idx = KosTransferPlan_ACTION_INDEX(plan);
-      if (idx < KosTransferPlan_ACTION_COUNT(plan)) {
-        KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[idx];
-        if (KosTransferAction_STEP(a) != KOS_XFER_EXTENT_ACTION
-            || KosTransferAction_EXTENT_NODE(a) != (KosDynNode *) wind
-            || KosTransferAction_EXTENT_PHASE(a) != KOS_XFER_EXTENT_PHASE_WIND)
-          return 0;
-      }
-    }
-
-    KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_BEGIN;
-    KosDynWind_ENTERED(wind) = 1;
-    if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-        && KosSegment_LEN(*KosEvalState_BLOCK(es))) {
-      PyObject *val = KosEvalState_StackPopRef(es);
-      if (val)
-        Py_DECREF(val);
-    }
-    /* The EXTENT_ACTION that fired this before-thunk returned
-       KOS_XFER_SUSPENDED_AWAIT without advancing action_index; advance it
-       now that the thunk has completed. */
-    if (KosEvalState_PLAN(es)) {
-      KosTransferPlan *plan = KosEvalState_PLAN(es);
-      size_t idx = KosTransferPlan_ACTION_INDEX(plan);
-      if (idx < KosTransferPlan_ACTION_COUNT(plan)) {
-        KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[idx];
-        if (KosTransferAction_STEP(a) == KOS_XFER_EXTENT_ACTION
-            && KosTransferAction_EXTENT_NODE(a) == (KosDynNode *) wind
-            && KosTransferAction_EXTENT_PHASE(a) == KOS_XFER_EXTENT_PHASE_WIND)
-          KosTransferPlan_ACTION_INDEX(plan)++;
-      }
-    }
-    return 0;
-  }
-  if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER) {
-    /* When a wind thunk tail-invokes a continuation, a new transfer plan
-       replaces the EXTENT_ACTION that started this thunk; defer cleanup
-       until that nested transfer finishes and replans. */
-    if (KosEvalState_PLAN(es)) {
-      KosTransferPlan *plan = KosEvalState_PLAN(es);
-      size_t idx = KosTransferPlan_ACTION_INDEX(plan);
-      if (idx < KosTransferPlan_ACTION_COUNT(plan)) {
-        KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[idx];
-        if (KosTransferAction_STEP(a) != KOS_XFER_EXTENT_ACTION
-            || KosTransferAction_EXTENT_NODE(a) != (KosDynNode *) wind)
-          return 0;
-      }
-    }
-
-    if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-        && KosSegment_LEN(*KosEvalState_BLOCK(es))) {
-      PyObject *thunk_ret = KosEvalState_StackPopRef(es);
-      if (thunk_ret)
-        Py_DECREF(thunk_ret);
-    }
-
-    PyObject *body_result = KosDynWind_BODY_RESULT(wind);
-    KosDynWind_BODY_RESULT(wind) = NULL;
-
-    /* A RAISE parked on the context stash for this wind is re-raised
-       below once cleanup completes so propagation continues. */
-    uint32_t wind_node_id = KosDynNode_NODE_ID((KosDynNode *) wind);
-    int had_park = kos_ctx_exc_stash_top_is(es, wind_node_id);
-
-    KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_AFTER;
-    {
-      KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) wind);
-
-      kos_dyn_commit_dyn_top(es, parent);
-      KosDynNode_PARENT((KosDynNode *) wind) = NULL;
-      kos_dynwind_free(wind);
-    }
-
-    /* The EXTENT_ACTION that fired this after-thunk returned
-       KOS_XFER_SUSPENDED_AWAIT without advancing action_index; advance it
-       now that the thunk has completed. */
-    if (KosEvalState_PLAN(es)) {
-      KosTransferPlan *plan = KosEvalState_PLAN(es);
-      size_t idx = KosTransferPlan_ACTION_INDEX(plan);
-      if (idx < KosTransferPlan_ACTION_COUNT(plan)) {
-        KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[idx];
-        if (KosTransferAction_STEP(a) == KOS_XFER_EXTENT_ACTION
-            && KosTransferAction_EXTENT_NODE(a) == (KosDynNode *) wind
-            && KosTransferAction_EXTENT_PHASE(a) == KOS_XFER_EXTENT_PHASE_UNWIND)
-          KosTransferPlan_ACTION_INDEX(plan)++;
-      }
-    }
-
-    if (had_park) {
-      /* Raise unwind: drop any body result and continue propagating the
-         parked exception now that the after-thunk has run. */
-      Py_XDECREF(body_result);
-      kos_ctx_exc_stash_reraise(es, wind_node_id);
+  if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
+      && KosSegment_LEN(*KosEvalState_BLOCK(es))) {
+    PyObject *val = KosEvalState_StackPopRef(es);
+    if (! val)
       return -1;
-    }
+    Py_DECREF(val);
+  }
 
-    if (body_result) {
-      if (KosEvalState_StackPushRef(es, body_result) < 0) {
-        Py_DECREF(body_result);
-        return -1;
-      }
-      Py_DECREF(body_result);
-    }
-    return 0;
+  if (KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_BEGIN) {
+    KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_BEGIN;
+    KosDynWind_ENTERED(node) = 1;
+  } else {
+    KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
   }
   return 0;
+}
+
+
+/**
+   The pending thunk died; nothing to take.
+*/
+static void kos_dyn_wind_abort(KosDynWind *node) {
+
+  if (KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_BEGIN
+      || KosDynWind_PHASE(node) == KOS_WIND_PHASE_PRE_AFTER)
+    KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
 }
 
 
@@ -343,27 +270,6 @@ KosDynWind *kos_dyn_push_wind(
 }
 
 
-/**
-   Unlink wind without running full uninstall (legacy fast pop). Prefer
-   kos_dyn_pop_top for extent teardown when thunks must run.
-*/
-int kos_dyn_pop_wind(KosEvalState *es, KosDynWind *wind) {
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) wind) {
-    PyErr_SetString(PyExc_RuntimeError, "wind node is not at top of chain");
-    return -1;
-  }
-  {
-    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) wind);
-
-    kos_dyn_commit_dyn_top(es, parent);
-    KosDynNode_PARENT((KosDynNode *) wind) = NULL;
-    kos_dynwind_free(wind);
-  }
-
-  return 0;
-}
-
-
 /* === GC traversal === */
 
 
@@ -375,8 +281,7 @@ static int dynnode_traverse_wind(KosDynNode *node, visitproc visit, void *arg) {
   KosDynWind *wind = (KosDynWind *) node;
   Py_VISIT(KosDynWind_BEFORE_THUNK(wind));
   Py_VISIT(KosDynWind_AFTER_THUNK(wind));
-  Py_VISIT(KosDynWind_BODY_RESULT(wind));
-  return 0;
+  return kos_dyn_ob_traverse(KosDynWind_OB(wind), visit, arg);
 }
 
 

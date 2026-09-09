@@ -146,6 +146,14 @@ void KosNamespace_TrackChain(PyObject *ns) {
 }
 
 
+int KosNamespace_TraverseUntracked(PyObject *ns, visitproc visit, void *arg) {
+
+  if (ns && KosNamespace_Check(ns) && ! PyObject_GC_IsTracked(ns))
+    return Py_TYPE(ns)->tp_traverse(ns, visit, arg);
+  return 0;
+}
+
+
 PyObject *KosNamespace_Reveal(PyObject *ns) {
   if (likely(ns)) {
     KosNamespace_TrackChain(ns);

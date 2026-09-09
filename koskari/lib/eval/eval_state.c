@@ -35,7 +35,23 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
   if (! KosEvalState_BREAKER(es))
     KosEvalState_BREAKER(es) = &koskari_breaker_always;
 
+  {
+    int limit = Py_GetRecursionLimit();
+    if (limit < 1)
+      limit = 1;
+    else if (limit > KOS_FRAME_DEPTH_MAX)
+      limit = KOS_FRAME_DEPTH_MAX;
+    KosEvalState_RECURSION_LIMIT(es) = (uint16_t) limit;
+  }
+
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_init);
+}
+
+
+int kos_eval_recursion_error(void) {
+  PyErr_SetString(PyExc_RecursionError,
+                  "maximum recursion depth exceeded");
+  return -1;
 }
 
 
@@ -54,11 +70,8 @@ void KosEvalState_ThawFromContext(KosEvalState *es) {
   KosEvalState_DYN_TOP(es) = KosContext_DYN_TOP(ctx);
   KosContext_DYN_TOP(ctx) = NULL;
 
-  KosEvalState_PLAN(es) = KosContext_PLAN(ctx);
-  KosContext_PLAN(ctx) = NULL;
-
-  KosEvalState_PLAN_STACK(es) = KosContext_PLAN_STACK(ctx);
-  KosContext_PLAN_STACK(ctx) = NULL;
+  KosEvalState_GOAL(es) = KosContext_GOAL(ctx);
+  KosContext_GOAL(ctx) = NULL;
 
   KosEvalState_FRAME(es) = KosContext_FRAME_TOP(ctx);
   KosContext_FRAME_TOP(ctx) = NULL;
@@ -121,11 +134,8 @@ void KosEvalState_FreezeToContext(KosEvalState *es) {
   KosContext_DYN_TOP(ctx) = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = NULL;
 
-  KosContext_PLAN(ctx) = KosEvalState_PLAN(es);
-  KosEvalState_PLAN(es) = NULL;
-
-  KosContext_PLAN_STACK(ctx) = KosEvalState_PLAN_STACK(es);
-  KosEvalState_PLAN_STACK(es) = NULL;
+  KosContext_GOAL(ctx) = KosEvalState_GOAL(es);
+  KosEvalState_GOAL(es) = NULL;
 
   KosContext_FRAME_TOP(ctx) = KosEvalState_FRAME(es);
   KosEvalState_FRAME(es) = NULL;
@@ -139,11 +149,6 @@ void KosEvalState_FreezeToContext(KosEvalState *es) {
   KosEvalState_CODE(es) = NULL;
   (es)->pc = 0;
   (es)->acting_pc = 0;
-
-  if (KosContext_PLAN(ctx))
-    KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
-  else
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
 }
 
 

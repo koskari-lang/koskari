@@ -154,10 +154,10 @@ assume a yielded generator is still on any chain.
 
 ## graft
 
-Transfer-plan vocabulary: splicing a captured chain segment onto
-another chain (the PUSH transfer step; `graft_point_id` locates the
-splice point for delimited continuation invokes). Reference:
-EVALUATOR.md §6.
+Older transfer-plan vocabulary for landing: splicing a cloned chain
+segment onto another chain. Say "land" and "seam": a goal lands its
+target on the seam, the DELIM a delimited invoke pushed or the root for
+an undelimited one. Reference: EVALUATOR.md §6.
 
 ## host (host context)
 
@@ -187,13 +187,23 @@ C code that owned a whole frame on the chain through a static
 `KosNativeProgram` descriptor and a typed-event handler. Replaced by
 resumes (below); the term survives only in archived design notes.
 
-## park (parked exception)
+## obligation
 
-Exception-stash vocabulary: an exception set aside on the context's
-exception stash (`KosContext.exc_stash`) while an asynchronous teardown
-runs, tagged with the responsible node's id and re-raised when control
-returns. Reference: EVALUATOR.md §4.4. Do not use "park" for iteration
-or await suspension; say "suspended" or name the mechanism.
+What a WIND or WITH node owes when it is unlinked, held in the node's
+one `KosObligation` slot: a VALUE (the body result), an EXCEPTION set
+aside while the after thunk or `__exit__` runs, or a RETURN crossing a
+leave in flight. Released at unlink by kind and by event. Reference:
+EVALUATOR.md §6.3, interpreter/extent-wind-unwind.md.
+
+## park (parked obligation, parked goal)
+
+Two uses. An obligation is parked on a node while its after thunk or
+`__exit__` runs (the raise walk parks the exception, the return walk
+the value). A transfer goal is parked on a node whose leave or enter
+handed control to a thunk frame or an awaitable; it acts again only
+when `dyn_top` is back where it was. Reference: EVALUATOR.md §4.4, §6.2.
+Do not use "park" for iteration or await suspension; say "suspended" or
+name the mechanism.
 
 ## provider
 
@@ -232,9 +242,20 @@ instruction (`KosOp.fn`), and control returns to `koskari_eval`'s
 trampoline only on a signal. Requires a compiler with musttail (clang,
 or GCC 15+). Reference: EVALUATOR.md §1.2, §2.5.
 
-## transfer plan
+## seam
 
-The step list a continuation invoke builds and the evaluator drains to
-move execution between chains: unwind actions, segment landings, and
-the final register load, executed iteratively by the eval loop rather
-than recursively. Reference: EVALUATOR.md §6.
+The node a transfer goal leaves down to and lands on: the DELIM a
+delimited invoke pushed (nothing below the invoker leaves), the prompt's
+parent for POP_SHIFT, the root GEN for a foreign cc-unwind, an
+undelimited invoke's lowest common ancestor with the template (matched
+by node id), or NULL when an undelimited invoke's chains share no node
+and the whole chain is replaced. Reference: EVALUATOR.md §6.2, §6.4.
+
+## transfer goal
+
+The record a continuation invoke arms and the evaluator's prologue
+drives to move execution between chains: where control is going (seam,
+target clone, payload, resume pc), never what to do. The driver
+re-derives LEAVING, LANDING, ENTERING, and DELIVERING from the live
+chain on every pass. Replaced the transfer plan's precomputed step list.
+Reference: EVALUATOR.md §6.

@@ -73,7 +73,7 @@ Both adapters operate by **greedily driving the Koskari evaluator until the firs
 
 - Not flattened into the caller's Koskari call chain
 - Discarded after the boundary event
-- Isolated from continuation capture, transfer plans, and resumable state
+- Isolated from continuation capture, transfer goals, and resumable state
 
 This keeps the sync bridge as a host boundary.
 

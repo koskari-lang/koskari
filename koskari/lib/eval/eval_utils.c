@@ -573,7 +573,7 @@ KosOpResult KosEvalState_Call(
                                          nargs, kwnames, 0);
     if (r.kind != KOS_RES_NORMAL)
       return r;
-    if (KosEvalState_PLAN(es))
+    if (KosEvalState_GOAL(es))
       return EVAL_REPROLOGUE();
     if (KosEvalState_FRAME(es)
         && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)))
@@ -983,6 +983,15 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
                  && KosFunction_BIND_SELF_STATE(callable) == 2)) {
         KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
 
+        if (unlikely(kos_eval_check_frame_room(
+                es, KosEvalState_FRAME(es), 1) < 0)) {
+          if (window)
+            kos_stack_drop_noerr_fast(caller_slot, window);
+          if (flags & KOS_CALL_CALLABLE_OWNED)
+            Py_DECREF(callable);
+          return EVAL_RAISE();
+        }
+
         if (likely(cached)) {
           /* Cache hit: steal-bind into the parked namespace first -- on
              failure nothing is stolen and the frame stays parked. */
@@ -1046,6 +1055,13 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
       if (likely(! (flags & KOS_CALL_ARGV_WINDOW)
                  && KosFunction_BIND_SELF_STATE(callable) == 2)) {
         KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
+
+        if (unlikely(kos_eval_check_frame_room(
+                es, KosEvalState_FRAME(es), 1) < 0)) {
+          if (flags & KOS_CALL_CALLABLE_OWNED)
+            Py_DECREF(callable);
+          return EVAL_RAISE();
+        }
 
         if (likely(cached)) {
           for (Py_ssize_t i = 0; i < nargs; i++)
@@ -1352,6 +1368,14 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
   KosCode *code = (KosCode *) KosFunction_CODE(callable);
   KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
   PyObject *frame_ns;
+
+  if (unlikely(kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)) {
+    if (window)
+      kos_stack_drop_noerr_fast(caller_slot, window);
+    if (flags & KOS_CALL_CALLABLE_OWNED)
+      Py_DECREF(callable);
+    return EVAL_RAISE();
+  }
 
   if (likely(cached)) {
     /* Cache hit: steal-bind into the parked namespace first -- on

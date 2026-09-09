@@ -20,7 +20,7 @@ exception). Uses PUSH_DYN_WITH/POP_DYN_WITH. Participates in transfer plans.
 
 import pytest
 
-from . import SpecialsTestCase
+from . import Park, SpecialsTestCase
 
 
 pytestmark = pytest.mark.phase_specials
@@ -149,6 +149,113 @@ class TestDynWithSpecial(SpecialsTestCase):
         self.assertTrue(mgr.exited)
 
 
+class TestDynWithShiftUnwind(SpecialsTestCase):
+
+    async def test_shift_result_delivery_runs_exit_once(self):
+        """
+        a shift body completing inside a dyn-with delivers its value to
+        the reset and runs the manager's __exit__ exactly once
+        """
+
+        events = []
+
+        class Mgr:
+
+            def __enter__(self):
+                events.append("enter")
+                return self
+
+            def __exit__(self, typ, val, tb):
+                events.append("exit")
+                return False
+
+        src_str = """
+        (reset
+          (dyn-with [(call make_mgr)]
+            (shift k 5)))
+        """
+        expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["enter", "exit"])
+
+
+class TestDynWithShiftSuspendedExit(SpecialsTestCase):
+
+    def make_manager(self, events):
+        class Mgr:
+
+            async def __aenter__(self):
+                events.append("aenter")
+                return self
+
+            async def __aexit__(self, typ, val, tb):
+                events.append("aexit-start")
+                await Park()
+                events.append("aexit-done")
+                return False
+
+        return Mgr
+
+
+    async def test_shift_result_delivery_awaits_exit(self):
+        """
+        a shift body completing inside a dyn-with whose __aexit__
+        suspends parks the transfer; the second send finishes __aexit__
+        and delivers the shift result to the reset
+        """
+
+        events = []
+        src_str = """
+        (lambda []
+          (reset
+            (dyn-with [(call make_mgr)]
+              (shift k 5))))
+        """
+        expr, mod = self.compile_expr(
+            src_str, make_mgr=self.make_manager(events))
+        fn = await expr()
+
+        coro = fn()
+        self.assertIsInstance(coro.send(None), Park)
+        self.assertEqual(events, ["aenter", "aexit-start"])
+        with self.assertRaises(StopIteration) as caught:
+            coro.send(None)
+        self.assertEqual(caught.exception.value, 5)
+        self.assertEqual(events, ["aenter", "aexit-start", "aexit-done"])
+
+
+    async def test_abandoned_mid_transfer_collects(self):
+        """
+        a coroutine parked in a transfer's __aexit__ that refers back to
+        itself through the manager is a cycle, and is collected
+        """
+
+        import gc
+        import weakref
+
+        events = []
+        Mgr = self.make_manager(events)
+        src_str = """
+        (lambda []
+          (reset
+            (dyn-with [(call make_mgr)]
+              (shift k 5))))
+        """
+        expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
+        fn = await expr()
+
+        coro = fn()
+        self.assertIsInstance(coro.send(None), Park)
+        mgr = [m for m in gc.get_referrers(Mgr) if isinstance(m, Mgr)][0]
+        mgr.coro = coro
+        alive = weakref.ref(mgr)
+
+        del coro, mgr, fn, expr, mod
+        gc.collect()
+        self.assertIsNone(alive())
+
+
 class TestDynWithTransferWindReproducer(SpecialsTestCase):
     """
     Minimal reproducer: continuation invoke into a dyn-with body should
@@ -238,7 +345,8 @@ class TestDynWithTransferFailures(SpecialsTestCase):
         __aenter__/__aexit__, the inner manager's sync __enter__ raises on
         transfer re-entry (a synchronous plan-step failure).  The abandon
         path must run the outer manager's async __aexit__ to completion
-        before the enclosing try/except catches.
+        before the enclosing try/except catches. The inner manager's
+        __exit__ does not run: its __enter__ never returned.
         """
 
         import asyncio
@@ -336,7 +444,6 @@ class TestDynWithTransferFailures(SpecialsTestCase):
             "invoke-saved-py saved=True",
             "aenter",
             "enter-1",
-            "exit",
             "aexit-start-1",
             "aexit-done-1",
             "caught",
@@ -345,6 +452,56 @@ class TestDynWithTransferFailures(SpecialsTestCase):
         ])
         self.assertEqual(enter_count[0], 2)
         self.assertEqual(aexit_count[0], 2)
+
+
+class TestReenteredWithBindsItsOwnScope(SpecialsTestCase):
+    """
+    When a transfer re-enters a dyn-with, __enter__ runs while the
+    landed frame above the with is current. The result must bind into
+    the with's own scope, the namespace the with was pushed in, not the
+    namespace that happens to be live at dyn_top.
+    """
+
+    async def test_reentered_with_binds_manager_in_its_own_frame(self):
+        managers = []
+
+        class Mgr:
+            def __enter__(self):
+                managers.append(self)
+                return self
+            def __exit__(self, *exc):
+                return False
+
+        saved = []
+        helper_expr, mod = self.compile_expr(
+            "(lambda [] (let/cc k (begin (call stash k) 0)))",
+            stash=saved.append)
+        helper = await helper_expr()
+
+        src_str = """
+        (let [[n 0]]
+          (begin
+            (dyn-with [x (call mgr)]
+              (begin
+                (call helper)
+                (setq n (+ n 1))
+                (call record x)))
+            (call record "after-with")
+            (cond ((== n 1) (call (call take) 0)) (else: nil))
+            (call record "after-cond")
+            n))
+        """
+        log = []
+        expr, mod = self.compile_expr(
+            src_str, mgr=Mgr, helper=helper, record=log.append,
+            take=lambda: saved[-1])
+        result = await expr()
+        self.assertEqual(result, 2)
+        self.assertEqual(len(managers), 2)
+        self.assertEqual(
+            log,
+            [managers[0], "after-with", managers[1], "after-with",
+             "after-cond"])
 
 
 # The end.

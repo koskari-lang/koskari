@@ -282,92 +282,12 @@ static int test_chain_clone_segment(void) {
 }
 
 
-/* === LCA computation tests === */
-
-
-static int test_compute_lca(void) {
-    /* Test LCA computation between two chains */
-    KosDynPrompt *root = kos_dynprompt_new(NULL, 0);
-    KosDynPrompt *a1 = kos_dynprompt_new((KosDynNode *) root, 1);
-    KosDynPrompt *a2 = kos_dynprompt_new((KosDynNode *) a1, 2);
-    KosDynPrompt *b1 = kos_dynprompt_new((KosDynNode *) root, 3);
-    KosDynPrompt *b2 = kos_dynprompt_new((KosDynNode *) b1, 4);
-
-    TEST_ASSERT_NOT_NULL(root, "create root");
-    TEST_ASSERT_NOT_NULL(a2, "create a2");
-    TEST_ASSERT_NOT_NULL(b2, "create b2");
-
-    /* LCA of a2 and b2 should be root */
-    KosDynNode *lca = kos_dyn_find_lca((KosDynNode *) a2, (KosDynNode *) b2, 0);
-    TEST_ASSERT_SAME(lca, root, "LCA is root");
-
-    /* LCA of a2 and a1 should be a1 */
-    lca = kos_dyn_find_lca((KosDynNode *) a2, (KosDynNode *) a1, 0);
-    TEST_ASSERT_SAME(lca, a1, "LCA of a2 and a1 is a1");
-
-    /* Free all nodes */
-    kos_dynprompt_free(a2);
-    kos_dynprompt_free(a1);
-    kos_dynprompt_free(b2);
-    kos_dynprompt_free(b1);
-    kos_dynprompt_free(root);
-
-    return 0;
-}
-
-
 /* === Continuation tests === */
 
 
 static int test_continuation_free_null(void) {
     /* Test that freeing NULL continuation doesn't crash */
     kos_continuation_free(NULL);
-    return 0;
-}
-
-
-/* === Transfer plan tests === */
-
-
-static int test_transfer_plan_free_null(void) {
-    /* Test that freeing NULL plan doesn't crash */
-    kos_free_transfer_plan(NULL);
-    return 0;
-}
-
-
-static int test_transfer_plan_free_with_inject_exc_type(void) {
-    /*
-       Build a transfer plan with INJECT action where exc_type is set
-       (is_throw=1), then free before completion. Verifies exc_type
-       is DECREF'd and no leak.
-    */
-    PyObject *ns = PyDict_New();
-    TEST_ASSERT_NOT_NULL(ns, "create namespace dict");
-
-    KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
-    TEST_ASSERT_NOT_NULL(frame, "create frame");
-
-    KosContext *ctx = KosContext_New(frame);
-    TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-    KosEvalState es;
-    KosEvalState_Init(&es, ctx);
-
-    PyObject *value = PyLong_FromLong(42);
-    TEST_ASSERT_NOT_NULL(value, "create value for throw");
-
-    KosTransferPlan *plan = NULL;
-    int res = kos_dyn_plan_transfer(&es, (KosDynNode *) frame, value, 1, 0,
-                                      &plan);
-    Py_DECREF(value);
-    TEST_ASSERT(res == 0, "kos_dyn_plan_transfer succeeded");
-    TEST_ASSERT_NOT_NULL(plan, "plan allocated");
-
-    kos_free_transfer_plan(plan);
-
-    KosContext_Free(ctx);
-
     return 0;
 }
 
@@ -499,11 +419,20 @@ static int test_dynwith_free_exc_unconditional(void) {
     TEST_ASSERT_NOT_NULL(with_node, "push WITH provisional");
 
     KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-    KosDynWith_EXC_TYP(with_node) = PyLong_FromLong(200004);
-    KosDynWith_EXC_VAL(with_node) = PyLong_FromLong(200005);
-    KosDynWith_EXC_TB(with_node) = PyLong_FromLong(200006);
+    /* an exception parked on the node resumes propagating when the node
+       is unlinked normally: the pop answers -1 with it pending, and the
+       three references end up owned by the error indicator */
+    TEST_ASSERT(kos_dyn_ob_park_exception(
+        (KosDynNode *) with_node,
+        Py_NewRef(PyExc_ValueError),
+        PyUnicode_FromString("parked"),
+        NULL) == 0,
+        "park exception on WITH");
 
-    TEST_ASSERT(kos_dyn_pop_with(&es, with_node) == 0, "pop WITH");
+    TEST_ASSERT(kos_dyn_pop_with(&es, with_node) == -1,
+        "pop WITH re-raises the parked exception");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "parked exception pending");
+    PyErr_Clear();
 
     KosEvalState_FreezeToContext(&es);
     KosContext_Free(ctx);
@@ -611,15 +540,8 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_chain_free);
     RUN_TEST(test_chain_clone_segment);
 
-    /* LCA tests */
-    RUN_TEST(test_compute_lca);
-
     /* Continuation tests */
     RUN_TEST(test_continuation_free_null);
-
-    /* Transfer plan tests */
-    RUN_TEST(test_transfer_plan_free_null);
-    RUN_TEST(test_transfer_plan_free_with_inject_exc_type);
 
     /* GEN and payload cleanup tests */
     RUN_TEST(test_dyngen_free_disposes_active);

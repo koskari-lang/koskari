@@ -27,32 +27,6 @@
 /* --- Transfer plan and delimited return --- */
 
 /**
-  Clear the context's transfer plan and free it.  Plan pointer is nulled
-  before freeing so any re-entrant eval (e.g. from Py_XDECREF(continuation_ref)
-  triggering Python dealloc/__del__) does not see the plan while it is freed.
-*/
-static void KosEvalState_DisarmTransferPlan(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosTransferPlan *p = KosEvalState_PLAN(es);
-  KosEvalState_PLAN(es) = NULL;
-  KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
-  kos_free_transfer_plan(p);
-}
-
-
-void KosEvalState_SetPendingReturn(
-    KosEvalState *es,
-    PyObject *val,
-    int to_parent) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  KosContext_PENDING_RETURN_VALUE(ctx) = val;
-  KosContext_PENDING_RETURN_TO_PARENT(ctx) = to_parent;
-}
-
-
-/**
   Consume a pending KOS_INJECT_THROW: ownership of both refs transfers
   to the caller (slots are nulled without decref).
 
@@ -87,6 +61,12 @@ int KosEvalState_SetFrameCodeAndNamespace(
   Py_XINCREF(code);
   Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
   KosDynFrame_CODE(frame) = code;
+  /* A placeholder became a code frame introducing ns, or a tail reset
+     is being refilled: the cap follows the code, as at construction. */
+  if (code)
+    KosDynNode_CAPS(frame) |= KOS_DYN_CAP_OWNS_NS;
+  else
+    KosDynNode_CAPS(frame) &= ~KOS_DYN_CAP_OWNS_NS;
   if (KosEvalState_FRAME(es) == frame) {
     KosEvalState_NAMESPACE(es) = ns;
     KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
@@ -159,195 +139,25 @@ KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es) {
 }
 
 
-void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosTransferPlan *old = KosEvalState_PLAN(es);
-
-  if (old)
-    kos_free_transfer_plan(old);
-  KosEvalState_PLAN(es) = plan;
-  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
-}
-
-
-static inline int KosEvalState_HasActiveTransferPlan(const KosEvalState *es) {
-
-  if (! es)
-    return 0;
-  return KosEvalState_PLAN(es) != NULL;
-}
-
-
 /**
-  True when the current (failed) plan step is a KosDynCCRaise sentinel
-  re-emit from kos_dyn_plan_cc_unwind (foreign apply signal delivery).
+  Drive the armed transfer goal as far as the chain allows and route its
+  answer: a step failure enters the raise ingress, an awaitable is tagged
+  for the driver, and a foreign cc-unwind's boundary raise goes back as
+  it stands.
+
+  :return: EVAL_NORMAL when no goal remains or the goal is parked;
+           EVAL_REPROLOGUE when a leave or enter installed a frame;
+           EVAL_AWAIT / EVAL_RAISE / EVAL_FATAL otherwise
 */
-static int xfer_plan_step_is_cc_raise_reemit(KosEvalState *es) {
+static KosOpResult kos_eval_drain_goal(KosEvalState *es) {
 
-  KosTransferPlan *plan = KosEvalState_PLAN(es);
-  if (! plan)
-    return 0;
+  int boundary = 0;
+  KosOpResult r = kos_xfer_goal_drive(es, &boundary);
 
-  size_t idx = KosTransferPlan_ACTION_INDEX(plan);
-  if (idx >= KosTransferPlan_ACTION_COUNT(plan))
-    return 0;
-
-  KosTransferAction *action = &KosTransferPlan_ACTIONS(plan)[idx];
-  if (KosTransferAction_STEP(action) != KOS_XFER_EXTENT_ACTION)
-    return 0;
-
-  KosDynNode *node = KosTransferAction_EXTENT_NODE(action);
-  return node && KosDynNode_IS_CC_RAISE(node);
+  if (boundary)
+    return r;
+  return kos_eval_walk_outcome(es, r);
 }
 
 
-/**
-  Foreign cc-unwind sentinel step: inject traceback and disarm nest.
-  Not a failed transfer; do not route through process_raise (a local
-  handler must not swallow another context's continuation signal).
-
-  :return: EVAL_RAISE with PyErr set
-*/
-static KosOpResult xfer_emit_cc_unwind_signal(KosEvalState *es) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  kos_eval_prepare_boundary_raise(ctx, es);
-  kos_abandon_transfer_nest(es);
-  return EVAL_RAISE();
-}
-
-
-/**
-  Run the current transfer plan to completion.  Step failures route
-  through process_raise (the unified RAISE ingress), except the foreign
-  cc-unwind sentinel re-emit and a pending KoskariContinuationApply
-  between drain steps (expected in-flight state; keep stepping).
-
-  :return: EVAL_NORMAL on success (plan cleared or suspended on await),
-           EVAL_REPROLOGUE if the plan was abandoned and a local handler
-           was applied,
-           EVAL_AWAIT if abandonment started an async unwind (suspension
-           tagged; val is the awaitable),
-           EVAL_RAISE / EVAL_FATAL if a step failed with no handler
-*/
-static KosOpResult run_transfer_plan_to_completion(KosEvalState *es) {
-
-  while (KosEvalState_PLAN(es)) {
-    if (PyErr_Occurred()) {
-      if (! (KoskariContinuationApply
-             && PyErr_ExceptionMatches(KoskariContinuationApply))) {
-        SAY("[eval] transfer drain with pending PyErr -> process_raise\n");
-        return process_raise(es);
-      }
-    }
-
-    SAYF("[eval] transfer step %zu/%zu\n",
-         (size_t) KosTransferPlan_ACTION_INDEX(KosEvalState_PLAN(es)),
-         (size_t) KosTransferPlan_ACTION_COUNT(KosEvalState_PLAN(es)));
-    int plan_res = kos_run_transfer_step(es);
-
-    if (plan_res < 0) {
-      if (xfer_plan_step_is_cc_raise_reemit(es)) {
-        SAY("[eval] cc-unwind sentinel re-emit -> raise\n");
-        return xfer_emit_cc_unwind_signal(es);
-      }
-      SAY("[eval] transfer step failed -> process_raise\n");
-      return process_raise(es);
-    }
-
-    if (plan_res == KOS_XFER_SUSPENDED_AWAIT) {
-      SAY("[eval] transfer step suspended on await\n");
-      /* do not clear plan; driver will resume and feed inject */
-      return EVAL_NORMAL();
-    }
-
-    if (plan_res == 0)
-      continue;
-
-    SAYF("[eval] transfer complete dyn_top=%p\n",
-         (void *) KosEvalState_DYN_TOP(es));
-    KosEvalState_DisarmTransferPlan(es);
-
-    if (! KosEvalState_PLAN_STACK(es))
-      break;
-
-    /* An outer transfer was suspended when a wind thunk invoked a nested
-       continuation.  That inner transfer just completed.  Rebuild a fresh
-       plan from the current chain position to the outer plan's
-       original_target using kos_dyn_plan_direct_install, then continue
-       draining the new plan. */
-    kos_resume_transfer_plan(es);
-    {
-      KosTransferPlan *outer = KosEvalState_PLAN(es);
-
-      if (kos_xfer_plan_is_delimited_push(outer)) {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "nested continuation invoke during an active"
-                        " delimited transfer is not supported");
-        return process_raise(es);
-      }
-
-      size_t outer_ac = KosTransferPlan_ACTION_COUNT(outer);
-      KosTransferAction *inject_a =
-          &KosTransferPlan_ACTIONS(outer)[outer_ac - 1];
-      KosDynNode *target = KosTransferPlan_ORIGINAL_TARGET(outer);
-      PyObject *inject_val = KosTransferAction_INJECT_VALUE(inject_a);
-      int inject_throw = KosTransferAction_INJECT_IS_THROW(inject_a);
-      uint32_t rpc = KosTransferPlan_RESUME_PC(outer);
-      KosSegment *rstack = KosTransferPlan_RESUME_STACK(outer);
-      uint32_t graft_id = KosTransferPlan_GRAFT_POINT_ID(outer);
-      KosDynNode *target_keep = NULL;
-
-      Py_XINCREF(inject_val);
-      KosTransferPlan_RESUME_STACK(outer) = NULL;
-
-      if (target) {
-        KosDynNode *bottom = target;
-        KosDynNode *stop;
-
-        while (bottom && KosDynNode_PARENT(bottom))
-          bottom = KosDynNode_PARENT(bottom);
-        stop = bottom ? KosDynNode_PARENT(bottom) : NULL;
-        target_keep = kos_dyn_clone_segment(target, stop);
-        if (! target_keep) {
-          Py_XDECREF(inject_val);
-          if (rstack)
-            KosStack_Release(rstack);
-          return process_raise(es);
-        }
-        bottom = target_keep;
-        while (bottom && KosDynNode_PARENT(bottom))
-          bottom = KosDynNode_PARENT(bottom);
-        KosDynNode_PARENT(bottom) = NULL;
-      }
-
-      KosEvalState_DisarmTransferPlan(es);
-
-      if (! target_keep) {
-        Py_XDECREF(inject_val);
-        if (rstack)
-          KosStack_Release(rstack);
-        break;
-      }
-
-      KosTransferPlan *new_plan = NULL;
-      if (kos_dyn_plan_direct_install(es, target_keep, inject_val,
-                                          inject_throw, graft_id,
-                                          &new_plan) < 0) {
-        Py_XDECREF(inject_val);
-        if (rstack)
-          KosStack_Release(rstack);
-        kos_dynchain_free(target_keep, NULL);
-        return process_raise(es);
-      }
-      Py_XDECREF(inject_val);
-      KosTransferPlan_RESUME_PC(new_plan) = rpc;
-      KosTransferPlan_RESUME_STACK(new_plan) = rstack;
-      KosEvalState_ArmTransferPlan(es, new_plan);
-    }
-  }
-
-  return EVAL_NORMAL();
-}
-
-
+// The end.

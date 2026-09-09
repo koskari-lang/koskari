@@ -26,7 +26,7 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
   PyObject *result;
   uint32_t prompt_pop_pc;
   KosDynPrompt *prompt = NULL;
-  KosTransferPlan *plan = NULL;
+  KosXferGoal *goal;
 
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (! top || ! KosDynNode_IS_SHIFT(top)) {
@@ -114,19 +114,17 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
     RESULT_RAISE();
   }
 
-  if (kos_dyn_plan_pop_shift(es, prompt, result, &plan) < 0) {
-    Py_DECREF(result);
-    RESULT_RAISE();
-  }
+  /* Leave everything down to the prompt's parent -- the shift, the
+     region remnants, the prompt itself -- and deliver the handler's
+     value there, at the first instruction after POP_PROMPT. */
+  goal = kos_xfer_goal_new(NULL, KosDynNode_PARENT((KosDynNode *) prompt),
+                           result, 0, prompt_pop_pc + 1, NULL, 0);
   Py_DECREF(result);
-
-  KosTransferPlan_RESUME_PC(plan) = prompt_pop_pc + 1;
-  KosTransferPlan_RESUME_STACK(plan) = NULL;
-  SAYF("[POP_SHIFT] plan ready: RESUME_PC=%u (first instr after POP_PROMPT)",
+  if (! goal)
+    RESULT_RAISE();
+  SAYF("[POP_SHIFT] goal armed: resume_pc=%u (first instr after POP_PROMPT)",
        (unsigned) (prompt_pop_pc + 1));
-
-  KosEvalState_ArmTransferPlan(es, plan);
-  KosTransferPlan_CONTINUATION_REF(plan) = NULL;
+  kos_xfer_goal_arm(es, goal);
 
   return EVAL_REPROLOGUE();
 }

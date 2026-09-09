@@ -265,19 +265,21 @@ nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). See evaluator.md for d
 
 **Dynamic Chain Types** (internal, for evaluator infrastructure):
 - `KosDynNode`: Base structure for dynamic chain nodes
-  - Kinds: FRAME, PROMPT, WIND, TRY, FINALLY, LOOP, FOREACH, NS, CC, CC_RAISE, YIELD_FROM, PARAM, WITH, DYN_WITH, SHIFT
+  - Kinds: FRAME, PROMPT, DELIM, WIND, TRY, FINALLY, LOOP, FOREACH, NS, COLLECT, CC, YIELD_FROM, PARAM, WITH, SHIFT, GEN, NEXT
   - `KosDynNode_IS_REGION` matches TRY, FINALLY, LOOP, FOREACH
 - `KosDynFrame`: Function activation record (code, pc, stack, namespace)
 - `KosDynPrompt`: Delimiter for delimited continuations (prompt_id, handler)
-- `KosDynWind`: Dynamic-wind extent (before/after thunk callables)
+- `KosDynWind`: Dynamic-wind extent (before/after thunk callables, obligation slot)
 - Region kinds (formerly `KosDynRegion` with `KosRegionStyle`; now separate kinds):
   - `KOS_DYN_TRY`: try block (handler_pc, enabled)
   - `KOS_DYN_FINALLY`: finally block (handler_pc, enabled, handling_raise)
   - `KOS_DYN_LOOP`: while loop (break_pc, continue_pc, enabled)
   - `KOS_DYN_FOREACH`: for-each loop (extends LOOP with iter, exhausted, iter_next_else_pc)
- `KosTransferPlan`: Action list for continuation transfer with hook execution.
-  Single allocation (plan + flexible actions array). Default 32 slots; realloc
-  when needed. One cached plan reused on free.
+- `KosXferGoal` (`xfer_goal.h`): where a continuation transfer is going (seam,
+  target clone, payload, resume pc, parked frontier, outer goal); the
+  evaluator's prologue drives it, re-deriving each step from the live chain.
+- `KosObligation`: the slot a WIND or WITH owes at unlink (value, parked
+  exception, or return in flight).
 
 ### Not Migrating
 

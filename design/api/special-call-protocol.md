@@ -15,7 +15,7 @@ This document reflects the **Koskari revision**: defer cookies and dedicated nat
 
 **Partially implemented.**
 
-- **Implemented**: Install slots (`tp_kos_install`, `tp_kos_tail_install`) and unified invocation entry points (`KosEvalState_Call`, `KosEvalState_CallArgs`, `KosEvalState_CallNoArgs`) as the canonical interface; single dispatch for CALL, CALL_NAMES, CALL_STAR, TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; type-slot lookup; install slots return `KosOpResult`; install slots are the only path for KosCallable; non-KosCallable or KosCallable without install use default (Python call + push_or_await); KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply all use install slots; native handler as frame evaluator; resume via `frame->pc` as native label; transfer plan model (context holds plan, eval loop drains it). Apply: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else native frame with handler for `PyObject_Call` + push_or_await. AWAIT uses `kos_await_dispatch` (defer vs push_or_await). TAIL_* opcodes have explicit Plain Python paths (frame pop when parent exists, call, push); they return `EVAL_CONTROL_RETURNED()` when continuing to trigger `kos_dynnode_on_control_returned` for wind thunks.
+- **Implemented**: Install slots (`tp_kos_install`, `tp_kos_tail_install`) and unified invocation entry points (`KosEvalState_Call`, `KosEvalState_CallArgs`, `KosEvalState_CallNoArgs`) as the canonical interface; single dispatch for CALL, CALL_NAMES, CALL_STAR, TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; type-slot lookup; install slots return `KosOpResult`; install slots are the only path for KosCallable; non-KosCallable or KosCallable without install use default (Python call + push_or_await); KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply all use install slots; native handler as frame evaluator; resume via `frame->pc` as native label; transfer goal model (context holds the armed goal, the prologue drives it). Apply: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else native frame with handler for `PyObject_Call` + push_or_await. AWAIT uses `kos_await_dispatch` (defer vs push_or_await). TAIL_* opcodes have explicit Plain Python paths (frame pop when parent exists, call, push); they return `EVAL_CONTROL_RETURNED()` when continuing to trigger `kos_dynnode_on_control_returned` for wind thunks.
 - **Not implemented**: kos next protocol.
 
 ## Purpose
@@ -112,9 +112,9 @@ KosOpResult KosEvalState_Call(
 
 Install returns `KosOpResult` (`EVAL_NORMAL`, `EVAL_AWAIT`, `EVAL_CONTROL_RETURNED`, etc.). On `EVAL_NORMAL` or `EVAL_REPROLOGUE`, the evaluator loop proceeds with the top frame (bytecode dispatch or native handler).
 
-### Transfer plan integration
+### Transfer goal integration
 
-The context holds an active transfer plan (`KosContext_PLAN(ctx)`). At the top of each dispatch loop iteration, the evaluator drains the plan via `run_transfer_plan_to_completion`. An install that builds a transfer plan (e.g. `kos_invoke_continuation(es, …)` for continuations) sets `KosContext_PLAN(ctx) = plan`, syncs eval state from `ctx`, and returns 0. The evaluator loop takes over and drains the plan on the next iteration.
+The context holds the armed transfer goal (`KosContext_GOAL(ctx)`, `KosEvalState_GOAL(es)` while running). At each prologue re-entry the evaluator drives it via `kos_eval_drain_goal`. An install that invokes a continuation (`kos_invoke_continuation(es, ...)`) either resumes in place or arms a goal with `kos_xfer_goal_arm` and answers REPROLOGUE; the prologue takes over and drives the goal.
 
 ---
 
@@ -136,7 +136,7 @@ The following describes how each Koskari callable type implements the install sl
 
 ### DelimitedContinuation / Continuation
 
-- **install**: Build the transfer plan (same-evaluator or cross-evaluator as appropriate). Set `KosContext_PLAN(ctx) = plan`. Return 0. The evaluator loop drains the plan on the next iteration.
+- **install**: Resume in place when the capture-time prompt is live, else clone the template and arm a transfer goal (`kos_xfer_goal_arm`). Answer REPROLOGUE. The prologue drives the goal.
 - **tail_install**: May be NULL (no tail optimization for continuations) or same as install; continuation invocation semantics may not differentiate.
 
 ### Apply
@@ -196,7 +196,7 @@ All CALL-family opcodes reduce to:
 1. Build canonical `(args_tuple, kwds_dict)`.
 2. Invoke `kos_callable_call` (CALL) or `kos_callable_tail_call` (TAIL_CALL), which look up `tp_kos_install` or `tp_kos_tail_install` and dispatch.
 3. Install returns 0 (continue), 1 (suspend), or -1 (error).
-4. Evaluator runs the top frame (bytecode or native) or drains the transfer plan if one was installed.
+4. Evaluator runs the top frame (bytecode or native) or drives the transfer goal if one was armed.
 
 There is no separate "begin argument" channel; argument handling is entirely the responsibility of the install function.
 
@@ -314,7 +314,7 @@ The following points are not implied by "planned work" elsewhere and are worth k
 - **Revision**: Defer cookies and dedicated native frame kind; reuse KosFrame. Frame `pc` is the native resume label; no cookie. Install slots own all frame setup (push or reset).
 - **Two slots**: `tp_kos_install` (non-tail) and `tp_kos_tail_install` (tail). If tail_install is NULL, no tail-call optimization; fallback is push + install.
 - **Unified invocation**: `kos_callable_call` and `kos_callable_tail_call` are the canonical entry points. CALL and TAIL_CALL opcodes invoke them. Install functions perform all frame manipulation and configuration.
-- **Per-type behavior**: Function and Expression push/reset frames with code/ns; Continuation builds a transfer plan, sets `KosContext_PLAN`, returns; Apply delegates when flattening or installs a native frame with handler for Python call. The evaluator loop drains transfer plans at each iteration.
+- **Per-type behavior**: Function and Expression push/reset frames with code/ns; Continuation resumes in place or arms a transfer goal and answers REPROLOGUE; Apply delegates when flattening or installs a native frame with handler for Python call. The prologue drives an armed goal at each re-entry.
 - **Native handler as frame evaluator**: If `top_frame->native_handler != NULL`, that handler is the frame's evaluator. Signals (await result, yield send, nested-call return) are routed to it first. Handler uses `frame->pc` as resume label. Handler not cleared before invocation.
 - **Leaf vs activation mode**: Handlers that never need re-entry (no suspend, no nested-call resume) may run in leaf mode (no activation frame). Handlers that suspend or need nested-call resume must use activation mode (own frame with native_handler).
 - **One pending native continuation per frame**: Non-overwritable; installing when one exists must error/assert. Evaluator clears immediately before invoking.

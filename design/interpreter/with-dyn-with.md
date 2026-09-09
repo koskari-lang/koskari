@@ -6,9 +6,9 @@ opcode contracts, stack/block behaviour, dynamic-chain integration, and
 transfer-plan rules.
 
 **See also:** [OPCODES.md](../OPCODES.md) (opcode reference), [extent-wind-unwind.md](extent-wind-unwind.md)
-(unified wind/unwind model), [execution-invariants.md](execution-invariants.md).
+(extent contract and unlink), [execution-invariants.md](execution-invariants.md).
 
-WITH and DYN_WITH participate in the same extent contract as WIND: both use the unified `kos_extent_run_wind` / `kos_extent_run_unwind` API and the single async return code `KOS_DYN_UNWIND_ASYNC_STARTED` for suspend-during-unwind.
+WITH nodes (single-shot `with` and multi-shot `dyn-with`, told apart by `KOS_DYN_CAP_NEEDS_INSTALL_WIND`) answer the same extent contract as WIND: `kos_dyn_extent_enter` / `kos_dyn_extent_leave` answer NORMAL, REPROLOGUE, AWAIT, or RAISE, `settle` takes a returned `__enter__` / `__exit__` result off the block, and the node leaves the chain only through `kos_dyn_unlink_top`.
 
 
 ## Goal
@@ -40,8 +40,8 @@ them like CALL.
 (dyn-with [name? expr] body...)
 ```
 
-Same as `with`, but the dynamic extent is multi-shot and participates in
-continuation transfer plans.
+Same as `with`, but the dynamic extent is multi-shot and re-enters when a
+transfer goal lands it.
 
 
 ## Bytecode / opcodes
@@ -217,17 +217,19 @@ awaitable (via `push_or_await`). That helper pushes the awaitable's result
 when it completes; that value must **not** become the with-expression value.
 
 - **Sync completion (r==0):** The awaitable completed in one step, so the exit
-  result was pushed. POP_WITH and the unwind path (`dyn_pop_top_with`) call
-  `kos_complete_pending_with_exit(ctx)`, which pops TOS (the exit result),
-  applies swallow logic, drops the owned stack block, pops the WITH node, sets
-  frame PC to `resume_pc`, and pushes `None`.
-- **Suspend:** The evaluator returns `KOS_RES_AWAIT`; the context has
-  `PENDING_WITH_EXIT_*` set (node, typ, val, tb, normal). The driver sends
-  the await result and re-enters `koskari_eval`. On re-entry, **revive** runs
-  before the next opcode: for AWAIT it pushes the send value, then if
-  `PENDING_WITH_EXIT_NODE` is set it calls `kos_complete_pending_with_exit`,
-  which pops TOS (that send value = exit result), applies swallow, drops block,
-  pops node, sets PC, pushes `None`. Execution then continues at the
+  result was pushed. The node's leave settles it at once
+  (`kos_dyn_extent_settle` pops it; a swallow leaves a SWALLOWED obligation), and the unlink
+  (`kos_dyn_unlink_top`) drops the owned segment, pops the WITH node, sets
+  the frame PC to `resume_pc`, and pushes `None`.
+- **Suspend:** The leave answers AWAIT; the node stays on the chain in
+  `KOS_WITH_PHASE_PENDING_EXIT_AWAIT` holding the exception it is handling
+  in its obligation slot. The evaluator returns `KOS_RES_AWAIT`. The driver
+  sends the await result and re-enters `koskari_eval`. On re-entry,
+  **revive** runs before the next opcode: `revive_await` pushes the send
+  value, then `kos_dyn_settle_top` settles the node at `dyn_top` (pops that
+  value, applies swallow) and unlinks it, which drops the segment, pops the
+  node, sets the PC, and pushes `None` (or re-raises the parked exception
+  when `__exit__` did not swallow). Execution then continues at the
   instruction after POP_WITH with `None` as the with value.
 
 So the exit return is never observable as the with-expression result; it is
@@ -239,7 +241,7 @@ only used internally for swallow and then discarded in favour of `None`.
 Same as PUSH_WITH, except:
 
 - Installs `KOS_DYN_DYN_WITH`.
-- The node is eligible for inclusion in continuation transfer plans.
+- The node carries `KOS_DYN_CAP_NEEDS_INSTALL_WIND`: a transfer goal re-enters it when it lands the extent.
 
 
 ### POP_DYN_WITH
@@ -274,24 +276,21 @@ This preserves the single-shot contract and prevents resource unsafety.
 > Single-shot semantics are preserved because each clone creates a fresh extent instance
 > (enter runs once per instance on wind, exit once on unwind); no instance is re-entered.
 
-### Rule 2: `dyn-with` participates in transfer plans
+### Rule 2: `dyn-with` participates in transfer goals
 
-For `KOS_DYN_DYN_WITH` nodes, the transfer-plan builder must include them as
-wind/unwind steps:
+A `dyn-with` node answers the extent contract like a wind: when a goal
+LEAVES through it, `kos_dyn_extent_leave` runs `exit` (the no-exception
+form; a transfer is not a raise); when a goal LANDS a segment containing
+it, ENTERING runs `enter` and re-binds `name` if present. A single-shot
+`with` in a landed segment is skipped by ENTERING: its `exit_done` ref is
+shared across clones, so no instance runs `__exit__` twice.
 
-- **Unwind step:** run `exit` (exception or non-exception form as appropriate
-  for the transfer)
-- **Wind step:** run `enter`; re-bind `name` if present
-
-**Transfer plan suspension:** Enter/exit may suspend (auto-await). When a wind
-or unwind step returns an awaitable, the plan suspends. The implementation
-records progress (e.g. which step suspended, inject slot for the result) and
-resumes the plan when the await completes: the driver receives `KOS_RES_AWAIT`,
-sends the result back on the next `koskari_eval`, and the eval loop feeds the
-inject into the plan and calls `kos_run_transfer_step` again. Transfer plans
-therefore support **suspension and resumption** (interruptible plans). See
-[extent-wind-unwind.md](extent-wind-unwind.md) for hook-body await and
-suspend-during-wind/unwind behaviour.
+**Suspension:** `enter` / `exit` may suspend (auto-await). The leave or
+enter answers AWAIT, the goal parks on the node, the driver receives
+`KOS_RES_AWAIT`, and on the next `koskari_eval` the revive settles the node
+and the prologue's goal drive continues from where it parked. See
+[extent-wind-unwind.md](extent-wind-unwind.md) for the contract and
+[EVALUATOR.md §6](../EVALUATOR.md) for the driver.
 
 **Wind/unwind ordering:** Unwind runs exit steps from **innermost** to
 **outermost**. Wind runs enter steps from **outermost** to **innermost**. This

@@ -43,16 +43,8 @@ KOS_OP_HANDLER(BREAK) {
     }
   }
 
-  {
-    KosWalkStatus ws = kos_dyn_unwind_to_loop(es, KOS_XFER_EVENT_BREAK,
-                                              result);
-    KosOpResult kr = (ws == KOS_WALK_ERROR) ? EVAL_RAISE()
-                   : (ws == KOS_WALK_ASYNC_UNWIND) ? EVAL_REPROLOGUE()
-                   : EVAL_NORMAL();
-    if (kr.kind == KOS_RES_RAISE)
-      Py_DECREF(result);
-    RESULT_RELAY(es, kr);
-  }
+  /* the walk consumes result on every answer */
+  RESULT_RELAY(es, kos_dyn_unwind_to_loop(es, KOS_XFER_EVENT_BREAK, result));
 }
 
 

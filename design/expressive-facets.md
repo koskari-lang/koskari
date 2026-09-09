@@ -331,7 +331,7 @@ machinery to fix it properly.
 Koskari has a real advantage here: a cancel scope is a `KosDynNode`. Trio has to
 implement cancel scopes on top of a runtime that does not want them; Koskari
 already tracks dynamic extent as a first-class chain, with wind/unwind events
-and transfer plans. The natural implementation is a new extent node kind, not a
+and transfer goals. The natural implementation is a new extent node kind, not a
 new subsystem.
 
 ### Sketch

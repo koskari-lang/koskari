@@ -68,10 +68,10 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
   }
 
   KosDynFrame *const caller = KosEvalState_FRAME(es);
-  KosOpResult wr = kos_dyn_wind(es, (KosDynNode *) with_node);
-  /* AWAIT: __enter__ returned an awaitable and the node stays
-     provisional; the revive binds the settled value
-     (kos_dyn_complete_pending) and continues into the body. */
+  KosOpResult wr = kos_dyn_extent_enter(es, (KosDynNode *) with_node);
+  /* AWAIT: __enter__ returned an awaitable and the node stays pending;
+     the revive settles it with the awaited value and continues into
+     the body. */
   if (wr.kind == KOS_RES_AWAIT)
     return wr;
 
@@ -88,7 +88,7 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
      in that second case would run the with body before the transfer
      it was meant to make. */
   if (wr.kind == KOS_RES_REPROLOGUE
-      && (KosEvalState_FRAME(es) == caller || KosEvalState_PLAN(es)))
+      && (KosEvalState_FRAME(es) == caller || KosEvalState_GOAL(es)))
     return wr;
 
   RESULT_CONTINUE(es);

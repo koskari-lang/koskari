@@ -285,10 +285,10 @@ static int test_context_recycle(void) {
   TEST_ASSERT_NULL(KosContext_DYN_TOP(ctx), "chain dropped");
   TEST_ASSERT_NULL(KosContext_FRAME_TOP(ctx), "frame_top cleared");
 
-  /* an armed transfer plan refuses the recycle */
-  KosContext_PLAN(ctx) = (KosTransferPlan *) ctx;  /* sentinel */
-  TEST_ASSERT_EQ(KosContext_Recycle(ctx), -1, "armed plan refuses");
-  KosContext_PLAN(ctx) = NULL;
+  /* an armed transfer goal refuses the recycle */
+  KosContext_GOAL(ctx) = (KosXferGoal *) ctx;  /* sentinel */
+  TEST_ASSERT_EQ(KosContext_Recycle(ctx), -1, "armed goal refuses");
+  KosContext_GOAL(ctx) = NULL;
 
   KosContext_Free(ctx);
   return 0;

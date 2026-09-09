@@ -15,9 +15,9 @@
 
 /**
    POP_WIND: arg unused. Pop the top wind node from the dynamic chain.
-   Stores TOS (body result) in the wind node before uninstall. Invokes the
-   after thunk if entered and non-null; may return KOS_DYN_UNWIND_ASYNC_STARTED
-   when the thunk pushes a frame.
+   Stores TOS (body result) in the wind node, then unlinks it: the after
+   thunk runs if entered and non-null, and the body result lands on the
+   revealed block once the node is gone.
 */
 
 KOS_OP_HANDLER(POP_WIND) {
@@ -27,26 +27,23 @@ KOS_OP_HANDLER(POP_WIND) {
     RESULT_RAISE();
   }
 
-  KosDynWind *wind = (KosDynWind *) top;
   PyObject *body_result = KosEvalState_StackPopRef(es);
   if (! body_result)
     RESULT_RAISE();
-  KosDynWind_BODY_RESULT(wind) = body_result;
+  /* the body value waits on the node for the unlink to deliver */
+  if (kos_dyn_ob_park_value(top, body_result) < 0)
+    RESULT_RAISE();
 
-  KosOpResult kr = kos_dyn_pop_top(es, KOS_XFER_EVENT_RETURN);
+  KosOpResult kr = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
   if (kr.kind == KOS_RES_REPROLOGUE) {
-    /* after-thunk frame started; eval continues in thunk; RETURN resumes unwind */
+    /* the after-thunk's frame is current; its return settles and
+       unlinks the wind */
     RESULT_CONTINUE(es);
   }
-  if (kr.kind == KOS_RES_RAISE) {
-    /* the after thunk failed before it could run: take the body result
-       back from the wind and leave it on the stack for the raise walk
-       to clear. The push steals the reference, releasing it on failure,
-       so nothing is left owned here. */
-    KosDynWind_BODY_RESULT(wind) = NULL;
-    (void) KosEvalState_StackPUSH(es, body_result);
+  if (kr.kind == KOS_RES_AWAIT)
+    return kr;  /* the revive settles and unlinks the wind */
+  if (kr.kind == KOS_RES_RAISE)
     RESULT_RAISE();
-  }
   RESULT_NEXT(es);
 }
 

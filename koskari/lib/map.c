@@ -157,7 +157,13 @@ static KosIterStepResult map_step_abort(
     PyObject *ftyp, *fval, *ftb;
 
     PyErr_Fetch(&ftyp, &fval, &ftb);
-    (void) kos_dyn_unwind_to_node(es, pre_top, KOS_XFER_EVENT_RAISE);
+    {
+      /* a leave in flight here is abandoned with the step */
+      KosOpResult wr = kos_dyn_unwind_to_node(es, pre_top,
+                                              KOS_XFER_EVENT_RAISE, NULL);
+      if (wr.kind == KOS_RES_AWAIT)
+        Py_XDECREF(wr.val);
+    }
     PyErr_Restore(ftyp, fval, ftb);
   }
   return KOS_ITER_ERROR;

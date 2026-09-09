@@ -240,8 +240,10 @@ the boundary constraint.
   **single unified dynamic chain**.
 * The chain is a linked list of `KosDynNode` structures with typed payloads.
 * Walking the chain provides complete dynamic extent information.
-* All mutations to the chain go through `kos_dyn_push`, the `kos_dyn_pop_*`
-  entry points, or transfer plan execution. No direct chain manipulation is permitted.
+* All mutations to the chain go through `kos_dyn_push`, the single unlink
+  site `kos_dyn_unlink_top` (behind the `kos_dyn_pop_*` entry points and the
+  unwind walks), or a transfer goal's landing. No direct chain manipulation
+  is permitted.
 
 **Node types**:
 * `KOS_DYN_FRAME` — function activation record
@@ -257,17 +259,16 @@ the boundary constraint.
 * `KOS_DYN_CC` — call/cc extent (PUSH_CC/POP_CC)
 * `KOS_DYN_YIELD_FROM` — yield-from delegation state (see [EVALUATOR.md](../EVALUATOR.md) §5; [archive/yield-from-execution-model.md](../archive/yield-from-execution-model.md))
 * `KOS_DYN_PARAM` — parameterize extent (PUSH_PARAM/POP_PARAM); binds/restores dynamic param
-* `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH); CATCH
-* `KOS_DYN_DYN_WITH` — multi-shot with extent (PUSH_DYN_WITH/POP_DYN_WITH); CATCH
+* `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH, PUSH_DYN_WITH/POP_DYN_WITH for the multi-shot shot); CATCH, CONTROL_HOOK, HOLDS_OBLIGATION
 
 **Capability bits** govern behavior without kind checks in generic handlers:
-* `KOS_DYN_CAP_CATCH` — node may swallow exception (WITH, DYN_WITH)
+* `KOS_DYN_CAP_CATCH` — node may swallow exception (WITH)
 * `KOS_DYN_CAP_BARRIER` — normal pop refused (PROMPT)
-* `KOS_DYN_CAP_HANDLES_EXCEPTIONS` — node has `unwind_on_exception` handler invoked during exception unwind when pop is refused (PROMPT)
-* `KOS_DYN_CAP_NEEDS_UNWIND_ACTION` — node has transfer-plan unwind handler (WIND, WITH, DYN_WITH, PARAM)
-* `KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION` — node has transfer-plan wind handler (WIND)
-* `KOS_DYN_CAP_NEEDS_INSTALL_WIND` — node runs wind on segment install (PARAM, DYN_WITH)
-* `KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN` — node needs post-unwind teardown (DYN_WITH, PROMPT)
+* `KOS_DYN_CAP_HANDLES_EXCEPTIONS` — node has `unwind_on_exception` handler invoked during exception unwind when pop is refused (PROMPT, TRY, FINALLY)
+* `KOS_DYN_CAP_CONTROL_HOOK` — node answers the extent contract (enter, leave, settle, abort): WIND, WITH
+* `KOS_DYN_CAP_HOLDS_OBLIGATION` — node carries an obligation slot: WIND, WITH
+* `KOS_DYN_CAP_NEEDS_INSTALL_WIND` — node re-enters when a transfer lands it (PARAM, multi-shot WITH)
+* `KOS_DYN_CAP_OWNS_NS` — node introduced its own namespace, which the collector reaches through it (code FRAME, NS, COLLECT)
 * `KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP` — preserve exception across pop (YIELD_FROM)
 
 ---
@@ -276,8 +277,9 @@ the boundary constraint.
 
 * Wind/unwind thunks are **null-arity Koskari callables** (bytecode blocks)
   invoked via `kos_callable_call`, not Python callables.
-* Thunks run as normal frames in the eval loop; when a thunk returns, the
-  RETURN opcode detects `IN_WIND_THUNK` and resumes unwind or transfer plan.
+* Thunks run as normal frames in the eval loop; when a thunk returns into
+  its WIND, `kos_dyn_settle_top` advances the node, and the walk or transfer
+  goal that was parked on it continues.
 * Thunks capture lexical context via closure.
 * **Local jumps and wind/unwind are distinct**: local jumps do *not* invoke
   wind/unwind handlers; continuation transfer *does* invoke them.
@@ -305,14 +307,17 @@ continuation capture and avoids special hook machinery.
 
 ---
 
-## 18. Transfer Plan Atomicity (Invariant)
+## 18. Transfer Goal Re-derivation (Invariant)
 
-* Continuation application is orchestrated via a **transfer plan**.
-* The plan executes atomically with respect to normal VM execution.
-* The VM does not interleave opcode dispatch with mid-transfer state.
-
-**Exception**: Hooks may suspend on AWAIT, in which case the transfer plan is
-suspended along with the context.
+* Continuation application is a **transfer goal**: a record of where control
+  is going (seam, target, payload), never of what to do.
+* The driver derives its next step from the live chain on every pass, so a
+  chain that moved while the goal was parked is its input, never a hazard.
+* A goal parked on a node (its thunk or `__exit__` is running, or it awaits)
+  acts again only when `dyn_top` is where it was when the node fired.
+* Landing is total: splice, resume pc, and the freeing of outer goals on an
+  undelimited landing happen in one synchronous step.
+* A failed step frees every goal and raises through the chain as it stands.
 
 ---
 

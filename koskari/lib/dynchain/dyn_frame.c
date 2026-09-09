@@ -19,7 +19,11 @@ KosDynFrame *kos_dynframe_new(
     return NULL;
   }
 
-  kos_dynnode_init(frame, KOS_DYN_FRAME, parent, KOS_DYN_CAP_BINDS_NS);
+  /* A frame with code introduces its namespace; a native or
+     placeholder frame carries the live namespace as an owned fill, as
+     any non-introducer node does, and must not report it as its own. */
+  kos_dynnode_init(frame, KOS_DYN_FRAME, parent,
+                   code ? KOS_DYN_CAP_OWNS_NS : 0);
   Py_XINCREF(code);
   KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = 0;
@@ -27,6 +31,7 @@ KosDynFrame *kos_dynframe_new(
   kos_dynnode_use_inline_segment((KosDynNode *) frame);
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
+  KosDynFrame_DEPTH(frame) = 1;  /* a root until an install says otherwise */
   KosDynFrame_PARK_CACHE(frame) = NULL;
   KosDynFrame_RESUME_FN(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
@@ -72,6 +77,10 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame)
       & ~KOS_FRAME_PARK_TO_CACHE;
+  /* A snapshot stands where its source stood until a splice renumbers
+     it (a landed template) or that position is exactly where it goes
+     (the restitched handler frame). */
+  KosDynFrame_DEPTH(clone) = KosDynFrame_DEPTH(frame);
   KosDynFrame_PARK_CACHE(clone) = NULL;
   /* clones opt out of the per-function frame cache */
   KosDynFrame_FN(clone) = NULL;
@@ -188,6 +197,13 @@ KosDynFrame *kos_dyn_push_frame(
     KosCode *code,
     PyObject *ns) {
 
+  KosDynFrame *cur = KosEvalState_FRAME(es);
+
+  if (unlikely(kos_eval_check_frame_room(es, cur, 1) < 0)) {
+    Py_XDECREF(ns);
+    return NULL;
+  }
+
   // CONTEXT: dirty, touches context directly
   KosDynFrame *frame = kos_dynframe_new(KosEvalState_DYN_TOP(es), code, ns);
   if (! frame)
@@ -196,9 +212,10 @@ KosDynFrame *kos_dyn_push_frame(
   /* Inherit demand extent from the current executing frame so that every
      child frame on the demand path carries the flag directly, enabling O(1)
      checks in kos_eval_in_demand without walking the dynchain. */
-  KosDynFrame *cur = KosEvalState_FRAME(es);
-  if (cur)
+  if (cur) {
     KosDynFrame_FLAGS(frame) |= (KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND);
+    KosDynFrame_DEPTH(frame) = KosDynFrame_DEPTH(cur) + 1;
+  }
 
   /* Inline retarget, specialized from kos_dyn_resync_after_push for a
      fresh FRAME node: flush the outgoing frame's live PCs, then load
@@ -255,6 +272,8 @@ KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es) {
    and the node base was normalized at park time
    (KosFunction_TryParkFrame); this is the install half of
    kos_dyn_push_frame with a fresh node id minted, and cannot fail.
+   The caller has asked kos_eval_check_frame_room for one frame before
+   binding into the parked namespace.
 */
 void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
 
@@ -265,7 +284,10 @@ void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
     KosDynFrame *cur = KosEvalState_FRAME(es);
     if (cur) {
       KosDynFrame_FLAGS(frame) |= (KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND);
+      KosDynFrame_DEPTH(frame) = KosDynFrame_DEPTH(cur) + 1;
       KosEvalState_FlushLiveRegsToFrame(es);
+    } else {
+      KosDynFrame_DEPTH(frame) = 1;
     }
   }
 
@@ -310,9 +332,10 @@ int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache) {
 
   KosDynNode_PARENT(frame) = NULL;
   KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
-  /* The caps a fresh FRAME node gets from kos_dynframe_new, so the
+  /* The caps a fresh code-less FRAME node gets from kos_dynframe_new
+     (none: the fill it will carry is not an introduced scope), so the
      reinstall is indistinguishable from a new allocation. */
-  KosDynNode_CAPS(frame) = KOS_DYN_CAP_BINDS_NS;
+  KosDynNode_CAPS(frame) = 0;
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) = 0;
@@ -436,10 +459,15 @@ int kos_dyn_pop_frame(KosEvalState *es) {
    :return: 0 on success, -1 on error
 */
 int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame) {
+  KosDynFrame *cur = KosEvalState_FRAME(es);
+
   if (! frame) {
     PyErr_SetString(PyExc_RuntimeError, "NULL frame for attach");
     return -1;
   }
+  if (kos_eval_check_frame_room(es, cur, 1) < 0)
+    return -1;
+  KosDynFrame_DEPTH(frame) = cur ? KosDynFrame_DEPTH(cur) + 1 : 1;
   KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(es);
   if (kos_dyn_push_noinstall(es, (KosDynNode *) frame) < 0)
     return -1;
@@ -494,3 +522,59 @@ static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) 
   Py_VISIT(KosDynFrame_FN(frame));
   return 0;
 }
+
+
+/* === Frame depth === */
+
+
+unsigned kos_dyn_frame_depth_at(KosDynNode *node) {
+
+  for (; node; node = KosDynNode_PARENT(node)) {
+    if (KosDynNode_IS_FRAME(node))
+      return KosDynFrame_DEPTH(node);
+  }
+  return 0;
+}
+
+
+unsigned kos_dyn_frame_count(KosDynNode *top, KosDynNode *base) {
+
+  unsigned count = 0;
+  KosDynNode *node;
+
+  for (node = top; node && node != base; node = KosDynNode_PARENT(node)) {
+    if (KosDynNode_IS_FRAME(node))
+      count++;
+  }
+  return count;
+}
+
+
+void kos_dyn_renumber_frames_counted(
+    KosDynNode *top,
+    KosDynNode *base,
+    unsigned base_depth,
+    unsigned count) {
+
+  /* Top-down walk: the topmost frame sits count above the base. */
+  unsigned depth = base_depth + count;
+  KosDynNode *node;
+
+  for (node = top; node && node != base; node = KosDynNode_PARENT(node)) {
+    if (KosDynNode_IS_FRAME(node))
+      KosDynFrame_DEPTH(node) = (uint16_t) depth--;
+  }
+}
+
+
+void kos_dyn_renumber_frames(
+    KosDynNode *top,
+    KosDynNode *base,
+    unsigned base_depth) {
+
+  kos_dyn_renumber_frames_counted(top, base, base_depth,
+                                  kos_dyn_frame_count(top, base));
+}
+
+
+

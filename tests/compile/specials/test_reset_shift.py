@@ -301,6 +301,37 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertEqual(events, ["before", "after", "before", "after"])
 
 
+    async def test_remote_invoke_after_thunk_with_frame(self):
+        """
+        a remote invoke whose slice completes through a dyn-wind after
+        thunk that installs a frame delivers the value once the thunk
+        returns
+        """
+
+        events = []
+
+        def rec(tag):
+            events.append(tag)
+            return None
+
+        src_str = """
+        (let [[captured nil]
+              [helper (lambda [] (rec "after"))]]
+          (begin
+            (setq captured
+              (reset
+                (dyn-wind
+                  (rec "before")
+                  (shift k k)
+                  (call helper))))
+            (call captured 5)))
+        """
+        expr, mod = self.compile_expr(src_str, rec=rec)
+        result = await expr()
+        self.assertEqual(result, 5)
+        self.assertEqual(events, ["before", "after", "before", "after"])
+
+
     async def test_param_in_caller_frame_uses_invoke_scope(self):
         """
         A parameterize established in a caller frame outside the reset's
@@ -563,6 +594,32 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         self.assertEqual(caught.exception.prompt_id, 0)
         self.assertEqual(caught.exception.operation, "shift")
 
+    async def test_shift_inside_enter_refuses_with_message(self):
+        """
+        a shift from inside a Koskari __enter__ would capture a with node
+        whose enter is in flight; the capture refuses with a message
+        """
+
+        enter_expr, _ = self.compile_expr("(lambda [self] (shift k k))")
+        enter_fn = await enter_expr()
+
+        class Mgr:
+
+            __enter__ = enter_fn
+
+            def __exit__(self, typ, val, tb):
+                return False
+
+        src_str = """
+        (reset
+          (with [(call make_mgr)] 1))
+        """
+        expr, mod = self.compile_expr(src_str, make_mgr=Mgr)
+        with self.assertRaises(RuntimeError) as caught:
+            await expr()
+        self.assertIn("in flight", str(caught.exception))
+
+
     async def test_shift_across_generator_raises_prompt_unreachable(self):
         """
         A reset exists outside the generator, but the shift inside the
@@ -584,6 +641,29 @@ class TestShiftCaptureErrors(SpecialsTestCase):
         self.assertEqual(caught.exception.boundary, "generator")
         self.assertEqual(caught.exception.operation, "shift")
         self.assertEqual(caught.exception.prompt_id, 0)
+
+
+class TestDelimitedReturnAcrossLeave(SpecialsTestCase):
+    """
+    A delimited return that meets an after thunk on its way to the
+    invoke site parks on the wind and finishes once the thunk returns,
+    landing the value at the invoke site inside the evaluator; it must
+    never surface at the boundary as a bare result.
+    """
+
+    async def test_second_shift_value_reaches_first_invoke_site(self):
+        src_str = """
+        (reset
+          (dyn-wind
+            None
+            (+ (shift k (call k 1)) (shift k2 10))
+            (call record "cleanup")))
+        """
+        log = []
+        expr, mod = self.compile_expr(src_str, record=log.append)
+        result = await expr()
+        self.assertEqual(result, 10)
+        self.assertEqual(log, ["cleanup"])
 
 
 # The end.

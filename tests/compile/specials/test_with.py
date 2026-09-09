@@ -115,6 +115,98 @@ class FutureEnterMgr:
         return self.exit_fut
 
 
+class FailingEnterMgr:
+    """
+    __enter__ raises; __exit__ must then never run
+    """
+
+    def __init__(self):
+        self.events = []
+
+
+    def __enter__(self):
+        self.events.append("enter")
+        raise ValueError("refused")
+
+
+    def __exit__(self, typ, val, tb):
+        self.events.append("exit")
+        return False
+
+
+class TestWithEnterFailure(SpecialsTestCase):
+
+    async def test_failing_enter_runs_no_exit(self):
+        """
+        a manager whose __enter__ raises is unlinked without __exit__
+        """
+
+        mgr = FailingEnterMgr()
+
+        src_str = """
+        (try
+          (with [(call get_mgr)] 1)
+          ([ValueError] "caught"))
+        """
+        expr, mod = self.compile_expr(
+            src_str, get_mgr=lambda: mgr, ValueError=ValueError)
+        result = await expr()
+        self.assertEqual(result, "caught")
+        self.assertEqual(mgr.events, ["enter"])
+
+
+class RaisingExitMgr:
+    """
+    __exit__ raises on every exit
+    """
+
+    def __enter__(self):
+        return self
+
+
+    def __exit__(self, typ, val, tb):
+        raise ValueError("exit refused")
+
+
+class TestWithExitRaisesWhileHandling(SpecialsTestCase):
+
+    async def test_exit_exception_chains_the_handled_one(self):
+        """
+        an __exit__ that raises while handling an exception replaces it,
+        and the replaced exception is the new one's __context__
+        """
+
+        src_str = """
+        (with [(call make_mgr)] (raise (call KeyError "body")))
+        """
+        expr, mod = self.compile_expr(
+            src_str, make_mgr=RaisingExitMgr, KeyError=KeyError)
+        with self.assertRaises(ValueError) as caught:
+            await expr()
+        self.assertIsInstance(caught.exception.__context__, KeyError)
+
+
+class TestWithExitRaisesOnReturn(SpecialsTestCase):
+
+    async def test_exit_raising_during_return_is_catchable(self):
+        """
+        a return crossing a with whose __exit__ raises reaches the
+        enclosing handler
+        """
+
+        src_str = """
+        (call
+          (lambda []
+            (try
+              (with [(call make_mgr)] (return 1))
+              ([ValueError] "caught"))))
+        """
+        expr, mod = self.compile_expr(
+            src_str, make_mgr=RaisingExitMgr, ValueError=ValueError)
+        result = await expr()
+        self.assertEqual(result, "caught")
+
+
 class TestWithSpecial(SpecialsTestCase):
 
     async def test_normal_enter_exit_expression_returns_none(self):

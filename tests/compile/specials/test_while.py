@@ -122,4 +122,121 @@ class TestWhileSpecial(SpecialsTestCase):
         self.assertEqual(c, [2, 1, "first", "second"])
 
 
+class TestLoopTransferAcrossLeave(SpecialsTestCase):
+    """
+    A break or continue crossing a with or dyn-wind whose leave hands
+    control to a frame or an awaitable parks on that node and finishes
+    once the leave settles. The loops are bounded by a counter so a
+    dropped transfer shows as the wrong result instead of a hang.
+    """
+
+    def koskari_exit(self, log):
+        return self.compile_expr(
+            """
+            (lambda [self typ val tb]
+              (begin (call record "exit") False))
+            """,
+            record=log.append)
+
+
+    async def test_break_across_koskari_exit(self):
+        log = []
+        expr, mod = self.koskari_exit(log)
+        exit_fn = await expr()
+
+        class Mgr:
+            def __enter__(self):
+                return self
+        Mgr.__exit__ = exit_fn
+
+        src_str = """
+        (let [[i 0]]
+          (begin
+            (call record
+              (while (< i 5)
+                (begin
+                  (setq i (+ i 1))
+                  (with [(call mgr)] (break 1)))))
+            i))
+        """
+        seen = []
+        expr, mod = self.compile_expr(src_str, mgr=Mgr, record=seen.append)
+        iterations = await expr()
+        self.assertEqual(seen, [1])
+        self.assertEqual(iterations, 1)
+        self.assertEqual(log, ["exit"])
+
+
+    async def test_break_across_async_exit(self):
+        log = []
+
+        class AMgr:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, typ, val, tb):
+                log.append("aexit")
+                return False
+
+        src_str = """
+        (let [[i 0]]
+          (begin
+            (call record
+              (while (< i 5)
+                (begin
+                  (setq i (+ i 1))
+                  (with [(call mgr)] (break 2)))))
+            i))
+        """
+        seen = []
+        expr, mod = self.compile_expr(src_str, mgr=AMgr, record=seen.append)
+        iterations = await expr()
+        self.assertEqual(seen, [2])
+        self.assertEqual(iterations, 1)
+        self.assertEqual(log, ["aexit"])
+
+
+    async def test_continue_across_async_exit(self):
+        log = []
+
+        class AMgr:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, typ, val, tb):
+                log.append("aexit")
+                return False
+
+        src_str = """
+        (let [[i 0] [n 0]]
+          (while (< i 10)
+            (begin
+              (setq i (+ i 1))
+              (with [(call mgr)]
+                (begin
+                  (setq n (+ n 1))
+                  (cond
+                    ((< n 3) (continue n))
+                    (else: (break n))))))))
+        """
+        expr, mod = self.compile_expr(src_str, mgr=AMgr)
+        result = await expr()
+        self.assertEqual(result, 3)
+        self.assertEqual(log, ["aexit", "aexit", "aexit"])
+
+
+    async def test_break_across_after_thunk(self):
+        log = []
+
+        src_str = """
+        (let [[i 0]]
+          (while (< i 5)
+            (begin
+              (setq i (+ i 1))
+              (dyn-wind None (break 4) (call record "after")))))
+        """
+        expr, mod = self.compile_expr(src_str, record=log.append)
+        result = await expr()
+        self.assertEqual(result, 4)
+        self.assertEqual(log, ["after"])
+
+
 # The end.

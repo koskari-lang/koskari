@@ -44,14 +44,11 @@ KOS_OP_HANDLER(CONTINUE) {
   }
 
   {
-    KosWalkStatus ws = kos_dyn_unwind_to_loop(es, KOS_XFER_EVENT_CONTINUE,
-                                              result);
-    if (unlikely(ws == KOS_WALK_ERROR)) {
-      Py_DECREF(result);
-      RESULT_RAISE();
-    }
-    if (unlikely(ws == KOS_WALK_ASYNC_UNWIND))
-      return EVAL_REPROLOGUE();
+    /* the walk consumes result on every answer */
+    KosOpResult wr = kos_dyn_unwind_to_loop(es, KOS_XFER_EVENT_CONTINUE,
+                                            result);
+    if (unlikely(wr.kind != KOS_RES_NORMAL))
+      return wr;
 
     /* The loop's back-edge is the one cycle the compiler closes with
        an instruction, so it is where a running loop cooperates: a GIL
