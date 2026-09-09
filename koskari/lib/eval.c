@@ -2315,10 +2315,10 @@ static KosOpResult eval_phase_entry(
     return pr;
   }
 
-  /* The revive completed a node whose leave had a return parked on it
-     (a wind whose after thunk tail-called the awaitable has no frame to
-     return through). With that node gone, the return continues instead
-     of the frame's bytecode. The answer has been through the ingress:
+  /* The revive completed a node whose leave had a return, break, or
+     continue parked on it (a wind whose after thunk tail-called the
+     awaitable has no frame to return through). With that node gone,
+     the transfer continues instead of the frame's bytecode. The answer has been through the ingress:
      a RAISE or an AWAIT is terminal, anything else goes on to dispatch. */
   if (mode == KOS_MODE_NORMAL && resume_return.kind == KOS_OB_RETURN) {
     KosOpResult rr = KosEval_ResumeReturn(es, &resume_return);

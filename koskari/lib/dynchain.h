@@ -119,7 +119,9 @@ typedef enum KosDynFlags {
 
 /**
    KosDynNode capability bits. Generic code checks these for behavior
-   instead of node type. Set at creation; copied on clone.
+   instead of node type. Set at creation and copied on clone; a frame's
+   BINDS_NS follows its code object and moves with it (a placeholder
+   filled with code gains it, a parked function frame keeps it).
 */
 #define KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION    (1u << 0)
 #define KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP  (1u << 1)
@@ -137,9 +139,11 @@ typedef enum KosDynFlags {
    which marks failed-pop recovery (kos_dyn_exception_unwind). */
 #define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
 
-/* This kind binds its own namespace extent (frame, ns, collect); the
-   ns field holds an introduced scope rather than the owned live-ns
-   fill every other pushed node carries. */
+/* This node introduced its own namespace extent (a frame with code, a
+   let, a collect); the ns field holds an introduced scope rather than
+   the owned live-ns fill every other pushed node carries, and the
+   collector reaches an untracked scope through this node alone. A
+   native or code-less frame carries a fill and does not have it. */
 #define KOS_DYN_CAP_BINDS_NS                 (1u << 11)
 
 /* This kind carries an obligation slot (KosObligation): what it owes
@@ -348,8 +352,8 @@ struct KosDynNode {
      marks a transfer bookmark, which inherits the enclosing extent's
      segment. */
   KosSegment *stack;
-  /* Owned namespace: an introduced scope for KOS_DYN_CAP_BINDS_NS
-     kinds, otherwise the owned live-ns fill taken at push. NULL only
+  /* Owned namespace: an introduced scope for a KOS_DYN_CAP_BINDS_NS
+     node, otherwise the owned live-ns fill taken at push. NULL only
      in the placeholder-frame window and on unfilled splices. */
   PyObject *ns;
 
@@ -1653,9 +1657,10 @@ typedef enum KosPendingReturnKind {
    to its handler, and the walk answers EVAL_REPROLOGUE. A live DELIM
    invoke bookmark stops the walk: it is left at dyn_top, stored in
    *took, and the walk answers EVAL_NORMAL with val still the caller's to
-   route. A suspension parks val as the context's pending return of the
-   given kind before answering. val is consumed on every answer but
-   EVAL_NORMAL.
+   route. A suspension parks val on the in-flight node as a RETURN
+   obligation carrying the given kind before answering; the loop walk
+   parks a break or continue the same way. val is consumed on every
+   answer but EVAL_NORMAL.
 
    kos_dyn_unwind_to_loop serves BREAK and CONTINUE: it finds the
    innermost loop region in the current frame, pops to it, and on

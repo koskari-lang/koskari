@@ -262,9 +262,9 @@ the boundary constraint.
 * `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH, PUSH_DYN_WITH/POP_DYN_WITH for the multi-shot shot); CATCH, CONTROL_HOOK, HOLDS_OBLIGATION
 
 **Capability bits** govern behavior without kind checks in generic handlers:
-* `KOS_DYN_CAP_CATCH` — node may swallow exception (WITH, DYN_WITH)
+* `KOS_DYN_CAP_CATCH` — node may swallow exception (WITH)
 * `KOS_DYN_CAP_BARRIER` — normal pop refused (PROMPT)
-* `KOS_DYN_CAP_HANDLES_EXCEPTIONS` — node has `unwind_on_exception` handler invoked during exception unwind when pop is refused (PROMPT)
+* `KOS_DYN_CAP_HANDLES_EXCEPTIONS` — node has `unwind_on_exception` handler invoked during exception unwind when pop is refused (PROMPT, TRY, FINALLY)
 * `KOS_DYN_CAP_CONTROL_HOOK` — node answers the extent contract (enter, leave, settle, abort): WIND, WITH
 * `KOS_DYN_CAP_HOLDS_OBLIGATION` — node carries an obligation slot: WIND, WITH
 * `KOS_DYN_CAP_NEEDS_INSTALL_WIND` — node re-enters when a transfer lands it (PARAM, multi-shot WITH)

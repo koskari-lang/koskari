@@ -391,11 +391,12 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
 
     while (*link) {
       KosXferGoal *outer = *link;
+      /* An outer is parked by construction; one with no frontier has
+         no place to resume from and would stall, so it goes too. */
       int gone = ! goal->seam
-          || (outer->frontier
-              && (! kos_dyn_reaches(es, outer->frontier)
-              || KosDynNode_NODE_ID(outer->frontier)
-              != outer->frontier_id));
+          || ! outer->frontier
+          || ! kos_dyn_reaches(es, outer->frontier)
+          || KosDynNode_NODE_ID(outer->frontier) != outer->frontier_id;
 
       if (gone) {
         *link = outer->outer;

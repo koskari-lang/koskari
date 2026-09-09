@@ -1838,7 +1838,7 @@ static KosOpResult kos_dyn_unlink_top_take(
   KosObligation ob;
 
   /* detached state, acted on once the node is gone */
-  PyObject *deliver = NULL;   /* a with's body value */
+  PyObject *deliver = NULL;   /* a parked VALUE: a body value */
 
   ob.kind = KOS_OB_NONE;
 

@@ -41,7 +41,7 @@ KOS_OP_HANDLER(POP_WITH) {
   /* the body value, when the body left one, waits on the node for the
      unlink to deliver; a with in statement position leaves none */
   {
-    KosSegment *seg = *KosEvalState_BLOCK(es);
+    KosSegment *seg = KosEvalState_BLOCK(es) ? *KosEvalState_BLOCK(es) : NULL;
 
     if (seg && KosSegment_LEN(seg)) {
       PyObject *body_result = KosEvalState_StackPopRef(es);
