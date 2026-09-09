@@ -515,13 +515,13 @@ Named as required in `with-dyn-with.md` and absent today:
 
 ## 7. Supersedes
 
-The closing paragraph of [extent-wind-unwind.md](extent-wind-unwind.md)
+The closing paragraph of [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md)
 ("Suspend during wind/unwind") describes the `step_awaitable` /
 `step_resume_inject` protocol, which is D2. Replaced by §3.2 and §3.3; its
 per-kind table is replaced by §3.4.
 
-Related: [callcc.md](callcc.md),
-[extent-wind-unwind.md](extent-wind-unwind.md),
-[with-dyn-with.md](with-dyn-with.md),
+Related: [callcc.md](../interpreter/callcc.md),
+[extent-wind-unwind.md](../interpreter/extent-wind-unwind.md),
+[with-dyn-with.md](../interpreter/with-dyn-with.md),
 [pending-return-across-suspension.md](pending-return-across-suspension.md),
 [archive/interrupted-transfer-plans.md](../archive/interrupted-transfer-plans.md).

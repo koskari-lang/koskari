@@ -110,6 +110,6 @@ the hook or revive that sees the node gone, with the raise walk discarding
 obligations owned by nodes it pops. Continuation capture then has one place
 to clone or forbid.
 
-Related: [callcc.md](callcc.md),
-[extent-wind-unwind.md](extent-wind-unwind.md),
+Related: [callcc.md](../interpreter/callcc.md),
+[extent-wind-unwind.md](../interpreter/extent-wind-unwind.md),
 [archive/interrupted-transfer-plans.md](../archive/interrupted-transfer-plans.md).
