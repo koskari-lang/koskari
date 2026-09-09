@@ -365,4 +365,42 @@ class TestNestedUndelimitedVoidsOuter(SpecialsTestCase):
         self.assertEqual(seen, ["enter", "exit"])
 
 
+class TestParkedGoalThunkDeliveries(SpecialsTestCase):
+    """
+    While a goal is parked on a wind's after thunk, the thunk is ordinary
+    code: a native map over an async function that completes without
+    suspending stages each result for the evaluator, and those staged
+    deliveries must reach their resumes, not be cleared for a goal that
+    is not about to drive.
+    """
+
+    async def test_map_over_async_in_after_thunk_during_transfer(self):
+        from koskari.lib import KosMap
+
+        async def adouble(x):
+            return x * 2
+
+        src_str = """
+        (let [[k nil] [n 0]]
+          (begin
+            (let/cc c (setq k c))
+            (setq n (+ n 1))
+            (cond
+              ((== n 1)
+               (dyn-wind
+                 None
+                 (call k 1)
+                 (for-each [x (call map adouble #[1 2 3])]
+                   (call record x))))
+              (else: nil))
+            n))
+        """
+        log = []
+        expr, mod = self.compile_expr(
+            src_str, record=log.append, map=KosMap, adouble=adouble)
+        result = await expr()
+        self.assertEqual(log, [2, 4, 6])
+        self.assertEqual(result, 2)
+
+
 # The end.

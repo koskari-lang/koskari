@@ -238,6 +238,16 @@ void kos_xfer_goal_abandon_all(KosEvalState *es) {
 }
 
 
+int kos_xfer_goal_will_drive(KosEvalState *es) {
+
+  KosXferGoal *goal = KosEvalState_GOAL(es);
+
+  if (! goal)
+    return 0;
+  return ! goal->frontier || KosEvalState_DYN_TOP(es) == goal->park_top;
+}
+
+
 int kos_xfer_goal_waits_on(KosEvalState *es, const KosDynNode *node) {
 
   KosXferGoal *goal = KosEvalState_GOAL(es);

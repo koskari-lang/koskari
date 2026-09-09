@@ -3342,11 +3342,12 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
     #endif
 
     /* Slim bounce: a staged delivery with no pending exception and no
-       plan armed goes straight to its resume. The two checks below
-       exist for chain surgery, which a staged handoff performs none
-       of. */
+       goal about to drive goes straight to its resume. The two checks
+       below exist for chain surgery, which a staged handoff performs
+       none of. A goal parked on a running thunk is dormant: the thunk's
+       own deliveries go through here like anyone else's. */
     if (KosEvalState_PENDING_VALUE(es)
-        && ! KosEvalState_GOAL(es)
+        && ! kos_xfer_goal_will_drive(es)
         && ! PyErr_Occurred()) {
       KosOpResult rs = eval_step_resume_delivery(es);
       if (rs.kind == KOS_RES_REPROLOGUE)
@@ -3367,13 +3368,14 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
       }
     }
 
-    /* A transfer plan replaces the control path a staged delivery was
+    /* A transfer replaces the control path a staged delivery was
        waiting on: the frame it was staged for may be gone once the
-       plan lands, and the plan's own INJECT is the delivery the
-       landing frame expects. Drop the stale slot ahead of the drain so
-       it can neither shadow that injection nor reach a resume it was
-       never meant for. */
-    if (KosEvalState_GOAL(es))
+       goal lands, and the goal's own delivery is the one the landing
+       frame expects. Drop the stale slot ahead of a drive so it can
+       neither shadow that delivery nor reach a resume it was never
+       meant for. Only ahead of a drive: while the goal is parked on a
+       running thunk the slot belongs to the thunk's code. */
+    if (kos_xfer_goal_will_drive(es))
       Py_CLEAR(KosEvalState_PENDING_VALUE(es));
 
     {

@@ -183,6 +183,14 @@ KosOpResult kos_xfer_goal_drive(KosEvalState *es, int *out_boundary);
 */
 int kos_xfer_goal_waits_on(KosEvalState *es, const KosDynNode *node);
 
+/**
+   1 when a goal is armed and the next drive will act on it: it is not
+   parked, or the thunk it parked on has returned (dyn_top is back at
+   park_top). A parked goal whose thunk is still running is dormant, and
+   the code in that thunk owns the evaluator's staged deliveries.
+*/
+int kos_xfer_goal_will_drive(KosEvalState *es);
+
 
 int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg);
 
