@@ -19,7 +19,7 @@
 
    Dynamic chain infrastructure for delimited continuations and
    dynamic-wind semantics. Provides DynNode types (FRAME, PROMPT,
-   WIND, REGION, CC_RAISE, and others) that form a unified parent
+   WIND, REGION, and others) that form a unified parent
    chain, replacing the separate frame and handler chains.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -61,9 +61,6 @@
                        is u.with.shot (see KOS_DYN_WITH_SHOT_*), not a second kind
    KOS_DYN_SHIFT     - Shift handler bookmark (transparent; no segment,
                        frame, or namespace of its own)
-   KOS_DYN_CC_RAISE  - Sentinel node holding a KoskariContinuationApply exception
-                       for the foreign-token transfer path; its unwind re-raises the
-                       stored exception so the eval loop exits with KOS_RES_RAISE
    KOS_DYN_GEN       - Generator node; intercepts handle(YIELD/RETURN/RAISE),
                        denies handle(SHIFT)
 */
@@ -84,7 +81,6 @@ typedef enum KosDynKind {
   KOS_DYN_PARAM,
   KOS_DYN_WITH,
   KOS_DYN_SHIFT,
-  KOS_DYN_CC_RAISE,
   KOS_DYN_GEN,
   /**
    KOS_DYN_NEXT - Iteration node for standalone NEXT opcode over Koskari
@@ -107,7 +103,6 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
 typedef enum KosDynFlags {
   KOS_DYNF_NONE        = 0x00,
   KOS_DYNF_CLONED      = 0x01,  /* node was cloned for continuation capture */
-  KOS_DYNF_WALK_LIMIT    = 0x02,  /* walks must not pass this node */
   KOS_DYNF_GEN_KEEPALIVE = 0x04,  /* GEN: holds a counted ref on its KPAG owner while active */
   KOS_DYNF_INVOCATION  = 0x08,  /* PROMPT: instance created by a k-invocation
                                    (graft instantiation or in-place invoke);
@@ -119,7 +114,6 @@ typedef enum KosDynFlags {
                                    re-parents the frame onto the chain.
                                    Traversal and teardown must cover it
                                    while held */
-  KOS_DYNF_LCA_VISITED = (int) 0x80000000u,  /* transient: set during kos_dyn_find_lca */
 } KosDynFlags;
 
 
@@ -508,10 +502,6 @@ struct KosDynNode {
       uint32_t prompt_node_id;
     } shift;
     struct {
-      PyObject *exc_type;  /* exception type from PyErr_Fetch */
-      PyObject *exc_val;   /* exception value */
-    } cc_raise;
-    struct {
       PyObject *owner;     /* owning generator object (borrowed) or NULL */
       struct KosDynNode *active; /* suspended frame when released; NULL when running */
       uintptr_t refcount;  /* reference count; init 1; release decrements; free when 0 */
@@ -595,7 +585,6 @@ typedef struct KosDynNode KosDynYieldFrom;
 typedef struct KosDynNode KosDynParam;
 typedef struct KosDynNode KosDynWith;
 typedef struct KosDynNode KosDynShift;
-typedef struct KosDynNode KosDynCCRaise;
 typedef struct KosDynNode KosDynGen;
 typedef struct KosDynNode KosDynNext;
 
@@ -625,7 +614,6 @@ struct KosContinuation {
   uint32_t resume_pc;           /* pc to resume at */
   KosSegment *resume_stack;  /* aliases node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag */
-  uint32_t graft_point_id;      /* node_id of graft point for ID fallback; 0 = none */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
   uint8_t live_slice_consumed;  /* 1 = in-place invoke consumed the live slice */
   PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
@@ -645,7 +633,6 @@ struct KosContinuation {
 #define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
 #define KosContinuation_RESUME_STACK(k)    (((KosContinuation *)(k))->resume_stack)
 #define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
-#define KosContinuation_GRAFT_POINT_ID(k)  (((KosContinuation *)(k))->graft_point_id)
 #define KosContinuation_ONE_SHOT(k)        (((KosContinuation *)(k))->one_shot)
 #define KosContinuation_LIVE_SLICE_CONSUMED(k) \
   (((KosContinuation *)(k))->live_slice_consumed)
@@ -658,168 +645,6 @@ struct KosContinuation {
   (((KosContinuation *)(k))->live_shift_node)
 #define KosContinuation_LIVE_SHIFT_NODE_ID(k) \
   (((KosContinuation *)(k))->live_shift_node_id)
-
-
-/* === KosTransferStep enum === */
-
-
-/**
-   KosTransferStep identifies the type of action in a transfer plan.
-
-   KOS_XFER_EXTENT_ACTION - Run extent wind (enter) or unwind (exit) for a
-   node.  Stores (node, phase).  Replaces the former RUN_HOOK and
-   NODE_UNWIND step types.
-
-   KOS_XFER_INSTALL       - Install a chain segment as current
-   KOS_XFER_INJECT        - Push resume value onto stack (or throw)
-   KOS_XFER_POP_ONE       - Run unwind for current top, unlink and free
-   KOS_XFER_PUSH          - Append segment to current chain (graft bottom to
-                            current dyn_top).  Used for delimited continuation
-                            invoke; caller stays on chain.
-   KOS_XFER_TRUNCATE_AND_INJECT - Free from current top through node
-                            (inclusive), set dyn_top to node's parent, push value.
-*/
-
-#define KOS_XFER_EXTENT_PHASE_WIND   0
-#define KOS_XFER_EXTENT_PHASE_UNWIND 1
-
-typedef enum KosTransferStep {
-  KOS_XFER_EXTENT_ACTION = 0,
-  KOS_XFER_INSTALL       = 1,
-  KOS_XFER_INJECT        = 2,
-  KOS_XFER_POP_ONE       = 3,
-  KOS_XFER_PUSH          = 4,
-  KOS_XFER_TRUNCATE_AND_INJECT = 5,
-} KosTransferStep;
-
-
-/**
-   Return value from kos_run_transfer_step: plan suspended on await.
-   Step set step_awaitable on plan; driver resumes with send_val, which
-   revive_plan stores in step_resume_inject.
-*/
-#define KOS_XFER_SUSPENDED_AWAIT 2
-
-
-/* === KosTransferAction: single transfer step === */
-
-
-/**
-   KosTransferAction represents one step in a transfer plan.
-   The step field determines which union member is active.
-*/
-
-typedef struct KosTransferAction {
-  KosTransferStep step;
-
-  union {
-    struct {
-      KosDynNode *node;
-      int phase;  /* KOS_XFER_EXTENT_PHASE_WIND or KOS_XFER_EXTENT_PHASE_UNWIND */
-    } extent_action;
-
-    struct {
-      KosDynNode *segment;
-    } install;
-
-    struct {
-      PyObject *value;
-      PyObject *exc_type;  /* for is_throw: exception type */
-      int is_throw;
-    } inject;
-
-    struct {
-      KosDynNode *node;
-      PyObject *value;
-      PyObject *exc_type;  /* for is_throw: exception type */
-      int is_throw;
-    } truncate_and_inject;
-  } data;
-
-} KosTransferAction;
-
-
-#define KosTransferAction_STEP(a)              (((KosTransferAction *)(a))->step)
-#define KosTransferAction_EXTENT_NODE(a)       (((KosTransferAction *)(a))->data.extent_action.node)
-#define KosTransferAction_EXTENT_PHASE(a)      (((KosTransferAction *)(a))->data.extent_action.phase)
-#define KosTransferAction_INSTALL_SEGMENT(a)   (((KosTransferAction *)(a))->data.install.segment)
-#define KosTransferAction_INJECT_VALUE(a)      (((KosTransferAction *)(a))->data.inject.value)
-#define KosTransferAction_INJECT_TYPE(a)       (((KosTransferAction *)(a))->data.inject.exc_type)
-#define KosTransferAction_INJECT_IS_THROW(a)   (((KosTransferAction *)(a))->data.inject.is_throw)
-#define KosTransferAction_TRUNCATE_NODE(a)     (((KosTransferAction *)(a))->data.truncate_and_inject.node)
-#define KosTransferAction_TRUNCATE_VALUE(a)    (((KosTransferAction *)(a))->data.truncate_and_inject.value)
-#define KosTransferAction_TRUNCATE_TYPE(a)     (((KosTransferAction *)(a))->data.truncate_and_inject.exc_type)
-#define KosTransferAction_TRUNCATE_IS_THROW(a) (((KosTransferAction *)(a))->data.truncate_and_inject.is_throw)
-
-
-/* === KosTransferPlan: continuation transfer execution plan === */
-
-
-#define KOS_XFER_PLAN_DEFAULT_ACTIONS 32
-
-
-/**
-   KosTransferPlan holds the action list for a continuation transfer.
-
-   Plan and actions are a single allocation. Default capacity is 32;
-   realloc the whole block when more are needed. One cached plan is
-   kept for reuse.
-
-   Actions are executed in order from index 0 to action_count-1.
-   The action_index tracks the next action to execute.
-
-   If a hook invokes another continuation, the current plan is
-   suspended and pushed onto the suspended stack. On completion,
-   the suspended plan is resumed.
-
-   The original_target is retained for future replanning when nested
-   transfers change the dynamic chain during a suspended plan.
-*/
-
-struct KosTransferPlan {
-  KosTransferPlan *suspended;   /* outer plan if nested */
-
-  size_t action_count;          /* total actions */
-  size_t action_index;          /* next action index */
-  size_t action_capacity;       /* slots allocated (>= action_count) */
-
-  KosDynNode *original_target;  /* target for chain-change detection */
-  uint32_t graft_point_id;      /* node_id for LCA fallback when replanning */
-  uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
-  KosSegment *resume_stack;  /* stack state at capture (invocation only) */
-  PyObject *continuation_ref;   /* strong ref (Py_INCREF) until plan freed or moved to prompt */
-  KosContinuation *invoke_clone;  /* when set, release then free when plan freed */
-
-  /* Stateful step: when current step suspended on await, store awaitable and resume state */
-  PyObject *step_awaitable;     /* awaitable when step suspended (owned) */
-  PyObject *step_resume_inject; /* value or exception to inject when resuming step (owned) */
-
-  /* The extent node an extent step fired, and dyn_top at that moment.
-     The step resumes only once dyn_top is that node again (the thunk's
-     frame came and went); an in-flight node the step did not fire is
-     someone else's thunk and is skipped. */
-  KosDynNode *park_node;
-  KosDynNode *park_top;
-
-  KosTransferAction actions[];  /* flexible array; size = action_capacity */
-};
-
-
-#define KosTransferPlan_SUSPENDED(p)        (((KosTransferPlan *)(p))->suspended)
-#define KosTransferPlan_ACTIONS(p)          (((KosTransferPlan *)(p))->actions)
-#define KosTransferPlan_ACTION_COUNT(p)     (((KosTransferPlan *)(p))->action_count)
-#define KosTransferPlan_ACTION_INDEX(p)     (((KosTransferPlan *)(p))->action_index)
-#define KosTransferPlan_ACTION_CAPACITY(p)  (((KosTransferPlan *)(p))->action_capacity)
-#define KosTransferPlan_ORIGINAL_TARGET(p)  (((KosTransferPlan *)(p))->original_target)
-#define KosTransferPlan_GRAFT_POINT_ID(p)   (((KosTransferPlan *)(p))->graft_point_id)
-#define KosTransferPlan_RESUME_PC(p)       (((KosTransferPlan *)(p))->resume_pc)
-#define KosTransferPlan_RESUME_STACK(p)    (((KosTransferPlan *)(p))->resume_stack)
-#define KosTransferPlan_CONTINUATION_REF(p) (((KosTransferPlan *)(p))->continuation_ref)
-#define KosTransferPlan_INVOKE_CLONE(p)    (((KosTransferPlan *)(p))->invoke_clone)
-#define KosTransferPlan_STEP_AWAITABLE(p)  (((KosTransferPlan *)(p))->step_awaitable)
-#define KosTransferPlan_STEP_RESUME_INJECT(p) (((KosTransferPlan *)(p))->step_resume_inject)
-#define KosTransferPlan_PARK_NODE(p)       (((KosTransferPlan *)(p))->park_node)
-#define KosTransferPlan_PARK_TOP(p)        (((KosTransferPlan *)(p))->park_top)
 
 
 /* === Hook invocation contract === */
@@ -1191,6 +1016,15 @@ void kos_dyngen_release(KosDynGen *gen);
 
 
 /**
+   Finish a flattened generator whose frame has already left the chain
+   and which is now dyn_top: mark its owner closed, unlink it, and drop
+   its chain references. The raise walk and a transfer's leave both
+   cross a flattened generator this way. PyErr is preserved across it.
+*/
+void kos_dyn_finish_flattened_gen(KosEvalState *es, KosDynGen *gen);
+
+
+/**
    Install GEN's active frame onto the context's chain for execution.
 
    Takes frame from GEN.active, links GEN and frame into the chain
@@ -1402,34 +1236,6 @@ int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc);
    :return: 0 on success, -1 on error
 */
 int kos_dyn_push_shift(KosEvalState *es, uint32_t prompt_node_id);
-
-
-/**
-   Build a transfer plan that unwinds all frames in the context to the root
-   (NULL frame), running WITH/finally teardown along the way, then re-raises
-   the stored KoskariContinuationApply exception via a KosDynCCRaise sentinel
-   node inserted at the bottom of the chain.
-
-   This is the foreign-token path for cross-context continuation invocation:
-   the current eval context cannot apply the continuation directly, so it
-   performs a segmented transfer by unwinding its dynamic chain completely and
-   exiting with the original exception so it can propagate further upward.
-
-   Inserts a KosDynCCRaise node at the root of the chain (below all existing
-   nodes) before building the plan.  The node's unwind callback re-raises
-   exc_val after all WITH/finally teardowns complete.
-
-   :param ctx: execution context
-   :param exc_val: the KoskariContinuationApply exception value (new ref stolen)
-   :param out_plan: output for the constructed transfer plan
-
-   :return: 0 on success, -1 on error
-*/
-int kos_dyn_plan_cc_unwind(
-    KosEvalState *es,
-    PyObject *exc_type,
-    PyObject *exc_val,
-    KosTransferPlan **out_plan);
 
 
 /**
@@ -1843,12 +1649,6 @@ KosOpResult kos_dyn_unwind_to_loop(
 int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
 
 
-/**
-   Transfer plan step protocol: a step that handed control to a thunk
-   frame, or stashed an awaitable on the plan, answers this instead of 0.
-   The plan rework replaces this protocol with KosOpResult.
-*/
-#define KOS_DYN_UNWIND_ASYNC_STARTED 1
 
 
 int kos_dyn_param_wind(KosEvalState *es, KosDynParam *node);
@@ -2153,181 +1953,13 @@ int kos_capture_cc(KosEvalState *es, KosContinuation **out_k);
 void kos_continuation_free(KosContinuation *k);
 
 
-/**
-   Clone a continuation for multi-shot invocation.
-
-   :param k: continuation to clone
-
-   :return: cloned continuation, or NULL on error
-*/
-KosContinuation *kos_continuation_clone(KosContinuation *k);
-
-
-/* === Transfer planning === */
-
-
-/**
-   Compute the lowest common ancestor between two chain positions.
-
-   Tries pointer equality first; when chains are disjoint (e.g. template vs
-   current), uses graft_point_id to find the graft point in chain a by node_id.
-
-   :param a: first chain position (typically current)
-   :param b: second chain position (typically target)
-   :param graft_point_id: node_id of graft point for ID fallback; 0 = none
-
-   :return: LCA node, or NULL if chains don't share an ancestor
-*/
-KosDynNode *kos_dyn_find_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id);
-
-
-/**
-   Build a transfer plan from current position to target.
-
-   The plan contains:
-   1. RUN_HOOK actions for after hooks from current to LCA (inner-to-outer)
-   2. INSTALL action to splice target chain
-   3. RUN_HOOK actions for before hooks from LCA to target (outer-to-inner)
-   4. INJECT action to push resume value
-
-   :param es: execution/eval state (borrowed ctx)
-   :param target: target chain position
-   :param value: resume value (borrowed, may be NULL)
-   :param is_throw: if nonzero, throw value as exception
-   :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
-   :param out_plan: output for transfer plan
-
-   :return: 0 on success, -1 on error
-*/
-int kos_dyn_plan_transfer(
-   KosEvalState *es,
-   KosDynNode *target,
-   PyObject *value,
-   int is_throw,
-   uint32_t graft_point_id,
-   KosTransferPlan **out_plan);
-
-
-/**
-   Build a transfer plan with no unwind (INSTALL + wind + INJECT only).
-   Use when the current and target chains are disjoint, such as after a
-   nested transfer interrupted an outer plan's wind thunk.
-   Caller sets RESUME_PC, RESUME_STACK after return.
-
-   :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
-
-   :return: 0 on success, -1 on error
-*/
-int kos_dyn_plan_direct_install(
-   KosEvalState *es,
-   KosDynNode *target,
-   PyObject *value,
-   int is_throw,
-   uint32_t graft_point_id,
-   KosTransferPlan **out_plan);
-
-
-/**
-   Build a PUSH plan for delimited continuation invoke.  Appends continuation
-   frames (excluding prompt) to the current chain.  Plan has: EXTENT_ACTION
-   (wind) for PARAM nodes in the segment if any, PUSH, INJECT.  Caller must
-   set RESUME_PC, RESUME_STACK after return.
-*/
-int kos_dyn_plan_delimited_push(
-   KosEvalState *es,
-   KosDynNode *segment,
-   PyObject *value,
-   int is_throw,
-   KosTransferPlan **out_plan);
-
-
-/**
-   Build a plan with only INSTALL and wind-before (no INJECT).
-   Caller pushes frame and value after running the plan.
-
-   :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
-*/
-int kos_dyn_plan_install_only(
-   KosEvalState *es,
-   KosDynNode *target,
-   uint32_t graft_point_id,
-   KosTransferPlan **out_plan);
-
-
-/**
-   Execute the next step of the active transfer plan.
-
-   If the step is RUN_HOOK, begins hook execution and returns.
-   If the step is INSTALL, splices the target chain.
-   If the step is INJECT, pushes the resume value.
-   :return: 1 if plan complete, 0 if more steps remain, -1 on error,
-     KOS_XFER_SUSPENDED_AWAIT when async
-*/
-int kos_run_transfer_step(KosEvalState *es);
-
-
-/**
-   Build a plan for POP_SHIFT: unwind from current to prompt (exclusive),
-   then TRUNCATE_AND_INJECT (free through prompt, push value).  Caller
-   must set RESUME_PC on the plan for the first instruction after POP_PROMPT.
-
-   :return: 0 on success, -1 on error
-*/
-int kos_dyn_plan_pop_shift(KosEvalState *es, KosDynPrompt *prompt,
-                                 PyObject *value, KosTransferPlan **out_plan);
-
-
-/**
-   Free a transfer plan and its actions.
-
-   :param plan: plan to free (may be NULL)
-*/
-void kos_free_transfer_plan(KosTransferPlan *plan);
-
-
-/**
-   Suspend current transfer plan for a nested transfer.  Called by
-   kos_invoke_continuation when a continuation is invoked while another
-   transfer is in progress.  Pushes active plan onto plan_stack, clears it.
-*/
-void kos_suspend_transfer_plan(KosEvalState *es);
-
-
-/**
-   Resume a suspended transfer plan after the nested transfer completes.
-   Pops from plan_stack and restores it as the active plan (no-op when
-   nothing is suspended).  Pairs with kos_suspend_transfer_plan.
-*/
-void kos_resume_transfer_plan(KosEvalState *es);
-
-
-/**
-   Free all suspended transfer plans on plan_stack.  Used when abandoning
-   a nested transfer nest after a fatal error.
-*/
-void kos_free_transfer_plan_stack(KosEvalState *es);
-
-
-/**
-   Disarm the active transfer plan and free any suspended outers on
-   plan_stack.  Does not clear PyErr or mutate dyn_top / frame_top / stack.
-*/
-void kos_abandon_transfer_nest(KosEvalState *es);
-
-
-/**
-   True when plan includes a KOS_XFER_PUSH step (delimited invoke plan).
-*/
-int kos_xfer_plan_is_delimited_push(const KosTransferPlan *plan);
-
-
 /* === Continuation invocation === */
 
 
 /**
    Invoke a captured continuation.
 
-   Builds a transfer plan from current position to the continuation's
+   Arms a transfer goal from the current position to the continuation's
    captured chain and schedules execution.
 
    :param es: execution/eval state
@@ -2397,21 +2029,6 @@ int kos_continuation_traverse(
 
 
 /**
-   Traverse a KosTransferPlan for GC.
-
-   :param plan: plan to traverse
-   :param visit: visitproc callback
-   :param arg: opaque arg for visit
-
-   :return: 0 on success, non-zero if visit returns non-zero
-*/
-int kos_transferplan_traverse(
-   KosTransferPlan *plan,
-   visitproc visit,
-   void *arg);
-
-
-/**
    Snapshot a dynamic chain to a Python list of per-node dicts.
 
    Each list entry includes generic node fields and a kind-specific
@@ -2449,7 +2066,6 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)
 #define KosDynNode_IS_WITH(n)       (KosDynNode_KIND(n) == KOS_DYN_WITH)
 #define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
-#define KosDynNode_IS_CC_RAISE(n) (KosDynNode_KIND(n) == KOS_DYN_CC_RAISE)
 #define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
 #define KosDynNode_IS_NEXT(n)     (KosDynNode_KIND(n) == KOS_DYN_NEXT)
 
@@ -2648,8 +2264,6 @@ static inline void kos_dyn_iter_request_arm(
 #define KosDynParam_BINDINGS(n)    (((KosDynNode *)(n))->u.param.bindings)
 #define KosDynParam_SAVED(n)       (((KosDynNode *)(n))->u.param.saved)
 
-#define KosDynCCRaise_EXC_TYPE(n)  (((KosDynNode *)(n))->u.cc_raise.exc_type)
-#define KosDynCCRaise_EXC_VAL(n)   (((KosDynNode *)(n))->u.cc_raise.exc_val)
 
 #define KOS_WITH_PHASE_IDLE                0
 #define KOS_WITH_PHASE_PENDING_EXIT_AWAIT  1

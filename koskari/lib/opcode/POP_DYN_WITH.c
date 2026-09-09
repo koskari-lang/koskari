@@ -38,7 +38,7 @@ KOS_OP_HANDLER(POP_DYN_WITH) {
   /* __exit__'s frame is current: run it; its return settles and
      unlinks the node. A plan armed by the install drains first. */
   if (kr.kind == KOS_RES_REPROLOGUE) {
-    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_PLAN(es))
+    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_GOAL(es))
       RESULT_CONTINUE(es);
     return kr;
   }

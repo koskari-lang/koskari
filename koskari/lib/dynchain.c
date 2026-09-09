@@ -19,9 +19,9 @@
 
    Implements the unified dynamic chain: a single parent-linked stack of
    KosDynNode values (frames, prompts, regions, winds, continuations, etc.)
-   replacing separate frame and handler chains. Transfer plans (see
-   kos_dyn_plan_transfer, kos_run_transfer_step) move control for delimited
-   and undelimited continuation invoke. Types and macros live in dynchain.h.
+   replacing separate frame and handler chains. Transfer goals (see
+   xfer_goal.h) move control for delimited and undelimited continuation
+   invoke. Types and macros live in dynchain.h.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -29,6 +29,7 @@
 
 
 #include "lib.h"
+#include "xfer_goal.h"
 #include "debug.h"
 #include "tracing.h"
 #include "hints.h"
@@ -101,7 +102,6 @@ static const char *kos_dynnode_kind_names[] = {
   "PARAM",
   "WITH",
   "SHIFT",
-  "CC_RAISE",
   "GEN",
   "NEXT",
   "UNKNOWN",
@@ -694,7 +694,6 @@ static int kos_dyn_pop_transparent_deliver(
 #include "dynchain/dyn_delim.c"
 #include "dynchain/dyn_cc.c"
 #include "dynchain/dyn_shift.c"
-#include "dynchain/dyn_cc_raise.c"
 #include "dynchain/dyn_gen.c"
 #include "dynchain/dyn_wind.c"
 /**
@@ -925,12 +924,6 @@ static KosOpResult kos_dyn_ob_resume_exception(KosObligation *ob) {
 KosOpResult kos_dyn_extent_enter(KosEvalState *es, KosDynNode *node) {
 
   switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_PARAM: {
-      /* install-wind span of the transfer plan; the plan rework routes
-         PARAM through the unlink primitive instead */
-      int r = kos_dyn_param_wind(es, (KosDynParam *) node);
-      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-    }
     case KOS_DYN_WITH:
       return kos_dyn_with_enter(es, (KosDynWith *) node);
     case KOS_DYN_WIND:
@@ -957,10 +950,7 @@ KosOpResult kos_dyn_extent_leave(
     case KOS_DYN_PARAM:
       kos_dyn_param_unwind(es, (KosDynParam *) node);
       return EVAL_NORMAL();
-    case KOS_DYN_CC_RAISE: {
-      int r = cc_raise_unwind(KosEvalState_CONTEXT(es), node);
-      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-    }
+
     case KOS_DYN_DELIM:
     case KOS_DYN_SHIFT:
     case KOS_DYN_GEN:
@@ -1017,17 +1007,6 @@ int kos_dyn_extent_in_flight(const KosDynNode *node) {
 }
 
 
-/**
-   True when the armed transfer plan's extent step fired node: the
-   step, not the hook, settles and advances it.
-*/
-static int kos_dyn_plan_step_waits_on(KosEvalState *es, KosDynNode *node) {
-  KosTransferPlan *plan = KosEvalState_PLAN(es);
-
-  return plan && KosTransferPlan_PARK_NODE(plan) == node;
-}
-
-
 KosOpResult kos_dyn_settle_top(KosEvalState *es, KosObligation *out_return) {
   KosDynNode *top = KosEvalState_DYN_TOP(es);
   int was_leave;
@@ -1036,7 +1015,7 @@ KosOpResult kos_dyn_settle_top(KosEvalState *es, KosObligation *out_return) {
     return EVAL_NORMAL();
   if (! kos_dyn_extent_in_flight(top))
     return EVAL_NORMAL();
-  if (kos_dyn_plan_step_waits_on(es, top))
+  if (kos_xfer_goal_waits_on(es, top))
     return EVAL_NORMAL();
 
   was_leave = KosDynNode_IS_WIND(top)
@@ -1107,9 +1086,7 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_SHIFT:
       kos_dynshift_free((KosDynShift *) node);
       break;
-    case KOS_DYN_CC_RAISE:
-      kos_dyn_cc_raise_free((KosDynCCRaise *) node);
-      break;
+
     case KOS_DYN_GEN:
       kos_dyngen_release((KosDynGen *) node);
       break;
@@ -2019,7 +1996,7 @@ int kos_dyn_push_clone(KosEvalState *es, KosDynNode *node) {
    operand stack stays on the frame below, and SHIFT inherits it via
    KosDynNode_STACK == NULL).
 
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
+   :return: 0 on success, -1 on error
 */
 int kos_dyn_install(KosEvalState *es, KosDynNode *node) {
   if (KosDynNode_KIND(node) == KOS_DYN_PARAM)
@@ -2208,10 +2185,7 @@ static KosDynNode *kos_dyn_clone_dispatch(KosDynNode *node) {
       return (KosDynNode *) kos_dyn_with_clone((KosDynWith *) node);
     case KOS_DYN_SHIFT:
       return (KosDynNode *) kos_dynshift_clone((KosDynShift *) node);
-    case KOS_DYN_CC_RAISE:
-      PyErr_SetString(PyExc_RuntimeError,
-                      "cannot clone CC_RAISE sentinel node");
-      return NULL;
+
     case KOS_DYN_GEN:
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot clone generator node node");
@@ -2399,7 +2373,6 @@ static KosContinuation *kos_continuation_create(
     uint32_t resume_pc,
     KosSegment *resume_stack,
     uint32_t prompt_id,
-    uint32_t graft_point_id,
     int one_shot,
     PyObject *token_ref) {
 
@@ -2423,7 +2396,6 @@ static KosContinuation *kos_continuation_create(
   KosContinuation_RESUME_PC(k) = resume_pc;
   KosContinuation_RESUME_STACK(k) = resume_stack;
   KosContinuation_PROMPT_ID(k) = prompt_id;
-  KosContinuation_GRAFT_POINT_ID(k) = graft_point_id;
   KosContinuation_ONE_SHOT(k) = one_shot;
   KosContinuation_TOKEN_REF(k) = token_ref;
   if (KosContinuation_TOKEN_REF(k))
@@ -2503,7 +2475,7 @@ static inline KosSegment *kos_chain_resume_stack(
 
 /**
    Clone segment_top..stop, detach template, wire KosContinuation. Caller
-   supplies prompt_id, graft_point_id, one_shot, and no_frame_err text.
+   supplies prompt_id, one_shot, and no_frame_err text.
 
    baseline_src, when non-NULL, is cloned and appended at the template
    bottom, below the prompt clone; baseline_ns, when non-NULL, replaces
@@ -2520,7 +2492,6 @@ static KosContinuation *kos_continuation_capture_segment(
     KosDynNode *stop,
     uint32_t resume_pc,
     uint32_t prompt_id,
-    uint32_t graft_point_id,
     int one_shot,
     KosDynFrame *baseline_src,
     PyObject *baseline_ns,
@@ -2579,7 +2550,6 @@ static KosContinuation *kos_continuation_capture_segment(
       resume_pc,
       resume_stack,
       prompt_id,
-      graft_point_id,
       one_shot,
       token);
   if (! k) {
@@ -2715,7 +2685,6 @@ int kos_shift_capture(
         stop,
         resume_pc,
         prompt_id,
-        0,
         1,
         baseline_src,
         baseline_ns,
@@ -2835,7 +2804,6 @@ int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
         KosDynCC_RESUME_PC(cc),
         KOS_PROMPT_ID_UNDELIMITED,
         0,
-        0,
         NULL,
         NULL,
         "CAPTURE_CC: no frame in captured segment");
@@ -2887,68 +2855,6 @@ void kos_continuation_free(KosContinuation *k) {
 }
 
 
-/**
-   Deep-copy captured segment and stack for a multi-shot re-invoke. Callers:
-   kos_invoke_continuation when ONE_SHOT is false.
-*/
-KosContinuation *kos_continuation_clone(KosContinuation *k) {
-  if (! k)
-    return NULL;
-
-  /* Clone only the continuation's segment (do not clone into context below
-   * the prompt). Find the bottom of the captured chain and use its parent
-   * as stop so we don't clone context nodes. */
-  KosDynNode *bottom = KosContinuation_CAPTURED_CHAIN(k);
-  while (bottom && bottom->parent)
-    bottom = bottom->parent;
-  KosDynNode *stop = bottom ? bottom->parent : NULL;
-
-  KosDynNode *cloned_chain = kos_dyn_clone_segment(KosContinuation_CAPTURED_CHAIN(k), stop);
-  if (! cloned_chain && KosContinuation_CAPTURED_CHAIN(k)) {
-    SAYF("[xfer] continuation_clone failed captured_chain=%p stop=%p pyerr=%d",
-         (void *) KosContinuation_CAPTURED_CHAIN(k), (void *) stop,
-         PyErr_Occurred() ? 1 : 0);
-    if (! PyErr_Occurred())
-      PyErr_SetString(PyExc_RuntimeError,
-                      "continuation captured chain clone failed");
-    return NULL;
-  }
-
-  if (KosContinuation_CAPTURED_CHAIN(k)
-      && ! kos_chain_first_frame(cloned_chain)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "continuation clone has no frame");
-    kos_dynchain_free(cloned_chain, NULL);
-    return NULL;
-  }
-
-  KosContinuation *clone = kos_continuation_create(
-      cloned_chain,
-      KosContinuation_RESUME_PC(k),
-      KosStack_DeepCopy(KosContinuation_RESUME_STACK(k)),
-      KosContinuation_PROMPT_ID(k),
-      KosContinuation_GRAFT_POINT_ID(k),
-      KosContinuation_ONE_SHOT(k),
-      KosContinuation_TOKEN_REF(k));
-
-  if (! clone) {
-    kos_dynchain_free(cloned_chain, NULL);
-    return NULL;
-  }
-
-  KosContinuation_LIVE_SLICE_CONSUMED(clone) =
-      KosContinuation_LIVE_SLICE_CONSUMED(k);
-  KosContinuation_LIVE_PROMPT_NODE(clone) = KosContinuation_LIVE_PROMPT_NODE(k);
-  KosContinuation_LIVE_PROMPT_NODE_ID(clone) =
-      KosContinuation_LIVE_PROMPT_NODE_ID(k);
-  KosContinuation_LIVE_SHIFT_NODE(clone) = KosContinuation_LIVE_SHIFT_NODE(k);
-  KosContinuation_LIVE_SHIFT_NODE_ID(clone) =
-      KosContinuation_LIVE_SHIFT_NODE_ID(k);
-
-  return clone;
-}
-
-
 #include "dynchain/xfer_plan.c"
 
 
@@ -2985,8 +2891,7 @@ static int dynnode_to_dict_payload(KosDynNode *node, PyObject *data) {
       return dynnode_to_dict_with(node, data);
     case KOS_DYN_SHIFT:
       return dynnode_to_dict_shift(node, data);
-    case KOS_DYN_CC_RAISE:
-      return dynnode_to_dict_cc_raise(node, data);
+
     case KOS_DYN_GEN:
       return dynnode_to_dict_gen(node, data);
     case KOS_DYN_NEXT:
@@ -3112,8 +3017,7 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       return dynnode_traverse_shift(node, visit, arg);
     case KOS_DYN_WIND:
       return dynnode_traverse_wind(node, visit, arg);
-    case KOS_DYN_CC_RAISE:
-      return dynnode_traverse_cc_raise(node, visit, arg);
+
     case KOS_DYN_GEN:
       return dynnode_traverse_gen(node, visit, arg);
     case KOS_DYN_NEXT:
@@ -3177,37 +3081,6 @@ int kos_continuation_traverse(
 
   Py_VISIT(KosContinuation_TOKEN_REF(k));
   return kos_dynchain_traverse(KosContinuation_CAPTURED_CHAIN(k), NULL, visit, arg);
-}
-
-
-/**
-   GC: visit continuation ref, step awaitables, and pending INJECT/TRUNCATE
-   payload objects in unfinished plan actions.
-*/
-int kos_transferplan_traverse(
-    KosTransferPlan *plan,
-    visitproc visit,
-    void *arg) {
-
-  if (! plan)
-    return 0;
-
-  Py_VISIT(KosTransferPlan_CONTINUATION_REF(plan));
-  Py_VISIT(KosTransferPlan_STEP_AWAITABLE(plan));
-  Py_VISIT(KosTransferPlan_STEP_RESUME_INJECT(plan));
-
-  for (size_t i = KosTransferPlan_ACTION_INDEX(plan); i < KosTransferPlan_ACTION_COUNT(plan); i++) {
-    KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[i];
-    if (KosTransferAction_STEP(a) == KOS_XFER_INJECT) {
-      Py_VISIT(KosTransferAction_INJECT_VALUE(a));
-      Py_VISIT(KosTransferAction_INJECT_TYPE(a));
-    } else if (KosTransferAction_STEP(a) == KOS_XFER_TRUNCATE_AND_INJECT) {
-      Py_VISIT(KosTransferAction_TRUNCATE_VALUE(a));
-      Py_VISIT(KosTransferAction_TRUNCATE_TYPE(a));
-    }
-  }
-
-  return 0;
 }
 
 
@@ -3476,11 +3349,6 @@ int koskari_dynchain_clear(PyObject *mod) {
     cont_freelist = next;
   }
   cont_freecount = 0;
-
-  if (xfer_plan_cache) {
-    PyMem_Free(xfer_plan_cache);
-    xfer_plan_cache = NULL;
-  }
   return 0;
 }
 

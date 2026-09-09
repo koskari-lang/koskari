@@ -13,7 +13,6 @@ KosDynGen *kos_dyngen_new(PyObject *owner) {
 
   kos_dynnode_init((KosDynNode *) gen, KOS_DYN_GEN, NULL,
                    KOS_DYN_CAP_INTERCEPTS_RAISE);
-  KosDynNode_FLAGS(gen) = KOS_DYNF_WALK_LIMIT;
   KosDynGen_OWNER(gen) = owner;  /* borrowed */
   KosDynGen_ACTIVE(gen) = NULL;
   KosDynGen_REFCOUNT(gen) = 1;
@@ -108,6 +107,24 @@ static void kos_dyngen_keepalive_release(KosDynGen *gen) {
     KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_KEEPALIVE;
     Py_XDECREF(owner);
   }
+}
+
+
+void kos_dyn_finish_flattened_gen(KosEvalState *es, KosDynGen *gen) {
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+  KosDynNode *consumer = KosDynNode_PARENT(gen);
+  PyObject *owner = KosDynGen_OWNER(gen);
+  KosIterSlots *islots;
+
+  if (owner && KosIter_CheckSlots(owner, &islots))
+    islots->ki_finish(owner, 1);
+  PyErr_Fetch(&typ, &val, &tb);
+  kos_dyn_commit_dyn_top(es, consumer);
+  KosDynNode_PARENT(gen) = NULL;
+  kos_dyngen_keepalive_release(gen);
+  kos_dyngen_release(gen);
+  PyErr_Restore(typ, val, tb);
 }
 
 

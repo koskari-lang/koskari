@@ -303,11 +303,11 @@ class TestDynWindContinuations(SpecialsTestCase):
 
     async def test_continuation_invoked_from_after_thunk_during_transfer(self):
         """
-        Invoking a second continuation from a dyn-wind after-thunk during an
-        active outer transfer (interrupted transfer) must not discard the outer
-        plan.  Both transfers must reach their targets: the inner continuation
-        (inner-k) runs first, then the outer (outer-k) is replanned and
-        completes with its own injected value.
+        Invoking a second continuation from a dyn-wind after-thunk that an
+        outer transfer is running supersedes that transfer: the inner
+        continuation lands, the chain it replaced included the outer
+        transfer's target, and the outer never delivers its value. The
+        program's value is the inner continuation's.
         """
 
         src_str = """
@@ -320,7 +320,7 @@ class TestDynWindContinuations(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
-        self.assertEqual(result, 42)
+        self.assertEqual(result, 99)
 
 
     async def test_continuation_invoked_from_before_thunk_during_transfer(self):

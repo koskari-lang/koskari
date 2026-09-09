@@ -27,22 +27,21 @@ from . import SpecialsTestCase
 pytestmark = pytest.mark.phase_specials
 
 
-class TestDelimitedTransferNestedForbid(SpecialsTestCase):
+class TestDelimitedTransferNested(SpecialsTestCase):
     """
-    Delimited PUSH transfer plans must not accept nested continuation invoke;
-    fail fast with RuntimeError instead of silent wrong-topology replan.
+    A delimited invoke from inside a wind thunk that another delimited
+    invoke is entering lands a second slice above the first; the inner
+    invoke returns its reset's value to the thunk, and the outer invoke
+    then finishes entering and runs its own slice.
     """
 
-    async def test_nested_invoke_during_delimited_push_transfer_raises(self):
+    async def test_nested_invoke_from_before_thunk_during_delimited_push(self):
         """
-        While a delimited PUSH transfer is draining, a dyn-wind before-thunk on
-        the captured segment invokes the same continuation again.  That nested
-        invoke must raise RuntimeError and abandon the transfer nest.
-
-        dyn-wind wraps shift so heritage nodes are captured with the prompt.
-        The pass counter skips nested invoke on the initial before entry and
-        performs it only when the cloned wind before-thunk runs during (k 0)
-        PUSH wind.
+        dyn-wind wraps shift so the wind is captured with the prompt. The
+        pass counter invokes k from the cloned wind's before-thunk exactly
+        once, on the first re-entry, so the recursion is bounded: the inner
+        invoke resumes the slice with 99 and returns 99 to the thunk, and
+        the outer invoke resumes the slice with 0
         """
 
         src_str = """
@@ -54,16 +53,18 @@ class TestDelimitedTransferNestedForbid(SpecialsTestCase):
                   (begin
                     (setq pass (+ pass 1))
                     (cond
-                      ((>= pass 2) (call k 99))
+                      ((== pass 2) (call k 99))
                       (else: nil)))
                   (shift k k)
                   nil)))
-            (call k 0)))
+            (call record (call k 0))
+            pass))
         """
-        expr, mod = self.compile_expr(src_str)
-        with self.assertRaises(RuntimeError) as ctx:
-            await expr()
-        self.assertIn("delimited transfer", str(ctx.exception))
+        results = []
+        expr, mod = self.compile_expr(src_str, record=results.append)
+        passes = await expr()
+        self.assertEqual(results, [0])
+        self.assertEqual(passes, 3)
 
 
 # The end.

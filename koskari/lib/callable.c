@@ -73,7 +73,7 @@ static PyObject *vcall_build_kwds_dict(
 static KosOpResult callable_promote_normal(KosEvalState *es, KosOpResult r) {
   if (r.kind != KOS_RES_NORMAL)
     return r;
-  if (KosEvalState_PLAN(es))
+  if (KosEvalState_GOAL(es))
     return EVAL_REPROLOGUE();
   /* An install that left a resume on the frame rather than bytecode
      must go through the prologue, which is where it is picked up.

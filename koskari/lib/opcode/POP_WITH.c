@@ -56,7 +56,7 @@ KOS_OP_HANDLER(POP_WITH) {
      settles and unlinks the node and sets the pc past this opcode. A
      plan armed by the install is the prologue's to drain. */
   if (kr.kind == KOS_RES_REPROLOGUE) {
-    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_PLAN(es))
+    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_GOAL(es))
       RESULT_CONTINUE(es);
     return kr;
   }

@@ -400,7 +400,7 @@ unwind are skipped; running them is a correctness gain.
 | PARAM, YIELD_FROM, TRY, FINALLY, NS, COLLECT, LOOP, FOREACH | synchronous teardown, unlink |
 | PROMPT, DELIM, SHIFT, CC, NEXT | unlink; `allow_barrier = 1` for every goal |
 | GEN, flattened (has a parent) | the raise walk's arm: `ki_finish`, teardown as exhausted, continue |
-| GEN, root (no parent) | the seam for cc-unwind (§3.7); unreachable for any other goal, since capture already refuses across a GEN. Assert |
+| GEN, root (no parent) | the seam for cc-unwind (§3.7); unreachable for any other goal, since capture already refuses across a GEN. `SystemError` |
 
 ### 3.10 Nesting
 
@@ -441,9 +441,12 @@ Deleted: the replan block (`eval_chain.c:270-350`),
 | Capture, clone | **KEEP** | plus §3.6's clone answers. `kos_invoke_continuation` builds a goal with a construction-time clone and no longer calls `kos_continuation_clone` |
 | In-place invoke | **KEEP** | the refusal at `xfer_plan.c:1413-1414` restated as "no goal armed" |
 
-`xfer_plan.c` leaves the textual include and becomes a translation unit whose
-header is: build a goal, drive a goal, free a goal. Nothing in the driver
-switches on `KosDynNode_KIND`.
+The goal lives in its own translation unit, `koskari/lib/xfer_goal.c` with
+`xfer_goal.h`: build a goal, arm it, drive it, free it, traverse it. Nothing
+in the driver switches on `KosDynNode_KIND` beyond the GEN and PARAM rows of
+§3.9 and §3.2. `xfer_plan.c` keeps only continuation invocation (the in-place
+path and `kos_invoke_continuation`, which builds a goal) and stays a textual
+include of `dynchain.c`, since the in-place path uses its statics.
 
 ## 5. Order of work
 
@@ -465,8 +468,17 @@ switches on `KosDynNode_KIND`.
    that raises during a return walk now reaches `process_raise` where it
    was EVAL_FATAL.
 3. §3.6.
-4. §3.1, §3.2, §3.7, §3.8 as one change. Closes D2, D3, D8, D10.
-5. §3.9, §3.10. Closes D4, D5.
+4. §3.1, §3.2, §3.7, §3.8 as one change, with §3.9 and §3.10, since the
+   driver cannot exist without its nesting and its GEN rule. Closes D2, D3,
+   D4, D5, D8, D10. Two test expectations change with it: an unbounded
+   nested delimited invoke from a before-thunk, which the removed refusal
+   used to stop, becomes the bounded shape (a recursion limit is the
+   follow-up that reinstates the unbounded program under
+   `RecursionError`); and an undelimited invoke from an after-thunk during
+   another undelimited transfer now yields the inner continuation's value,
+   the outer transfer being void per §3.10, where the replan used to
+   deliver the outer's.
+5. Remaining: the goal-side review items, ASan, pyversions.
 
 ## 6. Tests this must add
 

@@ -573,7 +573,7 @@ KosOpResult KosEvalState_Call(
                                          nargs, kwnames, 0);
     if (r.kind != KOS_RES_NORMAL)
       return r;
-    if (KosEvalState_PLAN(es))
+    if (KosEvalState_GOAL(es))
       return EVAL_REPROLOGUE();
     if (KosEvalState_FRAME(es)
         && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)))

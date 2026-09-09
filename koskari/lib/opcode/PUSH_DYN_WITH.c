@@ -88,7 +88,7 @@ KOS_OP_HANDLER_COLD(PUSH_DYN_WITH) {
      in that second case would run the with body before the transfer
      it was meant to make. */
   if (wr.kind == KOS_RES_REPROLOGUE
-      && (KosEvalState_FRAME(es) == caller || KosEvalState_PLAN(es)))
+      && (KosEvalState_FRAME(es) == caller || KosEvalState_GOAL(es)))
     return wr;
 
   RESULT_CONTINUE(es);

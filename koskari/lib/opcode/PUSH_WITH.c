@@ -90,7 +90,7 @@ KOS_OP_HANDLER_COLD(PUSH_WITH) {
   if (wr.kind != KOS_RES_NORMAL) {
     if (wr.kind == KOS_RES_REPROLOGUE
         && KosEvalState_FRAME(es) != caller
-        && ! KosEvalState_PLAN(es))
+        && ! KosEvalState_GOAL(es))
       RESULT_CONTINUE(es);
     return wr;
   }

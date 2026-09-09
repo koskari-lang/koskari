@@ -114,7 +114,7 @@ typedef enum KosContextFlags {
   KOS_CTX_RUNNING         = 0x01,
   KOS_CTX_FROZEN          = 0x02,
   KOS_CTX_DEAD            = 0x04,
-  KOS_CTX_IN_TRANSFER     = 0x10,  /* executing a transfer plan */
+  KOS_CTX_IN_TRANSFER     = 0x10,  /* a transfer goal is armed */
 } KosContextFlags;
 
 
@@ -160,7 +160,6 @@ typedef enum KosSuspensionEvent {
 */
 typedef enum KosEvalMode {
   KOS_MODE_NORMAL    = 0,
-  KOS_MODE_TRANSFER  = 1,
   KOS_MODE_EXCEPTION = 2,
 } KosEvalMode;
 
@@ -593,9 +592,8 @@ struct KosContext {
                                parameter cell table, forked (pointer-copied)
                                at creation. Lazy; NULL when empty. */
 
-  /* Transfer plan state */
-  KosTransferPlan *plan;        /* active transfer plan (or NULL) */
-  KosTransferPlan *plan_stack;  /* suspended plans stack */
+  /* The active transfer goal, or NULL; parked outer goals hang off it */
+  KosXferGoal *goal;
 
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_resume_inject;  /* value to push on next koskari_eval when resuming */
@@ -632,8 +630,7 @@ struct KosContext {
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
 #define KosContext_PARAM_REFS(c)            (((KosContext *)(c))->param_refs)
-#define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
-#define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
+#define KosContext_GOAL(c)                   (((KosContext *)(c))->goal)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)
@@ -665,9 +662,9 @@ struct KosContext {
   design/archive/freeze-thaw-context-segments.md.
 
   KosEvalState_Init only binds ctx and clears es. koskari_eval calls
-  KosEvalState_ThawFromContext to move dyn_top, plan, plan_stack, and derived
-  snapshots from ctx onto es (NULL on ctx). While RUN, es owns chain and plan;
-  KosEvalState_DYN_TOP and KosEvalState_PLAN never read ctx. Freeze restores
+  KosEvalState_ThawFromContext to move dyn_top, goal, and derived snapshots
+  from ctx onto es (NULL on ctx). While RUN, es owns chain and goal;
+  KosEvalState_DYN_TOP and KosEvalState_GOAL never read ctx. Freeze restores
   onto ctx and NULLs es. Chain shape changes refresh live fields via
   kos_dyn_resync_after_push/pop or kos_dyn_resync_chain.
 
@@ -678,8 +675,7 @@ struct KosContext {
 struct KosEvalState {
   KosContext *ctx;
   KosDynNode *dyn_top;       /* RUN: top of dynamic chain (stolen from ctx) */
-  KosTransferPlan *plan;     /* RUN: active transfer plan */
-  KosTransferPlan *plan_stack; /* RUN: suspended plans (via plan->suspended) */
+  KosXferGoal *goal;         /* RUN: active transfer goal (stolen from ctx) */
   KosDynFrame *frame; /* live top frame; thaw and kos_dyn_* retarget */
   KosCode *code;      /* live code from frame */
   KosSegment **block; /* live innermost stack slot; non-owning */
@@ -732,8 +728,7 @@ static inline KosOpResult kos_call_installed(KosEvalState *es) {
 
 #define KosEvalState_CONTEXT(es) ((es)->ctx)
 #define KosEvalState_DYN_TOP(es)     ((es)->dyn_top)
-#define KosEvalState_PLAN(es)        ((es)->plan)
-#define KosEvalState_PLAN_STACK(es)  ((es)->plan_stack)
+#define KosEvalState_GOAL(es)        ((es)->goal)
 #define KosEvalState_FRAME(es) ((es)->frame)
 #define KosEvalState_CODE(es) ((es)->code)
 /** The live code's instruction array. Read through the code object on
@@ -870,10 +865,6 @@ static inline KosOpResult kos_iter_installed(KosEvalState *es) {
 #define KosEvalState_SuspensionEvent(es) \
   KosContext_SUSPENSION_EVENT(KosEvalState_CONTEXT(es))
 
-#define KosEvalState_SuspendActivePlan(es) kos_suspend_transfer_plan(es)
-
-#define KosEvalState_ResumeSuspendedPlan(es) kos_resume_transfer_plan(es)
-
 #define KosEvalState_MarkSuspendedNotRunning(es) \
   do { \
     KosContext *kos_ctx_mark_sr_ = KosEvalState_CONTEXT(es); \
@@ -915,9 +906,9 @@ void KosEvalState_ThawFromContext(KosEvalState *es);
 
 
 /**
-  Restore dyn_top, plan, plan_stack, and derived snapshots from es onto ctx and
-  NULL es. Call from koskari_eval_cleanup after FlushLiveRegsToFrame. Updates
-  KOS_CTX_IN_TRANSFER from restored plan.
+  Restore dyn_top, goal, and derived snapshots from es onto ctx and NULL
+  es. Call from koskari_eval_cleanup after FlushLiveRegsToFrame. Updates
+  KOS_CTX_IN_TRANSFER from the restored goal.
 */
 
 void KosEvalState_FreezeToContext(KosEvalState *es);
@@ -948,12 +939,6 @@ done:
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_flush_live_regs);
 }
 
-
-/**
-  Replace any active transfer plan with plan and set KOS_CTX_IN_TRANSFER.
-  plan must be non-NULL. Frees the previous plan if present.
-*/
-void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan);
 
 int KosEvalState_SetFrameCodeAndNamespace(
     KosEvalState *es,
@@ -1025,7 +1010,7 @@ KosContext *KosContext_New(KosDynFrame *top);
   and KosEvalState_FlushLiveRegsToFrame run so frame PCs reflect the last
   live eval snapshot.
 
-  Also frees active and stacked transfer plans, clears await/resume and
+  Also frees the armed transfer goal and its outers, clears await/resume and
   inject fields, and drops domain and pending return state. The context
   record is returned to an internal freelist or PyMem_Free.
 
@@ -1039,7 +1024,7 @@ void KosContext_Free(KosContext *ctx);
    finished frame chain and clear the completion residue -- dead and
    running flags, suspension tag, in-flight await iterator, resume
    inject. A context holding state this reset cannot account for (an
-   armed transfer plan) is left untouched and the caller must free it
+   armed transfer goal) is left untouched and the caller must free it
    instead.
 
    :return: 0 recycled; -1 the context cannot be recycled
@@ -1336,7 +1321,7 @@ KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val);
    loop by a signal rather than by the fetch itself. In order: a
    staged CPS delivery with no pending exception and no plan goes
    straight to its resume; a pending exception runs the raise walk; an
-   armed transfer plan drains; a frame waiting on a resume takes its
+   armed transfer goal drives; a frame waiting on a resume takes its
    delivery. Each of those may ask to run again, and this function
    loops until none does.
 

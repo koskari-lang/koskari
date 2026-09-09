@@ -582,27 +582,10 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
           }
 
           /* Flattened generator whose frame the earlier raise phases
-             already crossed (dyn_top is the GEN itself). Finish it --
-             mark the owner closed, unlink the GEN, drop its chain refs
-             -- and continue the walk so the raise propagates into the
+             already crossed (dyn_top is the GEN itself). Finish it and
+             continue the walk so the raise propagates into the
              consumer's regions, per Python generator semantics. */
-          {
-            PyObject *owner = KosDynGen_OWNER(top);
-            KosIterSlots *islots;
-            if (owner && KosIter_CheckSlots(owner, &islots))
-              islots->ki_finish(owner, 1);
-          }
-          {
-            PyObject *typ = NULL, *val = NULL, *tb = NULL;
-            KosDynNode *consumer = KosDynNode_PARENT(top);
-
-            PyErr_Fetch(&typ, &val, &tb);
-            kos_dyn_commit_dyn_top(es, consumer);
-            KosDynNode_PARENT(top) = NULL;
-            kos_dyngen_keepalive_release((KosDynGen *) top);
-            kos_dyngen_release((KosDynGen *) top);
-            PyErr_Restore(typ, val, tb);
-          }
+          kos_dyn_finish_flattened_gen(es, (KosDynGen *) top);
           continue;
         }
 
