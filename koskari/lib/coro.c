@@ -103,7 +103,64 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
 /* === KosCoroutine type === */
 
 
+static PyObject *coroutine_close(PyObject *self);
+
+
+/**
+   Mark every frame on the suspended chain as a demand root, so the
+   close that follows runs on the demand path: cleanup that completes
+   synchronously runs, and cleanup that tries to suspend is refused
+   in-eval with KoskariSyncViolation, which the remaining finally blocks
+   still see. Child frames inherit the bit only at creation, and these
+   frames already exist.
+*/
+static void coroutine_mark_demand(KosCoroutine *coro) {
+  for (KosDynNode *node = KosContext_DYN_TOP(coro->ctx);
+       node; node = KosDynNode_PARENT(node)) {
+    if (KosDynNode_IS_FRAME(node))
+      KosDynFrame_FLAGS(node) |= KOS_FRAME_DEMAND;
+  }
+}
+
+
+/**
+   Finalizer: a coroutine dropped while suspended is closed before its
+   context is torn down, the way CPython closes an abandoned coroutine,
+   so its finally blocks, with exits, and wind after thunks run.
+   GeneratorExit is thrown at the suspension point and whatever
+   propagates back out is swallowed here; anything other than the close
+   itself is reported as unraisable. The forced free in dealloc follows
+   regardless of how the close went. A coroutine never started has
+   entered nothing, and a finished one has nothing left to unwind.
+*/
+static void coroutine_finalize(PyObject *self) {
+  KosCoroutine *const coro = (KosCoroutine *) self;
+
+  if (! coro->ctx || coro->in_send || ! coro_str_close)
+    return;
+  if (coro->state != KOS_CORO_WAITING_PY && coro->state != KOS_CORO_YIELDED)
+    return;
+
+  PyObject *typ, *val, *tb;
+  PyErr_Fetch(&typ, &val, &tb);
+
+  coroutine_mark_demand(coro);
+  PyObject *result = coroutine_close(self);
+  if (result)
+    Py_DECREF(result);
+  else
+    PyErr_WriteUnraisable(self);
+
+  PyErr_Restore(typ, val, tb);
+}
+
+
 static void coroutine_dealloc(PyObject *self) {
+
+  /* run the finalizer first; it may resurrect the coroutine, in which
+     case the dealloc is abandoned here and happens on the next drop */
+  if (PyObject_CallFinalizerFromDealloc(self) < 0)
+    return;
 
   PyObject_GC_UnTrack(self);
 
@@ -152,7 +209,6 @@ static int coroutine_clear(PyObject *self) {
 
 static PyObject *coroutine_send(PyObject *self, PyObject *value);
 static PyObject *coroutine_throw(PyObject *self, PyObject *args);
-static PyObject *coroutine_close(PyObject *self);
 
 
 static PyObject *coroutine_await(PyObject *self) {
@@ -540,6 +596,7 @@ PyTypeObject KosCoroutineType = {
   .tp_basicsize = sizeof(KosCoroutine),
   .tp_itemsize = 0,
   .tp_dealloc = coroutine_dealloc,
+  .tp_finalize = coroutine_finalize,
   .tp_repr = coroutine_repr,
   .tp_as_async = &coroutine_async_methods,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
