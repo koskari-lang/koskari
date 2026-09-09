@@ -413,6 +413,11 @@ class SourceStream(BaseSourceStream):
 
         super().__init__(stream, filename, line=line_no, col=col_no)
 
+        # where the character that triggered the running event macro
+        # stood; set by Reader._read before each dispatch, read by macros
+        # that report the opener of an unfinished form
+        self.event_position = None
+
         if auto_skip_exec:
             self.skip_exec()
 
@@ -467,7 +472,7 @@ class SourceStream(BaseSourceStream):
                                  text=text, filename=self.filename)
 
 
-    def reader_eof(self, position=None, *, context=None):
+    def reader_eof(self, position=None, *, context=None, opened_at=None):
         """
         Build a ReaderEOF for stream end inside an unfinished form
 
@@ -475,10 +480,25 @@ class SourceStream(BaseSourceStream):
         raise this immediately and REPL parse paths map it to incomplete
         input without displaying the exception.
 
+        When the unfinished form has an opener, a quote, a bracket, a
+        field brace, the error is located at that opener and the message
+        names it, so a reader of the error is pointed at what was never
+        closed rather than at the end of the input.
+
         :param position: optional (line, col) tuple; uses current if None
-        :param context: optional phrase appended after unexpected EOF
+        :param context: optional phrase naming the unfinished form
+        :param opened_at: (line, col) of the form's opener; when given it
+            becomes the error location and is named in the message
         :return: a ReaderEOF instance (caller should raise it)
         """
+
+        if opened_at is not None:
+            line, col = opened_at
+            what = context or "form"
+            message = (f"unexpected EOF in {what} opened at line {line},"
+                       f" column {col}")
+            return ReaderEOF(message, opened_at,
+                             text=None, filename=self.filename)
 
         if position is None:
             position = self.lin, self.col
@@ -1085,6 +1105,12 @@ class Reader:
             if not c:
                 return EOF, position, None
 
+            # the macro about to run has consumed its trigger; this is
+            # where the trigger stood, for it to report as the opener of
+            # whatever it goes on to read. A macro that reads nested
+            # forms must take it before the first nested read.
+            stream.event_position = position
+
             try:
                 event, value = self._dispatch_event_macros(stream, c)
                 if not raw and event is ATOM:
@@ -1393,7 +1419,8 @@ class Reader:
 
         opener = self._peek_string_opener(stream)
         if opener is EOF:
-            raise stream.reader_eof(segment_at, context="string segment")
+            raise stream.reader_eof(opened_at=segment_at,
+                                    context="string segment")
         elif not opener:
             raise stream.error(
                 "string segment expected after '-'", segment_at)
@@ -1923,6 +1950,8 @@ class Reader:
         :return: tuple of (event, value)
         """
 
+        opened_at = stream.event_position
+
         if char == "[" and self.bracket_pairs:
             empty = bracket_nil
             make_cell = bracket_pair
@@ -1960,7 +1989,8 @@ class Reader:
                         break
 
                 elif event is EOF:
-                    raise stream.reader_eof(position)
+                    raise stream.reader_eof(opened_at=opened_at,
+                                            context=f"{char!r} form")
 
                 elif result is empty:
                     result = make_cell(value, empty)
@@ -2116,10 +2146,11 @@ class Reader:
         if not peek or peek.isspace() or peek == ";" or peek in ")]}":
             return DEFER, None
 
+        opened_at = stream.event_position
         event, pos, child = self._read(stream)
 
         if event is EOF:
-            raise stream.reader_eof(pos)
+            raise stream.reader_eof(opened_at=opened_at, context="ref call")
         if event is not VALUE:
             raise stream.error(f"invalid use of {fchar}", pos)
 
@@ -2223,6 +2254,10 @@ class Reader:
         :return: tuple of (VALUE, string)
         """
 
+        # the event that led here was the opening quote, or the prefix
+        # letter before it; either way the literal opened there
+        opened_at = stream.event_position
+
         if stream.peek(2) == (char * 2):
             stream.read(2)
             return self._read_3string(stream, char, with_escapes)
@@ -2240,7 +2275,7 @@ class Reader:
             if is_escp(C):
                 result.append(sr())
         else:
-            raise stream.reader_eof(stream.position())
+            raise stream.reader_eof(opened_at=opened_at, context="string")
 
         res = "".join(result)
         if with_escapes:
@@ -2282,7 +2317,8 @@ class Reader:
             stream.read(1)
 
         else:
-            raise stream.reader_eof(stream.position())
+            raise stream.reader_eof(opened_at=stream.event_position,
+                                    context="triple-quoted string")
 
         if with_escapes:
             value = _as_unicode(value)
@@ -2299,10 +2335,11 @@ class Reader:
         :return: tuple of (VALUE, (quote expr))
         """
 
+        opened_at = stream.event_position
         event, pos, child = self._read(stream)
 
         if event is EOF:
-            raise stream.reader_eof(pos)
+            raise stream.reader_eof(opened_at=opened_at, context="quote")
         if event is not VALUE:
             msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
@@ -2319,11 +2356,13 @@ class Reader:
         :return: tuple of (VALUE, (quasiquote expr))
         """
 
+        opened_at = stream.event_position
         with self.temporary_event_macro(",", self._read_unquote, True):
             event, pos, child = self._read(stream)
 
         if event is EOF:
-            raise stream.reader_eof(pos)
+            raise stream.reader_eof(opened_at=opened_at,
+                                    context="quasiquote")
         if event is not VALUE:
             msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
@@ -2390,7 +2429,7 @@ class Reader:
 
         c = stream.read(1)
         if not c:
-            raise stream.reader_eof(fence_pos, context="fence")
+            raise stream.reader_eof(opened_at=fence_pos, context="fence")
         if c == "\r" and stream.peek(1) == "\n":
             stream.read(1)
 
@@ -2399,7 +2438,7 @@ class Reader:
         raw_lines = []
         while True:
             if not stream.peek(1):
-                raise stream.reader_eof(fence_pos, context="fence")
+                raise stream.reader_eof(opened_at=fence_pos, context="fence")
             line = stream.peek_line()
             if line.strip(" \t") == "```":
                 base = len(line) - len(line.lstrip(" \t"))
@@ -2479,11 +2518,12 @@ class Reader:
         :return: tuple of (VALUE, (unquote expr) or (unquote-splicing expr))
         """
 
+        opened_at = stream.event_position
         with self.temporary_event_macro("@", self._read_splice, True):
             event, pos, child = self._read(stream)
 
         if event is EOF:
-            raise stream.reader_eof(pos)
+            raise stream.reader_eof(opened_at=opened_at, context="unquote")
         if event is not VALUE:
             msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
@@ -2507,10 +2547,12 @@ class Reader:
         :return: tuple of (VALUE, (splice expr))
         """
 
+        opened_at = stream.event_position
         event, pos, child = self._read(stream)
 
         if event is EOF:
-            raise stream.reader_eof(pos)
+            raise stream.reader_eof(opened_at=opened_at,
+                                    context="unquote-splicing")
         if event is not VALUE:
             msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
@@ -3046,7 +3088,7 @@ class LayoutReader(Reader):
         if event is COLON:
             raise stream.error('block header must have a head', pos)
         if event is EOF:
-            raise stream.reader_eof(pos, context='block header')
+            raise stream.reader_eof(opened_at=pos, context='block header')
 
         args, found_colon = self._read_header_args(stream)
         if not found_colon:
@@ -3595,7 +3637,7 @@ class FormatStringReader(object):
             self.normal = normal_reader
 
 
-    def _read_format_spec(self, stream):
+    def _read_format_spec(self, stream, opened_at=None):
         """
         Read a colon-suffix format spec until the field closing brace
 
@@ -3611,7 +3653,8 @@ class FormatStringReader(object):
         while True:
             c = stream.read(1)
             if not c:
-                raise stream.reader_eof(stream.position())
+                raise stream.reader_eof(opened_at=opened_at,
+                                        context="f-string field")
             if c == '{':
                 depth += 1
                 parts.append(c)
@@ -3626,7 +3669,7 @@ class FormatStringReader(object):
         return ''.join(parts)
 
 
-    def _read_format_field(self, stream):
+    def _read_format_field(self, stream, opened_at=None):
         """
         Read one ``{...}`` f-string field
 
@@ -3661,7 +3704,8 @@ class FormatStringReader(object):
             event, pos, expr = norm._read(stream)
 
         if event is EOF:
-            raise stream.reader_eof(pos)
+            raise stream.reader_eof(opened_at=opened_at,
+                                    context="f-string field")
         if event is not VALUE:
             raise stream.error("invalid format field", pos)
 
@@ -3670,7 +3714,7 @@ class FormatStringReader(object):
 
         if peek == ':':
             stream.read(1)
-            spec = self._read_format_spec(stream)
+            spec = self._read_format_spec(stream, opened_at)
             child = cons(_symbol_format, expr, spec, nil)
 
         elif peek == '}':
@@ -3682,7 +3726,8 @@ class FormatStringReader(object):
             while stream.peek(1) != '}':
                 event, pos, val = norm._read(stream)
                 if event is EOF:
-                    raise stream.reader_eof(pos)
+                    raise stream.reader_eof(opened_at=opened_at,
+                                            context="f-string field")
                 if event is not VALUE:
                     raise stream.error("invalid format field", pos)
                 forms.append(val)
@@ -3715,7 +3760,7 @@ class FormatStringReader(object):
         return stream.read(1)
 
 
-    def _read_raw_field(self, stream):
+    def _read_raw_field(self, stream, opened_at=None):
         """
         Read one field's raw text up to and consuming the matching ``}``
 
@@ -3735,11 +3780,13 @@ class FormatStringReader(object):
         while True:
             c = stream.read(1)
             if not c:
-                raise stream.reader_eof(stream.position())
+                raise stream.reader_eof(opened_at=opened_at,
+                                        context="f-string field")
             if c == '\\':
                 nxt = stream.read(1)
                 if not nxt:
-                    raise stream.reader_eof(stream.position())
+                    raise stream.reader_eof(opened_at=opened_at,
+                                            context="f-string field")
                 parts.append(c)
                 parts.append(nxt)
                 if nxt == '"':
@@ -3757,19 +3804,21 @@ class FormatStringReader(object):
             parts.append(c)
 
 
-    def _read_field(self, stream):
+    def _read_field(self, stream, opened_at=None):
         """
         Read one ``{...}`` field: extract its raw text, decode, and parse
 
         :param stream: the source stream, positioned after the opening ``{``
+        :param opened_at: (line, col) of the opening ``{``, named when the
+            field is never closed
         :return: a ``(format ...)`` form for this field
         """
 
         pos = stream.position()
-        raw = self._read_raw_field(stream)
+        raw = self._read_raw_field(stream, opened_at)
         substream = source_str(_as_unicode(raw) + '}', stream.filename,
                                line_no=pos[0], col_no=pos[1])
-        return self._read_format_field(substream)
+        return self._read_format_field(substream, opened_at)
 
 
     def split(self, stream):
@@ -3808,6 +3857,7 @@ class FormatStringReader(object):
                     continue
 
                 if c == '{':
+                    open_pos = stream.position()
                     stream.read(1)
                     if stream.peek(1) == '{':
                         stream.read(1)
@@ -3815,7 +3865,7 @@ class FormatStringReader(object):
                         result.append('{')
                         continue
                     flush()
-                    result.append(self._read_field(stream))
+                    result.append(self._read_field(stream, open_pos))
                     continue
 
                 # c == '}'
@@ -3830,8 +3880,13 @@ class FormatStringReader(object):
                     stream.position(),
                     filename=stream.filename)
 
-        except ReaderEOF:
-            raise
+        except ReaderEOF as eof:
+            # the f-string's closing quote was already found, so the body
+            # is complete: running out of it inside a field is a
+            # malformed literal, never a request for more input
+            raise FormatStringSyntaxError(eof.message, eof.location,
+                                          filename=eof.filename,
+                                          text=eof.text) from None
         except ReaderSyntaxError as rex:
             raise FormatStringSyntaxError(rex.message, rex.location,
                                           filename=rex.filename,
