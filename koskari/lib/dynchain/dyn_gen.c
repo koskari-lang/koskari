@@ -232,13 +232,18 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
 
   /* The resumed frames sit above the consumer's frame; a resume that
      would not fit raises RecursionError at the request, as Python's
-     next() does, with the generator left suspended. */
-  if (kos_eval_check_frame_room(
-          es, KosEvalState_FRAME(es),
-          kos_dyn_frame_count(active, (KosDynNode *) gen)) < 0)
-    return -1;
-  kos_dyn_renumber_frames(active, (KosDynNode *) gen,
-                          kos_dyn_frame_depth_at(KosEvalState_DYN_TOP(es)));
+     next() does, with the generator left suspended. One count serves
+     the room check and the renumber, and the invoker frame in hand is
+     the base depth. */
+  {
+    unsigned count = kos_dyn_frame_count(active, (KosDynNode *) gen);
+
+    if (kos_eval_check_frame_room(es, invoker_frame, count) < 0)
+      return -1;
+    kos_dyn_renumber_frames_counted(
+        active, (KosDynNode *) gen,
+        invoker_frame ? KosDynFrame_DEPTH(invoker_frame) : 0, count);
+  }
 
   /* The consumer's registers, restored at the next freeze. */
   kos_live_regs_capture(es, KosDynGen_HOST(gen));
@@ -338,22 +343,29 @@ int kos_dyn_gen_install_bootstrap(
     return -1;
   }
 
-  for (n = chain_head; n; n = KosDynNode_PARENT(n)) {
-    if (n == (KosDynNode *) gen)
-      break;
-  }
-  if (! n) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_gen_install_bootstrap: GEN not on source chain");
-    return -1;
-  }
+  /* The membership check walks the span once; the frames it passes are
+     the count the room check and the renumber need. */
+  {
+    unsigned count = 0;
 
-  if (kos_eval_check_frame_room(
-          es, KosEvalState_FRAME(es),
-          kos_dyn_frame_count(chain_head, (KosDynNode *) gen)) < 0)
-    return -1;
-  kos_dyn_renumber_frames(chain_head, (KosDynNode *) gen,
-                          kos_dyn_frame_depth_at(KosEvalState_DYN_TOP(es)));
+    for (n = chain_head; n; n = KosDynNode_PARENT(n)) {
+      if (n == (KosDynNode *) gen)
+        break;
+      if (KosDynNode_IS_FRAME(n))
+        count++;
+    }
+    if (! n) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "kos_dyn_gen_install_bootstrap: GEN not on source"
+                      " chain");
+      return -1;
+    }
+    if (kos_eval_check_frame_room(es, invoker_frame, count) < 0)
+      return -1;
+    kos_dyn_renumber_frames_counted(
+        chain_head, (KosDynNode *) gen,
+        invoker_frame ? KosDynFrame_DEPTH(invoker_frame) : 0, count);
+  }
 
   /* The consumer's registers, restored at the first freeze. */
   kos_live_regs_capture(es, KosDynGen_HOST(gen));

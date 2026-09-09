@@ -550,19 +550,30 @@ unsigned kos_dyn_frame_count(KosDynNode *top, KosDynNode *base) {
 }
 
 
-void kos_dyn_renumber_frames(
+void kos_dyn_renumber_frames_counted(
     KosDynNode *top,
     KosDynNode *base,
-    unsigned base_depth) {
+    unsigned base_depth,
+    unsigned count) {
 
   /* Top-down walk: the topmost frame sits count above the base. */
-  unsigned depth = base_depth + kos_dyn_frame_count(top, base);
+  unsigned depth = base_depth + count;
   KosDynNode *node;
 
   for (node = top; node && node != base; node = KosDynNode_PARENT(node)) {
     if (KosDynNode_IS_FRAME(node))
       KosDynFrame_DEPTH(node) = (uint16_t) depth--;
   }
+}
+
+
+void kos_dyn_renumber_frames(
+    KosDynNode *top,
+    KosDynNode *base,
+    unsigned base_depth) {
+
+  kos_dyn_renumber_frames_counted(top, base, base_depth,
+                                  kos_dyn_frame_count(top, base));
 }
 
 

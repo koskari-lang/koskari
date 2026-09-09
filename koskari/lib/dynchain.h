@@ -1001,6 +1001,17 @@ void kos_dyn_renumber_frames(
     KosDynNode *base,
     unsigned base_depth);
 
+/**
+   kos_dyn_renumber_frames for a caller that has already counted the
+   segment's frames (count from kos_dyn_frame_count over the same
+   bounds), saving the recount.
+*/
+void kos_dyn_renumber_frames_counted(
+    KosDynNode *top,
+    KosDynNode *base,
+    unsigned base_depth,
+    unsigned count);
+
 
 /**
    Push a prepared frame -- code, namespace, and cleared stack already
