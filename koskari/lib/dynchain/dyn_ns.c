@@ -22,14 +22,16 @@ static KosDynNs *kos_dynns_new(
 
 
 /**
-   Clone node namespace by INCREF for continuation segments.
+   Clone for a continuation segment: the clone shares the node's
+   namespace. Two holders of a never-revealed namespace would each
+   report its contents to the collector, so the share reveals it (the
+   frame clone does the same), and the collector tracks it itself.
 */
 static KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
   if (! ns_node)
     return NULL;
 
-  PyObject *ns = KosDynNode_NS(ns_node);
-  Py_INCREF(ns);
+  PyObject *ns = KosNamespace_Reveal(KosDynNode_NS(ns_node));
   KosDynNs *clone = kos_dynns_new(NULL, ns);
   if (clone)
     KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(ns_node);

@@ -203,6 +203,87 @@ class TestSuspendedNamespaceAttribution(SpecialsTestCase):
         self.assertGreaterEqual(parks, 1)
 
 
+class TestCapturedScopeAttribution(SpecialsTestCase):
+    """
+    A continuation template shares the let namespace of the scope it was
+    captured in with the live chain. With the coroutine parked in that
+    let, the collector reaches the namespace from both holders and must
+    see its references once. The let sits at expression level so it is
+    a real scope (inside a function it would be fast slots).
+    """
+
+    async def test_captured_let_scope_is_reported_once(self):
+        """
+        capture under a let and park in it. The template's clone and the
+        live chain share the let's namespace; the collector must reach
+        the list bound there through that namespace alone, once, and the
+        coroutine must resume intact after a collection
+        """
+
+        src_str = """
+        (let [[acc #[0]] [saved nil]]
+          (begin
+            (let/cc k (setq saved k))
+            (call stash acc)
+            (call park)
+            (acc.append 1)
+            acc))
+        """
+        stashed = []
+        expr, mod = self.compile_expr(
+            src_str, park=Park, stash=stashed.append)
+
+        coro = expr()
+        self.assertIsInstance(coro.send(None), Park)
+        acc = stashed.pop()
+
+        holders = [type(r).__name__ for r in gc.get_referrers(acc)]
+        self.assertNotIn("Continuation", holders)
+        self.assertNotIn("Coroutine", holders)
+        self.assertEqual(holders.count("Namespace"), 1)
+
+        gc.collect()
+        with self.assertRaises(StopIteration) as caught:
+            coro.send(None)
+        self.assertIs(caught.exception.value, acc)
+        self.assertEqual(acc, [0, 1])
+
+
+    async def test_let_scope_survives_collection_after_let_exits(self):
+        """
+        the continuation outlives the let: once the let has exited, the
+        template's clone is the only holder of that namespace; a
+        collection while parked must leave it intact for a later invoke
+        """
+
+        src_str = """
+        (let [[saved nil] [n 0]]
+          (begin
+            (let [[acc #[0]]]
+              (begin
+                (let/cc k (setq saved k))
+                (setq n (+ n 1))
+                (acc.append n)
+                (call record (list acc))))
+            (call park)
+            (cond ((< n 2) (call saved 0)) (else: nil))
+            n))
+        """
+        log = []
+        expr, mod = self.compile_expr(
+            src_str, park=Park, record=log.append, list=list)
+
+        coro = expr()
+        self.assertIsInstance(coro.send(None), Park)
+        gc.collect()
+        self.assertIsInstance(coro.send(None), Park)
+        gc.collect()
+        with self.assertRaises(StopIteration) as caught:
+            coro.send(None)
+        self.assertEqual(caught.exception.value, 2)
+        self.assertEqual(log, [[0, 1], [0, 1, 2]])
+
+
 class TestObligationsAcrossSuspension(SpecialsTestCase):
 
     async def test_raise_survives_suspended_after_thunk(self):

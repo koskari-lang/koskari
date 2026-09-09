@@ -28,14 +28,15 @@ static KosDynCollect *kos_dyncollect_new(
 
 
 /**
-   Clone node namespace for continuation capture.
+   Clone for a continuation segment: the clone shares the node's
+   namespace, revealed so that only the collector, and not each holder,
+   reports its contents (see kos_dynns_clone).
 */
 static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
   if (! col_node)
     return NULL;
 
-  PyObject *ns = KosDynNode_NS((KosDynNode *) col_node);
-  Py_INCREF(ns);
+  PyObject *ns = KosNamespace_Reveal(KosDynNode_NS((KosDynNode *) col_node));
   KosDynCollect *clone = kos_dyncollect_new(NULL, ns);
   if (! clone)
     return NULL;
