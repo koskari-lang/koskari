@@ -2957,6 +2957,21 @@ KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob) {
                     "pending return lost its delimited-invoke bookmark");
     return kos_eval_walk_outcome(es, EVAL_RAISE());
 
+  case KOS_PENDING_RETURN_BREAK:
+  case KOS_PENDING_RETURN_CONTINUE: {
+    /* The loop walk finishes in the loop's own frame with the pc set,
+       so its NORMAL is a re-entry of that frame, not a boundary. */
+    KosOpResult lr = kos_eval_walk_outcome(
+        es, kos_dyn_unwind_to_loop(
+            es,
+            (kind == KOS_PENDING_RETURN_BREAK)
+                ? KOS_XFER_EVENT_BREAK : KOS_XFER_EVENT_CONTINUE,
+            val));
+    if (lr.kind == KOS_RES_NORMAL)
+      return EVAL_REPROLOGUE();
+    return lr;
+  }
+
   default:
     Py_DECREF(val);
     PyErr_SetString(PyExc_SystemError, "pending return with no return path");

@@ -382,13 +382,26 @@ KosOpResult kos_dyn_unwind_to_loop(
 
   /* Walk from DYN_TOP toward region; unwind each node with event */
   while (KosEvalState_DYN_TOP(es) != (KosDynNode *) region) {
+    KosDynNode *top = KosEvalState_DYN_TOP(es);
     KosOpResult r = kos_dyn_unlink_top(es, event, 0);
-    if (r.kind != KOS_RES_NORMAL) {
-      /* a leave in flight: the break or continue does not resume once
-         it settles, and result has no one to go to */
-      Py_DECREF(result);
+
+    if (r.kind == KOS_RES_NORMAL)
+      continue;
+    if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
+      /* The node's leave started and will suspend: result parks on
+         the node with the event as its path, and the walk resumes
+         from here once the node has left the chain, as a return does. */
+      uint8_t path = (event == KOS_XFER_EVENT_BREAK)
+          ? KOS_PENDING_RETURN_BREAK : KOS_PENDING_RETURN_CONTINUE;
+
+      if (kos_dyn_ob_park_return(top, result, path, NULL) < 0) {
+        Py_XDECREF(r.val);
+        return EVAL_RAISE();
+      }
       return r;
     }
+    Py_DECREF(result);
+    return r;
   }
 
   if (event == KOS_XFER_EVENT_CONTINUE) {
