@@ -464,6 +464,19 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ModuleNamespace.__name__, "ModuleNamespace")
 
 
+    async def test_ref_rejects_non_name_key(self):
+        """
+        A ref request with a key that is neither str nor symbol raises
+        TypeError and leaves no binding behind
+        """
+
+        ns = ModuleNamespace("m", {})
+        with self.assertRaises(TypeError):
+            ns.ref(123)
+        self.assertNotIn(123, ns)
+        self.assertEqual(list(ns.keys()), [])
+
+
     async def test_create(self):
         """ModuleNamespace can be created"""
         mn = ModuleNamespace("mn", {})

@@ -2615,8 +2615,13 @@ static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name) {
       val = PyDict_GetItem(blt, name);
 
     res = KosRef_New(name, val);
+    if (! res)
+      return NULL;
 
-    PyDict_SetItem(KosNamespace_BINDS(self), name, res);
+    if (PyDict_SetItem(KosNamespace_BINDS(self), name, res) < 0) {
+      Py_DECREF(res);
+      return NULL;
+    }
     Py_DECREF(res);
   }
 

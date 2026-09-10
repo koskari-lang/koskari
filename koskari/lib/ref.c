@@ -243,7 +243,12 @@ PyObject *KosSymbolicRef_New(PyObject *name, PyObject *value) {
   if (! self)
     return NULL;
 
-  if(sym_ref_init(self, name, value))
+  /* GC_New does not zero, and init can fail before assigning either
+     field; the failure path clears both */
+  KosRef_NAME(self) = NULL;
+  KosSymbolicRef_VALUE(self) = NULL;
+
+  if (sym_ref_init(self, name, value))
     Py_CLEAR(self);
 
   if (self)
