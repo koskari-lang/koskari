@@ -22,7 +22,7 @@ Compile .ki sources into .kio bodies and drive evaluation from loaded .kio.
 
 
 from ..compile.compiler import CompilerMode
-from ..lib import demand_call
+from ..lib import cons, demand_call, nil, symbol
 from ..module import (
     build_module_load_facets, detach_module_load_facets, init_module,
     materialize_exports, new_module)
@@ -51,10 +51,22 @@ def _compile_top_level_to_codes(mod, compiler, reader, source_stream):
             max_indent=None)
 
         bodies = []
+        docstr = None
         while True:
             source_expr = reader.read(stream)
             if source_expr is READ_EOF:
                 break
+
+            # the source loader lifts a leading string into __doc__
+            # without evaluating it; the .kio carries the same lift as
+            # its first body, a define of __doc__
+            if docstr is None:
+                if isinstance(source_expr, str):
+                    source_expr = cons(
+                        symbol('define'), symbol('__doc__'), source_expr, nil)
+                    docstr = True
+                else:
+                    docstr = False
 
             fragment = compiler.compile_expression(source_expr)
             code = compiler.complete(

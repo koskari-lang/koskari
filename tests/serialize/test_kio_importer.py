@@ -62,6 +62,87 @@ class TestKioImporterParity(unittest.TestCase):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
 
+    def _write(self, name, source):
+        path = os.path.join(self._tmpdir, name)
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write(source)
+        return path
+
+
+    def _load(self, modname, path):
+        loader = KoskariSourceFileLoader(modname, path)
+        spec = importlib.util.spec_from_file_location(
+            modname, path, loader=loader)
+        module = types.ModuleType(modname)
+        module.__name__ = modname
+        module.__package__ = None
+        module.__spec__ = spec
+        loader.exec_module_demand(module)
+        return module
+
+
+    def _both(self, stem, source):
+        """
+        Load ``source`` once from .ki and once from a .kio compiled from
+        it; return the (ki module, kio module) pair
+        """
+
+        ki_path = self._write(stem + '_src.ki', source)
+        kio_path = os.path.join(self._tmpdir, stem + '_out.kio')
+        compile_ki_file_to_kio(ki_path, kio_path)
+        return (self._load(stem + '_ki', ki_path),
+                self._load(stem + '_kio', kio_path))
+
+
+    def test_docstring_via_kio_matches_ki(self):
+        ki, kio = self._both('doc', '"""the module doc"""\n(define x 1)\n')
+        self.assertEqual(ki.__doc__, "the module doc")
+        self.assertEqual(kio.__doc__, ki.__doc__)
+        self.assertEqual(kio.x, 1)
+
+
+    def test_pragma_via_kio_matches_ki(self):
+        source = (
+            "(pragma [compiler/call-brackets 'warn])\n"
+            "(define setting (pragma compiler/call-brackets))\n")
+        ki, kio = self._both('pragma', source)
+        self.assertEqual(kio.setting, ki.setting)
+        self.assertIsNotNone(kio.__pragma__)
+        self.assertEqual(
+            kio.__pragma__.get('compiler/call-brackets'),
+            ki.__pragma__.get('compiler/call-brackets'))
+
+
+    def test_exports_via_kio_matches_ki(self):
+        source = "(declare-exports alpha)\n(define alpha 1)\n(define beta 2)\n"
+        ki, kio = self._both('exports', source)
+        self.assertEqual(ki.__all__, ('alpha',))
+        self.assertEqual(kio.__all__, ki.__all__)
+
+
+    def test_ellipsis_const_via_kio(self):
+        _ki, kio = self._both('ellipsis', "(define e ...)\n")
+        self.assertIs(kio.e, ...)
+
+
+    def test_kio_bodies_keep_source_code_settings(self):
+        """
+        top-level bodies compile with the pragma defaults, no cache slots
+        and no read-only sealing, and load back the same way
+        """
+
+        from koskari.serialize import load_kio
+
+        ki_path = self._write('settings_src.ki', "(define a 1)\n(define b 2)\n")
+        kio_path = os.path.join(self._tmpdir, 'settings_out.kio')
+        compile_ki_file_to_kio(ki_path, kio_path)
+        codes = load_kio(kio_path).codes
+        self.assertEqual(len(codes), 2)
+        for code in codes:
+            self.assertFalse(code.caches)
+            self.assertFalse(code.protected)
+
+
     def test_define_via_kio_matches_ki(self):
         ki_path = os.path.join(self._tmpdir, 'parity_src.ki')
         with open(ki_path, 'w', encoding='utf-8') as fh:

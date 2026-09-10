@@ -48,6 +48,7 @@ __all__ = (
     'MODULE_LOAD_FACET_NAMES',
 
     'build_module_load_facets',
+    'build_module_pragma',
     'attach_module_load_facets',
     'detach_module_load_facets',
 
@@ -365,7 +366,11 @@ async def load_module_kio_async(module):
     Execute a module from a precompiled .kio file.
 
     Each stored body is re-hardened and run as a top-level expression in
-    order, matching the incremental structure of load_module_async.
+    order, matching the incremental structure of load_module_async. The
+    module gets the same ``__pragma__`` record a source load binds, so
+    ``(pragma ...)`` bodies and package-pragma stamping run, and
+    ``__all__`` is materialized from ``declare-exports`` at the end. No
+    compiler or reader is built: the bodies were compiled already.
 
     :param module: koskari Module with __file__ pointing at a .kio path
     """
@@ -375,17 +380,21 @@ async def load_module_kio_async(module):
 
     from .serialize.codex import KioFile
 
+    build_module_pragma(module)
     kio_file = KioFile.read(filename)
-    for code in kio_file.codes:
-        expr = code.expression(ns)
-        await expr()
+    try:
+        for code in kio_file.codes:
+            expr = code.expression(ns)
+            await expr()
+    finally:
+        materialize_exports(module)
 
 
 def load_module_kio_demand(module):
     """
     Execute a module from a precompiled .kio file via demand_call.
 
-    Same ordering as load_module_kio_async but synchronous.
+    Same steps as load_module_kio_async but synchronous.
 
     :param module: koskari Module with __file__ set to a .kio path
     """
@@ -395,9 +404,13 @@ def load_module_kio_demand(module):
 
     from .serialize.codex import KioFile
 
+    build_module_pragma(module)
     kio_file = KioFile.read(filename)
-    for code in kio_file.codes:
-        demand_call(code.expression(ns))
+    try:
+        for code in kio_file.codes:
+            demand_call(code.expression(ns))
+    finally:
+        materialize_exports(module)
 
 
 # ---------------------------------------------------------------------------
@@ -443,14 +456,9 @@ def build_module_load_facets(module, filename=None):
     :class:`ModulePragma` is built and bound as ``__pragma__``; the
     compiler and reader are then chained off it via ``from_pragma``
     (each subscribing for later pragma changes) and bound as load
-    facets.  This is the single chokepoint where the pragma source is
-    resolved for a fresh pragma: the nearest ancestor package's
-    ``__package_pragma__`` seeds the settings when one exists (a copy
-    with a fresh watcher set -- watchers never cross modules), falling
-    back to the built-in default.  A package additionally pulls the
-    inherited default down as its own ``__package_pragma__`` so its
-    descendants inherit it; a ``(package-pragma ...)`` declaration in
-    the package body overwrites that stamp.
+    facets.  A fresh pragma comes from :func:`build_module_pragma`,
+    which seeds it from the nearest ancestor package's
+    ``__package_pragma__``.
 
     :param module: koskari Module (or object whose ``vars()`` is the ns)
     :param filename: optional source filename
@@ -469,14 +477,7 @@ def build_module_load_facets(module, filename=None):
 
     name = getattr(module, '__name__', '<module>')
 
-    pragma = ns.get('__pragma__')
-    if pragma is None:
-        inherited = find_package_pragma(module)
-        pragma = inherited.copy() if inherited is not None else ModulePragma()
-
-        if inherited is not None \
-                and getattr(module, '__path__', None) is not None:
-            ns['__package_pragma__'] = inherited.copy()
+    pragma = build_module_pragma(module)
 
     compiler = Compiler.from_pragma(name, module, filename=filename,
                                     pragma=pragma)
@@ -484,6 +485,40 @@ def build_module_load_facets(module, filename=None):
 
     attach_module_load_facets(module, pragma, compiler, reader)
     return compiler, reader
+
+
+def build_module_pragma(module):
+    """
+    The module's ``__pragma__`` record, bound if it was not already.
+
+    A bound ``__pragma__`` is returned as-is. Otherwise this is the single
+    chokepoint where the pragma source is resolved: the nearest ancestor
+    package's ``__package_pragma__`` seeds the settings when one exists
+    (a copy with a fresh watcher set -- watchers never cross modules),
+    falling back to the built-in default. A package additionally pulls
+    the inherited default down as its own ``__package_pragma__`` so its
+    descendants inherit it; a ``(package-pragma ...)`` declaration in the
+    package body overwrites that stamp.
+
+    :param module: koskari Module (or object whose ``vars()`` is the ns)
+    :return: the ModulePragma bound as ``__pragma__``
+    """
+
+    ns = vars(module)
+
+    pragma = ns.get('__pragma__')
+    if pragma is not None:
+        return pragma
+
+    inherited = find_package_pragma(module)
+    pragma = inherited.copy() if inherited is not None else ModulePragma()
+
+    if inherited is not None \
+            and getattr(module, '__path__', None) is not None:
+        ns['__package_pragma__'] = inherited.copy()
+
+    ns['__pragma__'] = pragma
+    return pragma
 
 
 def attach_module_load_facets(module, pragma, compiler, reader):
