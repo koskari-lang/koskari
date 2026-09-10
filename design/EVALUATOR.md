@@ -1116,8 +1116,8 @@ centralized check in `eval_event_await`.
 callable's, so a `BoundMethod(Demand(fn))` correctly reports the same
 flattenability as `Demand(fn)` alone.
 
-See [api/demand-wrapper.md](api/demand-wrapper.md). Archived
-implementation specs:
+Archived design and implementation notes:
+[archive/demand-wrapper.md](archive/demand-wrapper.md),
 [archive/demand-evalex-phase1.md](archive/demand-evalex-phase1.md),
 [archive/demand-evalex-phase2.md](archive/demand-evalex-phase2.md).
 
@@ -1829,7 +1829,7 @@ Use **`asyncio.run(expr())`** or **`await expr()`** when you need the full async
 
 To avoid recursive C calls and keep a single state machine:
 
-1. **CALL (Koskari callables)**: The CALL opcode invokes `KosEvalState_Call`, which resolves the call suite, preps the frame (`do_frame_prep`; TAIL_CALL resets the current frame), and dispatches the install slot. The evaluator does **not** call Python or recurse into `koskari_eval`; it continues the dispatch loop. See [api/special-call-protocol.md](api/special-call-protocol.md) for the install-slot design.
+1. **CALL (Koskari callables)**: The CALL opcode invokes `KosEvalState_Call`, which resolves the call suite, preps the frame (`do_frame_prep`; TAIL_CALL resets the current frame), and dispatches the install slot. The evaluator does **not** call Python or recurse into `koskari_eval`; it continues the dispatch loop. The install slot is `kc_vinstall` in the call suite (`evaluated.h`, `callable.h`); the two-slot design it replaced is archived at [archive/special-call-protocol.md](archive/special-call-protocol.md).
 
 2. **RETURN (frame has parent, normal call return)**: When the callee's parent is a plain bytecode frame, a discardable extent over one, or a frame waiting on a resume, the RETURN opcode frees the callee, delivers (push onto the parent's stack, or hand the value to the resume), and threads on without returning to the trampoline (§2.6). Otherwise it signals `EVAL_RETURN(val)`; the trampoline's **`eval_event_return_ng`** runs the unwind walk if extents sit above the frame, pops it, and delivers through the iteration node or **`eval_parent_return_deliver`** (pending slot or parent stack, then **`kos_dynnode_on_control_returned`** for WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the evaluator eventually stops for another reason.
 
@@ -1999,7 +1999,7 @@ void kos_frame_free(KosFrame *frame);
 
 #### Call Operations
 
-Koskari-to-Koskari calls (CALL/TAIL_CALL opcodes) invoke `KosEvalState_Call`, which preps the frame (push for CALL, reset for TAIL_CALL) and dispatches the callable's install slot, and execution continues in the same drive loop. See [api/special-call-protocol.md](api/special-call-protocol.md).
+Koskari-to-Koskari calls (CALL/TAIL_CALL opcodes) invoke `KosEvalState_Call`, which preps the frame (push for CALL, reset for TAIL_CALL) and dispatches the callable's install slot, and execution continues in the same drive loop. The install slot is `kc_vinstall` (`evaluated.h`); the two-slot design it replaced is archived at [archive/special-call-protocol.md](archive/special-call-protocol.md).
 
 #### Drive Loop
 
@@ -2144,16 +2144,16 @@ frame. This matches Scheme's `dynamic-wind` semantics.
 - [design/archive/eval-result-unification.md](archive/eval-result-unification.md) -- archived `KosOpResult` landing record
 - [design/archive/kosevent-elimination.md](archive/kosevent-elimination.md) -- Archived: KosEvent elimination (implemented; consolidated spec)
 - [design/archive/boundary-control-reemit.md](archive/boundary-control-reemit.md) -- Boundary staging and remaining dynnode dispatch work
-- [design/api/special-call-protocol.md](api/special-call-protocol.md) -- Install slots and invocation
+- [design/archive/special-call-protocol.md](archive/special-call-protocol.md) (archived) -- the two-slot install design, superseded by the `kc_vinstall` call suite
 - [design/interpreter/callcc.md](interpreter/callcc.md) -- Delimited continuation implementation details
 - [design/archive/transfer-plan-rework.md](archive/transfer-plan-rework.md) -- the goal, extent contract, unlink, and obligation design record
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) -- Execution model invariants
 - [design/interpreter/bytecode.md](interpreter/bytecode.md) -- Bytecode format and opcodes
-- [design/interpreter/introspection-trace.md](interpreter/introspection-trace.md) -- Read-only introspection and trace snapshot design
+- [design/archive/introspection-trace.md](archive/introspection-trace.md) (archived) -- the TraceView snapshot proposal, never built
 - [design/language/control-flow.md](language/control-flow.md) -- Language-level control flow including reset/shift
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) -- Execution invariants
 - [design/archive/iteration-yield-boundaries.md](archive/iteration-yield-boundaries.md) (archived) -- Iteration vs yield-from vs for-each: implementation map
-- [design/api/demand-wrapper.md](api/demand-wrapper.md) -- Public `Demand` API, `demand_call`, `demand_sync_ex`
+- [design/archive/demand-wrapper.md](archive/demand-wrapper.md) (archived) -- the original `Demand` API note; the type and `demand_sync_ex` live in `demand.c`
 - [design/archive/demand-evalex-phase1.md](archive/demand-evalex-phase1.md) -- Archived: demand in-eval denial
 - [design/archive/demand-evalex-phase2.md](archive/demand-evalex-phase2.md) -- Archived: demand call flattening
 - [design/archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md) -- Archived: nested interrupt and failed-transfer abandonment

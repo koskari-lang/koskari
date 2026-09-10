@@ -15,9 +15,9 @@ This document summarizes the Koskari/Sibilant model of **Namespace** (lexical sc
 | Type | Description |
 |------|-------------|
 | **Namespace** | Base lexical scope. Has a parent, optional name, and a map of bindings. |
-| **NamespaceSpec** | Layout descriptor: `ns_name`, `local_syms`, `closure_syms`. Describes what a namespace will hold before it is created. |
+| **NamespaceSpec** | Layout descriptor: `ns_name`, `local_syms`, `closure_syms`, `global_syms`, with the fast-slot name tuple and raw bitmap precomputed. Describes what a namespace will hold before it is created. |
 | **ModuleNamespace** | Module-level scope. Has a `builtins` dict for fallback lookup. Each .ki module gets one. |
-| **CollectorNamespace** | Like Namespace but does not expose refs via `FindRef`—blocks closure capture. Used for class member collection. |
+| **CollectorNamespace** | Like Namespace but its bindings are values the class dict copies out, so `FindRef` and ref requests skip it (except for `__class__`) and resolve from the enclosing scope. Used for class member collection. |
 | **Module** | Object whose attributes are backed by lookups in a Namespace. Has `__dict__` = the underlying Namespace. |
 
 ### Key API (C)
@@ -30,7 +30,7 @@ This document summarizes the Koskari/Sibilant model of **Namespace** (lexical sc
 
 ### Bindings
 
-Each binding is a **KosNameBind**: `name`, `held` (value or reference), and `raw` (0/1). Values can be held directly (raw) or wrapped in a Ref.
+A namespace keeps its declared names in fast slots, one per local, closure, and global symbol (`fast_names`), and any name added later in a `binds` dict of Refs. A local's slot starts *raw*, holding the value directly with its raw bit set, and is promoted in place to a Ref cell the first time something asks for the Ref (`ns_borrow_ref`); closure and global slots hold the enclosing scope's Ref from creation and are never raw.
 
 ---
 
@@ -57,6 +57,7 @@ Each binding is a **KosNameBind**: `name`, `held` (value or reference), and `raw
 | **ConstantRef** | Read-only ref, fixed value | (subclass of KosRef) |
 | **MemoizedRef** | Lazy, computed once | `getfn`, cached value in `obj` |
 | **ParamRef** | Function parameter binding | `key` (param name), `default` in `obj` |
+| **WeakRef** | Holds its value through a Python weak reference; empty once the referent is collected | weakref in `obj` |
 
 ### Ref Methods (Python)
 

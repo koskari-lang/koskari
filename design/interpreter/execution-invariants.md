@@ -323,13 +323,15 @@ continuation capture and avoids special hook machinery.
 
 ## 19. Introspection Is Read-Only (Invariant)
 
-* The evaluator provides a read-only introspection mechanism (TraceView
-  snapshot; see [introspection-trace.md](introspection-trace.md)).
+* The evaluator exposes only read-only views: `Context.snapshot()` pictures
+  a context's chain, stacks, and namespaces as plain Python data, and
+  exception decoration attaches `__koskari_dynchain__`, a list of frame
+  dicts, to a raised exception (`decorate_exception_with_dynchain`, eval.c).
 * Introspection does not mutate evaluator state, expose raw C structs, inject
   execution, or interact with continuations.
-* Snapshot objects remain valid even if the VM continues executing.
-* Exception trace reporting attaches a TraceView to raised exceptions (e.g.
-  `exc.__koskari_trace__`) for structured trace output.
+* A snapshot is plain data and stays valid however the VM continues.
+* The TraceView snapshot object once proposed for this was never built; see
+  [../archive/introspection-trace.md](../archive/introspection-trace.md).
 
 ---
 
@@ -395,7 +397,7 @@ delimited continuation semantics.
 ## Related Documentation
 
 * [evaluator.md](evaluator.md) — Evaluation model and VM structures
-* [introspection-trace.md](introspection-trace.md) — Read-only introspection and trace snapshot design
+* [../archive/introspection-trace.md](../archive/introspection-trace.md) (archived) — the TraceView proposal, never built
 * [callcc.md](callcc.md) — Delimited continuation implementation
 * [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
   the DynNode chain restructure (implemented; archived)

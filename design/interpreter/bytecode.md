@@ -89,7 +89,7 @@ Position lookup uses binary search to find the applicable entry for any instruct
 
 ```c
 struct KosCode {
-    PyObject_HEAD
+    PyObject_VAR_HEAD     /* ob_size = count of trailing KosCacheSlot entries */
 
     PyObject *name;       /* function/expression name */
     PyObject *filename;   /* source filename */
@@ -116,8 +116,15 @@ struct KosCode {
 
     PyCodeObject *faux;   /* faux code object for tracebacks */
     PyObject *extras;     /* extra metadata dict */
+
+    PyObject *arena;      /* owning KosArena once packed; NULL while unpacked */
+    PyObject *weakreflist;
 };
 ```
+
+The per-site cache slots follow the struct as a variable-length tail; they are
+the one thing a Code owns that can take part in a reference cycle, and the
+reason the type is GC-tracked.
 
 The extent table is derived during Code construction from PUSH/POP pairs (TRY, LOOP, FINALLY, PROMPT, etc.). Each entry is a KosExtentDesc (tagged union: kind plus kind-specific targets in u.try_finally, u.loop, u.exit_only, or u.shift). It enables O(1) lookup of block membership and handler targets. See [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md).
 
@@ -132,7 +139,10 @@ After initialization, the bytecode storage (instructions, positions, constant po
 
 ```c
 typedef enum KosCodeFlag {
-    KOS_CODE_YIELDS = 0x01,  /* code contains yield -> async generator */
+    KOS_CODE_YIELDS = 0x01,     /* code contains yield -> async generator */
+    KOS_CODE_USES_FAST = 0x02,  /* FAST-slot opcodes at root namespace scope */
+    KOS_CODE_PROTECTED = 0x04,  /* unified block is mprotect(PROT_READ)-sealed */
+    KOS_CODE_CACHE = 0x08,      /* per-site opcode caches enabled (pragma gate) */
 } KosCodeFlag;
 ```
 
@@ -157,8 +167,17 @@ typedef enum KosOpStyle {
     KOSTYLE_CONST,       /* argument is constant pool index */
     KOSTYLE_VAR,         /* argument is variable name (in cpool) */
     KOSTYLE_FASTVAR,     /* argument is fast local index */
+    KOSTYLE_OPCOUNT,     /* operator selector (high byte) + reducing count (low byte) */
+    KOSTYLE_EXTRA,       /* argument is an index into the extra table */
+    KOSTYLE_CMP,         /* field is a bare comparison selector */
+    KOSTYLE_CMPCOUNT,    /* comparison selector (high byte) + reducing count (low byte) */
+    KOSTYLE_CMPSRC,      /* comparison selector + per-operand source-shape bits */
+    KOSTYLE_OPERAND,     /* field is a bare operator selector */
 } KosOpStyle;
 ```
+
+The last six travel either as an instruction's own arg or as one field of an
+EXTRA row; `opcodes.incl` declares each opcode's schema.
 
 ## Opcode Categories
 
@@ -181,7 +200,7 @@ quick lookup.
 - `KOS_OP_RAISE`: Raise exception
 - `KOS_OP_RETURN`: Return value
 - `KOS_OP_YIELD`: Yield value (sets YIELDS flag)
-- `KOS_OP_YIELD_FROM`: Yield from iterable (implemented; sets YIELDS flag; delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; handler in koskari/lib/opcode/yield_from.c)
+- `KOS_OP_YIELD_FROM`: Yield from iterable (implemented; sets YIELDS flag; delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; handler in koskari/lib/opcode/YIELD_FROM.c)
 
 ### Jumps
 - `KOS_OP_JUMP`: Unconditional jump
@@ -190,13 +209,12 @@ quick lookup.
 - `KOS_OP_JUMP_AND`: Short-circuit AND
 - `KOS_OP_JUMP_OR`: Short-circuit OR
 
-### Check Jumps (Pattern Matching)
-- `KOS_OP_CHECK_EQ`, `KOS_OP_CHECK_NE`: Equality checks
-- `KOS_OP_CHECK_LT`, `KOS_OP_CHECK_LE`, `KOS_OP_CHECK_GT`, `KOS_OP_CHECK_GE`: Comparisons
-- `KOS_OP_CHECK_IN`, `KOS_OP_CHECK_NOT_IN`: Membership
-- `KOS_OP_CHECK_IS`, `KOS_OP_CHECK_IS_NOT`: Identity
-- `KOS_OP_CHECK_IS_INSTANCE`, `KOS_OP_CHECK_IS_SUBCLASS`: Type checks
+### Check Jumps
+- `KOS_OP_CHECK_COMPARE`: Chain-compare N operands under a KosCompare selector (EQ, NE, LT, LE, GT, GE, IN, NOT_IN, IS, IS_NOT, IS_INSTANCE, IS_SUBCLASS); jump if the chain fails
+- `KOS_OP_CHECK_COMPARE_VAR`, `KOS_OP_CHECK_COMPARE_FAST`: Arity-2 fused checks with operands from the namespace or fast slots (or the constant pool per the CMPSRC bits)
+- `KOS_OP_CHECK_NIL`: Squashed NILP + JUMP_FALSE; jump if TOS is not an empty-list singleton
 - `KOS_OP_CHECK_EXCEPTION`: Exception matching
+- `KOS_OP_SWITCH_EQ` and the fused `SWITCH_EQ_CONST` / `_VAR` / `_FAST` / `_VAR_ATTR` / `_FAST_ATTR`: Equality dispatch for `switch` arms
 
 ### Variables (by name)
 - `KOS_OP_VAR`: Load variable by name (constant index)
@@ -255,21 +273,21 @@ quick lookup.
 ### Dynamic Wind
 - `KOS_OP_PUSH_WIND`: Push wind extent (arg = COUNT: 1 = before only, 2 = both thunks)
 - `KOS_OP_POP_WIND`: Pop wind from dynamic chain
-- `KOS_OP_END_WIND`: Sentinel that terminates hook block execution
 
 ### Continuation Invocation
-- `KOS_OP_INVOKE_K`: Pop value then continuation from stack; invoke continuation with value
-- `KOS_OP_INVOKE_K_VAR`: Pop value; look up name (constant index) in frame namespace; invoke that continuation with value. Used when continuation is bound by name (e.g. shift handler with PUSH_NS + VAR_STORE)
+A captured continuation is an ordinary callable (`DelimitedContinuation`, `Continuation`); invoking one is a `CALL` whose target is that object. There is no dedicated opcode.
 
 ### Object Protocol
-- Comparisons: `KOS_OP_OBJECT_EQ`, `KOS_OP_OBJECT_NE`, `KOS_OP_OBJECT_LT`, etc.
-- Predicates: `KOS_OP_OBJECT_IN`, `KOS_OP_OBJECT_IS`, `KOS_OP_OBJECT_IS_INSTANCE`, etc.
-- Arithmetic: `KOS_OP_OBJECT_ADD`, `KOS_OP_OBJECT_SUBTRACT`, `KOS_OP_OBJECT_MULTIPLY`, etc.
-- General: `KOS_OP_OBJECT_ITER`, `KOS_OP_OBJECT_LEN`, etc.
+- `KOS_OP_OBJECT_OPERAND`: One arithmetic or bitwise operator over N operands; the OPCOUNT arg packs the KosOperand selector with the count. The hottest opcode; its site elects a specialized body (see [electors.md](electors.md))
+- `KOS_OP_OBJECT_INPLACE`: The same operator set through the `PyNumber_InPlace*` protocol; used by the inplace-item and inplace-attr forms
+- `KOS_OP_OBJECT_COMPARE` and the fused `OBJECT_COMPARE_VAR` / `OBJECT_COMPARE_FAST`: Chain comparisons as values (CMPCOUNT)
+- General: `KOS_OP_OBJECT_ITER`, `KOS_OP_OBJECT_LEN`, `KOS_OP_OBJECT_NOT`, `KOS_OP_OBJECT_TRUTH`, `KOS_OP_OBJECT_REPR`, `KOS_OP_OBJECT_STR`, `KOS_OP_OBJECT_FORMAT`, `KOS_OP_OBJECT_TYPE`, `KOS_OP_OBJECT_DIR`, `KOS_OP_OBJECT_VARS`, `KOS_OP_OBJECT_DIVMOD`, `KOS_OP_OBJECT_BIT_INVERT`
+- `KOS_OP_NILP`: Empty-list test
 
 ### Iteration
 - `KOS_OP_ITER_NEXT`: Get next from region iterator (must be inside PUSH_FOREACH); arg = else label; uses region->iter; auto-await
-- `KOS_OP_NEXT`: Stack-based next; arg = count (1 or 2); 1-arg: TOS = iterator, StopIteration raises; 2-arg: TOS = default, below = iterator, StopIteration pushes default; auto-await
+- `KOS_OP_OBJECT_NEXT`: Stack-based next; arg = count (1 or 2); 1-arg: TOS = iterator, StopIteration raises; 2-arg: TOS = default, below = iterator, StopIteration pushes default; auto-await
+- `KOS_OP_VAR_NEXT`, `KOS_OP_FAST_NEXT`: Fused next on a named or fast-slot iterator
 
 ### Introspection
 - `KOS_OP_GLOBALS`: Get globals dict

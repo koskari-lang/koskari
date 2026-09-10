@@ -264,12 +264,13 @@ When adding or changing an opcode:
 - [3. No-op and compile-time](#3-no-op-and-compile-time) — NOOP, LABEL, POSITION
 - [4. Stack](#4-stack) — DUP, POP, UNPACK, UNPACK_STAR, UNPACK_VAR, UNPACK_FAST
 - [5. Constants](#5-constants) — CONST, CONST2, CONST3, CONST4
-- [5.1 Pair construction and access](#51-pair-construction-and-access) — CAR, CDR, CONS, PROPER, PAIR_SPLICE
+- [5.1 Pair construction and access](#51-pair-construction-and-access) — CAR, CDR, CONS, PROPER, PAIR_SPLICE, NILP
 - [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
-- [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
+- [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION, CHECK_NIL
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
+- [9.2 Pattern dispatch](#92-pattern-dispatch) — MATCH_CASE
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST
@@ -281,7 +282,7 @@ When adding or changing an opcode:
 - [17. Calls](#17-calls) — CALL, CALL_NAMES, CALL_STAR, CALL_ATTR*, TAIL_*
 - [18. Block control](#18-block-control) — PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_COLLECT, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
 - [18.1 Context managers (with / dyn-with)](#181-context-managers-with--dyn-with) — PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH
-- [19. Object protocol](#19-object-protocol) — OBJECT_* (comparisons, predicates, numeric, general)
+- [19. Object protocol](#19-object-protocol) — OBJECT_COMPARE family, OBJECT_OPERAND, OBJECT_INPLACE, and the general OBJECT_* opcodes
 - [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) — PUSH_CC, POP_CC, CAPTURE_CC
 - [22. Dynamic wind](#22-dynamic-wind) — PUSH_WIND, POP_WIND
@@ -310,6 +311,7 @@ When adding or changing an opcode:
 | CONS | COUNT | Pop N values; push (e_0 . ... . e_{N-1}) | [§5.1](#kos_op_cons) |
 | PROPER | COUNT | Pop N values; push proper list (e_0 ... e_{N-1}) | [§5.1](#kos_op_proper) |
 | PAIR_SPLICE | COUNT | Concatenate N pair/tuple segments into one proper list | [§5.1](#kos_op_pair_splice) |
+| NILP | NOARG | Pop TOS; push True when it is an empty-list singleton | [§5.1](#kos_op_nilp) |
 | AWAIT | COUNT | Suspend on awaitable; resume with value | [§6](#kos_op_await) |
 | BREAK | COUNT | Jump to loop break target | [§6](#kos_op_break) |
 | CONTINUE | COUNT | Jump to loop continue target | [§6](#kos_op_continue) |
@@ -328,12 +330,14 @@ When adding or changing an opcode:
 | CHECK_COMPARE_VAR | EXTRA | Arity-2 fused check; operands from VAR/CONST per CMPSRC bits | [§9](#kos_op_check_compare_var) |
 | CHECK_COMPARE_FAST | EXTRA | Arity-2 fused check; operands from FAST/CONST per CMPSRC bits | [§9](#kos_op_check_compare_fast) |
 | CHECK_EXCEPTION | LABEL | Jump if exception no match | [§9](#kos_op_check_exception) |
+| CHECK_NIL | LABEL | Squashed NILP + JUMP_FALSE: pop TOS; jump when it is not an empty-list singleton | [§9](#kos_op_check_nil) |
 | SWITCH_EQ | LABEL | Equality dispatch; on match pop both and jump; on mismatch pop key only, fall through | [§9.1](#kos_op_switch_eq) |
 | SWITCH_EQ_CONST | EXTRA | Compare TOS to constant RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_const) |
 | SWITCH_EQ_VAR | EXTRA | Compare TOS to namespace var RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_var) |
 | SWITCH_EQ_FAST | EXTRA | Compare TOS to fast-slot RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast) |
 | SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_var_attr) |
 | SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast_attr) |
+| MATCH_CASE | EXTRA | Run the site's cached matcher on the subject; bind captures and fall through on match, jump on no match | [§9.2](#kos_op_match_case) |
 | GLOBALS | NOARG | Push globals dict | [§10](#kos_op_globals) |
 | LOCALS | NOARG | Push locals dict | [§10](#kos_op_locals) |
 | IMPORT | EXTRA | Import module; bind root or leaf (self-contained) | [§10.1](#kos_op_import) |
@@ -746,6 +750,17 @@ bottom to top matches push order).
 | 1     | VAR         | 1   | 1 (b)           | splice value |
 | 2     | CONST       | 2   | 2 ((sym c,))    | segment: tuple `(c,)` |
 | 3     | PAIR_SPLICE | 3   | 3               | stack: [..., (a . (b_0 ... b_n . (c)))] |
+
+
+### KOS_OP_NILP {#kos_op_nilp}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: `[..., x] → [..., bool]`. Pop TOS; push `True` when it is an
+  empty-list singleton (`nil` or bracket-nil), else `False`.
+- **Compiler form:** `Compiler.compress` lowers NILP followed by JUMP_FALSE
+  into one [CHECK_NIL](#kos_op_check_nil).
+- **Implementation**: `koskari/lib/opcode/NILP.c`
 
 
 ## 6. Mode control
@@ -1260,6 +1275,19 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
 | 7     | LABEL           | —   | —        | re-raise or next handler |
 
 
+### KOS_OP_CHECK_NIL {#kos_op_check_nil}
+
+- **Style**: LABEL. Arg = target pc (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[..., x] → [...]`. Pop TOS; branch to arg when it is not an
+  empty-list singleton; fall through when it is.
+- **Invariants**: Jump locality for target. The squashed form of
+  [NILP](#kos_op_nilp) followed by JUMP_FALSE.
+- **Compiler form:** Produced by `Compiler.compress`; pre-compile arg = string
+  label, post-compile arg = pc.
+- **Implementation**: `koskari/lib/opcode/CHECK_NIL.c`
+
+
 ## 9.1 Switch dispatch
 
 Switch dispatch opcodes implement multi-way **equality** branching. A typical
@@ -1371,6 +1399,34 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
   - **Mismatch**: fall through; stack unchanged.
 - **Compiler form:** tuple arg `("label", slot_index, "attr_name", 0)` pre-compile.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_FAST_ATTR.c`
+
+
+## 9.2 Pattern dispatch
+
+### KOS_OP_MATCH_CASE {#kos_op_match_case}
+
+- **Style**: EXTRA. Schema (LABEL, CONST, CONST, COUNT): `a0` = no-match
+  target pc, `a1` = frozen matcher tuple (cpool), `a2` = tuple of the extern
+  names the matcher's defaults do not cover (cpool), `a3` = keep-subject flag.
+- **Status**: Implemented. Cache: one KOS_CACHE_MATCHER slot holding the
+  Matcher thawed from `a1` and a KosSlotMap of its capture slots resolved
+  against the namespace layout.
+- **Stack**: `[..., subject, e0 ... eN-1] → [..., subject]` on no match (then
+  jump to `a0`); `→ [...]` on a match with the keep flag clear, or
+  `→ [..., subject]` with it set. `N = len(a2)`: the compiler pushes one
+  value per missing extern above the subject, in `a2` order.
+- **Semantics**: The opcode is the interface between the stack, the
+  namespace, and the matcher API. The subject goes to
+  `KosMatcher_RunSlotsVectorcall` as a length-1 spine with the stacked
+  externs and their names; the matcher resolves every extern (inbuilt
+  defaults included) and raises its own errors. On the first match the slot
+  array is bound through the cached KosSlotMap (by fast index, or by name for
+  a slot without one); a slot that did not fire stays unbound. The stacked
+  externs are consumed on both outcomes. With the keep flag set (a guarded
+  arm) the guard code must either jump to `a0` with the subject intact or
+  pop it before the arm body commits.
+- **Compiler form:** Emitted by `compile/match` (`compile/specials/conditionals.py`).
+- **Implementation**: `koskari/lib/opcode/MATCH_CASE.c`
 
 
 ## 10. Introspection
@@ -1556,7 +1612,7 @@ Extra row: `("os.path", 0, 0, 0)`.
 
 ---
 
-**Trace snapshots (design only):** Read-only stack/frame introspection for debugging is discussed in [interpreter/introspection-trace.md](interpreter/introspection-trace.md). There is **no** `KOS_OP_CAPTURE_FRAME` (or similar) in `koskari/lib/opcodes.incl`; a future opcode would be added there first, then documented here.
+**Trace snapshots:** There is **no** `KOS_OP_CAPTURE_FRAME` (or similar) in `koskari/lib/opcodes.incl`; a future opcode would be added there first, then documented here. The read-only views that exist are `Context.snapshot()` and the `__koskari_dynchain__` frame list on raised exceptions. The TraceView proposal is archived at [archive/introspection-trace.md](archive/introspection-trace.md).
 
 
 ## 11. Exception handling
@@ -3034,7 +3090,9 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
   derived/composite metaclass, `__prepare__`, merge, metaclass call); pushes
   resulting class.
 - **Compiler form:** Build pos with BUILD_ARGS; use with_collector_namespace for
-  PUSH_COLLECT/body/POP_COLLECT; then BUILD_CLASS. See design/api/OBJECT-MODEL.md.
+  PUSH_COLLECT/body/POP_COLLECT; then BUILD_CLASS. The class build path is
+  `kos_build_class` in `object.c`; the KosType design it replaced is archived at
+  design/archive/OBJECT-MODEL.md.
 
 **Example:** Empty class C. PUSH_COLLECT arg = constant pool index of nspec.
 
@@ -3231,8 +3289,8 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 Object protocol opcodes: single Python operation on TOS (and optionally below); pop operands, push result. All **Implemented** unless noted.
 
 - **Comparisons and predicates**: OBJECT_COMPARE (CMPCOUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, selector-keyed (KosCompare packs with the count); the fused OBJECT_COMPARE_VAR / OBJECT_COMPARE_FAST carry the ternary bounds idiom with no stack inputs.
-- **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
-- **Numeric, in-place**: OBJECT_INPLACE_* (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, reducing left-to-right via the `PyNumber_InPlace*` API (POWER is strictly binary); used by the inplace-item and inplace-attr special forms.
+- **Numeric**: OBJECT_OPERAND (OPCOUNT) — one opcode for every arithmetic and bitwise operator; the arg packs the KosOperand selector with the operand count, and the site elects a specialized body.
+- **Numeric, in-place**: OBJECT_INPLACE (OPCOUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, reducing left-to-right via the `PyNumber_InPlace*` API (POWER is strictly binary); used by the inplace-item and inplace-attr special forms.
 - **General**: OBJECT_ITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT.
 
 Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
@@ -3309,6 +3367,34 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 | 0     | OBJECT_COMPARE_FAST | 0 | (LT, c#0 (0), fast 0 ("x"), c#1 (100)) | stack: [..., bool] |
 
 ---
+
+### KOS_OP_OBJECT_OPERAND {#kos_op_object_operand}
+
+- **Style**: OPCOUNT. Arg packs a KosOperand selector (high byte) with the
+  operand count (low byte).
+- **Status**: Implemented. Cache: one KOS_CACHE_ELECTOR slot.
+- **Stack**: `[..., a1, ... aN] → [..., result]`. Pop the N operands, apply
+  the selected operator (reducing left-to-right for N > 2), push the result.
+- **Semantics**: The hottest opcode by dispatch count and by time. The
+  handler is a prologue only: it tail-calls the body the site's slot elected
+  (`eval/eval_electors.c`, int and float fast paths with their own guards);
+  an empty slot or an ungated site runs the electing function once, which
+  settles the slot. See [interpreter/electors.md](interpreter/electors.md).
+- **Compiler form:** Emitted by the operator specials in
+  `compile/specials/object.py`; the selector is a KosOperand name.
+- **Implementation**: `koskari/lib/opcode/OBJECT_OPERAND.c`
+
+### KOS_OP_OBJECT_INPLACE {#kos_op_object_inplace}
+
+- **Style**: OPCOUNT. Arg packs a KosOperand selector (high byte) with the
+  operand count (low byte).
+- **Status**: Implemented. Cache: one KOS_CACHE_ELECTOR slot.
+- **Stack**: `[..., a1, ... aN] → [..., result]`. Reduce the N operands
+  left-to-right through the operator's `PyNumber_InPlace*` protocol and push
+  the result.
+- **Semantics**: The stack in-place operation behind the inplace-item and
+  inplace-attr special forms; elected like OBJECT_OPERAND.
+- **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE.c`
 
 ### KOS_OP_OBJECT_BIT_INVERT {#kos_op_object_bit_invert}
 

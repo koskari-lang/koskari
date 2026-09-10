@@ -96,8 +96,9 @@ pipeline.
   (`POP` between `begin` forms). Always use non-tail call opcodes. |
 | **Promotion pass** | Decide which call sites are in tail position and rewrite
   to `TAIL_CALL*`. |
-| **VM** | Unchanged: `TAIL_CALL*` uses `tp_kos_tail_install` / frame reset per
-  [special-call-protocol.md](../api/special-call-protocol.md). |
+| **VM** | Unchanged: `TAIL_CALL*` uses `kc_vinstall` with the tail flag / frame
+  reset (the superseded two-slot design is archived at
+  [special-call-protocol.md](../archive/special-call-protocol.md)). |
 
 Specials no longer need to know whether they are compiling the last expression
 in a function body.
@@ -377,7 +378,7 @@ bodies (currently missed).
 
 ## See also
 
-- [special-call-protocol.md](../api/special-call-protocol.md) — VM tail install
+- [special-call-protocol.md](../archive/special-call-protocol.md) (archived) — the two-slot tail install design, superseded by `kc_vinstall`
 - [vector-call.md](../interpreter/vector-call.md) — `CALL` / `TAIL_CALL` stack layout
 - [PRAGMA.md](../PRAGMA.md) — deferred pass gating
 - [bytecode-finalization.md](../archive/bytecode-finalization.md) (archived, implemented) — finalization pipeline (orthogonal)

@@ -26,8 +26,8 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **[archive/opcode-eval-helpers-inventory.md](../archive/opcode-eval-helpers-inventory.md)** (archived): Static helpers in `eval.c` and opcode `.c` files — opcode cross-reference, redundancies, suggested public names for native/runtime API
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
 - **opcode-sizing.md**: per-handler code size joined with per-opcode timing (`make opsizing`, `design/perf/opsizing.tsv`); how to read the table and how to measure a change
-- **demand-evalex-phase1.md** / **demand-evalex-phase2.md** (archived under [archive/](../archive/)): demand in-eval denial and call flattening — see [EVALUATOR.md](../EVALUATOR.md) §7 and [api/demand-wrapper.md](../api/demand-wrapper.md)
-- **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView; proposed CAPTURE_FRAME opcode is design-only, see that doc §5)
+- **demand-evalex-phase1.md** / **demand-evalex-phase2.md** (archived under [archive/](../archive/)): demand in-eval denial and call flattening — see [EVALUATOR.md](../EVALUATOR.md) §7 and the archived [archive/demand-wrapper.md](../archive/demand-wrapper.md)
+- **[archive/introspection-trace.md](../archive/introspection-trace.md)** (archived): the TraceView snapshot proposal, never built; the live views are `Context.snapshot()` and `__koskari_dynchain__`
 - **callcc.md**: Call/cc implementation design (current PUSH delimited invoke)
 - **[archive/delimited-invoke-model.md](../archive/delimited-invoke-model.md)**: two-path delimited invoke (in-place Path A / bounded PUSH Path B) — implemented and archived; see also [archive/exception-patchup.md](../archive/exception-patchup.md) for the raise-path model
 - **[archive/kospartial.md](../archive/kospartial.md)**: partial application — implemented as the standalone native `KosPartial` (duck-typed, not an `isinstance` match); archived
