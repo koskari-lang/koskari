@@ -585,6 +585,22 @@ class PoolBuilder(object):
     def __init__(self):
         self.values = []
         self._index = {}
+        self._softened = {}
+
+
+    def soften(self, code):
+        """
+        The softened instruction list for code, built once per pool so
+        interning and encoding see the same operand objects
+
+        :param code: Code object
+        :return: list of (op, arg) pairs
+        """
+
+        key = id(code)
+        if key not in self._softened:
+            self._softened[key] = (code, code.soften())
+        return self._softened[key][1]
 
 
     def add(self, obj):
@@ -650,8 +666,7 @@ def intern_for_pool(pb, obj):
         intern_for_pool(pb, code.namespace_spec)
         intern_for_pool(pb, code.name)
         intern_for_pool(pb, code.filename)
-        instr = code.soften()
-        intern_instruction_args(pb, instr)
+        intern_instruction_args(pb, pb.soften(code))
         return pb.add(obj)
 
     if isinstance(obj, (tuple, frozenset)):
@@ -930,7 +945,7 @@ def encode_pool_record_value(val, index_of, pb=None):
         if pb is None:
             raise TypeError('FunctionSpec pool encoding requires a PoolBuilder')
         code = val.code
-        instr = code.soften()
+        instr = pb.soften(code)
         flg = code_flags(code)
         instr_b = encode_softened_instructions(pb, instr)
         ni = index_of(val.name)

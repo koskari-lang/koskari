@@ -101,6 +101,23 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual(kio.x, 1)
 
 
+    def test_function_body_via_kio_matches_ki(self):
+        """
+        A function whose body calls and builds from its formals runs the
+        same from .kio as from .ki
+        """
+
+        source = (
+            "(define k (lambda [a b] #[a b (+ a b)]))\n"
+            "(define r (k 1 2))\n"
+            "(define r2 (k 3 4))\n")
+        ki, kio = self._both('fnbody', source)
+        self.assertEqual([1, 2, 3], ki.r)
+        self.assertEqual([3, 4, 7], ki.r2)
+        self.assertEqual(ki.r, kio.r)
+        self.assertEqual(ki.r2, kio.r2)
+
+
     def test_pragma_via_kio_matches_ki(self):
         source = (
             "(pragma [compiler/call-brackets 'warn])\n"

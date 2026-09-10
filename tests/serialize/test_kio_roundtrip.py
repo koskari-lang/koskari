@@ -231,6 +231,56 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertEqual(len(kio.codes), 1)
         fn = demand_call(make_callable(kio.codes[0], ns))
         self.assertEqual(fn.__annotations__, {'a': 'int'})
+
+
+    def test_function_spec_extra_operand_roundtrip(self):
+        """
+        A nested body whose instructions carry EXTRA operand tuples
+        (fused loads, calls) is written and read back intact
+        """
+
+        inner_code, _ = build_expr([
+            ['FAST2', (0, 1, 0, 0)],
+            ['BUILD_LIST', 2],
+            ['RETURN', 1],
+        ], local_syms=('a', 'b'), name='inner')
+        fspec = FunctionSpec('inner', FormalsSpec(('a', 'b')), inner_code)
+        code, _ = build_expr([
+            ['CONST', fspec],
+            ['RETURN', 1],
+        ], name='outer')
+        buf = io.BytesIO()
+        dump_kio(buf, [code])
+        buf.seek(0)
+        kio = load_kio(buf)
+        loaded = None
+        for op, arg in kio.codes[0].soften():
+            if op == OpCode.CONST:
+                loaded = arg
+                break
+        self.assertIsInstance(loaded, FunctionSpec)
+        rows = [(op, arg) for op, arg in loaded.code.soften()
+                if op == OpCode.FAST2]
+        self.assertEqual([(OpCode.FAST2, (0, 1, 0, 0))], rows)
+
+
+    def test_compile_ki_function_body_with_call_roundtrip(self):
+        """
+        Compiling source whose function body calls something reaches
+        the .kio and reloads with the call row intact
+        """
+
+        buf = io.BytesIO()
+        compile_ki_source_to_kio(
+            '(define k (lambda [a b] (print a b)))\n', buf)
+        buf.seek(0)
+        kio = load_kio(buf)
+        specs = [arg for op, arg in kio.codes[0].soften()
+                 if isinstance(arg, FunctionSpec)]
+        self.assertEqual(1, len(specs))
+        ops = [OpCode(op) for op, _ in specs[0].code.soften()]
+        self.assertIn(OpCode.FAST2, ops)
+        self.assertTrue(any('CALL' in op.name for op in ops), ops)
     """
     Embedded body filename can differ from the compile-time path
     """
