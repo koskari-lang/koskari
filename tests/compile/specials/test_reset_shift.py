@@ -18,10 +18,14 @@ reset establishes a prompt; shift captures the continuation and runs a
 handler. Mirrors the semantics in design/language/control-flow.md.
 """
 
+import gc
+import sys
+
 import pytest
 
 from koskari.exceptions import KoskariPromptNotFound, KoskariPromptUnreachable
 from koskari.lib import DelimitedContinuation, ParamRef
+from koskari.module import load_module_source_async, new_module
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
@@ -44,6 +48,40 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, **{'+': add_fn})
         result = await expr()
         self.assertEqual(result, 6)
+
+
+    async def test_dropped_continuation_is_untracked_during_teardown(self):
+        """
+        Releasing a captured continuation runs the teardown of what it
+        holds; by then the continuation has left the collector's lists,
+        so nothing that runs during teardown can reach the dying object
+        """
+
+        seen = []
+        dying = []
+
+        class Sentinel:
+            def __del__(self):
+                seen.extend(
+                    o for o in gc.get_objects() if id(o) in dying)
+
+        # the sentinel is parked on the captured operand stack, and k is
+        # bound only in the module namespace, so the continuation dies
+        # by refcount rather than by cycle collection
+        src = "(define k (reset (#tuple (call make_sentinel) (shift k k))))"
+        module = new_module("cont_teardown")
+        vars(module)["__file__"] = "<cont_teardown>"
+        vars(module)["make_sentinel"] = Sentinel
+        await load_module_source_async(module, src, layout=False)
+
+        cont = vars(module)["k"]
+        self.assertIsInstance(cont, DelimitedContinuation)
+        del vars(module)["k"]
+        self.assertEqual(sys.getrefcount(cont), 2)
+
+        dying.append(id(cont))
+        del cont
+        self.assertEqual(seen, [])
 
 
     async def test_reset_shift_return_cont(self):

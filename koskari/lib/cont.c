@@ -41,6 +41,9 @@ static PyObject *str_target = NULL;
 static void delimited_continuation_dealloc(PyObject *self) {
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
 
+  /* the captured chain's teardown can run arbitrary Python; leave the
+     collector's lists before it starts */
+  PyObject_GC_UnTrack(self);
   kos_continuation_free(KosPyDelimitedContinuation_CAPTURED(cont));
 
   Py_TYPE(self)->tp_free(self);
@@ -247,6 +250,7 @@ static void continuation_dealloc(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
+  PyObject_GC_UnTrack(self);
   kos_continuation_free(KosPyContinuation_CAPTURED(cont));
 
   Py_TYPE(self)->tp_free(self);
