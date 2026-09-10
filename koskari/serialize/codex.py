@@ -415,13 +415,73 @@ class KioFile(object):
 
 
     @classmethod
-    def from_bytes(cls, data):
+    def validate(cls, source):
+        """
+        Check that a .kio is structurally sound without decoding its pool
+        or bodies. Returns the header and the section map, or raises
+        ValueError naming the first problem found
+
+        Checked, in order: the buffer holds a whole header; the magic and
+        bytecode ABI match this interpreter; the section directory lies
+        inside the file; every entry names a known tag, lies inside the
+        file after the header, and appears once; the POOL, CODE, and META
+        sections are all present; a stamped META is long enough to hold
+        its stamp
+
+        :param source: file path, bytes, or readable binary stream
+        :return: (KioHeader, dict of SectionTag to (offset, length))
+        :raises ValueError: describing the first structural fault
+        """
+
+        data = binary_read_all(source)
+        size = len(data)
+
+        if size < HEADER_SIZE:
+            raise ValueError(
+                f"truncated .kio: {size} bytes, header needs {HEADER_SIZE}")
         header = KioHeader.from_bytes(data)
         header.validate_runtime()
 
-        entries = decode_directory(
-            data, header.section_dir_offset, header.section_dir_count)
-        sec = {e[0]: (e[1], e[2]) for e in entries}
+        dir_off = header.section_dir_offset
+        dir_len = header.section_dir_count * DIR_ENTRY_SIZE
+        if dir_off < HEADER_SIZE or dir_off + dir_len > size:
+            raise ValueError(
+                f".kio section directory at {dir_off} for {dir_len} bytes"
+                f" lies outside the {size} byte file")
+
+        sections = {}
+        off = dir_off
+        for _ in range(header.section_dir_count):
+            tag_b, sec_off, sec_len = struct.unpack_from('<4sQQ', data, off)
+            off += DIR_ENTRY_SIZE
+            try:
+                tag = SectionTag.decode(tag_b)
+            except (ValueError, UnicodeDecodeError):
+                raise ValueError(f"unknown .kio section tag {tag_b!r}")
+            if tag in sections:
+                raise ValueError(f"duplicate .kio section {tag.value}")
+            if sec_off < HEADER_SIZE or sec_off + sec_len > size:
+                raise ValueError(
+                    f".kio section {tag.value} at {sec_off} for {sec_len}"
+                    f" bytes lies outside the {size} byte file")
+            sections[tag] = (sec_off, sec_len)
+
+        for tag in (SectionTag.POOL, SectionTag.CODE, SectionTag.META):
+            if tag not in sections:
+                raise ValueError(f".kio has no {tag.value} section")
+
+        meta_off, meta_len = sections[SectionTag.META]
+        if meta_len and (data[meta_off] & KioMeta.STAMPED) \
+                and meta_len < KioMeta._stamp.size:
+            raise ValueError(
+                f".kio META of {meta_len} bytes is too short for its stamp")
+
+        return header, sections
+
+
+    @classmethod
+    def from_bytes(cls, data):
+        header, sec = cls.validate(data)
 
         code_list = []
 
@@ -463,16 +523,12 @@ class KioFile(object):
 
         :param source: file path, bytes, or readable binary stream
         :return: KioMeta
-        :raises ValueError: bad magic or a bytecode ABI this interpreter
-            does not run
+        :raises ValueError: a structural fault, bad magic, or a bytecode
+            ABI this interpreter does not run (see validate)
         """
 
         data = binary_read_all(source)
-        header = KioHeader.from_bytes(data)
-        header.validate_runtime()
-        entries = decode_directory(
-            data, header.section_dir_offset, header.section_dir_count)
-        sec = {e[0]: (e[1], e[2]) for e in entries}
+        _header, sec = cls.validate(data)
         meta, _off = KioMeta.from_buffer(
             data, sec[SectionTag.META][0], sec[SectionTag.META][1])
         return meta
@@ -709,19 +765,6 @@ def encode_directory(entries):
         tag_b = tag.encode() if isinstance(tag, SectionTag) else tag
         out.extend(struct.pack('<4sQQ', tag_b, off, ln))
     return bytes(out)
-
-
-def decode_directory(buf, off, count):
-    """
-    Decode section directory entries from bytes
-    """
-
-    entries = []
-    for _ in range(count):
-        tag_b, doff, dlen = struct.unpack_from('<4sQQ', buf, off)
-        off += DIR_ENTRY_SIZE
-        entries.append((SectionTag.decode(tag_b), doff, dlen))
-    return entries
 
 
 def label_id_from_name(name):

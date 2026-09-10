@@ -29,6 +29,7 @@ from koskari.lib import (
     demand_call, nil, symbol)
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
+from koskari.serialize.codex import KIO_MAGIC, KioHeader, SectionTag
 
 from .. import make_callable
 from ..lib.opcode import build_code, build_expr
@@ -377,6 +378,57 @@ class TestKioMalformed(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             load_kio(io.BytesIO(data))
         self.assertIn('magic', str(ctx.exception).lower())
+
+
+    def _good_bytes(self):
+        code, _ = build_expr([
+            ['CONST', 42],
+            ['RETURN', 1],
+        ])
+        buf = io.BytesIO()
+        dump_kio(buf, [code])
+        return bytearray(buf.getvalue())
+
+
+    def test_validate_accepts_a_sound_file(self):
+        header, sections = KioFile.validate(bytes(self._good_bytes()))
+        self.assertEqual(header.magic, KIO_MAGIC)
+        self.assertEqual(
+            set(sections), {SectionTag.POOL, SectionTag.CODE, SectionTag.META})
+
+
+    def test_validate_rejects_truncated_header(self):
+        with self.assertRaises(ValueError):
+            KioFile.validate(bytes(self._good_bytes()[:16]))
+
+
+    def test_validate_rejects_truncated_body(self):
+        data = self._good_bytes()
+        with self.assertRaises(ValueError):
+            KioFile.validate(bytes(data[:len(data) // 2]))
+
+
+    def test_validate_rejects_missing_sections(self):
+        data = self._good_bytes()
+        # directory count sits after 8s + 5 u32 + Q in the header
+        struct.pack_into('<I', data, 8 + 5 * 4 + 8, 0)
+        with self.assertRaises(ValueError):
+            KioFile.validate(bytes(data))
+
+
+    def test_validate_rejects_section_past_end(self):
+        data = self._good_bytes()
+        header = KioHeader.from_bytes(data)
+        # first directory entry: 4s tag, Q offset, Q length
+        struct.pack_into('<Q', data, header.section_dir_offset + 4 + 8,
+                         len(data) * 4)
+        with self.assertRaises(ValueError):
+            KioFile.validate(bytes(data))
+
+
+    def test_read_meta_on_truncated_file_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            KioFile.read_meta(io.BytesIO(bytes(self._good_bytes()[:16])))
 
 
     def test_rejects_stale_bytecode_abi(self):

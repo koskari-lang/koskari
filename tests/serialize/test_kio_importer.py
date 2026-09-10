@@ -207,6 +207,20 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertTrue(module.__file__.endswith('.kio'), module.__file__)
 
 
+    def test_truncated_kio_yields_to_source(self):
+        """an unreadable .kio beside its .ki is passed over for the source"""
+        ki_path = self._write('cut_pick.ki', "(define who 1)\n")
+        kio_path = os.path.join(self._tmpdir, 'cut_pick.kio')
+        compile_ki_file_to_kio(ki_path, kio_path)
+        with open(kio_path, 'rb') as fh:
+            head = fh.read(16)
+        with open(kio_path, 'wb') as fh:
+            fh.write(head)
+        module = self._import('cut_pick')
+        self.assertEqual(module.who, 1)
+        self.assertTrue(module.__file__.endswith('.ki'), module.__file__)
+
+
     def test_stale_kio_yields_to_source(self):
         """a .ki edited after its .kio was compiled is the one imported"""
         ki_path = self._write('stale_pick.ki', "(define who 1)\n")
