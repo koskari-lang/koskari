@@ -316,16 +316,27 @@ async def import_module_async(fullname):
         raise ModuleNotFoundError(fullname)
 
     module = importlib.util.module_from_spec(spec)
-    sys.modules[fullname] = module
-
     if spec.loader is None:
-        raise ImportError('missing loader for %r' % (fullname,))
+        raise ImportError(f"missing loader for {fullname!r}")
 
+    # as importlib._bootstrap._load_unlocked does: the module is visible
+    # in sys.modules while its body runs, and gone again if the body
+    # fails, so a later import tries again instead of getting the
+    # half-loaded module
     loader = spec.loader
-    if hasattr(loader, 'exec_module_async'):
-        await loader.exec_module_async(module)
-    else:
-        loader.exec_module(module)
+    sys.modules[fullname] = module
+    try:
+        if hasattr(loader, 'exec_module_async'):
+            await loader.exec_module_async(module)
+        else:
+            loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(fullname, None)
+        raise
+
+    # the module in sys.modules is the one to bind, in case the loader
+    # replaced it
+    module = sys.modules[fullname]
 
     # mirror importlib._bootstrap._find_and_load_unlocked: bind the freshly
     # loaded submodule as an attribute on its parent package, so that later
