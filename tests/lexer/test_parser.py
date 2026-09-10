@@ -91,6 +91,20 @@ class TestParseAll(IsolatedAsyncioTestCase):
         self.assertEqual(forms, [42])
 
 
+    async def test_parse_all_reports_position_of_later_forms(self):
+        """
+        an error in the third form is reported on the third form's
+        line; positions keep counting across the forms of one source
+        """
+
+        from koskari.reader.parser import ReaderSyntaxError
+
+        src = '(define x 1)\n(define y 2)\n(define z (1 2)]\n'
+        with self.assertRaises(ReaderSyntaxError) as caught:
+            list(parse_all(src, '<later>'))
+        self.assertEqual(caught.exception.location[0], 3)
+
+
     async def test_parse_all_multiple_forms(self):
         src = '(define x 1)\n(define y 2)\nx'
         forms = list(parse_all(src))

@@ -42,13 +42,7 @@ def _compile_top_level_to_codes(mod, compiler, reader, source_stream):
 
     ns = vars(mod)
     try:
-        stream = IndentAwareStream(
-            source_stream.stream,
-            source_stream.filename,
-            auto_skip_exec=False,
-            line_no=source_stream.lin,
-            col_no=source_stream.col,
-            max_indent=None)
+        stream = IndentAwareStream.from_source(source_stream)
 
         bodies = []
         docstr = None

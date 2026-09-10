@@ -27,7 +27,8 @@ import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
 from koskari.lib import Module, ModuleNamespace, car, cdr, keyword, symbol
-from koskari.reader import READ_EOF, LayoutReader, source_str
+from koskari.reader import (
+    READ_EOF, IndentAwareStream, LayoutReader, source_str)
 from koskari.types import is_pair, unpack
 
 from . import parse_layout
@@ -264,7 +265,7 @@ def _parse_layout_all(src_str):
     builtins = dict(_BUILTIN_REGISTRY)
 
     reader = LayoutReader(builtins)
-    stream = source_str(src_str, '<unittest>')
+    stream = IndentAwareStream.from_source(source_str(src_str, '<unittest>'))
     results = []
     while True:
         form = reader.read(stream)

@@ -26,7 +26,7 @@ into s-expressions without compilation or evaluation.
 # This file was entirely generated via prompt, as the basis for the
 # prompt_toolkit REPL enhancements.
 
-from koskari.reader import source_str
+from koskari.reader import IndentAwareStream, source_str
 from koskari.reader.parser import READ_EOF
 
 
@@ -89,7 +89,7 @@ def parse(source, filename='<string>', reader=None):
 
     if reader is None:
         reader = default_layout_reader()
-    stream = source_str(source, filename)
+    stream = IndentAwareStream.from_source(source_str(source, filename))
     return reader.read(stream)
 
 
@@ -106,7 +106,7 @@ def parse_all(source, filename='<string>', reader=None):
 
     if reader is None:
         reader = default_layout_reader()
-    stream = source_str(source, filename)
+    stream = IndentAwareStream.from_source(source_str(source, filename))
     while True:
         form = reader.read(stream)
         if form is READ_EOF:

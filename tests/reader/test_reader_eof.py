@@ -27,7 +27,8 @@ import pytest
 
 from koskari.exceptions import ReaderEOF, ReaderSyntaxError
 from koskari.lib import ModuleNamespace
-from koskari.reader import READ_EOF, LayoutReader, default_reader, source_str
+from koskari.reader import (
+    READ_EOF, IndentAwareStream, LayoutReader, default_reader, source_str)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -72,12 +73,14 @@ class TestLayoutReaderEOF(TestCase):
     def test_unclosed_list_in_layout_line_raises_reader_eof(self):
         reader = self._reader()
         with self.assertRaises(ReaderEOF):
-            reader.read(source_str("(+ 1", "<t>"))
+            reader.read(IndentAwareStream.from_source(
+                source_str("(+ 1", "<t>")))
 
 
     def test_empty_layout_stream_is_read_eof(self):
         reader = self._reader()
-        self.assertIs(reader.read(source_str("", "<t>")), READ_EOF)
+        stream = IndentAwareStream.from_source(source_str("", "<t>"))
+        self.assertIs(reader.read(stream), READ_EOF)
 
 
 class TestReaderEOFNamesOpener(TestCase):

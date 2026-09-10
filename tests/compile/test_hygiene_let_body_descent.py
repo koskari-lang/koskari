@@ -29,7 +29,7 @@ from koskari.compile import Compiler
 from koskari.hygiene import (
     collect_binding_symbols, expand_template_with_hygiene)
 from koskari.lib import Module, ModuleNamespace, car, cdr, symbol
-from koskari.reader import LayoutReader, source_str
+from koskari.reader import IndentAwareStream, LayoutReader, source_str
 from koskari.types import is_pair, is_symbol
 
 
@@ -53,7 +53,8 @@ def _read_compile_form(compiler, src, line_no=1):
     Read source the same way compile/specials tests do (layout + builtins).
     """
 
-    stream = source_str(src, __file__, line_no=line_no)
+    stream = IndentAwareStream.from_source(
+        source_str(src, __file__, line_no=line_no))
     return LayoutReader(vars(compiler.module)).read(stream)
 
 

@@ -613,6 +613,27 @@ class IndentAwareStream(SourceStream):
         self.dedented = False
 
 
+    @classmethod
+    def from_source(cls, source_stream, max_indent=None):
+        """
+        The layout stream over a plain SourceStream, continuing from its
+        current position. Made once where a stream is created for layout
+        reading; the plain stream itself is not read afterwards
+
+        :param source_stream: a SourceStream, its ``#!`` line already
+            handled
+        :param max_indent: as for the constructor
+        """
+
+        return cls(
+            source_stream.stream,
+            source_stream.filename,
+            auto_skip_exec=False,
+            line_no=source_stream.lin,
+            col_no=source_stream.col,
+            max_indent=max_indent)
+
+
     def skip_whitespace(self):
         """
         Skip whitespace, stopping at dedent when max_indent is set
@@ -3581,25 +3602,26 @@ class LayoutReader(Reader):
         """
         Read a single layout form from the stream
 
-        Wraps reader_stream in an IndentAwareStream (with no max_indent
-        constraint) if it is not already one, then delegates to
-        read_form. This ensures stream.dedented is always available
-        throughout the layout read without any getattr guards.
+        The stream must be an IndentAwareStream, made once for the whole
+        source with :meth:`IndentAwareStream.from_source`, so successive
+        reads continue one position track and stream.dedented is always
+        available to the layout read. A plain SourceStream is refused: a
+        wrapper made per read would restart its line count at the
+        stream's stale position on every call.
 
         At EOF returns READ_EOF (same as Reader.read), not None, so callers
         can distinguish end-of-stream from a parsed Python None literal.
 
         ``BLOCK`` values are expanded via :func:`apply_layout`; ``BLOCKS``
         spines via :func:`apply_layouts` (returning the expanded car).
+
+        :raises TypeError: when reader_stream is not an IndentAwareStream
         """
 
         if not isinstance(reader_stream, IndentAwareStream):
-            reader_stream = IndentAwareStream(
-                reader_stream.stream, reader_stream.filename,
-                auto_skip_exec=False,
-                line_no=reader_stream.lin,
-                col_no=reader_stream.col,
-                max_indent=None)
+            raise TypeError(
+                "LayoutReader.read needs an IndentAwareStream; make one"
+                " with IndentAwareStream.from_source")
 
         event, pos, value = self.read_form(reader_stream)
 

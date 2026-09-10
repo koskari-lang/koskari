@@ -31,7 +31,8 @@ from koskari.exceptions import ReaderEOF, ReaderSyntaxError
 from koskari.lib import keyword, symbol
 from koskari.pragma import ModulePragma
 from koskari.reader import (
-    READ_EOF, LayoutReader, Reader, default_reader, source_str)
+    READ_EOF, IndentAwareStream, LayoutReader, Reader, default_reader,
+    source_str)
 from koskari.types import get_position
 
 
@@ -49,7 +50,7 @@ def parse_layout_all(src_str, **defns):
     builtins.update(defns)
 
     reader = LayoutReader(builtins)
-    stream = source_str(src_str, "<unittest>")
+    stream = IndentAwareStream.from_source(source_str(src_str, "<unittest>"))
 
     forms = []
     while True:
@@ -275,7 +276,8 @@ class TestFencePragma(IsolatedAsyncioTestCase):
 
     async def test_default_pragma_enables_fences(self):
         reader = LayoutReader.from_pragma(dict(_BUILTIN_REGISTRY))
-        stream = source_str("```bash\necho hi\n```\n", "<unittest>")
+        stream = IndentAwareStream.from_source(
+            source_str("```bash\necho hi\n```\n", "<unittest>"))
         result = reader.read(stream)
         head, _tail = result
         self.assertIs(head, symbol("apply-fence"))
@@ -284,7 +286,8 @@ class TestFencePragma(IsolatedAsyncioTestCase):
         pragma = ModulePragma({"reader/fences": False})
         reader = LayoutReader.from_pragma(dict(_BUILTIN_REGISTRY), pragma)
 
-        stream = source_str("```foo\n", "<unittest>")
+        stream = IndentAwareStream.from_source(
+            source_str("```foo\n", "<unittest>"))
         result = reader.read(stream)
         self.assertEqual(result, self.TRIPLE_QQ)
 
@@ -293,7 +296,8 @@ class TestFencePragma(IsolatedAsyncioTestCase):
         reader = LayoutReader.from_pragma(dict(_BUILTIN_REGISTRY), pragma)
 
         reader.reload_pragma(ModulePragma())
-        stream = source_str("```bash\necho hi\n```\n", "<unittest>")
+        stream = IndentAwareStream.from_source(
+            source_str("```bash\necho hi\n```\n", "<unittest>"))
         result = reader.read(stream)
         head, _tail = result
         self.assertIs(head, symbol("apply-fence"))
@@ -301,7 +305,8 @@ class TestFencePragma(IsolatedAsyncioTestCase):
     async def test_plain_reader_switch(self):
         reader = Reader()
         reader.fences_enabled = False
-        stream = source_str("```foo\n", "<unittest>")
+        stream = IndentAwareStream.from_source(
+            source_str("```foo\n", "<unittest>"))
         result = reader.read(stream)
         self.assertEqual(result, self.TRIPLE_QQ)
 

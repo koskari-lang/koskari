@@ -34,8 +34,8 @@ from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import kos_repr
 from koskari.pragma import ModulePragma
 from koskari.reader import (
-    DEFER, READ_EOF, LayoutReader, Reader, ReaderEOF, ReaderSyntaxError,
-    source_str)
+    DEFER, READ_EOF, IndentAwareStream, LayoutReader, Reader, ReaderEOF,
+    ReaderSyntaxError, source_str)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -783,7 +783,8 @@ class TestStringSegmentsInLayout(unittest.TestCase):
     def read(self, src):
         reader = LayoutReader.from_pragma(
             dict(_BUILTIN_REGISTRY), ModulePragma())
-        return reader.read(source_str(src, "<unittest>"))
+        return reader.read(
+            IndentAwareStream.from_source(source_str(src, "<unittest>")))
 
     def test_indented_continuation_joins(self):
         """

@@ -23,7 +23,7 @@ import pytest
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
 from koskari.lib import Datum, Module, car, cdr, cons, nil, symbol
-from koskari.reader import LayoutReader, source_str
+from koskari.reader import IndentAwareStream, LayoutReader, source_str
 from koskari.types import build_proper, is_pair, is_symbol
 from tests.compile.specials import _register_specials
 from tests.syntax.datum_syntax_helpers import (
@@ -55,11 +55,11 @@ def _unwrap_datum(x):
 
 def _install_lambda_ng_template(ns):
     reader = LayoutReader(ns)
-    stream = source_str(
+    stream = IndentAwareStream.from_source(source_str(
         "(lambda-ng [n] (+ n 1))",
         __file__,
         line_no=1,
-    )
+    ))
     return _unwrap_datum(reader.read(stream))
 
 
@@ -101,7 +101,8 @@ def _make_compiler_and_ns(testcase):
 
 def _read_form(ns, src_line):
     reader = LayoutReader(ns)
-    stream = source_str(src_line, __file__, line_no=1)
+    stream = IndentAwareStream.from_source(
+        source_str(src_line, __file__, line_no=1))
     return _unwrap_datum(reader.read(stream))
 
 
@@ -140,7 +141,8 @@ class MacroLambdaHygieneFullStackBase(LambdaNgFullStackBase):
         _register_specials(ns, _BUILTIN_REGISTRY)
         tpl = _install_lambda_ng_template(ns)
         _install_demo_syntaxes(ns, tpl)
-        stream = source_str(src_str, __file__, line_no=lineno)
+        stream = IndentAwareStream.from_source(
+            source_str(src_str, __file__, line_no=lineno))
         source = LayoutReader(ns).read(stream)
         compiler = Compiler("<unittest>", module, filename=__file__)
         fragment = compiler.full_compile(source)

@@ -65,7 +65,7 @@ def _parse_layout_ng(src_str, **defns):
     builtins = dict(_BUILTIN_REGISTRY)
     builtins.update(defns)
     reader = LayoutReader(builtins)
-    stream = source_str(src_str, '<test>')
+    stream = IndentAwareStream.from_source(source_str(src_str, '<test>'))
     return reader.read(stream)
 
 
@@ -424,17 +424,18 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
         result = _parse_layout_ng(src)
         self.assertEqual(result, expected)
 
-    async def test_stream_is_indent_aware_no_getattr(self):
-        # This test verifies that LayoutReader.read wraps a plain SourceStream
-        # in an IndentAwareStream so that stream.dedented is always a real
-        # attribute and not discovered through getattr.
+    async def test_plain_stream_is_refused(self):
+        # a layout read continues one position track across the forms
+        # of a source, so the caller makes the IndentAwareStream once;
+        # a plain SourceStream is refused rather than wrapped per read
         builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins)
         plain = source_str("foo x:\n  y\n", '<test>')
         self.assertIsInstance(plain, SourceStream)
         self.assertNotIsInstance(plain, IndentAwareStream)
-        # read() should still work correctly by wrapping internally
-        result = reader.read(plain)
+        with self.assertRaises(TypeError):
+            reader.read(plain)
+        result = reader.read(IndentAwareStream.from_source(plain))
         expected = pycons(
             (symbol('foo'),
              symbol('x'),

@@ -37,7 +37,7 @@ import-from ..exceptions:
   format_code_boundary_exception format_exception_with_koskari_trace
   apply_sys_last_exc CompilerError UncaughtCompilerError
   ReaderEOF ReaderSyntaxError
-import-from ..reader LayoutReader source_str READ_EOF
+import-from ..reader IndentAwareStream LayoutReader source_str READ_EOF
 import-from ..module init_module build_module_load_facets
 import-from ..lib kos_repr
 
@@ -127,7 +127,7 @@ define eval_expression [compiler source ns]:
     set! reader (LayoutReader.from_pragma ns pragma: (ns.get "__pragma__"))
     set! ns["__reader__"] reader
 
-  define stream (source_str source "<stdin>")
+  define stream (IndentAwareStream.from_source (source_str source "<stdin>"))
 
   define source_expr:
     try:

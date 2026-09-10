@@ -29,7 +29,7 @@ from koskari.compile.pragma import (
 from koskari.lib import Module, ModuleNamespace
 from koskari.module import build_module_load_facets
 from koskari.pragma import ModulePragma
-from koskari.reader import default_reader, source_str
+from koskari.reader import IndentAwareStream, default_reader, source_str
 
 
 pytestmark = pytest.mark.phase_basics
@@ -211,7 +211,8 @@ class TestPragmaReaderEffects(PragmaSyntaxHelpers):
         module, compiler = self.make_module()
         reader = vars(module)["__reader__"]
 
-        result = reader.read(source_str("```json\n{}\n```\n", __file__))
+        result = reader.read(IndentAwareStream.from_source(
+            source_str("```json\n{}\n```\n", __file__)))
         head, _tail = result
         self.assertIs(head, symbol("apply-fence"))
 
@@ -219,7 +220,8 @@ class TestPragmaReaderEffects(PragmaSyntaxHelpers):
             module, compiler, "(pragma [reader/fences False])")
         await expr()
 
-        result = reader.read(source_str("```foo\n", __file__))
+        result = reader.read(IndentAwareStream.from_source(
+            source_str("```foo\n", __file__)))
         head, _tail = result
         self.assertIs(head, symbol("quasiquote"))
 

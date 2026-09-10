@@ -456,7 +456,7 @@ from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
 from koskari.lib import Module, ModuleNamespace
 from koskari.lib import keyword as _kw_type
-from koskari.reader import LayoutReader, source_str
+from koskari.reader import IndentAwareStream, LayoutReader, source_str
 from koskari.reader.layouts import apply_layout as _apply_layout_macro
 from koskari.types import is_pair
 
@@ -538,7 +538,7 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
         module, mod_ns, compiler = self.make_module(**defns)
         layout_builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(layout_builtins)
-        stream = source_str(src_str, __file__)
+        stream = IndentAwareStream.from_source(source_str(src_str, __file__))
         source = reader.read(stream)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(mod_ns)

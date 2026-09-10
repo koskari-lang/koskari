@@ -28,7 +28,8 @@ from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler, CompilerMode
 from koskari.lib import (
     FunctionSpec, Module, ModuleNamespace, OpCode, bracket_cons, build_dict)
-from koskari.reader import LayoutReader, default_reader, source_str
+from koskari.reader import (
+    IndentAwareStream, LayoutReader, default_reader, source_str)
 from koskari.types import bracket_splice
 
 
@@ -67,7 +68,8 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
 
 
     def parse_source(self, src_str, lineno=1, reader=None):
-        stream = source_str(src_str, __file__, line_no=lineno)
+        stream = IndentAwareStream.from_source(
+            source_str(src_str, __file__, line_no=lineno))
         if reader is None:
             reader = default_reader
         return reader.read(stream)

@@ -26,7 +26,8 @@ from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
 from koskari.exceptions import ReaderSyntaxError
 from koskari.lib import cons, keyword, kos_repr, nil, symbol
-from koskari.reader import LINE_END, LayoutReader, source_str
+from koskari.reader import (
+    LINE_END, IndentAwareStream, LayoutReader, source_str)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -36,14 +37,14 @@ def parse_layout_ng(src_str, **defns):
     builtins = dict(_BUILTIN_REGISTRY)
     builtins.update(defns)
     reader = LayoutReader(builtins)
-    stream = source_str(src_str, '<unittest>')
+    stream = IndentAwareStream.from_source(source_str(src_str, '<unittest>'))
     return reader.read(stream)
 
 
 def parse_layout_ng_mode(src_str, **reader_kwargs):
     builtins = dict(_BUILTIN_REGISTRY)
     reader = LayoutReader(builtins, **reader_kwargs)
-    stream = source_str(src_str, '<unittest>')
+    stream = IndentAwareStream.from_source(source_str(src_str, '<unittest>'))
     return reader.read(stream)
 
 
@@ -383,7 +384,8 @@ class TestLayoutLineEvents(IsolatedAsyncioTestCase):
     async def test_read_header_form_line_end_at_semicolon(self):
         builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins)
-        stream = source_str(';; tail', '<unittest>')
+        stream = IndentAwareStream.from_source(
+            source_str(';; tail', '<unittest>'))
         stream.skip_whitespace()
         event, _pos, _val = reader._read_header_form(stream)
         self.assertIs(event, LINE_END)
@@ -391,7 +393,8 @@ class TestLayoutLineEvents(IsolatedAsyncioTestCase):
     async def test_quote_open_paren_uses_reader_quote_not_raw_block(self):
         builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins)
-        stream = source_str("' (1 2)\n", '<unittest>')
+        stream = IndentAwareStream.from_source(
+            source_str("' (1 2)\n", '<unittest>'))
         result = reader.read(stream)
         expected = cons(
             symbol('quote'),
@@ -406,21 +409,24 @@ class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
         builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins)
         src = '(lambda [f] (print f)) (+ 1 10)'
-        combined = reader.read(source_str(src, '<t>'))
-        head = reader.read(source_str('(lambda [f] (print f))', '<t>'))
-        arg = reader.read(source_str('(+ 1 10)', '<t>'))
+        combined = reader.read(IndentAwareStream.from_source(
+            source_str(src, '<t>')))
+        head = reader.read(IndentAwareStream.from_source(
+            source_str('(lambda [f] (print f))', '<t>')))
+        arg = reader.read(IndentAwareStream.from_source(
+            source_str('(+ 1 10)', '<t>')))
         self.assertEqual(combined, cons(head, arg, nil))
 
     async def test_blank_logical_lines_are_skipped(self):
         builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins)
-        stream = source_str('\n\nfoo\n', '<t>')
+        stream = IndentAwareStream.from_source(source_str('\n\nfoo\n', '<t>'))
         self.assertEqual(reader.read(stream), symbol('foo'))
 
     async def test_implicit_false_errors_on_two_values_one_line(self):
         builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins, layout_implicit_calls=False)
-        stream = source_str('foo bar', '<t>')
+        stream = IndentAwareStream.from_source(source_str('foo bar', '<t>'))
         with self.assertRaises(ReaderSyntaxError):
             reader.read(stream)
 
@@ -428,7 +434,8 @@ class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
         builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins)
         src = '(foo) a:\n  y\n'
-        result = reader.read(source_str(src, '<t>'))
+        result = reader.read(IndentAwareStream.from_source(
+            source_str(src, '<t>')))
         expected = pycons(
             (cons(symbol('foo'), nil),
              symbol('a'),

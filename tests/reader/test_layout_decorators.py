@@ -27,7 +27,7 @@ from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
 from koskari.exceptions import ReaderSyntaxError
 from koskari.lib import keyword, symbol
-from koskari.reader import LayoutReader, source_str
+from koskari.reader import IndentAwareStream, LayoutReader, source_str
 
 from . import parse_layout
 
@@ -157,7 +157,7 @@ class TestLayoutDecorateErrors(IsolatedAsyncioTestCase):
         builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins)
         reader.set_layout_modes(layout_decorators=True)
-        stream = source_str(src, '<unittest>')
+        stream = IndentAwareStream.from_source(source_str(src, '<unittest>'))
 
         with self.assertRaises(ReaderSyntaxError) as ctx:
             reader.read(stream)
@@ -181,7 +181,8 @@ class TestLayoutDecorateLayoutMacroDisabled(IsolatedAsyncioTestCase):
         builtins = dict(_BUILTIN_REGISTRY)
 
         reader = LayoutReaderNoAt(builtins)
-        stream = source_str('@foo\ndefine-class Obj []:\n  x\n', '<unittest>')
+        stream = IndentAwareStream.from_source(
+            source_str('@foo\ndefine-class Obj []:\n  x\n', '<unittest>'))
         result = reader.read(stream)
 
         self.assertTrue(str(result).startswith('@'))
@@ -203,7 +204,8 @@ class TestDecoratorPragmaGate(IsolatedAsyncioTestCase):
         """
 
         reader = LayoutReader(dict(_BUILTIN_REGISTRY))
-        stream = source_str(self.SRC, '<unittest>')
+        stream = IndentAwareStream.from_source(
+            source_str(self.SRC, '<unittest>'))
         result = reader.read(stream)
 
         self.assertTrue(str(result).startswith('@'))
@@ -216,7 +218,8 @@ class TestDecoratorPragmaGate(IsolatedAsyncioTestCase):
         """
 
         reader = LayoutReader.from_pragma(dict(_BUILTIN_REGISTRY))
-        stream = source_str(self.SRC, '<unittest>')
+        stream = IndentAwareStream.from_source(
+            source_str(self.SRC, '<unittest>'))
         result = reader.read(stream)
 
         head, _rest = result
@@ -233,7 +236,8 @@ class TestDecoratorPragmaGate(IsolatedAsyncioTestCase):
         pragma = ModulePragma({"reader/decorators": False})
         reader = LayoutReader.from_pragma(
             dict(_BUILTIN_REGISTRY), pragma=pragma)
-        stream = source_str(self.SRC, '<unittest>')
+        stream = IndentAwareStream.from_source(
+            source_str(self.SRC, '<unittest>'))
         result = reader.read(stream)
 
         self.assertTrue(str(result).startswith('@'))

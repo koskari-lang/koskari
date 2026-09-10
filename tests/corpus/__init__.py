@@ -37,7 +37,8 @@ from koskari.compile import Compiler, CompilerMode
 from koskari.lib import car, cdr, cons, demand_call, nil, symbol
 from koskari.module import new_module, public_vars
 from koskari.pragma import ModulePragma
-from koskari.reader import READ_EOF, LayoutReader, Reader, source_str
+from koskari.reader import (
+    READ_EOF, IndentAwareStream, LayoutReader, Reader, source_str)
 from koskari.syntax import MacroTransform, Syntax, SyntaxTransform
 from koskari.types import is_pair, is_proper, is_symbol, unpack
 
@@ -694,7 +695,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         :return: read form
         """
 
-        stream = source_str(source, '<corpus>')
+        stream = IndentAwareStream.from_source(source_str(source, '<corpus>'))
         forms = []
         while True:
             val = self.reader.read(stream)

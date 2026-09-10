@@ -27,7 +27,7 @@ from koskari.compile.pragma import KeywordLiterals
 from koskari.exceptions import CompilerError
 from koskari.lib import Module, ModuleNamespace
 from koskari.module import build_module_load_facets
-from koskari.reader import source_str
+from koskari.reader import IndentAwareStream, source_str
 
 
 pytestmark = pytest.mark.phase_compile
@@ -45,7 +45,8 @@ class TestKeywordLiteralLint(unittest.TestCase):
         module = Module(ModuleNamespace("test", dict(vars(builtins))))
         compiler, reader = build_module_load_facets(module, "<unittest>")
         compiler.keyword_literals = keyword_literals
-        source = reader.read(source_str(src, "<unittest>"))
+        source = reader.read(
+            IndentAwareStream.from_source(source_str(src, "<unittest>")))
         return compiler.full_compile(source)
 
     def test_allow_compiles(self):
