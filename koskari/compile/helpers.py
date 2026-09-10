@@ -577,21 +577,12 @@ def const_only_expr(fragment):
     value = None
 
     for op, opa in fragment.instructions:
-        if op == OpCode.CONST:
-            if found:
-                return (False, None)
-            found = True
-            value = opa
-
-        elif op in (OpCode.NOOP, OpCode.POSITION):
+        if op in (OpCode.NOOP, OpCode.POSITION):
             continue
-
-        elif found and op == OpCode.POP and opa == 1:
-            found = False
-            value = None
-
-        elif found:
+        if op != OpCode.CONST or found:
             return (False, None)
+        found = True
+        value = opa
 
     return (found, value)
 

@@ -65,6 +65,43 @@ class TestConstOnlyExpr(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIsNone(val)
 
+    def test_const_pop_const_false(self):
+        """
+        A discarded constant followed by another is a begin of two
+        constants, not a single constant expression
+        """
+
+        frag = self.compiler.fragment("c")
+        frag.instruction(OpCode.CONST, 3)
+        frag.instruction(OpCode.POP, 1)
+        frag.instruction(OpCode.CONST, 4)
+        ok, val = const_only_expr(frag)
+        self.assertFalse(ok)
+        self.assertIsNone(val)
+
+    def test_var_before_const_false(self):
+        """
+        An evaluated instruction before the constant is not a constant
+        expression, even when its value is popped
+        """
+
+        frag = self.compiler.fragment("c")
+        frag.instruction(OpCode.VAR, "x")
+        frag.instruction(OpCode.POP, 1)
+        frag.instruction(OpCode.CONST, 7)
+        ok, val = const_only_expr(frag)
+        self.assertFalse(ok)
+        self.assertIsNone(val)
+
+    def test_call_before_const_false(self):
+        frag = self.compiler.fragment("c")
+        frag.instruction(OpCode.CALL_VAR, ("f", (), 0, 0))
+        frag.instruction(OpCode.POP, 1)
+        frag.instruction(OpCode.CONST, 7)
+        ok, val = const_only_expr(frag)
+        self.assertFalse(ok)
+        self.assertIsNone(val)
+
 
 class TestHelperBegin(unittest.TestCase):
 
