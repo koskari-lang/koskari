@@ -412,7 +412,10 @@ static KosOpResult yield_from_drive_py_async(
 
   /* Build the awaitable for this step: __anext__, asend, athrow, or aclose. */
   PyObject *awaitable = NULL;
-  if (action == KOS_YF_STEP || (action == KOS_YF_SEND && ! KosDynYieldFrom_PENDING_ARG(yf))) {
+  if (action == KOS_YF_STEP
+      || (action == KOS_YF_SEND
+          && (! KosDynYieldFrom_PENDING_ARG(yf)
+              || KosDynYieldFrom_PENDING_ARG(yf) == Py_None))) {
     awaitable = get_await_next(delegate);
 
   } else if (kind == KOS_YF_PY_ASYNC_GEN && action == KOS_YF_SEND) {
@@ -445,6 +448,19 @@ static KosOpResult yield_from_drive_py_async(
   } else if (action == KOS_YF_CLOSE) {
     /* PY_ASYNC_ITER has no aclose; treat as exhausted. */
     return yield_from_finish(es, yf);
+
+  } else if (action == KOS_YF_THROW) {
+    /* PY_ASYNC_ITER has no athrow: the thrown exception lands here,
+       and the raise walk retires the node */
+    PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
+    PyObject *typ = KosDynYieldFrom_PENDING_ARG_TYPE(yf);
+    PyErr_SetObject(typ ? typ : (PyObject *) Py_TYPE(exc), exc);
+    return EVAL_RAISE();
+
+  } else {
+    PyErr_SetString(PyExc_TypeError,
+                    "send() to async iterator only accepts None");
+    return EVAL_RAISE();
   }
 
   if (! awaitable) {

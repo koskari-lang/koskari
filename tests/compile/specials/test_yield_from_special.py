@@ -179,6 +179,58 @@ class _StopsWithHeldInstance:
         raise self.stop
 
 
+class _TwoStepAsyncIter:
+    """
+    A plain Python async iterator (no asend, athrow, or aclose) that
+    yields two values and then stops
+    """
+
+    def __init__(self):
+        self.items = ["one", "two"]
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self.items:
+            raise StopAsyncIteration
+        return self.items.pop(0)
+
+
+class TestYieldFromPlainAsyncIterator(SpecialsTestCase):
+
+    async def test_second_step_reaches_anext(self):
+        """
+        A consumer step after the first yielded value drives __anext__
+        again instead of failing with no exception set
+        """
+
+        src = """
+        (lambda []
+          (yield-from (call source)))
+        """
+        expr, _mod = self.compile_expr(src, source=_TwoStepAsyncIter)
+        fn = await expr()
+        self.assertEqual(["one", "two"], await _collect_async_pairs(fn()))
+
+    async def test_throw_lands_at_the_delegating_generator(self):
+        """
+        athrow into the delegating generator raises the thrown exception
+        out of it, since a plain async iterator has no athrow
+        """
+
+        src = """
+        (lambda []
+          (yield-from (call source)))
+        """
+        expr, _mod = self.compile_expr(src, source=_TwoStepAsyncIter)
+        fn = await expr()
+        agen = fn()
+        self.assertEqual("one", await anext(agen))
+        with self.assertRaises(ValueError):
+            await agen.athrow(ValueError("into the delegate"))
+
+
 class TestYieldFromPythonAsyncExhaustion(SpecialsTestCase):
 
     async def test_stop_async_iteration_instance_released_once(self):
