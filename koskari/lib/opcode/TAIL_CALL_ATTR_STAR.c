@@ -14,20 +14,9 @@
 */
 
 
-/**
-   TAIL_CALL_ATTR_STAR: arg = extra index. Schema CONST (attr name), COUNT
-   (bitflags: 1 = has *args, 2 = has **kwargs). Stack [obj, pos, kwd]
-   per flags; obj.name is resolved through the per-site cache slot.
-   Tail call: the callee replaces the current frame.
-*/
-KOS_OP_HANDLER_COLD(TAIL_CALL_ATTR_STAR) {
-  const KosExtra *row = KosOp_ROW(insn);
-
-  KosOpResult res = kos_op_call_star(
-      es, NULL, KosExtra_OBJ(row, 0), KosOp_SLOT(insn),
-      KosExtra_IMM(row, 1), 1);
-  RESULT_RELAY(es, res);
-}
+/* TAIL_CALL_ATTR_STAR shares CALL_ATTR_STAR's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_ATTR_STAR.c. */
+#define op_TAIL_CALL_ATTR_STAR op_CALL_ATTR_STAR
 
 
 // The end.

@@ -15,12 +15,15 @@
 
 
 /**
-   CALL_STAR: arg = bitflags (1 = has *args, 2 = has **kwargs). Stack
-   [callable, pos, kwd] with kwd at TOS, pos and kwd present per flag.
+   CALL_STAR and TAIL_CALL_STAR: arg = bitflags (1 = has *args, 2 = has
+   **kwargs). Stack [callable, pos, kwd] with kwd at TOS, pos and kwd present
+   per flag. A TAIL_CALL instruction reaches this same handler and adds the
+   tail bit, which the core turns into a frame reset instead of a push.
 */
 KOS_OP_HANDLER_COLD(CALL_STAR) {
+  int tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn));
   KosOpResult res = kos_op_call_star(
-      es, NULL, NULL, NULL, KosOp_ARG(insn), 0);
+      es, NULL, NULL, NULL, KosOp_ARG(insn), tail);
   RESULT_RELAY(es, res);
 }
 

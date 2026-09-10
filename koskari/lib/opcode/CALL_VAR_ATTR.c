@@ -15,12 +15,15 @@
 
 
 /**
-   CALL_VAR_ATTR: arg = extra index. Schema VAR (name), CONST (attr name),
-   COUNT (arg count). Stack [arg_0, ..., arg_{N-1}] only; obj is loaded
-   from the frame namespace by VAR name. Resolve obj.attr, then call.
-   Unbound fn: fn(obj, *args). Bound/other: callable(*args).
+   CALL_VAR_ATTR and TAIL_CALL_VAR_ATTR: arg = extra index. Schema VAR (name),
+   CONST (attr name), COUNT (arg count). Stack [arg_0, ..., arg_{N-1}] only;
+   obj is loaded from the frame namespace by VAR name. Resolve obj.attr, then
+   call. Unbound fn: fn(obj, *args). Bound/other: callable(*args). A TAIL_CALL
+   instruction reaches this same handler and adds the tail bit, which the core
+   turns into a frame reset instead of a push.
 */
 KOS_OP_HANDLER_COLD(CALL_VAR_ATTR) {
+  unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
       unsigned n = KosExtra_IMM(row, 2);
 
@@ -54,7 +57,7 @@ KOS_OP_HANDLER_COLD(CALL_VAR_ATTR) {
   KosOpResult r = kos_call_invoke(es, resolved,
                                   (send_self == 0) ? obj : NULL,
                                   ptr, (Py_ssize_t) n, NULL,
-                                  KOS_CALL_ARGV_WINDOW
+                                  KOS_CALL_ARGV_WINDOW | tail
                                   | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
   RESULT_RELAY(es, r);

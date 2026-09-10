@@ -14,20 +14,23 @@
 */
 
 /**
-  CALL_NAMES: arg = N (number of positional arguments). Stack:
-  [callable, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}, names]
-  with names at TOS. KosCallable: steal then KosEvalState_Call. Plain Python:
-  TailPtr + PyObject_Vectorcall + DropNoErr.
+  CALL_NAMES and TAIL_CALL_NAMES: arg = N (number of positional arguments).
+  Stack: [callable, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1},
+  names] with names at TOS. KosCallable: steal then KosEvalState_Call. Plain
+  Python: TailPtr + PyObject_Vectorcall + DropNoErr. A TAIL_CALL instruction
+  reaches this same handler and adds the tail bit, which the core turns into a
+  frame reset instead of a push.
 */
 KOS_OP_HANDLER_COLD(CALL_NAMES) {
+  unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *names = KosEvalState_StackPeek(es);
   if (! names)
     RESULT_RAISE();
   if (! PyTuple_CheckExact(names)) {
-    PyErr_Format(PyExc_RuntimeError, "CALL_NAMES names must be tuple"
-                 ", not %R", names);
+    PyErr_Format(PyExc_RuntimeError, "%s names must be tuple, not %R",
+                 kos_opcode_name(KosOp_OP(insn)), names);
     RESULT_RAISE();
   }
 
@@ -50,7 +53,7 @@ KOS_OP_HANDLER_COLD(CALL_NAMES) {
   KosOpResult r = kos_call_invoke(es, ptr[0], NULL,
                                   total ? ptr + 1 : NULL, npos,
                                   nkwds ? names : NULL,
-                                  KOS_CALL_ARGV_WINDOW
+                                  KOS_CALL_ARGV_WINDOW | tail
                                   | KOS_CALL_WINDOW_CALLABLE);
   Py_DECREF(names);
   RESULT_RELAY(es, r);

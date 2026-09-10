@@ -13,50 +13,10 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   TAIL_CALL_NAMES: arg = N (number of positional arguments). Same stack
-   layout as CALL_NAMES: [callable, pos_0, ..., pos_{N-1}, kwd_val_0, ...,
-   kwd_val_{M-1}, names] with names at TOS. Tail call: the caller's frame
-   is reused or popped by the call core, which reads the window in place.
-*/
 
-KOS_OP_HANDLER_COLD(TAIL_CALL_NAMES) {
-  unsigned opa = KosOp_ARG(insn);
-
-  PyObject *names = KosEvalState_StackPeek(es);
-  if (! names)
-    RESULT_RAISE();
-  if (! PyTuple_CheckExact(names)) {
-    PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_NAMES names must be tuple"
-                 ", not %R", names);
-    RESULT_RAISE();
-  }
-
-  Py_ssize_t npos = (Py_ssize_t) opa;
-  Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
-  Py_ssize_t total = npos + nkwds;
-
-  /* Pop the names tuple off the top; the remaining window is the
-     standard [callable, pos..., kw_vals...] shape for the core. */
-  names = KosEvalState_StackPopRef(es);
-  if (! names)
-    RESULT_RAISE();
-
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, (size_t) total + 1);
-  if (! ptr) {
-    Py_DECREF(names);
-    RESULT_RAISE();
-  }
-
-  KosOpResult r = kos_call_invoke(es, ptr[0], NULL,
-                                  total ? ptr + 1 : NULL, npos,
-                                  nkwds ? names : NULL,
-                                  KOS_CALL_ARGV_WINDOW
-                                  | KOS_CALL_WINDOW_CALLABLE
-                                  | KOS_CALL_TAIL);
-  Py_DECREF(names);
-  RESULT_RELAY(es, r);
-}
+/* TAIL_CALL_NAMES shares CALL_NAMES's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_NAMES.c. */
+#define op_TAIL_CALL_NAMES op_CALL_NAMES
 
 
 // The end.

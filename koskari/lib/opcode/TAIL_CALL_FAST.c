@@ -14,37 +14,9 @@
 */
 
 
-/**
-  TAIL_CALL_FAST: arg = extra index. Schema FASTVAR (slot), COUNT (arg
-  count). Call callable from fast local slot. Stack [arg_0, ...,
-  arg_{N-1}]. Tail call: do not push a new frame; remove or recycle the
-  current one. Prologue only: kos_call_invoke owns the window drop and
-  the frame handoff under KOS_CALL_TAIL.
-*/
-KOS_OP_HANDLER(TAIL_CALL_FAST) {
-  const KosExtra *row = KosOp_ROW(insn);
-  unsigned n = KosExtra_IMM(row, 1);
-
-  PyObject *ns = CURRENT_NS();
-  KOS_OP_REQUIRE_NS(ns);
-
-  PyObject *callable = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
-  if (unlikely(! callable))
-    RESULT_RAISE();
-
-  PyObject *const *argv = NULL;
-  if (n) {
-    argv = KosEvalState_StackTailPtr(es, n);
-    if (unlikely(! argv)) {
-      Py_DECREF(callable);
-      RESULT_RAISE();
-    }
-  }
-
-  RESULT_RELAY(es, kos_call_invoke(
-      es, callable, NULL, argv, (Py_ssize_t) n, NULL,
-      KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED));
-}
+/* TAIL_CALL_FAST shares CALL_FAST's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_FAST.c. */
+#define op_TAIL_CALL_FAST op_CALL_FAST
 
 
 // The end.

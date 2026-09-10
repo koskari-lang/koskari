@@ -14,16 +14,9 @@
 */
 
 
-/**
-   TAIL_CALL_STAR: arg = bitflags (1 = has *args, 2 = has **kwargs). Stack
-   [callable, pos, kwd] with kwd at TOS, pos and kwd present per flag.
-   Tail call: the callee replaces the current frame.
-*/
-KOS_OP_HANDLER_COLD(TAIL_CALL_STAR) {
-  KosOpResult res = kos_op_call_star(
-      es, NULL, NULL, NULL, KosOp_ARG(insn), 1);
-  RESULT_RELAY(es, res);
-}
+/* TAIL_CALL_STAR shares CALL_STAR's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_STAR.c. */
+#define op_TAIL_CALL_STAR op_CALL_STAR
 
 
 // The end.

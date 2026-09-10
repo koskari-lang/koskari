@@ -13,28 +13,10 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   TAIL_CALL: arg = N. Same stack as CALL [callable, arg_0, ..., arg_{N-1}].
-   Tail call: do not push a new frame; remove or recycle the current one.
 
-   Extracts args via KosStackSteal before call; KosEvalState_Call handles frame
-   behavior and dispatch. Returns EVAL_CONTROL_RETURNED() when we push and
-   continue (the return settles a pending wind thunk).
-*/
-
-KOS_OP_HANDLER(TAIL_CALL) {
-  unsigned n = KosOp_ARG(insn);
-
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
-  if (! ptr)
-    RESULT_RAISE();
-
-  /* Prologue only: the whole window (callable included) is borrowed;
-     the core's tail subpath binds before the frame reset drops it. */
-  RESULT_RELAY(es, kos_call_invoke(
-      es, ptr[0], NULL, n ? ptr + 1 : NULL, (Py_ssize_t) n, NULL,
-      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE | KOS_CALL_TAIL));
-}
+/* TAIL_CALL shares CALL's handler, which reads the tail bit off the
+   opcode; see opcode/CALL.c. */
+#define op_TAIL_CALL op_CALL
 
 
 // The end.

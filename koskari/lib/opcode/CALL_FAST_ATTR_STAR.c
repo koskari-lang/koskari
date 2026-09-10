@@ -15,11 +15,14 @@
 
 
 /**
-   CALL_FAST_ATTR_STAR: arg = extra index. Schema FASTVAR (slot), CONST
-   (attr name), COUNT (bitflags). Receiver from the fast local slot;
-   stack [pos, kwd] per flags.
+   CALL_FAST_ATTR_STAR and TAIL_CALL_FAST_ATTR_STAR: arg = extra index. Schema
+   FASTVAR (slot), CONST (attr name), COUNT (bitflags). Receiver from the fast
+   local slot; stack [pos, kwd] per flags. A TAIL_CALL instruction reaches this
+   same handler and adds the tail bit, which the core turns into a frame reset
+   instead of a push.
 */
 KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
+  int tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn));
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *ns = CURRENT_NS();
@@ -30,7 +33,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_STAR) {
 
   KosOpResult res = kos_op_call_star(
       es, obj, KosExtra_OBJ(row, 1), KosOp_SLOT(insn),
-      KosExtra_IMM(row, 2), 0);
+      KosExtra_IMM(row, 2), tail);
   RESULT_RELAY(es, res);
 }
 

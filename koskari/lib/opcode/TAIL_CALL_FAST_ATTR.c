@@ -14,58 +14,9 @@
 */
 
 
-/**
-   TAIL_CALL_FAST_ATTR: arg = extra index. Schema FASTVAR (slot), CONST
-   (attr name), COUNT (arg count). Stack [arg_0, ..., arg_{N-1}] only;
-   obj is the value at the fast local slot (borrowed). Resolve obj.attr,
-   then call. Unbound fn: fn(obj, *args). Bound/other: callable(*args).
-   Tail call: do not push a new frame; remove or recycle the current one.
-*/
-KOS_OP_HANDLER(TAIL_CALL_FAST_ATTR) {
-  const KosExtra *row = KosOp_ROW(insn);
-  uint32_t slot_idx = KosExtra_IMM(row, 0);
-  unsigned n = KosExtra_IMM(row, 2);
-
-  PyObject *attr_name = KosExtra_OBJ(row, 1);
-
-  PyObject *ns = CURRENT_NS();
-  KOS_OP_REQUIRE_NS(ns);
-  PyObject *obj = kos_ns_fast_deref(ns, (size_t) slot_idx);
-  if (! obj)
-    RESULT_RAISE();
-
-  PyObject *const *argv = NULL;
-  if (n > 0) {
-    argv = KosEvalState_StackTailPtr(es, (size_t) n);
-    if (! argv) {
-      Py_DECREF(obj);
-      RESULT_RAISE();
-    }
-  }
-
-  /* Per-site cache: this opcode requests one slot (opcodes.incl). The index
-     is unset when the site got no slot (cache gated off for the code object).
-     The resolver treats a NULL slot as an uncached lookup. */
-  KosCacheSlot *cache = KosOp_SLOT(insn);
-
-  PyObject *resolved;
-  int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
-  if (send_self < 0) {
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
-
-  /* Prologue only: kos_call_invoke owns the window drop and the frame
-     handoff; an unbound resolution injects obj as self via the core's
-     prepend. */
-  KosOpResult r = kos_call_invoke(es, resolved,
-                                  (send_self == 0) ? obj : NULL,
-                                  argv, (Py_ssize_t) n, NULL,
-                                  KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL
-                                  | KOS_CALL_CALLABLE_OWNED);
-  Py_DECREF(obj);
-  RESULT_RELAY(es, r);
-}
+/* TAIL_CALL_FAST_ATTR shares CALL_FAST_ATTR's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_FAST_ATTR.c. */
+#define op_TAIL_CALL_FAST_ATTR op_CALL_FAST_ATTR
 
 
 // The end.

@@ -15,12 +15,15 @@
 
 
 /**
-   CALL_FAST_ATTR: arg = extra index. Schema FASTVAR (slot), CONST (attr name),
-   COUNT (arg count). Stack [arg_0, ..., arg_{N-1}] only; obj is the value
-   at the fast local slot (borrowed). Resolve obj.attr, then call.
-   Unbound fn: fn(obj, *args). Bound/other: callable(*args).
+   CALL_FAST_ATTR and TAIL_CALL_FAST_ATTR: arg = extra index. Schema FASTVAR
+   (slot), CONST (attr name), COUNT (arg count). Stack [arg_0, ..., arg_{N-1}]
+   only; obj is the value at the fast local slot (borrowed). Resolve obj.attr,
+   then call. Unbound fn: fn(obj, *args). Bound/other: callable(*args). A
+   TAIL_CALL instruction reaches this same handler and adds the tail bit, which
+   the core turns into a frame reset instead of a push.
 */
 KOS_OP_HANDLER(CALL_FAST_ATTR) {
+  unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   uint32_t slot_idx = KosExtra_IMM(row, 0);
   unsigned n = KosExtra_IMM(row, 2);
@@ -59,7 +62,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   KosOpResult r = kos_call_invoke(es, resolved,
                                   (send_self == 0) ? obj : NULL,
                                   argv, (Py_ssize_t) n, NULL,
-                                  KOS_CALL_ARGV_WINDOW
+                                  KOS_CALL_ARGV_WINDOW | tail
                                   | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
   RESULT_RELAY(es, r);

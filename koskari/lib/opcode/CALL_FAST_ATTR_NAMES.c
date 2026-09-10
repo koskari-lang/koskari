@@ -14,12 +14,16 @@
 */
 
 /**
-   CALL_FAST_ATTR_NAMES: arg = extra index. Schema FASTVAR (slot), CONST (attr),
-   CONST (kw names tuple), COUNT (npos). Stack [pos_0, ..., pos_{N-1},
-   kwd_val_0, ..., kwd_val_{M-1}]. Obj from fast slot; resolve obj.name, call.
+   CALL_FAST_ATTR_NAMES and TAIL_CALL_FAST_ATTR_NAMES: arg = extra index.
+   Schema FASTVAR (slot), CONST (attr), CONST (kw names tuple), COUNT (npos).
+   Stack [pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}]. Obj from fast
+   slot; resolve obj.name, call. A TAIL_CALL instruction reaches this same
+   handler and adds the tail bit, which the core turns into a frame reset
+   instead of a push.
 */
 
 KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
+  unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   uint32_t slot_idx = KosExtra_IMM(row, 0);
       unsigned opa = KosExtra_IMM(row, 3);
@@ -35,8 +39,8 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
   PyObject *names = KosExtra_OBJ(row, 2);
 
   if (! PyTuple_CheckExact(names)) {
-    PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR_NAMES names must be tuple"
-                 ", not %R", names);
+    PyErr_Format(PyExc_RuntimeError, "%s names must be tuple, not %R",
+                 kos_opcode_name(KosOp_OP(insn)), names);
     Py_DECREF(obj);
     RESULT_RAISE();
   }
@@ -67,7 +71,7 @@ KOS_OP_HANDLER_COLD(CALL_FAST_ATTR_NAMES) {
   KosOpResult r = kos_call_invoke(es, resolved,
                                   (send_self == 0) ? obj : NULL,
                                   argv, npos, nkwds ? names : NULL,
-                                  KOS_CALL_ARGV_WINDOW
+                                  KOS_CALL_ARGV_WINDOW | tail
                                   | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
   RESULT_RELAY(es, r);

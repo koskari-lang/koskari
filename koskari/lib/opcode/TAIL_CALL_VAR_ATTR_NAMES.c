@@ -13,69 +13,10 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   TAIL_CALL_VAR_ATTR_NAMES: arg = extra index. Schema VAR (name), CONST
-   (attr), CONST (kw names tuple), COUNT (npos). Stack [pos_0, ...,
-   pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}]. Obj from namespace by name;
-   resolve obj.name, call. Tail call: do not push a new frame; remove or
-   recycle the current one.
-*/
 
-KOS_OP_HANDLER_COLD(TAIL_CALL_VAR_ATTR_NAMES) {
-  const KosExtra *row = KosOp_ROW(insn);
-        unsigned opa = KosExtra_IMM(row, 3);
-
-  // borrow reference
-  PyObject *name = KosExtra_OBJ(row, 0);
-
-  // owned reference
-  PyObject *obj = frame_ns_deref(es, name);
-  if (! obj)
-    RESULT_RAISE();
-
-  // borrowed reference
-  PyObject *attr_name = KosExtra_OBJ(row, 1);
-
-  // borrowed reference
-  PyObject *names = KosExtra_OBJ(row, 2);
-
-  if (! PyTuple_CheckExact(names)) {
-    PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_VAR_ATTR_NAMES names must"
-                 " be tuple, not %R", names);
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
-
-  Py_ssize_t npos = (Py_ssize_t) opa;
-  Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
-  PyObject *const *ptr = NULL;
-  if (npos + nkwds > 0) {
-    ptr = KosEvalState_StackTailPtr(es, (size_t)(npos + nkwds));
-    if (! ptr) {
-      Py_DECREF(obj);
-      RESULT_RAISE();
-    }
-  }
-
-  PyObject *resolved;
-  KosCacheSlot *cache = KosOp_SLOT(insn);
-  int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
-  if (send_self < 0) {
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
-
-  /* Prologue only: kos_call_invoke owns the window drop and the frame
-     handoff; an unbound resolution injects obj as self via the core's
-     prepend. */
-  KosOpResult r = kos_call_invoke(es, resolved,
-                                  (send_self == 0) ? obj : NULL,
-                                  ptr, npos, nkwds ? names : NULL,
-                                  KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL
-                                  | KOS_CALL_CALLABLE_OWNED);
-  Py_DECREF(obj);
-  RESULT_RELAY(es, r);
-}
+/* TAIL_CALL_VAR_ATTR_NAMES shares CALL_VAR_ATTR_NAMES's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_VAR_ATTR_NAMES.c. */
+#define op_TAIL_CALL_VAR_ATTR_NAMES op_CALL_VAR_ATTR_NAMES
 
 
 // The end.

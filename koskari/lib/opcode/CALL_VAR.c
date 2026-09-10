@@ -15,12 +15,15 @@
 
 
 /**
-  CALL_VAR: arg = extra index. Schema VAR (name), COUNT (arg count).
-  Call callable from namespace by name. Stack [arg_0, ..., arg_{N-1}].
+  CALL_VAR and TAIL_CALL_VAR: arg = extra index. Schema VAR (name), COUNT (arg
+  count). Call callable from namespace by name. Stack [arg_0, ..., arg_{N-1}].
   KosCallable: steal args then KosEvalState_Call. Plain Python: TailPtr +
-  PyObject_Vectorcall + DropNoErr.
+  PyObject_Vectorcall + DropNoErr. A TAIL_CALL instruction reaches this same
+  handler and adds the tail bit, which the core turns into a frame reset
+  instead of a push.
 */
 KOS_OP_HANDLER_COLD(CALL_VAR) {
+  unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   unsigned n = KosExtra_IMM(row, 1);
 
@@ -42,7 +45,7 @@ KOS_OP_HANDLER_COLD(CALL_VAR) {
 
   RESULT_RELAY(es, kos_call_invoke(
       es, callable, NULL, argv, (Py_ssize_t) n, NULL,
-      KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED));
+      KOS_CALL_ARGV_WINDOW | tail | KOS_CALL_CALLABLE_OWNED));
 }
 
 

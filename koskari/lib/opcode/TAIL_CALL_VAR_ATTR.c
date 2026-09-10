@@ -14,53 +14,9 @@
 */
 
 
-/**
-   TAIL_CALL_VAR_ATTR: arg = extra index. Schema VAR (name), CONST (attr
-   name), COUNT (arg count). Stack [arg_0, ..., arg_{N-1}] only; obj is
-   loaded from the frame namespace by VAR name. Resolve obj.attr, then
-   call. Unbound fn: fn(obj, *args). Bound/other: callable(*args). Tail
-   call: do not push a new frame; remove or recycle the current one.
-*/
-KOS_OP_HANDLER_COLD(TAIL_CALL_VAR_ATTR) {
-  const KosExtra *row = KosOp_ROW(insn);
-      unsigned n = KosExtra_IMM(row, 2);
-
-  PyObject *var_name = KosExtra_OBJ(row, 0);
-
-  PyObject *attr_name = KosExtra_OBJ(row, 1);
-
-  PyObject *obj = frame_ns_deref(es, var_name);
-  if (! obj)
-    RESULT_RAISE();
-
-  PyObject *const *ptr = NULL;
-  if (n > 0) {
-    ptr = KosEvalState_StackTailPtr(es, (size_t) n);
-    if (! ptr) {
-      Py_DECREF(obj);
-      RESULT_RAISE();
-    }
-  }
-
-  PyObject *resolved;
-  KosCacheSlot *cache = KosOp_SLOT(insn);
-  int send_self = kos_resolve_named_attr(obj, attr_name, cache, &resolved);
-  if (send_self < 0) {
-    Py_DECREF(obj);
-    RESULT_RAISE();
-  }
-
-  /* Prologue only: kos_call_invoke owns the window drop and the frame
-     handoff; an unbound resolution injects obj as self via the core's
-     prepend. */
-  KosOpResult r = kos_call_invoke(es, resolved,
-                                  (send_self == 0) ? obj : NULL,
-                                  ptr, (Py_ssize_t) n, NULL,
-                                  KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL
-                                  | KOS_CALL_CALLABLE_OWNED);
-  Py_DECREF(obj);
-  RESULT_RELAY(es, r);
-}
+/* TAIL_CALL_VAR_ATTR shares CALL_VAR_ATTR's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_VAR_ATTR.c. */
+#define op_TAIL_CALL_VAR_ATTR op_CALL_VAR_ATTR
 
 
 // The end.

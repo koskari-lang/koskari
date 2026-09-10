@@ -13,48 +13,10 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-  TAIL_CALL_FAST_NAMES: arg = extra index. Schema FASTVAR (slot), CONST
-  (kw names), COUNT (npos). Call callable from fast local slot. Stack
-  [pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}]. Tail call: do
-  not push a new frame; remove or recycle the current one.
-*/
 
-KOS_OP_HANDLER_COLD(TAIL_CALL_FAST_NAMES) {
-  const KosExtra *row = KosOp_ROW(insn);
-  uint32_t slot_idx = KosExtra_IMM(row, 0);
-  Py_ssize_t npos = (Py_ssize_t) KosExtra_IMM(row, 2);
-
-  PyObject *ns = CURRENT_NS();
-  KOS_OP_REQUIRE_NS(ns);
-  PyObject *callable = kos_ns_fast_deref(ns, (size_t) slot_idx);
-  if (! callable)
-    RESULT_RAISE();
-
-  PyObject *names = KosExtra_OBJ(row, 1);
-  if (! PyTuple_CheckExact(names)) {
-    PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_FAST_NAMES names must be"
-                 " tuple, not %R", names);
-    Py_DECREF(callable);
-    RESULT_RAISE();
-  }
-
-  Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
-  size_t ntotal = (size_t) (npos + nkwds);
-
-  PyObject *const *argv = NULL;
-  if (ntotal) {
-    argv = KosEvalState_StackTailPtr(es, ntotal);
-    if (! argv) {
-      Py_DECREF(callable);
-      RESULT_RAISE();
-    }
-  }
-
-  RESULT_RELAY(es, kos_call_invoke(
-      es, callable, NULL, argv, npos, names,
-      KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED));
-}
+/* TAIL_CALL_FAST_NAMES shares CALL_FAST_NAMES's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_FAST_NAMES.c. */
+#define op_TAIL_CALL_FAST_NAMES op_CALL_FAST_NAMES
 
 
 // The end.

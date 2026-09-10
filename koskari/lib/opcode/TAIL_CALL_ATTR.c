@@ -14,47 +14,9 @@
 */
 
 
-/**
-   TAIL_CALL_ATTR: arg = extra index. Schema CONST (attr name), COUNT
-   (arg count). Stack [obj, arg_0, ..., arg_{N-1}]. Resolve obj.name,
-   then call. Unbound fn: fn(obj, *args). Bound/other: callable(*args).
-   Tail call: do not push a new frame; remove or recycle the current one.
-*/
-KOS_OP_HANDLER_COLD(TAIL_CALL_ATTR) {
-  const KosExtra *row = KosOp_ROW(insn);
-  unsigned n = KosExtra_IMM(row, 1);
-  unsigned count = n + 1;
-
-  PyObject *name = KosExtra_OBJ(row, 0);
-
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
-  if (! ptr)
-    RESULT_RAISE();
-
-  PyObject *obj = ptr[0];
-
-  PyObject *resolved;
-  KosCacheSlot *cache = KosOp_SLOT(insn);
-  int send_self = kos_resolve_named_attr(obj, name, cache, &resolved);
-  if (send_self < 0)
-    RESULT_RAISE();
-
-  /* Unbound: obj is already argv[0] in the window.  Bound: obj is the
-     under-slot, dropped with the window but not passed. */
-  KosOpResult r;
-  if (send_self == 0) {
-    r = kos_call_invoke(es, resolved, NULL, ptr, (Py_ssize_t) n + 1,
-                        NULL,
-                        KOS_CALL_ARGV_WINDOW | KOS_CALL_TAIL
-                        | KOS_CALL_CALLABLE_OWNED);
-  } else {
-    r = kos_call_invoke(es, resolved, NULL, (n > 0) ? &ptr[1] : NULL,
-                        (Py_ssize_t) n, NULL,
-                        KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
-                        | KOS_CALL_TAIL | KOS_CALL_CALLABLE_OWNED);
-  }
-  RESULT_RELAY(es, r);
-}
+/* TAIL_CALL_ATTR shares CALL_ATTR's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_ATTR.c. */
+#define op_TAIL_CALL_ATTR op_CALL_ATTR
 
 
 // The end.

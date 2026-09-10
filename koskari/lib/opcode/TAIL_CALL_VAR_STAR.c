@@ -14,22 +14,9 @@
 */
 
 
-/**
-   TAIL_CALL_VAR_STAR: arg = extra index. Schema VAR (name), STAR (bitflags).
-   Callable from the frame namespace by name; stack [pos, kwd] per flags.
-   Tail call: the callee replaces the current frame.
-*/
-KOS_OP_HANDLER_COLD(TAIL_CALL_VAR_STAR) {
-  const KosExtra *row = KosOp_ROW(insn);
-
-  PyObject *callable = frame_ns_deref(es, KosExtra_OBJ(row, 0));
-  if (! callable)
-    RESULT_RAISE();
-
-  KosOpResult res = kos_op_call_star(
-      es, callable, NULL, NULL, KosExtra_IMM(row, 1), 1);
-  RESULT_RELAY(es, res);
-}
+/* TAIL_CALL_VAR_STAR shares CALL_VAR_STAR's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_VAR_STAR.c. */
+#define op_TAIL_CALL_VAR_STAR op_CALL_VAR_STAR
 
 
 // The end.

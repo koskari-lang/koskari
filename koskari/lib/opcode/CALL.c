@@ -15,12 +15,16 @@
 
 
 /**
-  CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
-  ..., arg_{N-1}] (callable oldest). Prologue only: the whole window
-  (callable included) is borrowed; kos_call_invoke owns the drop.
+  CALL and TAIL_CALL: arg = number of positional arguments N. Stack has
+  [callable, arg_0, ..., arg_{N-1}] (callable oldest). Prologue only: the whole
+  window (callable included) is borrowed; kos_call_invoke owns the drop. A
+  TAIL_CALL instruction reaches this same handler and adds the tail bit, which
+  the core turns into a frame reset instead of a push; its return settles a
+  pending wind thunk.
 */
 KOS_OP_HANDLER(CALL) {
   unsigned n = KosOp_ARG(insn);
+  unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
   if (unlikely(! ptr))
@@ -30,7 +34,7 @@ KOS_OP_HANDLER(CALL) {
 
   RESULT_RELAY(es, kos_call_invoke(
       es, ptr[0], NULL, n ? ptr + 1 : NULL, (Py_ssize_t) n, NULL,
-      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE));
+      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE | tail));
 }
 
 

@@ -15,10 +15,13 @@
 
 
 /**
-   CALL_VAR_STAR: arg = extra index. Schema VAR (name), STAR (bitflags).
-   Callable from the frame namespace by name; stack [pos, kwd] per flags.
+   CALL_VAR_STAR and TAIL_CALL_VAR_STAR: arg = extra index. Schema VAR (name),
+   STAR (bitflags). Callable from the frame namespace by name; stack [pos, kwd]
+   per flags. A TAIL_CALL instruction reaches this same handler and adds the
+   tail bit, which the core turns into a frame reset instead of a push.
 */
 KOS_OP_HANDLER_COLD(CALL_VAR_STAR) {
+  int tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn));
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *callable = frame_ns_deref(es, KosExtra_OBJ(row, 0));
@@ -26,7 +29,7 @@ KOS_OP_HANDLER_COLD(CALL_VAR_STAR) {
     RESULT_RAISE();
 
   KosOpResult res = kos_op_call_star(
-      es, callable, NULL, NULL, KosExtra_IMM(row, 1), 0);
+      es, callable, NULL, NULL, KosExtra_IMM(row, 1), tail);
   RESULT_RELAY(es, res);
 }
 

@@ -14,26 +14,9 @@
 */
 
 
-/**
-   TAIL_CALL_FAST_ATTR_STAR: arg = extra index. Schema FASTVAR (slot), CONST
-   (attr name), COUNT (bitflags). Receiver from the fast local slot;
-   stack [pos, kwd] per flags.
-   Tail call: the callee replaces the current frame.
-*/
-KOS_OP_HANDLER_COLD(TAIL_CALL_FAST_ATTR_STAR) {
-  const KosExtra *row = KosOp_ROW(insn);
-
-  PyObject *ns = CURRENT_NS();
-  KOS_OP_REQUIRE_NS(ns);
-  PyObject *obj = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
-  if (! obj)
-    RESULT_RAISE();
-
-  KosOpResult res = kos_op_call_star(
-      es, obj, KosExtra_OBJ(row, 1), KosOp_SLOT(insn),
-      KosExtra_IMM(row, 2), 1);
-  RESULT_RELAY(es, res);
-}
+/* TAIL_CALL_FAST_ATTR_STAR shares CALL_FAST_ATTR_STAR's handler, which reads the tail bit off the
+   opcode; see opcode/CALL_FAST_ATTR_STAR.c. */
+#define op_TAIL_CALL_FAST_ATTR_STAR op_CALL_FAST_ATTR_STAR
 
 
 // The end.

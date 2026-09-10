@@ -250,6 +250,19 @@ typedef enum KosOpCode {
 } KosOpCode;
 
 
+/* The eighteen TAIL_CALL_* opcodes mirror the eighteen CALL_* opcodes
+   row for row, and each pair shares one handler that reads the tail
+   bit off the opcode. The two blocks must stay contiguous and equal in
+   length for that to hold. */
+#define KOS_OP_IS_TAIL_CALL(op) \
+  ((op) >= KOS_OP_TAIL_CALL && (op) <= KOS_OP_TAIL_CALL_FAST_ATTR_STAR)
+
+_Static_assert(
+    KOS_OP_TAIL_CALL_FAST_ATTR_STAR - KOS_OP_TAIL_CALL
+    == KOS_OP_CALL_FAST_ATTR_STAR - KOS_OP_CALL,
+    "CALL and TAIL_CALL opcode blocks must mirror each other");
+
+
 /* === Code flags === */
 
 
