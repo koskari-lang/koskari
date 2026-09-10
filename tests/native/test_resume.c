@@ -98,7 +98,7 @@ static int test_cg_prologue_delivers_staged_resume(void) {
 
   Py_XDECREF(ev.val);
   Py_DECREF(staged);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -161,7 +161,7 @@ static int test_dispatch_stages_into_pending_slot(void) {
 
   Py_XDECREF(ev.val);
   Py_DECREF(staged);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -204,7 +204,7 @@ static int test_next_resume_delivered_reports_in_hand(void) {
   Py_DECREF(it);
   Py_DECREF(lst);
   KosEvalState_FreezeToContext(&es);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -290,7 +290,7 @@ static int test_return_into_resume_parent(void) {
   Py_XDECREF(ev.val);
   Py_DECREF(forty_two);
   Py_DECREF(code);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -316,7 +316,7 @@ static int test_prologue_reenter_idle_proceeds(void) {
                  "nothing staged, pending, or armed: dispatch may proceed");
 
   KosEvalState_FreezeToContext(&es);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -354,7 +354,7 @@ static int test_prologue_reenter_delivers_staged(void) {
   Py_XDECREF(r.val);
   Py_DECREF(staged);
   KosEvalState_FreezeToContext(&es);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -388,7 +388,7 @@ static int test_prologue_reenter_runs_pending_exception(void) {
 
   PyErr_Clear();
   KosEvalState_FreezeToContext(&es);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -443,7 +443,7 @@ static int test_raise_walk_resume_propagates(void) {
   /* frame was popped and freed by the walk's own pop path */
   PyErr_Clear();
   KosEvalState_FreezeToContext(&es);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -487,7 +487,7 @@ static int test_raise_walk_resume_handles(void) {
   /* frame is still on the chain (not popped); context teardown frees
      the whole chain, frame and bottom together */
   KosEvalState_FreezeToContext(&es);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -652,7 +652,7 @@ static int test_call_resume_null_pushes_normal_result(void) {
   }
 
   KosEvalState_FreezeToContext(&es);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -693,7 +693,7 @@ static int test_next_resume_null_pushes_and_continues(void) {
   Py_DECREF(it);
   Py_DECREF(lst);
   KosEvalState_FreezeToContext(&es);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 

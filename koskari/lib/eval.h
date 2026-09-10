@@ -551,8 +551,7 @@ KosOpResult KosEvalState_NextResume(
   - A context is a Python object (koskari.lib.Context). KosContext_New
     returns a new reference; every holder (coroutine, async generator,
     map, filter, iteration adapter) keeps its own reference and drops
-    it with Py_CLEAR, so the last holder deallocates. KosContext_Free
-    is that release under its older name.
+    it with Py_CLEAR or Py_DECREF, so the last holder deallocates.
   - Deallocation is memory teardown only: the chain is freed without
     running the extent protocol. A holder that owes a close drive runs
     it before dropping its reference.
@@ -1028,10 +1027,8 @@ PyObject *KosEvalState_PopUnpackSequence(
 KosContext *KosContext_New(KosDynFrame *top);
 
 
-/**
-  Release the caller's reference to a context; NULL is a no-op.
-
-  The context deallocates with its last reference. Deallocation frees
+/*
+  A context deallocates with its last reference. Deallocation frees
   the dynamic chain, walking every node and running kind-specific free
   logic (including Py_DECREF on Python objects held by dyn nodes), which
   can invoke arbitrary Python code via destructors, and frees the armed
@@ -1040,15 +1037,17 @@ KosContext *KosContext_New(KosDynFrame *top);
   bytecode: a holder that owes the extent protocol a close drive runs
   it before releasing.
 */
-#define KosContext_Free(ctx) Py_XDECREF((PyObject *) (ctx))
 
 
 /**
    Make a context reusable after a completion at its root: drop the
-   finished frame chain and clear the completion residue -- dead and
-   running flags, suspension tag, in-flight await iterator, resume
-   inject. A context holding state this reset cannot account for (an
-   armed transfer goal) is left untouched and the caller must free it
+   finished frame chain with the frozen block and namespace derived
+   from it, and clear the completion residue -- dead and running
+   flags, suspension tag, in-flight await iterator, resume inject,
+   armed throw injection, and the handler-visible exception state.
+   The token, domain, and parameter cells stay: they are the context's
+   identity. A context holding state this reset cannot account for (an
+   armed transfer goal) is left untouched and the caller releases it
    instead.
 
    :return: 0 recycled; -1 the context cannot be recycled

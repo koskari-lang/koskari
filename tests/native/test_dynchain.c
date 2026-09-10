@@ -331,7 +331,7 @@ static int test_dyngen_bootstrap_no_active(void) {
     ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
 
     return 0;
 }
@@ -378,7 +378,7 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
     TEST_ASSERT_EQ(Py_REFCNT(delegate), rc_before, "delegate refcount restored");
 
     KosEvalState_FreezeToContext(&es);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
 
     return 0;
 }
@@ -435,7 +435,7 @@ static int test_dynwith_free_exc_unconditional(void) {
     PyErr_Clear();
 
     KosEvalState_FreezeToContext(&es);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
 
     return 0;
 }

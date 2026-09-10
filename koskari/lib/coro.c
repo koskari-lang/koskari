@@ -609,7 +609,7 @@ PyObject *KosCoroutine_New(KosContext *ctx) {
 
   KosCoroutine *coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
   if (! coro) {
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     return NULL;
   }
 

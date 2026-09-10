@@ -211,7 +211,7 @@ static int test_native_install_fresh_and_cached(void) {
   }
 
   KosEvalState_FreezeToContext(&es);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   Py_DECREF(ns);
   return 0;
 }
@@ -260,7 +260,7 @@ static int test_request_next_sync_lifecycle(void) {
   Py_DECREF(it);
   Py_DECREF(lst);
   KosEvalState_FreezeToContext(&es);
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 
@@ -290,7 +290,7 @@ static int test_context_recycle(void) {
   TEST_ASSERT_EQ(KosContext_Recycle(ctx), -1, "armed goal refuses");
   KosContext_GOAL(ctx) = NULL;
 
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 

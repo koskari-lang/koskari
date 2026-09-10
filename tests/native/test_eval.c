@@ -145,7 +145,7 @@ static int test_eval_object_add_return(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 6, "result is 6");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -184,7 +184,7 @@ static int test_domain_non_null(void) {
     TEST_ASSERT(KosContext_PARAM_REFS(ctx) == NULL,
                 "param cells start unallocated");
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -236,8 +236,8 @@ static int test_domain_fresh_when_no_tls(void) {
     TEST_ASSERT_NOT_SAME(cells1, cells2,
                          "contexts without TLS have isolated cell tables");
 
-    KosContext_Free(ctx1);
-    KosContext_Free(ctx2);
+    Py_DECREF(ctx1);
+    Py_DECREF(ctx2);
     Py_DECREF(code_obj);
 
     return 0;
@@ -279,7 +279,7 @@ static int test_eval_ctx_current_outside_eval(void) {
     TEST_ASSERT(kos_ctx_current() == NULL, "no current context after eval");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -340,7 +340,7 @@ static int test_eval_try_except_catch(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "result is 42");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -401,7 +401,7 @@ static int test_eval_try_finally_rerase(void) {
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
     PyErr_Clear();
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -520,7 +520,7 @@ static int test_eval_reset_shift_invoke(void) {
     ev.val = NULL;
     PyErr_Clear();
     if (ctx)
-        KosContext_Free(ctx);
+        Py_DECREF(ctx);
     Py_XDECREF(code_obj);
     return result;
 }
@@ -570,7 +570,7 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
                 "result is Continuation");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -680,7 +680,7 @@ static int test_eval_call_continuation_underrun(void) {
     ev.val = NULL;
     PyErr_Clear();
     if (ctx)
-        KosContext_Free(ctx);
+        Py_DECREF(ctx);
     Py_XDECREF(code_obj);
     return result;
 }
@@ -726,7 +726,7 @@ static int test_eval_call_wrong_type(void) {
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_TypeError), "exception is TypeError");
     PyErr_Clear();
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -772,7 +772,7 @@ static int test_eval_object_add_underrun(void) {
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
     PyErr_Clear();
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -817,7 +817,7 @@ static int test_eval_return_underrun(void) {
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
     PyErr_Clear();
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -859,7 +859,7 @@ static int test_eval_dup_underrun(void) {
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
     PyErr_Clear();
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -901,7 +901,7 @@ static int test_eval_call_empty_stack(void) {
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
     PyErr_Clear();
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1054,7 +1054,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
                 "__name__ is C");
     Py_DECREF(cname);
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1100,7 +1100,7 @@ static int test_eval_push_collect_empty_stack_raises(void) {
                 "exception is RuntimeError");
     PyErr_Clear();
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1218,7 +1218,7 @@ static int test_eval_call_zero_args(void) {
     ev.val = NULL;
     PyErr_Clear();
     if (ctx)
-        KosContext_Free(ctx);
+        Py_DECREF(ctx);
     Py_XDECREF(code_obj);
     return result;
 }
@@ -1279,7 +1279,7 @@ static int test_eval_fast_on_dict_ns(void) {
                 "exception is RuntimeError");
     PyErr_Clear();
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1350,7 +1350,7 @@ static int test_eval_build_function_no_defaults(void) {
                 "result is Function");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1464,7 +1464,7 @@ static int test_eval_yield_empty_resume(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 99, "resumed result is 99");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
 
@@ -1513,7 +1513,7 @@ static int test_eval_yield_send_resume(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 7, "returned sent value 7");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
 
@@ -1594,7 +1594,7 @@ static int test_eval_await_throw_completes_iterator(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 99, "await result 99");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
     Py_DECREF(pre);
 
@@ -1671,7 +1671,7 @@ static int test_eval_await_throw_reyield(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 99, "re-yielded 99");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
     Py_DECREF(pre);
 
@@ -1719,7 +1719,7 @@ static int test_eval_yield_throw_resume(void) {
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError), "exception is ValueError");
     PyErr_Clear();
 
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
 
@@ -1747,7 +1747,7 @@ static int test_eval_yield_throw_caught(void) {
     /*
       One PUSH_TRY and one POP_TRY (on the normal path).  The handler
       does not POP_TRY — try_local_exception_handler already disabled the
-      region; the context is freed by KosContext_Free after RETURN.
+      region; the context is released after RETURN.
     */
     PyObject *instr = PyList_New(11);
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 6));
@@ -1792,7 +1792,7 @@ static int test_eval_yield_throw_caught(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 55, "handler result is 55");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     kos_dyngen_release(dyn_gen);
     Py_DECREF(code_obj);
 
@@ -1822,7 +1822,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
     /*
       One PUSH_TRY and one POP_TRY (on the normal path).  The handler
       does not POP_TRY — the region is disabled by try_local_exception_handler;
-      the context is freed by KosContext_Free after RETURN.
+      the context is released after RETURN.
     */
     PyObject *instr = PyList_New(9);
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 4));
@@ -1852,7 +1852,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 77, "handler result is 77");
 
     Py_XDECREF(ev.val);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;

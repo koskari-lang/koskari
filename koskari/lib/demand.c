@@ -384,8 +384,7 @@ static int demand_sync_ex(
          suspension would have nowhere to go. */
       if (ir.kind != KOS_RES_NORMAL && ir.kind != KOS_RES_REPROLOGUE) {
         KosEvalState_FreezeToContext(&es);
-        KosContext_Free(ctx);
-        ctx = NULL;
+        Py_CLEAR(ctx);
 
         if (ir.kind == KOS_RES_RETURN) {
           result = demand_finish_koskari_value(ir.val);
@@ -409,8 +408,7 @@ static int demand_sync_ex(
 
     if (! KosEvalState_CODE(&es)) {
       KosEvalState_FreezeToContext(&es);
-      KosContext_Free(ctx);
-      ctx = NULL;
+      Py_CLEAR(ctx);
       PyErr_SetString(PyExc_SystemError,
                       "demand_sync: install left no code to run");
       goto ret_fail;
@@ -426,8 +424,7 @@ static int demand_sync_ex(
   {
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
-    KosContext_Free(ctx);
-    ctx = NULL;
+    Py_CLEAR(ctx);
 
     switch (ev.kind) {
       case KOS_RES_RETURN:

@@ -589,7 +589,7 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx) {
 
   KosPyAsyncGen *agen = PyObject_GC_New(KosPyAsyncGen, KOS_EVALUATED_PYTYPE(KosPyAsyncGenType));
   if (! agen) {
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     return NULL;
   }
 

@@ -26,7 +26,8 @@ import weakref
 
 import pytest
 
-from koskari.lib import KosMap
+from koskari.lib import Domain, FormalsSpec, KosMap
+from tests.lib.opcode import build_expr
 
 
 pytestmark = pytest.mark.phase_lib
@@ -269,6 +270,43 @@ class TestKosMapAbandonedMidAwait(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(canary_ref())
         self.assertEqual(marks, ["closed"])
+
+
+class TestKosMapRecycledContext(unittest.TestCase):
+    """
+    A map drives each step on one durable context and recycles it when
+    the step completes at its root. The recycled context carries
+    nothing of the finished step: no chain, no acting namespace
+    """
+
+    def test_recycled_context_reports_no_frozen_state(self):
+        seen = []
+
+        def capture():
+            seen.append(Domain.current_domain().get_contexts()[0])
+            return 7
+
+        # a Koskari function of one parameter that calls capture, so the
+        # map's context drives a frame and capture sees it running
+        code, base_ns = build_expr([
+            ["CONST", capture],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], local_syms=("x",))
+        fn = code.function(FormalsSpec(("x",), None, ())(), base_ns)
+
+        m = KosMap(fn, [1, 2, 3])
+        it = iter(m)
+        self.assertEqual(next(it), 7)
+
+        ctx = seen[0]
+        self.assertFalse(ctx.running)
+        self.assertIsNone(ctx.namespace)
+        self.assertEqual(ctx.snapshot()["dynnodes"], [])
+
+        # and the next step runs on the same, cleared context
+        self.assertEqual(next(it), 7)
+        self.assertIs(seen[1], ctx)
 
 
 # The end.

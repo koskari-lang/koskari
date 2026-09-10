@@ -254,7 +254,7 @@ static int test_paramref_store_deref_inside_scope(void) {
 
     Py_DECREF(param_ref);
     Py_DECREF(key);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -313,7 +313,7 @@ static int test_paramref_clear_inside_scope(void) {
 
     Py_DECREF(param_ref);
     Py_DECREF(key);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -362,7 +362,7 @@ static int test_paramref_is_empty_inside_scope(void) {
 
     Py_DECREF(param_ref);
     Py_DECREF(key);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -428,7 +428,7 @@ static int test_dynparam_push_pop_restore(void) {
 
     Py_DECREF(param_ref);
     Py_DECREF(key);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -497,7 +497,7 @@ static int test_dynparam_nested_restore(void) {
     kos_domain_pop_scope(ctx);
     Py_DECREF(param_ref);
     Py_DECREF(key);
-    KosContext_Free(ctx);
+    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;

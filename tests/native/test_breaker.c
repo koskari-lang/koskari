@@ -81,7 +81,7 @@ static int test_breaker_reads_the_interpreter(void) {
   TEST_ASSERT_EQ(kos_call_installed(&es).kind, KOS_RES_NORMAL,
                  "installs thread on again");
 
-  KosContext_Free(ctx);
+  Py_DECREF(ctx);
   return 0;
 }
 

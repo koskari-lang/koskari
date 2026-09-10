@@ -1365,16 +1365,27 @@ int KosContext_Recycle(KosContext *ctx) {
   if (KosContext_GOAL(ctx))
     return -1;
 
+  /* the frozen block and namespace point into the chain freed here;
+     the next drive derives both again from the frame it installs */
   if (KosContext_DYN_TOP(ctx))
     kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
   KosContext_DYN_TOP(ctx) = NULL;
   KosContext_FRAME_TOP(ctx) = NULL;
+  KosContext_BLOCK(ctx) = NULL;
+  KosContext_NAMESPACE(ctx) = NULL;
 
   KosContext_FLAGS(ctx) &= ~(KOS_CTX_DEAD | KOS_CTX_RUNNING);
   KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
   Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
-  KosContext_PY_RESUME_KIND(ctx) = 0;
+  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
+
+  /* residue of the finished run that the next one must not inherit:
+     an armed throw injection and the handler-visible exception state */
+  KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
+  Py_CLEAR(KosContext_INJECT_TYPE(ctx));
+  Py_CLEAR(KosContext_INJECT_VALUE(ctx));
+  KosExc_Clear(KosContext_EXC_INFO(ctx));
 
   return 0;
 }
