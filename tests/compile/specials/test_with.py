@@ -186,6 +186,47 @@ class TestWithExitRaisesWhileHandling(SpecialsTestCase):
         self.assertIsInstance(caught.exception.__context__, KeyError)
 
 
+class RaisingTruth:
+    """
+    A value whose truth test raises
+    """
+
+    def __bool__(self):
+        raise ValueError("truth refused")
+
+
+class TruthRaisingExitMgr:
+    """
+    __exit__ returns a value whose truth test raises
+    """
+
+    def __enter__(self):
+        return self
+
+
+    def __exit__(self, typ, val, tb):
+        return RaisingTruth()
+
+
+class TestWithExitResultTruthRaises(SpecialsTestCase):
+
+    async def test_truth_error_replaces_the_handled_one(self):
+        """
+        an __exit__ whose result cannot be truth-tested while handling an
+        exception raises that error, with the handled one as __context__;
+        neither exception is lost
+        """
+
+        src_str = """
+        (with [(call make_mgr)] (raise (call KeyError "body")))
+        """
+        expr, mod = self.compile_expr(
+            src_str, make_mgr=TruthRaisingExitMgr, KeyError=KeyError)
+        with self.assertRaises(ValueError) as caught:
+            await expr()
+        self.assertIsInstance(caught.exception.__context__, KeyError)
+
+
 class TestWithExitRaisesOnReturn(SpecialsTestCase):
 
     async def test_exit_raising_during_return_is_catchable(self):

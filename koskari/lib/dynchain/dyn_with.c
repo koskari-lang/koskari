@@ -293,18 +293,30 @@ static int kos_dyn_with_bind_entered(KosEvalState *es, KosDynWith *node) {
    Classify __exit__'s result against the triple parked on the node. A
    truthy result against an exception swallows it: the triple is
    released and the node now owes None in its place. Any other outcome
-   leaves the triple where it is for the unlink to re-raise.
+   leaves the triple where it is for the unlink to re-raise. Returns -1
+   with the error set when the result's truth test raises.
 */
-static void kos_dyn_with_classify_exit(
+static int kos_dyn_with_classify_exit(
     KosEvalState *es,
     KosDynWith *node,
     PyObject *result) {
 
   KosObligation *ob = KosDynWith_OB(node);
   int handling = (ob->kind == KOS_OB_EXCEPTION);
+  int swallow = 0;
 
-  if (handling && PyObject_IsTrue(result)) {
-    PyErr_Clear();
+  if (handling) {
+    swallow = PyObject_IsTrue(result);
+    if (swallow < 0) {
+      /* the result's truth test raised: that exception supersedes the
+         handled one, as a raising __exit__ does; the node keeps its
+         pending phase and parked triple for the raise walk */
+      Py_DECREF(result);
+      return -1;
+    }
+  }
+
+  if (swallow) {
     kos_dyn_ob_clear(ob);
     ob->kind = KOS_OB_SWALLOWED;
     if (KosEvalState_FRAME(es))
@@ -316,6 +328,7 @@ static void kos_dyn_with_classify_exit(
   Py_DECREF(result);
   kos_dyn_with_shot_after_exit_done(node);
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
+  return 0;
 }
 
 
@@ -448,7 +461,8 @@ static KosOpResult kos_dyn_with_leave(
   if (! result)
     return EVAL_RAISE();
 
-  kos_dyn_with_classify_exit(es, node, result);
+  if (kos_dyn_with_classify_exit(es, node, result) < 0)
+    return EVAL_RAISE();
   return EVAL_NORMAL();
 }
 
@@ -469,7 +483,7 @@ static int kos_dyn_with_settle(KosEvalState *es, KosDynWith *node) {
     PyObject *result = KosEvalState_StackPopRef(es);
     if (! result)
       return -1;
-    kos_dyn_with_classify_exit(es, node, result);
+    return kos_dyn_with_classify_exit(es, node, result);
   }
   return 0;
 }
