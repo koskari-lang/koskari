@@ -469,7 +469,7 @@ int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame) {
     return -1;
   KosDynFrame_DEPTH(frame) = cur ? KosDynFrame_DEPTH(cur) + 1 : 1;
   KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(es);
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) frame) < 0)
+  if (kos_dyn_push(es, (KosDynNode *) frame) < 0)
     return -1;
   return 0;
 }

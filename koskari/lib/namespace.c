@@ -341,26 +341,6 @@ static void nspec_dealloc(PyObject *self) {
 }
 
 
-static int nspec_traverse(PyObject *self, visitproc visit, void *arg) {
-  Py_VISIT(KosNamespaceSpec_NAME(self));
-  Py_VISIT(KosNamespaceSpec_LOCAL_SYMS(self));
-  Py_VISIT(KosNamespaceSpec_CLOSURE_SYMS(self));
-  Py_VISIT(KosNamespaceSpec_GLOBAL_SYMS(self));
-  Py_VISIT(KosNamespaceSpec_FAST_NAMES(self));
-  return 0;
-}
-
-
-static int nspec_clear(PyObject *self) {
-  Py_CLEAR(KosNamespaceSpec_NAME(self));
-  Py_CLEAR(KosNamespaceSpec_LOCAL_SYMS(self));
-  Py_CLEAR(KosNamespaceSpec_CLOSURE_SYMS(self));
-  Py_CLEAR(KosNamespaceSpec_GLOBAL_SYMS(self));
-  Py_CLEAR(KosNamespaceSpec_FAST_NAMES(self));
-  return 0;
-}
-
-
 static PyObject *nspec_repr(PyObject *self) {
   PyObject *name = KosNamespaceSpec_NAME(self);
   PyObject *closures = KosNamespaceSpec_CLOSURE_SYMS(self);
@@ -428,8 +408,6 @@ PyTypeObject KosNamespaceSpecType = {
   .tp_as_sequence = &nspec_seq,
   .tp_new = nspec_new,
   .tp_dealloc = nspec_dealloc,
-  .tp_traverse = nspec_traverse,
-  .tp_clear = nspec_clear,
   .tp_repr = nspec_repr,
 };
 
@@ -2235,32 +2213,6 @@ int KosNamespace_Store(
     PyObject *val) {
 
   return ns_store_symbol(namespace, key, val);
-}
-
-
-int KosNamespace_StoreVector(
-    PyObject *namespace,
-    PyObject *names,
-    PyObject *const *values) {
-
-  if (! names || ! PyTuple_Check(names)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "StoreVector requires a names tuple");
-    return -1;
-  }
-
-  Py_ssize_t n = PyTuple_GET_SIZE(names);
-  if (n > 0 && ! values) {
-    PyErr_SetString(PyExc_ValueError,
-                    "StoreVector requires a value array");
-    return -1;
-  }
-
-  for (Py_ssize_t i = 0; i < n; i++) {
-    if (ns_store_symbol(namespace, PyTuple_GET_ITEM(names, i), values[i]))
-      return -1;
-  }
-  return 0;
 }
 
 

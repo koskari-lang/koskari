@@ -59,15 +59,6 @@ static int dynnode_to_dict_ns(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Namespace unwind is implicit via cache refresh after node removal.
-*/
-void kos_dyn_ns_unwind(KosEvalState *es, KosDynNs *node) {
-  (void) es;
-  (void) node;
-}
-
-
-/**
    Push NS as DYN_TOP. Callers: PUSH_NS.
 */
 KosDynNs *kos_dyn_push_ns(
@@ -79,7 +70,7 @@ KosDynNs *kos_dyn_push_ns(
   if (! ns_node)
     return NULL;
 
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) ns_node) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) ns_node) < 0) {
     kos_dynns_free(ns_node);
     return NULL;
   }

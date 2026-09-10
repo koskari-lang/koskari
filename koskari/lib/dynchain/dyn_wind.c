@@ -262,7 +262,7 @@ KosDynWind *kos_dyn_push_wind(
   if (! wind)
     return NULL;
 
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) wind) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) wind) < 0) {
     kos_dynwind_free(wind);
     return NULL;
   }

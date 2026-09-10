@@ -45,7 +45,6 @@ from .reader import (
 
 __all__ = (
     'MODULE_DETACH_FACET_NAMES',
-    'MODULE_LOAD_FACET_NAMES',
 
     'build_module_load_facets',
     'build_module_pragma',
@@ -61,12 +60,6 @@ __all__ = (
     'load_module_source_async',
 )
 
-
-MODULE_LOAD_FACET_NAMES = (
-    '__pragma__',
-    '__compiler__',
-    '__reader__',
-)
 
 # the facets detached after a load; __pragma__ stays bound as the
 # module's record so a compiler can be rebuilt from it later

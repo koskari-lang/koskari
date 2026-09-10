@@ -942,9 +942,6 @@ void KosEvalState_ThawFromContext(KosEvalState *es);
 void KosEvalState_FreezeToContext(KosEvalState *es);
 
 
-/** @deprecated name; use KosEvalState_FreezeToContext */
-#define KosEvalState_FreezeDerivedToContext(es) KosEvalState_FreezeToContext(es)
-
 
 /**
   Freeze live pc and acting_pc from es onto the current heap frame before the

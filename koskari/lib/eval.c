@@ -85,15 +85,12 @@ typedef struct {
 static PyObject *str_await = NULL;
 static PyObject *str_send = NULL;
 static PyObject *str_throw = NULL;
-static PyObject *str_close = NULL;
 static PyObject *str_asend = NULL;
 static PyObject *str_athrow = NULL;
-static PyObject *str_aclose = NULL;
 static PyObject *str_enter = NULL;
 static PyObject *str_exit = NULL;
 static PyObject *str_aenter = NULL;
 static PyObject *str_aexit = NULL;
-static PyObject *str_class = NULL;
 static PyObject *str_getattr = NULL;
 static PyObject *str_name = NULL;
 static PyObject *str_package = NULL;
@@ -3815,7 +3812,6 @@ int koskari_eval_init(PyObject *mod) {
   }
 
   /* Initialize string constants (cleared in koskari_eval_clear). */
-  STR_CONST(str_aclose, "aclose");
   STR_CONST(str_aenter, "__aenter__");
   STR_CONST(str_aexit, "__aexit__");
   STR_CONST(str_args, "args");
@@ -3823,8 +3819,6 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_asyncio_future_blocking, "_asyncio_future_blocking");
   STR_CONST(str_athrow, "athrow");
   STR_CONST(str_await, "__await__");
-  STR_CONST(str_class, "__class__");
-  STR_CONST(str_close, "close");
   STR_CONST(str_continuation, "continuation");
   STR_CONST(str_enter, "__enter__");
   STR_CONST(str_exit, "__exit__");
@@ -3887,7 +3881,6 @@ int koskari_eval_clear(PyObject *mod) {
   /* Clear import sentinel and string constants initialized in koskari_eval_init. */
   Py_CLEAR(_import_fromlist);
 
-  Py_CLEAR(str_aclose);
   Py_CLEAR(str_aenter);
   Py_CLEAR(str_aexit);
   Py_CLEAR(str_args);
@@ -3895,8 +3888,6 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_asyncio_future_blocking);
   Py_CLEAR(str_athrow);
   Py_CLEAR(str_await);
-  Py_CLEAR(str_class);
-  Py_CLEAR(str_close);
   Py_CLEAR(str_continuation);
   Py_CLEAR(str_enter);
   Py_CLEAR(str_exit);

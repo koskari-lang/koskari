@@ -901,18 +901,12 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 
 
 /**
-   Like kos_dyn_push but skips kos_dyn_install (e.g. TRY/FINALLY regions).
-*/
-int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
-
-
-/**
    Flush live PCs, set dyn_top to new_top, retarget live fields on es.
 
    Use for pops, splices, gen install, and any dyn_top change that is not
    kos_dyn_push. Internally captures the previous dyn_top and calls
    kos_dyn_resync_after_pop (incremental parent pop or full rebuild).
-   Ordinary pushes must use kos_dyn_push or kos_dyn_push_noinstall instead.
+   Ordinary pushes must use kos_dyn_push instead.
 */
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
 
@@ -930,18 +924,6 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
    kos_dyn_push and kos_dyn_commit_dyn_top.
 */
 void kos_dyn_resync_chain(KosEvalState *es);
-
-
-/**
-   Clone a node and push onto the chain.  Fails for types that cannot
-   clone (e.g. returns error for types that must not cross capture).
-
-   :param ctx: execution context
-   :param node: node to clone
-
-   :return: 0 on success, -1 on error
-*/
-int kos_dyn_push_clone(KosEvalState *es, KosDynNode *node);
 
 
 /* === Dynamic chain context operations === */
@@ -1454,20 +1436,6 @@ int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node);
 
 
 /**
-   Undo a successful kos_dyn_push_try/finally/loop/foreach when a follow-up
-   install step fails. region must be the pointer returned from the
-   corresponding push.
-
-   :param ctx: execution context
-   :param region: region node still at dyn_top
-
-   :return: 0 after popping the region; -1 if kind is not TRY/FINALLY/LOOP/FOREACH
-      (does not pop; caller should set PyExc_RuntimeError)
-*/
-int kos_dyn_abort_push_region(KosEvalState *es, KosDynNode *region);
-
-
-/**
    Push a namespace scope node (for PUSH_NS). The node owns its active
    namespace in the generic node namespace slot.
 
@@ -1509,7 +1477,6 @@ KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *ns);
 int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node);
 
 
-void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node);
 
 
 /**
@@ -1795,7 +1762,6 @@ int kos_dyn_ob_park_return(
    implementation directly, allowing the compiler to emit a jump table
    with inlined handlers rather than an indirect function-pointer call.
 
-   kos_dyn_install: run install-phase setup when a node is pushed.
    kos_dyn_exception_unwind: called when exception propagation reaches a
      HANDLES_EXCEPTIONS node. Returns EVAL_NORMAL to continue unwinding,
      EVAL_REPROLOGUE if handler applied, EVAL_AWAIT if async started,
@@ -1803,7 +1769,6 @@ int kos_dyn_ob_park_return(
    kos_dyn_clone: allocate a copy of the node; NULL return on error or if
      the type forbids cloning.
 */
-int kos_dyn_install(KosEvalState *es, KosDynNode *node);
 KosOpResult kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node);
 
 /**
@@ -1861,7 +1826,6 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen);
 
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
-void kos_dyn_ns_unwind(KosEvalState *es, KosDynNs *node);
 
 void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
 
@@ -2257,7 +2221,6 @@ enum {
   KOS_YF_STEP = 0,
   KOS_YF_SEND = 1,
   KOS_YF_THROW = 2,
-  KOS_YF_CLOSE = 3,
 };
 
 

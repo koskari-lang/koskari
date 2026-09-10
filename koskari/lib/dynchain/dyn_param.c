@@ -266,7 +266,7 @@ KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings) {
     return NULL;
   }
 
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
     kos_dynparam_restore(ctx, node);
     kos_dynparam_free(node);
     return NULL;

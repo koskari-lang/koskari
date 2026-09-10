@@ -41,7 +41,6 @@ static PyObject *_str_elipsis = NULL;
 static PyObject *_str_empty = NULL;
 static PyObject *_str_nil = NULL;
 static PyObject *_str_open_paren = NULL;
-static PyObject *_str_recursive = NULL;
 static PyObject *_str_recursive_true = NULL;
 static PyObject *_str_space = NULL;
 static PyObject *_str_quote = NULL;
@@ -74,13 +73,8 @@ static int pair_free_count = 0;
 
 
 /* trashcan macros for deep recursion protection */
-#if PY_MAJOR_VERSION >= 3 && PY_MINOR_VERSION < 8
-#  define CPy_TRASHCAN_BEGIN(op, dealloc) Py_TRASHCAN_SAFE_BEGIN(op)
-#  define CPy_TRASHCAN_END(op) Py_TRASHCAN_SAFE_END(op)
-#else
-#  define CPy_TRASHCAN_BEGIN(op, dealloc) Py_TRASHCAN_BEGIN(op, dealloc)
-#  define CPy_TRASHCAN_END(op) Py_TRASHCAN_END
-#endif
+#define CPy_TRASHCAN_BEGIN(op, dealloc) Py_TRASHCAN_BEGIN(op, dealloc)
+#define CPy_TRASHCAN_END(op) Py_TRASHCAN_END
 
 
 /* === PairIteratorType === */
@@ -2329,7 +2323,6 @@ int koskari_pair_init(PyObject *mod) {
   STR_CONST(_str_empty, "");
   STR_CONST(_str_nil, "nil");
   STR_CONST(_str_open_paren, "(");
-  STR_CONST(_str_recursive, "recursive");
   STR_CONST(_str_recursive_true, "recursive=True");
   STR_CONST(_str_space, " ");
   STR_CONST(_str_quote, "\"");
@@ -2413,7 +2406,6 @@ int koskari_pair_clear(PyObject *mod) {
   Py_CLEAR(_str_empty);
   Py_CLEAR(_str_nil);
   Py_CLEAR(_str_open_paren);
-  Py_CLEAR(_str_recursive);
   Py_CLEAR(_str_recursive_true);
   Py_CLEAR(_str_space);
 

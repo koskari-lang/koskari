@@ -48,7 +48,6 @@ static KosOpResult kos_dyn_unlink_top_take(
     int allow_barrier,
     KosObligation *out_return);
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
-int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
 int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
 static void kos_dyn_restamp_spliced_prefix(KosEvalState *es);
@@ -738,28 +737,6 @@ static void kos_dyn_region_leave_exc(KosDynNode *node) {
 #include "dynchain/dyn_iter_node.c"
 
 
-/**
-   Pop a region node without going through normal opcode POP_* when a push
-   must be rolled back (e.g. setup failure). Dispatches to the matching
-   kos_dyn_pop_* for TRY, FINALLY, LOOP, FOREACH only.
-*/
-int kos_dyn_abort_push_region(KosEvalState *es, KosDynNode *region) {
-
-  switch (KosDynNode_KIND(region)) {
-    case KOS_DYN_TRY:
-      return kos_dyn_pop_try(es, (KosDynTry *) region);
-    case KOS_DYN_FINALLY:
-      return kos_dyn_pop_finally(es, (KosDynFinally *) region);
-    case KOS_DYN_LOOP:
-      return kos_dyn_pop_loop(es, (KosDynLoop *) region);
-    case KOS_DYN_FOREACH:
-      return kos_dyn_pop_foreach(es, (KosDynForeach *) region);
-    default:
-      return -1;
-  }
-}
-
-
 /* === Obligations === */
 
 
@@ -1294,8 +1271,8 @@ static void kos_dyn_resync_from(
 /**
    O(1) live-field update after a single-node push onto dyn_top.
 
-   Call from kos_dyn_push and kos_dyn_push_noinstall immediately after
-   new_node is KosEvalState_DYN_TOP(es) (and kos_dyn_install has run for push).
+   Call from kos_dyn_push immediately after new_node is
+   KosEvalState_DYN_TOP(es).
    Frame nodes replace frame, code, block, and namespace; other nodes update
    only the slots they carry. Passes flush=1 to kos_dyn_resync_apply so the
    outgoing frame's PCs are saved before the new frame is loaded. Do not use
@@ -1760,27 +1737,21 @@ done:
 
 
 /**
-   Link node as DYN_TOP, run install, retarget live fields.
+   Link node as DYN_TOP and retarget live fields. A kind with enter-time
+   work (PARAM, WITH, WIND) runs it explicitly around the push; the push
+   itself only links.
 
    kos_dyn_resync_after_push updates es; the frame-crossing flush runs in
    kos_dyn_resync_apply when the pushed node is a frame.
 */
 int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   // CONTEXT: dirty, touches context directly
-  KosDynNode *prev;
-
   if (! node)
     return -1;
 
   kos_dyn_prepare_push(es, node);
 
-  prev = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = node;
-
-  if (kos_dyn_install(es, node) < 0) {
-    KosEvalState_DYN_TOP(es) = prev;
-    return -1;
-  }
   kos_dyn_resync_after_push(es, node);
   return 0;
 }
@@ -1802,22 +1773,6 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
   removed = KosEvalState_DYN_TOP(es);
   KosEvalState_DYN_TOP(es) = new_top;
   kos_dyn_resync_after_pop(es, removed, new_top);
-}
-
-
-/**
-   Like kos_dyn_push but skips kos_dyn_install (region nodes, etc.).
-*/
-int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
-
-  if (! node)
-    return -1;
-
-  kos_dyn_prepare_push(es, node);
-
-  KosEvalState_DYN_TOP(es) = node;
-  kos_dyn_resync_after_push(es, node);
-  return 0;
 }
 
 
@@ -1940,42 +1895,7 @@ KosOpResult kos_dyn_unlink_top(
 }
 
 
-/**
-   Clone node then kos_dyn_push the clone. Used when the source node is shared
-   or must remain immutable on the template chain.
-*/
-int kos_dyn_push_clone(KosEvalState *es, KosDynNode *node) {
-  if (! node) {
-    return -1;
-  }
-
-  KosDynNode *clone = kos_dyn_clone(node);
-  if (! clone) {
-    return -1;
-  }
-
-  KosDynNode_PARENT(clone) = KosEvalState_DYN_TOP(es);
-  return kos_dyn_push(es, clone);
-}
-
-
 /* === Generic dispatch: switch-based per-kind handlers === */
-
-
-/**
-   Run install-phase setup for a node that was just pushed.  Only PARAM has
-   an install action.  WITH wind (enter) is invoked explicitly by opcodes or
-   the transfer plan after push, never here; PROMPT is a barrier only (the
-   operand stack stays on the frame below, and SHIFT inherits it via
-   KosDynNode_STACK == NULL).
-
-   :return: 0 on success, -1 on error
-*/
-int kos_dyn_install(KosEvalState *es, KosDynNode *node) {
-  if (KosDynNode_KIND(node) == KOS_DYN_PARAM)
-    return kos_dynparam_enter(KosEvalState_CONTEXT(es), (KosDynParam *) node);
-  return 0;
-}
 
 
 /**
@@ -2218,7 +2138,7 @@ KosDynYieldFrom *kos_dyn_push_yield_from(
   if (! node)
     return NULL;
 
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
     kos_dynyieldfrom_free(node);
     return NULL;
   }

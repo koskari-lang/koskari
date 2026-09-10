@@ -72,6 +72,15 @@ class TestKioRoundTrip(unittest.TestCase):
                 return arg
         self.fail("no CONST in roundtripped code")
 
+    def test_code_ref_shaped_tuple_is_a_tuple(self):
+        """
+        A constant tuple whose head happens to be the string CODE_REF is
+        an ordinary tuple through the .kio, not a code reference
+        """
+
+        self.assertEqual(self._const_roundtrip(('CODE_REF', 3)), ('CODE_REF', 3))
+
+
     def test_nil_const_roundtrip(self):
         """nil survives the const-pool round-trip as the nil singleton"""
         self.assertIs(self._const_roundtrip(nil), nil)

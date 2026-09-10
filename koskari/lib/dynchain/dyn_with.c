@@ -219,7 +219,7 @@ KosDynWith *kos_dyn_push_with_provisional(
 
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
     kos_dynwith_free(node);
     return NULL;
   }

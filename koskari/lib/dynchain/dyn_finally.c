@@ -92,7 +92,7 @@ KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc) {
   KosDynFinally *node = kos_dynfinally_new(KosEvalState_DYN_TOP(es), handler_pc);
   if (! node)
     return NULL;
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
     kos_dynfinally_free(node);
     return NULL;
   }

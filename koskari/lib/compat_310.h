@@ -16,7 +16,6 @@
 
 #define PyDict_NewPresized _PyDict_NewPresized
 #define PyGen_FetchStopIterationValue _PyGen_FetchStopIterationValue
-#define PyObject_LookupAttr _PyObject_LookupAttr
 
 /* PyUnicode_Equal public from 3.14 */
 #define PyUnicode_Equal koskari_Unicode_Equal

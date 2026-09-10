@@ -41,16 +41,6 @@ typedef int (*KosStrJoin)(PyObject *const *args, size_t count, PyObject **out);
 #define PICK_FUNC(name) (PyCFunction) m_ ## name
 
 
-#if PY_MINOR_VERSION < 6
-#define METHOD_TYPE METH_VARARGS
-#define VAR_FUNC(name)                                                  \
-  static PyObject *m_ ## name(PyObject *mod,                            \
-                              PyObject *args) {                         \
-    return name(PySequence_Fast_ITEMS(args),                            \
-                (size_t) PySequence_Fast_GET_SIZE(args));               \
-  }
-
-#else
 #define METHOD_TYPE METH_FASTCALL
 #define VAR_FUNC(name)                                                  \
   static PyObject *m_ ## name (PyObject *mod,                           \
@@ -58,8 +48,6 @@ typedef int (*KosStrJoin)(PyObject *const *args, size_t count, PyObject **out);
                                Py_ssize_t count) {                      \
     return name(args, count);                                           \
   }
-
-#endif
 
 
 /* One value-form comparison step.  Exact-int pairs settle on the

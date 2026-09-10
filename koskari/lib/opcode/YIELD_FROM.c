@@ -297,12 +297,8 @@ static KosOpResult yield_from_drive_sync_iter(
     PyObject *delegate,
     uint8_t action) {
 
-  if (action != KOS_YF_STEP && action != KOS_YF_SEND) {
-    if (action == KOS_YF_CLOSE)
-      ;  /* no-op for sync iter */
-    if (action == KOS_YF_THROW)
-      yield_from_clear_pending(yf);
-  }
+  if (action == KOS_YF_THROW)
+    yield_from_clear_pending(yf);
 
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf) != Py_None) {
     PyErr_SetString(PyExc_TypeError,
@@ -360,15 +356,6 @@ static KosOpResult yield_from_drive_sync_gen(
     return EVAL_RAISE();
   }
 
-  if (action == KOS_YF_CLOSE) {
-    PyObject *res = PyObject_CallMethodObjArgs(delegate, str_close, NULL);
-    Py_XDECREF(res);
-    PyErr_Clear();
-    kos_dyn_pop_yield_from(es, yf);
-    PyErr_SetNone(PyExc_GeneratorExit);
-    return EVAL_RAISE();
-  }
-
   {
     PyObject *res = PyObject_CallMethodObjArgs(delegate, str_send, send_val, NULL);
     if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
@@ -410,7 +397,7 @@ static KosOpResult yield_from_drive_py_async(
       && yield_from_throw_stop_async_finish(es, yf))
     return EVAL_NORMAL();
 
-  /* Build the awaitable for this step: __anext__, asend, athrow, or aclose. */
+  /* Build the awaitable for this step: __anext__, asend, or athrow. */
   PyObject *awaitable = NULL;
   if (action == KOS_YF_STEP
       || (action == KOS_YF_SEND
@@ -437,17 +424,6 @@ static KosOpResult yield_from_drive_py_async(
         Py_DECREF(tmp);
       }
     }
-
-  } else if (kind == KOS_YF_PY_ASYNC_GEN && action == KOS_YF_CLOSE) {
-    PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_aclose, NULL);
-    if (tmp) {
-      awaitable = PyObject_GetAwaitable(tmp);
-      Py_DECREF(tmp);
-    }
-
-  } else if (action == KOS_YF_CLOSE) {
-    /* PY_ASYNC_ITER has no aclose; treat as exhausted. */
-    return yield_from_finish(es, yf);
 
   } else if (action == KOS_YF_THROW) {
     /* PY_ASYNC_ITER has no athrow: the thrown exception lands here,
@@ -518,13 +494,6 @@ static KosOpResult yield_from_drive_kos_iter(
   if (! KosIter_CheckSlots(delegate, &islots)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "yield-from delegate lost its iter suite");
-    return EVAL_RAISE();
-  }
-
-  if (action == KOS_YF_CLOSE) {
-    islots->ki_finish(delegate, 1);
-    kos_dyn_pop_yield_from(es, yf);
-    PyErr_SetNone(PyExc_GeneratorExit);
     return EVAL_RAISE();
   }
 

@@ -16,23 +16,12 @@
 
 #define PyDict_NewPresized _PyDict_NewPresized
 #define PyGen_FetchStopIterationValue _PyGen_FetchStopIterationValue
-#define PyObject_LookupAttr _PyObject_LookupAttr
 
 /* PyUnicode_Equal public from 3.14 */
 #define PyUnicode_Equal koskari_Unicode_Equal
 
 /* PyErr_GetRaisedException added in 3.12 */
 #define PyErr_GetRaisedException koskari_Err_GetRaisedException
-
-
-typedef enum PySendResult {
-  PYGEN_RETURN,
-  PYGEN_NEXT,
-  PYGEN_ERROR,
-} PySendResult;
-
-
-PySendResult PyIter_Send(PyObject *iter, PyObject *arg, PyObject **presult);
 
 
 /* Py_NewRef / Py_XNewRef added in 3.10 */

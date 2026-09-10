@@ -319,7 +319,6 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 
   /* If suspended on yield, pass value as send_val */
   PyObject *send_val = NULL;
-  PyObject *throw_exc = NULL;
   if (coro->state == KOS_CORO_YIELDED) {
     send_val = (value != NULL) ? value : Py_None;
     Py_INCREF(send_val);
@@ -364,10 +363,7 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
 
-  KosOpResult res = koskari_eval(coro->ctx, send_val,
-                                  throw_exc ? (PyObject *) Py_TYPE(throw_exc)
-                                            : NULL,
-                                  throw_exc);
+  KosOpResult res = koskari_eval(coro->ctx, send_val, NULL, NULL);
   Py_XDECREF(send_val);
 
   coro->in_send = 0;

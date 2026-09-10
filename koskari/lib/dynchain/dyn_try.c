@@ -64,13 +64,13 @@ static int dynnode_to_dict_try(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Push TRY as DYN_TOP without kos_dyn_install. Callers: opcode PUSH_TRY.
+   Push TRY as DYN_TOP. Callers: opcode PUSH_TRY.
 */
 KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc) {
   KosDynTry *node = kos_dyntry_new(KosEvalState_DYN_TOP(es), handler_pc);
   if (! node)
     return NULL;
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
     kos_dyntry_free(node);
     return NULL;
   }

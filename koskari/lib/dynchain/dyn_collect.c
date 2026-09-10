@@ -65,15 +65,6 @@ static int dynnode_to_dict_collect(KosDynNode *node, PyObject *data) {
 
 
 /**
-   Collector namespace unwind is implicit via cache refresh after node removal.
-*/
-void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node) {
-  (void) es;
-  (void) node;
-}
-
-
-/**
    Push COLLECT as DYN_TOP. Callers: PUSH_COLLECT.
 */
 KosDynCollect *kos_dyn_push_collect(
@@ -85,7 +76,7 @@ KosDynCollect *kos_dyn_push_collect(
   if (! col_node)
     return NULL;
 
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) col_node) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) col_node) < 0) {
     kos_dyncollect_free(col_node);
     return NULL;
   }

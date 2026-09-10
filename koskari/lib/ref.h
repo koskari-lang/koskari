@@ -119,12 +119,6 @@ typedef struct KosDynamicRef {
   (((KosRef *) r)->obj)
 
 
-PyObject *KosDynamicRef_New(
-    PyObject *name,
-    PyObject *getfn,
-    PyObject *setfn,
-    PyObject *delfn,
-    PyObject *emptyfn);
 
 
 /* === ConstantRef === */
@@ -138,7 +132,6 @@ typedef struct KosConstantRef {
 } KosConstantRef;
 
 
-PyObject *KosConstantRef_New(PyObject *name, PyObject *value);
 
 
 /* === MemoizedRef === */
@@ -154,7 +147,6 @@ typedef struct KosMemoizedRef {
 } KosMemoizedRef;
 
 
-PyObject *KosMemoizedRef_New(PyObject *name, PyObject *getfn);
 
 
 #define KosMemoizedRef_VALUE(r)                 \
@@ -179,7 +171,6 @@ typedef struct KosWeakRef {
   (KosSymbolicRef_VALUE(r))
 
 
-PyObject *KosWeakRef_New(PyObject *name, PyObject *value);
 
 
 /* === ParamRef === */

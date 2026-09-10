@@ -49,7 +49,7 @@ static void kos_dyncc_free(KosDynCC *cc) {
 
 
 /**
-   Link CC as DYN_TOP without kos_dyn_install (minimal push). Callers: PUSH_CC.
+   Link CC as DYN_TOP (minimal push). Callers: PUSH_CC.
 */
 KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc) {
 
@@ -58,7 +58,7 @@ KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc) {
   if (! cc)
     return NULL;
 
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) cc) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) cc) < 0) {
     kos_dyncc_free(cc);
     return NULL;
   }

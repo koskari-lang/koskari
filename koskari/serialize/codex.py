@@ -126,7 +126,7 @@ class PoolKind(IntEnum):
     SYMBOL = 10
     KEYWORD = 11
     TUPLE = 12
-    CODE_REF = 14
+    CODE_REF = 14  # reserved; nothing writes or reads it
     NAMESPACE_SPEC = 17
     FORMALS_SPEC = 18
     FUNCTION_SPEC = 19
@@ -483,10 +483,7 @@ class KioFile(object):
     def from_bytes(cls, data):
         header, sec = cls.validate(data)
 
-        code_list = []
-
-        pool, _ = decode_pool_records(
-            data, sec[SectionTag.POOL][0], code_list)
+        pool, _ = decode_pool_records(data, sec[SectionTag.POOL][0])
 
         code_records, _ = decode_codep_bodies(data, sec[SectionTag.CODE][0])
 
@@ -962,9 +959,6 @@ def encode_pool_record_value(val, index_of, pb=None):
     :return: encoded record bytes
     """
 
-    if isinstance(val, tuple) and len(val) == 2 and val[0] == 'CODE_REF':
-        return struct.pack('<BI', PoolKind.CODE_REF, val[1])
-
     if isinstance(val, NamespaceSpec):
         ni = index_of(val.name)
         li = index_of(tuple(val.local_syms))
@@ -1064,16 +1058,6 @@ def encode_pool_record_value(val, index_of, pb=None):
     raise TypeError('unsupported pool value %r' % (val,))
 
 
-def pool_record_encode(val, index_of, pb=None):
-    """
-    Encode one pool value into a binary record
-
-    Delegates to encode_pool_record_value.
-    """
-
-    return encode_pool_record_value(val, index_of, pb)
-
-
 def encode_pool(pool_values, index_of, pb=None):
     """
     Encode full pool section
@@ -1085,7 +1069,7 @@ def encode_pool(pool_values, index_of, pb=None):
     return b''.join(chunks)
 
 
-def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
+def decode_pool_record_at_kind(kind, buf, off, prior):
     """
     Decode one pool record body after the kind byte into a final value
 
@@ -1097,7 +1081,6 @@ def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
     :param buf: buffer
     :param off: offset after kind byte
     :param prior: decoded values for lower pool indices
-    :param code_list: bodies for ``CODE_REF`` rows
     :return: pair of decoded value and new offset
     """
 
@@ -1165,11 +1148,6 @@ def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
         off += 12
         return slice(prior[si], prior[ei], prior[ti]), off
 
-    if kind == PoolKind.CODE_REF:
-        bi = struct.unpack_from('<I', buf, off)[0]
-        off += 4
-        return code_list[bi], off
-
     if kind == PoolKind.NAMESPACE_SPEC:
         ni, li, ci, gi = struct.unpack_from('<IIII', buf, off)
         off += 16
@@ -1202,7 +1180,7 @@ def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
     raise ValueError('unknown pool kind %s' % kind)
 
 
-def decode_pool_records(buf, off, code_list):
+def decode_pool_records(buf, off):
     """
     Decode full pool section
 
@@ -1216,7 +1194,7 @@ def decode_pool_records(buf, off, code_list):
     for _ in range(count):
         kind = buf[off]
         off += 1
-        val, off = decode_pool_record_at_kind(kind, buf, off, out, code_list)
+        val, off = decode_pool_record_at_kind(kind, buf, off, out)
         out.append(val)
 
     return out, off

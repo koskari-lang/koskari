@@ -74,7 +74,7 @@ KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t cont
   KosDynLoop *node = kos_dynloop_new(KosEvalState_DYN_TOP(es), break_pc, continue_pc);
   if (! node)
     return NULL;
-  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
     kos_dynloop_free(node);
     return NULL;
   }

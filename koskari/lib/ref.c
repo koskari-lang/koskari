@@ -868,26 +868,6 @@ PyTypeObject KosDynamicRefType = {
 };
 
 
-PyObject *KosDynamicRef_New(
-    PyObject *name,
-    PyObject *getfn,
-    PyObject *setfn,
-    PyObject *delfn,
-    PyObject *emptyfn) {
-
-  PyObject *self = PyObject_GC_New(PyObject, &KosDynamicRefType);
-  if (! self)
-    return NULL;
-
-  if (dyn_ref_init(self, name, getfn, setfn, delfn, emptyfn))
-    Py_CLEAR(self);
-
-  if (self)
-    PyObject_GC_Track(self);
-  return self;
-}
-
-
 /* === ConstantRef === */
 
 
@@ -979,20 +959,6 @@ PyTypeObject KosConstantRefType = {
   .tp_clear = sym_ref_clear,
   .tp_dealloc = sym_ref_dealloc,
 };
-
-
-PyObject *KosConstantRef_New(PyObject *name, PyObject *value) {
-  PyObject *self = PyObject_GC_New(PyObject, &KosConstantRefType);
-  if (! self)
-    return NULL;
-
-  if (const_ref_init(self, name, value))
-    Py_CLEAR(self);
-
-  if (self)
-    PyObject_GC_Track(self);
-  return self;
-}
 
 
 /* === MemoizedRef === */
@@ -1118,20 +1084,6 @@ PyTypeObject KosMemoizedRefType = {
   .tp_clear = memo_ref_clear,
   .tp_dealloc = memo_ref_dealloc,
 };
-
-
-PyObject *KosMemoizedRef_New(PyObject *name, PyObject *getfn) {
-  PyObject *self = PyObject_GC_New(PyObject, &KosMemoizedRefType);
-  if (! self)
-    return NULL;
-
-  if (memo_ref_init(self, name, getfn))
-    Py_CLEAR(self);
-
-  if (self)
-    PyObject_GC_Track(self);
-  return self;
-}
 
 
 /* === WeakRef === */
@@ -1309,19 +1261,6 @@ PyTypeObject KosWeakRefType = {
   .tp_clear = sym_ref_clear,
   .tp_dealloc = sym_ref_dealloc,
 };
-
-
-PyObject *KosWeakRef_New(PyObject *name, PyObject *value) {
-
-  PyObject *self = PyObject_GC_New(PyObject, &KosWeakRefType);
-  if (! self)
-    return NULL;
-
-  if (weak_ref_init(self, name, value))
-    Py_CLEAR(self);
-
-  return self;
-}
 
 
 /* === ParamRef === */

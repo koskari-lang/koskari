@@ -32,7 +32,7 @@ int kos_dyn_push_next_node(
   }
   KosDynNext_N(node) = n;
 
-  if (kos_dyn_push_noinstall(es, node) < 0) {
+  if (kos_dyn_push(es, node) < 0) {
     kos_dyn_next_free_payload(node);
     return -1;
   }

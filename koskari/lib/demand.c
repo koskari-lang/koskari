@@ -938,16 +938,6 @@ int koskari_demand_init(PyObject *mod) {
                           (PyObject *) KOS_EVALUATED_PYTYPE(KosDemandCallableType)) < 0)
     return -1;
 
-  /* Native test harness uses _koskari_test; no koskari package available */
-  {
-    PyObject *mod_name = PyModule_GetNameObject(mod);
-    int is_harness = (mod_name &&
-        PyUnicode_CompareWithASCIIString(mod_name, "_koskari_test") == 0);
-    Py_XDECREF(mod_name);
-    if (is_harness)
-      return 0;
-  }
-
   return 0;
 }
 

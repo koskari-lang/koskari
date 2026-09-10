@@ -106,18 +106,6 @@ _symbol_colon = symbol(":")
 ACTIVE_PRAGMA_PARAM = "active-compiler-pragma"
 
 
-def unique_append(lst, val):
-    """
-    Append val to lst only if it is not already present
-
-    :param lst: a mutable sequence
-    :param val: value to append
-    """
-
-    if val not in lst:
-        lst.append(val)
-
-
 def _arena_member_size(code):
     """
     The bytes a code object's unified block occupies inside an arena:
@@ -608,10 +596,6 @@ class Compiler:
             yield
         finally:
             self._macro_overlay.pop()
-
-
-    def error(self, msg, source):
-        raise CompilerError(msg, source)
 
 
     @contextmanager

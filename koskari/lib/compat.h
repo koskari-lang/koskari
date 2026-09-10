@@ -294,31 +294,6 @@ int koskari_Unicode_Equal(PyObject *a, PyObject *b);
 
 
 /**
-   Set exception from type and message string.  On Python 3.10, wraps the
-   string in exc_type(msg) so PyErr_Fetch returns the instance.  Shadowed
-   via macro in compat_310.h.
-*/
-void koskari_Err_SetString(PyObject *exc_type, const char *message);
-
-
-/**
-   Set exception from type and format string.  On Python 3.10, uses
-   PyUnicode_FromFormatV to create the exception value.  Shadowed via
-   macro in compat_310.h.
-*/
-void koskari_Err_Format(PyObject *exc_type, const char *format, ...);
-
-
-/**
-   Set exception from type and value.  On Python 3.10, when value is a
-   string or other non-instance, wraps it in exc_type(value) before
-   calling PyErr_SetObject.  On 3.11+, delegates to PyErr_SetObject
-   directly.  Use when value may be a plain string (e.g. KeyError key).
-*/
-void koskari_Err_SetObject(PyObject *exc_type, PyObject *value);
-
-
-/**
    Replaces _PyErr_FormatFromCause, moved to Python's internal-only header
    in 3.13+ and no longer visible to extensions.  Fetches the current
    exception, formats a new one, chains the old as __cause__/__context__,
