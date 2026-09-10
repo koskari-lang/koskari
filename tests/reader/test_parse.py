@@ -911,4 +911,26 @@ class TestSourceStreamInheritance(IsolatedAsyncioTestCase):
         self.assertEqual(s.position(), (1, 2))
 
 
+class TestBaseSourceStreamUninitialized(TestCase):
+    """
+    An instance built without __init__ has no stream, reports that
+    plainly, and refuses to read
+    """
+
+    def test_fields_read_as_none(self):
+        s = BaseSourceStream.__new__(BaseSourceStream)
+        self.assertIsNone(s.stream)
+        self.assertIsNone(s.filename)
+        self.assertEqual(s.position(), (1, 0))
+
+    def test_methods_raise_value_error(self):
+        s = BaseSourceStream.__new__(BaseSourceStream)
+        with self.assertRaises(ValueError):
+            s.read()
+        with self.assertRaises(ValueError):
+            s.peek()
+        with self.assertRaises(ValueError):
+            s.mark()
+
+
 # The end.

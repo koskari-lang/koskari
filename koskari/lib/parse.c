@@ -252,6 +252,16 @@ PyObject *KosBaseSourceStream_New(
 }
 
 
+/* 0 when the stream is present, else -1 with ValueError set: an
+   instance from a bare __new__ has no stream to read */
+static int bss_require_stream(KosBaseSourceStream *s) {
+  if (s->stream)
+    return 0;
+  PyErr_SetString(PyExc_ValueError, "BaseSourceStream is not initialized");
+  return -1;
+}
+
+
 static void bss_dealloc(PyObject *self) {
   Py_CLEAR(STREAM_STREAM(self));
   Py_CLEAR(STREAM_FILENAME(self));
@@ -261,6 +271,8 @@ static void bss_dealloc(PyObject *self) {
 
 PyObject *KosBaseSourceStream_Read(PyObject *self, Py_ssize_t count) {
   KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+  if (bss_require_stream(s))
+    return NULL;
 
   if (count < 1) {
     PyErr_SetString(PyExc_ValueError, "read count must be >= 1");
@@ -295,6 +307,8 @@ static PyObject *m_bss_read(PyObject *self, PyObject *args) {
 
 PyObject *KosBaseSourceStream_Peek(PyObject *self, Py_ssize_t count) {
   KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+  if (bss_require_stream(s))
+    return NULL;
 
   if (count < 1) {
     PyErr_SetString(PyExc_ValueError, "peek count must be >= 1");
@@ -355,6 +369,8 @@ PyObject *KosBaseSourceStream_ReadUntilPred(
   */
 
   KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+  if (bss_require_stream(s))
+    return NULL;
 
   /* save starting position */
   Py_ssize_t start_pos = stream_tell(s->stream);
@@ -414,6 +430,8 @@ PyObject *KosBaseSourceStream_ReadUntil(
   */
 
   KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+  if (bss_require_stream(s))
+    return NULL;
 
   if (! PyCallable_Check(testf)) {
     PyErr_SetString(PyExc_TypeError, "testf must be callable");
@@ -564,6 +582,8 @@ static PyObject *m_bss_readline(
   */
 
   KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+  if (bss_require_stream(s))
+    return NULL;
 
   /* save starting position */
   Py_ssize_t start_pos = stream_tell(s->stream);
@@ -627,6 +647,8 @@ static PyObject *m_bss_mark(PyObject *self, PyObject *_noargs) {
   */
 
   KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+  if (bss_require_stream(s))
+    return NULL;
 
   Py_ssize_t pos = stream_tell(s->stream);
   if (pos < 0)
@@ -642,6 +664,8 @@ static PyObject *m_bss_rewind(PyObject *self, PyObject *mark) {
   */
 
   KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+  if (bss_require_stream(s))
+    return NULL;
 
   Py_ssize_t pos, line, col;
   if (! PyArg_ParseTuple(mark, "nnn", &pos, &line, &col))
@@ -662,15 +686,13 @@ static PyObject *m_bss_rewind(PyObject *self, PyObject *mark) {
 
 static PyObject *bss_get_stream(PyObject *self, void *closure) {
   PyObject *stream = STREAM_STREAM(self);
-  Py_INCREF(stream);
-  return stream;
+  return Py_NewRef(stream ? stream : Py_None);
 }
 
 
 static PyObject *bss_get_filename(PyObject *self, void *closure) {
   PyObject *filename = STREAM_FILENAME(self);
-  Py_INCREF(filename);
-  return filename;
+  return Py_NewRef(filename ? filename : Py_None);
 }
 
 
