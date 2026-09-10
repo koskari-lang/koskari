@@ -26,7 +26,7 @@ import pytest
 
 from koskari.lib import (
     Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, bracket_nil,
-    demand_call, nil)
+    demand_call, nil, symbol)
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
 
@@ -262,6 +262,23 @@ class TestKioRoundTrip(unittest.TestCase):
         rows = [(op, arg) for op, arg in loaded.code.soften()
                 if op == OpCode.FAST2]
         self.assertEqual([(OpCode.FAST2, (0, 1, 0, 0))], rows)
+
+
+    def test_macro_rules_literals_roundtrip_as_frozenset(self):
+        """
+        The literal set a macro-rules form quotes into its build call
+        is a frozenset holding the macro name, before and after .kio
+        """
+
+        buf = io.BytesIO()
+        compile_ki_source_to_kio(
+            '(define-syntax twice (macro-rules []\n'
+            '  [(twice x) `(+ ,x ,x)]))\n', buf)
+        buf.seek(0)
+        kio = load_kio(buf)
+        found = [val for val in kio.pool if isinstance(val, frozenset)]
+        self.assertEqual(1, len(found))
+        self.assertIn(symbol('twice'), found[0])
 
 
     def test_count_style_args_survive_roundtrip(self):

@@ -41,8 +41,13 @@ _sym_parse_match_pattern = symbol("parse-match-pattern")
 def _emit_parse_rule_pattern(pattern_src, literals_datum):
     """
     Emit ``(parse-rule-pattern (quote PATTERN) (quote LITS))``
+
+    A set of literals is frozen so the emitted constant is hashable and
+    serializable; every other literals shape passes through
     """
 
+    if isinstance(literals_datum, set):
+        literals_datum = frozenset(literals_datum)
     return cons(
         _sym_parse_rule_pattern,
         cons(_sym_quote, pattern_src, nil),

@@ -101,6 +101,26 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual(kio.x, 1)
 
 
+    def test_rules_transformers_via_kio_match_ki(self):
+        """
+        Modules defining macro-rules and special-rules transformers
+        reach the .kio and expand the same way from it
+        """
+
+        source = (
+            "(define-syntax twice (macro-rules []\n"
+            "  [(twice x) `(+ ,x ,x)]))\n"
+            "(define-syntax ident (special-rules []\n"
+            "  [(c (ident x)) x.datum]))\n"
+            "(define a (twice 21))\n"
+            "(define b (ident 7))\n")
+        ki, kio = self._both('rules', source)
+        self.assertEqual(42, ki.a)
+        self.assertEqual(7, ki.b)
+        self.assertEqual(ki.a, kio.a)
+        self.assertEqual(ki.b, kio.b)
+
+
     def test_divmod_via_kio_matches_ki(self):
         """
         A divmod call keeps its operand count through the .kio
