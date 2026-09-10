@@ -143,6 +143,57 @@ class TestKioImporterParity(unittest.TestCase):
             self.assertFalse(code.protected)
 
 
+    def _import(self, modname):
+        importlib.invalidate_caches()
+        from koskari.importer import KoskariPathFinder
+        KoskariPathFinder.invalidate_caches()
+        return importlib.import_module(modname)
+
+
+    def test_fresh_kio_beside_source_is_loaded(self):
+        """a .kio whose stamp matches its sibling .ki is the one imported"""
+        ki_path = self._write('fresh_pick.ki', "(define who 1)\n")
+        compile_ki_file_to_kio(
+            ki_path, os.path.join(self._tmpdir, 'fresh_pick.kio'))
+        module = self._import('fresh_pick')
+        self.assertEqual(module.who, 1)
+        self.assertTrue(module.__file__.endswith('.kio'), module.__file__)
+
+
+    def test_stale_kio_yields_to_source(self):
+        """a .ki edited after its .kio was compiled is the one imported"""
+        ki_path = self._write('stale_pick.ki', "(define who 1)\n")
+        compile_ki_file_to_kio(
+            ki_path, os.path.join(self._tmpdir, 'stale_pick.kio'))
+        self._write('stale_pick.ki', "(define who 2)\n")
+        later = os.stat(ki_path).st_mtime + 10
+        os.utime(ki_path, (later, later))
+        module = self._import('stale_pick')
+        self.assertEqual(module.who, 2)
+        self.assertTrue(module.__file__.endswith('.ki'), module.__file__)
+
+
+    def test_unstamped_kio_yields_to_source(self):
+        """a .kio with no source stamp never shadows a sibling .ki"""
+        from koskari.serialize import compile_ki_source_to_kio
+
+        self._write('unstamped_pick.ki', "(define who 2)\n")
+        compile_ki_source_to_kio(
+            "(define who 1)\n",
+            os.path.join(self._tmpdir, 'unstamped_pick.kio'))
+        module = self._import('unstamped_pick')
+        self.assertEqual(module.who, 2)
+
+
+    def test_lone_kio_loads_without_source(self):
+        """a .kio with no sibling .ki loads as it is"""
+        ki_path = self._write('lone_src.ki', "(define who 1)\n")
+        compile_ki_file_to_kio(
+            ki_path, os.path.join(self._tmpdir, 'lone_pick.kio'))
+        module = self._import('lone_pick')
+        self.assertEqual(module.who, 1)
+
+
     def test_define_via_kio_matches_ki(self):
         ki_path = os.path.join(self._tmpdir, 'parity_src.ki')
         with open(ki_path, 'w', encoding='utf-8') as fh:

@@ -27,7 +27,7 @@ from ..module import (
     build_module_load_facets, detach_module_load_facets, init_module,
     materialize_exports, new_module)
 from ..reader import READ_EOF, IndentAwareStream, source_open, source_str
-from .codex import KioFile
+from .codex import KioFile, KioMeta
 
 
 def _compile_top_level_to_codes(mod, compiler, reader, source_stream):
@@ -117,7 +117,9 @@ def compile_ki_file_to_kio(
     with source_open(ki_path) as source_stream:
         bodies = _compile_top_level_to_codes(mod, compiler, reader, source_stream)
 
-    KioFile.from_codes(bodies).write(kio_dest)
+    # stamped from the source as it was compiled, so a loader can tell
+    # this file apart from one left behind by an older copy of the .ki
+    KioFile.from_codes(bodies, meta=KioMeta.for_source(ki_path)).write(kio_dest)
 
 
 def compile_ki_source_to_kio(
@@ -130,7 +132,9 @@ def compile_ki_source_to_kio(
 
     Same semantics as compile_ki_file_to_kio except input is a string. The
     logical filename for diagnostics and embedded ``Code.filename`` is
-    ``source_filename`` when set, otherwise a placeholder string.
+    ``source_filename`` when set, otherwise a placeholder string. No
+    source stamp is recorded, so the loader treats the file as stale
+    beside a sibling .ki.
 
     :param source_text: Koskari source string
     :param kio_dest: output .kio path or writable binary stream

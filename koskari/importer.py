@@ -26,7 +26,7 @@ import importlib.util
 import sys
 from importlib.abc import FileLoader
 from importlib.machinery import FileFinder, PathFinder
-from os import getcwd
+from os import getcwd, stat
 from os.path import exists
 
 
@@ -36,6 +36,7 @@ __all__ = (
     'KoskariFileFinder',
     'import_module_async',
     'install',
+    'source_for_stale_kio',
     'is_installed',
     'uninstall',
 )
@@ -83,6 +84,37 @@ class KoskariPathFinder(PathFinder):
         return finder
 
 
+def source_for_stale_kio(kio_path):
+    """
+    The sibling .ki to load in place of ``kio_path``, or None when the
+    .kio stands.
+
+    A .kio with no sibling source stands. Beside a source it stands only
+    when its stamp matches the source's current mtime and size; an
+    unstamped, unreadable, or wrong-ABI .kio yields to the source.
+
+    :param kio_path: path ending in .kio
+    :return: the .ki path, or None
+    """
+
+    ki_path = kio_path[:-1]
+    if not exists(ki_path):
+        return None
+
+    from koskari.serialize.codex import KioFile
+
+    try:
+        meta = KioFile.read_meta(kio_path)
+        st = stat(ki_path)
+    except (OSError, ValueError, KeyError):
+        return ki_path
+
+    if meta.source_mtime_ns != st.st_mtime_ns \
+            or meta.source_size != st.st_size:
+        return ki_path
+    return None
+
+
 class KoskariSourceFileLoader(FileLoader):
     """
     FileLoader for .ki source files and precompiled .kio artifacts.
@@ -92,6 +124,20 @@ class KoskariSourceFileLoader(FileLoader):
 
     def create_module(self, spec):
         return None
+
+
+    def _filename_to_load(self, fullname):
+        """
+        The file to execute: the finder's pick, unless that is a .kio
+        that has fallen behind its sibling .ki
+        """
+
+        filename = self.get_filename(fullname)
+        if filename.endswith('.kio'):
+            source = source_for_stale_kio(filename)
+            if source is not None:
+                return source
+        return filename
 
 
     def get_source(self, fullname):
@@ -108,7 +154,7 @@ class KoskariSourceFileLoader(FileLoader):
         from koskari.module import (
             init_module, load_module_async, load_module_kio_async, new_module)
 
-        filename = self.get_filename(module.__name__)
+        filename = self._filename_to_load(module.__name__)
 
         ki_mod = new_module(
             module.__name__,
@@ -145,7 +191,7 @@ class KoskariSourceFileLoader(FileLoader):
             init_module, load_module_demand, load_module_kio_demand,
             new_module)
 
-        filename = self.get_filename(module.__name__)
+        filename = self._filename_to_load(module.__name__)
 
         ki_mod = new_module(
             module.__name__,

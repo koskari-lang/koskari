@@ -27,7 +27,8 @@ import pytest
 from koskari.lib import (
     Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, bracket_nil,
     demand_call, nil)
-from koskari.serialize import compile_ki_source_to_kio, dump_kio, load_kio
+from koskari.serialize import (
+    KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
 
 from .. import make_callable
 from ..lib.opcode import build_code, build_expr
@@ -161,6 +162,26 @@ class TestKioRoundTrip(unittest.TestCase):
             if op == OpCode.CONST:
                 return arg
         self.fail("no CONST in roundtripped code")
+
+    def test_source_stamp_roundtrip(self):
+        """the META source stamp is stored and read back, whole or absent"""
+        code, _ = build_expr([['CONST', 1], ['RETURN', 1]])
+        stamped = KioMeta(source_mtime_ns=1234567890123456789, source_size=77)
+        buf = io.BytesIO()
+        KioFile.from_codes([code], meta=stamped).write(buf)
+        buf.seek(0)
+        meta = KioFile.read_meta(buf)
+        self.assertEqual(meta.source_mtime_ns, 1234567890123456789)
+        self.assertEqual(meta.source_size, 77)
+        buf.seek(0)
+        self.assertEqual(load_kio(buf).meta, stamped)
+
+        buf = io.BytesIO()
+        dump_kio(buf, [code])
+        buf.seek(0)
+        meta = KioFile.read_meta(buf)
+        self.assertIsNone(meta.source_mtime_ns)
+        self.assertIsNone(meta.source_size)
 
     def test_function_spec_const_roundtrip(self):
         inner_code, ns_inner = build_expr([

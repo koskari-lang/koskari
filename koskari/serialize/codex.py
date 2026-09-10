@@ -326,14 +326,41 @@ class KioHeader(object):
 @dataclass
 class KioMeta(object):
     """
-    META section payload (optional bytes; length from section directory)
+    META section payload
+
+    A leading flag byte says whether a source stamp follows: the mtime
+    in nanoseconds and the size in bytes of the .ki the file was
+    compiled from, as recorded when it was compiled. The loader compares
+    the stamp against a sibling .ki and loads the source when they
+    differ or when no stamp was recorded. Any bytes after the stamp are
+    soft_meta, opaque to the runtime. An empty section is a file with no
+    stamp and no soft_meta.
     """
 
-    soft_meta: bytes
+    _stamp = struct.Struct('<BqQ')
+
+    STAMPED = 0x01
+
+    soft_meta: bytes = b''
+    source_mtime_ns: int = None
+    source_size: int = None
 
     @classmethod
     def default(cls, soft_meta=None):
         return cls(soft_meta or b'')
+
+    @classmethod
+    def for_source(cls, path, soft_meta=None):
+        """
+        A META stamped from the .ki at ``path`` as it is on disk now
+        """
+
+        st = os.stat(path)
+        return cls(soft_meta or b'', st.st_mtime_ns, st.st_size)
+
+    @property
+    def stamped(self):
+        return self.source_mtime_ns is not None and self.source_size is not None
 
     @classmethod
     def from_buffer(cls, buf, off, length):
@@ -342,10 +369,26 @@ class KioMeta(object):
         """
 
         end = off + length
-        return cls(buf[off:end]), end
+        if length == 0:
+            return cls(), end
+
+        flags = buf[off]
+        off += 1
+        mtime_ns = size = None
+        if flags & cls.STAMPED:
+            _flags, mtime_ns, size = cls._stamp.unpack_from(buf, off - 1)
+            off += cls._stamp.size - 1
+        return cls(bytes(buf[off:end]), mtime_ns, size), end
 
     def to_bytes(self):
-        return self.soft_meta or b''
+        if self.stamped:
+            head = self._stamp.pack(
+                self.STAMPED, self.source_mtime_ns, self.source_size)
+        elif self.soft_meta:
+            head = bytes((0,))
+        else:
+            head = b''
+        return head + (self.soft_meta or b'')
 
 
 @dataclass
@@ -411,6 +454,28 @@ class KioFile(object):
     @classmethod
     def read(cls, source):
         return cls.from_bytes(binary_read_all(source))
+
+
+    @classmethod
+    def read_meta(cls, source):
+        """
+        The META of a .kio without decoding its pool or bodies
+
+        :param source: file path, bytes, or readable binary stream
+        :return: KioMeta
+        :raises ValueError: bad magic or a bytecode ABI this interpreter
+            does not run
+        """
+
+        data = binary_read_all(source)
+        header = KioHeader.from_bytes(data)
+        header.validate_runtime()
+        entries = decode_directory(
+            data, header.section_dir_offset, header.section_dir_count)
+        sec = {e[0]: (e[1], e[2]) for e in entries}
+        meta, _off = KioMeta.from_buffer(
+            data, sec[SectionTag.META][0], sec[SectionTag.META][1])
+        return meta
 
 
     def build_pool_and_code_records(self):
