@@ -264,6 +264,30 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertEqual([(OpCode.FAST2, (0, 1, 0, 0))], rows)
 
 
+    def test_count_style_args_survive_roundtrip(self):
+        """
+        AWAIT and OBJECT_DIVMOD carry a stack count in their arg, and
+        the count comes back from the .kio
+        """
+
+        buf = io.BytesIO()
+        compile_ki_source_to_kio(
+            '(define f (lambda [x] (await x)))\n'
+            '(define d (divmod 7 2))\n', buf)
+        buf.seek(0)
+        kio = load_kio(buf)
+        rows = {}
+        for code in kio.codes:
+            for op, arg in code.soften():
+                if isinstance(arg, FunctionSpec):
+                    for iop, iarg in arg.code.soften():
+                        rows[OpCode(iop)] = iarg
+                else:
+                    rows[OpCode(op)] = arg
+        self.assertEqual(1, rows[OpCode.AWAIT])
+        self.assertEqual(2, rows[OpCode.OBJECT_DIVMOD])
+
+
     def test_compile_ki_function_body_with_call_roundtrip(self):
         """
         Compiling source whose function body calls something reaches

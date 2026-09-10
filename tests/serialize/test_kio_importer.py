@@ -101,6 +101,16 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual(kio.x, 1)
 
 
+    def test_divmod_via_kio_matches_ki(self):
+        """
+        A divmod call keeps its operand count through the .kio
+        """
+
+        ki, kio = self._both('divmod', "(define d (divmod 7 2))\n")
+        self.assertEqual((3, 1), ki.d)
+        self.assertEqual(ki.d, kio.d)
+
+
     def test_function_body_via_kio_matches_ki(self):
         """
         A function whose body calls and builds from its formals runs the
