@@ -1095,6 +1095,7 @@ static inline int apply_formals_kwargs_phase(
     Py_ssize_t base = bases[r];
     for (Py_ssize_t ir = starts[r]; ir < l; ir++) {
       key = PyTuple_GET_ITEM(run, ir);
+      val = NULL;
       found = kwsource_take(ks, key, &val);
       if (found < 0)
         return -1;

@@ -399,6 +399,23 @@ class TestFormalsKwdOnly(unittest.IsolatedAsyncioTestCase):
             formals.apply(ns, (1,))
 
 
+    async def test_kwd_only_missing_beside_supplied_raises(self):
+        """
+        A missing keyword-only argument raises when another keyword is
+        supplied and there is no defaults dict. It must not inherit the
+        previously bound argument's value.
+        """
+
+        formals = Formals(
+            ("a",), (), (), ("b", "c"), None, None, None, None,
+        )
+        ns = Namespace("ns", None, ("a", "b", "c"))
+
+        with self.assertRaises(TypeError):
+            formals.apply(ns, (1,), {"b": 2})
+        self.assertNotIn("c", ns)
+
+
 class TestFormals_PosOnly(unittest.IsolatedAsyncioTestCase):
     """
     Tests for positional-only arguments
