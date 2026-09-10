@@ -153,9 +153,9 @@ The Koskari Python compiler runs **`Compiler.compress`** on the fragment’s
 instruction list inside **`Compiler.complete`** (before `_cpool_scan_merge`,
 **`convert_fast`**, **`demote_tail_calls_if_yields`**, and construction of the
 **`Code`** object). Implementation:
-[`koskari/compile/compiler.py`](../koskari/compile/compiler.py) (`compress`,
+`koskari/compile/compiler.py` (`compress`,
 `_CHECK_SQUASHES`, `_SWITCH_SQUASHES`). Regression tests:
-[`tests/compile/test_compress.py`](../tests/compile/test_compress.py).
+`tests/compile/test_compress.py`.
 
 **Purpose.** Shorten or simplify the pre-finalize `(opcode, arg)` stream in a
 single forward pass. The pass keeps a short output deque; most rules compare the
@@ -347,8 +347,7 @@ When adding or changing an opcode:
 | 3     | RETURN | 1   | 1        | |
 
 
-### KOS_OP_UNPACK {#kos_op_unpack}
-
+### KOS_OP_UNPACK
 - **Style**: COUNT. Arg = `n` (number of values to push).
 - **Status**: Implemented. (`koskari/lib/opcode/UNPACK.c`)
 - **Stack**: `[..., raw] → [..., v_{n-1}, ..., v_1, v_0]` where `v_i` is the
@@ -374,8 +373,7 @@ bottom to top matches push order).
 
 ---
 
-### KOS_OP_UNPACK_STAR {#kos_op_unpack_star}
-
+### KOS_OP_UNPACK_STAR
 - **Style**: EXTRA (`COUNT`, `COUNT`, `NOARG`, `NOARG`). Instruction arg =
   index into the code object's **extra** table; that row has `a0 = left`,
   `a1 = right` (both non-negative counts).
@@ -411,8 +409,7 @@ bottom to top matches push order).
 
 ---
 
-### KOS_OP_UNPACK_VAR {#kos_op_unpack_var}
-
+### KOS_OP_UNPACK_VAR
 - **Style**: EXTRA (`VAR`, `VAR`, `NOARG`, `NOARG`). Row: `a0`, `a1` = constant
   pool indices of the two names (strings).
 - **Status**: Implemented. (`koskari/lib/opcode/UNPACK_VAR.c`)
@@ -428,8 +425,7 @@ bottom to top matches push order).
 
 ---
 
-### KOS_OP_UNPACK_FAST {#kos_op_unpack_fast}
-
+### KOS_OP_UNPACK_FAST
 - **Style**: EXTRA (`FASTVAR`, `FASTVAR`, `NOARG`, `NOARG`). Row: `a0`, `a1` =
   fast local slot indices.
 - **Status**: Implemented. (`koskari/lib/opcode/UNPACK_FAST.c`)
@@ -468,8 +464,7 @@ bottom to top matches push order).
 
 ### 5.1 Pair construction and access
 
-### KOS_OP_CAR {#kos_op_car}
-
+### KOS_OP_CAR
 - **Style**: COUNT. Arg = repeat count: apply **car** that many times to the
   stack top (each step pops one pair and pushes its car).
 - **Status**: Implemented.
@@ -482,8 +477,7 @@ bottom to top matches push order).
   includes step index and type / `nil`).
 
 
-### KOS_OP_CDR {#kos_op_cdr}
-
+### KOS_OP_CDR
 - **Style**: COUNT. Arg = repeat count: apply **cdr** that many times to the
   stack top (each step pops one pair and pushes its cdr).
 - **Status**: Implemented.
@@ -496,8 +490,7 @@ bottom to top matches push order).
   `nil`).
 
 
-### KOS_OP_CONS {#kos_op_cons}
-
+### KOS_OP_CONS
 - **Style**: COUNT. Arg = number of values on stack (bottom = first element,
   top = tail).
 - **Status**: Implemented.
@@ -507,8 +500,7 @@ bottom to top matches push order).
   nil (INCREF).
 
 
-### KOS_OP_PROPER {#kos_op_proper}
-
+### KOS_OP_PROPER
 - **Style**: COUNT. Arg = number of element values on stack.
 - **Status**: Implemented. (`koskari/lib/opcode/PROPER.c`)
 - **Stack**: `[..., e_0, ..., e_{count-1}] → [..., result]` where result is the
@@ -529,8 +521,7 @@ bottom to top matches push order).
 | 3     | PROPER | 3   | 3          | stack: [..., (a b c)] |
 
 
-### KOS_OP_PAIR_SPLICE {#kos_op_pair_splice}
-
+### KOS_OP_PAIR_SPLICE
 - **Style**: COUNT. Arg = number of segments on stack (bottom = first segment,
   top = last segment).
 - **Status**: Implemented. (`koskari/lib/opcode/PAIR_SPLICE.c`)
@@ -668,7 +659,7 @@ bottom to top matches push order).
 - **Delegate kinds** (chosen at first entry by normalizing TOS): **sync iterator** (PyIter_Next); **sync generator** (send/throw/close); **Python async iterator** (__anext__); **Python async generator** (__anext__/asend/athrow/aclose); **Koskari async generator** (driven in-process via koskari_eval). Callables are called once; the return value is classified as above. Fallback: `iter(obj)` for sync iteration.
 - **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are pushed or emitted as values only.
 - **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The opcode is re-entered on each loop iteration until the delegate exhausts, yields (boundary **`KOS_RES_YIELD`**), or suspends on await (boundary **`KOS_RES_AWAIT`**).
-- **Implementation**: Handler and all YIELD_FROM-dedicated helpers (normalize, rollback PC, fetch StopIteration value, emit yield, complete with value, drive sync iter/gen and Python/Koskari async) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). Delegate close / unwind for the `KOS_DYN_YIELD_FROM` node lives in `koskari/lib/dynchain/dyn_yield_from.c` (e.g. `kos_yieldfrom_close_delegate`, `kos_dyn_yieldfrom_unwind`). See [koskari/lib/opcode/README.md](../../koskari/lib/opcode/README.md) for the opcode-fragment layout.
+- **Implementation**: Handler and all YIELD_FROM-dedicated helpers (normalize, rollback PC, fetch StopIteration value, emit yield, complete with value, drive sync iter/gen and Python/Koskari async) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). Delegate close / unwind for the `KOS_DYN_YIELD_FROM` node lives in `koskari/lib/dynchain/dyn_yield_from.c` (e.g. `kos_yieldfrom_close_delegate`, `kos_dyn_yieldfrom_unwind`). See `koskari/lib/opcode/README.md` for the opcode-fragment layout.
 - **See also**: [compile/yield-from](../specials/compile-yield-from.md)
 - **Covered by**: `tests/lib/opcode/test_yield_from.py` (sync/async delegates, Koskari async gen, send/throw/close, final values, type errors).
 
@@ -726,8 +717,7 @@ bottom to top matches push order).
 | 1     | CONST  | 1   | 1 (99)   | stack: [..., iterator or async iterator, default] |
 | 2     | OBJECT_NEXT | 2 | 2      | stack: [..., next_val] or [..., 99] if exhausted |
 
-### KOS_OP_VAR_NEXT {#kos_op_var_next}
-
+### KOS_OP_VAR_NEXT
 - **Style**: EXTRA (VAR, COUNT). Row = iterator name (pool), n (1 or 2).
 - **Status**: Implemented.
 - **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and run the shared step core (`object_next_step`) -- Koskari agen flatten, ambient async (a suspended python step rides the NEXT boundary), 1-arg raises StopIteration on exhaustion, 2-arg pops and delivers the default.
@@ -737,8 +727,7 @@ bottom to top matches push order).
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_next.py`
 
-### KOS_OP_FAST_NEXT {#kos_op_fast_next}
-
+### KOS_OP_FAST_NEXT
 - **Style**: EXTRA (FASTVAR, COUNT). Row = iterator slot, n (1 or 2).
 - **Status**: Implemented.
 - **Stack**: As VAR_NEXT, with the iterator loaded from its fast slot.
@@ -895,8 +884,7 @@ done:
 
 Check jumps: if the predicate does **not** hold, jump to the target label. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL)` row: `a0` is a KosCompare selector, `a1` the operand count (≥ 2), `a2` the target pc. It is variadic — the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), and the jump is taken when the chain fails. The extended selectors (IS, IS_NOT, IN, NOT_IN, IS_INSTANCE, IS_SUBCLASS) are strictly binary at this opcode. The remaining checks (exception, nil) take a single **LABEL** arg.
 
-### KOS_OP_CHECK_COMPARE {#kos_op_check_compare}
-
+### KOS_OP_CHECK_COMPARE
 - **Style**: EXTRA (CMP, COUNT, LABEL, NOARG). Row = KosCompare selector,
   operand count, target pc.
 - **Status**: Implemented.
@@ -921,8 +909,7 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
 
 ---
 
-### KOS_OP_CHECK_COMPARE_VAR {#kos_op_check_compare_var}
-
+### KOS_OP_CHECK_COMPARE_VAR
 - **Style**: EXTRA (CMPSRC, VAR, VAR, LABEL). Row = packed selector +
   source bits, two operand slots, target pc. A set source bit overrides
   that operand slot from its declared VAR kind to CONST (pool index).
@@ -945,8 +932,7 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
 
 ---
 
-### KOS_OP_CHECK_COMPARE_FAST {#kos_op_check_compare_fast}
-
+### KOS_OP_CHECK_COMPARE_FAST
 - **Style**: EXTRA (CMPSRC, FASTVAR, FASTVAR, LABEL). Row = packed selector +
   source bits, two operand slots, target pc. A set source bit overrides
   that operand slot from its declared FASTVAR kind to CONST (pool index).
@@ -1007,7 +993,7 @@ compare the scrutinee **`s`** at TOS to an RHS from the extra row. On
 the stack is **unchanged** and execution falls through.
 
 See [compile/switch](../specials/compile-switch.md) for the surface form and
-[Switch dispatch (§9.1)](families.md#91-switch-dispatch) for the opcode family.
+[Switch dispatch (§9.1)](#91-switch-dispatch) for the opcode family.
 
 ### KOS_OP_SWITCH_EQ
 
@@ -1151,8 +1137,7 @@ submodule; a root import passes a NULL fromlist to return the root package
 while still importing the full dotted chain (matching a plain Python
 `import foo.bar`).
 
-### KOS_OP_IMPORT {#kos_op_import}
-
+### KOS_OP_IMPORT
 - **Style**: EXTRA (`CONST`, `COUNT`, `COUNT`, `CONST`). Row: `a0` = cpool
   module name str (or None for a bare relative import), `a1` = level (leading
   dots; 0 = absolute), `a2` = leaf flag (0 = bind root, 1 = bind leaf), `a3` =
@@ -1182,8 +1167,7 @@ bind the leaf; relative `(import .foo)` uses `("foo", 1, 1, "foo")`.
 
 ---
 
-### KOS_OP_IMPORT_FROM {#kos_op_import_from}
-
+### KOS_OP_IMPORT_FROM
 - **Style**: EXTRA (`CONST`, `COUNT`, `CONST`, `CONST`). Row: `a0` = cpool
   module name str (or None), `a1` = level, `a2` = cpool tuple of attribute
   names, `a3` = cpool tuple of binding names (parallel to the attribute names;
@@ -1211,8 +1195,7 @@ bind `sep` as `s`. Extra row: `("os", 0, ("path", "sep"), ("path", "s"))`.
 
 ---
 
-### KOS_OP_IMPORT_STAR {#kos_op_import_star}
-
+### KOS_OP_IMPORT_STAR
 - **Style**: EXTRA (`CONST`, `COUNT`, `NOARG`, `NOARG`). Row: `a0` = cpool
   module name str (or None), `a1` = level.
 - **Status**: Implemented.
@@ -1238,8 +1221,7 @@ row: `("os.path", 0, 0, 0)`.
 | 1     | CONST       | 1   | 1 (None)            | statement value |
 | 2     | RETURN      | 1   | 1                   | |
 
-### KOS_OP_IMPORT_USE {#kos_op_import_use}
-
+### KOS_OP_IMPORT_USE
 - **Style**: EXTRA (`CONST`, `COUNT`, `CONST`, `CONST`). Row: `a0` = cpool
   module name str (or None), `a1` = level, `a2` = cpool tuple of feature
   stems, `a3` = cpool tuple of bind stems (parallel; the same tuple object
@@ -1378,8 +1360,7 @@ row: `("os.path", 0, 0, 0)`.
 
 ---
 
-### KOS_OP_VAR_TAKE {#kos_op_var_take}
-
+### KOS_OP_VAR_TAKE
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[...] → [..., value]`. Deref name, clear the binding, push the
@@ -1432,8 +1413,7 @@ row: `("os.path", 0, 0, 0)`.
 
 ---
 
-### KOS_OP_VAR_STORE_CONST {#kos_op_var_store_const}
-
+### KOS_OP_VAR_STORE_CONST
 - **Style**: EXTRA (VAR, CONST, NOARG, NOARG). Arg = extra-table index (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[...] → [...]` (no stack effect). **STORE**: store the constant value into the given name via `frame_ns_store`. Same semantics as **VAR_STORE**, but the value is taken from the constant pool (extra row field `a1`), not from TOS.
@@ -1461,34 +1441,29 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 - **Status**: Implemented.
 - **Compiler form:** Emitted by attr/del-attr/take-attr/set-attr specials when the object expression is a symbol (variable reference). May be lowered to FAST_ATTR_* when the name has a fixed slot.
 
-### KOS_OP_VAR_ATTR {#kos_op_var_attr}
-
+### KOS_OP_VAR_ATTR
 - **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
 - **Stack**: `[...] → [..., value]`. Get attribute on object held in namespace by name. Equivalent to ATTR but the object is loaded from the frame namespace, not from TOS.
 - **Implementation**: `koskari/lib/opcode/VAR_ATTR.c`
 
-### KOS_OP_VAR_ATTR_STORE {#kos_op_var_attr_store}
-
+### KOS_OP_VAR_ATTR_STORE
 - **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
 - **Stack**: `[..., value] → [...]`. Set attribute. Equivalent to ATTR_STORE with object from namespace.
 - **Implementation**: `koskari/lib/opcode/VAR_ATTR_STORE.c`
 
-### KOS_OP_VAR_ATTR_CLEAR {#kos_op_var_attr_clear}
-
+### KOS_OP_VAR_ATTR_CLEAR
 - **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
 - **Stack**: No stack effect. Delete attribute on object from namespace. Equivalent to ATTR_CLEAR with object from namespace.
 - **Implementation**: `koskari/lib/opcode/VAR_ATTR_CLEAR.c`
 
-### KOS_OP_VAR_ATTR_TAKE {#kos_op_var_attr_take}
-
+### KOS_OP_VAR_ATTR_TAKE
 - **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
 - **Stack**: `[...] → [..., value]`. Get attribute on object from namespace,
   delete it, push value.
 - **Compiler form:** Emitted by [compile/take-attr](../specials/compile-take-attr.md)
   when OBJ is a symbol. May lower to **FAST_ATTR_TAKE**.
 
-### KOS_OP_VAR_ATTR_REF {#kos_op_var_attr_ref}
-
+### KOS_OP_VAR_ATTR_REF
 - **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
 - **Stack**: `[...] → [..., attr_ref]`. Push attribute reference. Equivalent to ATTR_REF with object from namespace.
 - **Implementation**: `koskari/lib/opcode/VAR_ATTR_REF.c`
@@ -1547,8 +1522,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ---
 
-### KOS_OP_FAST_TAKE {#kos_op_fast_take}
-
+### KOS_OP_FAST_TAKE
 - **Style**: FASTVAR. Arg = fast local slot index.
 - **Status**: Implemented.
 - **Stack**: `[...] → [..., value]`. Take value from slot and clear it.
@@ -1598,8 +1572,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ---
 
-### KOS_OP_FAST_STORE_CONST {#kos_op_fast_store_const}
-
+### KOS_OP_FAST_STORE_CONST
 - **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG). Arg = extra-table index (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[...] → [...]` (no stack effect). **STORE**: store the constant value into the given fast slot via `KosNamespace_FastStore`. Same semantics as **FAST_STORE**, but the value is from the constant pool (extra row `a1`), not TOS.
@@ -1625,32 +1598,27 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 - **Status**: Implemented.
 - **Compiler form:** Emitted when VAR_ATTR_* is lowered (name has fixed slot).
 
-### KOS_OP_FAST_ATTR {#kos_op_fast_attr}
-
+### KOS_OP_FAST_ATTR
 - **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
 - **Stack**: `[...] → [..., value]`. Get attribute on object in fast slot. Equivalent to ATTR but object from slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ATTR.c`
 
-### KOS_OP_FAST_ATTR_STORE {#kos_op_fast_attr_store}
-
+### KOS_OP_FAST_ATTR_STORE
 - **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
 - **Stack**: `[..., value] → [...]`. Set attribute on object in fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ATTR_STORE.c`
 
-### KOS_OP_FAST_ATTR_CLEAR {#kos_op_fast_attr_clear}
-
+### KOS_OP_FAST_ATTR_CLEAR
 - **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
 - **Stack**: No stack effect. Delete attribute on object in fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ATTR_CLEAR.c`
 
-### KOS_OP_FAST_ATTR_TAKE {#kos_op_fast_attr_take}
-
+### KOS_OP_FAST_ATTR_TAKE
 - **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
 - **Stack**: `[...] → [..., value]`. Get attribute on object in fast slot,
   delete it, push value.
 
-### KOS_OP_FAST_ATTR_REF {#kos_op_fast_attr_ref}
-
+### KOS_OP_FAST_ATTR_REF
 - **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
 - **Stack**: `[...] → [..., attr_ref]`. Push attribute reference for object in fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ATTR_REF.c`
@@ -1708,8 +1676,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ---
 
-### KOS_OP_ATTR_TAKE {#kos_op_attr_take}
-
+### KOS_OP_ATTR_TAKE
 - **Style**: CONST. Arg = constant pool index of attribute name.
 - **Status**: Implemented.
 - **Stack**: `[..., obj] → [..., value]`. Get attribute, delete it, push value.
@@ -1795,8 +1762,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ---
 
-### KOS_OP_ITEM_TAKE {#kos_op_item_take}
-
+### KOS_OP_ITEM_TAKE
 - **Style**: NOARG. Key from stack.
 - **Status**: Implemented.
 - **Stack**: `[..., obj, key] → [..., value]`. Get item, delete it, push value.
@@ -1880,8 +1846,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ---
 
-### KOS_OP_CONST_ITEM_TAKE {#kos_op_const_item_take}
-
+### KOS_OP_CONST_ITEM_TAKE
 - **Style**: CONST. Arg = constant pool index of key.
 - **Status**: Implemented.
 - **Stack**: `[..., obj] → [..., value]`. Get item with constant key, delete
@@ -2011,8 +1976,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_NAMES {#kos_op_call_names}
-
+### KOS_OP_CALL_NAMES
 - **Style**: COUNT. Arg = N (number of positional arguments).
 - **Status**: Implemented.
 - **Stack**: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple] → [..., result]`. TOS = names_tuple (tuple of M keyword names); below it the M keyword values in the same order as names; below that the N positional args; then callable. TailPtr for callable + args + kwnames; validate names tuple; kos_callable_vcall; DropNoErr. No tuple or dict allocation.
@@ -2031,8 +1995,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_STAR {#kos_op_call_star}
-
+### KOS_OP_CALL_STAR
 - **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
 - **Status**: Implemented.
 - **Stack**: `[..., callable, pos, kwd]` with kwd at TOS. pos = *args (tuple or iterable); kwd = **kwargs (dict). Pop per opa: both (opa & 3 == 3): pop 3; **kwargs only (opa & 2): pop 2, pos = (); *args only (opa & 1): pop 2, kwd = NULL; neither: pop 1, pos = (), kwd = NULL. Ensure pos is tuple (PySequence_Tuple if needed). Call via kos_callable_call(ctx, out_ev, callable, pos, kwd).
@@ -2050,8 +2013,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_VAR {#kos_op_call_var}
-
+### KOS_OP_CALL_VAR
 - **Style**: EXTRA. Schema: VAR (name cpool idx), COUNT (npos), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: `[..., pos_0, ..., pos_{N-1}] → [..., result]`. Callable is loaded from frame namespace by name (`frame_ns_deref`); not on stack. KosCallable: steal args then KosContext_Call. Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr.
@@ -2059,8 +2021,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_FAST {#kos_op_call_fast}
-
+### KOS_OP_CALL_FAST
 - **Style**: EXTRA. Schema: FASTVAR (slot index), COUNT (npos), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: Same as CALL_VAR. Callable is loaded from fast local slot via `KosNamespace_FastDeref`; not on stack.
@@ -2068,8 +2029,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_VAR_NAMES {#kos_op_call_var_names}
-
+### KOS_OP_CALL_VAR_NAMES
 - **Style**: EXTRA. Schema: VAR (name cpool idx), CONST (kw names tuple cpool idx), COUNT (npos), NOARG.
 - **Status**: Implemented.
 - **Stack**: `[..., pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Callable from namespace by name; kw names tuple from constant pool. Same call semantics as CALL_NAMES.
@@ -2077,8 +2037,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_FAST_NAMES {#kos_op_call_fast_names}
-
+### KOS_OP_CALL_FAST_NAMES
 - **Style**: EXTRA. Schema: FASTVAR (slot index), CONST (kw names tuple cpool idx), COUNT (npos), NOARG.
 - **Status**: Implemented.
 - **Stack**: Same as CALL_VAR_NAMES. Callable from fast slot via `KosNamespace_FastDeref`.
@@ -2086,8 +2045,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_VAR_STAR {#kos_op_call_var_star}
-
+### KOS_OP_CALL_VAR_STAR
 - **Style**: EXTRA. Schema: VAR (name cpool idx), STAR (bitflags: 1 = *args, 2 = **kwargs), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: Same as CALL_STAR minus callable. `[..., pos, kwd]` or subsets per flags. Callable from namespace by name. Pop per flags, ensure pos is tuple, call via KosContext_CallArgs.
@@ -2095,8 +2053,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_FAST_STAR {#kos_op_call_fast_star}
-
+### KOS_OP_CALL_FAST_STAR
 - **Style**: EXTRA. Schema: FASTVAR (slot index), STAR (bitflags), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: Same as CALL_VAR_STAR. Callable from fast slot via `KosNamespace_FastDeref`.
@@ -2104,8 +2061,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_ATTR {#kos_op_call_attr}
-
+### KOS_OP_CALL_ATTR
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (npos), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: `[..., obj, arg_0, ..., arg_{N-1}] → [..., result]`. Attr name from constant pool (EXTRA row). Resolve `obj.name` via `kos_resolve_named_attr`; then invoke. Unbound class method (plain PyFunction/KosFunction from MRO): call `fn(obj, *args)`. Bound or instance-dict callable: call `callable(*args)`. Resolver return: -1 err, 0 = send self, 1 = omit self.
@@ -2143,8 +2099,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_ATTR_NAMES {#kos_op_call_attr_names}
-
+### KOS_OP_CALL_ATTR_NAMES
 - **Style**: EXTRA. Schema: CONST (attr name), CONST (kwarg names tuple), COUNT (npos), NOARG.
 - **Status**: Implemented.
 - **Stack**: `[..., obj, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Resolve `obj.name` via `kos_resolve_named_attr`; then call like CALL_NAMES. The kwarg names tuple and attr name are in the constant pool (EXTRA row), not on the stack.
@@ -2152,8 +2107,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_FAST_ATTR {#kos_op_call_fast_attr}
-
+### KOS_OP_CALL_FAST_ATTR
 - **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (npos), NOARG.
 - **Status**: Implemented.
 - **Stack**: `[..., arg_0, ..., arg_{N-1}] → [..., result]`. Same resolution and invocation rules as [`KOS_OP_CALL_ATTR`](#kos_op_call_attr), but `obj` is **not** on the stack: it is loaded from the current frame namespace via `KosNamespace_FastDeref` (slot `a0`). Requires a namespace that supports fast locals (`KosNamespace_SupportsFast`). When `send_self=0` (unbound method), uses `KosStackSteal_TailPrepend` to prepend `obj` to the stolen args; when `send_self=1`, uses `KosStackSteal_Tail` for `N` args only.
@@ -2162,8 +2116,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_VAR_ATTR {#kos_op_call_var_attr}
-
+### KOS_OP_CALL_VAR_ATTR
 - **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), CONST (attr name), COUNT (npos), NOARG.
 - **Status**: Implemented.
 - **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is obtained with `frame_ns_deref(ctx, var_name)` (owned reference); the handler balances refcounts with `Py_DECREF(obj)` on exit paths.
@@ -2172,8 +2125,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_FAST_ATTR_NAMES {#kos_op_call_fast_attr_names}
-
+### KOS_OP_CALL_FAST_ATTR_NAMES
 - **Style**: EXTRA. Schema: FASTVAR (slot index for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
 - **Status**: Implemented.
 - **Stack**: `[..., pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Obj is loaded from fast slot `a0` via `KosNamespace_FastDeref`; not on stack. One fewer element than CALL_ATTR_NAMES. Resolve and call like CALL_ATTR_NAMES. When `send_self=0` (unbound method), uses `KosStackSteal_TailPrepend` to prepend obj to args; when `send_self=1`, uses `KosStackSteal_Tail`.
@@ -2181,8 +2133,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_VAR_ATTR_NAMES {#kos_op_call_var_attr_names}
-
+### KOS_OP_CALL_VAR_ATTR_NAMES
 - **Style**: EXTRA. Schema: VAR (name/cpool for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
 - **Status**: Implemented.
 - **Stack**: Same as CALL_FAST_ATTR_NAMES. Obj is loaded from frame namespace by name (`frame_ns_deref`) instead of fast slot.
@@ -2190,8 +2141,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_ATTR_STAR {#kos_op_call_attr_star}
-
+### KOS_OP_CALL_ATTR_STAR
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: `obj.name(*args, **kwargs)`. Stack layout per opa flags (bottom … TOS): opa=0 → `[obj]`; opa=1 → `[obj, pos]` (pos = *args); opa=2 → `[obj, kwd]` (kwd = **kwargs); opa=3 → `[obj, pos, kwd]`. Pop in reverse order (kwd then pos then obj when both star forms are present). `pos` is ensured to be a tuple (coerced via PySequence_Tuple if needed). Resolve obj.name via `kos_resolve_named_attr`; when `send_self=0`, prepend `obj` to the positional tuple before the call. Call via `KosContext_CallArgs`.
@@ -2199,8 +2149,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_VAR_ATTR_STAR {#kos_op_call_var_attr_star}
-
+### KOS_OP_CALL_VAR_ATTR_STAR
 - **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG.
 - **Status**: Implemented.
 - **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is loaded with `frame_ns_deref(ctx, var_name)` (owned reference; handler decrements on exit paths). Stack layout per opa (bottom … TOS): opa=0 → `[]`; opa=1 → `[pos]`; opa=2 → `[kwd]`; opa=3 → `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; resolve via `kos_resolve_named_attr`, prepend `obj` to tuple args when `send_self=0`, call via `KosContext_CallArgs`.
@@ -2210,8 +2159,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_CALL_FAST_ATTR_STAR {#kos_op_call_fast_attr_star}
-
+### KOS_OP_CALL_FAST_ATTR_STAR
 - **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (opa bitflags), NOARG.
 - **Status**: Implemented.
 - **Stack**: Same stack layout and `opa` behavior as [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star). `obj` comes from `KosNamespace_FastDeref(ns, slot)` (slot `a0`); requires `KosNamespace_SupportsFast`. Pop/resolve/call semantics match CALL_ATTR_STAR. Same refcount convention as [`KOS_OP_CALL_FAST_ATTR`](#kos_op_call_fast_attr): no `Py_DECREF(obj)` on control paths (contrast [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star)).
@@ -2239,24 +2187,21 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_NAMES {#kos_op_tail_call_names}
-
+### KOS_OP_TAIL_CALL_NAMES
 - **Style**: COUNT. Arg = N (number of positional arguments).
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_NAMES: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple]`. Extracts via PopTailPtr (small) or PopTail (large); opcode owns storage, DECREFs at end. KosCallable: kos_callable_tail_vcall. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Vectorcall, kos_push_or_await. Returns **`EVAL_CONTROL_RETURNED()`** when continuing.
 
 ---
 
-### KOS_OP_TAIL_CALL_STAR {#kos_op_tail_call_star}
-
+### KOS_OP_TAIL_CALL_STAR
 - **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and ensure_tuple as CALL_STAR. KosCallable: kos_callable_tail_call. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Call, kos_push_or_await. Returns **`EVAL_CONTROL_RETURNED()`** when continuing. Same replace-frame semantics as TAIL_CALL.
 
 ---
 
-### KOS_OP_TAIL_CALL_ATTR {#kos_op_tail_call_attr}
-
+### KOS_OP_TAIL_CALL_ATTR
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (npos), NOARG, NOARG. One cache slot (attr resolution).
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_ATTR: `[..., obj, arg_0, ..., arg_{N-1}]`. Resolve `obj.name` via `kos_resolve_named_attr`, then call in tail position: the caller's frame is reused rather than a new frame pushed (`KOS_CALL_TAIL` through `kos_call_invoke`; an exact non-yielding KosFunction takes the bind-before-reset subpath, every other callable class spills and keeps `KosEvalState_Call`'s tail semantics).
@@ -2264,8 +2209,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_ATTR_NAMES {#kos_op_tail_call_attr_names}
-
+### KOS_OP_TAIL_CALL_ATTR_NAMES
 - **Style**: EXTRA. Schema: CONST (attr name), CONST (kwarg names tuple), COUNT (npos), NOARG. One cache slot.
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
@@ -2273,8 +2217,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_ATTR_STAR {#kos_op_tail_call_attr_star}
-
+### KOS_OP_TAIL_CALL_ATTR_STAR
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG. One cache slot.
 - **Status**: Implemented.
 - **Stack**: Same layout and pop order as CALL_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
@@ -2282,8 +2225,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_VAR {#kos_op_tail_call_var}
-
+### KOS_OP_TAIL_CALL_VAR
 - **Style**: EXTRA. Schema: VAR (name cpool idx), COUNT (npos), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_VAR: `[..., pos_0, ..., pos_{N-1}]`; the callable is loaded from the frame namespace by name, not on the stack. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
@@ -2291,8 +2233,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_VAR_NAMES {#kos_op_tail_call_var_names}
-
+### KOS_OP_TAIL_CALL_VAR_NAMES
 - **Style**: EXTRA. Schema: VAR (name), CONST (kwarg names tuple), COUNT (npos).
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_VAR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
@@ -2300,8 +2241,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_VAR_STAR {#kos_op_tail_call_var_star}
-
+### KOS_OP_TAIL_CALL_VAR_STAR
 - **Style**: EXTRA. Schema: VAR (name), STAR (bitflags), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: Same layout and pop order as CALL_VAR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
@@ -2309,8 +2249,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_VAR_ATTR {#kos_op_tail_call_var_attr}
-
+### KOS_OP_TAIL_CALL_VAR_ATTR
 - **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), COUNT (npos), NOARG. One cache slot.
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_VAR_ATTR: args only; obj is loaded from the frame namespace by name (owned deref, released on every path). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
@@ -2318,8 +2257,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_VAR_ATTR_NAMES {#kos_op_tail_call_var_attr_names}
-
+### KOS_OP_TAIL_CALL_VAR_ATTR_NAMES
 - **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos). One cache slot.
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_VAR_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
@@ -2327,8 +2265,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_VAR_ATTR_STAR {#kos_op_tail_call_var_attr_star}
-
+### KOS_OP_TAIL_CALL_VAR_ATTR_STAR
 - **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), COUNT (opa bitflags), NOARG. One cache slot.
 - **Status**: Implemented.
 - **Stack**: Same layout and pop order as CALL_VAR_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
@@ -2336,8 +2273,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_FAST {#kos_op_tail_call_fast}
-
+### KOS_OP_TAIL_CALL_FAST
 - **Style**: EXTRA. Schema: FASTVAR (slot index), COUNT (npos), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_FAST; the callable is loaded from the fast local slot (owned deref). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
@@ -2345,8 +2281,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_FAST_NAMES {#kos_op_tail_call_fast_names}
-
+### KOS_OP_TAIL_CALL_FAST_NAMES
 - **Style**: EXTRA. Schema: FASTVAR (slot), CONST (kwarg names tuple), COUNT (npos).
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_FAST_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
@@ -2354,8 +2289,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_FAST_STAR {#kos_op_tail_call_fast_star}
-
+### KOS_OP_TAIL_CALL_FAST_STAR
 - **Style**: EXTRA. Schema: FASTVAR (slot), STAR (bitflags), NOARG, NOARG.
 - **Status**: Implemented.
 - **Stack**: Same layout and pop order as CALL_FAST_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
@@ -2363,8 +2297,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_FAST_ATTR {#kos_op_tail_call_fast_attr}
-
+### KOS_OP_TAIL_CALL_FAST_ATTR
 - **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), COUNT (npos), NOARG. One cache slot.
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_FAST_ATTR: args only; obj is loaded from the fast local slot (owned deref, released on every path). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
@@ -2372,8 +2305,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_FAST_ATTR_NAMES {#kos_op_tail_call_fast_attr_names}
-
+### KOS_OP_TAIL_CALL_FAST_ATTR_NAMES
 - **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos). One cache slot.
 - **Status**: Implemented.
 - **Stack**: Same layout as CALL_FAST_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
@@ -2381,8 +2313,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ---
 
-### KOS_OP_TAIL_CALL_FAST_ATTR_STAR {#kos_op_tail_call_fast_attr_star}
-
+### KOS_OP_TAIL_CALL_FAST_ATTR_STAR
 - **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), COUNT (opa bitflags), NOARG. One cache slot.
 - **Status**: Implemented.
 - **Stack**: Same layout and pop order as CALL_FAST_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
@@ -2419,8 +2350,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 Context managers (`with` / `dyn-with`) at the language level: [with](../specials/with.md), [dyn-with](../specials/dyn-with.md). Summary below.
 
-### KOS_OP_PUSH_WITH {#kos_op_push_with}
-
+### KOS_OP_PUSH_WITH
 - **Style**: CONST. Arg = constant pool index of binding name (symbol/string) or sentinel for no binding.
 - **Status**: Implemented (single-shot with; sync and async __enter__/__exit__; VM auto-awaits when enter returns awaitable).
 - **Stack before:** `[..., mgr]`. **Stack after:** body runs in a fresh operand segment.
@@ -2428,21 +2358,18 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 - **Pushes:** KOS_DYN_WITH (single-shot; transfer barrier). Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
 - **Invariants:** Node owns one operand segment; stack restoration is structural (segment pop), not height-mark. A WITH extent must exist at the PUSH_WITH PC; otherwise RuntimeError.
 
-### KOS_OP_POP_WITH {#kos_op_pop_with}
-
+### KOS_OP_POP_WITH
 - **Style**: NOARG (argument unused in current `opcodes.incl`).
 - **Status**: Implemented (sync and async exit; VM auto-awaits when exit returns awaitable).
 - **Behaviour:** Call exit (no-exception form); auto-await if needed; pop the owned segment; pop dyn node; push `None`. When exit returns an awaitable: step via `kos_with_exit_start_await`; on sync completion (r==0) call `kos_complete_pending_with_exit` to consume the exit result and push `None`; on suspend returns **`EVAL_AWAIT(awaitable)`**; on resume, revive calls `kos_complete_pending_with_exit` so the with-expression value is always `None` (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
 - **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is always `None`; exit return is used only for swallow logic and is never the value seen by RETURN.
-### KOS_OP_PUSH_DYN_WITH {#kos_op_push_dyn_with}
-
+### KOS_OP_PUSH_DYN_WITH
 - **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
 - **Status**: Implemented (multi-shot dyn-with; sync and async enter/exit; VM auto-awaits when enter returns awaitable).
 - **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. Node participates in continuation transfer plans (wind/unwind on non-local transfer).
 - **Pushes:** KOS_DYN_DYN_WITH.
 
-### KOS_OP_POP_DYN_WITH {#kos_op_pop_dyn_with}
-
+### KOS_OP_POP_DYN_WITH
 - **Style**: NOARG.
 - **Status**: Implemented (sync and async exit; VM auto-awaits when exit returns awaitable).
 - **Behaviour:** Same as POP_WITH for normal and exception unwind. Pops KOS_DYN_DYN_WITH.
@@ -2582,8 +2509,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ---
 
-### KOS_OP_CLEAR_FINALLY {#kos_op_clear_finally}
-
+### KOS_OP_CLEAR_FINALLY
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: No stack effect. Clears FINALLY region state on non-local exit; does not pop the region (POP_FINALLY does at target). Does not touch the segment (only disables the region); the segment is dropped by POP_FINALLY or unwind.
@@ -2591,8 +2517,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ---
 
-### KOS_OP_CLEAR_LOOP {#kos_op_clear_loop}
-
+### KOS_OP_CLEAR_LOOP
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: No stack effect. Disables the top LOOP region (sets `enabled` to 0) and clears the loop segment. Used on normal exit from a while-loop body (before POP_LOOP), or on iterator exhaustion in patterns that only use LOOP extents.
@@ -2602,8 +2527,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ---
 
-### KOS_OP_CLEAR_FOREACH {#kos_op_clear_foreach}
-
+### KOS_OP_CLEAR_FOREACH
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: No stack effect. Disables the top FOREACH region (sets `enabled` to 0) and clears the loop segment. Used when a for-each iterator is exhausted naturally (before POP_FOREACH).
@@ -2612,8 +2536,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ---
 
-### KOS_OP_CLEAR_TRY {#kos_op_clear_try}
-
+### KOS_OP_CLEAR_TRY
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: No stack effect. Clears TRY region state on non-local exit; does not touch the segment; POP_TRY drops the segment at the target.
@@ -2621,8 +2544,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ---
 
-### KOS_OP_POP_TRY {#kos_op_pop_try}
-
+### KOS_OP_POP_TRY
 - **Style**: NOARG. Argument unused (or 0).
 - **Status**: Implemented.
 - **Stack**: Promote one value: pop TOS from the try segment, pop the region (dropping its segment), and push the value onto the revealed segment. The segment must hold exactly one value. Clear exception state before pop.
@@ -2630,8 +2552,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ---
 
-### KOS_OP_POP_FINALLY {#kos_op_pop_finally}
-
+### KOS_OP_POP_FINALLY
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: Same structural behaviour as POP_TRY for the finally segment: promote one value, drop the segment, pop the region.
@@ -2639,8 +2560,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ---
 
-### KOS_OP_POP_LOOP {#kos_op_pop_loop}
-
+### KOS_OP_POP_LOOP
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: Drop the region's segment (no promotion); pop LOOP region; push loop result from the region (stored on the region, not from the block).
@@ -2649,8 +2569,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ---
 
-### KOS_OP_POP_FOREACH {#kos_op_pop_foreach}
-
+### KOS_OP_POP_FOREACH
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: Drop the region's segment (no promotion); pop FOREACH region; push loop result from the region (stored on the region, not from the block). When no BREAK or CONTINUE set a result, push `None`.
@@ -2659,8 +2578,7 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 
 ---
 
-### KOS_OP_POP_NS {#kos_op_pop_ns}
-
+### KOS_OP_POP_NS
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Stack**: Pop the NS node; the revealed node's namespace becomes active, and any values remaining on the NS node's segment are delivered onto the revealed segment.
@@ -2686,8 +2604,7 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 
 Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
-### KOS_OP_OBJECT_COMPARE {#kos_op_object_compare}
-
+### KOS_OP_OBJECT_COMPARE
 - **Style**: CMPCOUNT. Arg packs a KosCompare selector (high byte) with
   the reducing count (low byte).
 - **Status**: Implemented.
@@ -2703,8 +2620,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   at normalize. When immediately followed by `JUMP_FALSE`, `compress`
   fuses the pair into [CHECK_COMPARE](#kos_op_check_compare).
 
-### KOS_OP_OBJECT_COMPARE_VAR {#kos_op_object_compare_var}
-
+### KOS_OP_OBJECT_COMPARE_VAR
 - **Style**: EXTRA (CMP, CONST, VAR, CONST). Row = bare selector, low
   bound (pool), middle operand, high bound (pool). Schema-static slots:
   no source bits, the shape is the opcode.
@@ -2729,8 +2645,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 ---
 
-### KOS_OP_OBJECT_COMPARE_FAST {#kos_op_object_compare_fast}
-
+### KOS_OP_OBJECT_COMPARE_FAST
 - **Style**: EXTRA (CMP, CONST, FASTVAR, CONST). Row = bare selector, low
   bound (pool), middle operand, high bound (pool). Schema-static slots:
   no source bits, the shape is the opcode.
@@ -2755,37 +2670,32 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 ---
 
-### KOS_OP_OBJECT_BIT_INVERT {#kos_op_object_bit_invert}
-
+### KOS_OP_OBJECT_BIT_INVERT
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_BIT_INVERT.c`
 
-### KOS_OP_OBJECT_DIR {#kos_op_object_dir}
-
+### KOS_OP_OBJECT_DIR
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_DIR.c`
 
-### KOS_OP_OBJECT_DIVMOD {#kos_op_object_divmod}
-
+### KOS_OP_OBJECT_DIVMOD
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_DIVMOD.c`
 
-### KOS_OP_OBJECT_ITER {#kos_op_object_iter}
-
+### KOS_OP_OBJECT_ITER
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: Uniform iterator acquisition over both protocols (shared with PUSH_FOREACH via `kos_iter_acquire`): a Koskari AsyncGenerator passes through as itself (native, never demand-wrapped), an object with `am_aiter` yields its async iterator, otherwise the sync protocol (`PyObject_GetIter`, including the sequence fallback). See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_ITER.c`
 
 
-### KOS_OP_VAR_ITER {#kos_op_var_iter}
-
+### KOS_OP_VAR_ITER
 - **Style**: VAR. Arg = constant index of a name.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., iterator]`. Fused VAR + OBJECT_ITER: resolve the name in the current frame's namespace and push its iterator, acquired uniformly over both protocols (`kos_iter_acquire`).
@@ -2794,8 +2704,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_unary.py`
 
-### KOS_OP_FAST_ITER {#kos_op_fast_iter}
-
+### KOS_OP_FAST_ITER
 - **Style**: FASTVAR. Arg = slot index.
 - **Status**: Implemented.
 - **Stack**: As VAR_ITER, with the iterable loaded from its fast slot.
@@ -2804,36 +2713,31 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_unary.py`
 
-### KOS_OP_OBJECT_LEN {#kos_op_object_len}
-
+### KOS_OP_OBJECT_LEN
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_LEN.c`
 
-### KOS_OP_OBJECT_NOT {#kos_op_object_not}
-
+### KOS_OP_OBJECT_NOT
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_NOT.c`
 
-### KOS_OP_OBJECT_REPR {#kos_op_object_repr}
-
+### KOS_OP_OBJECT_REPR
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_REPR.c`
 
-### KOS_OP_OBJECT_STR {#kos_op_object_str}
-
+### KOS_OP_OBJECT_STR
 - **Style**: COUNT.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_STR.c`
 
-### KOS_OP_OBJECT_FORMAT {#kos_op_object_format}
-
+### KOS_OP_OBJECT_FORMAT
 - **Style**: COUNT.
 - **Status**: Implemented.
 - **Semantics**: format operation. Arg must be 1 or 2.
@@ -2842,8 +2746,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   Stack effect: `[..., obj] -> [..., str]` or `[..., obj, rules] -> [..., str]`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_FORMAT.c`
 
-### KOS_OP_OBJECT_FORMAT_CONST {#kos_op_object_format_const}
-
+### KOS_OP_OBJECT_FORMAT_CONST
 - **Style**: CONST.
 - **Status**: Implemented.
 - **Semantics**: format operation with constant rules from cpool.
@@ -2852,54 +2755,47 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   Stack effect: `[..., obj] -> [..., str]`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_FORMAT_CONST.c`
 
-### KOS_OP_VAR_FORMAT {#kos_op_var_format}
-
+### KOS_OP_VAR_FORMAT
 - **Style**: VAR. Arg = constant index of a name.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT (arg=1): resolve the name in the current frame's namespace and push `PyObject_Format(obj, NULL)`.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_FORMAT (arg=1) is fed by a bare VAR load. Lowers to FAST_FORMAT through the simple `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_FORMAT.c`
 
-### KOS_OP_VAR_FORMAT_CONST {#kos_op_var_format_const}
-
+### KOS_OP_VAR_FORMAT_CONST
 - **Style**: EXTRA (VAR, CONST). Row = obj name (pool), rules string (pool).
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT_CONST: resolve the name in the current frame's namespace and push `PyObject_Format(obj, rules)`.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_FORMAT_CONST is fed by a bare VAR load. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_FORMAT_CONST.c`
 
-### KOS_OP_FAST_FORMAT {#kos_op_fast_format}
-
+### KOS_OP_FAST_FORMAT
 - **Style**: FASTVAR. Arg = slot index.
 - **Status**: Implemented.
 - **Stack**: As VAR_FORMAT, with the object loaded from its fast slot.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_FORMAT when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT.c`
 
-### KOS_OP_FAST_FORMAT_CONST {#kos_op_fast_format_const}
-
+### KOS_OP_FAST_FORMAT_CONST
 - **Style**: EXTRA (FASTVAR, CONST). Row = obj slot, rules string (pool).
 - **Status**: Implemented.
 - **Stack**: As VAR_FORMAT_CONST, with the object loaded from its fast slot.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of VAR_FORMAT_CONST when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT_CONST.c`
 
-### KOS_OP_OBJECT_TRUTH {#kos_op_object_truth}
-
+### KOS_OP_OBJECT_TRUTH
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_TRUTH.c`
 
-### KOS_OP_OBJECT_TYPE {#kos_op_object_type}
-
+### KOS_OP_OBJECT_TYPE
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_TYPE.c`
 
-### KOS_OP_OBJECT_VARS {#kos_op_object_vars}
-
+### KOS_OP_OBJECT_VARS
 - **Style**: NOARG.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.

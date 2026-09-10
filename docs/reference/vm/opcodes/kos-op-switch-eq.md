@@ -2,7 +2,7 @@
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
 - **Stack**: `[..., left, right]` (right = TOS). Compares `left == right` with
-  the same equality semantics as [CHECK_EQ](#kos_op_check_eq)
+  the same equality semantics as [CHECK_EQ](kos-op-check-compare.md)
   (`PyObject_RichCompareBool` with `Py_EQ`).
   - **Match**: pop both operands; `pc = arg`. Stack after: `[...]`.
   - **Mismatch**: pop `right` only; fall through. Stack after: `[..., left]`.

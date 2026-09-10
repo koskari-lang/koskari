@@ -19,7 +19,7 @@ POP_WITH. PUSH_WITH looks up the WITH extent at its PC and stores
 The expression value is always `None`. Both sync and async context managers
 are supported (VM auto-awaits enter/exit when they return awaitables). See
 [dyn-with](dyn-with.md) for the multi-shot variant and
-[PUSH_WITH / POP_WITH](../vm/index.md#kos_op_push_with) in the VM reference.
+[PUSH_WITH / POP_WITH](../vm/opcodes/kos-op-push-with.md) in the VM reference.
 
 
 **Examples:**

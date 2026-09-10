@@ -36,5 +36,5 @@ compare the scrutinee **`s`** at TOS to an RHS from the extra row. On
 the stack is **unchanged** and execution falls through.
 
 See [compile/switch](../../specials/compile-switch.md) for the surface form and
-[Switch dispatch (§9.1)](../families.md#91-switch-dispatch) for the opcode family.
+[Switch dispatch (§9.1)](../index.md#91-switch-dispatch) for the opcode family.
 
