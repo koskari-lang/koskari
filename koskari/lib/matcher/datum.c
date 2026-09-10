@@ -48,12 +48,14 @@ static PyObject *datum_iter_iternext(PyObject *self) {
   if (! pos)
     pos = Py_None;
 
+  /* the cell owns elem and pos; hold them before the cell can go */
+  Py_INCREF(elem);
+  Py_INCREF(pos);
+
   it->current = KosPair_CDR(cell);
   Py_INCREF(it->current);
   Py_DECREF(cell);
 
-  Py_INCREF(elem);
-  Py_INCREF(pos);
   Py_INCREF(it->binding);
   PyObject *out = kos_datum_new(
       elem, pos, it->binding, it->from_datum);

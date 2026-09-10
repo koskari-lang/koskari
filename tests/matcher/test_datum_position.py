@@ -21,6 +21,7 @@ Tests that KosPair spine-cell positions propagate into Datum captures
 
 
 import unittest
+import weakref
 
 import pytest
 
@@ -140,6 +141,41 @@ class TestDatumFrameConstruction(unittest.TestCase):
         self.assertIsNone(frame.source)
         self.assertIsNone(frame.position)
         self.assertIsNone(DatumFrame(frame).position)
+
+
+class Elem:
+    pass
+
+
+class TestDatumIteration(unittest.TestCase):
+    """
+    Iterating a Datum over a pair spine keeps each car alive when the
+    iterator is the only holder of the spine
+    """
+
+    def test_car_survives_when_iterator_owns_the_spine(self):
+        first = Elem()
+        second = Elem()
+        alive_first = weakref.ref(first)
+        alive_second = weakref.ref(second)
+
+        it = iter(Datum(cons(first, second, nil)))
+        del first, second
+
+        got = next(it)
+        self.assertIsNotNone(alive_first())
+        self.assertIs(got.datum, alive_first())
+
+        got = next(it)
+        self.assertIsNotNone(alive_second())
+        self.assertIs(got.datum, alive_second())
+
+        with self.assertRaises(StopIteration):
+            next(it)
+
+    def test_iteration_yields_every_element_in_order(self):
+        out = [d.datum for d in Datum(cons(1, 2, 3, nil))]
+        self.assertEqual([1, 2, 3], out)
 
 
 # The end.
