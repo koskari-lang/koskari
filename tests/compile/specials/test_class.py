@@ -53,6 +53,50 @@ class TestClassEmpty(SpecialsTestCase):
         self.assertIsInstance(c, result)
 
 
+class TestClassBodyRefs(SpecialsTestCase):
+
+    async def test_ref_in_body_resolves_past_the_body(self):
+        """
+        refq inside a class body reaches the enclosing binding even when
+        the body declares the same name, and the body's own binding still
+        becomes the class attribute
+        """
+
+        src_str = """
+        (begin
+          (define outer 5)
+          (define x 9)
+          (define C
+            (class C ()
+              (define x 1)
+              (define r (refq outer))
+              (define s (refq x))))
+          #[(attr C x) (deref (attr C r)) (deref (attr C s))])
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, [1, 5, 9])
+
+    async def test_ref_in_body_reaches_the_module_not_the_body(self):
+        """
+        With no enclosing binding but a module in the chain, refq in a
+        body yields the module's cell for the name, which the body's
+        own binding leaves empty
+        """
+
+        src_str = """
+        (begin
+          (define C
+            (class C ()
+              (define y 1)
+              (define r (refq y))))
+          #[(attr C y) (attr (attr C r) empty)])
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, [1, True])
+
+
 class TestClassQualname(SpecialsTestCase):
 
     async def test_class_has_qualname_from_form_name(self):

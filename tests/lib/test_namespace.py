@@ -896,6 +896,50 @@ class TestCollectorNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dict(cn), {'foo': 1})
 
 
+    async def test_ref_falls_through_past_body_declaration(self):
+        """
+        A ref request on a collector resolves from its parent; the body's
+        own declaration of the name neither answers nor shadows it, and
+        the body's binding still reaches the class dict
+        """
+
+        pn = Namespace("pn", None, ('x',), ())
+        pn['x'] = 5
+
+        cn = CollectorNamespace("cn", pn, ('x',), ())
+        cn['x'] = 1
+
+        self.assertIs(cn.ref('x'), pn.ref('x'))
+        self.assertEqual(cn['x'], 1)
+        self.assertEqual(dict(cn), {'x': 1})
+
+
+    async def test_ref_with_no_enclosing_binding_raises(self):
+        """
+        A ref request for a name only the body declares has nothing to
+        fall through to
+        """
+
+        cn = CollectorNamespace("cn", None, ('y',), ())
+        cn['y'] = 1
+
+        with self.assertRaises(NameError):
+            cn.ref('y')
+        self.assertEqual(dict(cn), {'y': 1})
+
+
+    async def test_class_cell_ref_is_the_collectors_own(self):
+        """
+        __class__ is the one body cell that outlives the body, and a ref
+        request for it answers from the collector
+        """
+
+        cn = CollectorNamespace("cn", None, ('__class__',), ())
+        cn['__class__'] = 'k'
+
+        self.assertEqual(cn.ref('__class__').deref(), 'k')
+
+
 class TestModule(unittest.IsolatedAsyncioTestCase):
     """Tests for the Module type"""
 

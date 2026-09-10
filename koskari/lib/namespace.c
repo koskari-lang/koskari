@@ -662,9 +662,21 @@ static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
    explicit ref forms, attribute stores); value reads and membership
    tests go through KosNamespace_REF, which never creates. */
 static PyObject *ns_claim_ref(PyObject *namespace, PyObject *key) {
-  if (KosNamespace_CheckExact(namespace) ||
-      KosCollectorNamespace_CheckExact(namespace)) {
+  if (KosNamespace_CheckExact(namespace)) {
     return ns_borrow_ref(namespace, key);
+
+  } else if (KosCollectorNamespace_CheckExact(namespace)) {
+    /* A class body's bindings are values the class dict copies out;
+       the cells themselves die with the body, so a Ref to one would be
+       false. A ref request falls through to the enclosing scope, which
+       the body's own declarations never shadow. __class__ is the one
+       cell that outlives the body (see KosNamespace_FindRef). */
+    if (PyUnicode_Equal(key, str_class_name))
+      return ns_borrow_ref(namespace, key);
+    PyObject *found = NULL;
+    if (KosNamespace_FindRef(KosNamespace_PARENT(namespace), key, &found) < 0)
+      return NULL;
+    return found;
 
   } else if (KosModuleNamespace_CheckExact(namespace)) {
     return mdl_ns_borrow_ref(namespace, key);
@@ -2376,6 +2388,17 @@ PyObject *KosNamespace_FastRef(PyObject *namespace, size_t index) {
     PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %zu",
                  index);
     return NULL;
+  }
+
+  /* a class body's slots are not ref targets; the request resolves by
+     name under the collector rule in ns_claim_ref */
+  if (KosCollectorNamespace_CheckExact(namespace)) {
+    PyObject *name = PyTuple_GET_ITEM(KosNamespace_FAST_NAMES(namespace),
+                                      (Py_ssize_t) index);
+    PyObject *ref = ns_claim_ref(namespace, name);
+    if (! ref && ! PyErr_Occurred())
+      PyErr_Format(PyExc_NameError, "no such reference: %R", name);
+    return ref;
   }
 
   if (kos_ns_is_raw(namespace, index)) {
