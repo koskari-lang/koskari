@@ -23,6 +23,8 @@ lambda Function, then call it so the body runs with fast-local frames.
 :license: GNU General Public License v3
 """
 
+import sys
+
 import pytest
 
 from koskari.exceptions import SpecialError
@@ -159,6 +161,54 @@ class TestYieldFromWithForEach(SpecialsTestCase):
 
         self.assertEqual(got_fe, got_yf)
         self.assertEqual(got_yf, list(data.items()))
+
+
+class _StopsWithHeldInstance:
+    """
+    An empty Python async iterator whose first step raises a
+    StopAsyncIteration instance the test holds a reference to
+    """
+
+    def __init__(self, stop):
+        self.stop = stop
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise self.stop
+
+
+class TestYieldFromPythonAsyncExhaustion(SpecialsTestCase):
+
+    async def test_stop_async_iteration_instance_released_once(self):
+        """
+        Exhausting a Python async iterable through yield-from releases
+        the StopAsyncIteration instance exactly as many times as it was
+        acquired; a held instance keeps its refcount
+        """
+
+        stop = StopAsyncIteration("held")
+        keep = [stop] * 4
+
+        src = """
+        (lambda []
+          (yield-from (call source)))
+        """
+        expr, _mod = self.compile_expr(
+            src, source=lambda: _StopsWithHeldInstance(stop))
+        fn = await expr()
+
+        before = sys.getrefcount(stop)
+        got = await _collect_async_pairs(fn())
+        self.assertEqual([], got)
+
+        # raising the instance gave it a traceback whose frame holds the
+        # iterator, which holds the instance; drop that loop so only the
+        # evaluator's own accounting is left to compare
+        stop.__traceback__ = None
+        self.assertEqual(before, sys.getrefcount(stop))
+        del keep
 
 
 # The end.

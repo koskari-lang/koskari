@@ -203,13 +203,14 @@ PyObject *koskari_Err_GetRaisedException(void) {
   PyObject *value = NULL;
   PyObject *tb = NULL;
   PyErr_Fetch(&type, &value, &tb);
-  Py_XDECREF(tb);
   if (! type)
     return NULL;
-  PyObject *exc = value ? value : PyObject_CallFunctionObjArgs(type, NULL);
+  PyErr_NormalizeException(&type, &value, &tb);
+  if (tb)
+    PyException_SetTraceback(value, tb);
   Py_DECREF(type);
-  Py_XDECREF(value);
-  return exc;
+  Py_XDECREF(tb);
+  return value;
 #endif
 }
 
