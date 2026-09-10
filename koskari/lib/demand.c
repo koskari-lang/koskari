@@ -264,7 +264,8 @@ static int demand_sync_ex(
     return result ? 0 : -1;
   }
 
-  /* KosBoundMethod: unwrap and prepend self to args */
+  /* KosBoundMethod: unwrap and prepend self to args; a NULL args is
+     no arguments, as the arms above already take it */
   if (KosBoundMethod_CheckExact(callable)) {
     PyObject *fn = KosBoundMethod_FUNC(callable);
     PyObject *self = KosBoundMethod_SELF(callable);
@@ -272,8 +273,12 @@ static int demand_sync_ex(
     if (! tmp)
       goto ret_fail;
 
-    call_args = PySequence_Concat(tmp, args);
-    Py_DECREF(tmp);
+    if (args) {
+      call_args = PySequence_Concat(tmp, args);
+      Py_DECREF(tmp);
+    } else {
+      call_args = tmp;
+    }
     if (! call_args)
       goto ret_fail;
     callable = fn;
