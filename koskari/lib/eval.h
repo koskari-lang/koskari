@@ -48,14 +48,14 @@
 */
 typedef enum KosOpResultKind {
   KOS_RES_NORMAL = 0,      /* continue to next opcode */
-  KOS_RES_REPROLOGUE,      /* restart prologue (PyErr set, or plan armed) */
+  KOS_RES_REPROLOGUE,      /* restart prologue (PyErr set, or goal armed) */
   KOS_RES_YIELD,           /* generator yielded val */
   KOS_RES_AWAIT,           /* suspend on awaitable val */
   KOS_RES_RETURN,          /* return val (needs walk+pop via eval_event_return) */
   KOS_RES_RAISE,           /* PyErr is set; run exception handler */
   KOS_RES_CONTROL_RETURNED,/* dyn-node control-returned hook */
   KOS_RES_DISPATCH,        /* resume instruction dispatch directly: live regs
-                              valid, no PyErr, no plan, no resume.
+                              valid, no PyErr, no goal, no resume.
                               Loop-internal only; must never escape
                               koskari_eval (post-op consumers normalize it) */
   KOS_RES_FATAL,           /* hard fault; koskari_eval returns -1 immediately */
@@ -143,7 +143,7 @@ typedef KosDynFrame KosFrame;
   KosSuspensionEvent records why the evaluator last suspended.
   Set when koskari_eval suspends with AWAIT or YIELD; cleared when execution
   starts or the context is not suspended.
-  Used at entry to choose revive path (revive_plan, revive_await, revive_yield).
+  Used at entry to choose the revive path (revive_await, revive_yield).
 */
 typedef enum KosSuspensionEvent {
   KOS_SUSP_NONE   = 0,
@@ -154,8 +154,7 @@ typedef enum KosSuspensionEvent {
 
 /**
   KosEvalMode is the result of entry/revive and drives the mode-handler loop.
-  NORMAL = run next insn or check completion; TRANSFER = run process_plan;
-  EXCEPTION = run process_raise.
+  NORMAL = run next insn or check completion; EXCEPTION = run process_raise.
 */
 typedef enum KosEvalMode {
   KOS_MODE_NORMAL    = 0,
@@ -539,14 +538,14 @@ KosOpResult KosEvalState_NextResume(
 /**
   KosContext is the top-level execution state for the Koskari VM.
 
-  This version uses the DynNode chain for dynamic extent tracking.
-  The dyn_top field points to the top of the chain, which may be
-  any node type (FRAME, PROMPT, WIND, REGION).
+  The dyn_top field points to the top of the dynamic chain, which may
+  be any node kind (FRAME, GEN, PROMPT, WIND, TRY, and the rest).
 
   The frame_top field is a cached pointer to the topmost FRAME node
   for fast access during normal execution.
 
-  Transfer plan execution is tracked via the plan/plan_stack fields.
+  The goal field is the active transfer goal, or NULL; parked outer
+  goals hang off it.
 
   Ownership and lifecycle:
   - A context is a Python object (koskari.lib.Context). KosContext_New
@@ -569,8 +568,8 @@ KosOpResult KosEvalState_NextResume(
     re-entering koskari_eval.
   - Resumption injects the result back into the VM via the stack.
 
-  Between koskari_eval drives, holds dyn_top, plan, plan_stack, and derived
-  revive snapshots. During RUN those fields are NULL on ctx (stolen onto
+  Between koskari_eval drives, holds dyn_top, goal, and derived revive
+  snapshots. During RUN those fields are NULL on ctx (stolen onto
   KosEvalState); see KosEvalState_ThawFromContext and KosEvalState_FreezeToContext.
 */
 
@@ -928,7 +927,7 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx);
 
 
 /**
-  Steal dyn_top, plan, plan_stack, and derived snapshots from ctx onto es and
+  Steal dyn_top, goal, and derived snapshots from ctx onto es and
   NULL those slots on ctx. Call at koskari_eval entry after Init. Does not
   steal ctx flags or Python bridge fields.
 */
@@ -1333,7 +1332,7 @@ KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val);
    The trampoline's re-entry: everything that must happen before the
    next instruction is fetched, whenever control comes back to the
    loop by a signal rather than by the fetch itself. In order: a
-   staged CPS delivery with no pending exception and no plan goes
+   staged CPS delivery with no pending exception and no goal goes
    straight to its resume; a pending exception runs the raise walk; an
    armed transfer goal drives; a frame waiting on a resume takes its
    delivery. Each of those may ask to run again, and this function
