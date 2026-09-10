@@ -352,10 +352,14 @@ KosOpResult KosIterRequest_Deliver(
         }
       }
 
+      /* the delivery unlinks and frees the node on every outcome, so
+         what the failure branch needs from it is read first */
+      int is_yield_from = KosDynNode_IS_YIELD_FROM(node);
+
       if (kos_dyn_iter_node_deliver_exhausted(es, node, value) < 0) {
         /* A re-emitting site (1-arg NEXT) completes by raising; a
            delivery failure without an exception is fatal. */
-        if (KosDynNode_IS_YIELD_FROM(node) || PyErr_Occurred())
+        if (is_yield_from || PyErr_Occurred())
           return EVAL_RAISE();
         return EVAL_FATAL();
       }
@@ -1213,7 +1217,7 @@ PyObject *KoskariContinuationError = NULL;
 /* === KosContext implementation === */
 
 
-#define CONTEXT_MAX_FREE 16  /* cap for cached KosContext; tunable */
+#define CONTEXT_MAX_FREE KOS_FREELIST_CAP(16)  /* cached KosContext cap; tunable */
 
 static size_t context_freecount = 0;
 static KosContext *context_freelist = NULL;

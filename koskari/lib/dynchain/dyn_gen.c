@@ -438,8 +438,11 @@ int kos_dyn_teardown_gen_exhausted(KosEvalState *es) {
   KosDynNode *consumer = KosDynNode_PARENT(gen);
 
   KosEvalState_FlushLiveRegsToFrame(es);
-  kos_dynchain_free(frame, (KosDynNode *) gen);
+  /* The commit resyncs the live registers from the node being removed
+     (its parent, stack, and namespace), so it runs while the frame and
+     GEN are still allocated; the chain is freed only afterwards. */
   kos_dyn_commit_dyn_top(es, consumer);
+  kos_dynchain_free(frame, (KosDynNode *) gen);
   /* GEN is dead: drop the keepalive on its owner (es is now consistent).
      In the common case the consumer still holds the KPAG, so this is just a
      decrement; if it was the last ref the owner deallocates here. */

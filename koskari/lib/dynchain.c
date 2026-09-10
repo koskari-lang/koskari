@@ -142,7 +142,7 @@ static void kos_dynnode_init(
 }
 
 
-#define DYN_NODE_MAX_FREE 128  /* cap for cached KosDynNode; tunable */
+#define DYN_NODE_MAX_FREE KOS_FREELIST_CAP(128)  /* cached KosDynNode cap; tunable */
 
 static size_t dyn_freecount = 0;
 static KosDynNode *dyn_freelist = NULL;
@@ -2330,7 +2330,7 @@ static int kos_validate_capture_cc(KosEvalState *es, KosDynCC *cc) {
    token_ref is INCREF'd. Returns NULL on alloc failure (PyErr_NoMemory set);
    caller must free captured_chain on failure.
 */
-#define CONT_MAX_FREE 64  /* cap for cached KosContinuation; tunable */
+#define CONT_MAX_FREE KOS_FREELIST_CAP(64)  /* cached KosContinuation cap; tunable */
 
 static size_t cont_freecount = 0;
 static KosContinuation *cont_freelist = NULL;

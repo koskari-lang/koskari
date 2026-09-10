@@ -106,7 +106,7 @@ static inline size_t kos_ns_raw_more_words(size_t count) {
 #endif
 
 /* Maximum depth of the KosNamespace freelist. */
-#define KOS_NS_FREELIST_MAX 256
+#define KOS_NS_FREELIST_MAX KOS_FREELIST_CAP(256)
 
 
 typedef struct KosNamespace {

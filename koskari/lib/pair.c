@@ -57,7 +57,7 @@ static PyObject *_str_bracket_nil = NULL;
 /* === pair free list === */
 
 
-#define PAIR_MAX_FREE 256
+#define PAIR_MAX_FREE KOS_FREELIST_CAP(256)
 
 static KosPair *pair_free_list = NULL;
 static int pair_free_count = 0;

@@ -27,7 +27,8 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    bracket_cons, bracket_nil, bracket_pair, cons, kos_repr, nil, nilp, pair)
+    bracket_cons, bracket_nil, bracket_pair, build_flags, cons, kos_repr,
+    nil, nilp, pair)
 
 
 pytestmark = pytest.mark.phase_lib
@@ -230,6 +231,9 @@ class TestBracketPairTraversal(unittest.TestCase):
         self.assertEqual(bracket_pair(1, bracket_nil), cons(1, nil))
 
 
+@unittest.skipIf(
+    build_flags.get('KOS_NOFREELIST'),
+    "built with KOS_NOFREELIST: no pair free list to share")
 class TestSharedFreelist(unittest.TestCase):
     """pair and bracket-pair share one free list; reuse stamps the type"""
 

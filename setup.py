@@ -46,6 +46,7 @@ passenvs = (
     "KOS_DEBUG_PATCH_DYN_CACHES",
     "KOS_EVAL_SAFETYNET",
     "KOS_ALL_COLD",
+    "KOS_NOFREELIST",
     "VERBOSE_DEBUG",
 )
 
@@ -132,6 +133,7 @@ def extra_compile_args(platform=None, debug=False, clang=False, major=0):
     asan = environ.get("KOS_ASAN") == "1"
 
     if asan:
+        args.append("-DKOS_ASAN=1")
         args.append("-fsanitize=address")
         args.append("-fno-omit-frame-pointer")
         args.append("-g")

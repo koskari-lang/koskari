@@ -64,6 +64,11 @@ endif
 ifneq ($(KOS_TRACE_EVAL_SYNC),)
 CFLAGS += -DKOS_TRACE_EVAL_SYNC=$(KOS_TRACE_EVAL_SYNC)
 endif
+# Disable every object freelist so freed memory reaches the allocator
+# and ASan or Valgrind can see a read of a freed node
+ifneq ($(KOS_NOFREELIST),)
+CFLAGS += -DKOS_NOFREELIST=1
+endif
 ifneq ($(VERBOSE_DEBUG),)
 CFLAGS += -DVERBOSE_DEBUG=$(VERBOSE_DEBUG)
 endif

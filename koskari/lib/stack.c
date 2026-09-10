@@ -45,7 +45,7 @@
 #define BLOCK_NEW_SIZE 16
 #define BLOCK_MAX_SIZE 256
 
-#define BLOCK_MAX_FREE 256
+#define BLOCK_MAX_FREE KOS_FREELIST_CAP(256)
 
 /* The inline discriminator (max <= KOS_SEGMENT_INLINE_SLOTS) and the
    single-step spill in KosStack_Grow both require inline capacity to

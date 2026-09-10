@@ -22,6 +22,20 @@
 #include <structmember.h>
 
 
+/* Every per-type freelist caps how many freed objects it keeps for
+   reuse. A recycled object's memory stays mapped and is zeroed on
+   return, so a read of a freed node yields quiet nonsense instead of
+   the fault ASan or Valgrind would report. Building with
+   -DKOS_NOFREELIST=1 (the KOS_NOFREELIST=1 environment variable through
+   setup.py, tests.mk, and the container targets) sets every cap to zero
+   so each free reaches the allocator and such reads become findable. */
+#ifdef KOS_NOFREELIST
+#define KOS_FREELIST_CAP(n) 0
+#else
+#define KOS_FREELIST_CAP(n) (n)
+#endif
+
+
 /* === Forward declarations ===
    All named struct types used across headers are typedef'd here, before
    any individual header is included, so that include order never matters.

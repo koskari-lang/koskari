@@ -128,23 +128,23 @@ test-container-build:  ## Build the native test container
 
 test-native: test-container-build  ## Run all native tests in container
 	@echo "Running all native memory tests in container..."
-	@$(CONTAINER_ENGINE) run --rm -e CC -v $(PWD):/src:Z $(CONTAINER_IMAGE) normal
+	@$(CONTAINER_ENGINE) run --rm -e CC -e KOS_NOFREELIST -v $(PWD):/src:Z $(CONTAINER_IMAGE) normal
 
 test-asan: test-container-build  ## Run ASan tests in container
 	@echo "Running ASan tests in container..."
-	@$(CONTAINER_ENGINE) run --rm -e CC -v $(PWD):/src:Z $(CONTAINER_IMAGE) asan
+	@$(CONTAINER_ENGINE) run --rm -e CC -e KOS_NOFREELIST -v $(PWD):/src:Z $(CONTAINER_IMAGE) asan
 
 test-valgrind: test-container-build  ## Run Valgrind tests in container
 	@echo "Running Valgrind tests in container..."
-	@$(CONTAINER_ENGINE) run --rm -e CC -v $(PWD):/src:Z $(CONTAINER_IMAGE) valgrind
+	@$(CONTAINER_ENGINE) run --rm -e CC -e KOS_NOFREELIST -v $(PWD):/src:Z $(CONTAINER_IMAGE) valgrind
 
 test-asan-suite: test-container-build  ## Run the FULL unit test suite under ASan in container
 	@echo "Running full test suite under ASan in container..."
-	@$(CONTAINER_ENGINE) run --rm -e CC -v $(PWD):/src:Z $(CONTAINER_IMAGE) suite-asan
+	@$(CONTAINER_ENGINE) run --rm -e CC -e KOS_NOFREELIST -v $(PWD):/src:Z $(CONTAINER_IMAGE) suite-asan
 
 test-valgrind-suite: test-container-build  ## Run the FULL unit test suite under Valgrind in container (slow)
 	@echo "Running full test suite under Valgrind in container (slow)..."
-	@$(CONTAINER_ENGINE) run --rm -e CC -v $(PWD):/src:Z $(CONTAINER_IMAGE) suite-valgrind
+	@$(CONTAINER_ENGINE) run --rm -e CC -e KOS_NOFREELIST -v $(PWD):/src:Z $(CONTAINER_IMAGE) suite-valgrind
 
 
 ##@ Full-Python Valgrind

@@ -1,0 +1,95 @@
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+   Build-time knobs reported at runtime as koskari.lib.build_flags
+
+   Included by lib.c with FLAG(name) defined. Each name that is a
+   defined object-like macro when the extension compiles becomes a key
+   in build_flags with its integer value; an undefined name is absent.
+   A knob defined with no value reports 0. Function-like macros cannot
+   be listed here. Every entry carries its own #ifdef: the preprocessor
+   cannot test definedness from inside a macro expansion.
+
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GPL v.3
+*/
+
+
+/* debug and diagnostic builds */
+#ifdef KOS_ASAN
+FLAG(KOS_ASAN)
+#endif
+#ifdef KOS_EVAL_SAFETYNET
+FLAG(KOS_EVAL_SAFETYNET)
+#endif
+#ifdef KOS_NOFREELIST
+FLAG(KOS_NOFREELIST)
+#endif
+#ifdef KOS_ALL_COLD
+FLAG(KOS_ALL_COLD)
+#endif
+#ifdef KOS_DEBUG_PATCH_DYN_CACHES
+FLAG(KOS_DEBUG_PATCH_DYN_CACHES)
+#endif
+#ifdef VERBOSE_DEBUG
+FLAG(VERBOSE_DEBUG)
+#endif
+
+/* tracing */
+#ifdef KOS_TRACE_FREELIST
+FLAG(KOS_TRACE_FREELIST)
+#endif
+#ifdef KOS_TRACE_EVENTS
+FLAG(KOS_TRACE_EVENTS)
+#endif
+#ifdef KOS_TRACE_OPCACHE
+FLAG(KOS_TRACE_OPCACHE)
+#endif
+#ifdef KOS_TRACE_TIMING
+FLAG(KOS_TRACE_TIMING)
+#endif
+#ifdef KOS_TRACE_EVAL_SYNC
+FLAG(KOS_TRACE_EVAL_SYNC)
+#endif
+#ifdef KOS_STACK_TRACE
+FLAG(KOS_STACK_TRACE)
+#endif
+#ifdef KOS_XFER_TRACE
+FLAG(KOS_XFER_TRACE)
+#endif
+
+/* detected or derived from the compiler and Python headers */
+#ifdef KOS_HAVE_MUSTTAIL
+FLAG(KOS_HAVE_MUSTTAIL)
+#endif
+#ifdef KOS_BREAKER_UNMAPPED
+FLAG(KOS_BREAKER_UNMAPPED)
+#endif
+#ifdef KOS_LONG_INLINE_DIGITS
+FLAG(KOS_LONG_INLINE_DIGITS)
+#endif
+#ifdef KOS_LONG_REUSE
+FLAG(KOS_LONG_REUSE)
+#endif
+#ifdef KOS_FLOAT_REUSE
+FLAG(KOS_FLOAT_REUSE)
+#endif
+
+/* tunables */
+#ifdef KOS_NS_MIN_SLOTS
+FLAG(KOS_NS_MIN_SLOTS)
+#endif

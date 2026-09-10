@@ -726,9 +726,15 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
 
     /* PASS: unwind and pop */
     {
+      /* Everything the code after the pop needs from the node is read
+         here: a pop that completes unlinks and frees it. */
       int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
       uint32_t catch_resume_pc = kos_dynnode_catch_resume_pc(top);
       int top_is_wind = (top && KosDynNode_IS_WIND(top));
+      int top_is_barrier =
+          (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
+      int top_handles_exceptions =
+          (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS));
       /* A wind about to fire its after-thunk runs it clean: the
          exception in flight is held here and parked on the node once
          the thunk has started. A wind (or with) whose thunk is dead is
@@ -737,7 +743,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
          with fires __exit__ with the exception as its argument and
          parks it itself. */
       int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
-          || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER))
+          || top_is_barrier
           || (top_is_wind && ! kos_dyn_extent_in_flight(top));
       if (needs_preserve && PyErr_Occurred())
         PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);
@@ -755,8 +761,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
             Py_XDECREF(pop_res.val);
             return EVAL_FATAL();
           }
-        } else if (PyErr_Occurred()
-                   && ! KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER)) {
+        } else if (PyErr_Occurred() && ! top_is_barrier) {
           /* The pop ran user teardown and it raised; the new exception
              supersedes the one in flight, which chains in as __context__
              (never clobbered). Barrier refusals are machinery noise, not
@@ -784,7 +789,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
           /* Evaluator-internal fault: allowed to abend the loop. */
           return EVAL_FATAL();
         }
-        if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
+        if (top_handles_exceptions) {
           KosOpResult exc_res = kos_dyn_exception_unwind(es, top);
           if (exc_res.kind == KOS_RES_AWAIT) {
             return exc_res;
@@ -795,7 +800,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
           if (exc_res.kind == KOS_RES_NORMAL)
             continue;
         }
-        if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER)) {
+        if (top_is_barrier) {
           /* Barrier with no working recovery: a legitimate walk exit. */
           SAY("[try_local] barrier without recovery -> RAISE\n");
           kos_eval_prepare_boundary_raise(ctx, es);

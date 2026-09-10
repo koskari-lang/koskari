@@ -24,8 +24,23 @@
 */
 
 
+#include "debug.h"
 #include "lib.h"
 #include "tracing.h"
+
+
+/* The sanitizer build defines KOS_ASAN from setup.py; the compiler's own
+   report of instrumentation covers a build that reached the flag some
+   other way. */
+#if ! defined(KOS_ASAN)
+# if defined(__SANITIZE_ADDRESS__)
+#  define KOS_ASAN 1
+# elif defined(__has_feature)
+#  if __has_feature(address_sanitizer)
+#   define KOS_ASAN 1
+#  endif
+# endif
+#endif
 
 
 /* === module methods === */
@@ -56,6 +71,46 @@ static PyMethodDef libmod_methods[] = {
 };
 
 
+/* === build flags === */
+
+
+static int build_flag_set(PyObject *flags, const char *name, long value) {
+  PyObject *v = PyLong_FromLong(value);
+  int res;
+  if (! v)
+    return -1;
+  res = PyDict_SetItemString(flags, name, v);
+  Py_DECREF(v);
+  return res;
+}
+
+
+/**
+   Build koskari.lib.build_flags: a read-only mapping from the name of
+   each build knob defined when this extension compiled to its integer
+   value. The knob list is build_flags.incl. Returns a new reference.
+*/
+static PyObject *build_flags_new(void) {
+  PyObject *flags = PyDict_New();
+  PyObject *proxy;
+  if (! flags)
+    return NULL;
+
+  /* (NAME + 0) reads a knob defined with no value as 0 */
+#define FLAG(NAME)                                                      \
+  if (build_flag_set(flags, #NAME, (long) (NAME + 0)) < 0) {           \
+    Py_DECREF(flags);                                                   \
+    return NULL;                                                        \
+  }
+#include "build_flags.incl"
+#undef FLAG
+
+  proxy = PyDictProxy_New(flags);
+  Py_DECREF(flags);
+  return proxy;
+}
+
+
 /* === module lifecycle === */
 
 
@@ -68,6 +123,17 @@ static int koskari_lib_init(PyObject *mod) {
     return -1;
 
   kos_trace_init();
+
+  {
+    PyObject *flags = build_flags_new();
+    int res;
+    if (! flags)
+      return -1;
+    res = PyDict_SetItemString(dict, "build_flags", flags);
+    Py_DECREF(flags);
+    if (res < 0)
+      return -1;
+  }
 
   /* compat must be initialized first; sync before coro and iter */
   if (koskari_arena_init(mod) ||
