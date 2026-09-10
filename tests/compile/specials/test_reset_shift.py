@@ -77,7 +77,9 @@ class TestResetShiftSpecials(SpecialsTestCase):
         cont = vars(module)["k"]
         self.assertIsInstance(cont, DelimitedContinuation)
         del vars(module)["k"]
-        self.assertEqual(sys.getrefcount(cont), 2)
+        # sole owner: from 3.14 the call argument no longer adds a count
+        expected = 1 if sys.version_info >= (3, 14) else 2
+        self.assertEqual(sys.getrefcount(cont), expected)
 
         dying.append(id(cont))
         del cont
