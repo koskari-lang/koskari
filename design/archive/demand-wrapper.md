@@ -1,5 +1,7 @@
 # Demand wrapper and call API
 
+**Status**: archived 2026-09-10, superseded. Names KosCallableTypeObject-era types and a demand_sync alias that do not exist; the Demand type and demand_sync_ex live in demand.c.
+
 This document specifies the **Demand** wrapper type (Python-facing adapter for
 Koskari callables), the split between **call** and **apply** entry points
 (renaming `demand_sync`), and bootstrap bindings for `.ki` code.

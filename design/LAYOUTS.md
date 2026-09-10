@@ -58,6 +58,9 @@ User-facing normative syntax: [docs/reference/reader-layout.md](../docs/referenc
 
 **Use-case:** Default when **`apply_layout`** / **`apply_layouts`** finds no
 **`layout/<head>`** for the block head. Head symbol is preserved.
+`define-syntax` and `extend-syntax` blocks take this default: the transformer
+block splices in after the name, and the `layout/syntax-rules` family below
+handles the inner block.
 
 **Behaviour:** Splices body onto header: **`(HEAD ARG … BODY-FORM …)`**. No
 peers.
@@ -89,6 +92,81 @@ begin:
 **Behaviour:** **`(HEAD ARG … (compile/begin BODY …))`**. No peers.
 
 **Implementation:** `koskari/reader/layouts/basics.layout_block_begin`
+
+
+## layout/keyword-block
+
+**Symbol:** `layout/keyword-block`
+
+**Use-case:** Opt-in splice of an indented body onto the header as one list,
+where a body line that starts with a keyword is inlined as that keyword and
+its value rather than read as an implicit call. Bind with
+**`define layout/<head> layout/keyword-block`** in **`.ki`**.
+
+**Behaviour:** **`(HEAD ARG … LINE …)`** with each `key: value` line spliced
+in place. No peers.
+
+**Implementation:** `koskari/reader/layouts/basics.layout_keyword_block`
+
+
+## layout/inline-block
+
+**Symbol:** `layout/inline-block`
+
+**Use-case:** Opt-in splice of an indented body onto the header as one list
+with no implicit calls at all, for heads whose block only breaks a long line.
+Bind with **`define layout/<head> layout/inline-block`** in **`.ki`**.
+
+**Behaviour:** **`(HEAD ARG … LINE-FORM …)`**. No peers.
+
+**Syntax:**
+
+```
+X foo:
+  bar (baz)
+  qux
+  alpha: beta
+;; → (X foo bar (baz) qux alpha: beta)
+```
+
+**Implementation:** `koskari/reader/layouts/basics.layout_inline_block`
+
+
+## layout/import-from
+
+**Symbol:** `layout/import-from`
+
+**Use-case:** Long **`import-from`** name lists. Delegates to
+**`layout/inline-block`**.
+
+**Syntax:**
+
+```
+import-from itertools:
+  count cycle permutations product repeat chain
+  combinations combinations_with_replacement
+  groupby tee
+```
+
+**Implementation:** `koskari/reader/layouts/basics.layout_import_from`
+
+
+## layout/quote and layout/quasiquote
+
+**Symbols:** `layout/quote`, `layout/quasiquote`
+
+**Use-case:** A **`'`** or **`` ` ``** prefix on a block head. The reader
+wraps the raw **`:block:`** in a synthetic
+**`(:block: quote () (INNER))`** (or `quasiquote`) for these raw handlers to
+unbox.
+
+**Behaviour:** **`(compile/quote INNER-BLOCK)`** or
+**`(compile/quasiquote INNER-BLOCK)`**, where INNER-BLOCK is the raw
+`:block:` cons, not layout-expanded. No peers.
+
+**Implementation:** `koskari/reader/layouts/basics.layout_quote`,
+`koskari/reader/layouts/basics.layout_quasiquote`;
+reader side `koskari/reader/parser.LayoutReader._read_quote_block`
 
 
 ## layout/call
@@ -559,6 +637,30 @@ finally:
 **Tests:** `tests/reader/layouts/test_try.py`
 
 
+## layout/dyn-wind
+
+**Symbol:** `layout/dyn-wind`
+
+**Use-case:** Block surface syntax for **`dyn-wind`** with **`before`** and
+**`after`** peers.
+
+**Behaviour:** **`(compile/dyn-wind [BEFORE …] [BODY …] [AFTER …])`**. The
+body is required; at least one of the peers is required.
+
+**Syntax:**
+
+```
+dyn-wind:
+  body-exprs ...
+before:
+  before-exprs ...
+after:
+  after-exprs ...
+```
+
+**Implementation:** `koskari/reader/layouts/dyn_wind.layout_dyn_wind`
+
+
 ## layout/syntax-rules
 
 **Symbol:** `layout/syntax-rules`
@@ -566,7 +668,7 @@ finally:
 **Use-case:** Block syntax for the `syntax-rules` transformer within a
 `define-syntax` block. Converts indented pattern/template rule blocks into the
 canonical `(syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...)` form. Used as the
-inner block of `layout/define-syntax`.
+inner block of a `define-syntax` block.
 
 **Behaviour:** Accepts a literals list in the header (e.g. `[x]` or `(x y)`).
 Each indented rule block has a pattern in the header and a template in the
@@ -685,75 +787,54 @@ macro-match:
 **Implementation:** `koskari/reader/layouts/define_syntax.layout_macro_match`
 
 
-## layout/define-syntax
+## layout/special-rules
 
-**Symbol:** `layout/define-syntax`
+**Symbol:** `layout/special-rules`
 
-**Use-case:** Block surface syntax for **`define-syntax`**. With no dedicated
-handler registered, default **`layout/block`** splices the transformer after the
-name: **`(define-syntax NAME TRANSFORMER …)`**.
+**Use-case:** Block syntax for the `special-rules` transformer within a
+`define-syntax` block. Same block shape as `layout/macro-rules`; lowers to
+`(special-rules (LIT ...) (PATTERN . BODY...) ...)`.
 
-**Behaviour:** Transformer choice and validation happen in the
-**`compile/define-syntax`** macro at compile time (see **compile/define-syntax**
-in [MACROS.md](MACROS.md)). Does not accept peers.
+**Behaviour:** Same as `layout/macro-rules` except for the emitted head. Does
+not accept peers.
 
-**Syntax:**
-
-```
-define-syntax NAME:
-  syntax-rules [LIT ...]:
-    PATTERN1:
-      TEMPLATE1...
-    PATTERN2:
-      TEMPLATE2...
-```
-
-**Other inner heads:** `macro-rules`, `syntax-match`, `macro-match`,
-`special-rules`, and `special-match` use the same indentation style as their
-layout sections below.
-
-**Examples:**
-
-```scheme
-define-syntax do-something-with-x:
-  syntax-rules [x]:
-    do-something-with-x:
-      (print "x and no args" x)
-      x
-    do-something-with-x y:
-      (print "x and one arg" x y)
-      (+ x y)
-;; → (define-syntax do-something-with-x
-;;     (syntax-rules (x)
-;;       ((do-something-with-x) (compile/begin (print "x and no args" x) x))
-;;       ((do-something-with-x y) (compile/begin (print "x and one arg" x y) (+ x y)))))
-```
-
-**Implementation:** default **`layout/block`** (`koskari/reader/layouts/basics.layout_block`)
-
-**Tests:** `tests/reader/layouts/test_define_syntax.py`
+**Implementation:** `koskari/reader/layouts/define_syntax.layout_special_rules`
 
 
-## layout/extend-syntax
+## layout/special-match
 
-**Symbol:** `layout/extend-syntax`
+**Symbol:** `layout/special-match`
 
-**Use-case:** Block surface syntax for **`extend-syntax`**. Default **`layout/block`**
-splices the transformer: **`(extend-syntax NAME TRANSFORMER …)`**.
+**Use-case:** Block syntax for the `special-match` transformer within a
+`define-syntax` block. Same rule shape as `layout/macro-match`; lowers to
+`(special-match (PATTERN . BODY...) ...)`.
 
-**Behaviour:** Compile-time behaviour is **`compile/extend-syntax`** (see
-**compile/extend-syntax** in [MACROS.md](MACROS.md)). Does not accept peers.
+**Behaviour:** Same as `layout/macro-match` except for the emitted head. Does
+not accept peers.
+
+**Implementation:** `koskari/reader/layouts/define_syntax.layout_special_match`
+
+
+## layout/bare-syntax
+
+**Symbol:** `layout/bare-syntax`
+
+**Use-case:** Block syntax for a `bare-syntax` transformer. The header names
+the called-by slot, with an optional leading name; the body is the template,
+left unexpanded like a syntax-rules template.
+
+**Behaviour:** **`(bare-syntax SLOT TMPL)`**, or **`(bare-syntax NAME SLOT
+TMPL)`** with a leading name; a multi-form template body is wrapped in
+`begin`. Does not accept peers.
 
 **Syntax:**
 
 ```
-extend-syntax NAME:
-  syntax-rules [LIT ...]:
-    PATTERN:
-      TEMPLATE...
+bare-syntax SLOT:
+  TEMPLATE-FORM...
 ```
 
-**Implementation:** default **`layout/block`** (`koskari/reader/layouts/basics.layout_block`)
+**Implementation:** `koskari/reader/layouts/define_syntax.layout_bare_syntax`
 
 
 ## Peers

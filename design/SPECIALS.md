@@ -1742,8 +1742,8 @@ and **`compile/special-match`** (below).
 
 **Typical surface form:** **`(define-syntax NAME (syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...))`**
 — the macro expands that to **`compile/define`** plus a **`syntax-rules`** spec
-with **`NAME`** repeated as the first argument. Block syntax via
-`layout/define-syntax` and `layout/syntax-rules` produces the same shape; see
+with **`NAME`** repeated as the first argument. Block syntax via the default
+block layout and `layout/syntax-rules` produces the same shape; see
 [LAYOUTS.md](LAYOUTS.md).
 
 **Implementation:** `koskari/bootstrap/_define_syntax.ki` (macro definition).

@@ -1,5 +1,7 @@
 # Koskari Introspection and Trace Snapshot Design
 
+**Status**: archived 2026-09-10, superseded. Specifies a TraceView / KosTraceView snapshot object that was never built; exception decoration in eval.c attaches __koskari_dynchain__, a list of frame dicts.
+
 This document defines a read-only introspection mechanism for the Koskari
 evaluator. The goal is to provide structured visibility into frames, dynamic
 extents, and extent-local storage for debugging and exception reporting,

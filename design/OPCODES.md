@@ -310,7 +310,7 @@ When adding or changing an opcode:
 | CONS | COUNT | Pop N values; push (e_0 . ... . e_{N-1}) | [§5.1](#kos_op_cons) |
 | PROPER | COUNT | Pop N values; push proper list (e_0 ... e_{N-1}) | [§5.1](#kos_op_proper) |
 | PAIR_SPLICE | COUNT | Concatenate N pair/tuple segments into one proper list | [§5.1](#kos_op_pair_splice) |
-| AWAIT | NOARG | Suspend on awaitable; resume with value | [§6](#kos_op_await) |
+| AWAIT | COUNT | Suspend on awaitable; resume with value | [§6](#kos_op_await) |
 | BREAK | COUNT | Jump to loop break target | [§6](#kos_op_break) |
 | CONTINUE | COUNT | Jump to loop continue target | [§6](#kos_op_continue) |
 | RAISE | COUNT | Pop N, raise exception | [§6](#kos_op_raise) |
@@ -3326,7 +3326,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 ### KOS_OP_OBJECT_DIVMOD {#kos_op_object_divmod}
 
-- **Style**: NOARG.
+- **Style**: COUNT (operand count; always 2).
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_DIVMOD.c`

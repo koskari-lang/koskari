@@ -1,5 +1,7 @@
 # Koskari Object Model – First Cut Design
 
+**Status**: archived 2026-09-10, superseded. Describes a KosType metaclass with kostype_tp_call and composite metaclass bases that no longer exists; object.c now demand-wraps dunders at class build and hands the namespace to the ordinary winning metaclass.
+
 This document defines the initial implementation of Koskari runtime types
 (KosType) and instances (KosObject) with interoperability for Python's
 sync expectations. Class creation uses PUSH_COLLECT / POP_COLLECT / BUILD_CLASS opcodes;

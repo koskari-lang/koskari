@@ -229,7 +229,7 @@ nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). See evaluator.md for d
 
 **Bytecode Types** (from sibilant-ceval, redesigned):
 - `Code`: Compiled bytecode storage object
-  - Compact 4-byte instructions (uint16_t opcode + uint16_t arg)
+  - 32-byte instruction records: handler pointer, opcode, arg, cache index, pc, resolved operand, cache slot pointer (`KosOp` in `bytecode.h`)
   - Delta-encoded position table (only records changes)
   - Read-only memory protection via `mprotect()` after init
   - Constant pool with deduplication

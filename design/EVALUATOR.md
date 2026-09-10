@@ -333,8 +333,10 @@ flowchart TD
 ### 2.4 Phase 4: Prepare next instruction
 
 Each instruction is a **`KosOp`**, `{ KosThreadFn fn; uint16_t op, arg,
-cache; }` (16 bytes): the handler that executes it beside its decoded
-fields. `fn` is resolved from **`kos_op_handlers[]`** (the table `eval.c`
+cache, pc; union { PyObject *obj; KosOp *target; KosExtra *row; } u;
+KosCacheSlot *slot; }` (32 bytes on LP64, two to a cache line): the
+handler that executes it beside its decoded fields, its resolved operand,
+and its cache slot. `fn` is resolved from **`kos_op_handlers[]`** (the table `eval.c`
 emits from `opcodes.incl`) at finalize in the block's writable window,
 and, like the cache index, is regenerated on every load and never
 serialized; soften emits only `(op, arg)`.

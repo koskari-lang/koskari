@@ -1,5 +1,7 @@
 # Koskari Dunder Adapter Design
 
+**Status**: archived 2026-09-10, superseded. Describes slot wiring for a KosType metaclass that no longer exists; dunders are demand-wrapped at class build in object.c and CPython's own slot machinery dispatches them.
+
 This document unifies the design for bridging Koskari's async-capable evaluator with Python's synchronous object protocol (dunder methods, type slots, iteration).
 
 **Implementation status**: Core design implemented. Host path (demand_sync, slot

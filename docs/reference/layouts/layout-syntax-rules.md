@@ -4,7 +4,7 @@
 **Use-case:** Block syntax for the `syntax-rules` transformer within a
 `define-syntax` block. Converts indented pattern/template rule blocks into the
 canonical `(syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...)` form. Used as the
-inner block of `layout/define-syntax`.
+inner block of a `define-syntax` block.
 
 **Behaviour:** Accepts a literals list in the header (e.g. `[x]` or `(x y)`).
 Each indented rule block has a pattern in the header and a template in the

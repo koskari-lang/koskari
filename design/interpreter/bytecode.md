@@ -315,7 +315,7 @@ sibilant-ceval used a similar custom bytecode format but with wider instructions
 - Separate async/await flags
 
 Koskari's improvements:
-- 8x more compact instructions (4 bytes vs ~32 bytes)
+- 32-byte instruction records that carry the resolved handler and operand with the opcode (`KosOp` in `bytecode.h`), so dispatch does no table lookups
 - Delta-encoded position table saves memory
 - Read-only memory protection for security
 - Simplified async model (all code is async)

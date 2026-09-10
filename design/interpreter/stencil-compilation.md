@@ -8,7 +8,7 @@ emit-C-and-invoke-a-compiler direction record archived at
 **See also:** [../archive/threaded-dispatch.md](../archive/threaded-dispatch.md) (phase 2 defines
 the musttail handler form this design compiles ahead of time),
 [../archive/cps-consumer-api.md](../archive/cps-consumer-api.md) (the resume contract a
-stencil chain's suspension points arm into), [bytecode-finalization.md](bytecode-finalization.md)
+stencil chain's suspension points arm into), [../archive/bytecode-finalization.md](../archive/bytecode-finalization.md)
 (the finalize pipeline this lowering extends), [../OPCODES.md](../OPCODES.md),
 `tools/opimpl.py`.
 

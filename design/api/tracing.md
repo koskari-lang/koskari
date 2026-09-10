@@ -17,7 +17,7 @@ tracing, there is no visibility into allocation patterns, cache hit rates,
 underruns (alloc when freelist empty), or overruns (return when freelist at
 cap). The tracing module provides:
 
-- **Four compile-time flags** to enable specific features (each has a cost)
+- **Five compile-time flags** to enable specific features (each has a cost)
 - **Macros** that expand to noops when disabled (zero runtime cost)
 - **Python API** `koskari.lib.get_trace_report()` returning a dict, and
   **`koskari.lib.clear_trace_counters()`** to zero accumulators mid-process
@@ -31,6 +31,7 @@ macros must include it explicitly (same opt-in pattern as `debug.h`).
 |------|---------|---------|
 | `KOS_TRACE_FREELIST` | 0 | Freelist alloc/return hit/miss/overrun (`freelists` key) |
 | `KOS_TRACE_EVENTS` | 0 | VM / dynchain event counters (`events` key) |
+| `KOS_TRACE_OPCACHE` | 0 | Per-site opcode-cache counters for the method, field, and elector caches (`opcache` key) |
 | `KOS_TRACE_TIMING` | 0 | Per-opcode and post-handler timing (`opcode_timing`, `post_handler_timing`, and summaries) |
 | `KOS_TRACE_EVAL_SYNC` | 0 | `KosEvalState` sync API call counts and wall time (`eval_state_sync` key) |
 
@@ -47,9 +48,9 @@ process to read totals.
 
 ### Churn demo (`tox -e churn-trace`)
 
-The **`churn-trace`** tox environment rebuilds the native module with all four
-trace flags enabled (`KOS_TRACE_FREELIST`, `KOS_TRACE_EVENTS`,
-`KOS_TRACE_TIMING`, `KOS_TRACE_EVAL_SYNC`) and runs
+The **`churn-trace`** tox environment rebuilds the native module with
+`KOS_TRACE_EVENTS`, `KOS_TRACE_OPCACHE`, `KOS_TRACE_TIMING`, and
+`KOS_TRACE_EVAL_SYNC` enabled (`KOS_TRACE_FREELIST` stays off) and runs
 [`examples/churn/churn.py`](../../examples/churn/churn.py). After the
 benchmarks, that script prints `get_trace_report()` as JSON. Wall-clock per
 phase still comes from the churn script's own output; report values are
@@ -115,13 +116,14 @@ Top-level keys emitted by `kos_trace_report()`:
 
 ### `flags`
 
-Always present. Four booleans mirror compile-time flags (see `kos_trace_report`
+Always present. Five booleans mirror compile-time flags (see `kos_trace_report`
 in `tracing.c`):
 
 | Field | Meaning |
 |-------|---------|
 | **freelist** | `KOS_TRACE_FREELIST` was 1 at build time |
 | **events** | `KOS_TRACE_EVENTS` was 1 at build time |
+| **opcache** | `KOS_TRACE_OPCACHE` was 1 at build time |
 | **timing** | `KOS_TRACE_TIMING` was 1 at build time |
 | **eval_state_sync** | `KOS_TRACE_EVAL_SYNC` was 1 at build time |
 
@@ -134,24 +136,27 @@ When all tracing is disabled at build time:
     "flags": {
         "freelist": False,
         "events": False,
+        "opcache": False,
         "timing": False,
         "eval_state_sync": False,
     },
 }
 ```
 
-When all four flags are enabled (outline only; numeric values are workload-specific):
+When all five flags are enabled (outline only; numeric values are workload-specific):
 
 ```python
 {
     "flags": {
         "freelist": True,
         "events": True,
+        "opcache": True,
         "timing": True,
         "eval_state_sync": True,
     },
     "freelists": { "...": {"alloc_hits": 0, "alloc_misses": 0, "return_hits": 0, "overruns": 0} },
     "events": { "dyn_handle_enter": 0, "...": 0 },
+    "opcache": { "method_hit": 0, "method_miss": 0, "...": 0 },
     "eval_state_sync": { "init": {"count": 0, "total_ns": 0}, "...": {"count": 0, "total_ns": 0} },
     "opcode_timing": { "POP": {"count": 0, "total_ns": 0, "...": 0.0} },
     "opcode_timing_summary": { "total_executions": 0, "total_ns": 0, "...": [] },
@@ -259,6 +264,32 @@ Add new counters in `tracing.h` (`KosTraceEventId`) and `tracing.c` (`kos_te_nam
 only by **appending** entries; do not reorder existing ids.
 
 C code increments via `KOS_TRACE_EVENTS_INC(KOS_TE_...)` in **dynchain.c**.
+
+### `opcache`
+
+Present when `flags.opcache` is true. Maps string keys to non-negative integer
+counts (`uint64_t` in C), one group per per-site cache family. See
+[interpreter/attr-lookup-cache.md](../interpreter/attr-lookup-cache.md) for the
+method and field caches and [interpreter/electors.md](../interpreter/electors.md)
+for electors.
+
+| Key | Meaning |
+|-----|---------|
+| **method_hit** | Guarded method slot served without a full resolve. |
+| **method_miss** | Slot present but re-resolved (cold, guard miss, value moved). |
+| **method_bypass** | Megamorphic site skipped caching. |
+| **method_uncached** | No slot at the site (gated off). |
+| **field_hit** | Guarded attribute-location mode served (for example SLOT). |
+| **field_generic** | Guard-free GENERIC verdict; fell to the generic path. |
+| **field_miss** | Cold classification (cold slot, guard miss). |
+| **field_fallback** | Guarded hit whose direct access declined and fell to the generic protocol. |
+| **elector_hit** | Elected handler served the site. |
+| **elector_miss** | Site re-elected. |
+| **elector_bypass** | Site skipped election. |
+| **elector_uncached** | No slot at the site (gated off). |
+
+Add new counters in `tracing.h` (`KosTraceOpCacheId`) and `tracing.c`
+(`kos_oc_names`) only by **appending** entries; do not reorder existing ids.
 
 ### `eval_state_sync`
 

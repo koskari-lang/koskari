@@ -1,5 +1,7 @@
 # Special Call Protocol (Kos Call)
 
+**Status**: archived 2026-09-10, superseded. Describes the two-slot tp_kos_install / tp_kos_tail_install model and a KosCallableTypeObject, replaced by the single kc_vinstall(tail_call) call suite in evaluated.h and callable.h returning KosOpResult.
+
 ## Revision (design clarifications)
 
 This document reflects the **Koskari revision**: defer cookies and dedicated native frame kind; reuse KosFrame. Key principles:

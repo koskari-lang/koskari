@@ -6,7 +6,7 @@ This directory documents the language-level features of Koskari, including synta
 
 - **conventions.md**: Recommended style for keywords and brackets (named args, flags, star/starstar, non-evaluation lists)
 - **special-forms.md**: All special forms (compile-time constructs)
-- **operators.md**: Operators and their compile-time optimizations
+- **[archive/operators.md](../archive/operators.md)** (archived): python-sibilant operator notes; the operator surface is documented for users in `docs/reference/specials/object-operators/index.md`
 - **macros.md**: Macro system (reader macros and compile-time macros) — see [archive/macros.md](../archive/macros.md)
 - **[archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)** (archived): syntax-box hygiene design (`koskari.syntax.Syntax`, `koskari.hygiene`); implemented
 - **unified-matcher-transformer-model.md**: Shared Matcher IR and transformer pipeline for `define-syntax`, `macro-rules`, specials, and post-expand hygiene/unbox

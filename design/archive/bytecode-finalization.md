@@ -6,7 +6,7 @@ format stored in KosCode. It addresses allocation sloppiness, introduces the
 extra table, unifies storage into a single block, and uses a disciplined
 multi-phase approach with precise sizing.
 
-**Status:** Design proposal — not yet implemented.
+**Status:** archived 2026-09-10, implemented. The collect / size / allocate / emit pipeline, identity-based cpool dedup, and unified block with extra table live in `koskari/lib/bytecode.c` (`code_collect`, `code_alloc_unified`, `code_emit`).
 
 **See also:** [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)
 (extent table, layout), [extra-table-and-opcode-metadata.md](../archive/extra-table-and-opcode-metadata.md)

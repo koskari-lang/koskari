@@ -1,5 +1,7 @@
 # Operators
 
+**Status**: archived 2026-09-10, superseded by the user documentation at `docs/reference/specials/object-operators/index.md`. The python-sibilant notes below predate the reducing operator families in `operator.c`.
+
 Operators in Koskari have both compile-time and runtime representations. They compile to optimized bytecode when possible, but can also be used as runtime functions.
 
 ## From python-sibilant

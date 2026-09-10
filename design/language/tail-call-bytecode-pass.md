@@ -380,6 +380,6 @@ bodies (currently missed).
 - [special-call-protocol.md](../api/special-call-protocol.md) — VM tail install
 - [vector-call.md](../interpreter/vector-call.md) — `CALL` / `TAIL_CALL` stack layout
 - [PRAGMA.md](../PRAGMA.md) — deferred pass gating
-- [bytecode-finalization.md](../interpreter/bytecode-finalization.md) — long-term finalization pipeline (orthogonal)
+- [bytecode-finalization.md](../archive/bytecode-finalization.md) (archived, implemented) — finalization pipeline (orthogonal)
 - `koskari/compile/compiler.py` — `complete()`, `compress`, `convert_fast`
 - `koskari/lib/bytecode.c` — `extent_pairs`, extent derivation
