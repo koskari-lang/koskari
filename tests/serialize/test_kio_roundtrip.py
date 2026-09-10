@@ -30,7 +30,7 @@ from koskari.lib import (
 from koskari.serialize import compile_ki_source_to_kio, dump_kio, load_kio
 
 from .. import make_callable
-from ..lib.opcode import build_expr
+from ..lib.opcode import build_code, build_expr
 
 
 pytestmark = pytest.mark.phase_compile
@@ -91,6 +91,76 @@ class TestKioRoundTrip(unittest.TestCase):
             self.assertEqual(got, value)
             self.assertIs(type(got), int)
 
+
+    def test_ellipsis_const_roundtrip(self):
+        """Ellipsis survives the const-pool round-trip as the singleton"""
+        self.assertIs(self._const_roundtrip(...), ...)
+
+    def test_frozenset_const_roundtrip(self):
+        """a frozenset of constants round-trips by value, as a frozenset"""
+        value = frozenset((1, "two", 3.0, None))
+        loaded = self._const_roundtrip(value)
+        self.assertIsInstance(loaded, frozenset)
+        self.assertEqual(loaded, value)
+
+    def test_slice_const_roundtrip(self):
+        """slices round-trip by value, None bounds included"""
+        for value in (slice(1, 10, 2), slice(None, 5, None), slice(None)):
+            loaded = self._const_roundtrip(value)
+            self.assertIsInstance(loaded, slice)
+            self.assertEqual(loaded, value)
+
+    def test_nested_frozenset_slice_roundtrip(self):
+        """containers nest: a tuple holding a frozenset holding a slice"""
+        value = (frozenset((slice(1, 2),)), ...)
+        loaded = self._const_roundtrip(value)
+        self.assertEqual(loaded, value)
+
+    def test_code_protect_and_cache_roundtrip(self):
+        """a body's protect and cache settings are stored and restored"""
+        rows = [['CONST', 1], ['RETURN', 1]]
+        nspec = NamespaceSpec(None, (), ())
+        instr = build_code(rows).soften()
+        plain = Code(nspec, instr, 'plain', protect=False, cache=False)
+        sealed = Code(nspec, instr, 'sealed', protect=True, cache=True)
+        self.assertFalse(plain.protected)
+        self.assertFalse(plain.caches)
+        self.assertTrue(sealed.protected)
+        self.assertTrue(sealed.caches)
+        buf = io.BytesIO()
+        dump_kio(buf, [plain, sealed])
+        buf.seek(0)
+        kio = load_kio(buf)
+        loaded_plain, loaded_sealed = kio.codes
+        self.assertFalse(loaded_plain.protected)
+        self.assertFalse(loaded_plain.caches)
+        self.assertTrue(loaded_sealed.protected)
+        self.assertTrue(loaded_sealed.caches)
+
+    def test_function_spec_flags_roundtrip(self):
+        """a nested function body keeps its protect and cache settings"""
+        nspec = NamespaceSpec(None, (), ())
+        instr = build_code([['CONST', 7], ['RETURN', 1]]).soften()
+        inner = Code(nspec, instr, 'inner', protect=False, cache=False)
+        fspec = FunctionSpec('inner', FormalsSpec(), inner)
+        code, _ = build_expr([
+            ['CONST', fspec],
+            ['RETURN', 1],
+        ], name='outer')
+        loaded = self._const_roundtrip_code(code)
+        self.assertIsInstance(loaded, FunctionSpec)
+        self.assertFalse(loaded.code.protected)
+        self.assertFalse(loaded.code.caches)
+
+    def _const_roundtrip_code(self, code):
+        buf = io.BytesIO()
+        dump_kio(buf, [code])
+        buf.seek(0)
+        kio = load_kio(buf)
+        for op, arg in kio.codes[0].soften():
+            if op == OpCode.CONST:
+                return arg
+        self.fail("no CONST in roundtripped code")
 
     def test_function_spec_const_roundtrip(self):
         inner_code, ns_inner = build_expr([

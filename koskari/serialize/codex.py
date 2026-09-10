@@ -131,6 +131,46 @@ class PoolKind(IntEnum):
     FORMALS_SPEC = 18
     FUNCTION_SPEC = 19
     BRACKET_NIL = 20
+    ELLIPSIS = 21
+    FROZENSET = 22
+    SLICE = 23
+
+
+class CodeFlags(IntEnum):
+    """
+    Bits of the flags word on a CODE body record and a FUNCTION_SPEC pool
+    record
+    """
+
+    YIELDS = 0x01
+    PROTECT = 0x02
+    CACHE = 0x04
+
+
+def code_flags(code):
+    """
+    The flags word recording how ``code`` was constructed
+    """
+
+    flags = 0
+    if code.yields:
+        flags |= CodeFlags.YIELDS
+    if code.protected:
+        flags |= CodeFlags.PROTECT
+    if code.caches:
+        flags |= CodeFlags.CACHE
+    return flags
+
+
+def code_from_record(nspec, instr, name, filename, flags):
+    """
+    Rebuild a Code with the protect and cache settings its record stored
+    """
+
+    return Code(
+        nspec, instr, name, filename,
+        protect=bool(flags & CodeFlags.PROTECT),
+        cache=bool(flags & CodeFlags.CACHE))
 
 
 @dataclass
@@ -361,7 +401,8 @@ class KioFile(object):
             nspec = pool[record.nspec_idx]
             name = pool[record.name_idx]
             filename = pool[record.filename_idx]
-            code = Code(nspec, instr, name, filename)
+            code = code_from_record(
+                nspec, instr, name, filename, record.flags)
             codes.append(code)
 
         return cls(header, meta, codes, pool)
@@ -388,7 +429,7 @@ class KioFile(object):
                 name_idx=intern_for_pool(pb, code.name),
                 filename_idx=intern_for_pool(pb, code.filename),
                 nspec_idx=intern_for_pool(pb, code.namespace_spec),
-                flags=0x01 if bool(code.yields) else 0,
+                flags=code_flags(code),
                 instr_count=len(instr),
                 instr_bytes=encode_softened_instructions(pb, instr),
             ))
@@ -548,9 +589,15 @@ def intern_for_pool(pb, obj):
         intern_instruction_args(pb, instr)
         return pb.add(obj)
 
-    if isinstance(obj, tuple):
+    if isinstance(obj, (tuple, frozenset)):
         for val in obj:
             intern_for_pool(pb, val)
+        return pb.add(obj)
+
+    if isinstance(obj, slice):
+        intern_for_pool(pb, obj.start)
+        intern_for_pool(pb, obj.stop)
+        intern_for_pool(pb, obj.step)
         return pb.add(obj)
 
     return pb.add(obj)
@@ -819,12 +866,7 @@ def encode_pool_record_value(val, index_of, pb=None):
             raise TypeError('FunctionSpec pool encoding requires a PoolBuilder')
         code = val.code
         instr = code.soften()
-        yld = False
-        for op, _ in instr:
-            if op in (OpCode.YIELD, OpCode.YIELD_FROM):
-                yld = True
-                break
-        flg = 0x01 if yld else 0
+        flg = code_flags(code)
         instr_b = encode_softened_instructions(pb, instr)
         ni = index_of(val.name)
         fi = index_of(val.formals_spec)
@@ -858,6 +900,9 @@ def encode_pool_record_value(val, index_of, pb=None):
     if val is None:
         return struct.pack('<B', PoolKind.NONE)
 
+    if val is Ellipsis:
+        return struct.pack('<B', PoolKind.ELLIPSIS)
+
     if isinstance(val, int):
         return struct.pack('<B', PoolKind.INT) + _pack_int_big(val)
 
@@ -879,13 +924,19 @@ def encode_pool_record_value(val, index_of, pb=None):
     if isinstance(val, keyword):
         return struct.pack('<B', PoolKind.KEYWORD) + _pack_string(str(val))
 
-    if isinstance(val, tuple):
+    if isinstance(val, (tuple, frozenset)):
         out = bytearray()
-        out.append(PoolKind.TUPLE)
+        out.append(
+            PoolKind.TUPLE if isinstance(val, tuple) else PoolKind.FROZENSET)
         out.extend(struct.pack('<I', len(val)))
         for elem in val:
             out.extend(struct.pack('<I', index_of(elem)))
         return bytes(out)
+
+    if isinstance(val, slice):
+        return struct.pack(
+            '<BIII', PoolKind.SLICE,
+            index_of(val.start), index_of(val.stop), index_of(val.step))
 
     raise TypeError('unsupported pool value %r' % (val,))
 
@@ -939,6 +990,9 @@ def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
     if kind == PoolKind.FALSE:
         return False, off
 
+    if kind == PoolKind.ELLIPSIS:
+        return Ellipsis, off
+
     if kind == PoolKind.NONE:
         return None, off
 
@@ -975,12 +1029,18 @@ def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
         s, off = _unpack_string(buf, off)
         return keyword(s), off
 
-    if kind == PoolKind.TUPLE:
+    if kind in (PoolKind.TUPLE, PoolKind.FROZENSET):
         arity = struct.unpack_from('<I', buf, off)[0]
         off += 4
         idxs = struct.unpack_from('<' + 'I' * arity, buf, off)
         off += 4 * arity
-        return tuple(prior[j] for j in idxs), off
+        build = tuple if kind == PoolKind.TUPLE else frozenset
+        return build(prior[j] for j in idxs), off
+
+    if kind == PoolKind.SLICE:
+        si, ei, ti = struct.unpack_from('<III', buf, off)
+        off += 12
+        return slice(prior[si], prior[ei], prior[ti]), off
 
     if kind == PoolKind.CODE_REF:
         bi = struct.unpack_from('<I', buf, off)[0]
@@ -998,7 +1058,7 @@ def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
         return FormalsSpec(*[prior[j] for j in idxs]), off
 
     if kind == PoolKind.FUNCTION_SPEC:
-        ni, fi, nsi, cni, cfi, _flg, ic = struct.unpack_from(
+        ni, fi, nsi, cni, cfi, flg, ic = struct.unpack_from(
             '<IIIIIII', buf, off)
         off += 28
         ib = buf[off:off + ic * INSTRUCTION_SIZE]
@@ -1013,7 +1073,7 @@ def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
         for _ in range(ic):
             (op, arg), ioff = decode_instruction(ib, ioff, prior)
             instr.append((op, arg))
-        code = Code(nspec, instr, code_name, code_fn)
+        code = code_from_record(nspec, instr, code_name, code_fn, flg)
         return FunctionSpec(name, formals, code), off
 
     raise ValueError('unknown pool kind %s' % kind)

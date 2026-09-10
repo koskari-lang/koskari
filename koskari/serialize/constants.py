@@ -41,10 +41,12 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # MINOR bumped: MATCH_CASE binds its captures into the namespace on a
 # match and pushes nothing; MATCH_STORE_NAMES removed, renumbering
 # every opcode after it.
+# PATCH bumped: .kio pool kinds ELLIPSIS, FROZENSET, SLICE added; code
+# body and function-spec flags carry protect (0x02) and cache (0x04).
 BYTECODE_ABI_MAJOR = 0
 BYTECODE_ABI_MINOR = 16
 BYTECODE_ABI_MICRO = 0
-BYTECODE_ABI_PATCH = 0
+BYTECODE_ABI_PATCH = 1
 
 
 # The end.

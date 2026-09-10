@@ -647,6 +647,12 @@ static PyObject *code_get_caches(PyObject *self, void *_unused) {
 }
 
 
+static PyObject *code_get_protected(PyObject *self, void *_unused) {
+
+  return PyBool_FromLong(KosCode_PROTECTED(self) != 0);
+}
+
+
 static PyObject *code_get_cache_slots(PyObject *self, void *_unused) {
 
   return PyLong_FromUnsignedLong(KosCode_CACHE_LEN(self));
@@ -704,6 +710,10 @@ static PyGetSetDef code_getset[] = {
 
   { "uses_fast", code_get_uses_fast, NULL,
     "bool; whether this code uses fast-slot opcodes at root namespace scope",
+    NULL },
+
+  { "protected", code_get_protected, NULL,
+    "bool; whether the unified block is sealed read-only with mprotect",
     NULL },
 
   { "caches", code_get_caches, NULL,
