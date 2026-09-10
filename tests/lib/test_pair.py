@@ -197,6 +197,29 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         p2 = cons(1, 2, 3, nil)
         self.assertEqual(p1, p2)
 
+    async def test_eq_element_error_propagates(self):
+        """
+        An element comparison that raises makes the pair comparison
+        raise the same error; no truth value is produced
+        """
+
+        class Refuses:
+            def __eq__(self, other):
+                raise ValueError("eq refused")
+
+        produced = []
+        try:
+            produced.append(cons(Refuses(), nil) == cons(Refuses(), nil))
+        except ValueError:
+            pass
+        self.assertEqual(produced, [])
+
+        try:
+            produced.append(cons(Refuses(), nil) != cons(Refuses(), nil))
+        except ValueError:
+            pass
+        self.assertEqual(produced, [])
+
     async def test_ne(self):
         """!= works correctly"""
         p1 = pair(1, 2)

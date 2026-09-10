@@ -639,6 +639,8 @@ static long pair_eq(PyObject *left, PyObject *right) {
     return 1;
 
   seen = PyDict_New();
+  if (! seen)
+    return -1;
 
   while (left != right) {
     if (KosNilP(left) && KosNilP(right)) {
@@ -684,20 +686,21 @@ static long pair_eq(PyObject *left, PyObject *right) {
       Py_DECREF(right_id);
       break;
 
-    } else if (! PyObject_RichCompareBool(KosPair_CAR(left),
-                                          KosPair_CAR(right), Py_EQ)) {
-      /* haven't been compared before, but they're not equal */
-      answer = 0;
-      Py_DECREF(left_id);
-      Py_DECREF(right_id);
-      break;
-
     } else {
-      /* equal, so make note that we've compared these to each other */
-      PyDict_SetItem(seen, left_id, right_id);
-      PyDict_SetItem(seen, right_id, left_id);
+      int eq = PyObject_RichCompareBool(KosPair_CAR(left),
+                                       KosPair_CAR(right), Py_EQ);
+      if (eq > 0) {
+        /* equal, so make note that we've compared these to each other */
+        PyDict_SetItem(seen, left_id, right_id);
+        PyDict_SetItem(seen, right_id, left_id);
+      }
       Py_DECREF(left_id);
       Py_DECREF(right_id);
+      if (eq <= 0) {
+        /* not equal, or the element comparison raised (-1) */
+        answer = eq;
+        break;
+      }
     }
 
     left = KosPair_CDR(left);

@@ -244,6 +244,35 @@ class TestValuesEquality(unittest.IsolatedAsyncioTestCase):
         v2 = values(1, 2, 4)
         self.assertNotEqual(v1, v2)
 
+    async def test_eq_element_error_propagates(self):
+        """
+        An element comparison that raises makes the values comparison
+        raise the same error; no truth value is produced
+        """
+
+        class Refuses:
+            def __eq__(self, other):
+                raise ValueError("eq refused")
+
+        produced = []
+        try:
+            produced.append(values(Refuses()) == values(Refuses()))
+        except ValueError:
+            pass
+        self.assertEqual(produced, [])
+
+        try:
+            produced.append(values(Refuses()) != values(Refuses()))
+        except ValueError:
+            pass
+        self.assertEqual(produced, [])
+
+        try:
+            produced.append(values(Refuses()) == (Refuses(),))
+        except ValueError:
+            pass
+        self.assertEqual(produced, [])
+
     async def test_eq_same_keywords(self):
         """values with same keywords are equal"""
 

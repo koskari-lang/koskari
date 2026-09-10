@@ -516,23 +516,24 @@ static long values_eq(PyObject *self, PyObject *other) {
             answer = (KosValues_KWDS(s) == KosValues_KWDS(o));
         }
 
-        answer = answer && \
-            PyObject_RichCompareBool(KosValues_ARGS(s), KosValues_ARGS(o), Py_EQ);
+        /* a -1 from the keywords comparison propagates as is */
+        if (answer > 0)
+            answer = PyObject_RichCompareBool(KosValues_ARGS(s), KosValues_ARGS(o), Py_EQ);
 
     } else if (PyTuple_CheckExact(other)) {
         /* comparing against a tuple is fine, so long as keywords either
            are NULL or empty. */
 
-        answer = ((! KosValues_KWDS(s)) || (! PyDict_Size(KosValues_KWDS(s)))) &&   \
-            PyObject_RichCompareBool(KosValues_ARGS(s), other, Py_EQ);
+        if ((! KosValues_KWDS(s)) || (! PyDict_Size(KosValues_KWDS(s))))
+            answer = PyObject_RichCompareBool(KosValues_ARGS(s), other, Py_EQ);
 
     } else if (PyDict_CheckExact(other)) {
         /* comparing against a dict is fine, so long as positionals is
            empty. */
 
         if (KosValues_KWDS(s)) {
-            answer = (! PyTuple_GET_SIZE(KosValues_ARGS(s))) &&           \
-                PyObject_RichCompareBool(KosValues_KWDS(s), other, Py_EQ);
+            if (! PyTuple_GET_SIZE(KosValues_ARGS(s)))
+                answer = PyObject_RichCompareBool(KosValues_KWDS(s), other, Py_EQ);
 
         } else {
             /* we'll say a NULL keywords is equal to an empty dict */
@@ -546,11 +547,11 @@ static long values_eq(PyObject *self, PyObject *other) {
 
 
 static PyObject *values_richcomp(PyObject *self, PyObject *other, int op) {
-    if (op == Py_EQ) {
-        return PyBool_FromLong(values_eq(self, other));
-
-    } else if (op == Py_NE) {
-        return PyBool_FromLong(! values_eq(self, other));
+    if (op == Py_EQ || op == Py_NE) {
+        long eq = values_eq(self, other);
+        if (eq < 0)
+            return NULL;
+        return PyBool_FromLong(op == Py_EQ ? eq : ! eq);
 
     } else {
         PyErr_SetString(PyExc_TypeError, "unsupported values comparison");
