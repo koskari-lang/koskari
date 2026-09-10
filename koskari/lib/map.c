@@ -456,8 +456,7 @@ static int kosmap_traverse(PyObject *self, visitproc visit, void *arg) {
 
   Py_VISIT(m->fn.cs_callable);
   Py_VISIT(m->source);
-  if (m->ctx)
-    return KosContext_Traverse(m->ctx, visit, arg);
+  Py_VISIT(m->ctx);
   return 0;
 }
 
@@ -468,11 +467,9 @@ static int kosmap_clear(PyObject *self) {
 
   KosCallShape_Clear(&m->fn);
   Py_CLEAR(m->source);
-  if (m->ctx) {
-    KosContext *ctx = m->ctx;
-    m->ctx = NULL;
-    KosContext_Free(ctx);
-  }
+  /* a stepper mid-step on this context holds its own reference and
+     finishes its drive before letting go; the last holder frees */
+  Py_CLEAR(m->ctx);
   return 0;
 }
 

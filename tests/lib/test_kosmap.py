@@ -20,7 +20,9 @@ entry, and only the park's owner resumes it
 """
 
 import asyncio
+import gc
 import unittest
+import weakref
 
 import pytest
 
@@ -216,6 +218,57 @@ class TestKosMapSourceCleanup(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await m.__anext__(), "1")
         self.assertIsNone(await m.aclose())
         self.assertEqual(log, ["cleaned"])
+
+
+class TestKosMapAbandonedMidAwait(unittest.IsolatedAsyncioTestCase):
+    """
+    A map and the step awaiting on its context can be dropped together
+    in one garbage cycle. Whichever of them the collector clears first,
+    the awaited coroutine is closed so its cleanup runs, and nothing
+    stays uncollectable
+    """
+
+    async def test_cycle_with_parked_step_collects_and_closes(self):
+        marks = []
+
+        async def slow(x):
+            # a future nothing else holds, so the test's own references
+            # are the only roots of the graph built below
+            fut = asyncio.get_running_loop().create_future()
+            try:
+                await fut
+                return x + 1
+            finally:
+                marks.append("closed")
+
+        m = KosMap(slow, [1, 2])
+        step = m.__anext__().__await__()
+        # drive the step until it parks on the future
+        parked = step.send(None)
+        # the future the map's context awaits now refers back to the
+        # step, closing the cycle: step -> map -> context -> slow ->
+        # future -> step
+        parked.back_edge = step
+
+        # a leaf hanging off the cycle: it dies with the cycle and can
+        # be watched, where the map and the step cannot be weakly held
+        class Canary:
+            pass
+
+        parked.canary = Canary()
+        canary_ref = weakref.ref(parked.canary)
+
+        # a second cycle holding the step, made after the map so the
+        # collector clears the map first and the step outlives the
+        # map's release of their shared context
+        keeper = [step]
+        keeper.append(keeper)
+
+        del m, step, parked, keeper
+        gc.collect()
+
+        self.assertIsNone(canary_ref())
+        self.assertEqual(marks, ["closed"])
 
 
 # The end.

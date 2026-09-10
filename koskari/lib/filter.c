@@ -566,8 +566,7 @@ static int kosfilter_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(f->pred.cs_callable);
   Py_VISIT(f->source);
   Py_VISIT(f->pending);
-  if (f->ctx)
-    return KosContext_Traverse(f->ctx, visit, arg);
+  Py_VISIT(f->ctx);
   return 0;
 }
 
@@ -579,11 +578,9 @@ static int kosfilter_clear(PyObject *self) {
   KosCallShape_Clear(&f->pred);
   Py_CLEAR(f->source);
   Py_CLEAR(f->pending);
-  if (f->ctx) {
-    KosContext *ctx = f->ctx;
-    f->ctx = NULL;
-    KosContext_Free(ctx);
-  }
+  /* a stepper mid-step on this context holds its own reference and
+     finishes its drive before letting go; the last holder frees */
+  Py_CLEAR(f->ctx);
   return 0;
 }
 

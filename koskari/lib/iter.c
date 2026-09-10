@@ -38,7 +38,7 @@ static int asyncgen_close_drive(KosPyAsyncGen *agen);
 /**
    Dissociate a frozen async generator from its context without running
    the extent protocol: detach and free the frozen chain, release the
-   gen. Leaves ctx ready for KosContext_Free.
+   gen. Leaves ctx ready to be released.
 
    Safe at arbitrary points, including dealloc mid-unwind with a live
    exception: no Python calls, no evaluator re-entry, and the pending
@@ -200,10 +200,7 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
     agen->gen = NULL;
   }
 
-  if (agen->ctx) {
-    KosContext_Free(agen->ctx);
-    agen->ctx = NULL;
-  }
+  Py_CLEAR(agen->ctx);
 }
 
 
@@ -236,8 +233,7 @@ static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
       return res;
   }
 
-  if (agen->ctx)
-    return KosContext_Traverse(agen->ctx, visit, arg);
+  Py_VISIT(agen->ctx);
 
   return 0;
 }

@@ -549,9 +549,17 @@ KosOpResult KosEvalState_NextResume(
   Transfer plan execution is tracked via the plan/plan_stack fields.
 
   Ownership and lifecycle:
-  - A context is created via KosContext_New and destroyed via KosContext_Free.
+  - A context is a Python object (koskari.lib.Context). KosContext_New
+    returns a new reference; every holder (coroutine, async generator,
+    map, filter, iteration adapter) keeps its own reference and drops
+    it with Py_CLEAR, so the last holder deallocates. KosContext_Free
+    is that release under its older name.
+  - Deallocation is memory teardown only: the chain is freed without
+    running the extent protocol. A holder that owes a close drive runs
+    it before dropping its reference.
+  - koskari_eval holds a reference for the length of a drive, so a
+    running context outlives every holder that lets go mid-drive.
   - The context owns its dynamic chain and associated state.
-  - While RUNNING, exactly one Python wrapper (KosPyCoroutine) may own it.
 
   Suspension and resumption:
   - When koskari_eval returns KOS_RES_AWAIT, the context is suspended.
@@ -567,6 +575,7 @@ KosOpResult KosEvalState_NextResume(
 */
 
 struct KosContext {
+  PyObject_HEAD
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
 
@@ -606,9 +615,12 @@ struct KosContext {
   uint8_t suspension_event;  /* KosSuspensionEvent */
 
   uint32_t flags;            /* KosContextFlags */
-
-  struct KosContext *context_freelist_next;  /* link when on context freelist only */
 };
+
+
+extern PyTypeObject KosContextType;
+
+#define KosContext_Check(o) PyObject_TypeCheck((o), &KosContextType)
 
 
 /* === KosContext accessor macros === */
@@ -638,7 +650,6 @@ struct KosContext {
 #define KosContext_SUSPENSION_EVENT(c)      (((KosContext *)(c))->suspension_event)
 
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
-#define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)
 
 
 /* === KosEvalState: C-local execution snapshot (API scaffolding) === */
@@ -1013,29 +1024,24 @@ PyObject *KosEvalState_PopUnpackSequence(
 
   :param top: initial frame (ownership transferred to context)
 
-  :return: new context, or NULL on error
+  :return: new reference to the context, or NULL on error
 */
 KosContext *KosContext_New(KosDynFrame *top);
 
 
 /**
-  Destroy an execution context and release all resources it owns.
+  Release the caller's reference to a context; NULL is a no-op.
 
-  This runs real teardown, not only releasing the struct: freeing the
-  dynamic chain walks every node and runs kind-specific free logic
-  (including Py_DECREF on Python objects held by dyn nodes). That can
-  invoke arbitrary Python code via destructors. It does not start
-  koskari_eval or execute bytecode. Before walking the chain, KosEvalState_Init
-  and KosEvalState_FlushLiveRegsToFrame run so frame PCs reflect the last
-  live eval snapshot.
-
-  Also frees the armed transfer goal and its outers, clears await/resume and
-  inject fields, and drops domain and pending return state. The context
-  record is returned to an internal freelist or PyMem_Free.
-
-  :param ctx: context to destroy; NULL is a no-op
+  The context deallocates with its last reference. Deallocation frees
+  the dynamic chain, walking every node and running kind-specific free
+  logic (including Py_DECREF on Python objects held by dyn nodes), which
+  can invoke arbitrary Python code via destructors, and frees the armed
+  transfer goal and its outers and the await, resume, inject, domain,
+  and parameter state. It does not start koskari_eval or execute
+  bytecode: a holder that owes the extent protocol a close drive runs
+  it before releasing.
 */
-void KosContext_Free(KosContext *ctx);
+#define KosContext_Free(ctx) Py_XDECREF((PyObject *) (ctx))
 
 
 /**
@@ -1192,17 +1198,6 @@ KosEvalState *kos_tls_active_eval_for_ctx(const KosContext *ctx);
 */
 PyObject *kos_domain_current(void);
 
-
-/* === GC helpers for Python wrappers === */
-
-/**
-  Traverse a KosContext for GC.
-
-  Visits all Python objects reachable from the context.
-
-  :return: 0 on success, non-zero if visit returns non-zero
-*/
-int KosContext_Traverse(KosContext *ctx, visitproc visit, void *arg);
 
 
 /* === Exception types === */

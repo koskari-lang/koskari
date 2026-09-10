@@ -477,72 +477,6 @@ static int domain_snapshot_set_item(
 }
 
 
-static int domain_snapshot_set_uint(PyObject *dict, const char *key, uint32_t value) {
-
-  return domain_snapshot_set_item(
-      dict, key, PyLong_FromUnsignedLong((unsigned long) value));
-}
-
-
-static PyObject *context_to_dict(KosContext *ctx) {
-
-  PyObject *out = PyDict_New();
-  if (! out)
-    return NULL;
-
-  if (domain_snapshot_set_item(out, "schema_version", PyLong_FromLong(1)) < 0
-      || domain_snapshot_set_item(out, "context_id", PyLong_FromVoidPtr((void *) ctx)) < 0
-      || domain_snapshot_set_uint(out, "flags", KosContext_FLAGS(ctx)) < 0
-      || domain_snapshot_set_uint(out, "suspension_event",
-                                  (uint32_t) KosContext_SUSPENSION_EVENT(ctx)) < 0) {
-    Py_DECREF(out);
-    return NULL;
-  }
-
-  PyObject *domain = KosContext_DOMAIN(ctx) ? KosContext_DOMAIN(ctx) : Py_None;
-  Py_INCREF(domain);
-  if (domain_snapshot_set_item(out, "domain", domain) < 0) {
-    Py_DECREF(out);
-    return NULL;
-  }
-
-  {
-    KosEvalState *active_es = kos_tls_active_eval_for_ctx(ctx);
-    PyObject *ns;
-
-    if (active_es && KosEvalState_NAMESPACE(active_es))
-      ns = KosEvalState_NAMESPACE(active_es);
-    else if (KosContext_NAMESPACE(ctx))
-      ns = KosContext_NAMESPACE(ctx);
-    else
-      ns = Py_None;
-    Py_INCREF(ns);
-    if (domain_snapshot_set_item(out, "namespace", ns) < 0) {
-      Py_DECREF(out);
-      return NULL;
-    }
-  }
-
-  {
-    KosEvalState *active_es = kos_tls_active_eval_for_ctx(ctx);
-    KosDynNode *dyn_top = active_es
-        ? KosEvalState_DYN_TOP(active_es)
-        : KosContext_DYN_TOP(ctx);
-    PyObject *nodes = kos_dynchain_snapshot_to_list(dyn_top);
-    if (! nodes) {
-      Py_DECREF(out);
-      return NULL;
-    }
-    if (domain_snapshot_set_item(out, "dynnodes", nodes) < 0) {
-      Py_DECREF(out);
-      return NULL;
-    }
-  }
-
-  return out;
-}
-
-
 static PyObject *domain_current_domain(PyObject *cls, PyObject *unused) {
 
   (void) cls;
@@ -566,17 +500,16 @@ static PyObject *domain_get_contexts(const PyObject *self, PyObject *unused) {
   if (! s || s->ctx_depth == 0)
     return out;
 
+  /* innermost first: the contexts running on this thread under this
+     domain, as the Context objects themselves */
   for (size_t i = s->ctx_depth; i--; ) {
     KosContext *ctx = s->ctx_stack[i];
     if (! ctx || KosContext_DOMAIN(ctx) != self)
       continue;
-    PyObject *entry = context_to_dict(ctx);
-    if (! entry || PyList_Append(out, entry) < 0) {
-      Py_XDECREF(entry);
+    if (PyList_Append(out, (PyObject *) ctx) < 0) {
       Py_DECREF(out);
       return NULL;
     }
-    Py_DECREF(entry);
   }
 
   return out;
@@ -635,7 +568,8 @@ static PyMethodDef domain_methods[] = {
    METH_CLASS | METH_NOARGS,
    "Return the active Domain from current TLS scope, or None"},
   {"get_contexts", (PyCFunction) domain_get_contexts, METH_NOARGS,
-   "Return current-thread context snapshots for this Domain"},
+   "Return the Context objects running on this thread under this Domain,"
+   " innermost first; Context.snapshot() pictures each one"},
   {"param_scopes", (PyCFunction) domain_param_scopes, METH_NOARGS,
    "Return {'shadow': {name: cell}, 'root': {name: cell}} for this Domain"},
   {"__enter__", (PyCFunction) domain_enter, METH_NOARGS,

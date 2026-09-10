@@ -58,8 +58,12 @@ static PyObject *iterate_display_name(PyObject *provider) {
 /**
    Acquire the drive context: the provider's durable ki_pyctx when it
    has one (context-level state persists across steps there), else a
-   lazily created adapter-owned host. *owned reports which, so release
-   paths free only adapter-owned contexts.
+   lazily created adapter-owned host. Either way the adapter holds a
+   reference of its own, so a provider cleared out from under a
+   mid-step adapter cannot take the context with it. *owned reports
+   which kind was taken: only an adapter-owned host is recycled or
+   dropped between steps; a durable one keeps the provider's
+   lifecycle.
 */
 static int iterate_acquire_host(
     KosIterSlots *islots,
@@ -73,6 +77,7 @@ static int iterate_acquire_host(
   if (islots->ki_pyctx) {
     KosContext *ctx = islots->ki_pyctx(provider);
     if (ctx) {
+      Py_INCREF(ctx);
       *host = ctx;
       *owned = 0;
       return 0;
@@ -162,8 +167,7 @@ static void iterate_reset_host(
   }
 
   if (KosContext_Recycle(ctx) < 0) {
-    KosContext_Free(ctx);
-    *host = NULL;
+    Py_CLEAR(*host);
     *owned = 0;
   }
 }
@@ -182,8 +186,10 @@ typedef struct {
   PyObject_HEAD
   PyObject *provider;     /* KosIter provider; NULL once spent */
   KosIterSlots *islots;   /* provider's suite; resolved once (static) */
-  KosContext *host;       /* drive context (see iterate_acquire_host) */
-  int host_owned;         /* host is adapter-owned; free on release */
+  KosContext *host;       /* drive context, a reference of our own
+                             (see iterate_acquire_host) */
+  int host_owned;         /* host is adapter-owned: recycled between
+                             steps, not the provider's durable one */
   PyObject *send_value;   /* value to send into the provider */
   int is_throw;           /* first drive delivers the throw pair */
   int closing;            /* aclose result mapping at terminal outcomes */
@@ -250,12 +256,8 @@ static void stepper_release_state(KosIterStepper *st) {
   if (st->awaiting && st->host)
     stepper_abandon_drive(st);
 
-  if (st->host) {
-    if (st->host_owned)
-      KosContext_Free(st->host);
-    st->host = NULL;
-    st->host_owned = 0;
-  }
+  Py_CLEAR(st->host);
+  st->host_owned = 0;
 
   Py_CLEAR(st->provider);
   Py_CLEAR(st->send_value);
@@ -281,9 +283,7 @@ static int stepper_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(st->send_value);
   Py_VISIT(st->throw_typ);
   Py_VISIT(st->throw_exc);
-
-  if (st->host && st->host_owned)
-    return KosContext_Traverse(st->host, visit, arg);
+  Py_VISIT(st->host);
 
   return 0;
 }
@@ -889,8 +889,10 @@ typedef struct {
   PyObject_HEAD
   PyObject *provider;      /* KosIter provider; NULL once closed */
   KosIterSlots *islots;    /* provider's suite; resolved once (static) */
-  KosContext *host;        /* drive context (see iterate_acquire_host) */
-  int host_owned;          /* host is adapter-owned; free on release */
+  KosContext *host;        /* drive context, a reference of our own
+                              (see iterate_acquire_host) */
+  int host_owned;          /* host is adapter-owned: recycled between
+                              steps, not the provider's durable one */
   PyObject *display_name;  /* provider __name__ for repr; may be NULL */
 } KosIterDemandGen;
 
@@ -908,12 +910,8 @@ static void demandgen_drop_state(KosIterDemandGen *gen) {
 
   Py_CLEAR(gen->provider);
 
-  if (gen->host) {
-    if (gen->host_owned)
-      KosContext_Free(gen->host);
-    gen->host = NULL;
-    gen->host_owned = 0;
-  }
+  Py_CLEAR(gen->host);
+  gen->host_owned = 0;
 }
 
 
@@ -934,12 +932,8 @@ static void demandgen_release_state(KosIterDemandGen *gen) {
     Py_CLEAR(gen->provider);
   }
 
-  if (gen->host) {
-    if (gen->host_owned)
-      KosContext_Free(gen->host);
-    gen->host = NULL;
-    gen->host_owned = 0;
-  }
+  Py_CLEAR(gen->host);
+  gen->host_owned = 0;
 }
 
 
@@ -962,9 +956,7 @@ static int demandgen_traverse(PyObject *self, visitproc visit, void *arg) {
 
   Py_VISIT(gen->provider);
   Py_VISIT(gen->display_name);
-
-  if (gen->host && gen->host_owned)
-    return KosContext_Traverse(gen->host, visit, arg);
+  Py_VISIT(gen->host);
 
   return 0;
 }

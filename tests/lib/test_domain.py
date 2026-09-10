@@ -22,7 +22,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import Domain, ParamRef
+from koskari.lib import Context, Domain, ParamRef, demand_call
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
@@ -62,30 +62,66 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
             contexts = dom.get_contexts()
             self.assertIsInstance(contexts, list)
 
-    def test_domain_get_contexts_shape_when_present(self):
+    def test_domain_get_contexts_no_running_context(self):
         """
-        Snapshot entries include baseline keys when contexts are present
+        With nothing running under the Domain, get_contexts is empty
         """
 
         with Domain() as dom:
-            contexts = dom.get_contexts()
-            for entry in contexts:
-                self.assertIn("schema_version", entry)
-                self.assertIn("context_id", entry)
-                self.assertIn("flags", entry)
-                self.assertIn("suspension_event", entry)
-                self.assertIn("domain", entry)
-                self.assertIn("namespace", entry)
-                self.assertIn("dynnodes", entry)
+            self.assertEqual(dom.get_contexts(), [])
 
-                self.assertIs(entry["domain"], dom)
-                self.assertIsInstance(entry["dynnodes"], list)
-                for dynnode in entry["dynnodes"]:
-                    self.assertIn("node_id", dynnode)
-                    self.assertIn("kind", dynnode)
-                    self.assertIn("namespace", dynnode)
-                    self.assertIn("stack", dynnode)
-                    self.assertIn("data", dynnode)
+    def test_domain_get_contexts_reports_running_context(self):
+        """
+        Called from inside a drive, get_contexts holds the Context
+        objects running under the Domain, innermost first, and each
+        Context pictures itself with snapshot()
+        """
+
+        seen = {}
+
+        def probe():
+            dom = Domain.current_domain()
+            seen["domain"] = dom
+            seen["contexts"] = dom.get_contexts()
+            seen["snapshot"] = seen["contexts"][0].snapshot()
+            return 7
+
+        code, ns = build_expr([
+            ["VAR", "probe"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"probe": probe})
+        self.assertEqual(demand_call(make_callable(code, ns)), 7)
+
+        contexts = seen["contexts"]
+        self.assertGreaterEqual(len(contexts), 1)
+        ctx = contexts[0]
+        self.assertIsInstance(ctx, Context)
+        self.assertIs(ctx.domain, seen["domain"])
+        self.assertIs(ctx.namespace, ns)
+
+        entry = seen["snapshot"]
+        for key in ("schema_version", "context_id", "flags",
+                    "suspension_event", "domain", "namespace", "dynnodes"):
+            self.assertIn(key, entry)
+        self.assertEqual(entry["context_id"], id(ctx))
+        self.assertIs(entry["domain"], seen["domain"])
+        self.assertIs(entry["namespace"], ns)
+        self.assertIsInstance(entry["dynnodes"], list)
+        self.assertGreaterEqual(len(entry["dynnodes"]), 1)
+        for dynnode in entry["dynnodes"]:
+            self.assertIn("node_id", dynnode)
+            self.assertIn("kind", dynnode)
+            self.assertIn("namespace", dynnode)
+            self.assertIn("stack", dynnode)
+            self.assertIn("data", dynnode)
+
+        # the drive is over: the context is no longer running
+        self.assertFalse(ctx.running)
+
+    def test_context_is_not_constructible(self):
+        with self.assertRaises(TypeError):
+            Context()
 
 
     def test_domain_paramref_store_deref_from_python(self):

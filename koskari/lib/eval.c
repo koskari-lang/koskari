@@ -1217,51 +1217,20 @@ PyObject *KoskariContinuationError = NULL;
 /* === KosContext implementation === */
 
 
-#define CONTEXT_MAX_FREE KOS_FREELIST_CAP(16)  /* cached KosContext cap; tunable */
-
-static size_t context_freecount = 0;
-static KosContext *context_freelist = NULL;
-
-
-/**
-   Return a KosContext struct to the freelist or free it.  Struct
-   teardown only; callers must have released all owned references.
-*/
-static void context_release(KosContext *ctx) {
-  if (context_freecount < CONTEXT_MAX_FREE) {
-    KOS_TRACE_FL_RETURN("context", 0);
-    memset(ctx, 0, sizeof(KosContext));
-    KosContext_FREELIST_NEXT(ctx) = context_freelist;
-    context_freelist = ctx;
-    context_freecount++;
-  } else {
-    KOS_TRACE_FL_RETURN("context", 1);
-    PyMem_Free(ctx);
-  }
-}
-
-
 KosContext *KosContext_New(KosDynFrame *top) {
 
-  KosContext *ctx = context_freelist;
-  if (ctx) {
-    context_freelist = KosContext_FREELIST_NEXT(ctx);
-    context_freecount--;
-    KOS_TRACE_FL_ALLOC("context", 1);
-    memset(ctx, 0, sizeof(KosContext));
-  } else {
-    KOS_TRACE_FL_ALLOC("context", 0);
-    ctx = PyMem_Malloc(sizeof(KosContext));
-    if (! ctx) {
-      PyErr_NoMemory();
-      return NULL;
-    }
-    memset(ctx, 0, sizeof(KosContext));
-  }
+  KosContext *ctx = PyObject_GC_New(KosContext, &KosContextType);
+  if (! ctx)
+    return NULL;
+
+  /* every field after the object header starts cleared, so a failure
+     below can release the half-built context through the type */
+  memset((char *) ctx + sizeof(PyObject), 0,
+         sizeof(KosContext) - sizeof(PyObject));
 
   KosContext_TOKEN(ctx) = evaluator_token_new();
   if (! KosContext_TOKEN(ctx)) {
-    context_release(ctx);
+    Py_DECREF(ctx);
     return NULL;
   }
 
@@ -1280,9 +1249,7 @@ KosContext *KosContext_New(KosDynFrame *top) {
       if (cells && PyDict_GET_SIZE(cells) > 0) {
         ctx->param_refs = PyDict_Copy(cells);
         if (! ctx->param_refs) {
-          Py_DECREF(KosContext_TOKEN(ctx));
-          KosContext_TOKEN(ctx) = NULL;
-          context_release(ctx);
+          Py_DECREF(ctx);
           return NULL;
         }
       }
@@ -1301,9 +1268,7 @@ KosContext *KosContext_New(KosDynFrame *top) {
       } else {
         ctx->domain = (PyObject *) KosDomain_New();
         if (! ctx->domain) {
-          Py_DECREF(KosContext_TOKEN(ctx));
-          KosContext_TOKEN(ctx) = NULL;
-          context_release(ctx);
+          Py_DECREF(ctx);
           return NULL;
         }
       }
@@ -1336,20 +1301,22 @@ KosContext *KosContext_New(KosDynFrame *top) {
     KosEvalState_FreezeToContext(&es);
   }
 
+  PyObject_GC_Track((PyObject *) ctx);
   return ctx;
 }
 
 
-void KosContext_Free(KosContext *ctx) {
+/**
+   Memory teardown only: releases dyn nodes and operand stacks via
+   kos_dynchain_free without running the extent protocol (WITH
+   __exit__, PARAM restore, WIND hooks). A holder with a frozen async
+   generator runs KosPyAsyncGen_Teardown before dropping its reference
+   so GEN.active is disposed before the context. Also the type's
+   tp_clear, so a context inside a garbage cycle drops what it holds.
+*/
+static int context_clear(PyObject *self) {
 
-  /*
-   * Memory teardown only: releases dyn nodes and operand stacks via
-   * kos_dynchain_free without running extent protocol (WITH __exit__,
-   * PARAM restore, WIND hooks). Callers with a frozen async generator must
-   * run KosPyAsyncGen_Teardown first so GEN.active is disposed before ctx.
-   */
-  if (! ctx)
-    return;
+  KosContext *ctx = (KosContext *) self;
 
   Py_XDECREF(KosContext_TOKEN(ctx));
   KosContext_TOKEN(ctx) = NULL;
@@ -1375,7 +1342,15 @@ void KosContext_Free(KosContext *ctx) {
   Py_XDECREF(KosContext_PARAM_REFS(ctx));
   KosContext_PARAM_REFS(ctx) = NULL;
 
-  context_release(ctx);
+  return 0;
+}
+
+
+static void context_dealloc(PyObject *self) {
+
+  PyObject_GC_UnTrack(self);
+  context_clear(self);
+  Py_TYPE(self)->tp_free(self);
 }
 
 
@@ -1405,18 +1380,13 @@ int KosContext_Recycle(KosContext *ctx) {
 }
 
 
-int KosContext_Traverse(
-    KosContext *ctx,
-    visitproc visit,
-    void *arg) {
+static int context_traverse(PyObject *self, visitproc visit, void *arg) {
 
+  KosContext *ctx = (KosContext *) self;
   KosDynNode *dyn_top;
   KosXferGoal *goal;
   KosEvalState *active_es;
   int res;
-
-  if (! ctx)
-    return 0;
 
   Py_VISIT(KosContext_TOKEN(ctx));
   Py_VISIT(KosContext_DOMAIN(ctx));
@@ -1456,6 +1426,184 @@ int KosContext_Traverse(
 
   return 0;
 }
+
+
+/* === KosContext Python surface === */
+
+
+static int context_snapshot_set(
+    PyObject *dict,
+    const char *key,
+    PyObject *value) {
+
+  if (! value)
+    return -1;
+  if (PyDict_SetItemString(dict, key, value) < 0) {
+    Py_DECREF(value);
+    return -1;
+  }
+  Py_DECREF(value);
+  return 0;
+}
+
+
+/**
+   The namespace the context is acting in: the live eval state's while
+   a drive is running on this thread, else the frozen one. Borrowed,
+   or NULL when the context has none.
+*/
+static PyObject *context_acting_namespace(KosContext *ctx) {
+
+  KosEvalState *active_es = kos_tls_active_eval_for_ctx(ctx);
+
+  if (active_es && KosEvalState_NAMESPACE(active_es))
+    return KosEvalState_NAMESPACE(active_es);
+  return KosContext_NAMESPACE(ctx);
+}
+
+
+/**
+   The top of the dynamic chain: stolen onto the live eval state while
+   a drive is running on this thread, else resting on the context.
+*/
+static KosDynNode *context_acting_dyn_top(KosContext *ctx) {
+
+  KosEvalState *active_es = kos_tls_active_eval_for_ctx(ctx);
+
+  if (active_es)
+    return KosEvalState_DYN_TOP(active_es);
+  return KosContext_DYN_TOP(ctx);
+}
+
+
+static PyObject *context_snapshot(PyObject *self, PyObject *unused) {
+
+  KosContext *ctx = (KosContext *) self;
+  PyObject *out;
+  PyObject *ns;
+
+  (void) unused;
+
+  out = PyDict_New();
+  if (! out)
+    return NULL;
+
+  ns = context_acting_namespace(ctx);
+  if (! ns)
+    ns = Py_None;
+  Py_INCREF(ns);
+
+  if (context_snapshot_set(out, "schema_version", PyLong_FromLong(1)) < 0
+      || context_snapshot_set(out, "context_id",
+                              PyLong_FromVoidPtr((void *) ctx)) < 0
+      || context_snapshot_set(out, "flags",
+                              PyLong_FromUnsignedLong(
+                                  KosContext_FLAGS(ctx))) < 0
+      || context_snapshot_set(out, "suspension_event",
+                              PyLong_FromUnsignedLong(
+                                  KosContext_SUSPENSION_EVENT(ctx))) < 0
+      || context_snapshot_set(out, "domain",
+                              Py_NewRef(KosContext_DOMAIN(ctx)
+                                        ? KosContext_DOMAIN(ctx)
+                                        : Py_None)) < 0
+      || context_snapshot_set(out, "namespace", ns) < 0
+      || context_snapshot_set(out, "dynnodes",
+                              kos_dynchain_snapshot_to_list(
+                                  context_acting_dyn_top(ctx))) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  return out;
+}
+
+
+static PyObject *context_get_domain(PyObject *self, void *unused) {
+
+  PyObject *domain = KosContext_DOMAIN(self);
+  return Py_NewRef(domain ? domain : Py_None);
+}
+
+
+static PyObject *context_get_namespace(PyObject *self, void *unused) {
+
+  PyObject *ns = context_acting_namespace((KosContext *) self);
+  return Py_NewRef(ns ? ns : Py_None);
+}
+
+
+static PyObject *context_get_running(PyObject *self, void *unused) {
+
+  return PyBool_FromLong((KosContext_FLAGS(self) & KOS_CTX_RUNNING) != 0);
+}
+
+
+static PyObject *context_get_dead(PyObject *self, void *unused) {
+
+  return PyBool_FromLong((KosContext_FLAGS(self) & KOS_CTX_DEAD) != 0);
+}
+
+
+static PyObject *context_get_suspension_event(PyObject *self, void *unused) {
+
+  return PyLong_FromUnsignedLong(KosContext_SUSPENSION_EVENT(self));
+}
+
+
+static PyObject *context_repr(PyObject *self) {
+
+  KosContext *ctx = (KosContext *) self;
+  const char *state =
+      (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING) ? "running"
+      : (KosContext_FLAGS(ctx) & KOS_CTX_DEAD) ? "dead"
+      : context_acting_dyn_top(ctx) ? "suspended"
+      : "idle";
+
+  return PyUnicode_FromFormat("<koskari.lib.Context %s at %p>", state, ctx);
+}
+
+
+static PyMethodDef context_methods[] = {
+  { "snapshot", (PyCFunction) context_snapshot, METH_NOARGS,
+    "snapshot() -> dict\n"
+    "A picture of the context now: flags, suspension event, domain, the"
+    " acting namespace, and one entry per dynamic chain node with its"
+    " kind, namespace, operand stack, and payload." },
+  { NULL, NULL, 0, NULL },
+};
+
+
+static PyGetSetDef context_getset[] = {
+  { "domain", context_get_domain, NULL,
+    "The Domain this context resolves parameters against", NULL },
+  { "namespace", context_get_namespace, NULL,
+    "The namespace the context is acting in, or None", NULL },
+  { "running", context_get_running, NULL,
+    "bool; a drive is running on this context", NULL },
+  { "dead", context_get_dead, NULL,
+    "bool; the context completed or failed at its root", NULL },
+  { "suspension_event", context_get_suspension_event, NULL,
+    "int; why the last drive left the evaluator", NULL },
+  { NULL, NULL, NULL, NULL, NULL },
+};
+
+
+PyTypeObject KosContextType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+  .tp_name = "koskari.lib.Context",
+  .tp_basicsize = sizeof(KosContext),
+  .tp_itemsize = 0,
+  .tp_dealloc = context_dealloc,
+  .tp_repr = context_repr,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_doc = "An evaluator execution context: the dynamic chain, operand"
+            " stacks, and namespaces of one running or suspended"
+            " computation. Created by the runtime, never from Python.",
+  .tp_traverse = context_traverse,
+  .tp_clear = context_clear,
+  .tp_methods = context_methods,
+  .tp_getset = context_getset,
+};
 
 
 /* === Frame namespace helpers (for VAR_* opcodes) === */
@@ -2452,7 +2600,7 @@ static KosOpResult eval_event_yield(
   }
   /* Only a yield that stops the evaluator leaves the context not
      running; a delivered yield keeps threading, and the context stays
-     RUNNING so KosContext_Traverse keeps visiting the live state. */
+     RUNNING so the context's GC traverse keeps visiting the live state. */
   KosEvalState_MarkDeadAfterYield(es);
   KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
   return EVAL_YIELD(val);
@@ -3446,6 +3594,12 @@ KosOpResult koskari_eval(
   if (KosExc_Held(&host_exc) || KosExc_Held(KosContext_EXC_INFO(ctx)))
     KosExc_Install(KosContext_EXC_INFO(ctx));
 
+  /* The drive holds the context: a holder that drops its reference
+     while bytecode runs (a coroutine collected from inside its own
+     body, a provider cleared under its stepper) leaves the context
+     alive until the drive has frozen back onto it below. */
+  Py_INCREF(ctx);
+
   KosEvalState_Init(&es, ctx);
   KosEvalState_ThawFromContext(&es);
   if (KosEvalState_DYN_TOP(&es))
@@ -3596,6 +3750,10 @@ koskari_eval_cleanup:
       KosExc_Clear(&host_exc);
     }
   }
+
+  /* the drive's hold on the context, taken at entry; a holder that let
+     go during the drive deallocates it here */
+  Py_DECREF(ctx);
   return eval_ret;
 }
 
@@ -3668,6 +3826,14 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_throw, "throw");
   // STR_CONST(str_getattribute, "__getattribute__");
 
+  if (PyType_Ready(&KosContextType) < 0)
+    return -1;
+  Py_INCREF(&KosContextType);
+  if (PyModule_AddObject(mod, "Context", (PyObject *) &KosContextType) < 0) {
+    Py_DECREF(&KosContextType);
+    return -1;
+  }
+
   /* Initialize KosEvaluatorToken type */
   if (PyType_Ready(&KosEvaluatorTokenType) < 0)
     return -1;
@@ -3735,13 +3901,6 @@ int koskari_eval_clear(PyObject *mod) {
   KoskariContinuationDead = NULL;
   KoskariContinuationApply = NULL;
   KoskariContinuationError = NULL;
-
-  while (context_freelist) {
-    KosContext *next = KosContext_FREELIST_NEXT(context_freelist);
-    PyMem_Free(context_freelist);
-    context_freelist = next;
-  }
-  context_freecount = 0;
 
   koskari_dynchain_clear(mod);
 
