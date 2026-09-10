@@ -1332,10 +1332,9 @@ static int context_clear(PyObject *self) {
   }
 
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
-  Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
-  Py_XDECREF(KosContext_INJECT_TYPE(ctx));
-  KosContext_INJECT_TYPE(ctx) = NULL;
-  Py_XDECREF(KosContext_INJECT_VALUE(ctx));
+  Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
+  Py_CLEAR(KosContext_INJECT_TYPE(ctx));
+  Py_CLEAR(KosContext_INJECT_VALUE(ctx));
   KosExc_Clear(KosContext_EXC_INFO(ctx));
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
