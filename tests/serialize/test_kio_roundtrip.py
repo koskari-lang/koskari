@@ -112,8 +112,12 @@ class TestKioRoundTrip(unittest.TestCase):
             self.assertEqual(loaded, value)
 
     def test_nested_frozenset_slice_roundtrip(self):
-        """containers nest: a tuple holding a frozenset holding a slice"""
-        value = (frozenset((slice(1, 2),)), ...)
+        """
+        containers nest: a tuple holding a frozenset, a tuple holding a
+        slice, and Ellipsis. The slice cannot sit inside the frozenset
+        because a slice is unhashable before Python 3.12
+        """
+        value = (frozenset((1, 2)), (slice(1, 2),), ...)
         loaded = self._const_roundtrip(value)
         self.assertEqual(loaded, value)
 
