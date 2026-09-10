@@ -71,7 +71,11 @@ extensions = [
 ]
 
 templates_path = ['_templates']
-exclude_patterns = ['agents', 'build', 'site', 'Thumbs.db', '.DS_Store']
+exclude_patterns = [
+    'agents', 'build', 'site', 'Thumbs.db', '.DS_Store',
+    # agent instruction files are not pages
+    '**/CLAUDE.md',
+]
 
 root_doc = 'index'
 
