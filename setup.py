@@ -190,6 +190,7 @@ def extension(platform=None, debug=None):
     depends.extend(libdir.glob("*.incl"))
     depends.extend(libdir.glob("dynchain/*.c"))
     depends.extend(libdir.glob("eval/*.c"))
+    depends.extend(libdir.glob("func/*.c"))
     depends.extend(libdir.glob("matcher/*.c"))
     depends.extend(libdir.glob("opcode/*.c"))
     depends = sorted(map(str, depends))
