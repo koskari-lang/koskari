@@ -26,11 +26,11 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import cons, nil, symbol
 from ...matcher import (
-    BIND, CALLEDBY, DEFINE, LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE,
-    parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
+    BIND, BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, REPEAT, REST, SYMBOL,
+    VALUE, parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
 from ...syntax import parse_syntax_rules_pattern, special
 from ...types import build_proper, is_pair, is_proper, is_symbol, unpack
-from ..helpers import match, match1
+from ..helpers import match1
 
 
 _sym_quote = symbol("quote")
@@ -66,37 +66,33 @@ def _emit_parse_match_pattern(pattern_src):
         nil)
 
 
-_SYNTAX_MATCH_BODY_PATTERN = MATCH(repeat_capture("rules", BIND("rule")))
-
 # Opaque one-cell rows for compile-time parsing of ``syntax-rules`` /
-# ``macro-rules`` / ``special-rules`` surfaces (Koskari rules are not always
-# two-element ``(pattern template)`` lists). Inner REPEAT binds rename to
+# ``macro-rules`` / ``syntax-match`` surfaces (Koskari rules are not
+# always two-element ``(pattern template)`` lists), split later by
+# _syntax_rules_row_pattern_and_template. Inner REPEAT binds rename to
 # ``rule__sr`` in the native matcher.
-_SYNTAX_RULES_BODY_PATTERN = MATCH(repeat_capture("rules", BIND("rule")))
+_RULE_ROWS = repeat_capture("rules", REPEAT(BIND("rule"), min_count=1))
 
-_MACRO_MATCH_RULE_ROW = LIST(BIND("pattern"), REST("body"))
-MACRO_MATCH_RULES_PATTERN = MATCH(
-    repeat_capture("rules", _MACRO_MATCH_RULE_ROW))
+# Rows of ``(PATTERN BODY...)`` for the match-dialect surfaces
+_MATCH_RULE_ROWS = repeat_capture(
+    "rules",
+    REPEAT(LIST(BIND("pattern"), REST("body")), min_count=1))
 
-_MACRO_RULES_BODY_PATTERN = MATCH(repeat_capture("rules", BIND("rule")))
+# Rows of ``((COMPILER-FORMAL PATTERN) BODY...)`` for the special
+# surfaces, whose pattern column names the compiler parameter
+_SPECIAL_RULE_ROWS = repeat_capture(
+    "rules",
+    REPEAT(
+        LIST(LIST(SYMBOL("compiler"), VALUE("pattern")), BODY("body")),
+        min_count=1))
+
+_SPECIAL_MATCH_RULE_ROWS = repeat_capture(
+    "rules",
+    REPEAT(
+        LIST(LIST(SYMBOL("compiler"), VALUE("pattern")), REST("body")),
+        min_count=1))
 
 _MATCH_FORM_PATTERN = LIST(LITERAL_SYM("match"), VALUE("inner"))
-
-SPECIAL_RULES_PATTERN = MATCH(
-    repeat_capture("rules", _MACRO_MATCH_RULE_ROW))
-SPECIAL_PATTERN_BREAKOUT = [
-    MATCH(LIST(SYMBOL("compiler"), VALUE("pattern"))),
-]
-
-# After compile/define-syntax, (compile/<rules-kind> NAME LITERALS . RULES).
-_COMPILE_NAME_LITERALS_RULES = [
-    MATCH(SYMBOL("name"), BIND("literals"), REST("rules")),
-]
-
-# After compile/define-syntax, (compile/<match-kind> NAME . RULES).
-_COMPILE_NAME_RULES_TAIL = [
-    MATCH(DEFINE("name"), REST("rules")),
-]
 
 
 def _syntax_rules_row_pattern_and_template(raw_rule):
@@ -131,17 +127,20 @@ def _syntax_rules_row_pattern_and_template(raw_rule):
     return pattern_src, template_expr
 
 
-_COMPILE_NAME_SPEC_PATTERNS = [MATCH(DEFINE("name"), VALUE("spec"))]
-
 
 _SYNTAX_RULES_PATTERNS = [
-    MATCH(CALLEDBY(), SYMBOL("name"), BIND("literals"), REST("rules")),
+    MATCH(
+        CALLEDBY("called_by"),
+        SYMBOL("name"),
+        BIND("literals"),
+        _RULE_ROWS),
 ]
 
 
 @builtin("compile/syntax-rules")
-@special("compile/syntax-rules", patterns=_SYNTAX_RULES_PATTERNS)
-def special_compile_syntax_rules(compiler, source):
+@special("compile/syntax-rules", patterns=_SYNTAX_RULES_PATTERNS,
+         unpack="kwargs")
+def special_compile_syntax_rules(compiler, called_by, name, literals, rules):
     """
     Compile (compile/syntax-rules NAME LITERALS RULES...).
 
@@ -154,50 +153,34 @@ def special_compile_syntax_rules(compiler, source):
     parsing runs when that expression is evaluated.
     """
 
-    _, rest = source
-    matched = match(rest, _COMPILE_NAME_LITERALS_RULES)
-    if matched is None:
-        raise SpecialError(
-            "compile/syntax-rules requires name, literals list, and rule forms",
-            source)
-
-    namesym = matched["name"].datum
-
-    literals_expr = matched["literals"].datum
-    rules_expr = matched["rules"].datum
-
-    rules_m = match(rules_expr, _SYNTAX_RULES_BODY_PATTERN)
-    if rules_m is None or not rules_m["rules"]:
-        raise SpecialError("syntax-rules requires at least one rule", rules_expr)
+    namesym = name.datum
+    literals_expr = literals.datum
 
     parts = []
-    for res in rules_m["rules"]:
+    for res in rules:
         raw_rule = res["rule"].datum
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
         parts.append(_emit_parse_rule_pattern(pattern_src, literals_expr))
         parts.append(cons(_sym_quote, template_expr, nil))
 
-    literals = set(unpack(literals_expr))
-    literals.add(namesym)
-
     return cons(symbol("build-syntax"),
                 str(namesym), *parts, nil)
 
 
 _BARE_SYNTAX_PATTERNS = [
-    MATCH(CALLEDBY(), SYMBOL("name"), SYMBOL("slot"), VALUE("template")),
-]
-
-# After compile/define-syntax, (compile/bare-syntax NAME SLOT TEMPLATE).
-_COMPILE_NAME_SLOT_TEMPLATE = [
-    MATCH(SYMBOL("name"), SYMBOL("slot"), VALUE("template")),
+    MATCH(
+        CALLEDBY("called_by"),
+        SYMBOL("name"),
+        SYMBOL("slot"),
+        VALUE("template")),
 ]
 
 
 @builtin("compile/bare-syntax")
-@special("compile/bare-syntax", patterns=_BARE_SYNTAX_PATTERNS)
-def special_compile_bare_syntax(compiler, source):
+@special("compile/bare-syntax", patterns=_BARE_SYNTAX_PATTERNS,
+         unpack="kwargs")
+def special_compile_bare_syntax(compiler, called_by, name, slot, template):
     """
     Compile (compile/bare-syntax NAME SLOT TEMPLATE).
 
@@ -211,32 +194,25 @@ def special_compile_bare_syntax(compiler, source):
     ``extend-syntax`` to attach it to an existing syntax.
     """
 
-    _, rest = source
-    matched = match(rest, _COMPILE_NAME_SLOT_TEMPLATE)
-    if matched is None:
-        raise SpecialError(
-            "compile/bare-syntax requires name, called-by symbol,"
-            " and one template",
-            source)
-
-    namesym = matched["name"].datum
-    slotsym = matched["slot"].datum
-    template_expr = matched["template"].datum
-
     return cons(symbol("build-bare-syntax"),
-                str(namesym), str(slotsym),
-                cons(_sym_quote, template_expr, nil),
+                str(name.datum), str(slot.datum),
+                cons(_sym_quote, template.datum, nil),
                 nil)
 
 
 _MACRO_RULES_PATTERNS = [
-    MATCH(CALLEDBY(), SYMBOL("name"), BIND("literals"), REST("rules")),
+    MATCH(
+        CALLEDBY("called_by"),
+        SYMBOL("name"),
+        BIND("literals"),
+        _RULE_ROWS),
 ]
 
 
 @builtin("compile/macro-rules")
-@special("compile/macro-rules", patterns=_MACRO_RULES_PATTERNS)
-def special_compile_macro_rules(compiler, source):
+@special("compile/macro-rules", patterns=_MACRO_RULES_PATTERNS,
+         unpack="kwargs")
+def special_compile_macro_rules(compiler, called_by, name, literals, rules):
     """
     Compile (compile/macro-rules NAME LITERALS RULES...).
 
@@ -247,26 +223,18 @@ def special_compile_macro_rules(compiler, source):
     expression; use ``(compile/define NAME ...)`` to bind it.
     """
 
-    _, rest = source
+    namesym = name.datum
 
-    matched = match(rest, _COMPILE_NAME_LITERALS_RULES)
-    if matched is None:
-        raise SpecialError(
-            "compile/macro-rules requires name, literals list, and rule forms",
-            source)
-
-    namesym = matched["name"].datum
-
-    literals, rows = parse_macro_rules_rows(
+    literal_set, rows = parse_macro_rules_rows(
         namesym,
-        matched["literals"].datum,
-        matched["rules"].datum,
+        literals.datum,
+        [res["rule"].datum for res in rules],
     )
 
     parts = []
 
     for pattern_matcher, pattern_src, formals, body_forms in rows:
-        parts.append(_emit_parse_rule_pattern(pattern_src, literals))
+        parts.append(_emit_parse_rule_pattern(pattern_src, literal_set))
         parts.append(cons(symbol("lambda"),
                           build_proper(*formals), body_forms))
 
@@ -274,13 +242,14 @@ def special_compile_macro_rules(compiler, source):
 
 
 _SYNTAX_MATCH_PATTERNS = [
-    MATCH(CALLEDBY(), SYMBOL("name"), REST("rules")),
+    MATCH(CALLEDBY("called_by"), SYMBOL("name"), _RULE_ROWS),
 ]
 
 
 @builtin("compile/syntax-match")
-@special("compile/syntax-match", patterns=_SYNTAX_MATCH_PATTERNS)
-def special_compile_syntax_match(compiler, source):
+@special("compile/syntax-match", patterns=_SYNTAX_MATCH_PATTERNS,
+         unpack="kwargs")
+def special_compile_syntax_match(compiler, called_by, name, rules):
     """
     Compile (compile/syntax-match NAME RULE ...).
 
@@ -293,24 +262,10 @@ def special_compile_syntax_match(compiler, source):
     Pattern parsing runs when that expression is evaluated.
     """
 
-    _, rest = source
-    matched = match(rest, _COMPILE_NAME_RULES_TAIL)
-    if matched is None:
-        raise SpecialError(
-            "compile/syntax-match requires name and at least one rule",
-            source)
-
-    namesym = matched["name"].datum
-
-    rules_expr = matched["rules"].datum
-
-    rules_m = match(rules_expr, _SYNTAX_MATCH_BODY_PATTERN)
-    if rules_m is None or not rules_m["rules"]:
-        raise SpecialError(
-            "syntax-match requires at least one valid rule", rules_expr)
+    namesym = name.datum
 
     parts = []
-    for res in rules_m["rules"]:
+    for res in rules:
         raw_rule = res["rule"].datum
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
@@ -321,13 +276,14 @@ def special_compile_syntax_match(compiler, source):
 
 
 _MACRO_MATCH_PATTERNS = [
-    MATCH(CALLEDBY(), SYMBOL("name"), REST("rules")),
+    MATCH(CALLEDBY("called_by"), SYMBOL("name"), _MATCH_RULE_ROWS),
 ]
 
 
 @builtin("compile/macro-match")
-@special("compile/macro-match", patterns=_MACRO_MATCH_PATTERNS)
-def special_compile_macro_match(compiler, source):
+@special("compile/macro-match", patterns=_MACRO_MATCH_PATTERNS,
+         unpack="kwargs")
+def special_compile_macro_match(compiler, called_by, name, rules):
     """
     Compile (compile/macro-match NAME RULE ...).
 
@@ -341,25 +297,11 @@ def special_compile_macro_match(compiler, source):
     to bind it.
     """
 
-    _, rest = source
-    matched = match(rest, _COMPILE_NAME_RULES_TAIL)
-    if matched is None:
-        raise SpecialError(
-            "compile/macro-match requires name and at least one rule",
-            source)
-
-    namesym = matched["name"].datum
-
-    rules_expr = matched["rules"].datum
-
-    rules_m = match(rules_expr, MACRO_MATCH_RULES_PATTERN)
-    if rules_m is None:
-        raise SpecialError(
-            "macro-match requires at least one valid rule", rules_expr)
+    namesym = name.datum
 
     parts = []
 
-    for sub_res in rules_m["rules"]:
+    for sub_res in rules:
         pattern_src = sub_res["pattern"].datum
         body_src = sub_res["body"].datum
 
@@ -374,13 +316,18 @@ def special_compile_macro_match(compiler, source):
 
 
 _SPECIAL_RULES_PATTERNS = [
-    MATCH(CALLEDBY(), SYMBOL("name"), BIND("literals"), REST("rules")),
+    MATCH(
+        CALLEDBY("called_by"),
+        SYMBOL("name"),
+        BIND("literals"),
+        _SPECIAL_RULE_ROWS),
 ]
 
 
 @builtin("compile/special-rules")
-@special("compile/special-rules", patterns=_SPECIAL_RULES_PATTERNS)
-def special_compile_special_rules(compiler, source):
+@special("compile/special-rules", patterns=_SPECIAL_RULES_PATTERNS,
+         unpack="kwargs")
+def special_compile_special_rules(compiler, called_by, name, literals, rules):
     """
     Compile (compile/special-rules NAME LITERALS RULES...).
 
@@ -394,51 +341,20 @@ def special_compile_special_rules(compiler, source):
     ``(compile/define NAME ...)`` to bind it.
     """
 
-    _, rest = source
+    namesym = name.datum
 
-    matched = match(rest, _COMPILE_NAME_LITERALS_RULES)
-    if matched is None:
-        raise SpecialError(
-            "compile/special-rules requires name, literals list, and rule forms",
-            source)
-
-    namesym = matched["name"].datum
-    literals_expr = matched["literals"].datum
-    rules_expr = matched["rules"].datum
-
-    literals = set(unpack(literals_expr))
-    literals.add(namesym)
-
-    rules_m = match(rules_expr, _MACRO_RULES_BODY_PATTERN)
-    if rules_m is None or not rules_m["rules"]:
-        raise SpecialError("special-rules requires at least one rule", rules_expr)
+    literal_set = set(unpack(literals.datum))
+    literal_set.add(namesym)
 
     parts = []
-    for res in rules_m["rules"]:
-        raw_rule = res["rule"].datum
-        if not is_pair(raw_rule):
-            raise SpecialError("invalid special-rules rule", raw_rule)
+    for res in rules:
+        compiler_formal = res["compiler"].datum
+        inner = res["pattern"].datum
+        body_forms = res["body"].datum
 
-        if not is_proper(raw_rule):
-            raise SpecialError("special-rules rule must be a proper list", raw_rule)
+        vars_ordered = collect_pattern_variable_symbols(inner, literal_set)
 
-        pattern_src, body_forms = raw_rule
-        if not body_forms:
-            raise SpecialError("special-rules rule requires a body", raw_rule)
-
-        m = match1(pattern_src, SPECIAL_PATTERN_BREAKOUT)
-        if m is None:
-            raise SpecialError(
-                "special-rules pattern column must be "
-                "(compiler-formal pattern)",
-                pattern_src)
-
-        compiler_formal = m["compiler"].datum
-        inner = m["pattern"].datum
-
-        vars_ordered = collect_pattern_variable_symbols(inner, literals)
-
-        parts.append(_emit_parse_rule_pattern(inner, literals))
+        parts.append(_emit_parse_rule_pattern(inner, literal_set))
         parts.append(cons(symbol("lambda"),
                           build_proper(compiler_formal, *vars_ordered),
                           body_forms))
@@ -447,13 +363,14 @@ def special_compile_special_rules(compiler, source):
 
 
 _SPECIAL_MATCH_PATTERNS = [
-    MATCH(CALLEDBY(), SYMBOL("name"), REST("rules")),
+    MATCH(CALLEDBY("called_by"), SYMBOL("name"), _SPECIAL_MATCH_RULE_ROWS),
 ]
 
 
 @builtin("compile/special-match")
-@special("compile/special-match", patterns=_SPECIAL_MATCH_PATTERNS)
-def special_compile_special_match(compiler, source):
+@special("compile/special-match", patterns=_SPECIAL_MATCH_PATTERNS,
+         unpack="kwargs")
+def special_compile_special_match(compiler, called_by, name, rules):
     """
     Compile (compile/special-match NAME RULE ...).
 
@@ -467,37 +384,15 @@ def special_compile_special_match(compiler, source):
     is the value of that expression; use ``(compile/define NAME ...)`` to bind it.
     """
 
-    _, rest = source
-    matched = match(rest, _COMPILE_NAME_RULES_TAIL)
-    if matched is None:
-        raise SpecialError(
-            "compile/special-match requires name and at least one rule",
-            source)
-
-    namesym = matched["name"].datum
-
-    rules_expr = matched["rules"].datum
-
-    rules_m = match(rules_expr, MACRO_MATCH_RULES_PATTERN)
-    if rules_m is None:
-        raise SpecialError(
-            "special-match requires at least one valid rule", rules_expr)
+    namesym = name.datum
 
     parts = []
 
-    for sub_res in rules_m["rules"]:
-        pattern_src = sub_res["pattern"].datum
-        body_src = sub_res["body"].datum
+    for res in rules:
+        compiler_formal = res["compiler"].datum
+        inner = res["pattern"].datum
+        body_src = res["body"].datum
 
-        m = match1(pattern_src, SPECIAL_PATTERN_BREAKOUT)
-        if m is None:
-            raise SpecialError(
-                "special-match pattern column must be "
-                "(compiler-formal pattern)",
-                pattern_src)
-
-        compiler_formal = m["compiler"].datum
-        inner = m["pattern"].datum
         if is_symbol(inner):
             inner = cons(cons(symbol("REST"), inner, nil), nil)
 
@@ -550,7 +445,7 @@ def collect_pattern_variable_symbols(pattern_expr, literals):
     return seen
 
 
-def parse_macro_rules_rows(name, literals_expr, rules_expr):
+def parse_macro_rules_rows(name, literals_expr, raw_rules):
     """
     Parse macro-rules literals and rules tail into matchers and body datums
 
@@ -560,7 +455,7 @@ def parse_macro_rules_rows(name, literals_expr, rules_expr):
     :param name: macro name symbol (included in literals)
     :param literals_expr: literals list expression (same position as in
         ``(macro-rules LITERALS RULE ...)``)
-    :param rules_expr: rules tail (same as after literals in macro-rules form)
+    :param raw_rules: the rule row datums, in source order
     :return: ``(literals, rows)`` where each row is ``(pattern_matcher,
         pattern_src, formals_tuple, list of body forms)``
     :raises SpecialError: when the rules are not valid macro-rules rows
@@ -569,13 +464,8 @@ def parse_macro_rules_rows(name, literals_expr, rules_expr):
     literals = set(unpack(literals_expr))
     literals.add(name)
 
-    rules_m = match(rules_expr, _MACRO_RULES_BODY_PATTERN)
-    if rules_m is None or not rules_m["rules"]:
-        raise SpecialError("macro-rules requires at least one rule", rules_expr)
-
     rows = []
-    for res in rules_m["rules"]:
-        raw_rule = res["rule"].datum
+    for raw_rule in raw_rules:
         if not is_pair(raw_rule):
             raise SpecialError("invalid macro-rules rule", raw_rule)
 
