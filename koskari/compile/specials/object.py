@@ -32,14 +32,41 @@ import operator as _op
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import Compare, OpCode, Operand, cons, symbol
-from ...matcher import CALLEDBY, MATCH, REST, VALUE
+from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
-from ...types import (
-    get_position, is_keyword, is_nil, is_pair, is_symbol, unpack)
-from ..helpers import const_only_expr, is_symbolish, match, splat_call_form
+from ...types import is_keyword, is_nil, is_pair, is_symbol, unpack
+from ..helpers import const_only_expr, splat_call_form
 
 
-_DEFAULT_SPECIAL_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+# Two or more operands, with the short arm carrying the arity message a
+# corpus record asserts
+_COMPARE_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), REST("args", min_tail=2)),
+    MATCH(CALLEDBY("called_by"), REST("short")),
+]
+
+# A value and one or more types
+_TYPE_CHECK_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), REST("args", min_tail=2)),
+]
+
+_BINARY_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("a"), VALUE("b")),
+]
+
+_UNARY_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("obj")),
+]
+
+# One or more operands folded left to right
+_REDUCE_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), BODY("args")),
+]
+
+# The concatenating form takes no operands as the empty string
+_STR_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), REST("args")),
+]
 
 
 def _reduce_fold(py_fold, compiler, body):
@@ -94,11 +121,12 @@ def _reduce_fold(py_fold, compiler, body):
     return (current, have_acc, acc, pending)
 
 
-def _reduce_op(
+def emit_reduce_op(
+        compiler,
+        called_by,
+        args,
         op,
         py_fold,
-        compiler,
-        source,
         operand=None,
         py_unary=None):
     """
@@ -119,10 +147,11 @@ def _reduce_op(
     OBJECT_OPERAND instruction carrying (operand, count); otherwise the
     supplied op opcode is emitted with a plain count arg (e.g. OBJECT_STR).
 
+    :param compiler: active Compiler
+    :param called_by: the head capture
+    :param args: the operand list capture
     :param op: OpCode for the OBJECT_* instruction, or None when operand is set
     :param py_fold: binary Python callable for constant folding, or None
-    :param compiler: active Compiler
-    :param source: raw source pair (called_by . body)
     :param operand: Operand op-type for OBJECT_OPERAND, or None
     :param py_unary: unary Python callable applied to a lone constant, or
         None when the operator has no single-argument form
@@ -131,21 +160,18 @@ def _reduce_op(
         py_unary rejects the lone constant
     """
 
-    called_by, body = source
+    head = called_by.datum
+    pos = called_by.position
+    body = args.datum
 
-    frag = compiler.fragment(called_by)
-
-    if is_nil(body):
-        raise SpecialError(
-            f"{called_by} requires at least one argument",
-            source)
+    frag = compiler.fragment(head)
 
     expr, rest = body
     if is_nil(rest) and not is_keyword(expr):
         if py_unary is None:
             raise SpecialError(
-                f"{called_by} requires at least two arguments",
-                source)
+                f"{head} requires at least two arguments",
+                head, position=pos)
 
         frag.position_of(body)
         expr_frag = compiler.full_compile(expr)
@@ -156,8 +182,8 @@ def _reduce_op(
                 value = py_unary(const_val)
             except (TypeError, ValueError, ArithmeticError) as exc:
                 raise SpecialError(
-                    f"{called_by} cannot be applied to {const_val!r}: {exc}",
-                    source)
+                    f"{head} cannot be applied to {const_val!r}: {exc}",
+                    head, position=pos)
             frag.instruction(OpCode.CONST, value)
             return frag
 
@@ -176,9 +202,9 @@ def _reduce_op(
     for fm in unpack(body):
         if is_keyword(fm):
             if have_acc:
-                return cons(symbol("call"), called_by, acc, body)
+                return cons(symbol("call"), head, acc, body)
             else:
-                return cons(symbol("call"), called_by, body)
+                return cons(symbol("call"), head, body)
 
     if have_acc:
         frag.instruction(OpCode.CONST, acc)
@@ -217,7 +243,7 @@ def _emit_reduce(frag, op, operand, count):
         frag.instruction(op, count)
 
 
-def _binary_op(op, compiler, source, opa=0, operand=None):
+def emit_binary_op(compiler, called_by, a, b, op, opa=0, operand=None):
     """
     Compile a strictly binary operator (always pops 2 values off the stack).
 
@@ -230,31 +256,21 @@ def _binary_op(op, compiler, source, opa=0, operand=None):
     parameterized OBJECT_OPERAND instruction carrying (operand, 2); otherwise
     the supplied op opcode is emitted with opa.
 
-    :param op: OpCode for the OBJECT_* instruction, or None when operand is set
     :param compiler: active Compiler
-    :param source: raw source pair (called_by . body)
+    :param called_by: the head capture
+    :param a: the left operand capture
+    :param b: the right operand capture
+    :param op: OpCode for the OBJECT_* instruction, or None when operand is set
     :param opa: argument value encoded into the instruction (default 0)
     :param operand: Operand op-type for OBJECT_OPERAND, or None
     :return: ByteCodeFragment
-    :raises SpecialError: when argument count is not exactly 2
     """
 
-    called_by, body = source
+    frag = compiler.fragment(called_by.datum)
 
-    frag = compiler.fragment(called_by)
-    count = 0
-
-    current = body
-    while not is_nil(current):
-        frag.position_of(current)
-        expr, current = current
-        frag.merge(compiler.full_compile(expr))
-        count += 1
-
-    if count != 2:
-        raise SpecialError(
-            "%s requires exactly 2 arguments, got %d" % (called_by, count),
-            source)
+    for cap in (a, b):
+        frag.position(cap.position)
+        frag.merge(compiler.full_compile(cap.datum))
 
     if operand is not None:
         frag.instruction(OpCode.OBJECT_OPERAND, (operand, 2))
@@ -263,51 +279,33 @@ def _binary_op(op, compiler, source, opa=0, operand=None):
     return frag
 
 
-def _unary_op(op, compiler, source):
+def emit_unary_op(compiler, called_by, obj, op):
     """
-    Compile a strictly unary operator (NOARG opcode style, always pops 1).
+    Compile a strictly unary operator (NOARG opcode style, always pops 1)
 
-    :param op: OpCode for the OBJECT_* instruction
     :param compiler: active Compiler
-    :param source: raw source pair (called_by . body)
+    :param called_by: the head capture
+    :param obj: the operand capture
+    :param op: OpCode for the OBJECT_* instruction
     :return: ByteCodeFragment
-    :raises SpecialError: when argument count is not exactly 1
     """
 
-    called_by, body = source
-
-    frag = compiler.fragment(called_by)
-    count = 0
-
-    current = body
-    while not is_nil(current):
-        frag.position_of(current)
-        expr, current = current
-        frag.merge(compiler.full_compile(expr))
-        count += 1
-
-    if count != 1:
-        raise SpecialError(
-            "%s requires exactly 1 argument, got %d" % (called_by, count),
-            source)
-
+    frag = compiler.fragment(called_by.datum)
+    frag.position(obj.position)
+    frag.merge(compiler.full_compile(obj.datum))
     frag.instruction(op, 0)
     return frag
 
 
 _FORMAT_PATTERNS = [
-    MATCH(VALUE("obj")),
-    MATCH(VALUE("obj"), VALUE("rules")),
+    MATCH(CALLEDBY("called_by"), VALUE("obj")),
+    MATCH(CALLEDBY("called_by"), VALUE("obj"), VALUE("rules")),
 ]
-
-_FORMAT_PATTERNS_FULL = tuple(
-    MATCH(CALLEDBY(), *m._children)
-    for m in _FORMAT_PATTERNS)
 
 
 @builtin("compile/format")
-@special("compile/format", patterns=_FORMAT_PATTERNS_FULL)
-def special_format(compiler, source):
+@special("compile/format", patterns=_FORMAT_PATTERNS, unpack="match")
+def special_format(compiler, caps):
     """
     Compile (compile/format OBJ [RULES]). Rules may be dynamic, constant str,
     or quoted symbol constant. The all-constant case folds to CONST here,
@@ -316,19 +314,14 @@ def special_format(compiler, source):
     demotion to OBJECT_FORMAT_CONST and the fused forms.
     """
 
-    called_by, body = source
-    matched = match(body, _FORMAT_PATTERNS)
-    if matched is None:
-        raise SpecialError(
-            "compile/format requires one or two arguments",
-            source)
+    called_by = caps["called_by"]
 
-    obj_expr = matched["obj"].datum
+    obj_expr = caps["obj"].datum
     obj_frag = compiler.full_compile(obj_expr)
     obj_is_const, obj_const = const_only_expr(obj_frag)
 
-    if "rules" in matched:
-        rules_expr = matched["rules"].datum
+    if "rules" in caps:
+        rules_expr = caps["rules"].datum
         rules_frag = compiler.full_compile(rules_expr)
         rules_is_const, rules_const = const_only_expr(rules_frag)
         if rules_is_const and is_symbol(rules_const):
@@ -337,8 +330,8 @@ def special_format(compiler, source):
     else:
         rules_expr = None
 
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
 
     if rules_expr:
         if obj_is_const and rules_is_const:
@@ -367,27 +360,34 @@ def special_format(compiler, source):
 # ---------------------------------------------------------------------------
 
 
-def _chain_compare(sel, compiler, source):
+def emit_chain_compare(compiler, caps, sel):
     """
     Compile a chained comparison operator as OBJECT_COMPARE carrying a
-    (Compare selector, count) CMPCOUNT argument.
+    (Compare selector, count) CMPCOUNT argument
 
-    :param sel: Compare selector for the comparison
     :param compiler: active Compiler
-    :param source: raw source pair (called_by . body)
-
+    :param caps: the match captures
+    :param sel: Compare selector for the comparison
     :return: ByteCodeFragment
-    :raises SpecialError: when fewer than 2 arguments are supplied
+    :raises SpecialError: when fewer than 2 operands are supplied
     """
 
-    called_by, body = source
+    called_by = caps["called_by"]
+    head = called_by.datum
 
-    call_form = splat_call_form(called_by, body)
+    if "args" not in caps:
+        raise SpecialError(
+            "%s requires at least two arguments" % head,
+            head, position=called_by.position)
+
+    body = caps["args"].datum
+
+    call_form = splat_call_form(head, body)
     if call_form is not None:
         return call_form
 
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
+    frag = compiler.fragment(head)
+    frag.position(called_by.position)
 
     count = 0
     current = body
@@ -397,73 +397,68 @@ def _chain_compare(sel, compiler, source):
         frag.merge(compiler.full_compile(expr))
         count += 1
 
-    if count < 2:
-        raise SpecialError(
-            "%s requires at least two arguments" % called_by,
-            source)
-
     frag.instruction(OpCode.OBJECT_COMPARE, (sel, count))
     return frag
 
 
 @builtin("compile/==", "compile/equal?")
-@special("compile/==", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_eq(compiler, source):
+@special("compile/==", patterns=_COMPARE_PATTERNS, unpack="match")
+def special_eq(compiler, caps):
     """
     Compile (compile/= A B). Test equality via __eq__
     """
 
-    return _chain_compare(Compare.EQ, compiler, source)
+    return emit_chain_compare(compiler, caps, Compare.EQ)
 
 
 @builtin("compile/!=", "compile/not-equal?")
-@special("compile/!=", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_ne(compiler, source):
+@special("compile/!=", patterns=_COMPARE_PATTERNS, unpack="match")
+def special_ne(compiler, caps):
     """
     Compile (compile/!= A B). Test inequality via __ne__
     """
 
-    return _chain_compare(Compare.NE, compiler, source)
+    return emit_chain_compare(compiler, caps, Compare.NE)
 
 
 @builtin("compile/<", "compile/lt?")
-@special("compile/<", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_lt(compiler, source):
+@special("compile/<", patterns=_COMPARE_PATTERNS, unpack="match")
+def special_lt(compiler, caps):
     """
     Compile (compile/< A B). Test less-than via __lt__
     """
 
-    return _chain_compare(Compare.LT, compiler, source)
+    return emit_chain_compare(compiler, caps, Compare.LT)
 
 
 @builtin("compile/<=", "compile/le?")
-@special("compile/<=", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_le(compiler, source):
+@special("compile/<=", patterns=_COMPARE_PATTERNS, unpack="match")
+def special_le(compiler, caps):
     """
     Compile (compile/<= A B). Test less-than-or-equal via __le__
     """
 
-    return _chain_compare(Compare.LE, compiler, source)
+    return emit_chain_compare(compiler, caps, Compare.LE)
 
 
 @builtin("compile/>", "compile/gt?")
-@special("compile/>", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_gt(compiler, source):
+@special("compile/>", patterns=_COMPARE_PATTERNS, unpack="match")
+def special_gt(compiler, caps):
     """
     Compile (compile/> A B). Test greater-than via __gt__
     """
 
-    return _chain_compare(Compare.GT, compiler, source)
+    return emit_chain_compare(compiler, caps, Compare.GT)
 
 
 @builtin("compile/>=", "compile/ge?")
-@special("compile/>=", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_ge(compiler, source):
+@special("compile/>=", patterns=_COMPARE_PATTERNS, unpack="match")
+def special_ge(compiler, caps):
     """
     Compile (compile/>= A B). Test greater-than-or-equal via __ge__
     """
 
-    return _chain_compare(Compare.GE, compiler, source)
+    return emit_chain_compare(compiler, caps, Compare.GE)
 
 
 # ---------------------------------------------------------------------------
@@ -471,50 +466,54 @@ def special_ge(compiler, source):
 # ---------------------------------------------------------------------------
 
 @builtin("compile/in", "compile/in?")
-@special("compile/in", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_in(compiler, source):
+@special("compile/in", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_in(compiler, called_by, a, b):
     """
     Compile (compile/in ITEM COLLECTION). Membership test via __contains__
     """
 
-    return _binary_op(OpCode.OBJECT_COMPARE, compiler, source,
-                      opa=(Compare.IN, 2))
+    return emit_binary_op(
+        compiler, called_by, a, b, OpCode.OBJECT_COMPARE,
+        opa=(Compare.IN, 2))
 
 
 @builtin("compile/not-in", "compile/not-in?")
-@special("compile/not-in", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_not_in(compiler, source):
+@special("compile/not-in", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_not_in(compiler, called_by, a, b):
     """
     Compile (compile/not-in ITEM COLLECTION). Negated membership test
     """
 
-    return _binary_op(OpCode.OBJECT_COMPARE, compiler, source,
-                      opa=(Compare.NOT_IN, 2))
+    return emit_binary_op(
+        compiler, called_by, a, b, OpCode.OBJECT_COMPARE,
+        opa=(Compare.NOT_IN, 2))
 
 
 @builtin("compile/is", "compile/is?")
-@special("compile/is", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_is(compiler, source):
+@special("compile/is", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_is(compiler, called_by, a, b):
     """
     Compile (compile/is A B). Identity test
     """
 
-    return _binary_op(OpCode.OBJECT_COMPARE, compiler, source,
-                      opa=(Compare.IS, 2))
+    return emit_binary_op(
+        compiler, called_by, a, b, OpCode.OBJECT_COMPARE,
+        opa=(Compare.IS, 2))
 
 
 @builtin("compile/is-not", "compile/is-not?")
-@special("compile/is-not", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_is_not(compiler, source):
+@special("compile/is-not", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_is_not(compiler, called_by, a, b):
     """
     Compile (compile/is-not A B). Negated identity test
     """
 
-    return _binary_op(OpCode.OBJECT_COMPARE, compiler, source,
-                      opa=(Compare.IS_NOT, 2))
+    return emit_binary_op(
+        compiler, called_by, a, b, OpCode.OBJECT_COMPARE,
+        opa=(Compare.IS_NOT, 2))
 
 
-def _type_check_op(sel, compiler, source):
+def emit_type_check(compiler, called_by, args, sel):
     """
     Compile a type-check operator as OBJECT_COMPARE carrying the
     IS_INSTANCE or IS_SUBCLASS selector. The CMPCOUNT count is the total
@@ -526,25 +525,17 @@ def _type_check_op(sel, compiler, source):
       (compile/instance? VAL TYPE)         -> count = 2  (single type)
       (compile/instance? VAL T1 T2 ...)    -> count = N+1  (types as tuple)
 
-    :param sel: Compare.IS_INSTANCE or Compare.IS_SUBCLASS
     :param compiler: active Compiler
-    :param source: raw source pair (called_by . body)
+    :param called_by: the head capture
+    :param args: the value-and-types capture
+    :param sel: Compare.IS_INSTANCE or Compare.IS_SUBCLASS
     :return: ByteCodeFragment
-    :raises SpecialError: when fewer than 2 arguments are supplied
     """
 
-    called_by, body = source
+    frag = compiler.fragment(called_by.datum)
+    exprs = list(args.datum.unpack())
 
-    frag = compiler.fragment(called_by)
-    exprs = list(body.unpack()) if not is_nil(body) else []
-
-    if len(exprs) < 2:
-        raise SpecialError(
-            "%s requires at least 2 arguments (value and type), got %d"
-            % (called_by, len(exprs)),
-            source)
-
-    frag.position_of(source)
+    frag.position(called_by.position)
 
     for expr in exprs:
         frag.merge(compiler.full_compile(expr))
@@ -554,25 +545,24 @@ def _type_check_op(sel, compiler, source):
 
 
 @builtin("compile/instance?")
-@special("compile/instance?", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_isinstance(compiler, source):
+@special("compile/instance?", patterns=_TYPE_CHECK_PATTERNS,
+         unpack="kwargs")
+def special_isinstance(compiler, called_by, args):
     """
     Compile (compile/instance? OBJ TYPE ...). Instance type check
     """
 
-    return _type_check_op(
-        Compare.IS_INSTANCE, compiler, source)
+    return emit_type_check(compiler, called_by, args, Compare.IS_INSTANCE)
 
 
 @builtin("compile/subclass?")
-@special("compile/subclass?", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_issubclass(compiler, source):
+@special("compile/subclass?", patterns=_TYPE_CHECK_PATTERNS, unpack="kwargs")
+def special_issubclass(compiler, called_by, args):
     """
     Compile (compile/subclass? CLS TYPE ...). Subclass type check
     """
 
-    return _type_check_op(
-        Compare.IS_SUBCLASS, compiler, source)
+    return emit_type_check(compiler, called_by, args, Compare.IS_SUBCLASS)
 
 
 # ---------------------------------------------------------------------------
@@ -580,110 +570,110 @@ def special_issubclass(compiler, source):
 # ---------------------------------------------------------------------------
 
 @builtin("compile/+")
-@special("compile/+", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_add(compiler, source):
+@special("compile/+", patterns=_REDUCE_PATTERNS, unpack="kwargs")
+def special_add(compiler, called_by, args):
     """
     Compile (compile/+ A B ...). Variadic addition via __add__
     """
 
-    return _reduce_op(
-        None, _op.add, compiler, source,
+    return emit_reduce_op(
+        compiler, called_by, args, None, _op.add,
         operand=Operand.ADD, py_unary=_op.pos)
 
 
 @builtin("compile/-")
-@special("compile/-", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_subtract(compiler, source):
+@special("compile/-", patterns=_REDUCE_PATTERNS, unpack="kwargs")
+def special_subtract(compiler, called_by, args):
     """
     Compile (compile/- A B ...). Variadic subtraction via __sub__
     """
 
-    return _reduce_op(
-        None, _op.sub, compiler, source,
+    return emit_reduce_op(
+        compiler, called_by, args, None, _op.sub,
         operand=Operand.SUBTRACT, py_unary=_op.neg)
 
 
 @builtin("compile/*")
-@special("compile/*", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_multiply(compiler, source):
+@special("compile/*", patterns=_REDUCE_PATTERNS, unpack="kwargs")
+def special_multiply(compiler, called_by, args):
     """
     Compile (compile/* A B ...). Variadic multiplication via __mul__
     """
 
-    return _reduce_op(
-        None, _op.mul, compiler, source,
+    return emit_reduce_op(
+        compiler, called_by, args, None, _op.mul,
         operand=Operand.MULTIPLY)
 
 
 @builtin("compile/**")
-@special("compile/**", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_power(compiler, source):
+@special("compile/**", patterns=_REDUCE_PATTERNS, unpack="kwargs")
+def special_power(compiler, called_by, args):
     """
     Compile (compile/** BASE EXP [MOD]). Exponentiation via __pow__
     """
 
-    return _reduce_op(
-        None, None, compiler, source,
+    return emit_reduce_op(
+        compiler, called_by, args, None, None,
         operand=Operand.POWER)
 
 
 @builtin("compile/&")
-@special("compile/&", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_and(compiler, source):
+@special("compile/&", patterns=_REDUCE_PATTERNS, unpack="kwargs")
+def special_bit_and(compiler, called_by, args):
     """
     Compile (compile/& A B ...). Variadic bitwise AND via __and__
     """
 
-    return _reduce_op(
-        None, _op.and_, compiler, source,
+    return emit_reduce_op(
+        compiler, called_by, args, None, _op.and_,
         operand=Operand.BIT_AND)
 
 
 @builtin("compile/|")
-@special("compile/|", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_or(compiler, source):
+@special("compile/|", patterns=_REDUCE_PATTERNS, unpack="kwargs")
+def special_bit_or(compiler, called_by, args):
     """
     Compile (compile/| A B ...). Variadic bitwise OR via __or__
     """
 
-    return _reduce_op(
-        None, _op.or_, compiler, source,
+    return emit_reduce_op(
+        compiler, called_by, args, None, _op.or_,
         operand=Operand.BIT_OR)
 
 
 @builtin("compile/^")
-@special("compile/^", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_xor(compiler, source):
+@special("compile/^", patterns=_REDUCE_PATTERNS, unpack="kwargs")
+def special_bit_xor(compiler, called_by, args):
     """
     Compile (compile/^ A B ...). Variadic bitwise XOR via __xor__
     """
 
-    return _reduce_op(
-        None, _op.xor, compiler, source,
+    return emit_reduce_op(
+        compiler, called_by, args, None, _op.xor,
         operand=Operand.BIT_XOR)
 
 
 @builtin("compile///")
-@special("compile///", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_floor_divide(compiler, source):
+@special("compile///", patterns=_REDUCE_PATTERNS, unpack="kwargs")
+def special_floor_divide(compiler, called_by, args):
     """
     Compile (compile/// A B ...). Variadic floor division via __floordiv__
     """
 
-    return _reduce_op(
-        None, _op.floordiv, compiler, source,
+    return emit_reduce_op(
+        compiler, called_by, args, None, _op.floordiv,
         operand=Operand.FLOOR_DIVIDE)
 
 
 @builtin("compile/@")
-@special("compile/@", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_matrix_multiply(compiler, source):
+@special("compile/@", patterns=_REDUCE_PATTERNS, unpack="kwargs")
+def special_matrix_multiply(compiler, called_by, args):
     """
     Compile (compile/@ A B ...). Variadic matrix multiplication via __matmul__
     """
 
-    return _reduce_op(
-        None, _op.matmul, compiler, source,
+    return emit_reduce_op(
+        compiler, called_by, args, None, _op.matmul,
         operand=Operand.MATRIX_MULTIPLY)
 
 
@@ -692,58 +682,59 @@ def special_matrix_multiply(compiler, source):
 # ---------------------------------------------------------------------------
 
 @builtin("compile//")
-@special("compile//", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_true_divide(compiler, source):
+@special("compile//", patterns=_REDUCE_PATTERNS, unpack="kwargs")
+def special_true_divide(compiler, called_by, args):
     """
     Compile (compile// A B ...). True division via __truediv__
     """
 
-    return _reduce_op(
-        None, _op.truediv, compiler, source,
+    return emit_reduce_op(
+        compiler, called_by, args, None, _op.truediv,
         operand=Operand.TRUE_DIVIDE)
 
 
 @builtin("compile/%")
-@special("compile/%", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_modulo(compiler, source):
+@special("compile/%", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_modulo(compiler, called_by, a, b):
     """
     Compile (compile/% A B). Modulo via __mod__
     """
 
-    return _binary_op(
-        None, compiler, source, operand=Operand.MODULO)
+    return emit_binary_op(
+        compiler, called_by, a, b, None, operand=Operand.MODULO)
 
 
 @builtin("compile/<<")
-@special("compile/<<", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_left(compiler, source):
+@special("compile/<<", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_bit_left(compiler, called_by, a, b):
     """
     Compile (compile/<< A B). Left bit-shift via __lshift__
     """
 
-    return _binary_op(
-        None, compiler, source, operand=Operand.BIT_LEFT)
+    return emit_binary_op(
+        compiler, called_by, a, b, None, operand=Operand.BIT_LEFT)
 
 
 @builtin("compile/>>")
-@special("compile/>>", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_right(compiler, source):
+@special("compile/>>", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_bit_right(compiler, called_by, a, b):
     """
     Compile (compile/>> A B). Right bit-shift via __rshift__
     """
 
-    return _binary_op(
-        None, compiler, source, operand=Operand.BIT_RIGHT)
+    return emit_binary_op(
+        compiler, called_by, a, b, None, operand=Operand.BIT_RIGHT)
 
 
 @builtin("compile/divmod")
-@special("compile/divmod", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_divmod(compiler, source):
+@special("compile/divmod", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_divmod(compiler, called_by, a, b):
     """
     Compile (compile/divmod A B). Combined quotient and remainder
     """
 
-    return _binary_op(OpCode.OBJECT_DIVMOD, compiler, source, opa=2)
+    return emit_binary_op(
+        compiler, called_by, a, b, OpCode.OBJECT_DIVMOD, opa=2)
 
 
 # ---------------------------------------------------------------------------
@@ -751,50 +742,50 @@ def special_divmod(compiler, source):
 # ---------------------------------------------------------------------------
 
 @builtin("compile/not")
-@special("compile/not", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_not(compiler, source):
+@special("compile/not", patterns=_UNARY_PATTERNS, unpack="kwargs")
+def special_not(compiler, called_by, obj):
     """
     Compile (compile/not OBJ). Boolean negation via __bool__ then invert
     """
 
-    return _unary_op(OpCode.OBJECT_NOT, compiler, source)
+    return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_NOT)
 
 
 @builtin("compile/nil?")
-@special("compile/nil?", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_nilp(compiler, source):
+@special("compile/nil?", patterns=_UNARY_PATTERNS, unpack="kwargs")
+def special_nilp(compiler, called_by, obj):
     """
     Compile (nil? OBJ). True if OBJ is an empty-list singleton, either
     nil or bracket-nil. Emits NILP, which compression may lower to a
     CHECK_NIL when followed by a conditional jump.
     """
 
-    return _unary_op(OpCode.NILP, compiler, source)
+    return emit_unary_op(compiler, called_by, obj, OpCode.NILP)
 
 
 @builtin("compile/repr")
-@special("compile/repr", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_repr(compiler, source):
+@special("compile/repr", patterns=_UNARY_PATTERNS, unpack="kwargs")
+def special_repr(compiler, called_by, obj):
     """
     Compile (compile/repr OBJ). String representation via __repr__
     """
 
-    return _unary_op(OpCode.OBJECT_REPR, compiler, source)
+    return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_REPR)
 
 
 @builtin("compile/truth")
-@special("compile/truth", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_truth(compiler, source):
+@special("compile/truth", patterns=_UNARY_PATTERNS, unpack="kwargs")
+def special_truth(compiler, called_by, obj):
     """
     Compile (compile/truth OBJ). Boolean coercion via __bool__
     """
 
-    return _unary_op(OpCode.OBJECT_TRUTH, compiler, source)
+    return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_TRUTH)
 
 
 @builtin("compile/iter")
-@special("compile/iter", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_iter(compiler, source):
+@special("compile/iter", patterns=_UNARY_PATTERNS, unpack="kwargs")
+def special_iter(compiler, called_by, obj):
     """
     Compile (compile/iter OBJ). Iterator acquisition uniform over both
     protocols: a koskari AsyncGenerator passes through as itself, an
@@ -802,22 +793,18 @@ def special_iter(compiler, source):
     protocol
     """
 
-    return _unary_op(OpCode.OBJECT_ITER, compiler, source)
+    return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_ITER)
 
 
 _NEXT_PATTERNS = [
-    MATCH(VALUE("it")),
-    MATCH(VALUE("it"), VALUE("default")),
+    MATCH(CALLEDBY("called_by"), VALUE("it")),
+    MATCH(CALLEDBY("called_by"), VALUE("it"), VALUE("default")),
 ]
-
-_NEXT_PATTERNS_FULL = tuple(
-    MATCH(CALLEDBY(), *m._children)
-    for m in _NEXT_PATTERNS)
 
 
 @builtin("compile/next")
-@special("compile/next", patterns=_NEXT_PATTERNS_FULL)
-def special_next(compiler, source):
+@special("compile/next", patterns=_NEXT_PATTERNS, unpack="match")
+def special_next(compiler, caps):
     """
     Compile (compile/next IT [DEFAULT]). One step of either iteration
     protocol via OBJECT_NEXT, ambient async: exhaustion raises
@@ -825,19 +812,14 @@ def special_next(compiler, source):
     two-argument form
     """
 
-    called_by, body = source
-    matched = match(body, _NEXT_PATTERNS)
-    if matched is None:
-        raise SpecialError(
-            "compile/next requires one or two arguments",
-            source)
+    called_by = caps["called_by"]
 
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
-    frag.merge(compiler.full_compile(matched["it"].datum))
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
+    frag.merge(compiler.full_compile(caps["it"].datum))
 
-    if "default" in matched:
-        frag.merge(compiler.full_compile(matched["default"].datum))
+    if "default" in caps:
+        frag.merge(compiler.full_compile(caps["default"].datum))
         frag.instruction(OpCode.OBJECT_NEXT, 2)
     else:
         frag.instruction(OpCode.OBJECT_NEXT, 1)
@@ -846,79 +828,82 @@ def special_next(compiler, source):
 
 
 @builtin("compile/~")
-@special("compile/~", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_bit_invert(compiler, source):
+@special("compile/~", patterns=_UNARY_PATTERNS, unpack="kwargs")
+def special_bit_invert(compiler, called_by, obj):
     """
     Compile (compile/~ OBJ). Bitwise inversion via __invert__
     """
 
-    return _unary_op(OpCode.OBJECT_BIT_INVERT, compiler, source)
+    return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_BIT_INVERT)
 
 
 @builtin("compile/#str")
-@special("compile/#str", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_str(compiler, source):
+@special("compile/#str", patterns=_STR_PATTERNS, unpack="kwargs")
+def special_str(compiler, called_by, args):
     """
     Compile (compile/#str OBJ ...). String conversion via __str__, variadic
     for f-string style multi-part concatenation
     """
 
-    called_by, body = source
+    head = called_by.datum
+    body = args.datum
+
     if is_nil(body):
-        frag = compiler.fragment(called_by)
+        frag = compiler.fragment(head)
         frag.instruction(OpCode.CONST, "")
         return frag
 
-    call_form = splat_call_form(called_by, body)
+    call_form = splat_call_form(head, body)
     if call_form is not None:
         return call_form
 
-    return _reduce_op(
+    return emit_reduce_op(
+        compiler,
+        called_by,
+        args,
         OpCode.OBJECT_STR,
         lambda a, b: str(a) + str(b),
-        compiler,
-        source,
         py_unary=str)
 
 
 @builtin("compile/len")
-@special("compile/len", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_len(compiler, source):
+@special("compile/len", patterns=_UNARY_PATTERNS, unpack="kwargs")
+def special_len(compiler, called_by, obj):
     """
     Compile (compile/len OBJ). Length query via __len__
     """
 
-    return _unary_op(OpCode.OBJECT_LEN, compiler, source)
+    return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_LEN)
 
 
 @builtin("compile/type")
-@special("compile/type", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_type(compiler, source):
+@special("compile/type", patterns=_UNARY_PATTERNS, unpack="kwargs")
+def special_type(compiler, called_by, obj):
     """
     Compile (compile/type OBJ). Type introspection via type()
     """
 
-    return _unary_op(OpCode.OBJECT_TYPE, compiler, source)
+    return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_TYPE)
 
 
 @builtin("compile/dir")
-@special("compile/dir", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_dir(compiler, source):
+@special("compile/dir", patterns=_UNARY_PATTERNS, unpack="kwargs")
+def special_dir(compiler, called_by, obj):
     """
     Compile (compile/dir OBJ). Attribute listing via __dir__
     """
 
-    return _unary_op(OpCode.OBJECT_DIR, compiler, source)
+    return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_DIR)
 
 
 @builtin("compile/vars")
-@special("compile/vars", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_vars(compiler, source):
+@special("compile/vars", patterns=_UNARY_PATTERNS, unpack="kwargs")
+def special_vars(compiler, called_by, obj):
     """
     Compile (compile/vars OBJ). Attribute dict via __dict__
     """
 
-    return _unary_op(OpCode.OBJECT_VARS, compiler, source)
+    return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_VARS)
 
 
 # operator symbol -> Operand op-type. Both the plain and compile/ symbol forms
@@ -944,45 +929,70 @@ for _sym_text, _binop in _OPERAND_BY_SYM.items():
     _INPLACE_OPERAND_MAP[symbol(_sym_text)] = _binop
 
 
+_INPLACE_PATTERNS = [
+    MATCH(
+        CALLEDBY("called_by"),
+        SYMBOL("op"),
+        SYMBOL("var"),
+        VALUE("value")),
+]
+
+_INPLACE_ITEM_PATTERNS = [
+    MATCH(
+        CALLEDBY("called_by"),
+        SYMBOL("op"),
+        VALUE("obj"),
+        VALUE("key"),
+        BODY("values")),
+]
+
+_INPLACE_ATTR_PATTERNS = [
+    MATCH(
+        CALLEDBY("called_by"),
+        SYMBOL("op"),
+        VALUE("obj"),
+        SYMBOL("attr"),
+        BODY("values")),
+]
+
+
+def inplace_operand(op):
+    """
+    The Operand op-type an inplace operator symbol names
+
+    :param op: the operator capture
+    :return: the Operand
+    :raises SpecialError: when the symbol names no operator
+    """
+
+    binop = _INPLACE_OPERAND_MAP.get(op.datum)
+    if binop is None:
+        raise SpecialError(
+            "unknown inplace operator", op.datum, position=op.position)
+
+    return binop
+
+
 @builtin("compile/inplace")
-@special("compile/inplace", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_inplace(compiler, source):
+@special("compile/inplace", patterns=_INPLACE_PATTERNS, unpack="kwargs")
+def special_inplace(compiler, called_by, op, var, value):
     """
     Compile (compile/inplace OP VAR VALUE). In-place update: VAR OP= VALUE.
     OP is any numeric or bitwise operator (+, -, *, /, //, %, **, @, &, |, ^,
     <<, >>).
     """
 
-    called_by, body = source
-    if is_nil(body) or not is_pair(body):
-        raise SpecialError("inplace requires op, var, and value", source)
+    binop = inplace_operand(op)
 
-    op_sym, rest = body
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError("inplace requires op, var, and value", source)
+    value_expr = value.datum
+    name = str(var.datum)
+    pos = op.position
 
-    var_sym, rest = rest
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError("inplace requires op, var, and value", source)
-
-    value_expr, rest = rest
-    if not is_nil(rest):
-        raise SpecialError("inplace takes exactly three arguments", source)
-
-    if not is_symbolish(var_sym):
-        raise SpecialError("inplace var must be a symbol", source)
-
-    binop = _INPLACE_OPERAND_MAP.get(op_sym)
-    if binop is None:
-        raise SpecialError("unknown inplace operator", source)
-
-    name = str(var_sym)
-    frag = compiler.fragment(called_by)
+    frag = compiler.fragment(called_by.datum)
 
     if not is_pair(value_expr):
-        frag.position_of(body)
+        frag.position(pos)
 
-    pos = get_position(body)
     frag.request_for_write(name, position=pos)
     frag.merge(compiler.full_compile(value_expr))
     # EXTRA row [OPCOUNT(op-type, count=1), VAR(name)]; resolution lowers the
@@ -995,51 +1005,32 @@ def special_inplace(compiler, source):
 
 
 @builtin("compile/inplace-item")
-@special("compile/inplace-item", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_inplace_item(compiler, source):
+@special("compile/inplace-item", patterns=_INPLACE_ITEM_PATTERNS,
+         unpack="kwargs")
+def special_inplace_item(compiler, called_by, op, obj, key, values):
     """
     Compile (compile/inplace-item OP OBJ KEY VALUE...). Multiple values
     reduce left-to-right through the single OBJECT_INPLACE instruction.
     """
 
-    called_by, body = source
-    if is_nil(body) or not is_pair(body):
-        raise SpecialError(
-            "inplace-item requires op, obj, key, and value", source)
+    binop = inplace_operand(op)
 
-    op_sym, rest = body
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError(
-            "inplace-item requires op, obj, key, and value", source)
-
-    obj_expr, rest = rest
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError(
-            "inplace-item requires op, obj, key, and value", source)
-
-    key_expr, rest = rest
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError(
-            "inplace-item requires op, obj, key, and value", source)
-
-    value_exprs = list(unpack(rest))
-
-    binop = _INPLACE_OPERAND_MAP.get(op_sym)
-    if binop is None:
-        raise SpecialError("unknown inplace operator", source)
+    value_exprs = list(values.datum.unpack())
 
     if (binop is Operand.POWER
             and len(value_exprs) != 1):
-        raise SpecialError("inplace ** takes exactly one value", source)
+        raise SpecialError(
+            "inplace ** takes exactly one value",
+            op.datum, position=op.position)
 
-    frag = compiler.fragment(called_by)
+    frag = compiler.fragment(called_by.datum)
 
     if not is_pair(value_exprs[0]):
-        frag.position_of(body)
+        frag.position(op.position)
 
-    frag.merge(compiler.full_compile(obj_expr))
+    frag.merge(compiler.full_compile(obj.datum))
 
-    keyfrag = compiler.full_compile(key_expr)
+    keyfrag = compiler.full_compile(key.datum)
     is_const, key_val = const_only_expr(keyfrag)
 
     if is_const:
@@ -1066,8 +1057,9 @@ def special_inplace_item(compiler, source):
 
 
 @builtin("compile/inplace-attr")
-@special("compile/inplace-attr", patterns=_DEFAULT_SPECIAL_PATTERNS)
-def special_inplace_attr(compiler, source):
+@special("compile/inplace-attr", patterns=_INPLACE_ATTR_PATTERNS,
+         unpack="kwargs")
+def special_inplace_attr(compiler, called_by, op, obj, attr, values):
     """
     Compile (compile/inplace-attr OP OBJ ATTR VALUE...). Multiple values
     reduce left-to-right into OBJ.ATTR through a single fused instruction:
@@ -1075,45 +1067,23 @@ def special_inplace_attr(compiler, source):
     FAST_ATTR_INPLACE), otherwise ATTR_INPLACE with OBJ on the stack.
     """
 
-    called_by, body = source
-    if is_nil(body) or not is_pair(body):
-        raise SpecialError(
-            "inplace-attr requires op, obj, attr, and value", source)
+    binop = inplace_operand(op)
 
-    op_sym, rest = body
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError(
-            "inplace-attr requires op, obj, attr, and value", source)
-
-    obj_expr, rest = rest
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError(
-            "inplace-attr requires op, obj, attr, and value", source)
-
-    key_expr, rest = rest
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError(
-            "inplace-attr requires op, obj, attr, and value", source)
-
-    value_exprs = list(unpack(rest))
-
-    if not is_symbol(key_expr):
-        raise SpecialError("inplace-attr attr must be a symbol", source)
-
-    binop = _INPLACE_OPERAND_MAP.get(op_sym)
-    if binop is None:
-        raise SpecialError("unknown inplace operator", source)
+    value_exprs = list(values.datum.unpack())
 
     if (binop is Operand.POWER
             and len(value_exprs) != 1):
-        raise SpecialError("inplace ** takes exactly one value", source)
+        raise SpecialError(
+            "inplace ** takes exactly one value",
+            op.datum, position=op.position)
 
-    sym = str(key_expr)
+    obj_expr = obj.datum
+    sym = str(attr.datum)
     count = len(value_exprs)
-    frag = compiler.fragment(called_by)
+    frag = compiler.fragment(called_by.datum)
 
     if not is_pair(value_exprs[0]):
-        frag.position_of(body)
+        frag.position(op.position)
 
     if is_symbol(obj_expr):
         # obj is a variable: fused VAR_ATTR_INPLACE, derefing the name and
