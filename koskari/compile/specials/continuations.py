@@ -24,38 +24,50 @@ compile/yield, and compile/await.
 
 
 from ...bootstrap import builtin
-from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, symbol
-from ...matcher import CALLEDBY, MATCH, REST
+from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
-from ...types import is_keyword, is_nil, is_pair
-from ..helpers import helper_begin, is_symbolish
+from ...types import is_keyword
+from ..helpers import helper_begin
 
-
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 _symbol_values = symbol("values")
 
 
+_ONE_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("expr")),
+]
+
+_K_BODY_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), SYMBOL("k"), BODY("body")),
+]
+
+_BODY_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), BODY("body")),
+]
+
+_VALUES_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), REST("rest")),
+]
+
+_OPTIONAL_ONE_PATTERNS = [
+    MATCH(CALLEDBY("called_by")),
+    MATCH(CALLEDBY("called_by"), VALUE("expr")),
+]
+
+
 @builtin("compile/call/cc")
-@special("compile/call/cc", patterns=_DEFAULT_PATTERNS)
-def special_call_cc(compiler, source):
+@special("compile/call/cc", patterns=_ONE_PATTERNS, unpack="kwargs")
+def special_call_cc(compiler, called_by, expr):
     """
     Compile (compile/call/cc FN). Captures continuation, invokes FN with the
     continuation, and returns the result.
     """
 
-    called_by, args = source
-    if is_nil(args) or not is_pair(args):
-        raise SpecialError("call/cc requires a single argument", source)
-    expr, rest = args
-    if not is_nil(rest):
-        raise SpecialError("call/cc requires a single argument", source)
-
-    fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_CC, 0)
-    fragment.merge(compiler.full_compile(expr))
+    fragment.merge(compiler.full_compile(expr.datum))
     fragment.instruction(OpCode.CAPTURE_CC, 0)
     fragment.instruction(OpCode.CALL, 1)
     fragment.instruction(OpCode.POP_CC, 0)
@@ -64,38 +76,32 @@ def special_call_cc(compiler, source):
 
 
 @builtin("compile/let/cc")
-@special("compile/let/cc", patterns=_DEFAULT_PATTERNS)
-def special_let_cc(compiler, source):
+@special("compile/let/cc", patterns=_K_BODY_PATTERNS, unpack="kwargs")
+def special_let_cc(compiler, called_by, k, body):
     """
     Compile (compile/let/cc K BODY...). Pushes new namespace to hold K,
     captures continuation, binds to K, runs body. K must be a symbol
     """
 
-    called_by, (k, body) = source
-    if not is_symbolish(k):
-        raise SpecialError(
-            "let/cc continuation variable must be a symbol",
-            source)
+    k_name = str(k.datum)
 
-    k_name = str(k)
-
-    fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
 
     fragment.instruction(OpCode.PUSH_CC, 0)
-    with fragment.child_namespace(called_by, [], []) as frag:
+    with fragment.child_namespace(called_by.datum, [], []) as frag:
         frag.declare_var(k_name)
         frag.instruction(OpCode.CAPTURE_CC, 0)
         frag.instruction(OpCode.VAR_STORE, k_name)
-        helper_begin(frag, body)
+        helper_begin(frag, body.datum)
     fragment.instruction(OpCode.POP_CC, 0)
 
     return fragment
 
 
 @builtin("compile/capture/cc")
-@special("compile/capture/cc", patterns=_DEFAULT_PATTERNS)
-def special_capture_cc(compiler, source):
+@special("compile/capture/cc", patterns=_K_BODY_PATTERNS, unpack="kwargs")
+def special_capture_cc(compiler, called_by, k, body):
     """
     Compile (compile/capture/cc K BODY...). Captures continuation, binds to K,
     runs body.
@@ -107,81 +113,96 @@ def special_capture_cc(compiler, source):
     completes.
     """
 
-    called_by, (k, body) = source
-    if not is_symbolish(k):
-        raise SpecialError(
-            "capture/cc continuation variable must be a symbol",
-            source)
+    k_name = str(k.datum)
 
-    k_name = str(k)
-
-    fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_CC, 0)
     fragment.instruction(OpCode.CAPTURE_CC, 0)
     fragment.instruction(OpCode.VAR_STORE, k_name)
-    helper_begin(fragment, body)
+    helper_begin(fragment, body.datum)
     fragment.instruction(OpCode.POP_CC, 0)
 
     return fragment
 
 
 @builtin("compile/reset")
-@special("compile/reset", patterns=_DEFAULT_PATTERNS)
-def special_reset(compiler, source):
+@special("compile/reset", patterns=_BODY_PATTERNS, unpack="kwargs")
+def special_reset(compiler, called_by, body):
     """
     Compile (compile/reset EXPR...). Establishes a prompt (tag 0), runs body,
     pops prompt. Enables delimited continuations via compile/shift.
     """
 
-    called_by, rest = source
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError("reset requires body", source)
-
-    fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_PROMPT, 0)
-    helper_begin(fragment, rest)
+    helper_begin(fragment, body.datum)
     fragment.instruction(OpCode.POP_PROMPT, 0)
 
     return fragment
 
 
 @builtin("compile/shift")
-@special("compile/shift", patterns=_DEFAULT_PATTERNS)
-def special_shift(compiler, source):
+@special("compile/shift", patterns=_K_BODY_PATTERNS, unpack="kwargs")
+def special_shift(compiler, called_by, k, body):
     """
     Compile (compile/shift K EXPR...). Captures continuation, binds to K, runs
     handler body. K must be a symbol; tag 0.
     """
 
-    called_by, rest = source
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError(
-            "shift requires continuation variable and body",
-            source)
+    k_name = str(k.datum)
 
-    k, body = rest
-    if not is_symbolish(k):
-        raise SpecialError(
-            "shift continuation variable must be a symbol",
-            source)
-
-    k_name = str(k)
-
-    fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_SHIFT, 0)
     fragment.declare_var(k_name)
     fragment.instruction(OpCode.VAR_STORE, k_name)
-    helper_begin(fragment, body)
+    helper_begin(fragment, body.datum)
     fragment.instruction(OpCode.POP_SHIFT, 0)
 
     return fragment
 
 
+def emit_values_form(compiler, source, opcode):
+    """
+    Compile a form that delivers zero, one, or several values, as
+    return and yield do: each value in turn, then opcode with the
+    count. A keyword among the values makes it a values form instead:
+    the source is rewritten to (KIND (values ...)) and returned for the
+    compiler to expand
+
+    :param compiler: the Compiler
+    :param source: the whole form; called-by at its head
+    :param opcode: RETURN or YIELD
+    :return: the fragment, or the rewritten source
+    """
+
+    called_by, rest = source
+    frag = compiler.fragment(called_by)
+
+    count = 0
+    while rest:
+        if is_keyword(rest.car):
+            # discard work in progress and return as a transform to
+            # invoke the form on the values instead.
+            fixup = cons(cons(_symbol_values, source.cdr), nil)
+            source.cdr = fixup
+            return source
+
+        frag.position_of(rest)
+        frag.merge(compiler.full_compile(rest.car))
+
+        rest = rest.cdr
+        count += 1
+
+    frag.position_of(source)
+    frag.instruction(opcode, count)
+    return frag
+
+
 @builtin("compile/return")
-@special("compile/return", patterns=_DEFAULT_PATTERNS)
+@special("compile/return", patterns=_VALUES_PATTERNS)
 def special_return(compiler, source):
     """
     Returns from function.
@@ -192,31 +213,11 @@ def special_return(compiler, source):
     (return k: v ...)   ; returns values object over complex arguments
     """
 
-    called_by, rest = source
-    frag = compiler.fragment(called_by)
-
-    count = 0
-    while rest:
-        if is_keyword(rest.car):
-            # discard work in progress and return as a transform to
-            # invoke return on the values instead.
-            fixup = cons(cons(_symbol_values, source.cdr), nil)
-            source.cdr = fixup
-            return source
-
-        frag.position_of(rest)
-        frag.merge(compiler.full_compile(rest.car))
-
-        rest = rest.cdr
-        count += 1
-
-    frag.position_of(source)
-    frag.instruction(OpCode.RETURN, count)
-    return frag
+    return emit_values_form(compiler, source, OpCode.RETURN)
 
 
 @builtin("compile/yield")
-@special("compile/yield", patterns=_DEFAULT_PATTERNS)
+@special("compile/yield", patterns=_VALUES_PATTERNS)
 def special_yield(compiler, source):
     """
     Yields from function.
@@ -227,48 +228,23 @@ def special_yield(compiler, source):
     (yield k: v ...)   ; yields values object over complex arguments
     """
 
-    called_by, rest = source
-    frag = compiler.fragment(called_by)
-
-    count = 0
-    while rest:
-        if is_keyword(rest.car):
-            # discard work in progress and return as a transform to
-            # invoke yield on the values instead.
-            fixup = cons(cons(_symbol_values, source.cdr), nil)
-            source.cdr = fixup
-            return source
-
-        frag.position_of(rest)
-        frag.merge(compiler.full_compile(rest.car))
-
-        rest = rest.cdr
-        count += 1
-
-    frag.position_of(source)
-    frag.instruction(OpCode.YIELD, count)
-    return frag
+    return emit_values_form(compiler, source, OpCode.YIELD)
 
 
 @builtin("compile/await")
-@special("compile/await", patterns=_DEFAULT_PATTERNS)
-def special_await(compiler, source):
+@special("compile/await", patterns=_OPTIONAL_ONE_PATTERNS, unpack="match")
+def special_await(compiler, caps):
     """
     Compile (compile/await) or (compile/await EXPR). Zero-arg: bare AWAIT (0)
     then CONST None. One-arg: evaluate EXPR, then AWAIT (1) on TOS.
     """
 
-    called_by, rest = source
-    expr = nil
-    if not is_nil(rest):
-        expr, tail = rest
-        if not is_nil(tail):
-            raise SpecialError("await requires zero or one argument", source)
+    called_by = caps["called_by"]
 
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
-    if expr:
-        frag.merge(compiler.full_compile(expr))
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
+    if "expr" in caps:
+        frag.merge(compiler.full_compile(caps["expr"].datum))
         frag.instruction(OpCode.AWAIT, 1)
     else:
         frag.instruction(OpCode.AWAIT, 0)
@@ -276,24 +252,16 @@ def special_await(compiler, source):
 
 
 @builtin("compile/yield-from")
-@special("compile/yield-from", patterns=_DEFAULT_PATTERNS)
-def special_yield_from(compiler, source):
+@special("compile/yield-from", patterns=_ONE_PATTERNS, unpack="kwargs")
+def special_yield_from(compiler, called_by, expr):
     """
     Compile (compile/yield-from EXPR). Evaluates EXPR, then yields from TOS via
     YIELD_FROM.
     """
 
-    called_by, rest = source
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError("yield-from requires a single argument", source)
-
-    expr, tail = rest
-    if not is_nil(tail):
-        raise SpecialError("yield-from requires a single argument", source)
-
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
-    frag.merge(compiler.full_compile(expr))
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
+    frag.merge(compiler.full_compile(expr.datum))
     frag.instruction(OpCode.YIELD_FROM, 0)
     frag.instruction(OpCode.CONST, None)
     return frag
