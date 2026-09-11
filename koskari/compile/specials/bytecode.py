@@ -22,32 +22,36 @@ Special form handler for compile/bytecode.
 
 
 from ...bootstrap import builtin
-from ...lib import OpCode, keyword, pair, symbol
-from ...matcher import CALLEDBY, MATCH, REST
+from ...lib import OpCode, keyword, symbol
+from ...matcher import (
+    CALLEDBY, FORM, MATCH, OPTIONAL, VALUE, repeat_capture)
 from ...syntax import special
-from ...types import is_nil
 from ..compiler import ByteCodeFragment, Compiler
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_BYTECODE_PATTERNS = [
+    MATCH(
+        CALLEDBY("called_by"),
+        repeat_capture(
+            "segments",
+            FORM(MATCH(VALUE("op"), OPTIONAL(VALUE("opa")))))),
+]
 
 
 @builtin("compile/bytecode")
-@special("compile/bytecode", patterns=_DEFAULT_PATTERNS)
+@special("compile/bytecode", patterns=_BYTECODE_PATTERNS, unpack="kwargs")
 def special_bytecode(
         compiler: Compiler,
-        source: pair) -> ByteCodeFragment:
+        called_by,
+        segments) -> ByteCodeFragment:
 
-    called_by, body = source
+    fragment = compiler.fragment(called_by.datum)
 
-    fragment = compiler.fragment(called_by)
-
-    for segm in body.unpack():
-        op, opa = segm
-        if is_nil(opa):
-            opa = 0
-        else:
-            opa, rest = opa
+    for segm in segments:
+        opcap = segm["op"]
+        op = opcap.datum
+        opacap = segm.get("opa")
+        opa = 0 if opacap is None else opacap.datum
 
         if isinstance(op, int):
             opc = OpCode(op)
@@ -62,7 +66,8 @@ def special_bytecode(
         if opc is None:
             raise TypeError("invalid Koskari OpCode: %r" % op)
 
-        fragment.position_of(segm)
+        # the op capture's position is the segment cell's own position
+        fragment.position(opcap.position)
         fragment.instruction(opc, opa)
 
     return fragment
