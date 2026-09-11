@@ -50,9 +50,9 @@ Opcode sequences produced
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode
-from ...matcher import CALLEDBY, MATCH, REST
+from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_keyword, is_nil, is_pair, is_symbol, unpack
+from ...types import is_pair, is_symbol, unpack
 from ..helpers import helper_using, is_symbolish
 
 
@@ -67,15 +67,27 @@ _IMPORT_ROOT = 0
 _IMPORT_LEAF = 1
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_MODULE_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("module")),
+]
+
+_IMPORT_FROM_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("module"), BODY("members")),
+]
+
+_USE_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("module")),
+    MATCH(CALLEDBY("called_by"), VALUE("module"), BODY("stems")),
+]
 
 
-def _attr_form_to_dotted(form, source):
+def _attr_form_to_dotted(form, source, position=None):
     """
     Convert (attr obj name) or nested equivalent to dotted string.
 
     :param form: (attr obj name) with obj symbol or nested attr
     :param source: source form for error context
+    :param position: source position recorded on errors
     :return: str like "os.path" or "foo.bar.baz"
     :raises SpecialError: when form is invalid
     """
@@ -86,35 +98,35 @@ def _attr_form_to_dotted(form, source):
     if not is_pair(form):
         raise SpecialError(
             "import argument must be symbol or (attr ...)",
-            source)
+            source, position=position)
 
     head, tail = form
     if str(head) != 'attr':
         raise SpecialError(
             "import argument must be symbol or (attr ...)",
-            source)
+            source, position=position)
 
     parts = list(unpack(tail))
     if len(parts) < 2:
         raise SpecialError(
             "attr in import requires two arguments",
-            source)
+            source, position=position)
 
     result = []
     for p in parts:
         if is_symbol(p) or isinstance(p, str):
             result.append(str(p))
         elif is_pair(p) and str(p[0]) == 'attr':
-            result.append(_attr_form_to_dotted(p, source))
+            result.append(_attr_form_to_dotted(p, source, position))
         else:
             raise SpecialError(
                 "import attr arguments must be symbols",
-                source)
+                source, position=position)
 
     return '.'.join(result)
 
 
-def _parse_import_name(name_form, source):
+def _parse_import_name(name_form, source, position=None):
     """
     Split a module name (symbol or (attr ...)) into (level:int,
     dotted_name:str).
@@ -126,6 +138,7 @@ def _parse_import_name(name_form, source):
     :param name_form: symbol like 'foo', 'foo.bar', '.foo' or (attr
         obj name) from reader expansion
     :param source: source form for error context
+    :param position: source position recorded on errors
     :return: (level, name) where level >= 0 and name is str or None
     :raises SpecialError: when name_form is not a symbol, str, or attr form
     """
@@ -138,12 +151,12 @@ def _parse_import_name(name_form, source):
         return (level, name)
 
     if is_pair(name_form) and str(name_form[0]) == 'attr':
-        dotted = _attr_form_to_dotted(name_form, source)
+        dotted = _attr_form_to_dotted(name_form, source, position)
         return (0, dotted)
 
     raise SpecialError(
         "import argument must be a symbol or (attr ...)",
-        source)
+        source, position=position)
 
 
 def _leaf_name(dotted):
@@ -168,7 +181,7 @@ def _root_name(dotted):
     return dotted.split('.', 1)[0]
 
 
-def _parse_member(elem, source, what):
+def _parse_member(elem, source, what, position=None):
     """
     Parse one bracketed or plain member element.
 
@@ -182,6 +195,7 @@ def _parse_member(elem, source, what):
     :param elem: one member element
     :param source: source form for error context
     :param what: form name for error messages
+    :param position: source position recorded on errors
     :return: (bind_name:str or None, target_form)
     :raises SpecialError: on invalid member form
     """
@@ -196,7 +210,7 @@ def _parse_member(elem, source, what):
             raise SpecialError(
                 f"{what} member must be a symbol or [TARGET as: BIND],"
                 f" not {elem!r}",
-                source) from None
+                source, position=position) from None
 
         if name is None:
             return (None, value)
@@ -204,18 +218,18 @@ def _parse_member(elem, source, what):
         if not is_symbolish(name):
             raise SpecialError(
                 f"{what} member binding must be a symbol, not {name!r}",
-                source)
+                source, position=position)
         return (str(name), value)
 
     raise SpecialError(
         f"{what} member must be a symbol or [TARGET as: BIND], not"
         f" {elem!r}",
-        source)
+        source, position=position)
 
 
 @builtin("compile/import")
-@special("compile/import", patterns=_DEFAULT_PATTERNS)
-def special_import(compiler, source):
+@special("compile/import", patterns=_MODULE_PATTERNS, unpack="kwargs")
+def special_import(compiler, called_by, module):
     """
     Compile (import MODULE) and (import [MODULE as: BIND]).
 
@@ -225,27 +239,15 @@ def special_import(compiler, source):
     imports (leading dots) are always leaf-style.
     """
 
-    called_by, rest = source
-    if is_nil(rest):
-        raise SpecialError("import requires a module name", source)
-
-    arg, rest = rest
-
-    if not is_nil(rest):
-        maybe_as, _ = rest
-        if is_keyword(maybe_as) and str(maybe_as) == 'as':
-            raise SpecialError(
-                "inline as: is not supported; use"
-                " (import [MODULE as: BIND])",
-                source)
-        raise SpecialError("too many arguments to import", source)
+    pos = called_by.position
+    arg = module.datum
 
     bind = None
     name_form = arg
     if is_pair(arg) and str(arg[0]) != 'attr':
-        bind, name_form = _parse_member(arg, source, "import")
+        bind, name_form = _parse_member(arg, arg, "import", pos)
 
-    level, dotted = _parse_import_name(name_form, source)
+    level, dotted = _parse_import_name(name_form, name_form, pos)
 
     if bind is not None:
         leaf = _IMPORT_LEAF
@@ -255,16 +257,17 @@ def special_import(compiler, source):
             raise SpecialError(
                 "bare relative import requires the [MODULE as: BIND]"
                 " member form",
-                source)
+                arg, position=pos)
         leaf = _IMPORT_LEAF
         bind = _leaf_name(dotted)
     else:
         if dotted is None:
-            raise SpecialError("import requires a module name", source)
+            raise SpecialError(
+                "import requires a module name", arg, position=pos)
         leaf = _IMPORT_ROOT
         bind = _root_name(dotted)
 
-    frag = compiler.fragment(called_by)
+    frag = compiler.fragment(called_by.datum)
     frag.declare_var(bind)
     frag.instruction(
         OpCode.IMPORT, (dotted, level, leaf, bind))
@@ -274,8 +277,9 @@ def special_import(compiler, source):
 
 
 @builtin("compile/import-from")
-@special("compile/import-from", patterns=_DEFAULT_PATTERNS)
-def special_import_from(compiler, source):
+@special("compile/import-from", patterns=_IMPORT_FROM_PATTERNS,
+         unpack="kwargs")
+def special_import_from(compiler, called_by, module, members):
     """
     Compile (import-from NAME MEMBER...) where each MEMBER is either a
     plain symbol or a [ATTR as: BIND] rename form.
@@ -285,32 +289,25 @@ def special_import_from(compiler, source):
     carrying the module name, level, and parallel attr/bind name tuples.
     """
 
-    called_by, rest = source
-    if is_nil(rest):
-        raise SpecialError("import-from requires a module name", source)
+    pos = called_by.position
+    name_sym = module.datum
 
-    name_sym, rest = rest
-    if is_nil(rest):
-        raise SpecialError("import-from requires at least one member", source)
-
-    level, dotted = _parse_import_name(name_sym, source)
+    level, dotted = _parse_import_name(name_sym, name_sym, pos)
 
     attrs = []
     binds = []
-    current = rest
-    while not is_nil(current):
-        elem, current = current
-        bind, target = _parse_member(elem, source, "import-from")
+    for elem in members.datum.unpack():
+        bind, target = _parse_member(elem, elem, "import-from", pos)
         if not is_symbolish(target):
             raise SpecialError(
                 f"import-from member must name an attribute, not"
                 f" {target!r}",
-                source)
+                elem, position=pos)
         attr = str(target)
         attrs.append(attr)
         binds.append(bind if bind is not None else attr)
 
-    frag = compiler.fragment(called_by)
+    frag = compiler.fragment(called_by.datum)
     for bind in binds:
         frag.declare_var(bind)
 
@@ -328,8 +325,9 @@ def special_import_from(compiler, source):
 
 
 @builtin("compile/import-all-from")
-@special("compile/import-all-from", patterns=_DEFAULT_PATTERNS)
-def special_import_all_from(compiler, source):
+@special("compile/import-all-from", patterns=_MODULE_PATTERNS,
+         unpack="kwargs")
+def special_import_all_from(compiler, called_by, module):
     """
     Compile (import-all-from MODULE): Python's `from MODULE import *`.
 
@@ -338,21 +336,17 @@ def special_import_all_from(compiler, source):
     at module top level, matching Python.
     """
 
-    called_by, rest = source
-    if is_nil(rest):
-        raise SpecialError("import-all-from requires a module name", source)
-
-    name_sym, rest = rest
-    if not is_nil(rest):
-        raise SpecialError("too many arguments to import-all-from", source)
+    pos = called_by.position
+    name_sym = module.datum
 
     if compiler.scope_depth > 0:
         raise SpecialError(
-            "import-all-from is only allowed at module level", source)
+            "import-all-from is only allowed at module level",
+            name_sym, position=pos)
 
-    level, dotted = _parse_import_name(name_sym, source)
+    level, dotted = _parse_import_name(name_sym, name_sym, pos)
 
-    frag = compiler.fragment(called_by)
+    frag = compiler.fragment(called_by.datum)
     frag.instruction(
         OpCode.IMPORT_STAR, (dotted, level, 0, 0))
     frag.instruction(OpCode.CONST, None)
@@ -364,8 +358,8 @@ _USE_FACET_PREFIXES = ("compile/", "layout/")
 
 
 @builtin("compile/use")
-@special("compile/use", patterns=_DEFAULT_PATTERNS)
-def special_use(compiler, source):
+@special("compile/use", patterns=_USE_PATTERNS, unpack="match")
+def special_use(compiler, caps):
     """
     Compile (use MODULE) and (use MODULE STEM...), where each STEM is a
     plain symbol or a [STEM as: BIND] rename form.
@@ -382,19 +376,18 @@ def special_use(compiler, source):
     module top level.
     """
 
-    called_by, rest = source
-    if is_nil(rest):
-        raise SpecialError("use requires a module name", source)
+    called_by = caps["called_by"]
+    pos = called_by.position
+    name_sym = caps["module"].datum
 
     if compiler.scope_depth > 0:
         raise SpecialError(
-            "use is only allowed at module level", source)
+            "use is only allowed at module level", name_sym, position=pos)
 
-    name_sym, rest = rest
-    level, dotted = _parse_import_name(name_sym, source)
+    level, dotted = _parse_import_name(name_sym, name_sym, pos)
 
-    if is_nil(rest):
-        frag = compiler.fragment(called_by)
+    if "stems" not in caps:
+        frag = compiler.fragment(called_by.datum)
         frag.instruction(
             OpCode.IMPORT_STAR, (dotted, level, 0, 0))
         frag.instruction(OpCode.CONST, None)
@@ -402,19 +395,17 @@ def special_use(compiler, source):
 
     stems = []
     binds = []
-    current = rest
-    while not is_nil(current):
-        elem, current = current
-        bind, target = _parse_member(elem, source, "use")
+    for elem in caps["stems"].datum.unpack():
+        bind, target = _parse_member(elem, elem, "use", pos)
         if not is_symbolish(target):
             raise SpecialError(
                 f"use member must name a feature, not {target!r}",
-                source)
+                elem, position=pos)
         stem = str(target)
         stems.append(stem)
         binds.append(bind if bind is not None else stem)
 
-    frag = compiler.fragment(called_by)
+    frag = compiler.fragment(called_by.datum)
     for bind in binds:
         frag.declare_var(bind)
         if not bind.startswith(_USE_FACET_PREFIXES):
