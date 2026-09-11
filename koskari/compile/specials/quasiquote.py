@@ -41,7 +41,7 @@ accepts tuples as segments natively.
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode, bracket_nil, bracket_pair, nil, symbol
-from ...matcher import CALLEDBY, MATCH, REST
+from ...matcher import CALLEDBY, MATCH, VALUE
 from ...syntax import special
 from ...types import is_nil, is_pair
 from ..compiler import _is_const
@@ -52,7 +52,9 @@ _symbol_quote = symbol("quote")
 _symbol_unquote = symbol("unquote")
 _symbol_unquote_splicing = symbol("unquote-splicing")
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_ONE_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("expr")),
+]
 
 
 def _qq_expr(compiler, frag, expr, level):
@@ -363,8 +365,8 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
 
 
 @builtin("compile/quasiquote")
-@special("compile/quasiquote", patterns=_DEFAULT_PATTERNS)
-def special_quasiquote(compiler, source):
+@special("compile/quasiquote", patterns=_ONE_PATTERNS, unpack="kwargs")
+def special_quasiquote(compiler, called_by, expr):
     """
     Compile (compile/quasiquote EXPR) — the backtick quasi-quote special form.
 
@@ -373,41 +375,35 @@ def special_quasiquote(compiler, source):
     evaluated as normal expressions.
     """
 
-    called_by, body = source
-
-    if is_nil(body) or not is_pair(body):
-        raise SpecialError("quasiquote requires one argument", source)
-
-    expr, rest = body
-    if not is_nil(rest):
-        raise SpecialError("quasiquote takes one argument", source)
-
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
-    _qq_expr(compiler, frag, expr, 0)
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
+    _qq_expr(compiler, frag, expr.datum, 0)
     return frag
 
 
 @builtin("compile/unquote")
-@special("compile/unquote", patterns=_DEFAULT_PATTERNS)
-def special_unquote(compiler, source):
+@special("compile/unquote", patterns=_ONE_PATTERNS, unpack="kwargs")
+def special_unquote(compiler, called_by, expr):
     """
     Raise SpecialError — unquote is only valid inside quasiquote
     """
 
-    raise SpecialError("unquote used outside of quasiquote", source)
+    raise SpecialError(
+        "unquote used outside of quasiquote",
+        expr.datum, position=called_by.position)
 
 
 @builtin("compile/unquote-splicing")
-@special("compile/unquote-splicing", patterns=_DEFAULT_PATTERNS)
-def special_unquote_splicing(compiler, source):
+@special("compile/unquote-splicing", patterns=_ONE_PATTERNS,
+         unpack="kwargs")
+def special_unquote_splicing(compiler, called_by, expr):
     """
     Raise SpecialError — unquote-splicing is only valid inside quasiquote
     """
 
     raise SpecialError(
         "unquote-splicing used outside of quasiquote",
-        source)
+        expr.datum, position=called_by.position)
 
 
 # The end.
