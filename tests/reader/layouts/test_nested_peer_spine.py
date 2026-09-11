@@ -29,7 +29,7 @@ from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
 from koskari.lib import cons, keyword, kos_repr, nil, symbol
 from koskari.reader import LayoutReader, source_str
-from koskari.reader.parser import IndentAwareStream
+from koskari.reader.stream import IndentAwareStream
 
 
 pytestmark = pytest.mark.phase_infra

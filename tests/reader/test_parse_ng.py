@@ -14,7 +14,7 @@
 """
 tests.reader.test_parse_ng
 
-Unit tests for koskari.reader.parser_ng stream layer and reader.
+Unit tests for the koskari.reader stream layer and reader.
 
 Tests focus on the new interface contracts introduced in parser_ng:
 - IndentAwareStream.dedented
@@ -35,9 +35,9 @@ import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
 from koskari.lib import BaseSourceStream, cons, keyword, nil, symbol
-from koskari.reader.parser import (
-    READ_EOF, IndentAwareStream, LayoutReader, Reader, SourceStream,
-    default_reader, source_str)
+from koskari.reader.layout import LayoutReader
+from koskari.reader.parser import READ_EOF, Reader, default_reader
+from koskari.reader.stream import IndentAwareStream, SourceStream, source_str
 
 
 pytestmark = pytest.mark.phase_infra
