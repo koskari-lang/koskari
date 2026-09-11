@@ -30,7 +30,7 @@ from ...matcher import (
     BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR, REST,
     SYMBOL, VALUE)
 from ...syntax import special
-from ...types import is_nil, is_pair
+from ...types import is_pair
 from ..helpers import (
     _parse_decl_tail, parse_decl, unpack_lhs_bind_symbols, using_unpack_helper)
 
@@ -73,9 +73,6 @@ def _define_name_type_pos_from_match(matched):
             namesym, type_expr = parse_decl(decl.source)
 
     return namesym, type_expr
-
-
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
 
 
 _SETQ_PATTERNS = [
@@ -223,6 +220,54 @@ def special_takeq(compiler, caps):
     return frag
 
 
+def emit_define_value(compiler, frag, caps, namesym, type_expr):
+    """
+    Finish a define fragment from its match. The function shorthand
+    (define X [Y Z] BODY...) compiles a function form carrying the name
+    and any return type, a plain value compiles itself (positioned at
+    an atom value), and a declare-only form compiles nothing; the value
+    is stored to the name and the form's result is None
+
+    :return: the fragment
+    """
+
+    name = str(namesym)
+
+    if "body" in caps:
+        formals = caps["formals"]
+        if isinstance(formals, Datum):
+            formals_spine = formals.datum
+        else:
+            formals_spine = formals.source
+        body_spine = caps["body"].datum
+        if type_expr is not None:
+            val_expr = cons(
+                symbol("function"),
+                namesym,
+                keyword("::"),
+                type_expr,
+                formals_spine,
+                body_spine)
+        else:
+            val_expr = cons(
+                symbol("function"), namesym, formals_spine, body_spine)
+
+    elif "value" in caps:
+        val_expr = caps["value"].datum
+        if not is_pair(val_expr):
+            frag.position(caps["value"].position)
+
+    else:
+        frag.instruction(OpCode.CONST, None)
+        return frag
+
+    frag.merge(compiler.full_compile(val_expr))
+    frag.instruction(OpCode.VAR_STORE, name)
+    frag.instruction(OpCode.CONST, None)
+
+    return frag
+
+
 _DEFINE_INLINE_PATTERNS = [
     MATCH(
         CALLEDBY(),
@@ -289,81 +334,41 @@ def special_define(compiler, caps):
 
     frag = compiler.fragment(called_by)
 
-    if "body" in caps:
+    # the function shorthand declares untyped: the return type rides on
+    # the function form instead
+    if "body" in caps or type_expr is None:
         frag.declare_var(name, position=pos)
-        formals = caps["formals"]
-        body = caps["body"]
-        if isinstance(formals, Datum):
-            formals_spine = formals.datum
-        else:
-            formals_spine = formals.source
-        body_spine = body.datum
-        if type_expr is not None:
-            val_expr = cons(
-                symbol("function"),
-                namesym,
-                keyword("::"),
-                type_expr,
-                formals_spine,
-                body_spine)
-        else:
-            val_expr = cons(symbol("function"), namesym,
-                            formals_spine,
-                            body_spine)
-
-    elif "value" in caps:
-        if type_expr is not None:
-            frag.declare_var(name, position=pos, type_expr=type_expr)
-        else:
-            frag.declare_var(name, position=pos)
-        val_expr = caps["value"].datum
-
     else:
-        if type_expr is not None:
-            frag.declare_var(name, position=pos, type_expr=type_expr)
-        else:
-            frag.declare_var(name, position=pos)
-        frag.instruction(OpCode.CONST, None)
-        return frag
+        frag.declare_var(name, position=pos, type_expr=type_expr)
 
-    if not is_pair(val_expr) and "value" in caps:
-        frag.position(caps["value"].position)
+    return emit_define_value(compiler, frag, caps, namesym, type_expr)
 
-    frag.merge(compiler.full_compile(val_expr))
-    frag.instruction(OpCode.VAR_STORE, name)
-    frag.instruction(OpCode.CONST, None)
 
-    return frag
+_NOARG_PATTERNS = [
+    MATCH(CALLEDBY("called_by")),
+]
 
 
 @builtin("compile/globals")
-@special("compile/globals", patterns=_DEFAULT_PATTERNS)
-def special_globals(compiler, source):
+@special("compile/globals", patterns=_NOARG_PATTERNS, unpack="kwargs")
+def special_globals(compiler, called_by):
     """
     Compile (compile/globals). Push the outermost frame namespace (globals)
     """
 
-    called_by, body = source
-    if not is_nil(body):
-        raise SpecialError("%s takes no arguments" % called_by, source)
-
-    frag = compiler.fragment(called_by)
+    frag = compiler.fragment(called_by.datum)
     frag.instruction(OpCode.GLOBALS, 0)
     return frag
 
 
 @builtin("compile/locals")
-@special("compile/locals", patterns=_DEFAULT_PATTERNS)
-def special_locals(compiler, source):
+@special("compile/locals", patterns=_NOARG_PATTERNS, unpack="kwargs")
+def special_locals(compiler, called_by):
     """
     Compile (compile/locals). Push the current frame namespace (locals)
     """
 
-    called_by, body = source
-    if not is_nil(body):
-        raise SpecialError("%s takes no arguments" % called_by, source)
-
-    frag = compiler.fragment(called_by)
+    frag = compiler.fragment(called_by.datum)
     frag.instruction(OpCode.LOCALS, 0)
     return frag
 
@@ -391,42 +396,7 @@ def special_define_global(compiler, caps):
             % (name,),
             called_by) from None
 
-    if "body" in caps:
-        formals = caps["formals"]
-        body = caps["body"]
-        if isinstance(formals, Datum):
-            formals_spine = formals.datum
-        else:
-            formals_spine = formals.source
-        body_spine = body.datum
-        if type_expr is not None:
-            val_expr = cons(
-                symbol("function"),
-                namesym,
-                keyword("::"),
-                type_expr,
-                formals_spine,
-                body_spine)
-        else:
-            val_expr = cons(symbol("function"), namesym,
-                            formals_spine,
-                            body_spine)
-
-    elif "value" in caps:
-        val_expr = caps["value"].datum
-
-    else:
-        frag.instruction(OpCode.CONST, None)
-        return frag
-
-    if not is_pair(val_expr) and "value" in caps:
-        frag.position(caps["value"].position)
-
-    frag.merge(compiler.full_compile(val_expr))
-    frag.instruction(OpCode.VAR_STORE, name)
-    frag.instruction(OpCode.CONST, None)
-
-    return frag
+    return emit_define_value(compiler, frag, caps, namesym, type_expr)
 
 
 # The end.
