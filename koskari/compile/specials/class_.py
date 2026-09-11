@@ -24,14 +24,19 @@ Special form handler for compile/class.
 from ...bootstrap import builtin
 from ...exceptions import ParametersError, SpecialError
 from ...lib import OpCode
-from ...matcher import CALLEDBY, MATCH, REST
+from ...matcher import CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
-from ...types import is_nil, is_pair
 from ..helpers import (
-    gather_parameters, helper_begin, is_symbolish, strip_leading_docstring)
+    gather_parameters, helper_begin, strip_leading_docstring)
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_CLASS_PATTERNS = [
+    MATCH(
+        CALLEDBY("called_by"),
+        SYMBOL("name"),
+        VALUE("supers"),
+        REST("body")),
+]
 
 
 def _extract_metaclass(kwds_seq):
@@ -57,8 +62,8 @@ def _compiling_module_name(compiler):
 
 
 @builtin("compile/class")
-@special("compile/class", patterns=_DEFAULT_PATTERNS)
-def special_class(compiler, source):
+@special("compile/class", patterns=_CLASS_PATTERNS, unpack="kwargs")
+def special_class(compiler, called_by, name, supers, body):
     """
     Compile (compile/class NAME (SUPERS) BODY...). Creates a class via
     PUSH_COLLECT/POP_COLLECT/BUILD_CLASS, runs body in CollectorNamespace,
@@ -66,44 +71,37 @@ def special_class(compiler, source):
     optional meta: Metaclass.
     """
 
-    called_by, rest = source
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError("compile/class requires name and supers", source)
-
-    name_form, rest_tail = rest
-    if not is_symbolish(name_form):
-        raise SpecialError("compile/class name must be a symbol", source)
-
-    name = str(name_form)
-
-    if is_nil(rest_tail) or not is_pair(rest_tail):
-        raise SpecialError("compile/class requires supers list and body", source)
-
-    supers, body = rest_tail
+    pos = called_by.position
+    head = called_by.datum
+    name = str(name.datum)
+    supers_form = supers.datum
+    body = body.datum
 
     try:
-        args_seq, kwds_seq = gather_parameters(supers, source=supers)
+        args_seq, kwds_seq = gather_parameters(
+            supers_form, source=supers_form)
     except ParametersError as e:
-        raise SpecialError(str(e), source)
+        raise SpecialError(str(e), supers_form, position=pos)
 
     metaclass_expr, extra_kwds = _extract_metaclass(kwds_seq)
     if extra_kwds:
         raise SpecialError(
             "compile/class supers only supports meta: keyword, not %s"
             % [k for k, _ in extra_kwds],
-            source)
+            supers_form, position=pos)
 
     has_star = any(x[0] == "*" for x in args_seq)
     if has_star:
         raise SpecialError(
-            "compile/class supers does not support *args", source)
+            "compile/class supers does not support *args",
+            supers_form, position=pos)
 
     bases = [expr for _, expr in args_seq]
 
     doc, body = strip_leading_docstring(body)
 
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
+    frag = compiler.fragment(head)
+    frag.position(pos)
 
     # Build pos tuple: (name, bases) or (name, bases, metaclass)
     # Stack order for BUILD_ARGS: first pushed is last popped
@@ -122,7 +120,7 @@ def special_class(compiler, source):
     else:
         frag.instruction(OpCode.BUILD_ARGS, 2)
 
-    with frag.collector_namespace(called_by) as body_frag:
+    with frag.collector_namespace(head) as body_frag:
         # The class body scope owns __class__, as CPython's does: methods
         # defined in the body close over this slot, and the class builder
         # fills it once the class object exists, so (super) and a bare
