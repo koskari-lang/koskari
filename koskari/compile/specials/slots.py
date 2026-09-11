@@ -29,92 +29,78 @@ from ...syntax import special
 from ...types import is_symbol
 
 
-_ATTR_FORMS = [
-    MATCH(CALLEDBY(), VALUE('obj'), SYMBOL('sym')),
+_ATTR_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("obj"), SYMBOL("sym")),
+]
+
+_SET_ATTR_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("obj"), SYMBOL("sym"), VALUE("val")),
 ]
 
 
-@builtin("compile/attr")
-@special("compile/attr", patterns=_ATTR_FORMS, unpack="match")
-def special_attr(compiler, caps):
+def emit_attr(compiler, called_by, obj, sym, var_op, stack_op, before=None):
     """
-    Compile (compile/attr OBJ SYM). Load attribute SYM from OBJ
+    A fragment for an attribute special: a symbol object takes the var
+    path, var_op with the (obj, sym, 0, 0) operand; any other object is
+    compiled onto the stack and takes stack_op with the attribute name.
+    before, when given, is called with the fragment between the object
+    and the row so a store can compile its value in the right place
+
+    :return: the fragment
     """
 
-    called_by = caps["called-by"].datum
-    pos = caps["called-by"].position
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
 
-    obj = caps["obj"].datum
-    sym = caps["sym"].datum
-
-    frag = compiler.fragment(called_by)
-    frag.position(pos)
+    obj = obj.datum
+    name = str(sym.datum)
 
     if is_symbol(obj):
         frag.request_var(str(obj))
-        frag.instruction(OpCode.VAR_ATTR, (str(obj), str(sym), 0, 0))
+        if before is not None:
+            before(frag)
+        frag.instruction(var_op, (str(obj), name, 0, 0))
     else:
         frag.merge(compiler.full_compile(obj))
-        frag.instruction(OpCode.ATTR, str(sym))
+        if before is not None:
+            before(frag)
+        frag.instruction(stack_op, name)
 
     return frag
 
 
-_DEL_ATTR_FORMS = [
-    MATCH(CALLEDBY(), VALUE('obj'), SYMBOL('sym')),
-]
+@builtin("compile/attr")
+@special("compile/attr", patterns=_ATTR_PATTERNS, unpack="kwargs")
+def special_attr(compiler, called_by, obj, sym):
+    """
+    Compile (compile/attr OBJ SYM). Load attribute SYM from OBJ
+    """
+
+    return emit_attr(
+        compiler, called_by, obj, sym, OpCode.VAR_ATTR, OpCode.ATTR)
 
 
 @builtin("compile/take-attr")
-@special("compile/take-attr", patterns=_DEL_ATTR_FORMS, unpack="match")
-def special_take_attr(compiler, caps):
+@special("compile/take-attr", patterns=_ATTR_PATTERNS, unpack="kwargs")
+def special_take_attr(compiler, called_by, obj, sym):
     """
     Compile (compile/take-attr OBJ SYM). Get attribute SYM from OBJ, delete
     it, push the value
     """
 
-    called_by = caps["called-by"].datum
-    pos = caps["called-by"].position
-
-    obj = caps["obj"].datum
-    sym = caps["sym"].datum
-
-    frag = compiler.fragment(called_by)
-    frag.position(pos)
-
-    if is_symbol(obj):
-        frag.request_var(str(obj))
-        frag.instruction(
-            OpCode.VAR_ATTR_TAKE, (str(obj), str(sym), 0, 0))
-    else:
-        frag.merge(compiler.full_compile(obj))
-        frag.instruction(OpCode.ATTR_TAKE, str(sym))
-
-    return frag
+    return emit_attr(
+        compiler, called_by, obj, sym, OpCode.VAR_ATTR_TAKE, OpCode.ATTR_TAKE)
 
 
 @builtin("compile/del-attr")
-@special("compile/del-attr", patterns=_DEL_ATTR_FORMS, unpack="match")
-def special_del_attr(compiler, caps):
+@special("compile/del-attr", patterns=_ATTR_PATTERNS, unpack="kwargs")
+def special_del_attr(compiler, called_by, obj, sym):
     """
     Compile (compile/del-attr OBJ SYM). Delete attribute SYM from OBJ
     """
 
-    called_by = caps["called-by"].datum
-    pos = caps["called-by"].position
-
-    obj = caps["obj"].datum
-    sym = caps["sym"].datum
-
-    frag = compiler.fragment(called_by)
-    frag.position(pos)
-
-    if is_symbol(obj):
-        frag.request_var(str(obj))
-        frag.instruction(OpCode.VAR_ATTR_CLEAR, (str(obj), str(sym), 0, 0))
-    else:
-        frag.merge(compiler.full_compile(obj))
-        frag.instruction(OpCode.ATTR_CLEAR, str(sym))
+    frag = emit_attr(
+        compiler, called_by, obj, sym, OpCode.VAR_ATTR_CLEAR, OpCode.ATTR_CLEAR)
 
     # every expression must evaluate to something
     frag.instruction(OpCode.CONST, None)
@@ -122,36 +108,16 @@ def special_del_attr(compiler, caps):
     return frag
 
 
-_SET_ATTR_FORMS = [
-    MATCH(CALLEDBY(), VALUE('obj'), SYMBOL('sym'), VALUE('val')),
-]
-
-
 @builtin("compile/set-attr")
-@special("compile/set-attr", patterns=_SET_ATTR_FORMS, unpack="match")
-def special_set_attr(compiler, caps):
+@special("compile/set-attr", patterns=_SET_ATTR_PATTERNS, unpack="kwargs")
+def special_set_attr(compiler, called_by, obj, sym, val):
     """
     Compile (compile/set-attr OBJ SYM VAL). Store VAL into attribute SYM on OBJ
     """
 
-    called_by = caps["called-by"].datum
-    pos = caps["called-by"].position
-
-    obj = caps["obj"].datum
-    sym = caps["sym"].datum
-    val = caps["val"].datum
-
-    frag = compiler.fragment(called_by)
-    frag.position(pos)
-
-    if is_symbol(obj):
-        frag.request_var(str(obj))
-        frag.merge(compiler.full_compile(val))
-        frag.instruction(OpCode.VAR_ATTR_STORE, (str(obj), str(sym), 0, 0))
-    else:
-        frag.merge(compiler.full_compile(obj))
-        frag.merge(compiler.full_compile(val))
-        frag.instruction(OpCode.ATTR_STORE, str(sym))
+    frag = emit_attr(
+        compiler, called_by, obj, sym, OpCode.VAR_ATTR_STORE, OpCode.ATTR_STORE,
+        before=lambda frag: frag.merge(compiler.full_compile(val.datum)))
 
     # every expression must evaluate to something
     frag.instruction(OpCode.CONST, None)
