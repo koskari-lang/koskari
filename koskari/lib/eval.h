@@ -1302,8 +1302,8 @@ KosOpResult KosEvalState_CallNoArgs(
    peephole. Implementation: koskari/lib/eval/eval_await.c included into the
    eval translation unit.
 
-   CALL* opcodes use a separate static push_or_await_fused in the same
-   translation unit, which may elide push plus a trailing POP,1.
+   CALL* opcodes pass the fuse flag to the same push_or_await body,
+   which may then elide the push plus a trailing POP,1.
 
    val is consumed (ownership transferred).
 */

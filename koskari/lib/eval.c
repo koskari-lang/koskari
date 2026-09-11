@@ -1408,7 +1408,7 @@ static PyObject *kos_import_module(
 
 
 static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
-  return push_or_await_plain(es, value, 1);
+  return push_or_await(es, value, 1, 0);
 }
 
 

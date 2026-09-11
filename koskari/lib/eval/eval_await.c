@@ -223,24 +223,64 @@ static int kos_isfuture(PyObject *val) {
 
 
 /**
+   CALL* peephole: when the next instruction is POP 1 (discard TOS),
+   release val and step past that POP instead of pushing. Returns 1
+   when it elided, else 0 with val untouched. Only sound from a CALL*
+   handler, where the frame PC is already the next instruction index
+   after fetch; a path that pops the stack in C before the next opcode
+   must not fuse.
+*/
+static inline int push_fuse_pop1(KosEvalState *es, PyObject *val) {
+  uint32_t pc = KosEvalState_PC(es);
+  KosOp *next = &KosEvalState_OPS(es)[pc];
+
+  if (next->op == KOS_OP_POP && next->arg == 1) {
+    Py_DECREF(val);
+    KosEvalState_SET_PC(es, pc + 1u);
+    return 1;
+  }
+  return 0;
+}
+
+
+/* Push val, or fuse it away when fuse is set and the peephole applies.
+   val is consumed. */
+static inline KosOpResult push_or_fuse(
+    KosEvalState *es,
+    PyObject *val,
+    int fuse) {
+
+  if (fuse && push_fuse_pop1(es, val))
+    return EVAL_NORMAL();
+  return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+}
+
+
+/**
    Push val, or if val is awaitable run eager_step and either push the
    result or suspend (KOS_RES_AWAIT). Use only for (1) the result of a
    call (CALL opcode: callable returned a coroutine) and (2) the AWAIT
-   opcode (explicitly awaiting TOS). All other paths must use KosEvalState_StackPUSH
-   so we do not auto-await values that are merely loaded or computed.
+   opcode (explicitly awaiting TOS). All other paths must use
+   KosEvalState_StackPUSH so we do not auto-await values that are merely
+   loaded or computed.
 
-   CALL* bytecode uses push_or_await_fused instead: same logic plus an optional
-   POP,1 peephole so KosEvalState_PushOrAwait and this function stay free of that
-   cost on every non-opcode caller (e.g. defer_drive, KosEvalState_Call).
+   await_defer: the explicit AWAIT opcode drives a Defer or an asyncio
+   future; implicit sites push those as plain handles.
+
+   fuse: a CALL* handler passes 1 so a pushed result followed by POP 1
+   is elided (push_fuse_pop1); every non-opcode caller (defer_drive,
+   KosEvalState_Call, KosEvalState_PushOrAwait) passes 0. Both flags
+   are literals at every call site and fold away.
 
    val is consumed (new reference).
 
    :return: EVAL_NORMAL, EVAL_AWAIT, or EVAL_RAISE
 */
-static KosOpResult push_or_await_plain(
+static inline KosOpResult push_or_await(
     KosEvalState *es,
     PyObject *val,
-    int await_defer) {
+    int await_defer,
+    int fuse) {
 
   /* Awaitability gate first: a type-level probe (two loads), so the
      dominant non-awaitable result skips everything below -- including
@@ -249,14 +289,12 @@ static KosOpResult push_or_await_plain(
   PyTypeObject *type = Py_TYPE(val);
   SAYF("[eval] push_or_await entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
-  if (! type->tp_as_async || ! type->tp_as_async->am_await) {
-    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-  }
+  if (! type->tp_as_async || ! type->tp_as_async->am_await)
+    return push_or_fuse(es, val, fuse);
 
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
-  if (! await_defer && KosDefer_Check(val)) {
-    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-  }
+  if (! await_defer && KosDefer_Check(val))
+    return push_or_fuse(es, val, fuse);
 
   /* asyncio futures are handles; implicit sites push them plain. */
   if (! await_defer) {
@@ -265,9 +303,8 @@ static KosOpResult push_or_await_plain(
       Py_DECREF(val);
       return EVAL_RAISE();
     }
-    if (isfut) {
-      return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-    }
+    if (isfut)
+      return push_or_fuse(es, val, fuse);
   }
 
   int suspended = 0;
@@ -275,9 +312,8 @@ static KosOpResult push_or_await_plain(
   PyObject *result = KosEvalState_EagerStepAwaitable(es, val, &suspended, &yielded);
   Py_DECREF(val);
 
-  if (result) {
-    return (KosEvalState_StackPUSH(es, result) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-  }
+  if (result)
+    return push_or_fuse(es, result, fuse);
 
   if (suspended && yielded) {
     KosEvalState_MarkSuspendedNotRunning(es);
@@ -294,7 +330,7 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
   if (unlikely(! val))
     return EVAL_RAISE();
 
-  return push_or_await_plain(es, val, 0);
+  return push_or_await(es, val, 0, 0);
 }
 
 
@@ -312,88 +348,6 @@ KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val) {
   KosEvalState_PENDING_VALUE(es) = settled;
   return EVAL_REPROLOGUE();
 }
-
-
-/**
-   Opcode-only variant of push_or_await: same semantics, plus peephole elision
-   when the next bytecode is POP with argument 1 (discard TOS). In that case
-   the value is released and the frame PC is advanced past that POP without a
-   stack push. Used only from CALL* handlers where the frame PC is already the
-   next instruction index after fetch. Do not use from defer_drive or other
-   paths that pop the stack in C before the next opcode — use
-   KosEvalState_PushOrAwait.
-
-   val is consumed (new reference).
-
-   :return: EVAL_NORMAL, EVAL_AWAIT, or EVAL_RAISE
-*/
-
-#define OP_TRY_FUSE_POP1_AFTER_PUSH(es, val)                                  \
-  do {                                                                        \
-    uint32_t opfuse_pc = KosEvalState_PC(es);                                 \
-    KosOp *opfuse_nx = &KosEvalState_OPS(es)[opfuse_pc];                      \
-    if (opfuse_nx->op == KOS_OP_POP && opfuse_nx->arg == 1) {                 \
-      Py_DECREF(val);                                                         \
-      KosEvalState_SET_PC(es, opfuse_pc + 1u);                                \
-      return EVAL_NORMAL();                                                   \
-    }                                                                         \
-  } while (0)
-
-
-static inline KosOpResult push_or_await_fused(
-    KosEvalState *es,
-    PyObject *val) {
-
-  /* Awaitability gate first: a type-level probe (two loads), so the
-     dominant non-awaitable result skips everything below -- including
-     the Defer subtype walk, which is sound to hoist because KosDefer
-     defines am_await and therefore always passes this gate. */
-  PyTypeObject *type = Py_TYPE(val);
-  SAYF("[eval] push_or_await_fused entry is_awaitable=%d\n",
-       (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
-  if (! type->tp_as_async || ! type->tp_as_async->am_await) {
-    OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
-    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-  }
-
-  /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
-  if (KosDefer_Check(val)) {
-    OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
-    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-  }
-
-  /* asyncio futures are handles; implicit sites push them plain. */
-  int isfut = kos_isfuture(val);
-  if (isfut < 0) {
-    Py_DECREF(val);
-    return EVAL_RAISE();
-  }
-  if (isfut) {
-    OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
-    return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-  }
-
-  int suspended = 0;
-  PyObject *yielded = NULL;
-  PyObject *result = KosEvalState_EagerStepAwaitable(es, val, &suspended, &yielded);
-  Py_DECREF(val);
-
-  if (result) {
-    OP_TRY_FUSE_POP1_AFTER_PUSH(es, result);
-    return (KosEvalState_StackPUSH(es, result) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-  }
-
-  if (suspended && yielded) {
-    KosEvalState_MarkSuspendedNotRunning(es);
-    SAYF("[eval] push_or_await_fused set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
-         suspended, yielded ? 1 : 0);
-    return EVAL_AWAIT(yielded);
-  }
-
-  return EVAL_RAISE();
-}
-
-#undef OP_TRY_FUSE_POP1_AFTER_PUSH
 
 
 /* Map 0/-1 int result (push, binary op) to KosOpResult. */
@@ -422,7 +376,7 @@ static inline KosOpResult kos_op_result_PUSH_OR_AWAIT(
   if (unlikely(! val))
     return EVAL_RAISE();
 
-  return push_or_await_fused(es, val);
+  return push_or_await(es, val, 0, 1);
 }
 
 

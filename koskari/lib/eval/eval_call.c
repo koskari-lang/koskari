@@ -134,7 +134,7 @@ static KosOpResult deliver_py_call_result(
     int tail_call,
     int tail_defer_return) {
 
-  KosOpResult por = push_or_await_plain(es, result, 0);
+  KosOpResult por = push_or_await(es, result, 0, 0);
   if (por.kind == KOS_RES_NORMAL && tail_call) {
     if (tail_defer_return) {
       PyObject *rv = KosEvalState_StackPopRef(es);
@@ -439,13 +439,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
            inside let / loop / foreach) uninstall now: the reused frame
            never reaches their POP_* rows.  The window is unaffected --
            the guard above pins it to the frame's own block. */
-        if (unlikely(kos_dyn_teardown_to_frame(es, frame) < 0)) {
-          if (window)
-            kos_stack_drop_noerr_fast(caller_slot, window);
-          if (flags & KOS_CALL_CALLABLE_OWNED)
-            Py_DECREF(callable);
-          return EVAL_RAISE();
-        }
+        if (unlikely(kos_dyn_teardown_to_frame(es, frame) < 0))
+          goto fail;
 
         /* Self-tail at simple arity with a provably private namespace:
            rebind the live frame's own namespace in place -- release the
@@ -474,11 +469,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
                                > KosSegment_LEN(*caller_slot)))) {
             (void) KosFormals_SimpleStealApplyBlock(ns, *caller_slot,
                                                     nargs);
-            if (window)
-              kos_stack_drop_noerr_fast(caller_slot, window);
-            if (flags & KOS_CALL_CALLABLE_OWNED)
-              Py_DECREF(callable);
-            return EVAL_RAISE();
+            goto fail;
           }
 
           KosNamespace_ClearRawFast(ns);
@@ -501,13 +492,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
           frame_ns = KosFunction_PrepareCallNamespaceFromVector(
               callable, argv, nargs, kwnames);
         }
-        if (unlikely(! frame_ns)) {
-          if (window)
-            kos_stack_drop_noerr_fast(caller_slot, window);
-          if (flags & KOS_CALL_CALLABLE_OWNED)
-            Py_DECREF(callable);
-          return EVAL_RAISE();
-        }
+        if (unlikely(! frame_ns))
+          goto fail;
 
         /* The callable is window-resident: the reset's block-clear
            releases it.  Hold it (and thereby code) across the reset,
@@ -551,13 +537,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         frame_ns = KosFunction_PrepareCallNamespaceFromVector(
             callable, argv, nargs, kwnames);
       }
-      if (unlikely(! frame_ns)) {
-        if (window)
-          kos_stack_drop_noerr_fast(caller_slot, window);
-        if (flags & KOS_CALL_CALLABLE_OWNED)
-          Py_DECREF(callable);
-        return EVAL_RAISE();
-      }
+      if (unlikely(! frame_ns))
+        goto fail;
       {
         PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
         if (window)
@@ -592,11 +573,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
 
         if (unlikely(kos_eval_check_frame_room(
                 es, KosEvalState_FRAME(es), 1) < 0)) {
-          if (window)
-            kos_stack_drop_noerr_fast(caller_slot, window);
-          if (flags & KOS_CALL_CALLABLE_OWNED)
-            Py_DECREF(callable);
-          return EVAL_RAISE();
+          goto fail;
         }
 
         if (likely(cached)) {
@@ -604,11 +581,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
              failure nothing is stolen and the frame stays parked. */
           if (unlikely(KosFormals_SimpleStealApplyBlock(
                   KosDynFrame_NS(cached), *caller_slot, nargs) < 0)) {
-            if (window)
-              kos_stack_drop_noerr_fast(caller_slot, window);
-            if (flags & KOS_CALL_CALLABLE_OWNED)
-              Py_DECREF(callable);
-            return EVAL_RAISE();
+            goto fail;
           }
           KosFunction_CACHED_FRAME(callable) = NULL;
           window -= (size_t) nargs;
@@ -626,11 +599,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
             callable, *caller_slot, nargs);
         if (unlikely(! frame_ns)) {
           /* nothing stolen; the whole window is still on the block */
-          if (window)
-            kos_stack_drop_noerr_fast(caller_slot, window);
-          if (flags & KOS_CALL_CALLABLE_OWNED)
-            Py_DECREF(callable);
-          return EVAL_RAISE();
+          goto fail;
         }
         window -= (size_t) nargs;
 
@@ -638,13 +607,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
            park attempt at release. */
         {
           KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
-          if (unlikely(! frame)) {
-            if (window)
-              kos_stack_drop_noerr_fast(caller_slot, window);
-            if (flags & KOS_CALL_CALLABLE_OWNED)
-              Py_DECREF(callable);
-            return EVAL_RAISE();
-          }
+          if (unlikely(! frame))
+            goto fail;
           if (! (flags & KOS_CALL_CALLABLE_OWNED))
             Py_INCREF(callable);
           KosDynFrame_FN(frame) = callable;
@@ -665,9 +629,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
 
         if (unlikely(kos_eval_check_frame_room(
                 es, KosEvalState_FRAME(es), 1) < 0)) {
-          if (flags & KOS_CALL_CALLABLE_OWNED)
-            Py_DECREF(callable);
-          return EVAL_RAISE();
+          goto fail;
         }
 
         if (likely(cached)) {
@@ -686,19 +648,13 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
 
         frame_ns = KosFunction_SimpleCallNamespaceFromVector(
             callable, argv, nargs);
-        if (unlikely(! frame_ns)) {
-          if (flags & KOS_CALL_CALLABLE_OWNED)
-            Py_DECREF(callable);
-          return EVAL_RAISE();
-        }
+        if (unlikely(! frame_ns))
+          goto fail;
         KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
         {
           KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
-          if (unlikely(! frame)) {
-            if (flags & KOS_CALL_CALLABLE_OWNED)
-              Py_DECREF(callable);
-            return EVAL_RAISE();
-          }
+          if (unlikely(! frame))
+            goto fail;
           if (! (flags & KOS_CALL_CALLABLE_OWNED))
             Py_INCREF(callable);
           KosDynFrame_FN(frame) = callable;
@@ -708,13 +664,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
 
       frame_ns = KosFunction_SimpleCallNamespaceFromVector(
           callable, argv, nargs);
-      if (unlikely(! frame_ns)) {
-        if (window)
-          kos_stack_drop_noerr_fast(caller_slot, window);
-        if (flags & KOS_CALL_CALLABLE_OWNED)
-          Py_DECREF(callable);
-        return EVAL_RAISE();
-      }
+      if (unlikely(! frame_ns))
+        goto fail;
       KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
       goto fn_frame_install;
     }
@@ -724,13 +675,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
     frame_ns = KosFunction_PrepareCallNamespaceFromVector(
         callable, argv, nargs, kwnames);
 
-    if (unlikely(! frame_ns)) {
-      if (window)
-        kos_stack_drop_noerr_fast(caller_slot, window);
-      if (flags & KOS_CALL_CALLABLE_OWNED)
-        Py_DECREF(callable);
-      return EVAL_RAISE();
-    }
+    if (unlikely(! frame_ns))
+      goto fail;
 
 fn_frame_install:
 
@@ -741,13 +687,8 @@ fn_frame_install:
        registers are loaded once, with their final values. */
     {
       KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
-      if (unlikely(! frame)) {
-        if (window)
-          kos_stack_drop_noerr_fast(caller_slot, window);
-        if (flags & KOS_CALL_CALLABLE_OWNED)
-          Py_DECREF(callable);
-        return EVAL_RAISE();
-      }
+      if (unlikely(! frame))
+        goto fail;
       if (window)
         kos_stack_drop_noerr_fast(caller_slot, window);
       if (flags & KOS_CALL_CALLABLE_OWNED)
@@ -838,6 +779,16 @@ legacy:
       Py_DECREF(callable);
     return r;
   }
+
+  /* Every error exit of the class dispatch: drop whatever of the
+     window is still on the block (a steal already took its span off
+     the count), release an owned callable, and raise. */
+fail:
+  if (window)
+    kos_stack_drop_noerr_fast(caller_slot, window);
+  if (flags & KOS_CALL_CALLABLE_OWNED)
+    Py_DECREF(callable);
+  return EVAL_RAISE();
 }
 
 
@@ -976,24 +927,15 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
   KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
   PyObject *frame_ns;
 
-  if (unlikely(kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)) {
-    if (window)
-      kos_stack_drop_noerr_fast(caller_slot, window);
-    if (flags & KOS_CALL_CALLABLE_OWNED)
-      Py_DECREF(callable);
-    return EVAL_RAISE();
-  }
+  if (unlikely(kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0))
+    goto fail;
 
   if (likely(cached)) {
     /* Cache hit: steal-bind into the parked namespace first -- on
        failure nothing is stolen and the frame stays parked. */
     if (unlikely(KosFormals_SimpleStealApplySelfBlock(
             KosDynFrame_NS(cached), self_arg, *caller_slot, nargs) < 0)) {
-      if (window)
-        kos_stack_drop_noerr_fast(caller_slot, window);
-      if (flags & KOS_CALL_CALLABLE_OWNED)
-        Py_DECREF(callable);
-      return EVAL_RAISE();
+      goto fail;
     }
     KosFunction_CACHED_FRAME(callable) = NULL;
     window -= (size_t) nargs;
@@ -1011,11 +953,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
       callable, self_arg, *caller_slot, nargs);
   if (unlikely(! frame_ns)) {
     /* nothing stolen; the whole window is still on the block */
-    if (window)
-      kos_stack_drop_noerr_fast(caller_slot, window);
-    if (flags & KOS_CALL_CALLABLE_OWNED)
-      Py_DECREF(callable);
-    return EVAL_RAISE();
+    goto fail;
   }
   window -= (size_t) nargs;
 
@@ -1023,13 +961,8 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
      attempt at release. */
   {
     KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
-    if (unlikely(! frame)) {
-      if (window)
-        kos_stack_drop_noerr_fast(caller_slot, window);
-      if (flags & KOS_CALL_CALLABLE_OWNED)
-        Py_DECREF(callable);
-      return EVAL_RAISE();
-    }
+    if (unlikely(! frame))
+      goto fail;
     if (! (flags & KOS_CALL_CALLABLE_OWNED))
       Py_INCREF(callable);
     KosDynFrame_FN(frame) = callable;
@@ -1038,6 +971,13 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
       kos_stack_drop_noerr_fast(caller_slot, window);
     return kos_call_installed(es);
   }
+
+fail:
+  if (window)
+    kos_stack_drop_noerr_fast(caller_slot, window);
+  if (flags & KOS_CALL_CALLABLE_OWNED)
+    Py_DECREF(callable);
+  return EVAL_RAISE();
 }
 
 
