@@ -38,7 +38,9 @@ _monitor = (symbol("gensym-thunk"),)
 
 _thunksym = re.compile("^%[1-9][0-9]*$").match
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_GENSYM_THUNK_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), REST("body")),
+]
 
 
 def _transform(pos_map, form):
@@ -129,10 +131,12 @@ def _build_formals(pos_map, source):
 
 
 @builtin("compile/gensym-thunk")
-@special("compile/gensym-thunk", patterns=_DEFAULT_PATTERNS)
+@special("compile/gensym-thunk", patterns=_GENSYM_THUNK_PATTERNS,
+         unpack="kwargs")
 def special_gensym_thunk(
         compiler: Compiler,
-        source) -> ByteCodeFragment:
+        called_by,
+        body) -> ByteCodeFragment:
     """
     Compile (compile/gensym-thunk BODY...) to a lambda with inferred formals.
 
@@ -141,12 +145,12 @@ def special_gensym_thunk(
     Placeholders: %%1, %%2, ... share gensyms per index; ... becomes * rest
     """
 
-    called_by, rest = source
+    rest = body.datum
 
     pos_map = {}
     if not is_nil(rest):
         rest = _transform(pos_map, rest)
-    formals = _build_formals(pos_map, source)
+    formals = _build_formals(pos_map, body.datum)
 
     return cons(symbol("lambda"), formals, rest)
 
