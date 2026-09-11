@@ -23,93 +23,86 @@ compile/cons.
 
 
 from ...bootstrap import builtin
-from ...exceptions import SpecialError
 from ...lib import OpCode, cons, symbol
-from ...matcher import CALLEDBY, MATCH, REST
+from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import get_position, is_keyword, is_nil, is_pair
+from ...types import is_keyword, is_nil, is_pair
 from ..helpers import requote
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_ONE_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("expr")),
+]
+
+_CONS_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), BODY("exprs")),
+]
+
+
+def emit_pair_part(compiler, called_by, expr, opcode):
+    """
+    A fragment for car and cdr: the expression compiled, then opcode
+    over the pair it produced
+
+    :return: the fragment
+    """
+
+    frag = compiler.fragment(called_by.datum)
+    frag.position(expr.position)
+    frag.merge(compiler.full_compile(expr.datum))
+    frag.instruction(opcode, 1)
+
+    return frag
 
 
 @builtin("compile/quote")
-@special("compile/quote", patterns=_DEFAULT_PATTERNS)
-def special_quote(compiler, source):
-    called_by, body = source
+@special("compile/quote", patterns=_ONE_PATTERNS, unpack="kwargs")
+def special_quote(compiler, called_by, expr):
+    """
+    Compile (compile/quote FORM). A pair is rewritten as its requoted
+    construction; any other datum becomes a constant
+    """
 
-    if is_nil(body) or not is_pair(body):
-        raise SpecialError("Too few arguments to quote", source)
-
-    body, rest = body
-    if not is_nil(rest):
-        raise SpecialError("Too many arguments to quote", source)
+    body = expr.datum
 
     if is_pair(body) and not is_nil(body):
         body = requote(body)
-        body.fill_position(get_position(source))
+        body.fill_position(called_by.position)
         return body
 
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
     frag.instruction(OpCode.CONST, body)
     return frag
 
 
 @builtin("compile/car")
-@special("compile/car", patterns=_DEFAULT_PATTERNS)
-def special_car(compiler, source):
+@special("compile/car", patterns=_ONE_PATTERNS, unpack="kwargs")
+def special_car(compiler, called_by, expr):
     """
     Compile (compile/car EXPR). Emit code that evaluates EXPR, then pushes
     the car of that pair. One argument. Emits CAR 1; consecutive CAR/CDR
     instructions may be merged by the compiler compress pass.
     """
 
-    called_by, body = source
-    if is_nil(body) or not is_pair(body):
-        raise SpecialError("compile/car requires one argument", source)
-
-    expr, rest = body
-    if not is_nil(rest):
-        raise SpecialError("compile/car takes one argument", source)
-
-    frag = compiler.fragment(called_by)
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.CAR, 1)
-
-    return frag
+    return emit_pair_part(compiler, called_by, expr, OpCode.CAR)
 
 
 @builtin("compile/cdr")
-@special("compile/cdr", patterns=_DEFAULT_PATTERNS)
-def special_cdr(compiler, source):
+@special("compile/cdr", patterns=_ONE_PATTERNS, unpack="kwargs")
+def special_cdr(compiler, called_by, expr):
     """
     Compile (compile/cdr EXPR). Emit code that evaluates EXPR, then pushes
     the cdr of that pair. One argument. Emits CDR 1; consecutive CDR/CAR
     instructions may be merged by the compiler compress pass.
     """
 
-    called_by, body = source
-    if is_nil(body) or not is_pair(body):
-        raise SpecialError("compile/cdr requires one argument", source)
-
-    expr, rest = body
-    if not is_nil(rest):
-        raise SpecialError("compile/cdr takes one argument", source)
-
-    frag = compiler.fragment(called_by)
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.CDR, 1)
-
-    return frag
+    return emit_pair_part(compiler, called_by, expr, OpCode.CDR)
 
 
 @builtin("compile/cons")
-@special("compile/cons", patterns=_DEFAULT_PATTERNS)
-def special_cons(compiler, source):
+@special("compile/cons", patterns=_CONS_PATTERNS, unpack="kwargs")
+def special_cons(compiler, called_by, exprs):
     """
     Variadic: (compile/cons EXPR1 EXPR2 ... EXPR_TAIL). Compile each
     expression in order (stack bottom = first element, top = tail), then
@@ -117,25 +110,24 @@ def special_cons(compiler, source):
     (the tail).
     """
 
-    called_by, body = source
-    if is_nil(body) or not is_pair(body):
-        raise SpecialError(
-            "compile/cons requires at least one argument",
-            source)
+    body = exprs.datum
+    forms = list(body.unpack())
 
-    exprs = list(body.unpack())
-
-    for fm in exprs:
+    for fm in forms:
         if is_keyword(fm):
-            return cons(symbol("call"), source)
+            # a keyword among the arguments makes this the cons
+            # function applied to complex arguments instead
+            rewritten = cons(symbol("call"), called_by.datum, body)
+            rewritten.cdr.set_position(called_by.position)
+            return rewritten
 
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
 
-    for expr in exprs:
-        frag.merge(compiler.full_compile(expr))
+    for form in forms:
+        frag.merge(compiler.full_compile(form))
 
-    frag.instruction(OpCode.CONS, len(exprs))
+    frag.instruction(OpCode.CONS, len(forms))
 
     return frag
 
