@@ -21,60 +21,34 @@ Compile .ki sources into .kio bodies and drive evaluation from loaded .kio.
 """
 
 
-from ..compile.compiler import CompilerMode
-from ..lib import cons, demand_call, nil, symbol
+from ..lib import demand_call
 from ..module import (
-    build_module_load_facets, detach_module_load_facets, init_module,
-    materialize_exports, new_module)
-from ..reader import READ_EOF, IndentAwareStream, source_open, source_str
+    compile_top_level, init_module, load_facets, new_module)
+from ..reader import source_open, source_str
 from .codex import KioFile, KioMeta
 
 
-def _compile_top_level_to_codes(mod, compiler, reader, source_stream):
+def compile_top_level_to_codes(mod, filename, source_stream):
     """
-    Read top-level forms from a SourceStream and return compiled Code objects
+    Read top-level forms from a SourceStream and return compiled Code
+    objects, running each as it is compiled so compile-time artifacts
+    are available to the forms after it
 
     :param mod: module namespace for evaluation side effects
-    :param compiler: Compiler instance
+    :param filename: logical source filename for the load facets
     :param source_stream: SourceStream from source_open or source_str
     :return: list of Code objects in source order
     """
 
     ns = vars(mod)
-    try:
-        stream = IndentAwareStream.from_source(source_stream)
+    bodies = []
 
-        bodies = []
-        docstr = None
-        while True:
-            source_expr = reader.read(stream)
-            if source_expr is READ_EOF:
-                break
-
-            # the source loader lifts a leading string into __doc__
-            # without evaluating it; the .kio carries the same lift as
-            # its first body, a define of __doc__
-            if docstr is None:
-                if isinstance(source_expr, str):
-                    source_expr = cons(
-                        symbol('define'), symbol('__doc__'), source_expr, nil)
-                    docstr = True
-                else:
-                    docstr = False
-
-            fragment = compiler.compile_expression(source_expr)
-            code = compiler.complete(
-                fragment, mode=CompilerMode.EXPRESSION, is_root=True)
+    with load_facets(mod, filename, seal=False, detach=True) as facets:
+        for code in compile_top_level(mod, *facets, source_stream):
             bodies.append(code)
-
-            # we must evaluate the code to ensure future compile-time
-            # artifacts are available
             demand_call(code.expression(ns))
 
-        return bodies
-    finally:
-        materialize_exports(mod)
-        detach_module_load_facets(mod)
+    return bodies
 
 
 def compile_ki_file_to_kio(
@@ -106,10 +80,9 @@ def compile_ki_file_to_kio(
 
     mod = new_module(mod_name, system=False)
     init_module(mod, ki_path, spec=None)
-    compiler, reader = build_module_load_facets(mod, display)
 
     with source_open(ki_path) as source_stream:
-        bodies = _compile_top_level_to_codes(mod, compiler, reader, source_stream)
+        bodies = compile_top_level_to_codes(mod, display, source_stream)
 
     # stamped from the source as it was compiled, so a loader can tell
     # this file apart from one left behind by an older copy of the .ki
@@ -140,10 +113,9 @@ def compile_ki_source_to_kio(
 
     mod = new_module(mod_name, system=False)
     init_module(mod, display, spec=None)
-    compiler, reader = build_module_load_facets(mod, display)
 
     source_stream = source_str(source_text, display)
-    bodies = _compile_top_level_to_codes(mod, compiler, reader, source_stream)
+    bodies = compile_top_level_to_codes(mod, display, source_stream)
 
     KioFile.from_codes(bodies).write(kio_dest)
 

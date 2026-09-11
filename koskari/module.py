@@ -34,10 +34,11 @@ This is the koskari analogue of sibilant.module from python-sibilant.
 
 
 import sys
+from contextlib import contextmanager
 from os.path import split
 
-from .compile import Compiler
-from .lib import Module, ModuleNamespace, demand_call
+from .compile import Compiler, CompilerMode
+from .lib import Module, ModuleNamespace, cons, demand_call, nil, symbol
 from .pragma import ModulePragma
 from .reader import (
     READ_EOF, IndentAwareStream, LayoutReader, source_open, source_str)
@@ -53,6 +54,12 @@ __all__ = (
 
     'new_module',
     'init_module',
+    'compile_top_level',
+    'load_facets',
+    'exports_materialized',
+    'run_codes_async',
+    'run_codes_demand',
+    'kio_codes',
     'load_module_async',
     'load_module_demand',
     'load_module_kio_async',
@@ -137,6 +144,129 @@ def init_module(module, filename, spec=None):
             ns['__path__'] = list(spec.submodule_search_locations)
 
 
+def compile_top_level(module, compiler, reader, source_stream):
+    """
+    Read and compile each top-level form of a module's source in order,
+    yielding one expression Code per form. The caller runs each before
+    the next is read, so compile-time artifacts a form defines (syntax,
+    reader macros) are live when the following form compiles.
+
+    A leading string is the module docstring: it is rewritten to a
+    define of ``__doc__`` and yielded like any other form, which is also
+    the body a .kio carries for it
+
+    :param module: koskari Module whose namespace the forms run in
+    :param compiler: Compiler facet for this load
+    :param reader: LayoutReader facet for this load
+    :param source_stream: SourceStream from source_open or source_str
+    """
+
+    stream = IndentAwareStream.from_source(source_stream)
+
+    docstr = None
+    while True:
+        source_expr = reader.read(stream)
+        if source_expr is READ_EOF:
+            return
+
+        if docstr is None:
+            docstr = isinstance(source_expr, str)
+            if docstr:
+                source_expr = cons(
+                    symbol('define'), symbol('__doc__'), source_expr, nil)
+
+        fragment = compiler.compile_expression(source_expr)
+        yield compiler.complete(
+            fragment, mode=CompilerMode.EXPRESSION, is_root=True)
+
+
+@contextmanager
+def load_facets(module, filename, *, seal, detach):
+    """
+    The facets of one load. Builds (or reuses) the compiler and reader
+    and yields them; seals the module on normal exit when ``seal`` is
+    set; when ``detach`` is set, materializes ``__all__`` and detaches
+    the facets afterward, always, even when the load raises, with
+    ``__pragma__`` staying bound. Callers passing ``detach`` False own
+    the completion steps: an interactive session seals but retains
+    facets; the bootstrap builtins loop defers both across its source
+    files and performs them once at the end
+
+    :param module: koskari Module (or object whose ``vars()`` is the ns)
+    :param filename: source filename for the compiler
+    :param seal: on success, pack the compiler's surviving code objects
+        per the compiler/pack-module pragma
+    :param detach: materialize exports and drop the load facets
+    :return: the (compiler, reader) pair
+    """
+
+    compiler, reader = build_module_load_facets(module, filename)
+    try:
+        yield compiler, reader
+        if seal:
+            compiler.seal()
+    finally:
+        if detach:
+            materialize_exports(module)
+            detach_module_load_facets(module)
+
+
+@contextmanager
+def exports_materialized(module):
+    """
+    Materialize ``__all__`` when the block ends, whether or not it raised
+    """
+
+    try:
+        yield
+    finally:
+        materialize_exports(module)
+
+
+async def run_codes_async(module, codes):
+    """
+    Run each Code as an expression of ``module``, awaiting each in turn.
+
+    A helper so no caller local outlives the loop: the last expression
+    must be released before the compiler seals, or it would be swept
+    into an arena
+    """
+
+    ns = vars(module)
+    for code in codes:
+        await code.expression(ns)()
+
+
+def run_codes_demand(module, codes):
+    """
+    Run each Code as an expression of ``module`` via demand_call. No
+    async suspension is allowed. See :func:`run_codes_async` for why
+    the loop lives in a helper
+    """
+
+    ns = vars(module)
+    for code in codes:
+        demand_call(code.expression(ns))
+
+
+def kio_codes(module):
+    """
+    The stored bodies of a module's precompiled .kio file, with the
+    module's ``__pragma__`` record bound first so ``(pragma ...)``
+    bodies and package-pragma stamping run as they do under a source
+    load. No compiler or reader is built: the bodies were compiled
+    already
+
+    :param module: koskari Module with ``__file__`` set to a .kio path
+    :return: the Code objects in stored order
+    """
+
+    from .serialize.codex import KioFile
+
+    build_module_pragma(module)
+    return KioFile.read(getattr(module, '__file__', '<unknown>')).codes
+
+
 async def load_module_async(module, *, seal=True, detach=True):
     """
     Execute a koskari module by reading, compiling, and running each
@@ -150,57 +280,21 @@ async def load_module_async(module, *, seal=True, detach=True):
     While loading, ``__pragma__``, ``__compiler__``, and ``__reader__``
     are bound on the module; facets already present (a prior load with
     ``detach=False``) are reused, so consecutive loads share one pragma,
-    compiler, and reader.
+    compiler, and reader. Sealing and detaching follow
+    :func:`load_facets`.
 
     :param module: koskari Module instance with ``__file__`` set
-    :param seal: when True, seal the module on successful completion:
-        the compiler packs its surviving code objects per the
-        compiler/pack-module pragma
+    :param seal: when True, seal the module on successful completion
     :param detach: when True, detach the compiler and reader facets
-        afterward (always, even when the load raises); ``__pragma__``
-        stays bound.  Callers passing False own the
-        completion steps: an interactive session seals but retains
-        facets; the bootstrap builtins loop defers both across its
-        source files and performs them once at the end
+        afterward
     """
 
     filename = getattr(module, '__file__', '<unknown>')
-    ns = vars(module)
 
-    docstr = None
-
-    with source_open(filename) as source_stream:
-
-        compiler, reader = build_module_load_facets(module, filename)
-        try:
-            stream = IndentAwareStream.from_source(source_stream)
-
-            while True:
-                source_expr = reader.read(stream)
-                if source_expr is READ_EOF:
-                    break
-
-                if docstr is None:
-                    if isinstance(source_expr, str):
-                        ns['__doc__'] = source_expr
-                        docstr = True
-                        continue
-                    else:
-                        docstr = False
-
-                fragment = compiler.compile_expression(source_expr)
-                expr = fragment.as_expression(ns)
-                await expr()
-
-            if seal:
-                # drop the loop's trailing references so the final
-                # ephemeral expression is not swept into an arena
-                fragment = expr = None
-                compiler.seal()
-        finally:
-            if detach:
-                materialize_exports(module)
-                detach_module_load_facets(module)
+    with source_open(filename) as source_stream, \
+            load_facets(module, filename, seal=seal, detach=detach) as facets:
+        await run_codes_async(
+            module, compile_top_level(module, *facets, source_stream))
 
 
 def load_module_demand(module, *, seal=True, detach=True):
@@ -208,62 +302,22 @@ def load_module_demand(module, *, seal=True, detach=True):
     Execute a koskari module by reading, compiling, and running each
     top-level expression in order via demand_call.
 
-    Same structure as load_module_async but each expression is run with
-    demand_call(expr) instead of awaiting a coroutine.  No async
+    Same structure as :func:`load_module_async` but each expression is
+    run with demand_call instead of awaiting a coroutine.  No async
     suspension is allowed.  Used by the loader's exec_module_demand path.
 
-    Load facet teardown matches :func:`load_module_async`.
-
     :param module: koskari Module instance with __file__ set
-    :param seal: when True, seal the module on successful completion:
-        the compiler packs its surviving code objects per the
-        compiler/pack-module pragma
+    :param seal: when True, seal the module on successful completion
     :param detach: when True, detach the compiler and reader facets
-        afterward (always, even when the load raises); ``__pragma__``
-        stays bound.  Callers passing False own the
-        completion steps: an interactive session seals but retains
-        facets; the bootstrap builtins loop defers both across its
-        source files and performs them once at the end
+        afterward
     """
 
     filename = getattr(module, '__file__', '<unknown>')
-    ns = vars(module)
 
-    docstr = None
-
-    with source_open(filename) as source_stream:
-
-        compiler, reader = build_module_load_facets(module, filename)
-        try:
-            stream = IndentAwareStream.from_source(source_stream)
-
-            while True:
-                source_expr = reader.read(stream)
-
-                if source_expr is READ_EOF:
-                    break
-
-                if docstr is None:
-                    if isinstance(source_expr, str):
-                        ns['__doc__'] = source_expr
-                        docstr = True
-                        continue
-                    else:
-                        docstr = False
-
-                fragment = compiler.compile_expression(source_expr)
-                expr = fragment.as_expression(ns)
-                demand_call(expr)
-
-            if seal:
-                # drop the loop's trailing references so the final
-                # ephemeral expression is not swept into an arena
-                fragment = expr = None
-                compiler.seal()
-        finally:
-            if detach:
-                materialize_exports(module)
-                detach_module_load_facets(module)
+    with source_open(filename) as source_stream, \
+            load_facets(module, filename, seal=seal, detach=detach) as facets:
+        run_codes_demand(
+            module, compile_top_level(module, *facets, source_stream))
 
 
 async def load_module_source_async(
@@ -280,15 +334,9 @@ async def load_module_source_async(
 
     :param module: koskari Module instance with ``__file__`` set
     :param source: koskari source text to execute
-    :param seal: when True, seal the module on successful completion:
-        the compiler packs its surviving code objects per the
-        compiler/pack-module pragma
+    :param seal: when True, seal the module on successful completion
     :param detach: when True, detach the compiler and reader facets
-        afterward (always, even when the load raises); ``__pragma__``
-        stays bound.  Callers passing False own the
-        completion steps: an interactive session seals but retains
-        facets; the bootstrap builtins loop defers both across its
-        source files and performs them once at the end
+        afterward
     :param layout: when False, read plain s-expressions instead of
         layout.  A layout line is a single form, so several expressions
         on one line become one implicit call; that suits a file but not
@@ -296,44 +344,14 @@ async def load_module_source_async(
     """
 
     filename = getattr(module, '__file__', '<string>')
-    ns = vars(module)
-
-    docstr = None
-
     source_stream = source_str(source, filename, auto_skip_exec=False)
 
-    compiler, reader = build_module_load_facets(module, filename)
-    if not layout:
-        reader.set_layout_modes(layout_enabled=False)
-    try:
-        stream = IndentAwareStream.from_source(source_stream)
-
-        while True:
-            source_expr = reader.read(stream)
-            if source_expr is READ_EOF:
-                break
-
-            if docstr is None:
-                if isinstance(source_expr, str):
-                    ns['__doc__'] = source_expr
-                    docstr = True
-                    continue
-                else:
-                    docstr = False
-
-            fragment = compiler.compile_expression(source_expr)
-            expr = fragment.as_expression(ns)
-            await expr()
-
-        if seal:
-            # drop the loop's trailing references so the final
-            # ephemeral expression is not swept into an arena
-            fragment = expr = None
-            compiler.seal()
-    finally:
-        if detach:
-            materialize_exports(module)
-            detach_module_load_facets(module)
+    with load_facets(module, filename, seal=seal, detach=detach) \
+            as (compiler, reader):
+        if not layout:
+            reader.set_layout_modes(layout_enabled=False)
+        await run_codes_async(
+            module, compile_top_level(module, compiler, reader, source_stream))
 
 
 async def load_module_kio_async(module):
@@ -341,28 +359,15 @@ async def load_module_kio_async(module):
     Execute a module from a precompiled .kio file.
 
     Each stored body is re-hardened and run as a top-level expression in
-    order, matching the incremental structure of load_module_async. The
-    module gets the same ``__pragma__`` record a source load binds, so
-    ``(pragma ...)`` bodies and package-pragma stamping run, and
-    ``__all__`` is materialized from ``declare-exports`` at the end. No
-    compiler or reader is built: the bodies were compiled already.
+    order, matching the incremental structure of load_module_async;
+    ``__all__`` is materialized from ``declare-exports`` at the end.
 
     :param module: koskari Module with __file__ pointing at a .kio path
     """
 
-    filename = getattr(module, '__file__', '<unknown>')
-    ns = vars(module)
-
-    from .serialize.codex import KioFile
-
-    build_module_pragma(module)
-    kio_file = KioFile.read(filename)
-    try:
-        for code in kio_file.codes:
-            expr = code.expression(ns)
-            await expr()
-    finally:
-        materialize_exports(module)
+    codes = kio_codes(module)
+    with exports_materialized(module):
+        await run_codes_async(module, codes)
 
 
 def load_module_kio_demand(module):
@@ -374,18 +379,9 @@ def load_module_kio_demand(module):
     :param module: koskari Module with __file__ set to a .kio path
     """
 
-    filename = getattr(module, '__file__', '<unknown>')
-    ns = vars(module)
-
-    from .serialize.codex import KioFile
-
-    build_module_pragma(module)
-    kio_file = KioFile.read(filename)
-    try:
-        for code in kio_file.codes:
-            demand_call(code.expression(ns))
-    finally:
-        materialize_exports(module)
+    codes = kio_codes(module)
+    with exports_materialized(module):
+        run_codes_demand(module, codes)
 
 
 # ---------------------------------------------------------------------------

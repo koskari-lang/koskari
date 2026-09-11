@@ -150,33 +150,49 @@ class KoskariSourceFileLoader(FileLoader):
         return self.get_data(path).decode('utf-8')
 
 
-    async def exec_module_async(self, module):
-        from koskari.module import (
-            init_module, load_module_async, load_module_kio_async, new_module)
+    def load_target(self, module):
+        """
+        A fresh koskari Module for the Python module being executed,
+        initialised from its spec, with the file to load
+        """
+
+        from koskari.module import init_module, new_module
 
         filename = self._filename_to_load(module.__name__)
 
         ki_mod = new_module(
             module.__name__,
             package=getattr(module, '__package__', None))
+        init_module(ki_mod, filename, spec=getattr(module, '__spec__', None))
 
-        spec = getattr(module, '__spec__', None)
-        init_module(ki_mod, filename, spec=spec)
+        return ki_mod, filename
 
-        # load a native koskari Module
+
+    @staticmethod
+    def finish_module(ki_mod, module):
+        """
+        Copy the loaded koskari Module's bindings onto the Python module
+        object
+        """
+
+        for name in list(vars(ki_mod).keys()):
+            try:
+                setattr(module, name, getattr(ki_mod, name))
+            except AttributeError:
+                pass
+
+
+    async def exec_module_async(self, module):
+        from koskari.module import load_module_async, load_module_kio_async
+
+        ki_mod, filename = self.load_target(module)
+
         if filename.endswith('.kio'):
             await load_module_kio_async(ki_mod)
         else:
             await load_module_async(ki_mod)
 
-        # copy the module elements into the Python module object.
-        ki_ns = vars(ki_mod)
-        for name in list(ki_ns.keys()):
-            try:
-                val = getattr(ki_mod, name)
-                setattr(module, name, val)
-            except AttributeError:
-                pass
+        self.finish_module(ki_mod, module)
 
 
     def exec_module_demand(self, module):
@@ -187,33 +203,16 @@ class KoskariSourceFileLoader(FileLoader):
         event loop or await is required.
         """
 
-        from koskari.module import (
-            init_module, load_module_demand, load_module_kio_demand,
-            new_module)
+        from koskari.module import load_module_demand, load_module_kio_demand
 
-        filename = self._filename_to_load(module.__name__)
+        ki_mod, filename = self.load_target(module)
 
-        ki_mod = new_module(
-            module.__name__,
-            package=getattr(module, '__package__', None))
-
-        spec = getattr(module, '__spec__', None)
-        init_module(ki_mod, filename, spec=spec)
-
-        # load a native koskari Module
         if filename.endswith('.kio'):
             load_module_kio_demand(ki_mod)
         else:
             load_module_demand(ki_mod)
 
-        # copy the module elements into the Python module object.
-        ki_ns = vars(ki_mod)
-        for name in list(ki_ns.keys()):
-            try:
-                val = getattr(ki_mod, name)
-                setattr(module, name, val)
-            except AttributeError:
-                pass
+        self.finish_module(ki_mod, module)
 
 
     def exec_module(self, module):
