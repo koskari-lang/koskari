@@ -18,7 +18,9 @@
    koskari/lib/filter.c
 
    KosFilter: a native lazy filter over one source, duck-typed against
-   builtins.filter, implemented as a KosIter provider.
+   builtins.filter, implemented as a KosIter provider on the shared
+   transform body (transform.c). This unit holds only the filter step
+   and the resume chain it arms.
 
    The fast path is pure C: a sync source element and an immediate
    verdict -- the element's own truthiness for a None predicate, or a
@@ -46,33 +48,12 @@
 #include "lib.h"
 
 
-/* === instance === */
-
-
-typedef struct {
-  PyObject_HEAD
-  KosCallShape pred;     /* predicate, shape resolved at construction;
-                            cs_callable NULL for the None predicate
-                            (the element's truthiness decides) */
-  PyObject *source;      /* acquired iterator (sync or async) */
-  PyObject *pending;     /* element under test while a verdict is in
-                            flight; owned */
-  KosDynFrame *cached_frame; /* inert frame parked between steps */
-  KosContext *ctx;       /* durable drive context (ki_pyctx), created
-                            lazily; adapter-recycled, freed with
-                            the filter */
-  uint8_t src_sync;      /* source steps through tp_iternext alone */
-  uint8_t closed;        /* exhausted or closed */
-  uint8_t busy;          /* a step is in flight; ki_finish clears */
-} KosFilterObject;
-
-
 /* === the step's CPS resumes ===
 
    No frame-carrying capture: replaying a captured step would
    re-consume source elements, so continuation capture across a live
-   filter-step frame refuses by name (see the KosResumeFrame_Install
-   call sites below and kos_dynframe_clone's resume refusal).
+   filter-step frame refuses by name (see the kos_transform_stage call
+   sites below and kos_dynframe_clone's resume refusal).
 
    The FETCH -> INVOKE -> VERDICT progression each step runs is
    carried by the resume set on the frame, not by a phase field: the
@@ -108,7 +89,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
     KosEvalState *es, void *state, PyObject *value) {
 
-  KosFilterObject *f = (KosFilterObject *) state;
+  KosTransform *f = (KosTransform *) state;
 
   (void) value;
 
@@ -145,13 +126,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
     KosEvalState *es, void *state, PyObject *element) {
 
-  KosFilterObject *f = (KosFilterObject *) state;
+  KosTransform *f = (KosTransform *) state;
 
   if (! element)
     return EVAL_RAISE();
 
   /* None predicate: the element's own truthiness is the verdict. */
-  if (! f->pred.cs_callable) {
+  if (! f->fn.cs_callable) {
     int ok = PyObject_IsTrue(element);
 
     if (ok < 0) {
@@ -174,7 +155,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
      duration. */
   f->pending = element;
   {
-    KosOpResult r = KosEvalState_CallResult(es, f->pred.cs_callable,
+    KosOpResult r = KosEvalState_CallResult(es, f->fn.cs_callable,
                                             &element, 1, NULL, 0,
                                             filter_resume_after_verdict, f);
     RESULT_ENTRY(es, r, filter_resume_after_verdict, f);
@@ -189,7 +170,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
     KosEvalState *es, void *state, PyObject *value) {
 
-  KosFilterObject *f = (KosFilterObject *) state;
+  KosTransform *f = (KosTransform *) state;
   int ok;
 
   if (! value)
@@ -212,40 +193,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
 }
 
 
-/* === the iter suite === */
-
-
-
-/**
-   Undo a partially installed step before reporting KOS_ITER_ERROR:
-   release the held element and pop everything pushed since the step
-   began (the program frame, a failed call's prepped frame), so the
-   suite contract -- a non-INSTALLED outcome leaves no partial state
-   -- holds on every error exit. The step's real exception is fenced
-   across the unwind.
-*/
-static KosIterStepResult filter_step_abort(
-    KosEvalState *es,
-    KosFilterObject *f,
-    KosDynNode *pre_top) {
-
-  Py_CLEAR(f->pending);
-
-  if (KosEvalState_DYN_TOP(es) != pre_top) {
-    PyObject *ftyp, *fval, *ftb;
-
-    PyErr_Fetch(&ftyp, &fval, &ftb);
-    {
-      /* a leave in flight here is abandoned with the step */
-      KosOpResult wr = kos_dyn_unwind_to_node(es, pre_top,
-                                              KOS_XFER_EVENT_RAISE, NULL);
-      if (wr.kind == KOS_RES_AWAIT)
-        Py_XDECREF(wr.val);
-    }
-    PyErr_Restore(ftyp, fval, ftb);
-  }
-  return KOS_ITER_ERROR;
-}
+/* === the step === */
 
 
 static KosIterStepResult filter_iter_step(
@@ -254,25 +202,12 @@ static KosIterStepResult filter_iter_step(
     PyObject *send_val,
     PyObject **out) {
 
-  KosFilterObject *f = (KosFilterObject *) self;
+  KosTransform *f = (KosTransform *) self;
   KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
+  KosIterStepResult early;
 
-  if (f->closed) {
-    *out = NULL;
-    return KOS_ITER_EXHAUSTED;
-  }
-
-  if (f->busy) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "filter is already being iterated");
-    return KOS_ITER_ERROR;
-  }
-
-  if (send_val && send_val != Py_None) {
-    PyErr_SetString(PyExc_TypeError,
-                    "can't send a value into a filter; it takes none");
-    return KOS_ITER_ERROR;
-  }
+  if (! kos_transform_step_ready(f, send_val, out, &early))
+    return early;
 
   if (f->src_sync) {
     /* Pure C while verdicts are immediate: fetch, test, emit or skip.
@@ -288,7 +223,7 @@ static KosIterStepResult filter_iter_step(
         return KOS_ITER_EXHAUSTED;
       }
 
-      if (! f->pred.cs_callable) {
+      if (! f->fn.cs_callable) {
         int ok = PyObject_IsTrue(element);
 
         if (ok < 0) {
@@ -310,28 +245,14 @@ static KosIterStepResult filter_iter_step(
          koskari_eval drives this chain (see stepper_step), so the call
          itself -- which can install a callee or need an await -- must
          happen from inside that later dispatch, not here. */
-      if (f->pred.cs_kind != KOS_CALL_SHAPE_PLAIN) {
-        KosDynFrame *frame = KosResumeFrame_Install(
-            es, "filter-step", &f->cached_frame);
-
-        if (! frame) {
-          Py_DECREF(element);
-          return filter_step_abort(es, f, pre_top);
-        }
-        if (KosEvalState_StackPushRef(es, element) < 0) {
-          Py_DECREF(element);
-          return filter_step_abort(es, f, pre_top);
-        }
-        Py_DECREF(element);
-        KosDynFrame_RESUME_FN(frame) = (void *) filter_resume_do_invoke;
-        KosDynFrame_RESUME_STATE(frame) = f;
-        f->busy = 1;
-        return KOS_ITER_INSTALLED_VALUE;
-      }
+      if (f->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
+        return kos_transform_stage(es, f, element,
+                                   (void *) filter_resume_do_invoke,
+                                   "filter-step", pre_top);
 
       /* A plain python predicate needs no evaluator at all. */
       {
-        PyObject *result = PyObject_CallOneArg(f->pred.cs_callable, element);
+        PyObject *result = PyObject_CallOneArg(f->fn.cs_callable, element);
 
         if (! result) {
           Py_DECREF(element);
@@ -357,27 +278,19 @@ static KosIterStepResult filter_iter_step(
           case 0: {
             /* Awaitable verdict: stage it raw on a resume-carrying
                frame, which owns every suspension; the await itself
-               happens from inside koskari_eval's own dispatch. */
-            KosDynFrame *frame = KosResumeFrame_Install(
-                es, "filter-step", &f->cached_frame);
+               happens from inside koskari_eval's own dispatch. The
+               element is held on the filter until the verdict
+               settles. */
+            KosIterStepResult staged = kos_transform_stage(
+                es, f, result, (void *) filter_resume_after_verdict,
+                "filter-step", pre_top);
 
-            if (! frame) {
-              Py_DECREF(result);
+            if (staged != KOS_ITER_INSTALLED_VALUE) {
               Py_DECREF(element);
-              return filter_step_abort(es, f, pre_top);
+              return staged;
             }
-            if (KosEvalState_StackPushRef(es, result) < 0) {
-              Py_DECREF(result);
-              Py_DECREF(element);
-              return filter_step_abort(es, f, pre_top);
-            }
-            Py_DECREF(result);
             f->pending = element;  /* steals */
-            KosDynFrame_RESUME_FN(frame) =
-                (void *) filter_resume_after_verdict;
-            KosDynFrame_RESUME_STATE(frame) = f;
-            f->busy = 1;
-            return KOS_ITER_INSTALLED_VALUE;
+            return staged;
           }
           default:
             Py_DECREF(result);
@@ -392,250 +305,21 @@ static KosIterStepResult filter_iter_step(
      cold-start fetch resume and defer the whole step -- nothing is
      fetched yet to stage, and the request itself (which can suspend)
      must run from inside koskari_eval's own dispatch. */
-  {
-    KosDynFrame *frame = KosResumeFrame_Install(
-        es, "filter-step", &f->cached_frame);
-
-    if (! frame)
-      return filter_step_abort(es, f, pre_top);
-    KosDynFrame_RESUME_FN(frame) = (void *) filter_resume_do_fetch;
-    KosDynFrame_RESUME_STATE(frame) = f;
-    f->busy = 1;
-    return KOS_ITER_INSTALLED_VALUE;
-  }
+  return kos_transform_stage(es, f, NULL, (void *) filter_resume_do_fetch,
+                             "filter-step", pre_top);
 }
 
 
-static KosIterStepResult filter_iter_throw(
-    KosEvalState *es,
-    PyObject *self,
-    PyObject *throw_typ,
-    PyObject *throw_exc,
-    PyObject **out) {
-
-  KosFilterObject *f = (KosFilterObject *) self;
-
-  (void) es;
-  (void) out;
-
-  if (f->busy) {
-    /* A step is in flight and its driver owns the filter's state:
-       every second caller is refused, GeneratorExit included -- the
-       same rule CPython applies to a running async generator. */
-    PyErr_SetString(PyExc_RuntimeError,
-                    "filter is already being iterated");
-    return KOS_ITER_ERROR;
-  }
-
-  if (PyErr_GivenExceptionMatches(throw_typ, PyExc_GeneratorExit)) {
-    /* Generator close semantics: run the source's cleanup, mark
-       closed, and let GeneratorExit propagate as the success shape. */
-    f->closed = 1;
-    f->busy = 0;
-    kos_iter_close(f->source);
-  }
-
-  PyErr_SetObject(throw_typ, throw_exc);
-  return KOS_ITER_ERROR;
-}
+/* === the type === */
 
 
-static int filter_iter_close(PyObject *self) {
-
-  KosFilterObject *f = (KosFilterObject *) self;
-
-  if (f->closed)
-    return 0;
-
-  /* Declined while a step is in flight; that drive's completion owns
-     the state. Reached from teardown paths, so no error is raised. */
-  if (f->busy)
-    return 0;
-
-  f->closed = 1;
-  f->busy = 0;
-  kos_iter_close(f->source);
-
-  return 0;
-}
-
-
-static void filter_iter_finish(PyObject *self, int exhausted) {
-
-  KosFilterObject *f = (KosFilterObject *) self;
-
-  f->busy = 0;
-  Py_CLEAR(f->pending);
-  if (exhausted)
-    f->closed = 1;
-
-}
-
-
-/**
-   The filter's durable drive context, created lazily: python-adapter
-   drives host their work here across steps instead of allocating a
-   context per element. The suite marks it recyclable, so the adapters
-   reset it at their completion points; a creation failure falls back
-   to an adapter-owned host.
-*/
-static KosContext *filter_iter_pyctx(PyObject *self) {
-
-  KosFilterObject *f = (KosFilterObject *) self;
-
-  if (! f->ctx) {
-    f->ctx = KosContext_New(NULL);
-    if (! f->ctx)
-      PyErr_Clear();
-  }
-  return f->ctx;
-}
-
-
-/* === construction === */
-
-
-/**
-   KosFilter(func, iterable). func may be None, keeping truthy
-   elements. The iterator is acquired eagerly with the PUSH_FOREACH
-   preference order: a KosIter provider or any iterator passes through
-   as itself, an async iterable yields its async iterator, otherwise
-   the sync protocol.
-*/
 static PyObject *kosfilter_new(
     PyTypeObject *type,
     PyObject *args,
     PyObject *kwds) {
 
-  PyObject *func = NULL;
-  PyObject *iterable = NULL;
-
-  if (kwds && PyDict_Size(kwds)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "KosFilter takes no keyword arguments");
-    return NULL;
-  }
-  if (! PyArg_ParseTuple(args, "OO:KosFilter", &func, &iterable))
-    return NULL;
-
-  if (func != Py_None && ! PyCallable_Check(func)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "KosFilter func must be callable or None");
-    return NULL;
-  }
-
-  PyObject *source = kos_iter_acquire(iterable);
-  if (! source)
-    return NULL;
-
-  KosFilterObject *f = (KosFilterObject *) type->tp_alloc(type, 0);
-  if (! f) {
-    Py_DECREF(source);
-    return NULL;
-  }
-
-  f->source = source;
-
-  /* Resolve the predicate's calling shape and the source's protocol
-     once; both are fixed for the filter's lifetime. */
-  if (func == Py_None) {
-    f->pred.cs_callable = NULL;
-    f->pred.cs_slots = NULL;
-    f->pred.cs_kind = KOS_CALL_SHAPE_PLAIN;
-  } else {
-    KosCallShape_Init(&f->pred, func);
-  }
-  f->src_sync = KosIter_CheckSync(source);
-
-  f->pending = NULL;
-  f->cached_frame = NULL;
-  f->ctx = NULL;
-  f->closed = 0;
-  f->busy = 0;
-  return (PyObject *) f;
+  return kos_transform_new(type, args, kwds, 1);
 }
-
-
-/* === GC + dealloc === */
-
-
-static int kosfilter_traverse(PyObject *self, visitproc visit, void *arg) {
-
-  KosFilterObject *f = (KosFilterObject *) self;
-
-  Py_VISIT(f->pred.cs_callable);
-  Py_VISIT(f->source);
-  Py_VISIT(f->pending);
-  Py_VISIT(f->ctx);
-  return 0;
-}
-
-
-static int kosfilter_clear(PyObject *self) {
-
-  KosFilterObject *f = (KosFilterObject *) self;
-
-  KosCallShape_Clear(&f->pred);
-  Py_CLEAR(f->source);
-  Py_CLEAR(f->pending);
-  /* a stepper mid-step on this context holds its own reference and
-     finishes its drive before letting go; the last holder frees */
-  Py_CLEAR(f->ctx);
-  return 0;
-}
-
-
-static void kosfilter_dealloc(PyObject *self) {
-
-  KosFilterObject *f = (KosFilterObject *) self;
-
-  PyObject_GC_UnTrack(self);
-  /* the context teardown runs first: a ReturnPark-armed frame still
-     on the chain parks into cached_frame, and the free below reclaims
-     it either way */
-  kosfilter_clear(self);
-  if (f->cached_frame) {
-    kos_dynframe_free(f->cached_frame);
-    f->cached_frame = NULL;
-  }
-  Py_TYPE(self)->tp_free(self);
-}
-
-
-static PyObject *kosfilter_repr(PyObject *self) {
-
-  return PyUnicode_FromFormat("<koskari filter object at %p>", self);
-}
-
-
-/* === Python surface === */
-
-
-static PyObject *kosfilter_aiter(PyObject *self) {
-
-  Py_INCREF(self);
-  return self;
-}
-
-
-static PyMethodDef kosfilter_methods[] = {
-  { "asend", (PyCFunction) KosIterAdapt_Asend, METH_O,
-    "Send a value into the filter step; returns an awaitable" },
-
-  { "athrow", (PyCFunction) KosIterAdapt_Athrow, METH_VARARGS,
-    "Throw an exception into the filter; returns an awaitable" },
-
-  { "aclose", (PyCFunction) KosIterAdapt_Aclose, METH_NOARGS,
-    "Close the filter; returns an awaitable" },
-
-  { NULL, NULL, 0, NULL },
-};
-
-
-static PyAsyncMethods kosfilter_async_methods = {
-  .am_aiter = kosfilter_aiter,
-  .am_anext = KosIterAdapt_Anext,
-};
 
 
 KosEvaluatedTypeObject KosFilterType = {
@@ -643,29 +327,29 @@ KosEvaluatedTypeObject KosFilterType = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
     .tp_name = "koskari.lib.filter",
-    .tp_basicsize = sizeof(KosFilterObject),
+    .tp_basicsize = sizeof(KosTransform),
     .tp_itemsize = 0,
-    .tp_dealloc = kosfilter_dealloc,
-    .tp_repr = kosfilter_repr,
-    .tp_as_async = &kosfilter_async_methods,
+    .tp_dealloc = kos_transform_dealloc,
+    .tp_repr = kos_transform_repr,
+    .tp_as_async = &kos_transform_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
     .tp_doc = "KosFilter(func, iterable) - native lazy filter; a None "
               "func keeps truthy elements; iterable both asynchronously "
               "(ambient await, koskari-flattened) and synchronously "
               "(demand path)",
-    .tp_traverse = kosfilter_traverse,
-    .tp_clear = kosfilter_clear,
+    .tp_traverse = kos_transform_traverse,
+    .tp_clear = kos_transform_clear,
     .tp_iter = KosIterAdapt_DemandIter,
-    .tp_methods = kosfilter_methods,
+    .tp_methods = kos_transform_methods,
     .tp_new = kosfilter_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_iter = {
     .ki_step = filter_iter_step,
-    .ki_throw = filter_iter_throw,
-    .ki_close = filter_iter_close,
-    .ki_finish = filter_iter_finish,
-    .ki_pyctx = filter_iter_pyctx,
+    .ki_throw = kos_transform_throw,
+    .ki_close = kos_transform_close,
+    .ki_finish = kos_transform_finish,
+    .ki_pyctx = kos_transform_pyctx,
     .ki_pyctx_recyclable = 1,
   },
 };

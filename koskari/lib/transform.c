@@ -1,0 +1,355 @@
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+   koskari/lib/transform.c
+
+   The shared body of the map and filter providers. See transform.h.
+
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
+*/
+
+
+#include "lib.h"
+
+
+/* The short kind name ("map", "filter") for messages: the class
+   __name__, which is the last segment of the type's dotted name. */
+static const char *transform_kind(PyTypeObject *type) {
+  const char *name = type->tp_name;
+  const char *dot = strrchr(name, '.');
+
+  return dot ? dot + 1 : name;
+}
+
+
+/* === construction === */
+
+
+PyObject *kos_transform_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds,
+    int allow_none) {
+
+  const char *kind = transform_kind(type);
+  PyObject *func = NULL;
+  PyObject *iterable = NULL;
+
+  if (kwds && PyDict_Size(kwds)) {
+    PyErr_Format(PyExc_TypeError, "%s takes no keyword arguments", kind);
+    return NULL;
+  }
+  if (! PyArg_UnpackTuple(args, kind, 2, 2, &func, &iterable))
+    return NULL;
+
+  if (! PyCallable_Check(func) && ! (allow_none && func == Py_None)) {
+    PyErr_Format(PyExc_TypeError, "%s func must be callable%s", kind,
+                 allow_none ? " or None" : "");
+    return NULL;
+  }
+
+  PyObject *source = kos_iter_acquire(iterable);
+  if (! source)
+    return NULL;
+
+  KosTransform *t = (KosTransform *) type->tp_alloc(type, 0);
+  if (! t) {
+    Py_DECREF(source);
+    return NULL;
+  }
+
+  t->source = source;
+
+  /* Resolve the callable's shape and the source's protocol once; both
+     are fixed for the transform's lifetime. */
+  if (func == Py_None) {
+    t->fn.cs_callable = NULL;
+    t->fn.cs_slots = NULL;
+    t->fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
+  } else {
+    KosCallShape_Init(&t->fn, func);
+  }
+  t->src_sync = KosIter_CheckSync(source);
+
+  t->pending = NULL;
+  t->cached_frame = NULL;
+  t->ctx = NULL;
+  t->closed = 0;
+  t->busy = 0;
+  return (PyObject *) t;
+}
+
+
+/* === the step's shared pieces === */
+
+
+int kos_transform_step_ready(
+    KosTransform *t,
+    PyObject *send_val,
+    PyObject **out,
+    KosIterStepResult *result) {
+
+  if (t->closed) {
+    *out = NULL;
+    *result = KOS_ITER_EXHAUSTED;
+    return 0;
+  }
+
+  if (t->busy) {
+    PyErr_Format(PyExc_RuntimeError, "%s is already being iterated",
+                 transform_kind(Py_TYPE(t)));
+    *result = KOS_ITER_ERROR;
+    return 0;
+  }
+
+  if (send_val && send_val != Py_None) {
+    PyErr_Format(PyExc_TypeError,
+                 "can't send a value into a %s; it takes none",
+                 transform_kind(Py_TYPE(t)));
+    *result = KOS_ITER_ERROR;
+    return 0;
+  }
+
+  return 1;
+}
+
+
+KosIterStepResult kos_transform_step_abort(
+    KosEvalState *es,
+    KosTransform *t,
+    KosDynNode *pre_top) {
+
+  Py_CLEAR(t->pending);
+
+  if (KosEvalState_DYN_TOP(es) != pre_top) {
+    PyObject *ftyp, *fval, *ftb;
+
+    PyErr_Fetch(&ftyp, &fval, &ftb);
+    {
+      /* a leave in flight here is abandoned with the step */
+      KosOpResult wr = kos_dyn_unwind_to_node(es, pre_top,
+                                              KOS_XFER_EVENT_RAISE, NULL);
+      if (wr.kind == KOS_RES_AWAIT)
+        Py_XDECREF(wr.val);
+    }
+    PyErr_Restore(ftyp, fval, ftb);
+  }
+  return KOS_ITER_ERROR;
+}
+
+
+KosIterStepResult kos_transform_stage(
+    KosEvalState *es,
+    KosTransform *t,
+    PyObject *value,
+    void *resume,
+    const char *label,
+    KosDynNode *pre_top) {
+
+  KosDynFrame *frame = KosResumeFrame_Install(es, label, &t->cached_frame);
+
+  if (! frame) {
+    Py_XDECREF(value);
+    return kos_transform_step_abort(es, t, pre_top);
+  }
+  if (value) {
+    if (KosEvalState_StackPushRef(es, value) < 0) {
+      Py_DECREF(value);
+      return kos_transform_step_abort(es, t, pre_top);
+    }
+    Py_DECREF(value);
+  }
+  KosDynFrame_RESUME_FN(frame) = resume;
+  KosDynFrame_RESUME_STATE(frame) = t;
+  t->busy = 1;
+  return KOS_ITER_INSTALLED_VALUE;
+}
+
+
+/* === the rest of the iter suite === */
+
+
+KosIterStepResult kos_transform_throw(
+    KosEvalState *es,
+    PyObject *self,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    PyObject **out) {
+
+  KosTransform *t = (KosTransform *) self;
+
+  (void) es;
+  (void) out;
+
+  if (t->busy) {
+    /* A step is in flight and its driver owns the transform's state:
+       every second caller is refused, GeneratorExit included -- the
+       same rule CPython applies to a running async generator. */
+    PyErr_Format(PyExc_RuntimeError, "%s is already being iterated",
+                 transform_kind(Py_TYPE(self)));
+    return KOS_ITER_ERROR;
+  }
+
+  if (PyErr_GivenExceptionMatches(throw_typ, PyExc_GeneratorExit)) {
+    /* Generator close semantics: run the source's cleanup, mark
+       closed, and let GeneratorExit propagate as the success shape. */
+    t->closed = 1;
+    t->busy = 0;
+    kos_iter_close(t->source);
+  }
+
+  PyErr_SetObject(throw_typ, throw_exc);
+  return KOS_ITER_ERROR;
+}
+
+
+int kos_transform_close(PyObject *self) {
+
+  KosTransform *t = (KosTransform *) self;
+
+  if (t->closed)
+    return 0;
+
+  /* Declined while a step is in flight; that drive's completion owns
+     the state. Reached from teardown paths, so no error is raised. */
+  if (t->busy)
+    return 0;
+
+  t->closed = 1;
+  t->busy = 0;
+  kos_iter_close(t->source);
+
+  return 0;
+}
+
+
+void kos_transform_finish(PyObject *self, int exhausted) {
+
+  KosTransform *t = (KosTransform *) self;
+
+  t->busy = 0;
+  Py_CLEAR(t->pending);
+  if (exhausted)
+    t->closed = 1;
+}
+
+
+/**
+   The transform's durable drive context, created lazily: python-adapter
+   drives host their work here across steps instead of allocating a
+   context per element. The suite marks it recyclable, so the adapters
+   reset it at their completion points; a creation failure falls back
+   to an adapter-owned host.
+*/
+KosContext *kos_transform_pyctx(PyObject *self) {
+
+  KosTransform *t = (KosTransform *) self;
+
+  if (! t->ctx) {
+    t->ctx = KosContext_New(NULL);
+    if (! t->ctx)
+      PyErr_Clear();
+  }
+  return t->ctx;
+}
+
+
+/* === GC + dealloc === */
+
+
+int kos_transform_traverse(PyObject *self, visitproc visit, void *arg) {
+
+  KosTransform *t = (KosTransform *) self;
+
+  Py_VISIT(t->fn.cs_callable);
+  Py_VISIT(t->source);
+  Py_VISIT(t->pending);
+  Py_VISIT(t->ctx);
+  return 0;
+}
+
+
+int kos_transform_clear(PyObject *self) {
+
+  KosTransform *t = (KosTransform *) self;
+
+  KosCallShape_Clear(&t->fn);
+  Py_CLEAR(t->source);
+  Py_CLEAR(t->pending);
+  /* a stepper mid-step on this context holds its own reference and
+     finishes its drive before letting go; the last holder frees */
+  Py_CLEAR(t->ctx);
+  return 0;
+}
+
+
+void kos_transform_dealloc(PyObject *self) {
+
+  KosTransform *t = (KosTransform *) self;
+
+  PyObject_GC_UnTrack(self);
+  /* the context teardown runs first: a ReturnPark-armed frame still
+     on the chain parks into cached_frame, and the free below reclaims
+     it either way */
+  kos_transform_clear(self);
+  if (t->cached_frame) {
+    kos_dynframe_free(t->cached_frame);
+    t->cached_frame = NULL;
+  }
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+PyObject *kos_transform_repr(PyObject *self) {
+
+  return PyUnicode_FromFormat("<koskari %s object at %p>",
+                              transform_kind(Py_TYPE(self)), self);
+}
+
+
+/* === Python surface === */
+
+
+static PyObject *transform_aiter(PyObject *self) {
+
+  Py_INCREF(self);
+  return self;
+}
+
+
+PyMethodDef kos_transform_methods[] = {
+  { "asend", (PyCFunction) KosIterAdapt_Asend, METH_O,
+    "Send a value into the step; returns an awaitable" },
+
+  { "athrow", (PyCFunction) KosIterAdapt_Athrow, METH_VARARGS,
+    "Throw an exception in; returns an awaitable" },
+
+  { "aclose", (PyCFunction) KosIterAdapt_Aclose, METH_NOARGS,
+    "Close; returns an awaitable" },
+
+  { NULL, NULL, 0, NULL },
+};
+
+
+PyAsyncMethods kos_transform_async_methods = {
+  .am_aiter = transform_aiter,
+  .am_anext = KosIterAdapt_Anext,
+};
+
+
+// The end.
