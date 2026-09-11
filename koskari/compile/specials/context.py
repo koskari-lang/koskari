@@ -24,22 +24,21 @@ compile/dyn-with.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import OpCode, pair
-from ...matcher import BODY, CALLEDBY, MATCH, REST, USING
+from ...lib import OpCode
+from ...matcher import BODY, CALLEDBY, MATCH, SYMBOL, USING, VALUE
 from ...syntax import special
-from ...types import is_nil, is_pair
-from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import const_only_expr, gather_bindings, helper_begin
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_PARAMETERIZE_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("bindings"), BODY("body")),
+]
 
 
 @builtin("compile/parameterize")
-@special("compile/parameterize", patterns=_DEFAULT_PATTERNS)
-def special_parameterize(
-        compiler: Compiler,
-        source: pair) -> ByteCodeFragment:
+@special("compile/parameterize", patterns=_PARAMETERIZE_PATTERNS,
+         unpack="kwargs")
+def special_parameterize(compiler, called_by, bindings, body):
     """
     Compile (compile/parameterize [[name val] ...] BODY...).
 
@@ -48,36 +47,33 @@ def special_parameterize(
     or `parameterq`
     """
 
-    called_by, rest = source
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError(
-            "parameterize requires bindings and body",
-            source)
-
-    bindings, body = rest
-    args, vals = gather_bindings(bindings, source)
+    args, vals = gather_bindings(bindings.datum, bindings.datum)
     if not args:
         raise SpecialError(
             "parameterize requires at least one binding",
-            source)
+            bindings.datum)
 
-    fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
 
     for val in vals:
         fragment.merge(compiler.full_compile(val))
 
     fragment.instruction(OpCode.PUSH_PARAM, tuple(map(str, args)))
-    helper_begin(fragment, body)
+    helper_begin(fragment, body.datum)
     fragment.instruction(OpCode.POP_PARAM, 0)
     return fragment
 
 
+_PARAMETER_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), SYMBOL("name")),
+    MATCH(CALLEDBY("called_by"), SYMBOL("name"), VALUE("default")),
+]
+
+
 @builtin("compile/parameter")
-@special("compile/parameter", patterns=_DEFAULT_PATTERNS)
-def special_parameter(
-        compiler: Compiler,
-        source: pair) -> ByteCodeFragment:
+@special("compile/parameter", patterns=_PARAMETER_PATTERNS, unpack="match")
+def special_parameter(compiler, caps):
     """
     Compile (compile/parameter NAME [DEFAULT]).
 
@@ -87,117 +83,84 @@ def special_parameter(
     no DEFAULT the resolution raises NameError.
     """
 
-    called_by, rest = source
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError("parameter requires a name", source)
+    called_by = caps["called_by"]
+    name = str(caps["name"].datum)
 
-    name, rest = rest
-    fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
 
-    if is_nil(rest):
-        fragment.instruction(OpCode.PARAM, (str(name), 0, 0, 0))
+    if "default" not in caps:
+        fragment.instruction(OpCode.PARAM, (name, 0, 0, 0))
         return fragment
 
-    if not is_pair(rest):
-        raise SpecialError("parameter takes a name and one default", source)
-
-    default, extra = rest
-    if not is_nil(extra):
-        raise SpecialError("parameter takes a name and one default", source)
-
-    defaultfrag = compiler.full_compile(default)
+    defaultfrag = compiler.full_compile(caps["default"].datum)
     is_const, const_val = const_only_expr(defaultfrag)
 
     if is_const:
-        fragment.instruction(
-            OpCode.PARAM_CONST, (str(name), const_val, 0, 0))
+        fragment.instruction(OpCode.PARAM_CONST, (name, const_val, 0, 0))
 
     else:
         fragment.merge(defaultfrag)
-        fragment.instruction(OpCode.PARAM, (str(name), 1, 0, 0))
+        fragment.instruction(OpCode.PARAM, (name, 1, 0, 0))
 
     return fragment
 
 
 _WITH_PATTERNS = [
-    MATCH(CALLEDBY(), USING("binding", scope="body"), BODY("body")),
+    MATCH(CALLEDBY("called_by"), USING("binding", scope="body"), BODY("body")),
 ]
 
 
-@builtin("compile/with")
-@special("compile/with", patterns=_WITH_PATTERNS, unpack="match")
-def special_with(compiler, caps):
+def emit_with(compiler, called_by, binding, body, push_op, pop_op):
     """
-    Compile (compile/with [name? expr] BODY...). Single-shot context manager
+    A fragment for a context-manager special: the manager expression
+    compiled, its optional name declared, the body between push_op and
+    pop_op
+
+    :return: the fragment
     """
-
-    called_by = caps["called-by"].datum
-    pos = caps["called-by"].position
-
-    binding = caps["binding"]
 
     nc = binding.get("name")
     ec = binding.get("expr")
+    name = str(nc.datum) if nc is not None else None
+    expr = ec.datum if ec is not None else None
 
-    name = nc.datum if nc else None
-    expr = ec.datum if ec else None
-
-    body = caps["body"].datum
-
-    # print(f"binding: {binding}")
-    # print(f"name: {name}")
-    # print(f"expr: {expr}")
-    # print(f"body: {body}")
-
-    fragment = compiler.fragment(called_by)
+    fragment = compiler.fragment(called_by.datum)
     fragment.merge(compiler.full_compile(expr))
 
     if name is not None:
-        name = str(name)
         fragment.declare_var(name)
 
-    fragment.position(pos)
-    fragment.instruction(OpCode.PUSH_WITH, name)
-    helper_begin(fragment, body)
-    fragment.instruction(OpCode.POP_WITH, 0)
+    fragment.position(called_by.position)
+    fragment.instruction(push_op, name)
+    helper_begin(fragment, body.datum)
+    fragment.instruction(pop_op, 0)
 
     return fragment
 
 
+@builtin("compile/with")
+@special("compile/with", patterns=_WITH_PATTERNS, unpack="kwargs")
+def special_with(compiler, called_by, binding, body):
+    """
+    Compile (compile/with [name? expr] BODY...). Single-shot context manager
+    """
+
+    return emit_with(
+        compiler, called_by, binding, body, OpCode.PUSH_WITH, OpCode.POP_WITH)
+
+
 @builtin("compile/dyn-with")
-@special("compile/dyn-with", patterns=_WITH_PATTERNS, unpack="match")
-def special_dyn_with(compiler, caps):
+@special("compile/dyn-with", patterns=_WITH_PATTERNS, unpack="kwargs")
+def special_dyn_with(compiler, called_by, binding, body):
     """
     Compile (compile/dyn-with [name? expr] BODY...). Multi-shot context manager
     that participates in transfer plans (exit on unwind, enter on wind).
     """
 
-    called_by = caps["called-by"].datum
-    pos = caps["called-by"].position
-
-    binding = caps["binding"]
-
-    nc = binding.get("name")
-    ec = binding.get("expr")
-    name = nc.datum if nc is not None else None
-    expr = ec.datum if ec is not None else None
-
-    body = caps["body"].datum
-
-    fragment = compiler.fragment(called_by)
-    fragment.merge(compiler.full_compile(expr))
-
-    if name is not None:
-        name = str(name)
-        fragment.declare_var(name)
-
-    fragment.position(pos)
-    fragment.instruction(OpCode.PUSH_DYN_WITH, name)
-    helper_begin(fragment, body)
-    fragment.instruction(OpCode.POP_DYN_WITH, 0)
-
-    return fragment
+    return emit_with(
+        compiler, called_by, binding, body,
+        OpCode.PUSH_DYN_WITH, OpCode.POP_DYN_WITH)
 
 
 # The end.
