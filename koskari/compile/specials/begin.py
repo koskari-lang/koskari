@@ -22,37 +22,41 @@ Special form handler for compile/begin.
 
 
 from ...bootstrap import builtin
-from ...lib import pair
-from ...matcher import CALLEDBY, MATCH, REST
+from ...lib import nil
+from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import get_position, is_nil, is_pair
 from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import helper_begin
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_BEGIN_PATTERNS = [
+    MATCH(CALLEDBY("called_by")),
+    MATCH(CALLEDBY("called_by"), VALUE("only")),
+    MATCH(CALLEDBY("called_by"), BODY("body")),
+]
 
 
 @builtin("compile/begin")
-@special("compile/begin", patterns=_DEFAULT_PATTERNS)
+@special("compile/begin", patterns=_BEGIN_PATTERNS, unpack="match")
 def special_begin(
         compiler: Compiler,
-        source: pair) -> ByteCodeFragment:
+        caps: dict) -> ByteCodeFragment:
 
-    called_by, body = source
-
-    if not is_nil(body) and is_pair(body) and is_nil(body.cdr):
+    if "only" in caps:
         # begin of a single form is that form: return it for
         # recompilation, so wrappers (layout rule bodies especially)
         # never obscure the form they hold -- a lowered head stays
         # recognizable to call's patterns, and expansion output stays
         # honest
-        return body.car
+        return caps["only"].datum
 
-    fragment = compiler.fragment(called_by)
+    called_by = caps["called_by"]
+    body = caps["body"].datum if "body" in caps else nil
+
+    fragment = compiler.fragment(called_by.datum)
     # thread the form's own position to diagnostics about positionless
     # atoms in the body
-    return helper_begin(fragment, body, position=get_position(source))
+    return helper_begin(fragment, body, position=called_by.position)
 
 
 # The end.
