@@ -43,6 +43,7 @@ from .items import (
     special_del_item, special_item, special_set_item, special_take_item)
 from .lambda_ import special_lambda
 from .let import special_let
+from .match import special_match
 from .loops import (
     special_break, special_continue, special_for_each, special_while)
 from .object import (
@@ -146,6 +147,7 @@ __all__ = (
     "special_le",
     "special_len",
     "special_let",
+    "special_match",
     "special_list_append",
     "special_load_exception",
     "special_let_cc",
