@@ -25,14 +25,31 @@ clear-exception, load-exception, and raise.
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, keyword, nil, symbol
-from ...matcher import CALLEDBY, MATCH, REST
+from ...matcher import CALLEDBY, MATCH, REST, VALUE
 from ...syntax import special
 from ...types import (
     fill_position, get_position, is_keyword, is_nil, is_pair, unpack)
 from ..helpers import helper_begin, helper_using, pycons
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_NOARG_PATTERNS = [
+    MATCH(CALLEDBY("called_by")),
+]
+
+_CHECKS_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), REST("checks")),
+]
+
+_TRY_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("body"), REST("clauses")),
+]
+
+# raise keeps a trailing REST rather than one arm per arity: a corpus
+# record asserts its hand-written "too many arguments" message, which a
+# match failure would replace
+_RAISE_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), REST("rest")),
+]
 
 
 _keyword_except = keyword("except")
@@ -144,15 +161,13 @@ def _collect_catches(compiler, catches):
 
 
 @builtin("compile/check-exception")
-@special("compile/check-exception", patterns=_DEFAULT_PATTERNS)
-def special_check_exception(compiler, source):
-    called_by, checks = source
-
-    fragment = compiler.fragment(called_by)
+@special("compile/check-exception", patterns=_CHECKS_PATTERNS,
+         unpack="kwargs")
+def special_check_exception(compiler, called_by, checks):
+    fragment = compiler.fragment(called_by.datum)
     count = 0
 
-    while not is_nil(checks):
-        expr, checks = checks
+    for expr in checks.datum.unpack():
         fragment.merge(compiler.full_compile(expr))
         count += 1
 
@@ -162,42 +177,30 @@ def special_check_exception(compiler, source):
 
 
 @builtin("compile/clear-exception")
-@special("compile/clear-exception", patterns=_DEFAULT_PATTERNS)
-def special_clear_exception(compiler, source):
-    called_by, rest = source
-
-    if not is_nil(rest):
-        raise TypeError("too many arguments to clear-exception")
-
-    fragment = compiler.fragment(called_by)
+@special("compile/clear-exception", patterns=_NOARG_PATTERNS,
+         unpack="kwargs")
+def special_clear_exception(compiler, called_by):
+    fragment = compiler.fragment(called_by.datum)
     fragment.instruction(OpCode.EXCEPTION_CLEAR, 0)
 
     return fragment
 
 
 @builtin("compile/load-exception")
-@special("compile/load-exception", patterns=_DEFAULT_PATTERNS)
-def special_load_exception(compiler, source):
-    called_by, rest = source
-
-    if not is_nil(rest):
-        raise TypeError("too many arguments to %s" % called_by)
-
-    fragment = compiler.fragment(called_by)
+@special("compile/load-exception", patterns=_NOARG_PATTERNS,
+         unpack="kwargs")
+def special_load_exception(compiler, called_by):
+    fragment = compiler.fragment(called_by.datum)
     fragment.instruction(OpCode.EXCEPTION, 0)
 
     return fragment
 
 
 @builtin("compile/try")
-@special("compile/try", patterns=_DEFAULT_PATTERNS)
-def special_try(compiler, source):
-    called_by, rest = source
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError("try requires body and clauses", source)
-
-    try_expr, catches = rest
-    ca, act_else, act_finally = _collect_catches(compiler, catches)
+@special("compile/try", patterns=_TRY_PATTERNS, unpack="kwargs")
+def special_try(compiler, called_by, body, clauses):
+    try_expr = body.datum
+    ca, act_else, act_finally = _collect_catches(compiler, clauses.datum)
 
     if act_finally is not None:
         if act_else is not None:
@@ -367,17 +370,17 @@ def _except(compiler, catches):
 
 
 @builtin("compile/raise")
-@special("compile/raise", patterns=_DEFAULT_PATTERNS)
-def special_raise(compiler, source):
-    called_by, rest = source
+@special("compile/raise", patterns=_RAISE_PATTERNS, unpack="kwargs")
+def special_raise(compiler, called_by, rest):
+    body = rest.datum
 
-    fragment = compiler.fragment(called_by)
-    if is_nil(rest):
+    fragment = compiler.fragment(called_by.datum)
+    if is_nil(body):
         fragment.instruction(OpCode.RAISE, 0)
         return fragment
 
-    expr, rest = rest
-    if not is_nil(rest):
+    expr, tail = body
+    if not is_nil(tail):
         raise TypeError("too many arguments to raise")
 
     fragment.merge(compiler.full_compile(expr))
