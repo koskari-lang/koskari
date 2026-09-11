@@ -18,7 +18,8 @@ Token type, tokenizer, and name sets for lexical analysis.
 
 Provides Token, tokenize, SPECIAL_NAMES, LAYOUT_NAMES, LAYOUT_HEAD_NAMES,
 LAYOUT_PEER_NAMES, and LAYOUT_BLOCK_NAMES for syntax highlighting and completion
-without compilation.
+without compilation. The name sets are built from the builtins namespace on
+first use, so importing this module does not load the bootstrap.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -35,20 +36,27 @@ from ..reader.patterns import (
     KEYWORD_RE, OCT_RE, STRING_PREFIXES)
 
 
-__all__ = (
-    'Token',
-    'tokenize',
-    'SPECIAL_NAMES',
-    'LAYOUT_NAMES',
-    'LAYOUT_HEAD_NAMES',
-    'LAYOUT_PEER_NAMES',
-    'LAYOUT_BLOCK_NAMES',
-)
-
 Token = namedtuple(
     'Token',
     ('type', 'text', 'start_line', 'start_col', 'end_line', 'end_col'),
 )
+
+
+LexerNames = namedtuple(
+    'LexerNames', ('special', 'layout', 'head', 'peer', 'block'))
+
+# module attribute -> LexerNames field, served by __getattr__
+LAZY_NAMES = {
+    'SPECIAL_NAMES': 'special',
+    'LAYOUT_NAMES': 'layout',
+    'LAYOUT_HEAD_NAMES': 'head',
+    'LAYOUT_PEER_NAMES': 'peer',
+    'LAYOUT_BLOCK_NAMES': 'block',
+}
+
+__all__ = ('Token', 'tokenize') + tuple(LAZY_NAMES)
+
+names = None
 
 
 def _make_special_names():
@@ -67,9 +75,9 @@ def _make_layout_names():
                      if isinstance(v, LayoutHandler))
 
 
-def _make_layout_head_names():
+def _make_layout_head_names(layout_names):
     col = []
-    for name in _make_layout_names():
+    for name in layout_names:
         if name.startswith('layout/'):
             col.append(name[7:])
     return frozenset(col)
@@ -87,11 +95,31 @@ def _make_layout_peer_names():
     return frozenset(result)
 
 
-SPECIAL_NAMES = _make_special_names()
-LAYOUT_NAMES = _make_layout_names()
-LAYOUT_HEAD_NAMES = _make_layout_head_names()
-LAYOUT_PEER_NAMES = _make_layout_peer_names()
-LAYOUT_BLOCK_NAMES = frozenset(LAYOUT_HEAD_NAMES | LAYOUT_PEER_NAMES)
+def lexer_names():
+    """
+    The special and layout name sets, built from the builtins namespace
+    on first use and cached. Importing this module therefore does not
+    load the bootstrap; the first tokenize or attribute access does
+
+    :return: a LexerNames of frozensets
+    """
+
+    global names
+
+    if names is None:
+        special = _make_special_names()
+        layout = _make_layout_names()
+        head = _make_layout_head_names(layout)
+        peer = _make_layout_peer_names()
+        names = LexerNames(special, layout, head, peer, frozenset(head | peer))
+    return names
+
+
+def __getattr__(name):
+    field = LAZY_NAMES.get(name)
+    if field is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return getattr(lexer_names(), field)
 
 
 _ATOM_TERMINATORS = ' \t\n\r()[]{}"\';`,'
@@ -139,7 +167,7 @@ def _atom_type(text, special_names):
         return 'py_singleton'
     if text in special_names:
         return 'special'
-    if text in LAYOUT_BLOCK_NAMES:
+    if text in lexer_names().block:
         return 'layout'
     return 'symbol'
 
@@ -219,7 +247,7 @@ def _try_layout_block_split(text, start_line, start_col, sn):
     if len(text) <= 1 or not text.endswith(':'):
         return None
     prefix = text[:-1]
-    if prefix not in LAYOUT_BLOCK_NAMES:
+    if prefix not in lexer_names().block:
         return None
     tok_type = _atom_type(prefix, sn)
     lp, cp = _advance_pos(start_line, start_col, prefix)
@@ -246,7 +274,7 @@ def tokenize(source, filename='<string>', special_names=None):
     # TODO: Look at this with human eyes, it seems like a lot of code
     # that is probably duplicating the original reader, but slower
 
-    sn = special_names if special_names is not None else SPECIAL_NAMES
+    sn = special_names if special_names is not None else lexer_names().special
 
     line = 1
     col = 1

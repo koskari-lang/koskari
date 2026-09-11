@@ -31,9 +31,8 @@ from .discovery import (
     collect_special_like_names_from_builtins, special_names_for_repl)
 from .parser import (
     READ_EOF, default_layout_reader, make_layout_reader, parse, parse_all)
-from .tokens import (
-    LAYOUT_BLOCK_NAMES, LAYOUT_HEAD_NAMES, LAYOUT_NAMES, LAYOUT_PEER_NAMES,
-    SPECIAL_NAMES, Token, tokenize)
+from . import tokens
+from .tokens import LAZY_NAMES, Token, tokenize
 
 
 __all__ = (
@@ -52,6 +51,17 @@ __all__ = (
     'LAYOUT_PEER_NAMES',
     'LAYOUT_BLOCK_NAMES',
 )
+
+
+def __getattr__(name):
+    """
+    The special and layout name sets come from tokens on first use, so
+    importing this package does not load the bootstrap builtins
+    """
+
+    if name in LAZY_NAMES:
+        return getattr(tokens, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # The end.
