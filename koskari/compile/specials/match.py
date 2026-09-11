@@ -26,7 +26,9 @@ compiled per pattern and an optional else clause.
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import Matcher, OpCode, keyword
-from ...matcher import CALLEDBY, MATCH, REST, MatchCompiler, parse_case_pattern
+from ...matcher import (
+    CALLEDBY, FORM, MATCH, REST, VALUE, MatchCompiler, parse_case_pattern,
+    repeat_capture)
 from ...syntax import special
 from ...types import is_pair
 from ..helpers import helper_begin
@@ -36,10 +38,19 @@ _keyword_else = keyword("else")
 _keyword_when = keyword("when")
 _keyword_unless = keyword("unless")
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+# the subject-less arm exists to carry its own diagnostic: a corpus
+# record asserts the message, which a match failure would replace
+_MATCH_PATTERNS = [
+    MATCH(CALLEDBY("called_by")),
+    MATCH(
+        CALLEDBY("called_by"),
+        VALUE("subject"),
+        repeat_capture(
+            "clauses", FORM(MATCH(VALUE("pattern"), REST("body"))))),
+]
 
 
-def _lower_pattern(pattern, source):
+def _lower_pattern(pattern, source, position=None):
     """
     Lower one clause delimiter's content through the runtime
     case-pattern dialect. parse_case_pattern classifies by head symbol
@@ -51,12 +62,12 @@ def _lower_pattern(pattern, source):
     try:
         return parse_case_pattern(pattern)
     except ValueError as exc:
-        raise SpecialError(str(exc), source) from exc
+        raise SpecialError(str(exc), source, position=position) from exc
 
 
 @builtin("compile/match")
-@special("compile/match", patterns=_DEFAULT_PATTERNS)
-def special_match(compiler, source):
+@special("compile/match", patterns=_MATCH_PATTERNS, unpack="match")
+def special_match(compiler, caps):
     """
     Compile (compile/match SUBJECT [[PATTERN] BODY...] ... [else: BODY...]).
     Evaluates SUBJECT once, then tries each arm's pattern in order. The
@@ -73,33 +84,40 @@ def special_match(compiler, source):
     intact, and the bound captures persist.
     """
 
-    called_by, cl = source
+    called_by = caps["called_by"]
 
-    fragment = compiler.fragment(called_by)
+    if "subject" not in caps:
+        raise SpecialError(
+            "match requires a subject", called_by.datum,
+            position=called_by.position)
+
+    fragment = compiler.fragment(called_by.datum)
 
     gen_label = compiler.gen_label
     done = gen_label()
 
-    if not cl:
-        raise SpecialError("match requires a subject", source)
-    subject, cl = cl
-
-    fragment.merge(compiler.full_compile(subject))
+    fragment.merge(compiler.full_compile(caps["subject"].datum))
 
     declared = set()
 
-    while cl:
-        element, cl = cl
+    clauses = caps["clauses"]
+    remaining = len(clauses)
 
-        fragment.position_of(element)
+    for clause in clauses:
+        remaining -= 1
 
-        if not is_pair(element):
-            raise SpecialError("match clause must be a list", source)
-        pattern, body = element
+        patcap = clause["pattern"]
+        pattern = patcap.datum
+        body = clause["body"].datum
+        clause_pos = patcap.position
+
+        fragment.position(clause_pos)
 
         if pattern is _keyword_else:
-            if cl:
-                raise SpecialError("else: must be last clause", source)
+            if remaining:
+                raise SpecialError(
+                    "else: must be last clause", pattern,
+                    position=clause_pos)
 
             fragment.instruction(OpCode.POP, 1)
             helper_begin(fragment, body)
@@ -113,10 +131,11 @@ def special_match(compiler, source):
             guard_kw, tail = body
             if not tail:
                 raise SpecialError(
-                    "match guard requires an expression", source)
+                    "match guard requires an expression", body,
+                    position=clause_pos)
             guard_expr, body = tail
 
-        arm = MATCH(_lower_pattern(pattern, source))
+        arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
         frozen = MatchCompiler().lower(arm)
         # frozen[1] is the full slot table in emission order -- the one
         # lowering yields both the constant and the binding names.
