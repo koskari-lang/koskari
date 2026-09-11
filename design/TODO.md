@@ -346,6 +346,15 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
   tests, user recipe. Ref:
   [examples/reader-macro-dollars.md](examples/reader-macro-dollars.md).
 
+### Itertools natives
+
+Providers on the `transform.c` base (`takewhile`, `dropwhile`, `starmap`,
+`accumulate`, `islice`, `zip`, `chain`, ...): N sources, trailing
+arguments, and the fetch chain across driven sources. Decide builtins
+vs an importable `koskari.itertools`, and whether type readiness in the
+single-phase `koskari.lib` init chain is worth delaying.
+Ref: [api/itertools-natives.md](api/itertools-natives.md).
+
 ### Ref surface (notes from the refs guide)
 
 - **`(set! (deref r) v)` — optimize value-level ref store** — now has a
