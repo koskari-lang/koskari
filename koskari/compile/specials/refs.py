@@ -23,118 +23,90 @@ compile/ref-item, compile/refq, and compile/bindq.
 
 
 from ...bootstrap import builtin
-from ...exceptions import SpecialError
 from ...lib import OpCode
-from ...matcher import CALLEDBY, DEFINE, MATCH, REST, VALUE
+from ...matcher import CALLEDBY, DEFINE, MATCH, SYMBOL, VALUE
 from ...syntax import special
-from ...types import is_nil, is_pair
-from ..helpers import const_only_expr
+from ...types import is_pair
+from ..helpers import emit_item_key
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_ONE_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("arg")),
+]
+
+_REF_ATTR_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("obj"), SYMBOL("sym")),
+]
+
+_REF_ITEM_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("obj"), VALUE("key")),
+]
+
+_REFQ_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), SYMBOL("sym")),
+]
 
 
 @builtin("compile/deref")
-@special("compile/deref", patterns=_DEFAULT_PATTERNS)
-def special_deref(compiler, source):
+@special("compile/deref", patterns=_ONE_PATTERNS, unpack="kwargs")
+def special_deref(compiler, called_by, arg):
     """
     Compile (compile/deref EXPR). Compile EXPR (produces ref on stack),
     then emit DEREF to call ref.deref() and push result.
     """
 
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("deref requires one argument", source)
-
-    arg, rest = body
-    if not is_nil(rest):
-        raise SpecialError("deref takes one argument", source)
-
-    frag = compiler.fragment(called_by)
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(arg))
+    frag = compiler.fragment(called_by.datum)
+    frag.position(arg.position)
+    frag.merge(compiler.full_compile(arg.datum))
     frag.instruction(OpCode.DEREF, 0)
 
     return frag
 
 
 @builtin("compile/ref-attr")
-@special("compile/ref-attr", patterns=_DEFAULT_PATTERNS)
-def special_ref_attr(compiler, source):
+@special("compile/ref-attr", patterns=_REF_ATTR_PATTERNS, unpack="kwargs")
+def special_ref_attr(compiler, called_by, obj, sym):
     """
     Compile (compile/ref-attr OBJ SYM). Produce a mutable reference to attribute SYM on OBJ
     """
 
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("ref-attr requires two arguments", source)
-    obj, (sym, rest) = body
-
-    if not is_nil(rest):
-        raise SpecialError("ref-attr takes two arguments", source)
-
-    frag = compiler.fragment(called_by)
-
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(obj))
-    frag.instruction(OpCode.ATTR_REF, str(sym))
+    frag = compiler.fragment(called_by.datum)
+    frag.position(obj.position)
+    frag.merge(compiler.full_compile(obj.datum))
+    frag.instruction(OpCode.ATTR_REF, str(sym.datum))
 
     return frag
 
 
 @builtin("compile/ref-item")
-@special("compile/ref-item", patterns=_DEFAULT_PATTERNS)
-def special_ref_item(compiler, source):
+@special("compile/ref-item", patterns=_REF_ITEM_PATTERNS, unpack="kwargs")
+def special_ref_item(compiler, called_by, obj, key):
     """
     Compile (compile/ref-item OBJ KEY). Produce a mutable reference to item at KEY in OBJ
     """
 
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("ref-item requires two arguments", source)
-    obj, (key, rest) = body
-
-    if not is_nil(rest):
-        raise SpecialError("ref-item takes two arguments", source)
-
-    frag = compiler.fragment(called_by)
-
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(obj))
-
-    keyfrag = compiler.full_compile(key)
-    is_const, key_val = const_only_expr(keyfrag)
-
-    if is_const:
-        frag.instruction(OpCode.CONST_ITEM_REF, key_val)
-
-    else:
-        frag.merge(keyfrag)
-        frag.instruction(OpCode.ITEM_REF, 0)
+    frag = compiler.fragment(called_by.datum)
+    frag.position(obj.position)
+    frag.merge(compiler.full_compile(obj.datum))
+    emit_item_key(
+        compiler, frag, key.datum, OpCode.CONST_ITEM_REF, OpCode.ITEM_REF)
 
     return frag
 
 
 @builtin("compile/refq")
-@special("compile/refq", patterns=_DEFAULT_PATTERNS)
-def special_refq(compiler, source):
+@special("compile/refq", patterns=_REFQ_PATTERNS, unpack="kwargs")
+def special_refq(compiler, called_by, sym):
     """
     Compile (compile/refq SYM). Load the value of the binding named SYM
     """
 
-    called_by, body = source
-    sym, rest = body
+    name = str(sym.datum)
 
-    sym = str(sym)
-
-    if not is_nil(rest):
-        raise SpecialError("refq takes one argument", source)
-
-    frag = compiler.fragment(called_by)
-
-    frag.position_of(body)
-    frag.request_var(sym)
-    frag.instruction(OpCode.VAR_REF, sym)
+    frag = compiler.fragment(called_by.datum)
+    frag.position(sym.position)
+    frag.request_var(name)
+    frag.instruction(OpCode.VAR_REF, name)
 
     return frag
 

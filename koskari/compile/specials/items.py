@@ -22,153 +22,85 @@ Special form handlers for compile/item, compile/del-item, and compile/set-item.
 
 
 from ...bootstrap import builtin
-from ...exceptions import SpecialError
 from ...lib import OpCode
-from ...matcher import CALLEDBY, MATCH, REST
+from ...matcher import CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_nil, is_pair
-from ..helpers import const_only_expr
+from ..helpers import emit_item_key
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_ITEM_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("obj"), VALUE("key")),
+]
+
+_SET_ITEM_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("obj"), VALUE("key"), VALUE("val")),
+]
+
+
+def item_fragment(compiler, called_by, obj):
+    """
+    A fragment for an item special with its object compiled, positioned
+    at the object
+    """
+
+    frag = compiler.fragment(called_by.datum)
+    frag.position(obj.position)
+    frag.merge(compiler.full_compile(obj.datum))
+    return frag
 
 
 @builtin("compile/item")
-@special("compile/item", patterns=_DEFAULT_PATTERNS)
-def special_item(compiler, source):
+@special("compile/item", patterns=_ITEM_PATTERNS, unpack="kwargs")
+def special_item(compiler, called_by, obj, key):
     """
     Compile (compile/item OBJ KEY). Load item at KEY from OBJ
     """
 
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("item requires two arguments", source)
-    obj, (key, rest) = body
-
-    if not is_nil(rest):
-        raise SpecialError("item takes two arguments", source)
-
-    frag = compiler.fragment(called_by)
-
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(obj))
-
-    keyfrag = compiler.full_compile(key)
-    is_const, key_val = const_only_expr(keyfrag)
-
-    if is_const:
-        frag.instruction(OpCode.CONST_ITEM, key_val)
-
-    else:
-        frag.merge(keyfrag)
-        frag.instruction(OpCode.ITEM, 0)
-
+    frag = item_fragment(compiler, called_by, obj)
+    emit_item_key(compiler, frag, key.datum, OpCode.CONST_ITEM, OpCode.ITEM)
     return frag
 
 
 @builtin("compile/del-item")
-@special("compile/del-item", patterns=_DEFAULT_PATTERNS)
-def special_del_item(compiler, source):
+@special("compile/del-item", patterns=_ITEM_PATTERNS, unpack="kwargs")
+def special_del_item(compiler, called_by, obj, key):
     """
     Compile (compile/del-item OBJ KEY). Delete item at KEY from OBJ
     """
 
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("del-item requires two arguments", source)
-    obj, (key, rest) = body
-
-    if not is_nil(rest):
-        raise SpecialError("del-item takes two arguments", source)
-
-    frag = compiler.fragment(called_by)
-
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(obj))
-
-    keyfrag = compiler.full_compile(key)
-    is_const, key_val = const_only_expr(keyfrag)
-
-    if is_const:
-        frag.instruction(OpCode.CONST_ITEM_CLEAR, key_val)
-
-    else:
-        frag.merge(keyfrag)
-        frag.instruction(OpCode.ITEM_CLEAR, 0)
-
+    frag = item_fragment(compiler, called_by, obj)
+    emit_item_key(
+        compiler, frag, key.datum, OpCode.CONST_ITEM_CLEAR, OpCode.ITEM_CLEAR)
     frag.instruction(OpCode.CONST, None)
-
     return frag
 
 
 @builtin("compile/take-item")
-@special("compile/take-item", patterns=_DEFAULT_PATTERNS)
-def special_take_item(compiler, source):
+@special("compile/take-item", patterns=_ITEM_PATTERNS, unpack="kwargs")
+def special_take_item(compiler, called_by, obj, key):
     """
     Compile (compile/take-item OBJ KEY). Get item at KEY from OBJ, delete it,
     push the value
     """
 
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("take-item requires two arguments", source)
-    obj, (key, rest) = body
-
-    if not is_nil(rest):
-        raise SpecialError("take-item takes two arguments", source)
-
-    frag = compiler.fragment(called_by)
-
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(obj))
-
-    keyfrag = compiler.full_compile(key)
-    is_const, key_val = const_only_expr(keyfrag)
-
-    if is_const:
-        frag.instruction(OpCode.CONST_ITEM_TAKE, key_val)
-
-    else:
-        frag.merge(keyfrag)
-        frag.instruction(OpCode.ITEM_TAKE, 0)
-
+    frag = item_fragment(compiler, called_by, obj)
+    emit_item_key(
+        compiler, frag, key.datum, OpCode.CONST_ITEM_TAKE, OpCode.ITEM_TAKE)
     return frag
 
 
 @builtin("compile/set-item")
-@special("compile/set-item", patterns=_DEFAULT_PATTERNS)
-def special_set_item(compiler, source):
+@special("compile/set-item", patterns=_SET_ITEM_PATTERNS, unpack="kwargs")
+def special_set_item(compiler, called_by, obj, key, val):
     """
     Compile (compile/set-item OBJ KEY VAL). Store VAL at item KEY in OBJ
     """
 
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("set-item requires three arguments", source)
-    obj, (key, (val, rest)) = body
-
-    if not is_nil(rest):
-        raise SpecialError("set-item takes three arguments", source)
-
-    frag = compiler.fragment(called_by)
-
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(obj))
-
-    keyfrag = compiler.full_compile(key)
-    is_const, key_val = const_only_expr(keyfrag)
-
-    if is_const:
-        frag.merge(compiler.full_compile(val))
-        frag.instruction(OpCode.CONST_ITEM_STORE, key_val)
-
-    else:
-        frag.merge(keyfrag)
-        frag.merge(compiler.full_compile(val))
-        frag.instruction(OpCode.ITEM_STORE, 0)
-
+    frag = item_fragment(compiler, called_by, obj)
+    emit_item_key(
+        compiler, frag, key.datum, OpCode.CONST_ITEM_STORE, OpCode.ITEM_STORE,
+        before=lambda: frag.merge(compiler.full_compile(val.datum)))
     frag.instruction(OpCode.CONST, None)
-
     return frag
 
 

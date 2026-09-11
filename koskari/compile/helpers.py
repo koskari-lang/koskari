@@ -587,6 +587,35 @@ def const_only_expr(fragment):
     return (found, value)
 
 
+def emit_item_key(compiler, frag, key, const_op, stack_op, before=None):
+    """
+    Emit an item access whose object is already on the fragment: a key
+    that compiles to a single constant takes const_op with the constant
+    as its operand, any other key is compiled onto the stack and takes
+    stack_op. before, when given, is called between the key and the
+    row so a store can compile its value in the right place
+
+    :param compiler: the Compiler
+    :param frag: fragment holding the object
+    :param key: key source form
+    :param const_op: opcode taking the key as a constant operand
+    :param stack_op: opcode taking the key from the stack
+    :param before: optional callable run before the row is emitted
+    """
+
+    keyfrag = compiler.full_compile(key)
+    is_const, key_val = const_only_expr(keyfrag)
+
+    if not is_const:
+        frag.merge(keyfrag)
+    if before is not None:
+        before()
+    if is_const:
+        frag.instruction(const_op, key_val)
+    else:
+        frag.instruction(stack_op, 0)
+
+
 def call_form_reroute(called_by, body):
     """
     Rewrite a variadic builder into its ``(call CALLED_BY . BODY)``
