@@ -23,7 +23,6 @@ compile/continue.
 
 
 from ...bootstrap import builtin
-from ...exceptions import SpecialError
 from ...lib import OpCode
 from ...matcher import (
     BINDING, BODY, CALLEDBY, MATCH, OPTIONAL, USING_UNPACK, VALUE)
@@ -145,53 +144,51 @@ def special_for_each(compiler, caps):
     return fragment
 
 
-def _special_break_continue(compiler, source, op):
+_LOOP_JUMP_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), OPTIONAL(VALUE("val"))),
+]
+
+
+def emit_loop_jump(compiler, called_by, val, op):
     """
-    Shared logic for break and continue. Emit op with count 0 or 1
+    A fragment for break and continue: op with a count of 0, or the
+    optional value compiled and a count of 1
+
+    :return: the fragment
     """
 
-    called_by, rest = source
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
 
-    if is_nil(rest):
-        frag = compiler.fragment(called_by)
-        frag.position_of(source)
+    if val is None:
         frag.instruction(op, 0)
         return frag
 
-    val, tail = rest
-    if not is_nil(tail):
-        raise SpecialError(
-            "%s takes at most one argument" % called_by,
-            source)
-
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
-    frag.merge(compiler.full_compile(val))
+    frag.merge(compiler.full_compile(val.datum))
     frag.instruction(op, 1)
     return frag
 
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), OPTIONAL(VALUE("val"))),)
-
-
 @builtin("compile/break")
-@special("compile/break", patterns=_DEFAULT_PATTERNS)
-def special_break(compiler, source):
+@special("compile/break", patterns=_LOOP_JUMP_PATTERNS, unpack="match")
+def special_break(compiler, caps):
     """
     Compile (compile/break) or (compile/break VAL). Exits innermost loop.
     """
 
-    return _special_break_continue(compiler, source, OpCode.BREAK)
+    return emit_loop_jump(
+        compiler, caps["called_by"], caps.get("val"), OpCode.BREAK)
 
 
 @builtin("compile/continue")
-@special("compile/continue", patterns=_DEFAULT_PATTERNS)
-def special_continue(compiler, source):
+@special("compile/continue", patterns=_LOOP_JUMP_PATTERNS, unpack="match")
+def special_continue(compiler, caps):
     """
     Compile (compile/continue) or (compile/continue VAL). Restarts loop.
     """
 
-    return _special_break_continue(compiler, source, OpCode.CONTINUE)
+    return emit_loop_jump(
+        compiler, caps["called_by"], caps.get("val"), OpCode.CONTINUE)
 
 
 # The end.
