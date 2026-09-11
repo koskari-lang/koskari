@@ -23,12 +23,11 @@ Special form handler for compile/dyn-wind (dynamic-wind).
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import FormalsSpec, FunctionSpec, OpCode, cons, nil, pair, symbol
+from ...lib import FormalsSpec, FunctionSpec, OpCode, cons, nil, symbol
 from ...matcher import CALLEDBY, LIST, LITERAL_KW, MATCH, ONEOF, REST, VALUE
 from ...syntax import special
-from ...types import is_nil, is_pair
+from ...types import is_nil
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
-from ..helpers import match
 
 
 def _compile_thunk(compiler, body_src, fragment):
@@ -46,20 +45,16 @@ def _compile_thunk(compiler, body_src, fragment):
     return fragment
 
 
-def _find_segments(source):
+def _find_segments(caps, called_by):
     """
-    Find the before, body, and after segments in the source.
+    Resolve the before, body, and after segments from one dyn-wind
+    match: the positional arms name their segments directly, the
+    keyword arms wrap each segment list in a begin
     """
 
-    matched = match(source, _DYN_WIND_PATTERNS)
-    if matched is None:
-        raise SpecialError(
-            "dyn-wind requires before, body, and after segments",
-            source)
-
-    before = matched.get("before_single")
-    body = matched.get("body_single")
-    after = matched.get("after_single")
+    before = caps.get("before_single")
+    body = caps.get("body_single")
+    after = caps.get("after_single")
 
     if body:
         before_src = before.datum if before else nil
@@ -67,9 +62,9 @@ def _find_segments(source):
         after_src = after.datum if after else nil
 
     else:
-        before = matched.get("before")
-        body = matched.get("body")
-        after = matched.get("after")
+        before = caps.get("before")
+        body = caps.get("body")
+        after = caps.get("after")
 
         before_src = (
             cons(symbol("begin"), before.datum)
@@ -84,7 +79,7 @@ def _find_segments(source):
     if is_nil(before_src) and is_nil(after_src):
         raise SpecialError(
             "dyn-wind requires at least one of before and after",
-            source)
+            called_by.datum, position=called_by.position)
 
     return (before_src, body_src, after_src)
 
@@ -131,28 +126,27 @@ _DYN_WIND_PATTERNS_FULL = tuple(
 
 
 @builtin("compile/dyn-wind")
-@special("compile/dyn-wind", patterns=_DYN_WIND_PATTERNS_FULL)
+@special("compile/dyn-wind", patterns=_DYN_WIND_PATTERNS_FULL,
+         unpack="match")
 def special_dyn_wind(
         compiler: Compiler,
-        source: pair) -> ByteCodeFragment:
+        caps: dict) -> ByteCodeFragment:
     """
     Compile (compile/dyn-wind [before] [body] [after]). Body is required;
     at least one of before or after is required. Wraps before/after in
     (lambda [] ...) thunks and emits PUSH_WIND / POP_WIND.
     """
 
-    called_by, rest = source
-    if is_nil(rest) or not is_pair(rest):
-        raise SpecialError("dyn-wind requires before, body, and after", source)
+    called_by = caps["called-by"]
 
-    before_src, body_src, after_src = _find_segments(rest)
+    before_src, body_src, after_src = _find_segments(caps, called_by)
 
     # print(f"before_src: {before_src}")
     # print(f"body_src: {body_src}")
     # print(f"after_src: {after_src}")
 
-    fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
+    fragment = compiler.fragment(called_by.datum)
+    fragment.position(called_by.position)
 
     if before_src and after_src:
         _compile_thunk(compiler, before_src, fragment)
