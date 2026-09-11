@@ -1327,6 +1327,9 @@ typedef struct {
   KosExtraRaw *extra_rows;    /* growable array of index-form rows; CONST/VAR interned */
   uint32_t extra_len;
   uint32_t extra_cap;
+  uint16_t *args;             /* per output instruction: the cpool index of a
+                                 CONST or VAR operand, resolved here so emit
+                                 neither converts nor interns a second time */
   KosPosition *pos_entries;   /* delta-encoded positions; index where (line,col) changes */
   uint32_t pos_count;
   uint32_t pos_cap;
@@ -1387,6 +1390,24 @@ static uint16_t intern_const(CodeCollect *coll, PyObject *value) {
   Py_DECREF(value);
   coll->cpool_len = (uint16_t) (n + 1);
   return (uint16_t) n;
+}
+
+
+/**
+   Release collect-phase resources. Call after code_emit or on failure.
+   Does not free the CodeCollect struct itself.
+*/
+static void code_collect_clear(CodeCollect *coll) {
+
+  Py_CLEAR(coll->cpool_list);
+  Py_CLEAR(coll->labels);
+  Py_CLEAR(coll->pending_labels);
+  PyMem_Del(coll->pos_entries);
+  coll->pos_entries = NULL;
+  PyMem_Del(coll->extra_rows);
+  coll->extra_rows = NULL;
+  PyMem_Del(coll->args);
+  coll->args = NULL;
 }
 
 
@@ -1490,10 +1511,11 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
   coll->extra_rows = NULL;
   coll->extra_len = 0;
   coll->extra_cap = 0;
+  coll->args = PyMem_New(uint16_t, (size_t) instr_l + 1);
   coll->pos_entries = PyMem_New(KosPosition, 64);
   coll->pos_count = 0;
   coll->pos_cap = 64;
-  if (! coll->pos_entries) {
+  if (! coll->args || ! coll->pos_entries) {
     goto failure;
   }
 
@@ -1752,17 +1774,19 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       continue;
     }
 
-    /* CONST: intern arg into cpool; emit phase will look up index */
+    /* CONST: intern arg into cpool; emit reads the index back */
     if (style == KOSTYLE_CONST) {
       uint16_t idx = intern_const(coll, b);
       if (idx == (uint16_t) -1) {
         goto failure;
       }
+      coll->args[di] = idx;
       di++;
       continue;
     }
 
-    /* VAR: stringify name, intern into cpool (identity-based) */
+    /* VAR: stringify name once, intern into cpool (identity-based);
+       emit reads the index back */
     if (style == KOSTYLE_VAR) {
       PyObject *name = PyObject_Str(b);
       if (! name) {
@@ -1773,6 +1797,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       if (idx == (uint16_t) -1) {
         goto failure;
       }
+      coll->args[di] = idx;
       di++;
       continue;
     }
@@ -1806,30 +1831,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
   return 0;
 
  failure:
-  PyMem_Del(coll->pos_entries);
-  coll->pos_entries = NULL;
-  PyMem_Del(coll->extra_rows);
-  coll->extra_rows = NULL;
-  Py_CLEAR(coll->cpool_list);
-  Py_CLEAR(coll->labels);
-  Py_CLEAR(coll->pending_labels);
+  code_collect_clear(coll);
   return -1;
-}
-
-
-/**
-   Release collect-phase resources. Call after code_emit or on failure.
-   Does not free the CodeCollect struct itself.
-*/
-static void code_collect_clear(CodeCollect *coll) {
-
-  Py_CLEAR(coll->cpool_list);
-  Py_CLEAR(coll->labels);
-  Py_CLEAR(coll->pending_labels);
-  PyMem_Del(coll->pos_entries);
-  coll->pos_entries = NULL;
-  PyMem_Del(coll->extra_rows);
-  coll->extra_rows = NULL;
 }
 
 
@@ -1956,8 +1959,11 @@ static void code_fill_derived(
 /**
    Emit instructions and tables into pre-allocated regions. Walk input
    again; for each instruction, write op/arg to code[]. LABEL and POSITION
-   are skipped. Resolve label targets for KOSTYLE_LABEL and pending_labels.
-   Copy cpool_list -> cpool, extra_rows -> extra, pos_entries -> pos.
+   are skipped. CONST and VAR args are the indices collect resolved;
+   nothing here converts or interns, so the pool cannot grow past the
+   count it was allocated at. Resolve label targets for KOSTYLE_LABEL
+   and pending_labels. Copy cpool_list -> cpool, extra_rows -> extra,
+   pos_entries -> pos.
 */
 /**
    Resolve one row from collect's index form: CONST and VAR fields become
@@ -2043,24 +2049,8 @@ static int code_emit(
     }
 
     /* Resolve arg from collect-phase data: cpool index, label pc, or raw */
-    if (style == KOSTYLE_CONST) {
-      uint16_t idx = intern_const(coll, b);
-      if (idx == (uint16_t) -1) {
-        return -1;
-      }
-      code[di].arg = idx;
-      code[di].u.obj = PyList_GET_ITEM(coll->cpool_list, idx);
-
-    } else if (style == KOSTYLE_VAR) {
-      PyObject *name = PyObject_Str(b);
-      if (! name) {
-        return -1;
-      }
-      uint16_t idx = intern_const(coll, name);
-      Py_DECREF(name);
-      if (idx == (uint16_t) -1) {
-        return -1;
-      }
+    if (style == KOSTYLE_CONST || style == KOSTYLE_VAR) {
+      uint16_t idx = coll->args[di];
       code[di].arg = idx;
       code[di].u.obj = PyList_GET_ITEM(coll->cpool_list, idx);
 
@@ -2149,8 +2139,7 @@ static int code_emit(
      owned references; a rejection after emit must release them
      (code_release_cpool) and success hands them to the Code, whose
      dealloc releases them. */
-  Py_ssize_t cpool_n = PyList_GET_SIZE(coll->cpool_list);
-  for (Py_ssize_t j = 0; j < cpool_n; j++) {
+  for (uint32_t j = 0; j < coll->cpool_len; j++) {
     PyObject *val = PyList_GET_ITEM(coll->cpool_list, j);
     Py_INCREF(val);
     cpool[j] = val;
