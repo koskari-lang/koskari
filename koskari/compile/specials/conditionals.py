@@ -25,9 +25,10 @@ compile/switch.
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode, keyword
-from ...matcher import CALLEDBY, MATCH, REST
+from ...matcher import (
+    CALLEDBY, FORM, MATCH, REST, VALUE, repeat_capture)
 from ...syntax import special
-from ...types import get_position, is_pair
+from ...types import is_pair
 from ..helpers import helper_begin
 
 
@@ -35,12 +36,25 @@ _keyword_else = keyword("else")
 _keyword_when = keyword("when")
 _keyword_unless = keyword("unless")
 
-_DEFAULT_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
+_CLAUSES = repeat_capture(
+    "clauses", FORM(MATCH(VALUE("test"), REST("body"))))
+
+_COND_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), _CLAUSES),
+]
+
+_SWITCH_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("value"), _CLAUSES),
+]
+
+_EXPRS_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), REST("exprs")),
+]
 
 
 @builtin("compile/cond")
-@special("compile/cond", patterns=_DEFAULT_PATTERNS)
-def special_cond(compiler, source):
+@special("compile/cond", patterns=_COND_PATTERNS, unpack="kwargs")
+def special_cond(compiler, called_by, clauses):
     """
     Compile (compile/cond (TEST BODY...) (TEST BODY...) ... (else: BODY...)).
     Conditionally executes body depending on a test expression. Multiple
@@ -48,28 +62,29 @@ def special_cond(compiler, source):
     yields None. The else: keyword as test is always true.
     """
 
-    called_by, cl = source
-
-    fragment = compiler.fragment(called_by)
+    fragment = compiler.fragment(called_by.datum)
 
     gen_label = compiler.gen_label
     done = gen_label()
     label = gen_label()
 
-    while cl:
-        element, cl = cl
+    remaining = len(clauses)
+    for clause in clauses:
+        remaining -= 1
 
-        fragment.position_of(element)
+        testcap = clause["test"]
+        test = testcap.datum
+        body = clause["body"].datum
+        clause_pos = testcap.position
+
+        fragment.position(clause_pos)
         fragment.instruction(OpCode.LABEL, label)
         label = gen_label()
 
-        test, body = element
-
-        clause_pos = get_position(element)
-
         if test is _keyword_else:
-            if cl:
-                raise SpecialError("else: must be last clause", source)
+            if remaining:
+                raise SpecialError(
+                    "else: must be last clause", test, position=clause_pos)
 
             helper_begin(fragment, body, position=clause_pos)
             break
@@ -88,8 +103,8 @@ def special_cond(compiler, source):
 
 
 @builtin("compile/switch")
-@special("compile/switch", patterns=_DEFAULT_PATTERNS)
-def special_switch(compiler, source):
+@special("compile/switch", patterns=_SWITCH_PATTERNS, unpack="kwargs")
+def special_switch(compiler, called_by, value, clauses):
     """
     Compile (compile/switch VALUE (COMPARE BODY...) (COMPARE BODY...) ... (else: BODY...)).
     Conditionally executes body depending on a compare expression. Multiple
@@ -97,31 +112,31 @@ def special_switch(compiler, source):
     evaluates as None. The else: keyword always matches.
     """
 
-    called_by, cl = source
-
-    fragment = compiler.fragment(called_by)
+    fragment = compiler.fragment(called_by.datum)
 
     gen_label = compiler.gen_label
     done = gen_label()
 
-    if not cl:
-        raise SpecialError("switch requires a value", source)
-    value, cl = cl
-
-    fragment.merge(compiler.full_compile(value))
+    fragment.merge(compiler.full_compile(value.datum))
 
     checks = compiler.fragment("switch-cases")
     bodies = compiler.fragment("switch-bodies")
 
-    while cl:
-        element, cl = cl
+    remaining = len(clauses)
+    for clause in clauses:
+        remaining -= 1
 
-        checks.position_of(element)
-        test, body = element
+        testcap = clause["test"]
+        test = testcap.datum
+        body = clause["body"].datum
+        clause_pos = testcap.position
+
+        checks.position(clause_pos)
 
         if test is _keyword_else:
-            if cl:
-                raise SpecialError("else: must be last clause", source)
+            if remaining:
+                raise SpecialError(
+                    "else: must be last clause", test, position=clause_pos)
 
             else_label = gen_label()
             checks.instruction(OpCode.JUMP, else_label)
@@ -132,8 +147,9 @@ def special_switch(compiler, source):
             break
 
         elif not (test and is_pair(test)):
-            raise SpecialError("switch compare must be a list of values",
-                               source)
+            raise SpecialError(
+                "switch compare must be a list of values",
+                test, position=clause_pos)
 
         body_label = gen_label()
         while test:
@@ -160,9 +176,38 @@ def special_switch(compiler, source):
     return fragment
 
 
+def emit_shortcut(compiler, called_by, exprs, empty_value, jump_op):
+    """
+    A fragment for a short-circuit special: each expression in turn,
+    jumping to the end over the rest when one settles the result. An
+    empty form is the constant empty_value
+
+    :return: the fragment
+    """
+
+    fragment = compiler.fragment(called_by.datum)
+
+    cl = exprs.datum
+    if not cl:
+        fragment.instruction(OpCode.CONST, empty_value)
+        return fragment
+
+    done = compiler.gen_label()
+
+    while cl:
+        expr, cl = cl
+        fragment.position_of(expr)
+        fragment.merge(compiler.full_compile(expr))
+        if cl:
+            fragment.instruction(jump_op, done)
+
+    fragment.instruction(OpCode.LABEL, done)
+    return fragment
+
+
 @builtin("compile/and")
-@special("compile/and", patterns=_DEFAULT_PATTERNS)
-def special_and(compiler, source):
+@special("compile/and", patterns=_EXPRS_PATTERNS, unpack="kwargs")
+def special_and(compiler, called_by, exprs):
     """
     Compile (compile/and EXPR ...). Short-circuit conjunction. Evaluates
     expressions left-to-right; returns the first falsy value without evaluating
@@ -170,30 +215,13 @@ def special_and(compiler, source):
     yields True
     """
 
-    called_by, cl = source
-
-    fragment = compiler.fragment(called_by)
-
-    if not cl:
-        fragment.instruction(OpCode.CONST, True)
-        return fragment
-
-    done = compiler.gen_label()
-
-    while cl:
-        expr, cl = cl
-        fragment.position_of(expr)
-        fragment.merge(compiler.full_compile(expr))
-        if cl:
-            fragment.instruction(OpCode.JUMP_AND, done)
-
-    fragment.instruction(OpCode.LABEL, done)
-    return fragment
+    return emit_shortcut(
+        compiler, called_by, exprs, True, OpCode.JUMP_AND)
 
 
 @builtin("compile/or")
-@special("compile/or", patterns=_DEFAULT_PATTERNS)
-def special_or(compiler, source):
+@special("compile/or", patterns=_EXPRS_PATTERNS, unpack="kwargs")
+def special_or(compiler, called_by, exprs):
     """
     Compile (compile/or EXPR ...). Short-circuit disjunction. Evaluates
     expressions left-to-right; returns the first truthy value without evaluating
@@ -201,25 +229,8 @@ def special_or(compiler, source):
     yields False
     """
 
-    called_by, cl = source
-
-    fragment = compiler.fragment(called_by)
-
-    if not cl:
-        fragment.instruction(OpCode.CONST, False)
-        return fragment
-
-    done = compiler.gen_label()
-
-    while cl:
-        expr, cl = cl
-        fragment.position_of(expr)
-        fragment.merge(compiler.full_compile(expr))
-        if cl:
-            fragment.instruction(OpCode.JUMP_OR, done)
-
-    fragment.instruction(OpCode.LABEL, done)
-    return fragment
+    return emit_shortcut(
+        compiler, called_by, exprs, False, OpCode.JUMP_OR)
 
 
 # The end.
