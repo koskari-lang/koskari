@@ -503,7 +503,7 @@ resume pair off the parent, `TAILCALL` the resume with the settled value,
 §8.2). Anything else -- an extent above the returning frame, a generator or
 receiving iteration-node parent, a missing retarget cache, an unsettled
 value -- signals **`EVAL_RETURN`**, as do the other producers of the signal
-(POP_PROMPT, the values.c and eval_utils.c termini, a resume's completion).
+(POP_PROMPT, the values.c and eval_call.c termini, a resume's completion).
 
 **`eval_event_return_ng`** handles such a frame return.  When try/with/wind nodes
 sit above the frame, **`eval_event_return`** first runs
@@ -1032,7 +1032,7 @@ extent nodes still open above the frame (a `let` NS, etc.), the pop is
 skipped and the result is delivered through a normal `EVAL_RETURN`
 instead of `EVAL_CONTROL_RETURNED`, so the open extents unwind through
 the regular RETURN walk (`KosEvalState_Call` / `CallArgs` / `CallNoArgs`
-in `eval/eval_utils.c`; `do_frame_prep` applies the same bare-frame guard
+in `eval/eval_call.c`; `do_frame_prep` applies the same bare-frame guard
 for frameless KosCallables).
 
 ### 7.4 Transfer Goal Integration
@@ -1125,7 +1125,7 @@ Archived design and implementation notes:
 
 Calls carry most of the evaluator's real complexity; an ordinary opcode
 pops, computes, pushes, and threads. Every CALL and TAIL_CALL opcode
-enters the same core, **`kos_call_invoke`** (`eval/eval_utils.c`), which
+enters the same core, **`kos_call_invoke`** (`eval/eval_call.c`), which
 classifies the callable and takes one of three paths. Two of them thread
 straight through to what comes next; the trampoline is involved only
 when the prologue has real work to do.

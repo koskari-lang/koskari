@@ -145,7 +145,9 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 
 #include "eval/eval_chain.c"
 #include "eval/eval_state.c"
-#include "eval/eval_utils.c"
+#include "eval/eval_await.c"
+#include "eval/eval_call.c"
+#include "eval/eval_iter.c"
 #include "eval/eval_obj.c"
 
 
@@ -3716,7 +3718,7 @@ handle_result:
        straight into the parent when they hold and signals RETURN only
        when they do not; a RETURN arriving here has either already
        failed them or comes from another producer (POP_PROMPT, the
-       values.c and eval_utils.c termini, a resume's completion), and
+       values.c and eval_call.c termini, a resume's completion), and
        takes the general path, whose own plain case is the same
        transition. */
     KosOpResult ar;

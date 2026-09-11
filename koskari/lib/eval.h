@@ -1299,7 +1299,7 @@ KosOpResult KosEvalState_CallNoArgs(
    and either push the result or suspend.
 
    Use from code outside opcode dispatch that must not apply the CALL* POP,1
-   peephole. Implementation: koskari/lib/eval/eval_utils.c included into the
+   peephole. Implementation: koskari/lib/eval/eval_await.c included into the
    eval translation unit.
 
    CALL* opcodes use a separate static push_or_await_fused in the same

@@ -1,0 +1,251 @@
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+
+/**
+  koskari/lib/eval/eval_iter.c
+
+  Python iteration from the evaluator: iterator acquire and close over
+  both protocols, result classification, the OBJECT_NEXT / ITER_NEXT
+  next paths, and the globals namespace lookup. Included into eval.c as
+  a segment (see the eval/ includes there).
+
+  :author: Christopher O'Brien <obriencj@preoccupied.net>
+  :license: GNU General Public License v3
+*/
+
+
+/* === Python iter next (OBJECT_NEXT / ITER_NEXT opcodes) === */
+
+
+/**
+   Acquire an iterator from an iterable, uniform over both protocols
+   (the PUSH_FOREACH preference order, shared with OBJECT_ITER so the
+   two cannot drift): a Koskari AsyncGenerator passes through as itself
+   (native, never demand-wrapped); an object with am_aiter yields its
+   async iterator; otherwise the sync protocol (PyObject_GetIter,
+   including the sequence fallback).
+
+   :param iterable: borrowed
+   :return: new iterator reference, or NULL with PyErr set
+*/
+PyObject *kos_iter_acquire(PyObject *iterable) {
+
+  if (KosIter_Check(iterable)) {
+    Py_INCREF(iterable);
+    return iterable;
+  }
+
+  if (Py_TYPE(iterable)->tp_as_async
+      && Py_TYPE(iterable)->tp_as_async->am_aiter)
+    return Py_TYPE(iterable)->tp_as_async->am_aiter(iterable);
+
+  return PyObject_GetIter(iterable);
+}
+
+
+/**
+   Close an acquired iterator, best-effort and exception-fenced: a
+   provider through its suite's ki_close, a sync iterator through
+   close(), an async iterator through aclose() with its awaitable
+   demand-driven -- an immediate completion honors the cleanup, a
+   genuine suspension takes the cannot-honor fallback of closing the
+   in-flight iterator. Any pending exception is preserved.
+*/
+void kos_iter_close(PyObject *iter) {
+
+  PyObject *ftyp, *fval, *ftb;
+
+  if (! iter)
+    return;
+
+  PyErr_Fetch(&ftyp, &fval, &ftb);
+
+  {
+    KosIterSlots *islots;
+
+    if (KosIter_CheckSlots(iter, &islots)) {
+      (void) islots->ki_close(iter);
+      PyErr_Clear();
+
+    } else if (Py_TYPE(iter)->tp_iternext) {
+      PyObject *r = PyObject_CallMethod(iter, "close", NULL);
+      Py_XDECREF(r);
+      PyErr_Clear();
+
+    } else {
+      PyObject *aw = PyObject_CallMethod(iter, "aclose", NULL);
+      if (aw) {
+        PyObject *it = PyObject_GetAwaitable(aw);
+        Py_DECREF(aw);
+        if (it) {
+          PyObject *step = PyObject_CallMethod(it, "send", "O", Py_None);
+          if (step) {
+            /* Suspend attempt during close; cannot honor further --
+               close the iterator so its GeneratorExit cleanup runs. */
+            Py_DECREF(step);
+            PyObject *r = PyObject_CallMethod(it, "close", NULL);
+            Py_XDECREF(r);
+          }
+          Py_DECREF(it);
+        }
+      }
+      PyErr_Clear();
+    }
+  }
+
+  PyErr_Restore(ftyp, fval, ftb);
+}
+
+
+/**
+   Classify a produced result under ambient async: a non-awaitable, a
+   Defer, or a future/task handle is a completed value; anything else
+   awaitable must be awaited before use.
+*/
+int KosEval_ResultIsValue(PyObject *result) {
+
+  PyTypeObject *typ = Py_TYPE(result);
+
+  if (! typ->tp_as_async || ! typ->tp_as_async->am_await)
+    return 1;
+  if (KosDefer_Check(result))
+    return 1;
+  return KosEval_IsFuture(result);
+}
+
+/**
+   Get next value from a Python async iterator using the given __anext__
+   awaitable. Caller must have obtained awaitable via get_await_next(iter);
+   this helper consumes it (DECREF). *result_out is set with a new
+   reference on GET_NEXT_VALUE.
+*/
+static KosGetNextResult next_from_python_async_iter(
+    KosEvalState *es,
+    PyObject **await_out,
+    PyObject *iter,
+    PyObject **result_out,
+    PyObject *awaitable) {
+
+  (void) iter;
+  int suspended = 0;
+  PyObject *yielded = NULL;
+  PyObject *result = KosEvalState_EagerStepAwaitable(es, awaitable, &suspended,
+                                                     &yielded);
+  Py_DECREF(awaitable);
+
+  if (suspended && yielded) {
+    KosEvalState_MarkSuspendedNotRunning(es);
+    *await_out = yielded;
+    return GET_NEXT_SUSPEND;
+  }
+
+  if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+    PyErr_Clear();
+    return GET_NEXT_EXHAUSTED;
+  }
+
+  if (result) {
+    *result_out = result;
+    return GET_NEXT_VALUE;
+  }
+
+  return GET_NEXT_ERROR;
+}
+
+
+/**
+   Get next value from a Python sync iterator (PyIter_Next).
+   *result_out is set with a new reference on GET_NEXT_VALUE.
+*/
+static KosGetNextResult next_from_python_sync_iter(
+    KosEvalState *es,
+    PyObject **await_out,
+    PyObject *iter,
+    PyObject **result_out) {
+
+  (void) es;
+  (void) await_out;
+
+  PyObject *n = PyIter_Next(iter);
+  if (n) {
+    *result_out = n;
+    return GET_NEXT_VALUE;
+  }
+
+  if (PyErr_Occurred())
+    return GET_NEXT_ERROR;
+
+  return GET_NEXT_EXHAUSTED;
+}
+
+
+/**
+   Dispatcher: get next from iter (Koskari async gen, Python async iter,
+   or Python sync iter). Does not push; does not perform GetIter.
+   *result_out set only on GET_NEXT_VALUE (caller pushes and DECREF).
+*/
+static inline KosGetNextResult op_get_next_from_iter(
+    KosEvalState *es,
+    PyObject **await_out,
+    PyObject *iter,
+    PyObject **result_out) {
+
+  /* Koskari async gen is handled in NEXT/ITER_NEXT via in-loop attach; never here. */
+
+  PyObject *awaitable = get_await_next(iter);
+  if (awaitable) {
+    KosGetNextResult r = next_from_python_async_iter(es, await_out, iter,
+                                                      result_out, awaitable);
+    return r;
+  }
+
+  if (PyIter_Check(iter))
+    return next_from_python_sync_iter(es, await_out, iter, result_out);
+
+  PyErr_SetString(PyExc_TypeError, "not an iterator");
+  return GET_NEXT_ERROR;
+}
+
+
+/**
+  Globals
+*/
+static inline PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es) {
+
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  PyObject *ns;
+
+  if (! frame) {
+    PyErr_SetString(PyExc_RuntimeError, "no frame for globals lookup");
+    return NULL;
+  }
+
+  ns = KosDynFrame_NS(frame);
+  if (! ns || ! KosNamespace_Check(ns)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "frame has no namespace for globals lookup");
+    return NULL;
+  }
+
+  while (KosNamespace_PARENT(ns))
+    ns = KosNamespace_PARENT(ns);
+
+  return ns;
+}
+
+
+// The end.
