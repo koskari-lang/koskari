@@ -15,16 +15,21 @@
 """
 koskari.itertools
 
-Iterator combinators written in Koskari. Each is a generator over its
-sources, so a source may be a sync iterable, an async iterable, or a
-KosIter provider, and a callable argument runs in the evaluator.
+Iterator combinators, native and koskari-written. A source may be a
+sync iterable, an async iterable, or a KosIter provider, and a
+callable argument runs in the evaluator. Python's itertools drives a
+source through tp_iternext and calls a predicate across the Python
+boundary, so it takes neither.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 
-(declare-exports chain takewhile)
+import-from koskari.lib dropwhile
+
+
+(declare-exports chain dropwhile takewhile)
 
 
 define chain [*: srcs]:

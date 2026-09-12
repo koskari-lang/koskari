@@ -167,7 +167,8 @@ static int koskari_lib_init(PyObject *mod) {
       koskari_async_loop_init(mod) ||
       koskari_property_init(mod) ||
       koskari_partial_init(mod) ||
-      koskari_zip_init(mod))
+      koskari_zip_init(mod) ||
+      koskari_dropwhile_init(mod))
     return -1;
 
   return 0;
@@ -183,6 +184,9 @@ int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   /* clear implementation units */
+  if (koskari_dropwhile_clear(mod))
+    return -1;
+
   if (koskari_zip_clear(mod))
     return -1;
 

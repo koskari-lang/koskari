@@ -73,6 +73,7 @@ struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
 #include "iterate.h"
 #include "transform.h"
 #include "filter.h"
+#include "dropwhile.h"
 #include "map.h"
 #include "zip.h"
 #include "matcher.h"
