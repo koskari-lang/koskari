@@ -75,6 +75,7 @@ struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
 #include "filter.h"
 #include "dropwhile.h"
 #include "map.h"
+#include "pairwise.h"
 #include "starmap.h"
 #include "zip.h"
 #include "matcher.h"
