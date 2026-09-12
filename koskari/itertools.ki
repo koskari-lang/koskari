@@ -15,9 +15,9 @@
 """
 koskari.itertools
 
-Iterator combinators, native and koskari-written. A source may be a
-sync iterable, an async iterable, or a KosIter provider, and a
-callable argument runs in the evaluator. Python's itertools drives a
+Iterator combinators, every one a native KosIter provider. A source
+may be a sync iterable, an async iterable, or a KosIter provider, and
+a callable argument runs in the evaluator. Python's itertools drives a
 source through tp_iternext and calls a predicate across the Python
 boundary, so it takes neither.
 
@@ -27,36 +27,13 @@ boundary, so it takes neither.
 
 
 import-from koskari.lib:
-  accumulate batched compress cycle dropwhile filterfalse islice
-  pairwise starmap takewhile zip-longest
+  accumulate batched chain chain-from-iterable compress cycle
+  dropwhile filterfalse islice pairwise starmap takewhile zip-longest
 
 
-(declare-exports accumulate batched chain compress cycle dropwhile
-                 filterfalse islice pairwise starmap takewhile
-                 zip-longest)
-
-
-define chain [*: srcs]:
-  """
-  Yield every element of each source in turn
-  """
-
-  for-each [x srcs]:
-    yield-from x
-
-
-define _takewhile [pred src]:
-  """
-  Yield elements of src while pred holds; stop at the first that fails,
-  leaving the rest of src unconsumed
-
-  Superseded by the native takewhile, kept for comparison
-  """
-
-  for-each [x src]:
-    unless (pred x):
-      return
-    yield x
+(declare-exports accumulate batched chain chain-from-iterable compress
+                 cycle dropwhile filterfalse islice pairwise starmap
+                 takewhile zip-longest)
 
 
 ; The end.

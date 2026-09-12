@@ -17,10 +17,11 @@ Tests for koskari.itertools takewhile.
 The sync shapes live in data/takewhile_cases.ki and run at import time;
 these tests import that module through the koskari import hook and
 assert the collected results. The async-source shapes call takewhile
-from Python and drive the generator with async iteration. Because
-koskari.itertools is written in Koskari, the full stack (reader,
-compiler, importer, bootstrap) must be available, so these run in the
-reproducers phase.
+from Python and drive it with async iteration. takewhile is a native
+provider reached through the koskari.itertools module, so the full
+stack (reader, compiler, importer, bootstrap) must be available and
+these run in the reproducers phase; the per-provider unit tests live
+in tests/lib.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3

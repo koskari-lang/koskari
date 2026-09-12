@@ -12,7 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.itertools, the iterator combinators written in Koskari
+Tests for koskari.itertools reached through the full stack: reader,
+compiler, importer, bootstrap
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
