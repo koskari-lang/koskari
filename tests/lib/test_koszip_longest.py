@@ -93,6 +93,11 @@ class TestKosZipLongestSync(unittest.TestCase):
     def test_every_source_empty(self):
         self.assertEqual(list(KosZipLongest([], [])), [])
 
+    def test_more_sources_than_the_sync_mask_holds(self):
+        rows = [[i, i + 100] for i in range(40)]
+        self.assertEqual(list(KosZipLongest(*rows)),
+                         list(itertools.zip_longest(*rows)))
+
     def test_three_sources_of_different_lengths(self):
         self.assertEqual(
             list(KosZipLongest([1, 2], [3], [4, 5, 6], fillvalue=-1)),
@@ -177,6 +182,21 @@ class TestKosZipLongestDriven(unittest.IsolatedAsyncioTestCase):
     async def test_itertools_cannot_take_the_same_source(self):
         with self.assertRaises(TypeError):
             list(itertools.zip_longest([1, 2], agen("ab")))
+
+    async def test_driven_source_retires_past_the_sync_mask(self):
+        # the per-source sync flags are cached in 32 bits; sources
+        # beyond that are checked live. This one is both driven and
+        # short, so it retires from index 35 while the rest run on
+        rows = [[i, i + 100] for i in range(40)]
+        sources = list(rows)
+        sources[35] = agen([35])
+
+        expected_rows = list(rows)
+        expected_rows[35] = [35]
+
+        self.assertEqual(
+            await self.collect(KosZipLongest(*sources, fillvalue=-1)),
+            list(itertools.zip_longest(*expected_rows, fillvalue=-1)))
 
     async def test_source_error_propagates(self):
         async def boom():

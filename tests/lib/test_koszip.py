@@ -85,6 +85,10 @@ class TestKosZipSync(unittest.TestCase):
         self.assertEqual(list(KosZip([1, 2], [3, 4], [5, 6], [7, 8])),
                          [(1, 3, 5, 7), (2, 4, 6, 8)])
 
+    def test_more_sources_than_the_sync_mask_holds(self):
+        rows = [[i, i + 100] for i in range(40)]
+        self.assertEqual(list(KosZip(*rows)), list(zip(*rows)))
+
     def test_row_is_a_tuple(self):
         self.assertIsInstance(next(iter(KosZip([1], [2]))), tuple)
 
@@ -138,6 +142,17 @@ class TestKosZipDriven(unittest.IsolatedAsyncioTestCase):
     async def test_builtin_zip_cannot_take_the_same_source(self):
         with self.assertRaises(TypeError):
             list(zip([1, 2, 3], agen("abc")))
+
+    async def test_driven_source_past_the_sync_mask(self):
+        # the per-source sync flags are cached in 32 bits; sources
+        # beyond that are checked live, so a driven one at index 35
+        # is what proves the fallback
+        rows = [[i, i + 100] for i in range(40)]
+        sources = list(rows)
+        sources[35] = agen(rows[35])
+
+        self.assertEqual(await self.collect(KosZip(*sources)),
+                         list(zip(*rows)))
 
 
 class TestKosZipTeardown(unittest.IsolatedAsyncioTestCase):
