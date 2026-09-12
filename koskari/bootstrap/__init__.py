@@ -30,12 +30,12 @@ from typing import Any, Dict
 
 from ..lib import (
     AttributeRef, ConstantRef, Datum, DynamicRef, ItemRef, KosFilter, KosMap,
-    KosPartial, KosProperty, MemoizedRef, Module, ModuleNamespace, ParamRef,
-    Ref, apply, bracket_cons, bracket_nil, build_dict, build_list, build_set,
-    build_str, build_tuple, car, cdr, cons, defer, demand, demand_apply,
-    demand_call, deref, gensym, getattr_star, getitem_star, hasattr_star,
-    hasitem_star, keyword, kos_repr, list_append, nil, pair, parameter, setcar,
-    setcdr, symbol, values)
+    KosPartial, KosProperty, KosZip, MemoizedRef, Module, ModuleNamespace,
+    ParamRef, Ref, apply, bracket_cons, bracket_nil, build_dict, build_list,
+    build_set, build_str, build_tuple, car, cdr, cons, defer, demand,
+    demand_apply, demand_call, deref, gensym, getattr_star, getitem_star,
+    hasattr_star, hasitem_star, keyword, kos_repr, list_append, nil, pair,
+    parameter, setcar, setcdr, symbol, values)
 from ..types import (
     TypePredicate, bracket_splice, build_proper, is_nil, is_None, is_proper,
     is_recursive, unpack)
@@ -154,6 +154,7 @@ def make_bootstrap():
     _ty('defer', defer)
     _ty('filter', KosFilter)
     _ty('map', KosMap)
+    _ty('zip', KosZip)
     _ty('demand', demand)
     _ty('partial', KosPartial)
     _ty('keyword', keyword)
@@ -265,7 +266,7 @@ def make_bootstrap():
     _bind('subclass?', issubclass)
     _bind('sum', sum)
     _bind('vars', vars)
-    _bind('zip', zip)
+    _ty('py-zip', zip)
 
     import koskari.lib as kl
     for name in ('*', '+', '-', '/', '//', '&', '|', '^'):

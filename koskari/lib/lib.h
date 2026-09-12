@@ -74,6 +74,7 @@ struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
 #include "transform.h"
 #include "filter.h"
 #include "map.h"
+#include "zip.h"
 #include "matcher.h"
 #include "namespace.h"
 #include "object.h"

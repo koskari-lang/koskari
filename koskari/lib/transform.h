@@ -24,13 +24,17 @@
 
 
 /**
-   KosTransform: the lazy one-source, one-callable KosIter provider that
-   map (map.c) and filter (filter.c) are the two instances of. This
-   unit holds everything the two share: the instance layout,
-   construction, the GC and Python surfaces, the suite functions other
-   than the step itself, and the staging of a resume-carrying frame.
-   Each instance keeps only its own step and the resume chain that
-   step arms.
+   KosTransform: the lazy KosIter provider body that map (map.c) and
+   filter (filter.c) are instances of. This unit holds everything its
+   providers share: the instance layout, one-source construction, the
+   GC and Python surfaces, the suite functions other than the step
+   itself, and the staging of a resume-carrying frame. Each provider
+   keeps only its own step and the resume chain that step arms.
+
+   A provider embeds KosTransform first, sets a larger tp_basicsize,
+   and chains its traverse and clear to the base's. Sources beyond the
+   first live in storage the provider owns and publishes through the
+   sources view; the base reads that view only to close what it holds.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -43,32 +47,74 @@ typedef struct KosTransform {
                             resolved at construction; cs_callable NULL
                             for filter's None predicate (the element's
                             truthiness decides) */
-  PyObject *source;      /* acquired iterator (sync or async) */
-  PyObject *pending;     /* filter's element under test while a
-                            verdict is in flight; owned. map never
-                            sets it */
+  PyObject *source;      /* arity-1 storage: acquired iterator (sync
+                            or async); sources points here */
+  PyObject **sources;    /* borrowed view of nsrc acquired iterators,
+                            never owned: &source at arity 1, else a
+                            provider's own storage. A provider
+                            retracts the view before releasing that
+                            storage, since tp_clear runs while the
+                            object is still alive */
+  PyObject *pending;     /* value in flight across a suspension --
+                            filter's element under test, a partial row
+                            -- owned, and cleared at every step
+                            completion by ki_finish. State that must
+                            outlive a step belongs to the provider */
   KosDynFrame *cached_frame; /* inert frame parked between steps */
   KosContext *ctx;       /* durable drive context (ki_pyctx), created
                             lazily; adapter-recycled, freed with the
                             transform */
-  uint8_t src_sync;      /* source steps through tp_iternext alone */
+  uint16_t nsrc;         /* entries in sources; 0 once retracted */
+  uint16_t idx;          /* resume position within a step that fetches
+                            more than once; untouched by providers
+                            that fetch a single element per step */
+  uint8_t src_sync;      /* the current source steps through
+                            tp_iternext alone; re-resolved on each
+                            acquisition by providers that swap sources
+                            rather than fixed for the lifetime */
   uint8_t closed;        /* exhausted or closed */
   uint8_t busy;          /* a step is in flight; ki_finish clears */
 } KosTransform;
 
 
 /**
-   tp_new body shared by both types: KIND(func, iterable). allow_none
-   admits None as the callable. The iterator is acquired eagerly with
-   the PUSH_FOREACH preference order: a KosIter provider or any
-   iterator passes through as itself, an async iterable yields its
-   async iterator, otherwise the sync protocol.
+   What None means in a provider's callable position. A provider that
+   substitutes a default for None rather than dropping the callable
+   resolves that in its own tp_new; this enum does not carry it.
+*/
+typedef enum KosTransformNone {
+  KOS_TF_NONE_REJECT = 0,  /* None is not callable here: TypeError */
+  KOS_TF_NONE_BARE,        /* None means no callable at all, the way
+                              filter falls back to truthiness */
+} KosTransformNone;
+
+
+/**
+   How a provider's tp_new reads its argument tuple.
+*/
+typedef struct KosTransformSpec {
+  uint8_t has_callable;  /* the leading argument is the callable */
+  uint8_t none_means;    /* KosTransformNone; read only when
+                            has_callable */
+} KosTransformSpec;
+
+
+/**
+   tp_new body for a one-source provider: KIND(func, iterable) when the
+   spec declares a callable, KIND(iterable) otherwise. The iterator is
+   acquired eagerly with the PUSH_FOREACH preference order: a KosIter
+   provider or any iterator passes through as itself, an async iterable
+   yields its async iterator, otherwise the sync protocol. The view is
+   published over the base's own source slot.
+
+   A multi-source provider acquires into storage it owns and publishes
+   the view itself; this entry does not serve it.
 */
 PyObject *kos_transform_new(
     PyTypeObject *type,
     PyObject *args,
     PyObject *kwds,
-    int allow_none);
+    const KosTransformSpec *spec);
 
 
 /**

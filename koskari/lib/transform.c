@@ -44,7 +44,7 @@ PyObject *kos_transform_new(
     PyTypeObject *type,
     PyObject *args,
     PyObject *kwds,
-    int allow_none) {
+    const KosTransformSpec *spec) {
 
   const char *kind = transform_kind(type);
   PyObject *func = NULL;
@@ -54,12 +54,20 @@ PyObject *kos_transform_new(
     PyErr_Format(PyExc_TypeError, "%s takes no keyword arguments", kind);
     return NULL;
   }
-  if (! PyArg_UnpackTuple(args, kind, 2, 2, &func, &iterable))
-    return NULL;
 
-  if (! PyCallable_Check(func) && ! (allow_none && func == Py_None)) {
-    PyErr_Format(PyExc_TypeError, "%s func must be callable%s", kind,
-                 allow_none ? " or None" : "");
+  if (spec->has_callable) {
+    int bare = (spec->none_means == KOS_TF_NONE_BARE);
+
+    if (! PyArg_UnpackTuple(args, kind, 2, 2, &func, &iterable))
+      return NULL;
+
+    if (! PyCallable_Check(func) && ! (bare && func == Py_None)) {
+      PyErr_Format(PyExc_TypeError, "%s func must be callable%s", kind,
+                   bare ? " or None" : "");
+      return NULL;
+    }
+
+  } else if (! PyArg_UnpackTuple(args, kind, 1, 1, &iterable)) {
     return NULL;
   }
 
@@ -74,15 +82,19 @@ PyObject *kos_transform_new(
   }
 
   t->source = source;
+  t->sources = &t->source;
+  t->nsrc = 1;
+  t->idx = 0;
 
-  /* Resolve the callable's shape and the source's protocol once; both
-     are fixed for the transform's lifetime. */
-  if (func == Py_None) {
+  /* Resolve the callable's shape once; it is fixed for the
+     transform's lifetime. The source's protocol is resolved per
+     acquisition, which for a one-source provider is the same thing. */
+  if (func && func != Py_None) {
+    KosCallShape_Init(&t->fn, func);
+  } else {
     t->fn.cs_callable = NULL;
     t->fn.cs_slots = NULL;
     t->fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
-  } else {
-    KosCallShape_Init(&t->fn, func);
   }
   t->src_sync = KosIter_CheckSync(source);
 
@@ -184,6 +196,24 @@ KosIterStepResult kos_transform_stage(
 /* === the rest of the iter suite === */
 
 
+/**
+   Close every acquired iterator the view names. A NULL slot -- one a
+   lazy provider has not reached, or one it cleared as it finished --
+   is a no-op in kos_iter_close, so a partly populated view needs no
+   special case. A retracted view (sources NULL) closes nothing.
+*/
+static void close_sources(KosTransform *t) {
+
+  uint16_t i;
+
+  if (! t->sources)
+    return;
+
+  for (i = 0; i < t->nsrc; i++)
+    kos_iter_close(t->sources[i]);
+}
+
+
 KosIterStepResult kos_transform_throw(
     KosEvalState *es,
     PyObject *self,
@@ -210,7 +240,7 @@ KosIterStepResult kos_transform_throw(
        closed, and let GeneratorExit propagate as the success shape. */
     t->closed = 1;
     t->busy = 0;
-    kos_iter_close(t->source);
+    close_sources(t);
   }
 
   PyErr_SetObject(throw_typ, throw_exc);
@@ -232,7 +262,7 @@ int kos_transform_close(PyObject *self) {
 
   t->closed = 1;
   t->busy = 0;
-  kos_iter_close(t->source);
+  close_sources(t);
 
   return 0;
 }

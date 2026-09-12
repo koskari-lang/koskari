@@ -216,12 +216,18 @@ static KosIterStepResult map_iter_step(
 /* === the type === */
 
 
+static const KosTransformSpec map_spec = {
+  .has_callable = 1,
+  .none_means = KOS_TF_NONE_REJECT,
+};
+
+
 static PyObject *kosmap_new(
     PyTypeObject *type,
     PyObject *args,
     PyObject *kwds) {
 
-  return kos_transform_new(type, args, kwds, 0);
+  return kos_transform_new(type, args, kwds, &map_spec);
 }
 
 

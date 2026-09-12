@@ -313,12 +313,18 @@ static KosIterStepResult filter_iter_step(
 /* === the type === */
 
 
+static const KosTransformSpec filter_spec = {
+  .has_callable = 1,
+  .none_means = KOS_TF_NONE_BARE,
+};
+
+
 static PyObject *kosfilter_new(
     PyTypeObject *type,
     PyObject *args,
     PyObject *kwds) {
 
-  return kos_transform_new(type, args, kwds, 1);
+  return kos_transform_new(type, args, kwds, &filter_spec);
 }
 
 

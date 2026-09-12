@@ -1,7 +1,8 @@
 # Itertools Natives
 
-**Status:** proposal. Nothing implemented; `map` and `filter` are the
-only transforms and they ship in the builtins namespace.
+**Status:** proposal, partly implemented. `map` and `filter` are native
+transforms in the builtins namespace. `koskari/itertools.ki` carries
+`chain` and `takewhile` as koskari-written generators.
 
 ## What exists
 
@@ -29,6 +30,36 @@ and `_ty('filter', KosFilter)` bind the native under the bare name plus a
 `py-filter`. `zip`, `enumerate`, `reversed`, `sorted`, and `sum` are
 Python's, bound bare.
 
+`koskari/itertools.ki` exists as a `.ki` module and exports `chain` and
+`takewhile`, both generators over their sources.
+
+## Why not Python's itertools
+
+Python's versions break on koskari inputs.
+
+**Callables.** `itertools.takewhile(pred, src)` calls `pred` through
+the Python call protocol. A koskari function called that way returns a
+coroutine, and C code testing the result for truth sees a truthy
+object, so the predicate reads as always true. Wrapping the callable in
+`demand` restores the verdict but forces every call to run to
+completion, so the predicate can no longer suspend.
+
+**Sources.** Python's versions drive a source with `PyIter_Next` and
+have nowhere to suspend. A KosIter provider is reachable through the
+demand adapter, each step forced to completion. An async iterator is
+not reachable at all.
+
+A combinator written in koskari has neither problem: `(pred x)` is a
+call in the evaluator, and `for-each`/`yield-from` drive a sync
+iterable, an async iterable, and a provider alike. That is what the
+two functions in `koskari/itertools.ki` already buy.
+
+The natives are the performance layer over those same semantics. A
+`.ki` generator costs a frame and a generator resume per element; a
+provider on the `transform.c` base completes the sync-source case in C
+and drops to one resume-carrying frame only where a fetch or a call
+suspends.
+
 ## Candidates
 
 Two tiers, by what the native buys.
@@ -46,11 +77,11 @@ boundary and coming back as a coroutine. Same win `map`/`filter` have.
 | `filterfalse` | none; filter with the verdict inverted |
 | `groupby` | current key, current group, lookahead element |
 
-**Source-shaping.** No callable. Python's `itertools` already does
-these over sync sources, and a KosIter provider is a sync iterator
-through the demand adapter, so the only win is a driven source: an
-async iterator or a provider stepped natively, consumed with ambient
-await and no coroutine per element.
+**Source-shaping.** No callable. Over sync sources Python's `itertools`
+suffices, and a KosIter provider reaches it through the demand adapter.
+The native case is a driven source: an async iterator, or a provider
+stepped natively, consumed with ambient await and no coroutine per
+element.
 
 | Native | Extra state |
 |---|---|
@@ -63,6 +94,7 @@ await and no coroutine per element.
 | `product`, `tee`, `cycle`, `repeat`, `count` | buffering or no source; poor fit for the step model, out of scope |
 
 `zip` is the one candidate that shadows a bare Python builtin binding.
+Its driven-source case is decided; see Placement.
 
 ## Generalizing the base
 
@@ -78,10 +110,15 @@ traverse/clear call the base's then visit its own fields. Needed:
 - **Optional trailing arguments** (`accumulate` initial, `islice`
   bounds): the shared `tp_new` takes a per-type parser after the
   callable/source prefix.
-- **Sequential fetch across driven sources.** A `zip` step over N
-  driven sources chains N `KosEvalState_NextResume` requests; the resume
-  state is the transform plus an index. `pending` is one slot; a
-  multi-source provider needs a small element buffer.
+- **Sequential fetch across driven sources.** A `zip` step fetches its
+  N sources left to right, stopping at the first exhausted one with the
+  elements to its left already consumed. Flatten the walk: one C loop
+  over the sources, arming a `KosEvalState_NextResume` only for a source
+  that suspends and resuming back into the loop at that index. Not one
+  provider per source, not a frame per source, not a resume bounce per
+  element. A row whose sources are all sync and ready completes in C
+  with no frame. `pending` is one slot, so the partial row needs an
+  element buffer that survives a suspension mid-row.
 
 Nothing in the step-abort or stage helpers changes.
 
@@ -101,11 +138,14 @@ providers. Builtins untouched. Python readers keep their mental model
 (itertools is imported), and Python's own `itertools` stays reachable
 under its own name with no twin convention needed.
 
-**Recommendation: B**, with one exception considered separately:
-`zip`, because it is already bare in builtins. It moves to native only
-if the driven-source case matters enough to pay for `py-zip`; the
-callable-applying tier is where the evaluator win is, and `zip` is not
-in it. Leave `zip` as Python's until a driven-source use case shows up.
+**Recommendation: B**, except `zip`, which goes native and bare in
+builtins with `py-zip` as the twin.
+
+`zip` is settled separately because Python's `zip` cannot consume an
+async iterator, and bare `zip` is the name programs reach for. A native
+`zip` behind an `import-from` leaves the default binding as the one
+that breaks on an async source. The `py-zip` twin is the price.
+`zip-longest` has no bare binding to preserve and stays in the module.
 
 ## Initialization
 
@@ -149,14 +189,18 @@ compile that dominates `import koskari`.
   and sub-iterator make it a second provider shape?
 - `starmap` on a driven source: unpack in C from the fetched element,
   or reuse the map resume chain with a star-shaped call.
-- Whether the `.ki` module also carries koskari-written combinators
-  (`flatten`, `partition`) that have no native, so the module is the
-  one place users look.
+- Which koskari-written combinators the `.ki` module carries beyond a
+  native's reach (`flatten`, `partition`), so the module is the one
+  place users look.
+- What happens to a `.ki` definition when a native lands under the same
+  name. `chain` and `takewhile` are both shipped as generators and
+  listed as native candidates.
 
 ## Refs
 
 - `koskari/lib/transform.h`, `transform.c`, `map.c`, `filter.c`
 - `koskari/lib/lib.c` (init chain)
 - `koskari/bootstrap/__init__.py` (`_ty`, `py-` twins)
+- `koskari/itertools.ki` (`chain`, `takewhile`)
 - [package-layout.md](package-layout.md) (where symbols are defined)
 - [../bundles-and-namespace-facets.md](../bundles-and-namespace-facets.md)
