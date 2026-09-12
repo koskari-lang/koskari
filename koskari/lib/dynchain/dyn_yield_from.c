@@ -242,6 +242,13 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
     return kos_dyn_pop_yield_from(es, yf);
   }
 
+  /* Disarm before the splice: kos_dyn_resync_chain below retargets
+     the live frame to the nearest FRAME from dyn_top, and the disarm
+     only clears the frame it finds live. Running it afterwards misses
+     a delegating frame buried below that point and leaves a live
+     resume pointer on it. */
+  kos_dyn_yield_from_disarm(es, yf);
+
   p = KosDynNode_PARENT(node);
   for (c = KosEvalState_DYN_TOP(es); c; c = KosDynNode_PARENT(c)) {
     if (KosDynNode_PARENT(c) == node) {
@@ -251,7 +258,6 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
   }
   kos_dyn_resync_chain(es);
   KosDynNode_PARENT(node) = NULL;
-  kos_dyn_yield_from_disarm(es, yf);
   kos_yieldfrom_close_delegate(yf);
   kos_dynyieldfrom_free(yf);
   return 0;

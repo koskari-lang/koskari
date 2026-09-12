@@ -208,11 +208,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
     zip_longest_fill(z, t->idx);
     t->idx++;
 
-    /* The raise walk called this resume, so the row cannot be carried
-       on by threading back into the fetch loop; the step arms itself
-       and lets the prologue re-enter instead. */
-    return kos_transform_resume_continue(
-        es, t, (void *) zip_longest_resume_fetch);
+    RESUME_HOP(zip_longest_resume_fetch, es, z, NULL);
   }
 
   PyTuple_SET_ITEM(t->pending, (Py_ssize_t) t->idx, element);

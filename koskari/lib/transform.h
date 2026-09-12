@@ -183,33 +183,6 @@ KosIterStepResult kos_transform_stage(
     KosDynNode *pre_top);
 
 
-/**
-   Continue a step whose resume handled an exception the raise walk
-   handed it. The walk calls a resume as a plain call and must not be
-   threaded on -- no RESULT_ENTRY, RESUME_HOP, or KOS_THREAD_NEXT --
-   so a step with fetching left to do arranges its own continuation
-   instead: arm resume on the step frame and answer REPROLOGUE, which
-   stops the walk and lets the prologue deliver into it against a
-   settled chain. The caller must have cleared the exception first.
-
-   A step that the handling finishes answers with
-   KosNativeFrame_ReturnPark instead; only one with more work needs
-   this.
-
-   Reads the live frame, which is the step frame for a provider: a
-   code-less step frame is handed the exception by the walk's
-   frame-crossing branch, where the live frame is the one carrying the
-   resume.
-
-   :param resume: the step's own resume to re-enter through
-   :return: EVAL_REPROLOGUE
-*/
-KosOpResult kos_transform_resume_continue(
-    KosEvalState *es,
-    KosTransform *t,
-    void *resume);
-
-
 /* The suite functions other than ki_step, shared by both types. */
 KosIterStepResult kos_transform_throw(
     KosEvalState *es,

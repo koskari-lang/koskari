@@ -192,36 +192,34 @@ typedef enum KosGetNextResult {
    that duplication across consumers is what these entries exist to
    remove.
 
-   NULL with PyErr set means the raise walk is propagating a pending
-   exception through the frame the resume is set on, and reaches
-   every armed resume before its frame is torn through: a code-less
-   step frame that is the live frame when its own operation fails (a
-   source exhausted or raising, a callee raising), and a resume frame
-   at dyn_top above the live frame alike. A frame carrying bytecode is
-   not handed the exception through the frame-crossing branch: its
-   resume is a yield-from phase resume, reached through its own node.
-   The resume either handles the exception or propagates it by
-   returning EVAL_RAISE; a consumer that only propagates sees exactly
-   what it would have seen with no resume at all.
+   NULL with PyErr set means the delivery failed -- the source was
+   exhausted, the source raised, the request failed, the callee raised
+   -- reported the way a PyObject * API reports failure to its caller.
+   A resume on the live frame runs from the trampoline against a
+   settled chain, so it may do anything a resume handed a value may
+   do. Thread on with
+   RESULT_ENTRY or RESUME_HOP to carry the step further, complete the
+   frame with KosNativeFrame_ReturnPark, or return EVAL_RAISE to
+   decline. Declining re-raises with the resume already disarmed, so
+   the unwind proceeds exactly as it would have with no resume armed
+   at all; a consumer that only propagates needs no code beyond that
+   one line.
 
-   A resume that handles by completing the frame (EVAL_RETURN) owns
-   clearing the exception it was handed -- it is delivering a value,
-   and a pending exception would surface from an unrelated point at
-   the next prologue re-entry. KOS_EVAL_SAFETYNET faults on it.
-   EVAL_REPROLOGUE carries no such obligation: arranging the frame's
-   continuation and leaving the exception standing routes it back
-   through the pending-exception step.
+   The delivery reaches a code-less step frame through the prologue
+   (process_raise hands off to it rather than walking). A frame
+   carrying bytecode is never handed a failure that way: its resume is
+   a yield-from phase resume, which reads a NULL delivery as a send of
+   None, and it is reached through its own node instead.
 
-   The walk calls the resume as a plain call and reads the result:
-   REPROLOGUE means the resume handled the exception and arranged the
-   frame's continuation (the walk stops), EVAL_RETURN means it handled
-   the exception by completing the frame (the return is applied from
-   the live frame, as KosNativeFrame_ReturnPark completes a step),
-   EVAL_RAISE means it is propagating it (the pop proceeds), EVAL_FATAL
-   aborts. A resume called by the walk must return one of those and
-   never thread on -- no RESULT_ENTRY, RESUME_HOP, or KOS_THREAD_NEXT
-   -- since a chain run inside the walk's frame would hand the walk a
-   signal it cannot apply.
+   A resume on a frame the walk reaches ABOVE the live frame (a
+   flattened delegation) does not get that freedom. The prologue's
+   offer tests the live frame and cannot see it, so the walk still
+   calls it as a plain call from inside the unwind, and it may only
+   answer REPROLOGUE or EVAL_RAISE -- never thread on, since a chain
+   run inside the walk would hand it a signal it cannot apply. A
+   resume cannot tell the two paths apart from its own code, so a
+   consumer that could be armed on either must keep to the narrower
+   rule. Every KosIter provider arms on the live frame only.
 
    Returns a KosOpResult naming the next signal to the loop: another
    CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT, or

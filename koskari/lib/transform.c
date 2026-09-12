@@ -206,19 +206,6 @@ KosIterStepResult kos_transform_stage(
 }
 
 
-KosOpResult kos_transform_resume_continue(
-    KosEvalState *es,
-    KosTransform *t,
-    void *resume) {
-
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-
-  KosDynFrame_RESUME_FN(frame) = resume;
-  KosDynFrame_RESUME_STATE(frame) = t;
-  return EVAL_REPROLOGUE();
-}
-
-
 /* === the rest of the iter suite === */
 
 

@@ -453,14 +453,20 @@ KosOpResult kos_dyn_unwind_to_loop(
 
 
 /**
-   Hand the pending exception to the CPS resume armed on frame: a plain
-   call with NULL, the resume disarmed first as the delivery step
-   disarms it. The resume handles the exception -- REPROLOGUE once it
-   has arranged the frame's continuation, or RETURN completing the
-   frame, which the walk's caller applies -- or propagates it with
-   EVAL_RAISE, in which case the walk goes on to pop the frame.
+   Hand the pending exception to the CPS resume armed on a frame the
+   walk reached at dyn_top above the live frame -- a flattened
+   delegation whose resume the prologue's own delivery cannot reach,
+   since that tests the live frame. A plain call with NULL, the resume
+   disarmed first as the delivery step disarms it. The resume handles
+   the exception (REPROLOGUE, once it has arranged the frame's
+   continuation) or propagates it with EVAL_RAISE, in which case the
+   walk goes on to pop the frame.
 
-   :return: EVAL_REPROLOGUE, EVAL_RETURN, EVAL_RAISE, or EVAL_FATAL
+   A code-less step frame that is itself the live frame does not come
+   through here: process_raise hands that case to the prologue, which
+   delivers against a settled chain where the resume may thread on.
+
+   :return: EVAL_REPROLOGUE, EVAL_RAISE, or EVAL_FATAL
 */
 static KosOpResult raise_walk_hand_to_resume(
     KosEvalState *es,
@@ -482,23 +488,6 @@ static KosOpResult raise_walk_hand_to_resume(
     case KOS_RES_REPROLOGUE:
       return EVAL_REPROLOGUE();
 
-    case KOS_RES_RETURN:
-      /* Completing the frame delivers a value, so the exception the
-         resume was handed must be gone. REPROLOGUE carries no such
-         obligation: a resume may arrange its continuation and leave
-         the exception standing, and the prologue's pending-exception
-         step routes it straight back here. */
-#if KOS_EVAL_SAFETYNET
-      if (PyErr_Occurred()) {
-        Py_XDECREF(hr.val);
-        PyErr_SetString(PyExc_SystemError,
-                        "resume completed its frame with an exception"
-                        " still pending");
-        return EVAL_FATAL();
-      }
-#endif
-      return hr;
-
     case KOS_RES_RAISE:
     case KOS_RES_FATAL:
       return hr;
@@ -511,7 +500,7 @@ static KosOpResult raise_walk_hand_to_resume(
 #if KOS_EVAL_SAFETYNET
       PyErr_SetString(PyExc_SystemError,
                       "resume answered a propagating exception with"
-                      " a signal other than REPROLOGUE, RETURN, or RAISE");
+                      " a signal other than REPROLOGUE or RAISE");
       return EVAL_FATAL();
 #else
       return EVAL_RAISE();
@@ -527,9 +516,7 @@ static KosOpResult raise_walk_hand_to_resume(
    frame and generator boundaries as the exception propagates. Returns
    KosOpResult (the eval-loop boundary type): EVAL_REPROLOGUE when a handler
    applied, EVAL_RAISE when none remains, EVAL_AWAIT when an async unwind
-   started, EVAL_RETURN when a resume-carrying frame answered the
-   exception by completing itself (the caller applies the return from
-   the live frame). Callers: process_raise (the unified RAISE ingress in
+   started. Callers: process_raise (the unified RAISE ingress in
    eval.c).
 */
 KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
@@ -569,29 +556,10 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
       if (! PyErr_Occurred())
         break;
 
-      /* A code-less frame carrying a CPS resume sees the pending
-         exception before it is torn through: a step frame whose own
-         operation failed, or one whose callee or source raised into
-         it. The resume handles the exception or propagates it, and
-         only a propagated one crosses the frame.
-
-         Code-less is the discriminator, not an optimization. A CPS
-         step frame is code-less by construction
-         (KosResumeFrame_Install). A resume armed on a frame that
-         carries bytecode is a yield-from phase resume, armed on the
-         delegating frame itself (kos_dyn_yield_from_arm), and those
-         read a NULL delivery as a send of None rather than as a
-         failure -- handing one a pending exception would swallow it
-         and resume the delegation. Those resumes are reached through
-         their own node, which disarms as it is popped, so this branch
-         must leave them alone. */
-      if (! KosDynFrame_CODE(KosEvalState_FRAME(es))
-          && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
-        KosOpResult hr = raise_walk_hand_to_resume(es, KosEvalState_FRAME(es));
-
-        if (hr.kind != KOS_RES_RAISE)
-          return hr;
-      }
+      /* A code-less step frame's resume has already seen this
+         exception: process_raise hands it to the prologue, which
+         delivers it as a NULL against a settled chain, and the walk
+         only runs once that resume declined and disarmed itself. */
 
       {
         KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
