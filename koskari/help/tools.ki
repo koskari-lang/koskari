@@ -272,7 +272,10 @@ define _namespace_get [namespace key]:
   Fetch one binding from a namespace mapping
   """
 
-  if (hasattr? namespace "get"):
+  if (hasattr? namespace "resolve"):
+    namespace.resolve key None
+
+  elif (hasattr? namespace "get"):
     namespace.get key
 
   else:
