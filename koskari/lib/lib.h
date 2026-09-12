@@ -80,6 +80,7 @@ struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
 #include "pairwise.h"
 #include "starmap.h"
 #include "zip.h"
+#include "zip_longest.h"
 #include "matcher.h"
 #include "namespace.h"
 #include "object.h"
