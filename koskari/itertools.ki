@@ -27,12 +27,13 @@ boundary, so it takes neither.
 
 
 import-from koskari.lib:
-  accumulate batched compress cycle dropwhile islice pairwise starmap
-  zip-longest
+  accumulate batched compress cycle dropwhile filterfalse islice
+  pairwise starmap zip-longest
 
 
 (declare-exports accumulate batched chain compress cycle dropwhile
-                 islice pairwise starmap takewhile zip-longest)
+                 filterfalse islice pairwise starmap takewhile
+                 zip-longest)
 
 
 define chain [*: srcs]:

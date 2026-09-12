@@ -48,6 +48,24 @@
 #include "lib.h"
 
 
+typedef struct KosFilter {
+  KosTransform base;
+  uint8_t invert;   /* filterfalse: the verdict selects what filter
+                       would drop */
+} KosFilter;
+
+
+/**
+   Does this verdict keep the element? filterfalse is filter with the
+   answer turned over, which is the whole of the difference between
+   them.
+*/
+static inline int filter_keeps(KosFilter *f, int ok) {
+
+  return f->invert ? ! ok : ok;
+}
+
+
 /* === the step's CPS resumes ===
 
    No frame-carrying capture: replaying a captured step would
@@ -139,7 +157,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
       Py_DECREF(element);
       return EVAL_RAISE();
     }
-    if (ok)
+    if (filter_keeps((KosFilter *) state, ok))
       return KosNativeFrame_ReturnPark(es, element, &f->cached_frame);
 
     Py_DECREF(element);
@@ -181,7 +199,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
   if (ok < 0)
     return EVAL_RAISE();
 
-  if (ok) {
+  if (filter_keeps((KosFilter *) state, ok)) {
     PyObject *element = f->pending;
 
     f->pending = NULL;
@@ -230,7 +248,7 @@ static KosIterStepResult filter_iter_step(
           Py_DECREF(element);
           return KOS_ITER_ERROR;
         }
-        if (ok) {
+        if (filter_keeps((KosFilter *) self, ok)) {
           *out = element;
           return KOS_ITER_VALUE;
         }
@@ -268,7 +286,7 @@ static KosIterStepResult filter_iter_step(
               Py_DECREF(element);
               return KOS_ITER_ERROR;
             }
-            if (ok) {
+            if (filter_keeps((KosFilter *) self, ok)) {
               *out = element;
               return KOS_ITER_VALUE;
             }
@@ -328,12 +346,40 @@ static PyObject *kosfilter_new(
 }
 
 
+/**
+   filterfalse(func, iterable): a filter whose verdict is turned over.
+   It is the same object with one flag set rather than a type of its
+   own, since nothing else about the two differs.
+*/
+static PyObject *kosfilter_false(PyObject *self, PyObject *args) {
+
+  PyObject *made;
+
+  (void) self;
+
+  made = kos_transform_new(KOS_EVALUATED_PYTYPE(KosFilterType), args, NULL,
+                           &filter_spec);
+  if (! made)
+    return NULL;
+
+  ((KosFilter *) made)->invert = 1;
+  return made;
+}
+
+
+static PyMethodDef kosfilter_false_def = {
+  "filterfalse", (PyCFunction) kosfilter_false, METH_VARARGS,
+  "filterfalse(func, iterable) - native lazy filterfalse; keeps what "
+  "filter would drop. A None func keeps falsey elements",
+};
+
+
 KosEvaluatedTypeObject KosFilterType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
     .tp_name = "koskari.lib.filter",
-    .tp_basicsize = sizeof(KosTransform),
+    .tp_basicsize = sizeof(KosFilter),
     .tp_itemsize = 0,
     .tp_dealloc = kos_transform_dealloc,
     .tp_repr = kos_transform_repr,
@@ -383,6 +429,18 @@ int koskari_filter_init(PyObject *mod) {
           dict, "filter",
           (PyObject *) KOS_EVALUATED_PYTYPE(KosFilterType)))
     return -1;
+
+  {
+    PyObject *ff = PyCFunction_New(&kosfilter_false_def, NULL);
+
+    if (! ff)
+      return -1;
+    if (PyDict_SetItemString(dict, "filterfalse", ff)) {
+      Py_DECREF(ff);
+      return -1;
+    }
+    Py_DECREF(ff);
+  }
 
   return 0;
 }
