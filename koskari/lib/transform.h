@@ -100,6 +100,28 @@ typedef struct KosTransformSpec {
 
 
 /**
+   Fill a freshly allocated one-source transform: acquire the iterator
+   from iterable, resolve func's call shape when there is one (NULL or
+   None leaves the transform with no callable), and publish the view
+   over the base's own source slot. Every other field is left as
+   tp_alloc zeroed it.
+
+   A provider that parses its own argument shape -- trailing bounds, a
+   count -- allocates, calls this, then stores its own fields. One
+   that takes the plain shape goes through kos_transform_new instead.
+
+   :param t: freshly allocated, zeroed
+   :param func: the callable, or NULL/None for none
+   :param iterable: borrowed
+   :return: 0, or -1 with PyErr set
+*/
+int kos_transform_init_one(
+    KosTransform *t,
+    PyObject *func,
+    PyObject *iterable);
+
+
+/**
    tp_new body for a one-source provider: KIND(func, iterable) when the
    spec declares a callable, KIND(iterable) otherwise. The iterator is
    acquired eagerly with the PUSH_FOREACH preference order: a KosIter

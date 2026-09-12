@@ -26,10 +26,10 @@ boundary, so it takes neither.
 """
 
 
-import-from koskari.lib dropwhile pairwise starmap
+import-from koskari.lib dropwhile islice pairwise starmap
 
 
-(declare-exports chain dropwhile pairwise starmap takewhile)
+(declare-exports chain dropwhile islice pairwise starmap takewhile)
 
 
 define chain [*: srcs]:

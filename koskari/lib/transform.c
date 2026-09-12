@@ -71,15 +71,28 @@ PyObject *kos_transform_new(
     return NULL;
   }
 
-  PyObject *source = kos_iter_acquire(iterable);
-  if (! source)
+  KosTransform *t = (KosTransform *) type->tp_alloc(type, 0);
+  if (! t)
     return NULL;
 
-  KosTransform *t = (KosTransform *) type->tp_alloc(type, 0);
-  if (! t) {
-    Py_DECREF(source);
+  if (kos_transform_init_one(t, func, iterable)) {
+    Py_DECREF(t);
     return NULL;
   }
+
+  return (PyObject *) t;
+}
+
+
+int kos_transform_init_one(
+    KosTransform *t,
+    PyObject *func,
+    PyObject *iterable) {
+
+  PyObject *source = kos_iter_acquire(iterable);
+
+  if (! source)
+    return -1;
 
   t->source = source;
   t->sources = &t->source;
@@ -103,7 +116,7 @@ PyObject *kos_transform_new(
   t->ctx = NULL;
   t->closed = 0;
   t->busy = 0;
-  return (PyObject *) t;
+  return 0;
 }
 
 
