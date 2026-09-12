@@ -28,7 +28,7 @@ boundary, so it takes neither.
 
 import-from koskari.lib:
   accumulate batched compress cycle dropwhile filterfalse islice
-  pairwise starmap zip-longest
+  pairwise starmap takewhile zip-longest
 
 
 (declare-exports accumulate batched chain compress cycle dropwhile
@@ -45,10 +45,12 @@ define chain [*: srcs]:
     yield-from x
 
 
-define takewhile [pred src]:
+define _takewhile [pred src]:
   """
   Yield elements of src while pred holds; stop at the first that fails,
   leaving the rest of src unconsumed
+
+  Superseded by the native takewhile, kept for comparison
   """
 
   for-each [x src]:

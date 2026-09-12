@@ -82,6 +82,7 @@ struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
 #include "map.h"
 #include "pairwise.h"
 #include "starmap.h"
+#include "takewhile.h"
 #include "zip.h"
 #include "zip_longest.h"
 #include "matcher.h"
