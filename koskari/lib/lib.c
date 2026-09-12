@@ -175,7 +175,8 @@ static int koskari_lib_init(PyObject *mod) {
       koskari_batched_init(mod) ||
       koskari_zip_longest_init(mod) ||
       koskari_compress_init(mod) ||
-      koskari_accumulate_init(mod))
+      koskari_accumulate_init(mod) ||
+      koskari_cycle_init(mod))
     return -1;
 
   return 0;
@@ -191,6 +192,9 @@ int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   /* clear implementation units */
+  if (koskari_cycle_clear(mod))
+    return -1;
+
   if (koskari_accumulate_clear(mod))
     return -1;
 

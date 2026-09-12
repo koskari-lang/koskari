@@ -76,6 +76,7 @@ struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
 #include "accumulate.h"
 #include "batched.h"
 #include "compress.h"
+#include "cycle.h"
 #include "dropwhile.h"
 #include "islice.h"
 #include "map.h"
