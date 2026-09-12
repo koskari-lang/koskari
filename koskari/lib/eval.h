@@ -193,17 +193,30 @@ typedef enum KosGetNextResult {
    remove.
 
    NULL with PyErr set means the raise walk is propagating a pending
-   exception through the frame the resume is set on. The walk hands
-   the exception to the resume only for a resume frame that is dyn_top
-   above the live frame (a flattened delegation); a step frame that is
-   the live frame when an operation fails is popped by the walk's
-   frame-crossing branch without its resume seeing the exception, and
-   the failure reaches the step's consumer through its iteration node.
-   A consumer therefore cannot rely on seeing its own failures; on
-   NULL it propagates the exception.
+   exception through the frame the resume is set on, and reaches
+   every armed resume before its frame is torn through: a code-less
+   step frame that is the live frame when its own operation fails (a
+   source exhausted or raising, a callee raising), and a resume frame
+   at dyn_top above the live frame alike. A frame carrying bytecode is
+   not handed the exception through the frame-crossing branch: its
+   resume is a yield-from phase resume, reached through its own node.
+   The resume either handles the exception or propagates it by
+   returning EVAL_RAISE; a consumer that only propagates sees exactly
+   what it would have seen with no resume at all.
+
+   A resume that handles by completing the frame (EVAL_RETURN) owns
+   clearing the exception it was handed -- it is delivering a value,
+   and a pending exception would surface from an unrelated point at
+   the next prologue re-entry. KOS_EVAL_SAFETYNET faults on it.
+   EVAL_REPROLOGUE carries no such obligation: arranging the frame's
+   continuation and leaving the exception standing routes it back
+   through the pending-exception step.
 
    The walk calls the resume as a plain call and reads the result:
-   REPROLOGUE means the resume handled the exception (the walk stops),
+   REPROLOGUE means the resume handled the exception and arranged the
+   frame's continuation (the walk stops), EVAL_RETURN means it handled
+   the exception by completing the frame (the return is applied from
+   the live frame, as KosNativeFrame_ReturnPark completes a step),
    EVAL_RAISE means it is propagating it (the pop proceeds), EVAL_FATAL
    aborts. A resume called by the walk must return one of those and
    never thread on -- no RESULT_ENTRY, RESUME_HOP, or KOS_THREAD_NEXT
@@ -509,10 +522,12 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
    CONTINUES arms resume and reports NORMAL when the install left a
    bytecode frame current (thread into it) or REPROLOGUE otherwise; an
    awaitable in-flight (EXIT) arms resume and reports EVAL_AWAIT, and
-   the AWAITED revive delivers into it. Exhaustion raises
-   StopIteration, which reaches resume through the raise walk like any
-   other failure. send_val is accepted for a future Send entry point; unused
-   today. Caller must have a current frame.
+   the AWAITED revive delivers into it. Exhaustion arms resume and
+   raises StopIteration, which reaches resume through the raise walk
+   like an in-flight source's failure does; a request that fails
+   outright reports RAISE with nothing armed. send_val is accepted for
+   a future Send entry point; unused today. Caller must have a current
+   frame.
 
    resume may be NULL: no continuation, behave exactly like the
    OBJECT_NEXT opcode's own default -- push the delivered element and

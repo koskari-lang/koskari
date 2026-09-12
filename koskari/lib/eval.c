@@ -121,6 +121,8 @@ static void kos_eval_mark_context_dead(KosContext *ctx);
 
 static KosOpResult process_raise(KosEvalState *es);
 
+static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res);
+
 static KosOpResult kos_eval_walk_outcome(KosEvalState *es, KosOpResult r);
 
 static KosOpResult eval_parent_return_deliver(KosEvalState *es, PyObject *val);
@@ -998,6 +1000,10 @@ own_fail:
                        AWAIT: async unwind started; tag KOS_SUSP_AWAIT,
                        mark suspended, propagate awaitable (caller owns
                        tl.val).
+                       RETURN: a resume-carrying frame answered the
+                       exception by completing itself; apply the return
+                       from that frame through apply_kos_op_result, as
+                       the delivery step applies a resume's completion.
                        RAISE: propagate; kos_eval_prepare_boundary_raise
                        already ran inside try_local - never call it again
                        (archive boundary-control-reemit.md invariant 7.4).
@@ -1005,7 +1011,8 @@ own_fail:
 
    :return: EVAL_REPROLOGUE to continue, EVAL_AWAIT on async unwind,
             EVAL_RAISE to propagate (PyErr set), EVAL_FATAL on internal
-            fault
+            fault, or the applied return's own result (EVAL_RETURN at
+            the drive root)
 */
 static KosOpResult process_raise(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -1043,6 +1050,13 @@ static KosOpResult process_raise(KosEvalState *es) {
       KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
       KosEvalState_MarkSuspendedNotRunning(es);
       return tl;
+    case KOS_RES_RETURN: {
+      /* The exception is handled and the live frame is complete:
+         apply its return. A plain frame-to-frame return's DISPATCH is
+         loop-internal and re-enters through the prologue instead. */
+      KosOpResult ar = apply_kos_op_result(es, tl);
+      return (ar.kind == KOS_RES_DISPATCH) ? EVAL_REPROLOGUE() : ar;
+    }
     case KOS_RES_FATAL:
       kos_eval_mark_context_dead(ctx);
       return EVAL_FATAL();
@@ -1948,6 +1962,14 @@ KosOpResult KosEvalState_NextResume(
       return EVAL_AWAIT(out);
 
     case KOS_IREQ_EXHAUSTED:
+      /* With a resume, exhaustion reaches it the way an in-flight
+         source's does: armed on the frame, the raise walk hands it
+         the StopIteration and it handles or propagates. Nothing is
+         armed without one, and the raise crosses the frame. */
+      if (resume) {
+        KosDynFrame_RESUME_FN(frame) = (void *) resume;
+        KosDynFrame_RESUME_STATE(frame) = state;
+      }
       PyErr_SetNone(PyExc_StopIteration);
       return EVAL_RAISE();
 
@@ -1957,9 +1979,6 @@ KosOpResult KosEvalState_NextResume(
   }
 }
 
-
-/* Forward declaration: defined after the delivery step. */
-static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res);
 
 /* Forward declaration: defined below. */
 static KosOpResult eval_step_resume_delivery(KosEvalState *es);

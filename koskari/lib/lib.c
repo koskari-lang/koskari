@@ -171,7 +171,8 @@ static int koskari_lib_init(PyObject *mod) {
       koskari_dropwhile_init(mod) ||
       koskari_starmap_init(mod) ||
       koskari_pairwise_init(mod) ||
-      koskari_islice_init(mod))
+      koskari_islice_init(mod) ||
+      koskari_batched_init(mod))
     return -1;
 
   return 0;
@@ -187,6 +188,9 @@ int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   /* clear implementation units */
+  if (koskari_batched_clear(mod))
+    return -1;
+
   if (koskari_islice_clear(mod))
     return -1;
 
