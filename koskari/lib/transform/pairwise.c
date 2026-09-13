@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/pairwise.c
+   koskari/lib/transform/pairwise.c
 
    KosPairwise: a native lazy pairwise over one source, duck-typed
    against itertools.pairwise, implemented as a KosIter provider on

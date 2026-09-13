@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/islice.c
+   koskari/lib/transform/islice.c
 
    KosISlice: a native lazy islice over one source, duck-typed against
    itertools.islice, implemented as a KosIter provider on the shared

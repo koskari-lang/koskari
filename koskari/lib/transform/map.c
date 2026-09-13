@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/map.c
+   koskari/lib/transform/map.c
 
    KosMap: a native lazy map over one source, duck-typed against
    builtins.map, implemented as a KosIter provider on the shared

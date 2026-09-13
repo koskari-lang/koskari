@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/dropwhile.c
+   koskari/lib/transform/dropwhile.c
 
    KosDropWhile: a native lazy dropwhile over one source, duck-typed
    against itertools.dropwhile, implemented as a KosIter provider on

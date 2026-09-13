@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/takewhile.c
+   koskari/lib/transform/takewhile.c
 
    KosTakeWhile: a native lazy takewhile over one source, duck-typed
    against itertools.takewhile, implemented as a KosIter provider on

@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/filter.c
+   koskari/lib/transform/filter.c
 
    KosFilter: a native lazy filter over one source, duck-typed against
    builtins.filter, implemented as a KosIter provider on the shared

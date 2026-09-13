@@ -205,6 +205,39 @@ extern PyMethodDef kos_transform_methods[];
 extern PyAsyncMethods kos_transform_async_methods;
 
 
+/* === The providers ===
+   This header is the family's single entry point: lib.h includes it
+   and nothing else from this directory, and the units below are
+   reached through it. */
+
+#include "accumulate.h"
+#include "batched.h"
+#include "chain.h"
+#include "compress.h"
+#include "cycle.h"
+#include "dropwhile.h"
+#include "filter.h"
+#include "islice.h"
+#include "map.h"
+#include "pairwise.h"
+#include "starmap.h"
+#include "takewhile.h"
+#include "zip.h"
+#include "zip_longest.h"
+
+
+/**
+   Ready every provider in this directory and insert it into the
+   module dict, in place of lib.c naming each one. A provider still
+   owns its own registration; this only decides when it runs. Nothing
+   here depends on the order: each readies its own static type, and
+   KosTransform is a struct rather than a type, so the base has
+   nothing to ready ahead of them.
+*/
+int koskari_transform_init(PyObject *mod);
+int koskari_transform_clear(PyObject *mod);
+
+
 #endif /* KOSKARI_TRANSFORM_H */
 
 

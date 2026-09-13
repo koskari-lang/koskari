@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/batched.c
+   koskari/lib/transform/batched.c
 
    KosBatched: a native lazy batched over one source, duck-typed
    against itertools.batched, implemented as a KosIter provider on the

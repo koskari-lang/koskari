@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/transform.c
+   koskari/lib/transform/transform.c
 
    The shared body of the map and filter providers. See transform.h.
 
@@ -393,6 +393,53 @@ PyAsyncMethods kos_transform_async_methods = {
   .am_aiter = transform_aiter,
   .am_anext = KosIterAdapt_Anext,
 };
+
+
+/* === Unit lifecycle === */
+
+
+int koskari_transform_init(PyObject *mod) {
+
+  if (koskari_filter_init(mod) ||
+      koskari_map_init(mod) ||
+      koskari_zip_init(mod) ||
+      koskari_zip_longest_init(mod) ||
+      koskari_chain_init(mod) ||
+      koskari_compress_init(mod) ||
+      koskari_cycle_init(mod) ||
+      koskari_accumulate_init(mod) ||
+      koskari_batched_init(mod) ||
+      koskari_dropwhile_init(mod) ||
+      koskari_takewhile_init(mod) ||
+      koskari_starmap_init(mod) ||
+      koskari_islice_init(mod) ||
+      koskari_pairwise_init(mod))
+    return -1;
+
+  return 0;
+}
+
+
+int koskari_transform_clear(PyObject *mod) {
+
+  if (koskari_pairwise_clear(mod) ||
+      koskari_islice_clear(mod) ||
+      koskari_starmap_clear(mod) ||
+      koskari_takewhile_clear(mod) ||
+      koskari_dropwhile_clear(mod) ||
+      koskari_batched_clear(mod) ||
+      koskari_accumulate_clear(mod) ||
+      koskari_cycle_clear(mod) ||
+      koskari_compress_clear(mod) ||
+      koskari_chain_clear(mod) ||
+      koskari_zip_longest_clear(mod) ||
+      koskari_zip_clear(mod) ||
+      koskari_map_clear(mod) ||
+      koskari_filter_clear(mod))
+    return -1;
+
+  return 0;
+}
 
 
 // The end.

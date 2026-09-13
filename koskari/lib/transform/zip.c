@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/zip.c
+   koskari/lib/transform/zip.c
 
    KosZip: a native lazy zip over N sources, duck-typed against
    builtins.zip, implemented as a KosIter provider on the shared

@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/chain.c
+   koskari/lib/transform/chain.c
 
    KosChain: a native lazy chain over a series of iterables,
    duck-typed against itertools.chain, implemented as a KosIter

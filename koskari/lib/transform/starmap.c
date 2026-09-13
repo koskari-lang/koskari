@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/starmap.c
+   koskari/lib/transform/starmap.c
 
    KosStarMap: a native lazy starmap over one source, duck-typed
    against itertools.starmap, implemented as a KosIter provider on the

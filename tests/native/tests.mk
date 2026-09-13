@@ -22,15 +22,19 @@ ifeq ($(origin CC),default)
 CC := clang
 endif
 
-# Test and library sources discovered via globs (stay in sync with tree)
+# Test and library sources discovered via globs (stay in sync with tree).
+# transform/ is the one subdirectory whose units compile in their own
+# right rather than being included into a top-level one, so it is
+# globbed here and in setup.py alike; the others are reached through
+# the file that includes them.
 LIB_DIR := ../../koskari/lib
 TEST_SRCS := $(wildcard test_*.c)
-LIB_SRCS := $(wildcard $(LIB_DIR)/*.c)
+LIB_SRCS := $(wildcard $(LIB_DIR)/*.c) $(wildcard $(LIB_DIR)/transform/*.c)
 
 # Build output directory (empty = current dir; set e.g. BUILD_DIR=/build in container)
 BUILD_DIR ?=
 OBJDIR := $(or $(BUILD_DIR),.)
-VPATH := . $(LIB_DIR)
+VPATH := . $(LIB_DIR) $(LIB_DIR)/transform
 
 # All sources
 SRCS := $(TEST_SRCS) $(LIB_SRCS)

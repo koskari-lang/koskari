@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/cycle.c
+   koskari/lib/transform/cycle.c
 
    KosCycle: a native endless cycle over one source, duck-typed
    against itertools.cycle, implemented as a KosIter provider on the

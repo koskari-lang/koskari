@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/compress.c
+   koskari/lib/transform/compress.c
 
    KosCompress: a native lazy compress over a data source and a
    selector source, duck-typed against itertools.compress, implemented

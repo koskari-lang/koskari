@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/zip_longest.c
+   koskari/lib/transform/zip_longest.c
 
    KosZipLongest: a native lazy zip-longest over N sources, duck-typed
    against itertools.zip_longest, implemented as a KosIter provider on

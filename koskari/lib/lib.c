@@ -152,8 +152,7 @@ static int koskari_lib_init(PyObject *mod) {
       koskari_func_init(mod) ||
       koskari_iter_init(mod) ||
       koskari_iterate_init(mod) ||
-      koskari_filter_init(mod) ||
-      koskari_map_init(mod) ||
+      koskari_transform_init(mod) ||
       koskari_matcher_init(mod) ||
       koskari_namespace_init(mod) ||
       koskari_operator_init(mod) ||
@@ -166,19 +165,7 @@ static int koskari_lib_init(PyObject *mod) {
       koskari_defer_init(mod) ||
       koskari_async_loop_init(mod) ||
       koskari_property_init(mod) ||
-      koskari_partial_init(mod) ||
-      koskari_zip_init(mod) ||
-      koskari_dropwhile_init(mod) ||
-      koskari_starmap_init(mod) ||
-      koskari_pairwise_init(mod) ||
-      koskari_islice_init(mod) ||
-      koskari_batched_init(mod) ||
-      koskari_zip_longest_init(mod) ||
-      koskari_compress_init(mod) ||
-      koskari_accumulate_init(mod) ||
-      koskari_cycle_init(mod) ||
-      koskari_takewhile_init(mod) ||
-      koskari_chain_init(mod))
+      koskari_partial_init(mod))
     return -1;
 
   return 0;
@@ -194,46 +181,7 @@ int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   /* clear implementation units */
-  if (koskari_chain_clear(mod))
-    return -1;
-
-  if (koskari_takewhile_clear(mod))
-    return -1;
-
-  if (koskari_cycle_clear(mod))
-    return -1;
-
-  if (koskari_accumulate_clear(mod))
-    return -1;
-
-  if (koskari_compress_clear(mod))
-    return -1;
-
-  if (koskari_zip_longest_clear(mod))
-    return -1;
-
-  if (koskari_batched_clear(mod))
-    return -1;
-
-  if (koskari_islice_clear(mod))
-    return -1;
-
-  if (koskari_pairwise_clear(mod))
-    return -1;
-
-  if (koskari_starmap_clear(mod))
-    return -1;
-
-  if (koskari_dropwhile_clear(mod))
-    return -1;
-
-  if (koskari_zip_clear(mod))
-    return -1;
-
-  if (koskari_map_clear(mod))
-    return -1;
-
-  if (koskari_filter_clear(mod))
+  if (koskari_transform_clear(mod))
     return -1;
 
   if (koskari_iterate_clear(mod))

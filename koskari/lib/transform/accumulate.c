@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/accumulate.c
+   koskari/lib/transform/accumulate.c
 
    KosAccumulate: a native lazy accumulate over one source, duck-typed
    against itertools.accumulate, implemented as a KosIter provider on
