@@ -395,25 +395,100 @@ PyAsyncMethods kos_transform_async_methods = {
 };
 
 
+/* === The providers ===
+
+   Each supplies only its ki_step, the resume chain that step arms,
+   and its type object. They are fragments of this unit, so the shared
+   body above is in scope for all of them. */
+
+
+#include "transform/map.c"
+#include "transform/filter.c"
+#include "transform/zip.c"
+#include "transform/zip_longest.c"
+#include "transform/chain.c"
+#include "transform/compress.c"
+#include "transform/cycle.c"
+#include "transform/accumulate.c"
+#include "transform/batched.c"
+#include "transform/dropwhile.c"
+#include "transform/takewhile.c"
+#include "transform/starmap.c"
+#include "transform/islice.c"
+#include "transform/pairwise.c"
+
+
 /* === Unit lifecycle === */
+
+
+/**
+   Every provider type, with the name its class carries and the short
+   alias matching that class __name__.
+*/
+static const struct {
+  KosEvaluatedTypeObject *type;
+  const char *cls;
+  const char *alias;
+} transform_types[] = {
+  { &KosMapType,         "KosMap",         "map" },
+  { &KosFilterType,      "KosFilter",      "filter" },
+  { &KosZipType,         "KosZip",         "zip" },
+  { &KosZipLongestType,  "KosZipLongest",  "zip-longest" },
+  { &KosChainType,       "KosChain",       "chain" },
+  { &KosCompressType,    "KosCompress",    "compress" },
+  { &KosCycleType,       "KosCycle",       "cycle" },
+  { &KosAccumulateType,  "KosAccumulate",  "accumulate" },
+  { &KosBatchedType,     "KosBatched",     "batched" },
+  { &KosDropWhileType,   "KosDropWhile",   "dropwhile" },
+  { &KosTakeWhileType,   "KosTakeWhile",   "takewhile" },
+  { &KosStarMapType,     "KosStarMap",     "starmap" },
+  { &KosISliceType,      "KosISlice",      "islice" },
+  { &KosPairwiseType,    "KosPairwise",    "pairwise" },
+};
+
+
+/**
+   Bind a provider that is a plain function rather than a type.
+   filterfalse and chain-from-iterable are the two: one is a filter
+   with a flag set, the other takes its series from an iterable.
+*/
+static int transform_bind_function(PyObject *dict, PyMethodDef *def) {
+
+  PyObject *fn = PyCFunction_New(def, NULL);
+  int failed;
+
+  if (! fn)
+    return -1;
+
+  failed = PyDict_SetItemString(dict, def->ml_name, fn);
+  Py_DECREF(fn);
+
+  return failed;
+}
 
 
 int koskari_transform_init(PyObject *mod) {
 
-  if (koskari_filter_init(mod) ||
-      koskari_map_init(mod) ||
-      koskari_zip_init(mod) ||
-      koskari_zip_longest_init(mod) ||
-      koskari_chain_init(mod) ||
-      koskari_compress_init(mod) ||
-      koskari_cycle_init(mod) ||
-      koskari_accumulate_init(mod) ||
-      koskari_batched_init(mod) ||
-      koskari_dropwhile_init(mod) ||
-      koskari_takewhile_init(mod) ||
-      koskari_starmap_init(mod) ||
-      koskari_islice_init(mod) ||
-      koskari_pairwise_init(mod))
+  PyObject *dict = PyModule_GetDict(mod);
+  size_t i;
+
+  if (! dict)
+    return -1;
+
+  for (i = 0; i < sizeof(transform_types) / sizeof(*transform_types); i++) {
+    PyTypeObject *type = KOS_EVALUATED_PYTYPE(*transform_types[i].type);
+
+    if (PyType_Ready(type))
+      return -1;
+    if (PyDict_SetItemString(dict, transform_types[i].cls, (PyObject *) type))
+      return -1;
+    if (PyDict_SetItemString(dict, transform_types[i].alias,
+                             (PyObject *) type))
+      return -1;
+  }
+
+  if (transform_bind_function(dict, &kosfilter_false_def) ||
+      transform_bind_function(dict, &koschain_from_iterable_def))
     return -1;
 
   return 0;
@@ -422,22 +497,7 @@ int koskari_transform_init(PyObject *mod) {
 
 int koskari_transform_clear(PyObject *mod) {
 
-  if (koskari_pairwise_clear(mod) ||
-      koskari_islice_clear(mod) ||
-      koskari_starmap_clear(mod) ||
-      koskari_takewhile_clear(mod) ||
-      koskari_dropwhile_clear(mod) ||
-      koskari_batched_clear(mod) ||
-      koskari_accumulate_clear(mod) ||
-      koskari_cycle_clear(mod) ||
-      koskari_compress_clear(mod) ||
-      koskari_chain_clear(mod) ||
-      koskari_zip_longest_clear(mod) ||
-      koskari_zip_clear(mod) ||
-      koskari_map_clear(mod) ||
-      koskari_filter_clear(mod))
-    return -1;
-
+  (void) mod;
   return 0;
 }
 

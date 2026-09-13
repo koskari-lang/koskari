@@ -71,7 +71,7 @@ struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
 #include "cont.h"
 #include "iter.h"
 #include "iterate.h"
-#include "transform/transform.h"
+#include "transform.h"
 #include "matcher.h"
 #include "namespace.h"
 #include "object.h"

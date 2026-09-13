@@ -1,17 +1,4 @@
-/*
-  This library is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 3 of the License, or
-  (at your option) any later version.
-
-  This library is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this library; if not, see <http://www.gnu.org/licenses/>.
-*/
+/* Included by transform.c -- chain */
 
 
 /**
@@ -45,9 +32,6 @@
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
 */
-
-
-#include "lib.h"
 
 
 typedef struct KosChain {
@@ -375,52 +359,6 @@ KosEvaluatedTypeObject KosChainType = {
     .ki_pyctx_recyclable = 1,
   },
 };
-
-
-/* === Unit lifecycle === */
-
-
-int koskari_chain_init(PyObject *mod) {
-
-  PyObject *dict = PyModule_GetDict(mod);
-  if (! dict)
-    return -1;
-
-  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosChainType)))
-    return -1;
-
-  if (PyDict_SetItemString(
-          dict, "KosChain",
-          (PyObject *) KOS_EVALUATED_PYTYPE(KosChainType)))
-    return -1;
-
-  /* short alias matching the class __name__ */
-  if (PyDict_SetItemString(
-          dict, "chain",
-          (PyObject *) KOS_EVALUATED_PYTYPE(KosChainType)))
-    return -1;
-
-  {
-    PyObject *fi = PyCFunction_New(&koschain_from_iterable_def, NULL);
-
-    if (! fi)
-      return -1;
-    if (PyDict_SetItemString(dict, "chain-from-iterable", fi)) {
-      Py_DECREF(fi);
-      return -1;
-    }
-    Py_DECREF(fi);
-  }
-
-  return 0;
-}
-
-
-int koskari_chain_clear(PyObject *mod) {
-
-  (void) mod;
-  return 0;
-}
 
 
 // The end.

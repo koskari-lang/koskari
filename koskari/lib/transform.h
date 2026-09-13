@@ -206,33 +206,73 @@ extern PyAsyncMethods kos_transform_async_methods;
 
 
 /* === The providers ===
-   This header is the family's single entry point: lib.h includes it
-   and nothing else from this directory, and the units below are
-   reached through it. */
+   Each is its own file under transform/, included into transform.c.
+   They declare nothing of their own, so their types are declared
+   here. */
 
-#include "accumulate.h"
-#include "batched.h"
-#include "chain.h"
-#include "compress.h"
-#include "cycle.h"
-#include "dropwhile.h"
-#include "filter.h"
-#include "islice.h"
-#include "map.h"
-#include "pairwise.h"
-#include "starmap.h"
-#include "takewhile.h"
-#include "zip.h"
-#include "zip_longest.h"
+extern KosEvaluatedTypeObject KosMapType;
+extern KosEvaluatedTypeObject KosFilterType;
+extern KosEvaluatedTypeObject KosZipType;
+extern KosEvaluatedTypeObject KosZipLongestType;
+extern KosEvaluatedTypeObject KosChainType;
+extern KosEvaluatedTypeObject KosCompressType;
+extern KosEvaluatedTypeObject KosCycleType;
+extern KosEvaluatedTypeObject KosAccumulateType;
+extern KosEvaluatedTypeObject KosBatchedType;
+extern KosEvaluatedTypeObject KosDropWhileType;
+extern KosEvaluatedTypeObject KosTakeWhileType;
+extern KosEvaluatedTypeObject KosStarMapType;
+extern KosEvaluatedTypeObject KosISliceType;
+extern KosEvaluatedTypeObject KosPairwiseType;
+
+
+#define KosMap_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosMapType)))
+
+#define KosFilter_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosFilterType)))
+
+#define KosZip_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosZipType)))
+
+#define KosZipLongest_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosZipLongestType)))
+
+#define KosChain_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosChainType)))
+
+#define KosCompress_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosCompressType)))
+
+#define KosCycle_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosCycleType)))
+
+#define KosAccumulate_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosAccumulateType)))
+
+#define KosBatched_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosBatchedType)))
+
+#define KosDropWhile_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosDropWhileType)))
+
+#define KosTakeWhile_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosTakeWhileType)))
+
+#define KosStarMap_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosStarMapType)))
+
+#define KosISlice_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosISliceType)))
+
+#define KosPairwise_CheckExact(obj) \
+  ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosPairwiseType)))
 
 
 /**
-   Ready every provider in this directory and insert it into the
-   module dict, in place of lib.c naming each one. A provider still
-   owns its own registration; this only decides when it runs. Nothing
-   here depends on the order: each readies its own static type, and
+   Ready every provider and insert it into the module dict.
    KosTransform is a struct rather than a type, so the base has
-   nothing to ready ahead of them.
+   nothing to ready ahead of them and the order is free.
 */
 int koskari_transform_init(PyObject *mod);
 int koskari_transform_clear(PyObject *mod);

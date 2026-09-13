@@ -184,17 +184,12 @@ def extension(platform=None, debug=None):
     """
 
     libdir = Path("koskari/lib")
-
-    # transform/ differs from the other subdirectories: its units are
-    # compiled in their own right rather than being included into a
-    # top-level one, so they are sources and not depends
-    sources = sorted(map(str, list(libdir.glob("*.c"))
-                         + list(libdir.glob("transform/*.c"))))
+    sources = sorted(map(str, libdir.glob("*.c")))
 
     depends = list(libdir.glob("*.h"))
-    depends.extend(libdir.glob("transform/*.h"))
     depends.extend(libdir.glob("*.incl"))
     depends.extend(libdir.glob("dynchain/*.c"))
+    depends.extend(libdir.glob("transform/*.c"))
     depends.extend(libdir.glob("eval/*.c"))
     depends.extend(libdir.glob("func/*.c"))
     depends.extend(libdir.glob("matcher/*.c"))
@@ -219,9 +214,6 @@ def extension(platform=None, debug=None):
         "koskari.lib",
         sources=sources,
         depends=depends,
-        # so a unit under transform/ reaches lib.h the same way a
-        # top-level one does
-        include_dirs=[str(libdir)],
         extra_compile_args=extra_compile_args(platform, debug, clang, major),
         extra_link_args=extra_link_args(platform, clang),
     )
