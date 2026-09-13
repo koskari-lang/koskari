@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Koskari &mdash; a Lisp that lives with Python</title>
-  <meta name="description" content="Koskari is a stackless Lisp for Python: first-class continuations, ambient async, and an indentation layout that reads blocks into forms.">
+  <meta name="description" content="Koskari is a stackless Lisp for CPython: first-class continuations, awaits without async markers, and an indentation layout that reads blocks into forms.">
   <meta property="og:title" content="Koskari">
   <meta property="og:description" content="A Lisp that lives with Python. First-class continuations, ambient async, indentation layout.">
   <meta property="og:type" content="website">
@@ -38,16 +38,16 @@
   <!-- hero -->
   <div class="ko-hero">
     <div>
-      <div class="ko-eyebrow">the fourth iteration of the sibilant idea</div>
+      <div class="ko-eyebrow">a lisp for cpython, descended from sibilant</div>
       <h1 class="ko-h1">A Lisp that lives<br><span class="ko-accent">with Python.</span></h1>
-      <p class="ko-lede">Koskari is a stackless Lisp running inside CPython: first-class continuations, ambient async, and an indentation layout that reads blocks into forms. It is built as a playground, with Python's whole ecosystem in reach and fewer of Python's restrictions.</p>
+      <p class="ko-lede">Koskari is a Lisp that runs on its own stackless evaluator inside CPython. It has first-class continuations, awaits without async markers, and an indentation layout that reads blocks into forms. Python's modules, classes, and objects are used directly, in both directions. If you know Python, everything you have still works. If you are new to programming, the beginner track starts from nothing.</p>
       <div class="ko-cta-row">
         <a class="ko-btn ko-btn-primary" href="/docs/start/overview/">Get started <span class="ko-btn-arrow">&rarr;</span></a>
-        <a class="ko-btn ko-btn-secondary" href="/docs/">Browse the docs</a>
+        <a class="ko-btn ko-btn-secondary" href="/docs/start/beginner/">Learn from zero</a>
       </div>
       <div class="ko-install">
-        <span class="ko-install-cmd"><span class="ko-prompt">$</span> pip install --pre koskari</span>
-        <span class="ko-install-soon">WEEKLY DEV SNAPSHOTS</span>
+        <span class="ko-install-cmd"><span class="ko-prompt">$</span> pip install koskari</span>
+        <span class="ko-install-soon">v{{ version }} BETA</span>
       </div>
     </div>
     <div class="ko-hero-art">
@@ -80,15 +80,43 @@
       <div class="ko-card">
         <div class="ko-card-icon">&#8767;</div>
         <h3 class="ko-card-title">Ambiently async</h3>
-        <p class="ko-card-body">Awaitable values are awaited in place. Any function can suspend and none carries an async marker, so the same code serves synchronous and asynchronous callers.</p>
+        <p class="ko-card-body">Awaitable values are awaited in place. Any function can suspend and none carries an async marker. Concurrency is a defer and a gather.</p>
       </div>
     </div>
   </div>
 
-  <!-- example -->
+  <!-- examples -->
   <div id="examples" class="ko-section ko-section-tight">
-    <div class="ko-label ko-label-tight">An example</div>
-    <h2 class="ko-section-title">A point, and its neighbors</h2>
+    <div class="ko-label ko-label-tight">Five examples, easiest first</div>
+
+    <h2 class="ko-section-title">Three fruits</h2>
+    <p class="ko-section-lede">A list, a function, a loop, and a print. A line that holds more than one thing is a call; a colon at the end of a line opens a block. <span class="ko-inline-code">(word.upper)</span> calls a Python string method and <span class="ko-inline-code">fruits[0]</span> indexes a Python list.</p>
+    <div class="ko-code-window">
+      <div class="ko-code-chrome">
+        <span class="ko-dot ko-dot-close"></span>
+        <span class="ko-dot ko-dot-min"></span>
+        <span class="ko-dot ko-dot-max"></span>
+        <span class="ko-code-filename">fruits.ki</span>
+      </div>
+      <div class="ko-code-body">
+<pre class="ko-code-pre"><span class="k-kw">define</span> fruits <span class="k-pn">#[</span><span class="k-str">"apple"</span> <span class="k-str">"pear"</span> <span class="k-str">"plum"</span><span class="k-pn">]</span>
+
+
+<span class="k-kw">define</span> <span class="k-fn">shout</span> <span class="k-pn">[</span>word<span class="k-pn">]:</span>
+    <span class="k-pn">(</span><span class="k-fn">+</span> <span class="k-pn">(</span><span class="k-fn">word.upper</span><span class="k-pn">)</span> <span class="k-str">"!"</span><span class="k-pn">)</span>
+
+<span class="k-kw">for-each</span> <span class="k-pn">[</span>fruit fruits<span class="k-pn">]:</span>
+    <span class="k-pn">(</span><span class="k-fn">print</span> <span class="k-pn">(</span><span class="k-fn">shout</span> fruit<span class="k-pn">))</span>
+
+<span class="k-pn">(</span><span class="k-fn">print</span> <span class="k-pn">(</span><span class="k-fn">len</span> fruits<span class="k-pn">)</span> <span class="k-str">"fruits, starting with"</span> fruits<span class="k-pn">[</span><span class="k-num">0</span><span class="k-pn">])</span>
+<span class="k-cm">;; APPLE!</span>
+<span class="k-cm">;; PEAR!</span>
+<span class="k-cm">;; PLUM!</span>
+<span class="k-cm">;; 3 fruits, starting with apple</span></pre>
+      </div>
+    </div>
+
+    <h2 class="ko-section-title ko-section-title-spaced">A point, and its neighbors</h2>
     <p class="ko-section-lede">The <span class="ko-inline-code">@dataclass</span> decorator comes straight from Python's standard library. The class body is layout syntax; the parenthesized forms inside it are ordinary S-expressions.</p>
     <div class="ko-code-window">
       <div class="ko-code-chrome">
@@ -131,14 +159,123 @@
         <span class="k-pn">(</span><span class="k-fn">set!</span> self.y y<span class="k-pn">)</span></pre>
       </div>
     </div>
+
+    <h2 class="ko-section-title ko-section-title-spaced">Async without the marker</h2>
+    <p class="ko-section-lede"><span class="ko-inline-code">fetch</span> calls <span class="ko-inline-code">asyncio.sleep</span> and returns a string. Nothing in it is marked async; the await happens at the call. <span class="ko-inline-code">defer</span> holds a call instead of resolving it, which is what <span class="ko-inline-code">gather</span> wants. Futures are held rather than awaited in place, so the one explicit <span class="ko-inline-code">await</span> in the program sits on the gather.</p>
+    <div class="ko-code-window">
+      <div class="ko-code-chrome">
+        <span class="ko-dot ko-dot-close"></span>
+        <span class="ko-dot ko-dot-min"></span>
+        <span class="ko-dot ko-dot-max"></span>
+        <span class="ko-code-filename">fetch.ki</span>
+      </div>
+      <div class="ko-code-body">
+<pre class="ko-code-pre"><span class="k-kw">import</span> asyncio
+<span class="k-kw">import-from</span> asyncio sleep
+<span class="k-kw">import-from</span> time perf_counter
+
+
+<span class="k-kw">define</span> <span class="k-fn">fetch</span> <span class="k-pn">[</span>name delay<span class="k-pn">]:</span>
+    <span class="k-pn">(</span><span class="k-fn">sleep</span> delay<span class="k-pn">)</span>
+    <span class="k-str">f"{name} took {delay}s"</span>
+
+<span class="k-kw">define</span> <span class="k-fn">job</span> <span class="k-pn">[</span>d<span class="k-pn">]:</span>
+    <span class="k-pn">(</span><span class="k-fn">defer</span> <span class="k-pn">(</span><span class="k-kw">lambda</span> <span class="k-pn">[]</span> <span class="k-pn">(</span><span class="k-fn">fetch</span> <span class="k-str">f"job-{d}"</span> d<span class="k-pn">)))</span>
+
+<span class="k-kw">define</span> <span class="k-fn">main</span> <span class="k-pn">[]:</span>
+    <span class="k-pn">(</span><span class="k-fn">print</span> <span class="k-pn">(</span><span class="k-fn">fetch</span> <span class="k-str">"solo"</span> <span class="k-num">0.1</span><span class="k-pn">))</span>
+    <span class="k-kw">define</span> start <span class="k-pn">(</span><span class="k-fn">perf_counter</span><span class="k-pn">)</span>
+    <span class="k-kw">define</span> results <span class="k-pn">(</span><span class="k-kw">await</span> <span class="k-pn">(</span><span class="k-fn">asyncio.gather</span> <span class="k-param">*:</span> <span class="k-pn">(</span><span class="k-kw">list-each</span> <span class="k-pn">[</span>d <span class="k-pn">#[</span><span class="k-num">0.3</span> <span class="k-num">0.1</span> <span class="k-num">0.2</span><span class="k-pn">]]</span> <span class="k-pn">(</span><span class="k-fn">job</span> d<span class="k-pn">))))</span>
+    <span class="k-pn">(</span><span class="k-fn">print</span> results<span class="k-pn">[</span><span class="k-num">0</span><span class="k-pn">]</span> results<span class="k-pn">[</span><span class="k-num">1</span><span class="k-pn">]</span> results<span class="k-pn">[</span><span class="k-num">2</span><span class="k-pn">])</span>
+    <span class="k-pn">(</span><span class="k-fn">print</span> <span class="k-str">f"all three in {(- (perf_counter) start):.2f}s"</span><span class="k-pn">)</span>
+
+<span class="k-pn">(</span><span class="k-fn">main</span><span class="k-pn">)</span>
+<span class="k-cm">;; solo took 0.1s</span>
+<span class="k-cm">;; job-0.3 took 0.3s job-0.1 took 0.1s job-0.2 took 0.2s</span>
+<span class="k-cm">;; all three in 0.30s</span></pre>
+      </div>
+    </div>
+
+    <h2 class="ko-section-title ko-section-title-spaced">A macro that retries</h2>
+    <p class="ko-section-lede"><span class="ko-inline-code">retry</span> is a macro, so its body is not evaluated until the expansion decides to. The template is written in the same layout as the code that uses it. One rule to know: a layout line with more than one element is a call, which is why the template spells its body as <span class="ko-inline-code">(begin body ...)</span>.</p>
+    <div class="ko-code-window">
+      <div class="ko-code-chrome">
+        <span class="ko-dot ko-dot-close"></span>
+        <span class="ko-dot ko-dot-min"></span>
+        <span class="ko-dot ko-dot-max"></span>
+        <span class="ko-code-filename">retry.ki</span>
+      </div>
+      <div class="ko-code-body">
+<pre class="ko-code-pre"><span class="k-kw">import-from</span> random random
+
+
+<span class="k-kw">define-syntax</span> <span class="k-fn">retry</span><span class="k-pn">:</span>
+    <span class="k-kw">syntax-rules</span> <span class="k-pn">[]:</span>
+        retry times body ...<span class="k-pn">:</span>
+            <span class="k-kw">let</span> loop <span class="k-pn">[[</span>left times<span class="k-pn">]]:</span>
+                <span class="k-kw">try</span><span class="k-pn">:</span>
+                    <span class="k-pn">(</span><span class="k-kw">begin</span> body ...<span class="k-pn">)</span>
+                <span class="k-kw">except</span> <span class="k-pn">[</span><span class="k-type">Exception</span> <span class="k-param">as:</span> e<span class="k-pn">]:</span>
+                    <span class="k-kw">if</span> <span class="k-pn">(</span><span class="k-fn">&gt;</span> left <span class="k-num">1</span><span class="k-pn">):</span>
+                        <span class="k-pn">(</span><span class="k-fn">loop</span> <span class="k-pn">(</span><span class="k-fn">-</span> left <span class="k-num">1</span><span class="k-pn">))</span>
+                    <span class="k-kw">else</span><span class="k-pn">:</span>
+                        <span class="k-pn">(</span><span class="k-kw">raise</span> e<span class="k-pn">)</span>
+
+
+<span class="k-kw">define</span> <span class="k-fn">flaky</span> <span class="k-pn">[</span>threshold<span class="k-pn">]:</span>
+    <span class="k-kw">define</span> roll <span class="k-pn">(</span><span class="k-fn">random</span><span class="k-pn">)</span>
+    <span class="k-kw">if</span> <span class="k-pn">(</span><span class="k-fn">&lt;</span> roll threshold<span class="k-pn">):</span>
+        <span class="k-pn">(</span><span class="k-kw">raise</span> <span class="k-pn">(</span><span class="k-type">RuntimeError</span> <span class="k-str">f"rolled {roll:.2f}"</span><span class="k-pn">))</span>
+    <span class="k-kw">else</span><span class="k-pn">:</span>
+        roll
+
+<span class="k-kw">define</span> result<span class="k-pn">:</span>
+    <span class="k-fn">retry</span> <span class="k-num">5</span><span class="k-pn">:</span>
+        <span class="k-pn">(</span><span class="k-fn">print</span> <span class="k-str">"trying"</span><span class="k-pn">)</span>
+        <span class="k-pn">(</span><span class="k-fn">flaky</span> <span class="k-num">0.7</span><span class="k-pn">)</span>
+
+<span class="k-pn">(</span><span class="k-fn">print</span> <span class="k-str">f"got {result:.2f}"</span><span class="k-pn">)</span>
+<span class="k-cm">;; trying</span>
+<span class="k-cm">;; trying</span>
+<span class="k-cm">;; got 0.93</span></pre>
+      </div>
+    </div>
+
+    <h2 class="ko-section-title ko-section-title-spaced">A search, with no search engine</h2>
+    <p class="ko-section-lede"><span class="ko-inline-code">amb</span> is an ordinary function. Each call captures the rest of the search as a delimited continuation and runs it once per choice; <span class="ko-inline-code">require</span> abandons the branches that cannot work. Choice points compose across function calls and nest to any depth.</p>
+    <div class="ko-code-window">
+      <div class="ko-code-chrome">
+        <span class="ko-dot ko-dot-close"></span>
+        <span class="ko-dot ko-dot-min"></span>
+        <span class="ko-dot ko-dot-max"></span>
+        <span class="ko-code-filename">triples.ki</span>
+      </div>
+      <div class="ko-code-body">
+<pre class="ko-code-pre"><span class="k-kw">import-from</span> koskari.solve amb require solve
+
+
+<span class="k-kw">define</span> <span class="k-fn">triples</span> <span class="k-pn">[</span>limit<span class="k-pn">]:</span>
+    <span class="k-fn">solve</span><span class="k-pn">:</span>
+        <span class="k-kw">lambda</span> <span class="k-pn">[]:</span>
+            <span class="k-kw">define</span> a <span class="k-pn">(</span><span class="k-fn">amb</span> <span class="k-pn">(</span><span class="k-fn">range</span> <span class="k-num">1</span> limit<span class="k-pn">))</span>
+            <span class="k-kw">define</span> b <span class="k-pn">(</span><span class="k-fn">amb</span> <span class="k-pn">(</span><span class="k-fn">range</span> a limit<span class="k-pn">))</span>
+            <span class="k-kw">define</span> c <span class="k-pn">(</span><span class="k-fn">amb</span> <span class="k-pn">(</span><span class="k-fn">range</span> b limit<span class="k-pn">))</span>
+            <span class="k-fn">require</span> <span class="k-pn">(</span><span class="k-fn">==</span> <span class="k-pn">(</span><span class="k-fn">+</span> <span class="k-pn">(</span><span class="k-fn">*</span> a a<span class="k-pn">)</span> <span class="k-pn">(</span><span class="k-fn">*</span> b b<span class="k-pn">))</span> <span class="k-pn">(</span><span class="k-fn">*</span> c c<span class="k-pn">))</span>
+            <span class="k-pn">#(</span>a b c<span class="k-pn">)</span>
+
+<span class="k-pn">(</span><span class="k-fn">print</span> <span class="k-pn">(</span><span class="k-fn">triples</span> <span class="k-num">20</span><span class="k-pn">))</span>
+<span class="k-cm">;; [(3, 4, 5), (5, 12, 13), (6, 8, 10), (8, 15, 17), (9, 12, 15)]</span></pre>
+      </div>
+    </div>
   </div>
 
   <!-- docs levels -->
   <div class="ko-section ko-section-tight">
     <div class="ko-label ko-label-tight">Documentation</div>
-    <h2 class="ko-section-title ko-section-title-spaced">Find your level</h2>
+    {% for group in doc_groups %}
+    <h2 class="ko-section-title ko-section-title-spaced">{{ group.title }}</h2>
     <div class="ko-doc-list">
-      {% for row in doc_rows %}
+      {% for row in group.rows %}
       <a class="ko-doc" href="{{ row.href }}">
         <span class="ko-doc-num">{{ row.num }}</span>
         <span class="ko-doc-title">{{ row.title }}</span>
@@ -147,6 +284,7 @@
       </a>
       {% endfor %}
     </div>
+    {% endfor %}
   </div>
 
   <!-- download band -->
@@ -154,17 +292,17 @@
     <div class="ko-download-grid">
       <div>
         <h2 class="ko-download-title">Get Koskari</h2>
-        <p class="ko-download-lede">Koskari is in early development. Weekly snapshots of <strong class="ko-download-strong">v{{ version }}</strong> publish to PyPI as dev releases; <strong class="ko-download-strong">v{{ beta_target }}</strong> will be the first public beta. Cross-platform: anywhere CPython runs.</p>
+        <p class="ko-download-lede">Koskari <strong class="ko-download-strong">v{{ version }}</strong> is the first beta. It installs from PyPI and runs on CPython 3.9 through 3.14 on Linux and macOS. Expect the language surface to move before 1.0. Koskari is a language for exploring, not a replacement for Python.</p>
         <div class="ko-platform-tags">
           <span class="ko-platform-tag">Linux</span>
-          <span class="ko-platform-tag">MacOS</span>
+          <span class="ko-platform-tag">macOS</span>
           <span class="ko-platform-tag">CPython 3.9+</span>
         </div>
       </div>
       <div class="ko-download-cmds">
         <div class="ko-cmd-box">
-          <div class="ko-cmd-label">PyPI &middot; weekly dev snapshot</div>
-          <div class="ko-cmd-line"><span class="ko-cmd-prompt">$</span> pip install --pre koskari</div>
+          <div class="ko-cmd-label">PyPI</div>
+          <div class="ko-cmd-line"><span class="ko-cmd-prompt">$</span> pip install koskari</div>
         </div>
         <div class="ko-cmd-box">
           <div class="ko-cmd-label">From source</div>

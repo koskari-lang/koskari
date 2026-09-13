@@ -35,10 +35,6 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 
-# The next public beta target. Distinct from the current package version
-# (which comes from setup.cfg); this is a roadmap milestone, not a release.
-BETA_TARGET = "0.9.0"
-
 # Public repository. The GitHub link 404s for anonymous visitors until the
 # repository is made public.
 REPO_URL = "https://github.com/koskari-lang/koskari"
@@ -61,22 +57,26 @@ ICON_WORDMARK_MARKUP = """
 """
 
 
-# "Find your level" rows, aligned to the documentation we actually
-# publish under /docs. Rendered in order; the number is derived from
-# position, so reordering or inserting rows just works.
-DOC_ROWS = [
-    ("Getting Started", "/docs/start/overview/",
-     "Install, open the REPL, evaluate your first form."),
-    ("Learn Koskari", "/docs/start/beginner/",
-     "The language from zero, one chapter at a time."),
-    ("Coming from Python", "/docs/start/from-python/",
-     "For people who already think in Python."),
-    ("The Guide", "/docs/guide/",
-     "A working tour: forms, functions, control flow, macros, and async."),
-    ("Language Reference", "/docs/reference/",
-     "Grammar, layout rules, special forms, and error codes."),
-    ("Runtime & Builtins", "/docs/reference/runtime/",
-     "Every builtin in the runtime library, indexed."),
+# Documentation rows, aligned to what we publish under /docs, in two
+# groups. Numbers are derived from position across both groups, so
+# reordering or inserting rows just works.
+DOC_GROUPS = [
+    ("Start here", [
+        ("Getting Started", "/docs/start/overview/",
+         "Install, open the REPL, evaluate your first form."),
+        ("Learn Koskari", "/docs/start/beginner/",
+         "The language from zero, one chapter at a time."),
+        ("Coming from Python", "/docs/start/from-python/",
+         "For people who already think in Python."),
+    ]),
+    ("Reference", [
+        ("The Guide", "/docs/guide/",
+         "A working tour: forms, functions, control flow, macros, and async."),
+        ("Language Reference", "/docs/reference/",
+         "Grammar, layout rules, special forms, and error codes."),
+        ("Runtime & Builtins", "/docs/reference/runtime/",
+         "Every builtin in the runtime library, indexed."),
+    ]),
 ]
 
 
@@ -109,22 +109,28 @@ def read_version(root=None):
     return conf["metadata"]["version"]
 
 
-def doc_rows():
+def doc_groups():
     """
-    Build the templating context for the documentation link rows
+    Build the templating context for the documentation link groups
 
-    :return: list of dicts with num, title, href, and blurb
+    :return: list of dicts with title and rows; each row has num, title,
+      href, and blurb
     """
 
-    rows = []
-    for index, (title, href, blurb) in enumerate(DOC_ROWS, start=1):
-        rows.append({
-            "num": f"{index:02d}",
-            "title": title,
-            "href": href,
-            "blurb": blurb,
-        })
-    return rows
+    groups = []
+    index = 1
+    for title, rows in DOC_GROUPS:
+        entries = []
+        for row_title, href, blurb in rows:
+            entries.append({
+                "num": f"{index:02d}",
+                "title": row_title,
+                "href": href,
+                "blurb": blurb,
+            })
+            index += 1
+        groups.append({"title": title, "rows": entries})
+    return groups
 
 
 def write_lockup_svg(out_path, root=None):
@@ -182,11 +188,10 @@ def render(src, out, root=None):
     version = read_version(root)
     page = template.render(
         version=version,
-        beta_target=BETA_TARGET,
         github_url=REPO_URL,
         repo_short=REPO_SHORT,
         license_label=LICENSE_LABEL,
-        doc_rows=doc_rows(),
+        doc_groups=doc_groups(),
     )
     (out / "index.html").write_text(page, encoding="utf-8")
 

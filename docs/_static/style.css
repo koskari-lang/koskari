@@ -624,6 +624,7 @@ body {
 .k-dec   { color: var(--ko-tok-dec); }
 .k-param { color: var(--ko-tok-param); }
 .k-pn    { color: var(--ko-tok-pn); }
+.k-cm    { color: var(--ko-tok-param); font-style: italic; }
 
 /* === Responsive === */
 
