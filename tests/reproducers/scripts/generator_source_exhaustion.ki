@@ -1,0 +1,108 @@
+;; Full-stack reproducer: the providers that catch a source running
+;; out, over koskari generator sources. The exhaustion arrives on the
+;; in-flight path, where the step frame is the live frame, so reaching
+;; the provider's own resume depends on process_raise handing it to
+;; the prologue rather than unwinding past the frame.
+
+
+import-from koskari.lib batched
+
+
+define gen [items]:
+    for-each [i items]:
+        yield i
+
+
+define batches [items n]:
+    list (batched (gen items) n)
+
+
+define short_tail []:
+    batches #[0 1 2 3 4 5 6] 3
+
+
+define whole_source_is_one_short_batch []:
+    batches #[0 1] 5
+
+
+define even_division []:
+    batches #[0 1 2 3 4 5] 3
+
+
+define flattened []:
+    define out #[]
+    for-each [batch (batched (gen #[0 1 2 3 4]) 2)]:
+        for-each [item batch]:
+            out.append item
+    out
+
+
+;; A source that fails rather than running out. The failure arrives on
+;; the same in-flight path as the exhaustion above, so it reaches the
+;; step's resume the same way -- and must propagate rather than being
+;; read as the source running out.
+
+
+define boom [at]:
+    for-each [i #[0 1 2 3]]:
+        if (== i at):
+            raise (ValueError "boom")
+        yield i
+
+
+define raise_inside_first_batch []:
+    list (batched (boom 1) 3)
+
+
+define raise_on_a_batch_boundary []:
+    list (batched (boom 3) 3)
+
+
+;; zip-longest over koskari generators: a source running out while a
+;; sibling is still live arrives on the same in-flight path, and must
+;; fill rather than end the row.
+
+
+import-from koskari.lib zip-longest
+
+
+define zl [a b]:
+    list (zip-longest (gen a) (gen b))
+
+
+define first_source_runs_out []:
+    zl #[1] #[10 20 30]
+
+
+define second_source_runs_out []:
+    zl #[1 2 3] #[10]
+
+
+define sources_run_out_together []:
+    zl #[1 2] #[10 20]
+
+
+define filled_value []:
+    list (zip-longest (gen #[1 2 3]) (gen #[10]) fillvalue: 0)
+
+
+;; The same providers driven inside a delimited extent, and through an
+;; invoked continuation. A catching provider takes no callable, so no
+;; user code runs inside its step and no transfer can be armed while
+;; its exhaustion arrives; these pin that the extents make no
+;; difference to what it produces.
+
+
+define batched_under_reset []:
+    reset:
+        list (batched (gen #[0 1 2 3 4 5 6]) 3)
+
+
+define batched_via_continuation []:
+    reset:
+        shift k (call k (list (batched (gen #[0 1 2]) 2)))
+
+
+define zip_longest_under_reset []:
+    reset:
+        list (zip-longest (gen #[1]) (gen #[10 20 30]))

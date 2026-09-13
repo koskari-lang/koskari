@@ -68,3 +68,51 @@ in `demand`.
 
 Reference: [map and filter](../reference/runtime/map-and-filter.md);
 the demand rules in [Pitfalls](pitfalls.md).
+
+## The same rule covers itertools
+
+`import-from itertools ...` is almost always the wrong import to
+generate. Use `koskari.itertools`, which publishes every combinator
+under the name you already know:
+
+```
+accumulate  batched  chain  chain-from-iterable  compress  cycle
+dropwhile  filterfalse  groupby  islice  pairwise  starmap
+takewhile  zip-longest
+```
+
+`map`, `filter` and `zip` are NOT there -- they are bare in builtins
+and already native. Do not import them from anywhere.
+
+Why it matters for generated code: a koskari callable handed to
+python's `itertools` returns a coroutine per call instead of a value,
+and coroutines are truthy, so every predicate reads as true. This does
+not raise. It produces plausible output that is wrong:
+
+```koskari
+(import-from itertools takewhile)
+(list (takewhile (lambda [x] (< x 3)) #[1 2 3 4 1]))
+; #[1 2 3 4 1] -- nothing was filtered, no error was raised
+
+(import-from koskari.itertools takewhile)
+(list (takewhile (lambda [x] (< x 3)) #[1 2 3 4 1]))
+; #[1 2]
+```
+
+Both forms compile and both run. Only the second is correct, and
+nothing in a test or a traceback will point at the first. Treat the
+python import as a defect on sight.
+
+Sources behave the same way as for `map` and `filter`: a suspending
+source reaches these combinators and does not reach python's. The
+consumer still decides -- `for-each` in an asynchronous context awaits
+in place, `list` drives synchronously and raises
+`KoskariSyncViolation` on a source that suspends.
+
+Two departures from python worth knowing before you rely on them:
+`groupby` yields each group as a list rather than a shared-cursor
+view, so a group stays valid after the parent advances; and
+`filterfalse` returns a `filter` carrying an inverted verdict, so
+`filter?` answers true for it.
+
+Reference: [koskari.itertools](../reference/runtime/koskari-itertools.md).

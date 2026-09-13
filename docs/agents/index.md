@@ -27,7 +27,8 @@ from Python or Scheme priors.
 - Gentler on-ramp for Python-shaped expectations:
   [Layout and calls](../start/from-python/layout-and-calls.md)
 - `map`, `filter`, and `partial` are koskari-native, not the python
-  builtins -- what that changes and when `demand` wrapping applies:
+  builtins -- what that changes, when `demand` wrapping applies, and
+  why `koskari.itertools` rather than `itertools`:
   [Native builtins](native-builtins.md)
 - Exception names at the read, compile, and run phases:
   [Error guide](../reference/error-codes.md)

@@ -189,6 +189,7 @@ def extension(platform=None, debug=None):
     depends = list(libdir.glob("*.h"))
     depends.extend(libdir.glob("*.incl"))
     depends.extend(libdir.glob("dynchain/*.c"))
+    depends.extend(libdir.glob("transform/*.c"))
     depends.extend(libdir.glob("eval/*.c"))
     depends.extend(libdir.glob("func/*.c"))
     depends.extend(libdir.glob("matcher/*.c"))

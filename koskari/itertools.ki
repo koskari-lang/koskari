@@ -15,37 +15,65 @@
 """
 koskari.itertools
 
-Iterator combinators written in Koskari. Each is a generator over its
-sources, so a source may be a sync iterable, an async iterable, or a
-KosIter provider, and a callable argument runs in the evaluator.
+Iterator combinators. A source may be a sync iterable, an async
+iterable, or a KosIter provider, and a callable argument runs in the
+evaluator. Python's itertools drives a source through tp_iternext and
+calls a predicate across the Python boundary, so it takes neither.
+
+All but groupby are native providers re-exported from koskari.lib.
+groupby is written here because its shape does not fit the one-step
+provider model.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 
-(declare-exports chain takewhile)
+(import-from koskari.lib
+  accumulate batched chain chain-from-iterable compress cycle
+  dropwhile filterfalse islice pairwise starmap takewhile zip-longest)
 
 
-define chain [*: srcs]:
+(declare-exports
+  accumulate batched chain chain-from-iterable compress
+  cycle dropwhile filterfalse groupby islice pairwise
+  starmap takewhile zip-longest)
+
+
+define groupby [src key: None]:
   """
-  Yield every element of each source in turn
+  Yield ``#(key group)`` for each run of consecutive elements sharing a
+  key, where key defaults to the element itself
   """
 
-  for-each [x srcs]:
-    yield-from x
+  ; The group is a list, not a view onto the source. Python's groupby
+  ; hands back a sub-iterator sharing one cursor with its parent, which
+  ; is only valid until the parent advances; that shape needs a second
+  ; reader of the same cursor, and there is no way to give one a driven
+  ; source without deciding for it when to suspend. Materializing each
+  ; run keeps every group valid for as long as its holder wants it, at
+  ; the cost of holding one run in memory.
 
-
-define takewhile [pred src]:
-  """
-  Yield elements of src while pred holds; stop at the first that fails,
-  leaving the rest of src unconsumed
-  """
+  define started False
+  define groupkey None
+  define group #[]
 
   for-each [x src]:
-    unless (pred x):
-      return
-    yield x
+    define k (if (None? key) x (key x))
+
+    if started:
+      unless (== k groupkey):
+        yield #(groupkey group)
+        set! group #[]
+        set! groupkey k
+    else:
+      set! started True
+      set! groupkey k
+
+    group.append x
+
+  when started:
+    yield #(groupkey group)
 
 
 ; The end.

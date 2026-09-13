@@ -453,13 +453,71 @@ KosOpResult kos_dyn_unwind_to_loop(
 
 
 /**
+   Hand the pending exception to the CPS resume armed on a frame the
+   walk reached at dyn_top above the live frame -- a flattened
+   delegation whose resume the prologue's own delivery cannot reach,
+   since that tests the live frame. A plain call with NULL, the resume
+   disarmed first as the delivery step disarms it. The resume handles
+   the exception (REPROLOGUE, once it has arranged the frame's
+   continuation) or propagates it with EVAL_RAISE, in which case the
+   walk goes on to pop the frame.
+
+   A code-less step frame that is itself the live frame does not come
+   through here: process_raise hands that case to the prologue, which
+   delivers against a settled chain where the resume may thread on.
+
+   :return: EVAL_REPROLOGUE, EVAL_RAISE, or EVAL_FATAL
+*/
+static KosOpResult raise_walk_hand_to_resume(
+    KosEvalState *es,
+    KosDynFrame *frame) {
+
+  KosResumeFn resume = (KosResumeFn) KosDynFrame_RESUME_FN(frame);
+  void *state = KosDynFrame_RESUME_STATE(frame);
+  KosOpResult hr;
+
+  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+
+  KOS_TRACE_RESUME_STEP();
+  hr = resume(es, state, NULL);
+  KOS_TRACE_TRAMPOLINE_STEP();
+
+  switch (hr.kind) {
+    case KOS_RES_NORMAL:
+    case KOS_RES_REPROLOGUE:
+      return EVAL_REPROLOGUE();
+
+    case KOS_RES_RAISE:
+    case KOS_RES_FATAL:
+      return hr;
+
+    default:
+      /* The resume ran as a plain call: it may handle the exception
+         or propagate it, never thread on or produce a signal this
+         walk cannot apply. */
+      Py_XDECREF(hr.val);
+#if KOS_EVAL_SAFETYNET
+      PyErr_SetString(PyExc_SystemError,
+                      "resume answered a propagating exception with"
+                      " a signal other than REPROLOGUE or RAISE");
+      return EVAL_FATAL();
+#else
+      return EVAL_RAISE();
+#endif
+  }
+}
+
+
+/**
    RAISE unwind walk. See dynchain.h for the contract. Walks dyn_top down
    toward the innermost frame, offering handle(RAISE) then popping until a
    TRY or FINALLY consumes (jump to handler) or no handler remains, crossing
    frame and generator boundaries as the exception propagates. Returns
    KosOpResult (the eval-loop boundary type): EVAL_REPROLOGUE when a handler
    applied, EVAL_RAISE when none remains, EVAL_AWAIT when an async unwind
-   started. Callers: process_raise (the unified RAISE ingress in eval.c).
+   started. Callers: process_raise (the unified RAISE ingress in
+   eval.c).
 */
 KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -497,6 +555,11 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
     if (KosEvalState_DYN_TOP(es) == (KosDynNode *) KosEvalState_FRAME(es)) {
       if (! PyErr_Occurred())
         break;
+
+      /* A code-less step frame's resume has already seen this
+         exception: process_raise hands it to the prologue, which
+         delivers it as a NULL against a settled chain, and the walk
+         only runs once that resume declined and disarmed itself. */
 
       {
         KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
@@ -684,44 +747,17 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
 
     }  /* KOS_DYN_CAP_INTERCEPTS_RAISE */
 
-    /* A frame carrying a CPS resume sees the pending exception before
-       it is torn through: the resume either handles it (REPROLOGUE)
-       or propagates it (EVAL_RAISE), in which case the pop below
-       proceeds. Only a resume frame sitting at dyn_top above the live
-       frame is called; a step frame that is the live frame when its
-       operation fails takes the frame-crossing branch above and is
-       popped without its resume running, so its consumer's iteration
-       node sees the failure instead. */
+    /* A resume-carrying frame at dyn_top above the live frame: its
+       resume sees the pending exception the same way the
+       frame-crossing branch's does, and a propagated exception goes
+       on to the pop below. */
     if (KosDynNode_IS_FRAME(top)
         && KosDynFrame_RESUME_FN((KosDynFrame *) top)) {
-      KosDynFrame *frame = (KosDynFrame *) top;
-      KosResumeFn resume = (KosResumeFn) KosDynFrame_RESUME_FN(frame);
-      void *state = KosDynFrame_RESUME_STATE(frame);
-      KosOpResult hr;
+      KosOpResult hr = raise_walk_hand_to_resume(es, (KosDynFrame *) top);
 
-      KosDynFrame_RESUME_FN(frame) = NULL;
-      KosDynFrame_RESUME_STATE(frame) = NULL;
-
-      KOS_TRACE_RESUME_STEP();
-      hr = resume(es, state, NULL);
-      KOS_TRACE_TRAMPOLINE_STEP();
-      if (hr.kind == KOS_RES_NORMAL || hr.kind == KOS_RES_REPROLOGUE)
-        return EVAL_REPROLOGUE();
-      if (hr.kind == KOS_RES_FATAL)
-        return EVAL_FATAL();
-#if KOS_EVAL_SAFETYNET
-      /* The resume ran as a plain call: it may handle the exception
-         or propagate it, never thread on or produce a signal this
-         walk cannot apply. */
-      if (hr.kind != KOS_RES_RAISE) {
-        Py_XDECREF(hr.val);
-        PyErr_SetString(PyExc_SystemError,
-                        "resume answered a propagating exception with"
-                        " a signal other than REPROLOGUE or RAISE");
-        return EVAL_FATAL();
-      }
-#endif
-      /* declined: fall through to the pop */
+      if (hr.kind != KOS_RES_RAISE)
+        return hr;
+      /* propagating: fall through to the pop */
     }
 
     /* PASS: unwind and pop */

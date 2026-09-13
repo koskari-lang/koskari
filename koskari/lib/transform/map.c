@@ -1,21 +1,8 @@
-/*
-  This library is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 3 of the License, or
-  (at your option) any later version.
-
-  This library is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this library; if not, see <http://www.gnu.org/licenses/>.
-*/
+/* Included by transform.c -- map */
 
 
 /**
-   koskari/lib/map.c
+   koskari/lib/transform/map.c
 
    KosMap: a native lazy map over one source, duck-typed against
    builtins.map, implemented as a KosIter provider on the shared
@@ -39,9 +26,6 @@
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
 */
-
-
-#include "lib.h"
 
 
 /* === the step's CPS resumes ===
@@ -216,12 +200,18 @@ static KosIterStepResult map_iter_step(
 /* === the type === */
 
 
+static const KosTransformSpec map_spec = {
+  .has_callable = 1,
+  .none_means = KOS_TF_NONE_REJECT,
+};
+
+
 static PyObject *kosmap_new(
     PyTypeObject *type,
     PyObject *args,
     PyObject *kwds) {
 
-  return kos_transform_new(type, args, kwds, 0);
+  return kos_transform_new(type, args, kwds, &map_spec);
 }
 
 
@@ -255,38 +245,6 @@ KosEvaluatedTypeObject KosMapType = {
     .ki_pyctx_recyclable = 1,
   },
 };
-
-
-/* === Unit lifecycle === */
-
-
-int koskari_map_init(PyObject *mod) {
-
-  PyObject *dict = PyModule_GetDict(mod);
-  if (! dict)
-    return -1;
-
-  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosMapType)))
-    return -1;
-
-  if (PyDict_SetItemString(dict, "KosMap",
-                           (PyObject *) KOS_EVALUATED_PYTYPE(KosMapType)))
-    return -1;
-
-  /* short alias matching the class __name__ */
-  if (PyDict_SetItemString(dict, "map",
-                           (PyObject *) KOS_EVALUATED_PYTYPE(KosMapType)))
-    return -1;
-
-  return 0;
-}
-
-
-int koskari_map_clear(PyObject *mod) {
-
-  (void) mod;
-  return 0;
-}
 
 
 // The end.

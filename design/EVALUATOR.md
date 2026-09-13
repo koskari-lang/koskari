@@ -300,17 +300,27 @@ flowchart TD
 
 A goal records where control is going and never what to do: the driver re-derives its next step from the live chain on every pass (§6). A leave or enter that hands control to a thunk frame or an awaitable parks the goal on that node with `dyn_top` as it was; the driver does nothing until `dyn_top` is that node again, which means the thunk's frame came and went. Goals nest: a continuation invoked from inside a thunk arms an inner goal while the outer stays parked, and the drive retires into the outer when the inner delivers. An undelimited landing frees every outer goal, since it replaced the chain they were moving.
 
-**Failed transfer:** a step that raises enters **`process_raise`** (the unified RAISE ingress), which frees the whole goal stack (`kos_xfer_goal_abandon_all`) and runs **`kos_dyn_unwind_raise`** on the chain as the driver left it; there is no rollback to the invoke site. `EVAL_REPROLOGUE` continues when a handler applies, `EVAL_AWAIT` when the unwind suspended (tagged for the driver), `EVAL_RAISE` / `EVAL_FATAL` otherwise. The one non-ingress carve-out is a foreign cc-unwind's boundary raise, which `kos_xfer_goal_drive` reports through `out_boundary` and the drain returns as it stands (§4.1).
+**Failed transfer:** a step that raises enters **`process_raise`** (the unified RAISE ingress), which frees the whole goal stack (`kos_xfer_goal_abandon_all`) and runs **`kos_dyn_unwind_raise`** on the chain as the driver left it; there is no rollback to the invoke site. `EVAL_REPROLOGUE` continues when a handler applies, `EVAL_AWAIT` when the unwind suspended (tagged for the driver), `EVAL_RAISE` / `EVAL_FATAL` otherwise. `process_raise` answers `EVAL_REPROLOGUE` without walking at all when the live frame is code-less with an armed resume, which is how a failed delivery reaches its consumer (§8.2). The one non-ingress carve-out is a foreign cc-unwind's boundary raise, which `kos_xfer_goal_drive` reports through `out_boundary` and the drain returns as it stands (§4.1).
 
 ### 2.3 Phase 3: Pending Exception Check
 
 At each **prologue re-entry** (`kos_prologue_reenter`), after the
-staged-delivery bounce (§8.2), **eval_phase_pending_exception** handles
-`PyErr_Occurred()` (opcode failure, continuation apply, async exception, etc.);
-a pending exception drops any staged delivery first, since the raise walk
-propagates the exception through the resume instead. The same helper is what takes a
-pending interrupt after **`Py_MakePendingCalls()`** at the **`poll`** section
-(see §1.6).
+staged-delivery bounce (§8.2), a pending exception is first offered to
+the live frame's resume: a code-less frame with one armed, and no goal
+in play, takes the exception as a NULL delivery through
+`eval_step_resume_delivery` (§8.2). Only past that does
+**eval_phase_pending_exception** handle `PyErr_Occurred()` (opcode
+failure, continuation apply, async exception, etc.), dropping any
+staged delivery first, since the frame it was staged for may be popped
+or replaced. The same helper is what takes a pending interrupt after
+**`Py_MakePendingCalls()`** at the **`poll`** section (see §1.6).
+
+The offer sits ahead of the pending-exception phase because that phase
+runs `process_raise`, which would unwind past the frame whose consumer
+is waiting for the failure. A goal in play is routed past the offer
+and through the phase below, whose `process_raise` abandons the goal
+stack and then bounces back here with the goal gone, so a transfer
+reaches abandon and `try_local` first and the offer still fires.
 
 ```mermaid
 flowchart TD
@@ -696,10 +706,14 @@ Walk from `dyn_top` toward the chain root (`dynchain/dyn_walk.c`). The
 walk **crosses frame boundaries** -- a raise leaves the evaluator loop only
 at the chain root (NULL parent) or a generator node. Per iteration:
 
-1. **Frame crossing** (`dyn_top == frame`): if the frame's parent is NULL
-   or a GEN, exit the walk (boundary raise); otherwise record the frame
-   into the exception's trace (`kos_eval_note_crossed_frame`), pop it, and
-   continue in the caller's section.
+1. **Frame crossing** (`dyn_top == frame`): a code-less frame's resume
+   has already seen this exception -- `process_raise` hands that case
+   to the prologue before the walk runs (§8.2), and the walk reaches
+   the frame only once that resume declined and disarmed itself. If
+   the frame's parent is
+   NULL or a GEN, exit the walk (boundary raise); otherwise record the
+   frame into the exception's trace (`kos_eval_note_crossed_frame`), pop
+   it, and continue in the caller's section.
 2. **Cap fast check**: only nodes with `KOS_DYN_CAP_INTERCEPTS_RAISE`
    (TRY, FINALLY, GEN, INPLACE-mode DELIM) are dispatched; everything
    else goes straight to unwind/pop. Dispatch outcomes:
@@ -1349,7 +1363,7 @@ goes by ending in **`RESULT_ENTRY(es, r, resume, state)`**:
 | `NORMAL` | a callee (or a generator's frame) is installed and current, resume armed on the caller | `KOS_THREAD_NEXT` into the callee's first instruction |
 | `REPROLOGUE` | the value still needed settling: one eager step ran, the outcome is staged, resume armed | return to the trampoline |
 | `AWAIT` | a genuine suspension, resume armed | return to the trampoline |
-| `RAISE` / `FATAL` | failure; the raise walk propagates it through the resume | return to the trampoline |
+| `RAISE` / `FATAL` | failure; it reaches the resume as a NULL delivery, which handles it or declines (§8.2) | return to the trampoline |
 
 `CallResult` with `resume == NULL` relays `KosEvalState_Call`'s result
 untouched, `tail_call` included; that is what partial, demand, and
@@ -1395,17 +1409,58 @@ still needs awaiting is settled by the delivery step
 (`KosEvalState_SettleStage`, one eager step, or a real suspension with
 the resume re-armed) before the resume runs. Consumers never classify.
 
-Failure reaches a resume, when it does, through the raise walk:
-`kos_dyn_unwind_raise` calls the resume of a frame that is `dyn_top`
-above the live frame (a flattened delegation) with a NULL value and
-`PyErr` set before tearing the frame through; the resume either
-handles the exception (`REPROLOGUE`) or propagates it (`EVAL_RAISE`),
-in which case the pop proceeds. A step frame that is the live frame
-when its own operation fails is popped by the walk's frame-crossing
-branch without its resume running, and the failure reaches the step's
-consumer through its iteration node, which owns the conversion (a
-raised `StopIteration` is exhaustion). Map and filter always
-propagate, so both shapes end the same way.
+Failure reaches a resume through the same channel a value does. NULL
+with `PyErr` set means the delivery failed, reported the way a
+`PyObject *` API reports failure to its caller.
+
+Two paths deliver it, under different rules. A resume on the live
+frame runs from the trampoline against a settled chain and may do
+anything a resume handed a value may do -- thread on with
+`RESULT_ENTRY` or `RESUME_HOP`, complete the frame with
+`KosNativeFrame_ReturnPark`, or return `EVAL_RAISE` to decline. A
+resume on a frame the walk reaches above the live frame is called from
+inside the unwind and may only answer `REPROLOGUE` or `EVAL_RAISE`.
+Every provider takes the first path; the second serves a flattened
+delegation and is pinned by `tests/native/test_resume.c`. A resume
+cannot tell the two apart from its own code, so one that could be
+armed on either must keep to the narrower rule.
+
+`process_raise` routes it. After the goal stack is abandoned and
+before the walk runs, it checks for a code-less frame with an armed
+resume and, finding one, returns `EVAL_REPROLOGUE` rather than
+unwinding; the prologue's armed-resume delivery (§2.3) then invokes
+the resume with NULL. Every raise ingress converges there, since
+`process_raise` is reached straight from `apply_kos_op_result` and
+never through the prologue. Declining re-raises with the resume
+already disarmed by the delivery, so the second pass finds nothing
+armed, the walk unwinds as it always did, and the bounce cannot
+loop.
+
+Code-less is what makes a frame eligible. A CPS step frame is
+code-less by construction (`KosResumeFrame_Install`). A resume armed on
+a frame carrying bytecode is a yield-from phase resume, armed on the
+delegating frame itself (`kos_dyn_yield_from_arm`), and those read a
+NULL delivery as a send of None, so they are left to their own node,
+which disarms as it is popped.
+
+Declining and never arming a resume are observationally identical,
+which is why `map`, `filter`, `zip`, `starmap`, `dropwhile`, `islice`,
+and `pairwise` need no code for failure: their NULL branches return
+`EVAL_RAISE`, and the failure reaches the step's consumer through its
+iteration node, which owns the conversion (a raised `StopIteration` is
+exhaustion). A provider that must act on its source running out handles
+that NULL instead -- `batched` completes its frame with the short final
+batch, `zip-longest` files the fill value and hops back into its row
+walk, which its position on the trampoline makes legal.
+
+`KosEvalState_NextResume`'s `KOS_IREQ_EXHAUSTED` arm arms the supplied
+resume, sets `StopIteration`, and answers `REPROLOGUE`, so immediate
+exhaustion and in-flight exhaustion reach the resume through that one
+channel.
+
+The second path is `raise_walk_hand_to_resume`, for the frame at
+`dyn_top` above the live frame described above. The prologue's offer
+cannot reach it, since that tests the live frame.
 
 #### Frame slots and parking
 

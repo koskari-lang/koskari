@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/transform.c
+   koskari/lib/transform/transform.c
 
    The shared body of the map and filter providers. See transform.h.
 
@@ -44,7 +44,7 @@ PyObject *kos_transform_new(
     PyTypeObject *type,
     PyObject *args,
     PyObject *kwds,
-    int allow_none) {
+    const KosTransformSpec *spec) {
 
   const char *kind = transform_kind(type);
   PyObject *func = NULL;
@@ -54,35 +54,60 @@ PyObject *kos_transform_new(
     PyErr_Format(PyExc_TypeError, "%s takes no keyword arguments", kind);
     return NULL;
   }
-  if (! PyArg_UnpackTuple(args, kind, 2, 2, &func, &iterable))
-    return NULL;
 
-  if (! PyCallable_Check(func) && ! (allow_none && func == Py_None)) {
-    PyErr_Format(PyExc_TypeError, "%s func must be callable%s", kind,
-                 allow_none ? " or None" : "");
+  if (spec->has_callable) {
+    int bare = (spec->none_means == KOS_TF_NONE_BARE);
+
+    if (! PyArg_UnpackTuple(args, kind, 2, 2, &func, &iterable))
+      return NULL;
+
+    if (! PyCallable_Check(func) && ! (bare && func == Py_None)) {
+      PyErr_Format(PyExc_TypeError, "%s func must be callable%s", kind,
+                   bare ? " or None" : "");
+      return NULL;
+    }
+
+  } else if (! PyArg_UnpackTuple(args, kind, 1, 1, &iterable)) {
     return NULL;
   }
-
-  PyObject *source = kos_iter_acquire(iterable);
-  if (! source)
-    return NULL;
 
   KosTransform *t = (KosTransform *) type->tp_alloc(type, 0);
-  if (! t) {
-    Py_DECREF(source);
+  if (! t)
+    return NULL;
+
+  if (kos_transform_init_one(t, func, iterable)) {
+    Py_DECREF(t);
     return NULL;
   }
 
-  t->source = source;
+  return (PyObject *) t;
+}
 
-  /* Resolve the callable's shape and the source's protocol once; both
-     are fixed for the transform's lifetime. */
-  if (func == Py_None) {
+
+int kos_transform_init_one(
+    KosTransform *t,
+    PyObject *func,
+    PyObject *iterable) {
+
+  PyObject *source = kos_iter_acquire(iterable);
+
+  if (! source)
+    return -1;
+
+  t->source = source;
+  t->sources = &t->source;
+  t->nsrc = 1;
+  t->idx = 0;
+
+  /* Resolve the callable's shape once; it is fixed for the
+     transform's lifetime. The source's protocol is resolved per
+     acquisition, which for a one-source provider is the same thing. */
+  if (func && func != Py_None) {
+    KosCallShape_Init(&t->fn, func);
+  } else {
     t->fn.cs_callable = NULL;
     t->fn.cs_slots = NULL;
     t->fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
-  } else {
-    KosCallShape_Init(&t->fn, func);
   }
   t->src_sync = KosIter_CheckSync(source);
 
@@ -91,7 +116,7 @@ PyObject *kos_transform_new(
   t->ctx = NULL;
   t->closed = 0;
   t->busy = 0;
-  return (PyObject *) t;
+  return 0;
 }
 
 
@@ -184,6 +209,24 @@ KosIterStepResult kos_transform_stage(
 /* === the rest of the iter suite === */
 
 
+/**
+   Close every acquired iterator the view names. A NULL slot -- one a
+   lazy provider has not reached, or one it cleared as it finished --
+   is a no-op in kos_iter_close, so a partly populated view needs no
+   special case. A retracted view (sources NULL) closes nothing.
+*/
+static void close_sources(KosTransform *t) {
+
+  uint16_t i;
+
+  if (! t->sources)
+    return;
+
+  for (i = 0; i < t->nsrc; i++)
+    kos_iter_close(t->sources[i]);
+}
+
+
 KosIterStepResult kos_transform_throw(
     KosEvalState *es,
     PyObject *self,
@@ -210,7 +253,7 @@ KosIterStepResult kos_transform_throw(
        closed, and let GeneratorExit propagate as the success shape. */
     t->closed = 1;
     t->busy = 0;
-    kos_iter_close(t->source);
+    close_sources(t);
   }
 
   PyErr_SetObject(throw_typ, throw_exc);
@@ -232,7 +275,7 @@ int kos_transform_close(PyObject *self) {
 
   t->closed = 1;
   t->busy = 0;
-  kos_iter_close(t->source);
+  close_sources(t);
 
   return 0;
 }
@@ -350,6 +393,113 @@ PyAsyncMethods kos_transform_async_methods = {
   .am_aiter = transform_aiter,
   .am_anext = KosIterAdapt_Anext,
 };
+
+
+/* === The providers ===
+
+   Each supplies only its ki_step, the resume chain that step arms,
+   and its type object. They are fragments of this unit, so the shared
+   body above is in scope for all of them. */
+
+
+#include "transform/map.c"
+#include "transform/filter.c"
+#include "transform/zip.c"
+#include "transform/zip_longest.c"
+#include "transform/chain.c"
+#include "transform/compress.c"
+#include "transform/cycle.c"
+#include "transform/accumulate.c"
+#include "transform/batched.c"
+#include "transform/dropwhile.c"
+#include "transform/takewhile.c"
+#include "transform/starmap.c"
+#include "transform/islice.c"
+#include "transform/pairwise.c"
+
+
+/* === Unit lifecycle === */
+
+
+/**
+   Every provider type, with the name its class carries and the short
+   alias matching that class __name__.
+*/
+static const struct {
+  KosEvaluatedTypeObject *type;
+  const char *cls;
+  const char *alias;
+} transform_types[] = {
+  { &KosMapType,         "KosMap",         "map" },
+  { &KosFilterType,      "KosFilter",      "filter" },
+  { &KosZipType,         "KosZip",         "zip" },
+  { &KosZipLongestType,  "KosZipLongest",  "zip-longest" },
+  { &KosChainType,       "KosChain",       "chain" },
+  { &KosCompressType,    "KosCompress",    "compress" },
+  { &KosCycleType,       "KosCycle",       "cycle" },
+  { &KosAccumulateType,  "KosAccumulate",  "accumulate" },
+  { &KosBatchedType,     "KosBatched",     "batched" },
+  { &KosDropWhileType,   "KosDropWhile",   "dropwhile" },
+  { &KosTakeWhileType,   "KosTakeWhile",   "takewhile" },
+  { &KosStarMapType,     "KosStarMap",     "starmap" },
+  { &KosISliceType,      "KosISlice",      "islice" },
+  { &KosPairwiseType,    "KosPairwise",    "pairwise" },
+};
+
+
+/**
+   Bind a provider that is a plain function rather than a type.
+   filterfalse and chain-from-iterable are the two: one is a filter
+   with a flag set, the other takes its series from an iterable.
+*/
+static int transform_bind_function(PyObject *dict, PyMethodDef *def) {
+
+  PyObject *fn = PyCFunction_New(def, NULL);
+  int failed;
+
+  if (! fn)
+    return -1;
+
+  failed = PyDict_SetItemString(dict, def->ml_name, fn);
+  Py_DECREF(fn);
+
+  return failed;
+}
+
+
+int koskari_transform_init(PyObject *mod) {
+
+  PyObject *dict = PyModule_GetDict(mod);
+  size_t i;
+
+  if (! dict)
+    return -1;
+
+  for (i = 0; i < sizeof(transform_types) / sizeof(*transform_types); i++) {
+    PyTypeObject *type = KOS_EVALUATED_PYTYPE(*transform_types[i].type);
+
+    if (PyType_Ready(type))
+      return -1;
+    if (PyDict_SetItemString(dict, transform_types[i].cls, (PyObject *) type))
+      return -1;
+    if (PyDict_SetItemString(dict, transform_types[i].alias,
+                             (PyObject *) type))
+      return -1;
+  }
+
+  if (transform_bind_function(dict, &kosfilter_false_def) ||
+      transform_bind_function(dict, &koschain_from_iterable_def))
+    return -1;
+
+  return 0;
+}
+
+
+int koskari_transform_clear(PyObject *mod) {
+
+  (void) mod;
+  return 0;
+}
 
 
 // The end.

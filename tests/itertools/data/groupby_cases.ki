@@ -1,0 +1,38 @@
+;; Sync groupby shapes, collected at import time and asserted by
+;; tests.itertools.test_groupby. groupby is written in Koskari because
+;; its shape does not fit the one-step provider model.
+
+
+import-from koskari.itertools groupby
+
+
+define pairs [result]:
+  """
+  Group results as plain tuples, so a test can compare them directly
+  """
+
+  define out #[]
+  for-each [kv result]:
+    out.append #((item kv 0) (list (item kv 1)))
+  out
+
+
+(define runs-of-letters (pairs (groupby "AAABBBCCD")))
+
+(define runs-of-numbers (pairs (groupby #[1 1 2 2 3])))
+
+(define empty-source (pairs (groupby #[])))
+
+(define single-element (pairs (groupby #[1])))
+
+(define keyed-by-length (pairs (groupby #["a" "bb" "cc" "d"] len)))
+
+(define repeated-key-is-two-runs (pairs (groupby #[1 2 1])))
+
+
+;; The first group is still readable after the parent has moved on,
+;; which is where this departs from Python's shared-cursor groups.
+
+(define collected (list (groupby "AABB")))
+(define surviving-first (list (item (item collected 0) 1)))
+(define surviving-second (list (item (item collected 1) 1)))
