@@ -1,0 +1,78 @@
+id: itertools-python-takewhile-koskari-predicate-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from itertools takewhile)
+    (list (takewhile (lambda [x] (< x 3)) (#list 1 2 3 4 1))))
+verify:
+  eval: "list:[1,2,3,4,1]"
+  invalid: >-
+    python's itertools calls the predicate through the python calling
+    convention, where a koskari lambda returns a coroutine rather than
+    a verdict. Coroutines are truthy, so every element passes and the
+    run never ends: the result is the whole source, with no error
+    raised and nothing in a traceback to point at it. Import takewhile
+    from koskari.itertools instead, which runs the predicate in the
+    evaluator and yields [1, 2]. Wrapping the lambda in demand also
+    restores the verdict, but forces every call to run to completion,
+    so the predicate can no longer suspend.
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - takewhile
+  - invalid
+  - surprising
+  - pitfall
+notes: >-
+  the silent half of the boundary problem; compare
+  itertools-takewhile-koskari-predicate-001
+---
+id: itertools-python-filterfalse-koskari-predicate-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from itertools filterfalse)
+    (list (filterfalse (lambda [x] (% x 2)) (#list 1 2 3 4))))
+verify:
+  eval: "list:[]"
+  invalid: >-
+    the same boundary problem inverted. python's filterfalse keeps
+    what its predicate rejects, and a koskari lambda hands it a truthy
+    coroutine every time, so nothing is kept and the result is empty
+    rather than [2, 4]. Import filterfalse from koskari.itertools.
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - filterfalse
+  - invalid
+  - surprising
+  - pitfall
+---
+id: itertools-map-filter-zip-not-in-module-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools map)
+    (list (map (lambda [x] (* x 2)) (#list 1 2 3))))
+verify:
+  invalid: >-
+    map, filter and zip are not in koskari.itertools. They are bound
+    bare in the builtins namespace and are already native, so this
+    import raises ImportError. Call map directly with no import at
+    all; python's remain reachable as py-map, py-filter and py-zip.
+references:
+  - reference/runtime/koskari-itertools.md
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - map
+  - invalid
+  - pitfall

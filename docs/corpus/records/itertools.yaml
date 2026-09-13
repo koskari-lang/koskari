@@ -1,0 +1,216 @@
+id: itertools-takewhile-koskari-predicate-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools takewhile)
+    (list (takewhile (lambda [x] (< x 3)) (#list 1 2 3 4 1))))
+verify:
+  eval: "list:[1,2]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - takewhile
+  - eval
+notes: >-
+  koskari.itertools takes a koskari callable directly; python's
+  itertools does not (see itertools-invalid.yaml)
+---
+id: itertools-dropwhile-retires-predicate-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools dropwhile)
+    (list (dropwhile (lambda [x] (< x 3)) (#list 1 2 3 4 1 2))))
+verify:
+  eval: "list:[3,4,1,2]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - dropwhile
+  - eval
+notes: >-
+  the predicate is retired after its first rejection, so the trailing
+  1 and 2 are yielded although they satisfy it
+---
+id: itertools-accumulate-initial-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools accumulate)
+    (list (accumulate (#list 1 2 3) initial: 10)))
+verify:
+  eval: "list:[10,11,13,16]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - accumulate
+  - eval
+notes: >-
+  the seed is emitted before the source is read, so four values come
+  from three elements
+---
+id: itertools-batched-short-tail-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools batched)
+    (list (each [b (batched (#list 0 1 2 3 4 5 6) 3)] (list b))))
+verify:
+  eval: "list:[[0,1,2],[3,4,5],[6]]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - batched
+  - eval
+notes: >-
+  batches are tuples; converted to lists here so the result encodes.
+  The final batch is short when the source does not divide evenly
+---
+id: itertools-chain-sources-in-turn-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools chain)
+    (list (chain (#list 1 2) "ab")))
+verify:
+  eval: "list:[1,2,\"a\",\"b\"]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - chain
+  - eval
+notes: >-
+  each source is acquired only when the one before it runs out
+---
+id: itertools-compress-selectors-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools compress)
+    (list (compress "ABCDEF" (#list 1 0 1 0 1 1))))
+verify:
+  eval: "list:[\"A\",\"C\",\"E\",\"F\"]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - compress
+  - eval
+---
+id: itertools-cycle-islice-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools cycle islice)
+    (list (islice (cycle "ABC") 8)))
+verify:
+  eval: "list:[\"A\",\"B\",\"C\",\"A\",\"B\",\"C\",\"A\",\"B\"]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - cycle
+  - islice
+  - eval
+notes: >-
+  cycle is endless, so it needs a bounded consumer; islice is the
+  usual one
+---
+id: itertools-islice-start-stop-step-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools islice)
+    (list (islice (#list 0 1 2 3 4 5 6 7 8 9) 2 7 2)))
+verify:
+  eval: "list:[2,4,6]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - islice
+  - eval
+notes: >-
+  bounds count forward only: start and stop non-negative, step at
+  least one, stop may be None for an open end
+---
+id: itertools-filterfalse-inverts-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools filterfalse)
+    (list (filterfalse (lambda [x] (% x 2)) (#list 1 2 3 4))))
+verify:
+  eval: "list:[2,4]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - filterfalse
+  - eval
+notes: >-
+  the result is a filter carrying an inverted verdict rather than a
+  type of its own, so filter? answers true for it
+---
+id: itertools-starmap-unpacks-element-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools starmap)
+    (list (starmap (lambda [a b] (+ a b)) (#list (#tuple 1 2) (#tuple 3 4)))))
+verify:
+  eval: "list:[3,7]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - starmap
+  - eval
+notes: >-
+  each element is unpacked as the argument list, unlike map which
+  passes it whole
+---
+id: itertools-groupby-materialized-groups-001
+feature: module/koskari.itertools
+source: |-
+  (begin
+    (import-from koskari.itertools groupby)
+    (list (each [kv (groupby "AAABB")] (list (item kv 1)))))
+verify:
+  eval: "list:[[\"A\",\"A\",\"A\"],[\"B\",\"B\"]]"
+references:
+  - reference/runtime/koskari-itertools.md
+stability: evolving
+tags:
+  - module
+  - itertools
+  - groupby
+  - eval
+notes: >-
+  groupby yields #(key group) and the group is a list, not a
+  shared-cursor view, so it stays valid after the parent advances
