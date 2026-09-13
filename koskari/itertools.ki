@@ -43,15 +43,15 @@ define groupby [src key: None]:
   """
   Yield (key, group) for each run of consecutive elements sharing a
   key, where key defaults to the element itself
-
-  The group is a list, not a view onto the source. Python's groupby
-  hands back a sub-iterator sharing one cursor with its parent, which
-  is only valid until the parent advances; that shape needs a second
-  reader of the same cursor, and there is no way to give one a driven
-  source without deciding for it when to suspend. Materializing each
-  run keeps every group valid for as long as its holder wants it, at
-  the cost of holding one run in memory.
   """
+
+  ; The group is a list, not a view onto the source. Python's groupby
+  ; hands back a sub-iterator sharing one cursor with its parent, which
+  ; is only valid until the parent advances; that shape needs a second
+  ; reader of the same cursor, and there is no way to give one a driven
+  ; source without deciding for it when to suspend. Materializing each
+  ; run keeps every group valid for as long as its holder wants it, at
+  ; the cost of holding one run in memory.
 
   define started False
   define groupkey None
