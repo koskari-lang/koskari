@@ -29,19 +29,20 @@ provider model.
 """
 
 
-import-from koskari.lib:
+(import-from koskari.lib
   accumulate batched chain chain-from-iterable compress cycle
-  dropwhile filterfalse islice pairwise starmap takewhile zip-longest
+  dropwhile filterfalse islice pairwise starmap takewhile zip-longest)
 
 
-(declare-exports accumulate batched chain chain-from-iterable compress
-                 cycle dropwhile filterfalse groupby islice pairwise
-                 starmap takewhile zip-longest)
+(declare-exports
+  accumulate batched chain chain-from-iterable compress
+  cycle dropwhile filterfalse groupby islice pairwise
+  starmap takewhile zip-longest)
 
 
 define groupby [src key: None]:
   """
-  Yield (key, group) for each run of consecutive elements sharing a
+  Yield ``#(key group)`` for each run of consecutive elements sharing a
   key, where key defaults to the element itself
   """
 
