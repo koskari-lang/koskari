@@ -48,7 +48,7 @@ and which register hygiene regions).
 
 **Symbol:** `compile/bytecode`
 
-**Syntax:** `(compile/bytecode [OP ARG] ...)`
+**Syntax:** `(bytecode [OP ARG] ...)`
 
 **Use-case:** Direct bytecode injection for tests, debugging, or hand-written
 code. Each element of the body is a pair (or list) `[OP ARG]` where `OP` is an
@@ -57,19 +57,19 @@ argument (optional; defaults to 0).
 
 **Behaviour:** Compiles to a single fragment that emits the given instructions in
 order. No constant-pool or label resolution is done inside the form; the
-compiler's normal `complete` pass handles that. Opcode names may be given with
-or without the `KOS_OP_` prefix.
+compiler's normal `complete` pass handles that. Opcode names are the
+`OpCode` members, spelled without the `KOS_OP_` prefix the C enum uses.
 
 **Examples:**
 
 ```scheme
 ;; Return a constant string
-(compile/bytecode
+(bytecode
   [CONST "Hello World"]
   [RETURN 1])
 
 ;; Load two variables and call a function of two arguments
-(compile/bytecode
+(bytecode
   [VAR add]
   [VAR value_a]
   [VAR value_b]
@@ -81,7 +81,7 @@ or without the `KOS_OP_` prefix.
 
 **Symbol:** `compile/begin`
 
-**Syntax:** `(compile/begin EXPR ...)`
+**Syntax:** `(begin EXPR ...)`
 
 **Use-case:** Sequential evaluation of expressions; useful for side effects and
 for running several forms in order while returning only the last value. Common
@@ -96,19 +96,19 @@ body compiles to pushing `None` and returning it.
 
 ```scheme
 ;; Single expression: just that value
-(compile/begin (compile/call print "hello"))
+(begin (call print "hello"))
 
 ;; Multiple expressions: run all, value is the last
-(compile/begin
-  (compile/call do-something)
-  (compile/call compute-result))
+(begin
+  (call do-something)
+  (call compute-result))
 ```
 
 ## compile/call
 
 **Symbol:** `compile/call`
 
-**Syntax:** `(compile/call CALLEE ARG ...)`
+**Syntax:** `(call CALLEE ARG ...)`
 
 Argument specifiers (order matters; analogous to Python 3.5+):
 
@@ -126,14 +126,14 @@ Positionals may interleave with `*:` (star args); keywords may interleave with
 `**:`; a keyword cannot be followed by `*:` or a positional. Full form examples:
 
 ```scheme
-(compile/call fn a b *: more x: xval y: yval **: kwargs)
+(call fn a b *: more x: xval y: yval **: kwargs)
 ```
 
 is equivalent to `fn(a, b, *more, x=xval, y=yval, **kwargs)` in Python.
 
 ```scheme
-(compile/call fn a *: bargs c *: dargs)
-(compile/call fn x: 1 **: kw1 y: 2 **: kw2)
+(call fn a *: bargs c *: dargs)
+(call fn x: 1 **: kw1 y: 2 **: kw2)
 ```
 
 are equivalent to `fn(a, *bargs, c, *dargs)` and
@@ -162,35 +162,35 @@ by the compiler.
 
 ```scheme
 ;; Positional
-(compile/call + 1 2)
-(compile/call my-func a b c)
+(call + 1 2)
+(call my-func a b c)
 
 ;; Keyword (KEY: VAL)
-(compile/call fn 1 2 name: "x")
+(call fn 1 2 name: "x")
 
 ;; Star args (*: EXPR) and star kwargs (**: EXPR)
-(compile/call apply-fn *: args)
-(compile/call merge *: pos **: kw)
-(compile/call fn a b *: rest x: 1 **: extra)
+(call apply-fn *: args)
+(call merge *: pos **: kw)
+(call fn a b *: rest x: 1 **: extra)
 
 ;; Interleaved (Python 3.5+ style)
-(compile/call fn a *: bargs c *: dargs)
-(compile/call fn x: 1 **: kw1 y: 2 **: kw2)
+(call fn a *: bargs c *: dargs)
+(call fn x: 1 **: kw1 y: 2 **: kw2)
 
-;; Method call via attr expansion: (compile/call (attr obj m) args) → compile/call-attr
-(compile/call (attr s upper))
-(compile/call (compile/attr obj split sep) "-")
+;; Method call via attr expansion: (call (attr obj m) args) → compile/call-attr
+(call (attr s upper))
+(call (attr obj split sep) "-")
 
-;; Dot-prefix callee: (compile/call .m obj args...) → compile/call-attr (same as attr)
-(compile/call .upper s)
-(compile/call .split s "-")
+;; Dot-prefix callee: (call .m obj args...) → compile/call-attr (same as attr)
+(call .upper s)
+(call .split s "-")
 ```
 
 ## compile/call-attr
 
 **Symbol:** `compile/call-attr`
 
-**Syntax:** `(compile/call-attr OBJ SYM [ARG ...])`
+**Syntax:** `(call-attr OBJ SYM [ARG ...])`
 
 **Use-case:** Call a method by name: resolve `obj.sym`, then invoke with the
 given arguments. Equivalent to `obj.sym(arg...)` in Python. Supports positional
@@ -210,15 +210,15 @@ used as a variable).
 
 ```scheme
 ;; Positional only
-(compile/call-attr s upper)
-(compile/call-attr s split sep)
-(compile/call-attr s replace "l" "L")
+(call-attr s upper)
+(call-attr s split sep)
+(call-attr s replace "l" "L")
 
 ;; With keywords
-(compile/call-attr obj m 99 name: 42)
+(call-attr obj m 99 name: 42)
 
 ;; Star args (emits CALL_ATTR_STAR)
-(compile/call-attr obj fn *: args **: kwargs)
+(call-attr obj fn *: args **: kwargs)
 ```
 
 **Tests:** `tests/compile/specials/test_call_attr.py`
@@ -232,12 +232,12 @@ used as a variable).
 
 | Shape                        | Form                                               |
 | ---------------------------- | -------------------------------------------------- |
-| Named + return               | `(compile/lambda NAME :: RET FORMALS BODY ...)`    |
-| Named + return (`type:`)     | `(compile/lambda NAME type: RET FORMALS BODY ...)` |
-| Anonymous + return           | `(compile/lambda :: RET FORMALS BODY ...)`         |
-| Anonymous + return (`type:`) | `(compile/lambda type: RET FORMALS BODY ...)`      |
-| Named, no return             | `(compile/lambda NAME FORMALS BODY ...)`           |
-| Anonymous, no return         | `(compile/lambda FORMALS BODY ...)`                |
+| Named + return               | `(lambda NAME :: RET FORMALS BODY ...)`    |
+| Named + return (`type:`)     | `(lambda NAME type: RET FORMALS BODY ...)` |
+| Anonymous + return           | `(lambda :: RET FORMALS BODY ...)`         |
+| Anonymous + return (`type:`) | `(lambda type: RET FORMALS BODY ...)`      |
+| Named, no return             | `(lambda NAME FORMALS BODY ...)`           |
+| Anonymous, no return         | `(lambda FORMALS BODY ...)`                |
 
 
 `RET` is a single expression (not a formal parameter). Like parameter
@@ -292,24 +292,24 @@ with the defaults and annotation name tuples in its extra row (see
 
 ```scheme
 ;; Anonymous identity
-(compile/lambda [x] x)
+(lambda [x] x)
 
 ;; Anonymous two-argument function
-(compile/lambda [a b] (compile/call + a b))
+(lambda [a b] (call + a b))
 
 ;; Named lambda for recursion
-(compile/lambda fact [n]
-  (compile/call fact ...))
+(lambda fact [n]
+  (call fact ...))
 
 ;; Keyword parameter with default
-(compile/lambda [x flag: true] ...)
+(lambda [x flag: true] ...)
 
 ;; Return type (named and anonymous)
-(compile/lambda f :: int [x] x)
-(compile/lambda :: str [x] "hi")
+(lambda f :: int [x] x)
+(lambda :: str [x] "hi")
 
 ;; Docstring + return type
-(compile/lambda g :: int [x] "doc for g" x)
+(lambda g :: int [x] "doc for g" x)
 ```
 
 **Tests:** `tests/compile/specials/test_lambda.py`
@@ -323,9 +323,9 @@ with the defaults and annotation name tuples in its extra row (see
 
 | Shape                    | Form                                                  |
 | ------------------------ | ----------------------------------------------------- |
-| Named + return           | `(compile/function NAME :: RET FORMALS BODY ...)`     |
-| Named + return (`type:`) | `(compile/function NAME type: RET FORMALS BODY ...)` |
-| Named, no return         | `(compile/function NAME FORMALS BODY ...)`            |
+| Named + return           | `(function NAME :: RET FORMALS BODY ...)`     |
+| Named + return (`type:`) | `(function NAME type: RET FORMALS BODY ...)` |
+| Named, no return         | `(function NAME FORMALS BODY ...)`            |
 
 
 There is no anonymous `compile/function` form; use `compile/lambda` for that.
@@ -350,13 +350,13 @@ function fragment (contrast named `compile/lambda`).
 
 ```scheme
 ;; Named function (no inner self-ref for double)
-(compile/function double [x] (compile/call * x 2))
+(function double [x] (call * x 2))
 
 ;; Return type
-(compile/function f :: int [x] x)
+(function f :: int [x] x)
 
 ;; Docstring + return type
-(compile/function g :: int [x] "doc for g" x)
+(function g :: int [x] "doc for g" x)
 ```
 
 **Implementation:** `koskari/compile/specials/lambda_.py`
@@ -370,8 +370,8 @@ function fragment (contrast named `compile/lambda`).
 
 **Syntax:**
 
-- Unnamed: `(compile/let BINDINGS BODY ...)`
-- Named: `(compile/let NAME BINDINGS BODY ...)`
+- Unnamed: `(let BINDINGS BODY ...)`
+- Named: `(let NAME BINDINGS BODY ...)`
 
 **Bindings:** A list of binding forms; each is `[SYM EXPR]` or `(EXPR as: SYM)`.
 Parsed with `gather_bindings` (see helpers). Matcher shape: **BINDINGS** with
@@ -391,18 +391,18 @@ expressions; body compiled with `helper_begin`. Named: rewrite to
 
 ```scheme
 ;; Unnamed let
-(compile/let [[x 1] [y 2]] (compile/call + x y))
+(let [[x 1] [y 2]] (call + x y))
 
 ;; Named let (e.g. loop)
-(compile/let loop [[n 10]]
-  (compile/call loop ...))
+(let loop [[n 10]]
+  (call loop ...))
 ```
 
 ## compile/cond
 
 **Symbol:** `compile/cond`
 
-**Syntax:** `(compile/cond [TEST BODY...] [TEST BODY...] ... [else: BODY...])`
+**Syntax:** `(cond [TEST BODY...] [TEST BODY...] ... [else: BODY...])`
 
 **Use-case:** Multi-branch conditional. Evaluates clauses in order; the first
 truthful test's body is evaluated and returned. No match yields `None`. The
@@ -417,16 +417,16 @@ None for the fall-through case.
 
 ```scheme
 ;; Empty cond → None
-(compile/cond)
+(cond)
 
 ;; Single clause
-(compile/cond [True 100])
+(cond [True 100])
 
 ;; else-only
-(compile/cond [else: 100])
+(cond [else: 100])
 
 ;; Multi-clause with else fallthrough
-(compile/cond
+(cond
   [False 100]
   [True 101]
   [else: 102])
@@ -439,7 +439,7 @@ None for the fall-through case.
 
 **Symbol:** `compile/switch`
 
-**Syntax:** `(compile/switch VALUE [COMPARE-LIST BODY...] ... [else: BODY...])`
+**Syntax:** `(switch VALUE [COMPARE-LIST BODY...] ... [else: BODY...])`
 
 **Use-case:** Multi-way equality branching against one discriminant value.
 `VALUE` is evaluated once, then each clause compares one or more candidate values
@@ -470,8 +470,8 @@ The head may be written as `switch` or `compile/switch`; compiler lookup resolve
 
 ```scheme
 (switch VALUE
-  ((COND1 COND2 ...) (compile/begin BODY...))
-  (else: (compile/begin BODY...)))
+  ((COND1 COND2 ...) (begin BODY...))
+  (else: (begin BODY...)))
 ```
 
 This shape is valid because each clause body is still a list of forms for
@@ -482,7 +482,7 @@ the sequencing.
 
 ```scheme
 ;; Direct s-expression form
-(compile/switch 5
+(switch 5
   [[1] "one"]
   [[2] "two"]
   [[5 6] "five-or-six"]
@@ -490,14 +490,14 @@ the sequencing.
 ;; -> "five-or-six"
 
 ;; No match with else
-(compile/switch 5
+(switch 5
   [[1] "one"]
   [[2 3] "two-or-three"]
   [else: "meh"])
 ;; -> "meh"
 
 ;; No match and no else
-(compile/switch 5
+(switch 5
   [[1] "one"]
   [[2] "two"])
 ;; -> None
@@ -510,7 +510,7 @@ the sequencing.
 
 **Symbol:** `compile/match`
 
-**Syntax:** `(compile/match SUBJECT [[PATTERN] BODY...] ... [else: BODY...])`
+**Syntax:** `(match SUBJECT [[PATTERN] BODY...] ... [else: BODY...])`
 
 **Use-case:** Structural pattern matching against one subject value. `SUBJECT`
 is evaluated once, then each arm's pattern is tried in order. The first
@@ -580,25 +580,25 @@ s-expression forms produce identical clauses.
 
 ```scheme
 ;; sequence destructure with rest
-(compile/match data
+(match data
   [[#[a b *: rest]] rest]
   [else: 0])
 ;; data = #(1 2 3)  ->  (2 3)
 
 ;; whole-value typed capture, multi-token spelling
-(compile/match data
+(match data
   [[x :: int] x]
   [else: "not an int"])
 ;; data = 7  ->  7
 
 ;; class pattern and guard
-(compile/match p
+(match p
   [[Point[x y]] when: (> x y) "descending"]
   [[Point[x y]] "ascending-or-equal"]
   [else: "not a point"])
 
 ;; mapping with a literal and a bound key
-(compile/match msg
+(match msg
   [[#{"kind": "job" "url": u}] u]
   [[#{"kind": k}] k]
   [else: "other"])
@@ -612,7 +612,7 @@ s-expression forms produce identical clauses.
 
 **Symbol:** `compile/and`
 
-**Syntax:** `(compile/and EXPR ...)`
+**Syntax:** `(and EXPR ...)`
 
 **Use-case:** Short-circuit conjunction. Evaluates expressions left-to-right
 and returns the first falsy value, skipping the rest. If all values are truthy,
@@ -634,11 +634,11 @@ term).
 **Examples:**
 
 ```scheme
-(compile/and)             ; → True
-(compile/and 42)          ; → 42
-(compile/and 1 2 3)       ; → 3   (all truthy, last value)
-(compile/and 1 None 3)    ; → None (short-circuit at second term)
-(compile/and False 99)    ; → False
+(and)             ; → True
+(and 42)          ; → 42
+(and 1 2 3)       ; → 3   (all truthy, last value)
+(and 1 None 3)    ; → None (short-circuit at second term)
+(and False 99)    ; → False
 ```
 
 **Tests:** `tests/compile/specials/test_cond.py`
@@ -647,7 +647,7 @@ term).
 
 **Symbol:** `compile/or`
 
-**Syntax:** `(compile/or EXPR ...)`
+**Syntax:** `(or EXPR ...)`
 
 **Use-case:** Short-circuit disjunction. Evaluates expressions left-to-right
 and returns the first truthy value, skipping the rest. If all values are falsy,
@@ -669,11 +669,11 @@ term).
 **Examples:**
 
 ```scheme
-(compile/or)              ; → False
-(compile/or 42)           ; → 42
-(compile/or None False 0) ; → 0   (all falsy, last value)
-(compile/or None 99 0)    ; → 99  (short-circuit at second term)
-(compile/or False 42)     ; → 42
+(or)              ; → False
+(or 42)           ; → 42
+(or None False 0) ; → 0   (all falsy, last value)
+(or None 99 0)    ; → 99  (short-circuit at second term)
+(or False 42)     ; → 42
 ```
 
 **Tests:** `tests/compile/specials/test_cond.py`
@@ -719,7 +719,7 @@ paths).
 
 ;; Named binding
 (try (parse input)
-  [[e ValueError] (compile/call log e)])
+  [[e ValueError] (call log e)])
 
 ;; Bare catch-all
 (try (risky-call)
@@ -743,7 +743,7 @@ paths).
 
 **Symbol:** `compile/raise`
 
-**Syntax:** `(compile/raise)` or `(compile/raise EXPR)`
+**Syntax:** `(raise)` or `(raise EXPR)`
 
 **Use-case:** Re-raise the current exception (no arg) or raise a new exception
 (EXPR). Used internally by try for re-raise on uncaught.
@@ -754,22 +754,22 @@ emits RAISE 1 (raise the value as exception).
 **Examples:**
 
 ```scheme
-(compile/raise)
-(compile/raise (ValueError "invalid"))
+(raise)
+(raise (ValueError "invalid"))
 ```
 
 ## compile/return
 
 **Symbol:** `compile/return`
 
-**Syntax:** `(compile/return VAL ...)` — variadic.
+**Syntax:** `(return VAL ...)` — variadic.
 
 | Form                        | Result                                            |
 |-----------------------------|---------------------------------------------------|
-| `(compile/return)`          | returns `None`                                    |
-| `(compile/return VAL)`      | returns `VAL`                                      |
-| `(compile/return VAL ...)`  | returns a `tuple` of the values                    |
-| `(compile/return K: V ...)` | returns a `values` object over the keyword pairs   |
+| `(return)`          | returns `None`                                    |
+| `(return VAL)`      | returns `VAL`                                      |
+| `(return VAL ...)`  | returns a `tuple` of the values                    |
+| `(return K: V ...)` | returns a `values` object over the keyword pairs   |
 
 **Use-case:** Return from the current function and transfer control back to the
 caller. `return` is variadic: two or more positional arguments return a tuple,
@@ -795,17 +795,17 @@ delivers and `koskari_eval` exits with `KOS_RES_RETURN`.
 **Examples:**
 
 ```scheme
-(compile/return)                  ;; -> None
-(compile/return result)           ;; -> result
-(compile/return a b c)            ;; -> #(a b c)  (a tuple)
-(compile/return a: a b: b c: c)   ;; -> values(a=a, b=b, c=c)
+(return)                  ;; -> None
+(return result)           ;; -> result
+(return a b c)            ;; -> #(a b c)  (a tuple)
+(return a: a b: b c: c)   ;; -> values(a=a, b=b, c=c)
 ```
 
 ## compile/check-exception
 
 **Symbol:** `compile/check-exception`
 
-**Syntax:** `(compile/check-exception TYPE ...)`
+**Syntax:** `(check-exception TYPE ...)`
 
 **Use-case:** Internal form used by compile/try. Checks if the current
 exception matches any of the given types; if so, clears the exception and
@@ -820,7 +820,7 @@ Used inside the cond built by _except.
 
 **Symbol:** `compile/clear-exception`
 
-**Syntax:** `(compile/clear-exception)`
+**Syntax:** `(clear-exception)`
 
 **Use-case:** Internal form. Clears the current exception state.
 
@@ -830,7 +830,7 @@ Used inside the cond built by _except.
 
 **Symbol:** `compile/load-exception`
 
-**Syntax:** `(compile/load-exception)`
+**Syntax:** `(load-exception)`
 
 **Use-case:** Internal form used by try handlers. Pushes the current exception
 value onto the stack (e.g. for binding with as: NAME).
@@ -841,7 +841,7 @@ value onto the stack (e.g. for binding with as: NAME).
 
 **Symbol:** `compile/while`
 
-**Syntax:** `(compile/while TEST BODY... [else: ELSEBODY])`
+**Syntax:** `(while TEST BODY... [else: ELSEBODY])`
 
 **Use-case:** Loop that runs body while TEST is truthy. Supports `compile/break`
 and `compile/continue` inside the body. An optional `[else: ELSEBODY]` clause
@@ -862,18 +862,18 @@ break target with its value and does not run the else clause.
 
 ```scheme
 ;; Simple loop
-(compile/while x
-  (compile/call append c x)
-  (compile/setq x (compile/call - x 1)))
+(while x
+  (call append c x)
+  (setq x (call - x 1)))
 
 ;; With break
-(compile/while True
-  (compile/cond [done (compile/break result)]
-                [else: (compile/call step)]))
+(while True
+  (cond [done (break result)]
+                [else: (call step)]))
 
 ;; Else runs when TEST becomes false
-(compile/while x
-  (compile/setq x (compile/call - x 1))
+(while x
+  (setq x (call - x 1))
   [else: "done"])
 ```
 
@@ -883,7 +883,7 @@ break target with its value and does not run the else clause.
 
 **Symbol:** `compile/for-each`
 
-**Syntax:** `(compile/for-each [BINDING EXPR] BODY... [else: ELSEBODY])`
+**Syntax:** `(for-each [BINDING EXPR] BODY... [else: ELSEBODY])`
 
 **Use-case:** Iterate over the sequence produced by EXPR, binding each element
 to BINDING and evaluating BODY on each iteration. Supports `compile/break` and
@@ -913,20 +913,20 @@ parent stack.
 
 ```scheme
 ;; Basic iteration; loop value is None
-(compile/for-each [i items]
-  (compile/call append result i))
+(for-each [i items]
+  (call append result i))
 
 ;; Else fires when iterator exhausts without a break
-(compile/for-each [i items]
-  (compile/cond
-    [(compile/call > i 4) (compile/break)]
-    [else: (compile/call append result i)])
+(for-each [i items]
+  (cond
+    [(call > i 4) (break)]
+    [else: (call append result i)])
   [else: "finished"])
 
 ;; Break with a value
-(compile/for-each [i items]
-  (compile/cond
-    [(compile/call eq i target) (compile/break "found")]
+(for-each [i items]
+  (cond
+    [(call eq i target) (break "found")]
     [else: None]))
 ```
 
@@ -936,7 +936,7 @@ parent stack.
 
 **Symbol:** `compile/globals`
 
-**Syntax:** `(compile/globals)`
+**Syntax:** `(globals)`
 
 **Use-case:** Obtain the module globals namespace for the current frame:
 walk `KosNamespace_PARENT` from the frame's namespace to the outermost parent
@@ -950,7 +950,7 @@ stack as the expression's value. Any arguments are rejected with `SpecialError`.
 
 ```scheme
 ;; Module globals namespace for the current frame
-(compile/globals)
+(globals)
 ```
 
 **Implementation:** `koskari/compile/specials/variables.special_globals`
@@ -961,7 +961,7 @@ stack as the expression's value. Any arguments are rejected with `SpecialError`.
 
 **Symbol:** `compile/locals`
 
-**Syntax:** `(compile/locals)`
+**Syntax:** `(locals)`
 
 **Use-case:** Obtain the current frame's namespace (locals), analogous to
 Python's `locals()`.
@@ -972,7 +972,7 @@ onto the stack. Any arguments are rejected with `SpecialError`.
 **Examples:**
 
 ```scheme
-(compile/locals)
+(locals)
 ```
 
 **Implementation:** `koskari/compile/specials/variables.special_locals`
@@ -983,7 +983,7 @@ onto the stack. Any arguments are rejected with `SpecialError`.
 
 **Symbol:** `compile/gensym-thunk`
 
-**Syntax:** `(compile/gensym-thunk BODY ...)`
+**Syntax:** `(gensym-thunk BODY ...)`
 
 **Reader — thunk syntax:** In s-expression mode, `{BODY ...}` is **thunk syntax**
 (also called **the thunk form**). It reads as `(compile/gensym-thunk BODY ...)`
@@ -1016,7 +1016,7 @@ pattern as other macros that expand to a lambda).
 
 ```scheme
 ;; Unary: { (+ %1 1) }  =>  thunk taking one argument
-(compile/gensym-thunk (+ %1 1))
+(gensym-thunk (+ %1 1))
 
 ;; Thunk syntax in source
 { (print "hello") }
@@ -1025,7 +1025,7 @@ pattern as other macros that expand to a lambda).
 { 99 }
 
 ;; Variadic rest: ... in the body becomes * and a rest formal
-(compile/gensym-thunk (f ...))
+(gensym-thunk (f ...))
 ```
 
 **Tests:** `tests/compile/specials/test_thunk.py`
@@ -1034,7 +1034,7 @@ pattern as other macros that expand to a lambda).
 
 **Symbol:** `compile/break`
 
-**Syntax:** `(compile/break)` or `(compile/break VAL)`
+**Syntax:** `(break)` or `(break VAL)`
 
 **Use-case:** Exit the innermost loop (`compile/while` or `compile/for-each`),
 optionally with a result value.
@@ -1045,15 +1045,15 @@ optionally with a result value.
 **Examples:**
 
 ```scheme
-(compile/break)
-(compile/break 99)
+(break)
+(break 99)
 ```
 
 ## compile/continue
 
 **Symbol:** `compile/continue`
 
-**Syntax:** `(compile/continue)` or `(compile/continue VAL)`
+**Syntax:** `(continue)` or `(continue VAL)`
 
 **Use-case:** Restart the innermost loop iteration. Must be inside a
 `compile/while` or `compile/for-each` body.
@@ -1065,8 +1065,8 @@ ITER_NEXT for for-each).
 **Examples:**
 
 ```scheme
-(compile/continue)
-(compile/continue last-value)
+(continue)
+(continue last-value)
 ```
 
 **Tests:** `tests/compile/specials/test_cond.py`, `tests/compile/specials/test_while.py`
@@ -1075,14 +1075,14 @@ ITER_NEXT for for-each).
 
 **Symbol:** `compile/yield`
 
-**Syntax:** `(compile/yield VAL ...)` — variadic.
+**Syntax:** `(yield VAL ...)` — variadic.
 
 | Form                       | Result                                          |
 |----------------------------|-------------------------------------------------|
-| `(compile/yield)`          | yields `None`                                   |
-| `(compile/yield VAL)`      | yields `VAL`                                     |
-| `(compile/yield VAL ...)`  | yields a `tuple` of the values                  |
-| `(compile/yield K: V ...)` | yields a `values` object over the keyword pairs |
+| `(yield)`          | yields `None`                                   |
+| `(yield VAL)`      | yields `VAL`                                     |
+| `(yield VAL ...)`  | yields a `tuple` of the values                  |
+| `(yield K: V ...)` | yields a `values` object over the keyword pairs |
 
 **Use-case:** Yield a value from a generator (or coroutine). Suspends the
 current frame and returns the value to the driver; resumption is via
@@ -1112,17 +1112,17 @@ instruction.
 **Examples:**
 
 ```scheme
-(compile/yield)                          ;; -> None
-(compile/yield (compile/call get-next))  ;; -> the computed value
-(compile/yield a b c)                    ;; -> #(a b c)  (a tuple)
-(compile/yield a: a b: b c: c)           ;; -> values(a=a, b=b, c=c)
+(yield)                          ;; -> None
+(yield (call get-next))  ;; -> the computed value
+(yield a b c)                    ;; -> #(a b c)  (a tuple)
+(yield a: a b: b c: c)           ;; -> values(a=a, b=b, c=c)
 ```
 
 ## compile/yield-from
 
 **Symbol:** `compile/yield-from`
 
-**Syntax:** `(compile/yield-from EXPR)` — exactly one argument.
+**Syntax:** `(yield-from EXPR)` — exactly one argument.
 
 **Use-case:** Delegate to another iterable or async-iterable and yield each
 produced value through the current async generator, analogous to Python's
@@ -1143,11 +1143,11 @@ with `KOS_CODE_YIELDS`. Full stack and suspension details are in
 **Examples:**
 
 ```scheme
-(compile/yield-from (compile/call items data))
+(yield-from (call items data))
 
 ;; Same consumer-visible values as:
-(compile/for-each [pair (compile/call items data)]
-  (compile/yield pair))
+(for-each [pair (call items data)]
+  (yield pair))
 ```
 
 **Tests:** `tests/compile/specials/test_yield_from_special.py`,
@@ -1157,7 +1157,7 @@ with `KOS_CODE_YIELDS`. Full stack and suspension details are in
 
 **Symbol:** `compile/await`
 
-**Syntax:** `(compile/await)` or `(compile/await EXPR)` — zero or one argument.
+**Syntax:** `(await)` or `(await EXPR)` — zero or one argument.
 
 **Use-case:** Koskari runs code under an async evaluator: ordinary Python calls
 that return a coroutine or awaitable are **auto-awaited** at the CALL boundary,
@@ -1186,10 +1186,10 @@ With zero arguments, emits `AWAIT` with operand **0** then `CONST None`. See
 
 ```scheme
 ;; Await a defer stored in d (defer was used so d is not auto-awaited)
-(compile/await d)
+(await d)
 
 ;; Cooperative suspend only; value of the form is None
-(compile/await)
+(await)
 ```
 
 **Tests:** `tests/compile/specials/test_await_special.py`
@@ -1198,7 +1198,7 @@ With zero arguments, emits `AWAIT` with operand **0** then `CONST None`. See
 
 **Symbol:** `compile/parameterize`
 
-**Syntax:** `(compile/parameterize BINDINGS BODY ...)`
+**Syntax:** `(parameterize BINDINGS BODY ...)`
 
 **Bindings:** Same as let: list of `[SYM EXPR]` or `(EXPR as: SYM)`; parsed with
 `gather_bindings`.
@@ -1219,12 +1219,12 @@ go into the running context's shadow table, never the domain root scope.
 
 ```scheme
 ;; Parameterize format; consumer pretty reads it via (parameterq format)
-(compile/parameterize [[format "woot %r woot"]]
-  (compile/call pretty 100))
+(parameterize [[format "woot %r woot"]]
+  (call pretty 100))
 
 ;; Multiple parameters
-(compile/parameterize [[a 100] [b 101]]
-  (compile/call check_both))
+(parameterize [[a 100] [b 101]]
+  (call check_both))
 ```
 
 See `tests/compile/specials/test_parameterize.py` for full consumer-style tests.
@@ -1233,7 +1233,7 @@ See `tests/compile/specials/test_parameterize.py` for full consumer-style tests.
 
 **Symbol:** `compile/parameter`
 
-**Syntax:** `(compile/parameter NAME [DEFAULT])`
+**Syntax:** `(parameter NAME [DEFAULT])`
 
 **Use-case:** Read a parameter by literal name. This is what `parameterq`
 expands to; the `parameter` builtin remains for names computed at runtime.
@@ -1249,13 +1249,13 @@ a miss.
 
 ```scheme
 ;; unbound name raises NameError
-(compile/parameter verbose)
+(parameter verbose)
 
 ;; literal default folds into the instruction
-(compile/parameter verbose False)
+(parameter verbose False)
 
 ;; computed default is evaluated and left on the stack
-(compile/parameter verbose (compile/call default-for 'verbose))
+(parameter verbose (call default-for 'verbose))
 ```
 
 ## compile/dyn-wind
@@ -1264,8 +1264,8 @@ a miss.
 
 **Syntax:**
 
-- **Positional:** `(compile/dyn-wind BEFORE BODY AFTER)` — three elements in fixed order; `BEFORE` and/or `AFTER` may be `nil`.
-- **Keyword:** `(compile/dyn-wind [before: BEFOREBODY...] [body: BODY...] [after: AFTERBODY...])` — top-level lists with marker keywords; omitted segments default to nil; order is arbitrary.
+- **Positional:** `(dyn-wind BEFORE BODY AFTER)` — three elements in fixed order; `BEFORE` and/or `AFTER` may be `nil`.
+- **Keyword:** `(dyn-wind [before: BEFOREBODY...] [body: BODY...] [after: AFTERBODY...])` — top-level lists with marker keywords; omitted segments default to nil; order is arbitrary.
 
 **Use-case:** Dynamic-wind extent: run before thunk on entry, body in the middle, after thunk on exit. Both thunks run on continuation transfer (multi-shot). Before and after are implicitly wrapped in null-arity lambdas; body is compiled as `(compile/begin ...)`.
 
@@ -1275,26 +1275,26 @@ a miss.
 
 ```scheme
 ;; Positional: before, body, after
-(compile/dyn-wind
-  (compile/begin (compile/call setup))
-  (compile/begin (compile/call work) result)
-  (compile/begin (compile/call teardown)))
+(dyn-wind
+  (begin (call setup))
+  (begin (call work) result)
+  (begin (call teardown)))
 
 ;; Positional: after only (before = nil)
-(compile/dyn-wind nil
-  (compile/begin 42)
-  (compile/begin (compile/call cleanup)))
+(dyn-wind nil
+  (begin 42)
+  (begin (call cleanup)))
 
 ;; Keyword: before, body, after
-(compile/dyn-wind
-  (before: (compile/call setup))
-  (body: (compile/call work) result)
-  (after: (compile/call teardown)))
+(dyn-wind
+  (before: (call setup))
+  (body: (call work) result)
+  (after: (call teardown)))
 
 ;; Keyword: body and after only (before omitted)
-(compile/dyn-wind
+(dyn-wind
   (body: 42)
-  (after: (compile/call cleanup)))
+  (after: (call cleanup)))
 ```
 
 **Tests:** `tests/compile/specials/test_dyn_wind.py`
@@ -1331,11 +1331,11 @@ enter/exit, normal completion, and exception propagation/swallow.
 ```scheme
 ;; With binding
 (with [f (open-file path)]
-  (compile/call read-all f))
+  (call read-all f))
 
 ;; Without binding
 (with [(make-lock)]
-  (compile/call do-work))
+  (call do-work))
 ```
 
 ## dyn-with
@@ -1360,14 +1360,14 @@ Expression value is always `None`. See
 ```scheme
 ;; Capture continuation inside dyn-with; invoke outside runs exit then enter
 (dyn-with [r (make-resource)]
-  (compile/call k (compile/refq r)))
+  (call k (refq r)))
 ```
 
 ## compile/setq
 
 **Symbol:** `compile/setq`
 
-**Syntax:** `(compile/setq SYM EXPR)`
+**Syntax:** `(setq SYM EXPR)`
 
 **Use-case:** Store the value of EXPR into the variable named SYM (must already
 exist in scope or be requested from an enclosing scope). The form evaluates to
@@ -1386,15 +1386,15 @@ See [MACROS.md](MACROS.md).
 **Examples:**
 
 ```scheme
-(compile/setq x 42)
-(compile/setq counter (compile/call + counter 1))
+(setq x 42)
+(setq counter (call + counter 1))
 ```
 
 ## compile/setq-values
 
 **Symbol:** `compile/setq-values`
 
-**Syntax:** `(compile/setq-values PATTERN VALUE)`
+**Syntax:** `(setq-values PATTERN VALUE)`
 
 PATTERN is either a symbol (single store) or a list pattern in the same shape as
 `compile/for-each` unpack bindings (including `*:` rest segments).
@@ -1413,8 +1413,8 @@ VALUE, then emits unpack store bytecode via the same helper as unpack-style
 **Examples:**
 
 ```scheme
-(compile/setq-values [a b] (compile/call pair 1 2))
-(compile/setq-values [a *: b c] seq)
+(setq-values [a b] (call pair 1 2))
+(setq-values [a *: b c] seq)
 
 ;; Via set! (see MACROS.md)
 (set! (values x y) point)
@@ -1428,7 +1428,7 @@ VALUE, then emits unpack store bytecode via the same helper as unpack-style
 
 **Symbol:** `compile/define-values`
 
-**Syntax:** `(compile/define-values PATTERN VALUE)`
+**Syntax:** `(define-values PATTERN VALUE)`
 
 Same PATTERN shapes as `compile/setq-values`.
 
@@ -1445,8 +1445,8 @@ prior `request_for_write`). The form evaluates to None.
 **Examples:**
 
 ```scheme
-(compile/define-values [a b] (compile/call pair 1 2))
-(compile/define-values [a *: b c] seq)
+(define-values [a b] (call pair 1 2))
+(define-values [a *: b c] seq)
 
 ;; Via let-values (see MACROS.md)
 (let-values [(x y) point] (use x y))
@@ -1460,7 +1460,7 @@ prior `request_for_write`). The form evaluates to None.
 
 **Symbol:** `compile/inplace`
 
-**Syntax:** `(compile/inplace OP VAR VALUE)`
+**Syntax:** `(inplace OP VAR VALUE)`
 
 **Use-case:** In-place update of a **symbol** binding: compute `VAR OP VALUE` and
 store the result back into VAR. Equivalent to Python augmented assignment on a
@@ -1488,8 +1488,8 @@ operators (`PyNumber_InPlaceAdd`, etc.).
 (set! bits (| bits mask))  ; bits |= mask
 
 ;; Direct use
-(compile/inplace + counter 1)
-(compile/inplace // total divisor)
+(inplace + counter 1)
+(inplace // total divisor)
 ```
 
 **Implementation:** `koskari/compile/specials/object.py` — `special_inplace`
@@ -1498,7 +1498,7 @@ operators (`PyNumber_InPlaceAdd`, etc.).
 
 **Symbol:** `compile/inplace-item`
 
-**Syntax:** `(compile/inplace-item OP OBJ KEY VALUE...)`
+**Syntax:** `(inplace-item OP OBJ KEY VALUE...)`
 
 **Use-case:** In-place update of an item slot: load `OBJ[KEY]`, compute
 `current OP VALUE`, store the result back at `KEY`. Equivalent to augmented
@@ -1523,7 +1523,7 @@ or ITEM_STORE. Evaluates to None.
 (inplace - (item d "count") step)
 
 ;; Direct use
-(compile/inplace-item + table key delta)
+(inplace-item + table key delta)
 ```
 
 **Implementation:** `koskari/compile/specials/object.py` — `special_inplace_item`
@@ -1534,7 +1534,7 @@ or ITEM_STORE. Evaluates to None.
 
 **Symbol:** `compile/inplace-attr`
 
-**Syntax:** `(compile/inplace-attr OP OBJ ATTR VALUE...)`
+**Syntax:** `(inplace-attr OP OBJ ATTR VALUE...)`
 
 **Use-case:** In-place update of an attribute: load `OBJ.ATTR`, compute
 `current OP VALUE`, store the result back. Equivalent to augmented assignment on
@@ -1557,7 +1557,7 @@ ATTR_STORE. Evaluates to None.
 (inplace + (attr obj count) 1)
 
 ;; Direct use
-(compile/inplace-attr + obj total amount)
+(inplace-attr + obj total amount)
 ```
 
 **Implementation:** `koskari/compile/specials/object.py` — `special_inplace_attr`
@@ -1568,7 +1568,7 @@ ATTR_STORE. Evaluates to None.
 
 **Symbol:** `compile/refq`
 
-**Syntax:** `(compile/refq SYM)`
+**Syntax:** `(refq SYM)`
 
 **Use-case:** Yield a mutable reference (Ref) to the variable named SYM. The
 reference can be passed and later deref'd or stored into.
@@ -1579,14 +1579,14 @@ stack is a Ref for that name.
 **Examples:**
 
 ```scheme
-(compile/refq my-var)
+(refq my-var)
 ```
 
 ## compile/bindq
 
 **Symbol:** `compile/bindq`
 
-**Syntax:** `(compile/bindq SYM EXPR)`
+**Syntax:** `(bindq SYM EXPR)`
 
 **Use-case:** Introduce a new binding SYM in the current scope with the value of
 EXPR. The form evaluates to None.
@@ -1597,7 +1597,7 @@ pushes CONST None.
 **Examples:**
 
 ```scheme
-(compile/bindq local 10)
+(bindq local 10)
 ```
 
 ## compile/define
@@ -1609,16 +1609,16 @@ ways:
 
 **Inline type** (preferred; same `::` / `type:` placement as `compile/lambda`):
 
-- Declaration only: `(compile/define NAME :: TYPE)` or `(compile/define NAME type: TYPE)`
-- Declare and store: `(compile/define NAME :: TYPE EXPR)` (or `type: TYPE`)
+- Declaration only: `(define NAME :: TYPE)` or `(define NAME type: TYPE)`
+- Declare and store: `(define NAME :: TYPE EXPR)` (or `type: TYPE`)
 - Function shorthand:
-`(compile/define NAME :: TYPE FORMALS BODY ...)` (or `type: TYPE`)
+`(define NAME :: TYPE FORMALS BODY ...)` (or `type: TYPE`)
 
 **DECL** as the first argument (single binding-shaped form, no value):
 
-- Declaration only: `(compile/define DECL)`
-- Declare and store: `(compile/define DECL EXPR)`
-- Function shorthand: `(compile/define DECL FORMALS BODY ...)`
+- Declaration only: `(define DECL)`
+- Declare and store: `(define DECL EXPR)`
+- Function shorthand: `(define DECL FORMALS BODY ...)`
 
 **DECL** may be:
 
@@ -1657,22 +1657,22 @@ compiles it, then emits `VAR_STORE`.
 
 ```scheme
 ;; Declaration only; assign later with compile/setq
-(compile/define x)
-(compile/setq x 42)
+(define x)
+(setq x 42)
 
 ;; Typed declaration (parse-only on the binding; assign later as usual)
-(compile/define x :: int)
-(compile/define [x :: int])
+(define x :: int)
+(define [x :: int])
 
 ;; Declare and store
-(compile/define y 99)
+(define y 99)
 
 ;; Function shorthand
-(compile/define double [x] (* x 2))
-(compile/define f :: int [x] 5)
-(compile/define [f :: int] [x] 5)
-(compile/define fact [n]
-  (compile/cond [(== n 0) 1]
+(define double [x] (* x 2))
+(define f :: int [x] 5)
+(define [f :: int] [x] 5)
+(define fact [n]
+  (cond [(== n 0) 1]
                 [else: (* n (fact (- n 1)))]))
 ```
 
@@ -1685,10 +1685,10 @@ compiles it, then emits `VAR_STORE`.
 **Syntax:** Same arities and spellings as `compile/define`: **inline type**
 (`NAME :: TYPE` / `NAME type: TYPE`) or **DECL** as the first argument:
 
-- `(compile/define-global NAME :: TYPE)` … (and `type:`), or `(compile/define-global DECL)`
-- `(compile/define-global NAME :: TYPE EXPR)` or `(compile/define-global DECL EXPR)`
-- `(compile/define-global NAME :: TYPE FORMALS BODY ...)` or
-`(compile/define-global DECL FORMALS BODY ...)`
+- `(define-global NAME :: TYPE)` … (and `type:`), or `(define-global DECL)`
+- `(define-global NAME :: TYPE EXPR)` or `(define-global DECL EXPR)`
+- `(define-global NAME :: TYPE FORMALS BODY ...)` or
+`(define-global DECL FORMALS BODY ...)`
 
 See **compile/define** for the meaning of **DECL** and function-shorthand
 lowering to `compile/function` (including `NAME :: TYPE` when a return type is
@@ -1712,16 +1712,16 @@ with local declaration; raises if the name is already in `declares` (e.g. from
 
 ```scheme
 ;; Explicit global; setq writes to module
-(compile/define-global x 1)
-(compile/setq x 42)
+(define-global x 1)
+(setq x 42)
 
 ;; Shared counter across nested closures
 ((lambda ()
-   (compile/define-global counter 0)
+   (define-global counter 0)
    (define inc (lambda []
-     (compile/setq counter (compile/call + counter 1))
+     (setq counter (call + counter 1))
      counter))
-   (compile/call inc)))
+   (call inc)))
 ```
 
 **Tests:** `tests/compile/specials/test_resolution_model.py`
@@ -1760,7 +1760,7 @@ specials).
 
 **Symbol:** `compile/syntax-rules`
 
-**Syntax:** `(compile/syntax-rules NAME LITERALS RULE ...)`
+**Syntax:** `(syntax-rules NAME LITERALS RULE ...)`
 
 **Use-case:** Lower a **`syntax-rules`**-style transformer spec to a
 **`build-syntax-rules`** call form (for recompilation). The built transformer is
@@ -1782,7 +1782,7 @@ patterns (`DEFINE`, `BIND` for literals, `REST` for rules).
 
 **Symbol:** `compile/macro-rules`
 
-**Syntax:** `(compile/macro-rules NAME LITERALS RULE ...)`
+**Syntax:** `(macro-rules NAME LITERALS RULE ...)`
 
 **Use-case:** Lower a **`macro-rules`**-style transformer spec to a
 **`build-macro-rules`** call form. Bind the result with **`compile/define`**.
@@ -1800,7 +1800,7 @@ patterns (`DEFINE`, `BIND` for literals, `REST` for rules).
 
 **Symbol:** `compile/syntax-match`
 
-**Syntax:** `(compile/syntax-match NAME (PATTERN TEMPLATE) ...)`
+**Syntax:** `(syntax-match NAME (PATTERN TEMPLATE) ...)`
 
 **Use-case:** **MATCH**-dialect pattern rules (same emission path as
 **`compile/syntax-rules`**: **`build-syntax-rules`**).
@@ -1822,7 +1822,7 @@ and **[MATCHER.md](MATCHER.md)** (`parse_explicit_rule_pattern`, surface heads).
 
 **Symbol:** `compile/macro-match`
 
-**Syntax:** `(compile/macro-match NAME (PATTERN BODY ...) ...)`
+**Syntax:** `(macro-match NAME (PATTERN BODY ...) ...)`
 
 **Use-case:** **MATCH**-dialect procedural rules (same emission shape as
 **`compile/macro-rules`**: **`build-macro-rules`**).
@@ -1844,7 +1844,7 @@ with **keyword** arguments from the match result (`koskari/syntax.py`:
 
 **Symbol:** `compile/special-rules`
 
-**Syntax:** `(compile/special-rules NAME LITERALS RULE ...)`
+**Syntax:** `(special-rules NAME LITERALS RULE ...)`
 
 **Use-case:** Lower a **`special-rules`**-style transformer spec to a
 **`build-special-rules`** call form. Rule procedures are **compiler-aware**:
@@ -1874,7 +1874,7 @@ of the result (see **`SpecialRulesTransformer`** in **`koskari/syntax.py`**).
 
 **Symbol:** `compile/special-match`
 
-**Syntax:** `(compile/special-match NAME (PATTERN BODY ...) ...)`
+**Syntax:** `(special-match NAME (PATTERN BODY ...) ...)`
 
 **Use-case:** **MATCH**-dialect special rules (same **`build-special-rules`**
 lowering as **`compile/special-rules`**, with an empty literals tuple — same
@@ -1897,7 +1897,7 @@ Emits **`build-special-rules`** with **`()`** for the serialized literals tuple.
 
 **Symbol:** `compile/class`
 
-**Syntax:** `(compile/class NAME (SUPERS) BODY ...)`
+**Syntax:** `(class NAME (SUPERS) BODY ...)`
 
 - **NAME**: symbol — used for the Python class `__name__` (and the BUILD_CLASS
   position tuple); **not** a compile-time binding target for this special
@@ -1933,22 +1933,22 @@ or `VAR_STORE` for **NAME** itself (only for injected `__doc__` /
 
 ```scheme
 ;; Expression value is the class (e.g. bind with compile/define)
-(compile/define C (compile/class C ()))
+(define C (class C ()))
 
 ;; Class with attribute
-(compile/define C
-  (compile/class C ()
-    (compile/define x 42)))
+(define C
+  (class C ()
+    (define x 42)))
 
 ;; Class with superclass (object is available from bootstrap)
-(compile/define C
-  (compile/class C (object)
-    (compile/define x 1)))
+(define C
+  (class C (object)
+    (define x 1)))
 
 ;; Custom metaclass
-(compile/define C
-  (compile/class C (Base meta: MyMeta)
-    (compile/define x 1)))
+(define C
+  (class C (Base meta: MyMeta)
+    (define x 1)))
 ```
 
 **Tests:** `tests/compile/specials/test_class.py`
@@ -1957,7 +1957,7 @@ or `VAR_STORE` for **NAME** itself (only for injected `__doc__` /
 
 **Symbol:** `compile/delq`
 
-**Syntax:** `(compile/delq SYM)`
+**Syntax:** `(delq SYM)`
 
 **Use-case:** Delete the binding named SYM from the current scope. The form
 evaluates to None.
@@ -1968,14 +1968,14 @@ None.
 **Examples:**
 
 ```scheme
-(compile/delq temp)
+(delq temp)
 ```
 
 ## compile/takeq
 
 **Symbol:** `compile/takeq`
 
-**Syntax:** `(compile/takeq SYM)`
+**Syntax:** `(takeq SYM)`
 
 **Use-case:** Return the value of binding SYM and clear the slot. Unlike
 `compile/delq`, errors when the binding is empty. Used to return an accumulator
@@ -1987,7 +1987,7 @@ None tail; the form value is the taken value.
 **Examples:**
 
 ```scheme
-(compile/takeq col)
+(takeq col)
 ```
 
 **Tests:** `tests/compile/specials/test_take_specials.py`
@@ -1996,7 +1996,7 @@ None tail; the form value is the taken value.
 
 **Symbol:** `compile/attr`
 
-**Syntax:** `(compile/attr OBJ SYM)`
+**Syntax:** `(attr OBJ SYM)`
 
 **Use-case:** Load the attribute named SYM from OBJ (getattr). The value is
 pushed on the stack.
@@ -2006,15 +2006,15 @@ pushed on the stack.
 **Examples:**
 
 ```scheme
-(compile/attr obj "value")
-(compile/attr thing count)
+(attr obj "value")
+(attr thing count)
 ```
 
 ## compile/del-attr
 
 **Symbol:** `compile/del-attr`
 
-**Syntax:** `(compile/del-attr OBJ SYM)`
+**Syntax:** `(del-attr OBJ SYM)`
 
 **Use-case:** Delete the attribute named SYM on OBJ. The form evaluates to None.
 
@@ -2023,14 +2023,14 @@ pushed on the stack.
 **Examples:**
 
 ```scheme
-(compile/del-attr obj x)
+(del-attr obj x)
 ```
 
 ## compile/take-attr
 
 **Symbol:** `compile/take-attr`
 
-**Syntax:** `(compile/take-attr OBJ SYM)`
+**Syntax:** `(take-attr OBJ SYM)`
 
 **Use-case:** Get the attribute named SYM on OBJ, delete it, and return the
 value.
@@ -2041,14 +2041,14 @@ symbol. Pushes the removed value (no CONST None).
 **Examples:**
 
 ```scheme
-(compile/take-attr obj x)
+(take-attr obj x)
 ```
 
 ## compile/set-attr
 
 **Symbol:** `compile/set-attr`
 
-**Syntax:** `(compile/set-attr OBJ SYM VAL)`
+**Syntax:** `(set-attr OBJ SYM VAL)`
 
 **Use-case:** Set the attribute named SYM on OBJ to the value of VAL. The form
 evaluates to None.
@@ -2059,14 +2059,14 @@ name, then pushes CONST None.
 **Examples:**
 
 ```scheme
-(compile/set-attr obj "value" 42)
+(set-attr obj "value" 42)
 ```
 
 ## compile/ref-attr
 
 **Symbol:** `compile/ref-attr`
 
-**Syntax:** `(compile/ref-attr OBJ SYM)`
+**Syntax:** `(ref-attr OBJ SYM)`
 
 **Use-case:** Yield a mutable reference (AttributeRef) to the attribute named
 SYM on OBJ. The reference can be deref'd or stored into.
@@ -2076,14 +2076,14 @@ SYM on OBJ. The reference can be deref'd or stored into.
 **Examples:**
 
 ```scheme
-(compile/ref-attr obj count)
+(ref-attr obj count)
 ```
 
 ## compile/item
 
 **Symbol:** `compile/item`
 
-**Syntax:** `(compile/item OBJ KEY)`
+**Syntax:** `(item OBJ KEY)`
 
 **Use-case:** Load the item at key KEY from OBJ (subscript/getitem). If KEY
 compiles to a single constant, uses CONST_ITEM; otherwise compiles KEY and
@@ -2096,15 +2096,15 @@ key fragment and emits ITEM 0.
 **Examples:**
 
 ```scheme
-(compile/item vec 0)
-(compile/item tbl (compile/call compute-key))
+(item vec 0)
+(item tbl (call compute-key))
 ```
 
 ## compile/ref-item
 
 **Symbol:** `compile/ref-item`
 
-**Syntax:** `(compile/ref-item OBJ KEY)`
+**Syntax:** `(ref-item OBJ KEY)`
 
 **Use-case:** Yield a mutable reference (ItemRef) to the item at KEY in OBJ. Same
 constant-key optimization as compile/item.
@@ -2114,14 +2114,14 @@ constant-key optimization as compile/item.
 **Examples:**
 
 ```scheme
-(compile/ref-item lst i)
+(ref-item lst i)
 ```
 
 ## compile/deref
 
 **Symbol:** `compile/deref`
 
-**Syntax:** `(compile/deref EXPR)`
+**Syntax:** `(deref EXPR)`
 
 **Use-case:** Dereference a mutable reference. Compiles EXPR (which must produce
 a Ref on the stack), then emits the DEREF opcode to call `ref.deref()` and push
@@ -2134,8 +2134,8 @@ The runtime `deref` builtin remains available for higher-order use (e.g.
 **Examples:**
 
 ```scheme
-(compile/deref r)   ; compiles expr for r, emits DEREF
-*r                  ; reader: (compile/deref r)
+(deref r)   ; compiles expr for r, emits DEREF
+*r                  ; reader: (deref r)
 (deref r)           ; runtime call; use when passing deref as first-class fn
 ```
 
@@ -2143,7 +2143,7 @@ The runtime `deref` builtin remains available for higher-order use (e.g.
 
 **Symbol:** `compile/del-item`
 
-**Syntax:** `(compile/del-item OBJ KEY)`
+**Syntax:** `(del-item OBJ KEY)`
 
 **Use-case:** Delete the item at KEY in OBJ. The form evaluates to None. Same
 constant-key optimization as compile/item.
@@ -2154,14 +2154,14 @@ ITEM_CLEAR, then CONST None.
 **Examples:**
 
 ```scheme
-(compile/del-item d "key")
+(del-item d "key")
 ```
 
 ## compile/take-item
 
 **Symbol:** `compile/take-item`
 
-**Syntax:** `(compile/take-item OBJ KEY)`
+**Syntax:** `(take-item OBJ KEY)`
 
 **Use-case:** Get the item at KEY in OBJ, delete it, and return the value.
 Same constant-key optimization as compile/item.
@@ -2172,14 +2172,14 @@ otherwise merges key fragment and emits ITEM_TAKE.
 **Examples:**
 
 ```scheme
-(compile/take-item d "key")
+(take-item d "key")
 ```
 
 ## compile/set-item
 
 **Symbol:** `compile/set-item`
 
-**Syntax:** `(compile/set-item OBJ KEY VAL)`
+**Syntax:** `(set-item OBJ KEY VAL)`
 
 **Use-case:** Set the item at KEY in OBJ to VAL. The form evaluates to None.
 Same constant-key optimization as compile/item.
@@ -2191,14 +2191,14 @@ ITEM_STORE 0. Then CONST None.
 **Examples:**
 
 ```scheme
-(compile/set-item vec 0 99)
+(set-item vec 0 99)
 ```
 
 ## compile/quote
 
 **Symbol:** `compile/quote`
 
-**Syntax:** `(compile/quote FORM)`
+**Syntax:** `(quote FORM)`
 
 **Use-case:** Prevent evaluation; FORM is produced as a literal value. For
 atoms, a single CONST is emitted. For non-nil lists, the form is rewritten to
@@ -2213,16 +2213,16 @@ compiles it. Otherwise emit CONST FORM.
 **Examples:**
 
 ```scheme
-(compile/quote 42)
-(compile/quote x)
-(compile/quote (a b c))
+(quote 42)
+(quote x)
+(quote (a b c))
 ```
 
 ## compile/quasiquote
 
 **Symbol:** `compile/quasiquote`
 
-**Syntax:** ``EXPR` (reader shorthand) or `(compile/quasiquote EXPR)`
+**Syntax:** ``EXPR` (reader shorthand) or `(quasiquote EXPR)`
 
 **Use-case:** Quasi-quotation: construct a pair structure at compile time with
 selected sub-expressions evaluated at runtime. Inside the body, `,EXPR`
@@ -2231,10 +2231,10 @@ flattens a list into the surrounding list.
 
 **Reader shorthands:**
 
-- ``EXPR` → `(compile/quasiquote EXPR)`
-- `,EXPR` → `(compile/unquote EXPR)` (only valid inside a quasiquote body)
-- `,@EXPR` → `(compile/unquote-splicing EXPR)` (only valid inside a quasiquote body)
-- ``HEAD: BODY` → `(compile/quasiquote-block (:block: ...))` (block quasiquote; see below)
+- ``EXPR` → `(quasiquote EXPR)`
+- `,EXPR` → `(unquote EXPR)` (only valid inside a quasiquote body)
+- `,@EXPR` → `(unquote-splicing EXPR)` (only valid inside a quasiquote body)
+- ``HEAD: BODY` → `(quasiquote-block (:block: ...))` (block quasiquote; see below)
 
 **Behaviour:** One argument required. The compiler walks the expression
 recursively at a nesting *level* (starting at 0):
@@ -2290,7 +2290,7 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 `(a . 42)     ; → (a . 42)
 
 ;; Nested quasiquote — inner unquote is NOT evaluated at outer level
-``(a ,(+ 1 2)) ; → (compile/quasiquote (a (compile/unquote (+ 1 2))))
+``(a ,(+ 1 2)) ; → (quasiquote (a (unquote (+ 1 2))))
 ```
 
 **Implementation:** `koskari/compile/specials/quasiquote.py`
@@ -2301,7 +2301,7 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 
 **Symbol:** `compile/quote-block`
 
-**Syntax:** `'HEAD: BODY` (reader shorthand) or `(compile/quote-block BLOCK-REPR)`
+**Syntax:** `'HEAD: BODY` (reader shorthand) or `(quote-block BLOCK-REPR)`
 
 **Use-case:** Produce a `:block:` cons as literal data — the block-syntax
 analogue of `compile/quote`. The entire indented block (including any nested
@@ -2326,7 +2326,7 @@ treated as opaque data — no layout expansion takes place.
   bar
 
 ;; Explicit form
-(compile/quote-block (:block: (begin) (foo bar)))
+(quote-block (:block: (begin) (foo bar)))
 ```
 
 **Implementation:** `koskari/compile/specials/quasiquote.py`
@@ -2337,7 +2337,7 @@ treated as opaque data — no layout expansion takes place.
 
 **Symbol:** `compile/quasiquote-block`
 
-**Syntax:** ``HEAD: BODY` (reader shorthand) or `(compile/quasiquote-block BLOCK-REPR)`
+**Syntax:** ``HEAD: BODY` (reader shorthand) or `(quasiquote-block BLOCK-REPR)`
 
 **Use-case:** The block-syntax analogue of `compile/quasiquote`. Captures an
 entire indented block (including nested peer blocks such as `if`/`else`) as a
@@ -2357,7 +2357,7 @@ sub-block headers and bodies.
 produces:
 
 ```
-(compile/quasiquote-block (:block: (begin) ((compile/unquote-splicing forms))))
+(quasiquote-block (:block: (begin) ((unquote-splicing forms))))
 ```
 
 Peers are represented as sibling `:block:` nodes inside the enclosing body:
@@ -2373,10 +2373,10 @@ Peers are represented as sibling `:block:` nodes inside the enclosing body:
 produces:
 
 ```
-(compile/quasiquote-block
+(quasiquote-block
   (:block: (begin)
-   ((:block: (if (compile/unquote cond)) ((compile/unquote then)))
-    (:block: (else) ((compile/unquote else))))))
+   ((:block: (if (unquote cond)) ((unquote then)))
+    (:block: (else) ((unquote else))))))
 ```
 
 **Behaviour:** Purely transformative. Rewrites to `(compile/quasiquote
@@ -2409,7 +2409,7 @@ and reconstructs it as literal data, exactly like nested `compile/quasiquote`.
 
 **Symbol:** `compile/unquote`
 
-**Syntax:** `,EXPR` (reader shorthand) or `(compile/unquote EXPR)`
+**Syntax:** `,EXPR` (reader shorthand) or `(unquote EXPR)`
 
 **Use-case:** Escape from quasi-quotation. Only valid inside a
 `compile/quasiquote` body; at the active nesting level (level 0) the argument
@@ -2430,7 +2430,7 @@ raises `SpecialError`. Inside quasiquote, this form is handled directly by the
 
 **Symbol:** `compile/unquote-splicing`
 
-**Syntax:** `,@EXPR` (reader shorthand) or `(compile/unquote-splicing EXPR)`
+**Syntax:** `,@EXPR` (reader shorthand) or `(unquote-splicing EXPR)`
 
 **Use-case:** Splice a list into a quasi-quoted list. Only valid in list
 (element) position inside a `compile/quasiquote` body; the argument must
@@ -2455,7 +2455,7 @@ cdr (dotted tail) position of an improper list; the quasiquote compiler raises
 
 **Symbol:** `compile/car`
 
-**Syntax:** `(compile/car EXPR)`
+**Syntax:** `(car EXPR)`
 
 **Use-case:** Compile code that evaluates EXPR (must produce a pair), then
 pushes the car of that pair. One argument.
@@ -2469,14 +2469,14 @@ with the sum of their counts (same for **CDR**).
 **Example:**
 
 ```scheme
-(compile/car (compile/cons 1 nil))   ; → 1
+(car (cons 1 nil))   ; → 1
 ```
 
 ## compile/cdr
 
 **Symbol:** `compile/cdr`
 
-**Syntax:** `(compile/cdr EXPR)`
+**Syntax:** `(cdr EXPR)`
 
 **Use-case:** Compile code that evaluates EXPR (must produce a pair), then
 pushes the cdr of that pair. One argument.
@@ -2490,14 +2490,14 @@ with the sum of their counts (same for **CAR**).
 **Example:**
 
 ```scheme
-(compile/cdr (compile/cons 1 (compile/cons 2 nil)))   ; → (2 . nil)
+(cdr (cons 1 (cons 2 nil)))   ; → (2 . nil)
 ```
 
 ## compile/#list
 
 **Symbol:** `compile/#list`
 
-**Syntax:** `(compile/#list EXPR ...)`
+**Syntax:** `(#list EXPR ...)`
 
 **Surface syntax:** `(#list EXPR ...)` and reader `#[ ... ]` (see
 [SYNTAX.md](SYNTAX.md)). The compiler resolves `#list` to `compile/#list` via
@@ -2546,8 +2546,8 @@ is never placed in the constant pool. See
 
 **Syntax:**
 
-- `(compile/#list-append SYM EXPR)`
-- `(compile/#list-append LIST_EXPR EXPR)`
+- `(#list-append SYM EXPR)`
+- `(#list-append LIST_EXPR EXPR)`
 
 **Surface syntax:** `(#list-append SYM EXPR)` or `(#list-append LIST EXPR)`.
 
@@ -2583,7 +2583,7 @@ the stack. Used by macros such as `list-each` (`(#list-append col item)`).
 
 **Symbol:** `compile/#tuple`
 
-**Syntax:** `(compile/#tuple EXPR ...)`
+**Syntax:** `(#tuple EXPR ...)`
 
 **Surface syntax:** `(#tuple EXPR ...)` and reader `#( ... )` (see
 [SYNTAX.md](SYNTAX.md)).
@@ -2623,7 +2623,7 @@ coverage in `tests/compile/specials/test_collections.py`.
 
 **Symbol:** `compile/cons`
 
-**Syntax:** `(compile/cons EXPR1 EXPR2 ... EXPR_TAIL)`
+**Syntax:** `(cons EXPR1 EXPR2 ... EXPR_TAIL)`
 
 **Use-case:** Variadic pair construction. Equivalent to (cons EXPR1 (cons EXPR2
 (... (cons EXPR_TAIL) ...))). At least one argument (the tail).
@@ -2636,8 +2636,8 @@ push result. count 0 pushes nil.
 **Example:**
 
 ```scheme
-(compile/cons 1 2 nil)                    ; → (1 . (2 . nil))
-(compile/cons (compile/quote a) (compile/quote (b c)) nil)  ; → (a b c)
+(cons 1 2 nil)                    ; → (1 . (2 . nil))
+(cons (quote a) (quote (b c)) nil)  ; → (a b c)
 ```
 
 ## Object operator specials
@@ -2654,9 +2654,9 @@ the corresponding Python operator before any code is emitted. Folding stops at
 the first non-constant argument to preserve dunder dispatch semantics.
 
 ```scheme
-(compile/+ 1 2 a)   ; → CONST 3, VAR a, OBJECT_ADD 2
-(compile/+ 1 2)     ; → CONST 3, OBJECT_ADD 1
-(compile/+ a 1 2)   ; → VAR a, CONST 1, CONST 2, OBJECT_ADD 3  (no fold)
+(+ 1 2 a)   ; → CONST 3, VAR a, OBJECT_ADD 2
+(+ 1 2)     ; → CONST 3, OBJECT_ADD 1
+(+ a 1 2)   ; → VAR a, CONST 1, CONST 2, OBJECT_ADD 3  (no fold)
 ```
 
 `compile/**`, `compile/instance?`, and `compile/subclass?` never fold
@@ -2679,20 +2679,20 @@ Primary symbols and aliases (see `koskari/compile/specials/object.py`):
 
 | Special                  | Opcode      | Chained Python semantics                 |
 | ------------------------ | ----------- | ---------------------------------------- |
-| `(compile/== A B ...)`   | `OBJECT_EQ` | `A == B == ...`                          |
-| `(compile/!= A B ...)`   | `OBJECT_NE` | `A != B != ...`                          |
-| `(compile/< A B ...)`    | `OBJECT_LT` | `A < B < ...`                            |
-| `(compile/<= A B ...)`   | `OBJECT_LE` | `A <= B <= ...`                          |
-| `(compile/> A B ...)`    | `OBJECT_GT` | `A > B > ...`                            |
-| `(compile/>= A B ...)`   | `OBJECT_GE` | `A >= B >= ...`                          |
+| `(== A B ...)`   | `OBJECT_EQ` | `A == B == ...`                          |
+| `(!= A B ...)`   | `OBJECT_NE` | `A != B != ...`                          |
+| `(< A B ...)`    | `OBJECT_LT` | `A < B < ...`                            |
+| `(<= A B ...)`   | `OBJECT_LE` | `A <= B <= ...`                          |
+| `(> A B ...)`    | `OBJECT_GT` | `A > B > ...`                            |
+| `(>= A B ...)`   | `OBJECT_GE` | `A >= B >= ...`                          |
 
 
 Examples:
 
 ```scheme
-(compile/< 0 1 2 3)      ; true  => (and (< 0 1) (< 1 2) (< 2 3))
-(compile/<= 1 2 2 4)     ; true
-(compile/== 5 5 7 5)     ; false
+(< 0 1 2 3)      ; true  => (and (< 0 1) (< 1 2) (< 2 3))
+(<= 1 2 2 4)     ; true
+(== 5 5 7 5)     ; false
 ```
 
 
@@ -2705,19 +2705,19 @@ Examples:
 
 | Special                            | Opcode          | Python                   |
 | ---------------------------------- | --------------- | ------------------------ |
-| `(compile/in ITEM COLLECTION)`     | `OBJECT_IN`     | `ITEM in COLLECTION`     |
-| `(compile/not-in ITEM COLLECTION)` | `OBJECT_NOT_IN` | `ITEM not in COLLECTION` |
-| `(compile/is A B)`                 | `OBJECT_IS`     | `A is B`                 |
-| `(compile/is-not A B)`             | `OBJECT_IS_NOT` | `A is not B`             |
+| `(in ITEM COLLECTION)`     | `OBJECT_IN`     | `ITEM in COLLECTION`     |
+| `(not-in ITEM COLLECTION)` | `OBJECT_NOT_IN` | `ITEM not in COLLECTION` |
+| `(is A B)`                 | `OBJECT_IS`     | `A is B`                 |
+| `(is-not A B)`             | `OBJECT_IS_NOT` | `A is not B`             |
 
 
 **Type checks (COUNT, at least 2 args):**
 
 ```scheme
-(compile/instance? OBJ TYPE)
-(compile/instance? OBJ TYPE1 TYPE2 ...)
-(compile/subclass? CLS BASE)
-(compile/subclass? CLS BASE1 BASE2 ...)
+(instance? OBJ TYPE)
+(instance? OBJ TYPE1 TYPE2 ...)
+(subclass? CLS BASE)
+(subclass? CLS BASE1 BASE2 ...)
 ```
 
 The opcode argument encodes the number of type arguments. With a single type
@@ -2741,16 +2741,16 @@ values on the stack after any constant folding.
 
 | Special                       | Opcode                   | Python fold         |
 | ----------------------------- | ------------------------ | ------------------- |
-| `(compile/+ A ...)`           | `OBJECT_ADD`             | `operator.add`      |
-| `(compile/- A ...)`           | `OBJECT_SUBTRACT`        | `operator.sub`      |
-| `(compile/* A ...)`           | `OBJECT_MULTIPLY`        | `operator.mul`      |
-| `(compile/** BASE EXP [MOD])` | `OBJECT_POWER`           | no fold             |
-| `(compile/& A ...)`           | `OBJECT_BIT_AND`         | `operator.and_`     |
-| `(compile/| A ...)`           | `OBJECT_BIT_OR`          | `operator.or_`      |
-| `(compile/^ A ...)`           | `OBJECT_BIT_XOR`         | `operator.xor`      |
-| `(compile/// A ...)`          | `OBJECT_FLOOR_DIVIDE`    | `operator.floordiv` |
-| `(compile// A ...)`           | `OBJECT_TRUE_DIVIDE`     | `operator.truediv`  |
-| `(compile/@ A ...)`           | `OBJECT_MATRIX_MULTIPLY` | `operator.matmul`   |
+| `(+ A ...)`           | `OBJECT_ADD`             | `operator.add`      |
+| `(- A ...)`           | `OBJECT_SUBTRACT`        | `operator.sub`      |
+| `(* A ...)`           | `OBJECT_MULTIPLY`        | `operator.mul`      |
+| `(** BASE EXP [MOD])` | `OBJECT_POWER`           | no fold             |
+| `(& A ...)`           | `OBJECT_BIT_AND`         | `operator.and_`     |
+| `(| A ...)`           | `OBJECT_BIT_OR`          | `operator.or_`      |
+| `(^ A ...)`           | `OBJECT_BIT_XOR`         | `operator.xor`      |
+| `(// A ...)`          | `OBJECT_FLOOR_DIVIDE`    | `operator.floordiv` |
+| `(/ A ...)`           | `OBJECT_TRUE_DIVIDE`     | `operator.truediv`  |
+| `(@ A ...)`           | `OBJECT_MATRIX_MULTIPLY` | `operator.matmul`   |
 
 
 ---
@@ -2763,10 +2763,10 @@ arg for `BIT_LEFT`, `BIT_RIGHT`, but `MODULO` and `DIVMOD` require arg=2.
 
 | Special                | Opcode             | Python         |
 | ---------------------- | ------------------ | -------------- |
-| `(compile/% A B)`      | `OBJECT_MODULO`    | `A % B`        |
-| `(compile/<< A B)`     | `OBJECT_BIT_LEFT`  | `A << B`       |
-| `(compile/>> A B)`     | `OBJECT_BIT_RIGHT` | `A >> B`       |
-| `(compile/divmod A B)` | `OBJECT_DIVMOD`    | `divmod(A, B)` |
+| `(% A B)`      | `OBJECT_MODULO`    | `A % B`        |
+| `(<< A B)`     | `OBJECT_BIT_LEFT`  | `A << B`       |
+| `(>> A B)`     | `OBJECT_BIT_RIGHT` | `A >> B`       |
+| `(divmod A B)` | `OBJECT_DIVMOD`    | `divmod(A, B)` |
 
 
 ---
@@ -2778,20 +2778,20 @@ Each requires exactly one argument.
 
 | Special                      | Opcode                                   | Python                     |
 | ---------------------------- | ---------------------------------------- | -------------------------- |
-| `(compile/not OBJ)`          | `OBJECT_NOT`                             | `not OBJ`                  |
-| `(compile/repr OBJ)`         | `OBJECT_REPR`                            | `repr(OBJ)`                |
-| `(compile/truth OBJ)`        | `OBJECT_TRUTH`                           | `bool(OBJ)`                |
-| `(compile/iter OBJ)`         | `OBJECT_ITER`                            | uniform `iter`/`aiter`     |
-| `(compile/next IT)`          | `OBJECT_NEXT`                            | `next(IT)`, either protocol |
-| `(compile/next IT DEFAULT)`  | `OBJECT_NEXT`                            | `next(IT, DEFAULT)`        |
-| `(compile/~ OBJ)`            | `OBJECT_BIT_INVERT`                      | `~OBJ`                     |
-| `(compile/str OBJ ...)`      | `OBJECT_STR`                             | `str(OBJ)` / f-string join |
-| `(compile/format OBJ)`       | `OBJECT_FORMAT`                          | `format(OBJ)`              |
-| `(compile/format OBJ RULES)` | `OBJECT_FORMAT` or `OBJECT_FORMAT_CONST` | `format(OBJ, RULES)`       |
-| `(compile/len OBJ)`          | `OBJECT_LEN`                             | `len(OBJ)`                 |
-| `(compile/type OBJ)`         | `OBJECT_TYPE`                            | `type(OBJ)`                |
-| `(compile/dir OBJ)`          | `OBJECT_DIR`                             | `dir(OBJ)`                 |
-| `(compile/vars OBJ)`         | `OBJECT_VARS`                            | `vars(OBJ)`                |
+| `(not OBJ)`          | `OBJECT_NOT`                             | `not OBJ`                  |
+| `(repr OBJ)`         | `OBJECT_REPR`                            | `repr(OBJ)`                |
+| `(truth OBJ)`        | `OBJECT_TRUTH`                           | `bool(OBJ)`                |
+| `(iter OBJ)`         | `OBJECT_ITER`                            | uniform `iter`/`aiter`     |
+| `(next IT)`          | `OBJECT_NEXT`                            | `next(IT)`, either protocol |
+| `(next IT DEFAULT)`  | `OBJECT_NEXT`                            | `next(IT, DEFAULT)`        |
+| `(~ OBJ)`            | `OBJECT_BIT_INVERT`                      | `~OBJ`                     |
+| `(str OBJ ...)`      | `OBJECT_STR`                             | `str(OBJ)` / f-string join |
+| `(format OBJ)`       | `OBJECT_FORMAT`                          | `format(OBJ)`              |
+| `(format OBJ RULES)` | `OBJECT_FORMAT` or `OBJECT_FORMAT_CONST` | `format(OBJ, RULES)`       |
+| `(len OBJ)`          | `OBJECT_LEN`                             | `len(OBJ)`                 |
+| `(type OBJ)`         | `OBJECT_TYPE`                            | `type(OBJ)`                |
+| `(dir OBJ)`          | `OBJECT_DIR`                             | `dir(OBJ)`                 |
+| `(vars OBJ)`         | `OBJECT_VARS`                            | `vars(OBJ)`                |
 
 
 Note: `compile/str` is variadic (COUNT) at the C level — it uses
@@ -2801,10 +2801,10 @@ arguments.
 
 `compile/format` lowering matrix:
 
-- `(compile/format OBJ)`:
+- `(format OBJ)`:
   - constant `OBJ` -> folds to `CONST` string via compile-time `format`
   - non-constant `OBJ` -> emits `OBJECT_FORMAT` with arg=1
-- `(compile/format OBJ RULES)`:
+- `(format OBJ RULES)`:
   - constant-normalized `RULES` (string or `(compile/quote SYMBOL)`) and
   constant `OBJ` -> folds to `CONST` string via compile-time `format`
   - constant-normalized `RULES` and non-constant `OBJ` -> emits
@@ -2822,7 +2822,7 @@ as constant `"foo"` for lowering/folding decisions.
 
 **Symbol:** `compile/call/cc`
 
-**Syntax:** `(compile/call/cc FN)`
+**Syntax:** `(call/cc FN)`
 
 **Use-case:** Undelimited call-with-current-continuation (Scheme-like). Captures
 the current continuation at the call site, wraps it in a `Continuation` object,
@@ -2843,17 +2843,17 @@ a different eval context triggers the segmented-transfer path.
 
 ```scheme
 ;; Capture and immediately invoke: returns 42
-(compile/call/cc
-  (compile/lambda [k]
-    (compile/call k 42)))
+(call/cc
+  (lambda [k]
+    (call k 42)))
 
 ;; Escape continuation: short-circuit a computation
-(compile/call/cc
-  (compile/lambda [escape]
-    (compile/begin
-      (compile/call do-setup)
-      (compile/call escape "early-exit")
-      (compile/call do-cleanup))))
+(call/cc
+  (lambda [escape]
+    (begin
+      (call do-setup)
+      (call escape "early-exit")
+      (call do-cleanup))))
 ```
 
 **Tests:** `tests/compile/specials/test_call_cc.py`
@@ -2862,7 +2862,7 @@ a different eval context triggers the segmented-transfer path.
 
 **Symbol:** `compile/let/cc`
 
-**Syntax:** `(compile/let/cc K BODY ...)`
+**Syntax:** `(let/cc K BODY ...)`
 
 **Use-case:** Koskari-specific undelimited continuation capture. Pushes a new
 child namespace, captures the current continuation and binds it to the name `K`
@@ -2881,11 +2881,11 @@ namespace. `K` is not visible after the `compile/let/cc` form.
 
 ```scheme
 ;; Bind escape continuation k, use it inside the body
-(compile/let/cc k
-  (compile/begin
-    (compile/call do-step-one)
-    (compile/call k "done")
-    (compile/call never-reached)))
+(let/cc k
+  (begin
+    (call do-step-one)
+    (call k "done")
+    (call never-reached)))
 ```
 
 **Tests:** `tests/compile/specials/test_call_cc.py`
@@ -2894,7 +2894,7 @@ namespace. `K` is not visible after the `compile/let/cc` form.
 
 **Symbol:** `compile/capture/cc`
 
-**Syntax:** `(compile/capture/cc K BODY ...)`
+**Syntax:** `(capture/cc K BODY ...)`
 
 **Use-case:** Lowest-level undelimited continuation capture. Like
 `compile/let/cc` but binds `K` in the **current** (ambient) namespace rather
@@ -2910,10 +2910,10 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
 
 ```scheme
 ;; Capture into ambient namespace; k accessible later
-(compile/capture/cc k
-  (compile/begin
-    (compile/call do-work k)
-    (compile/call k 0)))
+(capture/cc k
+  (begin
+    (call do-work k)
+    (call k 0)))
 ```
 
 **Tests:** `tests/compile/specials/test_call_cc.py`
@@ -2922,7 +2922,7 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
 
 **Symbol:** `compile/reset`
 
-**Syntax:** `(compile/reset BODY ...)`
+**Syntax:** `(reset BODY ...)`
 
 **Use-case:** Establish a prompt delimiter for delimited continuations
 (`compile/shift`). The body is evaluated with a prompt on the dynamic chain;
@@ -2936,17 +2936,17 @@ emits `POP_PROMPT 0`.
 
 ```scheme
 ;; (reset (+ 1 (shift k (k 5)))) => 6
-(compile/reset
-  (compile/call +
+(reset
+  (call +
     1
-    (compile/shift k (compile/call k 5))))
+    (shift k (call k 5))))
 ```
 
 ## compile/shift
 
 **Symbol:** `compile/shift`
 
-**Syntax:** `(compile/shift K BODY ...)`
+**Syntax:** `(shift K BODY ...)`
 
 **Use-case:** Capture the current delimited continuation up to the nearest
 `compile/reset` prompt and bind it to `K`, then run `BODY`. `K` is a
@@ -2961,9 +2961,9 @@ Koskari eval loop via `INVOKE_K` or `INVOKE_K_VAR`).
 
 ```scheme
 ;; Capture k; invoke immediately
-(compile/reset
-  (compile/shift k
-    (compile/call k "value")))
+(reset
+  (shift k
+    (call k "value")))
 ```
 
 ## import
@@ -3164,8 +3164,8 @@ resolve to, so the star already carries every feature's facets.
 
 **Symbol:** `compile/apply-fence`
 
-**Syntax:** `(compile/apply-fence NAME RAW)` or
-`(compile/apply-fence NAME RAW META)`
+**Syntax:** `(apply-fence NAME RAW)` or
+`(apply-fence NAME RAW META)`
 
 - **NAME** -- symbol naming the fence format (e.g. `bash`).
 - **RAW** -- string holding the fenced body verbatim.
@@ -3215,7 +3215,7 @@ echo hi
 ```
 
 ;; Reader lowers it to
-(compile/apply-fence bash "echo hi\n"
+(apply-fence bash "echo hi\n"
   (filename: "job.ki" line: 2 col: 0 options: ()))
 ````
 
@@ -3226,7 +3226,7 @@ deploy --now
 ```
 
 ;; =>
-(compile/apply-fence bash "deploy --now\n"
+(apply-fence bash "deploy --now\n"
   (filename: "job.ki" line: 2 col: 0
    options: (env: prod retries: 3)))
 ````
@@ -3242,7 +3242,7 @@ deploy --now
 The following specials are implemented but are not given full sections above.
 See the cited modules for behaviour and examples.
 
-- **compile/with** — Single-shot context manager; `(compile/with EXPR BODY ...)`.
+- **compile/with** — Single-shot context manager; `(with EXPR BODY ...)`.
 Emits `PUSH_WITH` / `POP_WITH`. Implementation:
 `koskari/compile/specials/context.py`.
 - **compile/dyn-with** — Multi-shot dynamic context manager; async enter/exit.
