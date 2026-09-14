@@ -17,7 +17,7 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynFinally_HANDLER_PC(node) = handler_pc;
   KosDynFinally_ENABLED(node) = 1;
   KosDynFinally_HANDLING_RAISE(node) = 0;
-  KosDynFinally_HANDLING_RETURN(node) = 0;
+  KosDynFinally_HANDLING_CONTROL(node) = 0;
   KosDynFinally_HANDLING_RESULT(node) = NULL;
   KosDynFinally_EXC_SAVED(node) = 0;
   KosExc_Init(KosDynFinally_SAVED(node));
@@ -40,7 +40,7 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   KosDynFinally_HANDLER_PC(clone) = KosDynFinally_HANDLER_PC(node);
   KosDynFinally_ENABLED(clone) = KosDynFinally_ENABLED(node);
   KosDynFinally_HANDLING_RAISE(clone) = KosDynFinally_HANDLING_RAISE(node);
-  KosDynFinally_HANDLING_RETURN(clone) = KosDynFinally_HANDLING_RETURN(node);
+  KosDynFinally_HANDLING_CONTROL(clone) = KosDynFinally_HANDLING_CONTROL(node);
   KosDynFinally_HANDLING_RESULT(clone) = KosDynFinally_HANDLING_RESULT(node);
   Py_XINCREF(KosDynFinally_HANDLING_RESULT(clone));
   KosDynFinally_EXC_SAVED(clone) = KosDynFinally_EXC_SAVED(node);
@@ -75,8 +75,8 @@ static int dynnode_to_dict_finally(KosDynNode *node, PyObject *data) {
   if (snapshot_set_int(data, "handling_raise",
       KosDynFinally_HANDLING_RAISE((KosDynFinally *) node)) < 0)
     return -1;
-  if (snapshot_set_int(data, "handling_return",
-      KosDynFinally_HANDLING_RETURN((KosDynFinally *) node)) < 0)
+  if (snapshot_set_int(data, "handling_control",
+      KosDynFinally_HANDLING_CONTROL((KosDynFinally *) node)) < 0)
     return -1;
   if (snapshot_set_obj(data, "handling_result",
       KosDynFinally_HANDLING_RESULT((KosDynFinally *) node)) < 0)

@@ -1933,7 +1933,8 @@ static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
    shift walk.
 
    TRY: CONSUMED when RAISE, enabled, PyErr set, and extent has except_pc.
-   FINALLY: CONSUMED when RAISE or RETURN and finally enabled.
+   FINALLY: CONSUMED when RAISE, RETURN, BREAK or CONTINUE and finally
+   enabled.
 */
 KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
                                KosXferEvent event) {
@@ -1980,11 +1981,13 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
       }
       return KOS_HANDLE_PASS;
     case KOS_DYN_FINALLY:
-      if (event == KOS_XFER_EVENT_RAISE
-          && KosDynFinally_ENABLED((KosDynFinally *) node))
-        return KOS_HANDLE_CONSUMED;
-      if (event == KOS_XFER_EVENT_RETURN
-          && KosDynFinally_ENABLED((KosDynFinally *) node))
+      /* Every control transit out of the body runs the finally block:
+         a raise, a return, and a loop's break or continue alike. */
+      if (KosDynFinally_ENABLED((KosDynFinally *) node)
+          && (event == KOS_XFER_EVENT_RAISE
+              || event == KOS_XFER_EVENT_RETURN
+              || event == KOS_XFER_EVENT_BREAK
+              || event == KOS_XFER_EVENT_CONTINUE))
         return KOS_HANDLE_CONSUMED;
       return KOS_HANDLE_PASS;
     case KOS_DYN_GEN:

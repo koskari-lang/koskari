@@ -447,7 +447,7 @@ struct KosDynNode {
       uint32_t handler_pc;
       uint8_t enabled;
       uint8_t handling_raise;
-      uint8_t handling_return;
+      uint8_t handling_control;  /* KosPendingReturnKind parked here */
       uint8_t exc_saved;      /* as for try_ */
       PyObject *handling_result;
       KosExcState saved;      /* handler-visible state before this region */
@@ -2180,7 +2180,7 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynFinally_HANDLER_PC(r)  (((KosDynNode *)(r))->u.finally_.handler_pc)
 #define KosDynFinally_ENABLED(r)     (((KosDynNode *)(r))->u.finally_.enabled)
 #define KosDynFinally_HANDLING_RAISE(r) (((KosDynNode *)(r))->u.finally_.handling_raise)
-#define KosDynFinally_HANDLING_RETURN(r) (((KosDynNode *)(r))->u.finally_.handling_return)
+#define KosDynFinally_HANDLING_CONTROL(r) (((KosDynNode *)(r))->u.finally_.handling_control)
 #define KosDynFinally_HANDLING_RESULT(r) (((KosDynNode *)(r))->u.finally_.handling_result)
 #define KosDynFinally_EXC_SAVED(r)   (((KosDynNode *)(r))->u.finally_.exc_saved)
 #define KosDynFinally_SAVED(r)       (&((KosDynNode *)(r))->u.finally_.saved)

@@ -239,4 +239,42 @@ class TestLoopTransferAcrossLeave(SpecialsTestCase):
         self.assertEqual(log, ["after"])
 
 
+    async def test_break_across_finally(self):
+        log = []
+
+        src_str = """
+        (let [[i 0]]
+          (while (< i 5)
+            (begin
+              (setq i (+ i 1))
+              (try (break 4) [finally: (call record "fin")]))))
+        """
+        expr, mod = self.compile_expr(src_str, record=log.append)
+        result = await expr()
+        self.assertEqual(result, 4)
+        self.assertEqual(log, ["fin"])
+
+
+    async def test_continue_across_finally(self):
+        log = []
+
+        src_str = """
+        (let [[i 0] [n 0]]
+          (while (< i 10)
+            (begin
+              (setq i (+ i 1))
+              (try
+                (begin
+                  (setq n (+ n 1))
+                  (cond
+                    ((< n 3) (continue n))
+                    (else: (break n))))
+                [finally: (call record "fin")]))))
+        """
+        expr, mod = self.compile_expr(src_str, record=log.append)
+        result = await expr()
+        self.assertEqual(result, 3)
+        self.assertEqual(log, ["fin", "fin", "fin"])
+
+
 # The end.

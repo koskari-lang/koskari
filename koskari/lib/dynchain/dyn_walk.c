@@ -227,7 +227,7 @@ KosOpResult kos_dyn_unwind_return(
           if (KosEvalState_FRAME(es))
             KosEvalState_SET_PC(es, KosDynFinally_HANDLER_PC(fin));
           KosDynFinally_ENABLED(fin) = 0;
-          KosDynFinally_HANDLING_RETURN(fin) = 1;
+          KosDynFinally_HANDLING_CONTROL(fin) = KOS_PENDING_RETURN_FRAME;
           if (KOS_XFER_TRACE)
             SAYF("[xfer] unwind_return: delivered to FINALLY, pc=%u",
                  (unsigned) KosDynFinally_HANDLER_PC(fin));
@@ -383,7 +383,49 @@ KosOpResult kos_dyn_unwind_to_loop(
   /* Walk from DYN_TOP toward region; unwind each node with event */
   while (KosEvalState_DYN_TOP(es) != (KosDynNode *) region) {
     KosDynNode *top = KosEvalState_DYN_TOP(es);
-    KosOpResult r = kos_dyn_unlink_top(es, event, 0);
+    KosOpResult r;
+
+    /* Handle phase: offer BREAK/CONTINUE before unwind, as the return
+       walk offers RETURN. An enabled FINALLY consumes it and the value
+       rides its stack through the finally body; POP_FINALLY re-issues
+       the transfer once the region is gone. */
+    {
+      KosHandleResult hr = kos_dyn_handle(es, top, event);
+      if (hr == KOS_HANDLE_CONSUMED) {
+        if (KosDynNode_IS_FINALLY(top)) {
+          KosDynFinally *fin = (KosDynFinally *) top;
+          if (KosEvalState_StackClear(es) < 0) {
+            Py_DECREF(result);
+            return EVAL_RAISE();
+          }
+          if (KosEvalState_StackPushRef(es, result) < 0) {
+            Py_DECREF(result);
+            return EVAL_RAISE();
+          }
+          Py_DECREF(result);
+          if (KosEvalState_FRAME(es))
+            KosEvalState_SET_PC(es, KosDynFinally_HANDLER_PC(fin));
+          KosDynFinally_ENABLED(fin) = 0;
+          KosDynFinally_HANDLING_CONTROL(fin) =
+              (event == KOS_XFER_EVENT_BREAK)
+                  ? KOS_PENDING_RETURN_BREAK : KOS_PENDING_RETURN_CONTINUE;
+          if (KOS_XFER_TRACE)
+            SAYF("[xfer] unwind_to_loop: delivered to FINALLY, pc=%u",
+                 (unsigned) KosDynFinally_HANDLER_PC(fin));
+          return EVAL_REPROLOGUE();
+        }
+        PyErr_SetString(PyExc_RuntimeError,
+                        "handle(CONSUMED) during loop walk: unexpected node");
+        Py_DECREF(result);
+        return EVAL_RAISE();
+      }
+      if (hr == KOS_HANDLE_ERROR) {
+        Py_DECREF(result);
+        return EVAL_RAISE();
+      }
+    }
+
+    r = kos_dyn_unlink_top(es, event, 0);
 
     if (r.kind == KOS_RES_NORMAL)
       continue;

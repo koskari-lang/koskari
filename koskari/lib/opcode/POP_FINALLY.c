@@ -42,13 +42,13 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
     return EVAL_REPROLOGUE();
   }
 
-  /* A return that was parked here by the unwind walk resumes as a
-     return; the finally body ran for its side effects only. Without
-     this the promoted value would just sit on the parent stack, and
-     only a trailing RETURN would carry it out. */
-  int returning = KosDynFinally_HANDLING_RETURN((KosDynFinally *) region);
-  if (returning)
-    KosDynFinally_HANDLING_RETURN((KosDynFinally *) region) = 0;
+  /* A control transfer parked here by an unwind walk resumes as itself
+     once the region is gone; the finally body ran for its side effects
+     only. Without this the promoted value would just sit on the parent
+     stack, and only a trailing RETURN would carry it out. */
+  uint8_t pending = KosDynFinally_HANDLING_CONTROL((KosDynFinally *) region);
+  if (pending)
+    KosDynFinally_HANDLING_CONTROL((KosDynFinally *) region) = 0;
 
   {
     PyObject *promoted = KosStack_PopRef(&KosDynNode_STACK(region));
@@ -58,10 +58,22 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
       Py_DECREF(promoted);
       RESULT_RAISE();
     }
+
     /* The region is gone before the walk resumes, so an enclosing
        enabled FINALLY takes its own delivery. */
-    if (returning)
-      return EVAL_RETURN(promoted);
+    switch (pending) {
+      case KOS_PENDING_RETURN_FRAME:
+        return EVAL_RETURN(promoted);
+      case KOS_PENDING_RETURN_BREAK:
+        RESULT_RELAY(es, kos_dyn_unwind_to_loop(
+            es, KOS_XFER_EVENT_BREAK, promoted));
+      case KOS_PENDING_RETURN_CONTINUE:
+        RESULT_RELAY(es, kos_dyn_unwind_to_loop(
+            es, KOS_XFER_EVENT_CONTINUE, promoted));
+      default:
+        break;
+    }
+
     if (KosEvalState_StackPushRef(es, promoted) < 0) {
       Py_DECREF(promoted);
       RESULT_RAISE();
