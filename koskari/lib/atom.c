@@ -308,18 +308,29 @@ PyObject *KosGensym_FromString(
     if (predicate) {
       PyObject *maybe = PyObject_CallFunctionObjArgs(predicate,
                                                      maybe_symbol, NULL);
-      if (! maybe) {
-        return NULL;
+      int accept;
 
-      } else if (PyObject_IsTrue(maybe)) {
-        Py_DECREF(maybe);
+      // every arm that does not hand back the candidate releases it:
+      // symbols are weakly interned, so holding one keeps its name
+      // reserved for the life of the process
+      if (! maybe) {
+        Py_CLEAR(maybe_symbol);
+        return NULL;
+      }
+
+      accept = PyObject_IsTrue(maybe);
+      Py_DECREF(maybe);
+
+      if (accept < 0) {
+        Py_CLEAR(maybe_symbol);
+        return NULL;
+      }
+
+      if (accept)
         return maybe_symbol;
 
-      } else {
-        Py_DECREF(maybe);
-        Py_CLEAR(maybe_symbol);
-        continue;
-      }
+      Py_CLEAR(maybe_symbol);
+      continue;
 
     } else {
       return maybe_symbol;

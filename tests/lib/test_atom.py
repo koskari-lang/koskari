@@ -302,6 +302,26 @@ class TestGensym(unittest.IsolatedAsyncioTestCase):
         g = gensym("test", None)
         self.assertIsInstance(g, symbol)
 
+    async def test_predicate_that_raises(self):
+        """gensym propagates an exception raised by the predicate"""
+        def predicate(sym):
+            raise KeyError("no")
+
+        with self.assertRaises(KeyError):
+            gensym("test", predicate)
+
+    async def test_predicate_result_bool_that_raises(self):
+        """gensym propagates an exception from the result's __bool__"""
+        class Nasty:
+            def __bool__(self):
+                raise RuntimeError("nope")
+
+        def predicate(sym):
+            return Nasty()
+
+        with self.assertRaises(RuntimeError):
+            gensym("test", predicate)
+
 
 class TestSymbolKeywordDistinct(unittest.IsolatedAsyncioTestCase):
     """Tests that symbol and keyword are distinct types"""
