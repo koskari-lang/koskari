@@ -384,6 +384,15 @@ static PyObject *coroutine_throw_pair(
     PyObject *typ,
     PyObject *exc) {
 
+  /* Re-entrancy guard, before the WAITING_PY arm below touches the
+     stored await iterator: this ends in koskari_eval on the same
+     context a drive already holds. */
+  if (coro->in_send) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "coroutine already being awaited");
+    return NULL;
+  }
+
   if (coro->state == KOS_CORO_DONE) {
     PyErr_SetString(PyExc_RuntimeError,
                     "cannot reuse already awaited coroutine");
@@ -446,6 +455,14 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
 static PyObject *coroutine_close(PyObject *self) {
 
   KosCoroutine *const coro = (KosCoroutine *) self;
+
+  /* Refused here rather than at the throw below, which this reaches
+     only after closing and clearing the stored await iterator. */
+  if (coro->in_send) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "coroutine already being awaited");
+    return NULL;
+  }
 
   if (coro->state == KOS_CORO_DONE) {
     Py_RETURN_NONE;

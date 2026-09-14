@@ -166,4 +166,80 @@ class TestCoroutineThrow(unittest.IsolatedAsyncioTestCase):
             await coro
 
 
+
+class TestCoroutineReentrancy(unittest.TestCase):
+    """
+    koskari_eval is not re-entrant on one context. send refuses a
+    second drive while one is in flight; throw and close reach the
+    same evaluator and must refuse it too, including the await
+    iterator they touch on the way there.
+    """
+
+
+    def make_coro(self, callback):
+        """
+        A coroutine whose only act is to call callback, so the
+        callback runs inside the drive
+        """
+
+        code, ns = build_expr(
+            [["VAR", "cb"], ["CALL", 0], ["RETURN", 1]],
+            local_syms=("cb",),
+            values={"cb": callback},
+        )
+        return make_callable(code, ns)()
+
+
+    def test_throw_during_send_is_refused(self):
+        """
+        throw from inside the drive raises rather than nesting a
+        second koskari_eval on the live context
+        """
+
+        box = {}
+        caught = []
+
+        def callback():
+            try:
+                box['coro'].throw(ValueError("x"))
+            except BaseException as exc:
+                caught.append(exc)
+            return 7
+
+        box["coro"] = self.make_coro(callback)
+        with self.assertRaises(StopIteration):
+            box["coro"].send(None)
+
+        self.assertEqual(len(caught), 1)
+        self.assertIsInstance(caught[0], RuntimeError)
+        self.assertIn("already being awaited", str(caught[0]))
+
+
+    def test_close_during_send_is_refused(self):
+        """
+        close from inside the drive is refused before it can close
+        the stored await iterator
+        """
+
+        box = {}
+        caught = []
+
+        def callback():
+            try:
+                box['coro'].close()
+                caught.append(None)
+            except BaseException as exc:
+                caught.append(exc)
+            return 7
+
+        box["coro"] = self.make_coro(callback)
+        with self.assertRaises(StopIteration):
+            box["coro"].send(None)
+
+        self.assertEqual(len(caught), 1)
+        self.assertIsInstance(caught[0], RuntimeError)
+        self.assertIn("already being awaited", str(caught[0]))
+
+
+
 # The end.
