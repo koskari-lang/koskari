@@ -306,6 +306,24 @@ class TestTrySpecial(SpecialsTestCase):
         self.assertEqual(res, 5)
 
 
+    async def test_try_finally_return_from_non_tail_try(self):
+        """
+        A ``return`` through ``finally`` carries its value out even when
+        the try is not the last form of the lambda
+        """
+
+        src = """
+        ((lambda []
+          (try
+            (return 5)
+            [finally: 100])
+          99))
+        """
+        expr, mod = self.compile_expr(src)
+        res = await expr()
+        self.assertEqual(res, 5)
+
+
     async def test_try_finally_preserves_compile_return_in_except_when_raised(self):
         """
         When the handler runs, ``return`` from except is not replaced

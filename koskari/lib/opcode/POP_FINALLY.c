@@ -42,7 +42,12 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
     return EVAL_REPROLOGUE();
   }
 
-  if (KosDynFinally_HANDLING_RETURN((KosDynFinally *) region))
+  /* A return that was parked here by the unwind walk resumes as a
+     return; the finally body ran for its side effects only. Without
+     this the promoted value would just sit on the parent stack, and
+     only a trailing RETURN would carry it out. */
+  int returning = KosDynFinally_HANDLING_RETURN((KosDynFinally *) region);
+  if (returning)
     KosDynFinally_HANDLING_RETURN((KosDynFinally *) region) = 0;
 
   {
@@ -53,6 +58,10 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
       Py_DECREF(promoted);
       RESULT_RAISE();
     }
+    /* The region is gone before the walk resumes, so an enclosing
+       enabled FINALLY takes its own delivery. */
+    if (returning)
+      return EVAL_RETURN(promoted);
     if (KosEvalState_StackPushRef(es, promoted) < 0) {
       Py_DECREF(promoted);
       RESULT_RAISE();
