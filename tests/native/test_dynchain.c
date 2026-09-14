@@ -180,8 +180,7 @@ static int test_dynfinally_new_free(void) {
     TEST_ASSERT_EQ(KosDynFinally_HANDLER_PC(node), 100, "handler_pc is set");
     TEST_ASSERT_EQ(KosDynFinally_ENABLED(node), 1, "enabled by default");
     TEST_ASSERT_EQ(KosDynFinally_HANDLING_RAISE(node), 0, "handling_raise is 0");
-    TEST_ASSERT_EQ(KosDynFinally_HANDLING_RETURN(node), 0, "handling_return is 0");
-    TEST_ASSERT_NULL(KosDynFinally_HANDLING_RESULT(node), "handling_result is NULL");
+    TEST_ASSERT_EQ(KosDynFinally_HANDLING_CONTROL(node), 0, "handling_control is 0");
 
     kos_dynfinally_free(node);
 
@@ -493,25 +492,6 @@ static int test_dynforeach_free_with_iter(void) {
 }
 
 
-static int test_dynfinally_free_with_handling_result(void) {
-
-    KosDynFinally *node;
-    PyObject *handling_result;
-
-    node = kos_dynfinally_new(NULL, 50);
-    TEST_ASSERT_NOT_NULL(node, "create FINALLY");
-
-    handling_result = PyLong_FromLong(400001);
-    TEST_ASSERT_NOT_NULL(handling_result, "handling_result");
-
-    KosDynFinally_HANDLING_RESULT(node) = handling_result;
-
-    kos_dynfinally_free(node);
-
-    return 0;
-}
-
-
 /* === Test runner === */
 
 
@@ -550,7 +530,6 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_dynwith_free_exc_unconditional);
     RUN_TEST(test_dyndelim_clone_no_chain_alias);
     RUN_TEST(test_dynforeach_free_with_iter);
-    RUN_TEST(test_dynfinally_free_with_handling_result);
 
     return 0;
 }

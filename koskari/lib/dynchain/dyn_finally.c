@@ -18,7 +18,6 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynFinally_ENABLED(node) = 1;
   KosDynFinally_HANDLING_RAISE(node) = 0;
   KosDynFinally_HANDLING_CONTROL(node) = 0;
-  KosDynFinally_HANDLING_RESULT(node) = NULL;
   KosDynFinally_EXC_SAVED(node) = 0;
   KosExc_Init(KosDynFinally_SAVED(node));
   KosExc_Init(KosDynFinally_HANDLING(node));
@@ -41,8 +40,6 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   KosDynFinally_ENABLED(clone) = KosDynFinally_ENABLED(node);
   KosDynFinally_HANDLING_RAISE(clone) = KosDynFinally_HANDLING_RAISE(node);
   KosDynFinally_HANDLING_CONTROL(clone) = KosDynFinally_HANDLING_CONTROL(node);
-  KosDynFinally_HANDLING_RESULT(clone) = KosDynFinally_HANDLING_RESULT(node);
-  Py_XINCREF(KosDynFinally_HANDLING_RESULT(clone));
   KosDynFinally_EXC_SAVED(clone) = KosDynFinally_EXC_SAVED(node);
   KosExc_Init(KosDynFinally_SAVED(clone));
   KosExc_Copy(KosDynFinally_SAVED(clone), KosDynFinally_SAVED(node));
@@ -53,11 +50,9 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
 
 
 /**
-   Release the handling result and both exception states; return node
-   to freelist.
+   Release both exception states; return node to freelist.
 */
 void kos_dynfinally_free(KosDynFinally *node) {
-  Py_XDECREF(KosDynFinally_HANDLING_RESULT(node));
   KosExc_Clear(KosDynFinally_SAVED(node));
   KosExc_Clear(KosDynFinally_HANDLING(node));
   kos_dynnode_return_to_freelist((KosDynNode *) node);
@@ -77,9 +72,6 @@ static int dynnode_to_dict_finally(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_int(data, "handling_control",
       KosDynFinally_HANDLING_CONTROL((KosDynFinally *) node)) < 0)
-    return -1;
-  if (snapshot_set_obj(data, "handling_result",
-      KosDynFinally_HANDLING_RESULT((KosDynFinally *) node)) < 0)
     return -1;
   return 0;
 }
@@ -124,11 +116,9 @@ int kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node) {
 
 
 /**
-   GC traverse a KOS_DYN_FINALLY: the handling result and both
-   exception states.
+   GC traverse a KOS_DYN_FINALLY: both exception states.
 */
 static int dynnode_traverse_finally(KosDynNode *node, visitproc visit, void *arg) {
-  Py_VISIT(KosDynFinally_HANDLING_RESULT((KosDynFinally *) node));
   if (KosExc_Traverse(KosDynFinally_SAVED((KosDynFinally *) node), visit, arg))
     return -1;
   return KosExc_Traverse(KosDynFinally_HANDLING((KosDynFinally *) node),
