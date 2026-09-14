@@ -93,16 +93,39 @@ static PyObject *constantly_repr(PyObject *self) {
 }
 
 
+static PyObject *constantly_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
+
+  PyObject *value = NULL;
+
+  (void) type;
+
+  if (kwds && PyDict_GET_SIZE(kwds)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "constantly() takes no keyword arguments");
+    return NULL;
+  }
+
+  if (! PyArg_UnpackTuple(args, "constantly", 1, 1, &value))
+    return NULL;
+
+  return KosUtils_Constantly(value);
+}
+
+
 static PyTypeObject KosConstantlyType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
-  .tp_name = "koskari.lib.constantly",
+  .tp_name = "constantly",
   .tp_basicsize = sizeof(KosConstantly),
   .tp_dealloc = constantly_dealloc,
   .tp_call = constantly_call,
   .tp_repr = constantly_repr,
   .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_doc = "A callable that always returns the same value",
+  .tp_new = constantly_new,
 };
 
 
@@ -1110,12 +1133,6 @@ static PyObject *m_identity(PyObject *mod, PyObject *value) {
 }
 
 
-static PyObject *m_constantly(PyObject *mod, PyObject *value) {
-
-  return KosUtils_Constantly(value);
-}
-
-
 static PyObject *m_kos_repr(PyObject *mod, PyObject *value) {
 
   (void) mod;
@@ -1319,14 +1336,9 @@ static PyMethodDef utils_methods[] = {
     "reapply(func, data, count) -> result\n"
     "Calls data = func(data) count times, returns final result." },
 
-
   { "identity", (PyCFunction) m_identity, METH_O,
     "identity(value) -> value\n"
     "Returns its argument unchanged." },
-
-  { "constantly", (PyCFunction) m_constantly, METH_O,
-    "constantly(value) -> callable\n"
-    "Returns a callable that always returns value." },
 
   { "kos_repr", (PyCFunction) m_kos_repr, METH_O,
     "kos_repr(obj) -> str\n"
@@ -1445,6 +1457,10 @@ int koskari_utils_init(PyObject *mod) {
 
   if (PyType_Ready(&KosConstantlyType) < 0 ||
       PyType_Ready(KOS_EVALUATED_PYTYPE(KosApplyType)) < 0)
+    return -1;
+
+  if (PyObject_SetAttrString(mod, "constantly",
+                             (PyObject *) &KosConstantlyType) < 0)
     return -1;
 
   for (PyMethodDef *mdef = utils_methods; mdef->ml_name; mdef++) {

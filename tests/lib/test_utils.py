@@ -220,8 +220,17 @@ class TestIdentity(unittest.TestCase):
 
 class TestConstantly(unittest.TestCase):
     """
-    Tests for the constantly function
+    Tests for the constantly type
     """
+
+    def test_constantly_is_type(self):
+        """
+        constantly is the type object itself
+        """
+
+        self.assertIsInstance(lib.constantly, type)
+        self.assertEqual(lib.constantly.__name__, "constantly")
+
 
     def test_constantly_returns_callable(self):
         """
@@ -230,6 +239,7 @@ class TestConstantly(unittest.TestCase):
 
         f = lib.constantly(42)
         self.assertTrue(callable(f))
+        self.assertIsInstance(f, lib.constantly)
 
 
     def test_constantly_returns_value(self):
@@ -273,6 +283,21 @@ class TestConstantly(unittest.TestCase):
         r = repr(f)
         self.assertIn("constantly", r)
         self.assertIn("42", r)
+
+
+    def test_constantly_arity(self):
+        """
+        constantly requires exactly one positional argument
+        """
+
+        with self.assertRaises(TypeError):
+            lib.constantly()
+
+        with self.assertRaises(TypeError):
+            lib.constantly(1, 2)
+
+        with self.assertRaises(TypeError):
+            lib.constantly(value=1)
 
 
 class TestPass(unittest.TestCase):

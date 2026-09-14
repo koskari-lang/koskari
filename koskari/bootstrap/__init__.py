@@ -35,7 +35,7 @@ from ..lib import (
     build_set, build_str, build_tuple, car, cdr, cons, defer, demand,
     demand_apply, demand_call, deref, gensym, getattr_star, getitem_star,
     hasattr_star, hasitem_star, keyword, kos_repr, list_append, nil, pair,
-    parameter, setcar, setcdr, symbol, values)
+    parameter, setcar, setcdr, symbol, values, identity, constantly)
 from ..types import (
     TypePredicate, bracket_splice, build_proper, is_nil, is_None, is_proper,
     is_recursive, unpack)
@@ -151,6 +151,7 @@ def make_bootstrap():
     _bind('ref?', TypePredicate('ref?', Ref))
 
     # types from koskari.lib
+    _ty('constantly', constantly)
     _ty('defer', defer)
     _ty('filter', KosFilter)
     _ty('map', KosMap)
@@ -173,6 +174,7 @@ def make_bootstrap():
     _bind('demand-call', demand_call)
     _bind('deref', deref)
     _bind('gensym', gensym)
+    _bind('identity', identity)
     _bind('nil', nil)
     _bind('bracket-nil', bracket_nil)
     _bind('parameter', parameter)
