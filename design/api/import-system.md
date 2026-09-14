@@ -22,8 +22,9 @@ files transparently via Python's standard `import` machinery.
 - **install()**: Insert `KoskariPathFinder` at the front of `sys.meta_path`.
   Idempotent.
 - **uninstall()**: Remove `KoskariPathFinder` from `sys.meta_path`.
-- **Auto-install**: `koskari/__init__.py` calls `_auto_enable_importer()` at
-  package import time. Suppressed when `KOSKARI_NOIMPORTER` is set.
+- **Auto-install**: `koskari/__init__.py` calls `install()` at package import
+  time. Suppressed when the `KOSKARI_NOIMPORTER` environment variable or the
+  `-X KOSKARI_NOIMPORTER` xoption is set to a non-zero value.
 
 ## Module Lifecycle
 
@@ -65,5 +66,7 @@ expression: coroutine + await).
 
 ## Source Suffixes
 
-Only `.ki` is registered. Other suffixes (e.g. `.kio` for compiled cache) are
-not yet integrated.
+Both `.ki` and `.kio` are registered. A `.kio` with no sibling source stands.
+Beside a source it stands only when its stamp matches that source's current
+mtime and size; an unstamped, unreadable, or wrong-ABI `.kio` yields to the
+`.ki` (see `source_for_stale_kio`).
