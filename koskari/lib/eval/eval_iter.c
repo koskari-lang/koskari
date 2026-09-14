@@ -213,6 +213,18 @@ static inline KosGetNextResult op_get_next_from_iter(
     return r;
   }
 
+  /* NULL from get_await_next means the object has no am_anext, with
+     no exception set, or that __anext__ or GetAwaitable failed. A
+     synchronous StopAsyncIteration is this iterator's exhaustion,
+     exactly as it is once the awaitable is stepped. */
+  if (PyErr_Occurred()) {
+    if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+      PyErr_Clear();
+      return GET_NEXT_EXHAUSTED;
+    }
+    return GET_NEXT_ERROR;
+  }
+
   if (PyIter_Check(iter))
     return next_from_python_sync_iter(es, await_out, iter, result_out);
 
