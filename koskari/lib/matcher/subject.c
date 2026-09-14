@@ -183,13 +183,29 @@ int KosMatchSubject_FromKosPair(
     return -1;
   }
 
-  /* First pass: count length */
+  /* First pass: count length. A second cursor runs two cells ahead
+     under the same cell test; a spine that loops has no non-cell to
+     retire it, so it catches this walk instead of running forever. */
   Py_ssize_t n = 0;
   PyObject *cursor = pair_or_nil;
+  PyObject *ahead = pair_or_nil;
+
   while (KosPair_IsCell(cursor)) {
     n++;
     cursor = KosPair_CDR(cursor);
+
+    for (int i = 0; ahead && i < 2; i++) {
+      PyObject *next = KosPair_IsCell(ahead) ? KosPair_CDR(ahead) : NULL;
+
+      ahead = (next && KosPair_IsCell(next)) ? next : NULL;
+    }
+    if (ahead == cursor) {
+      PyErr_SetString(PyExc_ValueError,
+                      "FromKosPair requires a non-recursive list");
+      return -1;
+    }
   }
+
   if (! KosNilP(cursor)) {
     PyErr_SetString(PyExc_TypeError,
                     "FromKosPair requires a proper list (nil-terminated)");

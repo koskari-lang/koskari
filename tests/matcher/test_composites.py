@@ -23,10 +23,10 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, cons, keyword, nil, symbol
+from koskari.lib import Datum, cdr, cons, keyword, nil, setcdr, symbol
 from koskari.matcher import (
     BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORMALS, LITERAL, MATCH,
-    TYPE, USING, VALUE, DatumFrame, Hygiene, HygienicMatchCompiler,
+    REST, TYPE, USING, VALUE, DatumFrame, Hygiene, HygienicMatchCompiler,
     MatchCompiler, Matcher, MatchResult, make_matcher)
 from koskari.types import build_proper
 
@@ -1124,6 +1124,38 @@ class TestMakeMatcher(unittest.TestCase):
         sa = symbol("foo")
         result = m.match((sa,))
         self.assertIsInstance(result, MatchResult)
+
+
+class TestCyclicPairSubject(unittest.TestCase):
+    """
+    A pair spine mutated into a cycle is not a proper list, and the
+    subject adapter rejects it rather than walking it forever
+    """
+
+    def test_match_refuses_a_cyclic_spine(self):
+        """
+        Matcher.match on a cyclic pair raises instead of hanging
+        """
+
+        subject = cons(1, 2, nil)
+        setcdr(cdr(subject), subject)
+
+        m = make_matcher(MATCH(CAPTURE("a"), REST("rest")))
+        with self.assertRaises(ValueError):
+            m.match(subject)
+
+
+    def test_match_refuses_a_self_looped_cell(self):
+        """
+        A single cell whose cdr is itself is the same rejection
+        """
+
+        subject = cons(1, nil)
+        setcdr(subject, subject)
+
+        m = make_matcher(MATCH(CAPTURE("a")))
+        with self.assertRaises(ValueError):
+            m.match(subject)
 
 
 # The end.
