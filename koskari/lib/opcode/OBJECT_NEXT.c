@@ -65,9 +65,10 @@ static KosOpResult object_next_step(
         return EVAL_RAISE();
 
       case KOS_IREQ_CONTINUES: {
-        /* A frame with bytecode (a generator attached) continues
-           dispatch directly; only a code-less native frame takes the
-           entry sequence, which exists for it. */
+        /* A frame the install left current is threaded into only when
+           it can be: a code-less native frame takes the entry
+           sequence, and a frame parked inside a yield-from runs that
+           node's phase resume first. */
         return kos_iter_installed(es);
       }
 

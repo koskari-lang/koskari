@@ -1945,16 +1945,16 @@ KosOpResult KosEvalState_NextResume(
       return kos_entry_value(es, frame, out, resume, state);
 
     case KOS_IREQ_CONTINUES: {
-      /* If the install left a real bytecode frame current (e.g. a
-         generator attached), dispatch continues there directly with
-         no trampoline hop; only a codeless result needs the bounce.
-         With a resume, it is armed for the delivery either way. */
-      KosDynFrame *cur = KosEvalState_FRAME(es);
+      /* A frame the install left current is threaded into only when
+         it can be: a frame parked inside a yield-from carries that
+         node's phase resume, and the prologue has to run it before
+         anything else. With a resume of our own, it is armed on the
+         calling frame for the delivery either way. */
       if (resume) {
         KosDynFrame_RESUME_FN(frame) = (void *) resume;
         KosDynFrame_RESUME_STATE(frame) = state;
       }
-      return (cur && KosDynFrame_CODE(cur)) ? EVAL_NORMAL() : EVAL_REPROLOGUE();
+      return kos_iter_installed(es);
     }
 
     case KOS_IREQ_EXIT:
