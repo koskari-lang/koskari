@@ -660,4 +660,63 @@ class TestSwitchEqFastAttrOpcode(CevalTest):
         self.assertIn("nonexistent", str(ctx.exception))
 
 
+
+
+
+class TestSwitchEqConstJumpLocality(CevalTest):
+    """
+    Finalize rejects a jump out of its own block extent. An EXTRA
+    opcode keeps its destination in a LABEL field of its row rather
+    than in the instruction arg, so the check has to read the row.
+    """
+
+
+    def test_local_target_inside_try_builds(self):
+        """
+        control: a target inside the PUSH_TRY extent is accepted
+        """
+
+        code, ns = build_expr([
+            ["PUSH_TRY", "handler"],
+            ["CONST", 10],
+            ["SWITCH_EQ_CONST", ("hit", 10, 0, 0)],
+            ["POP", 1],
+            ["LABEL", "hit"],
+            ["JUMP", "done"],
+            ["LABEL", "handler"],
+            ["EXCEPTION", 0],
+            ["POP", 1],
+            ["LABEL", "done"],
+            ["POP_TRY", 0],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        self.assertIsNotNone(code)
+
+
+    def test_target_outside_try_is_rejected(self):
+        """
+        a SWITCH_EQ_CONST whose LABEL leaves the extent is refused,
+        rather than jumping past the matching POP_TRY at runtime
+        """
+
+        with self.assertRaises(RuntimeError) as ctx:
+            build_expr([
+                ["PUSH_TRY", "handler"],
+                ["CONST", 10],
+                ["SWITCH_EQ_CONST", ("outside", 10, 0, 0)],
+                ["POP", 1],
+                ["JUMP", "done"],
+                ["LABEL", "handler"],
+                ["EXCEPTION", 0],
+                ["POP", 1],
+                ["LABEL", "done"],
+                ["POP_TRY", 0],
+                ["LABEL", "outside"],
+                ["CONST", 42],
+                ["RETURN", 1],
+            ])
+        self.assertIn("non-local JUMP", str(ctx.exception))
+
+
 # The end.

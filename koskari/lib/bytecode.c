@@ -2407,14 +2407,56 @@ static int derive_extents_fill(
 
 
 /**
-   Opcodes that perform control-flow jumps (must stay local).
-   Excludes PUSH_* whose args are handler targets that may legitimately
-   point outside the current block.
-*/
-static int is_jump_op(KosOpCode op) {
+   Collect the jump destinations one instruction carries, as pcs.
 
-  return (kos_opcode_style(op) == KOSTYLE_LABEL
-          && !is_push_op(op));
+   A KOSTYLE_LABEL opcode keeps its destination in the instruction arg.
+   An EXTRA one keeps the arg as a row index and the destination in a
+   LABEL field of that row, resolved to a KosOp during emit; the same
+   scan collect_label_map makes. PUSH_* handler targets are excluded:
+   they may legitimately leave the block. No PUSH_* is EXTRA-with-LABEL,
+   so the exclusion belongs only to the LABEL arm.
+
+   :param out: receives up to 4 destination pcs
+   :return: how many destinations were written
+*/
+static int jump_targets(
+    const KosOp *code,
+    uint32_t src_pc,
+    const KosExtra *extra,
+    uint32_t extra_len,
+    uint32_t *out) {
+
+  KosOpCode op = (KosOpCode) code[src_pc].op;
+  KosOpStyle st = kos_opcode_style(op);
+  int n = 0;
+
+  if (st == KOSTYLE_LABEL) {
+    if (is_push_op(op))
+      return 0;
+    out[0] = code[src_pc].arg;
+    return 1;
+  }
+
+  if (st != KOSTYLE_EXTRA || ! extra)
+    return 0;
+
+  {
+    uint32_t eidx = code[src_pc].arg;
+    const KosExtra *row;
+    KosExtraSchema schema = kos_opcode_extra_schema(op);
+
+    /* A row index past the table is another validator's report. */
+    if (eidx >= extra_len)
+      return 0;
+
+    row = &extra[eidx];
+    for (int slot = 0; slot < 4; slot++) {
+      if (schema_field(schema, slot) == KOSTYLE_LABEL)
+        out[n++] = KosExtra_TARGET(row, slot)->pc;
+    }
+  }
+
+  return n;
 }
 
 
@@ -2426,6 +2468,8 @@ static int is_jump_op(KosOpCode op) {
 static int validate_jump_locality(
     const KosOp *code,
     uint32_t code_len,
+    const KosExtra *extra,
+    uint32_t extra_len,
     const KosExtentDesc *extents,
     uint32_t extent_len,
     const uint16_t *top_extent_id) {
@@ -2438,24 +2482,15 @@ static int validate_jump_locality(
      source extent. PUSH_* handler args may jump out; JUMP/JUMP_TRUE etc
      must stay local. */
   for (uint32_t src_pc = 0; src_pc < code_len; src_pc++) {
-    if (! is_jump_op((KosOpCode) code[src_pc].op)) {
-      continue;
-    }
+    uint32_t targets[4];
+    int n_targets = jump_targets(code, src_pc, extra, extra_len, targets);
 
-    uint32_t t = code[src_pc].arg;
-    if (t >= code_len) {
-      PyErr_Format(PyExc_RuntimeError,
-                   "JUMP at pc %u targets out-of-range pc %u",
-                   src_pc, t);
-      return -1;
+    if (! n_targets) {
+      continue;
     }
 
     uint32_t eid = top_extent_id[src_pc];
-    if (eid == KOS_EXTENT_NONE) {
-      continue;
-    }
-
-    if (eid >= extent_len) {
+    if (eid == KOS_EXTENT_NONE || eid >= extent_len) {
       continue;
     }
 
@@ -2463,18 +2498,29 @@ static int validate_jump_locality(
     uint32_t enter_pc = e->push_pc + 1;
     uint32_t pop_pc = e->pop_pc;
 
-    if (enter_pc <= t && t < pop_pc) {
-      continue;
-    }
-    if (t == pop_pc) {
-      continue;
-    }
+    for (int k = 0; k < n_targets; k++) {
+      uint32_t t = targets[k];
 
-    PyErr_Format(PyExc_RuntimeError,
-                 "non-local JUMP at pc %u to pc %u: target outside block"
-                 " [%u, %u)",
-                 src_pc, t, enter_pc, pop_pc);
-    return -1;
+      if (t >= code_len) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "JUMP at pc %u targets out-of-range pc %u",
+                     src_pc, t);
+        return -1;
+      }
+
+      if (enter_pc <= t && t < pop_pc) {
+        continue;
+      }
+      if (t == pop_pc) {
+        continue;
+      }
+
+      PyErr_Format(PyExc_RuntimeError,
+                   "non-local JUMP at pc %u to pc %u: target outside block"
+                   " [%u, %u)",
+                   src_pc, t, enter_pc, pop_pc);
+      return -1;
+    }
   }
 
   return 0;
@@ -2884,8 +2930,8 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   }
 
   if (extents && top_extent_id &&
-      validate_jump_locality(code, code_len, extents, extent_count,
-                             top_extent_id))
+      validate_jump_locality(code, code_len, extra, extra_len, extents,
+                             extent_count, top_extent_id))
     goto reject;
 
   if (extents && top_extent_id &&
