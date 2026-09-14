@@ -18,7 +18,9 @@ Unit tests for utility functions
 :license: GNU General Public License v3
 """
 
+import gc
 import unittest
+import weakref
 
 import pytest
 
@@ -283,6 +285,25 @@ class TestConstantly(unittest.TestCase):
         r = repr(f)
         self.assertIn("constantly", r)
         self.assertIn("42", r)
+
+
+    def test_constantly_cycle_is_collectable(self):
+        """
+        a cycle through a constantly is reclaimed by the collector
+        """
+
+        class Holder:
+            pass
+
+        held = Holder()
+        f = lib.constantly(held)
+        held.fn = f
+
+        ref = weakref.ref(held)
+        del held, f
+        gc.collect()
+
+        self.assertIsNone(ref())
 
 
     def test_constantly_arity(self):

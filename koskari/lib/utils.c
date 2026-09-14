@@ -68,8 +68,23 @@ typedef struct {
 } KosConstantly;
 
 
+static int constantly_traverse(PyObject *self, visitproc visit, void *arg) {
+
+  Py_VISIT(((KosConstantly *) self)->value);
+  return 0;
+}
+
+
+static int constantly_clear(PyObject *self) {
+
+  Py_CLEAR(((KosConstantly *) self)->value);
+  return 0;
+}
+
+
 static void constantly_dealloc(PyObject *self) {
 
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(((KosConstantly *) self)->value);
   Py_TYPE(self)->tp_free(self);
 }
@@ -123,8 +138,10 @@ static PyTypeObject KosConstantlyType = {
   .tp_dealloc = constantly_dealloc,
   .tp_call = constantly_call,
   .tp_repr = constantly_repr,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "A callable that always returns the same value",
+  .tp_traverse = constantly_traverse,
+  .tp_clear = constantly_clear,
   .tp_new = constantly_new,
 };
 
@@ -360,12 +377,13 @@ PyObject *KosUtils_Identity(PyObject *value) {
 
 PyObject *KosUtils_Constantly(PyObject *value) {
 
-  KosConstantly *obj = PyObject_New(KosConstantly, &KosConstantlyType);
+  KosConstantly *obj = PyObject_GC_New(KosConstantly, &KosConstantlyType);
   if (! obj)
     return NULL;
 
   Py_INCREF(value);
   obj->value = value;
+  PyObject_GC_Track(obj);
 
   return (PyObject *) obj;
 }
