@@ -38,7 +38,8 @@ from typing import Optional, Tuple, Union
 
 from koskari.exceptions import CompilerError
 from koskari.lib import (
-    Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym, nil)
+    Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym, keyword,
+    nil, symbol)
 from koskari.types import (
     build_proper, is_keyword, is_nil, is_pair, is_symbol, unpack)
 
@@ -332,7 +333,8 @@ def _collect_from_region_root(root, find_compiled):
     return out
 
 
-def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
+def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None,
+                      kw_cells=None):
     """
     Collect binding symbols by walking a hygiene tree against captures
 
@@ -341,6 +343,8 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
     :param matched: capture dict (``MatchResult.captures``-shaped) for this node
     :param find_compiled: callable mapping head symbols to compiled specials
     :param tracer: optional dict with list counters (tests only)
+    :param kw_cells: optional set collecting ids of template cells whose
+        car is a binder keyword, for the renamer to rewrite
     :rtype: set of symbols
     """
 
@@ -359,9 +363,15 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
         for sym in owner.iter_introduced_symbols(matched):
             if sym is not None and is_symbol(sym):
                 out.add(sym)
+        if kw_cells is not None:
+            cells = getattr(owner, "iter_binder_keyword_cells", None)
+            if cells is not None:
+                for cell in cells(matched):
+                    kw_cells.add(id(cell))
         for form in owner.iter_recurse_targets(matched):
             if form is not None and not isinstance(form, Datum):
-                out |= collect_binding_symbols(form, find_compiled)
+                out |= collect_binding_symbols(form, find_compiled,
+                                               kw_cells)
         _walk_binder_scopes(matched, owner, find_compiled, out)
         if tracer is not None:
             scopes = getattr(owner, "_scopes", ())
@@ -380,7 +390,8 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
         if edge.kind == "group_child":
             if isinstance(val, dict):
                 out |= walk_hygiene_tree(
-                    tree, edge.child_id, val, find_compiled, tracer)
+                    tree, edge.child_id, val, find_compiled, tracer,
+                    kw_cells)
         elif edge.kind == "repeat_element":
             frames = val
             if isinstance(frames, Datum):
@@ -395,7 +406,8 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None):
                         tracer.setdefault("repeat_element", []).append(
                             edge.capture_slot)
                     out |= walk_hygiene_tree(
-                        tree, edge.child_id, fr, find_compiled, tracer)
+                        tree, edge.child_id, fr, find_compiled, tracer,
+                        kw_cells)
 
     return out
 
@@ -617,7 +629,8 @@ def expand_template_with_hygiene(
 # --- Macro output finalize
 
 
-def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
+def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled,
+                                          kw_cells=()):
     """
     One pass combining introduced binding-symbol renaming (same ``introduced``
     map semantics as :func:`expand_template_with_hygiene` with empty
@@ -627,9 +640,15 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
     symbols in ``binding_symbols`` are renamed. That preserves substituted
     pattern captures while freshening template literals
 
+    A cell named in ``kw_cells`` carries a binder keyword as its car: a
+    parameter the template names with a keyword rather than a symbol.
+    Those are renamed from the same ``introduced`` map, so the binder and
+    the body of the template agree on one gensym
+
     :param form: macro or syntax-rules output (pairs, atoms, ``Datum``)
     :param binding_symbols: symbols to rename when not bound as pattern vars
     :param find_compiled: unused; reserved for API parity with discovery sites
+    :param kw_cells: ids of cells whose car is a binder keyword
     :rtype: same root object as ``form`` after in-place updates where applicable
     """
 
@@ -641,6 +660,9 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
         if sym not in introduced:
             introduced[sym] = gensym(str(sym))
         return introduced[sym]
+
+    def gensym_binder_keyword(kw):
+        return keyword(str(gensym_binding(symbol(str(kw)))))
 
     def peel_car_in_place(nx):
         c = nx.car
@@ -684,6 +706,12 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
             if is_symbol(c):
                 if c in binding_symbols and not car_was_datum:
                     nx.car = gensym_binding(c)
+            elif is_keyword(c):
+                # a parameter the template named with a keyword: the
+                # cell was reported by its binder, so this keyword is
+                # in binder position and not a call-site label
+                if i in kw_cells and not car_was_datum:
+                    nx.car = gensym_binder_keyword(c)
             elif is_pair(c) and not car_was_datum:
                 walk_spine(c)
 
@@ -713,7 +741,7 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled):
 # --- Binding-symbol discovery
 
 
-def collect_binding_symbols(node, find_compiled):
+def collect_binding_symbols(node, find_compiled, kw_cells=None):
     """
     Walk one template or capture node for binding-symbol discovery.
 
@@ -722,6 +750,8 @@ def collect_binding_symbols(node, find_compiled):
 
     :param node: koskari pair, nil, tuple (ignored), or other leaf
     :param find_compiled: callable mapping head symbols to compiled specials
+    :param kw_cells: optional set collecting ids of template cells whose
+        car is a binder keyword
     :rtype: set of symbols
     """
 
@@ -738,10 +768,10 @@ def collect_binding_symbols(node, find_compiled):
     head, rest = node
     if not is_symbol(head):
         if is_nil(rest) and is_pair(head):
-            return collect_binding_symbols(head, find_compiled)
+            return collect_binding_symbols(head, find_compiled, kw_cells)
         if is_keyword(head):
             for elem in rest.unpack():
-                out |= collect_binding_symbols(elem, find_compiled)
+                out |= collect_binding_symbols(elem, find_compiled, kw_cells)
             return out
         return _collect_from_region_root(node, find_compiled)
 
@@ -755,18 +785,18 @@ def collect_binding_symbols(node, find_compiled):
     # print("DEBUG collect_binding_symbols", "hygiene=", repr(hygiene))
     if special is None or matched is None:
         for elem in rest.unpack():
-            out |= collect_binding_symbols(elem, find_compiled)
+            out |= collect_binding_symbols(elem, find_compiled, kw_cells)
         return out
 
     if hygiene:
         out |= walk_hygiene_tree(
-            hygiene, hygiene.root_id, matched, find_compiled)
+            hygiene, hygiene.root_id, matched, find_compiled, None, kw_cells)
 
     else:
         for elem in rest.unpack():
             out |= collect_binding_symbols(
                 elem if is_pair(elem) else cons(elem, nil),
-                find_compiled)
+                find_compiled, kw_cells)
 
     return out
 

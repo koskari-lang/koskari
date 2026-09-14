@@ -2415,6 +2415,25 @@ def formal_param_pattern():
     )
 
 
+def formal_keyword_name(cell):
+    """
+    Resolve a formals keyword slot to the symbol it binds at runtime.
+
+    A defaults or kw-only frame names its parameter with a keyword and
+    the compiler declares the plain name that keyword spells. Returns
+    that symbol, or None when the cell is absent, is not a keyword, or
+    is substitution material rather than template intro
+    """
+
+    if cell is None or _intro_suppressed(cell):
+        return None
+    kw = cell.datum if isinstance(cell, Datum) else cell
+    if not is_keyword(kw):
+        return None
+    return symbol(str(kw))
+
+
+
 def frame_formal_name(fr):
     """
     Resolve one positional formal frame to (name, by_ref).
@@ -2571,6 +2590,13 @@ class FORMALS(Composite, HygieneWireSlotScopes):
                 n, _byref = frame_formal_name(fr)
                 if n is not None and is_symbol(n):
                     yield n
+        defaults = grp.get("defaults", ())
+        for fr in defaults:
+            if not isinstance(fr, dict):
+                continue
+            n = formal_keyword_name(fr.get("kw"))
+            if n is not None:
+                yield n
         star = grp.get("star")
         if star is not None and not _intro_suppressed(star):
             if isinstance(star, Datum):
@@ -2588,13 +2614,42 @@ class FORMALS(Composite, HygieneWireSlotScopes):
             if not isinstance(fr, dict):
                 continue
             n = fr.get("name")
-            if n is not None:
-                if _intro_suppressed(n):
-                    continue
-                if isinstance(n, Datum):
-                    n = n.datum
-                if is_symbol(n):
+            if n is None:
+                n = formal_keyword_name(fr.get("kw"))
+                if n is not None:
                     yield n
+                continue
+            if _intro_suppressed(n):
+                continue
+            if isinstance(n, Datum):
+                n = n.datum
+            if is_symbol(n):
+                yield n
+
+
+    def iter_binder_keyword_cells(self, matched):
+        """
+        Yield the template cells whose car is a keyword naming a
+        parameter.
+
+        Hygiene renames symbols, and these parameters are named by a
+        keyword instead, so the renamer needs the cells themselves: a
+        keyword carries no position of its own and the interned object
+        is shared with every other use of that name in the template
+        """
+
+        grp = matched.get(self._slot)
+        if grp is None or not isinstance(grp, dict):
+            return
+        for phase in ("defaults", "kwonly"):
+            for fr in grp.get(phase, ()):
+                if not isinstance(fr, dict):
+                    continue
+                if formal_keyword_name(fr.get("kw")) is None:
+                    continue
+                cell = getattr(fr, "source", None)
+                if cell is not None and is_pair(cell):
+                    yield cell
 
 
     def iter_recurse_targets(self, matched):
