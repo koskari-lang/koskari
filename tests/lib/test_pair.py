@@ -501,6 +501,22 @@ class TestCons(unittest.IsolatedAsyncioTestCase):
         break_recursive(p)
         self.assertFalse(p.is_recursive())
 
+    async def test_make_recursive_cycle_past_the_head(self):
+        """make_recursive rejects a spine looping below the head"""
+        a = pair(1, nil)
+        b = pair(2, a)
+        setcdr(a, b)
+        with self.assertRaises(ValueError):
+            make_recursive(pair(0, a))
+
+    async def test_break_recursive_cycle_past_the_head(self):
+        """break_recursive rejects a spine looping below the head"""
+        a = pair(1, nil)
+        b = pair(2, a)
+        setcdr(a, b)
+        with self.assertRaises(ValueError):
+            break_recursive(pair(0, a))
+
 
 class TestBuildUnpackPair(unittest.IsolatedAsyncioTestCase):
     """Tests for the build_unpack_pair() function"""

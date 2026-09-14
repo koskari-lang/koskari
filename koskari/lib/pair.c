@@ -1959,6 +1959,31 @@ PyObject *KosPair_Cons(PyObject *members) {
 }
 
 
+/**
+   Advance the cycle-detection cursor two links, under the same stop
+   conditions as the walk it shadows. Reaching an exit retires the
+   cursor: the walk itself arrives there and ends on its own terms. A
+   cursor that instead lands on the walk's own position means the
+   spine loops somewhere other than head.
+
+   :param cursor: the fast cursor, retired in place at an exit
+   :param head: the walk's starting pair, one of its stop conditions
+*/
+static void pair_cycle_cursor_step(PyObject **cursor, PyObject *head) {
+  int i;
+
+  for (i = 0; i < 2; i++) {
+    PyObject *next = KosPair_CDR(*cursor);
+
+    if (KosNilP(next) || next == head || ! KosPair_Check(next)) {
+      *cursor = NULL;
+      return;
+    }
+    *cursor = next;
+  }
+}
+
+
 int KosPair_MakeRecursive(PyObject *pair) {
   if (KosNilP(pair) || ! KosPair_Check(pair))
     return -1;
@@ -1972,6 +1997,8 @@ int KosPair_MakeRecursive(PyObject *pair) {
   }
 
   PyObject *current = pair;
+  PyObject *cursor = pair;
+
   while (1) {
     PyObject *next = KosPair_CDR(current);
     if (KosNilP(next) || next == pair)
@@ -1979,6 +2006,14 @@ int KosPair_MakeRecursive(PyObject *pair) {
     if (! KosPair_Check(next))
       return -1;
     current = next;
+
+    if (cursor)
+      pair_cycle_cursor_step(&cursor, pair);
+    if (cursor == current) {
+      PyErr_SetString(PyExc_ValueError,
+                      "make_recursive: spine loops below the head");
+      return -1;
+    }
   }
 
   KosPair_SETCDR(current, pair);
@@ -1991,6 +2026,8 @@ int KosPair_BreakRecursive(PyObject *pair) {
     return -1;
 
   PyObject *current = pair;
+  PyObject *cursor = pair;
+
   while (1) {
     PyObject *cdr = KosPair_CDR(current);
     if (cdr == pair) {
@@ -2000,6 +2037,14 @@ int KosPair_BreakRecursive(PyObject *pair) {
     if (KosNilP(cdr) || ! KosPair_Check(cdr))
       return -1;
     current = cdr;
+
+    if (cursor)
+      pair_cycle_cursor_step(&cursor, pair);
+    if (cursor == current) {
+      PyErr_SetString(PyExc_ValueError,
+                      "break_recursive: spine loops below the head");
+      return -1;
+    }
   }
 }
 
