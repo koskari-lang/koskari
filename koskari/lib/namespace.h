@@ -263,7 +263,11 @@ int KosNamespace_Bind(PyObject *ns, PyObject *key, PyObject *ref);
 /**
    find the fast index of a reference based on its key.
 
-   returns index, or -1 if index not found, does not set error
+   A negative result means there is no fast slot for key. That is not
+   in itself a failure, so a caller that can meet a real error --
+   a key that is not a str -- must test PyErr_Occurred and propagate.
+
+   returns index, or -1 if there is no slot or the lookup failed
  */
 int KosNamespace_FastIndex(PyObject *ns, PyObject *key);
 

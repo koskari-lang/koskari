@@ -380,6 +380,14 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
             ns.bind('bar', 123)
 
 
+    async def test_bind_requires_str_key(self):
+        """bind() raises TypeError for a non-str key and binds nothing"""
+        ns = Namespace("ns", None, ('bar',))
+        with self.assertRaises(TypeError):
+            ns.bind(1, Ref('x', 0))
+        self.assertNotIn(1, ns.refs)
+
+
     async def test_find(self):
         """find() searches parent namespaces"""
         ns1 = Namespace("ns1", None, ('foo', 'bar', 'qux'))

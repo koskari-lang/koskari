@@ -1065,6 +1065,8 @@ static int ns_bind_ref(PyObject *self, PyObject *key, PyObject *ref) {
 
   int fast = KosNamespace_FastIndex(self, key);
   // SAYF(" fast index %i", fast);
+  if (fast < 0 && PyErr_Occurred())
+    return -1;
   if (fast >= 0) {
     Py_INCREF(ref);
     Py_XDECREF(KosNamespace_GET_FAST_VAL(self, (size_t) fast));
