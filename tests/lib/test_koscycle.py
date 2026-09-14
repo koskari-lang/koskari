@@ -152,6 +152,11 @@ class TestKosCycleDriven(unittest.IsolatedAsyncioTestCase):
     async def test_async_empty_source_is_exhausted(self):
         self.assertEqual([r async for r in KosCycle(agen(""))], [])
 
+    async def test_async_empty_source_stays_exhausted(self):
+        c = KosCycle(agen(""))
+        self.assertEqual([r async for r in c], [])
+        self.assertEqual([r async for r in c], [])
+
     async def test_replay_crosses_the_switch(self):
         c = KosCycle(agen([1, 2]))
         step = c.__aiter__()

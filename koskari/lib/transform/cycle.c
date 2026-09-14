@@ -120,6 +120,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
 
     PyErr_Clear();
     if (! cycle_switch_to_buffer(c)) {
+      t->closed = 1;
       PyErr_SetNone(PyExc_StopIteration);
       return EVAL_RAISE();
     }
