@@ -1140,3 +1140,131 @@ tags:
   - "surface:block"
   - idiom
 notes: "pass is a bootstrap no-op that expands to (begin) through its bare form; a function body of pass evaluates to None"
+---
+id: function-identity-basic-001
+feature: builtin/identity
+source: (identity 5)
+verify:
+  read: (identity 5)
+  expand: (identity 5)
+  eval: "5"
+stability: evolving
+tags:
+  - function
+  - identity
+  - idiom
+notes: 'identity returns its single argument unchanged. koskari/bootstrap/__init__.py'
+---
+id: function-identity-map-001
+feature: builtin/identity
+source: "(list (map identity #[3 1 2]))"
+verify:
+  read: (list (map identity (#list 3 1 2)))
+  expand: (list (map identity (#list 3 1 2)))
+  eval: list:[3,1,2]
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - function
+  - identity
+  - higher-order
+  - idiom
+notes: 'identity as the no-op transform where map requires a callable; the sequence is reproduced element for element, order untouched'
+---
+id: function-identity-keyword-default-001
+feature: builtin/identity
+source: |-
+  (begin
+    (define apply-to [x f: identity] (f x))
+    (#list (apply-to 7) (apply-to 7 f: str)))
+verify:
+  eval: list:[7,"7"]
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - identity
+  - higher-order
+  - default-value
+  - idiom
+notes: 'identity as the do-nothing default for an optional transform parameter. (apply-to 7) leaves 7 alone; (apply-to 7 f: str) applies str'
+---
+id: function-constantly-basic-001
+feature: builtin/constantly
+source: ((constantly 5))
+verify:
+  read: ((constantly 5))
+  expand: ((constantly 5))
+  eval: "5"
+stability: evolving
+tags:
+  - function
+  - constantly
+  - higher-order
+  - construct
+  - idiom
+notes: 'constantly is a type; (constantly V) builds a callable, and calling that callable yields V. koskari/bootstrap/__init__.py'
+---
+id: function-constantly-ignores-args-001
+feature: builtin/constantly
+source: ((constantly 5) 1 2)
+verify:
+  read: ((constantly 5) 1 2)
+  expand: ((constantly 5) 1 2)
+  eval: "5"
+stability: evolving
+tags:
+  - function
+  - constantly
+  - higher-order
+  - variadic
+  - idiom
+notes: 'the produced callable accepts and discards any arguments; only the constructor is arity-checked. ((constantly 5) a: 1 b: 2) is 5 as well'
+---
+id: function-constantly-map-001
+feature: builtin/constantly
+source: "(list (map (constantly 0) #[1 2 3]))"
+verify:
+  read: (list (map (constantly 0) (#list 1 2 3)))
+  expand: (list (map (constantly 0) (#list 1 2 3)))
+  eval: list:[0,0,0]
+references:
+  - reference/runtime/map-and-filter.md
+stability: evolving
+tags:
+  - function
+  - constantly
+  - higher-order
+  - idiom
+notes: '(constantly 0) gives map a callable that ignores each element, so the result is one constant per input'
+---
+id: function-constantly-predicate-001
+feature: builtin/constantly
+source: (constantly? (constantly 5))
+verify:
+  read: (constantly? (constantly 5))
+  expand: (constantly? (constantly 5))
+  eval: "true"
+stability: evolving
+tags:
+  - function
+  - constantly
+  - predicate
+  - idiom
+notes: 'constantly is registered as a type, so bootstrap binds the constantly? predicate alongside it'
+---
+id: function-constantly-repr-001
+feature: builtin/constantly
+source: (repr (constantly 5))
+verify:
+  read: (repr (constantly 5))
+  expand: (repr (constantly 5))
+  eval: '"constantly(5)"'
+stability: evolving
+tags:
+  - function
+  - constantly
+  - idiom
+notes: 'repr reports the captured value, constantly(5)'

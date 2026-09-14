@@ -170,3 +170,46 @@ tags:
   - closure
   - mutate
 notes: "corrective: hoist the state into a definition-time extent with @let [[count 0]] over the define, which grafts the define as the let body and makes count private persistent state."
+---
+id: function-identity-arity-invalid-001
+feature: builtin/identity
+source: (identity 1 2)
+verify:
+  read: (identity 1 2)
+  invalid: 'identity takes exactly one positional argument; two raise TypeError, "identity() takes exactly one argument (2 given)". It takes no keyword arguments either, so (identity value: 5) raises TypeError, "identity() takes no keyword arguments"'
+stability: evolving
+tags:
+  - function
+  - identity
+  - invalid
+  - pitfall
+notes: 'corrective: (identity 1) -- to carry several values through unchanged, pass one container, e.g. (identity #[1 2])'
+---
+id: function-constantly-arity-invalid-001
+feature: builtin/constantly
+source: (constantly)
+verify:
+  read: (constantly)
+  invalid: 'the constantly constructor requires exactly one argument and raises TypeError, "constantly expected 1 argument, got 0". The strictness is on construction alone; the callable it returns swallows any arguments'
+stability: evolving
+tags:
+  - function
+  - constantly
+  - invalid
+  - pitfall
+notes: 'corrective: (constantly None) for a callable that always yields None'
+---
+id: function-constantly-keyword-invalid-001
+feature: builtin/constantly
+source: "(constantly value: 5)"
+verify:
+  read: "(constantly value: 5)"
+  invalid: 'the captured value is positional only; naming it raises TypeError, "constantly() takes no keyword arguments". Keywords at the call site of the resulting callable are accepted and discarded, so ((constantly 5) a: 1 b: 2) is 5'
+stability: evolving
+tags:
+  - function
+  - constantly
+  - invalid
+  - keyword-argument
+  - pitfall
+notes: 'corrective: (constantly 5)'
