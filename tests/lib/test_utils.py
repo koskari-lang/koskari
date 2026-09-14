@@ -529,6 +529,24 @@ class TestBuildDict(unittest.TestCase):
         self.assertEqual(result, {'x': 1, 'y': 2, 'z': 3})
 
 
+    def test_build_dict_nil_item(self):
+        """
+        build_dict rejects nil as an item
+        """
+
+        with self.assertRaises(ValueError):
+            lib.build_dict(lib.nil)
+
+
+    def test_build_dict_one_element_pair(self):
+        """
+        build_dict rejects a pair carrying only a key
+        """
+
+        with self.assertRaises(ValueError):
+            lib.build_dict(lib.cons('x', lib.nil))
+
+
 class TestGetAttrStar(unittest.TestCase):
     """
     Tests for the getattr_star runtime builtin (surface: getattr*)

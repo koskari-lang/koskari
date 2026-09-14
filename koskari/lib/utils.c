@@ -1031,12 +1031,12 @@ PyObject *KosUtils_BuildDict(PyObject *args, PyObject *kwargs) {
     PyObject *value = NULL;
 
     /* Handle pair type specially */
-    if (KosPair_Check(item)) {
+    if (KosPair_IsCell(item)) {
       /* Extract car as key, cadr as value */
       key = KosPair_CAR(item);
       PyObject *tail = KosPair_CDR(item);
 
-      if (KosPair_Check(tail)) {
+      if (KosPair_IsCell(tail)) {
         value = KosPair_CAR(tail);
       } else if (KosNilP(tail)) {
         PyErr_SetString(PyExc_ValueError,
