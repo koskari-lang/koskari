@@ -185,6 +185,10 @@ static int kos_eval_in_demand(KosEvalState *es) {
 static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
   if (! kos_eval_in_demand(es))
     return 0;
+
+  /* The eager step parked the __await__ iterator for a resumption
+     that is now refused; nothing will drive it again. */
+  KosEvalState_PythonAwaitClearIter(es);
   kos_demand_set_sync_violation(msg);
   return 1;
 }

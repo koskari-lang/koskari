@@ -2258,6 +2258,10 @@ static KosOpResult eval_event_await(KosEvalState *es, PyObject *val) {
     Py_DECREF(val);
     KosContext_FLAGS(KosEvalState_CONTEXT(es)) &= ~KOS_CTX_DEAD;
     KosContext_FLAGS(KosEvalState_CONTEXT(es)) |= KOS_CTX_RUNNING;
+
+    /* The eager step parked the __await__ iterator for a resumption
+       that is now refused; nothing will drive it again. */
+    KosEvalState_PythonAwaitClearIter(es);
     kos_demand_set_sync_violation(
         "async suspension is not allowed in demand_sync");
     KosOpResult rs;

@@ -18,7 +18,9 @@ Tests for demand_call: invoke Koskari callables synchronously without suspension
 :license: GNU General Public License v3
 """
 
+import gc
 import unittest
+import weakref
 
 import pytest
 
@@ -412,6 +414,62 @@ class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
         with self.assertRaises(KoskariSyncViolation) as ctx:
             demand_call(fn)
         self.assertIn('suspension', str(ctx.exception))
+
+
+    def test_denied_await_releases_the_awaited_iterator(self):
+        """
+        The eager step parks the __await__ iterator on the context
+        before suspending. Denying that suspension abandons it, so it
+        must be released there rather than left for teardown. The
+        handler runs inside the same context and reports what it sees.
+        """
+
+        held = {}
+
+        def _suspending_iter():
+            yield
+            return None
+
+        class SuspendingAwaitable:
+            def __await__(self):
+                it = _suspending_iter()
+                held['ref'] = weakref.ref(it)
+                return it
+
+        def probe():
+            gc.collect()
+            return held['ref']() is None
+
+        awaitable = SuspendingAwaitable()
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('a', 'probe'),
+            values={'a': awaitable, 'probe': probe},
+        )
+        code = build_code(
+            [
+                ["PUSH_TRY", "handler"],
+                ["VAR", "a"],
+                ["AWAIT", 1],
+                ["CLEAR_TRY", 0],
+                ["JUMP", "end"],
+                ["LABEL", "handler"],
+                ["EXCEPTION", 0],
+                ["POP", 1],
+                ["VAR", "probe"],
+                ["CALL", 0],
+                ["JUMP", "end"],
+                ["LABEL", "end"],
+                ["POP_TRY", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('a', 'probe'),
+            name='demand_denied_await_release',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        self.assertTrue(demand_call(fn))
+
 
 
 class TestDemandSyncPlainPython(unittest.TestCase):
