@@ -145,15 +145,13 @@ def layout_inline_block(ns, source, peers):
 
     ret = header.copy()
 
-    elem, rest = body
-    while elem:
+    corr = body
+    while corr:
+        elem, corr = corr
         if is_pair(elem):
             ret.splice(elem)
         else:
             ret.append(elem)
-        if is_nil(rest):
-            break
-        elem, rest = rest
 
     return ret
 
