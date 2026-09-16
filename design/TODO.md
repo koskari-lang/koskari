@@ -5,32 +5,12 @@ design docs for detail.
 
 ---
 
-## Continuations / transfer goals
-
-No open items. The transfer goal, extent contract, unlink site, and
-obligation design landed on branch `transfer-plan-rework` together with
-the per-context recursion limit; see
-[archive/transfer-plan-rework.md](archive/transfer-plan-rework.md)
-and [EVALUATOR.md §6](EVALUATOR.md).
-
-Ref: [interpreter/callcc.md](interpreter/callcc.md),
-[archive/delimited-invoke-model.md](archive/delimited-invoke-model.md),
-[archive/exception-patchup.md](archive/exception-patchup.md),
-[archive/interrupted-transfer-plans.md](archive/interrupted-transfer-plans.md).
-
----
-
 ## Evaluator performance
 
 ### Opcode caching: further families (investigative)
 
-The per-site cache is **built and active**: the framework (tagged-union slots,
-widened `KosOp`, trailing slot array, the two pragmas) plus two families --
-the method cache (`KOS_CACHE_METHOD`, CALL_ATTR*) and the attribute-storage
-field cache (`KOS_CACHE_FIELD`, FAST/VAR_ATTR(_STORE); SLOT on all versions,
-INSTANCE_VALUE on 3.11-3.14). What remains is not building caching but adding
-new **kinds** on the same framework. Each is its own investigation, gated by a
-real workload that shows the win:
+New cache kinds on the per-site cache framework. Each is its own
+investigation, gated by a real workload that shows the win:
 
 - **`DICT_HINT` field mode** — the reserved field mode: a keys-index hint for
   attributes on a *materialized* instance `__dict__` (today they resolve to
@@ -206,20 +186,19 @@ Gaps per [documentation-goals.md](documentation-goals.md):
   `api/koskari-builtins.md` autodoc).
 - **`reference/error-codes.md`** — exception-class guide only; no stable
   identifier or message-pattern catalog for deep links from REPL output.
-- **`reference/vm/`** — contract lives in one large `index.md`; ~155 of 218
+- **`reference/vm/`** — contract lives in one large `index.md`; ~125 of 198
   `opcodes/*.md` pages are thin stubs. Split maintainer-facing pages from the
   spec (standalone bytecode-format, disassembly-and-debugging,
   peephole-and-lowering) are not separate; per-opcode public entries need depth.
 - **`project/vm-and-opcodes.md`** — contributor opcode checklist (add to
   `opcodes.incl`, regen handlers, update VM reference) not written.
-- **`patterns/recipes/`** — expand beyond the initial five recipes as usage
-  surfaces gaps.
+- **`patterns/recipes/`** — expand as usage surfaces gaps.
 - **`exercises/`** — optional exercise track from the meta spec not started.
 - **Maintenance process** — per-page stability labels not applied outside corpus
   records; tutorial/guide examples are not corpus-linked or verified; no CI guard
   for opcode-doc drift vs `koskari/lib/opcodes.incl`.
-- **`changelog.md`** — skeleton only (single 0.1.0 entry); needs release-driven
-  updates. **`faq.md`** is thin in places (e.g. free-threading answer incomplete).
+- **`changelog.md`** — single 0.1.0 entry; needs release-driven updates.
+  **`faq.md`** is thin in places (e.g. free-threading answer incomplete).
 
 ---
 
@@ -229,15 +208,13 @@ From [FEATURES.md](FEATURES.md) and related docs:
 
 - Performance optimizations (general)
 
-### Recursion max depth (investigate)
+### Recursion guard at the Python boundary (investigate)
 
-Runaway recursion ends in the OOM killer today: frames live on the heap,
-so nothing bounds chain depth, and no `Py_EnterRecursiveCall` guards the
-nested `koskari_eval` a Python-boundary re-entry puts on the C stack (a
-three-level `(super)` chain segfaults). Investigate two guards: a frame
-depth stored on the frame node at push, checked in `kos_dyn_push_frame`
-with a high, settable limit raising `RecursionError`; and CPython's
-recursion accounting around the boundary drivers that re-enter the eval.
+No `Py_EnterRecursiveCall` guards the nested `koskari_eval` a
+Python-boundary re-entry puts on the C stack (a three-level `(super)`
+chain segfaults). Investigate CPython's recursion accounting around the
+boundary drivers that re-enter the eval; the frame-depth limit already
+covers the chain.
 Ref: [EVALUATOR.md](EVALUATOR.md) §7 (installs and call paths).
 
 ---
@@ -341,28 +318,17 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 
 ## Bootstrap and reader surface
 
-- **Reader macro dollars example** — bootstrap **`set-macro-character`** /
-  **`read-atom`** helpers, port **`examples/reader-macro/dollars.ki`**, reader
+- **Reader macro helpers** — bootstrap **`set-macro-character`** /
+  **`read-atom`** helpers for `examples/reader-macro/dollars.ki`, reader
   tests, user recipe. Ref:
   [examples/reader-macro-dollars.md](examples/reader-macro-dollars.md).
 
-### Itertools natives
-
-Providers on the `transform.c` base (`takewhile`, `dropwhile`, `starmap`,
-`accumulate`, `islice`, `zip`, `chain`, ...): N sources, trailing
-arguments, and the fetch chain across driven sources. Decide builtins
-vs an importable `koskari.itertools`, and whether type readiness in the
-single-phase `koskari.lib` init chain is worth delaying.
-Ref: [api/itertools-natives.md](api/itertools-natives.md).
-
 ### Ref surface (notes from the refs guide)
 
-- **`(set! (deref r) v)` — optimize value-level ref store** — now has a
-  temporary working definition: `set!` on a deref dispatches to the ref's
-  `store` method (validated with tests), restoring read/write symmetry with
-  `compile/deref`. Open optimization: a dedicated opcode that validates `r` is
-  a `Ref` type rather than duck-typing on a `.store` method, and avoids the
-  method-call overhead.
+- **`(set! (deref r) v)` — dedicated ref-store opcode** — `set!` on a deref
+  dispatches to the ref's `store` method today. A dedicated opcode would
+  validate `r` is a `Ref` type rather than duck-typing on `.store`, and avoid
+  the method-call overhead.
 
 (The proposed `*foo` deref reader sugar is a separate open idea — see
 [ideas.md](ideas.md). It has been removed from user-facing docs pending a
@@ -374,21 +340,13 @@ decision.)
 
 ### Corpus generation agent
 
-Grow `docs/corpus/records/` to hundreds–thousands of entries covering every
-builtin special and macro, via an autonomous Claude Code agent rather than core
-dev time. The agent runs in its own git worktree (own gitignored `.venv` from a
-one-time `make venv` plus `uv pip install jsonschema PyYAML`; commits freely;
-human opens a PR per batch), keeping the oracle drift-free and avoiding
-contention with main-tree `tox`/`make test`. Tooling
-(`tools/corpus/quick.ki` — `verify` oracle, `insert` validate+append,
-`coverage`) and the generation-task `docs/corpus/CLAUDE.md` are **implemented**;
-`quick` is a thin wrapper over the existing `tests/corpus` runner and
-`tools/corpus/load.ki` serializer, run via `uv run` (the one sanctioned non-tox
-path). Remaining work is the supervised worktree run itself. Mandate per
-special/macro: basic, variant, block/layout, and invalid+corrective entries;
-priority on patterns common in real code (`define-class`, `for-each`,
-`define-syntax`, `try/except`, `let`, async). The PR's `make test`
-(`phase_corpus`) is the authoritative backstop.
+Run the supervised worktree generation pass: grow `docs/corpus/records/`
+to hundreds–thousands of entries covering every builtin special and macro
+via an autonomous Claude Code agent in its own git worktree, one PR per
+batch. Mandate per special/macro: basic, variant, block/layout, and
+invalid+corrective entries; priority on patterns common in real code
+(`define-class`, `for-each`, `define-syntax`, `try/except`, `let`, async).
+The PR's `make test` (`phase_corpus`) is the authoritative backstop.
 
 Ref: [corpus-generation-agent.md](corpus-generation-agent.md);
 [corpus-schema-philosophy.md](corpus-schema-philosophy.md).
