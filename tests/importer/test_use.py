@@ -24,6 +24,8 @@ exact from-import behavior on modules with no facet keys.
 """
 
 
+from textwrap import dedent
+
 import importlib
 import os
 import shutil
@@ -74,7 +76,7 @@ class UseCase(unittest.IsolatedAsyncioTestCase):
     def write_ki(self, modname, content):
         path = os.path.join(self._tmpdir, modname + '.ki')
         with open(path, 'w', encoding='utf-8') as fh:
-            fh.write(content)
+            fh.write(dedent(content))
         return path
 
 
@@ -244,9 +246,9 @@ class TestUseBare(UseCase):
 
 
     async def test_declared_module_materializes_all(self):
-        self.write_ki('ki_useb_prov', """
+        self.write_ki('ki_useb_prov', dedent("""
         (declare-exports doubled plain-value)
-        """ + PROVIDER)
+        """) + PROVIDER)
 
         prov = importlib.import_module('ki_useb_prov')
         self.assertEqual(
@@ -257,9 +259,9 @@ class TestUseBare(UseCase):
 
 
     async def test_bare_use_carries_declared_features(self):
-        self.write_ki('ki_useb_prov2', """
+        self.write_ki('ki_useb_prov2', dedent("""
         (declare-exports doubled plain-value)
-        """ + PROVIDER)
+        """) + PROVIDER)
         self.write_ki('ki_useb_user2', """
         (use ki_useb_prov2)
         (define result (doubled plain-value))
@@ -297,9 +299,9 @@ class TestUseBare(UseCase):
     async def test_literal_prefixed_declaration(self):
         # a prefixed declare-exports entry is a literal single-facet
         # export
-        self.write_ki('ki_useb_prov4', """
+        self.write_ki('ki_useb_prov4', dedent("""
         (declare-exports compile/doubled)
-        """ + PROVIDER)
+        """) + PROVIDER)
 
         prov = importlib.import_module('ki_useb_prov4')
         self.assertEqual(prov.__all__, ("compile/doubled",))

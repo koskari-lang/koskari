@@ -48,16 +48,19 @@ source: |-
       (values 1 2)
   
 verify:
-  read: (begin (define-values [a b]) (values 1 2))
-  invalid: "in layout, a bare indented line under a header is a CHILD form, not a continuation of the header -- the value becomes a separate expression, leaving define-values with no value: SyntaxMatchError (no matching syntax rule) at compile. To split just the value, either open its parenthesis on the header line and continue inside it, or end the header with a colon and nest the single value expression as a block."
+  error: "ReaderSyntaxError: unexpected indent"
+references:
+  - reference/reader-layout.md
+  - reference/concepts/layout-and-s-expressions.md
 stability: evolving
 tags:
   - layout
   - reader
+  - indent
   - "surface:block"
   - invalid
   - pitfall
-notes: "corrective (either): `define-values [a b] (values` + newline + indented `1 2)`; or `define-values [a b]:` + newline + indented `values 1 2`. Sibling of layout-bare-multiline-define-invalid-001."
+notes: "in layout, a line without a trailing colon is complete, so an indented line beneath it continues nothing; a top-level line must start at column 0, and the deeper `(values 1 2)` is a reader error under the default reader/indent pragma. corrective (either): `define-values [a b] (values` + newline + indented `1 2)`, since an open paren continues across lines; or `define-values [a b]:` + newline + indented `values 1 2`. Sibling of layout-bare-multiline-define-invalid-001."
 ---
 id: reader-dot-attr-python-call-parens-invalid-001
 feature: reader/dot-attr
@@ -345,3 +348,26 @@ tags:
   - surprising
   - pitfall
 notes: "corrective: f\"{z}\" with no space. sibling of the string-segment rule that the hyphen must touch the closing quote"
+---
+id: layout-keyword-block-peer-head-invalid-001
+feature: reader/layout
+source: |-
+  dict:
+    a: if True:
+      1
+    else:
+      2
+verify:
+  error: "LayoutError: a: value block headed by if cannot gather its peers here; write a:: and nest the if block"
+references:
+  - reference/reader-layout.md
+  - reference/layouts/layout-block-default.md
+stability: evolving
+tags:
+  - layout
+  - reader
+  - keyword
+  - surface:block
+  - invalid
+  - pitfall
+notes: "corrective: a:: on its own line, then the if block indented beneath it, which reads as a: (begin (cond ...)). Peers such as else pair only with a block head that starts its line, so a peer-gathering head cannot follow a keyword on the same header line."

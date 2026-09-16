@@ -26,6 +26,8 @@ as syntax in the consumer, renameable, and extendable.
 """
 
 
+from textwrap import dedent
+
 import importlib
 import os
 import shutil
@@ -89,7 +91,7 @@ class SyntaxImportCase(unittest.IsolatedAsyncioTestCase):
 
         path = os.path.join(self._tmpdir, modname + '.ki')
         with open(path, 'w', encoding='utf-8') as fh:
-            fh.write(content)
+            fh.write(dedent(content))
         return path
 
 

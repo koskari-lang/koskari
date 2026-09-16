@@ -21,6 +21,8 @@ Base class and helpers for testing koskari.compile.specials handlers.
 """
 
 
+from textwrap import dedent
+
 import unittest
 
 import koskari.compile.specials  # noqa: F401 - populate _BUILTIN_REGISTRY
@@ -69,7 +71,7 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
 
     def parse_source(self, src_str, lineno=1, reader=None):
         stream = IndentAwareStream.from_source(
-            source_str(src_str, __file__, line_no=lineno))
+            source_str(dedent(src_str), __file__, line_no=lineno))
         if reader is None:
             reader = default_reader
         return reader.read(stream)

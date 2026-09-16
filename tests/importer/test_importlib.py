@@ -17,6 +17,8 @@ of temporary .ki files.
 """
 
 
+from textwrap import dedent
+
 import importlib
 import importlib.util
 import os
@@ -107,7 +109,7 @@ class TestKiImport(unittest.IsolatedAsyncioTestCase):
     def _write_ki(self, modname, content):
         path = os.path.join(self._tmpdir, modname + '.ki')
         with open(path, 'w', encoding='utf-8') as fh:
-            fh.write(content)
+            fh.write(dedent(content))
         return path
 
 

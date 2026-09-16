@@ -38,16 +38,14 @@ def layout_dyn_wind(ns, source, peers):
 
     body is required; at least one of before or after is required.
 
-    Usage:
+    Usage::
 
-    ```
-    dyn-wind:
-      body-exprs ...
-    before:
-      before-exprs ...
-    after:
-      after-exprs ...
-    ```
+      dyn-wind:
+        body-exprs ...
+      before:
+        before-exprs ...
+      after:
+        after-exprs ...
     """
 
     head, body = source

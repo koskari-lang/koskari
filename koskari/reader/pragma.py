@@ -17,7 +17,7 @@ koskari.reader.pragma
 Reader-side pragma settings, registered into the koskari.pragma registry at
 import: reader/brackets, reader/index-brackets, reader/dot-attrs,
 reader/string-segments, reader/layout, reader/implicit-calls,
-reader/fences, reader/decorators. Each setting's
+reader/indent, reader/fences, reader/decorators. Each setting's
 ``default`` is its baseline (value when undeclared); the function's argument
 defaults are the parameter defaults (value when declared but the arg is
 omitted).
@@ -26,6 +26,8 @@ omitted).
 :license: GNU General Public License v3
 """
 
+
+from enum import Enum
 
 from ..pragma import pragma_setting
 
@@ -89,6 +91,42 @@ def reader_implicit_calls(enabled: bool = True) -> bool:
     """
 
     return enabled
+
+
+class IndentMismatch(Enum):
+    """
+    How the layout reader treats a content line whose indent does not
+    match its block. The first line of a block body sets the body's
+    indent; every later line of that body must start at the same column,
+    and a top-level line must start at column 0. A deeper line is an
+    unexpected indent, and a shallower line that is still inside the block
+    matches no enclosing level. Either way the line was almost certainly
+    meant as a continuation of the line above, which needs a trailing
+    colon or an open delimiter to continue.
+
+    - ``IGNORE``: read the line as a sibling form, no diagnostic
+    - ``WARN``: read it as a sibling form, but emit a SyntaxWarning
+    - ``ERROR``: raise a ReaderSyntaxError
+    """
+
+    IGNORE = "ignore"
+    WARN = "warn"
+    ERROR = "error"
+
+
+@pragma_setting("reader/indent", IndentMismatch.ERROR)
+def reader_indent(level=IndentMismatch.ERROR) -> IndentMismatch:
+    """
+    Policy when a layout line's indent does not match its block.
+
+    "error" - (default) raise a ReaderSyntaxError
+    "warn" - read the line as a sibling form, but emit a SyntaxWarning
+    "ignore" - read the line as a sibling form, no diagnostic
+    """
+
+    if isinstance(level, IndentMismatch):
+        return level
+    return IndentMismatch(str(level))
 
 
 @pragma_setting("reader/fences", True)

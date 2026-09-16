@@ -25,6 +25,8 @@ Tests for koskari.compile quasiquote special form, covering:
 :license: GNU General Public License v3
 """
 
+from textwrap import dedent
+
 import unittest
 
 import pytest
@@ -538,7 +540,8 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
         module, mod_ns, compiler = self.make_module(**defns)
         layout_builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(layout_builtins)
-        stream = IndentAwareStream.from_source(source_str(src_str, __file__))
+        stream = IndentAwareStream.from_source(
+            source_str(dedent(src_str), __file__))
         source = reader.read(stream)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(mod_ns)

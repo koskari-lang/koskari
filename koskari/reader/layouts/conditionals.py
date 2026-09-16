@@ -41,13 +41,14 @@ def layout_if(ns, source, peers):
     """
     Lower if/elif/else block sources to compile/cond for compilation.
 
-    eg.
-    if x:
-      (print "x")
-    elif y:
-      (print "y")
-    else:
-      (print "other")
+    eg.::
+
+      if x:
+        (print "x")
+      elif y:
+        (print "y")
+      else:
+        (print "other")
 
     :param source: ((if COND) . BODY) pair
     :param peers: list of peer (header . body) pairs
@@ -111,25 +112,27 @@ def layout_switch(ns, source, peers):
     """
     Lower a switch block source into a flat switch form for compilation
 
-    eg.
-    switch (get-value):
-      case [1]:
-        (print "one")
-      case [2]:
-        (print "two")
-      case [3 5]:
-        (print "three")
-      else:
-        (print "other")
+    eg.::
+
+      switch (get-value):
+        case [1]:
+          (print "one")
+        case [2]:
+          (print "two")
+        case [3 5]:
+          (print "three")
+        else:
+          (print "other")
 
     The inner case and else children are read by the default layout/block,
     which splices body forms after the header. This handler walks the switch
     body, validates each child shape, and emits
 
-        (switch VALUE
-          ([COMP...]  BODY...)
-          ...
-          (else: BODY...))
+    ::
+      (switch VALUE
+        ([COMP...]  BODY...)
+        ...
+        (else: BODY...))
 
     :param source: ((switch VALUE) . BODY) pair
     :param peers: must be empty
@@ -236,26 +239,29 @@ def layout_match(ns, source, peers):
     """
     Lower a match block source into a flat match form for compilation
 
-    eg.
-    match (get-value):
-      case #[a b c]:
-        (use a b c)
-      case x :: int:
-        (use x)
-      case Point[x y]:
-        (use x y)
-      else:
-        (other)
+    eg.::
+
+      match (get-value):
+        case #[a b c]:
+          (use a b c)
+        case x :: int:
+          (use x)
+        case Point[x y]:
+          (use x y)
+        else:
+          (other)
 
     A raw layout: the case and else children arrive as block sources, so
     each case header (however many tokens) is structurally separate from
     its body. The whole header tail becomes the clause's pattern
     delimiter, giving
 
-        (compile/match VALUE
-          [[PATTERN...] BODY...]
-          ...
-          [else: BODY...])
+    ::
+
+      (compile/match VALUE
+        [[PATTERN...] BODY...]
+        ...
+        [else: BODY...])
 
     which is the same clause shape an s-expr author writes directly. A
     ``when`` / ``unless`` marker in a case header splits it into pattern

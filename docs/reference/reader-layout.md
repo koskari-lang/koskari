@@ -129,6 +129,16 @@ A **layout block** consists of:
 The first header form is the **head**; remaining forms before the colon are
 **args**. The head may be any form (symbol, list, etc.), not only a bare symbol.
 
+The first body line sets the body's indent, and every later content line of
+that body must start at the same column; a top-level form starts at column 0.
+A deeper line is `unexpected indent`, and a shallower line that is still inside
+the block is `unindent does not match the enclosing block`. Both are
+`ReaderSyntaxError` under the default **`reader/indent`** pragma; `warn` and
+`ignore` read the line as a sibling form instead (see
+[Pragmas](concepts/pragma.md)). Blank lines and comment-only lines are never
+measured, and a line inside an open delimiter is a continuation, not a body
+line.
+
 ```koskari
 if x:
   y
@@ -276,10 +286,16 @@ See [Layout handler reference](layouts/index.md) for the per-head catalogue.
 : When false, a layout line with more than one top-level form is an error
   instead of folding to an implicit call.
 
+**layout_indent**
+: An `IndentMismatch` value, default `ERROR`: what a content line whose
+  indent does not match its block does. `WARN` emits a `SyntaxWarning` and
+  reads the line as a sibling form; `IGNORE` reads it as a sibling silently.
+
 Module pragma objects may supply these via `reload_pragma` on the reader: the
-pragma keys are **`reader/layout`** and **`reader/implicit-calls`** (they map
-to `layout_enabled` and `layout_implicit_calls`). These switches are intended
-for tooling and pragma-driven reader configuration.
+pragma keys are **`reader/layout`**, **`reader/implicit-calls`**, and
+**`reader/indent`** (they map to `layout_enabled`, `layout_implicit_calls`,
+and `layout_indent`). These switches are intended for tooling and
+pragma-driven reader configuration.
 
 `reload_pragma` carries the suffix-syntax switches too — **`reader/index-brackets`**,
 **`reader/dot-attrs`**, and **`reader/string-segments`** (see

@@ -118,6 +118,12 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
 - **`reader/implicit-calls`** *(default on)* — whether several values on one
   layout line form an implicit call. Off makes more than one value on a line an
   error.
+- **`reader/indent`** *(default `error`)* — what the layout reader does with a
+  content line whose indent does not match its block: the first line of a body
+  sets the body's indent, every later line must start at that column, and a
+  top-level line starts at column 0. `error` raises a `ReaderSyntaxError`,
+  `warn` emits a `SyntaxWarning` and reads the line as a sibling form, `ignore`
+  reads it as a sibling form silently.
 - **`reader/fences`** *(default on)* — whether triple-backtick fences read into
   `compile/apply-fence` forms. Off, backtick keeps only its quote and
   quasiquote readings. See

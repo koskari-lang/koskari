@@ -79,16 +79,20 @@ is identical to
 ```
 
 A header line with **no** trailing `:` has already completed as its
-own form. An indented line beneath it is an unrelated sibling, not an
-argument -- this is the trap, not the colon:
+own form, and nothing continues it. The reader enforces this through
+indentation: the first line of a block body sets the body's indent,
+every later line of that body must start at that same column, and a
+top-level line must start at column 0. A deeper line beneath a
+complete form is therefore a reader error, `unexpected indent`, not a
+silent sibling:
 
 ```koskari
-; WRONG: reads as (compile_file src dest) then (source_filename: name);
-; the keyword argument is silently dropped
+; WRONG: ReaderSyntaxError: unexpected indent -- compile_file src dest
+; is complete, and nothing continues it
 compile_file src dest
     source_filename: name
 
-; WRONG: reads as (define parts) then a disconnected list-each form
+; WRONG: the same error; define parts is complete
 define parts
     list-each [x (range 0 10)]:
         + x 250
@@ -96,12 +100,51 @@ define parts
 ; correct: parentheses span lines freely regardless of any colon
 (compile_file src dest
     source_filename: name)
+
+; correct: the trailing colon continues the call onto the body
+compile_file src dest:
+    source_filename: name
 ```
 
 `define x` (bare, no colon, nothing after it) failing to attach a
 value on the next line is this same rule, not a `define`-specific
 exception: `define x` is already `(define x)`; the value has to be on
 that line, or the header needs the trailing `:` shown above.
+
+The `reader/indent` pragma governs the check: `error` (the default)
+rejects the line, `warn` emits a SyntaxWarning and reads it as a
+sibling form, and `ignore` reads it as a sibling form silently. See
+[Pragmas](../reference/concepts/pragma.md).
+
+## Keyword arguments in a block call
+
+A line under a header that opens with a keyword is a keyword argument
+to that header, not a call. One form after the keyword is the value;
+several forms fold to a call. Ending the keyword's line with `:` makes
+the block beneath it the value, and a bare `k::` makes the body a
+`begin`:
+
+```koskari
+open path:                 ; (open path mode: "w" encoding: "utf-8")
+    mode: "w"
+    encoding: "utf-8"
+
+dict:                      ; (dict a: (+ 1 2) b: (let [[x 1]] (+ x 2)))
+    a: + 1 2
+    b: let [[x 1]]:
+        + x 2
+
+dict:                      ; (dict a: (begin (log "computing") (+ 1 2)))
+    a::
+        log "computing"
+        + 1 2
+```
+
+A head that gathers peers, such as `if` or `try`, cannot follow the
+keyword on its line; nest it under `k::` instead. This splice belongs
+to the default block layout, so it applies to any call written as a
+block; a keyword line inside a body that is not a call, such as an
+`if` arm, stays the pair `(k: value)` and fails to compile.
 
 ## The block colon is layout-only
 

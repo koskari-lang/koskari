@@ -70,10 +70,7 @@ class TestParse(IsolatedAsyncioTestCase):
 
 
     async def test_parse_layout_block(self):
-        src = """
-        if True:
-          x
-        """
+        src = "if True:\n  x\n"
         result = parse(src)
         self.assertTrue(is_pair(result))
         self.assertEqual(car(result), symbol('cond'))

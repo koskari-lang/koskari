@@ -25,6 +25,8 @@ Tests focus on the new interface contracts introduced in parser_ng:
 :license: GNU General Public License v3
 """
 
+from textwrap import dedent
+
 from io import StringIO
 from unittest import IsolatedAsyncioTestCase
 
@@ -65,7 +67,8 @@ def _parse_layout_ng(src_str, **defns):
     builtins = dict(_BUILTIN_REGISTRY)
     builtins.update(defns)
     reader = LayoutReader(builtins)
-    stream = IndentAwareStream.from_source(source_str(src_str, '<test>'))
+    stream = IndentAwareStream.from_source(
+        source_str(dedent(src_str), '<test>'))
     return reader.read(stream)
 
 

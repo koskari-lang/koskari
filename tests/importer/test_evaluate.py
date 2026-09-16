@@ -27,6 +27,7 @@ import koskari.builtins so the functions and their macros are present.
 
 
 import unittest
+from textwrap import dedent
 
 import pytest
 
@@ -52,7 +53,7 @@ class TestEvaluate(unittest.IsolatedAsyncioTestCase):
         mod_ns = ModuleNamespace("test", bltns)
         module = Module(mod_ns)
         source = default_reader.read(
-            source_str(src_str, __file__, line_no=lineno))
+            source_str(dedent(src_str), __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
         fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module
@@ -141,7 +142,7 @@ class TestGetCompiler(unittest.IsolatedAsyncioTestCase):
         mod_ns = ModuleNamespace("test", bltns)
         module = Module(mod_ns)
         source = default_reader.read(
-            source_str(src_str, __file__, line_no=lineno))
+            source_str(dedent(src_str), __file__, line_no=lineno))
         compiler = Compiler("<unittest>", module, filename=__file__)
         fragment = compiler.compile_expression(source)
         return fragment.as_expression(mod_ns), module, compiler
@@ -201,7 +202,8 @@ class TestGetCompiler(unittest.IsolatedAsyncioTestCase):
         module = new_module("evaltest")
         ns = vars(module)
         ns['__file__'] = "<evaltest>"
-        await load_module_source_async(module, src, seal=True, detach=True)
+        await load_module_source_async(
+            module, dedent(src), seal=True, detach=True)
 
         # detaching empties the binding: the name stays bound but holds
         # no value, so it is out of the mapping

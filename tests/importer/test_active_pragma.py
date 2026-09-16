@@ -24,6 +24,8 @@ consumers with different pragma values each see their own.
 """
 
 
+from textwrap import dedent
+
 import importlib
 import os
 import shutil
@@ -74,7 +76,7 @@ class ActivePragmaCase(unittest.IsolatedAsyncioTestCase):
     def write_ki(self, modname, content):
         path = os.path.join(self._tmpdir, modname + '.ki')
         with open(path, 'w', encoding='utf-8') as fh:
-            fh.write(content)
+            fh.write(dedent(content))
         return path
 
 

@@ -56,20 +56,21 @@ source: |-
       source_filename: name
     return 0
 verify:
-  read: "(define run [] (compile_file src dest) source_filename: name (return 0))"
-  invalid: "agent mistake: a bare (unparenthesized) call does not continue onto a more-indented next line. Here `source_filename: name` is read as its own line, and a line opening with a keyword is a keyword argument to the enclosing block head, so it becomes an argument to define rather than to compile_file. When a call spans lines, wrap it in parentheses or open a block: `compile_file src dest:` with `source_filename: name` indented beneath it. Correct form: (compile_file src dest source_filename: name)"
+  error: "ReaderSyntaxError: unexpected indent"
 references:
   - reference/grammar.md
+  - reference/reader-layout.md
   - reference/concepts/layout-and-s-expressions.md
 stability: evolving
 tags:
   - functions
   - reader
   - layout
+  - indent
   - invalid
-  - surprising
   - "surface:block"
   - pitfall
+notes: "agent mistake: a bare (unparenthesized) call does not continue onto a more-indented next line. The first line of a body sets its indent and every later line must start at that column, so the deeper `source_filename: name` line is a reader error under the default reader/indent pragma. corrective: wrap the call in parentheses, or open a block: `compile_file src dest:` with `source_filename: name` indented beneath it, reading (compile_file src dest source_filename: name)."
 ---
 id: macro-flet-sibling-reference-invalid-001
 feature: macro/compile/flet
@@ -99,19 +100,20 @@ source: |-
   define x
       (+ 1 2)
 verify:
-  read: (begin (define x) (+ 1 2))
+  error: "ReaderSyntaxError: unexpected indent"
 references:
   - reference/grammar.md
+  - reference/reader-layout.md
   - reference/concepts/layout-and-s-expressions.md
 stability: evolving
 tags:
   - reader
   - layout
+  - indent
   - "surface:block"
   - invalid
-  - surprising
   - pitfall
-notes: "a bare (unparenthesized) define or set! does NOT continue onto a more-indented next line: `define x` binds nothing and `(+ 1 2)` reads as a separate statement. corrective: parenthesize the whole form -- (define x (+ 1 2))."
+notes: "a bare (unparenthesized) define or set! does NOT continue onto a more-indented next line: `define x` is complete as (define x), and a top-level line must start at column 0, so the indented `(+ 1 2)` is a reader error under the default reader/indent pragma. corrective: parenthesize the whole form -- (define x (+ 1 2)) -- or end the header with a colon, `define x:` with `+ 1 2` indented beneath it."
 ---
 id: function-decorate-parameterize-timing-001
 feature: layout/decorate

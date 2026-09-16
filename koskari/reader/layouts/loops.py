@@ -70,12 +70,12 @@ def layout_for_each(ns, source, peers):
     """
     Layout handler for for-each blocks
 
-    eg. ```
-    for-each [x (range 0 3)]:
+    eg.::
+
+      for-each [x (range 0 3)]:
         (print x)
-    else:
+      else:
         (print "done")
-    ```
     """
 
     return _layout_loop(source, peers)
@@ -87,13 +87,13 @@ def layout_while(ns, source, peers):
     """
     Layout handler for while blocks
 
-    eg. ```
-    while (< x 3):
+    eg.::
+
+      while (< x 3):
         (print x)
         set! x (+ x 1)
-    else:
+      else:
         (print "done")
-    ```
     """
 
     return _layout_loop(source, peers)

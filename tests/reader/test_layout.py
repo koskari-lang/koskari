@@ -18,6 +18,8 @@ Unit tests for koskari.parse LayoutReader and block syntax.
 """
 
 
+from textwrap import dedent
+
 from unittest import IsolatedAsyncioTestCase
 
 import pytest
@@ -265,7 +267,8 @@ def _parse_layout_all(src_str):
     builtins = dict(_BUILTIN_REGISTRY)
 
     reader = LayoutReader(builtins)
-    stream = IndentAwareStream.from_source(source_str(src_str, '<unittest>'))
+    stream = IndentAwareStream.from_source(
+        source_str(dedent(src_str), '<unittest>'))
     results = []
     while True:
         form = reader.read(stream)

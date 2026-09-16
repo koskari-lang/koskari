@@ -26,12 +26,14 @@ not see layout rules. Body reads require an IndentAwareStream.
 """
 
 
+import warnings
 from contextlib import contextmanager
 from functools import partial
 
 from ..lib import Module, cons, nil, symbol
 from ..types import is_pair
 from .layouts import apply_layout, apply_layouts, find_layout
+from .pragma import IndentMismatch
 from .parser import (
     BLOCK, BLOCKS, COLON, DOT, EOF, LINE_END, READ_EOF, VALUE, Reader,
     _keyword_block, _symbol_decorate, _symbol_quasiquote, _symbol_quote)
@@ -128,6 +130,10 @@ class LayoutReader(Reader):
         # raw default is off; reload_pragma raises it to the pragma
         # baseline (reader/decorators)
         self.layout_decorators = False
+
+        # a line whose indent does not match its block is an error unless
+        # the pragma (reader/indent) relaxes it
+        self.layout_indent = IndentMismatch.ERROR
 
         if not nodefaults:
             self._add_default_macros()
@@ -292,7 +298,7 @@ class LayoutReader(Reader):
 
     def set_layout_modes(
             self, *, layout_enabled=None, layout_implicit_calls=None,
-            layout_decorators=None):
+            layout_decorators=None, layout_indent=None):
         """
         Update layout-mode feature switches on this reader.
 
@@ -306,6 +312,10 @@ class LayoutReader(Reader):
             self.layout_implicit_calls = bool(layout_implicit_calls)
         if layout_decorators is not None:
             self.layout_decorators = bool(layout_decorators)
+        if layout_indent is not None:
+            if not isinstance(layout_indent, IndentMismatch):
+                layout_indent = IndentMismatch(layout_indent)
+            self.layout_indent = layout_indent
 
 
     def reload_pragma(self, pragma):
@@ -313,9 +323,9 @@ class LayoutReader(Reader):
         Apply reader settings from a module pragma
 
         Extends :meth:`Reader.reload_pragma` with the layout switches
-        (reader/layout, reader/implicit-calls, and reader/decorators) and
-        mirrors every setting onto the inner s-expression reader, so both
-        surfaces agree.
+        (reader/layout, reader/implicit-calls, reader/decorators, and
+        reader/indent) and mirrors every setting onto the inner
+        s-expression reader, so both surfaces agree.
 
         :param pragma: a module pragma, or None for a no-op
         """
@@ -329,7 +339,35 @@ class LayoutReader(Reader):
         self.set_layout_modes(
             layout_enabled=pragma.get("reader/layout"),
             layout_implicit_calls=pragma.get("reader/implicit-calls"),
-            layout_decorators=pragma.get("reader/decorators"))
+            layout_decorators=pragma.get("reader/decorators"),
+            layout_indent=pragma.get("reader/indent"))
+
+
+    def _check_indent(self, stream, position, expected):
+        """
+        Apply the reader/indent policy to a content line
+
+        :param stream: the source stream, positioned at the line's content
+        :param position: (line, col) of the content
+        :param expected: the column the line must start at
+        :raises ReaderSyntaxError: under the error policy
+        """
+
+        col = position[1]
+        if col == expected or self.layout_indent is IndentMismatch.IGNORE:
+            return
+
+        if col > expected:
+            message = 'unexpected indent'
+        else:
+            message = 'unindent does not match the enclosing block'
+
+        if self.layout_indent is IndentMismatch.ERROR:
+            raise stream.error(message, position)
+
+        warnings.warn_explicit(
+            message, SyntaxWarning, stream.filename or '<koskari>',
+            position[0])
 
 
     @contextmanager
@@ -608,6 +646,7 @@ class LayoutReader(Reader):
         """
 
         body = []
+        body_indent = None
 
         try:
             with stream.indent_limit(outer_indent):
@@ -617,6 +656,11 @@ class LayoutReader(Reader):
                         break
                     if not stream.peek(1):
                         break
+                    position = stream.position()
+                    if body_indent is None:
+                        body_indent = position[1]
+                    else:
+                        self._check_indent(stream, position, body_indent)
                     event, pos, form = self.read_form(stream)
                     if event is EOF:
                         break
@@ -1058,6 +1102,10 @@ class LayoutReader(Reader):
         wrapper made per read would restart its line count at the
         stream's stale position on every call.
 
+        A top-level form must start at column 0; :attr:`layout_indent`
+        decides whether anything else is an error, a warning, or read
+        as-is.
+
         At EOF returns READ_EOF (same as Reader.read), not None, so callers
         can distinguish end-of-stream from a parsed Python None literal.
 
@@ -1073,6 +1121,9 @@ class LayoutReader(Reader):
                 " with IndentAwareStream.from_source")
 
         event, pos, value = self.read_form(reader_stream)
+
+        if event is not EOF and self.layout_enabled:
+            self._check_indent(reader_stream, pos, 0)
 
         if event is BLOCK:
             return apply_layout(value, self._ns)

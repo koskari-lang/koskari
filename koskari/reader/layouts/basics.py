@@ -35,12 +35,14 @@ def layout_block(ns, source, peers):
     the default block layout handler. Splices the applied layout of its
     body onto the header.
 
-    eg.
-    foo x:
-      bar
+    eg.::
 
-    becomes
-    (foo x bar)
+      foo x:
+        bar
+
+    becomes::
+
+      (foo x bar)
 
     A keyword names a call argument, so a body line that opens with one
     splices as the keyword and its value rather than as an implicit call,
@@ -48,14 +50,16 @@ def layout_block(ns, source, peers):
     rest of the header heads the value block, and a bare keyword header
     heads a begin block.
 
-    eg.
-    foo x:
-      bar
-      file: stderr
-      sep: 1 2
+    eg.::
 
-    becomes
-    (foo x bar file: stderr sep: (1 2))
+      foo x:
+        bar
+        file: stderr
+        sep: 1 2
+
+    becomes::
+
+      (foo x bar file: stderr sep: (1 2))
     """
 
     header, body = source
@@ -115,8 +119,8 @@ def keyword_value_block(ns, header, body, position):
         layout_obj = find_layout(ns, head) if is_symbol(head) else None
         if layout_obj is not None and layout_obj.peers:
             raise LayoutError(
-                f"{key} value block headed by {head} cannot gather its"
-                f" peers here; write {key}: and nest the {head} block",
+                f"{key}: value block headed by {head} cannot gather its"
+                f" peers here; write {key}:: and nest the {head} block",
                 position)
         block = cons(_keyword_block, cons(head, args), body, nil)
         if position:
@@ -135,12 +139,14 @@ def layout_block_begin(ns, source, peers):
     """
     block layout handler that wraps the body in compile/begin
 
-    eg.
-    foo x:
-      bar
+    eg.::
 
-    becomes
-    (foo x (compile/begin bar))
+      foo x:
+        bar
+
+    becomes::
+
+      (foo x (compile/begin bar))
     """
 
     header, body = source
@@ -164,13 +170,16 @@ def layout_inline_block(ns, source, peers):
     to break up long lines, rather than to express sub-expressions.
 
     eg.
-    X foo:
-      bar (baz)
-      qux
-      alpha: beta
+    ::
 
-    becomes
-    (X foo bar (baz) qux alpha: beta)
+      X foo:
+        bar (baz)
+        qux
+        alpha: beta
+
+    becomes::
+
+      (X foo bar (baz) qux alpha: beta)
     """
 
     header, body = source
@@ -200,11 +209,12 @@ def layout_import_from(ns, source, peers):
     """
     Inlining layout handler for long import lists.
 
-    eg.
-    import-from itertools:
-      count cycle permutations product repeat chain
-      combinations combinations_with_replacement
-      groupby tee
+    eg.::
+
+      import-from itertools:
+        count cycle permutations product repeat chain
+        combinations combinations_with_replacement
+        groupby tee
     """
 
     return layout_inline_block.read(ns, source, peers)

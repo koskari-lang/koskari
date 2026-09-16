@@ -1458,3 +1458,92 @@ tags:
   - surprising
   - pitfall
 notes: "each inner line under a header still follows the line rule: foo bar baz has more than one element, so it is the call (foo bar baz), and print receives ONE argument. To pass three arguments put each on its own line (layout-header-lines-join-as-arguments-001) or write (print foo bar baz)."
+---
+id: layout-keyword-line-is-keyword-argument-001
+feature: reader/layout
+source: |-
+  dict:
+    a: 1
+    b: 2
+verify:
+  read: "(dict a: 1 b: 2)"
+  expand: "(dict a: 1 b: 2)"
+  eval: "{\"a\": 1, \"b\": 2}"
+references:
+  - reference/reader-layout.md
+  - reference/layouts/layout-block-default.md
+  - reference/concepts/layout-and-s-expressions.md
+stability: evolving
+tags:
+  - layout
+  - reader
+  - keyword
+  - surface:block
+  - idiom
+notes: a line under a call header that opens with a keyword is a keyword argument to the header, spliced as the keyword and its value; it is not an implicit call of the keyword. One value form follows the keyword here; see layout-keyword-line-several-values-002 for a longer tail.
+---
+id: layout-keyword-line-several-values-002
+feature: reader/layout
+source: |-
+  dict:
+    a: + 1 2
+verify:
+  read: "(dict a: (+ 1 2))"
+  expand: "(dict a: (+ 1 2))"
+  eval: "{\"a\": 3}"
+references:
+  - reference/reader-layout.md
+  - reference/layouts/layout-block-default.md
+stability: evolving
+tags:
+  - layout
+  - reader
+  - keyword
+  - surface:block
+  - idiom
+notes: "several forms after a keyword on one line fold to a call, the same line rule as everywhere else: a: + 1 2 is a: (+ 1 2)."
+---
+id: layout-keyword-block-value-head-003
+feature: reader/layout
+source: |-
+  dict:
+    a: let [[x 1]]:
+      + x 2
+verify:
+  read: "(dict a: (let [[x 1]] (+ x 2)))"
+  expand: "(dict a: (let [[x 1]] (+ x 2)))"
+  eval: "{\"a\": 3}"
+references:
+  - reference/reader-layout.md
+  - reference/layouts/layout-block-default.md
+stability: evolving
+tags:
+  - layout
+  - reader
+  - keyword
+  - surface:block
+  - idiom
+notes: a keyword line ending in a colon takes the block beneath it as its value; the forms after the keyword head that block and resolve their own layout, here let. A head whose layout gathers peers (if, try) cannot sit here, see layout-keyword-block-peer-head-invalid-001.
+---
+id: layout-keyword-block-bare-begin-004
+feature: reader/layout
+source: |-
+  dict:
+    a::
+      let [[x 1]]:
+        + x 2
+verify:
+  read: "(dict a: (begin (let [[x 1]] (+ x 2))))"
+  expand: "(dict a: (begin (let [[x 1]] (+ x 2))))"
+  eval: "{\"a\": 3}"
+references:
+  - reference/reader-layout.md
+  - reference/layouts/layout-block-default.md
+stability: evolving
+tags:
+  - layout
+  - reader
+  - keyword
+  - surface:block
+  - idiom
+notes: "a bare keyword header, spelled k:: so the structural colon stays distinct from the keyword's own, takes its body as a begin block; the value is the body's last form. This is the spelling for a multi-statement value or for a peer-gathering block such as if under a keyword."

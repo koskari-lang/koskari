@@ -18,6 +18,8 @@ Unit tests for koskari.launcher hosted script dispatch.
 """
 
 
+from textwrap import dedent
+
 import os
 import shutil
 import sys
@@ -97,7 +99,7 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
     def _write_ki(self, modname, content):
         path = os.path.join(self._tmpdir, modname + '.ki')
         with open(path, 'w', encoding='utf-8') as fh:
-            fh.write(content)
+            fh.write(dedent(content))
         return path
 
     async def test_hosted_run_invokes_main(self):

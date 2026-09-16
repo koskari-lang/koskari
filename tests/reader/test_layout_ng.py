@@ -16,6 +16,8 @@ tests.reader.test_layout_ng
 Pass 1: strict layout_ng header semantics TDD.
 """
 
+from textwrap import dedent
+
 from unittest import IsolatedAsyncioTestCase, TestCase
 
 import pytest
@@ -37,14 +39,16 @@ def parse_layout_ng(src_str, **defns):
     builtins = dict(_BUILTIN_REGISTRY)
     builtins.update(defns)
     reader = LayoutReader(builtins)
-    stream = IndentAwareStream.from_source(source_str(src_str, '<unittest>'))
+    stream = IndentAwareStream.from_source(
+        source_str(dedent(src_str), '<unittest>'))
     return reader.read(stream)
 
 
 def parse_layout_ng_mode(src_str, **reader_kwargs):
     builtins = dict(_BUILTIN_REGISTRY)
     reader = LayoutReader(builtins, **reader_kwargs)
-    stream = IndentAwareStream.from_source(source_str(src_str, '<unittest>'))
+    stream = IndentAwareStream.from_source(
+        source_str(dedent(src_str), '<unittest>'))
     return reader.read(stream)
 
 
@@ -469,7 +473,7 @@ class TestLayoutReaderWhitespace(TestCase):
 
             wibble:
         100
-    )
+            )
         """
 
         result = parse_layout_ng_mode(src, layout_enabled=True)
@@ -495,7 +499,7 @@ class TestLayoutReaderWhitespace(TestCase):
 
             wibble:
         100
-    )
+            )
         """
 
         result = parse_layout_ng_mode(src, layout_enabled=True)
@@ -528,7 +532,7 @@ class TestLayoutReaderWhitespace(TestCase):
 
             wibble:
         100
-    )
+            )
         """
 
         result = parse_layout_ng_mode(src, layout_enabled=True)
