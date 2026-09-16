@@ -19,7 +19,7 @@ from Python or Scheme priors.
 - Layout and indentation mechanics, normative rules:
   [Reader and layout syntax](../reference/reader-layout.md)
 - Why layout and s-expressions coexist and when to use which:
-  [Layout and s-expressions](../reference/concepts/layout-and-s-expressions.md)
+  [Koskari and s-expressions](../reference/concepts/layout-and-s-expressions.md)
 - The call convention, and `[ ]` versus `( )`:
   [Brackets and the call convention](../reference/concepts/brackets-and-call-convention.md)
 - Idiomatic style -- prefer the direct form:

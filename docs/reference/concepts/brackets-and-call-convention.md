@@ -107,6 +107,6 @@ list of settings.
 
 ## See also
 
-- [Layout and s-expressions](layout-and-s-expressions.md) — the two surfaces
+- [Koskari and s-expressions](layout-and-s-expressions.md) — layout beside its s-expressions
   brackets appear in.
 - [Grammar](../grammar.md) — the formal reader grammar for lists and brackets.

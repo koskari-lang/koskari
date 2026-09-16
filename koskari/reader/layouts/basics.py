@@ -50,14 +50,12 @@ def layout_block(ns, source, peers):
 
     eg.
     foo x:
+      bar
       file: stderr
       sep: 1 2
-      end::
-        (log "eol")
-        "\\n"
 
     becomes
-    (foo x file: stderr sep: (1 2) end: (begin (log "eol") "\\n"))
+    (foo x bar file: stderr sep: (1 2))
     """
 
     header, body = source

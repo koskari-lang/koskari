@@ -192,8 +192,7 @@ the exact rules at the edges.
 Layout is the default surface at the top level of a module. Rules for blocks,
 lines, colon handling, and handler resolution live in dedicated reference pages:
 
-- [Layout and s-expressions](concepts/layout-and-s-expressions.md) — mental model
-  and three authoring surfaces
+- [Koskari and s-expressions](concepts/layout-and-s-expressions.md) — the rules beside their s-expressions
 - [Reader and layout syntax](reader-layout.md) — normative syntax rules
 
 ---

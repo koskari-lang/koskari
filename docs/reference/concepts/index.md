@@ -36,7 +36,7 @@ idiomatic-koskari
 | [Name resolution: runtime, compile-time, and layout](name-resolution-and-prefixes.md) | The three slots, `(foo …)` resolution, the two `+`, forcing a call with `call`, the `compile/`/`layout/` prefixes |
 | [Demand, async, and defer](demand-async-and-defer.md) | Ambient async model, demand path, defer, on-demand? |
 | [Choosing an async construct](choosing-an-async-construct.md) | Decision aid: `demand` / `define-demanding` vs `defer` vs `coroutine-fn` vs `as-coroutine` |
-| [Layout and s-expressions](layout-and-s-expressions.md) | Layout vs s-expr surfaces, YAML/JSON mental model, three authoring forms |
+| [Koskari and s-expressions](layout-and-s-expressions.md) | The layout rules, each beside the s-expression it reads to, and where parentheses stay |
 | [Decorators](decorators.md) | The `@` surface end to end: `reader/decorators` pragma, layout lowering, the decorate-subject expansion and its graft / call-time families, extending with new decorator shapes |
 | [Fences](fences.md) | Triple-backtick foreign literals, the compile-time transliterator model, when a format earns a fence |
 | [Macro matching and hygiene](macro-matching-and-hygiene.md) | Pattern match at expand time, datum forms and wrappers |

@@ -2,7 +2,7 @@
 
 Normative rules for how the Koskari layout reader turns source text into form
 trees. For motivation and the relationship between layout and s-expressions,
-see [Layout and s-expressions](concepts/layout-and-s-expressions.md).
+see [Koskari and s-expressions](concepts/layout-and-s-expressions.md).
 
 ---
 
@@ -381,6 +381,6 @@ else:
 
 ## See also
 
-- [Layout and s-expressions](concepts/layout-and-s-expressions.md) — mental model and three surfaces
+- [Koskari and s-expressions](concepts/layout-and-s-expressions.md) — the rules beside their s-expressions
 - [Layout handler reference](layouts/index.md) — per-head lowering (`layout/if`, …)
 - [Grammar](grammar.md) — syntax hub

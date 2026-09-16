@@ -1,161 +1,302 @@
-# Layout and s-expressions
+# Koskari and s-expressions
 
-How Koskari's layout surface relates to parenthesized s-expressions, and why
-both exist in the same language.
+Koskari is the layout language: indentation carries structure, and
+parentheses carry expressions. Every layout form reads to the same list
+structure that a parenthesized s-expression produces, so the compiler, the
+macro expander, and the evaluator never see which spelling was used. Layout
+reduces the reliance on parentheses for structure; it does not remove them.
 
----
-
-## Introduction
-
-Koskari modules in `.ki` files are read by the **layout reader** by default.
-At the top level of a file (outside any `(`, `[`, or `{`), you write
-indentation-based blocks and lines. The reader turns that text into the same
-kind of **form trees** that explicit s-expressions produce — lists built from
-pairs — and the compiler, macro expander, and evaluator see no difference
-after read.
-
-Parenthesized s-expressions remain fully supported. You can embed them anywhere
-delimiters allow, and you can write entire programs with parentheses only. Layout
-is optional authoring sugar on top of the s-expression core, not a separate
-language.
-
-For normative syntax rules, see [Reader and layout syntax](../reader-layout.md).
+The rules below are the whole surface. Each is shown as a pair: the layout
+spelling on the left, and on the right the s-expression the reader produces
+from it. The normative statement of the rules is
+[Reader and layout syntax](../reader-layout.md).
 
 ---
 
-## YAML and JSON
+## Lines
 
-Layout mode compares to YAML and s-expression mode to JSON.
+A line with one element is that value. A line with more than one element is
+a form headed by the first, which is a call, a definition, or any other
+form the head names.
 
-At the **document level**, Koskari layout behaves like YAML: indentation
-matters, block headers end with `:`, and bodies sit on following indented lines.
-When you open `(`, `[`, or `{`, you enter an **s-expression island** — nested
-forms follow delimiter rules only, the way a `{ ... }` or `[ ... ]` flow
-collection in YAML follows JSON-like rules inside the braces. Physical newlines
-inside balanced delimiters do not end the outer header or expression.
+::::{grid} 1 1 2 2
+:gutter: 2
 
-Koskari is a **syntax superset of s-expressions** in this sense: every program
-you can write with parentheses is valid Koskari, and layout adds surface forms
-that lower to the same underlying trees. Layout does not add evaluators or
-special forms you cannot reach from s-expressions; it adds ways to **write** the
-same pipelines.
-
----
-
-## Three surfaces
-
-The same conditional logic can appear in three authoring forms. They differ in
-**source text** and often in **reader output** before macro expansion, even when
-runtime behaviour matches.
-
-| Surface | Source shape | Typical use |
-| ------- | ------------ | ------------- |
-| **Layout block** | Header + structural `:` + newline + indented body (optional peers) | `.ki` files, multi-line control flow |
-| **Layout line** | One depth-0 line, no structural trailing `:`; multiple forms may fold | Compact top-level or body lines |
-| **S-expression** | Parenthesized form | Nested expressions, explicit calls, REPL one-liners |
-
-### Layout block
-
-Each clause is its own block: header line, mandatory newline, indented body.
-Peers such as `elif` and `else` are separate blocks at the same indent as the
-first header.
-
+:::{grid-item-card} Koskari
 ```koskari
-if test:
-  then-form
-else:
-  else-form
+print "hello" name
+name
+define sq [x] (* x x)
 ```
+:::
 
-Block `if` is handled by [layout/if](../layouts/layout-if.md) and lowers to
-`compile/cond` at **read** time — before macro expansion.
-
-### Layout line
-
-A single line with several top-level forms folds to an implicit call shape
-`(head arg …)` when implicit calls are enabled (the default):
-
+:::{grid-item-card} s-expression
 ```koskari
-if test then-form else-form
+(print "hello" name)
+name
+(define sq [x] (* x x))
 ```
-
-Line `if` reads as `(if test then-form else-form)` and expands through the
-[compile/if](../macros/compile-if.md) macro.
-
-### S-expression
-
-Explicit parentheses work at any depth:
-
-```koskari
-(if test then-form else-form)
-```
-
-Reader output matches the source shape; expansion follows the same macro path
-as a layout line.
-
-### Read shapes differ; eval can match
-
-| Surface | Example source | Reader output (informal) |
-| ------- | -------------- | ------------------------ |
-| Layout block `if` | `if True:` / `1` / `else:` / `2` | `(cond (True 1) (else: 2))` |
-| Layout block `when` | `when True:` / `42` | `(when True 42)` |
-| Layout line `if` | `if True 1 2` | `(if True 1 2)` |
-| S-expression `if` | `(if True 1 2)` | `(if True 1 2)` |
-
-Block `when` and `unless` use the default [layout/block](../layouts/layout-block-default.md)
-handler (no dedicated layout plugin). Line and s-expression `when` read as
-`(when cond body)` and expand through [compile/when](../macros/compile-when.md).
-
-`elif` exists only as a **peer block** after block `if`; there is no layout-line
-spelling for elif chains.
+:::
+::::
 
 ---
 
-## Conditionals
+## Blocks
 
-### Block `if` / `elif` / `else`
+A line ending in `:` opens a block. The header's elements and the body's
+lines join into one form, and each body line follows the line rule on its
+own. The head names a layout handler, `layout/<head>`; with no handler
+registered, the default splices body forms after the header.
 
+::::{grid} 1 1 2 2
+:gutter: 2
+
+:::{grid-item-card} Koskari
+```koskari
+when (> n 0):
+  print n
+  n
+```
+:::
+
+:::{grid-item-card} s-expression
+```koskari
+(when (> n 0) (print n) n)
+```
+:::
+::::
+
+---
+
+## Named heads and peers
+
+Some heads have their own handler, which may gather peer blocks at the same
+indent and lower the whole group to one form. Block `if` gathers `elif` and
+`else` and reads as `cond`.
+
+::::{grid} 1 1 2 2
+:gutter: 2
+
+:::{grid-item-card} Koskari
 ```koskari
 if (< x 0):
   "negative"
-elif (equal? x 0):
+elif (== x 0):
   "zero"
 else:
   "positive"
 ```
+:::
 
-### Block `when` and `unless`
-
+:::{grid-item-card} s-expression
 ```koskari
-when (> score 90):
-  (print "excellent")
-
-unless (nil? name):
-  (print "hello" name)
+(cond
+  [(< x 0) "negative"]
+  [(== x 0) "zero"]
+  [else: "positive"])
 ```
+:::
+::::
 
-### Layout line
-
-```koskari
-if True 1 2
-when True 42
-unless False 42
-```
-
-### S-expression
-
-```koskari
-(if True 1 2)
-(when True 42)
-(unless False 42)
-```
+The handlers and their peers are catalogued in the
+[layout handler reference](../layouts/index.md).
 
 ---
 
-## Where to go next
+## Keywords
 
-- [Reader and layout syntax](../reader-layout.md) — normative block, line, colon, and peer rules
-- [Layout handler reference](../layouts/index.md) — per-head lowering (`layout/if`, …)
-- [layout/if](../layouts/layout-if.md) — block conditional peers
-- [compile/if](../macros/compile-if.md), [compile/when](../macros/compile-when.md), [compile/unless](../macros/compile-unless.md) — macro forms for line and s-expression surfaces
-- [Layout and calls](../../start/from-python/layout-and-calls.md) — tutorial patterns in `.ki` files
+A line that opens with a keyword is an argument name and its value. One
+form after the keyword is the value; several fold to a call. A keyword
+followed by `:` takes a block as its value, and a bare `k::` takes a
+`begin` block.
+
+::::{grid} 1 1 2 2
+:gutter: 2
+
+:::{grid-item-card} Koskari
+```koskari
+print:
+  "hello"
+  file: stderr
+  end: ""
+```
+:::
+
+:::{grid-item-card} s-expression
+```koskari
+(print "hello" file: stderr end: "")
+```
+:::
+::::
+
+---
+
+## Parentheses inside layout
+
+Any `(`, `[`, or `{` switches to s-expression rules until it closes, at any
+depth. A newline inside an open delimiter does not end the line, so a
+header argument may span lines.
+
+::::{grid} 1 1 2 2
+:gutter: 2
+
+:::{grid-item-card} Koskari
+```koskari
+let [[a 1]
+     [b 2]]:
+  + a b
+```
+:::
+
+:::{grid-item-card} s-expression
+```koskari
+(let [[a 1] [b 2]]
+  (+ a b))
+```
+:::
+::::
+
+---
+
+## Side by side
+
+::::{grid} 1 1 2 2
+:gutter: 2
+
+:::{grid-item-card} Koskari
+```koskari
+define greet [name]:
+  print f"hello {name}"
+  name
+```
+:::
+
+:::{grid-item-card} s-expression
+```koskari
+(define greet [name]
+  (print f"hello {name}")
+  name)
+```
+:::
+::::
+
+::::{grid} 1 1 2 2
+:gutter: 2
+
+:::{grid-item-card} Koskari
+```koskari
+for-each [item items]:
+  print item
+```
+:::
+
+:::{grid-item-card} s-expression
+```koskari
+(for-each [item items]
+  (print item))
+```
+:::
+::::
+
+::::{grid} 1 1 2 2
+:gutter: 2
+
+:::{grid-item-card} Koskari
+```koskari
+while (running? x):
+  step x
+else:
+  "done"
+```
+:::
+
+:::{grid-item-card} s-expression
+```koskari
+(while (running? x)
+  (step x)
+  (else: "done"))
+```
+:::
+::::
+
+::::{grid} 1 1 2 2
+:gutter: 2
+
+:::{grid-item-card} Koskari
+```koskari
+try:
+  risky x
+except [e ValueError]:
+  print e
+finally:
+  cleanup
+```
+:::
+
+:::{grid-item-card} s-expression
+```koskari
+(try (begin (risky x))
+  [[e ValueError] (print e)]
+  [finally: cleanup])
+```
+:::
+::::
+
+::::{grid} 1 1 2 2
+:gutter: 2
+
+:::{grid-item-card} Koskari
+```koskari
+define-class Point (Base):
+  define x 0
+```
+:::
+
+:::{grid-item-card} s-expression
+```koskari
+(define-class Point (Base)
+  (begin (define x 0)))
+```
+:::
+::::
+
+::::{grid} 1 1 2 2
+:gutter: 2
+
+:::{grid-item-card} Koskari
+```koskari
+render:
+  #[1 2 3]
+  sep: ", "
+```
+:::
+
+:::{grid-item-card} s-expression
+```koskari
+(render #[1 2 3] sep: ", ")
+```
+:::
+::::
+
+---
+
+## Where parentheses stay
+
+Four places keep their delimiters inside layout:
+
+- Nested expressions, such as `(< x 0)` in a header.
+- Inner calls on a line, such as `print (sign -3)`.
+- Formals and bindings, such as `[name]` and `[[a 1] [b 2]]`.
+- Collection literals, such as `#[1 2 3]`.
+
+Statement-shaped code takes layout; expression-shaped code takes
+parentheses. A whole program written with parentheses only is valid Koskari,
+and the REPL accepts both spellings.
+
+---
+
+## See also
+
+- [Reader and layout syntax](../reader-layout.md), the normative block, line, colon, and peer rules
+- [Layout handler reference](../layouts/index.md), per-head lowering
+- [Layout and calls](../../start/from-python/layout-and-calls.md), tutorial patterns in `.ki` files

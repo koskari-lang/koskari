@@ -129,7 +129,7 @@ evaluates to Python objects.
 
 For the relationship between layout blocks, layout lines, and s-expressions when
 writing conditionals, see
-[Layout and s-expressions](../../reference/concepts/layout-and-s-expressions.md).
+[Koskari and s-expressions](../../reference/concepts/layout-and-s-expressions.md).
 
 > **Q:** `(if test a b)`?
 >

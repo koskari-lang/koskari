@@ -52,7 +52,7 @@ with examples, see [Concepts](concepts/index.md).
 : A read-time handler for a block head (`layout/if`, `layout/block`, …).
   Handlers run during layout expansion (`apply_layout` / `apply_layouts`) with
   signature `(namespace, source, peers)`. For general layout syntax, see
-  [Layout and s-expressions](concepts/layout-and-s-expressions.md).
+  [Koskari and s-expressions](concepts/layout-and-s-expressions.md).
 
 **layout block**
 : A header line ending in structural `:`, a newline, and an indented body.

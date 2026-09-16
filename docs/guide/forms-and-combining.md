@@ -20,7 +20,7 @@ The parenthesized call rule is the one from the tutorials: evaluate the inputs,
 then apply the thing in the first position.
 
 For layout blocks and lines in `.ki` files, see
-[Layout and s-expressions](../reference/concepts/layout-and-s-expressions.md).
+[Koskari and s-expressions](../reference/concepts/layout-and-s-expressions.md).
 
 ---
 
@@ -86,8 +86,8 @@ value you usually keep.
 
 ---
 
-**Go deeper:** [Layout and s-expressions](../reference/concepts/layout-and-s-expressions.md)
-— the three authoring surfaces and how each reads into the same forms.
+**Go deeper:** [Koskari and s-expressions](../reference/concepts/layout-and-s-expressions.md)
+— the layout rules, each beside the s-expression it reads to.
 [Brackets and the call convention](../reference/concepts/brackets-and-call-convention.md)
 — why `( )` calls and `[ ]` is data.
 [Name resolution](../reference/concepts/name-resolution-and-prefixes.md) — how
