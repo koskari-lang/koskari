@@ -94,21 +94,6 @@ begin:
 **Implementation:** `koskari/reader/layouts/basics.layout_block_begin`
 
 
-## layout/keyword-block
-
-**Symbol:** `layout/keyword-block`
-
-**Use-case:** Opt-in splice of an indented body onto the header as one list,
-where a body line that starts with a keyword is inlined as that keyword and
-its value rather than read as an implicit call. Bind with
-**`define layout/<head> layout/keyword-block`** in **`.ki`**.
-
-**Behaviour:** **`(HEAD ARG … LINE …)`** with each `key: value` line spliced
-in place. No peers.
-
-**Implementation:** `koskari/reader/layouts/basics.layout_keyword_block`
-
-
 ## layout/inline-block
 
 **Symbol:** `layout/inline-block`
@@ -167,61 +152,6 @@ unbox.
 **Implementation:** `koskari/reader/layouts/basics.layout_quote`,
 `koskari/reader/layouts/basics.layout_quasiquote`;
 reader side `koskari/reader/parser.LayoutReader._read_quote_block`
-
-
-## layout/call
-
-**Symbol:** `layout/call`
-
-**Use-case:** Block syntax for a function call: the callee is the only header
-argument; each indented body form becomes an argument to **`compile/call`**.
-Useful when a call has several arguments and you want them on separate lines
-without nesting parentheses for the whole call.
-
-**Behaviour:** Does not accept peers. The header must be exactly
-`(layout/call FN)` — no extra forms after **`FN`** (raises `LayoutError` if
-there are header arguments). Produces **`(compile/call FN ARG ...)`**. The body
-is **not** wrapped in **`compile/begin`**.
-
-Before building the call, the handler walks the body list: if a body form is a
-**pair whose car is a keyword**, it is rewritten in place into **two** adjacent
-arguments (the keyword, then the cdr), matching the usual **`compile/call`**
-keyword-argument layout. Ordinary forms are unchanged.
-
-For **`*:`**, splices, and the full **`compile/call`** surface, see
-[SPECIALS.md](SPECIALS.md) § compile/call.
-
-**Syntax:**
-
-```
-layout/call FN:
-  ARG-FORM
-  ...
-```
-
-A line such as **`NAME: VALUE`** is read as one pair form; the layout normalizes
-it to keyword plus value as described above.
-
-**Examples:**
-
-```scheme
-layout/call print:
-  "hello"
-;; → (compile/call print "hello")
-
-layout/call foo:
-  bar
-  (baz)
-;; → (compile/call foo bar (baz))
-
-layout/call foo:
-  bar
-  (baz)
-  alpha: beta
-;; → (compile/call foo bar (baz) alpha: beta)
-```
-
-**Implementation:** `koskari/reader/layouts/conditionals.layout_call`
 
 
 ## layout/class

@@ -18,19 +18,22 @@ Layout handlers for basic block syntax.
 """
 
 
-from ...bootstrap import add_builtin, builtin
+from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...types import get_position, is_keyword, is_nil, is_pair
-from .helpers import layout
+from ...types import get_position, is_keyword, is_nil, is_pair, is_symbol
+from .helpers import _keyword_block, layout
+
+
+_symbol_begin = symbol('begin')
 
 
 @builtin('layout/block')
 @layout(symbol('layout/block'))
 def layout_block(ns, source, peers):
     """
-    the default block layout handler. Simply splices the applied layout of
-    its body onto the header.
+    the default block layout handler. Splices the applied layout of its
+    body onto the header.
 
     eg.
     foo x:
@@ -38,6 +41,23 @@ def layout_block(ns, source, peers):
 
     becomes
     (foo x bar)
+
+    A keyword names a call argument, so a body line that opens with one
+    splices as the keyword and its value rather than as an implicit call,
+    and a block whose header opens with one is that argument's value: the
+    rest of the header heads the value block, and a bare keyword header
+    heads a begin block.
+
+    eg.
+    foo x:
+      file: stderr
+      sep: 1 2
+      end::
+        (log "eol")
+        "\\n"
+
+    becomes
+    (foo x file: stderr sep: (1 2) end: (begin (log "eol") "\\n"))
     """
 
     header, body = source
@@ -47,8 +67,68 @@ def layout_block(ns, source, peers):
             f"{header.car} layout does not take peers",
             get_position(source))
 
-    header.extend(body)
-    return header
+    if is_keyword(header.car):
+        return keyword_value_block(ns, header, body, get_position(source))
+
+    corr = body = body.copy()
+    while corr:
+        head, next = corr
+        if is_pair(head) and is_keyword(head.car):
+            tail = head.cdr
+            if is_pair(tail) and is_nil(tail.cdr):
+                val = tail.car
+            else:
+                val = tail
+            corr.car = head.car
+            corr.cdr = cons(val, next)
+        corr = next
+
+    ret = header.copy()
+    ret.splice(body)
+
+    return ret
+
+
+def keyword_value_block(ns, header, body, position):
+    """
+    Lower a block whose header opens with a keyword to the pair of that
+    keyword and the block's value
+
+    A bare keyword header heads a begin block. Otherwise the header forms
+    after the keyword head the value block, which is expanded through its
+    own layout. A value head whose layout declares peers is refused: peers
+    do not pair across a keyword header, so that block nests under the
+    bare keyword header instead
+
+    :param header: (KEYWORD FORM ...) block header
+    :param body: expanded body forms
+    :param position: source position of the block
+    :return: (KEYWORD VALUE-FORM)
+    :raises LayoutError: when the value head declares peers
+    """
+
+    from . import apply_layout, find_layout
+
+    key, rest = header
+    if is_nil(rest):
+        value = cons(_symbol_begin, body)
+    else:
+        head, args = rest
+        layout_obj = find_layout(ns, head) if is_symbol(head) else None
+        if layout_obj is not None and layout_obj.peers:
+            raise LayoutError(
+                f"{key} value block headed by {head} cannot gather its"
+                f" peers here; write {key}: and nest the {head} block",
+                position)
+        block = cons(_keyword_block, cons(head, args), body, nil)
+        if position:
+            block.set_position(position)
+        value = apply_layout(block, ns)
+
+    result = cons(key, value, nil)
+    if position:
+        result.set_position(position)
+    return result
 
 
 @builtin('layout/block-begin')
@@ -74,46 +154,6 @@ def layout_block_begin(ns, source, peers):
 
     header.append(cons(symbol('begin'), body))
     return header
-
-
-@builtin('layout/keyword-block')
-@layout(symbol('layout/keyword-block'))
-def layout_keyword_block(ns, source, peers):
-    """
-    keyword block layout handler which splices indented body onto the header as
-    to produce a single list. Lines starting with keywords are inlined directly
-    rather than being implicit calls.
-    """
-
-    header, body = source
-    called_by = header.car
-
-    if peers:
-        raise LayoutError(
-            f"{called_by} layout does not take peers",
-            get_position(source))
-
-    corr = body = body.copy()
-    while corr:
-        head, next = corr
-        if is_pair(head) and is_keyword(head.car):
-            tail = head.cdr
-            if is_pair(tail) and is_nil(tail.cdr):
-                val = tail.car
-            else:
-                val = tail
-            corr.car = head.car
-            corr.cdr = cons(val, next)
-        corr = next
-
-    ret = header.copy()
-    ret.splice(body)
-
-    return ret
-
-
-layout_call = layout_keyword_block
-add_builtin('layout/call', layout_call)
 
 
 @builtin('layout/inline-block')

@@ -739,6 +739,21 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
         p.extend(iter([2, 3]))
         self.assertEqual(list(p.unpack()), [1, 2, 3])
 
+    async def test_extend_with_empty_iterable_is_unchanged(self):
+        """extend with an empty list, nil, or exhausted iterator appends nothing"""
+        for empty in ([], (), nil, iter([])):
+            p = cons(1, 2, nil)
+            p.extend(empty)
+            self.assertEqual(list(p.unpack()), [1, 2])
+            self.assertTrue(p.is_proper())
+
+    async def test_extend_improper_with_empty_iterable(self):
+        """extend improper list with an empty iterable folds in the tail"""
+        p = cons(1, 2)
+        p.extend([])
+        self.assertEqual(list(p.unpack()), [1, 2])
+        self.assertTrue(p.is_proper())
+
     async def test_extend_with_proper_cons(self):
         """extend with proper cons copies and splices"""
         p = cons("foo", "bar", nil)
@@ -801,6 +816,14 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
         p = cons("foo", "bar", nil)
         p.splice([1, 2, 3])
         self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
+
+    async def test_splice_with_empty_iterable_is_unchanged(self):
+        """splice with an empty list or nil appends nothing"""
+        for empty in ([], nil):
+            p = cons("foo", "bar", nil)
+            p.splice(empty)
+            self.assertEqual(list(p.unpack()), ["foo", "bar"])
+            self.assertTrue(p.is_proper())
 
     async def test_splice_nil_error(self):
         """splice on nil raises TypeError"""

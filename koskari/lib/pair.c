@@ -1019,7 +1019,8 @@ static KosPair *pair_find_last(PyObject *self, PyObject *seen,
 
 /**
    Convert a Python iterable (tuple, list, iterator, etc.) to a proper
-   cons chain. Returns new pair or NULL on error.
+   cons chain. An empty iterable is nil. Returns new pair or nil, or
+   NULL on error.
  */
 static PyObject *pair_iterable_to_proper_cons(PyObject *obj) {
   PyObject *it = PyObject_GetIter(obj);
@@ -1050,6 +1051,12 @@ static PyObject *pair_iterable_to_proper_cons(PyObject *obj) {
   if (PyErr_Occurred()) {
     Py_DECREF(coll);
     return NULL;
+  }
+
+  if (PyList_GET_SIZE(coll) == 0) {
+    Py_DECREF(coll);
+    Py_INCREF(KosNil);
+    return KosNil;
   }
 
   if (PyList_Append(coll, KosNil) < 0) {

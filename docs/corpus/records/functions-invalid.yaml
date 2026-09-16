@@ -56,8 +56,8 @@ source: |-
       source_filename: name
     return 0
 verify:
-  read: "(define run [] (compile_file src dest) (source_filename: name) (return 0))"
-  invalid: "agent mistake: a bare (unparenthesized) call does not continue onto a more-indented next line. Here `source_filename: name` is read as its own statement headed by the keyword, not as an argument to compile_file, so the keyword argument is silently dropped. When a call spans lines, wrap it in parentheses. Correct form: (compile_file src dest source_filename: name)"
+  read: "(define run [] (compile_file src dest) source_filename: name (return 0))"
+  invalid: "agent mistake: a bare (unparenthesized) call does not continue onto a more-indented next line. Here `source_filename: name` is read as its own line, and a line opening with a keyword is a keyword argument to the enclosing block head, so it becomes an argument to define rather than to compile_file. When a call spans lines, wrap it in parentheses or open a block: `compile_file src dest:` with `source_filename: name` indented beneath it. Correct form: (compile_file src dest source_filename: name)"
 references:
   - reference/grammar.md
   - reference/concepts/layout-and-s-expressions.md

@@ -93,13 +93,6 @@ define-syntax config:
             (.configure name params ...)
 
 
-;; `config` is the ONE head that needs a non-default layout: its block is
-;; DATA (key: value lines), which inline-block splices flat into the form.
-;; Everything else (jobset, job, handler) uses the default layout/block --
-;; children stay as forms, and lambda is happy with a rest-like handler body.
-define layout/config layout/inline-block
-
-
 define-syntax handler:
     syntax-rules []:
         case (handler (tp name) [formals ...] body ...):

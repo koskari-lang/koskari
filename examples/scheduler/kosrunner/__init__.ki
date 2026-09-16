@@ -14,7 +14,7 @@
 
 (use .job Config Job JobSet require-extra watch-task)
 (use .subitems
-     jobset job config handler on-error allow with-subitems layout/config
+     jobset job config handler on-error allow with-subitems
      config/logging configure-logging reqenv)
 (use .access
      AccessConfig Group group config/access resolve-identity resolve-level
@@ -39,7 +39,6 @@ declare-exports [
     Config Job JobSet require-extra watch-task
 
     jobset job config handler on-error allow with-subitems
-    layout/config
     config/logging configure-logging reqenv
 
     AccessConfig Group group config/access resolve-identity resolve-level

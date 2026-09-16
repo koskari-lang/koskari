@@ -14,8 +14,8 @@
 """
 tests.reader.layouts.test_layout_call
 
-Reproducer for layout/call: positionals, *: splice, and keyword pairs
-interleaved in the block body.
+Reproducer for a call block under the default layout: positionals, *:
+splice, and keyword pairs interleaved in the block body.
 """
 
 from unittest import IsolatedAsyncioTestCase

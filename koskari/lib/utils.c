@@ -119,7 +119,7 @@ static PyObject *constantly_new(
 
   if (kwds && PyDict_GET_SIZE(kwds)) {
     PyErr_SetString(PyExc_TypeError,
-                    "constantly() takes no keyword arguments");
+                    "constantly takes no keyword arguments");
     return NULL;
   }
 

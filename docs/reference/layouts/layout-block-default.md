@@ -11,30 +11,40 @@ block head. The original head symbol is preserved; it is not rewritten to
 **`(HEAD ARG … BODY-FORM …)`**. Does not wrap the body in **`compile/begin`**.
 Does not accept peers.
 
-**Syntax:**
-
-```
-HEAD ARG ... :
-  BODY-FORM
-  ...
-```
-
-**Examples:**
+A body line that opens with a keyword is a call argument name followed by
+its value, so it splices as those two elements rather than as an implicit
+call. One form after the keyword is the value; several fold to a call:
 
 ```koskari
-foo x:
-  bar
-  baz
-;; → (foo x bar baz)
+print:
+  "hello"
+  file: stderr
+  sep: 1 2
+;; → (print "hello" file: stderr sep: (1 2))
+```
 
-unknown x:
-  (print x)
-;; → (unknown x (print x))
+The value may be a block. `k: HEAD ARG ... :` reads the block headed by
+**`HEAD`** through that head's own layout, and `k::` reads a **`begin`**
+block. A head whose layout gathers peers, such as `if` or `try`, cannot
+follow the keyword on the header line, since peers do not pair across a
+keyword header; nest that block under `k::` instead:
 
-begin:
-  (bar)
-  (baz)
-;; → (begin (bar) (baz))
+```koskari
+print:
+  file: begin:
+    (log "choosing")
+    stderr
+  "hello"
+;; → (print file: (begin (log "choosing") stderr) "hello")
+
+print:
+  file::
+    if redirect?:
+      stdout
+    else:
+      stderr
+  "hello"
+;; → (print file: (begin (cond (redirect? stdout) (else: stderr))) "hello")
 ```
 
 For a **`compile/begin`** wrapper around the body, use
