@@ -113,6 +113,11 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   Inside a layout block a continuation line must be indented at all, since
   column 0 ends the logical line. Once the marker is written a segment must
   follow, so `"a"- 5` is a read error.
+- **`reader/unary`** *(default on)* — whether `-`, `+`, and `~` attached to
+  the front of a name, a digit, or a delimited form read as the unary call:
+  `-x` is `(- x)`, `+x` is `(+ x)`, `~(f y)` is `(~ (f y))`. A signed number
+  keeps its sign as part of the literal, and `->` or a bare operator stay
+  ordinary symbols.
 - **`reader/layout`** *(default on)* — whether indentation-based layout blocks
   are read. Off leaves only s-expression syntax.
 - **`reader/implicit-calls`** *(default on)* — whether several values on one

@@ -21,10 +21,18 @@ sub-block headers and bodies.
 produces:
 
 ```
-(quasiquote-block (:block: (begin) ((unquote-splicing forms))))
+(quasiquote-block (:block: (begin) (:splice: (unquote-splicing forms))))
 ```
 
-Peers are represented as sibling `:block:` nodes inside the enclosing body:
+After the header, a `:block:` holds one entry per body line: the list of that
+line's elements, or a nested block. A line holding only an unquote-splicing
+form is marked `:splice:`,
+so that when the filled block is expanded the spliced forms spread into one
+line each; with `forms` bound to `(1 2 3)` the block above expands to
+`(begin 1 2 3)`. An unquote-splicing that shares a line with other elements
+splices into that line as usual.
+
+Peers are sibling `:block:` entries of the enclosing block:
 
 ```koskari
 `begin:
@@ -39,8 +47,8 @@ produces:
 ```
 (quasiquote-block
   (:block: (begin)
-   ((:block: (if (unquote cond)) ((unquote then)))
-    (:block: (else) ((unquote else))))))
+   (:block: (if (unquote cond)) ((unquote then)))
+   (:block: (else) ((unquote else)))))
 ```
 
 **Behaviour:** Purely transformative. Rewrites to `(quasiquote

@@ -33,6 +33,7 @@ import pytest
 
 from koskari.exceptions import SpecialError
 from koskari.lib import cons, nil, symbol
+from koskari.types import is_pair
 
 from . import SpecialsTestCase, _register_specials
 
@@ -464,6 +465,7 @@ from koskari.types import is_pair
 
 
 _keyword_block = _kw_type(':block:')
+_keyword_splice = _kw_type(':splice:')
 
 
 def _make_block(head_args_tuple, body_tuple):
@@ -471,12 +473,32 @@ def _make_block(head_args_tuple, body_tuple):
     Build a :block: cons from Python tuples.
 
     head_args_tuple is a tuple of atoms (head, arg0, arg1, ...),
-    body_tuple is a tuple of body forms.
+    body_tuple is a tuple of body forms, each becoming a one-element
+    line, or nested blocks and prebuilt lines taken as they are.
     """
 
     head_args = cons(*head_args_tuple, nil)
-    body = cons(*body_tuple, nil) if body_tuple else nil
-    return cons(_keyword_block, head_args, body, nil)
+    entries = [form if _is_entry(form) else cons(form, nil)
+               for form in body_tuple]
+    return cons(_keyword_block, head_args, *entries, nil)
+
+
+def _is_entry(form):
+    """
+    A nested block, or a line already built, goes in as it is
+    """
+
+    return (is_pair(form)
+            and (form.car is _keyword_block
+                 or form.car == _keyword_splice))
+
+
+def _splice_line(form):
+    """
+    The line the reader gives a lone ,@FORM in a deferred block
+    """
+
+    return cons(_kw_type(':splice:'), form, nil)
 
 
 class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
@@ -589,10 +611,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         head_args, body_tail = block_tail
         self.assertTrue(is_pair(head_args))
         self.assertEqual(head_args[0], symbol('begin'))
-        body_exprs, rest = body_tail
-        self.assertIs(rest, nil)
-        self.assertTrue(is_pair(body_exprs))
-        self.assertEqual(body_exprs[0], 42)
+        self.assertEqual(body_tail, cons(cons(42, nil), nil))
 
 
     async def test_unquote_slot_filled(self):
@@ -609,20 +628,19 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         self.assertTrue(is_pair(intermediate))
         block_kw, block_tail = intermediate
         self.assertIs(block_kw, _keyword_block)
-        _, body_tail = block_tail
-        body_exprs, _ = body_tail
-        first_body_elem, _ = body_exprs
-        self.assertEqual(first_body_elem, 99)
+        _, entries = block_tail
+        first_line, _ = entries
+        self.assertEqual(first_line, cons(99, nil))
 
 
     async def test_unquote_splicing_slot_filled(self):
         """
-        A ,@forms unquote-splicing site is spliced into the body list in the
-        intermediate source cons
+        A ,@forms unquote-splicing site on its own line is spliced into
+        that line's :splice: marker in the intermediate source cons
         """
 
         splice = cons(symbol('unquote-splicing'), symbol('forms'), nil)
-        block = _make_block((symbol('begin'),), (splice,))
+        block = _make_block((symbol('begin'),), (_splice_line(splice),))
         source = cons(symbol('quasiquote'), block, nil)
         forms = cons(10, 20, nil)
         intermediate, _, _, _ = await self.compile_cons_to_source(source, forms=forms)
@@ -630,12 +648,11 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         self.assertTrue(is_pair(intermediate))
         block_kw, block_tail = intermediate
         self.assertIs(block_kw, _keyword_block)
-        _, body_tail = block_tail
-        body_exprs, _ = body_tail
-        first_elem, rest_elems = body_exprs
-        second_elem, _ = rest_elems
-        self.assertEqual(first_elem, 10)
-        self.assertEqual(second_elem, 20)
+        _, entries = block_tail
+        splice_line, rest = entries
+        self.assertIs(rest, nil)
+        self.assertEqual(
+            splice_line, cons(_kw_type(':splice:'), 10, 20, nil))
 
 
 class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
@@ -679,7 +696,7 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         """
 
         splice = cons(symbol('unquote-splicing'), symbol('forms'), nil)
-        block = _make_block((symbol('begin'),), (splice,))
+        block = _make_block((symbol('begin'),), (_splice_line(splice),))
         source = cons(symbol('quasiquote'), block, nil)
         forms = cons(1, 2, 3, nil)
         intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(

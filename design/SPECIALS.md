@@ -2310,8 +2310,9 @@ handler. Useful for passing block structure as data to macros or other
 compile-time code.
 
 **Reader shorthand:** A `'` immediately preceding a block head (e.g. `'begin: ...`) causes the reader to read the entire block as a raw `:block:` cons and
-wrap it in `(compile/quote-block ...)`. Sub-blocks in the body are recursively
-read as `:block:` nodes without layout expansion.
+wrap it in `(compile/quote-block ...)`. Each body line is one entry of the
+cons, the list of the line's elements; sub-blocks are `:block:` entries,
+read recursively without layout expansion.
 
 **Behaviour:** Purely transformative. Rewrites to `(compile/quote BLOCK-REPR)`
 and returns that cons for normal compiler dispatch. The `:block:` cons is
@@ -2320,13 +2321,13 @@ treated as opaque data — no layout expansion takes place.
 **Examples:**
 
 ```scheme
-;; Reader shorthand: produces (:block: (begin) (foo bar)) as data
+;; Reader shorthand: produces (:block: (begin) (foo) (bar)) as data
 'begin:
   foo
   bar
 
 ;; Explicit form
-(quote-block (:block: (begin) (foo bar)))
+(quote-block (:block: (begin) (foo) (bar)))
 ```
 
 **Implementation:** `koskari/compile/specials/quasiquote.py`
@@ -2357,10 +2358,10 @@ sub-block headers and bodies.
 produces:
 
 ```
-(quasiquote-block (:block: (begin) ((unquote-splicing forms))))
+(quasiquote-block (:block: (begin) (:splice: (unquote-splicing forms))))
 ```
 
-Peers are represented as sibling `:block:` nodes inside the enclosing body:
+Peers are sibling `:block:` entries of the enclosing block:
 
 ```scheme
 `begin:
@@ -2375,8 +2376,8 @@ produces:
 ```
 (quasiquote-block
   (:block: (begin)
-   ((:block: (if (unquote cond)) ((unquote then)))
-    (:block: (else) ((unquote else))))))
+   (:block: (if (unquote cond)) ((unquote then)))
+   (:block: (else) ((unquote else)))))
 ```
 
 **Behaviour:** Purely transformative. Rewrites to `(compile/quasiquote

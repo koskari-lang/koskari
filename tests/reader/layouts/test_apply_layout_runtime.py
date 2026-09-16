@@ -29,6 +29,7 @@ import pytest
 
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
+from koskari.types import is_pair
 from koskari.lib import Module, ModuleNamespace, cons, keyword, nil, symbol
 from koskari.reader.layouts import apply_layout, apply_layouts
 from koskari.types import unpack
@@ -39,6 +40,7 @@ pytestmark = pytest.mark.phase_infra
 
 
 _keyword_block = keyword(':block:')
+_keyword_splice = keyword(':splice:')
 _symbol_compile_begin = symbol('begin')
 
 
@@ -47,12 +49,24 @@ def _make_block(head_args_tuple, body_tuple):
     Build a :block: cons from Python tuples.
 
     head_args_tuple is a tuple of atoms (head, arg0, arg1, ...),
-    body_tuple is a tuple of body forms.
+    body_tuple is a tuple of body forms, each becoming a one-element
+    line, or nested blocks and prebuilt lines taken as they are.
     """
 
     head_args = cons(*head_args_tuple, nil)
-    body = cons(*body_tuple, nil) if body_tuple else nil
-    return cons(_keyword_block, head_args, body, nil)
+    entries = [form if _is_entry(form) else cons(form, nil)
+               for form in body_tuple]
+    return cons(_keyword_block, head_args, *entries, nil)
+
+
+def _is_entry(form):
+    """
+    A nested block, or a line already built, goes in as it is
+    """
+
+    return (is_pair(form)
+            and (form.car is _keyword_block
+                 or form.car == _keyword_splice))
 
 
 class ApplyLayoutRuntimeTestCase(unittest.IsolatedAsyncioTestCase):

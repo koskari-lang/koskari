@@ -79,6 +79,34 @@ class TestEmptyBody(TestCase):
         self.assertEqual(parse_layout(src), expected)
 
 
+class TestKeywordLineVersusPair(TestCase):
+
+    def test_written_pair_is_not_a_keyword_line(self):
+        src = """
+        cond:
+          [(== v 0) "a0"]
+          [else: "meh"]
+        """
+        expected = pycons(
+            (symbol('cond'),
+             ((symbol('=='), symbol('v'), 0), 'a0'),
+             (keyword('else:'), 'meh')))
+        self.assertEqual(parse_layout(src), expected)
+
+
+    def test_paren_pair_is_not_a_keyword_line_either(self):
+        src = """
+        foo:
+          (else: x)
+          else: x
+        """
+        expected = pycons(
+            (symbol('foo'),
+             (keyword('else:'), symbol('x')),
+             keyword('else:'), symbol('x')))
+        self.assertEqual(parse_layout(src), expected)
+
+
 class TestKeywordBlocks(TestCase):
 
     def test_value_block_uses_its_own_head(self):
@@ -184,7 +212,8 @@ class TestKeywordBlocks(TestCase):
         expected = pycons(
             (symbol('quote'),
              (keyword(':block:'), (symbol('print'),),
-              ((keyword(':block:'), (keyword('file:'),), (symbol('x'),)),))))
+              (keyword(':block:'), (keyword('file:'),),
+               (symbol('x'),)))))
         self.assertEqual(parse_layout(src), expected)
 
 

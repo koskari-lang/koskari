@@ -408,7 +408,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
             (symbol("quote"),
              (_kw_block,
               (symbol("begin"),),
-              (symbol("foo"), symbol("bar"))))
+              (symbol("foo"),), (symbol("bar"),)))
         )
         result = _parse_layout_ng(src)
         self.assertEqual(result, expected)

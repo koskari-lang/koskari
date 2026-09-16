@@ -25,6 +25,8 @@ from unittest import TestCase
 import pytest
 
 from koskari.lib import cons, nil, symbol
+from koskari.pragma import ModulePragma
+from koskari.reader import LayoutReader
 from koskari.reader.layouts import layout_inline_block
 
 
@@ -33,10 +35,12 @@ pytestmark = pytest.mark.phase_infra
 
 def _read(header, body):
     """
-    Drive the handler directly with a header and a body spine
+    Drive the handler directly with a header and a body of one-element lines
     """
 
-    return layout_inline_block.read(None, cons(header, body), None)
+    reader = LayoutReader.from_pragma({}, ModulePragma())
+    lines = cons(*(cons(form, nil) for form in body.unpack()), nil) if body else nil
+    return layout_inline_block.read(reader, cons(header, lines), None)
 
 
 class TestInlineBlockWalk(TestCase):

@@ -142,7 +142,8 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
            (symbol("quasiquote"),
             (_kw_block,
              (symbol("begin"),),
-             ((symbol("unquote-splicing"), symbol("hello")),)))))
+             (keyword(':splice:'),
+              (symbol("unquote-splicing"), symbol("hello")))))))
 
         result = parse_layout(src)
         print("result   :", result)
@@ -174,13 +175,13 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
            (symbol("quasiquote"),
             (_kw_block,
              (symbol("begin"),),
-             ((_kw_block,
-               (symbol("if"),
-                (symbol("unquote"), symbol("test-expr"))),
-               ((symbol("unquote"), symbol("result")),)),
-              (_kw_block,
-               (symbol("else"),),
-               ((symbol("unquote"), symbol("fallback")),)))))))
+             (_kw_block,
+              (symbol("if"),
+               (symbol("unquote"), symbol("test-expr"))),
+              ((symbol("unquote"), symbol("result")),)),
+             (_kw_block,
+              (symbol("else"),),
+              ((symbol("unquote"), symbol("fallback")),))))))
 
         result = parse_layout(src)
         print("result   :", result)
@@ -210,7 +211,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
             (symbol("quote"),
              (_keyword_block,
               (symbol("begin"),),
-              (symbol("foo"), symbol("bar"))))
+              (symbol("foo"),), (symbol("bar"),)))
         )
 
         result = parse_layout(src)
@@ -245,8 +246,8 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
         self.assertTrue(is_pair(head_args))
         self.assertEqual(car(head_args), symbol("begin"))
 
-        body_exprs = car(cdr(cdr(block_repr)))
-        self.assertTrue(is_nil(body_exprs))
+        entries = cdr(cdr(block_repr))
+        self.assertTrue(is_nil(entries))
 
 
     async def test_quote_block_nested_sub_block(self):
@@ -265,9 +266,9 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
             (symbol("quote"),
              (_keyword_block,
               (symbol("begin"),),
-              ((_keyword_block,
-                (symbol("if"), symbol("x")),
-                (symbol("foo"),)),)))
+              (_keyword_block,
+               (symbol("if"), symbol("x")),
+               (symbol("foo"),))))
         )
 
         result = parse_layout(src)
@@ -295,7 +296,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
              (symbol("quote"),
               (_keyword_block,
                (symbol("begin"),),
-               (symbol("foo"), symbol("bar")))))
+               (symbol("foo"),), (symbol("bar"),))))
         )
 
         result = parse_layout(src)

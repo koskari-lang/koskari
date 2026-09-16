@@ -22,7 +22,8 @@ from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
 from ...types import fill_position, get_position, is_nil, is_pair, unpack
-from .helpers import block_source_from_cons, layout, match_block_source
+from .helpers import (
+    block_source_from_cons, is_block, layout, match_block_source)
 
 
 _symbol_case = symbol('case')
@@ -37,7 +38,7 @@ _keyword_unless = keyword('unless')
 
 @builtin('layout/if')
 @layout(symbol('layout/if'), peers=(_symbol_elif, _symbol_else))
-def layout_if(ns, source, peers):
+def layout_if(reader, source, peers):
     """
     Lower if/elif/else block sources to compile/cond for compilation.
 
@@ -63,7 +64,7 @@ def layout_if(ns, source, peers):
             'if block requires exactly one condition',
             get_position(source))
 
-    clauses = [cons(pargs[0], body)]
+    clauses = [cons(pargs[0], reader.fold_lines(body))]
     saw_else = False
 
     for peer in peers:
@@ -80,7 +81,7 @@ def layout_if(ns, source, peers):
                 raise LayoutError(
                     'elif block requires exactly one condition',
                     get_position(peer))
-            clause = cons(ppargs[0], pbody)
+            clause = cons(ppargs[0], reader.fold_lines(pbody))
             fill_position(clause, get_position(peer))
             clauses.append(clause)
 
@@ -93,7 +94,7 @@ def layout_if(ns, source, peers):
                 raise LayoutError(
                     'else block does not take arguments',
                     get_position(peer))
-            clause = cons(_keyword_else, pbody)
+            clause = cons(_keyword_else, reader.fold_lines(pbody))
             fill_position(clause, get_position(peer))
             clauses.append(clause)
             saw_else = True
@@ -108,7 +109,7 @@ def layout_if(ns, source, peers):
 
 @builtin('layout/switch')
 @layout(symbol('layout/switch'))
-def layout_switch(ns, source, peers):
+def layout_switch(reader, source, peers):
     """
     Lower a switch block source into a flat switch form for compilation
 
@@ -156,7 +157,7 @@ def layout_switch(ns, source, peers):
     clauses = []
     saw_else = False
 
-    for form in unpack(body):
+    for form in unpack(reader.fold_lines(body)):
         if not is_pair(form):
             raise LayoutError(
                 'switch body may only contain case or else clauses',
@@ -235,7 +236,7 @@ def _split_case_guard(cargs, child):
 
 @builtin('layout/match')
 @layout(symbol('layout/match'), raw=True)
-def layout_match(ns, source, peers):
+def layout_match(reader, source, peers):
     """
     Lower a match block source into a flat match form for compilation
 
@@ -272,7 +273,7 @@ def layout_match(ns, source, peers):
     :param peers: must be empty
     """
 
-    from . import apply_layouts
+    from . import apply_layouts, apply_lines
 
     if peers:
         raise LayoutError(
@@ -293,15 +294,23 @@ def layout_match(ns, source, peers):
     saw_else = False
 
     for child in unpack(body):
-        child = block_source_from_cons(child) or child
-        matched = match_block_source(child)
+        # a case block, or a parenthesized clause form on a line
+        as_block = is_block(child)
+        if not as_block:
+            child = reader.fold_line(child)
+        matched = match_block_source(
+            block_source_from_cons(child) or child)
         if matched is None:
             raise LayoutError(
                 'match body may only contain case or else blocks',
                 get_position(child) or get_position(source))
 
         chead, cargs = matched['header'].datum
-        cbody = apply_layouts(matched['body'].datum, ns)
+        cbody = matched['body'].datum
+        if as_block:
+            cbody = reader.fold_lines(apply_lines(cbody, reader))
+        else:
+            cbody = apply_layouts(cbody, reader)
 
         if chead is _symbol_case:
             if saw_else:

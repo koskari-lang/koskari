@@ -16,17 +16,23 @@ Block syntax rules are in [Reader and layout syntax](../reader-layout.md).
 
 ## `:block:` conses and layout expansion
 
-Indented blocks are first read as **`:block:`** conses:
+Indented blocks are first read as **`:block:`** conses, the header's elements
+as one list and then one entry per body line, each a line of elements or a
+nested block:
 
 ```
-(:block: (HEAD ARG ...) (BODY-FORM ...))
+(:block: (HEAD ARG ...) ENTRY ...)
+ENTRY ::= (ELEMENT ...) | (:block: ...)
 ```
 
 **`LayoutReader.read()`** expands those conses through
 **`koskari.reader.layouts`**: **`apply_layout`** for a single block,
 **`apply_layouts`** for a primary block plus stream-collected peer blocks on one
 spine. Each call looks up **`layout/<head>`** in the module namespace (then
-builtins) and invokes the handler as **`read(namespace, source, peers)`**.
+builtins) and invokes the handler as **`read(reader, source, peers)`**, where
+**`source`** is the cons's cdr, the header and the block's entries, unfolded;
+the handler calls **`reader.fold_line`** or **`reader.fold_lines`** where it
+wants forms.
 
 Unknown symbol heads use the default **`layout/block`** handler (flat splice).
 See [layout/block](layout-block-default.md). Opt-in **`compile/begin`** wrapping
@@ -47,7 +53,7 @@ before hygiene discovery so expansion matches reader layout behaviour.
 2. When the body must be wrapped in **`compile/begin`**, add
    **`define layout/<head> layout/block-begin`** in **`.ki`**, or implement a
    custom handler.
-3. Otherwise implement a handler with signature **`(namespace, source, peers)`**
+3. Otherwise implement a handler with signature **`(reader, source, peers)`**
    in the appropriate module under **`koskari/reader/layouts/`**, decorate with
    **`@layout(symbol('layout/head'), peers=(...))`** when peer blocks are
    needed, and register the handler in the layout namespace (builtins or module

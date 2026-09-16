@@ -31,7 +31,7 @@ _symbol_begin = symbol('begin')
 
 @builtin('layout/dyn-wind')
 @layout(symbol('layout/dyn-wind'), peers=(_symbol_before, _symbol_after))
-def layout_dyn_wind(ns, source, peers):
+def layout_dyn_wind(reader, source, peers):
     """
     Lower layout/dyn-wind block with before/body/after peers to
     (compile/dyn-wind [before] [body] [after]) for compilation.
@@ -49,6 +49,7 @@ def layout_dyn_wind(ns, source, peers):
     """
 
     head, body = source
+    body = reader.fold_lines(body)
 
     before_form = nil
     after_form = nil
@@ -61,6 +62,7 @@ def layout_dyn_wind(ns, source, peers):
 
     for peer in peers:
         pheader, pbody = peer
+        pbody = reader.fold_lines(pbody)
         phead, ppargs = pheader
 
         if phead is _symbol_before:

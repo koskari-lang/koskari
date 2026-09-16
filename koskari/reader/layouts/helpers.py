@@ -23,18 +23,26 @@ Layout decorator for reader block syntax and block-form matchers.
 
 
 from ...compile.helpers import match1
-from ...lib import cons, keyword, nil
+from ...lib import keyword
 from ...matcher import BIND, LIST, LITERAL_KW, MATCH, REST
-from ...types import is_nil, is_pair, is_symbol, unpack
+from ...types import is_pair, is_symbol
 
 
 _keyword_block = keyword(':block:')
 
 
+def is_block(form):
+    """
+    True when form is a ``:block:`` cons
+    """
+
+    return form and is_pair(form) and form.car is _keyword_block
+
+
 _BLOCK_SOURCE_PATTERN = MATCH(LIST(BIND('header'), REST('body')))
 
 _BLOCK_CONS_PATTERN = MATCH(
-    LIST(LITERAL_KW(':block:'), BIND('header'), BIND('body_list')))
+    LIST(LITERAL_KW(':block:'), BIND('header'), REST('body')))
 
 
 def _valid_block_header(header):
@@ -47,7 +55,7 @@ def _valid_block_header(header):
 
 def match_block_source(form):
     """
-    Match a pass-one block source ``((head . args) . body-forms...)``
+    Match a pass-one block source ``((head . args) . entries...)``
 
     :param form: candidate form from a block body read
     :return: match result with ``header`` and ``body`` slots, or None
@@ -64,10 +72,10 @@ def match_block_source(form):
 
 def match_block_cons(form):
     """
-    Match a ``:block:`` cons ``(:block: (head . args) (body...))``
+    Match a ``:block:`` cons ``(:block: (head . args) entry...)``
 
     :param form: candidate runtime or quote block form
-    :return: match result with ``header`` and ``body_list`` slots, or None
+    :return: match result with ``header`` and ``body`` slots, or None
     """
 
     matched = match1(form, [_BLOCK_CONS_PATTERN])
@@ -81,27 +89,26 @@ def match_block_cons(form):
 
 def block_source_from_cons(form):
     """
-    Convert a ``:block:`` cons to a pass-one block source pair
+    The pass-one block source of a ``:block:`` cons, which is its cdr
 
-    :param form: ``(:block: (head . args) (body...))`` cons
-    :return: ``((head . args) . body-forms...)`` or None
+    :param form: ``(:block: (head . args) entry...)`` cons
+    :return: ``((head . args) . entries...)`` or None
     """
 
-    matched = match_block_cons(form)
-    if matched is None:
+    if match_block_cons(form) is None:
         return None
-    header = matched['header'].datum
-    body_list = matched['body_list'].datum
-    if is_nil(body_list):
-        return cons(header, nil)
-    return cons(header, *unpack(body_list), nil)
+    return form.cdr
 
 
 class LayoutHandler:
     """
     Wrapper for layout handlers with optional peer metadata.
 
-    A handler is called as read_fn(ns, source, peers).
+    A handler is called as read_fn(reader, source, peers), where reader is
+    the LayoutReader expanding the source. The source is the block cons's
+    cdr, ``((head . args) . entries)``, each entry a line, the proper list
+    of the elements the reader saw on it, or a nested block; the reader's
+    fold_line and fold_lines apply the line rule wherever a form is wanted.
     """
 
     def __init__(self, head_symbol, read_fn, peers=(), raw=False):
@@ -115,7 +122,7 @@ def layout(head_symbol, peers=(), raw=False):
     """
     Decorator that wraps a layout handler function in ``LayoutHandler``.
 
-    The handler must have signature (ns, source, peers) and return
+    The handler must have signature (reader, source, peers) and return
     the parsed form. Optional ``peers`` declares peer block head symbols
     that the parser should gather contiguously after this block.
 

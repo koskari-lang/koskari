@@ -64,13 +64,13 @@ class TestNestedBlockRead(TestCase):
         begin_blk = pycons(
             (_keyword_block,
              (symbol('begin'),),
-             ((symbol('print'), 'foo'),)
+             (symbol('print'), 'foo')
             ))
 
         expected = pycons(
             (_keyword_block,
             (symbol('example'),),
-            (begin_blk,)))
+            begin_blk))
 
         found = read_layout_form(src)
 
@@ -93,18 +93,18 @@ class TestNestedBlockRead(TestCase):
         if_blk = pycons(
             (_keyword_block,
              (symbol('foobar'),),
-             ((symbol('print'), 'foo'),)
+             (symbol('print'), 'foo')
             ))
         else_blk = pycons(
             (_keyword_block,
              (symbol('barfoo'),),
-             ((symbol('print'), 'bar'),)
+             (symbol('print'), 'bar')
             ))
 
         expected = pycons(
             (_keyword_block,
             (symbol('example'),),
-            (if_blk, else_blk,)))
+            if_blk, else_blk))
 
         found = read_layout_form(src)
 
@@ -127,18 +127,18 @@ class TestNestedBlockRead(TestCase):
         if_blk = pycons(
             (_keyword_block,
              (symbol('if'), symbol('foo')),
-             ((symbol('print'), 'foo'),)
+             (symbol('print'), 'foo')
             ))
         else_blk = pycons(
             (_keyword_block,
              (symbol('else'),),
-             ((symbol('print'), 'bar'),)
+             (symbol('print'), 'bar')
             ))
 
         expected = pycons(
             (_keyword_block,
             (symbol('example'),),
-            (if_blk, else_blk,)))
+            if_blk, else_blk))
 
         found = read_layout_form(src)
 

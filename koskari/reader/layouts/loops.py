@@ -32,9 +32,9 @@ _symbol_else = symbol('else')
 _keyword_else = keyword('else')
 
 
-def _layout_loop(source, peers):
+def _layout_loop(reader, source, peers):
     header, body = source
-    header.extend(body)
+    header.extend(reader.fold_lines(body))
 
     if peers:
         if len(peers) != 1:
@@ -56,8 +56,7 @@ def _layout_loop(source, peers):
                 "else block does not take arguments",
                 get_position(peers))
 
-        else_body = pbody
-        clause = cons(_keyword_else, else_body)
+        clause = cons(_keyword_else, reader.fold_lines(pbody))
         fill_position(clause, get_position(peer))
         header.append(clause)
 
@@ -66,7 +65,7 @@ def _layout_loop(source, peers):
 
 @builtin("layout/for-each")
 @layout(symbol("layout/for-each"), peers=(_symbol_else,))
-def layout_for_each(ns, source, peers):
+def layout_for_each(reader, source, peers):
     """
     Layout handler for for-each blocks
 
@@ -78,12 +77,12 @@ def layout_for_each(ns, source, peers):
         (print "done")
     """
 
-    return _layout_loop(source, peers)
+    return _layout_loop(reader, source, peers)
 
 
 @builtin("layout/while")
 @layout(symbol("layout/while"), peers=(_symbol_else,))
-def layout_while(ns, source, peers):
+def layout_while(reader, source, peers):
     """
     Layout handler for while blocks
 
@@ -96,7 +95,7 @@ def layout_while(ns, source, peers):
         (print "done")
     """
 
-    return _layout_loop(source, peers)
+    return _layout_loop(reader, source, peers)
 
 
 # The end.

@@ -26,7 +26,7 @@ import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
-from koskari.exceptions import ReaderSyntaxError
+from koskari.exceptions import LayoutError, ReaderSyntaxError
 from koskari.lib import cons, keyword, kos_repr, nil, symbol
 from koskari.reader import (
     LINE_END, IndentAwareStream, LayoutReader, source_str)
@@ -431,7 +431,7 @@ class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
         builtins = dict(_BUILTIN_REGISTRY)
         reader = LayoutReader(builtins, layout_implicit_calls=False)
         stream = IndentAwareStream.from_source(source_str('foo bar', '<t>'))
-        with self.assertRaises(ReaderSyntaxError):
+        with self.assertRaises(LayoutError):
             reader.read(stream)
 
     async def test_pair_head_block(self):

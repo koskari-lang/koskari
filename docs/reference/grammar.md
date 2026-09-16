@@ -124,9 +124,21 @@ Four prefixes wrap the form that follows them:
 | `,form` | `(unquote form)` |
 | `,@form` | `(unquote-splicing form)` |
 
-`,` and `,@` are meaningful only inside a quasiquote. One more prefix, `&form`,
-reads as `(ref form)` for by-reference passing; a bare `&` with nothing
-attached is the ordinary `&` symbol.
+`,` and `,@` are meaningful only inside a quasiquote. `&form` reads as
+`(ref form)` for by-reference passing; a bare `&` with nothing attached is the
+ordinary `&` symbol.
+
+The unary operators `-`, `+`, and `~` are prefixes too. Attached to a name, a
+digit, or an opening delimiter, each reads as the one-argument call of its
+operator: `-x` is `(- x)`, `+foo.bar` is `(+ (attr foo bar))`, `~(f y)` is
+`(~ (f y))`, and `~5` is `(~ 5)`. The operand is read as a whole form, so
+`-foo["a"]` is `(- (item foo "a"))`. The one-argument builtins call the Python
+unary methods, so `+x` reaches `__pos__`, which is how a `Decimal` rounds to
+its context and a `Counter` drops its non-positive counts. A `-` before a
+digit is a signed number, so `-1` and `-.5` are literals rather than calls. An
+operator standing alone is its bare symbol, and one followed by any other
+character, `->`, `-=`, `--x`, and `+=` included, is an ordinary symbol. The
+prefixes are governed by the `reader/unary` pragma.
 
 ### Comments
 

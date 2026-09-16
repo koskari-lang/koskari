@@ -16,8 +16,9 @@ koskari.reader.pragma
 
 Reader-side pragma settings, registered into the koskari.pragma registry at
 import: reader/brackets, reader/index-brackets, reader/dot-attrs,
-reader/string-segments, reader/layout, reader/implicit-calls,
-reader/indent, reader/fences, reader/decorators. Each setting's
+reader/string-segments, reader/unary, reader/layout,
+reader/implicit-calls, reader/indent, reader/fences, reader/decorators. Each
+setting's
 ``default`` is its baseline (value when undeclared); the function's argument
 defaults are the parameter defaults (value when declared but the arg is
 omitted).
@@ -69,6 +70,20 @@ def reader_string_segments(enabled: bool = True) -> bool:
     Whether a ``-`` attached to a string literal's closing quote continues
     it into the next quoted segment (baseline on), joining into
     ``compile/#str``
+    """
+
+    return enabled
+
+
+@pragma_setting("reader/unary", True)
+def reader_unary(enabled: bool = True) -> bool:
+    """
+    Whether ``-``, ``+``, and ``~`` attached to the front of a name, a
+    digit, or a delimited form read as the unary call ``(OP FORM)``
+    (baseline on), so ``-x`` is ``(- x)``, ``+x`` is ``(+ x)``, and
+    ``~(f y)`` is ``(~ (f y))``. A signed number keeps its sign as part
+    of the literal, and an operator followed by anything else stays an
+    ordinary atom
     """
 
     return enabled

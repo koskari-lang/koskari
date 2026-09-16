@@ -24,7 +24,8 @@ Koskari s-expression reader and layout block parsing.
 from ..exceptions import FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError
 from . import pragma as _pragma  # noqa: F401
 from .layout import LayoutReader
-from .parser import DEFER, LINE_END, READ_EOF, Atom, Reader, default_reader
+from .parser import (
+    DEFER, LINE, LINE_END, READ_EOF, Atom, Reader, default_reader)
 from .stream import (
     IndentAwareStream, SourceStream, source_open, source_str, source_stream)
 
@@ -32,6 +33,7 @@ from .stream import (
 __all__ = (
     "DEFER",
     "LINE_END",
+    "LINE",
     "Atom",
     "ReaderSyntaxError",
     "ReaderEOF",

@@ -196,13 +196,15 @@ entirely in the active layout handler.
 ## Layout lines
 
 A **layout line** is a depth-0 logical line that does **not** end with a
-structural block `:`. The reader collects top-level forms on the line until
-`LINE_END` or EOF.
+structural block `:`. The reader collects the elements on the line until
+`LINE_END` or EOF and keeps them as the line; the fold below is applied by
+the layout handler that receives the line, or by `read()` for a top-level
+line, through the reader's `fold_line`.
 
-| Forms on line | Result (implicit calls enabled) |
-| ------------- | --------------------------------- |
-| One form | That form |
-| Multiple forms | `(first . rest…)` — implicit call / fold |
+| Elements on line | Form (implicit calls enabled) |
+| ---------------- | ----------------------------- |
+| One element | That element |
+| Several elements | `(first . rest…)` — implicit call / fold |
 
 Examples:
 
@@ -234,10 +236,27 @@ Parsing and layout expansion are separate steps.
 
 ### Parse
 
-A colon block is read as a **`:block:`** cons:
+A colon block is read as a **`:block:`** cons: the header's elements as one
+list, then one entry per body line, each entry either a line, the list of the
+elements the reader saw on it, or a nested block:
 
 ```
-(:block: (HEAD ARG ...) (BODY-FORM ...))
+(:block: (HEAD ARG ...) ENTRY ...)
+ENTRY ::= LINE | BLOCK
+LINE  ::= (ELEMENT ...)
+```
+
+Nothing on a line is folded at parse time. `else: x` is a two-element line,
+`(else: x)` is a one-element line holding a pair, and a nested block is its
+own entry, so the handler that expands the block can tell them apart:
+
+```koskari
+foo:
+  else: x
+  bar:
+    y
+  (else: x)
+;; (:block: (foo) (else: x) (:block: (bar) (y)) ((else: x)))
 ```
 
 Stream-collected peer blocks (when the layout declares peer heads) form a spine
@@ -252,10 +271,29 @@ expansion time.
 
 **`LayoutReader.read()`** calls **`apply_layout`** (one block) or
 **`apply_layouts`** (primary plus peers on a spine) from
-**`koskari.reader.layouts`**. Each lookup resolves **`layout/<head>`** in the
-module namespace, then builtins. Handlers are invoked as
-**`read(namespace, source, peers)`**, where **`source`** is
-**`(header . body)`** with **`header`** = **`(head . args)`**.
+**`koskari.reader.layouts`**, passing itself. Each lookup resolves
+**`layout/<head>`** in the module namespace, then builtins. Handlers are
+invoked as **`read(reader, source, peers)`**, where **`reader`** is the
+`LayoutReader` expanding the source and **`source`** is
+**`(header . entries)`**, the cdr of the block cons, with **`header`** =
+**`(head . args)`**.
+
+The line rule lives on the reader: **`reader.fold_line(entry)`** returns a
+one-element line's element, folds several elements to a call, or raises when
+**`reader/implicit-calls`** is off, and lowers a block entry to its form;
+**`reader.fold_lines(entries)`** does the same for a whole body. Before a
+handler runs, every nested block whose head is not a keyword has already been
+lowered into a one-element line, with its peers gathered from the entries
+after it; a block whose head is a keyword is left for the handler. A handler
+folds where it wants forms and reads the elements directly where it does not,
+so the default [layout/block](layouts/layout-block-default.md) can splice a
+keyword line or a keyword-headed block as a keyword argument while leaving a
+written `(else: x)` pair intact.
+
+Expansion that starts from a namespace rather than a reader, as the runtime
+`apply-layouts` builtin does for a filled quasiquote block, resolves the
+module's reader through its bound `__reader__`, rebuilding one from
+`__pragma__` when the load-time facet was detached.
 
 When no named layout matches, **`layout/block`** splices body forms after the
 header:
@@ -370,8 +408,8 @@ ExprPart      ::= ATOM | SEXPR ;
 - **Peer blocks:** Peers are `BlockLine` nodes at the same indent as the
   primary header, gathered only when the active handler declares their head
   symbols, then expanded with the primary through **`apply_layouts`**.
-- **Handler inputs:** `source` = `(header . body)`; `peers` = list of
-  `(pheader . pbody)` pairs (peer headers and bodies before expansion).
+- **Handler inputs:** `source` = `(header . entries)`; `peers` = list of
+  `(pheader . pentries)` pairs (peer headers and bodies before folding).
 
 ### Conforming examples
 

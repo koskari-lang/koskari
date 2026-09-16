@@ -48,6 +48,7 @@ __all__ = (
     'MODULE_DETACH_FACET_NAMES',
 
     'build_module_load_facets',
+    'find_module_reader',
     'build_module_pragma',
     'attach_module_load_facets',
     'detach_module_load_facets',
@@ -490,6 +491,33 @@ def build_module_pragma(module):
 
     ns['__pragma__'] = pragma
     return pragma
+
+
+def find_module_reader(ns):
+    """
+    The layout reader for the module owning ns. Returns the bound
+    __reader__, or rebuilds one from __pragma__ and binds it when the
+    load-time facet was detached
+
+    :param ns: a module, function, or let namespace, or a plain mapping
+    :return: the LayoutReader
+    """
+
+    while getattr(ns, 'parent', None) is not None:
+        ns = ns.parent
+
+    reader = ns.get('__reader__')
+    if reader is not None:
+        return reader
+
+    pragma = ns.get('__pragma__')
+    if pragma is None:
+        pragma = ModulePragma()
+        ns['__pragma__'] = pragma
+
+    reader = LayoutReader.from_pragma(ns, pragma=pragma)
+    ns['__reader__'] = reader
+    return reader
 
 
 def attach_module_load_facets(module, pragma, compiler, reader):

@@ -55,6 +55,7 @@ __all__ = (
     "READ_EOF",
     "DEFER",
     "LINE_END",
+    "LINE",
     "BLOCK",
     "BLOCKS",
 )
@@ -83,6 +84,7 @@ _symbol_attr = symbol("attr")
 _symbol_quote = symbol("quote")
 _symbol_decorate = symbol("decorate")
 _symbol_ref = symbol("ref")
+_unary_symbols = {c: symbol(c) for c in "-+~"}
 _symbol_refq = symbol("refq")
 _symbol_splice = symbol("splice")
 _symbol_unquote = symbol("unquote")
@@ -102,6 +104,7 @@ _DICT_SPLIT_MATCHER = repeat_capture("pairs", ONEOF(
 )).build()
 
 _keyword_block = keyword(":block:")
+_keyword_splice = keyword(":splice:")
 _keyword_fence_filename = keyword("filename")
 _keyword_fence_line = keyword("line")
 _keyword_fence_col = keyword("col")
@@ -117,6 +120,7 @@ CLOSE_PAIR = keyword("close-pair")
 EOF = keyword("eof")
 COLON = keyword("colon")
 LINE_END = keyword("line-end")
+LINE = keyword("line")
 DEFER = keyword("defer")
 
 _BASE_TERMINATORS = frozenset("\n\r\t ")
@@ -422,6 +426,7 @@ class Reader:
         self.index_brackets = False
         self.dot_attrs = True
         self.string_segments = False
+        self.unary = False
         self.fences_enabled = True
 
         if not nodefaults:
@@ -1276,6 +1281,8 @@ class Reader:
 
         sm('#', self._read_collection, False)
         sm('&', self._read_ref_call, False)
+        for c in "-+~":
+            sm(c, self._read_unary, False, predicate=self._unary_enabled)
 
         sm("'", self._read_quote, True)
         sm("`", self._read_quasiquote, True)
@@ -1336,7 +1343,7 @@ class Reader:
 
         Covers every setting a plain reader carries: reader/brackets,
         reader/index-brackets, reader/dot-attrs, reader/string-segments,
-        and reader/fences.
+        reader/unary, and reader/fences.
 
         Raw reader defaults are deliberately bare, so this is how a
         directly-constructed reader is brought up to the pragma's baseline.
@@ -1364,6 +1371,10 @@ class Reader:
         string_segments = pragma.get("reader/string-segments")
         if string_segments is not None:
             self.string_segments = bool(string_segments)
+
+        unary = pragma.get("reader/unary")
+        if unary is not None:
+            self.unary = bool(unary)
 
         fences = pragma.get("reader/fences")
         if fences is not None:
@@ -1721,6 +1732,67 @@ class Reader:
             return VALUE, keyword("&" + str(child))
 
         return VALUE, cons(_symbol_ref, child, nil)
+
+
+    def _unary_enabled(self, stream, char, value):
+        """
+        Predicate for the unary prefix macros
+
+        :return: whether ``reader/unary`` is enabled
+        """
+
+        return self.unary
+
+
+    def _read_unary(self, stream, fchar):
+        """
+        Read a unary operator prefix as ``(OP FORM)``
+
+        ``-``, ``+``, and ``~`` are prefix operators when directly attached
+        to a name, a digit, or an opening delimiter: that whole form is
+        read and wrapped in a call of the operator, so ``-x`` is ``(- x)``,
+        ``+foo.bar`` is ``(+ (attr foo bar))``, and ``~(f y)`` is
+        ``(~ (f y))``. The operand is read as a full form, so postfix
+        syntax binds tighter than the prefix and ``-foo["a"]`` reads as
+        ``(- (item foo "a"))``. The one-argument builtins call the
+        Python unary methods, so ``+x`` reaches ``__pos__`` and ``~x``
+        reaches ``__invert__``.
+
+        A ``-`` before a digit, or a ``.`` and a digit, defers so the
+        number atom keeps the sign as part of the literal; ``+1`` and
+        ``~1`` have no literal spelling and read as calls. Every operator
+        defers standing alone before whitespace, a comment, a closing
+        delimiter, or end of input, reading as its bare symbol, and
+        before any other character the ordinary atom scan runs, so
+        ``->``, ``-=``, ``--x``, and ``+=`` stay symbols.
+
+        :param stream: the source stream
+        :param fchar: the operator character
+        :return: tuple of (event, value)
+        """
+
+        peek = stream.peek(2)
+        if not peek:
+            return DEFER, None
+
+        nxt = peek[0]
+        digit = nxt.isdigit() or (nxt == '.' and peek[1:2].isdigit())
+        if digit:
+            if fchar == '-':
+                return DEFER, None
+        elif not (nxt.isalpha() or nxt == '_' or nxt in '([{'):
+            return DEFER, None
+
+        opened_at = stream.event_position
+        event, pos, child = self._read(stream)
+
+        if event is EOF:
+            raise stream.reader_eof(
+                opened_at=opened_at, context=f"unary {fchar}")
+        if event is not VALUE:
+            raise stream.error(f"invalid use of {fchar}", pos)
+
+        return VALUE, cons(_unary_symbols[fchar], child, nil)
 
 
     def _read_fstring(self, stream, fchar):

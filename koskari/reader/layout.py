@@ -30,13 +30,15 @@ import warnings
 from contextlib import contextmanager
 from functools import partial
 
+from ..exceptions import LayoutError
 from ..lib import Module, cons, nil, symbol
-from ..types import is_pair
-from .layouts import apply_layout, apply_layouts, find_layout
+from ..types import get_position, is_nil, is_pair
+from .layouts import apply_layout, apply_layouts, find_layout, is_block
 from .pragma import IndentMismatch
 from .parser import (
-    BLOCK, BLOCKS, COLON, DOT, EOF, LINE_END, READ_EOF, VALUE, Reader,
-    _keyword_block, _symbol_decorate, _symbol_quasiquote, _symbol_quote)
+    BLOCK, BLOCKS, COLON, DOT, EOF, LINE, LINE_END, READ_EOF, VALUE, Reader,
+    _keyword_block, _keyword_splice, _symbol_decorate, _symbol_quasiquote,
+    _symbol_quote, _symbol_unquote_splicing)
 from .stream import IndentAwareStream
 
 
@@ -215,6 +217,8 @@ class LayoutReader(Reader):
 
         sm('#', inner._read_collection, False)
         sm('&', self._read_ref_call, False)
+        for c in "-+~":
+            sm(c, self._read_unary, False, predicate=self._unary_enabled)
 
         self.add_event_macro("'", inner._read_quote, True)
         self.add_event_macro("`", inner._read_quasiquote, True)
@@ -504,8 +508,63 @@ class LayoutReader(Reader):
         return self._rest_after_colon_is_structural(line[1:])
 
 
+    @property
+    def namespace(self):
+        """
+        The namespace layout handlers resolve against
+        """
+
+        return self._ns
+
+
     def find_layout(self, name):
         return find_layout(self._ns, name)
+
+
+    def fold_line(self, entry):
+        """
+        The form one body entry denotes
+
+        A line is the proper list of the elements the reader saw on it.
+        One element is that element; several fold to the call of the
+        first, or raise when :attr:`layout_implicit_calls` is off. A
+        block entry lowers through its layout to its form.
+
+        :param entry: a line, a proper cons list of elements, never
+            empty, or a :block: cons
+        :return: the entry's form
+        :raises LayoutError: several elements with implicit calls off
+        """
+
+        if is_block(entry):
+            return apply_layout(entry, self)
+
+        line = entry
+        head, rest = line
+        if is_nil(rest):
+            return head
+        if not self.layout_implicit_calls:
+            raise LayoutError(
+                'multiple forms on one layout line', get_position(line))
+        form = line.copy()
+        pos = get_position(line)
+        if pos:
+            form.set_position(pos)
+        return form
+
+
+    def fold_lines(self, entries):
+        """
+        Fold every entry of a body with :meth:`fold_line`
+
+        :param entries: proper cons list of lines and blocks
+        :return: proper cons list of forms
+        """
+
+        if is_nil(entries):
+            return nil
+        return cons(
+            *(self.fold_line(entry) for entry in entries.unpack()), nil)
 
 
     def _structural_colon_before_line_end(self, stream):
@@ -642,7 +701,8 @@ class LayoutReader(Reader):
 
         :param stream: an IndentAwareStream
         :param outer_indent: column that ends the block body on dedent
-        :return: list of parsed body forms
+        :return: list of body entries: a line, the proper cons list of
+            the elements the reader saw on it, or a nested :block: cons
         """
 
         body = []
@@ -664,14 +724,32 @@ class LayoutReader(Reader):
                     event, pos, form = self.read_form(stream)
                     if event is EOF:
                         break
+                    elif event is LINE:
+                        body.append(form)
                     elif event is BLOCKS:
                         body.extend(form.unpack())
-                    else:
+                    elif is_block(form):
                         body.append(form)
+                    else:
+                        # a decorated block or a value that filled the
+                        # line on its own is that line's one element
+                        body.append(self._one_element_line(form, pos))
         finally:
             stream.dedented = False
 
         return body
+
+
+    @staticmethod
+    def _one_element_line(form, position):
+        """
+        Wrap a block or form that occupied a whole line as a line
+        """
+
+        line = cons(form, nil)
+        if position:
+            line.set_position(position)
+        return line
 
 
     def _peek_peer_head_symbol(self, stream):
@@ -779,20 +857,19 @@ class LayoutReader(Reader):
 
     def _build_block(self, stream, outer_indent, head, args):
         """
-        Build the raw :block: cons structure: (:block: (head . args) body...)
+        Build the raw :block: cons structure: (:block: (head . args) entry...)
 
         :param stream: source stream positioned after the block header colon
         :param outer_indent: column of the block head line
         :param head: the block head symbol
         :param args: list of forms between head and colon
-        :return: (:block: (head . args) (body...)) cons with position set
+        :return: (:block: (head . args) entry...) cons with position set
         """
 
         pos = stream.position()
         body = self.read_block_body(stream, outer_indent)
         header = cons(head, *args, nil)
-        body_list = cons(*body, nil) if body else nil
-        result = cons(_keyword_block, header, body_list, nil)
+        result = cons(_keyword_block, header, *body, nil)
         if is_pair(result):
             result.set_position(pos)
         return result
@@ -811,7 +888,7 @@ class LayoutReader(Reader):
         :param outer_indent: column of the block head line
         :param head: block head symbol if already read by the caller
         :param args: header argument forms if already read by the caller
-        :return: (:block: (head . args) (body...)) cons
+        :return: (:block: (head . args) entry...) cons
         """
 
         if head is None:
@@ -850,18 +927,18 @@ class LayoutReader(Reader):
         Block-macro handler for the ' prefix
 
         Reads the block header and body, then wraps the raw :block: cons in a
-        synthetic (:block: quote () (INNER)) for layout/quote to unbox
+        synthetic (:block: (quote) INNER) for layout/quote to unbox
 
         :param stream: the source stream, positioned after the ' character
         :param outer_indent: column of the block head line
-        :return: synthetic (:block: quote () (INNER)) cons
+        :return: synthetic (:block: (quote) INNER) cons
         """
 
         head, args, _ = self.read_block_header(stream)
         raw = self.read_block(stream, outer_indent, head, args)
         return cons(_keyword_block,
                     cons(_symbol_quote, nil),
-                    cons(raw, nil),
+                    raw,
                     nil)
 
 
@@ -871,11 +948,11 @@ class LayoutReader(Reader):
 
         Installs the , and ,@ unquote reader macros for the duration of
         the header and body read so that unquote sites are recognised.
-        Wraps the raw :block: cons in a synthetic (:block: quasiquote () (INNER))
+        Wraps the raw :block: cons in a synthetic (:block: (quasiquote) INNER)
 
         :param stream: the source stream, positioned after the ` character
         :param outer_indent: column of the block head line
-        :return: synthetic (:block: quasiquote () (INNER)) cons
+        :return: synthetic (:block: (quasiquote) INNER) cons
         """
 
         with self.temporary_event_macro(",", self._read_unquote, True):
@@ -883,43 +960,45 @@ class LayoutReader(Reader):
             raw = self.read_block(stream, outer_indent, head, args)
         return cons(_keyword_block,
                     cons(_symbol_quasiquote, nil),
-                    cons(raw, nil),
+                    raw,
                     nil)
-
-
-    def _combine_implicit_line_tail_forms(self, forms):
-        """
-        Combine multiple forms on a layout line into one value (implicit call)
-
-        :param forms: non-empty list of parsed values
-        :return: single form or cons chain
-        """
-
-        if len(forms) == 1:
-            return forms[0]
-        return cons(forms[0], *forms[1:], nil)
 
 
     def _finish_header_line(self, stream, values, first_value_pos, pos):
         """
-        Fold the values collected on one layout line into a VALUE result
+        Collect the values on one layout line into a LINE result
 
-        A single value is returned as-is; several values fold to an implicit
-        call, or raise when :attr:`layout_implicit_calls` is disabled.
+        Nothing is folded here: the line is handed on as the list of its
+        elements, and :meth:`fold_line` applies the line rule wherever a
+        form is wanted, in :meth:`read` for a top-level line and in the
+        layout handlers for the lines of a body. Inside a quoted or
+        quasiquoted block a line holding only an unquote-splicing form is
+        returned as ``(:splice: FORM)``, so the filled forms spread into
+        lines of their own when the block is expanded.
 
         :param stream: the source stream (for error reporting)
         :param values: non-empty list of values collected on the line
         :param first_value_pos: position of the first value
         :param pos: position of the line terminator (for error reporting)
-        :return: (VALUE, first_value_pos, folded value)
+        :return: (LINE, first_value_pos, the line as a proper cons list)
         """
 
-        if len(values) == 1:
-            return VALUE, first_value_pos, values[0]
-        if self.layout_implicit_calls:
-            return (VALUE, first_value_pos,
-                    self._combine_implicit_line_tail_forms(values))
-        raise stream.error('multiple forms on one layout line', pos)
+        if self._block_mode and len(values) == 1 and self._is_splice(values[0]):
+            # a deferred block keeps its lines as data until the quasiquote
+            # fills them; a line that is only ,@FORMS splices lines, not
+            # elements, so it is marked for apply_lines to spread
+            line = cons(_keyword_splice, values[0], nil)
+        else:
+            line = cons(*values, nil)
+        if first_value_pos:
+            line.set_position(first_value_pos)
+        return LINE, first_value_pos, line
+
+
+    @staticmethod
+    def _is_splice(form):
+        return (form and is_pair(form)
+                and form.car is _symbol_unquote_splicing)
 
 
     def _read_layout_decorate(self, stream, outer_indent):
@@ -941,7 +1020,7 @@ class LayoutReader(Reader):
             if not forms:
                 raise stream.error('empty decorator line', stream.position())
 
-            decorators.append(self._combine_implicit_line_tail_forms(forms))
+            decorators.append(self.fold_line(cons(*forms, nil)))
             stream.skip_whitespace()
             pk = stream.peek(1)
             if not pk:
@@ -960,7 +1039,9 @@ class LayoutReader(Reader):
             stream.read(1)
 
         event, pos, inner = self.read_form(stream)
-        if event is not VALUE and event is not BLOCK and event is not BLOCKS:
+        if event is LINE:
+            inner = self.fold_line(inner)
+        elif event is not BLOCK and event is not BLOCKS:
             raise stream.error('invalid syntax after decorators', pos)
 
         deco_list = cons(*decorators, nil)
@@ -1000,8 +1081,8 @@ class LayoutReader(Reader):
         :meth:`_layout_macro_enabled`). Otherwise collects header-mode values on
         the current logical line until ``LINE_END``, ``EOF``, or structural
         ``COLON`` (horizontal whitespace only between tokens). Empty lines are
-        skipped. At ``LINE_END`` with several values, folds with ``cons`` or
-        errors per :attr:`layout_implicit_calls`. At ``COLON``, returns
+        skipped. At ``LINE_END`` returns ``LINE`` with the elements as a
+        proper list, unfolded. At ``COLON``, returns
         ``BLOCK`` for a single :block: cons, or ``BLOCKS`` for a primary
         :block: plus stream-collected peer :block: conses on a spine.
         Expansion is deferred to :meth:`read`.
@@ -1109,8 +1190,10 @@ class LayoutReader(Reader):
         At EOF returns READ_EOF (same as Reader.read), not None, so callers
         can distinguish end-of-stream from a parsed Python None literal.
 
-        ``BLOCK`` values are expanded via :func:`apply_layout`; ``BLOCKS``
-        spines via :func:`apply_layouts` (returning the expanded car).
+        A ``LINE`` folds through :meth:`fold_line`; ``BLOCK`` values are
+        expanded via :func:`apply_layout` and ``BLOCKS`` spines via
+        :func:`apply_layouts` (returning the expanded car), each with this
+        reader.
 
         :raises TypeError: when reader_stream is not an IndentAwareStream
         """
@@ -1125,10 +1208,12 @@ class LayoutReader(Reader):
         if event is not EOF and self.layout_enabled:
             self._check_indent(reader_stream, pos, 0)
 
-        if event is BLOCK:
-            return apply_layout(value, self._ns)
+        if event is LINE:
+            return self.fold_line(value)
+        elif event is BLOCK:
+            return apply_layout(value, self)
         elif event is BLOCKS:
-            return apply_layouts(value, self._ns).car
+            return apply_layouts(value, self).car
         elif event is VALUE:
             return value
         elif event is EOF:

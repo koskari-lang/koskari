@@ -35,7 +35,7 @@ _keyword_finally = keyword('finally')
 
 @builtin('layout/try')
 @layout(symbol('layout/try'), peers=(_symbol_except, _symbol_else, _symbol_finally))
-def layout_try(ns, source, peers):
+def layout_try(reader, source, peers):
     """
     Lower try/except/else/finally block sources to (try ...) for compilation.
 
@@ -44,6 +44,7 @@ def layout_try(ns, source, peers):
     """
 
     header, body = source
+    body = reader.fold_lines(body)
 
     has_except = False
     act_else = None
@@ -52,6 +53,7 @@ def layout_try(ns, source, peers):
 
     for peer in peers:
         pheader, pbody = peer
+        pbody = reader.fold_lines(pbody)
         phead, prest = pheader
         ppargs = list(unpack(prest))
 

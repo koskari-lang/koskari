@@ -514,13 +514,14 @@ prefix is treated as a plain `<quote-form>` or `<quasiquote-form>`.
 <block-quote-form>
                 ::= "'" <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
                     <block-body>
-                  ; reads raw (:block: (<head> . <args>) <body>...); layout/quote
-                  ; lowers to (compile/quote (:block: ...)) at expansion
+                  ; reads raw (:block: (<head> . <args>) <entry>...), each entry a
+                  ; line of elements or a nested block; layout/quote lowers to
+                  ; (compile/quote (:block: ...)) at expansion
 
 <quasiquote-block-form>
                 ::= "`" <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
                     <block-body>
-                  ; desugars to: (compile/quasiquote-block (:block: (<head> . <args>) <body>...))
+                  ; desugars to: (compile/quasiquote-block (:block: (<head> . <args>) <entry>...))
                   ; unquote ("," and ",@") is active in both the header and body
 ```
 
@@ -564,9 +565,13 @@ specials; see [MATCHER.md](MATCHER.md) and [MACROS.md](MACROS.md).
 
 ### Parse and expand
 
-Colon blocks parse as **`:block:`** conses. **`LayoutReader.read()`** calls
-**`apply_layout`** or **`apply_layouts`** to invoke **`layout/<head>`** handlers
-as **`read(namespace, source, peers)`**.
+Colon blocks parse as **`:block:`** conses, **`(:block: (head . args) entry ...)`**
+with each entry a line of elements or a nested block, nothing folded.
+**`LayoutReader.read()`** calls **`apply_layout`** or **`apply_layouts`**,
+passing itself, to invoke **`layout/<head>`** handlers as
+**`read(reader, source, peers)`**; the handler folds lines through
+**`reader.fold_line`** where it wants forms. The IR is specified in
+[LAYOUTS.md](LAYOUTS.md) § Block IR.
 
 ### Default block handler (`layout/block`)
 

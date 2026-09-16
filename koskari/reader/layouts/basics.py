@@ -21,8 +21,8 @@ Layout handlers for basic block syntax.
 from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...types import get_position, is_keyword, is_nil, is_pair, is_symbol
-from .helpers import _keyword_block, layout
+from ...types import get_position, is_keyword, is_nil, is_pair, is_symbol, unpack
+from .helpers import _keyword_block, is_block, layout
 
 
 _symbol_begin = symbol('begin')
@@ -30,36 +30,38 @@ _symbol_begin = symbol('begin')
 
 @builtin('layout/block')
 @layout(symbol('layout/block'))
-def layout_block(ns, source, peers):
+def layout_block(reader, source, peers):
     """
-    the default block layout handler. Splices the applied layout of its
-    body onto the header.
+    the default block layout handler. Folds each body entry and splices
+    the forms onto the header.
 
-    eg.::
+    eg.
+    foo x:
+      bar
 
-      foo x:
-        bar
+    becomes
+    (foo x bar)
 
-    becomes::
+    A keyword names a call argument. A line that opens with one splices
+    as the keyword followed by the fold of the rest of the line, and a
+    sub-block whose header opens with one splices as the keyword followed
+    by the block's value: a begin over the body for a bare keyword header,
+    and the lowering of the block the rest of the header heads otherwise.
 
-      (foo x bar)
+    eg.
+    foo x:
+      bar
+      file: stderr
+      sep: 1 2
+      end::
+        "eol"
 
-    A keyword names a call argument, so a body line that opens with one
-    splices as the keyword and its value rather than as an implicit call,
-    and a block whose header opens with one is that argument's value: the
-    rest of the header heads the value block, and a bare keyword header
-    heads a begin block.
+    becomes
+    (foo x bar file: stderr sep: (1 2) end: (begin "eol"))
 
-    eg.::
-
-      foo x:
-        bar
-        file: stderr
-        sep: 1 2
-
-    becomes::
-
-      (foo x bar file: stderr sep: (1 2))
+    Reached as the handler of a keyword-headed block itself, it returns
+    the pair of the keyword and the value, which is what any other layout
+    folding such an entry receives.
     """
 
     header, body = source
@@ -70,83 +72,79 @@ def layout_block(ns, source, peers):
             get_position(source))
 
     if is_keyword(header.car):
-        return keyword_value_block(ns, header, body, get_position(source))
-
-    corr = body = body.copy()
-    while corr:
-        head, next = corr
-        if is_pair(head) and is_keyword(head.car):
-            tail = head.cdr
-            if is_pair(tail) and is_nil(tail.cdr):
-                val = tail.car
-            else:
-                val = tail
-            corr.car = head.car
-            corr.cdr = cons(val, next)
-        corr = next
+        return cons(header.car, keyword_block_value(reader, header, body), nil)
 
     ret = header.copy()
-    ret.splice(body)
+    for entry in unpack(body):
+        if is_block(entry):
+            eheader, ebody = entry.cdr
+            ret.append(eheader.car)
+            ret.append(keyword_block_value(reader, eheader, ebody))
+            continue
+        head, rest = entry
+        if is_keyword(head) and not is_nil(rest):
+            ret.append(head)
+            ret.append(reader.fold_line(rest))
+        else:
+            ret.append(reader.fold_line(entry))
 
     return ret
 
 
-def keyword_value_block(ns, header, body, position):
+def keyword_block_value(reader, header, body):
     """
-    Lower a block whose header opens with a keyword to the pair of that
-    keyword and the block's value
+    The value form of a block whose header opens with a keyword
 
-    A bare keyword header heads a begin block. Otherwise the header forms
-    after the keyword head the value block, which is expanded through its
-    own layout. A value head whose layout declares peers is refused: peers
-    do not pair across a keyword header, so that block nests under the
-    bare keyword header instead
+    A bare keyword header takes a begin over the body. Otherwise the
+    header forms after the keyword head the value block, which is lowered
+    through its own layout. A value head whose layout declares peers is
+    refused: peers do not pair across a keyword header, so that block
+    nests under the bare keyword header instead
 
+    :param reader: the LayoutReader expanding the source
     :param header: (KEYWORD FORM ...) block header
-    :param body: expanded body forms
-    :param position: source position of the block
-    :return: (KEYWORD VALUE-FORM)
+    :param body: the block's entries
+    :return: the value form
     :raises LayoutError: when the value head declares peers
     """
 
-    from . import apply_layout, find_layout
+    from . import apply_layout, apply_lines
 
     key, rest = header
-    if is_nil(rest):
-        value = cons(_symbol_begin, body)
-    else:
-        head, args = rest
-        layout_obj = find_layout(ns, head) if is_symbol(head) else None
-        if layout_obj is not None and layout_obj.peers:
-            raise LayoutError(
-                f"{key}: value block headed by {head} cannot gather its"
-                f" peers here; write {key}:: and nest the {head} block",
-                position)
-        block = cons(_keyword_block, cons(head, args), body, nil)
-        if position:
-            block.set_position(position)
-        value = apply_layout(block, ns)
+    position = get_position(header)
 
-    result = cons(key, value, nil)
+    if is_nil(rest):
+        value = cons(_symbol_begin, reader.fold_lines(apply_lines(body, reader)))
+        if position:
+            value.set_position(position)
+        return value
+
+    head = rest.car
+    layout_obj = reader.find_layout(str(head)) if is_symbol(head) else None
+    if layout_obj is not None and layout_obj.peers:
+        raise LayoutError(
+            f"{key}: value block headed by {head} cannot gather its"
+            f" peers here; write {key}:: and nest the {head} block",
+            position)
+
+    block = cons(_keyword_block, rest, *unpack(body), nil)
     if position:
-        result.set_position(position)
-    return result
+        block.set_position(position)
+    return apply_layout(block, reader)
 
 
 @builtin('layout/block-begin')
 @layout(symbol('layout/block-begin'))
-def layout_block_begin(ns, source, peers):
+def layout_block_begin(reader, source, peers):
     """
-    block layout handler that wraps the body in compile/begin
+    block layout handler that wraps the folded body in compile/begin
 
-    eg.::
+    eg.
+    foo x:
+      bar
 
-      foo x:
-        bar
-
-    becomes::
-
-      (foo x (compile/begin bar))
+    becomes
+    (foo x (compile/begin bar))
     """
 
     header, body = source
@@ -156,30 +154,29 @@ def layout_block_begin(ns, source, peers):
             f"{header.car} layout does not take peers",
             get_position(source))
 
-    header.append(cons(symbol('begin'), body))
+    header.append(cons(symbol('begin'), reader.fold_lines(body)))
     return header
 
 
 @builtin('layout/inline-block')
 @layout(symbol('layout/inline-block'))
-def layout_inline_block(ns, source, peers):
+def layout_inline_block(reader, source, peers):
     """
-    inlining layout handler which splices indented body onto the header as
-    to produce a single list, without applying implicit calls to the
-    individual lines. Used in cases where layout blocks are only meant
-    to break up long lines, rather than to express sub-expressions.
+    inlining layout handler which splices the elements of every body
+    line onto the header as to produce a single list, folding nothing.
+    Used in cases where layout blocks are only meant to break up long
+    lines, rather than to express sub-expressions. A sub-block whose
+    header opens with a keyword splices as the keyword and its value,
+    as under layout/block.
 
     eg.
-    ::
+    X foo:
+      bar (baz)
+      qux
+      alpha: beta
 
-      X foo:
-        bar (baz)
-        qux
-        alpha: beta
-
-    becomes::
-
-      (X foo bar (baz) qux alpha: beta)
+    becomes
+    (X foo bar (baz) qux alpha: beta)
     """
 
     header, body = source
@@ -191,21 +188,20 @@ def layout_inline_block(ns, source, peers):
             get_position(source))
 
     ret = header.copy()
-
-    corr = body
-    while corr:
-        elem, corr = corr
-        if is_pair(elem):
-            ret.splice(elem)
+    for entry in unpack(body):
+        if is_block(entry):
+            eheader, ebody = entry.cdr
+            ret.append(eheader.car)
+            ret.append(keyword_block_value(reader, eheader, ebody))
         else:
-            ret.append(elem)
+            ret.splice(entry.copy())
 
     return ret
 
 
 @builtin('layout/import-from')
 @layout(symbol('layout/import-from'))
-def layout_import_from(ns, source, peers):
+def layout_import_from(reader, source, peers):
     """
     Inlining layout handler for long import lists.
 
@@ -217,7 +213,7 @@ def layout_import_from(ns, source, peers):
         groupby tee
     """
 
-    return layout_inline_block.read(ns, source, peers)
+    return layout_inline_block.read(reader, source, peers)
 
 
 _symbol_quote = symbol('quote')
@@ -238,7 +234,7 @@ def _unbox_compile_layout(source, peers, compile_sym, label):
             get_position(source))
 
     inner, rest = body
-    if not is_nil(rest):
+    if not is_nil(rest) or not is_block(inner):
         raise LayoutError(
             f"{label} layout requires one inner block",
             get_position(source))
@@ -248,7 +244,7 @@ def _unbox_compile_layout(source, peers, compile_sym, label):
 
 @builtin('layout/quote')
 @layout(symbol('layout/quote'), raw=True)
-def layout_quote(ns, source, peers):
+def layout_quote(reader, source, peers):
     """
     Unbox a synthetic quote layout block to ``(compile/quote INNER-BLOCK)``
 
@@ -261,7 +257,7 @@ def layout_quote(ns, source, peers):
 
 @builtin('layout/quasiquote')
 @layout(symbol('layout/quasiquote'), raw=True)
-def layout_quasiquote(ns, source, peers):
+def layout_quasiquote(reader, source, peers):
     """
     Unbox a synthetic quasiquote layout block to
     ``(compile/quasiquote INNER-BLOCK)``

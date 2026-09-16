@@ -1,7 +1,7 @@
 # Block quasiquote and `:block:` layout expansion
 
 Block backtick reads raw **`:block:`** conses and wraps them in a synthetic
-**`(:block: quasiquote () (INNER))`** form. **`layout/quasiquote`** lowers that
+**`(:block: (quasiquote) INNER)`** form. **`layout/quasiquote`** lowers that
 to **`(quasiquote-block INNER)`**, which rewrites to
 **`(quasiquote INNER)`** for compilation.
 

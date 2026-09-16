@@ -1547,3 +1547,84 @@ tags:
   - surface:block
   - idiom
 notes: "a bare keyword header, spelled k:: so the structural colon stays distinct from the keyword's own, takes its body as a begin block; the value is the body's last form. This is the spelling for a multi-statement value or for a peer-gathering block such as if under a keyword."
+---
+id: reader-unary-minus-name-001
+feature: reader/unary
+source: (let [[x 5]] (* 2 -x))
+verify:
+  read: (let [[x 5]] (* 2 (- x)))
+  eval: "-10"
+references:
+  - reference/grammar.md
+  - reference/concepts/pragma.md
+stability: evolving
+tags:
+  - reader
+  - unary
+  - arithmetic
+  - idiom
+notes: a - attached to the front of a name reads as the negation (- x); the runtime - with one argument negates. Governed by the reader/unary pragma, baseline on. A number keeps its sign in the literal, so -1 is still the number and not (- 1).
+---
+id: reader-unary-minus-form-002
+feature: reader/unary
+source: "(let [[xs #[3 4]]] (+ 10 -(len xs) -xs[0]))"
+verify:
+  read: (let [[xs (#list 3 4)]] (+ 10 (- (len xs)) (- (item xs 0))))
+  eval: "5"
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - unary
+  - arithmetic
+  - idiom
+notes: "the prefix wraps a whole following form: -(len xs) is (- (len xs)), and postfix syntax binds tighter than the prefix, so -xs[0] is (- (item xs 0)). Inside a parenthesized form the old reading would have been a bare - symbol followed by the form, silently wrong."
+---
+id: reader-unary-dash-symbols-003
+feature: reader/unary
+source: "#[(quote ->) (quote -) (quote foo-bar) -1]"
+verify:
+  read: (#list (quote ->) (quote -) (quote foo-bar) -1)
+references:
+  - reference/grammar.md
+stability: evolving
+tags:
+  - reader
+  - unary
+  - symbol
+notes: "what the - prefix leaves alone: -> and a bare - are ordinary symbols, a dash inside a name is not a prefix, and a digit after the dash is a signed number."
+---
+id: reader-unary-plus-name-004
+feature: reader/unary
+source: (let [[x 5]] (* 2 +x))
+verify:
+  read: (let [[x 5]] (* 2 (+ x)))
+  eval: "10"
+references:
+  - reference/grammar.md
+  - reference/concepts/pragma.md
+stability: evolving
+tags:
+  - reader
+  - unary
+  - arithmetic
+  - idiom
+notes: "a + attached to the front of a name reads as the unary call (+ x), which reaches Python's __pos__: identity on numbers, context rounding on a Decimal, and dropping non-positive counts on a Counter. +1 has no literal spelling and reads as (+ 1)."
+---
+id: reader-unary-invert-name-005
+feature: reader/unary
+source: (let [[x 5]] (+ 1 ~x))
+verify:
+  read: (let [[x 5]] (+ 1 (~ x)))
+  eval: "-5"
+references:
+  - reference/grammar.md
+  - reference/concepts/pragma.md
+stability: evolving
+tags:
+  - reader
+  - unary
+  - bitwise
+  - idiom
+notes: a ~ attached to the front of a name reads as the unary call (~ x), Python's __invert__; ~5 is -6 and reads as (~ 5) since no literal carries a tilde.

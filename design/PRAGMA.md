@@ -81,8 +81,10 @@ setting is not declared), the value a bare `[key]` produces, and its domain:
 | `reader/index-brackets` | reader | `True` | `True` | bool | a `[ ... ]` group attached directly to a value (no whitespace) desugars into `(item VALUE KEY)`, chaining left to right |
 | `reader/dot-attrs` | reader | `True` | `True` | bool | `.` reads as attribute access, both within an atom (`foo.bar`) and attached to any value (`(get-fn x).baz`), producing `(compile/attr ...)`; off, a dot is inert in both spellings |
 | `reader/string-segments` | reader | `True` | `True` | bool | a `-` attached to a string literal's closing quote continues it into the next quoted segment, joining into `(compile/#str ...)` |
+| `reader/unary` | reader | `True` | `True` | bool | `-`, `+`, and `~` attached to the front of a name, a digit, or a delimited form read as the one-argument call `(OP FORM)`; a `-` before a digit stays a signed literal, and an operator standing alone or before any other character stays a symbol |
 | `reader/layout` | reader | `True` | `True` | bool | layout (indentation) block reading |
 | `reader/implicit-calls` | reader | `True` | `True` | bool | multiple values on one layout line form an implicit call |
+| `reader/indent` | reader | `error` | `error` | `ignore` / `warn` / `error` | policy when a layout line's indent does not match its block: the first body line sets the body's indent, every later line must start at that column, and a top-level form starts at column 0; `warn` and `ignore` read the line as a sibling form |
 | `reader/fences` | reader | `True` | `True` | bool | triple-backtick fences read into `compile/apply-fence` forms |
 | `reader/decorators` | reader | `True` | `True` | bool | leading `@` layout lines read as decorators, lowering to `compile/decorate`; a raw reader starts with this off, and `(compile/decorate ...)` stays available as a macro regardless |
 | `compiler/resolution` | compiler | `koskari` | *(required)* | `koskari` / `scheme` / `python` | name-resolution semantics for writes |
@@ -111,7 +113,15 @@ one family: **suffix reader macros**, which attach postfix syntax to a value
 already read. Each is a registered macro whose predicate consults its own
 setting, so the three compose without knowing about each other and a fourth can
 be added the same way — see
-[archive/suffix-macros.md](archive/suffix-macros.md).
+[archive/suffix-macros.md](archive/suffix-macros.md). `reader/unary` gates the
+mirror-image family, prefix macros on `-`, `+`, and `~`, registered the same
+way with one predicate; the operand is read as a whole form, so a suffix binds
+tighter than the prefix and `-foo["a"]` is `(- (item foo "a"))`.
+
+`reader/indent` is the one reader setting with a policy domain rather than a
+switch. It is an `IndentMismatch` enum in `koskari.reader.pragma`, the same
+shape as the compiler's `StrayColon`, and the layout reader carries it as
+`layout_indent` beside the other layout switches.
 
 ---
 
