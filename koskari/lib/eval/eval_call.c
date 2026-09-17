@@ -74,10 +74,13 @@ static inline int do_frame_prep(
 
 
 /**
-   The result of an install slot that ran on a prepared frame: a frame
-   the slot filled is a callee entry, and so a cooperation point
-   (kos_call_installed); a slot that wanted no frame delivered a value
-   and its result stands
+   The result of an install slot that ran on a prepared frame for a
+   native entry (KosEvalState_Call and the CallArgs pair): a frame the
+   slot filled is a callee entry, and so a cooperation point; a slot
+   that wanted no frame delivered a value and its result stands. POLL
+   is a handler-relay answer, so a native caller gets REPROLOGUE for
+   it and bounces through the trampoline, which polls ahead of the
+   prologue.
 */
 static inline KosOpResult kos_call_slot_result(
     KosEvalState *es,
@@ -86,7 +89,7 @@ static inline KosOpResult kos_call_slot_result(
     KosOpResult r) {
 
   if (r.kind == KOS_RES_NORMAL && KosCallSlots_WantsFrame(slots, callable))
-    return kos_call_installed(es);
+    return KOS_EVAL_BREAKER_UP(es) ? EVAL_REPROLOGUE() : EVAL_NORMAL();
   return r;
 }
 
@@ -315,9 +318,12 @@ KosOpResult KosEvalState_CallResult(
       }
       /* fall through: callee installed and current */
     case KOS_RES_REPROLOGUE:
+    case KOS_RES_POLL:
       /* callee installed above caller, or a plan armed by the install;
          caller's own frame is unchanged and still reachable -- its
-         eventual return delivers here. */
+         eventual return delivers here. Call never answers POLL; the
+         arm keeps an installed callee from losing its resume should a
+         path ever relay one. */
       KosDynFrame_RESUME_KIND(caller) = resume;
       KosDynFrame_RESUME_STATE(caller) = state;
       return r;
