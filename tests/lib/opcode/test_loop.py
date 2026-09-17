@@ -20,6 +20,7 @@ Tests for PUSH_LOOP, POP_LOOP, BREAK, CONTINUE opcodes.
 
 import pytest
 
+from koskari.lib import NamespaceSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
@@ -104,6 +105,75 @@ class TestLoopOpcodes(CevalTest):
         ], values={"n": 0})
         result = await make_callable(code, ns)()
         self.assertEqual(result, 3)
+
+
+    async def test_loop_continue_inside_let(self):
+        """
+        CONTINUE with a let namespace between the loop region and the
+        frame; the let closes over n as the compiler would declare it
+        """
+
+        child_nspec = NamespaceSpec("let", (), ("n",))
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["VAR_STORE", "n"],
+            ["PUSH_NS", (child_nspec, None, 0, 0)],
+            ["PUSH_LOOP", 0],
+            ["VAR", "n"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "n"],
+            ["VAR", "n"],
+            ["CONST", 3],
+            ["OBJECT_GE", 2],
+            ["JUMP_TRUE", "break_lbl"],
+            ["CONTINUE", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["POP_NS", 1],
+            ["POP", 1],
+            ["VAR", "n"],
+            ["RETURN", 1],
+        ], values={"n": 0})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 3)
+
+
+    async def test_loop_continue_under_finally(self):
+        """
+        CONTINUE below a finally region runs the finally body first
+        """
+
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["VAR_STORE", "n"],
+            ["CONST", 0],
+            ["VAR_STORE", "fin"],
+            ["PUSH_LOOP", 0],
+            ["VAR", "n"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "n"],
+            ["VAR", "n"],
+            ["CONST", 3],
+            ["OBJECT_GE", 2],
+            ["JUMP_TRUE", "break_lbl"],
+            ["PUSH_FINALLY", "fin_lbl"],
+            ["CONTINUE", 0],
+            ["LABEL", "fin_lbl"],
+            ["VAR", "fin"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "fin"],
+            ["POP_FINALLY", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["POP", 1],
+            ["VAR", "fin"],
+            ["RETURN", 1],
+        ], values={"n": 0, "fin": 0})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 2)
 
 
     async def test_nested_loops_break_inner(self):
