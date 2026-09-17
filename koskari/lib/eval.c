@@ -1816,6 +1816,8 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
         r = eval_ng_plain_return(es, child, parent, val));
     if (likely(r.kind == KOS_RES_DISPATCH))
       RESULT_CONTINUE(es);
+    if (r.kind == KOS_RES_REPROLOGUE)
+      TAILCALL(kos_eval_prologue, es, NULL, NULL);
     return r;
   }
 
@@ -1824,6 +1826,8 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
         r = eval_ng_region_return(es, child, parent, ft, val));
     if (likely(r.kind == KOS_RES_DISPATCH))
       RESULT_CONTINUE(es);
+    if (r.kind == KOS_RES_REPROLOGUE)
+      TAILCALL(kos_eval_prologue, es, NULL, NULL);
     return r;
   }
 
@@ -1847,6 +1851,8 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
     KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return_ng(es, val));
     if (likely(r.kind == KOS_RES_DISPATCH))
       RESULT_CONTINUE(es);
+    if (r.kind == KOS_RES_REPROLOGUE)
+      TAILCALL(kos_eval_prologue, es, NULL, NULL);
     return r;
   }
 }
@@ -1891,7 +1897,27 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
                     "flattened generator yield found no consumer");
     RESULT_RAISE();
   }
+  if (r.kind == KOS_RES_REPROLOGUE)
+    TAILCALL(kos_eval_prologue, es, NULL, NULL);
   return r;
+}
+
+
+/* The poll itself. Another thread waiting on the GIL has already
+   outlasted the interpreter's switch interval, so yield it now, as
+   Python's own loop would; then take any pending signal.
+   Py_MakePendingCalls is the public entry that runs the interpreter's
+   own signal handling, which is what clears the breaker's signal
+   input: PyErr_CheckSignals alone would leave it up and every later
+   cooperation point polling. A signal it raises is left set for the
+   prologue's pending-exception step, which drops any staged delivery
+   before the raise walk. */
+static void kos_eval_poll_now(void) {
+  if (koskari_gil_drop_requested()) {
+    Py_BEGIN_ALLOW_THREADS
+    Py_END_ALLOW_THREADS
+  }
+  Py_MakePendingCalls();
 }
 
 
@@ -1903,23 +1929,9 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
   (void) insn;
   (void) val;
 
-  /* Another thread waiting on the GIL has already outlasted the
-     interpreter's switch interval, so yield it now, as Python's own
-     loop would; then take any pending signal. Py_MakePendingCalls is
-     the public entry that runs the interpreter's own signal handling,
-     which is what clears the breaker's signal input:
-     PyErr_CheckSignals alone would leave it up and every later
-     cooperation point polling. */
-  if (koskari_gil_drop_requested()) {
-    Py_BEGIN_ALLOW_THREADS
-    Py_END_ALLOW_THREADS
-  }
-  Py_MakePendingCalls();
-
-  /* A signal raised here is taken by the prologue's pending-exception
-     step, which drops any staged delivery before the raise walk. */
+  kos_eval_poll_now();
   if (unlikely(PyErr_Occurred()))
-    return EVAL_REPROLOGUE();
+    TAILCALL(kos_eval_prologue, es, NULL, NULL);
   KOS_THREAD_NEXT(es);
 }
 
@@ -1935,6 +1947,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
   (void) val;
 
   KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(es));
+  if (r.kind == KOS_RES_REPROLOGUE)
+    TAILCALL(kos_eval_prologue, es, NULL, NULL);
   return r;
 }
 
@@ -1949,6 +1963,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_await(
   (void) insn;
 
   KOS_TRACE_POST_OP_WRAP(event_await, r = eval_event_await(es, val));
+  if (r.kind == KOS_RES_REPROLOGUE)
+    TAILCALL(kos_eval_prologue, es, NULL, NULL);
   return r;
 }
 
@@ -1966,6 +1982,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
   r = kos_eval_post_opcode_control_returned_after_hook(es);
   if (likely(r.kind == KOS_RES_DISPATCH))
     RESULT_CONTINUE(es);
+  if (r.kind == KOS_RES_REPROLOGUE)
+    TAILCALL(kos_eval_prologue, es, NULL, NULL);
   return r;
 }
 
@@ -3308,12 +3326,25 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
 #define KOS_REENTER_AGAIN(es)                                           \
   {                                                                     \
     if (KOS_EVAL_BREAKER_UP(es))                                        \
-      return EVAL_REPROLOGUE();                                         \
+      kos_eval_poll_now();                                              \
     continue;                                                           \
   }
 
 
-KosOpResult kos_prologue_reenter(KosEvalState *es) {
+KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val) {
+
+  (void) insn;
+  (void) val;
+
+  /* A re-entry is a cooperation point: a raise walk, a plan transfer,
+     a continuation replay, or a staged delivery arrives here, and the
+     poll runs before the pass delivers, so a pending signal is seen
+     ahead of a staged delivery. */
+  if (KOS_EVAL_BREAKER_UP(es))
+    kos_eval_poll_now();
 
   /* es live fields via Init, kos_dyn_* retarget after chain surgery,
      freeze at cleanup; chain errors propagate without rebuild. */
@@ -3426,8 +3457,20 @@ KosOpResult kos_prologue_reenter(KosEvalState *es) {
     }
     #endif
 
-    return EVAL_NORMAL();
+    {
+      KosOp *next;
+
+      KOS_EVAL_PREPARE_NEXT_INSN(es, next, kos_eval_prologue_bad_code);
+      KOS_TRACE_THREAD_STEP(next->op);
+      TAILCALL(next->fn, es, next, NULL);
+    }
   }
+
+#if KOS_EVAL_SAFETYNET
+kos_eval_prologue_bad_code:
+  kos_eval_report_pc_bounds_error(es);
+  return EVAL_FATAL();
+#endif
 }
 
 
@@ -3453,7 +3496,6 @@ KosOpResult koskari_eval(
   KosOpResult eval_ret = EVAL_RAISE();
   KosExcState host_exc;
   KosEvalState es;
-  KosOp *insn;
   KosOpResult r;
 
   if (! ctx) {
@@ -3540,97 +3582,27 @@ KosOpResult koskari_eval(
 
   /* === the trampoline === */
 
-prologue:
-  /* A re-entry is a cooperation point: a raise walk, a plan transfer,
-     a continuation replay, or a call install that found the breaker
-     up all arrive here.  The poll runs before the re-entry delivers: a
-     resume hop that found the breaker up staged its delivery so that
-     a pending signal is seen ahead of it. */
-  if (KOS_EVAL_BREAKER_UP(&es))
-    goto poll;
-
-reenter:
-  {
-    KosOpResult pr = kos_prologue_reenter(&es);
-    if (pr.kind == KOS_RES_REPROLOGUE)
-      goto prologue;  /* a pass found the breaker up: poll first */
-    if (pr.kind != KOS_RES_NORMAL) {
-      eval_ret = pr;
-      goto koskari_eval_cleanup;
+  /* One call into the prologue, which threads into the instruction
+     stream; a chain comes back only with a boundary result, marked as
+     such on the eval state by the event that made it one. A result
+     that reached here unmarked came from a producer that returned it
+     raw instead of tailing into its event, and is applied here as the
+     loop-bodied evaluator did. */
+  for (;;) {
+    r = kos_eval_prologue(&es, NULL, NULL);
+    if (es.terminal || r.kind == KOS_RES_FATAL) {
+      eval_ret = r;
+      break;
     }
-  }
-  goto thread;
+    if (r.kind == KOS_RES_REPROLOGUE)
+      continue;
 
-poll:
-  KOS_TRACE_TRAMPOLINE_STEP();
-  /* The breaker is up.  Another thread waiting on the GIL has already
-     outlasted the interpreter's switch interval, so yield it now, as
-     Python's own loop would; then take any pending signal.
-     Py_MakePendingCalls is the public entry that runs the
-     interpreter's own signal handling, which is what clears the
-     breaker's signal input: PyErr_CheckSignals alone would leave it up
-     and every later cooperation point polling.  A signal raised here
-     is taken by the re-entry's pending-exception step, which drops
-     any staged delivery before the raise walk. */
-  if (koskari_gil_drop_requested()) {
-    Py_BEGIN_ALLOW_THREADS
-    Py_END_ALLOW_THREADS
-  }
-  Py_MakePendingCalls();
-  goto reenter;
-
-thread:
-  KOS_EVAL_PREPARE_NEXT_INSN(&es, insn, pc_bounds_error);
-  KOS_TRACE_THREAD_STEP(insn->op);
-  r = insn->fn(&es, insn, NULL);
-
-  if (likely(r.kind == KOS_RES_NORMAL)) {
-    /* A chain hands back NORMAL only from a cooperation point that
-       found the breaker up (or a handler with no chain to run). */
-    if (KOS_EVAL_BREAKER_UP(&es))
-      goto poll;
-    goto thread;
-  }
-  goto handle_result;
-
-#if KOS_EVAL_SAFETYNET
-pc_bounds_error:
-  kos_eval_report_pc_bounds_error(&es);
-  eval_ret = EVAL_FATAL();
-  goto koskari_eval_cleanup;
-#endif
-
-handle_result:
-  KOS_TRACE_TRAMPOLINE_STEP();
-  /* A result a chain hands back has been through its event inside the
-     chain when the eval state says so: a raise walked to no handler,
-     a suspension recorded, a root return. The evaluator leaves with
-     it; applying it again would walk an unwound chain or freeze a
-     frozen generator. */
-  if (es.terminal) {
+    KOS_TRACE_TRAMPOLINE_STEP();
+    r = apply_kos_op_result(&es, r);
+    if (r.kind == KOS_RES_DISPATCH || r.kind == KOS_RES_REPROLOGUE)
+      continue;
     eval_ret = r;
-    goto koskari_eval_cleanup;
-  }
-  {
-    /* The plain-return fast arms live in op_RETURN, which threads
-       straight into the parent when they hold and signals RETURN only
-       when they do not; a RETURN arriving here has either already
-       failed them or comes from another producer (POP_PROMPT, the
-       values.c and eval_call.c termini, a resume's completion), and
-       takes the general path, whose own plain case is the same
-       transition. */
-    KosOpResult ar;
-
-    ar = apply_kos_op_result(&es, r);
-
-    if (ar.kind == KOS_RES_DISPATCH) {
-      /* Plain frame-to-frame return: live regs already retargeted, no
-         pending PyErr / plan / native handler.  Skip the prologue and
-         go straight back to threading. */
-      goto thread;
-    }
-    if (ar.kind == KOS_RES_REPROLOGUE) goto prologue;
-    eval_ret = ar;
+    break;
   }
 
 koskari_eval_cleanup:
