@@ -246,6 +246,19 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
     PyObject *val);
 
 
+/**
+   The raise walk, a KosThreadFn every RESULT_RAISE tails into: the
+   exception set is offered up the chain (try and finally extents,
+   node conversion, a code-less frame's resume) and the answer is
+   REPROLOGUE with the handler pc set, AWAIT for an async unwind, or
+   the terminal RAISE or FATAL. insn and val are unused.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+
+
 /* === Threaded control transfer === */
 
 
@@ -374,7 +387,11 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
     RESULT_NEXT(es);                                                    \
   } while (0)
 
-#define RESULT_RAISE()  return EVAL_RAISE()
+/* RESULT_RAISE(): the exception is set; tail into the raise walk. The
+   calling function must have the KosThreadFn prototype and hold es. A
+   helper without that prototype returns EVAL_RAISE() instead and its
+   handler's RESULT_RELAY makes the same tail call. */
+#define RESULT_RAISE()  TAILCALL(kos_eval_raise, es, NULL, NULL)
 #define RESULT_FAIL()   return EVAL_FATAL()
 
 /**
@@ -383,9 +400,10 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
    await, a dynamic node's transition. NORMAL means the helper left
    the next instruction at es->pc (a callee's first instruction after
    an install, the next instruction after a push), and continues
-   there; every other kind returns to the trampoline as it stands.
-   The helper itself keeps its own prototype and return; the tail
-   call happens here, in the handler. POLL is NORMAL from a
+   there; RAISE tails into the raise walk as RESULT_RAISE does; every
+   other kind returns to the trampoline as it stands. The helper
+   itself keeps its own prototype and return; the tail call happens
+   here, in the handler. POLL is NORMAL from a
    cooperation point that found the breaker up (a frame install, the
    one cycle a tail-recursive loop closes without a CONTINUE): the
    relay tails into the breaker service, which threads on.
@@ -397,6 +415,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
       KOS_THREAD_NEXT(es);                                              \
     if (kos_rr_.kind == KOS_RES_POLL)                                   \
       TAILCALL(kos_eval_poll, (es), NULL, NULL);                        \
+    if (kos_rr_.kind == KOS_RES_RAISE)                                  \
+      TAILCALL(kos_eval_raise, (es), NULL, NULL);                       \
     return kos_rr_;                                                     \
   } while (0)
 
@@ -730,6 +750,10 @@ struct KosEvalState {
   uint16_t recursion_limit; /* the deepest frame this context may
                          install: sys.getrecursionlimit() read at Init
                          and clamped to KOS_FRAME_DEPTH_MAX */
+  uint8_t raise_terminal;   /* set by kos_eval_prepare_boundary_raise:
+                         the RAISE in flight has been walked and found
+                         no handler, so the trampoline leaves with it
+                         instead of walking it again */
 };
 
 

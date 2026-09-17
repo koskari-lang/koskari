@@ -843,6 +843,8 @@ void kos_eval_prepare_boundary_raise(
   inject_eval_frame_traceback(ctx, &typ, &val, &tb);
   PyErr_Restore(typ, val, tb);
   kos_eval_mark_context_dead(ctx);
+  if (es)
+    es->raise_terminal = 1;
 }
 
 
@@ -1904,6 +1906,21 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
   if (unlikely(PyErr_Occurred()))
     return EVAL_REPROLOGUE();
   KOS_THREAD_NEXT(es);
+}
+
+
+KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val) {
+
+  KosOpResult r;
+
+  (void) insn;
+  (void) val;
+
+  KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(es));
+  return r;
 }
 
 
@@ -3529,6 +3546,14 @@ pc_bounds_error:
 
 handle_result:
   KOS_TRACE_TRAMPOLINE_STEP();
+  /* A RAISE from a chain has been through kos_eval_raise: when the
+     walk found no handler it prepared the boundary raise and the
+     evaluator leaves with it. Walking it again would find the chain
+     already unwound. */
+  if (r.kind == KOS_RES_RAISE && es.raise_terminal) {
+    eval_ret = r;
+    goto koskari_eval_cleanup;
+  }
   {
     /* The plain-return fast arms live in op_RETURN, which threads
        straight into the parent when they hold and signals RETURN only
