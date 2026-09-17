@@ -181,9 +181,11 @@ typedef struct {
                                construction), 1 bind, 2 no-bind */
   Py_ssize_t simple_arity1; /* exact positional arity PLUS ONE for the
                                simple-call fast path (plain positional
-                               formals, no defaults/star/kwd/by-refs,
-                               non-yielding code); 0 = not simple, so
-                               zeroed construction is fail-safe */
+                               formals, no defaults/star/kwd/by-refs);
+                               a property of the formals alone, so the
+                               call arms test the code for yields
+                               themselves; 0 = not simple, so zeroed
+                               construction is fail-safe */
   KosDynFrame *cached_frame; /* parked prepared frame (code + reset ns +
                                 cleared stack, fn NULL) for the next
                                 non-recursive simple call; owned; NULL
