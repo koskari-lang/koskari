@@ -1784,6 +1784,100 @@ static KosOpResult kos_op_call_star(
 }
 
 
+/**
+   The delivery of RETURN: val is the owned return value.  The three
+   shapes that need no walk thread straight on: a plain bytecode parent
+   takes the value on its stack and continues at its saved pc (the
+   bytecode frame's own resume); a region over such a parent takes the
+   value on its segment and reacts through its control-returned hook
+   if it has one; a parent waiting on a resume takes the value by a
+   tail call into that resume.  Anything else -- an extent above the
+   returning frame, a generator or a receiving iteration-node parent,
+   a missing retarget cache, an unsettled value -- signals RETURN and
+   the trampoline's return machinery walks it.  Reached by tail call
+   from every RETURN row, so it carries the KosThreadFn prototype; insn
+   is unused.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val) {
+
+  KosDynNode *child, *parent;
+  KosDynFrame *ft;
+  KosOpResult r;
+
+  (void) insn;
+
+  if (likely(kos_return_is_plain(es, &child, &parent))) {
+    KOS_TRACE_POST_OP_WRAP(plain_return,
+        r = eval_ng_plain_return(es, child, parent, val));
+    if (likely(r.kind == KOS_RES_DISPATCH))
+      RESULT_CONTINUE(es);
+    return r;
+  }
+
+  if (kos_return_is_region(es, &child, &parent, &ft)) {
+    KOS_TRACE_POST_OP_WRAP(plain_return,
+        r = eval_ng_region_return(es, child, parent, ft, val));
+    if (likely(r.kind == KOS_RES_DISPATCH))
+      RESULT_CONTINUE(es);
+    return r;
+  }
+
+  if (kos_return_is_resume(es, &parent)) {
+    KosResumeFn resume;
+    void *state;
+    int took = kos_return_take_resume(es, parent, val, &resume, &state);
+
+    if (took > 0)
+      RESUME_HOP(resume, es, state, val);
+    if (unlikely(took < 0))
+      RESULT_RAISE();
+  }
+
+  return EVAL_RETURN(val);
+}
+
+
+/**
+   The delivery of YIELD: val is the owned yielded value.  A flattened
+   generator delivers to its consumer here and threads into it: the
+   same freeze and delivery the trampoline would run for the YIELD
+   signal, minus the trip.  A generator an adapter drives surfaces the
+   value as the terminal YIELD.  Reached by tail call from every YIELD
+   row; insn is unused.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val) {
+
+  KosDynGen *gen = kos_dyn_find_gen(es);
+
+  (void) insn;
+
+  if (gen && KosDynGen_IS_FLATTENED(gen)) {
+    KosOpResult r;
+
+    KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, gen, val));
+    if (likely(r.kind == KOS_RES_DISPATCH))
+      RESULT_CONTINUE(es);
+    if (unlikely(r.kind == KOS_RES_YIELD)) {
+      /* The freeze found no consumer for a generator that had one:
+         never hand the trampoline a YIELD it would deliver again. */
+      Py_DECREF(r.val);
+      PyErr_SetString(PyExc_SystemError,
+                      "flattened generator yield found no consumer");
+      RESULT_RAISE();
+    }
+    return r;
+  }
+
+  return EVAL_YIELD(val);
+}
+
+
 #include "handlers.incl"
 #undef CURRENT_NS
 #undef KOS_OP_REQUIRE_NS

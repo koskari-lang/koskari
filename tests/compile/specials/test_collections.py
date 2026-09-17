@@ -127,7 +127,7 @@ class TestBuildTupleSpecial(SpecialsTestCase):
         self.assertEqual((1, 2, 3), await expr())
         code = self.compile_to_code("(#tuple 1 2 3)")
         ops = _opcodes(code)
-        self.assertIn(OpCode.CONST, ops)
+        self.assertTrue({OpCode.CONST, OpCode.RETURN_CONST} & set(ops))
         self.assertNotIn(OpCode.BUILD_ARGS, ops)
         self.assertNotIn(OpCode.COMBINE_ARGS, ops)
 

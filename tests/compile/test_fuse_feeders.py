@@ -62,6 +62,43 @@ def convert_fast(base_nspec, instr):
     return proc.instructions
 
 
+class TestFuseControlFeeders(unittest.TestCase):
+
+    def test_const_return_fuses(self):
+        out = fuse_ops([(C, 42), (OpCode.RETURN, 1)])
+        self.assertEqual(out, [(OpCode.RETURN_CONST, 42)])
+
+    def test_var_return_fuses(self):
+        out = fuse_ops([(V, "a"), (OpCode.RETURN, 1)])
+        self.assertEqual(out, [(OpCode.RETURN_VAR, "a")])
+
+    def test_const_yield_fuses(self):
+        out = fuse_ops([(C, 42), (OpCode.YIELD, 1), (OpCode.RETURN, 0)])
+        self.assertEqual(
+            out, [(OpCode.YIELD_CONST, 42), (OpCode.RETURN, 0)])
+
+    def test_var_yield_fuses(self):
+        out = fuse_ops([(V, "a"), (OpCode.YIELD, 1), (OpCode.RETURN, 0)])
+        self.assertEqual(
+            out, [(OpCode.YIELD_VAR, "a"), (OpCode.RETURN, 0)])
+
+    def test_tuple_return_stays(self):
+        instr = [(V, "a"), (V, "b"), (OpCode.RETURN, 2)]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_return_var_lowers_to_fast(self):
+        nspec = NamespaceSpec("fn", ("a",), ())
+        out = convert_fast(nspec, [(OpCode.RETURN_VAR, "a")])
+        self.assertEqual(out, [(OpCode.RETURN_FAST, 0)])
+        out = convert_fast(nspec, [(OpCode.YIELD_VAR, "a")])
+        self.assertEqual(out, [(OpCode.YIELD_FAST, 0)])
+
+    def test_return_var_stays_without_slot(self):
+        nspec = NamespaceSpec("fn", ("a",), ())
+        out = convert_fast(nspec, [(OpCode.RETURN_VAR, "b")])
+        self.assertEqual(out, [(OpCode.RETURN_VAR, "b")])
+
+
 class TestFuseCheckFeeders(unittest.TestCase):
 
     def test_var_var_fuses(self):

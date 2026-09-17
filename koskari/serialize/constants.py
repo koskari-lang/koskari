@@ -52,8 +52,12 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # elector cache slot.
 # MINOR bumped: ITEM_INPLACE and CONST_ITEM_INPLACE appended to the
 # stack item tiers.
+# MINOR bumped: RETURN_CONST and YIELD_CONST inserted after YIELD in
+# mode control, RETURN_VAR and YIELD_VAR after VAR_FORMAT_CONST, and
+# RETURN_FAST and YIELD_FAST after FAST_FORMAT_CONST, renumbering every
+# opcode after them.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 17
+BYTECODE_ABI_MINOR = 18
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 1
 

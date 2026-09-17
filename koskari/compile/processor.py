@@ -137,6 +137,11 @@ SWITCH_SQUASHES = {
 JUMP_PRIORS = frozenset((OpCode.JUMP_TRUE, OpCode.JUMP_FALSE))
 POP_PRIORS = frozenset((OpCode.CONST, OpCode.DUP))
 FEEDER = frozenset((OpCode.VAR, OpCode.CONST))
+
+# the rows that make a code object a generator
+YIELD_OPS = frozenset((
+    OpCode.YIELD, OpCode.YIELD_FROM, OpCode.YIELD_CONST, OpCode.YIELD_VAR,
+    OpCode.YIELD_FAST))
 CONST_FEEDER = frozenset((OpCode.CONST,))
 
 
@@ -207,6 +212,8 @@ def build_var_to_fast():
     var_to_fast[OpCode.SWITCH_EQ_VAR] = OpCode.SWITCH_EQ_FAST
     var_to_fast[OpCode.SWITCH_EQ_VAR_ATTR] = OpCode.SWITCH_EQ_FAST_ATTR
     var_to_fast[OpCode.OBJECT_COMPARE_VAR] = OpCode.OBJECT_COMPARE_FAST
+    var_to_fast[OpCode.RETURN_VAR] = OpCode.RETURN_FAST
+    var_to_fast[OpCode.YIELD_VAR] = OpCode.YIELD_FAST
 
     return var_to_fast
 
@@ -698,6 +705,27 @@ class ByteCodeProcessor:
                  (arg[0], arg[1], matched[0][1], 0))]
 
 
+    @fuse_rule(FEEDER, OpCode.RETURN)
+    @fuse_rule(FEEDER, OpCode.YIELD)
+    def fuse_control_feeder(self, op, arg, matched):
+        """
+        x RETURN 1 -> RETURN_CONST x or RETURN_VAR x by the feeder's
+        kind, and the same for YIELD; the value rides the row instead
+        of the stack. The N forms are left alone
+        """
+
+        if arg != 1:
+            return None
+        feeder_op, feeder_arg = matched[0]
+        if op == OpCode.RETURN:
+            fused = (OpCode.RETURN_CONST if feeder_op == OpCode.CONST
+                     else OpCode.RETURN_VAR)
+        else:
+            fused = (OpCode.YIELD_CONST if feeder_op == OpCode.CONST
+                     else OpCode.YIELD_VAR)
+        return [(fused, feeder_arg)]
+
+
     @fuse_rule(FEEDER, FEEDER, OpCode.CHECK_COMPARE)
     def fuse_check_compare(self, op, arg, matched):
         """
@@ -1093,8 +1121,7 @@ class ByteCodeProcessor:
         """
 
         instr = self.instructions
-        yield_ops = (OpCode.YIELD, OpCode.YIELD_FROM)
-        if any(op in yield_ops for op, _ in instr):
+        if any(op in YIELD_OPS for op, _ in instr):
             return
 
         labels = {
@@ -1147,8 +1174,7 @@ class ByteCodeProcessor:
         """
 
         instr = self.instructions
-        yield_ops = (OpCode.YIELD, OpCode.YIELD_FROM)
-        if not any(op in yield_ops for op, _ in instr):
+        if not any(op in YIELD_OPS for op, _ in instr):
             return
         self.instructions = [
             (TAIL_CALL_TO_CALL.get(op, op), arg)
@@ -1206,8 +1232,7 @@ class ByteCodeProcessor:
         # function body).
         tco_enabled = (
             compiler.tco_enabled and function_body and not
-            any(op in (OpCode.YIELD, OpCode.YIELD_FROM)
-                for op, _ in self.instructions))
+            any(op in YIELD_OPS for op, _ in self.instructions))
 
         if tco_enabled:
             self.promote_tail_calls()

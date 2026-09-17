@@ -201,9 +201,11 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 | `SWITCH_EQ` fusion | Prior opcode in **`_SWITCH_SQUASHES`**: replace **`KOS_OP_SWITCH_EQ`** with the mapped opcode; **arg** becomes **`(switch_label, *pargs[:3])`** if the prior **arg** was a tuple, else **`(switch_label, pargs, None, None)`** ( **`switch_label`** is this instruction’s original **arg**). |
 | `LABEL` vs prior jump | If the **`KOS_OP_LABEL`** name equals the prior instruction’s target: for prior **`KOS_OP_JUMP`**, drop the jump; for prior **`KOS_OP_JUMP_TRUE`** / **`KOS_OP_JUMP_FALSE`**, if the instruction before the jump is **`KOS_OP_CONST`**, drop const and jump; else replace the conditional jump with **`KOS_OP_POP`** **1**. |
 | Implicit `None` | **`KOS_OP_CONST`** **`None`** immediately before **`KOS_OP_RETURN`** / **`KOS_OP_BREAK`** / **`KOS_OP_CONTINUE`** / **`KOS_OP_YIELD`** with **arg 1** → remove the const and set the control opcode’s **arg** to **0**. |
+| Built tuple | **`KOS_OP_BUILD_ARGS`** **n** (n ≥ 2) immediately before **`KOS_OP_RETURN`** / **`KOS_OP_BREAK`** / **`KOS_OP_CONTINUE`** / **`KOS_OP_YIELD`** with **arg 1** → drop the build and set the control opcode’s **arg** to **n**; its N form builds the same tuple. n of 0 and 1 stay, since `()` is not `None` and a one-tuple is not its element. |
 | `CAR` / `CDR` merge | Two consecutive **same** opcodes **`KOS_OP_CAR`** or **`KOS_OP_CDR`** → one instruction with **args summed**. |
 | `VAR_STORE` fusion | Prior **`KOS_OP_CONST`** `value` immediately followed by **`KOS_OP_VAR_STORE`** `name` → **`KOS_OP_VAR_STORE_CONST`** with arg **`(name, value, None, None)`** (drop the **`CONST`**). Only the **immediate** prior instruction counts. |
 | Epilogue | If the stream does not end with **`KOS_OP_RETURN`**: if the last op is **`KOS_OP_CONST`** **`None`**, replace it with **`KOS_OP_RETURN`** **0**; otherwise append **`KOS_OP_RETURN`** **1**. |
+| Control feeder (fusion pass) | In the later `fuse_feeders` pass, **`KOS_OP_RETURN`** **1** or **`KOS_OP_YIELD`** **1** fed by a bare **`KOS_OP_CONST`** becomes **`KOS_OP_RETURN_CONST`** / **`KOS_OP_YIELD_CONST`**, and fed by a bare **`KOS_OP_VAR`** becomes **`KOS_OP_RETURN_VAR`** / **`KOS_OP_YIELD_VAR`**, which lower to the FAST twins; the epilogue's appended **`KOS_OP_RETURN`** **1** fuses the same way. |
 
 **`_CHECK_SQUASHES`** (prior opcode → **LABEL** opcode replacing the **`JUMP_FALSE`** pair; the fused opcode inherits the jump's label):
 
@@ -265,7 +267,7 @@ When adding or changing an opcode:
 - [4. Stack](#4-stack) — DUP, POP, UNPACK, UNPACK_STAR, UNPACK_VAR, UNPACK_FAST
 - [5. Constants](#5-constants) — CONST, CONST2, CONST3, CONST4
 - [5.1 Pair construction and access](#51-pair-construction-and-access) — CAR, CDR, CONS, PROPER, PAIR_SPLICE, NILP
-- [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
+- [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, RETURN_CONST, YIELD_CONST, YIELD_FROM
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION, CHECK_NIL
@@ -273,8 +275,8 @@ When adding or changing an opcode:
 - [9.2 Pattern dispatch](#92-pattern-dispatch) — MATCH_CASE
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST
-- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST
+- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
+- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_TAKE, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, ITEM_TAKE, CONST_ITEM, CONST_ITEM_TAKE, and variants
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
@@ -961,6 +963,30 @@ bottom to top matches push order).
 
 ---
 
+### KOS_OP_RETURN_CONST
+
+- **Style**: CONST. Arg = pool index of the constant to return.
+- **Status**: Implemented.
+- **Stack**: `[...] -> [...]`. Returns the constant exactly as RETURN 1 returns a popped value: the handler takes a reference and tail-calls `kos_return_deliver`, the KosThreadFn-shaped delivery every RETURN row ends in (plain, region and resume shapes thread on; anything else signals RETURN).
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when RETURN 1 is fed by a bare CONST; a `None` constant takes RETURN 0 in the squish pass first. The epilogue's appended RETURN 1 after a constant body fuses the same way.
+- **Implementation**: `koskari/lib/opcode/RETURN_CONST.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
+
+---
+
+### KOS_OP_YIELD_CONST
+
+- **Style**: CONST. Arg = pool index of the constant to yield.
+- **Status**: Implemented.
+- **Stack**: `[...] -> [...]`. Yields the constant exactly as YIELD 1 yields a popped value: the handler takes a reference and tail-calls `kos_yield_deliver`, the delivery every YIELD row ends in. Sets **`KOS_CODE_YIELDS`** at finalize (`kos_op_yields`) and counts as a yield for tail-call demotion.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when YIELD 1 is fed by a bare CONST; a `None` constant takes YIELD 0 in the squish pass first.
+- **Implementation**: `koskari/lib/opcode/YIELD_CONST.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
+
+---
+
 ### KOS_OP_YIELD_FROM
 
 - **Style**: NOARG.
@@ -1037,7 +1063,7 @@ bottom to top matches push order).
 - **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and run the shared step core (`object_next_step`) -- Koskari agen flatten, ambient async (a suspended python step rides the NEXT boundary), 1-arg raises StopIteration on exhaustion, 2-arg pops and delivers the default.
 - **Invariants**: The fused name resolution runs after the default row (the fusion requires a bare default feeder, so the reorder is unobservable beyond NameError timing).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_NEXT's iterator feeder is a bare VAR load (the 2-arg form also requires a bare VAR/CONST default). Lowers to FAST_NEXT through the generic schema-driven `convert_fast` path.
-- **Implementation**: `koskari/lib/opcode/VAR_NEXT.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR_NEXT.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_next.py`
 
@@ -1047,7 +1073,7 @@ bottom to top matches push order).
 - **Status**: Implemented.
 - **Stack**: As VAR_NEXT, with the iterator loaded from its fast slot.
 - **Compiler form:** Post-compile only: the generic `convert_fast` lowering of VAR_NEXT when the iterator name has a fast slot.
-- **Implementation**: `koskari/lib/opcode/FAST_NEXT.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/FAST_NEXT.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_next.py`
 
@@ -1242,7 +1268,7 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
 - **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
   are never emitted (that is a folding case).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` (late `compress` sweep) absorbing two bare VAR/CONST feeder rows into an arity-2 [CHECK_COMPARE](#kos_op_check_compare). Runs before `pack_var_runs` so this fusion gets first claim on the feeders. Lowers to CHECK_COMPARE_FAST via the CMPSRC-aware `convert_fast` case (all-or-nothing on the name slots).
-- **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_VAR.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_VAR.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`
 
@@ -1720,7 +1746,7 @@ Extra row: `("os.path", 0, 0, 0)`.
   a run of two consecutive bare **VAR** loads (quads first, then one triple
   or one pair). **`convert_fast`** lowers to **FAST2** when both names have
   fast slots (all-or-nothing; a mixed-eligibility row stays VAR2).
-- **Implementation**: `koskari/lib/opcode/VAR2.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR2.c`
 - **Covered by**: `tests/compile/test_pack_var_runs.py`,
   `tests/reproducers/test_var_pack.py`
 
@@ -1746,7 +1772,7 @@ Extra row: `("os.path", 0, 0, 0)`.
   from a run of three consecutive bare VAR loads (quads first, then one triple
   or one pair). **`convert_fast`** lowers to FAST3 when all three names have fast
   slots (all-or-nothing; a mixed-eligibility row stays VAR3).
-- **Implementation**: `koskari/lib/opcode/VAR3.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR3.c`
 - **Covered by**: `tests/compile/test_pack_var_runs.py`,
   `tests/reproducers/test_var_pack.py`
 
@@ -1771,7 +1797,7 @@ Extra row: `("os.path", 0, 0, 0)`.
 - **Compiler form:** As **VAR2**: produced only by **`pack_runs`** from a run
   of four (or more, greedily) consecutive bare **VAR** loads.
   **`convert_fast`** lowers to **FAST4** when all four names have fast slots.
-- **Implementation**: `koskari/lib/opcode/VAR4.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR4.c`
 - **Covered by**: `tests/compile/test_pack_var_runs.py`,
   `tests/reproducers/test_var_pack.py`
 
@@ -1902,7 +1928,7 @@ Extra row: `("os.path", 0, 0, 0)`.
 
 - **Style**: EXTRA (OPCOUNT, VAR, NOARG, NOARG). Row a0 = operator selector in the high byte and reduce count in the low byte, a1 = the variable name.
 - **Status**: Implemented.
-- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce the count operands from the stack into the frame namespace binding with the operator, left to right, and store the result back; pushes nothing (the special appends CONST None). Cold: the operator switch lives in the shared `kos_var_inplace_operand`.
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce the count operands from the stack into the frame namespace binding with the operator, left to right, and store the result back; pushes nothing (the special appends CONST None). The operator switch lives in the shared `kos_var_inplace_operand`.
 - **Compiler form:** Emitted by **`compile/inplace`** when the target is a symbol. May lower to **FAST_INPLACE**; a single constant operand squashes into **VAR_INPLACE_CONST**.
 - **Implementation**: `koskari/lib/opcode/VAR_INPLACE.c`
 
@@ -1963,7 +1989,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 - **Style**: EXTRA (OPCOUNT, VAR, CONST, NOARG). Row a0 = operator selector and count, a1 = the object name, a2 = the attribute name.
 - **Status**: Implemented. Cache: one KOS_CACHE_FIELD slot; a single resolved storage location serves both the read of obj.attr and the write-back.
-- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Resolve the object by name, reduce obj.attr in place with the count values left to right, store it back; pushes nothing (the special appends CONST None). Cold: the operator switch lives in the shared `kos_inplace_reduce`.
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Resolve the object by name, reduce obj.attr in place with the count values left to right, store it back; pushes nothing (the special appends CONST None). The operator switch lives in the shared `kos_inplace_reduce`.
 - **Compiler form:** Emitted by **`compile/inplace-attr`** when OBJ is a symbol. May lower to **FAST_ATTR_INPLACE**.
 - **Implementation**: `koskari/lib/opcode/VAR_ATTR_INPLACE.c`
 
@@ -2468,7 +2494,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 - **Style**: EXTRA (OPCOUNT, CONST, NOARG, NOARG). Row a0 = operator selector and count, a1 = the attribute name.
 - **Status**: Implemented. Cache: one KOS_CACHE_FIELD slot, degrading to its megamorphic bypass at a polymorphic site.
-- **Stack**: `[..., obj, v0 .. v_{n-1}] → [...]`. Reduce obj.attr in place with the count values left to right, store it back, drop the object and the values; pushes nothing (the special appends CONST None). Cold: the operator switch lives in the shared `kos_inplace_reduce`.
+- **Stack**: `[..., obj, v0 .. v_{n-1}] → [...]`. Reduce obj.attr in place with the count values left to right, store it back, drop the object and the values; pushes nothing (the special appends CONST None). The operator switch lives in the shared `kos_inplace_reduce`.
 - **Compiler form:** Emitted by **`compile/inplace-attr`** when OBJ is an expression.
 - **Implementation**: `koskari/lib/opcode/ATTR_INPLACE.c`
 
@@ -3585,7 +3611,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Invariants**: Selector is a valid KosCompare ordinal (richcompare
   chain semantics; extended selectors are never emitted at arity 3).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when the exact CONST / VAR / CONST feeder shape meets an arity-3 comparison. In value position the OBJECT_COMPARE quartet collapses to this row alone; in branch position the arity-3 CHECK_COMPARE cannot also carry its label (five fields), so it splits into this row plus `JUMP_FALSE`. Lowers to OBJECT_COMPARE_FAST through the generic schema-driven `convert_fast` path.
-- **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE_VAR.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE_VAR.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`,
   `tests/reproducers/test_compare_fusion.py`
@@ -3758,7 +3784,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT (arg=1): resolve the name in the current frame's namespace and push `PyObject_Format(obj, NULL)`.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_FORMAT (arg=1) is fed by a bare VAR load. Lowers to FAST_FORMAT through the simple `convert_fast` path.
-- **Implementation**: `koskari/lib/opcode/VAR_FORMAT.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR_FORMAT.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
 
@@ -3768,9 +3794,29 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT_CONST: resolve the name in the current frame's namespace and push `PyObject_Format(obj, rules)`.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_FORMAT_CONST is fed by a bare VAR load. The 2-arg OBJECT_FORMAT (dynamic rules) stays unfused: absorbing the object load would move its name resolution past the rules evaluation. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
-- **Implementation**: `koskari/lib/opcode/VAR_FORMAT_CONST.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR_FORMAT_CONST.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
+
+### KOS_OP_RETURN_VAR {#kos_op_return_var}
+
+- **Style**: VAR. Arg = pool index of the name.
+- **Status**: Implemented.
+- **Stack**: `[...] -> [...]`. Resolve the name in the current frame's namespace (`frame_ns_deref`, NameError when unbound) and tail-call `kos_return_deliver` with the value, as RETURN 1 would with a popped one.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when RETURN 1 is fed by a bare VAR load. Lowers to RETURN_FAST through `convert_fast` (registered beside the other suffix twins in `build_var_to_fast`).
+- **Implementation**: `koskari/lib/opcode/RETURN_VAR.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
+
+### KOS_OP_YIELD_VAR {#kos_op_yield_var}
+
+- **Style**: VAR. Arg = pool index of the name.
+- **Status**: Implemented.
+- **Stack**: `[...] -> [...]`. Resolve the name as RETURN_VAR does and tail-call `kos_yield_deliver` with the value. Sets **`KOS_CODE_YIELDS`** at finalize and counts as a yield for tail-call demotion.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when YIELD 1 is fed by a bare VAR load. Lowers to YIELD_FAST through `convert_fast`.
+- **Implementation**: `koskari/lib/opcode/YIELD_VAR.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
 
 ### KOS_OP_FAST_FORMAT {#kos_op_fast_format}
 
@@ -3791,6 +3837,26 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT_CONST.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
+
+### KOS_OP_RETURN_FAST {#kos_op_return_fast}
+
+- **Style**: FASTVAR. Arg = slot index.
+- **Status**: Implemented.
+- **Stack**: As RETURN_VAR, with the value read from its fast slot (`kos_ns_fast_deref`, NameError when empty).
+- **Compiler form:** Post-compile only: the `convert_fast` lowering of RETURN_VAR when the name has a fast slot.
+- **Implementation**: `koskari/lib/opcode/RETURN_FAST.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
+
+### KOS_OP_YIELD_FAST {#kos_op_yield_fast}
+
+- **Style**: FASTVAR. Arg = slot index.
+- **Status**: Implemented.
+- **Stack**: As YIELD_VAR, with the value read from its fast slot; sets **`KOS_CODE_YIELDS`** at finalize.
+- **Compiler form:** Post-compile only: the `convert_fast` lowering of YIELD_VAR when the name has a fast slot.
+- **Implementation**: `koskari/lib/opcode/YIELD_FAST.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
 
 ### KOS_OP_OBJECT_TRUTH {#kos_op_object_truth}
 

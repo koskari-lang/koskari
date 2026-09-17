@@ -43,30 +43,7 @@ KOS_OP_HANDLER(YIELD) {
     }
   }
 
-  /* A flattened generator delivers to its consumer here and threads
-     into it: the same freeze and delivery the trampoline would run for
-     the YIELD signal, minus the trip. A generator an adapter drives
-     surfaces the value as the terminal YIELD. */
-  KosDynGen *gen = kos_dyn_find_gen(es);
-
-  if (gen && KosDynGen_IS_FLATTENED(gen)) {
-    KosOpResult r;
-
-    KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, gen, val));
-    if (likely(r.kind == KOS_RES_DISPATCH))
-      RESULT_CONTINUE(es);
-    if (unlikely(r.kind == KOS_RES_YIELD)) {
-      /* The freeze found no consumer for a generator that had one:
-         never hand the trampoline a YIELD it would deliver again. */
-      Py_DECREF(r.val);
-      PyErr_SetString(PyExc_SystemError,
-                      "flattened generator yield found no consumer");
-      RESULT_RAISE();
-    }
-    return r;
-  }
-
-  return EVAL_YIELD(val);
+  TAILCALL(kos_yield_deliver, es, insn, val);
 }
 
 

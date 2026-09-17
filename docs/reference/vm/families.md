@@ -3,15 +3,15 @@
 - [4. Stack](index.md#4-stack) — DUP, POP, UNPACK, UNPACK_STAR, UNPACK_VAR, UNPACK_FAST
 - [5. Constants](index.md#5-constants) — CONST, CONST2, CONST3, CONST4
 - [5.1 Pair construction and access](index.md#51-pair-construction-and-access) — CAR, CDR, CONS, PROPER, PAIR_SPLICE
-- [6. Mode control](index.md#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
+- [6. Mode control](index.md#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, RETURN_CONST, YIELD_CONST, YIELD_FROM
 - [7. Iteration](index.md#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](index.md#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](index.md#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](index.md#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](index.md#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](index.md#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](index.md#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITEM_INPLACE*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST
-- [13. Fast variables](index.md#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITEM*, FAST_ITEM_INPLACE*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST
+- [12. Variables by name](index.md#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITEM_INPLACE*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
+- [13. Fast variables](index.md#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITEM*, FAST_ITEM_INPLACE*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
 - [14. Attributes](index.md#14-attributes) — ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
 - [15. Items](index.md#15-items) — ITEM, CONST_ITEM, ITEM_INPLACE, and variants
 - [15.1 Reference dereference](index.md#151-reference-dereference) — DEREF
@@ -54,6 +54,8 @@
 | RAISE | COUNT | Pop N, raise exception | [§6](opcodes/kos-op-raise.md) |
 | RETURN | COUNT | Pop return value; `EVAL_RETURN(val)` → **`eval_event_return`**; **`KOS_RES_RETURN`** at driver boundary | [§6](opcodes/kos-op-return.md) |
 | YIELD | COUNT | Pop value; `EVAL_YIELD(val)` → **`apply_kos_op_result`** → **`eval_event_yield`** (walk/freeze, optional boundary deliver) | [§6](opcodes/kos-op-yield.md) |
+| RETURN_CONST | CONST | Return the pooled constant; the `CONST` + `RETURN 1` fusion | [§6](opcodes/kos-op-return-const.md) |
+| YIELD_CONST | CONST | Yield the pooled constant; the `CONST` + `YIELD 1` fusion | [§6](opcodes/kos-op-yield-const.md) |
 | YIELD_FROM | NOARG | Delegate to sub-iterator/gen; PC-stable; send/throw/close | [§6](opcodes/kos-op-yield-from.md) |
 | ITER_NEXT | LABEL | Next from region iterator; else jump | [§7](opcodes/kos-op-iter-next.md) |
 | OBJECT_NEXT | COUNT | Stack-based next (1 or 2 args) | [§7](opcodes/kos-op-object-next.md) |
@@ -87,6 +89,8 @@
 | VAR_BIND | VAR | BIND: use TOS ref to resolve name | [§12](opcodes/kos-op-var-bind.md) |
 | VAR_STORE | VAR | STORE: write TOS value into name | [§12](opcodes/kos-op-var-store.md) |
 | VAR_STORE_CONST | EXTRA | STORE: write constant into name (no stack) | [§12](opcodes/kos-op-var-store-const.md) |
+| RETURN_VAR | VAR | Return the name's value; the `VAR` + `RETURN 1` fusion | [§12](opcodes/kos-op-return-var.md) |
+| YIELD_VAR | VAR | Yield the name's value; the `VAR` + `YIELD 1` fusion | [§12](opcodes/kos-op-yield-var.md) |
 | FAST | FASTVAR | Load from slot | [§13](opcodes/kos-op-fast.md) |
 | FAST2 | EXTRA | Load two slots, push in row order | [§13](opcodes/kos-op-fast2.md) |
 | FAST3 | EXTRA | Load three slots, push in row order | [§13](opcodes/kos-op-fast3.md) |
@@ -94,6 +98,8 @@
 | FAST_BIND | FASTVAR | BIND: use TOS ref to resolve slot | [§13](opcodes/kos-op-fast-bind.md) |
 | FAST_STORE | FASTVAR | STORE: write TOS value into slot | [§13](opcodes/kos-op-fast-store.md) |
 | FAST_STORE_CONST | EXTRA | STORE: write constant into slot (no stack) | [§13](opcodes/kos-op-fast-store-const.md) |
+| RETURN_FAST | FASTVAR | Return the slot's value; lowering of RETURN_VAR | [§13](opcodes/kos-op-return-fast.md) |
+| YIELD_FAST | FASTVAR | Yield the slot's value; lowering of YIELD_VAR | [§13](opcodes/kos-op-yield-fast.md) |
 | ATTR | CONST | Get attribute | [§14](opcodes/kos-op-attr.md) |
 | ATTR_STORE | CONST | Set attribute | [§14](opcodes/kos-op-attr-store.md) |
 | ITEM | NOARG | Get item (key on stack) | [§15](opcodes/kos-op-item.md) |
