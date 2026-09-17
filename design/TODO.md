@@ -30,36 +30,15 @@ frame's return arm.
 
 Ref: [interpreter/electors.md](interpreter/electors.md).
 
-### Variable-tier item access opcodes and item electors
+### Reads that call and reads that wait
 
-VAR_ITEM, VAR_CONST_ITEM and their STORE forms with FAST twins, a
-cache slot on the whole item family, and an elector body per
-container kind (exact list, tuple, dict, generic). Loads fuse in the
-compress pipeline; stores emit from the set-item special. Item rows
-and their feeders are a quarter of the fannkuch dispatches.
+A ref deref that answers "call this" or an awaitable instead of
+running a nested evaluator, so a read can raise, suspend and be
+captured like a call. A schema-derived row resume finishes the
+multi-slot and fused rows; RETURN and YIELD loads tail into the
+getter. Raw and plain-ref reads keep their code.
 
-Ref: [interpreter/item-access-opcodes.md](interpreter/item-access-opcodes.md);
-[interpreter/item-inplace-opcodes.md](interpreter/item-inplace-opcodes.md).
-
-### Loop transfer fast path
-
-A top-is-region arm in CONTINUE and BREAK that skips the find walk,
-the ancestry proof, and the zero-iteration unwind loop, and a
-single-dispatch FOREACH back-edge (CONTINUE tailing into the iterator
-step, later the node-style FOREACH elector). Sequenced after the item
-opcodes.
-
-Ref: [interpreter/loop-transfer-fast-path.md](interpreter/loop-transfer-fast-path.md).
-
-### Threaded control: every signal a jump target
-
-A static resume kind, name, function, clear and clone, that the frame
-points at in place of a bare function, so teardown, capture and
-transfer restore have one rule each. Follow-ups on it: a deref that
-answers "call this" and installs the call, a schema-derived row resume
-for the multi-slot loads, and reads that wait on a future.
-
-Ref: [interpreter/threaded-control.md](interpreter/threaded-control.md).
+Ref: [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
 
 ### Dispatch tweaks to investigate
 
@@ -265,20 +244,6 @@ Ref: [EVALUATOR.md](EVALUATOR.md) §7 (installs and call paths).
 
 The following items are captured from design discussion. Each has a short
 design note and is open for evaluation and possible implementation.
-
-### Fused item in-place opcodes (six-opcode review)
-
-Replace the `DUP` choreography in `compile/inplace-item` with fused
-read-modify-write item opcodes mirroring the attr in-place family:
-stack-object `ITEM_INPLACE` / `CONST_ITEM_INPLACE`, variable-based
-`VAR_ITEM_INPLACE` / `VAR_CONST_ITEM_INPLACE`, and their fast
-derivations `FAST_ITEM_INPLACE` / `FAST_CONST_ITEM_INPLACE`. Review the
-six proposed opcodes -- encodings, the read-at-op-time ordering shift,
-naming vs the `*_INPLACE_CONST` suffix convention, and whether the
-stack-object tier carries its dispatch-table weight -- before any
-implementation.
-
-Ref: [interpreter/item-inplace-opcodes.md](interpreter/item-inplace-opcodes.md).
 
 ### GEN yield-from passthru
 

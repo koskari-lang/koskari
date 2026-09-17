@@ -2,7 +2,13 @@
 
 ## Status
 
-Proposal -- not implemented. Sequenced after
+Implemented on the churn-test-performance branch (2026-09-17): the
+top-is-region arm in CONTINUE, which does the result swap, segment
+clear and pc move in place, and with a FOREACH region runs the
+iterator step there too, the first route under proposal 2. Dropped:
+the BREAK arm, which the counts below say is not measurable, and the
+result-equal incref skip. The second route, a node-style FOREACH
+elector, is the open item in the electors work. Sequenced after
 [item-access-opcodes.md](item-access-opcodes.md).
 
 ## Summary
@@ -150,9 +156,9 @@ is not part of this proposal.
 
 ## Related
 
-- [electors.md](electors.md) -- the node-style home and the FOREACH
+- [../interpreter/electors.md](../interpreter/electors.md) -- the node-style home and the FOREACH
   step as its next site.
-- [extent-wind-unwind.md](extent-wind-unwind.md) -- the transfer
+- [../interpreter/extent-wind-unwind.md](../interpreter/extent-wind-unwind.md) -- the transfer
   walk contract the arm specialises.
 - `koskari/lib/dynchain/dyn_walk.c` -- `kos_dyn_find_loop`,
   `kos_dyn_unwind_to_loop`.

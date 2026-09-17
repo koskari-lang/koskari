@@ -2,9 +2,10 @@
 
 ## Status
 
-Changes 1 to 5 and 7 implemented on the churn branch (2026-09-17);
-change 6 assessed and closed with nothing to do. The follow-ups at the
-end depend on change 7 and are their own arc.
+Implemented on the churn-test-performance branch (2026-09-17): changes
+1 to 5 and 7; change 6 assessed and closed with nothing to do. The
+reads that call and reads that wait, which build on change 7, are
+designed in [../interpreter/resumable-reads.md](../interpreter/resumable-reads.md).
 
 ## Summary
 
@@ -219,99 +220,6 @@ The three boundaries and every call into a Python callable are C
 returns; the frame-depth limit exists for that recursion and the tail
 chain does not touch it. FATAL stays a return.
 
-## Follow-ups: reads that call and reads that wait
-
-Both depend on change 7. Today a `KosDynamicRef` wraps its get
-function in `KosDemand_New` (`ref.c`), so a read runs a nested
-evaluator to completion on the C stack: the demand path, and the
-reason a read can never suspend or be captured.
-
-### A deref that answers "call this"
-
-The non-raw arm of `kos_ns_fast_deref` and `frame_ns_deref` gains a
-third answer beside a value and an error: the callable the ref's
-getter is. The demand wrapping goes. A single-slot load (FAST, VAR)
-runs the call core with that callable and no arguments, exactly as
-`op_CALL` with a count of zero, and ends in `RESULT_RELAY`. The callee
-is an ordinary frame: a raise inside the getter unwinds to the read,
-an await inside it suspends as any call's does, a capture across it is
-a capture across a call. No resume is involved, because the plain
-return arm pushes the callee's value onto the invoker's stack and
-threads at the invoker's saved pc, which the handler had already
-advanced past its row: the value lands where the load would have
-pushed it.
-
-A store through a dynamic ref's setter is a call whose result must be
-dropped; it arms a kind that pops and threads.
-
-The electors are unaffected: they classify on the raw arm and demote
-to the generic body on a miss, so the call arm lives in the generic
-body of every VAR and FAST row, once each; the fused rows have more of
-them than the plain loads.
-
-### The row resume: index plus lookup
-
-Every row that derefs more than one slot, FAST2 to FAST4, VAR2 to
-VAR4, and the fused VAR and FAST rows, meets the same shape when a slot
-answers "call this" in the middle: push what is resolved, arm a resume
-that knows where in the row it is, install the call, and finish the row
-when the value comes back. One kind serves all of them:
-
-- **State**: the index of the slot being resolved, carried in the
-  `void *` as an integer. Nothing else survives: the row is re-derived
-  as `code[acting_pc]` on the frame the resume is armed on, `acting_pc`
-  being flushed at the install and restored at the return.
-- **The buffer is the operand stack**: resolved values are pushed
-  where the row would have pushed them. A bytecode frame's delivery is
-  always the pending slot, never its stack, so the buffered values
-  survive a suspension and a freeze untouched.
-- **`fn`**: pushes the delivered value, then continues the row from
-  index plus one through a per-row callback that knows the row's
-  layout: which operand fields are lookups and in what order. A raw
-  slot is pushed in place; a call-backed slot re-arms the same kind with
-  the new index and installs; when the count is reached the resume
-  threads from `es->pc`.
-- **`clone`**: identity. A capture across a suspended row is a capture
-  across a call plus one integer.
-- **`clear`**: NULL. The stack owns the temporaries.
-
-The delivery arrives settled: with a non-NULL state the delivery step
-classifies the value and stages a settling step for an awaitable, so
-the resume only ever receives a value.
-
-The per-row callback is the part to design cleanly, since the rows'
-lookup fields differ in position and count: the schema in
-`opcodes.incl` already names which operand fields are VAR or FASTVAR,
-so the callback can be derived from the row's schema rather than
-written per row, and a row family then registers nothing beyond its
-handler's use of the shared kind. That derivation is the design work
-of this follow-up.
-
-### Reads that wait
-
-With the call arm and the row resume in place, a ref whose deref
-answers with an awaitable takes the same road as a call whose result
-needed awaiting: the handler arms the row kind with the index and
-returns AWAIT through `kos_eval_await`; an awaitable already done
-delivers on the spot, one that is not returns the boundary and the
-Python loop runs the background work. Under a demand driver the
-boundary forces as it does today. The delivery pushes the value into
-the row as any other.
-
-What it gives: `(define x (background (compute)))` as an opt-in binding
-form that stores a future ref; every read of `x` is a plain FAST until
-the first read that arrives before the value, which suspends the
-context and resumes in the row when the value lands. A suspended read
-is a frame with a resume armed, so the frame cache refuses it under
-the existing rule. The binding form must produce a non-raw ref, which
-promotes the slot as a closure capture does; the template reset returns
-it to raw at the cache store.
-
-Two places the implementation is checked against: nothing may change
-the invoker's `acting_pc` between arming and delivery except the
-transfer restore, which copies it with the resume pair; and every
-generic body that derefs a slot carries the call arm.
-
 ## Testing
 
 - Per change: the full suite; the trace build's trampoline-step
@@ -321,22 +229,15 @@ generic body that derefs a slot carries the call arm.
 - Change 7: a step abandoned by a coroutine closed mid-suspension
   leaves its provider clear; capture across a yield-from phase still
   works; capture across a provider step still refuses by name.
-- Follow-ups: a getter that raises, awaits, and is captured across; a
-  FAST4 with call-backed slots in every position; reads that settle
-  immediately, reads that suspend and resume under an asyncio driver
-  and under a demand driver, a failed future raising at the read site,
-  a suspended row inside a generator and inside a delimited region, and
-  the frame cache refusing a suspended read.
 
 ## Related
 
 - [EVALUATOR.md](../EVALUATOR.md) §1.2, §2.6, §3 -- the loop phases and
   the signal vocabulary this replaces.
-- [electors.md](electors.md) -- the elector prologue, the first
+- [../interpreter/electors.md](../interpreter/electors.md) -- the elector prologue, the first
   thread-function helper handlers hop into.
-- `koskari/lib/eval.c` -- `koskari_eval`, `kos_prologue_reenter`,
+- `koskari/lib/eval.c` -- `koskari_eval`, `kos_eval_prologue`,
   `apply_kos_op_result`, `process_raise`, `kos_return_deliver`,
   `kos_yield_deliver`.
 - `koskari/lib/eval.h` -- `TAILCALL`, `RESUME_HOP`, `RESULT_RELAY`,
   `RESULT_RAISE`, `RESULT_NEXT_POLL`.
-- `koskari/lib/ref.c` -- `KosDynamicRef` and its demand wrapping.

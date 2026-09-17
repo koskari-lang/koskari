@@ -207,7 +207,7 @@ Loads have no ordering question: both operands are names.
 ## Electors
 
 The item family joins the cache-style electors of
-[electors.md](electors.md): the handler loads the site's
+[../interpreter/electors.md](../interpreter/electors.md): the handler loads the site's
 `KOS_CACHE_ELECTOR` slot and tail-calls the elected body; the body
 guards on every execution; a guard miss tail-calls the shared miss
 function, which runs the generic body and counts toward the demotion
@@ -321,7 +321,7 @@ call; the bodies are the only place a container type is named.
 
 - [item-inplace-opcodes.md](item-inplace-opcodes.md) -- the
   read-modify-write rows; shares the axes and the bodies.
-- [electors.md](electors.md) -- the elector contract and the measured
+- [../interpreter/electors.md](../interpreter/electors.md) -- the elector contract and the measured
   history of the arithmetic, compare, and attr families.
 - `koskari/lib/opcode/ITEM.c`, `ITEM_STORE.c`, `CONST_ITEM.c` -- the
   handlers that become generic bodies.
