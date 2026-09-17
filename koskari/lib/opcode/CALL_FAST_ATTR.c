@@ -57,10 +57,31 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     RESULT_RAISE();
   }
 
+  PyObject *self_arg = (send_self == 0) ? obj : NULL;
+
+  /* Frame-cache hit, installed here; the tail twin reuses the live
+     frame and never consults the cache. */
+  if (! tail) {
+    KosOpResult r;
+    int taken = kos_call_cached_frame_install(
+        es, resolved, self_arg, (Py_ssize_t) n, &r);
+
+    if (likely(taken > 0)) {
+      Py_DECREF(obj);
+      RESULT_RELAY(es, r);
+    }
+    if (unlikely(taken < 0)) {
+      if (n)
+        kos_stack_drop_noerr_fast(KosEvalState_BLOCK(es), n);
+      Py_DECREF(resolved);
+      Py_DECREF(obj);
+      RESULT_RAISE();
+    }
+  }
+
   /* Prologue only: kos_call_invoke owns the window drop; an unbound
      resolution injects obj as self via the core's prepend. */
-  KosOpResult r = kos_call_invoke(es, resolved,
-                                  (send_self == 0) ? obj : NULL,
+  KosOpResult r = kos_call_invoke(es, resolved, self_arg,
                                   argv, (Py_ssize_t) n, NULL,
                                   KOS_CALL_ARGV_WINDOW | tail
                                   | KOS_CALL_CALLABLE_OWNED);

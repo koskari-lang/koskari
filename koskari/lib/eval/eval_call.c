@@ -907,6 +907,66 @@ static inline KosOpResult kos_call_invoke_body(
 
 
 /**
+   The frame-cache hit of a window call, taken in the handler before the
+   call core: an exact KosFunction at simple arity with a frame parked
+   on it steal-binds the block tail into that frame's namespace (slot 0
+   from self_arg when one is given), pushes the frame ready, and tags
+   it with the owned callable reference. Any other shape returns 0 with
+   nothing consumed and the handler goes on to kos_call_invoke. The
+   window is nargs wide and the callable is owned by the caller, so a
+   taken arm leaves no residue to drop.
+
+   :param self_arg: borrowed receiver for an unbound method call, or
+     NULL; the arity classified is nargs + 2 with it, nargs + 1 without
+   :param out: the installed result when 1 is returned
+   :return: 1 when the call was installed here, 0 when the arm does not
+     apply, -1 with an error set and nothing consumed when it applied
+     and failed (no frame room); the handler releases the window and
+     the callable
+*/
+KOS_OP_INLINE int kos_call_cached_frame_install(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *self_arg,
+    Py_ssize_t nargs,
+    KosOpResult *out) {
+
+  KosDynFrame *cached;
+  Py_ssize_t arity1 = nargs + (self_arg ? 2 : 1);
+
+  if (Py_TYPE(callable) != KOS_EVALUATED_PYTYPE(KosFunctionType)
+      || arity1 != KosFunction_SIMPLE_ARITY1(callable)
+      || KosFunction_BIND_SELF_STATE(callable) != 2
+      || KosCode_YIELDS((KosCode *) KosFunction_CODE(callable)))
+    return 0;
+
+  cached = KosFunction_CACHED_FRAME(callable);
+  if (! cached)
+    return 0;
+
+  if (unlikely(kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0))
+    return -1;
+
+  /* Steal-bind first: on failure nothing is stolen and the frame stays
+     parked. */
+  if (self_arg
+      ? unlikely(KosFormals_SimpleStealApplySelfBlock(
+            KosDynFrame_NS(cached), self_arg, *KosEvalState_BLOCK(es),
+            nargs) < 0)
+      : unlikely(KosFormals_SimpleStealApplyBlock(
+            KosDynFrame_NS(cached), *KosEvalState_BLOCK(es), nargs) < 0))
+    return -1;
+
+  KosFunction_CACHED_FRAME(callable) = NULL;
+  kos_dyn_push_ready_frame(es, cached);
+  KosDynFrame_FN(cached) = callable;  /* the owned reference transfers */
+  KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+  *out = kos_call_installed(es);
+  return 1;
+}
+
+
+/**
    Install a simple-arity KosFunction call whose receiver arrives out of
    band (unbound method resolution): fast slot 0 binds from self_arg and
    the window's arg span steal-binds into slots 1..nargs, through the
