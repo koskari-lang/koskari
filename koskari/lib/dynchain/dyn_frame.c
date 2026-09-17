@@ -197,12 +197,25 @@ KosDynFrame *kos_dyn_push_frame(
     KosCode *code,
     PyObject *ns) {
 
-  KosDynFrame *cur = KosEvalState_FRAME(es);
-
-  if (unlikely(kos_eval_check_frame_room(es, cur, 1) < 0)) {
+  if (unlikely(kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)) {
     Py_XDECREF(ns);
     return NULL;
   }
+  return kos_dyn_push_frame_unchecked(es, code, ns);
+}
+
+
+/**
+   kos_dyn_push_frame with the frame-room check left to the caller: the
+   simple call arms verify room once before probing the frame cache, so
+   their miss install must not test it again.
+*/
+KosDynFrame *kos_dyn_push_frame_unchecked(
+    KosEvalState *es,
+    KosCode *code,
+    PyObject *ns) {
+
+  KosDynFrame *cur = KosEvalState_FRAME(es);
 
   // CONTEXT: dirty, touches context directly
   KosDynFrame *frame = kos_dynframe_new(KosEvalState_DYN_TOP(es), code, ns);

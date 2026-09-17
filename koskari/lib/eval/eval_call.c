@@ -606,7 +606,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         /* Cache miss: install as usual, then tag the frame for the
            park attempt at release. */
         {
-          KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
+          KosDynFrame *frame = kos_dyn_push_frame_unchecked(
+              es, code, frame_ns);
           if (unlikely(! frame))
             goto fail;
           if (! (flags & KOS_CALL_CALLABLE_OWNED))
@@ -652,7 +653,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
           goto fail;
         KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
         {
-          KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
+          KosDynFrame *frame = kos_dyn_push_frame_unchecked(
+              es, code, frame_ns);
           if (unlikely(! frame))
             goto fail;
           if (! (flags & KOS_CALL_CALLABLE_OWNED))
@@ -960,7 +962,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
   /* Cache miss: install as usual, then tag the frame for the park
      attempt at release. */
   {
-    KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
+    KosDynFrame *frame = kos_dyn_push_frame_unchecked(es, code, frame_ns);
     if (unlikely(! frame))
       goto fail;
     if (! (flags & KOS_CALL_CALLABLE_OWNED))

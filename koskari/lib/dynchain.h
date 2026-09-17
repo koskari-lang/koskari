@@ -943,6 +943,13 @@ void kos_dyn_resync_chain(KosEvalState *es);
 */
 KosDynFrame *kos_dyn_push_frame(KosEvalState *es, KosCode *code, PyObject *ns);
 
+/* kos_dyn_push_frame without the frame-room check; the caller has run
+   kos_eval_check_frame_room for one frame already. */
+KosDynFrame *kos_dyn_push_frame_unchecked(
+    KosEvalState *es,
+    KosCode *code,
+    PyObject *ns);
+
 
 /**
    Push a frame with code=NULL, ns=empty dict, stack=NULL for INSTALL to configure.
