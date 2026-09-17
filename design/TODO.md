@@ -53,11 +53,11 @@ Ref: [interpreter/loop-transfer-fast-path.md](interpreter/loop-transfer-fast-pat
 
 ### Threaded control: every signal a jump target
 
-The breaker poll, the prologue, the raise walk and the remaining
-events become thread functions the handlers tail into, so the
-trampoline collapses to one call and returns only at a boundary.
-Stretch goal: reads that settle a future ref by suspending at the
-instruction and re-executing it on delivery.
+A static resume kind, name, function, clear and clone, that the frame
+points at in place of a bare function, so teardown, capture and
+transfer restore have one rule each. Follow-ups on it: a deref that
+answers "call this" and installs the call, a schema-derived row resume
+for the multi-slot loads, and reads that wait on a future.
 
 Ref: [interpreter/threaded-control.md](interpreter/threaded-control.md).
 

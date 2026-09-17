@@ -2,9 +2,10 @@
 
 ## Status
 
-Proposal -- not implemented. Sequenced after the call-path and
-loop-transfer work on the churn branch. The stretch goal at the end
-depends on changes 2 and 5 and is its own arc.
+Changes 1 to 5 implemented on the churn branch (2026-09-17); change 6
+assessed and closed with nothing to do. Change 7, the resume kind, is a
+proposal. The follow-ups at the end depend on change 7 and are their
+own arc.
 
 ## Summary
 
@@ -42,34 +43,40 @@ region and resume return shapes thread straight on.
 
 ## The changes
 
-Each lands green on its own, in this order. Change 2 is the keystone;
-1 is small and independent, 3 and 4 follow from 2, 5 is a consequence.
+Each lands green on its own. The order that held: 1, then 3 and 5,
+then 2 and 4 together. The prologue can only be a tail target once no
+raw result needs the trampoline's post-processing, since a tail-entered
+chain has no one to post-process it, and that is what 3 and 5 provide.
 
 ### 1. The breaker service as a thread function
 
 `kos_eval_poll(es, insn, val)`: the GIL drop and `Py_MakePendingCalls`
 from the `poll:` label, then a tail into the prologue when a signal
-raised, else `KOS_THREAD_NEXT`. The cooperation points stop returning:
-`RESULT_NEXT_POLL` tails into it when the breaker is up,
-`kos_call_installed` too, and `RESUME_HOP` tails into it in place of
-`DISPATCH`. Releasing the GIL inside a tail chain is safe: the chain
-holds no C frames. The trampoline's "NORMAL means a cooperation point"
-case goes with it.
+raised, else `KOS_THREAD_NEXT`. `RESULT_NEXT_POLL` tails into it when
+the breaker is up; a frame install answers the loop-internal
+`KOS_RES_POLL`, which the handler's `RESULT_RELAY` turns into the same
+tail call. A plain NORMAL relay is not a cooperation point: a signal is
+taken at back-edges and frame entry only, which the signal reproducers
+assert, and the native call API translates POLL to REPROLOGUE so its
+callers see what they saw before. `RESUME_HOP` keeps staging through
+`DISPATCH`, which reaches the prologue's poll after change 2. Releasing
+the GIL inside a tail chain is safe: the chain holds no C frames.
 
 ### 2. The prologue as a thread function
 
 `kos_eval_prologue(es, insn, val)` is `kos_prologue_reenter` with two
-changes: `KOS_REENTER_AGAIN` becomes a tail into `kos_eval_poll` when
-the breaker is up and into itself otherwise, and its NORMAL exit
-becomes `KOS_THREAD_NEXT` with the pc-bounds safety net moved inside.
-Boundary kinds return.
+changes: it polls in place, through the plain `kos_eval_poll_now`, at
+its head and on every pass that goes round again with the breaker up,
+and its NORMAL exit becomes the instruction fetch and a tail call into
+the handler, with the pc-bounds safety net moved inside. Boundary kinds
+return.
 
-With it, `RESULT_RELAY` learns the rest of the vocabulary: NORMAL and
-DISPATCH thread, REPROLOGUE tails the prologue, RAISE tails the raise
-function of change 3, anything else returns. That one macro is how
-helpers keep returning `KosOpResult` while every handler turns the
-answer into a jump; the forty `EVAL_REPROLOGUE()` sites in helpers do
-not change.
+With it, `RESULT_RELAY` tails the prologue on REPROLOGUE, `DISPATCH`
+tails it after staging, `kos_eval_poll` tails it when the poll raised,
+and every event thread function tails it when its event answers
+REPROLOGUE. That is how helpers keep returning `KosOpResult` while every
+handler turns the answer into a jump; the forty `EVAL_REPROLOGUE()`
+sites in helpers do not change.
 
 The prologue's order is the one discipline the whole set keeps: raise,
 goal drain and resume delivery reach the instruction stream only
@@ -80,7 +87,9 @@ in that loop are exactly where order matters.
 
 `kos_eval_raise(es, insn, val)` holds `process_raise`: a handler found
 means the pc is set and it tails the prologue, so the pending-exception
-phase still runs first; no handler means the boundary RAISE returns.
+phase still runs first; no handler means the boundary RAISE returns,
+and `kos_eval_prepare_boundary_raise` marks it terminal on the eval
+state so the trampoline leaves with it instead of walking it again.
 `RESULT_RAISE()` becomes that tail call. It is used only in handler
 bodies and electors, which carry the prototype, and the compiler proves
 it: musttail refuses any other caller. `return EVAL_RAISE()` in helpers
@@ -91,25 +100,43 @@ control flow stop paying a trampoline trip.
 
 `koskari_eval` keeps its entry phases, then one plain call into
 `kos_eval_prologue`, then cleanup on what comes back. The five labels
-and `apply_kos_op_result` go. `KOS_RES_REPROLOGUE`, `KOS_RES_DISPATCH`
-and `KOS_RES_NORMAL` remain as helper answers but never reach the
-trampoline; the boundary kinds are YIELD, AWAIT, RETURN, RAISE and
-FATAL. The trace's trampoline-step counter becomes the number of
-boundary crossings, which is the measurement for the set.
+go. A result the chain hands back is a boundary when the eval state's
+`terminal` mark says so: a raise walked to no handler, a recorded AWAIT
+or YIELD suspension, a root return, or FATAL. `apply_kos_op_result`
+stays as the fallback for an unmarked result, one a producer returned
+raw instead of tailing into its event, applied as the loop-bodied
+evaluator did before the prologue is called again. `KOS_RES_REPROLOGUE`,
+`KOS_RES_DISPATCH`, `KOS_RES_POLL` and `KOS_RES_NORMAL` remain as helper
+answers. The trace's trampoline-step counter becomes the number of
+fallback applications, which is the measurement of what still returns
+raw.
 
 ### 5. The remaining events as thread functions
 
-The general RETURN path from POP_PROMPT, the values and call-core
-termini and a resume's completion tail `kos_return_deliver` as the
-RETURN rows do. The with and wind control-returned hook becomes
-`kos_eval_control_returned(es, insn, val)`, reached from the region
-return, and `KOS_RES_CONTROL_RETURNED` goes. `eval_event_await` splits
-the same way into `kos_eval_await(es, insn, val)`: an awaitable already
-settled threads on, an unsettled one returns the boundary.
+`kos_return_deliver` takes the general RETURN path itself after its
+plain arms, and the other producers of a RETURN reach it: POP_PROMPT
+and POP_FINALLY through `RESULT_RETURN`, the values and call-core
+termini and a resume's completion through `RESULT_RELAY`.
+`kos_yield_deliver` runs the freeze for every generator, a root one
+included. The with and wind control-returned hook becomes
+`kos_eval_control_returned(es, insn, val)`, and `eval_event_await`
+`kos_eval_await(es, insn, val)`, both reached through the relay and,
+for AWAIT, through `RESULT_AWAIT` from the handlers that returned it
+raw. Each event marks the eval state terminal where its result becomes
+a boundary, and the resume-delivery hub leaves with a marked result as
+the trampoline does. `RESULT_RELAY` speaks the whole vocabulary: NORMAL
+and DISPATCH thread, POLL polls, RAISE, AWAIT, RETURN, YIELD and
+CONTROL_RETURNED go to their event, REPROLOGUE to the prologue, FATAL
+returns.
 
 ### 6. What the shape then allows
 
-Each is its own later step:
+Assessed after change 5 and closed with nothing to do: a root return
+already reaches its boundary in one hop; a provider step's answers are
+relayed into their events by the handler; the event trace wrappers keep
+the per-event timing the trace build reports; and the result struct's
+sixteen bytes cost nothing at a boundary. Kept as the record of the
+allowances:
 
 - Finalize-written control rows. THEEND is already a barrier handler;
   a root-return row and a generator-exhausted row can tail straight to
@@ -124,74 +151,181 @@ Each is its own later step:
   the value; the sixteen-byte round trip stays only where a helper
   answers a handler.
 
+### 7. The resume kind
+
+A frame's resume is three words today: `resume_fn`, `resume_state` and
+`resume_name`. The state is a borrowed pointer, and what it points to
+is governed by a convention per user and by three sites in the frame
+code: `kos_dynframe_free` nulls the pair; `kos_dynframe_clone` copies a
+NULL-state pair and refuses any other by name; the transfer restore in
+`xfer_goal.c` copies the pair verbatim. The one non-trivial state in
+the tree, the provider record a transform step arms, survives because
+the iteration node that steps it owns it, and a step abandoned without
+a raise walk leaves that record marked busy with its pending value held.
+
+The change puts the behaviour beside the function, once, in a static
+record every frame that arms that function shares:
+
+```c
+typedef struct KosResumeKind {
+  const char *name;                 /* what resume_name carries today */
+  KosThreadFn fn;                   /* the resume itself */
+  void (*clear)(void *state);       /* teardown with no delivery coming;
+                                       NULL: the state is borrowed */
+  void *(*clone)(void *state);      /* capture and multi-shot landing;
+                                       NULL: refuse by name */
+} KosResumeKind;
+```
+
+The frame holds `resume_kind` and `resume_state`, two words. "Armed" is
+`kind != NULL`. The state stays per frame; the kind never holds anything
+that varies between frames.
+
+The three lifecycle sites become one rule each: free and park call
+`clear` when the kind has one, then null the pair; clone calls `clone`
+and copies the kind, or refuses by `kind->name`; the transfer restore
+copies the kind and calls `clone` on the template's state, so a
+multi-shot landing never moves a state out of its template. Clean
+completion stays the owner's business: the node or provider clears its
+own fields when the step finishes, and `clear` runs only when no
+delivery will come. The failure delivery is unchanged: a live NULL into
+`kind->fn` with the error set.
+
+Every arming site and the kind it declares:
+
+| site | kind |
+|---|---|
+| provider step (`transform.c`, through `KosResumeFrame_Install`) | one static per provider phase: `clear` releases `busy` and `pending` on the record, no `clone` |
+| the CPS entries `KosEvalState_CallResult` and `NextResume` | the native caller hands in its kind with the state; the entries stop taking a bare function |
+| yield-from phases (`dyn_yield_from.c`) | one static per phase: no `clear`, `clone` identity, since the node it serves clones with the chain |
+| `DISPATCH` and `RESUME_HOP` (`eval.h`) | take the kind and stage or tail into `kind->fn` |
+| `KosResumeFrame_Install` | takes the kind in place of the name and sets it at install; arming a state is all the step does afterwards |
+
+The delivery step and the failure walk call `kind->fn`; the hop tails
+into it through one load from a static record. What each user gains:
+providers get their abandonment cleanup, yield-from loses nothing, and
+a resume whose state is an integer becomes capturable for one identity
+function.
+
+What it touches: the frame union, the three lifecycle sites, the two
+CPS entry signatures and their callers in the provider suite and the
+koscallables, the two macros, `KosResumeFrame_Install`, and the arming
+lines in the fourteen providers.
+
 ## What does not change
 
 The three boundaries and every call into a Python callable are C
 returns; the frame-depth limit exists for that recursion and the tail
 chain does not touch it. FATAL stays a return.
 
-## Stretch goal: resumable reads
+## Follow-ups: reads that call and reads that wait
 
-Today a `KosDynamicRef` wraps its get function in `KosDemand_New`
-(`ref.c`), so a read runs a nested evaluator to completion on the C
-stack: the demand path, and the reason a read can never suspend. With
-changes 2 and 5 in place a deref may answer "not yet" and the reader
-settles instead of forcing.
+Both depend on change 7. Today a `KosDynamicRef` wraps its get
+function in `KosDemand_New` (`ref.c`), so a read runs a nested
+evaluator to completion on the C stack: the demand path, and the
+reason a read can never suspend or be captured.
 
-- A ref kind whose deref can answer with an awaitable instead of a
-  value: a future ref for a backgrounded binding, and the dynamic
-  ref's getter unwrapped from its demand so a coroutine getter answers
-  the same way. `kos_ns_fast_deref` and `frame_ns_deref` return that
-  awaitable with a distinct answer, one extra branch on the non-raw
-  arm only; raw slots are untouched.
-- One thread function, `kos_eval_settle(es, insn, awaitable)`: install
-  a resume on the frame whose state is the ref, then tail into
-  `kos_eval_await`. An awaitable already done delivers on the spot; one
-  that is not returns the AWAIT boundary, and the Python loop runs the
-  background work. Under a demand driver the boundary forces as it does
-  today, so the same code is transparent in both drives.
-- The resume, on delivery: store the value into the ref, so it is
-  settled for every later read, then thread at `acting_pc`, re-executing
-  the instruction, which now reads a plain value. A failed future
-  delivers its exception to the same resume, which raises at the read
-  site.
+### A deref that answers "call this"
 
-Re-execution is the whole trick. Every row that derefs a namespace ref
-does so before it touches the stack: VAR and FAST, the VAR2 to VAR4 and
-FAST2 to FAST4 loads, and every fused VAR and FAST row and elector read
-their operands from the row. The stack rows never deref a ref; their
-operands were pushed by reads that already settled. So settle-and-retry
-is correct for every reader by construction, and no handler learns
-anything: the deref answers "not yet", the handler tails
-`kos_eval_settle`, one line in the deref's failure arm.
+The non-raw arm of `kos_ns_fast_deref` and `frame_ns_deref` gains a
+third answer beside a value and an error: the callable the ref's
+getter is. The demand wrapping goes. A single-slot load (FAST, VAR)
+runs the call core with that callable and no arguments, exactly as
+`op_CALL` with a count of zero, and ends in `RESULT_RELAY`. The callee
+is an ordinary frame: a raise inside the getter unwinds to the read,
+an await inside it suspends as any call's does, a capture across it is
+a capture across a call. No resume is involved, because the plain
+return arm pushes the callee's value onto the invoker's stack and
+threads at the invoker's saved pc, which the handler had already
+advanced past its row: the value lands where the load would have
+pushed it.
+
+A store through a dynamic ref's setter is a call whose result must be
+dropped; it arms a kind that pops and threads.
+
+The electors are unaffected: they classify on the raw arm and demote
+to the generic body on a miss, so the call arm lives in the generic
+body of every VAR and FAST row, once each; the fused rows have more of
+them than the plain loads.
+
+### The row resume: index plus lookup
+
+Every row that derefs more than one slot, FAST2 to FAST4, VAR2 to
+VAR4, and the fused VAR and FAST rows, meets the same shape when a slot
+answers "call this" in the middle: push what is resolved, arm a resume
+that knows where in the row it is, install the call, and finish the row
+when the value comes back. One kind serves all of them:
+
+- **State**: the index of the slot being resolved, carried in the
+  `void *` as an integer. Nothing else survives: the row is re-derived
+  as `code[acting_pc]` on the frame the resume is armed on, `acting_pc`
+  being flushed at the install and restored at the return.
+- **The buffer is the operand stack**: resolved values are pushed
+  where the row would have pushed them. A bytecode frame's delivery is
+  always the pending slot, never its stack, so the buffered values
+  survive a suspension and a freeze untouched.
+- **`fn`**: pushes the delivered value, then continues the row from
+  index plus one through a per-row callback that knows the row's
+  layout: which operand fields are lookups and in what order. A raw
+  slot is pushed in place; a call-backed slot re-arms the same kind with
+  the new index and installs; when the count is reached the resume
+  threads from `es->pc`.
+- **`clone`**: identity. A capture across a suspended row is a capture
+  across a call plus one integer.
+- **`clear`**: NULL. The stack owns the temporaries.
+
+The delivery arrives settled: with a non-NULL state the delivery step
+classifies the value and stages a settling step for an awaitable, so
+the resume only ever receives a value.
+
+The per-row callback is the part to design cleanly, since the rows'
+lookup fields differ in position and count: the schema in
+`opcodes.incl` already names which operand fields are VAR or FASTVAR,
+so the callback can be derived from the row's schema rather than
+written per row, and a row family then registers nothing beyond its
+handler's use of the shared kind. That derivation is the design work
+of this follow-up.
+
+### Reads that wait
+
+With the call arm and the row resume in place, a ref whose deref
+answers with an awaitable takes the same road as a call whose result
+needed awaiting: the handler arms the row kind with the index and
+returns AWAIT through `kos_eval_await`; an awaitable already done
+delivers on the spot, one that is not returns the boundary and the
+Python loop runs the background work. Under a demand driver the
+boundary forces as it does today. The delivery pushes the value into
+the row as any other.
 
 What it gives: `(define x (background (compute)))` as an opt-in binding
 form that stores a future ref; every read of `x` is a plain FAST until
 the first read that arrives before the value, which suspends the
-context and resumes at that instruction when the value lands. A
-suspended read is a frame with a resume armed, so the frame cache
-refuses it under the existing rule. The binding form must produce a
-non-raw ref, which promotes the slot exactly as a closure capture does;
-the template reset returns it to raw at the cache store.
+context and resumes in the row when the value lands. A suspended read
+is a frame with a resume armed, so the frame cache refuses it under
+the existing rule. The binding form must produce a non-raw ref, which
+promotes the slot as a closure capture does; the template reset returns
+it to raw at the cache store.
 
-The ref kinds and the deref answer are independent of the evaluator
-work and can be built first. Getting the settle right across the
-delimited-continuation and generator paths is the serious part: a
-frame suspended on a settle sits on the chain like any await, and
-every capture and freeze rule that applies to an await applies to it.
+Two places the implementation is checked against: nothing may change
+the invoker's `acting_pc` between arming and delivery except the
+transfer restore, which copies it with the resume pair; and every
+generic body that derefs a slot carries the call arm.
 
 ## Testing
 
-- Per change: the full suite and the `KOS_EVAL_SAFETYNET=1` suite; the
-  trace build's trampoline-step counter falling to the boundary count
-  on the churn kernels.
+- Per change: the full suite; the trace build's trampoline-step
+  counter, which now counts only raw fallbacks, on the churn kernels.
 - Change 3: the exception reproducers and the raise-heavy kernels under
   `tox -qe churn`.
-- Stretch goal: reads that settle immediately, reads that suspend and
-  resume under an asyncio driver and under a demand driver, a failed
-  future raising at the read site, a settle inside a generator and
-  inside a delimited region, and the frame cache refusing a suspended
-  read.
+- Change 7: a step abandoned by a coroutine closed mid-suspension
+  leaves its provider clear; capture across a yield-from phase still
+  works; capture across a provider step still refuses by name.
+- Follow-ups: a getter that raises, awaits, and is captured across; a
+  FAST4 with call-backed slots in every position; reads that settle
+  immediately, reads that suspend and resume under an asyncio driver
+  and under a demand driver, a failed future raising at the read site,
+  a suspended row inside a generator and inside a delimited region, and
+  the frame cache refusing a suspended read.
 
 ## Related
 
