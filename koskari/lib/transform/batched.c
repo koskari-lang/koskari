@@ -78,15 +78,16 @@ static PyObject *batched_short(KosBatched *b) {
 
 
 /* the resume kinds: one static record per resume function, its
-   name and lifecycle; no clear (the owner keeps its record) and no
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
     KosEvalState *es, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(batched_resume_deliver_kind, "batched-step", batched_resume_deliver, NULL, NULL);
-KOS_RESUME_KIND(batched_resume_fill_kind, "batched-step", batched_resume_fill, NULL, NULL);
+KOS_RESUME_KIND(batched_resume_deliver_kind, "batched-step", batched_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(batched_resume_fill_kind, "batched-step", batched_resume_fill, kos_transform_step_clear, NULL);
 
 
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(

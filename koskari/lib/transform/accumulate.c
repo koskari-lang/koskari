@@ -63,7 +63,8 @@ static KosOpResult accumulate_emit(KosEvalState *es, KosAccumulate *a) {
 
 
 /* the resume kinds: one static record per resume function, its
-   name and lifecycle; no clear (the owner keeps its record) and no
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fetch(
     KosEvalState *es, void *state, PyObject *value);
@@ -72,9 +73,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_result(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(accumulate_resume_fetch_kind, "accumulate-step", accumulate_resume_fetch, NULL, NULL);
-KOS_RESUME_KIND(accumulate_resume_fold_kind, "accumulate-step", accumulate_resume_fold, NULL, NULL);
-KOS_RESUME_KIND(accumulate_resume_result_kind, "accumulate-step", accumulate_resume_result, NULL, NULL);
+KOS_RESUME_KIND(accumulate_resume_fetch_kind, "accumulate-step", accumulate_resume_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(accumulate_resume_fold_kind, "accumulate-step", accumulate_resume_fold, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(accumulate_resume_result_kind, "accumulate-step", accumulate_resume_result, kos_transform_step_clear, NULL);
 
 
 /**

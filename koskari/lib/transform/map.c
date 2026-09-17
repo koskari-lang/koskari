@@ -37,7 +37,8 @@
 
 
 /* the resume kinds: one static record per resume function, its
-   name and lifecycle; no clear (the owner keeps its record) and no
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
     KosEvalState *es, void *state, PyObject *value);
@@ -46,9 +47,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(map_resume_after_fetch_kind, "map-step", map_resume_after_fetch, NULL, NULL);
-KOS_RESUME_KIND(map_resume_after_result_kind, "map-step", map_resume_after_result, NULL, NULL);
-KOS_RESUME_KIND(map_resume_start_fetch_kind, "map-step", map_resume_start_fetch, NULL, NULL);
+KOS_RESUME_KIND(map_resume_after_fetch_kind, "map-step", map_resume_after_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(map_resume_after_result_kind, "map-step", map_resume_after_result, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(map_resume_start_fetch_kind, "map-step", map_resume_start_fetch, kos_transform_step_clear, NULL);
 
 
 /**

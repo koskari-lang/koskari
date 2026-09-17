@@ -63,7 +63,8 @@ static inline int filter_keeps(KosFilter *f, int ok) {
 
 
 /* the resume kinds: one static record per resume function, its
-   name and lifecycle; no clear (the owner keeps its record) and no
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
     KosEvalState *es, void *state, PyObject *value);
@@ -72,9 +73,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(filter_resume_after_verdict_kind, "filter-step", filter_resume_after_verdict, NULL, NULL);
-KOS_RESUME_KIND(filter_resume_do_fetch_kind, "filter-step", filter_resume_do_fetch, NULL, NULL);
-KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step", filter_resume_do_invoke, NULL, NULL);
+KOS_RESUME_KIND(filter_resume_after_verdict_kind, "filter-step", filter_resume_after_verdict, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(filter_resume_do_fetch_kind, "filter-step", filter_resume_do_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step", filter_resume_do_invoke, kos_transform_step_clear, NULL);
 
 
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(

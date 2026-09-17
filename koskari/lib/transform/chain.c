@@ -89,15 +89,16 @@ static int chain_advance(KosChain *c) {
 
 
 /* the resume kinds: one static record per resume function, its
-   name and lifecycle; no clear (the owner keeps its record) and no
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
     KosEvalState *es, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(chain_resume_deliver_kind, "chain-step", chain_resume_deliver, NULL, NULL);
-KOS_RESUME_KIND(chain_resume_fetch_kind, "chain-step", chain_resume_fetch, NULL, NULL);
+KOS_RESUME_KIND(chain_resume_deliver_kind, "chain-step", chain_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(chain_resume_fetch_kind, "chain-step", chain_resume_fetch, kos_transform_step_clear, NULL);
 
 
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(

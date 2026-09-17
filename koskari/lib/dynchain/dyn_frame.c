@@ -88,7 +88,7 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   /* A resume whose kind can clone its state copies; one whose kind
      cannot (a provider step, whose state is the step's own) refuses
-     the capture by name. The clone's fields start unarmed so the
+     the capture by name. The clone's resume starts empty so the
      refusal's free finds nothing to clear. */
   KosDynFrame_RESUME_KIND(clone) = NULL;
   KosDynFrame_RESUME_STATE(clone) = NULL;
@@ -118,6 +118,21 @@ void *kos_resume_clone_shared(void *state) {
 
 
 /**
+   Clear a resume that will get no delivery: the kind's clear, when it
+   has one, releases what the state holds, then the kind and state are
+   nulled. The one rule behind free, park and tail reset.
+*/
+static void kos_dynframe_clear_resume(KosDynFrame *frame) {
+  const KosResumeKind *kind = KosDynFrame_RESUME_KIND(frame);
+
+  if (kind && kind->clear)
+    kind->clear(KosDynFrame_RESUME_STATE(frame));
+  KosDynFrame_RESUME_KIND(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+}
+
+
+/**
    Release stack chain and namespace; return node to freelist. Callers:
    kos_dynnode_free, chain teardown.
 
@@ -130,12 +145,7 @@ void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  /* A resume still armed here gets no delivery: its kind's clear, when
-     it has one, releases what the state holds. */
-  if (KosDynFrame_RESUME_KIND(frame) && KosDynFrame_RESUME_KIND(frame)->clear)
-    KosDynFrame_RESUME_KIND(frame)->clear(KosDynFrame_RESUME_STATE(frame));
-  KosDynFrame_RESUME_KIND(frame) = NULL;
-  KosDynFrame_RESUME_STATE(frame) = NULL;
+  kos_dynframe_clear_resume(frame);
 
   /* A completing frame set by KosNativeFrame_ReturnPark: park_cache is
      the holder's cache slot; offer the frame there before the ordinary
@@ -304,8 +314,7 @@ int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache) {
 
   Py_CLEAR(KosDynFrame_NS(frame));
   KosDynFrame_PARK_CACHE(frame) = NULL;
-  KosDynFrame_RESUME_KIND(frame) = NULL;
-  KosDynFrame_RESUME_STATE(frame) = NULL;
+  kos_dynframe_clear_resume(frame);
 
   KosStack_Clear(&KosDynFrame_STACK(frame));
   KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
@@ -392,8 +401,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
   KosDynFrame_PARK_CACHE(frame) = NULL;
-  KosDynFrame_RESUME_KIND(frame) = NULL;
-  KosDynFrame_RESUME_STATE(frame) = NULL;
+  kos_dynframe_clear_resume(frame);
   /* the frame is being repurposed for a different function */
   Py_CLEAR(KosDynFrame_FN(frame));
 }

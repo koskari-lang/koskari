@@ -291,6 +291,15 @@ void kos_transform_finish(PyObject *self, int exhausted) {
 }
 
 
+void kos_transform_step_clear(void *state) {
+
+  KosTransform *t = (KosTransform *) state;
+
+  t->busy = 0;
+  Py_CLEAR(t->pending);
+}
+
+
 /**
    The transform's durable drive context, created lazily: python-adapter
    drives host their work here across steps instead of allocating a
