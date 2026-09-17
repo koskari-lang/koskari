@@ -1,0 +1,18 @@
+;; async_generators -- produce values from a generator and fold them with
+;; for-each (pyperformance async_generators).  Python needs an async
+;; generator and async for; a Koskari generator is iterable on the hosted
+;; path as it is, so the kernel carries no async spelling.
+
+define produce [n]:
+    for-each [i (range n)]:
+        (yield i)
+
+
+define async_generators [n]:
+    define total 0
+    for-each [i (produce n)]:
+        incr! total i
+    total
+
+
+;; The end.

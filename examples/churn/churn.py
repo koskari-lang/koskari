@@ -29,6 +29,7 @@ by name (positional), by ``--tag``, or run all.
 """
 
 import argparse
+import asyncio
 import json
 from time import perf_counter
 
@@ -36,6 +37,7 @@ import registry
 import reporter
 
 import koskari  # noqa: F401  (activates the .ki import hook)
+from koskari.asyncio import run_until_complete
 from koskari.lib import clear_trace_counters, demand, get_trace_report
 
 
@@ -58,6 +60,43 @@ def measure(fn, args, runs, samples, warmup):
     return times, answer
 
 
+def hosted(loop, fn):
+    """
+    Wrap ``fn`` so each call is driven to completion on ``loop``.  ``fn`` is
+    an ``async def`` or a bare Koskari function; either way the call yields
+    a coroutine the loop runs.
+    """
+
+    def call(*args):
+        return run_until_complete(loop, fn(*args))
+    return call
+
+
+def variants(bench, want_py, want_ki):
+    """
+    Yield ``(label, callable)`` for each requested side of ``bench``, the
+    callable ready for :func:`measure`.  A hosted benchmark drives both
+    sides on one event loop, closed once the generator is exhausted; a
+    demand benchmark runs the Koskari kernel through ``demand``.
+    """
+
+    if not bench.hosted:
+        if want_py:
+            yield "python", bench.py
+        if want_ki:
+            yield "koskari", demand(bench.ki)
+        return
+
+    loop = asyncio.new_event_loop()
+    try:
+        if want_py:
+            yield "python", hosted(loop, bench.py)
+        if want_ki:
+            yield "koskari", hosted(loop, bench.ki)
+    finally:
+        loop.close()
+
+
 def run_benchmark(bench, mode, samples, warmup):
     """
     Run one benchmark under ``mode`` and return a :class:`reporter.Result`.
@@ -75,16 +114,9 @@ def run_benchmark(bench, mode, samples, warmup):
     timings = []
     answers = []
 
-    if want_py:
-        times, answer = measure(
-            bench.py, bench.args, bench.runs, samples, warmup)
-        timings.append(reporter.Timing("python", bench.runs, times, answer))
-        answers.append(answer)
-
-    if want_ki:
-        fn = demand(bench.ki)
+    for label, fn in variants(bench, want_py, want_ki):
         times, answer = measure(fn, bench.args, bench.runs, samples, warmup)
-        timings.append(reporter.Timing("koskari", bench.runs, times, answer))
+        timings.append(reporter.Timing(label, bench.runs, times, answer))
         answers.append(answer)
 
     ok = True

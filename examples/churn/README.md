@@ -50,6 +50,12 @@ takes the last value).
 Koskari-only benchmarks (no Python variant) run their Koskari side in `compare`
 too, checking `expected`; they are skipped only under `--mode python`.
 
+A **hosted** benchmark (`hosted=True` in its descriptor) is an async case:
+each call is driven to completion on one asyncio event loop instead of the
+`demand` path. The Python variant is an `async def`; the Koskari kernel is
+called bare and its coroutine handed to the loop. The per-call
+`run_until_complete` cost is paid on both sides.
+
 ## Selecting benchmarks
 
 - **By name:** positional arguments — `tox -qe churn -- loop pidigits`.
@@ -58,7 +64,7 @@ too, checking `expected`; they are skipped only under `--mode python`.
 
 Tags in use: `dispatch`, `call`, `recursion`, `iteration`, `alloc`, `attr`,
 `slots`, `branch`, `loop`, `demand`, `generator`, `koskari-only`, `float`,
-`bignum`, `array`, `game`.
+`bignum`, `array`, `game`, `async`.
 
 ## Options
 
@@ -112,11 +118,21 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `binary_trees` | allocation churn + recursion | check-sum 129712 |
 | `starmap` | Koskari-only: the `demand` sync path | deterministic baseline |
 | `yieldfrom` | Koskari-only: `yield-from` delegation/teardown | deterministic baseline |
+| `async_tree` | hosted: fan-out task tree via `gather` (pyperformance async_tree, no I/O) | leaf count 4096 |
+| `coroutines` | hosted: await-chain recursion (pyperformance coroutines) | fib(25) = 75025 |
+| `async_generators` | hosted: async generator consumed by `async for` (pyperformance async_generators) | sum of range(20000) |
 
 The first seven are RNG-style churn with no external oracle — correctness rests
-on the Python and Koskari answers agreeing. The four *game* benchmarks carry a
-known checksum, so they stay correctness-checked even in `--mode koskari` with
-no Python side present.
+on the Python and Koskari answers agreeing. The four *game* benchmarks and the
+three *hosted* async benchmarks carry a known result, so they stay
+correctness-checked even in `--mode koskari` with no Python side present.
+
+The hosted kernels are written as Koskari, not as transliterated Python. Every
+Koskari call already runs on the async-native evaluator, so `coroutines` is
+the plain recursion and `async_generators` is a plain generator under
+`for-each`; only `async_tree` carries an explicit `await`, on the
+`asyncio.gather` future, which is a handle the evaluator never resolves on its
+own.
 
 ## Adding a benchmark
 
@@ -159,6 +175,7 @@ the driver discovers every non-underscore module in `py/`.
        ki=_ki.square_sum,
        expected=None,          # a known value makes it self-validating
        tags=("loop",),
+       hosted=False,           # True => drive each call on an event loop
    )
    ```
 
