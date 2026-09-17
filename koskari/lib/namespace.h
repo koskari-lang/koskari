@@ -159,15 +159,6 @@ PyObject *KosNamespace_Copy(PyObject *template_ns);
 
 
 /**
-  Clear every raw fast slot back to NULL, leaving non-raw slots (shared
-  closure/global Refs) untouched: restores a call namespace to the state
-  KosNamespace_Copy produced.  Used by the per-function frame cache at
-  park time.
-*/
-void KosNamespace_ClearRawFast(PyObject *ns);
-
-
-/**
    Looks up Ref matching key. A module namespace creates the binding
    on a miss and keeps it; this is a request for a Ref to hold.
 
@@ -503,6 +494,23 @@ static inline uint64_t *kos_ns_raw_word(PyObject *ns, size_t idx) {
 
 static inline int kos_ns_is_raw(PyObject *ns, size_t idx) {
   return (int) ((*kos_ns_raw_word(ns, idx) >> (idx & 63)) & 1ULL);
+}
+
+
+/**
+  Clear every raw fast slot back to NULL, leaving non-raw slots (shared
+  closure/global Refs) untouched: restores a call namespace to the state
+  KosNamespace_Copy produced.  Used by the per-function frame cache when
+  a frame is stored, and by the self-tail rebind.
+*/
+static inline void KosNamespace_ClearRawFast(PyObject *ns) {
+
+  size_t count = KosNamespace_FAST_COUNT(ns);
+
+  for (size_t i = 0; i < count; i++) {
+    if (kos_ns_is_raw(ns, i))
+      Py_CLEAR(KosNamespace_GET_FAST_VAL(ns, i));
+  }
 }
 
 

@@ -2363,6 +2363,36 @@ static inline int kos_return_is_plain(
 
 
 /**
+   kos_dynframe_free with the frame-cache offer inline: the returning
+   frame's fn tag is taken here and the frame offered to its function's
+   cache without leaving the unit. A refused offer, a frame flagged for
+   a native holder's cache, or an untagged frame falls to
+   kos_dynframe_free, which skips the offer since the tag is gone.
+*/
+KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
+
+  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  KosDynFrame_RESUME_NAME(frame) = NULL;
+
+  {
+    PyObject *fn = KosDynFrame_FN(frame);
+    if (likely(fn)
+        && ! (KosDynFrame_FLAGS(frame) & KOS_FRAME_PARK_TO_CACHE)) {
+      int parked;
+
+      KosDynFrame_FN(frame) = NULL;
+      parked = KosFunction_TryParkFrame(fn, frame);
+      Py_DECREF(fn);
+      if (likely(parked))
+        return;
+    }
+  }
+  kos_dynframe_free(frame);
+}
+
+
+/**
    NG fast path: plain Koskari frame-to-frame return.
 
    Inline retarget from child (being freed) to parent.  Skips the chain
@@ -2385,7 +2415,7 @@ KOS_OP_INLINE KosOpResult eval_ng_plain_return(
   KosEvalState_CODE(es) = KosDynFrame_CODE((KosDynFrame *) parent);
   es->pc = KosDynFrame_PC((KosDynFrame *) parent);
   es->acting_pc = KosDynFrame_ACTING_PC((KosDynFrame *) parent);
-  kos_dynframe_free((KosDynFrame *) child);
+  kos_dynframe_free_fast((KosDynFrame *) child);
 
   if (KosEvalState_StackPUSH(es, val) < 0)
     return EVAL_FATAL();
