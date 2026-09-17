@@ -477,4 +477,88 @@ class TestCompareConstFold(unittest.TestCase):
         self.assertIn((OpCode.JUMP, "L1"), out)
 
 
+class TestItemStoreConstSquash(unittest.TestCase):
+    """
+    CONST ahead of a fused item store squashes into the stack-free
+    _CONST row; a non-constant value leaves the store as it is
+    """
+
+    def test_var_item_store_const_squash(self):
+        out = squish_ops([
+            (OpCode.CONST, 42),
+            (OpCode.VAR_ITEM_STORE, ("lst", "i", 0, 0)),
+        ])
+        self.assertEqual(
+            out,
+            [(OpCode.VAR_ITEM_STORE_CONST, ("lst", "i", 42, 0)),
+             (OpCode.RETURN, 1)])
+
+    def test_var_const_item_store_const_squash(self):
+        out = squish_ops([
+            (OpCode.CONST, 42),
+            (OpCode.VAR_CONST_ITEM_STORE, ("d", "k", 0, 0)),
+        ])
+        self.assertEqual(
+            out,
+            [(OpCode.VAR_CONST_ITEM_STORE_CONST, ("d", "k", 42, 0)),
+             (OpCode.RETURN, 1)])
+
+    def test_item_stores_not_squashed_without_const(self):
+        out = squish_ops([
+            (OpCode.VAR, "v"),
+            (OpCode.VAR_ITEM_STORE, ("lst", "i", 0, 0)),
+            (OpCode.VAR, "v"),
+            (OpCode.VAR_CONST_ITEM_STORE, ("d", "k", 0, 0)),
+        ])
+        ops = [op for op, _ in out]
+        self.assertIn(OpCode.VAR_ITEM_STORE, ops)
+        self.assertIn(OpCode.VAR_CONST_ITEM_STORE, ops)
+        self.assertNotIn(OpCode.VAR_ITEM_STORE_CONST, ops)
+        self.assertNotIn(OpCode.VAR_CONST_ITEM_STORE_CONST, ops)
+
+
+class TestItemInplaceConstSquash(unittest.TestCase):
+    """
+    CONST rhs on a single-operand VAR_ITEM_INPLACE or
+    VAR_CONST_ITEM_INPLACE fuses to the stack-free _CONST form
+    """
+
+    def test_const_rhs_fuses(self):
+        out = squish_ops([
+            (OpCode.CONST, 1),
+            (OpCode.VAR_ITEM_INPLACE, ((Operand.ADD, 1), "lst", "i", 0)),
+        ])
+        self.assertIn(
+            (OpCode.VAR_ITEM_INPLACE_CONST, (int(Operand.ADD), "lst", "i", 1)),
+            out)
+        out = squish_ops([
+            (OpCode.CONST, 1),
+            (OpCode.VAR_CONST_ITEM_INPLACE, ((Operand.SUBTRACT, 1), "d", "k", 0)),
+        ])
+        self.assertIn(
+            (OpCode.VAR_CONST_ITEM_INPLACE_CONST,
+             (int(Operand.SUBTRACT), "d", "k", 1)),
+            out)
+
+    def test_computed_rhs_stays(self):
+        out = squish_ops([
+            (OpCode.VAR, "y"),
+            (OpCode.VAR_ITEM_INPLACE, ((Operand.ADD, 1), "lst", "i", 0)),
+        ])
+        self.assertIn(
+            (OpCode.VAR_ITEM_INPLACE, ((Operand.ADD, 1), "lst", "i", 0)), out)
+
+    def test_multi_operand_stays(self):
+        out = squish_ops([
+            (OpCode.VAR, "y"),
+            (OpCode.CONST, 1),
+            (OpCode.VAR_CONST_ITEM_INPLACE, ((Operand.ADD, 2), "d", "k", 0)),
+        ])
+        self.assertIn(
+            (OpCode.VAR_CONST_ITEM_INPLACE, ((Operand.ADD, 2), "d", "k", 0)),
+            out)
+        self.assertNotIn(
+            OpCode.VAR_CONST_ITEM_INPLACE_CONST, [op for op, _ in out])
+
+
 # The end.

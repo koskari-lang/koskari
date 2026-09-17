@@ -627,6 +627,59 @@ class ByteCodeProcessor:
                  (merged >> 8, arg[1], matched[0][1], None))]
 
 
+    @squish_rule(OpCode.CONST, OpCode.VAR_ITEM_INPLACE)
+    def var_item_inplace_const_fuse(self, op, arg, matched):
+        """
+        CONST VAR_ITEM_INPLACE (single operand) -> the stack-free
+        VAR_ITEM_INPLACE_CONST: bare operator selector, object name, key
+        name, pooled operand
+        """
+
+        merged = merge_opcount(arg[0])
+        if merged & 0xff != 1:
+            return None
+        return [(OpCode.VAR_ITEM_INPLACE_CONST,
+                 (merged >> 8, arg[1], arg[2], matched[0][1]))]
+
+
+    @squish_rule(OpCode.CONST, OpCode.VAR_CONST_ITEM_INPLACE)
+    def var_const_item_inplace_const_fuse(self, op, arg, matched):
+        """
+        CONST VAR_CONST_ITEM_INPLACE (single operand) -> the stack-free
+        VAR_CONST_ITEM_INPLACE_CONST: bare operator selector, object
+        name, pooled key, pooled operand
+        """
+
+        merged = merge_opcount(arg[0])
+        if merged & 0xff != 1:
+            return None
+        return [(OpCode.VAR_CONST_ITEM_INPLACE_CONST,
+                 (merged >> 8, arg[1], arg[2], matched[0][1]))]
+
+
+    @squish_rule(OpCode.CONST, OpCode.VAR_ITEM_STORE)
+    def var_item_store_const_fuse(self, op, arg, matched):
+        """
+        CONST VAR_ITEM_STORE -> the stack-free VAR_ITEM_STORE_CONST row:
+        object name, key name, pooled value
+        """
+
+        return [(OpCode.VAR_ITEM_STORE_CONST,
+                 (arg[0], arg[1], matched[0][1], 0))]
+
+
+    @squish_rule(OpCode.CONST, OpCode.VAR_CONST_ITEM_STORE)
+    def var_const_item_store_const_fuse(self, op, arg, matched):
+        """
+        CONST VAR_CONST_ITEM_STORE -> the stack-free
+        VAR_CONST_ITEM_STORE_CONST row: object name, pooled key, pooled
+        value
+        """
+
+        return [(OpCode.VAR_CONST_ITEM_STORE_CONST,
+                 (arg[0], arg[1], matched[0][1], 0))]
+
+
     @fuse_rule(FEEDER, FEEDER, OpCode.CHECK_COMPARE)
     def fuse_check_compare(self, op, arg, matched):
         """
@@ -680,6 +733,25 @@ class ByteCodeProcessor:
             return None
         return [(OpCode.OBJECT_COMPARE_VAR,
                  (sel, matched[0][1], matched[1][1], matched[2][1]))]
+
+
+    @fuse_rule(OpCode.VAR, OpCode.VAR, OpCode.ITEM)
+    def fuse_var_item(self, op, arg, matched):
+        """
+        VAR obj, VAR key, ITEM -> VAR_ITEM (obj, key): both operands
+        read from the namespace by the row, nothing on the stack
+        """
+
+        return [(OpCode.VAR_ITEM, (matched[0][1], matched[1][1], 0, 0))]
+
+
+    @fuse_rule(OpCode.VAR, OpCode.CONST_ITEM)
+    def fuse_var_const_item(self, op, arg, matched):
+        """
+        VAR obj, CONST_ITEM key -> VAR_CONST_ITEM (obj, key)
+        """
+
+        return [(OpCode.VAR_CONST_ITEM, (matched[0][1], arg, 0, 0))]
 
 
     @fuse_rule(OpCode.VAR, OpCode.OBJECT_ITER)

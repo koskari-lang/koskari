@@ -135,20 +135,51 @@ class TestInplaceItemSpecial(SpecialsTestCase):
         self.assertEqual(15, lst[1])
 
 
-    async def test_inplace_item_const_key_emits_dup_and_const_item_store(self):
+    async def test_inplace_item_symbol_obj_const_key_const_value(self):
         code = self.compile_to_code('(inplace-item + d "k" 1)', d={})
-        self.assertEqual(1, _count_op(code, OpCode.DUP))
-        self.assertIn(OpCode.CONST_ITEM, _opcodes(code))
-        self.assertIn(OpCode.CONST_ITEM_STORE, _opcodes(code))
-        self.assertIsNotNone(_find_inplace(code, Operand.ADD))
+        self.assertEqual(0, _count_op(code, OpCode.DUP))
+        self.assertIn(OpCode.VAR_CONST_ITEM_INPLACE_CONST, _opcodes(code))
+        self.assertNotIn(OpCode.CONST, _opcodes(code)[:1])
 
 
-    async def test_inplace_item_var_key_emits_dup_and_item_store(self):
+    async def test_inplace_item_symbol_obj_symbol_key_const_value(self):
         code = self.compile_to_code("(inplace-item + lst i 1)", lst=[], i=0)
-        self.assertEqual(1, _count_op(code, OpCode.DUP))
-        self.assertIn(OpCode.ITEM, _opcodes(code))
-        self.assertIn(OpCode.ITEM_STORE, _opcodes(code))
-        self.assertNotIn(OpCode.CONST_ITEM, _opcodes(code))
+        self.assertEqual(0, _count_op(code, OpCode.DUP))
+        self.assertIn(OpCode.VAR_ITEM_INPLACE_CONST, _opcodes(code))
+
+
+    async def test_inplace_item_symbol_obj_computed_value(self):
+        code = self.compile_to_code("(inplace-item + lst i (f))", lst=[], i=0, f=None)
+        self.assertIn(OpCode.VAR_ITEM_INPLACE, _opcodes(code))
+        code = self.compile_to_code('(inplace-item + d "k" (f))', d={}, f=None)
+        self.assertIn(OpCode.VAR_CONST_ITEM_INPLACE, _opcodes(code))
+
+
+    async def test_inplace_item_symbol_obj_two_values_keeps_count(self):
+        code = self.compile_to_code("(inplace-item + lst i 1 2)", lst=[], i=0)
+        self.assertIn(OpCode.VAR_ITEM_INPLACE, _opcodes(code))
+        self.assertNotIn(OpCode.VAR_ITEM_INPLACE_CONST, _opcodes(code))
+
+
+    async def test_inplace_item_expression_obj_emits_stack_rows(self):
+        code = self.compile_to_code('(inplace-item + (f) "k" 1)', f=None)
+        self.assertEqual(0, _count_op(code, OpCode.DUP))
+        self.assertIn(OpCode.CONST_ITEM_INPLACE, _opcodes(code))
+        code = self.compile_to_code("(inplace-item + (f) i 1)", f=None, i=0)
+        self.assertIn(OpCode.ITEM_INPLACE, _opcodes(code))
+
+
+    async def test_inplace_item_computed_key_emits_stack_row(self):
+        code = self.compile_to_code("(inplace-item + lst (+ i 1) 1)", lst=[], i=0)
+        self.assertIn(OpCode.ITEM_INPLACE, _opcodes(code))
+        self.assertNotIn(OpCode.VAR_ITEM_INPLACE, _opcodes(code))
+
+
+    async def test_inplace_item_in_function_body_lowers_to_fast(self):
+        code = self.compile_to_code("(lambda [lst i] (inplace-item + lst i 1))")
+        body = self.lambda_body_code(code)
+        ops = [body.oparg(i)[0] for i in range(body.length())]
+        self.assertIn(OpCode.FAST_ITEM_INPLACE_CONST, ops)
 
 
     async def test_inplace_item_mutates_in_place(self):
@@ -168,8 +199,8 @@ class TestInplaceItemSpecial(SpecialsTestCase):
 
     async def test_inplace_item_multiple_values(self):
         """
-        extra values reduce left-to-right through a single
-        OBJECT_INPLACE_* instruction
+        extra values reduce left-to-right through the single fused
+        row, whose OPCOUNT carries the value count
         """
 
         d = {"k": 10}
@@ -180,8 +211,11 @@ class TestInplaceItemSpecial(SpecialsTestCase):
 
         code = self.compile_to_code('(inplace-item + d "k" 1 2 3)',
                                     d={})
-        arg = _find_inplace(code, Operand.ADD)
-        self.assertEqual(4, arg)
+        rows = [code.extra_tuple(arg) for op, arg in _ops(code)
+                if op == OpCode.VAR_CONST_ITEM_INPLACE]
+        self.assertEqual(1, len(rows))
+        self.assertEqual(int(Operand.ADD), rows[0][0] >> 8)
+        self.assertEqual(3, rows[0][0] & 0xff)
 
 
     async def test_inplace_item_power_takes_one_value(self):

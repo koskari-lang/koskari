@@ -2160,3 +2160,35 @@ tags:
   - format
   - construct
 notes: RULES is the Python format spec string itself, passed to format(OBJ, RULES)
+---
+id: object-set-item-value-first-004
+feature: special/compile/set-item
+source: (let [[a (#list 0)] [b (#list 0)]] (begin (let [[d a]] (set-item d 0 (begin (setq d b) 7))) (#list a b)))
+verify:
+  read: (let [[a (#list 0)] [b (#list 0)]] (begin (let [[d a]] (set-item d 0 (begin (setq d b) 7))) (#list a b)))
+  expand: (let [[a (#list 0)] [b (#list 0)]] (begin (let [[d a]] (set-item d 0 (begin (setq d b) 7))) (#list a b)))
+  eval: list:[[0],[7]]
+references:
+  - reference/specials/compile-set-item.md
+stability: evolving
+tags:
+  - object
+  - mutate
+  - evaluation-order
+notes: with a symbol object and a constant or symbol key, VAL runs before OBJ is resolved; a VAL that rebinds OBJ stores into the new binding
+---
+id: object-inplace-item-value-first-001
+feature: special/compile/inplace-item
+source: (let [[a (#list 1)] [b (#list 1)]] (begin (let [[d a]] (inplace-item + d 0 (begin (setq d b) 10))) (#list a b)))
+verify:
+  read: (let [[a (#list 1)] [b (#list 1)]] (begin (let [[d a]] (inplace-item + d 0 (begin (setq d b) 10))) (#list a b)))
+  expand: (let [[a (#list 1)] [b (#list 1)]] (begin (let [[d a]] (inplace-item + d 0 (begin (setq d b) 10))) (#list a b)))
+  eval: list:[[1],[11]]
+references:
+  - reference/specials/compile-inplace-item.md
+stability: evolving
+tags:
+  - object
+  - mutate
+  - evaluation-order
+notes: with a symbol object and a constant or symbol key, the VALUEs run before OBJ is resolved and its item read; a VALUE that rebinds OBJ updates the new binding

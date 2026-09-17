@@ -474,4 +474,111 @@ class TestFormatLowering(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, [(VFC, ("x", "04d", None, None))])
 
 
+IT = OpCode.ITEM
+CI = OpCode.CONST_ITEM
+VIT = OpCode.VAR_ITEM
+VCI = OpCode.VAR_CONST_ITEM
+
+
+class TestFuseItemFeeders(unittest.TestCase):
+    """
+    VAR obj, VAR key, ITEM fuse into VAR_ITEM; VAR obj, CONST_ITEM key
+    into VAR_CONST_ITEM. A constant object, a computed object or key,
+    and the store rows stay
+    """
+
+    def test_var_var_item_fuses(self):
+        out = fuse_ops([(V, "a"), (V, "i"), (IT, 0)])
+        self.assertEqual(out, [(VIT, ("a", "i", 0, 0))])
+
+    def test_var_const_item_fuses(self):
+        out = fuse_ops([(V, "a"), (CI, "k")])
+        self.assertEqual(out, [(VCI, ("a", "k", 0, 0))])
+
+    def test_const_object_stays(self):
+        out = fuse_ops([(C, (1, 2)), (V, "i"), (IT, 0)])
+        self.assertEqual(out, [(C, (1, 2)), (V, "i"), (IT, 0)])
+        out = fuse_ops([(C, "abc"), (CI, 1)])
+        self.assertEqual(out, [(C, "abc"), (CI, 1)])
+
+    def test_computed_key_stays(self):
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([(V, "a"), (V, "f"), call, (IT, 0)])
+        self.assertEqual(out, [(V, "a"), (V, "f"), call, (IT, 0)])
+
+    def test_computed_object_stays(self):
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([(V, "f"), call, (V, "i"), (IT, 0)])
+        self.assertEqual(out, [(V, "f"), call, (V, "i"), (IT, 0)])
+        out = fuse_ops([(V, "f"), call, (CI, "k")])
+        self.assertEqual(out, [(V, "f"), call, (CI, "k")])
+
+    def test_var_var_item_position_transparent(self):
+        out = fuse_ops([(V, "a"), (P, 3), (V, "i"), (P, 7), (IT, 0)])
+        self.assertEqual(out, [(VIT, ("a", "i", 0, 0)), (P, 7)])
+
+    def test_store_rows_stay(self):
+        out = fuse_ops([(V, "a"), (V, "i"), (V, "v"), (OpCode.ITEM_STORE, 0)])
+        self.assertEqual(
+            out, [(V, "a"), (V, "i"), (V, "v"), (OpCode.ITEM_STORE, 0)])
+        out = fuse_ops([(V, "a"), (V, "v"), (OpCode.CONST_ITEM_STORE, "k")])
+        self.assertEqual(
+            out, [(V, "a"), (V, "v"), (OpCode.CONST_ITEM_STORE, "k")])
+
+    def test_fused_rows_pack_nothing(self):
+        # the feeders the rule consumed never reach the pack phase
+        nspec = NamespaceSpec(None, ("a", "i"), ())
+        proc = ByteCodeProcessor(make_fragment([
+            (V, "a"), (V, "i"), (IT, 0), (OpCode.RETURN, 1)]))
+        proc.fuse_feeders()
+        proc.convert_fast(nspec)
+        proc.pack_runs()
+        self.assertEqual(proc.instructions, [
+            (OpCode.FAST_ITEM, (0, 1, 0, 0)), (OpCode.RETURN, 1)])
+
+
+class TestItemLowering(unittest.IsolatedAsyncioTestCase):
+    """
+    convert_fast lowers the VAR item rows to their FAST twins by the
+    name-derived map and the schema: every VAR field must have a slot
+    """
+
+    async def test_var_item_lowers_when_both_local(self):
+        nspec = NamespaceSpec(None, ("a", "i"), ())
+        result = convert_fast(nspec, [(VIT, ("a", "i", 0, 0))])
+        self.assertEqual(result, [(OpCode.FAST_ITEM, (0, 1, 0, 0))])
+
+    async def test_var_item_stays_when_key_not_local(self):
+        nspec = NamespaceSpec(None, ("a",), ())
+        result = convert_fast(nspec, [(VIT, ("a", "i", 0, 0))])
+        self.assertEqual(result, [(VIT, ("a", "i", 0, 0))])
+
+    async def test_var_const_item_lowers_when_local(self):
+        nspec = NamespaceSpec(None, ("a",), ())
+        result = convert_fast(nspec, [(VCI, ("a", "k", 0, 0))])
+        self.assertEqual(result, [(OpCode.FAST_CONST_ITEM, (0, "k", 0, 0))])
+
+    async def test_store_rows_lower(self):
+        nspec = NamespaceSpec(None, ("a", "i"), ())
+        result = convert_fast(nspec, [
+            (OpCode.VAR_ITEM_STORE, ("a", "i", 0, 0)),
+            (OpCode.VAR_CONST_ITEM_STORE, ("a", "k", 0, 0)),
+        ])
+        self.assertEqual(result, [
+            (OpCode.FAST_ITEM_STORE, (0, 1, 0, 0)),
+            (OpCode.FAST_CONST_ITEM_STORE, (0, "k", 0, 0)),
+        ])
+
+    async def test_store_rows_stay_when_not_local(self):
+        nspec = NamespaceSpec(None, ("i",), ())
+        result = convert_fast(nspec, [
+            (OpCode.VAR_ITEM_STORE, ("a", "i", 0, 0)),
+            (OpCode.VAR_CONST_ITEM_STORE, ("a", "k", 0, 0)),
+        ])
+        self.assertEqual(result, [
+            (OpCode.VAR_ITEM_STORE, ("a", "i", 0, 0)),
+            (OpCode.VAR_CONST_ITEM_STORE, ("a", "k", 0, 0)),
+        ])
+
+
 # The end.

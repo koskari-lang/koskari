@@ -13,23 +13,22 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-
 /**
-  CONST_ITEM: arg = constant index (key). Push TOS[key].
+   CONST_ITEM: arg = constant index (key). Stack [obj]; pop it, push
+   obj[key].
+   Prologue only: tail-call the body the site's slot elected
+   (eval/eval_electors.c), which carries its own guard; an empty slot
+   or an ungated site takes the electing function, which classifies
+   the container once and settles the slot. One cache slot:
+   KOS_CACHE_ELECTOR.
 */
+
 KOS_OP_HANDLER(CONST_ITEM) {
-  PyObject *key = KosOp_OBJ(insn);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
 
-  PyObject *obj = KosEvalState_StackPopRef(es);
-  if (unlikely(! obj))
-    RESULT_RAISE();
-
-  PyObject *item = PyObject_GetItem(obj, key);
-  Py_DECREF(obj);
-  if (unlikely(! item))
-    RESULT_RAISE();
-
-  RESULT_STEAL(es, item);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_const_item_elect, es, insn, NULL);
 }
 
 

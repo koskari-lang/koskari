@@ -30,6 +30,27 @@ frame's return arm.
 
 Ref: [interpreter/electors.md](interpreter/electors.md).
 
+### Variable-tier item access opcodes and item electors
+
+VAR_ITEM, VAR_CONST_ITEM and their STORE forms with FAST twins, a
+cache slot on the whole item family, and an elector body per
+container kind (exact list, tuple, dict, generic). Loads fuse in the
+compress pipeline; stores emit from the set-item special. Item rows
+and their feeders are a quarter of the fannkuch dispatches.
+
+Ref: [interpreter/item-access-opcodes.md](interpreter/item-access-opcodes.md);
+[interpreter/item-inplace-opcodes.md](interpreter/item-inplace-opcodes.md).
+
+### Loop transfer fast path
+
+A top-is-region arm in CONTINUE and BREAK that skips the find walk,
+the ancestry proof, and the zero-iteration unwind loop, and a
+single-dispatch FOREACH back-edge (CONTINUE tailing into the iterator
+step, later the node-style FOREACH elector). Sequenced after the item
+opcodes.
+
+Ref: [interpreter/loop-transfer-fast-path.md](interpreter/loop-transfer-fast-path.md).
+
 ### Dispatch tweaks to investigate
 
 Every record now carries its own pc, so the `acting_pc` store in

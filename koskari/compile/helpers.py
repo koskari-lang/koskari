@@ -587,6 +587,26 @@ def const_only_expr(fragment):
     return (found, value)
 
 
+def var_only_expr(fragment):
+    """
+    Check whether a ByteCodeFragment consists only of a single VAR load,
+    answering (True, name) for one and (False, None) otherwise
+    """
+
+    found = False
+    name = None
+
+    for op, opa in fragment.instructions:
+        if op in (OpCode.NOOP, OpCode.POSITION):
+            continue
+        if op != OpCode.VAR or found:
+            return (False, None)
+        found = True
+        name = opa
+
+    return (found, name)
+
+
 def emit_item_key(compiler, frag, key, const_op, stack_op, before=None):
     """
     Emit an item access whose object is already on the fragment: a key

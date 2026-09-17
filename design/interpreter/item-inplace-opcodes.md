@@ -2,7 +2,24 @@
 
 ## Status
 
-Proposal -- not implemented. Six potential new opcodes pending review.
+Implemented on the churn-test-performance branch (2026-09-16), with
+four more rows than proposed: VAR_ITEM_INPLACE_CONST,
+VAR_CONST_ITEM_INPLACE_CONST and their FAST twins carry a single
+constant operand in the row's fourth field (schema OPERAND, obj, key,
+CONST), squashed from a CONST ahead of the fused row at a count of
+one as VAR_INPLACE_CONST is. The stack tier and the VAR rows run
+kos_item_inplace_reduce with no cache slot; the four FAST rows carry
+an elector slot and elect their operator's int or float body, the
+cell found by an exact list or dict check inside the body and the
+cell's value offered as the result's home. The emission table below
+stands except for its second row: VAR_ITEM_INPLACE takes the key by
+name (schema OPCOUNT, VAR, VAR, NOARG), and a computed key under a
+symbol object takes the stack tier with the object on the stack, so
+the fused rows never mix a slot operand with a stack operand. The FAST
+rows are reached by lowering and the read-after-values ordering stands
+as accepted. Measured on the churn harness: nbody
+1.88x to 1.05x of CPython, fannkuch 1.48x to 1.36x. Open question 4
+is answered by [item-access-opcodes.md](item-access-opcodes.md).
 
 ## Summary
 
