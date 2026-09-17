@@ -1047,6 +1047,10 @@ def special_inplace_item(compiler, called_by, op, obj, key, values):
             frag.instruction(OpCode.VAR_CONST_ITEM_INPLACE,
                              ((binop, count), name, key_val, 0))
         else:
+            # the key is resolved by name when the row runs, so a
+            # captured key is requested from the enclosing scope like
+            # the object is
+            frag.request_var(key_name)
             frag.instruction(OpCode.VAR_ITEM_INPLACE,
                              ((binop, count), name, key_name, 0))
     else:

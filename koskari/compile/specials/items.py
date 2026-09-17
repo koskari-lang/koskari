@@ -113,6 +113,9 @@ def emit_var_item_store(compiler, called_by, obj, key, val):
     if is_const:
         frag.instruction(OpCode.VAR_CONST_ITEM_STORE, (name, key_val, 0, 0))
     else:
+        # the key is resolved by name when the row runs, so a captured
+        # key is requested from the enclosing scope like the object is
+        frag.request_var(key_name)
         frag.instruction(OpCode.VAR_ITEM_STORE, (name, key_name, 0, 0))
     frag.instruction(OpCode.CONST, None)
     return frag
