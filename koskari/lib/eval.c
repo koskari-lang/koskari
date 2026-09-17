@@ -1878,6 +1878,35 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
 }
 
 
+KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val) {
+
+  (void) insn;
+  (void) val;
+
+  /* Another thread waiting on the GIL has already outlasted the
+     interpreter's switch interval, so yield it now, as Python's own
+     loop would; then take any pending signal. Py_MakePendingCalls is
+     the public entry that runs the interpreter's own signal handling,
+     which is what clears the breaker's signal input:
+     PyErr_CheckSignals alone would leave it up and every later
+     cooperation point polling. */
+  if (koskari_gil_drop_requested()) {
+    Py_BEGIN_ALLOW_THREADS
+    Py_END_ALLOW_THREADS
+  }
+  Py_MakePendingCalls();
+
+  /* A signal raised here is taken by the prologue's pending-exception
+     step, which drops any staged delivery before the raise walk. */
+  if (unlikely(PyErr_Occurred()))
+    return EVAL_REPROLOGUE();
+  KOS_THREAD_NEXT(es);
+}
+
+
 #include "handlers.incl"
 #undef CURRENT_NS
 #undef KOS_OP_REQUIRE_NS
@@ -2205,6 +2234,7 @@ static KosOpResult eval_phase_entry(
     case KOS_RES_NORMAL:
     case KOS_RES_REPROLOGUE:
     case KOS_RES_DISPATCH:
+    case KOS_RES_POLL:
       *mode_out = KOS_MODE_NORMAL;
       return EVAL_NORMAL();
     default:
@@ -2222,7 +2252,8 @@ static KosOpResult eval_phase_entry(
     KosOpResult rs = eval_step_resume_delivery(es);
     if (rs.kind != KOS_RES_NORMAL
         && rs.kind != KOS_RES_REPROLOGUE
-        && rs.kind != KOS_RES_DISPATCH)
+        && rs.kind != KOS_RES_DISPATCH
+        && rs.kind != KOS_RES_POLL)
       return rs;
     /* NORMAL / REPROLOGUE / DISPATCH: resume finished cleanly; proceed
        into dispatch (DISPATCH is loop-internal and must not escape) */
@@ -3043,7 +3074,8 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
      eval_event_await, which is where a demand extent denies it and
      where the suspension event is recorded. Returning either raw would
      escape koskari_eval unprocessed. */
-  if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE)
+  if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE
+      || res.kind == KOS_RES_POLL)
     return EVAL_REPROLOGUE();
 
   {
@@ -3063,6 +3095,7 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
   switch (res.kind) {
   case KOS_RES_NORMAL:
   case KOS_RES_REPROLOGUE:
+  case KOS_RES_POLL:
     return EVAL_REPROLOGUE();
 
   case KOS_RES_RAISE: {

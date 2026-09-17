@@ -178,6 +178,10 @@ KosOpResult KosEvalState_Call(
     KosSegment *dummy = NULL;
     KosOpResult r = kos_call_invoke_body(es, &dummy, 0, callable, args,
                                          nargs, kwnames, 0);
+    /* POLL is a handler-relay answer; a native caller bounces through
+       the trampoline, which polls ahead of the prologue as before. */
+    if (r.kind == KOS_RES_POLL)
+      return EVAL_REPROLOGUE();
     if (r.kind != KOS_RES_NORMAL)
       return r;
     if (KosEvalState_GOAL(es))

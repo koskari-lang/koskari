@@ -58,6 +58,10 @@ typedef enum KosOpResultKind {
                               valid, no PyErr, no goal, no resume.
                               Loop-internal only; must never escape
                               koskari_eval (post-op consumers normalize it) */
+  KOS_RES_POLL,            /* as NORMAL, from a cooperation point that found
+                              the eval breaker up: the handler's relay tails
+                              into the breaker service before threading on.
+                              Loop-internal like DISPATCH */
   KOS_RES_FATAL,           /* hard fault; koskari_eval returns -1 immediately */
 } KosOpResultKind;
 
@@ -76,6 +80,7 @@ struct KosOpResult {
 #define EVAL_RETURN(v)          ((KosOpResult){ KOS_RES_RETURN, (v) })
 #define EVAL_CONTROL_RETURNED() ((KosOpResult){ KOS_RES_CONTROL_RETURNED, NULL })
 #define EVAL_DISPATCH()         ((KosOpResult){ KOS_RES_DISPATCH, NULL })
+#define EVAL_POLL()             ((KosOpResult){ KOS_RES_POLL, NULL })
 #define EVAL_FATAL()            ((KosOpResult){ KOS_RES_FATAL, NULL })
 
 
@@ -228,6 +233,19 @@ typedef enum KosGetNextResult {
 typedef KosThreadFn KosResumeFn;
 
 
+/**
+   The breaker service, a KosThreadFn the cooperation points tail into
+   when the eval breaker is up: yields the GIL when another thread has
+   asked for it and runs the pending calls, then threads on at es->pc,
+   or answers REPROLOGUE when the poll raised so the prologue's
+   pending-exception phase takes the signal. insn and val are unused.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+
+
 /* === Threaded control transfer === */
 
 
@@ -367,13 +385,18 @@ typedef KosThreadFn KosResumeFn;
    an install, the next instruction after a push), and continues
    there; every other kind returns to the trampoline as it stands.
    The helper itself keeps its own prototype and return; the tail
-   call happens here, in the handler.
+   call happens here, in the handler. POLL is NORMAL from a
+   cooperation point that found the breaker up (a frame install, the
+   one cycle a tail-recursive loop closes without a CONTINUE): the
+   relay tails into the breaker service, which threads on.
 */
 #define RESULT_RELAY(es, r)                                             \
   do {                                                                  \
     KosOpResult kos_rr_ = (r);                                          \
     if (likely(kos_rr_.kind == KOS_RES_NORMAL))                         \
       KOS_THREAD_NEXT(es);                                              \
+    if (kos_rr_.kind == KOS_RES_POLL)                                   \
+      TAILCALL(kos_eval_poll, (es), NULL, NULL);                        \
     return kos_rr_;                                                     \
   } while (0)
 
@@ -422,14 +445,15 @@ typedef KosThreadFn KosResumeFn;
 
 /**
    RESULT_NEXT_POLL(es): thread on to the instruction at es->pc, unless
-   the eval breaker is up, in which case hand the trampoline that same
-   step so it polls first. The cooperation point for an opcode that
-   closes a cycle on its own (CONTINUE, the compiler's one back-edge).
+   the eval breaker is up, in which case tail into the breaker service,
+   which polls and threads on to that same step. The cooperation point
+   for an opcode that closes a cycle on its own (CONTINUE, the
+   compiler's one back-edge).
 */
 #define RESULT_NEXT_POLL(es)                                            \
   do {                                                                  \
     if (KOS_EVAL_BREAKER_UP(es))                                        \
-      return EVAL_NORMAL();                                             \
+      TAILCALL(kos_eval_poll, (es), NULL, NULL);                        \
     KOS_THREAD_NEXT(es);                                                \
   } while (0)
 
@@ -720,10 +744,10 @@ struct KosEvalState {
 
 /**
    The result a call-core install arm returns once the callee frame is
-   live at pc 0: thread on, or when the eval breaker is up restart
-   through the prologue so the trampoline polls before the callee's
-   first instruction. Frame entry is a cooperation point because a
-   tail-recursive loop has no CONTINUE.
+   live at pc 0: thread on, or POLL when the eval breaker is up so the
+   handler's RESULT_RELAY tails into the breaker service before the
+   callee's first instruction. Frame entry is a cooperation point
+   because a tail-recursive loop has no CONTINUE.
 */
 /**
    True when a just-installed frame can be threaded into at its pc: it
@@ -737,7 +761,7 @@ static inline int kos_frame_threads(KosDynFrame *nf) {
 
 
 static inline KosOpResult kos_call_installed(KosEvalState *es) {
-  return KOS_EVAL_BREAKER_UP(es) ? EVAL_REPROLOGUE() : EVAL_NORMAL();
+  return KOS_EVAL_BREAKER_UP(es) ? EVAL_POLL() : EVAL_NORMAL();
 }
 
 
