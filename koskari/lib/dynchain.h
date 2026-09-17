@@ -1007,15 +1007,6 @@ void kos_dyn_renumber_frames_counted(
 
 
 /**
-   Push a prepared frame -- code, namespace, and cleared stack already
-   attached, node base normalized by KosFunction_TryParkFrame -- as
-   DYN_TOP and FRAME_TOP.  The install mirrors kos_dyn_push_frame minus
-   the allocation; cannot fail.
-*/
-void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame);
-
-
-/**
    Offer a detached native-program frame to a holder's one-frame cache:
    strip it to an inert allocation -- program, state, stack contents,
    and links all cleared, so the parked frame holds no references of

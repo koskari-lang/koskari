@@ -978,6 +978,49 @@ done:
 }
 
 
+/**
+   Push a prepared frame from the per-function cache as DYN_TOP and
+   FRAME_TOP.  Code, namespace, and cleared stack are already attached
+   and the node base was normalized at park time
+   (KosFunction_TryParkFrame); this is the install half of
+   kos_dyn_push_frame with the node id reset, and cannot fail.
+   The caller has asked kos_eval_check_frame_room for one frame before
+   binding into the parked namespace.
+*/
+static inline void kos_dyn_push_ready_frame(
+    KosEvalState *es,
+    KosDynFrame *frame) {
+
+  KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(es);
+  KosDynNode_NODE_ID(frame) = 0;  /* a fresh instance; minted on first read */
+
+  {
+    KosDynFrame *cur = KosEvalState_FRAME(es);
+    if (cur) {
+      KosDynFrame_FLAGS(frame) |= (KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND);
+      KosDynFrame_DEPTH(frame) = KosDynFrame_DEPTH(cur) + 1;
+      KosEvalState_FlushLiveRegsToFrame(es);
+    } else {
+      KosDynFrame_DEPTH(frame) = 1;
+    }
+  }
+
+  /* the installed segment's unwind cache: the live slot it displaces */
+  KosSegment_BACK(KosDynNode_STACK((KosDynNode *) frame)) =
+      KosEvalState_BLOCK(es);
+  if (KosSegment_IS_INLINE(KosDynNode_STACK((KosDynNode *) frame)))
+    KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) KosEvalState_FRAME(es);
+  KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
+  KosEvalState_FRAME(es) = frame;
+  KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
+  KosEvalState_NAMESPACE(es) = KosDynNode_NS((KosDynNode *) frame);
+  KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
+  es->pc = 0;
+  es->acting_pc = 0;
+}
+
+
 int KosEvalState_SetFrameCodeAndNamespace(
     KosEvalState *es,
     KosDynFrame *frame,

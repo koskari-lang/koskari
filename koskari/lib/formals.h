@@ -19,6 +19,8 @@
 
 
 #include <Python.h>
+#include "namespace.h"
+#include "stack.h"
 
 
 /* === FormalsSpec === */
@@ -185,40 +187,100 @@ PyObject *KosFormals_NamespaceSpec(
 
 
 /**
-  Steal-bind positionals into fast slots 0..nargs-1.  Requires the
-  simple-call classification and a fresh call namespace (raw NULL
-  slots).  The caller forfeits every reference in args; buffers with
-  borrowed entries must not be passed.
+   Steal-bind positionals for the simple-call class: move args[0..nargs-1]
+   into namespace fast slots 0..nargs-1.  Requires the simple-call
+   classification (KosFunction simple_arity1) and a namespace fresh from
+   KosNamespace_Copy, so every target slot is raw positional and NULL --
+   the bind is a bare pointer transfer with no refcount traffic.
+
+   Ownership: the caller forfeits every reference in args; after this
+   returns the namespace owns them all.  A buffer holding any borrowed
+   entry (e.g. the self-arg prepend buffer, whose slot 0 is borrowed)
+   must never be passed here.
 */
-int KosFormals_SimpleStealApply(
+static inline int KosFormals_SimpleStealApply(
     PyObject *ns,
     PyObject *const *args,
-    Py_ssize_t nargs);
+    Py_ssize_t nargs) {
+
+  for (Py_ssize_t i = 0; i < nargs; i++)
+    KosNamespace_GET_FAST_VAL(ns, i) = args[i];
+  return 0;
+}
 
 
 /**
-  Steal-bind the top nargs references off the block tail into fast
-  slots 0..nargs-1, retracting the block length in the same step.  The
-  moved span must not also be dropped by the caller.
+   Steal-bind positionals from the tail of a segment: move the top
+   nargs references into namespace fast slots 0..nargs-1 and retract the
+   block length in the same step, so the transfer and the window
+   accounting cannot come apart -- the moved span must not be dropped by
+   the caller.  Same classification contract as
+   KosFormals_SimpleStealApply.
+
+   :return: 0 on success; -1 on underrun (error set, nothing moved)
 */
-int KosFormals_SimpleStealApplyBlock(
+static inline int KosFormals_SimpleStealApplyBlock(
     PyObject *ns,
     KosSegment *block,
-    Py_ssize_t nargs);
+    Py_ssize_t nargs) {
+
+  if (! nargs)
+    return 0;
+
+  if (unlikely(! block || (size_t) nargs > KosSegment_LEN(block))) {
+    PyErr_Format(PyExc_RuntimeError, "formals steal underrun."
+                 " requested: %zu, available: %zu", (size_t) nargs,
+                 block ? KosSegment_LEN(block) : 0);
+    return -1;
+  }
+
+  {
+    size_t base = KosSegment_LEN(block) - (size_t) nargs;
+    (void) KosFormals_SimpleStealApply(ns, &block->objs[base], nargs);
+    KosSegment_LEN(block) = base;
+  }
+  return 0;
+}
 
 
 /**
-  Self-injecting variant of KosFormals_SimpleStealApplyBlock: bind fast
-  slot 0 from self (borrowed; a reference is taken), then steal-bind the
-  top nargs references off the block tail into fast slots 1..nargs,
-  retracting the block length.  Same classification contract; the
-  function's simple arity is nargs + 1.
+   Steal-bind positionals with an out-of-band receiver: slot 0 binds from
+   self (borrowed; a reference is taken here), and the top nargs block
+   references move into slots 1..nargs with the block length retracted in
+   the same step.  self never lives on the block, so the caller's window
+   accounting is untouched by the injection.  Same classification
+   contract as KosFormals_SimpleStealApply against a simple arity of
+   nargs + 1.
+
+   :return: 0 on success; -1 on underrun (error set, nothing moved)
 */
-int KosFormals_SimpleStealApplySelfBlock(
+static inline int KosFormals_SimpleStealApplySelfBlock(
     PyObject *ns,
     PyObject *self,
     KosSegment *block,
-    Py_ssize_t nargs);
+    Py_ssize_t nargs) {
+
+  if (unlikely(nargs
+               && (! block || (size_t) nargs > KosSegment_LEN(block)))) {
+    PyErr_Format(PyExc_RuntimeError, "formals steal underrun."
+                 " requested: %zu, available: %zu", (size_t) nargs,
+                 block ? KosSegment_LEN(block) : 0);
+    return -1;
+  }
+
+  Py_INCREF(self);
+  KosNamespace_GET_FAST_VAL(ns, 0) = self;
+
+  if (nargs) {
+    size_t base = KosSegment_LEN(block) - (size_t) nargs;
+    PyObject *const *args = &block->objs[base];
+
+    for (Py_ssize_t i = 0; i < nargs; i++)
+      KosNamespace_GET_FAST_VAL(ns, (size_t) i + 1) = args[i];
+    KosSegment_LEN(block) = base;
+  }
+  return 0;
+}
 
 
 /* === Unit lifecycle === */
