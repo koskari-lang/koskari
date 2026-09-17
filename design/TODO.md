@@ -51,6 +51,16 @@ opcodes.
 
 Ref: [interpreter/loop-transfer-fast-path.md](interpreter/loop-transfer-fast-path.md).
 
+### Threaded control: every signal a jump target
+
+The breaker poll, the prologue, the raise walk and the remaining
+events become thread functions the handlers tail into, so the
+trampoline collapses to one call and returns only at a boundary.
+Stretch goal: reads that settle a future ref by suspending at the
+instruction and re-executing it on delivery.
+
+Ref: [interpreter/threaded-control.md](interpreter/threaded-control.md).
+
 ### Dispatch tweaks to investigate
 
 Every record now carries its own pc, so the `acting_pc` store in
