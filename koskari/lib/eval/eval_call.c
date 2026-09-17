@@ -472,7 +472,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
             goto fail;
           }
 
-          KosNamespace_ClearRawFast(ns);
+          KosNamespace_ResetToTemplate(ns);
           (void) KosFormals_SimpleStealApplyBlock(ns, *caller_slot, nargs);
           kos_stack_clear_fast(&KosDynFrame_STACK(frame));
           KOS_TRACE_EVENTS_INC(KOS_TE_CALL_TAIL_INPLACE);

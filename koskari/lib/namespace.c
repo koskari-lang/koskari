@@ -748,6 +748,19 @@ static int ns_init_syms_from_nspec(
 }
 
 
+/* The parent link a new namespace stores: the nearest ancestor that is
+   not a call-frame namespace (one made by KosNamespace_Copy, which
+   carries a template). A frame's names reach a nested scope only as
+   captured cells, resolved from the live parent at construction, so the
+   link skips the frame and the frame stays private to its call. */
+static PyObject *ns_link_parent(PyObject *parent) {
+  while (parent && KosNamespace_Check(parent)
+         && KosNamespace_TEMPLATE(parent))
+    parent = KosNamespace_PARENT(parent);
+  return parent;
+}
+
+
 /* Allocate and initialize a namespace from a NamespaceSpec, using cached
    fast_names and bitmasks to skip per-slot work.  This is the hot path
    called on every function invocation. */
@@ -787,12 +800,17 @@ static PyObject *ns_newfull_from_nspec(
 
   Py_INCREF(name);
   KosNamespace_NAME(self) = name;
-  Py_XINCREF(parent);
-  KosNamespace_PARENT(self) = parent;
+  {
+    PyObject *link = ns_link_parent(parent);
+    Py_XINCREF(link);
+    KosNamespace_PARENT(self) = link;
+  }
   KosNamespace_BINDS(self) = binds;
   KosNamespace_FAST_COUNT(self) = count;
   KosNamespace_FAST_NAMES(self) = NULL;
 
+  /* closure and global syms resolve from the live parent, where the
+     captured slots are; the stored link above may sit past it */
   if (ns_init_syms_from_nspec(self, parent, nspec))
     Py_CLEAR(self);
 

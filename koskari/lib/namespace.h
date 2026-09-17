@@ -497,23 +497,6 @@ static inline int kos_ns_is_raw(PyObject *ns, size_t idx) {
 }
 
 
-/**
-  Clear every raw fast slot back to NULL, leaving non-raw slots (shared
-  closure/global Refs) untouched: restores a call namespace to the state
-  KosNamespace_Copy produced.  Used by the per-function frame cache when
-  a frame is stored, and by the self-tail rebind.
-*/
-static inline void KosNamespace_ClearRawFast(PyObject *ns) {
-
-  size_t count = KosNamespace_FAST_COUNT(ns);
-
-  for (size_t i = 0; i < count; i++) {
-    if (kos_ns_is_raw(ns, i))
-      Py_CLEAR(KosNamespace_GET_FAST_VAL(ns, i));
-  }
-}
-
-
 static inline void kos_ns_set_raw(PyObject *ns, size_t idx, int raw) {
   uint64_t *word = kos_ns_raw_word(ns, idx);
   uint64_t bit = 1ULL << (idx & 63);
@@ -521,6 +504,29 @@ static inline void kos_ns_set_raw(PyObject *ns, size_t idx, int raw) {
     *word |= bit;
   else
     *word &= ~bit;
+}
+
+
+/**
+  Restore a call namespace to the state KosNamespace_Copy produced from
+  its template: every slot the template holds raw is emptied and marked
+  raw again. That releases a raw local, and also a cell a closure
+  promoted the slot to during the call, which the closure keeps alone.
+  Slots the template holds as refs (closure and global cells) are left
+  as they are. Used by the per-function frame cache when a frame is
+  stored, and by the self-tail rebind.
+*/
+static inline void KosNamespace_ResetToTemplate(PyObject *ns) {
+
+  PyObject *template_ns = KosNamespace_TEMPLATE(ns);
+  size_t count = KosNamespace_FAST_COUNT(ns);
+
+  for (size_t i = 0; i < count; i++) {
+    if (kos_ns_is_raw(template_ns, i)) {
+      Py_CLEAR(KosNamespace_GET_FAST_VAL(ns, i));
+      kos_ns_set_raw(ns, i, 1);
+    }
+  }
 }
 
 

@@ -245,10 +245,10 @@ static inline int KosFunction_TryParkFrame(
     Py_FatalError("KosFunction_TryParkFrame: frame has no stack");
 #endif
 
-  /* Reset to the state a fresh install would produce: raw slots NULL
-     (non-raw template refs retained), empty stack, normalized node
-     base ready for kos_dyn_push_ready_frame. */
-  KosNamespace_ClearRawFast(ns);
+  /* Reset to the state a fresh install would produce: the template's
+     raw slots NULL and raw again (its refs retained), empty stack,
+     normalized node base ready for kos_dyn_push_ready_frame. */
+  KosNamespace_ResetToTemplate(ns);
   kos_stack_clear_fast(&KosDynFrame_STACK(frame));
   KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
   KosDynFrame_BACK_FRAME(frame) = NULL;
