@@ -24,7 +24,7 @@ KOS_OP_HANDLER(AWAIT) {
   uint32_t arg = KosOp_ARG(insn);
 
   if (arg == 0u)
-    return EVAL_AWAIT(Py_NewRef(Py_None));
+    RESULT_AWAIT(es, Py_NewRef(Py_None));
 
   if (unlikely(arg != 1u)) {
     PyErr_Format(PyExc_RuntimeError,

@@ -76,7 +76,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
       }
     }
     KosEvalState_MarkSuspendedNotRunning(es);
-    return EVAL_RETURN(val);
+    RESULT_RETURN(es, val);
   }
 
   KosDynNode *top = KosEvalState_CurrentNode(es);

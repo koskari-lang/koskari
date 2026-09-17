@@ -63,7 +63,7 @@ KOS_OP_HANDLER(POP_FINALLY) {
        enabled FINALLY takes its own delivery. */
     switch (pending) {
       case KOS_PENDING_RETURN_FRAME:
-        return EVAL_RETURN(promoted);
+        RESULT_RETURN(es, promoted);
       case KOS_PENDING_RETURN_BREAK:
         RESULT_RELAY(es, kos_dyn_unwind_to_loop(
             es, KOS_XFER_EVENT_BREAK, promoted));

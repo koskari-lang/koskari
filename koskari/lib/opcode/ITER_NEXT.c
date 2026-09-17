@@ -58,7 +58,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
       }
 
       case KOS_IREQ_EXIT:
-        return EVAL_AWAIT(out);
+        RESULT_AWAIT(es, out);
 
       case KOS_IREQ_ERROR:
       default:

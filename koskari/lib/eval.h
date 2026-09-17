@@ -259,6 +259,31 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
     PyObject *val);
 
 
+/**
+   The delivery of RETURN, YIELD and AWAIT and the control-returned
+   hook, each a KosThreadFn the handlers and the relay tail into with
+   the owned value (NULL for the hook): the event runs in the chain,
+   threads on when it can, and returns a boundary otherwise. insn is
+   unused.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+KOS_PRESERVE_NONE KosOpResult kos_eval_await(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+
+
 /* === Threaded control transfer === */
 
 
@@ -394,16 +419,22 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
 #define RESULT_RAISE()  TAILCALL(kos_eval_raise, es, NULL, NULL)
 #define RESULT_FAIL()   return EVAL_FATAL()
 
+/* The owned value leaves through the event's thread function; the
+   calling function must have the KosThreadFn prototype. */
+#define RESULT_AWAIT(es, val)   TAILCALL(kos_eval_await, (es), NULL, (val))
+#define RESULT_RETURN(es, val)  TAILCALL(kos_return_deliver, (es), NULL, (val))
+
 /**
    RESULT_RELAY(es, r): end a handler with the result of the helper
    that settled its operation -- the call core, an iteration step, an
    await, a dynamic node's transition. NORMAL means the helper left
    the next instruction at es->pc (a callee's first instruction after
    an install, the next instruction after a push), and continues
-   there; RAISE tails into the raise walk as RESULT_RAISE does; every
-   other kind returns to the trampoline as it stands. The helper
-   itself keeps its own prototype and return; the tail call happens
-   here, in the handler. POLL is NORMAL from a
+   there; RAISE, AWAIT, RETURN, YIELD and CONTROL_RETURNED tail into
+   their event's thread function; DISPATCH threads; REPROLOGUE and
+   FATAL return to the trampoline. The helper itself keeps its own
+   prototype and return; the tail call happens here, in the handler.
+   POLL is NORMAL from a
    cooperation point that found the breaker up (a frame install, the
    one cycle a tail-recursive loop closes without a CONTINUE): the
    relay tails into the breaker service, which threads on.
@@ -417,6 +448,16 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
       TAILCALL(kos_eval_poll, (es), NULL, NULL);                        \
     if (kos_rr_.kind == KOS_RES_RAISE)                                  \
       TAILCALL(kos_eval_raise, (es), NULL, NULL);                       \
+    if (kos_rr_.kind == KOS_RES_AWAIT)                                  \
+      TAILCALL(kos_eval_await, (es), NULL, kos_rr_.val);                \
+    if (kos_rr_.kind == KOS_RES_RETURN)                                 \
+      TAILCALL(kos_return_deliver, (es), NULL, kos_rr_.val);            \
+    if (kos_rr_.kind == KOS_RES_YIELD)                                  \
+      TAILCALL(kos_yield_deliver, (es), NULL, kos_rr_.val);             \
+    if (kos_rr_.kind == KOS_RES_CONTROL_RETURNED)                       \
+      TAILCALL(kos_eval_control_returned, (es), NULL, NULL);            \
+    if (kos_rr_.kind == KOS_RES_DISPATCH)                               \
+      KOS_THREAD_NEXT(es);                                              \
     return kos_rr_;                                                     \
   } while (0)
 
@@ -750,10 +791,12 @@ struct KosEvalState {
   uint16_t recursion_limit; /* the deepest frame this context may
                          install: sys.getrecursionlimit() read at Init
                          and clamped to KOS_FRAME_DEPTH_MAX */
-  uint8_t raise_terminal;   /* set by kos_eval_prepare_boundary_raise:
-                         the RAISE in flight has been walked and found
-                         no handler, so the trampoline leaves with it
-                         instead of walking it again */
+  uint8_t terminal;         /* the result in flight is a boundary that
+                         has been through its event: a raise walked to
+                         no handler, a suspension recorded for AWAIT or
+                         YIELD, a root return. The trampoline and the
+                         resume delivery leave with it instead of
+                         applying it again */
 };
 
 

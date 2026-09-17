@@ -844,7 +844,7 @@ void kos_eval_prepare_boundary_raise(
   PyErr_Restore(typ, val, tb);
   kos_eval_mark_context_dead(ctx);
   if (es)
-    es->raise_terminal = 1;
+    es->terminal = 1;
 }
 
 
@@ -1800,7 +1800,7 @@ static KosOpResult kos_op_call_star(
    from every RETURN row, so it carries the KosThreadFn prototype; insn
    is unused.
 */
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
+KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
     KosEvalState *es,
     void *insn,
     PyObject *val) {
@@ -1838,7 +1838,17 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
       RESULT_RAISE();
   }
 
-  return EVAL_RETURN(val);
+  /* The general path: the walk over the extents above the frame, the
+     generator and iteration-node parents, the delimited return, the
+     root. Its own plain case is the transition above. */
+  {
+    KosOpResult r;
+
+    KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return_ng(es, val));
+    if (likely(r.kind == KOS_RES_DISPATCH))
+      RESULT_CONTINUE(es);
+    return r;
+  }
 }
 
 
@@ -1850,33 +1860,38 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
    value as the terminal YIELD.  Reached by tail call from every YIELD
    row; insn is unused.
 */
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
+KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
     KosEvalState *es,
     void *insn,
     PyObject *val) {
 
   KosDynGen *gen = kos_dyn_find_gen(es);
+  KosOpResult r;
 
   (void) insn;
 
-  if (gen && KosDynGen_IS_FLATTENED(gen)) {
-    KosOpResult r;
-
-    KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, gen, val));
-    if (likely(r.kind == KOS_RES_DISPATCH))
-      RESULT_CONTINUE(es);
-    if (unlikely(r.kind == KOS_RES_YIELD)) {
-      /* The freeze found no consumer for a generator that had one:
-         never hand the trampoline a YIELD it would deliver again. */
-      Py_DECREF(r.val);
-      PyErr_SetString(PyExc_SystemError,
-                      "flattened generator yield found no consumer");
-      RESULT_RAISE();
-    }
-    return r;
+  if (unlikely(! gen)) {
+    Py_DECREF(val);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "yield outside generator: no generator node on chain");
+    return EVAL_FATAL();
   }
 
-  return EVAL_YIELD(val);
+  /* The freeze, then the delivery to a flattened consumer, or the
+     terminal YIELD for a generator an adapter drives. */
+  KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, gen, val));
+  if (likely(r.kind == KOS_RES_DISPATCH))
+    RESULT_CONTINUE(es);
+  if (unlikely(r.kind == KOS_RES_YIELD && KosDynGen_IS_FLATTENED(gen))) {
+    /* The freeze found no consumer for a generator that had one:
+       never hand the trampoline a YIELD it would deliver again. */
+    Py_DECREF(r.val);
+    es->terminal = 0;
+    PyErr_SetString(PyExc_SystemError,
+                    "flattened generator yield found no consumer");
+    RESULT_RAISE();
+  }
+  return r;
 }
 
 
@@ -1920,6 +1935,37 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
   (void) val;
 
   KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(es));
+  return r;
+}
+
+
+KOS_PRESERVE_NONE KosOpResult kos_eval_await(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val) {
+
+  KosOpResult r;
+
+  (void) insn;
+
+  KOS_TRACE_POST_OP_WRAP(event_await, r = eval_event_await(es, val));
+  return r;
+}
+
+
+KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val) {
+
+  KosOpResult r;
+
+  (void) insn;
+  (void) val;
+
+  r = kos_eval_post_opcode_control_returned_after_hook(es);
+  if (likely(r.kind == KOS_RES_DISPATCH))
+    RESULT_CONTINUE(es);
   return r;
 }
 
@@ -2305,6 +2351,7 @@ static KosOpResult eval_phase_transfer(KosEvalState *es) {
   if (! KosEvalState_FRAME(es)) {
     kos_eval_mark_context_dead(ctx);
     Py_INCREF(Py_None);
+    es->terminal = 1;
     return EVAL_RETURN(Py_None);
   }
 
@@ -2378,6 +2425,7 @@ static KosOpResult eval_event_yield(
      RUNNING so the context's GC traverse keeps visiting the live state. */
   KosEvalState_MarkDeadAfterYield(es);
   KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
+  es->terminal = 1;
   return EVAL_YIELD(val);
 }
 
@@ -2406,6 +2454,7 @@ static KosOpResult eval_event_await(KosEvalState *es, PyObject *val) {
   KosEvalState_MarkSuspendedNotRunning(es);
   KOS_TRACE_POST_OP_WRAP(event_await,
       KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT));
+  es->terminal = 1;
   return EVAL_AWAIT(val);
 }
 
@@ -2757,6 +2806,7 @@ static KosOpResult eval_event_return_at_frame(
 
     if (! consumer) {
       KosEvalState_MarkDeadAfterReturn(es);
+      es->terminal = 1;
       return EVAL_RETURN(val);
     }
 
@@ -2820,6 +2870,7 @@ static KosOpResult eval_event_return_at_frame(
 
   /* Case 4: no parent — root frame, eval done. */
   KosEvalState_MarkDeadAfterReturn(es);
+  es->terminal = 1;
   return EVAL_RETURN(val);
 }
 
@@ -3094,6 +3145,11 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE
       || res.kind == KOS_RES_POLL)
     return EVAL_REPROLOGUE();
+
+  /* A resume that threaded into a chain hands back what the chain
+     did; a result already through its event leaves as it is. */
+  if (es->terminal)
+    return res;
 
   {
     KosOpResult ar = apply_kos_op_result(es, res);
@@ -3546,11 +3602,12 @@ pc_bounds_error:
 
 handle_result:
   KOS_TRACE_TRAMPOLINE_STEP();
-  /* A RAISE from a chain has been through kos_eval_raise: when the
-     walk found no handler it prepared the boundary raise and the
-     evaluator leaves with it. Walking it again would find the chain
-     already unwound. */
-  if (r.kind == KOS_RES_RAISE && es.raise_terminal) {
+  /* A result a chain hands back has been through its event inside the
+     chain when the eval state says so: a raise walked to no handler,
+     a suspension recorded, a root return. The evaluator leaves with
+     it; applying it again would walk an unwound chain or freeze a
+     frozen generator. */
+  if (es.terminal) {
     eval_ret = r;
     goto koskari_eval_cleanup;
   }
