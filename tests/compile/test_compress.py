@@ -188,6 +188,47 @@ class TestCompress(unittest.TestCase):
         ])
         self.assertEqual(out, [(OpCode.RETURN, 0)])
 
+    def test_build_args_before_control_takes_the_count(self):
+        for op in (OpCode.RETURN, OpCode.BREAK, OpCode.CONTINUE,
+                   OpCode.YIELD):
+            out = squish_ops([
+                (OpCode.CONST, 1),
+                (OpCode.CONST, 2),
+                (OpCode.BUILD_ARGS, 2),
+                (op, 1),
+            ])
+            # squish appends RETURN 1 when the stream does not end in one
+            self.assertEqual(
+                out[:3], [(OpCode.CONST, 1), (OpCode.CONST, 2), (op, 2)])
+
+    def test_build_args_below_two_stays(self):
+        for count in (0, 1):
+            rows = [(OpCode.CONST, 1)] * count
+            rows += [(OpCode.BUILD_ARGS, count), (OpCode.RETURN, 1)]
+            self.assertEqual(squish_ops(rows), rows)
+
+    def test_build_args_before_control_zero_stays(self):
+        rows = [
+            (OpCode.CONST, 1),
+            (OpCode.CONST, 2),
+            (OpCode.BUILD_ARGS, 2),
+            (OpCode.POP, 1),
+            (OpCode.RETURN, 0),
+        ]
+        out = squish_ops(rows)
+        self.assertIn((OpCode.BUILD_ARGS, 2), out)
+        self.assertIn((OpCode.RETURN, 0), out)
+
+    def test_build_args_across_label_stays(self):
+        rows = [
+            (OpCode.CONST, 1),
+            (OpCode.CONST, 2),
+            (OpCode.BUILD_ARGS, 2),
+            (OpCode.LABEL, "join"),
+            (OpCode.RETURN, 1),
+        ]
+        self.assertEqual(squish_ops(rows), rows)
+
     def test_missing_return_appends_return_one(self):
         out = squish_ops([
             (OpCode.CONST, 123),

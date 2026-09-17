@@ -594,6 +594,24 @@ class ByteCodeProcessor:
         return [(op, 0)]
 
 
+    @squish_rule(OpCode.BUILD_ARGS, OpCode.RETURN)
+    @squish_rule(OpCode.BUILD_ARGS, OpCode.BREAK)
+    @squish_rule(OpCode.BUILD_ARGS, OpCode.CONTINUE)
+    @squish_rule(OpCode.BUILD_ARGS, OpCode.YIELD)
+    def control_tuple_normalize(self, op, arg, matched):
+        """
+        A control op carrying a just-built tuple takes the count itself,
+        since its N form builds the same tuple: BUILD_ARGS 2, RETURN 1
+        -> RETURN 2. Two or more only: BUILD_ARGS 0 is the empty tuple
+        where RETURN 0 is None, and BUILD_ARGS 1 is a one-tuple where
+        RETURN 1 is the bare value
+        """
+
+        if arg != 1 or matched[0][1] < 2:
+            return None
+        return [(op, matched[0][1])]
+
+
     @squish_rule(OpCode.CAR, OpCode.CAR)
     @squish_rule(OpCode.CDR, OpCode.CDR)
     def car_cdr_merge(self, op, arg, matched):
