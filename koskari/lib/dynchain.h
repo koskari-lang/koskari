@@ -1044,6 +1044,15 @@ int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache);
 
 void kos_dynframe_reset_for_tail(KosDynFrame *frame);
 
+
+/**
+   Clear a resume that will get no delivery: the kind's clear, when it
+   has one, releases what the state holds, then the kind and state are
+   nulled. The one rule behind free, park, tail reset and a transfer
+   restore writing over the live frame's resume
+*/
+void kos_dynframe_clear_resume(KosDynFrame *frame);
+
 /* Drop discardable extent nodes (NS, LOOP, FOREACH) above frame before
    tail-call frame reuse; errors on any other open node kind. */
 int kos_dyn_teardown_to_frame(KosEvalState *es, KosDynFrame *frame);

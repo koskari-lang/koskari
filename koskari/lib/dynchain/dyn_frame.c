@@ -117,12 +117,7 @@ void *kos_resume_clone_shared(void *state) {
 }
 
 
-/**
-   Clear a resume that will get no delivery: the kind's clear, when it
-   has one, releases what the state holds, then the kind and state are
-   nulled. The one rule behind free, park and tail reset.
-*/
-static void kos_dynframe_clear_resume(KosDynFrame *frame) {
+void kos_dynframe_clear_resume(KosDynFrame *frame) {
   const KosResumeKind *kind = KosDynFrame_RESUME_KIND(frame);
 
   if (kind && kind->clear)

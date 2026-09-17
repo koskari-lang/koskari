@@ -82,8 +82,13 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
   Py_CLEAR(goal->continuation_ref);
   if (goal->restore) {
     for (size_t i = 0; i < goal->restore_count; i++) {
-      if (goal->restore[i].stack)
-        KosStack_Release(goal->restore[i].stack);
+      KosXferRestore *r = &goal->restore[i];
+
+      if (r->stack)
+        KosStack_Release(r->stack);
+      /* a cloned resume state never applied gets its kind's clear */
+      if (r->resume_kind && r->resume_kind->clear)
+        r->resume_kind->clear(r->resume_state);
     }
     PyMem_Free(goal->restore);
     goal->restore = NULL;
@@ -140,10 +145,25 @@ int kos_xfer_goal_capture_restore(
         goto fail;
     }
     if (KosDynNode_IS_FRAME(live)) {
+      const KosResumeKind *kind = KosDynFrame_RESUME_KIND(tmpl);
+
       r->pc = KosDynFrame_PC(tmpl);
       r->acting_pc = KosDynFrame_ACTING_PC(tmpl);
-      r->resume_kind = KosDynFrame_RESUME_KIND(tmpl);
-      r->resume_state = KosDynFrame_RESUME_STATE(tmpl);
+      /* The template keeps its state for the next landing: the record
+         takes the kind's clone. The capture that built the template
+         refused any kind without one. */
+      if (kind) {
+#if KOS_EVAL_SAFETYNET
+        if (! kind->clone) {
+          PyErr_Format(PyExc_SystemError,
+              "transfer: a template resume '%s' that cannot be cloned",
+              kind->name ? kind->name : "?");
+          goto fail;
+        }
+#endif
+        r->resume_kind = kind;
+        r->resume_state = kind->clone(KosDynFrame_RESUME_STATE(tmpl));
+      }
     }
     live = KosDynNode_PARENT(live);
     tmpl = KosDynNode_PARENT(tmpl);
@@ -157,6 +177,8 @@ fail:
   for (size_t i = 0; i < count; i++) {
     if (recs[i].stack)
       KosStack_Release(recs[i].stack);
+    if (recs[i].resume_kind && recs[i].resume_kind->clear)
+      recs[i].resume_kind->clear(recs[i].resume_state);
   }
   PyMem_Free(recs);
   return -1;
@@ -198,8 +220,13 @@ static int goal_apply_restore(KosEvalState *es, KosXferGoal *goal) {
     if (KosDynNode_IS_FRAME(node)) {
       KosDynFrame_PC(node) = r->pc;
       KosDynFrame_ACTING_PC(node) = r->acting_pc;
+      /* the resume the live frame held gets no delivery; the record's
+         clone is handed over, so the goal no longer owns it */
+      kos_dynframe_clear_resume((KosDynFrame *) node);
       KosDynFrame_RESUME_KIND(node) = r->resume_kind;
       KosDynFrame_RESUME_STATE(node) = r->resume_state;
+      r->resume_kind = NULL;
+      r->resume_state = NULL;
       /* The live registers are the authority for the current frame
          and are flushed back into it whenever the frame changes; a
          restore of that frame must land in them too. */
