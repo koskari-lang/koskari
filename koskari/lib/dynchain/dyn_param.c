@@ -86,7 +86,7 @@ static KosDynParam *kos_dynparam_clone(KosDynParam *node) {
   kos_dynnode_init((KosDynNode *) clone, KOS_DYN_PARAM, NULL,
                    KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
   KosDynParam_BINDINGS(clone) = copy;
   KosDynParam_SAVED(clone) = NULL;
 

@@ -40,7 +40,7 @@ static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
   KosDynCollect *clone = kos_dyncollect_new(NULL, ns);
   if (! clone)
     return NULL;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID((KosDynNode *) col_node);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id((KosDynNode *) col_node);
   return clone;
 }
 

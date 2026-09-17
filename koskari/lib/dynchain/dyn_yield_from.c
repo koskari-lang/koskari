@@ -50,6 +50,7 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_PENDING_ARG_TYPE(node) = NULL;
   KosDynYieldFrom_INFLIGHT(node) = NULL;
   KosDynYieldFrom_REQ(node)->iter = NULL;
+  KosDynYieldFrom_REQ(node)->islots = NULL;
   KosDynYieldFrom_REQ(node)->mode = KOS_IREQ_IDLE;
   KosDynYieldFrom_DRIVE(node) = NULL;
   KosDynYieldFrom_RESUME(node) = NULL;
@@ -111,7 +112,7 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
                    KosDynNode_CAPS(node));
 
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
 
   KosDynYieldFrom_DELEGATE(clone) = KosDynYieldFrom_DELEGATE(node);
   Py_XINCREF(KosDynYieldFrom_DELEGATE(clone));

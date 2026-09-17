@@ -33,7 +33,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
    and the marker only provides the prompt instance that captures inside
    the slice bound at and POP_SHIFT resolves to. No pop_pc either --
    completion routes through the paired DELIM (KOS_DYNF_INVOCATION),
-   never through a POP_PROMPT resume. Freshly minted node_id.
+   never through a POP_PROMPT resume. Its own node id, not the live prompt's.
    Callers: kos_delimited_invoke_inplace.
 */
 static KosDynPrompt *kos_dynprompt_new_invocation(
@@ -67,7 +67,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
 
   kos_dynnode_init(clone, KOS_DYN_PROMPT, NULL, KosDynNode_CAPS(prompt));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(prompt) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(prompt);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(prompt);
   KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
   KosDynPrompt_POP_PC(clone) = KosDynPrompt_POP_PC(prompt);
   return clone;

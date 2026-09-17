@@ -34,7 +34,7 @@ static KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
   PyObject *ns = KosNamespace_Reveal(KosDynNode_NS(ns_node));
   KosDynNs *clone = kos_dynns_new(NULL, ns);
   if (clone)
-    KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(ns_node);
+    KosDynNode_NODE_ID(clone) = kos_dynnode_id(ns_node);
   return clone;
 }
 

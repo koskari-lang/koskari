@@ -35,7 +35,7 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
     return NULL;
   kos_dynnode_init(clone, KOS_DYN_FINALLY, NULL, KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
   KosDynFinally_HANDLER_PC(clone) = KosDynFinally_HANDLER_PC(node);
   KosDynFinally_ENABLED(clone) = KosDynFinally_ENABLED(node);
   KosDynFinally_HANDLING_RAISE(clone) = KosDynFinally_HANDLING_RAISE(node);

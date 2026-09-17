@@ -16,6 +16,8 @@ KosDynGen *kos_dyngen_new(PyObject *owner) {
   KosDynGen_OWNER(gen) = owner;  /* borrowed */
   KosDynGen_ACTIVE(gen) = NULL;
   KosDynGen_REFCOUNT(gen) = 1;
+  *KosDynGen_HOST(gen) = (KosLiveRegs) { 0 };
+  *KosDynGen_FROZEN(gen) = (KosLiveRegs) { 0 };
   return gen;
 }
 
@@ -133,7 +135,7 @@ static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
   if (snapshot_set_obj(data, "owner", KosDynGen_OWNER(node)) < 0)
     return -1;
   if (snapshot_set_uint(data, "active_node_id",
-      KosDynGen_ACTIVE(node) ? KosDynNode_NODE_ID(KosDynGen_ACTIVE(node)) : 0) < 0)
+      KosDynGen_ACTIVE(node) ? kos_dynnode_id(KosDynGen_ACTIVE(node)) : 0) < 0)
     return -1;
   if (snapshot_set_item(data, "refcount",
                         PyLong_FromSize_t((size_t) KosDynGen_REFCOUNT(node))) < 0)
@@ -443,6 +445,9 @@ int kos_dyn_teardown_gen_exhausted(KosEvalState *es) {
      GEN are still allocated; the chain is freed only afterwards. */
   kos_dyn_commit_dyn_top(es, consumer);
   kos_dynchain_free(frame, (KosDynNode *) gen);
+  /* The dead GEN may outlive this drive on its owner; it holds no
+     consumer namespace past the chain. */
+  Py_CLEAR(KosDynNode_NS((KosDynNode *) gen));
   /* GEN is dead: drop the keepalive on its owner (es is now consistent).
      In the common case the consumer still holds the KPAG, so this is just a
      decrement; if it was the last ref the owner deallocates here. */

@@ -58,7 +58,7 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
 
     while (node) {
       if (KosDynNode_IS_PROMPT(node)
-          && KosDynNode_NODE_ID(node) == want) {
+          && kos_dynnode_id(node) == want) {
         prompt = (KosDynPrompt *) node;
         break;
       }
@@ -99,7 +99,7 @@ KOS_OP_HANDLER_COLD(POP_SHIFT) {
       RESULT_RAISE();
     }
     SAYF("[POP_SHIFT] invocation prompt %u: delivering to paired delim %p",
-         (unsigned) KosDynNode_NODE_ID((KosDynNode *) prompt),
+         (unsigned) kos_dynnode_id((KosDynNode *) prompt),
          (void *) pair);
     RESULT_RELAY(es, kos_eval_route_delim_return(es, pair, result));
   }

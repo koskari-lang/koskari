@@ -54,7 +54,7 @@ KosXferGoal *kos_xfer_goal_new(
   goal->outer = NULL;
   goal->target = target;
   goal->seam = seam;
-  goal->seam_id = seam ? KosDynNode_NODE_ID(seam) : 0;
+  goal->seam_id = seam ? kos_dynnode_id(seam) : 0;
   goal->frontier = NULL;
   goal->frontier_id = 0;
   goal->park_top = NULL;
@@ -126,14 +126,14 @@ int kos_xfer_goal_capture_restore(
   for (size_t i = 0; i < count; i++) {
     KosXferRestore *r = &recs[i];
 
-    if (! tmpl || KosDynNode_NODE_ID(tmpl) != KosDynNode_NODE_ID(live)) {
+    if (! tmpl || kos_dynnode_id(tmpl) != kos_dynnode_id(live)) {
       PyErr_SetString(PyExc_SystemError,
           "transfer: the template does not mirror the chain"
           " below the seam");
       goto fail;
     }
     r->node = live;
-    r->node_id = KosDynNode_NODE_ID(live);
+    r->node_id = kos_dynnode_id(live);
     if (KosDynNode_STACK(tmpl)) {
       r->stack = KosStack_DeepCopy(KosDynNode_STACK(tmpl));
       if (! r->stack)
@@ -178,7 +178,7 @@ static int goal_apply_restore(KosEvalState *es, KosXferGoal *goal) {
     KosDynNode *node = r->node;
 
 #if KOS_EVAL_SAFETYNET
-    if (KosDynNode_NODE_ID(node) != r->node_id) {
+    if (kos_dynnode_id(node) != r->node_id) {
       PyErr_SetString(PyExc_SystemError,
           "transfer: a restored node left the chain");
       return -1;
@@ -285,7 +285,7 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
 static void goal_park(KosXferGoal *goal, KosDynNode *node, KosDynNode *top) {
 
   goal->frontier = node;
-  goal->frontier_id = KosDynNode_NODE_ID(node);
+  goal->frontier_id = kos_dynnode_id(node);
   goal->park_top = top;
 }
 
@@ -303,7 +303,7 @@ static KosOpResult goal_leave(KosEvalState *es, KosXferGoal *goal) {
      chain would otherwise be discovered only once the chain is empty */
   if (goal->seam
       && (! kos_dyn_reaches(es, goal->seam)
-      || KosDynNode_NODE_ID(goal->seam) != goal->seam_id)) {
+      || kos_dynnode_id(goal->seam) != goal->seam_id)) {
     PyErr_SetString(PyExc_SystemError,
         "transfer: the seam is not on the chain");
     return EVAL_RAISE();
@@ -396,7 +396,7 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
       int gone = ! goal->seam
           || ! outer->frontier
           || ! kos_dyn_reaches(es, outer->frontier)
-          || KosDynNode_NODE_ID(outer->frontier) != outer->frontier_id;
+          || kos_dynnode_id(outer->frontier) != outer->frontier_id;
 
       if (gone) {
         *link = outer->outer;
@@ -550,7 +550,7 @@ KosOpResult kos_xfer_goal_drive(KosEvalState *es, int *out_boundary) {
         return EVAL_NORMAL();
 #if KOS_EVAL_SAFETYNET
       if (! kos_dyn_reaches(es, goal->frontier)
-          || KosDynNode_NODE_ID(goal->frontier) != goal->frontier_id) {
+          || kos_dynnode_id(goal->frontier) != goal->frontier_id) {
         PyErr_SetString(PyExc_SystemError,
             "transfer: the node it waited on left the chain");
         return EVAL_RAISE();

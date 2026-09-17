@@ -58,7 +58,7 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   kos_dynnode_init(clone, KOS_DYN_FRAME, NULL, KosDynNode_CAPS(frame));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(frame);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(frame);
 
   if (kos_dyn_clone_copy_segment((KosDynNode *) clone,
                                  (KosDynNode *) frame) < 0) {
@@ -278,7 +278,7 @@ KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es) {
 void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
 
   KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(es);
-  KosDynNode_NODE_ID(frame) = kos_dynnode_mint_id();
+  KosDynNode_NODE_ID(frame) = 0;  /* a fresh instance; minted on first read */
 
   {
     KosDynFrame *cur = KosEvalState_FRAME(es);

@@ -103,6 +103,17 @@ Two pieces of work:
 
 ## Compiler
 
+### Binding forms and builder forms (rename)
+
+One word per role: `define` stays as the by-form purist spelling,
+`def` defines a function, `var` binds a value, `global` binds at the
+module, `class` defines a class (today `define-class`); the builders
+become `build-class` and `build-function`, `lambda` unchanged. With
+it a zero-arity `(vars)` on the existing special and a namespace repr
+for the CLI. Five migration steps, each green.
+
+Ref: [language/binding-forms-rename.md](language/binding-forms-rename.md).
+
 ### Extent verification and dead-region sweep
 
 Add the TAIL-under-non-discardable-extent check to the finalize walk

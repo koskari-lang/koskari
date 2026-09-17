@@ -2080,6 +2080,24 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynNode_FLAGS(n)   (((KosDynNode *)(n))->flags)
 #define KosDynNode_CAPS(n)    (((KosDynNode *)(n))->caps)
 #define KosDynNode_NODE_ID(n) (((KosDynNode *)(n))->node_id)
+
+/* Mint a fresh, never-zero node id. */
+uint32_t kos_dynnode_mint_id(void);
+
+/**
+   The node's id, minted on first read. Ids serve identity matching
+   across clones and grafts (LCA seams, prompt lookup by a shift,
+   snapshots); a node that is never captured, matched or snapshotted
+   never pays for one. Zero is the unminted state: kos_dynnode_init
+   leaves it so, a clone copies its source's id through this accessor,
+   and a reused parked frame is reset to it.
+*/
+static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
+  uint32_t id = KosDynNode_NODE_ID(node);
+  if (! id)
+    id = KosDynNode_NODE_ID(node) = kos_dynnode_mint_id();
+  return id;
+}
 #define KosDynNode_HAS_CAP(n, cap)  (KosDynNode_CAPS(n) & (cap))
 
 #define KosDynNode_IS_FRAME(n)   (KosDynNode_KIND(n) == KOS_DYN_FRAME)

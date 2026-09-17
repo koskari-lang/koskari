@@ -58,6 +58,12 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
   /* The frozen span leaves the live chain; its segments' unwind-cache
      back links cannot survive the detach. */
   kos_dyn_clear_unwind_caches(ctx_active, NULL);
+  /* The GEN's namespace fill is the consumer's live namespace stamped
+     at the install; the next install stamps it again from that
+     consumer's registers. Holding it across the freeze would keep the
+     consumer's frame namespace referenced from a suspended generator
+     the consumer itself may hold. */
+  Py_CLEAR(KosDynNode_NS(gen));
 
   SAY("[gen] freeze storing in gen->active: chain ");
   for (n = ctx_active; n; n = KosDynNode_PARENT(n))

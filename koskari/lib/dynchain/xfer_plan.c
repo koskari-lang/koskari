@@ -43,7 +43,7 @@ static int kos_delimited_inplace_ready(
     node = KosDynNode_PARENT(node);
   }
   if (! node || ! KosDynNode_IS_SHIFT(node)
-      || KosDynNode_NODE_ID(node) != KosContinuation_LIVE_SHIFT_NODE_ID(k))
+      || kos_dynnode_id(node) != KosContinuation_LIVE_SHIFT_NODE_ID(k))
     return 0;
 
   *out_nested_frame = NULL;
@@ -66,7 +66,7 @@ static int kos_delimited_inplace_ready(
     node = KosDynNode_PARENT(node);
   }
   if (! node || ! KosDynNode_IS_PROMPT(node)
-      || KosDynNode_NODE_ID(node) != KosContinuation_LIVE_PROMPT_NODE_ID(k))
+      || kos_dynnode_id(node) != KosContinuation_LIVE_PROMPT_NODE_ID(k))
     return 0;
 
   return 1;
@@ -429,7 +429,7 @@ int kos_chain_common_ancestor(
     tmpl_arr[--i] = node;
 
   for (i = 0; i < n_live && i < n_tmpl; i++) {
-    if (KosDynNode_NODE_ID(live_arr[i]) != KosDynNode_NODE_ID(tmpl_arr[i]))
+    if (kos_dynnode_id(live_arr[i]) != kos_dynnode_id(tmpl_arr[i]))
       break;
     *out_live = live_arr[i];
     *out_tmpl = tmpl_arr[i];

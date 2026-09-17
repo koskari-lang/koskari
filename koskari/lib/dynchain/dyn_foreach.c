@@ -20,6 +20,7 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   KosDynForeach_EXHAUSTED(node) = 0;
   KosDynForeach_ITER_NEXT_ELSE_PC(node) = 0;
   KosDynForeach_REQ(node)->iter = NULL;
+  KosDynForeach_REQ(node)->islots = NULL;
   KosDynForeach_REQ(node)->mode = KOS_IREQ_IDLE;
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
@@ -35,7 +36,7 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
     return NULL;
   kos_dynnode_init(clone, KOS_DYN_FOREACH, NULL, KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
   KosDynForeach_BREAK_PC(clone) = KosDynForeach_BREAK_PC(node);
   KosDynForeach_CONTINUE_PC(clone) = KosDynForeach_CONTINUE_PC(node);
   KosDynForeach_ENABLED(clone) = KosDynForeach_ENABLED(node);

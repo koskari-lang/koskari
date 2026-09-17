@@ -138,7 +138,7 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node) {
       (KosDynNode *) clone, KOS_DYN_NEXT, NULL, KosDynNode_CAPS((KosDynNode *) node));
   KosDynNode_FLAGS((KosDynNode *) clone) =
       KosDynNode_FLAGS((KosDynNode *) node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID((KosDynNode *) clone) = KosDynNode_NODE_ID((KosDynNode *) node);
+  KosDynNode_NODE_ID((KosDynNode *) clone) = kos_dynnode_id((KosDynNode *) node);
   Py_XINCREF(KosDynNext_REQ(node)->iter);
   *KosDynNext_REQ(clone) = *KosDynNext_REQ(node);
   Py_XINCREF(KosDynNext_DEFAULT_VAL((KosDynNode *) node));
