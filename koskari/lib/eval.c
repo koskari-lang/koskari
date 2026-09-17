@@ -2041,7 +2041,7 @@ KosOpResult KosNativeFrame_ReturnPark(
    namespace (kos_dyn_push_frame_native's contract): the parked frame
    was stripped of its fill at park, so the reinstall attaches a fresh
    one before the push publishes the frame's namespace to the live
-   register. The caller fills resume_name itself.
+   register. KosResumeFrame_Install sets the resume kind on it.
 */
 static KosDynFrame *kos_push_or_reuse_codeless_frame(
     KosEvalState *es,

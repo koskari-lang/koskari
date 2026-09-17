@@ -147,8 +147,9 @@ Electors have two homes, distinguished by what the elected fact belongs to:
 ## The elector and the resume
 
 A resume (§8.2) is a `KosThreadFn` that receives one delivery on a frame:
-the frame carries `resume_fn` and `resume_state`, the trampoline or a
-`RESUME_HOP` invokes it with the settled value, and the pair is cleared.
+the frame carries `resume_kind` and `resume_state`, the prologue or a
+`RESUME_HOP` invokes the kind's `fn` with the settled value, and the pair
+is cleared.
 An elector is a `KosThreadFn` that receives control at a site or a node:
 the slot or node carries the pointer, the handler or a delivery invokes it,
 and the pointer stays.
@@ -393,8 +394,8 @@ Several opcodes are re-entered on each delivery by rolling the pc back to
 the acting instruction (`YIELD_FROM`, `POP_WITH` on an async exit, `PUSH_WITH`
 on an async enter, `YIELD`, the prompt/shift pops) and re-deriving the phase
 from node state. Under §8.2 a delivery already has a route that does not
-touch the instruction stream: the frame's `resume_fn` / `resume_state`
-pair. A node-style resume arms that pair with a phase function and the node
+touch the instruction stream: the frame's `resume_kind` / `resume_state`
+pair. A node-style resume sets that pair to a phase kind and the node
 as its state. The opcode then runs once per node, and every later delivery
 lands on the phase function, which reads its node, does the phase's work,
 and either arms the next phase or threads on past the opcode.
@@ -456,7 +457,7 @@ the generator suspends.
 await their results; each is a request with a resume.
 
 **PROMPT, SHIFT, CC**. These nodes already carry a `resume_pc` and, for the
-in-place delimited invoke, a displaced stack. A `resume_fn` beside the pc
+in-place delimited invoke, a displaced stack. A resume kind beside the pc
 is the same idea expressed the same way as every other node. Investigative:
 the transfer-plan machinery owns these paths and the gain is uniformity
 rather than speed.

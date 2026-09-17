@@ -356,16 +356,19 @@ continuation capture and avoids special hook machinery.
 
 ## 20a. Frame Resumes (Invariant)
 
-* A frame's resume triple (`resume_fn`, `resume_state`, `resume_name`)
-  receives the frame's next delivery instead of an instruction. A step
-  resume (map, filter) lives on a code-less frame with the step object as
-  its state. A node resume lives on a bytecode frame whose extent node
-  owns an operation in flight (yield-from), with NULL state: the node is
-  `dyn_top` above the frame.
-* NULL state is the discriminator: such a resume is delivered its value
-  unsettled, is copied by a continuation clone, and is disarmed by its
-  node's pop and unwind. A step resume's state has no clone story, so
-  capture across that frame refuses by name.
+* A frame's resume (`resume_kind`, a static `KosResumeKind`, and
+  `resume_state`) receives the frame's next delivery instead of an
+  instruction. A step resume (map, filter) lives on a code-less frame
+  with the step object as its state. A node resume lives on a bytecode
+  frame whose extent node owns an operation in flight (yield-from), with
+  NULL state: the node is `dyn_top` above the frame.
+* The kind carries the lifecycle. A resume with no delivery coming is
+  cleared through the kind's `clear` (a provider step releases its
+  record's busy mark and pending value); a continuation clone copies the
+  state through the kind's `clone` or refuses by the kind's name (a
+  yield-from phase shares its state, a provider step refuses). A node
+  resume is delivered its value unsettled and is cleared by its node's
+  pop and unwind.
 * A bytecode frame's delivery is always the pending slot, never its
   operand stack. The revive, the generator install, and the flattened
   drive route a sent value to the slot when the frame is waiting, and

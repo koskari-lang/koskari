@@ -405,7 +405,7 @@ struct KosDynNode {
          only while KOS_FRAME_PARK_TO_CACHE is set, which
          KosNativeFrame_ReturnPark alone does. */
       void *park_cache;
-      /* CPS consumer resume (see eval.h, KosResumeFn): the kind names
+      /* CPS consumer resume (the contract is in eval.h): the kind names
          the entry to invoke on the next value staged to this frame and
          the lifecycle of the state it receives; NULL means nothing is
          armed. Set and cleared together with the state. The kind's

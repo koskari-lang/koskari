@@ -184,9 +184,9 @@ typedef enum KosGetNextResult {
 
 
 /**
-   A per-frame CPS resume: the callback a consumer sets on a frame via
-   KosEvalState_CallResult / KosEvalState_NextResume to receive exactly
-   one settled delivery -- a call's result, a callee frame's return, a
+   A per-frame CPS resume: the fn of the KosResumeKind (dynchain.h) a
+   consumer sets on a frame via KosEvalState_CallResult /
+   KosEvalState_NextResume to receive exactly one settled delivery -- a call's result, a callee frame's return, a
    Next request's element, or an awaited value, however it was
    produced.
 
@@ -228,9 +228,8 @@ typedef enum KosGetNextResult {
 
    Returns a KosOpResult naming the next signal to the loop: another
    CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT, or
-   EVAL_REPROLOGUE.
+   EVAL_REPROLOGUE. The prototype is KosThreadFn.
 */
-typedef KosThreadFn KosResumeFn;
 
 
 /**

@@ -1307,9 +1307,12 @@ If `throw_typ`/`throw_exc` are set, any revive path calls `PyErr_SetObject` and 
 ### 8.2 CPS resumes
 
 A **resume** is C code that receives one delivery on a frame instead
-of implementing an opcode: a `KosThreadFn` set on a frame
-(`resume_fn`, `resume_state`), invoked exactly once with the value the
-operation produced, or with NULL and an exception set when it failed.
+of implementing an opcode: the `fn` of a `KosResumeKind` set on a
+frame (`resume_kind`, `resume_state`), invoked exactly once with the
+value the operation produced, or with NULL and an exception set when
+it failed. The kind is one static record per resume function holding
+its name and its lifecycle: `clear` for a teardown with no delivery
+coming, `clone` for a continuation capture and a transfer restore.
 Two shapes exist. A **step resume** lives on a code-less frame the
 consumer installed: the **map step** (`map.c`) and the **filter step**
 (`filter.c`) are each a short chain of resumes (fetch, invoke, verdict)
@@ -1322,12 +1325,16 @@ frame. Apply and demand are not resume consumers: apply's completion
 is synchronous, and demand runs at the classify boundary before any
 evaluator delivery exists.
 
-The NULL state is the discriminator the machinery reads. A node resume
-takes its delivery as it is (the delivery step settles values only for
-a step resume: a delegate's yielded awaitable is data), a continuation
-clone copies it (the node clones with the chain; a step resume's state
-has no clone story, so capture across that frame still refuses by
-name), and the node's pop and unwind disarm it. A bytecode frame's
+The NULL state is the discriminator the delivery step reads: a node
+resume takes its delivery as it is (values are settled only for a step
+resume: a delegate's yielded awaitable is data). The kind carries the
+rest. A continuation clone copies the state through the kind's `clone`
+(`kos_resume_clone_shared` on the yield-from kinds, since the node
+clones with the chain) or refuses by the kind's name (every provider
+step kind); a frame freed, parked or reset with its resume still set
+runs the kind's `clear` (`kos_transform_step_clear` on the provider
+kinds, releasing the record's busy mark and pending value); the node's
+pop and unwind clear a node resume. A bytecode frame's
 delivery is always the pending slot, never its operand stack: the
 revive, the generator install, and the flattened drive route a sent
 value there when the frame is waiting, and the delivery step pops a
@@ -1365,11 +1372,11 @@ re-consume source elements.
 KosOpResult KosEvalState_CallResult(
     KosEvalState *es, PyObject *callable, PyObject *const *args,
     Py_ssize_t nargs, PyObject *kwnames, int tail_call,
-    KosResumeFn resume, void *state);
+    const KosResumeKind *resume, void *state);
 
 KosOpResult KosEvalState_NextResume(
     KosEvalState *es, PyObject *iter, PyObject *send_val,
-    KosResumeFn resume, void *state);
+    const KosResumeKind *resume, void *state);
 ```
 
 An entry does the operation and reports what happened; the calling
@@ -1484,14 +1491,15 @@ cannot reach it, since that tests the live frame.
 
 #### Frame slots and parking
 
-The frame arm carries `resume_fn`, `resume_state`, `resume_name` (for
-the capture refusal message), and `park_cache`. A step frame completes
+The frame arm carries `resume_kind`, `resume_state`, and `park_cache`;
+the kind's name is what a capture refusal message reports. A step frame completes
 through `KosNativeFrame_ReturnPark(es, value, &cache)`, which signals
 `RETURN` and arms the frame to park itself, stripped inert, into the
 consumer's one-frame cache when the return path frees it;
-`KosResumeFrame_Install(es, name, &cache)` reinstalls the parked frame
-for the next step in place of a fresh allocation. `kos_dynframe_park_inert`
-and `kos_dynframe_reset_for_tail` both clear the resume triple.
+`KosResumeFrame_Install(es, kind, &cache)` reinstalls the parked frame
+for the next step in place of a fresh allocation. `kos_dynframe_free`,
+`kos_dynframe_park_inert` and `kos_dynframe_reset_for_tail` all go
+through `kos_dynframe_clear_resume`.
 
 Python-adapter drives (`iterate.c`) host a provider's work in a durable
 context exposed through the suite's `ki_pyctx`, recycled between
@@ -1661,7 +1669,7 @@ node kind. Multi-shot vs single-shot is **not** a second `KosDynKind`; it is
 `dynchain/dyn_with.c`; generic `dynchain.c` dispatches on kind and caps only.
 See [with-dyn-with.md](interpreter/with-dyn-with.md) and `dynchain.h`.
 
-- **Frame** (u.frame): code (borrowed; NULL for a code-less resume frame), pc (next instruction), acting_pc (instruction currently being executed), ns (owned), frame_flags, depth (nesting depth on the chain, §7.7), resume_fn + resume_state + resume_name (a set resume receives the frame's next delivery; see §8.2), park_cache (the consumer cache a completing step frame parks into).
+- **Frame** (u.frame): code (borrowed; NULL for a code-less resume frame), pc (next instruction), acting_pc (instruction currently being executed), ns (owned), frame_flags, depth (nesting depth on the chain, §7.7), resume_kind + resume_state (a set resume receives the frame's next delivery; see §8.2), park_cache (the consumer cache a completing step frame parks into).
   Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_DEPTH, KosDynFrame_RESUME_FN, KosDynFrame_RESUME_STATE, KosDynFrame_RESUME_NAME, KosDynFrame_PARK_CACHE.
 - **Prompt** (u.prompt): prompt_id; pop_pc (the region's POP_PROMPT, resolved from the PROMPT extent at push).
   Macros: KosDynPrompt_ID, KosDynPrompt_POP_PC.

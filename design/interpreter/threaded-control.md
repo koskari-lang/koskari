@@ -2,10 +2,9 @@
 
 ## Status
 
-Changes 1 to 5 implemented on the churn branch (2026-09-17); change 6
-assessed and closed with nothing to do. Change 7, the resume kind, is a
-proposal. The follow-ups at the end depend on change 7 and are their
-own arc.
+Changes 1 to 5 and 7 implemented on the churn branch (2026-09-17);
+change 6 assessed and closed with nothing to do. The follow-ups at the
+end depend on change 7 and are their own arc.
 
 ## Summary
 
@@ -153,22 +152,23 @@ allowances:
 
 ### 7. The resume kind
 
-A frame's resume is three words today: `resume_fn`, `resume_state` and
-`resume_name`. The state is a borrowed pointer, and what it points to
-is governed by a convention per user and by three sites in the frame
-code: `kos_dynframe_free` nulls the pair; `kos_dynframe_clone` copies a
-NULL-state pair and refuses any other by name; the transfer restore in
-`xfer_goal.c` copies the pair verbatim. The one non-trivial state in
-the tree, the provider record a transform step arms, survives because
-the iteration node that steps it owns it, and a step abandoned without
-a raise walk leaves that record marked busy with its pending value held.
+Before this change a frame's resume was three words: `resume_fn`,
+`resume_state` and `resume_name`. The state was a borrowed pointer, and
+what it pointed to was governed by a convention per user and by three
+sites in the frame code: `kos_dynframe_free` nulled the pair;
+`kos_dynframe_clone` copied a NULL-state pair and refused any other by
+name; the transfer restore in `xfer_goal.c` copied the pair verbatim.
+The one non-trivial state in the tree, the provider record a transform
+step sets, survived because the iteration node that steps it owns it,
+and a step abandoned without a raise walk left that record marked busy
+with its pending value held.
 
 The change puts the behaviour beside the function, once, in a static
-record every frame that arms that function shares:
+record every frame that sets that function shares:
 
 ```c
 typedef struct KosResumeKind {
-  const char *name;                 /* what resume_name carries today */
+  const char *name;                 /* what resume_name carried */
   KosThreadFn fn;                   /* the resume itself */
   void (*clear)(void *state);       /* teardown with no delivery coming;
                                        NULL: the state is borrowed */
@@ -177,29 +177,30 @@ typedef struct KosResumeKind {
 } KosResumeKind;
 ```
 
-The frame holds `resume_kind` and `resume_state`, two words. "Armed" is
-`kind != NULL`. The state stays per frame; the kind never holds anything
-that varies between frames.
+The frame holds `resume_kind` and `resume_state`, two words. A resume
+is set when `kind != NULL`. The state stays per frame; the kind never
+holds anything that varies between frames.
 
-The three lifecycle sites become one rule each: free and park call
-`clear` when the kind has one, then null the pair; clone calls `clone`
-and copies the kind, or refuses by `kind->name`; the transfer restore
-copies the kind and calls `clone` on the template's state, so a
-multi-shot landing never moves a state out of its template. Clean
-completion stays the owner's business: the node or provider clears its
-own fields when the step finishes, and `clear` runs only when no
-delivery will come. The failure delivery is unchanged: a live NULL into
-`kind->fn` with the error set.
+The lifecycle sites are one rule each: free, park and tail reset go
+through `kos_dynframe_clear_resume`, which calls `clear` when the kind
+has one and then nulls the pair; clone calls `clone` and copies the
+kind, or refuses by `kind->name`; the transfer restore record takes
+`clone` of the template's state, so a multi-shot landing never moves a
+state out of its template, and applying it clears the live frame's
+resume first. Clean completion stays the owner's business: the node or
+provider clears its own fields when the step finishes, and `clear` runs
+only when no delivery will come. The failure delivery is unchanged: a
+live NULL into `kind->fn` with the error set.
 
-Every arming site and the kind it declares:
+Every site that sets a resume and the kind it declares:
 
 | site | kind |
 |---|---|
-| provider step (`transform.c`, through `KosResumeFrame_Install`) | one static per provider phase: `clear` releases `busy` and `pending` on the record, no `clone` |
+| provider step (`transform.c`, through `KosResumeFrame_Install`) | one static per provider phase: `clear` is `kos_transform_step_clear`, releasing `busy` and `pending` on the record; no `clone` |
 | the CPS entries `KosEvalState_CallResult` and `NextResume` | the native caller hands in its kind with the state; the entries stop taking a bare function |
-| yield-from phases (`dyn_yield_from.c`) | one static per phase: no `clear`, `clone` identity, since the node it serves clones with the chain |
+| yield-from phases (`dyn_yield_from.c`) | one static per phase: no `clear`, `clone` is `kos_resume_clone_shared`, since the node it serves clones with the chain |
 | `DISPATCH` and `RESUME_HOP` (`eval.h`) | take the kind and stage or tail into `kind->fn` |
-| `KosResumeFrame_Install` | takes the kind in place of the name and sets it at install; arming a state is all the step does afterwards |
+| `KosResumeFrame_Install` | takes the kind in place of the name and sets it at install; setting the state is all the step does afterwards |
 
 The delivery step and the failure walk call `kind->fn`; the hop tails
 into it through one load from a static record. What each user gains:
@@ -207,10 +208,10 @@ providers get their abandonment cleanup, yield-from loses nothing, and
 a resume whose state is an integer becomes capturable for one identity
 function.
 
-What it touches: the frame union, the three lifecycle sites, the two
-CPS entry signatures and their callers in the provider suite and the
-koscallables, the two macros, `KosResumeFrame_Install`, and the arming
-lines in the fourteen providers.
+What it touched: the frame union, the lifecycle sites, the two CPS
+entry signatures and their callers in the provider suite and the
+koscallables, the two macros, `KosResumeFrame_Install`, and the lines
+setting a resume in the fourteen providers.
 
 ## What does not change
 
