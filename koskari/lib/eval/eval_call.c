@@ -252,7 +252,7 @@ static KosOpResult kos_entry_value(
     KosEvalState *es,
     KosDynFrame *caller,
     PyObject *val,
-    KosResumeFn resume,
+    const KosResumeKind *resume,
     void *state) {
 
   switch (KosEval_ResultIsValue(val)) {
@@ -262,7 +262,7 @@ static KosOpResult kos_entry_value(
     case 0: {
       KosOpResult pr = KosEvalState_SettleStage(es, val);
       if (pr.kind == KOS_RES_REPROLOGUE || pr.kind == KOS_RES_AWAIT) {
-        KosDynFrame_RESUME_FN(caller) = (void *) resume;
+        KosDynFrame_RESUME_KIND(caller) = resume;
         KosDynFrame_RESUME_STATE(caller) = state;
       }
       return pr;
@@ -282,7 +282,7 @@ KosOpResult KosEvalState_CallResult(
     Py_ssize_t nargs,
     PyObject *kwnames,
     int tail_call,
-    KosResumeFn resume,
+    const KosResumeKind *resume,
     void *state) {
 
   KosDynFrame *caller = KosEvalState_FRAME(es);
@@ -318,14 +318,14 @@ KosOpResult KosEvalState_CallResult(
       /* callee installed above caller, or a plan armed by the install;
          caller's own frame is unchanged and still reachable -- its
          eventual return delivers here. */
-      KosDynFrame_RESUME_FN(caller) = (void *) resume;
+      KosDynFrame_RESUME_KIND(caller) = resume;
       KosDynFrame_RESUME_STATE(caller) = state;
       return r;
 
     case KOS_RES_AWAIT:
       /* the call's own result needed awaiting; the AWAITED revive
          delivers into resume once it settles. */
-      KosDynFrame_RESUME_FN(caller) = (void *) resume;
+      KosDynFrame_RESUME_KIND(caller) = resume;
       KosDynFrame_RESUME_STATE(caller) = state;
       return r;
 

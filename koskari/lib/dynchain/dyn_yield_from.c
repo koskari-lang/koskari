@@ -332,14 +332,13 @@ void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node) {
 void kos_dyn_yield_from_arm(
     KosEvalState *es,
     KosDynYieldFrom *node,
-    void *resume) {
+    const KosResumeKind *resume) {
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
 
-  KosDynYieldFrom_RESUME(node) = resume;
-  KosDynFrame_RESUME_FN(frame) = resume;
+  KosDynYieldFrom_RESUME(node) = (void *) resume;
+  KosDynFrame_RESUME_KIND(frame) = resume;
   KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = "yield-from";
 }
 
 
@@ -347,10 +346,10 @@ void kos_dyn_yield_from_disarm(KosEvalState *es, KosDynYieldFrom *node) {
   KosDynFrame *frame = KosEvalState_FRAME(es);
 
   if (frame && node
-      && KosDynFrame_RESUME_FN(frame) == KosDynYieldFrom_RESUME(node)) {
-    KosDynFrame_RESUME_FN(frame) = NULL;
+      && (const void *) KosDynFrame_RESUME_KIND(frame)
+          == KosDynYieldFrom_RESUME(node)) {
+    KosDynFrame_RESUME_KIND(frame) = NULL;
     KosDynFrame_RESUME_STATE(frame) = NULL;
-    KosDynFrame_RESUME_NAME(frame) = NULL;
   }
 }
 

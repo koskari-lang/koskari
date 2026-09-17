@@ -182,11 +182,10 @@ KosIterStepResult kos_transform_stage(
     KosEvalState *es,
     KosTransform *t,
     PyObject *value,
-    void *resume,
-    const char *label,
+    const KosResumeKind *resume,
     KosDynNode *pre_top) {
 
-  KosDynFrame *frame = KosResumeFrame_Install(es, label, &t->cached_frame);
+  KosDynFrame *frame = KosResumeFrame_Install(es, resume, &t->cached_frame);
 
   if (! frame) {
     Py_XDECREF(value);
@@ -199,7 +198,7 @@ KosIterStepResult kos_transform_stage(
     }
     Py_DECREF(value);
   }
-  KosDynFrame_RESUME_FN(frame) = resume;
+  KosDynFrame_RESUME_KIND(frame) = resume;
   KosDynFrame_RESUME_STATE(frame) = t;
   t->busy = 1;
   return KOS_ITER_INSTALLED_VALUE;

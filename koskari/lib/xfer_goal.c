@@ -142,9 +142,8 @@ int kos_xfer_goal_capture_restore(
     if (KosDynNode_IS_FRAME(live)) {
       r->pc = KosDynFrame_PC(tmpl);
       r->acting_pc = KosDynFrame_ACTING_PC(tmpl);
-      r->resume_fn = KosDynFrame_RESUME_FN(tmpl);
+      r->resume_kind = KosDynFrame_RESUME_KIND(tmpl);
       r->resume_state = KosDynFrame_RESUME_STATE(tmpl);
-      r->resume_name = KosDynFrame_RESUME_NAME(tmpl);
     }
     live = KosDynNode_PARENT(live);
     tmpl = KosDynNode_PARENT(tmpl);
@@ -199,9 +198,8 @@ static int goal_apply_restore(KosEvalState *es, KosXferGoal *goal) {
     if (KosDynNode_IS_FRAME(node)) {
       KosDynFrame_PC(node) = r->pc;
       KosDynFrame_ACTING_PC(node) = r->acting_pc;
-      KosDynFrame_RESUME_FN(node) = r->resume_fn;
+      KosDynFrame_RESUME_KIND(node) = r->resume_kind;
       KosDynFrame_RESUME_STATE(node) = r->resume_state;
-      KosDynFrame_RESUME_NAME(node) = r->resume_name;
       /* The live registers are the authority for the current frame
          and are flushed back into it whenever the frame changes; a
          restore of that frame must land in them too. */

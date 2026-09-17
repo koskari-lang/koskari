@@ -48,6 +48,21 @@ typedef struct KosDropWhile {
    resume function pointer is itself the state. */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; no clear (the owner keeps its record) and no
+   clone (a step in flight refuses capture by name) */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(dropwhile_resume_fetch_kind, "dropwhile-step", dropwhile_resume_fetch, NULL, NULL);
+KOS_RESUME_KIND(dropwhile_resume_invoke_kind, "dropwhile-step", dropwhile_resume_invoke, NULL, NULL);
+KOS_RESUME_KIND(dropwhile_resume_verdict_kind, "dropwhile-step", dropwhile_resume_verdict, NULL, NULL);
+
+
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
     KosEvalState *es, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
@@ -61,7 +76,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
    arbitrarily long dropped run stays flat.
 */
 #define dropwhile_refetch(es, d) \
-  RESUME_HOP(dropwhile_resume_fetch, (es), (d), NULL)
+  RESUME_HOP(&dropwhile_resume_fetch_kind, (es), (d), NULL)
 
 
 /**
@@ -87,13 +102,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
         PyErr_SetNone(PyExc_StopIteration);
       return EVAL_RAISE();
     }
-    RESUME_HOP(dropwhile_resume_invoke, es, t, element);
+    RESUME_HOP(&dropwhile_resume_invoke_kind, es, t, element);
   }
 
   {
     KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
-                                            dropwhile_resume_invoke, t);
-    RESULT_ENTRY(es, r, dropwhile_resume_invoke, t);
+                                            &dropwhile_resume_invoke_kind, t);
+    RESULT_ENTRY(es, r, &dropwhile_resume_invoke_kind, t);
   }
 }
 
@@ -121,8 +136,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
   {
     KosOpResult r = KosEvalState_CallResult(es, t->fn.cs_callable,
                                             &element, 1, NULL, 0,
-                                            dropwhile_resume_verdict, d);
-    RESULT_ENTRY(es, r, dropwhile_resume_verdict, d);
+                                            &dropwhile_resume_verdict_kind, d);
+    RESULT_ENTRY(es, r, &dropwhile_resume_verdict_kind, d);
   }
 }
 
@@ -204,8 +219,7 @@ static KosIterStepResult dropwhile_iter_step(
          makes the call in this evaluator. */
       if (t->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
         return kos_transform_stage(es, t, element,
-                                   (void *) dropwhile_resume_invoke,
-                                   "dropwhile-step", pre_top);
+                                   &dropwhile_resume_invoke_kind, pre_top);
 
       /* A plain python predicate needs no evaluator at all. */
       {
@@ -238,8 +252,7 @@ static KosIterStepResult dropwhile_iter_step(
                frame, which owns every suspension. The element is held
                on the transform until the verdict settles. */
             KosIterStepResult staged = kos_transform_stage(
-                es, t, result, (void *) dropwhile_resume_verdict,
-                "dropwhile-step", pre_top);
+                es, t, result, &dropwhile_resume_verdict_kind, pre_top);
 
             if (staged != KOS_ITER_INSTALLED_VALUE) {
               Py_DECREF(element);
@@ -262,8 +275,7 @@ static KosIterStepResult dropwhile_iter_step(
      itself (which can suspend) must run from inside koskari_eval's
      own dispatch. */
   return kos_transform_stage(es, t, NULL,
-                             (void *) dropwhile_resume_fetch,
-                             "dropwhile-step", pre_top);
+                             &dropwhile_resume_fetch_kind, pre_top);
 }
 
 

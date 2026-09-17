@@ -1658,7 +1658,7 @@ static int kos_return_take_resume(
     KosEvalState *es,
     KosDynNode *parent,
     PyObject *val,
-    KosResumeFn *out_resume,
+    const KosResumeKind **out_resume,
     void **out_state);
 
 
@@ -1832,7 +1832,7 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
   }
 
   if (kos_return_is_resume(es, &parent)) {
-    KosResumeFn resume;
+    const KosResumeKind *resume;
     void *state;
     int took = kos_return_take_resume(es, parent, val, &resume, &state);
 
@@ -2066,14 +2066,14 @@ static KosDynFrame *kos_push_or_reuse_codeless_frame(
 
 KosDynFrame *KosResumeFrame_Install(
     KosEvalState *es,
-    const char *name,
+    const KosResumeKind *kind,
     KosDynFrame **cache) {
 
   KosDynFrame *frame = kos_push_or_reuse_codeless_frame(es, cache);
   if (! frame)
     return NULL;
 
-  KosDynFrame_RESUME_NAME(frame) = name;
+  KosDynFrame_RESUME_KIND(frame) = kind;
   return frame;
 }
 
@@ -2122,7 +2122,7 @@ KosOpResult KosEvalState_NextResume(
     KosEvalState *es,
     PyObject *iter,
     PyObject *send_val,
-    KosResumeFn resume,
+    const KosResumeKind *resume,
     void *state) {
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
@@ -2147,7 +2147,7 @@ KosOpResult KosEvalState_NextResume(
          anything else. With a resume of our own, it is armed on the
          calling frame for the delivery either way. */
       if (resume) {
-        KosDynFrame_RESUME_FN(frame) = (void *) resume;
+        KosDynFrame_RESUME_KIND(frame) = resume;
         KosDynFrame_RESUME_STATE(frame) = state;
       }
       return kos_iter_installed(es);
@@ -2156,7 +2156,7 @@ KosOpResult KosEvalState_NextResume(
     case KOS_IREQ_EXIT:
       if (! resume)
         return EVAL_AWAIT(out);
-      KosDynFrame_RESUME_FN(frame) = (void *) resume;
+      KosDynFrame_RESUME_KIND(frame) = resume;
       KosDynFrame_RESUME_STATE(frame) = state;
       return EVAL_AWAIT(out);
 
@@ -2170,7 +2170,7 @@ KosOpResult KosEvalState_NextResume(
       if (! resume)
         return EVAL_RAISE();
 
-      KosDynFrame_RESUME_FN(frame) = (void *) resume;
+      KosDynFrame_RESUME_KIND(frame) = resume;
       KosDynFrame_RESUME_STATE(frame) = state;
       return EVAL_REPROLOGUE();
 
@@ -2181,7 +2181,7 @@ KosOpResult KosEvalState_NextResume(
       if (! resume)
         return EVAL_RAISE();
 
-      KosDynFrame_RESUME_FN(frame) = (void *) resume;
+      KosDynFrame_RESUME_KIND(frame) = resume;
       KosDynFrame_RESUME_STATE(frame) = state;
       return EVAL_REPROLOGUE();
   }
@@ -2572,9 +2572,8 @@ static inline int kos_return_is_plain(
 */
 KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
 
-  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = NULL;
 
   {
     PyObject *fn = KosDynFrame_FN(frame);
@@ -2765,7 +2764,7 @@ static int kos_return_take_resume(
     KosEvalState *es,
     KosDynNode *parent,
     PyObject *val,
-    KosResumeFn *out_resume,
+    const KosResumeKind **out_resume,
     void **out_state) {
 
   switch (KosEval_ResultIsValue(val)) {
@@ -2783,9 +2782,9 @@ static int kos_return_take_resume(
     return -1;
   }
 
-  *out_resume = (KosResumeFn) KosDynFrame_RESUME_FN((KosDynFrame *) parent);
+  *out_resume = KosDynFrame_RESUME_KIND((KosDynFrame *) parent);
   *out_state = KosDynFrame_RESUME_STATE((KosDynFrame *) parent);
-  KosDynFrame_RESUME_FN((KosDynFrame *) parent) = NULL;
+  KosDynFrame_RESUME_KIND((KosDynFrame *) parent) = NULL;
   KosDynFrame_RESUME_STATE((KosDynFrame *) parent) = NULL;
   return 1;
 }
@@ -3086,13 +3085,13 @@ static KosOpResult eval_step_drain_goal(KosEvalState *es) {
 */
 static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosDynFrame *frame = KosEvalState_FRAME(es);
-  KosResumeFn resume = (KosResumeFn) KosDynFrame_RESUME_FN(frame);
+  const KosResumeKind *resume = KosDynFrame_RESUME_KIND(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
   PyObject *val;
   KosOpResult res = EVAL_NORMAL();
   int have_res = 0;
 
-  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
   /* The pending slot is the live transit. The frame stack carries a
@@ -3135,7 +3134,7 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
       case 0:
         /* Not settled yet. Put the resume back and settle one step;
            the staged outcome is delivered on a later pass. */
-        KosDynFrame_RESUME_FN(frame) = (void *) resume;
+        KosDynFrame_RESUME_KIND(frame) = resume;
         KosDynFrame_RESUME_STATE(frame) = state;
         res = KosEvalState_SettleStage(es, val);
         have_res = 1;
@@ -3151,7 +3150,7 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
 
   if (! have_res) {
     KOS_TRACE_RESUME_STEP();
-    res = resume(es, state, val);
+    res = resume->fn(es, state, val);
   }
 
   /* Every outcome routes through the one hub: a RAISE from here is an

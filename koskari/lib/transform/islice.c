@@ -87,6 +87,21 @@ static int islice_bound(
    position. */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; no clear (the owner keeps its record) and no
+   clone (a step in flight refuses capture by name) */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_discard(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_emit(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(islice_resume_discard_kind, "islice-step", islice_resume_discard, NULL, NULL);
+KOS_RESUME_KIND(islice_resume_emit_kind, "islice-step", islice_resume_emit, NULL, NULL);
+KOS_RESUME_KIND(islice_resume_skip_kind, "islice-step", islice_resume_skip, NULL, NULL);
+
+
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_discard(
     KosEvalState *es, void *state, PyObject *element);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_emit(
@@ -126,8 +141,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
   while (s->cnt < s->next) {
     if (! t->src_sync) {
       KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
-                                              islice_resume_discard, s);
-      RESULT_ENTRY(es, r, islice_resume_discard, s);
+                                              &islice_resume_discard_kind, s);
+      RESULT_ENTRY(es, r, &islice_resume_discard_kind, s);
     }
 
     {
@@ -151,8 +166,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
 
   if (! t->src_sync) {
     KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
-                                            islice_resume_emit, s);
-    RESULT_ENTRY(es, r, islice_resume_emit, s);
+                                            &islice_resume_emit_kind, s);
+    RESULT_ENTRY(es, r, &islice_resume_emit_kind, s);
   }
 
   {
@@ -163,7 +178,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
         PyErr_SetNone(PyExc_StopIteration);
       return EVAL_RAISE();
     }
-    RESUME_HOP(islice_resume_emit, es, s, element);
+    RESUME_HOP(&islice_resume_emit_kind, es, s, element);
   }
 }
 
@@ -184,7 +199,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_discard(
   Py_DECREF(element);
   s->cnt++;
 
-  RESUME_HOP(islice_resume_skip, es, s, NULL);
+  RESUME_HOP(&islice_resume_skip_kind, es, s, NULL);
 }
 
 
@@ -268,8 +283,7 @@ static KosIterStepResult islice_iter_step(
   /* Driven source: defer the whole walk. Nothing is fetched yet to
      stage, and a request that can suspend must run from inside
      koskari_eval's own dispatch. */
-  return kos_transform_stage(es, t, NULL, (void *) islice_resume_skip,
-                             "islice-step", pre_top);
+  return kos_transform_stage(es, t, NULL, &islice_resume_skip_kind, pre_top);
 }
 
 

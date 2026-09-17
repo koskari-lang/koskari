@@ -33,9 +33,8 @@ KosDynFrame *kos_dynframe_new(
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_DEPTH(frame) = 1;  /* a root until an install says otherwise */
   KosDynFrame_PARK_CACHE(frame) = NULL;
-  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = NULL;
   KosDynFrame_FN(frame) = NULL;
   KosDynFrame_BACK_FRAME(frame) = NULL;
   return frame;
@@ -87,17 +86,19 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   /* borrowed unwind cache is meaningless off the source's chain */
   KosDynFrame_BACK_FRAME(clone) = NULL;
 
-  /* A node resume (NULL state: the node it serves is dyn_top above the
-     frame, cloned with the chain) copies as it is. A step resume's
-     state is the step's own and has no clone story, so capture across
-     that frame refuses by name. */
-  if (KosDynFrame_RESUME_FN(frame) && ! KosDynFrame_RESUME_STATE(frame)) {
-    KosDynFrame_RESUME_FN(clone) = KosDynFrame_RESUME_FN(frame);
-    KosDynFrame_RESUME_STATE(clone) = NULL;
-    KosDynFrame_RESUME_NAME(clone) = KosDynFrame_RESUME_NAME(frame);
+  /* A resume whose kind can clone its state copies; one whose kind
+     cannot (a provider step, whose state is the step's own) refuses
+     the capture by name. The clone's fields start unarmed so the
+     refusal's free finds nothing to clear. */
+  KosDynFrame_RESUME_KIND(clone) = NULL;
+  KosDynFrame_RESUME_STATE(clone) = NULL;
+  if (KosDynFrame_RESUME_KIND(frame) && KosDynFrame_RESUME_KIND(frame)->clone) {
+    KosDynFrame_RESUME_KIND(clone) = KosDynFrame_RESUME_KIND(frame);
+    KosDynFrame_RESUME_STATE(clone) =
+        KosDynFrame_RESUME_KIND(frame)->clone(KosDynFrame_RESUME_STATE(frame));
     return clone;
   }
-  if (KosDynFrame_RESUME_FN(frame)) {
+  if (KosDynFrame_RESUME_KIND(frame)) {
     PyErr_Format(PyExc_RuntimeError,
                  "cannot capture a continuation across native"
                  " frame '%s'",
@@ -106,11 +107,13 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
     kos_dynframe_free(clone);
     return NULL;
   }
-  KosDynFrame_RESUME_FN(clone) = NULL;
-  KosDynFrame_RESUME_STATE(clone) = NULL;
-  KosDynFrame_RESUME_NAME(clone) = NULL;
 
   return clone;
+}
+
+
+void *kos_resume_clone_shared(void *state) {
+  return state;
 }
 
 
@@ -127,9 +130,12 @@ void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  KosDynFrame_RESUME_FN(frame) = NULL;
+  /* A resume still armed here gets no delivery: its kind's clear, when
+     it has one, releases what the state holds. */
+  if (KosDynFrame_RESUME_KIND(frame) && KosDynFrame_RESUME_KIND(frame)->clear)
+    KosDynFrame_RESUME_KIND(frame)->clear(KosDynFrame_RESUME_STATE(frame));
+  KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = NULL;
 
   /* A completing frame set by KosNativeFrame_ReturnPark: park_cache is
      the holder's cache slot; offer the frame there before the ordinary
@@ -298,9 +304,8 @@ int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache) {
 
   Py_CLEAR(KosDynFrame_NS(frame));
   KosDynFrame_PARK_CACHE(frame) = NULL;
-  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = NULL;
 
   KosStack_Clear(&KosDynFrame_STACK(frame));
   KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
@@ -387,9 +392,8 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
   KosDynFrame_PARK_CACHE(frame) = NULL;
-  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = NULL;
   /* the frame is being repurposed for a different function */
   Py_CLEAR(KosDynFrame_FN(frame));
 }

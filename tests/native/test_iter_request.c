@@ -32,6 +32,11 @@
 #include "../../koskari/lib/lib.h"
 
 
+/* a kind that never delivers: the install and park tests only read
+   its name */
+KOS_RESUME_KIND(iterreq_kind, "iterreq-test", NULL, NULL, NULL);
+
+
 static PyObject *make_list123(void) {
   PyObject *lst = PyList_New(0);
   if (! lst)
@@ -108,7 +113,7 @@ static int test_park_inert_strips_and_parks(void) {
   KosDynFrame *frame = kos_dynframe_new(NULL, NULL, NULL);
   TEST_ASSERT_NOT_NULL(frame, "create code-less frame");
   KosDynFrame_PARK_CACHE(frame) = (void *) frame;
-  KosDynFrame_RESUME_NAME(frame) = "iterreq-test";
+  KosDynFrame_RESUME_KIND(frame) = &iterreq_kind;
 
   int parked = kos_dynframe_park_inert(frame, &cache);
   TEST_ASSERT_EQ(parked, 1, "frame parks into the empty cache");
@@ -176,7 +181,7 @@ static int test_native_install_fresh_and_cached(void) {
   PyObject *staged = PyLong_FromLong(42);
   TEST_ASSERT_NOT_NULL(staged, "create staged value");
 
-  KosDynFrame *frame = KosResumeFrame_Install(&es, "iterreq-test", NULL);
+  KosDynFrame *frame = KosResumeFrame_Install(&es, &iterreq_kind, NULL);
   TEST_ASSERT_NOT_NULL(frame, "install code-less frame");
   TEST_ASSERT(KosDynFrame_RESUME_NAME(frame)
               && ! strcmp(KosDynFrame_RESUME_NAME(frame), "iterreq-test"),
@@ -203,7 +208,7 @@ static int test_native_install_fresh_and_cached(void) {
     TEST_ASSERT_EQ(kos_dynframe_park_inert(spare, &cache), 1, "park spare");
 
     KosDynFrame *reused = KosResumeFrame_Install(
-        &es, "iterreq-test", &cache);
+        &es, &iterreq_kind, &cache);
     TEST_ASSERT_SAME(reused, spare, "cached frame is reinstalled");
     TEST_ASSERT_NULL(cache, "cache emptied by the reinstall");
     TEST_ASSERT_SAME(KosDynFrame_NS(reused), ns,
@@ -228,7 +233,7 @@ static int test_request_next_sync_lifecycle(void) {
   KosEvalState_Init(&es, ctx);
   KosEvalState_ThawFromContext(&es);
 
-  KosDynFrame *frame = KosResumeFrame_Install(&es, "iterreq-test", NULL);
+  KosDynFrame *frame = KosResumeFrame_Install(&es, &iterreq_kind, NULL);
   TEST_ASSERT_NOT_NULL(frame, "install code-less frame");
 
   PyObject *lst = make_list123();

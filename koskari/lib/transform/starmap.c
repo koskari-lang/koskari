@@ -50,6 +50,21 @@ static PyObject *starmap_unpack(PyObject *element) {
    call sites below and kos_dynframe_clone's resume refusal). */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; no clear (the owner keeps its record) and no
+   clone (a step in flight refuses capture by name) */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_after_result(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(starmap_resume_after_result_kind, "starmap-step", starmap_resume_after_result, NULL, NULL);
+KOS_RESUME_KIND(starmap_resume_invoke_kind, "starmap-step", starmap_resume_invoke, NULL, NULL);
+KOS_RESUME_KIND(starmap_resume_start_fetch_kind, "starmap-step", starmap_resume_start_fetch, NULL, NULL);
+
+
 /**
    The invoke completed. The value is settled by contract, so the step
    completes with it directly. value is consumed.
@@ -89,9 +104,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
   r = KosEvalState_CallResult(es, t->fn.cs_callable,
                               PySequence_Fast_ITEMS(args),
                               PyTuple_GET_SIZE(args), NULL, 0,
-                              starmap_resume_after_result, t);
+                              &starmap_resume_after_result_kind, t);
   Py_DECREF(args);
-  RESULT_ENTRY(es, r, starmap_resume_after_result, t);
+  RESULT_ENTRY(es, r, &starmap_resume_after_result_kind, t);
 }
 
 
@@ -112,8 +127,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
 
   r = KosEvalState_NextResume(
       es, ((KosTransform *) state)->source, NULL,
-      starmap_resume_invoke, state);
-  RESULT_ENTRY(es, r, starmap_resume_invoke, state);
+      &starmap_resume_invoke_kind, state);
+  RESULT_ENTRY(es, r, &starmap_resume_invoke_kind, state);
 }
 
 
@@ -151,8 +166,7 @@ static KosIterStepResult starmap_iter_step(
        exception: its install needs no helper frame. */
     if (t->fn.cs_kind != KOS_CALL_SHAPE_PLAIN && ! t->fn.cs_direct)
       return kos_transform_stage(es, t, element,
-                                 (void *) starmap_resume_invoke,
-                                 "starmap-step", pre_top);
+                                 &starmap_resume_invoke_kind, pre_top);
 
     args = starmap_unpack(element);
     if (! args)
@@ -194,8 +208,7 @@ static KosIterStepResult starmap_iter_step(
              needs must happen from inside koskari_eval's own
              dispatch. */
           return kos_transform_stage(es, t, result,
-                                     (void *) starmap_resume_after_result,
-                                     "starmap-step", pre_top);
+                                     &starmap_resume_after_result_kind, pre_top);
         default:
           Py_DECREF(result);
           return KOS_ITER_ERROR;
@@ -208,8 +221,7 @@ static KosIterStepResult starmap_iter_step(
      request itself (which can suspend) must run from inside
      koskari_eval's own dispatch. */
   return kos_transform_stage(es, t, NULL,
-                             (void *) starmap_resume_start_fetch,
-                             "starmap-step", pre_top);
+                             &starmap_resume_start_fetch_kind, pre_top);
 }
 
 

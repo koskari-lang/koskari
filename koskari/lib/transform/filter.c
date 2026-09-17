@@ -62,6 +62,21 @@ static inline int filter_keeps(KosFilter *f, int ok) {
    resume function pointer is itself the state. */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; no clear (the owner keeps its record) and no
+   clone (a step in flight refuses capture by name) */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(filter_resume_after_verdict_kind, "filter-step", filter_resume_after_verdict, NULL, NULL);
+KOS_RESUME_KIND(filter_resume_do_fetch_kind, "filter-step", filter_resume_do_fetch, NULL, NULL);
+KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step", filter_resume_do_invoke, NULL, NULL);
+
+
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
     KosEvalState *es, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
@@ -77,7 +92,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
    by a bounce through the trampoline.
 */
 #define filter_refetch(es, f) \
-  RESUME_HOP(filter_resume_do_fetch, (es), (f), NULL)
+  RESUME_HOP(&filter_resume_do_fetch_kind, (es), (f), NULL)
 
 
 /**
@@ -108,13 +123,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
         PyErr_SetNone(PyExc_StopIteration);
       return EVAL_RAISE();
     }
-    RESUME_HOP(filter_resume_do_invoke, es, f, element);
+    RESUME_HOP(&filter_resume_do_invoke_kind, es, f, element);
   }
 
   {
     KosOpResult r = KosEvalState_NextResume(es, f->source, NULL,
-                                            filter_resume_do_invoke, f);
-    RESULT_ENTRY(es, r, filter_resume_do_invoke, f);
+                                            &filter_resume_do_invoke_kind, f);
+    RESULT_ENTRY(es, r, &filter_resume_do_invoke_kind, f);
   }
 }
 
@@ -159,8 +174,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
   {
     KosOpResult r = KosEvalState_CallResult(es, f->fn.cs_callable,
                                             &element, 1, NULL, 0,
-                                            filter_resume_after_verdict, f);
-    RESULT_ENTRY(es, r, filter_resume_after_verdict, f);
+                                            &filter_resume_after_verdict_kind, f);
+    RESULT_ENTRY(es, r, &filter_resume_after_verdict_kind, f);
   }
 }
 
@@ -249,8 +264,7 @@ static KosIterStepResult filter_iter_step(
          happen from inside that later dispatch, not here. */
       if (f->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
         return kos_transform_stage(es, f, element,
-                                   (void *) filter_resume_do_invoke,
-                                   "filter-step", pre_top);
+                                   &filter_resume_do_invoke_kind, pre_top);
 
       /* A plain python predicate needs no evaluator at all. */
       {
@@ -284,8 +298,7 @@ static KosIterStepResult filter_iter_step(
                element is held on the filter until the verdict
                settles. */
             KosIterStepResult staged = kos_transform_stage(
-                es, f, result, (void *) filter_resume_after_verdict,
-                "filter-step", pre_top);
+                es, f, result, &filter_resume_after_verdict_kind, pre_top);
 
             if (staged != KOS_ITER_INSTALLED_VALUE) {
               Py_DECREF(element);
@@ -307,8 +320,7 @@ static KosIterStepResult filter_iter_step(
      cold-start fetch resume and defer the whole step -- nothing is
      fetched yet to stage, and the request itself (which can suspend)
      must run from inside koskari_eval's own dispatch. */
-  return kos_transform_stage(es, f, NULL, (void *) filter_resume_do_fetch,
-                             "filter-step", pre_top);
+  return kos_transform_stage(es, f, NULL, &filter_resume_do_fetch_kind, pre_top);
 }
 
 

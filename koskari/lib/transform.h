@@ -178,8 +178,7 @@ KosIterStepResult kos_transform_stage(
     KosEvalState *es,
     KosTransform *t,
     PyObject *value,
-    void *resume,
-    const char *label,
+    const KosResumeKind *resume,
     KosDynNode *pre_top);
 
 

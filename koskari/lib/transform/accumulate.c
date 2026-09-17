@@ -62,6 +62,21 @@ static KosOpResult accumulate_emit(KosEvalState *es, KosAccumulate *a) {
    call sites below and kos_dynframe_clone's resume refusal). */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; no clear (the owner keeps its record) and no
+   clone (a step in flight refuses capture by name) */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_result(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(accumulate_resume_fetch_kind, "accumulate-step", accumulate_resume_fetch, NULL, NULL);
+KOS_RESUME_KIND(accumulate_resume_fold_kind, "accumulate-step", accumulate_resume_fold, NULL, NULL);
+KOS_RESUME_KIND(accumulate_resume_result_kind, "accumulate-step", accumulate_resume_result, NULL, NULL);
+
+
 /**
    RESULT: the fold settled. It becomes the running total and the
    step's value. value is consumed.
@@ -118,8 +133,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
     PyObject *argv[2] = { a->total, element };
     KosOpResult r = KosEvalState_CallResult(es, t->fn.cs_callable, argv, 2,
                                             NULL, 0,
-                                            accumulate_resume_result, a);
-    RESULT_ENTRY(es, r, accumulate_resume_result, a);
+                                            &accumulate_resume_result_kind, a);
+    RESULT_ENTRY(es, r, &accumulate_resume_result_kind, a);
   }
 }
 
@@ -141,8 +156,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fetch(
 
   r = KosEvalState_NextResume(
       es, ((KosTransform *) state)->source, NULL,
-      accumulate_resume_fold, state);
-  RESULT_ENTRY(es, r, accumulate_resume_fold, state);
+      &accumulate_resume_fold_kind, state);
+  RESULT_ENTRY(es, r, &accumulate_resume_fold_kind, state);
 }
 
 
@@ -210,8 +225,7 @@ static KosIterStepResult accumulate_iter_step(
        evaluator. */
     if (t->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
       return kos_transform_stage(es, t, element,
-                                 (void *) accumulate_resume_fold,
-                                 "accumulate-step", pre_top);
+                                 &accumulate_resume_fold_kind, pre_top);
 
     /* A plain python function needs no evaluator at all. */
     {
@@ -234,8 +248,7 @@ static KosIterStepResult accumulate_iter_step(
              to accumulate_resume_result -- the await it needs must
              happen from inside koskari_eval's own dispatch. */
           return kos_transform_stage(es, t, result,
-                                     (void *) accumulate_resume_result,
-                                     "accumulate-step", pre_top);
+                                     &accumulate_resume_result_kind, pre_top);
         default:
           Py_DECREF(result);
           return KOS_ITER_ERROR;
@@ -245,8 +258,7 @@ static KosIterStepResult accumulate_iter_step(
 
   /* Driven source: set the cold-start kickoff resume and defer the
      first fetch entirely. */
-  return kos_transform_stage(es, t, NULL, (void *) accumulate_resume_fetch,
-                             "accumulate-step", pre_top);
+  return kos_transform_stage(es, t, NULL, &accumulate_resume_fetch_kind, pre_top);
 }
 
 

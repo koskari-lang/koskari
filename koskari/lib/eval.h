@@ -327,8 +327,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
 
 
 /**
-   DISPATCH(fn, es, arg, value): deliver value to fn, a KosThreadFn,
-   by way of the trampoline: fn and arg become the current frame's
+   DISPATCH(fn, es, arg, value): deliver value to fn, a KosResumeKind,
+   by way of the prologue: fn and arg become the current frame's
    resume, value (an owned reference, or NULL for a cold start with
    nothing staged) goes into the eval state's pending slot, and the
    prologue is tailed into, which polls if due and then takes the slot
@@ -338,14 +338,14 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
    delivery to the next resume uses RESUME_HOP, which tail-calls the
    resume directly and falls back to this when the eval breaker is up.
 */
-#define DISPATCH(fn, es, arg, value)                                    \
+#define DISPATCH(kind, es, arg, value)                                  \
   do {                                                                  \
     KosEvalState *kos_dsp_es_ = (es);                                   \
     KosDynFrame *kos_dsp_frame_ = KosEvalState_FRAME(kos_dsp_es_);      \
     PyObject *kos_dsp_val_ = (value);                                   \
     KOS_DISPATCH_SAFETYNET(kos_dsp_es_, kos_dsp_val_);                  \
     KosEvalState_PENDING_VALUE(kos_dsp_es_) = kos_dsp_val_;             \
-    KosDynFrame_RESUME_FN(kos_dsp_frame_) = (void *) (fn);              \
+    KosDynFrame_RESUME_KIND(kos_dsp_frame_) = (kind);                   \
     KosDynFrame_RESUME_STATE(kos_dsp_frame_) = (void *) (arg);          \
     TAILCALL(kos_eval_prologue, kos_dsp_es_, NULL, NULL);               \
   } while (0)
@@ -504,8 +504,9 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
 
 
 /**
-   RESUME_HOP(fn, es, state, value): hand a delivery from one resume to
-   the next -- the hop a step's phases make, or a bytecode return into a
+   RESUME_HOP(kind, es, state, value): hand a delivery from one resume
+   to the next, kind being the next resume's KosResumeKind -- the hop a
+   step's phases make, or a bytecode return into a
    resume-carrying parent. A tail call that is also a cooperation
    point: when the eval breaker is up it stages through DISPATCH
    instead, so the trampoline polls before the prologue delivers. A
@@ -514,12 +515,12 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
    as promptly as a loop does. The calling function must have the
    KosThreadFn prototype, as for TAILCALL.
 */
-#define RESUME_HOP(fn, es, state, value)                                \
+#define RESUME_HOP(kind, es, state, value)                              \
   do {                                                                  \
     if (KOS_EVAL_BREAKER_UP(es))                                        \
-      DISPATCH((fn), (es), (state), (value));                           \
+      DISPATCH((kind), (es), (state), (value));                         \
     KOS_TRACE_RESUME_STEP();                                            \
-    TAILCALL((fn), (es), (state), (value));                             \
+    TAILCALL((kind)->fn, (es), (state), (value));                       \
   } while (0)
 
 
@@ -591,7 +592,7 @@ KosOpResult KosNativeFrame_ReturnPark(
 */
 KosDynFrame *KosResumeFrame_Install(
     KosEvalState *es,
-    const char *name,
+    const KosResumeKind *kind,
     KosDynFrame **cache);
 
 
@@ -646,7 +647,7 @@ KosOpResult KosEvalState_NextResume(
     KosEvalState *es,
     PyObject *iter,
     PyObject *send_val,
-    KosResumeFn resume,
+    const KosResumeKind *resume,
     void *state);
 
 
@@ -1425,7 +1426,7 @@ KosOpResult KosEvalState_CallResult(
     Py_ssize_t nargs,
     PyObject *kwnames,
     int tail_call,
-    KosResumeFn resume,
+    const KosResumeKind *resume,
     void *state);
 
 

@@ -520,15 +520,15 @@ static KosOpResult raise_walk_hand_to_resume(
     KosEvalState *es,
     KosDynFrame *frame) {
 
-  KosResumeFn resume = (KosResumeFn) KosDynFrame_RESUME_FN(frame);
+  const KosResumeKind *resume = KosDynFrame_RESUME_KIND(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
   KosOpResult hr;
 
-  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
   KOS_TRACE_RESUME_STEP();
-  hr = resume(es, state, NULL);
+  hr = resume->fn(es, state, NULL);
   KOS_TRACE_TRAMPOLINE_STEP();
 
   switch (hr.kind) {
