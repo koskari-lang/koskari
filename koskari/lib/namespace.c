@@ -90,6 +90,7 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
     if (count > 0)
       memset(((KosNamespace *) p)->fast, 0, count * sizeof(PyObject *));
     ns_init_raw_storage((KosNamespace *) p, count);
+    KosNamespace_TEMPLATE(p) = NULL;
 
     return p;
   }
@@ -100,6 +101,7 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
     ns_freecount--;
 
     KosNamespace_PARENT(ns) = NULL;
+    KosNamespace_TEMPLATE(ns) = NULL;
     KOS_TRACE_FL_ALLOC("namespace", 1);
 
     PyObject *p = (PyObject *) ns;
@@ -119,6 +121,7 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
   memset(((KosNamespace *) p)->fast, 0,
          (size_t) KOS_NS_MIN_SLOTS * sizeof(PyObject *));
   ns_init_raw_storage((KosNamespace *) p, count);
+  KosNamespace_TEMPLATE(p) = NULL;
   return p;
 }
 
@@ -210,22 +213,20 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
   if (! self)
     return NULL;
 
-  Py_INCREF(KosNamespace_NAME(template_ns));
+  // One reference to the template covers name, parent and fast_names:
+  // the template owns all three for as long as this copy holds it, so
+  // they are stored borrowed (see KosNamespace_TEMPLATE).
+  Py_INCREF(template_ns);
+  KosNamespace_TEMPLATE(self) = template_ns;
   KosNamespace_NAME(self) = KosNamespace_NAME(template_ns);
-
-  Py_XINCREF(parent);
   KosNamespace_PARENT(self) = parent;
+  KosNamespace_FAST_NAMES(self) = KosNamespace_FAST_NAMES(template_ns);
 
   // Function namespaces carry every ref in fast[]; name lookups resolve
   // against fast_names, so no binds dict is allocated.  Raw-slot promotion
   // stays in the fast slot; only a dynamic non-slot bind lazily creates one.
   KosNamespace_BINDS(self) = NULL;
   KosNamespace_FAST_COUNT(self) = count;
-
-  // Share the immutable names tuple from the template (just an incref).
-  PyObject *fast_names = KosNamespace_FAST_NAMES(template_ns);
-  Py_XINCREF(fast_names);
-  KosNamespace_FAST_NAMES(self) = fast_names;
 
   // Copy raw-flag bits wholesale.
   ns_copy_raw_bits(KosNamespace_FAST_RAW(self),
@@ -1988,6 +1989,22 @@ static PyObject *ns_new(PyTypeObject *type,
 }
 
 
+/* Release name, parent and fast_names: owned here when there is no
+   template, borrowed through the template otherwise. Idempotent. */
+static void ns_release_header(PyObject *self) {
+  if (KosNamespace_TEMPLATE(self)) {
+    KosNamespace_NAME(self) = NULL;
+    KosNamespace_PARENT(self) = NULL;
+    KosNamespace_FAST_NAMES(self) = NULL;
+    Py_CLEAR(KosNamespace_TEMPLATE(self));
+  } else {
+    Py_CLEAR(KosNamespace_NAME(self));
+    Py_CLEAR(KosNamespace_PARENT(self));
+    Py_CLEAR(KosNamespace_FAST_NAMES(self));
+  }
+}
+
+
 static void ns_dealloc(PyObject *self) {
   // SAYF("ns_dealloc(%R)", self);
 
@@ -1995,10 +2012,8 @@ static void ns_dealloc(PyObject *self) {
      its fields are cleared or it is recycled to the freelist */
   PyObject_GC_UnTrack(self);
 
-  Py_CLEAR(KosNamespace_NAME(self));
-  Py_CLEAR(KosNamespace_PARENT(self));
+  ns_release_header(self);
   Py_CLEAR(KosNamespace_BINDS(self));
-  Py_CLEAR(KosNamespace_FAST_NAMES(self));
 
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; )
     Py_CLEAR(KosNamespace_GET_FAST_VAL(self, i));
@@ -2026,10 +2041,14 @@ static void ns_dealloc(PyObject *self) {
 
 
 static int ns_traverse(PyObject *self, visitproc visit, void *arg) {
-  Py_VISIT(KosNamespace_NAME(self));
-  Py_VISIT(KosNamespace_PARENT(self));
+  if (KosNamespace_TEMPLATE(self)) {
+    Py_VISIT(KosNamespace_TEMPLATE(self));
+  } else {
+    Py_VISIT(KosNamespace_NAME(self));
+    Py_VISIT(KosNamespace_PARENT(self));
+    Py_VISIT(KosNamespace_FAST_NAMES(self));
+  }
   Py_VISIT(KosNamespace_BINDS(self));
-  Py_VISIT(KosNamespace_FAST_NAMES(self));
 
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; )
     Py_VISIT(KosNamespace_GET_FAST_VAL(self, i));
@@ -2039,10 +2058,8 @@ static int ns_traverse(PyObject *self, visitproc visit, void *arg) {
 
 
 static int ns_clear(PyObject *self) {
-  Py_CLEAR(KosNamespace_NAME(self));
-  Py_CLEAR(KosNamespace_PARENT(self));
+  ns_release_header(self);
   Py_CLEAR(KosNamespace_BINDS(self));
-  Py_CLEAR(KosNamespace_FAST_NAMES(self));
 
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; )
     Py_CLEAR(KosNamespace_GET_FAST_VAL(self, i));
@@ -2759,6 +2776,7 @@ PyObject *KosModuleNamespace_New(PyObject *name, PyObject *builtins) {
   KosNamespace_NAME(self) = name;
 
   KosNamespace_PARENT(self) = NULL;
+  KosNamespace_TEMPLATE(self) = NULL;
   KosNamespace_BINDS(self) = binds;
   KosNamespace_FAST_COUNT(self) = 0;
   KosNamespace_FAST_NAMES(self) = NULL;

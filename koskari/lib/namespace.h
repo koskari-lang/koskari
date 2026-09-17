@@ -116,6 +116,10 @@ typedef struct KosNamespace {
 
   PyObject *parent;     // KosNamespace
   PyObject *binds;      // PyDictObject
+  PyObject *template_ns; // the namespace this one was copied from, or NULL.
+                         // When set, name, parent and fast_names are borrowed
+                         // through it (it owns them for at least as long as
+                         // this copy holds it); when NULL they are owned here.
 
   size_t fast_count;       // number of fast slots
   PyObject *fast_names;    // PyTupleObject of slot names, shared across copies
@@ -335,6 +339,9 @@ int KosNamespace_FastBind(
 
 #define KosNamespace_BINDS(ns)               \
   (((KosNamespace *) ns)->binds)
+
+#define KosNamespace_TEMPLATE(ns)            \
+  (((KosNamespace *) ns)->template_ns)
 
 #define KosNamespace_FAST_COUNT(ns)             \
   (((KosNamespace *) ns)->fast_count)
