@@ -18,7 +18,7 @@
    matches that type, push True, else False.
 */
 
-KOS_OP_HANDLER_COLD(EXCEPTION_MATCH) {
+KOS_OP_HANDLER(EXCEPTION_MATCH) {
 
   PyObject *match = KosEvalState_StackPopRef(es);
   if (! match)

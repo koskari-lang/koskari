@@ -21,7 +21,7 @@
   jump to row.a0. On mismatch: fall through with stack unchanged.
 */
 
-KOS_OP_HANDLER_COLD(SWITCH_EQ_VAR) {
+KOS_OP_HANDLER(SWITCH_EQ_VAR) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *var_name = KosExtra_OBJ(row, 1);

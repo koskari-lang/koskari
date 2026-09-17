@@ -17,7 +17,7 @@
 /**
   POSITION: arg unused. Debug/source position marker; no runtime effect.
 */
-KOS_OP_HANDLER_COLD(POSITION) {
+KOS_OP_HANDLER(POSITION) {
   (void) insn;
   RESULT_NEXT(es);
 }

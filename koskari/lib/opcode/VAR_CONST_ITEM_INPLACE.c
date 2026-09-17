@@ -21,7 +21,7 @@
    dropped, nothing is pushed. The cold twin of FAST_CONST_ITEM_INPLACE.
 */
 
-KOS_OP_HANDLER_COLD(VAR_CONST_ITEM_INPLACE) {
+KOS_OP_HANDLER(VAR_CONST_ITEM_INPLACE) {
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));

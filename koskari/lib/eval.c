@@ -1572,13 +1572,6 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
   static KOS_PRESERVE_NONE KosOpResult op_##name(                       \
       KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
 
-/* The cold variant names a large, rarely-run opcode; under threaded
-   dispatch every handler is out of line, so it differs only in the
-   explicit noinline. */
-#define KOS_OP_HANDLER_COLD(name)                                       \
-  static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult op_##name(         \
-      KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
-
 #define CURRENT_NS() KosEvalState_NAMESPACE(es)
 
 /* Namespace-presence guard for opcode handlers.  es->namespace is a live
@@ -1794,7 +1787,6 @@ static KosOpResult kos_op_call_star(
 #include "handlers.incl"
 #undef CURRENT_NS
 #undef KOS_OP_REQUIRE_NS
-#undef KOS_OP_HANDLER_COLD
 #undef KOS_OP_HANDLER
 #undef KOS_ELECTOR
 #undef KOS_ELECTOR_PAIR_SAFETYNET

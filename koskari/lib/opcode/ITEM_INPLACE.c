@@ -21,7 +21,7 @@
    None). Cold: the operator switch lives in the shared reduce.
 */
 
-KOS_OP_HANDLER_COLD(ITEM_INPLACE) {
+KOS_OP_HANDLER(ITEM_INPLACE) {
   uint16_t arg = KosOp_ARG(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
   int count = (int) KosOpCount_COUNT(arg);

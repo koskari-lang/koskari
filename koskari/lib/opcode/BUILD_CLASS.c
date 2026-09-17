@@ -20,7 +20,7 @@
    Pops ns, pos; builds class via kos_build_class (demand-wrap pass,
    metaclass resolution, prepare, namespace merge); pushes resulting class.
 */
-KOS_OP_HANDLER_COLD(BUILD_CLASS) {
+KOS_OP_HANDLER(BUILD_CLASS) {
   (void) insn;
 
   PyObject *ns = KosEvalState_StackPopRef(es);

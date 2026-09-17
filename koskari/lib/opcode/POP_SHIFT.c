@@ -22,7 +22,7 @@
    prompt recorded at push).
 */
 
-KOS_OP_HANDLER_COLD(POP_SHIFT) {
+KOS_OP_HANDLER(POP_SHIFT) {
   PyObject *result;
   uint32_t prompt_pop_pc;
   KosDynPrompt *prompt = NULL;

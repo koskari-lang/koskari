@@ -19,7 +19,7 @@
   name. Resolve the name in the current frame's namespace and push
   PyObject_Format(obj, NULL).
 */
-KOS_OP_HANDLER_COLD(VAR_FORMAT) {
+KOS_OP_HANDLER(VAR_FORMAT) {
   PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = frame_ns_deref(es, name);

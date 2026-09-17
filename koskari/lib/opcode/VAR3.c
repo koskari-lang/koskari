@@ -21,7 +21,7 @@
   with nothing pushed; a push failure releases what the handler still
   holds, the failed value included by the push itself.
 */
-KOS_OP_HANDLER_COLD(VAR3) {
+KOS_OP_HANDLER(VAR3) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *name;
 

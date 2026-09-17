@@ -18,7 +18,7 @@
    Push getattr(obj, attr) where obj = frame_ns_deref(var_name).
 */
 
-KOS_OP_HANDLER_COLD(VAR_ATTR) {
+KOS_OP_HANDLER(VAR_ATTR) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *var_name = KosExtra_OBJ(row, 0);
   PyObject *attr_name = KosExtra_OBJ(row, 1);

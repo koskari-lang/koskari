@@ -19,7 +19,7 @@
   Stack: [..., d_0, ..., d_{m-1}] -> [..., dict].
   Merge the m dicts (later overwrite earlier on key clash) and push result.
 */
-KOS_OP_HANDLER_COLD(COMBINE_KWDS) {
+KOS_OP_HANDLER(COMBINE_KWDS) {
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *built = PyDict_New();

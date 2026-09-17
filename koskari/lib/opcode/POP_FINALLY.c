@@ -19,7 +19,7 @@
    raise, restore the exception. Then pop the region.
 */
 
-KOS_OP_HANDLER_COLD(POP_FINALLY) {
+KOS_OP_HANDLER(POP_FINALLY) {
 
   KosDynNode *region = KosEvalState_CurrentNode(es);
   if (! region || ! KosDynNode_IS_FINALLY(region)) {

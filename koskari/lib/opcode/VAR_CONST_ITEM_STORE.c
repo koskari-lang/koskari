@@ -20,7 +20,7 @@
    nothing. The cold twin of FAST_CONST_ITEM_STORE.
 */
 
-KOS_OP_HANDLER_COLD(VAR_CONST_ITEM_STORE) {
+KOS_OP_HANDLER(VAR_CONST_ITEM_STORE) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *key = KosExtra_OBJ(row, 1);
   PyObject *val = KosEvalState_StackPopRef(es);

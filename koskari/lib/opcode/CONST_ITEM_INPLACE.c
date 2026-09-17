@@ -20,7 +20,7 @@
    then every entry is dropped; pushes nothing.
 */
 
-KOS_OP_HANDLER_COLD(CONST_ITEM_INPLACE) {
+KOS_OP_HANDLER(CONST_ITEM_INPLACE) {
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));

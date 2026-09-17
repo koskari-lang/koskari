@@ -18,7 +18,7 @@
   UNPACK: arg = n (COUNT). Pop TOS, materialize as fast sequence, require
   len == n, push n elements so index 0 is TOS (push indices n-1 .. 0).
 */
-KOS_OP_HANDLER_COLD(UNPACK) {
+KOS_OP_HANDLER(UNPACK) {
   Py_ssize_t n = (Py_ssize_t) KosOp_ARG(insn);
 
   PyObject *seq = KosEvalState_PopUnpackSequence(es, n, 1, "UNPACK");

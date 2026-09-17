@@ -20,7 +20,7 @@
    effect. The cold twin of FAST_ITEM_STORE_CONST.
 */
 
-KOS_OP_HANDLER_COLD(VAR_ITEM_STORE_CONST) {
+KOS_OP_HANDLER(VAR_ITEM_STORE_CONST) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *val = KosExtra_OBJ(row, 2);
   PyObject *obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));

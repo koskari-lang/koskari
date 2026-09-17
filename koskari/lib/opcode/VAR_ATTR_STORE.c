@@ -18,7 +18,7 @@
    setattr(obj, attr, TOS) where obj = frame_ns_deref(var_name). Pop val.
 */
 
-KOS_OP_HANDLER_COLD(VAR_ATTR_STORE) {
+KOS_OP_HANDLER(VAR_ATTR_STORE) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *var_name = KosExtra_OBJ(row, 0);
   PyObject *attr_name = KosExtra_OBJ(row, 1);

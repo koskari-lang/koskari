@@ -20,7 +20,7 @@
    push nothing. The cold twin of FAST_ITEM_STORE.
 */
 
-KOS_OP_HANDLER_COLD(VAR_ITEM_STORE) {
+KOS_OP_HANDLER(VAR_ITEM_STORE) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)

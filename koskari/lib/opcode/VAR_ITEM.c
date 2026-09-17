@@ -20,7 +20,7 @@
    survives lowering names an object or key with no fast slot.
 */
 
-KOS_OP_HANDLER_COLD(VAR_ITEM) {
+KOS_OP_HANDLER(VAR_ITEM) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));
   if (! obj)

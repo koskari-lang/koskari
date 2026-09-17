@@ -19,7 +19,7 @@
    dynamic chain.
 */
 
-KOS_OP_HANDLER_COLD(POP_PROMPT) {
+KOS_OP_HANDLER(POP_PROMPT) {
   (void) insn;
 
   /* Return bookmark: PUSH-graft (POP_PROMPT) or in-place (INPLACE)

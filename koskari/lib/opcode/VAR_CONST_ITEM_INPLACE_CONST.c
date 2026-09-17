@@ -21,7 +21,7 @@
    FAST_CONST_ITEM_INPLACE_CONST.
 */
 
-KOS_OP_HANDLER_COLD(VAR_CONST_ITEM_INPLACE_CONST) {
+KOS_OP_HANDLER(VAR_CONST_ITEM_INPLACE_CONST) {
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
   PyObject *key = KosExtra_OBJ(row, 2);

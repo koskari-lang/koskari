@@ -19,7 +19,7 @@
    namespace; nothing is popped. The cold twin of FAST_CONST_ITEM.
 */
 
-KOS_OP_HANDLER_COLD(VAR_CONST_ITEM) {
+KOS_OP_HANDLER(VAR_CONST_ITEM) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *key = KosExtra_OBJ(row, 1);
   PyObject *obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));

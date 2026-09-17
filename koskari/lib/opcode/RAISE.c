@@ -18,7 +18,7 @@
   RAISE: arg = 0 (reraise current exception), 1 (raise TOS: instance or class).
   Set the current exception; control will transfer to a handler by the eval loop.
 */
-KOS_OP_HANDLER_COLD(RAISE) {
+KOS_OP_HANDLER(RAISE) {
   unsigned n = KosOp_ARG(insn);
 
   if (n == 0) {

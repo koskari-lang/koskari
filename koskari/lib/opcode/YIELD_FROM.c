@@ -808,7 +808,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_emit(
   instruction, and the drive continues there when the delegate is
   exhausted.
 */
-KOS_OP_HANDLER_COLD(YIELD_FROM) {
+KOS_OP_HANDLER(YIELD_FROM) {
   KosDynNode *dyn_top = KosEvalState_CurrentNode(es);
   PyObject *subexpr;
   PyObject *delegate = NULL;

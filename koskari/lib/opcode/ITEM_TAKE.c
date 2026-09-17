@@ -17,7 +17,7 @@
 /**
   ITEM_TAKE: arg unused. getitem then delitem TOS1[TOS]. Stack: obj, key.
 */
-KOS_OP_HANDLER_COLD(ITEM_TAKE) {
+KOS_OP_HANDLER(ITEM_TAKE) {
   PyObject *key = KosEvalState_StackPopRef(es);
   if (unlikely(! key))
     RESULT_RAISE();

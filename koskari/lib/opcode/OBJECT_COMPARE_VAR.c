@@ -20,7 +20,7 @@
    three operands under the selector and push the chain result.
 */
 
-KOS_OP_HANDLER_COLD(OBJECT_COMPARE_VAR) {
+KOS_OP_HANDLER(OBJECT_COMPARE_VAR) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *ops[3];
