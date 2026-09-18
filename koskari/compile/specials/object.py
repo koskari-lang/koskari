@@ -36,7 +36,7 @@ from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_keyword, is_nil, is_pair, is_symbol, unpack
 from ..helpers import const_only_expr, feeder_expr, splat_call_form
-from ..processor import item_opcode
+from ..processor import item_inplace_arg, item_opcode
 from .items import emit_item_place
 
 
@@ -1043,7 +1043,7 @@ def special_inplace_item(compiler, called_by, op, obj, key, values):
     if fields:
         frag.instruction(
             item_opcode(obj_op, key_op, 'INPLACE'),
-            tuple([(binop, count)] + fields) + (0,) * (3 - len(fields)))
+            item_inplace_arg((binop, count), fields))
     else:
         frag.instruction(OpCode.ITEM_INPLACE, (binop, count))
 

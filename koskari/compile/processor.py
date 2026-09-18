@@ -278,6 +278,16 @@ def item_arg(fields):
     return tuple(fields) + (0,) * (4 - len(fields))
 
 
+def item_inplace_arg(operator, fields, *rhs):
+    """
+    The arg of an in-place item row: the operator field, the named
+    fields in name order, and the pool operand when the row carries
+    one; a lone operator field is the plain OPCOUNT arg
+    """
+
+    return item_arg([operator, *fields, *rhs])
+
+
 def item_named_fields(op, arg):
     """
     The named fields an item row's arg carries, in name order, with
@@ -944,12 +954,10 @@ class ByteCodeProcessor:
             fields = [r[1] for r in head]
             if count == 1 and values[0][0] == OpCode.CONST:
                 fused = item_opcode(obj, key, 'INPLACE', const_operand=True)
-                out = [(fused, tuple([binop] + fields + [values[0][1]])
-                        + (0,) * (2 - len(fields)))]
+                out = [(fused, item_inplace_arg(binop, fields, values[0][1]))]
             else:
                 fused = item_opcode(obj, key, 'INPLACE')
-                out = values + [
-                    (fused, tuple([arg] + fields) + (0,) * (3 - len(fields)))]
+                out = values + [(fused, item_inplace_arg(arg, fields))]
             self.splice(found[0], skipped, out)
             return []
 
@@ -960,8 +968,9 @@ class ByteCodeProcessor:
         found, skipped = self.match_priors((CONST_FEEDER,))
         if found is None:
             return None
-        self.splice(found[0], skipped, [
-            (OpCode.ITEM_INPLACE_CONST, (binop, self.rows[found[0]][1], 0, 0))])
+        self.splice(found[0], skipped, [(
+            OpCode.ITEM_INPLACE_CONST,
+            item_inplace_arg(binop, [], self.rows[found[0]][1]))])
         return []
 
 
@@ -979,10 +988,9 @@ class ByteCodeProcessor:
         merged = merge_opcount(arg[0])
         if merged & 0xff != 1:
             return None
-        fields = item_named_fields(op, arg)
         return [(OpCode[f"{op.name}_CONST"],
-                 tuple([merged >> 8] + fields + [matched[0][1]])
-                 + (0,) * (2 - len(fields)))]
+                 item_inplace_arg(merged >> 8, item_named_fields(op, arg),
+                                  matched[0][1]))]
 
 
     @fuse_rule(OpCode.VAR, OpCode.OBJECT_ITER)
