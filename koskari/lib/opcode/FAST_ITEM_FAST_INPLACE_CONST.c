@@ -13,15 +13,15 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST_ITEM_FAST_INPLACE_CONST: arg = extra index. Schema OPERAND,
-   FASTVAR, FASTVAR, CONST. No stack operands. Object from a fast
-   slot, key from a fast slot, operand from the pool. obj[key] =
-   obj[key] OP operands, reduced left to right; push nothing. The
-   access runs through kos_item_inplace (eval/eval_item.c) on the
-   site's one KOS_CACHE_ITEM slot.
-*/
 
+/**
+  FAST_ITEM_FAST_INPLACE_CONST: arg = extra index. Schema OPERAND,
+  FASTVAR, FASTVAR, CONST. No stack operands. Object from a fast
+  slot, key from a fast slot, operand from the pool. obj[key] =
+  obj[key] OP operands, reduced left to right; push nothing. The
+  access runs through kos_item_inplace (eval/eval_item.c) on the
+  site's one KOS_CACHE_ITEM slot.
+*/
 KOS_OP_HANDLER(FAST_ITEM_FAST_INPLACE_CONST) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
@@ -36,9 +36,11 @@ KOS_OP_HANDLER(FAST_ITEM_FAST_INPLACE_CONST) {
                      { RESULT_RAISE(); });
   KOS_NS_FAST_BORROW(key, key_ref, ns, KosExtra_IMM(row, 2),
                      { Py_XDECREF(obj_ref); RESULT_RAISE(); });
+
   rc = kos_item_inplace(KosOp_SLOT(insn), obj, key, op, &rhs, 1);
   Py_XDECREF(obj_ref);
   Py_XDECREF(key_ref);
+
   if (unlikely(rc < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
