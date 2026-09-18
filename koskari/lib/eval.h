@@ -298,6 +298,18 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
     void *insn,
     PyObject *val);
 
+/**
+   The cold half of RESULT_RELAY: every helper answer but NORMAL, out
+   of line once instead of a seven-arm ladder in each relaying handler.
+   The kind travels in the void slot as an integer, since a tail call
+   cannot hand over a pointer into the caller's frame, and the value in
+   its own slot. Tails into the answer's service; FATAL returns.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
+    KosEvalState *es,
+    void *kind,
+    PyObject *val);
+
 
 /* === Threaded control transfer === */
 
@@ -471,23 +483,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
     KosOpResult kos_rr_ = (r);                                          \
     if (likely(kos_rr_.kind == KOS_RES_NORMAL))                         \
       KOS_THREAD_NEXT(es);                                              \
-    if (kos_rr_.kind == KOS_RES_POLL)                                   \
-      TAILCALL(kos_eval_poll, (es), NULL, NULL);                        \
-    if (kos_rr_.kind == KOS_RES_RAISE)                                  \
-      TAILCALL(kos_eval_raise, (es), NULL, NULL);                       \
-    if (kos_rr_.kind == KOS_RES_AWAIT)                                  \
-      TAILCALL(kos_eval_await, (es), NULL, kos_rr_.val);                \
-    if (kos_rr_.kind == KOS_RES_RETURN)                                 \
-      TAILCALL(kos_return_deliver, (es), NULL, kos_rr_.val);            \
-    if (kos_rr_.kind == KOS_RES_YIELD)                                  \
-      TAILCALL(kos_yield_deliver, (es), NULL, kos_rr_.val);             \
-    if (kos_rr_.kind == KOS_RES_CONTROL_RETURNED)                       \
-      TAILCALL(kos_eval_control_returned, (es), NULL, NULL);            \
-    if (kos_rr_.kind == KOS_RES_DISPATCH)                               \
-      KOS_THREAD_NEXT(es);                                              \
-    if (kos_rr_.kind == KOS_RES_REPROLOGUE)                             \
-      TAILCALL(kos_eval_prologue, (es), NULL, NULL);                    \
-    return kos_rr_;                                                     \
+    TAILCALL(kos_eval_relay, (es),                                      \
+             (void *) (uintptr_t) kos_rr_.kind, kos_rr_.val);           \
   } while (0)
 
 /**

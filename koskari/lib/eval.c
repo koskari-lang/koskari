@@ -1994,6 +1994,36 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
 }
 
 
+KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
+    KosEvalState *es,
+    void *kind,
+    PyObject *val) {
+
+  switch ((KosOpResultKind) (uintptr_t) kind) {
+  case KOS_RES_POLL:
+    TAILCALL(kos_eval_poll, es, NULL, NULL);
+  case KOS_RES_RAISE:
+    TAILCALL(kos_eval_raise, es, NULL, NULL);
+  case KOS_RES_AWAIT:
+    TAILCALL(kos_eval_await, es, NULL, val);
+  case KOS_RES_RETURN:
+    TAILCALL(kos_return_deliver, es, NULL, val);
+  case KOS_RES_YIELD:
+    TAILCALL(kos_yield_deliver, es, NULL, val);
+  case KOS_RES_CONTROL_RETURNED:
+    TAILCALL(kos_eval_control_returned, es, NULL, NULL);
+  case KOS_RES_DISPATCH:
+  case KOS_RES_NORMAL:
+    KOS_THREAD_NEXT(es);
+  case KOS_RES_REPROLOGUE:
+    TAILCALL(kos_eval_prologue, es, NULL, NULL);
+  case KOS_RES_FATAL:
+  default:
+    return EVAL_FATAL();
+  }
+}
+
+
 #include "handlers.incl"
 #undef CURRENT_NS
 #undef KOS_OP_REQUIRE_NS
