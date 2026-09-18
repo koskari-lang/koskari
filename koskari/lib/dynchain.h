@@ -2187,9 +2187,8 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 
 #define KosDynFrame_RESUME_KIND(f)  (((KosDynNode *)(f))->u.frame.resume_kind)
 #define KosDynFrame_RESUME_STATE(f) (((KosDynNode *)(f))->u.frame.resume_state)
-/* read-only views through the kind: armed, the function, the name */
-#define KosDynFrame_RESUME_FN(f)                                          \
-  (KosDynFrame_RESUME_KIND(f) ? KosDynFrame_RESUME_KIND(f)->fn : NULL)
+/* A resume is set when the kind is non-NULL; the name is a read-only
+   view through the kind for messages and the snapshot. */
 #define KosDynFrame_RESUME_NAME(f)                                        \
   (KosDynFrame_RESUME_KIND(f) ? KosDynFrame_RESUME_KIND(f)->name : NULL)
 

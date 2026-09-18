@@ -80,7 +80,7 @@ static KosOpResult callable_promote_normal(KosEvalState *es, KosOpResult r) {
      NORMAL here would resume instruction dispatch on a frame that has
      no code. */
   if (KosEvalState_FRAME(es)
-      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)))
+      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)))
     return EVAL_REPROLOGUE();
   return EVAL_NORMAL();
 }

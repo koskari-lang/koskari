@@ -542,7 +542,7 @@ static KosOpResult goal_deliver(
       return EVAL_RAISE();
     }
 #if KOS_EVAL_SAFETYNET
-    if (KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+    if (KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
       PyErr_SetString(PyExc_SystemError,
           "transfer: landed on a frame carrying a resume");
       return EVAL_RAISE();

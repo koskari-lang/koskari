@@ -844,7 +844,7 @@ struct KosEvalState {
    run first, so the installer bounces through the prologue instead.
 */
 static inline int kos_frame_threads(KosDynFrame *nf) {
-  return nf && KosDynFrame_CODE(nf) && ! KosDynFrame_RESUME_FN(nf);
+  return nf && KosDynFrame_CODE(nf) && ! KosDynFrame_RESUME_KIND(nf);
 }
 
 

@@ -190,7 +190,7 @@ KosOpResult KosEvalState_Call(
     if (KosEvalState_GOAL(es))
       return EVAL_REPROLOGUE();
     if (KosEvalState_FRAME(es)
-        && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)))
+        && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)))
       return EVAL_REPROLOGUE();
     return EVAL_NORMAL();
   }
@@ -463,7 +463,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
             && ! (flags & KOS_CALL_ARGV_PREPENDED)
             && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
             && KosFunction_BIND_SELF_STATE(callable) == 2
-            && ! KosDynFrame_RESUME_FN(frame)
+            && ! KosDynFrame_RESUME_KIND(frame)
             && kos_tail_ns_reusable(KosDynFrame_NS(frame))) {
           PyObject *ns = KosDynFrame_NS(frame);
 

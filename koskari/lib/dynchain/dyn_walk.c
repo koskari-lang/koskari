@@ -800,7 +800,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
        frame-crossing branch's does, and a propagated exception goes
        on to the pop below. */
     if (KosDynNode_IS_FRAME(top)
-        && KosDynFrame_RESUME_FN((KosDynFrame *) top)) {
+        && KosDynFrame_RESUME_KIND((KosDynFrame *) top)) {
       KosOpResult hr = raise_walk_hand_to_resume(es, (KosDynFrame *) top);
 
       if (hr.kind != KOS_RES_RAISE)

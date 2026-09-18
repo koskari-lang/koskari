@@ -294,7 +294,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
      flight) takes its delivery through the pending slot instead. */
   {
     KosDynFrame *surfaced = KosEvalState_FRAME(es);
-    if (! (surfaced && KosDynFrame_RESUME_FN(surfaced))
+    if (! (surfaced && KosDynFrame_RESUME_KIND(surfaced))
         && KosEvalState_StackPushRef(es, Py_None) < 0)
       return -1;
   }

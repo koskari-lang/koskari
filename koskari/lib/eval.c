@@ -499,7 +499,7 @@ static KosOpResult revive_await(
       return EVAL_NORMAL();
     }
 
-    if (KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+    if (KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
       /* the frame is waiting on a resume: the awaited value is its
          delivery, staged for the entry's delivery step */
       if (! owned)
@@ -551,7 +551,7 @@ static KosEvalMode revive_yield(
      pending slot; a throw raises at the frame, and the raise walk
      disarms the resume when it unwinds the delegation's node. */
   if (KosEvalState_FRAME(es)
-      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
     if (throw_exc != NULL) {
       PyErr_SetObject(throw_typ, throw_exc);
       return KOS_MODE_EXCEPTION;
@@ -1050,7 +1050,7 @@ static KosOpResult process_raise(KosEvalState *es) {
      because the delivery disarms the resume. */
   if (KosEvalState_FRAME(es)
       && ! KosDynFrame_CODE(KosEvalState_FRAME(es))
-      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)))
+      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)))
     return EVAL_REPROLOGUE();
 
   {
@@ -1607,7 +1607,7 @@ static inline KosOpResult kos_eval_delivery_done(KosEvalState *es) {
 
   if (likely(frame
              && KosDynFrame_CODE(frame)
-             && ! KosDynFrame_RESUME_FN(frame)
+             && ! KosDynFrame_RESUME_KIND(frame)
              && ! KosEvalState_PENDING_VALUE(es)
              && ! KosEvalState_GOAL(es)
              && ! PyErr_Occurred()))
@@ -2330,7 +2330,7 @@ static KosOpResult eval_phase_entry(
   if ((send_val != NULL || KosEvalState_PENDING_VALUE(es))
       && mode == KOS_MODE_NORMAL
       && KosEvalState_FRAME(es)
-      && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
 
     KosOpResult rs = eval_step_resume_delivery(es);
     if (rs.kind != KOS_RES_NORMAL
@@ -2529,7 +2529,7 @@ static inline int kos_return_parent_is_plain(KosDynNode *parent) {
   return parent
       && KosDynNode_IS_FRAME(parent)
       && KosDynFrame_CODE((KosDynFrame *) parent)
-      && ! KosDynFrame_RESUME_FN((KosDynFrame *) parent);
+      && ! KosDynFrame_RESUME_KIND((KosDynFrame *) parent);
 }
 
 
@@ -2670,7 +2670,7 @@ KOS_OP_INLINE int kos_return_is_region(
   if (! ft
       || ! KosDynNode_IS_FRAME((KosDynNode *) ft)
       || ! KosDynFrame_CODE(ft)
-      || KosDynFrame_RESUME_FN(ft))
+      || KosDynFrame_RESUME_KIND(ft))
     return 0;
 
   if (! KosDynNode_STACK(child)
@@ -2739,7 +2739,7 @@ KOS_OP_INLINE int kos_return_is_resume(
   parent = KosDynNode_PARENT(child);
   if (! parent
       || ! KosDynNode_IS_FRAME(parent)
-      || ! KosDynFrame_RESUME_FN((KosDynFrame *) parent))
+      || ! KosDynFrame_RESUME_KIND((KosDynFrame *) parent))
     return 0;
 
   pp = KosDynNode_PARENT(parent);
@@ -3023,7 +3023,7 @@ static inline KosOpResult eval_parent_return_deliver_impl(
   /* Destination by one field: a parent waiting on a resume takes the
      value through the pending slot; a bytecode parent takes it on its
      stack, where its next instruction finds it. */
-  if (parent && KosDynFrame_RESUME_FN(parent)) {
+  if (parent && KosDynFrame_RESUME_KIND(parent)) {
     KosEvalState_StageDelivery(es, val);
   } else if (KosEvalState_StackPUSH(es, val) < 0) {
     return EVAL_FATAL();
@@ -3054,7 +3054,7 @@ static KosOpResult eval_step_drain_goal(KosEvalState *es) {
 /**
    One CPS resume delivery: pop the value staged on the current frame's
    own stack, clear the frame's resume, and invoke it. Caller must only
-   invoke when the eval frame has RESUME_FN set.
+   invoke when the eval frame has a resume kind set.
 
    This is the single point every staged delivery converges on -- a
    callee's frame return, an iteration node's element, and an awaited
@@ -3391,7 +3391,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
         && ! KosEvalState_GOAL(es)
         && KosEvalState_FRAME(es)
         && ! KosDynFrame_CODE(KosEvalState_FRAME(es))
-        && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
+        && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
       KosOpResult rs = eval_step_resume_delivery(es);
       if (rs.kind == KOS_RES_REPROLOGUE)
         KOS_REENTER_AGAIN(es);
@@ -3431,7 +3431,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
     }
 
     if (KosEvalState_FRAME(es)
-        && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)) != NULL) {
+        && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)) != NULL) {
       KosOpResult rs = eval_step_resume_delivery(es);
       if (rs.kind == KOS_RES_REPROLOGUE)
         KOS_REENTER_AGAIN(es);

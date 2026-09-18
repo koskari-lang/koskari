@@ -463,7 +463,7 @@ static KosIterStepResult agen_iter_drive(
        with an empty stack -- nothing to swap. */
     if (frozen && send_val && ! PyErr_Occurred()) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
-      if (frame && KosDynFrame_RESUME_FN(frame)) {
+      if (frame && KosDynFrame_RESUME_KIND(frame)) {
         /* waiting on a resume: the sent value is its delivery */
         Py_INCREF(send_val);
         KosEvalState_StageDelivery(es, send_val);

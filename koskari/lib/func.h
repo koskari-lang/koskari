@@ -239,7 +239,7 @@ static inline int KosFunction_TryParkFrame(
   if (Py_REFCNT(ns) != 1)
     Py_FatalError("KosFunction_TryParkFrame: untracked frame namespace"
                   " has an escaping reference");
-  if (KosDynFrame_RESUME_FN(frame))
+  if (KosDynFrame_RESUME_KIND(frame))
     Py_FatalError("KosFunction_TryParkFrame: frame carries a resume");
   if (! KosDynFrame_STACK(frame))
     Py_FatalError("KosFunction_TryParkFrame: frame has no stack");
