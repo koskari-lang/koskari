@@ -97,6 +97,20 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
     return NULL;
   }
 
+  /* A single-shot extent's exit-done fact is shared, not copied: the
+     live twin's exit must be visible to every clone. The cell is made
+     here, on first clone, so a with that is never captured (nearly all
+     of them) allocates nothing; every reader treats a missing cell as
+     not done and the node's own shot field still records the live
+     twin's exit. Made before the clone exists, so nothing fallible
+     sits between the clone's allocation and its complete arm. */
+  if (KosDynWith_SHOT(src) == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE
+      && ! KosDynWith_EXIT_DONE(src)) {
+    KosDynWith_EXIT_DONE(src) = KosRef_New(NULL, NULL);
+    if (! KosDynWith_EXIT_DONE(src))
+      return NULL;
+  }
+
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
   if (! node)
     return NULL;
@@ -115,20 +129,6 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_SHOT(node) = KosDynWith_SHOT(src);
-  /* A single-shot extent's exit-done fact is shared, not copied: the
-     live twin's exit must be visible to every clone. The cell is made
-     here, on first clone, so a with that is never captured (nearly all
-     of them) allocates nothing; every reader treats a missing cell as
-     not done and the node's own shot field still records the live
-     twin's exit. */
-  if (KosDynWith_SHOT(src) == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE
-      && ! KosDynWith_EXIT_DONE(src)) {
-    KosDynWith_EXIT_DONE(src) = KosRef_New(NULL, NULL);
-    if (! KosDynWith_EXIT_DONE(src)) {
-      kos_dynwith_free(node);
-      return NULL;
-    }
-  }
   KosDynWith_EXIT_DONE(node) = KosDynWith_EXIT_DONE(src);
   Py_XINCREF(KosDynWith_EXIT_DONE(node));
   KosDynWith_NAME(node) = KosDynWith_NAME(src);
