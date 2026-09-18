@@ -61,8 +61,8 @@ static int test_breaker_reads_the_interpreter(void) {
                  "breaker up with a signal pending");
   TEST_ASSERT_EQ(KOS_EVAL_BREAKER_UP(&es) != 0, 1,
                  "cooperation test sees the pending signal");
-  TEST_ASSERT_EQ(kos_call_installed(&es).kind, KOS_RES_REPROLOGUE,
-                 "an install re-enters the prologue with the breaker up");
+  TEST_ASSERT_EQ(kos_call_installed(&es).kind, KOS_RES_POLL,
+                 "an install polls before threading on with the breaker up");
   TEST_ASSERT_EQ(koskari_gil_drop_requested(), 0,
                  "a signal is not a GIL drop request");
 

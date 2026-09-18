@@ -1996,10 +1996,12 @@ static int run_fast_item_site(PyObject *code_obj, PyObject *obj, PyObject *key) 
         return -1;
     }
 
+    /* the frame takes the namespace reference */
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
-    Py_DECREF(ns);
-    if (! frame)
+    if (! frame) {
+        Py_DECREF(ns);
         return -1;
+    }
 
     KosContext *ctx = KosContext_New(frame);
     if (! ctx)
