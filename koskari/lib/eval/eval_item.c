@@ -26,9 +26,12 @@
    Every helper borrows obj and key. A body runs no user code between
    its guard and its access except on the dict and protocol paths,
    which hold obj and key across the call, since a hash or a dunder
-   can rebind the fast slot a handler peeked. The store helper steals
-   val: a stack value moves into the cell, a constant or slot value
-   arrives with the reference the cell needs.
+   can rebind the fast slot a handler peeked; a dict body that cannot
+   finish after its hash keeps its hold and hands it to the protocol
+   path (KOS_ITEM_HELD), so the borrowed pointers are never read again
+   once user code has run under them. The store helper steals val: a
+   stack value moves into the cell, a constant or slot value arrives
+   with the reference the cell needs.
 
    Only the elected hit path is inline; the election, the protocol
    path and the miss accounting are out of line, one copy each.
@@ -53,6 +56,16 @@ typedef enum KosItemCode {
   KOS_ITEM_DECLINE,
   KOS_ITEM_ERROR,
 } KosItemCode;
+
+
+/* Or'd into MISS or DECLINE by a body that ran user code under its
+   hold on obj and key and keeps that hold: the borrowed pointers the
+   handler passed may be dead once the hash or a dunder rebound the
+   slot they came from, so the protocol path that follows takes the
+   held references over and releases them after its call. A body
+   that ran no user code answers a plain code and the protocol path
+   holds for itself. */
+#define KOS_ITEM_HELD 8
 
 
 /* Guard misses since the election before a site demotes. */
@@ -169,11 +182,17 @@ static int kos_item_dict_load(PyObject *obj, PyObject *key, PyObject **out) {
   Py_INCREF(obj);
   Py_INCREF(key);
   v = PyDict_GetItemWithError(obj, key);
-  Py_XINCREF(v);
+  if (unlikely(! v)) {
+    if (PyErr_Occurred()) {
+      Py_DECREF(key);
+      Py_DECREF(obj);
+      return KOS_ITEM_ERROR;
+    }
+    return KOS_ITEM_DECLINE | KOS_ITEM_HELD;
+  }
+  Py_INCREF(v);
   Py_DECREF(key);
   Py_DECREF(obj);
-  if (unlikely(! v))
-    return PyErr_Occurred() ? KOS_ITEM_ERROR : KOS_ITEM_DECLINE;
   *out = v;
   return KOS_ITEM_HIT;
 }
@@ -266,6 +285,22 @@ static KOS_NOINLINE PyObject *kos_item_load_protocol(
 }
 
 
+/* The protocol over references a body held and handed over. */
+static KOS_NOINLINE PyObject *kos_item_load_protocol_held(
+    KosCacheSlot *slot,
+    PyObject *obj,
+    PyObject *key) {
+
+  PyObject *out;
+
+  kos_item_tick(slot);
+  out = PyObject_GetItem(obj, key);
+  Py_DECREF(key);
+  Py_DECREF(obj);
+  return out;
+}
+
+
 static inline PyObject *kos_item_load_run(
     KosCacheSlot *slot,
     KosItemLoadBody body,
@@ -273,8 +308,9 @@ static inline PyObject *kos_item_load_run(
     PyObject *key) {
 
   PyObject *out;
+  int code = body(obj, key, &out);
 
-  switch (body(obj, key, &out)) {
+  switch (code & ~KOS_ITEM_HELD) {
   case KOS_ITEM_HIT:
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
     return out;
@@ -286,6 +322,8 @@ static inline PyObject *kos_item_load_run(
   case KOS_ITEM_DECLINE:
     break;
   }
+  if (code & KOS_ITEM_HELD)
+    return kos_item_load_protocol_held(slot, obj, key);
   return kos_item_load_protocol(slot, obj, key);
 }
 
@@ -346,6 +384,23 @@ static KOS_NOINLINE int kos_item_store_protocol(
 }
 
 
+static KOS_NOINLINE int kos_item_store_protocol_held(
+    KosCacheSlot *slot,
+    PyObject *obj,
+    PyObject *key,
+    PyObject *val) {
+
+  int rc;
+
+  kos_item_tick(slot);
+  rc = PyObject_SetItem(obj, key, val);
+  Py_DECREF(key);
+  Py_DECREF(obj);
+  Py_DECREF(val);
+  return rc;
+}
+
+
 static inline int kos_item_store_run(
     KosCacheSlot *slot,
     KosItemStoreBody body,
@@ -353,7 +408,9 @@ static inline int kos_item_store_run(
     PyObject *key,
     PyObject *val) {
 
-  switch (body(obj, key, val)) {
+  int code = body(obj, key, val);
+
+  switch (code & ~KOS_ITEM_HELD) {
   case KOS_ITEM_HIT:
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
     return 0;
@@ -365,6 +422,8 @@ static inline int kos_item_store_run(
   case KOS_ITEM_DECLINE:
     break;
   }
+  if (code & KOS_ITEM_HELD)
+    return kos_item_store_protocol_held(slot, obj, key, val);
   return kos_item_store_protocol(slot, obj, key, val);
 }
 
@@ -413,14 +472,16 @@ static inline int kos_item_store(
    then held until kos_item_inplace_store or kos_item_inplace_release
    lets them go, since the hash ran user code. DECLINE is an index
    outside the list or a key the dict lacks (the protocol raises the
-   IndexError or KeyError), MISS any other container, ERROR a failed
-   hash with the error set. */
+   IndexError or KeyError); on the dict arm the hold stays, with idx
+   -1, for the body to hand over. MISS any other container, ERROR a
+   failed hash with the error set and the hold released. */
 typedef enum KosItemCell {
   KOS_ITEM_CELL_FOUND,
   KOS_ITEM_CELL_DECLINE,
   KOS_ITEM_CELL_MISS,
   KOS_ITEM_CELL_ERROR,
 } KosItemCell;
+
 
 static inline KosItemCell kos_item_inplace_cell(
     PyObject *obj,
@@ -429,8 +490,10 @@ static inline KosItemCell kos_item_inplace_cell(
     Py_ssize_t *out_idx) {
 
   if (PyList_CheckExact(obj) && PyLong_CheckExact(key)) {
-    if (! kos_item_index(key, PyList_GET_SIZE(obj), out_idx))
+    if (! kos_item_index(key, PyList_GET_SIZE(obj), out_idx)) {
+      *out_idx = 0;
       return KOS_ITEM_CELL_DECLINE;
+    }
     *out_acc = PyList_GET_ITEM(obj, *out_idx);
     return KOS_ITEM_CELL_FOUND;
   }
@@ -438,20 +501,27 @@ static inline KosItemCell kos_item_inplace_cell(
     Py_INCREF(obj);
     Py_INCREF(key);
     *out_acc = PyDict_GetItemWithError(obj, key);
-    if (! *out_acc) {
-      Py_DECREF(key);
-      Py_DECREF(obj);
-      return PyErr_Occurred() ? KOS_ITEM_CELL_ERROR : KOS_ITEM_CELL_DECLINE;
-    }
     *out_idx = -1;
+    if (! *out_acc) {
+      if (PyErr_Occurred()) {
+        Py_DECREF(key);
+        Py_DECREF(obj);
+        return KOS_ITEM_CELL_ERROR;
+      }
+      /* the hash ran; the hold stays with the caller's answer */
+      return KOS_ITEM_CELL_DECLINE;
+    }
     return KOS_ITEM_CELL_FOUND;
   }
+  *out_idx = 0;
   return KOS_ITEM_CELL_MISS;
 }
 
 
-/* The dict arm holds obj and key from the cell lookup to the store; a
-   decline or a miss inside the arm releases them on the way out. */
+/* The dict arm holds obj and key from the cell lookup to the store.
+   An error inside the arm releases them on the way out; a miss or a
+   decline hands them to the caller flagged KOS_ITEM_HELD, since the
+   hash ran user code and the caller's borrowed pointers may be dead. */
 static inline void kos_item_inplace_release(
     PyObject *obj,
     PyObject *key,
@@ -461,6 +531,11 @@ static inline void kos_item_inplace_release(
     Py_DECREF(key);
     Py_DECREF(obj);
   }
+}
+
+
+static inline int kos_item_inplace_answer(Py_ssize_t idx, int code) {
+  return idx < 0 ? code | KOS_ITEM_HELD : code;
 }
 
 
@@ -552,22 +627,21 @@ static inline int kos_item_inplace_store(
     case KOS_ITEM_CELL_ERROR:                                           \
       return KOS_ITEM_ERROR;                                            \
     default:                                                            \
-      return KOS_ITEM_DECLINE;                                          \
+      return kos_item_inplace_answer(idx, KOS_ITEM_DECLINE);            \
     }                                                                   \
     if (unlikely(! KOS_ITEM_##KIND##_CHECK(acc)                         \
-                 || ! KOS_ITEM_##KIND##_CHECK(rhs))) {                  \
-      kos_item_inplace_release(obj, key, idx);                          \
-      return KOS_ITEM_MISS;                                             \
-    }                                                                   \
+                 || ! KOS_ITEM_##KIND##_CHECK(rhs)))                    \
+      return kos_item_inplace_answer(idx, KOS_ITEM_MISS);               \
     if (unlikely(! KOS_ITEM_##KIND##_READ(acc, a)                       \
-                 || ! KOS_ITEM_##KIND##_READ(rhs, b))) {                \
-      kos_item_inplace_release(obj, key, idx);                          \
-      return KOS_ITEM_DECLINE;                                          \
-    }                                                                   \
+                 || ! KOS_ITEM_##KIND##_READ(rhs, b)))                  \
+      return kos_item_inplace_answer(idx, KOS_ITEM_DECLINE);            \
     rc = KOS_ITEM_##KIND##_FAST(NAME)(a, b, acc, &out);                 \
     if (unlikely(rc <= 0)) {                                            \
-      kos_item_inplace_release(obj, key, idx);                          \
-      return rc < 0 ? KOS_ITEM_ERROR : KOS_ITEM_DECLINE;                \
+      if (rc < 0) {                                                     \
+        kos_item_inplace_release(obj, key, idx);                        \
+        return KOS_ITEM_ERROR;                                          \
+      }                                                                 \
+      return kos_item_inplace_answer(idx, KOS_ITEM_DECLINE);            \
     }                                                                   \
     if (unlikely(kos_item_inplace_store(obj, key, idx, acc, out) < 0))  \
       return KOS_ITEM_ERROR;                                            \
@@ -624,12 +698,10 @@ static int kos_item_inplace_str_add(
   case KOS_ITEM_CELL_ERROR:
     return KOS_ITEM_ERROR;
   default:
-    return KOS_ITEM_DECLINE;
+    return kos_item_inplace_answer(idx, KOS_ITEM_DECLINE);
   }
-  if (unlikely(! PyUnicode_CheckExact(acc) || ! PyUnicode_CheckExact(rhs))) {
-    kos_item_inplace_release(obj, key, idx);
-    return KOS_ITEM_MISS;
-  }
+  if (unlikely(! PyUnicode_CheckExact(acc) || ! PyUnicode_CheckExact(rhs)))
+    return kos_item_inplace_answer(idx, KOS_ITEM_MISS);
 
   out = PyUnicode_Concat(acc, rhs);
   if (unlikely(! out)) {
@@ -712,6 +784,24 @@ static KOS_NOINLINE int kos_item_inplace_protocol(
 }
 
 
+static KOS_NOINLINE int kos_item_inplace_protocol_held(
+    KosCacheSlot *slot,
+    PyObject *obj,
+    PyObject *key,
+    KosOperand op,
+    PyObject *const *args,
+    int count) {
+
+  int rc;
+
+  kos_item_tick(slot);
+  rc = kos_item_inplace_reduce(obj, key, op, args, count);
+  Py_DECREF(key);
+  Py_DECREF(obj);
+  return rc;
+}
+
+
 static inline int kos_item_inplace_run(
     KosCacheSlot *slot,
     KosItemInplaceBody body,
@@ -720,7 +810,9 @@ static inline int kos_item_inplace_run(
     KosOperand op,
     PyObject *const *args) {
 
-  switch (body(obj, key, args[0])) {
+  int code = body(obj, key, args[0]);
+
+  switch (code & ~KOS_ITEM_HELD) {
   case KOS_ITEM_HIT:
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
     return 0;
@@ -732,6 +824,8 @@ static inline int kos_item_inplace_run(
   case KOS_ITEM_DECLINE:
     break;
   }
+  if (code & KOS_ITEM_HELD)
+    return kos_item_inplace_protocol_held(slot, obj, key, op, args, 1);
   return kos_item_inplace_protocol(slot, obj, key, op, args, 1);
 }
 
@@ -746,14 +840,23 @@ static KOS_NOINLINE int kos_item_inplace_cold(
     int count) {
 
   KosItemInplaceBody body;
+  int rc;
 
   if (slot && slot->kind == KOS_CACHE_ITEM)
     return kos_item_inplace_protocol(slot, obj, key, op, args, count);
+  /* the classification hashes the key, so the borrowed operands are
+     held across it and the call that follows */
+  Py_INCREF(obj);
+  Py_INCREF(key);
   body = count == 1 ? kos_item_inplace_classify(op, obj, key, args[0]) : NULL;
   kos_item_elect(slot, (KosItemBody) { .inplace = body });
   if (! body)
-    return kos_item_inplace_protocol(slot, obj, key, op, args, count);
-  return kos_item_inplace_run(slot, body, obj, key, op, args);
+    rc = kos_item_inplace_protocol(slot, obj, key, op, args, count);
+  else
+    rc = kos_item_inplace_run(slot, body, obj, key, op, args);
+  Py_DECREF(key);
+  Py_DECREF(obj);
+  return rc;
 }
 
 
