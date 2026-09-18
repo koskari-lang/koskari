@@ -73,9 +73,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_result(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(accumulate_resume_fetch_kind, "accumulate-step", accumulate_resume_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(accumulate_resume_fold_kind, "accumulate-step", accumulate_resume_fold, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(accumulate_resume_result_kind, "accumulate-step", accumulate_resume_result, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(accumulate_resume_fetch_kind, "accumulate-step",
+                accumulate_resume_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(accumulate_resume_fold_kind, "accumulate-step",
+                accumulate_resume_fold, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(accumulate_resume_result_kind, "accumulate-step",
+                accumulate_resume_result, kos_transform_step_clear, NULL);
 
 
 /**
@@ -259,7 +262,8 @@ static KosIterStepResult accumulate_iter_step(
 
   /* Driven source: set the cold-start kickoff resume and defer the
      first fetch entirely. */
-  return kos_transform_stage(es, t, NULL, &accumulate_resume_fetch_kind, pre_top);
+  return kos_transform_stage(es, t, NULL, &accumulate_resume_fetch_kind,
+                             pre_top);
 }
 
 

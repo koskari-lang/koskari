@@ -73,12 +73,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(compress_resume_deliver_kind, "compress-step", compress_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(compress_resume_fetch_kind, "compress-step", compress_resume_fetch, kos_transform_step_clear, NULL);
-
-
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element);
+KOS_RESUME_KIND(compress_resume_deliver_kind, "compress-step",
+                compress_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(compress_resume_fetch_kind, "compress-step",
+                compress_resume_fetch, kos_transform_step_clear, NULL);
 
 
 /**
@@ -101,8 +99,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
     PyObject *element;
 
     if (! ((c->sync_mask >> t->idx) & 1u)) {
-      KosOpResult r = KosEvalState_NextResume(es, t->sources[t->idx], NULL,
-                                              &compress_resume_deliver_kind, c);
+      KosOpResult r = KosEvalState_NextResume(
+          es, t->sources[t->idx], NULL, &compress_resume_deliver_kind, c);
       RESULT_ENTRY(es, r, &compress_resume_deliver_kind, c);
     }
 
@@ -238,7 +236,8 @@ static KosIterStepResult compress_iter_step(
   /* A driven source: defer the whole row. Nothing is fetched yet to
      stage, and a request that can suspend must run from inside
      koskari_eval's own dispatch. */
-  return kos_transform_stage(es, t, NULL, &compress_resume_fetch_kind, pre_top);
+  return kos_transform_stage(es, t, NULL, &compress_resume_fetch_kind,
+                             pre_top);
 }
 
 

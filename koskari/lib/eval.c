@@ -1845,16 +1845,12 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
   /* The general path: the walk over the extents above the frame, the
      generator and iteration-node parents, the delimited return, the
      root. Its own plain case is the transition above. */
-  {
-    KosOpResult r;
-
-    KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return_ng(es, val));
-    if (likely(r.kind == KOS_RES_DISPATCH))
-      RESULT_CONTINUE(es);
-    if (r.kind == KOS_RES_REPROLOGUE)
-      TAILCALL(kos_eval_prologue, es, NULL, NULL);
-    return r;
-  }
+  KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return_ng(es, val));
+  if (likely(r.kind == KOS_RES_DISPATCH))
+    RESULT_CONTINUE(es);
+  if (r.kind == KOS_RES_REPROLOGUE)
+    TAILCALL(kos_eval_prologue, es, NULL, NULL);
+  return r;
 }
 
 
@@ -2574,8 +2570,7 @@ static inline int kos_return_is_plain(
 */
 KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
 
-  KosDynFrame_RESUME_KIND(frame) = NULL;
-  KosDynFrame_RESUME_STATE(frame) = NULL;
+  kos_dynframe_clear_resume(frame);
 
   {
     PyObject *fn = KosDynFrame_FN(frame);
@@ -3320,9 +3315,8 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
    pass is a cooperation point: a resume hop that found the breaker up
    staged its delivery and answered REPROLOGUE expecting a poll, and a
    loop that simply went round again would deliver, hop, and stage
-   forever with the word still up. So when the breaker is up the
-   re-entry hands REPROLOGUE back to the trampoline, whose prologue
-   polls and re-enters. Not a do-while: the continue must reach the
+   forever with the word still up. So a pass polls first when the
+   breaker is up. Not a do-while: the continue must reach the
    enclosing for. */
 #define KOS_REENTER_AGAIN(es)                                           \
   {                                                                     \

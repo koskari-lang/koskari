@@ -61,9 +61,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(starmap_resume_after_result_kind, "starmap-step", starmap_resume_after_result, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(starmap_resume_invoke_kind, "starmap-step", starmap_resume_invoke, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(starmap_resume_start_fetch_kind, "starmap-step", starmap_resume_start_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(starmap_resume_after_result_kind, "starmap-step",
+                starmap_resume_after_result, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(starmap_resume_invoke_kind, "starmap-step",
+                starmap_resume_invoke, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(starmap_resume_start_fetch_kind, "starmap-step",
+                starmap_resume_start_fetch, kos_transform_step_clear, NULL);
 
 
 /**
@@ -208,8 +211,8 @@ static KosIterStepResult starmap_iter_step(
              defer to starmap_resume_after_result -- the await it
              needs must happen from inside koskari_eval's own
              dispatch. */
-          return kos_transform_stage(es, t, result,
-                                     &starmap_resume_after_result_kind, pre_top);
+          return kos_transform_stage(
+              es, t, result, &starmap_resume_after_result_kind, pre_top);
         default:
           Py_DECREF(result);
           return KOS_ITER_ERROR;

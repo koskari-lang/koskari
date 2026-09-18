@@ -80,12 +80,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(zip_resume_deliver_kind, "zip-step", zip_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(zip_resume_fetch_kind, "zip-step", zip_resume_fetch, kos_transform_step_clear, NULL);
-
-
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element);
+KOS_RESUME_KIND(zip_resume_deliver_kind, "zip-step",
+                zip_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(zip_resume_fetch_kind, "zip-step",
+                zip_resume_fetch, kos_transform_step_clear, NULL);
 
 
 /**
@@ -110,8 +108,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
     PyObject *element;
 
     if (! zip_sync(z, t->idx)) {
-      KosOpResult r = KosEvalState_NextResume(es, t->sources[t->idx],
-                                              NULL, &zip_resume_deliver_kind, z);
+      KosOpResult r = KosEvalState_NextResume(
+          es, t->sources[t->idx], NULL, &zip_resume_deliver_kind, z);
       RESULT_ENTRY(es, r, &zip_resume_deliver_kind, z);
     }
 

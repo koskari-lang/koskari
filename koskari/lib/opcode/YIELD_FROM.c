@@ -189,17 +189,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_emit(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_send(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(yield_from_resume_await_kind, "yield-from", yield_from_resume_await, NULL, kos_resume_clone_shared);
-KOS_RESUME_KIND(yield_from_resume_emit_kind, "yield-from", yield_from_resume_emit, NULL, kos_resume_clone_shared);
-KOS_RESUME_KIND(yield_from_resume_send_kind, "yield-from", yield_from_resume_send, NULL, kos_resume_clone_shared);
-
-
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_send(
-    KosEvalState *es, void *state, PyObject *value);
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_await(
-    KosEvalState *es, void *state, PyObject *value);
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_emit(
-    KosEvalState *es, void *state, PyObject *value);
+KOS_RESUME_KIND(yield_from_resume_await_kind, "yield-from",
+                yield_from_resume_await, NULL, kos_resume_clone_shared);
+KOS_RESUME_KIND(yield_from_resume_emit_kind, "yield-from",
+                yield_from_resume_emit, NULL, kos_resume_clone_shared);
+KOS_RESUME_KIND(yield_from_resume_send_kind, "yield-from",
+                yield_from_resume_send, NULL, kos_resume_clone_shared);
 
 
 /**
@@ -226,7 +221,6 @@ static KOS_NOINLINE KosOpResult yield_from_yield_value(
 
   return EVAL_YIELD(payload);
 }
-
 
 
 /**

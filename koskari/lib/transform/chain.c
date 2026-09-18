@@ -97,12 +97,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(chain_resume_deliver_kind, "chain-step", chain_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(chain_resume_fetch_kind, "chain-step", chain_resume_fetch, kos_transform_step_clear, NULL);
-
-
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element);
+KOS_RESUME_KIND(chain_resume_deliver_kind, "chain-step",
+                chain_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(chain_resume_fetch_kind, "chain-step",
+                chain_resume_fetch, kos_transform_step_clear, NULL);
 
 
 /**
@@ -220,7 +218,8 @@ static KosIterStepResult chain_iter_step(
     }
 
     if (! t->src_sync)
-      return kos_transform_stage(es, t, NULL, &chain_resume_fetch_kind, pre_top);
+      return kos_transform_stage(es, t, NULL, &chain_resume_fetch_kind,
+                                 pre_top);
 
     element = PyIter_Next(t->source);
     if (! element) {

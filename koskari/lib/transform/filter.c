@@ -73,17 +73,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(filter_resume_after_verdict_kind, "filter-step", filter_resume_after_verdict, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(filter_resume_do_fetch_kind, "filter-step", filter_resume_do_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step", filter_resume_do_invoke, kos_transform_step_clear, NULL);
-
-
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
-    KosEvalState *es, void *state, PyObject *value);
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
-    KosEvalState *es, void *state, PyObject *element);
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
-    KosEvalState *es, void *state, PyObject *value);
+KOS_RESUME_KIND(filter_resume_after_verdict_kind, "filter-step",
+                filter_resume_after_verdict, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(filter_resume_do_fetch_kind, "filter-step",
+                filter_resume_do_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step",
+                filter_resume_do_invoke, kos_transform_step_clear, NULL);
 
 
 /**
@@ -173,9 +168,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
      duration. */
   f->pending = element;
   {
-    KosOpResult r = KosEvalState_CallResult(es, f->fn.cs_callable,
-                                            &element, 1, NULL, 0,
-                                            &filter_resume_after_verdict_kind, f);
+    KosOpResult r = KosEvalState_CallResult(
+        es, f->fn.cs_callable, &element, 1, NULL, 0,
+        &filter_resume_after_verdict_kind, f);
     RESULT_ENTRY(es, r, &filter_resume_after_verdict_kind, f);
   }
 }
@@ -321,7 +316,8 @@ static KosIterStepResult filter_iter_step(
      cold-start fetch resume and defer the whole step -- nothing is
      fetched yet to stage, and the request itself (which can suspend)
      must run from inside koskari_eval's own dispatch. */
-  return kos_transform_stage(es, f, NULL, &filter_resume_do_fetch_kind, pre_top);
+  return kos_transform_stage(es, f, NULL, &filter_resume_do_fetch_kind,
+                             pre_top);
 }
 
 

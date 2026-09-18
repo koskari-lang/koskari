@@ -47,9 +47,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
     KosEvalState *es, void *state, PyObject *value);
 
-KOS_RESUME_KIND(map_resume_after_fetch_kind, "map-step", map_resume_after_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(map_resume_after_result_kind, "map-step", map_resume_after_result, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(map_resume_start_fetch_kind, "map-step", map_resume_start_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(map_resume_after_fetch_kind, "map-step",
+                map_resume_after_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(map_resume_after_result_kind, "map-step",
+                map_resume_after_result, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(map_resume_start_fetch_kind, "map-step",
+                map_resume_start_fetch, kos_transform_step_clear, NULL);
 
 
 /**
@@ -206,7 +209,8 @@ static KosIterStepResult map_iter_step(
      cold-start kickoff resume and defer the first fetch entirely --
      nothing is fetched yet to stage, and the request itself (which can
      suspend) must run from inside koskari_eval's own dispatch. */
-  return kos_transform_stage(es, m, NULL, &map_resume_start_fetch_kind, pre_top);
+  return kos_transform_stage(es, m, NULL, &map_resume_start_fetch_kind,
+                             pre_top);
 }
 
 

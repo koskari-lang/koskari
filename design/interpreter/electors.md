@@ -260,10 +260,13 @@ without counting, since the site is still an int site. Misses count
 since the election; the hit path takes no store. At
 `KOS_ELECTOR_MISS_LIMIT` (8, the method cache's) the slot demotes to
 `MEGAMORPHIC` with `fn` set to the generic body. The generic body is
-the slow path, so it can afford a count of its own: it ticks the same
-byte on every execution and empties the slot when the byte wraps, so
-a demoted site, or one whose first operands were not its steady type,
-classifies again every 256 executions rather than never. The
+the slow path, so it can afford a count of its own: it ticks a byte of
+its own on every execution, apart from the misses that drive the
+demotion, and empties the slot when the byte wraps, so a demoted site,
+or one whose first operands were not its steady type, classifies again
+every 256 executions rather than never. A decline from an elected body
+(an index past a list's end, a key a dict lacks) runs the generic body
+and ticks; it is not a guard miss. The
 `KOS_TRACE_OPCACHE` counters `elector_hit`,
 `elector_miss` (an election or a guard miss), `elector_bypass` (a
 demotion), and `elector_uncached` are shared by the families.

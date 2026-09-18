@@ -1493,22 +1493,6 @@ KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val);
 
 
 /**
-   The trampoline's re-entry: everything that must happen before the
-   next instruction is fetched, whenever control comes back to the
-   loop by a signal rather than by the fetch itself. In order: a
-   staged CPS delivery with no pending exception and no goal goes
-   straight to its resume; a pending exception runs the raise walk; an
-   armed transfer goal drives; a frame waiting on a resume takes its
-   delivery. Each of those may ask to run again, and this function
-   loops until none does.
-
-   :return: EVAL_NORMAL when instruction dispatch may proceed from
-       es->pc; otherwise the terminal result koskari_eval returns
-       (AWAIT, YIELD, RETURN, RAISE, FATAL)
-*/
-
-
-/**
    Inject traceback into the current PyErr in-place, leave PyErr set, and
    mark the context dead.  Call only when PyErr is set.  The RAISE invariant
    requires PyErr to remain set on every KOS_RES_RAISE boundary.
