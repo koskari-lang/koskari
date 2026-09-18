@@ -2024,6 +2024,91 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_CONST_ITEM_INPLACE_CONST_BODY,
                      fast_const_item_inplace_const)
 
 
+/* The str body of an item in-place family: + over an exact-str cell
+   and operand, the cell found as the numeric bodies find it. A
+   container cell cannot be vacated for an in-place append the way a
+   fast slot or a __slots__ member can, since a list with a NULL entry
+   is not a list, so both arms concatenate and swap: the list cell
+   directly, the dict cell through a store with the operands held as
+   the numeric dict arm holds them. */
+#define KOS_ITEM_INPLACE_STR_ELECTOR(FAMILY, FETCH, RHS, RHS_GUARDED, DROP) \
+  KOS_ELECTOR(FAMILY##_str_add) {                                       \
+    const KosExtra *row = KosOp_ROW(insn);                              \
+    PyObject *ns = KosEvalState_NAMESPACE(es);                          \
+    PyObject *obj, *key, *acc, *rhs, *out;                              \
+    Py_ssize_t idx = -1;                                                \
+                                                                        \
+    KOS_OP_REQUIRE_NS(ns);                                              \
+    FETCH(obj, key);                                                    \
+    rhs = (RHS);                                                        \
+    if (unlikely(! rhs))                                                \
+      RESULT_RAISE();                                                   \
+    if (PyList_CheckExact(obj) && PyLong_CheckExact(key)) {             \
+      if (unlikely(! kos_item_index(key, PyList_GET_SIZE(obj), &idx)))  \
+        TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
+      acc = PyList_GET_ITEM(obj, idx);                                  \
+    } else if (PyDict_CheckExact(obj)) {                                \
+      Py_INCREF(obj);                                                   \
+      Py_INCREF(key);                                                   \
+      acc = PyDict_GetItemWithError(obj, key);                          \
+      if (unlikely(! acc)) {                                            \
+        kos_item_inplace_release(obj, key, idx);                        \
+        if (PyErr_Occurred())                                           \
+          RESULT_RAISE();                                               \
+        TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
+      }                                                                 \
+    } else {                                                            \
+      TAILCALL(el_miss, es, insn, value);                               \
+    }                                                                   \
+    if (unlikely(! PyUnicode_CheckExact(acc)                            \
+                 || (RHS_GUARDED && ! PyUnicode_CheckExact(rhs)))) {    \
+      kos_item_inplace_release(obj, key, idx);                          \
+      TAILCALL(el_miss, es, insn, value);                               \
+    }                                                                   \
+                                                                        \
+    out = PyUnicode_Concat(acc, rhs);                                   \
+    if (unlikely(! out)) {                                              \
+      kos_item_inplace_release(obj, key, idx);                          \
+      RESULT_RAISE();                                                   \
+    }                                                                   \
+    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
+    DROP;                                                               \
+    if (idx >= 0) {                                                     \
+      PyList_SET_ITEM(obj, idx, out);                                   \
+      Py_DECREF(acc);                                                   \
+    } else {                                                            \
+      int kos_is_rc_ = PyDict_SetItem(obj, key, out);                   \
+      Py_DECREF(out);                                                   \
+      Py_DECREF(key);                                                   \
+      Py_DECREF(obj);                                                   \
+      if (unlikely(kos_is_rc_ < 0))                                     \
+        RESULT_RAISE();                                                 \
+    }                                                                   \
+    RESULT_NEXT(es);                                                    \
+  }
+
+KOS_ITEM_INPLACE_STR_ELECTOR(item_inplace, KOS_ITEM_INPLACE_FETCH_STACK,
+    kos_stack_peek_top(es), 1,
+    kos_stack_drop_noerr_fast(KosEvalState_BLOCK(es), 3))
+KOS_ITEM_INPLACE_STR_ELECTOR(const_item_inplace,
+    KOS_ITEM_INPLACE_FETCH_STACK_CONST,
+    kos_stack_peek_top(es), 1,
+    kos_stack_drop_noerr_fast(KosEvalState_BLOCK(es), 2))
+KOS_ITEM_INPLACE_STR_ELECTOR(fast_item_inplace, KOS_ITEM_INPLACE_FETCH_FAST,
+    kos_stack_peek_top(es), 1,
+    kos_stack_drop1_fast(KosEvalState_BLOCK(es)))
+KOS_ITEM_INPLACE_STR_ELECTOR(fast_const_item_inplace,
+    KOS_ITEM_INPLACE_FETCH_FAST_CONST,
+    kos_stack_peek_top(es), 1,
+    kos_stack_drop1_fast(KosEvalState_BLOCK(es)))
+KOS_ITEM_INPLACE_STR_ELECTOR(fast_item_inplace_const,
+    KOS_ITEM_INPLACE_FETCH_FAST,
+    KosExtra_OBJ(row, 3), 0, ((void) 0))
+KOS_ITEM_INPLACE_STR_ELECTOR(fast_const_item_inplace_const,
+    KOS_ITEM_INPLACE_FETCH_FAST_CONST,
+    KosExtra_OBJ(row, 3), 0, ((void) 0))
+
+
 /* === Election === */
 
 
@@ -2302,7 +2387,8 @@ static inline PyObject *kos_elector_item_peek(PyObject *obj, PyObject *key) {
       return NULL;                                                      \
     return kos_elector_num_body(                                        \
         (KosOperand) (OP), kos_elector_item_peek(obj, key), rhs,        \
-        kos_##FAMILY##_int_bodies, kos_##FAMILY##_float_bodies, NULL);  \
+        kos_##FAMILY##_int_bodies, kos_##FAMILY##_float_bodies,         \
+        el_##FAMILY##_str_add);                                         \
   }
 
 /* The fast shapes read their object from the row's field 1. */
@@ -2385,6 +2471,7 @@ KOS_ELECTOR_ELECT(fast_const_item_inplace_const, kos_elector_fast_const_item_inp
 #undef KOS_ITEM_CLASSIFY
 #undef KOS_ITEM_INPLACE_CLASSIFY
 #undef KOS_ITEM_INPLACE_CLASSIFY_OBJ
+#undef KOS_ITEM_INPLACE_STR_ELECTOR
 #undef KOS_CONST_ITEM_INPLACE_BODY
 #undef KOS_ITEM_INPLACE_BODY
 #undef KOS_FAST_CONST_ITEM_INPLACE_CONST_BODY

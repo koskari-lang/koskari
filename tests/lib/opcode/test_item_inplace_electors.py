@@ -393,6 +393,87 @@ class TestItemInplaceElector(CevalTest):
         await site([8], 0, 3)
 
 
+class StrSub(str):
+    def __add__(self, other):
+        return ("sub", other)
+
+
+class TestItemInplaceStrElector(CevalTest):
+    """
+    The str body of every item in-place family: + over an exact-str
+    cell and operand, on a list and a dict cell
+    """
+
+    def sites(self):
+        return (
+            (lambda: stack_site('ADD'), lambda s, c, k, v: s(c, k, v)),
+            (lambda: const_key_stack_site('ADD', 0), lambda s, c, k, v: s(c, v)),
+            (lambda: object_stack_site('ADD'), lambda s, c, k, v: s(c, k, v)),
+            (lambda: object_stack_const_key_site('ADD', 0),
+             lambda s, c, k, v: s(c, v)),
+        )
+
+    async def test_str_cells_concatenate_on_list_and_dict(self):
+        for make, call in self.sites():
+            site, _ = make()
+            lst = ["a"]
+            for piece in ("b", "c", "d"):
+                await call(site, lst, 0, piece)
+            self.assertEqual(lst, ["abcd"])
+            d = {0: "x"}
+            await call(site, d, 0, "y")
+            await call(site, d, 0, "z")
+            self.assertEqual(d, {0: "xyz"})
+            # the cell holds a new object each time
+            before = lst[0]
+            await call(site, lst, 0, "")
+            self.assertEqual(lst[0], before)
+
+    async def test_constant_operand_families(self):
+        site, _ = const_rhs_site('ADD', "!")
+        lst = ["hi"]
+        for _ in range(3):
+            await site(lst, 0)
+        self.assertEqual(lst, ["hi!!!"])
+        site, _ = const_both_site('ADD', 0, "?")
+        lst = ["a"]
+        for _ in range(3):
+            await site(lst)
+        self.assertEqual(lst, ["a???"])
+        d = {0: ""}
+        await site(d)
+        self.assertEqual(d, {0: "?"})
+
+    async def test_subclass_and_other_operands_miss(self):
+        site, _ = stack_site('ADD')
+        lst = ["a"]
+        await site(lst, 0, "b")
+        sub = [StrSub("s")]
+        await site(sub, 0, "t")
+        self.assertEqual(sub, [("sub", "t")])
+        with self.assertRaises(TypeError):
+            await site(lst, 0, 1)
+        with self.assertRaises(TypeError):
+            await site([1], 0, "b")
+        lst2 = ["x"]
+        await site(lst2, 0, StrSub("y"))
+        self.assertEqual(lst2, ["xy"])
+        self.assertIs(type(lst2[0]), str)
+        await site(lst, 0, "c")
+        self.assertEqual(lst, ["abc"])
+
+    async def test_declines_take_the_generic_body(self):
+        site, _ = stack_site('ADD')
+        lst = ["a", "b"]
+        await site(lst, 1, "c")
+        with self.assertRaises(IndexError):
+            await site(lst, 5, "c")
+        with self.assertRaises(KeyError):
+            await site({}, "k", "c")
+        await site(lst, -1, "d")
+        self.assertEqual(lst, ["a", "bcd"])
+
+
 class TestFastConstItemInplaceElector(CevalTest):
 
     async def test_int_and_float_cells(self):
