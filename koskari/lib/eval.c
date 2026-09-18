@@ -1844,7 +1844,9 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
 
   /* The general path: the walk over the extents above the frame, the
      generator and iteration-node parents, the delimited return, the
-     root. Its own plain case is the transition above. */
+     root. Its own plain case is the transition above. The arms above
+     are the RETURN row's own work; from here on is the signal's. */
+  KOS_TRACE_TRAMPOLINE_STEP();
   KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return_ng(es, val));
   if (likely(r.kind == KOS_RES_DISPATCH))
     RESULT_CONTINUE(es);
@@ -1880,7 +1882,11 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
   }
 
   /* The freeze, then the delivery to a flattened consumer, or the
-     terminal YIELD for a generator an adapter drives. */
+     terminal YIELD for a generator an adapter drives. The flattened
+     delivery is the YIELD row's own work; the terminal yield is the
+     signal's. */
+  if (! KosDynGen_IS_FLATTENED(gen))
+    KOS_TRACE_TRAMPOLINE_STEP();
   KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, gen, val));
   if (likely(r.kind == KOS_RES_DISPATCH))
     RESULT_CONTINUE(es);
@@ -1925,6 +1931,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
   (void) insn;
   (void) val;
 
+  KOS_TRACE_TRAMPOLINE_STEP();
   kos_eval_poll_now();
   if (unlikely(PyErr_Occurred()))
     TAILCALL(kos_eval_prologue, es, NULL, NULL);
@@ -1942,6 +1949,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
   (void) insn;
   (void) val;
 
+  KOS_TRACE_TRAMPOLINE_STEP();
   KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(es));
   if (r.kind == KOS_RES_REPROLOGUE)
     TAILCALL(kos_eval_prologue, es, NULL, NULL);
@@ -1958,6 +1966,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_await(
 
   (void) insn;
 
+  KOS_TRACE_TRAMPOLINE_STEP();
   KOS_TRACE_POST_OP_WRAP(event_await, r = eval_event_await(es, val));
   if (r.kind == KOS_RES_REPROLOGUE)
     TAILCALL(kos_eval_prologue, es, NULL, NULL);
@@ -1975,6 +1984,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
   (void) insn;
   (void) val;
 
+  KOS_TRACE_TRAMPOLINE_STEP();
   r = kos_eval_post_opcode_control_returned_after_hook(es);
   if (likely(r.kind == KOS_RES_DISPATCH))
     RESULT_CONTINUE(es);

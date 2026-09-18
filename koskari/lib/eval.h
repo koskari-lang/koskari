@@ -346,6 +346,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
     KosEvalState_PENDING_VALUE(kos_dsp_es_) = kos_dsp_val_;             \
     KosDynFrame_RESUME_KIND(kos_dsp_frame_) = (kind);                   \
     KosDynFrame_RESUME_STATE(kos_dsp_frame_) = (void *) (arg);          \
+    KOS_TRACE_TRAMPOLINE_STEP();                                        \
     TAILCALL(kos_eval_prologue, kos_dsp_es_, NULL, NULL);               \
   } while (0)
 

@@ -287,6 +287,30 @@ class TestTraceReport(unittest.TestCase):
             self.assertIsInstance(row["op"], str)
             self.assertIsInstance(row["avg_ns"], int)
 
+    def test_trampoline_counts_signal_services_when_enabled(self):
+        """
+        The trampoline slot counts every signal service entry, the
+        thread form of the old landing points: here the eval entry
+        and three raise walks, whatever else the run polled
+        """
+
+        report = lib.get_trace_report()
+        if not report["flags"].get("timing"):
+            self.skipTest(
+                "KOS_TRACE_TIMING not enabled; rebuild with KOS_TRACE_TIMING=1"
+            )
+        expr, _ = SpecialsTestCase("assertTrue").compile_expr(
+            "(begin (define n 0)"
+            " (while (< n 3)"
+            "  (setq n (+ n 1))"
+            "  (try (raise (ValueError)) ((e ValueError) None)))"
+            " n)", ValueError=ValueError)
+        lib.clear_trace_counters()
+        self.assertEqual(asyncio.run(expr()), 3)
+        report = lib.get_trace_report()
+        self.assertGreaterEqual(
+            report["opcode_timing"]["trampoline"]["count"], 4)
+
     def test_post_handler_timing_shape_when_enabled(self):
         """
         When built with KOS_TRACE_TIMING=1, post_handler_timing entries match
