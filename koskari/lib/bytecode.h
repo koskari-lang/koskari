@@ -566,8 +566,11 @@ struct KosCacheSlot {
        the teardown arm is a no-op. */
     struct {
       KosThreadFn fn;          /* elected body; the generic body once demoted */
-      uint8_t misses;          /* guard misses since the election */
+      uint8_t misses;          /* guard misses since the election; drives
+                                  the demotion */
       uint8_t mode;            /* KosElectorMode */
+      uint8_t ticks;           /* generic-body executions; the wrap empties
+                                  the slot for a re-election */
     } elector;
   } u;
 };

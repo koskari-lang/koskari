@@ -101,6 +101,7 @@ static inline void kos_elector_elect(KosCacheSlot *slot, KosThreadFn fn) {
   KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_MISS);
   slot->u.elector.fn = fn;
   slot->u.elector.misses = 0;
+  slot->u.elector.ticks = 0;
   slot->u.elector.mode = KOS_ELECTOR_ELECTED;
   slot->kind = KOS_CACHE_ELECTOR;
 }
@@ -122,6 +123,7 @@ static inline void kos_elector_miss(KosCacheSlot *slot, KosThreadFn generic) {
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_BYPASS);
     slot->u.elector.fn = generic;
     slot->u.elector.misses = 0;
+    slot->u.elector.ticks = 0;
     slot->u.elector.mode = KOS_ELECTOR_MEGAMORPHIC;
     return;
   }
@@ -129,12 +131,14 @@ static inline void kos_elector_miss(KosCacheSlot *slot, KosThreadFn generic) {
 }
 
 
-/* One execution of a generic body: the slow path counts in the byte a
-   specialised body would use for misses, and when it wraps the slot
-   empties, so the next execution classifies again. */
+/* One execution of a generic body, reached by demotion or by a decline
+   from an elected body: the slow path counts in its own byte, and when
+   it wraps the slot empties, so the next execution classifies again.
+   A decline is not a guard miss and never moves the site toward
+   demotion. */
 static inline void kos_elector_generic_tick(KosCacheSlot *slot) {
   if (slot && slot->kind == KOS_CACHE_ELECTOR
-      && ++slot->u.elector.misses == 0)
+      && ++slot->u.elector.ticks == 0)
     slot->kind = KOS_CACHE_EMPTY;
 }
 
