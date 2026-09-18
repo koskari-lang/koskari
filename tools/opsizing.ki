@@ -246,11 +246,12 @@ define format_cell [value]:
     One TSV cell: empty for None, three decimals for a float
     """
 
-    when (None? value):
+    if (None? value):
         return ""
-    when (instance? value float):
+    elif (instance? value float):
         return f"{value:.3f}"
-    return (str value)
+    else:
+        return (str value)
 
 
 @demand
