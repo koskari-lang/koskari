@@ -2067,6 +2067,7 @@ static KosDynFrame *kos_push_or_reuse_codeless_frame(
 KosDynFrame *KosResumeFrame_Install(
     KosEvalState *es,
     const KosResumeKind *kind,
+    void *state,
     KosDynFrame **cache) {
 
   KosDynFrame *frame = kos_push_or_reuse_codeless_frame(es, cache);
@@ -2074,6 +2075,7 @@ KosDynFrame *KosResumeFrame_Install(
     return NULL;
 
   KosDynFrame_RESUME_KIND(frame) = kind;
+  KosDynFrame_RESUME_STATE(frame) = state;
   return frame;
 }
 

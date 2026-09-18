@@ -584,14 +584,16 @@ KosOpResult KosNativeFrame_ReturnPark(
 /**
    Push a code-less frame onto the chain for CPS resume use. When cache
    holds a parked frame it is reinstalled in place of a fresh
-   allocation and *cache is emptied. The frame carries only name (for a
-   capture refusal message, see kos_dynframe_clone) -- it has no resume
-   set until the caller's next KosEvalState_CallResult / NextResume
-   call sets one. Returns the frame, or NULL with PyErr set.
+   allocation and *cache is emptied. The frame carries kind and state
+   from the install on, so a teardown at any point after it hands the
+   kind's clear that state; the caller's later KosEvalState_CallResult
+   / NextResume call sets the resume that receives the delivery.
+   Returns the frame, or NULL with PyErr set.
 */
 KosDynFrame *KosResumeFrame_Install(
     KosEvalState *es,
     const KosResumeKind *kind,
+    void *state,
     KosDynFrame **cache);
 
 

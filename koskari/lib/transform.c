@@ -185,12 +185,16 @@ KosIterStepResult kos_transform_stage(
     const KosResumeKind *resume,
     KosDynNode *pre_top) {
 
-  KosDynFrame *frame = KosResumeFrame_Install(es, resume, &t->cached_frame);
+  KosDynFrame *frame = KosResumeFrame_Install(
+      es, resume, t, &t->cached_frame);
 
   if (! frame) {
     Py_XDECREF(value);
     return kos_transform_step_abort(es, t, pre_top);
   }
+  /* the frame carries the kind and the record from here; an abort
+     below tears it down through the kind's clear */
+  t->busy = 1;
   if (value) {
     if (KosEvalState_StackPushRef(es, value) < 0) {
       Py_DECREF(value);
@@ -198,9 +202,6 @@ KosIterStepResult kos_transform_stage(
     }
     Py_DECREF(value);
   }
-  KosDynFrame_RESUME_KIND(frame) = resume;
-  KosDynFrame_RESUME_STATE(frame) = t;
-  t->busy = 1;
   return KOS_ITER_INSTALLED_VALUE;
 }
 
