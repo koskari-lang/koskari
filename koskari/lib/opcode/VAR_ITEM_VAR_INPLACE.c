@@ -43,7 +43,7 @@ KOS_OP_HANDLER(VAR_ITEM_VAR_INPLACE) {
   }
 
   tail = kos_stack_tail_ptr_fast(*bl, (size_t) count);
-  if (unlikely(! tail)) {
+  if (unlikely(count && ! tail)) {
     Py_DECREF(obj);
     Py_DECREF(key);
     RESULT_RAISE();

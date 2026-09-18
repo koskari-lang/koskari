@@ -333,6 +333,18 @@ class TestItemMatrix(CevalTest):
                     await fn([10, 20, 30], 1, 7)
 
 
+    async def test_in_place_at_count_zero_reduces_nothing(self):
+        # the compiler never emits a count of zero; a hand-assembled
+        # row with one stores the cell back unchanged
+        for name in ("FAST_ITEM_CONST_INPLACE", "FAST_ITEM_FAST_INPLACE",
+                     "VAR_ITEM_CONST_INPLACE", "VAR_ITEM_VAR_INPLACE",
+                     "ITEM_CONST_INPLACE", "ITEM_INPLACE"):
+            row = next(r for r in ROWS if r[0] == name)
+            fn, _ = site(*row, count=0)
+            self.assertEqual(await fn([10, 20], 1, 5), [10, 20], name)
+            self.assertEqual(await fn({1: 20}, 1, 5), {1: 20}, name)
+
+
     async def test_elected_site_serves_a_kind_change(self):
         # a list site sees dicts for eight executions, demotes, keeps
         # answering through the protocol, and re-elects after the tick

@@ -39,7 +39,7 @@ KOS_OP_HANDLER(FAST_ITEM_CONST_INPLACE) {
                      { RESULT_RAISE(); });
 
   tail = kos_stack_tail_ptr_fast(*bl, (size_t) count);
-  if (unlikely(! tail)) {
+  if (unlikely(count && ! tail)) {
     Py_XDECREF(obj_ref);
     RESULT_RAISE();
   }
