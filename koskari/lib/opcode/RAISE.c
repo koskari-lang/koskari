@@ -66,7 +66,8 @@ KOS_OP_HANDLER(RAISE) {
     RESULT_RAISE();
   }
 
-  return EVAL_REPROLOGUE();
+  /* the exception is set: the raise walk, as the prologue would run it */
+  RESULT_RAISE();
 }
 
 

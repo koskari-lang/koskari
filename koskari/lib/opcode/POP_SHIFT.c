@@ -126,7 +126,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
        (unsigned) (prompt_pop_pc + 1));
   kos_xfer_goal_arm(es, goal);
 
-  return EVAL_REPROLOGUE();
+  RESULT_REPROLOGUE(es);
 }
 
 

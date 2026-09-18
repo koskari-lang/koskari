@@ -414,7 +414,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
 #define RESULT_PUSH(es, val)                                            \
   do {                                                                  \
     if (unlikely(KosEvalState_StackPushRef((es), (val)) < 0))           \
-      return EVAL_RAISE();                                              \
+      RESULT_RAISE();                                                   \
     RESULT_NEXT(es);                                                    \
   } while (0)
 
@@ -422,9 +422,9 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
   do {                                                                  \
     PyObject *kos_rs_val_ = (val);                                      \
     if (unlikely(! kos_rs_val_))                                        \
-      return EVAL_RAISE();                                              \
+      RESULT_RAISE();                                                   \
     if (unlikely(KosEvalState_StackPUSH((es), kos_rs_val_) < 0))        \
-      return EVAL_RAISE();                                              \
+      RESULT_RAISE();                                                   \
     RESULT_NEXT(es);                                                    \
   } while (0)
 
@@ -434,6 +434,16 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
    handler's RESULT_RELAY makes the same tail call. */
 #define RESULT_RAISE()  TAILCALL(kos_eval_raise, es, NULL, NULL)
 #define RESULT_FAIL()   return EVAL_FATAL()
+
+/* RESULT_REPROLOGUE(es): the handler left prologue work behind (an
+   armed goal, a restored exception); tail into the prologue. The
+   trampoline slot is stepped here as the loop stepped it on a raw
+   REPROLOGUE, since the prologue itself does not step. */
+#define RESULT_REPROLOGUE(es)                                           \
+  do {                                                                  \
+    KOS_TRACE_TRAMPOLINE_STEP();                                        \
+    TAILCALL(kos_eval_prologue, (es), NULL, NULL);                      \
+  } while (0)
 
 /* The owned value leaves through the event's thread function; the
    calling function must have the KosThreadFn prototype. */
