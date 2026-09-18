@@ -151,16 +151,15 @@ int kos_xfer_goal_capture_restore(
       r->acting_pc = KosDynFrame_ACTING_PC(tmpl);
       /* The template keeps its state for the next landing: the record
          takes the kind's clone. The capture that built the template
-         refused any kind without one. */
+         refused any kind without one; a template reaching here with
+         one is refused the same way rather than called through. */
       if (kind) {
-#if KOS_EVAL_SAFETYNET
-        if (! kind->clone) {
+        if (unlikely(! kind->clone)) {
           PyErr_Format(PyExc_SystemError,
               "transfer: a template resume '%s' that cannot be cloned",
               kind->name ? kind->name : "?");
           goto fail;
         }
-#endif
         r->resume_kind = kind;
         r->resume_state = kind->clone(KosDynFrame_RESUME_STATE(tmpl));
       }

@@ -30,6 +30,7 @@
 
 #include "test_harness.h"
 #include "../../koskari/lib/lib.h"
+#include "../../koskari/lib/xfer_goal.h"
 
 
 /* === helpers === */
@@ -545,6 +546,43 @@ static int test_clone_copies_node_resume(void) {
 }
 
 
+/* A transfer restore record clones a template frame's resume state
+   through its kind; a template whose kind cannot clone is refused
+   with an error in every build, never called through. The template
+   is hand-built here, since kos_dynframe_clone refuses to make one. */
+static int test_capture_restore_refuses_uncloneable_kind(void) {
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  KosDynFrame *live = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(live, "create live frame");
+  KosDynFrame *tmpl = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(tmpl, "create template frame");
+  KosDynNode_NODE_ID(tmpl) = kos_dynnode_id(live);
+
+  KosDynFrame_RESUME_KIND(tmpl) = &resume_probe_kind;
+  KosDynFrame_RESUME_STATE(tmpl) = (void *) tmpl;
+
+  KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, NULL,
+                                        0, 0, NULL, 0);
+  TEST_ASSERT_NOT_NULL(goal, "create goal");
+
+  int r = kos_xfer_goal_capture_restore(
+      goal, (KosDynNode *) live, (KosDynNode *) tmpl);
+  TEST_ASSERT_EQ(r, -1, "a template resume without a clone is refused");
+  TEST_ASSERT(PyErr_ExceptionMatches(PyExc_SystemError),
+              "the refusal is a SystemError");
+  TEST_ASSERT_NULL(goal->restore, "no records were kept");
+  PyErr_Clear();
+
+  kos_xfer_goal_free(goal);
+  kos_dynframe_free(tmpl);
+  kos_dynframe_free(live);
+  Py_DECREF(ns);
+  return 0;
+}
+
+
 /* A step resume's state is the step's own and has no clone story, so
    capture across that frame refuses by name. */
 static int test_clone_refuses_step_resume_frame(void) {
@@ -732,6 +770,7 @@ int run_resume_tests(void) {
   RUN_TEST(test_raise_walk_resume_propagates);
   RUN_TEST(test_raise_walk_resume_handles);
   RUN_TEST(test_clone_copies_node_resume);
+  RUN_TEST(test_capture_restore_refuses_uncloneable_kind);
   RUN_TEST(test_clone_refuses_step_resume_frame);
   RUN_TEST(test_park_inert_clears_resume_triple);
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
