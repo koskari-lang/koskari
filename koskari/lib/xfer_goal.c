@@ -510,8 +510,12 @@ static KosOpResult goal_enter(KosEvalState *es, KosXferGoal *goal) {
 
 
 /**
-   DELIVERING: push the payload, arm it as a throw, or raise it at the
-   boundary; then retire the goal.
+   DELIVERING: push the payload, stage it for the landing frame's
+   resume, arm it as a throw, or raise it at the boundary; then retire
+   the goal. A landing frame that carries a resume was waiting on a
+   delivery when it was captured, and the restore put that resume back
+   through its kind's clone: the payload is that delivery, staged in
+   the pending slot for the prologue pass that follows the drive.
 */
 static KosOpResult goal_deliver(
     KosEvalState *es,
@@ -541,15 +545,18 @@ static KosOpResult goal_deliver(
           "transfer: no frame to deliver to");
       return EVAL_RAISE();
     }
-#if KOS_EVAL_SAFETYNET
     if (KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
-      PyErr_SetString(PyExc_SystemError,
-          "transfer: landed on a frame carrying a resume");
+#if KOS_EVAL_SAFETYNET
+      if (KosEvalState_PENDING_VALUE(es)) {
+        PyErr_SetString(PyExc_SystemError,
+            "transfer: landed on a frame with a delivery already staged");
+        return EVAL_RAISE();
+      }
+#endif
+      Py_XSETREF(KosEvalState_PENDING_VALUE(es), Py_NewRef(goal->payload));
+    } else if (KosEvalState_StackPushRef(es, goal->payload) < 0) {
       return EVAL_RAISE();
     }
-#endif
-    if (KosEvalState_StackPushRef(es, goal->payload) < 0)
-      return EVAL_RAISE();
   }
 
   kos_xfer_goal_pop(es);

@@ -241,7 +241,7 @@ struct KosXferGoal {
 2. LANDING: splice the cloned slice onto the DELIM; renumber its frames.
 3. ENTERING: `before` thunks of the slice's WIND nodes, outermost first;
    PARAM extents re-bind; multi-shot withs re-enter.
-4. DELIVERING: push the value (or raise it into the landed frame).
+4. DELIVERING: push the value, stage it for the landed frame's resume when the restore put one back, or raise it into the landed frame.
 5. `POP_PROMPT` in the slice returns through the DELIM to the invoke site.
 
 **Undelimited landing** (call/cc):

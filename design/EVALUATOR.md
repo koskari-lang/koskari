@@ -1534,7 +1534,7 @@ carry recyclable durable contexts.
 2. `PyErr_Occurred()` at the next prologue (or after the opcode). `process_raise` runs.
 3. `handle_continuation_apply` sees its own token: fetches continuation and value, clears PyErr, calls `kos_invoke_continuation(&es, ...)`.
 4. `kos_invoke_continuation` runs in place when it can (§6.4); otherwise it checks the recursion limit, clones the template, pushes the DELIM seam (delimited), and arms a goal. `handle_continuation_apply` answers `EVAL_REPROLOGUE()`.
-5. The prologue's `eval_step_drain_goal` drives it: LEAVING unlinks down to the seam (after thunks and `__exit__`s run as frames, each parking the goal until it returns), LANDING splices the clone and sets the resume pc, ENTERING runs before thunks outermost first, DELIVERING pushes the value.
+5. The prologue's `eval_step_drain_goal` drives it: LEAVING unlinks down to the seam (after thunks and `__exit__`s run as frames, each parking the goal until it returns), LANDING splices the clone and sets the resume pc, ENTERING runs before thunks outermost first, DELIVERING pushes the value, or stages it in the pending slot when the landing frame carries a resume the restore put back (the frame was waiting on a delivery when it was captured, and the value is that delivery).
 6. Execution resumes at the captured pc with the value on the stack.
 
 ### 9.4 Scenario: Nested Continuation During Transfer
