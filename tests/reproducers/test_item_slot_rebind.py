@@ -77,6 +77,26 @@ class TestItemSlotRebind(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len({id(d) for d in seen}), 3)
 
 
+    async def test_inplace_guard_miss_under_a_rebinding_key(self):
+        # an int cell elects the int body; a str cell then misses that
+        # body's guard after the hash ran, and the protocol raises for
+        # the container the row fetched
+        mod = await self.load_module()
+        self.assertIn(OpCode.FAST_ITEM_FAST_INPLACE_CONST, opcodes_of(mod.miss))
+        await mod.prime(1)
+        primed = (await mod.current())[3]
+        after = await mod.miss()
+        self.assertEqual(primed, {mod.km: 2})
+        self.assertIsNot(after, primed)
+        seen = []
+        for _ in range(3):
+            await mod.prime("text")
+            with self.assertRaises(TypeError):
+                await mod.miss()
+            seen.append((await mod.current())[3])
+        self.assertEqual(len({id(d) for d in seen}), 3)
+
+
     async def test_store_under_a_rebinding_key(self):
         mod = await self.load_module()
         self.assertIn(OpCode.FAST_ITEM_FAST_STORE_FAST, opcodes_of(mod.store))
