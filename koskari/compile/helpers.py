@@ -630,9 +630,11 @@ def emit_item_access(compiler, called_by, obj, key, stack_op, named_op):
     Emit an item access with no value, for compile/item and the CLEAR,
     TAKE, and REF specials: the object, the key, and stack_op, which
     the compress pipeline folds when the key and object are feeders.
-    When the object is a symbol and the key is not a feeder the key
-    compiles to the stack and named_op names the object, since no
-    fold reaches an object load behind a computed key
+    When the object compiles to a bare name load and the key is not a
+    feeder, the key compiles to the stack and named_op names the
+    object, since no fold reaches an object load behind a computed
+    key. A symbol that compiles to anything else, nil among them,
+    stays on the stack
 
     :param compiler: the Compiler
     :param called_by: the special's called-by match
@@ -645,16 +647,17 @@ def emit_item_access(compiler, called_by, obj, key, stack_op, named_op):
 
     frag = compiler.fragment(called_by.datum)
     frag.position(obj.position)
+    objfrag = compiler.full_compile(obj.datum)
     keyfrag = compiler.full_compile(key.datum)
+    obj_kind, obj_name = feeder_expr(objfrag)
     key_kind, _ = feeder_expr(keyfrag)
 
-    if is_symbol(obj.datum) and key_kind is None:
-        name = str(obj.datum)
+    if obj_kind == 'var' and key_kind is None:
         frag.merge(keyfrag)
-        frag.request_var(name)
-        frag.instruction(named_op, name)
+        frag.request_var(obj_name)
+        frag.instruction(named_op, obj_name)
     else:
-        frag.merge(compiler.full_compile(obj.datum))
+        frag.merge(objfrag)
         frag.merge(keyfrag)
         frag.instruction(stack_op, 0)
     return frag

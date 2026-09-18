@@ -196,6 +196,16 @@ class TestInplaceItemSpecial(SpecialsTestCase):
         self.assertIn(OpCode.ITEM_INPLACE, _opcodes(code))
 
 
+    async def test_inplace_item_nil_object_is_a_constant_not_a_name(self):
+        code = self.compile_to_code("(inplace-item + nil (k) 1)", k=lambda: 0)
+        self.assertFalse(
+            [op for op in _opcodes(code) if OpCode(op).name.startswith("VAR_ITEM")])
+        expr, mod = self.compile_expr("(inplace-item + nil (k) 1)", k=lambda: 0)
+        with self.assertRaises(Exception) as caught:
+            await expr()
+        self.assertNotIsInstance(caught.exception, NameError)
+
+
     async def test_inplace_item_in_function_body_lowers_to_fast(self):
         cases = {
             "(lambda [lst i] (inplace-item + lst i 1))": OpCode.FAST_ITEM_FAST_INPLACE_CONST,

@@ -25,7 +25,6 @@ from ...bootstrap import builtin
 from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_symbol
 from ..helpers import emit_item_access, feeder_expr
 from ..processor import item_arg, item_opcode
 
@@ -85,8 +84,9 @@ def emit_item_place(compiler, frag, obj, keyfrag, key_kind, value_feeders):
     Plain when the key and every value are feeders: the object and the
     key compile to the stack and the compress pipeline folds the row's
     trailing feeders. Otherwise a non-feeder operand would sit between
-    a named operand and the row, so the object is named when a symbol
-    and the key when a feeder, and only the rest compiles to the stack
+    a named operand and the row, so the object is named when it
+    compiles to a bare name load (nil is a symbol that does not) and
+    the key when a feeder, and only the rest compiles to the stack
 
     :param compiler: the Compiler
     :param frag: the fragment being built
@@ -97,16 +97,19 @@ def emit_item_place(compiler, frag, obj, keyfrag, key_kind, value_feeders):
     :return: (obj_op, key_op, fields) for item_opcode and item_arg
     """
 
-    obj_name = str(obj.datum) if is_symbol(obj.datum) else None
+    objfrag = compiler.full_compile(obj.datum)
+    obj_kind, obj_name = feeder_expr(objfrag)
+    if obj_kind != 'var':
+        obj_name = None
     if (key_kind and value_feeders) or not (obj_name or key_kind):
-        frag.merge(compiler.full_compile(obj.datum))
+        frag.merge(objfrag)
         frag.merge(keyfrag)
         return None, None, []
 
     fields = []
     obj_op = key_op = None
     if obj_name is None:
-        frag.merge(compiler.full_compile(obj.datum))
+        frag.merge(objfrag)
     else:
         frag.request_var(obj_name)
         obj_op = OpCode.VAR

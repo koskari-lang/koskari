@@ -270,6 +270,38 @@ class TestItemShapes(SpecialsTestCase):
             ops = [body.oparg(i)[0] for i in range(body.length())]
             self.assertIn(row, ops, src)
 
+    async def raised_by(self, src, **defns):
+        expr, mod = self.compile_expr(src, **defns)
+        try:
+            await expr()
+        except Exception as e:
+            return type(e)
+        return None
+
+
+    async def test_nil_object_is_a_constant_not_a_name(self):
+        # nil reads as a symbol but compiles to a constant: under a
+        # computed key it stays on the stack and the container's own
+        # error is raised, as the feeder-key form raises it
+        cases = {
+            "(item nil (k))": "(item nil 0)",
+            "(del-item nil (k))": "(del-item nil 0)",
+            "(take-item nil (k))": "(take-item nil 0)",
+            "(ref-item nil (k))": "(ref-item nil 0)",
+            "(set-item nil (k) 1)": "(set-item nil 0 1)",
+            "(set-item nil (k) (f))": "(set-item nil 0 1)",
+        }
+        for shaped, plain in cases.items():
+            ops = self.ops(shaped, k=lambda: 0, f=lambda: 1)
+            self.assertFalse(
+                [op for op in ops if OpCode(op).name.startswith("VAR_ITEM")], shaped)
+            expected = await self.raised_by(plain)
+            self.assertIsNot(expected, NameError, plain)
+            self.assertIs(
+                await self.raised_by(shaped, k=lambda: 0, f=lambda: 1),
+                expected, shaped)
+
+
     async def test_accesses_land(self):
         src_str = """
         (let [[lst (#list 10 20 30)] [d (#dict (#tuple "k" 1))] [i 1]]
