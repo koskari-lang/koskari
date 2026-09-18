@@ -150,7 +150,7 @@ document uses **finalize** for that VM-oriented stage to avoid confusion with
 |------------------------|-------------------------|---------------------|
 | String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND |
 | Literal value          | Constant pool index     | CONST |
-| Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE; ATTR*, CONST_ITEM* (key) |
+| Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE; ATTR*, ITEM_CONST* (key) |
 | `(name, value, …)`     | Extra-table index       | VAR_STORE_CONST (§12); may lower to FAST_STORE_CONST (§13) |
 | Name → slot (optional) | Fast local index       | VAR may be lowered to FAST*; then arg is slot index |
 | (unchanged)            | (unchanged)             | NOARG, COUNT, etc. |
@@ -278,7 +278,7 @@ When adding or changing an opcode:
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
 - [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_TAKE, ATTR_REF, ATTR_STORE
-- [15. Items](#15-items) — ITEM, ITEM_TAKE, CONST_ITEM, CONST_ITEM_TAKE, and variants
+- [15. Items](#15-items) — ITEM, ITEM_STORE, ITEM_INPLACE, ITEM_CLEAR, ITEM_TAKE, ITEM_REF, and the rows naming their object, key, and value
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
 - [16. Argument production](#16-argument-production) — BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, etc.
 - [17. Calls](#17-calls) — CALL, CALL_NAMES, CALL_STAR, CALL_ATTR*, TAIL_*
@@ -368,33 +368,98 @@ When adding or changing an opcode:
 | ATTR | CONST | Get attribute | [§14](#kos_op_attr) |
 | ATTR_TAKE | CONST | Get attribute, delete it, push value | [§14](#kos_op_attr_take) |
 | ATTR_STORE | CONST | Set attribute | [§14](#kos_op_attr_store) |
-| ITEM | NOARG | Get item (key on stack) | [§15](#kos_op_item) |
-| ITEM_TAKE | NOARG | Get item, delete it, push value | [§15](#kos_op_item_take) |
-| ITEM_STORE | NOARG | Set item | [§15](#kos_op_item_store) |
-| CONST_ITEM | CONST | Get item (constant key) | [§15](#kos_op_const_item) |
-| CONST_ITEM_TAKE | CONST | Get item (constant key), delete, push value | [§15](#kos_op_const_item_take) |
-| VAR_ITEM | EXTRA | Get item; object and key by name | [§12](#kos_op_var_item) |
-| VAR_CONST_ITEM | EXTRA | Get item; object by name, constant key | [§12](#kos_op_var_const_item) |
-| VAR_ITEM_STORE | EXTRA | Set item; object and key by name | [§12](#kos_op_var_item_store) |
-| VAR_CONST_ITEM_STORE | EXTRA | Set item; object by name, constant key | [§12](#kos_op_var_const_item_store) |
-| FAST_ITEM | EXTRA | Get item; object and key from fast slots | [§13](#kos_op_fast_item) |
-| FAST_CONST_ITEM | EXTRA | Get item; object from fast slot, constant key | [§13](#kos_op_fast_const_item) |
-| FAST_ITEM_STORE | EXTRA | Set item; object and key from fast slots | [§13](#kos_op_fast_item_store) |
-| FAST_CONST_ITEM_STORE | EXTRA | Set item; object from fast slot, constant key | [§13](#kos_op_fast_const_item_store) |
-| VAR_ITEM_STORE_CONST | EXTRA | Set item to a constant; object and key by name | [§12](#kos_op_var_item_store_const) |
-| VAR_CONST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object by name, constant key | [§12](#kos_op_var_const_item_store_const) |
-| FAST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object and key from fast slots | [§13](#kos_op_fast_item_store_const) |
-| FAST_CONST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object from fast slot, constant key | [§13](#kos_op_fast_const_item_store_const) |
-| ITEM_INPLACE | OPCOUNT | Reduce item in place; object and key on stack | [§15](#kos_op_item_inplace) |
-| CONST_ITEM_INPLACE | EXTRA | Reduce item in place; object on stack, constant key | [§15](#kos_op_const_item_inplace) |
-| VAR_ITEM_INPLACE | EXTRA | Reduce item in place; object and key by name | [§12](#kos_op_var_item_inplace) |
-| VAR_CONST_ITEM_INPLACE | EXTRA | Reduce item in place; object by name, constant key | [§12](#kos_op_var_const_item_inplace) |
-| VAR_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object and key by name | [§12](#kos_op_var_item_inplace_const) |
-| VAR_CONST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object by name, constant key | [§12](#kos_op_var_const_item_inplace_const) |
-| FAST_ITEM_INPLACE | EXTRA | Reduce item in place; object and key from fast slots | [§13](#kos_op_fast_item_inplace) |
-| FAST_CONST_ITEM_INPLACE | EXTRA | Reduce item in place; object from fast slot, constant key | [§13](#kos_op_fast_const_item_inplace) |
-| FAST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object and key from fast slots | [§13](#kos_op_fast_item_inplace_const) |
-| FAST_CONST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object from fast slot, constant key | [§13](#kos_op_fast_const_item_inplace_const) |
+| ITEM | NOARG | Get item; object on the stack, key on the stack | [§15](#kos_op_item) |
+| ITEM_CLEAR | NOARG | Delete item; object on the stack, key on the stack | [§15](#kos_op_item_clear) |
+| ITEM_TAKE | NOARG | Take item; object on the stack, key on the stack | [§15](#kos_op_item_take) |
+| ITEM_REF | NOARG | Item reference; object on the stack, key on the stack | [§15](#kos_op_item_ref) |
+| ITEM_STORE | NOARG | Set item; object on the stack, key on the stack | [§15](#kos_op_item_store) |
+| ITEM_STORE_CONST | CONST | Set item to a constant; object on the stack, key on the stack | [§15](#kos_op_item_store_const) |
+| ITEM_STORE_VAR | VAR | Set item; object on the stack, key on the stack, value by name | [§12](#kos_op_item_store_var) |
+| ITEM_STORE_FAST | FASTVAR | Set item; object on the stack, key on the stack, value from a fast slot | [§13](#kos_op_item_store_fast) |
+| ITEM_INPLACE | OPCOUNT | Reduce item in place; object on the stack, key on the stack | [§15](#kos_op_item_inplace) |
+| ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key on the stack | [§15](#kos_op_item_inplace_const) |
+| ITEM_CONST | CONST | Get item; object on the stack, constant key | [§15](#kos_op_item_const) |
+| ITEM_CONST_CLEAR | CONST | Delete item; object on the stack, constant key | [§15](#kos_op_item_const_clear) |
+| ITEM_CONST_TAKE | CONST | Take item; object on the stack, constant key | [§15](#kos_op_item_const_take) |
+| ITEM_CONST_REF | CONST | Item reference; object on the stack, constant key | [§15](#kos_op_item_const_ref) |
+| ITEM_CONST_STORE | CONST | Set item; object on the stack, constant key | [§15](#kos_op_item_const_store) |
+| ITEM_CONST_STORE_CONST | EXTRA | Set item to a constant; object on the stack, constant key | [§15](#kos_op_item_const_store_const) |
+| ITEM_CONST_STORE_VAR | EXTRA | Set item; object on the stack, constant key, value by name | [§12](#kos_op_item_const_store_var) |
+| ITEM_CONST_STORE_FAST | EXTRA | Set item; object on the stack, constant key, value from a fast slot | [§13](#kos_op_item_const_store_fast) |
+| ITEM_CONST_INPLACE | EXTRA | Reduce item in place; object on the stack, constant key | [§15](#kos_op_item_const_inplace) |
+| ITEM_CONST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, constant key | [§15](#kos_op_item_const_inplace_const) |
+| ITEM_VAR | VAR | Get item; object on the stack, key by name | [§12](#kos_op_item_var) |
+| ITEM_VAR_CLEAR | VAR | Delete item; object on the stack, key by name | [§12](#kos_op_item_var_clear) |
+| ITEM_VAR_TAKE | VAR | Take item; object on the stack, key by name | [§12](#kos_op_item_var_take) |
+| ITEM_VAR_REF | VAR | Item reference; object on the stack, key by name | [§12](#kos_op_item_var_ref) |
+| ITEM_VAR_STORE | VAR | Set item; object on the stack, key by name | [§12](#kos_op_item_var_store) |
+| ITEM_VAR_STORE_CONST | EXTRA | Set item to a constant; object on the stack, key by name | [§12](#kos_op_item_var_store_const) |
+| ITEM_VAR_STORE_VAR | EXTRA | Set item; object on the stack, key by name, value by name | [§12](#kos_op_item_var_store_var) |
+| ITEM_VAR_INPLACE | EXTRA | Reduce item in place; object on the stack, key by name | [§12](#kos_op_item_var_inplace) |
+| ITEM_VAR_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key by name | [§12](#kos_op_item_var_inplace_const) |
+| ITEM_FAST | FASTVAR | Get item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast) |
+| ITEM_FAST_CLEAR | FASTVAR | Delete item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_clear) |
+| ITEM_FAST_TAKE | FASTVAR | Take item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_take) |
+| ITEM_FAST_REF | FASTVAR | Item reference; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_ref) |
+| ITEM_FAST_STORE | FASTVAR | Set item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_store) |
+| ITEM_FAST_STORE_CONST | EXTRA | Set item to a constant; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_store_const) |
+| ITEM_FAST_STORE_FAST | EXTRA | Set item; object on the stack, key from a fast slot, value from a fast slot | [§13](#kos_op_item_fast_store_fast) |
+| ITEM_FAST_INPLACE | EXTRA | Reduce item in place; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_inplace) |
+| ITEM_FAST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_inplace_const) |
+| VAR_ITEM | VAR | Get item; object by name, key on the stack | [§12](#kos_op_var_item) |
+| VAR_ITEM_CLEAR | VAR | Delete item; object by name, key on the stack | [§12](#kos_op_var_item_clear) |
+| VAR_ITEM_TAKE | VAR | Take item; object by name, key on the stack | [§12](#kos_op_var_item_take) |
+| VAR_ITEM_REF | VAR | Item reference; object by name, key on the stack | [§12](#kos_op_var_item_ref) |
+| VAR_ITEM_STORE | VAR | Set item; object by name, key on the stack | [§12](#kos_op_var_item_store) |
+| VAR_ITEM_STORE_CONST | EXTRA | Set item to a constant; object by name, key on the stack | [§12](#kos_op_var_item_store_const) |
+| VAR_ITEM_STORE_VAR | EXTRA | Set item; object by name, key on the stack, value by name | [§12](#kos_op_var_item_store_var) |
+| VAR_ITEM_INPLACE | EXTRA | Reduce item in place; object by name, key on the stack | [§12](#kos_op_var_item_inplace) |
+| VAR_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object by name, key on the stack | [§12](#kos_op_var_item_inplace_const) |
+| VAR_ITEM_CONST | EXTRA | Get item; object by name, constant key | [§12](#kos_op_var_item_const) |
+| VAR_ITEM_CONST_CLEAR | EXTRA | Delete item; object by name, constant key | [§12](#kos_op_var_item_const_clear) |
+| VAR_ITEM_CONST_TAKE | EXTRA | Take item; object by name, constant key | [§12](#kos_op_var_item_const_take) |
+| VAR_ITEM_CONST_REF | EXTRA | Item reference; object by name, constant key | [§12](#kos_op_var_item_const_ref) |
+| VAR_ITEM_CONST_STORE | EXTRA | Set item; object by name, constant key | [§12](#kos_op_var_item_const_store) |
+| VAR_ITEM_CONST_STORE_CONST | EXTRA | Set item to a constant; object by name, constant key | [§12](#kos_op_var_item_const_store_const) |
+| VAR_ITEM_CONST_STORE_VAR | EXTRA | Set item; object by name, constant key, value by name | [§12](#kos_op_var_item_const_store_var) |
+| VAR_ITEM_CONST_INPLACE | EXTRA | Reduce item in place; object by name, constant key | [§12](#kos_op_var_item_const_inplace) |
+| VAR_ITEM_CONST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object by name, constant key | [§12](#kos_op_var_item_const_inplace_const) |
+| VAR_ITEM_VAR | EXTRA | Get item; object by name, key by name | [§12](#kos_op_var_item_var) |
+| VAR_ITEM_VAR_CLEAR | EXTRA | Delete item; object by name, key by name | [§12](#kos_op_var_item_var_clear) |
+| VAR_ITEM_VAR_TAKE | EXTRA | Take item; object by name, key by name | [§12](#kos_op_var_item_var_take) |
+| VAR_ITEM_VAR_REF | EXTRA | Item reference; object by name, key by name | [§12](#kos_op_var_item_var_ref) |
+| VAR_ITEM_VAR_STORE | EXTRA | Set item; object by name, key by name | [§12](#kos_op_var_item_var_store) |
+| VAR_ITEM_VAR_STORE_CONST | EXTRA | Set item to a constant; object by name, key by name | [§12](#kos_op_var_item_var_store_const) |
+| VAR_ITEM_VAR_STORE_VAR | EXTRA | Set item; object by name, key by name, value by name | [§12](#kos_op_var_item_var_store_var) |
+| VAR_ITEM_VAR_INPLACE | EXTRA | Reduce item in place; object by name, key by name | [§12](#kos_op_var_item_var_inplace) |
+| VAR_ITEM_VAR_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object by name, key by name | [§12](#kos_op_var_item_var_inplace_const) |
+| FAST_ITEM | FASTVAR | Get item; object from a fast slot, key on the stack | [§13](#kos_op_fast_item) |
+| FAST_ITEM_CLEAR | FASTVAR | Delete item; object from a fast slot, key on the stack | [§13](#kos_op_fast_item_clear) |
+| FAST_ITEM_TAKE | FASTVAR | Take item; object from a fast slot, key on the stack | [§13](#kos_op_fast_item_take) |
+| FAST_ITEM_REF | FASTVAR | Item reference; object from a fast slot, key on the stack | [§13](#kos_op_fast_item_ref) |
+| FAST_ITEM_STORE | FASTVAR | Set item; object from a fast slot, key on the stack | [§13](#kos_op_fast_item_store) |
+| FAST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object from a fast slot, key on the stack | [§13](#kos_op_fast_item_store_const) |
+| FAST_ITEM_STORE_FAST | EXTRA | Set item; object from a fast slot, key on the stack, value from a fast slot | [§13](#kos_op_fast_item_store_fast) |
+| FAST_ITEM_INPLACE | EXTRA | Reduce item in place; object from a fast slot, key on the stack | [§13](#kos_op_fast_item_inplace) |
+| FAST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object from a fast slot, key on the stack | [§13](#kos_op_fast_item_inplace_const) |
+| FAST_ITEM_CONST | EXTRA | Get item; object from a fast slot, constant key | [§13](#kos_op_fast_item_const) |
+| FAST_ITEM_CONST_CLEAR | EXTRA | Delete item; object from a fast slot, constant key | [§13](#kos_op_fast_item_const_clear) |
+| FAST_ITEM_CONST_TAKE | EXTRA | Take item; object from a fast slot, constant key | [§13](#kos_op_fast_item_const_take) |
+| FAST_ITEM_CONST_REF | EXTRA | Item reference; object from a fast slot, constant key | [§13](#kos_op_fast_item_const_ref) |
+| FAST_ITEM_CONST_STORE | EXTRA | Set item; object from a fast slot, constant key | [§13](#kos_op_fast_item_const_store) |
+| FAST_ITEM_CONST_STORE_CONST | EXTRA | Set item to a constant; object from a fast slot, constant key | [§13](#kos_op_fast_item_const_store_const) |
+| FAST_ITEM_CONST_STORE_FAST | EXTRA | Set item; object from a fast slot, constant key, value from a fast slot | [§13](#kos_op_fast_item_const_store_fast) |
+| FAST_ITEM_CONST_INPLACE | EXTRA | Reduce item in place; object from a fast slot, constant key | [§13](#kos_op_fast_item_const_inplace) |
+| FAST_ITEM_CONST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object from a fast slot, constant key | [§13](#kos_op_fast_item_const_inplace_const) |
+| FAST_ITEM_FAST | EXTRA | Get item; object from a fast slot, key from a fast slot | [§13](#kos_op_fast_item_fast) |
+| FAST_ITEM_FAST_CLEAR | EXTRA | Delete item; object from a fast slot, key from a fast slot | [§13](#kos_op_fast_item_fast_clear) |
+| FAST_ITEM_FAST_TAKE | EXTRA | Take item; object from a fast slot, key from a fast slot | [§13](#kos_op_fast_item_fast_take) |
+| FAST_ITEM_FAST_REF | EXTRA | Item reference; object from a fast slot, key from a fast slot | [§13](#kos_op_fast_item_fast_ref) |
+| FAST_ITEM_FAST_STORE | EXTRA | Set item; object from a fast slot, key from a fast slot | [§13](#kos_op_fast_item_fast_store) |
+| FAST_ITEM_FAST_STORE_CONST | EXTRA | Set item to a constant; object from a fast slot, key from a fast slot | [§13](#kos_op_fast_item_fast_store_const) |
+| FAST_ITEM_FAST_STORE_FAST | EXTRA | Set item; object from a fast slot, key from a fast slot, value from a fast slot | [§13](#kos_op_fast_item_fast_store_fast) |
+| FAST_ITEM_FAST_INPLACE | EXTRA | Reduce item in place; object from a fast slot, key from a fast slot | [§13](#kos_op_fast_item_fast_inplace) |
+| FAST_ITEM_FAST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object from a fast slot, key from a fast slot | [§13](#kos_op_fast_item_fast_inplace_const) |
 | DEREF | NOARG | Pop Ref, call ref.deref(), push result | [§15.1](#kos_op_deref) |
 | BUILD_FUNCTION | EXTRA | Build function from spec, with keyword defaults and annotations from names tuples | [§16](#kos_op_build_function) |
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
@@ -1994,74 +2059,273 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 - **Implementation**: `koskari/lib/opcode/VAR_ATTR_INPLACE.c`
 
 
-### KOS_OP_VAR_ITEM {#kos_op_var_item}
+### KOS_OP_ITEM_STORE_VAR {#kos_op_item_store_var}
+- **Style**: VAR (the value's name).
+- **Stack**: `[..., obj, key] → [...]`. Set obj[key] = value with the object on the stack, the key on the stack and the value resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR value, ITEM_STORE`. May lower to **ITEM_STORE_FAST**.
+- **Implementation**: `koskari/lib/opcode/ITEM_STORE_VAR.c`
 
+### KOS_OP_ITEM_CONST_STORE_VAR {#kos_op_item_const_store_var}
+- **Style**: EXTRA (CONST, VAR, NOARG, NOARG).
+- **Stack**: `[..., obj] → [...]`. Set obj[key] = value with the object on the stack, the key a pool constant and the value resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `CONST key, VAR value, ITEM_STORE`, or from `VAR value` ahead of the shaped **ITEM_CONST_STORE**. May lower to **ITEM_CONST_STORE_FAST**.
+- **Implementation**: `koskari/lib/opcode/ITEM_CONST_STORE_VAR.c`
+
+### KOS_OP_ITEM_VAR {#kos_op_item_var}
+- **Style**: VAR (the key's name).
+- **Stack**: `[..., obj] → [..., value]`. Get obj[key] with the object on the stack and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR key, ITEM`. May lower to **ITEM_FAST**.
+- **Implementation**: `koskari/lib/opcode/ITEM_VAR.c`
+
+### KOS_OP_ITEM_VAR_CLEAR {#kos_op_item_var_clear}
+- **Style**: VAR (the key's name).
+- **Stack**: `[..., obj] → [...]`. Delete obj[key] with the object on the stack and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR key, ITEM_CLEAR`. May lower to **ITEM_FAST_CLEAR**.
+- **Implementation**: `koskari/lib/opcode/ITEM_VAR_CLEAR.c`
+
+### KOS_OP_ITEM_VAR_TAKE {#kos_op_item_var_take}
+- **Style**: VAR (the key's name).
+- **Stack**: `[..., obj] → [..., value]`. Get obj[key], delete it, and push the value with the object on the stack and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR key, ITEM_TAKE`. May lower to **ITEM_FAST_TAKE**.
+- **Implementation**: `koskari/lib/opcode/ITEM_VAR_TAKE.c`
+
+### KOS_OP_ITEM_VAR_REF {#kos_op_item_var_ref}
+- **Style**: VAR (the key's name).
+- **Stack**: `[..., obj] → [..., value]`. Push an ItemRef over obj[key] with the object on the stack and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR key, ITEM_REF`. May lower to **ITEM_FAST_REF**.
+- **Implementation**: `koskari/lib/opcode/ITEM_VAR_REF.c`
+
+### KOS_OP_ITEM_VAR_STORE {#kos_op_item_var_store}
+- **Style**: VAR (the key's name).
+- **Stack**: `[..., obj, value] → [...]`. Set obj[key] = value with the object on the stack, the key resolved by name and the value on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/set-item`** when OBJ is a symbol or KEY is a feeder and a value is not, so the fold could not reach the named operands. May lower to **ITEM_FAST_STORE**.
+- **Implementation**: `koskari/lib/opcode/ITEM_VAR_STORE.c`
+
+### KOS_OP_ITEM_VAR_STORE_CONST {#kos_op_item_var_store_const}
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., obj] → [...]`. Set obj[key] = value with the object on the stack, the key resolved by name and the value a pool constant.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR key, CONST value, ITEM_STORE`, or from `CONST value` ahead of the shaped **ITEM_VAR_STORE**. May lower to **ITEM_FAST_STORE_CONST**.
+- **Implementation**: `koskari/lib/opcode/ITEM_VAR_STORE_CONST.c`
+
+### KOS_OP_ITEM_VAR_STORE_VAR {#kos_op_item_var_store_var}
 - **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
-- **Stack**: `[...] → [..., value]`. Get obj[key] with the object and the key both resolved by name in the frame namespace. Equivalent to ITEM with nothing on the stack.
-- **Compiler form:** Fused by the compress pipeline from `VAR obj, VAR key, ITEM`. May lower to **FAST_ITEM**.
+- **Stack**: `[..., obj] → [...]`. Set obj[key] = value with the object on the stack, the key resolved by name and the value resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR key, VAR value, ITEM_STORE`, or from `VAR value` ahead of the shaped **ITEM_VAR_STORE**. May lower to **ITEM_FAST_STORE_FAST**.
+- **Implementation**: `koskari/lib/opcode/ITEM_VAR_STORE_VAR.c`
+
+### KOS_OP_ITEM_VAR_INPLACE {#kos_op_item_var_inplace}
+- **Style**: EXTRA (OPCOUNT, VAR, NOARG, NOARG).
+- **Stack**: `[..., obj, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object on the stack and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/inplace-item`** when OBJ is a symbol or KEY is a feeder and a value is not, so the fold could not reach the named operands. May lower to **ITEM_FAST_INPLACE**.
+- **Implementation**: `koskari/lib/opcode/ITEM_VAR_INPLACE.c`
+
+### KOS_OP_ITEM_VAR_INPLACE_CONST {#kos_op_item_var_inplace_const}
+- **Style**: EXTRA (OPERAND, VAR, CONST, NOARG).
+- **Stack**: `[..., obj] → [...]`. Reduce obj[key] in place with the pool constant and store it back with the object on the stack and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR key, CONST rhs, ITEM_INPLACE` at a count of one, or from `CONST rhs` ahead of the shaped **ITEM_VAR_INPLACE**. May lower to **ITEM_FAST_INPLACE_CONST**.
+- **Implementation**: `koskari/lib/opcode/ITEM_VAR_INPLACE_CONST.c`
+
+### KOS_OP_VAR_ITEM {#kos_op_var_item}
+- **Style**: VAR (the object's name).
+- **Stack**: `[..., key] → [..., value]`. Get obj[key] with the object resolved by name and the key on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/item`** when OBJ is a symbol and KEY is not a feeder, since no fold reaches an object load behind a computed key. May lower to **FAST_ITEM**.
 - **Implementation**: `koskari/lib/opcode/VAR_ITEM.c`
 
+### KOS_OP_VAR_ITEM_CLEAR {#kos_op_var_item_clear}
+- **Style**: VAR (the object's name).
+- **Stack**: `[..., key] → [...]`. Delete obj[key] with the object resolved by name and the key on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/del-item`** when OBJ is a symbol and KEY is not a feeder, since no fold reaches an object load behind a computed key. May lower to **FAST_ITEM_CLEAR**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_CLEAR.c`
 
-### KOS_OP_VAR_CONST_ITEM {#kos_op_var_const_item}
+### KOS_OP_VAR_ITEM_TAKE {#kos_op_var_item_take}
+- **Style**: VAR (the object's name).
+- **Stack**: `[..., key] → [..., value]`. Get obj[key], delete it, and push the value with the object resolved by name and the key on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/take-item`** when OBJ is a symbol and KEY is not a feeder, since no fold reaches an object load behind a computed key. May lower to **FAST_ITEM_TAKE**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_TAKE.c`
 
-- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
-- **Stack**: `[...] → [..., value]`. Get obj[key] with the object resolved by name and the key a pool constant. Equivalent to CONST_ITEM with nothing on the stack.
-- **Compiler form:** Fused by the compress pipeline from `VAR obj, CONST_ITEM key`. May lower to **FAST_CONST_ITEM**.
-- **Implementation**: `koskari/lib/opcode/VAR_CONST_ITEM.c`
-
+### KOS_OP_VAR_ITEM_REF {#kos_op_var_item_ref}
+- **Style**: VAR (the object's name).
+- **Stack**: `[..., key] → [..., value]`. Push an ItemRef over obj[key] with the object resolved by name and the key on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/ref-item`** when OBJ is a symbol and KEY is not a feeder, since no fold reaches an object load behind a computed key. May lower to **FAST_ITEM_REF**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_REF.c`
 
 ### KOS_OP_VAR_ITEM_STORE {#kos_op_var_item_store}
-
-- **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
-- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object and the key resolved by name after the value was pushed.
-- **Compiler form:** Emitted by **`compile/set-item`** when OBJ is a symbol and KEY is a symbol; the value compiles first. May lower to **FAST_ITEM_STORE**.
+- **Style**: VAR (the object's name).
+- **Stack**: `[..., key, value] → [...]`. Set obj[key] = value with the object resolved by name, the key on the stack and the value on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/set-item`** when OBJ is a symbol and KEY is not a feeder, since no fold reaches an object load behind a computed key. May lower to **FAST_ITEM_STORE**.
 - **Implementation**: `koskari/lib/opcode/VAR_ITEM_STORE.c`
 
-
-### KOS_OP_VAR_CONST_ITEM_STORE {#kos_op_var_const_item_store}
-
-- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
-- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object resolved by name after the value was pushed and the key a pool constant.
-- **Compiler form:** Emitted by **`compile/set-item`** when OBJ is a symbol and KEY is a constant; the value compiles first. May lower to **FAST_CONST_ITEM_STORE**.
-- **Implementation**: `koskari/lib/opcode/VAR_CONST_ITEM_STORE.c`
-
-
 ### KOS_OP_VAR_ITEM_STORE_CONST {#kos_op_var_item_store_const}
-
-- **Style**: EXTRA (VAR, VAR, CONST, NOARG).
-- **Stack**: No stack effect. Set obj[key] = value with the object and the key resolved by name and the value a pool constant.
-- **Compiler form:** Squashed by the compress pipeline from `CONST value, VAR_ITEM_STORE`. May lower to **FAST_ITEM_STORE_CONST**.
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., key] → [...]`. Set obj[key] = value with the object resolved by name, the key on the stack and the value a pool constant.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `CONST value` ahead of **VAR_ITEM_STORE**, the row **`compile/set-item`** shapes for a symbol object under a computed key. May lower to **FAST_ITEM_STORE_CONST**.
 - **Implementation**: `koskari/lib/opcode/VAR_ITEM_STORE_CONST.c`
 
-
-### KOS_OP_VAR_CONST_ITEM_STORE_CONST {#kos_op_var_const_item_store_const}
-
-- **Style**: EXTRA (VAR, CONST, CONST, NOARG).
-- **Stack**: No stack effect. Set obj[key] = value with the object resolved by name and the key and value pool constants.
-- **Compiler form:** Squashed by the compress pipeline from `CONST value, VAR_CONST_ITEM_STORE`. May lower to **FAST_CONST_ITEM_STORE_CONST**.
-- **Implementation**: `koskari/lib/opcode/VAR_CONST_ITEM_STORE_CONST.c`
-
+### KOS_OP_VAR_ITEM_STORE_VAR {#kos_op_var_item_store_var}
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
+- **Stack**: `[..., key] → [...]`. Set obj[key] = value with the object resolved by name, the key on the stack and the value resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR value` ahead of **VAR_ITEM_STORE**, the row **`compile/set-item`** shapes for a symbol object under a computed key. May lower to **FAST_ITEM_STORE_FAST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_STORE_VAR.c`
 
 ### KOS_OP_VAR_ITEM_INPLACE {#kos_op_var_item_inplace}
-
-- **Style**: EXTRA (OPCOUNT, VAR, VAR, NOARG).
-- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the object and key resolved by name after the values were pushed. Emitted by **`compile/inplace-item`** when OBJ is a symbol and KEY is a symbol. May lower to **FAST_ITEM_INPLACE**.
+- **Style**: EXTRA (OPCOUNT, VAR, NOARG, NOARG).
+- **Stack**: `[..., key, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object resolved by name and the key on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/inplace-item`** when OBJ is a symbol and KEY is not a feeder, since no fold reaches an object load behind a computed key. May lower to **FAST_ITEM_INPLACE**.
 - **Implementation**: `koskari/lib/opcode/VAR_ITEM_INPLACE.c`
-### KOS_OP_VAR_CONST_ITEM_INPLACE {#kos_op_var_const_item_inplace}
 
-- **Style**: EXTRA (OPCOUNT, VAR, CONST, NOARG).
-- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the object resolved by name after the values were pushed and the key a pool constant. Emitted by **`compile/inplace-item`** when OBJ is a symbol and KEY is constant. May lower to **FAST_CONST_ITEM_INPLACE**.
-- **Implementation**: `koskari/lib/opcode/VAR_CONST_ITEM_INPLACE.c`
 ### KOS_OP_VAR_ITEM_INPLACE_CONST {#kos_op_var_item_inplace_const}
-
-- **Style**: EXTRA (OPERAND, VAR, VAR, CONST).
-- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant, the object and key resolved by name. Squashed by the compress pipeline from `CONST rhs, VAR_ITEM_INPLACE` at a count of one. May lower to **FAST_ITEM_INPLACE_CONST**.
+- **Style**: EXTRA (OPERAND, VAR, CONST, NOARG).
+- **Stack**: `[..., key] → [...]`. Reduce obj[key] in place with the pool constant and store it back with the object resolved by name and the key on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `CONST operand` ahead of **VAR_ITEM_INPLACE** at a count of one, the row **`compile/inplace-item`** shapes for a symbol object under a computed key. May lower to **FAST_ITEM_INPLACE_CONST**.
 - **Implementation**: `koskari/lib/opcode/VAR_ITEM_INPLACE_CONST.c`
-### KOS_OP_VAR_CONST_ITEM_INPLACE_CONST {#kos_op_var_const_item_inplace_const}
 
+### KOS_OP_VAR_ITEM_CONST {#kos_op_var_item_const}
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key] with the object resolved by name and the key a pool constant.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, CONST key, ITEM`. May lower to **FAST_ITEM_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_CONST.c`
+
+### KOS_OP_VAR_ITEM_CONST_CLEAR {#kos_op_var_item_const_clear}
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: No stack effect. Delete obj[key] with the object resolved by name and the key a pool constant.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, CONST key, ITEM_CLEAR`. May lower to **FAST_ITEM_CONST_CLEAR**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_CONST_CLEAR.c`
+
+### KOS_OP_VAR_ITEM_CONST_TAKE {#kos_op_var_item_const_take}
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key], delete it, and push the value with the object resolved by name and the key a pool constant.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, CONST key, ITEM_TAKE`. May lower to **FAST_ITEM_CONST_TAKE**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_CONST_TAKE.c`
+
+### KOS_OP_VAR_ITEM_CONST_REF {#kos_op_var_item_const_ref}
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Push an ItemRef over obj[key] with the object resolved by name and the key a pool constant.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, CONST key, ITEM_REF`. May lower to **FAST_ITEM_CONST_REF**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_CONST_REF.c`
+
+### KOS_OP_VAR_ITEM_CONST_STORE {#kos_op_var_item_const_store}
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object resolved by name, the key a pool constant and the value on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/set-item`** when OBJ is a symbol, KEY is a feeder and a value is not, so the fold could not reach the named operands. May lower to **FAST_ITEM_CONST_STORE**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_CONST_STORE.c`
+
+### KOS_OP_VAR_ITEM_CONST_STORE_CONST {#kos_op_var_item_const_store_const}
+- **Style**: EXTRA (VAR, CONST, CONST, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object resolved by name, the key a pool constant and the value a pool constant.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, CONST key, CONST value, ITEM_STORE`, or from `CONST value` ahead of the shaped **VAR_ITEM_CONST_STORE**. May lower to **FAST_ITEM_CONST_STORE_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_CONST_STORE_CONST.c`
+
+### KOS_OP_VAR_ITEM_CONST_STORE_VAR {#kos_op_var_item_const_store_var}
+- **Style**: EXTRA (VAR, CONST, VAR, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object resolved by name, the key a pool constant and the value resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, CONST key, VAR value, ITEM_STORE`, or from `VAR value` ahead of the shaped **VAR_ITEM_CONST_STORE**. May lower to **FAST_ITEM_CONST_STORE_FAST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_CONST_STORE_VAR.c`
+
+### KOS_OP_VAR_ITEM_CONST_INPLACE {#kos_op_var_item_const_inplace}
+- **Style**: EXTRA (OPCOUNT, VAR, CONST, NOARG).
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object resolved by name and the key a pool constant.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/inplace-item`** when OBJ is a symbol, KEY is a feeder and a value is not, so the fold could not reach the named operands. May lower to **FAST_ITEM_CONST_INPLACE**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_CONST_INPLACE.c`
+
+### KOS_OP_VAR_ITEM_CONST_INPLACE_CONST {#kos_op_var_item_const_inplace_const}
 - **Style**: EXTRA (OPERAND, VAR, CONST, CONST).
-- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant, the object resolved by name and the key a pool constant. Squashed by the compress pipeline from `CONST rhs, VAR_CONST_ITEM_INPLACE` at a count of one. May lower to **FAST_CONST_ITEM_INPLACE_CONST**.
-- **Implementation**: `koskari/lib/opcode/VAR_CONST_ITEM_INPLACE_CONST.c`
+- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant and store it back with the object resolved by name and the key a pool constant.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, CONST key, CONST rhs, ITEM_INPLACE` at a count of one, or from `CONST rhs` ahead of the shaped **VAR_ITEM_CONST_INPLACE**. May lower to **FAST_ITEM_CONST_INPLACE_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_CONST_INPLACE_CONST.c`
+
+### KOS_OP_VAR_ITEM_VAR {#kos_op_var_item_var}
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key] with the object resolved by name and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, VAR key, ITEM`. May lower to **FAST_ITEM_FAST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_VAR.c`
+
+### KOS_OP_VAR_ITEM_VAR_CLEAR {#kos_op_var_item_var_clear}
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
+- **Stack**: No stack effect. Delete obj[key] with the object resolved by name and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, VAR key, ITEM_CLEAR`. May lower to **FAST_ITEM_FAST_CLEAR**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_VAR_CLEAR.c`
+
+### KOS_OP_VAR_ITEM_VAR_TAKE {#kos_op_var_item_var_take}
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key], delete it, and push the value with the object resolved by name and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, VAR key, ITEM_TAKE`. May lower to **FAST_ITEM_FAST_TAKE**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_VAR_TAKE.c`
+
+### KOS_OP_VAR_ITEM_VAR_REF {#kos_op_var_item_var_ref}
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Push an ItemRef over obj[key] with the object resolved by name and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, VAR key, ITEM_REF`. May lower to **FAST_ITEM_FAST_REF**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_VAR_REF.c`
+
+### KOS_OP_VAR_ITEM_VAR_STORE {#kos_op_var_item_var_store}
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
+- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object resolved by name, the key resolved by name and the value on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/set-item`** when OBJ is a symbol, KEY is a feeder and a value is not, so the fold could not reach the named operands. May lower to **FAST_ITEM_FAST_STORE**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_VAR_STORE.c`
+
+### KOS_OP_VAR_ITEM_VAR_STORE_CONST {#kos_op_var_item_var_store_const}
+- **Style**: EXTRA (VAR, VAR, CONST, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object resolved by name, the key resolved by name and the value a pool constant.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, VAR key, CONST value, ITEM_STORE`, or from `CONST value` ahead of the shaped **VAR_ITEM_VAR_STORE**. May lower to **FAST_ITEM_FAST_STORE_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_VAR_STORE_CONST.c`
+
+### KOS_OP_VAR_ITEM_VAR_STORE_VAR {#kos_op_var_item_var_store_var}
+- **Style**: EXTRA (VAR, VAR, VAR, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object resolved by name, the key resolved by name and the value resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, VAR key, VAR value, ITEM_STORE`, or from `VAR value` ahead of the shaped **VAR_ITEM_VAR_STORE**. May lower to **FAST_ITEM_FAST_STORE_FAST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_VAR_STORE_VAR.c`
+
+### KOS_OP_VAR_ITEM_VAR_INPLACE {#kos_op_var_item_var_inplace}
+- **Style**: EXTRA (OPCOUNT, VAR, VAR, NOARG).
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object resolved by name and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/inplace-item`** when OBJ is a symbol, KEY is a feeder and a value is not, so the fold could not reach the named operands. May lower to **FAST_ITEM_FAST_INPLACE**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_VAR_INPLACE.c`
+
+### KOS_OP_VAR_ITEM_VAR_INPLACE_CONST {#kos_op_var_item_var_inplace_const}
+- **Style**: EXTRA (OPERAND, VAR, VAR, CONST).
+- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant and store it back with the object resolved by name and the key resolved by name.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR obj, VAR key, CONST rhs, ITEM_INPLACE` at a count of one, or from `CONST rhs` ahead of the shaped **VAR_ITEM_VAR_INPLACE**. May lower to **FAST_ITEM_FAST_INPLACE_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_VAR_INPLACE_CONST.c`
+
+
 ## 13. Fast variables
 
 ### KOS_OP_FAST
@@ -2329,78 +2593,261 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 - **Implementation**: `koskari/lib/opcode/FAST_ATTR_INPLACE.c`
 
 
-### KOS_OP_FAST_ITEM {#kos_op_fast_item}
+### KOS_OP_ITEM_STORE_FAST {#kos_op_item_store_fast}
+- **Style**: FASTVAR (the value's slot).
+- **Stack**: `[..., obj, key] → [...]`. Set obj[key] = value with the object on the stack, the key on the stack and the value read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **ITEM_STORE_VAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_STORE_FAST.c`
 
+### KOS_OP_ITEM_CONST_STORE_FAST {#kos_op_item_const_store_fast}
+- **Style**: EXTRA (CONST, FASTVAR, NOARG, NOARG).
+- **Stack**: `[..., obj] → [...]`. Set obj[key] = value with the object on the stack, the key a pool constant and the value read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **ITEM_CONST_STORE_VAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_CONST_STORE_FAST.c`
+
+### KOS_OP_ITEM_FAST {#kos_op_item_fast}
+- **Style**: FASTVAR (the key's slot).
+- **Stack**: `[..., obj] → [..., value]`. Get obj[key] with the object on the stack and the key read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **ITEM_VAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_FAST.c`
+
+### KOS_OP_ITEM_FAST_CLEAR {#kos_op_item_fast_clear}
+- **Style**: FASTVAR (the key's slot).
+- **Stack**: `[..., obj] → [...]`. Delete obj[key] with the object on the stack and the key read from a fast slot.
+- **Compiler form:** The lowering of **ITEM_VAR_CLEAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_FAST_CLEAR.c`
+
+### KOS_OP_ITEM_FAST_TAKE {#kos_op_item_fast_take}
+- **Style**: FASTVAR (the key's slot).
+- **Stack**: `[..., obj] → [..., value]`. Get obj[key], delete it, and push the value with the object on the stack and the key read from a fast slot.
+- **Compiler form:** The lowering of **ITEM_VAR_TAKE**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_FAST_TAKE.c`
+
+### KOS_OP_ITEM_FAST_REF {#kos_op_item_fast_ref}
+- **Style**: FASTVAR (the key's slot).
+- **Stack**: `[..., obj] → [..., value]`. Push an ItemRef over obj[key] with the object on the stack and the key read from a fast slot.
+- **Compiler form:** The lowering of **ITEM_VAR_REF**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_FAST_REF.c`
+
+### KOS_OP_ITEM_FAST_STORE {#kos_op_item_fast_store}
+- **Style**: FASTVAR (the key's slot).
+- **Stack**: `[..., obj, value] → [...]`. Set obj[key] = value with the object on the stack, the key read from a fast slot and the value on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **ITEM_VAR_STORE**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_FAST_STORE.c`
+
+### KOS_OP_ITEM_FAST_STORE_CONST {#kos_op_item_fast_store_const}
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., obj] → [...]`. Set obj[key] = value with the object on the stack, the key read from a fast slot and the value a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **ITEM_VAR_STORE_CONST**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_FAST_STORE_CONST.c`
+
+### KOS_OP_ITEM_FAST_STORE_FAST {#kos_op_item_fast_store_fast}
 - **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
-- **Stack**: `[...] → [..., value]`. Get obj[key] with the object and the key both read from fast slots.
-- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Stack**: `[..., obj] → [...]`. Set obj[key] = value with the object on the stack, the key read from a fast slot and the value read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **ITEM_VAR_STORE_VAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_FAST_STORE_FAST.c`
+
+### KOS_OP_ITEM_FAST_INPLACE {#kos_op_item_fast_inplace}
+- **Style**: EXTRA (OPCOUNT, FASTVAR, NOARG, NOARG).
+- **Stack**: `[..., obj, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object on the stack and the key read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **ITEM_VAR_INPLACE**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_FAST_INPLACE.c`
+
+### KOS_OP_ITEM_FAST_INPLACE_CONST {#kos_op_item_fast_inplace_const}
+- **Style**: EXTRA (OPERAND, FASTVAR, CONST, NOARG).
+- **Stack**: `[..., obj] → [...]`. Reduce obj[key] in place with the pool constant and store it back with the object on the stack and the key read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **ITEM_VAR_INPLACE_CONST**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/ITEM_FAST_INPLACE_CONST.c`
+
+### KOS_OP_FAST_ITEM {#kos_op_fast_item}
+- **Style**: FASTVAR (the object's slot).
+- **Stack**: `[..., key] → [..., value]`. Get obj[key] with the object read from a fast slot and the key on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM**: every named operand has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ITEM.c`
 
+### KOS_OP_FAST_ITEM_CLEAR {#kos_op_fast_item_clear}
+- **Style**: FASTVAR (the object's slot).
+- **Stack**: `[..., key] → [...]`. Delete obj[key] with the object read from a fast slot and the key on the stack.
+- **Compiler form:** The lowering of **VAR_ITEM_CLEAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_CLEAR.c`
 
-### KOS_OP_FAST_CONST_ITEM {#kos_op_fast_const_item}
+### KOS_OP_FAST_ITEM_TAKE {#kos_op_fast_item_take}
+- **Style**: FASTVAR (the object's slot).
+- **Stack**: `[..., key] → [..., value]`. Get obj[key], delete it, and push the value with the object read from a fast slot and the key on the stack.
+- **Compiler form:** The lowering of **VAR_ITEM_TAKE**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_TAKE.c`
 
-- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
-- **Stack**: `[...] → [..., value]`. Get obj[key] with the object read from a fast slot and the key a pool constant.
-- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
-- **Implementation**: `koskari/lib/opcode/FAST_CONST_ITEM.c`
-
+### KOS_OP_FAST_ITEM_REF {#kos_op_fast_item_ref}
+- **Style**: FASTVAR (the object's slot).
+- **Stack**: `[..., key] → [..., value]`. Push an ItemRef over obj[key] with the object read from a fast slot and the key on the stack.
+- **Compiler form:** The lowering of **VAR_ITEM_REF**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_REF.c`
 
 ### KOS_OP_FAST_ITEM_STORE {#kos_op_fast_item_store}
-
-- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
-- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object and the key read from fast slots.
-- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Style**: FASTVAR (the object's slot).
+- **Stack**: `[..., key, value] → [...]`. Set obj[key] = value with the object read from a fast slot, the key on the stack and the value on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_STORE**: every named operand has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ITEM_STORE.c`
 
-
-### KOS_OP_FAST_CONST_ITEM_STORE {#kos_op_fast_const_item_store}
-
-- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
-- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object read from a fast slot and the key a pool constant.
-- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
-- **Implementation**: `koskari/lib/opcode/FAST_CONST_ITEM_STORE.c`
-
-
 ### KOS_OP_FAST_ITEM_STORE_CONST {#kos_op_fast_item_store_const}
-
-- **Style**: EXTRA (FASTVAR, FASTVAR, CONST, NOARG).
-- **Stack**: No stack effect. Set obj[key] = value with the object and the key read from fast slots and the value a pool constant.
-- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., key] → [...]`. Set obj[key] = value with the object read from a fast slot, the key on the stack and the value a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_STORE_CONST**: every named operand has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ITEM_STORE_CONST.c`
 
-
-### KOS_OP_FAST_CONST_ITEM_STORE_CONST {#kos_op_fast_const_item_store_const}
-
-- **Style**: EXTRA (FASTVAR, CONST, CONST, NOARG).
-- **Stack**: No stack effect. Set obj[key] = value with the object read from a fast slot and the key and value pool constants.
-- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
-- **Implementation**: `koskari/lib/opcode/FAST_CONST_ITEM_STORE_CONST.c`
-
+### KOS_OP_FAST_ITEM_STORE_FAST {#kos_op_fast_item_store_fast}
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
+- **Stack**: `[..., key] → [...]`. Set obj[key] = value with the object read from a fast slot, the key on the stack and the value read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_STORE_VAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_STORE_FAST.c`
 
 ### KOS_OP_FAST_ITEM_INPLACE {#kos_op_fast_item_inplace}
-
-- **Style**: EXTRA (OPCOUNT, FASTVAR, FASTVAR, NOARG).
-- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the object and key read from fast slots.
-- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Style**: EXTRA (OPCOUNT, FASTVAR, NOARG, NOARG).
+- **Stack**: `[..., key, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object read from a fast slot and the key on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_INPLACE**: every named operand has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ITEM_INPLACE.c`
-### KOS_OP_FAST_CONST_ITEM_INPLACE {#kos_op_fast_const_item_inplace}
 
-- **Style**: EXTRA (OPCOUNT, FASTVAR, CONST, NOARG).
-- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the object read from a fast slot and the key a pool constant.
-- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
-- **Implementation**: `koskari/lib/opcode/FAST_CONST_ITEM_INPLACE.c`
 ### KOS_OP_FAST_ITEM_INPLACE_CONST {#kos_op_fast_item_inplace_const}
-
-- **Style**: EXTRA (OPERAND, FASTVAR, FASTVAR, CONST).
-- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant, the object and key read from fast slots.
-- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Style**: EXTRA (OPERAND, FASTVAR, CONST, NOARG).
+- **Stack**: `[..., key] → [...]`. Reduce obj[key] in place with the pool constant and store it back with the object read from a fast slot and the key on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_INPLACE_CONST**: every named operand has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ITEM_INPLACE_CONST.c`
-### KOS_OP_FAST_CONST_ITEM_INPLACE_CONST {#kos_op_fast_const_item_inplace_const}
 
+### KOS_OP_FAST_ITEM_CONST {#kos_op_fast_item_const}
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key] with the object read from a fast slot and the key a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_CONST**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_CONST.c`
+
+### KOS_OP_FAST_ITEM_CONST_CLEAR {#kos_op_fast_item_const_clear}
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: No stack effect. Delete obj[key] with the object read from a fast slot and the key a pool constant.
+- **Compiler form:** The lowering of **VAR_ITEM_CONST_CLEAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_CONST_CLEAR.c`
+
+### KOS_OP_FAST_ITEM_CONST_TAKE {#kos_op_fast_item_const_take}
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key], delete it, and push the value with the object read from a fast slot and the key a pool constant.
+- **Compiler form:** The lowering of **VAR_ITEM_CONST_TAKE**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_CONST_TAKE.c`
+
+### KOS_OP_FAST_ITEM_CONST_REF {#kos_op_fast_item_const_ref}
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Push an ItemRef over obj[key] with the object read from a fast slot and the key a pool constant.
+- **Compiler form:** The lowering of **VAR_ITEM_CONST_REF**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_CONST_REF.c`
+
+### KOS_OP_FAST_ITEM_CONST_STORE {#kos_op_fast_item_const_store}
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object read from a fast slot, the key a pool constant and the value on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_CONST_STORE**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_CONST_STORE.c`
+
+### KOS_OP_FAST_ITEM_CONST_STORE_CONST {#kos_op_fast_item_const_store_const}
+- **Style**: EXTRA (FASTVAR, CONST, CONST, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object read from a fast slot, the key a pool constant and the value a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_CONST_STORE_CONST**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_CONST_STORE_CONST.c`
+
+### KOS_OP_FAST_ITEM_CONST_STORE_FAST {#kos_op_fast_item_const_store_fast}
+- **Style**: EXTRA (FASTVAR, CONST, FASTVAR, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object read from a fast slot, the key a pool constant and the value read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_CONST_STORE_VAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_CONST_STORE_FAST.c`
+
+### KOS_OP_FAST_ITEM_CONST_INPLACE {#kos_op_fast_item_const_inplace}
+- **Style**: EXTRA (OPCOUNT, FASTVAR, CONST, NOARG).
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object read from a fast slot and the key a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_CONST_INPLACE**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_CONST_INPLACE.c`
+
+### KOS_OP_FAST_ITEM_CONST_INPLACE_CONST {#kos_op_fast_item_const_inplace_const}
 - **Style**: EXTRA (OPERAND, FASTVAR, CONST, CONST).
-- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant, the object read from a fast slot and the key and operand pool constants.
-- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
-- **Implementation**: `koskari/lib/opcode/FAST_CONST_ITEM_INPLACE_CONST.c`
+- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant and store it back with the object read from a fast slot and the key a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_CONST_INPLACE_CONST**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_CONST_INPLACE_CONST.c`
+
+### KOS_OP_FAST_ITEM_FAST {#kos_op_fast_item_fast}
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key] with the object read from a fast slot and the key read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_VAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_FAST.c`
+
+### KOS_OP_FAST_ITEM_FAST_CLEAR {#kos_op_fast_item_fast_clear}
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
+- **Stack**: No stack effect. Delete obj[key] with the object read from a fast slot and the key read from a fast slot.
+- **Compiler form:** The lowering of **VAR_ITEM_VAR_CLEAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_FAST_CLEAR.c`
+
+### KOS_OP_FAST_ITEM_FAST_TAKE {#kos_op_fast_item_fast_take}
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key], delete it, and push the value with the object read from a fast slot and the key read from a fast slot.
+- **Compiler form:** The lowering of **VAR_ITEM_VAR_TAKE**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_FAST_TAKE.c`
+
+### KOS_OP_FAST_ITEM_FAST_REF {#kos_op_fast_item_fast_ref}
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Push an ItemRef over obj[key] with the object read from a fast slot and the key read from a fast slot.
+- **Compiler form:** The lowering of **VAR_ITEM_VAR_REF**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_FAST_REF.c`
+
+### KOS_OP_FAST_ITEM_FAST_STORE {#kos_op_fast_item_fast_store}
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
+- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object read from a fast slot, the key read from a fast slot and the value on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_VAR_STORE**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_FAST_STORE.c`
+
+### KOS_OP_FAST_ITEM_FAST_STORE_CONST {#kos_op_fast_item_fast_store_const}
+- **Style**: EXTRA (FASTVAR, FASTVAR, CONST, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object read from a fast slot, the key read from a fast slot and the value a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_VAR_STORE_CONST**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_FAST_STORE_CONST.c`
+
+### KOS_OP_FAST_ITEM_FAST_STORE_FAST {#kos_op_fast_item_fast_store_fast}
+- **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object read from a fast slot, the key read from a fast slot and the value read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_VAR_STORE_VAR**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_FAST_STORE_FAST.c`
+
+### KOS_OP_FAST_ITEM_FAST_INPLACE {#kos_op_fast_item_fast_inplace}
+- **Style**: EXTRA (OPCOUNT, FASTVAR, FASTVAR, NOARG).
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object read from a fast slot and the key read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_VAR_INPLACE**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_FAST_INPLACE.c`
+
+### KOS_OP_FAST_ITEM_FAST_INPLACE_CONST {#kos_op_fast_item_fast_inplace_const}
+- **Style**: EXTRA (OPERAND, FASTVAR, FASTVAR, CONST).
+- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant and store it back with the object read from a fast slot and the key read from a fast slot.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** The lowering of **VAR_ITEM_VAR_INPLACE_CONST**: every named operand has a fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_FAST_INPLACE_CONST.c`
+
+
 ## 14. Attributes
 
 ### KOS_OP_ATTR
@@ -2501,217 +2948,163 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ## 15. Items
 
-ITEM, CONST_ITEM, ITEM_STORE and CONST_ITEM_STORE, and their FAST twins
-in §13, carry one KOS_CACHE_ELECTOR slot each (`eval/eval_electors.c`,
-the item families). On its first execution a site elects a body for
-the container kind it sees: an exact list or tuple under an exact int
-key, or an exact dict under any key. The body guards the kind on every
-execution and reads or writes the container directly; an index outside
-the sequence or a key the dict lacks runs the object protocol for that
-execution, so IndexError and KeyError keep their messages, and eight
-guard misses demote the site to the protocol until it re-elects. The
-VAR twins in §12 carry no slot: a VAR row survives lowering only for a
-name with no fast slot, and its cost is the name resolution.
+The item rows are named by a three-position grammar: the leading
+marker names the object's origin, ITEM is followed by the key's, and a
+STORE or INPLACE verb by its value's. An unmarked operand rides the
+stack; CONST is a pool constant, VAR a name resolved in the frame
+namespace (§12), FAST a fast slot (§13). FAST_ITEM_CONST_STORE_FAST is
+a fast object, a constant key, and a fast value; ITEM_VAR_STORE is a
+stack object, a named key, and a stack value. The row's EXTRA fields
+follow name order, skipping stack operands; a row with one named
+operand takes that operand's plain style. The stack order of the
+operands a row reads is object, key, value.
 
-The FAST in-place rows in §13 carry one KOS_CACHE_ELECTOR slot each
-and elect their operator's int or float body, as FAST_INPLACE does
-(`eval/eval_electors.c`, the item in-place families); the body finds
-the cell by an exact list or dict check, offers the cell's value as
-the result's home under the in-place result rule, and stores back
-only when a new object came back. ITEM_INPLACE, CONST_ITEM_INPLACE
-and the VAR rows run the object protocol through the shared
-`kos_item_inplace_reduce`.
+Every combination of stack and slot object, stack, constant, and slot
+key, and stack, constant, and slot value exists for ITEM, CLEAR, TAKE,
+REF, and STORE; the in-place rows take their operand from the stack or
+the pool, as every other INPLACE row does. A VAR row is the twin of a
+FAST row for a name with no fast slot; the lowering is all or nothing
+per row.
 
-### KOS_OP_ITEM
+The ITEM, STORE, and INPLACE rows of the stack tier and the FAST tier
+carry one KOS_CACHE_ITEM slot each. A handler fetches its operands by
+origin and calls `kos_item_load`, `kos_item_store`, or
+`kos_item_inplace` (`eval/eval_item.c`), which on the site's first
+execution elects a body for the container kind it sees: an exact list
+or tuple under an exact int key, or an exact dict under any key. The
+body guards the kind on every execution and reads or writes the
+container directly; an index outside the sequence or a key the dict
+lacks runs the object protocol for that execution, so IndexError and
+KeyError keep their messages, and eight guard misses demote the site
+to the protocol until the protocol's own count wraps and the site
+re-elects. The in-place bodies are one per operator and numeric kind,
+find the cell inside the body, and offer the cell's value as the
+result's home under the in-place result rule. CLEAR, TAKE, and REF
+run the object protocol through `kos_item_clear`, `kos_item_take`, and
+`kos_item_ref`, which hold the operands across the call.
 
-- **Style**: NOARG. Key from stack (below object).
-- **Status**: Implemented.
-- **Stack**: `[..., obj, key] → [..., obj, value]`. Get item; push value.
-- **Invariants**: TOS = key, below = object.
+The compiler emits the plain stack row after the object, the key, and
+the value, and the compress pipeline folds the run of feeders directly
+ahead of the row, which in stack order is the value, then the key,
+then the object; a CONST in the object position never folds. A special
+shapes its emission only where a non-feeder operand would sit between
+a named operand and the row: a symbol object under a computed key
+names the object, and a computed value behind a symbol object or a
+feeder key names what it can.
 
-**Example:** Get obj[key]. Pool: 0 = "d", 1 = "k".
+**Example:** `(set-item d "k" 42)` in a function body, `d` a local.
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
-| 0     | VAR    | 0   | 0 ('d')  | stack: [..., d] |
-| 1     | CONST  | 1   | 1 ('k')  | stack: [..., d, 'k'] |
-| 2     | ITEM   | 0   | 0        | stack: [..., d, d['k']] |
-| 3     | RETURN | 1   | 1        | |
+| 0     | FAST_ITEM_CONST_STORE_CONST | 0 | (fast 0 (d), c#0 ('k'), c#1 (42), 0) | d['k'] = 42; no stack effect |
 
----
+### KOS_OP_ITEM {#kos_op_item}
+- **Style**: NOARG.
+- **Stack**: `[..., obj, key] → [..., value]`. Get obj[key] with the object on the stack and the key on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** Emitted by **`compile/item`**; the compress pipeline folds the run of feeders (bare VAR and CONST loads) ahead of it into the rows that name them.
+- **Implementation**: `koskari/lib/opcode/ITEM.c`
 
-### KOS_OP_ITEM_STORE
-
-- **Style**: NOARG. Key and value from stack.
-- **Status**: Implemented.
-- **Stack**: `[..., obj, key, value] → [..., obj]`. Set item.
-- **Invariants**: TOS = value, below = key, below = object.
-
-**Example:** obj[key] = value.
-
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 0     | VAR        | 0   | 0 ('d')  | stack: [..., d] |
-| 1     | CONST      | 1   | 1 ('k')  | stack: [..., d, 'k'] |
-| 2     | CONST      | 2   | 2 (42)   | stack: [..., d, 'k', 42] |
-| 3     | ITEM_STORE | 0   | 0        | d['k'] = 42; stack: [..., d] |
-
----
-
-### KOS_OP_ITEM_CLEAR
-
-- **Style**: NOARG. Key from stack.
-- **Status**: Implemented.
-- **Stack**: `[..., obj, key] → [..., obj]`. Delete item.
-- **Invariants**: Object and key on stack.
-
-**Example:** del obj[key].
-
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 0     | VAR        | 0   | 0 ('d')  | stack: [..., d] |
-| 1     | CONST      | 1   | 1 ('k')  | stack: [..., d, 'k'] |
-| 2     | ITEM_CLEAR | 0   | 0        | del d['k']; stack: [..., d] |
-
----
+### KOS_OP_ITEM_CLEAR {#kos_op_item_clear}
+- **Style**: NOARG.
+- **Stack**: `[..., obj, key] → [...]`. Delete obj[key] with the object on the stack and the key on the stack.
+- **Compiler form:** Emitted by **`compile/del-item`**; the compress pipeline folds the run of feeders (bare VAR and CONST loads) ahead of it into the rows that name them.
+- **Implementation**: `koskari/lib/opcode/ITEM_CLEAR.c`
 
 ### KOS_OP_ITEM_TAKE {#kos_op_item_take}
-
-- **Style**: NOARG. Key from stack.
-- **Status**: Implemented.
-- **Stack**: `[..., obj, key] → [..., value]`. Get item, delete it, push value.
-  Errors if key missing.
-- **Invariants**: Object and key on stack.
-- **Compiler form:** Emitted by **`compile/take-item`** when key is not
-  constant-only.
+- **Style**: NOARG.
+- **Stack**: `[..., obj, key] → [..., value]`. Get obj[key], delete it, and push the value with the object on the stack and the key on the stack.
+- **Compiler form:** Emitted by **`compile/take-item`**; the compress pipeline folds the run of feeders (bare VAR and CONST loads) ahead of it into the rows that name them.
 - **Implementation**: `koskari/lib/opcode/ITEM_TAKE.c`
-- **Covered by**: `tests/lib/opcode/test_take_opcodes.py`
 
-**Example:** Take d[k].
+### KOS_OP_ITEM_REF {#kos_op_item_ref}
+- **Style**: NOARG.
+- **Stack**: `[..., obj, key] → [..., value]`. Push an ItemRef over obj[key] with the object on the stack and the key on the stack.
+- **Compiler form:** Emitted by **`compile/ref-item`**; the compress pipeline folds the run of feeders (bare VAR and CONST loads) ahead of it into the rows that name them.
+- **Implementation**: `koskari/lib/opcode/ITEM_REF.c`
 
-| index | opcode    | arg | arg view | comment |
-|------:|-----------|-----|----------|---------|
-| 0     | VAR       | 0   | 0 ('d')  | stack: [..., d] |
-| 1     | CONST     | 1   | 1 ('k')  | stack: [..., d, 'k'] |
-| 2     | ITEM_TAKE | 0   | 0        | take d['k']; stack: [..., value] |
+### KOS_OP_ITEM_STORE {#kos_op_item_store}
+- **Style**: NOARG.
+- **Stack**: `[..., obj, key, value] → [...]`. Set obj[key] = value with the object on the stack, the key on the stack and the value on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** Emitted by **`compile/set-item`**; the compress pipeline folds the run of feeders (bare VAR and CONST loads) ahead of it into the rows that name them.
+- **Implementation**: `koskari/lib/opcode/ITEM_STORE.c`
 
----
-
-### KOS_OP_ITEM_REF
-
-- **Style**: NOARG. Key from stack.
-- **Status**: Implemented.
-- **Stack**: `[..., obj, key] → [..., obj, item_ref]`. Push item reference.
-- **Invariants**: Object and key on stack.
-
-**Example:** Push reference for d[k]. Pool: 0 = "d", 1 = "k".
-
-| index | opcode   | arg | arg view | comment |
-|------:|----------|-----|----------|---------|
-| 0     | VAR      | 0   | 0 ('d')  | stack: [..., d] |
-| 1     | CONST    | 1   | 1 ('k')  | stack: [..., d, 'k'] |
-| 2     | ITEM_REF | 0   | 0        | stack: [..., d, item_ref] |
-
----
-
-### KOS_OP_CONST_ITEM
-
-- **Style**: CONST. Arg = constant pool index of key (post-compile).
-- **Status**: Implemented.
-- **Stack**: `[..., obj] → [..., obj, value]`. Get item with constant key.
-- **Invariants**: TOS is object; key from pool.
-- **Compiler form:** Pre-compile arg = key value (e.g. string or index); post-compile arg = pool index.
-
-**Example:** Get obj["key"]. Pool: 0 = "obj", 1 = "key".
-
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 0     | VAR        | 0   | 0 ('obj')| stack: [..., obj] |
-| 1     | CONST_ITEM | 1   | 1 ('key')| stack: [..., obj, obj['key']] |
-
----
-
-### KOS_OP_CONST_ITEM_STORE
-
-- **Style**: CONST. Arg = constant pool index of key.
-- **Status**: Implemented.
-- **Stack**: `[..., obj, value] → [..., obj]`. Set item with constant key.
-- **Invariants**: Key from pool.
-
-**Example:** obj["key"] = value. Pool: 0 = "key".
-
-| index | opcode        | arg | arg view | comment |
-|------:|---------------|-----|----------|---------|
-| 0     | VAR           | 0   | 0 ('obj')| stack: [..., obj] |
-| 1     | CONST         | 1   | 1 (42)   | stack: [..., obj, 42] |
-| 2     | CONST_ITEM_STORE | 0 | 0 ('key')| obj['key'] = 42; stack: [..., obj] |
-
----
-
-### KOS_OP_CONST_ITEM_CLEAR
-
-- **Style**: CONST. Arg = constant pool index of key.
-- **Status**: Implemented.
-- **Stack**: `[..., obj] → [..., obj]`. Delete item with constant key.
-- **Invariants**: Key from pool.
-
-**Example:** del obj["key"]. Pool: 0 = "key".
-
-| index | opcode        | arg | arg view | comment |
-|------:|---------------|-----|----------|---------|
-| 0     | VAR           | 0   | 0 ('obj')| stack: [..., obj] |
-| 1     | CONST_ITEM_CLEAR | 0 | 0 ('key')| del obj['key']; stack: [..., obj] |
-
----
-
-### KOS_OP_CONST_ITEM_TAKE {#kos_op_const_item_take}
-
-- **Style**: CONST. Arg = constant pool index of key.
-- **Status**: Implemented.
-- **Stack**: `[..., obj] → [..., value]`. Get item with constant key, delete
-  it, push value. Errors if key missing.
-- **Invariants**: Key from pool.
-- **Compiler form:** Emitted by **`compile/take-item`** when key is
-  constant-only.
-- **Implementation**: `koskari/lib/opcode/CONST_ITEM_TAKE.c`
-- **Covered by**: `tests/lib/opcode/test_take_opcodes.py`
-
-**Example:** Take obj["key"]. Pool: 0 = "key".
-
-| index | opcode           | arg | arg view | comment |
-|------:|------------------|-----|----------|---------|
-| 0     | VAR              | 0   | 0 ('obj')| stack: [..., obj] |
-| 1     | CONST_ITEM_TAKE  | 0   | 0 ('key')| take obj['key']; stack: [..., value] |
-
----
-
-### KOS_OP_CONST_ITEM_REF
-
-- **Style**: CONST. Arg = constant pool index of key.
-- **Status**: Implemented.
-- **Stack**: `[..., obj] → [..., obj, item_ref]`. Push item reference for constant key.
-- **Invariants**: Key from pool.
-
-**Example:** Push reference for obj["key"]. Pool: 0 = "key".
-
-| index | opcode        | arg | arg view | comment |
-|------:|---------------|-----|----------|---------|
-| 0     | VAR           | 0   | 0 ('obj')| stack: [..., obj] |
-| 1     | CONST_ITEM_REF| 0   | 0 ('key')| stack: [..., obj, item_ref] |
-
+### KOS_OP_ITEM_STORE_CONST {#kos_op_item_store_const}
+- **Style**: CONST (the value).
+- **Stack**: `[..., obj, key] → [...]`. Set obj[key] = value with the object on the stack, the key on the stack and the value a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** Folded by the compress pipeline from `CONST value, ITEM_STORE`.
+- **Implementation**: `koskari/lib/opcode/ITEM_STORE_CONST.c`
 
 ### KOS_OP_ITEM_INPLACE {#kos_op_item_inplace}
-
 - **Style**: OPCOUNT (operator selector, value count).
-- **Stack**: `[..., obj, key, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right through the object protocol, store it back, drop every entry. Emitted by **`compile/inplace-item`** when OBJ is an expression or KEY is computed.
-- **Cache**: one KOS_CACHE_ELECTOR slot; the int and float bodies of the FAST twin over the stack shape, elected at a count of one.
+- **Stack**: `[..., obj, key, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object on the stack and the key on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** Emitted by **`compile/inplace-item`**; the compress pipeline folds the run of feeders (bare VAR and CONST loads) ahead of it into the rows that name them.
 - **Implementation**: `koskari/lib/opcode/ITEM_INPLACE.c`
-### KOS_OP_CONST_ITEM_INPLACE {#kos_op_const_item_inplace}
 
+### KOS_OP_ITEM_INPLACE_CONST {#kos_op_item_inplace_const}
+- **Style**: EXTRA (OPERAND, CONST, NOARG, NOARG).
+- **Stack**: `[..., obj, key] → [...]`. Reduce obj[key] in place with the pool constant and store it back with the object on the stack and the key on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** Folded by the compress pipeline from `CONST rhs, ITEM_INPLACE` at a count of one, or from `CONST rhs` ahead of the shaped **ITEM_INPLACE**.
+- **Implementation**: `koskari/lib/opcode/ITEM_INPLACE_CONST.c`
+
+### KOS_OP_ITEM_CONST {#kos_op_item_const}
+- **Style**: CONST (the key).
+- **Stack**: `[..., obj] → [..., value]`. Get obj[key] with the object on the stack and the key a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** Folded by the compress pipeline from `CONST key, ITEM`.
+- **Implementation**: `koskari/lib/opcode/ITEM_CONST.c`
+
+### KOS_OP_ITEM_CONST_CLEAR {#kos_op_item_const_clear}
+- **Style**: CONST (the key).
+- **Stack**: `[..., obj] → [...]`. Delete obj[key] with the object on the stack and the key a pool constant.
+- **Compiler form:** Folded by the compress pipeline from `CONST key, ITEM_CLEAR`.
+- **Implementation**: `koskari/lib/opcode/ITEM_CONST_CLEAR.c`
+
+### KOS_OP_ITEM_CONST_TAKE {#kos_op_item_const_take}
+- **Style**: CONST (the key).
+- **Stack**: `[..., obj] → [..., value]`. Get obj[key], delete it, and push the value with the object on the stack and the key a pool constant.
+- **Compiler form:** Folded by the compress pipeline from `CONST key, ITEM_TAKE`.
+- **Implementation**: `koskari/lib/opcode/ITEM_CONST_TAKE.c`
+
+### KOS_OP_ITEM_CONST_REF {#kos_op_item_const_ref}
+- **Style**: CONST (the key).
+- **Stack**: `[..., obj] → [..., value]`. Push an ItemRef over obj[key] with the object on the stack and the key a pool constant.
+- **Compiler form:** Folded by the compress pipeline from `CONST key, ITEM_REF`.
+- **Implementation**: `koskari/lib/opcode/ITEM_CONST_REF.c`
+
+### KOS_OP_ITEM_CONST_STORE {#kos_op_item_const_store}
+- **Style**: CONST (the key).
+- **Stack**: `[..., obj, value] → [...]`. Set obj[key] = value with the object on the stack, the key a pool constant and the value on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** Shaped by **`compile/set-item`** when OBJ is a symbol or KEY is a feeder and a value is not, so the fold could not reach the named operands.
+- **Implementation**: `koskari/lib/opcode/ITEM_CONST_STORE.c`
+
+### KOS_OP_ITEM_CONST_STORE_CONST {#kos_op_item_const_store_const}
+- **Style**: EXTRA (CONST, CONST, NOARG, NOARG).
+- **Stack**: `[..., obj] → [...]`. Set obj[key] = value with the object on the stack, the key a pool constant and the value a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** Folded by the compress pipeline from `CONST key, CONST value, ITEM_STORE`, or from `CONST value` ahead of the shaped **ITEM_CONST_STORE**.
+- **Implementation**: `koskari/lib/opcode/ITEM_CONST_STORE_CONST.c`
+
+### KOS_OP_ITEM_CONST_INPLACE {#kos_op_item_const_inplace}
 - **Style**: EXTRA (OPCOUNT, CONST, NOARG, NOARG).
-- **Stack**: `[..., obj, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the key a pool constant, store it back, drop every entry. Emitted by **`compile/inplace-item`** when OBJ is an expression and KEY is constant.
-- **Cache**: one KOS_CACHE_ELECTOR slot; the int and float bodies of the FAST twin over the stack shape, elected at a count of one.
-- **Implementation**: `koskari/lib/opcode/CONST_ITEM_INPLACE.c`
+- **Stack**: `[..., obj, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object on the stack and the key a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** Shaped by **`compile/inplace-item`** when OBJ is a symbol or KEY is a feeder and a value is not, so the fold could not reach the named operands.
+- **Implementation**: `koskari/lib/opcode/ITEM_CONST_INPLACE.c`
+
+### KOS_OP_ITEM_CONST_INPLACE_CONST {#kos_op_item_const_inplace_const}
+- **Style**: EXTRA (OPERAND, CONST, CONST, NOARG).
+- **Stack**: `[..., obj] → [...]`. Reduce obj[key] in place with the pool constant and store it back with the object on the stack and the key a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see §15).
+- **Compiler form:** Folded by the compress pipeline from `CONST key, CONST rhs, ITEM_INPLACE` at a count of one, or from `CONST rhs` ahead of the shaped **ITEM_CONST_INPLACE**.
+- **Implementation**: `koskari/lib/opcode/ITEM_CONST_INPLACE_CONST.c`
+
+
 ## 15.1 Reference dereference
 
 ### KOS_OP_DEREF

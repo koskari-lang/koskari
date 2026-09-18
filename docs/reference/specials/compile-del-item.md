@@ -3,11 +3,11 @@
 
 **Syntax:** `(del-item OBJ KEY)`
 
-**Use-case:** Delete the item at KEY in OBJ. The form evaluates to None. Same
-constant-key optimization as compile/item.
+**Use-case:** Delete the item at KEY in OBJ. The form evaluates to None.
 
-**Behaviour:** Compiles OBJ, then either CONST_ITEM_CLEAR or key fragment +
-ITEM_CLEAR, then CONST None.
+**Behaviour:** Compiles OBJ, then KEY, then emits ITEM_CLEAR, folded and
+shaped as compile/item is (ITEM_CONST_CLEAR, VAR_ITEM_VAR_CLEAR,
+VAR_ITEM_CLEAR, and so on). Then CONST None.
 
 **Examples:**
 

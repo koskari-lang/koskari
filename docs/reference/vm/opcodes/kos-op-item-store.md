@@ -1,15 +1,6 @@
 # KOS_OP_ITEM_STORE
-- **Style**: NOARG. Key and value from stack.
-- **Status**: Implemented.
-- **Stack**: `[..., obj, key, value] → [..., obj]`. Set item.
-- **Invariants**: TOS = value, below = key, below = object.
-
-**Example:** obj[key] = value.
-
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 0     | VAR        | 0   | 0 ('d')  | stack: [..., d] |
-| 1     | CONST      | 1   | 1 ('k')  | stack: [..., d, 'k'] |
-| 2     | CONST      | 2   | 2 (42)   | stack: [..., d, 'k', 42] |
-| 3     | ITEM_STORE | 0   | 0        | d['k'] = 42; stack: [..., d] |
-
+- **Style**: NOARG.
+- **Stack**: `[..., obj, key, value] → [...]`. Set obj[key] = value with the object on the stack, the key on the stack and the value on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see the items section of the VM reference).
+- **Compiler form:** Emitted by **`compile/set-item`**; the compress pipeline folds the run of feeders (bare VAR and CONST loads) ahead of it into the rows that name them.
+- **Implementation**: `koskari/lib/opcode/ITEM_STORE.c`

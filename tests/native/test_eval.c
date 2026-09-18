@@ -1984,14 +1984,16 @@ static int test_eval_frozen_gen_teardown_without_install(void) {
 /* === Elector demotion counts guard misses alone === */
 
 
-/* Run a one-row FAST_ITEM site once: a fresh frame over a namespace
-   whose two fast slots hold obj and key. Returns the eval's result
-   kind; a raise is cleared. */
-static int run_fast_item_site(PyObject *code_obj, PyObject *obj, PyObject *key) {
+/* Run a one-row item site once: a fresh frame over a namespace whose
+   fast slots hold obj, key and, when given, val. Returns the eval's
+   result kind; a raise is cleared. */
+static int run_item_site(
+    PyObject *code_obj, PyObject *obj, PyObject *key, PyObject *val) {
     PyObject *ns = KosNamespace_New(NULL, KosCode_NSPEC(code_obj));
     if (! ns)
         return -1;
-    if (kos_ns_fast_store(ns, 0, obj) < 0 || kos_ns_fast_store(ns, 1, key) < 0) {
+    if (kos_ns_fast_store(ns, 0, obj) < 0 || kos_ns_fast_store(ns, 1, key) < 0
+        || (val && kos_ns_fast_store(ns, 2, val) < 0)) {
         Py_DECREF(ns);
         return -1;
     }
@@ -2017,28 +2019,42 @@ static int run_fast_item_site(PyObject *code_obj, PyObject *obj, PyObject *key) 
 }
 
 
-/* A decline from an elected body (an index past the list's end) runs
-   the generic body once and must not count toward demotion: seven
-   declines and then one guard miss leave the site elected. */
-static int test_elector_declines_do_not_count_toward_demotion(void) {
+/* A one-row site over the fast locals obj, key, val: the row, then
+   RETURN 1 for a load or FAST 0, RETURN 1 for a store. */
+static PyObject *make_item_site(int op, PyObject *row, int store) {
     PyObject *name = PyUnicode_FromString("site");
-    PyObject *locals = Py_BuildValue("(ss)", "obj", "key");
+    PyObject *locals = Py_BuildValue("(sss)", "obj", "key", "val");
     PyObject *closures = PyTuple_New(0);
     PyObject *nspec = KosNamespaceSpec_New(name, locals, closures, NULL);
     Py_DECREF(name);
     Py_DECREF(locals);
     Py_DECREF(closures);
-    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+    if (! nspec)
+        return NULL;
 
-    PyObject *row = Py_BuildValue("(iiii)", 0, 1, 0, 0);
-    PyObject *instr = PyList_New(2);
-    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_FAST_ITEM, row));
-    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
-    Py_DECREF(row);
+    PyObject *instr = PyList_New(store ? 3 : 2);
+    PyList_SET_ITEM(instr, 0, make_instr(op, row));
+    if (store) {
+        PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_FAST, 0));
+        PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
+    } else {
+        PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+    }
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     Py_DECREF(instr);
     Py_DECREF(nspec);
+    return code_obj;
+}
+
+
+/* A decline from an elected body (an index past the list's end) runs
+   the protocol once and must not count toward demotion: seven
+   declines and then one guard miss leave the site elected. */
+static int test_elector_declines_do_not_count_toward_demotion(void) {
+    PyObject *row = Py_BuildValue("(iiii)", 0, 1, 0, 0);
+    PyObject *code_obj = make_item_site(KOS_OP_FAST_ITEM_FAST, row, 0);
+    Py_DECREF(row);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     KosCacheSlot *slot = KosOp_SLOT(&KosCode_CODE(code_obj)[0]);
@@ -2049,25 +2065,81 @@ static int test_elector_declines_do_not_count_toward_demotion(void) {
     PyObject *zero = PyLong_FromLong(0);
     PyObject *far = PyLong_FromLong(5);
 
-    TEST_ASSERT_EQ(run_fast_item_site(code_obj, lst, zero), (int) KOS_RES_RETURN,
+    TEST_ASSERT_EQ(run_item_site(code_obj, lst, zero, NULL), (int) KOS_RES_RETURN,
                    "the first load elects the list body");
-    TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_ELECTOR, "the slot is an elector");
-    TEST_ASSERT_EQ(slot->u.elector.mode, (int) KOS_ELECTOR_ELECTED,
+    TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_ITEM, "the slot is an item slot");
+    TEST_ASSERT_EQ(slot->u.item.mode, (int) KOS_ELECTOR_ELECTED,
                    "the site is elected");
+    TEST_ASSERT_NOT_NULL(slot->u.item.fn.load, "the site holds a body");
 
     for (int i = 0; i < 7; i++) {
-        TEST_ASSERT_EQ(run_fast_item_site(code_obj, lst, far), (int) KOS_RES_RAISE,
+        TEST_ASSERT_EQ(run_item_site(code_obj, lst, far, NULL), (int) KOS_RES_RAISE,
                        "an index past the end declines and raises");
     }
-    TEST_ASSERT_EQ(slot->u.elector.mode, (int) KOS_ELECTOR_ELECTED,
+    TEST_ASSERT_EQ(slot->u.item.mode, (int) KOS_ELECTOR_ELECTED,
                    "declines leave the site elected");
 
-    TEST_ASSERT_EQ(run_fast_item_site(code_obj, d, zero), (int) KOS_RES_RAISE,
+    TEST_ASSERT_EQ(run_item_site(code_obj, d, zero, NULL), (int) KOS_RES_RAISE,
                    "a dict misses the list guard and raises KeyError generically");
-    TEST_ASSERT_EQ(slot->u.elector.mode, (int) KOS_ELECTOR_ELECTED,
+    TEST_ASSERT_EQ(slot->u.item.mode, (int) KOS_ELECTOR_ELECTED,
                    "one guard miss after seven declines does not demote");
 
     Py_DECREF(far);
+    Py_DECREF(zero);
+    Py_DECREF(d);
+    Py_DECREF(lst);
+    Py_DECREF(code_obj);
+    return 0;
+}
+
+
+/* Eight guard misses demote a store site: the body is dropped and the
+   protocol runs, still storing correctly; the tick wrap then empties
+   the slot and the next execution elects again. */
+static int test_item_store_site_demotes_and_re_elects(void) {
+    PyObject *row = Py_BuildValue("(iiii)", 0, 1, 2, 0);
+    PyObject *code_obj = make_item_site(KOS_OP_FAST_ITEM_FAST_STORE_FAST, row, 1);
+    Py_DECREF(row);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    KosCacheSlot *slot = KosOp_SLOT(&KosCode_CODE(code_obj)[0]);
+    TEST_ASSERT_NOT_NULL(slot, "the site has a cache slot");
+
+    PyObject *lst = Py_BuildValue("[ii]", 10, 20);
+    PyObject *d = PyDict_New();
+    PyObject *zero = PyLong_FromLong(0);
+    PyObject *val = PyLong_FromLong(7);
+
+    TEST_ASSERT_EQ(run_item_site(code_obj, lst, zero, val), (int) KOS_RES_RETURN,
+                   "the first store elects the list body");
+    TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_ITEM, "the slot is an item slot");
+    TEST_ASSERT_EQ(PyList_GET_ITEM(lst, 0), val, "the list cell took the value");
+
+    for (int i = 0; i < 8; i++) {
+        TEST_ASSERT_EQ(run_item_site(code_obj, d, zero, val), (int) KOS_RES_RETURN,
+                       "a dict misses the list guard and stores generically");
+    }
+    TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_ITEM, "the slot stays an item slot");
+    TEST_ASSERT_EQ(slot->u.item.mode, (int) KOS_ELECTOR_MEGAMORPHIC,
+                   "eight misses demote the site");
+    TEST_ASSERT_NULL(slot->u.item.fn.store, "a demoted site holds no body");
+    TEST_ASSERT_EQ(PyDict_GetItem(d, zero), val, "the dict took the value");
+
+    /* the eight misses each ran the protocol once and ticked; the
+       wrap at 256 empties the slot */
+    for (int i = 0; i < 256 - 8; i++) {
+        TEST_ASSERT_EQ(run_item_site(code_obj, d, zero, val), (int) KOS_RES_RETURN,
+                       "a demoted site stores through the protocol");
+    }
+    TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_EMPTY,
+                   "the tick wrap empties the slot");
+    TEST_ASSERT_EQ(run_item_site(code_obj, d, zero, val), (int) KOS_RES_RETURN,
+                   "the next execution elects again");
+    TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_ITEM, "the slot is an item slot");
+    TEST_ASSERT_EQ(slot->u.item.mode, (int) KOS_ELECTOR_ELECTED,
+                   "the dict body is elected");
+
+    Py_DECREF(val);
     Py_DECREF(zero);
     Py_DECREF(d);
     Py_DECREF(lst);
@@ -2117,6 +2189,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_opcode_error_caught_by_try);
     RUN_TEST(test_eval_frozen_gen_teardown_without_install);
     RUN_TEST(test_elector_declines_do_not_count_toward_demotion);
+    RUN_TEST(test_item_store_site_demotes_and_re_elects);
 
     return 0;
 }

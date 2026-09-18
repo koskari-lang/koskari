@@ -41,6 +41,8 @@ __all__ = (
     "USING",
     "USING_UNPACK",
     "const_only_expr",
+    "emit_item_access",
+    "feeder_expr",
     "convert_bindings",
     "discover_docstring",
     "gather_bindings",
@@ -607,49 +609,55 @@ def var_only_expr(fragment):
     return (found, name)
 
 
-def emit_item_key(compiler, frag, key, const_op, stack_op, before=None):
+def feeder_expr(fragment):
     """
-    Emit an item access whose object is already on the fragment: a key
-    that compiles to a single constant takes const_op with the constant
-    as its operand, any other key is compiled onto the stack and takes
-    stack_op. before, when given, is called between the key and the
-    row so a store can compile its value in the right place
+    Classify a compiled fragment as a feeder the compress pipeline
+    folds: ('const', value) for a single CONST, ('var', name) for a
+    single VAR, (None, None) for anything else
+    """
+
+    is_const, value = const_only_expr(fragment)
+    if is_const:
+        return ('const', value)
+    is_var, name = var_only_expr(fragment)
+    if is_var:
+        return ('var', name)
+    return (None, None)
+
+
+def emit_item_access(compiler, called_by, obj, key, stack_op, named_op):
+    """
+    Emit an item access with no value, for compile/item and the CLEAR,
+    TAKE, and REF specials: the object, the key, and stack_op, which
+    the compress pipeline folds when the key and object are feeders.
+    When the object is a symbol and the key is not a feeder the key
+    compiles to the stack and named_op names the object, since no
+    fold reaches an object load behind a computed key
 
     :param compiler: the Compiler
-    :param frag: fragment holding the object
-    :param key: key source form
-    :param const_op: opcode taking the key as a constant operand
-    :param stack_op: opcode taking the key from the stack
-    :param before: optional callable run before the row is emitted
+    :param called_by: the special's called-by match
+    :param obj: the object match
+    :param key: the key match
+    :param stack_op: the verb's row over a stack object and key
+    :param named_op: the verb's row over a named object and stack key
+    :return: the fragment
     """
 
-    emit_item_keyfrag(
-        frag, compiler.full_compile(key), const_op, stack_op, before)
+    frag = compiler.fragment(called_by.datum)
+    frag.position(obj.position)
+    keyfrag = compiler.full_compile(key.datum)
+    key_kind, _ = feeder_expr(keyfrag)
 
-
-def emit_item_keyfrag(frag, keyfrag, const_op, stack_op, before=None):
-    """
-    emit_item_key over a key already compiled, for a caller that
-    classified the key fragment first and took another path on the
-    shapes it handles itself
-
-    :param frag: fragment holding the object
-    :param keyfrag: the compiled key
-    :param const_op: opcode taking the key as a constant operand
-    :param stack_op: opcode taking the key from the stack
-    :param before: optional callable run before the row is emitted
-    """
-
-    is_const, key_val = const_only_expr(keyfrag)
-
-    if not is_const:
+    if is_symbol(obj.datum) and key_kind is None:
+        name = str(obj.datum)
         frag.merge(keyfrag)
-    if before is not None:
-        before()
-    if is_const:
-        frag.instruction(const_op, key_val)
+        frag.request_var(name)
+        frag.instruction(named_op, name)
     else:
+        frag.merge(compiler.full_compile(obj.datum))
+        frag.merge(keyfrag)
         frag.instruction(stack_op, 0)
+    return frag
 
 
 def call_form_reroute(called_by, body):

@@ -346,7 +346,7 @@ class TestAgenDeallocWhenFrozen(CevalTest):
             ["LABEL", "fin"],
             ["VAR", "ran"],
             ["CONST", True],
-            ["CONST_ITEM_STORE", "done"],
+            ["ITEM_CONST_STORE", "done"],
             ["EXCEPTION", 0],
             ["POP_FINALLY", 0],
             ["RAISE", 1],

@@ -13,30 +13,29 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-
 /**
-  ITEM_REF: arg unused. Push item reference for subscription.
-  Stack: obj, key (TOS).
+   ITEM_REF: no arg. Stack [obj, key]. Object from the stack, key
+   from the stack. Push a reference cell over obj[key]. The access
+   runs through kos_item_ref (eval/eval_item.c).
 */
+
 KOS_OP_HANDLER(ITEM_REF) {
-  PyObject *key = KosEvalState_StackPopRef(es);
-  if (unlikely(! key))
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail;
+  PyObject *obj;
+  PyObject *key;
+  PyObject *out;
+
+  tail = kos_stack_tail_ptr_fast(*bl, 2);
+  if (unlikely(! tail))
     RESULT_RAISE();
-
-  PyObject *obj = KosEvalState_StackPopRef(es);
-  if (unlikely(! obj)) {
-    Py_DECREF(key);
+  obj = tail[0];
+  key = tail[1];
+  out = kos_item_ref(obj, key);
+  if (unlikely(! out))
     RESULT_RAISE();
-  }
-
-  PyObject *ref = KosItemRef_New(NULL, obj, key);
-  Py_DECREF(obj);
-  Py_DECREF(key);
-
-  if (unlikely(! ref))
-    RESULT_RAISE();
-
-  RESULT_STEAL(es, ref);
+  kos_stack_replace2_fast(bl, out);
+  RESULT_NEXT(es);
 }
 
 

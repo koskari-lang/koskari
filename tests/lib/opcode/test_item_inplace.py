@@ -13,7 +13,7 @@
 
 
 """
-Tests for the in-place item rows: ITEM_INPLACE and CONST_ITEM_INPLACE
+Tests for the in-place item rows: ITEM_INPLACE and ITEM_CONST_INPLACE
 with the object on the stack, the VAR rows resolving the object (and
 key) by name, and the FAST rows reading them from fast slots. Each
 reduces obj[key] in place over its values through the object protocol
@@ -106,7 +106,7 @@ class TestStackItemInplace(CevalTest):
             ["CONST", "below"],
             ["CONST", d],
             ["CONST", 2],
-            ["CONST_ITEM_INPLACE", (opcount(SUB, 1), "k", 0, 0)],
+            ["ITEM_CONST_INPLACE", (opcount(SUB, 1), "k", 0, 0)],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), "below")
@@ -115,7 +115,7 @@ class TestStackItemInplace(CevalTest):
             code, ns = build_expr([
                 ["CONST", {}],
                 ["CONST", 2],
-                ["CONST_ITEM_INPLACE", (opcount(SUB, 1), "k", 0, 0)],
+                ["ITEM_CONST_INPLACE", (opcount(SUB, 1), "k", 0, 0)],
                 ["CONST", None],
                 ["RETURN", 1],
             ])
@@ -130,7 +130,7 @@ class TestVarItemInplace(CevalTest):
             ["CONST", "below"],
             ["CONST", 10],
             ["CONST", 100],
-            ["VAR_ITEM_INPLACE", (opcount(ADD, 2), "obj", "key", 0)],
+            ["VAR_ITEM_VAR_INPLACE", (opcount(ADD, 2), "obj", "key", 0)],
             ["RETURN", 1],
         ], values={"obj": lst, "key": 2})
         self.assertEqual(await make_callable(code, ns)(), "below")
@@ -141,7 +141,7 @@ class TestVarItemInplace(CevalTest):
         d = {"k": 5}
         code, ns = build_expr([
             ["CONST", 2],
-            ["VAR_CONST_ITEM_INPLACE", (opcount(SUB, 1), "obj", "k", 0)],
+            ["VAR_ITEM_CONST_INPLACE", (opcount(SUB, 1), "obj", "k", 0)],
             ["CONST", None],
             ["RETURN", 1],
         ], values={"obj": d})
@@ -153,7 +153,7 @@ class TestVarItemInplace(CevalTest):
         lst = [1, 2, 3]
         code, ns = build_expr([
             ["CONST", "below"],
-            ["VAR_ITEM_INPLACE_CONST", (int(ADD), "obj", "key", 10)],
+            ["VAR_ITEM_VAR_INPLACE_CONST", (int(ADD), "obj", "key", 10)],
             ["RETURN", 1],
         ], values={"obj": lst, "key": 0})
         self.assertEqual(await make_callable(code, ns)(), "below")
@@ -163,7 +163,7 @@ class TestVarItemInplace(CevalTest):
     async def test_var_const_item_inplace_const(self):
         d = {"k": 5}
         code, ns = build_expr([
-            ["VAR_CONST_ITEM_INPLACE_CONST", (int(SUB), "obj", "k", 2)],
+            ["VAR_ITEM_CONST_INPLACE_CONST", (int(SUB), "obj", "k", 2)],
             ["CONST", None],
             ["RETURN", 1],
         ], values={"obj": d})
@@ -174,14 +174,14 @@ class TestVarItemInplace(CevalTest):
     async def test_var_rows_unbound_and_protocol_errors(self):
         code, ns = build_expr([
             ["CONST", 1],
-            ["VAR_ITEM_INPLACE", (opcount(ADD, 1), "missing", "key", 0)],
+            ["VAR_ITEM_VAR_INPLACE", (opcount(ADD, 1), "missing", "key", 0)],
             ["CONST", None],
             ["RETURN", 1],
         ], values={"key": 0})
         with self.assertRaises(NameError):
             await make_callable(code, ns)()
         code, ns = build_expr([
-            ["VAR_CONST_ITEM_INPLACE_CONST", (int(ADD), "obj", 4, 1)],
+            ["VAR_ITEM_CONST_INPLACE_CONST", (int(ADD), "obj", 4, 1)],
             ["CONST", None],
             ["RETURN", 1],
         ], values={"obj": [0]})
@@ -195,7 +195,7 @@ class TestFastItemInplace(CevalTest):
         fn = fast_fn([
             ["CONST", "below"],
             ["FAST", 2],
-            ["FAST_ITEM_INPLACE", (opcount(ADD, 1), 0, 1, 0)],
+            ["FAST_ITEM_FAST_INPLACE", (opcount(ADD, 1), 0, 1, 0)],
             ["RETURN", 1],
         ], ("obj", "key", "v"))
         lst = [1, 2, 3]
@@ -219,7 +219,7 @@ class TestFastItemInplace(CevalTest):
         fn = fast_fn([
             ["FAST", 2],
             ["FAST", 3],
-            ["FAST_ITEM_INPLACE", (opcount(ADD, 2), 0, 1, 0)],
+            ["FAST_ITEM_FAST_INPLACE", (opcount(ADD, 2), 0, 1, 0)],
             ["FAST", 0],
             ["RETURN", 1],
         ], ("obj", "key", "a", "b"))
@@ -229,7 +229,7 @@ class TestFastItemInplace(CevalTest):
     async def test_fast_const_item_inplace(self):
         fn = fast_fn([
             ["FAST", 1],
-            ["FAST_CONST_ITEM_INPLACE", (opcount(SUB, 1), 0, 1, 0)],
+            ["FAST_ITEM_CONST_INPLACE", (opcount(SUB, 1), 0, 1, 0)],
             ["FAST", 0],
             ["RETURN", 1],
         ], ("obj", "v"))
@@ -240,7 +240,7 @@ class TestFastItemInplace(CevalTest):
     async def test_fast_item_inplace_const(self):
         fn = fast_fn([
             ["CONST", "below"],
-            ["FAST_ITEM_INPLACE_CONST", (int(ADD), 0, 1, 10)],
+            ["FAST_ITEM_FAST_INPLACE_CONST", (int(ADD), 0, 1, 10)],
             ["RETURN", 1],
         ], ("obj", "key"))
         lst = [1, 2]
@@ -253,7 +253,7 @@ class TestFastItemInplace(CevalTest):
 
     async def test_fast_const_item_inplace_const(self):
         fn = fast_fn([
-            ["FAST_CONST_ITEM_INPLACE_CONST", (int(SUB), 0, "k", 2)],
+            ["FAST_ITEM_CONST_INPLACE_CONST", (int(SUB), 0, "k", 2)],
             ["FAST", 0],
             ["RETURN", 1],
         ], ("obj",))
@@ -265,7 +265,7 @@ class TestFastItemInplace(CevalTest):
     async def test_fast_rows_unbound_slot_raises(self):
         fn = fast_fn([
             ["FAST_CLEAR", 1],
-            ["FAST_ITEM_INPLACE_CONST", (int(ADD), 0, 1, 1)],
+            ["FAST_ITEM_FAST_INPLACE_CONST", (int(ADD), 0, 1, 1)],
             ["CONST", None],
             ["RETURN", 1],
         ], ("obj", "key"))

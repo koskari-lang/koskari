@@ -27,7 +27,7 @@ from ...lib import OpCode
 from ...matcher import CALLEDBY, DEFINE, MATCH, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_pair
-from ..helpers import emit_item_key
+from ..helpers import emit_item_access
 
 
 _ONE_PATTERNS = [
@@ -85,13 +85,8 @@ def special_ref_item(compiler, called_by, obj, key):
     Compile (compile/ref-item OBJ KEY). Produce a mutable reference to item at KEY in OBJ
     """
 
-    frag = compiler.fragment(called_by.datum)
-    frag.position(obj.position)
-    frag.merge(compiler.full_compile(obj.datum))
-    emit_item_key(
-        compiler, frag, key.datum, OpCode.CONST_ITEM_REF, OpCode.ITEM_REF)
-
-    return frag
+    return emit_item_access(
+        compiler, called_by, obj, key, OpCode.ITEM_REF, OpCode.VAR_ITEM_REF)
 
 
 @builtin("compile/refq")

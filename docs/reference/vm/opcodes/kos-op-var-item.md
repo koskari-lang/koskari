@@ -1,4 +1,6 @@
 # KOS_OP_VAR_ITEM
-- **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
-- **Stack**: `[...] → [..., value]`. Get obj[key] with the object and the key both resolved by name in the frame namespace. Equivalent to ITEM with nothing on the stack. May lower to **FAST_ITEM**.
+- **Style**: VAR (the object's name).
+- **Stack**: `[..., key] → [..., value]`. Get obj[key] with the object resolved by name and the key on the stack.
+- **Cache**: none; a VAR row survives lowering only for a name with no fast slot.
+- **Compiler form:** Shaped by **`compile/item`** when OBJ is a symbol and KEY is not a feeder, since no fold reaches an object load behind a computed key. May lower to **FAST_ITEM**.
 - **Implementation**: `koskari/lib/opcode/VAR_ITEM.c`

@@ -1,6 +1,6 @@
 # Item opcode matrix: naming, shared helpers, and the full grid
 
-**Status:** Draft, 2026-09-18. Nothing implemented.
+**Status:** Implemented 2026-09-18 on the fast-item-store-opcodes branch: the 92 rows, `eval/eval_item.c`, the fold rules, the specials, the ABI bump to 0.19, the tests, and the references. The container runs (native, ASan, valgrind) are the remaining gates.
 
 **Ref:** [electors.md](electors.md) for the cache-style elector home the
 item families use today; [../OPCODES.md](../OPCODES.md) sections 12, 13

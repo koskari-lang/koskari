@@ -13,9 +13,9 @@
 
 
 """
-Tests for the in-place item electors: FAST_ITEM_INPLACE,
-FAST_CONST_ITEM_INPLACE, FAST_ITEM_INPLACE_CONST and
-FAST_CONST_ITEM_INPLACE_CONST sites elect their operator's int or
+Tests for the in-place item electors: FAST_ITEM_FAST_INPLACE,
+FAST_ITEM_CONST_INPLACE, FAST_ITEM_FAST_INPLACE_CONST and
+FAST_ITEM_CONST_INPLACE_CONST sites elect their operator's int or
 float body for the item and operand they first see, find the cell by
 an exact list or dict check inside the body, decline to the generic
 body for an index outside the list, a key the dict lacks, or an
@@ -73,14 +73,14 @@ def make_site(instr, syms, cache=True):
 
 def stack_site(opname, cache=True, count=1):
     """
-    (obj, key, v...) applying obj[key] OP= v... through FAST_ITEM_INPLACE,
+    (obj, key, v...) applying obj[key] OP= v... through FAST_ITEM_FAST_INPLACE,
     returning obj
     """
 
     syms = ('obj', 'key') + tuple(f'v{i}' for i in range(count))
     instr = [['FAST', i + 2] for i in range(count)]
     instr += [
-        ['FAST_ITEM_INPLACE', (opcount(Operand[opname], count), 0, 1, 0)],
+        ['FAST_ITEM_FAST_INPLACE', (opcount(Operand[opname], count), 0, 1, 0)],
         ['FAST', 0],
         ['RETURN', 1],
     ]
@@ -103,14 +103,14 @@ def object_stack_site(opname, cache=True, count=1):
 
 def object_stack_const_key_site(opname, key, cache=True, count=1):
     """
-    (obj, v...) applying obj[key] OP= v... through CONST_ITEM_INPLACE,
+    (obj, v...) applying obj[key] OP= v... through ITEM_CONST_INPLACE,
     the object on the stack below the values and the key a constant
     """
 
     syms = ('obj',) + tuple(f'v{i}' for i in range(count))
     loads = [['FAST', i] for i in range(1 + count)]
     return make_site(
-        loads + [['CONST_ITEM_INPLACE', (opcount(Operand[opname], count), key, 0, 0)],
+        loads + [['ITEM_CONST_INPLACE', (opcount(Operand[opname], count), key, 0, 0)],
                  ['CONST', None], ['RETURN', 1]],
         syms, cache=cache)
 
@@ -118,7 +118,7 @@ def object_stack_const_key_site(opname, key, cache=True, count=1):
 def const_key_stack_site(opname, key, cache=True):
     instr = [
         ['FAST', 1],
-        ['FAST_CONST_ITEM_INPLACE', (opcount(Operand[opname], 1), 0, key, 0)],
+        ['FAST_ITEM_CONST_INPLACE', (opcount(Operand[opname], 1), 0, key, 0)],
         ['FAST', 0],
         ['RETURN', 1],
     ]
@@ -127,7 +127,7 @@ def const_key_stack_site(opname, key, cache=True):
 
 def const_rhs_site(opname, rhs, cache=True):
     instr = [
-        ['FAST_ITEM_INPLACE_CONST', (int(Operand[opname]), 0, 1, rhs)],
+        ['FAST_ITEM_FAST_INPLACE_CONST', (int(Operand[opname]), 0, 1, rhs)],
         ['FAST', 0],
         ['RETURN', 1],
     ]
@@ -136,7 +136,7 @@ def const_rhs_site(opname, rhs, cache=True):
 
 def const_both_site(opname, key, rhs, cache=True):
     instr = [
-        ['FAST_CONST_ITEM_INPLACE_CONST', (int(Operand[opname]), 0, key, rhs)],
+        ['FAST_ITEM_CONST_INPLACE_CONST', (int(Operand[opname]), 0, key, rhs)],
         ['FAST', 0],
         ['RETURN', 1],
     ]
@@ -170,10 +170,10 @@ class TestCacheSlots(CevalTest):
 
     def test_var_rows_request_no_slot(self):
         for instr in (
-                [['VAR_ITEM_INPLACE', (opcount(Operand.ADD, 1), 'a', 'k', 0)]],
-                [['VAR_CONST_ITEM_INPLACE', (opcount(Operand.ADD, 1), 'a', 0, 0)]],
-                [['VAR_ITEM_INPLACE_CONST', (int(Operand.ADD), 'a', 'k', 1)]],
-                [['VAR_CONST_ITEM_INPLACE_CONST', (int(Operand.ADD), 'a', 0, 1)]]):
+                [['VAR_ITEM_VAR_INPLACE', (opcount(Operand.ADD, 1), 'a', 'k', 0)]],
+                [['VAR_ITEM_CONST_INPLACE', (opcount(Operand.ADD, 1), 'a', 0, 0)]],
+                [['VAR_ITEM_VAR_INPLACE_CONST', (int(Operand.ADD), 'a', 'k', 1)]],
+                [['VAR_ITEM_CONST_INPLACE_CONST', (int(Operand.ADD), 'a', 0, 1)]]):
             code = build_code(instr + [['RETURN', 1]])
             self.assertEqual(code.cache_slots, 0, instr)
 

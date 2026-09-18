@@ -1505,13 +1505,21 @@ operators (`PyNumber_InPlaceAdd`, etc.).
 assignment on a subscript (`d[k] += 1`). Normally reached via
 `(inplace OP (item OBJ KEY) VALUE)` (see [MACROS.md](MACROS.md)).
 
-**Behaviour:** Compiles OBJ once. Loads the current item (CONST_ITEM when KEY is
-constant, otherwise ITEM after KEY is evaluated). Uses **DUP** so OBJ (and KEY,
-when not constant) is not re-evaluated for the store. Compiles the VALUEs,
-applies the corresponding **OBJECT_INPLACE_*** opcode (the `PyNumber_InPlace*`
-API, so mutable values are updated in place; multiple values (except for `**`, which takes exactly one) reduce
-left-to-right through the single instruction), then stores via CONST_ITEM_STORE
-or ITEM_STORE. Evaluates to None.
+**Behaviour:** One fused row reads the current item, applies the
+operator (the `PyNumber_InPlace*` API, so mutable values such as lists and
+sets are updated in place) to it and the VALUEs, and stores the result
+back; multiple values (except for `**`, which takes exactly one) reduce
+left-to-right through that row. When KEY and every VALUE are feeders (a
+constant or a symbol) the special emits OBJ, KEY, the VALUEs, and
+ITEM_INPLACE, and the compress pipeline folds a symbol OBJ and the KEY
+into the row that names them, re-emitting the values ahead of it; a
+single constant VALUE folds into the `_CONST` twin. Otherwise the
+special names what a fold could not reach: a symbol OBJ under a
+computed KEY emits VAR_ITEM_INPLACE with the key and values on the
+stack, and a computed VALUE behind a symbol OBJ or a feeder KEY emits
+VAR_ITEM_VAR_INPLACE, VAR_ITEM_CONST_INPLACE, ITEM_VAR_INPLACE, or
+ITEM_CONST_INPLACE with the values on the stack. A named object or key
+is fetched when the row runs, after the VALUEs. Evaluates to None.
 
 **Supported operators:** Same set as `compile/inplace`.
 
@@ -2085,13 +2093,16 @@ SYM on OBJ. The reference can be deref'd or stored into.
 
 **Syntax:** `(item OBJ KEY)`
 
-**Use-case:** Load the item at key KEY from OBJ (subscript/getitem). If KEY
-compiles to a single constant, uses CONST_ITEM; otherwise compiles KEY and
-emits ITEM.
+**Use-case:** Load the item at key KEY from OBJ (subscript/getitem).
 
-**Behaviour:** Compiles OBJ. If the key expression is constant-only (per
-`const_only_expr`), emits CONST_ITEM with that constant; otherwise merges the
-key fragment and emits ITEM 0.
+**Behaviour:** Compiles OBJ, then KEY, then emits ITEM, and the compress
+pipeline folds a symbol OBJ and a constant or symbol KEY into the row
+that names them (ITEM_CONST, ITEM_VAR, VAR_ITEM_CONST, VAR_ITEM_VAR, and
+their FAST twins in a function body). When OBJ is a symbol and KEY is
+neither a constant nor a symbol, the key compiles to the stack and the
+special emits VAR_ITEM, which names the object, since no fold reaches
+an object load behind a computed key. A named object or key is fetched
+when the row runs.
 
 **Examples:**
 
@@ -2106,10 +2117,10 @@ key fragment and emits ITEM 0.
 
 **Syntax:** `(ref-item OBJ KEY)`
 
-**Use-case:** Yield a mutable reference (ItemRef) to the item at KEY in OBJ. Same
-constant-key optimization as compile/item.
+**Use-case:** Yield a mutable reference (ItemRef) to the item at KEY in OBJ.
 
-**Behaviour:** Like compile/item but emits CONST_ITEM_REF or ITEM_REF.
+**Behaviour:** Like compile/item but emits ITEM_REF, folded and shaped
+the same way (ITEM_CONST_REF, VAR_ITEM_VAR_REF, VAR_ITEM_REF, and so on).
 
 **Examples:**
 
@@ -2145,11 +2156,11 @@ The runtime `deref` builtin remains available for higher-order use (e.g.
 
 **Syntax:** `(del-item OBJ KEY)`
 
-**Use-case:** Delete the item at KEY in OBJ. The form evaluates to None. Same
-constant-key optimization as compile/item.
+**Use-case:** Delete the item at KEY in OBJ. The form evaluates to None.
 
-**Behaviour:** Compiles OBJ, then either CONST_ITEM_CLEAR or key fragment +
-ITEM_CLEAR, then CONST None.
+**Behaviour:** Compiles OBJ, then KEY, then emits ITEM_CLEAR, folded and
+shaped as compile/item is (ITEM_CONST_CLEAR, VAR_ITEM_VAR_CLEAR,
+VAR_ITEM_CLEAR, and so on). Then CONST None.
 
 **Examples:**
 
@@ -2164,10 +2175,10 @@ ITEM_CLEAR, then CONST None.
 **Syntax:** `(take-item OBJ KEY)`
 
 **Use-case:** Get the item at KEY in OBJ, delete it, and return the value.
-Same constant-key optimization as compile/item.
 
-**Behaviour:** Compiles OBJ; if key is constant-only, emits CONST_ITEM_TAKE;
-otherwise merges key fragment and emits ITEM_TAKE.
+**Behaviour:** Compiles OBJ, then KEY, then emits ITEM_TAKE, folded and
+shaped as compile/item is (ITEM_CONST_TAKE, VAR_ITEM_VAR_TAKE,
+VAR_ITEM_TAKE, and so on).
 
 **Examples:**
 
@@ -2182,11 +2193,18 @@ otherwise merges key fragment and emits ITEM_TAKE.
 **Syntax:** `(set-item OBJ KEY VAL)`
 
 **Use-case:** Set the item at KEY in OBJ to VAL. The form evaluates to None.
-Same constant-key optimization as compile/item.
 
-**Behaviour:** Compiles OBJ; if key is constant, compiles VAL and emits
-CONST_ITEM_STORE; otherwise merges key fragment, compiles VAL, emits
-ITEM_STORE 0. Then CONST None.
+**Behaviour:** When KEY and VAL are both feeders (a constant or a
+symbol), compiles OBJ, KEY, VAL and emits ITEM_STORE; the compress
+pipeline folds the feeders ahead of the row, the value, then the key,
+then a symbol OBJ, into the row that names them. Otherwise the special
+names what a fold could not reach: a symbol OBJ under a computed KEY
+compiles the key and VAL to the stack and emits VAR_ITEM_STORE; a
+computed VAL behind a symbol OBJ or a feeder KEY compiles a compound
+OBJ and VAL to the stack and emits VAR_ITEM_VAR_STORE,
+VAR_ITEM_CONST_STORE, ITEM_VAR_STORE, or ITEM_CONST_STORE. A named
+object or key is fetched when the row runs, after every stack operand.
+Then CONST None.
 
 **Examples:**
 

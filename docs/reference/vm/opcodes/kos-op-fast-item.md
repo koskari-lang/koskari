@@ -1,5 +1,6 @@
 # KOS_OP_FAST_ITEM
-- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
-- **Stack**: `[...] → [..., value]`. Get obj[key] with the object and the key both read from fast slots. Equivalent to ITEM with nothing on the stack.
-- **Cache**: one KOS_CACHE_ELECTOR slot; the site elects a body for the container kind it first sees (exact list or tuple under an exact int key, exact dict under any key) and otherwise runs the object protocol.
+- **Style**: FASTVAR (the object's slot).
+- **Stack**: `[..., key] → [..., value]`. Get obj[key] with the object read from a fast slot and the key on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see the items section of the VM reference).
+- **Compiler form:** The lowering of **VAR_ITEM**: every named operand has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ITEM.c`

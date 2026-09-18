@@ -1,5 +1,6 @@
 # KOS_OP_FAST_ITEM_INPLACE
-- **Style**: EXTRA (OPCOUNT, FASTVAR, FASTVAR, NOARG).
-- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the object and key read from fast slots.
-- **Cache**: one KOS_CACHE_ELECTOR slot; the site elects its operator's int or float body for the item and operand it first sees, finds the cell by an exact list or dict check inside the body, and otherwise runs the object protocol.
+- **Style**: EXTRA (OPCOUNT, FASTVAR, NOARG, NOARG).
+- **Stack**: `[..., key, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with the count values left to right and store it back with the object read from a fast slot and the key on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see the items section of the VM reference).
+- **Compiler form:** The lowering of **VAR_ITEM_INPLACE**: every named operand has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ITEM_INPLACE.c`

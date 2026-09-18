@@ -14,38 +14,39 @@
 */
 
 /**
-   VAR_ITEM_INPLACE: arg = extra index. Schema OPCOUNT (operator selector
-   and count), VAR (obj name), VAR (key name). Stack [v0 .. v_{count-1}];
-   obj[key] OP= each value left to right with both operands resolved by
-   name in the frame namespace after the values were pushed; the values
-   are dropped, nothing is pushed. The cold twin of FAST_ITEM_INPLACE.
+   VAR_ITEM_INPLACE: arg = extra index. Schema OPCOUNT, VAR, NOARG,
+   NOARG. Stack [key, v0 .. v(count-1)]. Object from the frame
+   namespace by name, key from the stack, operand from the stack.
+   obj[key] = obj[key] OP operands, reduced left to right; push
+   nothing. The access runs through kos_item_inplace
+   (eval/eval_item.c) with no slot; the cold twin of the FAST row.
 */
 
 KOS_OP_HANDLER(VAR_ITEM_INPLACE) {
   const KosExtra *row = KosOp_ROW(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
-  int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail;
+  uint32_t opc = KosExtra_IMM(row, 0);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(opc);
+  int count = (int) KosOpCount_COUNT(opc);
+  PyObject *obj;
+  PyObject *key;
+  int rc;
 
-  PyObject *const *args = KosEvalState_StackTailPtr(es, (size_t) count);
-  if (count && ! args)
+  obj = frame_ns_deref(es, KosExtra_OBJ(row, 1));
+  if (unlikely(! obj))
     RESULT_RAISE();
-
-  PyObject *obj = frame_ns_deref(es, KosExtra_OBJ(row, 1));
-  if (! obj)
-    RESULT_RAISE();
-
-  PyObject *key = frame_ns_deref(es, KosExtra_OBJ(row, 2));
-  if (! key) {
+  tail = kos_stack_tail_ptr_fast(*bl, (size_t) count + 1);
+  if (unlikely(! tail)) {
     Py_DECREF(obj);
     RESULT_RAISE();
   }
-
-  int res = kos_item_inplace_reduce(obj, key, op, args, count);
-  KosEvalState_StackDropNoErr(es, (size_t) count);
+  key = tail[0];
+  rc = kos_item_inplace(KosOp_SLOT(insn), obj, key, op, tail + 1, count);
   Py_DECREF(obj);
-  Py_DECREF(key);
-  if (unlikely(res < 0))
+  if (unlikely(rc < 0))
     RESULT_RAISE();
+  kos_stack_drop_noerr_fast(bl, (size_t) count + 1);
   RESULT_NEXT(es);
 }
 

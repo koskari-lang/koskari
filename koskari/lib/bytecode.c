@@ -3040,6 +3040,7 @@ static void cache_slot_release(KosCacheSlot *slot) {
     Py_CLEAR(slot->u.matcher.slotmap);
     break;
   case KOS_CACHE_ELECTOR:
+  case KOS_CACHE_ITEM:
     /* ref-free: a static function and two counters. */
     break;
   }
@@ -3057,6 +3058,7 @@ static int cache_slot_visit(KosCacheSlot *slot, visitproc visit, void *arg) {
   case KOS_CACHE_EMPTY:
   case KOS_CACHE_FIELD:
   case KOS_CACHE_ELECTOR:
+  case KOS_CACHE_ITEM:
     break;
   case KOS_CACHE_METHOD:
     Py_VISIT(slot->u.method.type);

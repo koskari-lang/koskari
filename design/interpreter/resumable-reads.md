@@ -46,7 +46,7 @@ A change that moves either is stopped and redesigned.
 ### 1. Row bodies over owned operands
 
 Every row that derefs slots and then does work -- the `FAST_ATTR`,
-`FAST_ITEM`, `CALL_FAST` (and its NAMES, STAR, ATTR forms), FORMAT,
+`FAST_ITEM_FAST`, `CALL_FAST` (and its NAMES, STAR, ATTR forms), FORMAT,
 ITER, NEXT, COMPARE, SWITCH, LIST_APPEND and INPLACE families, and
 their VAR twins -- splits into the deref prologue it has now and a
 `static inline <op>_apply(es, insn, a, b, ...)` taking the derefed

@@ -4,16 +4,22 @@
 **Syntax:** `(set-item OBJ KEY VAL)`
 
 **Use-case:** Set the item at KEY in OBJ to VAL. The form evaluates to None.
-Same constant-key optimization as compile/item.
 
-**Behaviour:** When OBJ is a symbol and KEY is a constant or a symbol,
-compiles VAL first and emits one VAR_CONST_ITEM_STORE or VAR_ITEM_STORE
-row that resolves OBJ (and KEY) by name when it runs, so a VAL that
-rebinds OBJ stores into the new binding and an unbound OBJ raises after
-VAL has run. A constant VAL folds into the row as VAR_ITEM_STORE_CONST or
-VAR_CONST_ITEM_STORE_CONST, leaving the stack untouched. Otherwise compiles OBJ; if KEY is constant, compiles VAL and
-emits CONST_ITEM_STORE; else merges the key fragment, compiles VAL, emits
-ITEM_STORE 0. Then CONST None.
+**Behaviour:** When KEY and VAL are both feeders (a constant or a
+symbol), compiles OBJ, KEY, VAL and emits ITEM_STORE; the compress
+pipeline folds the feeders ahead of the row, the value, then the key,
+then a symbol OBJ, into the row that names them, so `(set-item d "k"
+1)` is one VAR_ITEM_CONST_STORE_CONST row with no stack effect and
+`(set-item o.a k v)` is the attribute load then ITEM_VAR_STORE_VAR.
+Otherwise the special names what a fold could not reach: a symbol OBJ
+under a computed KEY compiles the key and VAL to the stack and emits
+VAR_ITEM_STORE; a computed VAL behind a symbol OBJ or a feeder KEY
+compiles a compound OBJ and VAL to the stack and emits
+VAR_ITEM_VAR_STORE, VAR_ITEM_CONST_STORE, ITEM_VAR_STORE, or
+ITEM_CONST_STORE. A named object or key is fetched when the row runs,
+after every stack operand, so a VAL that rebinds OBJ stores into the
+new binding and an unbound OBJ raises after VAL has run. In a function
+body the VAR rows lower to their FAST twins. Then CONST None.
 
 **Examples:**
 

@@ -443,6 +443,7 @@ typedef enum KosCacheKind {
   KOS_CACHE_FIELD,       /* attribute-storage location (load/store/delete) */
   KOS_CACHE_MATCHER,     /* thawed Matcher for a MATCH_CASE arm */
   KOS_CACHE_ELECTOR,     /* handler elected for the site */
+  KOS_CACHE_ITEM,        /* item body elected for the site */
 } KosCacheKind;
 
 
@@ -485,6 +486,25 @@ typedef enum KosElectorMode {
   KOS_ELECTOR_ELECTED = 0,
   KOS_ELECTOR_MEGAMORPHIC,
 } KosElectorMode;
+
+
+/**
+   The bodies of the KOS_CACHE_ITEM layout: one container kind's load,
+   store, or in-place reduce over borrowed obj and key. A body answers
+   a KosItemCode (eval/eval_item.c): hit, a guard miss, a decline to
+   the object protocol, or an error. The store body consumes val
+   unless it misses or declines. See
+   design/interpreter/item-opcode-matrix.md.
+*/
+typedef int (*KosItemLoadBody)(PyObject *obj, PyObject *key, PyObject **out);
+typedef int (*KosItemStoreBody)(PyObject *obj, PyObject *key, PyObject *val);
+typedef int (*KosItemInplaceBody)(PyObject *obj, PyObject *key, PyObject *rhs);
+
+typedef union KosItemBody {
+  KosItemLoadBody load;
+  KosItemStoreBody store;
+  KosItemInplaceBody inplace;
+} KosItemBody;
 
 
 /**
@@ -572,6 +592,19 @@ struct KosCacheSlot {
       uint8_t ticks;           /* generic-body executions; the wrap empties
                                   the slot for a re-election */
     } elector;
+
+    /* KOS_CACHE_ITEM: the item body elected for the site, by the verb
+       the site's opcode names. A NULL body is a demoted site, or one
+       whose classification found no body: the object protocol runs
+       and ``ticks`` counts toward the re-election. There are NO owned
+       references; the teardown arm is a no-op. */
+    struct {
+      KosItemBody fn;          /* elected body; NULL once demoted */
+      uint8_t misses;          /* guard misses since the election */
+      uint8_t mode;            /* KosElectorMode */
+      uint8_t ticks;           /* protocol executions; the wrap empties
+                                  the slot for a re-election */
+    } item;
   } u;
 };
 

@@ -141,7 +141,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
         # folded operand
         self.assertEqual(
             (int(Operand.ADD), "d", "k", 1),
-            _row(code, OpCode.VAR_CONST_ITEM_INPLACE_CONST))
+            _row(code, OpCode.VAR_ITEM_CONST_INPLACE_CONST))
 
 
     async def test_inplace_item_symbol_obj_symbol_key_const_value(self):
@@ -149,41 +149,65 @@ class TestInplaceItemSpecial(SpecialsTestCase):
         self.assertEqual(0, _count_op(code, OpCode.DUP))
         self.assertEqual(
             (int(Operand.ADD), "lst", "i", 1),
-            _row(code, OpCode.VAR_ITEM_INPLACE_CONST))
+            _row(code, OpCode.VAR_ITEM_VAR_INPLACE_CONST))
 
 
     async def test_inplace_item_symbol_obj_computed_value(self):
         code = self.compile_to_code("(inplace-item + lst i (f))", lst=[], i=0, f=None)
-        self.assertIn(OpCode.VAR_ITEM_INPLACE, _opcodes(code))
+        self.assertIn(OpCode.VAR_ITEM_VAR_INPLACE, _opcodes(code))
         code = self.compile_to_code('(inplace-item + d "k" (f))', d={}, f=None)
-        self.assertIn(OpCode.VAR_CONST_ITEM_INPLACE, _opcodes(code))
+        self.assertIn(OpCode.VAR_ITEM_CONST_INPLACE, _opcodes(code))
 
 
     async def test_inplace_item_symbol_obj_two_values_keeps_count(self):
         code = self.compile_to_code("(inplace-item + lst i 1 2)", lst=[], i=0)
-        self.assertIn(OpCode.VAR_ITEM_INPLACE, _opcodes(code))
-        self.assertNotIn(OpCode.VAR_ITEM_INPLACE_CONST, _opcodes(code))
+        self.assertIn(OpCode.VAR_ITEM_VAR_INPLACE, _opcodes(code))
+        self.assertNotIn(OpCode.VAR_ITEM_VAR_INPLACE_CONST, _opcodes(code))
 
 
-    async def test_inplace_item_expression_obj_emits_stack_rows(self):
+    async def test_inplace_item_expression_obj_names_the_key(self):
         code = self.compile_to_code('(inplace-item + (f) "k" 1)', f=None)
         self.assertEqual(0, _count_op(code, OpCode.DUP))
-        self.assertIn(OpCode.CONST_ITEM_INPLACE, _opcodes(code))
+        self.assertEqual(
+            (int(Operand.ADD), "k", 1, 0),
+            _row(code, OpCode.ITEM_CONST_INPLACE_CONST))
         code = self.compile_to_code("(inplace-item + (f) i 1)", f=None, i=0)
-        self.assertIn(OpCode.ITEM_INPLACE, _opcodes(code))
+        self.assertEqual(
+            (int(Operand.ADD), "i", 1, 0),
+            _row(code, OpCode.ITEM_VAR_INPLACE_CONST))
+        code = self.compile_to_code("(inplace-item + (f) i v)", f=None, i=0, v=1)
+        self.assertIn(OpCode.ITEM_VAR_INPLACE, _opcodes(code))
+        code = self.compile_to_code("(inplace-item + (f) i (g))", f=None, i=0, g=None)
+        self.assertIn(OpCode.ITEM_VAR_INPLACE, _opcodes(code))
+        code = self.compile_to_code("(inplace-item + o.a i 1)", o=None, i=0)
+        self.assertIn(OpCode.ITEM_VAR_INPLACE_CONST, _opcodes(code))
 
 
-    async def test_inplace_item_computed_key_emits_stack_row(self):
+    async def test_inplace_item_computed_key_names_the_object(self):
         code = self.compile_to_code("(inplace-item + lst (+ i 1) 1)", lst=[], i=0)
+        self.assertEqual(
+            (int(Operand.ADD), "lst", 1, 0),
+            _row(code, OpCode.VAR_ITEM_INPLACE_CONST))
+        code = self.compile_to_code("(inplace-item + lst (+ i 1) v)", lst=[], i=0, v=1)
+        self.assertIn(OpCode.VAR_ITEM_INPLACE, _opcodes(code))
+        code = self.compile_to_code("(inplace-item + (f) (+ i 1) 1)", f=None, i=0)
+        self.assertIn(OpCode.ITEM_INPLACE_CONST, _opcodes(code))
+        code = self.compile_to_code("(inplace-item + (f) (+ i 1) (g))", f=None, i=0, g=None)
         self.assertIn(OpCode.ITEM_INPLACE, _opcodes(code))
-        self.assertNotIn(OpCode.VAR_ITEM_INPLACE, _opcodes(code))
 
 
     async def test_inplace_item_in_function_body_lowers_to_fast(self):
-        code = self.compile_to_code("(lambda [lst i] (inplace-item + lst i 1))")
-        body = self.lambda_body_code(code)
-        ops = [body.oparg(i)[0] for i in range(body.length())]
-        self.assertIn(OpCode.FAST_ITEM_INPLACE_CONST, ops)
+        cases = {
+            "(lambda [lst i] (inplace-item + lst i 1))": OpCode.FAST_ITEM_FAST_INPLACE_CONST,
+            "(lambda [lst i v] (inplace-item + lst i v))": OpCode.FAST_ITEM_FAST_INPLACE,
+            "(lambda [lst i] (inplace-item + lst (+ i 1) 1))": OpCode.FAST_ITEM_INPLACE_CONST,
+            "(lambda [o k] (inplace-item + o.a k 1))": OpCode.ITEM_FAST_INPLACE_CONST,
+            "(lambda [o k v] (inplace-item + o.a k v))": OpCode.ITEM_FAST_INPLACE,
+        }
+        for src, row in cases.items():
+            body = self.lambda_body_code(self.compile_to_code(src))
+            ops = [body.oparg(i)[0] for i in range(body.length())]
+            self.assertIn(row, ops, src)
 
 
     async def test_inplace_item_mutates_in_place(self):
@@ -216,7 +240,7 @@ class TestInplaceItemSpecial(SpecialsTestCase):
         code = self.compile_to_code('(inplace-item + d "k" 1 2 3)',
                                     d={})
         rows = [code.extra_tuple(arg) for op, arg in _ops(code)
-                if op == OpCode.VAR_CONST_ITEM_INPLACE]
+                if op == OpCode.VAR_ITEM_CONST_INPLACE]
         self.assertEqual(1, len(rows))
         self.assertEqual(int(Operand.ADD), rows[0][0] >> 8)
         self.assertEqual(3, rows[0][0] & 0xff)

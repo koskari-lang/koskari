@@ -13,8 +13,8 @@
 
 
 """
-Tests for the variable-tier item rows: VAR_ITEM, VAR_CONST_ITEM,
-VAR_ITEM_STORE, VAR_CONST_ITEM_STORE and their FAST twins. The VAR rows
+Tests for the variable-tier item rows: VAR_ITEM_VAR, VAR_ITEM_CONST,
+VAR_ITEM_VAR_STORE, VAR_ITEM_CONST_STORE and their FAST twins. The VAR rows
 resolve the object (and key) by name in the frame namespace; the FAST
 rows read them from fast slots. Loads push the item and pop nothing;
 stores pop the value and push nothing.
@@ -51,7 +51,7 @@ class TestVarItemOpcodes(CevalTest):
 
     async def test_var_item_loads_by_name(self):
         code, ns = build_expr([
-            ["VAR_ITEM", ("obj", "key", 0, 0)],
+            ["VAR_ITEM_VAR", ("obj", "key", 0, 0)],
             ["RETURN", 1],
         ], values={"obj": {"a": 1, "b": 2}, "key": "b"})
         self.assertEqual(await make_callable(code, ns)(), 2)
@@ -60,7 +60,7 @@ class TestVarItemOpcodes(CevalTest):
     async def test_var_item_leaves_stack_alone(self):
         code, ns = build_expr([
             ["CONST", "below"],
-            ["VAR_ITEM", ("obj", "key", 0, 0)],
+            ["VAR_ITEM_VAR", ("obj", "key", 0, 0)],
             ["POP", 1],
             ["RETURN", 1],
         ], values={"obj": [10, 20, 30], "key": 1})
@@ -69,7 +69,7 @@ class TestVarItemOpcodes(CevalTest):
 
     async def test_var_item_unbound_object_raises(self):
         code, ns = build_expr([
-            ["VAR_ITEM", ("missing", "key", 0, 0)],
+            ["VAR_ITEM_VAR", ("missing", "key", 0, 0)],
             ["RETURN", 1],
         ], values={"key": 0})
         with self.assertRaises(NameError):
@@ -78,7 +78,7 @@ class TestVarItemOpcodes(CevalTest):
 
     async def test_var_item_unbound_key_raises(self):
         code, ns = build_expr([
-            ["VAR_ITEM", ("obj", "missing", 0, 0)],
+            ["VAR_ITEM_VAR", ("obj", "missing", 0, 0)],
             ["RETURN", 1],
         ], values={"obj": [1]})
         with self.assertRaises(NameError):
@@ -87,7 +87,7 @@ class TestVarItemOpcodes(CevalTest):
 
     async def test_var_item_index_error_propagates(self):
         code, ns = build_expr([
-            ["VAR_ITEM", ("obj", "key", 0, 0)],
+            ["VAR_ITEM_VAR", ("obj", "key", 0, 0)],
             ["RETURN", 1],
         ], values={"obj": [1, 2], "key": 5})
         with self.assertRaises(IndexError):
@@ -96,7 +96,7 @@ class TestVarItemOpcodes(CevalTest):
 
     async def test_var_const_item_loads(self):
         code, ns = build_expr([
-            ["VAR_CONST_ITEM", ("obj", "k", 0, 0)],
+            ["VAR_ITEM_CONST", ("obj", "k", 0, 0)],
             ["RETURN", 1],
         ], values={"obj": {"k": "v"}})
         self.assertEqual(await make_callable(code, ns)(), "v")
@@ -104,7 +104,7 @@ class TestVarItemOpcodes(CevalTest):
 
     async def test_var_const_item_key_error_propagates(self):
         code, ns = build_expr([
-            ["VAR_CONST_ITEM", ("obj", "nope", 0, 0)],
+            ["VAR_ITEM_CONST", ("obj", "nope", 0, 0)],
             ["RETURN", 1],
         ], values={"obj": {"k": "v"}})
         with self.assertRaises(KeyError):
@@ -116,7 +116,7 @@ class TestVarItemOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", "below"],
             ["CONST", 99],
-            ["VAR_ITEM_STORE", ("obj", "key", 0, 0)],
+            ["VAR_ITEM_VAR_STORE", ("obj", "key", 0, 0)],
             ["RETURN", 1],
         ], values={"obj": lst, "key": 2})
         self.assertEqual(await make_callable(code, ns)(), "below")
@@ -127,7 +127,7 @@ class TestVarItemOpcodes(CevalTest):
         d = {}
         code, ns = build_expr([
             ["CONST", 7],
-            ["VAR_CONST_ITEM_STORE", ("obj", "k", 0, 0)],
+            ["VAR_ITEM_CONST_STORE", ("obj", "k", 0, 0)],
             ["CONST", None],
             ["RETURN", 1],
         ], values={"obj": d})
@@ -138,7 +138,7 @@ class TestVarItemOpcodes(CevalTest):
     async def test_var_item_store_unbound_object_raises(self):
         code, ns = build_expr([
             ["CONST", 7],
-            ["VAR_ITEM_STORE", ("missing", "key", 0, 0)],
+            ["VAR_ITEM_VAR_STORE", ("missing", "key", 0, 0)],
             ["CONST", None],
             ["RETURN", 1],
         ], values={"key": 0})
@@ -149,7 +149,7 @@ class TestVarItemOpcodes(CevalTest):
     async def test_var_item_store_type_error_propagates(self):
         code, ns = build_expr([
             ["CONST", 7],
-            ["VAR_ITEM_STORE", ("obj", "key", 0, 0)],
+            ["VAR_ITEM_VAR_STORE", ("obj", "key", 0, 0)],
             ["CONST", None],
             ["RETURN", 1],
         ], values={"obj": (1, 2), "key": 0})
@@ -161,7 +161,7 @@ class TestFastItemOpcodes(CevalTest):
 
     async def test_fast_item_loads_from_slots(self):
         fn = fast_fn([
-            ["FAST_ITEM", (0, 1, 0, 0)],
+            ["FAST_ITEM_FAST", (0, 1, 0, 0)],
             ["RETURN", 1],
         ], ("obj", "key"))
         self.assertEqual(await fn([10, 20, 30], 1), 20)
@@ -172,7 +172,7 @@ class TestFastItemOpcodes(CevalTest):
     async def test_fast_item_leaves_stack_alone(self):
         fn = fast_fn([
             ["CONST", "below"],
-            ["FAST_ITEM", (0, 1, 0, 0)],
+            ["FAST_ITEM_FAST", (0, 1, 0, 0)],
             ["POP", 1],
             ["RETURN", 1],
         ], ("obj", "key"))
@@ -182,7 +182,7 @@ class TestFastItemOpcodes(CevalTest):
     async def test_fast_item_unbound_slot_raises(self):
         fn = fast_fn([
             ["FAST_CLEAR", 1],
-            ["FAST_ITEM", (0, 1, 0, 0)],
+            ["FAST_ITEM_FAST", (0, 1, 0, 0)],
             ["RETURN", 1],
         ], ("obj", "key"))
         with self.assertRaises(NameError):
@@ -191,7 +191,7 @@ class TestFastItemOpcodes(CevalTest):
 
     async def test_fast_item_errors_propagate(self):
         fn = fast_fn([
-            ["FAST_ITEM", (0, 1, 0, 0)],
+            ["FAST_ITEM_FAST", (0, 1, 0, 0)],
             ["RETURN", 1],
         ], ("obj", "key"))
         with self.assertRaises(IndexError):
@@ -204,7 +204,7 @@ class TestFastItemOpcodes(CevalTest):
 
     async def test_fast_const_item_loads(self):
         fn = fast_fn([
-            ["FAST_CONST_ITEM", (0, 1, 0, 0)],
+            ["FAST_ITEM_CONST", (0, 1, 0, 0)],
             ["RETURN", 1],
         ], ("obj",))
         self.assertEqual(await fn([10, 20, 30]), 20)
@@ -215,7 +215,7 @@ class TestFastItemOpcodes(CevalTest):
         fn = fast_fn([
             ["CONST", "below"],
             ["FAST", 2],
-            ["FAST_ITEM_STORE", (0, 1, 0, 0)],
+            ["FAST_ITEM_FAST_STORE", (0, 1, 0, 0)],
             ["RETURN", 1],
         ], ("obj", "key", "val"))
         lst = [0, 0]
@@ -229,7 +229,7 @@ class TestFastItemOpcodes(CevalTest):
     async def test_fast_const_item_store(self):
         fn = fast_fn([
             ["FAST", 1],
-            ["FAST_CONST_ITEM_STORE", (0, "k", 0, 0)],
+            ["FAST_ITEM_CONST_STORE", (0, "k", 0, 0)],
             ["FAST", 0],
             ["RETURN", 1],
         ], ("obj", "val"))
@@ -239,7 +239,7 @@ class TestFastItemOpcodes(CevalTest):
     async def test_fast_item_store_errors_propagate(self):
         fn = fast_fn([
             ["FAST", 2],
-            ["FAST_ITEM_STORE", (0, 1, 0, 0)],
+            ["FAST_ITEM_FAST_STORE", (0, 1, 0, 0)],
             ["CONST", None],
             ["RETURN", 1],
         ], ("obj", "key", "val"))
@@ -260,7 +260,7 @@ class TestItemStoreConstOpcodes(CevalTest):
         lst = [0, 0, 0]
         code, ns = build_expr([
             ["CONST", "below"],
-            ["VAR_ITEM_STORE_CONST", ("obj", "key", 99, 0)],
+            ["VAR_ITEM_VAR_STORE_CONST", ("obj", "key", 99, 0)],
             ["RETURN", 1],
         ], values={"obj": lst, "key": 1})
         self.assertEqual(await make_callable(code, ns)(), "below")
@@ -270,7 +270,7 @@ class TestItemStoreConstOpcodes(CevalTest):
     async def test_var_const_item_store_const(self):
         d = {}
         code, ns = build_expr([
-            ["VAR_CONST_ITEM_STORE_CONST", ("obj", "k", 7, 0)],
+            ["VAR_ITEM_CONST_STORE_CONST", ("obj", "k", 7, 0)],
             ["CONST", None],
             ["RETURN", 1],
         ], values={"obj": d})
@@ -280,14 +280,14 @@ class TestItemStoreConstOpcodes(CevalTest):
 
     async def test_var_item_store_const_errors(self):
         code, ns = build_expr([
-            ["VAR_ITEM_STORE_CONST", ("missing", "key", 1, 0)],
+            ["VAR_ITEM_VAR_STORE_CONST", ("missing", "key", 1, 0)],
             ["CONST", None],
             ["RETURN", 1],
         ], values={"key": 0})
         with self.assertRaises(NameError):
             await make_callable(code, ns)()
         code, ns = build_expr([
-            ["VAR_CONST_ITEM_STORE_CONST", ("obj", 5, 1, 0)],
+            ["VAR_ITEM_CONST_STORE_CONST", ("obj", 5, 1, 0)],
             ["CONST", None],
             ["RETURN", 1],
         ], values={"obj": [0]})
@@ -298,7 +298,7 @@ class TestItemStoreConstOpcodes(CevalTest):
     async def test_fast_item_store_const(self):
         fn = fast_fn([
             ["CONST", "below"],
-            ["FAST_ITEM_STORE_CONST", (0, 1, "v", 0)],
+            ["FAST_ITEM_FAST_STORE_CONST", (0, 1, "v", 0)],
             ["RETURN", 1],
         ], ("obj", "key"))
         lst = [0, 0]
@@ -315,7 +315,7 @@ class TestItemStoreConstOpcodes(CevalTest):
 
     async def test_fast_const_item_store_const(self):
         fn = fast_fn([
-            ["FAST_CONST_ITEM_STORE_CONST", (0, 1, "v", 0)],
+            ["FAST_ITEM_CONST_STORE_CONST", (0, 1, "v", 0)],
             ["FAST", 0],
             ["RETURN", 1],
         ], ("obj",))

@@ -14,37 +14,41 @@
 */
 
 /**
-   VAR_ITEM_STORE: arg = extra index. Schema VAR (obj name), VAR (key
-   name). Stack [val]; obj[key] = val with both operands resolved by
-   name in the frame namespace after the value was pushed, pop val,
-   push nothing. The cold twin of FAST_ITEM_STORE.
+   VAR_ITEM_STORE: arg = name index. Stack [key, val]. Object from
+   the frame namespace by name, key from the stack, value from the
+   stack. obj[key] = val; push nothing. The access runs through
+   kos_item_store (eval/eval_item.c) with no slot; the cold twin of
+   the FAST row.
 */
 
 KOS_OP_HANDLER(VAR_ITEM_STORE) {
-  const KosExtra *row = KosOp_ROW(insn);
-  PyObject *val = KosEvalState_StackPopRef(es);
-  if (! val)
-    RESULT_RAISE();
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail;
+  PyObject *obj;
+  PyObject *key;
+  PyObject *val;
+  int rc;
 
-  PyObject *obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));
-  if (! obj) {
-    Py_DECREF(val);
+  obj = frame_ns_deref(es, KosOp_OBJ(insn));
+  if (unlikely(! obj))
+    RESULT_RAISE();
+  val = kos_stack_pop_ref_fast(bl);
+  if (unlikely(! val)) {
+    Py_DECREF(obj);
     RESULT_RAISE();
   }
-
-  PyObject *key = frame_ns_deref(es, KosExtra_OBJ(row, 1));
-  if (! key) {
+  tail = kos_stack_tail_ptr_fast(*bl, 1);
+  if (unlikely(! tail)) {
     Py_DECREF(obj);
     Py_DECREF(val);
     RESULT_RAISE();
   }
-
-  int res = PyObject_SetItem(obj, key, val);
+  key = tail[0];
+  rc = kos_item_store(KosOp_SLOT(insn), obj, key, val);
   Py_DECREF(obj);
-  Py_DECREF(key);
-  Py_DECREF(val);
-  if (res < 0)
+  if (unlikely(rc < 0))
     RESULT_RAISE();
+  kos_stack_drop_noerr_fast(bl, 1);
   RESULT_NEXT(es);
 }
 

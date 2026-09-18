@@ -1617,6 +1617,7 @@ static inline KosOpResult kos_eval_delivery_done(KosEvalState *es) {
 
 
 #include "eval/eval_electors.c"
+#include "eval/eval_item.c"
 
 /* Cross-handler helpers defined inside handlers.incl after some of
    their users (the include follows opcodes.incl order): the shared

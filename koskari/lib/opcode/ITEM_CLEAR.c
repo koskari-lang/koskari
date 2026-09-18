@@ -13,28 +13,28 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-
 /**
-  ITEM_CLEAR: arg unused. del TOS1[TOS]. Stack: obj, key (TOS).
+   ITEM_CLEAR: no arg. Stack [obj, key]. Object from the stack, key
+   from the stack. del obj[key]; push nothing. The access runs
+   through kos_item_clear (eval/eval_item.c).
 */
+
 KOS_OP_HANDLER(ITEM_CLEAR) {
-  PyObject *key = KosEvalState_StackPopRef(es);
-  if (unlikely(! key))
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail;
+  PyObject *obj;
+  PyObject *key;
+  int rc;
+
+  tail = kos_stack_tail_ptr_fast(*bl, 2);
+  if (unlikely(! tail))
     RESULT_RAISE();
-
-  PyObject *obj = KosEvalState_StackPopRef(es);
-  if (unlikely(! obj)) {
-    Py_DECREF(key);
+  obj = tail[0];
+  key = tail[1];
+  rc = kos_item_clear(obj, key);
+  if (unlikely(rc < 0))
     RESULT_RAISE();
-  }
-
-  int res = PyObject_DelItem(obj, key);
-  Py_DECREF(obj);
-  Py_DECREF(key);
-
-  if (unlikely(res < 0))
-    RESULT_RAISE();
-
+  kos_stack_drop_noerr_fast(bl, 2);
   RESULT_NEXT(es);
 }
 

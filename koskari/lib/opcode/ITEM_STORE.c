@@ -14,21 +14,35 @@
 */
 
 /**
-   ITEM_STORE: no arg. Stack [obj, key, val]; obj[key] = val, pop all
-   three, push nothing.
-   Prologue only: tail-call the body the site's slot elected
-   (eval/eval_electors.c), which carries its own guard; an empty slot
-   or an ungated site takes the electing function, which classifies
-   the container once and settles the slot. One cache slot:
-   KOS_CACHE_ELECTOR.
+   ITEM_STORE: no arg. Stack [obj, key, val]. Object from the stack,
+   key from the stack, value from the stack. obj[key] = val; push
+   nothing. The access runs through kos_item_store (eval/eval_item.c)
+   on the site's one KOS_CACHE_ITEM slot.
 */
 
 KOS_OP_HANDLER(ITEM_STORE) {
-  KosCacheSlot *slot = KosOp_SLOT(insn);
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail;
+  PyObject *obj;
+  PyObject *key;
+  PyObject *val;
+  int rc;
 
-  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
-    TAILCALL(slot->u.elector.fn, es, insn, NULL);
-  TAILCALL(el_item_store_elect, es, insn, NULL);
+  val = kos_stack_pop_ref_fast(bl);
+  if (unlikely(! val))
+    RESULT_RAISE();
+  tail = kos_stack_tail_ptr_fast(*bl, 2);
+  if (unlikely(! tail)) {
+    Py_DECREF(val);
+    RESULT_RAISE();
+  }
+  obj = tail[0];
+  key = tail[1];
+  rc = kos_item_store(KosOp_SLOT(insn), obj, key, val);
+  if (unlikely(rc < 0))
+    RESULT_RAISE();
+  kos_stack_drop_noerr_fast(bl, 2);
+  RESULT_NEXT(es);
 }
 
 

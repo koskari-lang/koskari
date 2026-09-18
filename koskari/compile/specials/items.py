@@ -26,8 +26,8 @@ from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, VALUE
 from ...syntax import special
 from ...types import is_symbol
-from ..helpers import (
-    const_only_expr, emit_item_key, emit_item_keyfrag, var_only_expr)
+from ..helpers import emit_item_access, feeder_expr
+from ..processor import item_arg, item_opcode
 
 
 _ITEM_PATTERNS = [
@@ -39,16 +39,7 @@ _SET_ITEM_PATTERNS = [
 ]
 
 
-def item_fragment(compiler, called_by, obj):
-    """
-    A fragment for an item special with its object compiled, positioned
-    at the object
-    """
-
-    frag = compiler.fragment(called_by.datum)
-    frag.position(obj.position)
-    frag.merge(compiler.full_compile(obj.datum))
-    return frag
+ITEM_FEEDER_OP = {'var': OpCode.VAR, 'const': OpCode.CONST}
 
 
 @builtin("compile/item")
@@ -58,9 +49,8 @@ def special_item(compiler, called_by, obj, key):
     Compile (compile/item OBJ KEY). Load item at KEY from OBJ
     """
 
-    frag = item_fragment(compiler, called_by, obj)
-    emit_item_key(compiler, frag, key.datum, OpCode.CONST_ITEM, OpCode.ITEM)
-    return frag
+    return emit_item_access(
+        compiler, called_by, obj, key, OpCode.ITEM, OpCode.VAR_ITEM)
 
 
 @builtin("compile/del-item")
@@ -70,9 +60,8 @@ def special_del_item(compiler, called_by, obj, key):
     Compile (compile/del-item OBJ KEY). Delete item at KEY from OBJ
     """
 
-    frag = item_fragment(compiler, called_by, obj)
-    emit_item_key(
-        compiler, frag, key.datum, OpCode.CONST_ITEM_CLEAR, OpCode.ITEM_CLEAR)
+    frag = emit_item_access(
+        compiler, called_by, obj, key, OpCode.ITEM_CLEAR, OpCode.VAR_ITEM_CLEAR)
     frag.instruction(OpCode.CONST, None)
     return frag
 
@@ -85,40 +74,52 @@ def special_take_item(compiler, called_by, obj, key):
     push the value
     """
 
-    frag = item_fragment(compiler, called_by, obj)
-    emit_item_key(
-        compiler, frag, key.datum, OpCode.CONST_ITEM_TAKE, OpCode.ITEM_TAKE)
-    return frag
+    return emit_item_access(
+        compiler, called_by, obj, key, OpCode.ITEM_TAKE, OpCode.VAR_ITEM_TAKE)
 
 
-def emit_var_item_store(compiler, called_by, obj, keyfrag, val):
+def emit_item_place(compiler, frag, obj, keyfrag, key_kind, value_feeders):
     """
-    The fused store for a symbol object with a constant or symbol key:
-    the value compiled first, then one VAR_CONST_ITEM_STORE or
-    VAR_ITEM_STORE row that resolves the object (and key) by name when
-    it runs. keyfrag is the compiled key; any other key shape answers
-    None and the caller takes the stack path with that same fragment
+    Emit the object and key of a store or in-place row, answering the
+    feeder opcodes the row names for them, None for a stack operand.
+    Plain when the key and every value are feeders: the object and the
+    key compile to the stack and the compress pipeline folds the row's
+    trailing feeders. Otherwise a non-feeder operand would sit between
+    a named operand and the row, so the object is named when a symbol
+    and the key when a feeder, and only the rest compiles to the stack
+
+    :param compiler: the Compiler
+    :param frag: the fragment being built
+    :param obj: the object match
+    :param keyfrag: the compiled key
+    :param key_kind: the key's feeder kind, or None
+    :param value_feeders: whether every value is a feeder
+    :return: (obj_op, key_op, fields) for item_opcode and item_arg
     """
 
-    is_const, key_val = const_only_expr(keyfrag)
-    is_var, key_name = var_only_expr(keyfrag)
-    if not (is_const or is_var):
-        return None
+    obj_name = str(obj.datum) if is_symbol(obj.datum) else None
+    if (key_kind and value_feeders) or not (obj_name or key_kind):
+        frag.merge(compiler.full_compile(obj.datum))
+        frag.merge(keyfrag)
+        return None, None, []
 
-    name = str(obj.datum)
-    frag = compiler.fragment(called_by.datum)
-    frag.position(obj.position)
-    frag.merge(compiler.full_compile(val.datum))
-    frag.request_var(name)
-    if is_const:
-        frag.instruction(OpCode.VAR_CONST_ITEM_STORE, (name, key_val, 0, 0))
+    fields = []
+    obj_op = key_op = None
+    if obj_name is None:
+        frag.merge(compiler.full_compile(obj.datum))
     else:
-        # the key is resolved by name when the row runs, so a captured
-        # key is requested from the enclosing scope like the object is
-        frag.request_var(key_name)
-        frag.instruction(OpCode.VAR_ITEM_STORE, (name, key_name, 0, 0))
-    frag.instruction(OpCode.CONST, None)
-    return frag
+        frag.request_var(obj_name)
+        obj_op = OpCode.VAR
+        fields.append(obj_name)
+    if key_kind is None:
+        frag.merge(keyfrag)
+    else:
+        _, key_val = feeder_expr(keyfrag)
+        if key_kind == 'var':
+            frag.request_var(key_val)
+        key_op = ITEM_FEEDER_OP[key_kind]
+        fields.append(key_val)
+    return obj_op, key_op, fields
 
 
 @builtin("compile/set-item")
@@ -129,16 +130,19 @@ def special_set_item(compiler, called_by, obj, key, val):
     """
 
     keyfrag = compiler.full_compile(key.datum)
+    valfrag = compiler.full_compile(val.datum)
+    key_kind, _ = feeder_expr(keyfrag)
+    val_kind, _ = feeder_expr(valfrag)
 
-    if is_symbol(obj.datum):
-        frag = emit_var_item_store(compiler, called_by, obj, keyfrag, val)
-        if frag is not None:
-            return frag
-
-    frag = item_fragment(compiler, called_by, obj)
-    emit_item_keyfrag(
-        frag, keyfrag, OpCode.CONST_ITEM_STORE, OpCode.ITEM_STORE,
-        before=lambda: frag.merge(compiler.full_compile(val.datum)))
+    frag = compiler.fragment(called_by.datum)
+    frag.position(obj.position)
+    obj_op, key_op, fields = emit_item_place(
+        compiler, frag, obj, keyfrag, key_kind, val_kind is not None)
+    frag.merge(valfrag)
+    if fields:
+        frag.instruction(item_opcode(obj_op, key_op, 'STORE'), item_arg(fields))
+    else:
+        frag.instruction(OpCode.ITEM_STORE, 0)
     frag.instruction(OpCode.CONST, None)
     return frag
 
