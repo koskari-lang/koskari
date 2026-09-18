@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   ITEM_CONST_REF: arg = constant index. Stack [obj]. Object from the
-   stack, key from the pool. Push a reference cell over obj[key]. The
-   access runs through kos_item_ref (eval/eval_item.c).
-*/
 
+/**
+  ITEM_CONST_REF: arg = constant index. Stack [obj]. Object from the
+  stack, key from the pool. Push a reference cell over obj[key]. The
+  access runs through kos_item_ref (eval/eval_item.c).
+*/
 KOS_OP_HANDLER(ITEM_CONST_REF) {
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;
@@ -29,10 +29,13 @@ KOS_OP_HANDLER(ITEM_CONST_REF) {
   tail = kos_stack_tail_ptr_fast(*bl, 1);
   if (unlikely(! tail))
     RESULT_RAISE();
+
   obj = tail[0];
   out = kos_item_ref(obj, key);
+
   if (unlikely(! out))
     RESULT_RAISE();
+
   kos_item_replace_top(bl, out);
   RESULT_NEXT(es);
 }

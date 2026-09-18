@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   ITEM_TAKE: no arg. Stack [obj, key]. Object from the stack, key
-   from the stack. Push obj[key], then del obj[key]. The access runs
-   through kos_item_take (eval/eval_item.c).
-*/
 
+/**
+  ITEM_TAKE: no arg. Stack [obj, key]. Object from the stack, key
+  from the stack. Push obj[key], then del obj[key]. The access runs
+  through kos_item_take (eval/eval_item.c).
+*/
 KOS_OP_HANDLER(ITEM_TAKE) {
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;
@@ -29,11 +29,14 @@ KOS_OP_HANDLER(ITEM_TAKE) {
   tail = kos_stack_tail_ptr_fast(*bl, 2);
   if (unlikely(! tail))
     RESULT_RAISE();
+
   obj = tail[0];
   key = tail[1];
   out = kos_item_take(obj, key);
+
   if (unlikely(! out))
     RESULT_RAISE();
+
   kos_stack_replace2_fast(bl, out);
   RESULT_NEXT(es);
 }

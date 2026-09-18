@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST_ITEM_CLEAR: arg = fast slot. Stack [key]. Object from a fast
-   slot, key from the stack. del obj[key]; push nothing. The access
-   runs through kos_item_clear (eval/eval_item.c).
-*/
 
+/**
+  FAST_ITEM_CLEAR: arg = fast slot. Stack [key]. Object from a fast
+  slot, key from the stack. del obj[key]; push nothing. The access
+  runs through kos_item_clear (eval/eval_item.c).
+*/
 KOS_OP_HANDLER(FAST_ITEM_CLEAR) {
   PyObject *ns = KosEvalState_NAMESPACE(es);
   KosSegment **bl = KosEvalState_BLOCK(es);
@@ -30,16 +30,20 @@ KOS_OP_HANDLER(FAST_ITEM_CLEAR) {
   KOS_OP_REQUIRE_NS(ns);
   KOS_NS_FAST_BORROW(obj, obj_ref, ns, KosOp_ARG(insn),
                      { RESULT_RAISE(); });
+
   tail = kos_stack_tail_ptr_fast(*bl, 1);
   if (unlikely(! tail)) {
     Py_XDECREF(obj_ref);
     RESULT_RAISE();
   }
+
   key = tail[0];
   rc = kos_item_clear(obj, key);
   Py_XDECREF(obj_ref);
+
   if (unlikely(rc < 0))
     RESULT_RAISE();
+
   kos_stack_drop_noerr_fast(bl, 1);
   RESULT_NEXT(es);
 }

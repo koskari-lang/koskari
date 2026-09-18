@@ -13,14 +13,14 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST_ITEM_FAST_STORE: arg = extra index. Schema FASTVAR, FASTVAR,
-   NOARG, NOARG. Stack [val]. Object from a fast slot, key from a
-   fast slot, value from the stack. obj[key] = val; push nothing. The
-   access runs through kos_item_store (eval/eval_item.c) on the
-   site's one KOS_CACHE_ITEM slot.
-*/
 
+/**
+  FAST_ITEM_FAST_STORE: arg = extra index. Schema FASTVAR, FASTVAR,
+  NOARG, NOARG. Stack [val]. Object from a fast slot, key from a fast
+  slot, value from the stack. obj[key] = val; push nothing. The
+  access runs through kos_item_store (eval/eval_item.c) on the site's
+  one KOS_CACHE_ITEM slot.
+*/
 KOS_OP_HANDLER(FAST_ITEM_FAST_STORE) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
@@ -35,15 +35,18 @@ KOS_OP_HANDLER(FAST_ITEM_FAST_STORE) {
                      { RESULT_RAISE(); });
   KOS_NS_FAST_BORROW(key, key_ref, ns, KosExtra_IMM(row, 1),
                      { Py_XDECREF(obj_ref); RESULT_RAISE(); });
+
   val = kos_stack_pop_ref_fast(bl);
   if (unlikely(! val)) {
     Py_XDECREF(obj_ref);
     Py_XDECREF(key_ref);
     RESULT_RAISE();
   }
+
   rc = kos_item_store(KosOp_SLOT(insn), obj, key, val);
   Py_XDECREF(obj_ref);
   Py_XDECREF(key_ref);
+
   if (unlikely(rc < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);

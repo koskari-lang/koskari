@@ -13,13 +13,13 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   ITEM_STORE_CONST: arg = constant index. Stack [obj, key]. Object
-   from the stack, key from the stack, value from the pool. obj[key]
-   = val; push nothing. The access runs through kos_item_store
-   (eval/eval_item.c) on the site's one KOS_CACHE_ITEM slot.
-*/
 
+/**
+  ITEM_STORE_CONST: arg = constant index. Stack [obj, key]. Object
+  from the stack, key from the stack, value from the pool. obj[key] =
+  val; push nothing. The access runs through kos_item_store
+  (eval/eval_item.c) on the site's one KOS_CACHE_ITEM slot.
+*/
 KOS_OP_HANDLER(ITEM_STORE_CONST) {
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;
@@ -30,16 +30,20 @@ KOS_OP_HANDLER(ITEM_STORE_CONST) {
 
   val = KosOp_OBJ(insn);
   Py_INCREF(val);
+
   tail = kos_stack_tail_ptr_fast(*bl, 2);
   if (unlikely(! tail)) {
     Py_DECREF(val);
     RESULT_RAISE();
   }
+
   obj = tail[0];
   key = tail[1];
   rc = kos_item_store(KosOp_SLOT(insn), obj, key, val);
+
   if (unlikely(rc < 0))
     RESULT_RAISE();
+
   kos_stack_drop_noerr_fast(bl, 2);
   RESULT_NEXT(es);
 }

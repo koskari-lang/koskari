@@ -13,13 +13,13 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   VAR_ITEM_CONST_REF: arg = extra index. Schema VAR, CONST, NOARG,
-   NOARG. No stack operands. Object from the frame namespace by name,
-   key from the pool. Push a reference cell over obj[key]. The access
-   runs through kos_item_ref (eval/eval_item.c).
-*/
 
+/**
+  VAR_ITEM_CONST_REF: arg = extra index. Schema VAR, CONST, NOARG,
+  NOARG. No stack operands. Object from the frame namespace by name,
+  key from the pool. Push a reference cell over obj[key]. The access
+  runs through kos_item_ref (eval/eval_item.c).
+*/
 KOS_OP_HANDLER(VAR_ITEM_CONST_REF) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *obj;
@@ -29,8 +29,10 @@ KOS_OP_HANDLER(VAR_ITEM_CONST_REF) {
   obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));
   if (unlikely(! obj))
     RESULT_RAISE();
+
   out = kos_item_ref(obj, key);
   Py_DECREF(obj);
+
   if (unlikely(! out))
     RESULT_RAISE();
   RESULT_STEAL(es, out);

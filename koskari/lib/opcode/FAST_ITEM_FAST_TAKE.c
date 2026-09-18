@@ -13,13 +13,13 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST_ITEM_FAST_TAKE: arg = extra index. Schema FASTVAR, FASTVAR,
-   NOARG, NOARG. No stack operands. Object from a fast slot, key from
-   a fast slot. Push obj[key], then del obj[key]. The access runs
-   through kos_item_take (eval/eval_item.c).
-*/
 
+/**
+  FAST_ITEM_FAST_TAKE: arg = extra index. Schema FASTVAR, FASTVAR,
+  NOARG, NOARG. No stack operands. Object from a fast slot, key from
+  a fast slot. Push obj[key], then del obj[key]. The access runs
+  through kos_item_take (eval/eval_item.c).
+*/
 KOS_OP_HANDLER(FAST_ITEM_FAST_TAKE) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
@@ -32,9 +32,11 @@ KOS_OP_HANDLER(FAST_ITEM_FAST_TAKE) {
                      { RESULT_RAISE(); });
   KOS_NS_FAST_BORROW(key, key_ref, ns, KosExtra_IMM(row, 1),
                      { Py_XDECREF(obj_ref); RESULT_RAISE(); });
+
   out = kos_item_take(obj, key);
   Py_XDECREF(obj_ref);
   Py_XDECREF(key_ref);
+
   if (unlikely(! out))
     RESULT_RAISE();
   RESULT_STEAL(es, out);

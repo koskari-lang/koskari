@@ -13,15 +13,15 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   FAST_ITEM_FAST_INPLACE: arg = extra index. Schema OPCOUNT,
-   FASTVAR, FASTVAR, NOARG. Stack [v0 .. v(count-1)]. Object from a
-   fast slot, key from a fast slot, operand from the stack. obj[key]
-   = obj[key] OP operands, reduced left to right; push nothing. The
-   access runs through kos_item_inplace (eval/eval_item.c) on the
-   site's one KOS_CACHE_ITEM slot.
-*/
 
+/**
+  FAST_ITEM_FAST_INPLACE: arg = extra index. Schema OPCOUNT, FASTVAR,
+  FASTVAR, NOARG. Stack [v0 .. v(count-1)]. Object from a fast slot,
+  key from a fast slot, operand from the stack. obj[key] = obj[key]
+  OP operands, reduced left to right; push nothing. The access runs
+  through kos_item_inplace (eval/eval_item.c) on the site's one
+  KOS_CACHE_ITEM slot.
+*/
 KOS_OP_HANDLER(FAST_ITEM_FAST_INPLACE) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
@@ -39,17 +39,21 @@ KOS_OP_HANDLER(FAST_ITEM_FAST_INPLACE) {
                      { RESULT_RAISE(); });
   KOS_NS_FAST_BORROW(key, key_ref, ns, KosExtra_IMM(row, 2),
                      { Py_XDECREF(obj_ref); RESULT_RAISE(); });
+
   tail = kos_stack_tail_ptr_fast(*bl, (size_t) count);
   if (unlikely(! tail)) {
     Py_XDECREF(obj_ref);
     Py_XDECREF(key_ref);
     RESULT_RAISE();
   }
+
   rc = kos_item_inplace(KosOp_SLOT(insn), obj, key, op, tail, count);
   Py_XDECREF(obj_ref);
   Py_XDECREF(key_ref);
+
   if (unlikely(rc < 0))
     RESULT_RAISE();
+
   kos_stack_drop_noerr_fast(bl, (size_t) count);
   RESULT_NEXT(es);
 }

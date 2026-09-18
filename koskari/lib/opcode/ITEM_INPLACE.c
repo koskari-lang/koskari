@@ -13,15 +13,15 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   ITEM_INPLACE: arg = operator selector and count. Stack [obj, key,
-   v0 .. v(count-1)]. Object from the stack, key from the stack,
-   operand from the stack. obj[key] = obj[key] OP operands, reduced
-   left to right; push nothing. The access runs through
-   kos_item_inplace (eval/eval_item.c) on the site's one
-   KOS_CACHE_ITEM slot.
-*/
 
+/**
+  ITEM_INPLACE: arg = operator selector and count. Stack [obj, key,
+  v0 .. v(count-1)]. Object from the stack, key from the stack,
+  operand from the stack. obj[key] = obj[key] OP operands, reduced
+  left to right; push nothing. The access runs through
+  kos_item_inplace (eval/eval_item.c) on the site's one
+  KOS_CACHE_ITEM slot.
+*/
 KOS_OP_HANDLER(ITEM_INPLACE) {
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;
@@ -35,11 +35,14 @@ KOS_OP_HANDLER(ITEM_INPLACE) {
   tail = kos_stack_tail_ptr_fast(*bl, (size_t) count + 2);
   if (unlikely(! tail))
     RESULT_RAISE();
+
   obj = tail[0];
   key = tail[1];
   rc = kos_item_inplace(KosOp_SLOT(insn), obj, key, op, tail + 2, count);
+
   if (unlikely(rc < 0))
     RESULT_RAISE();
+
   kos_stack_drop_noerr_fast(bl, (size_t) count + 2);
   RESULT_NEXT(es);
 }

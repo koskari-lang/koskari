@@ -13,15 +13,15 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   VAR_ITEM_INPLACE_CONST: arg = extra index. Schema OPERAND, VAR,
-   CONST, NOARG. Stack [key]. Object from the frame namespace by
-   name, key from the stack, operand from the pool. obj[key] =
-   obj[key] OP operands, reduced left to right; push nothing. The
-   access runs through kos_item_inplace (eval/eval_item.c) with no
-   slot; the cold twin of the FAST row.
-*/
 
+/**
+  VAR_ITEM_INPLACE_CONST: arg = extra index. Schema OPERAND, VAR,
+  CONST, NOARG. Stack [key]. Object from the frame namespace by name,
+  key from the stack, operand from the pool. obj[key] = obj[key] OP
+  operands, reduced left to right; push nothing. The access runs
+  through kos_item_inplace (eval/eval_item.c) with no slot; the cold
+  twin of the FAST row.
+*/
 KOS_OP_HANDLER(VAR_ITEM_INPLACE_CONST) {
   const KosExtra *row = KosOp_ROW(insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
@@ -35,16 +35,20 @@ KOS_OP_HANDLER(VAR_ITEM_INPLACE_CONST) {
   obj = frame_ns_deref(es, KosExtra_OBJ(row, 1));
   if (unlikely(! obj))
     RESULT_RAISE();
+
   tail = kos_stack_tail_ptr_fast(*bl, 1);
   if (unlikely(! tail)) {
     Py_DECREF(obj);
     RESULT_RAISE();
   }
+
   key = tail[0];
   rc = kos_item_inplace(KosOp_SLOT(insn), obj, key, op, &rhs, 1);
   Py_DECREF(obj);
+
   if (unlikely(rc < 0))
     RESULT_RAISE();
+
   kos_stack_drop_noerr_fast(bl, 1);
   RESULT_NEXT(es);
 }
