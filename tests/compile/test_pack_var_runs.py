@@ -161,10 +161,11 @@ class TestPackVarRuns(unittest.TestCase):
         self.assertEqual(out, [pos, (OpCode.CONST, 1)])
 
     def test_process_runs_the_packer(self):
-        out = process_ops([(V, "a"), (V, "b"), (V, "c"), (V, "d")])
+        out = process_ops([
+            (V, "a"), (V, "b"), (V, "c"), (V, "d"), (OpCode.RETURN, 0)])
         self.assertEqual(out, [
             (OpCode.VAR4, ("a", "b", "c", "d")),
-            (OpCode.RETURN, 1),
+            (OpCode.RETURN, 0),
         ])
 
     def test_fast_run_packs_fast2_fast4(self):

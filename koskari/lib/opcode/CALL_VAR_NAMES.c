@@ -22,7 +22,7 @@
   tail bit, which the core turns into a frame reset instead of a push.
 */
 
-KOS_OP_HANDLER_COLD(CALL_VAR_NAMES) {
+KOS_OP_HANDLER(CALL_VAR_NAMES) {
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
       Py_ssize_t npos = (Py_ssize_t) KosExtra_IMM(row, 2);

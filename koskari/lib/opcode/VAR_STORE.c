@@ -18,7 +18,7 @@
   VAR_STORE: arg = constant index (name). Pop TOS and store into name in
   the current frame namespace.
 */
-KOS_OP_HANDLER_COLD(VAR_STORE) {
+KOS_OP_HANDLER(VAR_STORE) {
   PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = KosEvalState_StackPopRef(es);

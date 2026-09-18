@@ -28,7 +28,7 @@
    field cache is on obj.attr, independent of how obj itself is looked up.
 */
 
-KOS_OP_HANDLER_COLD(VAR_ATTR_INPLACE) {
+KOS_OP_HANDLER(VAR_ATTR_INPLACE) {
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));

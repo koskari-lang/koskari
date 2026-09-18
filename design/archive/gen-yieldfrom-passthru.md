@@ -1,25 +1,27 @@
 # GEN Yield-From Passthru (Proposal)
 
-**Status: PROPOSAL -- a recorded possibility, undecided and not
-scheduled.**  This document evaluates the idea; nothing here is
-committed work.  If rejected, archive with a note; if accepted, split
-into staged implementation specs.
+**Status: archived 2026-09-18, superseded.** The node-style yield-from
+(electors) removed the re-dispatch and the phase decode this proposal
+targeted; the residue it names below, the freeze and the prologue
+bounce per hop, is the delivery hub's own shape and is tracked with
+the prologue and hub work, not as a GEN field. Kept as the record of
+the idea and its per-delegate-kind analysis.
 
 **Note (2026-09-04):** the per-hop cost in section 2 predates the
-node-style yield-from in [electors.md](electors.md). The delegating
+node-style yield-from in [../interpreter/electors.md](../interpreter/electors.md). The delegating
 frame no longer re-dispatches the YIELD_FROM opcode or decodes a phase
 machine; each hop is now the freeze, one prologue bounce, and the
 armed phase resume. What passthru would still remove is the freeze and
 the bounce themselves, so re-evaluate it against that residue.
 
 Companion docs:
-- [../archive/boundary-control-reemit.md](../archive/boundary-control-reemit.md)
+- [boundary-control-reemit.md](boundary-control-reemit.md)
   (archived; the implemented boundary model this would extend)
-- [../archive/dispatch-sizing.md](../archive/dispatch-sizing.md) (YIELD_FROM size history)
-- [evaluator.md](evaluator.md)
-- [../archive/cps-consumer-api.md](../archive/cps-consumer-api.md) (the NEXT/ITER_NEXT
+- [dispatch-sizing.md](dispatch-sizing.md) (YIELD_FROM size history)
+- [../EVALUATOR.md](../EVALUATOR.md)
+- [cps-consumer-api.md](cps-consumer-api.md) (the NEXT/ITER_NEXT
   resume machinery this proposal's stepping unification lands on; see §10)
-- [stencil-compilation.md](stencil-compilation.md) (why shrinking YIELD_FROM
+- [../interpreter/stencil-compilation.md](../interpreter/stencil-compilation.md) (why shrinking YIELD_FROM
   matters beyond this opcode)
 
 
@@ -240,14 +242,14 @@ current implementation.
 ## 10. Relationship to CPS consumer API and stenciling
 
 The per-delegate-kind stepping this proposal unifies onto NEXT / ITER_NEXT
-machinery is the same stepping [../archive/cps-consumer-api.md](../archive/cps-consumer-api.md)
+machinery is the same stepping [cps-consumer-api.md](cps-consumer-api.md)
 formalizes as `KosEvalState_NextResume`: DELIVERED/EXHAUSTED/CONTINUES/ERROR
 handled once, at the entry, instead of once per delegate kind inside
 YIELD_FROM. Landing this proposal on top of that entry rather than the
 current hand-rolled phase machine is what makes §7's "YIELD_FROM shrinks to
 normalize/install + reconstruction target" literal, not aspirational.
 
-That shrink matters past this opcode. [stencil-compilation.md](stencil-compilation.md)
+That shrink matters past this opcode. [../interpreter/stencil-compilation.md](../interpreter/stencil-compilation.md)
 excludes `KOS_OP_HANDLER_COLD` handlers from stenciling; YIELD_FROM's current
 size is why it carries that designation. Every opcode being stencilable is
 the stated end goal, and CPS-based slimming -- moving delegate-stepping into

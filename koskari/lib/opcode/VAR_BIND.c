@@ -18,7 +18,7 @@
    the value at TOS (pop value, then bind).
 */
 
-KOS_OP_HANDLER_COLD(VAR_BIND) {
+KOS_OP_HANDLER(VAR_BIND) {
 
   PyObject *name = KosOp_OBJ(insn);
 

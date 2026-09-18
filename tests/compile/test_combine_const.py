@@ -108,11 +108,11 @@ class TestCombineConst(unittest.TestCase):
         out = process_ops([
             (C, 1),
             (C, 2),
-            (OpCode.RETURN, 1),
+            (OpCode.RETURN, 0),
         ])
         self.assertEqual(out, [
             (OpCode.CONST2, (1, 2, None, None)),
-            (OpCode.RETURN, 1),
+            (OpCode.RETURN, 0),
         ])
 
     def test_process_packs_fold_products(self):
@@ -123,11 +123,11 @@ class TestCombineConst(unittest.TestCase):
             (C, 4),
             (C, 8),
             (OpCode.OBJECT_COMPARE, (Compare.EQ, 2)),
-            (OpCode.RETURN, 1),
+            (OpCode.RETURN, 0),
         ])
         self.assertEqual(out, [
             (OpCode.CONST2, ("tag", False, None, None)),
-            (OpCode.RETURN, 1),
+            (OpCode.RETURN, 0),
         ])
 
 

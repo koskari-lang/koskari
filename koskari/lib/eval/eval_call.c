@@ -74,10 +74,13 @@ static inline int do_frame_prep(
 
 
 /**
-   The result of an install slot that ran on a prepared frame: a frame
-   the slot filled is a callee entry, and so a cooperation point
-   (kos_call_installed); a slot that wanted no frame delivered a value
-   and its result stands
+   The result of an install slot that ran on a prepared frame for a
+   native entry (KosEvalState_Call and the CallArgs pair): a frame the
+   slot filled is a callee entry, and so a cooperation point; a slot
+   that wanted no frame delivered a value and its result stands. POLL
+   is a handler-relay answer, so a native caller gets REPROLOGUE for
+   it and bounces through the trampoline, which polls ahead of the
+   prologue.
 */
 static inline KosOpResult kos_call_slot_result(
     KosEvalState *es,
@@ -86,7 +89,7 @@ static inline KosOpResult kos_call_slot_result(
     KosOpResult r) {
 
   if (r.kind == KOS_RES_NORMAL && KosCallSlots_WantsFrame(slots, callable))
-    return kos_call_installed(es);
+    return KOS_EVAL_BREAKER_UP(es) ? EVAL_REPROLOGUE() : EVAL_NORMAL();
   return r;
 }
 
@@ -178,12 +181,16 @@ KosOpResult KosEvalState_Call(
     KosSegment *dummy = NULL;
     KosOpResult r = kos_call_invoke_body(es, &dummy, 0, callable, args,
                                          nargs, kwnames, 0);
+    /* POLL is a handler-relay answer; a native caller bounces through
+       the trampoline, which polls ahead of the prologue as before. */
+    if (r.kind == KOS_RES_POLL)
+      return EVAL_REPROLOGUE();
     if (r.kind != KOS_RES_NORMAL)
       return r;
     if (KosEvalState_GOAL(es))
       return EVAL_REPROLOGUE();
     if (KosEvalState_FRAME(es)
-        && KosDynFrame_RESUME_FN(KosEvalState_FRAME(es)))
+        && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)))
       return EVAL_REPROLOGUE();
     return EVAL_NORMAL();
   }
@@ -248,7 +255,7 @@ static KosOpResult kos_entry_value(
     KosEvalState *es,
     KosDynFrame *caller,
     PyObject *val,
-    KosResumeFn resume,
+    const KosResumeKind *resume,
     void *state) {
 
   switch (KosEval_ResultIsValue(val)) {
@@ -258,7 +265,7 @@ static KosOpResult kos_entry_value(
     case 0: {
       KosOpResult pr = KosEvalState_SettleStage(es, val);
       if (pr.kind == KOS_RES_REPROLOGUE || pr.kind == KOS_RES_AWAIT) {
-        KosDynFrame_RESUME_FN(caller) = (void *) resume;
+        KosDynFrame_RESUME_KIND(caller) = resume;
         KosDynFrame_RESUME_STATE(caller) = state;
       }
       return pr;
@@ -278,7 +285,7 @@ KosOpResult KosEvalState_CallResult(
     Py_ssize_t nargs,
     PyObject *kwnames,
     int tail_call,
-    KosResumeFn resume,
+    const KosResumeKind *resume,
     void *state) {
 
   KosDynFrame *caller = KosEvalState_FRAME(es);
@@ -311,17 +318,20 @@ KosOpResult KosEvalState_CallResult(
       }
       /* fall through: callee installed and current */
     case KOS_RES_REPROLOGUE:
+    case KOS_RES_POLL:
       /* callee installed above caller, or a plan armed by the install;
          caller's own frame is unchanged and still reachable -- its
-         eventual return delivers here. */
-      KosDynFrame_RESUME_FN(caller) = (void *) resume;
+         eventual return delivers here. Call never answers POLL; the
+         arm keeps an installed callee from losing its resume should a
+         path ever relay one. */
+      KosDynFrame_RESUME_KIND(caller) = resume;
       KosDynFrame_RESUME_STATE(caller) = state;
       return r;
 
     case KOS_RES_AWAIT:
       /* the call's own result needed awaiting; the AWAITED revive
          delivers into resume once it settles. */
-      KosDynFrame_RESUME_FN(caller) = (void *) resume;
+      KosDynFrame_RESUME_KIND(caller) = resume;
       KosDynFrame_RESUME_STATE(caller) = state;
       return r;
 
@@ -453,7 +463,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
             && ! (flags & KOS_CALL_ARGV_PREPENDED)
             && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
             && KosFunction_BIND_SELF_STATE(callable) == 2
-            && ! KosDynFrame_RESUME_FN(frame)
+            && ! KosDynFrame_RESUME_KIND(frame)
             && kos_tail_ns_reusable(KosDynFrame_NS(frame))) {
           PyObject *ns = KosDynFrame_NS(frame);
 
@@ -472,9 +482,9 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
             goto fail;
           }
 
-          KosNamespace_ClearRawFast(ns);
+          KosNamespace_ResetToTemplate(ns);
           (void) KosFormals_SimpleStealApplyBlock(ns, *caller_slot, nargs);
-          KosStack_Clear(&KosDynFrame_STACK(frame));
+          kos_stack_clear_fast(&KosDynFrame_STACK(frame));
           KOS_TRACE_EVENTS_INC(KOS_TE_CALL_TAIL_INPLACE);
           es->pc = 0;
           es->acting_pc = 0;
@@ -606,7 +616,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         /* Cache miss: install as usual, then tag the frame for the
            park attempt at release. */
         {
-          KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
+          KosDynFrame *frame = kos_dyn_push_frame_unchecked(
+              es, code, frame_ns);
           if (unlikely(! frame))
             goto fail;
           if (! (flags & KOS_CALL_CALLABLE_OWNED))
@@ -652,7 +663,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
           goto fail;
         KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
         {
-          KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
+          KosDynFrame *frame = kos_dyn_push_frame_unchecked(
+              es, code, frame_ns);
           if (unlikely(! frame))
             goto fail;
           if (! (flags & KOS_CALL_CALLABLE_OWNED))
@@ -905,6 +917,66 @@ static inline KosOpResult kos_call_invoke_body(
 
 
 /**
+   The frame-cache hit of a window call, taken in the handler before the
+   call core: an exact KosFunction at simple arity with a frame parked
+   on it steal-binds the block tail into that frame's namespace (slot 0
+   from self_arg when one is given), pushes the frame ready, and tags
+   it with the owned callable reference. Any other shape returns 0 with
+   nothing consumed and the handler goes on to kos_call_invoke. The
+   window is nargs wide and the callable is owned by the caller, so a
+   taken arm leaves no residue to drop.
+
+   :param self_arg: borrowed receiver for an unbound method call, or
+     NULL; the arity classified is nargs + 2 with it, nargs + 1 without
+   :param out: the installed result when 1 is returned
+   :return: 1 when the call was installed here, 0 when the arm does not
+     apply, -1 with an error set and nothing consumed when it applied
+     and failed (no frame room); the handler releases the window and
+     the callable
+*/
+KOS_OP_INLINE int kos_call_cached_frame_install(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *self_arg,
+    Py_ssize_t nargs,
+    KosOpResult *out) {
+
+  KosDynFrame *cached;
+  Py_ssize_t arity1 = nargs + (self_arg ? 2 : 1);
+
+  if (Py_TYPE(callable) != KOS_EVALUATED_PYTYPE(KosFunctionType)
+      || arity1 != KosFunction_SIMPLE_ARITY1(callable)
+      || KosFunction_BIND_SELF_STATE(callable) != 2
+      || KosCode_YIELDS((KosCode *) KosFunction_CODE(callable)))
+    return 0;
+
+  cached = KosFunction_CACHED_FRAME(callable);
+  if (! cached)
+    return 0;
+
+  if (unlikely(kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0))
+    return -1;
+
+  /* Steal-bind first: on failure nothing is stolen and the frame stays
+     parked. */
+  if (self_arg
+      ? unlikely(KosFormals_SimpleStealApplySelfBlock(
+            KosDynFrame_NS(cached), self_arg, *KosEvalState_BLOCK(es),
+            nargs) < 0)
+      : unlikely(KosFormals_SimpleStealApplyBlock(
+            KosDynFrame_NS(cached), *KosEvalState_BLOCK(es), nargs) < 0))
+    return -1;
+
+  KosFunction_CACHED_FRAME(callable) = NULL;
+  kos_dyn_push_ready_frame(es, cached);
+  KosDynFrame_FN(cached) = callable;  /* the owned reference transfers */
+  KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+  *out = kos_call_installed(es);
+  return 1;
+}
+
+
+/**
    Install a simple-arity KosFunction call whose receiver arrives out of
    band (unbound method resolution): fast slot 0 binds from self_arg and
    the window's arg span steal-binds into slots 1..nargs, through the
@@ -960,7 +1032,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
   /* Cache miss: install as usual, then tag the frame for the park
      attempt at release. */
   {
-    KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
+    KosDynFrame *frame = kos_dyn_push_frame_unchecked(es, code, frame_ns);
     if (unlikely(! frame))
       goto fail;
     if (! (flags & KOS_CALL_CALLABLE_OWNED))

@@ -21,7 +21,7 @@
    LABEL on failure.
 */
 
-KOS_OP_HANDLER_COLD(CHECK_COMPARE_VAR) {
+KOS_OP_HANDLER(CHECK_COMPARE_VAR) {
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t src = KosExtra_IMM(row, 0);
 

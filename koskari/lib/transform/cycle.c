@@ -102,6 +102,21 @@ static PyObject *cycle_keep(KosCycle *c, PyObject *element) {
    site below and kos_dynframe_clone's resume refusal). */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
+   clone (a step in flight refuses capture by name) */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(cycle_resume_deliver_kind, "cycle-step",
+                cycle_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(cycle_resume_fetch_kind, "cycle-step",
+                cycle_resume_fetch, kos_transform_step_clear, NULL);
+
+
 /**
    DELIVER: the first pass produced an element, or ran out. Running
    out is not a failure -- it is the switch to replaying -- so the
@@ -157,8 +172,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
 
   r = KosEvalState_NextResume(
       es, ((KosTransform *) state)->source, NULL,
-      cycle_resume_deliver, state);
-  RESULT_ENTRY(es, r, cycle_resume_deliver, state);
+      &cycle_resume_deliver_kind, state);
+  RESULT_ENTRY(es, r, &cycle_resume_deliver_kind, state);
 }
 
 
@@ -209,8 +224,7 @@ static KosIterStepResult cycle_iter_step(
 
   /* Driven source: set the cold-start kickoff resume and defer the
      fetch entirely. */
-  return kos_transform_stage(es, t, NULL, (void *) cycle_resume_fetch,
-                             "cycle-step", pre_top);
+  return kos_transform_stage(es, t, NULL, &cycle_resume_fetch_kind, pre_top);
 }
 
 

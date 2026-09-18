@@ -10,13 +10,17 @@ augmented assignment on a subscript (`d[k] += 1`).
 Normally written as **`(inplace OP (item OBJ KEY) VALUE)`** — the
 **`compile/inplace`** macro extension expands item forms to this special.
 
-**Behaviour:** Evaluates OBJ once. Loads the current item (CONST_ITEM when KEY is
-constant, otherwise ITEM). Uses DUP so OBJ and KEY are not re-evaluated for the
-store. Applies the corresponding OBJECT_INPLACE_* operator (the
-`PyNumber_InPlace*` API, so mutable values such as lists and sets are updated
-in place) to the loaded value and the VALUEs — multiple values (except for `**`, which takes exactly one) reduce
-left-to-right through the single instruction — then stores via
-CONST_ITEM_STORE or ITEM_STORE. The form evaluates to None.
+**Behaviour:** One fused row reads the current item, applies the
+operator (the `PyNumber_InPlace*` API, so mutable values such as lists and
+sets are updated in place) to it and the VALUEs, and stores the result
+back; multiple values (except for `**`, which takes exactly one) reduce
+left-to-right through that row. When OBJ is a symbol and KEY is a
+constant or a symbol the row is VAR_CONST_ITEM_INPLACE or
+VAR_ITEM_INPLACE, resolving OBJ (and KEY) by name after the VALUEs have
+run; a single constant VALUE folds into the row as the `_CONST` twin,
+leaving the stack untouched. Otherwise OBJ (and a computed KEY) ride the
+stack under the VALUEs and the row is CONST_ITEM_INPLACE or ITEM_INPLACE.
+The form evaluates to None.
 
 **Supported operators:** Same set as [`compile/inplace`](compile-inplace.md).
 

@@ -35,7 +35,7 @@ from ...lib import Compare, OpCode, Operand, cons, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_keyword, is_nil, is_pair, is_symbol, unpack
-from ..helpers import const_only_expr, splat_call_form
+from ..helpers import const_only_expr, splat_call_form, var_only_expr
 
 
 # Two or more operands, with the short arm carrying the arity message a
@@ -1023,33 +1023,49 @@ def special_inplace_item(compiler, called_by, op, obj, key, values):
             "inplace ** takes exactly one value",
             op.datum, position=op.position)
 
+    count = len(value_exprs)
     frag = compiler.fragment(called_by.datum)
 
     if not is_pair(value_exprs[0]):
         frag.position(op.position)
 
-    frag.merge(compiler.full_compile(obj.datum))
-
     keyfrag = compiler.full_compile(key.datum)
     is_const, key_val = const_only_expr(keyfrag)
+    is_var, key_name = var_only_expr(keyfrag)
 
-    if is_const:
-        frag.instruction(OpCode.DUP, 1)
-        frag.instruction(OpCode.CONST_ITEM, key_val)
+    if is_symbol(obj.datum) and (is_const or is_var):
+        # obj is a variable and the key a constant or a variable: one
+        # fused row resolving both by name when it runs, only the
+        # values on the stack. Resolution lowers it to the FAST twin
+        # where possible, and a single constant value squashes into
+        # the _CONST twin in the compress pipeline.
+        name = str(obj.datum)
+        frag.request_var(name)
+        for value_expr in value_exprs:
+            frag.merge(compiler.full_compile(value_expr))
+        if is_const:
+            frag.instruction(OpCode.VAR_CONST_ITEM_INPLACE,
+                             ((binop, count), name, key_val, 0))
+        else:
+            # the key is resolved by name when the row runs, so a
+            # captured key is requested from the enclosing scope like
+            # the object is
+            frag.request_var(key_name)
+            frag.instruction(OpCode.VAR_ITEM_INPLACE,
+                             ((binop, count), name, key_name, 0))
     else:
-        frag.merge(keyfrag)
-        frag.instruction(OpCode.DUP, 2)
-        frag.instruction(OpCode.ITEM, 0)
-
-    for value_expr in value_exprs:
-        frag.merge(compiler.full_compile(value_expr))
-    frag.instruction(OpCode.OBJECT_INPLACE,
-                     (binop, 1 + len(value_exprs)))
-
-    if is_const:
-        frag.instruction(OpCode.CONST_ITEM_STORE, key_val)
-    else:
-        frag.instruction(OpCode.ITEM_STORE, 0)
+        # obj is an expression, or the key is computed: the object (and
+        # key) ride the stack below the values.
+        frag.merge(compiler.full_compile(obj.datum))
+        if not is_const:
+            frag.merge(keyfrag)
+        for value_expr in value_exprs:
+            frag.merge(compiler.full_compile(value_expr))
+        if is_const:
+            frag.instruction(OpCode.CONST_ITEM_INPLACE,
+                             ((binop, count), key_val, 0, 0))
+        else:
+            frag.instruction(OpCode.ITEM_INPLACE, (binop, count))
 
     frag.instruction(OpCode.CONST, None)
 

@@ -23,7 +23,7 @@
   PC bounds check. Users cannot supply THEEND (rejected in code_collect); we
   are its only source.
 */
-KOS_OP_HANDLER_COLD(THEEND) {
+KOS_OP_HANDLER(THEEND) {
   (void) insn;
   kos_eval_report_pc_bounds_error(es);
   RESULT_FAIL();

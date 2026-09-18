@@ -1,0 +1,23 @@
+;; async_tree -- a fan-out tree of concurrent work (pyperformance async_tree,
+;; the "none" workload: no I/O, the scheduler alone).  Each interior node
+;; holds one defer per branch and awaits them together through
+;; asyncio.gather; leaves do no work.  The gather result is an asyncio
+;; future, a handle the evaluator does not resolve on its own, so that one
+;; await is explicit.  The answer is the leaf count.
+
+(import asyncio)
+
+
+define recurse [level branches]:
+    if (== level 0):
+        1
+    else:
+        define held (list-each [_ (range branches)] (defer recurse (- level 1) branches))
+        (sum (await (asyncio.gather *: held)))
+
+
+define async_tree [levels branches]:
+    (recurse levels branches)
+
+
+;; The end.

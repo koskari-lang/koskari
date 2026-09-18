@@ -54,52 +54,8 @@ KOS_OP_HANDLER(RETURN) {
     }
   }
 
-  /* === Phase 2: deliver ===
-     The three shapes that need no walk thread straight on: a plain
-     bytecode parent takes the value on its stack and continues at its
-     saved pc (the bytecode frame's own resume); a region over such a
-     parent takes the value on its segment and reacts through its
-     control-returned hook if it has one; a parent waiting on a resume
-     takes the value by a tail call into that resume. Anything else --
-     an extent above the returning frame, a generator or a receiving
-     iteration-node parent, a missing retarget cache, an unsettled
-     value -- signals RETURN and the trampoline's return machinery
-     walks it. */
-  {
-    KosDynNode *child, *parent;
-    KosDynFrame *ft;
-    KosOpResult r;
-
-    if (likely(kos_return_is_plain(es, &child, &parent))) {
-      KOS_TRACE_POST_OP_WRAP(plain_return,
-          r = eval_ng_plain_return(es, child, parent, val));
-      if (likely(r.kind == KOS_RES_DISPATCH))
-        RESULT_CONTINUE(es);
-      return r;
-    }
-
-    if (kos_return_is_region(es, &child, &parent, &ft)) {
-      KOS_TRACE_POST_OP_WRAP(plain_return,
-          r = eval_ng_region_return(es, child, parent, ft, val));
-      if (likely(r.kind == KOS_RES_DISPATCH))
-        RESULT_CONTINUE(es);
-      return r;
-    }
-
-    if (kos_return_is_resume(es, &parent)) {
-      KosResumeFn resume;
-      void *state;
-      int took = kos_return_take_resume(es, parent, val, &resume, &state);
-
-      if (took > 0) {
-        RESUME_HOP(resume, es, state, val);
-      }
-      if (unlikely(took < 0))
-        RESULT_RAISE();
-    }
-  }
-
-  return EVAL_RETURN(val);
+  /* === Phase 2: deliver === */
+  TAILCALL(kos_return_deliver, es, insn, val);
 }
 
 

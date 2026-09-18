@@ -201,9 +201,11 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 | `SWITCH_EQ` fusion | Prior opcode in **`_SWITCH_SQUASHES`**: replace **`KOS_OP_SWITCH_EQ`** with the mapped opcode; **arg** becomes **`(switch_label, *pargs[:3])`** if the prior **arg** was a tuple, else **`(switch_label, pargs, None, None)`** ( **`switch_label`** is this instruction’s original **arg**). |
 | `LABEL` vs prior jump | If the **`KOS_OP_LABEL`** name equals the prior instruction’s target: for prior **`KOS_OP_JUMP`**, drop the jump; for prior **`KOS_OP_JUMP_TRUE`** / **`KOS_OP_JUMP_FALSE`**, if the instruction before the jump is **`KOS_OP_CONST`**, drop const and jump; else replace the conditional jump with **`KOS_OP_POP`** **1**. |
 | Implicit `None` | **`KOS_OP_CONST`** **`None`** immediately before **`KOS_OP_RETURN`** / **`KOS_OP_BREAK`** / **`KOS_OP_CONTINUE`** / **`KOS_OP_YIELD`** with **arg 1** → remove the const and set the control opcode’s **arg** to **0**. |
+| Built tuple | **`KOS_OP_BUILD_ARGS`** **n** (n ≥ 2) immediately before **`KOS_OP_RETURN`** / **`KOS_OP_BREAK`** / **`KOS_OP_CONTINUE`** / **`KOS_OP_YIELD`** with **arg 1** → drop the build and set the control opcode’s **arg** to **n**; its N form builds the same tuple. n of 0 and 1 stay, since `()` is not `None` and a one-tuple is not its element. |
 | `CAR` / `CDR` merge | Two consecutive **same** opcodes **`KOS_OP_CAR`** or **`KOS_OP_CDR`** → one instruction with **args summed**. |
 | `VAR_STORE` fusion | Prior **`KOS_OP_CONST`** `value` immediately followed by **`KOS_OP_VAR_STORE`** `name` → **`KOS_OP_VAR_STORE_CONST`** with arg **`(name, value, None, None)`** (drop the **`CONST`**). Only the **immediate** prior instruction counts. |
 | Epilogue | If the stream does not end with **`KOS_OP_RETURN`**: if the last op is **`KOS_OP_CONST`** **`None`**, replace it with **`KOS_OP_RETURN`** **0**; otherwise append **`KOS_OP_RETURN`** **1**. |
+| Control feeder (fusion pass) | In the later `fuse_feeders` pass, **`KOS_OP_RETURN`** **1** or **`KOS_OP_YIELD`** **1** fed by a bare **`KOS_OP_CONST`** becomes **`KOS_OP_RETURN_CONST`** / **`KOS_OP_YIELD_CONST`**, and fed by a bare **`KOS_OP_VAR`** becomes **`KOS_OP_RETURN_VAR`** / **`KOS_OP_YIELD_VAR`**, which lower to the FAST twins; the epilogue's appended **`KOS_OP_RETURN`** **1** fuses the same way. |
 
 **`_CHECK_SQUASHES`** (prior opcode → **LABEL** opcode replacing the **`JUMP_FALSE`** pair; the fused opcode inherits the jump's label):
 
@@ -265,7 +267,7 @@ When adding or changing an opcode:
 - [4. Stack](#4-stack) — DUP, POP, UNPACK, UNPACK_STAR, UNPACK_VAR, UNPACK_FAST
 - [5. Constants](#5-constants) — CONST, CONST2, CONST3, CONST4
 - [5.1 Pair construction and access](#51-pair-construction-and-access) — CAR, CDR, CONS, PROPER, PAIR_SPLICE, NILP
-- [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
+- [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, RETURN_CONST, YIELD_CONST, YIELD_FROM
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION, CHECK_NIL
@@ -273,8 +275,8 @@ When adding or changing an opcode:
 - [9.2 Pattern dispatch](#92-pattern-dispatch) — MATCH_CASE
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST
-- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST
+- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
+- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_TAKE, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, ITEM_TAKE, CONST_ITEM, CONST_ITEM_TAKE, and variants
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
@@ -371,6 +373,28 @@ When adding or changing an opcode:
 | ITEM_STORE | NOARG | Set item | [§15](#kos_op_item_store) |
 | CONST_ITEM | CONST | Get item (constant key) | [§15](#kos_op_const_item) |
 | CONST_ITEM_TAKE | CONST | Get item (constant key), delete, push value | [§15](#kos_op_const_item_take) |
+| VAR_ITEM | EXTRA | Get item; object and key by name | [§12](#kos_op_var_item) |
+| VAR_CONST_ITEM | EXTRA | Get item; object by name, constant key | [§12](#kos_op_var_const_item) |
+| VAR_ITEM_STORE | EXTRA | Set item; object and key by name | [§12](#kos_op_var_item_store) |
+| VAR_CONST_ITEM_STORE | EXTRA | Set item; object by name, constant key | [§12](#kos_op_var_const_item_store) |
+| FAST_ITEM | EXTRA | Get item; object and key from fast slots | [§13](#kos_op_fast_item) |
+| FAST_CONST_ITEM | EXTRA | Get item; object from fast slot, constant key | [§13](#kos_op_fast_const_item) |
+| FAST_ITEM_STORE | EXTRA | Set item; object and key from fast slots | [§13](#kos_op_fast_item_store) |
+| FAST_CONST_ITEM_STORE | EXTRA | Set item; object from fast slot, constant key | [§13](#kos_op_fast_const_item_store) |
+| VAR_ITEM_STORE_CONST | EXTRA | Set item to a constant; object and key by name | [§12](#kos_op_var_item_store_const) |
+| VAR_CONST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object by name, constant key | [§12](#kos_op_var_const_item_store_const) |
+| FAST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object and key from fast slots | [§13](#kos_op_fast_item_store_const) |
+| FAST_CONST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object from fast slot, constant key | [§13](#kos_op_fast_const_item_store_const) |
+| ITEM_INPLACE | OPCOUNT | Reduce item in place; object and key on stack | [§15](#kos_op_item_inplace) |
+| CONST_ITEM_INPLACE | EXTRA | Reduce item in place; object on stack, constant key | [§15](#kos_op_const_item_inplace) |
+| VAR_ITEM_INPLACE | EXTRA | Reduce item in place; object and key by name | [§12](#kos_op_var_item_inplace) |
+| VAR_CONST_ITEM_INPLACE | EXTRA | Reduce item in place; object by name, constant key | [§12](#kos_op_var_const_item_inplace) |
+| VAR_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object and key by name | [§12](#kos_op_var_item_inplace_const) |
+| VAR_CONST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object by name, constant key | [§12](#kos_op_var_const_item_inplace_const) |
+| FAST_ITEM_INPLACE | EXTRA | Reduce item in place; object and key from fast slots | [§13](#kos_op_fast_item_inplace) |
+| FAST_CONST_ITEM_INPLACE | EXTRA | Reduce item in place; object from fast slot, constant key | [§13](#kos_op_fast_const_item_inplace) |
+| FAST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object and key from fast slots | [§13](#kos_op_fast_item_inplace_const) |
+| FAST_CONST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object from fast slot, constant key | [§13](#kos_op_fast_const_item_inplace_const) |
 | DEREF | NOARG | Pop Ref, call ref.deref(), push result | [§15.1](#kos_op_deref) |
 | BUILD_FUNCTION | EXTRA | Build function from spec, with keyword defaults and annotations from names tuples | [§16](#kos_op_build_function) |
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
@@ -939,6 +963,30 @@ bottom to top matches push order).
 
 ---
 
+### KOS_OP_RETURN_CONST
+
+- **Style**: CONST. Arg = pool index of the constant to return.
+- **Status**: Implemented.
+- **Stack**: `[...] -> [...]`. Returns the constant exactly as RETURN 1 returns a popped value: the handler takes a reference and tail-calls `kos_return_deliver`, the KosThreadFn-shaped delivery every RETURN row ends in (plain, region and resume shapes thread on; anything else signals RETURN).
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when RETURN 1 is fed by a bare CONST; a `None` constant takes RETURN 0 in the squish pass first. The epilogue's appended RETURN 1 after a constant body fuses the same way.
+- **Implementation**: `koskari/lib/opcode/RETURN_CONST.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
+
+---
+
+### KOS_OP_YIELD_CONST
+
+- **Style**: CONST. Arg = pool index of the constant to yield.
+- **Status**: Implemented.
+- **Stack**: `[...] -> [...]`. Yields the constant exactly as YIELD 1 yields a popped value: the handler takes a reference and tail-calls `kos_yield_deliver`, the delivery every YIELD row ends in. Sets **`KOS_CODE_YIELDS`** at finalize (`kos_op_yields`) and counts as a yield for tail-call demotion.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when YIELD 1 is fed by a bare CONST; a `None` constant takes YIELD 0 in the squish pass first.
+- **Implementation**: `koskari/lib/opcode/YIELD_CONST.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
+
+---
+
 ### KOS_OP_YIELD_FROM
 
 - **Style**: NOARG.
@@ -1015,7 +1063,7 @@ bottom to top matches push order).
 - **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and run the shared step core (`object_next_step`) -- Koskari agen flatten, ambient async (a suspended python step rides the NEXT boundary), 1-arg raises StopIteration on exhaustion, 2-arg pops and delivers the default.
 - **Invariants**: The fused name resolution runs after the default row (the fusion requires a bare default feeder, so the reorder is unobservable beyond NameError timing).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_NEXT's iterator feeder is a bare VAR load (the 2-arg form also requires a bare VAR/CONST default). Lowers to FAST_NEXT through the generic schema-driven `convert_fast` path.
-- **Implementation**: `koskari/lib/opcode/VAR_NEXT.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR_NEXT.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_next.py`
 
@@ -1025,7 +1073,7 @@ bottom to top matches push order).
 - **Status**: Implemented.
 - **Stack**: As VAR_NEXT, with the iterator loaded from its fast slot.
 - **Compiler form:** Post-compile only: the generic `convert_fast` lowering of VAR_NEXT when the iterator name has a fast slot.
-- **Implementation**: `koskari/lib/opcode/FAST_NEXT.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/FAST_NEXT.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_object_next.py`
 
@@ -1220,7 +1268,7 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
 - **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
   are never emitted (that is a folding case).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` (late `compress` sweep) absorbing two bare VAR/CONST feeder rows into an arity-2 [CHECK_COMPARE](#kos_op_check_compare). Runs before `pack_var_runs` so this fusion gets first claim on the feeders. Lowers to CHECK_COMPARE_FAST via the CMPSRC-aware `convert_fast` case (all-or-nothing on the name slots).
-- **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_VAR.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/CHECK_COMPARE_VAR.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`
 
@@ -1698,7 +1746,7 @@ Extra row: `("os.path", 0, 0, 0)`.
   a run of two consecutive bare **VAR** loads (quads first, then one triple
   or one pair). **`convert_fast`** lowers to **FAST2** when both names have
   fast slots (all-or-nothing; a mixed-eligibility row stays VAR2).
-- **Implementation**: `koskari/lib/opcode/VAR2.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR2.c`
 - **Covered by**: `tests/compile/test_pack_var_runs.py`,
   `tests/reproducers/test_var_pack.py`
 
@@ -1724,7 +1772,7 @@ Extra row: `("os.path", 0, 0, 0)`.
   from a run of three consecutive bare VAR loads (quads first, then one triple
   or one pair). **`convert_fast`** lowers to FAST3 when all three names have fast
   slots (all-or-nothing; a mixed-eligibility row stays VAR3).
-- **Implementation**: `koskari/lib/opcode/VAR3.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR3.c`
 - **Covered by**: `tests/compile/test_pack_var_runs.py`,
   `tests/reproducers/test_var_pack.py`
 
@@ -1749,7 +1797,7 @@ Extra row: `("os.path", 0, 0, 0)`.
 - **Compiler form:** As **VAR2**: produced only by **`pack_runs`** from a run
   of four (or more, greedily) consecutive bare **VAR** loads.
   **`convert_fast`** lowers to **FAST4** when all four names have fast slots.
-- **Implementation**: `koskari/lib/opcode/VAR4.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR4.c`
 - **Covered by**: `tests/compile/test_pack_var_runs.py`,
   `tests/reproducers/test_var_pack.py`
 
@@ -1876,6 +1924,24 @@ Extra row: `("os.path", 0, 0, 0)`.
 **Example (fusion source):** `(compile/setq x 42)` emits value, **`VAR_STORE`**, **`CONST`** `None`; compress turns **`CONST`** `42` + **`VAR_STORE`** `x` into **`VAR_STORE_CONST`**.
 
 
+### KOS_OP_VAR_INPLACE {#kos_op_var_inplace}
+
+- **Style**: EXTRA (OPCOUNT, VAR, NOARG, NOARG). Row a0 = operator selector in the high byte and reduce count in the low byte, a1 = the variable name.
+- **Status**: Implemented.
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce the count operands from the stack into the frame namespace binding with the operator, left to right, and store the result back; pushes nothing (the special appends CONST None). The operator switch lives in the shared `kos_var_inplace_operand`.
+- **Compiler form:** Emitted by **`compile/inplace`** when the target is a symbol. May lower to **FAST_INPLACE**; a single constant operand squashes into **VAR_INPLACE_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_INPLACE.c`
+
+
+### KOS_OP_VAR_INPLACE_CONST {#kos_op_var_inplace_const}
+
+- **Style**: EXTRA (OPERAND, VAR, CONST, NOARG). Row a0 = bare operator selector, a1 = the variable name, a2 = the operand.
+- **Status**: Implemented.
+- **Stack**: No stack effect. Augmented assignment with a constant operand through the frame namespace: deref the name, apply the operator with the pool constant, store back.
+- **Peephole**: the compressed form of **CONST** followed by **VAR_INPLACE** at a count of one, as VAR_STORE_CONST is of CONST and VAR_STORE. May lower to **FAST_INPLACE_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_INPLACE_CONST.c`
+
+
 ### 12.1 Attribute access on variables (VAR_ATTR_*)
 
 These opcodes perform attribute get, set, clear, take, or reference on an object fetched from the frame namespace by name. The object is not on the stack; it is resolved via `frame_ns_deref(var_name)`. Each uses EXTRA schema: VAR (obj name), CONST (attr name).
@@ -1919,6 +1985,83 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 - **Implementation**: `koskari/lib/opcode/VAR_ATTR_REF.c`
 
 
+### KOS_OP_VAR_ATTR_INPLACE {#kos_op_var_attr_inplace}
+
+- **Style**: EXTRA (OPCOUNT, VAR, CONST, NOARG). Row a0 = operator selector and count, a1 = the object name, a2 = the attribute name.
+- **Status**: Implemented. Cache: one KOS_CACHE_FIELD slot; a single resolved storage location serves both the read of obj.attr and the write-back.
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Resolve the object by name, reduce obj.attr in place with the count values left to right, store it back; pushes nothing (the special appends CONST None). The operator switch lives in the shared `kos_inplace_reduce`.
+- **Compiler form:** Emitted by **`compile/inplace-attr`** when OBJ is a symbol. May lower to **FAST_ATTR_INPLACE**.
+- **Implementation**: `koskari/lib/opcode/VAR_ATTR_INPLACE.c`
+
+
+### KOS_OP_VAR_ITEM {#kos_op_var_item}
+
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key] with the object and the key both resolved by name in the frame namespace. Equivalent to ITEM with nothing on the stack.
+- **Compiler form:** Fused by the compress pipeline from `VAR obj, VAR key, ITEM`. May lower to **FAST_ITEM**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM.c`
+
+
+### KOS_OP_VAR_CONST_ITEM {#kos_op_var_const_item}
+
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key] with the object resolved by name and the key a pool constant. Equivalent to CONST_ITEM with nothing on the stack.
+- **Compiler form:** Fused by the compress pipeline from `VAR obj, CONST_ITEM key`. May lower to **FAST_CONST_ITEM**.
+- **Implementation**: `koskari/lib/opcode/VAR_CONST_ITEM.c`
+
+
+### KOS_OP_VAR_ITEM_STORE {#kos_op_var_item_store}
+
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG).
+- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object and the key resolved by name after the value was pushed.
+- **Compiler form:** Emitted by **`compile/set-item`** when OBJ is a symbol and KEY is a symbol; the value compiles first. May lower to **FAST_ITEM_STORE**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_STORE.c`
+
+
+### KOS_OP_VAR_CONST_ITEM_STORE {#kos_op_var_const_item_store}
+
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object resolved by name after the value was pushed and the key a pool constant.
+- **Compiler form:** Emitted by **`compile/set-item`** when OBJ is a symbol and KEY is a constant; the value compiles first. May lower to **FAST_CONST_ITEM_STORE**.
+- **Implementation**: `koskari/lib/opcode/VAR_CONST_ITEM_STORE.c`
+
+
+### KOS_OP_VAR_ITEM_STORE_CONST {#kos_op_var_item_store_const}
+
+- **Style**: EXTRA (VAR, VAR, CONST, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object and the key resolved by name and the value a pool constant.
+- **Compiler form:** Squashed by the compress pipeline from `CONST value, VAR_ITEM_STORE`. May lower to **FAST_ITEM_STORE_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_STORE_CONST.c`
+
+
+### KOS_OP_VAR_CONST_ITEM_STORE_CONST {#kos_op_var_const_item_store_const}
+
+- **Style**: EXTRA (VAR, CONST, CONST, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object resolved by name and the key and value pool constants.
+- **Compiler form:** Squashed by the compress pipeline from `CONST value, VAR_CONST_ITEM_STORE`. May lower to **FAST_CONST_ITEM_STORE_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_CONST_ITEM_STORE_CONST.c`
+
+
+### KOS_OP_VAR_ITEM_INPLACE {#kos_op_var_item_inplace}
+
+- **Style**: EXTRA (OPCOUNT, VAR, VAR, NOARG).
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the object and key resolved by name after the values were pushed. Emitted by **`compile/inplace-item`** when OBJ is a symbol and KEY is a symbol. May lower to **FAST_ITEM_INPLACE**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_INPLACE.c`
+### KOS_OP_VAR_CONST_ITEM_INPLACE {#kos_op_var_const_item_inplace}
+
+- **Style**: EXTRA (OPCOUNT, VAR, CONST, NOARG).
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the object resolved by name after the values were pushed and the key a pool constant. Emitted by **`compile/inplace-item`** when OBJ is a symbol and KEY is constant. May lower to **FAST_CONST_ITEM_INPLACE**.
+- **Implementation**: `koskari/lib/opcode/VAR_CONST_ITEM_INPLACE.c`
+### KOS_OP_VAR_ITEM_INPLACE_CONST {#kos_op_var_item_inplace_const}
+
+- **Style**: EXTRA (OPERAND, VAR, VAR, CONST).
+- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant, the object and key resolved by name. Squashed by the compress pipeline from `CONST rhs, VAR_ITEM_INPLACE` at a count of one. May lower to **FAST_ITEM_INPLACE_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_ITEM_INPLACE_CONST.c`
+### KOS_OP_VAR_CONST_ITEM_INPLACE_CONST {#kos_op_var_const_item_inplace_const}
+
+- **Style**: EXTRA (OPERAND, VAR, CONST, CONST).
+- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant, the object resolved by name and the key a pool constant. Squashed by the compress pipeline from `CONST rhs, VAR_CONST_ITEM_INPLACE` at a count of one. May lower to **FAST_CONST_ITEM_INPLACE_CONST**.
+- **Implementation**: `koskari/lib/opcode/VAR_CONST_ITEM_INPLACE_CONST.c`
 ## 13. Fast variables
 
 ### KOS_OP_FAST
@@ -2120,6 +2263,24 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 | 2     | RETURN           | 1   | 1                  | |
 
 
+### KOS_OP_FAST_INPLACE {#kos_op_fast_inplace}
+
+- **Style**: EXTRA (OPCOUNT, FASTVAR, NOARG, NOARG). Row a0 = operator selector in the high byte and reduce count in the low byte, a1 = the fast slot.
+- **Status**: Implemented. Cache: one KOS_CACHE_ELECTOR slot.
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce the count operands from the stack into the slot with the operator, left to right; pushes nothing. Hot: prologue only, tail-calling the body the site's slot elected (an int, float, or str body for the accumulator and operand it first saw, with the result written into the accumulator in place when the slot is its only owner); an empty slot or an ungated site takes the electing function.
+- **Compiler form:** The lowered form of **VAR_INPLACE**.
+- **Implementation**: `koskari/lib/opcode/FAST_INPLACE.c`
+
+
+### KOS_OP_FAST_INPLACE_CONST {#kos_op_fast_inplace_const}
+
+- **Style**: EXTRA (OPERAND, FASTVAR, CONST, NOARG). Row a0 = bare operator selector, a1 = the fast slot, a2 = the operand.
+- **Status**: Implemented. Cache: one KOS_CACHE_ELECTOR slot.
+- **Stack**: No stack effect. Augmented assignment with a constant operand, completely stack-free: deref the slot, apply the operator with the pool constant, store back. The compiled form of `(incr! i)`. Prologue only, as FAST_INPLACE; the operand's type was fixed at the election, so the body guards only the accumulator.
+- **Compiler form:** The lowered form of **VAR_INPLACE_CONST**.
+- **Implementation**: `koskari/lib/opcode/FAST_INPLACE_CONST.c`
+
+
 ### 13.1 Attribute access on fast locals (FAST_ATTR_*)
 
 These opcodes perform attribute get, set, clear, take, or reference on an object fetched from the fast local slot. The object is not on the stack; it is resolved via `KosNamespace_FastDeref(ns, slot)`. Each uses EXTRA schema: FASTVAR (slot), CONST (attr name).
@@ -2159,6 +2320,87 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 - **Implementation**: `koskari/lib/opcode/FAST_ATTR_REF.c`
 
 
+### KOS_OP_FAST_ATTR_INPLACE {#kos_op_fast_attr_inplace}
+
+- **Style**: EXTRA (OPCOUNT, FASTVAR, CONST, NOARG). Row a0 = operator selector and count, a1 = the object's fast slot, a2 = the attribute name.
+- **Status**: Implemented. Cache: two slots, the KOS_CACHE_FIELD slot first (one resolved storage location serving both the read of obj.attr and the write-back) and a KOS_CACHE_ELECTOR slot second.
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Read the object from its slot, reduce obj.attr in place with the count values left to right, store it back; pushes nothing. Hot: prologue only, tail-calling the body the elector slot holds, which guards through the field slot and reads, computes, and stores through its location; an empty elector slot or an ungated site takes the electing function, and the generic path runs `kos_attr_inplace_cached` through the field slot.
+- **Compiler form:** The lowered form of **VAR_ATTR_INPLACE**.
+- **Implementation**: `koskari/lib/opcode/FAST_ATTR_INPLACE.c`
+
+
+### KOS_OP_FAST_ITEM {#kos_op_fast_item}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key] with the object and the key both read from fast slots.
+- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM.c`
+
+
+### KOS_OP_FAST_CONST_ITEM {#kos_op_fast_const_item}
+
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get obj[key] with the object read from a fast slot and the key a pool constant.
+- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Implementation**: `koskari/lib/opcode/FAST_CONST_ITEM.c`
+
+
+### KOS_OP_FAST_ITEM_STORE {#kos_op_fast_item_store}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG).
+- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object and the key read from fast slots.
+- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_STORE.c`
+
+
+### KOS_OP_FAST_CONST_ITEM_STORE {#kos_op_fast_const_item_store}
+
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., value] → [...]`. Set obj[key] = value with the object read from a fast slot and the key a pool constant.
+- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Implementation**: `koskari/lib/opcode/FAST_CONST_ITEM_STORE.c`
+
+
+### KOS_OP_FAST_ITEM_STORE_CONST {#kos_op_fast_item_store_const}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, CONST, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object and the key read from fast slots and the value a pool constant.
+- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_STORE_CONST.c`
+
+
+### KOS_OP_FAST_CONST_ITEM_STORE_CONST {#kos_op_fast_const_item_store_const}
+
+- **Style**: EXTRA (FASTVAR, CONST, CONST, NOARG).
+- **Stack**: No stack effect. Set obj[key] = value with the object read from a fast slot and the key and value pool constants.
+- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Implementation**: `koskari/lib/opcode/FAST_CONST_ITEM_STORE_CONST.c`
+
+
+### KOS_OP_FAST_ITEM_INPLACE {#kos_op_fast_item_inplace}
+
+- **Style**: EXTRA (OPCOUNT, FASTVAR, FASTVAR, NOARG).
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the object and key read from fast slots.
+- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_INPLACE.c`
+### KOS_OP_FAST_CONST_ITEM_INPLACE {#kos_op_fast_const_item_inplace}
+
+- **Style**: EXTRA (OPCOUNT, FASTVAR, CONST, NOARG).
+- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the object read from a fast slot and the key a pool constant.
+- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Implementation**: `koskari/lib/opcode/FAST_CONST_ITEM_INPLACE.c`
+### KOS_OP_FAST_ITEM_INPLACE_CONST {#kos_op_fast_item_inplace_const}
+
+- **Style**: EXTRA (OPERAND, FASTVAR, FASTVAR, CONST).
+- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant, the object and key read from fast slots.
+- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Implementation**: `koskari/lib/opcode/FAST_ITEM_INPLACE_CONST.c`
+### KOS_OP_FAST_CONST_ITEM_INPLACE_CONST {#kos_op_fast_const_item_inplace_const}
+
+- **Style**: EXTRA (OPERAND, FASTVAR, CONST, CONST).
+- **Stack**: No stack effect. Reduce obj[key] in place with the pool constant, the object read from a fast slot and the key and operand pool constants.
+- **Cache**: one KOS_CACHE_ELECTOR slot (see §15).
+- **Implementation**: `koskari/lib/opcode/FAST_CONST_ITEM_INPLACE_CONST.c`
 ## 14. Attributes
 
 ### KOS_OP_ATTR
@@ -2248,7 +2490,37 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 | 1     | ATTR_REF | 1   | 1 ('prop')| stack: [..., obj, attr_ref] |
 
 
+### KOS_OP_ATTR_INPLACE {#kos_op_attr_inplace}
+
+- **Style**: EXTRA (OPCOUNT, CONST, NOARG, NOARG). Row a0 = operator selector and count, a1 = the attribute name.
+- **Status**: Implemented. Cache: one KOS_CACHE_FIELD slot, degrading to its megamorphic bypass at a polymorphic site.
+- **Stack**: `[..., obj, v0 .. v_{n-1}] → [...]`. Reduce obj.attr in place with the count values left to right, store it back, drop the object and the values; pushes nothing (the special appends CONST None). The operator switch lives in the shared `kos_inplace_reduce`.
+- **Compiler form:** Emitted by **`compile/inplace-attr`** when OBJ is an expression.
+- **Implementation**: `koskari/lib/opcode/ATTR_INPLACE.c`
+
+
 ## 15. Items
+
+ITEM, CONST_ITEM, ITEM_STORE and CONST_ITEM_STORE, and their FAST twins
+in §13, carry one KOS_CACHE_ELECTOR slot each (`eval/eval_electors.c`,
+the item families). On its first execution a site elects a body for
+the container kind it sees: an exact list or tuple under an exact int
+key, or an exact dict under any key. The body guards the kind on every
+execution and reads or writes the container directly; an index outside
+the sequence or a key the dict lacks runs the object protocol for that
+execution, so IndexError and KeyError keep their messages, and eight
+guard misses demote the site to the protocol until it re-elects. The
+VAR twins in §12 carry no slot: a VAR row survives lowering only for a
+name with no fast slot, and its cost is the name resolution.
+
+The FAST in-place rows in §13 carry one KOS_CACHE_ELECTOR slot each
+and elect their operator's int or float body, as FAST_INPLACE does
+(`eval/eval_electors.c`, the item in-place families); the body finds
+the cell by an exact list or dict check, offers the cell's value as
+the result's home under the in-place result rule, and stores back
+only when a new object came back. ITEM_INPLACE, CONST_ITEM_INPLACE
+and the VAR rows run the object protocol through the shared
+`kos_item_inplace_reduce`.
 
 ### KOS_OP_ITEM
 
@@ -2428,6 +2700,18 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 | 1     | CONST_ITEM_REF| 0   | 0 ('key')| stack: [..., obj, item_ref] |
 
 
+### KOS_OP_ITEM_INPLACE {#kos_op_item_inplace}
+
+- **Style**: OPCOUNT (operator selector, value count).
+- **Stack**: `[..., obj, key, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right through the object protocol, store it back, drop every entry. Emitted by **`compile/inplace-item`** when OBJ is an expression or KEY is computed.
+- **Cache**: one KOS_CACHE_ELECTOR slot; the int and float bodies of the FAST twin over the stack shape, elected at a count of one.
+- **Implementation**: `koskari/lib/opcode/ITEM_INPLACE.c`
+### KOS_OP_CONST_ITEM_INPLACE {#kos_op_const_item_inplace}
+
+- **Style**: EXTRA (OPCOUNT, CONST, NOARG, NOARG).
+- **Stack**: `[..., obj, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the key a pool constant, store it back, drop every entry. Emitted by **`compile/inplace-item`** when OBJ is an expression and KEY is constant.
+- **Cache**: one KOS_CACHE_ELECTOR slot; the int and float bodies of the FAST twin over the stack shape, elected at a count of one.
+- **Implementation**: `koskari/lib/opcode/CONST_ITEM_INPLACE.c`
 ## 15.1 Reference dereference
 
 ### KOS_OP_DEREF
@@ -3329,7 +3613,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Invariants**: Selector is a valid KosCompare ordinal (richcompare
   chain semantics; extended selectors are never emitted at arity 3).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when the exact CONST / VAR / CONST feeder shape meets an arity-3 comparison. In value position the OBJECT_COMPARE quartet collapses to this row alone; in branch position the arity-3 CHECK_COMPARE cannot also carry its label (five fields), so it splits into this row plus `JUMP_FALSE`. Lowers to OBJECT_COMPARE_FAST through the generic schema-driven `convert_fast` path.
-- **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE_VAR.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/OBJECT_COMPARE_VAR.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_compare.py`,
   `tests/reproducers/test_compare_fusion.py`
@@ -3502,7 +3786,7 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT (arg=1): resolve the name in the current frame's namespace and push `PyObject_Format(obj, NULL)`.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_FORMAT (arg=1) is fed by a bare VAR load. Lowers to FAST_FORMAT through the simple `convert_fast` path.
-- **Implementation**: `koskari/lib/opcode/VAR_FORMAT.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR_FORMAT.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
 
@@ -3512,9 +3796,29 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Status**: Implemented.
 - **Stack**: `[...] -> [..., str]`. Fused VAR + OBJECT_FORMAT_CONST: resolve the name in the current frame's namespace and push `PyObject_Format(obj, rules)`.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_FORMAT_CONST is fed by a bare VAR load. The 2-arg OBJECT_FORMAT (dynamic rules) stays unfused: absorbing the object load would move its name resolution past the rules evaluation. Lowers to FAST_FORMAT_CONST through the generic schema-driven `convert_fast` path.
-- **Implementation**: `koskari/lib/opcode/VAR_FORMAT_CONST.c` (cold handler)
+- **Implementation**: `koskari/lib/opcode/VAR_FORMAT_CONST.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
+
+### KOS_OP_RETURN_VAR {#kos_op_return_var}
+
+- **Style**: VAR. Arg = pool index of the name.
+- **Status**: Implemented.
+- **Stack**: `[...] -> [...]`. Resolve the name in the current frame's namespace (`frame_ns_deref`, NameError when unbound) and tail-call `kos_return_deliver` with the value, as RETURN 1 would with a popped one.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when RETURN 1 is fed by a bare VAR load. Lowers to RETURN_FAST through `convert_fast` (registered beside the other suffix twins in `build_var_to_fast`).
+- **Implementation**: `koskari/lib/opcode/RETURN_VAR.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
+
+### KOS_OP_YIELD_VAR {#kos_op_yield_var}
+
+- **Style**: VAR. Arg = pool index of the name.
+- **Status**: Implemented.
+- **Stack**: `[...] -> [...]`. Resolve the name as RETURN_VAR does and tail-call `kos_yield_deliver` with the value. Sets **`KOS_CODE_YIELDS`** at finalize and counts as a yield for tail-call demotion.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when YIELD 1 is fed by a bare VAR load. Lowers to YIELD_FAST through `convert_fast`.
+- **Implementation**: `koskari/lib/opcode/YIELD_VAR.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
 
 ### KOS_OP_FAST_FORMAT {#kos_op_fast_format}
 
@@ -3535,6 +3839,26 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT_CONST.c`
 - **Covered by**: `tests/compile/test_fuse_feeders.py`,
   `tests/lib/opcode/test_format_fused.py`
+
+### KOS_OP_RETURN_FAST {#kos_op_return_fast}
+
+- **Style**: FASTVAR. Arg = slot index.
+- **Status**: Implemented.
+- **Stack**: As RETURN_VAR, with the value read from its fast slot (`kos_ns_fast_deref`, NameError when empty).
+- **Compiler form:** Post-compile only: the `convert_fast` lowering of RETURN_VAR when the name has a fast slot.
+- **Implementation**: `koskari/lib/opcode/RETURN_FAST.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
+
+### KOS_OP_YIELD_FAST {#kos_op_yield_fast}
+
+- **Style**: FASTVAR. Arg = slot index.
+- **Status**: Implemented.
+- **Stack**: As YIELD_VAR, with the value read from its fast slot; sets **`KOS_CODE_YIELDS`** at finalize.
+- **Compiler form:** Post-compile only: the `convert_fast` lowering of YIELD_VAR when the name has a fast slot.
+- **Implementation**: `koskari/lib/opcode/YIELD_FAST.c`
+- **Covered by**: `tests/lib/opcode/test_control_operand.py`,
+  `tests/compile/test_fuse_feeders.py`
 
 ### KOS_OP_OBJECT_TRUTH {#kos_op_object_truth}
 

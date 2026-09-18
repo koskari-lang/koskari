@@ -77,8 +77,19 @@ static PyObject *batched_short(KosBatched *b) {
    suspends, and DELIVER files that element and hops back in. */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
+   clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element);
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(batched_resume_deliver_kind, "batched-step",
+                batched_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(batched_resume_fill_kind, "batched-step",
+                batched_resume_fill, kos_transform_step_clear, NULL);
 
 
 /**
@@ -102,8 +113,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
      resume -- it fills its whole batch inside the step. */
   while (b->filled < b->n) {
     KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
-                                            batched_resume_deliver, b);
-    RESULT_ENTRY(es, r, batched_resume_deliver, b);
+                                            &batched_resume_deliver_kind, b);
+    RESULT_ENTRY(es, r, &batched_resume_deliver_kind, b);
   }
 
   {
@@ -145,7 +156,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
   PyTuple_SET_ITEM(t->pending, b->filled, element);
   b->filled++;
 
-  RESUME_HOP(batched_resume_fill, es, b, NULL);
+  RESUME_HOP(&batched_resume_fill_kind, es, b, NULL);
 }
 
 
@@ -209,7 +220,7 @@ static KosIterStepResult batched_iter_step(
      koskari_eval's own dispatch. */
   {
     KosIterStepResult staged = kos_transform_stage(
-        es, t, NULL, (void *) batched_resume_fill, "batched-step", pre_top);
+        es, t, NULL, &batched_resume_fill_kind, pre_top);
 
     if (staged != KOS_ITER_INSTALLED_VALUE) {
       Py_DECREF(batch);

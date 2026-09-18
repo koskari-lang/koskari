@@ -32,7 +32,7 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
     return NULL;
   kos_dynnode_init(clone, KOS_DYN_TRY, NULL, KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
   KosDynTry_HANDLER_PC(clone) = KosDynTry_HANDLER_PC(node);
   KosDynTry_ENABLED(clone) = KosDynTry_ENABLED(node);
   KosDynTry_EXC_SAVED(clone) = KosDynTry_EXC_SAVED(node);

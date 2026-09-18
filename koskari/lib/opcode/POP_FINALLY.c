@@ -19,7 +19,7 @@
    raise, restore the exception. Then pop the region.
 */
 
-KOS_OP_HANDLER_COLD(POP_FINALLY) {
+KOS_OP_HANDLER(POP_FINALLY) {
 
   KosDynNode *region = KosEvalState_CurrentNode(es);
   if (! region || ! KosDynNode_IS_FINALLY(region)) {
@@ -39,7 +39,7 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
        exception continue through the prologue. */
     if (unlikely(kos_dyn_pop_finally(es, (KosDynFinally *) region) < 0))
       RESULT_RAISE();
-    return EVAL_REPROLOGUE();
+    RESULT_REPROLOGUE(es);
   }
 
   /* A control transfer parked here by an unwind walk resumes as itself
@@ -63,7 +63,7 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
        enabled FINALLY takes its own delivery. */
     switch (pending) {
       case KOS_PENDING_RETURN_FRAME:
-        return EVAL_RETURN(promoted);
+        RESULT_RETURN(es, promoted);
       case KOS_PENDING_RETURN_BREAK:
         RESULT_RELAY(es, kos_dyn_unwind_to_loop(
             es, KOS_XFER_EVENT_BREAK, promoted));
@@ -84,7 +84,7 @@ KOS_OP_HANDLER_COLD(POP_FINALLY) {
   /* Restoring the active exception must run through the prologue so
      eval_phase_pending_exception observes PyErr before the next opcode. */
   if (PyErr_Occurred())
-    return EVAL_REPROLOGUE();
+    RESULT_REPROLOGUE(es);
   RESULT_NEXT(es);
 }
 

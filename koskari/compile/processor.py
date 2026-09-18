@@ -137,6 +137,11 @@ SWITCH_SQUASHES = {
 JUMP_PRIORS = frozenset((OpCode.JUMP_TRUE, OpCode.JUMP_FALSE))
 POP_PRIORS = frozenset((OpCode.CONST, OpCode.DUP))
 FEEDER = frozenset((OpCode.VAR, OpCode.CONST))
+
+# the rows that make a code object a generator
+YIELD_OPS = frozenset((
+    OpCode.YIELD, OpCode.YIELD_FROM, OpCode.YIELD_CONST, OpCode.YIELD_VAR,
+    OpCode.YIELD_FAST))
 CONST_FEEDER = frozenset((OpCode.CONST,))
 
 
@@ -207,6 +212,8 @@ def build_var_to_fast():
     var_to_fast[OpCode.SWITCH_EQ_VAR] = OpCode.SWITCH_EQ_FAST
     var_to_fast[OpCode.SWITCH_EQ_VAR_ATTR] = OpCode.SWITCH_EQ_FAST_ATTR
     var_to_fast[OpCode.OBJECT_COMPARE_VAR] = OpCode.OBJECT_COMPARE_FAST
+    var_to_fast[OpCode.RETURN_VAR] = OpCode.RETURN_FAST
+    var_to_fast[OpCode.YIELD_VAR] = OpCode.YIELD_FAST
 
     return var_to_fast
 
@@ -280,6 +287,19 @@ ROUTE_TRANSPARENT = frozenset((
 # registered rules in source order.
 SQUISH_RULES = {}
 FUSE_RULES = {}
+
+
+def control_tuple_fold(op, arg, count):
+    """
+    The rows a control op with arg over a BUILD_ARGS of count folds to,
+    or None when it does not fold: the control op takes the count
+    itself for a count of two or more, since its N form builds the
+    same tuple
+    """
+
+    if arg != 1 or count < 2:
+        return None
+    return [(op, count)]
 
 
 def squish_rule(*pattern):
@@ -594,6 +614,22 @@ class ByteCodeProcessor:
         return [(op, 0)]
 
 
+    @squish_rule(OpCode.BUILD_ARGS, OpCode.RETURN)
+    @squish_rule(OpCode.BUILD_ARGS, OpCode.BREAK)
+    @squish_rule(OpCode.BUILD_ARGS, OpCode.CONTINUE)
+    @squish_rule(OpCode.BUILD_ARGS, OpCode.YIELD)
+    def control_tuple_normalize(self, op, arg, matched):
+        """
+        A control op carrying a just-built tuple takes the count itself,
+        since its N form builds the same tuple: BUILD_ARGS 2, RETURN 1
+        -> RETURN 2. Two or more only: BUILD_ARGS 0 is the empty tuple
+        where RETURN 0 is None, and BUILD_ARGS 1 is a one-tuple where
+        RETURN 1 is the bare value
+        """
+
+        return control_tuple_fold(op, arg, matched[0][1])
+
+
     @squish_rule(OpCode.CAR, OpCode.CAR)
     @squish_rule(OpCode.CDR, OpCode.CDR)
     def car_cdr_merge(self, op, arg, matched):
@@ -625,6 +661,80 @@ class ByteCodeProcessor:
             return None
         return [(OpCode.VAR_INPLACE_CONST,
                  (merged >> 8, arg[1], matched[0][1], None))]
+
+
+    @squish_rule(OpCode.CONST, OpCode.VAR_ITEM_INPLACE)
+    def var_item_inplace_const_fuse(self, op, arg, matched):
+        """
+        CONST VAR_ITEM_INPLACE (single operand) -> the stack-free
+        VAR_ITEM_INPLACE_CONST: bare operator selector, object name, key
+        name, pooled operand
+        """
+
+        merged = merge_opcount(arg[0])
+        if merged & 0xff != 1:
+            return None
+        return [(OpCode.VAR_ITEM_INPLACE_CONST,
+                 (merged >> 8, arg[1], arg[2], matched[0][1]))]
+
+
+    @squish_rule(OpCode.CONST, OpCode.VAR_CONST_ITEM_INPLACE)
+    def var_const_item_inplace_const_fuse(self, op, arg, matched):
+        """
+        CONST VAR_CONST_ITEM_INPLACE (single operand) -> the stack-free
+        VAR_CONST_ITEM_INPLACE_CONST: bare operator selector, object
+        name, pooled key, pooled operand
+        """
+
+        merged = merge_opcount(arg[0])
+        if merged & 0xff != 1:
+            return None
+        return [(OpCode.VAR_CONST_ITEM_INPLACE_CONST,
+                 (merged >> 8, arg[1], arg[2], matched[0][1]))]
+
+
+    @squish_rule(OpCode.CONST, OpCode.VAR_ITEM_STORE)
+    def var_item_store_const_fuse(self, op, arg, matched):
+        """
+        CONST VAR_ITEM_STORE -> the stack-free VAR_ITEM_STORE_CONST row:
+        object name, key name, pooled value
+        """
+
+        return [(OpCode.VAR_ITEM_STORE_CONST,
+                 (arg[0], arg[1], matched[0][1], 0))]
+
+
+    @squish_rule(OpCode.CONST, OpCode.VAR_CONST_ITEM_STORE)
+    def var_const_item_store_const_fuse(self, op, arg, matched):
+        """
+        CONST VAR_CONST_ITEM_STORE -> the stack-free
+        VAR_CONST_ITEM_STORE_CONST row: object name, pooled key, pooled
+        value
+        """
+
+        return [(OpCode.VAR_CONST_ITEM_STORE_CONST,
+                 (arg[0], arg[1], matched[0][1], 0))]
+
+
+    @fuse_rule(FEEDER, OpCode.RETURN)
+    @fuse_rule(FEEDER, OpCode.YIELD)
+    def fuse_control_feeder(self, op, arg, matched):
+        """
+        x RETURN 1 -> RETURN_CONST x or RETURN_VAR x by the feeder's
+        kind, and the same for YIELD; the value rides the row instead
+        of the stack. The N forms are left alone
+        """
+
+        if arg != 1:
+            return None
+        feeder_op, feeder_arg = matched[0]
+        if op == OpCode.RETURN:
+            fused = (OpCode.RETURN_CONST if feeder_op == OpCode.CONST
+                     else OpCode.RETURN_VAR)
+        else:
+            fused = (OpCode.YIELD_CONST if feeder_op == OpCode.CONST
+                     else OpCode.YIELD_VAR)
+        return [(fused, feeder_arg)]
 
 
     @fuse_rule(FEEDER, FEEDER, OpCode.CHECK_COMPARE)
@@ -680,6 +790,25 @@ class ByteCodeProcessor:
             return None
         return [(OpCode.OBJECT_COMPARE_VAR,
                  (sel, matched[0][1], matched[1][1], matched[2][1]))]
+
+
+    @fuse_rule(OpCode.VAR, OpCode.VAR, OpCode.ITEM)
+    def fuse_var_item(self, op, arg, matched):
+        """
+        VAR obj, VAR key, ITEM -> VAR_ITEM (obj, key): both operands
+        read from the namespace by the row, nothing on the stack
+        """
+
+        return [(OpCode.VAR_ITEM, (matched[0][1], matched[1][1], 0, 0))]
+
+
+    @fuse_rule(OpCode.VAR, OpCode.CONST_ITEM)
+    def fuse_var_const_item(self, op, arg, matched):
+        """
+        VAR obj, CONST_ITEM key -> VAR_CONST_ITEM (obj, key)
+        """
+
+        return [(OpCode.VAR_CONST_ITEM, (matched[0][1], arg, 0, 0))]
 
 
     @fuse_rule(OpCode.VAR, OpCode.OBJECT_ITER)
@@ -773,6 +902,11 @@ class ByteCodeProcessor:
             if i >= 0 and rows[i][0] == OpCode.CONST \
                and rows[i][1] is None:
                 rows[i] = (OpCode.RETURN, 0)
+            elif i >= 0 and rows[i][0] == OpCode.BUILD_ARGS \
+                    and control_tuple_fold(OpCode.RETURN, 1, rows[i][1]):
+                # the appended terminator takes the fold the rule would
+                # have applied had the RETURN been in the stream
+                rows[i] = (OpCode.RETURN, rows[i][1])
             else:
                 rows.append((OpCode.RETURN, 1))
 
@@ -1003,8 +1137,7 @@ class ByteCodeProcessor:
         """
 
         instr = self.instructions
-        yield_ops = (OpCode.YIELD, OpCode.YIELD_FROM)
-        if any(op in yield_ops for op, _ in instr):
+        if any(op in YIELD_OPS for op, _ in instr):
             return
 
         labels = {
@@ -1057,8 +1190,7 @@ class ByteCodeProcessor:
         """
 
         instr = self.instructions
-        yield_ops = (OpCode.YIELD, OpCode.YIELD_FROM)
-        if not any(op in yield_ops for op, _ in instr):
+        if not any(op in YIELD_OPS for op, _ in instr):
             return
         self.instructions = [
             (TAIL_CALL_TO_CALL.get(op, op), arg)
@@ -1116,8 +1248,7 @@ class ByteCodeProcessor:
         # function body).
         tco_enabled = (
             compiler.tco_enabled and function_body and not
-            any(op in (OpCode.YIELD, OpCode.YIELD_FROM)
-                for op, _ in self.instructions))
+            any(op in YIELD_OPS for op, _ in self.instructions))
 
         if tco_enabled:
             self.promote_tail_calls()

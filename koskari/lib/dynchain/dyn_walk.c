@@ -58,6 +58,12 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
   /* The frozen span leaves the live chain; its segments' unwind-cache
      back links cannot survive the detach. */
   kos_dyn_clear_unwind_caches(ctx_active, NULL);
+  /* The GEN's namespace fill is the consumer's live namespace stamped
+     at the install; the next install stamps it again from that
+     consumer's registers. Holding it across the freeze would keep the
+     consumer's frame namespace referenced from a suspended generator
+     the consumer itself may hold. */
+  Py_CLEAR(KosDynNode_NS(gen));
 
   SAY("[gen] freeze storing in gen->active: chain ");
   for (n = ctx_active; n; n = KosDynNode_PARENT(n))
@@ -514,15 +520,15 @@ static KosOpResult raise_walk_hand_to_resume(
     KosEvalState *es,
     KosDynFrame *frame) {
 
-  KosResumeFn resume = (KosResumeFn) KosDynFrame_RESUME_FN(frame);
+  const KosResumeKind *resume = KosDynFrame_RESUME_KIND(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
   KosOpResult hr;
 
-  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
   KOS_TRACE_RESUME_STEP();
-  hr = resume(es, state, NULL);
+  hr = resume->fn(es, state, NULL);
   KOS_TRACE_TRAMPOLINE_STEP();
 
   switch (hr.kind) {
@@ -794,7 +800,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
        frame-crossing branch's does, and a propagated exception goes
        on to the pop below. */
     if (KosDynNode_IS_FRAME(top)
-        && KosDynFrame_RESUME_FN((KosDynFrame *) top)) {
+        && KosDynFrame_RESUME_KIND((KosDynFrame *) top)) {
       KosOpResult hr = raise_walk_hand_to_resume(es, (KosDynFrame *) top);
 
       if (hr.kind != KOS_RES_RAISE)

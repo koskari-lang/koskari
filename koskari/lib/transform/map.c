@@ -36,6 +36,25 @@
    sites below and kos_dynframe_clone's resume refusal). */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
+   clone (a step in flight refuses capture by name) */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(map_resume_after_fetch_kind, "map-step",
+                map_resume_after_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(map_resume_after_result_kind, "map-step",
+                map_resume_after_result, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(map_resume_start_fetch_kind, "map-step",
+                map_resume_start_fetch, kos_transform_step_clear, NULL);
+
+
 /**
    The invoke completed. The value is settled by contract, so the step
    completes with it directly. value is consumed.
@@ -72,9 +91,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
     return EVAL_RAISE();
 
   r = KosEvalState_CallResult(es, m->fn.cs_callable, &element, 1, NULL,
-                              0, map_resume_after_result, m);
+                              0, &map_resume_after_result_kind, m);
   Py_DECREF(element);
-  RESULT_ENTRY(es, r, map_resume_after_result, m);
+  RESULT_ENTRY(es, r, &map_resume_after_result_kind, m);
 }
 
 
@@ -101,8 +120,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
 
   r = KosEvalState_NextResume(
       es, ((KosTransform *) state)->source, NULL,
-      map_resume_after_fetch, state);
-  RESULT_ENTRY(es, r, map_resume_after_fetch, state);
+      &map_resume_after_fetch_kind, state);
+  RESULT_ENTRY(es, r, &map_resume_after_fetch_kind, state);
 }
 
 
@@ -159,8 +178,7 @@ static KosIterStepResult map_iter_step(
        not here. */
     if (m->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
       return kos_transform_stage(es, m, element,
-                                 (void *) map_resume_after_fetch,
-                                 "map-step", pre_top);
+                                 &map_resume_after_fetch_kind, pre_top);
 
     /* A plain python callable needs no evaluator at all. */
     {
@@ -179,8 +197,7 @@ static KosIterStepResult map_iter_step(
              await it needs must happen from inside koskari_eval's
              own dispatch, not from map_iter_step. */
           return kos_transform_stage(es, m, result,
-                                     (void *) map_resume_after_result,
-                                     "map-step", pre_top);
+                                     &map_resume_after_result_kind, pre_top);
         default:
           Py_DECREF(result);
           return KOS_ITER_ERROR;
@@ -192,8 +209,8 @@ static KosIterStepResult map_iter_step(
      cold-start kickoff resume and defer the first fetch entirely --
      nothing is fetched yet to stage, and the request itself (which can
      suspend) must run from inside koskari_eval's own dispatch. */
-  return kos_transform_stage(es, m, NULL, (void *) map_resume_start_fetch,
-                             "map-step", pre_top);
+  return kos_transform_stage(es, m, NULL, &map_resume_start_fetch_kind,
+                             pre_top);
 }
 
 

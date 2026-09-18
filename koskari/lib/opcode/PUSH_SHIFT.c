@@ -59,7 +59,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   {
     KosDynNode *shift_node = KosEvalState_DYN_TOP(es);
     KosContinuation_LIVE_SHIFT_NODE(k) = shift_node;
-    KosContinuation_LIVE_SHIFT_NODE_ID(k) = KosDynNode_NODE_ID(shift_node);
+    KosContinuation_LIVE_SHIFT_NODE_ID(k) = kos_dynnode_id(shift_node);
   }
 
   if (unlikely(KosEvalState_StackPUSH(es, wrapper) < 0))

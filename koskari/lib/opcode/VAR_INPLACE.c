@@ -21,7 +21,7 @@
    shared kos_var_inplace_operand, out of the inlined dispatch loop.
 */
 
-KOS_OP_HANDLER_COLD(VAR_INPLACE) {
+KOS_OP_HANDLER(VAR_INPLACE) {
   const KosExtra *row = KosOp_ROW(insn);
 
   KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));

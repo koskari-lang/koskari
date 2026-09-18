@@ -50,6 +50,7 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_PENDING_ARG_TYPE(node) = NULL;
   KosDynYieldFrom_INFLIGHT(node) = NULL;
   KosDynYieldFrom_REQ(node)->iter = NULL;
+  KosDynYieldFrom_REQ(node)->islots = NULL;
   KosDynYieldFrom_REQ(node)->mode = KOS_IREQ_IDLE;
   KosDynYieldFrom_DRIVE(node) = NULL;
   KosDynYieldFrom_RESUME(node) = NULL;
@@ -111,7 +112,7 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
                    KosDynNode_CAPS(node));
 
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
 
   KosDynYieldFrom_DELEGATE(clone) = KosDynYieldFrom_DELEGATE(node);
   Py_XINCREF(KosDynYieldFrom_DELEGATE(clone));
@@ -331,14 +332,13 @@ void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node) {
 void kos_dyn_yield_from_arm(
     KosEvalState *es,
     KosDynYieldFrom *node,
-    void *resume) {
+    const KosResumeKind *resume) {
 
   KosDynFrame *frame = KosEvalState_FRAME(es);
 
-  KosDynYieldFrom_RESUME(node) = resume;
-  KosDynFrame_RESUME_FN(frame) = resume;
+  KosDynYieldFrom_RESUME(node) = (void *) resume;
+  KosDynFrame_RESUME_KIND(frame) = resume;
   KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = "yield-from";
 }
 
 
@@ -346,10 +346,10 @@ void kos_dyn_yield_from_disarm(KosEvalState *es, KosDynYieldFrom *node) {
   KosDynFrame *frame = KosEvalState_FRAME(es);
 
   if (frame && node
-      && KosDynFrame_RESUME_FN(frame) == KosDynYieldFrom_RESUME(node)) {
-    KosDynFrame_RESUME_FN(frame) = NULL;
+      && (const void *) KosDynFrame_RESUME_KIND(frame)
+          == KosDynYieldFrom_RESUME(node)) {
+    KosDynFrame_RESUME_KIND(frame) = NULL;
     KosDynFrame_RESUME_STATE(frame) = NULL;
-    KosDynFrame_RESUME_NAME(frame) = NULL;
   }
 }
 

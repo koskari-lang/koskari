@@ -18,7 +18,7 @@
   VAR_TAKE: arg = constant index (name). Deref name, clear binding,
   push value.
 */
-KOS_OP_HANDLER_COLD(VAR_TAKE) {
+KOS_OP_HANDLER(VAR_TAKE) {
   PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = frame_ns_take(es, name);

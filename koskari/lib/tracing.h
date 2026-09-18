@@ -246,9 +246,11 @@ void kos_trace_fl_return(const char *name, int overrun);
    timing slot is open per thread, and every transfer closes the open
    slot and opens the next. The transfer macros carry the step (a fetch
    knows the opcode it enters), a resume hop steps into the resume
-   slot, and the trampoline steps into its own slot at each landing
-   point (poll, result handling, entry), which is also what closes a
-   handler that returned a signal rather than threading. A nested
+   slot, and the trampoline slot is stepped into at the eval entry and
+   at the entry of each signal service (the poll, the raise walk, the
+   await, a general-path return, a terminal yield, control returned, a
+   staged dispatch), which is also what closes the handler that tailed
+   into the service. A nested
    evaluator pushes the open slot at entry and pops it at exit, so each
    opcode reads its exclusive time. The clock is a cycle counter where
    one is available; the report calibrates it to nanoseconds.

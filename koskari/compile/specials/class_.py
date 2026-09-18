@@ -67,7 +67,8 @@ def special_class(compiler, called_by, name, supers, body):
     """
     Compile (compile/class NAME (SUPERS) BODY...). Creates a class via
     PUSH_COLLECT/POP_COLLECT/BUILD_CLASS, runs body in CollectorNamespace,
-    binds result to NAME. SUPERS may include superclass expressions and
+    and leaves the class on the stack. NAME is the class's name; no
+    variable is defined. SUPERS may include superclass expressions and
     optional meta: Metaclass.
     """
 

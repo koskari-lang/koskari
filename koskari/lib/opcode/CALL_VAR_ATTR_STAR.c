@@ -21,7 +21,7 @@
    reaches this same handler and adds the tail bit, which the core turns into a
    frame reset instead of a push.
 */
-KOS_OP_HANDLER_COLD(CALL_VAR_ATTR_STAR) {
+KOS_OP_HANDLER(CALL_VAR_ATTR_STAR) {
   int tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn));
   const KosExtra *row = KosOp_ROW(insn);
 

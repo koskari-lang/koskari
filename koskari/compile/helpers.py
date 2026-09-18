@@ -587,6 +587,26 @@ def const_only_expr(fragment):
     return (found, value)
 
 
+def var_only_expr(fragment):
+    """
+    Check whether a ByteCodeFragment consists only of a single VAR load,
+    answering (True, name) for one and (False, None) otherwise
+    """
+
+    found = False
+    name = None
+
+    for op, opa in fragment.instructions:
+        if op in (OpCode.NOOP, OpCode.POSITION):
+            continue
+        if op != OpCode.VAR or found:
+            return (False, None)
+        found = True
+        name = opa
+
+    return (found, name)
+
+
 def emit_item_key(compiler, frag, key, const_op, stack_op, before=None):
     """
     Emit an item access whose object is already on the fragment: a key
@@ -603,7 +623,23 @@ def emit_item_key(compiler, frag, key, const_op, stack_op, before=None):
     :param before: optional callable run before the row is emitted
     """
 
-    keyfrag = compiler.full_compile(key)
+    emit_item_keyfrag(
+        frag, compiler.full_compile(key), const_op, stack_op, before)
+
+
+def emit_item_keyfrag(frag, keyfrag, const_op, stack_op, before=None):
+    """
+    emit_item_key over a key already compiled, for a caller that
+    classified the key fragment first and took another path on the
+    shapes it handles itself
+
+    :param frag: fragment holding the object
+    :param keyfrag: the compiled key
+    :param const_op: opcode taking the key as a constant operand
+    :param stack_op: opcode taking the key from the stack
+    :param before: optional callable run before the row is emitted
+    """
+
     is_const, key_val = const_only_expr(keyfrag)
 
     if not is_const:

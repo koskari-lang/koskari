@@ -48,7 +48,7 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
      with the original, so the holds flag must not be copied. */
   KosDynNode_FLAGS(clone) = (KosDynNode_FLAGS(delim) | KOS_DYNF_CLONED)
       & ~KOS_DYNF_HOLDS_RETURN_FRAME;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(delim);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(delim);
   KosDynDelim_MODE(clone) = KosDynDelim_MODE(delim);
   KosDynDelim_RETURN_CHAIN(clone) = NULL;
   KosDynDelim_RETURN_PC(clone) = KosDynDelim_RETURN_PC(delim);
@@ -109,12 +109,12 @@ static int dynnode_to_dict_delim(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_uint(data, "frame_node_id",
       KosDynDelim_RETURN_FRAME_NODE(delim)
-          ? KosDynNode_NODE_ID(KosDynDelim_RETURN_FRAME_NODE(delim))
+          ? kos_dynnode_id(KosDynDelim_RETURN_FRAME_NODE(delim))
           : 0) < 0)
     return -1;
   if (snapshot_set_uint(data, "return_node_id",
       KosDynDelim_RETURN_NODE(delim)
-          ? KosDynNode_NODE_ID(KosDynDelim_RETURN_NODE(delim))
+          ? kos_dynnode_id(KosDynDelim_RETURN_NODE(delim))
           : 0) < 0)
     return -1;
   if (snapshot_set_uint(data, "saved_pc", KosDynDelim_SAVED_PC(delim)) < 0)

@@ -21,6 +21,7 @@ keyword, star; evaluation order; end-to-end.
 
 import pytest
 
+from koskari.compile.processor import YIELD_OPS
 from koskari.lib import OpCode
 from tests.dis.dis import dis
 
@@ -522,7 +523,7 @@ class TestGeneratorTailCallDemotion(SpecialsTestCase):
         )
         body = self.lambda_body_code(code)
         ops = [body.oparg(i)[0] for i in range(body.length())]
-        self.assertIn(OpCode.YIELD, ops)
+        self.assertTrue(YIELD_OPS & set(ops))
         for op in ops:
             self.assertNotIn(op, TAIL_CALL_OPCODES)
         self.assertTrue(any(op in (OpCode.CALL, OpCode.CALL_VAR,

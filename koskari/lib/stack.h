@@ -306,6 +306,7 @@ int KosStack_PopTailPtr(KosSegment **self, size_t count, PyObject **dest);
 #define kos_stack_peek_fast         KosStack_Peek
 #define kos_stack_tail_ptr_fast     KosStack_TailPtr
 #define kos_stack_pop_tail_ptr_fast KosStack_PopTailPtr
+#define kos_stack_clear_fast        KosStack_Clear
 
 #else  /* ! KOS_STACK_TRACE */
 
@@ -438,6 +439,19 @@ static inline int kos_stack_pop_tail_ptr_fast(
     return 0;
   }
   return KosStack_PopTailPtr(block, count, dest);
+}
+
+
+/* Release every value on the segment and empty it; the segment stays
+   attached. Mirrors KosStack_Clear, which never fails. */
+static inline void kos_stack_clear_fast(KosSegment **block) {
+
+  KosSegment *s = *block;
+  size_t len = s->len;
+
+  while (len)
+    Py_DECREF(s->objs[--len]);
+  s->len = 0;
 }
 
 #endif  /* KOS_STACK_TRACE */

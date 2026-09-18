@@ -33,9 +33,8 @@ KosDynFrame *kos_dynframe_new(
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_DEPTH(frame) = 1;  /* a root until an install says otherwise */
   KosDynFrame_PARK_CACHE(frame) = NULL;
-  KosDynFrame_RESUME_FN(frame) = NULL;
+  KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = NULL;
   KosDynFrame_FN(frame) = NULL;
   KosDynFrame_BACK_FRAME(frame) = NULL;
   return frame;
@@ -58,7 +57,7 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   kos_dynnode_init(clone, KOS_DYN_FRAME, NULL, KosDynNode_CAPS(frame));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(frame);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(frame);
 
   if (kos_dyn_clone_copy_segment((KosDynNode *) clone,
                                  (KosDynNode *) frame) < 0) {
@@ -87,17 +86,19 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   /* borrowed unwind cache is meaningless off the source's chain */
   KosDynFrame_BACK_FRAME(clone) = NULL;
 
-  /* A node resume (NULL state: the node it serves is dyn_top above the
-     frame, cloned with the chain) copies as it is. A step resume's
-     state is the step's own and has no clone story, so capture across
-     that frame refuses by name. */
-  if (KosDynFrame_RESUME_FN(frame) && ! KosDynFrame_RESUME_STATE(frame)) {
-    KosDynFrame_RESUME_FN(clone) = KosDynFrame_RESUME_FN(frame);
-    KosDynFrame_RESUME_STATE(clone) = NULL;
-    KosDynFrame_RESUME_NAME(clone) = KosDynFrame_RESUME_NAME(frame);
+  /* A resume whose kind can clone its state copies; one whose kind
+     cannot (a provider step, whose state is the step's own) refuses
+     the capture by name. The clone's resume starts empty so the
+     refusal's free finds nothing to clear. */
+  KosDynFrame_RESUME_KIND(clone) = NULL;
+  KosDynFrame_RESUME_STATE(clone) = NULL;
+  if (KosDynFrame_RESUME_KIND(frame) && KosDynFrame_RESUME_KIND(frame)->clone) {
+    KosDynFrame_RESUME_KIND(clone) = KosDynFrame_RESUME_KIND(frame);
+    KosDynFrame_RESUME_STATE(clone) =
+        KosDynFrame_RESUME_KIND(frame)->clone(KosDynFrame_RESUME_STATE(frame));
     return clone;
   }
-  if (KosDynFrame_RESUME_FN(frame)) {
+  if (KosDynFrame_RESUME_KIND(frame)) {
     PyErr_Format(PyExc_RuntimeError,
                  "cannot capture a continuation across native"
                  " frame '%s'",
@@ -106,11 +107,23 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
     kos_dynframe_free(clone);
     return NULL;
   }
-  KosDynFrame_RESUME_FN(clone) = NULL;
-  KosDynFrame_RESUME_STATE(clone) = NULL;
-  KosDynFrame_RESUME_NAME(clone) = NULL;
 
   return clone;
+}
+
+
+void *kos_resume_clone_shared(void *state) {
+  return state;
+}
+
+
+void kos_dynframe_clear_resume(KosDynFrame *frame) {
+  const KosResumeKind *kind = KosDynFrame_RESUME_KIND(frame);
+
+  if (kind && kind->clear)
+    kind->clear(KosDynFrame_RESUME_STATE(frame));
+  KosDynFrame_RESUME_KIND(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
 }
 
 
@@ -127,9 +140,7 @@ void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  KosDynFrame_RESUME_FN(frame) = NULL;
-  KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = NULL;
+  kos_dynframe_clear_resume(frame);
 
   /* A completing frame set by KosNativeFrame_ReturnPark: park_cache is
      the holder's cache slot; offer the frame there before the ordinary
@@ -197,12 +208,25 @@ KosDynFrame *kos_dyn_push_frame(
     KosCode *code,
     PyObject *ns) {
 
-  KosDynFrame *cur = KosEvalState_FRAME(es);
-
-  if (unlikely(kos_eval_check_frame_room(es, cur, 1) < 0)) {
+  if (unlikely(kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)) {
     Py_XDECREF(ns);
     return NULL;
   }
+  return kos_dyn_push_frame_unchecked(es, code, ns);
+}
+
+
+/**
+   kos_dyn_push_frame with the frame-room check left to the caller: the
+   simple call arms verify room once before probing the frame cache, so
+   their miss install must not test it again.
+*/
+KosDynFrame *kos_dyn_push_frame_unchecked(
+    KosEvalState *es,
+    KosCode *code,
+    PyObject *ns) {
+
+  KosDynFrame *cur = KosEvalState_FRAME(es);
 
   // CONTEXT: dirty, touches context directly
   KosDynFrame *frame = kos_dynframe_new(KosEvalState_DYN_TOP(es), code, ns);
@@ -266,43 +290,6 @@ KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es) {
 }
 
 
-/**
-   Push a prepared frame from the per-function cache as DYN_TOP and
-   FRAME_TOP.  Code, namespace, and cleared stack are already attached
-   and the node base was normalized at park time
-   (KosFunction_TryParkFrame); this is the install half of
-   kos_dyn_push_frame with a fresh node id minted, and cannot fail.
-   The caller has asked kos_eval_check_frame_room for one frame before
-   binding into the parked namespace.
-*/
-void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame) {
-
-  KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(es);
-  KosDynNode_NODE_ID(frame) = kos_dynnode_mint_id();
-
-  {
-    KosDynFrame *cur = KosEvalState_FRAME(es);
-    if (cur) {
-      KosDynFrame_FLAGS(frame) |= (KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND);
-      KosDynFrame_DEPTH(frame) = KosDynFrame_DEPTH(cur) + 1;
-      KosEvalState_FlushLiveRegsToFrame(es);
-    } else {
-      KosDynFrame_DEPTH(frame) = 1;
-    }
-  }
-
-  kos_dyn_stamp_installed_segment(KosDynNode_STACK((KosDynNode *) frame),
-                                  KosEvalState_BLOCK(es));
-  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) KosEvalState_FRAME(es);
-  KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
-  KosEvalState_FRAME(es) = frame;
-  KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
-  KosEvalState_NAMESPACE(es) = KosDynNode_NS((KosDynNode *) frame);
-  KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
-  es->pc = 0;
-  es->acting_pc = 0;
-}
-
 
 /**
    Offer a detached native-program frame to a holder's one-frame
@@ -322,9 +309,7 @@ int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache) {
 
   Py_CLEAR(KosDynFrame_NS(frame));
   KosDynFrame_PARK_CACHE(frame) = NULL;
-  KosDynFrame_RESUME_FN(frame) = NULL;
-  KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = NULL;
+  kos_dynframe_clear_resume(frame);
 
   KosStack_Clear(&KosDynFrame_STACK(frame));
   KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
@@ -411,9 +396,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
   KosDynFrame_PARK_CACHE(frame) = NULL;
-  KosDynFrame_RESUME_FN(frame) = NULL;
-  KosDynFrame_RESUME_STATE(frame) = NULL;
-  KosDynFrame_RESUME_NAME(frame) = NULL;
+  kos_dynframe_clear_resume(frame);
   /* the frame is being repurposed for a different function */
   Py_CLEAR(KosDynFrame_FN(frame));
 }

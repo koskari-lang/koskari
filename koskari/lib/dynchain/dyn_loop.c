@@ -30,7 +30,7 @@ KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
     return NULL;
   kos_dynnode_init(clone, KOS_DYN_LOOP, NULL, KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
   KosDynLoop_BREAK_PC(clone) = KosDynLoop_BREAK_PC(node);
   KosDynLoop_CONTINUE_PC(clone) = KosDynLoop_CONTINUE_PC(node);
   KosDynLoop_ENABLED(clone) = KosDynLoop_ENABLED(node);

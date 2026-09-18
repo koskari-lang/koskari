@@ -53,6 +53,19 @@ def _find_op(code, opcode):
     return None
 
 
+def _consts(code):
+    """
+    The constants the code loads, from CONST rows and from the fused
+    RETURN_CONST a constant in tail position becomes
+    """
+
+    return [
+        code.constant(arg)
+        for op, arg in _ops(code)
+        if op in (OpCode.CONST, OpCode.RETURN_CONST)
+    ]
+
+
 def _find_operand(code, operand):
     """
     Return the operand count of the first OBJECT_OPERAND instruction whose
@@ -513,11 +526,7 @@ class TestObjectAdd(SpecialsTestCase):
         dis(code)
 
         self.assertIsNone(arg)
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(3, consts)
         self.assertEqual(1, consts.count(3))
 
@@ -531,11 +540,7 @@ class TestObjectAdd(SpecialsTestCase):
 
         self.assertIsNotNone(arg)
         self.assertEqual(2, arg)
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(3, consts)
 
 
@@ -562,11 +567,7 @@ class TestObjectAdd(SpecialsTestCase):
         code = self.compile_to_code("(+ 1 11 *: xs)")
         arg = _find_operand(code, Operand.ADD)
         self.assertIsNone(arg)
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(12, consts)
 
 
@@ -588,11 +589,7 @@ class TestObjectSubtract(SpecialsTestCase):
         code = self.compile_to_code("(- 10 3)")
         arg = _find_operand(code, Operand.SUBTRACT)
         self.assertIsNone(arg)
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(7, consts)
 
 
@@ -601,11 +598,7 @@ class TestObjectSubtract(SpecialsTestCase):
         # unary form; it used to return the literal unchanged
         code = self.compile_to_code("(- 5)")
         self.assertIsNone(_find_operand(code, Operand.SUBTRACT))
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(-5, consts)
         self.assertNotIn(5, consts)
 
@@ -678,11 +671,7 @@ class TestObjectUnaryReducers(SpecialsTestCase):
     async def test_all_constants_still_fold_to_one_const(self):
         code = self.compile_to_code("(- 10 3 2)")
         self.assertIsNone(_find_operand(code, Operand.SUBTRACT))
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(5, consts)
 
 
@@ -709,11 +698,7 @@ class TestObjectMultiply(SpecialsTestCase):
         code = self.compile_to_code("(* 3 4)")
         arg = _find_operand(code, Operand.MULTIPLY)
         self.assertIsNone(arg)
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(12, consts)
 
 
@@ -755,11 +740,7 @@ class TestObjectBitAnd(SpecialsTestCase):
         code = self.compile_to_code("(& 12 10)")
         arg = _find_operand(code, Operand.BIT_AND)
         self.assertIsNone(arg)
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(8, consts)
 
 
@@ -781,11 +762,7 @@ class TestObjectBitOr(SpecialsTestCase):
         code = self.compile_to_code("(| 12 3)")
         arg = _find_operand(code, Operand.BIT_OR)
         self.assertIsNone(arg)
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(15, consts)
 
 
@@ -807,11 +784,7 @@ class TestObjectBitXor(SpecialsTestCase):
         code = self.compile_to_code("(^ 12 10)")
         arg = _find_operand(code, Operand.BIT_XOR)
         self.assertIsNone(arg)
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(6, consts)
 
 
@@ -833,11 +806,7 @@ class TestObjectFloorDivide(SpecialsTestCase):
         code = self.compile_to_code("(// 7 2)")
         arg = _find_operand(code, Operand.FLOOR_DIVIDE)
         self.assertIsNone(arg)
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(3, consts)
 
 
@@ -877,11 +846,7 @@ class TestObjectTrueDivide(SpecialsTestCase):
         code = self.compile_to_code("(/ 7.0 2.0)")
         arg = _find_operand(code, Operand.TRUE_DIVIDE)
         self.assertIsNone(arg)
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn(3.5, consts)
 
 
@@ -1293,11 +1258,7 @@ class TestObjectFormat(SpecialsTestCase):
     async def test_format_const_fold_without_rules(self):
         code = self.compile_to_code("(format 99)")
         self.assertNotIn(OpCode.OBJECT_FORMAT, _opcodes(code))
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn("99", consts)
 
 
@@ -1305,11 +1266,7 @@ class TestObjectFormat(SpecialsTestCase):
         code = self.compile_to_code('(format 7 "04d")')
         self.assertNotIn(OpCode.OBJECT_FORMAT, _opcodes(code))
         self.assertNotIn(OpCode.OBJECT_FORMAT_CONST, _opcodes(code))
-        consts = [
-            code.constant(arg)
-            for op, arg in _ops(code)
-            if op == OpCode.CONST
-        ]
+        consts = _consts(code)
         self.assertIn("0007", consts)
 
 

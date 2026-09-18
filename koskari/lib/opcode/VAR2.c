@@ -20,7 +20,7 @@
   order. Both names resolve before either push, so a missing name
   raises with nothing pushed.
 */
-KOS_OP_HANDLER_COLD(VAR2) {
+KOS_OP_HANDLER(VAR2) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);

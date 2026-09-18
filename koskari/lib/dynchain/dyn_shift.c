@@ -32,7 +32,7 @@ static KosDynShift *kos_dynshift_clone(KosDynShift *shift) {
   kos_dynnode_init((KosDynNode *) clone, KOS_DYN_SHIFT, NULL,
                    KosDynNode_CAPS((KosDynNode *) shift));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(shift) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(shift);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(shift);
   KosDynShift_PROMPT_NODE_ID(clone) = KosDynShift_PROMPT_NODE_ID(shift);
   return clone;
 }

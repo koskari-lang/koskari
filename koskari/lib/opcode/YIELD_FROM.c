@@ -178,12 +178,23 @@ static PyObject *yield_from_take_await_result(KosDynYieldFrom *yf) {
 }
 
 
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_send(
-    KosEvalState *es, void *state, PyObject *value);
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; no clear (the node owns the state) and a shared
+   clone (the node is captured with the chain, the frame's arm follows
+   it as it is) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_await(
     KosEvalState *es, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_emit(
     KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_send(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(yield_from_resume_await_kind, "yield-from",
+                yield_from_resume_await, NULL, kos_resume_clone_shared);
+KOS_RESUME_KIND(yield_from_resume_emit_kind, "yield-from",
+                yield_from_resume_emit, NULL, kos_resume_clone_shared);
+KOS_RESUME_KIND(yield_from_resume_send_kind, "yield-from",
+                yield_from_resume_send, NULL, kos_resume_clone_shared);
 
 
 /**
@@ -203,14 +214,13 @@ static KOS_NOINLINE KosOpResult yield_from_yield_value(
     generator; the await-shaped suspension below keeps its deny.
   */
 
-  kos_dyn_yield_from_arm(es, yf, (void *) yield_from_resume_send);
+  kos_dyn_yield_from_arm(es, yf, &yield_from_resume_send_kind);
   SAYF("[yf] emit_yield dyn_top=%p frame=%p payload=%p -> KOS_RES_YIELD\n",
        (void *) KosEvalState_CurrentNode(es), (void *) KosEvalState_FRAME(es),
        (void *) payload);
 
   return EVAL_YIELD(payload);
 }
-
 
 
 /**
@@ -458,7 +468,7 @@ static KosOpResult yield_from_drive_py_async(
       return EVAL_RAISE();
     }
     KosDynYieldFrom_INFLIGHT(yf) = awaitable;
-    kos_dyn_yield_from_arm(es, yf, (void *) yield_from_resume_await);
+    kos_dyn_yield_from_arm(es, yf, &yield_from_resume_await_kind);
     KosEvalState_FlushLiveRegsToFrame(es);
     KosEvalState_MarkDeadAfterYield(es);
     return EVAL_AWAIT(yielded);
@@ -808,7 +818,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_emit(
   instruction, and the drive continues there when the delegate is
   exhausted.
 */
-KOS_OP_HANDLER_COLD(YIELD_FROM) {
+KOS_OP_HANDLER(YIELD_FROM) {
   KosDynNode *dyn_top = KosEvalState_CurrentNode(es);
   PyObject *subexpr;
   PyObject *delegate = NULL;
@@ -841,7 +851,7 @@ KOS_OP_HANDLER_COLD(YIELD_FROM) {
     KosThreadFn drive = yield_from_drive_for_kind(kind);
 
     KosDynYieldFrom_DRIVE(yf) = (void *) drive;
-    KosDynYieldFrom_RESUME_EMIT(yf) = (void *) yield_from_resume_emit;
+    KosDynYieldFrom_RESUME_EMIT(yf) = (void *) &yield_from_resume_emit_kind;
     /* es->pc already sits past this instruction, and acting_pc is it */
     TAILCALL(drive, es, insn, NULL);
   }

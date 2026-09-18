@@ -78,9 +78,9 @@ typedef struct KosXferRestore {
                                   none) */
   uint32_t pc;                 /* frame only */
   uint32_t acting_pc;
-  void *resume_fn;
-  void *resume_state;
-  const char *resume_name;
+  const KosResumeKind *resume_kind;
+  void *resume_state;          /* the kind's clone of the template's
+                                  state, owned until applied */
 } KosXferRestore;
 
 

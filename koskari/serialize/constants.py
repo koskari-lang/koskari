@@ -43,8 +43,21 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # every opcode after it.
 # PATCH bumped: .kio pool kinds ELLIPSIS, FROZENSET, SLICE added; code
 # body and function-spec flags carry protect (0x02) and cache (0x04).
+# MINOR bumped: VAR_ITEM, VAR_CONST_ITEM, VAR_ITEM_STORE,
+# VAR_CONST_ITEM_STORE, VAR_ITEM_STORE_CONST,
+# VAR_CONST_ITEM_STORE_CONST, the four VAR item in-place rows, and
+# their FAST twins inserted after the attr rows of the VAR and FAST
+# families, and ITEM_INPLACE and CONST_ITEM_INPLACE appended to the
+# stack item tiers, renumbering every opcode after them; ITEM,
+# CONST_ITEM, ITEM_STORE, CONST_ITEM_STORE gain an elector cache slot,
+# and later ITEM_INPLACE and CONST_ITEM_INPLACE too (slots are not
+# serialized; no bump).
+# MINOR bumped: RETURN_CONST and YIELD_CONST inserted after YIELD in
+# mode control, RETURN_VAR and YIELD_VAR after VAR_FORMAT_CONST, and
+# RETURN_FAST and YIELD_FAST after FAST_FORMAT_CONST, renumbering every
+# opcode after them.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 16
+BYTECODE_ABI_MINOR = 18
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 1
 

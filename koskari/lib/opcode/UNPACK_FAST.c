@@ -19,7 +19,7 @@
   Pop TOS, materialize as fast sequence, require len == 2, FastStore seq[0]
   and seq[1].
 */
-KOS_OP_HANDLER_COLD(UNPACK_FAST) {
+KOS_OP_HANDLER(UNPACK_FAST) {
   const KosExtra *row = KosOp_ROW(insn);
   size_t idx0 = (size_t) KosExtra_IMM(row, 0);
   size_t idx1 = (size_t) KosExtra_IMM(row, 1);

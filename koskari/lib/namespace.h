@@ -116,6 +116,10 @@ typedef struct KosNamespace {
 
   PyObject *parent;     // KosNamespace
   PyObject *binds;      // PyDictObject
+  PyObject *template_ns; // the namespace this one was copied from, or NULL.
+                         // When set, name, parent and fast_names are borrowed
+                         // through it (it owns them for at least as long as
+                         // this copy holds it); when NULL they are owned here.
 
   size_t fast_count;       // number of fast slots
   PyObject *fast_names;    // PyTupleObject of slot names, shared across copies
@@ -152,15 +156,6 @@ PyObject *KosNamespace_FromSpec(PyObject *nspec, PyObject *parent);
    slots are left empty. New reference or NULL on error.
 */
 PyObject *KosNamespace_Copy(PyObject *template_ns);
-
-
-/**
-  Clear every raw fast slot back to NULL, leaving non-raw slots (shared
-  closure/global Refs) untouched: restores a call namespace to the state
-  KosNamespace_Copy produced.  Used by the per-function frame cache at
-  park time.
-*/
-void KosNamespace_ClearRawFast(PyObject *ns);
 
 
 /**
@@ -336,6 +331,9 @@ int KosNamespace_FastBind(
 #define KosNamespace_BINDS(ns)               \
   (((KosNamespace *) ns)->binds)
 
+#define KosNamespace_TEMPLATE(ns)            \
+  (((KosNamespace *) ns)->template_ns)
+
 #define KosNamespace_FAST_COUNT(ns)             \
   (((KosNamespace *) ns)->fast_count)
 
@@ -506,6 +504,29 @@ static inline void kos_ns_set_raw(PyObject *ns, size_t idx, int raw) {
     *word |= bit;
   else
     *word &= ~bit;
+}
+
+
+/**
+  Restore a call namespace to the state KosNamespace_Copy produced from
+  its template: every slot the template holds raw is emptied and marked
+  raw again. That releases a raw local, and also a cell a closure
+  promoted the slot to during the call, which the closure keeps alone.
+  Slots the template holds as refs (closure and global cells) are left
+  as they are. Used by the per-function frame cache when a frame is
+  stored, and by the self-tail rebind.
+*/
+static inline void KosNamespace_ResetToTemplate(PyObject *ns) {
+
+  PyObject *template_ns = KosNamespace_TEMPLATE(ns);
+  size_t count = KosNamespace_FAST_COUNT(ns);
+
+  for (size_t i = 0; i < count; i++) {
+    if (kos_ns_is_raw(template_ns, i)) {
+      Py_CLEAR(KosNamespace_GET_FAST_VAL(ns, i));
+      kos_ns_set_raw(ns, i, 1);
+    }
+  }
 }
 
 

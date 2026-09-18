@@ -315,9 +315,10 @@ static PyObject *context_snapshot(PyObject *self, PyObject *unused) {
     return NULL;
 
   ns = context_acting_namespace(ctx);
-  if (! ns)
-    ns = Py_None;
-  Py_INCREF(ns);
+  if (ns)
+    KosNamespace_Reveal(ns);
+  else
+    ns = Py_NewRef(Py_None);
 
   if (context_snapshot_set(out, "schema_version", PyLong_FromLong(1)) < 0
       || context_snapshot_set(out, "context_id",
@@ -354,7 +355,9 @@ static PyObject *context_get_domain(PyObject *self, void *unused) {
 static PyObject *context_get_namespace(PyObject *self, void *unused) {
 
   PyObject *ns = context_acting_namespace((KosContext *) self);
-  return Py_NewRef(ns ? ns : Py_None);
+  if (! ns)
+    Py_RETURN_NONE;
+  return KosNamespace_Reveal(ns);
 }
 
 

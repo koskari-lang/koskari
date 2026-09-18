@@ -19,7 +19,7 @@
   the list bound to name. Does not push. TypeError when the binding is not
   a list.
 */
-KOS_OP_HANDLER_COLD(VAR_LIST_APPEND) {
+KOS_OP_HANDLER(VAR_LIST_APPEND) {
 
   PyObject *name = KosOp_OBJ(insn);
 

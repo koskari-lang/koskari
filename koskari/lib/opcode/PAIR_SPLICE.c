@@ -73,7 +73,7 @@ static int pair_splice_extend(PyObject *coll, PyObject *item) {
   Used by compile/quasiquote to concatenate literal segments and
   unquote-splicing results into the final list.
 */
-KOS_OP_HANDLER_COLD(PAIR_SPLICE) {
+KOS_OP_HANDLER(PAIR_SPLICE) {
   size_t count = (size_t) KosOp_ARG(insn);
 
   if (count == 0)

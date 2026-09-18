@@ -43,6 +43,23 @@ KOS_OP_HANDLER(CALL_FAST) {
     }
   }
 
+  /* Frame-cache hit, installed here; the tail twin reuses the live
+     frame and never consults the cache. */
+  if (! tail) {
+    KosOpResult r;
+    int taken = kos_call_cached_frame_install(
+        es, callable, NULL, (Py_ssize_t) n, &r);
+
+    if (likely(taken > 0))
+      RESULT_RELAY(es, r);
+    if (unlikely(taken < 0)) {
+      if (n)
+        kos_stack_drop_noerr_fast(KosEvalState_BLOCK(es), n);
+      Py_DECREF(callable);
+      RESULT_RAISE();
+    }
+  }
+
   RESULT_RELAY(es, kos_call_invoke(
       es, callable, NULL, argv, (Py_ssize_t) n, NULL,
       KOS_CALL_ARGV_WINDOW | tail | KOS_CALL_CALLABLE_OWNED));

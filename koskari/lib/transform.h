@@ -178,8 +178,7 @@ KosIterStepResult kos_transform_stage(
     KosEvalState *es,
     KosTransform *t,
     PyObject *value,
-    void *resume,
-    const char *label,
+    const KosResumeKind *resume,
     KosDynNode *pre_top);
 
 
@@ -192,6 +191,15 @@ KosIterStepResult kos_transform_throw(
     PyObject **out);
 int kos_transform_close(PyObject *self);
 void kos_transform_finish(PyObject *self, int exhausted);
+
+
+/**
+   The clear of every provider step kind: a step frame torn down with
+   its resume still set releases the record's busy mark and the value
+   in flight, so the transform can be stepped again. Takes the
+   KosTransform the frame's state points at
+*/
+void kos_transform_step_clear(void *state);
 KosContext *kos_transform_pyctx(PyObject *self);
 
 

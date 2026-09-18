@@ -27,7 +27,7 @@
   KosFunction_NewWithAnnotations when annotations are present, and
   push the result.
 */
-KOS_OP_HANDLER_COLD(BUILD_FUNCTION) {
+KOS_OP_HANDLER(BUILD_FUNCTION) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *defnames = KosExtra_OBJ(row, 0);

@@ -342,6 +342,35 @@ typedef enum KosHandleResult {
    directly outside this header.
 */
 
+
+/**
+   The behaviour of a frame's resume, one static record per resume
+   function, shared by every frame that arms that function. The state
+   stays per frame in the resume_state slot; the kind holds nothing that
+   varies between frames. fn is the resume itself, a KosThreadFn. clear
+   runs at a teardown with no delivery coming (a frame freed or parked
+   with the resume still armed); NULL means the state is borrowed and
+   its owner cleans up. clone runs at a continuation capture and at a
+   multi-shot landing; NULL means the capture refuses by name. Clean
+   completion is the owner's business as ever.
+*/
+typedef struct KosResumeKind {
+  const char *name;
+  struct KosOpResult (KOS_PRESERVE_NONE *fn)(struct KosEvalState *es,
+                                              void *state, PyObject *value);
+  void (*clear)(void *state);
+  void *(*clone)(void *state);
+} KosResumeKind;
+
+#define KOS_RESUME_KIND(ident, label, fnp, clearp, clonep)              \
+  static const KosResumeKind ident = { (label), (fnp), (clearp), (clonep) }
+
+/* The clone of a kind whose state is owned elsewhere and copied with
+   the chain (a node's resume, whose state is NULL or the node
+   itself): the state is handed on as it is. */
+void *kos_resume_clone_shared(void *state);
+
+
 struct KosDynNode {
   KosDynNode *parent;   /* enclosing node (toward root); reused as freelist link */
   KosDynKind kind;      /* discriminator for node type */
@@ -376,19 +405,13 @@ struct KosDynNode {
          only while KOS_FRAME_PARK_TO_CACHE is set, which
          KosNativeFrame_ReturnPark alone does. */
       void *park_cache;
-      /* CPS consumer resume (see eval.h, KosResumeFn): the trampoline
-         entry to invoke on the next value staged to this frame, and
-         the state it receives. void * to avoid the include-order
-         constraint of naming KosOpResult here. Set and cleared
-         together; NULL means nothing is set. */
-      void *resume_fn;
+      /* CPS consumer resume (the contract is in eval.h): the kind names
+         the entry to invoke on the next value staged to this frame and
+         the lifecycle of the state it receives; NULL means nothing is
+         armed. Set and cleared together with the state. The kind's
+         name is what a capture-refusal message reports. */
+      const KosResumeKind *resume_kind;
       void *resume_state;
-      /* Borrowed static string naming the resume's installer, used
-         only to name the frame in a capture-refusal message. Set by
-         KosResumeFrame_Install and lives for the frame's occupancy
-         (cleared at free, park, and tail reset), so it may be non-NULL
-         while resume_fn is momentarily NULL between deliveries. */
-      const char *resume_name;
       /* Owning KosFunction (strong) when this frame participates in the
          per-function frame cache; NULL opts out (clones, placeholder,
          code-less, and generator frames never set it).  Released --
@@ -943,6 +966,13 @@ void kos_dyn_resync_chain(KosEvalState *es);
 */
 KosDynFrame *kos_dyn_push_frame(KosEvalState *es, KosCode *code, PyObject *ns);
 
+/* kos_dyn_push_frame without the frame-room check; the caller has run
+   kos_eval_check_frame_room for one frame already. */
+KosDynFrame *kos_dyn_push_frame_unchecked(
+    KosEvalState *es,
+    KosCode *code,
+    PyObject *ns);
+
 
 /**
    Push a frame with code=NULL, ns=empty dict, stack=NULL for INSTALL to configure.
@@ -1000,15 +1030,6 @@ void kos_dyn_renumber_frames_counted(
 
 
 /**
-   Push a prepared frame -- code, namespace, and cleared stack already
-   attached, node base normalized by KosFunction_TryParkFrame -- as
-   DYN_TOP and FRAME_TOP.  The install mirrors kos_dyn_push_frame minus
-   the allocation; cannot fail.
-*/
-void kos_dyn_push_ready_frame(KosEvalState *es, KosDynFrame *frame);
-
-
-/**
    Offer a detached native-program frame to a holder's one-frame cache:
    strip it to an inert allocation -- program, state, stack contents,
    and links all cleared, so the parked frame holds no references of
@@ -1022,6 +1043,15 @@ int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache);
 
 
 void kos_dynframe_reset_for_tail(KosDynFrame *frame);
+
+
+/**
+   Clear a resume that will get no delivery: the kind's clear, when it
+   has one, releases what the state holds, then the kind and state are
+   nulled. The one rule behind free, park, tail reset and a transfer
+   restore writing over the live frame's resume
+*/
+void kos_dynframe_clear_resume(KosDynFrame *frame);
 
 /* Drop discardable extent nodes (NS, LOOP, FOREACH) above frame before
    tail-call frame reuse; errors on any other open node kind. */
@@ -1840,8 +1870,10 @@ void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
    frame: the frame's next delivery runs it instead of an instruction.
    Every suspension of the delegation ends in this.
 */
-void kos_dyn_yield_from_arm(KosEvalState *es, KosDynYieldFrom *node,
-                            void *resume);
+void kos_dyn_yield_from_arm(
+    KosEvalState *es,
+    KosDynYieldFrom *node,
+    const KosResumeKind *resume);
 
 void kos_dyn_yield_from_disarm(KosEvalState *es, KosDynYieldFrom *node);
 
@@ -2080,6 +2112,24 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynNode_FLAGS(n)   (((KosDynNode *)(n))->flags)
 #define KosDynNode_CAPS(n)    (((KosDynNode *)(n))->caps)
 #define KosDynNode_NODE_ID(n) (((KosDynNode *)(n))->node_id)
+
+/* Mint a fresh, never-zero node id. */
+uint32_t kos_dynnode_mint_id(void);
+
+/**
+   The node's id, minted on first read. Ids serve identity matching
+   across clones and grafts (LCA seams, prompt lookup by a shift,
+   snapshots); a node that is never captured, matched or snapshotted
+   never pays for one. Zero is the unminted state: kos_dynnode_init
+   leaves it so, a clone copies its source's id through this accessor,
+   and a reused parked frame is reset to it.
+*/
+static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
+  uint32_t id = KosDynNode_NODE_ID(node);
+  if (! id)
+    id = KosDynNode_NODE_ID(node) = kos_dynnode_mint_id();
+  return id;
+}
 #define KosDynNode_HAS_CAP(n, cap)  (KosDynNode_CAPS(n) & (cap))
 
 #define KosDynNode_IS_FRAME(n)   (KosDynNode_KIND(n) == KOS_DYN_FRAME)
@@ -2135,9 +2185,12 @@ PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
 
-#define KosDynFrame_RESUME_FN(f)    (((KosDynNode *)(f))->u.frame.resume_fn)
+#define KosDynFrame_RESUME_KIND(f)  (((KosDynNode *)(f))->u.frame.resume_kind)
 #define KosDynFrame_RESUME_STATE(f) (((KosDynNode *)(f))->u.frame.resume_state)
-#define KosDynFrame_RESUME_NAME(f)  (((KosDynNode *)(f))->u.frame.resume_name)
+/* A resume is set when the kind is non-NULL; the name is a read-only
+   view through the kind for messages and the snapshot. */
+#define KosDynFrame_RESUME_NAME(f)                                        \
+  (KosDynFrame_RESUME_KIND(f) ? KosDynFrame_RESUME_KIND(f)->name : NULL)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
 #define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)

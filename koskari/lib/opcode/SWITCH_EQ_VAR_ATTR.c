@@ -22,7 +22,7 @@
   On mismatch: fall through with stack unchanged.
 */
 
-KOS_OP_HANDLER_COLD(SWITCH_EQ_VAR_ATTR) {
+KOS_OP_HANDLER(SWITCH_EQ_VAR_ATTR) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *var_name = KosExtra_OBJ(row, 1);

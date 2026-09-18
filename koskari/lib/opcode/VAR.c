@@ -18,7 +18,7 @@
   VAR: arg = constant index of a name. Look up that name in the current
   frame's namespace and push the value.
 */
-KOS_OP_HANDLER_COLD(VAR) {
+KOS_OP_HANDLER(VAR) {
   PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = frame_ns_deref(es, name);

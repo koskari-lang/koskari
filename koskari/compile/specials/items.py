@@ -25,7 +25,9 @@ from ...bootstrap import builtin
 from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ..helpers import emit_item_key
+from ...types import is_symbol
+from ..helpers import (
+    const_only_expr, emit_item_key, emit_item_keyfrag, var_only_expr)
 
 
 _ITEM_PATTERNS = [
@@ -89,6 +91,36 @@ def special_take_item(compiler, called_by, obj, key):
     return frag
 
 
+def emit_var_item_store(compiler, called_by, obj, keyfrag, val):
+    """
+    The fused store for a symbol object with a constant or symbol key:
+    the value compiled first, then one VAR_CONST_ITEM_STORE or
+    VAR_ITEM_STORE row that resolves the object (and key) by name when
+    it runs. keyfrag is the compiled key; any other key shape answers
+    None and the caller takes the stack path with that same fragment
+    """
+
+    is_const, key_val = const_only_expr(keyfrag)
+    is_var, key_name = var_only_expr(keyfrag)
+    if not (is_const or is_var):
+        return None
+
+    name = str(obj.datum)
+    frag = compiler.fragment(called_by.datum)
+    frag.position(obj.position)
+    frag.merge(compiler.full_compile(val.datum))
+    frag.request_var(name)
+    if is_const:
+        frag.instruction(OpCode.VAR_CONST_ITEM_STORE, (name, key_val, 0, 0))
+    else:
+        # the key is resolved by name when the row runs, so a captured
+        # key is requested from the enclosing scope like the object is
+        frag.request_var(key_name)
+        frag.instruction(OpCode.VAR_ITEM_STORE, (name, key_name, 0, 0))
+    frag.instruction(OpCode.CONST, None)
+    return frag
+
+
 @builtin("compile/set-item")
 @special("compile/set-item", patterns=_SET_ITEM_PATTERNS, unpack="kwargs")
 def special_set_item(compiler, called_by, obj, key, val):
@@ -96,9 +128,16 @@ def special_set_item(compiler, called_by, obj, key, val):
     Compile (compile/set-item OBJ KEY VAL). Store VAL at item KEY in OBJ
     """
 
+    keyfrag = compiler.full_compile(key.datum)
+
+    if is_symbol(obj.datum):
+        frag = emit_var_item_store(compiler, called_by, obj, keyfrag, val)
+        if frag is not None:
+            return frag
+
     frag = item_fragment(compiler, called_by, obj)
-    emit_item_key(
-        compiler, frag, key.datum, OpCode.CONST_ITEM_STORE, OpCode.ITEM_STORE,
+    emit_item_keyfrag(
+        frag, keyfrag, OpCode.CONST_ITEM_STORE, OpCode.ITEM_STORE,
         before=lambda: frag.merge(compiler.full_compile(val.datum)))
     frag.instruction(OpCode.CONST, None)
     return frag

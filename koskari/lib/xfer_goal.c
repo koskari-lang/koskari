@@ -54,7 +54,7 @@ KosXferGoal *kos_xfer_goal_new(
   goal->outer = NULL;
   goal->target = target;
   goal->seam = seam;
-  goal->seam_id = seam ? KosDynNode_NODE_ID(seam) : 0;
+  goal->seam_id = seam ? kos_dynnode_id(seam) : 0;
   goal->frontier = NULL;
   goal->frontier_id = 0;
   goal->park_top = NULL;
@@ -82,8 +82,13 @@ void kos_xfer_goal_free(KosXferGoal *goal) {
   Py_CLEAR(goal->continuation_ref);
   if (goal->restore) {
     for (size_t i = 0; i < goal->restore_count; i++) {
-      if (goal->restore[i].stack)
-        KosStack_Release(goal->restore[i].stack);
+      KosXferRestore *r = &goal->restore[i];
+
+      if (r->stack)
+        KosStack_Release(r->stack);
+      /* a cloned resume state never applied gets its kind's clear */
+      if (r->resume_kind && r->resume_kind->clear)
+        r->resume_kind->clear(r->resume_state);
     }
     PyMem_Free(goal->restore);
     goal->restore = NULL;
@@ -126,25 +131,38 @@ int kos_xfer_goal_capture_restore(
   for (size_t i = 0; i < count; i++) {
     KosXferRestore *r = &recs[i];
 
-    if (! tmpl || KosDynNode_NODE_ID(tmpl) != KosDynNode_NODE_ID(live)) {
+    if (! tmpl || kos_dynnode_id(tmpl) != kos_dynnode_id(live)) {
       PyErr_SetString(PyExc_SystemError,
           "transfer: the template does not mirror the chain"
           " below the seam");
       goto fail;
     }
     r->node = live;
-    r->node_id = KosDynNode_NODE_ID(live);
+    r->node_id = kos_dynnode_id(live);
     if (KosDynNode_STACK(tmpl)) {
       r->stack = KosStack_DeepCopy(KosDynNode_STACK(tmpl));
       if (! r->stack)
         goto fail;
     }
     if (KosDynNode_IS_FRAME(live)) {
+      const KosResumeKind *kind = KosDynFrame_RESUME_KIND(tmpl);
+
       r->pc = KosDynFrame_PC(tmpl);
       r->acting_pc = KosDynFrame_ACTING_PC(tmpl);
-      r->resume_fn = KosDynFrame_RESUME_FN(tmpl);
-      r->resume_state = KosDynFrame_RESUME_STATE(tmpl);
-      r->resume_name = KosDynFrame_RESUME_NAME(tmpl);
+      /* The template keeps its state for the next landing: the record
+         takes the kind's clone. The capture that built the template
+         refused any kind without one; a template reaching here with
+         one is refused the same way rather than called through. */
+      if (kind) {
+        if (unlikely(! kind->clone)) {
+          PyErr_Format(PyExc_SystemError,
+              "transfer: a template resume '%s' that cannot be cloned",
+              kind->name ? kind->name : "?");
+          goto fail;
+        }
+        r->resume_kind = kind;
+        r->resume_state = kind->clone(KosDynFrame_RESUME_STATE(tmpl));
+      }
     }
     live = KosDynNode_PARENT(live);
     tmpl = KosDynNode_PARENT(tmpl);
@@ -158,6 +176,8 @@ fail:
   for (size_t i = 0; i < count; i++) {
     if (recs[i].stack)
       KosStack_Release(recs[i].stack);
+    if (recs[i].resume_kind && recs[i].resume_kind->clear)
+      recs[i].resume_kind->clear(recs[i].resume_state);
   }
   PyMem_Free(recs);
   return -1;
@@ -178,7 +198,7 @@ static int goal_apply_restore(KosEvalState *es, KosXferGoal *goal) {
     KosDynNode *node = r->node;
 
 #if KOS_EVAL_SAFETYNET
-    if (KosDynNode_NODE_ID(node) != r->node_id) {
+    if (kos_dynnode_id(node) != r->node_id) {
       PyErr_SetString(PyExc_SystemError,
           "transfer: a restored node left the chain");
       return -1;
@@ -199,9 +219,13 @@ static int goal_apply_restore(KosEvalState *es, KosXferGoal *goal) {
     if (KosDynNode_IS_FRAME(node)) {
       KosDynFrame_PC(node) = r->pc;
       KosDynFrame_ACTING_PC(node) = r->acting_pc;
-      KosDynFrame_RESUME_FN(node) = r->resume_fn;
+      /* the resume the live frame held gets no delivery; the record's
+         clone is handed over, so the goal no longer owns it */
+      kos_dynframe_clear_resume((KosDynFrame *) node);
+      KosDynFrame_RESUME_KIND(node) = r->resume_kind;
       KosDynFrame_RESUME_STATE(node) = r->resume_state;
-      KosDynFrame_RESUME_NAME(node) = r->resume_name;
+      r->resume_kind = NULL;
+      r->resume_state = NULL;
       /* The live registers are the authority for the current frame
          and are flushed back into it whenever the frame changes; a
          restore of that frame must land in them too. */
@@ -285,7 +309,7 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
 static void goal_park(KosXferGoal *goal, KosDynNode *node, KosDynNode *top) {
 
   goal->frontier = node;
-  goal->frontier_id = KosDynNode_NODE_ID(node);
+  goal->frontier_id = kos_dynnode_id(node);
   goal->park_top = top;
 }
 
@@ -303,7 +327,7 @@ static KosOpResult goal_leave(KosEvalState *es, KosXferGoal *goal) {
      chain would otherwise be discovered only once the chain is empty */
   if (goal->seam
       && (! kos_dyn_reaches(es, goal->seam)
-      || KosDynNode_NODE_ID(goal->seam) != goal->seam_id)) {
+      || kos_dynnode_id(goal->seam) != goal->seam_id)) {
     PyErr_SetString(PyExc_SystemError,
         "transfer: the seam is not on the chain");
     return EVAL_RAISE();
@@ -396,7 +420,7 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
       int gone = ! goal->seam
           || ! outer->frontier
           || ! kos_dyn_reaches(es, outer->frontier)
-          || KosDynNode_NODE_ID(outer->frontier) != outer->frontier_id;
+          || kos_dynnode_id(outer->frontier) != outer->frontier_id;
 
       if (gone) {
         *link = outer->outer;
@@ -486,8 +510,12 @@ static KosOpResult goal_enter(KosEvalState *es, KosXferGoal *goal) {
 
 
 /**
-   DELIVERING: push the payload, arm it as a throw, or raise it at the
-   boundary; then retire the goal.
+   DELIVERING: push the payload, stage it for the landing frame's
+   resume, arm it as a throw, or raise it at the boundary; then retire
+   the goal. A landing frame that carries a resume was waiting on a
+   delivery when it was captured, and the restore put that resume back
+   through its kind's clone: the payload is that delivery, staged in
+   the pending slot for the prologue pass that follows the drive.
 */
 static KosOpResult goal_deliver(
     KosEvalState *es,
@@ -517,15 +545,18 @@ static KosOpResult goal_deliver(
           "transfer: no frame to deliver to");
       return EVAL_RAISE();
     }
+    if (KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
 #if KOS_EVAL_SAFETYNET
-    if (KosDynFrame_RESUME_FN(KosEvalState_FRAME(es))) {
-      PyErr_SetString(PyExc_SystemError,
-          "transfer: landed on a frame carrying a resume");
+      if (KosEvalState_PENDING_VALUE(es)) {
+        PyErr_SetString(PyExc_SystemError,
+            "transfer: landed on a frame with a delivery already staged");
+        return EVAL_RAISE();
+      }
+#endif
+      Py_XSETREF(KosEvalState_PENDING_VALUE(es), Py_NewRef(goal->payload));
+    } else if (KosEvalState_StackPushRef(es, goal->payload) < 0) {
       return EVAL_RAISE();
     }
-#endif
-    if (KosEvalState_StackPushRef(es, goal->payload) < 0)
-      return EVAL_RAISE();
   }
 
   kos_xfer_goal_pop(es);
@@ -550,7 +581,7 @@ KosOpResult kos_xfer_goal_drive(KosEvalState *es, int *out_boundary) {
         return EVAL_NORMAL();
 #if KOS_EVAL_SAFETYNET
       if (! kos_dyn_reaches(es, goal->frontier)
-          || KosDynNode_NODE_ID(goal->frontier) != goal->frontier_id) {
+          || kos_dynnode_id(goal->frontier) != goal->frontier_id) {
         PyErr_SetString(PyExc_SystemError,
             "transfer: the node it waited on left the chain");
         return EVAL_RAISE();

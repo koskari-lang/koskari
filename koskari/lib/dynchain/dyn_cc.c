@@ -31,7 +31,7 @@ static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
 
   kos_dynnode_init(clone, KOS_DYN_CC, NULL, KosDynNode_CAPS(cc));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(cc) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(cc);
+  KosDynNode_NODE_ID(clone) = kos_dynnode_id(cc);
   KosDynCC_RESUME_PC(clone) = KosDynCC_RESUME_PC(cc);
   return clone;
 }

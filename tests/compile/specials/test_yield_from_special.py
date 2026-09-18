@@ -28,6 +28,7 @@ import sys
 import pytest
 
 from koskari.exceptions import SpecialError
+from koskari.compile.processor import YIELD_OPS
 from koskari.lib import OpCode
 
 from . import SpecialsTestCase
@@ -109,7 +110,7 @@ class TestYieldFromWithForEach(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = _opcodes(body)
         self.assertIn(OpCode.PUSH_FOREACH, ops)
-        self.assertIn(OpCode.YIELD, ops)
+        self.assertTrue((YIELD_OPS - {OpCode.YIELD_FROM}) & set(ops))
         self.assertNotIn(OpCode.YIELD_FROM, ops)
 
 

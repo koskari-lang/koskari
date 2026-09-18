@@ -101,8 +101,19 @@ static void zip_longest_fill(KosZipLongest *z, uint16_t i) {
    value, when the source ran out -- and hops straight back in. */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
+   clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element);
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(zip_longest_resume_deliver_kind, "zip-longest-step",
+                zip_longest_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(zip_longest_resume_fetch_kind, "zip-longest-step",
+                zip_longest_resume_fetch, kos_transform_step_clear, NULL);
 
 
 /**
@@ -133,9 +144,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     }
 
     if (! zip_longest_sync(z, t->idx)) {
-      KosOpResult r = KosEvalState_NextResume(es, t->sources[t->idx], NULL,
-                                              zip_longest_resume_deliver, z);
-      RESULT_ENTRY(es, r, zip_longest_resume_deliver, z);
+      KosOpResult r = KosEvalState_NextResume(
+          es, t->sources[t->idx], NULL, &zip_longest_resume_deliver_kind, z);
+      RESULT_ENTRY(es, r, &zip_longest_resume_deliver_kind, z);
     }
 
     element = PyIter_Next(t->sources[t->idx]);
@@ -192,13 +203,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
     zip_longest_fill(z, t->idx);
     t->idx++;
 
-    RESUME_HOP(zip_longest_resume_fetch, es, z, NULL);
+    RESUME_HOP(&zip_longest_resume_fetch_kind, es, z, NULL);
   }
 
   PyTuple_SET_ITEM(t->pending, (Py_ssize_t) t->idx, element);
   t->idx++;
 
-  RESUME_HOP(zip_longest_resume_fetch, es, z, NULL);
+  RESUME_HOP(&zip_longest_resume_fetch_kind, es, z, NULL);
 }
 
 
@@ -273,8 +284,7 @@ static KosIterStepResult zip_longest_iter_step(
      from inside koskari_eval's own dispatch. */
   {
     KosIterStepResult staged = kos_transform_stage(
-        es, t, NULL, (void *) zip_longest_resume_fetch,
-        "zip-longest-step", pre_top);
+        es, t, NULL, &zip_longest_resume_fetch_kind, pre_top);
 
     if (staged != KOS_ITER_INSTALLED_VALUE) {
       Py_DECREF(row);

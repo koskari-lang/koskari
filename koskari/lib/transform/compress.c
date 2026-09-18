@@ -64,8 +64,19 @@ static int compress_keeps(PyObject *selector) {
    and DELIVER files that source's element and hops back in. */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
+   clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element);
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(compress_resume_deliver_kind, "compress-step",
+                compress_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(compress_resume_fetch_kind, "compress-step",
+                compress_resume_fetch, kos_transform_step_clear, NULL);
 
 
 /**
@@ -88,9 +99,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
     PyObject *element;
 
     if (! ((c->sync_mask >> t->idx) & 1u)) {
-      KosOpResult r = KosEvalState_NextResume(es, t->sources[t->idx], NULL,
-                                              compress_resume_deliver, c);
-      RESULT_ENTRY(es, r, compress_resume_deliver, c);
+      KosOpResult r = KosEvalState_NextResume(
+          es, t->sources[t->idx], NULL, &compress_resume_deliver_kind, c);
+      RESULT_ENTRY(es, r, &compress_resume_deliver_kind, c);
     }
 
     element = PyIter_Next(t->sources[t->idx]);
@@ -142,7 +153,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
   if (t->idx == COMPRESS_DATA) {
     t->pending = element;  /* steals */
     t->idx = COMPRESS_SELECTOR;
-    RESUME_HOP(compress_resume_fetch, es, c, NULL);
+    RESUME_HOP(&compress_resume_fetch_kind, es, c, NULL);
   }
 
   {
@@ -161,7 +172,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
     Py_CLEAR(t->pending);
   }
 
-  RESUME_HOP(compress_resume_fetch, es, c, NULL);
+  RESUME_HOP(&compress_resume_fetch_kind, es, c, NULL);
 }
 
 
@@ -225,8 +236,8 @@ static KosIterStepResult compress_iter_step(
   /* A driven source: defer the whole row. Nothing is fetched yet to
      stage, and a request that can suspend must run from inside
      koskari_eval's own dispatch. */
-  return kos_transform_stage(es, t, NULL, (void *) compress_resume_fetch,
-                             "compress-step", pre_top);
+  return kos_transform_stage(es, t, NULL, &compress_resume_fetch_kind,
+                             pre_top);
 }
 
 

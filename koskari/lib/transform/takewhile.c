@@ -34,10 +34,23 @@
    call sites below and kos_dynframe_clone's resume refusal). */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
+   clone (a step in flight refuses capture by name) */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
+    KosEvalState *es, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
-    KosEvalState *es, void *state, PyObject *element);
+    KosEvalState *es, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
     KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(takewhile_resume_fetch_kind, "takewhile-step",
+                takewhile_resume_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(takewhile_resume_invoke_kind, "takewhile-step",
+                takewhile_resume_invoke, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(takewhile_resume_verdict_kind, "takewhile-step",
+                takewhile_resume_verdict, kos_transform_step_clear, NULL);
 
 
 /**
@@ -70,8 +83,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
     return EVAL_RAISE();
 
   r = KosEvalState_NextResume(es, t->source, NULL,
-                              takewhile_resume_invoke, t);
-  RESULT_ENTRY(es, r, takewhile_resume_invoke, t);
+                              &takewhile_resume_invoke_kind, t);
+  RESULT_ENTRY(es, r, &takewhile_resume_invoke_kind, t);
 }
 
 
@@ -92,8 +105,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
   {
     KosOpResult r = KosEvalState_CallResult(es, t->fn.cs_callable,
                                             &element, 1, NULL, 0,
-                                            takewhile_resume_verdict, t);
-    RESULT_ENTRY(es, r, takewhile_resume_verdict, t);
+                                            &takewhile_resume_verdict_kind, t);
+    RESULT_ENTRY(es, r, &takewhile_resume_verdict_kind, t);
   }
 }
 
@@ -161,8 +174,7 @@ static KosIterStepResult takewhile_iter_step(
        in this evaluator. */
     if (t->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
       return kos_transform_stage(es, t, element,
-                                 (void *) takewhile_resume_invoke,
-                                 "takewhile-step", pre_top);
+                                 &takewhile_resume_invoke_kind, pre_top);
 
     /* A plain python predicate needs no evaluator at all. */
     {
@@ -196,8 +208,7 @@ static KosIterStepResult takewhile_iter_step(
              frame, which owns every suspension. The element is held
              on the transform until the verdict settles. */
           KosIterStepResult staged = kos_transform_stage(
-              es, t, result, (void *) takewhile_resume_verdict,
-              "takewhile-step", pre_top);
+              es, t, result, &takewhile_resume_verdict_kind, pre_top);
 
           if (staged != KOS_ITER_INSTALLED_VALUE) {
             Py_DECREF(element);
@@ -216,8 +227,8 @@ static KosIterStepResult takewhile_iter_step(
 
   /* Driven source: set the cold-start fetch resume and defer the
      whole step. */
-  return kos_transform_stage(es, t, NULL, (void *) takewhile_resume_fetch,
-                             "takewhile-step", pre_top);
+  return kos_transform_stage(es, t, NULL, &takewhile_resume_fetch_kind,
+                             pre_top);
 }
 
 

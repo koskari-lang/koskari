@@ -120,8 +120,8 @@ aligns to it.
 `KosThreadFn` prototype and musttail rules), [../EVALUATOR.md](../EVALUATOR.md)
 §8.2 (CPS resumes), [stencil-compilation.md](stencil-compilation.md) (the
 consumer that copies handler bodies per site),
-[../archive/insn-flags-discard.md](../archive/insn-flags-discard.md) (superseded), [gen-yieldfrom-passthru.md](gen-yieldfrom-passthru.md)
-(the YIELD_FROM follow-up this subsumes).
+[../archive/insn-flags-discard.md](../archive/insn-flags-discard.md) (superseded), [../archive/gen-yieldfrom-passthru.md](../archive/gen-yieldfrom-passthru.md)
+(the YIELD_FROM follow-up this subsumes, archived).
 
 ## Summary
 
@@ -147,8 +147,9 @@ Electors have two homes, distinguished by what the elected fact belongs to:
 ## The elector and the resume
 
 A resume (§8.2) is a `KosThreadFn` that receives one delivery on a frame:
-the frame carries `resume_fn` and `resume_state`, the trampoline or a
-`RESUME_HOP` invokes it with the settled value, and the pair is cleared.
+the frame carries `resume_kind` and `resume_state`, the prologue or a
+`RESUME_HOP` invokes the kind's `fn` with the settled value, and the pair
+is cleared.
 An elector is a `KosThreadFn` that receives control at a site or a node:
 the slot or node carries the pointer, the handler or a delivery invokes it,
 and the pointer stays.
@@ -259,10 +260,13 @@ without counting, since the site is still an int site. Misses count
 since the election; the hit path takes no store. At
 `KOS_ELECTOR_MISS_LIMIT` (8, the method cache's) the slot demotes to
 `MEGAMORPHIC` with `fn` set to the generic body. The generic body is
-the slow path, so it can afford a count of its own: it ticks the same
-byte on every execution and empties the slot when the byte wraps, so
-a demoted site, or one whose first operands were not its steady type,
-classifies again every 256 executions rather than never. The
+the slow path, so it can afford a count of its own: it ticks a byte of
+its own on every execution, apart from the misses that drive the
+demotion, and empties the slot when the byte wraps, so a demoted site,
+or one whose first operands were not its steady type, classifies again
+every 256 executions rather than never. A decline from an elected body
+(an index past a list's end, a key a dict lacks) runs the generic body
+and ticks; it is not a guard miss. The
 `KOS_TRACE_OPCACHE` counters `elector_hit`,
 `elector_miss` (an election or a guard miss), `elector_bypass` (a
 demotion), and `elector_uncached` are shared by the families.
@@ -393,8 +397,8 @@ Several opcodes are re-entered on each delivery by rolling the pc back to
 the acting instruction (`YIELD_FROM`, `POP_WITH` on an async exit, `PUSH_WITH`
 on an async enter, `YIELD`, the prompt/shift pops) and re-deriving the phase
 from node state. Under §8.2 a delivery already has a route that does not
-touch the instruction stream: the frame's `resume_fn` / `resume_state`
-pair. A node-style resume arms that pair with a phase function and the node
+touch the instruction stream: the frame's `resume_kind` / `resume_state`
+pair. A node-style resume sets that pair to a phase kind and the node
 as its state. The opcode then runs once per node, and every later delivery
 lands on the phase function, which reads its node, does the phase's work,
 and either arms the next phase or threads on past the opcode.
@@ -456,7 +460,7 @@ the generator suspends.
 await their results; each is a request with a resume.
 
 **PROMPT, SHIFT, CC**. These nodes already carry a `resume_pc` and, for the
-in-place delimited invoke, a displaced stack. A `resume_fn` beside the pc
+in-place delimited invoke, a displaced stack. A resume kind beside the pc
 is the same idea expressed the same way as every other node. Investigative:
 the transfer-plan machinery owns these paths and the gain is uniformity
 rather than speed.

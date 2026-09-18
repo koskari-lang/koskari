@@ -40,8 +40,19 @@ typedef struct KosPairwise {
    call site below and kos_dynframe_clone's resume refusal). */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
+   clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element);
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(pairwise_resume_deliver_kind, "pairwise-step",
+                pairwise_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(pairwise_resume_fetch_kind, "pairwise-step",
+                pairwise_resume_fetch, kos_transform_step_clear, NULL);
 
 
 /**
@@ -67,13 +78,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
         PyErr_SetNone(PyExc_StopIteration);
       return EVAL_RAISE();
     }
-    RESUME_HOP(pairwise_resume_deliver, es, t, element);
+    RESUME_HOP(&pairwise_resume_deliver_kind, es, t, element);
   }
 
   {
     KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
-                                            pairwise_resume_deliver, t);
-    RESULT_ENTRY(es, r, pairwise_resume_deliver, t);
+                                            &pairwise_resume_deliver_kind, t);
+    RESULT_ENTRY(es, r, &pairwise_resume_deliver_kind, t);
   }
 }
 
@@ -95,7 +106,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
 
   if (! p->held) {
     p->held = element;  /* steals */
-    RESUME_HOP(pairwise_resume_fetch, es, p, NULL);
+    RESUME_HOP(&pairwise_resume_fetch_kind, es, p, NULL);
   }
 
   row = PyTuple_Pack(2, p->held, element);
@@ -173,8 +184,7 @@ static KosIterStepResult pairwise_iter_step(
      itself (which can suspend) must run from inside koskari_eval's
      own dispatch. */
   return kos_transform_stage(es, t, NULL,
-                             (void *) pairwise_resume_fetch,
-                             "pairwise-step", pre_top);
+                             &pairwise_resume_fetch_kind, pre_top);
 }
 
 

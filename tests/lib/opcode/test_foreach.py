@@ -85,6 +85,53 @@ class TestForeachOpcodes(CevalTest):
         self.assertEqual(result, 10)
 
 
+    async def test_foreach_continue_steps_iterator(self):
+        """
+        CONTINUE with the FOREACH region on top steps the iterator and
+        lands on the else target at exhaustion
+        """
+
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["VAR_STORE", "total"],
+            ["CONST", [1, 2, 3, 4]],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT", "else_lbl"],
+            ["VAR", "total"],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "total"],
+            ["CONTINUE", 0],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_FOREACH", 0],
+            ["POP_FOREACH", 0],
+            ["POP", 1],
+            ["VAR", "total"],
+            ["RETURN", 1],
+        ], values={"total": 0})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 10)
+
+
+    async def test_foreach_continue_value_is_loop_result(self):
+        """
+        CONTINUE with a value records it as the region result, which
+        POP_FOREACH returns when the loop runs out
+        """
+
+        code, ns = build_expr([
+            ["CONST", [1, 2, 3]],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONTINUE", 1],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_FOREACH", 0],
+            ["POP_FOREACH", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 3)
+
+
     async def test_foreach_break_exits_early(self):
         """
         FOREACH BREAK exits when value equals 2. BREAK with arg=0 uses None

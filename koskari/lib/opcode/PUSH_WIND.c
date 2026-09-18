@@ -19,7 +19,7 @@
    validate callable or Py_None, push wind node, run wind phase.
 */
 
-KOS_OP_HANDLER_COLD(PUSH_WIND) {
+KOS_OP_HANDLER(PUSH_WIND) {
   unsigned count = KosOp_ARG(insn);
   PyObject *before = NULL;
   PyObject *after = NULL;  /* set only when count==2 */

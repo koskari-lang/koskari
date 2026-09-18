@@ -2081,9 +2081,8 @@ static int code_emit(
     }
 
     /* Record YIELDS flag for generators */
-    if (op == KOS_OP_YIELD || op == KOS_OP_YIELD_FROM) {
+    if (kos_op_yields(op))
       KosCode_FLAGS(self) |= KOS_CODE_YIELDS;
-    }
 
     /* Emit position entry when this instruction has a position change */
     if (pi < coll->pos_count && coll->pos_entries[pi].index == di) {
@@ -2595,7 +2594,7 @@ static int validate_no_tail_with_yield(PyObject *instr_fast) {
     }
 
     long lop = PyLong_AsLong(a);
-    if (lop == KOS_OP_YIELD || lop == KOS_OP_YIELD_FROM) {
+    if (kos_op_yields(lop)) {
       saw_yield = 1;
     } else if (lop >= KOS_OP_TAIL_CALL
                && lop <= KOS_OP_TAIL_CALL_FAST_ATTR_STAR) {

@@ -40,6 +40,11 @@ class Benchmark:
     still runnable under ``--mode koskari`` for tracing).  ``expected``, when
     set, is a known result the answer is checked against -- so a Koskari-only
     run stays correctness-checked with no Python side present.
+
+    ``hosted`` marks an async benchmark: each call is driven to completion on
+    an asyncio event loop instead of the demand path.  The Python variant is
+    then an ``async def`` and the Koskari kernel is called bare, its
+    coroutine handed to the loop.
     """
 
     name: str
@@ -49,6 +54,7 @@ class Benchmark:
     py: typing.Optional[typing.Callable] = None
     expected: typing.Optional[object] = None
     tags: typing.Tuple = ()
+    hosted: bool = False
 
 
 def discover():

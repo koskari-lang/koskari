@@ -109,8 +109,8 @@ typedef struct KosCallSlots {
    later at the site's iteration node. ERROR leaves PyErr set; on any
    non-INSTALLED outcome the provider has fully undone its own partial
    state. A provider whose step needs its own suspensions or
-   sub-iteration runs them under a CPS resume frame (see
-   KosResumeFn); the suite itself never parks.
+   sub-iteration runs them under a CPS resume frame (the resume
+   contract is in eval.h); the suite itself never parks.
 */
 typedef enum {
   KOS_ITER_VALUE = 0,   /* *out: the element (new ref) */

@@ -71,8 +71,19 @@ static inline int zip_sync(KosZip *z, uint16_t i) {
    back into the loop. */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
+   clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element);
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(zip_resume_deliver_kind, "zip-step",
+                zip_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(zip_resume_fetch_kind, "zip-step",
+                zip_resume_fetch, kos_transform_step_clear, NULL);
 
 
 /**
@@ -97,9 +108,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
     PyObject *element;
 
     if (! zip_sync(z, t->idx)) {
-      KosOpResult r = KosEvalState_NextResume(es, t->sources[t->idx],
-                                              NULL, zip_resume_deliver, z);
-      RESULT_ENTRY(es, r, zip_resume_deliver, z);
+      KosOpResult r = KosEvalState_NextResume(
+          es, t->sources[t->idx], NULL, &zip_resume_deliver_kind, z);
+      RESULT_ENTRY(es, r, &zip_resume_deliver_kind, z);
     }
 
     element = PyIter_Next(t->sources[t->idx]);
@@ -142,7 +153,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
   PyTuple_SET_ITEM(t->pending, (Py_ssize_t) t->idx, element);
   t->idx++;
 
-  RESUME_HOP(zip_resume_fetch, es, z, NULL);
+  RESUME_HOP(&zip_resume_fetch_kind, es, z, NULL);
 }
 
 
@@ -202,7 +213,7 @@ static KosIterStepResult zip_iter_step(
      (see stepper_step). */
   {
     KosIterStepResult staged = kos_transform_stage(
-        es, t, NULL, (void *) zip_resume_fetch, "zip-step", pre_top);
+        es, t, NULL, &zip_resume_fetch_kind, pre_top);
 
     if (staged != KOS_ITER_INSTALLED_VALUE) {
       Py_DECREF(row);

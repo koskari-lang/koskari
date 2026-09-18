@@ -1393,49 +1393,6 @@ PyObject *KosFunction_SimpleCallNamespaceStealSelfBlock(
 }
 
 
-int KosFunction_TryParkFrame(PyObject *self, KosDynFrame *frame) {
-
-  KosFunction *fn = (KosFunction *) self;
-  PyObject *ns;
-
-  if (fn->cached_frame)
-    return 0;
-
-  /* The namespace must be provably private to the frame: a captured,
-     revealed, or dynamically-extended namespace stays live-visible and
-     the frame takes the ordinary teardown instead. */
-  ns = KosDynFrame_NS(frame);
-  if (! ns
-      || ! KosNamespace_CheckExact(ns)
-      || Py_REFCNT(ns) != 1
-      || PyObject_GC_IsTracked(ns)
-      || KosNamespace_BINDS(ns) != NULL
-      || KosDynFrame_RESUME_FN(frame)
-      || ! KosDynFrame_STACK(frame))
-    return 0;
-
-  /* Reset to the state a fresh install would produce: raw slots NULL
-     (non-raw template refs retained), empty stack, normalized node
-     base ready for kos_dyn_push_ready_frame. */
-  KosNamespace_ClearRawFast(ns);
-  KosStack_Clear(&KosDynFrame_STACK(frame));
-  KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
-  KosDynFrame_BACK_FRAME(frame) = NULL;
-
-  KosDynNode_PARENT(frame) = NULL;
-  KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
-  /* The parked frame keeps the namespace it introduced, so it keeps
-     the cap that tells the collector to look inside it. */
-  KosDynNode_CAPS(frame) = KOS_DYN_CAP_OWNS_NS;
-  KosDynFrame_PC(frame) = 0;
-  KosDynFrame_ACTING_PC(frame) = 0;
-  KosDynFrame_FLAGS(frame) = 0;
-
-  fn->cached_frame = frame;
-  return 1;
-}
-
-
 PyObject *KosFunction_VectorCall(
     PyObject *self,
     PyObject *const *args,

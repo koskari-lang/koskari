@@ -19,7 +19,7 @@
   Pop TOS, materialize as fast sequence, require len == 2, store seq[0] and
   seq[1] into the two names (VAR_STORE semantics).
 */
-KOS_OP_HANDLER_COLD(UNPACK_VAR) {
+KOS_OP_HANDLER(UNPACK_VAR) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *name0 = KosExtra_OBJ(row, 0);
   PyObject *name1 = KosExtra_OBJ(row, 1);

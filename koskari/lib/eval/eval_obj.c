@@ -268,4 +268,35 @@ static int kos_attr_inplace_reduce(
 }
 
 
+/* Shared core for the augmented item-assignment family (ITEM_INPLACE and
+   the CONST / VAR / FAST variants).  Reduces obj[key] in place:
+
+     acc = obj[key]
+     acc = fold(acc) over the count values in args
+     obj[key] = acc
+
+   args points at the count reduction values (a stack tail or a row
+   constant); this function neither pops them nor touches obj or key --
+   the caller owns them and drops the stack afterwards.  Returns 0/-1. */
+static int kos_item_inplace_reduce(
+    PyObject *obj,
+    PyObject *key,
+    KosOperand op,
+    PyObject *const *args,
+    int count) {
+
+  PyObject *acc = PyObject_GetItem(obj, key);
+  if (! acc)
+    return -1;
+
+  acc = attr_inplace_fold(acc, op, args, count);
+  if (! acc)
+    return -1;
+
+  int res = PyObject_SetItem(obj, key, acc);
+  Py_DECREF(acc);
+  return res;
+}
+
+
 // The end.

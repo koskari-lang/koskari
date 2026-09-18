@@ -19,7 +19,7 @@
    dynamic chain.
 */
 
-KOS_OP_HANDLER_COLD(POP_PROMPT) {
+KOS_OP_HANDLER(POP_PROMPT) {
   (void) insn;
 
   /* Return bookmark: PUSH-graft (POP_PROMPT) or in-place (INPLACE)
@@ -76,7 +76,7 @@ KOS_OP_HANDLER_COLD(POP_PROMPT) {
       }
     }
     KosEvalState_MarkSuspendedNotRunning(es);
-    return EVAL_RETURN(val);
+    RESULT_RETURN(es, val);
   }
 
   KosDynNode *top = KosEvalState_CurrentNode(es);

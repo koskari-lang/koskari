@@ -30,6 +30,16 @@ frame's return arm.
 
 Ref: [interpreter/electors.md](interpreter/electors.md).
 
+### Reads that call and reads that wait
+
+A ref deref that answers "call this" or an awaitable instead of
+running a nested evaluator, so a read can raise, suspend and be
+captured like a call. A schema-derived row resume finishes the
+multi-slot and fused rows; RETURN and YIELD loads tail into the
+getter. Raw and plain-ref reads keep their code.
+
+Ref: [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
+
 ### Dispatch tweaks to investigate
 
 Every record now carries its own pc, so the `acting_pc` store in
@@ -40,15 +50,6 @@ re-fetching through `es->code`; and the fused POP peephole could read
 kernels; measure before taking any.
 
 Ref: [archive/resolved-operands.md](archive/resolved-operands.md).
-
----
-
-## Profiling / instrumentation
-
-- Optional opcode-level histograms (freelist tracing, `KOS_TRACE_EVENTS`, and
-  `KOS_TRACE_TIMING` already exist).
-
-Ref: [api/tracing.md](api/tracing.md).
 
 ---
 
@@ -81,6 +82,17 @@ Two pieces of work:
 ---
 
 ## Compiler
+
+### Binding forms and builder forms (rename)
+
+One word per role: `define` stays as the by-form purist spelling,
+`def` defines a function, `var` binds a value, `global` binds at the
+module, `class` defines a class (today `define-class`); the builders
+become `build-class` and `build-function`, `lambda` unchanged. With
+it a zero-arity `(vars)` on the existing special and a namespace repr
+for the CLI. Five migration steps, each green.
+
+Ref: [language/binding-forms-rename.md](language/binding-forms-rename.md).
 
 ### Extent verification and dead-region sweep
 
@@ -204,10 +216,6 @@ Gaps per [documentation-goals.md](documentation-goals.md):
 
 ## To design (broader)
 
-From [FEATURES.md](FEATURES.md) and related docs:
-
-- Performance optimizations (general)
-
 ### Recursion guard at the Python boundary (investigate)
 
 No `Py_EnterRecursiveCall` guards the nested `koskari_eval` a
@@ -223,31 +231,6 @@ Ref: [EVALUATOR.md](EVALUATOR.md) §7 (installs and call paths).
 
 The following items are captured from design discussion. Each has a short
 design note and is open for evaluation and possible implementation.
-
-### Fused item in-place opcodes (six-opcode review)
-
-Replace the `DUP` choreography in `compile/inplace-item` with fused
-read-modify-write item opcodes mirroring the attr in-place family:
-stack-object `ITEM_INPLACE` / `CONST_ITEM_INPLACE`, variable-based
-`VAR_ITEM_INPLACE` / `VAR_CONST_ITEM_INPLACE`, and their fast
-derivations `FAST_ITEM_INPLACE` / `FAST_CONST_ITEM_INPLACE`. Review the
-six proposed opcodes -- encodings, the read-at-op-time ordering shift,
-naming vs the `*_INPLACE_CONST` suffix convention, and whether the
-stack-object tier carries its dispatch-table weight -- before any
-implementation.
-
-Ref: [interpreter/item-inplace-opcodes.md](interpreter/item-inplace-opcodes.md).
-
-### GEN yield-from passthru
-
-A `yieldfrom` field on the GEN dynnode: re-entering a delegating generator
-dispatches straight to the delegate without thawing the frame, which is
-reconstructed only when the delegate raises or ends.  Staged foreign-first;
-the flattened Koskari delegate carries the hard questions (chain topology,
-lazy reconstruction cascade, extent-inert guard).  Undecided — the proposal
-doc weighs pros/cons and per-delegate-kind complexity.
-
-Ref: [interpreter/gen-yieldfrom-passthru.md](interpreter/gen-yieldfrom-passthru.md).
 
 ### Seq-values kwargs (in-scope formals apply)
 
@@ -280,14 +263,6 @@ structured like `define-special` but feeding **runtime sequence values** into
 the matcher arms instead of source forms.
 
 Ref: [language/multi-dispatch-methods.md](language/multi-dispatch-methods.md).
-
-### Example dispatch call timing harness
-
-Add timed examples (Python, async Python, Koskari, demand Koskari
-callees; Python and Koskari callers); triple timestamps with baseline
-subtraction; ~1000 iterations per cell; aggregate averages.
-
-Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
 ### Formal default modes (`value:` / `copy:` / `new:`)
 

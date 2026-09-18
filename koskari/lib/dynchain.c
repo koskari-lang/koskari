@@ -136,6 +136,7 @@ static void kos_dynnode_init(
   KosDynNode_KIND(node) = kind;
   KosDynNode_FLAGS(node) = KOS_DYNF_NONE;
   KosDynNode_CAPS(node) = caps;
+  KosDynNode_NODE_ID(node) = 0;  /* minted on first read, see kos_dynnode_id */
   KosDynNode_STACK(node) = NULL;
   KosDynNode_NS(node) = NULL;
 }
@@ -149,12 +150,12 @@ static uint32_t dyn_node_id_counter = 1;  /* 0 reserved for unset / no graft poi
 
 
 /**
-   Mint a fresh, never-zero node id. Every allocation gets one; clones for
-   continuation capture overwrite it with the original's id for LCA
-   matching. Prompt instantiation at k-invoke time mints anew so a grafted
-   prompt is a distinct instance from the live original.
+   Mint a fresh, never-zero node id. Minted on first read through
+   kos_dynnode_id; clones for continuation capture copy the original's
+   id for LCA matching. Prompt instantiation at k-invoke time mints anew
+   so a grafted prompt is a distinct instance from the live original.
 */
-static uint32_t kos_dynnode_mint_id(void) {
+uint32_t kos_dynnode_mint_id(void) {
   uint32_t id = dyn_node_id_counter++;
   if (! dyn_node_id_counter)
     dyn_node_id_counter = 1;  /* avoid 0 on rollover */
@@ -163,9 +164,12 @@ static uint32_t kos_dynnode_mint_id(void) {
 
 
 /**
-   Allocate and zero a KosDynNode. Prefer reuse from freelist; else PyMem_Malloc.
-   Returns NULL on failure (sets PyErr_NoMemory). Caller must set kind and
-   the relevant union member.
+   Allocate a KosDynNode. Prefer reuse from freelist; else PyMem_Malloc.
+   Returns NULL on failure (sets PyErr_NoMemory). The memory is not
+   zeroed: kos_dynnode_init writes the head and every kind's
+   constructor writes its whole union member.
+   The embedded segment's header is initialized on use
+   (kos_dynnode_use_inline_segment) and its slots are gated by len.
 */
 static KosDynNode *kos_dynnode_alloc(void) {
   KosDynNode *p = dyn_freelist;
@@ -174,10 +178,6 @@ static KosDynNode *kos_dynnode_alloc(void) {
     dyn_freelist = KosDynNode_PARENT(p);
     dyn_freecount--;
     KOS_TRACE_FL_ALLOC("dyn_node", 1);
-    /* zeroed on return to the freelist; only the parent link (reused
-       as the freelist chain) needs clearing */
-    KosDynNode_PARENT(p) = NULL;
-    p->node_id = kos_dynnode_mint_id();
     return p;
   }
 
@@ -188,19 +188,13 @@ static KosDynNode *kos_dynnode_alloc(void) {
     return NULL;
   }
 
-  /* The embedded segment at the tail needs no zeroing: its header is
-     initialized on use (kos_dynnode_use_inline_segment) and its slots
-     are gated by len. */
-  memset(p, 0, offsetof(KosDynNode, iseg));
-  p->node_id = kos_dynnode_mint_id();
-
   return p;
 }
 
 
 /**
    Return a node to the freelist or free it. Call only after kind-specific
-   cleanup (refs released). Node is zeroed before being cached.
+   cleanup (refs released).
 */
 static void kos_dynnode_return_to_freelist(KosDynNode *node) {
   if (KosDynNode_STACK(node)) {
@@ -214,8 +208,9 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 
   if (dyn_freecount < DYN_NODE_MAX_FREE) {
     KOS_TRACE_FL_RETURN("dyn_node", 0);
-    /* Skip the embedded segment tail; see kos_dynnode_alloc. */
-    memset(node, 0, offsetof(KosDynNode, iseg));
+    /* The payload stays as it was: stale pointers on a freelisted node
+       are never traversed, and the next constructor writes every
+       field. See kos_dynnode_alloc. */
     KosDynNode_PARENT(node) = dyn_freelist;
     dyn_freelist = node;
     dyn_freecount++;
@@ -1542,8 +1537,9 @@ static void kos_dyn_restamp_spliced_prefix(KosEvalState *es) {
   /* Collect until the first COMPLETELY stamped node: at least one
      cache set and none missing. Absence of evidence is not
      stamped-ness -- a bookmark carries no restampable caches at all
-     (its ns fill is owned state that survives detach, so it proves
-     nothing about the nodes below it), and the caches at the bottom
+     (its ns fill is stamped like any other node's and a GEN's is
+     cleared at the freeze, so it proves nothing about the nodes below
+     it), and the caches at the bottom
      of the chain are legitimately NULL. A partially stamped node
      (e.g. a frame whose back link survived while its restored
      segment's did not) still needs collecting. */
@@ -2109,10 +2105,8 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
      attached no ns of its own (every non-introducing kind) carries
      the same live-ns fill its source held. Introducing kinds handle
      their own (frame goes through KosNamespace_Reveal). */
-  if (cloned && ! KosDynNode_NS(cloned) && KosDynNode_NS(node)) {
-    Py_INCREF(KosDynNode_NS(node));
-    KosDynNode_NS(cloned) = KosDynNode_NS(node);
-  }
+  if (cloned && ! KosDynNode_NS(cloned) && KosDynNode_NS(node))
+    KosDynNode_NS(cloned) = KosNamespace_Reveal(KosDynNode_NS(node));
 
   /* Segment copy is centralized here for clones built through this
      dispatcher; kos_dynframe_clone copies its own segment so its
@@ -2590,13 +2584,13 @@ int kos_shift_capture(
       return -1;
 
     {
-      uint32_t live_id = KosDynNode_NODE_ID((KosDynNode *) prompt);
+      uint32_t live_id = kos_dynnode_id((KosDynNode *) prompt);
       KosDynNode *pclone = KosContinuation_CAPTURED_CHAIN(k);
       KosDynNode *walk;
 
       while (pclone
              && ! (KosDynNode_IS_PROMPT(pclone)
-                   && KosDynNode_NODE_ID(pclone) == live_id))
+                   && kos_dynnode_id(pclone) == live_id))
         pclone = KosDynNode_PARENT(pclone);
 
       if (pclone) {
@@ -2644,7 +2638,7 @@ int kos_shift_capture(
 
         if (! KosDynNode_IS_PROMPT(walk))
           continue;
-        old_id = KosDynNode_NODE_ID(walk);
+        old_id = kos_dynnode_id(walk);
         KosDynNode_NODE_ID(walk) = kos_dynnode_mint_id();
         KosDynNode_FLAGS(walk) |= KOS_DYNF_INVOCATION;
         for (snode = KosContinuation_CAPTURED_CHAIN(k); snode;
@@ -2660,7 +2654,7 @@ int kos_shift_capture(
      * node is recorded by PUSH_SHIFT after it is pushed. */
     KosContinuation_LIVE_PROMPT_NODE(k) = (KosDynNode *) prompt;
     KosContinuation_LIVE_PROMPT_NODE_ID(k) =
-        KosDynNode_NODE_ID((KosDynNode *) prompt);
+        kos_dynnode_id((KosDynNode *) prompt);
 
     *out_k = k;
   }
@@ -2807,11 +2801,15 @@ static PyObject *dynnode_to_dict_generic(KosDynNode *node) {
   if (! out)
     return NULL;
 
-  if (snapshot_set_uint(out, "node_id", KosDynNode_NODE_ID(node)) < 0
+  /* The snapshot hands the namespace to Python; reveal it. */
+  PyObject *ns = kos_dynnode_introduces_ns(node) ? KosDynNode_NS(node) : NULL;
+  if (ns)
+    KosNamespace_TrackChain(ns);
+
+  if (snapshot_set_uint(out, "node_id", kos_dynnode_id(node)) < 0
       || snapshot_set_item(out, "kind",
           PyUnicode_FromString(kos_dynnode_kind_name(KosDynNode_KIND(node)))) < 0
-      || snapshot_set_obj(out, "namespace",
-          kos_dynnode_introduces_ns(node) ? KosDynNode_NS(node) : NULL) < 0) {
+      || snapshot_set_obj(out, "namespace", ns) < 0) {
     Py_DECREF(out);
     return NULL;
   }

@@ -22,7 +22,7 @@
    CONST + VAR_INPLACE (count 1).
 */
 
-KOS_OP_HANDLER_COLD(VAR_INPLACE_CONST) {
+KOS_OP_HANDLER(VAR_INPLACE_CONST) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 1);

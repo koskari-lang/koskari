@@ -342,6 +342,13 @@ struct KosOp {
 
 #define KosOp_FN(insn)     (((KosOp *) (insn))->fn)
 #define KosOp_OP(insn)     (((KosOp *) (insn))->op)
+
+/* The rows that make a code object a generator */
+static inline int kos_op_yields(unsigned op) {
+  return op == KOS_OP_YIELD || op == KOS_OP_YIELD_FROM
+      || op == KOS_OP_YIELD_CONST || op == KOS_OP_YIELD_VAR
+      || op == KOS_OP_YIELD_FAST;
+}
 #define KosOp_ARG(insn)    (((KosOp *) (insn))->arg)
 #define KosOp_PC(insn)     (((KosOp *) (insn))->pc)
 #define KosOp_OBJ(insn)    (((KosOp *) (insn))->u.obj)
@@ -559,8 +566,11 @@ struct KosCacheSlot {
        the teardown arm is a no-op. */
     struct {
       KosThreadFn fn;          /* elected body; the generic body once demoted */
-      uint8_t misses;          /* guard misses since the election */
+      uint8_t misses;          /* guard misses since the election; drives
+                                  the demotion */
       uint8_t mode;            /* KosElectorMode */
+      uint8_t ticks;           /* generic-body executions; the wrap empties
+                                  the slot for a re-election */
     } elector;
   } u;
 };

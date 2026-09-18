@@ -58,6 +58,10 @@ typedef enum KosOpResultKind {
                               valid, no PyErr, no goal, no resume.
                               Loop-internal only; must never escape
                               koskari_eval (post-op consumers normalize it) */
+  KOS_RES_POLL,            /* as NORMAL, from a cooperation point that found
+                              the eval breaker up: the handler's relay tails
+                              into the breaker service before threading on.
+                              Loop-internal like DISPATCH */
   KOS_RES_FATAL,           /* hard fault; koskari_eval returns -1 immediately */
 } KosOpResultKind;
 
@@ -76,6 +80,7 @@ struct KosOpResult {
 #define EVAL_RETURN(v)          ((KosOpResult){ KOS_RES_RETURN, (v) })
 #define EVAL_CONTROL_RETURNED() ((KosOpResult){ KOS_RES_CONTROL_RETURNED, NULL })
 #define EVAL_DISPATCH()         ((KosOpResult){ KOS_RES_DISPATCH, NULL })
+#define EVAL_POLL()             ((KosOpResult){ KOS_RES_POLL, NULL })
 #define EVAL_FATAL()            ((KosOpResult){ KOS_RES_FATAL, NULL })
 
 
@@ -179,9 +184,9 @@ typedef enum KosGetNextResult {
 
 
 /**
-   A per-frame CPS resume: the callback a consumer sets on a frame via
-   KosEvalState_CallResult / KosEvalState_NextResume to receive exactly
-   one settled delivery -- a call's result, a callee frame's return, a
+   A per-frame CPS resume: the fn of the KosResumeKind (dynchain.h) a
+   consumer sets on a frame via KosEvalState_CallResult /
+   KosEvalState_NextResume to receive exactly one settled delivery -- a call's result, a callee frame's return, a
    Next request's element, or an awaited value, however it was
    produced.
 
@@ -223,9 +228,87 @@ typedef enum KosGetNextResult {
 
    Returns a KosOpResult naming the next signal to the loop: another
    CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT, or
-   EVAL_REPROLOGUE.
+   EVAL_REPROLOGUE. The prototype is KosThreadFn.
 */
-typedef KosThreadFn KosResumeFn;
+
+
+/**
+   The breaker service, a KosThreadFn the cooperation points tail into
+   when the eval breaker is up: yields the GIL when another thread has
+   asked for it and runs the pending calls, then threads on at es->pc,
+   or answers REPROLOGUE when the poll raised so the prologue's
+   pending-exception phase takes the signal. insn and val are unused.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+
+
+/**
+   The prologue, a KosThreadFn: the ordered re-entry protocol -- staged
+   delivery, pending exception, goal drain, resume delivery, with the
+   breaker polled ahead of every pass -- run until no step asks for
+   another pass, then the instruction at es->pc fetched and tail-called.
+   Every re-entry into the instruction stream (a raise walk that found
+   its handler, a plan transfer, a continuation replay, a staged
+   delivery) tails into this, and it returns only a boundary result.
+   insn and val are unused.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+
+
+/**
+   The raise walk, a KosThreadFn every RESULT_RAISE tails into: the
+   exception set is offered up the chain (try and finally extents,
+   node conversion, a code-less frame's resume) and the answer is
+   REPROLOGUE with the handler pc set, AWAIT for an async unwind, or
+   the terminal RAISE or FATAL. insn and val are unused.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+
+
+/**
+   The delivery of RETURN, YIELD and AWAIT and the control-returned
+   hook, each a KosThreadFn the handlers and the relay tail into with
+   the owned value (NULL for the hook): the event runs in the chain,
+   threads on when it can, and returns a boundary otherwise. insn is
+   unused.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+KOS_PRESERVE_NONE KosOpResult kos_eval_await(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
+    KosEvalState *es,
+    void *insn,
+    PyObject *val);
+
+/**
+   The cold half of RESULT_RELAY: every helper answer but NORMAL, out
+   of line once instead of a seven-arm ladder in each relaying handler.
+   The kind travels in the void slot as an integer, since a tail call
+   cannot hand over a pointer into the caller's frame, and the value in
+   its own slot. Tails into the answer's service; FATAL returns.
+*/
+KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
+    KosEvalState *es,
+    void *kind,
+    PyObject *val);
 
 
 /* === Threaded control transfer === */
@@ -255,27 +338,28 @@ typedef KosThreadFn KosResumeFn;
 
 
 /**
-   DISPATCH(fn, es, arg, value): deliver value to fn, a KosThreadFn,
-   by way of the trampoline: fn and arg become the current frame's
+   DISPATCH(fn, es, arg, value): deliver value to fn, a KosResumeKind,
+   by way of the prologue: fn and arg become the current frame's
    resume, value (an owned reference, or NULL for a cold start with
-   nothing staged) goes into the eval state's pending slot, and
-   EVAL_REPROLOGUE returns to the trampoline, which polls if due and
-   whose re-entry then takes the slot and invokes fn. The frame stack
-   is not touched. Caller must have a current frame, and nothing may
-   already be staged. A resume handing a delivery to the next resume
-   uses RESUME_HOP, which tail-calls and falls back to this when the
-   eval breaker is up.
+   nothing staged) goes into the eval state's pending slot, and the
+   prologue is tailed into, which polls if due and then takes the slot
+   and invokes fn. The frame stack is not touched. Caller must have a
+   current frame, nothing may already be staged, and the calling
+   function must have the KosThreadFn prototype. A resume handing a
+   delivery to the next resume uses RESUME_HOP, which tail-calls the
+   resume directly and falls back to this when the eval breaker is up.
 */
-#define DISPATCH(fn, es, arg, value)                                    \
+#define DISPATCH(kind, es, arg, value)                                  \
   do {                                                                  \
     KosEvalState *kos_dsp_es_ = (es);                                   \
     KosDynFrame *kos_dsp_frame_ = KosEvalState_FRAME(kos_dsp_es_);      \
     PyObject *kos_dsp_val_ = (value);                                   \
     KOS_DISPATCH_SAFETYNET(kos_dsp_es_, kos_dsp_val_);                  \
     KosEvalState_PENDING_VALUE(kos_dsp_es_) = kos_dsp_val_;             \
-    KosDynFrame_RESUME_FN(kos_dsp_frame_) = (void *) (fn);              \
+    KosDynFrame_RESUME_KIND(kos_dsp_frame_) = (kind);                   \
     KosDynFrame_RESUME_STATE(kos_dsp_frame_) = (void *) (arg);          \
-    return EVAL_REPROLOGUE();                                           \
+    KOS_TRACE_TRAMPOLINE_STEP();                                        \
+    TAILCALL(kos_eval_prologue, kos_dsp_es_, NULL, NULL);               \
   } while (0)
 
 /* === Opcode result macros === */
@@ -342,7 +426,7 @@ typedef KosThreadFn KosResumeFn;
 #define RESULT_PUSH(es, val)                                            \
   do {                                                                  \
     if (unlikely(KosEvalState_StackPushRef((es), (val)) < 0))           \
-      return EVAL_RAISE();                                              \
+      RESULT_RAISE();                                                   \
     RESULT_NEXT(es);                                                    \
   } while (0)
 
@@ -350,14 +434,33 @@ typedef KosThreadFn KosResumeFn;
   do {                                                                  \
     PyObject *kos_rs_val_ = (val);                                      \
     if (unlikely(! kos_rs_val_))                                        \
-      return EVAL_RAISE();                                              \
+      RESULT_RAISE();                                                   \
     if (unlikely(KosEvalState_StackPUSH((es), kos_rs_val_) < 0))        \
-      return EVAL_RAISE();                                              \
+      RESULT_RAISE();                                                   \
     RESULT_NEXT(es);                                                    \
   } while (0)
 
-#define RESULT_RAISE()  return EVAL_RAISE()
+/* RESULT_RAISE(): the exception is set; tail into the raise walk. The
+   calling function must have the KosThreadFn prototype and hold es. A
+   helper without that prototype returns EVAL_RAISE() instead and its
+   handler's RESULT_RELAY makes the same tail call. */
+#define RESULT_RAISE()  TAILCALL(kos_eval_raise, es, NULL, NULL)
 #define RESULT_FAIL()   return EVAL_FATAL()
+
+/* RESULT_REPROLOGUE(es): the handler left prologue work behind (an
+   armed goal, a restored exception); tail into the prologue. The
+   trampoline slot is stepped here as the loop stepped it on a raw
+   REPROLOGUE, since the prologue itself does not step. */
+#define RESULT_REPROLOGUE(es)                                           \
+  do {                                                                  \
+    KOS_TRACE_TRAMPOLINE_STEP();                                        \
+    TAILCALL(kos_eval_prologue, (es), NULL, NULL);                      \
+  } while (0)
+
+/* The owned value leaves through the event's thread function; the
+   calling function must have the KosThreadFn prototype. */
+#define RESULT_AWAIT(es, val)   TAILCALL(kos_eval_await, (es), NULL, (val))
+#define RESULT_RETURN(es, val)  TAILCALL(kos_return_deliver, (es), NULL, (val))
 
 /**
    RESULT_RELAY(es, r): end a handler with the result of the helper
@@ -365,16 +468,23 @@ typedef KosThreadFn KosResumeFn;
    await, a dynamic node's transition. NORMAL means the helper left
    the next instruction at es->pc (a callee's first instruction after
    an install, the next instruction after a push), and continues
-   there; every other kind returns to the trampoline as it stands.
-   The helper itself keeps its own prototype and return; the tail
-   call happens here, in the handler.
+   there; RAISE, AWAIT, RETURN, YIELD and CONTROL_RETURNED tail into
+   their event's thread function; DISPATCH threads; REPROLOGUE tails
+   into the prologue; FATAL returns to the trampoline. The helper
+   itself keeps its own
+   prototype and return; the tail call happens here, in the handler.
+   POLL is NORMAL from a
+   cooperation point that found the breaker up (a frame install, the
+   one cycle a tail-recursive loop closes without a CONTINUE): the
+   relay tails into the breaker service, which threads on.
 */
 #define RESULT_RELAY(es, r)                                             \
   do {                                                                  \
     KosOpResult kos_rr_ = (r);                                          \
     if (likely(kos_rr_.kind == KOS_RES_NORMAL))                         \
       KOS_THREAD_NEXT(es);                                              \
-    return kos_rr_;                                                     \
+    TAILCALL(kos_eval_relay, (es),                                      \
+             (void *) (uintptr_t) kos_rr_.kind, kos_rr_.val);           \
   } while (0)
 
 /**
@@ -401,8 +511,9 @@ typedef KosThreadFn KosResumeFn;
 
 
 /**
-   RESUME_HOP(fn, es, state, value): hand a delivery from one resume to
-   the next -- the hop a step's phases make, or a bytecode return into a
+   RESUME_HOP(kind, es, state, value): hand a delivery from one resume
+   to the next, kind being the next resume's KosResumeKind -- the hop a
+   step's phases make, or a bytecode return into a
    resume-carrying parent. A tail call that is also a cooperation
    point: when the eval breaker is up it stages through DISPATCH
    instead, so the trampoline polls before the prologue delivers. A
@@ -411,25 +522,26 @@ typedef KosThreadFn KosResumeFn;
    as promptly as a loop does. The calling function must have the
    KosThreadFn prototype, as for TAILCALL.
 */
-#define RESUME_HOP(fn, es, state, value)                                \
+#define RESUME_HOP(kind, es, state, value)                              \
   do {                                                                  \
     if (KOS_EVAL_BREAKER_UP(es))                                        \
-      DISPATCH((fn), (es), (state), (value));                           \
+      DISPATCH((kind), (es), (state), (value));                         \
     KOS_TRACE_RESUME_STEP();                                            \
-    TAILCALL((fn), (es), (state), (value));                             \
+    TAILCALL((kind)->fn, (es), (state), (value));                       \
   } while (0)
 
 
 /**
    RESULT_NEXT_POLL(es): thread on to the instruction at es->pc, unless
-   the eval breaker is up, in which case hand the trampoline that same
-   step so it polls first. The cooperation point for an opcode that
-   closes a cycle on its own (CONTINUE, the compiler's one back-edge).
+   the eval breaker is up, in which case tail into the breaker service,
+   which polls and threads on to that same step. The cooperation point
+   for an opcode that closes a cycle on its own (CONTINUE, the
+   compiler's one back-edge).
 */
 #define RESULT_NEXT_POLL(es)                                            \
   do {                                                                  \
     if (KOS_EVAL_BREAKER_UP(es))                                        \
-      return EVAL_NORMAL();                                             \
+      TAILCALL(kos_eval_poll, (es), NULL, NULL);                        \
     KOS_THREAD_NEXT(es);                                                \
   } while (0)
 
@@ -480,14 +592,16 @@ KosOpResult KosNativeFrame_ReturnPark(
 /**
    Push a code-less frame onto the chain for CPS resume use. When cache
    holds a parked frame it is reinstalled in place of a fresh
-   allocation and *cache is emptied. The frame carries only name (for a
-   capture refusal message, see kos_dynframe_clone) -- it has no resume
-   set until the caller's next KosEvalState_CallResult / NextResume
-   call sets one. Returns the frame, or NULL with PyErr set.
+   allocation and *cache is emptied. The frame carries kind and state
+   from the install on, so a teardown at any point after it hands the
+   kind's clear that state; the caller's later KosEvalState_CallResult
+   / NextResume call sets the resume that receives the delivery.
+   Returns the frame, or NULL with PyErr set.
 */
 KosDynFrame *KosResumeFrame_Install(
     KosEvalState *es,
-    const char *name,
+    const KosResumeKind *kind,
+    void *state,
     KosDynFrame **cache);
 
 
@@ -542,7 +656,7 @@ KosOpResult KosEvalState_NextResume(
     KosEvalState *es,
     PyObject *iter,
     PyObject *send_val,
-    KosResumeFn resume,
+    const KosResumeKind *resume,
     void *state);
 
 
@@ -706,6 +820,12 @@ struct KosEvalState {
   uint16_t recursion_limit; /* the deepest frame this context may
                          install: sys.getrecursionlimit() read at Init
                          and clamped to KOS_FRAME_DEPTH_MAX */
+  uint8_t terminal;         /* the result in flight is a boundary that
+                         has been through its event: a raise walked to
+                         no handler, a suspension recorded for AWAIT or
+                         YIELD, a root return. The trampoline and the
+                         resume delivery leave with it instead of
+                         applying it again */
 };
 
 
@@ -720,10 +840,10 @@ struct KosEvalState {
 
 /**
    The result a call-core install arm returns once the callee frame is
-   live at pc 0: thread on, or when the eval breaker is up restart
-   through the prologue so the trampoline polls before the callee's
-   first instruction. Frame entry is a cooperation point because a
-   tail-recursive loop has no CONTINUE.
+   live at pc 0: thread on, or POLL when the eval breaker is up so the
+   handler's RESULT_RELAY tails into the breaker service before the
+   callee's first instruction. Frame entry is a cooperation point
+   because a tail-recursive loop has no CONTINUE.
 */
 /**
    True when a just-installed frame can be threaded into at its pc: it
@@ -732,12 +852,12 @@ struct KosEvalState {
    run first, so the installer bounces through the prologue instead.
 */
 static inline int kos_frame_threads(KosDynFrame *nf) {
-  return nf && KosDynFrame_CODE(nf) && ! KosDynFrame_RESUME_FN(nf);
+  return nf && KosDynFrame_CODE(nf) && ! KosDynFrame_RESUME_KIND(nf);
 }
 
 
 static inline KosOpResult kos_call_installed(KosEvalState *es) {
-  return KOS_EVAL_BREAKER_UP(es) ? EVAL_REPROLOGUE() : EVAL_NORMAL();
+  return KOS_EVAL_BREAKER_UP(es) ? EVAL_POLL() : EVAL_NORMAL();
 }
 
 
@@ -975,6 +1095,49 @@ static inline void KosEvalState_FlushLiveRegsToFrame(KosEvalState *es) {
 
 done:
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_flush_live_regs);
+}
+
+
+/**
+   Push a prepared frame from the per-function cache as DYN_TOP and
+   FRAME_TOP.  Code, namespace, and cleared stack are already attached
+   and the node base was normalized at park time
+   (KosFunction_TryParkFrame); this is the install half of
+   kos_dyn_push_frame with the node id reset, and cannot fail.
+   The caller has asked kos_eval_check_frame_room for one frame before
+   binding into the parked namespace.
+*/
+static inline void kos_dyn_push_ready_frame(
+    KosEvalState *es,
+    KosDynFrame *frame) {
+
+  KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(es);
+  KosDynNode_NODE_ID(frame) = 0;  /* a fresh instance; minted on first read */
+
+  {
+    KosDynFrame *cur = KosEvalState_FRAME(es);
+    if (cur) {
+      KosDynFrame_FLAGS(frame) |= (KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND);
+      KosDynFrame_DEPTH(frame) = KosDynFrame_DEPTH(cur) + 1;
+      KosEvalState_FlushLiveRegsToFrame(es);
+    } else {
+      KosDynFrame_DEPTH(frame) = 1;
+    }
+  }
+
+  /* the installed segment's unwind cache: the live slot it displaces */
+  KosSegment_BACK(KosDynNode_STACK((KosDynNode *) frame)) =
+      KosEvalState_BLOCK(es);
+  if (KosSegment_IS_INLINE(KosDynNode_STACK((KosDynNode *) frame)))
+    KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) KosEvalState_FRAME(es);
+  KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
+  KosEvalState_FRAME(es) = frame;
+  KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
+  KosEvalState_NAMESPACE(es) = KosDynNode_NS((KosDynNode *) frame);
+  KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
+  es->pc = 0;
+  es->acting_pc = 0;
 }
 
 
@@ -1272,7 +1435,7 @@ KosOpResult KosEvalState_CallResult(
     Py_ssize_t nargs,
     PyObject *kwnames,
     int tail_call,
-    KosResumeFn resume,
+    const KosResumeKind *resume,
     void *state);
 
 
@@ -1335,23 +1498,6 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val);
    outcome, per its own contract. val is consumed.
 */
 KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val);
-
-
-/**
-   The trampoline's re-entry: everything that must happen before the
-   next instruction is fetched, whenever control comes back to the
-   loop by a signal rather than by the fetch itself. In order: a
-   staged CPS delivery with no pending exception and no goal goes
-   straight to its resume; a pending exception runs the raise walk; an
-   armed transfer goal drives; a frame waiting on a resume takes its
-   delivery. Each of those may ask to run again, and this function
-   loops until none does.
-
-   :return: EVAL_NORMAL when instruction dispatch may proceed from
-       es->pc; otherwise the terminal result koskari_eval returns
-       (AWAIT, YIELD, RETURN, RAISE, FATAL)
-*/
-KosOpResult kos_prologue_reenter(KosEvalState *es);
 
 
 /**

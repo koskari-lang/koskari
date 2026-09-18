@@ -88,8 +88,19 @@ static int chain_advance(KosChain *c) {
    site below and kos_dynframe_clone's resume refusal). */
 
 
+/* the resume kinds: one static record per resume function, its
+   name and lifecycle; the step clear releases the record's busy mark
+   and pending value when the frame is torn down mid-step, and no
+   clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element);
+    KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
+    KosEvalState *es, void *state, PyObject *value);
+
+KOS_RESUME_KIND(chain_resume_deliver_kind, "chain-step",
+                chain_resume_deliver, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(chain_resume_fetch_kind, "chain-step",
+                chain_resume_fetch, kos_transform_step_clear, NULL);
 
 
 /**
@@ -126,8 +137,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
 
     if (! t->src_sync) {
       KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
-                                              chain_resume_deliver, c);
-      RESULT_ENTRY(es, r, chain_resume_deliver, c);
+                                              &chain_resume_deliver_kind, c);
+      RESULT_ENTRY(es, r, &chain_resume_deliver_kind, c);
     }
 
     element = PyIter_Next(t->source);
@@ -164,7 +175,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
     PyErr_Clear();
     Py_CLEAR(t->source);
 
-    RESUME_HOP(chain_resume_fetch, es, c, NULL);
+    RESUME_HOP(&chain_resume_fetch_kind, es, c, NULL);
   }
 
   return KosNativeFrame_ReturnPark(es, element, &t->cached_frame);
@@ -207,8 +218,8 @@ static KosIterStepResult chain_iter_step(
     }
 
     if (! t->src_sync)
-      return kos_transform_stage(es, t, NULL, (void *) chain_resume_fetch,
-                                 "chain-step", pre_top);
+      return kos_transform_stage(es, t, NULL, &chain_resume_fetch_kind,
+                                 pre_top);
 
     element = PyIter_Next(t->source);
     if (! element) {

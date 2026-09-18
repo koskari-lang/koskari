@@ -123,7 +123,7 @@ static PyObject *kos_import_from_member(PyObject *mod, PyObject *attr) {
   from-import report: cannot import name X from Y (path). Other
   exceptions propagate.
 */
-KOS_OP_HANDLER_COLD(IMPORT_FROM) {
+KOS_OP_HANDLER(IMPORT_FROM) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);

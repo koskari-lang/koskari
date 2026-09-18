@@ -213,8 +213,8 @@ adapters. Current providers: the koskari generator, KosMap, KosFilter.
 
 ## resume
 
-A `KosThreadFn` set on a codeless frame (`resume_fn`, `resume_state`)
-to receive exactly one delivery: a call's settled result, a callee's
+The `fn` of a `KosResumeKind` set on a codeless frame (`resume_kind`,
+`resume_state`) to receive exactly one delivery: a call's settled result, a callee's
 return, an iteration element, or an awaited value. Invoked with the
 value, or with NULL and an exception set when the operation failed.
 Set through the CPS entries `KosEvalState_CallResult` and

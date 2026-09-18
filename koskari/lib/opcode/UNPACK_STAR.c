@@ -20,7 +20,7 @@
   > 0. Push suffix scalars (len-1 .. len-right), then middle as tuple, then
   prefix (left-1 .. 0) so first prefix is TOS.
 */
-KOS_OP_HANDLER_COLD(UNPACK_STAR) {
+KOS_OP_HANDLER(UNPACK_STAR) {
   const KosExtra *row = KosOp_ROW(insn);
   unsigned left = KosExtra_IMM(row, 0);
   unsigned right = KosExtra_IMM(row, 1);

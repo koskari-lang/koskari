@@ -17,7 +17,7 @@
 /**
   NOOP: arg unused. No operation; advance to next instruction.
 */
-KOS_OP_HANDLER_COLD(NOOP) {
+KOS_OP_HANDLER(NOOP) {
   (void) insn;
   RESULT_NEXT(es);  /* continue */
 }

@@ -73,7 +73,7 @@ static PyObject *kos_import_star_names(PyObject *mod) {
 }
 
 
-KOS_OP_HANDLER_COLD(IMPORT_STAR) {
+KOS_OP_HANDLER(IMPORT_STAR) {
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);

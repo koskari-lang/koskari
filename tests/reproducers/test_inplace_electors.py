@@ -98,7 +98,10 @@ class TestInplaceElectors(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_element(self):
         mod = await self.load_module()
-        self.assertIn(OpCode.OBJECT_INPLACE, opcodes_of(mod.item_accumulate))
+        ops = opcodes_of(mod.item_accumulate)
+        self.assertIn(OpCode.FAST_CONST_ITEM_INPLACE, ops)
+        self.assertIn(OpCode.FAST_CONST_ITEM_INPLACE_CONST, ops)
+        self.assertNotIn(OpCode.OBJECT_INPLACE, ops)
         self.assertEqual(
             await mod.item_accumulate(50), [sum(range(50)), 100])
 

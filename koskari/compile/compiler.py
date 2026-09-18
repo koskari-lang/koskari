@@ -319,6 +319,16 @@ class ByteCodeFragment:
             child.resolution.register_scope_fragment(
                 child, tuple(f for f in compiler.lexical_stack if f is not child))
 
+            # A name the scope closes over is a closure need of the
+            # enclosing scope as well: the enclosing function captures
+            # the cell in its own slot at creation, and the scope's
+            # PUSH_NS resolves it from the frame. A namespace's parent
+            # link skips call frames, so the frame is the only place
+            # the scope can reach it.
+            for name in nspec.closure_syms:
+                if name not in self.declares:
+                    self.request_var(name)
+
             if names:
                 self.merge(valfrag)
 
@@ -349,6 +359,9 @@ class ByteCodeFragment:
             nspec = child.as_namespace_spec()
             child.resolution.register_scope_fragment(
                 child, tuple(f for f in compiler.lexical_stack if f is not child))
+            for name in nspec.closure_syms:
+                if name not in self.declares:
+                    self.request_var(name)
 
             self.instruction(OpCode.PUSH_COLLECT, nspec)
             self.instructions.extend(child.instructions)

@@ -21,7 +21,7 @@
   (object_next_step): value or default on exhaustion, 1-arg raises
   StopIteration, auto-await.
 */
-KOS_OP_HANDLER_COLD(VAR_NEXT) {
+KOS_OP_HANDLER(VAR_NEXT) {
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t n = (uint16_t) KosExtra_IMM(row, 1);
   if (unlikely(n != 1 && n != 2)) {

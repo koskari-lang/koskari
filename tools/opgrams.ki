@@ -77,8 +77,11 @@ define MODULE_GROUPS #{
         "koslife.life")
 
     "churn": #(
+        "ki.async_generators"
+        "ki.async_tree"
         "ki.binary_trees"
         "ki.branch"
+        "ki.coroutines"
         "ki.fannkuch"
         "ki.field"
         "ki.field_slots"
