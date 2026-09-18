@@ -933,28 +933,36 @@ class ByteCodeProcessor:
         count = merged & 0xff
         binop = merged >> 8
 
-        for named in ((VAR_FEEDER, FEEDER), (FEEDER,), ()):
+        for named in ((VAR_FEEDER, FEEDER), (FEEDER,)):
             found, skipped = self.match_priors(named + (FEEDER,) * count)
             if found is None:
                 continue
             rows = [self.rows[i] for i in found]
             head, values = rows[:len(named)], rows[len(named):]
             obj = head[0][0] if len(named) == 2 else None
-            key = head[-1][0] if named else None
+            key = head[-1][0]
             fields = [r[1] for r in head]
             if count == 1 and values[0][0] == OpCode.CONST:
                 fused = item_opcode(obj, key, 'INPLACE', const_operand=True)
                 out = [(fused, tuple([binop] + fields + [values[0][1]])
                         + (0,) * (2 - len(fields)))]
-            elif named:
+            else:
                 fused = item_opcode(obj, key, 'INPLACE')
                 out = values + [
                     (fused, tuple([arg] + fields) + (0,) * (3 - len(fields)))]
-            else:
-                return None
             self.splice(found[0], skipped, out)
             return []
-        return None
+
+        # nothing to name: a single CONST operand still folds into
+        # ITEM_INPLACE_CONST; a VAR operand or a longer run stays
+        if count != 1:
+            return None
+        found, skipped = self.match_priors((CONST_FEEDER,))
+        if found is None:
+            return None
+        self.splice(found[0], skipped, [
+            (OpCode.ITEM_INPLACE_CONST, (binop, self.rows[found[0]][1], 0, 0))])
+        return []
 
 
     @fuse_rule(OpCode.CONST, OpCode.VAR_ITEM_INPLACE)
