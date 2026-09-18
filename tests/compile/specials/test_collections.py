@@ -135,7 +135,9 @@ class TestBuildTupleSpecial(SpecialsTestCase):
     async def test_tuple_pure_dynamic_uses_build_args(self):
         expr, mod = self.compile_expr("(#tuple x y)", x=1, y=2)
         self.assertEqual((1, 2), await expr())
-        code = self.compile_to_code("(#tuple x y)", x=1, y=2)
+        # out of tail position: a tail tuple folds into RETURN n, which
+        # builds the same tuple
+        code = self.compile_to_code("(begin (#tuple x y) None)", x=1, y=2)
         ops = _opcodes(code)
         self.assertIn(OpCode.BUILD_ARGS, ops)
         self.assertNotIn(OpCode.COMBINE_ARGS, ops)

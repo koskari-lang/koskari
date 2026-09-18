@@ -289,6 +289,19 @@ SQUISH_RULES = {}
 FUSE_RULES = {}
 
 
+def control_tuple_fold(op, arg, count):
+    """
+    The rows a control op with arg over a BUILD_ARGS of count folds to,
+    or None when it does not fold: the control op takes the count
+    itself for a count of two or more, since its N form builds the
+    same tuple
+    """
+
+    if arg != 1 or count < 2:
+        return None
+    return [(op, count)]
+
+
 def squish_rule(*pattern):
     """
     Register a processor method as a squish rule for the form given in
@@ -614,9 +627,7 @@ class ByteCodeProcessor:
         RETURN 1 is the bare value
         """
 
-        if arg != 1 or matched[0][1] < 2:
-            return None
-        return [(op, matched[0][1])]
+        return control_tuple_fold(op, arg, matched[0][1])
 
 
     @squish_rule(OpCode.CAR, OpCode.CAR)
@@ -891,6 +902,11 @@ class ByteCodeProcessor:
             if i >= 0 and rows[i][0] == OpCode.CONST \
                and rows[i][1] is None:
                 rows[i] = (OpCode.RETURN, 0)
+            elif i >= 0 and rows[i][0] == OpCode.BUILD_ARGS \
+                    and control_tuple_fold(OpCode.RETURN, 1, rows[i][1]):
+                # the appended terminator takes the fold the rule would
+                # have applied had the RETURN been in the stream
+                rows[i] = (OpCode.RETURN, rows[i][1])
             else:
                 rows.append((OpCode.RETURN, 1))
 

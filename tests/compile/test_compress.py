@@ -229,6 +229,20 @@ class TestCompress(unittest.TestCase):
         ]
         self.assertEqual(squish_ops(rows), rows)
 
+    def test_trailing_build_args_folds_into_the_appended_return(self):
+        out = squish_ops([
+            (OpCode.CONST, 1),
+            (OpCode.CONST, 2),
+            (OpCode.BUILD_ARGS, 2),
+        ])
+        self.assertEqual(
+            out, [(OpCode.CONST, 1), (OpCode.CONST, 2), (OpCode.RETURN, 2)])
+
+    def test_trailing_build_args_below_two_keeps_return_one(self):
+        for count in (0, 1):
+            rows = [(OpCode.CONST, 1)] * count + [(OpCode.BUILD_ARGS, count)]
+            self.assertEqual(squish_ops(rows), rows + [(OpCode.RETURN, 1)])
+
     def test_missing_return_appends_return_one(self):
         out = squish_ops([
             (OpCode.CONST, 123),
