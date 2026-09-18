@@ -53,15 +53,6 @@ Ref: [archive/resolved-operands.md](archive/resolved-operands.md).
 
 ---
 
-## Profiling / instrumentation
-
-- Optional opcode-level histograms (freelist tracing, `KOS_TRACE_EVENTS`, and
-  `KOS_TRACE_TIMING` already exist).
-
-Ref: [api/tracing.md](api/tracing.md).
-
----
-
 ## Native build optimization
 
 ### Profile-guided optimization (PGO) build
@@ -225,10 +216,6 @@ Gaps per [documentation-goals.md](documentation-goals.md):
 
 ## To design (broader)
 
-From [FEATURES.md](FEATURES.md) and related docs:
-
-- Performance optimizations (general)
-
 ### Recursion guard at the Python boundary (investigate)
 
 No `Py_EnterRecursiveCall` guards the nested `koskari_eval` a
@@ -244,17 +231,6 @@ Ref: [EVALUATOR.md](EVALUATOR.md) §7 (installs and call paths).
 
 The following items are captured from design discussion. Each has a short
 design note and is open for evaluation and possible implementation.
-
-### GEN yield-from passthru
-
-A `yieldfrom` field on the GEN dynnode: re-entering a delegating generator
-dispatches straight to the delegate without thawing the frame, which is
-reconstructed only when the delegate raises or ends.  Staged foreign-first;
-the flattened Koskari delegate carries the hard questions (chain topology,
-lazy reconstruction cascade, extent-inert guard).  Undecided — the proposal
-doc weighs pros/cons and per-delegate-kind complexity.
-
-Ref: [interpreter/gen-yieldfrom-passthru.md](interpreter/gen-yieldfrom-passthru.md).
 
 ### Seq-values kwargs (in-scope formals apply)
 
@@ -287,14 +263,6 @@ structured like `define-special` but feeding **runtime sequence values** into
 the matcher arms instead of source forms.
 
 Ref: [language/multi-dispatch-methods.md](language/multi-dispatch-methods.md).
-
-### Example dispatch call timing harness
-
-Add timed examples (Python, async Python, Koskari, demand Koskari
-callees; Python and Koskari callers); triple timestamps with baseline
-subtraction; ~1000 iterations per cell; aggregate averages.
-
-Ref: [examples/dispatch-call-timing.md](examples/dispatch-call-timing.md).
 
 ### Formal default modes (`value:` / `copy:` / `new:`)
 

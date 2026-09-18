@@ -256,7 +256,7 @@ recover it; that expectation is worth measuring, not assuming.
   handlers are excluded here because their current bulk makes stenciling
   them a poor first step, not because some opcodes are permanently
   unstencilable. YIELD_FROM is the flagship case: it carries `_COLD` for
-  size, and [gen-yieldfrom-passthru.md](gen-yieldfrom-passthru.md) §10
+  size, and [../archive/gen-yieldfrom-passthru.md](../archive/gen-yieldfrom-passthru.md) §10
   argues that CPS-based delegate-stepping slims it to normalize/install
   plus a reconstruction target -- small enough to stencil normally. The
   question this leaves open is whether any handler stays legitimately

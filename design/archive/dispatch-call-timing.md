@@ -2,8 +2,12 @@
 
 ## Status
 
-Proposal — not implemented. Example / benchmark code under examples (exact
-tree location TBD when implemented).
+Archived 2026-09-18, superseded: the churn harness (`examples/churn`,
+`tox -qe churn`) times Koskari against CPython over eighteen kernels
+with cross-checked answers, including method, coroutine, async-tree
+and yield-from calls, and writes a metrics payload. A cell this
+proposal names that the harness lacks is a kernel there, not a second
+harness.
 
 ## Summary
 
@@ -27,6 +31,6 @@ tree location TBD when implemented).
 
 ## Related
 
-- [../api/tracing.md](../api/tracing.md) — existing tracing and timing hooks.
-- [../archive/gil-cooperation.md](../archive/gil-cooperation.md) —
+- [../api/tracing.md](../api/tracing.md) -- existing tracing and timing hooks.
+- [gil-cooperation.md](gil-cooperation.md) --
   cooperation and timing noise context.

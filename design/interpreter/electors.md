@@ -120,8 +120,8 @@ aligns to it.
 `KosThreadFn` prototype and musttail rules), [../EVALUATOR.md](../EVALUATOR.md)
 §8.2 (CPS resumes), [stencil-compilation.md](stencil-compilation.md) (the
 consumer that copies handler bodies per site),
-[../archive/insn-flags-discard.md](../archive/insn-flags-discard.md) (superseded), [gen-yieldfrom-passthru.md](gen-yieldfrom-passthru.md)
-(the YIELD_FROM follow-up this subsumes).
+[../archive/insn-flags-discard.md](../archive/insn-flags-discard.md) (superseded), [../archive/gen-yieldfrom-passthru.md](../archive/gen-yieldfrom-passthru.md)
+(the YIELD_FROM follow-up this subsumes, archived).
 
 ## Summary
 

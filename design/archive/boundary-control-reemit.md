@@ -6,8 +6,8 @@ landed: the frame-crossing vs consumer-delivery split (thin **`RETURN`**,
 (§5.3), and finally the generic dynnode boundary dispatch (§5.2) as the
 capability-keyed dispatcher in `koskari/lib/dynchain/dyn_boundary.c`.
 The speculative follow-on is
-[gen-yieldfrom-passthru.md](../interpreter/gen-yieldfrom-passthru.md)
-(a proposal, undecided).
+[gen-yieldfrom-passthru.md](gen-yieldfrom-passthru.md)
+(archived, superseded by the node-style yield-from).
 
 This document describes the boundary model where frame-local outcomes are
 signaled first, then delivered to parent consumers after crossing a frame
@@ -16,7 +16,7 @@ boundary.
 Companion docs:
 - [kosevent-elimination.md](kosevent-elimination.md) (archived; implemented)
 - [event-driven-node-delivery.md](event-driven-node-delivery.md)
-- [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md)
+- [generic-dynnode-protocol.md](generic-dynnode-protocol.md)
 - [EVALUATOR.md](../EVALUATOR.md)
 
 

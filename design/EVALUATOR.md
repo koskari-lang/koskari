@@ -107,9 +107,9 @@ WIND/WITH keep the deliberately separate
 - **Large opcodes.** **YIELD_FROM** now shares noinline motif helpers
   across its four per-kind drive variants (yield-out, exhaustion,
   StopAsyncIteration harvest, await-resume), but the driver logic still
-  lives in the opcode; the speculative next step is the GEN passthru
-  proposal ([interpreter/gen-yieldfrom-passthru.md](interpreter/gen-yieldfrom-passthru.md),
-  undecided).
+  lives in the opcode; the GEN passthru proposal that would have moved
+  it ([archive/gen-yieldfrom-passthru.md](archive/gen-yieldfrom-passthru.md))
+  is archived as superseded by the node-style yield-from.
 
 - **CPS entries still bounce on two paths.** A resume tail-calls the
   next step when a value is in hand or a callee is installed (§8.2),
