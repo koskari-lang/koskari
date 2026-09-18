@@ -1472,20 +1472,33 @@ static inline void kos_item_replace_top(KosSegment **bl, PyObject *val) {
     Py_INCREF(out);                                                     \
   } while (0)
 
+/* The dict bodies hold the container and the key across the dict
+   call: hashing the key runs user code, which can rebind a fast slot
+   holding a plain ref and free what the body fetched borrowed. */
 #define KOS_ITEM_DICT_GUARD(obj, key)  PyDict_CheckExact(obj)
 #define KOS_ITEM_DICT_LOAD(obj, key, out)                               \
   do {                                                                  \
+    Py_INCREF(obj);                                                     \
+    Py_INCREF(key);                                                     \
     (out) = PyDict_GetItemWithError((obj), (key));                      \
+    Py_XINCREF(out);                                                    \
+    Py_DECREF(key);                                                     \
+    Py_DECREF(obj);                                                     \
     if (unlikely(! (out))) {                                            \
       if (PyErr_Occurred())                                             \
         RESULT_RAISE();                                                 \
       TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
     }                                                                   \
-    Py_INCREF(out);                                                     \
   } while (0)
 #define KOS_ITEM_DICT_STORE(obj, key, val, bl, N, TAKE, DROP)            \
   do {                                                                  \
-    if (unlikely(PyDict_SetItem((obj), (key), (val)) < 0))              \
+    int kos_ds_rc_;                                                     \
+    Py_INCREF(obj);                                                     \
+    Py_INCREF(key);                                                     \
+    kos_ds_rc_ = PyDict_SetItem((obj), (key), (val));                   \
+    Py_DECREF(key);                                                     \
+    Py_DECREF(obj);                                                     \
+    if (unlikely(kos_ds_rc_ < 0))                                       \
       RESULT_RAISE();                                                   \
     kos_stack_drop_noerr_fast((bl), (N));                               \
   } while (0)
@@ -1494,9 +1507,10 @@ static inline void kos_item_replace_top(KosSegment **bl, PyObject *val) {
 /* The operand fetch of each family, obj and key borrowed and, for a
    store, val borrowed from the top of the stack. A fast slot the peek
    cannot read (empty, or a ref kind that needs the general deref) is
-   a miss; the generic body raises or resolves it. Nothing runs
-   between the fetch and the access that could rebind a slot or pop
-   the stack, so the borrows hold. */
+   a miss; the generic body raises or resolves it. The list and tuple
+   bodies run no user code between the fetch and the access, so their
+   borrows hold; the dict bodies hash the key and hold their operands
+   for it. */
 #define KOS_ITEM_FETCH_STACK(obj, key, N)                               \
   do {                                                                  \
     PyObject *const *kos_if_args_ =                                     \
@@ -1787,8 +1801,28 @@ KOS_ELECTOR(fast_const_item_inplace_const_generic) {
   } while (0)
 
 
+/* The dict arm of an in-place body holds obj and key from its fetch
+   to its store; a decline or a miss inside the arm releases them on
+   the way out. idx is -1 on the dict arm. */
+static inline void kos_item_inplace_release(
+    PyObject *obj,
+    PyObject *key,
+    Py_ssize_t idx) {
+
+  if (idx < 0) {
+    Py_DECREF(key);
+    Py_DECREF(obj);
+  }
+}
+
+#define KOS_ITEM_INPLACE_DECLINE(obj, key, idx)                         \
+  (kos_item_inplace_release((obj), (key), (idx)),                       \
+   kos_elector_generic_of(insn))
+
+
 /* One body per operator and kind for a family that reduces an item in
-   place: the container and key fetched borrowed, the cell found by a
+   place: the container and key fetched borrowed (and held across the
+   dict arm, whose hashing runs user code), the cell found by a
    two-way exact-type check (a list under an int index, a dict under
    any key; anything else is a miss, an index outside the list or a
    key the dict lacks a decline to the generic body), the kind's guard
@@ -1816,8 +1850,14 @@ KOS_ELECTOR(fast_const_item_inplace_const_generic) {
         TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
       acc = PyList_GET_ITEM(obj, idx);                                  \
     } else if (PyDict_CheckExact(obj)) {                                \
+      /* the dict arm hashes the key, which runs user code: obj and    \
+         key are held from here to the store, and released on every   \
+         exit of the arm */                                            \
+      Py_INCREF(obj);                                                   \
+      Py_INCREF(key);                                                   \
       acc = PyDict_GetItemWithError(obj, key);                          \
       if (unlikely(! acc)) {                                            \
+        kos_item_inplace_release(obj, key, idx);                        \
         if (PyErr_Occurred())                                           \
           RESULT_RAISE();                                               \
         TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
@@ -1826,22 +1866,29 @@ KOS_ELECTOR(fast_const_item_inplace_const_generic) {
       TAILCALL(el_miss, es, insn, value);                               \
     }                                                                   \
     if (unlikely(! KOS_##KIND##_CHECK(acc)                              \
-                 || (RHS_GUARDED && ! KOS_##KIND##_CHECK(rhs))))        \
+                 || (RHS_GUARDED && ! KOS_##KIND##_CHECK(rhs)))) {      \
+      kos_item_inplace_release(obj, key, idx);                          \
       TAILCALL(el_miss, es, insn, value);                               \
-    KOS_##KIND##_EXTRACT(acc, rhs, kos_elector_generic_of(insn));       \
+    }                                                                   \
+    KOS_##KIND##_EXTRACT(acc, rhs, KOS_ITEM_INPLACE_DECLINE(obj, key, idx)); \
                                                                         \
     KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, acc, out);        \
     DROP;                                                               \
-    if (out != acc) {                                                   \
-      if (idx >= 0) {                                                   \
+    if (idx >= 0) {                                                     \
+      if (out != acc) {                                                 \
         PyList_SET_ITEM(obj, idx, out);                                 \
         Py_DECREF(acc);                                                 \
-      } else {                                                          \
-        int kos_ii_rc_ = PyDict_SetItem(obj, key, out);                 \
-        Py_DECREF(out);                                                 \
-        if (unlikely(kos_ii_rc_ < 0))                                   \
-          RESULT_RAISE();                                               \
       }                                                                 \
+    } else {                                                            \
+      int kos_ii_rc_ = 0;                                               \
+      if (out != acc) {                                                 \
+        kos_ii_rc_ = PyDict_SetItem(obj, key, out);                     \
+        Py_DECREF(out);                                                 \
+      }                                                                 \
+      Py_DECREF(key);                                                   \
+      Py_DECREF(obj);                                                   \
+      if (unlikely(kos_ii_rc_ < 0))                                     \
+        RESULT_RAISE();                                                 \
     }                                                                   \
     RESULT_NEXT(es);                                                    \
   }
@@ -2228,6 +2275,7 @@ KOS_ELECTOR_ELECT(fast_const_item_inplace_const, kos_elector_fast_const_item_inp
 #undef KOS_ITEM_INPLACE_ELECTOR
 #undef KOS_ITEM_INPLACE_FETCH_FAST_CONST
 #undef KOS_ITEM_INPLACE_FETCH_FAST
+#undef KOS_ITEM_INPLACE_DECLINE
 #undef KOS_ITEM_STORE_ELECTORS
 #undef KOS_ITEM_LOAD_ELECTORS
 #undef KOS_ITEM_STORE_ELECTOR
