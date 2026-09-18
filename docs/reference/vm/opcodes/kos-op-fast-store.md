@@ -1,6 +1,5 @@
 # KOS_OP_FAST_STORE
 - **Style**: FASTVAR. Arg = fast local slot index.
-- **Status**: Implemented.
 - **Stack**: `[..., value] → [...]`. **STORE**: store this value in the given
   slot (through the reference that already resolves it). See §1.9. Not
   interchangeable with FAST_BIND.

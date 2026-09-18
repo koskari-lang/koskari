@@ -1,6 +1,5 @@
 # KOS_OP_CONTINUE
 - **Style**: COUNT. Arg = number of stack elements to pop before jumping.
-- **Status**: Implemented.
 - **Stack**: Pops `arg` elements; control transfers to continue target of innermost LOOP/FOREACH extent.
 - **Invariants**: Must be inside a LOOP or FOREACH extent.
 

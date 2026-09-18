@@ -43,6 +43,9 @@ __all__ = (
     "const_only_expr",
     "convert_bindings",
     "discover_docstring",
+    "emit_item_access",
+    "emit_item_place",
+    "feeder_expr",
     "gather_bindings",
     "gather_formals",
     "gather_parameters",
@@ -607,49 +610,109 @@ def var_only_expr(fragment):
     return (found, name)
 
 
-def emit_item_key(compiler, frag, key, const_op, stack_op, before=None):
+def feeder_expr(fragment):
     """
-    Emit an item access whose object is already on the fragment: a key
-    that compiles to a single constant takes const_op with the constant
-    as its operand, any other key is compiled onto the stack and takes
-    stack_op. before, when given, is called between the key and the
-    row so a store can compile its value in the right place
+    Classify a compiled fragment as a feeder the compress pipeline
+    folds: ('const', value) for a single CONST, ('var', name) for a
+    single VAR, (None, None) for anything else
+    """
+
+    is_const, value = const_only_expr(fragment)
+    if is_const:
+        return ('const', value)
+    is_var, name = var_only_expr(fragment)
+    if is_var:
+        return ('var', name)
+    return (None, None)
+
+
+def emit_item_access(compiler, called_by, obj, key, stack_op, named_op):
+    """
+    Emit an item access with no value, for compile/item and the CLEAR,
+    TAKE, and REF specials: the object, the key, and stack_op, which
+    the compress pipeline folds when the key and object are feeders.
+    When the object compiles to a bare name load and the key is not a
+    feeder, the key compiles to the stack and named_op names the
+    object, since no fold reaches an object load behind a computed
+    key. A symbol that compiles to anything else, nil among them,
+    stays on the stack
 
     :param compiler: the Compiler
-    :param frag: fragment holding the object
-    :param key: key source form
-    :param const_op: opcode taking the key as a constant operand
-    :param stack_op: opcode taking the key from the stack
-    :param before: optional callable run before the row is emitted
+    :param called_by: the special's called-by match
+    :param obj: the object match
+    :param key: the key match
+    :param stack_op: the verb's row over a stack object and key
+    :param named_op: the verb's row over a named object and stack key
+    :return: the fragment
     """
 
-    emit_item_keyfrag(
-        frag, compiler.full_compile(key), const_op, stack_op, before)
+    frag = compiler.fragment(called_by.datum)
+    frag.position(obj.position)
+    objfrag = compiler.full_compile(obj.datum)
+    keyfrag = compiler.full_compile(key.datum)
+    obj_kind, obj_name = feeder_expr(objfrag)
+    key_kind, _ = feeder_expr(keyfrag)
 
-
-def emit_item_keyfrag(frag, keyfrag, const_op, stack_op, before=None):
-    """
-    emit_item_key over a key already compiled, for a caller that
-    classified the key fragment first and took another path on the
-    shapes it handles itself
-
-    :param frag: fragment holding the object
-    :param keyfrag: the compiled key
-    :param const_op: opcode taking the key as a constant operand
-    :param stack_op: opcode taking the key from the stack
-    :param before: optional callable run before the row is emitted
-    """
-
-    is_const, key_val = const_only_expr(keyfrag)
-
-    if not is_const:
+    if obj_kind == 'var' and key_kind is None:
         frag.merge(keyfrag)
-    if before is not None:
-        before()
-    if is_const:
-        frag.instruction(const_op, key_val)
+        frag.request_var(obj_name)
+        frag.instruction(named_op, obj_name)
     else:
+        frag.merge(objfrag)
+        frag.merge(keyfrag)
         frag.instruction(stack_op, 0)
+    return frag
+
+
+ITEM_FEEDER_OP = {'var': OpCode.VAR, 'const': OpCode.CONST}
+
+
+def emit_item_place(compiler, frag, obj, keyfrag, key, value_feeders):
+    """
+    Emit the object and key of a store or in-place row, answering the
+    feeder opcodes the row names for them, None for a stack operand.
+    Plain when the key and every value are feeders: the object and the
+    key compile to the stack and the compress pipeline folds the row's
+    trailing feeders. Otherwise a non-feeder operand would sit between
+    a named operand and the row, so the object is named when it
+    compiles to a bare name load (nil is a symbol that does not) and
+    the key when a feeder, and only the rest compiles to the stack
+
+    :param compiler: the Compiler
+    :param frag: the fragment being built
+    :param obj: the object match
+    :param keyfrag: the compiled key
+    :param key: the key's feeder pair from feeder_expr
+    :param value_feeders: whether every value is a feeder
+    :return: (obj_op, key_op, fields) for item_opcode and item_arg
+    """
+
+    key_kind, key_val = key
+    objfrag = compiler.full_compile(obj.datum)
+    obj_kind, obj_name = feeder_expr(objfrag)
+    if obj_kind != 'var':
+        obj_name = None
+    if (key_kind and value_feeders) or not (obj_name or key_kind):
+        frag.merge(objfrag)
+        frag.merge(keyfrag)
+        return None, None, []
+
+    fields = []
+    obj_op = key_op = None
+    if obj_name is None:
+        frag.merge(objfrag)
+    else:
+        frag.request_var(obj_name)
+        obj_op = OpCode.VAR
+        fields.append(obj_name)
+    if key_kind is None:
+        frag.merge(keyfrag)
+    else:
+        if key_kind == 'var':
+            frag.request_var(key_val)
+        key_op = ITEM_FEEDER_OP[key_kind]
+        fields.append(key_val)
+    return obj_op, key_op, fields
 
 
 def call_form_reroute(called_by, body):

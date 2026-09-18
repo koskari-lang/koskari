@@ -13,23 +13,40 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   FAST_ITEM: arg = extra index. Schema FASTVAR (obj slot), FASTVAR
-   (key slot). Push obj[key] with both operands read from fast slots;
-   nothing is popped.
-   Prologue only: tail-call the body the site's slot elected
-   (eval/eval_electors.c), which carries its own guard; an empty slot
-   or an ungated site takes the electing function, which classifies
-   the container once and settles the slot. One cache slot:
-   KOS_CACHE_ELECTOR.
+  FAST_ITEM: arg = fast slot. Stack [key]. Object from a fast slot,
+  key from the stack. Push obj[key]. The access runs through
+  kos_item_load (eval/eval_item.c) on the site's one KOS_CACHE_ITEM
+  slot.
 */
-
 KOS_OP_HANDLER(FAST_ITEM) {
-  KosCacheSlot *slot = KosOp_SLOT(insn);
+  PyObject *ns = KosEvalState_NAMESPACE(es);
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail;
+  PyObject *obj, *obj_ref;
+  PyObject *key;
+  PyObject *out;
 
-  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
-    TAILCALL(slot->u.elector.fn, es, insn, NULL);
-  TAILCALL(el_fast_item_elect, es, insn, NULL);
+  KOS_OP_REQUIRE_NS(ns);
+  KOS_NS_FAST_BORROW(obj, obj_ref, ns, KosOp_ARG(insn),
+                     { RESULT_RAISE(); });
+
+  tail = kos_stack_tail_ptr_fast(*bl, 1);
+  if (unlikely(! tail)) {
+    Py_XDECREF(obj_ref);
+    RESULT_RAISE();
+  }
+
+  key = tail[0];
+  out = kos_item_load(KosOp_SLOT(insn), obj, key);
+  Py_XDECREF(obj_ref);
+
+  if (unlikely(! out))
+    RESULT_RAISE();
+
+  kos_item_replace_top(bl, out);
+  RESULT_NEXT(es);
 }
 
 

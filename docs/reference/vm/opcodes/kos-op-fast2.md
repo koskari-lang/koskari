@@ -1,7 +1,6 @@
 # KOS_OP_FAST2
 - **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG). Row = two fast local
   slot indices.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., a, b]`. Load both slots and push in row order.
   Both slots resolve before either push, so an unbound slot errors with
   nothing pushed.

@@ -3,13 +3,16 @@
 
 **Syntax:** `(item OBJ KEY)`
 
-**Use-case:** Load the item at key KEY from OBJ (subscript/getitem). If KEY
-compiles to a single constant, uses CONST_ITEM; otherwise compiles KEY and
-emits ITEM.
+**Use-case:** Load the item at key KEY from OBJ (subscript/getitem).
 
-**Behaviour:** Compiles OBJ. If the key expression is constant-only (per
-`const_only_expr`), emits CONST_ITEM with that constant; otherwise merges the
-key fragment and emits ITEM 0.
+**Behaviour:** Compiles OBJ, then KEY, then emits ITEM, and the compress
+pipeline folds a symbol OBJ and a constant or symbol KEY into the row
+that names them (ITEM_CONST, ITEM_VAR, VAR_ITEM_CONST, VAR_ITEM_VAR, and
+their FAST twins in a function body). When OBJ is a symbol and KEY is
+neither a constant nor a symbol, the key compiles to the stack and the
+special emits VAR_ITEM, which names the object, since no fold reaches
+an object load behind a computed key. A named object or key is fetched
+when the row runs.
 
 **Examples:**
 

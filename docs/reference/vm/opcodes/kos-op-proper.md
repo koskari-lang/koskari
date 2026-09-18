@@ -1,6 +1,5 @@
 # KOS_OP_PROPER
 - **Style**: COUNT. Arg = number of element values on stack.
-- **Status**: Implemented. (`koskari/lib/opcode/PROPER.c`)
 - **Stack**: `[..., e_0, ..., e_{count-1}] → [..., result]` where result is the
   proper list `(e_0 e_1 ... e_{count-1})`. nil is implicitly appended as the
   tail. count 0 → push nil directly.

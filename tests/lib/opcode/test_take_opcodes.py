@@ -13,7 +13,7 @@
 
 """
 Tests for take opcodes: VAR_TAKE, FAST_TAKE, ATTR_TAKE, ITEM_TAKE,
-CONST_ITEM_TAKE, VAR_ATTR_TAKE.
+ITEM_CONST_TAKE, VAR_ATTR_TAKE.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -132,7 +132,7 @@ class TestItemTake(CevalTest):
         data = {"k": 7}
         code, ns = build_expr([
             ["CONST", data],
-            ["CONST_ITEM_TAKE", "k"],
+            ["ITEM_CONST_TAKE", "k"],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()

@@ -1,6 +1,5 @@
 # KOS_OP_RAISE
 - **Style**: COUNT. Arg = number of values to pop (e.g. 1 for exception instance).
-- **Status**: Implemented.
 - **Stack**: Pops `arg` values; raises with the popped exception.
 - **Invariants**: Popped value(s) form the exception to raise.
 

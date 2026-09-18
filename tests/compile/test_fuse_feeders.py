@@ -25,8 +25,11 @@ import unittest
 
 import pytest
 
-from koskari.compile.processor import ByteCodeProcessor, make_cmpsrc
-from koskari.lib import Compare, NamespaceSpec, OpCode
+from koskari.compile.processor import (
+    ITEM_VAR_TO_FAST, VAR_TO_FAST, ByteCodeProcessor, make_cmpsrc)
+from koskari.lib import Compare, NamespaceSpec, OpCode, Operand
+
+from tests.lib.opcode import opcount
 
 from . import make_fragment
 
@@ -527,55 +530,67 @@ class TestFormatLowering(unittest.IsolatedAsyncioTestCase):
 
 
 IT = OpCode.ITEM
-CI = OpCode.CONST_ITEM
-VIT = OpCode.VAR_ITEM
-VCI = OpCode.VAR_CONST_ITEM
+ADD1 = (Operand.ADD, 1)
+ADD2 = (Operand.ADD, 2)
+IADD = int(Operand.ADD)
 
 
-class TestFuseItemFeeders(unittest.TestCase):
+class TestFuseItemAccess(unittest.TestCase):
     """
-    VAR obj, VAR key, ITEM fuse into VAR_ITEM; VAR obj, CONST_ITEM key
-    into VAR_CONST_ITEM. A constant object, a computed object or key,
-    and the store rows stay
+    A load, CLEAR, TAKE, or REF row folds the feeders directly ahead
+    of it: a VAR object and a feeder key name both, a feeder key alone
+    names the key, a CONST object never folds, and a computed operand
+    between a feeder and the row leaves the feeder alone
     """
 
-    def test_var_var_item_fuses(self):
-        out = fuse_ops([(V, "a"), (V, "i"), (IT, 0)])
-        self.assertEqual(out, [(VIT, ("a", "i", 0, 0))])
+    VERBS = ("ITEM", "ITEM_CLEAR", "ITEM_TAKE", "ITEM_REF")
 
-    def test_var_const_item_fuses(self):
-        out = fuse_ops([(V, "a"), (CI, "k")])
-        self.assertEqual(out, [(VCI, ("a", "k", 0, 0))])
+    def row(self, verb, obj, key):
+        parts = ([obj] if obj else []) + ["ITEM"] + ([key] if key else [])
+        if verb != "ITEM":
+            parts.append(verb[len("ITEM_"):])
+        return OpCode["_".join(parts)]
 
-    def test_const_object_stays(self):
-        out = fuse_ops([(C, (1, 2)), (V, "i"), (IT, 0)])
-        self.assertEqual(out, [(C, (1, 2)), (V, "i"), (IT, 0)])
-        out = fuse_ops([(C, "abc"), (CI, 1)])
-        self.assertEqual(out, [(C, "abc"), (CI, 1)])
+    def test_var_obj_var_key(self):
+        for verb in self.VERBS:
+            out = fuse_ops([(V, "a"), (V, "i"), (OpCode[verb], 0)])
+            self.assertEqual(
+                out, [(self.row(verb, "VAR", "VAR"), ("a", "i", 0, 0))])
+
+    def test_var_obj_const_key(self):
+        for verb in self.VERBS:
+            out = fuse_ops([(V, "a"), (C, "k"), (OpCode[verb], 0)])
+            self.assertEqual(
+                out, [(self.row(verb, "VAR", "CONST"), ("a", "k", 0, 0))])
+
+    def test_const_obj_folds_key_only(self):
+        for verb in self.VERBS:
+            out = fuse_ops([(C, (1, 2)), (V, "i"), (OpCode[verb], 0)])
+            self.assertEqual(
+                out, [(C, (1, 2)), (self.row(verb, None, "VAR"), "i")])
+            out = fuse_ops([(C, "abc"), (C, 1), (OpCode[verb], 0)])
+            self.assertEqual(
+                out, [(C, "abc"), (self.row(verb, None, "CONST"), 1)])
+
+    def test_computed_obj_folds_key_only(self):
+        call = (OpCode.CALL, 0)
+        for verb in self.VERBS:
+            out = fuse_ops([(V, "f"), call, (V, "i"), (OpCode[verb], 0)])
+            self.assertEqual(
+                out, [(V, "f"), call, (self.row(verb, None, "VAR"), "i")])
+            out = fuse_ops([(V, "f"), call, (C, "k"), (OpCode[verb], 0)])
+            self.assertEqual(
+                out, [(V, "f"), call, (self.row(verb, None, "CONST"), "k")])
 
     def test_computed_key_stays(self):
         call = (OpCode.CALL, 0)
-        out = fuse_ops([(V, "a"), (V, "f"), call, (IT, 0)])
-        self.assertEqual(out, [(V, "a"), (V, "f"), call, (IT, 0)])
+        for verb in self.VERBS:
+            out = fuse_ops([(V, "a"), (V, "f"), call, (OpCode[verb], 0)])
+            self.assertEqual(out, [(V, "a"), (V, "f"), call, (OpCode[verb], 0)])
 
-    def test_computed_object_stays(self):
-        call = (OpCode.CALL, 0)
-        out = fuse_ops([(V, "f"), call, (V, "i"), (IT, 0)])
-        self.assertEqual(out, [(V, "f"), call, (V, "i"), (IT, 0)])
-        out = fuse_ops([(V, "f"), call, (CI, "k")])
-        self.assertEqual(out, [(V, "f"), call, (CI, "k")])
-
-    def test_var_var_item_position_transparent(self):
+    def test_position_transparent(self):
         out = fuse_ops([(V, "a"), (P, 3), (V, "i"), (P, 7), (IT, 0)])
-        self.assertEqual(out, [(VIT, ("a", "i", 0, 0)), (P, 7)])
-
-    def test_store_rows_stay(self):
-        out = fuse_ops([(V, "a"), (V, "i"), (V, "v"), (OpCode.ITEM_STORE, 0)])
-        self.assertEqual(
-            out, [(V, "a"), (V, "i"), (V, "v"), (OpCode.ITEM_STORE, 0)])
-        out = fuse_ops([(V, "a"), (V, "v"), (OpCode.CONST_ITEM_STORE, "k")])
-        self.assertEqual(
-            out, [(V, "a"), (V, "v"), (OpCode.CONST_ITEM_STORE, "k")])
+        self.assertEqual(out, [(OpCode.VAR_ITEM_VAR, ("a", "i", 0, 0)), (P, 7)])
 
     def test_fused_rows_pack_nothing(self):
         # the feeders the rule consumed never reach the pack phase
@@ -586,50 +601,287 @@ class TestFuseItemFeeders(unittest.TestCase):
         proc.convert_fast(nspec)
         proc.pack_runs()
         self.assertEqual(proc.instructions, [
-            (OpCode.FAST_ITEM, (0, 1, 0, 0)), (OpCode.RETURN, 1)])
+            (OpCode.FAST_ITEM_FAST, (0, 1, 0, 0)), (OpCode.RETURN, 1)])
 
 
-class TestItemLowering(unittest.IsolatedAsyncioTestCase):
+class TestFuseItemStore(unittest.TestCase):
     """
-    convert_fast lowers the VAR item rows to their FAST twins by the
-    name-derived map and the schema: every VAR field must have a slot
+    ITEM_STORE folds its trailing feeders: value, then key, then a
+    VAR object; the rows the special shapes with the value on the
+    stack fold a value feeder alone
     """
 
-    async def test_var_item_lowers_when_both_local(self):
+    ST = OpCode.ITEM_STORE
+
+    def test_three_feeders(self):
+        cases = {
+            ((V, "a"), (V, "i"), (V, "v")): (
+                OpCode.VAR_ITEM_VAR_STORE_VAR, ("a", "i", "v", 0)),
+            ((V, "a"), (V, "i"), (C, 1)): (
+                OpCode.VAR_ITEM_VAR_STORE_CONST, ("a", "i", 1, 0)),
+            ((V, "a"), (C, "k"), (V, "v")): (
+                OpCode.VAR_ITEM_CONST_STORE_VAR, ("a", "k", "v", 0)),
+            ((V, "a"), (C, "k"), (C, 1)): (
+                OpCode.VAR_ITEM_CONST_STORE_CONST, ("a", "k", 1, 0)),
+        }
+        for feeders, fused in cases.items():
+            out = fuse_ops(list(feeders) + [(self.ST, 0)])
+            self.assertEqual(out, [fused])
+
+    def test_two_feeders_behind_a_computed_object(self):
+        call = (OpCode.CALL, 0)
+        cases = {
+            ((V, "i"), (V, "v")): (OpCode.ITEM_VAR_STORE_VAR, ("i", "v", 0, 0)),
+            ((V, "i"), (C, 1)): (OpCode.ITEM_VAR_STORE_CONST, ("i", 1, 0, 0)),
+            ((C, "k"), (V, "v")): (OpCode.ITEM_CONST_STORE_VAR, ("k", "v", 0, 0)),
+            ((C, "k"), (C, 1)): (OpCode.ITEM_CONST_STORE_CONST, ("k", 1, 0, 0)),
+        }
+        for feeders, fused in cases.items():
+            out = fuse_ops([(V, "f"), call] + list(feeders) + [(self.ST, 0)])
+            self.assertEqual(out, [(V, "f"), call, fused])
+
+    def test_const_object_folds_key_and_value(self):
+        out = fuse_ops([(C, (1,)), (V, "i"), (V, "v"), (self.ST, 0)])
+        self.assertEqual(
+            out, [(C, (1,)), (OpCode.ITEM_VAR_STORE_VAR, ("i", "v", 0, 0))])
+
+    def test_one_feeder_behind_a_computed_key(self):
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([(V, "a"), (V, "f"), call, (V, "v"), (self.ST, 0)])
+        self.assertEqual(
+            out, [(V, "a"), (V, "f"), call, (OpCode.ITEM_STORE_VAR, "v")])
+        out = fuse_ops([(V, "a"), (V, "f"), call, (C, 1), (self.ST, 0)])
+        self.assertEqual(
+            out, [(V, "a"), (V, "f"), call, (OpCode.ITEM_STORE_CONST, 1)])
+
+    def test_computed_value_stays(self):
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([(V, "a"), (V, "i"), (V, "f"), call, (self.ST, 0)])
+        self.assertEqual(out, [(V, "a"), (V, "i"), (V, "f"), call, (self.ST, 0)])
+
+    def test_shaped_rows_fold_a_value_feeder(self):
+        cases = {
+            (OpCode.VAR_ITEM_STORE, "a"): (
+                OpCode.VAR_ITEM_STORE_VAR, ("a", "v", 0, 0),
+                OpCode.VAR_ITEM_STORE_CONST, ("a", 1, 0, 0)),
+            (OpCode.VAR_ITEM_VAR_STORE, ("a", "i", 0, 0)): (
+                OpCode.VAR_ITEM_VAR_STORE_VAR, ("a", "i", "v", 0),
+                OpCode.VAR_ITEM_VAR_STORE_CONST, ("a", "i", 1, 0)),
+            (OpCode.VAR_ITEM_CONST_STORE, ("a", "k", 0, 0)): (
+                OpCode.VAR_ITEM_CONST_STORE_VAR, ("a", "k", "v", 0),
+                OpCode.VAR_ITEM_CONST_STORE_CONST, ("a", "k", 1, 0)),
+            (OpCode.ITEM_VAR_STORE, "i"): (
+                OpCode.ITEM_VAR_STORE_VAR, ("i", "v", 0, 0),
+                OpCode.ITEM_VAR_STORE_CONST, ("i", 1, 0, 0)),
+            (OpCode.ITEM_CONST_STORE, "k"): (
+                OpCode.ITEM_CONST_STORE_VAR, ("k", "v", 0, 0),
+                OpCode.ITEM_CONST_STORE_CONST, ("k", 1, 0, 0)),
+        }
+        for row, (vop, varg, cop, carg) in cases.items():
+            self.assertEqual(fuse_ops([(V, "v"), row]), [(vop, varg)])
+            self.assertEqual(fuse_ops([(C, 1), row]), [(cop, carg)])
+
+    def test_shaped_row_keeps_a_computed_value(self):
+        call = (OpCode.CALL, 0)
+        row = (OpCode.VAR_ITEM_VAR_STORE, ("a", "i", 0, 0))
+        out = fuse_ops([(V, "f"), call, row])
+        self.assertEqual(out, [(V, "f"), call, row])
+
+    def test_position_transparent(self):
+        out = fuse_ops([
+            (V, "a"), (P, 1), (V, "i"), (P, 2), (V, "v"), (P, 3), (self.ST, 0)])
+        self.assertEqual(
+            out, [(OpCode.VAR_ITEM_VAR_STORE_VAR, ("a", "i", "v", 0)), (P, 3)])
+
+    def test_compound_object_ending_in_a_load_folds_the_load(self):
+        # the object's last instruction is the bare load the rule sees
+        # as the object feeder; the call ahead of it is left in place
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([
+            (V, "f"), call, (OpCode.POP, 1), (V, "a"), (V, "i"), (V, "v"),
+            (self.ST, 0)])
+        self.assertEqual(out, [
+            (V, "f"), call, (OpCode.POP, 1),
+            (OpCode.VAR_ITEM_VAR_STORE_VAR, ("a", "i", "v", 0))])
+
+
+class TestFuseItemInplace(unittest.TestCase):
+    """
+    ITEM_INPLACE folds a VAR object and a feeder key when every value
+    is a feeder, re-emitting the values ahead of the row; a single
+    CONST value folds into the _CONST twin; the shaped rows fold a
+    CONST operand at count one
+    """
+
+    IP = OpCode.ITEM_INPLACE
+
+    def test_var_obj_var_key_var_value(self):
+        out = fuse_ops([(V, "a"), (V, "i"), (V, "v"), (self.IP, ADD1)])
+        self.assertEqual(out, [
+            (V, "v"), (OpCode.VAR_ITEM_VAR_INPLACE, (ADD1, "a", "i", 0))])
+
+    def test_var_obj_const_key_var_value(self):
+        out = fuse_ops([(V, "a"), (C, "k"), (V, "v"), (self.IP, ADD1)])
+        self.assertEqual(out, [
+            (V, "v"), (OpCode.VAR_ITEM_CONST_INPLACE, (ADD1, "a", "k", 0))])
+
+    def test_const_value_folds_into_the_const_twin(self):
+        out = fuse_ops([(V, "a"), (V, "i"), (C, 1), (self.IP, ADD1)])
+        self.assertEqual(
+            out, [(OpCode.VAR_ITEM_VAR_INPLACE_CONST, (IADD, "a", "i", 1))])
+        out = fuse_ops([(V, "a"), (C, "k"), (C, 1), (self.IP, ADD1)])
+        self.assertEqual(
+            out, [(OpCode.VAR_ITEM_CONST_INPLACE_CONST, (IADD, "a", "k", 1))])
+
+    def test_computed_object_folds_key_only(self):
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([(V, "f"), call, (V, "i"), (C, 1), (self.IP, ADD1)])
+        self.assertEqual(out, [
+            (V, "f"), call, (OpCode.ITEM_VAR_INPLACE_CONST, (IADD, "i", 1, 0))])
+        out = fuse_ops([(V, "f"), call, (C, "k"), (V, "v"), (self.IP, ADD1)])
+        self.assertEqual(out, [
+            (V, "f"), call, (V, "v"),
+            (OpCode.ITEM_CONST_INPLACE, (ADD1, "k", 0, 0))])
+
+    def test_const_object_folds_key_only(self):
+        out = fuse_ops([(C, [0]), (C, 0), (C, 1), (self.IP, ADD1)])
+        self.assertEqual(
+            out, [(C, [0]), (OpCode.ITEM_CONST_INPLACE_CONST, (IADD, 0, 1, 0))])
+
+    def test_two_values_re_emit_behind_the_row(self):
+        out = fuse_ops([(V, "a"), (V, "i"), (V, "x"), (C, 2), (self.IP, ADD2)])
+        self.assertEqual(out, [
+            (V, "x"), (C, 2), (OpCode.VAR_ITEM_VAR_INPLACE, (ADD2, "a", "i", 0))])
+
+    def test_re_emitted_values_pack(self):
+        nspec = NamespaceSpec(None, ("a", "i", "x", "y"), ())
+        proc = ByteCodeProcessor(make_fragment([
+            (V, "a"), (V, "i"), (V, "x"), (V, "y"), (self.IP, ADD2),
+            (OpCode.RETURN, 0)]))
+        proc.fuse_feeders()
+        proc.normalize_opcount()
+        proc.convert_fast(nspec)
+        proc.pack_runs()
+        self.assertEqual(proc.instructions, [
+            (OpCode.FAST2, (2, 3, None, None)),
+            (OpCode.FAST_ITEM_FAST_INPLACE, (opcount(Operand.ADD, 2), 0, 1, 0)),
+            (OpCode.RETURN, 0)])
+
+    def test_position_transparent(self):
+        out = fuse_ops([
+            (V, "a"), (P, 1), (V, "i"), (P, 2), (V, "v"), (P, 3), (self.IP, ADD1)])
+        self.assertEqual(out, [
+            (V, "v"), (OpCode.VAR_ITEM_VAR_INPLACE, (ADD1, "a", "i", 0)), (P, 3)])
+        out = fuse_ops([
+            (V, "a"), (V, "i"), (P, 4), (C, 1), (self.IP, ADD1)])
+        self.assertEqual(out, [
+            (OpCode.VAR_ITEM_VAR_INPLACE_CONST, (IADD, "a", "i", 1)), (P, 4)])
+
+    def test_computed_value_stays(self):
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([(V, "a"), (V, "i"), (V, "f"), call, (self.IP, ADD1)])
+        self.assertEqual(
+            out, [(V, "a"), (V, "i"), (V, "f"), call, (self.IP, ADD1)])
+
+    def test_computed_key_folds_a_const_operand_only(self):
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([(V, "a"), (V, "f"), call, (C, 1), (self.IP, ADD1)])
+        self.assertEqual(
+            out, [(V, "a"), (V, "f"), call,
+                  (OpCode.ITEM_INPLACE_CONST, (IADD, 1, 0, 0))])
+        out = fuse_ops([(V, "a"), (V, "f"), call, (V, "v"), (self.IP, ADD1)])
+        self.assertEqual(
+            out, [(V, "a"), (V, "f"), call, (V, "v"), (self.IP, ADD1)])
+        out = fuse_ops([(V, "a"), (V, "f"), call, (C, 1), (C, 2), (self.IP, ADD2)])
+        self.assertEqual(
+            out, [(V, "a"), (V, "f"), call, (C, 1), (C, 2), (self.IP, ADD2)])
+
+    def test_shaped_rows_fold_a_const_operand_at_count_one(self):
+        cases = {
+            (OpCode.VAR_ITEM_INPLACE, (ADD1, "a", 0, 0)): (
+                OpCode.VAR_ITEM_INPLACE_CONST, (IADD, "a", 1, 0)),
+            (OpCode.VAR_ITEM_VAR_INPLACE, (ADD1, "a", "i", 0)): (
+                OpCode.VAR_ITEM_VAR_INPLACE_CONST, (IADD, "a", "i", 1)),
+            (OpCode.VAR_ITEM_CONST_INPLACE, (ADD1, "a", "k", 0)): (
+                OpCode.VAR_ITEM_CONST_INPLACE_CONST, (IADD, "a", "k", 1)),
+            (OpCode.ITEM_VAR_INPLACE, (ADD1, "i", 0, 0)): (
+                OpCode.ITEM_VAR_INPLACE_CONST, (IADD, "i", 1, 0)),
+            (OpCode.ITEM_CONST_INPLACE, (ADD1, "k", 0, 0)): (
+                OpCode.ITEM_CONST_INPLACE_CONST, (IADD, "k", 1, 0)),
+        }
+        for row, fused in cases.items():
+            self.assertEqual(fuse_ops([(C, 1), row]), [fused])
+
+    def test_shaped_rows_keep_a_var_operand_and_a_count_above_one(self):
+        row = (OpCode.VAR_ITEM_VAR_INPLACE, (ADD1, "a", "i", 0))
+        self.assertEqual(fuse_ops([(V, "v"), row]), [(V, "v"), row])
+        row = (OpCode.VAR_ITEM_VAR_INPLACE, (ADD2, "a", "i", 0))
+        self.assertEqual(
+            fuse_ops([(V, "v"), (C, 1), row]), [(V, "v"), (C, 1), row])
+
+
+class TestItemLowering(unittest.TestCase):
+    """
+    convert_fast lowers every VAR item row to its FAST twin through
+    the written-out map and the schema: every VAR field must have a
+    slot, a plain-style row lowers its one field
+    """
+
+    def test_map_covers_every_var_row(self):
+        var_rows = {
+            op for op in OpCode
+            if "ITEM" in op.name and "VAR" in op.name.split("_")}
+        self.assertEqual(set(ITEM_VAR_TO_FAST), var_rows)
+        for var, fast in ITEM_VAR_TO_FAST.items():
+            self.assertEqual(fast.name, var.name.replace("VAR", "FAST"))
+            self.assertIn(var, VAR_TO_FAST)
+            self.assertIs(VAR_TO_FAST[var], fast)
+
+    def test_three_field_row_lowers(self):
+        nspec = NamespaceSpec(None, ("a", "i", "v"), ())
+        result = convert_fast(
+            nspec, [(OpCode.VAR_ITEM_VAR_STORE_VAR, ("a", "i", "v", 0))])
+        self.assertEqual(
+            result, [(OpCode.FAST_ITEM_FAST_STORE_FAST, (0, 1, 2, 0))])
+
+    def test_all_or_nothing(self):
         nspec = NamespaceSpec(None, ("a", "i"), ())
-        result = convert_fast(nspec, [(VIT, ("a", "i", 0, 0))])
-        self.assertEqual(result, [(OpCode.FAST_ITEM, (0, 1, 0, 0))])
+        row = (OpCode.VAR_ITEM_VAR_STORE_VAR, ("a", "i", "v", 0))
+        self.assertEqual(convert_fast(nspec, [row]), [row])
+        row = (OpCode.VAR_ITEM_VAR, ("a", "i", 0, 0))
+        self.assertEqual(
+            convert_fast(nspec, [row]), [(OpCode.FAST_ITEM_FAST, (0, 1, 0, 0))])
+        self.assertEqual(
+            convert_fast(NamespaceSpec(None, ("a",), ()), [row]), [row])
 
-    async def test_var_item_stays_when_key_not_local(self):
-        nspec = NamespaceSpec(None, ("a",), ())
-        result = convert_fast(nspec, [(VIT, ("a", "i", 0, 0))])
-        self.assertEqual(result, [(VIT, ("a", "i", 0, 0))])
-
-    async def test_var_const_item_lowers_when_local(self):
-        nspec = NamespaceSpec(None, ("a",), ())
-        result = convert_fast(nspec, [(VCI, ("a", "k", 0, 0))])
-        self.assertEqual(result, [(OpCode.FAST_CONST_ITEM, (0, "k", 0, 0))])
-
-    async def test_store_rows_lower(self):
-        nspec = NamespaceSpec(None, ("a", "i"), ())
+    def test_plain_rows_lower(self):
+        nspec = NamespaceSpec(None, ("a", "v"), ())
         result = convert_fast(nspec, [
-            (OpCode.VAR_ITEM_STORE, ("a", "i", 0, 0)),
-            (OpCode.VAR_CONST_ITEM_STORE, ("a", "k", 0, 0)),
+            (OpCode.VAR_ITEM, "a"),
+            (OpCode.ITEM_VAR, "v"),
+            (OpCode.ITEM_STORE_VAR, "v"),
+            (OpCode.VAR_ITEM_STORE, "a"),
+            (OpCode.ITEM_VAR_TAKE, "a"),
         ])
         self.assertEqual(result, [
-            (OpCode.FAST_ITEM_STORE, (0, 1, 0, 0)),
-            (OpCode.FAST_CONST_ITEM_STORE, (0, "k", 0, 0)),
+            (OpCode.FAST_ITEM, 0),
+            (OpCode.ITEM_FAST, 1),
+            (OpCode.ITEM_STORE_FAST, 1),
+            (OpCode.FAST_ITEM_STORE, 0),
+            (OpCode.ITEM_FAST_TAKE, 0),
         ])
 
-    async def test_store_rows_stay_when_not_local(self):
-        nspec = NamespaceSpec(None, ("i",), ())
+    def test_mixed_rows_lower(self):
+        nspec = NamespaceSpec(None, ("a", "v"), ())
         result = convert_fast(nspec, [
-            (OpCode.VAR_ITEM_STORE, ("a", "i", 0, 0)),
-            (OpCode.VAR_CONST_ITEM_STORE, ("a", "k", 0, 0)),
+            (OpCode.VAR_ITEM_CONST_STORE_VAR, ("a", "k", "v", 0)),
+            (OpCode.ITEM_CONST_STORE_VAR, ("k", "v", 0, 0)),
+            (OpCode.VAR_ITEM_VAR_INPLACE_CONST, (IADD, "a", "v", 1)),
         ])
         self.assertEqual(result, [
-            (OpCode.VAR_ITEM_STORE, ("a", "i", 0, 0)),
-            (OpCode.VAR_CONST_ITEM_STORE, ("a", "k", 0, 0)),
+            (OpCode.FAST_ITEM_CONST_STORE_FAST, (0, "k", 1, 0)),
+            (OpCode.ITEM_CONST_STORE_FAST, ("k", 1, 0, 0)),
+            (OpCode.FAST_ITEM_FAST_INPLACE_CONST, (IADD, 0, 1, 1)),
         ])
 
 

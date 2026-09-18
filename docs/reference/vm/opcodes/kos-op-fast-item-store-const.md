@@ -1,5 +1,6 @@
 # KOS_OP_FAST_ITEM_STORE_CONST
-- **Style**: EXTRA (FASTVAR, FASTVAR, CONST, NOARG).
-- **Stack**: No stack effect. Set obj[key] = value with the object and the key read from fast slots and the value a pool constant.
-- **Cache**: one KOS_CACHE_ELECTOR slot; the site elects a body for the container kind it first sees (exact list under an exact int key, exact dict under any key) and otherwise runs the object protocol.
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., key] → [...]`. Set obj[key] = value with the object read from a fast slot, the key on the stack and the value a pool constant.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see the items section of the VM reference).
+- **Compiler form:** The lowering of **VAR_ITEM_STORE_CONST**: every named operand has a fast slot.
 - **Implementation**: `koskari/lib/opcode/FAST_ITEM_STORE_CONST.c`

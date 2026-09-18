@@ -1,6 +1,5 @@
 # KOS_OP_GLOBALS
 - **Style**: NOARG.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., globals_dict]`.
 - **Invariants**: Frame has globals namespace.
 

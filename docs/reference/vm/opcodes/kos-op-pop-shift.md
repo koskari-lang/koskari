@@ -1,6 +1,5 @@
 # KOS_OP_POP_SHIFT
 - **Style**: NOARG.
-- **Status**: Implemented.
 - **Stack**: Pops TOS as result and resolves the delimiter by the prompt instance the SHIFT recorded at capture. For a live reset: builds a transfer plan that unwinds through the SHIFT and PROMPT (dropping both and the PROMPT's segment), injects the result onto the outer frame's stack, and resumes at the closing pc the prompt recorded at push, + 1. For an invocation prompt (created by invoking a captured k; no POP_PROMPT pairs with it): the result is the value of that k-invocation, delivered at the invoke site through the paired DELIM bookmark.
 - **Invariants**: Must be inside a PUSH_SHIFT extent. The delimiter is resolved by instance identity, never by chain position; the resolved prompt carries the resume pc, so no extent lookup happens at pop time.
 - **Compiler form:** No argument.

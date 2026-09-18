@@ -2,7 +2,6 @@
 - **Style**: EXTRA (OPERAND, VAR, CONST). Row a0 = bare KosOperand
   selector (the count is fixed at 1 by the shape), a1 = constant pool
   index of the name, a2 = constant pool index of the operand.
-- **Status**: Implemented.
 - **Stack**: No stack effect. Augmented assignment with a constant rhs
   through the frame namespace, completely stack-free: obj = deref(name);
   obj OP= const; store back.

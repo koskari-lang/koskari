@@ -2,7 +2,6 @@
 - **Style**: EXTRA (CMP, CONST, FASTVAR, CONST). Row = bare selector,
   low bound (pool), middle operand fast slot, high bound (pool).
   Schema-static slots: no source bits, the shape is the opcode.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., result]`. The ternary bounds idiom
   (`const < x < const`): chain-compare the three operands under the
   selector and push the chain result (for JUMP_FALSE / JUMP_TRUE or

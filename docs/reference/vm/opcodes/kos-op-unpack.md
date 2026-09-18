@@ -1,6 +1,5 @@
 # KOS_OP_UNPACK
 - **Style**: COUNT. Arg = `n` (number of values to push).
-- **Status**: Implemented. (`koskari/lib/opcode/UNPACK.c`)
 - **Stack**: `[..., raw] → [..., v_{n-1}, ..., v_1, v_0]` where `v_i` is the
   `i`-th element of the realized sequence and **TOS = v_0 = seq[0]** (so the
   first binding in source order can use `VAR_STORE` / `FAST_STORE` on TOS

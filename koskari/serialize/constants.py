@@ -56,8 +56,15 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # mode control, RETURN_VAR and YIELD_VAR after VAR_FORMAT_CONST, and
 # RETURN_FAST and YIELD_FAST after FAST_FORMAT_CONST, renumbering every
 # opcode after them.
+# MINOR bumped: the item family renamed to the three-position grammar
+# (object marker, ITEM, key marker, verb, value marker) and filled out
+# to every combination of stack, constant, and named object, key, and
+# value for ITEM, CLEAR, TAKE, REF, STORE, and INPLACE, renumbering
+# every opcode after the VAR family. The FAST rows and the stack rows
+# of ITEM, STORE, and INPLACE carry a KOS_CACHE_ITEM slot (slots are
+# not serialized).
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 18
+BYTECODE_ABI_MINOR = 19
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 1
 

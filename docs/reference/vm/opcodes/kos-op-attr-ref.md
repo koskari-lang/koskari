@@ -1,6 +1,5 @@
 # KOS_OP_ATTR_REF
 - **Style**: CONST. Arg = constant pool index of attribute name.
-- **Status**: Implemented.
 - **Stack**: `[..., obj] → [..., obj, attr_ref]`. Push attribute reference.
 - **Invariants**: TOS is the object.
 

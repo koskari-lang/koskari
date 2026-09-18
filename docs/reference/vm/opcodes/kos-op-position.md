@@ -1,6 +1,5 @@
 # KOS_OP_POSITION
 - **Style**: COMPILE. Compile-time only.
-- **Status**: Compile-time; **stripped** in post-compile under normal circumstances. If retained, no-op at runtime.
 - **Stack**: No change.
 - **Invariants**: Position is recorded in the code object's position table during finalize. The POSITION instruction itself is normally omitted from the bytecode.
 - **Behavior**: Source position marker. Finalize records the position (line, col) in the position table and **strips** the POSITION instruction. If a POSITION is retained, it advances PC only (safety net).

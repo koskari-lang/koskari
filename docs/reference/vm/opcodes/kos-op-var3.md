@@ -1,7 +1,6 @@
 # KOS_OP_VAR3
 - **Style**: EXTRA (VAR, VAR, VAR, NOARG). Row = three constant pool name indices
   (post-compile).
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., a, b, c]`. Load the three names from the frame namespace and
   push in row order. Every name resolves before any push, so a missing name
   errors with nothing pushed.

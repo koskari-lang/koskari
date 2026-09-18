@@ -1,7 +1,6 @@
 # KOS_OP_UNPACK_FAST
 - **Style**: EXTRA (`FASTVAR`, `FASTVAR`, `NOARG`, `NOARG`). Row: `a0`, `a1` =
   fast local slot indices.
-- **Status**: Implemented. (`koskari/lib/opcode/UNPACK_FAST.c`)
 - **Stack**: `[..., raw] → [...]`. Pop TOS, `PySequence_List`, require `len == 2`,
   then `KosNamespace_FastStore` for slot `a0` with `seq[0]` and slot `a1` with
   `seq[1]` (same ownership rules as `FAST_STORE`: namespace increments ref as

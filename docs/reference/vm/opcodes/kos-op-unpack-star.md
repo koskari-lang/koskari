@@ -2,7 +2,6 @@
 - **Style**: EXTRA (`COUNT`, `COUNT`, `NOARG`, `NOARG`). Instruction arg =
   index into the code object's **extra** table; that row has `a0 = left`,
   `a1 = right` (both non-negative counts).
-- **Status**: Implemented. (`koskari/lib/opcode/UNPACK_STAR.c`)
 - **Semantics**: Pop TOS, `PySequence_List(raw)`. Require `left + right > 0`
   and `len(seq) >= left + right`. Let `L = len(seq)`. The **middle** slice is
   `seq[left : L - right]` (inclusive start, exclusive end), materialized as a

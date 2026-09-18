@@ -1,6 +1,5 @@
 # KOS_OP_SWITCH_EQ_CONST
 - **Style**: EXTRA. Schema `(LABEL, CONST, NOARG, NOARG)`.
-- **Status**: Implemented.
 - **Stack**: `[..., s]`. Compare `s == cpool[a1]` with `Py_EQ`.
   - **Match**: pop `s`; `pc = a0`.
   - **Mismatch**: fall through; stack unchanged (`s` still TOS).

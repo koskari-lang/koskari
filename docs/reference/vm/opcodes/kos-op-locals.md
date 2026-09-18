@@ -1,6 +1,5 @@
 # KOS_OP_LOCALS
 - **Style**: NOARG.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., locals_dict]`.
 - **Invariants**: Frame has locals namespace.
 

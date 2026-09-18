@@ -13,24 +13,45 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   FAST_ITEM_INPLACE_CONST: arg = extra index. Schema OPERAND (selector),
-   FASTVAR (obj slot), FASTVAR (key slot), CONST (rhs). obj[key] OP= rhs
-   with both operands read from fast slots and the operand from the
-   pool; no stack effect.
-   Prologue only: tail-call the body the site's slot elected
-   (eval/eval_electors.c), which carries its own guard; an empty slot
-   or an ungated site takes the electing function, which classifies
-   the item and operand once and settles the slot. One cache slot:
-   KOS_CACHE_ELECTOR.
+  FAST_ITEM_INPLACE_CONST: arg = extra index. Schema OPERAND,
+  FASTVAR, CONST, NOARG. Stack [key]. Object from a fast slot, key
+  from the stack, operand from the pool. obj[key] = obj[key] OP
+  operands, reduced left to right; push nothing. The access runs
+  through kos_item_inplace (eval/eval_item.c) on the site's one
+  KOS_CACHE_ITEM slot.
 */
-
 KOS_OP_HANDLER(FAST_ITEM_INPLACE_CONST) {
-  KosCacheSlot *slot = KosOp_SLOT(insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *ns = KosEvalState_NAMESPACE(es);
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail;
+  KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
+  PyObject *rhs = KosExtra_OBJ(row, 2);
+  PyObject *obj, *obj_ref;
+  PyObject *key;
+  int rc;
 
-  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
-    TAILCALL(slot->u.elector.fn, es, insn, NULL);
-  TAILCALL(el_fast_item_inplace_const_elect, es, insn, NULL);
+  KOS_OP_REQUIRE_NS(ns);
+  KOS_NS_FAST_BORROW(obj, obj_ref, ns, KosExtra_IMM(row, 1),
+                     { RESULT_RAISE(); });
+
+  tail = kos_stack_tail_ptr_fast(*bl, 1);
+  if (unlikely(! tail)) {
+    Py_XDECREF(obj_ref);
+    RESULT_RAISE();
+  }
+
+  key = tail[0];
+  rc = kos_item_inplace(KosOp_SLOT(insn), obj, key, op, &rhs, 1);
+  Py_XDECREF(obj_ref);
+
+  if (unlikely(rc < 0))
+    RESULT_RAISE();
+
+  kos_stack_drop_noerr_fast(bl, 1);
+  RESULT_NEXT(es);
 }
 
 

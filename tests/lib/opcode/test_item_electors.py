@@ -13,8 +13,8 @@
 
 
 """
-Tests for the item electors: ITEM, CONST_ITEM, ITEM_STORE,
-CONST_ITEM_STORE and their FAST twins elect a body for the container
+Tests for the item electors: ITEM, ITEM_CONST, ITEM_STORE,
+ITEM_CONST_STORE and their FAST twins elect a body for the container
 kind the site first sees (exact list or tuple under an exact int key,
 exact dict under any key), decline to the generic body for an index
 outside the sequence or a key the dict lacks, count type-guard misses
@@ -50,8 +50,8 @@ LOAD_SITES = {
     'ITEM': (
         [["FAST", 0], ["FAST", 1], ["ITEM", 0], ["RETURN", 1]],
         ("obj", "key")),
-    'FAST_ITEM': (
-        [["FAST_ITEM", (0, 1, 0, 0)], ["RETURN", 1]],
+    'FAST_ITEM_FAST': (
+        [["FAST_ITEM_FAST", (0, 1, 0, 0)], ["RETURN", 1]],
         ("obj", "key")),
 }
 
@@ -60,27 +60,27 @@ STORE_SITES = {
         [["FAST", 0], ["FAST", 1], ["FAST", 2], ["ITEM_STORE", 0],
          ["FAST", 0], ["RETURN", 1]],
         ("obj", "key", "val")),
-    'FAST_ITEM_STORE': (
-        [["FAST", 2], ["FAST_ITEM_STORE", (0, 1, 0, 0)],
+    'FAST_ITEM_FAST_STORE': (
+        [["FAST", 2], ["FAST_ITEM_FAST_STORE", (0, 1, 0, 0)],
          ["FAST", 0], ["RETURN", 1]],
         ("obj", "key", "val")),
 }
 
 
 def const_load_site(key, opname, cache=True):
-    if opname == 'CONST_ITEM':
-        instr = [["FAST", 0], ["CONST_ITEM", key], ["RETURN", 1]]
+    if opname == 'ITEM_CONST':
+        instr = [["FAST", 0], ["ITEM_CONST", key], ["RETURN", 1]]
     else:
-        instr = [["FAST_CONST_ITEM", (0, key, 0, 0)], ["RETURN", 1]]
+        instr = [["FAST_ITEM_CONST", (0, key, 0, 0)], ["RETURN", 1]]
     return make_site(instr, ("obj",), cache=cache)
 
 
 def const_store_site(key, opname, cache=True):
-    if opname == 'CONST_ITEM_STORE':
-        instr = [["FAST", 0], ["FAST", 1], ["CONST_ITEM_STORE", key],
+    if opname == 'ITEM_CONST_STORE':
+        instr = [["FAST", 0], ["FAST", 1], ["ITEM_CONST_STORE", key],
                  ["FAST", 0], ["RETURN", 1]]
     else:
-        instr = [["FAST", 1], ["FAST_CONST_ITEM_STORE", (0, key, 0, 0)],
+        instr = [["FAST", 1], ["FAST_ITEM_CONST_STORE", (0, key, 0, 0)],
                  ["FAST", 0], ["RETURN", 1]]
     return make_site(instr, ("obj", "val"), cache=cache)
 
@@ -109,17 +109,17 @@ class TestItemCacheSlots(CevalTest):
             self.assertEqual(code.cache_slots, 1, instr)
             _, code = make_site(instr, syms, cache=False)
             self.assertEqual(code.cache_slots, 0, instr)
-        for opname in ('CONST_ITEM', 'FAST_CONST_ITEM'):
+        for opname in ('ITEM_CONST', 'FAST_ITEM_CONST'):
             self.assertEqual(const_load_site(0, opname)[1].cache_slots, 1)
-        for opname in ('CONST_ITEM_STORE', 'FAST_CONST_ITEM_STORE'):
+        for opname in ('ITEM_CONST_STORE', 'FAST_ITEM_CONST_STORE'):
             self.assertEqual(const_store_site(0, opname)[1].cache_slots, 1)
 
 
     def test_var_rows_request_no_slot(self):
-        for op in ('VAR_ITEM', 'VAR_ITEM_STORE'):
+        for op in ('VAR_ITEM_VAR', 'VAR_ITEM_VAR_STORE'):
             code = build_code([[op, ("obj", "key", 0, 0)], ["RETURN", 1]])
             self.assertEqual(code.cache_slots, 0, op)
-        for op in ('VAR_CONST_ITEM', 'VAR_CONST_ITEM_STORE'):
+        for op in ('VAR_ITEM_CONST', 'VAR_ITEM_CONST_STORE'):
             code = build_code([[op, ("obj", 0, 0, 0)], ["RETURN", 1]])
             self.assertEqual(code.cache_slots, 0, op)
 
@@ -142,7 +142,7 @@ class TestItemLoadElectors(CevalTest):
         with self.assertRaises(IndexError):
             await site(lst, -11)
         self.assertEqual(await site(lst, 3), 3)
-        # a bool key is not an exact int: a guard miss, served generically
+        # a bool key is not an exact int; the site answers as the protocol does
         self.assertEqual(await site(lst, True), 1)
         # an index wider than the fast read declines, still correct
         with self.assertRaises(IndexError):
@@ -213,9 +213,9 @@ class TestItemLoadElectors(CevalTest):
 
     async def test_unbound_fast_slot_at_an_elected_site_raises(self):
         site, _ = make_site([
-            ["FAST_ITEM", (0, 1, 0, 0)],
+            ["FAST_ITEM_FAST", (0, 1, 0, 0)],
             ["FAST_CLEAR", 1],
-            ["FAST_ITEM", (0, 1, 0, 0)],
+            ["FAST_ITEM_FAST", (0, 1, 0, 0)],
             ["RETURN", 1],
         ], ("obj", "key"))
         with self.assertRaises(NameError):
@@ -225,7 +225,7 @@ class TestItemLoadElectors(CevalTest):
 class TestConstItemLoadElectors(CevalTest):
 
     async def test_int_key_sites(self):
-        for opname in ('CONST_ITEM', 'FAST_CONST_ITEM'):
+        for opname in ('ITEM_CONST', 'FAST_ITEM_CONST'):
             site, _ = const_load_site(1, opname)
             for _ in range(3):
                 self.assertEqual(await site([7, 8, 9]), 8)
@@ -249,7 +249,7 @@ class TestConstItemLoadElectors(CevalTest):
 
 
     async def test_str_key_sites(self):
-        for opname in ('CONST_ITEM', 'FAST_CONST_ITEM'):
+        for opname in ('ITEM_CONST', 'FAST_ITEM_CONST'):
             site, _ = const_load_site("k", opname)
             for _ in range(3):
                 self.assertEqual(await site({"k": 1}), 1)
@@ -336,7 +336,7 @@ class TestItemStoreElectors(CevalTest):
 class TestConstItemStoreElectors(CevalTest):
 
     async def test_int_key_sites(self):
-        for opname in ('CONST_ITEM_STORE', 'FAST_CONST_ITEM_STORE'):
+        for opname in ('ITEM_CONST_STORE', 'FAST_ITEM_CONST_STORE'):
             site, _ = const_store_site(1, opname)
             lst = [0, 0]
             for i in range(3):
@@ -350,7 +350,7 @@ class TestConstItemStoreElectors(CevalTest):
 
 
     async def test_str_key_sites(self):
-        for opname in ('CONST_ITEM_STORE', 'FAST_CONST_ITEM_STORE'):
+        for opname in ('ITEM_CONST_STORE', 'FAST_ITEM_CONST_STORE'):
             site, _ = const_store_site("k", opname)
             d = {}
             for i in range(3):
@@ -361,12 +361,12 @@ class TestConstItemStoreElectors(CevalTest):
 
 
 def const_value_store_site(key, value, opname, cache=True):
-    if opname == 'FAST_ITEM_STORE_CONST':
-        instr = [["FAST_ITEM_STORE_CONST", (0, 1, value, 0)],
+    if opname == 'FAST_ITEM_FAST_STORE_CONST':
+        instr = [["FAST_ITEM_FAST_STORE_CONST", (0, 1, value, 0)],
                  ["FAST", 0], ["RETURN", 1]]
         syms = ("obj", "key")
     else:
-        instr = [["FAST_CONST_ITEM_STORE_CONST", (0, key, value, 0)],
+        instr = [["FAST_ITEM_CONST_STORE_CONST", (0, key, value, 0)],
                  ["FAST", 0], ["RETURN", 1]]
         syms = ("obj",)
     return make_site(instr, syms, cache=cache)
@@ -379,18 +379,18 @@ class TestItemStoreConstElectors(CevalTest):
     """
 
     def test_rows_request_one_slot(self):
-        for opname in ('FAST_ITEM_STORE_CONST', 'FAST_CONST_ITEM_STORE_CONST'):
+        for opname in ('FAST_ITEM_FAST_STORE_CONST', 'FAST_ITEM_CONST_STORE_CONST'):
             self.assertEqual(const_value_store_site(0, 1, opname)[1].cache_slots, 1)
             self.assertEqual(
                 const_value_store_site(0, 1, opname, cache=False)[1].cache_slots, 0)
-        for op in ('VAR_ITEM_STORE_CONST', 'VAR_CONST_ITEM_STORE_CONST'):
+        for op in ('VAR_ITEM_VAR_STORE_CONST', 'VAR_ITEM_CONST_STORE_CONST'):
             code = build_code([[op, ("obj", "key", 1, 0)], ["RETURN", 1]])
             self.assertEqual(code.cache_slots, 0, op)
 
 
     async def test_fast_item_store_const_site(self):
         for cache in (True, False):
-            site, _ = const_value_store_site(None, "v", 'FAST_ITEM_STORE_CONST',
+            site, _ = const_value_store_site(None, "v", 'FAST_ITEM_FAST_STORE_CONST',
                                              cache=cache)
             lst = [0] * 3
             for i in range(-3, 3):
@@ -415,7 +415,7 @@ class TestItemStoreConstElectors(CevalTest):
 
     async def test_fast_const_item_store_const_site(self):
         for cache in (True, False):
-            site, _ = const_value_store_site(1, "v", 'FAST_CONST_ITEM_STORE_CONST',
+            site, _ = const_value_store_site(1, "v", 'FAST_ITEM_CONST_STORE_CONST',
                                              cache=cache)
             lst = [0, 0]
             for _ in range(3):
@@ -431,7 +431,7 @@ class TestItemStoreConstElectors(CevalTest):
     async def test_constant_keeps_its_references(self):
         # the cell takes a new reference each time; the pool constant
         # survives every overwrite and the site's demotion and re-election
-        site, _ = const_value_store_site(0, "v", 'FAST_CONST_ITEM_STORE_CONST')
+        site, _ = const_value_store_site(0, "v", 'FAST_ITEM_CONST_STORE_CONST')
         lst = [None]
         for _ in range(10):
             await site(lst)

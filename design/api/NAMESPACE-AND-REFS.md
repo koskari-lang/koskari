@@ -109,7 +109,7 @@ Module-level `deref(ref)` calls `ref.deref()`. Used when passing refs as first-c
 - **compile/setq** — Store into existing binding (`VAR_STORE`).
 - **compile/delq** — Clear binding (`VAR_CLEAR`).
 - **compile/ref-attr** — Ref to `obj.attr` (`ATTR_REF`).
-- **compile/ref-item** — Ref to `obj[key]` (`ITEM_REF` or `CONST_ITEM_REF`).
+- **compile/ref-item** — Ref to `obj[key]` (`ITEM_REF` and the rows that name its object or key).
 
 ---
 
@@ -141,7 +141,7 @@ Module-level `deref(ref)` calls `ref.deref()`. Used when passing refs as first-c
 | VAR_CLEAR | Clear binding for name. |
 | DEREF | Pop Ref, call `ref.deref()`, push result. |
 | ATTR_REF | Pop obj, push AttributeRef for obj.attr. |
-| CONST_ITEM_REF / ITEM_REF | Push ItemRef for obj[key]. |
+| ITEM_REF and its named-operand rows | Push ItemRef for obj[key]. |
 
 Frame namespaces must be `Namespace` (or compatible) for VAR_REF, VAR_BIND, VAR_STORE, VAR_CLEAR. Plain dicts support only value storage, not ref-based bindings.
 

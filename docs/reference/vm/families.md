@@ -10,10 +10,10 @@
 - [9.1 Switch dispatch](index.md#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](index.md#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](index.md#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](index.md#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITEM_INPLACE*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
-- [13. Fast variables](index.md#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITEM*, FAST_ITEM_INPLACE*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
+- [12. Variables by name](index.md#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
+- [13. Fast variables](index.md#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITEM*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
 - [14. Attributes](index.md#14-attributes) — ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
-- [15. Items](index.md#15-items) — ITEM, CONST_ITEM, ITEM_INPLACE, and variants
+- [15. Items](index.md#15-items) — ITEM, ITEM_STORE, ITEM_INPLACE, ITEM_CLEAR, ITEM_TAKE, ITEM_REF, and the rows naming their object, key, and value
 - [15.1 Reference dereference](index.md#151-reference-dereference) — DEREF
 - [16. Argument production](index.md#16-argument-production) — BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, etc.
 - [17. Calls](index.md#17-calls) — CALL, CALL_NAMES, CALL_STAR, CALL_ATTR*, TAIL_*
@@ -102,31 +102,98 @@
 | YIELD_FAST | FASTVAR | Yield the slot's value; lowering of YIELD_VAR | [§13](opcodes/kos-op-yield-fast.md) |
 | ATTR | CONST | Get attribute | [§14](opcodes/kos-op-attr.md) |
 | ATTR_STORE | CONST | Set attribute | [§14](opcodes/kos-op-attr-store.md) |
-| ITEM | NOARG | Get item (key on stack) | [§15](opcodes/kos-op-item.md) |
-| ITEM_STORE | NOARG | Set item | [§15](opcodes/kos-op-item-store.md) |
-| CONST_ITEM | CONST | Get item (constant key) | [§15](opcodes/kos-op-const-item.md) |
-| VAR_ITEM | EXTRA | Get item; object and key by name | [§12](opcodes/kos-op-var-item.md) |
-| VAR_CONST_ITEM | EXTRA | Get item; object by name, constant key | [§12](opcodes/kos-op-var-const-item.md) |
-| VAR_ITEM_STORE | EXTRA | Set item; object and key by name | [§12](opcodes/kos-op-var-item-store.md) |
-| VAR_CONST_ITEM_STORE | EXTRA | Set item; object by name, constant key | [§12](opcodes/kos-op-var-const-item-store.md) |
-| FAST_ITEM | EXTRA | Get item; object and key from fast slots | [§13](opcodes/kos-op-fast-item.md) |
-| FAST_CONST_ITEM | EXTRA | Get item; object from fast slot, constant key | [§13](opcodes/kos-op-fast-const-item.md) |
-| FAST_ITEM_STORE | EXTRA | Set item; object and key from fast slots | [§13](opcodes/kos-op-fast-item-store.md) |
-| FAST_CONST_ITEM_STORE | EXTRA | Set item; object from fast slot, constant key | [§13](opcodes/kos-op-fast-const-item-store.md) |
-| VAR_ITEM_STORE_CONST | EXTRA | Set item to a constant; object and key by name | [§12](opcodes/kos-op-var-item-store-const.md) |
-| VAR_CONST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object by name, constant key | [§12](opcodes/kos-op-var-const-item-store-const.md) |
-| FAST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object and key from fast slots | [§13](opcodes/kos-op-fast-item-store-const.md) |
-| FAST_CONST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object from fast slot, constant key | [§13](opcodes/kos-op-fast-const-item-store-const.md) |
-| ITEM_INPLACE | OPCOUNT | Reduce item in place; object and key on stack | [§15](opcodes/kos-op-item-inplace.md) |
-| CONST_ITEM_INPLACE | EXTRA | Reduce item in place; object on stack, constant key | [§15](opcodes/kos-op-const-item-inplace.md) |
-| VAR_ITEM_INPLACE | EXTRA | Reduce item in place; object and key by name | [§12](opcodes/kos-op-var-item-inplace.md) |
-| VAR_CONST_ITEM_INPLACE | EXTRA | Reduce item in place; object by name, constant key | [§12](opcodes/kos-op-var-const-item-inplace.md) |
-| VAR_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object and key by name | [§12](opcodes/kos-op-var-item-inplace-const.md) |
-| VAR_CONST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object by name, constant key | [§12](opcodes/kos-op-var-const-item-inplace-const.md) |
-| FAST_ITEM_INPLACE | EXTRA | Reduce item in place; object and key from fast slots | [§13](opcodes/kos-op-fast-item-inplace.md) |
-| FAST_CONST_ITEM_INPLACE | EXTRA | Reduce item in place; object from fast slot, constant key | [§13](opcodes/kos-op-fast-const-item-inplace.md) |
-| FAST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object and key from fast slots | [§13](opcodes/kos-op-fast-item-inplace-const.md) |
-| FAST_CONST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object from fast slot, constant key | [§13](opcodes/kos-op-fast-const-item-inplace-const.md) |
+| ITEM | NOARG | Get item; object on the stack, key on the stack | [§15](opcodes/kos-op-item.md) |
+| ITEM_CLEAR | NOARG | Delete item; object on the stack, key on the stack | [§15](opcodes/kos-op-item-clear.md) |
+| ITEM_TAKE | NOARG | Take item; object on the stack, key on the stack | [§15](opcodes/kos-op-item-take.md) |
+| ITEM_REF | NOARG | Item reference; object on the stack, key on the stack | [§15](opcodes/kos-op-item-ref.md) |
+| ITEM_STORE | NOARG | Set item; object on the stack, key on the stack | [§15](opcodes/kos-op-item-store.md) |
+| ITEM_STORE_CONST | CONST | Set item to a constant; object on the stack, key on the stack | [§15](opcodes/kos-op-item-store-const.md) |
+| ITEM_STORE_VAR | VAR | Set item; object on the stack, key on the stack, value by name | [§12](opcodes/kos-op-item-store-var.md) |
+| ITEM_STORE_FAST | FASTVAR | Set item; object on the stack, key on the stack, value from a fast slot | [§13](opcodes/kos-op-item-store-fast.md) |
+| ITEM_INPLACE | OPCOUNT | Reduce item in place; object on the stack, key on the stack | [§15](opcodes/kos-op-item-inplace.md) |
+| ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key on the stack | [§15](opcodes/kos-op-item-inplace-const.md) |
+| ITEM_CONST | CONST | Get item; object on the stack, constant key | [§15](opcodes/kos-op-item-const.md) |
+| ITEM_CONST_CLEAR | CONST | Delete item; object on the stack, constant key | [§15](opcodes/kos-op-item-const-clear.md) |
+| ITEM_CONST_TAKE | CONST | Take item; object on the stack, constant key | [§15](opcodes/kos-op-item-const-take.md) |
+| ITEM_CONST_REF | CONST | Item reference; object on the stack, constant key | [§15](opcodes/kos-op-item-const-ref.md) |
+| ITEM_CONST_STORE | CONST | Set item; object on the stack, constant key | [§15](opcodes/kos-op-item-const-store.md) |
+| ITEM_CONST_STORE_CONST | EXTRA | Set item to a constant; object on the stack, constant key | [§15](opcodes/kos-op-item-const-store-const.md) |
+| ITEM_CONST_STORE_VAR | EXTRA | Set item; object on the stack, constant key, value by name | [§12](opcodes/kos-op-item-const-store-var.md) |
+| ITEM_CONST_STORE_FAST | EXTRA | Set item; object on the stack, constant key, value from a fast slot | [§13](opcodes/kos-op-item-const-store-fast.md) |
+| ITEM_CONST_INPLACE | EXTRA | Reduce item in place; object on the stack, constant key | [§15](opcodes/kos-op-item-const-inplace.md) |
+| ITEM_CONST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, constant key | [§15](opcodes/kos-op-item-const-inplace-const.md) |
+| ITEM_VAR | VAR | Get item; object on the stack, key by name | [§12](opcodes/kos-op-item-var.md) |
+| ITEM_VAR_CLEAR | VAR | Delete item; object on the stack, key by name | [§12](opcodes/kos-op-item-var-clear.md) |
+| ITEM_VAR_TAKE | VAR | Take item; object on the stack, key by name | [§12](opcodes/kos-op-item-var-take.md) |
+| ITEM_VAR_REF | VAR | Item reference; object on the stack, key by name | [§12](opcodes/kos-op-item-var-ref.md) |
+| ITEM_VAR_STORE | VAR | Set item; object on the stack, key by name | [§12](opcodes/kos-op-item-var-store.md) |
+| ITEM_VAR_STORE_CONST | EXTRA | Set item to a constant; object on the stack, key by name | [§12](opcodes/kos-op-item-var-store-const.md) |
+| ITEM_VAR_STORE_VAR | EXTRA | Set item; object on the stack, key by name, value by name | [§12](opcodes/kos-op-item-var-store-var.md) |
+| ITEM_VAR_INPLACE | EXTRA | Reduce item in place; object on the stack, key by name | [§12](opcodes/kos-op-item-var-inplace.md) |
+| ITEM_VAR_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key by name | [§12](opcodes/kos-op-item-var-inplace-const.md) |
+| ITEM_FAST | FASTVAR | Get item; object on the stack, key from a fast slot | [§13](opcodes/kos-op-item-fast.md) |
+| ITEM_FAST_CLEAR | FASTVAR | Delete item; object on the stack, key from a fast slot | [§13](opcodes/kos-op-item-fast-clear.md) |
+| ITEM_FAST_TAKE | FASTVAR | Take item; object on the stack, key from a fast slot | [§13](opcodes/kos-op-item-fast-take.md) |
+| ITEM_FAST_REF | FASTVAR | Item reference; object on the stack, key from a fast slot | [§13](opcodes/kos-op-item-fast-ref.md) |
+| ITEM_FAST_STORE | FASTVAR | Set item; object on the stack, key from a fast slot | [§13](opcodes/kos-op-item-fast-store.md) |
+| ITEM_FAST_STORE_CONST | EXTRA | Set item to a constant; object on the stack, key from a fast slot | [§13](opcodes/kos-op-item-fast-store-const.md) |
+| ITEM_FAST_STORE_FAST | EXTRA | Set item; object on the stack, key from a fast slot, value from a fast slot | [§13](opcodes/kos-op-item-fast-store-fast.md) |
+| ITEM_FAST_INPLACE | EXTRA | Reduce item in place; object on the stack, key from a fast slot | [§13](opcodes/kos-op-item-fast-inplace.md) |
+| ITEM_FAST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key from a fast slot | [§13](opcodes/kos-op-item-fast-inplace-const.md) |
+| VAR_ITEM | VAR | Get item; object by name, key on the stack | [§12](opcodes/kos-op-var-item.md) |
+| VAR_ITEM_CLEAR | VAR | Delete item; object by name, key on the stack | [§12](opcodes/kos-op-var-item-clear.md) |
+| VAR_ITEM_TAKE | VAR | Take item; object by name, key on the stack | [§12](opcodes/kos-op-var-item-take.md) |
+| VAR_ITEM_REF | VAR | Item reference; object by name, key on the stack | [§12](opcodes/kos-op-var-item-ref.md) |
+| VAR_ITEM_STORE | VAR | Set item; object by name, key on the stack | [§12](opcodes/kos-op-var-item-store.md) |
+| VAR_ITEM_STORE_CONST | EXTRA | Set item to a constant; object by name, key on the stack | [§12](opcodes/kos-op-var-item-store-const.md) |
+| VAR_ITEM_STORE_VAR | EXTRA | Set item; object by name, key on the stack, value by name | [§12](opcodes/kos-op-var-item-store-var.md) |
+| VAR_ITEM_INPLACE | EXTRA | Reduce item in place; object by name, key on the stack | [§12](opcodes/kos-op-var-item-inplace.md) |
+| VAR_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object by name, key on the stack | [§12](opcodes/kos-op-var-item-inplace-const.md) |
+| VAR_ITEM_CONST | EXTRA | Get item; object by name, constant key | [§12](opcodes/kos-op-var-item-const.md) |
+| VAR_ITEM_CONST_CLEAR | EXTRA | Delete item; object by name, constant key | [§12](opcodes/kos-op-var-item-const-clear.md) |
+| VAR_ITEM_CONST_TAKE | EXTRA | Take item; object by name, constant key | [§12](opcodes/kos-op-var-item-const-take.md) |
+| VAR_ITEM_CONST_REF | EXTRA | Item reference; object by name, constant key | [§12](opcodes/kos-op-var-item-const-ref.md) |
+| VAR_ITEM_CONST_STORE | EXTRA | Set item; object by name, constant key | [§12](opcodes/kos-op-var-item-const-store.md) |
+| VAR_ITEM_CONST_STORE_CONST | EXTRA | Set item to a constant; object by name, constant key | [§12](opcodes/kos-op-var-item-const-store-const.md) |
+| VAR_ITEM_CONST_STORE_VAR | EXTRA | Set item; object by name, constant key, value by name | [§12](opcodes/kos-op-var-item-const-store-var.md) |
+| VAR_ITEM_CONST_INPLACE | EXTRA | Reduce item in place; object by name, constant key | [§12](opcodes/kos-op-var-item-const-inplace.md) |
+| VAR_ITEM_CONST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object by name, constant key | [§12](opcodes/kos-op-var-item-const-inplace-const.md) |
+| VAR_ITEM_VAR | EXTRA | Get item; object by name, key by name | [§12](opcodes/kos-op-var-item-var.md) |
+| VAR_ITEM_VAR_CLEAR | EXTRA | Delete item; object by name, key by name | [§12](opcodes/kos-op-var-item-var-clear.md) |
+| VAR_ITEM_VAR_TAKE | EXTRA | Take item; object by name, key by name | [§12](opcodes/kos-op-var-item-var-take.md) |
+| VAR_ITEM_VAR_REF | EXTRA | Item reference; object by name, key by name | [§12](opcodes/kos-op-var-item-var-ref.md) |
+| VAR_ITEM_VAR_STORE | EXTRA | Set item; object by name, key by name | [§12](opcodes/kos-op-var-item-var-store.md) |
+| VAR_ITEM_VAR_STORE_CONST | EXTRA | Set item to a constant; object by name, key by name | [§12](opcodes/kos-op-var-item-var-store-const.md) |
+| VAR_ITEM_VAR_STORE_VAR | EXTRA | Set item; object by name, key by name, value by name | [§12](opcodes/kos-op-var-item-var-store-var.md) |
+| VAR_ITEM_VAR_INPLACE | EXTRA | Reduce item in place; object by name, key by name | [§12](opcodes/kos-op-var-item-var-inplace.md) |
+| VAR_ITEM_VAR_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object by name, key by name | [§12](opcodes/kos-op-var-item-var-inplace-const.md) |
+| FAST_ITEM | FASTVAR | Get item; object from a fast slot, key on the stack | [§13](opcodes/kos-op-fast-item.md) |
+| FAST_ITEM_CLEAR | FASTVAR | Delete item; object from a fast slot, key on the stack | [§13](opcodes/kos-op-fast-item-clear.md) |
+| FAST_ITEM_TAKE | FASTVAR | Take item; object from a fast slot, key on the stack | [§13](opcodes/kos-op-fast-item-take.md) |
+| FAST_ITEM_REF | FASTVAR | Item reference; object from a fast slot, key on the stack | [§13](opcodes/kos-op-fast-item-ref.md) |
+| FAST_ITEM_STORE | FASTVAR | Set item; object from a fast slot, key on the stack | [§13](opcodes/kos-op-fast-item-store.md) |
+| FAST_ITEM_STORE_CONST | EXTRA | Set item to a constant; object from a fast slot, key on the stack | [§13](opcodes/kos-op-fast-item-store-const.md) |
+| FAST_ITEM_STORE_FAST | EXTRA | Set item; object from a fast slot, key on the stack, value from a fast slot | [§13](opcodes/kos-op-fast-item-store-fast.md) |
+| FAST_ITEM_INPLACE | EXTRA | Reduce item in place; object from a fast slot, key on the stack | [§13](opcodes/kos-op-fast-item-inplace.md) |
+| FAST_ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object from a fast slot, key on the stack | [§13](opcodes/kos-op-fast-item-inplace-const.md) |
+| FAST_ITEM_CONST | EXTRA | Get item; object from a fast slot, constant key | [§13](opcodes/kos-op-fast-item-const.md) |
+| FAST_ITEM_CONST_CLEAR | EXTRA | Delete item; object from a fast slot, constant key | [§13](opcodes/kos-op-fast-item-const-clear.md) |
+| FAST_ITEM_CONST_TAKE | EXTRA | Take item; object from a fast slot, constant key | [§13](opcodes/kos-op-fast-item-const-take.md) |
+| FAST_ITEM_CONST_REF | EXTRA | Item reference; object from a fast slot, constant key | [§13](opcodes/kos-op-fast-item-const-ref.md) |
+| FAST_ITEM_CONST_STORE | EXTRA | Set item; object from a fast slot, constant key | [§13](opcodes/kos-op-fast-item-const-store.md) |
+| FAST_ITEM_CONST_STORE_CONST | EXTRA | Set item to a constant; object from a fast slot, constant key | [§13](opcodes/kos-op-fast-item-const-store-const.md) |
+| FAST_ITEM_CONST_STORE_FAST | EXTRA | Set item; object from a fast slot, constant key, value from a fast slot | [§13](opcodes/kos-op-fast-item-const-store-fast.md) |
+| FAST_ITEM_CONST_INPLACE | EXTRA | Reduce item in place; object from a fast slot, constant key | [§13](opcodes/kos-op-fast-item-const-inplace.md) |
+| FAST_ITEM_CONST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object from a fast slot, constant key | [§13](opcodes/kos-op-fast-item-const-inplace-const.md) |
+| FAST_ITEM_FAST | EXTRA | Get item; object from a fast slot, key from a fast slot | [§13](opcodes/kos-op-fast-item-fast.md) |
+| FAST_ITEM_FAST_CLEAR | EXTRA | Delete item; object from a fast slot, key from a fast slot | [§13](opcodes/kos-op-fast-item-fast-clear.md) |
+| FAST_ITEM_FAST_TAKE | EXTRA | Take item; object from a fast slot, key from a fast slot | [§13](opcodes/kos-op-fast-item-fast-take.md) |
+| FAST_ITEM_FAST_REF | EXTRA | Item reference; object from a fast slot, key from a fast slot | [§13](opcodes/kos-op-fast-item-fast-ref.md) |
+| FAST_ITEM_FAST_STORE | EXTRA | Set item; object from a fast slot, key from a fast slot | [§13](opcodes/kos-op-fast-item-fast-store.md) |
+| FAST_ITEM_FAST_STORE_CONST | EXTRA | Set item to a constant; object from a fast slot, key from a fast slot | [§13](opcodes/kos-op-fast-item-fast-store-const.md) |
+| FAST_ITEM_FAST_STORE_FAST | EXTRA | Set item; object from a fast slot, key from a fast slot, value from a fast slot | [§13](opcodes/kos-op-fast-item-fast-store-fast.md) |
+| FAST_ITEM_FAST_INPLACE | EXTRA | Reduce item in place; object from a fast slot, key from a fast slot | [§13](opcodes/kos-op-fast-item-fast-inplace.md) |
+| FAST_ITEM_FAST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object from a fast slot, key from a fast slot | [§13](opcodes/kos-op-fast-item-fast-inplace-const.md) |
 | DEREF | NOARG | Pop Ref, call ref.deref(), push result | [§15.1](opcodes/kos-op-deref.md) |
 | BUILD_FUNCTION | EXTRA | Build function from spec, with keyword defaults and annotations from names tuples | [§16](opcodes/kos-op-build-function.md) |
 | CALL | COUNT | Call with N positional args | [§17](opcodes/kos-op-call.md) |

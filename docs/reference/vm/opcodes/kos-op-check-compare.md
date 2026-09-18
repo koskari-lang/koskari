@@ -1,7 +1,6 @@
 # KOS_OP_CHECK_COMPARE
 - **Style**: EXTRA (CMP, COUNT, LABEL, NOARG). Row = KosCompare selector,
   operand count, target pc.
-- **Status**: Implemented.
 - **Stack**: `[..., a1, ..., aN] → [...]`. Chain-compare the top COUNT
   operands under the selector; jump to LABEL when the chain fails. The
   operands are dropped either way. Raises `TypeError` when `COUNT < 2`.

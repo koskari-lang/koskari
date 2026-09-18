@@ -13,31 +13,44 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-/**
-   VAR_ITEM_STORE_CONST: arg = extra index. Schema VAR (obj name), VAR
-   (key name), CONST (val). obj[key] = val with both operands resolved
-   by name in the frame namespace and the value from the pool; no stack
-   effect. The cold twin of FAST_ITEM_STORE_CONST.
-*/
 
+/**
+  VAR_ITEM_STORE_CONST: arg = extra index. Schema VAR, CONST, NOARG,
+  NOARG. Stack [key]. Object from the frame namespace by name, key
+  from the stack, value from the pool. obj[key] = val; push nothing.
+  The access runs through kos_item_store (eval/eval_item.c) with no
+  slot; the cold twin of the FAST row.
+*/
 KOS_OP_HANDLER(VAR_ITEM_STORE_CONST) {
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *val = KosExtra_OBJ(row, 2);
-  PyObject *obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));
-  if (! obj)
-    RESULT_RAISE();
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail;
+  PyObject *obj;
+  PyObject *key;
+  PyObject *val;
+  int rc;
 
-  PyObject *key = frame_ns_deref(es, KosExtra_OBJ(row, 1));
-  if (! key) {
+  obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));
+  if (unlikely(! obj))
+    RESULT_RAISE();
+  val = KosExtra_OBJ(row, 1);
+  Py_INCREF(val);
+
+  tail = kos_stack_tail_ptr_fast(*bl, 1);
+  if (unlikely(! tail)) {
     Py_DECREF(obj);
+    Py_DECREF(val);
     RESULT_RAISE();
   }
 
-  int res = PyObject_SetItem(obj, key, val);
+  key = tail[0];
+  rc = kos_item_store(KosOp_SLOT(insn), obj, key, val);
   Py_DECREF(obj);
-  Py_DECREF(key);
-  if (res < 0)
+
+  if (unlikely(rc < 0))
     RESULT_RAISE();
+
+  kos_stack_drop_noerr_fast(bl, 1);
   RESULT_NEXT(es);
 }
 

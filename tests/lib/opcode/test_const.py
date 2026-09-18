@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for CONST, CONST_ITEM opcodes.
+Tests for CONST, ITEM_CONST opcodes.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -29,7 +29,7 @@ pytestmark = pytest.mark.phase_lib
 
 class TestConstOpcodes(CevalTest):
     """
-    Tests for CONST, CONST_ITEM, CONST_ITEM_CLEAR, CONST_ITEM_REF, CONST_ITEM_STORE
+    Tests for CONST, ITEM_CONST, ITEM_CONST_CLEAR, ITEM_CONST_REF, ITEM_CONST_STORE
     """
 
     async def test_const_return_single_value(self):
@@ -47,12 +47,12 @@ class TestConstOpcodes(CevalTest):
 
     async def test_const_item_getitem(self):
         """
-        CONST_ITEM pushes TOS[key] with key from constant pool
+        ITEM_CONST pushes TOS[key] with key from constant pool
         """
 
         code, ns = build_expr([
             ["CONST", {"a": 10, "b": 20}],
-            ["CONST_ITEM", "b"],
+            ["ITEM_CONST", "b"],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -61,15 +61,15 @@ class TestConstOpcodes(CevalTest):
 
     async def test_const_item_store_setitem(self):
         """
-        CONST_ITEM_STORE does TOS1[key] = TOS; key from constant pool
+        ITEM_CONST_STORE does TOS1[key] = TOS; key from constant pool
         """
 
         code, ns = build_expr([
             ["CONST", {}],
             ["DUP", 1],
             ["CONST", "x"],
-            ["CONST_ITEM_STORE", "key"],
-            ["CONST_ITEM", "key"],
+            ["ITEM_CONST_STORE", "key"],
+            ["ITEM_CONST", "key"],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -78,13 +78,13 @@ class TestConstOpcodes(CevalTest):
 
     async def test_const_item_clear_delitem(self):
         """
-        CONST_ITEM_CLEAR deletes TOS[key]
+        ITEM_CONST_CLEAR deletes TOS[key]
         """
 
         d = {"z": 1}
         code, ns = build_expr([
             ["CONST", d],
-            ["CONST_ITEM_CLEAR", "z"],
+            ["ITEM_CONST_CLEAR", "z"],
             ["CONST", 42],
             ["RETURN", 1],
         ])
@@ -95,14 +95,14 @@ class TestConstOpcodes(CevalTest):
 
     async def test_const_item_ref_pushes_item_ref(self):
         """
-        CONST_ITEM_REF pushes ItemRef for TOS[key]
+        ITEM_CONST_REF pushes ItemRef for TOS[key]
         """
 
         from koskari.lib import ItemRef
         d = {"k": "v"}
         code, ns = build_expr([
             ["CONST", d],
-            ["CONST_ITEM_REF", "k"],
+            ["ITEM_CONST_REF", "k"],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()

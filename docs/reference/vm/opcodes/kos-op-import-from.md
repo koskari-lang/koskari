@@ -1,6 +1,5 @@
 # KOS_OP_IMPORT_FROM
 - **Style**: EXTRA (`CONST`, `COUNT`, `CONST`, `CONST`). Row: `a0` = cpool module name str (or None), `a1` = level, `a2` = cpool tuple of attribute names, `a3` = cpool tuple of binding names (parallel to the attribute names; the same tuple object when there are no renames).
-- **Status**: Implemented.
 - **Stack**: no effect.
 - **Semantics**: Import the leaf module, then for each attribute name `getattr` it and store the value into the current frame namespace under the corresponding binding name. Self-contained: no module on the stack, no compensating POP.
 - **Submodule fallback**: when the `getattr` raises `AttributeError`, import `"{module.__name__}.{attr}"` and retry — matching CPython's `from pkg import sub` behavior for submodules the package `__init__` does not import. Other exceptions propagate.

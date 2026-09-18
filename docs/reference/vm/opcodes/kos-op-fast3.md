@@ -1,6 +1,5 @@
 # KOS_OP_FAST3
 - **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, NOARG). Row = three fast local slot indices.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., a, b, c]`. Load the three slots and push in row order. Every
   slot resolves before any push, so an unbound slot errors with nothing
   pushed.

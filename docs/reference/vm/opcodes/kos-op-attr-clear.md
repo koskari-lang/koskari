@@ -1,6 +1,5 @@
 # KOS_OP_ATTR_CLEAR
 - **Style**: CONST. Arg = constant pool index of attribute name.
-- **Status**: Implemented.
 - **Stack**: `[..., obj] → [...]`. Delete attribute.
 - **Invariants**: TOS is the object.
 

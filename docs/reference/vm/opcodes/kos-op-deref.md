@@ -1,6 +1,5 @@
 # KOS_OP_DEREF
 - **Style**: NOARG.
-- **Status**: Implemented.
 - **Stack**: `[..., ref] → [..., value]`. Pop one value (a Ref with a deref method). Call `ref.deref()`, push result. Raises TypeError if TOS has no deref method.
 - **Use-case**: Fast path for dereferencing a mutable reference. Used by the `(deref EXPR)` special form.
 

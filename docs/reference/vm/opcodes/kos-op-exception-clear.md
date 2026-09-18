@@ -1,6 +1,5 @@
 # KOS_OP_EXCEPTION_CLEAR
 - **Style**: NOARG.
-- **Status**: Implemented.
 - **Stack**: No change. Clear current exception state.
 - **Invariants**: —
 

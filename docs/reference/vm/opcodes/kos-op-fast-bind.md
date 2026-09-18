@@ -1,6 +1,5 @@
 # KOS_OP_FAST_BIND
 - **Style**: FASTVAR. Arg = fast local slot index.
-- **Status**: Implemented.
 - **Stack**: `[..., ref] → [...]`. **BIND**: use this reference to resolve the
   given slot (name). See §1.9. Not interchangeable with FAST_STORE.
 - **Invariants**: Slot index in range.

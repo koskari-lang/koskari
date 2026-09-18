@@ -15,35 +15,30 @@
 
 
 /**
-  ITEM_TAKE: arg unused. getitem then delitem TOS1[TOS]. Stack: obj, key.
+  ITEM_TAKE: no arg. Stack [obj, key]. Object from the stack, key
+  from the stack. Push obj[key], then del obj[key]. The access runs
+  through kos_item_take (eval/eval_item.c).
 */
 KOS_OP_HANDLER(ITEM_TAKE) {
-  PyObject *key = KosEvalState_StackPopRef(es);
-  if (unlikely(! key))
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail;
+  PyObject *obj;
+  PyObject *key;
+  PyObject *out;
+
+  tail = kos_stack_tail_ptr_fast(*bl, 2);
+  if (unlikely(! tail))
     RESULT_RAISE();
 
-  PyObject *obj = KosEvalState_StackPopRef(es);
-  if (unlikely(! obj)) {
-    Py_DECREF(key);
-    RESULT_RAISE();
-  }
+  obj = tail[0];
+  key = tail[1];
+  out = kos_item_take(obj, key);
 
-  PyObject *item = PyObject_GetItem(obj, key);
-  if (unlikely(! item)) {
-    Py_DECREF(obj);
-    Py_DECREF(key);
+  if (unlikely(! out))
     RESULT_RAISE();
-  }
 
-  int res = PyObject_DelItem(obj, key);
-  Py_DECREF(obj);
-  Py_DECREF(key);
-  if (unlikely(res < 0)) {
-    Py_DECREF(item);
-    RESULT_RAISE();
-  }
-
-  RESULT_STEAL(es, item);
+  kos_stack_replace2_fast(bl, out);
+  RESULT_NEXT(es);
 }
 
 

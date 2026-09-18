@@ -1,7 +1,6 @@
 # KOS_OP_CHECK_NIL
 
 - **Style**: LABEL. Arg = target pc (post-compile).
-- **Status**: Implemented.
 - **Stack**: `[..., x] → [...]`. Pop TOS; branch to arg when it is not an
   empty-list singleton; fall through when it is.
 - **Invariants**: Jump locality for target. The squashed form of

@@ -1,6 +1,5 @@
 # KOS_OP_DUP
 - **Style**: COUNT. Arg = number of elements to duplicate.
-- **Status**: Implemented.
 - **Stack**: `[..., a_1, ..., a_n] → [..., a_1, ..., a_n, a_1, ..., a_n]` (top `arg` elements duplicated).
 - **Invariants**: Stack must have at least `arg` elements.
 

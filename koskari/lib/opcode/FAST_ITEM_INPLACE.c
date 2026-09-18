@@ -13,25 +13,46 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
+
 /**
-   FAST_ITEM_INPLACE: arg = extra index. Schema OPCOUNT (operator selector
-   and count), FASTVAR (obj slot), FASTVAR (key slot). Stack [v0 ..
-   v_{count-1}]; obj[key] OP= each value left to right, with both
-   operands read from fast slots; the values are dropped, nothing is
-   pushed (the special appends CONST None).
-   Prologue only: tail-call the body the site's slot elected
-   (eval/eval_electors.c), which carries its own guard; an empty slot
-   or an ungated site takes the electing function, which classifies
-   the item and operand once and settles the slot. One cache slot:
-   KOS_CACHE_ELECTOR.
+  FAST_ITEM_INPLACE: arg = extra index. Schema OPCOUNT, FASTVAR,
+  NOARG, NOARG. Stack [key, v0 .. v(count-1)]. Object from a fast
+  slot, key from the stack, operand from the stack. obj[key] =
+  obj[key] OP operands, reduced left to right; push nothing. The
+  access runs through kos_item_inplace (eval/eval_item.c) on the
+  site's one KOS_CACHE_ITEM slot.
 */
-
 KOS_OP_HANDLER(FAST_ITEM_INPLACE) {
-  KosCacheSlot *slot = KosOp_SLOT(insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *ns = KosEvalState_NAMESPACE(es);
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail;
+  uint32_t opc = KosExtra_IMM(row, 0);
+  KosOperand op = (KosOperand) KosOpCount_TYPE(opc);
+  int count = (int) KosOpCount_COUNT(opc);
+  PyObject *obj, *obj_ref;
+  PyObject *key;
+  int rc;
 
-  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
-    TAILCALL(slot->u.elector.fn, es, insn, NULL);
-  TAILCALL(el_fast_item_inplace_elect, es, insn, NULL);
+  KOS_OP_REQUIRE_NS(ns);
+  KOS_NS_FAST_BORROW(obj, obj_ref, ns, KosExtra_IMM(row, 1),
+                     { RESULT_RAISE(); });
+
+  tail = kos_stack_tail_ptr_fast(*bl, (size_t) count + 1);
+  if (unlikely(! tail)) {
+    Py_XDECREF(obj_ref);
+    RESULT_RAISE();
+  }
+
+  key = tail[0];
+  rc = kos_item_inplace(KosOp_SLOT(insn), obj, key, op, tail + 1, count);
+  Py_XDECREF(obj_ref);
+
+  if (unlikely(rc < 0))
+    RESULT_RAISE();
+
+  kos_stack_drop_noerr_fast(bl, (size_t) count + 1);
+  RESULT_NEXT(es);
 }
 
 

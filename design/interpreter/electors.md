@@ -343,11 +343,13 @@ identity selectors.
 fused format opcodes test `PyUnicode_CheckExact` and the spec shape per
 call. Electors: exact str with empty spec, exact int, generic `__format__`.
 
-**ITEM, ITEM_STORE, CONST_ITEM(_STORE)**. Subscript through
-`PyObject_GetItem`. Electors: exact `PyDict` with hashable const key, exact
-`PyList` with `PyLong` index, exact `PyTuple`, generic mapping. The
-`CONST_ITEM` forms have the key as a site constant, so the dict elector can
-pre-hash it into the slot.
+**ITEM, ITEM_STORE, ITEM_INPLACE and every row of the item grid**.
+Subscript through `PyObject_GetItem`. Electors: exact `PyDict` under any
+key, exact `PyList` with `PyLong` index, exact `PyTuple`, generic
+mapping. Built: the election lives in the shared helpers of
+`eval/eval_item.c` on a KOS_CACHE_ITEM slot, and every row of the
+family is a fetch, a call, and a settle; see
+[../archive/item-opcode-matrix.md](../archive/item-opcode-matrix.md).
 
 **OBJECT_ITER, VAR_ITER, FAST_ITER, PUSH_FOREACH's acquisition**.
 `kos_iter_acquire` chooses sync versus async acquisition. An elector here

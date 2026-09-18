@@ -1,6 +1,5 @@
 # KOS_OP_BUILD_CLASS
 - **Style**: NOARG. Argument unused.
-- **Status**: Implemented.
 - **Stack**: Expects `[..., pos, ns]` with TOS = ns, TOS-1 = pos. Pops ns, pos.
   pos = (name, bases) or (name, bases, metaclass). Builds the class via
   `kos_build_class` (namespace materialization, demand-wrap of slot-backed

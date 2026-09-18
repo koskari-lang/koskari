@@ -1,6 +1,5 @@
 # KOS_OP_CHECK_EXCEPTION
 - **Style**: LABEL. Arg = target pc (post-compile).
-- **Status**: Implemented.
 - **Stack**: Pop TOS (exception type or tuple of types). If current exception matches that value, leave PC unchanged; else set PC to arg (branch to next handler).
 - **Invariants**: Jump locality for target. Used inside exception handling path.
 - **Compiler form:** Pre-compile arg = string label (next handler or re-raise); post-compile arg = pc.

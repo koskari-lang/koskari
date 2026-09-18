@@ -1,0 +1,46 @@
+;; Item sites whose container sits in a captured slot, under a key whose
+;; hash rebinds that slot: the row peeks the container borrowed, the
+;; dict body's hash runs the rebinding, and the site must finish the
+;; access on the container it fetched. The load and in-place
+;; containers have no other owner, so the rebinding drops their last
+;; reference outside the site.
+
+(define dl (dict))
+(define di (dict))
+(define ds (dict))
+(define first ds)
+
+(define-class LoadKey []
+  (define __hash__ [self] (define-global dl (dict)) 1)
+  (define __eq__ [self other] False))
+
+(define-class IncrKey []
+  (define __hash__ [self] (define-global di (dict)) 1)
+  (define __eq__ [self other] False))
+
+(define-class StoreKey []
+  (define __hash__ [self] (define-global ds (dict)) 1)
+  (define __eq__ [self other] False))
+
+(define dm (dict))
+(define armed False)
+
+;; rebinds only once armed, so the cell can be primed first
+(define-class MissKey []
+  (define __hash__ [self] (if armed (define-global dm (dict)) None) 1)
+  (define __eq__ [self other] False))
+
+(define kl (LoadKey))
+(define ki (IncrKey))
+(define ks (StoreKey))
+(define km (MissKey))
+
+(define load (lambda () dl[kl]))
+(define incr (lambda () (incr! di[ki]) di))
+(define store (lambda (v) (set! ds[ks] v) ds))
+(define prime (lambda (v)
+  (define-global armed False)
+  (set! dm[km] v)
+  (define-global armed True)))
+(define miss (lambda () (incr! dm[km]) dm))
+(define current (lambda () #(dl di ds dm)))

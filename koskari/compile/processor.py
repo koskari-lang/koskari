@@ -137,6 +137,7 @@ SWITCH_SQUASHES = {
 JUMP_PRIORS = frozenset((OpCode.JUMP_TRUE, OpCode.JUMP_FALSE))
 POP_PRIORS = frozenset((OpCode.CONST, OpCode.DUP))
 FEEDER = frozenset((OpCode.VAR, OpCode.CONST))
+VAR_FEEDER = frozenset((OpCode.VAR,))
 
 # the rows that make a code object a generator
 YIELD_OPS = frozenset((
@@ -192,6 +193,116 @@ COMPARE_FOLDS = {
 }
 
 
+# The item family's VAR rows and their FAST twins, written out: the
+# object, key, and value markers each lower, in any position of the
+# name (see design/archive/item-opcode-matrix.md).
+ITEM_VAR_TO_FAST = {
+    OpCode.ITEM_VAR: OpCode.ITEM_FAST,
+    OpCode.ITEM_VAR_CLEAR: OpCode.ITEM_FAST_CLEAR,
+    OpCode.ITEM_VAR_TAKE: OpCode.ITEM_FAST_TAKE,
+    OpCode.ITEM_VAR_REF: OpCode.ITEM_FAST_REF,
+    OpCode.ITEM_STORE_VAR: OpCode.ITEM_STORE_FAST,
+    OpCode.ITEM_CONST_STORE_VAR: OpCode.ITEM_CONST_STORE_FAST,
+    OpCode.ITEM_VAR_STORE: OpCode.ITEM_FAST_STORE,
+    OpCode.ITEM_VAR_STORE_CONST: OpCode.ITEM_FAST_STORE_CONST,
+    OpCode.ITEM_VAR_STORE_VAR: OpCode.ITEM_FAST_STORE_FAST,
+    OpCode.ITEM_VAR_INPLACE: OpCode.ITEM_FAST_INPLACE,
+    OpCode.ITEM_VAR_INPLACE_CONST: OpCode.ITEM_FAST_INPLACE_CONST,
+    OpCode.VAR_ITEM: OpCode.FAST_ITEM,
+    OpCode.VAR_ITEM_CLEAR: OpCode.FAST_ITEM_CLEAR,
+    OpCode.VAR_ITEM_TAKE: OpCode.FAST_ITEM_TAKE,
+    OpCode.VAR_ITEM_REF: OpCode.FAST_ITEM_REF,
+    OpCode.VAR_ITEM_STORE: OpCode.FAST_ITEM_STORE,
+    OpCode.VAR_ITEM_STORE_CONST: OpCode.FAST_ITEM_STORE_CONST,
+    OpCode.VAR_ITEM_STORE_VAR: OpCode.FAST_ITEM_STORE_FAST,
+    OpCode.VAR_ITEM_INPLACE: OpCode.FAST_ITEM_INPLACE,
+    OpCode.VAR_ITEM_INPLACE_CONST: OpCode.FAST_ITEM_INPLACE_CONST,
+    OpCode.VAR_ITEM_CONST: OpCode.FAST_ITEM_CONST,
+    OpCode.VAR_ITEM_CONST_CLEAR: OpCode.FAST_ITEM_CONST_CLEAR,
+    OpCode.VAR_ITEM_CONST_TAKE: OpCode.FAST_ITEM_CONST_TAKE,
+    OpCode.VAR_ITEM_CONST_REF: OpCode.FAST_ITEM_CONST_REF,
+    OpCode.VAR_ITEM_CONST_STORE: OpCode.FAST_ITEM_CONST_STORE,
+    OpCode.VAR_ITEM_CONST_STORE_CONST: OpCode.FAST_ITEM_CONST_STORE_CONST,
+    OpCode.VAR_ITEM_CONST_STORE_VAR: OpCode.FAST_ITEM_CONST_STORE_FAST,
+    OpCode.VAR_ITEM_CONST_INPLACE: OpCode.FAST_ITEM_CONST_INPLACE,
+    OpCode.VAR_ITEM_CONST_INPLACE_CONST: OpCode.FAST_ITEM_CONST_INPLACE_CONST,
+    OpCode.VAR_ITEM_VAR: OpCode.FAST_ITEM_FAST,
+    OpCode.VAR_ITEM_VAR_CLEAR: OpCode.FAST_ITEM_FAST_CLEAR,
+    OpCode.VAR_ITEM_VAR_TAKE: OpCode.FAST_ITEM_FAST_TAKE,
+    OpCode.VAR_ITEM_VAR_REF: OpCode.FAST_ITEM_FAST_REF,
+    OpCode.VAR_ITEM_VAR_STORE: OpCode.FAST_ITEM_FAST_STORE,
+    OpCode.VAR_ITEM_VAR_STORE_CONST: OpCode.FAST_ITEM_FAST_STORE_CONST,
+    OpCode.VAR_ITEM_VAR_STORE_VAR: OpCode.FAST_ITEM_FAST_STORE_FAST,
+    OpCode.VAR_ITEM_VAR_INPLACE: OpCode.FAST_ITEM_FAST_INPLACE,
+    OpCode.VAR_ITEM_VAR_INPLACE_CONST: OpCode.FAST_ITEM_FAST_INPLACE_CONST,
+}
+
+
+# The marker an item row's name carries for a feeder in one of its
+# operand positions, and the arg an item row takes: the scalar for one
+# named field, the padded 4-tuple for more.
+ITEM_FEEDER_MARK = {OpCode.VAR: 'VAR', OpCode.CONST: 'CONST'}
+
+
+def item_opcode(obj, key, verb, val=None, const_operand=False):
+    """
+    The item row for a shape: obj and key are the feeder opcodes of a
+    named object and key, None for the stack; verb is ITEM, CLEAR,
+    TAKE, REF, STORE, or INPLACE; val is a store's feeder opcode or
+    None for the stack; const_operand marks an in-place row over a
+    pool operand
+    """
+
+    parts = []
+    if obj is not None:
+        parts.append(ITEM_FEEDER_MARK[obj])
+    parts.append('ITEM')
+    if key is not None:
+        parts.append(ITEM_FEEDER_MARK[key])
+    if verb != 'ITEM':
+        parts.append(verb)
+    if val is not None:
+        parts.append(ITEM_FEEDER_MARK[val])
+    if const_operand:
+        parts.append('CONST')
+    return OpCode['_'.join(parts)]
+
+
+def item_arg(fields):
+    """
+    The arg of an item row over its named fields in name order
+    """
+
+    if len(fields) == 1:
+        return fields[0]
+    return tuple(fields) + (0,) * (4 - len(fields))
+
+
+def item_inplace_arg(operator, fields, *rhs):
+    """
+    The arg of an in-place item row: the operator field, the named
+    fields in name order, and the pool operand when the row carries
+    one; a lone operator field is the plain OPCOUNT arg
+    """
+
+    return item_arg([operator, *fields, *rhs])
+
+
+def item_named_fields(op, arg):
+    """
+    The named fields an item row's arg carries, in name order, with
+    an in-place row's operator field left out
+    """
+
+    if not op.extra:
+        return [arg]
+    kinds = [k for k in op.extra if k != OpStyle.NOARG]
+    fields = list(arg[:len(kinds)])
+    if kinds[0] in (OpStyle.OPCOUNT, OpStyle.OPERAND):
+        fields = fields[1:]
+    return fields
+
+
 def build_var_to_fast():
     # Pre-compiled map: VAR opcode -> FAST opcode for convert_fast lowering.
     # Built by finding each FAST_* opcode and resolving to a matching VAR_*
@@ -204,9 +315,15 @@ def build_var_to_fast():
                 or opname.startswith('CALL_FAST')
                 or opname.startswith('TAIL_CALL_FAST')):
             continue
+        if 'ITEM' in opname:
+            # the item family spells its FAST twins mid-name as well as
+            # at the head; its map is written out below
+            continue
         varname = opname.replace('FAST', 'VAR', 1)
         if hasattr(OpCode, varname):
             var_to_fast[OpCode[varname]] = opcode
+
+    var_to_fast.update(ITEM_VAR_TO_FAST)
 
     var_to_fast[OpCode.UNPACK_VAR] = OpCode.UNPACK_FAST
     var_to_fast[OpCode.SWITCH_EQ_VAR] = OpCode.SWITCH_EQ_FAST
@@ -663,59 +780,6 @@ class ByteCodeProcessor:
                  (merged >> 8, arg[1], matched[0][1], None))]
 
 
-    @squish_rule(OpCode.CONST, OpCode.VAR_ITEM_INPLACE)
-    def var_item_inplace_const_fuse(self, op, arg, matched):
-        """
-        CONST VAR_ITEM_INPLACE (single operand) -> the stack-free
-        VAR_ITEM_INPLACE_CONST: bare operator selector, object name, key
-        name, pooled operand
-        """
-
-        merged = merge_opcount(arg[0])
-        if merged & 0xff != 1:
-            return None
-        return [(OpCode.VAR_ITEM_INPLACE_CONST,
-                 (merged >> 8, arg[1], arg[2], matched[0][1]))]
-
-
-    @squish_rule(OpCode.CONST, OpCode.VAR_CONST_ITEM_INPLACE)
-    def var_const_item_inplace_const_fuse(self, op, arg, matched):
-        """
-        CONST VAR_CONST_ITEM_INPLACE (single operand) -> the stack-free
-        VAR_CONST_ITEM_INPLACE_CONST: bare operator selector, object
-        name, pooled key, pooled operand
-        """
-
-        merged = merge_opcount(arg[0])
-        if merged & 0xff != 1:
-            return None
-        return [(OpCode.VAR_CONST_ITEM_INPLACE_CONST,
-                 (merged >> 8, arg[1], arg[2], matched[0][1]))]
-
-
-    @squish_rule(OpCode.CONST, OpCode.VAR_ITEM_STORE)
-    def var_item_store_const_fuse(self, op, arg, matched):
-        """
-        CONST VAR_ITEM_STORE -> the stack-free VAR_ITEM_STORE_CONST row:
-        object name, key name, pooled value
-        """
-
-        return [(OpCode.VAR_ITEM_STORE_CONST,
-                 (arg[0], arg[1], matched[0][1], 0))]
-
-
-    @squish_rule(OpCode.CONST, OpCode.VAR_CONST_ITEM_STORE)
-    def var_const_item_store_const_fuse(self, op, arg, matched):
-        """
-        CONST VAR_CONST_ITEM_STORE -> the stack-free
-        VAR_CONST_ITEM_STORE_CONST row: object name, pooled key, pooled
-        value
-        """
-
-        return [(OpCode.VAR_CONST_ITEM_STORE_CONST,
-                 (arg[0], arg[1], matched[0][1], 0))]
-
-
     @fuse_rule(FEEDER, OpCode.RETURN)
     @fuse_rule(FEEDER, OpCode.YIELD)
     def fuse_control_feeder(self, op, arg, matched):
@@ -792,23 +856,141 @@ class ByteCodeProcessor:
                  (sel, matched[0][1], matched[1][1], matched[2][1]))]
 
 
-    @fuse_rule(OpCode.VAR, OpCode.VAR, OpCode.ITEM)
-    def fuse_var_item(self, op, arg, matched):
+    @fuse_rule(FEEDER, OpCode.ITEM)
+    @fuse_rule(FEEDER, OpCode.ITEM_CLEAR)
+    @fuse_rule(FEEDER, OpCode.ITEM_TAKE)
+    @fuse_rule(FEEDER, OpCode.ITEM_REF)
+    @fuse_rule(FEEDER, FEEDER, OpCode.ITEM)
+    @fuse_rule(FEEDER, FEEDER, OpCode.ITEM_CLEAR)
+    @fuse_rule(FEEDER, FEEDER, OpCode.ITEM_TAKE)
+    @fuse_rule(FEEDER, FEEDER, OpCode.ITEM_REF)
+    def fuse_item_access(self, op, arg, matched):
         """
-        VAR obj, VAR key, ITEM -> VAR_ITEM (obj, key): both operands
-        read from the namespace by the row, nothing on the stack
+        VAR obj, VAR|CONST key, ITEM -> VAR_ITEM_VAR or VAR_ITEM_CONST;
+        VAR|CONST key alone -> ITEM_VAR or ITEM_CONST; the same for
+        CLEAR, TAKE, and REF. An item row folds the run of feeders
+        directly ahead of it, which is always its trailing operands in
+        stack order (value, then key, then object); a CONST in the
+        object position never folds, so the rule declines to the
+        shorter form. See design/archive/item-opcode-matrix.md
         """
 
-        return [(OpCode.VAR_ITEM, (matched[0][1], matched[1][1], 0, 0))]
+        verb = op.name[len('ITEM_'):] or 'ITEM'
+        if len(matched) == 2:
+            (obj_op, obj_arg), (key_op, key_arg) = matched
+            if obj_op != OpCode.VAR:
+                return None
+            return [(item_opcode(obj_op, key_op, verb),
+                     item_arg([obj_arg, key_arg]))]
+        (key_op, key_arg), = matched
+        return [(item_opcode(None, key_op, verb), key_arg)]
 
 
-    @fuse_rule(OpCode.VAR, OpCode.CONST_ITEM)
-    def fuse_var_const_item(self, op, arg, matched):
+    @fuse_rule(FEEDER, OpCode.ITEM_STORE)
+    @fuse_rule(FEEDER, FEEDER, OpCode.ITEM_STORE)
+    @fuse_rule(FEEDER, FEEDER, FEEDER, OpCode.ITEM_STORE)
+    def fuse_item_store(self, op, arg, matched):
         """
-        VAR obj, CONST_ITEM key -> VAR_CONST_ITEM (obj, key)
+        VAR obj, F key, F value, ITEM_STORE -> the row naming all
+        three; F key, F value -> the row naming the key and value; F
+        value -> ITEM_STORE_VAR or ITEM_STORE_CONST
         """
 
-        return [(OpCode.VAR_CONST_ITEM, (matched[0][1], arg, 0, 0))]
+        if len(matched) == 3:
+            (obj_op, obj_arg), (key_op, key_arg), (val_op, val_arg) = matched
+            if obj_op != OpCode.VAR:
+                return None
+            return [(item_opcode(obj_op, key_op, 'STORE', val_op),
+                     item_arg([obj_arg, key_arg, val_arg]))]
+        if len(matched) == 2:
+            (key_op, key_arg), (val_op, val_arg) = matched
+            return [(item_opcode(None, key_op, 'STORE', val_op),
+                     item_arg([key_arg, val_arg]))]
+        (val_op, val_arg), = matched
+        return [(item_opcode(None, None, 'STORE', val_op), val_arg)]
+
+
+    @fuse_rule(FEEDER, OpCode.VAR_ITEM_STORE)
+    @fuse_rule(FEEDER, OpCode.VAR_ITEM_VAR_STORE)
+    @fuse_rule(FEEDER, OpCode.VAR_ITEM_CONST_STORE)
+    @fuse_rule(FEEDER, OpCode.ITEM_VAR_STORE)
+    @fuse_rule(FEEDER, OpCode.ITEM_CONST_STORE)
+    def fuse_item_store_value(self, op, arg, matched):
+        """
+        F value ahead of a store row the special shaped with the value
+        on the stack -> the row with the value named
+        """
+
+        (val_op, val_arg), = matched
+        fused = OpCode[f"{op.name}_{ITEM_FEEDER_MARK[val_op]}"]
+        return [(fused, item_arg(item_named_fields(op, arg) + [val_arg]))]
+
+
+    @fuse_rule(OpCode.ITEM_INPLACE)
+    def fuse_item_inplace(self, op, arg, matched):
+        """
+        VAR obj, F key, F x count, ITEM_INPLACE -> the value feeders
+        re-emitted ahead of VAR_ITEM_VAR_INPLACE or
+        VAR_ITEM_CONST_INPLACE; F key, F x count -> the same ahead of
+        ITEM_VAR_INPLACE or ITEM_CONST_INPLACE. A single CONST value
+        folds into the _CONST twin instead, ITEM_INPLACE_CONST when
+        nothing else is named. A fallback rule: the value
+        count is read from the OPCOUNT operand, so matching and
+        splicing run through the services directly
+        """
+
+        merged = merge_opcount(arg)
+        count = merged & 0xff
+        binop = merged >> 8
+
+        for named in ((VAR_FEEDER, FEEDER), (FEEDER,)):
+            found, skipped = self.match_priors(named + (FEEDER,) * count)
+            if found is None:
+                continue
+            rows = [self.rows[i] for i in found]
+            head, values = rows[:len(named)], rows[len(named):]
+            obj = head[0][0] if len(named) == 2 else None
+            key = head[-1][0]
+            fields = [r[1] for r in head]
+            if count == 1 and values[0][0] == OpCode.CONST:
+                fused = item_opcode(obj, key, 'INPLACE', const_operand=True)
+                out = [(fused, item_inplace_arg(binop, fields, values[0][1]))]
+            else:
+                fused = item_opcode(obj, key, 'INPLACE')
+                out = values + [(fused, item_inplace_arg(arg, fields))]
+            self.splice(found[0], skipped, out)
+            return []
+
+        # nothing to name: a single CONST operand still folds into
+        # ITEM_INPLACE_CONST; a VAR operand or a longer run stays
+        if count != 1:
+            return None
+        found, skipped = self.match_priors((CONST_FEEDER,))
+        if found is None:
+            return None
+        self.splice(found[0], skipped, [(
+            OpCode.ITEM_INPLACE_CONST,
+            item_inplace_arg(binop, [], self.rows[found[0]][1]))])
+        return []
+
+
+    @fuse_rule(OpCode.CONST, OpCode.VAR_ITEM_INPLACE)
+    @fuse_rule(OpCode.CONST, OpCode.VAR_ITEM_VAR_INPLACE)
+    @fuse_rule(OpCode.CONST, OpCode.VAR_ITEM_CONST_INPLACE)
+    @fuse_rule(OpCode.CONST, OpCode.ITEM_VAR_INPLACE)
+    @fuse_rule(OpCode.CONST, OpCode.ITEM_CONST_INPLACE)
+    def fuse_item_inplace_const(self, op, arg, matched):
+        """
+        CONST operand ahead of a single-operand in-place row the
+        special shaped with the operand on the stack -> the _CONST twin
+        """
+
+        merged = merge_opcount(arg[0])
+        if merged & 0xff != 1:
+            return None
+        return [(OpCode[f"{op.name}_CONST"],
+                 item_inplace_arg(merged >> 8, item_named_fields(op, arg),
+                                  matched[0][1]))]
 
 
     @fuse_rule(OpCode.VAR, OpCode.OBJECT_ITER)

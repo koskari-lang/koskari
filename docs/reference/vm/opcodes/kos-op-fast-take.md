@@ -1,7 +1,6 @@
 # KOS_OP_FAST_TAKE
 
 - **Style**: FASTVAR. Arg = fast local slot index.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., value]`. Take value from slot via
   `KosNamespace_FastTake` (steal pointer on raw slots without extra INCREF),
   clear slot. **Errors with NameError if slot is empty** (contrast

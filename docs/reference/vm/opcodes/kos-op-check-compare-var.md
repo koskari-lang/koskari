@@ -2,7 +2,6 @@
 - **Style**: EXTRA (CMPSRC, VAR, VAR, LABEL). Row = packed selector +
   source bits, two operand slots, target pc. A set source bit overrides
   that operand slot from its declared VAR kind to CONST (pool index).
-- **Status**: Implemented.
 - **Stack**: No stack effect. Arity-2 fused comparison branch: load both
   operands per the source bits (frame namespace name lookup, or constant
   pool), compare under the selector, jump to LABEL on failure.

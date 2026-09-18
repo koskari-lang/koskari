@@ -1,6 +1,5 @@
 # KOS_OP_LABEL
 - **Style**: COMPILE. Compile-time only.
-- **Status**: Compile-time; stripped in post-compile under normal circumstances. If retained, no-op at runtime.
 - **Stack**: No change.
 - **Invariants**: Not present in final bytecode after normal finalize; or executed as no-op if retained.
 - **Behavior**: Jump target placeholder. Finalize resolves branch targets to the LABEL's pc, then **strips** the LABEL instruction (branch args are adjusted to point at the next instruction). If a LABEL is retained, it advances PC only (safety net).

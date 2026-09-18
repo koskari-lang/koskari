@@ -2,7 +2,6 @@
 - **Style**: EXTRA (OPERAND, FASTVAR, CONST). Row a0 = bare KosOperand
   selector (the count is fixed at 1 by the shape), a1 = fast slot index,
   a2 = constant pool index of the operand.
-- **Status**: Implemented.
 - **Stack**: No stack effect. Augmented assignment with a constant rhs on
   a fast slot, completely stack-free: obj = deref(slot); obj OP= const;
   store back. A counted loop's back-edge increment is this single

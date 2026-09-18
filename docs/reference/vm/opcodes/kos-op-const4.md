@@ -1,6 +1,5 @@
 # KOS_OP_CONST4
 - **Style**: EXTRA (CONST, CONST, CONST, CONST). Row = four constant pool indices (post-compile).
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., a, b, c, d]`. Push the four constants in row order. A constant is
   a borrowed pool reference, so a failed push leaves nothing to release.
 - **Invariants**: Indices in the constant pool.

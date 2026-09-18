@@ -237,12 +237,13 @@ quick lookup.
 - `KOS_OP_ATTR_STORE`: Set attribute
 
 ### Items
-- `KOS_OP_ITEM`: Get item (computed key)
+- `KOS_OP_ITEM`: Get item (object and key on the stack)
 - `KOS_OP_ITEM_CLEAR`: Delete item
 - `KOS_OP_ITEM_REF`: Get item reference
 - `KOS_OP_ITEM_STORE`: Set item
-- `KOS_OP_CONST_ITEM`: Get item (constant key)
-- `KOS_OP_CONST_ITEM_CLEAR`, `KOS_OP_CONST_ITEM_REF`, `KOS_OP_CONST_ITEM_STORE`
+- `KOS_OP_ITEM_CONST`: Get item (constant key), and the rest of the
+  item grid named by object, key, and value origin (see
+  [../archive/item-opcode-matrix.md](../archive/item-opcode-matrix.md))
 
 ### Calls
 - `KOS_OP_CALL`: Simple call

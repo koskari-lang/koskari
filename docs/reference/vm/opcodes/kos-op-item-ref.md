@@ -1,14 +1,5 @@
 # KOS_OP_ITEM_REF
-- **Style**: NOARG. Key from stack.
-- **Status**: Implemented.
-- **Stack**: `[..., obj, key] → [..., obj, item_ref]`. Push item reference.
-- **Invariants**: Object and key on stack.
-
-**Example:** Push reference for d[k]. Pool: 0 = "d", 1 = "k".
-
-| index | opcode   | arg | arg view | comment |
-|------:|----------|-----|----------|---------|
-| 0     | VAR      | 0   | 0 ('d')  | stack: [..., d] |
-| 1     | CONST    | 1   | 1 ('k')  | stack: [..., d, 'k'] |
-| 2     | ITEM_REF | 0   | 0        | stack: [..., d, item_ref] |
-
+- **Style**: NOARG.
+- **Stack**: `[..., obj, key] → [..., value]`. Push an ItemRef over obj[key] with the object on the stack and the key on the stack.
+- **Compiler form:** Emitted by **`compile/ref-item`**; the compress pipeline folds the run of feeders (bare VAR and CONST loads) ahead of it into the rows that name them.
+- **Implementation**: `koskari/lib/opcode/ITEM_REF.c`

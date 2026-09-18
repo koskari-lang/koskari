@@ -1,6 +1,5 @@
 # KOS_OP_POP
 - **Style**: COUNT. Arg = number of elements to pop.
-- **Status**: Implemented.
 - **Stack**: `[..., a_1, ..., a_n] → [...]` (pop `arg` elements).
 - **Invariants**: Stack must have at least `arg` elements.
 

@@ -1,6 +1,5 @@
 # KOS_OP_FAST_REF
 - **Style**: FASTVAR. Arg = fast local slot index.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., ref]`. Push reference to slot.
 - **Invariants**: Slot index in range.
 

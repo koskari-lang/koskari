@@ -1,6 +1,5 @@
 # KOS_OP_CONST2
 - **Style**: EXTRA (CONST, CONST, NOARG, NOARG). Row = two constant pool indices (post-compile).
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., a, b]`. Push the two constants in row order. A constant is
   a borrowed pool reference, so a failed push leaves nothing to release.
 - **Invariants**: Indices in the constant pool.

@@ -1,6 +1,5 @@
 # KOS_OP_ITER_NEXT
 - **Style**: LABEL. Arg = else branch pc (post-compile).
-- **Status**: Implemented.
 - **Stack**: Uses region iterator (PUSH_FOREACH). If next available: push value; else jump to `arg`. Auto-await if iterator is async.
 - **Invariants**: Must be inside a PUSH_FOREACH extent. Jump target `arg` must be local.
 - **Compiler form:** Pre-compile arg = string label (else / exhausted target); post-compile arg = pc.

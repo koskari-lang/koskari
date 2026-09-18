@@ -1,7 +1,6 @@
 # KOS_OP_FAST4
 - **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, FASTVAR). Row = four fast
   local slot indices.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., a, b, c, d]`. Load all four slots and push in
   row order. All slots resolve before any push, so an unbound slot errors
   with nothing pushed.

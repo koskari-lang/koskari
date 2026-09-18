@@ -1,15 +1,6 @@
 # KOS_OP_ITEM
-- **Style**: NOARG. Key from stack (below object).
-- **Status**: Implemented.
-- **Stack**: `[..., obj, key] → [..., obj, value]`. Get item; push value.
-- **Invariants**: TOS = key, below = object.
-
-**Example:** Get obj[key]. Pool: 0 = "d", 1 = "k".
-
-| index | opcode | arg | arg view | comment |
-|------:|--------|-----|----------|---------|
-| 0     | VAR    | 0   | 0 ('d')  | stack: [..., d] |
-| 1     | CONST  | 1   | 1 ('k')  | stack: [..., d, 'k'] |
-| 2     | ITEM   | 0   | 0        | stack: [..., d, d['k']] |
-| 3     | RETURN | 1   | 1        | |
-
+- **Style**: NOARG.
+- **Stack**: `[..., obj, key] → [..., value]`. Get obj[key] with the object on the stack and the key on the stack.
+- **Cache**: one KOS_CACHE_ITEM slot; the site elects a body for the container kind it first sees through the shared helper in `eval/eval_item.c` (see the items section of the VM reference).
+- **Compiler form:** Emitted by **`compile/item`**; the compress pipeline folds the run of feeders (bare VAR and CONST loads) ahead of it into the rows that name them.
+- **Implementation**: `koskari/lib/opcode/ITEM.c`

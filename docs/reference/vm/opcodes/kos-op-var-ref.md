@@ -1,6 +1,5 @@
 # KOS_OP_VAR_REF
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., ref]`. Push a reference to the named variable (e.g. for closure).
 - **Invariants**: Name in constant pool.
 - **Compiler form:** Pre-compile arg = name; post-compile arg = pool index.
