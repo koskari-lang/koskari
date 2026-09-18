@@ -28,6 +28,7 @@ return the same results as the object protocol throughout.
 
 
 import operator
+import sys
 
 import pytest
 
@@ -281,6 +282,32 @@ class TestFastItemInplaceElector(CevalTest):
         with self.assertRaises(ZeroDivisionError):
             await site(lst, 0, 0)
         await site([8], 0, 3)
+
+
+    async def test_dict_arm_releases_its_holds_on_every_exit(self):
+        """
+        The dict arm holds the container and key across the hash; an
+        overflow in the elected arithmetic declines to the generic body
+        and an error raises, and both must release the holds
+        """
+
+        site, _ = stack_site('ADD')
+        d = {"k": 2 ** 62}
+        await site(d, "k", 1)
+        await site(d, "k", 1)
+        before = sys.getrefcount(d)
+        await site(d, "k", 1)
+        self.assertEqual(sys.getrefcount(d), before)
+        await site(d, "k", 2 ** 62)
+        self.assertEqual(d["k"], 2 ** 63 + 3)
+        self.assertEqual(sys.getrefcount(d), before)
+        site, _ = stack_site('MODULO')
+        d = {"k": 7}
+        await site(d, "k", 3)
+        before = sys.getrefcount(d)
+        with self.assertRaises(ZeroDivisionError):
+            await site(d, "k", 0)
+        self.assertEqual(sys.getrefcount(d), before)
 
 
 class TestItemInplaceElector(CevalTest):

@@ -386,16 +386,22 @@ KOS_ELECTOR(miss) {
    operator's arithmetic, a decline (overflow, a negative shift, a zero
    divisor) taking the generic body without counting, an allocation
    failure raising. */
-#define KOS_ELECTOR_RESULT(FAST, a, b, reuse, out)                      \
+#define KOS_ELECTOR_RESULT_HELD(FAST, a, b, reuse, out, RELEASE)        \
   do {                                                                  \
     int kos_ir_rc_ = FAST((a), (b), (reuse), &(out));                   \
     if (unlikely(kos_ir_rc_ <= 0)) {                                    \
+      RELEASE;                                                          \
       if (kos_ir_rc_ < 0)                                               \
         RESULT_RAISE();                                                 \
       TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
     }                                                                   \
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
   } while (0)
+
+/* The common form: nothing is held across the arithmetic. RELEASE in
+   the held form runs before a decline or a raise leaves the body. */
+#define KOS_ELECTOR_RESULT(FAST, a, b, reuse, out)                      \
+  KOS_ELECTOR_RESULT_HELD(FAST, a, b, reuse, out, ((void) 0))
 
 
 /* One body per operator and kind for the two families whose operands
@@ -1616,7 +1622,8 @@ static inline void kos_item_replace_top(KosSegment **bl, PyObject *val) {
    from its source, the kind's guard, the kind's store. N is every
    stack entry the family owns, the value included; DROP is what the
    list body still drops once the value has been taken. */
-#define KOS_ITEM_STORE_ELECTOR(FAMILY, KIND, kind, FETCH, N, VALUE, TAKE, DROP) \
+#define KOS_ITEM_STORE_ELECTOR(FAMILY, KIND, kind, FETCH, N, VALUE,       \
+                               TAKE, DROP)                              \
   KOS_ELECTOR(FAMILY##_##kind) {                                        \
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
     PyObject *obj, *key, *val;                                          \
@@ -1899,6 +1906,96 @@ static inline void kos_item_inplace_release(
    kos_elector_generic_of(insn))
 
 
+/* The cell an in-place body reduces: a list cell under an exact int
+   index, or a dict cell under any key. FOUND sets acc (borrowed from
+   the container) and idx, -1 on the dict arm, where obj and key are
+   then held until kos_item_inplace_store or kos_item_inplace_release
+   lets them go, since the hash ran user code. DECLINE is an index
+   outside the list or a key the dict lacks (the generic body raises
+   the IndexError or KeyError), MISS any other container, ERROR a
+   failed hash with the error set. */
+typedef enum KosItemCell {
+  KOS_ITEM_CELL_FOUND,
+  KOS_ITEM_CELL_DECLINE,
+  KOS_ITEM_CELL_MISS,
+  KOS_ITEM_CELL_ERROR,
+} KosItemCell;
+
+static inline KosItemCell kos_item_inplace_cell(
+    PyObject *obj,
+    PyObject *key,
+    PyObject **out_acc,
+    Py_ssize_t *out_idx) {
+
+  if (PyList_CheckExact(obj) && PyLong_CheckExact(key)) {
+    if (! kos_item_index(key, PyList_GET_SIZE(obj), out_idx))
+      return KOS_ITEM_CELL_DECLINE;
+    *out_acc = PyList_GET_ITEM(obj, *out_idx);
+    return KOS_ITEM_CELL_FOUND;
+  }
+  if (PyDict_CheckExact(obj)) {
+    Py_INCREF(obj);
+    Py_INCREF(key);
+    *out_acc = PyDict_GetItemWithError(obj, key);
+    if (! *out_acc) {
+      Py_DECREF(key);
+      Py_DECREF(obj);
+      return PyErr_Occurred() ? KOS_ITEM_CELL_ERROR : KOS_ITEM_CELL_DECLINE;
+    }
+    *out_idx = -1;
+    return KOS_ITEM_CELL_FOUND;
+  }
+  return KOS_ITEM_CELL_MISS;
+}
+
+
+/* The store of a body's result into the cell kos_item_inplace_cell
+   found: nothing when the result is the accumulator written in place,
+   else the list cell is swapped and the old value released, or the
+   dict cell stored and the owned result released. The dict arm's
+   holds are released either way. Returns 0, or -1 with an error set. */
+static inline int kos_item_inplace_store(
+    PyObject *obj,
+    PyObject *key,
+    Py_ssize_t idx,
+    PyObject *acc,
+    PyObject *out) {
+
+  int rc = 0;
+
+  if (idx >= 0) {
+    if (out != acc) {
+      PyList_SET_ITEM(obj, idx, out);
+      Py_DECREF(acc);
+    }
+    return 0;
+  }
+  if (out != acc) {
+    rc = PyDict_SetItem(obj, key, out);
+    Py_DECREF(out);
+  }
+  Py_DECREF(key);
+  Py_DECREF(obj);
+  return rc;
+}
+
+
+/* The cell lookup in a body, with its three exits. */
+#define KOS_ITEM_INPLACE_CELL(obj, key, acc, idx)                       \
+  do {                                                                  \
+    switch (kos_item_inplace_cell((obj), (key), &(acc), &(idx))) {      \
+    case KOS_ITEM_CELL_FOUND:                                           \
+      break;                                                            \
+    case KOS_ITEM_CELL_MISS:                                            \
+      TAILCALL(el_miss, es, insn, value);                               \
+    case KOS_ITEM_CELL_ERROR:                                           \
+      RESULT_RAISE();                                                   \
+    default:                                                            \
+      TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
+    }                                                                   \
+  } while (0)
+
+
 /* One body per operator and kind for a family that reduces an item in
    place: the container and key fetched borrowed (and held across the
    dict arm, whose hashing runs user code), the cell found by a
@@ -1911,12 +2008,13 @@ static inline void kos_item_inplace_release(
    the container is its only owner the result is written into it and
    no store follows; otherwise the family's operand release (DROP)
    runs and the result is swapped into the cell. */
-#define KOS_ITEM_INPLACE_ELECTOR(FAMILY, KIND, kind, NAME, FETCH, RHS, RHS_GUARDED, DROP) \
+#define KOS_ITEM_INPLACE_ELECTOR(FAMILY, KIND, kind, NAME, FETCH, RHS,    \
+                                 RHS_GUARDED, DROP)                     \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
     PyObject *obj, *key, *acc, *rhs, *out;                              \
-    Py_ssize_t idx = -1;                                                \
+    Py_ssize_t idx;                                                     \
     KOS_##KIND##_VARS;                                                  \
                                                                         \
     KOS_OP_REQUIRE_NS(ns);                                              \
@@ -1924,26 +2022,7 @@ static inline void kos_item_inplace_release(
     rhs = (RHS);                                                        \
     if (unlikely(! rhs))                                                \
       RESULT_RAISE();                                                   \
-    if (PyList_CheckExact(obj) && PyLong_CheckExact(key)) {             \
-      if (unlikely(! kos_item_index(key, PyList_GET_SIZE(obj), &idx)))  \
-        TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
-      acc = PyList_GET_ITEM(obj, idx);                                  \
-    } else if (PyDict_CheckExact(obj)) {                                \
-      /* the dict arm hashes the key, which runs user code: obj and    \
-         key are held from here to the store, and released on every   \
-         exit of the arm */                                            \
-      Py_INCREF(obj);                                                   \
-      Py_INCREF(key);                                                   \
-      acc = PyDict_GetItemWithError(obj, key);                          \
-      if (unlikely(! acc)) {                                            \
-        kos_item_inplace_release(obj, key, idx);                        \
-        if (PyErr_Occurred())                                           \
-          RESULT_RAISE();                                               \
-        TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
-      }                                                                 \
-    } else {                                                            \
-      TAILCALL(el_miss, es, insn, value);                               \
-    }                                                                   \
+    KOS_ITEM_INPLACE_CELL(obj, key, acc, idx);                          \
     if (unlikely(! KOS_##KIND##_CHECK(acc)                              \
                  || (RHS_GUARDED && ! KOS_##KIND##_CHECK(rhs)))) {      \
       kos_item_inplace_release(obj, key, idx);                          \
@@ -1951,24 +2030,11 @@ static inline void kos_item_inplace_release(
     }                                                                   \
     KOS_##KIND##_EXTRACT(acc, rhs, KOS_ITEM_INPLACE_DECLINE(obj, key, idx)); \
                                                                         \
-    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, acc, out);        \
+    KOS_ELECTOR_RESULT_HELD(KOS_##KIND##_FAST(NAME), a, b, acc, out,    \
+                            kos_item_inplace_release(obj, key, idx));   \
     DROP;                                                               \
-    if (idx >= 0) {                                                     \
-      if (out != acc) {                                                 \
-        PyList_SET_ITEM(obj, idx, out);                                 \
-        Py_DECREF(acc);                                                 \
-      }                                                                 \
-    } else {                                                            \
-      int kos_ii_rc_ = 0;                                               \
-      if (out != acc) {                                                 \
-        kos_ii_rc_ = PyDict_SetItem(obj, key, out);                     \
-        Py_DECREF(out);                                                 \
-      }                                                                 \
-      Py_DECREF(key);                                                   \
-      Py_DECREF(obj);                                                   \
-      if (unlikely(kos_ii_rc_ < 0))                                     \
-        RESULT_RAISE();                                                 \
-    }                                                                   \
+    if (unlikely(kos_item_inplace_store(obj, key, idx, acc, out) < 0))  \
+      RESULT_RAISE();                                                   \
     RESULT_NEXT(es);                                                    \
   }
 
@@ -1995,7 +2061,8 @@ static inline void kos_item_inplace_release(
       FAMILY, KIND, kind, NAME, KOS_ITEM_INPLACE_FETCH_FAST,            \
       KosExtra_OBJ(row, 3), 0,                                          \
       ((void) 0))
-#define KOS_FAST_CONST_ITEM_INPLACE_CONST_BODY(FAMILY, KIND, kind, NAME, OPERAND) \
+#define KOS_FAST_CONST_ITEM_INPLACE_CONST_BODY(FAMILY, KIND, kind, NAME,  \
+                                               OPERAND)                 \
   KOS_ITEM_INPLACE_ELECTOR(                                             \
       FAMILY, KIND, kind, NAME, KOS_ITEM_INPLACE_FETCH_FAST_CONST,      \
       KosExtra_OBJ(row, 3), 0,                                          \
@@ -2025,41 +2092,24 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_CONST_ITEM_INPLACE_CONST_BODY,
 
 
 /* The str body of an item in-place family: + over an exact-str cell
-   and operand, the cell found as the numeric bodies find it. A
-   container cell cannot be vacated for an in-place append the way a
-   fast slot or a __slots__ member can, since a list with a NULL entry
-   is not a list, so both arms concatenate and swap: the list cell
-   directly, the dict cell through a store with the operands held as
-   the numeric dict arm holds them. */
+   and operand, the cell found and stored as the numeric bodies find
+   and store it. A container cell cannot be vacated for an in-place
+   append the way a fast slot or a __slots__ member can, since a list
+   with a NULL entry is not a list, so the concatenation is swapped
+   in. */
 #define KOS_ITEM_INPLACE_STR_ELECTOR(FAMILY, FETCH, RHS, RHS_GUARDED, DROP) \
   KOS_ELECTOR(FAMILY##_str_add) {                                       \
     const KosExtra *row = KosOp_ROW(insn);                              \
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
     PyObject *obj, *key, *acc, *rhs, *out;                              \
-    Py_ssize_t idx = -1;                                                \
+    Py_ssize_t idx;                                                     \
                                                                         \
     KOS_OP_REQUIRE_NS(ns);                                              \
     FETCH(obj, key);                                                    \
     rhs = (RHS);                                                        \
     if (unlikely(! rhs))                                                \
       RESULT_RAISE();                                                   \
-    if (PyList_CheckExact(obj) && PyLong_CheckExact(key)) {             \
-      if (unlikely(! kos_item_index(key, PyList_GET_SIZE(obj), &idx)))  \
-        TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
-      acc = PyList_GET_ITEM(obj, idx);                                  \
-    } else if (PyDict_CheckExact(obj)) {                                \
-      Py_INCREF(obj);                                                   \
-      Py_INCREF(key);                                                   \
-      acc = PyDict_GetItemWithError(obj, key);                          \
-      if (unlikely(! acc)) {                                            \
-        kos_item_inplace_release(obj, key, idx);                        \
-        if (PyErr_Occurred())                                           \
-          RESULT_RAISE();                                               \
-        TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
-      }                                                                 \
-    } else {                                                            \
-      TAILCALL(el_miss, es, insn, value);                               \
-    }                                                                   \
+    KOS_ITEM_INPLACE_CELL(obj, key, acc, idx);                          \
     if (unlikely(! PyUnicode_CheckExact(acc)                            \
                  || (RHS_GUARDED && ! PyUnicode_CheckExact(rhs)))) {    \
       kos_item_inplace_release(obj, key, idx);                          \
@@ -2071,19 +2121,14 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_CONST_ITEM_INPLACE_CONST_BODY,
       kos_item_inplace_release(obj, key, idx);                          \
       RESULT_RAISE();                                                   \
     }                                                                   \
+    /* an empty operand hands the cell's own value back as a new       \
+       reference; the store keeps the cell, so that reference goes */  \
+    if (out == acc)                                                     \
+      Py_DECREF(out);                                                   \
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
     DROP;                                                               \
-    if (idx >= 0) {                                                     \
-      PyList_SET_ITEM(obj, idx, out);                                   \
-      Py_DECREF(acc);                                                   \
-    } else {                                                            \
-      int kos_is_rc_ = PyDict_SetItem(obj, key, out);                   \
-      Py_DECREF(out);                                                   \
-      Py_DECREF(key);                                                   \
-      Py_DECREF(obj);                                                   \
-      if (unlikely(kos_is_rc_ < 0))                                     \
-        RESULT_RAISE();                                                 \
-    }                                                                   \
+    if (unlikely(kos_item_inplace_store(obj, key, idx, acc, out) < 0))  \
+      RESULT_RAISE();                                                   \
     RESULT_NEXT(es);                                                    \
   }
 
@@ -2166,7 +2211,9 @@ static inline KosThreadFn kos_elector_fold_body(
 
 /* The classification of a stack-pair site: binary with the pair on
    the stack, or a run of more than two of one kind. */
-static inline KosThreadFn kos_elector_pair_classify(KosEvalState *es, void *insn) {
+static inline KosThreadFn kos_elector_pair_classify(
+    KosEvalState *es,
+    void *insn) {
   uint16_t arg = KosOp_ARG(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
   size_t count = KosOpCount_COUNT(arg);
@@ -2284,58 +2331,110 @@ static inline PyObject *kos_elector_item_fast_at(
   return kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(KosOp_ROW(insn), field));
 }
 
-#define KOS_ITEM_CLASSIFY(FAMILY, OBJ, KEY, TUPLE)                      \
-  static inline KosThreadFn kos_elector_##FAMILY##_classify(            \
-      KosEvalState *es,                                                 \
-      void *insn) {                                                     \
-                                                                        \
-    PyObject *obj = (OBJ);                                              \
-    PyObject *key = (KEY);                                              \
-                                                                        \
-    return kos_elector_item_body(                                       \
-        obj, key, el_##FAMILY##_list, TUPLE, el_##FAMILY##_dict);       \
-  }
+/* The classification of each load and store family: the object and
+   key as the family fetches them, handed to the shared body choice. */
+static inline KosThreadFn kos_elector_item_classify(
+    KosEvalState *es,
+    void *insn) {
 
-KOS_ITEM_CLASSIFY(item,
-    kos_elector_item_stack_at(es, 2, 0),
-    kos_elector_item_stack_at(es, 2, 1),
-    el_item_tuple)
-KOS_ITEM_CLASSIFY(const_item,
-    kos_elector_item_stack_at(es, 1, 0),
-    KosOp_OBJ(insn),
-    el_const_item_tuple)
-KOS_ITEM_CLASSIFY(fast_item,
-    kos_elector_item_fast_at(es, insn, 0),
-    kos_elector_item_fast_at(es, insn, 1),
-    el_fast_item_tuple)
-KOS_ITEM_CLASSIFY(fast_const_item,
-    kos_elector_item_fast_at(es, insn, 0),
-    KosExtra_OBJ(KosOp_ROW(insn), 1),
-    el_fast_const_item_tuple)
-KOS_ITEM_CLASSIFY(item_store,
-    kos_elector_item_stack_at(es, 3, 0),
-    kos_elector_item_stack_at(es, 3, 1),
-    NULL)
-KOS_ITEM_CLASSIFY(const_item_store,
-    kos_elector_item_stack_at(es, 2, 0),
-    KosOp_OBJ(insn),
-    NULL)
-KOS_ITEM_CLASSIFY(fast_item_store,
-    kos_elector_item_fast_at(es, insn, 0),
-    kos_elector_item_fast_at(es, insn, 1),
-    NULL)
-KOS_ITEM_CLASSIFY(fast_const_item_store,
-    kos_elector_item_fast_at(es, insn, 0),
-    KosExtra_OBJ(KosOp_ROW(insn), 1),
-    NULL)
-KOS_ITEM_CLASSIFY(fast_item_store_const,
-    kos_elector_item_fast_at(es, insn, 0),
-    kos_elector_item_fast_at(es, insn, 1),
-    NULL)
-KOS_ITEM_CLASSIFY(fast_const_item_store_const,
-    kos_elector_item_fast_at(es, insn, 0),
-    KosExtra_OBJ(KosOp_ROW(insn), 1),
-    NULL)
+  return kos_elector_item_body(
+      kos_elector_item_stack_at(es, 2, 0),
+      kos_elector_item_stack_at(es, 2, 1),
+      el_item_list, el_item_tuple, el_item_dict);
+}
+
+static inline KosThreadFn kos_elector_const_item_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  return kos_elector_item_body(
+      kos_elector_item_stack_at(es, 1, 0),
+      KosOp_OBJ(insn),
+      el_const_item_list, el_const_item_tuple, el_const_item_dict);
+}
+
+static inline KosThreadFn kos_elector_fast_item_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  return kos_elector_item_body(
+      kos_elector_item_fast_at(es, insn, 0),
+      kos_elector_item_fast_at(es, insn, 1),
+      el_fast_item_list, el_fast_item_tuple, el_fast_item_dict);
+}
+
+static inline KosThreadFn kos_elector_fast_const_item_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  return kos_elector_item_body(
+      kos_elector_item_fast_at(es, insn, 0),
+      KosExtra_OBJ(KosOp_ROW(insn), 1),
+      el_fast_const_item_list, el_fast_const_item_tuple,
+      el_fast_const_item_dict);
+}
+
+static inline KosThreadFn kos_elector_item_store_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  return kos_elector_item_body(
+      kos_elector_item_stack_at(es, 3, 0),
+      kos_elector_item_stack_at(es, 3, 1),
+      el_item_store_list, NULL, el_item_store_dict);
+}
+
+static inline KosThreadFn kos_elector_const_item_store_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  return kos_elector_item_body(
+      kos_elector_item_stack_at(es, 2, 0),
+      KosOp_OBJ(insn),
+      el_const_item_store_list, NULL, el_const_item_store_dict);
+}
+
+static inline KosThreadFn kos_elector_fast_item_store_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  return kos_elector_item_body(
+      kos_elector_item_fast_at(es, insn, 0),
+      kos_elector_item_fast_at(es, insn, 1),
+      el_fast_item_store_list, NULL, el_fast_item_store_dict);
+}
+
+static inline KosThreadFn kos_elector_fast_const_item_store_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  return kos_elector_item_body(
+      kos_elector_item_fast_at(es, insn, 0),
+      KosExtra_OBJ(KosOp_ROW(insn), 1),
+      el_fast_const_item_store_list, NULL, el_fast_const_item_store_dict);
+}
+
+static inline KosThreadFn kos_elector_fast_item_store_const_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  return kos_elector_item_body(
+      kos_elector_item_fast_at(es, insn, 0),
+      kos_elector_item_fast_at(es, insn, 1),
+      el_fast_item_store_const_list, NULL, el_fast_item_store_const_dict);
+}
+
+static inline KosThreadFn kos_elector_fast_const_item_store_const_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  return kos_elector_item_body(
+      kos_elector_item_fast_at(es, insn, 0),
+      KosExtra_OBJ(KosOp_ROW(insn), 1),
+      el_fast_const_item_store_const_list, NULL,
+      el_fast_const_item_store_const_dict);
+}
+
 
 
 
@@ -2369,65 +2468,129 @@ static inline PyObject *kos_elector_item_peek(PyObject *obj, PyObject *key) {
    the row. A family whose operand rides the stack elects only at a
    count of one, the shape its bodies read; a pool constant the int
    body could never read leaves the site generic. */
-#define KOS_ITEM_INPLACE_CLASSIFY_OBJ(FAMILY, OP, OBJ, KEY, RHS, COUNT_OK) \
-  static inline KosThreadFn kos_elector_##FAMILY##_classify(            \
-      KosEvalState *es,                                                 \
-      void *insn) {                                                     \
-                                                                        \
-    const KosExtra *row = KosOp_ROW(insn);                              \
-    PyObject *obj = (OBJ);                                              \
-    PyObject *key = (KEY);                                              \
-    PyObject *rhs = (RHS);                                              \
-    long long b;                                                        \
-                                                                        \
-    (void) row;                                                         \
-    if (! (COUNT_OK))                                                   \
-      return NULL;                                                      \
-    if (rhs && PyLong_CheckExact(rhs) && ! kos_long_as_ll(rhs, &b))     \
-      return NULL;                                                      \
-    return kos_elector_num_body(                                        \
-        (KosOperand) (OP), kos_elector_item_peek(obj, key), rhs,        \
-        kos_##FAMILY##_int_bodies, kos_##FAMILY##_float_bodies,         \
-        el_##FAMILY##_str_add);                                         \
-  }
+/* The classification of an in-place item site: the item peeked under
+   the site's object and key operands and the operand from the stack or
+   the row. A family whose operand rides the stack elects only at a
+   count of one, the shape its bodies read; a pool constant the int
+   body could never read leaves the site generic. */
+static inline KosThreadFn kos_elector_item_inplace_body(
+    KosOperand op,
+    PyObject *obj,
+    PyObject *key,
+    PyObject *rhs,
+    int count_ok,
+    const KosThreadFn *int_table,
+    const KosThreadFn *float_table,
+    KosThreadFn str_add) {
 
-/* The fast shapes read their object from the row's field 1. */
-#define KOS_ITEM_INPLACE_CLASSIFY(FAMILY, OP, KEY, RHS, COUNT_OK)      \
-  KOS_ITEM_INPLACE_CLASSIFY_OBJ(FAMILY, OP,                             \
-      kos_elector_item_fast_at(es, insn, 1), KEY, RHS, COUNT_OK)
+  long long b;
 
-KOS_ITEM_INPLACE_CLASSIFY_OBJ(item_inplace,
-    KosOpCount_TYPE(KosOp_ARG(insn)),
-    kos_elector_item_stack_at(es, 3, 0),
-    kos_elector_item_stack_at(es, 3, 1),
-    kos_stack_peek_top(es),
-    KosOpCount_COUNT(KosOp_ARG(insn)) == 1)
-KOS_ITEM_INPLACE_CLASSIFY_OBJ(const_item_inplace,
-    KosOpCount_TYPE(KosExtra_IMM(row, 0)),
-    kos_elector_item_stack_at(es, 2, 0),
-    KosExtra_OBJ(row, 1),
-    kos_stack_peek_top(es),
-    KosOpCount_COUNT(KosExtra_IMM(row, 0)) == 1)
-KOS_ITEM_INPLACE_CLASSIFY(fast_item_inplace,
-    KosOpCount_TYPE(KosExtra_IMM(row, 0)),
-    kos_elector_item_fast_at(es, insn, 2),
-    kos_stack_peek_top(es),
-    KosOpCount_COUNT(KosExtra_IMM(row, 0)) == 1)
-KOS_ITEM_INPLACE_CLASSIFY(fast_const_item_inplace,
-    KosOpCount_TYPE(KosExtra_IMM(row, 0)),
-    KosExtra_OBJ(row, 2),
-    kos_stack_peek_top(es),
-    KosOpCount_COUNT(KosExtra_IMM(row, 0)) == 1)
-KOS_ITEM_INPLACE_CLASSIFY(fast_item_inplace_const,
-    KosExtra_IMM(row, 0),
-    kos_elector_item_fast_at(es, insn, 2),
-    KosExtra_OBJ(row, 3),
-    1)
-KOS_ITEM_INPLACE_CLASSIFY(fast_const_item_inplace_const,
-    KosExtra_IMM(row, 0),
-    KosExtra_OBJ(row, 2),
-    KosExtra_OBJ(row, 3),
-    1)
+  if (! count_ok)
+    return NULL;
+  if (rhs && PyLong_CheckExact(rhs) && ! kos_long_as_ll(rhs, &b))
+    return NULL;
+  return kos_elector_num_body(
+      op, kos_elector_item_peek(obj, key), rhs, int_table, float_table,
+      str_add);
+}
+
+static inline KosThreadFn kos_elector_item_inplace_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  return kos_elector_item_inplace_body(
+      (KosOperand) KosOpCount_TYPE(KosOp_ARG(insn)),
+      kos_elector_item_stack_at(es, 3, 0),
+      kos_elector_item_stack_at(es, 3, 1),
+      kos_stack_peek_top(es),
+      KosOpCount_COUNT(KosOp_ARG(insn)) == 1,
+      kos_item_inplace_int_bodies, kos_item_inplace_float_bodies,
+      el_item_inplace_str_add);
+}
+
+static inline KosThreadFn kos_elector_const_item_inplace_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+
+  return kos_elector_item_inplace_body(
+      (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)),
+      kos_elector_item_stack_at(es, 2, 0),
+      KosExtra_OBJ(row, 1),
+      kos_stack_peek_top(es),
+      KosOpCount_COUNT(KosExtra_IMM(row, 0)) == 1,
+      kos_const_item_inplace_int_bodies, kos_const_item_inplace_float_bodies,
+      el_const_item_inplace_str_add);
+}
+
+static inline KosThreadFn kos_elector_fast_item_inplace_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+
+  return kos_elector_item_inplace_body(
+      (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)),
+      kos_elector_item_fast_at(es, insn, 1),
+      kos_elector_item_fast_at(es, insn, 2),
+      kos_stack_peek_top(es),
+      KosOpCount_COUNT(KosExtra_IMM(row, 0)) == 1,
+      kos_fast_item_inplace_int_bodies, kos_fast_item_inplace_float_bodies,
+      el_fast_item_inplace_str_add);
+}
+
+static inline KosThreadFn kos_elector_fast_const_item_inplace_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+
+  return kos_elector_item_inplace_body(
+      (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)),
+      kos_elector_item_fast_at(es, insn, 1),
+      KosExtra_OBJ(row, 2),
+      kos_stack_peek_top(es),
+      KosOpCount_COUNT(KosExtra_IMM(row, 0)) == 1,
+      kos_fast_const_item_inplace_int_bodies,
+      kos_fast_const_item_inplace_float_bodies,
+      el_fast_const_item_inplace_str_add);
+}
+
+static inline KosThreadFn kos_elector_fast_item_inplace_const_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+
+  return kos_elector_item_inplace_body(
+      (KosOperand) KosExtra_IMM(row, 0),
+      kos_elector_item_fast_at(es, insn, 1),
+      kos_elector_item_fast_at(es, insn, 2),
+      KosExtra_OBJ(row, 3),
+      1,
+      kos_fast_item_inplace_const_int_bodies,
+      kos_fast_item_inplace_const_float_bodies,
+      el_fast_item_inplace_const_str_add);
+}
+
+static inline KosThreadFn kos_elector_fast_const_item_inplace_const_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+
+  return kos_elector_item_inplace_body(
+      (KosOperand) KosExtra_IMM(row, 0),
+      kos_elector_item_fast_at(es, insn, 1),
+      KosExtra_OBJ(row, 2),
+      KosExtra_OBJ(row, 3),
+      1,
+      kos_fast_const_item_inplace_const_int_bodies,
+      kos_fast_const_item_inplace_const_float_bodies,
+      el_fast_const_item_inplace_const_str_add);
+}
+
 
 
 /* A family's electing function, reached from an empty slot or an
@@ -2456,21 +2619,24 @@ KOS_ELECTOR_ELECT(fast_const_item, kos_elector_fast_const_item_classify)
 KOS_ELECTOR_ELECT(item_store, kos_elector_item_store_classify)
 KOS_ELECTOR_ELECT(const_item_store, kos_elector_const_item_store_classify)
 KOS_ELECTOR_ELECT(fast_item_store, kos_elector_fast_item_store_classify)
-KOS_ELECTOR_ELECT(fast_const_item_store, kos_elector_fast_const_item_store_classify)
-KOS_ELECTOR_ELECT(fast_item_store_const, kos_elector_fast_item_store_const_classify)
-KOS_ELECTOR_ELECT(fast_const_item_store_const, kos_elector_fast_const_item_store_const_classify)
+KOS_ELECTOR_ELECT(fast_const_item_store,
+                  kos_elector_fast_const_item_store_classify)
+KOS_ELECTOR_ELECT(fast_item_store_const,
+                  kos_elector_fast_item_store_const_classify)
+KOS_ELECTOR_ELECT(fast_const_item_store_const,
+                  kos_elector_fast_const_item_store_const_classify)
 KOS_ELECTOR_ELECT(item_inplace, kos_elector_item_inplace_classify)
 KOS_ELECTOR_ELECT(const_item_inplace, kos_elector_const_item_inplace_classify)
 KOS_ELECTOR_ELECT(fast_item_inplace, kos_elector_fast_item_inplace_classify)
-KOS_ELECTOR_ELECT(fast_const_item_inplace, kos_elector_fast_const_item_inplace_classify)
-KOS_ELECTOR_ELECT(fast_item_inplace_const, kos_elector_fast_item_inplace_const_classify)
-KOS_ELECTOR_ELECT(fast_const_item_inplace_const, kos_elector_fast_const_item_inplace_const_classify)
+KOS_ELECTOR_ELECT(fast_const_item_inplace,
+                  kos_elector_fast_const_item_inplace_classify)
+KOS_ELECTOR_ELECT(fast_item_inplace_const,
+                  kos_elector_fast_item_inplace_const_classify)
+KOS_ELECTOR_ELECT(fast_const_item_inplace_const,
+                  kos_elector_fast_const_item_inplace_const_classify)
 
 
 #undef KOS_ELECTOR_ELECT
-#undef KOS_ITEM_CLASSIFY
-#undef KOS_ITEM_INPLACE_CLASSIFY
-#undef KOS_ITEM_INPLACE_CLASSIFY_OBJ
 #undef KOS_ITEM_INPLACE_STR_ELECTOR
 #undef KOS_CONST_ITEM_INPLACE_BODY
 #undef KOS_ITEM_INPLACE_BODY
@@ -2483,6 +2649,7 @@ KOS_ELECTOR_ELECT(fast_const_item_inplace_const, kos_elector_fast_const_item_inp
 #undef KOS_ITEM_INPLACE_FETCH_STACK
 #undef KOS_ITEM_INPLACE_FETCH_FAST_CONST
 #undef KOS_ITEM_INPLACE_FETCH_FAST
+#undef KOS_ITEM_INPLACE_CELL
 #undef KOS_ITEM_INPLACE_DECLINE
 #undef KOS_ITEM_STORE_ELECTORS
 #undef KOS_ITEM_LOAD_ELECTORS
