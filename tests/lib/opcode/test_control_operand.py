@@ -142,4 +142,49 @@ class TestYieldOperand(CevalTest):
         self.assertEqual(await collect(fn(3, 4)), [3, 4])
 
 
+    async def sent_value_after(self, agen, first):
+        """
+        Drive agen to its first yield, send a value into it, and return
+        what the generator yields next: the fused row pushes nothing,
+        so the sent value is the yield expression's value and the plain
+        YIELD after it hands it back
+        """
+
+        self.assertEqual(await anext(agen), first)
+        asend = agen.__anext__()
+        try:
+            return await asend.send(123)
+        except StopIteration as e:
+            return e.value
+
+
+    async def test_send_into_yield_const(self):
+        code, ns = build_expr([
+            ["YIELD_CONST", 1],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        agen = make_callable(code, ns)()
+        self.assertEqual(await self.sent_value_after(agen, 1), 123)
+
+
+    async def test_send_into_yield_var(self):
+        code, ns = build_expr([
+            ["YIELD_VAR", "x"],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ], values={"x": "a"})
+        agen = make_callable(code, ns)()
+        self.assertEqual(await self.sent_value_after(agen, "a"), 123)
+
+
+    async def test_send_into_yield_fast(self):
+        fn = fast_fn([
+            ["YIELD_FAST", 0],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ], ("a",))
+        self.assertEqual(await self.sent_value_after(fn(3), 3), 123)
+
+
 # The end.

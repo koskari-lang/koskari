@@ -86,6 +86,21 @@ class TestFuseControlFeeders(unittest.TestCase):
         instr = [(V, "a"), (V, "b"), (OpCode.RETURN, 2)]
         self.assertEqual(fuse_ops(instr), instr)
 
+    def test_feeder_across_label_stays(self):
+        instr = [(C, 42), (OpCode.LABEL, "join"), (OpCode.RETURN, 1)]
+        self.assertEqual(fuse_ops(instr), instr)
+        instr = [(V, "a"), (OpCode.LABEL, "join"), (OpCode.YIELD, 1),
+                 (OpCode.RETURN, 0)]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_feeder_position_transparent(self):
+        pos = (OpCode.POSITION, (1, 0, None))
+        out = fuse_ops([(C, 42), pos, (OpCode.RETURN, 1)])
+        self.assertEqual(out, [(OpCode.RETURN_CONST, 42), pos])
+        out = fuse_ops([(V, "a"), pos, (OpCode.YIELD, 1), (OpCode.RETURN, 0)])
+        self.assertEqual(
+            out, [(OpCode.YIELD_VAR, "a"), pos, (OpCode.RETURN, 0)])
+
     def test_return_var_lowers_to_fast(self):
         nspec = NamespaceSpec("fn", ("a",), ())
         out = convert_fast(nspec, [(OpCode.RETURN_VAR, "a")])

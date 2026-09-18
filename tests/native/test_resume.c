@@ -546,6 +546,151 @@ static int test_clone_copies_node_resume(void) {
 }
 
 
+/* A kind whose clone and clear record what they are handed, for the
+   transfer restore tests: the clone answers a distinct pointer so the
+   record's state can be told from the template's. */
+static void *recorded_clone_in = NULL;
+static void *recorded_clear_in = NULL;
+static int recorded_clone_calls = 0;
+static int recorded_clear_calls = 0;
+static int recorded_clone_out;
+
+static void *recording_clone(void *state) {
+  recorded_clone_in = state;
+  recorded_clone_calls++;
+  return &recorded_clone_out;
+}
+
+static void recording_clear(void *state) {
+  recorded_clear_in = state;
+  recorded_clear_calls++;
+}
+
+KOS_RESUME_KIND(resume_recording_kind, "recording", resume_probe,
+                recording_clear, recording_clone);
+
+static void recording_reset(void) {
+  recorded_clone_in = NULL;
+  recorded_clear_in = NULL;
+  recorded_clone_calls = 0;
+  recorded_clear_calls = 0;
+}
+
+
+/* A transfer restore record takes the kind's clone of the template's
+   state, and a record freed unapplied runs the kind's clear on that
+   clone; the template keeps its own state throughout. */
+static int test_capture_restore_clones_and_clears_unapplied(void) {
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  KosDynFrame *live = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(live, "create live frame");
+  KosDynFrame *tmpl = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(tmpl, "create template frame");
+  KosDynNode_NODE_ID(tmpl) = kos_dynnode_id(live);
+
+  int marker = 0;
+  recording_reset();
+  KosDynFrame_RESUME_KIND(tmpl) = &resume_recording_kind;
+  KosDynFrame_RESUME_STATE(tmpl) = &marker;
+
+  KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, NULL,
+                                        0, 0, NULL, 0);
+  TEST_ASSERT_NOT_NULL(goal, "create goal");
+
+  TEST_ASSERT_EQ(kos_xfer_goal_capture_restore(
+                     goal, (KosDynNode *) live, (KosDynNode *) tmpl),
+                 0, "the record is captured");
+  TEST_ASSERT_EQ(recorded_clone_calls, 1, "the kind's clone ran once");
+  TEST_ASSERT_SAME(recorded_clone_in, &marker,
+                   "the clone was handed the template's state");
+  TEST_ASSERT_SAME(KosDynFrame_RESUME_STATE(tmpl), &marker,
+                   "the template keeps its own state");
+  TEST_ASSERT_EQ(recorded_clear_calls, 0, "nothing cleared yet");
+
+  /* freed unapplied: the clone is the goal's to clear */
+  kos_xfer_goal_free(goal);
+  TEST_ASSERT_EQ(recorded_clear_calls, 1, "the kind's clear ran once");
+  TEST_ASSERT_SAME(recorded_clear_in, &recorded_clone_out,
+                   "the clear was handed the record's clone");
+
+  KosDynFrame_RESUME_KIND(tmpl) = NULL;
+  KosDynFrame_RESUME_STATE(tmpl) = NULL;
+  kos_dynframe_free(tmpl);
+  kos_dynframe_free(live);
+  Py_DECREF(ns);
+  return 0;
+}
+
+
+/* Applying a record clears the resume the live frame held and hands
+   the clone to the frame, so the goal no longer owns it: driven as a
+   throw, whose delivery touches no frame stack. */
+static int test_capture_restore_apply_hands_over_the_clone(void) {
+  KosContext *ctx = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosEvalState_ThawFromContext(&es);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *live = kos_dyn_push_frame(&es, NULL, ns);
+  TEST_ASSERT_NOT_NULL(live, "push live frame");
+  KosDynFrame *tmpl = kos_dynframe_new(NULL, NULL, ns);
+  TEST_ASSERT_NOT_NULL(tmpl, "create template frame");
+  KosDynNode_NODE_ID(tmpl) = kos_dynnode_id(live);
+
+  int marker = 0;
+  int prior = 0;
+  recording_reset();
+  KosDynFrame_RESUME_KIND(tmpl) = &resume_recording_kind;
+  KosDynFrame_RESUME_STATE(tmpl) = &marker;
+
+  PyObject *exc = PyObject_CallNoArgs(PyExc_ValueError);
+  TEST_ASSERT_NOT_NULL(exc, "create payload");
+  KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, exc,
+                                        1, (uint32_t) -1, NULL, 0);
+  TEST_ASSERT_NOT_NULL(goal, "create goal");
+  TEST_ASSERT_EQ(kos_xfer_goal_capture_restore(
+                     goal, (KosDynNode *) live, (KosDynNode *) tmpl),
+                 0, "the record is captured");
+
+  /* the live frame carries a resume of its own the landing displaces */
+  KosDynFrame_RESUME_KIND(live) = &resume_recording_kind;
+  KosDynFrame_RESUME_STATE(live) = &prior;
+
+  kos_xfer_goal_arm(&es, goal);
+  {
+    int boundary = 0;
+    KosOpResult r = kos_xfer_goal_drive(&es, &boundary);
+    TEST_ASSERT_EQ(r.kind, (int) KOS_RES_NORMAL, "the goal drives through");
+  }
+  TEST_ASSERT_NULL(KosEvalState_GOAL(&es), "the goal retired");
+  TEST_ASSERT_EQ(recorded_clear_calls, 1,
+                 "the live frame's prior resume was cleared once");
+  TEST_ASSERT_SAME(recorded_clear_in, &prior,
+                   "the clear was handed the prior state");
+  TEST_ASSERT_SAME(KosDynFrame_RESUME_KIND(live), &resume_recording_kind,
+                   "the live frame carries the record's kind");
+  TEST_ASSERT_SAME(KosDynFrame_RESUME_STATE(live), &recorded_clone_out,
+                   "the live frame carries the record's clone");
+
+  KosDynFrame_RESUME_KIND(live) = NULL;
+  KosDynFrame_RESUME_STATE(live) = NULL;
+  KosDynFrame_RESUME_KIND(tmpl) = NULL;
+  KosDynFrame_RESUME_STATE(tmpl) = NULL;
+  kos_dynframe_free(tmpl);
+  Py_DECREF(exc);
+  KosEvalState_FreezeToContext(&es);
+  Py_DECREF(ctx);
+  Py_DECREF(ns);
+  return 0;
+}
+
+
 /* A transfer restore record clones a template frame's resume state
    through its kind; a template whose kind cannot clone is refused
    with an error in every build, never called through. The template
@@ -770,6 +915,8 @@ int run_resume_tests(void) {
   RUN_TEST(test_raise_walk_resume_propagates);
   RUN_TEST(test_raise_walk_resume_handles);
   RUN_TEST(test_clone_copies_node_resume);
+  RUN_TEST(test_capture_restore_clones_and_clears_unapplied);
+  RUN_TEST(test_capture_restore_apply_hands_over_the_clone);
   RUN_TEST(test_capture_restore_refuses_uncloneable_kind);
   RUN_TEST(test_clone_refuses_step_resume_frame);
   RUN_TEST(test_park_inert_clears_resume_triple);

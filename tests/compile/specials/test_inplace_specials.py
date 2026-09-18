@@ -42,17 +42,15 @@ def _count_op(code, opcode):
     return sum(1 for op, _ in _ops(code) if op == opcode)
 
 
-def _find_inplace(code, operand):
+def _row(code, opcode):
     """
-    Return the operand count of the first OBJECT_INPLACE instruction whose
-    op-type is `operand`, or None. The stack in-place operators were
-    consolidated into OBJECT_INPLACE, whose arg packs the operator selector in
-    the high byte and the count in the low byte.
+    The operand row of the first instruction with opcode, with its
+    pool values restored, or None
     """
 
-    for op, arg in _ops(code):
-        if op == OpCode.OBJECT_INPLACE and (arg >> 8) == int(operand):
-            return arg & 0xff
+    for op, arg in code.soften():
+        if op == opcode:
+            return tuple(arg)
     return None
 
 
@@ -138,14 +136,20 @@ class TestInplaceItemSpecial(SpecialsTestCase):
     async def test_inplace_item_symbol_obj_const_key_const_value(self):
         code = self.compile_to_code('(inplace-item + d "k" 1)', d={})
         self.assertEqual(0, _count_op(code, OpCode.DUP))
-        self.assertIn(OpCode.VAR_CONST_ITEM_INPLACE_CONST, _opcodes(code))
         self.assertNotIn(OpCode.CONST, _opcodes(code)[:1])
+        # the row carries the selector, the object, the key and the
+        # folded operand
+        self.assertEqual(
+            (int(Operand.ADD), "d", "k", 1),
+            _row(code, OpCode.VAR_CONST_ITEM_INPLACE_CONST))
 
 
     async def test_inplace_item_symbol_obj_symbol_key_const_value(self):
         code = self.compile_to_code("(inplace-item + lst i 1)", lst=[], i=0)
         self.assertEqual(0, _count_op(code, OpCode.DUP))
-        self.assertIn(OpCode.VAR_ITEM_INPLACE_CONST, _opcodes(code))
+        self.assertEqual(
+            (int(Operand.ADD), "lst", "i", 1),
+            _row(code, OpCode.VAR_ITEM_INPLACE_CONST))
 
 
     async def test_inplace_item_symbol_obj_computed_value(self):
