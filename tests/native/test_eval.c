@@ -2125,12 +2125,17 @@ static int test_item_store_site_demotes_and_re_elects(void) {
     TEST_ASSERT_NULL(slot->u.item.fn.store, "a demoted site holds no body");
     TEST_ASSERT_EQ(PyDict_GetItem(d, zero), val, "the dict took the value");
 
-    /* the eight misses each ran the protocol once and ticked; the
-       wrap at 256 empties the slot */
-    for (int i = 0; i < 256 - 8; i++) {
+    /* the demotion reset the tick count and the demoting execution
+       then ran the protocol once, so the wrap at 256 protocol
+       executions since the demotion comes 255 executions later */
+    for (int i = 0; i < 254; i++) {
         TEST_ASSERT_EQ(run_item_site(code_obj, d, zero, val), (int) KOS_RES_RETURN,
                        "a demoted site stores through the protocol");
     }
+    TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_ITEM,
+                   "one execution short of the wrap the slot is still demoted");
+    TEST_ASSERT_EQ(run_item_site(code_obj, d, zero, val), (int) KOS_RES_RETURN,
+                   "the 256th protocol execution since the demotion");
     TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_EMPTY,
                    "the tick wrap empties the slot");
     TEST_ASSERT_EQ(run_item_site(code_obj, d, zero, val), (int) KOS_RES_RETURN,
