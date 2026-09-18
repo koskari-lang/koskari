@@ -35,9 +35,9 @@ from ...lib import Compare, OpCode, Operand, cons, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import is_keyword, is_nil, is_pair, is_symbol, unpack
-from ..helpers import const_only_expr, feeder_expr, splat_call_form
+from ..helpers import (
+    const_only_expr, emit_item_place, feeder_expr, splat_call_form)
 from ..processor import item_inplace_arg, item_opcode
-from .items import emit_item_place
 
 
 # Two or more operands, with the short arm carrying the arity message a
@@ -1032,12 +1032,12 @@ def special_inplace_item(compiler, called_by, op, obj, key, values):
         frag.position(op.position)
 
     keyfrag = compiler.full_compile(key.datum)
-    key_kind, _ = feeder_expr(keyfrag)
+    key = feeder_expr(keyfrag)
     valfrags = [compiler.full_compile(value_expr) for value_expr in value_exprs]
     value_feeders = all(feeder_expr(f)[0] is not None for f in valfrags)
 
     obj_op, key_op, fields = emit_item_place(
-        compiler, frag, obj, keyfrag, key_kind, value_feeders)
+        compiler, frag, obj, keyfrag, key, value_feeders)
     for valfrag in valfrags:
         frag.merge(valfrag)
     if fields:

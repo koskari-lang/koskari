@@ -41,10 +41,11 @@ __all__ = (
     "USING",
     "USING_UNPACK",
     "const_only_expr",
-    "emit_item_access",
-    "feeder_expr",
     "convert_bindings",
     "discover_docstring",
+    "emit_item_access",
+    "emit_item_place",
+    "feeder_expr",
     "gather_bindings",
     "gather_formals",
     "gather_parameters",
@@ -661,6 +662,57 @@ def emit_item_access(compiler, called_by, obj, key, stack_op, named_op):
         frag.merge(keyfrag)
         frag.instruction(stack_op, 0)
     return frag
+
+
+ITEM_FEEDER_OP = {'var': OpCode.VAR, 'const': OpCode.CONST}
+
+
+def emit_item_place(compiler, frag, obj, keyfrag, key, value_feeders):
+    """
+    Emit the object and key of a store or in-place row, answering the
+    feeder opcodes the row names for them, None for a stack operand.
+    Plain when the key and every value are feeders: the object and the
+    key compile to the stack and the compress pipeline folds the row's
+    trailing feeders. Otherwise a non-feeder operand would sit between
+    a named operand and the row, so the object is named when it
+    compiles to a bare name load (nil is a symbol that does not) and
+    the key when a feeder, and only the rest compiles to the stack
+
+    :param compiler: the Compiler
+    :param frag: the fragment being built
+    :param obj: the object match
+    :param keyfrag: the compiled key
+    :param key: the key's feeder pair from feeder_expr
+    :param value_feeders: whether every value is a feeder
+    :return: (obj_op, key_op, fields) for item_opcode and item_arg
+    """
+
+    key_kind, key_val = key
+    objfrag = compiler.full_compile(obj.datum)
+    obj_kind, obj_name = feeder_expr(objfrag)
+    if obj_kind != 'var':
+        obj_name = None
+    if (key_kind and value_feeders) or not (obj_name or key_kind):
+        frag.merge(objfrag)
+        frag.merge(keyfrag)
+        return None, None, []
+
+    fields = []
+    obj_op = key_op = None
+    if obj_name is None:
+        frag.merge(objfrag)
+    else:
+        frag.request_var(obj_name)
+        obj_op = OpCode.VAR
+        fields.append(obj_name)
+    if key_kind is None:
+        frag.merge(keyfrag)
+    else:
+        if key_kind == 'var':
+            frag.request_var(key_val)
+        key_op = ITEM_FEEDER_OP[key_kind]
+        fields.append(key_val)
+    return obj_op, key_op, fields
 
 
 def call_form_reroute(called_by, body):
