@@ -211,7 +211,7 @@ OP(ITEM_CLEAR, 0, NOARG)
 OP(ITEM_TAKE, 0, NOARG)
 OP(ITEM_REF, 0, NOARG)
 OP(ITEM_STORE, 1, NOARG)  // cache: elector
-OP(ITEM_INPLACE, 0, OPCOUNT)
+OP(ITEM_INPLACE, 1, OPCOUNT)  // cache: elector
 
 // object item indexing (constant key)
 OP(CONST_ITEM, 1, CONST)  // cache: elector
@@ -219,7 +219,7 @@ OP(CONST_ITEM_CLEAR, 0, CONST)
 OP(CONST_ITEM_TAKE, 0, CONST)
 OP(CONST_ITEM_REF, 0, CONST)
 OP(CONST_ITEM_STORE, 1, CONST)  // cache: elector
-OP(CONST_ITEM_INPLACE, 0, EXTRA, OPCOUNT, CONST, NOARG, NOARG)
+OP(CONST_ITEM_INPLACE, 1, EXTRA, OPCOUNT, CONST, NOARG, NOARG)  // cache: elector
 
 // reference dereference
 OP(DEREF, 0, NOARG)

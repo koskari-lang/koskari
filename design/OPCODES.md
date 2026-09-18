@@ -2704,11 +2704,13 @@ and the VAR rows run the object protocol through the shared
 
 - **Style**: OPCOUNT (operator selector, value count).
 - **Stack**: `[..., obj, key, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right through the object protocol, store it back, drop every entry. Emitted by **`compile/inplace-item`** when OBJ is an expression or KEY is computed.
+- **Cache**: one KOS_CACHE_ELECTOR slot; the int and float bodies of the FAST twin over the stack shape, elected at a count of one.
 - **Implementation**: `koskari/lib/opcode/ITEM_INPLACE.c`
 ### KOS_OP_CONST_ITEM_INPLACE {#kos_op_const_item_inplace}
 
 - **Style**: EXTRA (OPCOUNT, CONST, NOARG, NOARG).
 - **Stack**: `[..., obj, v0 .. v_{n-1}] → [...]`. Reduce obj[key] in place with each value left to right, the key a pool constant, store it back, drop every entry. Emitted by **`compile/inplace-item`** when OBJ is an expression and KEY is constant.
+- **Cache**: one KOS_CACHE_ELECTOR slot; the int and float bodies of the FAST twin over the stack shape, elected at a count of one.
 - **Implementation**: `koskari/lib/opcode/CONST_ITEM_INPLACE.c`
 ## 15.1 Reference dereference
 

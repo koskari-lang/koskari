@@ -18,23 +18,19 @@
    reduction count in the low byte). Stack [obj, key, v0 .. v_{count-1}];
    obj[key] OP= each value left to right through kos_item_inplace_reduce,
    then every entry is dropped; pushes nothing (the special appends CONST
-   None). Cold: the operator switch lives in the shared reduce.
+   None). Prologue only: tail-call the body the site's slot elected
+   (eval/eval_electors.c), which carries its own guard; an empty slot or
+   an ungated site takes the electing function, which classifies the
+   item and operand once and settles the slot. One cache slot:
+   KOS_CACHE_ELECTOR.
 */
 
 KOS_OP_HANDLER(ITEM_INPLACE) {
-  uint16_t arg = KosOp_ARG(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
-  int count = (int) KosOpCount_COUNT(arg);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
 
-  PyObject *const *tail = KosEvalState_StackTailPtr(es, (size_t) (count + 2));
-  if (! tail)
-    RESULT_RAISE();
-
-  int res = kos_item_inplace_reduce(tail[0], tail[1], op, &tail[2], count);
-  KosEvalState_StackDropNoErr(es, (size_t) (count + 2));
-  if (unlikely(res < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_item_inplace_elect, es, insn, NULL);
 }
 
 

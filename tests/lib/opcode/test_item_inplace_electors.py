@@ -86,6 +86,34 @@ def stack_site(opname, cache=True, count=1):
     return make_site(instr, syms, cache=cache)
 
 
+def object_stack_site(opname, cache=True, count=1):
+    """
+    (obj, key, v...) applying obj[key] OP= v... through ITEM_INPLACE,
+    the object and key on the stack below the values
+    """
+
+    syms = ('obj', 'key') + tuple(f'v{i}' for i in range(count))
+    loads = [['FAST', i] for i in range(2 + count)]
+    return make_site(
+        loads + [['ITEM_INPLACE', opcount(Operand[opname], count)],
+                 ['CONST', None], ['RETURN', 1]],
+        syms, cache=cache)
+
+
+def object_stack_const_key_site(opname, key, cache=True, count=1):
+    """
+    (obj, v...) applying obj[key] OP= v... through CONST_ITEM_INPLACE,
+    the object on the stack below the values and the key a constant
+    """
+
+    syms = ('obj',) + tuple(f'v{i}' for i in range(count))
+    loads = [['FAST', i] for i in range(1 + count)]
+    return make_site(
+        loads + [['CONST_ITEM_INPLACE', (opcount(Operand[opname], count), key, 0, 0)],
+                 ['CONST', None], ['RETURN', 1]],
+        syms, cache=cache)
+
+
 def const_key_stack_site(opname, key, cache=True):
     instr = [
         ['FAST', 1],
@@ -128,19 +156,19 @@ class ListSub(list):
 
 class TestCacheSlots(CevalTest):
 
-    def test_fast_rows_request_one_slot(self):
+    def test_slotted_rows_request_one_slot(self):
         for maker in (lambda c: stack_site('ADD', cache=c),
                       lambda c: const_key_stack_site('ADD', 0, cache=c),
                       lambda c: const_rhs_site('ADD', 1, cache=c),
-                      lambda c: const_both_site('ADD', 0, 1, cache=c)):
+                      lambda c: const_both_site('ADD', 0, 1, cache=c),
+                      lambda c: object_stack_site('ADD', cache=c),
+                      lambda c: object_stack_const_key_site('ADD', 0, cache=c)):
             self.assertEqual(maker(True)[1].cache_slots, 1)
             self.assertEqual(maker(False)[1].cache_slots, 0)
 
 
-    def test_other_rows_request_no_slot(self):
+    def test_var_rows_request_no_slot(self):
         for instr in (
-                [['ITEM_INPLACE', opcount(Operand.ADD, 1)]],
-                [['CONST_ITEM_INPLACE', (opcount(Operand.ADD, 1), 0, 0, 0)]],
                 [['VAR_ITEM_INPLACE', (opcount(Operand.ADD, 1), 'a', 'k', 0)]],
                 [['VAR_CONST_ITEM_INPLACE', (opcount(Operand.ADD, 1), 'a', 0, 0)]],
                 [['VAR_ITEM_INPLACE_CONST', (int(Operand.ADD), 'a', 'k', 1)]],
@@ -247,6 +275,116 @@ class TestFastItemInplaceElector(CevalTest):
 
     async def test_error_at_an_elected_site_propagates(self):
         site, _ = stack_site('MODULO')
+        lst = [7]
+        await site(lst, 0, 3)
+        self.assertEqual(lst, [1])
+        with self.assertRaises(ZeroDivisionError):
+            await site(lst, 0, 0)
+        await site([8], 0, 3)
+
+
+class TestItemInplaceElector(CevalTest):
+    """
+    The stack shapes: object and key below the value, or object below
+    the value and a constant key
+    """
+
+    async def test_every_int_operator_on_list_and_dict_cells(self):
+        for opname, pyop in INT_OPERATORS:
+            site, _ = object_stack_site(opname)
+            for a, b in INT_PAIRS * 2:
+                for container, key in (([a], 0), ({"k": a}, "k")):
+                    try:
+                        expected = pyop(a, b)
+                    except Exception as exc:
+                        with self.assertRaises(type(exc)):
+                            await site(container, key, b)
+                        continue
+                    if opname == 'BIT_LEFT' and b > 64:
+                        continue
+                    await site(container, key, b)
+                    self.assertTrue(same(container[key], expected),
+                                    (opname, a, b, container[key]))
+
+
+    async def test_every_float_operator_with_constant_key(self):
+        for opname, pyop in FLOAT_OPERATORS:
+            site, _ = object_stack_const_key_site(opname, 0)
+            for a, b in FLOAT_PAIRS * 2:
+                lst = [a]
+                try:
+                    expected = pyop(a, b)
+                except Exception as exc:
+                    with self.assertRaises(type(exc)):
+                        await site(lst, b)
+                    continue
+                await site(lst, b)
+                self.assertTrue(same(lst[0], expected), (opname, a, b, lst[0]))
+
+
+    async def test_elected_site_declines_and_misses(self):
+        for cache in (True, False):
+            site, _ = object_stack_site('ADD', cache=cache)
+            lst = [1, 2, 3]
+            for i in range(-3, 3):
+                await site(lst, i, 10)
+            self.assertEqual(lst, [21, 22, 23])
+            with self.assertRaises(IndexError):
+                await site(lst, 3, 1)
+            with self.assertRaises(KeyError):
+                await site({}, "k", 1)
+            d = {"k": "a"}
+            await site(d, "k", "b")
+            self.assertEqual(d["k"], "ab")
+            sub = ListSub([0])
+            await site(sub, 0, 1)
+            self.assertEqual(list.__getitem__(sub, 0), ("sub", 101))
+            with self.assertRaises(TypeError):
+                await site((1,), 0, 1)
+            await site(lst, 1, 1)
+            self.assertEqual(lst[1], 23)
+            # the stack is empty after every shape
+            self.assertIsNone(await site(lst, 0, 0))
+
+
+    async def test_demoted_site_re_elects_and_serves_every_kind(self):
+        site, _ = object_stack_site('ADD')
+        lst, fl = [0], [0.0]
+        for _ in range(10):
+            await site(lst, 0, 1)
+            await site(fl, 0, 0.5)
+        for _ in range(600):
+            await site(fl, 0, 0.5)
+        await site(lst, 0, 1)
+        self.assertEqual(lst, [11])
+        self.assertEqual(fl, [305.0])
+        site, _ = object_stack_const_key_site('ADD', 0)
+        lst, fl = [0], [0.0]
+        for _ in range(10):
+            await site(lst, 1)
+            await site(fl, 0.5)
+        for _ in range(600):
+            await site(fl, 0.5)
+        await site(lst, 1)
+        self.assertEqual(lst, [11])
+        self.assertEqual(fl, [305.0])
+
+
+    async def test_two_value_site_is_generic_and_correct(self):
+        site, _ = object_stack_site('ADD', count=2)
+        lst = [1]
+        for _ in range(5):
+            await site(lst, 0, 10, 100)
+        self.assertEqual(lst, [551])
+        site, _ = object_stack_const_key_site('SUBTRACT', 0, count=2)
+        lst = [1000]
+        for _ in range(3):
+            await site(lst, 10, 100)
+        self.assertEqual(lst, [670])
+
+
+    async def test_error_at_an_elected_site_propagates(self):
+        site, _ = object_stack_site('MODULO')
         lst = [7]
         await site(lst, 0, 3)
         self.assertEqual(lst, [1])

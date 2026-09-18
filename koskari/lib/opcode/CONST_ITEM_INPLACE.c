@@ -17,24 +17,19 @@
    CONST_ITEM_INPLACE: arg = extra index. Schema OPCOUNT (operator
    selector and count), CONST (key). Stack [obj, v0 .. v_{count-1}];
    obj[key] OP= each value left to right through kos_item_inplace_reduce,
-   then every entry is dropped; pushes nothing.
+   then every entry is dropped; pushes nothing. Prologue only: tail-call
+   the body the site's slot elected (eval/eval_electors.c), which
+   carries its own guard; an empty slot or an ungated site takes the
+   electing function, which classifies the item and operand once and
+   settles the slot. One cache slot: KOS_CACHE_ELECTOR.
 */
 
 KOS_OP_HANDLER(CONST_ITEM_INPLACE) {
-  const KosExtra *row = KosOp_ROW(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
-  int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
-  PyObject *key = KosExtra_OBJ(row, 1);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
 
-  PyObject *const *tail = KosEvalState_StackTailPtr(es, (size_t) (count + 1));
-  if (! tail)
-    RESULT_RAISE();
-
-  int res = kos_item_inplace_reduce(tail[0], key, op, &tail[1], count);
-  KosEvalState_StackDropNoErr(es, (size_t) (count + 1));
-  if (unlikely(res < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_const_item_inplace_elect, es, insn, NULL);
 }
 
 
