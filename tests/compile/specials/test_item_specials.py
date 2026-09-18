@@ -19,7 +19,10 @@ special forms.
 
 import pytest
 
+from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.lib import OpCode
+from koskari.matcher import CALLEDBY, MATCH
+from koskari.syntax import special
 
 from . import SpecialsTestCase
 
@@ -195,6 +198,47 @@ class TestItemSpecialFusion(SpecialsTestCase):
         body = self.lambda_body_code(code)
         ops = [body.oparg(i)[0] for i in range(body.length())]
         self.assertIn(OpCode.FAST_ITEM, ops)
+
+
+class TestItemKeyCompiledOnce(SpecialsTestCase):
+    """
+    The key form of an item store compiles once whatever path the
+    store takes, so a compile-time effect in the key runs once
+    """
+
+    def counting_specials(self):
+        counts = []
+        patterns = [MATCH(CALLEDBY("called_by"))]
+
+        @special("compile/count-key", patterns=patterns, unpack="kwargs")
+        def special_count_key(compiler, called_by):
+            # a computed key: neither a lone constant nor a lone name,
+            # so the store takes its stack path
+            counts.append(1)
+            frag = compiler.fragment(called_by.datum)
+            frag.instruction(OpCode.CONST, 0)
+            frag.instruction(OpCode.CONST, 1)
+            frag.instruction(OpCode.POP, 1)
+            return frag
+
+        specials = dict(_BUILTIN_REGISTRY)
+        specials["compile/count-key"] = special_count_key
+        return specials, counts
+
+
+    async def test_set_item_symbol_obj_computed_key_compiles_key_once(self):
+        specials, counts = self.counting_specials()
+        self.compile_expr(
+            "(set-item lst (count-key) 1)", specials=specials, lst=[])
+        self.assertEqual(len(counts), 1)
+
+
+    async def test_inplace_item_symbol_obj_computed_key_compiles_key_once(self):
+        specials, counts = self.counting_specials()
+        self.compile_expr(
+            "(inplace-item + lst (count-key) 1)",
+            specials=specials, lst=[0])
+        self.assertEqual(len(counts), 1)
 
 
 # The end.
