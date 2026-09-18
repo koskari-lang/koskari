@@ -82,7 +82,7 @@ class TestSetItemShapes(SpecialsTestCase):
     compile/set-item emits the object, key, value, and ITEM_STORE and
     the compress pipeline folds the trailing feeders; when the key or
     the value is not a feeder the special names what a fold could not
-    reach (see design/interpreter/item-opcode-matrix.md)
+    reach (see design/archive/item-opcode-matrix.md)
     """
 
     def ops(self, src, **defns):

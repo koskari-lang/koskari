@@ -195,7 +195,7 @@ COMPARE_FOLDS = {
 
 # The item family's VAR rows and their FAST twins, written out: the
 # object, key, and value markers each lower, in any position of the
-# name (see design/interpreter/item-opcode-matrix.md).
+# name (see design/archive/item-opcode-matrix.md).
 ITEM_VAR_TO_FAST = {
     OpCode.ITEM_VAR: OpCode.ITEM_FAST,
     OpCode.ITEM_VAR_CLEAR: OpCode.ITEM_FAST_CLEAR,
@@ -872,7 +872,7 @@ class ByteCodeProcessor:
         directly ahead of it, which is always its trailing operands in
         stack order (value, then key, then object); a CONST in the
         object position never folds, so the rule declines to the
-        shorter form. See design/interpreter/item-opcode-matrix.md
+        shorter form. See design/archive/item-opcode-matrix.md
         """
 
         verb = op.name[len('ITEM_'):] or 'ITEM'

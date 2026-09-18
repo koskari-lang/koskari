@@ -243,7 +243,7 @@ quick lookup.
 - `KOS_OP_ITEM_STORE`: Set item
 - `KOS_OP_ITEM_CONST`: Get item (constant key), and the rest of the
   item grid named by object, key, and value origin (see
-  [item-opcode-matrix.md](item-opcode-matrix.md))
+  [../archive/item-opcode-matrix.md](../archive/item-opcode-matrix.md))
 
 ### Calls
 - `KOS_OP_CALL`: Simple call

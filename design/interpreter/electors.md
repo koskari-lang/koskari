@@ -349,7 +349,7 @@ key, exact `PyList` with `PyLong` index, exact `PyTuple`, generic
 mapping. Built: the election lives in the shared helpers of
 `eval/eval_item.c` on a KOS_CACHE_ITEM slot, and every row of the
 family is a fetch, a call, and a settle; see
-[item-opcode-matrix.md](item-opcode-matrix.md).
+[../archive/item-opcode-matrix.md](../archive/item-opcode-matrix.md).
 
 **OBJECT_ITER, VAR_ITER, FAST_ITER, PUSH_FOREACH's acquisition**.
 `kos_iter_acquire` chooses sync versus async acquisition. An elector here

@@ -1,8 +1,19 @@
 # Item opcode matrix: naming, shared helpers, and the full grid
 
-**Status:** Implemented 2026-09-18 on the fast-item-store-opcodes branch: the 92 rows, `eval/eval_item.c`, the fold rules, the specials, the ABI bump to 0.19, the tests, and the references. The container runs (native, ASan, valgrind) are the remaining gates.
+**Status:** As built. Implemented 2026-09-18 on the fast-item-store-opcodes
+branch: the 92 rows, `eval/eval_item.c`, the fold rules, the specials,
+the ABI bump to 0.19, the tests, and the references, with every gate
+green (make test, lint, native, ASan, valgrind, the ASan suite). A
+three-agent review then changed four things the sections below record:
+a dict body that ran user code keeps its hold and hands it to the
+protocol path (KOS_ITEM_HELD), an object is named only when it
+compiles to a bare VAR load, an in-place row whose whole tail is the
+operand run takes a count of zero, and the in-place row args go
+through `item_inplace_arg` with `emit_item_place` beside
+`emit_item_access` in the compile helpers. Archived; the section 15
+prose of the rollup and the VM reference is the permanent record.
 
-**Ref:** [electors.md](electors.md) for the cache-style elector home the
+**Ref:** [../interpreter/electors.md](../interpreter/electors.md) for the cache-style elector home the
 item families use today; [../OPCODES.md](../OPCODES.md) sections 12, 13
 and 15 for the current rows; `koskari/lib/eval/eval_electors.c` for the
 families being replaced.

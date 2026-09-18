@@ -36,7 +36,7 @@
    Only the elected hit path is inline; the election, the protocol
    path and the miss accounting are out of line, one copy each.
 
-   See design/interpreter/item-opcode-matrix.md.
+   See design/archive/item-opcode-matrix.md.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3

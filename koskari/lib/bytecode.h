@@ -494,7 +494,7 @@ typedef enum KosElectorMode {
    a KosItemCode (eval/eval_item.c): hit, a guard miss, a decline to
    the object protocol, or an error. The store body consumes val
    unless it misses or declines. See
-   design/interpreter/item-opcode-matrix.md.
+   design/archive/item-opcode-matrix.md.
 */
 typedef int (*KosItemLoadBody)(PyObject *obj, PyObject *key, PyObject **out);
 typedef int (*KosItemStoreBody)(PyObject *obj, PyObject *key, PyObject *val);
