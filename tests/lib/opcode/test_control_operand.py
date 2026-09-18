@@ -34,6 +34,14 @@ from tests.lib.opcode import CevalTest, build_code, build_expr
 pytestmark = pytest.mark.phase_lib
 
 
+try:
+    anext
+except NameError:
+    # anext wasn't available until Python 3.10
+    async def anext(agen):
+        return await agen.__anext__()
+
+
 def fast_fn(instr, syms):
     """
     A function over the fast locals syms running instr
