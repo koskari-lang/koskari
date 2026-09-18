@@ -29,6 +29,8 @@ from koskari.compile.processor import (
     ITEM_VAR_TO_FAST, VAR_TO_FAST, ByteCodeProcessor, make_cmpsrc)
 from koskari.lib import Compare, NamespaceSpec, OpCode, Operand
 
+from tests.lib.opcode import opcount
+
 from . import make_fragment
 
 
@@ -685,6 +687,23 @@ class TestFuseItemStore(unittest.TestCase):
         out = fuse_ops([(V, "f"), call, row])
         self.assertEqual(out, [(V, "f"), call, row])
 
+    def test_position_transparent(self):
+        out = fuse_ops([
+            (V, "a"), (P, 1), (V, "i"), (P, 2), (V, "v"), (P, 3), (self.ST, 0)])
+        self.assertEqual(
+            out, [(OpCode.VAR_ITEM_VAR_STORE_VAR, ("a", "i", "v", 0)), (P, 3)])
+
+    def test_compound_object_ending_in_a_load_folds_the_load(self):
+        # the object's last instruction is the bare load the rule sees
+        # as the object feeder; the call ahead of it is left in place
+        call = (OpCode.CALL, 0)
+        out = fuse_ops([
+            (V, "f"), call, (OpCode.POP, 1), (V, "a"), (V, "i"), (V, "v"),
+            (self.ST, 0)])
+        self.assertEqual(out, [
+            (V, "f"), call, (OpCode.POP, 1),
+            (OpCode.VAR_ITEM_VAR_STORE_VAR, ("a", "i", "v", 0))])
+
 
 class TestFuseItemInplace(unittest.TestCase):
     """
@@ -733,6 +752,30 @@ class TestFuseItemInplace(unittest.TestCase):
         out = fuse_ops([(V, "a"), (V, "i"), (V, "x"), (C, 2), (self.IP, ADD2)])
         self.assertEqual(out, [
             (V, "x"), (C, 2), (OpCode.VAR_ITEM_VAR_INPLACE, (ADD2, "a", "i", 0))])
+
+    def test_re_emitted_values_pack(self):
+        nspec = NamespaceSpec(None, ("a", "i", "x", "y"), ())
+        proc = ByteCodeProcessor(make_fragment([
+            (V, "a"), (V, "i"), (V, "x"), (V, "y"), (self.IP, ADD2),
+            (OpCode.RETURN, 0)]))
+        proc.fuse_feeders()
+        proc.normalize_opcount()
+        proc.convert_fast(nspec)
+        proc.pack_runs()
+        self.assertEqual(proc.instructions, [
+            (OpCode.FAST2, (2, 3, None, None)),
+            (OpCode.FAST_ITEM_FAST_INPLACE, (opcount(Operand.ADD, 2), 0, 1, 0)),
+            (OpCode.RETURN, 0)])
+
+    def test_position_transparent(self):
+        out = fuse_ops([
+            (V, "a"), (P, 1), (V, "i"), (P, 2), (V, "v"), (P, 3), (self.IP, ADD1)])
+        self.assertEqual(out, [
+            (V, "v"), (OpCode.VAR_ITEM_VAR_INPLACE, (ADD1, "a", "i", 0)), (P, 3)])
+        out = fuse_ops([
+            (V, "a"), (V, "i"), (P, 4), (C, 1), (self.IP, ADD1)])
+        self.assertEqual(out, [
+            (OpCode.VAR_ITEM_VAR_INPLACE_CONST, (IADD, "a", "i", 1)), (P, 4)])
 
     def test_computed_value_stays(self):
         call = (OpCode.CALL, 0)

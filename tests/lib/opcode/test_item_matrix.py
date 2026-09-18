@@ -110,8 +110,14 @@ def row_arg(op, obj, key, val, operand, key_const, val_const, count):
     return fields[0] if fields else 0
 
 
-def site(name, obj, key, verb, val, operand, key_const=1, val_const=7,
-         count=1, cache=True):
+KEY_CONST = 1
+VAL_CONST = 7
+KEY_LOCAL = 2
+VAL_LOCAL = 9
+
+
+def site(name, obj, key, verb, val, operand, key_const=KEY_CONST,
+         val_const=VAL_CONST, count=1, cache=True):
     """
     A function over the fast locals obj, key, val running one row.
     Loads, TAKE, and REF return the row's result; the others return
@@ -180,19 +186,31 @@ class TestItemMatrix(CevalTest):
             self.assertEqual(code.cache_slots, 1 if elects else 0, name)
 
 
+    def key_for(self, key):
+        # the key the site reads: the pool constant on a const row,
+        # else the fast local, which differ so the origin is checked
+        return KEY_CONST if key == "const" else KEY_LOCAL
+
+    def val_for(self, val):
+        return VAL_CONST if val == "const" else VAL_LOCAL
+
     async def check_load(self, name, obj, key, verb, val, operand):
         fn, _ = site(name, obj, key, verb, val, operand)
+        k = self.key_for(key)
+        lst = [10, 20, 30]
         for _ in range(3):
-            self.assertEqual(await fn([10, 20, 30], 1), 20, name)
-            self.assertEqual(await fn((10, 20, 30), 1), 20, name)
-            self.assertEqual(await fn({1: 20}, 1), 20, name)
-            self.assertEqual(await fn(Served(), 1), 20, name)
+            self.assertEqual(await fn(lst, KEY_LOCAL), lst[k], name)
+            self.assertEqual(await fn(tuple(lst), KEY_LOCAL), lst[k], name)
+            self.assertEqual(await fn({k: 20}, KEY_LOCAL), 20, name)
+            served = Served()
+            self.assertEqual(await fn(served, KEY_LOCAL), 20, name)
+            self.assertEqual(served.log, [("get", k)], name)
         with self.assertRaises(IndexError, msg=name):
-            await fn([10], 1)
+            await fn([10], KEY_LOCAL)
         with self.assertRaises(KeyError, msg=name):
-            await fn({}, 1)
+            await fn({}, KEY_LOCAL)
         with self.assertRaises(TypeError, msg=name):
-            await fn(42, 1)
+            await fn(42, KEY_LOCAL)
         if key != "const":
             with self.assertRaises(TypeError, msg=name):
                 await fn({}, {}, None)
@@ -202,20 +220,25 @@ class TestItemMatrix(CevalTest):
 
     async def check_store(self, name, obj, key, verb, val, operand):
         fn, _ = site(name, obj, key, verb, val, operand)
+        k, v = self.key_for(key), self.val_for(val)
         for _ in range(3):
-            self.assertEqual(await fn([10, 20, 30], 1, 7), [10, 7, 30], name)
-            self.assertEqual(await fn({}, 1, 7), {1: 7}, name)
+            expect = [10, 20, 30]
+            expect[k] = v
+            self.assertEqual(
+                await fn([10, 20, 30], KEY_LOCAL, VAL_LOCAL), expect, name)
+            self.assertEqual(await fn({}, KEY_LOCAL, VAL_LOCAL), {k: v}, name)
             served = Served()
-            await fn(served, 1, 7)
-            self.assertEqual(served.log, [("set", 1, 7)], name)
+            await fn(served, KEY_LOCAL, VAL_LOCAL)
+            self.assertEqual(served.log, [("set", k, v)], name)
         with self.assertRaises(TypeError, msg=name):
-            await fn((10, 20), 1, 7)
+            await fn((10, 20, 30), KEY_LOCAL, VAL_LOCAL)
         with self.assertRaises(IndexError, msg=name):
-            await fn([10], 1, 7)
+            await fn([10], KEY_LOCAL, VAL_LOCAL)
         with self.assertRaises(TypeError, msg=name):
-            await fn(42, 1, 7)
+            await fn(42, KEY_LOCAL, VAL_LOCAL)
         fn, _ = site(name, obj, key, verb, val, operand, key_const="k")
-        self.assertEqual(await fn({}, "k", 7), {"k": 7}, name)
+        self.assertEqual(
+            await fn({}, "k", VAL_LOCAL), {"k": v}, name)
         marker = object()
         fn, _ = site(name, obj, key, verb, val, operand, key_const=0,
                      val_const=marker)
@@ -224,20 +247,30 @@ class TestItemMatrix(CevalTest):
 
 
     async def check_inplace(self, name, obj, key, verb, val, operand):
-        fn, _ = site(name, obj, key, verb, val, operand, val_const=5)
+        fn, _ = site(name, obj, key, verb, val, operand)
+        k = self.key_for(key)
+        r = VAL_CONST if operand == "const" else VAL_LOCAL
         for _ in range(3):
-            self.assertEqual(await fn([10, 20, 30], 1, 5), [10, 25, 30], name)
-            self.assertEqual(await fn({1: 20}, 1, 5), {1: 25}, name)
-            self.assertEqual(await fn([0, 1.5], 1, 5), [0, 6.5], name)
+            expect = [10, 20, 30]
+            expect[k] += r
+            self.assertEqual(
+                await fn([10, 20, 30], KEY_LOCAL, VAL_LOCAL), expect, name)
+            self.assertEqual(
+                await fn({k: 20}, KEY_LOCAL, VAL_LOCAL), {k: 20 + r}, name)
+            floats = [0.5, 1.5, 2.5]
+            expect = list(floats)
+            expect[k] += r
+            self.assertEqual(
+                await fn(floats, KEY_LOCAL, VAL_LOCAL), expect, name)
         served = Served()
-        await fn(served, 1, 5)
-        self.assertEqual(served.log, [("get", 1), ("set", 1, 25)], name)
+        await fn(served, KEY_LOCAL, VAL_LOCAL)
+        self.assertEqual(served.log, [("get", k), ("set", k, 20 + r)], name)
         with self.assertRaises(TypeError, msg=name):
-            await fn((10, 20), 1, 5)
+            await fn((10, 20, 30), KEY_LOCAL, VAL_LOCAL)
         with self.assertRaises(IndexError, msg=name):
-            await fn([10], 1, 5)
+            await fn([10], KEY_LOCAL, VAL_LOCAL)
         with self.assertRaises(KeyError, msg=name):
-            await fn({}, 1, 5)
+            await fn({}, KEY_LOCAL, VAL_LOCAL)
         fn, _ = site(name, obj, key, verb, val, operand, key_const=0,
                      val_const="b")
         self.assertEqual(await fn(["a"], 0, "b"), ["ab"], name)
@@ -249,51 +282,77 @@ class TestItemMatrix(CevalTest):
         self.assertEqual(inner, [1, 2], name)
         if operand == "stack":
             fn, _ = site(name, obj, key, verb, val, operand, count=2)
-            self.assertEqual(await fn([10, 20], 1, 5), [10, 30], name)
-            self.assertEqual(await fn({1: 20}, 1, 5), {1: 30}, name)
+            expect = [10, 20, 30]
+            expect[k] += 2 * VAL_LOCAL
+            self.assertEqual(
+                await fn([10, 20, 30], KEY_LOCAL, VAL_LOCAL), expect, name)
+            self.assertEqual(
+                await fn({k: 20}, KEY_LOCAL, VAL_LOCAL),
+                {k: 20 + 2 * VAL_LOCAL}, name)
 
 
     async def check_clear(self, name, obj, key, verb, val, operand):
         fn, _ = site(name, obj, key, verb, val, operand)
+        k = self.key_for(key)
         for _ in range(3):
-            self.assertEqual(await fn([10, 20, 30], 1), [10, 30], name)
-            self.assertEqual(await fn({1: 20, 2: 3}, 1), {2: 3}, name)
+            expect = [10, 20, 30]
+            del expect[k]
+            self.assertEqual(await fn([10, 20, 30], KEY_LOCAL), expect, name)
+            self.assertEqual(await fn({k: 20, 5: 3}, KEY_LOCAL), {5: 3}, name)
             served = Served()
-            await fn(served, 1)
-            self.assertEqual(served.log, [("del", 1)], name)
+            await fn(served, KEY_LOCAL)
+            self.assertEqual(served.log, [("del", k)], name)
         with self.assertRaises(TypeError, msg=name):
-            await fn((10, 20), 1)
+            await fn((10, 20, 30), KEY_LOCAL)
         with self.assertRaises(KeyError, msg=name):
-            await fn({}, 1)
+            await fn({}, KEY_LOCAL)
 
 
     async def check_take(self, name, obj, key, verb, val, operand):
         fn, _ = site(name, obj, key, verb, val, operand)
+        k = self.key_for(key)
         for _ in range(3):
             lst = [10, 20, 30]
-            self.assertEqual(await fn(lst, 1), 20, name)
-            self.assertEqual(lst, [10, 30], name)
-            d = {1: 20}
-            self.assertEqual(await fn(d, 1), 20, name)
+            expect = list(lst)
+            taken = expect.pop(k)
+            self.assertEqual(await fn(lst, KEY_LOCAL), taken, name)
+            self.assertEqual(lst, expect, name)
+            d = {k: 20}
+            self.assertEqual(await fn(d, KEY_LOCAL), 20, name)
             self.assertEqual(d, {}, name)
             served = Served()
-            self.assertEqual(await fn(served, 1), 20, name)
-            self.assertEqual(served.log, [("get", 1), ("del", 1)], name)
+            self.assertEqual(await fn(served, KEY_LOCAL), 20, name)
+            self.assertEqual(served.log, [("get", k), ("del", k)], name)
         with self.assertRaises(TypeError, msg=name):
-            await fn((10, 20), 1)
+            await fn((10, 20, 30), KEY_LOCAL)
         with self.assertRaises(KeyError, msg=name):
-            await fn({}, 1)
+            await fn({}, KEY_LOCAL)
 
 
     async def check_ref(self, name, obj, key, verb, val, operand):
         fn, _ = site(name, obj, key, verb, val, operand)
+        k = self.key_for(key)
         for _ in range(3):
             lst = [10, 20, 30]
-            ref = await fn(lst, 1)
+            ref = await fn(lst, KEY_LOCAL)
             self.assertIsInstance(ref, ItemRef, name)
+            self.assertEqual(ref.deref(), lst[k], name)
+            ref.store(7)
+            self.assertEqual(lst[k], 7, name)
+            d = {k: 20}
+            ref = await fn(d, KEY_LOCAL)
             self.assertEqual(ref.deref(), 20, name)
             ref.store(7)
-            self.assertEqual(lst, [10, 7, 30], name)
+            self.assertEqual(d, {k: 7}, name)
+            ref = await fn((10, 20, 30), KEY_LOCAL)
+            self.assertEqual(ref.deref(), (10, 20, 30)[k], name)
+            with self.assertRaises(TypeError, msg=name):
+                ref.store(7)
+            served = Served()
+            ref = await fn(served, KEY_LOCAL)
+            self.assertEqual(ref.deref(), 20, name)
+            ref.store(7)
+            self.assertEqual(served.log, [("get", k), ("set", k, 7)], name)
 
 
     CHECKS = {
@@ -346,9 +405,9 @@ class TestItemMatrix(CevalTest):
 
 
     async def test_elected_site_serves_a_kind_change(self):
-        # a list site sees dicts for eight executions, demotes, keeps
-        # answering through the protocol, and re-elects after the tick
-        # wrap
+        # a site that saw a list answers a long run of dicts and then
+        # a list again the same as before; the slot states behind that
+        # (demotion, re-election) are asserted in tests/native
         for name in ("FAST_ITEM_FAST", "ITEM_FAST", "FAST_ITEM",
                      "FAST_ITEM_FAST_STORE_FAST", "ITEM_FAST_STORE_CONST",
                      "FAST_ITEM_STORE", "FAST_ITEM_FAST_INPLACE_CONST",

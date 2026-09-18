@@ -137,7 +137,7 @@ class TestVarItemInplace(CevalTest):
         self.assertEqual(lst, [1, 2, 113])
 
 
-    async def test_var_const_item_inplace(self):
+    async def test_var_item_const_inplace(self):
         d = {"k": 5}
         code, ns = build_expr([
             ["CONST", 2],
@@ -160,7 +160,7 @@ class TestVarItemInplace(CevalTest):
         self.assertEqual(lst, [11, 2, 3])
 
 
-    async def test_var_const_item_inplace_const(self):
+    async def test_var_item_const_inplace_const(self):
         d = {"k": 5}
         code, ns = build_expr([
             ["VAR_ITEM_CONST_INPLACE_CONST", (int(SUB), "obj", "k", 2)],
@@ -226,7 +226,7 @@ class TestFastItemInplace(CevalTest):
         self.assertEqual(await fn([1], 0, 10, 100), [111])
 
 
-    async def test_fast_const_item_inplace(self):
+    async def test_fast_item_const_inplace(self):
         fn = fast_fn([
             ["FAST", 1],
             ["FAST_ITEM_CONST_INPLACE", (opcount(SUB, 1), 0, 1, 0)],
@@ -251,7 +251,7 @@ class TestFastItemInplace(CevalTest):
         self.assertEqual(d, {"k": 11})
 
 
-    async def test_fast_const_item_inplace_const(self):
+    async def test_fast_item_const_inplace_const(self):
         fn = fast_fn([
             ["FAST_ITEM_CONST_INPLACE_CONST", (int(SUB), 0, "k", 2)],
             ["FAST", 0],

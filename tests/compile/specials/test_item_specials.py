@@ -202,13 +202,18 @@ class TestSetItemShapes(SpecialsTestCase):
         # a captured name sits in a ref-kind slot the peek does not
         # read: every row resolves it through the general deref
         src_str = """
-        (let [[lst (#list 0 0 0)] [i 1] [v 5]]
-          (define f (lambda [] (set-item lst i v) (set-item lst 2 v)
-                               (inplace-item + lst i 1) (item lst i)))
-          (#tuple (f) lst))
+        (let [[lst (#list 0 0 0 0)] [d (#dict (#tuple "k" 1))] [i 1] [v 5]]
+          (define f (lambda []
+            (set-item lst i v) (set-item lst 2 v) (set-item lst 3 1)
+            (inplace-item + lst i 1)
+            (define r (ref-item lst i))
+            (define t (take-item d "k"))
+            (del-item lst 3)
+            (#tuple (item lst i) (r.deref) t)))
+          (#tuple (f) lst d))
         """
         expr, mod = self.compile_expr(src_str)
-        self.assertEqual((6, [0, 6, 5]), await expr())
+        self.assertEqual(((6, 6, 1), [0, 6, 5], {}), await expr())
 
 
 class TestItemShapes(SpecialsTestCase):
@@ -300,6 +305,28 @@ class TestItemShapes(SpecialsTestCase):
             self.assertIs(
                 await self.raised_by(shaped, k=lambda: 0, f=lambda: 1),
                 expected, shaped)
+
+
+    async def test_named_object_resolves_when_the_row_runs(self):
+        # the row fetches a named object when it runs, after the key:
+        # a key expression that rebinds the name reads the new binding
+        old, new = [10, 20], [30, 40]
+        cases = {
+            "(item d (begin (setq d new) 0))": 30,
+            "(take-item d (begin (setq d new) 0))": 30,
+            "(begin (del-item d (begin (setq d new) 0)) new)": [40],
+            "(ref-item d (begin (setq d new) 0)).deref": None,
+        }
+        for src, expected in cases.items():
+            old, new = [10, 20], [30, 40]
+            expr, mod = self.compile_expr(
+                f"(let [[d old]] {src})", old=old, new=new)
+            result = await expr()
+            if expected is None:
+                self.assertEqual(30, result(), src)
+            else:
+                self.assertEqual(expected, result, src)
+            self.assertEqual([10, 20], old, src)
 
 
     async def test_accesses_land(self):

@@ -142,7 +142,7 @@ class TestItemLoadElectors(CevalTest):
         with self.assertRaises(IndexError):
             await site(lst, -11)
         self.assertEqual(await site(lst, 3), 3)
-        # a bool key is not an exact int: a guard miss, served generically
+        # a bool key is not an exact int; the site answers as the protocol does
         self.assertEqual(await site(lst, True), 1)
         # an index wider than the fast read declines, still correct
         with self.assertRaises(IndexError):

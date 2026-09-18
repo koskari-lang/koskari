@@ -94,7 +94,7 @@ class TestVarItemOpcodes(CevalTest):
             await make_callable(code, ns)()
 
 
-    async def test_var_const_item_loads(self):
+    async def test_var_item_const_loads(self):
         code, ns = build_expr([
             ["VAR_ITEM_CONST", ("obj", "k", 0, 0)],
             ["RETURN", 1],
@@ -102,7 +102,7 @@ class TestVarItemOpcodes(CevalTest):
         self.assertEqual(await make_callable(code, ns)(), "v")
 
 
-    async def test_var_const_item_key_error_propagates(self):
+    async def test_var_item_const_key_error_propagates(self):
         code, ns = build_expr([
             ["VAR_ITEM_CONST", ("obj", "nope", 0, 0)],
             ["RETURN", 1],
@@ -123,7 +123,7 @@ class TestVarItemOpcodes(CevalTest):
         self.assertEqual(lst, [0, 0, 99])
 
 
-    async def test_var_const_item_store(self):
+    async def test_var_item_const_store(self):
         d = {}
         code, ns = build_expr([
             ["CONST", 7],
@@ -202,7 +202,7 @@ class TestFastItemOpcodes(CevalTest):
             await fn(42, 0)
 
 
-    async def test_fast_const_item_loads(self):
+    async def test_fast_item_const_loads(self):
         fn = fast_fn([
             ["FAST_ITEM_CONST", (0, 1, 0, 0)],
             ["RETURN", 1],
@@ -226,7 +226,7 @@ class TestFastItemOpcodes(CevalTest):
         self.assertEqual(d, {"k": 5})
 
 
-    async def test_fast_const_item_store(self):
+    async def test_fast_item_const_store(self):
         fn = fast_fn([
             ["FAST", 1],
             ["FAST_ITEM_CONST_STORE", (0, "k", 0, 0)],
@@ -267,7 +267,7 @@ class TestItemStoreConstOpcodes(CevalTest):
         self.assertEqual(lst, [0, 99, 0])
 
 
-    async def test_var_const_item_store_const(self):
+    async def test_var_item_const_store_const(self):
         d = {}
         code, ns = build_expr([
             ["VAR_ITEM_CONST_STORE_CONST", ("obj", "k", 7, 0)],
@@ -313,7 +313,7 @@ class TestItemStoreConstOpcodes(CevalTest):
             await fn((0,), 0)
 
 
-    async def test_fast_const_item_store_const(self):
+    async def test_fast_item_const_store_const(self):
         fn = fast_fn([
             ["FAST_ITEM_CONST_STORE_CONST", (0, 1, "v", 0)],
             ["FAST", 0],
