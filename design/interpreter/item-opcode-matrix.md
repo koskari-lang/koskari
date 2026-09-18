@@ -149,6 +149,15 @@ holds obj and key across those two paths and only those, as the dict
 body does today. Stack and const operands pay that hold needlessly on
 the dict path; that is today's behavior too.
 
+A dict body that hashed the key and then cannot finish, an absent key
+or a cell that misses the in-place guard, keeps its hold rather than
+releasing it, and answers its code with `KOS_ITEM_HELD` set. The run
+function routes a held answer to a protocol variant that takes the
+references over and releases them after the call, so the borrowed
+pointers the handler passed are never read again once user code has
+run under them. The in-place classification hashes the key too, so
+the cold path holds obj and key across it and the call that follows.
+
 ### Slot representation
 
 A new cache kind, `KOS_CACHE_ITEM`, whose payload mirrors the elector
@@ -183,7 +192,8 @@ call, the same count as the prologue tail it replaces. An enum would
 let the compiler inline the list body into every handler, at the code
 growth the elector survey measured.
 
-A body answers one of four codes:
+A body answers one of four codes, MISS and DECLINE with `KOS_ITEM_HELD`
+or'd in when the body keeps its hold:
 
 | Code | Meaning | Helper's next step |
 |---|---|---|
@@ -191,6 +201,11 @@ A body answers one of four codes:
 | KOS_ITEM_MISS | guard failed (wrong container kind) | count the miss, run the protocol |
 | KOS_ITEM_DECLINE | right kind, cell out of range or absent | run the protocol, no count |
 | KOS_ITEM_ERROR | error set | return the failure |
+
+A demoted slot keeps its kind with a NULL body, so the hot path's
+test of the body fails and the cold path runs the protocol with the
+tick; the wrap empties the slot and the next execution classifies
+again.
 
 ### Bodies
 
@@ -200,15 +215,16 @@ Five static functions, written once:
 |---|---|---|
 | list load | exact list, exact int key in range | `PyList_GET_ITEM` + incref |
 | tuple load | exact tuple, exact int key in range | `PyTuple_GET_ITEM` + incref |
-| dict load | exact dict | hold obj and key; `PyDict_GetItemWithError`; absent is a decline |
+| dict load | exact dict | hold obj and key; `PyDict_GetItemWithError`; absent is a decline with the hold kept |
 | list store | exact list, exact int key in range | `PyList_SET_ITEM` takes the stolen val; old released last |
 | dict store | exact dict | hold obj and key; `PyDict_SetItem`; decref val after |
 
 Index normalization is `kos_item_index` as today. A key wider than long
 long or outside the sequence is a decline.
 
-The protocol paths: `PyObject_GetItem` and `PyObject_SetItem` with obj
-and key held, followed by the tick. The store path decrefs val after.
+The protocol paths: the tick, then `PyObject_GetItem` or
+`PyObject_SetItem` with obj and key held, or with the references a
+body handed over. The store path decrefs val after.
 
 The in-place bodies are the numeric elector bodies as they stand, with
 the family dimension removed: one int table and one float table
@@ -236,36 +252,42 @@ so the const rows carry no separate unguarded body.
 static inline int kos_item_store(
     KosCacheSlot *slot, PyObject *obj, PyObject *key, PyObject *val) {
 
-  if (likely(slot && slot->kind == KOS_CACHE_ITEM)) {
-    switch (slot->u.item.fn.store(obj, key, val)) {
-      case KOS_ITEM_HIT:
-        KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
-        return 0;
-      case KOS_ITEM_ERROR:
-        return -1;
-      case KOS_ITEM_MISS:
-        kos_item_miss(slot);
-        break;
-      case KOS_ITEM_DECLINE:
-        break;
-    }
-    return kos_item_store_protocol(slot, obj, key, val);
-  }
+  if (likely(slot && slot->kind == KOS_CACHE_ITEM && slot->u.item.fn.store))
+    return kos_item_store_run(slot, slot->u.item.fn.store, obj, key, val);
+  return kos_item_store_cold(slot, obj, key, val);
+}
 
-  /* empty slot or ungated site: classify once, settle the slot, and
-     run the body it chose; the protocol body when nothing matched */
-  return kos_item_store_elect(slot, obj, key, val);
+static inline int kos_item_store_run(
+    KosCacheSlot *slot, KosItemStoreBody body,
+    PyObject *obj, PyObject *key, PyObject *val) {
+
+  int code = body(obj, key, val);
+
+  switch (code & ~KOS_ITEM_HELD) {
+    case KOS_ITEM_HIT:
+      KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
+      return 0;
+    case KOS_ITEM_ERROR:
+      return -1;
+    case KOS_ITEM_MISS:
+      kos_item_miss(slot);
+      break;
+    case KOS_ITEM_DECLINE:
+      break;
+  }
+  if (code & KOS_ITEM_HELD)
+    return kos_item_store_protocol_held(slot, obj, key, val);
+  return kos_item_store_protocol(slot, obj, key, val);
 }
 ```
 
-Classification is `kos_elector_item_body` as it stands, returning the
-body for the kind: dict under any key, list or tuple under an exact int
-key, else NULL for the protocol body. `kos_item_store_elect` settles the
-slot then runs the chosen body through the same switch, so a first
-execution behaves as an elected one.
-
-A demoted slot holds the protocol body as its elected one, so the
-switch above runs it directly and the tick counts inside it.
+The run function is inline; the protocol paths and the cold path are
+out of line. Classification returns the body for the kind, dict under
+any key, list (and tuple, for a load) under an exact int key, else
+NULL. The cold path runs the protocol for a demoted slot, and for an
+empty slot or an ungated site classifies once, settles the slot with
+the body or with NULL, and runs the body through the same switch, so
+a first execution behaves as an elected one.
 
 ### Operand fetch in a handler
 
@@ -759,12 +781,13 @@ the constant-key row; the rules do.
 Shaped emission, when the default would strand a named operand behind a
 non-feeder one:
 
-- The object is a symbol and the key is not a feeder: the key and any
-  values compile to the stack and the row names the object,
-  `VAR_ITEM`, `VAR_ITEM_STORE`, `VAR_ITEM_INPLACE`, or the verb's row.
-  Today this shape pushes the object.
-- A value is not a feeder and the object is a symbol or the key is a
-  feeder: the object compiles to the stack when compound, the values
+- The object compiles to a bare VAR load and the key is not a feeder:
+  the key and any values compile to the stack and the row names the
+  object, `VAR_ITEM`, `VAR_ITEM_STORE`, `VAR_ITEM_INPLACE`, or the
+  verb's row. Today this shape pushes the object. A symbol that
+  compiles to anything else, `nil` among them, is a stack object.
+- A value is not a feeder and the object is such a load or the key is
+  a feeder: the object compiles to the stack when compound, the values
   compile to the stack, and the row names what it can:
   `VAR_ITEM_VAR_STORE`, `VAR_ITEM_CONST_STORE`, `ITEM_VAR_STORE`,
   `ITEM_CONST_STORE`, and the in-place counterparts. Today's
@@ -801,11 +824,16 @@ kinds:
 | F k, F v, ITEM_STORE | ITEM_{VAR,CONST}_STORE_{VAR,CONST} |
 | F v, ITEM_STORE | ITEM_STORE_{VAR,CONST} |
 | F v, VAR_ITEM_STORE | VAR_ITEM_STORE_{VAR,CONST} |
+| F v, VAR_ITEM_VAR_STORE | VAR_ITEM_VAR_STORE_{VAR,CONST} |
+| F v, VAR_ITEM_CONST_STORE | VAR_ITEM_CONST_STORE_{VAR,CONST} |
+| F v, ITEM_VAR_STORE | ITEM_VAR_STORE_{VAR,CONST} |
+| F v, ITEM_CONST_STORE | ITEM_CONST_STORE_{VAR,CONST} |
 
-The last row folds the value into the shaped row for a symbol object
-under a non-feeder key. The shaped rows with a named key never meet a
-value feeder, since shaping happens only for a non-feeder value; the
-value-fold table is still complete over every stack-value row so a
+The last five rows fold the value into a row the special shaped with
+the value on the stack. Only VAR_ITEM_STORE, shaped for a named object
+under a non-feeder key, meets a value feeder in compiled code; the
+other four are shaped only for a non-feeder value, and their rows
+keep the table complete over every stack-value row so a
 hand-assembled stream folds the same way.
 
 In-place, count n with every value a feeder:
@@ -814,7 +842,8 @@ In-place, count n with every value a feeder:
 |---|---|
 | VAR o, F k, F x n, ITEM_INPLACE | the n feeders, then VAR_ITEM_{VAR,CONST}_INPLACE (o, k) |
 | F k, F x n, ITEM_INPLACE | the n feeders, then ITEM_{VAR,CONST}_INPLACE (k) |
-| CONST v, X_INPLACE at count 1 | X_INPLACE_CONST, for each of the six stack-operand rows |
+| CONST v, ITEM_INPLACE at count 1 | ITEM_INPLACE_CONST, when nothing else is named |
+| CONST v, X_INPLACE at count 1 | X_INPLACE_CONST, for VAR_ITEM_INPLACE, VAR_ITEM_VAR_INPLACE, VAR_ITEM_CONST_INPLACE, ITEM_VAR_INPLACE, ITEM_CONST_INPLACE |
 
 The first two re-emit the value feeders behind the fused row, which
 moves two pure loads past each other and nothing else. `pack_runs`
@@ -828,9 +857,10 @@ either way.
 ### Lowering
 
 `build_var_to_fast` in `compile/processor.py` derives VAR twins from
-FAST names by prefix, which fits the families whose names align. The
-item rows do not align, so their map is written out: one table of the
-38 VAR-to-FAST pairs of this family, merged into `VAR_TO_FAST` beside
+FAST names by replacing the first FAST, which fits the families that
+carry the marker at the head only. The item rows carry it in up to
+three positions, so their map is written out: one table of the 38
+VAR-to-FAST pairs of this family, merged into `VAR_TO_FAST` beside
 the derived entries. The schema-driven lowering in `convert_fast`
 already lowers each VAR field of an EXTRA row and the whole arg of a
 plain VAR row, all or nothing, so no per-row lowering code is added.
@@ -840,7 +870,7 @@ plain VAR row, all or nothing, so no per-row lowering code is added.
 ## Serialization
 
 Minor ABI bump in `serialize/constants.py`, with a note in the history
-block: the item rows renamed and 36 inserted mid-enum, renumbering
+block: the item rows renamed and 60 inserted mid-enum, renumbering
 every opcode after the VAR family. Slots are not serialized.
 
 ## Tests

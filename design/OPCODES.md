@@ -2878,14 +2878,19 @@ The ITEM, STORE, and INPLACE rows of the stack tier and the FAST tier
 carry one KOS_CACHE_ITEM slot each. A handler fetches its operands by
 origin and calls `kos_item_load`, `kos_item_store`, or
 `kos_item_inplace` (`eval/eval_item.c`), which on the site's first
-execution elects a body for the container kind it sees: an exact list
-or tuple under an exact int key, or an exact dict under any key. The
-body guards the kind on every execution and reads or writes the
-container directly; an index outside the sequence or a key the dict
-lacks runs the object protocol for that execution, so IndexError and
-KeyError keep their messages, and eight guard misses demote the site
-to the protocol until the protocol's own count wraps and the site
-re-elects. The in-place bodies are one per operator and numeric kind,
+execution elects a body for the container kind it sees: for a load an
+exact list or tuple under an exact int key or an exact dict under any
+key, for a store or an in-place reduce an exact list under an exact
+int key or an exact dict, since a tuple takes no store. The body
+guards the kind on every execution and reads or writes the container
+directly; an index outside the sequence or a key the dict lacks runs
+the object protocol for that execution, so IndexError and KeyError
+keep their messages, and eight guard misses demote the site to the
+protocol until the protocol's own count wraps and the site re-elects.
+A dict body that hashed the key and cannot finish keeps its hold on
+the object and key and hands it to the protocol path, since the hash
+may have rebound the slot a handler peeked. The in-place bodies are
+one per operator for int and float cells plus the str body for `+`,
 find the cell inside the body, and offer the cell's value as the
 result's home under the in-place result rule. CLEAR, TAKE, and REF
 run the object protocol through `kos_item_clear`, `kos_item_take`, and
