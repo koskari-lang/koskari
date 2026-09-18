@@ -1,7 +1,6 @@
 # KOS_OP_ATTR_TAKE
 
 - **Style**: CONST. Arg = constant pool index of attribute name.
-- **Status**: Implemented.
 - **Stack**: `[..., obj] → [..., value]`. Get attribute, delete it, push value.
   Errors if attribute missing.
 - **Invariants**: TOS is the object.

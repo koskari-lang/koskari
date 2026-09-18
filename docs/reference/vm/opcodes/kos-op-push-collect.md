@@ -1,6 +1,5 @@
 # KOS_OP_PUSH_COLLECT
 - **Style**: CONST. Arg = constant pool index of NamespaceSpec.
-- **Status**: Implemented.
 - **Stack**: Does not consume the stack. Loads NamespaceSpec from constant pool at
   arg, creates CollectorNamespace, installs as frame ns, pushes KOS_DYN_COLLECT,
   and owns an operand segment; the body runs in it; expression results (e.g.

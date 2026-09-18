@@ -1,6 +1,5 @@
 # KOS_OP_SWITCH_EQ_FAST
 - **Style**: EXTRA. Schema `(LABEL, FASTVAR, NOARG, NOARG)`.
-- **Status**: Implemented.
 - **Stack**: `[..., s]`. Resolve `rhs = KosNamespace_FastDeref(ns, a1)`, then
   compare `s == rhs` with `Py_EQ`.
   - **Match**: pop `s`; `pc = a0`.

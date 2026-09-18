@@ -1,6 +1,5 @@
 # KOS_OP_JUMP_AND
 - **Style**: LABEL. Short-circuit AND: jump if TOS is false.
-- **Status**: Implemented.
 - **Stack**: Pops one value; if false, push it back and jump to `arg`; if true,
   discard it and advance. Either way TOS is consumed on the fall-through path.
 - **Invariants**: Jump locality for target.

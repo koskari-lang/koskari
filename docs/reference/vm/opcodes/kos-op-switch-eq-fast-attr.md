@@ -1,6 +1,5 @@
 # KOS_OP_SWITCH_EQ_FAST_ATTR
 - **Style**: EXTRA. Schema `(LABEL, FASTVAR, CONST, NOARG)`.
-- **Status**: Implemented.
 - **Stack**: `[..., s]`. Resolve `obj = KosNamespace_FastDeref(ns, a1)`,
   `rhs = getattr(obj, attr_name)` from `a2`, then compare `s == rhs`.
   - **Match**: pop `s`; `pc = a0`.

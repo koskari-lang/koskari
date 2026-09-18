@@ -1,6 +1,5 @@
 # KOS_OP_RETURN_CONST
 - **Style**: CONST. Arg = pool index of the constant to return.
-- **Status**: Implemented.
 - **Stack**: `[...] → [...]` (no stack effect). Returns the constant exactly as **`KOS_OP_RETURN`** **1** returns a popped value: the same plain, region and resume deliveries, else the RETURN signal to the trampoline.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when **`KOS_OP_RETURN`** **1** is fed by a bare **`KOS_OP_CONST`**. A `None` constant takes **`KOS_OP_RETURN`** **0** in the earlier squish pass instead.
 - **See also**: [KOS_OP_RETURN](kos-op-return.md); [compile/return](../../specials/compile-return.md); **`koskari/lib/opcode/RETURN_CONST.c`**.

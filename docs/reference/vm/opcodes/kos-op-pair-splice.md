@@ -1,7 +1,6 @@
 # KOS_OP_PAIR_SPLICE
 - **Style**: COUNT. Arg = number of segments on stack (bottom = first segment,
   top = last segment).
-- **Status**: Implemented. (`koskari/lib/opcode/PAIR_SPLICE.c`)
 - **Stack**: `[..., seg_0, ..., seg_{count-1}] → [..., result]` where result is
   the concatenation of all segments as a single proper list. Each segment may be:
   nil (contributes nothing), a pair (proper or improper; its elements are

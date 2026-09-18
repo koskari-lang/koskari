@@ -1,6 +1,5 @@
 # KOS_OP_FAST_CLEAR
 - **Style**: FASTVAR. Arg = fast local slot index.
-- **Status**: Implemented.
 - **Stack**: No stack effect. Clear slot.
 - **Invariants**: Slot index in range.
 

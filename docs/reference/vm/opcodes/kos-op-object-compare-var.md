@@ -2,7 +2,6 @@
 - **Style**: EXTRA (CMP, CONST, VAR, CONST). Row = bare selector, low
   bound (pool), middle operand name, high bound (pool). Schema-static
   slots: no source bits, the shape is the opcode.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., result]`. The ternary bounds idiom
   (`const < x < const`) with the middle operand resolved by name:
   chain-compare the three operands under the selector and push the

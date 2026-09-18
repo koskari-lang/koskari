@@ -1,6 +1,5 @@
 # KOS_OP_IMPORT
 - **Style**: EXTRA (`CONST`, `COUNT`, `COUNT`, `CONST`). Row: `a0` = cpool module name str (or None for a bare relative import), `a1` = level (leading dots; 0 = absolute), `a2` = leaf flag (0 = bind root, 1 = bind leaf), `a3` = cpool binding name str.
-- **Status**: Implemented.
 - **Stack**: no effect.
 - **Semantics**: Import the module (root or leaf per the flag) and store it into the current frame namespace under the binding name. With the leaf flag clear the root package is bound while the full dotted chain is still imported — plain `(import foo.bar)` binds `foo`; with it set the deepest submodule is bound — the `(import [foo.bar as: fbar])` member form. Relative imports are always leaf-style. Self-contained: no stack effect, no separate VAR_BIND.
 - **Leaf behaviour**: a NULL fromlist to `PyImport_ImportModuleLevelObject` returns the root while importing the whole chain; the sentinel `_import_fromlist = ("*",)` returns the leaf submodule.

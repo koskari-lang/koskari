@@ -1,6 +1,5 @@
 # KOS_OP_ATTR
 - **Style**: CONST. Arg = constant pool index of attribute name (post-compile).
-- **Status**: Implemented.
 - **Stack**: `[..., obj] → [..., obj, value]`. Get attribute; push value.
 - **Invariants**: TOS is the object. Name in constant pool.
 - **Compiler form:** Pre-compile arg = attribute name (string); post-compile arg = pool index.

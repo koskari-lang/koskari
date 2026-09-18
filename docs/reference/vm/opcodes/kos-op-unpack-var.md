@@ -1,7 +1,6 @@
 # KOS_OP_UNPACK_VAR
 - **Style**: EXTRA (`VAR`, `VAR`, `NOARG`, `NOARG`). Row: `a0`, `a1` = constant
   pool indices of the two names (strings).
-- **Status**: Implemented. (`koskari/lib/opcode/UNPACK_VAR.c`)
 - **Stack**: `[..., raw] → [...]`. No values pushed; **STORE** semantics only
   (same as `VAR_STORE` / `KosNamespace_Store` through `frame_ns_store`): `seq[0]`
   into the first name, `seq[1]` into the second. Pop TOS, `PySequence_List`,

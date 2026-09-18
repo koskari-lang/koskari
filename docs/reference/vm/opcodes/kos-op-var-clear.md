@@ -1,6 +1,5 @@
 # KOS_OP_VAR_CLEAR
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
-- **Status**: Implemented.
 - **Stack**: No stack effect. Delete name from namespace.
 - **Invariants**: Name in constant pool.
 - **Compiler form:** Pre-compile arg = name; post-compile arg = pool index.

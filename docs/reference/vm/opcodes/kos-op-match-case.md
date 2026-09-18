@@ -3,7 +3,6 @@
 - **Style**: EXTRA. Schema (LABEL, CONST, CONST, COUNT): `a0` = no-match
   target pc, `a1` = frozen matcher tuple (cpool), `a2` = tuple of the extern
   names the matcher's defaults do not cover (cpool), `a3` = keep-subject flag.
-- **Status**: Implemented. Cache: one KOS_CACHE_MATCHER slot holding the
   Matcher thawed from `a1` and a KosSlotMap of its capture slots resolved
   against the namespace layout.
 - **Stack**: `[..., subject, e0 ... eN-1] → [..., subject]` on no match (then

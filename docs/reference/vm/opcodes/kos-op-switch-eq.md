@@ -1,6 +1,5 @@
 # KOS_OP_SWITCH_EQ
 - **Style**: LABEL. Arg = target pc (post-compile).
-- **Status**: Implemented.
 - **Stack**: `[..., left, right]` (right = TOS). Compares `left == right` with
   the same equality semantics as [CHECK_EQ](kos-op-check-compare.md)
   (`PyObject_RichCompareBool` with `Py_EQ`).

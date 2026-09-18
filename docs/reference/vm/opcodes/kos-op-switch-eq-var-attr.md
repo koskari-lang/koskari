@@ -1,6 +1,5 @@
 # KOS_OP_SWITCH_EQ_VAR_ATTR
 - **Style**: EXTRA. Schema `(LABEL, VAR, CONST, NOARG)`.
-- **Status**: Implemented.
 - **Stack**: `[..., s]`. Resolve `obj = frame_ns_deref(var_name)` from `a1`,
   `rhs = getattr(obj, attr_name)` from `a2`, then compare `s == rhs`.
   - **Match**: pop `s`; `pc = a0`.

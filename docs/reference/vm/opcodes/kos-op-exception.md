@@ -1,6 +1,5 @@
 # KOS_OP_EXCEPTION
 - **Style**: NOARG.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., exception]`. Push current exception (in handler).
 - **Invariants**: Used when an exception is being handled.
 

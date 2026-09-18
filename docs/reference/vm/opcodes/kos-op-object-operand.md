@@ -1,7 +1,6 @@
 # KOS_OP_OBJECT_OPERAND
 - **Style**: OPCOUNT. Arg packs a KosOperand selector (high byte) with the
   reduce count (low byte).
-- **Status**: Implemented.
 - **Stack**: `[..., a1, ..., aN] → [..., result]`. Reduce the N operands
   left-to-right under the operator (`values[0]` is the seed), via
   `kos_operand_reduce` (`operator.c`) with its two-operand PyLong fast

@@ -1,6 +1,5 @@
 # KOS_OP_YIELD_FAST
 - **Style**: FASTVAR. Arg = fast slot index.
-- **Status**: Implemented.
 - **Stack**: `[...] → [...]` (no stack effect). As **`KOS_OP_YIELD_VAR`**, with the value read from the fast slot; an empty slot raises `NameError` as **`KOS_OP_FAST`** would. Marks the code as a generator.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of **`KOS_OP_YIELD_VAR`** when the name has a fast slot.
 - **See also**: [KOS_OP_YIELD_VAR](kos-op-yield-var.md); **`koskari/lib/opcode/YIELD_FAST.c`**.

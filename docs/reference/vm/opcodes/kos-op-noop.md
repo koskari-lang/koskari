@@ -1,6 +1,5 @@
 # KOS_OP_NOOP
 - **Style**: NOARG. Argument unused.
-- **Status**: Implemented.
 - **Stack**: No change.
 - **Invariants**: None beyond global.
 - **Behavior**: Advance PC only; no effect.

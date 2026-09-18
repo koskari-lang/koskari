@@ -1,6 +1,5 @@
 # KOS_OP_ATTR_STORE
 - **Style**: CONST. Arg = constant pool index of attribute name.
-- **Status**: Implemented.
 - **Stack**: `[..., obj, value] → [..., obj]`. Pop value, set attribute on obj.
 - **Invariants**: Below TOS is object; name in pool.
 

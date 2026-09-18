@@ -1,6 +1,5 @@
 # KOS_OP_CALL_STAR
 - **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
-- **Status**: Implemented.
 - **Stack**: `[..., callable, pos, kwd]` with kwd at TOS. pos = *args (tuple or iterable); kwd = **kwargs (dict). Pop per opa: both (opa & 3 == 3): pop 3; **kwargs only (opa & 2): pop 2, pos = (); *args only (opa & 1): pop 2, kwd = NULL; neither: pop 1, pos = (), kwd = NULL. Ensure pos is tuple (PySequence_Tuple if needed). Call via kos_callable_call(ctx, out_ev, callable, pos, kwd).
 - **Invariants**: Stack height per opa; pos converted to tuple when *args present.
 

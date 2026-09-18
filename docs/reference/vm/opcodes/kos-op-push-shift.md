@@ -1,6 +1,5 @@
 # KOS_OP_PUSH_SHIFT
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
-- **Status**: Implemented.
 - **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. Pushes a SHIFT marker recording the captured prompt's instance, pushes the captured continuation on stack, and enters the shift block in place; no unwinding happens at capture. SHIFT is a transparent bookmark with no segment of its own.
 - **Pushes:** KOS_DYN_SHIFT (transparent bookmark: no segment of its own, no handlers).
 - **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT. Invoking the captured continuation re-delimits: each invocation runs the region under a fresh prompt instance, so a shift inside that run terminates only that invocation.

@@ -1,6 +1,5 @@
 # KOS_OP_THEEND
 - **Style**: NOARG.
-- **Status**: No runtime implementation.
 - **Stack**: Unreachable for normal execution.
 - **Invariants**: If execution reaches THEEND, the VM raises RuntimeError. THEEND must always be last in opcodes.incl.
 

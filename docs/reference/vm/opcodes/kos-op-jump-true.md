@@ -1,6 +1,5 @@
 # KOS_OP_JUMP_TRUE
 - **Style**: LABEL. Arg = target pc (post-compile).
-- **Status**: Implemented.
 - **Stack**: Pops one value; if true, jump to `arg`; else advance PC.
 - **Invariants**: Jump locality for target.
 - **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.

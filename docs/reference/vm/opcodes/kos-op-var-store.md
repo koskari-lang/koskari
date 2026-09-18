@@ -1,6 +1,5 @@
 # KOS_OP_VAR_STORE
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
-- **Status**: Implemented.
 - **Stack**: `[..., value] → [...]`. **STORE**: store this value in the given
   name (through the reference that already resolves it). See §1.9.
 - **Invariants**: Name must already be bound.

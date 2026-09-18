@@ -1,6 +1,5 @@
 # KOS_OP_FAST
 - **Style**: FASTVAR. Arg = fast local slot index.
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., value]`. Load from slot.
 - **Invariants**: Slot index in range for frame.
 - **Compiler form:** Usually post-compile only: emitted when VAR is lowered to a

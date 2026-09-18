@@ -1,6 +1,5 @@
 # KOS_OP_VAR_BIND
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
-- **Status**: Implemented.
 - **Stack**: `[..., ref] → [...]`. **BIND**: use this reference to resolve the
   given name in the frame namespace. See §1.9.
 - **Invariants**: Name in constant pool.

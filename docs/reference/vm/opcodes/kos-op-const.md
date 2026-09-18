@@ -1,6 +1,5 @@
 # KOS_OP_CONST
 - **Style**: CONST. Arg = constant pool index (post-compile).
-- **Status**: Implemented.
 - **Stack**: `[...] → [..., c]` where `c = cpool[arg]`.
 - **Invariants**: `arg < cpool_len`.
 - **Compiler form:** Pre-compile arg = literal value (e.g. `CONST "hello"`, `CONST

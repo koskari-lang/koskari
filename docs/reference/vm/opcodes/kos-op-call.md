@@ -1,6 +1,5 @@
 # KOS_OP_CALL
 - **Style**: COUNT. Arg = number of positional arguments.
-- **Status**: Implemented.
 - **Stack**: `[..., callable, arg_1, ..., arg_n] → [..., result]`. KosExpression/KosFunction: new frame pushed, in-loop execution. Python callable: may suspend on awaitable.
 - **Execution model**: Only the **call result** is ever auto-awaited: when a Python call returns a coroutine/awaitable, the VM awaits it (flattened) and pushes the final value. All other opcodes (CONST, loads, getattr, subscript, binary ops, yield-from results, etc.) push their value with no automatic await; use the AWAIT opcode to await explicitly.
 - **Invariants**: Stack has at least 1 + arg elements. See execution-invariants for in-loop flattening.

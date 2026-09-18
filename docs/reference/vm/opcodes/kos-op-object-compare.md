@@ -1,7 +1,6 @@
 # KOS_OP_OBJECT_COMPARE
 - **Style**: CMPCOUNT. Arg packs a KosCompare selector (high byte) with
   the reducing count (low byte).
-- **Status**: Implemented.
 - **Stack**: `[..., a1, ..., aN] → [..., result]`. Chain-compare `N`
   stack values under the selector and push the result (`N >= 2`; raises
   `TypeError` otherwise).

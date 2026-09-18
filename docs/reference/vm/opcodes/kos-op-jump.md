@@ -1,6 +1,5 @@
 # KOS_OP_JUMP
 - **Style**: LABEL. Arg = target pc (post-compile).
-- **Status**: Implemented.
 - **Stack**: No change.
 - **Invariants**: Target must be inside current extent or at its `pop_pc` (jump locality).
 - **Compiler form:** Pre-compile arg = string label name (must match a LABEL in
