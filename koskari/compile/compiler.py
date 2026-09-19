@@ -158,6 +158,10 @@ class ByteCodeFragment:
         # class body compiled into its enclosing Code
         self.function_scope = False
 
+        # set by collector_namespace for a class body: its bindings
+        # become the class's attributes, whose names are labels
+        self.collector_scope = False
+
 
     def as_namespace_spec(self):
         """
@@ -361,6 +365,7 @@ class ByteCodeFragment:
         compiler = self.compiler
         ns_name = str(ns_name)
         child = compiler.fragment(ns_name)
+        child.collector_scope = True
         with compiler.resolution_scope(child):
             yield child
             nspec = child.as_namespace_spec()

@@ -564,4 +564,30 @@ class TestImportInTemplate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["p"], "and me")
 
 
+class TestClassMembersInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    A member a template defines in a class body is an attribute of the
+    class, named by its bare spelling
+    """
+
+    SRC = """
+(define-syntax mk-greeter
+  (syntax-rules []
+    [(mk-greeter name)
+     (define-class name []
+       (define greeting "hi")
+       (define greet [self] (#str self.greeting " there")))]))
+
+(mk-greeter Greeter)
+(define greeter (Greeter))
+(define said (greeter.greet))
+"""
+
+    async def test_member_names_are_bare(self):
+        ns = await load("mh_class_members", self.SRC)
+        self.assertEqual(ns["said"], "hi there")
+        names = [n for n in dir(ns["Greeter"]) if not n.startswith("_")]
+        self.assertEqual(sorted(names), ["greet", "greeting"])
+
+
 # The end.

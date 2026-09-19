@@ -30,7 +30,7 @@ from ...matcher import (
     BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR, REST,
     SYMBOL, VALUE)
 from ...syntax import special
-from ...types import is_pair
+from ...types import is_pair, strip_mark
 from ..helpers import (
     _parse_decl_tail, parse_decl, unpack_lhs_bind_symbols, using_unpack_helper)
 
@@ -331,6 +331,13 @@ def special_define(compiler, caps):
     pos = caps["called-by"].position
 
     namesym, type_expr = _define_name_type_pos_from_match(caps)
+
+    # a define in a class body names an attribute of the class, a
+    # label read by its bare spelling; elsewhere the name binds under
+    # the template's marks
+    scopes = compiler.lexical_stack
+    if scopes and scopes[-1].collector_scope:
+        namesym = strip_mark(namesym)
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
