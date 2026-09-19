@@ -20,7 +20,8 @@ define-class Point []:
 
 An annotated formal is parenthesized inside the formals list:
 `[(n :: int)]`. The parentheses group the name with its annotation, so
-the formals list still reads as one parameter.
+the formals list still reads as one parameter. A bare `[n :: int]` is a
+compile error that names the parenthesized spelling.
 
 The annotation is an ordinary expression evaluated in the defining
 scope. A string annotation, `:: "Request"`, stays a lazily resolved
