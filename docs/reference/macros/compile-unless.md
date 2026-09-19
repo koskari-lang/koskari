@@ -1,5 +1,25 @@
 # compile/unless
-**Syntax:** `(unless COND THEN)`
 
-**Behaviour:** **`(cond [COND None] [else: THEN])`**.
+**Syntax:** `(unless COND BODY ...)`
 
+**Behaviour:** Expands to `(cond [COND None] [else: BODY ...])`. When
+`COND` is falsy the body forms run in order and the last is the value;
+otherwise the value is `None`.
+
+**Examples:**
+
+```koskari
+define invite [user]:
+  unless user:
+    return "missing user"
+  f"sent to {user.email}"
+```
+
+```koskari
+koskari> (unless False 1 2)
+2
+koskari> (macroexpand-1 '(unless a b c))
+(cond [a None] [else b c])
+```
+
+**See also:** [`when`](compile-when.md).

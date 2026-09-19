@@ -1,68 +1,75 @@
-# Layout handler reference
+# Layout handlers
 
-Per-head read-time lowering for indent-based block syntax. General layout
-**syntax** (blocks, lines, colon rules, peers) lives in
-[Reader and layout syntax](../reader-layout.md). Motivation and the layout /
-s-expression relationship are in
+A layout handler reads an indented block into a form. The reader resolves
+the block's head as `layout/<head>` in the module namespace, then in the
+builtins, and hands the handler the header and the body lines. A head
+with no handler takes the default, which splices the body lines after
+the header as arguments. The general rules for blocks, lines, the
+structural colon, and peer blocks are in
+[Reader and layout syntax](../reader-layout.md); the motivation is in
 [Koskari and s-expressions](../../guide/layout-and-s-expressions.md).
 
-The `LayoutReader` resolves layout heads from a namespace (`layout/<head>`);
-handlers live in `koskari/reader/layouts/`. A **`.ki`** module can reuse an
-existing handler by binding **`layout/<head>`** to another layout name (for
-example **`define layout/my-head layout/block-begin`**) instead of adding Python
-code.
+## Handlers
 
-Block syntax rules are in [Reader and layout syntax](../reader-layout.md).
+| Head | Peers | Reads to |
+|------|-------|----------|
+| [any other head](layout-block-default.md) | | `(HEAD ARGS... BODY...)`, one argument per body line, keyword lines as keyword arguments |
+| [`block-begin`](layout-block-begin.md) | | `(HEAD ARGS... (begin BODY...))`; bind `layout/<head>` to it for a head that wants one body form |
+| [`if`](layout-if.md) | `elif`, `else` | `(cond [TEST BODY] ... [else: BODY])` |
+| [`while`](layout-while.md) | `else` | `(while TEST BODY... (else: BODY...))` |
+| [`for-each`](layout-for-each.md) | `else` | `(for-each [VAR SEQ] BODY... (else: BODY...))` |
+| [`try`](layout-try.md) | `except`, `else`, `finally` | `(try (begin BODY...) [[e Type] ...] [else: ...] [finally: ...])` |
+| [`switch`](layout-switch.md) | | `(switch SUBJECT [VALUE BODY...] ... [else: BODY...])` |
+| [`match`](layout-match.md) | | `(match SUBJECT (case PATTERN BODY...) ... (else: BODY...))` |
+| [`class`](layout-class.md) | | `(class NAME SUPERS (begin BODY...))`, a class expression |
+| [`define-class`](layout-define-class.md) | | `(define-class NAME SUPERS (begin BODY...))` |
+| [`syntax-rules`](layout-syntax-rules.md) | | a `syntax-rules` transformer, one arm per `PATTERN:` block |
+| [`syntax-match`](layout-syntax-match.md) | | a `syntax-match` transformer |
+| [`macro-rules`](layout-macro-rules.md) | | a `macro-rules` transformer |
+| [`macro-match`](layout-macro-match.md) | | a `macro-match` transformer |
 
-## `:block:` conses and layout expansion
+Peers are blocks at the same indent as the primary header whose head is
+in the handler's peer set; the reader gathers them and expands the whole
+spine as one form. Blank and comment-only lines between a body and its
+peer do not break the spine.
 
-Indented blocks are first read as **`:block:`** conses, the header's elements
-as one list and then one entry per body line, each a line of elements or a
-nested block:
+## Blocks as data
 
-```
+An indented block is first read as a `:block:` cons, the header's
+elements as one list and then one entry per body line:
+
+```text
 (:block: (HEAD ARG ...) ENTRY ...)
 ENTRY ::= (ELEMENT ...) | (:block: ...)
 ```
 
-**`LayoutReader.read()`** expands those conses through
-**`koskari.reader.layouts`**: **`apply_layout`** for a single block,
-**`apply_layouts`** for a primary block plus stream-collected peer blocks on one
-spine. Each call looks up **`layout/<head>`** in the module namespace (then
-builtins) and invokes the handler as **`read(reader, source, peers)`**, where
-**`source`** is the cons's cdr, the header and the block's entries, unfolded;
-the handler calls **`reader.fold_line`** or **`reader.fold_lines`** where it
-wants forms.
+`LayoutReader.read()` expands those conses through `apply_layout` for a
+single block and `apply_layouts` for a primary block with its peers,
+invoking the handler as `read(reader, source, peers)`. The handler calls
+`reader.fold_line` or `reader.fold_lines` where it wants forms and reads
+the elements directly where it does not, which is how the default block
+handler turns a keyword line into a keyword argument.
 
-Unknown symbol heads use the default **`layout/block`** handler (flat splice).
-See [layout/block](layout-block-default.md). Opt-in **`compile/begin`** wrapping
-uses [layout/block-begin](layout-block-begin.md).
+Quoted and quasiquoted blocks keep the `:block:` structure as data,
+through `layout/quote` and `layout/quasiquote`, and a macro template
+that contains a block is expanded through `apply_layout` before hygiene
+so that expansion matches what the reader would have produced.
 
-Some paths preserve **`:block:`** structure as data instead of expanding it —
-quoted and quasiquoted blocks (via **`layout/quote`** and
-**`layout/quasiquote`**), and macro templates that retain blocks. Macro and
-**`syntax-rules`** output is finalized through
-**`koskari.syntax._finalize_macro_output`**, which calls **`apply_layout`**
-before hygiene discovery so expansion matches reader layout behaviour.
+## Adding a handler
 
-## Adding new layouts
-
-1. When a block only needs flat splicing (header forms followed by body forms in
-   one list), no dedicated handler is required — the default **`layout/block`**
-   applies when no **`layout/<head>`** is registered.
-2. When the body must be wrapped in **`compile/begin`**, add
-   **`define layout/<head> layout/block-begin`** in **`.ki`**, or implement a
-   custom handler.
-3. Otherwise implement a handler with signature **`(reader, source, peers)`**
-   in the appropriate module under **`koskari/reader/layouts/`**, decorate with
-   **`@layout(symbol('layout/head'), peers=(...))`** when peer blocks are
-   needed, and register the handler in the layout namespace (builtins or module
-   globals).
-4. Add a handler page under **`docs/reference/layouts/`** documenting syntax,
-   read shape, and peers.
+1. A block that only needs its body spliced after the header needs no
+   handler; the default applies.
+2. A block whose body should be one `begin` form binds
+   `define layout/<head> layout/block-begin` in a `.ki` module.
+3. Anything else is a Python function `(reader, source, peers)` under
+   `koskari/reader/layouts/`, decorated with
+   `@layout(symbol('layout/head'), peers=(...))` when it gathers peers,
+   and registered in the layout namespace.
+4. Add a page under `docs/reference/layouts/` for it.
 
 ```{toctree}
 :maxdepth: 1
+:hidden:
 :glob:
 
 layout-*
