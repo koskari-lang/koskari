@@ -1,6 +1,6 @@
 # Koskari orientation for AI agents
 
-Koskari is a LISP dialect for Python: `.ki` source files combine an
+Koskari is a Lisp dialect for Python: `.ki` source files combine an
 indentation-based layout syntax with s-expressions, expanded through
 macros and compiled to bytecode that runs alongside ordinary Python.
 

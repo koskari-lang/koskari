@@ -123,7 +123,7 @@ keys:
 #{"ok": True}
 ```
 
-## Coming from Scheme or another LISP
+## Coming from Scheme or another Lisp
 
 **Write Koskari forms, not Scheme stand-ins.** There is no `eq` /
 `eqv?`; equality is `==` (also spelled `equal?`). Rest parameters are
