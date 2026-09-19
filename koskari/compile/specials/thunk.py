@@ -28,7 +28,7 @@ from ...exceptions import SpecialError
 from ...lib import cons, gensym, keyword, nil, symbol
 from ...matcher import CALLEDBY, MATCH, REST
 from ...syntax import special
-from ...types import is_nil, is_pair, is_symbol
+from ...types import is_nil, is_pair, is_symbol, strip_mark
 from ..compiler import ByteCodeFragment, Compiler
 
 
@@ -71,19 +71,22 @@ def _transform(pos_map, form):
             val = cons(nil, nil)
 
         elif is_pair(head):
-            if head[0] in _monitor:
+            if strip_mark(head[0]) in _monitor:
                 # don't descend into gensym-thunk forms
                 val = cons(head, nil)
             else:
                 val = cons(_transform(pos_map, head), nil)
 
-        elif is_symbol(head):
-            if _thunksym(str(head)):
-                if head in pos_map:
-                    head = pos_map[head]
+        elif is_symbol(strip_mark(head)):
+            # a placeholder is a label: %1 written by a template is the
+            # same slot as %1 written by hand, so it is read stripped
+            bare = strip_mark(head)
+            if _thunksym(str(bare)):
+                if bare in pos_map:
+                    head = pos_map[bare]
                 else:
-                    pos_map[head] = gensym(str(head))
-                    head = pos_map[head]
+                    pos_map[bare] = gensym(str(bare))
+                    head = pos_map[bare]
             val = cons(head, nil)
 
         elif head is Ellipsis:

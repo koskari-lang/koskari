@@ -25,12 +25,14 @@ from typing import List
 
 from ..exceptions import ParametersError, SpecialError
 from ..lib import (
-    DatumFrame, Matcher, OpCode, bracket_nil, bracket_pair, car, cdr, cons,
-    keyword, nil, pair, symbol)
+    DatumFrame, OpCode, bracket_nil, bracket_pair, car, cdr, cons, keyword,
+    nil, pair, symbol)
 from ..matcher import (
     BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH, REST, SYMBOL, USING,
-    USING_UNPACK, VALUE, HygienicMatchCompiler, Pattern, frame_formal_name)
-from ..types import is_keyword, is_nil, is_pair, is_proper, is_symbol, unpack
+    USING_UNPACK, VALUE, MatchCompiler, Pattern, frame_formal_name)
+from ..types import (
+    is_keyword, is_mark, is_nil, is_pair, is_proper, is_symbol, strip_mark,
+    unpack)
 from .compiler import ByteCodeFragment, _is_const
 
 
@@ -116,10 +118,7 @@ _BEGIN_HEADS = (_SYM_BEGIN,)
 def match_pattern_raw(source, patterns, literals=None):
     """
     Try each matcher pattern against ``source`` (pair spine or ``nil``).
-    Return native ``MatchResult.captures`` on first match, else ``None``.
-
-    Used by :meth:`koskari.compile.compiler.Special.match_for_hygiene` and
-    :func:`koskari.hygiene.collect_binding_symbols`.
+    Return native ``MatchResult.captures`` on first match, else ``None``
     """
 
     if not is_nil(source) and not is_pair(source):
@@ -134,8 +133,7 @@ def match_pattern_raw(source, patterns, literals=None):
             raise TypeError(
                 "compile helpers.match_pattern_raw expects matcher Pattern,"
                 f" got {pat!r}")
-        hc = HygienicMatchCompiler()
-        bm = Matcher.from_tuple(hc.lower(pat))
+        bm = MatchCompiler.compile(pat)
         m = bm.match(source)
         if m.matched:
             return m.captures
@@ -193,9 +191,12 @@ _BINDING_FORMS = [
 
 def is_symbolish(thing):
     """
-    Return True if thing is a symbol or lazy gensym (valid binding name)
+    Return True if thing is a symbol, a Mark over a symbol, or a lazy
+    gensym (valid binding name)
     """
 
+    if is_mark(thing):
+        return is_symbol(thing.datum)
     return is_symbol(thing) or is_lazygensym(thing)
 
 
@@ -289,7 +290,7 @@ def _formal_kw_tag_to_key(kw):
     Map keyword atom to annotation key; empty keyword (``::`` sugar) is type
     """
 
-    raw = str(kw)
+    raw = str(strip_mark(kw))
     if raw.endswith(":"):
         raw = raw[:-1]
     if raw == "":
@@ -304,7 +305,7 @@ def _parse_formal_tail(tail, source):
 
     if is_nil(tail):
         return {}, None
-    head = car(tail)
+    head = strip_mark(car(tail))
     rest = cdr(tail)
     if not is_keyword(head):
         if not is_nil(rest):
@@ -317,7 +318,7 @@ def _parse_formal_tail(tail, source):
     default = None
     cur = tail
     while not is_nil(cur):
-        kw = car(cur)
+        kw = strip_mark(car(cur))
         cur = cdr(cur)
         if not is_keyword(kw):
             raise SpecialError(
@@ -347,7 +348,7 @@ def parse_formal_parameter(form, source=None):
     Parse one formal parameter: bare symbol, or list with name and attributes
     """
 
-    if is_symbol(form) or is_lazygensym(form):
+    if is_symbolish(form):
         return (form, {}, None)
     if not is_pair(form):
         raise SpecialError(
@@ -395,7 +396,7 @@ def _parse_decl_tail(tail, source):
 
     if is_nil(tail):
         return {}
-    head = car(tail)
+    head = strip_mark(car(tail))
     if not is_keyword(head):
         raise SpecialError(
             "declaration cannot include a value",
@@ -404,7 +405,7 @@ def _parse_decl_tail(tail, source):
     ann = {}
     cur = tail
     while not is_nil(cur):
-        kw = car(cur)
+        kw = strip_mark(car(cur))
         cur = cdr(cur)
         if not is_keyword(kw):
             raise SpecialError(
@@ -436,7 +437,7 @@ def parse_decl(form, source=None):
     Parse a binding-shaped declaration with no value
     """
 
-    if is_symbol(form) or is_lazygensym(form):
+    if is_symbolish(form):
         return (form, None)
     if not is_pair(form):
         raise SpecialError(
@@ -484,7 +485,7 @@ def gather_parameters(args, source=None):
 
     undefined = object()
 
-    if is_symbol(args) or is_lazygensym(args):
+    if is_symbolish(args):
         return ([("*", args)], [])
 
     elif isinstance(args, (list, tuple)):
@@ -511,8 +512,9 @@ def gather_parameters(args, source=None):
     arg = next(iargs, undefined)
 
     while arg is not undefined:
-        if is_keyword(arg):
-            if arg is _keyword_star:
+        label = strip_mark(arg)
+        if is_keyword(label):
+            if label is _keyword_star:
                 if in_kwds_phase:
                     raise ParametersError(
                         "* args must come before keyword arguments",
@@ -524,7 +526,7 @@ def gather_parameters(args, source=None):
                         source)
                 args_seq.append(("*", star_sym))
 
-            elif arg is _keyword_starstar:
+            elif label is _keyword_starstar:
                 in_kwds_phase = True
                 starstar_sym = next(iargs, undefined)
                 if starstar_sym is undefined:
@@ -538,8 +540,9 @@ def gather_parameters(args, source=None):
                 value = next(iargs, undefined)
                 if value is undefined:
                     raise ParametersError(
-                        "missing value for keyword parameter %s" % arg, source)
-                kwds_seq.append((str(arg), value))
+                        "missing value for keyword parameter %s" % label,
+                        source)
+                kwds_seq.append((str(label), value))
 
         else:
             if in_kwds_phase:
@@ -883,7 +886,7 @@ def helper_elsebody(source):
         head, tail = current
         if is_nil(tail) and is_pair(head):
             e, ebody = head
-            if e is _keyword_else:
+            if strip_mark(e) is _keyword_else:
                 body_list = cons(*collected, nil) if collected else nil
                 if is_nil(ebody):
                     return body_list, None
@@ -919,7 +922,7 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
 
     star_idx = [
         i for i, elt in enumerate(items)
-        if is_keyword(elt) and elt is _keyword_star]
+        if strip_mark(elt) is _keyword_star]
 
     if len(star_idx) > 1:
         fail("at most one * is allowed in an unpack pattern")
@@ -1007,7 +1010,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
 
     star_idx = [
         i for i, elt in enumerate(items)
-        if is_keyword(elt) and elt is _keyword_star]
+        if strip_mark(elt) is _keyword_star]
 
     if len(star_idx) > 1:
         fail("at most one * is allowed in an unpack pattern")
@@ -1171,7 +1174,7 @@ def _attrs_frames_to_ann(attr_frames: List[dict], source):
         kw_cell = afr.get('kw')
         if kw_cell is None:
             continue
-        kw = kw_cell.datum
+        kw = strip_mark(kw_cell.datum)
         val_cell = afr.get('attr_val')
         if val_cell is None:
             raise SpecialError(
@@ -1264,7 +1267,7 @@ def _gather_one_positional_frame(fr: dict, source):
         raise SpecialError(
             f"positional frame missing name: {fr!r}",
             source)
-    if not (is_symbol(name) or is_lazygensym(name)):
+    if not is_symbolish(name):
         raise SpecialError(
             "positional formals must be symbols or bracket forms, not"
             f" {name!r}",
@@ -1289,7 +1292,7 @@ def _reject_bare_annotation(kw, typ, prev_name, source):
     :raises SpecialError: when kw is the empty keyword
     """
 
-    if str(kw) != "":
+    if str(strip_mark(kw)) != "":
         return
     name = "name" if prev_name is None else str(prev_name)
     shown = repr(typ) if isinstance(typ, str) else str(typ)
@@ -1365,7 +1368,7 @@ def gather_formals(formals_group, source=None):
                 f"invalid kwonly frame {fr!r}",
                 source)
         name = None if (v := fr.get('name')) is None else v.datum
-        if name is not None and (is_symbol(name) or is_lazygensym(name)):
+        if name is not None and is_symbolish(name):
             name, by_ref = _strip_byref_sym(name)
             if by_ref:
                 by_refs.append(str(name))
@@ -1391,13 +1394,13 @@ def gather_formals(formals_group, source=None):
 
     ss_cell = formals_group.get('starstar')
     starstar = ss_cell.datum if ss_cell else None
-    if starstar and not is_symbol(starstar):
+    if starstar and not is_symbolish(starstar):
         raise SpecialError(
             f"** keyword requires symbol binding, not {starstar!r}",
             source)
 
     if star is not None and not is_nil(star):
-        if not is_symbol(star):
+        if not is_symbolish(star):
             raise SpecialError(
                 f"* keyword requires symbol binding, not {star!r}",
                 source)

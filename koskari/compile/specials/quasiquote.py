@@ -43,7 +43,7 @@ from ...exceptions import SpecialError
 from ...lib import OpCode, bracket_nil, bracket_pair, nil, symbol
 from ...matcher import CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_nil, is_pair
+from ...types import is_nil, is_pair, strip_mark
 from ..compiler import _is_const
 
 
@@ -73,16 +73,12 @@ def _qq_expr(compiler, frag, expr, level):
         frag.instruction(OpCode.CONST, expr)
         return
 
-    # redundant with _is_const(expr)
-    # if is_nil(expr):
-    #     frag.instruction(OpCode.CONST, nil)
-    #     return
-
     if not is_pair(expr):
-        frag.instruction(OpCode.CONST, expr)
+        frag.instruction(OpCode.CONST, strip_mark(expr))
         return
 
     head, tail = expr
+    head = strip_mark(head)
 
     if head is _symbol_unquote:
         if is_nil(tail) or not is_pair(tail):
@@ -130,7 +126,7 @@ def _is_splice(expr, level):
         level == 0
         and is_pair(expr)
         and not is_nil(expr)
-        and expr[0] is _symbol_unquote_splicing
+        and strip_mark(expr[0]) is _symbol_unquote_splicing
     )
 
 
@@ -267,7 +263,7 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
         if (not is_nil(current)
                 and is_pair(current)
                 and not is_nil(current.cdr)
-                and current.car is _symbol_unquote):
+                and strip_mark(current.car) is _symbol_unquote):
             segment.append(_compile_element(compiler, frag, elem, level))
             break
 
@@ -319,7 +315,7 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
             frag.instruction(OpCode.CONST, current)
         elif (is_pair(current)
               and not is_nil(current)
-              and current[0] is _symbol_unquote
+              and strip_mark(current[0]) is _symbol_unquote
               and level == 0):
             unquote_body = current[1]
             if is_nil(unquote_body) or not is_pair(unquote_body):

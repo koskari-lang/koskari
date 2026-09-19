@@ -64,12 +64,12 @@ _LET_PATTERNS = [
     MATCH(
         CALLEDBY(),
         SYMBOL("name"),
-        BINDINGS("bindings", mode="parallel", scope="body"),
+        BINDINGS("bindings"),
         BODY("body")),
 
     MATCH(
         CALLEDBY(),
-        BINDINGS("bindings", mode="parallel", scope="body"),
+        BINDINGS("bindings"),
         BODY("body")),
 ]
 
@@ -119,7 +119,7 @@ def special_let(
 _LETREC_PATTERNS = [
     MATCH(
         CALLEDBY(),
-        BINDINGS("bindings", mode="parallel", scope="body"),
+        BINDINGS("bindings"),
         BODY("body")),
 ]
 

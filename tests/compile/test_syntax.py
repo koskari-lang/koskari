@@ -34,7 +34,7 @@ from koskari.lib import Module, ModuleNamespace, car, cdr, cons, symbol
 from koskari.matcher import make_matcher, parse_explicit_rule_pattern
 from koskari.syntax import (
     Syntax, SyntaxTransform, build_syntax, parse_syntax_rules_pattern)
-from koskari.types import build_proper, is_symbol, unpack
+from koskari.types import build_proper, is_mark, strip_marks, unpack
 
 
 pytestmark = pytest.mark.phase_compile
@@ -77,7 +77,8 @@ def assert_forms_equal(test_case, got, expected):
     Assert two forms are equal (compare as unpacked lists)
     """
 
-    test_case.assertEqual(list(unpack(got)), list(unpack(expected)))
+    test_case.assertEqual(
+        list(unpack(strip_marks(got))), list(unpack(strip_marks(expected))))
 
 
 def assert_head(test_case, form_pair, expected_symbol):
@@ -85,7 +86,8 @@ def assert_head(test_case, form_pair, expected_symbol):
     Assert car(form_pair) equals expected_symbol
     """
 
-    test_case.assertEqual(car(form_pair), symbol(expected_symbol))
+    test_case.assertEqual(
+        strip_marks(car(form_pair)), symbol(expected_symbol))
 
 
 def assert_binding_renamed(test_case, let_form, original_name):
@@ -97,7 +99,7 @@ def assert_binding_renamed(test_case, let_form, original_name):
     bindings = car(cdr(let_form))
     binding_pair = car(bindings)
     bound_name = car(binding_pair)
-    test_case.assertTrue(is_symbol(bound_name), 'binding name must be symbol')
+    test_case.assertTrue(is_mark(bound_name), 'binding name must be marked')
     test_case.assertNotEqual(str(bound_name), original_name)
 
 
@@ -109,7 +111,7 @@ def assert_formal_renamed(test_case, lambda_form, original_name):
 
     formals = car(cdr(lambda_form))
     param = car(formals)
-    test_case.assertTrue(is_symbol(param), 'formal must be symbol')
+    test_case.assertTrue(is_mark(param), 'formal must be marked')
     test_case.assertNotEqual(str(param), original_name)
 
 

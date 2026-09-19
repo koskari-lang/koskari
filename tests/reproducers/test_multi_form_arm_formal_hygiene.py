@@ -31,7 +31,7 @@ import unittest
 import pytest
 
 from koskari.module import load_module_source_async, new_module
-from koskari.types import is_keyword, is_symbol, unpack
+from koskari.types import is_keyword, is_mark, is_symbol, unpack
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -95,8 +95,10 @@ class TestMultiFormArmFormalHygiene(unittest.IsolatedAsyncioTestCase):
     async def test_keyword_formal_renamed_with_body(self):
         mod = await self.load("mfa_kw")
         formals, body = defined_function_parts(vars(mod)["kw-expansion"])
-        self.assertTrue(is_keyword(formals[0]))
-        self.assertTrue(is_symbol(body))
+        self.assertTrue(is_mark(formals[0]))
+        self.assertTrue(is_keyword(formals[0].datum))
+        self.assertTrue(is_mark(body))
+        self.assertTrue(is_symbol(body.datum))
         self.assertEqual(str(formals[0]), str(body))
         self.assertNotEqual(str(body), "argv")
 
@@ -110,8 +112,9 @@ class TestMultiFormArmFormalHygiene(unittest.IsolatedAsyncioTestCase):
     async def test_positional_formal_renamed_with_body(self):
         mod = await self.load("mfa_pos")
         formals, body = defined_function_parts(vars(mod)["pos-expansion"])
-        self.assertTrue(is_symbol(formals[0]))
-        self.assertIs(formals[0], body)
+        self.assertTrue(is_mark(formals[0]))
+        self.assertTrue(is_symbol(formals[0].datum))
+        self.assertEqual(formals[0], body)
         self.assertNotEqual(str(body), "argv")
 
 
@@ -125,8 +128,10 @@ class TestMultiFormArmFormalHygiene(unittest.IsolatedAsyncioTestCase):
         mod = await self.load("mfa_cell")
         formals, body = defined_function_parts(vars(mod)["cell-expansion"])
         cell = list(unpack(formals[0]))
-        self.assertTrue(is_keyword(cell[0]))
-        self.assertTrue(is_symbol(body))
+        self.assertTrue(is_mark(cell[0]))
+        self.assertTrue(is_keyword(cell[0].datum))
+        self.assertTrue(is_mark(body))
+        self.assertTrue(is_symbol(body.datum))
         self.assertEqual(str(cell[0]), str(body))
         self.assertNotEqual(str(body), "argv")
 

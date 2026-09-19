@@ -25,9 +25,9 @@ from ...bootstrap import builtin
 from ...lib import OpCode, cons, nil, symbol
 from ...matcher import BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, SYMBOL, VALUE
 from ...syntax import special
-from ...types import fill_position, is_symbol
+from ...types import fill_position, strip_mark
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers import gather_parameters
+from ..helpers import gather_parameters, is_symbolish
 
 
 def _partition_args(args_seq):
@@ -210,16 +210,17 @@ def special_call(
 
     callable = caps["callable"].datum
 
-    use_var_path = is_symbol(callable)
-    name = str(callable) if is_symbol(callable) else None
+    use_var_path = is_symbolish(callable)
+    name = str(callable) if use_var_path else None
 
     # rewriting (.foo obj args...) to
-    # (compile/call-attr obj foo args...)
+    # (compile/call-attr obj foo args...); the attribute is a label,
+    # so a mark on the callable does not reach it
     if name and rest and name.startswith("."):
         obj, rest = rest
         rewritten = cons(
             _sym_call_attr,
-            obj, symbol(name[1:]), rest)
+            obj, symbol(str(strip_mark(callable))[1:]), rest)
         fill_position(rewritten, pos)
         return rewritten
 
@@ -228,8 +229,8 @@ def special_call(
         # the var path names the callable directly rather than routing it
         # through compile_symbol, so the stray-colon check has to run here.
         # The other path calls full_compile, which checks for us.
-        compiler.check_stray_colon(callable, pos)
-        fragment.request_var(name)
+        compiler.check_stray_colon(strip_mark(callable), pos)
+        fragment.request_var(callable)
 
     fragment.position(pos)
     if not use_var_path:
@@ -266,7 +267,7 @@ def special_call_attr(
     pos = caps["called-by"].position
 
     obj = caps["obj"].datum
-    attr = str(caps["attr"].datum)
+    attr = str(strip_mark(caps["attr"].datum))
     args_src = caps["args"].datum if "args" in caps else nil
 
     fragment = compiler.fragment(called_by)
@@ -274,12 +275,12 @@ def special_call_attr(
     # The attr call always takes the var path when obj is a symbol; the
     # processor's promotion pass relabels tail-position attr calls onto
     # their TAIL_CALL_*ATTR* twins after emission.
-    use_var_path = is_symbol(obj)
+    use_var_path = is_symbolish(obj)
     name = str(obj) if use_var_path else None
 
     fragment.position(pos)
     if use_var_path:
-        fragment.request_var(name)
+        fragment.request_var(obj)
     else:
         fragment.merge(compiler.full_compile(obj))
 

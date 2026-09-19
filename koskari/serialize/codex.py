@@ -28,7 +28,7 @@ from enum import Enum, IntEnum
 
 from ..lib import (
     SOFTEN_LABEL_PREFIX, Code, FormalsSpec, FunctionSpec, NamespaceSpec,
-    OpCode, OpStyle, bracket_nil, keyword, nil, symbol)
+    Mark, OpCode, OpStyle, bracket_nil, keyword, nil, symbol)
 from .constants import (
     BYTECODE_ABI_MAJOR, BYTECODE_ABI_MICRO, BYTECODE_ABI_MINOR,
     BYTECODE_ABI_PATCH, KIO_MAGIC)
@@ -134,6 +134,7 @@ class PoolKind(IntEnum):
     ELLIPSIS = 21
     FROZENSET = 22
     SLICE = 23
+    MARK = 24
 
 
 class CodeFlags(IntEnum):
@@ -756,6 +757,10 @@ def intern_for_pool(pb, obj):
         intern_for_pool(pb, obj.step)
         return pb.add(obj)
 
+    if isinstance(obj, Mark):
+        intern_for_pool(pb, obj.datum)
+        return pb.add(obj)
+
     return pb.add(obj)
 
 
@@ -1066,6 +1071,14 @@ def encode_pool_record_value(val, index_of, pb=None):
     if isinstance(val, keyword):
         return struct.pack('<B', PoolKind.KEYWORD) + _pack_string(str(val))
 
+    if isinstance(val, Mark):
+        # a template atom with its expansion marks, from a transformer a
+        # macro-generating macro defined
+        marks = val.marks
+        return (struct.pack('<BII', PoolKind.MARK, index_of(val.datum),
+                            len(marks))
+                + struct.pack('<' + 'Q' * len(marks), *marks))
+
     if isinstance(val, (tuple, frozenset)):
         out = bytearray()
         out.append(
@@ -1159,6 +1172,13 @@ def decode_pool_record_at_kind(kind, buf, off, prior):
     if kind == PoolKind.KEYWORD:
         s, off = _unpack_string(buf, off)
         return keyword(s), off
+
+    if kind == PoolKind.MARK:
+        idx, arity = struct.unpack_from('<II', buf, off)
+        off += 8
+        marks = struct.unpack_from('<' + 'Q' * arity, buf, off)
+        off += 8 * arity
+        return Mark(prior[idx], tuple(marks)), off
 
     if kind in (PoolKind.TUPLE, PoolKind.FROZENSET):
         arity = struct.unpack_from('<I', buf, off)[0]

@@ -28,7 +28,8 @@ from ...lib import OpCode, cons, keyword, nil, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, VALUE
 from ...syntax import special
 from ...types import (
-    fill_position, get_position, is_keyword, is_nil, is_pair, unpack)
+    fill_position, get_position, is_keyword, is_nil, is_pair, strip_mark,
+    unpack)
 from ..helpers import helper_begin, helper_using, pycons
 
 
@@ -117,8 +118,9 @@ def _collect_catches(compiler, catches):
             raise SpecialError("clause with no body in try", ca)
 
         ex, act = ca
+        tag = strip_mark(ex)
 
-        if ex is _keyword_except:
+        if tag is _keyword_except:
             ex_pair = cons(cons(_keyword_except, nil), act)
             pos = get_position(ca)
             if pos:
@@ -138,19 +140,19 @@ def _collect_catches(compiler, catches):
                 fill_position(ex_pair, pos)
             normal_catches.append(ex_pair)
 
-        elif not is_keyword(ex):
+        elif not is_keyword(tag):
             ex_pair = cons(cons(_keyword_except, ex), act)
             pos = get_position(ca)
             if pos:
                 fill_position(ex_pair, pos)
             normal_catches.append(ex_pair)
 
-        elif ex is _keyword_finally:
+        elif tag is _keyword_finally:
             if act_finally is not None:
                 raise SpecialError("duplicate finally: clause in try", ca)
             act_finally = act
 
-        elif is_keyword(ex) and str(ex) == "else":
+        elif str(tag) == "else":
             if act_else is not None:
                 raise SpecialError("duplicate else: clause in try", ca)
             act_else = act

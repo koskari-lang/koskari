@@ -15,450 +15,81 @@
 """
 koskari.hygiene
 
-Hygiene discovery and template expansion driven by freeze-built hygiene
-trees aligned to matcher capture-scope structure, plus stable Syntax hooks
-(:meth:`koskari.syntax.Syntax.match_for_hygiene`).
+Template expansion and expansion finalize for syntax transformers.
 
-Capture-shape contract (runtime walk):
+Hygiene is provenance: a symbol or keyword a template introduced is
+boxed in a Mark carrying the expansion that introduced it, and the
+compiler declares and resolves it under the mangled key the Mark
+spells. Material substituted from the use site arrives in Datum boxes
+from the matcher and is never marked. Finalize peels the Datum boxes
+for compilation and leaves the Marks for the compiler
 
-* Binder slot -> symbol, Datum, dict (GROUP), or list of dicts (REPEAT)
-* Region slot (BODY/VALUE) -> pair spine, optional Datum wrapper (never nested),
-  or special form
-* group_child edge -> matched[slot] is dict (native GROUP capture)
-* repeat_element edge -> matched[slot] is list of dict frames
-* subform descent -> region value is a compile special; uses that form's arm plan
-
-:author: Christopher O'Brien <obriencj@preoccupied.net>
+:author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
 """
 
 
-from dataclasses import dataclass, field
-from typing import Optional, Tuple, Union
-
 from koskari.exceptions import CompilerError
 from koskari.lib import (
-    Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym, keyword,
-    nil, symbol)
+    Datum, Mark, bracket_cons, bracket_nil, bracket_pair, cons, symbol)
 from koskari.types import (
-    build_proper, is_keyword, is_nil, is_pair, is_symbol, unpack)
+    build_proper, get_position, is_keyword, is_mark, is_nil, is_pair,
+    is_symbol, unpack)
 
 
 __all__ = (
-    "HygieneEdge",
-    "HygieneNode",
-    "Hygiene",
-    "validate_hygiene_tree",
-    "introduced_symbols_from_match",
-    "binder_recurse_targets",
-    "collect_binding_symbols",
     "expand_template_with_hygiene",
-    "apply_syntax_rules_hygiene",
-    "finalize_macro_hygiene_unbox_one_pass",
-    "walk_hygiene_tree",
+    "finalize_expansion",
+    "mark_atom",
+    "mark_expansion",
+    "peel_datums",
 )
 
 
-# --- Hygiene tree types
+# --- Marking
 
 
-@dataclass
-class HygieneNode(object):
+def mark_atom(atom, mark):
     """
-    One capture-scope hygiene context from matcher lowering
+    The atom boxed with ``mark``: a symbol or keyword becomes a Mark
+    over it, a Mark gains ``mark`` as its newest, and anything else is
+    returned unchanged
 
-    While :class:`koskari.matcher.HygienicMatchCompiler` builds a plan,
-    binders and regions are dicts and scoped_slots is a set. Each node
-    finalized onto :class:`Hygiene` uses copied dicts and a frozenset for
-    scoped_slots
-
-    :param node_id: unique node index in the owning tree
-    :param parent_id: parent node id, or None for the root
-    :param binders: binder slot names mapped to owning Pattern instances
-    :param regions: scope-region slot names mapped to owning Pattern instances
-    :param scoped_slots: region slots walked via binder ``_scopes`` only
-    :param link_slot: GROUP link capture slot during lowering only; cleared on freeze
+    :param atom: a source atom
+    :param mark: the expansion mark, an int
     """
 
-    node_id: int
-    parent_id: Optional[int]
-    binders: dict = field(default_factory=dict)
-    regions: dict = field(default_factory=dict)
-    scoped_slots: Union[set, frozenset] = field(default_factory=set)
-    link_slot: Optional[str] = field(default=None, compare=False, repr=False)
+    if is_mark(atom):
+        return Mark(atom.datum, atom.marks + (mark,))
+    if is_symbol(atom) or is_keyword(atom):
+        return Mark(atom, mark)
+    return atom
 
 
-@dataclass(frozen=True)
-class HygieneEdge(object):
+def _binding_key(atom):
     """
-    Parent-to-child link in a hygiene tree
-
-    :param kind: ``group_child`` or ``repeat_element``
-    :param parent_id: parent node id
-    :param child_id: child node id
-    :param capture_slot: capture key in the parent matched mapping
+    The symbol a template atom is looked up under in the pattern
+    bindings: itself for a symbol, the symbol spelling its key for a
+    Mark
     """
 
-    kind: str
-    parent_id: int
-    child_id: int
-    capture_slot: str
-
-
-@dataclass(frozen=True)
-class Hygiene(object):
-    """
-    Freeze-time hygiene plan: nodes mirror capture-scope nesting; edges
-    encode GROUP and REPEAT child walks
-    """
-
-    nodes: Tuple[HygieneNode, ...]
-    edges: Tuple[HygieneEdge, ...]
-    root_id: int
-
-
-    def is_empty(self):
-        """
-        True when no node in the tree has binders or regions
-
-        A plan with edges but nothing to walk under them, such as a
-        syntax-rules pattern with an ellipsis, discovers nothing on its
-        own, and its form is walked element-wise instead
-        """
-
-        return not any(node.binders or node.regions for node in self.nodes)
-
-
-    def __bool__(self):
-        return not self.is_empty()
-
-
-    @property
-    def root(self):
-        """
-        The root hygiene node
-        """
-
-        return self.node_by_id(self.root_id)
-
-
-    def node_by_id(self, node_id):
-        """
-        Return the node for ``node_id``
-
-        :param node_id: node index
-        :rtype: HygieneNode
-        :raises KeyError: when ``node_id`` is unknown
-        """
-
-        for node in self.nodes:
-            if node.node_id == node_id:
-                return node
-        raise KeyError(node_id)
-
-
-    def edges_from(self, parent_id):
-        """
-        Yield edges whose parent is ``parent_id``
-        """
-
-        for edge in self.edges:
-            if edge.parent_id == parent_id:
-                yield edge
-
-
-    @classmethod
-    def single_node(cls, binders=None, regions=None, scoped_slots=None):
-        """
-        Build a one-node tree (tests and synthetic plans)
-
-        :param binders: optional binder slot map
-        :param regions: optional region slot map
-        :param scoped_slots: optional scoped region slot names
-        :rtype: Hygiene
-        """
-
-        if binders is not None:
-            binders = dict(binders)
-
-        if regions is not None:
-            regions = dict(regions)
-
-        ss = frozenset(scoped_slots or ())
-
-        node = HygieneNode(
-            0, None,
-            binders or {},
-            regions or {},
-            ss)
-        return cls((node,), (), 0)
-
-
-# --- Tree validation
-
-
-def validate_hygiene_tree(tree):
-    """
-    Verify structural invariants of a hygiene tree. Raises ValueError on
-    violation
-
-    :param tree: Hygiene instance
-    """
-
-    if not tree.nodes:
-        raise ValueError("hygiene tree has no nodes")
-
-    ids = {n.node_id for n in tree.nodes}
-    if len(ids) != len(tree.nodes):
-        raise ValueError("duplicate hygiene node ids")
-
-    if tree.root_id not in ids:
-        raise ValueError("root_id not in nodes")
-
-    for node in tree.nodes:
-        if node.parent_id is not None and node.parent_id not in ids:
-            raise ValueError(
-                f"node {node.node_id}"
-                f" parent {node.parent_id} missing")
-
-        for slot in node.binders:
-            if slot in node.regions:
-                raise ValueError(
-                    "slot %r is both binder and region on node %d"
-                    % (slot, node.node_id))
-
-        overlap = set(node.regions) & set(node.scoped_slots)
-        if overlap:
-            raise ValueError(
-                "scoped_slots overlap regions on node %d: %r"
-                % (node.node_id, overlap))
-
-    for edge in tree.edges:
-        if edge.parent_id not in ids or edge.child_id not in ids:
-            raise ValueError(
-                "edge %r references missing node" % (edge,))
-
-        if edge.kind not in ("group_child", "repeat_element"):
-            raise ValueError(
-                "unknown edge kind %r" % (edge.kind,))
-
-
-# --- Matcher capture walk (internal)
-
-
-def _hygiene_collect_walk_roots(form):
-    """
-    Normalize matcher capture values into roots for binding-symbol walks.
-    Scope-region captures are often Datum-wrapped spine slices; peel one
-    layer for the walk only. Tuple captures expand to per-element roots
-    """
-
-    if form is None:
-        return
-
-    if isinstance(form, tuple):
-        for elem in form:
-            for root in _hygiene_collect_walk_roots(elem):
-                yield root
-        return
-
-    if isinstance(form, Datum):
-        form = form.datum
-
-    yield form
-
-
-def _walk_region_roots(matched, owner, find_compiled, out, kw_cells=None):
-    """
-    Walk scope-region targets from ``owner`` into ``out``
-    """
-
-    for form in owner.iter_scope_targets(matched):
-        for root in _hygiene_collect_walk_roots(form):
-            out |= _collect_from_region_root(root, find_compiled, kw_cells)
-
-
-def _walk_binder_scopes(matched, owner, find_compiled, out, kw_cells=None):
-    """
-    Walk binder ``_scopes`` sibling slots (same matched mapping)
-    """
-
-    scopes = getattr(owner, "_scopes", ())
-    if not scopes:
-        return
-    for scope_slot in scopes:
-        val = matched and matched.get(scope_slot)
-        if val is None:
-            continue
-        if isinstance(val, Datum) and (is_pair(val.datum) or is_nil(val.datum)):
-            spine = val.datum
-        elif is_pair(val) or is_nil(val):
-            spine = val
-        else:
-            out |= _collect_from_region_root(val, find_compiled, kw_cells)
-            continue
-        for root in _hygiene_collect_walk_roots(spine):
-            out |= _collect_from_region_root(root, find_compiled, kw_cells)
-
-
-def _collect_from_region_root(root, find_compiled, kw_cells=None):
-    """
-    Descend a scope-region root the same way as ``collect_binding_symbols``
-    on a nested form: specials via their hygiene arm; other pair spines
-    via element-wise recursion without harvesting arbitrary symbols
-
-    A region capture may be a proper list of sibling forms
-    ``(form1 . (form2 . nil))`` or one compile-special application
-    ``(compile/name . args)``. Those shapes share cons structure; when the
-    ``car`` is a resolved compile head we treat the spine as one application,
-    otherwise we walk every element from ``unpack(root)`` so the first
-    sibling is not dropped
-    """
-
-    # print("DEBUG _collect_from_region_root", "root=", repr(root))
-
-    if isinstance(root, Datum):
-        root = root.datum
-
-    if not root or is_symbol(root) or not is_pair(root):
-        return set()
-
-    items = list(unpack(root))
-    first = items[0]
-    if is_symbol(first) and find_compiled(first) is not None:
-        return collect_binding_symbols(root, find_compiled, kw_cells)
-
-    out = set()
-    for elem in items:
-        out |= collect_binding_symbols(elem, find_compiled, kw_cells)
-    return out
-
-
-def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None,
-                      kw_cells=None):
-    """
-    Collect binding symbols by walking a hygiene tree against captures
-
-    :param tree: Hygiene plan
-    :param node_id: node to visit
-    :param matched: capture dict (``MatchResult.captures``-shaped) for this node
-    :param find_compiled: callable mapping head symbols to compiled specials
-    :param tracer: optional dict with list counters (tests only)
-    :param kw_cells: optional set collecting ids of template cells whose
-        car is a binder keyword, for the renamer to rewrite
-    :rtype: set of symbols
-    """
-
-    if tree is None or matched is None:
-        return set()
-
-    assert isinstance(matched, dict)
-
-    if tracer is not None:
-        tracer.setdefault("node_enter", []).append(node_id)
-
-    node = tree.node_by_id(node_id)
-    out = set()
-
-    for owner in node.binders.values():
-        for sym in owner.iter_introduced_symbols(matched):
-            if sym is not None and is_symbol(sym):
-                out.add(sym)
-        if kw_cells is not None:
-            cells = getattr(owner, "iter_binder_keyword_cells", None)
-            if cells is not None:
-                for cell in cells(matched):
-                    kw_cells.add(id(cell))
-        for form in owner.iter_recurse_targets(matched):
-            if form is not None and not isinstance(form, Datum):
-                out |= collect_binding_symbols(form, find_compiled,
-                                               kw_cells)
-        _walk_binder_scopes(matched, owner, find_compiled, out, kw_cells)
-        if tracer is not None:
-            scopes = getattr(owner, "_scopes", ())
-            for scope_slot in scopes:
-                tracer.setdefault("scope_walk", []).append(scope_slot)
-
-    for slot, owner in node.regions.items():
-        if slot in node.scoped_slots:
-            continue
-        if tracer is not None:
-            tracer.setdefault("region_walk", []).append(slot)
-        _walk_region_roots(matched, owner, find_compiled, out, kw_cells)
-
-    for edge in tree.edges_from(node_id):
-        val = matched and matched.get(edge.capture_slot)
-        if edge.kind == "group_child":
-            if isinstance(val, dict):
-                out |= walk_hygiene_tree(
-                    tree, edge.child_id, val, find_compiled, tracer,
-                    kw_cells)
-        elif edge.kind == "repeat_element":
-            frames = val
-            if isinstance(frames, Datum):
-                frames = frames.datum
-            if is_nil(frames):
-                continue
-            if not isinstance(frames, list):
-                continue
-            for fr in frames:
-                if isinstance(fr, dict):
-                    if tracer is not None:
-                        tracer.setdefault("repeat_element", []).append(
-                            edge.capture_slot)
-                    out |= walk_hygiene_tree(
-                        tree, edge.child_id, fr, find_compiled, tracer,
-                        kw_cells)
-
-    return out
-
-
-def introduced_symbols_from_match(matched, hygiene):
-    """
-    Collect symbols introduced by binder composites under hygiene rules.
-
-    :param matched: capture mapping from one successful hygiene-side match
-    :param hygiene: Hygiene plan or None
-    :rtype: set of koskari symbols
-    """
-
-    if not isinstance(hygiene, Hygiene):
-        return set()
-    return walk_hygiene_tree(hygiene, hygiene.root_id, matched, lambda h: None)
-
-
-def binder_recurse_targets(matched, hygiene):
-    """
-    Yield forms nested under binder slots that must be walked for nested
-    binder discovery (initializer arms).
-
-    :param matched: capture mapping from one successful hygiene-side match
-    :param hygiene: Hygiene plan or None
-    :rtype: iterable of forms suitable for collect_binding_symbols recursion
-    """
-
-    if matched is None or hygiene is None or hygiene.is_empty():
-        return
-
-    node = hygiene.node_by_id(hygiene.root_id)
-    for owner in node.binders.values():
-        for form in owner.iter_recurse_targets(matched):
-            if form is not None and not isinstance(form, Datum):
-                yield form
+    if is_mark(atom):
+        return symbol(str(atom))
+    return atom
 
 
 # --- Template expansion
 
 
 def _collect_symbols(expr, out):
-    if is_symbol(expr):
-        out.add(expr)
+    if is_symbol(expr) or is_mark(expr):
+        out.add(_binding_key(expr))
         return
 
     if is_pair(expr):
         for elem in unpack(expr):
-            if is_symbol(elem):
-                out.add(elem)
+            if is_symbol(elem) or is_mark(elem):
+                out.add(_binding_key(elem))
             elif is_pair(elem):
                 _collect_symbols(elem, out)
 
@@ -537,14 +168,10 @@ def _slice_bindings(bindings, controlling, index):
     return sub
 
 
-def expand_template_with_hygiene(
-        template,
-        bindings,
-        binding_symbols,
-        introduced=None):
+def expand_template_with_hygiene(template, bindings, mark=None):
     """
-    Substitute pattern bindings and assign fresh gensyms for introduced
-    template identifiers.
+    Substitute pattern bindings into a template and mark the symbols
+    and keywords the template itself introduces.
 
     Ellipsis repetition is depth-aware: a variable captured under N pattern
     ellipses carries N nested repeat sequences, and each template ``...`` peels
@@ -552,21 +179,19 @@ def expand_template_with_hygiene(
     under fewer ellipses than its rank still carries an unconsumed sequence at
     use site and raises, rather than splicing a raw column into the output
 
-    :param template: template form (pairs, symbols, or Syntax-like opaque)
+    :param template: template form (pairs, symbols, or opaque atoms)
     :param bindings: dict from pattern variable symbol to capture value
         (often ``Datum``-wrapped); a single outer ``Datum`` wrapper is peeled
         only when expanding list or ellipsis structure, not when returning
         an unexpanded binding reference unchanged
-    :param binding_symbols: set of symbols needing gensym when not bound
-    :param introduced: optional map mutated from symbol to gensym
+    :param mark: the expansion mark to box template atoms with, or None
+        to substitute without marking
     """
 
-    if introduced is None:
-        introduced = {}
-
-    if is_symbol(template):
-        if template in bindings:
-            val = bindings[template]
+    if is_symbol(template) or is_mark(template):
+        key = _binding_key(template)
+        if key in bindings:
+            val = bindings[key]
             if _repeat_seq(val) is not None:
                 raise CompilerError(
                     'ellipsis variable used at insufficient ellipsis depth',
@@ -576,12 +201,14 @@ def expand_template_with_hygiene(
         if template is Ellipsis:
             return template
 
-        if template in binding_symbols:
-            if template not in introduced:
-                introduced[template] = gensym(str(template))
-            return introduced[template]
+        if mark is None:
+            return template
+        return mark_atom(template, mark)
 
-        return template
+    if is_keyword(template):
+        if mark is None:
+            return template
+        return mark_atom(template, mark)
 
     if not is_pair(template):
         return template
@@ -595,15 +222,16 @@ def expand_template_with_hygiene(
         rep = (i + 1 < len(items) and items[i + 1] is Ellipsis)
         if not rep:
             out.append(
-                expand_template_with_hygiene(
-                    elem, bindings, binding_symbols, introduced))
+                expand_template_with_hygiene(elem, bindings, mark))
             i += 1
             continue
 
         # a lone pattern variable bound to a non-repeat value (a pair spine
         # from a REST capture) splices like quasiquote ,@ rather than iterating
-        if is_symbol(elem) and elem in bindings and _repeat_seq(bindings[elem]) is None:
-            spliced = _binding_value_for_expand(bindings[elem])
+        if ((is_symbol(elem) or is_mark(elem))
+                and _binding_key(elem) in bindings
+                and _repeat_seq(bindings[_binding_key(elem)]) is None):
+            spliced = _binding_value_for_expand(bindings[_binding_key(elem)])
             if spliced is not None:
                 out.extend(unpack(spliced))
             i += 2
@@ -614,8 +242,7 @@ def expand_template_with_hygiene(
         for rep_i in range(count):
             sub = _slice_bindings(bindings, controlling, rep_i)
             out.append(
-                expand_template_with_hygiene(
-                    elem, sub, binding_symbols, introduced))
+                expand_template_with_hygiene(elem, sub, mark))
         i += 2
 
     # preserve the template's delimiter style: a bracket-pair template
@@ -627,43 +254,68 @@ def expand_template_with_hygiene(
     return build_proper(*out)
 
 
-# --- Macro output finalize
+# --- Expansion finalize
 
 
-def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled,
-                                          kw_cells=()):
+def mark_expansion(form, mark):
     """
-    One pass combining introduced binding-symbol renaming (same ``introduced``
-    map semantics as :func:`expand_template_with_hygiene` with empty
-    ``bindings``) and ``Datum`` peeling for compilation.
+    A copy of a procedural expansion with every symbol and keyword
+    outside a ``Datum`` boxed with ``mark``. A ``Datum`` is substituted
+    material and is carried over as it is; a pair inside one is never
+    entered. Pair cells are rebuilt with their positions and delimiter
+    style
 
-    ``Datum``-wrapped spine cells are peeled in place but not gensymmed; bare
-    symbols in ``binding_symbols`` are renamed. That preserves substituted
-    pattern captures while freshening template literals
-
-    A cell named in ``kw_cells`` carries a binder keyword as its car: a
-    parameter the template names with a keyword rather than a symbol.
-    Those are renamed from the same ``introduced`` map, so the binder and
-    the body of the template agree on one gensym
-
-    :param form: macro or syntax-rules output (pairs, atoms, ``Datum``)
-    :param binding_symbols: symbols to rename when not bound as pattern vars
-    :param find_compiled: unused; reserved for API parity with discovery sites
-    :param kw_cells: ids of cells whose car is a binder keyword
-    :rtype: same root object as ``form`` after in-place updates where applicable
+    :param form: the handler's output
+    :param mark: the expansion mark
+    :return: the marked copy
     """
 
-    _ = find_compiled
-    introduced = {}
+    if isinstance(form, Datum):
+        return form
+
+    if not is_pair(form) or is_nil(form):
+        return mark_atom(form, mark)
+
+    items = []
+    tail = form
+    while is_pair(tail) and not is_nil(tail):
+        items.append(tail)
+        tail = tail.cdr
+        if isinstance(tail, Datum):
+            break
+
+    if isinstance(tail, Datum):
+        end = tail
+    else:
+        end = mark_atom(tail, mark)
+
+    out = end
+    for cell in reversed(items):
+        car = mark_expansion(cell.car, mark)
+        if isinstance(cell, bracket_pair):
+            out = bracket_cons(car, out)
+        else:
+            out = cons(car, out)
+        pos = get_position(cell)
+        if pos:
+            out.set_position(pos)
+    return out
+
+
+def peel_datums(form):
+    """
+    Peel ``Datum`` boxes off a finished expansion in place, so the
+    compiler sees the substituted source. A ``Datum`` car is unboxed and
+    its position moved onto the cell; the material inside is the user's
+    code and is not entered. ``Datum`` layers along a cdr chain are
+    unboxed the same way
+
+    :param form: expansion output (pairs, atoms, ``Datum``, ``Mark``)
+    :rtype: same root object as ``form`` after in-place updates where
+        applicable
+    """
+
     seen = set()
-
-    def gensym_binding(sym):
-        if sym not in introduced:
-            introduced[sym] = gensym(str(sym))
-        return introduced[sym]
-
-    def gensym_binder_keyword(kw):
-        return keyword(str(gensym_binding(symbol(str(kw)))))
 
     def peel_car_in_place(nx):
         c = nx.car
@@ -677,7 +329,6 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled,
         return nx.car
 
     def peel_cdr_datums_in_place(nx):
-        # Repeated Datum wrappers along the cdr chain (not Datum-in-Datum).
         tail = nx.cdr
         while isinstance(tail, Datum):
             tail = tail.datum
@@ -686,15 +337,9 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled,
         return tail
 
     def walk_spine(nx):
-        # A car wrapped in a Datum is material spliced in from a pattern
-        # capture: a BODY/VALUE region, wrapped once and never nested. We peel
-        # the wrapper for compilation but must not descend into it -- its
-        # insides are the user's captured code, not template structure, so
-        # nothing there may be gensymmed. Only template-built (bare) pairs are
-        # walked; the Datum wrapper is the sentinel that keeps us out.
         while not is_nil(nx):
             if not is_pair(nx):
-                return nx
+                return
             i = id(nx)
             if i in seen:
                 nx = nx.cdr
@@ -703,113 +348,35 @@ def finalize_macro_hygiene_unbox_one_pass(form, binding_symbols, find_compiled,
 
             car_was_datum = isinstance(nx.car, Datum)
             c = peel_car_in_place(nx)
-
-            if is_symbol(c):
-                if c in binding_symbols and not car_was_datum:
-                    nx.car = gensym_binding(c)
-            elif is_keyword(c):
-                # a parameter the template named with a keyword: the
-                # cell was reported by its binder, so this keyword is
-                # in binder position and not a call-site label
-                if i in kw_cells and not car_was_datum:
-                    nx.car = gensym_binder_keyword(c)
-            elif is_pair(c) and not car_was_datum:
+            if is_pair(c) and not car_was_datum:
                 walk_spine(c)
 
-            cdr_was_datum = isinstance(nx.cdr, Datum)
             tail = peel_cdr_datums_in_place(nx)
-            if is_nil(tail):
-                return nil
-            if is_pair(tail):
-                nx = tail
-                continue
-            if is_symbol(tail) and tail in binding_symbols and not cdr_was_datum:
-                nx.cdr = gensym_binding(tail)
-            return nil
-        return nil
+            if not is_pair(tail):
+                return
+            nx = tail
 
     if isinstance(form, Datum):
         form = form.datum
-    if is_symbol(form):
-        if form in binding_symbols:
-            return gensym_binding(form)
-        return form
     if is_pair(form):
         walk_spine(form)
     return form
 
 
-# --- Binding-symbol discovery
-
-
-def collect_binding_symbols(node, find_compiled, kw_cells=None):
+def finalize_expansion(form, mark=None):
     """
-    Walk one template or capture node for binding-symbol discovery.
+    Finish one expansion for the compiler: mark a procedural arm's
+    output when ``mark`` is given, then peel the ``Datum`` boxes
 
-    Only koskari pair trees participate; tuples are runtime/capture values,
-    not source structure, and are never descended. Other atoms yield nothing.
-
-    :param node: koskari pair, nil, tuple (ignored), or other leaf
-    :param find_compiled: callable mapping head symbols to compiled specials
-    :param kw_cells: optional set collecting ids of template cells whose
-        car is a binder keyword
-    :rtype: set of symbols
+    :param form: the expansion output
+    :param mark: the expansion mark for a procedural arm, or None when
+        transcription marked the output already
+    :return: the finished form
     """
 
-    # print("DEBUG collect_binding_symbols", "node=", repr(node))
-
-    out = set()
-
-    if isinstance(node, Datum):
-        return out
-
-    if is_nil(node) or not is_pair(node):
-        return out
-
-    head, rest = node
-    if not is_symbol(head):
-        if is_nil(rest) and is_pair(head):
-            return collect_binding_symbols(head, find_compiled, kw_cells)
-        if is_keyword(head):
-            for elem in rest.unpack():
-                out |= collect_binding_symbols(elem, find_compiled, kw_cells)
-            return out
-        return _collect_from_region_root(node, find_compiled, kw_cells)
-
-    special = find_compiled(head)
-    # print("DEBUG collect_binding_symbols", "special=", repr(special))
-    matched = None
-    hygiene = None
-    if special is not None:
-        matched, _, hygiene = special.match_for_hygiene(node)
-    # print("DEBUG collect_binding_symbols", "matched=", repr(matched))
-    # print("DEBUG collect_binding_symbols", "hygiene=", repr(hygiene))
-    if special is None or matched is None:
-        for elem in rest.unpack():
-            out |= collect_binding_symbols(elem, find_compiled, kw_cells)
-        return out
-
-    if hygiene:
-        out |= walk_hygiene_tree(
-            hygiene, hygiene.root_id, matched, find_compiled, None, kw_cells)
-
-    else:
-        for elem in rest.unpack():
-            out |= collect_binding_symbols(
-                elem if is_pair(elem) else cons(elem, nil),
-                find_compiled, kw_cells)
-
-    return out
-
-
-def apply_syntax_rules_hygiene(template, bindings, find_compiled):
-    """
-    Run binding-symbol discovery and template expansion with hygiene in one
-    step.
-    """
-
-    syms = collect_binding_symbols(template, find_compiled)
-    return expand_template_with_hygiene(template, bindings, syms, {})
+    if mark is not None:
+        form = mark_expansion(form, mark)
+    return peel_datums(form)
 
 
 # The end.

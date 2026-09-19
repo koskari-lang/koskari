@@ -52,7 +52,7 @@ from ...exceptions import SpecialError
 from ...lib import OpCode
 from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_pair, is_symbol, unpack
+from ...types import is_pair, is_symbol, strip_mark, unpack
 from ..helpers import helper_using, is_symbolish
 
 
@@ -92,6 +92,7 @@ def _attr_form_to_dotted(form, source, position=None):
     :raises SpecialError: when form is invalid
     """
 
+    form = strip_mark(form)
     if is_symbol(form) or isinstance(form, str):
         return str(form)
 
@@ -101,7 +102,7 @@ def _attr_form_to_dotted(form, source, position=None):
             source, position=position)
 
     head, tail = form
-    if str(head) != 'attr':
+    if str(strip_mark(head)) != 'attr':
         raise SpecialError(
             "import argument must be symbol or (attr ...)",
             source, position=position)
@@ -114,9 +115,10 @@ def _attr_form_to_dotted(form, source, position=None):
 
     result = []
     for p in parts:
+        p = strip_mark(p)
         if is_symbol(p) or isinstance(p, str):
             result.append(str(p))
-        elif is_pair(p) and str(p[0]) == 'attr':
+        elif is_pair(p) and str(strip_mark(p[0])) == 'attr':
             result.append(_attr_form_to_dotted(p, source, position))
         else:
             raise SpecialError(
@@ -143,6 +145,7 @@ def _parse_import_name(name_form, source, position=None):
     :raises SpecialError: when name_form is not a symbol, str, or attr form
     """
 
+    name_form = strip_mark(name_form)
     if is_symbol(name_form) or isinstance(name_form, str):
         raw = str(name_form)
         stripped = raw.lstrip('.')
@@ -150,7 +153,7 @@ def _parse_import_name(name_form, source, position=None):
         name = stripped if stripped else None
         return (level, name)
 
-    if is_pair(name_form) and str(name_form[0]) == 'attr':
+    if is_pair(name_form) and str(strip_mark(name_form[0])) == 'attr':
         dotted = _attr_form_to_dotted(name_form, source, position)
         return (0, dotted)
 
@@ -219,7 +222,7 @@ def _parse_member(elem, source, what, position=None):
             raise SpecialError(
                 f"{what} member binding must be a symbol, not {name!r}",
                 source, position=position)
-        return (str(name), value)
+        return (str(strip_mark(name)), value)
 
     raise SpecialError(
         f"{what} member must be a symbol or [TARGET as: BIND], not"
@@ -244,7 +247,7 @@ def special_import(compiler, called_by, module):
 
     bind = None
     name_form = arg
-    if is_pair(arg) and str(arg[0]) != 'attr':
+    if is_pair(arg) and str(strip_mark(arg[0])) != 'attr':
         bind, name_form = _parse_member(arg, arg, "import", pos)
 
     level, dotted = _parse_import_name(name_form, name_form, pos)
@@ -303,7 +306,9 @@ def special_import_from(compiler, called_by, module, members):
                 f"import-from member must name an attribute, not"
                 f" {target!r}",
                 elem, position=pos)
-        attr = str(target)
+        # a member names an attribute of the module and, unrenamed, the
+        # binding it lands in; both are labels, so a mark does not reach them
+        attr = str(strip_mark(target))
         attrs.append(attr)
         binds.append(bind if bind is not None else attr)
 

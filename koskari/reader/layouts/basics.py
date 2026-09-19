@@ -21,7 +21,8 @@ Layout handlers for basic block syntax.
 from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...types import get_position, is_keyword, is_nil, is_pair, is_symbol, unpack
+from ...types import (
+    get_position, is_keyword, is_nil, is_pair, is_symbol, strip_mark, unpack)
 from .helpers import _keyword_block, is_block, layout
 
 
@@ -71,7 +72,7 @@ def layout_block(reader, source, peers):
             f"{header.car} layout does not take peers",
             get_position(source))
 
-    if is_keyword(header.car):
+    if is_keyword(strip_mark(header.car)):
         return cons(header.car, keyword_block_value(reader, header, body), nil)
 
     ret = header.copy()
@@ -82,7 +83,7 @@ def layout_block(reader, source, peers):
             ret.append(keyword_block_value(reader, eheader, ebody))
             continue
         head, rest = entry
-        if is_keyword(head) and not is_nil(rest):
+        if is_keyword(strip_mark(head)) and not is_nil(rest):
             ret.append(head)
             ret.append(reader.fold_line(rest))
         else:
@@ -119,7 +120,7 @@ def keyword_block_value(reader, header, body):
             value.set_position(position)
         return value
 
-    head = rest.car
+    head = strip_mark(rest.car)
     layout_obj = reader.find_layout(str(head)) if is_symbol(head) else None
     if layout_obj is not None and layout_obj.peers:
         raise LayoutError(

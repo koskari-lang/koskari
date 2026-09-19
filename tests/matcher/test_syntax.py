@@ -445,19 +445,6 @@ class TestParseCompositeSlotFirst(unittest.TestCase):
         pat = parse_matcher(src)
         self.assertIsInstance(pat, BINDINGS)
         self.assertEqual(pat._slot, "slot")
-        self.assertEqual(pat._mode, "parallel")
-
-
-    def test_bindings_with_mode_option(self):
-        """
-        (BINDINGS slot mode: sequential) carries the mode through
-        """
-
-        src = _list(symbol("BINDINGS"), symbol("s"),
-                    keyword("mode"), symbol("sequential"))
-        pat = parse_matcher(src)
-        self.assertIsInstance(pat, BINDINGS)
-        self.assertEqual(pat._mode, "sequential")
 
 
     def test_formals(self):
@@ -837,8 +824,7 @@ class TestRegistry(unittest.TestCase):
         CAPTURE_OPTION_KEYS holds the documented set of options
         """
 
-        self.assertEqual(CAPTURE_OPTION_KEYS,
-                         frozenset({"scope", "mode", "role"}))
+        self.assertEqual(CAPTURE_OPTION_KEYS, frozenset({"scope", "role"}))
 
 
     def test_register_matcher_user_factory(self):
@@ -1084,6 +1070,5 @@ class TestMetaMatcherExposed(unittest.TestCase):
         self.assertIs(
             result.captures["quoted_symbol"].datum,
             symbol("x"))
-
 
 # The end.

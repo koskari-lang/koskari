@@ -122,7 +122,6 @@ class TestDatumFrameConstruction(unittest.TestCase):
         frame = DatumFrame()
         self.assertIsNone(frame.source)
         self.assertIsNone(frame.position)
-        self.assertFalse(frame.from_datum)
         self.assertEqual(dict(frame), {})
         self.assertIn("source=None", repr(frame))
         self.assertIn("position=None", repr(frame))

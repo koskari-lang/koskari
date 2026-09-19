@@ -55,7 +55,7 @@ static int match_repeat_capture_list(
         Py_ssize_t span = *cursor - saved;
         PyObject *elem = NULL;
         if (span == 1) {
-          PyObject *raw = e->subj->vt->get(e->subj, saved);
+          PyObject *raw = subject_capture_get(e->subj, saved);
           Py_INCREF(raw);
           elem = kos_datum_from_spine_cell(e, e->subj, saved, raw);
           if (! elem) {
@@ -135,7 +135,7 @@ static int match_repeat_capture_list(
     Py_ssize_t span = *cursor - saved;
     PyObject *elem = NULL;
     if (span == 1) {
-      PyObject *raw = e->subj->vt->get(e->subj, saved);
+      PyObject *raw = subject_capture_get(e->subj, saved);
       Py_INCREF(raw);
       elem = kos_datum_from_spine_cell(e, e->subj, saved, raw);
       if (! elem) {

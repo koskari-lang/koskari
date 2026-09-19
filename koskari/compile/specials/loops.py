@@ -76,11 +76,11 @@ def special_while(compiler, _while, test, body):
 _FOREACH_PATTERNS = (
     MATCH(
         CALLEDBY("_foreach"),
-        BINDING("binding", scope="body"),
+        BINDING("binding"),
         BODY("body")),
     MATCH(
         CALLEDBY("_foreach"),
-        USING_UNPACK("using", scope="body"),
+        USING_UNPACK("using"),
         BODY("body")),
 )
 

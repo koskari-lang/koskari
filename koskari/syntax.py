@@ -24,23 +24,23 @@ Syntax dispatch scaffolding
 
 from abc import ABC, abstractmethod
 from functools import wraps
+from itertools import count
 from typing import Any
 
 from koskari.bootstrap import builtin
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SyntaxMatchError
-from koskari.hygiene import (
-    Hygiene, collect_binding_symbols, expand_template_with_hygiene,
-    finalize_macro_hygiene_unbox_one_pass)
+from koskari.hygiene import expand_template_with_hygiene, finalize_expansion
 from koskari.lib import (
     Datum, Matcher, cons, demand_call, gensym, match_select, nil, symbol)
 from koskari.matcher import (
     BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME, TEST_ANY,
-    HygienicMatchCompiler, Pattern, check_pattern_arg,
+    MatchCompiler, Pattern, check_pattern_arg,
     parse_explicit_rule_pattern, repeat_capture)
 from koskari.reader.layouts import apply_layout
 from koskari.types import (
-    fill_position, get_position, is_nil, is_pair, is_proper, is_symbol, unpack)
+    fill_position, get_position, is_nil, is_pair, is_proper, is_symbol,
+    strip_mark, unpack)
 
 
 __all__ = (
@@ -61,6 +61,9 @@ __all__ = (
 
 
 _symbol_match = symbol("match")
+
+# one fresh mark per arm expansion, whatever transformer runs it
+_expansion_marks = count(1)
 
 
 class Syntax(Compiled):
@@ -129,24 +132,6 @@ class Syntax(Compiled):
         if result is None:
             return None, None
         return self.transforms[idx], result
-
-
-    def match_for_hygiene(self, form):
-        """
-        Match ``form`` against the first arm whose frozen matcher succeeds.
-
-        :param form: special form pair spine
-        :return: ``(matched, pattern, hygiene)`` where ``matched`` is capture
-            mapping, ``pattern`` is that arm's frozen ``Pattern``, and
-            ``hygiene`` is that arm's plan; or ``(None, None, None)`` when no
-            arm matches
-        """
-
-        idx, result = match_select(self._matchers, form)
-        if result is None:
-            return None, None, None
-        tf = self.transforms[idx]
-        return result.captures, tf.pattern, tf.hygiene
 
 
     def compile_impl(self, compiler, source_obj):
@@ -266,13 +251,12 @@ class Syntax(Compiled):
 
 class Transform(ABC):
     """
-    One clause of a ``Syntax`` dispatcher: frozen ``matcher`` pattern,
-    hygiene plan, and matcher-backed ``try_expand``
+    One clause of a ``Syntax`` dispatcher: frozen ``matcher`` pattern
+    and matcher-backed ``try_expand``
     """
 
     pattern: Any
     matcher: Matcher
-    hygiene: Hygiene
 
 
     def __init__(self, pattern):
@@ -288,10 +272,7 @@ class Transform(ABC):
                 f" got {type(pattern)}")
 
         self.pattern = pattern
-
-        hc = HygienicMatchCompiler()
-        self.matcher = Matcher.from_tuple(hc.lower(pattern))
-        self.hygiene = hc.build_hygiene()
+        self.matcher = MatchCompiler.compile(pattern)
 
 
     def try_expand(self, compiler, source_obj):
@@ -321,8 +302,7 @@ class Transform(ABC):
 
 class SyntaxTransform(Transform):
     """
-    Template arm: optional procedural ``transformer`` then template expand,
-    then shared finalize (hygiene plus ``Datum`` peel for compile)
+    Template arm: template expansion with a fresh mark, then finalize
     """
 
     def __init__(self, pattern, template, pattern_src=nil):
@@ -347,14 +327,14 @@ class SyntaxTransform(Transform):
         :param compiler: active compiler
         :param source: full special form (proper list spine)
         :param result: match result from ``self._matcher``
-        :return: expanded form after hygiene and finalize
+        :return: expanded form after finalize
         """
 
         bindings = _captures_to_bindings(result.captures)
         bindings = _promote_repeat_frame_bindings(bindings)
 
         subst = expand_template_with_hygiene(
-            self.template, bindings, set(), {})
+            self.template, bindings, next(_expansion_marks))
 
         return _finalize_macro_output(compiler, subst)
 
@@ -406,7 +386,7 @@ class BareTransform(SyntaxTransform):
         :param compiler: active compiler instance
         :param sym: lone atom that triggered this expansion
         :param position: enclosing source position threaded by the caller
-        :return: expanded form after hygiene and finalize
+        :return: expanded form after finalize
         """
 
         result = _BareResult({self.slot: Datum(sym, position)})
@@ -418,7 +398,7 @@ class BareTransform(SyntaxTransform):
 
 class MacroTransform(Transform):
     """
-    Procedural arm: invoke handler then ``hygiene`` on expanded output
+    Procedural arm: invoke handler, then mark and finalize its output
     """
 
     def __init__(self, pattern, handler):
@@ -439,22 +419,22 @@ class MacroTransform(Transform):
 
     def handle_expand(self, compiler, source, result):
         """
-        Run handler, then procedural macro hygiene on the result
+        Run handler, then mark and finalize the result
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
         :param result: match result from ``self._matcher``
-        :return: hygiened expanded form after finalize
+        :return: expanded form after finalize
         """
 
         expanded = self.handler(compiler, **result.captures)
-        result = _finalize_macro_output(compiler, expanded)
-        return result
+        return _finalize_macro_output(
+            compiler, expanded, next(_expansion_marks))
 
 
 class SpecialTransform(Transform):
     """
-    Special arm: handler return is the compile result (no automatic hygiene)
+    Special arm: handler return is the compile result (no marking)
     """
 
     def __init__(self, pattern, handler):
@@ -567,18 +547,15 @@ def _promote_repeat_frame_bindings(bindings):
     return out
 
 
-def _finalize_macro_output(compiler, form):
+def _finalize_macro_output(compiler, form, mark=None):
     """
-    Discover binding symbols on ``form`` then run the shared in-place hygiene
-    and ``Datum`` peel pass. None is a form like any other: an expansion to
-    None compiles to the constant None
+    Apply layout to ``form``, mark a procedural arm's output when
+    ``mark`` is given, and peel the ``Datum`` boxes. None is a form like
+    any other: an expansion to None compiles to the constant None
     """
 
     form = apply_layout(form, vars(compiler.module))
-    kw_cells = set()
-    syms = collect_binding_symbols(form, compiler.find_compiled, kw_cells)
-    return finalize_macro_hygiene_unbox_one_pass(
-        form, syms, compiler.find_compiled, kw_cells)
+    return finalize_expansion(form, mark)
 
 
 def _normalize_special_patterns(patterns):
@@ -671,7 +648,7 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
 
     if is_pair(pattern_expr):
         head, rest = pattern_expr
-        if head == _symbol_match:
+        if strip_mark(head) == _symbol_match:
             if (not is_proper(rest)
                     or not is_nil(rest.cdr)
                     or is_nil(rest)):
@@ -687,9 +664,9 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
             f" (context {source_ctx!r})"
         )
 
-    if is_symbol(pattern_expr):
+    if is_symbol(strip_mark(pattern_expr)):
         if pattern_expr in literals:
-            return MATCH(LITERAL(pattern_expr))
+            return MATCH(LITERAL(strip_mark(pattern_expr)))
         return MATCH(REST(str(pattern_expr)))
 
     if not is_pair(pattern_expr):
@@ -733,9 +710,12 @@ def _syntax_elem_pattern(pat, literals, source_ctx, seen):
             f" (context {source_ctx!r})"
         )
 
-    if is_symbol(pat):
+    if is_symbol(strip_mark(pat)):
+        # a literal matches by name; a pattern variable a template
+        # introduced keeps its mark in its slot name, so the marked
+        # template reference finds it and a bare use-site symbol does not
         if pat in literals:
-            return LITERAL(pat)
+            return LITERAL(strip_mark(pat))
         name = str(pat)
         if name in seen:
             return SAME(name)
@@ -755,7 +735,7 @@ def _syntax_pattern_specs(p_items, literals, source_ctx, seen):
     while i < len(p_items):
         if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
             pat = p_items[i]
-            if is_symbol(pat) and pat not in literals:
+            if is_symbol(strip_mark(pat)) and pat not in literals:
                 if i + 2 < len(p_items):
                     specs.append(REST(str(pat)))
                 else:
@@ -865,6 +845,5 @@ def build_special(name, *pattern_and_lambdas):
         transforms.append(SpecialTransform(pat, _wrap_special_handler(fn)))
 
     return Syntax(name, transforms)
-
 
 # The end.

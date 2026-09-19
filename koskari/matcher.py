@@ -18,10 +18,8 @@ koskari.matcher
 Python surface for the next-generation native matcher. Provides the thaw
 helper that reconstructs a native Matcher from its frozen tagged-tuple
 representation, plus a small builder API for authoring matcher patterns in
-Python that lower to the same frozen form. Lowering uses either the baseline
-MatchCompiler (slots, externs, consts, nodes only) or HygienicMatchCompiler
-for patterns that need parallel compile-time metadata alongside the frozen
-matcher (see that class). Rule-level MATCH spines use
+Python that lower to the same frozen form through MatchCompiler (slots,
+externs, consts, nodes). Rule-level MATCH spines use
 :func:`parse_explicit_rule_pattern`. :func:`repeat_capture` lowers to CAPTURE
 wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 (dict, Datum slice, etc.); see repeat_capture and binding_inner_pattern
@@ -33,10 +31,9 @@ wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 
 from typing import Protocol, runtime_checkable
 
-from koskari.hygiene import Hygiene, HygieneEdge, HygieneNode
 from koskari.lib import (
-    Datum, DatumFrame, Matcher, MatchResult, cons, keyword, kos_repr, nil,
-    pair, symbol)
+    Datum, DatumFrame, Mark, Matcher, MatchResult, cons, keyword, kos_repr,
+    nil, pair, symbol)
 from koskari.types import (
     is_keyword, is_nil, is_pair, is_proper, is_symbol, unpack)
 
@@ -47,13 +44,12 @@ __all__ = (
 
     "Matcher",
     "MatchResult",
+    "Datum",
+    "DatumFrame",
 
     "Pattern",
     "Composite",
     "MatchCompiler",
-
-    "HygienicPattern",
-    "HygienicMatchCompiler",
 
     "TEST_ANY",
     "SAME",
@@ -118,14 +114,6 @@ __all__ = (
 )
 
 
-def _intro_suppressed(capture):
-    """
-    True when a binder capture is substitution material, not template intro
-    """
-
-    return isinstance(capture, Datum) and capture.from_datum
-
-
 def thaw(tagged_tuple):
     """
     Reconstruct a native Matcher from its frozen tagged-tuple
@@ -160,17 +148,18 @@ class MatchCompiler:
         self.in_class_fields = False
 
 
-    def begin_nested_claims(self, inherit_formals=False, **kwargs):
+    def begin_nested_claims(self, inherit_formals=None, **kwargs):
         """
         Begin a nested region where duplicate capture slot names are isolated
         (for example ONEOF branches or GROUP children). When
         ``inherit_formals`` is false, slots interned inside the region are
         omitted from :data:`formal_slot_names` (nested GROUP / REPEAT rows).
-        Keyword arguments beyond ``inherit_formals`` are reserved for
-        subclasses
+        Left unset, a region a GROUP opens (``link_slot`` given) does not
+        inherit and a ONEOF branch does
         """
 
-        _ = kwargs
+        if inherit_formals is None:
+            inherit_formals = "link_slot" not in kwargs
         self.capture_scope_stack.append({})
         if inherit_formals:
             self._formal_scope_stack.append(self._formal_scope_stack[-1])
@@ -309,256 +298,6 @@ class MatchCompiler:
         return Matcher.from_tuple(cls().lower(pattern))
 
 
-class HygienicMatchCompiler(MatchCompiler):
-    """
-    Match compiler that accumulates a :class:`koskari.hygiene.Hygiene`
-    alongside the baseline tables. Use for matchers over compile-time
-    source forms; runtime-only matchers should use the baseline
-    MatchCompiler via MatchCompiler().lower(pattern)
-    """
-
-    def __init__(self):
-        """
-        Construct a match compiler with an empty hygiene tree builder
-        """
-
-        super().__init__()
-        self._hygiene_node_id = 0
-        self._hygiene_nodes = []
-        self._hygiene_edges = []
-        self._hygiene_frame_stack = []
-        self._pending_link_slot = None
-        self._last_linked_child_id = None
-        root = self._new_hygiene_frame(None)
-        self._hygiene_current = root
-        self._hygiene_root_id = root.node_id
-        self._hygiene_nested_modes = []
-
-
-    def begin_nested_claims(self, **kwargs):
-        if 'link_slot' in kwargs:
-            self._pending_link_slot = kwargs['link_slot']
-            mode = 'link'
-        else:
-            mode = 'merge'
-        self._hygiene_nested_modes.append(mode)
-        super().begin_nested_claims(
-            inherit_formals=(mode == 'merge'), **kwargs)
-        self._push_hygiene_frame(mode)
-
-
-    def end_nested_claims(self, **kwargs):
-        mode = self._hygiene_nested_modes.pop()
-        super().end_nested_claims(**kwargs)
-        self._pop_hygiene_frame(mode)
-
-
-    def _new_hygiene_frame(self, parent_id):
-        nid = self._hygiene_node_id
-        self._hygiene_node_id += 1
-        return HygieneNode(nid, parent_id)
-
-
-    def _finalize_hygiene_frame(self, frame):
-        node = HygieneNode(
-            frame.node_id,
-            frame.parent_id,
-            dict(frame.binders),
-            dict(frame.regions),
-            frozenset(frame.scoped_slots))
-        self._hygiene_nodes.append(node)
-        return node
-
-
-    def _push_hygiene_frame(self, mode):
-        parent = self._hygiene_current
-        child = self._new_hygiene_frame(parent.node_id)
-        child.link_slot = self._pending_link_slot
-        self._pending_link_slot = None
-        self._hygiene_frame_stack.append(parent)
-        self._hygiene_current = child
-
-
-    def _pop_hygiene_frame(self, mode):
-        child = self._hygiene_current
-        parent = self._hygiene_frame_stack.pop()
-        self._hygiene_current = parent
-        if mode == "merge":
-            self._merge_hygiene_frame(parent, child)
-            return
-        if mode == "link":
-            self._finalize_hygiene_frame(child)
-            self._last_linked_child_id = child.node_id
-            slot = child.link_slot
-            if slot is not None:
-                self._hygiene_edges.append(HygieneEdge(
-                    "group_child",
-                    parent.node_id,
-                    child.node_id,
-                    slot))
-
-
-    def _remap_hygiene_parent_id(self, old_id, new_id):
-        """
-        After ONEOF merge, re-home edges and finalized nodes that pointed
-        at the merged-away frame id
-        """
-
-        if old_id == new_id:
-            return
-        remapped = []
-        for edge in self._hygiene_edges:
-            pid = new_id if edge.parent_id == old_id else edge.parent_id
-            remapped.append(HygieneEdge(
-                edge.kind, pid, edge.child_id, edge.capture_slot))
-        self._hygiene_edges = remapped
-        nodes = []
-        for node in self._hygiene_nodes:
-            pid = node.parent_id
-            if pid == old_id:
-                pid = new_id
-            nodes.append(HygieneNode(
-                node.node_id, pid,
-                node.binders, node.regions, node.scoped_slots))
-        self._hygiene_nodes = nodes
-
-
-    def _merge_hygiene_frame(self, parent, child):
-        cid = child.node_id
-        pid = parent.node_id
-        if cid != pid:
-            self._remap_hygiene_parent_id(cid, pid)
-
-        for slot, owner in child.binders.items():
-            if slot in parent.binders:
-                if parent.binders[slot] is not owner:
-                    raise ValueError(
-                        "duplicate binder for slot %r in matcher pattern"
-                        % (slot,))
-            else:
-                parent.binders.setdefault(slot, owner)
-        for slot, owner in child.regions.items():
-            if slot in parent.regions:
-                prev = parent.regions[slot]
-                if prev is owner:
-                    continue
-                prev_slot = getattr(prev, "_slot", None)
-                ow_slot = getattr(owner, "_slot", None)
-                if (type(prev) is type(owner)
-                        and prev_slot == slot
-                        and ow_slot == slot):
-                    continue
-                raise ValueError(
-                    "scope region %r already registered" % (slot,))
-            else:
-                parent.regions.setdefault(slot, owner)
-        parent.scoped_slots |= child.scoped_slots
-
-
-    def add_binder(self, slot, owner):
-        """
-        Record the Pattern or Composite that owns hygiene interpretation
-        for this binder slot. Raises ValueError on duplicate slot entries
-
-        :param slot: slot name introduced by the composite
-        :param owner: HygienicPattern instance whose iter_introduced_symbols
-            and iter_recurse_targets Hygiene uses at runtime
-        """
-
-        frame = self._hygiene_current
-        if slot in frame.binders:
-            raise ValueError(
-                "duplicate binder for slot %r in matcher pattern"
-                % (slot,))
-        frame.binders[slot] = owner
-        for scope_slot in getattr(owner, "_scopes", ()):
-            frame.scoped_slots.add(scope_slot)
-
-
-    def add_scope_region(self, slot, owner):
-        """
-        Record the Pattern instance that owns scope-region traversal for
-        this slot. Skips registration when a binder ``_scopes`` already
-        owns the slot
-
-        :param slot: slot name carrying scope-region semantics
-        :param owner: HygienicPattern instance whose iter_scope_targets
-            Hygiene uses
-        """
-
-        frame = self._hygiene_current
-        if slot in frame.scoped_slots:
-            return
-        if slot in frame.regions:
-            if frame.regions[slot] is not owner:
-                raise ValueError(
-                    "scope region %r already registered" % (slot,))
-            return
-        frame.regions[slot] = owner
-
-
-    def note_repeat_capture(self, slot, child_node_id):
-        """
-        Link a REPEAT list capture to the hygiene subtree built for the
-        anonymous GROUP row pattern
-        """
-
-        self._hygiene_edges.append(HygieneEdge(
-            "repeat_element",
-            self._hygiene_current.node_id,
-            child_node_id,
-            slot))
-
-
-    def build_hygiene(self):
-        """
-        Assemble the hygiene tree from accumulated frames and edges.
-        Returns an empty Hygiene when nothing registered
-        """
-
-        if self._hygiene_frame_stack:
-            raise RuntimeError(
-                "unbalanced hygiene scope stack at build_hygiene")
-        root_frame = self._hygiene_current
-        if not self._hygiene_nodes:
-            self._finalize_hygiene_frame(root_frame)
-        elif not any(
-                n.node_id == root_frame.node_id for n in self._hygiene_nodes):
-            self._finalize_hygiene_frame(root_frame)
-        if not self._hygiene_nodes and not self._hygiene_edges:
-            return Hygiene.single_node()
-        if not any(n.node_id == self._hygiene_root_id for n in self._hygiene_nodes):
-            self._finalize_hygiene_frame(root_frame)
-        return Hygiene(
-            tuple(self._hygiene_nodes),
-            tuple(self._hygiene_edges),
-            self._hygiene_root_id)
-
-
-    def on_pattern(self, pat):
-        """
-        Register HygienicPattern owners during the same lower walk as node
-        emission
-        """
-
-        if isinstance(pat, HygienicPattern):
-            pat.register_hygiene(self)
-
-
-    @classmethod
-    def compile_and_hygiene(
-            cls,
-            pattern: "Pattern") -> tuple[Matcher, Hygiene]:
-        """
-        Compile a pattern into a tuple of (matcher, hygiene plan)
-        """
-
-        hc = cls()
-        matcher = Matcher.from_tuple(hc.lower(pattern))
-        hygiene = hc.build_hygiene()
-        return matcher, hygiene
-
-
 @runtime_checkable
 class Pattern(Protocol):
     """
@@ -670,9 +409,9 @@ def pattern_slot_names(pattern):
     """
 
     check_pattern_arg(pattern, "pattern_slot_names pattern")
-    hc = HygienicMatchCompiler()
-    hc.lower(pattern)
-    return list(hc.formal_slot_names)
+    mc = MatchCompiler()
+    mc.lower(pattern)
+    return list(mc.formal_slot_names)
 
 
 # === Primitive builders ===
@@ -954,13 +693,6 @@ class CAPTURE(Pattern):
             sub_idx = -1
         else:
             sub_idx = self._sub.lower(ctx)
-            if isinstance(ctx, HygienicMatchCompiler):
-                if isinstance(self._sub, REPEAT):
-                    inner = self._sub._sub
-                    if isinstance(inner, GROUP):
-                        child_id = ctx._last_linked_child_id
-                        if child_id is not None:
-                            ctx.note_repeat_capture(self._slot, child_id)
         if self._scope_slot is None:
             scope_idx = -1
         else:
@@ -1853,7 +1585,6 @@ def LIST(*specs, key=None):
     return CAPTURE(key, inner)
 
 
-
 def make_matcher(pattern):
     """
     Lower a pattern AST into a native Matcher. The matcher carries
@@ -1876,38 +1607,6 @@ def make_matcher(pattern):
 
 
 # === Composite matchers ===
-
-
-def normalize_scopes(scope, scopes, what):
-    """
-    Coerce the scope/scopes kwargs into a single tuple of slot names.
-    Accepts None for both, a single str for scope, and a tuple/list of
-    str for scopes. Mixing both raises ValueError
-
-    :param scope: optional single scope-region slot name
-    :param scopes: optional tuple/list of scope-region slot names
-    :param what: caller name used in error messages
-    :raises TypeError: when scope/scopes have wrong types
-    :raises ValueError: when both are supplied or scope is empty
-    """
-
-    if scope is not None and scopes is not None:
-        raise ValueError(
-            "%s accepts scope or scopes, not both" % (what,))
-    if scope is not None:
-        check_str_arg(scope, "%s scope" % (what,))
-        return (scope,)
-    if scopes is None:
-        return ()
-    if not isinstance(scopes, (tuple, list)):
-        raise TypeError(
-            "%s scopes must be a tuple or list of str, got %r"
-            % (what, type(scopes).__name__))
-    out = []
-    for s in scopes:
-        check_str_arg(s, "%s scopes entry" % (what,))
-        out.append(s)
-    return tuple(out)
 
 
 class Composite(Pattern):
@@ -1943,105 +1642,6 @@ class Composite(Pattern):
         self._expand().visit(fn)
 
 
-@runtime_checkable
-class HygienicPattern(Protocol):
-    """
-    Structural contract for patterns that participate in hygiene wire,
-    freeze-time registration, and post-match hygiene walks over captures
-    """
-
-    def hygiene_wire(self):
-        """
-        Build a portable hygiene row for this instance
-        """
-
-        ...
-
-
-    @classmethod
-    def hygiene_from_wire(cls, row):
-        """
-        Rebuild an instance from ``hygiene_wire`` output
-        """
-
-        ...
-
-
-    def register_hygiene(self, ctx):
-        """
-        Record binder or scope-region ownership on a HygienicMatchCompiler
-        """
-
-        ...
-
-
-    def iter_introduced_symbols(self, matched):
-        """
-        Yield symbols introduced as binders for captures produced by this
-        pattern, given a native-style capture mapping from one match
-        """
-
-        ...
-
-
-    def iter_recurse_targets(self, matched):
-        """
-        Yield nested forms to recurse for binder discovery (initializers,
-        type expressions, etc.)
-        """
-
-        ...
-
-
-    def iter_scope_targets(self, matched):
-        """
-        Yield template roots for lexical scope-region descent (bodies)
-        """
-
-        ...
-
-
-class HygieneWireSlotScopes(object):
-    """
-    Shared hygiene wire for binder composites keyed by slot and scopes
-    tuple
-    """
-
-
-    def hygiene_wire(self):
-        """
-        Wire row is ``(class name, slot, scopes)``
-        """
-
-        return (type(self).__name__, self._slot, self._scopes)
-
-
-    @classmethod
-    def hygiene_from_wire(cls, row):
-        """
-        Invert ``hygiene_wire`` for the 3-tuple slot-and-scopes shape
-        """
-
-        _, slot, scopes = row
-        return cls(slot, scopes=scopes)
-
-
-    def register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, self)
-
-
-    def iter_introduced_symbols(self, matched):
-        return ()
-
-
-    def iter_recurse_targets(self, matched):
-        return ()
-
-
-    def iter_scope_targets(self, matched):
-        return ()
-
-
 class CALLEDBY(Composite):
     """
     Capture the compile-head symbol into the called-by slot
@@ -2072,23 +1672,20 @@ class CALLEDBY(Composite):
         return f"(CALLEDBY {self._slot!r})"
 
 
-class DEFINE(Composite, HygieneWireSlotScopes):
+class DEFINE(Composite):
     """
     Capture one element constrained to be a symbol. Used as the
     introduced-name slot for define-shaped specials
     """
 
 
-    def __init__(self, slot, *, scope=None, scopes=None):
+    def __init__(self, slot):
         """
         :param slot: target slot name
-        :param scope: optional scope-region slot name
-        :param scopes: optional tuple of scope-region slot names
         """
 
         check_str_arg(slot, "DEFINE slot")
         self._slot = slot
-        self._scopes = normalize_scopes(scope, scopes, "DEFINE")
 
 
     def _expand(self):
@@ -2103,19 +1700,7 @@ class DEFINE(Composite, HygieneWireSlotScopes):
         return '(DEFINE %s)' % (self._slot,)
 
 
-    def iter_introduced_symbols(self, matched):
-        val = matched.get(self._slot)
-        if val is None:
-            return
-        if _intro_suppressed(val):
-            return
-        if isinstance(val, Datum):
-            val = val.datum
-        if is_symbol(val):
-            yield val
-
-
-class DECL(Composite, HygieneWireSlotScopes):
+class DECL(Composite):
     """
     Capture one element shaped as a declaration: a bare symbol, a
     one-element list naming the symbol, the (type as: name) form,
@@ -2129,16 +1714,13 @@ class DECL(Composite, HygieneWireSlotScopes):
     """
 
 
-    def __init__(self, slot, *, scope=None, scopes=None):
+    def __init__(self, slot):
         """
         :param slot: target slot name
-        :param scope: optional scope-region slot name
-        :param scopes: optional tuple of scope-region slot names
         """
 
         check_str_arg(slot, "DECL slot")
         self._slot = slot
-        self._scopes = normalize_scopes(scope, scopes, "DECL")
 
 
     def __repr__(self):
@@ -2161,53 +1743,7 @@ class DECL(Composite, HygieneWireSlotScopes):
         ))
 
 
-    def iter_introduced_symbols(self, matched):
-        grp = matched.get(self._slot)
-        if grp is None:
-            return
-        if isinstance(grp, Datum):
-            if _intro_suppressed(grp):
-                return
-            val = grp.datum
-            if is_symbol(val):
-                yield val
-            return
-        if isinstance(grp, DatumFrame) and grp.from_datum:
-            return
-        if not isinstance(grp, dict):
-            return
-        name = grp.get("name")
-        if name is not None:
-            if _intro_suppressed(name):
-                return
-            if isinstance(name, Datum):
-                name = name.datum
-            if is_symbol(name):
-                yield name
-                return
-        raw = grp.source
-        if isinstance(raw, Datum):
-            if _intro_suppressed(raw):
-                return
-            raw = raw.datum
-        if is_symbol(raw):
-            yield raw
-
-
-    def iter_recurse_targets(self, matched):
-        grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
-            return
-        t = grp.get("type")
-        if t is not None:
-            yield t
-        dt = grp.get("decl_tail")
-        if dt is not None:
-            if is_pair(dt.datum):
-                yield dt
-
-
-class BINDING(Composite, HygieneWireSlotScopes):
+class BINDING(Composite):
     """
     Capture a single binding-shaped cell, (NAME EXPR) or
     (EXPR as: NAME). After a successful match captures[slot] is a dict
@@ -2217,16 +1753,13 @@ class BINDING(Composite, HygieneWireSlotScopes):
     """
 
 
-    def __init__(self, slot, *, scope=None, scopes=None):
+    def __init__(self, slot):
         """
         :param slot: target slot name
-        :param scope: optional scope-region slot name
-        :param scopes: optional tuple of scope-region slot names
         """
 
         check_str_arg(slot, "BINDING slot")
         self._slot = slot
-        self._scopes = normalize_scopes(scope, scopes, "BINDING")
 
 
     def _expand(self):
@@ -2239,29 +1772,6 @@ class BINDING(Composite, HygieneWireSlotScopes):
 
     def __kos_repr__(self):
         return '(BINDING %s)' % (self._slot,)
-
-
-    def iter_introduced_symbols(self, matched):
-        grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
-            return
-        name = grp.get("name")
-        if name is not None:
-            if _intro_suppressed(name):
-                return
-            if isinstance(name, Datum):
-                name = name.datum
-            if is_symbol(name):
-                yield name
-
-
-    def iter_recurse_targets(self, matched):
-        grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
-            return
-        ex = grp.get("expr")
-        if ex is not None:
-            yield ex
 
 
 class BINDINGS(Composite):
@@ -2277,37 +1787,21 @@ class BINDINGS(Composite):
     """
 
 
-    def __init__(self, slot, *, mode='parallel', scope=None, scopes=None):
+    def __init__(self, slot):
         """
         :param slot: target slot name
-        :param mode: stored on the composite instance only, currently
-            uninterpreted; legacy callers pass 'parallel' or
-            'sequential'
-        :param scope: optional scope-region slot name
-        :param scopes: optional tuple of scope-region slot names
         """
 
         check_str_arg(slot, "BINDINGS slot")
-        if not isinstance(mode, str):
-            raise TypeError(
-                "BINDINGS mode must be a str, got %r"
-                % (type(mode).__name__,))
         self._slot = slot
-        self._mode = mode
-        self._scopes = normalize_scopes(scope, scopes, "BINDINGS")
 
 
     def __repr__(self):
-        if self._mode == 'parallel':
-            return 'BINDINGS(%r)' % (self._slot,)
-        return "BINDINGS(%r, mode=%r)" % (self._slot, self._mode)
+        return 'BINDINGS(%r)' % (self._slot,)
 
 
     def __kos_repr__(self):
-        parts = ['BINDINGS', self._slot]
-        if self._mode != 'parallel':
-            parts.extend(['mode:', kos_repr(self._mode)])
-        return '(%s)' % (' '.join(parts),)
+        return '(BINDINGS %s)' % (self._slot,)
 
 
     def _expand(self):
@@ -2325,66 +1819,6 @@ class BINDINGS(Composite):
             CAPTURE(self._slot, LITERAL(nil)),
             FORM(CAPTURE(self._slot, REPEAT(row))),
         )
-
-
-    def iter_introduced_symbols(self, matched):
-        cells = matched.get(self._slot)
-        if cells is None:
-            return
-        if isinstance(cells, Datum):
-            cells = cells.datum
-            if is_nil(cells):
-                return
-        for fr in cells:
-            if isinstance(fr, dict):
-                n = fr.get("name")
-                if n is not None:
-                    if _intro_suppressed(n):
-                        continue
-                    if isinstance(n, Datum):
-                        n = n.datum
-                    if is_symbol(n):
-                        yield n
-
-
-    def iter_recurse_targets(self, matched):
-        cells = matched.get(self._slot)
-        if cells is None:
-            return
-        if isinstance(cells, Datum):
-            cells = cells.datum
-            if is_nil(cells):
-                return
-        for fr in cells:
-            if isinstance(fr, dict):
-                ex = fr.get("expr")
-                if ex is not None:
-                    yield ex
-
-
-    def iter_scope_targets(self, matched):
-        return ()
-
-
-    def register_hygiene(self, ctx):
-        ctx.add_binder(self._slot, self)
-
-
-    def hygiene_wire(self):
-        return ("BINDINGS", self._slot, self._mode, self._scopes)
-
-
-    @classmethod
-    def hygiene_from_wire(cls, row):
-        """
-        Build from ``hygiene_wire`` output
-
-        :param row: ``("BINDINGS", slot, mode, scopes)``
-        :rtype: BINDINGS
-        """
-
-        _, slot, mode, scopes = row
-        return cls(slot, mode=mode, scopes=scopes)
 
 
 def formal_param_pattern():
@@ -2427,17 +1861,15 @@ def formal_keyword_name(cell):
 
     A defaults or kw-only frame names its parameter with a keyword and
     the compiler declares the plain name that keyword spells. Returns
-    that symbol, or None when the cell is absent, is not a keyword, or
-    is substitution material rather than template intro
+    that symbol, or None when the cell is absent or is not a keyword
     """
 
-    if cell is None or _intro_suppressed(cell):
+    if cell is None:
         return None
     kw = cell.datum if isinstance(cell, Datum) else cell
     if not is_keyword(kw):
         return None
     return symbol(str(kw))
-
 
 
 def frame_formal_name(fr):
@@ -2461,7 +1893,7 @@ def frame_formal_name(fr):
     v = fr.get("name")
     if v is not None:
         n = v.datum if isinstance(v, Datum) else v
-        if is_symbol(n) and str(n)[:1] == "&":
+        if (is_symbol(n) or isinstance(n, Mark)) and str(n)[:1] == "&":
             return symbol(str(n)[1:]), True
         return n, False
 
@@ -2469,7 +1901,7 @@ def frame_formal_name(fr):
     if v is None:
         return None, False
     kw = v.datum if isinstance(v, Datum) else v
-    if not is_keyword(kw):
+    if not is_keyword(kw.datum if isinstance(kw, Mark) else kw):
         return None, False
     s = str(kw)
     if s[:1] == "&":
@@ -2550,7 +1982,7 @@ def formals_inner_pattern():
     ))
 
 
-class FORMALS(Composite, HygieneWireSlotScopes):
+class FORMALS(Composite):
     """
     Capture one element shaped as a proper-list formals cell and
     decompose its structure into a nested capture dict. Improper-list
@@ -2570,16 +2002,13 @@ class FORMALS(Composite, HygieneWireSlotScopes):
     """
 
 
-    def __init__(self, slot, *, scope=None, scopes=None):
+    def __init__(self, slot):
         """
         :param slot: target slot name
-        :param scope: optional scope-region slot name
-        :param scopes: optional tuple of scope-region slot names
         """
 
         check_str_arg(slot, "FORMALS slot")
         self._slot = slot
-        self._scopes = normalize_scopes(scope, scopes, "FORMALS")
 
 
     def _expand(self):
@@ -2594,128 +2023,7 @@ class FORMALS(Composite, HygieneWireSlotScopes):
         return '(FORMALS %s)' % (self._slot,)
 
 
-    def iter_introduced_symbols(self, matched):
-        grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
-            return
-        pos = grp.get("positionals", ())
-        for fr in pos:
-            if isinstance(fr, dict):
-                cell = fr.get("ref_name")
-                if cell is None:
-                    cell = fr.get("name")
-                if cell is None:
-                    cell = fr.get("kw")
-                if cell is not None and _intro_suppressed(cell):
-                    continue
-                n, _byref = frame_formal_name(fr)
-                if n is not None and is_symbol(n):
-                    yield n
-        defaults = grp.get("defaults", ())
-        for fr in defaults:
-            if not isinstance(fr, dict):
-                continue
-            n = formal_keyword_name(fr.get("kw"))
-            if n is not None:
-                yield n
-        star = grp.get("star")
-        if star is not None and not _intro_suppressed(star):
-            if isinstance(star, Datum):
-                star = star.datum
-            if is_symbol(star):
-                yield star
-        ss = grp.get("starstar")
-        if ss is not None and not _intro_suppressed(ss):
-            if isinstance(ss, Datum):
-                ss = ss.datum
-            if is_symbol(ss):
-                yield ss
-        kwonly = grp.get("kwonly", ())
-        for fr in kwonly:
-            if not isinstance(fr, dict):
-                continue
-            n = fr.get("name")
-            if n is None:
-                n = formal_keyword_name(fr.get("kw"))
-                if n is not None:
-                    yield n
-                continue
-            if _intro_suppressed(n):
-                continue
-            if isinstance(n, Datum):
-                n = n.datum
-            if is_symbol(n):
-                yield n
-
-
-    def iter_binder_keyword_cells(self, matched):
-        """
-        Yield the template cells whose car is a keyword naming a
-        parameter.
-
-        Hygiene renames symbols, and these parameters are named by a
-        keyword instead, so the renamer needs the cells themselves: a
-        keyword carries no position of its own and the interned object
-        is shared with every other use of that name in the template
-        """
-
-        grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
-            return
-        for phase in ("defaults", "kwonly"):
-            for fr in grp.get(phase, ()):
-                if not isinstance(fr, dict):
-                    continue
-                if formal_keyword_name(fr.get("kw")) is None:
-                    continue
-                cell = getattr(fr, "source", None)
-                if cell is not None and is_pair(cell):
-                    yield cell
-
-        # A keyword-headed positional cell, (y: 1 :: int), keeps its
-        # keyword as the car of the inner pair, which is the car of the
-        # formals spine cell the frame records as its source.
-        for fr in grp.get("positionals", ()):
-            if not isinstance(fr, dict):
-                continue
-            if formal_keyword_name(fr.get("kw")) is None:
-                continue
-            cell = getattr(fr, "source", None)
-            if cell is None or not is_pair(cell):
-                continue
-            inner = cell.car
-            if is_pair(inner):
-                yield inner
-
-
-    def iter_recurse_targets(self, matched):
-        grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
-            return
-        defs = grp.get("defaults", ())
-        for fr in defs:
-            if isinstance(fr, dict):
-                dv = fr.get("default")
-                if dv is not None:
-                    yield dv
-        kwonly = grp.get("kwonly", ())
-        for fr in kwonly:
-            if isinstance(fr, dict):
-                dv = fr.get("default")
-                if dv is not None:
-                    yield dv
-        pos = grp.get("positionals", ())
-        for fr in pos:
-            if isinstance(fr, dict):
-                attrs = fr.get("attrs", ())
-                for afr in attrs:
-                    if isinstance(afr, dict):
-                        av = afr.get("attr_val")
-                        if av is not None:
-                            yield av
-
-
-class USING(Composite, HygieneWireSlotScopes):
+class USING(Composite):
     """
     Capture one element shaped as a using-form. Four inner shapes
     are recognised through an ordered ONEOF; first match wins:
@@ -2732,16 +2040,13 @@ class USING(Composite, HygieneWireSlotScopes):
     """
 
 
-    def __init__(self, slot, *, scope=None, scopes=None):
+    def __init__(self, slot):
         """
         :param slot: target slot name
-        :param scope: optional scope-region slot name
-        :param scopes: optional tuple of scope-region slot names
         """
 
         check_str_arg(slot, "USING slot")
         self._slot = slot
-        self._scopes = normalize_scopes(scope, scopes, "USING")
 
 
     def __repr__(self):
@@ -2761,30 +2066,7 @@ class USING(Composite, HygieneWireSlotScopes):
         )))
 
 
-    def iter_introduced_symbols(self, matched):
-        grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
-            return
-        name = grp.get("name")
-        if name is not None:
-            if _intro_suppressed(name):
-                return
-            if isinstance(name, Datum):
-                name = name.datum
-            if is_symbol(name):
-                yield name
-
-
-    def iter_recurse_targets(self, matched):
-        grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
-            return
-        ex = grp.get("expr")
-        if ex is not None:
-            yield ex
-
-
-class USING_UNPACK(Composite, HygieneWireSlotScopes):
+class USING_UNPACK(Composite):
     """
     Capture ``((PATTERN...) EXPR)`` for unpack bindings (e.g. for-each).
     After a successful match captures[slot] is a dict (native GROUP) or
@@ -2793,16 +2075,13 @@ class USING_UNPACK(Composite, HygieneWireSlotScopes):
     """
 
 
-    def __init__(self, slot, *, scope=None, scopes=None):
+    def __init__(self, slot):
         """
         :param slot: target slot name
-        :param scope: optional scope-region slot name
-        :param scopes: optional tuple of scope-region slot names
         """
 
         check_str_arg(slot, "USING_UNPACK slot")
         self._slot = slot
-        self._scopes = normalize_scopes(scope, scopes, "USING_UNPACK")
 
 
     def __repr__(self):
@@ -2815,28 +2094,6 @@ class USING_UNPACK(Composite, HygieneWireSlotScopes):
 
     def _expand(self):
         return GROUP(self._slot, FORM(MATCH(PAIR("lhs"), VALUE("expr"))))
-
-
-    def iter_introduced_symbols(self, matched):
-        grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
-            return
-        lhs = grp.get("lhs")
-        if lhs is None:
-            return
-        if _intro_suppressed(lhs):
-            return
-        lhs_v = lhs.datum if isinstance(lhs, Datum) else lhs
-        yield from _iter_unpack_lhs_symbols(lhs_v)
-
-
-    def iter_recurse_targets(self, matched):
-        grp = matched.get(self._slot)
-        if grp is None or not isinstance(grp, dict):
-            return
-        ex = grp.get("expr")
-        if ex is not None:
-            yield ex
 
 
 def _iter_unpack_lhs_symbols(lhs):
@@ -2887,12 +2144,9 @@ def _iter_unpack_lhs_symbols(lhs):
 
 class VALUE(Pattern):
     """
-    Scope-region-aware single-element capture. Lowers to the same native
-    ``CAPTURE`` node as ``BIND(slot)`` while registering the slot as an
-    expression scope region in the compiled Hygiene plan.
-    ``iter_scope_targets`` yields the captured subform once so
-    ``collect_binding_symbols`` can discover binders inside RHS slots
-    (e.g. ``compile/define`` value arms)
+    Single-element capture of a slot holding an expression the form
+    evaluates. Lowers to the same native ``CAPTURE`` node as
+    ``BIND(slot)``; the spelling records the slot's role
     """
 
 
@@ -2909,7 +2163,7 @@ class VALUE(Pattern):
 
     def lower(self, ctx):
         """
-        Emit ``CAPTURE`` after recording expression scope meta
+        Emit ``CAPTURE``
         """
 
         ctx.on_pattern(self)
@@ -2924,55 +2178,12 @@ class VALUE(Pattern):
         return '(VALUE %s)' % (self._slot,)
 
 
-    def iter_introduced_symbols(self, matched):
-        yield from ()
-
-
-    def iter_recurse_targets(self, matched):
-        yield from ()
-
-
-    def iter_scope_targets(self, matched):
-        """
-        Yield the value capture as the single scope-region walk root
-        """
-
-        val = matched.get(self._slot)
-        if val is None:
-            return
-        yield val
-
-
-    def hygiene_wire(self):
-        """
-        Wire row is ``("VALUE", slot)``
-        """
-
-        return ("VALUE", self._slot)
-
-
-    @classmethod
-    def hygiene_from_wire(cls, row):
-        """
-        Invert ``hygiene_wire`` for the 2-tuple VALUE shape
-        """
-
-        _, slot = row
-        return cls(slot)
-
-
-    def register_hygiene(self, ctx):
-        ctx.add_scope_region(self._slot, self)
-
-
 class BODY(Pattern):
     """
-    Scope-region-aware remainder capture. Lowers to the same native
-    ``REST`` node as ``REST(slot, min_tail=1)`` (minimum one spine cell
-    in the body tail) while registering the slot as a body scope region
-    in the compiled Hygiene plan. The capture is one lexical extent for
-    hygiene: iter_scope_targets yields that value once, not tuple
-    elements
+    Remainder capture of a slot holding the forms a body evaluates.
+    Lowers to the same native ``REST`` node as ``REST(slot, min_tail=1)``
+    (minimum one spine cell in the body tail); the spelling records
+    the slot's role
     """
 
 
@@ -2989,30 +2200,11 @@ class BODY(Pattern):
 
     def lower(self, ctx):
         """
-        Emit ``REST`` with ``min_tail=1`` after recording body scope meta
+        Emit ``REST`` with ``min_tail=1``
         """
 
         ctx.on_pattern(self)
         return REST(self._slot, min_tail=1).lower(ctx)
-
-
-    def iter_introduced_symbols(self, matched):
-        yield from ()
-
-
-    def iter_recurse_targets(self, matched):
-        yield from ()
-
-
-    def iter_scope_targets(self, matched):
-        """
-        Yield the body capture as the single scope-region walk root
-        """
-
-        val = matched.get(self._slot)
-        if val is None:
-            return
-        yield val
 
 
     def __repr__(self):
@@ -3023,32 +2215,10 @@ class BODY(Pattern):
         return f"(BODY {self._slot})"
 
 
-    def hygiene_wire(self):
-        """
-        Wire row is ``("BODY", slot)``
-        """
-
-        return ("BODY", self._slot)
-
-
-    @classmethod
-    def hygiene_from_wire(cls, row):
-        """
-        Invert ``hygiene_wire`` for the 2-tuple BODY shape
-        """
-
-        _, slot = row
-        return cls(slot)
-
-
-    def register_hygiene(self, ctx):
-        ctx.add_scope_region(self._slot, self)
-
-
 # === Self-describing matcher syntax: registry, meta-matcher, parser ===
 
 
-CAPTURE_OPTION_KEYS = frozenset({"scope", "mode", "role"})
+CAPTURE_OPTION_KEYS = frozenset({"scope", "role"})
 
 
 MATCHER_REGISTRY = {}
@@ -3103,13 +2273,11 @@ KW_TYPE = keyword("type")
 KW_VAL = keyword("val")
 KW_STAR = keyword("*")
 KW_SCOPE = keyword("scope")
-KW_MODE = keyword("mode")
 KW_ROLE = keyword("role")
 
 
 CAPTURE_OPTION_KW_TO_NAME = {
     KW_SCOPE: "scope",
-    KW_MODE: "mode",
     KW_ROLE: "role",
 }
 
@@ -3161,7 +2329,7 @@ def parse_matcher(elem):
         raise ValueError(
             "nil is not a valid matcher pattern element")
     # the element is source, so it is walked as a one-cell spine:
-    # captures come back as Datum with position and from_datum intact
+    # captures come back as Datum with position intact
     result = META_MATCHER.match(
         cons(elem, nil), symbol=symbol, keyword=keyword)
     if not result.matched:
@@ -3295,7 +2463,7 @@ def lower_class(extern_sym, fields):
 def lower_named_capture(name_sym, args):
     """
     Lower (NAME args...) where NAME is not a registered head. Walks
-    args, splitting capture options (scope:/mode:/role: keywords)
+    args, splitting capture options (scope:/role: keywords)
     from constraints. Inline ::, type:, and val: markers are
     recognised inside the args list as constraint shorthand. The
     returned CAPTURE accepts at most one constraint child; multiple
@@ -3370,10 +2538,6 @@ def lower_named_capture(name_sym, args):
                 "(%s ...) role: option must be an int, got %r"
                 % (name, type(role_val).__name__))
         kwargs["hygiene_role"] = role_val
-    if "mode" in options:
-        raise ValueError(
-            "(%s ...) mode: option only applies to BINDINGS,"
-            " not to a named capture" % (name,))
 
     return CAPTURE(name, sub, **kwargs)
 
@@ -3433,49 +2597,6 @@ def slot_only_factory(name, ctor):
         items = list(unpack(raw_args))
         expect_arity(name, items, 1)
         return ctor(coerce_slot(name, items[0]))
-
-    factory.__name__ = f"factory_{name}"
-    factory.matcher_wire_class = ctor
-    return factory
-
-
-def slot_with_options_factory(name, ctor, allowed_options):
-    """
-    Build a factory for a slot-first composite that takes additional
-    keyword/value option pairs after the slot, e.g.
-    (BINDINGS slot mode: parallel)
-    """
-
-    def factory(head_sym, raw_args):
-        items = list(unpack(raw_args))
-        if not items:
-            raise ValueError(
-                "(%s ...) requires a slot name" % (name,))
-        slot = coerce_slot(name, items[0])
-        opts = {}
-        i = 1
-        n = len(items)
-        while i < n:
-            elem = items[i]
-            if not is_keyword(elem):
-                raise ValueError(
-                    "(%s ...) trailing args must be keyword/value"
-                    " pairs, got %r" % (name, elem))
-            kw_name = str(elem)
-            if kw_name not in allowed_options:
-                raise ValueError(
-                    "(%s ...) unknown option %r"
-                    % (name, elem))
-            if i + 1 >= n:
-                raise ValueError(
-                    "(%s ...) option %r missing value"
-                    % (name, elem))
-            value = items[i + 1]
-            if is_symbol(value):
-                value = str(value)
-            opts[kw_name] = value
-            i += 2
-        return ctor(slot, **opts)
 
     factory.__name__ = f"factory_{name}"
     factory.matcher_wire_class = ctor
@@ -3809,10 +2930,7 @@ def register_builtin_matchers():
     register_matcher("DEFINE", slot_only_factory("DEFINE", DEFINE))
     register_matcher("DECL", slot_only_factory("DECL", DECL))
     register_matcher("BINDING", slot_only_factory("BINDING", BINDING))
-    register_matcher(
-        "BINDINGS",
-        slot_with_options_factory(
-            "BINDINGS", BINDINGS, frozenset({"mode"})))
+    register_matcher("BINDINGS", slot_only_factory("BINDINGS", BINDINGS))
     register_matcher("FORMALS", slot_only_factory("FORMALS", FORMALS))
     register_matcher("USING", slot_only_factory("USING", USING))
 
@@ -4141,6 +3259,5 @@ def parse_case_pattern(content):
 
     raise ValueError(
         f"internal: case delimiter matched with no slot bound: {content!r}")
-
 
 # The end.

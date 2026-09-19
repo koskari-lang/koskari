@@ -171,7 +171,7 @@ def special_list_append(compiler, caps):
 
         name = str(sym)
         pos = caps["sym"].position
-        frag.request_for_write(name, position=pos)
+        frag.request_for_write(sym, position=pos)
         if not is_pair(expr):
             frag.position(pos)
 

@@ -32,7 +32,8 @@ import pytest
 
 from koskari.lib import symbol
 from koskari.module import load_module_source_async, new_module
-from koskari.types import is_keyword, is_pair, is_symbol, unpack
+from koskari.types import (
+    is_keyword, is_mark, is_pair, is_symbol, strip_mark, unpack)
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -102,7 +103,7 @@ def find_define(form):
     if not is_pair(form):
         return None
     items = list(unpack(form))
-    if items and items[0] is _define:
+    if items and strip_mark(items[0]) is _define:
         return list(unpack(items[2])), items[3]
     for item in items:
         found = find_define(item)
@@ -122,8 +123,10 @@ class TestClauseBodyHygiene(unittest.IsolatedAsyncioTestCase):
 
     def assert_keyword_formal_renamed(self, expansion):
         formals, body = find_define(expansion)
-        self.assertTrue(is_keyword(formals[0]))
-        self.assertTrue(is_symbol(body))
+        self.assertTrue(is_mark(formals[0]))
+        self.assertTrue(is_keyword(formals[0].datum))
+        self.assertTrue(is_mark(body))
+        self.assertTrue(is_symbol(body.datum))
         self.assertEqual(str(formals[0]), str(body))
         self.assertNotEqual(str(body), "argv")
 
@@ -160,8 +163,9 @@ class TestClauseBodyHygiene(unittest.IsolatedAsyncioTestCase):
     async def test_cond_clause_renames_positional_formal(self):
         mod = await self.load("cbh_pos")
         formals, body = find_define(vars(mod)["pos-expansion"])
-        self.assertTrue(is_symbol(formals[0]))
-        self.assertIs(formals[0], body)
+        self.assertTrue(is_mark(formals[0]))
+        self.assertTrue(is_symbol(formals[0].datum))
+        self.assertEqual(formals[0], body)
         self.assertNotEqual(str(body), "argv")
         self.assertEqual(await vars(mod)["fd"](4), 4)
 

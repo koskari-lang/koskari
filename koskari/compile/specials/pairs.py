@@ -26,7 +26,7 @@ from ...bootstrap import builtin
 from ...lib import OpCode, cons, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_keyword, is_nil, is_pair
+from ...types import is_keyword, is_nil, is_pair, strip_mark
 from ..helpers import requote
 
 
@@ -67,6 +67,33 @@ def special_quote(compiler, called_by, expr):
 
     if is_pair(body) and not is_nil(body):
         body = requote(body)
+        body.fill_position(called_by.position)
+        return body
+
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
+    frag.instruction(OpCode.CONST, strip_mark(body))
+    return frag
+
+
+_sym_quote_syntax = symbol("quote-syntax")
+
+
+@builtin("compile/quote-syntax")
+@special("compile/quote-syntax", patterns=_ONE_PATTERNS, unpack="kwargs")
+def special_quote_syntax(compiler, called_by, expr):
+    """
+    Compile (compile/quote-syntax FORM) as ``quote`` does, keeping the
+    marks on the atoms. A syntax transformer's patterns and templates
+    are quoted this way: a template a macro-generating macro introduced
+    carries the outer expansion's marks, and its references must resolve
+    to what that expansion bound
+    """
+
+    body = expr.datum
+
+    if is_pair(body) and not is_nil(body):
+        body = requote(body, quote_sym=_sym_quote_syntax)
         body.fill_position(called_by.position)
         return body
 
@@ -114,7 +141,7 @@ def special_cons(compiler, called_by, exprs):
     forms = list(body.unpack())
 
     for fm in forms:
-        if is_keyword(fm):
+        if is_keyword(strip_mark(fm)):
             # a keyword among the arguments makes this the cons
             # function applied to complex arguments instead
             rewritten = cons(symbol("call"), called_by.datum, body)

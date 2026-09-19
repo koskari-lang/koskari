@@ -12,12 +12,6 @@ static int match_form(
   if (*cursor + 1 + (Py_ssize_t) trailing_min > length)
     return 0;
 
-  int saved_in = e->in_from_datum;
-  if (e->subj->kp_cars && *cursor >= 0
-      && *cursor < e->subj->cached_length
-      && KosDatum_Check(e->subj->kp_cars[*cursor]))
-    e->in_from_datum = 1;
-
   PyObject *elem = e->subj->vt->get(e->subj, *cursor);
 
   /* PEP 634 sequence-pattern gate. str / bytes / bytearray are atoms —
@@ -30,35 +24,25 @@ static int match_form(
      Soft no-match for all of them. */
   PyObject *peeled = matcher_peel_datum(elem);
   if (PyUnicode_Check(peeled) || PyBytes_Check(peeled)
-      || PyByteArray_Check(peeled)) {
-    e->in_from_datum = saved_in;
+      || PyByteArray_Check(peeled))
     return 0;
-  }
   if (! (KosPair_Check(peeled) || KosNilP(peeled)
          || PyList_Check(peeled) || PyTuple_Check(peeled))) {
 #ifdef Py_TPFLAGS_SEQUENCE
     /* Sequence-flagged types descend, exactly as CPython's
        MATCH_SEQUENCE does (PEP 634). */
-    if (! PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_SEQUENCE)) {
-      e->in_from_datum = saved_in;
+    if (! PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_SEQUENCE))
       return 0;
-    }
 #else
     /* 3.9: no tp_flags sequence bit; fall back to the ABC check. */
     PyObject *seq_type = get_abc_sequence();
-    if (! seq_type) {
-      e->in_from_datum = saved_in;
+    if (! seq_type)
       return -1;
-    }
     int isinst = PyObject_IsInstance(peeled, seq_type);
-    if (isinst < 0) {
-      e->in_from_datum = saved_in;
+    if (isinst < 0)
       return -1;
-    }
-    if (! isinst) {
-      e->in_from_datum = saved_in;
+    if (! isinst)
       return 0;
-    }
 #endif
   }
 
@@ -66,7 +50,6 @@ static int match_form(
   if (subject_from_any(elem, &sub)) {
     /* Not a sequence-like subject — match fails (no exception). */
     PyErr_Clear();
-    e->in_from_datum = saved_in;
     return 0;
   }
 
@@ -80,7 +63,6 @@ static int match_form(
 
   Py_ssize_t sub_length = sub.vt->length(&sub);
   e->subj = saved;
-  e->in_from_datum = saved_in;
   KosMatchSubject_Release(&sub);
 
   if (r != 1)

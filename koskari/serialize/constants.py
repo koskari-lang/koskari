@@ -63,10 +63,12 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # every opcode after the VAR family. The FAST rows and the stack rows
 # of ITEM, STORE, and INPLACE carry a KOS_CACHE_ITEM slot (slots are
 # not serialized).
+# PATCH bumped: .kio pool kind MARK added, a template atom with the
+# expansion marks it carries.
 BYTECODE_ABI_MAJOR = 0
 BYTECODE_ABI_MINOR = 19
 BYTECODE_ABI_MICRO = 0
-BYTECODE_ABI_PATCH = 1
+BYTECODE_ABI_PATCH = 2
 
 
 # The end.

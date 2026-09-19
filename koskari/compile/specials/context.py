@@ -107,7 +107,7 @@ def special_parameter(compiler, caps):
 
 
 _WITH_PATTERNS = [
-    MATCH(CALLEDBY("called_by"), USING("binding", scope="body"), BODY("body")),
+    MATCH(CALLEDBY("called_by"), USING("binding"), BODY("body")),
 ]
 
 

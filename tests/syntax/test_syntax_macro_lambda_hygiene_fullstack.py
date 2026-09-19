@@ -24,7 +24,8 @@ from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
 from koskari.lib import Datum, Module, car, cdr, cons, nil, symbol
 from koskari.reader import IndentAwareStream, LayoutReader, source_str
-from koskari.types import build_proper, is_pair, is_symbol
+from koskari.types import (
+    build_proper, is_mark, is_pair, is_symbol, strip_mark)
 from tests.compile.specials import _register_specials
 from tests.syntax.datum_syntax_helpers import (
     macro_from_rule_rows, syntax_from_match_datums, syntax_from_rule_datums)
@@ -114,7 +115,7 @@ def assert_lambda_ng_formal_renamed(test, expanded, original_name):
 
     exp = _unwrap_datum(expanded)
     test.assertTrue(is_pair(exp))
-    test.assertEqual(car(exp), _LAMBDA_HEAD)
+    test.assertEqual(strip_mark(car(exp)), _LAMBDA_HEAD)
     rest = cdr(exp)
     test.assertTrue(is_pair(rest))
     formals_cell = car(rest)
@@ -122,7 +123,8 @@ def assert_lambda_ng_formal_renamed(test, expanded, original_name):
         param = car(formals_cell)
     else:
         param = formals_cell
-    test.assertTrue(is_symbol(param))
+    test.assertTrue(is_mark(param))
+    test.assertTrue(is_symbol(param.datum))
     test.assertNotEqual(str(param), original_name)
 
 

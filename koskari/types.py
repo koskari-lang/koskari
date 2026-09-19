@@ -25,13 +25,14 @@ from contextlib import contextmanager
 from functools import partial
 
 from .lib import (
-    Domain, KoskariSyncViolation, ParamRef, bracket_nil, bracket_pair, cons,
-    keyword, nil, nilp, pair, symbol)
+    Domain, KoskariSyncViolation, Mark, ParamRef, bracket_nil, bracket_pair,
+    cons, keyword, nil, nilp, pair, symbol)
 
 
 __all__ = (
     "TypePredicate",
     "BuiltinPredicate",
+    "is_mark",
     "is_nil",
     "is_None",
     "is_proper",
@@ -41,6 +42,8 @@ __all__ = (
     "parameterize",
     "unpack",
     "is_on_demand",
+    "strip_mark",
+    "strip_marks",
 )
 
 
@@ -120,6 +123,57 @@ is_pair = TypePredicate("pair?", pair)
 
 is_nil = BuiltinPredicate("nil?", nilp)
 is_None = BuiltinPredicate("None?", operator.is_, None)
+
+
+def is_mark(value):
+    """
+    Returns True if value is a Mark, a template-introduced symbol or
+    keyword carrying its expansion marks
+    """
+
+    return isinstance(value, Mark)
+
+
+def strip_mark(value):
+    """
+    The symbol or keyword under a Mark, or value unchanged. Use where an
+    atom is read as a tag, a label, or a literal: hygiene renames only
+    the names a form binds and resolves
+    """
+
+    return value.datum if isinstance(value, Mark) else value
+
+
+def strip_marks(form):
+    """
+    A copy of a form with every Mark replaced by the atom under it.
+    Pair cells are rebuilt with their positions and delimiter style;
+    atoms other than marks are returned as they are
+    """
+
+    if isinstance(form, Mark):
+        return form.datum
+
+    if not isinstance(form, pair) or nilp(form):
+        return form
+
+    cells = []
+    tail = form
+    while isinstance(tail, pair) and not nilp(tail):
+        cells.append(tail)
+        tail = tail.cdr
+
+    out = strip_marks(tail)
+    for cell in reversed(cells):
+        car = strip_marks(cell.car)
+        if isinstance(cell, bracket_pair):
+            out = bracket_pair(car, out)
+        else:
+            out = cons(car, out)
+        pos = get_position(cell)
+        if pos:
+            out.set_position(pos)
+    return out
 
 
 def is_proper(value):

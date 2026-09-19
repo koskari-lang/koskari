@@ -30,7 +30,7 @@ from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
     repeat_capture)
 from ...syntax import special
-from ...types import is_pair
+from ...types import is_pair, strip_mark
 from ..helpers import helper_begin
 
 
@@ -113,7 +113,7 @@ def special_match(compiler, caps):
 
         fragment.position(clause_pos)
 
-        if pattern is _keyword_else:
+        if strip_mark(pattern) is _keyword_else:
             if remaining:
                 raise SpecialError(
                     "else: must be last clause", pattern,
@@ -126,9 +126,10 @@ def special_match(compiler, caps):
 
         guard_kw = None
         guard_expr = None
-        if is_pair(body) and (body.car is _keyword_when
-                              or body.car is _keyword_unless):
+        if is_pair(body) and (strip_mark(body.car) is _keyword_when
+                              or strip_mark(body.car) is _keyword_unless):
             guard_kw, tail = body
+            guard_kw = strip_mark(guard_kw)
             if not tail:
                 raise SpecialError(
                     "match guard requires an expression", body,

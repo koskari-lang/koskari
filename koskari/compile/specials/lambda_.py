@@ -132,19 +132,19 @@ _FUNCTION_PATTERNS = (
         SYMBOL("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         SYMBOL("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         SYMBOL("name"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
 )
 
@@ -170,35 +170,35 @@ _LAMBDA_PATTERNS = (
         SYMBOL("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         SYMBOL("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         LITERAL_KW("::"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         LITERAL_KW("type:"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         SYMBOL("name"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
 )
 

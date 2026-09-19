@@ -124,6 +124,18 @@ static PyObject *kospair_get(KosMatchSubject *s, Py_ssize_t i) {
 }
 
 
+/**
+   The value a capture binds for cell i: the car with its ``Datum``
+   layers peeled and any ``Mark`` kept. Matching reads through the
+   vtable ``get``, which peels both; captures read here. Borrowed.
+*/
+static PyObject *subject_capture_get(KosMatchSubject *s, Py_ssize_t i) {
+  if (s->kp_cars)
+    return matcher_peel_datum_keep_mark(s->kp_cars[i]);
+  return s->vt->get(s, i);
+}
+
+
 static PyObject *kospair_tail(KosMatchSubject *s, Py_ssize_t start) {
   PyObject *t = s->kp_tails[start];
   Py_INCREF(t);
@@ -146,7 +158,7 @@ static PyObject *kospair_slice(
   if (! t)
     return NULL;
   for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *v = matcher_peel_datum(s->kp_cars[start + i]);
+    PyObject *v = matcher_peel_datum_keep_mark(s->kp_cars[start + i]);
     Py_INCREF(v);
     PyTuple_SET_ITEM(t, i, v);
   }

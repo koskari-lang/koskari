@@ -29,16 +29,17 @@ from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
 from ..lib import (
-    Arena, Code, Datum, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
-    Namespace, NamespaceSpec, OpCode, bracket_nil, bracket_pair, cons, keyword,
-    kos_repr, nil, symbol)
+    Arena, Code, Datum, FormalsSpec, FunctionSpec, Mark, Module,
+    ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
+    bracket_pair, cons, keyword, kos_repr, nil, symbol)
 from ..types import (
-    fill_position, get_position, is_keyword, is_nil, is_pair, is_proper,
-    is_symbol, parameterize)
+    fill_position, get_position, is_keyword, is_mark, is_nil, is_pair,
+    is_proper, is_symbol, parameterize, strip_mark, strip_marks)
 from .pragma import (
     BracketCalls, KeywordLiterals, KoskariPragma, PackModule, ResolutionMode,
     StrayColon)
-from .processor import ByteCodeProcessor
+from .processor import (
+    CMPSRC_X_CONST, CMPSRC_Y_CONST, ByteCodeProcessor)
 
 
 class Compiled(ABC):
@@ -173,6 +174,8 @@ class ByteCodeFragment:
         :param var_name: name to request from enclosing scope
         """
 
+        if is_mark(var_name):
+            self.resolution.note_mark(var_name)
         self.resolution.on_request_var(self, str(var_name))
 
 
@@ -184,6 +187,8 @@ class ByteCodeFragment:
         :param position: optional (line, col) for error reporting
         """
 
+        if is_mark(var_name):
+            self.resolution.note_mark(var_name)
         self.resolution.on_write(self, str(var_name), position=position)
 
 
@@ -195,6 +200,8 @@ class ByteCodeFragment:
         :param position: optional (line, col) for error reporting
         """
 
+        if is_mark(var_name):
+            self.resolution.note_mark(var_name)
         self.resolution.on_explicit_global(self, str(var_name), position=position)
 
 
@@ -393,6 +400,181 @@ class ByteCodeFragment:
 class CompilerMode(IntEnum):
     FUNCTION = auto()
     EXPRESSION = auto()
+
+
+def mark_candidates(mark):
+    """
+    The keys a marked reference may resolve to, longest first: its own
+    key, then the key with the newest mark removed, down to the bare
+    name
+
+    :param mark: a Mark
+    :rtype: list of str
+    """
+
+    marks = mark.marks
+    out = []
+    for n in range(len(marks), 0, -1):
+        out.append(str(Mark(mark.datum, marks[:n])))
+    out.append(str(mark.datum))
+    return out
+
+
+def _choose_key(candidates, scopes, declared_keys, module_names):
+    """
+    The first candidate declared in a visible scope, or, for a marked
+    spelling, declared anywhere so far this turn or already bound in
+    the module; the bare name when none is
+
+    A marked spelling declared outside the visible scopes is a
+    module-level definition the expansion made earlier, which the
+    module namespace resolves at run time; a sibling scope's binding of
+    the same spelling reaches the same choice and fails loudly there.
+    One bound in the module was defined by an earlier turn, as a
+    macro-generating macro's expansion leaves behind
+    """
+
+    for cand in candidates:
+        for scope in scopes:
+            if cand in scope:
+                return cand
+        if cand is not candidates[-1]:
+            if cand in declared_keys or cand in module_names:
+                return cand
+    return candidates[-1]
+
+
+def resolve_marks(fragment, ancestors):
+    """
+    Resolve every marked name the fragment references to the binding
+    it names, in place, at the fragment's completion when its own
+    declarations are final.
+
+    A marked reference tries its key, then the key with the newest mark
+    removed, down to the bare name, against the declarations visible
+    from its position: the inline scopes open around it in the
+    instruction stream, the fragment's own, and the fragments still
+    open around the fragment. An inline scope's closure names resolve
+    from outside that scope. A reference that falls below its key is
+    recorded for the root check
+
+    :param fragment: the fragment being completed
+    :param ancestors: fragments lexically open around it, outermost
+        first
+    """
+
+    reso = fragment.resolution
+    marks = reso.marks
+    compiler = fragment.compiler
+    module_names = vars(compiler.module) if compiler is not None else {}
+
+    def declared(frag):
+        return set(frag.declares) | set(frag._request_global)
+
+    base = [declared(fragment)]
+    base.extend(declared(f) for f in reversed(ancestors))
+
+    def choose(name, scopes):
+        mark = marks.get(name)
+        if mark is None:
+            return name
+        chosen = _choose_key(
+            mark_candidates(mark), scopes, reso.declared_keys,
+            module_names)
+        if chosen != name:
+            reso.stripped.append((name, chosen, ancestors))
+        return chosen
+
+    def rename_bucket(bucket, scopes):
+        seen = []
+        for name in bucket:
+            chosen = choose(name, scopes)
+            if chosen not in seen:
+                seen.append(chosen)
+        bucket[:] = seen
+
+    rename_bucket(fragment.requests, base)
+    rename_bucket(fragment.requests_for_write, base)
+    rename_bucket(fragment._request_global, base)
+
+    def rebuild_nspec(nspec, scopes):
+        closure = []
+        for name in nspec.closure_syms:
+            chosen = choose(name, scopes)
+            if chosen not in closure:
+                closure.append(chosen)
+        if tuple(closure) == tuple(nspec.closure_syms):
+            return nspec
+        return NamespaceSpec(
+            nspec.name, nspec.local_syms, tuple(closure), nspec.global_syms)
+
+    scopes = list(base)
+    pending = None
+    out = []
+    for op, arg in fragment.instructions:
+        if op == OpCode.CONST:
+            if isinstance(arg, NamespaceSpec):
+                arg = rebuild_nspec(arg, scopes)
+                pending = arg
+
+        elif op == OpCode.PUSH_NS:
+            nspec = rebuild_nspec(arg[0], scopes)
+            arg = (nspec,) + tuple(arg[1:])
+            scopes.insert(0, set(nspec.local_syms))
+
+        elif op == OpCode.PUSH_COLLECT:
+            if isinstance(arg, NamespaceSpec):
+                arg = rebuild_nspec(arg, scopes)
+                nspec = arg
+            else:
+                nspec = pending
+            scopes.insert(0, set(nspec.local_syms) if nspec else set())
+            pending = None
+
+        elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
+            scopes.pop(0)
+
+        elif op == OpCode.CHECK_COMPARE_VAR:
+            cmpsrc, x, y, label = arg
+            if not (cmpsrc & CMPSRC_X_CONST):
+                x = choose(x, scopes)
+            if not (cmpsrc & CMPSRC_Y_CONST):
+                y = choose(y, scopes)
+            arg = (cmpsrc, x, y, label)
+
+        elif op.style == OpStyle.VAR:
+            arg = choose(arg, scopes)
+
+        elif op.extra and OpStyle.VAR in op.extra:
+            arg = tuple(
+                choose(v, scopes) if fk == OpStyle.VAR else v
+                for v, fk in zip(arg, op.extra))
+
+        out.append((op, arg))
+
+    fragment.instructions = out
+
+
+def check_stripped_marks(reso, root):
+    """
+    Raise when a marked reference resolved below its key while a
+    fragment open around it, or the root, went on to declare that key:
+    the reference was compiled into a closure before the definition it
+    names
+
+    :param reso: the resolution instance for the turn
+    :param root: the fragment completing as the root
+    :raises CompilerError: on such a reference
+    """
+
+    for key, chosen, ancestors in reso.stripped:
+        for frag in ancestors + (root,):
+            if key in frag.declares:
+                raise CompilerError(
+                    f"introduced name {kos_repr(reso.marks[key].datum)}"
+                    f" is referenced by a closure before its definition"
+                    f" in the same expansion; define it first",
+                    key)
 
 
 _COMPILER_LITERALS = {
@@ -667,7 +849,25 @@ class Compiler:
         :return: Compiled instance, or None
         """
 
-        name = str(name)
+        # a marked head names a transformer the same expansion may
+        # have defined under the marked spelling, else the bare one
+        if is_mark(name):
+            for cand in mark_candidates(name):
+                found = self._find_compiled_use(cand)
+                if found is not None:
+                    return found
+            return None
+
+        return self._find_compiled_use(str(name))
+
+
+    def _find_compiled_use(self, name):
+        """
+        Resolve one spelling as a syntax use
+
+        :param name: the spelling as written
+        :return: Compiled instance, or None
+        """
 
         # prefix-only resolution: the short name is the use; the
         # prefixed spelling denotes the transformer object itself and
@@ -760,13 +960,16 @@ class Compiler:
         :raises CompilerError: on a cycle or an unsettled chain
         """
 
+        # each expansion marks its output afresh, so a cycle repeats a
+        # form up to its marks
+        bare = strip_marks(form)
         for i, prior in enumerate(seen):
             if form is prior:
                 continue
-            if form == prior:
-                chain = " -> ".join(str(f) for f in seen[i:])
+            if bare == strip_marks(prior):
+                chain = " -> ".join(str(strip_marks(f)) for f in seen[i:])
                 raise CompilerError(
-                    f"macro expansion cycle: {chain} -> {form}",
+                    f"macro expansion cycle: {chain} -> {bare}",
                     form)
 
         limit = self.rewrite_limit
@@ -810,7 +1013,11 @@ class Compiler:
         source object carrying its own position wins over it
         """
 
-        if is_symbol(source_obj):
+        # a marked keyword is the keyword: only a symbol binds or resolves
+        if is_mark(source_obj) and is_keyword(source_obj.datum):
+            source_obj = source_obj.datum
+
+        if is_symbol(source_obj) or is_mark(source_obj):
             dispatch = self.compile_symbol
         elif is_pair(source_obj):
             dispatch = self.compile_pair
@@ -843,8 +1050,12 @@ class Compiler:
 
     def compile_symbol(self, fragment, sym, position=None):
 
-        if sym is _symbol_colon:
-            self.check_stray_colon(sym)
+        bare = strip_mark(sym)
+        if bare is not sym:
+            fragment.resolution.note_mark(sym)
+
+        if bare is _symbol_colon:
+            self.check_stray_colon(bare)
 
         # TODO: we may want to add an alias/FOO form for
         # compile-time symbolic aliases. These would be distinct
@@ -852,8 +1063,8 @@ class Compiler:
         # source list -- the aliases would only expand the symbol
         # itself.
 
-        if sym in _COMPILER_LITERALS:
-            return self.compile_const(fragment, _COMPILER_LITERALS[sym])
+        if bare in _COMPILER_LITERALS:
+            return self.compile_const(fragment, _COMPILER_LITERALS[bare])
 
         comp = self.find_bare_compiled(sym)
         if comp is not None:
@@ -873,7 +1084,7 @@ class Compiler:
 
     def compile_raw_symbol(self, fragment, sym):
         strsym = str(sym)
-        fragment.request_var(strsym)
+        fragment.request_var(sym)
         fragment.instruction(OpCode.VAR, strsym)
         return fragment
 
@@ -1003,12 +1214,12 @@ class Compiler:
             # but still evaluate the internal elements (so not quoted)
             return cons(_symbol_cons, *source_obj.unpack(), nil)
 
-        if is_symbol(head):
+        if is_symbol(strip_mark(head)):
             comp = self.find_compiled(head)
             if comp:
                 return self.compile_special(fragment, comp, source_obj)
 
-            if head is _symbol_call:
+            if strip_mark(head) is _symbol_call:
                 raise CompilerError("compile/call not found", source_obj)
 
         elif is_pair(head):
@@ -1062,7 +1273,7 @@ class Compiler:
             fill_position(ret, get_position(form) or position)
             return ret
 
-        if not is_symbol(head):
+        if not is_symbol(strip_mark(head)):
             return None
 
         comp = self.find_compiled(head)
@@ -1095,6 +1306,9 @@ class Compiler:
         """
 
         reso = fragment.resolution
+
+        if reso.marks:
+            resolve_marks(fragment, tuple(self.lexical_stack))
 
         # handles compression, var-to-fast lowering, and tail-call
         # promotion, deriving the pass settings from this compiler
@@ -1133,6 +1347,7 @@ class Compiler:
         if _validate and is_root:
             reso.validate_tree(
                 code, (), CompilerMode.FUNCTION, is_root=True)
+            check_stripped_marks(reso, fragment)
 
         # finally, register the code with the minted registry so that it
         # can potentially be sealed later. A compiler kept past its seal

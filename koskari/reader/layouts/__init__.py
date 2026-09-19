@@ -26,7 +26,7 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 from ...bootstrap import builtin
 from ...lib import cons, keyword, nil, symbol
 from ...types import (
-    fill_position, get_position, is_keyword, is_pair, is_symbol)
+    fill_position, get_position, is_keyword, is_pair, is_symbol, strip_mark)
 from .basics import (
     layout_block, layout_block_begin, layout_inline_block,
     layout_quasiquote, layout_quote)
@@ -171,7 +171,7 @@ def _lower_block(form, tail, reader):
     """
 
     head_args, entries = form.cdr
-    head = head_args.car
+    head = strip_mark(head_args.car)
 
     layout_obj = None
     if is_symbol(head):
@@ -238,7 +238,7 @@ def apply_lines(entries, target):
         entry, tail = entries
 
         if _is_block(entry):
-            if is_keyword(entry.cdr.car.car):
+            if is_keyword(strip_mark(entry.cdr.car.car)):
                 out.append(entry)
             else:
                 lowered, tail = _lower_block(entry, tail, reader)
@@ -247,7 +247,7 @@ def apply_lines(entries, target):
                     line.set_position(get_position(entry))
                 out.append(line)
 
-        elif is_pair(entry) and entry.car is _keyword_splice:
+        elif is_pair(entry) and strip_mark(entry.car) is _keyword_splice:
             for form in entry.cdr.unpack():
                 spread = cons(form, nil)
                 if get_position(entry):
@@ -294,7 +294,7 @@ def apply_layouts(blocks, target):
         if not form or not is_pair(form):
             pass
 
-        elif form.car is _keyword_block:
+        elif strip_mark(form.car) is _keyword_block:
             lowered, tail = _lower_block(form, tail, reader)
             blocks.cdr = tail
             blocks.car = lowered
@@ -319,7 +319,7 @@ def apply_layout(block, target):
     """
 
     if block and is_pair(block):
-        if block.car is _keyword_block:
+        if strip_mark(block.car) is _keyword_block:
             res = apply_layouts(cons(block, nil), target)
             return res.car
         else:

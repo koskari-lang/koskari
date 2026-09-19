@@ -275,7 +275,6 @@ typedef struct KosDatum {
   PyObject *datum;
   PyObject *position;
   PyObject *binding;  /* capture slot name (str) or Py_None */
-  int from_datum;     /* 1 when capture is substitution, not template intro */
 } KosDatum;
 
 
@@ -293,7 +292,6 @@ typedef struct KosDatumFrame {
   PyDictObject dict;
   PyObject *source;
   PyObject *position;
-  int from_datum;
 } KosDatumFrame;
 
 

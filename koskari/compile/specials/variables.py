@@ -88,7 +88,8 @@ def special_setq(compiler, caps):
     binding SYM
     """
 
-    sym = str(caps["sym"].datum)
+    symatom = caps["sym"].datum
+    sym = str(symatom)
     pos = caps["sym"].position
     expr = caps["expr"].datum
 
@@ -97,7 +98,7 @@ def special_setq(compiler, caps):
     if not is_pair(expr):
         frag.position(pos)
 
-    frag.request_for_write(sym, position=pos)
+    frag.request_for_write(symatom, position=pos)
     frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.VAR_STORE, sym)
     frag.instruction(OpCode.CONST, None)
@@ -131,7 +132,7 @@ def special_setq_values(compiler, caps):
     lhs = lhs_mr.datum
 
     for namesym in unpack_lhs_bind_symbols(lhs, flatten=True):
-        frag.request_for_write(str(namesym), position=pos)
+        frag.request_for_write(namesym, position=pos)
 
     frag.position(expr_mr.position)
     frag.merge(compiler.full_compile(expr_mr.datum))
@@ -188,7 +189,7 @@ def special_delq(compiler, caps):
     frag = compiler.fragment(called_by)
 
     frag.position(pos)
-    frag.request_for_write(str(sym), position=pos)
+    frag.request_for_write(sym, position=pos)
     frag.instruction(OpCode.VAR_CLEAR, str(sym))
     frag.instruction(OpCode.CONST, None)
 
@@ -214,7 +215,7 @@ def special_takeq(compiler, caps):
     frag = compiler.fragment(called_by)
 
     frag.position(pos)
-    frag.request_for_write(str(sym), position=pos)
+    frag.request_for_write(sym, position=pos)
     frag.instruction(OpCode.VAR_TAKE, str(sym))
 
     return frag
@@ -274,14 +275,14 @@ _DEFINE_INLINE_PATTERNS = [
         DEFINE("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         REST("body")),
     MATCH(
         CALLEDBY(),
         DEFINE("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         REST("body")),
     MATCH(
         CALLEDBY(),
@@ -308,7 +309,7 @@ _DEFINE_INLINE_PATTERNS = [
 ]
 
 _DEFINE_DECL_PATTERNS = [
-    MATCH(CALLEDBY(), DECL("decl"), FORMALS("formals", scope="body"), BODY("body")),
+    MATCH(CALLEDBY(), DECL("decl"), FORMALS("formals"), BODY("body")),
     MATCH(CALLEDBY(), DECL("decl"), VALUE("value")),
     MATCH(CALLEDBY(), DECL("decl")),
 ]
@@ -389,7 +390,7 @@ def special_define_global(compiler, caps):
 
     frag = compiler.fragment(called_by)
     try:
-        frag.request_global(name)
+        frag.request_global(namesym)
     except CompilerError:
         raise SpecialError(
             '%r cannot be both local (define) and global (define-global).'

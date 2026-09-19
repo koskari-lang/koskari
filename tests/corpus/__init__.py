@@ -40,7 +40,7 @@ from koskari.pragma import ModulePragma
 from koskari.reader import (
     READ_EOF, IndentAwareStream, LayoutReader, Reader, source_str)
 from koskari.syntax import MacroTransform, Syntax, SyntaxTransform
-from koskari.types import is_pair, is_proper, is_symbol, unpack
+from koskari.types import is_pair, is_proper, is_symbol, strip_marks, unpack
 
 
 _WILDCARD = object()
@@ -730,7 +730,9 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         if not isinstance(tf, (SyntaxTransform, MacroTransform)):
             return form
 
-        expanded = tf.handle_expand(self.compiler, form, mr)
+        # the corpus records an expansion as source: the datum view, with
+        # the marks the expansion carries for the compiler left off
+        expanded = strip_marks(tf.handle_expand(self.compiler, form, mr))
 
         if is_proper(expanded):
             parts = list(expanded.unpack())

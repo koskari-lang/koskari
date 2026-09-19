@@ -146,6 +146,19 @@ class KoskariPragma:
         # enclosing function are module level and skipped like the root
         self._inline_scopes = {}
 
+        # Map mangled key -> Mark for every marked identifier this turn
+        # compiles, so a fragment's completion can resolve the key to
+        # the binding it names (see Compiler.resolve_marks)
+        self.marks = {}
+
+        # Every name declared so far this turn, whatever fragment it
+        # was declared in
+        self.declared_keys = set()
+
+        # Marked references resolved to a shorter spelling than their
+        # key, as (key, chosen, ancestors open at that completion)
+        self.stripped = []
+
 
     def on_write(self, fragment, name: str, *, position=None):
         """
@@ -165,6 +178,14 @@ class KoskariPragma:
             _unique_append(fragment.requests_for_write, name)
 
 
+    def note_mark(self, mark):
+        """
+        Register a marked identifier this turn compiles, by its key
+        """
+
+        self.marks[str(mark)] = mark
+
+
     def on_declare(self, fragment, name: str, *, position=None):
         """
         Record a declaration (define, params, bindings).
@@ -172,6 +193,7 @@ class KoskariPragma:
         """
 
         name = str(name)
+        self.declared_keys.add(name)
 
         for bucket in (fragment.requests, fragment.requests_for_write,
                        fragment._request_global):
