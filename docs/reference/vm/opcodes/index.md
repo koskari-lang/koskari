@@ -7,5 +7,4 @@ Per-opcode reference pages. See also [Bytecode overview](../index.md) and [Opcod
 :glob:
 
 *
-   kos-op-*
 ```

@@ -481,7 +481,7 @@ verify:
   read: (cond (True 1))
   eval: "1"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/layouts/layout-if.md
   - reference/specials/compile-cond.md
@@ -501,7 +501,7 @@ verify:
   read: (cond (False 1))
   eval: "null"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/layouts/layout-if.md
   - reference/specials/compile-cond.md
@@ -524,7 +524,7 @@ verify:
   read: "(cond (True 1) (else: 2))"
   eval: "1"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/layouts/layout-if.md
   - reference/specials/compile-cond.md
@@ -546,7 +546,7 @@ verify:
   read: "(cond (False 1) (else: 2))"
   eval: "2"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/layouts/layout-if.md
   - reference/specials/compile-cond.md
@@ -569,7 +569,7 @@ verify:
   read: (cond (False 1) (True 2))
   eval: "2"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/layouts/layout-if.md
   - reference/specials/compile-cond.md
@@ -593,7 +593,7 @@ verify:
   read: (cond (False 1) (False 2))
   eval: "null"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/layouts/layout-if.md
   - reference/specials/compile-cond.md
@@ -617,7 +617,7 @@ verify:
   read: (cond (True 1) (False 2))
   eval: "1"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/layouts/layout-if.md
   - reference/specials/compile-cond.md
@@ -643,7 +643,7 @@ verify:
   read: "(cond (True 1) (False 2) (else: 3))"
   eval: "1"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/layouts/layout-if.md
   - reference/specials/compile-cond.md
@@ -669,7 +669,7 @@ verify:
   read: "(cond (False 1) (True 2) (else: 3))"
   eval: "2"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/layouts/layout-if.md
   - reference/specials/compile-cond.md
@@ -695,7 +695,7 @@ verify:
   read: "(cond (False 1) (False 2) (else: 3))"
   eval: "3"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/layouts/layout-if.md
   - reference/specials/compile-cond.md
@@ -717,7 +717,7 @@ verify:
   read: (when True 42)
   eval: "42"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/macros/compile-when.md
 stability: evolving
@@ -738,7 +738,7 @@ verify:
   read: (when False 42)
   eval: "null"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/macros/compile-when.md
 stability: evolving
@@ -759,7 +759,7 @@ verify:
   read: (unless False 42)
   eval: "42"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/macros/compile-unless.md
 stability: evolving
@@ -780,7 +780,7 @@ verify:
   read: (unless True 42)
   eval: "null"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/macros/compile-unless.md
 stability: evolving
@@ -799,7 +799,7 @@ verify:
   read: (if True 1 2)
   eval: "1"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/macros/compile-if.md
 stability: evolving
@@ -818,7 +818,7 @@ verify:
   read: (if False 1 2)
   eval: "2"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/macros/compile-if.md
 stability: evolving
@@ -837,7 +837,7 @@ verify:
   read: (when True 42)
   eval: "42"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/macros/compile-when.md
 stability: evolving
@@ -856,7 +856,7 @@ verify:
   read: (when False 42)
   eval: "null"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/macros/compile-when.md
 stability: evolving
@@ -875,7 +875,7 @@ verify:
   read: (unless False 42)
   eval: "42"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/macros/compile-unless.md
 stability: evolving
@@ -894,7 +894,7 @@ verify:
   read: (unless True 42)
   eval: "null"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/reader-layout.md
   - reference/macros/compile-unless.md
 stability: evolving
@@ -913,7 +913,7 @@ verify:
   read: (if True 1 2)
   eval: "1"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/macros/compile-if.md
 stability: evolving
 tags:
@@ -930,7 +930,7 @@ verify:
   read: (if False 1 2)
   eval: "2"
 references:
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
   - reference/macros/compile-if.md
 stability: evolving
 tags:
@@ -1022,7 +1022,7 @@ verify:
 references:
   - reference/macros/compile-unless.md
   - reference/macros/compile-when.md
-  - reference/concepts/idiomatic-koskari.md
+  - guide/idiomatic-koskari.md
 stability: evolving
 tags:
   - conditional

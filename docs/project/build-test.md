@@ -1,5 +1,23 @@
 # Build and test
 
+## Building from source
+
+Prerequisites:
+
+- Python 3.9 or newer (CPython)
+- A C compiler with musttail support for the native extension: clang, or
+  GCC 15 or newer. The build picks clang when it is on the PATH; set `CC`
+  to choose.
+- [tox](https://tox.wiki/) for the tests and the documentation
+
+From the repository root, `make build` compiles the native extension and
+produces a wheel under `dist/`, and `make install` installs it. For an
+editable install:
+
+```bash
+pip install -e ".[repl]"
+```
+
 ## Make targets
 
 Run `make help` for the full list. Common targets:
@@ -45,4 +63,5 @@ make test-valgrind
 make docs
 ```
 
-Output: `build/docs/` (dirhtml).
+Output: `build/site/docs/` (dirhtml). `make site` also renders the
+koskari.org landing page into `build/site/`.

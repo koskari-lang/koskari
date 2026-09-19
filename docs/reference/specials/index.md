@@ -5,8 +5,8 @@ dispatches on the head symbol of a list form. The forms below are implemented in
 `koskari/compile/specials/` and use helpers from `koskari/compile/helpers.py`
 where applicable. Many handlers declare structure with **`koskari.matcher`**
 patterns (`@special(..., patterns=...)`); see
-[Macro matching and hygiene](../concepts/macro-matching-and-hygiene.md) and
-[`koskari.matcher`](../../api/koskari-matcher.md) for pattern syntax, capture
+[Macro matching and hygiene](../../guide/macro-matching-and-hygiene.md) and
+[`koskari.matcher`](../api/koskari-matcher.md) for pattern syntax, capture
 shapes, and hygiene behaviour.
 
 ## Macros, reader macros, hygiene, and compiler optimizations
@@ -23,7 +23,7 @@ see **`compile/define-syntax`** and the **`compile/syntax-rules`**,
 **`compile/macro-rules`**, **`compile/syntax-match`**, **`compile/macro-match`**,
 **`compile/special-rules`**, and **`compile/special-match`** sections below.
 **RULE** vs **MATCH** pattern languages share one transformer model; see
-[Macro matching and hygiene](../concepts/macro-matching-and-hygiene.md).
+[Macro matching and hygiene](../../guide/macro-matching-and-hygiene.md).
 
 **Special-form transformers** — **`special-rules`** and **`special-match`** build
 **`SpecialRulesTransformer`** values (`koskari/syntax.py`): rule procedures are
@@ -32,17 +32,14 @@ invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
 Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
 
 **Syntax boxes and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own syntax-rule expansion and template hygiene; macro output runs **`koskari.reader.layouts.apply_layout`** (module namespace) before binding-symbol discovery and the hygiene / Datum finalize passes; see
-[Macro matching and hygiene](../concepts/macro-matching-and-hygiene.md) and
-[`koskari.hygiene`](../../api/koskari-hygiene.md) (**`Datum`**, **`DatumFrame`**, which matchers capture
+[Macro matching and hygiene](../../guide/macro-matching-and-hygiene.md) and
+[`koskari.hygiene`](../api/koskari-hygiene.md) (**`Datum`**, **`DatumFrame`**, which matchers capture
 and which register hygiene regions).
 
 ```{toctree}
 :maxdepth: 1
 :glob:
 
+object-operators/index
 *
-   compile-*
-   import*
-   with*
-   dyn-with*
 ```

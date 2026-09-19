@@ -84,5 +84,5 @@ When an error is long, use this order:
 4. If a form is shown, compare that form to the relevant reference page.
 5. Change one thing and rerun.
 
-See also [Errors and debugging](../start/from-python/errors-and-debugging.md)
+See also [Errors and debugging](../tutorials/from-python/errors-and-debugging.md)
 for a Python-oriented walkthrough.

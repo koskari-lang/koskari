@@ -35,7 +35,7 @@ pages give exact rules per form.
 > **Q:** How does layout syntax fit in?
 >
 > **A:** In `.ki` files the reader also accepts indent-based blocks and lines.
-> See [Koskari and s-expressions](../reference/concepts/layout-and-s-expressions.md).
+> See [Koskari and s-expressions](layout-and-s-expressions.md).
 
 > **Q:** Do numbers and strings need much reading?
 >
@@ -131,9 +131,9 @@ Reading turns text into forms. Evaluation turns forms into values (and
 effects). Nested calls evaluate inner forms first. When in doubt, predict the
 value, then check at the REPL.
 
-**Go deeper:** [Koskari and s-expressions](../reference/concepts/layout-and-s-expressions.md)
+**Go deeper:** [Koskari and s-expressions](layout-and-s-expressions.md)
 — how layout text becomes the same forms as s-expressions.
-[Demand, async, and defer](../reference/concepts/demand-async-and-defer.md) —
+[Demand, async, and defer](demand-async-and-defer.md) —
 what "evaluate" means on Koskari's async-native substrate.
 
 Next in the guide: [Forms and combining](forms-and-combining.md).

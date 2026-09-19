@@ -15,6 +15,6 @@ directly on an s-expr form. Hoists the name out of a **`define`** /
 step, outermost decorator first — `@d1` `@d2` over a definition applies as
 `(d1 (d2 ...))`, matching Python's ordering.
 
-See [Decorators](../concepts/decorators.md) for the full pipeline from the
+See [Decorators](../../guide/decorators.md) for the full pipeline from the
 `reader/decorators` pragma through layout lowering to expansion and
 extension.

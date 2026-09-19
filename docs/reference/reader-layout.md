@@ -2,7 +2,7 @@
 
 Normative rules for how the Koskari layout reader turns source text into form
 trees. For motivation and the relationship between layout and s-expressions,
-see [Koskari and s-expressions](concepts/layout-and-s-expressions.md).
+see [Koskari and s-expressions](../guide/layout-and-s-expressions.md).
 
 ---
 
@@ -135,7 +135,7 @@ A deeper line is `unexpected indent`, and a shallower line that is still inside
 the block is `unindent does not match the enclosing block`. Both are
 `ReaderSyntaxError` under the default **`reader/indent`** pragma; `warn` and
 `ignore` read the line as a sibling form instead (see
-[Pragmas](concepts/pragma.md)). Blank lines and comment-only lines are never
+[Pragmas](../guide/pragma.md)). Blank lines and comment-only lines are never
 measured, and a line inside an open delimiter is a continuation, not a body
 line.
 
@@ -370,7 +370,7 @@ in the EBNF productions.
 
 ### Productions
 
-```ebnf
+```text
 Module        ::= Suite EOF ;
 
 Suite         ::= { Line }* ;
@@ -435,6 +435,6 @@ else:
 
 ## See also
 
-- [Koskari and s-expressions](concepts/layout-and-s-expressions.md) — the rules beside their s-expressions
+- [Koskari and s-expressions](../guide/layout-and-s-expressions.md) — the rules beside their s-expressions
 - [Layout handler reference](layouts/index.md) — per-head lowering (`layout/if`, …)
 - [Grammar](grammar.md) — syntax hub

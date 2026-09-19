@@ -60,7 +60,7 @@ verify:
 references:
   - reference/grammar.md
   - reference/reader-layout.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: evolving
 tags:
   - functions
@@ -104,7 +104,7 @@ verify:
 references:
   - reference/grammar.md
   - reference/reader-layout.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: evolving
 tags:
   - reader
@@ -130,7 +130,7 @@ verify:
   read: (begin (define-parameter verbose False) (decorate ((parameterize [[verbose True]])) (define loud? [] verbose)) (loud?))
   invalid: grafted @parameterize completes at definition time, so the parameter extent spans only the define itself and has already ended before any call; (loud?) reads verbose at call time and returns False, not True
 references:
-  - reference/concepts/decorators.md
+  - guide/decorators.md
   - reference/macros/compile-decorate-subject.md
 stability: evolving
 tags:
@@ -160,7 +160,7 @@ verify:
   invalid: "count is re-defined inside the body on every call, so the state never persists -- both calls return 1, giving list:[1,1] instead of list:[1,2]"
 references:
   - reference/specials/compile-define.md
-  - reference/concepts/decorators.md
+  - guide/decorators.md
 stability: evolving
 tags:
   - function

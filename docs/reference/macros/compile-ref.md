@@ -8,5 +8,5 @@
 
 **Reader shorthand:** `&name` and `&obj.attr` (atom forms) and `&(item coll key)`
 (`&` immediately followed by `(`) read as `(ref …)`. See
-[bindings and refs](../concepts/bindings-and-refs.md).
+[bindings and refs](../../guide/bindings-and-refs.md).
 

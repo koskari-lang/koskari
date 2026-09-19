@@ -27,5 +27,5 @@ asserts are re-enabled later in the load.
 (assert (expensive-invariant-check))   ; compiles away entirely
 ```
 
-See [Pragmas and feature settings](../concepts/pragma.md) for how pragma
+See [Pragmas and feature settings](../../guide/pragma.md) for how pragma
 forms work.

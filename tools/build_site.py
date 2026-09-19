@@ -62,20 +62,20 @@ ICON_WORDMARK_MARKUP = """
 # reordering or inserting rows just works.
 DOC_GROUPS = [
     ("Start here", [
-        ("Getting Started", "/docs/start/overview/",
-         "Install, open the REPL, evaluate your first form."),
-        ("Learn Koskari", "/docs/start/beginner/",
+        ("Quickstart", "/docs/quickstart/",
+         "Install, open the REPL, run a file, read one small program."),
+        ("Little Koskari", "/docs/tutorials/beginner/",
          "The language from zero, one chapter at a time."),
-        ("Coming from Python", "/docs/start/from-python/",
-         "For people who already think in Python."),
+        ("From Python", "/docs/tutorials/from-python/",
+         "Python and Koskari side by side, for people who think in Python."),
     ]),
-    ("Reference", [
-        ("The Guide", "/docs/guide/",
-         "A working tour: forms, functions, control flow, macros, and async."),
-        ("Language Reference", "/docs/reference/",
-         "Grammar, layout rules, special forms, and error codes."),
-        ("Runtime & Builtins", "/docs/reference/runtime/",
-         "Every builtin in the runtime library, indexed."),
+    ("Go deeper", [
+        ("Guide", "/docs/guide/",
+         "One page per mechanism: layout, names, functions, macros, async."),
+        ("Reference", "/docs/reference/",
+         "Grammar, every form, every builtin, every opcode, the CLI, errors."),
+        ("Python API", "/docs/reference/api/",
+         "Embedding Koskari in a Python program."),
     ]),
 ]
 

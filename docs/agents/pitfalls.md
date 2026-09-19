@@ -132,7 +132,7 @@ binding, not a procedure argument.
 
 **Brackets are not vectors.** `[ ]` and `( )` read identically and
 compare equal; `[ ]` is a readability convention, covered in
-[Brackets and the call convention](../reference/concepts/brackets-and-call-convention.md).
+[Brackets and the call convention](../guide/brackets-and-call-convention.md).
 
 **Syntax works in operator position.** The head of a call may itself
 be a form headed by a macro; the compiler expands the head and
@@ -143,12 +143,12 @@ ordinary call of its value, so method calls like `("-".join items)`
 keep their fused spelling. A syntax that has *only* a bare form acts
 as an alias in operator position: the head expands and the arguments
 ride along. Details in
-[Name resolution](../reference/concepts/name-resolution-and-prefixes.md).
+[Name resolution](../guide/name-resolution-and-prefixes.md).
 
 **The idiomatic form is the direct one.** Koskari prefers `(when x
 ...)` over `(if x ... None)`, `(unless x ...)` over `(when (not x)
 ...)`, and direct forms over compositions of primitives; see
-[Idiomatic Koskari](../reference/concepts/idiomatic-koskari.md).
+[Idiomatic Koskari](../guide/idiomatic-koskari.md).
 
 ---
 

@@ -2,7 +2,7 @@
 
 Per-name compile-time transliteration for triple-backtick fenced literals.
 Motivation and the "when does a format earn a fence" framing are in
-[Fences](../concepts/fences.md); the dispatch special is
+[Fences](../../guide/fences.md); the dispatch special is
 [`compile/apply-fence`](../specials/compile-apply-fence.md).
 
 ## Fence expansion
@@ -48,7 +48,7 @@ syntax.
 3. Validate opener-line options from **`(meta.get "options")`** and raise
    **`FenceError`** for unknown ones.
 4. Hold the bar: a new fence should express something genuinely awkward in
-   native Koskari (see [Fences](../concepts/fences.md)).
+   native Koskari (see [Fences](../../guide/fences.md)).
 5. Add a handler page under **`docs/reference/fences/`**.
 
 ```{toctree}

@@ -78,7 +78,7 @@ package, and either imports its `.ki` submodules the same way. For the full mode
 of how files on disk map to importable names — including packages, namespace
 packages, the `.py`/`.ki` same-name conflict, and getting a directory onto
 `sys.path` — see
-[Modules and packages](../reference/concepts/modules-and-packages.md).
+[Modules and packages](modules-and-packages.md).
 
 ---
 

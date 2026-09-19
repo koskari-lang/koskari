@@ -81,7 +81,7 @@ names to keep programs friendly.
 
 ---
 
-**Go deeper:** [Bindings and refs](../reference/concepts/bindings-and-refs.md)
+**Go deeper:** [Bindings and refs](bindings-and-refs.md)
 — the precise namespace / bind-vs-store / deref vocabulary.
-[References and storage indirection](../reference/concepts/references-and-storage-indirection.md)
+[References and storage indirection](references-and-storage-indirection.md)
 — getting a handle to a storage location and writing through it.

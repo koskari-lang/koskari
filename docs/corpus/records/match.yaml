@@ -8,7 +8,7 @@ verify:
   eval: "42"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -25,7 +25,7 @@ verify:
   eval: '"five"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -42,7 +42,7 @@ verify:
   eval: "null"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -58,7 +58,7 @@ verify:
   eval: "null"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -74,7 +74,7 @@ verify:
   eval: "7"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -92,7 +92,7 @@ verify:
   eval: '"no"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -108,7 +108,7 @@ verify:
   eval: "2"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -126,7 +126,7 @@ verify:
   eval: "tuple:(2,3)"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -144,7 +144,7 @@ verify:
   eval: "99"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -161,7 +161,7 @@ verify:
   eval: '"empty"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -177,7 +177,7 @@ verify:
   eval: "5"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -193,7 +193,7 @@ verify:
   eval: '"low"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -210,7 +210,7 @@ verify:
   eval: '"not-nine"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -226,7 +226,7 @@ verify:
   eval: '"first-arm"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -244,7 +244,7 @@ verify:
   eval: '"string"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -263,7 +263,7 @@ verify:
   eval: '"big"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -279,7 +279,7 @@ verify:
   eval: '"small"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -295,7 +295,7 @@ verify:
   eval: '"http://x"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -313,7 +313,7 @@ verify:
   eval: "9"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -330,7 +330,7 @@ verify:
   eval: '"not-a-mapping"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -347,7 +347,7 @@ verify:
   eval: '"positive"'
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -365,7 +365,7 @@ verify:
   eval: "5"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -383,7 +383,7 @@ verify:
   eval: "1"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -402,7 +402,7 @@ verify:
   eval: "4"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -420,7 +420,7 @@ verify:
   eval: "1"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -445,7 +445,7 @@ verify:
   eval: '"five"'
 references:
   - reference/layouts/layout-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -468,7 +468,7 @@ verify:
   eval: "7"
 references:
   - reference/layouts/layout-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -492,7 +492,7 @@ verify:
   eval: '"big"'
 references:
   - reference/layouts/layout-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -517,7 +517,7 @@ verify:
   eval: "2"
 references:
   - reference/layouts/layout-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -546,7 +546,7 @@ verify:
   eval: "4"
 references:
   - reference/layouts/layout-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -569,7 +569,7 @@ verify:
   eval: '"http://x"'
 references:
   - reference/layouts/layout-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -586,7 +586,7 @@ verify:
   eval: "1"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match

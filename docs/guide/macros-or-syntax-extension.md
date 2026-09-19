@@ -90,6 +90,6 @@ when the shape of the code itself is the abstraction.
 
 ---
 
-**Go deeper:** [Macro matching and hygiene](../reference/concepts/macro-matching-and-hygiene.md)
+**Go deeper:** [Macro matching and hygiene](macro-matching-and-hygiene.md)
 — pattern matching at expand time, datum forms and wrappers, and how hygiene
 actually prevents capture.

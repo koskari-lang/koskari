@@ -9,7 +9,7 @@ verify:
   invalid: "surprising layout: line-mode if completes as (if (< n 1) a); else: is not an if peer — reads as (else (begin b)), a call to unbound else, not conditional fallthrough; no LayoutError, runtime error if else is undefined"
 references:
   - reference/layouts/layout-if.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: evolving
 tags:
   - conditional
@@ -31,7 +31,7 @@ verify:
   invalid: "surprising layout: line-mode if completes first; elif: is not an if peer — reads as (elif (== n 1) (begin b)), a call to unbound elif; no LayoutError, runtime error if elif is undefined"
 references:
   - reference/layouts/layout-if.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: evolving
 tags:
   - conditional
@@ -207,7 +207,7 @@ verify:
   invalid: "surprising layout: then: is not an if peer (only elif and else are collected); reads as separate (then (begin 2)) call to unbound then — not LayoutError invalid peer for if block"
 references:
   - reference/layouts/layout-if.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: evolving
 tags:
   - conditional
@@ -232,7 +232,7 @@ verify:
   invalid: "surprising layout: else: at switch indent is not a switch peer or inner clause; switch reads without else arm, then else: is separate (else (begin \"other\")) call to unbound else; no LayoutError — put else: inside switch body"
 references:
   - reference/layouts/layout-switch.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: evolving
 tags:
   - conditional
@@ -361,7 +361,7 @@ verify:
   invalid: "agent mistake: the block-opening colon is layout-only and must be followed by a newline. Inside parentheses it is read as a bare symbol `:`, which here takes unless's then-slot and shoves (handle x) into the else position. In s-expr, drop the colon. Correct form: (unless (None? x) (handle x)). Use the colon only in layout form, on the header line, with the body indented below."
 references:
   - reference/grammar.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: evolving
 tags:
   - conditionals

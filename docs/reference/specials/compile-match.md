@@ -8,7 +8,7 @@
 first matching arm binds its captured names and runs its body, whose value
 is the result of the form. `else:` always matches; with no matching arm and
 no `else:` the form yields `None`. Pattern syntax is documented in
-[Match patterns](../concepts/match-patterns.md).
+[Match patterns](../../guide/match-patterns.md).
 
 **Behaviour:** Requires at least one argument (`SUBJECT`). Each non-else
 clause is a list whose **first element is the pattern delimiter** — a list
@@ -36,7 +36,7 @@ advances to the next arm with the subject intact, and the bound captures
 persist (Python-consistent).
 
 Contracts (details in
-[Match patterns](../concepts/match-patterns.md)): captures are sparse — an
+[Match patterns](../../guide/match-patterns.md)): captures are sparse — an
 unbound optional slot raises `NameError` when read; bindings persist after
 the form; `str` / `bytes` never destructure under sequence patterns;
 pattern callables run on the demand path.

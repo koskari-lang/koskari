@@ -4,7 +4,7 @@ Per-head read-time lowering for indent-based block syntax. General layout
 **syntax** (blocks, lines, colon rules, peers) lives in
 [Reader and layout syntax](../reader-layout.md). Motivation and the layout /
 s-expression relationship are in
-[Koskari and s-expressions](../concepts/layout-and-s-expressions.md).
+[Koskari and s-expressions](../../guide/layout-and-s-expressions.md).
 
 The `LayoutReader` resolves layout heads from a namespace (`layout/<head>`);
 handlers live in `koskari/reader/layouts/`. A **`.ki`** module can reuse an

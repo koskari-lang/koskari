@@ -20,7 +20,7 @@ The parenthesized call rule is the one from the tutorials: evaluate the inputs,
 then apply the thing in the first position.
 
 For layout blocks and lines in `.ki` files, see
-[Koskari and s-expressions](../reference/concepts/layout-and-s-expressions.md).
+[Koskari and s-expressions](layout-and-s-expressions.md).
 
 ---
 
@@ -86,10 +86,10 @@ value you usually keep.
 
 ---
 
-**Go deeper:** [Koskari and s-expressions](../reference/concepts/layout-and-s-expressions.md)
+**Go deeper:** [Koskari and s-expressions](layout-and-s-expressions.md)
 — the layout rules, each beside the s-expression it reads to.
-[Brackets and the call convention](../reference/concepts/brackets-and-call-convention.md)
+[Brackets and the call convention](brackets-and-call-convention.md)
 — why `( )` calls and `[ ]` is data.
-[Name resolution](../reference/concepts/name-resolution-and-prefixes.md) — how
+[Name resolution](name-resolution-and-prefixes.md) — how
 `(foo …)` picks a compile-time form or a runtime call, and what the `compile/`
 prefix means.

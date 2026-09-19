@@ -260,10 +260,10 @@ def test_rewrite_markdown_links_roots_relative_targets():
 
     material = _load_view_module('_material')
     rewrite = material.rewrite_markdown_links
-    page = 'start/from-python/map.md'
+    page = 'tutorials/from-python/map.md'
 
     assert rewrite('[a](layout-and-calls.md)', page) == (
-        '[a](start/from-python/layout-and-calls.md)')
+        '[a](tutorials/from-python/layout-and-calls.md)')
     assert rewrite('[a](../../reference/specials/index.md)', page) == (
         '[a](reference/specials/index.md)')
     # a link that climbs out of docs/ into the sibling examples/ tree
@@ -299,10 +299,10 @@ def test_rewrite_markdown_links_skips_fenced_code():
 
     material = _load_view_module('_material')
     text = '```\n[a](../other.md)\n```\n[b](../other.md)\n'
-    result = material.rewrite_markdown_links(text, 'start/from-python/map.md')
+    result = material.rewrite_markdown_links(text, 'tutorials/from-python/map.md')
 
     assert '[a](../other.md)' in result
-    assert '[b](start/other.md)' in result
+    assert '[b](tutorials/other.md)' in result
 
 
 def test_rewrite_toctree_normalizes_non_glob_entries():
@@ -361,9 +361,9 @@ def test_rewrite_toctree_handles_titled_entry():
 
     material = _load_view_module('_material')
     text = '```{toctree}\nThe Map <map>\n```\n'
-    result = material.rewrite_markdown_links(text, 'start/from-python/index.md')
+    result = material.rewrite_markdown_links(text, 'tutorials/from-python/index.md')
 
-    assert 'The Map <start/from-python/map.md>' in result
+    assert 'The Map <tutorials/from-python/map.md>' in result
 
 
 def test_docs_view_normalizes_toctree_navigation():
@@ -375,12 +375,12 @@ def test_docs_view_normalizes_toctree_navigation():
     docs = _load_view_module('docs')
     rows = {row['path']: row for row in _generate_source_view(docs)}
 
-    from_python = rows['start/from-python/index.md']['content']
-    assert 'start/from-python/map.md' in from_python
-    assert 'start/from-python/layout-and-calls.md' in from_python
+    from_python = rows['tutorials/from-python/index.md']['content']
+    assert 'tutorials/from-python/map.md' in from_python
+    assert 'tutorials/from-python/layout-and-calls.md' in from_python
 
     reference = rows['reference/index.md']['content']
-    assert 'reference/concepts/index.md' in reference
+    assert 'reference/grammar.md' in reference
     assert 'reference/specials/index.md' in reference
 
     specials = rows['reference/specials/index.md']['content']

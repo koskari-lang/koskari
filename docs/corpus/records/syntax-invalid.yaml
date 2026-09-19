@@ -51,7 +51,7 @@ verify:
   error: "ReaderSyntaxError: unexpected indent"
 references:
   - reference/reader-layout.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: evolving
 tags:
   - layout
@@ -224,7 +224,7 @@ verify:
   invalid: "a dot with no enclosing parens is an attribute read, never a call; x.strip.lower reads as (attr (attr x strip) lower), an attribute lookup for 'lower' on the unbound strip method object, and fails at runtime with AttributeError: 'builtin_function_or_method' object has no attribute 'lower'"
 references:
   - reference/grammar.md
-  - reference/concepts/brackets-and-call-convention.md
+  - guide/brackets-and-call-convention.md
 stability: evolving
 tags:
   - object

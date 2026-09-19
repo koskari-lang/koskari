@@ -70,12 +70,13 @@ Use Python dictionaries, objects, attributes, and item access when that is the
 natural shape of the data:
 
 ```koskari
-(define user #{name: "Ada" score: 10})
-(print (item user "name"))
+(define user #{"name": "Ada" "score": 10})
+(print user["name"])
 ```
 
-For complex, computed, or non-string keys, there is a pair form of the
-dictionary literal
+Keys are expressions, so a string key is quoted. A `name:` keyword key
+looks up the variable `name` instead. For computed keys there is a pair
+form of the dictionary literal
 
 ```koskari
 (define user #{("name" . (get-user-name)) ("score" . (get-score))})

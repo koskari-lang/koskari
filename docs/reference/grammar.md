@@ -94,7 +94,7 @@ A **dotted pair** places a value directly in the tail with `.`:
 Square brackets `[ ]` read with the **same grammar** as `( )` and produce a
 value-equal chain; the reader records the bracket style so a call-position lint
 can flag it, but the compiler treats the two the same. See
-[Brackets and the call convention](concepts/brackets-and-call-convention.md).
+[Brackets and the call convention](../guide/brackets-and-call-convention.md).
 
 ### Collection literals
 
@@ -194,7 +194,7 @@ chains fold to a single constant, so the join costs nothing at run time.
 
 Each of the three is governed by its own setting — `reader/index-brackets`,
 `reader/dot-attrs`, and `reader/string-segments`. See
-[Pragmas and feature settings](concepts/pragma.md) for turning them off and for
+[Pragmas and feature settings](../guide/pragma.md) for turning them off and for
 the exact rules at the edges.
 
 ---
@@ -204,7 +204,7 @@ the exact rules at the edges.
 Layout is the default surface at the top level of a module. Rules for blocks,
 lines, colon handling, and handler resolution live in dedicated reference pages:
 
-- [Koskari and s-expressions](concepts/layout-and-s-expressions.md) — the rules beside their s-expressions
+- [Koskari and s-expressions](../guide/layout-and-s-expressions.md) — the rules beside their s-expressions
 - [Reader and layout syntax](reader-layout.md) — normative syntax rules
 
 ---

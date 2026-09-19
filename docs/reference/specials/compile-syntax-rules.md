@@ -36,7 +36,7 @@ what lets macros like [`flet`](../macros/compile-flet.md) and
 `special_compile_syntax_rules`
 
 
-**See also:** [Macro matching and hygiene](../concepts/macro-matching-and-hygiene.md)
+**See also:** [Macro matching and hygiene](../../guide/macro-matching-and-hygiene.md)
 — **`compile/syntax-rules`** hygiene patterns (`DEFINE`, `BIND` for literals,
 `REST` for rules).
 

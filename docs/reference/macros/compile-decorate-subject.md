@@ -22,4 +22,4 @@ and invoked on the subject.
 
 Further shape arms can be registered with
 [`extend-syntax`](compile-extend-syntax.md); registered arms are tried before
-the invocation arm. See [Decorators](../concepts/decorators.md).
+the invocation arm. See [Decorators](../../guide/decorators.md).

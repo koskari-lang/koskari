@@ -7,7 +7,7 @@ verify:
   error: "SpecialError: invalid case pattern"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -24,7 +24,7 @@ verify:
   error: "SpecialError: else: must be last clause"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -40,7 +40,7 @@ verify:
   error: "SpecialError: match requires a subject"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -56,7 +56,7 @@ verify:
   error: "SpecialError: match guard requires an expression"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -77,7 +77,7 @@ verify:
   error: "LayoutError: case cannot follow else"
 references:
   - reference/layouts/layout-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -96,7 +96,7 @@ verify:
   error: "LayoutError: else block does not take arguments"
 references:
   - reference/layouts/layout-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -115,7 +115,7 @@ verify:
   error: "LayoutError: match block requires exactly one value expression"
 references:
   - reference/layouts/layout-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -133,7 +133,7 @@ verify:
   invalid: "surprising: a bare :: inside a sequence is not a type marker -- #[a :: int] is a THREE-element sequence (capture a, literal :: keyword, capture int), so seq=(1,2,3) falls through to else; no error is raised"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match
@@ -154,7 +154,7 @@ verify:
   invalid: "surprising for Python sequence intuitions elsewhere: a two-character string does NOT destructure into characters -- strings are atoms to sequence patterns (PEP 634), so this falls to else"
 references:
   - reference/specials/compile-match.md
-  - reference/concepts/match-patterns.md
+  - guide/match-patterns.md
 stability: evolving
 tags:
   - match

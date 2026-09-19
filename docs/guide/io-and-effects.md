@@ -24,7 +24,7 @@ Use `with` for resources that need cleanup:
 
 ```koskari
 with [f (open path)]:
-  (print (read f))
+  (print (f.read))
 ```
 
 The context manager's enter result is bound to the optional name (`f` above),

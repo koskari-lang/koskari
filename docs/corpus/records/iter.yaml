@@ -182,7 +182,7 @@ source: (list (range 5))
 verify:
   eval: "list:[0,1,2,3,4]"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
 stability: evolving
 tags:
   - iter
@@ -197,7 +197,7 @@ source: (list (range 2 5))
 verify:
   eval: "list:[2,3,4]"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
 stability: evolving
 tags:
   - iter
@@ -212,7 +212,7 @@ source: (list (range 0 10 3))
 verify:
   eval: "list:[0,3,6,9]"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
 stability: evolving
 tags:
   - iter
@@ -227,7 +227,7 @@ source: (range? (range 0 3))
 verify:
   eval: "true"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
 stability: evolving
 tags:
   - iter
@@ -257,7 +257,7 @@ source: "#(1 2 3 4)"
 verify:
   read: "(#tuple 1 2 3 4)"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -272,7 +272,7 @@ source: "#[1 2 3 4]"
 verify:
   read: "(#list 1 2 3 4)"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -287,7 +287,7 @@ source: "#{a 1 b 2}"
 verify:
   read: "(#dict a 1 b 2)"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -302,7 +302,7 @@ source: "#{(key . val) (key2 . val2)}"
 verify:
   read: "(#dict (key . val) (key2 . val2))"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -318,7 +318,7 @@ source: "#{key: val key2: val2}"
 verify:
   read: "(#dict (#tuple key val) (#tuple key2 val2))"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -337,7 +337,7 @@ source: "(item #[10 20 30] 1)"
 verify:
   eval: "20"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/specials/compile-item.md
 stability: evolving
 tags:
@@ -353,7 +353,7 @@ source: "(item #{\"key\" : 10 \"key2\" : 20} \"key\")"
 verify:
   eval: "10"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/specials/compile-item.md
 stability: evolving
 tags:
@@ -1140,7 +1140,7 @@ verify:
   expand: "(#list 1 2 *: seq)"
   eval: "list:[1,2,1,2,3]"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -1162,7 +1162,7 @@ verify:
   expand: "(#list *: seq 4)"
   eval: "list:[1,2,3,4]"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -1184,7 +1184,7 @@ verify:
   expand: "(#list *: seq)"
   eval: "list:[1,2,3]"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -1206,7 +1206,7 @@ verify:
   expand: "(#list 1 z 3)"
   eval: "list:[1,1,3]"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -1227,7 +1227,7 @@ verify:
   expand: "(#tuple 1 *: seq)"
   eval: "tuple:(1,1,2,3)"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -1249,7 +1249,7 @@ verify:
   expand: "(#tuple *: seq)"
   eval: "tuple:(1,2,3)"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -1271,7 +1271,7 @@ verify:
   expand: "(#tuple 1 z 3)"
   eval: "tuple:(1,1,3)"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -1292,7 +1292,7 @@ verify:
   expand: (list seq)
   eval: "list:[1,2,3]"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -1311,7 +1311,7 @@ verify:
   expand: (tuple seq)
   eval: "tuple:(1,2,3)"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: evolving
 tags:
@@ -1737,7 +1737,7 @@ verify:
   expand: "(#dict)"
   eval: "{}"
 references:
-  - start/from-python/data-and-control.md
+  - tutorials/from-python/data-and-control.md
   - reference/grammar.md
 stability: stable
 tags:
@@ -1786,7 +1786,7 @@ verify:
   eval: "list:[3,2,1]"
 references:
   - agents/pitfalls.md
-  - reference/concepts/demand-async-and-defer.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - iter

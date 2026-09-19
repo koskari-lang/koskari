@@ -419,7 +419,7 @@ verify:
   expand: (call parse-match-pattern (quote (double (VALUE x))))
 references:
   - reference/macros/index.md
-  - reference/concepts/macro-matching-and-hygiene.md
+  - guide/macro-matching-and-hygiene.md
 stability: evolving
 tags:
   - syntax
@@ -434,7 +434,7 @@ verify:
   expand: (call parse-rule-pattern (quote (m v)) (quote [m item]))
 references:
   - reference/macros/index.md
-  - reference/concepts/macro-matching-and-hygiene.md
+  - guide/macro-matching-and-hygiene.md
 stability: evolving
 tags:
   - syntax
@@ -465,7 +465,7 @@ verify:
   expand: (call parse-match-pattern (quote (VAR a)))
 references:
   - reference/macros/index.md
-  - reference/concepts/macro-matching-and-hygiene.md
+  - guide/macro-matching-and-hygiene.md
 stability: evolving
 tags:
   - syntax
@@ -482,7 +482,7 @@ verify:
   expand: (call parse-match-pattern (quote (LITERAL 42)))
 references:
   - reference/macros/index.md
-  - reference/concepts/macro-matching-and-hygiene.md
+  - guide/macro-matching-and-hygiene.md
 stability: evolving
 tags:
   - syntax
@@ -617,7 +617,7 @@ verify:
   expand: (call parse-rule-pattern (quote (my-rule a b)) (quote (my-rule val1 val2)))
 references:
   - reference/macros/index.md
-  - reference/concepts/macro-matching-and-hygiene.md
+  - guide/macro-matching-and-hygiene.md
 stability: evolving
 tags:
   - syntax
@@ -653,7 +653,7 @@ source: |-
 verify:
   eval: "3"
 references:
-  - reference/concepts/macro-matching-and-hygiene.md
+  - guide/macro-matching-and-hygiene.md
   - reference/macros/compile-cadr-caddr-cadddr-caddddr.md
 stability: evolving
 tags:
@@ -1389,7 +1389,7 @@ verify:
   read: (f x)
 references:
   - reference/reader-layout.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: stable
 tags:
   - layout
@@ -1407,7 +1407,7 @@ verify:
   read: (attr x strip)
 references:
   - reference/reader-layout.md
-  - reference/concepts/brackets-and-call-convention.md
+  - guide/brackets-and-call-convention.md
 stability: stable
 tags:
   - layout
@@ -1430,7 +1430,7 @@ verify:
   read: (print foo bar baz)
 references:
   - reference/reader-layout.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: stable
 tags:
   - layout
@@ -1449,7 +1449,7 @@ verify:
   read: (print (foo bar baz))
 references:
   - reference/reader-layout.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: stable
 tags:
   - layout
@@ -1472,7 +1472,7 @@ verify:
 references:
   - reference/reader-layout.md
   - reference/layouts/layout-block-default.md
-  - reference/concepts/layout-and-s-expressions.md
+  - guide/layout-and-s-expressions.md
 stability: evolving
 tags:
   - layout
@@ -1556,7 +1556,7 @@ verify:
   eval: "-10"
 references:
   - reference/grammar.md
-  - reference/concepts/pragma.md
+  - guide/pragma.md
 stability: evolving
 tags:
   - reader
@@ -1603,7 +1603,7 @@ verify:
   eval: "10"
 references:
   - reference/grammar.md
-  - reference/concepts/pragma.md
+  - guide/pragma.md
 stability: evolving
 tags:
   - reader
@@ -1620,7 +1620,7 @@ verify:
   eval: "-5"
 references:
   - reference/grammar.md
-  - reference/concepts/pragma.md
+  - guide/pragma.md
 stability: evolving
 tags:
   - reader

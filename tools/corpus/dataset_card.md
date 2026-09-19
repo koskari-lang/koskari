@@ -50,7 +50,7 @@ are present. Missing stages are null.
 ### docs
 
 User documentation pages (Markdown) from the source repository's
-`docs/reference/`, `docs/start/`, `docs/guide/`, `docs/patterns/`, and
+`docs/reference/`, `docs/tutorials/`, `docs/guide/`, and
 `docs/agents/` trees. One row per page. The `path` column matches the
 strings in the `corpus` config's `references` column verbatim, so a
 record's references resolve directly to their documentation content.

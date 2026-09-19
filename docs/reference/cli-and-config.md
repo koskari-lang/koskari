@@ -66,7 +66,7 @@ from the command line, use `-`.
 |---------|---------|
 | `koskari-lsp` | Language server (LSP) |
 | `python -m koskari` | Same as `koskari` |
-| Installed app commands | Declared with **`koskari_scripts`**; see [Packaging an installed command](../patterns/recipes/packaging-installed-scripts.md) |
+| Installed app commands | Declared with **`koskari_scripts`**; see [Packaging an installed command](../guide/packaging.md) |
 
 ## Environment
 

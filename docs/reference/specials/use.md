@@ -80,5 +80,5 @@ nested scope the compile-time facets could not take effect anyway; use
 - [import-from](import-from.md) — one binding per member, exact Python
   semantics.
 - [import-all-from](import-all-from.md) — Python's `from M import *`.
-- [Name resolution](../concepts/name-resolution-and-prefixes.md) — the
+- [Name resolution](../../guide/name-resolution-and-prefixes.md) — the
   facet model `use` imports across.

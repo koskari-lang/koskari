@@ -141,8 +141,8 @@ result. Defaults make calls friendlier. Recursion needs a clear stopping case.
 
 ---
 
-**Go deeper:** [Demand, async, and defer](../reference/concepts/demand-async-and-defer.md)
+**Go deeper:** [Demand, async, and defer](demand-async-and-defer.md)
 — how `coroutine-fn`, `defer`, and the ambient async evaluator decide when a
 function body actually runs. When you know you need one but not which,
-[Choosing an async construct](../reference/concepts/choosing-an-async-construct.md)
+[Choosing an async construct](choosing-an-async-construct.md)
 is the decision table.

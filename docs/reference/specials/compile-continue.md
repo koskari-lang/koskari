@@ -8,7 +8,7 @@
 
 **Bare form:** the lone symbol `continue` expands to `(continue)`, so the
 Python-style spelling restarts the iteration. Governed by the
-[`compiler/bare-control-words`](../concepts/pragma.md#compiler) pragma of the
+[`compiler/bare-control-words`](../../guide/pragma.md#compiler) pragma of the
 module being compiled (`convert` by default, or `warn` / `error`); because the
 bare symbol always expands, `continue` can never name a variable.
 

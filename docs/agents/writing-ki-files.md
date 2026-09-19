@@ -54,7 +54,7 @@ Prefer the explicit `(return)` spelling anyway -- the
 `compiler/bare-control-words` pragma can make the bare spelling warn
 or error. Any other lone name is an ordinary variable reference
 unless a syntax was defined with the `bare-syntax` kind; see
-[Name resolution](../reference/concepts/name-resolution-and-prefixes.md).
+[Name resolution](../guide/name-resolution-and-prefixes.md).
 
 ## Trailing `:` continues a call; its absence ends one
 
@@ -114,7 +114,7 @@ that line, or the header needs the trailing `:` shown above.
 The `reader/indent` pragma governs the check: `error` (the default)
 rejects the line, `warn` emits a SyntaxWarning and reads it as a
 sibling form, and `ignore` reads it as a sibling form silently. See
-[Pragmas](../reference/concepts/pragma.md).
+[Pragmas](../guide/pragma.md).
 
 ## Keyword arguments in a block call
 
@@ -179,7 +179,7 @@ hash forms.
                 ; over (dict), (list), (tuple)
 ```
 
-See [Brackets and the call convention](../reference/concepts/brackets-and-call-convention.md).
+See [Brackets and the call convention](../guide/brackets-and-call-convention.md).
 
 ## Whitespace is the only separator
 

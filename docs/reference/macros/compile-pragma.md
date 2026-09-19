@@ -23,5 +23,5 @@ object.
 default; **`(help (pragma NS/KEY))`** shows one setting's signature and
 documentation.
 
-See [Pragmas and feature settings](../concepts/pragma.md) for the full list of
+See [Pragmas and feature settings](../../guide/pragma.md) for the full list of
 settings and what each value means.

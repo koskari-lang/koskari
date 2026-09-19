@@ -85,5 +85,5 @@ see it.
 
 ---
 
-**Go deeper:** [Demand, async, and defer](../reference/concepts/demand-async-and-defer.md)
+**Go deeper:** [Demand, async, and defer](demand-async-and-defer.md)
 — iteration and control flow on Koskari's async-native evaluator.

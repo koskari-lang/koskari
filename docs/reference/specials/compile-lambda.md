@@ -30,7 +30,7 @@ stays a string and is not retried.
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
 for rest. Supports `*` and `**` in formals (see `gather_formals` in helpers and
-[`koskari.matcher`](../../api/koskari-matcher.md)).
+[`koskari.matcher`](../api/koskari-matcher.md)).
 Parameter types may use `::` / `type:` on individual parameters (see formals
 helpers).
 

@@ -942,7 +942,7 @@ verify:
   read: (begin (decorate ((let [[count 0]])) (define tick [] (incr! count) count)) (tick) (tick) (tick))
   eval: "3"
 references:
-  - reference/concepts/decorators.md
+  - guide/decorators.md
   - reference/macros/compile-decorate-subject.md
 stability: evolving
 tags:
@@ -966,7 +966,7 @@ verify:
   expand: (let [[c 0]] (function f [] c))
 references:
   - reference/macros/compile-decorate-subject.md
-  - reference/concepts/decorators.md
+  - guide/decorators.md
 stability: evolving
 tags:
   - function
@@ -986,7 +986,7 @@ verify:
   expand: (demand (function f [] 1))
 references:
   - reference/macros/compile-decorate-subject.md
-  - reference/concepts/decorators.md
+  - guide/decorators.md
 stability: evolving
 tags:
   - function
@@ -1005,7 +1005,7 @@ verify:
   expand: (define foo (decorate [demand] (function foo [x] x)))
 references:
   - reference/macros/compile-decorate.md
-  - reference/concepts/decorators.md
+  - guide/decorators.md
 stability: evolving
 tags:
   - function
@@ -1029,7 +1029,7 @@ verify:
   read: "(begin (define-parameter verbose False) (decorate ((call-parameterize [[verbose True]])) (define loud? [] verbose)) (#list (loud?) verbose))"
   eval: "list:[true,false]"
 references:
-  - reference/concepts/decorators.md
+  - guide/decorators.md
   - reference/macros/compile-decorate-subject.md
   - reference/macros/compile-define-parameter-and-compile-parameterq.md
 stability: evolving
@@ -1076,7 +1076,7 @@ verify:
   expand: "(let [[... (function f [] 1)]] (decorate-wraps ... (lambda [*: ... **: ...] (with [(cm)] (... *: ... **: ...)))))"
 references:
   - reference/macros/compile-decorate-subject.md
-  - reference/concepts/decorators.md
+  - guide/decorators.md
 stability: evolving
 tags:
   - function
@@ -1105,7 +1105,7 @@ verify:
   read: (begin (define-parameter scale 10) (decorate ((let [[total 0]]) (call-parameterize [[scale 100]])) (define add [n] (set! total (+ total (* n scale))) total)) (add 1) (add 2))
   eval: "300"
 references:
-  - reference/concepts/decorators.md
+  - guide/decorators.md
   - reference/macros/compile-decorate-subject.md
 stability: evolving
 tags:
