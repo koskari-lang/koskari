@@ -2348,7 +2348,7 @@ def parse_matcher(elem):
         return LITERAL(atom)
 
     if "quoted_symbol" in c:
-        return LITERAL_SYM(str(c["quoted_symbol"].datum))
+        return LITERAL_SYM(str(strip_mark(c["quoted_symbol"].datum)))
 
     if "dcolon_args" in c:
         return lower_anon_constraint(
@@ -2436,7 +2436,7 @@ def lower_anon_constraint(tag, args, source):
     if len(items) != 1:
         raise ValueError(
             f"({tag}) expects exactly one payload, got {len(items)} in {source!r}")
-    payload = items[0]
+    payload = strip_mark(items[0])
     if tag == "val:":
         return LITERAL(payload)
     if is_symbol(payload):
@@ -2480,7 +2480,7 @@ def lower_named_capture(name_sym, args):
     i = 0
     n = len(items)
     while i < n:
-        elem = items[i]
+        elem = strip_mark(items[i])
         if is_keyword(elem):
             opt_name = CAPTURE_OPTION_KW_TO_NAME.get(elem)
             if opt_name is not None:
@@ -2496,7 +2496,7 @@ def lower_named_capture(name_sym, args):
                     raise ValueError(
                         "(%s ...) constraint marker missing payload"
                         % (name,))
-                payload = items[i + 1]
+                payload = strip_mark(items[i + 1])
                 if is_symbol(payload):
                     constraints.append(TYPE(str(payload)))
                 else:
@@ -2629,7 +2629,7 @@ def _min_option_key(elem):
     Normalize a Koskari keyword to ``min`` for ``min:`` / ``min``
     """
 
-    return str(elem).rstrip(":")
+    return str(strip_mark(elem)).rstrip(":")
 
 
 def repeat_match_factory(head_sym, raw_args):
@@ -2651,7 +2651,7 @@ def repeat_match_factory(head_sym, raw_args):
     n = len(items)
     while i < n:
         elem = items[i]
-        if not is_keyword(elem):
+        if not is_keyword(strip_mark(elem)):
             raise ValueError(
                 "(REPEAT ...) trailing arguments must be keyword/value pairs,"
                 " got %r" % (elem,))
@@ -2689,7 +2689,7 @@ def rest_match_factory(head_sym, raw_args):
     n = len(items)
     while i < n:
         elem = items[i]
-        if not is_keyword(elem):
+        if not is_keyword(strip_mark(elem)):
             raise ValueError(
                 "(REST ...) trailing arguments must be keyword/value pairs,"
                 " got %r" % (elem,))
@@ -3166,7 +3166,7 @@ def parse_case_element(elem):
         return LITERAL(atom)
 
     if "quoted_symbol" in c:
-        return LITERAL_SYM(str(c["quoted_symbol"].datum))
+        return LITERAL_SYM(str(strip_mark(c["quoted_symbol"].datum)))
 
     if "seq_head" in c:
         elems = c["seq_elems"].datum if "seq_elems" in c else nil

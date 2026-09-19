@@ -373,4 +373,46 @@ class TestGeneratedMatchPatterns(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["tripled"], 15)
 
 
+class TestPatternTagsInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    The keyword tags and payloads of a pattern a template writes are
+    marked; a :: annotation, a quoted symbol, and a min: option are read
+    by their bare spelling
+    """
+
+    SRC = """
+(define-syntax classify
+  (syntax-rules []
+    [(classify v)
+     (match v
+       [[x :: int] when: (> x 10) "big"]
+       [[x :: int] "small"]
+       [['go] "go"]
+       [else: "other"])]))
+
+(define-syntax at-least-one
+  (syntax-rules []
+    [(at-least-one name)
+     (define-syntax name (syntax-match [(name (REST r min: 1)) (quote r)]))]))
+
+(at-least-one some)
+(define big (classify 42))
+(define small (classify 3))
+(define go (classify 'go))
+(define other (classify "x"))
+(define gathered (some 1 2))
+"""
+
+    async def test_annotated_case_pattern(self):
+        ns = await load("mh_pattern_tags", self.SRC)
+        self.assertEqual(
+            (ns["big"], ns["small"], ns["go"], ns["other"]),
+            ("big", "small", "go", "other"))
+
+
+    async def test_generated_min_option(self):
+        ns = await load("mh_pattern_min", self.SRC)
+        self.assertEqual(list(unpack(ns["gathered"])), [1, 2])
+
+
 # The end.
