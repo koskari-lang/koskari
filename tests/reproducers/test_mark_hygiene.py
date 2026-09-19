@@ -521,4 +521,47 @@ define form (guard-form True 1 2)
         self.assertEqual(last[1], 2)
 
 
+class TestImportInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    An import a template writes binds under the template's marked
+    spelling: the template's own references reach it and a use-site
+    binding of the same name is untouched
+    """
+
+    SRC = """
+(define environ "mine")
+(define os "mine too")
+(define p "and me")
+
+(define-syntax os-environ
+  (syntax-rules []
+    [(os-environ) (begin (import-from os environ) environ)]))
+
+(define-syntax os-sep
+  (syntax-rules []
+    [(os-sep) (begin (import os) os.sep)]))
+
+(define-syntax path-sep
+  (syntax-rules []
+    [(path-sep) (begin (import [os.path as: p]) p.sep)]))
+
+(define imported-environ (os-environ))
+(define imported-sep (os-sep))
+(define renamed-sep (path-sep))
+"""
+
+    async def test_import_from_member(self):
+        ns = await load("mh_import_from", self.SRC)
+        self.assertNotEqual(ns["imported-environ"], "mine")
+        self.assertEqual(ns["environ"], "mine")
+
+
+    async def test_import_module_and_renamed_member(self):
+        ns = await load("mh_import", self.SRC)
+        self.assertIsInstance(ns["imported-sep"], str)
+        self.assertEqual(ns["imported-sep"], ns["renamed-sep"])
+        self.assertEqual(ns["os"], "mine too")
+        self.assertEqual(ns["p"], "and me")
+
+
 # The end.

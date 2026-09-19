@@ -49,10 +49,10 @@ Opcode sequences produced
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import OpCode
+from ...lib import Mark, OpCode, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_pair, is_symbol, strip_mark, unpack
+from ...types import is_mark, is_pair, is_symbol, strip_mark, unpack
 from ..helpers import helper_using, is_symbolish
 
 
@@ -162,6 +162,45 @@ def _parse_import_name(name_form, source, position=None):
         source, position=position)
 
 
+def _name_atoms(name_form):
+    """
+    The root and leaf atoms of a module name form: the symbol itself,
+    or the innermost object and the outermost attribute of an
+    ``(attr ...)`` chain
+
+    :param name_form: symbol, Mark, or (attr obj name) form
+    :return: (root, leaf)
+    """
+
+    if not is_pair(name_form):
+        return name_form, name_form
+    leaf = name_form
+    root = name_form
+    while is_pair(root):
+        parts = list(unpack(root))
+        if len(parts) != 3:
+            break
+        leaf = parts[2] if leaf is name_form else leaf
+        root = parts[1]
+    return root, leaf
+
+
+def _bind_spelling(bind, atom):
+    """
+    The name an import binds: ``bind`` as computed from the dotted
+    module name, carrying the marks of the atom it came from, so a
+    template's import binds apart from the use site and the template's
+    own references reach it
+
+    :param bind: the bare binding name
+    :param atom: the source atom the binding is named after
+    """
+
+    if is_mark(atom):
+        return str(Mark(symbol(bind), atom.marks))
+    return bind
+
+
 def _leaf_name(dotted):
     """
     Return the last component of a dotted module name, or the name itself.
@@ -222,7 +261,7 @@ def _parse_member(elem, source, what, position=None):
             raise SpecialError(
                 f"{what} member binding must be a symbol, not {name!r}",
                 source, position=position)
-        return (str(strip_mark(name)), value)
+        return (str(name), value)
 
     raise SpecialError(
         f"{what} member must be a symbol or [TARGET as: BIND], not"
@@ -262,13 +301,13 @@ def special_import(compiler, called_by, module):
                 " member form",
                 arg, position=pos)
         leaf = _IMPORT_LEAF
-        bind = _leaf_name(dotted)
+        bind = _bind_spelling(_leaf_name(dotted), _name_atoms(name_form)[1])
     else:
         if dotted is None:
             raise SpecialError(
                 "import requires a module name", arg, position=pos)
         leaf = _IMPORT_ROOT
-        bind = _root_name(dotted)
+        bind = _bind_spelling(_root_name(dotted), _name_atoms(name_form)[0])
 
     frag = compiler.fragment(called_by.datum)
     frag.declare_var(bind)
@@ -306,11 +345,11 @@ def special_import_from(compiler, called_by, module, members):
                 f"import-from member must name an attribute, not"
                 f" {target!r}",
                 elem, position=pos)
-        # a member names an attribute of the module and, unrenamed, the
-        # binding it lands in; both are labels, so a mark does not reach them
-        attr = str(strip_mark(target))
-        attrs.append(attr)
-        binds.append(bind if bind is not None else attr)
+        # a member names an attribute of the module, a label read by its
+        # bare spelling, and the binding it lands in, which keeps the
+        # template's marks so the import binds apart from the use site
+        attrs.append(str(strip_mark(target)))
+        binds.append(bind if bind is not None else str(target))
 
     frag = compiler.fragment(called_by.datum)
     for bind in binds:
@@ -406,9 +445,8 @@ def special_use(compiler, caps):
             raise SpecialError(
                 f"use member must name a feature, not {target!r}",
                 elem, position=pos)
-        stem = str(target)
-        stems.append(stem)
-        binds.append(bind if bind is not None else stem)
+        stems.append(str(strip_mark(target)))
+        binds.append(bind if bind is not None else str(target))
 
     frag = compiler.fragment(called_by.datum)
     for bind in binds:
