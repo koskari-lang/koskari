@@ -1,62 +1,138 @@
 # Layout and calls
 
-Most Koskari you will write in a `.ki` file looks like Python: a header line
-ending with a colon, then an indented body. Inside `()`, `[]`, or `{}` the
-reader uses s-expression rules, which is why nested calls still look like
-`(+ 1 2)`. The rules, with each layout shape beside the s-expression it reads
-to, are in [Koskari and s-expressions](../../guide/layout-and-s-expressions.md).
+Most Koskari in a `.ki` file looks like Python: a header line ending in a
+colon, then an indented body. Inside `(`, `[`, or `{` the reader switches
+to s-expression rules, which is why a nested call is still `(+ 1 2)`.
 
----
+## Two rules
 
-## Defining functions with layout
+:::{dialogue}
+What does a line mean?
++++
+A line with more than one element is a call whose first element is the
+callee. A line with one element is that element. So `print "hi"` is
+`(print "hi")`, and `x` alone is the value of `x`.
+:::
 
-`define` with formals uses the same block shape as Python `def`:
+:::{dialogue}
+What does a colon mean?
++++
+A line ending in `:` opens a block, and the indented lines under it are
+arguments to that line. `define double [x]:` followed by a body is one
+form, `(define double [x] BODY...)`.
+:::
 
+## Functions
+
+:::{pair}
+```python
+def double(x):
+    return x * 2
+```
++++
 ```koskari
 define double [x]:
-  * x 2
+  (* x 2)
 ```
+:::
 
-A one-line body can follow the formals on the same line, without a colon:
+:::{dialogue}
+Where is `return`?
++++
+The last form in the body is the result. `return` exists for leaving
+early; chapter 4 covers it.
+:::
 
+:::{pair}
+```python
+double = lambda x: x * 2
+```
++++
 ```koskari
 define double [x] (* x 2)
 ```
+:::
 
----
+:::{dialogue}
+Why no colon on that one?
++++
+The body fits on the header line, so there is nothing to continue. A
+colon is only for a body that follows on indented lines.
+:::
 
-## Conditionals: `if`, `elif`, `else`
+## Conditionals
 
-`elif` and `else` are peer blocks at the same indent as the `if` header:
-
+:::{pair}
+```python
+def sign(n):
+    if n < 0:
+        return "negative"
+    elif n == 0:
+        return "zero"
+    else:
+        return "positive"
+```
++++
 ```koskari
 define sign [n]:
   if (< n 0):
     "negative"
-  elif (equal? n 0):
+  elif (== n 0):
     "zero"
   else:
     "positive"
 ```
+:::
 
-One-arm branches use `when`, and `unless` inverts the test:
+:::{dialogue}
+Why is the test in parentheses?
++++
+`(< n 0)` is a call to `<`, and a call inside a header needs its
+parentheses. Only the line itself gets the implicit call.
+:::
 
+:::{pair}
+```python
+if n > 0:
+    print(n)
+
+if not ready:
+    print("wait")
+```
++++
 ```koskari
 when (> n 0):
-  (print n)
+  print n
+
+unless ready:
+  print "wait"
 ```
+:::
 
----
+## Where parentheses stay
 
-## Runnable mini-program
+:::{dialogue}
+When do I still write them?
++++
+- A nested expression: `(< n 0)` in a header, `(* x 2)` in a body.
+- A call used as an argument: `print (sign -3)`.
+- Formals and bindings: `[n]`, `[[a 1] [b 2]]`.
+- Collection literals: `#[1 2 3]`.
 
-Save as `sign.ki` in any directory (with Koskari installed):
+Statement-shaped code takes layout; expression-shaped code takes
+parentheses. Every layout form reads to the same s-expression, so a
+whole program written with parentheses only is also valid.
+:::
+
+## Run it
+
+Save as `sign.ki`:
 
 ```koskari
 define sign [n]:
   if (< n 0):
     "negative"
-  elif (equal? n 0):
+  elif (== n 0):
     "zero"
   else:
     "positive"
@@ -67,13 +143,9 @@ when-main:
   print (sign 9)
 ```
 
-Run:
-
 ```bash
 koskari sign.ki
 ```
-
-Expected output (three lines):
 
 ```text
 negative
@@ -81,37 +153,5 @@ zero
 positive
 ```
 
----
-
-## Try it
-
-At the REPL, predict then check:
-
-```koskari
-koskari> define sq [x] (* x x)
-koskari> (sq 5)
-```
-
-You should see `25`.
-
----
-
-## Remember
-
-- Layout is the default authoring style in `.ki` files; parentheses remain for
-  nested expressions, inner calls, formals, and literals.
-- `define name [formals]:` plus an indented body replaces most `def` uses in
-  files; a single expression can sit on the same line after the formals.
-- `if` / `elif` / `else` peers mirror Python's chain; see
-  [Data and control](data-and-control.md) for loops and assignment next.
-
----
-
-## See also
-
-- [Koskari and s-expressions](../../guide/layout-and-s-expressions.md)
-  -- the rules, side by side with their s-expressions
-- [Reader and layout syntax](../../reference/reader-layout.md) -- normative syntax
-  rules
-
-Next: [Runtime and tooling](runtime-and-tooling.md).
+The rules, each beside the s-expression it reads to, are in
+[Koskari and s-expressions](../../guide/layout-and-s-expressions.md).

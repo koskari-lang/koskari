@@ -89,6 +89,6 @@ a `@dataclass` class.
 
 ## See also
 
-- [From Python: Classes and objects — Property accessors](../classes-and-objects.md#property-accessors)
+- [From Python: Classes and objects — Property accessors](../classes-and-objects.md#properties)
 - [layout/define-class](../../../reference/layouts/layout-define-class.md)
 - [compile/decorate](../../../reference/macros/compile-decorate.md)

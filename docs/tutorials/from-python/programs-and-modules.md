@@ -1,282 +1,213 @@
 # Programs and modules
 
-A `.ki` file is a module: imports and top-level `define` forms run at load time,
-like a Python file executed on import. Scripts often end with **`when-main:`**
-instead of `if __name__ == "__main__":`.
+A `.ki` file is a module. Top-level forms run when it loads, as a Python
+file's do on import.
 
----
+## Running
 
-## What this chapter builds
+:::{pair}
+```bash
+python prog.py
+python -i prog.py
+python
+```
++++
+```bash
+koskari prog.ki
+koskari -i prog.ki
+koskari
+```
+:::
 
-You will structure a small program file, run it with `koskari`, use
-`when-main:` for entry points, write comments, and use **`each`** /
-**`list-each`** for comprehensions over Python iterables.
+:::{dialogue}
+Where do `.ki` files live?
++++
+Beside your `.py` files, in the same packages and on the same
+`sys.path`. Once `import koskari` has run, Python's `import mypkg.mod`
+finds `mypkg/mod.ki`. Running a script adds its directory to the path,
+as Python does.
+:::
 
----
+## The shape of a file
 
-## Anatomy of a `.ki` file
+:::{pair}
+```python
+"""Process names from argv."""
 
-A typical program file contains:
+import sys
 
-1. **Comments** — `;;` to end of line (like Lisp `;`).
-2. **Imports** — `(import m)` or `(import-from m name …)` at top level.
-3. **Definitions** — `define`, `define-class`, sometimes `define-syntax` later.
-4. **Entry point** — optional `when-main:` block for script-only code.
 
-There is no requirement to wrap everything in a `main()` function. Top-level
-`define` binds module-level names the way module-level assignments do in Python.
+def process(name):
+    print("hello", name)
 
-Example skeleton:
 
+def main():
+    for name in sys.argv[1:]:
+        process(name)
+
+
+if __name__ == "__main__":
+    main()
+```
++++
 ```koskari
-;; mytool.ki — process names from argv
+"""
+Process names from argv
+"""
 
-import-from sys argv
+import sys
 
-define main []:
-  define args (item-slice argv 1)
-  for-each [arg args]:
-    (process arg)
 
 define process [name]:
   print "hello" name
 
+
+define main []:
+  for-each [name (item-slice sys.argv 1)]:
+    (process name)
+
+
 when-main:
   (main)
 ```
+:::
 
-**`item-slice`** drops the first element of **`argv`**; see
-[compile/item-slice](../../reference/macros/compile-slice-and-compile-item-slice.md).
+:::{dialogue}
+What is `when-main`?
++++
+The block that runs only when the file is executed as a script and not
+when it is imported: Python's `if __name__ == "__main__":`. Comments
+are `;` to the end of the line, doubled by custom.
+:::
 
----
+## Comprehensions
 
-## `when-main`
-
-> **Q:** Python `if __name__ == "__main__":`?
->
-> **A:**
->
-> ```koskari
-> when-main:
->   (main)
-> ```
->
-> Expands to run the body only when the module is executed as a script, not when
-> imported.
-
-> **Q:** Can I put several forms under `when-main:`?
->
-> **A:** Yes — indent multiple lines like any other layout block:
->
-> ```koskari
-> when-main:
->   print "starting"
->   (main)
->   print "done"
-> ```
-
-See [compile/when-main](../../reference/macros/compile-when-main.md).
-
----
-
-## Module docstrings
-
-> **Q:** A string at the top of the file?
->
-> **A:** Bootstrap and library `.ki` files often place a triple-quoted string
-> after initial forms to document the module. Tooling may attach it to the module
-> object similarly to Python docstrings on packages.
-
----
-
-## Comprehensions: `each` and `list-each`
-
-Python gives you several related shapes:
-
+:::{pair}
 ```python
-squares_iter = (x * x for x in range(6))
-squares_list = [x * x for x in range(6)]
-evens = [x for x in range(10) if x % 2 == 0]
+squares = [x * x for x in range(6)]
 ```
++++
+```koskari
+define squares:
+  list-each [x (range 6)]:
+    (* x x)
+```
+:::
 
-Koskari splits those shapes into names that say what they produce. **`each`** is
-for generators. **`list-each`** is for a Python list. **`dict-each`** is for a
-Python dict.
+:::{pair}
+```python
+evens = [x for x in xs if x % 2 == 0]
+```
++++
+```koskari
+define evens:
+  list-each [x xs] when: (== 0 (% x 2)):
+    x
+```
+:::
 
-> **Q:** Generator expression `(f(x) for x in seq)`?
->
-> **A:** **`each`** builds a generator. The layout body is the value yielded for
-> each item:
->
-> ```koskari
-> each [x (range 0 6)]:
->   (* x x)
-> ```
->
-> When you need to nest the generator inside another call, use the parenthesized
-> spelling:
->
-> ```koskari
-> print (list (each [x (range 0 6)] (* x x)))
-> ```
+:::{pair}
+```python
+lengths = {w: len(w) for w in words}
+```
++++
+```koskari
+define lengths:
+  dict-each [w words] key: w value: (len w)
+```
+:::
 
-> **Q:** Generator expression with an `if` clause?
->
-> **A:** Put `when:` or `unless:` on the `each` header:
->
-> ```koskari
-> each [x (range 0 10)] when: (equal? 0 (% x 2)):
->   x
-> ```
->
-> Read that as “for each `x`, when this condition is true, yield the body.” The
-> `unless:` variant is delightful for “skip the dull cases”:
->
-> ```koskari
-> each [name names] unless: (name.startswith "_"):
->   (name.upper)
-> ```
->
-> The same filter works in s-expression form when the whole generator is an
-> argument:
->
-> ```koskari
-> (list (each [x (range 0 10)] when: (equal? 0 (% x 2)) x))
-> ```
+:::{pair}
+```python
+gen = (x * x for x in xs)
+```
++++
+```koskari
+define gen:
+  each [x xs]:
+    (* x x)
+```
+:::
 
-> **Q:** List comprehension `[f(x) for x in seq]`?
->
-> **A:** **`list-each`** produces a Python list immediately:
->
-> ```koskari
-> list-each [x (range 0 6)]:
->   (* x x)
-> ```
->
-> If you are building an API response, a test fixture, or any value you plan to
-> index more than once, reach for `list-each` instead of `each`.
->
-> Nested as an argument:
->
-> ```koskari
-> print (list-each [word words] (word.title))
-> ```
+:::{dialogue}
+Which one is which?
++++
+`list-each` builds a list, `dict-each` a dict, `each` a generator. All
+three take the `[var seq]` binding that `for-each` takes, and a `when:`
+or `unless:` clause on the header filters. A `for-each` loop is for
+side effects; the `-each` family is for values.
+:::
 
-> **Q:** Plain `for item in seq: ...` with side effects?
->
-> **A:** Use **`for-each`**. It is a loop, not a comprehension, so its body is for
-> doing work: printing, appending, calling methods, breaking, and continuing.
->
-> ```koskari
-> for-each [path paths]:
->   print "checking" path
->   unless (path.exists):
->     continue
->   (upload path)
-> ```
->
-> Parenthesized `for-each` is useful inside macro output or compact examples:
->
-> ```koskari
-> (for-each [path paths]
->   (print "checking" path)
->   (upload path))
-> ```
+## Imports
 
-> **Q:** What about Python `for` / `else`?
->
-> **A:** `for-each` has an `else:` peer, like Python. The peer runs when the
-> iterable is exhausted naturally, not when `break` exits the loop:
->
-> ```koskari
-> define find-user [users email]:
->   for-each [user users]:
->     when (equal? user.email email):
->       break user
->   else:
->     None
-> ```
+:::{pair}
+```python
+import math
+import os.path
+from pathlib import Path
+from functools import lru_cache as memoize
+from mypkg import *
+```
++++
+```koskari
+import math
+import os.path
+import-from pathlib Path
+import-from functools [lru_cache as: memoize]
+import-all-from mypkg
+```
+:::
 
-> **Q:** Dict comprehension?
->
-> **A:** **`dict-each`** with `key:` and `value:` clauses — see
-> [compile/dict-each](../../reference/macros/compile-dict-each.md) when you need
-> exact shapes.
->
-> ```koskari
-> dict-each [name names] key: name value: (len name)
-> ```
+:::{dialogue}
+Does `import os.path` bind `os`?
++++
+Yes, as in Python. `import [os.path as: p]` binds the leaf module
+directly.
+:::
 
-> **Q:** Generator over a Cartesian product (like nested `for` loops)?
->
-> **A:** Combine **`each`** with a Python iterable, for example
-> `itertools.product`:
->
-> ```koskari
-> (import-from itertools product)
->
-> each [[x y] (product (range 0 w) (range 0 h))]:
->   #(x y)
-> ```
->
-> Destructuring in the binding (`[x y]`) is the Koskari version of Python’s
-> `for x, y in ...`.
+## Packages
 
----
+:::{pair}
+```text
+mypkg/
+  __init__.py
+  tools.py
+```
++++
+```text
+mypkg/
+  __init__.py
+  tools.ki
+```
+:::
 
-## Running and importing
+:::{dialogue}
+Does the `__init__` have to be Python?
++++
+No; `__init__.ki` works, and so does no `__init__` at all, which gives a
+namespace package as it would in Python. A Python `__init__.py` that
+runs `import koskari` is the common choice, since it turns the import
+hook on for anyone who imports the package. The rules, including the
+one trap, a `foo.py` beside a `foo.ki`, are in
+[Modules and packages](../../guide/modules-and-packages.md).
+:::
 
-> **Q:** Run a script?
->
-> **A:** `koskari path/to/file.ki` — see [Runtime and tooling](runtime-and-tooling.md).
-
-> **Q:** Import from another `.ki` file?
->
-> **A:** Same import rules as Python once the Koskari importer is active:
-> `(import mypackage.mymodule)` loads `mymodule.ki` when present.
-
----
-
-## Runnable mini-program
+## Run it
 
 Save as `squares.ki`:
 
 ```koskari
 define squares [n]:
-  list-each [i (range 0 n)]:
+  list-each [i (range n)]:
     (* i i)
 
 when-main:
   print (squares 6)
 ```
 
-Run:
-
-```bash
-koskari squares.ki
+```text
+[0, 1, 4, 9, 16, 25]
 ```
 
-Expected: `[0, 1, 4, 9, 16, 25]` (Python list printed).
-
-Full recipe: [Script entry point](examples/script-main.md).
-
-To ship a command users install with pip, see
-[Packaging an installed command](../../guide/packaging.md).
-
----
-
-## Try it
-
-Run your `squares.ki` from the previous section, or open the
-[Point class](examples/point-class.md) recipe if you want a
-full class plus `when-main`.
-
----
-
-## Remember
-
-`.ki` modules mirror Python modules. Use `when-main:` for script entry,
-`;;` for comments, and `each` / `list-each` for comprehensions. Keep imports and
-definitions at the top; run side effects under `when-main:` when appropriate.
-
-Next: [Errors and debugging](errors-and-debugging.md).
+To ship a `.ki` program as a pip-installed command, see
+[Packaging a Koskari application](../../guide/packaging.md).

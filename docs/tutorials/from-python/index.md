@@ -1,19 +1,21 @@
-# From Python track
+# From Python
 
-An on-ramp for readers who already know Python. Each chapter mixes short
-narrative, Q&A callouts for Python↔Koskari deltas, and runnable examples in
-**layout-first** style.
+For readers who know Python. Each chapter sets the Python spelling on the
+left and the Koskari spelling on the right, then says what changed. Read
+in order; the later chapters lean on the earlier ones.
 
-You need [Quickstart](../../quickstart.md) finished first. If parentheses
-feel unfamiliar, read [Little Koskari](../beginner/index.md) — chapter 2
-covers calling in plain language.
+You need the [Quickstart](../../quickstart.md) done first. If the
+parentheses look strange, chapter 2 of
+[Little Koskari](../beginner/index.md) explains calling in plain words.
+
+When a line begins with `koskari>`, it is REPL input, and the line under
+it is what Koskari shows.
 
 ```{toctree}
 :maxdepth: 1
 
 map
 layout-and-calls
-runtime-and-tooling
 data-and-control
 functions-and-scope
 classes-and-objects
@@ -24,6 +26,3 @@ macros-and-dsls
 where-next
 examples/index
 ```
-
-When a chapter shows `koskari>`, that line is REPL input. Python snippets use
-normal Python syntax for contrast only.

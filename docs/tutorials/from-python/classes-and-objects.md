@@ -1,198 +1,165 @@
 # Classes and objects
 
-Koskari classes compile to ordinary Python types. You can call methods from
-Python, attach Python decorators such as `@dataclass`, and use attribute syntax
-`obj.field` in method bodies when the reader allows it.
+A Koskari class is a Python class. Methods are callable from Python,
+Python decorators apply, and instances are ordinary objects.
 
----
+## Defining
 
-## What this chapter builds
+:::{pair}
+```python
+class Point:
+    """A point in 2D space"""
+    x: int = 0
+    y: int = 0
+```
++++
+```koskari
+define-class Point []:
+  """ A point in 2D space """
+  define x :: int 0
+  define y :: int 0
+```
+:::
 
-You will declare a class with `define-class`, add fields and methods with
-layout bodies, apply `@dataclass`, and run a small program that constructs
-instances and calls methods.
-
----
-
-## Defining a class
-
-> **Q:** How do I declare a class (the equivalent of `class Point:` in Python)?
->
-> **A:** Use **`define-class`** with a layout body — same colon-and-indent shape
-> as `define` for functions:
->
-> ```koskari
-> define-class Point []:
->   """
->   A point in 2D space
->   """
->   define x :: int 0
->   define y :: int 0
-> ```
->
-> The `[]` after the class name is the base list. Empty bases mean no explicit
-> superclass, like `class Point:` in Python. To subclass:
->
-> ```koskari
-> define-class Child (Parent):
->   ...
-> ```
->
-> See [layout/define-class](../../reference/layouts/layout-define-class.md).
-
-> **Q:** How do I add instance fields with a type and a default value?
->
-> **A:** Use **`define`** inside the class body, with `::` for the type and a
-> trailing default expression:
->
-> ```koskari
-> define x :: int 0
-> define y :: int 0
-> ```
->
-> That mirrors annotated attributes in Python 3 (`x: int = 0`). The annotations
-> land on the class `__annotations__` as real objects (`{'x': int, 'y': int}`);
-> at runtime instances behave like normal Python objects.
-
----
+:::{dialogue}
+What is the `[]`?
++++
+The base list. Empty means no explicit base, as `class Point:` does.
+`define-class Child (Parent):` subclasses. The `::` carries an
+annotation, and it lands in `__annotations__` as the real type object.
+:::
 
 ## Methods
 
-> **Q:** How do I define a method on the class?
->
-> **A:** Another **`define`** inside the class body. Put **`self`** first in the
-> formals list, then any other parameters (defaults and keywords work like on
-> module-level functions):
->
-> ```koskari
-> define get_coord [self]:
->   #(self.x self.y)
-> ```
->
-> The last expression in the body is the return value unless you use **`return`**
-> for an early exit.
+:::{pair}
+```python
+class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
 
-> **Q:** Can I write `self.x` in a method, or only `(attr self x)`?
->
-> **A:** Use **`self.x`** (and method calls like `self.set_x val`) in class
-> bodies — that is the usual style. Forms such as `(attr self x)` and
-> `(set-attr self real_x v)` remain available when the name is not a simple
-> dotted identifier (for example a slot named `real_x`).
+    def coord(self):
+        return (self.x, self.y)
+```
++++
+```koskari
+define-class Point []:
+  define __init__ [self x y]:
+    set! self.x x
+    set! self.y y
 
-> **Q:** How do I write `__init__`?
->
-> **A:** Define it like any other method; Koskari emits a normal Python class,
-> so dunder names follow Python rules:
->
-> ```koskari
-> define __init__ [self x]:
->   (set! self.x x)
-> ```
+  define coord [self]:
+    #(self.x self.y)
+```
+:::
 
----
+:::{dialogue}
+Is `self` special?
++++
+No more than in Python. It is the first formal, by convention named
+`self`. `self.x` reads the attribute and `set! self.x` writes it; dunder
+methods follow Python's rules because the class is a Python type.
+:::
 
-## Property accessors
+## Properties
 
-> **Q:** How do I write a `@property` getter and setter?
->
-> **A:** Use `@property` above a `define` inside the class body, then chain
-> `.setter` (or `.deleter`) the same way Python does:
->
-> ```koskari
-> define-class Circle []:
->   define _radius :: float 0.0
->
->   @property
->   define radius [self]:
->     self._radius
->
->   @radius.setter
->   define radius [self value]:
->     (set! self._radius (float value))
-> ```
->
-> At the call site, attribute access and assignment work normally:
->
-> ```koskari
-> define c (Circle)
-> (set! c.radius 3.0)
-> print c.radius   ; → 3.0
-> ```
+:::{pair}
+```python
+class Circle:
+    _radius = 0.0
 
-> **Q:** Do I need to add `@demand` to property accessors the way I do for
-> ordinary methods?
->
-> **A:** No. Koskari replaces Python's built-in `property` with **`KosProperty`**
-> in the bootstrap, which automatically wraps any Koskari function accessor in
-> `Demand` at registration time — constructor, `.setter`, and `.deleter` all
-> apply the wrap. You write plain `define` inside the class body; the demand
-> path is wired up for you.
->
-> Plain Python callables (for example a `lambda` or a Python `def`) are stored
-> unchanged, so mixing Koskari and Python accessors on the same descriptor works
-> as expected.
+    @property
+    def radius(self):
+        return self._radius
 
-> **Q:** What about `.deleter`?
->
-> **A:** Same pattern — chain `.deleter` on the property name:
->
-> ```koskari
-> @radius.deleter
-> define radius [self]:
->   (set! self._radius 0.0)
-> ```
+    @radius.setter
+    def radius(self, value):
+        self._radius = float(value)
+```
++++
+```koskari
+define-class Circle []:
+  define _radius :: float 0.0
 
-See [Property accessors recipe](examples/property-accessors.md)
-for a complete runnable example.
+  @property
+  define radius [self]:
+    self._radius
 
----
+  @radius.setter
+  define radius [self value]:
+    set! self._radius (float value)
+```
+:::
 
-## Python decorators on classes
+:::{dialogue}
+Does `property` need `@demand`?
++++
+No. Koskari's `property` wraps a Koskari accessor for the demand path
+itself, so a getter, setter, and deleter are plain `define` forms.
+:::
 
-> **Q:** Can I put Python’s `@dataclass` on a Koskari class?
->
-> **A:** Yes. Stack `@` lines above **`define-class`**, the same as above `class`
-> in Python:
->
-> ```koskari
-> import-from dataclasses dataclass
->
-> @dataclass
-> define-class Point []:
->   define x :: int 0
->   define y :: int 0
-> ```
->
-> Construction uses normal call syntax: `(Point 3 5)` → Python `Point(3, 5)`.
-> Instances expose `.x`, `.y`, and `__annotations__` like a Python dataclass.
+## Python decorators
 
-> **Q:** Do other Python decorators (`@functools…`, custom wrappers) work on
-> classes and methods?
->
-> **A:** Any importable decorator callable works: `@` above `define-class` or
-> `define`. You use them the same way as in Python; no extra Koskari-specific
-> ceremony.
+:::{pair}
+```python
+from dataclasses import dataclass
 
----
+@dataclass
+class Point:
+    x: int = 0
+    y: int = 0
 
-## Types and instances from Python
+p = Point(3, 5)
+```
++++
+```koskari
+import-from dataclasses dataclass
 
-> **Q:** After `define-class`, is `Point` a real Python class I can import and
-> instantiate from `.py` code?
->
-> **A:** Yes — it is a normal Python `type`. Load the `.ki` module (Koskari
-> importer enabled) and use `Point` like any other class.
+@dataclass
+define-class Point []:
+  define x :: int 0
+  define y :: int 0
 
-> **Q:** How do I test whether a value is an instance of my class?
->
-> **A:** Use Python’s **`isinstance`**. Koskari also defines a predicate per
-> class (for example **`Point?`**) that you can call from Koskari code.
+define p (Point 3 5)
+```
+:::
 
----
+:::{dialogue}
+Which decorators work?
++++
+Any importable callable, above `define-class` or above a method. The
+class body's annotated `define` forms are what `dataclass` reads, so it
+generates `__init__`, `__repr__`, and `__eq__` as it would for the
+Python spelling.
+:::
 
-## Runnable mini-program
+## Instances
 
-Save `point.ki`:
+:::{pair}
+```python
+p = Point(3, 5)
+isinstance(p, Point)
+p.x
+```
++++
+```koskari
+define p (Point 3 5)
+(instance? p Point)
+p.x
+```
+:::
+
+:::{dialogue}
+Can Python code use the class?
++++
+Yes. Import the `.ki` module from Python and `Point` is a normal type,
+with `isinstance`, `dataclasses.fields`, and everything else that works
+on one.
+:::
+
+## Run it
+
+Save as `point.ki`:
 
 ```koskari
 import-from dataclasses dataclass
@@ -203,30 +170,18 @@ define-class Point []:
   define y :: int 0
 
   define label [self]:
-    (+ "Point at (" (str self.x) ", " (str self.y) ")")
+    f"Point at ({self.x}, {self.y})"
 
 when-main:
   define p (Point 1 2)
   print (p.label)
+  print p
 ```
 
-Expected: `Point at (1, 2)`
+```text
+Point at (1, 2)
+Point(x=1, y=2)
+```
 
-A larger `Point` with `neighbors` and `@dataclass`: [Point class](examples/point-class.md).
-
----
-
-## Try it
-
-Define a small class in a file, run it with `koskari`, then import that module
-from Python in the same environment if you need to call it from `.py` code.
-
----
-
-## Remember
-
-`define-class` + indented `define` methods replace `class` / `def` for most
-OOP. Use `@dataclass` and other Python decorators as in Python. Instances are
-Python objects; attribute access and methods interoperate both ways.
-
-Next: [Programs and modules](programs-and-modules.md).
+A larger version with a generator method and a property is the
+[Point class](examples/point-class.md) example.

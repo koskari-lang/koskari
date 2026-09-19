@@ -1,128 +1,142 @@
 # Interop
 
-Koskari and Python share one process. Calling across the boundary works in
-both directions — the workflow you need when mixing `.ki` with Python
-libraries or hosting Koskari inside an app.
-
----
+Koskari and Python share one process. Calls cross the boundary in both
+directions.
 
 ## Koskari calls Python
 
-> **Q:** Import a Python module?
->
-> **A:**
->
-> ```koskari
-> (import os)
-> (import-from os path getcwd)
-> (import-from os (path as: osp))
-> ```
+:::{pair}
+```python
+from math import sqrt
+import os.path as osp
 
-> **Q:** Call a Python function?
->
-> **A:** Bind it, then call:
->
-> ```koskari
-> (import-from math sqrt)
-> (sqrt 9)
-> ```
->
-> Method calls: `(s.upper)` or `(call-attr s upper)` — dotted callees desugar
-> through attribute access.
+sqrt(9)
+osp.join("a", "b")
+"abc".upper()
+```
++++
+```koskari
+import-from math sqrt
+import [os.path as: osp]
 
-> **Q:** Use `@dataclass`, `functools`, FastAPI, etc.?
->
-> **A:** Import and use them like Python — stack `@dataclass` on `define-class`,
-> wrap functions with `functools.lru_cache`, construct `fastapi.FastAPI`, and so
-> on. See [Classes and objects](classes-and-objects.md) and the
-> [Point class](examples/point-class.md) recipe.
+(sqrt 9)
+(osp.join "a" "b")
+("abc".upper)
+```
+:::
 
-> **Q:** Attribute access and subscripts?
->
-> **A:** `obj.field` in source where supported; `(attr obj field)`,
-> `(item obj key)`, and `set!` on those targets for dynamic cases.
+:::{dialogue}
+Do I convert anything?
++++
+No. Every value is already a Python object. Arguments go in as they
+are, results come back as they are, and a Python function sees nothing
+unusual about being called from Koskari.
+:::
 
-> **Q:** Are return values Python objects?
->
-> **A:** Yes. Pass them back to Python APIs without conversion.
-
----
+:::{dialogue}
+Are attribute names translated?
++++
+No. Python names are used verbatim: `(asyncio.get_running_loop)`, with
+the underscore. Koskari's own names keep their dashes unless a Python
+caller has to reach them by identifier, in which case spell them with
+underscores.
+:::
 
 ## Python calls Koskari
 
-> **Q:** Load a `.ki` module from Python?
->
-> **A:** `import koskari` enables the importer by default, then:
->
-> ```python
-> import mypackage.mymodule   # loads mymodule.ki when present
-> ```
->
-> See [koskari.importer](../../reference/api/koskari-importer.md).
+:::{pair}
+```python
+import koskari       # installs the .ki import hook
+import mypkg.tools   # loads mypkg/tools.ki
 
-> **Q:** Call a Koskari function from Python?
->
-> **A:** Functions bound at module level are callable from Python. Async
-> Koskari callables integrate with **`asyncio`** (see `koskari.asyncio` in the API
-> reference).
+mypkg.tools.CONSTANT
+```
++++
+```koskari
+;; mypkg/tools.ki
+define CONSTANT 42
 
-> **Q:** Run a script programmatically?
->
-> **A:** `koskari.cli` (`run_file_async`, `repl_async`) and `koskari.module` —
-> for embedding, read the API pages after this track.
+define-demanding shout [word]:
+  (+ (word.upper) "!")
+```
+:::
 
----
+:::{dialogue}
+Why `define-demanding`?
++++
+A plain `define` produces an ambiently async function. Called from
+Koskari it returns a value; called from Python it returns a coroutine.
+`define-demanding` wraps the function so a Python caller with no event
+loop gets the value. Any function Python will call directly wants it;
+functions called only from Koskari do not.
+:::
 
-## Async boundary
+:::{pair}
+```python
+from mypkg.tools import shout
 
-> **Q:** Do I need `await` everywhere?
->
-> **A:** Not for ordinary Python calls whose results are auto-awaited at Koskari
-> call sites. Use **`await`** for **`defer`** and other values the VM does not
-> eagerly await. See
-> [Demand, async, and defer](../../guide/demand-async-and-defer.md).
+shout("hi")   # 'HI!'
+```
++++
+```koskari
+(shout "hi")   ; "HI!" either way
+```
+:::
 
----
+## Callbacks
 
-## What is not seamless
+:::{pair}
+```python
+sorted(rows, key=lambda r: r["k"])
+rows.sort(key=lambda r: r["k"])
+```
++++
+```koskari
+(sorted rows key: (lambda [r] r["k"]))
+(rows.sort key: (demand (lambda [r] r["k"])))
+```
+:::
 
-> **Q:** Can I paste Python source into `.ki` files?
->
-> **A:** No. Syntax is Koskari layout and forms, not Python statements.
+:::{dialogue}
+Why does one need `demand` and not the other?
++++
+`sorted` is a Koskari builtin that wraps the key for you. `rows.sort`
+is Python's method and calls the key directly, so it gets coroutines
+unless the lambda is wrapped. `itemgetter` and `attrgetter` are the
+usual answer: `(rows.sort key: (itemgetter "k"))` builds a plain Python
+callable with no lambda at all. The same applies to `min`, `max`, and
+any Python function that calls what you hand it.
+:::
 
-> **Q:** Can every Python library be used unchanged?
->
-> **A:** Any **importable** module is fair game. Reproduce exotic control flow in
-> a small REPL form before relying on it in production.
+## Async
 
----
+:::{dialogue}
+Do I write `await`?
++++
+Rarely. A call that returns an awaitable is awaited at the call. The
+explicit `await` is for a `defer`, a Task, or a Future you chose to
+hold. See [Demand, async, and defer](../../guide/demand-async-and-defer.md).
+:::
 
-## Quick smoke test
+## What does not cross
 
-At `koskari>`:
+:::{dialogue}
+Can I paste Python into a `.ki` file?
++++
+No. The syntax is Koskari's. Everything Python's import system can
+reach is usable; Python source is not.
+:::
+
+## Run it
+
+At the REPL:
 
 ```koskari
-(import-from math pi)
-(* pi 2)
+koskari> (import-from math pi)
+koskari> (* pi 2)
+6.283185307179586
 ```
 
-Predict a float near `6.28`, then check.
-
----
-
-## Try it
-
-At `koskari>` (already in the smoke test above), import `math` and use a
-Python constant in a Koskari form. Then, if you have a `.ki` module on your
-path, import it from Python and call a bound function — same as any mixed
-project.
-
----
-
-## Remember
-
-Import and call Python like Python. Koskari values are Python objects. Load
-`.ki` from Python via the importer; use API docs when you embed, not when you
-only write scripts.
-
-Next: [Where next](where-next.md).
+To host Koskari inside a Python application, load files into a
+namespace you control, or run the REPL from Python, see
+[Hosting Koskari from Python](../../guide/hosting-from-python.md).

@@ -1,282 +1,248 @@
 # Data and control
 
-Values and control flow are where Python habits help most. This chapter
-assumes you have read [Layout and calls](layout-and-calls.md) — examples below
-use indented blocks, not only parenthesized forms.
-
----
-
-## What this chapter builds
-
-You will bind names, branch with `if` / `elif` / `else`, loop with `while` and
-`for-each`, and use `incr!` / `decr!` for counter updates. Everything still
-evaluates to Python objects.
-
----
+Values and control flow are where Python habits carry the furthest.
 
 ## Atoms
 
-> **Q:** Numbers and strings?
->
-> **A:** Same literals as Python: `42`, `-3`, `"hello"`. Double quotes for
-> strings.
+:::{pair}
+```python
+42
+-3
+"hello"
+True, False, None
+```
++++
+```koskari
+42
+-3
+"hello"
+True False None
+```
+:::
 
-> **Q:** Booleans?
->
-> **A:** `True` and `False` — the Python singletons. Tests in conditionals use
-> **Python truthiness** (empty collections false, `None` false, and so on).
-
-> **Q:** `None`?
->
-> **A:** Python `None`. Empty `cond` with no match also yields `None`.
-
-> **Q:** What is `nil`?
->
-> **A:** The empty list / end-of-chain marker for pair structure — not the same
-> as `None`. `(nil? nil)` is true; `(None? nil)` is false.
-
----
+:::{dialogue}
+What is `nil`?
++++
+The empty Lisp list, the end of every pair chain. It is not `None`:
+`(nil? nil)` is true and `(None? nil)` is false. Python data never
+produces one; you meet it with quoted lists and macros.
+:::
 
 ## Collections
 
-> **Q:** Python `[1, 2, 3]`?
->
-> **A:** Reader shorthand:
->
-> ```koskari
-> #[1 2 3]
-> ```
->
-> Builds a Python **list**.
+:::{pair}
+```python
+[1, 2, 3]
+(1, 2, 3)
+{"a": 1, "b": 2}
+```
++++
+```koskari
+#[1 2 3]
+#(1 2 3)
+#{"a": 1 "b": 2}
+```
+:::
 
-> **Q:** Tuple and dict?
->
-> **A:**
->
-> ```koskari
-> #(1 2 3)
-> #{"a": 1 "b": 2}
-> ```
->
-> Evaluation produces normal Python tuple and dict values. Dict keys are
-> expressions, so string keys are quoted; a bare `a:` key would look up the
-> variable `a`.
+:::{dialogue}
+Why the `#`?
++++
+Bare `[1 2 3]` reads like `(1 2 3)`, a call of `1`. The `#` marks a
+literal. Keys in `#{...}` are expressions, so a string key is quoted; a
+bare `a:` key would look up the variable `a`.
+:::
 
-> **Q:** Spread an existing sequence into a literal (Python `[*xs, 1]`)?
->
-> **A:** Use **`*:`** inside the literal; the sequence's items are spliced in
-> place:
->
-> ```koskari
-> #[*: xs 1 2]      ; xs items, then 1 and 2
-> #(1 *: xs)        ; 1, then xs items
-> ```
->
-> Any iterable works, and the result is always a fresh list or tuple — the
-> spread source is never aliased.
+:::{pair}
+```python
+[*xs, 1, 2]
+(1, *xs)
+```
++++
+```koskari
+#[*: xs 1 2]
+#(1 *: xs)
+```
+:::
 
-> **Q:** Linked lists?
->
-> **A:** Often built with **`cons`** for macro and list-processing code:
->
-> ```koskari
-> (cons 1 2 3 nil)
-> ```
->
-> For everyday data, prefer `#[…]` and Python APIs.
-
----
+:::{pair}
+```python
+xs[0]
+xs[-1]
+d["a"]
+xs[1:]
+```
++++
+```koskari
+xs[0]
+xs[-1]
+d["a"]
+(item-slice xs 1)
+```
+:::
 
 ## Assignment
 
-> **Q:** `x = 6` at module level?
->
-> **A:**
->
-> ```koskari
-> define x 6
-> ```
->
-> Or `(define x 6)` on one line.
+:::{pair}
+```python
+x = 6
+x = 7
+x += 1
+n -= 2
+```
++++
+```koskari
+define x 6
+set! x 7
+incr! x
+decr! n 2
+```
+:::
 
-> **Q:** Reassign `x = 7`?
->
-> **A:**
->
-> ```koskari
-> set! x 7
-> ```
+:::{dialogue}
+Why two words for `=`?
++++
+`define` introduces a name in the current scope. `set!` stores into a
+name that exists, and it is an error if none does. Python lets one
+symbol do both and infers which you meant.
+:::
 
-> **Q:** `x += 1` / `n -= 1`?
->
-> **A:** Use **`incr!`** and **`decr!`** (macros over inplace update):
->
-> ```koskari
-> incr! x
-> decr! n
-> decr! n 2
-> ```
->
-> Typical in counting `while` loops. See
-> [incr! / decr!](../../reference/macros/compile-incr-and-compile-decr.md).
+:::{pair}
+```python
+obj.count = 0
+d["k"] = v
+```
++++
+```koskari
+set! obj.count 0
+set! d["k"] v
+```
+:::
 
-> **Q:** Subscript and attribute assignment?
->
-> **A:** `set!` accepts `(item obj key)` and `(attr obj name)` as assignment
-> targets, same idea as Python’s `obj[k] = v` and `obj.attr = v`.
+## Conditionals
 
----
+:::{pair}
+```python
+if x < 0:
+    s = "negative"
+elif x == 0:
+    s = "zero"
+else:
+    s = "positive"
+```
++++
+```koskari
+define s:
+  if (< x 0):
+    "negative"
+  elif (== x 0):
+    "zero"
+  else:
+    "positive"
+```
+:::
 
-## Conditionals (layout)
+:::{dialogue}
+Why does the `define` go outside?
++++
+An `if` is an expression. Its value is the value of the branch that
+ran, so one `define` takes the whole choice. Python's `if` is a
+statement, so each branch assigns.
+:::
 
-For the relationship between layout blocks, layout lines, and s-expressions when
-writing conditionals, see
-[Koskari and s-expressions](../../guide/layout-and-s-expressions.md).
-
-> **Q:** `(if test a b)`?
->
-> **A:** Layout peers (preferred in `.ki` files):
->
-> ```koskari
-> if test:
->   a
-> else:
->   b
-> ```
->
-> One-arm `if` without else yields `None`. Use **`when`** when you only need the
-> true branch.
-
-> **Q:** `elif` chains?
->
-> **A:** `elif` peers after the first body (same as Python):
->
-> ```koskari
-> if (< x 0):
->   "negative"
-> elif (equal? x 0):
->   "zero"
-> else:
->   "positive"
-> ```
->
-> Under the hood this becomes **`cond`**. You can also write `(cond …)` directly;
-> see [compile/cond](../../reference/specials/compile-cond.md).
-
-> **Q:** `if test: body` with no else?
->
-> **A:**
->
-> ```koskari
-> when test:
->   body
-> ```
-
-> **Q:** `if not test: body`?
->
-> **A:**
->
-> ```koskari
-> unless test:
->   body
-> ```
-
-### Fast-return checks with `unless`
-
-Python code often starts with a guard clause: check the boring case, return
-early, then let the rest of the function tell the happy-path story.
-
+:::{pair}
 ```python
 def invite(user):
     if not user:
         return "missing user"
     if not user.email:
         return "missing email"
-    return f"sent invite to {user.email}"
+    return f"sent to {user.email}"
 ```
-
-In Koskari, **`unless`** makes those negative checks read like a little safety
-rail at the top of the function:
-
++++
 ```koskari
 define invite [user]:
   unless user:
     return "missing user"
   unless user.email:
     return "missing email"
-  f"sent invite to {user.email}"
+  f"sent to {user.email}"
 ```
+:::
 
-That is a macro, not a new kind of `if`: it expands to a conditional whose body
-runs only when the test is false. The s-expression spelling is handy when the
-check is nested inside another form:
+:::{dialogue}
+What are `when` and `unless`?
++++
+One-armed `if`. `when` runs its body if the test is true, `unless` if
+it is false. They keep a guard clause positive instead of writing
+`(not ...)`.
+:::
+
+## Loops
+
+:::{pair}
+```python
+while n > 0:
+    n -= 1
+else:
+    print("done")
+```
++++
+```koskari
+while (> n 0):
+  decr! n
+else:
+  print "done"
+```
+:::
+
+:::{pair}
+```python
+for item in seq:
+    if item.ok:
+        continue
+    process(item)
+```
++++
+```koskari
+for-each [item seq]:
+  when item.ok:
+    continue
+  (process item)
+```
+:::
+
+:::{dialogue}
+Does `for-each` have `else` and `break`?
++++
+Both, as in Python: the `else:` peer runs when the loop ends without a
+`break`. `break` may carry a value, which becomes the value of the
+loop:
 
 ```koskari
-(lambda [user]
-  (unless user (return "missing user"))
-  (send-invite user))
+define found:
+  for-each [v values]:
+    when (> v 2):
+      break v
+  else:
+    None
 ```
+:::
 
-Use `unless` for short, local “stop here if this is not true” moments. If the
-negative branch grows large, an `if` / `else:` pair is usually kinder to future
-you.
+:::{pair}
+```python
+a and b
+a or b
+not a
+```
++++
+```koskari
+(and a b)
+(or a b)
+(not a)
+```
+:::
 
----
-
-## Loops (layout)
-
-> **Q:** `while test: body`?
->
-> **A:**
->
-> ```koskari
-> while test:
->   body
-> ```
->
-> Optional **`else:`** peer (runs when the test becomes false, not when `break`
-> fires), matching Python:
->
-> ```koskari
-> while (> n 0):
->   decr! n
-> else:
->   "done"
-> ```
-
-> **Q:** `for item in seq: body`?
->
-> **A:**
->
-> ```koskari
-> for-each [item seq]:
->   body
-> ```
->
-> Works on Python iterables. Supports `break`, `continue`, and an `else:` peer
-> like `while`. See [layout/for-each](../../reference/layouts/layout-for-each.md).
-
-> **Q:** `break` / `continue`?
->
-> **A:** `(break [value])` and `(continue)` inside `while` and `for-each`.
-
----
-
-## Order of evaluation
-
-> **Q:** Are arguments evaluated left-to-right like Python 3?
->
-> **A:** Yes for nested calls: inner forms finish before outer calls use their
-> values.
-
-> **Q:** Short-circuit `and` / `or`?
->
-> **A:** Available as special forms — same practical idea as Python’s `and` /
-> `or`. See the specials reference when you need exact rules.
-
----
-
-## Runnable mini-program: countdown
+## Run it
 
 Save as `countdown.ki`:
 
@@ -292,44 +258,9 @@ when-main:
   (countdown 3)
 ```
 
-Run:
-
-```bash
-koskari countdown.ki
-```
-
-Expected:
-
 ```text
 3
 2
 1
 lift-off
 ```
-
-Full recipe: [Countdown pattern](examples/countdown.md).
-
----
-
-## Try it
-
-In the REPL, bind a list and walk it:
-
-```koskari
-koskari> define total 0
-koskari> for-each [x #[1 2 3]]:
-  ....   incr! total x
-koskari> total
-```
-
-You should see `6` (sum of the list).
-
----
-
-## Remember
-
-Literals and Python collections interop directly. Use `define` / `set!` /
-`incr!` / `decr!` for bindings and updates. Branch and loop with layout blocks;
-truthiness matches Python; `nil` does not.
-
-Next: [Functions and scope](functions-and-scope.md).

@@ -1,149 +1,189 @@
 # Map
 
-This chapter is the Rosetta stone: what transfers cleanly from Python, what
-looks similar but behaves differently, and what is genuinely new. Later
-chapters teach **layout-first** syntax in depth.
+What carries over from Python unchanged, what looks the same but is not,
+and what is new.
 
----
+## Same runtime
 
-## How you will write Koskari
+:::{dialogue}
+Is Koskari a new Python implementation?
++++
+No. Koskari runs inside CPython. Numbers, strings, lists, dicts, the
+builtins, and every module you import are ordinary Python objects. What
+changes is how you write programs.
+:::
 
-If you are coming from Python, plan on **indent blocks with colons** for
-definitions, conditionals, loops, classes, and try/except. The reader expands
-those blocks into forms the compiler runs; you can peek at that expansion when
-debugging, but day-to-day authoring matches Python’s “header + body” rhythm more
-than it matches “everything in parentheses.”
+:::{dialogue}
+So `(+ 1 2)` is a call to `+`?
++++
+Yes. The first thing inside the parentheses is the callee and the rest
+are its arguments, the way `f(x, y)` puts the name first and the
+arguments in one pair of parentheses. In a `.ki` file, a line with more
+than one element is the same call without the parentheses: `print "hi"`
+reads as `(print "hi")`.
+:::
 
-Parenthesized calls still appear for nested math, imports, and short one-liners.
-The [Layout and calls](layout-and-calls.md) chapter is the hands-on introduction.
+## The shapes, side by side
 
----
-
-## Same runtime, different surface
-
-> **Q:** Is Koskari a new Python implementation?
->
-> **A:** No. Koskari runs on **CPython**. Numbers, strings, many builtins, and
-> imported Python modules are ordinary Python objects. What changes is mostly
-> **how you write programs**: layout blocks, macros, and s-expression forms where
-> nesting is clearer in parentheses.
-
-> **Q:** So `(+ 1 2)` is just calling `+`?
->
-> **A:** Yes. The first word after `(` is the callee; the rest are arguments.
-> That is Koskari’s default call rule — like `f(x, y)` with the function name
-> first inside one pair of parentheses. In a `.ki` file a layout line with
-> more than one element is the same call without the parentheses:
-> `print "hi"` reads as `(print "hi")`. See the layout chapter.
-
----
-
-## Transfers cleanly
-
-> **Q:** What Python knowledge carries over immediately?
->
-> **A:**
->
-> | Python habit | Koskari (layout-first) | Koskari (s-expression) |
-> |--------------|------------------------|-------------------------|
-> | `42`, `"hi"` | same literals | same |
-> | `import os` | top-level `(import os)` | `(import os)` |
-> | `from os import path` | `(import-from os path)` | same |
-> | `obj.attr` | `obj.attr` in many contexts | `(attr obj attr)` |
-> | `obj.method(a, b)` | `(obj.method a b)` | `(call-attr obj method a b)` |
-> | `if` / `elif` / `else` | `if:` / `elif:` / `else:` peers | `(if test a b)` or `cond` |
-> | `while` / `for` | `while:` / `for-each [x seq]:` | `(while …)` / `(for-each …)` |
-> | `try` / `except` | `try:` / `except [Type]:` peers | `(try …)` |
-> | `def f(x): …` | `define f [x]: …` | `(define f [x] …)` |
-> | `class C:` | `define-class C []: …` | see [Classes](classes-and-objects.md) |
-
-> **Q:** Can I use Python objects inside Koskari calls?
->
-> **A:** Yes. Import them, bind names, pass them as arguments. Interop is the
-> default path, not an escape hatch.
-
----
-
-## Looks similar, mind the gap
-
-> **Q:** What trips up Python readers first?
->
-> **A:**
->
-> - **A line is one form.** `print "hi"` on its own line is the call
->   `(print "hi")`, but a lone `print` is the function, not a call. Inside
->   parentheses only `(print "hi")` calls.
-> - **`define` vs `set!`.** `define` introduces a binding (like first assignment
->   at module scope). `set!` updates an existing name (like reassignment).
-> - **`None` vs `nil`.** `None` is Python’s null. `nil` ends Koskari list
->   structure. `(None? x)` and `(nil? x)` mean different things.
-> - **Truth tests follow Python truthiness** in `if`, `cond`, and `while`.
-> - **Results at the REPL.** Useful values print; defining a name stays quiet,
->   like assignment without `print` in Python.
-
-> **Q:** Is `[a b]` a list?
->
-> **A:** In parameter positions it is **formals** — names for `define` /
-> `lambda`. Literal collections use reader shorthands such as `#[1 2 3]` (Python
-> list) and `#{key val}` (dict). Details in [Data and control](data-and-control.md).
-
----
-
-## Genuinely new (covered later in this track)
-
-> **Q:** What should I not expect to paste from Python verbatim?
->
-> **A:**
->
-> - **Layout peers** — `elif`, loop `else:`, `except` blocks have Koskari-specific
->   header rules; see [Layouts](../../reference/layouts/index.md).
-> - **Macros** — `define-syntax` rewrites code before evaluation. Covered when
->   you need syntax extension, not on day one.
-> - **Pairs and `cons`** — list structure for macros and advanced code; `#[…]`
->   covers most Python-list needs.
-> - **Continuations and dynamic wind** — present in the language; skip until you
->   need them.
-
-> **Q:** Where is the full catalog?
->
-> **A:** [Special forms](../../reference/specials/index.md), [macros](../../reference/macros/index.md), and [layouts](../../reference/layouts/index.md). This track teaches usage; reference gives exact rules.
-
----
-
-## How to use this track
-
-> **Q:** Read in order?
->
-> **A:** Yes, starting here, then [Layout and calls](layout-and-calls.md). Skim
-> what you already know; slow down on **classes**, **programs**, **errors**, and
-> **interop** if you embed Koskari in a Python app.
-
-> **Q:** What about the shared guide?
->
-> **A:** [Model of evaluation](../../guide/model-of-evaluation.md) names read /
-> eval / data explicitly. The shared guide now continues into forms, bindings,
-> functions, data, control flow, modules, macros, effects, and testing; this
-> track remains the fastest Rosetta-style route for Python readers.
-
----
-
-## Try it
-
-From the repository root (after [Quickstart](../../quickstart.md)):
-
-```bash
-koskari examples/hello.ki
+:::{pair}
+```python
+import os
+from os import path
 ```
++++
+```koskari
+import os
+import-from os path
+```
+:::
 
-You should see greeting lines and attribute access on a small class. Open the
-file alongside the output.
+:::{pair}
+```python
+obj.attr
+obj.method(a, b)
+xs[0]
+```
++++
+```koskari
+obj.attr
+(obj.method a b)
+xs[0]
+```
+:::
 
----
+:::{pair}
+```python
+x = 6
+x = 7
+x += 1
+```
++++
+```koskari
+define x 6
+set! x 7
+incr! x
+```
+:::
 
-## Remember
+:::{pair}
+```python
+if n < 0:
+    ...
+elif n == 0:
+    ...
+else:
+    ...
+```
++++
+```koskari
+if (< n 0):
+  ...
+elif (== n 0):
+  ...
+else:
+  ...
+```
+:::
 
-Koskari is Python-hosted with a layout-friendly surface: same objects, different
-grammar. Most daily Python maps to a small set of forms. Watch `define`/`set!`,
-`nil`/`None`, and use layout blocks for structure.
+:::{pair}
+```python
+while cond:
+    ...
 
-Next: [Layout and calls](layout-and-calls.md).
+for x in seq:
+    ...
+```
++++
+```koskari
+while cond:
+  ...
+
+for-each [x seq]:
+  ...
+```
+:::
+
+:::{pair}
+```python
+def f(x, y=2):
+    return x + y
+```
++++
+```koskari
+define f [x y: 2]:
+  (+ x y)
+```
+:::
+
+:::{pair}
+```python
+class C(Base):
+    ...
+```
++++
+```koskari
+define-class C (Base):
+  ...
+```
+:::
+
+:::{pair}
+```python
+try:
+    ...
+except ValueError as e:
+    ...
+```
++++
+```koskari
+try:
+  ...
+except [ValueError as: e]:
+  ...
+```
+:::
+
+:::{pair}
+```python
+[1, 2, 3]
+(1, 2, 3)
+{"a": 1}
+```
++++
+```koskari
+#[1 2 3]
+#(1 2 3)
+#{"a": 1}
+```
+:::
+
+## Looks the same, is not
+
+:::{dialogue}
+What trips up a Python reader first?
++++
+- **A line is one form.** `print "hi"` on its own line is a call. A lone
+  `print` is the function.
+- **`define` and `set!`.** `define` introduces a name; `set!` changes one
+  that exists. Python's `=` does both.
+- **`[a b]` is not a list.** Square brackets read like parentheses. In
+  `define f [x y]` they hold the parameters. A list literal is `#[...]`.
+- **`None` and `nil`.** `None` is Python's. `nil` is the empty Lisp
+  list. `(None? x)` and `(nil? x)` ask different questions.
+- **Truth tests are Python's.** `if`, `while`, and `cond` test Python
+  truthiness, so `#[]` and `0` are false.
+- **Commas are not separators.** Whitespace is. `#[1, 2]` reads two odd
+  symbols.
+:::
+
+## New
+
+:::{dialogue}
+What has no Python counterpart?
++++
+- **Macros.** `define-syntax` rewrites code before it runs. Chapter 9.
+- **By-reference parameters.** A function can write into its caller's
+  variable. Chapter 4.
+- **Pairs and quoting.** The Lisp list, for macros and code as data.
+- **Continuations.** Present in the language; not needed on day one.
+:::
