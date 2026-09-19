@@ -25,7 +25,9 @@ use against patterns and fills a template:
 define-syntax unless:
   syntax-rules []:
     unless test body ...:
-      when (not test):
+      if test:
+        None
+      else:
         (begin body ...)
 ```
 

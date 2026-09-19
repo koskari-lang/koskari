@@ -40,13 +40,13 @@ opener-line option raises `FenceError`.
 "dlroW 321 olleH"
 ```
 
-```koskari
+````koskari
 ;; immediate: True -- the fence is the ProcessResult, no callable
 define host ```bash immediate: True
 hostname -f
 ```
 define name host.text
-```
+````
 
 ## ProcessResult
 
