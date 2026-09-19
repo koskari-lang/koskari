@@ -527,6 +527,11 @@ def resolve_marks(fragment, ancestors):
         return NamespaceSpec(
             nspec.name, nspec.local_syms, tuple(closure), nspec.global_syms)
 
+    def scope_names(nspec):
+        # a global an inline scope declares is bound in the module and
+        # visible within the scope under that spelling, as its locals are
+        return set(nspec.local_syms) | set(nspec.global_syms)
+
     scopes = list(base)
     pending = None
     out = []
@@ -539,7 +544,7 @@ def resolve_marks(fragment, ancestors):
         elif op == OpCode.PUSH_NS:
             nspec = rebuild_nspec(arg[0], scopes)
             arg = (nspec,) + tuple(arg[1:])
-            scopes.insert(0, set(nspec.local_syms))
+            scopes.insert(0, scope_names(nspec))
 
         elif op == OpCode.PUSH_COLLECT:
             if isinstance(arg, NamespaceSpec):
@@ -547,7 +552,7 @@ def resolve_marks(fragment, ancestors):
                 nspec = arg
             else:
                 nspec = pending
-            scopes.insert(0, set(nspec.local_syms) if nspec else set())
+            scopes.insert(0, scope_names(nspec) if nspec else set())
             pending = None
 
         elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):

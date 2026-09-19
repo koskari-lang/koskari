@@ -302,4 +302,41 @@ class TestTryInTemplate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["passthru"], 7)
 
 
+class TestDefineGlobalInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    A global a template defines is bound under its marked spelling, and
+    the template's own references reach it from the same scope, from a
+    closure, and from an inline scope
+    """
+
+    SRC = """
+(define-syntax top
+  (syntax-rules []
+    [(top) (begin (define-global ga 5) ga)]))
+
+(define-syntax scoped
+  (syntax-rules []
+    [(scoped) (let [] (define-global gb 6) gb)]))
+
+(define-syntax closed
+  (syntax-rules []
+    [(closed) (begin (define-global gc 7) ((lambda [] gc)))]))
+
+(define-syntax scoped-closed
+  (syntax-rules []
+    [(scoped-closed) (let [] (define-global gd 8) ((lambda [] gd)))]))
+
+(define a (top))
+(define b (scoped))
+(define c (closed))
+(define d (scoped-closed))
+"""
+
+    async def test_global_visible_to_template_references(self):
+        ns = await load("mh_define_global", self.SRC)
+        self.assertEqual((ns["a"], ns["b"], ns["c"], ns["d"]), (5, 6, 7, 8))
+        for bare in ("ga", "gb", "gc", "gd"):
+            self.assertNotIn(bare, ns)
+
+
 # The end.
