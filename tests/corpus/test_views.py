@@ -384,8 +384,8 @@ def test_docs_view_normalizes_toctree_navigation():
     assert 'reference/specials/index.md' in reference
 
     specials = rows['reference/specials/index.md']['content']
-    assert 'compile-*' in specials
-    assert 'compile-*.md' not in specials
+    assert '\n*\n' in specials
+    assert '*.md' not in specials
 
 
 # The end.
