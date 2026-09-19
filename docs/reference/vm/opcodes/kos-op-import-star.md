@@ -7,7 +7,7 @@
 - **Compiler form:** Pre-compile extra operand is a 4-tuple `(name, level, 0, 0)`.
 - **Implementation**: `koskari/lib/opcode/IMPORT_STAR.c`
 
-**Example:** `(import-all-from os.path)` — bind `os.path`'s public names. Extra row: `("os.path", 0, 0, 0)`.
+**Example:** `(import-all-from os.path)` -- bind `os.path`'s public names. Extra row: `("os.path", 0, 0, 0)`.
 
 | index | opcode      | arg | arg view            | comment |
 |------:|-------------|-----|---------------------|---------|

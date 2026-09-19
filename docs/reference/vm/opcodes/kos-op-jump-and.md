@@ -16,7 +16,7 @@ eval A
 JUMP_AND done   ; falsy → push A back, jump to done
 eval B          ; A was already discarded on fall-through
 JUMP_AND done
-eval C          ; last term — value stays on stack
+eval C          ; last term -- value stays on stack
 done:
 ```
 
@@ -28,5 +28,5 @@ done:
 | 1     | JUMP_AND  | 4   | 4 (-> 4) | if not a → pc=4 |
 | 2     | CONST     | 1   | 1 (True) | stack: [..., b] |
 | 3     | JUMP_AND  | 4   | 4 (-> 4) | if not b → pc=4 |
-| 4     | LABEL     | —   | —        | fail (or result) |
+| 4     | LABEL     | --   | --        | fail (or result) |
 

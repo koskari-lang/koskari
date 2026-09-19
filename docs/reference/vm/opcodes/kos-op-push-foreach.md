@@ -15,4 +15,4 @@
 | 3     | POP          | 1   | 1        | body: consume x |
 | 4     | JUMP         | 2   | 2 (-> 2) | loop back |
 | 5     | POP_FOREACH  | 0   | 0        | push loop result (None if unset) |
-| 6     | LABEL        | —   | —        | break / exhausted (= pop_pc+1) |
+| 6     | LABEL        | --   | --        | break / exhausted (= pop_pc+1) |

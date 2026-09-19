@@ -12,7 +12,7 @@
 | 1     | JUMP_FALSE | 4   | 4 (-> 4) | pop TOS; if false → pc=4 |
 | 2     | CONST      | 1   | 1 (42)   | stack: [..., 42] |
 | 3     | JUMP       | 5   | 5 (-> 5) | |
-| 4     | LABEL      | —   | —        | else |
+| 4     | LABEL      | --   | --        | else |
 | 5     | CONST      | 2   | 2 (0)    | stack: [..., 0] |
 | 6     | RETURN     | 1   | 1        | |
 

@@ -12,6 +12,6 @@
 | 1     | …      | …   | …        | try body |
 | 2     | POP_TRY | 0   | 0        | normal exit: pop TRY |
 | 3     | JUMP   | 5   | 5 (-> 5)  | skip handler |
-| 4     | LABEL  | —   | —        | except handler (except_pc) |
-| 5     | LABEL  | —   | —        | exit |
+| 4     | LABEL  | --   | --        | except handler (except_pc) |
+| 5     | LABEL  | --   | --        | exit |
 

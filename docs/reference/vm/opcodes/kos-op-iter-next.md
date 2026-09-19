@@ -14,4 +14,4 @@
 | 3     | POP      | 1   | 1        | consume value (body) |
 | 4     | JUMP     | 2   | 2 (-> 2) | loop back |
 | 5     | POP_FOREACH | 0 | 0        | push loop result (None if unset) |
-| 6     | LABEL    | —   | —        | else (exhausted) |
+| 6     | LABEL    | --   | --        | else (exhausted) |

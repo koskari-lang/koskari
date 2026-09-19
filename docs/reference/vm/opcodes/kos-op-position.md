@@ -9,7 +9,7 @@
 
 | index | opcode  | arg | arg view | comment |
 |------:|---------|-----|----------|---------|
-| 0     | POSITION| 0   | —        | line 1, col 0 (in position table); no-op if executed |
+| 0     | POSITION| 0   | --        | line 1, col 0 (in position table); no-op if executed |
 | 1     | CONST   | 0   | 0 (1)    | stack: [..., 1] |
 | 2     | RETURN  | 1   | 1        | |
 

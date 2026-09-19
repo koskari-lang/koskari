@@ -15,5 +15,5 @@
 | 3     | …         | …   | …        | body |
 | 4     | JUMP      | 1   | 1 (-> 1) | continue (loop head) |
 | 5     | POP_LOOP  | 0   | 0        | |
-| 6     | LABEL     | —   | —        | break target (= pop_pc+1) |
+| 6     | LABEL     | --   | --        | break target (= pop_pc+1) |
 
