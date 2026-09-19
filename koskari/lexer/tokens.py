@@ -237,17 +237,32 @@ def _scan_string_end(source, quote, n):
     return n
 
 
-def _try_layout_block_split(text, start_line, start_col, sn):
+def _rest_of_line_blank(source, start, n):
     """
-    If text is ``prefix:`` with prefix in ``LAYOUT_BLOCK_NAMES``, return a
-    pair of Tokens (prefix, colon). Prefix type comes from ``_atom_type`` so
-    specials win over layout. Otherwise return None.
+    True when nothing but whitespace or a comment follows position start
+    on its line
+    """
+
+    i = start
+    while i < n and source[i] in ' \t\r':
+        i += 1
+    return i >= n or source[i] in '\n;'
+
+
+def _try_layout_block_split(text, start_line, start_col, sn, opens_block):
+    """
+    If text is ``prefix:`` and the colon opens a layout block, return a
+    pair of Tokens (prefix, colon); otherwise return None. A prefix in
+    ``LAYOUT_BLOCK_NAMES`` opens a block anywhere; any other prefix opens
+    one when opens_block says the colon ends a line outside all
+    delimiters. Prefix type comes from ``_atom_type`` so specials win over
+    layout.
     """
 
     if len(text) <= 1 or not text.endswith(':'):
         return None
     prefix = text[:-1]
-    if prefix not in lexer_names().block:
+    if not opens_block and prefix not in lexer_names().block:
         return None
     tok_type = _atom_type(prefix, sn)
     lp, cp = _advance_pos(start_line, start_col, prefix)
@@ -281,6 +296,7 @@ def tokenize(source, filename='<string>', special_names=None):
     i = 0
     n = len(source)
     sl = source
+    depth = 0
 
     while i < n:
         start_line = line
@@ -303,6 +319,10 @@ def tokenize(source, filename='<string>', special_names=None):
             continue
 
         if ch in '()[]{}':
+            if ch in '([{':
+                depth += 1
+            elif depth:
+                depth -= 1
             yield Token(_BRACKET_TOKENS[ch], ch, start_line, start_col, line, col)
             continue
 
@@ -362,6 +382,7 @@ def tokenize(source, filename='<string>', special_names=None):
             if i < n and sl[i] in '({[':
                 text = ch + sl[i]
                 i += 1
+                depth += 1
                 line, col = _advance_pos(line, col, text[1:])
                 yield Token(
                     'collection_open',
@@ -373,7 +394,9 @@ def tokenize(source, filename='<string>', special_names=None):
                 end = _scan_atom_end(sl, i, n)
                 text = sl[i - 1:end]
                 i = end
-                split = _try_layout_block_split(text, start_line, start_col, sn)
+                split = _try_layout_block_split(
+                    text, start_line, start_col, sn,
+                    not depth and _rest_of_line_blank(sl, end, n))
                 if split is not None:
                     first, second = split
                     yield first
@@ -389,7 +412,9 @@ def tokenize(source, filename='<string>', special_names=None):
         end = _scan_atom_end(sl, i, n)
         text = sl[i - 1:end]
         i = end
-        split = _try_layout_block_split(text, start_line, start_col, sn)
+        split = _try_layout_block_split(
+            text, start_line, start_col, sn,
+            not depth and _rest_of_line_blank(sl, end, n))
         if split is not None:
             first, second = split
             yield first
