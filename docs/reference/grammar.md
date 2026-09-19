@@ -53,8 +53,9 @@ see [Suffix syntax](#suffix-syntax).
 
 Symbols are names: any token that is not a number, string, keyword, or
 singleton. Symbols may contain letters, digits, `-`, `_`, `/`, and most
-punctuation (`+`, `<`, `list->vector`, `None?` are all symbols). A leading digit
-makes a number instead, so a name starts with something else.
+punctuation (`+`, `<`, `list->vector`, `None?` are all symbols). A token
+that matches a numeric pattern is a number; any other token is a symbol,
+so `2x` and `1st` are symbols.
 
 Keywords are self-evaluating name markers written with a colon on either
 end. `:foo` and `foo:` both read as the keyword `foo`; the trailing-colon

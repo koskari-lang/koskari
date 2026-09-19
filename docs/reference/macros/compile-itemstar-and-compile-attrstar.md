@@ -18,7 +18,7 @@ koskari> (item* #{"a": #{"b": 2}} "a" "b")
 2
 koskari> (import os)
 koskari> (attr* os path sep)
-'/'
+"/"
 ```
 
 The suffix spellings `d["a"]["b"]` and `os.path.sep` read to the same

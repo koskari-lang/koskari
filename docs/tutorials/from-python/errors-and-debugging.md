@@ -128,7 +128,7 @@ koskari> try:
    ...>   (/ 1 0)
    ...> except [ZeroDivisionError]:
    ...>   "caught"
-'caught'
+"caught"
 ```
 
 The exception classes for each phase are in the

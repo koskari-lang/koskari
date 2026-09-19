@@ -11,7 +11,7 @@ Yes. It joins the pieces end to end:
 
 ```koskari
 koskari> (+ "Ada" " " "Lovelace")
-'Ada Lovelace'
+"Ada Lovelace"
 ```
 :::
 
@@ -50,7 +50,7 @@ Yes, any call:
 
 ```koskari
 koskari> f"{name} has {(len name)} letters"
-'Ada has 3 letters'
+"Ada has 3 letters"
 ```
 :::
 
@@ -63,9 +63,9 @@ Text has methods, called with a dot after the value:
 
 ```koskari
 koskari> ("hello".upper)
-'HELLO'
+"HELLO"
 koskari> (name.lower)
-'ada'
+"ada"
 ```
 
 The parentheses make it a call. Without them, `name.lower` is the method
@@ -79,7 +79,7 @@ How do we split a sentence into words?
 
 ```koskari
 koskari> ("the quick brown fox".split)
-['the', 'quick', 'brown', 'fox']
+#["the" "quick" "brown" "fox"]
 ```
 
 And `join` goes the other way. It is called on the text to put between
@@ -87,7 +87,7 @@ the items:
 
 ```koskari
 koskari> (" ".join #["one" "two" "three"])
-'one two three'
+"one two three"
 ```
 :::
 
@@ -103,7 +103,7 @@ turns text into a number and `str` turns a number into text:
 koskari> (+ (int "42") 1)
 43
 koskari> (+ (str 42) "!")
-'42!'
+"42!"
 ```
 :::
 

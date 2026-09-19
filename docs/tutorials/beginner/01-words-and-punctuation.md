@@ -32,11 +32,12 @@ Between double quotes:
 
 ```koskari
 koskari> "Hello, Koskari!"
-'Hello, Koskari!'
+"Hello, Koskari!"
 ```
 
 The quotes are punctuation. They mark where the text starts and stops
-and are not part of it.
+and are not part of it. Koskari shows a value back with its quotes so
+you can see it is text; `print` shows the text alone.
 :::
 
 :::{dialogue}
@@ -65,8 +66,9 @@ screen.
 :::{dialogue}
 Can a name contain digits, or a dash?
 +++
-Both: `x2`, `add-tax`, and `total-so-far` are names. A name cannot start
-with a digit, since that would make it a number.
+Both: `x2`, `add-tax`, and `total-so-far` are names. A name can even
+start with a digit, as long as the whole word is not a number: `2x` is a
+name and `2` is a number.
 :::
 
 ## Parentheses

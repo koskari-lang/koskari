@@ -44,9 +44,9 @@ at `0`:
 
 ```koskari
 koskari> fruits[0]
-'apple'
+"apple"
 koskari> fruits[2]
-'plum'
+"plum"
 ```
 :::
 
@@ -57,7 +57,7 @@ And the last one, without counting?
 
 ```koskari
 koskari> fruits[-1]
-'plum'
+"plum"
 ```
 :::
 
@@ -72,7 +72,7 @@ the name, inside parentheses:
 ```koskari
 koskari> (fruits.append "fig")
 koskari> fruits
-['apple', 'pear', 'plum', 'fig']
+#["apple" "pear" "plum" "fig"]
 ```
 
 `append` changes the list in place and shows nothing.

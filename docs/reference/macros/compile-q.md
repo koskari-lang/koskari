@@ -13,7 +13,7 @@ form expands to `(truth COND)`.
 
 ```koskari
 koskari> (? 1 "y" "n")
-'y'
+"y"
 koskari> (? 0 "y")
 False
 koskari> (? "x")
