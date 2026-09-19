@@ -94,7 +94,7 @@ Local compile-time binding: [archive/let-syntax-and-inline-macro.md](archive/let
 Block backtick reads as **`(compile/quasiquote-block (:block: …))`**, rewritten to
 **`(compile/quasiquote (:block: …))`**. `define-syntax` output is finalized through
 **`koskari.syntax._finalize_macro_output`**, which calls **`apply_layout`** before
-hygiene (see [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block).
+marking and the `Datum` peel (see [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block).
 
 
 ## koskari/bootstrap/_define_syntax.ki
@@ -171,7 +171,8 @@ stored in the module namespace.
 **Syntax:** Used as `(datum expr)` or `(datum expr pos)` inside macro bodies.
 
 **Behaviour:** **`macro-rules`** expansion to **`(call datum expr [position])`**, capturing
-source position for hygiene.
+source position and marking the value as use-site material, which hygiene
+does not mark.
 
 
 ## koskari/bootstrap/_conditionals.ki

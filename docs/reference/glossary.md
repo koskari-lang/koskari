@@ -25,16 +25,24 @@ with examples, see [Guide](../guide/index.md).
 
 **datum**
 : Two senses. The macro form `(datum expr)` or `(datum expr pos)` captures an
-  expression together with its source position, so renamers treat a substituted
+  expression together with its source position, so hygiene treats a substituted
   user fragment as input rather than as a freshly introduced identifier; related
   forms are `datumq`, `parse-match-patternq`, and `parse-rule-patternq`. The
-  hygiene wrapper is the `Datum` syntax box a captured pattern variable arrives
-  in at expand time -- a value plus optional position and flags, opaque to
-  renaming, peeled by the finalize step before compilation. See
+  wrapper is the `Datum` box a captured pattern variable arrives in at expand
+  time -- a value plus optional position, never marked, peeled by the finalize
+  step before compilation. See
   [Macros and hygiene](../guide/macros-and-hygiene.md),
   [compile/datum](macros/compile-datum.md),
   [koskari.hygiene](api/koskari-hygiene.md), and
   [koskari.lib](api/koskari-lib.md).
+
+**mark**
+: The stamp hygiene puts on a symbol or keyword a macro template introduced:
+  the expansion that wrote it. The compiler binds and resolves a marked name
+  under its own spelling, `tmp#1a`, and a marked name nothing bound falls
+  back to the plain name. `quote` strips marks; `quote-syntax` keeps them.
+  See [Macros and hygiene](../guide/macros-and-hygiene.md) and
+  [compile/quote-syntax](specials/compile-quote-syntax.md).
 
 **defer**
 : Single-shot await handle; not auto-awaited at use sites -- use explicit

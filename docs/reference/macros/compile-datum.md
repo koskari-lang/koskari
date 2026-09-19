@@ -4,9 +4,9 @@
 
 **Behaviour:** Expands to `(call datum EXPR [POSITION])`, wrapping the
 value in a `Datum` that carries a source position. In a procedural
-macro, a symbol the body computes is emitted through `datum` so the
-renamer treats it as user syntax rather than a fresh template
-identifier, and so the compiler can position errors in it.
+macro, a symbol the body computes is emitted through `datum` so hygiene
+treats it as user syntax rather than a fresh template identifier, and so
+the compiler can position errors in it.
 
 **Examples:**
 

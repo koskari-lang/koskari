@@ -62,7 +62,7 @@ embedded via a **`rule`** wrapper inside RULE columns.
 ## Related documents
 
 - **Syntax boxes / procedural hygiene**: [../archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)
-- **Matcher hygiene metadata (current implementation)**: [matcher-hygiene-extensions.md](../api/matcher-hygiene-extensions.md)
+- **Matcher hygiene metadata (current implementation)**: [matcher-hygiene-extensions.md](../archive/matcher-hygiene-extensions.md)
 - **Pattern matching API (tagged tuples, `koskari.matcher` / `koskari.lib.Matcher`)**: [pattern-matching.md](../api/pattern-matching.md)
 - **Implemented compile-time macros**: [MACROS.md](../MACROS.md)
 - **`compile/define-syntax` and macro specials**: [SPECIALS.md](../SPECIALS.md)

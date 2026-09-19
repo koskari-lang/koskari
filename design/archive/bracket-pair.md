@@ -282,7 +282,7 @@ pair  (KosPairType)
   LSP), surfaced as a fix-it (`( )` → `[ ]` here). Every macro author then gets
   per-position style guidance for free without the linter hard-coding `let`,
   `cond`, `letrec`, etc.
-  Ref: [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md),
+  Ref: [matcher-hygiene-extensions.md](matcher-hygiene-extensions.md),
   [MATCHER.md](MATCHER.md).
 - **Repr fidelity beyond leading-cell.** Any richer round-tripping of mixed
   delimiters is deferred; v1 commits only to the leading-cell rule.

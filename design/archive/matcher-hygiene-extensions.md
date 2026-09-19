@@ -1,5 +1,9 @@
 # Koskari Matcher Syntax Extensions for Hygiene Discovery
 
+**Status:** Archived. The discovery-by-pattern hygiene this describes was
+replaced by expansion marks resolved at the compiler; see
+[../MATCHER.md](../MATCHER.md) § Hygiene model.
+
 ## Purpose
 
 Define a small extension to the existing `MATCH(...)` pattern language so special forms can declare:

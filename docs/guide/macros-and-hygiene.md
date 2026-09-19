@@ -64,17 +64,39 @@ Inside a procedural body you work with the matched forms directly:
 
 ## Hygiene
 
-A name the template introduces on its own is renamed, so it cannot
-collide with a binding at the use site. A name the caller supplies is
-bound as written.
+A name the template introduces on its own is kept apart from every
+binding at the use site. A name the caller supplies is bound as written.
 
-`(datum expr)` is the author's control over that renaming: it marks a
-fragment as having come from the input form rather than from the
-template, so renamers and binder collection leave it alone. At expand
-time, captured pattern-variable values are carried in `Datum` boxes,
-which the finalize step peels before compilation. The Python and C types
-are under [`koskari.hygiene`](../reference/api/koskari-hygiene.md) and
-[`koskari.lib.Datum`](../reference/api/koskari-lib.md).
+Each expansion stamps the symbols its template wrote with a mark, and
+the compiler binds and resolves a stamped name under its own spelling,
+`tmp#1a` for the `tmp` of one expansion. A stamped name that nothing
+bound falls back to the plain name, so a template's `cons` is the
+caller's `cons`. A stamped name passed into another macro keeps its
+stamp, so a binder written through a nested macro is still the
+template's own, and a stamped name inside `quote` comes out plain.
+`macroexpand` prints stamped names as written; the stamp shows in
+`str` of the symbol.
+
+`(datum expr)` is the author's control in a procedural macro: it marks
+a fragment as having come from the input form rather than from the
+template, so it is never stamped. At expand time, captured
+pattern-variable values are carried in `Datum` boxes, which the finalize
+step peels before compilation. The Python and C types are under
+[`koskari.hygiene`](../reference/api/koskari-hygiene.md) and
+[`koskari.lib`](../reference/api/koskari-lib.md).
+
+One order is refused. A template that defines two names, the first a
+function that calls the second, must define the second first:
+
+```koskari
+;; refused: helper is defined after the closure that names it
+(begin
+  (define main (lambda [] (helper)))
+  (define helper (lambda [] 42)))
+```
+
+The compiler reports that the introduced name is referenced by a closure
+before its definition.
 
 ## Brackets and parens match the same shape
 

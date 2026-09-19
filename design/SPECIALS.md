@@ -37,11 +37,17 @@ invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
 (unlike **`macro-rules`** / **`macro-match`**, which receive only keyword args).
 Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
 
-**Syntax boxes and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own syntax-rule expansion and template hygiene; macro output runs **`koskari.reader.layouts.apply_layout`** (module namespace) before binding-symbol discovery and the hygiene / Datum finalize passes; see
-[archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md),
-[api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md), and
-[MATCHER.md](MATCHER.md) ( **`Datum`**, **`DatumFrame`**, which matchers capture
-and which register hygiene regions).
+**Marks and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own
+template transcription and expansion finalize; macro output runs
+**`koskari.reader.layouts.apply_layout`** (module namespace), a procedural
+arm's output is marked, and the `Datum` boxes are peeled. A symbol or keyword
+a template introduced reaches the compiler as a **`Mark`** and is declared and
+resolved under its mangled key; a handler that reads a name by hand reads a
+tag or label through `strip_mark` and a binder or reference by its key. See
+[MATCHER.md](MATCHER.md) § Hygiene model (**`Datum`**, **`DatumFrame`**,
+**`Mark`**) and, for the superseded design,
+[archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) and
+[archive/matcher-hygiene-extensions.md](archive/matcher-hygiene-extensions.md).
 
 
 ## compile/bytecode

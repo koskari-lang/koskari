@@ -11,8 +11,8 @@ Without an explicit POSITION, the position recorded is FORM's own, or `None`
 when the form carries none.
 
 A `Datum` carries the form on its `datum` attribute and the position on
-`position`. Hygiene uses those to attribute an expansion to the source that
-produced it.
+`position`. Hygiene leaves what is inside unmarked, and the compiler
+positions errors in it from the position.
 
 **Examples:**
 

@@ -459,7 +459,7 @@ Matcher classes register into the native engine’s tables when lowered from **`
 ## Related Documents
 
 - [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md): Proposed shared Matcher IR and transformer pipeline (syntax-rules, procedural macros, specials)
-- [matcher-hygiene-extensions.md](matcher-hygiene-extensions.md): MATCH role additions for hygiene discovery; `BINDINGS` with scope; REST/EXPR as body regions; implemented `_collect_binding_symbols_matcher`
+- [../archive/matcher-hygiene-extensions.md](../archive/matcher-hygiene-extensions.md): MATCH role additions for hygiene discovery; `BINDINGS` with scope; REST/EXPR as body regions; implemented `_collect_binding_symbols_matcher`
 - [archive/macros.md](../archive/macros.md): Macro system notes; define-syntax will supersede defmacro
 - [special-forms.md](../language/special-forms.md): Special form catalog
 - [types.md](types.md): symbol, keyword, pair — types used in patterns
