@@ -28,7 +28,6 @@ import unittest
 
 import pytest
 
-from koskari.exceptions import CompilerError
 from koskari.module import load_module_source_async, new_module
 from koskari.types import is_symbol, unpack
 
@@ -94,8 +93,9 @@ class TestQuoteStripsMarks(unittest.IsolatedAsyncioTestCase):
 
 class TestSiblingDefinitions(unittest.IsolatedAsyncioTestCase):
     """
-    An introduced closure may reference an introduced definition that
-    precedes it; one that follows it is refused at compile time
+    An introduced closure may reference an introduced definition in
+    either order: a function body completes when the fragment enclosing
+    it does, when every sibling definition is declared
     """
 
     GOOD = """
@@ -127,10 +127,79 @@ class TestSiblingDefinitions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["answer"], 42)
 
 
-    async def test_definition_after_closure_is_refused(self):
-        with self.assertRaises(CompilerError) as caught:
-            await load("mh_sibling_forward", self.FORWARD)
-        self.assertIn("before its definition", str(caught.exception))
+    async def test_definition_after_closure(self):
+        ns = await load("mh_sibling_forward", self.FORWARD)
+        self.assertEqual(ns["answer"], 42)
+
+
+class TestMutualRecursionInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    labels and letrec expand to sibling definitions whose bodies name
+    each other; a template that writes them must compile
+    """
+
+    SRC = """
+(define-syntax parity
+  (syntax-rules []
+    [(parity n)
+     (labels [[ev [k] (if (== k 0) True (od (- k 1)))]
+              [od [k] (if (== k 0) False (ev (- k 1)))]]
+       (ev n))]))
+
+(define-syntax parity-rec
+  (syntax-rules []
+    [(parity-rec n)
+     (letrec [[ev (lambda [k] (if (== k 0) True (od (- k 1))))]
+              [od (lambda [k] (if (== k 0) False (ev (- k 1))))]]
+       (ev n))]))
+
+(define four (parity 4))
+(define five (parity 5))
+(define four-rec (parity-rec 4))
+(define five-rec (parity-rec 5))
+"""
+
+    async def test_labels_in_template(self):
+        ns = await load("mh_labels", self.SRC)
+        self.assertTrue(ns["four"])
+        self.assertFalse(ns["five"])
+
+
+    async def test_letrec_in_template(self):
+        ns = await load("mh_letrec", self.SRC)
+        self.assertTrue(ns["four-rec"])
+        self.assertFalse(ns["five-rec"])
+
+
+class TestFreeReferenceBesideSiblingScope(unittest.IsolatedAsyncioTestCase):
+    """
+    A free template reference falls back to the use-site name even when
+    a sibling scope in the same expansion bound the same spelling
+    """
+
+    SRC = """
+(define tmp 100)
+
+(define-syntax peek
+  (syntax-rules []
+    [(peek) (begin (let [[tmp 1]] tmp) tmp)]))
+
+(define-syntax peek-lambda
+  (syntax-rules []
+    [(peek-lambda) (begin ((lambda [] (let [[tmp 1]] tmp))) ((lambda [] tmp)))]))
+
+(define after-let (peek))
+(define after-lambda (peek-lambda))
+"""
+
+    async def test_reference_after_sibling_let(self):
+        ns = await load("mh_sibling_scope", self.SRC)
+        self.assertEqual(ns["after-let"], 100)
+
+
+    async def test_reference_in_sibling_lambda(self):
+        ns = await load("mh_sibling_lambda", self.SRC)
+        self.assertEqual(ns["after-lambda"], 100)
 
 
 class TestMacroGeneratingMacro(unittest.IsolatedAsyncioTestCase):

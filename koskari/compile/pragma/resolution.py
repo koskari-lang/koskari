@@ -148,16 +148,8 @@ class KoskariPragma:
 
         # Map mangled key -> Mark for every marked identifier this turn
         # compiles, so a fragment's completion can resolve the key to
-        # the binding it names (see Compiler.resolve_marks)
+        # the binding it names (see koskari.compile.compiler.resolve_marks)
         self.marks = {}
-
-        # Every name declared so far this turn, whatever fragment it
-        # was declared in
-        self.declared_keys = set()
-
-        # Marked references resolved to a shorter spelling than their
-        # key, as (key, chosen, ancestors open at that completion)
-        self.stripped = []
 
 
     def on_write(self, fragment, name: str, *, position=None):
@@ -193,7 +185,6 @@ class KoskariPragma:
         """
 
         name = str(name)
-        self.declared_keys.add(name)
 
         for bucket in (fragment.requests, fragment.requests_for_write,
                        fragment._request_global):

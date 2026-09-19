@@ -265,9 +265,7 @@ class TestMarkResolution(TestMarkedForms):
         self.assertEqual(await expr(), 42)
 
 
-    async def test_closure_reference_before_definition_is_an_error(self):
-        from koskari.exceptions import CompilerError
-
+    async def test_closure_reference_before_definition_resolves(self):
         form = build_proper(
             S("begin"),
             build_proper(S("define"), M("g"), build_proper(
@@ -275,8 +273,17 @@ class TestMarkResolution(TestMarkedForms):
             build_proper(S("define"), M("h"), build_proper(
                 S("lambda"), build_proper(), 42)),
             build_proper(M("g")))
-        with self.assertRaises(CompilerError):
-            self.compile_form(form)
+        expr, module = self.compile_form(form)
+        self.assertEqual(await expr(), 42)
+
+
+    async def test_free_reference_ignores_sibling_scope_binder(self):
+        form = build_proper(
+            S("begin"),
+            build_proper(S("let"), build_proper(build_proper(M("t"), 1)), M("t")),
+            M("t"))
+        expr, module = self.compile_form(form, t=100)
+        self.assertEqual(await expr(), 100)
 
 
 # The end.

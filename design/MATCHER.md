@@ -303,24 +303,27 @@ Keyword-named formals declare the key too, so `argv:` in a template binds
 
 Declares are immediate: a marked binder is declared under its key. A marked
 reference is emitted under its key and resolved when its fragment completes
-(`Compiler.resolve_marks`), when the fragment's own declarations are final.
+(`resolve_marks` in `koskari.compile.compiler`), when every declaration
+visible to it is final. A function body does not complete when its lambda
+is compiled: the lambda special emits a `DeferredFunction` constant, and
+`Compiler.complete` on the enclosing fragment completes those bodies first,
+against the enclosing fragment's now final declarations, before replacing
+each with its `FunctionSpec`. A sibling defined later in the same body, as
+the functions of a `labels` form are, is therefore visible to a closure
+defined before it.
+
 The candidates for `Mark(t, (1, 2))` are `t#1#2`, `t#1`, `t`, longest first.
 The first candidate declared in a visible scope wins: the inline scopes open
 around the reference in the instruction stream, the fragment itself, the
-fragments still open around it. Failing that, a marked spelling declared
-anywhere so far in the turn or already bound in the module wins (a
-module-level definition an earlier form of the same expansion, or an earlier
-turn, made). Failing that, the bare name, which the runtime resolves as
-usual. The chosen spelling is written into the instruction operands, the
-closure requests, and the inline scopes' namespace specs.
+fragments enclosing it. Failing that, a marked spelling already bound in the
+module wins (a definition an earlier turn made, as a macro-generating
+macro's expansion leaves behind). Failing that, the bare name, which the
+runtime resolves as usual. A binder in a sibling scope is not visible and
+does not count. The chosen spelling is written into the instruction
+operands, the closure requests, and the inline scopes' namespace specs.
 
 Free template references therefore reach the runtime bare, and a function
 carries one closure slot per name, not one per expansion.
-
-One shape is refused: a reference that fell below its key while a fragment
-open around it, or the root, went on to declare that key. That is an
-introduced closure referencing an introduced definition placed after it;
-`check_stripped_marks` raises at root completion. Define first.
 
 ### Heads
 

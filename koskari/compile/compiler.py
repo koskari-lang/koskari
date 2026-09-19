@@ -402,6 +402,37 @@ class CompilerMode(IntEnum):
     EXPRESSION = auto()
 
 
+class DeferredFunction:
+    """
+    A function body awaiting completion, standing in for its
+    FunctionSpec in the enclosing fragment's CONST row until the
+    enclosing fragment completes.
+
+    A nested function resolves the marked names it references against
+    the declarations visible around it, and those are final only when
+    the fragment enclosing it completes: a sibling defined later in the
+    same body, as the functions of a labels form are, must be visible
+    to a closure defined before it. So a function body is completed
+    when its enclosing fragment is, and the FunctionSpec takes its place
+    then
+
+    :param fragment: the function body fragment
+    :param name: the function name, or None
+    :param formals_spec: the FormalsSpec
+    :param ancestors: the fragments lexically open around the body
+        when it closed, outermost first
+    """
+
+    __slots__ = ("fragment", "name", "formals_spec", "ancestors")
+
+
+    def __init__(self, fragment, name, formals_spec, ancestors):
+        self.fragment = fragment
+        self.name = name
+        self.formals_spec = formals_spec
+        self.ancestors = ancestors
+
+
 def mark_candidates(mark):
     """
     The keys a marked reference may resolve to, longest first: its own
@@ -420,27 +451,21 @@ def mark_candidates(mark):
     return out
 
 
-def _choose_key(candidates, scopes, declared_keys, module_names):
+def _choose_key(candidates, scopes, module_names):
     """
     The first candidate declared in a visible scope, or, for a marked
-    spelling, declared anywhere so far this turn or already bound in
-    the module; the bare name when none is
+    spelling, already bound in the module; the bare name when none is
 
-    A marked spelling declared outside the visible scopes is a
-    module-level definition the expansion made earlier, which the
-    module namespace resolves at run time; a sibling scope's binding of
-    the same spelling reaches the same choice and fails loudly there.
-    One bound in the module was defined by an earlier turn, as a
-    macro-generating macro's expansion leaves behind
+    A marked spelling bound in the module was defined by an earlier
+    turn, as a macro-generating macro's expansion leaves behind
     """
 
     for cand in candidates:
         for scope in scopes:
             if cand in scope:
                 return cand
-        if cand is not candidates[-1]:
-            if cand in declared_keys or cand in module_names:
-                return cand
+        if cand is not candidates[-1] and cand in module_names:
+            return cand
     return candidates[-1]
 
 
@@ -453,14 +478,13 @@ def resolve_marks(fragment, ancestors):
     A marked reference tries its key, then the key with the newest mark
     removed, down to the bare name, against the declarations visible
     from its position: the inline scopes open around it in the
-    instruction stream, the fragment's own, and the fragments still
-    open around the fragment. An inline scope's closure names resolve
-    from outside that scope. A reference that falls below its key is
-    recorded for the root check
+    instruction stream, the fragment's own, and the fragments that
+    enclose the fragment, whose declarations are final by the time it
+    completes (see DeferredFunction). An inline scope's closure names
+    resolve from outside that scope
 
     :param fragment: the fragment being completed
-    :param ancestors: fragments lexically open around it, outermost
-        first
+    :param ancestors: fragments lexically enclosing it, outermost first
     """
 
     reso = fragment.resolution
@@ -478,12 +502,7 @@ def resolve_marks(fragment, ancestors):
         mark = marks.get(name)
         if mark is None:
             return name
-        chosen = _choose_key(
-            mark_candidates(mark), scopes, reso.declared_keys,
-            module_names)
-        if chosen != name:
-            reso.stripped.append((name, chosen, ancestors))
-        return chosen
+        return _choose_key(mark_candidates(mark), scopes, module_names)
 
     def rename_bucket(bucket, scopes):
         seen = []
@@ -553,28 +572,6 @@ def resolve_marks(fragment, ancestors):
         out.append((op, arg))
 
     fragment.instructions = out
-
-
-def check_stripped_marks(reso, root):
-    """
-    Raise when a marked reference resolved below its key while a
-    fragment open around it, or the root, went on to declare that key:
-    the reference was compiled into a closure before the definition it
-    names
-
-    :param reso: the resolution instance for the turn
-    :param root: the fragment completing as the root
-    :raises CompilerError: on such a reference
-    """
-
-    for key, chosen, ancestors in reso.stripped:
-        for frag in ancestors + (root,):
-            if key in frag.declares:
-                raise CompilerError(
-                    f"introduced name {kos_repr(reso.marks[key].datum)}"
-                    f" is referenced by a closure before its definition"
-                    f" in the same expansion; define it first",
-                    key)
 
 
 _COMPILER_LITERALS = {
@@ -1294,21 +1291,38 @@ class Compiler:
         return res
 
 
-    def complete(self, fragment, mode=None, _validate=True, is_root=False):
+    def complete(
+            self,
+            fragment,
+            mode=None,
+            _validate=True,
+            is_root=False,
+            ancestors=None):
         """
         Complete a fragment into a Code object.
+
+        The function bodies the fragment holds as DeferredFunction
+        constants complete first, against this fragment's now final
+        declarations, and their FunctionSpecs take their place
 
         :param fragment: the fragment to complete
         :param mode: the mode to complete in
         :param _validate: whether to validate the code
         :param is_root: whether this is the root fragment
+        :param ancestors: the fragments lexically enclosing this one,
+            outermost first; the open lexical stack when omitted
         :return: the completed Code object
         """
 
         reso = fragment.resolution
 
+        if ancestors is None:
+            ancestors = tuple(self.lexical_stack)
+
+        self.complete_deferred(fragment)
+
         if reso.marks:
-            resolve_marks(fragment, tuple(self.lexical_stack))
+            resolve_marks(fragment, ancestors)
 
         # handles compression, var-to-fast lowering, and tail-call
         # promotion, deriving the pass settings from this compiler
@@ -1339,7 +1353,7 @@ class Compiler:
                     protect=self.protect_code, cache=cache)
         if fragment.doc is not None:
             code.extras['doc'] = fragment.doc
-        reso.register_code_fragment(code, fragment, tuple(self.lexical_stack))
+        reso.register_code_fragment(code, fragment, ancestors)
 
         # Recursively validate that all writes are satisfied.
         # Only validate from root complete(); inner complete() calls skip so
@@ -1347,7 +1361,6 @@ class Compiler:
         if _validate and is_root:
             reso.validate_tree(
                 code, (), CompilerMode.FUNCTION, is_root=True)
-            check_stripped_marks(reso, fragment)
 
         # finally, register the code with the minted registry so that it
         # can potentially be sealed later. A compiler kept past its seal
@@ -1358,6 +1371,28 @@ class Compiler:
         self._minted.append(weakref.ref(code))
 
         return code
+
+
+    def complete_deferred(self, fragment):
+        """
+        Complete every function body held as a DeferredFunction constant
+        in the fragment's instruction stream and replace each with its
+        FunctionSpec
+
+        :param fragment: the fragment about to complete
+        """
+
+        rows = fragment.instructions
+        for i, (op, arg) in enumerate(rows):
+            if op is OpCode.CONST and isinstance(arg, DeferredFunction):
+                # a function fragment was on the lexical stack while its
+                # body compiled; the root never is, and encloses the rest
+                ancestors = arg.ancestors
+                if fragment not in ancestors:
+                    ancestors = (fragment,) + ancestors
+                code = self.complete(
+                    arg.fragment, CompilerMode.FUNCTION, ancestors=ancestors)
+                rows[i] = (op, FunctionSpec(arg.name, arg.formals_spec, code))
 
 
     def seal(self):

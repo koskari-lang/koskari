@@ -85,18 +85,10 @@ step peels before compilation. The Python and C types are under
 [`koskari.hygiene`](../reference/api/koskari-hygiene.md) and
 [`koskari.lib`](../reference/api/koskari-lib.md).
 
-One order is refused. A template that defines two names, the first a
-function that calls the second, must define the second first:
-
-```koskari
-;; refused: helper is defined after the closure that names it
-(begin
-  (define main (lambda [] (helper)))
-  (define helper (lambda [] 42)))
-```
-
-The compiler reports that the introduced name is referenced by a closure
-before its definition.
+A function body a template writes sees every definition the same
+expansion makes around it, in either order, so a template may define
+mutually recursive functions or use `labels` and `letrec` as written
+source does.
 
 ## Brackets and parens match the same shape
 
