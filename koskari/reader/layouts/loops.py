@@ -13,9 +13,9 @@
 
 
 """
-koskari.reader.layouts.helpers
+koskari.reader.layouts.loops
 
-Layout decorator for reader block syntax.
+Layout handlers for for-each and while blocks.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -44,12 +44,7 @@ def _layout_loop(reader, source, peers):
 
         peer = peers[0]
         pheader, pbody = peer
-        phead, pargs = pheader
-
-        if phead != _symbol_else:
-            raise LayoutError(
-                "loop blocks can only have an else peer",
-                get_position(peers))
+        _phead, pargs = pheader
 
         if pargs:
             raise LayoutError(
