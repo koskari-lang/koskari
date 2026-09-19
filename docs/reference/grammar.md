@@ -1,33 +1,30 @@
 # Grammar
 
-Koskari source combines **layout syntax** (indentation-based blocks and lines
-in `.ki` files) with **s-expressions** (parenthesized forms). The reader turns
+Koskari source combines layout syntax (indentation-based blocks and lines
+in `.ki` files) with s-expressions (parenthesized forms). The reader turns
 both into list structure; the compiler then expands macros and dispatches on
 special forms.
-
----
 
 ## S-expression forms
 
 Inside any `(`, `[`, or `{`, and at the top level of a form, the base reader
-applies. It reads **atoms** and **lists** and a handful of **prefix** and
-**collection** syntaxes. Everyday shapes are covered in
-[Model of evaluation](../guide/model-of-evaluation.md); this section is the
-normative catalogue.
+applies. It reads atoms and lists and a handful of prefix and
+collection syntaxes. The everyday shapes are in
+[Model of evaluation](../guide/model-of-evaluation.md).
 
-**Whitespace is the only separator.** Tokens are split on spaces, tabs, and
+Whitespace is the only separator. Tokens are split on spaces, tabs, and
 newlines (and on the delimiter characters). Punctuation that other languages
-use to separate items -- most notably the **comma** -- is an ordinary atom
+use to separate items -- most notably the comma -- is an ordinary atom
 character here, so `#[1, 2, 3]` reads three symbols `1,` `2,` `3`, not three
 integers. Separate list items with spaces.
 
 ### Atoms
 
 An atom is one whitespace- or delimiter-bounded token. The reader matches each
-token against the literal patterns below; a token that matches **none of them**
-is a **symbol**.
+token against the literal patterns below; a token that matches none of them
+is a symbol.
 
-**Numbers.** Each numeric shape is a distinct literal:
+Numbers. Each numeric shape is a distinct literal:
 
 | Written | Reads as | Notes |
 |---|---|---|
@@ -40,7 +37,7 @@ is a **symbol**.
 | `9.99d`, `5d` | decimal | trailing `d`, `decimal.Decimal` |
 | `3+4j`, `2.0+1i` | complex | trailing `i` or `j` |
 
-**Strings** are double-quoted, with optional single-character prefixes attached
+Strings are double-quoted, with optional single-character prefixes attached
 directly to the opening quote:
 
 | Written | Meaning |
@@ -54,16 +51,16 @@ A prefix is recognised only when it sits immediately before the quote (`f"…"`,
 not `f "…"`). A trailing hyphen continues a string into the next quoted segment;
 see [Suffix syntax](#suffix-syntax).
 
-**Symbols** are names: any token that is not a number, string, keyword, or
+Symbols are names: any token that is not a number, string, keyword, or
 singleton. Symbols may contain letters, digits, `-`, `_`, `/`, and most
 punctuation (`+`, `<`, `list->vector`, `None?` are all symbols). A leading digit
-generally makes a number instead, so names start with a non-digit.
+makes a number instead, so a name starts with something else.
 
-**Keywords** are self-evaluating name markers written with a colon on either
+Keywords are self-evaluating name markers written with a colon on either
 end. `:foo` and `foo:` both read as the keyword `foo`; the trailing-colon
 spelling is what carries keyword arguments in calls and headers.
 
-**Singletons and constants:**
+Singletons and constants:
 
 | Written | Reads as |
 |---|---|
@@ -76,7 +73,7 @@ spelling is what carries keyword arguments in calls and headers.
 
 ### Lists
 
-Parentheses group forms into a **pair chain** (a cons list):
+Parentheses group forms into a pair chain (a cons list):
 
 ```koskari
 (+ 1 2 3)         ;; a three-argument call
@@ -84,14 +81,14 @@ Parentheses group forms into a **pair chain** (a cons list):
 ()                ;; the empty list, nil
 ```
 
-A **dotted pair** places a value directly in the tail with `.`:
+A dotted pair places a value directly in the tail with `.`:
 
 ```koskari
 (k . v)           ;; one cons cell: car k, cdr v
 (1 2 . 3)         ;; improper list ending in 3
 ```
 
-Square brackets `[ ]` read with the **same grammar** as `( )` and produce a
+Square brackets `[ ]` read with the same grammar as `( )` and produce a
 value-equal chain; the reader records the bracket style so a call-position lint
 can flag it, but the compiler treats the two the same. See
 [Brackets and the call convention](../guide/brackets-and-call-convention.md).
@@ -109,7 +106,7 @@ whitespace-separated:
 
 A `#dict` spine accepts alternating `key value` pairs, dotted `(key . value)`
 entries, or `key:` keyword keys (`#{name: n}`). Keys are **ordinary
-expressions**, so a `key:` key lowers to the *name* `key`, not the string
+expressions**, so a `key:` key lowers to the name `key`, not the string
 `"key"` -- quote or write the string explicitly (`#{"name": n}`) when you want a
 literal string key.
 
@@ -142,15 +139,13 @@ prefixes are governed by the `reader/unary` pragma.
 
 ### Comments
 
-A `;` begins a line comment that runs to the end of the line (the doubled `;;`
-is a common style, still just a line comment). Comments may appear between any
-tokens and are skipped by the reader.
-
----
+A `;` begins a line comment that runs to the end of the line; the doubled
+`;;` is a common style and reads the same. Comments may appear between
+any tokens and are skipped by the reader.
 
 ## Suffix syntax
 
-Three pieces of syntax attach to the **value just read**, wrapping it rather
+Three pieces of syntax attach to the value just read, wrapping it rather
 than starting something new. They read left to right and chain freely with each
 other:
 
@@ -164,20 +159,20 @@ other:
 | `foo[0].bar` | `(attr (item foo 0) bar)` |
 | `"a"- " b"` | `(#str "a" " b")` |
 
-**Attachment is strict.** The suffix character must follow the value with no
+Attachment is strict. The suffix character must follow the value with no
 space between them. A space ends the value instead, which is what keeps
 `foo [a]` two separate forms and leaves the leading-dot method call
 `(.baz obj)` alone.
 
-**Index brackets** (`foo[k]`) read an item access, and a group may carry
+Index brackets (`foo[k]`) read an item access, and a group may carry
 several keys (`foo[1 2]`). An empty group is an error.
 
-**Dots** read an attribute. This is the same expansion whether the dot sits
+Dots read an attribute. This is the same expansion whether the dot sits
 inside a single name (`obj.value`) or attaches to a form or literal
 (`(get-fn x).baz`, `"".join`) -- the dot is the attribute read, and enclosing
 parentheses are what make it a call. A dot with no name after it is an error.
 
-**A trailing hyphen on a string** continues that literal into the next quoted
+A trailing hyphen on a string continues that literal into the next quoted
 segment, so a long string can be broken across lines without restructuring the
 call around an explicit join:
 
@@ -197,8 +192,6 @@ Each of the three is governed by its own setting -- `reader/index-brackets`,
 [Pragmas and feature settings](../guide/pragma.md) for turning them off and for
 the exact rules at the edges.
 
----
-
 ## Layout forms
 
 Layout is the default surface at the top level of a module. Rules for blocks,
@@ -206,8 +199,6 @@ lines, colon handling, and handler resolution live in dedicated reference pages:
 
 - [Koskari and s-expressions](../guide/layout-and-s-expressions.md) -- the rules beside their s-expressions
 - [Reader and layout syntax](reader-layout.md) -- normative syntax rules
-
----
 
 ## Layout handlers
 
