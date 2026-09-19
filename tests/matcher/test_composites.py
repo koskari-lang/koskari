@@ -583,6 +583,36 @@ class TestFORMALS(unittest.TestCase):
         self.assertIs(positionals[0]["name"], sself)
 
 
+    def test_formals_keyword_headed_positional_cell(self):
+        """
+        FORMALS accepts ((x :: int) (y: 1 :: int)); the keyword-headed
+        cell yields a positional frame holding 'kw', 'default', and
+        an attrs frame for the annotation
+        """
+
+        pat = MATCH(FORMALS("f"))
+        m = pat.build()
+        sx = symbol("x")
+        ky = keyword("y")
+        kann = keyword("")
+        sint = symbol("int")
+        formals = _list(_list(sx, kann, sint), _list(ky, 1, kann, sint))
+        result = m.match((formals,))
+        self.assertTrue(result.matched)
+        u = _ucaps(result)
+        positionals = u["f"]["positionals"]
+        self.assertEqual(len(positionals), 2)
+        self.assertIs(positionals[0]["name"], sx)
+        self.assertIs(positionals[1]["kw"], ky)
+        self.assertEqual(positionals[1]["default"], 1)
+        self.assertNotIn("name", positionals[1])
+        attrs = positionals[1]["attrs"]
+        self.assertEqual(len(attrs), 1)
+        self.assertIs(attrs[0]["kw"], kann)
+        self.assertIs(attrs[0]["attr_val"], sint)
+        self.assertEqual(u["f"]["defaults"], [])
+
+
     def test_formals_positionals_with_one_default(self):
         """
         FORMALS accepts (self threshold: 0.6) -- a typical method

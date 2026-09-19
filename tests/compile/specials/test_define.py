@@ -20,6 +20,7 @@ import pytest
 
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
+from koskari.exceptions import SpecialError
 from koskari.lib import Module, symbol
 from koskari.reader import IndentAwareStream, LayoutReader, source_str
 
@@ -167,6 +168,64 @@ class TestDefineAnnotationBindings(SpecialsTestCase):
         f = self.compile_fragment(
             "(define f :: int [x] (mul x 2))", mul=lambda a, b: a * b)
         self.assertEqual(f.annotation_bindings, [])
+
+
+class TestDefineKeywordHeadedFormals(SpecialsTestCase):
+
+    async def test_define_return_type_with_keyword_headed_formal(self):
+        src = """
+        (begin
+          (define foo :: int [[x :: int] [y: 1 :: int]] (add x y))
+          foo)
+        """
+        expr, mod = self.compile_expr(src, int=int, add=lambda a, b: a + b)
+        fn = await expr()
+        self.assertEqual(
+            fn.__annotations__, {"x": int, "y": int, "return": int})
+        self.assertEqual(await fn(1), 2)
+        self.assertEqual(await fn(1, 5), 6)
+        self.assertEqual(await fn(1, y=7), 8)
+
+
+    async def test_define_decl_return_type_with_keyword_headed_formal(self):
+        src = """
+        (begin
+          (define [foo :: int] [[x :: int] [y: 1 :: int]] (add x y))
+          foo)
+        """
+        expr, mod = self.compile_expr(src, int=int, add=lambda a, b: a + b)
+        fn = await expr()
+        self.assertEqual(
+            fn.__annotations__, {"x": int, "y": int, "return": int})
+        self.assertEqual(await fn(1, y=7), 8)
+
+
+class TestDefineBareDoubleColonFormals(SpecialsTestCase):
+
+    async def test_define_lambda_bare_double_colon_rejected(self):
+        src = "(define f (lambda [n :: int] n))"
+        with self.assertRaises(SpecialError) as cm:
+            self.compile_expr(src, int=int)
+        self.assertIn("[(n :: int)]", str(cm.exception))
+
+
+    async def test_define_inline_bare_double_colon_rejected(self):
+        src = "(define f [n :: int] n)"
+        with self.assertRaises(SpecialError) as cm:
+            self.compile_expr(src, int=int)
+        self.assertIn("[(n :: int)]", str(cm.exception))
+
+
+    async def test_define_parenthesized_annotation_still_binds(self):
+        src = """
+        (begin
+          (define f [(n :: int)] n)
+          f)
+        """
+        expr, mod = self.compile_expr(src, int=int)
+        fn = await expr()
+        self.assertEqual(fn.__annotations__, {"n": int})
+        self.assertEqual(await fn(3), 3)
 
 
 # The end.

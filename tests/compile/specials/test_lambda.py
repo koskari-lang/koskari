@@ -18,6 +18,8 @@ Tests for koskari.compile lambda special (named and unnamed).
 
 import pytest
 
+from koskari.exceptions import SpecialError
+
 from . import SpecialsTestCase
 
 
@@ -87,6 +89,44 @@ class TestLambdaNamed(SpecialsTestCase):
         expr, mod = self.compile_expr(src)
         fn = await expr()
         self.assertEqual(fn.__annotations__, {"a": "NoSuchThing"})
+
+
+    async def test_lambda_keyword_headed_formal_default_and_annotation(self):
+        src = "(lambda [[x :: int] [y: 1 :: int]] (add x y))"
+        expr, mod = self.compile_expr(src, int=int, add=lambda a, b: a + b)
+        fn = await expr()
+        self.assertEqual(fn.__annotations__, {"x": int, "y": int})
+        self.assertEqual(await fn(1), 2)
+        self.assertEqual(await fn(1, 5), 6)
+        self.assertEqual(await fn(1, y=7), 8)
+
+
+    async def test_lambda_keyword_headed_formal_bare_double_colon_rejected(self):
+        src = "(lambda [[:: int]] 1)"
+        with self.assertRaises(SpecialError) as cm:
+            self.compile_expr(src, int=int)
+        self.assertIn("[(name :: int)]", str(cm.exception))
+
+
+    async def test_lambda_bare_double_colon_in_formals_rejected(self):
+        src = "(lambda [n :: int] n)"
+        with self.assertRaises(SpecialError) as cm:
+            self.compile_expr(src, int=int)
+        self.assertIn("[(n :: int)]", str(cm.exception))
+
+
+    async def test_lambda_bare_double_colon_after_star_rejected(self):
+        src = "(lambda [n *: rest :: int] n)"
+        with self.assertRaises(SpecialError) as cm:
+            self.compile_expr(src, int=int)
+        self.assertIn("[(n :: int)]", str(cm.exception))
+
+
+    async def test_lambda_bare_double_colon_leading_rejected(self):
+        src = "(lambda [:: int] 1)"
+        with self.assertRaises(SpecialError) as cm:
+            self.compile_expr(src, int=int)
+        self.assertIn("[(name :: int)]", str(cm.exception))
 
 
 class TestLambdaReturnType(SpecialsTestCase):

@@ -54,11 +54,21 @@ define-syntax mk-pos:
       define name [argv]:
         argv
 
+define-syntax mk-cell:
+  syntax-rules []:
+    mk-cell name:
+      define k 1
+
+      define name [[argv: None]]:
+        argv
+
 define kw-expansion (macroexpand-1 '(mk-kw fa))
 define pos-expansion (macroexpand-1 '(mk-pos fb))
+define cell-expansion (macroexpand-1 '(mk-cell fc))
 
 (mk-kw fa)
 (mk-pos fb)
+(mk-cell fc)
 """
 
 
@@ -108,6 +118,23 @@ class TestMultiFormArmFormalHygiene(unittest.IsolatedAsyncioTestCase):
     async def test_positional_formal_function_callable(self):
         mod = await self.load("mfa_pos_call")
         self.assertEqual(await vars(mod)["fb"](2), 2)
+
+
+
+    async def test_keyword_headed_cell_formal_renamed_with_body(self):
+        mod = await self.load("mfa_cell")
+        formals, body = defined_function_parts(vars(mod)["cell-expansion"])
+        cell = list(unpack(formals[0]))
+        self.assertTrue(is_keyword(cell[0]))
+        self.assertTrue(is_symbol(body))
+        self.assertEqual(str(cell[0]), str(body))
+        self.assertNotEqual(str(body), "argv")
+
+
+    async def test_keyword_headed_cell_formal_function_callable(self):
+        mod = await self.load("mfa_cell_call")
+        self.assertEqual(await vars(mod)["fc"](3), 3)
+        self.assertIsNone(await vars(mod)["fc"]())
 
 
 # The end.

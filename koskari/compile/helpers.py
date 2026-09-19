@@ -1234,6 +1234,10 @@ def _gather_one_positional_frame(fr: dict, source):
     else:
         default_expr = _NO_DEFAULT
 
+    kw_cell = fr.get('kw')
+    if kw_cell is not None:
+        _reject_bare_annotation(kw_cell.datum, default_expr, None, source)
+
     annotations = {}
     if typ is not None:
         annotations['type'] = typ
@@ -1269,6 +1273,32 @@ def _gather_one_positional_frame(fr: dict, source):
     return name, annotations, default_expr, by_ref
 
 
+def _reject_bare_annotation(kw, typ, prev_name, source):
+    """
+    Raise when a defaults or kw-only frame carries the empty keyword.
+
+    A bare :: inside a formals list reads as the empty keyword, so the
+    matcher takes it for a defaulted parameter named "". The error spells
+    the parenthesized annotation form using the preceding formal and the
+    value that followed the ::
+
+    :param kw: the frame keyword
+    :param typ: the value that followed the keyword
+    :param prev_name: the formal that preceded the keyword, or None
+    :param source: spine for error context
+    :raises SpecialError: when kw is the empty keyword
+    """
+
+    if str(kw) != "":
+        return
+    name = "name" if prev_name is None else str(prev_name)
+    shown = repr(typ) if isinstance(typ, str) else str(typ)
+    raise SpecialError(
+        "bare :: in formals list; annotate a parameter as"
+        f" [({name} :: {shown})]",
+        source)
+
+
 def gather_formals(formals_group, source=None):
     """
     Parse matcher FORMALS GROUP dict into seven values for compile specials
@@ -1292,6 +1322,7 @@ def gather_formals(formals_group, source=None):
     positional = []
     defaults = []
     by_refs = []
+    prev_name = None
 
     for fr in formals_group.get('positionals', ()):
         if not isinstance(fr, dict):
@@ -1307,6 +1338,7 @@ def gather_formals(formals_group, source=None):
             defaults.append((keyword(str(name)), default))
         else:
             positional.append(name)
+        prev_name = name
 
     for fr in formals_group.get('defaults', ()):
         if not isinstance(fr, dict):
@@ -1319,10 +1351,12 @@ def gather_formals(formals_group, source=None):
             raise SpecialError(
                 f"defaults frame missing keyword: {fr!r}",
                 source)
+        _reject_bare_annotation(kw, dflt, prev_name, source)
         kw, by_ref = _strip_byref_kw(kw)
         if by_ref:
             by_refs.append(str(kw))
         defaults.append((kw, dflt))
+        prev_name = kw
 
     kwonly = []
     for fr in formals_group.get('kwonly', ()):
@@ -1336,14 +1370,17 @@ def gather_formals(formals_group, source=None):
             if by_ref:
                 by_refs.append(str(name))
             kwonly.append((keyword(str(name)), nil))
+            prev_name = name
             continue
         kw = None if (v := fr.get('kw')) is None else v.datum
         dflt = None if (v := fr.get('default')) is None else v.datum
         if kw is not None:
+            _reject_bare_annotation(kw, dflt, prev_name, source)
             kw, by_ref = _strip_byref_kw(kw)
             if by_ref:
                 by_refs.append(str(kw))
             kwonly.append((kw, dflt))
+            prev_name = kw
         else:
             raise SpecialError(
                 f"invalid kw-only frame {fr!r}",

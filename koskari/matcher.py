@@ -2391,13 +2391,19 @@ def formal_param_pattern():
     """
     Build a one-element matcher that recognises a single formal
     parameter cell. Accepted shapes mirror parse_formal_parameter:
-    bare symbol, (name), (name default), (type as: name), and
+    bare symbol, (name), (name default), (type as: name),
     (name kw1 v1 kw2 v2 ...) with one-or-more keyword/value pairs
-    in the tail. Captures inside this pattern appear in the enclosing
-    REPEAT frame as 'name', 'default', 'type', and 'attrs' (a list
-    of {'kw', 'attr_val'} frame dicts from CAPTURE/VALUE pairs) depending
-    on which arm fires
+    in the tail, and (name: default kw1 v1 ...) where a keyword heads
+    the cell and its value is the default. Captures inside this
+    pattern appear in the enclosing REPEAT frame as 'name' (or 'kw'
+    for the keyword-headed shape), 'default', 'type', and 'attrs' (a
+    list of {'kw', 'attr_val'} frame dicts from CAPTURE/VALUE pairs)
+    depending on which arm fires
     """
+
+    attrs = repeat_capture("attrs", MATCH(
+        CAPTURE("kw", TYPE("keyword")),
+        VALUE("attr_val")))
 
     return ONEOF(
         SYMBOL("name"),
@@ -2407,11 +2413,11 @@ def formal_param_pattern():
             SYMBOL("ref_name"))),
         FORM(MATCH(SYMBOL("name"), VALUE("default"))),
         FORM(MATCH(VALUE("type"), LITERAL_KW("as"), SYMBOL("name"))),
+        FORM(MATCH(SYMBOL("name"), attrs)),
         FORM(MATCH(
-            SYMBOL("name"),
-            repeat_capture("attrs", MATCH(
-                CAPTURE("kw", TYPE("keyword")),
-                VALUE("attr_val"))))),
+            CAPTURE("kw", TYPE("keyword")),
+            VALUE("default"),
+            OPTIONAL(attrs))),
     )
 
 
@@ -2440,8 +2446,11 @@ def frame_formal_name(fr):
 
     The binding symbol lives under 'ref_name' for the (ref x) and
     (ref x) by-ref shapes. Otherwise it lives under 'name'; a 'name' carrying
-    a leading & is the reader-disabled by-ref fallback and is stripped. The
-    returned name is the raw symbol (Datum-unwrapped) or None
+    a leading & is the reader-disabled by-ref fallback and is stripped. A
+    keyword-headed cell such as (y: 1 :: int) names the parameter under
+    'kw' and the symbol that keyword spells is returned; a leading & on
+    the keyword marks it by-ref. The returned name is the raw symbol
+    (Datum-unwrapped) or None
     """
 
     v = fr.get("ref_name")
@@ -2450,12 +2459,22 @@ def frame_formal_name(fr):
         return n, True
 
     v = fr.get("name")
+    if v is not None:
+        n = v.datum if isinstance(v, Datum) else v
+        if is_symbol(n) and str(n)[:1] == "&":
+            return symbol(str(n)[1:]), True
+        return n, False
+
+    v = fr.get("kw")
     if v is None:
         return None, False
-    n = v.datum if isinstance(v, Datum) else v
-    if is_symbol(n) and str(n)[:1] == "&":
-        return symbol(str(n)[1:]), True
-    return n, False
+    kw = v.datum if isinstance(v, Datum) else v
+    if not is_keyword(kw):
+        return None, False
+    s = str(kw)
+    if s[:1] == "&":
+        return symbol(s[1:]), True
+    return symbol(s), False
 
 
 def kwonly_param_pattern():
@@ -2585,6 +2604,8 @@ class FORMALS(Composite, HygieneWireSlotScopes):
                 cell = fr.get("ref_name")
                 if cell is None:
                     cell = fr.get("name")
+                if cell is None:
+                    cell = fr.get("kw")
                 if cell is not None and _intro_suppressed(cell):
                     continue
                 n, _byref = frame_formal_name(fr)
@@ -2650,6 +2671,21 @@ class FORMALS(Composite, HygieneWireSlotScopes):
                 cell = getattr(fr, "source", None)
                 if cell is not None and is_pair(cell):
                     yield cell
+
+        # A keyword-headed positional cell, (y: 1 :: int), keeps its
+        # keyword as the car of the inner pair, which is the car of the
+        # formals spine cell the frame records as its source.
+        for fr in grp.get("positionals", ()):
+            if not isinstance(fr, dict):
+                continue
+            if formal_keyword_name(fr.get("kw")) is None:
+                continue
+            cell = getattr(fr, "source", None)
+            if cell is None or not is_pair(cell):
+                continue
+            inner = cell.car
+            if is_pair(inner):
+                yield inner
 
 
     def iter_recurse_targets(self, matched):
