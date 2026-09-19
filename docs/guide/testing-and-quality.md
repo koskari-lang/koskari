@@ -16,7 +16,7 @@ define add-tax [price]:
 ```
 
 Run it, change one input, and run it again. This is the same edit → run → read
-loop from the beginner track.
+loop from Little Koskari.
 
 ---
 

@@ -70,6 +70,9 @@ def setup(app):
     from .builtins_directive import KosBuiltinsDirective
     app.add_directive('kos-builtins', KosBuiltinsDirective)
 
+    from .columns import register_columns
+    register_columns(app)
+
     from koskari.extras.pygments import register_sphinx_lexer
     register_sphinx_lexer(app)
 

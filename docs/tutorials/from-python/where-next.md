@@ -66,7 +66,7 @@ Copy a pattern into a `.ki` file, run it, and change one line at a time.
 
 > **Q:** I never learned Python — is there another track?
 >
-> **A:** [Beginner track](../beginner/index.md) teaches the same language from
+> **A:** [Little Koskari](../beginner/index.md) teaches the same language from
 > first principles. Both paths share [Model of evaluation](../../guide/model-of-evaluation.md).
 
 ---

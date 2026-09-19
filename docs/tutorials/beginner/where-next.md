@@ -1,48 +1,35 @@
 # Where next
 
-You can run Koskari, read basic results and errors, and write small programs
-from nested calls, `define`, conditionals, and tiny functions.
+You can run Koskari, read its results and its errors, and write a program
+from calls, names, choices, functions, lists, and text.
 
----
+:::{dialogue}
+What should I read next?
++++
+The [Guide](../../guide/index.md), starting with
+[Model of evaluation](../../guide/model-of-evaluation.md). It names what
+happened in every chapter here: reading text into forms, and evaluating
+forms into values.
+:::
 
-## Into the shared guide
+:::{dialogue}
+Do I need the reference?
++++
+Not yet. Keep the [glossary](../../reference/glossary.md) open for a word
+you do not know, and go to a form's [reference](../../reference/index.md)
+page when you want its exact rules.
+:::
 
-> **Q:** What should I read next?
->
-> **A:** [Model of evaluation](../../guide/model-of-evaluation.md) in the
-> shared guide. It names what “read,” “evaluate,” and “data” mean — the story
-> both tutorial tracks build on.
+:::{dialogue}
+I know Python. Is there a shorter way?
++++
+[From Python](../from-python/index.md) sets each Python spelling beside
+its Koskari one. It ends with worked examples to copy and change.
+:::
 
-> **Q:** Do I need every reference page first?
->
-> **A:** No. Keep the [glossary](../../reference/glossary.md) open when a word
-> is new. Use [concepts](../../guide/index.md) when a term needs
-> more than a one-line definition. Use [reference](../../reference/index.md)
-> when you want exact rules for one form.
-
----
-
-## If you already know Python
-
-> **Q:** I skipped ahead mentally — is there a faster on-ramp?
->
-> **A:** See [From Python](../from-python/index.md) for Rosetta-style mapping.
-> You can read it alongside the guide; both paths should agree on one
-> evaluation story.
-
----
-
-## Practice
-
-> **Q:** How do I get better?
->
-> **A:** Same loop as chapter 0: change a program, run it, read the result.
-> Try [Hello world](../../quickstart.md) and vary one line at a
-> time.
-
----
-
-## What you should remember
-
-Tutorials teach order and mental models. Reference teaches lookup. You have
-enough to start the guide.
+:::{dialogue}
+How do I get better?
++++
+The same loop as every chapter: decide what a program will do, run it,
+and read what it did. Change one line at a time.
+:::

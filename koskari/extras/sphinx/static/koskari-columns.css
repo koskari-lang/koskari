@@ -1,0 +1,73 @@
+/* Two-column rows emitted by the koskari.extras.sphinx dialogue and
+   pair directives. A dialogue row is a question beside its answer; a
+   pair row is one spelling beside another. Both stack on narrow
+   screens. */
+
+.ko-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 1.5em;
+  margin: 0 0 1.5em;
+}
+
+.ko-columns > .ko-col {
+  min-width: 0;
+}
+
+.ko-columns > .ko-col > :last-child {
+  margin-bottom: 0;
+}
+
+.ko-columns .ko-col-label {
+  margin: 0 0 0.4em;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a8070;
+}
+
+/* dialogue: a hairline down the middle, the question set in the
+   body face, the answer carrying the code */
+
+.ko-dialogue {
+  padding: 0.9em 0;
+  border-top: 1px solid #e9e0cf;
+}
+
+.ko-dialogue + .ko-dialogue {
+  margin-top: -1.5em;
+}
+
+.ko-dialogue > .ko-col-answer {
+  padding-left: 1.5em;
+  border-left: 1px solid #e9e0cf;
+}
+
+.ko-dialogue > .ko-col-question > p {
+  color: #211c16;
+}
+
+/* pair: two captioned columns, no rule between them */
+
+.ko-pair > .ko-col-right {
+  padding-left: 0.25em;
+}
+
+.ko-columns pre {
+  margin-bottom: 0;
+}
+
+@media (max-width: 700px) {
+  .ko-columns {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.75em;
+  }
+
+  .ko-dialogue > .ko-col-answer {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+/* The end. */

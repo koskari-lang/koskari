@@ -16,7 +16,7 @@ pages give exact rules per form.
 > 3. **Data** — some values are data you can inspect; some are things you can
 >    call.
 
-> **Q:** Which did the beginner track already use?
+> **Q:** Which did Little Koskari already use?
 >
 > **A:** All three, without the names. When you typed `(+ 1 2)` at the REPL,
 > Koskari read the text, evaluated the call, and showed the number `3` — data.
@@ -29,7 +29,7 @@ pages give exact rules per form.
 >
 > **A:** On disk or at the keyboard it is **text**. After reading, Koskari
 > treats it as a **call**: `+` with inputs `1` and `2`. Reading is strict: bad
-> punctuation fails before evaluation starts (syntax errors from the beginner
+> punctuation fails before evaluation starts (syntax errors from Little Koskari
 > track).
 
 > **Q:** How does layout syntax fit in?
@@ -61,7 +61,7 @@ pages give exact rules per form.
 > **Q:** What is the value of `(define x 6)`?
 >
 > **A:** The side effect is: the name `x` now means `6`. The form’s value is
-> not interesting to print at the REPL — that is why the beginner track stayed
+> not interesting to print at the REPL — that is why Little Koskari stayed
 > quiet after `define`.
 
 > **Q:** What is the value of `(print "hi")`?
@@ -95,7 +95,7 @@ pages give exact rules per form.
 > **Q:** In `(print (+ 1 2))`, what runs first?
 >
 > **A:** The inner call `(+ 1 2)` evaluates to `3`. Then `print` receives `3`
-> as its input. Same rule as the beginner track: **inside before outside**.
+> as its input. Same rule as Little Koskari: **inside before outside**.
 
 ---
 

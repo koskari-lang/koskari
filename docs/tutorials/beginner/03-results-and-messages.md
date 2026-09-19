@@ -1,128 +1,101 @@
 # Results and messages
 
-Running programs produces **output** and sometimes **errors**. Reading both is
-part of programming — not a separate skill for “later.”
+Running a program produces output, and sometimes an error. Reading both
+is part of programming.
 
----
+## Results at the prompt
 
-## Normal results at the REPL
+:::{dialogue}
+When does Koskari show a result?
++++
+At the prompt, whenever a line produces a value worth seeing:
 
-> **Q:** When does Koskari show a result on screen?
->
-> **A:** At the REPL, when a line **finishes with a useful value**, Koskari
-> prints that value so you can see it:
->
-> ```koskari
-> koskari> (+ 1 2)
-> 3
-> ```
+```koskari
+koskari> (+ 1 2)
+3
+```
+:::
 
-> **Q:** What about `(define x 99)`?
->
-> **A:** Try it. Defining `x` does its job quietly — you should **not** see `99`
-> printed just because you defined the name. The form’s result is not interesting
-> to show.
+:::{dialogue}
+What about `(define x 99)`?
++++
+Nothing is shown. Giving a name a value is a quiet job; there is no
+result to look at. Ask for `x` afterwards and you see `99`.
+:::
 
-> **Q:** What about `(print "hi")`?
->
-> **A:** `print` sends `"hi"` to the screen as its main effect. Focus on the
-> text that appears. (Side effects and “return values” get a fuller story in
-> the [guide](../../guide/model-of-evaluation.md).)
+:::{dialogue}
+And `(print "hi")`?
++++
+You see `hi`, because that is what `print` does. Its own result is
+nothing worth showing, so the prompt shows only the printed text.
+:::
 
----
+:::{dialogue}
+Can we get the last result back?
++++
+Yes. An underscore names the value from the last line:
 
-## The last result
+```koskari
+koskari> (+ 3 4)
+7
+koskari> (* _ 2)
+14
+```
+:::
 
-> **Q:** Can we ask for the previous result again?
->
-> **A:** Yes. Type an underscore:
->
-> ```koskari
-> koskari> (+ 3 4)
-> 7
-> koskari> _
-> 7
-> ```
->
-> `_` means “the value from the last line I ran.”
+## Errors while reading
 
----
+:::{dialogue}
+What if the punctuation is wrong?
++++
+Koskari cannot read the program and says so:
 
-## Syntax errors
+```koskari
+koskari> ( 1 2 ]
+```
 
-> **Q:** What if the punctuation is wrong?
->
-> **A:** Koskari cannot read the program. Try:
->
-> ```koskari
-> koskari> ( 1 2 ]
-> ```
->
-> Koskari reports a **syntax error**. The message usually mentions mismatched
-> brackets or an unexpected token.
+The message names a syntax error and says where the reader gave up.
+:::
 
-> **Q:** Where does the message appear?
->
-> **A:** At the REPL, syntax errors go to the **error output** (often the same
-> terminal, but separate from normal printed results). Read the **first useful
-> line** — it often says what kind of problem Koskari saw.
+:::{dialogue}
+What should we do with it?
++++
+Read the first line of the message. Look back at what you typed and
+count the `(` and `)`. Fix one thing and run again.
+:::
 
-> **Q:** What should we do?
->
-> **A:**
->
-> 1. Read the first line of the message.
-> 2. Look back at what you typed — count `(` and `)`.
-> 3. Fix one thing, run again.
+## Errors while running
 
----
+:::{dialogue}
+Can the punctuation be right and the program still fail?
++++
+Yes. Koskari can read this, but cannot do it:
 
-## Runtime errors
+```koskari
+koskari> (/ 1 0)
+```
 
-> **Q:** Can punctuation be correct and the program still fail?
->
-> **A:** Yes. The program can be **readable** but ask for something impossible.
-> Example:
->
-> ```koskari
-> koskari> (/ 1 0)
-> ```
->
-> Koskari read the program fine, but running it hits a **runtime error**.
+The message is a `ZeroDivisionError`. Reading was fine; running was not.
+:::
 
-> **Q:** How is that different from a syntax error?
->
-> **A:**
->
-> - **Syntax error** — Koskari could not understand the text.
-> - **Runtime error** — Koskari understood the text, but something went wrong
->   while doing it.
+:::{dialogue}
+So there are two kinds of error?
++++
+Two kinds. A syntax error means Koskari could not understand the text.
+A runtime error means it understood the text and something went wrong
+doing it. The first line of the message tells you which.
+:::
 
----
+## Lines that continue
 
-## Continuing a line
+:::{dialogue}
+What if I press Enter before the group is closed?
++++
+Koskari waits for the rest. The prompt changes until the `)` arrives:
 
-> **Q:** What if I press Enter too early?
->
-> **A:** Koskari may wait for the rest of the group. This is fine:
->
-> ```koskari
-> koskari> (+ 1
-> ...> 2)
-> 3
-> ```
->
-> The prompt may change until the `)` closes the group. Finish the parentheses,
-> then Koskari runs the whole call.
-
----
-
-## What you should remember
-
-- Useful values show at the REPL; quiet forms like `define` often do not.
-- `_` recalls the last result.
-- Syntax errors mean “fix the text.” Runtime errors mean “fix what the program
-  tries to do.”
-- Read the first line of an error message before guessing.
-
-Next: [Repeating patterns](04-repeating-patterns.md).
+```koskari
+koskari> (+ 1
+   ...>    2)
+3
+```
+:::

@@ -5,7 +5,7 @@ narrative, Q&A callouts for Python↔Koskari deltas, and runnable examples in
 **layout-first** style.
 
 You need [Quickstart](../../quickstart.md) finished first. If parentheses
-feel unfamiliar, skim the [beginner track](../beginner/index.md) — chapter 2
+feel unfamiliar, read [Little Koskari](../beginner/index.md) — chapter 2
 covers calling in plain language.
 
 ```{toctree}

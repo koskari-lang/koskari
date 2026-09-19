@@ -1,0 +1,17 @@
+/* Styles for the Koskari documentation pages beyond the theme. The
+   landing page has its own stylesheet, style.css, which Sphinx copies
+   but does not load. */
+
+/* A rule box in the tutorials: one stated rule the reader keeps. */
+
+.rst-content .admonition.ko-rule {
+  background: #fbf7ec;
+  border-left: 4px solid #d4a32c;
+}
+
+.rst-content .admonition.ko-rule > .admonition-title {
+  background: #ecc356;
+  color: #2c2206;
+}
+
+/* The end. */

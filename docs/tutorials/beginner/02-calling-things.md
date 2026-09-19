@@ -1,100 +1,128 @@
 # Calling things
 
-Most of Koskari work is **calling** something with inputs.
+Most of what a program does is call something with inputs.
 
----
+## The shape of a call
 
-## The calling rule
+:::{dialogue}
+What is a call?
++++
+A group whose first word is the thing to do. The rest are its inputs:
 
-> **Q:** What is a call?
->
-> **A:** A call is a parenthesized group whose **first word** is the thing to
-> do. The rest are **inputs**:
->
-> ```koskari
-> (print "Hello")
-> ```
->
-> Here `print` is the thing to do. `"Hello"` is the input.
+```koskari
+(print "Hello")
+```
 
-> **Q:** What is `(+ 1 2)`?
->
-> **A:** A call. `+` is the thing to do. `1` and `2` are inputs.
+`print` is the thing to do. `"Hello"` is the input.
+:::
 
-> **Q:** Before you run it — what should `(+ 1 2)` produce?
->
-> Think, then try at the REPL:
->
-> ```koskari
-> koskari> (+ 1 2)
-> ```
->
-> **A:** `3`.
+:::{dialogue}
+What is `(+ 1 2)`?
++++
+A call. `+` is the thing to do; `1` and `2` are the inputs.
+:::
 
-> **Q:** What about `(+ 10 5)`?
->
-> **A:** Predict first: `15`. Then check at the REPL.
+:::{dialogue}
+What does `(+ 1 2)` produce?
++++
+`3`. Decide first, then check:
 
----
+```koskari
+koskari> (+ 1 2)
+3
+```
+:::
+
+:::{dialogue}
+And `(+ 10 5)`?
++++
+`15`.
+:::
+
+:::{dialogue}
+And `(* 6 7)`?
++++
+`42`. The `*` is how multiplication is spelled.
+:::
+
+:::{admonition} The call rule
+:class: ko-rule
+
+The first thing inside the parentheses is what to do. Everything after
+it is an input.
+:::
 
 ## More than one input
 
-> **Q:** Can a call have many inputs?
->
-> **A:** Yes:
->
-> ```koskari
-> (+ 1 2 3 4)
-> ```
->
-> Try it. `+` adds all the inputs together.
+:::{dialogue}
+Can a call have many inputs?
++++
+Yes:
 
-> **Q:** What is `(print "a" "b" "c")`?
->
-> **A:** A call to `print` with three inputs. `print` sends each piece to the
-> screen in order. Try it and read what appears.
+```koskari
+koskari> (+ 1 2 3 4)
+10
+```
 
----
+`+` adds every input it is given.
+:::
+
+:::{dialogue}
+What does `(print "a" "b" "c")` do?
++++
+Calls `print` with three inputs. It puts each on the screen, in order,
+with a space between:
+
+```koskari
+koskari> (print "a" "b" "c")
+a b c
+```
+:::
 
 ## Giving a name a value
 
-> **Q:** Can we remember a value under a name?
->
-> **A:** Yes. Use `define`:
->
-> ```koskari
-> koskari> (define x 6)
-> koskari> (define y 7)
-> ```
->
-> After that, `x` means `6` and `y` means `7`.
+:::{dialogue}
+Can we keep a value under a name?
++++
+Yes, with `define`:
 
-> **Q:** What is `(print x y (* x y))`?
->
-> **A:** A call to `print` with three inputs: the value of `x`, the value of
-> `y`, and the value of `(* x y)`. Predict the middle piece before you run it.
-> Then try the whole call.
+```koskari
+koskari> (define x 6)
+koskari> (define y 7)
+```
 
----
+From then on `x` means `6` and `y` means `7`.
+:::
+
+:::{dialogue}
+What does `(print x y (* x y))` show?
++++
+Three inputs: the value of `x`, the value of `y`, and the value of
+`(* x y)`. Work out the third before you run it.
+
+```koskari
+koskari> (print x y (* x y))
+6 7 42
+```
+:::
 
 ## Calls inside calls
 
-> **Q:** Can an input be another call?
->
-> **A:** Yes. That is how `(* x y)` sits inside the `print` call above. Koskari
-> works from the inside out: inner calls finish first, then outer calls use
-> their results.
+:::{dialogue}
+Can an input be another call?
++++
+Yes. That is what `(* x y)` was, sitting inside the `print` call.
+Koskari works from the inside out: the inner call finishes first, and its
+value becomes the input to the outer one.
+:::
 
-> **Q:** What is `(+ 1 (+ 2 3))`?
->
-> **A:** Predict: the inner call is `5`, then `+` adds `1` and `5` to get `6`.
-> Check at the REPL.
+:::{dialogue}
+What is `(+ 1 (+ 2 3))`?
++++
+The inner call is `5`, then `+` adds `1` and `5`:
 
----
-
-## What you should remember
-
-A call looks like `(thing input ...)`. The first word after `(` is what happens;
-the rest are inputs. Inputs can be numbers, text, names, or other calls.
-
-Next: [Results and messages](03-results-and-messages.md).
+```koskari
+koskari> (+ 1 (+ 2 3))
+6
+```
+:::

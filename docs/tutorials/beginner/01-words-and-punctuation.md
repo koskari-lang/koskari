@@ -1,131 +1,121 @@
 # Words and punctuation
 
-Programs are made of **words** and **punctuation**.
-
----
+A program is made of words and punctuation. This chapter is about telling
+them apart.
 
 ## Numbers
 
-> **Q:** Is `42` a Koskari program?
->
-> **A:** It is a **number** — a kind of value. At the REPL you can type it alone:
->
-> ```koskari
-> koskari> 42
-> ```
->
-> Koskari shows the number back to you. (Chapter 3 explains when results appear
-> on screen.)
+:::{dialogue}
+Is `42` a program?
++++
+It is a number, one kind of value. Type it at the prompt and Koskari
+shows it back:
 
-> **Q:** Are `0` and `-3` numbers too?
->
-> **A:** Yes.
+```koskari
+koskari> 42
+42
+```
+:::
 
----
+:::{dialogue}
+Are `0` and `-3` numbers too?
++++
+Yes. So is `2.5`.
+:::
 
-## Text (strings)
+## Text
 
-> **Q:** How do we write text in a program?
->
-> **A:** Put it in **double quotes**:
->
-> ```koskari
-> "Hello, Koskari!"
-> ```
->
-> The quotes are punctuation. They are not part of the text that is stored —
-> they mark where the text starts and stops.
+:::{dialogue}
+How do we write text in a program?
++++
+Between double quotes:
 
-> **Q:** Can we use single quotes for strings?
->
-> **A:** Not for this kind of text. Use `"` as shown.
+```koskari
+koskari> "Hello, Koskari!"
+'Hello, Koskari!'
+```
 
----
+The quotes are punctuation. They mark where the text starts and stops
+and are not part of it.
+:::
+
+:::{dialogue}
+Can we use single quotes instead?
++++
+No. A single quote means something else, which chapter 9 uses. Text is
+always in `"` quotes.
+:::
 
 ## Names
 
-> **Q:** What is `x`?
->
-> **A:** By itself, `x` is a **name**. A name is a word you choose. Names hold
-> values once you **define** them (chapter 2).
+:::{dialogue}
+What is `x`?
++++
+By itself, a name. A name is a word you choose. It means nothing until
+you give it a value, which chapter 2 does.
+:::
 
-> **Q:** Is `print` a name?
->
-> **A:** Yes. It is a name that already means something in Koskari: a thing you
-> can call to send text to the screen.
+:::{dialogue}
+Is `print` a name?
++++
+Yes, and one that already has a value: the thing that puts text on the
+screen.
+:::
 
-> **Q:** Can names contain digits?
->
-> **A:** Often, yes — for example `x2`. They cannot start with a digit. For now,
-> use simple names like `count`, `message`, and `total`.
-
----
+:::{dialogue}
+Can a name contain digits, or a dash?
++++
+Both: `x2`, `add-tax`, and `total-so-far` are names. A name cannot start
+with a digit, since that would make it a number.
+:::
 
 ## Parentheses
 
-> **Q:** What does `(` do?
->
-> **A:** It starts a **group**. The matching `)` ends the group. Everything
-> between them belongs together:
->
-> ```koskari
-> (+ 1 2)
-> ```
->
-> This group is one **call** (chapter 2). The parentheses are not optional
-> decoration — they tell Koskari where the group begins and ends.
+:::{dialogue}
+What does `(` do?
++++
+It starts a group, and the matching `)` ends it. Everything between them
+belongs together:
 
-> **Q:** Can groups nest?
->
-> **A:** Yes:
->
-> ```koskari
-> (+ 1 (+ 2 3))
-> ```
->
-> Inner groups can sit inside outer groups. Chapter 4 practices this pattern.
+```koskari
+(+ 1 2)
+```
 
----
+The group is a call, which is chapter 2. The parentheses are not
+decoration; they tell Koskari where the group begins and ends.
+:::
+
+:::{dialogue}
+Can a group sit inside another group?
++++
+Yes, to any depth:
+
+```koskari
+(+ 1 (+ 2 3))
+```
+:::
 
 ## Spacing
 
-> **Q:** Does `(+ 1 2)` mean something different from `(+  1   2)`?
->
-> **A:** Koskari allows flexible spacing inside a group. These are the same
-> idea:
->
-> ```koskari
-> (+ 1 2)
-> (+  1   2)
-> ```
->
-> Good style uses spaces so human readers can see the pieces. Koskari is strict
-> about parentheses and quotes, not about how many spaces you use.
+:::{dialogue}
+Is `(+ 1 2)` different from `(+  1   2)`?
++++
+No. Inside a group, one space or several are the same. Use spaces so
+that a person can see the pieces.
+:::
 
-> **Q:** What about `(+1 2)`?
->
-> **A:** This means something different. A `+` or `-` touching the thing
-> after it belongs to that thing: `+1` is the number `1` with a sign, not
-> the name `+` followed by `1`. So `(+1 2)` asks the number `1` to do
-> something with `2`, and Koskari reports an error. Put a space after the
-> name you are calling.
+:::{dialogue}
+What about `(+1 2)`?
++++
+That is different. A `+` or `-` touching what follows it belongs to it:
+`+1` is the number `1` with a sign, not the name `+` beside a `1`. So
+`(+1 2)` asks the number `1` to do something with `2`, and Koskari
+reports an error. Put a space after the name you are calling.
+:::
 
----
+:::{admonition} The group rule
+:class: ko-rule
 
-## One rule to keep
-
-> **Q:** What is the one punctuation rule not to break?
->
-> **A:** Every `(` must have a matching `)`. If you leave one out, Koskari
-> cannot read the program and will report a **syntax error** (chapter 3).
-
----
-
-## What you should remember
-
-- Numbers like `42` are values.
-- `"text"` is text in double quotes.
-- Names like `x` and `print` are words you use to refer to things.
-- `(...)` groups pieces together; groups can nest.
-
-Next: [Calling things](02-calling-things.md).
+Every `(` has a matching `)`. Leave one out and Koskari cannot read the
+program at all.
+:::
