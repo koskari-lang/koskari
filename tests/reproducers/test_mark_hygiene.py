@@ -468,4 +468,25 @@ class TestClassPatternInTemplate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["selfed"], 5)
 
 
+class TestGeneratedKeywordLiteral(unittest.IsolatedAsyncioTestCase):
+    """
+    A keyword literal in a rule pattern a template writes matches a
+    use-site keyword by its bare spelling
+    """
+
+    SRC = """
+(define-syntax mk-pick
+  (syntax-rules []
+    [(mk-pick name)
+     (define-syntax name (syntax-rules [] [(name a then: b) b]))]))
+
+(mk-pick pick)
+(define picked (pick 1 then: 2))
+"""
+
+    async def test_keyword_literal_matches(self):
+        ns = await load("mh_keyword_literal", self.SRC)
+        self.assertEqual(ns["picked"], 2)
+
+
 # The end.
