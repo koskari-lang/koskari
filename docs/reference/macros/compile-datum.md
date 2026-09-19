@@ -6,5 +6,5 @@
 **Behaviour:** **`macro-rules`** expansion to **`(call datum expr [position])`**, capturing
 source position for hygiene.
 
-See [Macro matching and hygiene](../../guide/macro-matching-and-hygiene.md).
+See [Macro matching and hygiene](../../guide/macros-and-hygiene.md).
 

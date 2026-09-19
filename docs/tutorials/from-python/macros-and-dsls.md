@@ -158,4 +158,4 @@ when its form finishes compiling.
 :::
 
 The matching rules, hygiene, and the procedural `macro-rules` form are
-in [Macros and syntax extension](../../guide/macros-or-syntax-extension.md).
+in [Macros and hygiene](../../guide/macros-and-hygiene.md).

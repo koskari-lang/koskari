@@ -12,7 +12,7 @@ special forms.
 Inside any `(`, `[`, or `{`, and at the top level of a form, the base reader
 applies. It reads **atoms** and **lists** and a handful of **prefix** and
 **collection** syntaxes. Everyday shapes are covered in
-[Forms and combining](../guide/forms-and-combining.md); this section is the
+[Model of evaluation](../guide/model-of-evaluation.md); this section is the
 normative catalogue.
 
 **Whitespace is the only separator.** Tokens are split on spaces, tabs, and

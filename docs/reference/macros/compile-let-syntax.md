@@ -43,4 +43,4 @@ Nested shadowing:
 - [compile/define-syntax](compile-define-syntax.md)
 - [compile/extend-syntax](compile-extend-syntax.md)
 - [compile/inline-macro](compile-inline-macro.md)
-- [Macro matching and hygiene](../../guide/macro-matching-and-hygiene.md)
+- [Macro matching and hygiene](../../guide/macros-and-hygiene.md)

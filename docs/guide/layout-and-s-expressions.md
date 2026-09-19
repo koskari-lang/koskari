@@ -19,25 +19,22 @@ A line with one element is that value. A line with more than one element is
 a form headed by the first, which is a call, a definition, or any other
 form the head names.
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 print "hello" name
 name
 define sq [x] (* x x)
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (print "hello" name)
 name
 (define sq [x] (* x x))
 ```
 :::
-::::
 
 ---
 
@@ -48,23 +45,20 @@ lines join into one form, and each body line follows the line rule on its
 own. The head names a layout handler, `layout/<head>`; with no handler
 registered, the default splices body forms after the header.
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 when (> n 0):
   print n
   n
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (when (> n 0) (print n) n)
 ```
 :::
-::::
 
 ---
 
@@ -74,10 +68,10 @@ Some heads have their own handler, which may gather peer blocks at the same
 indent and lower the whole group to one form. Block `if` gathers `elif` and
 `else` and reads as `cond`.
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 if (< x 0):
   "negative"
@@ -86,9 +80,7 @@ elif (== x 0):
 else:
   "positive"
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (cond
   [(< x 0) "negative"]
@@ -96,7 +88,6 @@ else:
   [else: "positive"])
 ```
 :::
-::::
 
 The handlers and their peers are catalogued in the
 [layout handler reference](../reference/layouts/index.md).
@@ -110,24 +101,21 @@ form after the keyword is the value; several fold to a call. A keyword
 followed by `:` takes a block as its value, and a bare `k::` takes a
 `begin` block.
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 print:
   "hello"
   file: stderr
   end: ""
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (print "hello" file: stderr end: "")
 ```
 :::
-::::
 
 ---
 
@@ -137,92 +125,80 @@ Any `(`, `[`, or `{` switches to s-expression rules until it closes, at any
 depth. A newline inside an open delimiter does not end the line, so a
 header argument may span lines.
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 let [[a 1]
      [b 2]]:
   + a b
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (let [[a 1] [b 2]]
   (+ a b))
 ```
 :::
-::::
 
 ---
 
 ## Side by side
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 define greet [name]:
   print f"hello {name}"
   name
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (define greet [name]
   (print f"hello {name}")
   name)
 ```
 :::
-::::
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 for-each [item items]:
   print item
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (for-each [item items]
   (print item))
 ```
 :::
-::::
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 while (running? x):
   step x
 else:
   "done"
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (while (running? x)
   (step x)
   (else: "done"))
 ```
 :::
-::::
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 try:
   risky x
@@ -231,52 +207,43 @@ except [e ValueError]:
 finally:
   cleanup
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (try (begin (risky x))
   [[e ValueError] (print e)]
   [finally: cleanup])
 ```
 :::
-::::
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 define-class Point (Base):
   define x 0
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (define-class Point (Base)
   (begin (define x 0)))
 ```
 :::
-::::
 
-::::{grid} 1 1 2 2
-:gutter: 2
+:::{pair}
+:left: Koskari
+:right: s-expression
 
-:::{grid-item-card} Koskari
 ```koskari
 render:
   #[1 2 3]
   sep: ", "
 ```
-:::
-
-:::{grid-item-card} s-expression
++++
 ```koskari
 (render #[1 2 3] sep: ", ")
 ```
 :::
-::::
 
 ---
 

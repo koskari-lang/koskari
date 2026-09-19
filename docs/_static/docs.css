@@ -15,3 +15,11 @@
 }
 
 /* The end. */
+
+/* The theme forces nowrap on table cells, which pushes the guide and
+   reference tables into a horizontal scroll. Let cells wrap. */
+
+.wy-table-responsive table td,
+.wy-table-responsive table th {
+  white-space: normal;
+}

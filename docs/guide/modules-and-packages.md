@@ -1,14 +1,60 @@
-# Modules and packages: putting `.ki` files on disk
+# Modules and packages
 
-Koskari **augments the Python importer** rather than replacing it. Koskari source
-lives in files with a **`.ki`** extension (compiled objects are `.kio`), and once
-the import hook is active those files import by exactly the **same rules as
-Python**: a file is a module, a directory is a package, a directory with an
-**`__init__.ki`** (or `__init__.py`) is a regular package, and a directory with
-**no `__init__`** is an implicit **namespace package**. Dotted names, `as`
-aliases, and relative imports all behave as they do in Python.
+A `.ki` file is a module. Its top-level forms run in order when it is
+loaded, and it imports by Python's rules once the import hook is active:
+a file is a module, a directory is a package, a directory with an
+`__init__.ki` or `__init__.py` is a regular package, and a directory with
+no `__init__` is a namespace package. Dotted names, `as` aliases, and
+relative imports behave as they do in Python.
 
-## How the augmentation works
+## The shape of a file
+
+Definitions first, then the run-now part under `when-main:`, so that
+importing the file does not run the script body:
+
+```koskari
+"""
+Greet whoever is named on the command line
+"""
+
+import sys
+
+
+define greet [name]:
+  print "hello" name
+
+
+when-main:
+  for-each [name (item-slice sys.argv 1)]:
+    (greet name)
+```
+
+A docstring at the top becomes the module's `__doc__`. The order that
+reads best is imports, then constants and configuration, then functions
+and classes, then `when-main:`; a reader can then answer what the file
+needs, what it defines, and what happens when it runs.
+
+## Imports
+
+```koskari
+import math
+import os.path                                ;; binds os
+import [os.path as: p]                        ;; binds the leaf as p
+import-from pathlib Path
+import-from functools [lru_cache as: memoize]
+import-all-from mypackage                     ;; from mypackage import *
+```
+
+A plain dotted `import os.path` binds the root package, `os`, with
+`os.path` reachable as an attribute, as Python does. The bracketed
+`[MODULE as: NAME]` form binds the leaf. `import-all-from` binds a
+module's public names and is allowed only at module top level. See
+[`import`](../reference/specials/import.md),
+[`import-from`](../reference/specials/import-from.md), and
+[`use`](../reference/specials/use.md), which imports a macro together
+with its runtime sibling.
+
+## How the import hook works
 
 Importing `koskari` installs a meta-path finder ahead of CPython's. That finder
 recognizes the `.ki` and `.kio` extensions; when it locates such a source file it
@@ -35,19 +81,6 @@ source extensions:
 | `pkg/__init__.ki` (or `.py`) + `pkg/foo.ki` | `pkg`, `pkg.foo` | regular package |
 | `pkg/foo.ki` with **no** `pkg/__init__.*` | `pkg.foo` | namespace package |
 | `foo.kio` | `foo` | precompiled module |
-
-## A single module
-
-One file is one module. Reusable definitions up top, run-now behavior under
-`when-main:` so importing the file does not execute the script body:
-
-```koskari
-define greet [name]:
-  (print "hello" name)
-
-when-main:
-  (greet "Ada")
-```
 
 ## A regular package: `__init__.ki`
 
@@ -164,15 +197,3 @@ Import resolution searches `sys.path`. The usual ways a directory lands there:
 - **An installed package.** `pip install .` puts your declared packages on the
   path for good. For shipping an installed command, see
   [Packaging an installed command](packaging.md).
-
-## What you should remember
-
-- Koskari augments the Python importer; `.ki`/`.kio` are just recognized source
-  extensions, and every Python import rule still applies.
-- `__init__.ki` (or `.py`) makes a **regular package**; **no `__init__`** makes a
-  **namespace package**; both import their `.ki` submodules the same way.
-- A `.py` and a `.ki` file with the **same base name in one directory** is an
-  undefined-behavior conflict — give them different names or split them into
-  separate packages (`py/` and `ki/`).
-- A directory only imports if it is reachable on `sys.path`; running a script
-  adds the script's directory unless `PYTHONSAFEPATH` suppresses it.

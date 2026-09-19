@@ -26,7 +26,7 @@ with examples, see [Concepts](../guide/index.md).
 **datum**
 : Either the `(datum expr)` macro form that captures source position in templates,
   or a hygiene syntax box wrapping captured macro fragments. See
-  [Macro matching and hygiene](../guide/macro-matching-and-hygiene.md) and
+  [Macro matching and hygiene](../guide/macros-and-hygiene.md) and
   [compile/datum](macros/compile-datum.md).
 
 **defer**
@@ -74,7 +74,7 @@ with examples, see [Concepts](../guide/index.md).
 : In compile-time docs, test a source form against a pattern and expand the
   matching arm (`syntax-rules`, `syntax-match`, special patterns, etc.). Not the
   same as `switch` or runtime value dispatch. See
-  [Macro matching and hygiene](../guide/macro-matching-and-hygiene.md).
+  [Macro matching and hygiene](../guide/macros-and-hygiene.md).
 
 **namespace**
 : Lexical environment mapping names to reference cells; each name resolves through

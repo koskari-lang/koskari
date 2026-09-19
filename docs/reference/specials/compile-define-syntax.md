@@ -18,5 +18,5 @@ with **`NAME`** repeated as the first argument. Block syntax via the
 **Implementation:** `koskari/bootstrap/_define_syntax.ki` (macro definition).
 
 **See also:** [Macros](../macros/index.md),
-[Macro matching and hygiene](../../guide/macro-matching-and-hygiene.md),
+[Macro matching and hygiene](../../guide/macros-and-hygiene.md),
 **`compile/syntax-rules`**, **`compile/syntax-match`**.

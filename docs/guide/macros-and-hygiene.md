@@ -1,9 +1,87 @@
-# Macro matching and hygiene
+# Macros and hygiene
 
-Compile-time macros transform source forms before the compiler sees the
-result. Two ideas often confused under one word **match**: structural matching
-of input forms, and unrelated runtime or control-flow “match”. **Datum** also
-has two senses: a macro helper form and a hygiene wrapper around captured syntax.
+A macro is a function from forms to forms that runs at compile time.
+The compiler hands it a use of its name, it returns the code that use
+stands for, and the compiler continues on the result. That is how
+`if`, `when`, `set!`, `define-class`, and the `-each` family exist: each
+lowers to a smaller core form.
+
+## What a macro is for
+
+A function receives values after its arguments are evaluated. A macro
+receives the argument forms unevaluated, so it can decide whether, when,
+and how many times they run, and it can introduce bindings around them.
+Reach for one when you need a new binding shape, control over
+evaluation, or boilerplate that must wrap a body you wrote. When the
+inputs are values, write a function; it is easier to test, pass around,
+and explain.
+
+## Defining one
+
+`define-syntax` binds a name to a transformer. `syntax-rules` matches the
+use against patterns and fills a template:
+
+```koskari
+define-syntax unless:
+  syntax-rules []:
+    unless test body ...:
+      when (not test):
+        (begin body ...)
+```
+
+An ellipsis in a pattern matches zero or more forms and the same
+ellipsis in the template splices them back. A template is read by the
+layout reader before the ellipsis is expanded, so a line holding only
+`body ...` would read as the call `(body ...)`; keep `body ...` on the
+line of the form it belongs to, or spell it `(begin body ...)`.
+
+The macro and its first use must be in separate compilation units: an
+earlier top-level form in the same file, or an imported module. A
+`begin` that defines a macro and uses it in the same block fails,
+because the macro is registered when its defining form finishes
+compiling.
+
+## Templates and procedures
+
+`syntax-rules` and `syntax-match` bodies are templates: a shape with
+holes that the matched pieces fill. `macro-rules` and `macro-match`
+bodies are procedures: ordinary Koskari that runs at expand time and
+returns a form. Use the procedural kind when the output depends on
+inspecting the input: reordering entries, computing a name, classifying
+arguments.
+
+Inside a procedural body you work with the matched forms directly:
+
+- `form.datum` unwraps a matched form to its pair; the elements inside
+  are raw symbols, keywords, and values.
+- `define-values [head [tp rest]] form.datum` destructures it; `(car rest)`
+  takes the next element.
+- `(keyword? x)` and `(symbol? x)` classify a token.
+- Build the output with quasiquote, or with variadic `cons`, whose last
+  argument is the tail.
+- To emit an identifier you compute, wrap it in `datum`:
+  `(datum (symbol f"job/{tp.datum}"))`. That is how a dispatcher rewrites
+  `(job kafka ...)` into `(job/kafka ...)` and lets the compiler re-expand it.
+
+## Seeing an expansion
+
+`macroexpand` expands a form fully and `macroexpand-1` takes one step:
+
+```koskari
+koskari> (macroexpand '(unless ready (print "go")))
+(cond [ready None] [else (print "go")])
+```
+
+Keep a parenthesized use beside a layout use while writing a macro; the
+s-expression is the tree the macro sees.
+
+## Two senses of match, two senses of datum
+
+Two ideas share the word **match**: structural matching of input forms,
+which this page is about, and the runtime `match` form over values,
+which is [Match patterns](match-patterns.md). **Datum** also has two
+senses: a macro helper form and a hygiene wrapper around captured
+syntax.
 
 ## Match (macro and special transformers)
 
@@ -25,9 +103,8 @@ detail lives in [`koskari.matcher`](../reference/api/koskari-matcher.md) and
 This is **not** the same as:
 
 - **`compile/switch`** — value dispatch on runtime data
+- The runtime **`match`** form over values, in [Match patterns](match-patterns.md)
 - Exception matching at the VM layer
-- A future runtime **`match`** / **`match-case`** value form (not documented here
-  as shipped surface syntax)
 
 When the [Glossary](../reference/glossary.md) says **match**, it means macro/special
 pattern matching unless context says otherwise.
@@ -120,10 +197,10 @@ Source form
     → compile as usual
 ```
 
-## Related reading
+## See also
 
-- [Macros](../reference/macros/index.md) — `define-syntax`, `extend-syntax`, rule forms
-- [compile/let-syntax](../reference/macros/compile-let-syntax.md) — local compile-time macro binding
-- [compile/inline-macro](../reference/macros/compile-inline-macro.md) — compile-time source splice
+- [Macros](../reference/macros/index.md): `define-syntax`,
+  `extend-syntax`, and the rule forms
+- [compile/let-syntax](../reference/macros/compile-let-syntax.md):
+  a local compile-time binding
 - [compile/datum](../reference/macros/compile-datum.md)
-- [Glossary: macro](../reference/glossary.md), [Glossary: form](../reference/glossary.md)

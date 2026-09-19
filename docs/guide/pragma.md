@@ -232,18 +232,18 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   bodies attach a per-site cache to attribute and method-call instructions,
   so a repeated access with the same receiver type skips the resolution walk.
   On is the baseline; the reused code that loops flow through is where it
-  pays. See [Attribute and method caching](opcode-caching.md).
+  pays. See [Attribute and method caching](runtime-tuning.md#attribute-and-method-caching).
 - **`compiler/cache-expression`** *(default off)* — the same caching for
   top-level module and REPL expressions. Off by default because top-level
   code usually runs once as it loads, so a cache would not amortize. A bare
   `[compiler/cache-expression]` turns it on. See
-  [Attribute and method caching](opcode-caching.md).
+  [Attribute and method caching](runtime-tuning.md#attribute-and-method-caching).
 - **`compiler/protect-code`** *(default off)* — whether each compiled code
   object's bytecode storage is sealed read-only at the OS level the moment it
   is built. On, a stray or hostile write to live bytecode faults instead of
   corrupting the interpreter, at the cost of a full memory page per code
   object. A bare `[compiler/protect-code]` turns it on. See
-  [Code sealing and arena packing](code-sealing.md).
+  [Code sealing and arena packing](runtime-tuning.md#code-sealing-and-arena-packing).
 - **`compiler/pack-module`** *(default on)* — whether the module's surviving
   code objects are compacted into shared read-only storage when the module
   finishes loading. On — the baseline — a loaded module's functions share one
@@ -256,7 +256,7 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   (pragma [compiler/pack-module False])
   ```
 
-  See [Code sealing and arena packing](code-sealing.md) for the model
+  See [Code sealing and arena packing](runtime-tuning.md#code-sealing-and-arena-packing) for the model
   and its tradeoffs.
 
 ### Pragma machinery

@@ -419,7 +419,7 @@ verify:
   expand: (call parse-match-pattern (quote (double (VALUE x))))
 references:
   - reference/macros/index.md
-  - guide/macro-matching-and-hygiene.md
+  - guide/macros-and-hygiene.md
 stability: evolving
 tags:
   - syntax
@@ -434,7 +434,7 @@ verify:
   expand: (call parse-rule-pattern (quote (m v)) (quote [m item]))
 references:
   - reference/macros/index.md
-  - guide/macro-matching-and-hygiene.md
+  - guide/macros-and-hygiene.md
 stability: evolving
 tags:
   - syntax
@@ -465,7 +465,7 @@ verify:
   expand: (call parse-match-pattern (quote (VAR a)))
 references:
   - reference/macros/index.md
-  - guide/macro-matching-and-hygiene.md
+  - guide/macros-and-hygiene.md
 stability: evolving
 tags:
   - syntax
@@ -482,7 +482,7 @@ verify:
   expand: (call parse-match-pattern (quote (LITERAL 42)))
 references:
   - reference/macros/index.md
-  - guide/macro-matching-and-hygiene.md
+  - guide/macros-and-hygiene.md
 stability: evolving
 tags:
   - syntax
@@ -617,7 +617,7 @@ verify:
   expand: (call parse-rule-pattern (quote (my-rule a b)) (quote (my-rule val1 val2)))
 references:
   - reference/macros/index.md
-  - guide/macro-matching-and-hygiene.md
+  - guide/macros-and-hygiene.md
 stability: evolving
 tags:
   - syntax
@@ -653,7 +653,7 @@ source: |-
 verify:
   eval: "3"
 references:
-  - guide/macro-matching-and-hygiene.md
+  - guide/macros-and-hygiene.md
   - reference/macros/compile-cadr-caddr-cadddr-caddddr.md
 stability: evolving
 tags:

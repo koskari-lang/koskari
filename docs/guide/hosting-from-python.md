@@ -90,7 +90,7 @@ coro = as_coroutine(mod.greet('world'))        # a genuine Python coroutine
 ```
 
 Which construct to reach for —
-[Choosing an async construct](choosing-an-async-construct.md).
+[Choosing a construct](demand-async-and-defer.md#choosing-a-construct).
 
 ## Rules of thumb
 
@@ -107,5 +107,5 @@ Which construct to reach for —
 
 - [From Python: Interop](../tutorials/from-python/interop.md) — calling across the boundary
 - [Demand, async, and defer](demand-async-and-defer.md) — the async host model
-- [Choosing an async construct](choosing-an-async-construct.md) — defer, coroutine-fn, and bridges
+- [Choosing a construct](demand-async-and-defer.md#choosing-a-construct) — defer, coroutine-fn, and bridges
 - [Packaging an installed command](packaging.md) — ship a `.ki` app as a pip command

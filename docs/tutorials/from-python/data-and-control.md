@@ -102,8 +102,9 @@ decr! n 2
 Why two words for `=`?
 +++
 `define` introduces a name in the current scope. `set!` stores into a
-name that exists, and it is an error if none does. Python lets one
-symbol do both and infers which you meant.
+name that exists; inside a function, a `set!` to a name bound nowhere
+is a compile error that names the fix. Python lets one symbol do both
+and infers which you meant.
 :::
 
 :::{pair}

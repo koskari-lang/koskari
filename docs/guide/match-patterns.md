@@ -162,5 +162,5 @@ as Python's `case ... if ...`.
 - [`compile/switch`](../reference/specials/compile-switch.md) — equality dispatch
 - [`koskari.matcher`](../reference/api/koskari-matcher.md) — the matcher API these
   patterns compile to
-- [Macro matching and hygiene](macro-matching-and-hygiene.md) — the same
+- [Macro matching and hygiene](macros-and-hygiene.md) — the same
   engine matching source forms at compile time
