@@ -65,7 +65,7 @@ ICON_WORDMARK_MARKUP = """
 SAMPLE_DIR = 'samples'
 
 SAMPLE_NAMES = (
-    'hero.ki',
+    'move.ki',
     'shapes.py',
     'shapes.ki',
     'fetch.ki',

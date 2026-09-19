@@ -159,9 +159,9 @@ body {
   text-underline-offset: 2px;
 }
 
-/* === Hero === */
+/* === Opening === */
 
-.ko-hero {
+.ko-opening {
   display: grid;
   grid-template-columns: 1.02fr .98fr;
   gap: 40px;
@@ -318,7 +318,7 @@ body {
   box-shadow: var(--ko-shadow-code);
 }
 
-.ko-code-hero { max-width: none; }
+.ko-code-opening { max-width: none; }
 
 .ko-code-chrome {
   display: flex;
@@ -350,7 +350,7 @@ body {
   color: var(--ko-fg-code);
 }
 
-.ko-code-hero .ko-code-pre { font-size: 12.5px; }
+.ko-code-opening .ko-code-pre { font-size: 12.5px; }
 
 /* === Python beside Koskari === */
 
@@ -507,16 +507,16 @@ body {
 /* === Responsive === */
 
 @media (max-width: 860px) {
-  .ko-hero { grid-template-columns: 1fr; }
+  .ko-opening { grid-template-columns: 1fr; }
   .ko-download-grid { grid-template-columns: 1fr; }
   .ko-compare { grid-template-columns: 1fr; }
-  .ko-code-hero .ko-code-pre { font-size: 13.5px; }
+  .ko-code-opening .ko-code-pre { font-size: 13.5px; }
 }
 
 @media (max-width: 620px) {
   :root { --ko-pad-x: 24px; }
 
-  .ko-nav-links { gap: 18px; }
+  .ko-nav-links { flex-wrap: wrap; gap: 14px; font-size: 14px; }
   .ko-h1 { font-size: 44px; }
   .ko-download { padding: 32px 24px; }
 }

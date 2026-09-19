@@ -36,7 +36,7 @@
 
   <main>
 
-  <section class="ko-hero">
+  <section class="ko-opening">
     <div>
       <h1 class="ko-h1">A Lisp that lives<br><span class="ko-accent">with Python.</span></h1>
       <p class="ko-lede">Koskari is a Lisp that runs on its own <a class="ko-text-link" href="/docs/reference/vm/">stackless evaluator inside CPython</a>. It <a class="ko-text-link" href="/docs/guide/demand-async-and-defer/">awaits without async markers</a>, reads <a class="ko-text-link" href="/docs/guide/layout-and-s-expressions/">indentation as layout</a>, and takes <a class="ko-text-link" href="/docs/tutorials/from-python/interop/">Python modules, classes, and objects both ways</a>, <a class="ko-text-link" href="/docs/tutorials/from-python/classes-and-objects/">subclassing</a> included.</p>
@@ -49,11 +49,14 @@
         <span class="ko-install-soon">v{{ version }} BETA</span>
       </div>
     </div>
-    <div class="ko-code-window ko-code-hero">
-      <div class="ko-code-chrome">
-        <span class="ko-code-filename">{{ samples.hero_ki.filename }}</span>
+    <div>
+      <div class="ko-code-window ko-code-opening">
+        <div class="ko-code-chrome">
+          <span class="ko-code-filename">{{ samples.move_ki.filename }}</span>
+        </div>
+        <div class="ko-code-body"><pre class="ko-code-pre">{{ samples.move_ki.code }}</pre></div>
       </div>
-      <div class="ko-code-body"><pre class="ko-code-pre">{{ samples.hero_ki.code }}</pre></div>
+      <p class="ko-compare-caption">The <span class="ko-inline-code">&amp;</span> formals receive <a class="ko-text-link" href="/docs/guide/bindings-and-refs/">references</a>, so one function updates a dict item, a list index, or an attribute in place.</p>
     </div>
   </section>
 
@@ -116,7 +119,7 @@
     <div class="ko-download-grid">
       <div>
         <h2 class="ko-download-title">Get Koskari</h2>
-        <p class="ko-download-lede">Koskari <strong class="ko-download-strong">v{{ version }}</strong> is the first beta, so <a class="ko-ink-link" href="/docs/project/release-and-versioning/">expect the language surface to move</a> before 1.0. It installs from PyPI and <a class="ko-ink-link" href="/docs/faq/">runs on CPython 3.9 through 3.14 on Linux and macOS, and is not a replacement for Python</a>. A Python program can also <a class="ko-ink-link" href="/docs/guide/hosting-from-python/">embed it</a>.</p>
+        <p class="ko-download-lede">Koskari <strong class="ko-download-strong">v{{ version }}</strong> is the first beta, so <a class="ko-ink-link" href="/docs/project/release-and-versioning/">expect the language surface to move</a> before 1.0. It installs from PyPI and <a class="ko-ink-link" href="/docs/faq/#which-python-versions-and-platforms">runs on CPython 3.9 through 3.14 on Linux and macOS</a>. It is <a class="ko-ink-link" href="/docs/faq/#what-is-it-not">not a replacement for Python</a>. A Python program can also <a class="ko-ink-link" href="/docs/guide/hosting-from-python/">embed it</a>.</p>
         <div class="ko-platform-tags">
           <span class="ko-platform-tag">Linux</span>
           <span class="ko-platform-tag">macOS</span>
