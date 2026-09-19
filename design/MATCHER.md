@@ -265,7 +265,10 @@ names with that knowledge at the point it declares or references them.
 
 ### Marking
 
-Each arm expansion allocates a fresh mark (`koskari.syntax._expansion_marks`).
+Each arm expansion allocates a fresh mark (`koskari.syntax._expansion_marks`),
+counting up from a base drawn once per process (`EXPANSION_MARK_BASE`), so a
+marked spelling serialized into a `.kio` by one process is not minted again
+for a different name by the process that loads it.
 
 - A template arm marks every template-literal symbol and keyword while it
   transcribes (`expand_template_with_hygiene(template, bindings, mark)`).

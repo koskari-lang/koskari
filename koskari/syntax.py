@@ -25,6 +25,7 @@ Syntax dispatch scaffolding
 from abc import ABC, abstractmethod
 from functools import wraps
 from itertools import count
+from secrets import randbits
 from typing import Any
 
 from koskari.bootstrap import builtin
@@ -62,8 +63,13 @@ __all__ = (
 
 _symbol_match = symbol("match")
 
-# one fresh mark per arm expansion, whatever transformer runs it
-_expansion_marks = count(1)
+# one fresh mark per arm expansion, whatever transformer runs it. The
+# counter starts from a base drawn once per process: a template a
+# macro-generating macro defined carries its marks into a .kio, and a
+# process that loads that module and compiles into it must not mint
+# the same key for a different name of its own
+EXPANSION_MARK_BASE = randbits(32) + 1
+_expansion_marks = count(EXPANSION_MARK_BASE)
 
 
 class Syntax(Compiled):
