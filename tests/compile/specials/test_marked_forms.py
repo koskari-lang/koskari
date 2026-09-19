@@ -286,4 +286,36 @@ class TestMarkResolution(TestMarkedForms):
         self.assertEqual(await expr(), 100)
 
 
+class TestMarkResolutionStreams(TestMarkedForms):
+    """
+    The resolution pass walks the compiler's own emission: a class
+    body's PUSH_COLLECT carries its namespace spec as the operand, and
+    a comparison the processor fuses later is still plain loads here
+    """
+
+
+    async def test_marked_reference_inside_class_body(self):
+        form = build_proper(
+            S("begin"),
+            build_proper(S("define"), M("base"), 4),
+            build_proper(S("define"), M("C"), build_proper(
+                S("class"), M("C"), build_proper(),
+                build_proper(S("define"), M("member"), M("base")))),
+            build_proper(S("attr"), M("C"), S("member")))
+        expr, module = self.compile_form(form)
+        self.assertEqual(await expr(), 4)
+
+
+    async def test_marked_operands_of_a_fused_comparison(self):
+        form = build_proper(
+            S("begin"),
+            build_proper(S("define"), M("t"), 3),
+            build_proper(
+                S("cond"),
+                build_proper(build_proper(S("<"), M("t"), 5), "lt"),
+                build_proper(MK("else"), "ge")))
+        expr, module = self.compile_form(form)
+        self.assertEqual(await expr(), "lt")
+
+
 # The end.

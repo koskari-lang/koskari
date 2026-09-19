@@ -198,9 +198,6 @@ def expand_template_with_hygiene(template, bindings, mark=None):
                     template)
             return val
 
-        if template is Ellipsis:
-            return template
-
         if mark is None:
             return template
         return mark_atom(template, mark)

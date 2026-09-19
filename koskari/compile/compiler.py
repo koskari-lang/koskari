@@ -38,8 +38,7 @@ from ..types import (
 from .pragma import (
     BracketCalls, KeywordLiterals, KoskariPragma, PackModule, ResolutionMode,
     StrayColon)
-from .processor import (
-    CMPSRC_X_CONST, CMPSRC_Y_CONST, ByteCodeProcessor)
+from .processor import ByteCodeProcessor
 
 
 class Compiled(ABC):
@@ -537,39 +536,23 @@ def resolve_marks(fragment, ancestors):
         # visible within the scope under that spelling, as its locals are
         return set(nspec.local_syms) | set(nspec.global_syms)
 
+    # the stream is the compiler's own emission: PUSH_NS and
+    # PUSH_COLLECT carry their NamespaceSpec as the operand, and the
+    # fused rows the processor mints later are not here yet
     scopes = list(base)
-    pending = None
     out = []
     for op, arg in fragment.instructions:
-        if op == OpCode.CONST:
-            if isinstance(arg, NamespaceSpec):
-                arg = rebuild_nspec(arg, scopes)
-                pending = arg
-
-        elif op == OpCode.PUSH_NS:
+        if op == OpCode.PUSH_NS:
             nspec = rebuild_nspec(arg[0], scopes)
             arg = (nspec,) + tuple(arg[1:])
             scopes.insert(0, scope_names(nspec))
 
         elif op == OpCode.PUSH_COLLECT:
-            if isinstance(arg, NamespaceSpec):
-                arg = rebuild_nspec(arg, scopes)
-                nspec = arg
-            else:
-                nspec = pending
-            scopes.insert(0, scope_names(nspec) if nspec else set())
-            pending = None
+            arg = rebuild_nspec(arg, scopes)
+            scopes.insert(0, scope_names(arg))
 
         elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
             scopes.pop(0)
-
-        elif op == OpCode.CHECK_COMPARE_VAR:
-            cmpsrc, x, y, label = arg
-            if not (cmpsrc & CMPSRC_X_CONST):
-                x = choose(x, scopes)
-            if not (cmpsrc & CMPSRC_Y_CONST):
-                y = choose(y, scopes)
-            arg = (cmpsrc, x, y, label)
 
         elif op.style == OpStyle.VAR:
             arg = choose(arg, scopes)
