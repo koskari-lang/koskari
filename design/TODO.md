@@ -115,6 +115,19 @@ gate options, and the equivalence obligations are recorded for review.
 
 Ref: [language/dict-literal-compression.md](language/dict-literal-compression.md).
 
+### Hygiene system review
+
+Binder discovery, the freeze-time `Hygiene` plan, and the finalize
+renamer have each been patched in isolation: keyword-cell threading,
+REST versus BODY at region captures, the plan-emptiness rule for
+ellipsis macros. Review them as one system: which captures register
+regions and why, what a plan with no binders or regions means, how
+nested macros and `Datum`-wrapped captures bound the walk, and what a
+template-introduced binder is owed at every depth.
+
+Ref: [MATCHER.md](MATCHER.md),
+[api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md).
+
 ### Bundles and namespace facets
 
 Introduce **bundles** as first-class namespace facet objects: a namespace of
