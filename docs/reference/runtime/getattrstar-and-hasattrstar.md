@@ -31,9 +31,9 @@ Walk **`ELEMENT`** through each name in **`ATTRLIST`** left to right. Return
 true only when every step succeeds; return false on the first failed lookup
 without raising.
 
-Any exception raised during a step is cleared and read as absent, not only
-**`AttributeError`**. A property that raises **`ValueError`** reads as false,
-where Python's **`hasattr`** would propagate it.
+Only **`AttributeError`** reads as absent, as with Python's **`hasattr`**.
+Any other exception raised during a step propagates, so a property that
+raises **`ValueError`** raises it through **`hasattr*`**.
 
 An empty **`ATTRLIST`** raises **`ValueError`**.
 

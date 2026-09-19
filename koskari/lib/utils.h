@@ -217,12 +217,12 @@ PyObject *KosUtils_GetAttrStar(
    Chained hasattr through a sequence of attribute names.
 
    Walks element through each name in attrlist left to right. Returns
-   Py_True only when every step succeeds; Py_False on the first failed
-   lookup (any exception cleared, Python hasattr semantics per step).
+   Py_True only when every step succeeds; Py_False on the first step
+   that raises AttributeError, which is cleared, as Python hasattr does.
 
    :param element: starting object
    :param attrlist: sequence of attribute names
-   :return: Py_True or Py_False
+   :return: Py_True or Py_False, or NULL with any other exception set
    :raises ValueError: when attrlist is empty
 */
 PyObject *KosUtils_HasAttrStar(
