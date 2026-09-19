@@ -74,8 +74,9 @@ bound falls back to the plain name, so a template's `cons` is the
 caller's `cons`. A stamped name passed into another macro keeps its
 stamp, so a binder written through a nested macro is still the
 template's own, and a stamped name inside `quote` comes out plain.
-`macroexpand` prints stamped names as written; the stamp shows in
-`str` of the symbol.
+A printed form shows stamped names as written, whether through
+`print`, `str`, or `macroexpand` at the REPL; the stamp shows only in
+`str` of the stamped symbol itself.
 
 `(datum expr)` is the author's control in a procedural macro: it marks
 a fragment as having come from the input form rather than from the

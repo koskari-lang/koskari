@@ -24,7 +24,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import Mark, keyword, kos_repr, symbol
+from koskari.lib import Mark, cons, keyword, kos_repr, nil, symbol
 
 
 pytestmark = pytest.mark.phase_lib
@@ -96,6 +96,21 @@ class TestMark(unittest.TestCase):
         self.assertEqual(repr(m), "<koskari mark t#1>")
         self.assertEqual(kos_repr(m), "t")
         self.assertEqual(kos_repr(Mark(keyword("else"), 1)), "else:")
+
+
+    def test_printed_form_shows_the_atom(self):
+        """
+        str of a form is source: a marked atom prints as written, in
+        car and in dotted tail position, while str of the Mark itself
+        is its key
+        """
+
+        form = cons(Mark(symbol("let"), 1), Mark(symbol("t"), 1), 1, nil)
+        self.assertEqual(str(form), "(let t 1)")
+        self.assertEqual(kos_repr(form), "(let t 1)")
+        dotted = cons(1, Mark(symbol("t"), 1))
+        self.assertEqual(str(dotted), "(1 . t)")
+        self.assertEqual(str(Mark(symbol("t"), 1)), "t#1")
 
 
 # The end.
