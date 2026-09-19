@@ -130,7 +130,7 @@ def test_full_view_columns():
 def test_docs_view_row_per_markdown_page():
     """
     koskari-docs emits one row per Markdown page under each published
-    docs subtree
+    docs subtree and one per published root page
     """
 
     docs = _load_view_module('docs')
@@ -138,6 +138,9 @@ def test_docs_view_row_per_markdown_page():
 
     root = project_root()
     expected = 0
+    for name in docs.DOC_ROOT_PAGES:
+        assert (root / 'docs' / name).is_file()
+        expected += 1
     for subdir in docs._DOC_SUBDIRS:
         expected += len(list((root / 'docs' / subdir).rglob('*.md')))
 
@@ -171,6 +174,7 @@ def test_docs_view_resolves_all_record_references():
 
     records = load_records(default_records_dir())
     published = tuple(sub + '/' for sub in docs._DOC_SUBDIRS)
+    published += tuple(docs.DOC_ROOT_PAGES)
     cited = set()
     for record in records:
         for ref in record.get('references') or []:
