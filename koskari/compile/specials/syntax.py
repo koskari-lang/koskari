@@ -26,7 +26,7 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import cons, nil, symbol
 from ...matcher import (
-    BIND, BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, REPEAT, REST, SYMBOL,
+    BIND, BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, REPEAT, SYMBOL,
     VALUE, parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
 from ...syntax import parse_syntax_rules_pattern, special
 from ...types import build_proper, is_pair, is_proper, is_symbol, unpack
@@ -76,7 +76,7 @@ _RULE_ROWS = repeat_capture("rules", REPEAT(BIND("rule"), min_count=1))
 # Rows of ``(PATTERN BODY...)`` for the match-dialect surfaces
 _MATCH_RULE_ROWS = repeat_capture(
     "rules",
-    REPEAT(LIST(BIND("pattern"), REST("body")), min_count=1))
+    REPEAT(LIST(BIND("pattern"), BODY("body")), min_count=1))
 
 # Rows of ``((COMPILER-FORMAL PATTERN) BODY...)`` for the special
 # surfaces, whose pattern column names the compiler parameter
@@ -89,7 +89,7 @@ _SPECIAL_RULE_ROWS = repeat_capture(
 _SPECIAL_MATCH_RULE_ROWS = repeat_capture(
     "rules",
     REPEAT(
-        LIST(LIST(SYMBOL("compiler"), VALUE("pattern")), REST("body")),
+        LIST(LIST(SYMBOL("compiler"), VALUE("pattern")), BODY("body")),
         min_count=1))
 
 _MATCH_FORM_PATTERN = LIST(LITERAL_SYM("match"), VALUE("inner"))

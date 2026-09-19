@@ -119,13 +119,14 @@ class Hygiene(object):
 
     def is_empty(self):
         """
-        True when the root node has no binders, regions, or outgoing edges
+        True when no node in the tree has binders or regions
+
+        A plan with edges but nothing to walk under them, such as a
+        syntax-rules pattern with an ellipsis, discovers nothing on its
+        own, and its form is walked element-wise instead
         """
 
-        if self.edges:
-            return False
-        root = self.node_by_id(self.root_id)
-        return not bool(root.binders or root.regions)
+        return not any(node.binders or node.regions for node in self.nodes)
 
 
     def __bool__(self):
@@ -267,17 +268,17 @@ def _hygiene_collect_walk_roots(form):
     yield form
 
 
-def _walk_region_roots(matched, owner, find_compiled, out):
+def _walk_region_roots(matched, owner, find_compiled, out, kw_cells=None):
     """
     Walk scope-region targets from ``owner`` into ``out``
     """
 
     for form in owner.iter_scope_targets(matched):
         for root in _hygiene_collect_walk_roots(form):
-            out |= _collect_from_region_root(root, find_compiled)
+            out |= _collect_from_region_root(root, find_compiled, kw_cells)
 
 
-def _walk_binder_scopes(matched, owner, find_compiled, out):
+def _walk_binder_scopes(matched, owner, find_compiled, out, kw_cells=None):
     """
     Walk binder ``_scopes`` sibling slots (same matched mapping)
     """
@@ -294,13 +295,13 @@ def _walk_binder_scopes(matched, owner, find_compiled, out):
         elif is_pair(val) or is_nil(val):
             spine = val
         else:
-            out |= _collect_from_region_root(val, find_compiled)
+            out |= _collect_from_region_root(val, find_compiled, kw_cells)
             continue
         for root in _hygiene_collect_walk_roots(spine):
-            out |= _collect_from_region_root(root, find_compiled)
+            out |= _collect_from_region_root(root, find_compiled, kw_cells)
 
 
-def _collect_from_region_root(root, find_compiled):
+def _collect_from_region_root(root, find_compiled, kw_cells=None):
     """
     Descend a scope-region root the same way as ``collect_binding_symbols``
     on a nested form: specials via their hygiene arm; other pair spines
@@ -325,11 +326,11 @@ def _collect_from_region_root(root, find_compiled):
     items = list(unpack(root))
     first = items[0]
     if is_symbol(first) and find_compiled(first) is not None:
-        return collect_binding_symbols(root, find_compiled)
+        return collect_binding_symbols(root, find_compiled, kw_cells)
 
     out = set()
     for elem in items:
-        out |= collect_binding_symbols(elem, find_compiled)
+        out |= collect_binding_symbols(elem, find_compiled, kw_cells)
     return out
 
 
@@ -372,7 +373,7 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None,
             if form is not None and not isinstance(form, Datum):
                 out |= collect_binding_symbols(form, find_compiled,
                                                kw_cells)
-        _walk_binder_scopes(matched, owner, find_compiled, out)
+        _walk_binder_scopes(matched, owner, find_compiled, out, kw_cells)
         if tracer is not None:
             scopes = getattr(owner, "_scopes", ())
             for scope_slot in scopes:
@@ -383,7 +384,7 @@ def walk_hygiene_tree(tree, node_id, matched, find_compiled, tracer=None,
             continue
         if tracer is not None:
             tracer.setdefault("region_walk", []).append(slot)
-        _walk_region_roots(matched, owner, find_compiled, out)
+        _walk_region_roots(matched, owner, find_compiled, out, kw_cells)
 
     for edge in tree.edges_from(node_id):
         val = matched and matched.get(edge.capture_slot)
@@ -773,7 +774,7 @@ def collect_binding_symbols(node, find_compiled, kw_cells=None):
             for elem in rest.unpack():
                 out |= collect_binding_symbols(elem, find_compiled, kw_cells)
             return out
-        return _collect_from_region_root(node, find_compiled)
+        return _collect_from_region_root(node, find_compiled, kw_cells)
 
     special = find_compiled(head)
     # print("DEBUG collect_binding_symbols", "special=", repr(special))

@@ -25,7 +25,7 @@ clear-exception, load-exception, and raise.
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode, cons, keyword, nil, symbol
-from ...matcher import CALLEDBY, MATCH, REST, VALUE
+from ...matcher import BODY, CALLEDBY, MATCH, REST, VALUE
 from ...syntax import special
 from ...types import (
     fill_position, get_position, is_keyword, is_nil, is_pair, unpack)
@@ -41,7 +41,8 @@ _CHECKS_PATTERNS = [
 ]
 
 _TRY_PATTERNS = [
-    MATCH(CALLEDBY("called_by"), VALUE("body"), REST("clauses")),
+    MATCH(CALLEDBY("called_by"), VALUE("body")),
+    MATCH(CALLEDBY("called_by"), VALUE("body"), BODY("clauses")),
 ]
 
 # raise keeps a trailing REST rather than one arm per arity: a corpus
@@ -198,9 +199,10 @@ def special_load_exception(compiler, called_by):
 
 @builtin("compile/try")
 @special("compile/try", patterns=_TRY_PATTERNS, unpack="kwargs")
-def special_try(compiler, called_by, body, clauses):
+def special_try(compiler, called_by, body, clauses=None):
     try_expr = body.datum
-    ca, act_else, act_finally = _collect_catches(compiler, clauses.datum)
+    clause_forms = nil if clauses is None else clauses.datum
+    ca, act_else, act_finally = _collect_catches(compiler, clause_forms)
 
     if act_finally is not None:
         if act_else is not None:

@@ -26,7 +26,7 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import OpCode, keyword
 from ...matcher import (
-    CALLEDBY, FORM, MATCH, REST, VALUE, repeat_capture)
+    BODY, CALLEDBY, FORM, MATCH, REST, VALUE, repeat_capture)
 from ...syntax import special
 from ...types import is_pair
 from ..helpers import helper_begin
@@ -37,7 +37,7 @@ _keyword_when = keyword("when")
 _keyword_unless = keyword("unless")
 
 _CLAUSES = repeat_capture(
-    "clauses", FORM(MATCH(VALUE("test"), REST("body"))))
+    "clauses", FORM(MATCH(VALUE("test"), BODY("body"))))
 
 _COND_PATTERNS = [
     MATCH(CALLEDBY("called_by"), _CLAUSES),

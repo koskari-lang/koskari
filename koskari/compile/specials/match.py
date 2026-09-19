@@ -27,7 +27,7 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import Matcher, OpCode, keyword
 from ...matcher import (
-    CALLEDBY, FORM, MATCH, REST, VALUE, MatchCompiler, parse_case_pattern,
+    BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
     repeat_capture)
 from ...syntax import special
 from ...types import is_pair
@@ -46,7 +46,7 @@ _MATCH_PATTERNS = [
         CALLEDBY("called_by"),
         VALUE("subject"),
         repeat_capture(
-            "clauses", FORM(MATCH(VALUE("pattern"), REST("body"))))),
+            "clauses", FORM(MATCH(VALUE("pattern"), BODY("body"))))),
 ]
 
 
