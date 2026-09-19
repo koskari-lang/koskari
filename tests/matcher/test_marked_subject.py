@@ -25,10 +25,11 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, Mark, keyword, symbol
+from koskari.lib import Datum, DatumFrame, Mark, keyword, symbol
 from koskari.matcher import (
-    FORMALS, LITERAL_KW, LITERAL_SYM, MATCH, SYMBOL, VALUE)
-from koskari.types import build_proper
+    BIND, BINDING, CAPTURE, FORM, FORMALS, LITERAL_KW, LITERAL_SYM, MATCH,
+    REST, SYMBOL, TEST_ANY, VALUE, repeat_capture)
+from koskari.types import build_proper, unpack
 
 
 pytestmark = pytest.mark.phase_infra
@@ -87,6 +88,63 @@ class TestMarkedSubject(unittest.TestCase):
         self.assertTrue(result.matched)
         frame = _peel(result.captures["f"])
         self.assertIs(_peel(frame["positionals"][0]["name"]), sx)
+
+
+class TestMarkedCapturePaths(unittest.TestCase):
+    """
+    Every capture path hands the Mark back: a multi-cell slice, a REST
+    tail, a REPEAT row, a frame's source, and a cell boxed in a Datum
+    around the Mark
+    """
+
+
+    def test_slice_capture_keeps_marks(self):
+        m = MATCH(CAPTURE("two", MATCH(TEST_ANY(), TEST_ANY()))).build()
+        a, b = Mark(symbol("a"), 1), Mark(symbol("b"), 1)
+        result = m.match(build_proper(a, b))
+        self.assertTrue(result.matched)
+        got = [_peel(x) for x in result.captures["two"]]
+        self.assertEqual(got, [a, b])
+
+
+    def test_rest_tail_keeps_marks(self):
+        m = MATCH(SYMBOL("head"), REST("tail")).build()
+        a, b = Mark(symbol("a"), 1), Mark(symbol("b"), 1)
+        result = m.match(build_proper(symbol("h"), a, b))
+        self.assertTrue(result.matched)
+        tail = list(unpack(_peel(result.captures["tail"])))
+        self.assertEqual(tail, [a, b])
+
+
+    def test_repeat_row_keeps_marks(self):
+        m = MATCH(repeat_capture(
+            "rows", FORM(MATCH(SYMBOL("n"), BIND("v"))))).build()
+        a, b = Mark(symbol("a"), 1), Mark(symbol("b"), 1)
+        result = m.match(build_proper(build_proper(a, 1), build_proper(b, 2)))
+        self.assertTrue(result.matched)
+        rows = result.captures["rows"]
+        self.assertEqual([_peel(r["n"]) for r in rows], [a, b])
+
+
+    def test_frame_source_keeps_marks(self):
+        m = MATCH(BINDING("b")).build()
+        name = Mark(symbol("t"), 1)
+        cell = build_proper(name, 1)
+        result = m.match(build_proper(cell))
+        self.assertTrue(result.matched)
+        frame = result.captures["b"]
+        self.assertIsInstance(frame, DatumFrame)
+        self.assertIs(_peel(frame["name"]), name)
+        source_cell = list(unpack(frame.source))[0]
+        self.assertIs(list(unpack(source_cell))[0], name)
+
+
+    def test_datum_around_mark_yields_the_mark(self):
+        m = MATCH(SYMBOL("name")).build()
+        name = Mark(symbol("t"), 1)
+        result = m.match(build_proper(Datum(name)))
+        self.assertTrue(result.matched)
+        self.assertIs(_peel(result.captures["name"]), name)
 
 
 # The end.

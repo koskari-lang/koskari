@@ -36,14 +36,6 @@ with examples, see [Guide](../guide/index.md).
   [koskari.hygiene](api/koskari-hygiene.md), and
   [koskari.lib](api/koskari-lib.md).
 
-**mark**
-: The stamp hygiene puts on a symbol or keyword a macro template introduced:
-  the expansion that wrote it. The compiler binds and resolves a marked name
-  under its own spelling, `tmp#1a`, and a marked name nothing bound falls
-  back to the plain name. `quote` strips marks; `quote-syntax` keeps them.
-  See [Macros and hygiene](../guide/macros-and-hygiene.md) and
-  [compile/quote-syntax](specials/compile-quote-syntax.md).
-
 **defer**
 : Single-shot await handle; not auto-awaited at use sites -- use explicit
   [compile/await](specials/compile-await.md), which consumes it (reuse
@@ -84,6 +76,14 @@ with examples, see [Guide](../guide/index.md).
 **macro**
 : A compile-time transformer defined with `define-syntax`. Expands to ordinary
   forms before compilation.
+
+**mark**
+: The stamp hygiene puts on a symbol or keyword a macro template introduced:
+  the expansion that wrote it. The compiler binds and resolves a marked name
+  under its own spelling, `tmp#1a`, and a marked name nothing bound falls
+  back to the plain name. `quote` strips marks; `quote-syntax` keeps them.
+  See [Macros and hygiene](../guide/macros-and-hygiene.md) and
+  [compile/quote-syntax](specials/compile-quote-syntax.md).
 
 **match**
 : Two senses. In compile-time documentation, and throughout this glossary unless

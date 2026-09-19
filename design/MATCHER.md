@@ -540,7 +540,7 @@ from koskari.compile.helpers import match, match_pattern_raw
 | `mark_expansion(form, mark)` | Mark a procedural arm's output |
 | `finalize_expansion(form, mark=None)` | Mark when given, then peel `Datum` |
 | `strip_mark(atom)` / `strip_marks(form)` | The atom or form without marks |
-| `Compiler.resolve_marks(fragment, ancestors)` | Resolve marked references at completion |
+| `resolve_marks(fragment, ancestors)` | Resolve marked references at completion |
 | `parse_case_pattern(content)` | Lower one match/case clause delimiter |
 | `parse_case_element(elem)` | Lower one case-pattern element |
 
