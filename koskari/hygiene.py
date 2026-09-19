@@ -257,17 +257,19 @@ def expand_template_with_hygiene(template, bindings, mark=None):
 # --- Expansion finalize
 
 
-def mark_expansion(form, mark):
+def mark_expansion(form, mark, seen=None):
     """
     A copy of a procedural expansion with every symbol and keyword
     outside a ``Datum`` boxed with ``mark``. A ``Datum`` is substituted
     material and is carried over as it is; a pair inside one is never
     entered. Pair cells are rebuilt with their positions and delimiter
-    style
+    style. A cell reached twice is a cycle, which source cannot hold
 
     :param form: the handler's output
     :param mark: the expansion mark
+    :param seen: ids of the cells already on the walk
     :return: the marked copy
+    :raises CompilerError: when the output is cyclic
     """
 
     if isinstance(form, Datum):
@@ -276,9 +278,17 @@ def mark_expansion(form, mark):
     if not is_pair(form) or is_nil(form):
         return mark_atom(form, mark)
 
+    if seen is None:
+        seen = set()
+
     items = []
     tail = form
     while is_pair(tail) and not is_nil(tail):
+        if id(tail) in seen:
+            raise CompilerError(
+                "macro expansion is cyclic; a form cannot contain itself",
+                form)
+        seen.add(id(tail))
         items.append(tail)
         tail = tail.cdr
         if isinstance(tail, Datum):
@@ -291,7 +301,7 @@ def mark_expansion(form, mark):
 
     out = end
     for cell in reversed(items):
-        car = mark_expansion(cell.car, mark)
+        car = mark_expansion(cell.car, mark, seen)
         if isinstance(cell, bracket_pair):
             out = bracket_cons(car, out)
         else:

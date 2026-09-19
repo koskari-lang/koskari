@@ -26,7 +26,7 @@ import unittest
 import pytest
 
 from koskari.exceptions import CompilerError
-from koskari.hygiene import expand_template_with_hygiene
+from koskari.hygiene import expand_template_with_hygiene, mark_expansion
 from koskari.lib import (
     bracket_nil, bracket_pair, cons, kos_repr, nil, pair, symbol)
 from koskari.types import build_proper
@@ -198,6 +198,30 @@ class TestExpandTemplate(unittest.TestCase):
         with self.assertRaises(CompilerError) as ctx:
             expand_template_with_hygiene(tpl, bindings)
         self.assertIn("ellipsis", str(ctx.exception).lower())
+
+
+class TestMarkExpansion(unittest.TestCase):
+
+
+    def test_cyclic_output_is_refused(self):
+        """
+        A procedural arm's output that contains itself is refused
+        rather than walked without end
+        """
+
+        cell = cons(1, nil)
+        cell.cdr = cell
+        with self.assertRaises(CompilerError) as caught:
+            mark_expansion(cell, 1)
+        self.assertIn("cyclic", str(caught.exception))
+
+
+    def test_car_cycle_is_refused(self):
+        outer = cons(1, nil)
+        inner = cons(outer, nil)
+        outer.car = inner
+        with self.assertRaises(CompilerError):
+            mark_expansion(outer, 1)
 
 
 # The end.
