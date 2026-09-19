@@ -35,7 +35,7 @@ from koskari.lib import (
     Datum, DatumFrame, Mark, Matcher, MatchResult, cons, keyword, kos_repr,
     nil, pair, symbol)
 from koskari.types import (
-    is_keyword, is_nil, is_pair, is_proper, is_symbol, unpack)
+    is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark, unpack)
 
 
 __all__ = (
@@ -2400,17 +2400,20 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
         raise ValueError("invalid ellipsis in MATCH pattern%s" % ctx)
 
     if not is_pair(form):
-        return LITERAL(form)
+        return LITERAL(strip_mark(form))
 
     if not is_proper(form):
         raise ValueError("MATCH pattern must be a proper list%s" % ctx)
 
     head, tail = form
 
+    # a pattern a template wrote arrives marked: the head names a
+    # registered matcher by its bare spelling, and the slot keeps its
+    # mark so the template's marked reference finds it
     if not is_nil(tail) and is_pair(tail):
         decl_bind = tail.car
-        factory = lookup_matcher(str(head))
-        if factory is not None and is_symbol(decl_bind):
+        factory = lookup_matcher(str(strip_mark(head)))
+        if factory is not None and is_symbol(strip_mark(decl_bind)):
             return factory(head, tail)
 
     specs = []
@@ -2563,7 +2566,7 @@ def coerce_slot(name, value):
     koskari symbol or a Python str
     """
 
-    if is_symbol(value):
+    if is_symbol(value) or (isinstance(value, Mark) and is_symbol(value.datum)):
         return str(value)
     if isinstance(value, str):
         return value

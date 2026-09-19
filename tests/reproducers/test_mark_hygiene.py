@@ -339,4 +339,38 @@ class TestDefineGlobalInTemplate(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(bare, ns)
 
 
+class TestGeneratedMatchPatterns(unittest.IsolatedAsyncioTestCase):
+    """
+    A syntax-match or macro-match transformer a template defines
+    carries marked pattern atoms; the registry head and slot must still
+    lower, and the slot must keep the mark the template references
+    """
+
+    SRC = """
+(define-syntax mk-double
+  (syntax-rules []
+    [(mk-double name)
+     (define-syntax name (syntax-match [(name (VALUE x)) (+ x x)]))]))
+
+(define-syntax mk-triple
+  (syntax-rules []
+    [(mk-triple name)
+     (define-syntax name (macro-match [(name (VALUE x)) `(* 3 ,x)]))]))
+
+(mk-double twice)
+(mk-triple thrice)
+(define doubled (twice 21))
+(define tripled (thrice 5))
+"""
+
+    async def test_generated_syntax_match(self):
+        ns = await load("mh_gen_syntax_match", self.SRC)
+        self.assertEqual(ns["doubled"], 42)
+
+
+    async def test_generated_macro_match(self):
+        ns = await load("mh_gen_macro_match", self.SRC)
+        self.assertEqual(ns["tripled"], 15)
+
+
 # The end.
