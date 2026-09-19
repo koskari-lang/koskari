@@ -25,8 +25,8 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, bracket_nil,
-    demand_call, nil, symbol)
+    Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, OpStyle,
+    bracket_nil, demand_call, nil, symbol)
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
 from koskari.serialize.codex import KIO_MAGIC, KioHeader, SectionTag
@@ -313,6 +313,36 @@ class TestKioRoundTrip(unittest.TestCase):
                     rows[OpCode(op)] = arg
         self.assertEqual(1, rows[OpCode.AWAIT])
         self.assertEqual(2, rows[OpCode.OBJECT_DIVMOD])
+
+
+    def test_compile_ki_conditional_branch_roundtrip(self):
+        """
+        A body with an if/else keeps its jump and label rows through
+        the .kio, every jump names a label the reloaded body carries,
+        and dumping the reloaded body again is byte-identical
+        """
+
+        source = (
+            '(define x 1)\n'
+            '(if (== x 1) (print "one") (print "other"))\n')
+        buf = io.BytesIO()
+        compile_ki_source_to_kio(source, buf)
+        first = buf.getvalue()
+        kio = load_kio(io.BytesIO(first))
+
+        rows = [(OpCode(op), arg) for code in kio.codes
+                for op, arg in code.soften()]
+        labels = [arg for op, arg in rows if op == OpCode.LABEL]
+        jumps = [arg for op, arg in rows
+                 if op != OpCode.LABEL and op.style == OpStyle.LABEL]
+        self.assertTrue(labels, rows)
+        self.assertTrue(jumps, rows)
+        for target in jumps:
+            self.assertIn(target, labels)
+
+        again = io.BytesIO()
+        dump_kio(again, kio.codes)
+        self.assertEqual(first, again.getvalue())
 
 
     def test_compile_ki_function_body_with_call_roundtrip(self):

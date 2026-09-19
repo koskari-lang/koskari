@@ -206,7 +206,8 @@ static int soften_label_map_add_pc(
   }
 
   if (! existing) {
-    PyObject *name = PyUnicode_FromFormat("LABEL_%u", (unsigned int) pc);
+    PyObject *name = PyUnicode_FromFormat(KosCode_SOFTEN_LABEL_PREFIX "%u",
+                                            (unsigned int) pc);
     if (! name) {
       Py_DECREF(key);
       return -1;
@@ -227,7 +228,7 @@ static int soften_label_map_add_pc(
 
 /**
    Build the single ``dict`` mapping each jump-target PC (``int`` key) to
-   label string (``"L0"``, ``"L1"``, ...).
+   label string (``"LABEL_<pc>"``, see KosCode_SOFTEN_LABEL_PREFIX).
 
    Hardened code stores branch destinations as raw PCs in ``KosOp.arg`` for
    KOSTYLE_LABEL opcodes, and likewise in EXTRA row slots marked LABEL in the
@@ -3853,6 +3854,11 @@ int koskari_bytecode_init(PyObject *mod) {
   }
 
   if (PyDict_SetItemString(dict, "Code", (PyObject *) &KosCodeType)) {
+    return -1;
+  }
+
+  if (PyModule_AddStringConstant(mod, "SOFTEN_LABEL_PREFIX",
+                                 KosCode_SOFTEN_LABEL_PREFIX)) {
     return -1;
   }
 

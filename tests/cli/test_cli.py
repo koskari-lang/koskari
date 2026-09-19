@@ -22,6 +22,7 @@ import asyncio
 import io
 import os
 import sys
+import tempfile
 import traceback
 import unittest
 
@@ -552,6 +553,24 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         code, out = await self._capture_main(_script('define_and_print.ki'))
         self.assertEqual(0, code)
         self.assertIn('42', out)
+
+
+    async def test_main_compile_kio_then_execute_kio_branches(self):
+        """
+        A program with an if/else compiles to .kio and the .kio runs
+        the taken branch
+        """
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            kio_path = os.path.join(tmpdir, 'if_else.kio')
+            code, out = await self._capture_main(
+                '--compile-kio', kio_path, _script('if_else.ki'))
+            self.assertEqual(0, code)
+            self.assertTrue(os.path.exists(kio_path))
+            code, out = await self._capture_main('--execute-kio', kio_path)
+            self.assertEqual(0, code)
+            self.assertIn('one', out)
+            self.assertNotIn('other', out)
 
 
     async def test_main_run_command_exits_zero(self):

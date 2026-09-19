@@ -340,6 +340,14 @@ struct KosOp {
 };
 
 
+/**
+  The name soften gives a jump target: this prefix followed by the
+  target pc in decimal. The .kio codex parses and rebuilds the same
+  names, so the prefix is exported to Python as SOFTEN_LABEL_PREFIX.
+*/
+#define KosCode_SOFTEN_LABEL_PREFIX "LABEL_"
+
+
 #define KosOp_FN(insn)     (((KosOp *) (insn))->fn)
 #define KosOp_OP(insn)     (((KosOp *) (insn))->op)
 

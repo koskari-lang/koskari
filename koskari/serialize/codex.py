@@ -27,8 +27,8 @@ from dataclasses import dataclass
 from enum import Enum, IntEnum
 
 from ..lib import (
-    Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, OpStyle,
-    bracket_nil, keyword, nil, symbol)
+    SOFTEN_LABEL_PREFIX, Code, FormalsSpec, FunctionSpec, NamespaceSpec,
+    OpCode, OpStyle, bracket_nil, keyword, nil, symbol)
 from .constants import (
     BYTECODE_ABI_MAJOR, BYTECODE_ABI_MICRO, BYTECODE_ABI_MINOR,
     BYTECODE_ABI_PATCH, KIO_MAGIC)
@@ -766,22 +766,24 @@ def encode_directory(entries):
 
 def label_id_from_name(name):
     """
-    Parse L{n} label name to integer id
+    Parse a softened label name back to the target pc it names. The
+    name is the one Code.soften gives a jump target: the native
+    SOFTEN_LABEL_PREFIX followed by the pc in decimal
     """
 
-    if isinstance(name, str) and name.startswith('L'):
-        rest = name[1:]
+    if isinstance(name, str) and name.startswith(SOFTEN_LABEL_PREFIX):
+        rest = name[len(SOFTEN_LABEL_PREFIX):]
         if rest.isdigit():
             return int(rest)
-    raise ValueError('bad label name %r' % (name,))
+    raise ValueError(f"bad label name {name!r}")
 
 
 def label_name_from_id(lid):
     """
-    Format label id as L{n}
+    Format a target pc as the label name Code.soften would give it
     """
 
-    return 'L%d' % lid
+    return f"{SOFTEN_LABEL_PREFIX}{lid}"
 
 
 def encode_instruction(op, arg, pool_index_of):
