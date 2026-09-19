@@ -11,6 +11,6 @@
 | 0     | VAR        | 0   | 0 (x)    | stack: [..., x] |
 | 1     | JUMP_TRUE  | 3   | 3 (-> 3) | pop TOS; if true → pc=3 |
 | 2     | CONST      | 0   | 0 (0)    | else path |
-| 3     | LABEL      | —   | —        | then path |
+| 3     | LABEL      | --   | --        | then path |
 | 4     | RETURN     | 1   | 1        | |
 

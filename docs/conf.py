@@ -89,6 +89,7 @@ html_theme_options = {
     'includehidden': True,
 }
 html_static_path = ['_static']
+html_css_files = ['docs.css']
 html_favicon = '../koskari/assets/koskari-icon.svg'
 html_logo = '../koskari/assets/koskari-lockup-64.png'
 

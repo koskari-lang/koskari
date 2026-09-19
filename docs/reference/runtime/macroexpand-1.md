@@ -23,18 +23,25 @@ yourself.
 
 **Relation to the macro:** **`(macroexpand-1 form)`** and **`(macroexpand-1 form
 ns)`** are handled by the **`compile/macroexpand-1`** macro, which expands to
-**`(call macroexpand-1 …)`** with **`(globals)`** when the namespace argument is
+**`(call macroexpand-1 ...)`** with **`(globals)`** when the namespace argument is
 omitted. See [compile/macroexpand-1](../macros/compile-macroexpand-1.md).
 
 **Examples:**
 
 ```koskari
-;; One expansion step using the current globals namespace
-(macroexpand-1 (when condition action))
+>>> (macroexpand-1 '(when condition action))
+(cond [condition action] [else: None])
+```
 
+```koskari
 ;; Explicit namespace
 (macroexpand-1 some-form my-ns)
+```
 
-;; From surface syntax without pre-reading
-(macroexpandq-1 (when condition action))
+The **`macroexpandq-1`** macro quotes for you, so the form is written
+unquoted:
+
+```koskari
+>>> (macroexpandq-1 (when condition action))
+(cond [condition action] [else: None])
 ```

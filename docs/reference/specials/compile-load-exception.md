@@ -7,4 +7,3 @@
 value onto the stack (e.g. for binding with as: NAME).
 
 **Behaviour:** Emits EXCEPTION. No arguments.
-

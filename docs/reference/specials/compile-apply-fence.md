@@ -1,12 +1,12 @@
 # compile/apply-fence
 **Symbol:** `compile/apply-fence`
 
-**Syntax:** `(apply-fence NAME RAW META)` — normally produced by the
+**Syntax:** `(apply-fence NAME RAW META)` -- normally produced by the
 triple-backtick fence reader syntax rather than written by hand.
 
 **Use-case:** Compile-time expansion of a fenced foreign literal. A fence
-captures raw source in a declared foreign format — a bash script, and in
-principle any notation awkward to write as s-expressions — and lowers it
+captures raw source in a declared foreign format -- a bash script, and in
+principle any notation awkward to write as s-expressions -- and lowers it
 into ordinary Koskari source before compilation continues.
 
 **Reader shorthand:**
@@ -67,11 +67,11 @@ points into the fence body.
 
 **Built-in fences:**
 
-- `fence/bash` — bash script capture, built on the `run-process`
+- `fence/bash` -- bash script capture, built on the `run-process`
   builtin. By default the fence evaluates to an async **callable**:
   invoking it runs the script via `bash -c`, and any positional
   arguments passed to the callable are forwarded as the script's
-  positional parameters — `(script "alpha" "beta")` makes `$1` be
+  positional parameters -- `(script "alpha" "beta")` makes `$1` be
   `alpha` and `$2` be `beta`, with `$@` behaving accordingly. With the
   `immediate: True` option there is no callable at all: the fence
   expands to the `run-process` call in place, so the fence expression
@@ -82,7 +82,7 @@ points into the fence body.
   the raw `stdout` / `stderr` bytes, with `text` / `stderr_text` for
   decoded output and `(.json result)`, `(.jsonl result)`, and
   `(.yaml result)` (requires PyYAML) for parsed stdout. A nonzero exit
-  status is **reported, never raised** — call `(.raise_for_status
+  status is **reported, never raised** -- call `(.raise_for_status
   result)` to raise `subprocess.CalledProcessError` instead; it returns
   the result on success, so strict-and-parsed chains as
   `(.json (.raise_for_status (script)))`.
@@ -125,7 +125,7 @@ curl -s https://example.org/api/summary/
 ```
 define summary (.json (.raise_for_status (report)))
 
-;; immediate: True — no callable; the fence is the ProcessResult
+;; immediate: True -- no callable; the fence is the ProcessResult
 define lookup ```bash immediate: True
 hostname -f
 ```

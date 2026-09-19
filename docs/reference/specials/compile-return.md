@@ -1,7 +1,7 @@
 # compile/return
 **Symbol:** `compile/return`
 
-**Syntax:** `(return VAL ...)` — variadic.
+**Syntax:** `(return VAL ...)` -- variadic.
 
 | Form                | Result                                           |
 |---------------------|--------------------------------------------------|
@@ -13,7 +13,7 @@
 **Bare form:** the lone symbol `return` (as in `unless ok: return`) expands to
 `(return)`, so the Python-style spelling returns `None` from the current
 function. The expansion is governed by the
-[`compiler/bare-control-words`](../concepts/pragma.md#compiler) pragma of the
+[`compiler/bare-control-words`](../../guide/pragma.md#compiler) pragma of the
 module being compiled: `convert` (the default) expands silently, `warn` expands
 with a `SyntaxWarning`, and `error` refuses at compile time. Because the bare
 symbol always expands, `return` can never name a variable.

@@ -13,6 +13,7 @@ quoting, or layout needs to be fixed.
 
 | Error | What it means | What to try |
 | --- | --- | --- |
+| `ReaderError` | Base class for reader-phase failures. It subclasses `KoskariSyntaxError`, which in turn subclasses Python's `SyntaxError`. | Catch this to handle any reader failure in one place. |
 | `ReaderSyntaxError` | The reader found invalid syntax, such as mismatched delimiters. | Count `(` / `)`, check brackets, and reread the first error line. |
 | `ReaderEOF` | Input ended while a form was still open. | Finish the string, list, block, or closing delimiter. |
 | `FormatStringSyntaxError` | A format string could not be parsed. | Check the expression inside the format string. |
@@ -36,8 +37,10 @@ Compile errors happen after reading and before runtime evaluation.
 | --- | --- | --- |
 | `CompilerError` | Base class for compile-phase failures. | Look for the form shown in the diagnostic. |
 | `SpecialError` | A special form has invalid arguments. | Compare the form with its reference page. |
-| `SyntaxMatchError` | A form did not match any accepted syntax pattern. | Check argument order, keywords, and required body forms. |
-| `NotYetImplemented` | A placeholder feature was reached. | Use a documented form or report the missing case. |
+| `SyntaxMatchError` | A form matched no arm of a special's syntax. The diagnostic lists the patterns that special accepts. | Check argument order, keywords, and required body forms. |
+| `ParametersError` | A parameter or argument list is malformed: `*` after keyword arguments, a keyword with no value, or a positional argument after a keyword. | Reorder the arguments and give every keyword a value. |
+| `FenceError` | A fence block could not be expanded, or the foreign source inside it could not be parsed. | Check the fence's options and the embedded source. |
+| `UncaughtCompilerError` | An unexpected exception escaped the compiler and was wrapped with the form being compiled. | Read the chained cause. Report it when the form is valid. |
 
 Example:
 
@@ -57,11 +60,25 @@ and Koskari runtime exceptions.
 | Error | What it means | What to try |
 | --- | --- | --- |
 | `KoskariException` | Base class for Koskari-raised exceptions. | Read the specific subclass and form details. |
-| `KoskariSyncViolation` | Async/demand code was used from an incompatible sync path. | Move the operation into an async-aware path or use explicit awaiting. |
-| `KoskariContinuationError` | Base class for continuation capture failures. | Read the specific subclass; the two below need different fixes. |
+| `NotYetImplemented` | A placeholder for a feature that is not implemented yet. | Use a documented form or report the missing case. |
+| `KoskariContinuationError` | Base class for continuation capture and transfer failures. It is not a `RuntimeError` subclass, so an `except RuntimeError` around a continuation-using call will not swallow it. | Read the specific subclass; the two below need different fixes. |
 | `KoskariPromptNotFound` | A `shift` found no enclosing delimiter on the dynamic chain. | Establish one: `reset`, or for searches `solve` / `solve-first`. |
 | `KoskariPromptUnreachable` | A delimiter exists but a crossed boundary (`boundary` attribute, e.g. a generator) denied the capture. | Restructure so the capture does not cross the boundary; adding a delimiter will not help. |
 | Python exceptions such as `ZeroDivisionError`, `NameError`, `ValueError` | A called operation failed at runtime. | Fix the value, missing name, or failing Python call. |
+
+### Koskari errors that subclass a Python type
+
+Two Koskari classes inherit from a Python exception type.
+
+| Error | Python base | What it means | What to try |
+| --- | --- | --- | --- |
+| `KoskariSyncViolation` | `TypeError` | A synchronous demand path reached an `await` or a `yield` it cannot perform. | Move the operation into an async-aware path, or stop demanding the call. |
+| `KoskariSyntaxError` | `SyntaxError` | Read-time or compile-time syntax failure; the base of the reader errors above. | See the reader table. |
+
+`KoskariSyncViolation` is defined in the native extension and inherits from
+`TypeError` alone, so an `except KoskariException` will not catch it; catch it
+by its own name or by `TypeError`. `KoskariSyntaxError` inherits from both
+`SyntaxError` and `KoskariException`.
 
 Example:
 
@@ -84,5 +101,5 @@ When an error is long, use this order:
 4. If a form is shown, compare that form to the relevant reference page.
 5. Change one thing and rerun.
 
-See also [Errors and debugging](../start/from-python/errors-and-debugging.md)
+See also [Errors and debugging](../tutorials/from-python/errors-and-debugging.md)
 for a Python-oriented walkthrough.

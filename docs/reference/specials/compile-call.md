@@ -5,14 +5,12 @@
 
 Argument specifiers (order matters; analogous to Python 3.5+):
 
-
 | Form        | Syntax     | Example          | Pythonic equivalent |
 | ----------- | ---------- | ---------------- | ------------------- |
 | Positional  | `EXPR ...` | `(f a b c)`      | `f(a, b, c)`        |
 | Keyword     | `KEY: VAL` | `(f x: 1 y: 2)`  | `f(x=1, y=2)`       |
 | Star args   | `*: EXPR`  | `(f *: more)`    | `f(*more)`          |
 | Star kwargs | `**: EXPR` | `(f **: kwargs)` | `f(**kwargs)`       |
-
 
 Positionals may interleave with `*:` (star args); keywords may interleave with
 `**:` (star kwargs). All positionals and `*:` must come before any keywords or
@@ -70,12 +68,11 @@ by the compiler.
 (fn a *: bargs c *: dargs)
 (fn x: 1 **: kw1 y: 2 **: kw2)
 
-;; Method call via attr expansion: ((attr obj m) args) → compile/call-attr
+;; Method call via attr expansion: ((attr obj m) args) -> compile/call-attr
 ((attr s upper))
 ((attr obj split sep) "-")
 
-;; Dot-prefix callee: (.m obj args...) → compile/call-attr (same as attr)
+;; Dot-prefix callee: (.m obj args...) -> compile/call-attr (same as attr)
 (.upper s)
 (.split s "-")
 ```
-

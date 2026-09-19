@@ -8,7 +8,7 @@
 
 **Bare form:** the lone symbol `raise` expands to `(raise)`, giving Python's
 bare-`raise` re-raise spelling inside a handler. Governed by the
-[`compiler/bare-control-words`](../concepts/pragma.md#compiler) pragma of the
+[`compiler/bare-control-words`](../../guide/pragma.md#compiler) pragma of the
 module being compiled (`convert` by default, or `warn` / `error`); because the
 bare symbol always expands, `raise` can never name a variable.
 
@@ -21,4 +21,3 @@ emits RAISE 1 (raise the value as exception).
 (raise)
 (raise (ValueError "invalid"))
 ```
-

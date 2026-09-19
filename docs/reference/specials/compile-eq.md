@@ -4,7 +4,7 @@
 
 **Syntax:** `(!= A B ...)`
 
-**Use-case:** Chained comparison — at least two values. Succeeds when
+**Use-case:** Chained comparison -- at least two values. Succeeds when
 each adjacent pair is unequal, like Python chained comparisons.
 
 **Behaviour:** Compiles each argument, emits the corresponding `OBJECT_*`

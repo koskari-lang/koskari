@@ -4,7 +4,7 @@
 **Syntax:** `(import-all-from MODULE)`
 
 `MODULE` follows the same dotted-name and relative-import rules as `import`.
-There is no member list, no rename, and no mixing with named imports — to
+There is no member list, no rename, and no mixing with named imports -- to
 combine a wildcard and named imports, write two statements (as in Python).
 
 **Use-case:** Bulk-bind a module's public names into the current namespace,

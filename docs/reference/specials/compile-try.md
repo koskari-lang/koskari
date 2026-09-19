@@ -5,14 +5,14 @@
 
 where each `CLAUSE` is `(EXCEPTMATCH BODY...)` and `EXCEPTMATCH` is one of:
 
-- `[TYPEEXPR]`, `[SYM TYPEEXPR]`, or `[TYPEEXPR as: SYM]` — USE form; type-only
+- `[TYPEEXPR]`, `[SYM TYPEEXPR]`, or `[TYPEEXPR as: SYM]` -- USE form; type-only
 or binding.
-- `except:` — bare catch-all; catches any exception without a type check or binding
+- `except:` -- bare catch-all; catches any exception without a type check or binding
 
 In addition, two keyword-head clauses are accepted:
 
-- `(else: BODY...)` — run when the try body completed without exception
-- `(finally: BODY...)` — always run; must be last
+- `(else: BODY...)` -- run when the try body completed without exception
+- `(finally: BODY...)` -- always run; must be last
 
 **Use-case:** Exception handling. Runs BODY; on exception, matches against clauses in order and runs the first matching handler. Optional `else:` runs when no exception occurred. Optional `finally:` always runs (on normal exit or exception). At least one except-style clause or `finally:` is required.
 
@@ -52,5 +52,3 @@ paths).
   [else: (on-success)]
   [finally: (cleanup)])
 ```
-
-

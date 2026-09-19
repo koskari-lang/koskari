@@ -4,7 +4,7 @@
 **Syntax:** Same arities and spellings as `compile/define`: **inline type**
 (`NAME :: TYPE` / `NAME type: TYPE`) or **DECL** as the first argument:
 
-- `(define-global NAME :: TYPE)` … (and `type:`), or `(define-global DECL)`
+- `(define-global NAME :: TYPE)` ... (and `type:`), or `(define-global DECL)`
 - `(define-global NAME :: TYPE EXPR)` or `(define-global DECL EXPR)`
 - `(define-global NAME :: TYPE FORMALS BODY ...)` or
 `(define-global DECL FORMALS BODY ...)`
@@ -42,7 +42,3 @@ with local declaration; raises if the name is already in `declares` (e.g. from
      counter))
    (inc)))
 ```
-
-
-**Implementation:** `koskari/compile/specials/variables.special_define_global`
-

@@ -22,4 +22,3 @@ reference.
 (dyn-with [r (make-resource)]
   (k (refq r)))
 ```
-

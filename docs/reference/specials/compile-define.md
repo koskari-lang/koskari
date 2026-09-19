@@ -44,7 +44,7 @@ binding** after `VAR_STORE`, not an inner closure self-ref for the name.
 
 **Behaviour:** With **DECL**, parses the first argument with `parse_decl`. With
 **inline type**, the matcher binds `NAME`, `::` or `type:`, and `TYPE` (see
-[`koskari.matcher`](../../api/koskari-matcher.md) — **DECL** composite). Declares
+[`koskari.matcher`](../api/koskari-matcher.md) -- **DECL** composite). Declares
 the introduced name. For declaration-only: emits CONST None. For
 declare-and-store: compiles EXPR, emits `VAR_STORE` to store the value, then
 CONST None. For function shorthand: builds the `compile/function` form as above and
@@ -72,5 +72,3 @@ compiles it, then emits `VAR_STORE`.
   (cond [(== n 0) 1]
                 [else: (* n (fact (- n 1)))]))
 ```
-
-

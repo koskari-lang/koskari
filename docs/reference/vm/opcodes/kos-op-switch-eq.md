@@ -12,8 +12,8 @@
   pc.
 
 **Example:** Two-arm chain then else. Pool: 0 = 10, 1 = 1, 2 = 20, 3 = 2, 4 =
-0. Discriminant 10: first key 1 (mismatch — pop key, fall through with `[10]`);
-second key 20 (match — pop both, jump to body); body returns 2. Else drops
+0. Discriminant 10: first key 1 (mismatch -- pop key, fall through with `[10]`);
+second key 20 (match -- pop both, jump to body); body returns 2. Else drops
 disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 
 | index | opcode    | arg | arg view  | comment |
@@ -26,7 +26,7 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 | 5     | POP       | 1   | 1         | else: drop discriminant |
 | 6     | CONST     | 4   | 4 (0)     | else result |
 | 7     | RETURN    | 1   | 1         | |
-| 8     | LABEL     | —   | —         | body |
+| 8     | LABEL     | --   | --         | body |
 | 9     | CONST     | 3   | 3 (2)     | stack: [..., 2] |
 | 10    | RETURN    | 1   | 1         | |
 

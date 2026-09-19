@@ -17,7 +17,8 @@ tools.corpus.views.docs
 koskari-docs dataset view: user documentation pages served to agents.
 
 One row per Markdown page under the user-facing docs subtrees named in
-``_DOC_SUBDIRS`` (reference, start, guide, patterns, agents). The row ``path``
+``_DOC_SUBDIRS`` (reference, tutorials, guide, agents), plus the root
+pages named in ``DOC_ROOT_PAGES`` (the quickstart and the FAQ). The row ``path``
 is the docs-relative path, which matches the strings stored in corpus
 records' ``references`` field verbatim, so the MCP can resolve a
 record's references to their documentation content.
@@ -56,7 +57,9 @@ import-from tools.corpus.views._material:
 
 define VIEW_NAME "koskari-docs"
 
-define _DOC_SUBDIRS #("reference" "start" "guide" "patterns" "agents")
+define _DOC_SUBDIRS #("reference" "tutorials" "guide" "agents")
+
+define DOC_ROOT_PAGES #("quickstart.md" "faq.md")
 
 
 define _section [rel_path]:
@@ -84,28 +87,34 @@ define generate [root provenance]:
 
     define docs_dir (.joinpath (Path root) "docs")
 
-    define rows #[]
+    define pages #[]
+    for-each [name DOC_ROOT_PAGES]:
+        define page (docs_dir.joinpath name)
+        when (page.is_file):
+            (pages.append page)
+
     for-each [subdir _DOC_SUBDIRS]:
         define base (docs_dir.joinpath subdir)
-        unless (base.is_dir):
-            (continue)
+        when (base.is_dir):
+            (pages.extend (base.rglob "*.md"))
 
-        for-each [path (base.rglob "*.md")]:
-            define rel_path ((path.relative_to docs_dir).as_posix)
-            define text (rewrite_markdown_links
-                (path.read_text encoding: "utf-8") rel_path)
-            define-values [title summary] (markdown_title_summary text)
+    define rows #[]
+    for-each [path pages]:
+        define rel_path ((path.relative_to docs_dir).as_posix)
+        define text (rewrite_markdown_links
+            (path.read_text encoding: "utf-8") rel_path)
+        define-values [title summary] (markdown_title_summary text)
 
-            rows.append #{
-                "path": rel_path
-                "title": (or title path.stem)
-                "summary": summary
-                "content": text
-                "section": (_section rel_path)
-                "kind": "doc"
-                "schema_version": provenance["schema_version"]
-                "git_ref": provenance["git_ref"]
-            }
+        rows.append #{
+            "path": rel_path
+            "title": (or title path.stem)
+            "summary": summary
+            "content": text
+            "section": (_section rel_path)
+            "kind": "doc"
+            "schema_version": provenance["schema_version"]
+            "git_ref": provenance["git_ref"]
+        }
 
     rows.sort key: (itemgetter "path")
     return rows

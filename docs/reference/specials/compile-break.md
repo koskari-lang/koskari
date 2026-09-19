@@ -8,7 +8,7 @@ optionally with a result value.
 
 **Bare form:** the lone symbol `break` expands to `(break)`, so the
 Python-style spelling exits the loop. Governed by the
-[`compiler/bare-control-words`](../concepts/pragma.md#compiler) pragma of the
+[`compiler/bare-control-words`](../../guide/pragma.md#compiler) pragma of the
 module being compiled (`convert` by default, or `warn` / `error`); because the
 bare symbol always expands, `break` can never name a variable.
 
@@ -21,4 +21,3 @@ bare symbol always expands, `break` can never name a variable.
 (break)
 (break 99)
 ```
-

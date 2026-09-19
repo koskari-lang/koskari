@@ -14,4 +14,3 @@ pushes CONST None.
 ```koskari
 (bindq local 10)
 ```
-

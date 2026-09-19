@@ -24,4 +24,3 @@ left-associative for chains. See [Grammar](../grammar.md#suffix-syntax); the
 obj.value
 (get-fn x).baz
 ```
-

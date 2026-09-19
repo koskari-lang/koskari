@@ -4,7 +4,7 @@
 **Use-case:** Structural pattern matching in block syntax. Lowers to the
 delimiter clauses consumed by
 [`compile/match`](../specials/compile-match.md). Pattern syntax is
-documented in [Match patterns](../concepts/match-patterns.md).
+documented in [Match patterns](../../guide/match-patterns.md).
 
 **Behaviour:** Does not accept peers. Header must be exactly
 `match SUBJECT:` (one subject expression). A raw layout: inner `case` and
@@ -15,7 +15,7 @@ nested layout blocks in each body are expanded, emitting:
 
 `(match SUBJECT [[PATTERN...] BODY...] ... [else: BODY...])`
 
-— the same clause shape an s-expression author writes directly.
+That is the same clause shape an s-expression author writes directly.
 
 A `when` / `unless` marker in a case header splits it into pattern and
 guard: the tokens before the marker are the pattern, and exactly one form

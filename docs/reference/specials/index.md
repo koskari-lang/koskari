@@ -1,48 +1,139 @@
 # Special forms
 
-Specials are registered in the compiler's module namespace; the compiler
-dispatches on the head symbol of a list form. The forms below are implemented in
-`koskari/compile/specials/` and use helpers from `koskari/compile/helpers.py`
-where applicable. Many handlers declare structure with **`koskari.matcher`**
-patterns (`@special(..., patterns=...)`); see
-[Macro matching and hygiene](../concepts/macro-matching-and-hygiene.md) and
-[`koskari.matcher`](../../api/koskari-matcher.md) for pattern syntax, capture
-shapes, and hygiene behaviour.
+A special form is a head the compiler handles itself. When a form's head
+names one, the compiler emits bytecode for it directly, following the
+form's own rules for which arguments are evaluated and when. Every other
+head in call position is a runtime call. Each page below gives the
+form's symbol, syntax, behaviour, and examples; the surface names most
+programs write, `if`, `when`, `set!`, `define-class`, are
+[macros](../macros/index.md) that lower to these.
 
-## Macros, reader macros, hygiene, and compiler optimizations
+The compiler binds each special under its `compile/` name, and the
+short name is how a program uses it. How `(foo ...)` decides between a
+special, a macro, and a call is in
+[Name resolution and prefixes](../../guide/name-resolution-and-prefixes.md).
 
-**Reader macros** — Parse-time character dispatch is implemented on
-`koskari.reader.parser.Parser`: `set_macro_character`, `remove_macro_character`,
-and default readers for quote, quasiquote, unquote, and unquote-splicing.
+## Definition and binding
 
-**Compile-time macros** — User-facing **`(define-syntax NAME SPEC)`** is expanded
-by the **`compile/define-syntax`** macro in `koskari/bootstrap/_define_syntax.ki` (not a
-`@special`). **`SPEC`** must begin with **`syntax-rules`**, **`macro-rules`**,
-**`syntax-match`**, **`macro-match`**, **`special-rules`**, or **`special-match`**;
-see **`compile/define-syntax`** and the **`compile/syntax-rules`**,
-**`compile/macro-rules`**, **`compile/syntax-match`**, **`compile/macro-match`**,
-**`compile/special-rules`**, and **`compile/special-match`** sections below.
-**RULE** vs **MATCH** pattern languages share one transformer model; see
-[Macro matching and hygiene](../concepts/macro-matching-and-hygiene.md).
+| Form | Does |
+|------|------|
+| [`define`](compile-define.md) | Bind a name, or a function when formals follow |
+| [`define-global`](compile-define-global.md) | Bind a module-level name from inside a function |
+| [`define-values`](compile-define-values.md) | Bind several names by unpacking one value |
+| [`function`](compile-function.md) | A named function value that is not bound |
+| [`lambda`](compile-lambda.md) | An anonymous function value; formals, defaults, rest collectors, annotations, by-ref |
+| [`let`](compile-let.md) | Lexical bindings for a body; named `let` for loops |
+| [`letrec`](compile-letrec.md) | Lexical bindings that may refer to each other |
+| [`setq`](compile-setq.md) | Store into an existing binding; the special under `set!` |
+| [`setq-values`](compile-setq-values.md) | Store into several bindings by unpacking |
+| [`bindq`](compile-bindq.md) | Bind a name to a ref |
+| [`refq`](compile-refq.md) | The ref of a variable; the special under `&name` |
+| [`deref`](compile-deref.md) | Read through a ref |
+| [`takeq`](compile-takeq.md) | Read a binding and clear it |
+| [`delq`](compile-delq.md) | Delete a binding |
+| [`globals`](compile-globals.md), [`locals`](compile-locals.md) | The module namespace; the current frame's namespace |
+| [`parameter`](compile-parameter.md), [`parameterize`](compile-parameterize.md) | Read a dynamic parameter; rebind parameters for a body |
 
-**Special-form transformers** — **`special-rules`** and **`special-match`** build
-**`SpecialRulesTransformer`** values (`koskari/syntax.py`): rule procedures are
-invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
-(unlike **`macro-rules`** / **`macro-match`**, which receive only keyword args).
-Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
+## Control flow
 
-**Syntax boxes and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own syntax-rule expansion and template hygiene; macro output runs **`koskari.reader.layouts.apply_layout`** (module namespace) before binding-symbol discovery and the hygiene / Datum finalize passes; see
-[Macro matching and hygiene](../concepts/macro-matching-and-hygiene.md) and
-[`koskari.hygiene`](../../api/koskari-hygiene.md) (**`Datum`**, **`DatumFrame`**, which matchers capture
-and which register hygiene regions).
+| Form | Does |
+|------|------|
+| [`begin`](compile-begin.md) | Run forms in order; the value is the last |
+| [`cond`](compile-cond.md) | The first clause whose test is true; what layout `if` reads to |
+| [`switch`](compile-switch.md) | Branch on equality against candidates |
+| [`match`](compile-match.md) | Destructure against patterns; see [Match patterns](../../guide/match-patterns.md) |
+| [`and`](compile-and.md), [`or`](compile-or.md) | Short-circuit conjunction and disjunction |
+| [`while`](compile-while.md) | Loop while a test is true, with an `else:` clause |
+| [`for-each`](compile-for-each.md) | Loop over an iterable, with destructuring and an `else:` clause |
+| [`break`](compile-break.md), [`continue`](compile-continue.md) | Leave a loop, with an optional value; start the next iteration |
+| [`return`](compile-return.md) | Leave a function; several values return a tuple, keywords a `values` |
+| [`try`](compile-try.md) | Handle exceptions, with `else:` and `finally:` clauses |
+| [`raise`](compile-raise.md) | Raise an exception, or re-raise the current one |
+| [`check-exception`](compile-check-exception.md), [`load-exception`](compile-load-exception.md), [`clear-exception`](compile-clear-exception.md) | Internal forms that `try` expands into |
+
+## Objects, attributes, and items
+
+| Form | Does |
+|------|------|
+| [`attr`](compile-attr.md), [`set-attr`](compile-set-attr.md), [`del-attr`](compile-del-attr.md) | Read, store, delete an attribute; `obj.name` reads as `attr` |
+| [`ref-attr`](compile-ref-attr.md), [`take-attr`](compile-take-attr.md), [`inplace-attr`](compile-inplace-attr.md) | A ref to an attribute; take and delete; update in place |
+| [`item`](compile-item.md), [`set-item`](compile-set-item.md), [`del-item`](compile-del-item.md) | Read, store, delete a subscript; `obj[key]` reads as `item` |
+| [`ref-item`](compile-ref-item.md), [`take-item`](compile-take-item.md), [`inplace-item`](compile-inplace-item.md) | A ref to a subscript; take and delete; update in place |
+| [`inplace`](compile-inplace.md) | Update a variable in place; the special under `incr!` and `decr!` |
+| [`call`](compile-call.md) | Call a value; forces a runtime call past a same-named macro |
+| [`call-attr`](compile-call-attr.md) | Call a method by name; `(obj.method ...)` reads to this |
+| [`class`](compile-class.md) | Build a class value; what `define-class` lowers to |
+| [`instance?`](compile-instance.md), [`subclass?`](compile-subclass.md) | Type tests, accepting several types |
+| [`#str`](compile-str.md), [`format`](compile-format.md) | String conversion; `format` with an optional bare format spec |
+| [`#list`, `#tuple`, `#list-append`](object-operators/index.md#collection-builders) | Build a list or tuple; append to a list |
+
+## Operators
+
+| Form | Does |
+|------|------|
+| [`==`](compile-eqeq.md), [`!=`](compile-eq.md), [`equal?`](compile-equal.md), [`not-equal?`](compile-not-equal.md) | Equality, chained over any number of operands |
+| [`<`](compile-lt.md), [`<=`](compile-lteq.md), [`>`](compile-gt.md), [`>=`](compile-gteq.md) | Ordering, chained |
+| [`le?`](compile-le.md), [`ge?`](compile-ge.md) | Aliases for `<=` and `>=` |
+| [`**`](compile-starstar.md) | Exponentiation with an optional modulus |
+| [`in`, `not-in`, `is`, `is-not`](object-operators/index.md#membership-and-identity) | Membership and identity, each with a `?`-suffixed alias |
+| [`not`, `truth`, `nil?`, `repr`, `len`, `type`, `dir`, `vars`, `iter`, `next`, `divmod`](object-operators/index.md#unary-and-inspection-operators) | The unary and inspection operators |
+| [Object operators](object-operators/index.md) | The arithmetic, bitwise, and unary operators, constant folding, and the comparison table |
+
+## Pairs and quoting
+
+| Form | Does |
+|------|------|
+| [`cons`](compile-cons.md), [`car`](compile-car.md), [`cdr`](compile-cdr.md) | Build a pair chain; its first element; its rest |
+| [`quote`](compile-quote.md) | A form as data; `'form` |
+| [`quasiquote`](compile-quasiquote.md), [`unquote`](compile-unquote.md), [`unquote-splicing`](compile-unquote-splicing.md) | A template; `` `form ``, `,form`, `,@form` |
+| [Block quote](compile-quote-block.md), [block quasiquote](compile-quasiquote-block.md) | The reader shorthands `'head:` and `` `head: ``, which quote an indented block as its `block:` cons |
+
+## Async, generators, and continuations
+
+| Form | Does |
+|------|------|
+| [`await`](compile-await.md) | Await a held awaitable; bare `(await)` is a cooperative suspend |
+| [`yield`](compile-yield.md), [`yield-from`](compile-yield-from.md) | Generator and coroutine suspension; delegation |
+| [`with`](with.md), [`dyn-with`](dyn-with.md) | Context managers, lexical and dynamic-extent |
+| [`dyn-wind`](compile-dyn-wind.md) | Before and after thunks around a body, rerun across continuation jumps |
+| [`reset`](compile-reset.md), [`shift`](compile-shift.md) | Delimited continuations |
+| [`call-cc`](compile-call-cc.md), [`let-cc`](compile-let-cc.md), [`capture-cc`](compile-capture-cc.md) | Undelimited continuations, from the Scheme form down to the raw capture |
+
+## Modules
+
+| Form | Does |
+|------|------|
+| [`import`](import.md) | Import a module; `[MODULE as: NAME]` binds the leaf |
+| [`import-from`](import-from.md) | Import names from a module, with aliases |
+| [`import-all-from`](import-all-from.md) | Bind a module's public names, at module level only |
+| [`use`](use.md) | Import a feature with all its facets, a macro together with its runtime sibling |
+
+## Macro definition and the compiler
+
+| Form | Does |
+|------|------|
+| [`syntax-rules`](compile-syntax-rules.md), [`syntax-match`](compile-syntax-match.md) | Template transformers, by rule list and by named spec |
+| [`macro-rules`](compile-macro-rules.md), [`macro-match`](compile-macro-match.md) | Procedural transformers |
+| [`special-rules`](compile-special-rules.md), [`special-match`](compile-special-match.md) | Transformers that receive the compiler and emit bytecode |
+| [`bare-syntax`](compile-bare-syntax.md) | The arm used when a syntax name appears as a lone atom |
+| [`gensym-thunk`](compile-gensym-partial.md) | The `{...}` thunk with inferred `%1`, `%2` formals |
+| [`apply-fence`](compile-apply-fence.md) | Expand a fenced foreign literal through its handler |
+| [`bytecode`](compile-bytecode.md) | Inject bytecode directly |
+
+## Patterns and hygiene
+
+Many specials declare their shape with [`koskari.matcher`](../api/koskari-matcher.md)
+patterns, and a form that fits none of a special's patterns fails with
+`SyntaxMatchError` at compile time. The transformer forms share one
+matcher and one hygiene model; see
+[Macros and hygiene](../../guide/macros-and-hygiene.md) and
+[`koskari.hygiene`](../api/koskari-hygiene.md).
 
 ```{toctree}
 :maxdepth: 1
+:hidden:
 :glob:
 
+object-operators/index
 *
-   compile-*
-   import*
-   with*
-   dyn-with*
 ```

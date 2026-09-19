@@ -735,9 +735,25 @@ class TestHasAttrStar(unittest.TestCase):
             lib.hasattr_star(object())
 
 
-    def test_lookup_exception_false(self):
+    def test_lookup_attribute_error_false(self):
         """
-        hasattr_star is false when lookup raises (Python hasattr semantics)
+        hasattr_star is false when a lookup raises AttributeError from
+        inside a property, as Python hasattr is
+        """
+
+        class Shy(object):
+
+            @property
+            def hidden(self):
+                raise AttributeError('hidden')
+
+        self.assertFalse(lib.hasattr_star(Shy(), ['hidden']))
+
+
+    def test_lookup_other_exception_propagates(self):
+        """
+        hasattr_star propagates any exception other than AttributeError,
+        as Python hasattr does
         """
 
         class Bad(object):
@@ -746,7 +762,8 @@ class TestHasAttrStar(unittest.TestCase):
             def boom(self):
                 raise ValueError('nope')
 
-        self.assertFalse(lib.hasattr_star(Bad(), ['boom']))
+        with self.assertRaises(ValueError):
+            lib.hasattr_star(Bad(), ['boom'])
 
 
 class TestGetItemStar(unittest.TestCase):

@@ -1,33 +1,30 @@
 # Grammar
 
-Koskari source combines **layout syntax** (indentation-based blocks and lines
-in `.ki` files) with **s-expressions** (parenthesized forms). The reader turns
+Koskari source combines layout syntax (indentation-based blocks and lines
+in `.ki` files) with s-expressions (parenthesized forms). The reader turns
 both into list structure; the compiler then expands macros and dispatches on
 special forms.
-
----
 
 ## S-expression forms
 
 Inside any `(`, `[`, or `{`, and at the top level of a form, the base reader
-applies. It reads **atoms** and **lists** and a handful of **prefix** and
-**collection** syntaxes. Everyday shapes are covered in
-[Forms and combining](../guide/forms-and-combining.md); this section is the
-normative catalogue.
+applies. It reads atoms and lists and a handful of prefix and
+collection syntaxes. The everyday shapes are in
+[Model of evaluation](../guide/model-of-evaluation.md).
 
-**Whitespace is the only separator.** Tokens are split on spaces, tabs, and
+Whitespace is the only separator. Tokens are split on spaces, tabs, and
 newlines (and on the delimiter characters). Punctuation that other languages
-use to separate items — most notably the **comma** — is an ordinary atom
-character here, so `#[1, 2, 3]` reads three symbols `1,` `2,` `3`, not three
-integers. Separate list items with spaces.
+use to separate items -- most notably the comma -- is an ordinary atom
+character here, so `#[1, 2, 3]` reads the symbols `1,` and `2,` followed by
+the integer `3`, not three integers. Separate list items with spaces.
 
 ### Atoms
 
 An atom is one whitespace- or delimiter-bounded token. The reader matches each
-token against the literal patterns below; a token that matches **none of them**
-is a **symbol**.
+token against the literal patterns below; a token that matches none of them
+is a symbol.
 
-**Numbers.** Each numeric shape is a distinct literal:
+Numbers. Each numeric shape is a distinct literal:
 
 | Written | Reads as | Notes |
 |---|---|---|
@@ -40,30 +37,31 @@ is a **symbol**.
 | `9.99d`, `5d` | decimal | trailing `d`, `decimal.Decimal` |
 | `3+4j`, `2.0+1i` | complex | trailing `i` or `j` |
 
-**Strings** are double-quoted, with optional single-character prefixes attached
+Strings are double-quoted, with optional single-character prefixes attached
 directly to the opening quote:
 
 | Written | Meaning |
 |---|---|
 | `"text"` | plain string |
-| `f"x is {x}"` | format string — interpolates `{…}` expressions |
-| `r"a\d+"` | raw string — no backslash escapes |
-| `b"bytes"` | bytes literal — ASCII text plus escapes for any byte (`b"\xff"`); a literal non-ASCII character is an error |
+| `f"x is {x}"` | format string -- interpolates `{...}` expressions |
+| `r"a\d+"` | raw string -- no backslash escapes |
+| `b"bytes"` | bytes literal -- ASCII text plus escapes for any byte (`b"\xff"`); a literal non-ASCII character is an error |
 
-A prefix is recognised only when it sits immediately before the quote (`f"…"`,
-not `f "…"`). A trailing hyphen continues a string into the next quoted segment;
+A prefix is recognised only when it sits immediately before the quote (`f"..."`,
+not `f "..."`). A trailing hyphen continues a string into the next quoted segment;
 see [Suffix syntax](#suffix-syntax).
 
-**Symbols** are names: any token that is not a number, string, keyword, or
+Symbols are names: any token that is not a number, string, keyword, or
 singleton. Symbols may contain letters, digits, `-`, `_`, `/`, and most
-punctuation (`+`, `<`, `list->vector`, `None?` are all symbols). A leading digit
-generally makes a number instead, so names start with a non-digit.
+punctuation (`+`, `<`, `list->vector`, `None?` are all symbols). A token
+that matches a numeric pattern is a number; any other token is a symbol,
+so `2x` and `1st` are symbols.
 
-**Keywords** are self-evaluating name markers written with a colon on either
+Keywords are self-evaluating name markers written with a colon on either
 end. `:foo` and `foo:` both read as the keyword `foo`; the trailing-colon
 spelling is what carries keyword arguments in calls and headers.
 
-**Singletons and constants:**
+Singletons and constants:
 
 | Written | Reads as |
 |---|---|
@@ -76,7 +74,7 @@ spelling is what carries keyword arguments in calls and headers.
 
 ### Lists
 
-Parentheses group forms into a **pair chain** (a cons list):
+Parentheses group forms into a pair chain (a cons list):
 
 ```koskari
 (+ 1 2 3)         ;; a three-argument call
@@ -84,17 +82,17 @@ Parentheses group forms into a **pair chain** (a cons list):
 ()                ;; the empty list, nil
 ```
 
-A **dotted pair** places a value directly in the tail with `.`:
+A dotted pair places a value directly in the tail with `.`:
 
 ```koskari
 (k . v)           ;; one cons cell: car k, cdr v
 (1 2 . 3)         ;; improper list ending in 3
 ```
 
-Square brackets `[ ]` read with the **same grammar** as `( )` and produce a
+Square brackets `[ ]` read with the same grammar as `( )` and produce a
 value-equal chain; the reader records the bracket style so a call-position lint
 can flag it, but the compiler treats the two the same. See
-[Brackets and the call convention](concepts/brackets-and-call-convention.md).
+[Brackets and the call convention](../guide/brackets-and-call-convention.md).
 
 ### Collection literals
 
@@ -107,11 +105,51 @@ whitespace-separated:
 | `#[1 2 3]` | `(#list 1 2 3)` | a list |
 | `#{"a": 1 "b": 2}` | `(#dict (#tuple "a" 1) (#tuple "b" 2))` | a dict |
 
-A `#dict` spine accepts alternating `key value` pairs, dotted `(key . value)`
-entries, or `key:` keyword keys (`#{name: n}`). Keys are **ordinary
-expressions**, so a `key:` key lowers to the *name* `key`, not the string
-`"key"` — quote or write the string explicitly (`#{"name": n}`) when you want a
-literal string key.
+A `#dict` spine is a sequence of entries. Four entry forms are accepted:
+
+| Entry | Example | Reads as |
+|---|---|---|
+| `key: value` | `#{name: n}` | `(#dict (#tuple name n))` |
+| `KEY : VALUE` | `#{"name": n}`, `#{(str 1) : "one"}` | `(#dict (#tuple "name" n))` |
+| `**: EXPR` | `#{**: other}` | `(#dict **: other)` |
+| `(key . value)` | `#{("a" . 1)}` | `(#dict ("a" . 1))` |
+
+Keys are **ordinary expressions**, so a `key:` key lowers to the name `key`,
+not the string `"key"` -- quote or write the string explicitly (`#{"name": n}`)
+when you want a literal string key. The `KEY : VALUE` spelling takes any key
+expression, with the `:` standing alone as its own token. A dotted entry
+evaluates both halves the same way, and its value must be an atom:
+`("a" . (+ 1 2))` is the proper list `("a" + 1 2)`, which compiles as a call
+to `"a"`.
+
+Alternating `key value` items are not an entry form. `#{"a" 1}` reads as
+`(#dict "a" 1)`, and the call raises `ValueError: build_dict items must be
+(key, value) pairs`.
+
+Classification is all-or-nothing: one entry the reader cannot classify leaves
+the whole spine raw, so mixing a dotted entry with `key: value` entries fails
+even though each form works on its own.
+
+### Thunk braces
+
+Braces read their contents as the body of a thunk:
+
+| Written | Reads as |
+|---|---|
+| `{(+ %1 %2)}` | `(gensym-thunk (+ %1 %2))` |
+
+The body is a form sequence, so the two-argument thunk is spelled
+`{(+ %1 %2)}` -- the inner parentheses are the call, and the braces only
+delimit the body. The `%N` placeholders become the formals. See
+[`gensym-thunk`](specials/compile-gensym-partial.md).
+
+```koskari
+>>> (define add {(+ %1 %2)})
+>>> (add 3 4)
+7
+>>> (list (map {(* %1 %1)} #[1 2 3]))
+#[1 4 9]
+```
 
 ### Prefix reader sugar
 
@@ -140,17 +178,39 @@ operator standing alone is its bare symbol, and one followed by any other
 character, `->`, `-=`, `--x`, and `+=` included, is an ordinary symbol. The
 prefixes are governed by the `reader/unary` pragma.
 
+### Fenced literals
+
+A triple-backtick fence captures its body as raw text and reads as a
+`compile/apply-fence` form naming the format given on the opener line:
+
+```text
+(apply-fence NAME RAW META)
+```
+
+The compiler resolves `fence/<name>` in the module namespace and compiles the
+source the handler returns in place of the fence. The `reader/fences` pragma
+governs the syntax; with it off, a backtick keeps only its quasiquote reading.
+
+````koskari
+define shout ```bash
+echo -n "$1" | tr a-z A-Z
+```
+
+(print (shout "koskari").text)
+````
+
+See [Fence handler reference](fences/index.md) for the handlers that ship and
+for defining new ones.
+
 ### Comments
 
-A `;` begins a line comment that runs to the end of the line (the doubled `;;`
-is a common style, still just a line comment). Comments may appear between any
-tokens and are skipped by the reader.
-
----
+A `;` begins a line comment that runs to the end of the line; the doubled
+`;;` is a common style and reads the same. Comments may appear between
+any tokens and are skipped by the reader.
 
 ## Suffix syntax
 
-Three pieces of syntax attach to the **value just read**, wrapping it rather
+Three pieces of syntax attach to the value just read, wrapping it rather
 than starting something new. They read left to right and chain freely with each
 other:
 
@@ -164,20 +224,20 @@ other:
 | `foo[0].bar` | `(attr (item foo 0) bar)` |
 | `"a"- " b"` | `(#str "a" " b")` |
 
-**Attachment is strict.** The suffix character must follow the value with no
+Attachment is strict. The suffix character must follow the value with no
 space between them. A space ends the value instead, which is what keeps
 `foo [a]` two separate forms and leaves the leading-dot method call
 `(.baz obj)` alone.
 
-**Index brackets** (`foo[k]`) read an item access, and a group may carry
+Index brackets (`foo[k]`) read an item access, and a group may carry
 several keys (`foo[1 2]`). An empty group is an error.
 
-**Dots** read an attribute. This is the same expansion whether the dot sits
+Dots read an attribute. This is the same expansion whether the dot sits
 inside a single name (`obj.value`) or attaches to a form or literal
-(`(get-fn x).baz`, `"".join`) — the dot is the attribute read, and enclosing
+(`(get-fn x).baz`, `"".join`) -- the dot is the attribute read, and enclosing
 parentheses are what make it a call. A dot with no name after it is an error.
 
-**A trailing hyphen on a string** continues that literal into the next quoted
+A trailing hyphen on a string continues that literal into the next quoted
 segment, so a long string can be broken across lines without restructuring the
 call around an explicit join:
 
@@ -192,24 +252,44 @@ lines, and comments in between are skipped. Each segment carries its own
 prefix, so an `f` segment interpolates and an `r` segment stays raw. All-literal
 chains fold to a single constant, so the join costs nothing at run time.
 
-Each of the three is governed by its own setting — `reader/index-brackets`,
+Each of the three is governed by its own setting -- `reader/index-brackets`,
 `reader/dot-attrs`, and `reader/string-segments`. See
-[Pragmas and feature settings](concepts/pragma.md) for turning them off and for
-the exact rules at the edges.
+[Pragmas and feature settings](../guide/pragma.md) for turning them off.
 
----
+## Decorator lines
 
-## Layout forms
+A layout line beginning with `@` is a decorator line. One or more `@` lines,
+followed by the form they decorate, read as
+`(compile/decorate (DECORATOR ...) FORM)`:
 
-Layout is the default surface at the top level of a module. Rules for blocks,
-lines, colon handling, and handler resolution live in dedicated reference pages:
+```koskari
+define loud [f]:
+  lambda [*: args]:
+    (print "calling")
+    (f *: args)
 
-- [Koskari and s-expressions](concepts/layout-and-s-expressions.md) — the rules beside their s-expressions
-- [Reader and layout syntax](reader-layout.md) — normative syntax rules
+@loud
+define greet [who]:
+  (print "hello" who)
 
----
+(greet "world")
+```
+
+The call prints `calling`, then `hello world`.
+
+Every `@` line must begin at the same column as the decorated form; a
+mismatched column is the error `decorator lines must align with the decorated
+form`. An `@` with nothing after it on the line is `empty decorator line`.
+
+The `reader/decorators` pragma governs this layout surface only. With it off,
+the [`compile/decorate`](macros/compile-decorate.md) macro is still available
+in its s-expression spelling.
 
 ## Layout handlers
 
-Per-head read-time lowering (`layout/if`, `layout/block`, …) is documented in
+Per-head read-time lowering (`layout/if`, `layout/block`, ...) is documented in
 the [Layout handler reference](layouts/index.md).
+
+See also: [Koskari and s-expressions](../guide/layout-and-s-expressions.md) for
+the layout rules beside their s-expressions, and
+[Reader and layout syntax](reader-layout.md) for the normative syntax rules.

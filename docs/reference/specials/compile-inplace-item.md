@@ -7,7 +7,7 @@
 OBJ, compute `current OP VALUE`, and store the result back. Equivalent to
 augmented assignment on a subscript (`d[k] += 1`).
 
-Normally written as **`(inplace OP (item OBJ KEY) VALUE)`** — the
+Normally written as **`(inplace OP (item OBJ KEY) VALUE)`** -- the
 **`compile/inplace`** macro extension expands item forms to this special.
 
 **Behaviour:** One fused row reads the current item, applies the
@@ -39,5 +39,3 @@ form evaluates to None.
 ;; Direct use
 (inplace-item + table key delta)
 ```
-
-**Implementation:** `koskari/compile/specials/object.py` — `special_inplace_item`

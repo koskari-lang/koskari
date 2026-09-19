@@ -1,16 +1,16 @@
 # layout/while
-**Symbols:** `layout/while`, `layout/for-each`
+**Symbol:** `layout/while`
 
-**Use-case:** Block syntax for `while` and `for-each` loops with an optional
-`else` peer. Both names share one handler (`layout_loop`); the read result keeps
-the block head (`while` or `for-each`) and is compiled by `compile/while` or
-`compile/for-each`.
+**Use-case:** Block syntax for a `while` loop with an optional `else`
+peer. The read result keeps the `while` head and is compiled by
+[`compile/while`](../specials/compile-while.md).
 
-**Behaviour:** Body forms are appended to
-the header list (no `compile/begin` wrapper). Accepts at most one optional peer
-`else`. When present, the else peer body is appended as a final
-`(else: BODY...)` clause (not merged into the main loop body). Rules: only
-`else` is allowed as a peer; `else` takes no arguments; at most one `else` peer.
+**Behaviour:** The header is `while TEST`, one test expression. Body
+forms are appended to the header list with no `begin` wrapper, giving
+`(while TEST BODY...)`. `else` is the only peer gathered; its body is
+appended as a final `(else: BODY...)` clause rather than merged into the
+loop body. Rules: `else` takes no arguments, and at most one `else` peer
+may appear.
 
 **Syntax:**
 
@@ -19,33 +19,31 @@ while TEST:
   BODY
 else:
   BODY
-
-for-each [BINDING EXPR]:
-  BODY
-else:
-  BODY
 ```
 
 **Examples:**
 
 ```koskari
-while (some_test 123):
-  loopbody...
-else:
-  elsebody...
-;; → (while (some_test 123) loopbody... (else: elsebody...))
+while (< x 3):
+  (print x)
+;; -> (while (< x 3) (print x))
 
-while x:
-  y
-;; → (while x y)
-
-for-each [i items]:
-  (call append result i)
+while (< x 3):
+  (print x)
+  set! x (+ x 1)
 else:
-  "finished"
-;; → (for-each [i items] (call append result i) (else: "finished"))
+  (print "done")
+;; -> (while (< x 3) (print x) (set! x (+ x 1)) (else: (print "done")))
 ```
 
-**Implementation:** `koskari/reader/layouts/loops.layout_loop` (registered as
-`layout/while` and `layout/for-each` via `add_builtin`)
+```koskari
+define total 0
+define x 0
 
+while (< x 3):
+  set! total (+ total x)
+  set! x (+ x 1)
+else:
+  (print "while done" total)
+;; prints: while done 3
+```

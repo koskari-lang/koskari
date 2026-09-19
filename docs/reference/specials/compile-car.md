@@ -15,6 +15,5 @@ with the sum of their counts (same for **CDR**).
 **Example:**
 
 ```koskari
-(car (cons 1 nil))   ; → 1
+(car (cons 1 nil))   ; -> 1
 ```
-

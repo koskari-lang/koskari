@@ -1,7 +1,7 @@
 # compile/yield
 **Symbol:** `compile/yield`
 
-**Syntax:** `(yield VAL ...)` — variadic.
+**Syntax:** `(yield VAL ...)` -- variadic.
 
 | Form               | Result                                          |
 |--------------------|-------------------------------------------------|
@@ -18,7 +18,7 @@ and with keyword arguments it yields a multi-value `values` object.
 
 **Bare form:** the lone symbol `yield` expands to `(yield)`, so the
 Python-style spelling yields `None`. Governed by the
-[`compiler/bare-control-words`](../concepts/pragma.md#compiler) pragma of the
+[`compiler/bare-control-words`](../../guide/pragma.md#compiler) pragma of the
 module being compiled (`convert` by default, or `warn` / `error`); because the
 bare symbol always expands, `yield` can never name a variable.
 

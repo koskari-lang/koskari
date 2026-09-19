@@ -3,7 +3,7 @@
 
 **Syntax:** `(class NAME (SUPERS) BODY ...)`
 
-- **NAME**: symbol — used for the Python class `__name__` (and the BUILD_CLASS
+- **NAME**: symbol -- used for the Python class `__name__` (and the BUILD_CLASS
   position tuple); **not** a compile-time binding target for this special
 - **SUPERS**: list of superclass expressions and optional `meta: Metaclass` keyword
 - **BODY**: forms compiled in sequence inside the CollectorNamespace (e.g.
@@ -13,7 +13,7 @@
 run the body in a CollectorNamespace. The **value of the form** is the new class
 object (default metaclass is plain `type`; use `meta: MyMeta` in SUPERS for a custom
 metaclass). To **bind** the class to a name in the surrounding scope, wrap with
-`compile/define` (or use the **`define-class`** macro — see
+`compile/define` (or use the **`define-class`** macro -- see
 [define-class macro](../macros/index.md) and
 [layout/define-class](../layouts/layout-define-class.md)).
 
@@ -55,5 +55,3 @@ or `VAR_STORE` for **NAME** itself (only for injected `__doc__` /
   (class C (Base meta: MyMeta)
     (define x 1)))
 ```
-
-

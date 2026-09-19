@@ -1,139 +1,155 @@
 # Model of evaluation
 
-Both tutorial on-ramps meet here. Later guide chapters add detail; reference
-pages give exact rules per form.
+What happens between the text of a program and its result, in four
+stages: read, expand, compile, evaluate. Everything else in the guide is
+a closer look at one of them.
 
----
+## Forms
 
-## Three ideas
+A **form** is one complete piece of Koskari. The everyday shapes:
 
-> **Q:** What happens when Koskari runs a program?
->
-> **A:** Three ideas cover most of what you need:
->
-> 1. **Read** — turn text into structure Koskari can walk.
-> 2. **Evaluate** — run that structure to produce a value (or an effect).
-> 3. **Data** — some values are data you can inspect; some are things you can
->    call.
+```koskari
+42                         ;; a value
+message                    ;; a name
+(+ 1 2)                    ;; a call
+(print "area:" (* 6 7))    ;; a call with a call inside it
+```
 
-> **Q:** Which did the beginner track already use?
->
-> **A:** All three, without the names. When you typed `(+ 1 2)` at the REPL,
-> Koskari read the text, evaluated the call, and showed the number `3` — data.
+A value evaluates to itself. A name evaluates to what it is bound to. A
+call evaluates its arguments, then applies the thing in first position
+to them. Inner calls finish before the call around them, so
+`(print "area:" (* 6 7))` prints `area: 42`.
 
----
+A file is a sequence of forms, run from top to bottom:
+
+```koskari
+(define width 6)
+(define height 7)
+(print "area:" (* width height))
+```
+
+Layout is another spelling of the same forms. A line with more than one
+element is a call, and a line ending in `:` opens a block whose indented
+lines are arguments to it:
+
+```koskari
+define width 6
+if (> width 5):
+  print "wide"
+else:
+  print "narrow"
+```
+
+Nothing after the reader can tell which spelling was used. The rules,
+each beside the s-expression it produces, are in
+[Koskari and s-expressions](layout-and-s-expressions.md).
 
 ## Read
 
-> **Q:** Is `(+ 1 2)` text or structure?
->
-> **A:** On disk or at the keyboard it is **text**. After reading, Koskari
-> treats it as a **call**: `+` with inputs `1` and `2`. Reading is strict: bad
-> punctuation fails before evaluation starts (syntax errors from the beginner
-> track).
+The reader turns text into forms: atoms, pairs, and the collection
+literals. `(+ 1 2)` becomes a pair chain whose head is the symbol `+`.
+`"hello"` becomes a string and `42` an integer, since those need no
+further work. Layout blocks are read into the same pair chains through
+the layout handlers, so a block `if` and a written `(cond ...)` arrive at
+the next stage as the same thing.
 
-> **Q:** How does layout syntax fit in?
->
-> **A:** In `.ki` files the reader also accepts indent-based blocks and lines.
-> See [Koskari and s-expressions](../reference/concepts/layout-and-s-expressions.md).
+Reading is strict. A missing `)` or a bad indent is a `ReaderSyntaxError`,
+raised before anything runs. The reader also carries source positions,
+which is what puts a Koskari line in a traceback.
 
-> **Q:** Do numbers and strings need much reading?
->
-> **A:** They are already simple values. `"hello"` reads as text data. `42`
-> reads as a number.
+## Expand
 
----
+The compiler walks each form. When a form's head names a macro, the
+macro receives the form and returns a new one, and the walk continues
+on the result. `if` is a macro over `cond`; `when`, `unless`, `set!`,
+`define-class`, and the comprehension forms `each`, `list-each`, and
+`dict-each` are macros too:
+
+```koskari
+>>> (macroexpand '(when ready (print "go")))
+(cond [ready (print "go")] [else: None])
+```
+
+`for-each` is a compiler special rather than a macro; the comprehension
+macros expand into it, and it expands no further.
+
+Expansion is where a program's vocabulary grows. A `define-syntax` in
+your own module adds a head the walk knows about, and its uses lower to
+ordinary forms before compilation. See
+[Macros and hygiene](macros-and-hygiene.md).
+
+## Compile
+
+Once a form has no macro left in it, the compiler emits bytecode for it.
+The heads it handles itself are the **special forms**: `define`,
+`lambda`, `cond`, `try`, `while`, the operators, the imports, and about
+a hundred more, each with a page in the
+[reference](../reference/specials/index.md). Anything else in head
+position is a call of a runtime value.
+
+The picture that explains most behavior is a stack. For `(+ 1 2)` the
+compiler emits: push the constant `1`, push the constant `2`, add two
+operands. For `(print (+ 1 2))`: look up `print`, then the three
+instructions above, then call with one argument. The inner call leaves
+its value on the stack where the outer call finds it, which is why
+evaluation is inside out.
+
+Compile errors are shape errors: a `define` with no name, a `lambda`
+whose formals are not a list, a form that matches none of a special's
+patterns. They are raised as `CompilerError` before the module runs.
+
+```koskari
+(define)
+```
+
+reads fine and fails here.
 
 ## Evaluate
 
-> **Q:** What does “evaluate” mean?
->
-> **A:** Find the value a form denotes by following Koskari’s rules.
+The evaluator runs the bytecode. It is stackless: a Koskari call does
+not consume the C stack, so tail calls loop, deep recursion does not
+overflow, and a running function can be suspended and resumed. That
+last property is what makes every function able to await without being
+marked async; see [Demand, async, and defer](demand-async-and-defer.md).
 
-> **Q:** What is the value of `42`?
->
-> **A:** `42`.
+Names are looked up in the namespace the code was compiled in, then its
+parents, then the module's builtins. A name with no binding is a
+`NameError` at the point of use, not at compile time, because a later
+form or another module may bind it first. See
+[Name resolution and prefixes](name-resolution-and-prefixes.md) for how
+`(+ 1 2)` becomes an opcode while `+` is also a function you can pass
+around.
 
-> **Q:** What is the value of `(+ 1 2)`?
->
-> **A:** Evaluate `1` → `1`. Evaluate `2` → `2`. Apply `+` → `3`.
+Runtime errors are Python exceptions. `(/ 1 0)` raises
+`ZeroDivisionError` from the same place Python would.
 
-> **Q:** What is the value of `(define x 6)`?
->
-> **A:** The side effect is: the name `x` now means `6`. The form’s value is
-> not interesting to print at the REPL — that is why the beginner track stayed
-> quiet after `define`.
+## Which stage failed
 
-> **Q:** What is the value of `(print "hi")`?
->
-> **A:** `print` runs for effect (text on screen). The value of the call is
-> not what you care about when learning — you care that `"hi"` appeared.
+When a program surprises you, the traceback names the stage:
 
----
+| Error | Stage | What to look at |
+|-------|-------|-----------------|
+| `ReaderSyntaxError`, `LayoutError` | read | punctuation, indentation, a `:` inside parentheses |
+| `SyntaxMatchError` on a macro | expand | the form against the macro's patterns; `macroexpand-1` shows one step |
+| `CompilerError`, `SpecialError` | compile | the form named in the message against its reference page |
+| `NameError`, `TypeError`, any Python exception | evaluate | the value, the missing name, the failing call |
 
-## Data vs things to call
+The exception classes are catalogued in the
+[Error guide](../reference/error-codes.md).
 
-> **Q:** Is `+` data?
->
-> **A:** It is a **name** bound to something callable. You do not quote it in
-> normal use — you put it first in a call.
+## Data and code
 
-> **Q:** Is `"+"` data?
->
-> **A:** It is **text data** (a string). It is not the same as the callable `+`.
-> **Not yet:** full quoting rules live in later guide and reference material.
+A form is also a value. Quote it and it stays a pair chain instead of
+running:
 
-> **Q:** What is `(+ 1 2)` before it runs?
->
-> **A:** A **form** — structure that can be evaluated. After it runs, you get
-> the number `3`.
+```koskari
+>>> '(+ 1 2)
+(+ 1 2)
+>>> (car '(+ 1 2))
++
+```
 
----
-
-## Order inside a call
-
-> **Q:** In `(print (+ 1 2))`, what runs first?
->
-> **A:** The inner call `(+ 1 2)` evaluates to `3`. Then `print` receives `3`
-> as its input. Same rule as the beginner track: **inside before outside**.
-
----
-
-## Predict, then check
-
-> **Q:** What is `(+ (+ 1 2) (* 3 4))`?
->
-> **A:** Work it out before the REPL:
->
-> 1. `(+ 1 2)` → `3`
-> 2. `(* 3 4)` → `12`
-> 3. `(+ 3 12)` → `15`
->
-> Then type it at `koskari>` and confirm.
-
----
-
-## What we defer
-
-> **Q:** What is this chapter not explaining?
->
-> **A:** Macros (code that rewrites code before evaluation), layout blocks
-> (indent syntax that reads into forms), bytecode, and the full catalog of
-> special forms. Those have guide and reference sections. The rule here stays
-> the same: **forms evaluate to values; calls evaluate their inputs, then
-> apply the first position.**
-
----
-
-## What you should remember
-
-Reading turns text into forms. Evaluation turns forms into values (and
-effects). Nested calls evaluate inner forms first. When in doubt, predict the
-value, then check at the REPL.
-
-**Go deeper:** [Koskari and s-expressions](../reference/concepts/layout-and-s-expressions.md)
-— how layout text becomes the same forms as s-expressions.
-[Demand, async, and defer](../reference/concepts/demand-async-and-defer.md) —
-what "evaluate" means on Koskari's async-native substrate.
-
-Next in the guide: [Forms and combining](forms-and-combining.md).
+That is the property macros rest on. A macro is a function whose input
+and output are forms, and `car`, `cdr`, and `cons` are how it takes them
+apart and puts them together. [Data structures](data-structures.md)
+covers the pair and the quoting forms.

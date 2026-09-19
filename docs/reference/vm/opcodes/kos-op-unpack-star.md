@@ -9,7 +9,7 @@
   **TOS is the first prefix element** `seq[0]` (when `left > 0`):
   1. **Suffix** scalars: indices `L-1, L-2, ..., L-right` (each via
      `KosStack_PushRef`).
-  2. **Middle**: one value — the tuple — via `KosStack_PUSH` (**stolen**
+  2. **Middle**: one value -- the tuple -- via `KosStack_PUSH` (**stolen**
      reference from `PySequence_Tuple`).
   3. **Prefix** scalars: indices `left-1, ..., 0` (each via `PushRef`).
 - **Stack (TOS right)**: `[..., raw] → [..., seq[L-1], ..., seq[L-right],

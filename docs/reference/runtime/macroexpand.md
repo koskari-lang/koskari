@@ -26,12 +26,19 @@ are handled by the **`compile/macroexpand`** macro. The **`macroexpandq`** and
 **Examples:**
 
 ```koskari
-;; Fully expand a form in the globals namespace
-(macroexpand (define x 1))
+>>> (macroexpand '(when condition action))
+(cond [condition action] [else: None])
+```
 
-;; Expand from surface syntax
-(macroexpandq (define x 1))
+The **`macroexpandq`** macro quotes for you, so the form is written
+unquoted:
 
+```koskari
+>>> (macroexpandq (when condition action))
+(cond [condition action] [else: None])
+```
+
+```koskari
 ;; Direct call with an explicit namespace
 (call macroexpand when-form (globals))
 ```

@@ -16,4 +16,3 @@ the result. The runtime `deref` builtin remains available for higher-order use
 (deref r)   ; compiles expr for r, emits DEREF
 (deref r)           ; runtime call; use when passing deref as first-class fn
 ```
-

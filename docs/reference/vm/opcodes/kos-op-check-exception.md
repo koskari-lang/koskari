@@ -12,7 +12,7 @@
 | 4     | CHECK_EXCEPTION | 7   | 7 (-> 7) | pop typ; if exc not match → pc=7 |
 | 5     | POP             | 1   | 1        | consume exc |
 | 6     | RETURN          | 1   | 1        | handle |
-| 7     | LABEL           | —   | —        | re-raise or next handler |
+| 7     | LABEL           | --   | --        | re-raise or next handler |
 
 
 ## 9.1 Switch dispatch

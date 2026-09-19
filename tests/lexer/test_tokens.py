@@ -188,11 +188,35 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual(toks[1].end_col, 5)
 
 
-    async def test_tokenize_non_layout_trailing_colon_stays_keyword(self):
-        toks = list(tokenize('foobar:'))
-        self.assertEqual(len(toks), 1)
-        self.assertEqual(toks[0].type, 'keyword')
-        self.assertEqual(toks[0].text, 'foobar:')
+    async def test_tokenize_trailing_colon_inside_delimiters_stays_keyword(self):
+        toks = list(tokenize('(f foobar:\n  x)'))
+        self.assertEqual(toks[2].type, 'keyword')
+        self.assertEqual(toks[2].text, 'foobar:')
+        toks = list(tokenize('[x y: 2]'))
+        self.assertEqual(toks[2].type, 'keyword')
+        self.assertEqual(toks[2].text, 'y:')
+        toks = list(tokenize('#{name: n}'))
+        self.assertEqual(toks[1].type, 'keyword')
+        self.assertEqual(toks[1].text, 'name:')
+
+
+    async def test_tokenize_trailing_colon_mid_line_stays_keyword(self):
+        toks = list(tokenize('f x: 1'))
+        self.assertEqual(toks[1].type, 'keyword')
+        self.assertEqual(toks[1].text, 'x:')
+
+
+    async def test_tokenize_line_end_colon_opens_block(self):
+        toks = list(tokenize('define result:'))
+        self.assertEqual([t.type for t in toks[1:]], ['symbol', 'colon'])
+        self.assertEqual(toks[1].text, 'result')
+        self.assertEqual(toks[2].start_col, 14)
+        toks = list(tokenize('retry 5:  ; five tries\n  (flaky)'))
+        self.assertEqual(
+            [t.type for t in toks[:3]], ['symbol', 'number', 'colon'])
+        self.assertEqual(toks[1].text, '5')
+        toks = list(tokenize('solve:\n  x'))
+        self.assertEqual([t.type for t in toks[:2]], ['symbol', 'colon'])
 
 
     async def test_tokenize_quote(self):

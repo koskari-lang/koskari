@@ -1,5 +1,5 @@
 # compile/labels
-**Syntax:** **`(labels [[NAME FORMALS BODY …] …] FORM …)`**
+**Syntax:** **`(labels [[NAME FORMALS BODY ...] ...] FORM ...)`**
 
 **Behaviour:** Like [`flet`](compile-flet.md), but the bound names are visible to
 one another, so the functions can be mutually recursive. Each declaration is
@@ -25,5 +25,5 @@ A binding may call any sibling, including one declared later in the same
 
 As with any local binding, a **`labels`** binding whose name is also a **macro**
 (a special form, or one of the **`cad*r`** accessor macros) does not take effect
-in call position — macros expand before names resolve, so they always win. Names
+in call position -- macros expand before names resolve, so they always win. Names
 bound to runtime functions are shadowed normally.

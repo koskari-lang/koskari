@@ -3,7 +3,6 @@
 
 **Syntax** (most specific forms first; `NAME` is optional in all groups):
 
-
 | Shape                        | Form                                               |
 | ---------------------------- | -------------------------------------------------- |
 | Named + return               | `(lambda NAME :: RET FORMALS BODY ...)`    |
@@ -13,11 +12,10 @@
 | Named, no return             | `(lambda NAME FORMALS BODY ...)`           |
 | Anonymous, no return         | `(lambda FORMALS BODY ...)`                |
 
-
 `RET` is a single expression (not a formal parameter). Like parameter
 annotations, it is evaluated in the **defining scope** when the function is
 created, and appears on the callable as `__annotations__['return']` as a real
-object — `:: int` yields the `int` type itself, and
+object -- `:: int` yields the `int` type itself, and
 `inspect.signature(fn).return_annotation` matches. An unbound name raises
 `NameError` at function creation, just like an unbound keyword default.
 
@@ -30,7 +28,7 @@ stays a string and is not retried.
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
 for rest. Supports `*` and `**` in formals (see `gather_formals` in helpers and
-[`koskari.matcher`](../../api/koskari-matcher.md)).
+[`koskari.matcher`](../api/koskari-matcher.md)).
 Parameter types may use `::` / `type:` on individual parameters (see formals
 helpers).
 
@@ -44,7 +42,7 @@ docstring discovery; the body is still compiled in full.
 given name in the function's scope so the function can refer to itself (e.g. for
 recursion in a named `let` or inline `(lambda NAME ...)`).
 
-**See also:** [compile/function](compile-function.md) — named functions **without**
+**See also:** [compile/function](compile-function.md) -- named functions **without**
 a closure self-binding at creation; used by `define` / `define-global` function
 shorthand and decorator macros.
 
@@ -80,4 +78,3 @@ creation by `BUILD_FUNCTION`, which builds the keyword-defaults dict and the
 ;; Docstring + return type
 (lambda g :: int [x] "doc for g" x)
 ```
-

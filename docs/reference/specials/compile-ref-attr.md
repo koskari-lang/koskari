@@ -13,4 +13,3 @@ SYM on OBJ. The reference can be deref'd or stored into.
 ```koskari
 (ref-attr obj count)
 ```
-

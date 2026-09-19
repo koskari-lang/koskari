@@ -15,7 +15,7 @@ None for the fall-through case.
 **Examples:**
 
 ```koskari
-;; Empty cond → None
+;; Empty cond -> None
 (cond)
 
 ;; Single clause
@@ -34,4 +34,3 @@ None for the fall-through case.
 **Note:** The higher-level forms `compile/if`, `compile/when`,
 `compile/unless`, `compile/?`, and `compile/bool` are macros in
 `koskari/bootstrap/_conditionals.ki` (see [Macros](../macros/index.md)).
-

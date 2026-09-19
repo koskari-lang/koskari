@@ -10,10 +10,11 @@ flattens a list into the surrounding list.
 
 **Reader shorthands:**
 
-- ``EXPR` → `(quasiquote EXPR)`
-- `,EXPR` → `(unquote EXPR)` (only valid inside a quasiquote body)
-- `,@EXPR` → `(unquote-splicing EXPR)` (only valid inside a quasiquote body)
-- ``HEAD: BODY` → `(quasiquote-block (:block: ...))` (block quasiquote; see below)
+- ``EXPR` -> `(quasiquote EXPR)`
+- `,EXPR` -> `(unquote EXPR)` (only valid inside a quasiquote body)
+- `,@EXPR` -> `(unquote-splicing EXPR)` (only valid inside a quasiquote body)
+- `` `HEAD: BODY `` -> `(quasiquote (block: (HEAD) ...))`; see
+  [Block quasiquote](compile-quasiquote-block.md)
 
 **Behaviour:** One argument required. The compiler walks the expression
 recursively at a nesting *level* (starting at 0):
@@ -22,7 +23,7 @@ recursively at a nesting *level* (starting at 0):
 - `**(unquote INNER)`** at level 0: `INNER` is compiled normally
 (evaluated at runtime); its result becomes that position's value.
 - `**(unquote INNER)**` at level > 0: the unquote form is reconstructed
-literally as a pair — `CONST compile/unquote`, recurse on INNER at level − 1,
+literally as a pair -- `CONST compile/unquote`, recurse on INNER at level - 1,
 `PROPER 2`.
 - `**(quasiquote INNER)**` at any level: reconstructed literally at
 level + 1.
@@ -54,25 +55,21 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 
 ```koskari
 ;; Atom: just a constant
-`42           ; → 42
-`foo          ; → symbol foo
+`42           ; -> 42
+`foo          ; -> symbol foo
 
-;; Proper list — compiles to PROPER 3
-`(a b c)      ; → (a b c)
+;; Proper list -- compiles to PROPER 3
+`(a b c)      ; -> (a b c)
 
-;; Unquote — x is evaluated at runtime
-`(a ,x b)     ; → (a <value of x> b)
+;; Unquote -- x is evaluated at runtime
+`(a ,x b)     ; -> (a <value of x> b)
 
-;; Unquote-splicing — items is spliced in
-`(a ,@items b) ; → (a item0 item1 ... b)
+;; Unquote-splicing -- items is spliced in
+`(a ,@items b) ; -> (a item0 item1 ... b)
 
 ;; Dotted pair with atom tail
-`(a . 42)     ; → (a . 42)
+`(a . 42)     ; -> (a . 42)
 
-;; Nested quasiquote — inner unquote is NOT evaluated at outer level
-``(a ,(+ 1 2)) ; → (quasiquote (a (unquote (+ 1 2))))
+;; Nested quasiquote -- inner unquote is NOT evaluated at outer level
+``(a ,(+ 1 2)) ; -> (quasiquote (a (unquote (+ 1 2))))
 ```
-
-**Implementation:** `koskari/compile/specials/quasiquote.py`
-
-

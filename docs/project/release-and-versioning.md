@@ -1,51 +1,33 @@
 # Release and versioning
 
----
+Koskari 0.1.0 is the first public release, a beta. Versions follow
+`major.minor.patch`. Through the `0.x` series the language surface may
+change between minor versions, and the [changelog](../changelog.md)
+records each change for readers before anything else.
 
-## Current version
+## What may change
 
-The current documented package version is **0.1.0**. Treat the `0.x` series as
-an early language and tooling series: examples are useful and intentional, but
-public compatibility promises are still modest.
-
----
-
-## Compatibility expectations
-
-For users, the practical rule is:
-
-- Tutorial examples should keep working within the documented version series.
-- Reference pages describe the behavior of the current implementation.
-- Advanced internals such as bytecode details may change faster than beginner
-  syntax and everyday library usage.
-
-When behavior matters for a project, pin the Koskari package version in the
-same way you would pin Python package dependencies.
-
----
-
-## What can change in early releases
-
-During early releases, these areas may evolve:
-
-- Macro and layout conveniences.
+- Macro and layout conveniences: a form may gain a shape or lose one
+  that nothing used.
 - Error wording and diagnostic detail.
-- Tooling integrations such as highlighting, LSP behavior, and Sphinx helpers.
-- VM and bytecode internals.
+- Tooling: highlighting, the language server, the Sphinx extension.
+- Bytecode and evaluator internals, which change faster than the
+  language.
 
-User-facing changes should be reflected in the tutorials, guide, reference, and
-changelog.
+## What holds
 
----
+- Tutorial and guide examples run as shown for the version series that
+  documents them.
+- Reference pages describe the current implementation; a form's page
+  changes when the form does.
+- A `.kio` file is tied to the bytecode version that produced it, and a
+  mismatch is refused rather than misread.
 
-## Reporting documentation drift
+Pin the package version in a project the way any Python dependency is
+pinned.
 
-If an example does not run as shown, include:
+## Reporting drift
 
-1. The Koskari version.
-2. The exact command you ran.
-3. The full error message or output.
-4. The documentation page and example section.
-
-That information makes it much easier to tell whether the implementation,
-example, or explanation needs to change.
+An example that does not run as shown is a bug. Report it with the
+Koskari version, the exact command, the full output, and the page and
+section.

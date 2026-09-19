@@ -23,19 +23,20 @@ Return a lazy iterator producing `(FUNC element)` for each element of
 ```
 
 **`FUNC`** may be any callable: a koskari function, a python function,
-or another callable object. A koskari function that awaits works
+or another callable object. A koskari function that suspends works
 transparently when the map is consumed in an asynchronous context:
 
 ```koskari
-import-from asyncio sleep
-
 define slow-double [x]:
-    (await (sleep 0))
+    (sleep 0)
     (* x 2)
 
 for-each [v (map slow-double #[1 2 3])]:
     (print v)
 ```
+
+`sleep` is a builtin and suspends on its own; it needs no import and no
+`await`.
 
 Matching python's `map`, a mapped function that raises
 **`StopIteration`** truncates the iteration.

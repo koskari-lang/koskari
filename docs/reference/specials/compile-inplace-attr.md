@@ -7,7 +7,7 @@
 OBJ, compute `current OP VALUE`, and store the result back. Equivalent to
 augmented assignment on an attribute (`obj.x += 1`). ATTR must be a symbol.
 
-Normally written as **`(inplace OP (attr OBJ ATTR) VALUE)`** — the
+Normally written as **`(inplace OP (attr OBJ ATTR) VALUE)`** -- the
 **`compile/inplace`** macro extension expands attribute forms to this special.
 
 **Behaviour:** When OBJ is a symbol, loads via VAR_ATTR and stores via
@@ -28,5 +28,3 @@ instruction), and stores via ATTR_STORE. The form evaluates to None.
 ;; Direct use
 (inplace-attr + obj total amount)
 ```
-
-**Implementation:** `koskari/compile/specials/object.py` — `special_inplace_attr`

@@ -25,4 +25,3 @@ crossed boundary denied the capture); see the **Errors** section of
     1
     (shift k (k 5))))
 ```
-

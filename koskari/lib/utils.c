@@ -933,8 +933,12 @@ PyObject *KosUtils_HasAttrStar(
     if (! val) {
       Py_DECREF(element);
       Py_DECREF(attrlist);
-      PyErr_Clear();
-      Py_RETURN_FALSE;
+
+      if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+        PyErr_Clear();
+        Py_RETURN_FALSE;
+      }
+      return NULL;
     }
 
     Py_DECREF(element);

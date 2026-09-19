@@ -28,6 +28,6 @@
 |------:|--------|-----|----------|---------|
 | 0     | JUMP   | 2   | 2 (-> 2) | branch to label |
 | 1     | CONST  | 0   | 0 (99)   | dead code |
-| 2     | LABEL  | 0   | —        | target "done"; no-op if executed |
+| 2     | LABEL  | 0   | --        | target "done"; no-op if executed |
 | 3     | RETURN | 1   | 1        | |
 

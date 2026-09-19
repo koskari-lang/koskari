@@ -14,4 +14,3 @@ name, then pushes CONST None.
 ```koskari
 (set-attr obj "value" 42)
 ```
-

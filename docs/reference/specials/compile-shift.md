@@ -39,4 +39,3 @@ translate them into its own vocabulary, as `koskari.solve` does with
   (shift k
     (k "value")))
 ```
-

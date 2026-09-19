@@ -2,7 +2,7 @@
 
 Per-name compile-time transliteration for triple-backtick fenced literals.
 Motivation and the "when does a format earn a fence" framing are in
-[Fences](../concepts/fences.md); the dispatch special is
+[Fences](../../guide/fences.md); the dispatch special is
 [`compile/apply-fence`](../specials/compile-apply-fence.md).
 
 ## Fence expansion
@@ -19,8 +19,8 @@ the opener-line `options:`. The **`compile/apply-fence`** special resolves
 **`fence/<name>`** in the module namespace and invokes the handler as
 **`(handler RAW META-DICT)`**, where `META-DICT` is `META` converted to a
 plain dict (`name`, `filename`, `line`, `col`, `options`). The handler
-returns ordinary Koskari source, which is compiled — and passed through
-**`apply_layout`** — in place of the fence.
+returns ordinary Koskari source, which is compiled -- and passed through
+**`apply_layout`** -- in place of the fence.
 
 Handler resolution (**`find_fence`** in **`koskari.fences`**): a bare-name
 binding resolves only when it is a **`FenceHandler`**; a **`fence/`**-prefixed
@@ -30,26 +30,31 @@ may define its own fence by binding a two-argument function to
 
 ## Self-contained expansions
 
-Fence handlers lower to source that references only **universal builtins** —
+Fence handlers lower to source that references only universal builtins --
 never a helper that must already be bound in the compiling module. `fence/bash`
 lowers onto the `run-process` builtin, so a bash fence works in any module
-without imports or setup. This mirrors how the built-in handlers are authored:
-in Koskari, in **`koskari/bootstrap/_fences.ki`**, via the **`define-fence`**
-syntax.
+without imports or setup. The built-in handlers are authored the same way, in
+Koskari, through [`define-fence`](../macros/compile-define-fence.md).
 
-## Adding new fences
+## Writing a fence handler
 
-1. Prefer defining the handler in **`.ki`** with **`define-fence`** (see
-   `koskari/bootstrap/_fences.ki`). A handler is
-   **`(define-fence fence/<name> [raw meta] BODY ...)`** returning Koskari
-   source — usually a quasiquoted template.
-2. Keep the expansion self-contained: reference only universal builtins so the
-   fence needs no pre-existing bindings at the use site.
-3. Validate opener-line options from **`(meta.get "options")`** and raise
-   **`FenceError`** for unknown ones.
-4. Hold the bar: a new fence should express something genuinely awkward in
-   native Koskari (see [Fences](../concepts/fences.md)).
-5. Add a handler page under **`docs/reference/fences/`**.
+Define the handler with [`define-fence`](../macros/compile-define-fence.md):
+`(define-fence fence/<name> [raw meta] BODY ...)`, returning Koskari source --
+usually a quasiquoted template.
+
+Keep the expansion self-contained. Reference only universal builtins, so the
+fence needs no pre-existing bindings at the use site.
+
+Validate opener-line options from `(meta.get "options")` and raise
+`FenceError` for ones the handler does not accept.
+
+A fence earns its place when the format it carries is genuinely awkward to
+write as native Koskari; see [Fences](../../guide/fences.md).
+
+```koskari
+>>> define-fence fence/shout [raw meta]:
+...   `(.upper ,(raw.strip))
+```
 
 ```{toctree}
 :maxdepth: 1

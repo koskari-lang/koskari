@@ -11,6 +11,6 @@
 | 0     | PUSH_FINALLY| 3   | 3 (-> 3) | push FINALLY; finally code at 3 |
 | 1     | …           | …   | …        | protected body |
 | 2     | POP_FINALLY | 0   | 0        | normal exit |
-| 3     | LABEL       | —   | —        | finally block |
+| 3     | LABEL       | --   | --        | finally block |
 | 4     | END_FINALLY | 0   | 0        | (conceptual) |
 

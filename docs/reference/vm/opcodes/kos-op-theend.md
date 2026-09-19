@@ -15,6 +15,6 @@
 
 ## See also
 
-- [VM overview](../index.md) — notation, invariants, and opcode catalog
-- `koskari/lib/opcodes.incl` — Authoritative opcode enum and order
-- `koskari.dis` — Runtime disassembly of KosCode objects
+- [VM overview](../index.md) -- notation, invariants, and opcode catalog
+- `koskari/lib/opcodes.incl` -- Authoritative opcode enum and order
+- `koskari.dis` -- Runtime disassembly of KosCode objects

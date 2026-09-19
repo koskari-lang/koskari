@@ -22,5 +22,3 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
     (do-work k)
     (k 0)))
 ```
-
-

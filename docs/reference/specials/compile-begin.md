@@ -18,4 +18,3 @@
   (do-something)
   (compute-result))
 ```
-

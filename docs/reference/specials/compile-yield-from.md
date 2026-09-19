@@ -1,7 +1,7 @@
 # compile/yield-from
 **Symbol:** `compile/yield-from`
 
-**Syntax:** `(yield-from EXPR)` — exactly one argument.
+**Syntax:** `(yield-from EXPR)` -- exactly one argument.
 
 **Use-case:** Delegate to another iterable or async-iterable and yield each
 produced value through the current async generator, analogous to Python's
@@ -29,5 +29,3 @@ with `KOS_CODE_YIELDS`. Opcode behaviour is documented in
 (for-each [pair (items data)]
   (yield pair))
 ```
-
-

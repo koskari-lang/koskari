@@ -1,6 +1,6 @@
 # <img src="koskari/assets/koskari-icon.svg" height="42" align="top" alt=""> Koskari
 
-Koskari is a LISP dialect for Python -- indent-based layout syntax, macros, and a
+Koskari is a Lisp dialect for Python -- indent-based layout syntax, macros, and a
 custom bytecode evaluator that runs on CPython.
 
 ```koskari
@@ -58,7 +58,7 @@ koskari hello.ki   # run a script
 The `repl` extra enables syntax-highlighted REPL input via `prompt_toolkit`. Other
 optional extras: `lsp`, `pygments`, `sphinx`.
 
-See [docs/start/install-run.md](docs/start/install-run.md) for the full first-session walkthrough.
+See the [quickstart](docs/quickstart.md) for the full first-session walkthrough.
 
 
 ## Documentation
@@ -66,16 +66,15 @@ See [docs/start/install-run.md](docs/start/install-run.md) for the full first-se
 User documentation lives in [docs/](docs/) and builds into a Sphinx site with
 `make docs`:
 
-- **[Getting started](docs/start/overview.md)** -- install, first program, and
-  two on-ramps: a [beginner track](docs/start/beginner/index.md) for readers new
-  to programming and a [from-Python track](docs/start/from-python/index.md) for
-  Python developers.
-- **[Guide](docs/guide/index.md)** -- the shared concept spine. Each chapter is a
-  quick orientation that points to the authoritative
-  [concepts](docs/reference/concepts/index.md) pages for the full rules.
-- **[Reference](docs/reference/index.md)** -- special forms, macros, layouts, the
-  runtime library, and VM opcodes.
-- **[Patterns](docs/patterns/index.md)** -- task-oriented recipes.
+- **[Quickstart](docs/quickstart.md)** -- install, a first session, a first
+  program.
+- **[Tutorials](docs/tutorials/index.md)** -- [Little Koskari](docs/tutorials/beginner/index.md)
+  for readers new to programming, and [From Python](docs/tutorials/from-python/index.md)
+  with worked examples for Python developers.
+- **[Guide](docs/guide/index.md)** -- one page per concept: evaluation, layout,
+  bindings and refs, functions, control flow, macros, demand and async, hosting.
+- **[Reference](docs/reference/index.md)** -- grammar, special forms, macros,
+  layouts, the runtime library, VM opcodes, and the Python API.
 
 
 ## Corpus and MCP server

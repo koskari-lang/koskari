@@ -1,75 +1,74 @@
-# compile/quasiquote-block
-**Symbol:** `compile/quasiquote-block`
+# Block quasiquote
+**Syntax:** `` `HEAD: BODY `` (reader shorthand)
 
-**Syntax:** ``HEAD: BODY` (reader shorthand) or `(quasiquote-block BLOCK-REPR)`
+There is no `quasiquote-block` special. A backtick immediately before a block
+head is a reader shorthand that lowers to
+[`compile/quasiquote`](compile-quasiquote.md) over the block's raw `block:`
+cons.
 
-**Use-case:** The block-syntax analogue of `compile/quasiquote`. Captures an
-entire indented block (including nested peer blocks such as `if`/`else`) as a
-`:block:` cons with `,EXPR` and `,@EXPR` unquote sites active throughout the
-header and body. The primary tool for writing macros in block syntax.
+**Use-case:** Capture an indented block as a template, with `,EXPR` and
+`,@EXPR` unquote sites active throughout the header and the body. This is how
+macros are written in block syntax.
 
-**Reader shorthand:** A ``` immediately preceding a block head causes the
-reader to read the entire block as a raw `:block:` cons with `,`/`,@` unquote
-reader macros active for all header arguments, body forms, and nested
-sub-block headers and bodies.
+**Behaviour:** The reader installs the `,` and `,@` reader macros for the
+duration of the header and body read, reads the block raw, and wraps it in a
+synthetic `(block: (quasiquote) INNER)` form. The `layout/quasiquote` handler
+unboxes that to `(compile/quasiquote INNER)`. The quasiquote fills the unquote
+sites and leaves the `block:` structure in place; it runs no layout handlers.
 
-```koskari
-`begin:
-  ,@forms
-```
-
-produces:
-
-```
-(quasiquote-block (:block: (begin) (:splice: (unquote-splicing forms))))
-```
-
-After the header, a `:block:` holds one entry per body line: the list of that
+After the header, a `block:` holds one entry per body line: the list of that
 line's elements, or a nested block. A line holding only an unquote-splicing
-form is marked `:splice:`,
-so that when the filled block is expanded the spliced forms spread into one
-line each; with `forms` bound to `(1 2 3)` the block above expands to
-`(begin 1 2 3)`. An unquote-splicing that shares a line with other elements
-splices into that line as usual.
+form is marked `splice:`, so the spliced forms spread into one line each when
+the filled block is expanded. An unquote-splicing sharing a line with other
+elements splices into that line.
 
-Peers are sibling `:block:` entries of the enclosing block:
+The backtick must open the statement, and it reads the primary block only --
+a peer written at the same indentation as the quasiquoted head is not gathered.
+Peers nested inside the block are ordinary nested `block:` entries.
+
+**Examples:**
 
 ```koskari
-`begin:
-  if ,cond:
-    ,then
-  else:
-    ,else
+>>> define forms '(1 2 3)
+>>> define tmpl:
+...   `begin:
+...     ,@forms
+>>> tmpl
+(block: (begin) (splice: 1 2 3))
 ```
 
-produces:
+A nested peer stays a nested entry:
 
+```koskari
+>>> define cnd '(> n 1)
+>>> define thn "big"
+>>> define els "small"
+>>> define q:
+...   `begin:
+...     if ,cnd:
+...       ,thn
+...     else:
+...       ,els
+>>> q
+(block: (begin) (block: (if (> n 1)) ("big")) (block: (else) ("small")))
 ```
-(quasiquote-block
-  (:block: (begin)
-   (:block: (if (unquote cond)) ((unquote then)))
-   (:block: (else) ((unquote else)))))
+
+**Expansion:** A filled block is still reader form. Macro expansion runs the
+layout handlers over a transformer's output before hygiene, so a macro whose
+template is a block quasiquote needs no extra step. A pipeline that builds a
+block at run time and wants source out of it calls
+[`apply-layout`](../runtime/block-quasiquote-and-block-layout-expansion.md)
+itself:
+
+```koskari
+>>> (apply-layout tmpl (globals))
+(begin 1 2 3)
 ```
 
-**Behaviour:** Purely transformative. Rewrites to `(quasiquote
-BLOCK-REPR)` for normal compiler dispatch. `compile/quasiquote` walks the
-`:block:` structure and fills unquote / unquote-splicing sites; it does **not**
-invoke layout handlers, so the filled structure remains `:block:` reader form
-where the quasi-quote produced blocks.
+**Nesting:** A nested block quasiquote is ordinary nested quasiquote --
+the level increases, and the inner template is reconstructed as data rather
+than filled.
 
-For **`define-syntax`** expansions, **`koskari.syntax._finalize_macro_output`**
-(applied after **`MacroTransform`** handlers and **`SyntaxTransform`** template
-substitution) calls **`koskari.reader.layouts.apply_layout`** on the expanded
-form using **`vars(compiler.module)`** **before** binding-symbol discovery and
-the shared hygiene / **`Datum`** finalize pass. That performs depth-first
-`:block:` expansion through **`layout/<head>`** handlers with peer consumption,
-matching reader layout semantics. Custom expansion pipelines that bypass that
-finalize step must call **`apply_layout`** (or **`apply_layouts`**) themselves
-when layout-expanded source is required.
-
-**Nesting:** `_qq_expr` recognises `compile/quasiquote-block` at depth > 0
-and reconstructs it as literal data, exactly like nested `compile/quasiquote`.
-
-**Implementation:** `koskari/compile/specials/quasiquote.py`
-
-
+**See also:** [`compile/quasiquote`](compile-quasiquote.md),
+[Block quote](compile-quote-block.md),
+[Block quasiquote and layout expansion](../runtime/block-quasiquote-and-block-layout-expansion.md).

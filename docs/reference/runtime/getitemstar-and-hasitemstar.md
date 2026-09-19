@@ -20,8 +20,11 @@ An empty **`KEYLIST`** raises **`ValueError`**.
 ```koskari
 (getitem* tbl #["a" "b"])
 (getitem* tbl #["a" "b"] missing)
-(getitem* vec #("0" "1"))
+(getitem* vec #[0 1])
 ```
+
+Keys are passed through as written, so a nested list or tuple takes
+integers.
 
 ## hasitem*
 
@@ -37,7 +40,7 @@ An empty **`KEYLIST`** raises **`ValueError`**.
 
 ```koskari
 (hasitem* tbl #["a" "b"])
-(hasitem* vec #("0" "1"))
+(hasitem* vec #[0 1])
 ```
 
 ## Comparison

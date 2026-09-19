@@ -5,7 +5,7 @@ verify:
   invalid: bind! and bindq attach a Ref to a name, not a plain value; (bind! y 42) tries to store 42 in the binding slot instead of binding y to a ref cell
 references:
   - reference/macros/compile-bind.md
-  - reference/concepts/bindings-and-refs.md
+  - guide/bindings-and-refs.md
 stability: evolving
 tags:
   - variable
@@ -24,7 +24,7 @@ verify:
   invalid: "the form parses fine, but a by-ref formal binds the caller's Ref as the parameter's storage, so it requires a Ref argument; (bump 5) passes the plain value 5 and fails at call time with TypeError: bump() by-ref formal n requires a Ref, not 5"
 references:
   - reference/specials/compile-lambda.md
-  - reference/concepts/references-and-storage-indirection.md
+  - guide/references-and-storage-indirection.md
 stability: evolving
 tags:
   - variable

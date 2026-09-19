@@ -1,92 +1,111 @@
 # Data structures
 
-Data structures collect values so a program can pass them around as one value.
-Koskari works comfortably with Python values and also has Lisp-style pairs and
-lists.
+Python's containers for data, and the Lisp pair for code.
 
----
+## Python containers
 
-## Lists from Python and Koskari calls
-
-When you import or receive a Python list, use ordinary calls and loops to work
-with it:
+The collection literals build ordinary Python objects:
 
 ```koskari
-(define numbers (list (range 5)))
-(for-each [n numbers]
-  (print n))
+#[1 2 3]              ;; list
+#(1 2 3)              ;; tuple
+#{"a": 1 "b": 2}      ;; dict
 ```
 
-Because Koskari runs on Python, Python containers are everyday values.
-
----
-
-## Pairs and Lisp lists
-
-Koskari also has pair operations:
+Items are separated by whitespace. A `*:` inside a list or tuple literal
+splices an iterable in place, and the result is always a fresh object:
 
 ```koskari
-(define pair_val (cons "first" "rest"))
-(car pair_val)    ;; first part
-(cdr pair_val)    ;; rest part
+#[*: xs 1 2]
+#(1 *: xs)
 ```
 
-Use pair operations when you are writing macros, manipulating Koskari forms, or
-following Lisp-style examples.
+Dict keys are expressions. A string key is quoted; a bare `name:` key
+looks up the variable `name`; a parenthesized key is computed:
 
----
+```koskari
+#{"name": "Ada" "score": 10}
+#{(key-for user): (score-for user)}
+```
 
-## Quoting data
+Access and update use the same suffixes as Python:
 
-Normally a list-shaped form is a call. Quote it when you want the structure as
-data instead of running it:
+```koskari
+xs[0]
+d["a"]
+set! xs[0] 9
+set! d["k"] v
+(item-slice xs 1)        ;; xs[1:]
+(item-slice xs 0 2)      ;; xs[:2]
+```
+
+Everything a Python object does, it does here: `(xs.append 4)`,
+`(d.get "k" 0)`, `(len xs)`, `(in 2 xs)`, `(sorted xs)`. Call a method
+on the binding, `(d.get "k")`, rather than through the type.
+
+## Pairs
+
+The pair is the Lisp cons cell. `cons` builds a chain, `car` is its
+first element, and `cdr` is the rest:
+
+```koskari
+(cons 1 2 3 nil)     ;; (1 2 3)
+(car '(1 2 3))       ;; 1
+(cdr '(1 2 3))       ;; (2 3)
+(cons 0 '(1 2))      ;; (0 1 2)
+```
+
+`cons` is variadic: the last argument is the tail, and `nil` ends a
+proper list. `nil?` tests for the empty list, `pair?` for a cell.
+`first` and `second` are aliases for `car` and `cadr`.
+
+`nil` is not `None`. `(nil? nil)` is true and `(None? nil)` is false;
+each predicate answers only for its own value.
+
+Pairs are the structure a program is made of: every form the reader
+produces is a pair chain, and a macro takes them apart with `car` and
+`cdr` and builds its output with `cons`. Use them for that, and for a
+problem that is naturally one item and the rest. Use `#[...]` for data
+that Python libraries will see.
+
+## Quoting
+
+A form in head position is a call. Quote it and it stays data:
 
 ```koskari
 (quote (red green blue))
-```
-
-Which can be written in shorter form using the reader macro. The single quote
-character tells the reader that the form immediately following it should be
-wrapped in the `quote` invocation.
-
-```koskari
 '(red green blue)
 ```
 
-Quasiquote is the template version: most of the structure is data, but selected
-parts can be computed with unquote. Here the special character is the single
-backtick. The comma then performs un-quoting for one sub-form.
+The single quote is the reader's shorthand for `quote`. A quoted symbol
+is a symbol value, `'red`, and a quoted list is a pair chain of them.
+
+Quasiquote is the template form. A backtick quotes the structure and a
+comma evaluates one part inside it; `,@` splices a sequence:
 
 ```koskari
-(define name "Ada")
-`(hello ,name)
+define name "Ada"
+`(hello ,name)          ;; (hello "Ada")
+`(1 ,@#[2 3] 4)         ;; (1 2 3 4)
 ```
 
----
+Quasiquote is how a macro template is usually written; see
+[Macros and hygiene](macros-and-hygiene.md).
 
-## Dictionaries and objects
+## Symbols and keywords
 
-Use Python dictionaries, objects, attributes, and item access when that is the
-natural shape of the data:
+A symbol is an interned name: `'foo`. A keyword is a self-evaluating
+marker written with a trailing colon, `foo:`, used for keyword arguments
+and as markers in forms such as `[else: ...]`. `(symbol? x)` and
+`(keyword? x)` classify them. An unquoted keyword in value position
+compiles to itself, which the `compiler/keyword-literals` pragma warns
+about, since it is more often a typo for a variable.
 
-```koskari
-(define user #{name: "Ada" score: 10})
-(print (item user "name"))
-```
+## Choosing
 
-For complex, computed, or non-string keys, there is a pair form of the
-dictionary literal
-
-```koskari
-(define user #{("name" . (get-user-name)) ("score" . (get-score))})
-```
-
-For public examples, choose the simplest structure that makes the program's
-purpose obvious.
-
----
-
-## What you should remember
-
-Use Python containers for ordinary application data. Use pairs and quoted forms
-when you need Lisp-shaped data or code-as-data. Quote prevents evaluation.
+| You have | Use |
+|----------|-----|
+| application data, anything a Python API will touch | `#[...]`, `#(...)`, `#{...}` |
+| code as data, macro input and output | pairs, quote, quasiquote |
+| a name as a value | a symbol |
+| an argument label or a structural marker | a keyword |

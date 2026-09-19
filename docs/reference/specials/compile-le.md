@@ -4,7 +4,7 @@
 
 **Syntax:** `(le? A B ...)`
 
-**Use-case:** Chained comparison — at least two values. Succeeds when
+**Use-case:** Chained comparison -- at least two values. Succeeds when
 each adjacent pair is ordered ascending or equal, like Python chained comparisons.
 
 **Behaviour:** Compiles each argument, emits the corresponding `OBJECT_*`

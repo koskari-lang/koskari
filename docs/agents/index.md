@@ -1,6 +1,6 @@
 # Koskari orientation for AI agents
 
-Koskari is a LISP dialect for Python: `.ki` source files combine an
+Koskari is a Lisp dialect for Python: `.ki` source files combine an
 indentation-based layout syntax with s-expressions, expanded through
 macros and compiled to bytecode that runs alongside ordinary Python.
 
@@ -19,13 +19,13 @@ from Python or Scheme priors.
 - Layout and indentation mechanics, normative rules:
   [Reader and layout syntax](../reference/reader-layout.md)
 - Why layout and s-expressions coexist and when to use which:
-  [Koskari and s-expressions](../reference/concepts/layout-and-s-expressions.md)
+  [Koskari and s-expressions](../guide/layout-and-s-expressions.md)
 - The call convention, and `[ ]` versus `( )`:
-  [Brackets and the call convention](../reference/concepts/brackets-and-call-convention.md)
+  [Brackets and the call convention](../guide/brackets-and-call-convention.md)
 - Idiomatic style -- prefer the direct form:
-  [Idiomatic Koskari](../reference/concepts/idiomatic-koskari.md)
+  [Idiomatic Koskari](../guide/idiomatic-koskari.md)
 - Gentler on-ramp for Python-shaped expectations:
-  [Layout and calls](../start/from-python/layout-and-calls.md)
+  [Layout and calls](../tutorials/from-python/layout-and-calls.md)
 - `map`, `filter`, and `partial` are koskari-native, not the python
   builtins -- what that changes, when `demand` wrapping applies, and
   why `koskari.itertools` rather than `itertools`:

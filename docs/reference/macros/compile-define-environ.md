@@ -1,16 +1,31 @@
 # compile/define-environ
-**Syntax:** **`(define-environ NAME [DEFAULT])`**.
 
-**Behaviour:** **`compile/define`** + **`environ-ref`** binding. Declares `NAME`
-as a local whose ref reads and writes the process environment variable named
-`NAME` (via `os.environ`).
+**Syntax:** `(define-environ NAME [DEFAULT])`
 
-Without a `DEFAULT`, the ref is an `ItemRef` into `os.environ`, so a deref of an
-unset variable raises `KeyError`. With a `DEFAULT`, the ref returns `DEFAULT`
-when the variable is unset (`environ.get`), stores into `os.environ[NAME]`, and
-deletes the variable on clear.
+**Behaviour:** Binds `NAME` to a ref into `os.environ` for the variable
+of the same name: reading `NAME` reads the variable and `set!` on it
+stores the variable. Without a default the ref is an `ItemRef`, and a
+read of an unset variable raises `KeyError`. With a default the read
+returns it when the variable is unset, and clearing the ref deletes the
+variable.
 
-The same ref is available anonymously through
-[`compile/ref`](compile-ref.md) and [`compile/bind!`](compile-bind.md) with an
-explicit key: **`(ref (environ KEY [DEFAULT]))`** and
-**`(bind! NAME (environ KEY [DEFAULT]))`**. An empty `KEY` raises `ValueError`.
+The same ref is available anonymously as `(ref (environ KEY [DEFAULT]))`
+and through `(bind! NAME (environ KEY [DEFAULT]))`, which let the
+binding's name differ from the variable's. An empty key raises
+`ValueError`.
+
+**Examples:**
+
+```koskari
+import os
+
+(define-environ HOME)
+(instance? HOME str)           ;; True
+
+(define-environ APP_MODE "dev")
+APP_MODE                       ;; "dev" when unset
+(set! APP_MODE "prod")
+os.environ["APP_MODE"]         ;; "prod"
+```
+
+**See also:** [`bind!`](compile-bind.md), [`ref`](compile-ref.md).

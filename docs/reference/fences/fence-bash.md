@@ -40,18 +40,18 @@ opener-line option raises `FenceError`.
 "dlroW 321 olleH"
 ```
 
-```koskari
-;; immediate: True — the fence is the ProcessResult, no callable
+````koskari
+;; immediate: True -- the fence is the ProcessResult, no callable
 define host ```bash immediate: True
 hostname -f
 ```
 define name host.text
-```
+````
 
 ## ProcessResult
 
 `ProcessResult` (from `koskari.asyncio`) is the captured outcome of a finished
-process — the subprocess analogue of an HTTP client's Response: capture
+process -- the subprocess analogue of an HTTP client's Response: capture
 everything, interpret afterwards.
 
 | Member | Meaning |
@@ -74,7 +74,7 @@ define summary (.json (.raise_for_status (report)))
 ## Implementation
 
 `fence/bash` is defined in Koskari, in `koskari/bootstrap/_fences.ki`, through
-the `define-fence` syntax — it is not Python code. The handler receives the
+the `define-fence` syntax -- it is not Python code. The handler receives the
 raw script text and the metadata dict and returns Koskari source:
 
 ```koskari
@@ -116,7 +116,7 @@ Notes:
   script as their string form.
 - **No shell injection surface.** Arguments are passed as discrete `argv`
   entries to `create_subprocess_exec` (an `execve`, not a shell string), so
-  they are never re-tokenized by a shell — the safe, `shell=False`-equivalent
+  they are never re-tokenized by a shell -- the safe, `shell=False`-equivalent
   path.
 
 **Runtime:** `koskari.asyncio` (`run-process`, `ProcessResult`).

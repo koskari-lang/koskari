@@ -19,7 +19,7 @@ to any depth.
 Nondeterministically choose a value from `CHOICES` (any iterable). The
 rest of the enclosing search runs once per choice, and each choice's
 solutions are collected in order. Calling `amb` with no enclosing
-`solve` or `solve-first` raises `NoActiveSearch` (see § Errors).
+`solve` or `solve-first` raises `NoActiveSearch` (see the Errors section).
 
 ## require
 
@@ -56,7 +56,7 @@ Enumeration is eager within a search: `solve` explores everything
 before returning, and `solve-first` stops early by skipping rather than
 by suspending. A lazy, one-solution-at-a-time enumerator is a
 non-goal for this module: it would require yielding across choice
-points, and a `shift` cannot cross a generator boundary (see § Errors).
+points, and a `shift` cannot cross a generator boundary (see the Errors section).
 
 ## Errors
 
@@ -89,7 +89,7 @@ import-from koskari.solve amb require solve solve-first
     (define c (amb (range b 15)))
     (require (== (+ (* a a) (* b b)) (* c c)))
     (#tuple a b c)))
-;; => [(3, 4, 5), (5, 12, 13), (6, 8, 10)]
+;; => #[#(3 4 5) #(5 12 13) #(6 8 10)]
 
 ;; just the first
 (solve-first

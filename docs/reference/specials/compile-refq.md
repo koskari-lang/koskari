@@ -14,4 +14,3 @@ stack is a Ref for that name.
 ```koskari
 (refq my-var)
 ```
-

@@ -3,7 +3,7 @@
 
 **Syntax:** `(instance? OBJ TYPE ...)`
 
-**Use-case:** Runtime type check — at least value and one type. With several
+**Use-case:** Runtime type check -- at least value and one type. With several
 types, succeeds if `OBJ` is an instance of any of them.
 
 **Examples:**

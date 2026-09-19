@@ -20,7 +20,7 @@ An empty **`ATTRLIST`** raises **`ValueError`**.
 ```koskari
 (getattr* obj #["a" "b"])
 (getattr* obj #["a" "b"] missing)
-(getattr* obj '("inner" "y"))
+(getattr* obj #["inner" "y"])
 ```
 
 ## hasattr*
@@ -31,14 +31,15 @@ Walk **`ELEMENT`** through each name in **`ATTRLIST`** left to right. Return
 true only when every step succeeds; return false on the first failed lookup
 without raising.
 
-Per-step semantics match Python **`hasattr`**: any exception during lookup is
-treated as absent.
+Only **`AttributeError`** reads as absent, as with Python's **`hasattr`**.
+Any other exception raised during a step propagates, so a property that
+raises **`ValueError`** raises it through **`hasattr*`**.
 
 An empty **`ATTRLIST`** raises **`ValueError`**.
 
 ```koskari
 (hasattr* obj #["a" "b"])
-(hasattr* obj '("inner" "y"))
+(hasattr* obj #["inner" "y"])
 ```
 
 ## Comparison

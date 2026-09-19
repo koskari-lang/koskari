@@ -1,14 +1,40 @@
 # Koskari documentation
 
-Koskari is a LISP dialect for Python: an extensible language with indent-based layout syntax, macros, and a custom bytecode evaluator.
+Koskari is a Lisp that runs on its own stackless evaluator inside CPython.
+A `.ki` source file combines an indentation layout with s-expressions,
+expands through macros, and compiles to bytecode that runs beside ordinary
+Python. Any Python module imports, any Python class can be subclassed, and
+objects pass in both directions.
 
+## Where to start
+
+**[Quickstart](quickstart.md)**: install, open the REPL, run a file, and
+read one small program.
+
+**[Tutorials](tutorials/index.md)**: two tracks, each read in order.
+[Little Koskari](tutorials/beginner/index.md) assumes no programming
+background. [From Python](tutorials/from-python/index.md) puts Python and
+Koskari side by side and ends with worked examples.
+
+**[Guide](guide/index.md)**: one page per mechanism, how it works and why:
+layout, name resolution, bindings and refs, functions, macros, async,
+modules, pragmas, hosting Koskari from Python, and packaging. Read a page
+when its topic comes up.
+
+**[Reference](reference/index.md)**: the catalogues. Grammar and layout
+rules, every special form, macro, layout handler, builtin, and opcode, the
+command line, the error classes, and the Python API.
+
+**Project**: [building and testing](project/build-test.md) from a source
+checkout, the [architecture](project/architecture-map.md), how the project
+is [developed](project/provenance.md), [versioning](project/release-and-versioning.md),
+and the [changelog](changelog.md).
 
 ```{toctree}
 :maxdepth: 1
-:caption: Getting started
+:caption: Start
 
-start/overview
-start/install-run
+quickstart
 faq
 ```
 
@@ -16,8 +42,15 @@ faq
 :maxdepth: 1
 :caption: Tutorials
 
-start/beginner/index
-start/from-python/index
+tutorials/index
+tutorials/beginner/index
+tutorials/from-python/index
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: Guide
+
 guide/index
 ```
 
@@ -30,19 +63,11 @@ reference/index
 
 ```{toctree}
 :maxdepth: 1
-:caption: Patterns and API
-
-patterns/index
-api/index
-```
-
-```{toctree}
-:maxdepth: 1
-:caption: Project and corpus
+:caption: Project
 
 project/build-test
 project/architecture-map
 project/provenance
-corpus/index
+project/release-and-versioning
 changelog
 ```
