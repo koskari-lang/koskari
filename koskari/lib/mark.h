@@ -45,8 +45,10 @@ typedef struct KosMark {
 extern PyTypeObject KosMarkType;
 
 
+/* Mark is not a base type, so the check is one pointer compare: it
+   runs on every cell the matcher reads, marked or not. */
 #define KosMark_Check(obj)                                      \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosMarkType))
+  ((obj) && Py_IS_TYPE((obj), &KosMarkType))
 
 #define KosMark_DATUM(m) (((KosMark *) (m))->datum)
 #define KosMark_MARKS(m) (((KosMark *) (m))->marks)

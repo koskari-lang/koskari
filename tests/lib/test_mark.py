@@ -58,6 +58,16 @@ class TestMark(unittest.TestCase):
         self.assertEqual(m.marks, (3, 4))
 
 
+    def test_is_not_a_base_type(self):
+        """
+        The matcher reads every cell through an exact type check on
+        Mark, which holds because Mark cannot be subclassed
+        """
+
+        with self.assertRaises(TypeError):
+            type("SubMark", (Mark,), {})
+
+
     def test_rejects_non_atom_datum(self):
         with self.assertRaises(TypeError):
             Mark("tmp", 1)

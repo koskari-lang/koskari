@@ -441,10 +441,10 @@ static PyObject *make_match_result(
 */
 static PyObject *matcher_peel_datum(PyObject *obj) {
   while (obj) {
-    if (KosDatum_Check(obj))
-      obj = ((KosDatum *) obj)->datum;
-    else if (KosMark_Check(obj))
+    if (KosMark_Check(obj))
       obj = KosMark_DATUM(obj);
+    else if (KosDatum_Check(obj))
+      obj = ((KosDatum *) obj)->datum;
     else
       break;
   }
