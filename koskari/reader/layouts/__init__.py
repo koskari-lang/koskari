@@ -149,7 +149,7 @@ def _gather_peers(tail, declared):
         sibling = _block_candidate(tail.car)
         if sibling is None:
             break
-        if str(sibling.cdr.car.car) not in declared:
+        if str(strip_mark(sibling.cdr.car.car)) not in declared:
             break
         peer = sibling.cdr
         peer_pos = get_position(sibling)

@@ -28,8 +28,9 @@ import unittest
 
 import pytest
 
+from koskari.lib import keyword
 from koskari.module import load_module_source_async, new_module
-from koskari.types import is_symbol, unpack
+from koskari.types import is_symbol, strip_mark, unpack
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -487,6 +488,37 @@ class TestGeneratedKeywordLiteral(unittest.IsolatedAsyncioTestCase):
     async def test_keyword_literal_matches(self):
         ns = await load("mh_keyword_literal", self.SRC)
         self.assertEqual(ns["picked"], 2)
+
+
+class TestQuasiquotedBlockPeers(unittest.IsolatedAsyncioTestCase):
+    """
+    A block quasiquote in a template is lowered by the layout handlers
+    after transcription marked its heads; a peer block such as else
+    must still be gathered under its bare head
+    """
+
+    SRC = """
+define-syntax guard-form:
+  syntax-rules []:
+    guard-form test a b:
+      `begin:
+        if test:
+          a
+        else:
+          b
+
+define form (guard-form True 1 2)
+"""
+
+    async def test_else_peer_is_gathered(self):
+        ns = await load("mh_block_peers", self.SRC)
+        outer = list(unpack(ns["form"]))
+        self.assertEqual(len(outer), 2)
+        cond = list(unpack(outer[1]))
+        self.assertEqual(len(cond), 3)
+        last = list(unpack(cond[2]))
+        self.assertIs(strip_mark(last[0]), keyword("else"))
+        self.assertEqual(last[1], 2)
 
 
 # The end.

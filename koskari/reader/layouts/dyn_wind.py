@@ -20,7 +20,7 @@ Layout handler for layout/dyn-wind block syntax.
 from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...types import fill_position, get_position, is_nil
+from ...types import fill_position, get_position, is_nil, strip_mark
 from .helpers import layout
 
 
@@ -64,6 +64,7 @@ def layout_dyn_wind(reader, source, peers):
         pheader, pbody = peer
         pbody = reader.fold_lines(pbody)
         phead, ppargs = pheader
+        phead = strip_mark(phead)
 
         if phead is _symbol_before:
             if not is_nil(before_form):

@@ -21,7 +21,7 @@ from ...bootstrap import builtin
 from ...compile.helpers import helper_using
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
-from ...types import fill_position, get_position, is_pair, unpack
+from ...types import fill_position, get_position, is_pair, strip_mark, unpack
 from .helpers import layout
 
 
@@ -55,6 +55,7 @@ def layout_try(reader, source, peers):
         pheader, pbody = peer
         pbody = reader.fold_lines(pbody)
         phead, prest = pheader
+        phead = strip_mark(phead)
         ppargs = list(unpack(prest))
 
         if phead is _symbol_except:
