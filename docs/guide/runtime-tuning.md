@@ -10,7 +10,7 @@ Attribute access and method calls are the hot path of most Koskari code:
 `self.total`, `box.a`, `(counter.bump v)`. Each of those, done naively,
 walks the type's method-resolution order and probes a dictionary every
 single time -- even when the same call site sees the same kind of object on
-every pass through a loop. Koskari attaches a small **per-site cache** to
+every pass through a loop. Koskari attaches a small per-site cache to
 those instructions so that repeat is nearly free: the first time a site
 runs it resolves the attribute the slow, fully-correct way and records how
 it got there; every later run with the same receiver type replays that
@@ -20,15 +20,15 @@ The cache is invisible to program behavior. It only ever makes a repeated
 access faster; it never changes what an access returns or when it raises.
 When the assumption behind a cached answer stops holding -- the receiver is
 a different type, the class was monkeypatched, an instance grew or lost the
-attribute -- the guard misses and the site quietly falls back to the full
+attribute -- the guard misses and the site falls back to the full
 lookup.
 
 ### Monomorphic by design
 
-Each site remembers **one** answer, not a table of them. A call site that
-is used with a single receiver type -- the overwhelmingly common case, like
+Each site remembers one answer, not a table of them. A call site that
+is used with a single receiver type, the common case, like
 a method called on the same class each iteration -- stays on the fast path.
-A site that is genuinely *polymorphic*, cycling through many receiver types,
+A site that is genuinely polymorphic, cycling through many receiver types,
 does not grow an ever-larger cache: after enough guard misses it gives up
 and runs uncached from then on, so a churning site costs a guard check at
 worst, never a chain walk. This keeps every hit to a single comparison and
@@ -36,11 +36,11 @@ keeps the cache a fixed, small cost per site.
 
 What it accelerates:
 
-- **Method calls** -- `(obj.method args)` resolves the method once per site
+- Method calls -- `(obj.method args)` resolves the method once per site
   and, for plain Koskari and Python methods, invokes it without allocating a
   bound-method object.
-- **Attribute reads and writes** -- `obj.attr` and `(set! obj.attr v)`
-  resolve *where the attribute lives* once and then read or write that
+- Attribute reads and writes -- `obj.attr` and `(set! obj.attr v)`
+  resolve where the attribute lives once and then read or write that
   location directly. A `__slots__` member becomes a direct field access; a
   regular (dict-backed) instance attribute becomes a direct indexed read or
   write of the instance's inline values.
@@ -50,11 +50,11 @@ What it accelerates:
 Caching is a compile-time choice per code object, governed by two module
 pragmas that split on how often the code runs.
 
-**`compiler/cache-function`** *(default on)* answers "cache inside function
+`compiler/cache-function` *(default on)* answers "cache inside function
 and lambda bodies." These are the reused code that loops and repeated calls
 flow through, so caching there pays for itself quickly. On is the baseline.
 
-**`compiler/cache-expression`** *(default off)* answers "cache top-level
+`compiler/cache-expression` *(default off)* answers "cache top-level
 module and REPL expressions." Those typically run once as the module loads
 or the line is entered, so a cache would never amortize; off is the
 baseline. Turn it on only for a top-level body you know runs hot in a loop.
@@ -65,7 +65,7 @@ baseline. Turn it on only for a top-level body you know runs hot in a loop.
 ```
 
 When caching is gated off for a code object, its instructions carry no
-cache and run exactly as they did before caching existed -- correct, just
+cache and run as they did before caching existed, correct and
 unaccelerated.
 
 ### Python version caveats
@@ -74,16 +74,16 @@ The machinery works across the whole supported range (3.9 - 3.14), but one
 part of it depends on how CPython stores instance attributes, which changed
 mid-range:
 
-- **Method caching and `__slots__` attribute access** work on **every**
+- Method caching and `__slots__` attribute access work on every
   supported version.
-- **Direct caching of regular (dict-backed) instance attributes** -- the
+- Direct caching of regular (dict-backed) instance attributes -- the
   `self.x` read and write fast path for ordinary classes -- requires the
-  inline-value instance layout CPython introduced in **3.11**. On **3.9 and
+  inline-value instance layout CPython introduced in 3.11. On **3.9 and
   3.10** those accesses stay correct but take the ordinary attribute path;
   they are not accelerated by the cache.
 
-This is a deliberate floor: Koskari runs on long-lived old interpreters
-without denying them anything, and simply skips the newest fast path where
+The floor is deliberate: Koskari runs on long-lived old interpreters
+without denying them anything, and skips the newest fast path where
 the runtime cannot support it. No source change is needed -- the same code
 caches what it can on whichever interpreter it runs under.
 
@@ -95,7 +95,7 @@ caches what it can on whichever interpreter it runs under.
 ## Code sealing and arena packing
 
 Compiled Koskari code is immutable: once a function's bytecode is built,
-nothing rewrites it. *Sealing* makes that immutability real at the
+nothing rewrites it. Sealing makes that immutability real at the
 operating-system level -- the memory holding the instructions, constant
 pool, and control tables is marked read-only with `mprotect`, so any
 write to it faults on the spot instead of silently corrupting the
@@ -110,17 +110,17 @@ and compose freely.
 
 ### The two pragmas
 
-**`compiler/protect-code`** *(default off)* answers "seal each code
+`compiler/protect-code` *(default off)* answers "seal each code
 object as it is born." On, every compiled code object -- including each
 top-level expression that is evaluated once and discarded -- gets its
 own page-aligned, sealed allocation the moment it exists. Off, code is
 built on the plain heap.
 
-**`compiler/pack-module`** *(default on)* answers "compact what the
+`compiler/pack-module` *(default on)* answers "compact what the
 module keeps." When a module finishes loading, its surviving code
 objects -- the functions and classes that made it into the module's
 namespace -- are relocated together into one shared allocation (an
-*arena*) and sealed read-only with a single `mprotect`. What survives
+arena) and sealed read-only with a single `mprotect`. What survives
 is decided by reachability: imported functions belong to their own
 module's arena, and a top-level expression that was evaluated and
 dropped is already gone by the time the module seals.
@@ -152,10 +152,10 @@ for both) means unbounded, producing one arena per module:
 is a soft cap on an arena's payload -- a single code object larger than
 the cap still lands in its own arena rather than failing.
 
-The reason to bound arenas is **lifetime pinning**: an arena lives
-until the *last* code object inside it dies. For a module whose
-functions load and unload together -- the overwhelmingly common case  -- 
-that is exactly right. But a single survivor (a returned closure, a
+The reason to bound an arena is its lifetime: an arena lives
+until the last code object inside it dies. For a module whose
+functions load and unload together, the common case,
+that is right. But a single survivor (a returned closure, a
 function cached in a registry, a suspended coroutine over a module
 function) keeps its entire arena resident. Capping arena size caps the
 blast radius of any one survivor. Keep the unbounded default unless you
@@ -167,24 +167,24 @@ Turning `compiler/protect-code` on buys during-load protection: a
 function's bytecode is read-only from the instant it is defined, so
 nothing that runs later in the module body -- buggy or hostile -- can
 alter an already-defined function before the module seals. Whether that
-window matters is a threat-model question, and it is the *only* thing
+window matters is a threat-model question, and it is the only thing
 on offer, because at rest the on/on and off/on configurations end up
 identical.
 
 What it costs, per code object:
 
-- **A full memory page each.** Protection is page-granular, so a
+- A full memory page each. Protection is page-granular, so a
   fifty-byte expression occupies (typically) 4 KB. Every top-level
   expression in the module body -- each one compiled, evaluated once,
   and discarded -- briefly burns a page of its own.
-- **A kernel mapping each.** `mprotect` on heap memory splits the
+- A kernel mapping each. `mprotect` on heap memory splits the
   process's virtual memory areas, so every sealed object becomes a
   distinct kernel VMA. Large programs accrue thousands, approaching
   the `vm.max_map_count` limit, and every page fault pays for a bigger
   VMA tree.
-- **Two syscalls each.** One `mprotect` to seal at construction, one to
+- Two syscalls each. One `mprotect` to seal at construction, one to
   unseal before free.
-- **A higher transient peak with packing.** Under on/on, the per-page
+- A higher transient peak with packing. Under on/on, the per-page
   originals and the arena coexist during the repack before the
   originals are released.
 

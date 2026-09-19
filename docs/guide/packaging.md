@@ -1,29 +1,27 @@
 # Packaging a Koskari application
 
-Ship a Koskari application as a normal pip-installable command. Users run
-`mytool` from their shell; your sources stay in `.ki` files under a declared
+Ship a Koskari application as a pip-installable command. Users run
+`mytool` from a shell; the sources stay in `.ki` files under a declared
 Python package.
 
-## Overview
+## How it works
 
-Koskari uses a **`koskari_scripts`** entry point group (similar in spirit to
-Python **`console_scripts`**, but for async Koskari programs). At build time,
-the koskari setuptools plugin:
+Koskari defines a `koskari_scripts` entry point group, the counterpart
+of `console_scripts` for Koskari programs. At build time the Koskari
+setuptools plugin:
 
-- writes a pre-built stub for each command into the wheel (via
-  **`install_scripts`**) that calls **`run_resolved_script(dist==version, name)`**
-- adds **`*.ki`** and **`*.kio`** to **`package_data`** for each package you
-  list in **`packages=`**
-- sets **`zip_safe = False`** so installed sources remain discoverable
+- writes a stub for each command into the wheel, through
+  `install_scripts`, that calls `run_resolved_script(dist==version, name)`
+- adds `*.ki` and `*.kio` to `package_data` for each package listed in
+  `packages=`
+- sets `zip_safe = False` so the installed sources stay discoverable
 
-At install time, pip copies the stub from the wheel into **`bin/mytool`**. At
-runtime the stub resolves the **`koskari_scripts`** target from that package's
-dist-info only, then runs it under the koskari async host (no per-app
-**`asyncio.run`** shim).
+At install time pip copies the stub into `bin/mytool`. At run time the
+stub resolves the `koskari_scripts` target from that package's
+dist-info and runs it under the Koskari async host, so the application
+needs no `asyncio.run` of its own.
 
-## Minimal packaging
-
-Parent directory layout:
+## A minimal package
 
 ```text
 myapp/
@@ -35,7 +33,7 @@ myapp/
     cli.ki
 ```
 
-**`setup.cfg`** (metadata and entry points):
+`setup.cfg` carries the metadata and the entry point:
 
 ```ini
 [metadata]
@@ -55,7 +53,7 @@ koskari_scripts =
     mytool = mypkg.cli:main
 ```
 
-**`setup.py`** (minimal shim):
+`setup.py` is the minimal shim:
 
 ```python
 from setuptools import setup
@@ -63,7 +61,8 @@ from setuptools import setup
 setup()
 ```
 
-**`pyproject.toml`** (build requires koskari so the plugin runs):
+`pyproject.toml` lists koskari as a build requirement so the plugin
+runs:
 
 ```toml
 [build-system]
@@ -71,8 +70,9 @@ requires = ["setuptools>=61", "koskari"]
 build-backend = "setuptools.build_meta"
 ```
 
-**`mypkg/cli.ki`** -- expose **`main`** with the same contract as Python
-**`console_scripts`**: **no parameters**; read CLI args from **`sys.argv`**:
+`mypkg/cli.ki` exposes `main` with the `console_scripts` contract: no
+parameters, arguments read from `sys.argv`, an integer exit code
+returned:
 
 ```koskari
 (import sys)
@@ -80,25 +80,23 @@ build-backend = "setuptools.build_meta"
 
 define main []:
   (define-values [prog *: args] sys.argv)
-  ;; parse args, run your program, return an integer exit code
+  ;; parse args, run the program, return an exit code
   0
 ```
 
-An optional **`argv`** parameter with a default of **`sys.argv`** is also
-fine when **`main`** is called with zero arguments.
+An `argv` parameter with a default of `sys.argv` is also accepted, since
+`main` is called with no arguments.
 
-## Package **`__init__.py`**
-
-A minimal Python **`__init__.py`** that runs **`import koskari`** is
-recommended. It ensures the `.ki` import hook is active when your package
-loads, including environments where koskari's site **`*.pth`** bootstrap is
-not installed (common with editable installs).
+`mypkg/__init__.py` runs `import koskari`, which turns the `.ki` import
+hook on when the package loads, including in environments where
+Koskari's site `.pth` bootstrap is absent, as it is in some editable
+installs:
 
 ```python
 import koskari
 ```
 
-You do not need a Python **`main`** function or **`asyncio.run`** wrapper.
+No Python `main` function and no `asyncio.run` wrapper is needed.
 
 ## Build and install
 
@@ -106,60 +104,45 @@ From the application directory:
 
 ```bash
 pip install .
-# or: uv pip install .
 ```
 
-When koskari is only available locally (not on an index), the build environment
-must be able to import koskari -- for example by installing koskari editable
-first, or by disabling build isolation for that build.
+When koskari is available only locally, the build environment must be
+able to import it: install koskari editable first, or disable build
+isolation for that build.
 
-After install, verify metadata:
+After the install, the distribution's entry points list the command:
 
 ```text
 [koskari_scripts]
 mytool = mypkg.cli:main
 ```
 
-The installed **`bin/mytool`** file calls
-**`run_resolved_script('myapp==…', 'mytool')`** directly.
+The installed `bin/mytool` calls `run_resolved_script('myapp==...',
+'mytool')`, and `mytool --help` runs it.
 
-Run:
+## Rules
 
-```bash
-mytool --help
-```
+| Topic | Rule |
+| ----- | ---- |
+| entry value | `module:callable`, for example `mypkg.cli:main` |
+| entry callable | `main()` with no parameters; read `sys.argv` |
+| return value | an integer exit code, `None` for 0, or an awaitable producing one |
+| `packages=` | declare it; the plugin does not guess package names |
+| `package_data` | omit `*.ki` and `*.kio`; the plugin adds them |
+| `zip_safe` | omit it; the plugin sets `False` when `koskari_scripts` is present |
+| name collisions | do not register the same command under `console_scripts` |
+| CI validation | `koskari.extras.setuptools.validate_koskari_scripts` checks entry names and `module:callable` values on a `Distribution` |
 
-## Rules of thumb
-
-| Topic | Guidance |
-| ----- | -------- |
-| Entry value | Use **`module:callable`** (for example **`mypkg.cli:main`**) |
-| Entry callable | **`main()`** with **no parameters** -- same as **`console_scripts`**; read **`sys.argv`** |
-| Return value | Integer exit code, **`None`** (treated as 0), or an awaitable producing one |
-| **`packages=`** | Declare explicitly; the plugin does not guess package names |
-| **`package_data`** | Omit **`*.ki`** / **`*.kio`**; the plugin adds them |
-| **`zip_safe`** | Omit; the plugin sets **`False`** when **`koskari_scripts`** is present |
-| Name collisions | Do not register the same command name under **`console_scripts`** |
-| CI validation | **`from koskari.extras.setuptools import validate_koskari_scripts`** checks entry names and **`module:callable`** values on a **`Distribution`** mock |
-
-## Complete example
-
-The repository includes **`examples/life`**: package **`koslife`**, command
-**`koslife`**, entry **`koslife.cli:main`**. See that tree for a working
-curses application.
-
-## See also
-
-- [CLI and configuration](../reference/cli-and-config.md)
-- [Script entry point](../tutorials/from-python/examples/script-main.md)
-- [Demand, async, and defer](demand-async-and-defer.md)
+The repository's `examples/life` is a complete application of this
+shape: package `koslife`, command `koslife`, entry `koslife.cli:main`, a
+curses program.
 
 ## The bundled icon
 
-Koskari ships its apple mark inside the package, so an application can use
-it as a window icon, favicon, or placeholder mark without vendoring the
-artwork. `koskari.assets` exposes it as SVG text or bytes, as PNG bytes at
-the packaged sizes, or as a filesystem path:
+Koskari ships its apple mark inside the package, so an application can
+use it as a window icon, favicon, or placeholder mark without vendoring
+the artwork. `koskari.assets` exposes it as SVG text or bytes, as PNG
+bytes at the packaged sizes, or as a filesystem path:
 
 ```python
 from koskari.assets import (ICON_PNG_SIZES, icon_path, icon_png_bytes,
@@ -178,14 +161,14 @@ import-from koskari.assets icon_png_bytes
 define icon_bytes (icon_png_bytes 32)
 ```
 
-A PNG size that is not packaged raises `ValueError`; check
-`ICON_PNG_SIZES` first.
+A PNG size that is not packaged raises `ValueError`; `ICON_PNG_SIZES`
+lists the packaged ones.
 
 Some APIs want a path rather than bytes: a GUI toolkit's window-icon
-setter, a web framework's favicon route. `icon_path` is a context manager
-for that. It works when koskari is installed as a zipped wheel, since it
-may extract to a temporary file for the duration of the block, so the path
-is valid only inside the `with`:
+setter, a web framework's favicon route. `icon_path` is a context
+manager for that. It works when koskari is installed as a zipped wheel,
+since it may extract to a temporary file for the duration of the block,
+so the path is valid only inside the `with`:
 
 ```python
 from koskari.assets import icon_path
@@ -196,3 +179,9 @@ with icon_path(size=32) as path:
 with icon_path() as svg_path:      # size=None selects the SVG
     favicon_route.serve(svg_path)
 ```
+
+## See also
+
+- [CLI and configuration](../reference/cli-and-config.md)
+- [Script entry point](../tutorials/from-python/examples/script-main.md)
+- [Hosting Koskari from Python](hosting-from-python.md)

@@ -11,7 +11,6 @@ spelling on the left, and on the right the s-expression the reader produces
 from it. The normative statement of the rules is
 [Reader and layout syntax](../reference/reader-layout.md).
 
----
 
 ## Lines
 
@@ -36,7 +35,6 @@ name
 ```
 :::
 
----
 
 ## Blocks
 
@@ -60,7 +58,6 @@ when (> n 0):
 ```
 :::
 
----
 
 ## Named heads and peers
 
@@ -92,7 +89,6 @@ else:
 The handlers and their peers are catalogued in the
 [layout handler reference](../reference/layouts/index.md).
 
----
 
 ## Keywords
 
@@ -117,7 +113,6 @@ print:
 ```
 :::
 
----
 
 ## Parentheses inside layout
 
@@ -141,7 +136,6 @@ let [[a 1]
 ```
 :::
 
----
 
 ## Side by side
 
@@ -245,7 +239,6 @@ render:
 ```
 :::
 
----
 
 ## Where parentheses stay
 
@@ -260,7 +253,6 @@ Statement-shaped code takes layout; expression-shaped code takes
 parentheses. A whole program written with parentheses only is valid Koskari,
 and the REPL accepts both spellings.
 
----
 
 ## See also
 

@@ -1,10 +1,11 @@
 # Match patterns
 
-`match` destructures a value against a series of case patterns: the first
-arm whose pattern matches binds its captured names and runs its body. It
-is the value-matching sibling of [`switch`](../reference/specials/compile-switch.md)
-(equality dispatch) -- reach for `match` when you care about the *shape* of
-a value, and `switch` when you only compare it against candidates.
+`match` destructures a value against a series of case patterns: the
+first arm whose pattern matches binds its captured names and runs its
+body. It is the sibling of
+[`switch`](../reference/specials/compile-switch.md), which dispatches on
+equality. `match` is for the shape of a value; `switch` compares it
+against candidates.
 
 ```koskari
 match msg:
@@ -18,101 +19,98 @@ match msg:
     (ignore msg)
 ```
 
-The `match` form itself is
-documented at [`compile/match`](../reference/specials/compile-match.md) and
-[`layout/match`](../reference/layouts/layout-match.md).
+The form itself is [`compile/match`](../reference/specials/compile-match.md)
+and [`layout/match`](../reference/layouts/layout-match.md).
 
-## Patterns are classified by head, never by bracket
+## Patterns are classified by head, not by bracket
 
-`()` and `[]` are value-equal in koskari, so a pattern's *kind* is never
-decided by which bracket surrounds it. Instead, each kind announces itself
-with a **head symbol or marker** -- and the reader sugars (`#[…]`, `#{…}`,
-`Name[…]`) produce exactly those heads. A bare symbol is always a capture;
-a bare atom is always a literal; everything structured says what it is.
+`()` and `[]` are value-equal, so a pattern's kind is never decided by
+its bracket. Each kind announces itself with a head symbol or marker,
+and the reader sugars `#[...]`, `#{...}`, and `Name[...]` produce those
+heads. A bare symbol is a capture; a bare atom is a literal; everything
+structured says what it is.
 
 ## Element vocabulary
 
 | Pattern | Written | Meaning |
 |---------|---------|---------|
-| capture | `x` | bind this position (or the whole subject) to `x` |
-| literal | `5`, `"s"`, `foo:`, `'sym` | position must equal the value |
-| typed capture | `x :: T` | bind `x`; value must satisfy type/predicate `T` |
+| capture | `x` | bind this position, or the whole subject, to `x` |
+| literal | `5`, `"s"`, `foo:`, `'sym` | the position must equal the value |
+| typed capture | `x :: T` | bind `x`; the value must satisfy the type or predicate `T` |
 | type check | `(:: T)` | check only, no binding |
-| sequence | `#[a b c]` or `#(a b c)` | destructure a sequence positionally |
+| sequence | `#[a b c]` or `#(a b c)` | destructure a sequence by position |
 | rest | `#[a *: rest]` | bind the remaining elements to `rest` |
-| mapping | `#{KEY: PAT ...}` | value must be a mapping; see below |
-| class | `Point[x y]` | isinstance check plus field extraction |
+| mapping | `#{KEY: PAT ...}` | the value must be a mapping; see below |
+| class | `Point[x y]` | an isinstance check plus field extraction |
 | class, keyword fields | `Point[x: 0 y]` | attribute `x` must equal 0; bind attribute `y` |
-| extraction | `(app f PAT)` | call `f` on the value, match `PAT` against the result |
+| extraction | `(app f PAT)` | call `f` on the value and match `PAT` against the result |
 | predicate | `(? pred)` | `pred` called on the value must be truthy |
-| alternation | `(or PAT PAT ...)` | first alternative that matches |
-| negation | `(not PAT)` | value must not match `PAT` |
+| alternation | `(or PAT PAT ...)` | the first alternative that matches |
+| negation | `(not PAT)` | the value must not match `PAT` |
 
-Patterns nest freely: a sequence element may be a class pattern, a mapping
-value may be a sequence, an extraction result may be destructured  -- 
-`(app splitext #[base ".ki"])`.
+Patterns nest: a sequence element may be a class pattern, a mapping
+value may be a sequence, an extraction result may be destructured, as
+in `(app splitext #[base ".ki"])`.
 
-The canonical matcher heads (`FORM`, `ONEOF`, `REST`, `CLASS`, …) from
-[`koskari.matcher`](../reference/api/koskari-matcher.md) are also accepted in
-pattern position for advanced use; the sugared forms above lower to them.
+The matcher heads from [`koskari.matcher`](../reference/api/koskari-matcher.md),
+`FORM`, `ONEOF`, `REST`, `CLASS`, and the rest, are also accepted in
+pattern position; the sugared forms above lower to them.
 
 ### Sequences
 
-A sequence pattern is always the explicit `#[…]` / `#(…)` form -- a bare
-list is never silently a sequence. Length must agree unless a `*: rest`
-marker captures the remaining elements. Inside a sequence, a typed element
-must be parenthesized: `#[(x :: int) y]`.
+A sequence pattern is the explicit `#[...]` or `#(...)` form; a bare
+list is never a sequence. The length must agree unless a `*: rest`
+marker captures the remaining elements. Inside a sequence a typed
+element is parenthesized: `#[(x :: int) y]`.
 
-**Only real sequences destructure.** A sequence pattern matches lists,
-tuples, and other `collections.abc.Sequence` instances (`range`, for
-example) -- the same rule as Python's PEP 634. `str`, `bytes`, and
-`bytearray` never destructure into characters; mappings never
-destructure into their keys (they belong to `#{...}` arms); sets are
-not sequences; and an iterator flowing past a sequence arm is never
-silently consumed. All of these fall through as a soft no-match -- a
-string still matches as a whole value (a literal, a capture, or
-`s :: str`), and a dict still matches mapping arms.
+Only sequences destructure. A sequence pattern matches lists, tuples,
+and other `collections.abc.Sequence` instances such as `range`, the
+same rule as Python's PEP 634. `str`, `bytes`, and `bytearray` never
+destructure into characters; mappings never destructure into their keys,
+which belong to `#{...}` arms; sets are not sequences; and an iterator
+that reaches a sequence arm is not consumed. Each of these is a
+no-match, so a string still matches as a whole value, as a literal, a
+capture, or `s :: str`, and a dict still matches mapping arms.
 
 ### Classes
 
-`Point[x y]` checks `isinstance(value, Point)` and extracts fields:
-positional fields resolve through the class's `__match_args__`
-(dataclasses and named tuples provide it automatically on Python 3.10+;
-on 3.9, which predates `__match_args__`, koskari synthesizes the
-equivalent for dataclasses and namedtuples, and any other class needs an
-explicit `__match_args__`); keyword fields
-(`Point[x: 0 y]`) read attributes directly and work on any class. A bare
-`Point[]` is an isinstance check alone. Field patterns nest:
-`Point[(x :: int) y]`.
+`Point[x y]` checks `isinstance(value, Point)` and extracts fields.
+Positional fields resolve through the class's `__match_args__`, which
+dataclasses and named tuples provide on Python 3.10 and later; on 3.9,
+which predates `__match_args__`, Koskari synthesizes the equivalent for
+dataclasses and namedtuples, and any other class needs an explicit
+`__match_args__`. Keyword fields, `Point[x: 0 y]`, read attributes and
+work on any class. A bare `Point[]` is an isinstance check alone. Field
+patterns nest: `Point[(x :: int) y]`.
 
 ### Mappings
 
-`#{KEY: PAT ...}` matches a `dict` (or any `collections.abc.Mapping`).
+`#{KEY: PAT ...}` matches a `dict` or any `collections.abc.Mapping`.
 Every listed key must be present and its value must match the paired
-pattern; **extra keys are ignored**. A literal key is written literally
-(`#{"kind": "job"}`); a **symbol key is resolved from the enclosing
-scope at match time**, so computed keys work:
+pattern; extra keys are ignored. A literal key is written as a literal,
+`#{"kind": "job"}`. A symbol key is resolved from the enclosing scope at
+match time, so keys can be computed:
 
 ```koskari
 define field "url"
 
 match msg:
-  case #{field: u}:      ; looks up whatever `field` holds -- "url"
+  case #{field: u}:      ; the key is whatever field holds, "url"
     (fetch u)
 ```
 
 ### Names resolve from the enclosing scope
 
-Every name a pattern references -- the `T` in `x :: T`, the class in
-`Point[…]`, the `pred` in `(? pred)`, the `f` in `(app f …)`, a symbol
-mapping key -- is an ordinary binding resolved from the enclosing scope at
-match time. Closure-captured and locally-bound names work exactly as they
+Every name a pattern references, the `T` in `x :: T`, the class in
+`Point[...]`, the `pred` in `(? pred)`, the `f` in `(app f ...)`, a
+symbol mapping key, is an ordinary binding resolved from the enclosing
+scope at match time. Closure-captured and local names work as they
 would in the body.
 
 ### Callables run on the demand path
 
-Predicates and extractors are invoked synchronously through the demand
-mechanism, so a plain koskari `define` works directly -- no wrapping:
+Predicates and extractors are called synchronously through the demand
+mechanism, so a plain Koskari `define` works without wrapping:
 
 ```koskari
 define splitext [name]:
@@ -123,14 +121,14 @@ match path:
     (compile-source base)
 ```
 
-A callable that genuinely suspends (a real `await`) raises
-`KoskariSyncViolation` -- patterns cannot pause. A raising predicate or
-extractor propagates as an error; it is never treated as a non-match.
+A callable that suspends raises `KoskariSyncViolation`; a pattern
+cannot pause. A predicate or extractor that raises propagates the error
+rather than counting as a no-match.
 
 ## Guards
 
-A `when` / `unless` guard runs **after** the pattern matches and binds,
-with the captured names in scope; a failed guard advances to the next arm:
+A `when` or `unless` guard runs after the pattern has matched and bound,
+with the captured names in scope. A failed guard moves to the next arm:
 
 ```koskari
 match v:
@@ -140,27 +138,25 @@ match v:
     "ascending-or-equal"
 ```
 
-Captured names remain bound even when the guard fails -- the same behaviour
-as Python's `case ... if ...`.
+Captured names stay bound when a guard fails, as after Python's
+`case ... if ...`.
 
-## Binding behaviour
+## Binding
 
-- Captured names are bound in the **enclosing scope** and remain visible
-  after the `match` form, like every other koskari binding (and like
-  Python's `match`). Arms are not isolated scopes.
-- Captures are **sparse**: a slot that did not bind (an `OPTIONAL` arm
-  that did not fire) is left unbound, and reading it raises `NameError`.
-  Bind defaults before the match, or guard on the shape, when a slot may
-  be absent.
-- Arms are tried in order; the first match wins. With no matching arm and
-  no `else:`, the form yields `None`.
+- Captured names are bound in the enclosing scope and stay visible after
+  the `match` form, like every other binding and like Python's `match`.
+  Arms are not scopes.
+- Captures are sparse: a slot that did not bind, an `OPTIONAL` arm that
+  did not fire, is left unbound, and reading it raises `NameError`. Bind
+  a default before the match, or guard on the shape, when a slot may be
+  absent.
+- Arms are tried in order and the first match wins. With no matching arm
+  and no `else:`, the value is `None`.
 
 ## See also
 
-- [`compile/match`](../reference/specials/compile-match.md) -- the match special form
-- [`layout/match`](../reference/layouts/layout-match.md) -- the `match:` block layout
-- [`compile/switch`](../reference/specials/compile-switch.md) -- equality dispatch
-- [`koskari.matcher`](../reference/api/koskari-matcher.md) -- the matcher API these
-  patterns compile to
-- [Macro matching and hygiene](macros-and-hygiene.md) -- the same
-  engine matching source forms at compile time
+- [`compile/match`](../reference/specials/compile-match.md): the special form
+- [`layout/match`](../reference/layouts/layout-match.md): the `match:` block
+- [`compile/switch`](../reference/specials/compile-switch.md): equality dispatch
+- [`koskari.matcher`](../reference/api/koskari-matcher.md): the matcher these patterns compile to
+- [Macros and hygiene](macros-and-hygiene.md): the same engine matching source forms at compile time

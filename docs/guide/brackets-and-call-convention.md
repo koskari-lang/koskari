@@ -1,112 +1,94 @@
 # Brackets and the call convention
 
-Koskari reads `( )` and `[ ]` with the **same grammar**. A `[ ]` form is **not**
-a vector, array, or "literal list" that behaves differently from `( )`. Both
-read into ordinary pair chains, and **by default both compile the same way**.
+Koskari reads `( )` and `[ ]` with the same grammar. A `[ ]` form is not a
+vector, an array, or a list literal. Both read into pair chains, and by
+default both compile the same way.
 
-## Same grammar, same default compilation
+## Same grammar, same compilation
 
-A non-empty list in head (operator) position compiles to a **call** -- the first
-element is applied to the rest -- no matter which bracket delimited it:
+A non-empty list in head position compiles to a call, whichever bracket
+delimited it:
 
 ```koskari
 (f 1 2)   ; call f with 1 and 2
-[f 1 2]   ; identical: call f with 1 and 2
+[f 1 2]   ; the same call
 ```
 
-So `[a 1]` is a call to `a` with argument `1`, exactly like `(a 1)`. If you are
-coming from a language where `[...]` builds a list value, this is the single
-most important thing to unlearn. To build collection values, Koskari uses the
-`#(...)`, `#[...]`, and `#{...}` reader forms (tuple, list, dict), not bare
-brackets.
+`[a 1]` is a call to `a` with argument `1`. A reader arriving from a
+language where `[...]` builds a list has this one thing to unlearn.
+Collection values are the `#(...)`, `#[...]`, and `#{...}` reader forms:
+tuple, list, dict.
 
-## What the brackets actually carry
+## What the brackets carry
 
-The reader records that a form came from `[ ]` by producing a **bracket-pair**
-(and `bracket-nil` for the empty `[]`). A bracket-pair is value-equal to and
-fully interchangeable with a normal pair -- every pair operation works on it  -- 
-it simply remembers its bracket origin. That memory does nothing on its own; it
-exists so tooling and the compiler's call-position check can use it.
+The reader records that a form came from `[ ]` by producing a
+bracket-pair, and `bracket-nil` for the empty `[]`. A bracket-pair is
+value-equal to a pair, every pair operation works on it, and it
+remembers its bracket origin. That memory does nothing on its own; it is
+there for tooling and for the compiler's call-position check.
 
 ## The convention
 
-The convention -- which the compiler by default points out rather than enforces
-(a `SyntaxWarning`, never a changed compilation) -- is:
+By default the compiler points the convention out rather than enforcing
+it, with a `SyntaxWarning` and no change to compilation:
 
-- **`( )` means a call/apply form.** The first element is the thing being
-  applied; the rest are its arguments. Some forms evaluate every argument;
-  others deliberately treat certain arguments as data.
-- **`[ ]` means a non-call data fragment.** Binding lists, `cond` clauses,
-  pattern rows -- structure that the enclosing form consumes as data, never
-  applies as a call.
+- `( )` is a call. The first element is applied to the rest. Some forms
+  evaluate every argument; others treat certain arguments as data.
+- `[ ]` is a data fragment that the enclosing form consumes: a binding
+  list, a `cond` clause, a pattern row.
 
-This is first of all a **reading aid**. Nobody expects
+The convention is a reading aid first. Nobody reads
 
 ```koskari
 (let [[a 1]] (+ a 100))
 ```
 
-to *call* `a` with `1` -- the brackets make "this is a binding, not a call"
-visible at a glance. Binding lists like this are consumed as data by `let`, so
-they never reach the call compiler regardless of the convention.
+as a call of `a` with `1`; the brackets say "binding" at a glance. A
+binding list is consumed as data by `let` and never reaches the call
+compiler, whatever the convention says.
 
-## Why it can also catch bugs
+## Catching a typo
 
-Because brackets mark intended-data positions, a bracketed fragment that
-*accidentally* ends up in call position is a strong signal of a mistake. Take a
-typo -- `ler` instead of `let`:
+Because brackets mark data positions, a bracketed fragment that reaches
+call position is a sign of a mistake. With `ler` typed for `let`:
 
 ```koskari
 (ler [[a 1]] (+ a 100))
 ```
 
-`ler` is not a special form, so this compiles as a **call** to the value `ler`,
-whose first argument is `[[a 1]]` -- i.e. `(call (call a 1))`. That is clearly
-not what the author meant. The bracket marker lets the compiler notice that a
-`[ ]` fragment reached call position and tell you.
+`ler` is not a special form, so the form compiles as a call of the value
+`ler` whose first argument is `[[a 1]]`, that is, `(call (call a 1))`.
+The bracket marker lets the compiler see a `[ ]` fragment in call
+position and say so.
 
-## Changing the behavior (via pragma)
+## Changing the behaviour
 
-The reader and compiler ship these two settings at their defaults, and the
-**only** way to change them is a [`pragma`](pragma.md) form near the top of your
-module. There is no global switch and no per-form syntax -- the behavior is
-module-scoped and set explicitly:
+Two settings, changed only by a [`pragma`](pragma.md) near the top of a
+module; there is no global switch and no per-form syntax:
 
 | Setting | Affects | Values | Default | Meaning |
 |---|---|---|---|---|
-| `reader/brackets` | reader | on / off | on | Whether `[ ]` reads into a bracket-pair (carrying the origin marker) or a plain pair. |
-| `compiler/call-brackets` | compiler | `ignore` / `warn` / `error` | `warn` | What happens when a bracket-pair reaches call position. |
-
-Escalate the convention to a hard error, or silence it entirely:
+| `reader/brackets` | reader | on, off | on | whether `[ ]` reads into a bracket-pair or a plain pair |
+| `compiler/call-brackets` | compiler | `ignore`, `warn`, `error` | `warn` | what happens when a bracket-pair reaches call position |
 
 ```koskari
-; make a [ ] fragment in call position a compile error
+;; a [ ] fragment in call position is a compile error
 (pragma [compiler/call-brackets 'error])
 
-; or turn the check off and leave brackets as pure documentation
+;; the check is off; brackets are documentation
 (pragma [compiler/call-brackets 'ignore])
-```
 
-With `error` set, the `ler` typo from above is caught at compile time instead of
-silently compiling to `(call (call a 1))`.
-
-Or drop the distinction entirely -- make `[ ]` and `( )` completely
-indistinguishable, so no marker is produced and no check can fire:
-
-```koskari
+;; no marker is produced, so no check can fire
 (pragma [reader/brackets False])
 ```
 
-A pragma is forward-only and scoped to the module that sets it: it affects only
-the code that follows it, and never the modules you import. At the `warn`
-default the convention is advisory -- a bracket-pair in call position still
-compiles like a paren form, but the compiler points it out; `ignore` reduces
-brackets to pure documentation. See
-[Pragmas and feature settings](pragma.md) for how pragma forms work and the full
-list of settings.
+With `error`, the `ler` typo above is caught at compile time. A pragma
+is forward-only and scoped to its module: it affects the code after it
+and never the modules it imports.
 
 ## See also
 
-- [Koskari and s-expressions](layout-and-s-expressions.md) -- layout beside its s-expressions
-  brackets appear in.
-- [Grammar](../reference/grammar.md) -- the formal reader grammar for lists and brackets.
+- [Koskari and s-expressions](layout-and-s-expressions.md): layout beside
+  the s-expressions the brackets appear in.
+- [Grammar](../reference/grammar.md): the reader grammar for lists and
+  brackets.

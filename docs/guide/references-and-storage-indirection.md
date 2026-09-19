@@ -1,25 +1,23 @@
 # References and storage indirection
 
-This page assumes you are comfortable with `define` and `set!` -- you know
-that defining a name lets you refer to it and assign new values into it. A name
-is attached to a **storage location**, and you can get hold of that location
-itself. Koskari calls such a handle a **ref**.
+A name is attached to a storage location, and the location itself can be
+taken hold of. Koskari calls that handle a ref. This page assumes
+`define` and `set!`.
 
-If you have met pointers in C, a ref will feel familiar -- but a ref is *safer*:
-it points at exactly one storage location, you cannot do arithmetic on it, and
-there is no null or dangling ref to trip over.
+A ref is a pointer with the sharp edges removed: it points at one
+storage location, there is no arithmetic on it, and it is never null or
+dangling.
 
-Every snippet here is exercised in [examples/refs.ki](https://github.com/obriencj/python-koskari/blob/master/examples/refs.ki).
+The same snippets are `examples/refs.ki` in the repository.
 
----
 
 ## A name labels a storage location
 
 :::{dialogue}
 When you write `(set! food 11)`, what actually changes?
 +++
-Not the name `food` -- the **storage location** it labels. `define`
-creates the location and attaches the name; `set!` changes what is *inside*
+Not the name `food` -- the storage location it labels. `define`
+creates the location and attaches the name; `set!` changes what is inside
 it.
 
 ```koskari
@@ -34,10 +32,9 @@ food
 So a name is like a label on a box. Can you get hold of the box
 itself, instead of what is inside it?
 +++
-Yes. That handle to the box is a **ref**.
+Yes. That handle to the box is a ref.
 :::
 
----
 
 ## Getting a ref: the long form, then the `&` sugar
 
@@ -63,18 +60,17 @@ Yes -- `&food` is sugar for `(ref food)`. The two are identical:
 ```
 
 You will see `&` again later, on function parameters. It always means the
-same thing: *the location, not the value.*
+same thing: the location, not the value.
 :::
 
----
 
 ## A ref is an ordinary value
 
 :::{dialogue}
 `r` holds a ref. If you ask for `r`, do you get `11` back?
 +++
-No -- you get the **ref object** itself. A ref is a value you can pass
-around and store like any other. To read the value it points at, **deref**
+No -- you get the ref object itself. A ref is a value you can pass
+around and store like any other. To read the value it points at, deref
 it:
 
 ```koskari
@@ -87,13 +83,12 @@ value. `food` gives you the value directly; `r` gives you the location, and
 `(deref r)` follows it.
 :::
 
----
 
 ## Writing through a ref
 
 :::{dialogue}
 You read through a ref with `(deref r)`. Symmetrically -- can you
-*write* through it, changing `food` without naming it?
+write through it, changing `food` without naming it?
 +++
 Yes. Assign to the deref: `(set! (deref r) v)` stores through the ref
 into the location it points at.
@@ -104,17 +99,17 @@ food
 ; -> 20
 ```
 
-Note the symmetry: `(deref r)` reads the pointed-at location, `(set! (deref
+The symmetry: `(deref r)` reads the pointed-at location, `(set! (deref
 r) …)` writes it. The line that changed `food` never mentioned `food` -- `r`
-*is* the box. (Under the hood this dispatches to the ref's `store` method, so
+is the box. (Under the hood this dispatches to the ref's `store` method, so
 `(r.store 20)` does the same thing when you already hold the ref.)
 :::
 
 :::{dialogue}
 Then `(set! r 20)` -- same thing?
 +++
-No -- the **target** of `set!` matters. `(set! (deref r) 20)` writes
-*through* the ref. But `(set! r 20)` assigns to the **name** `r` -- it throws
+No -- the target of `set!` matters. `(set! (deref r) 20)` writes
+through the ref. But `(set! r 20)` assigns to the name `r` -- it throws
 the ref away and puts `20` in `r`:
 
 ```koskari
@@ -125,12 +120,11 @@ r
 ; -> 99    (r no longer holds a ref)
 ```
 
-So: `(set! (deref r) v)` writes *through* the ref; `(set! r v)` *replaces*
+So: `(set! (deref r) v)` writes through the ref; `(set! r v)` replaces
 it. When you hold a ref as a value, reach the target via the deref  -- 
 `(deref r)` to read, `(set! (deref r) v)` to write.
 :::
 
----
 
 ## Refs to locations that have no name
 
@@ -156,17 +150,16 @@ variable name of its own, yet you can read and write it through the ref just
 the same.
 :::
 
----
 
 ## Making the indirection invisible: `bind!`
 
 :::{dialogue}
 Carrying a ref around and reaching through the deref every time is a
-chore. Can a name's location simply *be* a ref, so you read and write it like
+chore. Can a name's location be a ref, so you read and write it like
 any other variable?
 +++
-That is exactly what `bind!` does. It attaches a name to a ref **as
-that name's storage**:
+That is what `bind!` does. It attaches a name to a ref as
+that name's storage:
 
 ```koskari
 (define total 5)
@@ -185,7 +178,7 @@ plain `set! alias` stores through for you. No `deref`, no `store`.
 :::{dialogue}
 Does that work for the no-name locations too?
 +++
-Yes -- bind a name to an item or attribute ref and then just use the
+Yes -- bind a name to an item or attribute ref and then use the
 name:
 
 ```koskari
@@ -196,16 +189,15 @@ xs
 ```
 
 This is the "safer pointer" payoff. You aim a name at a location once, and
-from then on the code reads like ordinary variable access while quietly
+from then on the code reads like ordinary variable access while
 writing back to the original slot.
 :::
 
----
 
 ## Passing a ref to a function -- by hand first
 
 :::{dialogue}
-A ref is just a value, so you can pass one into a function. How would a
+A ref is a value, so you can pass one into a function. How would a
 function use it to change the caller's variable?
 +++
 Take the ref as an ordinary parameter, then `bind!` a local name to it
@@ -226,7 +218,6 @@ The caller passes `&a` (the location of `a`); the function binds `n` to that
 location, so `(set! n ...)` writes back into `a`.
 :::
 
----
 
 ## By-ref parameters do the `bind!` for you
 
@@ -235,7 +226,7 @@ Binding the parameter by hand every time is boilerplate. Is there
 sugar?
 +++
 Mark the parameter itself with `&`. A by-ref parameter binds the
-caller's ref as its storage automatically -- the function body just uses the
+caller's ref as its storage automatically -- the function body uses the
 name:
 
 ```koskari
@@ -250,11 +241,10 @@ b
 
 Note the two `&`, doing the matching halves of one handshake: `&n` in the
 parameter list says "I want the location," and `&b` at the call says "here is
-the location." This is the third time `&` has meant *location, not value*  -- 
+the location." This is the third time `&` has meant location, not value  -- 
 on `(ref x)`, on items and attributes, and now on parameters.
 :::
 
----
 
 ## The guardrail
 
@@ -270,24 +260,22 @@ It is an error, caught immediately -- not a silent corruption:
 ```
 
 This is part of what makes refs safer than raw pointers: a by-ref slot only
-accepts an actual ref, aimed at exactly one location.
+accepts an actual ref, aimed at one location.
 :::
 
----
 
 ## How this differs from Python
 
 :::{dialogue}
 Python passes everything "by reference" already, doesn't it?
 +++
-Python names already reference *objects*, so two names can see the same
-mutable list. But you cannot get a reference to a **binding** -- a callee can
-never rebind a caller's variable. Koskari lets you pass the *location itself*,
+Python names already reference objects, so two names can see the same
+mutable list. But you cannot get a reference to a binding -- a callee can
+never rebind a caller's variable. Koskari lets you pass the location itself,
 so a function can write back to the caller's `a`, a list slot, or an
 attribute. Python passes object references by value; Koskari can pass the slot.
 :::
 
----
 
 ## Where next
 
@@ -295,6 +283,6 @@ attribute. Python passes object references by value; Koskari can pass the slot.
   vocabulary (bind vs store, deref, namespaces).
 - [`compile/ref`](../reference/macros/compile-ref.md) and the by-ref formals
   note under [`compile/lambda`](../reference/specials/compile-lambda.md).
-- Refs whose get/set is *computed* (dynamic refs) push storage indirection one
-  step further -- there is no underlying slot at all, just behavior. They are a
+- Refs whose get/set is computed (dynamic refs) push storage indirection one
+  step further -- there is no underlying slot at all, behaviour. They are a
   topic for a future advanced recipe.

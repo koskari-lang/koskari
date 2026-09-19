@@ -1,8 +1,8 @@
 # Demand, async evaluation, and defer
 
-Koskari bytecode runs on an **async-native** evaluator: suspension and resumption
+Koskari bytecode runs on an async-native evaluator: suspension and resumption
 are normal, and many Python calls that return coroutines or awaitables are
-**auto-awaited** at call boundaries. How you **host** that evaluator (with or
+auto-awaited at call boundaries. How you host that evaluator (with or
 without an asyncio event loop) is a separate choice.
 
 ## Ambient async execution
@@ -11,15 +11,15 @@ Python treats asynchronous execution as opt-in: functions are marked `async`,
 and calling an async function returns a coroutine that must be awaited.
 
 Koskari treats asynchronous execution as the default. Every function can
-suspend and resume; the runtime tries to produce a **concrete value** at each
+suspend and resume; the runtime tries to produce a concrete value at each
 step and only suspends when it cannot continue. A stackless evaluator (frames on
 the heap, not the C stack) makes that model practical for tail calls,
 continuations, generators, and async work in one pipeline.
 
-In practice:
+Three consequences:
 
 - Every Koskari function is capable of suspension.
-- Most code **reads** synchronously -- explicit [`await`](../reference/specials/compile-await.md)
+- Most code reads synchronously -- explicit [`await`](../reference/specials/compile-await.md)
   is uncommon.
 - Suspension propagates through the evaluator rather than through coroutine
   objects at every call site.
@@ -83,7 +83,7 @@ holds the result rather than a bare coroutine. See
 [VM opcode reference](../reference/vm/index.md) for opcode-level detail.
 
 Two kinds of values are excluded and arrive as plain values: a
-[defer](#defer) handle, and any asyncio **future** (anything passing
+[defer](#defer) handle, and any asyncio future (anything passing
 `asyncio.isfuture`, including `Task`). Futures are handles to work owned by
 the event loop; hold them, cancel them, or resolve them with an explicit
 `(await fut)` when the value is wanted.
@@ -104,9 +104,9 @@ work may run on the host loop, the result arrives, execution resumes, and
 
 ## defer
 
-Sometimes a program must **not** resolve a value immediately. A **defer** is a
+Sometimes a program must not resolve a value immediately. A defer is a
 single-shot await handle (Python builtin `defer`, also exposed in bootstrap).
-The wrapped call runs when the defer is **constructed**; the VM does **not**
+The wrapped call runs when the defer is constructed; the VM does not
 auto-await the defer value at the next use site.
 
 ```koskari
@@ -126,31 +126,31 @@ Use explicit [`(await expr)`](../reference/specials/compile-await.md) when `expr
 or any other awaitable you must suspend on at that program point. See
 [`koskari.lib`](../reference/api/koskari-lib.md) for the C/Python type surface.
 
-Bare **`(await)`** with no argument performs a cooperative suspend on the
-async-hosted path; on the demand path it triggers **`KoskariSyncViolation`**
+Bare `(await)` with no argument performs a cooperative suspend on the
+async-hosted path; on the demand path it triggers `KoskariSyncViolation`
 (see [on-demand?](#authoring-for-both-paths) below).
 
 ## Demand evaluation
 
-**Demand evaluation** runs Koskari to completion **without** hosting an asyncio
+Demand evaluation runs Koskari to completion without hosting an asyncio
 loop for that run. Each top-level form is driven synchronously from the host
 (for example `demand_call` on a compiled expression).
 
 Typical uses:
 
-- Default **module import** path (`exec_module_demand` on the meta path finder)
+- Default module import path (`exec_module_demand` on the meta path finder)
 - Loading bootstrap without an event loop (demand builtins path via
   `koskari.bootstrap`)
 - [`load_module_demand`](../reference/api/koskari-module.md) -- same read/compile loop as
   async load, but each expression is executed on the demand path
 
 On the demand path, suspension that requires waiting on a Python awaitable
-raises **`KoskariSyncViolation`**. Koskari code meant to run under demand must
+raises `KoskariSyncViolation`. Koskari code meant to run under demand must
 not rely on `await` at points where the host cannot resume.
 
 ### Why demand exists
 
-Many **Python integration points must not suspend**: numeric operators, attribute
+Many Python integration points must not suspend: numeric operators, attribute
 access, sequence protocols, iterator hooks, and most CPython slot implementations
 expect a synchronous result or an exception -- not a suspended computation.
 
@@ -159,7 +159,7 @@ x + y  # cannot yield to an event loop mid-operation
 ```
 
 When Python invokes a Koskari dunder (for example `__add__`), the runtime routes
-that work through **demand execution**: produce a value now, or raise; never
+that work through demand execution: produce a value now, or raise; never
 suspend. That preserves predictable behaviour for `obj + other` and similar
 calls while still allowing suspension inside ordinary Koskari-to-Koskari
 evaluation.
@@ -171,12 +171,12 @@ Demand establishes a boundary:
 
 ## Async-hosted evaluation
 
-**Async-hosted evaluation** loads or runs code under an asyncio-driven host: each
+Async-hosted evaluation loads or runs code under an asyncio-driven host: each
 compiled top-level expression is awaited. The CLI and
 [`load_module_async`](../reference/api/koskari-module.md) use this path when an event loop
 is available.
 
-Same bytecode and namespaces as demand; different **host** and allowed
+Same bytecode and namespaces as demand; different host and allowed
 suspensions.
 
 | Aspect | Demand path | Async-hosted path |
@@ -191,10 +191,10 @@ Importer details: [`koskari.importer`](../reference/api/koskari-importer.md),
 
 ## Authoring for both paths
 
-- **`define-demanding`** -- defines a function wrapped with `demand` so its body
+- `define-demanding` -- defines a function wrapped with `demand` so its body
   is compiled for demand-call contexts
   ([`compile/define-demanding`](../reference/macros/compile-define-demanding.md))
-- **`on-demand?`** -- runtime predicate: tries bare `(await)` and returns true if
+- `on-demand?` -- runtime predicate: tries bare `(await)` and returns true if
   that would violate sync completion (demand path)
   ([`on-demand?`](../reference/runtime/on-demand.md))
 
@@ -205,7 +205,7 @@ async-hosted load when the embedding app already runs asyncio.
 
 Koskari resolves ordinary calls to values automatically (see [Demand, async,
 and defer](demand-async-and-defer.md)), so most code needs none of these. Reach
-for one only when you want to *override* that default -- run without a loop, hold
+for one only when you want to override that default -- run without a loop, hold
 a result instead of resolving it, or hand Koskari async work to a raw asyncio
 API. The linked pages are the full rules.
 
@@ -218,14 +218,14 @@ API. The linked pages are the full rules.
 | You must hand a Koskari **function** to a **Python asyncio API that requires a coroutine function** (a task factory, framework hook) | **`coroutine-fn`** / **`define-coroutine`** | builtin / macro |
 | You need to **schedule or gather** held async work on the asyncio loop | **`create-task`**, or `defer` + `asyncio.gather` | asyncio bridge |
 
-The first two shape **how your own code runs**; the last two are **bridges to
+The first two shape how your own code runs; the last two are **bridges to
 raw asyncio**. If you are not crossing into an asyncio API by hand, you almost
 certainly want `demand`/`defer`, not the coroutine bridges.
 
-> **Auto-await caveat.** Koskari auto-awaits an awaitable at the call boundary
+> Auto-await caveat. Koskari auto-awaits an awaitable at the call boundary
 > (see [Demand, async, and defer](demand-async-and-defer.md)). So calling a
-> coroutine function *from Koskari* resolves it to a value -- to hand a real
-> coroutine to asyncio, pass the **function** (`coroutine-fn`) or a **`defer`**,
+> coroutine function from Koskari resolves it to a value -- to hand a real
+> coroutine to asyncio, pass the function (`coroutine-fn`) or a `defer`,
 > never a call result.
 
 ### `demand` / `define-demanding` -- run without a loop
@@ -246,7 +246,7 @@ define-demanding checksum [a b]:
 
 ### `defer` -- hold work instead of resolving it
 
-The wrapped call runs when the defer is **constructed**; the VM does **not**
+The wrapped call runs when the defer is constructed; the VM does not
 auto-await the defer at its next use. You resolve it explicitly.
 
 ```koskari
@@ -260,9 +260,9 @@ Full treatment: [Demand, async, and defer](demand-async-and-defer.md) and
 
 ### `coroutine-fn` / `define-coroutine` -- a genuine coroutine function
 
-Some asyncio entry points require a real *coroutine function* -- one that
+Some asyncio entry points require a real coroutine function -- one that
 `asyncio.iscoroutinefunction` accepts. `coroutine-fn` wraps a function so it
-qualifies; you hand the **function** to the API, and when *Python* calls it, it
+qualifies; you hand the function to the API, and when Python calls it, it
 gets a coroutine.
 
 ```koskari
@@ -275,7 +275,7 @@ define-coroutine work [x]:
 (asyncio.iscoroutinefunction work)   ; -> True
 ```
 
-Pass `work` itself to the asyncio API. Do **not** call `(work 1)` from Koskari
+Pass `work` itself to the asyncio API. Do not call `(work 1)` from Koskari
 first -- that auto-awaits to the value (see the caveat above).
 `define-coroutine NAME args body` expands to
 `(define NAME (coroutine-fn (function NAME args body ...)))`. See
@@ -284,7 +284,7 @@ first -- that auto-awaits to the value (see the caveat above).
 ### Scheduling and gathering -- `create-task`, `defer` + `gather`
 
 To run held async work on the loop, schedule a `defer` (or coroutine) with
-**`create-task`**. It returns the real `asyncio.Task` -- a handle. Tasks
+`create-task`. It returns the real `asyncio.Task` -- a handle. Tasks
 (like all asyncio futures) are excluded from implicit auto-await, so the
 handle can be stored, cancelled, or given done-callbacks, and is resolved
 by explicit await:

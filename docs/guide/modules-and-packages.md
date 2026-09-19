@@ -60,7 +60,7 @@ Importing `koskari` installs a meta-path finder ahead of CPython's. That finder
 recognizes the `.ki` and `.kio` extensions; when it locates such a source file it
 loads it as a module and copies the module's names onto the Python module object,
 so `(import-from mymod thing)` and `from mymod import thing` both work. When the
-finder is asked for a **directory that has no `__init__`**, it deliberately steps
+finder is asked for a directory that has no `__init__`, it steps
 aside and lets CPython's own machinery produce an implicit namespace package.
 That single deferral is why a bare directory of `.ki` files is importable with no
 ceremony.
@@ -68,7 +68,7 @@ ceremony.
 The hook is normally active because Koskari installs a site `*.pth` bootstrap.
 In environments where that is not present (some editable installs, some embedded
 hosts), make sure something runs `import koskari` before the first `.ki` import.
-A package `__init__.py` containing just `import koskari` is the common insurance.
+A package `__init__.py` containing `import koskari` is the common insurance.
 
 ## The one rule, plus the `.ki` extension
 
@@ -86,7 +86,7 @@ source extensions:
 
 Give a directory an `__init__.ki` and it is a regular package. The init runs when
 the package is first imported and typically re-exports the submodules' public
-names using **relative imports** (a leading dot is "this package"):
+names using relative imports (a leading dot is "this package"):
 
 ```text
 kosrunner/
@@ -111,7 +111,7 @@ init logic is itself Koskari.
 ## A namespace package: no `__init__`
 
 Leave the `__init__` out and the directory is an implicit namespace package. Its
-`.ki` submodules still import as `pkg.submod`; there is simply no package-level
+`.ki` submodules still import as `pkg.submod`; there is no package-level
 init and no re-exports:
 
 ```text
@@ -155,16 +155,16 @@ Python's dot rules (each leading dot climbs one package); see
 
 ## The `.py` / `.ki` same-name trap
 
-A `foo.py` and a `foo.ki` **in the same directory** both claim the module name
-`foo`. That is an **import conflict with undefined behavior** -- which finder wins
+A `foo.py` and a `foo.ki` in the same directory both claim the module name
+`foo`. That is an import conflict with undefined behavior -- which finder wins
 is unspecified, and it can change with build state or import order. Do not rely
 on it.
 
 Two ways to keep two-language layouts unambiguous:
 
-- **Distinct base names.** Differentiate before the extension: `foo_py.py` and
+- Distinct base names. Differentiate before the extension: `foo_py.py` and
   `foo_ki.ki`, never `foo.py` + `foo.ki`.
-- **Separate packages.** Put each language in its own directory so the *package*
+- Separate packages. Put each language in its own directory so the package
   name disambiguates, and the base names can match:
 
   ```text
@@ -188,12 +188,12 @@ Two ways to keep two-language layouts unambiguous:
 
 Import resolution searches `sys.path`. The usual ways a directory lands there:
 
-- **Running a script.** `python path/to/app.py` prepends the script's own
+- Running a script. `python path/to/app.py` prepends the script's own
   directory to `sys.path[0]`, so files next to `app.py` import by bare name.
-  Note the interaction with **`PYTHONSAFEPATH`** (equivalently `python -P`): when
-  set, it **disables** that automatic prepend. If a runner sets
+  Note the interaction with `PYTHONSAFEPATH` (equivalently `python -P`): when
+  set, it disables that automatic prepend. If a runner sets
   `PYTHONSAFEPATH=1` globally, clear it (`PYTHONSAFEPATH=`) for the target that
   needs bare sibling imports, or put the directory on `PYTHONPATH` explicitly.
-- **An installed package.** `pip install .` puts your declared packages on the
+- An installed package. `pip install .` puts your declared packages on the
   path for good. For shipping an installed command, see
   [Packaging an installed command](packaging.md).

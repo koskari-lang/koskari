@@ -1,54 +1,54 @@
 # Hosting Koskari from Python
 
-Run Koskari from inside a Python program: load `.ki` modules, execute a source
-file into a namespace you control, or drop into a REPL -- then call back into
+Run Koskari from inside a Python program: import `.ki` modules, execute
+a file into a namespace you hold, or open a REPL, and call back into
 Koskari from Python.
 
-## Import a `.ki` module (simplest)
+## Importing a module
 
 `import koskari` installs the import hook, after which any `.ki` file on
 `sys.path` imports like a Python module:
 
 ```python
 import koskari                 # installs the .ki import hook
-import mypkg.tools             # loads mypkg/tools.ki if present
+import mypkg.tools             # loads mypkg/tools.ki
 
 result = mypkg.tools.SOME_CONSTANT
 ```
 
-This is enough when your `.ki` code is packaged alongside Python and you just
-want to import it. No event loop is required -- imports run on the demand path
-(see [Demand, async, and defer](demand-async-and-defer.md)).
+This covers `.ki` code packaged beside Python. No event loop is needed;
+imports run on the demand path. See
+[Demand, async, and defer](demand-async-and-defer.md).
 
-## Run a file into a namespace you control (headless)
+## Running a file into a namespace
 
-To execute a specific `.ki` file into a module object you hold -- without pulling
-in the REPL -- use `koskari.module` directly:
+To execute one `.ki` file into a module object you hold, without the
+REPL, use `koskari.module`:
 
 ```python
 import asyncio
-import koskari                                  # import hook
+import koskari
 from koskari.module import (new_module, init_module,
                             load_module_async)
 
 async def main():
     mod = new_module('__app__')                # a fresh Koskari module
-    init_module(mod, 'app.ki')                 # attach file metadata + specials
-    await load_module_async(mod)               # execute top-level forms
-    # `mod` now holds everything app.ki defined
-    greeting = await mod.greet('world')        # see the async note below
+    init_module(mod, 'app.ki')                 # attach the file and the specials
+    await load_module_async(mod)               # run the top-level forms
+    greeting = await mod.greet('world')        # a Koskari function is awaited
     print(greeting)
 
 asyncio.run(main())
 ```
 
-`init_module` + `load_module_async` is exactly what the CLI's
+`init_module` followed by `load_module_async` is what the CLI's
 `run_file_async` does; calling them directly avoids the REPL dependency.
 
-## Interactive REPL and the CLI wrappers
+## The REPL and the CLI wrappers
 
-`koskari.cli` offers ready-made async entry points -- but it imports the
-prompt-toolkit REPL, so it pulls that dependency in:
+`koskari.cli` has async entry points for running a file and for the
+REPL. It imports the prompt-toolkit REPL, so it brings that dependency
+in:
 
 ```python
 import asyncio
@@ -57,49 +57,50 @@ from koskari.module import new_module
 
 async def main():
     mod = new_module('__main__')
-    await run_file_async(mod, 'app.ki')        # wraps init_module + load
-    await repl_async(mod)                      # interactive REPL bound to mod
+    await run_file_async(mod, 'app.ki')        # init_module plus load
+    await repl_async(mod)                      # a REPL bound to mod
 
 asyncio.run(main())
 ```
 
-For a headless service, prefer the `koskari.module` path above so you don't
-depend on prompt-toolkit.
+A headless service takes the `koskari.module` path above and leaves
+prompt-toolkit out.
 
-## Calling back into Koskari -- await the result
+## Calling into Koskari
 
-**Koskari functions are async-native.** Calling one from Python returns an
-awaitable, not the final value -- you must `await` it (from an async context):
+A Koskari function called from Python returns an awaitable, not a
+value, because every Koskari function can suspend. From an async
+context, await it:
 
 ```python
-greeting = await mod.greet('world')            # -> 'hello, world'
+greeting = await mod.greet('world')            # 'hello, world'
 ```
 
-Outside an event loop, or when handing the result to a raw asyncio API, bridge
-it explicitly:
+A function defined with `define-demanding`, or `@demand`, returns the
+value directly and can be called with no event loop. Outside a loop, or
+when handing a result to a raw asyncio API, bridge it:
 
 ```python
 from koskari.asyncio import as_coroutine
-coro = as_coroutine(mod.greet('world'))        # a genuine Python coroutine
+coro = as_coroutine(mod.greet('world'))        # a Python coroutine
 ```
 
-Which construct to reach for  -- 
-[Choosing a construct](demand-async-and-defer.md#choosing-a-construct).
+Which construct fits which situation is the
+[decision table](demand-async-and-defer.md#choosing-a-construct).
 
-## Rules of thumb
+## Summary
 
-| Topic | Guidance |
-| ----- | -------- |
-| Enable `.ki` imports | `import koskari` once, early; the hook installs itself |
-| Just importing modules | Plain `import mypkg.mod`; no loop needed |
-| Running a file headless | `new_module` + `init_module` + `load_module_async` |
-| REPL / CLI wrappers | `koskari.cli.run_file_async` / `repl_async` (adds prompt-toolkit) |
-| Calling a Koskari fn from Python | `await` the result -- it is an awaitable |
-| No event loop available | Demand path; suspension raises `KoskariSyncViolation` |
+| Need | Use |
+| ---- | --- |
+| `.ki` imports | `import koskari` once, early |
+| importing modules | `import mypkg.mod`; no loop needed |
+| running a file headless | `new_module`, `init_module`, `load_module_async` |
+| the REPL or CLI behaviour | `koskari.cli.run_file_async` and `repl_async`, with prompt-toolkit |
+| calling a Koskari function | `await` the result, or define it with `define-demanding` |
+| no event loop | the demand path; a suspension raises `KoskariSyncViolation` |
 
 ## See also
 
-- [From Python: Interop](../tutorials/from-python/interop.md) -- calling across the boundary
-- [Demand, async, and defer](demand-async-and-defer.md) -- the async host model
-- [Choosing a construct](demand-async-and-defer.md#choosing-a-construct) -- defer, coroutine-fn, and bridges
-- [Packaging an installed command](packaging.md) -- ship a `.ki` app as a pip command
+- [Interop](../tutorials/from-python/interop.md): calls across the boundary
+- [Demand, async, and defer](demand-async-and-defer.md): the host model
+- [Packaging a Koskari application](packaging.md): a `.ki` program as a pip command
