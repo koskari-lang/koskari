@@ -25,6 +25,6 @@ prior `request_for_write`). The form evaluates to None.
 (let-values [(x y) point] (use x y))
 ```
 
-**Implementation:** `koskari/compile/specials/variables.py` — `special_define_values`
+**Implementation:** `koskari/compile/specials/variables.py` -- `special_define_values`
 
 

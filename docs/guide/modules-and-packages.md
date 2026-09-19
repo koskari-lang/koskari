@@ -156,7 +156,7 @@ Python's dot rules (each leading dot climbs one package); see
 ## The `.py` / `.ki` same-name trap
 
 A `foo.py` and a `foo.ki` **in the same directory** both claim the module name
-`foo`. That is an **import conflict with undefined behavior** — which finder wins
+`foo`. That is an **import conflict with undefined behavior** -- which finder wins
 is unspecified, and it can change with build state or import order. Do not rely
 on it.
 

@@ -17,7 +17,7 @@ normative catalogue.
 
 **Whitespace is the only separator.** Tokens are split on spaces, tabs, and
 newlines (and on the delimiter characters). Punctuation that other languages
-use to separate items — most notably the **comma** — is an ordinary atom
+use to separate items -- most notably the **comma** -- is an ordinary atom
 character here, so `#[1, 2, 3]` reads three symbols `1,` `2,` `3`, not three
 integers. Separate list items with spaces.
 
@@ -46,9 +46,9 @@ directly to the opening quote:
 | Written | Meaning |
 |---|---|
 | `"text"` | plain string |
-| `f"x is {x}"` | format string — interpolates `{…}` expressions |
-| `r"a\d+"` | raw string — no backslash escapes |
-| `b"bytes"` | bytes literal — ASCII text plus escapes for any byte (`b"\xff"`); a literal non-ASCII character is an error |
+| `f"x is {x}"` | format string -- interpolates `{…}` expressions |
+| `r"a\d+"` | raw string -- no backslash escapes |
+| `b"bytes"` | bytes literal -- ASCII text plus escapes for any byte (`b"\xff"`); a literal non-ASCII character is an error |
 
 A prefix is recognised only when it sits immediately before the quote (`f"…"`,
 not `f "…"`). A trailing hyphen continues a string into the next quoted segment;
@@ -110,7 +110,7 @@ whitespace-separated:
 A `#dict` spine accepts alternating `key value` pairs, dotted `(key . value)`
 entries, or `key:` keyword keys (`#{name: n}`). Keys are **ordinary
 expressions**, so a `key:` key lowers to the *name* `key`, not the string
-`"key"` — quote or write the string explicitly (`#{"name": n}`) when you want a
+`"key"` -- quote or write the string explicitly (`#{"name": n}`) when you want a
 literal string key.
 
 ### Prefix reader sugar
@@ -174,7 +174,7 @@ several keys (`foo[1 2]`). An empty group is an error.
 
 **Dots** read an attribute. This is the same expansion whether the dot sits
 inside a single name (`obj.value`) or attaches to a form or literal
-(`(get-fn x).baz`, `"".join`) — the dot is the attribute read, and enclosing
+(`(get-fn x).baz`, `"".join`) -- the dot is the attribute read, and enclosing
 parentheses are what make it a call. A dot with no name after it is an error.
 
 **A trailing hyphen on a string** continues that literal into the next quoted
@@ -192,7 +192,7 @@ lines, and comments in between are skipped. Each segment carries its own
 prefix, so an `f` segment interpolates and an `r` segment stays raw. All-literal
 chains fold to a single constant, so the join costs nothing at run time.
 
-Each of the three is governed by its own setting — `reader/index-brackets`,
+Each of the three is governed by its own setting -- `reader/index-brackets`,
 `reader/dot-attrs`, and `reader/string-segments`. See
 [Pragmas and feature settings](../guide/pragma.md) for turning them off and for
 the exact rules at the edges.
@@ -204,8 +204,8 @@ the exact rules at the edges.
 Layout is the default surface at the top level of a module. Rules for blocks,
 lines, colon handling, and handler resolution live in dedicated reference pages:
 
-- [Koskari and s-expressions](../guide/layout-and-s-expressions.md) — the rules beside their s-expressions
-- [Reader and layout syntax](reader-layout.md) — normative syntax rules
+- [Koskari and s-expressions](../guide/layout-and-s-expressions.md) -- the rules beside their s-expressions
+- [Reader and layout syntax](reader-layout.md) -- normative syntax rules
 
 ---
 

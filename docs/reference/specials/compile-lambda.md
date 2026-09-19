@@ -17,7 +17,7 @@
 `RET` is a single expression (not a formal parameter). Like parameter
 annotations, it is evaluated in the **defining scope** when the function is
 created, and appears on the callable as `__annotations__['return']` as a real
-object — `:: int` yields the `int` type itself, and
+object -- `:: int` yields the `int` type itself, and
 `inspect.signature(fn).return_annotation` matches. An unbound name raises
 `NameError` at function creation, just like an unbound keyword default.
 
@@ -44,7 +44,7 @@ docstring discovery; the body is still compiled in full.
 given name in the function's scope so the function can refer to itself (e.g. for
 recursion in a named `let` or inline `(lambda NAME ...)`).
 
-**See also:** [compile/function](compile-function.md) — named functions **without**
+**See also:** [compile/function](compile-function.md) -- named functions **without**
 a closure self-binding at creation; used by `define` / `define-global` function
 shorthand and decorator macros.
 

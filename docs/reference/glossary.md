@@ -30,7 +30,7 @@ with examples, see [Concepts](../guide/index.md).
   [compile/datum](macros/compile-datum.md).
 
 **defer**
-: Single-shot await handle; not auto-awaited at use sites—use explicit
+: Single-shot await handle; not auto-awaited at use sites -- use explicit
   [compile/await](specials/compile-await.md), which consumes it (reuse
   raises `RuntimeError`). See
   [Demand, async, and defer](../guide/demand-async-and-defer.md) and
@@ -101,7 +101,7 @@ with examples, see [Concepts](../guide/index.md).
   Contrast **lambda** formals, which are ordinary lexical parameters.
 
 **pragma**
-: Module-scoped switches that tune reader and compiler behavior — bracket-call
+: Module-scoped switches that tune reader and compiler behavior -- bracket-call
   checking, name resolution, layout reading, and so on. Set with the `pragma`
   form; forward-only and never inherited by imported modules. See
   [Pragmas and feature settings](../guide/pragma.md).

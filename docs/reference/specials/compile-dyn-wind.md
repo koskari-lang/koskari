@@ -3,8 +3,8 @@
 
 **Syntax:**
 
-- **Positional:** `(dyn-wind BEFORE BODY AFTER)` — three elements in fixed order; `BEFORE` and/or `AFTER` may be `nil`.
-- **Keyword:** `(dyn-wind [before: BEFOREBODY...] [body: BODY...] [after: AFTERBODY...])` — top-level lists with marker keywords; omitted segments default to nil; order is arbitrary.
+- **Positional:** `(dyn-wind BEFORE BODY AFTER)` -- three elements in fixed order; `BEFORE` and/or `AFTER` may be `nil`.
+- **Keyword:** `(dyn-wind [before: BEFOREBODY...] [body: BODY...] [after: AFTERBODY...])` -- top-level lists with marker keywords; omitted segments default to nil; order is arbitrary.
 
 **Use-case:** Dynamic-wind extent: run before thunk on entry, body in the middle, after thunk on exit. Both thunks run on continuation transfer (multi-shot). Before and after are implicitly wrapped in null-arity lambdas; body is compiled as `(begin ...)`.
 

@@ -1,15 +1,15 @@
 # compile/decorate-subject
 **Syntax:**
 
-- `(decorate-subject (let BINDINGS) SUBJECT)` — **`(let BINDINGS SUBJECT)`**
-- `(decorate-subject (with BINDING) SUBJECT)` — **`(with BINDING SUBJECT)`**
-- `(decorate-subject (parameterize PARAMS) SUBJECT)` —
+- `(decorate-subject (let BINDINGS) SUBJECT)` -- **`(let BINDINGS SUBJECT)`**
+- `(decorate-subject (with BINDING) SUBJECT)` -- **`(with BINDING SUBJECT)`**
+- `(decorate-subject (parameterize PARAMS) SUBJECT)`  -- 
   **`(parameterize PARAMS SUBJECT)`**
-- `(decorate-subject (call-with BINDING) SUBJECT)` — a forwarding function
+- `(decorate-subject (call-with BINDING) SUBJECT)` -- a forwarding function
   that enters `(with BINDING ...)` per invocation around a call to SUBJECT
-- `(decorate-subject (call-parameterize PARAMS) SUBJECT)` — a forwarding
+- `(decorate-subject (call-parameterize PARAMS) SUBJECT)` -- a forwarding
   function that enters `(parameterize PARAMS ...)` per invocation
-- `(decorate-subject DECO SUBJECT)` — **`(DECO SUBJECT)`**
+- `(decorate-subject DECO SUBJECT)` -- **`(DECO SUBJECT)`**
 
 **Behaviour:** Applies **one** decorator expression to a subject form. A
 body-less extent form (`let`, `with`, `parameterize`) is completed by

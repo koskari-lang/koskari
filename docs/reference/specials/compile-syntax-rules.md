@@ -32,11 +32,11 @@ what lets macros like [`flet`](../macros/compile-flet.md) and
 [`labels`](../macros/compile-labels.md) carry a per-binding body
 (**`body ...`**) nested inside a per-binding declaration list.
 
-**Implementation:** `koskari/compile/specials/syntax.py` —
+**Implementation:** `koskari/compile/specials/syntax.py`  -- 
 `special_compile_syntax_rules`
 
 
 **See also:** [Macro matching and hygiene](../../guide/macros-and-hygiene.md)
-— **`compile/syntax-rules`** hygiene patterns (`DEFINE`, `BIND` for literals,
+ --  **`compile/syntax-rules`** hygiene patterns (`DEFINE`, `BIND` for literals,
 `REST` for rules).
 

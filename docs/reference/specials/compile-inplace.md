@@ -36,4 +36,4 @@ fixed slot.
 (inplace * (attr obj scale) 2)
 ```
 
-**Implementation:** `koskari/compile/specials/object.py` — `special_inplace`
+**Implementation:** `koskari/compile/specials/object.py` -- `special_inplace`

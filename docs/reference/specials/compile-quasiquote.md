@@ -22,7 +22,7 @@ recursively at a nesting *level* (starting at 0):
 - `**(unquote INNER)`** at level 0: `INNER` is compiled normally
 (evaluated at runtime); its result becomes that position's value.
 - `**(unquote INNER)**` at level > 0: the unquote form is reconstructed
-literally as a pair — `CONST compile/unquote`, recurse on INNER at level − 1,
+literally as a pair -- `CONST compile/unquote`, recurse on INNER at level − 1,
 `PROPER 2`.
 - `**(quasiquote INNER)**` at any level: reconstructed literally at
 level + 1.
@@ -57,19 +57,19 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 `42           ; → 42
 `foo          ; → symbol foo
 
-;; Proper list — compiles to PROPER 3
+;; Proper list -- compiles to PROPER 3
 `(a b c)      ; → (a b c)
 
-;; Unquote — x is evaluated at runtime
+;; Unquote -- x is evaluated at runtime
 `(a ,x b)     ; → (a <value of x> b)
 
-;; Unquote-splicing — items is spliced in
+;; Unquote-splicing -- items is spliced in
 `(a ,@items b) ; → (a item0 item1 ... b)
 
 ;; Dotted pair with atom tail
 `(a . 42)     ; → (a . 42)
 
-;; Nested quasiquote — inner unquote is NOT evaluated at outer level
+;; Nested quasiquote -- inner unquote is NOT evaluated at outer level
 ``(a ,(+ 1 2)) ; → (quasiquote (a (unquote (+ 1 2))))
 ```
 

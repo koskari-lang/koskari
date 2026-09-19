@@ -25,5 +25,5 @@ A binding may call any sibling, including one declared later in the same
 
 As with any local binding, a **`labels`** binding whose name is also a **macro**
 (a special form, or one of the **`cad*r`** accessor macros) does not take effect
-in call position — macros expand before names resolve, so they always win. Names
+in call position -- macros expand before names resolve, so they always win. Names
 bound to runtime functions are shadowed normally.

@@ -10,7 +10,7 @@ Mirrors Python's `or` operator.
 
 **Behaviour:** Zero args: emits `CONST False`. One arg: compiles it directly.
 Multiple args: compiles each expression in order; after each non-last expression,
-emits `JUMP_OR done`. `JUMP_OR` pops TOS — if it is truthy, pushes it back and
+emits `JUMP_OR done`. `JUMP_OR` pops TOS -- if it is truthy, pushes it back and
 jumps to `done` (short-circuit); if falsy, discards it and falls through so the
 next expression can be evaluated. The last expression is compiled without a jump
 and its value remains on the stack as the result. A `LABEL done` is appended.

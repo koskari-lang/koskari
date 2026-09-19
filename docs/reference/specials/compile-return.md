@@ -1,7 +1,7 @@
 # compile/return
 **Symbol:** `compile/return`
 
-**Syntax:** `(return VAL ...)` — variadic.
+**Syntax:** `(return VAL ...)` -- variadic.
 
 | Form                | Result                                           |
 |---------------------|--------------------------------------------------|

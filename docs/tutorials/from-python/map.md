@@ -160,7 +160,7 @@ except [ValueError as: e]:
 ## Looks the same, is not
 
 :::{dialogue}
-What trips up a Python reader first?
+What looks like Python and is not?
 +++
 - **A line is one form.** `print "hi"` on its own line is a call. A lone
   `print` is the function.

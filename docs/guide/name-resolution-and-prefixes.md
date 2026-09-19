@@ -4,7 +4,7 @@ A single name in Koskari can mean up to three different things, chosen by a
 **prefix** and by **where the name appears**. This is what lets `(+ 1 2)`
 compile to fast arithmetic opcodes while `+` is still an ordinary function you
 can pass around. The prefixes
-(`compile/`, `layout/`) trip people up.
+(`compile/`, `layout/`) are the part to learn.
 
 ## The three slots
 
@@ -13,11 +13,11 @@ A name such as `foo` can occupy up to three independent **slots**:
 | Slot | Written as | Consulted when… | Holds |
 |------|-----------|-----------------|-------|
 | **Runtime** | `foo` | `foo` is used as a *value*, or called through `compile/call` | an ordinary value (usually a function) |
-| **Compile-time** | `compile/foo` | `(foo …)` appears in *operator position* | a *syntax* — a special form or macro that runs at compile time |
+| **Compile-time** | `compile/foo` | `(foo …)` appears in *operator position* | a *syntax* -- a special form or macro that runs at compile time |
 | **Layout** | `layout/foo` | `foo` heads an indented *block* (`foo …:`) | a layout handler that turns the block into a form |
 
 The slots are independent: a name can fill one, two, or all three. Which slots
-are filled is decided by whoever *defines* the name — see the *Filling the
+are filled is decided by whoever *defines* the name -- see the *Filling the
 slots* section below.
 
 ## How `(foo …)` resolves in operator position
@@ -29,16 +29,16 @@ When the compiler sees a list whose head is a symbol, `(foo a b)`, it resolves
    is a *bare form* (see below) acts as an **alias** here: the head expands
    through the bare arm and the arguments ride along, so `(foo a b)`
    becomes `(EXPANSION a b)` and resolves again from the top.
-2. Otherwise, rewrite the call to `(call foo a b)` — a **runtime
+2. Otherwise, rewrite the call to `(call foo a b)` -- a **runtime
    function call** of whatever value `foo` holds.
 
 The short name is the *only* spelling that resolves as a use. Writing the
-prefixed spelling in operator position — `(compile/foo a b)` — does **not**
+prefixed spelling in operator position -- `(compile/foo a b)` -- does **not**
 invoke the syntax: it is a runtime call of the syntax *object*, which fails.
 The prefixed spelling always denotes the object itself (see below).
 
 When the head is not a symbol but a **form**, the compiler first attempts
-to lower it — see *Expansion in operator position* below.
+to lower it -- see *Expansion in operator position* below.
 
 ### The two `+`
 
@@ -50,7 +50,7 @@ to lower it — see *Expansion in operator position* below.
 (p 3 4)          ; -> 7
 ```
 
-`(+ 1 2)` never calls the `+` function — the `compile/+` syntax turns it into
+`(+ 1 2)` never calls the `+` function -- the `compile/+` syntax turns it into
 opcodes. The function `+` is a *separate* thing in the runtime slot, reached only
 when you use `+` as a value (or force a call; see below).
 
@@ -62,7 +62,7 @@ Outside operator position, a bare name resolves to its **runtime** slot:
 (map + xs ys)    ; + here is the runtime function passed to map
 ```
 
-If a name fills *only* its compile-time slot, using it as a value is an error —
+If a name fills *only* its compile-time slot, using it as a value is an error  -- 
 there is nothing in the runtime slot:
 
 ```koskari
@@ -74,15 +74,15 @@ One class of names never reaches value resolution at all: a syntax with a
 **bare form** expands its lone symbol before the runtime slot is ever
 consulted. The statement words carry bootstrap bare forms, so a lone
 `return`, `continue`, `break`, `raise`, `yield`, or `pass` expands to its call form
-— the Python-style spelling works, and none of these six can ever name a
+ --  the Python-style spelling works, and none of these six can ever name a
 variable. The [`compiler/bare-control-words`](pragma.md#compiler) pragma
 selects whether that conversion is silent, warned, or refused. Any syntax
-can declare a bare form with the `bare-syntax` transformer kind — see
+can declare a bare form with the `bare-syntax` transformer kind -- see
 [compile/define-syntax](../reference/macros/compile-define-syntax.md).
 
 ## Forcing a runtime call: `call`
 
-`(call foo a b)` **forces** step 2 — it compiles through `compile/call`,
+`(call foo a b)` **forces** step 2 -- it compiles through `compile/call`,
 bypassing any `compile/foo` syntax, and calls the runtime value of `foo`:
 
 ```koskari
@@ -93,8 +93,8 @@ bypassing any `compile/foo` syntax, and calls the runtime value of `foo`:
 Both yield `3`, but by different paths: the first is inlined arithmetic, the
 second is an actual function invocation.
 
-`call` earns its keep in **self-referential syntax**. A macro named `foo` often
-expands into code that must *call the underlying function* `foo` — for example a
+`call` is needed in **self-referential syntax**. A macro named `foo` often
+expands into code that must *call the underlying function* `foo` -- for example a
 wrapper that supplies default arguments pulled from the caller's environment with
 `(globals)` or `(locals)`. If that expansion wrote `(foo …)`, resolution would
 find the macro again and it would expand forever. Writing `(call foo …)`
@@ -130,7 +130,7 @@ cases:
 
 `define-syntax foo:` and `define-syntax compile/foo:` are the **same
 definition**: the transformer is always bound under `compile/foo`, whichever
-spelling you write. The short spelling is preferred — the written name is the
+spelling you write. The short spelling is preferred -- the written name is the
 transformer's *identity*, feeding help text and match errors, and the short
 name is what users write at every use site.
 
@@ -152,13 +152,13 @@ resolved again from the top.
 The expansion landing on a *symbol* is the powerful case: the rebuilt form
 is a fresh syntax use, with the tail as that syntax's arguments. This goes
 beyond Scheme, where an application's operator is expanded as an expression
-and never re-examined as syntax — in Koskari, a macro can *compute* the
+and never re-examined as syntax -- in Koskari, a macro can *compute* the
 syntax at the head of a form.
 
 Attempts nest through arbitrary depth and are all-or-nothing: a head whose
 innermost head is not a syntax, or whose expansion compiles to bytecode
 rather than source, fails the whole attempt, and the original form lowers
-to an ordinary call of the head's value — which is why
+to an ordinary call of the head's value -- which is why
 `((make-adder 1) 2)` with a plain function still means exactly what it
 always did, and why a method call's `(attr obj name)` head still reaches
 the call machinery intact. Nothing from a failed attempt is kept.
@@ -208,16 +208,16 @@ free identifier in it is exported.
 ## In practice
 
 - **Write surface forms.** `(+ 1 2)`, `(if …)`, `(while …)`, `(await x)`. The
-  compiler finds the compile-time form for you — you almost never type a
+  compiler finds the compile-time form for you -- you almost never type a
   `compile/` prefix.
 - **Reach for `call` only** to force a runtime function call past a compile-time
   form, which in practice means inside a self-referential macro.
 - **A `compile/foo` head in your code** is a mistake: it calls the syntax
-  object as a runtime value and fails. In *value* position it is deliberate —
+  object as a runtime value and fails. In *value* position it is deliberate  -- 
   a reference to the transformer itself.
 
 ## See also
 
-- [compile/call](../reference/specials/compile-call.md) — the default call form and its opcode.
-- [Brackets and the call convention](brackets-and-call-convention.md) — what counts as operator position.
-- [Demand, async, and defer](demand-async-and-defer.md) — a related compile-time vs runtime distinction (the two paths an evaluator can take).
+- [compile/call](../reference/specials/compile-call.md) -- the default call form and its opcode.
+- [Brackets and the call convention](brackets-and-call-convention.md) -- what counts as operator position.
+- [Demand, async, and defer](demand-async-and-defer.md) -- a related compile-time vs runtime distinction (the two paths an evaluator can take).

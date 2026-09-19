@@ -18,7 +18,7 @@ define greet [name]:
 
 Python readers will recognize the shape, and the default behavior matches
 Python exactly: each decorator expression is evaluated and applied to the
-definition, outermost first — `@d1` `@d2` over `foo` yields `(d1 (d2 foo))`.
+definition, outermost first -- `@d1` `@d2` over `foo` yields `(d1 (d2 foo))`.
 
 Koskari's decorators go further in one deliberate way: certain *binding
 forms*, written body-less in decorator position, wrap the definition
@@ -32,7 +32,7 @@ define tick []:
     count
 ```
 
-`tick` is a module-level function closed over a private `count` — the same
+`tick` is a module-level function closed over a private `count` -- the same
 program as a `let` block containing the definition, without the indentation
 and without `define-global` to push the name back out.
 
@@ -48,8 +48,8 @@ A module can declare it off:
 ```
 
 after which a leading `@` has no layout meaning and reads through the
-ordinary atom rules. A **directly constructed** reader — one built by
-tooling rather than through a module pragma — starts with the surface off,
+ordinary atom rules. A **directly constructed** reader -- one built by
+tooling rather than through a module pragma -- starts with the surface off,
 like the other pragma-gated reader features; readers built via
 `LayoutReader.from_pragma` (the import path, the REPL, the lexer) get the
 baseline.
@@ -79,7 +79,7 @@ Two reader conveniences fall out of existing layout rules:
 - **Parens are optional on the decorator line.** Multiple forms on a layout
   line combine into one call form, so `@let [[c 0]]` reads identically to
   `@(let [[c 0]])`.
-- **The subject is any layout form** — a `define`, a `define-class`, a
+- **The subject is any layout form** -- a `define`, a `define-class`, a
   `begin:` block, an `if`, a bare s-expression. Decorators are not
   restricted to definitions.
 
@@ -125,10 +125,10 @@ The rule of thumb: *the decorator's head tells you when its effect happens.*
 
 | Decorator | When the effect happens |
 |---|---|
-| `@some-callable` | at decoration — evaluated and invoked on the subject |
-| `@let [[c 0]]` | at definition — lexical capture around the subject |
-| `@with [(cm)]` | now — extent spans the subject's evaluation |
-| `@parameterize [[p v]]` | now — extent spans the subject's evaluation |
+| `@some-callable` | at decoration -- evaluated and invoked on the subject |
+| `@let [[c 0]]` | at definition -- lexical capture around the subject |
+| `@with [(cm)]` | now -- extent spans the subject's evaluation |
+| `@parameterize [[p v]]` | now -- extent spans the subject's evaluation |
 | `@call-with [(cm)]` | per invocation |
 | `@call-parameterize [[p v]]` | per invocation |
 
@@ -147,7 +147,7 @@ complete it by splicing the subject in as the form's body:
 
 Only the body-less spelling is special. A complete form with a body misses
 the arm and falls to the default, where it evaluates as an ordinary
-expression — so every decorator expression that already worked keeps its
+expression -- so every decorator expression that already worked keeps its
 meaning, and the graft arms claim only spellings that are meaningless as
 standalone expressions.
 
@@ -168,7 +168,7 @@ observes. For a per-call extent, use the `call-` spelling.
 **The call arms** wrap the subject in a forwarding function: enter the
 extent, call the original with the passed arguments, close the extent,
 deliver the value. The binding group sits inside the wrapper, so the
-context-manager expression or parameter values re-evaluate on every call —
+context-manager expression or parameter values re-evaluate on every call  -- 
 a fresh `(cm)` per invocation, exactly as if the `with` were written in the
 body. The wrapper answers for the function it wraps: `decorate-wraps`
 (a `functools.update_wrapper`) carries over `__name__`, `__doc__`, the
@@ -203,13 +203,13 @@ extend-syntax compile/decorate-subject:
 
 That is the entire registration for a graft-style decorator: `@my-extent
 [...]` over any form now completes `my-extent` with the subject as its body.
-A call-time variant follows the `call-` pattern — wrap the subject in a
+A call-time variant follows the `call-` pattern -- wrap the subject in a
 `lambda` that establishes the extent and forwards `*: args **: kwds`.
 
 Guidelines that keep the decorator position readable:
 
-- **Claim only body-less shapes.** Match `(my-extent group)` — exactly one
-  group, no body — so complete expressions keep their invocation meaning.
+- **Claim only body-less shapes.** Match `(my-extent group)` -- exactly one
+  group, no body -- so complete expressions keep their invocation meaning.
 - **Follow the two families.** A lexical or run-now form grafts; a per-call
   form gets a `call-` name. Resist inventing a third timing.
 - **Match on your form's own head.** The arm literals match symbolically,
@@ -220,8 +220,8 @@ Guidelines that keep the decorator position readable:
 
 ## Debugging the expansion
 
-`macroexpand-1` shows each stage of the pipeline one step at a time — the
-hoist, the peel, and the arm — which is usually the fastest way to see why
+`macroexpand-1` shows each stage of the pipeline one step at a time -- the
+hoist, the peel, and the arm -- which is usually the fastest way to see why
 a decorator did or didn't fire:
 
 ```koskari

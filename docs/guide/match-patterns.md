@@ -3,7 +3,7 @@
 `match` destructures a value against a series of case patterns: the first
 arm whose pattern matches binds its captured names and runs its body. It
 is the value-matching sibling of [`switch`](../reference/specials/compile-switch.md)
-(equality dispatch) — reach for `match` when you care about the *shape* of
+(equality dispatch) -- reach for `match` when you care about the *shape* of
 a value, and `switch` when you only compare it against candidates.
 
 ```koskari
@@ -26,7 +26,7 @@ documented at [`compile/match`](../reference/specials/compile-match.md) and
 
 `()` and `[]` are value-equal in koskari, so a pattern's *kind* is never
 decided by which bracket surrounds it. Instead, each kind announces itself
-with a **head symbol or marker** — and the reader sugars (`#[…]`, `#{…}`,
+with a **head symbol or marker** -- and the reader sugars (`#[…]`, `#{…}`,
 `Name[…]`) produce exactly those heads. A bare symbol is always a capture;
 a bare atom is always a literal; everything structured says what it is.
 
@@ -49,7 +49,7 @@ a bare atom is always a literal; everything structured says what it is.
 | negation | `(not PAT)` | value must not match `PAT` |
 
 Patterns nest freely: a sequence element may be a class pattern, a mapping
-value may be a sequence, an extraction result may be destructured —
+value may be a sequence, an extraction result may be destructured  -- 
 `(app splitext #[base ".ki"])`.
 
 The canonical matcher heads (`FORM`, `ONEOF`, `REST`, `CLASS`, …) from
@@ -58,18 +58,18 @@ pattern position for advanced use; the sugared forms above lower to them.
 
 ### Sequences
 
-A sequence pattern is always the explicit `#[…]` / `#(…)` form — a bare
+A sequence pattern is always the explicit `#[…]` / `#(…)` form -- a bare
 list is never silently a sequence. Length must agree unless a `*: rest`
 marker captures the remaining elements. Inside a sequence, a typed element
 must be parenthesized: `#[(x :: int) y]`.
 
 **Only real sequences destructure.** A sequence pattern matches lists,
 tuples, and other `collections.abc.Sequence` instances (`range`, for
-example) — the same rule as Python's PEP 634. `str`, `bytes`, and
+example) -- the same rule as Python's PEP 634. `str`, `bytes`, and
 `bytearray` never destructure into characters; mappings never
 destructure into their keys (they belong to `#{...}` arms); sets are
 not sequences; and an iterator flowing past a sequence arm is never
-silently consumed. All of these fall through as a soft no-match — a
+silently consumed. All of these fall through as a soft no-match -- a
 string still matches as a whole value (a literal, a capture, or
 `s :: str`), and a dict still matches mapping arms.
 
@@ -103,16 +103,16 @@ match msg:
 
 ### Names resolve from the enclosing scope
 
-Every name a pattern references — the `T` in `x :: T`, the class in
+Every name a pattern references -- the `T` in `x :: T`, the class in
 `Point[…]`, the `pred` in `(? pred)`, the `f` in `(app f …)`, a symbol
-mapping key — is an ordinary binding resolved from the enclosing scope at
+mapping key -- is an ordinary binding resolved from the enclosing scope at
 match time. Closure-captured and locally-bound names work exactly as they
 would in the body.
 
 ### Callables run on the demand path
 
 Predicates and extractors are invoked synchronously through the demand
-mechanism, so a plain koskari `define` works directly — no wrapping:
+mechanism, so a plain koskari `define` works directly -- no wrapping:
 
 ```koskari
 define splitext [name]:
@@ -124,7 +124,7 @@ match path:
 ```
 
 A callable that genuinely suspends (a real `await`) raises
-`KoskariSyncViolation` — patterns cannot pause. A raising predicate or
+`KoskariSyncViolation` -- patterns cannot pause. A raising predicate or
 extractor propagates as an error; it is never treated as a non-match.
 
 ## Guards
@@ -140,7 +140,7 @@ match v:
     "ascending-or-equal"
 ```
 
-Captured names remain bound even when the guard fails — the same behaviour
+Captured names remain bound even when the guard fails -- the same behaviour
 as Python's `case ... if ...`.
 
 ## Binding behaviour
@@ -157,10 +157,10 @@ as Python's `case ... if ...`.
 
 ## See also
 
-- [`compile/match`](../reference/specials/compile-match.md) — the match special form
-- [`layout/match`](../reference/layouts/layout-match.md) — the `match:` block layout
-- [`compile/switch`](../reference/specials/compile-switch.md) — equality dispatch
-- [`koskari.matcher`](../reference/api/koskari-matcher.md) — the matcher API these
+- [`compile/match`](../reference/specials/compile-match.md) -- the match special form
+- [`layout/match`](../reference/layouts/layout-match.md) -- the `match:` block layout
+- [`compile/switch`](../reference/specials/compile-switch.md) -- equality dispatch
+- [`koskari.matcher`](../reference/api/koskari-matcher.md) -- the matcher API these
   patterns compile to
-- [Macro matching and hygiene](macros-and-hygiene.md) — the same
+- [Macro matching and hygiene](macros-and-hygiene.md) -- the same
   engine matching source forms at compile time

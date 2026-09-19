@@ -4,12 +4,6 @@ Ship a Koskari application as a normal pip-installable command. Users run
 `mytool` from their shell; your sources stay in `.ki` files under a declared
 Python package.
 
-## Prerequisites
-
-- [Quickstart](../quickstart.md)
-- [From Python: Programs and modules](../tutorials/from-python/programs-and-modules.md)
-- [Script entry point](../tutorials/from-python/examples/script-main.md) — define a `main` entry callable
-
 ## Overview
 
 Koskari uses a **`koskari_scripts`** entry point group (similar in spirit to
@@ -77,7 +71,7 @@ requires = ["setuptools>=61", "koskari"]
 build-backend = "setuptools.build_meta"
 ```
 
-**`mypkg/cli.ki`** — expose **`main`** with the same contract as Python
+**`mypkg/cli.ki`** -- expose **`main`** with the same contract as Python
 **`console_scripts`**: **no parameters**; read CLI args from **`sys.argv`**:
 
 ```koskari
@@ -97,7 +91,7 @@ fine when **`main`** is called with zero arguments.
 
 A minimal Python **`__init__.py`** that runs **`import koskari`** is
 recommended. It ensures the `.ki` import hook is active when your package
-loads, including environments where koskari’s site **`*.pth`** bootstrap is
+loads, including environments where koskari's site **`*.pth`** bootstrap is
 not installed (common with editable installs).
 
 ```python
@@ -116,7 +110,7 @@ pip install .
 ```
 
 When koskari is only available locally (not on an index), the build environment
-must be able to import koskari — for example by installing koskari editable
+must be able to import koskari -- for example by installing koskari editable
 first, or by disabling build isolation for that build.
 
 After install, verify metadata:
@@ -140,7 +134,7 @@ mytool --help
 | Topic | Guidance |
 | ----- | -------- |
 | Entry value | Use **`module:callable`** (for example **`mypkg.cli:main`**) |
-| Entry callable | **`main()`** with **no parameters** — same as **`console_scripts`**; read **`sys.argv`** |
+| Entry callable | **`main()`** with **no parameters** -- same as **`console_scripts`**; read **`sys.argv`** |
 | Return value | Integer exit code, **`None`** (treated as 0), or an awaitable producing one |
 | **`packages=`** | Declare explicitly; the plugin does not guess package names |
 | **`package_data`** | Omit **`*.ki`** / **`*.kio`**; the plugin adds them |

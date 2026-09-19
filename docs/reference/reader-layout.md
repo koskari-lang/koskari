@@ -20,7 +20,7 @@ Reading is strict: malformed layout or punctuation fails before evaluation.
 
 ## Layout mode and s-expression mode
 
-**Layout mode** applies at **delimiter depth 0** — outside all `(`, `[`, and
+**Layout mode** applies at **delimiter depth 0** -- outside all `(`, `[`, and
 `{`. A module file or REPL line at the top level uses layout rules for blocks
 and lines.
 
@@ -73,8 +73,8 @@ the following newline.
 ## Colon in layout mode
 
 At delimiter depth 0, `:` is a **terminating** character for header and
-layout-line scans. The **final** `:` on a header line — after which only
-whitespace and/or a comment remain until the logical line ends — is
+layout-line scans. The **final** `:` on a header line -- after which only
+whitespace and/or a comment remain until the logical line ends -- is
 **structural**: it opens the block body. It is not part of header content.
 
 Spacing around the structural colon does not matter: `if x:` and `if x :` are
@@ -105,8 +105,8 @@ unknown x::
 ;; → (unknown x: z)
 ```
 
-Wrapping a keyword in a delimiter (`[...]` or `(...)`) is also valid — inside
-delimiters, s-expression mode applies — but wrapping is not required for
+Wrapping a keyword in a delimiter (`[...]` or `(...)`) is also valid -- inside
+delimiters, s-expression mode applies -- but wrapping is not required for
 keywords in header arguments.
 
 Header-colon recognition is a **single forward pass**: a predicated `:` event
@@ -120,10 +120,10 @@ stream separately; that is not a replay of the header scan.
 
 A **layout block** consists of:
 
-1. **Header** — one or more forms read until the structural `:`
-2. **Structural colon** — the final `:` on the header logical line
-3. **Newline** — required; the body does not start on the same line as the header
-4. **Body** — forms at an indent **strictly greater** than the header line, until
+1. **Header** -- one or more forms read until the structural `:`
+2. **Structural colon** -- the final `:` on the header logical line
+3. **Newline** -- required; the body does not start on the same line as the header
+4. **Body** -- forms at an indent **strictly greater** than the header line, until
    dedent or end of file
 
 The first header form is the **head**; remaining forms before the colon are
@@ -154,7 +154,7 @@ block is expanded.
 A header with no forms before the structural colon is an error. Content after
 `:` on the same physical line means that colon is **not** structural (the
 remainder is neither empty nor a comment), so the line is read as a layout
-line — often with a keyword atom — rather than as a layout block. A structural
+line -- often with a keyword atom -- rather than as a layout block. A structural
 colon therefore requires only whitespace and/or a comment to end of line, then
 a newline before the indented body.
 
@@ -204,7 +204,7 @@ line, through the reader's `fold_line`.
 | Elements on line | Form (implicit calls enabled) |
 | ---------------- | ----------------------------- |
 | One element | That element |
-| Several elements | `(first . rest…)` — implicit call / fold |
+| Several elements | `(first . rest…)` -- implicit call / fold |
 
 Examples:
 
@@ -219,8 +219,8 @@ if True 1 2
 ;; → (if True 1 2)
 ```
 
-The first form may be any value — symbol, number, string, or parenthesized
-form — not only a bare symbol.
+The first form may be any value -- symbol, number, string, or parenthesized
+form -- not only a bare symbol.
 
 When **`layout_implicit_calls`** is false, a line with more than one form is a
 syntax error (`multiple forms on one layout line`).
@@ -335,7 +335,7 @@ pragma keys are **`reader/layout`**, **`reader/implicit-calls`**, and
 and `layout_indent`). These switches are intended for tooling and
 pragma-driven reader configuration.
 
-`reload_pragma` carries the suffix-syntax switches too — **`reader/index-brackets`**,
+`reload_pragma` carries the suffix-syntax switches too -- **`reader/index-brackets`**,
 **`reader/dot-attrs`**, and **`reader/string-segments`** (see
 [Grammar](grammar.md#suffix-syntax)). A raw reader constructed directly reads
 with these off; the pragma is what turns them on, so tooling that builds a
@@ -346,7 +346,7 @@ reads on a raw reader too.
 One suffix interacts with layout. A string segment's gap crosses newlines, so a
 continuation line is consumed as part of the value on the line that opened it,
 and the block structure is unaffected. Because the gap skip stops at a dedent,
-a continuation line **may not sit at column 0** inside a layout block — that
+a continuation line **may not sit at column 0** inside a layout block -- that
 column ends the logical line before the gap can reach the segment, and the
 reader reports `string segment must stay indented within its block`. Any
 indentation satisfies this, including less than the block's own body indent; a
@@ -362,11 +362,11 @@ in the EBNF productions.
 
 ### Terminals
 
-- `ATOM` — lexer atom (symbol, number, string, keyword token, etc.)
-- `SEXPR` — balanced delimited form parsed by the s-expression reader as one unit
-- `:` — structural header terminator at depth 0
-- `NL` — logical line break (physical newline at delimiter depth 0)
-- `INDENT`, `DEDENT` — indentation boundaries
+- `ATOM` -- lexer atom (symbol, number, string, keyword token, etc.)
+- `SEXPR` -- balanced delimited form parsed by the s-expression reader as one unit
+- `:` -- structural header terminator at depth 0
+- `NL` -- logical line break (physical newline at delimiter depth 0)
+- `INDENT`, `DEDENT` -- indentation boundaries
 
 ### Productions
 
@@ -435,6 +435,6 @@ else:
 
 ## See also
 
-- [Koskari and s-expressions](../guide/layout-and-s-expressions.md) — the rules beside their s-expressions
-- [Layout handler reference](layouts/index.md) — per-head lowering (`layout/if`, …)
-- [Grammar](grammar.md) — syntax hub
+- [Koskari and s-expressions](../guide/layout-and-s-expressions.md) -- the rules beside their s-expressions
+- [Layout handler reference](layouts/index.md) -- per-head lowering (`layout/if`, …)
+- [Grammar](grammar.md) -- syntax hub

@@ -13,7 +13,7 @@ options on registered matchers, etc.). See [Macro matching and hygiene](../../gu
 [`koskari.matcher`](../api/koskari-matcher.md) (`parse_explicit_rule_pattern`,
 surface heads).
 
-**Implementation:** `koskari/compile/specials/syntax.py` —
+**Implementation:** `koskari/compile/specials/syntax.py`  -- 
 `special_compile_syntax_match`
 
 

@@ -19,7 +19,7 @@ and at least `obj` is present (the dotted callee is not used as a variable).
 **The postfix spelling reaches this too, for any receiver.** Because the reader
 turns a dot attached to a value into `(attr ...)`, and this special
 matches that form in call position, `(obj.name args)` is a method call whatever
-`obj` is — a name, a form, or a literal:
+`obj` is -- a name, a form, or a literal:
 
 ```koskari
 (s.upper)                  ; on a name
@@ -30,7 +30,7 @@ matches that form in call position, `(obj.name args)` is a method call whatever
 
 The leading-dot spelling `(.upper "hello")` remains valid and compiles to the
 same thing; it is no longer the only option for a receiver that is not a bound
-symbol. Both spellings are governed by `reader/dot-attrs` — see
+symbol. Both spellings are governed by `reader/dot-attrs` -- see
 [Grammar](../grammar.md#suffix-syntax).
 
 **Examples:**

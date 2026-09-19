@@ -12,12 +12,12 @@ is required.
 
 Three forms of `except` peer are accepted:
 
-- **Bare** — `except:` with no arguments: catches any exception without a type
+- **Bare** -- `except:` with no arguments: catches any exception without a type
   check and without binding. Emits `(except: BODY...)`.
-- **Type-only** — `except [TYPEEXPR]:` with a single bracketed USE form
+- **Type-only** -- `except [TYPEEXPR]:` with a single bracketed USE form
   containing only the type expression: checks the exception type, no binding.
   Emits `(TYPEEXPR BODY...)`.
-- **Binding** — `except [SYM TYPEEXPR]:` or `except [TYPEEXPR as: SYM]:`:
+- **Binding** -- `except [SYM TYPEEXPR]:` or `except [TYPEEXPR as: SYM]:`:
   checks the type and binds the caught exception to `SYM`. Emits
   `((SYM . TYPEEXPR) BODY...)`.
 

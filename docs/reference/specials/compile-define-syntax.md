@@ -10,7 +10,7 @@ lowered by **`compile/syntax-rules`**, **`compile/macro-rules`**,
 and **`compile/special-match`** (below).
 
 **Typical surface form:** **`(define-syntax NAME (syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...))`**
-— the macro expands that to **`compile/define`** plus a **`syntax-rules`** spec
+ --  the macro expands that to **`compile/define`** plus a **`syntax-rules`** spec
 with **`NAME`** repeated as the first argument. Block syntax via the
 [default block layout](../layouts/layout-block-default.md) and
 [layout/syntax-rules](../layouts/layout-syntax-rules.md) produces the same shape.

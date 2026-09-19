@@ -1,12 +1,7 @@
 # Script entry point
 
 Run code only when a `.ki` file is executed as a script, not when it is imported
-as a module — the Koskari equivalent of Python’s `if __name__ == "__main__":`.
-
-## Prerequisites
-
-- [Quickstart](../../../quickstart.md)
-- [From Python: Programs and modules](../programs-and-modules.md)
+as a module -- the Koskari equivalent of Python's `if __name__ == "__main__":`.
 
 ## Minimal pattern
 

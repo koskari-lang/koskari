@@ -15,7 +15,7 @@ nested layout blocks in each body are expanded, emitting:
 
 `(match SUBJECT [[PATTERN...] BODY...] ... [else: BODY...])`
 
-— the same clause shape an s-expression author writes directly.
+ --  the same clause shape an s-expression author writes directly.
 
 A `when` / `unless` marker in a case header splits it into pattern and
 guard: the tokens before the marker are the pattern, and exactly one form

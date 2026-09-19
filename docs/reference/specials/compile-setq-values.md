@@ -27,6 +27,6 @@ VALUE, then emits unpack store bytecode via the same helper as unpack-style
 (set! (values x y) point)
 ```
 
-**Implementation:** `koskari/compile/specials/variables.py` — `special_setq_values`
+**Implementation:** `koskari/compile/specials/variables.py` -- `special_setq_values`
 
 

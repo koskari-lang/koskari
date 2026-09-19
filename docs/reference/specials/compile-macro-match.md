@@ -13,7 +13,7 @@
 with **keyword** arguments from the match result (`koskari/syntax.py`:
 **`MacroRule.expand`**).
 
-**Implementation:** `koskari/compile/specials/syntax.py` —
+**Implementation:** `koskari/compile/specials/syntax.py`  -- 
 `special_compile_macro_match`
 
 

@@ -16,7 +16,7 @@ echo hello
 ````
 
 The fence names a format (`bash`) on the opener line; the body is captured
-verbatim. At read time the reader does not understand the body — it only
+verbatim. At read time the reader does not understand the body -- it only
 wraps it into a `(apply-fence NAME RAW META)` form. Compilation then
 resolves a handler named `fence/<name>` and asks it to turn the raw text into
 Koskari source, which is compiled in place of the fence.
@@ -36,7 +36,7 @@ handler and how it is implemented see the
 ## When a format earns a fence
 
 Fences are deliberately narrow. The bar for adding one is that the notation
-must be **genuinely awkward to express in native Koskari** — not merely
+must be **genuinely awkward to express in native Koskari** -- not merely
 different-looking.
 
 The built-in `fence/bash` clears that bar: "capture a shell script, run it
@@ -49,7 +49,7 @@ dropped: `{ "a": 1 }` is barely different from the native `#{"a" 1}`, and
 native literal forms give you compile-time structure a foreign parser can't.
 When native syntax already expresses the value cleanly, a fence only adds a
 second grammar to learn. Reach for a fence when the *foreign* form is the
-clear one — a large template body, a shell script — not when it merely
+clear one -- a large template body, a shell script -- not when it merely
 resembles something you already have.
 
 ---

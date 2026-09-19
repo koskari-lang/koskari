@@ -2,12 +2,7 @@
 
 A Koskari class with `@property` getter, `.setter`, and `.deleter` accessors.
 Koskari's `KosProperty` automatically wraps Koskari function accessors in the
-demand path — no `@demand` boilerplate required.
-
-## Prerequisites
-
-- [Quickstart](../../../quickstart.md)
-- [From Python: Classes and objects](../classes-and-objects.md)
+demand path, so no `@demand` is needed.
 
 ## The demand-path difference
 
@@ -15,7 +10,7 @@ In plain Python, writing a coroutine-backed property accessor requires
 explicit demand wrapping:
 
 ```python
-# Python — manual wrapping needed
+# Python -- manual wrapping needed
 prop = property(demand(kos_getter), demand(kos_setter))
 ```
 
@@ -89,6 +84,6 @@ a `@dataclass` class.
 
 ## See also
 
-- [From Python: Classes and objects — Property accessors](../classes-and-objects.md#properties)
+- [From Python: Classes and objects -- Property accessors](../classes-and-objects.md#properties)
 - [layout/define-class](../../../reference/layouts/layout-define-class.md)
 - [compile/decorate](../../../reference/macros/compile-decorate.md)

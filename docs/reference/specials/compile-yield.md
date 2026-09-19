@@ -1,7 +1,7 @@
 # compile/yield
 **Symbol:** `compile/yield`
 
-**Syntax:** `(yield VAL ...)` — variadic.
+**Syntax:** `(yield VAL ...)` -- variadic.
 
 | Form               | Result                                          |
 |--------------------|-------------------------------------------------|

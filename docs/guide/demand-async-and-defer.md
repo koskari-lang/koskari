@@ -19,7 +19,7 @@ continuations, generators, and async work in one pipeline.
 In practice:
 
 - Every Koskari function is capable of suspension.
-- Most code **reads** synchronously — explicit [`await`](../reference/specials/compile-await.md)
+- Most code **reads** synchronously -- explicit [`await`](../reference/specials/compile-await.md)
   is uncommon.
 - Suspension propagates through the evaluator rather than through coroutine
   objects at every call site.
@@ -40,7 +40,7 @@ print(result)  # <coroutine object ...>
 ```
 
 The caller must `await` (or schedule) the coroutine. Async tends to spread
-through callers — sometimes called async contagion.
+through callers -- sometimes called async contagion.
 
 In Koskari:
 
@@ -54,7 +54,7 @@ define user (fetch-user)
 
 If `db.get-user` finishes immediately, `user` is a normal value and `print`
 runs. If it must wait on Python, the evaluator suspends the current context and
-resumes when the result is ready — without requiring `async` on `fetch-user`
+resumes when the result is ready -- without requiring `async` on `fetch-user`
 or an explicit await at the call site.
 
 Conceptually, `(fetch-user)` at a use site behaves like Python's
@@ -66,11 +66,11 @@ and managed by the runtime.
 | Functions async by default | No | Yes (capable of suspend) |
 | Explicit `async` declaration | Required for async defs | Not required |
 | Explicit `await` at most call sites | Usually yes | Usually no |
-| Call returns coroutine object by default | Yes (for async def) | No — value or suspend |
+| Call returns coroutine object by default | Yes (for async def) | No -- value or suspend |
 | Runtime tries immediate value resolution | No | Yes |
 | Suspension handled by evaluator | No (caller awaits) | Yes |
 | Intentionally hold work for later | Tasks, coroutines | [`defer`](#defer) |
-| Python dunder / slot may suspend | No | No — see [demand](#demand-evaluation) |
+| Python dunder / slot may suspend | No | No -- see [demand](#demand-evaluation) |
 | Demand (sync-forbidden) execution path | N/A | Yes |
 
 ## Auto-await at call boundaries
@@ -116,10 +116,10 @@ define task (defer fetch-user)
 ```
 
 That mirrors holding a coroutine in Python, and like a coroutine the
-handle is consumed by its first await — awaiting it again raises
+handle is consumed by its first await -- awaiting it again raises
 `RuntimeError`. When you need a handle that can be awaited more than
 once, cancelled, or given callbacks, schedule it as a Task with
-`create-task`. Defer is explicit — immediate resolution remains the
+`create-task`. Defer is explicit -- immediate resolution remains the
 default for ordinary calls.
 
 Use explicit [`(await expr)`](../reference/specials/compile-await.md) when `expr` is a defer
@@ -141,7 +141,7 @@ Typical uses:
 - Default **module import** path (`exec_module_demand` on the meta path finder)
 - Loading bootstrap without an event loop (demand builtins path via
   `koskari.bootstrap`)
-- [`load_module_demand`](../reference/api/koskari-module.md) — same read/compile loop as
+- [`load_module_demand`](../reference/api/koskari-module.md) -- same read/compile loop as
   async load, but each expression is executed on the demand path
 
 On the demand path, suspension that requires waiting on a Python awaitable
@@ -152,7 +152,7 @@ not rely on `await` at points where the host cannot resume.
 
 Many **Python integration points must not suspend**: numeric operators, attribute
 access, sequence protocols, iterator hooks, and most CPython slot implementations
-expect a synchronous result or an exception — not a suspended computation.
+expect a synchronous result or an exception -- not a suspended computation.
 
 ```python
 x + y  # cannot yield to an event loop mid-operation
@@ -191,21 +191,21 @@ Importer details: [`koskari.importer`](../reference/api/koskari-importer.md),
 
 ## Authoring for both paths
 
-- **`define-demanding`** — defines a function wrapped with `demand` so its body
+- **`define-demanding`** -- defines a function wrapped with `demand` so its body
   is compiled for demand-call contexts
   ([`compile/define-demanding`](../reference/macros/compile-define-demanding.md))
-- **`on-demand?`** — runtime predicate: tries bare `(await)` and returns true if
+- **`on-demand?`** -- runtime predicate: tries bare `(await)` and returns true if
   that would violate sync completion (demand path)
   ([`on-demand?`](../reference/runtime/on-demand.md))
 
-Prefer demand-friendly code in modules that must import without a loop; use
+Keep modules that must import without a loop on the demand path; use
 async-hosted load when the embedding app already runs asyncio.
 
 ## Choosing a construct
 
 Koskari resolves ordinary calls to values automatically (see [Demand, async,
 and defer](demand-async-and-defer.md)), so most code needs none of these. Reach
-for one only when you want to *override* that default — run without a loop, hold
+for one only when you want to *override* that default -- run without a loop, hold
 a result instead of resolving it, or hand Koskari async work to a raw asyncio
 API. The linked pages are the full rules.
 
@@ -213,7 +213,7 @@ API. The linked pages are the full rules.
 
 | Your situation | Use | Kind |
 |----------------|-----|------|
-| The code must run to completion **now, with no event loop** — a module imported without a host, or a body reached through a Python dunder | **`demand`** / **`define-demanding`** | function wrapper / macro |
+| The code must run to completion **now, with no event loop** -- a module imported without a host, or a body reached through a Python dunder | **`demand`** / **`define-demanding`** | function wrapper / macro |
 | You want to **hold** an async result and await it **later**, not resolve it at the next use site | **`defer`** | builtin type |
 | You must hand a Koskari **function** to a **Python asyncio API that requires a coroutine function** (a task factory, framework hook) | **`coroutine-fn`** / **`define-coroutine`** | builtin / macro |
 | You need to **schedule or gather** held async work on the asyncio loop | **`create-task`**, or `defer` + `asyncio.gather` | asyncio bridge |
@@ -224,13 +224,13 @@ certainly want `demand`/`defer`, not the coroutine bridges.
 
 > **Auto-await caveat.** Koskari auto-awaits an awaitable at the call boundary
 > (see [Demand, async, and defer](demand-async-and-defer.md)). So calling a
-> coroutine function *from Koskari* resolves it to a value — to hand a real
+> coroutine function *from Koskari* resolves it to a value -- to hand a real
 > coroutine to asyncio, pass the **function** (`coroutine-fn`) or a **`defer`**,
 > never a call result.
 
-### `demand` / `define-demanding` — run without a loop
+### `demand` / `define-demanding` -- run without a loop
 
-Runs on the demand path: produce a value now, or raise — never suspend. A body
+Runs on the demand path: produce a value now, or raise -- never suspend. A body
 that tries to await a Python awaitable here raises `KoskariSyncViolation`.
 
 ```koskari
@@ -244,7 +244,7 @@ define-demanding checksum [a b]:
 `(define NAME (demand (function NAME formals body ...)))`. See
 [`compile/define-demanding`](../reference/macros/compile-define-demanding.md).
 
-### `defer` — hold work instead of resolving it
+### `defer` -- hold work instead of resolving it
 
 The wrapped call runs when the defer is **constructed**; the VM does **not**
 auto-await the defer at its next use. You resolve it explicitly.
@@ -258,9 +258,9 @@ define task (defer fetch-user)   ; runs fetch-user now; result is held
 Full treatment: [Demand, async, and defer](demand-async-and-defer.md) and
 [`compile/await`](../reference/specials/compile-await.md).
 
-### `coroutine-fn` / `define-coroutine` — a genuine coroutine function
+### `coroutine-fn` / `define-coroutine` -- a genuine coroutine function
 
-Some asyncio entry points require a real *coroutine function* — one that
+Some asyncio entry points require a real *coroutine function* -- one that
 `asyncio.iscoroutinefunction` accepts. `coroutine-fn` wraps a function so it
 qualifies; you hand the **function** to the API, and when *Python* calls it, it
 gets a coroutine.
@@ -276,15 +276,15 @@ define-coroutine work [x]:
 ```
 
 Pass `work` itself to the asyncio API. Do **not** call `(work 1)` from Koskari
-first — that auto-awaits to the value (see the caveat above).
+first -- that auto-awaits to the value (see the caveat above).
 `define-coroutine NAME args body` expands to
 `(define NAME (coroutine-fn (function NAME args body ...)))`. See
 [`compile/define-coroutine`](../reference/macros/compile-define-coroutine.md).
 
-### Scheduling and gathering — `create-task`, `defer` + `gather`
+### Scheduling and gathering -- `create-task`, `defer` + `gather`
 
 To run held async work on the loop, schedule a `defer` (or coroutine) with
-**`create-task`**. It returns the real `asyncio.Task` — a handle. Tasks
+**`create-task`**. It returns the real `asyncio.Task` -- a handle. Tasks
 (like all asyncio futures) are excluded from implicit auto-await, so the
 handle can be stored, cancelled, or given done-callbacks, and is resolved
 by explicit await:
@@ -296,11 +296,11 @@ define t (create-task (defer fetch-user))
 (await t)
 ```
 
-Keep a reference to the task while it runs — the event loop holds only a
+Keep a reference to the task while it runs -- the event loop holds only a
 weak one. Passing a `defer` to `create-task` consumes it (a defer is
 single-shot); the Task owns the work from then on.
 
-For concurrency, hold each call as a `defer` and await them together — defers
+For concurrency, hold each call as a `defer` and await them together -- defers
 are awaitable, so `asyncio.gather` accepts them directly:
 
 ```koskari
@@ -311,8 +311,8 @@ define b (defer (function fetch [] (fetch-user 2)))
 ```
 
 A defer satisfies `asyncio.iscoroutine` (it carries the full coroutine
-protocol), so the strict surfaces — `asyncio.create_task`, `asyncio.run`,
-`run_coroutine_threadsafe` — accept it directly. The lower-level
+protocol), so the strict surfaces -- `asyncio.create_task`, `asyncio.run`,
+`run_coroutine_threadsafe` -- accept it directly. The lower-level
 `as-coroutine` helper (in `koskari.asyncio`, reached by import) remains
 for the rare non-coroutine awaitable that needs to satisfy those checks.
 

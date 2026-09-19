@@ -3,9 +3,9 @@
 
 **Syntax:**
 
-- `(import-from MODULE NAME ...)` — import named attributes from MODULE
-- `(import-from MODULE [NAME as: BIND] ...)` — with per-name renames
-- `(import-from .MODULE NAME ...)` — relative module, named attributes
+- `(import-from MODULE NAME ...)` -- import named attributes from MODULE
+- `(import-from MODULE [NAME as: BIND] ...)` -- with per-name renames
+- `(import-from .MODULE NAME ...)` -- relative module, named attributes
 - Mix of plain symbols and `[NAME as: BIND]` forms is allowed.
 
 `MODULE` is an unquoted symbol (same leading-dot convention as `import`). Each
@@ -42,6 +42,6 @@ A member that names a not-yet-imported submodule is imported on demand, so
 
 ## Related
 
-- [use](use.md) — the koskari-native import: one *feature* per member,
+- [use](use.md) -- the koskari-native import: one *feature* per member,
   carrying the runtime, `compile/`, and `layout/` facets together.
-- [import-all-from](import-all-from.md) — Python's `from M import *`.
+- [import-all-from](import-all-from.md) -- Python's `from M import *`.

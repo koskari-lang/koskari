@@ -86,14 +86,14 @@ syntax.
 ## Match (macro and special transformers)
 
 In reference docs, **match** usually means: given a source form, test it against
-a **pattern** and run the matching arm’s template.
+a **pattern** and run the matching arm's template.
 
 Mechanisms include:
 
-- **`syntax-rules`** / **`macro-rules`** / **`special-rules`** — clause lists
-- **`syntax-match`** / **`macro-match`** / **`special-match`** — named transformer
+- **`syntax-rules`** / **`macro-rules`** / **`special-rules`** -- clause lists
+- **`syntax-match`** / **`macro-match`** / **`special-match`** -- named transformer
   specs (see [Macros index](../reference/macros/index.md) and [Layouts index](../reference/layouts/index.md))
-- Compiler **`@special(..., patterns=...)`** arms — same matcher engine over
+- Compiler **`@special(..., patterns=...)`** arms -- same matcher engine over
   spine subjects
 
 The matcher is implemented in native code with patterns built in Python; API
@@ -102,7 +102,7 @@ detail lives in [`koskari.matcher`](../reference/api/koskari-matcher.md) and
 
 This is **not** the same as:
 
-- **`compile/switch`** — value dispatch on runtime data
+- **`compile/switch`** -- value dispatch on runtime data
 - The runtime **`match`** form over values, in [Match patterns](match-patterns.md)
 - Exception matching at the VM layer
 
@@ -114,7 +114,7 @@ pattern matching unless context says otherwise.
 A `[…]` and a `(…)` read to the same pair structure (see [Brackets and the call
 convention](brackets-and-call-convention.md)), so a pattern cannot tell one from
 the other. `[formals]` matches any one-element form, including a plain `(f x)`
-call — so you cannot write two arms that branch on "is this a bracket or a
+call -- so you cannot write two arms that branch on "is this a bracket or a
 call." A form that must carry a literal bracket, such as lambda formals, has to
 require it in every arm (spell out an explicit `[]` for the empty case) rather
 than treat it as optional.
@@ -125,7 +125,7 @@ Macros and special forms are resolved at **compile time**, before ordinary name
 lookup happens. When the compiler sees a form in call position, it first checks
 whether the head is a macro or special; if so it expands, and only the expanded
 result is subject to name resolution. **A macro always wins over a same-named
-value binding in call position** — a local `let` / `define` / `labels` / `flet`
+value binding in call position** -- a local `let` / `define` / `labels` / `flet`
 binding, a module binding, or an import cannot displace it.
 
 ```koskari
@@ -144,14 +144,14 @@ normally:
 (let []
   (define first (lambda [n] (* n 100)))
   (first 3))
-;; ⇒ 300 — first is a runtime function, so the local binding wins
+;; ⇒ 300 -- first is a runtime function, so the local binding wins
 ```
 
 Practical consequences:
 
 - Choosing a helper name (in `labels`, `flet`, `let`, or a parameter) that
   collides with a macro or special form (`if`, `when`, a `cad*r` accessor, …)
-  will not rebind it in call position — the macro still expands. Rename the
+  will not rebind it in call position -- the macro still expands. Rename the
   helper if you need it callable.
 - The colliding name is still usable as a **value** (passed as an argument,
   stored in a variable); only the call-position head goes through macro

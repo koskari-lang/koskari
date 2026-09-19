@@ -3,7 +3,7 @@
 
 **Syntax:** `'HEAD: BODY` (reader shorthand) or `(quote-block BLOCK-REPR)`
 
-**Use-case:** Produce a `:block:` cons as literal data — the block-syntax
+**Use-case:** Produce a `:block:` cons as literal data -- the block-syntax
 analogue of `compile/quote`. The entire indented block (including any nested
 sub-blocks) is captured as a `:block:` cons without invoking layout handlers on
 the inner structure. Useful for passing block structure as data to macros or
@@ -18,7 +18,7 @@ entries.
 
 **Behaviour:** Purely transformative. Rewrites to `(quote BLOCK-REPR)`
 and returns that cons for normal compiler dispatch. The `:block:` cons is
-treated as opaque data — no layout expansion takes place on the quoted block.
+treated as opaque data -- no layout expansion takes place on the quoted block.
 
 **Examples:**
 
