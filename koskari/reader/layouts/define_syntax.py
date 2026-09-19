@@ -84,7 +84,8 @@ def _rule_row(reader, rule_source, layout_body=False):
 
     :param reader: the LayoutReader expanding the source
     :param rule_source: one rule's :block: entry
-    :param layout_body: expand nested :block: forms in the template body
+    :param layout_body: expand nested :block: forms in a parenthesized
+        rule's template; a block rule's body is always expanded
     :return: one rule row cons
     """
 
@@ -113,9 +114,10 @@ def _rule_row(reader, rule_source, layout_body=False):
 
     pattern = _pattern_from_header(header)
     if as_block:
-        if layout_body:
-            body = apply_lines(body, reader)
-        body = reader.fold_lines(body)
+        # lower the nested blocks in place first so a block gathers its
+        # declared peers from the entries after it, as the default block
+        # handler does for a non-raw body
+        body = reader.fold_lines(apply_lines(body, reader))
     elif layout_body:
         body = apply_layouts(body, reader)
     if not is_nil(body) and is_pair(body) and is_nil(body.cdr):
@@ -240,7 +242,9 @@ def layout_bare_syntax(reader, source, peers):
             'bare-syntax requires a template',
             get_position(source))
 
-    body = reader.fold_lines(body)
+    from . import apply_lines
+
+    body = reader.fold_lines(apply_lines(body, reader))
     if not is_nil(body) and is_pair(body) and is_nil(body.cdr):
         template = body.car
     else:

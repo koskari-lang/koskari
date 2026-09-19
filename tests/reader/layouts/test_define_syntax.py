@@ -28,7 +28,7 @@ import pytest
 
 from koskari.compile.helpers import pycons
 from koskari.exceptions import LayoutError
-from koskari.lib import symbol
+from koskari.lib import keyword, symbol
 
 from .. import parse_layout
 
@@ -237,6 +237,78 @@ class TestLayoutDefineSyntax(TestCase):
              (symbol('special-match'),
               ((symbol('m'), symbol('x')),
                symbol('x')))))
+        self._assert_layout_parse(src, expected)
+
+
+    def _arm_if_else_src(self, transformer):
+        return f"""
+        define-syntax u:
+          {transformer}:
+            u test body ...:
+              if test:
+                None
+              else:
+                (begin body ...)
+        """
+
+
+    def _arm_if_else_template(self):
+        return (
+            symbol('cond'),
+            (symbol('test'), None),
+            (keyword('else'), (symbol('begin'), symbol('body'), Ellipsis)))
+
+
+    def _assert_arm_if_else(self, transformer, head, literals=None):
+        rule = (
+            (symbol('u'), symbol('test'), symbol('body'), Ellipsis),
+            self._arm_if_else_template())
+        lowered = (symbol(head), rule)
+        if literals is not None:
+            lowered = (symbol(head), literals, rule)
+        expected = pycons(
+            (symbol('define-syntax'), symbol('u'), lowered))
+        self._assert_layout_parse(self._arm_if_else_src(transformer), expected)
+
+
+    def test_syntax_rules_arm_if_else_gathers_peer(self):
+        """
+        An if with an else peer as the first entry of a rule arm lowers
+        to one cond carrying the else clause
+        """
+
+        self._assert_arm_if_else('syntax-rules []', 'syntax-rules', ())
+
+
+    def test_macro_rules_arm_if_else_gathers_peer(self):
+        self._assert_arm_if_else('macro-rules ()', 'macro-rules', ())
+
+
+    def test_syntax_match_arm_if_else_gathers_peer(self):
+        self._assert_arm_if_else('syntax-match', 'syntax-match')
+
+
+    def test_macro_match_arm_if_else_gathers_peer(self):
+        self._assert_arm_if_else('macro-match', 'macro-match')
+
+
+    def test_bare_syntax_if_else_gathers_peer(self):
+        src = """
+        define-syntax u:
+          bare-syntax me:
+            if test:
+              None
+            else:
+              (begin body)
+        """
+        expected = pycons(
+            (symbol('define-syntax'),
+             symbol('u'),
+             (symbol('bare-syntax'),
+              symbol('me'),
+              (symbol('cond'),
+               (symbol('test'), None),
+               (keyword('else'), (symbol('begin'), symbol('body')))))))
         self._assert_layout_parse(src, expected)
 
 
