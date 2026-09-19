@@ -211,4 +211,26 @@ class TestRecursiveMacro(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["first-wins"], 3)
 
 
+class TestTryInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    A try form a template writes carries a marked exception type; the
+    try special rebuilds its clauses with pycons, which must accept a
+    Mark as a leaf
+    """
+
+    SRC = """
+(define-syntax guarded
+  (syntax-rules []
+    [(guarded body) (try body (except: ZeroDivisionError "caught"))]))
+
+(define outcome (guarded (/ 1 0)))
+(define passthru (guarded 7))
+"""
+
+    async def test_marked_exception_type_compiles(self):
+        ns = await load("mh_try", self.SRC)
+        self.assertEqual(ns["outcome"], "caught")
+        self.assertEqual(ns["passthru"], 7)
+
+
 # The end.
