@@ -415,4 +415,57 @@ class TestPatternTagsInTemplate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(unpack(ns["gathered"])), [1, 2])
 
 
+class TestClassPatternInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    A class pattern a template writes names the class and its keyword
+    fields by their bare spelling, and binds its captures under the
+    marked one
+    """
+
+    SRC = """
+(define-class Point []
+  (define __match_args__ #("x" "y"))
+  (define __init__ [self x y]
+    (set-attr self x x)
+    (set-attr self y y)))
+
+(define-syntax sum-point
+  (syntax-rules []
+    [(sum-point v)
+     (match v
+       [[Point[x y]] (+ x y)]
+       [else: "no"])]))
+
+(define-syntax y-of
+  (syntax-rules []
+    [(y-of v)
+     (match v
+       [[Point[y: y]] y]
+       [else: "no"])]))
+
+(define-syntax self-y
+  (syntax-rules []
+    [(self-y v)
+     (match v
+       [[Point[x: 1 y]] y]
+       [else: "no"])]))
+
+(define summed (sum-point (Point 1 2)))
+(define missed (sum-point 3))
+(define keyed (y-of (Point 1 2)))
+(define selfed (self-y (Point 1 5)))
+"""
+
+    async def test_positional_fields(self):
+        ns = await load("mh_class_pattern", self.SRC)
+        self.assertEqual(ns["summed"], 3)
+        self.assertEqual(ns["missed"], "no")
+
+
+    async def test_keyword_and_self_binding_fields(self):
+        ns = await load("mh_class_pattern_kw", self.SRC)
+        self.assertEqual(ns["keyed"], 2)
+        self.assertEqual(ns["selfed"], 5)
+
+
 # The end.

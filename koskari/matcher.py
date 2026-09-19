@@ -3103,7 +3103,11 @@ def _lower_case_class(name_sym, fields):
     follow keyword fields
     """
 
-    type_name = str(name_sym)
+    # the class name is a reference the use site resolves and a field
+    # keyword names an attribute: both read by their bare spelling. A
+    # self-binding field binds under its marked spelling and names the
+    # attribute under the bare one
+    type_name = str(strip_mark(name_sym))
     field_objs = []
     items = list(unpack(fields))
     seen_keyword = False
@@ -3111,22 +3115,23 @@ def _lower_case_class(name_sym, fields):
     n = len(items)
     while i < n:
         elem = items[i]
-        if is_keyword(elem):
+        tag = strip_mark(elem)
+        if is_keyword(tag):
             if i + 1 >= n:
                 raise ValueError(
                     f"{type_name}[...] keyword field"
-                    f" {elem!s} missing its pattern")
+                    f" {tag!s} missing its pattern")
             field_objs.append(FIELD(
                 parse_case_element(items[i + 1]),
-                name=str(elem).rstrip(":")))
+                name=str(tag).rstrip(":")))
             seen_keyword = True
             i += 2
         elif seen_keyword:
-            if not is_symbol(elem):
+            if not is_symbol(tag):
                 raise ValueError(
                     f"{type_name}[...] field after keyword fields"
                     f" must be a symbol, got {elem!r}")
-            field_objs.append(FIELD(CAPTURE(str(elem)), name=str(elem)))
+            field_objs.append(FIELD(CAPTURE(str(elem)), name=str(tag)))
             i += 1
         else:
             field_objs.append(FIELD(parse_case_element(elem)))
