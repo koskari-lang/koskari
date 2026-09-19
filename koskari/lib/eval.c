@@ -1441,27 +1441,6 @@ static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
 */
 
 
-/* Pop one value; branch to KosOp_ARG(insn) when it is NOT an empty-list
-   singleton (nil or bracket-nil) — the squashed form of NILP followed
-   by JUMP_FALSE. */
-static int kos_check_nil(
-    KosEvalState *es,
-    KosOp *insn) {
-
-  PyObject *val = KosEvalState_StackPopRef(es);
-  if (! val)
-    return -1;
-
-  int is_nil = KosNilP(val);
-  Py_DECREF(val);
-
-  if (! is_nil)
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
-
-  return 0;
-}
-
-
 /* === THEEND, BREAK, CONTINUE, YIELD, YIELD_FROM === */
 
 /* THEEND: no runtime implementation; hardcoded error (not a "stub" to be implemented). */

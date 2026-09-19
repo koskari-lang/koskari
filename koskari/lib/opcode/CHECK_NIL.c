@@ -20,8 +20,16 @@
   JUMP_FALSE.
 */
 KOS_OP_HANDLER(CHECK_NIL) {
-  if (unlikely(kos_check_nil(es, insn) < 0))
+  PyObject *val = KosEvalState_StackPopRef(es);
+  if (unlikely(! val))
     RESULT_RAISE();
+
+  int is_nil = KosNilP(val);
+  Py_DECREF(val);
+
+  if (! is_nil)
+    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+
   RESULT_NEXT(es);
 }
 

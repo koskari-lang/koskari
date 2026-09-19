@@ -56,4 +56,72 @@ class TestCompileNilp(SpecialsTestCase):
         self.assertNotIn(OpCode.NILP, ops)
 
 
+class TestEvalCheckNil(SpecialsTestCase):
+    """the fused CHECK_NIL branch takes the right arm at evaluation"""
+
+    async def eval_cond_nilp(self, src_str, **defns):
+        """
+        Evaluate a cond whose test is a bare nil? and return the arm taken
+        """
+
+        expr, mod = self.compile_expr(src_str, **defns)
+        return await expr()
+
+
+    async def test_cond_nilp_pair_takes_false_arm(self):
+        """(cond [(nil? x) 0] [else: 1]) yields 1 when x is a pair"""
+
+        result = await self.eval_cond_nilp("(cond [(nil? '(a b c)) 0] [else: 1])")
+        self.assertEqual(result, 1)
+
+
+    async def test_cond_nilp_python_list_takes_false_arm(self):
+        """(cond [(nil? x) 0] [else: 1]) yields 1 when x is a Python list"""
+
+        result = await self.eval_cond_nilp("(cond [(nil? #[1 2]) 0] [else: 1])")
+        self.assertEqual(result, 1)
+
+
+    async def test_cond_nilp_bound_python_list_takes_false_arm(self):
+        """(cond [(nil? x) 0] [else: 1]) yields 1 when x is bound to a Python list"""
+
+        result = await self.eval_cond_nilp("(cond [(nil? xs) 0] [else: 1])", xs=[1, 2])
+        self.assertEqual(result, 1)
+
+
+    async def test_cond_nilp_nil_takes_true_arm(self):
+        """(cond [(nil? x) 0] [else: 1]) yields 0 when x is nil"""
+
+        result = await self.eval_cond_nilp("(cond [(nil? nil) 0] [else: 1])")
+        self.assertEqual(result, 0)
+
+
+    async def test_cond_nilp_quoted_empty_takes_true_arm(self):
+        """(cond [(nil? x) 0] [else: 1]) yields 0 when x is a quoted empty list"""
+
+        result = await self.eval_cond_nilp("(cond [(nil? '()) 0] [else: 1])")
+        self.assertEqual(result, 0)
+
+
+    async def test_cond_nilp_bracket_nil_takes_true_arm(self):
+        """(cond [(nil? x) 0] [else: 1]) yields 0 when x is bracket nil"""
+
+        result = await self.eval_cond_nilp("(cond [(nil? '[]) 0] [else: 1])")
+        self.assertEqual(result, 0)
+
+
+    async def test_cond_nilp_is_fused(self):
+        """the cond forms under test compile through CHECK_NIL, not NILP"""
+
+        for src_str in (
+                "(cond [(nil? '(a b c)) 0] [else: 1])",
+                "(cond [(nil? #[1 2]) 0] [else: 1])",
+                "(cond [(nil? nil) 0] [else: 1])",
+                "(cond [(nil? '[]) 0] [else: 1])"):
+            code = self.compile_to_code(src_str)
+            ops = [code.oparg(i)[0] for i in range(code.length())]
+            self.assertIn(OpCode.CHECK_NIL, ops, src_str)
+            self.assertNotIn(OpCode.NILP, ops, src_str)
+
+
 # The end.
