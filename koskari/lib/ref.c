@@ -674,7 +674,7 @@ PyObject *KosItemRef_New(PyObject *name, PyObject *obj, PyObject *key) {
 /* === DynamicRef === */
 
 
-static PyObject *dyn_demand_wrap(PyObject *fn) {
+static PyObject *ref_demand_wrap(PyObject *fn) {
   if (! fn || fn == Py_None)
     return NULL;
   if (KosCallable_Check(fn))
@@ -708,19 +708,19 @@ static int dyn_ref_init(
   }
   KosRef_NAME(self) = name;
 
-  KosDynamicRef_GETFN(self) = dyn_demand_wrap(getfn);
+  KosDynamicRef_GETFN(self) = ref_demand_wrap(getfn);
   if (! KosDynamicRef_GETFN(self) && PyErr_Occurred())
     return -1;
 
-  KosDynamicRef_SETFN(self) = dyn_demand_wrap(setfn);
+  KosDynamicRef_SETFN(self) = ref_demand_wrap(setfn);
   if (! KosDynamicRef_SETFN(self) && PyErr_Occurred())
     return -1;
 
-  KosDynamicRef_DELFN(self) = dyn_demand_wrap(delfn);
+  KosDynamicRef_DELFN(self) = ref_demand_wrap(delfn);
   if (! KosDynamicRef_DELFN(self) && PyErr_Occurred())
     return -1;
 
-  KosDynamicRef_EMPTYFN(self) = dyn_demand_wrap(emptyfn);
+  KosDynamicRef_EMPTYFN(self) = ref_demand_wrap(emptyfn);
   if (! KosDynamicRef_EMPTYFN(self) && PyErr_Occurred())
     return -1;
 
@@ -985,8 +985,9 @@ static int memo_ref_init(PyObject *self, PyObject *name, PyObject *getfn) {
   }
   KosRef_NAME(self) = name;
 
-  Py_INCREF(getfn);
-  KosMemoizedRef_GETFN(self) = getfn;
+  KosMemoizedRef_GETFN(self) = ref_demand_wrap(getfn);
+  if (! KosMemoizedRef_GETFN(self))
+    return -1;
 
   return 0;
 }

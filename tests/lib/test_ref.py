@@ -523,6 +523,27 @@ class TestMemoizedRef(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.deref(), 15)
         lazy.assert_called_once()
 
+    def test_deref_with_koskari_function_getter(self):
+        """deref calls a Koskari Function getter once and caches the value"""
+        lazy = Mock(side_effect=range(15, 20))
+        _, base_ns = build_expr(
+            [['CONST', 0], ['RETURN', 1]],
+            local_syms=('lazy',),
+            values={'lazy': lazy},
+        )
+        code = build_code(
+            [['FAST', 0], ['CALL', 0], ['RETURN', 1]],
+            local_syms=(),
+            closure_syms=('lazy',),
+            name='getter',
+        )
+        getter = make_callable(code, base_ns, FormalsSpec())
+        r = MemoizedRef(None, getter)
+
+        self.assertEqual(r.deref(), 15)
+        self.assertEqual(r.deref(), 15)
+        lazy.assert_called_once()
+
     async def test_not_empty_after_deref(self):
         """MemoizedRef is not empty after first deref"""
         r = MemoizedRef(None, lambda: 42)
