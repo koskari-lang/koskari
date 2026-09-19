@@ -1,34 +1,41 @@
 # compile/extend-syntax
-**Symbol:** `compile/extend-syntax`
 
-**Syntax:** `(extend-syntax NAME TRANSFORMER)` with the same transformer heads as
-`define-syntax`, including `bare-syntax`.
+**Syntax:** `(extend-syntax NAME TRANSFORMER)`, with the same transformer
+heads as `define-syntax`, `bare-syntax` included.
 
-**Behaviour:** Rebinds **`compile/NAME`** via **`setq`** with the combination of
-the existing transformer and a new **`syntax-rules`** / **`syntax-match`** /
-**`macro-rules`** / **`macro-match`** / **`special-rules`** / **`special-match`** /
-**`bare-syntax`** spec (each expansion passes the written **`NAME`** as the
-builder's identity argument).
+**Behaviour:** Rebinds `compile/NAME` to the combination of the existing
+transformer and the new spec, through `setq`. The new arms take
+precedence: a base transformer can carry a generic fall-through case and
+a later extension that adds a more specific case wins wherever both
+match. That is the basis of open dispatch, a base `(config (tp name) ...)`
+plus per-type `extend-syntax config` cases keyed on a literal head.
 
-**Documentation:** the original docstring carries forward; a docstring given
-in the extension is appended to it rather than replacing it.
+The original docstring carries forward, and a docstring in the extension
+is appended to it. A transformer holds at most one bare form, so
+extending with `bare-syntax` replaces the existing bare arm.
 
-**Bare forms:** a transformer carries at most one bare form, so extending
-with `bare-syntax` replaces any existing bare arm rather than stacking.
+Extensions compose across imports. After `import-from mod foo`,
+extending `foo` in the importing module adds cases that route there
+while the base rules still apply to inputs the new cases do not match.
+A library can ship a base macro and let each consumer specialize it.
 
-**Precedence:** The newer rules take precedence over the existing ones (the
-combination is `NAME + new` via `Syntax.__add__`). So a base transformer can
-carry a generic fall-through case, and a later `extend-syntax` that adds a more
-specific case wins wherever both would match. This is the basis of open
-dispatch: a base `(config (tp name) …)` fall-through plus per-type
-`extend-syntax config` cases keyed on a literal head, as in
-`(config (kafka name) …)` (the same shape as `(help (pragma key))`).
+**Examples:**
 
-**Across modules:** `extend-syntax` composes across imports. After
-`import-from mod foo`, extending `foo` in the importing module adds cases that
-route there while the base rules still apply to inputs the new cases do not
-match. This is what lets a library ship a base macro and have each consumer or
-sibling module specialize it.
+```koskari
+define-syntax greet:
+  syntax-rules []:
+    greet name:
+      f"hello {name}"
 
-**Layout:** default **`layout/block`** flat splice at read time.
+extend-syntax greet:
+  syntax-rules [loud]:
+    greet loud name:
+      f"HELLO {name}"
 
+(greet "a")          ;; "hello a"
+(greet loud "b")     ;; "HELLO b"
+```
+
+**See also:** [`define-syntax`](compile-define-syntax.md),
+[`decorate-subject`](compile-decorate-subject.md), whose shape arms are
+extended this way.

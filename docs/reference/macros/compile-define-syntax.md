@@ -36,6 +36,25 @@ variable.
 **Layout:** default **`layout/block`** flat splice at read time; a
 `bare-syntax SLOT:` block takes the template as its body.
 
+## Examples
+
+```koskari
+define-syntax unless:
+  syntax-rules []:
+    unless test body ...:
+      when (not test):
+        (begin body ...)
+```
+
+```koskari
+(define-syntax twice (syntax-rules [] [(twice x) (* 2 x)]))
+(twice 4)      ;; 8
+```
+
+The macro and its first use are in separate top-level forms; a `begin`
+that defines a macro and uses it in the same block fails, since the
+transformer is bound when its defining form finishes compiling.
+
 ## Related
 
 - [compile/let-syntax](compile-let-syntax.md) -- local compile-time macro for the body extent

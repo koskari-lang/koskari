@@ -1,10 +1,33 @@
 # compile/declare-exports
-**Syntax:** **`(declare-exports name …)`**
 
-**Behaviour:** **`macro-rules`** → **`(define-global __features__ #(…))`**
-with sorted, deduplicated string names. Each name is a **feature stem**: at
-the end of the module load, `__all__` is materialized from the stems as the
-binding keys that actually exist -- the runtime name and the `compile/` and
-`layout/` facets of each -- so Python-side star imports stay honest while
-[`use`](../specials/use.md) and `import-all-from` carry every facet. A name
-written with a facet prefix is a literal single-binding export.
+**Syntax:** `(declare-exports NAME ...)`
+
+**Behaviour:** Expands to `(define-global __features__ #(...))` holding
+the sorted, deduplicated names as strings. Each name is a feature stem.
+When the module finishes loading, `__all__` is built from the stems as
+the bindings that exist: the runtime name and its `compile/` and
+`layout/` facets. A Python-side star import therefore sees only what is
+bound, while [`use`](../specials/use.md) and `import-all-from` carry
+every facet of a feature. A name written with a facet prefix exports
+that one binding.
+
+**Examples:**
+
+```koskari
+;; shapes.ki
+(declare-exports area define-shape)
+
+define area [w h] (* w h)
+
+define-syntax define-shape:
+  ...
+```
+
+```koskari
+koskari> (declare-exports greet shout)
+koskari> __features__
+('greet', 'shout')
+```
+
+**See also:** [`use`](../specials/use.md),
+[Modules and packages](../../guide/modules-and-packages.md).

@@ -15,7 +15,7 @@ The zero-argument form names the first parameter `self`. A method whose
 first parameter has another name, a classmethod for instance, uses the
 explicit form: `(super __class__ cls)`.
 
-```
+```koskari
 define-class A []:
   define __init__ [self]:
     (set-attr self a 1)
@@ -32,6 +32,3 @@ define-class C (B):
 
 (vars (C))   ; {'a': 1, 'b': 2, 'c': 3}
 ```
-
-
-## koskari/bootstrap/_class.ki

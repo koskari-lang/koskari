@@ -1,9 +1,25 @@
 # compile/item* and compile/attr*
-**Syntax:** **`(item* OBJ KEY …)`**, **`(attr* OBJ NAME …)`**
 
-**Behaviour:** Left-nested **`item`** / **`attr`** chains.
+**Syntax:** `(item* OBJ KEY ...)`, `(attr* OBJ NAME ...)`
 
-For runtime chained access with a default or presence test (no macro
-expansion), see [getitem* and hasitem*](../runtime/getitemstar-and-hasitemstar.md)
-and [getattr* and hasattr*](../runtime/getattrstar-and-hasattrstar.md).
+**Behaviour:** Left-nested `item` and `attr` chains: `(item* d "a" "b")`
+is `(item (item d "a") "b")`, and `(attr* os path sep)` is
+`(attr (attr os path) sep)`. Each step is a plain lookup that raises
+when a key or attribute is missing. For a chained lookup with a default
+or a presence test, the runtime functions
+[`getitem*` and `hasitem*`](../runtime/getitemstar-and-hasitemstar.md)
+and [`getattr*` and `hasattr*`](../runtime/getattrstar-and-hasattrstar.md)
+take the path at run time.
 
+**Examples:**
+
+```koskari
+koskari> (item* #{"a": #{"b": 2}} "a" "b")
+2
+koskari> (import os)
+koskari> (attr* os path sep)
+'/'
+```
+
+The suffix spellings `d["a"]["b"]` and `os.path.sep` read to the same
+chains.

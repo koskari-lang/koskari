@@ -1,27 +1,36 @@
 # compile/pragma
 
-**Symbol:** `compile/pragma` (surface: `pragma`)
+**Syntax:** `(pragma [NS/KEY VALUE ...] ...)` to set, `(pragma NS/KEY)` to
+read one setting, `(pragma)` for the module's pragma object.
 
-**Syntax:**
+**Behaviour:** The set form controls the module's reader and compiler
+settings. Each bracketed form is one setting: a slash-namespaced key
+followed by positional or keyword values, and a bare `[NS/KEY]` selects
+the setting's default. It expands to
+`(setq __pragma__ (.rebuild __pragma__ ...))`, so the change applies to
+everything read and compiled after it in this module and to nothing
+imported. Values are expressions: a literal symbol is quoted, while
+booleans, numbers, and strings are bare.
 
-- `(pragma [NS/KEY VALUE …] …)` -- set one or more settings.
-- `(pragma NS/KEY)` -- read the current value of one setting.
-- `(pragma)` -- the module's pragma object.
+`(pragma NS/KEY)` reads the current value as `(item __pragma__ "NS/KEY")`.
+`(help pragma)` lists every setting with its default, and
+`(help (pragma NS/KEY))` documents one.
 
-**Behaviour:** The set form controls module-scoped reader and compiler feature
-settings. Each bracketed form is one setting -- a slash-namespaced key followed
-by positional and/or keyword values; a bare **`[NS/KEY]`** uses the setting's
-default. It expands to **`(setq __pragma__ (.rebuild __pragma__ …))`**,
-rebuilding the module's pragma; the change is forward-only and does not affect
-imported modules. Each `VALUE` is an ordinary expression, so a literal symbol
-value must be quoted -- `(pragma [compiler/call-brackets 'error])` -- while
-booleans, numbers, and strings are bare. **`(pragma NS/KEY)`** reads the current
-value (`(item __pragma__ "NS/KEY")`) and **`(pragma)`** is the `__pragma__`
-object.
+**Examples:**
 
-**`(help pragma)`** reports the current settings and every registered setting's
-default; **`(help (pragma NS/KEY))`** shows one setting's signature and
-documentation.
+```koskari
+(pragma [compiler/call-brackets 'error]
+        [reader/brackets False])
 
-See [Pragmas and feature settings](../../guide/pragma.md) for the full list of
-settings and what each value means.
+(pragma [compiler/pack-module True max-count: 32])
+```
+
+```koskari
+koskari> (pragma compiler/call-brackets)
+BracketCalls.WARN
+koskari> (pragma reader/layout)
+True
+```
+
+**See also:** [Pragmas and feature settings](../../guide/pragma.md) for
+every setting and its values.

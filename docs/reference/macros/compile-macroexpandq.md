@@ -1,9 +1,16 @@
 # compile/macroexpandq
 
-**Syntax:** `(macroexpandq form)`, `(macroexpandq form ns)`
+**Syntax:** `(macroexpandq FORM)`, `(macroexpandq FORM NS)`
 
-**Behaviour:** Expands to **`(call macroexpand (quote form) …)`**. With one argument,
-the namespace is **`(globals)`**; with two, the given namespace is used. The form
-is quoted before expansion, so you write surface syntax directly.
+**Behaviour:** Expands to `(call macroexpand (quote FORM) ...)`. The form
+is quoted for you, so it is written as surface syntax. With one argument
+the namespace is `(globals)`; with two, the given namespace.
 
-See [macroexpand](../runtime/macroexpand.md).
+**Examples:**
+
+```koskari
+koskari> (macroexpandq (when a b))
+(cond [a b] [else None])
+```
+
+**See also:** [`macroexpand`](compile-macroexpand.md).
