@@ -13,4 +13,3 @@ the same way (ITEM_CONST_REF, VAR_ITEM_VAR_REF, VAR_ITEM_REF, and so on).
 ```koskari
 (ref-item lst i)
 ```
-

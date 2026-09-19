@@ -14,7 +14,3 @@ onto the stack. Any arguments are rejected with `SpecialError`.
 ```koskari
 (locals)
 ```
-
-**Implementation:** `koskari/compile/specials/variables.special_locals`
-
-

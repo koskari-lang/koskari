@@ -132,8 +132,8 @@ reach is usable; Python source is not.
 At the REPL:
 
 ```koskari
-koskari> (import-from math pi)
-koskari> (* pi 2)
+>>> (import-from math pi)
+>>> (* pi 2)
 6.283185307179586
 ```
 

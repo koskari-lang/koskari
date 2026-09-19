@@ -39,5 +39,3 @@ form evaluates to None.
 ;; Direct use
 (inplace-item + table key delta)
 ```
-
-**Implementation:** `koskari/compile/specials/object.py` -- `special_inplace_item`

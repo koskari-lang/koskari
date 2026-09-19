@@ -72,5 +72,3 @@ compiles it, then emits `VAR_STORE`.
   (cond [(== n 0) 1]
                 [else: (* n (fact (- n 1)))]))
 ```
-
-

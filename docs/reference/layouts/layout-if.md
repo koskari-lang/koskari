@@ -29,7 +29,7 @@ else:
 ```koskari
 if x:
   y
-;; → (cond (x y))
+;; -> (cond (x y))
 
 if x:
   a
@@ -37,8 +37,5 @@ elif y:
   b
 else:
   c
-;; → (cond (x a) (y b) (else: c))
+;; -> (cond (x a) (y b) (else: c))
 ```
-
-**Implementation:** `koskari/reader/layouts/conditionals.layout_if`
-

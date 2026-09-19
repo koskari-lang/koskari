@@ -1,4 +1,4 @@
-# Demand, async evaluation, and defer
+# Demand, async, and defer
 
 Koskari bytecode runs on an async-native evaluator: suspension and resumption
 are normal, and many Python calls that return coroutines or awaitables are
@@ -203,11 +203,10 @@ async-hosted load when the embedding app already runs asyncio.
 
 ## Choosing a construct
 
-Koskari resolves ordinary calls to values automatically (see [Demand, async,
-and defer](demand-async-and-defer.md)), so most code needs none of these. Reach
-for one only when you want to override that default -- run without a loop, hold
-a result instead of resolving it, or hand Koskari async work to a raw asyncio
-API. The linked pages are the full rules.
+Koskari resolves ordinary calls to values automatically, so most code
+needs none of these. Reach for one only when you want to override that
+default -- run without a loop, hold a result instead of resolving it, or
+hand Koskari async work to a raw asyncio API.
 
 ### Decision table
 
@@ -222,11 +221,11 @@ The first two shape how your own code runs; the last two are **bridges to
 raw asyncio**. If you are not crossing into an asyncio API by hand, you almost
 certainly want `demand`/`defer`, not the coroutine bridges.
 
-> Auto-await caveat. Koskari auto-awaits an awaitable at the call boundary
-> (see [Demand, async, and defer](demand-async-and-defer.md)). So calling a
-> coroutine function from Koskari resolves it to a value -- to hand a real
-> coroutine to asyncio, pass the function (`coroutine-fn`) or a `defer`,
-> never a call result.
+> Auto-await caveat. Koskari
+> [auto-awaits](#auto-await-at-call-boundaries) an awaitable at the call
+> boundary, so calling a coroutine function from Koskari resolves it to a
+> value. To hand a real coroutine to asyncio, pass the function
+> (`coroutine-fn`) or a `defer`, never a call result.
 
 ### `demand` / `define-demanding` -- run without a loop
 
@@ -246,17 +245,9 @@ define-demanding checksum [a b]:
 
 ### `defer` -- hold work instead of resolving it
 
-The wrapped call runs when the defer is constructed; the VM does not
-auto-await the defer at its next use. You resolve it explicitly.
-
-```koskari
-define task (defer fetch-user)   ; runs fetch-user now; result is held
-;; ... pass task around; it is not auto-awaited ...
-(await task)                     ; resolve when you are ready
-```
-
-Full treatment: [Demand, async, and defer](demand-async-and-defer.md) and
-[`compile/await`](../reference/specials/compile-await.md).
+A defer holds an async result instead of resolving it at the next use
+site, and an explicit `(await ...)` consumes it. [defer](#defer) above
+has the rules.
 
 ### `coroutine-fn` / `define-coroutine` -- a genuine coroutine function
 
@@ -313,7 +304,7 @@ define b (defer (function fetch [] (fetch-user 2)))
 A defer satisfies `asyncio.iscoroutine` (it carries the full coroutine
 protocol), so the strict surfaces -- `asyncio.create_task`, `asyncio.run`,
 `run_coroutine_threadsafe` -- accept it directly. The lower-level
-`as-coroutine` helper (in `koskari.asyncio`, reached by import) remains
+`as_coroutine` helper (in `koskari.asyncio`, reached by import) remains
 for the rare non-coroutine awaitable that needs to satisfy those checks.
 
 ## See also

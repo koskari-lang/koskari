@@ -14,10 +14,9 @@ next expression can be evaluated. The last expression is compiled without a jump
 **Examples:**
 
 ```koskari
-(and)             ; → True
-(and 42)          ; → 42
-(and 1 2 3)       ; → 3   (all truthy, last value)
-(and 1 None 3)    ; → None (short-circuit at second term)
-(and False 99)    ; → False
+(and)             ; -> True
+(and 42)          ; -> 42
+(and 1 2 3)       ; -> 3   (all truthy, last value)
+(and 1 None 3)    ; -> None (short-circuit at second term)
+(and False 99)    ; -> False
 ```
-

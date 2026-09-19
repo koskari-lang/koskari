@@ -28,5 +28,3 @@ instruction), and stores via ATTR_STORE. The form evaluates to None.
 ;; Direct use
 (inplace-attr + obj total amount)
 ```
-
-**Implementation:** `koskari/compile/specials/object.py` -- `special_inplace_attr`

@@ -21,4 +21,3 @@ emits RAISE 1 (raise the value as exception).
 (raise)
 (raise (ValueError "invalid"))
 ```
-

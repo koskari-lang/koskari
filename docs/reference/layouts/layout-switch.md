@@ -50,5 +50,3 @@ switch x:
     "one"
 ;; -> (switch x ([1] "one"))
 ```
-
-**Implementation:** `koskari/reader/layouts/conditionals.layout_switch`

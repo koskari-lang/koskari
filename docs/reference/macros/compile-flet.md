@@ -1,5 +1,5 @@
 # compile/flet
-**Syntax:** **`(flet [[NAME FORMALS BODY …] …] FORM …)`**
+**Syntax:** **`(flet [[NAME FORMALS BODY ...] ...] FORM ...)`**
 
 **Behaviour:** Binds local functions for the extent of a body. Each declaration
 becomes a **`let`** binding whose value is an anonymous **`lambda`**:

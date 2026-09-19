@@ -17,7 +17,7 @@ followed by its value(s). A bare `[key]` uses the setting's default value.
         [reader/brackets False])
 ```
 
-- Values are ordinary expressions, so a literal symbol must be quoted  -- 
+- Values are ordinary expressions, so a literal symbol must be quoted --
   `'error`, `'scheme`, `'warn`. Booleans (`True` / `False`), numbers, and
   strings are self-carrying and need no quote, and a computed value (a variable
   or call) works too.
@@ -58,7 +58,8 @@ while some other module compiles -- so inside a macro, `(pragma KEY)` would
 answer for the wrong module. `(active-pragma KEY)` reads the pragma the
 compiler has bound for the current compilation turn instead, so a macro's
 expansion is governed by the settings of the module using it. Outside a
-compilation turn it reads as `None`.
+compilation turn no pragma is bound, and `(active-pragma)` answers a
+default pragma carrying every setting's baseline value.
 
 ## What each setting means
 
@@ -67,52 +68,21 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
 
 ### Reader
 
+`reader/index-brackets`, `reader/dot-attrs`, and `reader/string-segments`
+govern the three suffix syntaxes;
+[Grammar](../reference/grammar.md#suffix-syntax) states their rules, and
+turning one off makes its character inert in the reader.
+
 - `reader/brackets`, default on: whether `[ ]` reads into a distinct
   bracket-pair value that remembers its origin, rather than a plain pair. Off
   makes `[ ]` and `( )` completely indistinguishable. See
   [Brackets and the call convention](brackets-and-call-convention.md).
-- `reader/index-brackets`, default on: whether a `[ ... ]` group
-  attached directly to a just-read value (no intervening whitespace) desugars
-  into an item access: `data["bar"]` reads as `(item data "bar")`. Groups
-  chain left to right, so `grid[y][x]` reads as `(item (item grid y) x)`, and
-  a space breaks the attachment -- `foo [a]` stays two separate forms. Empty
-  index brackets are a read error. `[reader/index-brackets False]` turns it
-  off. Because the desugar happens in the reader, the result is an ordinary
-  `(item …)` form and composes accordingly -- for example `&data["bar"]` is a
-  ref to that slot.
-- `reader/dot-attrs`, default on: whether `.` reads as attribute
-  access. This governs both spellings at once: `foo.bar` written inside a
-  single atom, and a `.` attached to any just-read value, so
-  `(get-fn x).baz` and `"".join` are attribute reads on a form and on a
-  literal. Both produce `(attr …)`, chain left to right
-  (`obj.a.b`), and compose with index brackets in either order  -- 
-  `foo[0].bar` and `foo.bar[0]` both read the way they look. A space breaks
-  the attachment, so `.name` after whitespace stays an ordinary symbol and
-  the leading-dot method call `(.name obj)` is unaffected. With the feature
-  on, a dot with no name after it (`foo.`, `foo..bar`, `(f x).`) is a read
-  error naming the offending segment; off, a dot is inert in both spellings
-  and `foo.bar` is an ordinary symbol.
-- `reader/string-segments`, default on: whether a `-` attached
-  directly to a string literal's closing quote continues that literal into
-  the next quoted segment, so a long string can be broken to fit a line
-  without restructuring the call around an explicit join:
-
-  ```koskari
-  (print "This is one"-
-         " long string broken"-
-         " up across lines")
-  ```
-
-  The segments join into a `(#str …)` form, which folds back to a
-  single constant when every segment is one, so the result costs nothing at
-  runtime. Each segment carries its own prefix -- an `f` segment
-  interpolates, an `r` segment is raw -- and the gap between a marker and
-  its segment may be any amount of whitespace, on the same line or several
-  lines down, with comments skipped. The marker is strictly adjacent to the
-  closing quote: `"a" -` with a space is a string followed by a minus.
-  Inside a layout block a continuation line must be indented at all, since
-  column 0 ends the logical line. Once the marker is written a segment must
-  follow, so `"a"- 5` is a read error.
+- `reader/index-brackets`, default on: whether `data["bar"]` reads as
+  `(item data "bar")`.
+- `reader/dot-attrs`, default on: whether `obj.value` reads as
+  `(attr obj value)`.
+- `reader/string-segments`, default on: whether a `-` on a string
+  literal's closing quote continues it into the next quoted segment.
 - `reader/unary`, default on: whether `-`, `+`, and `~` attached to
   the front of a name, a digit, or a delimited form read as the unary call:
   `-x` is `(- x)`, `+x` is `(+ x)`, `~(f y)` is `(~ (f y))`. A signed number
@@ -190,7 +160,7 @@ Settings are grouped by what they affect: the reader (`reader/*`), the compiler
   are structural rather than value positions, so they are never flagged:
   keyword arguments (`(print 1 sep: "-")`) and keyword markers consumed
   by a form (`(cond [(> x 1) 'big] [else: 'small])`).
-- `compiler/enable-asserts`, default on: whether `(assert …)` forms
+- `compiler/enable-asserts`, default on: whether `(assert ...)` forms
   expand to their check. Off, an `assert` compiles away entirely: neither the
   condition nor the message is compiled or evaluated, mirroring Python's `-O`
   behavior. The gate is consulted as each `assert` is compiled, so a change

@@ -11,17 +11,21 @@ identifier, and so the compiler can position errors in it.
 **Examples:**
 
 ```koskari
-koskari> (macroexpand-1 '(datum foo))
+>>> (macroexpand-1 '(datum foo))
 (call datum foo None)
 ```
 
 ```koskari
 define-syntax job:
   macro-rules []:
-    job tp rest ...:
+    case (job tp rest ...):
       ;; rewrite (job kafka ...) to (job/kafka ...)
-      (cons (datum (symbol f"job/{tp.datum}")) rest)
+      (cons (datum (symbol f"job/{tp.datum}")) *: rest nil)
 ```
+
+`rest` is the captured tail, spliced with `*:` into the variadic `cons`
+and closed with `nil`. Passed as a single argument it would be consed on
+as one element.
 
 **See also:** [Macros and hygiene](../../guide/macros-and-hygiene.md),
 [`koskari.hygiene`](../api/koskari-hygiene.md).

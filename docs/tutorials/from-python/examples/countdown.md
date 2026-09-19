@@ -4,6 +4,20 @@ A `while` loop with `decr!` and an `else:` peer that runs when the counter
 reaches zero -- used in the from-python [Data and control](../data-and-control.md)
 chapter.
 
+## The program
+
+```koskari
+define countdown [n]:
+  while (> n 0):
+    print n
+    decr! n
+  else:
+    print "lift-off"
+
+when-main:
+  (countdown 3)
+```
+
 ## Run
 
 Save as `countdown.ki` and:

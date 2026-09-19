@@ -21,7 +21,6 @@ are supported (VM auto-awaits enter/exit when they return awaitables). See
 [dyn-with](dyn-with.md) for the multi-shot variant and
 [PUSH_WITH / POP_WITH](../vm/opcodes/kos-op-push-with.md) in the VM reference.
 
-
 **Examples:**
 
 ```koskari
@@ -33,4 +32,3 @@ are supported (VM auto-awaits enter/exit when they return awaitables). See
 (with [(make-lock)]
   (do-work))
 ```
-

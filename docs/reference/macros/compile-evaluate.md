@@ -12,10 +12,10 @@ rather than a plain dict. `FORM` is evaluated, so quote a literal form.
 **Examples:**
 
 ```koskari
-koskari> (evaluate '(+ 1 2))
+>>> (evaluate '(+ 1 2))
 3
-koskari> (define x 4)
-koskari> (evaluate '(* 2 x) (globals))
+>>> (define x 4)
+>>> (evaluate '(* 2 x) (globals))
 8
 ```
 

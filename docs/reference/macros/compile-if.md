@@ -17,8 +17,8 @@ never passes through this macro.
 ```
 
 ```koskari
-koskari> (macroexpand-1 '(if a then: b else: c))
-(cond [a b] [else c])
+>>> (macroexpand-1 '(if a then: b else: c))
+(cond [a b] [else: c])
 ```
 
 **See also:** [`cond`](../specials/compile-cond.md),

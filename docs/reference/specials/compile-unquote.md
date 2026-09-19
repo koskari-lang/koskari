@@ -17,4 +17,3 @@ raises `SpecialError`. Inside quasiquote, this form is handled directly by the
 `(a ,x b)    ; x is evaluated
 `(a ,(+ 1 2) b)  ; (+ 1 2) is evaluated, giving 3
 ```
-

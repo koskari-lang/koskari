@@ -16,7 +16,7 @@ with **`compile_expression`**; the fragment is converted with
 
 **Relation to the macro:** **`(compileq form)`** and **`(compileq form ns)`** are
 handled by the **`compile/compileq`** macro, which quotes the form and expands
-to **`(call compile …)`**. See [compile/compileq](../macros/compile-compileq.md).
+to **`(call compile ...)`**. See [compile/compileq](../macros/compile-compileq.md).
 
 **Examples:**
 

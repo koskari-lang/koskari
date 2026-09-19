@@ -16,10 +16,10 @@ define invite [user]:
 ```
 
 ```koskari
-koskari> (unless False 1 2)
+>>> (unless False 1 2)
 2
-koskari> (macroexpand-1 '(unless a b c))
-(cond [a None] [else b c])
+>>> (macroexpand-1 '(unless a b c))
+(cond [a None] [else: b c])
 ```
 
 **See also:** [`when`](compile-when.md).

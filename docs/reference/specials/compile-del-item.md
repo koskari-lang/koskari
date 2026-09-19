@@ -14,4 +14,3 @@ VAR_ITEM_CLEAR, and so on). Then CONST None.
 ```koskari
 (del-item d "key")
 ```
-

@@ -10,7 +10,7 @@ Can `+` add text?
 Yes. It joins the pieces end to end:
 
 ```koskari
-koskari> (+ "Ada" " " "Lovelace")
+>>> (+ "Ada" " " "Lovelace")
 "Ada Lovelace"
 ```
 :::
@@ -21,7 +21,7 @@ How long is a piece of text?
 `len` counts its characters, the same `len` that counts a list:
 
 ```koskari
-koskari> (len "Hello")
+>>> (len "Hello")
 5
 ```
 :::
@@ -49,7 +49,7 @@ Can a call go in the braces?
 Yes, any call:
 
 ```koskari
-koskari> f"{name} has {(len name)} letters"
+>>> f"{name} has {(len name)} letters"
 "Ada has 3 letters"
 ```
 :::
@@ -62,9 +62,9 @@ How do we make text loud?
 Text has methods, called with a dot after the value:
 
 ```koskari
-koskari> ("hello".upper)
+>>> ("hello".upper)
 "HELLO"
-koskari> (name.lower)
+>>> (name.lower)
 "ada"
 ```
 
@@ -78,7 +78,7 @@ How do we split a sentence into words?
 `split` gives a list of the words:
 
 ```koskari
-koskari> ("the quick brown fox".split)
+>>> ("the quick brown fox".split)
 #["the" "quick" "brown" "fox"]
 ```
 
@@ -86,7 +86,7 @@ And `join` goes the other way. It is called on the text to put between
 the items:
 
 ```koskari
-koskari> (" ".join #["one" "two" "three"])
+>>> (" ".join #["one" "two" "three"])
 "one two three"
 ```
 :::
@@ -100,9 +100,9 @@ No. One is text, the other is a number. `(+ "42" 1)` is an error. `int`
 turns text into a number and `str` turns a number into text:
 
 ```koskari
-koskari> (+ (int "42") 1)
+>>> (+ (int "42") 1)
 43
-koskari> (+ (str 42) "!")
+>>> (+ (str 42) "!")
 "42!"
 ```
 :::

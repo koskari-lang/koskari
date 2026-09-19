@@ -1,7 +1,9 @@
 /* Koskari landing page styles.
    Shared tokens live in :root so fonts and colors can be tweaked in one place.
    Layout, type, and interactive behavior all live here; the index template
-   only carries structure and class names. */
+   only carries structure and class names.
+   Every foreground token meets WCAG AA 4.5:1 against the surfaces it is
+   used on. */
 
 :root {
   /* fonts */
@@ -17,72 +19,60 @@
   --ko-bg-ink: #1c1812;
   --ko-bg-ink-deep: #100d09;
   --ko-bg-pill: #EFE7D6;
-  --ko-bg-eyebrow: #F2E8CF;
-  --ko-bg-icon: #F4EAD0;
-  --ko-bg-doc-hover: #FBF7EC;
 
   /* text */
   --ko-fg: #211C16;
   --ko-fg-muted: #5C544A;
   --ko-fg-soft: #5f5747;
-  --ko-fg-dim: #6a6354;
   --ko-fg-nav: #534b40;
-  --ko-fg-faint: #9C8F79;
+  --ko-fg-faint: #726654;
   --ko-fg-ink: #EDE6D7;
   --ko-fg-ink-soft: #B9B0A0;
-  --ko-fg-ink-dim: #8A8070;
-  --ko-fg-ink-prompt: #6F6657;
+  --ko-fg-ink-dim: #8B8070;
+  --ko-fg-ink-prompt: #847A68;
   --ko-fg-code: #3A332B;
   --ko-fg-code-shell: #E7DFD0;
-  --ko-fg-footer-end: #C7BBA3;
+  --ko-fg-footer-end: #7D6D4C;
 
   /* accents */
-  --ko-accent: #A9761A;
+  --ko-accent: #936617;
   --ko-accent-bright: #E8B84A;
-  --ko-accent-warm: #B5683C;
-  --ko-accent-doc: #C0A050;
-  --ko-accent-border: #E1C77E;
-  --ko-accent-eyebrow-border: #E7D6A6;
+  --ko-accent-warm: #A25D36;
   --ko-btn-primary-fg: #2c2206;
   --ko-btn-primary-top: #ecc356;
   --ko-btn-primary-bot: #d4a32c;
   --ko-btn-secondary-fg: #3b342b;
   --ko-prompt-green: #7C8B40;
 
-  /* chrome dots */
-  --ko-dot-close: #E0865A;
-  --ko-dot-min: #E6B84C;
-  --ko-dot-max: #9FB36A;
-
   /* borders */
   --ko-border: #E9E0CF;
   --ko-border-card: #ECE3D2;
   --ko-border-soft: #EFE7D6;
   --ko-border-btn: #E2D8C5;
-  --ko-border-hero-ring: #EBE0C9;
   --ko-border-ink: #3a342a;
   --ko-border-ink-box: #2e2a21;
 
   /* code tokens */
-  --ko-tok-kw: #A9761A;
+  --ko-tok-kw: #936617;
   --ko-tok-fn: #4F6E8F;
-  --ko-tok-num: #9A6B2F;
-  --ko-tok-str: #7C8B40;
-  --ko-tok-dec: #B5683C;
-  --ko-tok-param: #8A7E6B;
-  --ko-tok-pn: #B8AD98;
+  --ko-tok-num: #96682E;
+  --ko-tok-str: #6B7737;
+  --ko-tok-dec: #A25D36;
+  --ko-tok-param: #7B705F;
+  --ko-tok-pn: #7E7057;
 
   /* spacing */
   --ko-pad-x: 56px;
   --ko-radius-sm: 8px;
   --ko-radius-md: 10px;
-  --ko-radius-lg: 12px;
   --ko-radius-xl: 13px;
   --ko-radius-pill: 99px;
 
+  /* code window measure */
+  --ko-code-measure: 70ch;
+
   /* shadows */
   --ko-shadow-btn: 0 6px 16px rgba(190, 150, 40, .28);
-  --ko-shadow-card: 0 14px 34px rgba(60, 44, 16, .12);
   --ko-shadow-code: 0 10px 30px rgba(60, 44, 16, .07);
 }
 
@@ -142,7 +132,7 @@ body {
   align-items: center;
   gap: 30px;
   font-size: 15px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .ko-link {
@@ -153,29 +143,30 @@ body {
 
 .ko-link:hover { color: var(--ko-accent); }
 
+/* === Inline links in prose === */
+
+.ko-text-link {
+  color: var(--ko-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ko-text-link:hover { text-decoration-thickness: 2px; }
+
+.ko-ink-link {
+  color: var(--ko-accent-bright);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* === Hero === */
 
 .ko-hero {
   display: grid;
-  grid-template-columns: 1.18fr .82fr;
+  grid-template-columns: 1.02fr .98fr;
   gap: 40px;
   align-items: center;
   padding: 72px var(--ko-pad-x) 60px;
-}
-
-.ko-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--ko-font-mono);
-  font-size: 12px;
-  letter-spacing: .04em;
-  color: var(--ko-accent);
-  background: var(--ko-bg-eyebrow);
-  border: 1px solid var(--ko-accent-eyebrow-border);
-  padding: 6px 12px;
-  border-radius: var(--ko-radius-pill);
-  margin-bottom: 24px;
 }
 
 .ko-h1 {
@@ -193,7 +184,7 @@ body {
   font-size: 18.5px;
   line-height: 1.6;
   color: var(--ko-fg-muted);
-  max-width: 30em;
+  max-width: 34em;
   margin: 0 0 32px;
 }
 
@@ -217,12 +208,22 @@ body {
 
 .ko-btn:hover { transform: translateY(-1px); }
 
+.ko-btn:focus-visible {
+  outline: 3px solid var(--ko-accent);
+  outline-offset: 3px;
+}
+
 .ko-btn-primary {
   background: linear-gradient(var(--ko-btn-primary-top), var(--ko-btn-primary-bot));
   color: var(--ko-btn-primary-fg);
   font-weight: 700;
   padding: 14px 24px;
   box-shadow: var(--ko-shadow-btn);
+}
+
+.ko-btn-primary::after {
+  content: "\2192";
+  font-family: var(--ko-font-mono);
 }
 
 .ko-btn-secondary {
@@ -233,18 +234,15 @@ body {
   border: 1px solid var(--ko-border-btn);
 }
 
-.ko-btn-arrow {
-  font-family: var(--ko-font-mono);
-}
-
 .ko-install {
   display: flex;
   align-items: center;
   gap: 14px;
+  flex-wrap: wrap;
   background: var(--ko-bg-ink);
   border-radius: 9px;
   padding: 13px 18px;
-  max-width: 30em;
+  max-width: 34em;
 }
 
 .ko-install-cmd {
@@ -263,34 +261,6 @@ body {
   letter-spacing: .05em;
 }
 
-.ko-hero-art {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.ko-hero-mark {
-  position: relative;
-  width: 262px;
-  height: 262px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: radial-gradient(circle at 50% 42%, #F4ECD6 0%, var(--ko-bg) 70%);
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px var(--ko-border-hero-ring);
-}
-
-.ko-etymology {
-  text-align: center;
-  margin-top: 18px;
-  font-family: var(--ko-font-mono);
-  font-size: 12px;
-  color: var(--ko-fg-faint);
-  letter-spacing: .03em;
-}
-
 /* === Sections === */
 
 .ko-section {
@@ -303,14 +273,15 @@ body {
 
 .ko-label {
   font-family: var(--ko-font-mono);
+  font-weight: 700;
   font-size: 12px;
   letter-spacing: .14em;
   text-transform: uppercase;
   color: var(--ko-accent);
-  margin-bottom: 22px;
+  margin: 0 0 22px;
 }
 
-.ko-label-tight { margin-bottom: 8px; }
+.ko-label-tight { margin-bottom: 14px; }
 
 .ko-section-title {
   font-family: var(--ko-font-display);
@@ -320,13 +291,13 @@ body {
   margin: 0 0 6px;
 }
 
-.ko-section-title-spaced { margin-bottom: 22px; }
+.ko-section-title-spaced { margin-top: 44px; }
 
 .ko-section-lede {
   font-size: 16px;
   line-height: 1.55;
   color: var(--ko-fg-soft);
-  max-width: 40em;
+  max-width: 32em;
   margin: 0 0 22px;
 }
 
@@ -336,69 +307,18 @@ body {
   font-size: 14px;
 }
 
-/* === Feature cards === */
-
-.ko-features-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 18px;
-}
-
-.ko-card {
-  background: var(--ko-bg-card);
-  border: 1px solid var(--ko-border-card);
-  border-radius: var(--ko-radius-xl);
-  padding: 26px;
-  transition: transform .16s ease, box-shadow .2s ease, border-color .2s ease;
-}
-
-.ko-card:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--ko-shadow-card);
-  border-color: var(--ko-accent-border);
-}
-
-.ko-card-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: var(--ko-radius-md);
-  background: var(--ko-bg-icon);
-  color: var(--ko-accent);
-  font-family: var(--ko-font-mono);
-  font-size: 20px;
-  font-weight: 700;
-  margin-bottom: 16px;
-}
-
-.ko-card-icon-sm { font-size: 18px; }
-
-.ko-card-title {
-  font-family: var(--ko-font-display);
-  font-weight: 600;
-  font-size: 20px;
-  margin: 0 0 8px;
-  letter-spacing: -.01em;
-}
-
-.ko-card-body {
-  font-size: 15px;
-  line-height: 1.55;
-  color: var(--ko-fg-soft);
-  margin: 0;
-}
-
 /* === Code window === */
 
 .ko-code-window {
+  max-width: var(--ko-code-measure);
   background: var(--ko-bg-soft);
   border: 1px solid var(--ko-border-card);
   border-radius: var(--ko-radius-xl);
   overflow: hidden;
   box-shadow: var(--ko-shadow-code);
 }
+
+.ko-code-hero { max-width: none; }
 
 .ko-code-chrome {
   display: flex;
@@ -409,21 +329,10 @@ body {
   background: var(--ko-bg-chrome);
 }
 
-.ko-dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-}
-
-.ko-dot-close { background: var(--ko-dot-close); }
-.ko-dot-min { background: var(--ko-dot-min); }
-.ko-dot-max { background: var(--ko-dot-max); }
-
 .ko-code-filename {
   font-family: var(--ko-font-mono);
   font-size: 12.5px;
   color: var(--ko-fg-faint);
-  margin-left: 8px;
 }
 
 .ko-code-body {
@@ -441,64 +350,34 @@ body {
   color: var(--ko-fg-code);
 }
 
-/* === Docs levels === */
+.ko-code-hero .ko-code-pre { font-size: 12.5px; }
 
-.ko-doc-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* === Python beside Koskari === */
+
+.ko-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
 }
 
-.ko-doc {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 20px 24px;
-  background: var(--ko-bg-card);
-  border: 1px solid var(--ko-border-card);
-  border-radius: var(--ko-radius-lg);
-  text-decoration: none;
-  color: var(--ko-fg);
-  transition: transform .16s ease, box-shadow .2s ease, background .16s ease, border-color .2s ease;
+.ko-compare .ko-code-window { max-width: none; }
+
+.ko-compare-caption {
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--ko-fg-soft);
+  max-width: 32em;
+  margin: 18px 0 0;
 }
 
-.ko-doc:hover {
-  background: var(--ko-bg-doc-hover);
-  border-color: var(--ko-accent-border);
-  transform: translateY(-3px);
-  box-shadow: var(--ko-shadow-card);
-}
+/* === Documentation line === */
 
-.ko-doc-num {
-  font-family: var(--ko-font-mono);
-  font-size: 13px;
-  color: var(--ko-accent-doc);
-  font-weight: 700;
-  width: 28px;
-}
-
-.ko-doc-title {
-  font-family: var(--ko-font-display);
-  font-weight: 600;
-  font-size: 19px;
-  width: 230px;
-}
-
-.ko-doc-blurb {
-  font-size: 15px;
-  color: var(--ko-fg-dim);
-  flex: 1;
-}
-
-.ko-arrow {
-  font-family: var(--ko-font-mono);
-  color: var(--ko-tok-pn);
-  transition: transform .16s ease, color .16s ease;
-}
-
-.ko-doc:hover .ko-arrow {
-  transform: translateX(4px);
-  color: var(--ko-accent);
+.ko-doc-line {
+  font-size: 16.5px;
+  line-height: 1.9;
+  color: var(--ko-fg-soft);
+  margin: 0;
 }
 
 /* === Download band === */
@@ -622,7 +501,6 @@ body {
 .k-num   { color: var(--ko-tok-num); }
 .k-str   { color: var(--ko-tok-str); }
 .k-dec   { color: var(--ko-tok-dec); }
-.k-param { color: var(--ko-tok-param); }
 .k-pn    { color: var(--ko-tok-pn); }
 .k-cm    { color: var(--ko-tok-param); font-style: italic; }
 
@@ -630,19 +508,21 @@ body {
 
 @media (max-width: 860px) {
   .ko-hero { grid-template-columns: 1fr; }
-  .ko-hero-art { order: -1; }
   .ko-download-grid { grid-template-columns: 1fr; }
-  .ko-features-grid { grid-template-columns: 1fr; }
+  .ko-compare { grid-template-columns: 1fr; }
+  .ko-code-hero .ko-code-pre { font-size: 13.5px; }
 }
 
 @media (max-width: 620px) {
   :root { --ko-pad-x: 24px; }
 
   .ko-nav-links { gap: 18px; }
-  .ko-doc-title { width: auto; }
-  .ko-doc-blurb { display: none; }
   .ko-h1 { font-size: 44px; }
   .ko-download { padding: 32px 24px; }
+}
+
+@media (max-width: 400px) {
+  .ko-h1 { font-size: 36px; }
 }
 
 /* The end. */

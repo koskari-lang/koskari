@@ -1,0 +1,14 @@
+import-from koskari.solve amb require solve
+
+
+define triples [limit]:
+    solve:
+        lambda []:
+            define a (amb (range 1 limit))
+            define b (amb (range a limit))
+            define c (amb (range b limit))
+            require (== (+ (* a a) (* b b)) (* c c))
+            #(a b c)
+
+(print (triples 20))
+;; [(3, 4, 5), (5, 12, 13), (6, 8, 10), (8, 15, 17), (9, 12, 15)]

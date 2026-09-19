@@ -3,8 +3,8 @@
 **Module:** `koskari.itertools`
 
 **Imports:** `import-from koskari.itertools accumulate batched chain
-compress cycle dropwhile filterfalse groupby islice pairwise starmap
-takewhile zip-longest`
+chain-from-iterable compress cycle dropwhile filterfalse groupby islice
+pairwise starmap takewhile zip-longest`
 
 **Use-case:** The iterator combinators, in a form that accepts koskari
 functions and koskari sources. Python's `itertools` does not: it calls
@@ -78,8 +78,8 @@ of the combinator.
 
 ## accumulate
 
-**Syntax:** `(accumulate ITERABLE)` ·
-`(accumulate ITERABLE FUNC)` · `(accumulate ITERABLE initial: SEED)`
+**Syntax:** `(accumulate ITERABLE)`,
+`(accumulate ITERABLE FUNC)`, `(accumulate ITERABLE initial: SEED)`
 
 Yield running totals. The first element is emitted as it stands and
 becomes the first total; each later element is folded into it. With no
@@ -109,7 +109,7 @@ when the source does not divide evenly. `N` must be at least one.
 
 ## chain
 
-**Syntax:** `(chain ITERABLE ...)` · `(chain-from-iterable ITERABLES)`
+**Syntax:** `(chain ITERABLE ...)`, `(chain-from-iterable ITERABLES)`
 
 Yield every element of each source in turn. A source is acquired only
 when the one before it runs out, so a source never reached is never
@@ -178,7 +178,7 @@ verdict, so `filter?` answers true for it.
 
 ## groupby
 
-**Syntax:** `(groupby ITERABLE)` · `(groupby ITERABLE KEY)`
+**Syntax:** `(groupby ITERABLE)`, `(groupby ITERABLE KEY)`
 
 Yield `#(key group)` for each run of consecutive elements sharing a
 key, where `KEY` defaults to the element itself. Non-adjacent runs of
@@ -197,8 +197,8 @@ group stays usable for as long as you hold it.
 
 ## islice
 
-**Syntax:** `(islice ITERABLE STOP)` ·
-`(islice ITERABLE START STOP)` · `(islice ITERABLE START STOP STEP)`
+**Syntax:** `(islice ITERABLE STOP)`,
+`(islice ITERABLE START STOP)`, `(islice ITERABLE START STOP STEP)`
 
 Yield a slice of the source by position. Bounds count forward only:
 `START` and `STOP` must be non-negative, `STEP` at least one, and
@@ -249,7 +249,7 @@ whatever holds it can carry on from the element after.
 
 ## zip-longest
 
-**Syntax:** `(zip-longest ITERABLE ...)` ·
+**Syntax:** `(zip-longest ITERABLE ...)`,
 `(zip-longest ITERABLE ... fillvalue: FILL)`
 
 Pair elements positionally, continuing until every source is spent

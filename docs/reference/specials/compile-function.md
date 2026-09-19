@@ -3,13 +3,11 @@
 
 **Syntax** (named only; most specific forms first):
 
-
 | Shape                    | Form                                           |
 | ------------------------ | ---------------------------------------------- |
 | Named + return           | `(function NAME :: RET FORMALS BODY ...)`     |
 | Named + return (`type:`) | `(function NAME type: RET FORMALS BODY ...)`  |
 | Named, no return         | `(function NAME FORMALS BODY ...)`            |
-
 
 There is no anonymous `function` form; use [lambda](compile-lambda.md) for that.
 

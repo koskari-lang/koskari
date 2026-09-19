@@ -21,4 +21,3 @@ cdr (dotted tail) position of an improper list; the quasiquote compiler raises
 `(a ,@items b)   ; items (a list) is spliced in between a and b
 `(,@xs ,@ys)     ; two lists concatenated
 ```
-

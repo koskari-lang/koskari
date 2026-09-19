@@ -52,5 +52,3 @@ paths).
   [else: (on-success)]
   [finally: (cleanup)])
 ```
-
-

@@ -28,7 +28,7 @@ command line, the error classes, and the Python API.
 **Project**: [building and testing](project/build-test.md) from a source
 checkout, the [architecture](project/architecture-map.md), how the project
 is [developed](project/provenance.md), [versioning](project/release-and-versioning.md),
-the [example corpus](corpus/index.md), and the [changelog](changelog.md).
+and the [changelog](changelog.md).
 
 ```{toctree}
 :maxdepth: 1
@@ -69,6 +69,5 @@ project/build-test
 project/architecture-map
 project/provenance
 project/release-and-versioning
-corpus/index
 changelog
 ```

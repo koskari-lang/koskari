@@ -3,21 +3,36 @@
 **Syntax:** `(cadr PAIR)`, `(caddr PAIR)`, `(cadddr PAIR)`,
 `(caddddr PAIR)`; `(first PAIR)` through `(fifth PAIR)`
 
-**Behaviour:** The accessors expand to nested `car` and `cdr`: `cadr`
-is the second element, `caddr` the third, and so on. `first` through
-`fifth` are aliases for `car`, `cadr`, `caddr`, `cadddr`, and
-`caddddr`. They are macros, so in call position they expand even when
-a local binding of the same name exists.
+**Behaviour:** `cadr` through `caddddr` are macros that expand to
+nested `car` and `cdr`: `cadr` is the second element, `caddr` the
+third, and so on. Being macros, they expand in call position even when
+a local binding of the same name exists. Each also has a runtime
+function binding of the same name, so `cadr` can be handed to a
+higher-order function as a value.
+
+`first` through `fifth` are runtime bindings only -- `car`, `cadr`,
+`caddr`, `cadddr`, and `caddddr` as functions. They resolve as ordinary
+values, so a local binding of the same name shadows them in call
+position.
 
 **Examples:**
 
 ```koskari
-koskari> (cadr '(1 2 3))
+>>> (cadr '(1 2 3))
 2
-koskari> (third '(1 2 3))
+>>> (third '(1 2 3))
 3
-koskari> (fifth '(1 2 3 4 5))
+>>> (fifth '(1 2 3 4 5))
 5
+>>> (list (map first #['(1 2) '(3 4)]))
+#[1 3]
+```
+
+```koskari
+>>> (let [[first (lambda [p] "shadowed")]] (first '(1 2 3)))
+"shadowed"
+>>> (let [[cadr (lambda [p] "shadowed")]] (cadr '(1 2 3)))
+2
 ```
 
 **See also:** [`car`](../specials/compile-car.md),

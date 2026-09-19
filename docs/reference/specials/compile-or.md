@@ -23,11 +23,9 @@ term).
 **Examples:**
 
 ```koskari
-(or)              ; → False
-(or 42)           ; → 42
-(or None False 0) ; → 0   (all falsy, last value)
-(or None 99 0)    ; → 99  (short-circuit at second term)
-(or False 42)     ; → 42
+(or)              ; -> False
+(or 42)           ; -> 42
+(or None False 0) ; -> 0   (all falsy, last value)
+(or None 99 0)    ; -> 99  (short-circuit at second term)
+(or False 42)     ; -> 42
 ```
-
-

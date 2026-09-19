@@ -19,7 +19,7 @@ step, outermost first, so `@d1` over `@d2` over a definition applies as
 **Examples:**
 
 ```koskari
-koskari> (macroexpand-1 '(decorate (d1) (define foo [x] x)))
+>>> (macroexpand-1 '(decorate (d1) (define foo [x] x)))
 (define foo (decorate [d1] (function foo [x] x)))
 ```
 

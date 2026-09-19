@@ -2,13 +2,15 @@
 
 **Symbol:** `compile/inline-macro` (surface: **`inline-macro`**)
 
-**Syntax:** **`(inline-macro body …)`**
+**Syntax:** **`(inline-macro body ...)`**
 
 **Behaviour:** **`special-rules`** compile special. At expand time the body
-forms are unwrapped from **`Datum`**, combined into **`(begin body …)`**,
-compiled and evaluated once via **`full_compile`** and **`as_expression`**. The
-resulting form is returned for the compiler to compile in place of the
-**`inline-macro`** site (compile-time source splice). A body that evaluates
+forms are unwrapped from **`Datum`** and combined into
+**`` `(let [] ,@body) ``**, a single scope over the whole body, then
+compiled and evaluated once via **`full_compile`** and **`as_expression`**
+against the module's namespace. The resulting form is returned for the
+compiler to compile in place of the **`inline-macro`** site (compile-time
+source splice). A body that evaluates
 to `None` splices the constant `None`, as does any other value with no form
 of its own. No transformer is installed and nothing is bound in the module
 namespace.
@@ -32,4 +34,4 @@ surrounding module compiles as the result of the **`inline-macro`** form.
 
 - [compile/let-syntax](compile-let-syntax.md)
 - [compile/define-syntax](compile-define-syntax.md)
-- [Macro matching and hygiene](../../guide/macros-and-hygiene.md)
+- [Macros and hygiene](../../guide/macros-and-hygiene.md)

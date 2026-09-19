@@ -15,6 +15,7 @@ the REPL shows the expansion of any of them.
 | [`take!`](compile-take.md) | Read a name, attribute, or subscript and clear it |
 | [`bind!`](compile-bind.md) | Bind a name to a ref, typed by the target shape |
 | [`ref`](compile-ref.md) | A ref to a name, attribute, subscript, or parameter |
+| [`unassigned?`, `default!`](compile-default-and-compile-unassigned.md) | Whether a location holds a value; store one unless it already does |
 | [`global`, `local`](compile-global-and-compile-local.md) | Declare which scope a name belongs to |
 | [`let*`](compile-letstar.md) | Sequential `let`, each binding seeing the ones before |
 | [`let-values`](compile-let-values.md) | `let` with unpacking |
@@ -31,9 +32,10 @@ the REPL shows the expansion of any of them.
 | [`when`](compile-when.md), [`unless`](compile-unless.md) | One-armed conditionals |
 | [`?`](compile-q.md) | Conditional with a boolean default |
 | [`bool`](compile-bool.md) | Truthiness as a boolean |
-| [`None?`, `nil?`](compile-none-and-compile-nil.md) | Identity tests for the two empties |
+| [`None?`](compile-none-and-compile-nil.md) | Identity test against the `None` singleton |
 | [`has?`](compile-has.md) | Membership |
 | [`assert`](compile-assert.md) | Raise `AssertionError` unless a test holds; removable by pragma |
+| [`pass`](compile-pass.md) | A no-op expression, and a bare control word |
 
 ## Definitions
 
@@ -68,6 +70,8 @@ the REPL shows the expansion of any of them.
 | [`let-syntax`](compile-let-syntax.md) | A transformer scoped to a body |
 | [`inline-macro`](compile-inline-macro.md) | Run a body at expand time and splice its result |
 | [`datum`](compile-datum.md) | Capture a form with its source position for hygiene |
+| [`datumq`](compile-datumq.md) | The same without evaluating the argument |
+| [`define-fence`](compile-define-fence.md) | Define a fence handler for a triple-backtick literal |
 | [`macroexpand`, `macroexpand-1`](compile-macroexpand.md) | Expand a form fully, or by one step |
 | [`macroexpandq`, `macroexpandq-1`](compile-macroexpandq.md) | The same without quoting the form |
 | [`compileq`](compile-compileq.md), [`evaluate`](compile-evaluate.md), [`get-compiler`](compile-get-compiler.md) | Compile, evaluate, and reach the compiler from a program |

@@ -12,7 +12,7 @@ A list of three names. The single quote in front says: keep this group
 as it is, do not call `apple`.
 
 ```koskari
-koskari> '(apple pear plum)
+>>> '(apple pear plum)
 (apple pear plum)
 ```
 
@@ -26,7 +26,7 @@ How do we get the first item?
 `car`:
 
 ```koskari
-koskari> (car '(apple pear plum))
+>>> (car '(apple pear plum))
 apple
 ```
 :::
@@ -37,7 +37,7 @@ And everything after the first?
 `cdr`, which is the rest of the list, itself a list:
 
 ```koskari
-koskari> (cdr '(apple pear plum))
+>>> (cdr '(apple pear plum))
 (pear plum)
 ```
 
@@ -52,9 +52,9 @@ The empty list, written `nil` or `'()`. `nil?` asks whether a list is
 empty:
 
 ```koskari
-koskari> (cdr '(plum))
+>>> (cdr '(plum))
 ()
-koskari> (nil? (cdr '(plum)))
+>>> (nil? (cdr '(plum)))
 True
 ```
 :::
@@ -65,7 +65,7 @@ How do we put an item on the front?
 `cons`:
 
 ```koskari
-koskari> (cons 'fig '(apple pear))
+>>> (cons 'fig '(apple pear))
 (fig apple pear)
 ```
 :::

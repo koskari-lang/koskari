@@ -10,13 +10,17 @@ that tools and readers use; nothing checks them at a call.
 ```koskari
 define total :: int 0
 
-define double :: int [n :: int]:
+define double :: int [(n :: int)]:
   (* n 2)
 
 define-class Point []:
   define x :: int 0
   define y :: int 0
 ```
+
+An annotated formal is parenthesized inside the formals list:
+`[(n :: int)]`. The parentheses group the name with its annotation, so
+the formals list still reads as one parameter.
 
 The annotation is an ordinary expression evaluated in the defining
 scope. A string annotation, `:: "Request"`, stays a lazily resolved
@@ -28,7 +32,9 @@ A function's annotations go to `__annotations__` and `inspect.signature`
 reports them:
 
 ```koskari
-double.__annotations__   ;; {'n': <class 'int'>, 'return': <class 'int'>}
+import inspect
+(print double.__annotations__)        ;; {'n': <class 'int'>, 'return': <class 'int'>}
+(print (inspect.signature double))    ;; (n: int) -> int
 ```
 
 A class's annotated `define` forms go to the class `__annotations__`,

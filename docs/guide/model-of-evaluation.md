@@ -62,12 +62,16 @@ which is what puts a Koskari line in a traceback.
 The compiler walks each form. When a form's head names a macro, the
 macro receives the form and returns a new one, and the walk continues
 on the result. `if` is a macro over `cond`; `when`, `unless`, `set!`,
-`define-class`, and the `-each` family are macros too:
+`define-class`, and the comprehension forms `each`, `list-each`, and
+`dict-each` are macros too:
 
 ```koskari
-koskari> (macroexpand '(when ready (print "go")))
-(cond [ready (print "go")] [else None])
+>>> (macroexpand '(when ready (print "go")))
+(cond [ready (print "go")] [else: None])
 ```
+
+`for-each` is a compiler special rather than a macro; the comprehension
+macros expand into it, and it expands no further.
 
 Expansion is where a program's vocabulary grows. A `define-syntax` in
 your own module adds a head the walk knows about, and its uses lower to
@@ -139,9 +143,9 @@ A form is also a value. Quote it and it stays a pair chain instead of
 running:
 
 ```koskari
-koskari> '(+ 1 2)
+>>> '(+ 1 2)
 (+ 1 2)
-koskari> (car '(+ 1 2))
+>>> (car '(+ 1 2))
 +
 ```
 

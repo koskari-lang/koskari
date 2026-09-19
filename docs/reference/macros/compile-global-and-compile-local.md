@@ -1,15 +1,17 @@
 # compile/global and compile/local
 
-**Syntax:** `(global NAME)`; `(local NAME)` or `(local NAME VALUE)`.
+**Syntax:** `(global NAME)` or `(global NAME VALUE)`; `(local NAME)` or
+`(local NAME VALUE)`.
 
 **Behaviour:** `global` expands to
 [`define-global`](../specials/compile-define-global.md), so later stores
 to `NAME` inside the function reach the module binding. `local` expands
 to [`define`](../specials/compile-define.md), declaring a function-local
-name, with an optional initial value. Under the default strict
-resolution a store to a name bound in no enclosing scope is a compile
-error, and these two forms are how a function says which scope it
-means.
+name. Both take an optional initial value, assigned at the declaration;
+without one the name is declared and left unassigned. Under the default
+strict resolution a store to a name bound in no enclosing scope is a
+compile error, and these two forms are how a function says which scope
+it means.
 
 **Examples:**
 
@@ -21,6 +23,18 @@ define start []:
   when (None? server):
     set! server (create-server)
   (server.serve)
+```
+
+The two-argument form declares and assigns in one step:
+
+```koskari
+define count 5
+
+define zero-count []:
+  global count 0
+
+(zero-count)
+count     ;; 0
 ```
 
 **See also:** [Bindings and refs](../../guide/bindings-and-refs.md),

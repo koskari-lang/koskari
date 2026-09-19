@@ -11,8 +11,8 @@ evaluated, so quote it.
 **Examples:**
 
 ```koskari
-koskari> (macroexpand '(when ready (print "go")))
-(cond [ready (print "go")] [else None])
+>>> (macroexpand '(when ready (print "go")))
+(cond [ready (print "go")] [else: None])
 ```
 
 **See also:** [`macroexpand-1`](compile-macroexpand-1.md) for one step,

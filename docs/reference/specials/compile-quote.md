@@ -20,4 +20,3 @@ compiles it. Otherwise emit CONST FORM.
 (quote x)
 (quote (a b c))
 ```
-

@@ -1,8 +1,8 @@
 # compile/super
-**Syntax:** **`(super)`**, **`(super ARGS …)`**
+**Syntax:** **`(super)`**, **`(super ARGS ...)`**
 
-**Behaviour:** **`(super)`** → **`(call super __class__ self)`**;
-**`(super ARGS …)`** → **`(call super ARGS …)`**.
+**Behaviour:** **`(super)`** -> **`(call super __class__ self)`**;
+**`(super ARGS ...)`** -> **`(call super ARGS ...)`**.
 
 `__class__` is the class a method was defined in. The class body binds
 it once the class object exists, and every method defined in that body

@@ -2,24 +2,32 @@
 
 Exceptions are Python exceptions. Tracebacks show Koskari source lines.
 
-## Two phases
+## Where an error comes from
 
 :::{dialogue}
 Is there a `SyntaxError` and a runtime error, as in Python?
 +++
-Yes. A reader error, `ReaderSyntaxError`, means the text could not be
-read: unbalanced parentheses, a bad block. Nothing has run. A runtime
-error is a Python exception raised while running, from your code or
-from a library you called.
+Yes, with a third between them. A reader error, `ReaderSyntaxError`,
+means the text could not be read: unbalanced parentheses, a bad block.
+A compile error, `CompilerError` and its subclasses, means the form read
+but its shape is wrong for the special form at its head. Neither has run
+anything. A runtime error is a Python exception raised while running,
+from your code or from a library you called.
 
 ```koskari
-koskari> ( 1 2 ]
+>>> ( 1 2 ]
 ```
 
-is a reader error, and
+is a reader error,
 
 ```koskari
-koskari> (/ 1 0)
+>>> (define)
+```
+
+is a compile error, and
+
+```koskari
+>>> (/ 1 0)
 ```
 
 raises `ZeroDivisionError`.
@@ -124,10 +132,10 @@ print "here" x x.value
 At the REPL:
 
 ```koskari
-koskari> try:
-   ...>   (/ 1 0)
-   ...> except [ZeroDivisionError]:
-   ...>   "caught"
+>>> try:
+...   (/ 1 0)
+... except [ZeroDivisionError]:
+...   "caught"
 "caught"
 ```
 

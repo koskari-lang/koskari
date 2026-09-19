@@ -8,11 +8,11 @@ under Python's rules, as `True` or `False`.
 **Examples:**
 
 ```koskari
-koskari> (bool 0)
+>>> (bool 0)
 False
-koskari> (bool "x")
+>>> (bool "x")
 True
-koskari> (bool #[])
+>>> (bool #[])
 False
 ```
 

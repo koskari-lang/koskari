@@ -25,7 +25,7 @@ How do we use it?
 Call it like anything else:
 
 ```koskari
-koskari> (double 8)
+>>> (double 8)
 16
 ```
 :::

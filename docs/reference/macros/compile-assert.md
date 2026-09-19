@@ -7,7 +7,7 @@
 - `(assert EXPR)` -- raise `AssertionError` when `EXPR` is falsey.
 - `(assert EXPR MESSAGE)` -- the same, with `MESSAGE` as the exception argument.
 
-**Behaviour:** Expands to a falsey-check that raises **`AssertionError`**  -- 
+**Behaviour:** Expands to a falsey-check that raises **`AssertionError`** --
 effectively `(unless EXPR (raise (AssertionError MESSAGE?)))`. `MESSAGE` is an
 ordinary expression and is evaluated only when the assertion fails.
 

@@ -17,7 +17,3 @@ stack as the expression's value. Any arguments are rejected with `SpecialError`.
 ;; Module globals namespace for the current frame
 (globals)
 ```
-
-**Implementation:** `koskari/compile/specials/variables.special_globals`
-
-

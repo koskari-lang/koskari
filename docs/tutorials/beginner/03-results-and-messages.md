@@ -11,7 +11,7 @@ When does Koskari show a result?
 At the prompt, whenever a line produces a value worth seeing:
 
 ```koskari
-koskari> (+ 1 2)
+>>> (+ 1 2)
 3
 ```
 :::
@@ -36,9 +36,9 @@ Can we get the last result back?
 Yes. An underscore names the value from the last line:
 
 ```koskari
-koskari> (+ 3 4)
+>>> (+ 3 4)
 7
-koskari> (* _ 2)
+>>> (* _ 2)
 14
 ```
 :::
@@ -51,10 +51,13 @@ What if the punctuation is wrong?
 Koskari cannot read the program and says so:
 
 ```koskari
-koskari> ( 1 2 ]
+>>> ( 1 2 ]
+ReaderSyntaxError: mismatched open and close characters
 ```
 
-The message names a syntax error and says where the reader gave up.
+At the prompt the message is that one line: the name of the error and
+what went wrong. Running the same text from a file adds the file, the
+line number, and a caret under the character that stopped the reader.
 :::
 
 :::{dialogue}
@@ -72,10 +75,15 @@ Can the punctuation be right and the program still fail?
 Yes. Koskari can read this, but cannot do it:
 
 ```koskari
-koskari> (/ 1 0)
+>>> (/ 1 0)
+Traceback (most recent call last):
+  Koskari dynchain (native eval):
+  File "<stdin>", line 1, in __main__
+ZeroDivisionError: division by zero
 ```
 
-The message is a `ZeroDivisionError`. Reading was fine; running was not.
+The last line names the error. Reading was fine; running was not, and
+the lines above say where.
 :::
 
 :::{dialogue}
@@ -94,8 +102,8 @@ What if I press Enter before the group is closed?
 Koskari waits for the rest. The prompt changes until the `)` arrives:
 
 ```koskari
-koskari> (+ 1
-   ...>    2)
+>>> (+ 1
+...    2)
 3
 ```
 :::

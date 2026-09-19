@@ -8,7 +8,7 @@ block head. The original head symbol is preserved; it is not rewritten to
 **`layout/block`**.
 
 **Behaviour:** Splices body forms onto the header list:
-**`(HEAD ARG … BODY-FORM …)`**. Does not wrap the body in **`compile/begin`**.
+**`(HEAD ARG ... BODY-FORM ...)`**. Does not wrap the body in **`compile/begin`**.
 Does not accept peers.
 
 A body line that opens with a keyword is a call argument name followed by
@@ -20,7 +20,7 @@ print:
   "hello"
   file: stderr
   sep: 1 2
-;; → (print "hello" file: stderr sep: (1 2))
+;; -> (print "hello" file: stderr sep: (1 2))
 ```
 
 The value may be a block. `k: HEAD ARG ... :` reads the block headed by
@@ -35,7 +35,7 @@ print:
     (log "choosing")
     stderr
   "hello"
-;; → (print file: (begin (log "choosing") stderr) "hello")
+;; -> (print file: (begin (log "choosing") stderr) "hello")
 
 print:
   file::
@@ -44,11 +44,9 @@ print:
     else:
       stderr
   "hello"
-;; → (print file: (begin (cond (redirect? stdout) (else: stderr))) "hello")
+;; -> (print file: (begin (cond (redirect? stdout) (else: stderr))) "hello")
 ```
 
 For a **`compile/begin`** wrapper around the body, use
 [layout/block-begin](layout-block-begin.md) instead (for example
 **`define layout/my-head layout/block-begin`** in a **`.ki`** module).
-
-**Implementation:** `koskari/reader/layouts/basics.layout_block`

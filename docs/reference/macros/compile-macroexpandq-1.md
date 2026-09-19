@@ -10,8 +10,8 @@ expansion step is applied. With one argument the namespace is
 **Examples:**
 
 ```koskari
-koskari> (macroexpandq-1 (when a b))
-(cond [a b] [else None])
+>>> (macroexpandq-1 (when a b))
+(cond [a b] [else: None])
 ```
 
 **See also:** [`macroexpand-1`](compile-macroexpand-1.md).

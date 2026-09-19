@@ -50,7 +50,7 @@ structured says what it is.
 
 Patterns nest: a sequence element may be a class pattern, a mapping
 value may be a sequence, an extraction result may be destructured, as
-in `(app splitext #[base ".ki"])`.
+in `(app splitext #[base "." "ki"])`.
 
 The matcher heads from [`koskari.matcher`](../reference/api/koskari-matcher.md),
 `FORM`, `ONEOF`, `REST`, `CLASS`, and the rest, are also accepted in
@@ -80,8 +80,10 @@ dataclasses and named tuples provide on Python 3.10 and later; on 3.9,
 which predates `__match_args__`, Koskari synthesizes the equivalent for
 dataclasses and namedtuples, and any other class needs an explicit
 `__match_args__`. Keyword fields, `Point[x: 0 y]`, read attributes and
-work on any class. A bare `Point[]` is an isinstance check alone. Field
-patterns nest: `Point[(x :: int) y]`.
+work on any class. Field patterns nest: `Point[(x :: int) y]`. For an
+isinstance check with no field extraction, write the type-check pattern
+`(:: Point)`; an empty bracket group is an index suffix to the reader,
+not a pattern.
 
 ### Mappings
 

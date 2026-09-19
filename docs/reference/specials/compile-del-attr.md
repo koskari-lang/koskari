@@ -12,4 +12,3 @@
 ```koskari
 (del-attr obj x)
 ```
-

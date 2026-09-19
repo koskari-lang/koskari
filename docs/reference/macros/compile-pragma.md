@@ -26,9 +26,9 @@ booleans, numbers, and strings are bare.
 ```
 
 ```koskari
-koskari> (pragma compiler/call-brackets)
-BracketCalls.WARN
-koskari> (pragma reader/layout)
+>>> (pragma compiler/call-brackets)
+<BracketCalls.WARN: 'warn'>
+>>> (pragma reader/layout)
 True
 ```
 

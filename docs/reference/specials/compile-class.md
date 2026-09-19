@@ -55,5 +55,3 @@ or `VAR_STORE` for **NAME** itself (only for injected `__doc__` /
   (class C (Base meta: MyMeta)
     (define x 1)))
 ```
-
-

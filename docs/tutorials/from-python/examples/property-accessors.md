@@ -29,6 +29,9 @@ Plain Python callables pass through unchanged, so mixed accessors work.
 ## Core shape
 
 ```koskari
+import-from dataclasses dataclass
+
+
 @dataclass
 define-class Circle []:
   """ A circle with a validated radius. """

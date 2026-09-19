@@ -28,7 +28,7 @@ What does `(+ 1 2)` produce?
 `3`. Decide first, then check:
 
 ```koskari
-koskari> (+ 1 2)
+>>> (+ 1 2)
 3
 ```
 :::
@@ -60,7 +60,7 @@ Can a call have many inputs?
 Yes:
 
 ```koskari
-koskari> (+ 1 2 3 4)
+>>> (+ 1 2 3 4)
 10
 ```
 
@@ -74,7 +74,7 @@ Calls `print` with three inputs. It puts each on the screen, in order,
 with a space between:
 
 ```koskari
-koskari> (print "a" "b" "c")
+>>> (print "a" "b" "c")
 a b c
 ```
 :::
@@ -87,8 +87,8 @@ Can we keep a value under a name?
 Yes, with `define`:
 
 ```koskari
-koskari> (define x 6)
-koskari> (define y 7)
+>>> (define x 6)
+>>> (define y 7)
 ```
 
 From then on `x` means `6` and `y` means `7`.
@@ -101,7 +101,7 @@ Three inputs: the value of `x`, the value of `y`, and the value of
 `(* x y)`. Work out the third before you run it.
 
 ```koskari
-koskari> (print x y (* x y))
+>>> (print x y (* x y))
 6 7 42
 ```
 :::
@@ -122,7 +122,7 @@ What is `(+ 1 (+ 2 3))`?
 The inner call is `5`, then `+` adds `1` and `5`:
 
 ```koskari
-koskari> (+ 1 (+ 2 3))
+>>> (+ 1 (+ 2 3))
 6
 ```
 :::

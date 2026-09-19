@@ -23,6 +23,7 @@ special, a macro, and a call is in
 | [`function`](compile-function.md) | A named function value that is not bound |
 | [`lambda`](compile-lambda.md) | An anonymous function value; formals, defaults, rest collectors, annotations, by-ref |
 | [`let`](compile-let.md) | Lexical bindings for a body; named `let` for loops |
+| [`letrec`](compile-letrec.md) | Lexical bindings that may refer to each other |
 | [`setq`](compile-setq.md) | Store into an existing binding; the special under `set!` |
 | [`setq-values`](compile-setq-values.md) | Store into several bindings by unpacking |
 | [`bindq`](compile-bindq.md) | Bind a name to a ref |
@@ -63,7 +64,8 @@ special, a macro, and a call is in
 | [`call-attr`](compile-call-attr.md) | Call a method by name; `(obj.method ...)` reads to this |
 | [`class`](compile-class.md) | Build a class value; what `define-class` lowers to |
 | [`instance?`](compile-instance.md), [`subclass?`](compile-subclass.md) | Type tests, accepting several types |
-| [`str`](compile-str.md), [`format`](compile-format.md) | String conversion; `format` with an optional spec |
+| [`#str`](compile-str.md), [`format`](compile-format.md) | String conversion; `format` with an optional bare format spec |
+| [`#list`, `#tuple`, `#list-append`](object-operators/index.md#collection-builders) | Build a list or tuple; append to a list |
 
 ## Operators
 
@@ -73,6 +75,8 @@ special, a macro, and a call is in
 | [`<`](compile-lt.md), [`<=`](compile-lteq.md), [`>`](compile-gt.md), [`>=`](compile-gteq.md) | Ordering, chained |
 | [`le?`](compile-le.md), [`ge?`](compile-ge.md) | Aliases for `<=` and `>=` |
 | [`**`](compile-starstar.md) | Exponentiation with an optional modulus |
+| [`in`, `not-in`, `is`, `is-not`](object-operators/index.md#membership-and-identity) | Membership and identity, each with a `?`-suffixed alias |
+| [`not`, `truth`, `nil?`, `repr`, `len`, `type`, `dir`, `vars`, `iter`, `next`, `divmod`](object-operators/index.md#unary-and-inspection-operators) | The unary and inspection operators |
 | [Object operators](object-operators/index.md) | The arithmetic, bitwise, and unary operators, constant folding, and the comparison table |
 
 ## Pairs and quoting
@@ -82,7 +86,7 @@ special, a macro, and a call is in
 | [`cons`](compile-cons.md), [`car`](compile-car.md), [`cdr`](compile-cdr.md) | Build a pair chain; its first element; its rest |
 | [`quote`](compile-quote.md) | A form as data; `'form` |
 | [`quasiquote`](compile-quasiquote.md), [`unquote`](compile-unquote.md), [`unquote-splicing`](compile-unquote-splicing.md) | A template; `` `form ``, `,form`, `,@form` |
-| [`quote-block`](compile-quote-block.md), [`quasiquote-block`](compile-quasiquote-block.md) | The same over an indented block, keeping its `:block:` structure |
+| [Block quote](compile-quote-block.md), [block quasiquote](compile-quasiquote-block.md) | The reader shorthands `'head:` and `` `head: ``, which quote an indented block as its `block:` cons |
 
 ## Async, generators, and continuations
 
@@ -111,7 +115,7 @@ special, a macro, and a call is in
 | [`syntax-rules`](compile-syntax-rules.md), [`syntax-match`](compile-syntax-match.md) | Template transformers, by rule list and by named spec |
 | [`macro-rules`](compile-macro-rules.md), [`macro-match`](compile-macro-match.md) | Procedural transformers |
 | [`special-rules`](compile-special-rules.md), [`special-match`](compile-special-match.md) | Transformers that receive the compiler and emit bytecode |
-| [`define-syntax`](compile-define-syntax.md) | Bind a transformer; the `compile/` binding beneath the macro |
+| [`bare-syntax`](compile-bare-syntax.md) | The arm used when a syntax name appears as a lone atom |
 | [`gensym-thunk`](compile-gensym-partial.md) | The `{...}` thunk with inferred `%1`, `%2` formals |
 | [`apply-fence`](compile-apply-fence.md) | Expand a fenced foreign literal through its handler |
 | [`bytecode`](compile-bytecode.md) | Inject bytecode directly |

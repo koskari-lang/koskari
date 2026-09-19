@@ -35,5 +35,3 @@
   (body: 42)
   (after: (cleanup)))
 ```
-
-

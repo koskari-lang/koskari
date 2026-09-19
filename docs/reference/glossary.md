@@ -1,7 +1,7 @@
 # Glossary
 
 Shared terms used across tutorials and reference pages. For longer explanations
-with examples, see [Concepts](../guide/index.md).
+with examples, see [Guide](../guide/index.md).
 
 **async evaluation**
 : Running Koskari under an asyncio-hosted loader or REPL; top-level and `await`
@@ -24,10 +24,17 @@ with examples, see [Concepts](../guide/index.md).
 : `KosCode` instruction sequence executed by the Koskari VM.
 
 **datum**
-: Either the `(datum expr)` macro form that captures source position in templates,
-  or a hygiene syntax box wrapping captured macro fragments. See
-  [Macro matching and hygiene](../guide/macros-and-hygiene.md) and
-  [compile/datum](macros/compile-datum.md).
+: Two senses. The macro form `(datum expr)` or `(datum expr pos)` captures an
+  expression together with its source position, so renamers treat a substituted
+  user fragment as input rather than as a freshly introduced identifier; related
+  forms are `datumq`, `parse-match-patternq`, and `parse-rule-patternq`. The
+  hygiene wrapper is the `Datum` syntax box a captured pattern variable arrives
+  in at expand time -- a value plus optional position and flags, opaque to
+  renaming, peeled by the finalize step before compilation. See
+  [Macros and hygiene](../guide/macros-and-hygiene.md),
+  [compile/datum](macros/compile-datum.md),
+  [koskari.hygiene](api/koskari-hygiene.md), and
+  [koskari.lib](api/koskari-lib.md).
 
 **defer**
 : Single-shot await handle; not auto-awaited at use sites -- use explicit
@@ -49,7 +56,7 @@ with examples, see [Concepts](../guide/index.md).
 : A Koskari expression: atoms, lists, or layout-derived s-expressions.
 
 **layout**
-: A read-time handler for a block head (`layout/if`, `layout/block`, …).
+: A read-time handler for a block head (`layout/if`, `layout/block`, ...).
   Handlers run during layout expansion (`apply_layout` / `apply_layouts`) with
   signature `(reader, source, peers)`. For general layout syntax, see
   [Koskari and s-expressions](../guide/layout-and-s-expressions.md).
@@ -71,10 +78,20 @@ with examples, see [Concepts](../guide/index.md).
   forms before compilation.
 
 **match**
-: In compile-time docs, test a source form against a pattern and expand the
-  matching arm (`syntax-rules`, `syntax-match`, special patterns, etc.). Not the
-  same as `switch` or runtime value dispatch. See
-  [Macro matching and hygiene](../guide/macros-and-hygiene.md).
+: Two senses. In compile-time documentation, and throughout this glossary unless
+  the context says otherwise, match means testing a source form against a pattern
+  and expanding the matching arm. The mechanisms are the clause lists
+  `syntax-rules`, `macro-rules`, and `special-rules`; the named transformer specs
+  `syntax-match`, `macro-match`, and `special-match` (see
+  [Macros index](macros/index.md) and [Layouts index](layouts/index.md)); and the
+  compiler's `@special(..., patterns=...)` arms, which run the same matcher engine
+  over spine subjects. The matcher itself is native code driven by patterns built
+  in Python; see [koskari.matcher](api/koskari-matcher.md) and
+  [koskari.hygiene](api/koskari-hygiene.md). The other sense is the runtime
+  `match` form, which dispatches on the structure of a value; that is
+  [Match patterns](../guide/match-patterns.md). Neither is `compile/switch`,
+  which dispatches on a runtime value, nor exception matching at the VM layer.
+  See [Macros and hygiene](../guide/macros-and-hygiene.md).
 
 **namespace**
 : Lexical environment mapping names to reference cells; each name resolves through

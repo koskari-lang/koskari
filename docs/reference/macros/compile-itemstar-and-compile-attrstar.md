@@ -14,10 +14,10 @@ take the path at run time.
 **Examples:**
 
 ```koskari
-koskari> (item* #{"a": #{"b": 2}} "a" "b")
+>>> (item* #{"a": #{"b": 2}} "a" "b")
 2
-koskari> (import os)
-koskari> (attr* os path sep)
+>>> (import os)
+>>> (attr* os path sep)
 "/"
 ```
 

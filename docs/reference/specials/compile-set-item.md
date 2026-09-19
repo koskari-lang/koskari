@@ -26,4 +26,3 @@ body the VAR rows lower to their FAST twins. Then CONST None.
 ```koskari
 (set-item vec 0 99)
 ```
-

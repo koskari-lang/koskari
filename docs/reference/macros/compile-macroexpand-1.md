@@ -11,9 +11,9 @@ quote it.
 **Examples:**
 
 ```koskari
-koskari> (macroexpand-1 '(when a b))
-(cond [a b] [else None])
-koskari> (macroexpand-1 '(decorate (d1) (define foo [x] x)))
+>>> (macroexpand-1 '(when a b))
+(cond [a b] [else: None])
+>>> (macroexpand-1 '(decorate (d1) (define foo [x] x)))
 (define foo (decorate [d1] (function foo [x] x)))
 ```
 

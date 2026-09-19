@@ -27,9 +27,9 @@ and are tried before the invocation arm.
 **Examples:**
 
 ```koskari
-koskari> (macroexpand-1 '(decorate-subject (let [[c 0]]) subject))
+>>> (macroexpand-1 '(decorate-subject (let [[c 0]]) subject))
 (let [[c 0]] subject)
-koskari> (macroexpand-1 '(decorate-subject d fn))
+>>> (macroexpand-1 '(decorate-subject d fn))
 (d fn)
 ```
 

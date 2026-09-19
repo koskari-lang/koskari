@@ -12,7 +12,7 @@ It is a number, one kind of value. Type it at the prompt and Koskari
 shows it back:
 
 ```koskari
-koskari> 42
+>>> 42
 42
 ```
 :::
@@ -31,7 +31,7 @@ How do we write text in a program?
 Between double quotes:
 
 ```koskari
-koskari> "Hello, Koskari!"
+>>> "Hello, Koskari!"
 "Hello, Koskari!"
 ```
 

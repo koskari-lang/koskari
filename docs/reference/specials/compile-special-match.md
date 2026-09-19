@@ -13,6 +13,3 @@ the inner **`pattern`** is lowered by **`parse_explicit_rule_pattern`** (explici
 MATCH syntax). If that inner pattern is a bare symbol, it is wrapped as
 **`(REST sym)`** before parsing (same convenience as **`compile/macro-match`**).
 Emits **`build-special`** with the lowered pattern and rule lambda pairs.
-
-**Implementation:** `koskari/compile/specials/syntax.py`  -- 
-`special_compile_special_match`

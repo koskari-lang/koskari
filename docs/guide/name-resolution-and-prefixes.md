@@ -57,7 +57,8 @@ reached when `+` is used as a value or through `call`.
 Outside operator position a bare name resolves to its runtime slot:
 
 ```koskari
-(map + xs ys)    ; + here is the runtime function passed to map
+import functools
+(functools.reduce + xs)    ; + here is the runtime function, passed as a value
 ```
 
 A name that fills only its compile-time slot has nothing in the runtime
@@ -65,7 +66,7 @@ slot, so using it as a value is an error:
 
 ```koskari
 (if True 1 2)    ; compile/if is a syntax
-(define x if)    ; NameError: Empty reference: if
+(define x if)    ; NameError: No such reference: if
 ```
 
 A syntax with a bare form never reaches value resolution: the lone
@@ -178,7 +179,7 @@ the use; the prefixed name is the thing.
 A macro template names other identifiers: a class it constructs, a
 helper it calls. Those names resolve where the macro is used, not where
 it is defined. A macro that expands to `(basicConfig ...)` compiles at
-its definition and fails with `Empty reference: basicConfig` at every
+its definition and fails with `No such reference: basicConfig` at every
 use site that has not imported `basicConfig`.
 
 A macro shipped in a library must emit only names its caller can reach.

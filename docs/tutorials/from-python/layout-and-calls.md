@@ -40,7 +40,8 @@ define double [x]:
 Where is `return`?
 +++
 The last form in the body is the result. `return` exists for leaving
-early; chapter 4 covers it.
+early; [Functions and scope](functions-and-scope.md#returning) covers
+it.
 :::
 
 :::{pair}
@@ -114,14 +115,10 @@ unless ready:
 :::{dialogue}
 When do I still write them?
 +++
-- A nested expression: `(< n 0)` in a header, `(* x 2)` in a body.
-- A call used as an argument: `print (sign -3)`.
-- Formals and bindings: `[n]`, `[[a 1] [b 2]]`.
-- Collection literals: `#[1 2 3]`.
-
-Statement-shaped code takes layout; expression-shaped code takes
-parentheses. Every layout form reads to the same s-expression, so a
-whole program written with parentheses only is also valid.
+Around a nested expression, an inner call on the line, formals and
+bindings, and a collection literal. The four places, each with an
+example, are in
+[Koskari and s-expressions](../../guide/layout-and-s-expressions.md#where-parentheses-stay).
 :::
 
 ## Run it

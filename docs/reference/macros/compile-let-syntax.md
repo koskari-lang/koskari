@@ -2,10 +2,10 @@
 
 **Symbol:** `compile/let-syntax` (surface: **`let-syntax`**)
 
-**Syntax:** **`(let-syntax NAME (syntax-rules literals rule …) body …)`**
+**Syntax:** **`(let-syntax NAME (syntax-rules literals rule ...) body ...)`**
 
 **Behaviour:** **`special-rules`** compile special (not a source rewrite macro).
-At expand time it builds the same **`(syntax-rules NAME literals rule …)`** form
+At expand time it builds the same **`(syntax-rules NAME literals rule ...)`** form
 **`define-syntax`** would compile, runs **`full_compile`** on that spec and
 evaluates the resulting expression to obtain a **`Syntax`** transformer. The body
 is compiled inside **`Compiler.macro_overlay`**, which pushes the transformer
@@ -43,4 +43,4 @@ Nested shadowing:
 - [compile/define-syntax](compile-define-syntax.md)
 - [compile/extend-syntax](compile-extend-syntax.md)
 - [compile/inline-macro](compile-inline-macro.md)
-- [Macro matching and hygiene](../../guide/macros-and-hygiene.md)
+- [Macros and hygiene](../../guide/macros-and-hygiene.md)

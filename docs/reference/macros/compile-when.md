@@ -19,8 +19,8 @@ when (> n 0):
 ```
 
 ```koskari
-koskari> (macroexpand-1 '(when a b c))
-(cond [a b c] [else None])
+>>> (macroexpand-1 '(when a b c))
+(cond [a b c] [else: None])
 ```
 
 **See also:** [`unless`](compile-unless.md) for the inverted test,

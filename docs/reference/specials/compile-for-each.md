@@ -22,8 +22,8 @@ block and jumps back to ITER_NEXT.
 
 On exhaustion, CLEAR_FOREACH marks natural exit. When an else body is present, its
 result is compiled and then BREAK 1 is emitted: this pops the FOREACH region,
-pushes the else result directly to the parent stack, and jumps to after_pop  -- 
-so the else value arrives cleanly without any temporary variable. When there is
+pushes the else result directly to the parent stack, and jumps to after_pop --
+so the else value arrives without a temporary variable. When there is
 no else body, POP_FOREACH falls through to after_pop and pushes the region's None.
 User `compile/break` also jumps to after_pop with its value already on the
 parent stack.
@@ -48,5 +48,3 @@ parent stack.
     [(== i target) (break "found")]
     [else: None]))
 ```
-
-

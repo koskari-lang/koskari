@@ -11,7 +11,7 @@ further forms into it.
 **Examples:**
 
 ```koskari
-koskari> (type (get-compiler))
+>>> (type (get-compiler))
 <class 'koskari.compile.compiler.Compiler'>
 ```
 

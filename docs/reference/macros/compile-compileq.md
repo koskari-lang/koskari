@@ -10,10 +10,10 @@ The result is an `Expression`, callable to run it.
 **Examples:**
 
 ```koskari
-koskari> (define e (compileq (+ 1 2)))
-koskari> (type e)
+>>> (define e (compileq (+ 1 2)))
+>>> (type e)
 <class 'koskari.lib.Expression'>
-koskari> (e)
+>>> (e)
 3
 ```
 

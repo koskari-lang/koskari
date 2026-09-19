@@ -142,9 +142,13 @@ define-syntax unless:
 How do I see what a macro produced?
 +++
 ```koskari
-koskari> (macroexpand '(unless ready (go)))
-(cond [ready None] [else (go)])
+>>> (macroexpand '(unless ready (go)))
+(cond [ready None] [else: (go)])
 ```
+
+`unless` is a builtin, so that expansion comes from the builtin's
+template, a `cond`. The `define-syntax unless` above is a worked example
+of writing the rule; the definition in force here is the builtin's.
 
 Keep a parenthesized use beside the layout use while you learn; the
 s-expression is the tree the macro sees.

@@ -3,7 +3,6 @@
 
 **Syntax** (most specific forms first; `NAME` is optional in all groups):
 
-
 | Shape                        | Form                                               |
 | ---------------------------- | -------------------------------------------------- |
 | Named + return               | `(lambda NAME :: RET FORMALS BODY ...)`    |
@@ -12,7 +11,6 @@
 | Anonymous + return (`type:`) | `(lambda type: RET FORMALS BODY ...)`      |
 | Named, no return             | `(lambda NAME FORMALS BODY ...)`           |
 | Anonymous, no return         | `(lambda FORMALS BODY ...)`                |
-
 
 `RET` is a single expression (not a formal parameter). Like parameter
 annotations, it is evaluated in the **defining scope** when the function is
@@ -80,4 +78,3 @@ creation by `BUILD_FUNCTION`, which builds the keyword-defaults dict and the
 ;; Docstring + return type
 (lambda g :: int [x] "doc for g" x)
 ```
-

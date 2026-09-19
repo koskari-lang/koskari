@@ -29,4 +29,3 @@ enum member names.
   [CALL 2]
   [RETURN 1])
 ```
-

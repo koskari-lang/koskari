@@ -1,5 +1,5 @@
 # compile/labels
-**Syntax:** **`(labels [[NAME FORMALS BODY …] …] FORM …)`**
+**Syntax:** **`(labels [[NAME FORMALS BODY ...] ...] FORM ...)`**
 
 **Behaviour:** Like [`flet`](compile-flet.md), but the bound names are visible to
 one another, so the functions can be mutually recursive. Each declaration is

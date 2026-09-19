@@ -1,0 +1,23 @@
+import asyncio
+import-from asyncio sleep
+import-from time perf_counter
+
+
+define fetch [name delay]:
+    (sleep delay)
+    f"{name} took {delay}s"
+
+define job [d]:
+    (defer (lambda [] (fetch f"job-{d}" d)))
+
+define main []:
+    (print (fetch "solo" 0.1))
+    define start (perf_counter)
+    define results (await (asyncio.gather *: (list-each [d #[0.3 0.1 0.2]] (job d))))
+    (print results[0] results[1] results[2])
+    (print f"all three in {(- (perf_counter) start):.2f}s")
+
+(main)
+;; solo took 0.1s
+;; job-0.3 took 0.3s job-0.1 took 0.1s job-0.2 took 0.2s
+;; all three in 0.30s

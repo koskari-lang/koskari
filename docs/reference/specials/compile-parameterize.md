@@ -38,4 +38,3 @@ exits.
 (parameterize [[a 100] [b 101]]
   (check_both))
 ```
-

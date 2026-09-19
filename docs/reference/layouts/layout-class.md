@@ -20,11 +20,11 @@ name) or more than three (extra forms after supers).
 ```
 class NAME:
   BODY
-;; → (class NAME () (begin BODY))
+;; -> (class NAME () (begin BODY))
 
 class NAME (Base1 Base2):
   BODY
-;; → (class NAME (Base1 Base2) (begin BODY))
+;; -> (class NAME (Base1 Base2) (begin BODY))
 ```
 
 **Examples:**
@@ -32,16 +32,13 @@ class NAME (Base1 Base2):
 ```koskari
 class C:
   x
-;; → (class C () (begin x))
+;; -> (class C () (begin x))
 
 class C (Base):
   x
-;; → (class C (Base) (begin x))
+;; -> (class C (Base) (begin x))
 
 class C ():
   x
-;; → (class C () (begin x))
+;; -> (class C () (begin x))
 ```
-
-**Implementation:** `koskari/reader/layouts/classes.layout_class`
-

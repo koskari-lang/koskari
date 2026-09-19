@@ -26,5 +26,3 @@ namespace. `K` is not visible after the `compile/let/cc` form.
     (k "done")
     (never-reached)))
 ```
-
-

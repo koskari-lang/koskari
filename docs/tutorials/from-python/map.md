@@ -172,8 +172,9 @@ What looks like Python and is not?
   list. `(None? x)` and `(nil? x)` ask different questions.
 - **Truth tests are Python's.** `if`, `while`, and `cond` test Python
   truthiness, so `#[]` and `0` are false.
-- **Commas are not separators.** Whitespace is. `#[1, 2]` reads two odd
-  symbols.
+- **Commas are not separators.** Whitespace is, and a comma sticks to
+  the token in front of it, so `#[1, 2]` reads the symbol `1,` and the
+  integer `2`.
 :::
 
 ## New
@@ -181,9 +182,11 @@ What looks like Python and is not?
 :::{dialogue}
 What has no Python counterpart?
 +++
-- **Macros.** `define-syntax` rewrites code before it runs. Chapter 9.
+- **Macros.** `define-syntax` rewrites code before it runs. See
+  [Macros](macros-and-dsls.md).
 - **By-reference parameters.** A function can write into its caller's
-  variable. Chapter 4.
+  variable. See
+  [Functions and scope](functions-and-scope.md#by-reference-parameters).
 - **Pairs and quoting.** The Lisp list, for macros and code as data.
 - **Continuations.** Present in the language; not needed on day one.
 :::

@@ -29,7 +29,7 @@ How many items does it have?
 `len` counts:
 
 ```koskari
-koskari> (len fruits)
+>>> (len fruits)
 3
 ```
 :::
@@ -43,9 +43,9 @@ With its position in square brackets, touching the name. Positions start
 at `0`:
 
 ```koskari
-koskari> fruits[0]
+>>> fruits[0]
 "apple"
-koskari> fruits[2]
+>>> fruits[2]
 "plum"
 ```
 :::
@@ -56,7 +56,7 @@ And the last one, without counting?
 `-1` counts from the end:
 
 ```koskari
-koskari> fruits[-1]
+>>> fruits[-1]
 "plum"
 ```
 :::
@@ -70,8 +70,8 @@ Every list has an `append` method. A method is called with a dot after
 the name, inside parentheses:
 
 ```koskari
-koskari> (fruits.append "fig")
-koskari> fruits
+>>> (fruits.append "fig")
+>>> fruits
 #["apple" "pear" "plum" "fig"]
 ```
 
@@ -84,9 +84,9 @@ Is something in the list?
 `in` asks:
 
 ```koskari
-koskari> (in "pear" fruits)
+>>> (in "pear" fruits)
 True
-koskari> (in "kiwi" fruits)
+>>> (in "kiwi" fruits)
 False
 ```
 :::
@@ -112,7 +112,7 @@ Can we add up a list of numbers?
 `sum` does that in one call:
 
 ```koskari
-koskari> (sum #[3 4 5])
+>>> (sum #[3 4 5])
 12
 ```
 :::

@@ -5,7 +5,6 @@ verify:
   expand: "(define-global compile/unless (syntax-rules unless unless (else:) ...))"
 references:
   - reference/macros/compile-define-syntax.md
-  - reference/specials/compile-define-syntax.md
 stability: evolving
 tags:
   - syntax

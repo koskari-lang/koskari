@@ -6,4 +6,3 @@
 **Use-case:** Internal form. Clears the current exception state.
 
 **Behaviour:** Emits EXCEPTION_CLEAR. No arguments.
-

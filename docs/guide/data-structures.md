@@ -21,12 +21,11 @@ splices an iterable in place, and the result is always a fresh object:
 ```
 
 Dict keys are expressions. A string key is quoted; a bare `name:` key
-looks up the variable `name`. Computed keys can also be written as
-dotted pairs:
+looks up the variable `name`; a parenthesized key is computed:
 
 ```koskari
 #{"name": "Ada" "score": 10}
-#{(key-for user) . (score-for user)}
+#{(key-for user): (score-for user)}
 ```
 
 Access and update use the same suffixes as Python:

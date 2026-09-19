@@ -17,7 +17,7 @@ when-main:
 ```
 
 ```koskari
-koskari> (macroexpand-1 '(when-main (main)))
+>>> (macroexpand-1 '(when-main (main)))
 (when (equal? __name__ "__main__") (begin (main)))
 ```
 

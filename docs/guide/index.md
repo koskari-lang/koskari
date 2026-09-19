@@ -18,7 +18,7 @@ one whose topic has come up in your code.
 | Page | Covers |
 |------|--------|
 | [Bindings and refs](bindings-and-refs.md) | `define`, `let`, `set!`, shadowing; namespaces, bind versus store, ref, deref, resolve, unpack |
-| [References and storage indirection](references-and-storage-indirection.md) | Refs as location handles, `&`, writing through a ref, `bind!`, by-reference parameters |
+| [References and storage indirection](references-and-storage-indirection.md) | Refs as location handles, `&`, writing through a ref, `bind!`, `take!`, dynamic refs |
 | [Data structures](data-structures.md) | Python containers, pairs, quote and quasiquote, symbols and keywords |
 | [Types and annotations](types-and-annotations.md) | `::` annotations, where they land, checking values at runtime |
 
@@ -40,21 +40,16 @@ one whose topic has come up in your code.
 | [I/O and effects](io-and-effects.md) | `print`, `with`, exceptions and `try` as an expression, stores, async effects |
 | [Demand, async, and defer](demand-async-and-defer.md) | Ambient await, the demand path, `defer`, and which construct to reach for |
 | [Hosting Koskari from Python](hosting-from-python.md) | The import hook, running a file into a namespace, awaiting Koskari functions from Python |
-| [Packaging a Koskari application](packaging.md) | `koskari_scripts` entry points, the setuptools plugin, the bundled icon |
+| [Packaging an installed command](packaging.md) | `koskari_scripts` entry points and the setuptools plugin |
+| [Runtime tuning](runtime-tuning.md) | The per-site attribute cache and read-only code storage, and their pragmas |
 
 ## Syntax extension
 
 | Page | Covers |
 |------|--------|
-| [Macros and hygiene](macros-and-hygiene.md) | What a macro is for, `define-syntax`, templates versus procedures, expansions, matching, hygiene |
+| [Macros and hygiene](macros-and-hygiene.md) | What a macro is for, `define-syntax`, templates versus procedures, hygiene, expansion order |
 | [Fences](fences.md) | Foreign literals as compile-time transliteration; when a format earns one |
 | [Pragmas and feature settings](pragma.md) | Setting and reading a pragma; every `reader/*`, `compiler/*`, and `pragma/*` setting |
-
-## Runtime
-
-| Page | Covers |
-|------|--------|
-| [Runtime tuning](runtime-tuning.md) | The per-site attribute cache and read-only code storage, and their pragmas |
 
 ```{toctree}
 :maxdepth: 1
@@ -78,8 +73,8 @@ io-and-effects
 demand-async-and-defer
 hosting-from-python
 packaging
+runtime-tuning
 macros-and-hygiene
 fences
 pragma
-runtime-tuning
 ```

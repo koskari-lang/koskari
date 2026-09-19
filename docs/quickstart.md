@@ -11,7 +11,7 @@ pip install "koskari[repl]"
 The `repl` extra adds syntax highlighting to the REPL. Weekly development
 snapshots also publish as pre-releases; `pip install --pre` selects the
 latest one. To build from a source checkout instead, see
-[Build and testproject/build-test.md).
+[Build and test](project/build-test.md).
 
 ## First session
 
@@ -21,13 +21,23 @@ Start the REPL:
 koskari
 ```
 
-Type a form at the prompt and Koskari prints its value:
+The prompt is `>>> `. Type a form at it and Koskari prints the form's
+value on the next line:
 
 ```koskari
-koskari> (+ 1 2)
+>>> (+ 1 2)
 3
-koskari> (print "Hello, Koskari!")
+>>> (print "Hello, Koskari!")
 Hello, Koskari!
+```
+
+A form left open at the end of a line continues on the next, under a
+`... ` prompt:
+
+```koskari
+>>> (+ 1
+...    2)
+3
 ```
 
 ## A file
@@ -80,7 +90,10 @@ koskari --compile-kio out.kio hello.ki
 koskari --execute-kio out.kio
 ```
 
-See [CLI and configurationreference/cli-and-config.md) for every flag.
+`--compile-kio` runs the program as well as writing the `.kio`, so the
+first command prints `Hello, Koskari!` too.
+
+See [CLI and configuration](reference/cli-and-config.md) for every flag.
 
 ## Editor setup
 
@@ -101,8 +114,8 @@ pip install "koskari[repl,lsp]"
 
 ## Next
 
-- New to programming: [Little Koskaritutorials/beginner/index.md).
-- Know Python: [From Pythontutorials/from-python/index.md).
-- Know a Lisp already: the [Guideguide/index.md) page on
-  [Koskari and s-expressionsguide/layout-and-s-expressions.md), then the
-  [Referencereference/index.md).
+- New to programming: [Little Koskari](tutorials/beginner/index.md).
+- Know Python: [From Python](tutorials/from-python/index.md).
+- Know a Lisp already: the [Guide](guide/index.md) page on
+  [Koskari and s-expressions](guide/layout-and-s-expressions.md), then the
+  [Reference](reference/index.md).

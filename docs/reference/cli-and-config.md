@@ -18,14 +18,17 @@ for example, `koskari app.ki 20 -- --verbose` sets `sys.argv` to
 
 | Flag | Description |
 |------|-------------|
+| `-h`, `--help` | Show the usage message, then exit |
+| `--version` | Print Koskari and Python version information, then exit |
+| `-q`, `--quiet` | Suppress the REPL startup version banner |
 | `--no-tweak-path` | Do not add the current directory to `sys.path` |
 | `--histfile PATH` | REPL readline/prompt_toolkit history file |
-| `--repl-full-trace` | Show REPL infrastructure frames in error tracebacks |
-| `-i`, `--interactive` | Enter REPL after running a script |
+| `--repl-full-trace` | Show REPL infrastructure frames in runtime error tracebacks |
+| `-i`, `--interactive` | Enter interactive mode after executing the given script |
 | `-c CMD`, `--command CMD` | Evaluate s-expressions from CMD, then exit |
 | `--compile-kio OUT SRC` | Compile `SRC` `.ki` to `.kio` at `OUT`, then exit |
-| `--compile-kio-source-name PATH` | Logical source path stored in `.kio` |
-| `--execute-kio SRC` | Run precompiled `.kio` at `SRC` |
+| `--compile-kio-source-name PATH` | Logical `.ki` path stored in the `.kio` for tracebacks; defaults to the input path |
+| `--execute-kio SRC` | Run `SRC` as a precompiled `.kio` |
 
 Exactly one run target is required for script execution: `-c CMD`,
 `--compile-kio OUT SRC`, `--execute-kio SRC`, or positional `filename`.

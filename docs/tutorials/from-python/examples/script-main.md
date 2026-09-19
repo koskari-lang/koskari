@@ -19,6 +19,12 @@ Save as `tool.ki` and run:
 koskari tool.ki
 ```
 
+```text
+running as script
+```
+
+Importing `tool` from another module defines `main` and prints nothing.
+
 ## When to use it
 
 Use `when-main:` for code that should run only from the command line:

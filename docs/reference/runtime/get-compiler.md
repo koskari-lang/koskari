@@ -22,7 +22,7 @@ compiler and later ones reuse it.
 
 **Relation to the macro:** **`(get-compiler)`** and **`(get-compiler ns)`** are
 handled by the **`compile/get-compiler`** macro, which expands to **`(call
-get-compiler …)`** with **`(locals)`** when the namespace argument is omitted.
+get-compiler ...)`** with **`(locals)`** when the namespace argument is omitted.
 See [compile/get-compiler](../macros/compile-get-compiler.md).
 
 **Examples:**
@@ -32,7 +32,7 @@ See [compile/get-compiler](../macros/compile-get-compiler.md).
 (define c (get-compiler))
 
 ;; Compile a form by hand with the module compiler
-(define frag ((get-compiler) .compile_expression '(+ 1 2)))
+(define frag (.compile_expression (get-compiler) '(+ 1 2)))
 ```
 
 See also [compile](compile.md) and [evaluate](evaluate.md).

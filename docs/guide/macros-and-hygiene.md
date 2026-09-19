@@ -31,17 +31,14 @@ define-syntax unless:
         (begin body ...)
 ```
 
-An ellipsis in a pattern matches zero or more forms and the same
-ellipsis in the template splices them back. A template is read by the
-layout reader before the ellipsis is expanded, so a line holding only
-`body ...` would read as the call `(body ...)`; keep `body ...` on the
-line of the form it belongs to, or spell it `(begin body ...)`.
-
-The macro and its first use must be in separate compilation units: an
-earlier top-level form in the same file, or an imported module. A
-`begin` that defines a macro and uses it in the same block fails,
-because the macro is registered when its defining form finishes
-compiling.
+Two rules govern where the pieces may sit. An ellipsis in a pattern
+matches zero or more forms and the same ellipsis in the template splices
+them back, but the template is read by the layout reader first, so a line
+holding only `body ...` reads as the call `(body ...)`. And a macro and
+its first use must be in separate compilation units, because the macro is
+registered when its defining form finishes compiling.
+[Macros](../tutorials/from-python/macros-and-dsls.md) works both rules
+through an example.
 
 ## Templates and procedures
 
@@ -65,138 +62,73 @@ Inside a procedural body you work with the matched forms directly:
   `(datum (symbol f"job/{tp.datum}"))`. That is how a dispatcher rewrites
   `(job kafka ...)` into `(job/kafka ...)` and lets the compiler re-expand it.
 
-## Seeing an expansion
+## Hygiene
 
-`macroexpand` expands a form fully and `macroexpand-1` takes one step:
+A name the template introduces on its own is renamed, so it cannot
+collide with a binding at the use site. A name the caller supplies is
+bound as written.
 
-```koskari
-koskari> (macroexpand '(unless ready (print "go")))
-(cond [ready None] [else (print "go")])
-```
+`(datum expr)` is the author's control over that renaming: it marks a
+fragment as having come from the input form rather than from the
+template, so renamers and binder collection leave it alone. At expand
+time, captured pattern-variable values are carried in `Datum` boxes,
+which the finalize step peels before compilation. The Python and C types
+are under [`koskari.hygiene`](../reference/api/koskari-hygiene.md) and
+[`koskari.lib.Datum`](../reference/api/koskari-lib.md).
 
-Keep a parenthesized use beside a layout use while writing a macro; the
-s-expression is the tree the macro sees.
+## Brackets and parens match the same shape
 
-## Two senses of match, two senses of datum
+A `[...]` and a `(...)` read to the same pair structure (see [Brackets
+and the call convention](brackets-and-call-convention.md)), so a pattern
+cannot tell one from the other. `[formals]` matches any one-element form,
+including a plain `(f x)` call, so no two arms can branch on whether a
+group was written with brackets or parentheses. A form that must carry a
+literal bracket, such as lambda formals, has to require it in every arm,
+spelling out an explicit `[]` for the empty case rather than treating it
+as optional.
 
-Two ideas share the word match: structural matching of input forms,
-which this page is about, and the runtime `match` form over values,
-which is [Match patterns](match-patterns.md). Datum also has two
-senses: a macro helper form and a hygiene wrapper around captured
-syntax.
+## Macros expand before names resolve
 
-## Match (macro and special transformers)
-
-In reference docs, match usually means: given a source form, test it against
-a pattern and run the matching arm's template.
-
-Mechanisms include:
-
-- `syntax-rules` / `macro-rules` / `special-rules` -- clause lists
-- `syntax-match` / `macro-match` / `special-match` -- named transformer
-  specs (see [Macros index](../reference/macros/index.md) and [Layouts index](../reference/layouts/index.md))
-- Compiler `@special(..., patterns=...)` arms -- same matcher engine over
-  spine subjects
-
-The matcher is implemented in native code with patterns built in Python; API
-detail lives in [`koskari.matcher`](../reference/api/koskari-matcher.md) and
-[`koskari.hygiene`](../reference/api/koskari-hygiene.md).
-
-This is not the same as:
-
-- `compile/switch` -- value dispatch on runtime data
-- The runtime `match` form over values, in [Match patterns](match-patterns.md)
-- Exception matching at the VM layer
-
-When the [Glossary](../reference/glossary.md) says match, it means macro/special
-pattern matching unless context says otherwise.
-
-### Brackets and parens match the same shape
-
-A `[…]` and a `(…)` read to the same pair structure (see [Brackets and the call
-convention](brackets-and-call-convention.md)), so a pattern cannot tell one from
-the other. `[formals]` matches any one-element form, including a plain `(f x)`
-call -- so you cannot write two arms that branch on "is this a bracket or a
-call." A form that must carry a literal bracket, such as lambda formals, has to
-require it in every arm (spell out an explicit `[]` for the empty case) rather
-than treat it as optional.
-
-## Resolution order: macros expand before names resolve
-
-Macros and special forms are resolved at compile time, before ordinary name
-lookup happens. When the compiler sees a form in call position, it first checks
-whether the head is a macro or special; if so it expands, and only the expanded
-result is subject to name resolution. **A macro always wins over a same-named
-value binding in call position** -- a local `let` / `define` / `labels` / `flet`
-binding, a module binding, or an import cannot displace it.
+Macros and special forms are resolved at compile time, before ordinary
+name lookup. When the compiler sees a form in call position it first
+checks whether the head is a macro or special; if so it expands, and only
+the expanded result is subject to name resolution. A macro always wins
+over a same-named value binding in call position -- a local `let`,
+`define`, `labels`, or `flet` binding, a module binding, or an import
+cannot displace it.
 
 ```koskari
 (let []
   (define caddr (lambda [n] 999))
   (caddr (cons 1 2 3 4 nil)))
-;; ⇒ 3, not 999
+;; -> 3, not 999
 ```
 
-`caddr` is a macro (it expands to nested `car` / `cdr`), so `(caddr …)` expands
-at compile time and the local `define` is never consulted in that call
-position. Names bound to plain functions have no such precedence and shadow
-normally:
+`caddr` is a macro that expands to nested `car` and `cdr`, so the call
+expands at compile time and the local `define` is never consulted in that
+position. A name bound to a plain function has no such precedence and
+shadows normally:
 
 ```koskari
 (let []
   (define first (lambda [n] (* n 100)))
   (first 3))
-;; ⇒ 300 -- first is a runtime function, so the local binding wins
+;; -> 300; first is a runtime function, so the local binding wins
 ```
 
-Practical consequences:
+A helper name that collides with a macro or special (`if`, `when`, a
+`cad*r` accessor) will not rebind it in call position. Rename the helper
+if you need it callable. The colliding name is still usable as a value,
+passed as an argument or stored in a variable; only the call-position
+head goes through expansion.
 
-- Choosing a helper name (in `labels`, `flet`, `let`, or a parameter) that
-  collides with a macro or special form (`if`, `when`, a `cad*r` accessor, …)
-  will not rebind it in call position -- the macro still expands. Rename the
-  helper if you need it callable.
-- The colliding name is still usable as a value (passed as an argument,
-  stored in a variable); only the call-position head goes through macro
-  expansion.
+## Seeing an expansion
 
-## Datum (macro form)
+`macroexpand` expands a form fully and `macroexpand-1` takes one step:
 
-Inside macro bodies, `(datum expr)` or `(datum expr pos)` captures an
-expression together with source position for hygiene. It expands to a call
-that records where the fragment came from.
-
-- Macro: [`compile/datum`](../reference/macros/compile-datum.md)
-- Related: `datumq`, `parse-match-patternq`, `parse-rule-patternq`
-  in bootstrap syntax helpers
-
-Authors use `datum` so renamers and binder collection do not treat
-substituted user fragments as freshly introduced identifiers.
-
-## Datum (hygiene wrapper)
-
-At expand time, captured pattern-variable values are often wrapped in a
-Datum object (syntax box): a value plus optional position and flags. Tools
-that walk expanded code treat those boxes as opaque for renaming when the capture
-came from the input form, not from the template.
-
-Macro expansion finalize steps peel `Datum` wrappers before compile. The
-Python/C types are documented under
-[`koskari.hygiene`](../reference/api/koskari-hygiene.md) and
-[`koskari.lib.Datum`](../reference/api/koskari-lib.md).
-
-| Sense | Role |
-|-------|------|
-| **`(datum …)` form** | Macro author syntax to attach position |
-| **Datum wrapper** | Runtime/expansion representation of a captured fragment |
-
-## Practical flow
-
-```text
-Source form
-    → matcher selects arm (match)
-    → template may use (datum …) for hygiene
-    → expanded ordinary forms
-    → compile as usual
+```koskari
+>>> (macroexpand '(unless ready (print "go")))
+(cond [ready None] [else: (print "go")])
 ```
 
 ## See also
@@ -206,3 +138,5 @@ Source form
 - [compile/let-syntax](../reference/macros/compile-let-syntax.md):
   a local compile-time binding
 - [compile/datum](../reference/macros/compile-datum.md)
+- [Glossary](../reference/glossary.md): what match and datum mean in
+  compile-time documentation

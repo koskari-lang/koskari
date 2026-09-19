@@ -46,21 +46,31 @@ asyncio.run(main())
 
 ## The REPL and the CLI wrappers
 
-`koskari.cli` has async entry points for running a file and for the
-REPL. It imports the prompt-toolkit REPL, so it brings that dependency
-in:
+`koskari.cli.host` wraps the two steps above in one call,
+`run_file_async`, which is what the `koskari` command runs:
 
 ```python
 import asyncio
-from koskari.cli import run_file_async, repl_async
+from koskari.cli.host import run_file_async
 from koskari.module import new_module
 
 async def main():
     mod = new_module('__main__')
     await run_file_async(mod, 'app.ki')        # init_module plus load
-    await repl_async(mod)                      # a REPL bound to mod
+    print(await mod.greet('world'))
 
 asyncio.run(main())
+```
+
+The interactive loop is `repl`, a Koskari function in
+`koskari.cli.repl`. It pulls in prompt-toolkit, so import it only where
+an interactive session is wanted; awaiting it on a loaded module hands
+that module's namespace to the prompt:
+
+```python
+from koskari.cli.repl import repl
+
+await repl(mod)                                # blocks until the user exits
 ```
 
 A headless service takes the `koskari.module` path above and leaves
@@ -95,7 +105,8 @@ Which construct fits which situation is the
 | `.ki` imports | `import koskari` once, early |
 | importing modules | `import mypkg.mod`; no loop needed |
 | running a file headless | `new_module`, `init_module`, `load_module_async` |
-| the REPL or CLI behaviour | `koskari.cli.run_file_async` and `repl_async`, with prompt-toolkit |
+| the CLI's file-running behaviour | `koskari.cli.host.run_file_async` |
+| an interactive prompt | `koskari.cli.repl.repl`, with prompt-toolkit |
 | calling a Koskari function | `await` the result, or define it with `define-demanding` |
 | no event loop | the demand path; a suspension raises `KoskariSyncViolation` |
 
@@ -103,4 +114,4 @@ Which construct fits which situation is the
 
 - [Interop](../tutorials/from-python/interop.md): calls across the boundary
 - [Demand, async, and defer](demand-async-and-defer.md): the host model
-- [Packaging a Koskari application](packaging.md): a `.ki` program as a pip command
+- [Packaging an installed command](packaging.md): a `.ki` program as a pip command

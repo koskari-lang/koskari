@@ -58,6 +58,12 @@ define rest (item argv (slice 1 None))
 define-values [name *: rest] argv
 ```
 
+These two differ in the type of the tail. Slicing a list yields a list,
+while the `*:` collector always yields a tuple, so `rest` is `#["b" "c"]`
+from the slice and `#("b" "c")` from the collector. Use the collector
+when the tail is iterated or unpacked, and the slice when the caller
+needs a list.
+
 ## Testing for None
 
 `None?` is the predicate for the `None` singleton.

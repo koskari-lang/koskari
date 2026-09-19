@@ -86,9 +86,9 @@ name moves outside the decoration so the decorated value is what gets
 bound:
 
 ```koskari
-(decorate (d1) (define foo [x] x))
+(decorate [d1] (define foo [x] x))
 ;; expands to
-(define foo (decorate (d1) (function foo [x] x)))
+(define foo (decorate [d1] (function foo [x] x)))
 ```
 
 The fold: with a value subject, `decorate` peels one decorator per
@@ -209,6 +209,6 @@ peel, and the arm, which is the way to see why a decorator did or did
 not fire:
 
 ```koskari
-(macroexpand-1 '(decorate ((let [[c 0]])) (function f [] c)) ns)
+(macroexpand-1 '(decorate ((let [[c 0]])) (function f [] c)))
 ;; (decorate-subject (let [[c 0]]) (decorate [] (function f [] c)))
 ```

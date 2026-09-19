@@ -210,4 +210,4 @@ when-main:
 ```
 
 To ship a `.ki` program as a pip-installed command, see
-[Packaging a Koskari application](../../guide/packaging.md).
+[Packaging an installed command](../../guide/packaging.md).

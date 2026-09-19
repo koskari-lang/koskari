@@ -1,4 +1,4 @@
-# Packaging a Koskari application
+# Packaging an installed command
 
 Ship a Koskari application as a pip-installable command. Users run
 `mytool` from a shell; the sources stay in `.ki` files under a declared
@@ -140,45 +140,8 @@ curses program.
 ## The bundled icon
 
 Koskari ships its apple mark inside the package, so an application can
-use it as a window icon, favicon, or placeholder mark without vendoring
-the artwork. `koskari.assets` exposes it as SVG text or bytes, as PNG
-bytes at the packaged sizes, or as a filesystem path:
-
-```python
-from koskari.assets import (ICON_PNG_SIZES, icon_path, icon_png_bytes,
-                            icon_svg_bytes, icon_svg_text)
-
-ICON_PNG_SIZES            # (32, 256), the sizes packaged
-icon_svg_text()           # str, the SVG document
-icon_svg_bytes()          # bytes, the same document
-icon_png_bytes(32)        # bytes, the 32x32 PNG
-```
-
-The same functions are reachable from Koskari:
-
-```koskari
-import-from koskari.assets icon_png_bytes
-define icon_bytes (icon_png_bytes 32)
-```
-
-A PNG size that is not packaged raises `ValueError`; `ICON_PNG_SIZES`
-lists the packaged ones.
-
-Some APIs want a path rather than bytes: a GUI toolkit's window-icon
-setter, a web framework's favicon route. `icon_path` is a context
-manager for that. It works when koskari is installed as a zipped wheel,
-since it may extract to a temporary file for the duration of the block,
-so the path is valid only inside the `with`:
-
-```python
-from koskari.assets import icon_path
-
-with icon_path(size=32) as path:
-    window.set_icon(str(path))
-
-with icon_path() as svg_path:      # size=None selects the SVG
-    favicon_route.serve(svg_path)
-```
+use it as a window icon or favicon without vendoring the artwork;
+[koskari.assets](../reference/runtime/koskari-assets.md) is the API.
 
 ## See also
 

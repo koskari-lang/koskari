@@ -24,9 +24,9 @@ define-syntax define-shape:
 ```
 
 ```koskari
-koskari> (declare-exports greet shout)
-koskari> __features__
-('greet', 'shout')
+>>> (declare-exports greet shout)
+>>> __features__
+#("greet" "shout")
 ```
 
 **See also:** [`use`](../specials/use.md),

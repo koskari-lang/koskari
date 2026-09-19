@@ -5,7 +5,7 @@
 
 **Use-case:** Lower a **`special-rules`**-style transformer spec to a
 **`build-special`** call form. Rule procedures are **compiler-aware**:
-each rule's lambda is built with formals **`(COMPILER pattern-vars …)`**  -- 
+each rule's lambda is built with formals **`(COMPILER pattern-vars ...)`** --
 the **`COMPILER`** slot corresponds to the pattern column breakout
 (see behaviour). Bind the result with **`compile/define`**.
 
@@ -19,6 +19,3 @@ The literal set includes the macro **`NAME`** automatically (as for other
 rule-based transformers). The built transformer's **`compile_impl`** passes
 **`compiler`** and the captured pattern variables into the winning rule and
 returns its result for recompilation.
-
-**Implementation:** `koskari/compile/specials/syntax.py`  -- 
-`special_compile_special_rules`

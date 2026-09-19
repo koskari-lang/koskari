@@ -196,7 +196,7 @@ default packing give you sealed code at rest for almost nothing.
 
 ### Interactive sessions
 
-Definitions entered at the REPL are cheap plain-heap allocations  -- 
+Definitions entered at the REPL are cheap plain-heap allocations --
 interactive code churns, and sealing churn buys little. The module a
 session starts from (a file run with `-i`) is sealed normally when it
 finishes loading, and the session keeps working in it afterward.

@@ -12,11 +12,11 @@ form expands to `(truth COND)`.
 **Examples:**
 
 ```koskari
-koskari> (? 1 "y" "n")
+>>> (? 1 "y" "n")
 "y"
-koskari> (? 0 "y")
+>>> (? 0 "y")
 False
-koskari> (? "x")
+>>> (? "x")
 True
 ```
 

@@ -1,9 +1,10 @@
 # Runtime library
 
 Functions and modules available at run time: the builtins written in
-Koskari or native to it, and the two library modules that ship with the
-package. Names in the builtins need no import; the modules are imported
-as any Python module is.
+Koskari or native to it, and the four library modules that ship with
+the package -- `koskari.itertools`, `koskari.solve`, `koskari.asyncio`,
+and `koskari.assets`. Names in the builtins need no import; the modules
+are imported as any Python module is.
 
 ## Compilation and expansion
 
@@ -14,7 +15,7 @@ as any Python module is.
 | [`get-compiler`](get-compiler.md) | The compiler that owns a namespace, for compiling into that module |
 | [`macroexpand`](macroexpand.md) | Expand a form until its head is no longer a macro |
 | [`macroexpand-1`](macroexpand-1.md) | One expansion step |
-| [`apply-layouts`](block-quasiquote-and-block-layout-expansion.md) | Expand a `:block:` cons through the layout handlers at run time, for filled quasiquote blocks |
+| [`apply-layouts`](block-quasiquote-and-block-layout-expansion.md) | Expand a `block:` cons through the layout handlers at run time, for filled quasiquote blocks |
 | [`help`](help.md) | Documentation for a binding, through the pager |
 
 ## Values and access
@@ -33,6 +34,8 @@ as any Python module is.
 |--------|----------|
 | [`koskari.itertools`](koskari-itertools.md) | The `itertools` combinators in a form that accepts Koskari functions and Koskari sources |
 | [`koskari.solve`](koskari-solve.md) | `amb`, `require`, `solve`, and `solve-first`: nondeterministic search over delimited continuations |
+| [`koskari.asyncio`](../api/koskari-asyncio.md) | `run-process` and `ProcessResult`, the subprocess pair behind the bash fence |
+| [`koskari.assets`](koskari-assets.md) | The packaged icon, as SVG or PNG bytes or a filesystem path |
 
 The Python builtins are bound as well, under their Python names: `len`,
 `print`, `sorted`, `zip`, `enumerate`, and the rest, with the natives

@@ -47,5 +47,3 @@ symbol. Both spellings are governed by `reader/dot-attrs` -- see
 ;; Star args (emits CALL_ATTR_STAR)
 (call-attr obj fn *: args **: kwargs)
 ```
-
-

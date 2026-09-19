@@ -64,9 +64,9 @@ If `width` is `10` and `height` is `4`, what is `(* width height)`?
 `40`:
 
 ```koskari
-koskari> (define width 10)
-koskari> (define height 4)
-koskari> (* width height)
+>>> (define width 10)
+>>> (define height 4)
+>>> (* width height)
 40
 ```
 :::
@@ -77,7 +77,7 @@ What does `(print "area:" (* width height))` show?
 Two inputs reach `print`: the text and the number the inner call made.
 
 ```koskari
-koskari> (print "area:" (* width height))
+>>> (print "area:" (* width height))
 area: 40
 ```
 :::

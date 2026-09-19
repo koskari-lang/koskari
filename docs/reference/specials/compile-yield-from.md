@@ -29,5 +29,3 @@ with `KOS_CODE_YIELDS`. Opcode behaviour is documented in
 (for-each [pair (items data)]
   (yield pair))
 ```
-
-

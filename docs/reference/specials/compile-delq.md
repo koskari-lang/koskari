@@ -17,4 +17,3 @@ None.
 
 **See also:** [compile/takeq](compile-takeq.md) (return the value and clear the
 binding; errors when the binding is empty).
-

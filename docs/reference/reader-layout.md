@@ -9,7 +9,7 @@ see [Koskari and s-expressions](../guide/layout-and-s-expressions.md).
 The layout reader (`LayoutReader`) is the default reader for Koskari
 modules. It accepts indentation-based blocks and lines at delimiter
 depth 0, embeds ordinary s-expressions inside `(`, `[`, and `{`, and
-parses colon blocks as `:block:` conses and expands them through
+parses colon blocks as `block:` conses and expands them through
 layout handlers (`layout/<head>`) into list forms for the compiler.
 
 Reading is strict: malformed layout or punctuation fails before evaluation.
@@ -90,11 +90,11 @@ remains distinct from the keyword's own trailing `:`:
 ```koskari
 unknown as: x:
   y
-;; → (unknown as: x y)
+;; -> (unknown as: x y)
 
 unknown x::
   z
-;; → (unknown x: z)
+;; -> (unknown x: z)
 ```
 
 Wrapping a keyword in a delimiter (`[...]` or `(...)`) is also valid -- inside
@@ -134,7 +134,7 @@ if x:
   y
 ```
 
-Sub-blocks may appear in the body. Each is parsed as a `:block:` cons.
+Sub-blocks may appear in the body. Each is parsed as a `block:` cons.
 Peer heads declared for the sub-block's layout (for example `else` after nested
 `if`) are gathered on the same spine and expanded together when the enclosing
 block is expanded.
@@ -190,19 +190,19 @@ line, through the reader's `fold_line`.
 | Elements on line | Form (implicit calls enabled) |
 | ---------------- | ----------------------------- |
 | One element | That element |
-| Several elements | `(first . rest…)` -- implicit call / fold |
+| Several elements | `(first . rest...)` -- implicit call / fold |
 
 Examples:
 
 ```koskari
 foo bar
-;; → (foo bar)
+;; -> (foo bar)
 
 (get-callee) a b
-;; → ((get-callee) a b)
+;; -> ((get-callee) a b)
 
 if True 1 2
-;; → (if True 1 2)
+;; -> (if True 1 2)
 ```
 
 The first form may be any value -- symbol, number, string, or parenthesized
@@ -220,12 +220,12 @@ Parsing and layout expansion are separate steps.
 
 ### Parse
 
-A colon block is read as a `:block:` cons: the header's elements as one
+A colon block is read as a `block:` cons: the header's elements as one
 list, then one entry per body line, each entry either a line, the list of the
 elements the reader saw on it, or a nested block:
 
 ```
-(:block: (HEAD ARG ...) ENTRY ...)
+(block: (HEAD ARG ...) ENTRY ...)
 ENTRY ::= LINE | BLOCK
 LINE  ::= (ELEMENT ...)
 ```
@@ -240,14 +240,14 @@ foo:
   bar:
     y
   (else: x)
-;; (:block: (foo) (else: x) (:block: (bar) (y)) ((else: x)))
+;; (block: (foo) (else: x) (block: (bar) (y)) ((else: x)))
 ```
 
 Stream-collected peer blocks (when the layout declares peer heads) form a spine
-of `:block:` conses that are expanded as one unit.
+of `block:` conses that are expanded as one unit.
 
 Block quote and quasiquote prefixes (`'head:` and `` `head: ``) read raw
-`:block:` conses in the header and body without expanding nested layout.
+`block:` conses in the header and body without expanding nested layout.
 They are wrapped for `layout/quote` and `layout/quasiquote` to lower at
 expansion time.
 
@@ -285,7 +285,7 @@ header:
 ```koskari
 foobar [x y z]:
   (print x y z)
-;; → (foobar [x y z] (print x y z))
+;; -> (foobar [x y z] (print x y z))
 ```
 
 For an explicit `compile/begin` wrapper, bind
@@ -318,21 +318,16 @@ and `layout_indent`). These switches are intended for tooling and
 pragma-driven reader configuration.
 
 `reload_pragma` carries the suffix-syntax switches too -- `reader/index-brackets`,
-`reader/dot-attrs`, and `reader/string-segments` (see
-[Grammar](grammar.md#suffix-syntax)). A raw reader constructed directly reads
-with these off; the pragma is what turns them on, so tooling that builds a
-reader without applying a pragma sees none of that syntax. `reader/dot-attrs`
-is the exception: the single-name spelling `foo.bar` predates the pragma and
-reads on a raw reader too.
+`reader/dot-attrs`, and `reader/string-segments`, described under
+[Suffix syntax](grammar.md#suffix-syntax).
 
 One suffix interacts with layout. A string segment's gap crosses newlines, so a
 continuation line is consumed as part of the value on the line that opened it,
-and the block structure is unaffected. Because the gap skip stops at a dedent,
-a continuation line may not sit at column 0 inside a layout block -- that
-column ends the logical line before the gap can reach the segment, and the
-reader reports `string segment must stay indented within its block`. Any
-indentation satisfies this, including less than the block's own body indent; a
-continuation belongs to the line that opened it.
+and the block structure is unaffected. The gap skip stops at a dedent, so a
+continuation line may not sit at column 0 inside a layout block -- that column
+ends the logical line before the gap can reach the segment, and the reader
+reports `string segment must stay indented within its block`. Any indentation
+satisfies this, including less than the block's own body indent.
 
 ## Formal grammar
 
@@ -382,7 +377,7 @@ ExprPart      ::= ATOM | SEXPR ;
 - Embedded s-expressions: When a `HeaderPart` or `ExprPart` begins with
   `(`, `[`, or `{`, the s-expression reader consumes a complete balanced form
   as one `SEXPR`. Newlines inside that form do not end the outer logical line.
-- Layout head resolution: For `BlockLine` with header parts `H0 H1 …`,
+- Layout head resolution: For `BlockLine` with header parts `H0 H1 ...`,
   expansion resolves `layout/<H0>` when `H0` is a symbol; otherwise
   `layout/block` applies.
 - Peer blocks: Peers are `BlockLine` nodes at the same indent as the
@@ -414,5 +409,5 @@ else:
 ## See also
 
 - [Koskari and s-expressions](../guide/layout-and-s-expressions.md) -- the rules beside their s-expressions
-- [Layout handler reference](layouts/index.md) -- per-head lowering (`layout/if`, …)
+- [Layout handler reference](layouts/index.md) -- per-head lowering (`layout/if`, ...)
 - [Grammar](grammar.md) -- syntax hub

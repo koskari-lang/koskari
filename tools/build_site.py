@@ -30,9 +30,11 @@ import re
 import shutil
 import sys
 from configparser import ConfigParser
+from html import escape
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup
 
 
 # Public repository. The GitHub link 404s for anonymous visitors until the
@@ -57,27 +59,19 @@ ICON_WORDMARK_MARKUP = """
 """
 
 
-# Documentation rows, aligned to what we publish under /docs, in two
-# groups. Numbers are derived from position across both groups, so
-# reordering or inserting rows just works.
-DOC_GROUPS = [
-    ("Start here", [
-        ("Quickstart", "/docs/quickstart/",
-         "Install, open the REPL, run a file, read one small program."),
-        ("Little Koskari", "/docs/tutorials/beginner/",
-         "The language from zero, one chapter at a time."),
-        ("From Python", "/docs/tutorials/from-python/",
-         "Python and Koskari side by side, for people who think in Python."),
-    ]),
-    ("Go deeper", [
-        ("Guide", "/docs/guide/",
-         "One page per mechanism: layout, names, functions, macros, async."),
-        ("Reference", "/docs/reference/",
-         "Grammar, every form, every builtin, every opcode, the CLI, errors."),
-        ("Python API", "/docs/reference/api/",
-         "Embedding Koskari in a Python program."),
-    ]),
-]
+# Sample programs shown on the landing page. Each one is a real file
+# under docs/site/samples that runs and prints the output its trailing
+# comments claim. The template reaches them as samples.<stem>_<ext>.
+SAMPLE_DIR = 'samples'
+
+SAMPLE_NAMES = (
+    'hero.ki',
+    'shapes.py',
+    'shapes.ki',
+    'fetch.ki',
+    'retry.ki',
+    'triples.ki',
+)
 
 
 def project_root(root=None):
@@ -109,28 +103,99 @@ def read_version(root=None):
     return conf["metadata"]["version"]
 
 
-def doc_groups():
+def token_classes():
     """
-    Build the templating context for the documentation link groups
+    Ordered Pygments token categories paired with landing page classes
 
-    :return: list of dicts with title and rows; each row has num, title,
-      href, and blurb
+    The first category containing a token wins, so the specific Name
+    subtypes are listed ahead of the categories that contain them.
+    Pygments is imported lazily on first call.
+
+    :return: tuple of (token category, CSS class name) pairs
+    :raises ImportError: when Pygments is not installed
     """
 
-    groups = []
-    index = 1
-    for title, rows in DOC_GROUPS:
-        entries = []
-        for row_title, href, blurb in rows:
-            entries.append({
-                "num": f"{index:02d}",
-                "title": row_title,
-                "href": href,
-                "blurb": blurb,
-            })
-            index += 1
-        groups.append({"title": title, "rows": entries})
-    return groups
+    from pygments.token import (
+        Comment, Keyword, Name, Number, Operator, Punctuation, String)
+
+    return (
+        (Comment, 'k-cm'),
+        (Name.Decorator, 'k-dec'),
+        (Name.Function, 'k-fn'),
+        (Name.Class, 'k-fn'),
+        (Name.Builtin, 'k-kw'),
+        (Name.Constant, 'k-type'),
+        (Keyword, 'k-kw'),
+        (String, 'k-str'),
+        (Number, 'k-num'),
+        (Operator, 'k-pn'),
+        (Punctuation, 'k-pn'),
+    )
+
+
+def sample_lexer(name):
+    """
+    Return the Pygments lexer for one sample file
+
+    Koskari samples use the lexer shipped with the package, so the
+    landing page and the documentation highlight the same way.
+
+    :param name: sample file name, used for its suffix
+    :return: Pygments Lexer instance
+    :raises ImportError: when Pygments is not installed
+    """
+
+    if name.endswith('.ki'):
+        from koskari.extras.pygments import KoskariLexer
+        return KoskariLexer()
+
+    from pygments.lexers import PythonLexer
+    return PythonLexer()
+
+
+def highlight_sample(source, name):
+    """
+    Highlight one sample source into span markup for a code window
+
+    :param source: sample file contents
+    :param name: sample file name, used to pick the lexer
+    :return: Markup holding the highlighted source
+    """
+
+    classes = token_classes()
+    parts = []
+    for tok, text in sample_lexer(name).get_tokens(source):
+        if not text:
+            continue
+        body = escape(text, quote=False)
+        for category, css in classes:
+            if tok in category:
+                parts.append(f'<span class="{css}">{body}</span>')
+                break
+        else:
+            parts.append(body)
+    return Markup("".join(parts).rstrip("\n"))
+
+
+def samples(src):
+    """
+    Read and highlight every landing page sample
+
+    :param src: source directory holding index.html.j2
+    :return: dict keyed by sample stem and suffix, each value carrying
+      the file name and its highlighted markup
+    """
+
+    found = {}
+    for name in SAMPLE_NAMES:
+        path = Path(src) / SAMPLE_DIR / name
+        source = path.read_text(encoding='utf-8')
+        key = name.replace('.', '_').replace('-', '_')
+        found[key] = {
+            "filename": name,
+            "code": highlight_sample(source, name),
+        }
+    return found
 
 
 def write_lockup_svg(out_path, root=None):
@@ -191,7 +256,7 @@ def render(src, out, root=None):
         github_url=REPO_URL,
         repo_short=REPO_SHORT,
         license_label=LICENSE_LABEL,
-        doc_groups=doc_groups(),
+        samples=samples(src),
     )
     (out / "index.html").write_text(page, encoding="utf-8")
 

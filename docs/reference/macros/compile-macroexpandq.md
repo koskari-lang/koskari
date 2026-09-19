@@ -9,8 +9,8 @@ the namespace is `(globals)`; with two, the given namespace.
 **Examples:**
 
 ```koskari
-koskari> (macroexpandq (when a b))
-(cond [a b] [else None])
+>>> (macroexpandq (when a b))
+(cond [a b] [else: None])
 ```
 
 **See also:** [`macroexpand`](compile-macroexpand.md).

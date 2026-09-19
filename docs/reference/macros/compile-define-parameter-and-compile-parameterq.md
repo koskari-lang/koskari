@@ -36,7 +36,7 @@ define show [] (if verbose "loud" "quiet")
 ```
 
 ```koskari
-koskari> (macroexpand-1 '(define-parameter verbose False))
+>>> (macroexpand-1 '(define-parameter verbose False))
 (begin (define verbose) (bindq verbose (ParamRef (quote verbose) False)))
 ```
 

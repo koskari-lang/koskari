@@ -1,26 +1,21 @@
 # layout/for-each
-**Symbols:** `layout/while`, `layout/for-each`
+**Symbol:** `layout/for-each`
 
-**Use-case:** Block syntax for `while` and `for-each` loops with an optional
-`else` peer. Both names share one handler (`layout_loop`); the read result keeps
-the block head (`while` or `for-each`) and is compiled by `compile/while` or
-`compile/for-each`.
+**Use-case:** Block syntax for a `for-each` loop with an optional `else`
+peer. The read result keeps the `for-each` head and is compiled by
+[`compile/for-each`](../specials/compile-for-each.md).
 
-**Behaviour:** Body forms are appended to
-the header list (no `compile/begin` wrapper). Accepts at most one optional peer
-`else`. When present, the else peer body is appended as a final
-`(else: BODY...)` clause (not merged into the main loop body). Rules: only
-`else` is allowed as a peer; `else` takes no arguments; at most one `else` peer.
+**Behaviour:** The header is `for-each [BINDING SEQ]`, a binding form and
+the sequence it draws from. Body forms are appended to the header list
+with no `begin` wrapper, giving `(for-each [BINDING SEQ] BODY...)`.
+`else` is the only peer gathered; its body is appended as a final
+`(else: BODY...)` clause rather than merged into the loop body. Rules:
+`else` takes no arguments, and at most one `else` peer may appear.
 
 **Syntax:**
 
 ```
-while TEST:
-  BODY
-else:
-  BODY
-
-for-each [BINDING EXPR]:
+for-each [BINDING SEQ]:
   BODY
 else:
   BODY
@@ -29,23 +24,24 @@ else:
 **Examples:**
 
 ```koskari
-while (some_test 123):
-  loopbody...
-else:
-  elsebody...
-;; → (while (some_test 123) loopbody... (else: elsebody...))
+for-each [x (range 0 3)]:
+  (print x)
+;; -> (for-each [x (range 0 3)] (print x))
 
-while x:
-  y
-;; → (while x y)
-
-for-each [i items]:
-  (call append result i)
+for-each [x seq]:
+  (print x)
 else:
-  "finished"
-;; → (for-each [i items] (call append result i) (else: "finished"))
+  done
+;; -> (for-each [x seq] (print x) (else: done))
 ```
 
-**Implementation:** `koskari/reader/layouts/loops.layout_loop` (registered as
-`layout/while` and `layout/for-each` via `add_builtin`)
-
+```koskari
+for-each [i (range 0 3)]:
+  (print "item" i)
+else:
+  (print "for-each done")
+;; prints: item 0
+;; prints: item 1
+;; prints: item 2
+;; prints: for-each done
+```

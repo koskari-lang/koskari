@@ -84,3 +84,6 @@ string key: `#{"name": "x"}`.
 
 Square brackets read like parentheses, so that is a call of `1`. A
 list literal is `#[1 2 3]`.
+
+Elements are separated by whitespace, and a comma sticks to the token in
+front of it: `#[1, 2]` reads the symbol `1,` and the integer `2`.

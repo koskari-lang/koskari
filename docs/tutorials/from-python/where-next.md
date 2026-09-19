@@ -37,6 +37,6 @@ I want to embed Koskari in a Python app.
 [Hosting Koskari from Python](../../guide/hosting-from-python.md)
 covers the import hook, running a file into a namespace, and awaiting
 Koskari functions from Python.
-[Packaging a Koskari application](../../guide/packaging.md) ships a
+[Packaging an installed command](../../guide/packaging.md) ships a
 `.ki` program as a pip command.
 :::

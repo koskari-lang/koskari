@@ -14,7 +14,6 @@ push result. count 0 pushes nil.
 **Example:**
 
 ```koskari
-(cons 1 2 nil)                    ; → (1 . (2 . nil))
-(cons (quote a) (quote (b c)) nil)  ; → (a b c)
+(cons 1 2 nil)                    ; -> (1 . (2 . nil))
+(cons (quote a) (quote (b c)) nil)  ; -> (a b c)
 ```
-

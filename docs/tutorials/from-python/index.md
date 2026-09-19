@@ -8,8 +8,9 @@ You need the [Quickstart](../../quickstart.md) done first. If the
 parentheses look strange, chapter 2 of
 [Little Koskari](../beginner/index.md) explains calling in plain words.
 
-When a line begins with `koskari>`, it is REPL input, and the line under
-it is what Koskari shows.
+In a transcript, a line starting with `>>> ` is what you type at the
+REPL and the line under it is what Koskari shows. A form that runs past
+one line continues under a `... ` prompt.
 
 ```{toctree}
 :maxdepth: 1
@@ -23,6 +24,6 @@ programs-and-modules
 errors-and-debugging
 interop
 macros-and-dsls
-where-next
 examples/index
+where-next
 ```

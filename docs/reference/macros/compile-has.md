@@ -9,8 +9,8 @@ reads as a question about the collection.
 **Examples:**
 
 ```koskari
-koskari> (has? #[1 2] 2)
+>>> (has? #[1 2] 2)
 True
-koskari> (has? #[1 2] 9)
+>>> (has? #[1 2] 9)
 False
 ```

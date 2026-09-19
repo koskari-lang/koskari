@@ -19,5 +19,3 @@ With **no arguments**, `compile/await` emits a **bare** cooperative suspend (`AW
 ;; Cooperative suspend only; value of the form is None
 (await)
 ```
-
-

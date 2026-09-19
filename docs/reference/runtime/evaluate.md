@@ -22,7 +22,7 @@ rebuilt from its **`__pragma__`** after the load-time facets were detached.
 
 **Relation to the macro:** **`(evaluate form)`** and **`(evaluate form ns)`**
 are handled by the **`compile/evaluate`** macro, which expands to **`(call
-evaluate …)`** with **`(locals)`** when the namespace argument is omitted. See
+evaluate ...)`** with **`(locals)`** when the namespace argument is omitted. See
 [compile/evaluate](../macros/compile-evaluate.md).
 
 **Examples:**
