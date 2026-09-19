@@ -627,12 +627,34 @@ def load_kio(source):
     return KioFile.read(source)
 
 
+def pool_key(obj):
+    """
+    The key a value shares a pool slot under. An int, str, bytes, float
+    or complex value shares a slot with every equal value of the same
+    type, so a constant rebuilt by the decoder and an immediate rebuilt
+    by Code.soften meet in one record whether or not the interpreter
+    handed back the same object. Everything else is keyed by identity
+
+    :param obj: candidate pool value
+    :return: hashable key
+    """
+
+    kind = type(obj)
+    if kind in (int, str, bytes):
+        return (kind, obj)
+    if kind is float:
+        return (kind, struct.pack('<d', obj))
+    if kind is complex:
+        return (kind, struct.pack('<dd', obj.real, obj.imag))
+    return (None, id(obj))
+
+
 class PoolBuilder(object):
     """
-    Identity-based pool builder for serialization
+    Pool builder for serialization, deduplicating by pool_key
 
     :ivar values: list of values in pool order
-    :ivar _index: id(obj) -> pool index
+    :ivar _index: pool_key(obj) -> pool index
     """
 
     def __init__(self):
@@ -664,11 +686,11 @@ class PoolBuilder(object):
         :return: pool index
         """
 
-        i = id(obj)
-        if i in self._index:
-            return self._index[i]
+        key = pool_key(obj)
+        if key in self._index:
+            return self._index[key]
         idx = len(self.values)
-        self._index[i] = idx
+        self._index[key] = idx
         self.values.append(obj)
         return idx
 
@@ -681,10 +703,10 @@ class PoolBuilder(object):
         :return: pool index
         """
 
-        i = id(obj)
-        if i not in self._index:
-            raise ValueError('pool index missing for %r' % (obj,))
-        return self._index[i]
+        key = pool_key(obj)
+        if key not in self._index:
+            raise ValueError(f"pool index missing for {obj!r}")
+        return self._index[key]
 
 
 def intern_for_pool(pb, obj):
@@ -692,8 +714,9 @@ def intern_for_pool(pb, obj):
     Insert object into pool with dependency order for codec values
     """
 
-    if id(obj) in pb._index:
-        return pb._index[id(obj)]
+    key = pool_key(obj)
+    if key in pb._index:
+        return pb._index[key]
 
     if isinstance(obj, NamespaceSpec):
         intern_for_pool(pb, obj.name)

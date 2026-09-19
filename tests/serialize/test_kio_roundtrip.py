@@ -29,7 +29,8 @@ from koskari.lib import (
     bracket_nil, demand_call, nil, symbol)
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
-from koskari.serialize.codex import KIO_MAGIC, KioHeader, SectionTag
+from koskari.serialize.codex import (
+    KIO_MAGIC, KioHeader, PoolBuilder, SectionTag)
 
 from .. import make_callable
 from ..lib.opcode import build_code, build_expr
@@ -392,6 +393,35 @@ class TestSoftenRebuild(unittest.TestCase):
         instr = code.soften()
         code2 = Code(code.namespace_spec, instr, code.name, code.filename)
         self.assertEqual(demand_call(make_callable(code2, ns)), 42)
+
+
+class TestPoolDedup(unittest.TestCase):
+    """
+    Scalar pool values share a slot by value, everything else by identity
+    """
+
+    def test_equal_ints_share_a_slot(self):
+        pb = PoolBuilder()
+        first = int.from_bytes(b'\x01', 'big', signed=True)
+        second = 1
+        self.assertEqual(pb.add(first), pb.add(second))
+        self.assertEqual(pb.add(10 ** 20), pb.add(int('1' + '0' * 20)))
+        self.assertEqual(len(pb.values), 2)
+
+
+    def test_equal_strings_share_a_slot(self):
+        pb = PoolBuilder()
+        self.assertEqual(pb.add('print'), pb.add(''.join(['pr', 'int'])))
+        self.assertEqual(pb.add(b'ab'), pb.add(bytes([97, 98])))
+        self.assertEqual(len(pb.values), 2)
+
+
+    def test_type_and_sign_keep_separate_slots(self):
+        pb = PoolBuilder()
+        slots = {pb.add(v) for v in (1, 1.0, True, 0.0, -0.0, 1 + 0j)}
+        self.assertEqual(len(slots), 6)
+        self.assertEqual(pb.add(float('nan')), pb.add(float('nan')))
+        self.assertNotEqual(pb.add(symbol('a')), pb.add('a'))
 
 
 class TestFastValidation(unittest.TestCase):
