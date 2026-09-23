@@ -24,7 +24,7 @@ head is read as the atom it wraps, and quote strips marks
 
 import pytest
 
-from koskari.lib import Mark, keyword, symbol
+from koskari.lib import Mark, gensym, keyword, symbol
 from koskari.types import build_proper, is_symbol, unpack
 
 from . import SpecialsTestCase
@@ -37,15 +37,33 @@ def S(name):
     return symbol(name)
 
 
-def M(name, mark=1):
-    return Mark(symbol(name), mark)
+class MarkSpelling(object):
+    """
+    Template atoms spelled as Mark boxes
+    """
+
+    def M(self, name, mark=1):
+        return Mark(symbol(name), mark)
 
 
-def MK(name, mark=1):
-    return Mark(keyword(name), mark)
+    def MK(self, name, mark=1):
+        return Mark(keyword(name), mark)
 
 
-class TestMarkedForms(SpecialsTestCase):
+class GensymSpelling(object):
+    """
+    Template atoms spelled as gensyms; a keyword carries no marks
+    """
+
+    def M(self, name, mark=1):
+        return gensym(symbol(name), marks=mark)
+
+
+    def MK(self, name, mark=1):
+        return keyword(name)
+
+
+class TestMarkedForms(MarkSpelling, SpecialsTestCase):
 
 
     def compile_form(self, form, **defns):
@@ -64,8 +82,8 @@ class TestMarkedForms(SpecialsTestCase):
     async def test_marked_define_binds_mangled_key(self):
         form = build_proper(
             S("begin"),
-            build_proper(S("define"), M("t"), 5),
-            M("t"))
+            build_proper(S("define"), self.M("t"), 5),
+            self.M("t"))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 5)
         self.assertIn("t#1", vars(module))
@@ -76,8 +94,8 @@ class TestMarkedForms(SpecialsTestCase):
         form = build_proper(
             S("begin"),
             build_proper(S("define"), S("t"), 1),
-            build_proper(S("define"), M("t"), 2),
-            build_proper(S("cons"), S("t"), M("t"), S("nil")))
+            build_proper(S("define"), self.M("t"), 2),
+            build_proper(S("cons"), S("t"), self.M("t"), S("nil")))
         expr, module = self.compile_form(form)
         result = await expr()
         self.assertEqual(list(unpack(result)), [1, 2])
@@ -85,7 +103,7 @@ class TestMarkedForms(SpecialsTestCase):
 
     async def test_marked_lambda_formal(self):
         form = build_proper(
-            build_proper(S("lambda"), build_proper(M("x")), M("x")),
+            build_proper(S("lambda"), build_proper(self.M("x")), self.M("x")),
             3)
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 3)
@@ -93,7 +111,7 @@ class TestMarkedForms(SpecialsTestCase):
 
     async def test_marked_keyword_formal_declares_mangled_name(self):
         fn = build_proper(
-            S("lambda"), build_proper(MK("argv"), 9), M("argv"))
+            S("lambda"), build_proper(self.MK("argv"), 9), self.M("argv"))
         expr, module = self.compile_form(build_proper(fn))
         self.assertEqual(await expr(), 9)
 
@@ -101,8 +119,8 @@ class TestMarkedForms(SpecialsTestCase):
     async def test_marked_let_binding(self):
         form = build_proper(
             S("let"),
-            build_proper(build_proper(M("t"), 4)),
-            build_proper(S("add"), M("t"), 1))
+            build_proper(build_proper(self.M("t"), 4)),
+            build_proper(S("add"), self.M("t"), 1))
         expr, module = self.compile_form(form, add=lambda a, b: a + b)
         self.assertEqual(await expr(), 5)
 
@@ -110,26 +128,26 @@ class TestMarkedForms(SpecialsTestCase):
     async def test_marked_setq(self):
         form = build_proper(
             S("begin"),
-            build_proper(S("define"), M("t"), 1),
-            build_proper(S("setq"), M("t"), 2),
-            M("t"))
+            build_proper(S("define"), self.M("t"), 1),
+            build_proper(S("setq"), self.M("t"), 2),
+            self.M("t"))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 2)
 
 
     async def test_marked_head_resolves_special(self):
-        form = build_proper(M("cond"), build_proper(True, 1))
+        form = build_proper(self.M("cond"), build_proper(True, 1))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 1)
 
 
     async def test_marked_literal_symbol(self):
-        expr, module = self.compile_form(M("None"))
+        expr, module = self.compile_form(self.M("None"))
         self.assertIsNone(await expr())
 
 
     async def test_marked_keyword_label_at_call_site(self):
-        form = build_proper(S("f"), MK("x"), 1)
+        form = build_proper(S("f"), self.MK("x"), 1)
         expr, module = self.compile_form(form, f=lambda x: x + 10)
         self.assertEqual(await expr(), 11)
 
@@ -138,18 +156,18 @@ class TestMarkedForms(SpecialsTestCase):
         form = build_proper(
             S("cond"),
             build_proper(False, 1),
-            build_proper(MK("else"), 2))
+            build_proper(self.MK("else"), 2))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 2)
 
 
     async def test_marked_keyword_as_value_is_the_keyword(self):
-        expr, module = self.compile_form(MK("k"))
+        expr, module = self.compile_form(self.MK("k"))
         self.assertIs(await expr(), keyword("k"))
 
 
     async def test_quote_strips_marks(self):
-        form = build_proper(M("quote"), build_proper(M("t"), M("u")))
+        form = build_proper(self.M("quote"), build_proper(self.M("t"), self.M("u")))
         expr, module = self.compile_form(form)
         items = list(unpack(await expr()))
         self.assertEqual(items, [S("t"), S("u")])
@@ -157,17 +175,17 @@ class TestMarkedForms(SpecialsTestCase):
 
 
     async def test_quote_atom_strips_mark(self):
-        form = build_proper(S("quote"), M("t"))
+        form = build_proper(S("quote"), self.M("t"))
         expr, module = self.compile_form(form)
         self.assertIs(await expr(), S("t"))
 
 
     async def test_quasiquote_strips_literal_marks_and_reads_unquote(self):
         form = build_proper(
-            M("quasiquote"),
+            self.M("quasiquote"),
             build_proper(
-                M("a"),
-                build_proper(M("unquote"), build_proper(S("add"), 1, 1))))
+                self.M("a"),
+                build_proper(self.M("unquote"), build_proper(S("add"), 1, 1))))
         expr, module = self.compile_form(form, add=lambda a, b: a + b)
         self.assertEqual(list(unpack(await expr())), [S("a"), 2])
 
@@ -176,13 +194,13 @@ class TestMarkedForms(SpecialsTestCase):
         class Obj:
             name = "n"
 
-        form = build_proper(S("attr"), S("o"), M("name"))
+        form = build_proper(S("attr"), S("o"), self.M("name"))
         expr, module = self.compile_form(form, o=Obj())
         self.assertEqual(await expr(), "n")
 
 
     async def test_dot_call_attribute_is_a_label(self):
-        form = build_proper(M(".upper"), "a")
+        form = build_proper(self.M(".upper"), "a")
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), "A")
 
@@ -196,15 +214,15 @@ class TestMarkResolution(TestMarkedForms):
 
 
     async def test_free_reference_resolves_to_bare_global(self):
-        form = build_proper(M("add"), 1, 2)
+        form = build_proper(self.M("add"), 1, 2)
         expr, module = self.compile_form(form, add=lambda a, b: a + b)
         self.assertEqual(await expr(), 3)
 
 
     async def test_free_reference_inside_lambda(self):
         fn = build_proper(
-            S("lambda"), build_proper(M("x")),
-            build_proper(M("add"), M("x"), 1))
+            S("lambda"), build_proper(self.M("x")),
+            build_proper(self.M("add"), self.M("x"), 1))
         expr, module = self.compile_form(
             build_proper(fn, 2), add=lambda a, b: a + b)
         self.assertEqual(await expr(), 3)
@@ -212,33 +230,33 @@ class TestMarkResolution(TestMarkedForms):
 
     async def test_marked_reference_falls_back_to_bare_local(self):
         form = build_proper(
-            S("let"), build_proper(build_proper(S("t"), 1)), M("t"))
+            S("let"), build_proper(build_proper(S("t"), 1)), self.M("t"))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 1)
 
 
     async def test_closure_over_inline_scope_marked_binding(self):
         form = build_proper(
-            S("let"), build_proper(build_proper(M("t"), 5)),
-            build_proper(build_proper(S("lambda"), build_proper(), M("t"))))
+            S("let"), build_proper(build_proper(self.M("t"), 5)),
+            build_proper(build_proper(S("lambda"), build_proper(), self.M("t"))))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 5)
 
 
     async def test_nested_inline_scopes(self):
         form = build_proper(
-            S("let"), build_proper(build_proper(M("t"), 5)),
+            S("let"), build_proper(build_proper(self.M("t"), 5)),
             build_proper(
                 S("let"), build_proper(build_proper(S("u"), 1)),
-                build_proper(M("add"), M("t"), S("u"))))
+                build_proper(self.M("add"), self.M("t"), S("u"))))
         expr, module = self.compile_form(form, add=lambda a, b: a + b)
         self.assertEqual(await expr(), 6)
 
 
     async def test_doubly_marked_reference_finds_singly_marked_binder(self):
         form = build_proper(
-            S("let"), build_proper(build_proper(M("t"), 5)),
-            Mark(S("t"), (1, 2)))
+            S("let"), build_proper(build_proper(self.M("t"), 5)),
+            self.M("t", (1, 2)))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 5)
 
@@ -247,7 +265,7 @@ class TestMarkResolution(TestMarkedForms):
         form = build_proper(
             S("begin"),
             build_proper(S("define"), S("c"), 1),
-            build_proper(S("setq"), M("c"), 2),
+            build_proper(S("setq"), self.M("c"), 2),
             S("c"))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 2)
@@ -256,11 +274,11 @@ class TestMarkResolution(TestMarkedForms):
     async def test_definition_before_closure_reference(self):
         form = build_proper(
             S("begin"),
-            build_proper(S("define"), M("h"), build_proper(
+            build_proper(S("define"), self.M("h"), build_proper(
                 S("lambda"), build_proper(), 42)),
-            build_proper(S("define"), M("g"), build_proper(
-                S("lambda"), build_proper(), build_proper(M("h")))),
-            build_proper(M("g")))
+            build_proper(S("define"), self.M("g"), build_proper(
+                S("lambda"), build_proper(), build_proper(self.M("h")))),
+            build_proper(self.M("g")))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 42)
 
@@ -268,11 +286,11 @@ class TestMarkResolution(TestMarkedForms):
     async def test_closure_reference_before_definition_resolves(self):
         form = build_proper(
             S("begin"),
-            build_proper(S("define"), M("g"), build_proper(
-                S("lambda"), build_proper(), build_proper(M("h")))),
-            build_proper(S("define"), M("h"), build_proper(
+            build_proper(S("define"), self.M("g"), build_proper(
+                S("lambda"), build_proper(), build_proper(self.M("h")))),
+            build_proper(S("define"), self.M("h"), build_proper(
                 S("lambda"), build_proper(), 42)),
-            build_proper(M("g")))
+            build_proper(self.M("g")))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 42)
 
@@ -280,8 +298,8 @@ class TestMarkResolution(TestMarkedForms):
     async def test_free_reference_ignores_sibling_scope_binder(self):
         form = build_proper(
             S("begin"),
-            build_proper(S("let"), build_proper(build_proper(M("t"), 1)), M("t")),
-            M("t"))
+            build_proper(S("let"), build_proper(build_proper(self.M("t"), 1)), self.M("t")),
+            self.M("t"))
         expr, module = self.compile_form(form, t=100)
         self.assertEqual(await expr(), 100)
 
@@ -297,11 +315,11 @@ class TestMarkResolutionStreams(TestMarkedForms):
     async def test_marked_reference_inside_class_body(self):
         form = build_proper(
             S("begin"),
-            build_proper(S("define"), M("base"), 4),
-            build_proper(S("define"), M("C"), build_proper(
-                S("class"), M("C"), build_proper(),
-                build_proper(S("define"), M("member"), M("base")))),
-            build_proper(S("attr"), M("C"), S("member")))
+            build_proper(S("define"), self.M("base"), 4),
+            build_proper(S("define"), self.M("C"), build_proper(
+                S("class"), self.M("C"), build_proper(),
+                build_proper(S("define"), self.M("member"), self.M("base")))),
+            build_proper(S("attr"), self.M("C"), S("member")))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), 4)
 
@@ -309,13 +327,27 @@ class TestMarkResolutionStreams(TestMarkedForms):
     async def test_marked_operands_of_a_fused_comparison(self):
         form = build_proper(
             S("begin"),
-            build_proper(S("define"), M("t"), 3),
+            build_proper(S("define"), self.M("t"), 3),
             build_proper(
                 S("cond"),
-                build_proper(build_proper(S("<"), M("t"), 5), "lt"),
-                build_proper(MK("else"), "ge")))
+                build_proper(build_proper(S("<"), self.M("t"), 5), "lt"),
+                build_proper(self.MK("else"), "ge")))
         expr, module = self.compile_form(form)
         self.assertEqual(await expr(), "lt")
+
+
+class TestGensymForms(GensymSpelling, TestMarkedForms):
+    """
+    The same forms with the template atoms spelled as gensyms
+    """
+
+
+class TestGensymResolution(GensymSpelling, TestMarkResolution):
+    pass
+
+
+class TestGensymResolutionStreams(GensymSpelling, TestMarkResolutionStreams):
+    pass
 
 
 # The end.

@@ -1355,6 +1355,10 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
     PyObject *got = matcher_peel_datum(elem);
     if (lit == got)
       return 1;
+    /* a literal names an atom by its bare spelling, so a gensym
+       matches the symbol it spells */
+    if (KosGensym_Check(got) && KosGensym_BASE(got) == lit)
+      return 1;
     int cmp = PyObject_RichCompareBool(lit, got, Py_EQ);
     if (cmp < 0)
       return -1;

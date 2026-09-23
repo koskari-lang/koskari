@@ -1213,6 +1213,68 @@ static int test_match_kospair_mark_capture_keeps_mark(void) {
 }
 
 
+static int test_match_kospair_gensym_literal_matches_base(void) {
+    /*
+      A gensym in a KosPair spine matches TEST_LITERAL against the
+      symbol it spells, is a symbol for TEST_TYPE(symbol), and comes
+      back from the capture as itself.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    TEST_ASSERT_NOT_NULL(b, "create builder");
+
+    PyObject *sym_name = PyUnicode_FromString("tmp");
+    PyObject *sym = KosSymbol_FromString(sym_name);
+    Py_DECREF(sym_name);
+    PyObject *marks = Py_BuildValue("(i)", 1);
+    PyObject *g = KosGensym_New(sym, marks);
+    Py_DECREF(marks);
+    TEST_ASSERT_NOT_NULL(g, "gensym built");
+    TEST_ASSERT(KosSymbol_Check(g), "gensym is a symbol");
+
+    int slot = add_str_slot(b, "name");
+    int e_sym = add_str_extern(b, "symbol");
+    int c_lit = KosMatcherBuilder_AddConst(b, sym);
+
+    int n_lit = append_test_literal(b, (uint32_t) c_lit);
+    int n_t = append_test_type(b, (uint32_t) e_sym);
+    int n_cap = append_capture(b, (uint32_t) slot, (uint32_t) n_t);
+    uint32_t kids[] = {(uint32_t) n_lit, (uint32_t) n_cap};
+    int n_grp = append_match(b, kids, 2);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *items[2] = { g, g };
+    PyObject *cons = make_kospair(items, 2);
+    PyObject *extern_env = PyTuple_Pack(1, (PyObject *) &KosSymbolType);
+
+    KosMatchSubject subj;
+    TEST_ASSERT_EQ(KosMatchSubject_FromKosPair(cons, &subj), 0,
+                   "kospair subject built");
+
+    PyObject *r = KosMatcher_Match((KosMatcher *) m_obj, &subj, extern_env);
+    KosMatchSubject_Release(&subj);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "literal matched the base");
+    PyObject *cap_box = PyDict_GetItemString(
+        ((KosMatchResult *) r)->captures, "name");
+    TEST_ASSERT_NOT_NULL(cap_box, "capture present");
+    PyObject *cap = unwrap_datum_value(cap_box);
+    TEST_ASSERT_SAME(cap, g, "capture is the gensym");
+    TEST_ASSERT_SAME(KosGensym_BASE(cap), sym, "gensym spells the symbol");
+    Py_DECREF(cap);
+
+    Py_DECREF(r);
+    Py_DECREF(extern_env);
+    Py_DECREF(cons);
+    Py_DECREF(g);
+    Py_DECREF(sym);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
 static int test_match_form_descends_into_pair(void) {
     /*
       Outer matcher is GROUP(TEST_ANY, FORM(GROUP(CAPTURE(x,
@@ -3102,6 +3164,7 @@ int run_matcher_tests(void) {
     RUN_TEST(test_match_group_kospair);
     RUN_TEST(test_match_kospair_datum_transparent);
     RUN_TEST(test_match_kospair_mark_capture_keeps_mark);
+    RUN_TEST(test_match_kospair_gensym_literal_matches_base);
     RUN_TEST(test_match_form_descends_into_pair);
     RUN_TEST(test_match_same_symbol_equal);
     RUN_TEST(test_match_same_symbol_unequal);

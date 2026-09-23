@@ -69,12 +69,13 @@ def _qq_expr(compiler, frag, expr, level):
     :param level: nesting depth (0 = active quasi-quote level)
     """
 
-    if _is_const(expr):
-        frag.instruction(OpCode.CONST, expr)
-        return
+    # a quoted atom is data, read by its bare spelling: the marks are
+    # projected off before the const test so a gensym is emitted as
+    # the symbol it spells
+    expr = strip_mark(expr)
 
-    if not is_pair(expr):
-        frag.instruction(OpCode.CONST, strip_mark(expr))
+    if _is_const(expr) or not is_pair(expr):
+        frag.instruction(OpCode.CONST, expr)
         return
 
     head, tail = expr
@@ -200,6 +201,8 @@ def _compile_element(compiler, frag, expr, level):
     :param level: nesting depth
     :return: (value_or_subfrag, is_const)
     """
+
+    expr = strip_mark(expr)
 
     if _is_const(expr):
         return (expr, True)

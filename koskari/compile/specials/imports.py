@@ -49,7 +49,7 @@ Opcode sequences produced
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import Mark, OpCode, symbol
+from ...lib import Mark, OpCode, gensym, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
 from ...types import is_mark, is_pair, is_symbol, strip_mark, unpack
@@ -196,6 +196,8 @@ def _bind_spelling(bind, atom):
     :param atom: the source atom the binding is named after
     """
 
+    if isinstance(atom, gensym):
+        return str(gensym(symbol(bind), marks=atom.marks))
     if is_mark(atom):
         return str(Mark(symbol(bind), atom.marks))
     return bind

@@ -26,7 +26,7 @@ from functools import partial
 
 from .lib import (
     Domain, KoskariSyncViolation, Mark, ParamRef, bracket_nil, bracket_pair,
-    cons, keyword, nil, nilp, pair, symbol)
+    cons, gensym, keyword, nil, nilp, pair, symbol)
 
 
 __all__ = (
@@ -127,29 +127,35 @@ is_None = BuiltinPredicate("None?", operator.is_, None)
 
 def is_mark(value):
     """
-    Returns True if value is a Mark, a template-introduced symbol or
-    keyword carrying its expansion marks
+    Returns True if value is a template-introduced atom carrying its
+    expansion marks: a gensym, or a Mark over a symbol or keyword
     """
 
-    return isinstance(value, Mark)
+    return type(value) is gensym or isinstance(value, Mark)
 
 
 def strip_mark(value):
     """
-    The symbol or keyword under a Mark, or value unchanged. Use where an
-    atom is read as a tag, a label, or a literal: hygiene renames only
-    the names a form binds and resolves
+    The atom under the marks, or value unchanged: the base of a gensym,
+    the symbol or keyword under a Mark. Use where an atom is read as a
+    tag, a label, or a literal: hygiene renames only the names a form
+    binds and resolves
     """
 
+    if type(value) is gensym:
+        return value.base
     return value.datum if isinstance(value, Mark) else value
 
 
 def strip_marks(form):
     """
-    A copy of a form with every Mark replaced by the atom under it.
-    Pair cells are rebuilt with their positions and delimiter style;
+    A copy of a form with every marked atom replaced by the atom under
+    it. Pair cells are rebuilt with their positions and delimiter style;
     atoms other than marks are returned as they are
     """
+
+    if type(form) is gensym:
+        return form.base
 
     if isinstance(form, Mark):
         return form.datum

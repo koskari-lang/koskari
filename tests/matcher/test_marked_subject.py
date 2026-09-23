@@ -25,7 +25,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, DatumFrame, Mark, keyword, symbol
+from koskari.lib import Datum, DatumFrame, Mark, gensym, keyword, symbol
 from koskari.matcher import (
     BIND, BINDING, CAPTURE, FORM, FORMALS, LITERAL_KW, LITERAL_SYM, MATCH,
     REST, SYMBOL, TEST_ANY, VALUE, repeat_capture)
@@ -142,6 +142,99 @@ class TestMarkedCapturePaths(unittest.TestCase):
     def test_datum_around_mark_yields_the_mark(self):
         m = MATCH(SYMBOL("name")).build()
         name = Mark(symbol("t"), 1)
+        result = m.match(build_proper(Datum(name)))
+        self.assertTrue(result.matched)
+        self.assertIs(_peel(result.captures["name"]), name)
+
+
+def G(name, mark=1):
+    return gensym(symbol(name), marks=mark)
+
+
+class TestGensymSubject(unittest.TestCase):
+    """
+    A gensym is a symbol: a SYMBOL slot takes it with no peel, a
+    symbol literal matches its base, and every capture path hands it
+    back as itself
+    """
+
+
+    def test_symbol_slot_accepts_gensym_and_returns_it(self):
+        m = MATCH(SYMBOL("name")).build()
+        g = G("tmp")
+        result = m.match(build_proper(g))
+        self.assertTrue(result.matched)
+        got = _peel(result.captures["name"])
+        self.assertIs(type(got), gensym)
+        self.assertIs(got, g)
+
+
+    def test_symbol_literal_matches_base(self):
+        m = MATCH(LITERAL_SYM("match"), VALUE("inner")).build()
+        result = m.match(build_proper(G("match"), 1))
+        self.assertTrue(result.matched)
+        self.assertEqual(_peel(result.captures["inner"]), 1)
+
+
+    def test_symbol_literal_rejects_other_base(self):
+        m = MATCH(LITERAL_SYM("match"), VALUE("inner")).build()
+        result = m.match(build_proper(G("other"), 1))
+        self.assertFalse(result.matched)
+
+
+    def test_formals_positional_keeps_gensym(self):
+        m = MATCH(FORMALS("f")).build()
+        sx = G("x")
+        result = m.match(build_proper(build_proper(sx)))
+        self.assertTrue(result.matched)
+        frame = _peel(result.captures["f"])
+        self.assertIs(_peel(frame["positionals"][0]["name"]), sx)
+
+
+    def test_slice_capture_keeps_gensyms(self):
+        m = MATCH(CAPTURE("two", MATCH(TEST_ANY(), TEST_ANY()))).build()
+        a, b = G("a"), G("b")
+        result = m.match(build_proper(a, b))
+        self.assertTrue(result.matched)
+        got = [_peel(x) for x in result.captures["two"]]
+        self.assertEqual(got, [a, b])
+
+
+    def test_rest_tail_keeps_gensyms(self):
+        m = MATCH(SYMBOL("head"), REST("tail")).build()
+        a, b = G("a"), G("b")
+        result = m.match(build_proper(symbol("h"), a, b))
+        self.assertTrue(result.matched)
+        tail = list(unpack(_peel(result.captures["tail"])))
+        self.assertEqual(tail, [a, b])
+
+
+    def test_repeat_row_keeps_gensyms(self):
+        m = MATCH(repeat_capture(
+            "rows", FORM(MATCH(SYMBOL("n"), BIND("v"))))).build()
+        a, b = G("a"), G("b")
+        result = m.match(build_proper(build_proper(a, 1), build_proper(b, 2)))
+        self.assertTrue(result.matched)
+        rows = result.captures["rows"]
+        self.assertEqual([_peel(r["n"]) for r in rows], [a, b])
+
+
+    def test_frame_source_keeps_gensyms(self):
+        m = MATCH(BINDING("b")).build()
+        name = G("t")
+        cell = build_proper(name, 1)
+        result = m.match(build_proper(cell))
+        self.assertTrue(result.matched)
+        frame = result.captures["b"]
+        self.assertIsInstance(frame, DatumFrame)
+        self.assertIs(_peel(frame["name"]), name)
+        source_cell = list(unpack(frame.source))[0]
+        self.assertIs(list(unpack(source_cell))[0], name)
+
+
+    def test_datum_around_gensym_yields_the_gensym(self):
+        m = MATCH(SYMBOL("name")).build()
+        name = G("t")
         result = m.match(build_proper(Datum(name)))
         self.assertTrue(result.matched)
         self.assertIs(_peel(result.captures["name"]), name)

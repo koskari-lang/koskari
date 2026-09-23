@@ -29,7 +29,7 @@ from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
 from ..lib import (
-    Arena, Code, Datum, FormalsSpec, FunctionSpec, Mark, Module,
+    Arena, Code, Datum, FormalsSpec, FunctionSpec, Module,
     ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
     bracket_pair, cons, keyword, kos_repr, nil, symbol)
 from ..types import (
@@ -443,15 +443,16 @@ def mark_candidates(mark):
     key, then the key with the newest mark removed, down to the bare
     name
 
-    :param mark: a Mark
+    :param mark: a gensym or a Mark
     :rtype: list of str
     """
 
-    marks = mark.marks
+    base = str(strip_mark(mark))
+    rungs = [f"#{m:x}" for m in mark.marks]
     out = []
-    for n in range(len(marks), 0, -1):
-        out.append(str(Mark(mark.datum, marks[:n])))
-    out.append(str(mark.datum))
+    for n in range(len(rungs), 0, -1):
+        out.append(base + "".join(rungs[:n]))
+    out.append(base)
     return out
 
 
@@ -1004,8 +1005,8 @@ class Compiler:
         """
 
         # a marked keyword is the keyword: only a symbol binds or resolves
-        if is_mark(source_obj) and is_keyword(source_obj.datum):
-            source_obj = source_obj.datum
+        if is_mark(source_obj) and is_keyword(strip_mark(source_obj)):
+            source_obj = strip_mark(source_obj)
 
         if is_symbol(source_obj) or is_mark(source_obj):
             dispatch = self.compile_symbol

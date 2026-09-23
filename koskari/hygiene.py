@@ -34,7 +34,7 @@ from koskari.lib import (
     Datum, Mark, bracket_cons, bracket_nil, bracket_pair, cons, symbol)
 from koskari.types import (
     build_proper, get_position, is_keyword, is_mark, is_nil, is_pair,
-    is_symbol, unpack)
+    is_symbol, strip_mark, unpack)
 
 
 __all__ = (
@@ -60,7 +60,7 @@ def mark_atom(atom, mark):
     """
 
     if is_mark(atom):
-        return Mark(atom.datum, atom.marks + (mark,))
+        return Mark(strip_mark(atom), atom.marks + (mark,))
     if is_symbol(atom) or is_keyword(atom):
         return Mark(atom, mark)
     return atom
@@ -69,11 +69,11 @@ def mark_atom(atom, mark):
 def _binding_key(atom):
     """
     The symbol a template atom is looked up under in the pattern
-    bindings: itself for a symbol, the symbol spelling its key for a
-    Mark
+    bindings: itself for a symbol or a gensym, which is interned under
+    its own spelling, and the symbol spelling its key for a Mark
     """
 
-    if is_mark(atom):
+    if isinstance(atom, Mark):
         return symbol(str(atom))
     return atom
 

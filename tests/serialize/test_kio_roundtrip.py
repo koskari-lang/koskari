@@ -26,7 +26,7 @@ import pytest
 
 from koskari.lib import (
     Code, FormalsSpec, FunctionSpec, Mark, NamespaceSpec, OpCode, OpStyle,
-    bracket_nil, demand_call, keyword, nil, symbol)
+    bracket_nil, demand_call, gensym, keyword, nil, symbol)
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
 from koskari.serialize.codex import (
@@ -123,6 +123,18 @@ class TestKioRoundTrip(unittest.TestCase):
             self.assertEqual(loaded, value)
             self.assertIs(loaded.datum, value.datum)
             self.assertEqual(loaded.marks, value.marks)
+
+    def test_gensym_const_roundtrip(self):
+        """
+        a template symbol round-trips as the gensym of its base and
+        marks, not as the plain symbol of its spelling
+        """
+        value = gensym(symbol("t"), marks=(1, 255))
+        loaded = self._const_roundtrip(value)
+        self.assertIs(type(loaded), gensym)
+        self.assertIs(loaded, value)
+        self.assertIs(loaded.base, symbol("t"))
+        self.assertEqual(loaded.marks, (1, 255))
 
     def test_slice_const_roundtrip(self):
         """slices round-trip by value, None bounds included"""

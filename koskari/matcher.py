@@ -1901,7 +1901,7 @@ def frame_formal_name(fr):
     if v is None:
         return None, False
     kw = v.datum if isinstance(v, Datum) else v
-    if not is_keyword(kw.datum if isinstance(kw, Mark) else kw):
+    if not is_keyword(strip_mark(kw)):
         return None, False
     s = str(kw)
     if s[:1] == "&":

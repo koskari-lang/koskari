@@ -196,7 +196,7 @@ def is_symbolish(thing):
     """
 
     if is_mark(thing):
-        return is_symbol(thing.datum)
+        return is_symbol(strip_mark(thing))
     return is_symbol(thing) or is_lazygensym(thing)
 
 
