@@ -134,7 +134,7 @@ Instead: reuse the real reader, and reuse the real compile-time pattern
 builders. For the known transformer heads (`syntax-rules`, `macro-rules`,
 `syntax-match`, `macro-match`, `special-rules`, `special-match`), pattern
 construction is already a compile-time, side-effect-free step:
-`special_compile_syntax_rules` et al. build the `HygienicMatchCompiler` matcher
+`special_compile_syntax_rules` et al. build the `MatchCompiler` matcher
 before anything is evaluated; eval only turns the resulting `build-syntax-rules`
 call into a live `Transform` object. So the validator does not need eval at all
 for these; it needs the same matcher-construction call the compiler already

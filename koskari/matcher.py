@@ -640,10 +640,10 @@ class CAPTURE(Pattern):
         :param slot: target slot name
         :param sub: optional sub-pattern; when None the capture takes
             any single element
-        :param hygiene_role: integer in [0, 0xFFFF]; reserved for the
-            phase 9 hygiene migration
-        :param scope_slot: optional slot name carrying scope metadata;
-            also reserved for phase 9
+        :param hygiene_role: integer in [0, 0xFFFF]; carried on the
+            CAPTURE wire row and read by nothing
+        :param scope_slot: optional slot name; carried on the wire row
+            and read by nothing
         :raises TypeError: when slot is not a str, sub is not a pattern
             or None, scope_slot is not str or None, or hygiene_role is
             not an int

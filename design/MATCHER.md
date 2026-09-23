@@ -16,7 +16,7 @@ runtime match/case: `koskari/compile/specials/conditionals.py`,
 
 - [api/pattern-matching.md](api/pattern-matching.md) — tagged-tuple IR and migration notes
 - [archive/matcher-hygiene-extensions.md](archive/matcher-hygiene-extensions.md) — the superseded discovery-by-pattern hygiene design
-- [language/matcher-ng-rollup.md](language/matcher-ng-rollup.md) — rollout notes and as-built sketches
+- [archive/matcher-ng-rollup.md](archive/matcher-ng-rollup.md) — rollout notes and as-built sketches from before hygiene by marks; the hygiene names it uses are gone
 - [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) — `Datum` in macro expansion
 - [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — specials, syntax-rules, and shared finalize pipeline
 - [archive/match-pattern-language.md](archive/match-pattern-language.md) — runtime pattern-language design record
@@ -173,8 +173,7 @@ they add no match-time Python logic.
 Capture options on named captures (not matched input):
 
 ```scheme
-(scope: body)
-(mode: parallel)    ; BINDINGS only at factory level
+(scope: body)         ; parsed and stored on the CAPTURE wire; nothing reads it
 (role: N)             ; stored on CAPTURE wire; reserved
 ```
 
@@ -305,7 +304,7 @@ every symbol test accepts it. The rule at each site:
 | quoted data | `quote` / `quasiquote` project to the base; `quote-syntax` keeps the gensym |
 
 `koskari.types.strip_mark` projects one value, `strip_marks` a whole form;
-`is_mark` is the exact-type test.
+`type(x) is gensym` is the exact-type test, and a known atom reads `.base`.
 Handlers that go through `gather_formals`, the unpack helpers,
 `compile_symbol`, and the fragment's `request_var` / `declare_var` get
 the key for free; a handler that reads a name by hand applies the table.
@@ -413,7 +412,7 @@ spelling records the slot's role for the reader.
 - Phases (all optional): positionals → defaults → `*:` → kw-only → `**:`.
 - A positional or keyword name may carry a leading `&` **by-ref** marker;
   parsing strips it and records the name in the `by_refs` tuple on `Formals`
-  (never on `*` / `**`). See [SYNTAX.md](../SYNTAX.md) (By-ref formals).
+  (never on `*` / `**`). See [SYNTAX.md](SYNTAX.md) (By-ref formals).
 - **Compile:** `gather_formals` in `koskari.compile.helpers`.
 
 ### USING / USING_UNPACK

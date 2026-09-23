@@ -60,7 +60,8 @@ def emit_pair_part(compiler, called_by, expr, opcode):
 def special_quote(compiler, called_by, expr):
     """
     Compile (compile/quote FORM). A pair is rewritten as its requoted
-    construction; any other datum becomes a constant
+    construction; any other datum becomes a constant, a symbol as its
+    base since quoted data carries no marks
     """
 
     body = expr.datum

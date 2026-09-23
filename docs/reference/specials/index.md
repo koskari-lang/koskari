@@ -88,7 +88,7 @@ special, a macro, and a call is in
 | [`quote-syntax`](compile-quote-syntax.md) | A form as data, keeping hygiene marks; `#'form`; what a transformer's patterns and templates are quoted with |
 | [`quasiquote`](compile-quasiquote.md), [`unquote`](compile-unquote.md), [`unquote-splicing`](compile-unquote-splicing.md) | A template; `` `form ``, `,form`, `,@form` |
 | [`quasiquote-syntax`](compile-quasiquote-syntax.md) | A template keeping hygiene marks; `` #`form ``; what a procedural macro a template defines builds its output with |
-| [Block quote](compile-quote-block.md), [block quasiquote](compile-quasiquote-block.md) | The reader shorthands `'head:` and `` `head: ``, which quote an indented block as its `block:` cons |
+| [Block quote](compile-quote-block.md), [block quasiquote](compile-quasiquote-block.md) | The reader shorthands `'head:` and `` `head: ``, which quote an indented block as its `block:` cons; `#'head:` and `` #`head: `` do the same keeping hygiene marks |
 
 ## Async, generators, and continuations
 

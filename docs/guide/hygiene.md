@@ -146,8 +146,8 @@ define-syntax with-fresh:
 ```
 
 A backtick is data, so it projects any marks a symbol in the handler's
-body already carries. That matters in one case, a macro that a template
-defines, covered in Data and source below.
+body already carries. One case needs the marks kept, a macro that a
+template defines, covered in Data and source below.
 
 ## Data and source
 
@@ -309,7 +309,7 @@ scoped spellings a module ended up with, look at its namespace:
 (counter)
 (counter)
 (list (filter (lambda [k] (k.startswith "hits")) (list (globals))))
-;; => ['hits', 'hits#50e3cb5e', 'hits#50e3cb60']
+;; => ['hits', 'hits#50e3cb5e', 'hits#50e3cb60', 'hits#50e3cb62']
 ```
 
 Each `(counter)` was its own expansion with its own mark. A `.kio` file

@@ -66,21 +66,23 @@ Inside a procedural body you work with the matched forms directly:
 
 A name the template introduces on its own is kept apart from every
 binding at the use site. A name the caller supplies is bound as written.
+[Hygiene](hygiene.md) covers the mechanism in full.
 
-Each expansion stamps the symbols its template wrote with a mark, and
-the compiler binds and resolves a stamped name under its own spelling,
-`tmp#1a` for the `tmp` of one expansion. A stamped name that nothing
-bound falls back to the plain name, so a template's `cons` is the
-caller's `cons`. A stamped name passed into another macro keeps its
-stamp, so a binder written through a nested macro is still the
-template's own, and a stamped name inside `quote` comes out plain.
-A printed form shows stamped names as written, whether through
-`print`, `str`, or `macroexpand` at the REPL; the stamp shows only in
-`str` of the stamped symbol itself.
+Each expansion marks the symbols its template wrote, and the compiler
+binds and resolves a marked name under its own spelling, `tmp#1a` for
+the `tmp` of one expansion. A marked name that nothing bound falls back
+to the plain name, so a template's `cons` is the caller's `cons`. A
+marked name passed into another macro keeps its mark, so a binder
+written through a nested macro is still the template's own, and a
+marked name inside `quote` or a backtick comes out plain; `#'` and
+`` #` `` are the forms that keep it, which a macro a template defines
+needs. A printed form shows marked names as written, whether through
+`print`, `str`, or `macroexpand` at the REPL; the mark shows only in
+`str` of the marked symbol itself.
 
 `(datum expr)` is the author's control in a procedural macro: it marks
 a fragment as having come from the input form rather than from the
-template, so it is never stamped. At expand time, captured
+template, so it is never marked. At expand time, captured
 pattern-variable values are carried in `Datum` boxes, which the finalize
 step peels before compilation. The Python and C types are under
 [`koskari.hygiene`](../reference/api/koskari-hygiene.md) and
@@ -148,6 +150,8 @@ head goes through expansion.
 
 ## See also
 
+- [Hygiene](hygiene.md): marks, `quote-syntax`, `quasiquote-syntax`,
+  and the `#'` and `` #` `` prefixes
 - [Macros](../reference/macros/index.md): `define-syntax`,
   `extend-syntax`, and the rule forms
 - [compile/let-syntax](../reference/macros/compile-let-syntax.md):

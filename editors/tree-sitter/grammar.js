@@ -81,6 +81,8 @@ module.exports = grammar({
       $.collection_dict,
       $.quote,
       $.quasiquote,
+      $.quote_syntax,
+      $.quasiquote_syntax,
       $.unquote,
       $.unquote_splicing,
       $._atom
@@ -119,6 +121,10 @@ module.exports = grammar({
     quote: $ => seq("'", choice($._form, $.comment)),
 
     quasiquote: $ => seq('`', choice($._form, $.comment)),
+
+    quote_syntax: $ => seq("#'", choice($._form, $.comment)),
+
+    quasiquote_syntax: $ => seq('#`', choice($._form, $.comment)),
 
     unquote: $ => seq(',', choice($._form, $.comment)),
 

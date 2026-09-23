@@ -190,6 +190,8 @@
    (list "\\([^ \t\n()\\[\\]{};\"'\x60]+\\):" 1 font-lock-builtin-face)
    ;; Unquote operators , and ,@
    (list ",@?" 0 font-lock-preprocessor-face t)
+   ;; Syntax quote prefixes #' and #`
+   (list "#['\x60]" 0 font-lock-preprocessor-face t)
    ;; Collection prefixes #( #[ #{
    (list "#\\([(\\[{])\\)" 1 font-lock-type-face)
    ;; Numbers

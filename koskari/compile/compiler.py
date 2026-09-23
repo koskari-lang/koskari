@@ -419,7 +419,7 @@ class DeferredFunctionSpec:
     """
     A function body awaiting completion, standing in for its
     FunctionSpec in the enclosing fragment's CONST row until the
-    enclosing fragment completes.
+    enclosing fragment completes
 
     A nested function resolves the marked names it references against
     the declarations visible around it, and those are final only when
@@ -490,7 +490,7 @@ def resolve_marks(fragment, ancestors):
     """
     Resolve every marked name the fragment references to the binding
     it names, in place, at the fragment's completion when its own
-    declarations are final.
+    declarations are final
 
     A marked reference tries its key, then the key with the newest mark
     removed, down to the bare name, against the declarations visible

@@ -3,8 +3,7 @@
 You are generating conformance corpus entries for the Koskari language — a Lisp
 dialect implemented in Python over a custom C VM. Entries land in
 `docs/corpus/records/` and downstream feed a HuggingFace dataset that trains
-agents to write idiomatic Koskari. Design rationale:
-[design/corpus-generation-agent.md](../../design/corpus-generation-agent.md).
+agents to write idiomatic Koskari.
 
 Your job is volume *and* correctness: many distinct entries, each with `verify`
 fields that come from the real implementation — never from guessing.
@@ -124,8 +123,8 @@ quick coverage [--min-entries N] [--feature <f>]
 - `--feature <f>` prints the count and entry ids for one feature.
 - Note: it reports only features that already appear in the corpus; gap
   analysis against the full special/macro registry is not yet implemented, so
-  also consult [design/SPECIALS.md](../../design/SPECIALS.md) and
-  [design/MACROS.md](../../design/MACROS.md) for entirely-missing features.
+  also consult the [specials index](../reference/specials/index.md) and the
+  [macros index](../reference/macros/index.md) for entirely-missing features.
 
 ### Typical loop
 
@@ -157,8 +156,8 @@ quick coverage [--min-entries N] [--feature <f>]
 
 ## What to produce
 
-For each builtin special ([design/SPECIALS.md](../../design/SPECIALS.md)) and
-macro ([design/MACROS.md](../../design/MACROS.md)), aim for at least:
+For each builtin special ([specials index](../reference/specials/index.md)) and
+macro ([macros index](../reference/macros/index.md)), aim for at least:
 
 1. **Basic** — simplest correct invocation, eval verified.
 2. **Variant** — different argument count, nested form, or edge case.
@@ -225,9 +224,11 @@ before pausing for review. Quality over quantity.
 
 ## Reference docs
 
-- [design/SPECIALS.md](../../design/SPECIALS.md) — compiler special forms
-- [design/MACROS.md](../../design/MACROS.md) — builtin macros by bootstrap file
-- [design/SYNTAX.md](../../design/SYNTAX.md) — reader/layout grammar
+- [specials index](../reference/specials/index.md) — compiler special forms
+- [macros index](../reference/macros/index.md) — builtin macros
+- [grammar](../reference/grammar.md) and
+  [reader and layout syntax](../reference/reader-layout.md) — reader/layout
+  grammar
 - `docs/corpus/records/` — existing entries, for style and de-duplication
 
 # The end.

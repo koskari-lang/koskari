@@ -8,8 +8,8 @@
 **`syntax-match`** / **`macro-match`** transformers, **compile-time lowering**
 (`compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`,
 `compile/macro-match` in `koskari/compile/specials/syntax.py`), **template hygiene**
-(`koskari/hygiene.py`), and **syntax boxes** (`koskari.syntax.Syntax`,
-**`finalize_macro_hygiene_unbox_one_pass`** and related helpers in **`hygiene`**) are implemented. Complements
+(`koskari/hygiene.py`), and the **`Datum`** boxes captured material rides in
+(`koskari.lib.Datum`, peeled by **`finalize_expansion`** in **`hygiene`**) are implemented. Complements
 [../archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md).
 
 **Terminology: RULE vs MATCH (macro pattern languages)**
@@ -148,14 +148,14 @@ so loaders can reconstruct the correct worker type.
 
 For every rule, after the worker returns:
 
-1. **Hygiene transform** — Matcher-informed gensym / binding isolation (reuse
-   and extend `_collect_binding_symbols_matcher` and related paths for
-   templates; boxed payloads skip renaming per
-   [../archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)).
+1. **Hygiene transform** — A template's own symbols are scoped as gensyms
+   during transcription (`expand_template_with_hygiene`); a procedural arm's
+   output is scoped by `mark_expansion`; boxed payloads are never marked per
+   [../archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md).
 
-2. **Unboxing / splice** — Resolve **`Syntax`** boxes; merge call-site segments
-   into the final tree (`finalize_macro_hygiene_unbox_one_pass` and related
-   **`hygiene`** helpers). Procedural macros are the
+2. **Unboxing / splice** — Peel the **`Datum`** boxes; merge call-site segments
+   into the final tree (`finalize_expansion` in **`hygiene`**). Procedural
+   macros are the
    primary consumer when mixing generated skeleton with user subforms.
 
 Schematic order: **match → expand (template *or* macro) → hygiene → unbox → …**
@@ -178,7 +178,7 @@ Schematic order: **match → expand (template *or* macro) → hygiene → unbox 
 
 4. **Hygiene** — Shared post-expand pass.
 
-5. **Unboxing** — Shared final splice (`finalize_macro_hygiene_unbox_one_pass`).
+5. **Unboxing** — Shared final splice (`finalize_expansion`).
 
 ---
 
@@ -230,9 +230,9 @@ over time; shipped code keeps RULE parsing in **`koskari/syntax.py`** while shar
 ### `syntax-rules` (declarative)
 
 Each clause: **pattern + template**. The expander performs substitution and
-ellipsis repetition; introduced binders are handled via existing template
-hygiene (e.g. **`collect_binding_symbols`** + gensym in
-**`koskari/hygiene.py`** and **`koskari/syntax.py`**).
+ellipsis repetition; the symbols the template introduces are scoped as
+gensyms during transcription (**`expand_template_with_hygiene`** in
+**`koskari/hygiene.py`**).
 
 ### `macro-rules` (procedural)
 

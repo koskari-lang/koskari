@@ -164,6 +164,10 @@ Six prefixes wrap the form that follows them:
 | `,form` | `(unquote form)` |
 | `,@form` | `(unquote-splicing form)` |
 
+In layout mode the four quoting prefixes also take a block head: `'head:`,
+`` `head: ``, `#'head:`, and `` #`head: `` quote the indented block as its
+`block:` cons; see [Reader and layout syntax](reader-layout.md).
+
 `,` and `,@` are meaningful only inside a quasiquote. `&form` reads as
 `(ref form)` for by-reference passing; a bare `&` with nothing attached is the
 ordinary `&` symbol.

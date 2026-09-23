@@ -17,6 +17,8 @@
     { "include": "#paren-list" },
     { "include": "#bracket-list" },
     { "include": "#brace-block" },
+    { "include": "#quote-syntax-form" },
+    { "include": "#quasiquote-syntax-form" },
     { "include": "#quote-form" },
     { "include": "#quasiquote-form" },
     { "include": "#block-header" },
@@ -235,6 +237,29 @@
       },
       "name": "meta.quoted.koskari",
       "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "quote-syntax-form": {
+      "begin": "(#')",
+      "end": "(?=[\\s;()\\[\\]{\"'`]|$)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.quote.syntax.koskari" }
+      },
+      "name": "meta.quoted.syntax.koskari",
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "quasiquote-syntax-form": {
+      "begin": "(#`)",
+      "end": "(?=[\\s;()\\[\\]{\"'`]|$)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.quasiquote.syntax.koskari" }
+      },
+      "name": "meta.quasiquote.syntax.koskari",
+      "patterns": [
+        { "include": "#unquote" },
         { "include": "$self" }
       ]
     },

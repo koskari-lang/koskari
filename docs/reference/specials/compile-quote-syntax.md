@@ -1,7 +1,8 @@
 # compile/quote-syntax
 **Symbol:** `compile/quote-syntax`
 
-**Syntax:** `(quote-syntax FORM)`, or `#'FORM`
+**Syntax:** `(quote-syntax FORM)`, or `#'FORM`; in layout mode `#'HEAD: BODY`
+quotes an indented block (see [Block quote](compile-quote-block.md))
 
 **Use-case:** Produce FORM as a literal value the way `quote` does, keeping
 the hygiene marks on its symbols. `quote` strips them, which is right for

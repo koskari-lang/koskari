@@ -55,6 +55,14 @@ with examples, see [Guide](../guide/index.md).
 **form**
 : A Koskari expression: atoms, lists, or layout-derived s-expressions.
 
+**gensym**
+: A symbol scoped by marks: the symbol a macro template wrote, `base`, under
+  the marks of the expansions that introduced it, `marks`, interned under the
+  derived spelling `tmp#1a`. `symbol?` is true for it and equality is
+  identity. `(gensym "t")` in a procedural macro mints one under a fresh mark;
+  `gensym.next_mark` is the counter the expander draws marks from. See
+  [Hygiene](../guide/hygiene.md).
+
 **layout**
 : A read-time handler for a block head (`layout/if`, `layout/block`, ...).
   Handlers run during layout expansion (`apply_layout` / `apply_layouts`) with
@@ -78,7 +86,7 @@ with examples, see [Guide](../guide/index.md).
   forms before compilation.
 
 **mark**
-: The stamp hygiene puts on a symbol a macro template introduced: the
+: What hygiene puts on a symbol a macro template introduced: the
   expansion that wrote it. The compiler binds and resolves a marked name
   under its own spelling, `tmp#1a`, and a marked name nothing bound falls
   back to the plain name. `quote` and `quasiquote` strip marks;

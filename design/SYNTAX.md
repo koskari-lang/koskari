@@ -172,6 +172,9 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
 
 <quote-form>            ::= "'" <form>      ; desugars to: (compile/quote <form>)
 <quasiquote-form>       ::= "`" <form>      ; desugars to: (compile/quasiquote <form>)
+<quote-syntax-form>     ::= "#'" <form>     ; desugars to: (compile/quote-syntax <form>)
+<quasiquote-syntax-form>
+                        ::= "#`" <form>     ; desugars to: (compile/quasiquote-syntax <form>)
                             ; inside a quasiquote, "," and ",@" become active:
 <unquote-form>          ::= "," <form>      ; desugars to: (compile/unquote <form>)
 <unquote-splice-form>   ::= ",@" <form>     ; desugars to: (compile/unquote-splicing <form>)
@@ -447,8 +450,8 @@ indent column is **strictly greater than** the indent column of the block head.
 
 <layout-form-inner>
                 ::= <paren-form>            ; first char in "([{" — plain s-expression
-                  | <block-quote-form>      ; "'" followed by a block header and ":"
-                  | <quasiquote-block-form> ; "`" followed by a block header and ":"
+                  | <block-quote-form>      ; "'" or "#'" followed by a block header and ":"
+                  | <quasiquote-block-form> ; "`" or "#`" followed by a block header and ":"
                   | <colon-block>           ; header line ending in structural ":"
                   | <form>                  ; fallthrough — any base s-expression form
 
@@ -506,22 +509,26 @@ header arguments—i.e. an implicit **block** shape analogous to that implicit
 
 ### Block-macro prefix forms
 
-When `'` or `` ` `` appears at depth 0 and a colon follows somewhere on the
-same line at depth 0, the prefix introduces a block-macro form. Otherwise the
-prefix is treated as a plain `<quote-form>` or `<quasiquote-form>`.
+When `'`, `` ` ``, `#'`, or `` #` `` appears at depth 0 and a colon follows
+somewhere on the same line at depth 0, the prefix introduces a block-macro
+form. Otherwise the prefix is treated as a plain `<quote-form>`,
+`<quasiquote-form>`, `<quote-syntax-form>`, or `<quasiquote-syntax-form>`.
 
 ```bnf
 <block-quote-form>
-                ::= "'" <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
+                ::= ("'" | "#'") <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
                     <block-body>
                   ; reads raw (:block: (<head> . <args>) <entry>...), each entry a
                   ; line of elements or a nested block; layout/quote lowers to
-                  ; (compile/quote (:block: ...)) at expansion
+                  ; (compile/quote (:block: ...)) at expansion, and
+                  ; layout/quote-syntax to (compile/quote-syntax (:block: ...))
 
 <quasiquote-block-form>
-                ::= "`" <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
+                ::= ("`" | "#`") <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
                     <block-body>
-                  ; desugars to: (compile/quasiquote-block (:block: (<head> . <args>) <entry>...))
+                  ; desugars to: (compile/quasiquote-block (:block: (<head> . <args>) <entry>...)),
+                  ; or through layout/quasiquote-syntax to
+                  ; (compile/quasiquote-syntax (:block: ...))
                   ; unquote ("," and ",@") is active in both the header and body
 ```
 

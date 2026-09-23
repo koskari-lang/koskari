@@ -6,7 +6,7 @@ Archived specification. Implemented on branch `hygiene-rework`
 (`0aaebd75` through `1b64c70b`, 2026-09-23 and 24). `Mark` and the
 `gensym` builtin are one type, a subtype of the interned symbol; the
 matcher carries no hygiene; name resolution is unchanged. The rollups
-are [MATCHER.md](MATCHER.md) and [SPECIALS.md](SPECIALS.md); the user
+are [MATCHER.md](../MATCHER.md) and [SPECIALS.md](../SPECIALS.md); the user
 page is `docs/guide/hygiene.md`.
 
 As built, against the text below:

@@ -35,7 +35,6 @@ Canonical matcher and hygiene reference:
 **`SpecialRulesTransformer`** values (`koskari/syntax.py`): rule procedures are
 invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
 (unlike **`macro-rules`** / **`macro-match`**, which receive only keyword args).
-Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
 
 **Marks and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own
 template transcription and expansion finalize; macro output runs
@@ -45,8 +44,8 @@ template introduced reaches the compiler as a **`gensym`**, a symbol
 subtype, and is declared and resolved under its derived spelling; a keyword
 is never scoped. A handler that reads a name by hand reads a tag or label
 through `.base` and a binder or reference by its spelling. See
-[MATCHER.md](MATCHER.md) § Hygiene model (**`Datum`**, **`DatumFrame`**,
-**`Mark`**) and, for the superseded design,
+[MATCHER.md](MATCHER.md) § Hygiene model for **`gensym`** and § Datum and
+DatumFrame for the boxes, and, for the superseded design,
 [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) and
 [archive/matcher-hygiene-extensions.md](archive/matcher-hygiene-extensions.md).
 
@@ -381,8 +380,8 @@ function fragment (contrast named `compile/lambda`).
 - Named: `(let NAME BINDINGS BODY ...)`
 
 **Bindings:** A list of binding forms; each is `[SYM EXPR]` or `(EXPR as: SYM)`.
-Parsed with `gather_bindings` (see helpers). Matcher shape: **BINDINGS** with
-`scope: body` in [MATCHER.md](MATCHER.md).
+Parsed with `gather_bindings` (see helpers). Matcher shape: **BINDINGS** in
+[MATCHER.md](MATCHER.md).
 
 **Use-case:** Lexical bindings for the duration of the body. Unnamed let pushes a
 child namespace (PUSH_NS), binds names to compiled values, runs the body, and
@@ -1876,8 +1875,9 @@ compiler parameter, the second is a nested **RULE** pattern (lowered with
 RULE pattern (same ordering as **`compile/macro-rules`** for implicit patterns).
 The literal set includes the macro **`NAME`** automatically (as for other
 rule-based transformers). The built transformer’s **`compile_impl`** passes
-**`compiler`** and **`tc`** into the winning rule and returns **`unbox_macro`**
-of the result (see **`SpecialRulesTransformer`** in **`koskari/syntax.py`**).
+**`compiler`** and **`tc`** into the winning rule and returns the handler's
+result as the compile product, with no marking (see **`SpecialTransform`**
+in **`koskari/syntax.py`**).
 
 **Implementation:** `koskari/compile/specials/syntax.py` —
 `special_compile_special_rules`

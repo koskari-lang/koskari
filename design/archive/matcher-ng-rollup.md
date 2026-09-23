@@ -2,6 +2,11 @@
 
 ## Status
 
+Archived. The hygiene machinery this rollup names, `HygienicMatchCompiler`,
+`build_hygiene`, `collect_binding_symbols`, and the finalize helpers, was
+replaced by hygiene by marks; see [gensym-atom-subtype.md](gensym-atom-subtype.md)
+and the [MATCHER.md](../MATCHER.md) rollup for the current shape.
+
 Phases 1 through 6 of the implementation strategy below are landed. The
 native engine lives in `koskari/lib/matcher.{c,h}`; the Python builder
 API and the cleanroom composite layer live in `koskari/matcher.py`.
@@ -1557,10 +1562,10 @@ through Phase 6.
 ### Phase 8 — Runtime match/case *(implemented)*
 
 Runtime `match` is a **sequence-unpacking** form over the same matcher
-constants. Opcodes / lowering in [match-case-form.md](../archive/match-case-form.md); the
+constants. Opcodes / lowering in [match-case-form.md](match-case-form.md); the
 surface pattern language (clause delimiter, head-driven classifier,
 reader-sugar heads, guards, and the universal shape-detection vision) in
-[match-pattern-language.md](../archive/match-pattern-language.md). The special makes no
+[match-pattern-language.md](match-pattern-language.md). The special makes no
 shape decisions — all pattern classification is the matcher's, dispatched on
 head. `*: name` rest is a matcher-surface rule on the spine composites
 (`form_factory` / `match_factory`), not a match-only convenience.

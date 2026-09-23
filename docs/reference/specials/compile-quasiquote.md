@@ -20,6 +20,8 @@ flattens a list into the surrounding list.
 recursively at a nesting *level* (starting at 0):
 
 - **Atoms and constants** (symbols, keywords, numbers, nil): emitted as `CONST`.
+  A symbol a macro template wrote is emitted as the plain symbol, without its
+  hygiene mark; `quasiquote-syntax` keeps the mark.
 - `**(unquote INNER)`** at level 0: `INNER` is compiled normally
 (evaluated at runtime); its result becomes that position's value.
 - `**(unquote INNER)**` at level > 0: the unquote form is reconstructed
@@ -73,3 +75,6 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 ;; Nested quasiquote -- inner unquote is NOT evaluated at outer level
 ``(a ,(+ 1 2)) ; -> (quasiquote (a (unquote (+ 1 2))))
 ```
+
+**See also:** [`quasiquote-syntax`](compile-quasiquote-syntax.md),
+[`quote`](compile-quote.md), [Hygiene](../../guide/hygiene.md).

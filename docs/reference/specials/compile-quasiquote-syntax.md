@@ -1,7 +1,9 @@
 # compile/quasiquote-syntax
 **Symbol:** `compile/quasiquote-syntax`
 
-**Syntax:** `(quasiquote-syntax FORM)`, or `` #`FORM ``
+**Syntax:** `(quasiquote-syntax FORM)`, or `` #`FORM ``; in layout mode
+`` #`HEAD: BODY `` quotes an indented block (see
+[Block quasiquote](compile-quasiquote-block.md))
 
 **Use-case:** Build a form the way `quasiquote` does, keeping the hygiene
 marks on the symbols it writes as constants. A backtick is data: a

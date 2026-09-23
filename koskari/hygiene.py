@@ -160,7 +160,7 @@ def _slice_bindings(bindings, controlling, index):
 def expand_template_with_hygiene(template, bindings, mark=None):
     """
     Substitute pattern bindings into a template and mark the symbols
-    the template itself introduces.
+    the template itself introduces
 
     Ellipsis repetition is depth-aware: a variable captured under N pattern
     ellipses carries N nested repeat sequences, and each template ``...`` peels

@@ -57,7 +57,9 @@ the elements directly where it does not, which is how the default block
 handler turns a keyword line into a keyword argument.
 
 Quoted and quasiquoted blocks keep the `block:` structure as data,
-through `layout/quote` and `layout/quasiquote`, and a macro template
+through `layout/quote` and `layout/quasiquote`, or `layout/quote-syntax`
+and `layout/quasiquote-syntax` for the `#'head:` and `` #`head: ``
+prefixes that keep hygiene marks, and a macro template
 that contains a block is expanded through `apply_layout` before the
 captured material is unboxed, so that expansion matches what the
 reader would have produced.

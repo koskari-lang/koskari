@@ -1,10 +1,13 @@
 # Block quasiquote
-**Syntax:** `` `HEAD: BODY `` (reader shorthand)
+**Syntax:** `` `HEAD: BODY `` (reader shorthand); `` #`HEAD: BODY `` keeps
+hygiene marks
 
 There is no `quasiquote-block` special. A backtick immediately before a block
 head is a reader shorthand that lowers to
 [`compile/quasiquote`](compile-quasiquote.md) over the block's raw `block:`
-cons.
+cons, through the `layout/quasiquote` handler; `` #` `` lowers to
+[`compile/quasiquote-syntax`](compile-quasiquote-syntax.md) through
+`layout/quasiquote-syntax`.
 
 **Use-case:** Capture an indented block as a template, with `,EXPR` and
 `,@EXPR` unquote sites active throughout the header and the body. This is how

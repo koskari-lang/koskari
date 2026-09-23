@@ -30,7 +30,7 @@ The **native** matcher (`koskari.lib.Matcher`) interprets frozen matcher tuples.
 The legacy Python modules **`koskari.matcher`**, **`koskari.compile.helpers`**, **`koskari.syntax`**, and **`koskari.hygiene`** have been removed.
 
 ```python
-from koskari.matcher import LIST, MATCH, SYMBOL, FORMALS, HygienicMatchCompiler
+from koskari.matcher import LIST, MATCH, SYMBOL, FORMALS, MatchCompiler
 from koskari.compile.helpers import match_pattern_raw, gather_formals
 ```
 
@@ -282,12 +282,12 @@ Serialized:
 Construct patterns ergonomically:
 
 ```python
-from koskari.matcher import LIST, MATCH, LITERAL_KW, SYMBOL, HygienicMatchCompiler
+from koskari.matcher import LIST, MATCH, LITERAL_KW, SYMBOL, MatchCompiler
 from koskari.lib import Matcher
 
-hc = HygienicMatchCompiler()
+mc = MatchCompiler()
 # pattern = ...  # matcher Pattern tree
-frozen = hc.lower(pattern)
+frozen = mc.lower(pattern)
 matcher_obj = Matcher.from_tuple(frozen)
 ```
 
@@ -296,7 +296,7 @@ Serialization and thaw use the same frozen tuple representation consumed by **`k
 The snippet below is illustrative; exact combinator names live in **`koskari.matcher`** (see module exports).
 
 ```python
-# Illustrative: build a matcher pattern, lower with HygienicMatchCompiler,
+# Illustrative: build a matcher pattern, lower with MatchCompiler,
 # then match a source spine with koskari.lib.Matcher.from_tuple(...).match(...)
 pass
 ```
@@ -429,7 +429,7 @@ These expand to the same tagged tuples the matcher expects.
 
 ### MATCHERS Registry
 
-Matcher classes register into the native engine’s tables when lowered from **`matcher`** (see `HygienicMatchCompiler` and `Matcher.from_tuple`). Legacy Python `@matcher` registration on **`koskari.matcher`** is gone; tagged tuples produced today are consumed by **`koskari.lib.Matcher`** only.
+Matcher classes register into the native engine’s tables when lowered from **`matcher`** (see `MatchCompiler` and `Matcher.from_tuple`). Legacy Python `@matcher` registration on **`koskari.matcher`** is gone; tagged tuples produced today are consumed by **`koskari.lib.Matcher`** only.
 
 ### Role Helpers (hygiene discovery)
 
@@ -459,7 +459,7 @@ Matcher classes register into the native engine’s tables when lowered from **`
 ## Related Documents
 
 - [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md): Proposed shared Matcher IR and transformer pipeline (syntax-rules, procedural macros, specials)
-- [../archive/matcher-hygiene-extensions.md](../archive/matcher-hygiene-extensions.md): MATCH role additions for hygiene discovery; `BINDINGS` with scope; REST/EXPR as body regions; implemented `_collect_binding_symbols_matcher`
+- [../archive/matcher-hygiene-extensions.md](../archive/matcher-hygiene-extensions.md): MATCH role additions for hygiene discovery; `BINDINGS` with scope; REST/EXPR as body regions (archived; superseded by hygiene by marks)
 - [archive/macros.md](../archive/macros.md): Macro system notes; define-syntax will supersede defmacro
 - [special-forms.md](../language/special-forms.md): Special form catalog
 - [types.md](types.md): symbol, keyword, pair — types used in patterns

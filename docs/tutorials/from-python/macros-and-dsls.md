@@ -103,7 +103,7 @@ with flags, defaults, and help text, is more arms in the same rule.
 Why does the use site name `main` as well as `greet`?
 +++
 Hygiene. A name the template introduces on its own, such as a `define
-main` written inside the rule, is renamed so it cannot collide with the
+main` written inside the rule, is marked so it cannot collide with the
 caller's names. A name the caller supplies is bound as written. Both
 functions are meant to be called, so both names come from the use.
 :::
