@@ -639,8 +639,8 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
     :rtype: Pattern
     """
 
-    if not isinstance(literals, (set, frozenset)):
-        literals = frozenset(literals)
+    # a literal is named and matched by its bare spelling
+    literals = frozenset(strip_mark(lit) for lit in literals)
 
     if is_pair(pattern_expr):
         head, rest = pattern_expr
@@ -661,8 +661,9 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
         )
 
     if is_symbol(pattern_expr):
-        if pattern_expr in literals:
-            return MATCH(LITERAL(strip_mark(pattern_expr)))
+        bare = strip_mark(pattern_expr)
+        if bare in literals:
+            return MATCH(LITERAL(bare))
         return MATCH(REST(str(pattern_expr)))
 
     if not is_pair(pattern_expr):
@@ -707,11 +708,13 @@ def _syntax_elem_pattern(pat, literals, source_ctx, seen):
         )
 
     if is_symbol(pat):
-        # a literal matches by name; a pattern variable a template
-        # introduced keeps its mark in its slot name, so the marked
-        # template reference finds it and a bare use-site symbol does not
-        if pat in literals:
-            return LITERAL(strip_mark(pat))
+        # a literal matches by its bare spelling; a pattern variable a
+        # template introduced keeps its mark in its slot name, so the
+        # marked template reference finds it and a bare use-site symbol
+        # does not
+        bare = strip_mark(pat)
+        if bare in literals:
+            return LITERAL(bare)
         name = str(pat)
         if name in seen:
             return SAME(name)
@@ -732,7 +735,7 @@ def _syntax_pattern_specs(p_items, literals, source_ctx, seen):
     while i < len(p_items):
         if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
             pat = p_items[i]
-            if is_symbol(pat) and pat not in literals:
+            if is_symbol(pat) and strip_mark(pat) not in literals:
                 if i + 2 < len(p_items):
                     specs.append(REST(str(pat)))
                 else:

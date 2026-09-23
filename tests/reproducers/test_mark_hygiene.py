@@ -28,6 +28,7 @@ import unittest
 
 import pytest
 
+from koskari.exceptions import SyntaxMatchError
 from koskari.lib import keyword, symbol
 from koskari.module import load_module_source_async, new_module
 from koskari.types import strip_mark, unpack
@@ -310,6 +311,51 @@ class TestMacroGeneratingMacro(unittest.IsolatedAsyncioTestCase):
         ns = await load("mh_generating", self.SRC)
         self.assertEqual(ns["got"], 7)
         self.assertEqual(ns["y"], 100)
+
+
+class TestGeneratedLiteral(unittest.IsolatedAsyncioTestCase):
+    """
+    A syntax-rules literal is named and matched by its bare spelling:
+    a literals entry a caller supplies names the occurrence the outer
+    template writes in the inner pattern
+    """
+
+    SRC = """
+(define-syntax defmac
+  (syntax-rules []
+    [(defmac mname lit)
+     (define-syntax mname
+       (syntax-rules [lit]
+         [(mname a to b) (+ a b)]
+         [(mname a b) (* a b)]))]))
+
+(defmac m to)
+(define with-literal (m 2 to 3))
+(define without-literal (m 2 9))
+"""
+
+    MISS = """
+(define-syntax defmac
+  (syntax-rules []
+    [(defmac mname lit)
+     (define-syntax mname
+       (syntax-rules [lit]
+         [(mname a to b) (+ a b)]
+         [(mname a b) (* a b)]))]))
+
+(defmac m to)
+(define answer (m 2 9 3))
+"""
+
+    async def test_literal_arm_matches_the_literal(self):
+        ns = await load("mh_generated_literal", self.SRC)
+        self.assertEqual(ns["with-literal"], 5)
+        self.assertEqual(ns["without-literal"], 18)
+
+
+    async def test_literal_arm_refuses_a_non_literal(self):
+        with self.assertRaises(SyntaxMatchError):
+            await load("mh_generated_literal_miss", self.MISS)
 
 
 class TestProceduralInnerMacro(unittest.IsolatedAsyncioTestCase):
