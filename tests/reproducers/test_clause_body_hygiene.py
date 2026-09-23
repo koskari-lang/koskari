@@ -32,10 +32,10 @@ import unittest
 
 import pytest
 
-from koskari.lib import keyword, symbol
+from koskari.lib import gensym, keyword, symbol
 from koskari.module import load_module_source_async, new_module
 from koskari.types import (
-    is_mark, is_pair, is_symbol, strip_mark, unpack)
+    is_pair, is_symbol, strip_mark, unpack)
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -126,7 +126,7 @@ class TestClauseBodyHygiene(unittest.IsolatedAsyncioTestCase):
     def assert_keyword_formal_scoped(self, expansion):
         formals, body = find_define(expansion)
         self.assertIs(formals[0], keyword("argv"))
-        self.assertTrue(is_mark(body))
+        self.assertIsInstance(body, gensym)
         self.assertIs(strip_mark(body), symbol("argv"))
         self.assertNotEqual(str(body), "argv")
 
@@ -163,7 +163,7 @@ class TestClauseBodyHygiene(unittest.IsolatedAsyncioTestCase):
     async def test_cond_clause_renames_positional_formal(self):
         mod = await self.load("cbh_pos")
         formals, body = find_define(vars(mod)["pos-expansion"])
-        self.assertTrue(is_mark(formals[0]))
+        self.assertIsInstance(formals[0], gensym)
         self.assertTrue(is_symbol(strip_mark(formals[0])))
         self.assertEqual(formals[0], body)
         self.assertNotEqual(str(body), "argv")

@@ -34,7 +34,7 @@ from koskari.exceptions import CompilerError
 from koskari.lib import (
     Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym)
 from koskari.types import (
-    build_proper, get_position, is_mark, is_nil, is_pair,
+    build_proper, get_position, is_nil, is_pair,
     is_symbol, strip_mark, unpack)
 
 
@@ -60,20 +60,10 @@ def mark_atom(atom, mark):
     :param mark: the expansion mark, an int
     """
 
-    if is_mark(atom):
+    if isinstance(atom, gensym):
         return gensym(strip_mark(atom), marks=atom.marks + (mark,))
     if is_symbol(atom):
         return gensym(atom, marks=mark)
-    return atom
-
-
-def _binding_key(atom):
-    """
-    The symbol a template atom is looked up under in the pattern
-    bindings: itself, since a gensym is interned under its own spelling
-    and a slot named by that spelling is that gensym
-    """
-
     return atom
 
 
@@ -81,14 +71,14 @@ def _binding_key(atom):
 
 
 def _collect_symbols(expr, out):
-    if is_symbol(expr) or is_mark(expr):
-        out.add(_binding_key(expr))
+    if is_symbol(expr):
+        out.add(expr)
         return
 
     if is_pair(expr):
         for elem in unpack(expr):
-            if is_symbol(elem) or is_mark(elem):
-                out.add(_binding_key(elem))
+            if is_symbol(elem):
+                out.add(elem)
             elif is_pair(elem):
                 _collect_symbols(elem, out)
 
@@ -187,10 +177,9 @@ def expand_template_with_hygiene(template, bindings, mark=None):
         to substitute without marking
     """
 
-    if is_symbol(template) or is_mark(template):
-        key = _binding_key(template)
-        if key in bindings:
-            val = bindings[key]
+    if is_symbol(template):
+        if template in bindings:
+            val = bindings[template]
             if _repeat_seq(val) is not None:
                 raise CompilerError(
                     'ellipsis variable used at insufficient ellipsis depth',
@@ -219,10 +208,10 @@ def expand_template_with_hygiene(template, bindings, mark=None):
 
         # a lone pattern variable bound to a non-repeat value (a pair spine
         # from a REST capture) splices like quasiquote ,@ rather than iterating
-        if ((is_symbol(elem) or is_mark(elem))
-                and _binding_key(elem) in bindings
-                and _repeat_seq(bindings[_binding_key(elem)]) is None):
-            spliced = _binding_value_for_expand(bindings[_binding_key(elem)])
+        if (is_symbol(elem)
+                and elem in bindings
+                and _repeat_seq(bindings[elem]) is None):
+            spliced = _binding_value_for_expand(bindings[elem])
             if spliced is not None:
                 out.extend(unpack(spliced))
             i += 2

@@ -32,7 +32,7 @@ from ...lib import demand_call, nil
 from ...matcher import CALLEDBY, CAPTURE, MATCH, PAIR, SYMBOL, TYPE
 from ...reader.layouts import apply_layout
 from ...syntax import special
-from ...types import fill_position, is_keyword, is_mark, is_pair, is_symbol
+from ...types import fill_position, is_keyword, is_pair, is_symbol
 
 
 _APPLY_FENCE_PATTERNS = [
@@ -57,8 +57,6 @@ def _is_source(value):
     if value is None:
         return False
     if is_pair(value) or is_symbol(value) or is_keyword(value):
-        return True
-    if is_mark(value):
         return True
     return isinstance(value, (str, bytes, bool, int, float, complex))
 

@@ -30,11 +30,12 @@ import pytest
 
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
-from koskari.lib import Module, ModuleNamespace, car, cdr, cons, symbol
+from koskari.lib import (
+    Module, ModuleNamespace, car, cdr, cons, gensym, symbol)
 from koskari.matcher import make_matcher, parse_explicit_rule_pattern
 from koskari.syntax import (
     Syntax, SyntaxTransform, build_syntax, parse_syntax_rules_pattern)
-from koskari.types import build_proper, is_mark, strip_marks, unpack
+from koskari.types import build_proper, strip_marks, unpack
 
 
 pytestmark = pytest.mark.phase_compile
@@ -99,7 +100,8 @@ def assert_binding_renamed(test_case, let_form, original_name):
     bindings = car(cdr(let_form))
     binding_pair = car(bindings)
     bound_name = car(binding_pair)
-    test_case.assertTrue(is_mark(bound_name), 'binding name must be marked')
+    test_case.assertIsInstance(
+        bound_name, gensym, "binding name must be a gensym")
     test_case.assertNotEqual(str(bound_name), original_name)
 
 
@@ -111,7 +113,7 @@ def assert_formal_renamed(test_case, lambda_form, original_name):
 
     formals = car(cdr(lambda_form))
     param = car(formals)
-    test_case.assertTrue(is_mark(param), 'formal must be marked')
+    test_case.assertIsInstance(param, gensym, "formal must be a gensym")
     test_case.assertNotEqual(str(param), original_name)
 
 

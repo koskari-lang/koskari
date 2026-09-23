@@ -31,9 +31,9 @@ import unittest
 
 import pytest
 
-from koskari.lib import keyword, symbol
+from koskari.lib import gensym, keyword, symbol
 from koskari.module import load_module_source_async, new_module
-from koskari.types import is_mark, is_symbol, strip_mark, unpack
+from koskari.types import is_symbol, strip_mark, unpack
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -98,7 +98,7 @@ class TestMultiFormArmFormalHygiene(unittest.IsolatedAsyncioTestCase):
         mod = await self.load("mfa_kw")
         formals, body = defined_function_parts(vars(mod)["kw-expansion"])
         self.assertIs(formals[0], keyword("argv"))
-        self.assertTrue(is_mark(body))
+        self.assertIsInstance(body, gensym)
         self.assertIs(strip_mark(body), symbol("argv"))
         self.assertNotEqual(str(body), "argv")
 
@@ -112,7 +112,7 @@ class TestMultiFormArmFormalHygiene(unittest.IsolatedAsyncioTestCase):
     async def test_positional_formal_renamed_with_body(self):
         mod = await self.load("mfa_pos")
         formals, body = defined_function_parts(vars(mod)["pos-expansion"])
-        self.assertTrue(is_mark(formals[0]))
+        self.assertIsInstance(formals[0], gensym)
         self.assertTrue(is_symbol(strip_mark(formals[0])))
         self.assertEqual(formals[0], body)
         self.assertNotEqual(str(body), "argv")
@@ -129,7 +129,7 @@ class TestMultiFormArmFormalHygiene(unittest.IsolatedAsyncioTestCase):
         formals, body = defined_function_parts(vars(mod)["cell-expansion"])
         cell = list(unpack(formals[0]))
         self.assertIs(cell[0], keyword("argv"))
-        self.assertTrue(is_mark(body))
+        self.assertIsInstance(body, gensym)
         self.assertIs(strip_mark(body), symbol("argv"))
         self.assertNotEqual(str(body), "argv")
 

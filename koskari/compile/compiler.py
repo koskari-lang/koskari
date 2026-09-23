@@ -31,9 +31,9 @@ from ..exceptions import CompilerError, UncaughtCompilerError
 from ..lib import (
     Arena, Code, Datum, FormalsSpec, FunctionSpec, Module,
     ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
-    bracket_pair, cons, keyword, kos_repr, nil, symbol)
+    bracket_pair, cons, gensym, keyword, kos_repr, nil, symbol)
 from ..types import (
-    fill_position, get_position, is_keyword, is_mark, is_nil, is_pair,
+    fill_position, get_position, is_keyword, is_nil, is_pair,
     is_proper, is_symbol, parameterize, strip_marks)
 from .pragma import (
     BracketCalls, KeywordLiterals, KoskariPragma, PackModule, ResolutionMode,
@@ -177,7 +177,7 @@ class ByteCodeFragment:
         :param var_name: name to request from enclosing scope
         """
 
-        if is_mark(var_name):
+        if isinstance(var_name, gensym):
             self.resolution.note_mark(var_name)
         self.resolution.on_request_var(self, str(var_name))
 
@@ -190,7 +190,7 @@ class ByteCodeFragment:
         :param position: optional (line, col) for error reporting
         """
 
-        if is_mark(var_name):
+        if isinstance(var_name, gensym):
             self.resolution.note_mark(var_name)
         self.resolution.on_write(self, str(var_name), position=position)
 
@@ -203,7 +203,7 @@ class ByteCodeFragment:
         :param position: optional (line, col) for error reporting
         """
 
-        if is_mark(var_name):
+        if isinstance(var_name, gensym):
             self.resolution.note_mark(var_name)
         self.resolution.on_explicit_global(self, str(var_name), position=position)
 
@@ -842,7 +842,7 @@ class Compiler:
 
         # a marked head names a transformer the same expansion may
         # have defined under the marked spelling, else the bare one
-        if is_mark(name):
+        if isinstance(name, gensym):
             for cand in mark_candidates(name):
                 found = self._find_compiled_use(cand)
                 if found is not None:
@@ -1004,7 +1004,7 @@ class Compiler:
         source object carrying its own position wins over it
         """
 
-        if is_symbol(source_obj) or is_mark(source_obj):
+        if is_symbol(source_obj):
             dispatch = self.compile_symbol
         elif is_pair(source_obj):
             dispatch = self.compile_pair

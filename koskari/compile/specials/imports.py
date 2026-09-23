@@ -52,7 +52,7 @@ from ...exceptions import SpecialError
 from ...lib import OpCode, gensym, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_mark, is_pair, is_symbol, strip_mark, unpack
+from ...types import is_pair, is_symbol, strip_mark, unpack
 from ..helpers import helper_using, is_symbolish
 
 
@@ -196,7 +196,7 @@ def _bind_spelling(bind, atom):
     :param atom: the source atom the binding is named after
     """
 
-    if is_mark(atom):
+    if isinstance(atom, gensym):
         return str(gensym(symbol(bind), marks=atom.marks))
     return bind
 

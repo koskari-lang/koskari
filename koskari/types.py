@@ -32,7 +32,6 @@ from .lib import (
 __all__ = (
     "TypePredicate",
     "BuiltinPredicate",
-    "is_mark",
     "is_nil",
     "is_None",
     "is_proper",
@@ -123,15 +122,6 @@ is_pair = TypePredicate("pair?", pair)
 
 is_nil = BuiltinPredicate("nil?", nilp)
 is_None = BuiltinPredicate("None?", operator.is_, None)
-
-
-def is_mark(value):
-    """
-    Returns True if value is a gensym, a template-introduced symbol
-    carrying its expansion marks
-    """
-
-    return type(value) is gensym
 
 
 def strip_mark(value):
