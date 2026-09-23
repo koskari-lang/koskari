@@ -330,9 +330,9 @@ class TestRecursiveMacro(unittest.IsolatedAsyncioTestCase):
 
 class TestTryInTemplate(unittest.IsolatedAsyncioTestCase):
     """
-    A try form a template writes carries a marked exception type; the
+    A try form a template writes carries a scoped exception type; the
     try special rebuilds its clauses with pycons, which must accept a
-    Mark as a leaf
+    gensym as a leaf
     """
 
     SRC = """

@@ -1153,66 +1153,6 @@ static int test_match_kospair_datum_transparent(void) {
 }
 
 
-static int test_match_kospair_mark_capture_keeps_mark(void) {
-    /*
-      A KosPair spine car boxed in a Mark matches as the atom under it:
-      TEST_TYPE(symbol) succeeds, and the capture keeps the Mark so the
-      compiler sees the template's provenance.
-    */
-    KosMatcherBuilder *b = KosMatcherBuilder_New();
-    TEST_ASSERT_NOT_NULL(b, "create builder");
-
-    int slot = add_str_slot(b, "name");
-    int e_sym = add_str_extern(b, "symbol");
-
-    int n_t = append_test_type(b, (uint32_t) e_sym);
-    int n_cap = append_capture(b, (uint32_t) slot, (uint32_t) n_t);
-    uint32_t kids[] = {(uint32_t) n_cap};
-    int n_grp = append_match(b, kids, 1);
-
-    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_grp);
-    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
-
-    PyObject *sym_name = PyUnicode_FromString("tmp");
-    PyObject *sym = KosSymbol_FromString(sym_name);
-    Py_DECREF(sym_name);
-    PyObject *marks = Py_BuildValue("(i)", 1);
-    PyObject *marked = KosMark_New(sym, marks);
-    Py_DECREF(marks);
-    TEST_ASSERT_NOT_NULL(marked, "Mark built");
-
-    PyObject *items[1] = { marked };
-    PyObject *cons = make_kospair(items, 1);
-    PyObject *extern_env = PyTuple_Pack(1, (PyObject *) &KosSymbolType);
-
-    KosMatchSubject subj;
-    TEST_ASSERT_EQ(KosMatchSubject_FromKosPair(cons, &subj), 0,
-                   "kospair subject built");
-
-    PyObject *r = KosMatcher_Match((KosMatcher *) m_obj, &subj, extern_env);
-    KosMatchSubject_Release(&subj);
-    TEST_ASSERT_NOT_NULL(r, "match returned");
-    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched through the mark");
-    PyObject *cap_box = PyDict_GetItemString(
-        ((KosMatchResult *) r)->captures, "name");
-    TEST_ASSERT_NOT_NULL(cap_box, "capture present");
-    TEST_ASSERT(KosDatum_Check(cap_box), "capture is Datum");
-    PyObject *cap = unwrap_datum_value(cap_box);
-    TEST_ASSERT_SAME(cap, marked, "capture keeps the Mark");
-    TEST_ASSERT_SAME(KosMark_DATUM(cap), sym, "Mark holds the symbol");
-    Py_DECREF(cap);
-
-    Py_DECREF(r);
-    Py_DECREF(extern_env);
-    Py_DECREF(cons);
-    Py_DECREF(marked);
-    Py_DECREF(sym);
-    Py_DECREF(m_obj);
-    KosMatcherBuilder_Free(b);
-    return 0;
-}
-
-
 static int test_match_kospair_gensym_literal_matches_base(void) {
     /*
       A gensym in a KosPair spine matches TEST_LITERAL against the
@@ -3163,7 +3103,6 @@ int run_matcher_tests(void) {
     RUN_TEST(test_match_group_pysequence);
     RUN_TEST(test_match_group_kospair);
     RUN_TEST(test_match_kospair_datum_transparent);
-    RUN_TEST(test_match_kospair_mark_capture_keeps_mark);
     RUN_TEST(test_match_kospair_gensym_literal_matches_base);
     RUN_TEST(test_match_form_descends_into_pair);
     RUN_TEST(test_match_same_symbol_equal);

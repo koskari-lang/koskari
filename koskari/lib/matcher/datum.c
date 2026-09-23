@@ -435,28 +435,12 @@ static PyObject *make_match_result(
 
 
 /**
-   Borrow through outer ``Datum`` and ``Mark`` layers for KosPair spine
-   reads. The underlying pair tree and the boxes are unchanged; only
-   matching sees the inner value.
+   Borrow through outer ``Datum`` layers for KosPair spine reads. The
+   underlying pair tree and the boxes are unchanged; only matching
+   sees the inner value. A gensym is a symbol and is never peeled: it
+   is the identity a capture hands back to the compiler.
 */
 static PyObject *matcher_peel_datum(PyObject *obj) {
-  while (obj) {
-    if (KosMark_Check(obj))
-      obj = KosMark_DATUM(obj);
-    else if (KosDatum_Check(obj))
-      obj = ((KosDatum *) obj)->datum;
-    else
-      break;
-  }
-  return obj;
-}
-
-
-/**
-   Borrow through outer ``Datum`` layers only. A ``Mark`` stays: it is
-   the identity a capture hands back to the compiler.
-*/
-static PyObject *matcher_peel_datum_keep_mark(PyObject *obj) {
   while (obj && KosDatum_Check(obj))
     obj = ((KosDatum *) obj)->datum;
   return obj;

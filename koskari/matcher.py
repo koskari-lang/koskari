@@ -32,7 +32,7 @@ wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
 from typing import Protocol, runtime_checkable
 
 from koskari.lib import (
-    Datum, DatumFrame, Mark, Matcher, MatchResult, cons, keyword, kos_repr,
+    Datum, DatumFrame, Matcher, MatchResult, cons, keyword, kos_repr,
     nil, pair, symbol)
 from koskari.types import (
     is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark, unpack)
@@ -1893,7 +1893,7 @@ def frame_formal_name(fr):
     v = fr.get("name")
     if v is not None:
         n = v.datum if isinstance(v, Datum) else v
-        if (is_symbol(n) or isinstance(n, Mark)) and str(n)[:1] == "&":
+        if is_symbol(n) and str(n)[:1] == "&":
             return symbol(str(n)[1:]), True
         return n, False
 
@@ -2566,7 +2566,7 @@ def coerce_slot(name, value):
     koskari symbol or a Python str
     """
 
-    if is_symbol(value) or (isinstance(value, Mark) and is_symbol(value.datum)):
+    if is_symbol(value):
         return str(value)
     if isinstance(value, str):
         return value

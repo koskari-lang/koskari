@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from functools import partial
 
 from .lib import (
-    Domain, KoskariSyncViolation, Mark, ParamRef, bracket_nil, bracket_pair,
+    Domain, KoskariSyncViolation, ParamRef, bracket_nil, bracket_pair,
     cons, gensym, keyword, nil, nilp, pair, symbol)
 
 
@@ -127,38 +127,32 @@ is_None = BuiltinPredicate("None?", operator.is_, None)
 
 def is_mark(value):
     """
-    Returns True if value is a template-introduced atom carrying its
-    expansion marks: a gensym, or a Mark over a symbol or keyword
+    Returns True if value is a gensym, a template-introduced symbol
+    carrying its expansion marks
     """
 
-    return type(value) is gensym or isinstance(value, Mark)
+    return type(value) is gensym
 
 
 def strip_mark(value):
     """
-    The atom under the marks, or value unchanged: the base of a gensym,
-    the symbol or keyword under a Mark. Use where an atom is read as a
-    tag, a label, or a literal: hygiene renames only the names a form
-    binds and resolves
+    The base symbol of a gensym, or value unchanged. Use where an atom
+    is read as a tag, a label, or a literal: hygiene renames only the
+    names a form binds and resolves
     """
 
-    if type(value) is gensym:
-        return value.base
-    return value.datum if isinstance(value, Mark) else value
+    return value.base if type(value) is gensym else value
 
 
 def strip_marks(form):
     """
-    A copy of a form with every marked atom replaced by the atom under
-    it. Pair cells are rebuilt with their positions and delimiter style;
-    atoms other than marks are returned as they are
+    A copy of a form with every gensym replaced by its base symbol.
+    Pair cells are rebuilt with their positions and delimiter style;
+    atoms other than gensyms are returned as they are
     """
 
     if type(form) is gensym:
         return form.base
-
-    if isinstance(form, Mark):
-        return form.datum
 
     if not isinstance(form, pair) or nilp(form):
         return form

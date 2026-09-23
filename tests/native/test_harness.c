@@ -201,12 +201,6 @@ static int initialize_types(void) {
         return -1;
     }
 
-    /* Initialize the Mark type (mark) */
-    if (koskari_mark_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize mark type\n");
-        return -1;
-    }
-
     /* Initialize matcher types (matcher) */
     if (koskari_matcher_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize matcher types\n");

@@ -25,7 +25,7 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    Code, FormalsSpec, FunctionSpec, Mark, NamespaceSpec, OpCode, OpStyle,
+    Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, OpStyle,
     bracket_nil, demand_call, gensym, keyword, nil, symbol)
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
@@ -114,15 +114,6 @@ class TestKioRoundTrip(unittest.TestCase):
         loaded = self._const_roundtrip(value)
         self.assertIsInstance(loaded, frozenset)
         self.assertEqual(loaded, value)
-
-    def test_mark_const_roundtrip(self):
-        """a Mark round-trips with its atom and marks"""
-        value = Mark(symbol("t"), (1, 255))
-        loaded = self._const_roundtrip(value)
-        self.assertIsInstance(loaded, Mark)
-        self.assertEqual(loaded, value)
-        self.assertIs(loaded.datum, value.datum)
-        self.assertEqual(loaded.marks, value.marks)
 
     def test_gensym_const_roundtrip(self):
         """

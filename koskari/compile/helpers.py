@@ -25,13 +25,13 @@ from typing import List
 
 from ..exceptions import ParametersError, SpecialError
 from ..lib import (
-    DatumFrame, Mark, OpCode, bracket_nil, bracket_pair, car, cdr, cons,
+    DatumFrame, OpCode, bracket_nil, bracket_pair, car, cdr, cons,
     keyword, nil, pair, symbol)
 from ..matcher import (
     BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH, REST, SYMBOL, USING,
     USING_UNPACK, VALUE, MatchCompiler, Pattern, frame_formal_name)
 from ..types import (
-    is_keyword, is_mark, is_nil, is_pair, is_proper, is_symbol, strip_mark,
+    is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark,
     unpack)
 from .compiler import ByteCodeFragment, _is_const
 
@@ -178,7 +178,7 @@ _keyword_starstar = keyword("**")
 _PYCONS_DIRECT = (
     str, bytes, bool, int, float, complex,
     type(None), type(...),
-    symbol, keyword, Mark, type(nil), type(bracket_nil), pair,
+    symbol, keyword, type(nil), type(bracket_nil), pair,
 )
 _PYCONS_RECONS = (tuple, list)
 
@@ -191,12 +191,10 @@ _BINDING_FORMS = [
 
 def is_symbolish(thing):
     """
-    Return True if thing is a symbol, a Mark over a symbol, or a lazy
+    Return True if thing is a symbol, a gensym included, or a lazy
     gensym (valid binding name)
     """
 
-    if is_mark(thing):
-        return is_symbol(strip_mark(thing))
     return is_symbol(thing) or is_lazygensym(thing)
 
 

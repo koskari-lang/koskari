@@ -305,10 +305,13 @@ static int test_gensym_unique(void) {
     TEST_ASSERT_NOT_SAME(sym2, sym3, "gensyms are unique (2,3)");
     TEST_ASSERT_NOT_SAME(sym1, sym3, "gensyms are unique (1,3)");
 
-    /* All should be symbols */
-    TEST_ASSERT(KosSymbol_CheckExact(sym1), "gensym is symbol type");
-    TEST_ASSERT(KosSymbol_CheckExact(sym2), "gensym is symbol type");
-    TEST_ASSERT(KosSymbol_CheckExact(sym3), "gensym is symbol type");
+    /* All should be symbols, of the gensym subtype */
+    TEST_ASSERT(KosSymbol_Check(sym1), "gensym is a symbol");
+    TEST_ASSERT(KosGensym_Check(sym1), "gensym is gensym type");
+    TEST_ASSERT(KosSymbol_Check(sym2), "gensym is a symbol");
+    TEST_ASSERT(KosGensym_Check(sym2), "gensym is gensym type");
+    TEST_ASSERT(KosSymbol_Check(sym3), "gensym is a symbol");
+    TEST_ASSERT(KosGensym_Check(sym3), "gensym is gensym type");
 
     Py_DECREF(sym3);
     Py_DECREF(sym2);
@@ -324,7 +327,8 @@ static int test_gensym_no_name(void) {
     */
     PyObject *sym = KosGensym_FromString(NULL, NULL);
     TEST_ASSERT_NOT_NULL(sym, "create gensym without name");
-    TEST_ASSERT(KosSymbol_CheckExact(sym), "gensym is symbol type");
+    TEST_ASSERT(KosSymbol_Check(sym), "gensym is a symbol");
+    TEST_ASSERT(KosGensym_Check(sym), "gensym is gensym type");
 
     Py_DECREF(sym);
     return 0;

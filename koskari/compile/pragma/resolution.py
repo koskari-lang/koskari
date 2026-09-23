@@ -146,7 +146,7 @@ class KoskariPragma:
         # enclosing function are module level and skipped like the root
         self._inline_scopes = {}
 
-        # Map mangled key -> Mark for every marked identifier this turn
+        # Map derived spelling -> gensym for every scoped name this turn
         # compiles, so a fragment's completion can resolve the key to
         # the binding it names (see koskari.compile.compiler.resolve_marks)
         self.marks = {}

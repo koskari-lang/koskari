@@ -443,7 +443,7 @@ def mark_candidates(mark):
     key, then the key with the newest mark removed, down to the bare
     name
 
-    :param mark: a gensym or a Mark
+    :param mark: a gensym
     :rtype: list of str
     """
 
