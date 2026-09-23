@@ -30,7 +30,8 @@ from koskari.lib import (
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
 from koskari.serialize.codex import (
-    KIO_MAGIC, KioHeader, PoolBuilder, SectionTag)
+    KIO_MAGIC, KioHeader, PoolBuilder, PoolKind, SectionTag,
+    encode_pool_record_value)
 
 from .. import make_callable
 from ..lib.opcode import build_code, build_expr
@@ -117,15 +118,18 @@ class TestKioRoundTrip(unittest.TestCase):
 
     def test_gensym_const_roundtrip(self):
         """
-        a template symbol round-trips as the gensym of its base and
-        marks, not as the plain symbol of its spelling
+        a template symbol is written as the SYMBOL record of its scoped
+        spelling; no pool kind carries marks, and the record reads back
+        as the symbol of that spelling
         """
         value = gensym(symbol("t"), marks=(1, 255))
+        pb = PoolBuilder()
+        pb.add(value)
+        record = encode_pool_record_value(value, pb.index_of, pb)
+        self.assertEqual(record[0], PoolKind.SYMBOL)
         loaded = self._const_roundtrip(value)
-        self.assertIs(type(loaded), gensym)
-        self.assertIs(loaded, value)
-        self.assertIs(loaded.base, symbol("t"))
-        self.assertEqual(loaded.marks, (1, 255))
+        self.assertIsInstance(loaded, symbol)
+        self.assertEqual(str(loaded), "t#1#ff")
 
     def test_slice_const_roundtrip(self):
         """slices round-trip by value, None bounds included"""

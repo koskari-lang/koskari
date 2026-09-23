@@ -65,10 +65,12 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # not serialized).
 # PATCH bumped: .kio pool kind GENSYM added, a template symbol with the
 # expansion marks it carries.
+# PATCH bumped: pool kind GENSYM removed; a gensym is written as the
+# SYMBOL record of its scoped spelling.
 BYTECODE_ABI_MAJOR = 0
 BYTECODE_ABI_MINOR = 19
 BYTECODE_ABI_MICRO = 0
-BYTECODE_ABI_PATCH = 2
+BYTECODE_ABI_PATCH = 3
 
 
 # The end.

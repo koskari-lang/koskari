@@ -404,6 +404,55 @@ class TestProceduralInnerMacro(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["got"], 100)
 
 
+class TestProceduralInnerMacroLayout(unittest.IsolatedAsyncioTestCase):
+    """
+    The layout block forms of the syntax quotes compile and run: a
+    quasiquote-syntax block keeps the outer marks and a quote-syntax
+    block yields the source it holds
+    """
+
+    QUASI = """
+define-syntax mk-getter:
+  syntax-rules []:
+    case (mk-getter name val):
+      begin:
+        define secret val
+        define-syntax name:
+          macro-rules []:
+            case (name):
+              #`begin:
+                secret
+
+define secret 100
+mk-getter get-secret 8
+define got (get-secret)
+"""
+
+    QUOTE = """
+define-syntax mk-form:
+  syntax-rules []:
+    case (mk-form name):
+      define-syntax name:
+        macro-rules []:
+          case (name):
+            #'begin:
+              (+ 1 2)
+
+mk-form three
+define got (three)
+"""
+
+    async def test_quasiquote_syntax_block(self):
+        ns = await load("mh_procedural_layout_quasi", self.QUASI)
+        self.assertEqual(ns["got"], 8)
+        self.assertEqual(ns["secret"], 100)
+
+
+    async def test_quote_syntax_block(self):
+        ns = await load("mh_procedural_layout_quote", self.QUOTE)
+        self.assertEqual(ns["got"], 3)
+
+
 class TestScopedCaptureUnderQuote(unittest.IsolatedAsyncioTestCase):
     """
     A scoped symbol an outer template hands to an inner macro, which

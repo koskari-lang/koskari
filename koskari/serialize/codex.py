@@ -28,7 +28,7 @@ from enum import Enum, IntEnum
 
 from ..lib import (
     SOFTEN_LABEL_PREFIX, Code, FormalsSpec, FunctionSpec, NamespaceSpec,
-    OpCode, OpStyle, bracket_nil, gensym, keyword, nil, symbol)
+    OpCode, OpStyle, bracket_nil, keyword, nil, symbol)
 from .constants import (
     BYTECODE_ABI_MAJOR, BYTECODE_ABI_MICRO, BYTECODE_ABI_MINOR,
     BYTECODE_ABI_PATCH, KIO_MAGIC)
@@ -134,7 +134,6 @@ class PoolKind(IntEnum):
     ELLIPSIS = 21
     FROZENSET = 22
     SLICE = 23
-    GENSYM = 24
 
 
 class CodeFlags(IntEnum):
@@ -757,10 +756,6 @@ def intern_for_pool(pb, obj):
         intern_for_pool(pb, obj.step)
         return pb.add(obj)
 
-    if isinstance(obj, gensym):
-        intern_for_pool(pb, obj.base)
-        return pb.add(obj)
-
     return pb.add(obj)
 
 
@@ -1065,16 +1060,10 @@ def encode_pool_record_value(val, index_of, pb=None):
     if isinstance(val, bytes):
         return struct.pack('<B', PoolKind.BYTES) + struct.pack('<I', len(val)) + val
 
-    if isinstance(val, gensym):
-        # a template symbol with its expansion marks, from a transformer
-        # a macro-generating macro defined; tested before symbol, which
-        # it subtypes
-        marks = val.marks
-        return (struct.pack('<BII', PoolKind.GENSYM, index_of(val.base),
-                            len(marks))
-                + struct.pack('<' + 'Q' * len(marks), *marks))
-
     if isinstance(val, symbol):
+        # a gensym, from a transformer a macro-generating macro defined,
+        # is written as the symbol of its scoped spelling: the spelling
+        # is what reaches the binding, and no mark survives compilation
         return struct.pack('<B', PoolKind.SYMBOL) + _pack_string(str(val))
 
     if isinstance(val, keyword):
@@ -1173,13 +1162,6 @@ def decode_pool_record_at_kind(kind, buf, off, prior):
     if kind == PoolKind.KEYWORD:
         s, off = _unpack_string(buf, off)
         return keyword(s), off
-
-    if kind == PoolKind.GENSYM:
-        idx, arity = struct.unpack_from('<II', buf, off)
-        off += 8
-        marks = struct.unpack_from('<' + 'Q' * arity, buf, off)
-        off += 8 * arity
-        return gensym(prior[idx], marks=marks), off
 
     if kind in (PoolKind.TUPLE, PoolKind.FROZENSET):
         arity = struct.unpack_from('<I', buf, off)[0]

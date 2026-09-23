@@ -30,7 +30,9 @@ As built, against the text below:
   transformer lowerings, and `quasiquote-syntax` was added after this
   note for a procedural macro a template defines, with the reader
   prefixes `#'` and `` #` `` and matching layout block forms.
-- Pool kind `GENSYM` takes the number `MARK` held, 24.
+- No pool kind carries marks. A gensym in a constant is written as the
+  `SYMBOL` record of its scoped spelling; the Serialization section
+  below described a `GENSYM` kind that was added and then removed.
 
 ## Summary
 
