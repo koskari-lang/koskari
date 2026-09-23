@@ -667,7 +667,7 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
         return MATCH(REST(str(pattern_expr)))
 
     if not is_pair(pattern_expr):
-        return MATCH(LITERAL(strip_mark(pattern_expr)))
+        return MATCH(LITERAL(pattern_expr))
 
     return MATCH(*_syntax_pattern_specs(
         list(unpack(pattern_expr)), literals, source_ctx, set()))
@@ -723,7 +723,7 @@ def _syntax_elem_pattern(pat, literals, source_ctx, seen):
 
     if not is_pair(pat):
         # a keyword or other atom literal matches by its bare spelling
-        return LITERAL(strip_mark(pat))
+        return LITERAL(pat)
 
     return FORM(MATCH(*_syntax_pattern_specs(
         list(unpack(pat)), literals, source_ctx, seen)))

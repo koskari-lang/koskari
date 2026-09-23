@@ -518,7 +518,9 @@ class LITERAL(Pattern):
         Capture the literal value to be referenced through the consts
         table at freeze time
 
-        :param value: any concrete value, must not be a pattern
+        :param value: any concrete value, must not be a pattern; an
+            atom is held by its bare spelling, since a literal names
+            an atom and hygiene renames only bindings
         :raises TypeError: when value is itself a Pattern
         """
 
@@ -526,7 +528,7 @@ class LITERAL(Pattern):
             raise TypeError(
                 "LITERAL value must be a concrete value, "
                 "not a pattern: %r" % (type(value).__name__,))
-        self._value = value
+        self._value = strip_mark(value)
 
 
     def lower(self, ctx):
@@ -2400,7 +2402,7 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
         raise ValueError("invalid ellipsis in MATCH pattern%s" % ctx)
 
     if not is_pair(form):
-        return LITERAL(strip_mark(form))
+        return LITERAL(form)
 
     if not is_proper(form):
         raise ValueError("MATCH pattern must be a proper list%s" % ctx)

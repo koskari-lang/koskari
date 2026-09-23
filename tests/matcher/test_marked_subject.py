@@ -25,10 +25,10 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, DatumFrame, gensym, symbol
+from koskari.lib import Datum, DatumFrame, gensym, keyword, symbol
 from koskari.matcher import (
-    BIND, BINDING, CAPTURE, FORM, FORMALS, LITERAL_SYM, MATCH,
-    REST, SYMBOL, TEST_ANY, VALUE, repeat_capture)
+    BIND, BINDING, CAPTURE, FORM, FORMALS, LITERAL, LITERAL_SYM, MATCH,
+    REST, SYMBOL, TEST_ANY, VALUE, parse_matcher, repeat_capture)
 from koskari.types import build_proper, unpack
 
 
@@ -72,6 +72,23 @@ class TestGensymSubject(unittest.TestCase):
         m = MATCH(LITERAL_SYM("match"), VALUE("inner")).build()
         result = m.match(build_proper(G("other"), 1))
         self.assertFalse(result.matched)
+
+
+    def test_literal_built_from_gensym_holds_the_base(self):
+        m = MATCH(LITERAL(G("match")), VALUE("inner")).build()
+        result = m.match(build_proper(symbol("match"), 1))
+        self.assertTrue(result.matched)
+        self.assertEqual(_peel(result.captures["inner"]), 1)
+
+
+    def test_val_payload_from_gensym_matches_the_base(self):
+        pattern = build_proper(
+            symbol("MATCH"),
+            build_proper(symbol("inner"), keyword("val"), G("match")))
+        m = parse_matcher(pattern).build()
+        result = m.match(build_proper(symbol("match")))
+        self.assertTrue(result.matched)
+        self.assertIs(_peel(result.captures["inner"]), symbol("match"))
 
 
     def test_formals_positional_keeps_gensym(self):
