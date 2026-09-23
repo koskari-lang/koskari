@@ -33,8 +33,8 @@ from ..lib import (
     ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
     bracket_pair, cons, gensym, keyword, kos_repr, nil, symbol)
 from ..types import (
-    fill_position, get_position, is_keyword, is_nil, is_pair,
-    is_proper, is_symbol, parameterize, strip_marks)
+    equal_by_base, fill_position, get_position, is_keyword, is_nil,
+    is_pair, is_proper, is_symbol, parameterize)
 from .pragma import (
     BracketCalls, KeywordLiterals, KoskariPragma, PackModule, ResolutionMode,
     StrayColon)
@@ -952,15 +952,14 @@ class Compiler:
         """
 
         # each expansion marks its output afresh, so a cycle repeats a
-        # form up to its marks
-        bare = strip_marks(form)
+        # form up to its marks; str of a form already prints the bases
         for i, prior in enumerate(seen):
             if form is prior:
                 continue
-            if bare == strip_marks(prior):
-                chain = " -> ".join(str(strip_marks(f)) for f in seen[i:])
+            if equal_by_base(form, prior):
+                chain = " -> ".join(str(f) for f in seen[i:])
                 raise CompilerError(
-                    f"macro expansion cycle: {chain} -> {bare}",
+                    f"macro expansion cycle: {chain} -> {form}",
                     form)
 
         limit = self.rewrite_limit
