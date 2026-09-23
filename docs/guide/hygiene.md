@@ -67,16 +67,17 @@ A gensym is a symbol. `symbol?` answers true for it, it sits in a pair
 like any symbol, and it is interned under its spelling so two mentions of
 `tmp#b23376a7` are one object. It is a different object from the plain
 `tmp`, and equality is identity, so nothing that compares symbols confuses
-the two.
+the two. Here the mark is chosen so the spelling is fixed; a template's
+mark comes from the process counter.
 
 ```koskari
->>> define g (gensym "tmp")
+>>> define g (gensym (symbol "tmp") marks: #(26))
 >>> (str g)
-'tmp#b23376a7'
+"tmp#1a"
 >>> g.base
 tmp
 >>> g.marks
-(2989717159,)
+#(26)
 >>> (== g g.base)
 False
 >>> (is (symbol (str g)) g)
