@@ -476,6 +476,46 @@ class TestRecursiveMacro(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["first-wins"], 3)
 
 
+class TestParameterNameInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    A parameter name is a label addressed by its spelling: a template
+    reads and binds the parameter a caller or a module names, and the
+    parameter a template declares is the one it parameterizes
+    """
+
+    READS_MODULE_PARAMETER = """
+(define-parameter depth 0)
+
+(define-syntax rd
+  (syntax-rules []
+    [(rd) (parameterq depth 9)]))
+
+(define outer (rd))
+(define inner (parameterize [[depth 4]] (rd)))
+"""
+
+    OWNS_PARAMETER = """
+(define-syntax scoped
+  (syntax-rules []
+    [(scoped body)
+     (begin
+       (define-parameter p 1)
+       (parameterize [[p 5]] body))]))
+
+(define answer (scoped (parameterq p)))
+"""
+
+    async def test_template_reads_module_parameter(self):
+        ns = await load("mh_param_read", self.READS_MODULE_PARAMETER)
+        self.assertEqual(ns["outer"], 9)
+        self.assertEqual(ns["inner"], 4)
+
+
+    async def test_template_owns_parameter(self):
+        ns = await load("mh_param_own", self.OWNS_PARAMETER)
+        self.assertEqual(ns["answer"], 5)
+
+
 class TestTryInTemplate(unittest.IsolatedAsyncioTestCase):
     """
     A try form a template writes carries a scoped exception type; the

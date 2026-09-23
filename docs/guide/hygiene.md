@@ -250,6 +250,8 @@ there the compiler reads the base:
 - a member a `class` body defines, so a template can add a method under
   the name a caller will call;
 - a keyword, which is never scoped in the first place;
+- a parameter name, in `parameterize`, `parameter`, and the forms that
+  lower to them, since a parameter is addressed by its spelling;
 - the operator in an inplace assignment;
 - quoted data, as above.
 

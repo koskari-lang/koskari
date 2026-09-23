@@ -59,7 +59,8 @@ def special_parameterize(compiler, called_by, bindings, body):
     for val in vals:
         fragment.merge(compiler.full_compile(val))
 
-    fragment.instruction(OpCode.PUSH_PARAM, tuple(map(str, args)))
+    # a parameter name is a label, addressed by its spelling
+    fragment.instruction(OpCode.PUSH_PARAM, tuple(str(a.base) for a in args))
     helper_begin(fragment, body.datum)
     fragment.instruction(OpCode.POP_PARAM, 0)
     return fragment
@@ -84,7 +85,7 @@ def special_parameter(compiler, caps):
     """
 
     called_by = caps["called_by"]
-    name = str(caps["name"].datum)
+    name = str(caps["name"].datum.base)
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
