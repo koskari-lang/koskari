@@ -410,15 +410,17 @@ static PyObject *sib_quoted(PyObject *u) {
 
 /**
    The str of one element of a printed pair: a string is quoted, a
-   Mark prints the atom under it, since str of a form is source and
-   hygiene provenance is not, and anything else prints as str does.
-   New reference, or NULL with an exception set.
+   Mark or a gensym prints the atom under it, since str of a form is
+   source and hygiene provenance is not, and anything else prints as
+   str does. New reference, or NULL with an exception set.
 */
 static PyObject *pair_elem_str(PyObject *elem) {
   if (PyUnicode_CheckExact(elem))
     return sib_quoted(elem);
   if (KosMark_Check(elem))
     return PyObject_Str(KosMark_DATUM(elem));
+  if (KosGensym_Check(elem))
+    return PyObject_Str(KosGensym_BASE(elem));
   return PyObject_Str(elem);
 }
 

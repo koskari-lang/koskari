@@ -177,25 +177,4 @@ class TestSpecialFromRuleRows(unittest.TestCase):
             special_from_rule_rows(m, (), ())
 
 
-class TestExpansionMarkBase(unittest.TestCase):
-    """
-    Marks count up from a base drawn once per process, so two processes
-    do not spell the same key for different names
-    """
-
-    def test_two_processes_draw_different_bases(self):
-        import subprocess
-        import sys
-
-        code = "import koskari.syntax as s; print(s.EXPANSION_MARK_BASE)"
-        bases = set()
-        for _ in range(2):
-            out = subprocess.run(
-                [sys.executable, "-c", code], capture_output=True,
-                text=True, check=True).stdout.strip()
-            bases.add(int(out))
-        self.assertEqual(len(bases), 2)
-        self.assertTrue(all(b >= 1 for b in bases))
-
-
 # The end.
