@@ -25,7 +25,7 @@ from koskari.compile.helpers import (
     discover_docstring, gather_formals, helper_begin)
 from koskari.compile.specials.lambda_ import _LAMBDA_PATTERNS
 from koskari.exceptions import SyntaxMatchError
-from koskari.lib import FormalsSpec, FunctionSpec, OpCode, nil
+from koskari.lib import FormalsSpec, FunctionSpec, OpCode, nil, symbol
 from koskari.syntax import special
 from tests.compile.specials import SpecialsTestCase
 
@@ -64,8 +64,13 @@ def special_lambda_ng(
     fragment_name = proper_name or "<lambda>"
 
     pre_kwd = []
+    pre_kwd_syms = [symbol(str(k)) for k, _ in defaults]
+    kwonly_syms = [symbol(str(k)) for k, _ in kwonly]
+    pos_syms = list(pos)
     pos = [str(k) for k in pos]
+    star_sym = star or None
     star = str(star) if star else None
+    starstar_sym = starstar or None
     starstar = str(starstar) if starstar else None
 
     ann_exprs = [(name, bundle['type'])
@@ -94,15 +99,15 @@ def special_lambda_ng(
             frag.merge(compiler.full_compile(expr))
 
     lamb = compiler.fragment(fragment_name)
-    lamb.declare_vars(pos)
-    lamb.declare_vars(pre_kwd)
-    if star:
-        lamb.declare_var(star)
-    lamb.declare_vars([str(k) for k, _ in kwonly])
-    if starstar:
-        lamb.declare_var(starstar)
-    if proper_name is not None:
-        lamb.declare_var(proper_name)
+    lamb.declare_vars(pos_syms)
+    lamb.declare_vars(pre_kwd_syms)
+    if star_sym:
+        lamb.declare_var(star_sym)
+    lamb.declare_vars(kwonly_syms)
+    if starstar_sym:
+        lamb.declare_var(starstar_sym)
+    if named is not None:
+        lamb.declare_var(named)
 
     lamb.doc = discover_docstring(body_src)
 

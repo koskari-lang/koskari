@@ -655,8 +655,11 @@ def emit_item_access(compiler, called_by, obj, key, stack_op, named_op):
     key_kind, _ = feeder_expr(keyfrag)
 
     if obj_kind == 'var' and key_kind is None:
+        # the object's load becomes the named operand; its request
+        # carries over without its instruction
         frag.merge(keyfrag)
-        frag.request_var(obj_name)
+        for sym in objfrag.requests:
+            frag.request_var(sym)
         frag.instruction(named_op, obj_name)
     else:
         frag.merge(objfrag)
@@ -700,17 +703,19 @@ def emit_item_place(compiler, frag, obj, keyfrag, key, value_feeders):
 
     fields = []
     obj_op = key_op = None
+    # a named operand's request carries over without its instruction
     if obj_name is None:
         frag.merge(objfrag)
     else:
-        frag.request_var(obj_name)
+        for sym in objfrag.requests:
+            frag.request_var(sym)
         obj_op = OpCode.VAR
         fields.append(obj_name)
     if key_kind is None:
         frag.merge(keyfrag)
     else:
-        if key_kind == 'var':
-            frag.request_var(key_val)
+        for sym in keyfrag.requests:
+            frag.request_var(sym)
         key_op = ITEM_FEEDER_OP[key_kind]
         fields.append(key_val)
     return obj_op, key_op, fields
@@ -984,9 +989,8 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
         frag.position_of(source)
 
     if is_symbolish(lhs):
-        name = str(lhs)
-        maybe_declare(name)
-        frag.instruction(OpCode.VAR_STORE, name)
+        maybe_declare(lhs)
+        frag.instruction(OpCode.VAR_STORE, str(lhs))
         return frag
 
     if not is_proper(lhs):
@@ -999,11 +1003,10 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     if len(items) == 2 \
        and is_symbolish(items[0]) \
        and is_symbolish(items[1]):
-        name1 = str(items[0])
-        name2 = str(items[1])
-        maybe_declare(name1)
-        maybe_declare(name2)
-        frag.instruction(OpCode.UNPACK_VAR, (name1, name2, 0, 0))
+        maybe_declare(items[0])
+        maybe_declare(items[1])
+        frag.instruction(
+            OpCode.UNPACK_VAR, (str(items[0]), str(items[1]), 0, 0))
         return frag
 
     star_idx = [
@@ -1020,9 +1023,8 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
             if is_pair(elt):
                 frag.merge(using_unpack_helper(compiler, elt, source, declare))
             elif is_symbolish(elt):
-                elt = str(elt)
                 maybe_declare(elt)
-                frag.instruction(OpCode.VAR_STORE, elt)
+                frag.instruction(OpCode.VAR_STORE, str(elt))
             else:
                 fail("unpack pattern list elements must be symbols or pairs")
         return frag
@@ -1037,11 +1039,10 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     suffix = after_star[1:]
     if not is_symbolish(star_name):
         fail("name after * in unpack pattern must be a symbol")
-    star_name = str(star_name)
 
     if not prefix and not suffix:
         maybe_declare(star_name)
-        frag.instruction(OpCode.VAR_STORE, star_name)
+        frag.instruction(OpCode.VAR_STORE, str(star_name))
         return frag
 
     left = len(prefix)
@@ -1051,22 +1052,20 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
         if is_pair(elt):
             frag.merge(using_unpack_helper(compiler, elt, source, declare))
         elif is_symbolish(elt):
-            elt = str(elt)
             maybe_declare(elt)
-            frag.instruction(OpCode.VAR_STORE, elt)
+            frag.instruction(OpCode.VAR_STORE, str(elt))
         else:
             fail("unpack pattern list elements must be symbols or pairs")
 
     maybe_declare(star_name)
-    frag.instruction(OpCode.VAR_STORE, star_name)
+    frag.instruction(OpCode.VAR_STORE, str(star_name))
 
     for elt in suffix:
         if is_pair(elt):
             frag.merge(using_unpack_helper(compiler, elt, source, declare))
         elif is_symbolish(elt):
-            elt = str(elt)
             maybe_declare(elt)
-            frag.instruction(OpCode.VAR_STORE, elt)
+            frag.instruction(OpCode.VAR_STORE, str(elt))
         else:
             fail("unpack pattern list elements must be symbols or pairs")
 

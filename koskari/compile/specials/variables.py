@@ -338,16 +338,15 @@ def special_define(compiler, caps):
     scopes = compiler.lexical_stack
     if scopes and scopes[-1].collector_scope:
         namesym = namesym.base
-    name = str(namesym)
 
     frag = compiler.fragment(called_by)
 
     # the function shorthand declares untyped: the return type rides on
     # the function form instead
     if "body" in caps or type_expr is None:
-        frag.declare_var(name, position=pos)
+        frag.declare_var(namesym, position=pos)
     else:
-        frag.declare_var(name, position=pos, type_expr=type_expr)
+        frag.declare_var(namesym, position=pos, type_expr=type_expr)
 
     return emit_define_value(compiler, frag, caps, namesym, type_expr)
 

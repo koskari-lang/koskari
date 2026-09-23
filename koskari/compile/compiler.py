@@ -177,9 +177,11 @@ class ByteCodeFragment:
         :param var_name: name to request from enclosing scope
         """
 
+        if not isinstance(var_name, symbol):
+            raise TypeError(f"expected a symbol, not {var_name!r}")
         if isinstance(var_name, gensym):
             self.resolution.note_mark(var_name)
-        self.resolution.on_request_var(self, str(var_name))
+        self.resolution.on_request_var(self, var_name)
 
 
     def request_for_write(self, var_name, position=None):
@@ -190,9 +192,11 @@ class ByteCodeFragment:
         :param position: optional (line, col) for error reporting
         """
 
+        if not isinstance(var_name, symbol):
+            raise TypeError(f"expected a symbol, not {var_name!r}")
         if isinstance(var_name, gensym):
             self.resolution.note_mark(var_name)
-        self.resolution.on_write(self, str(var_name), position=position)
+        self.resolution.on_write(self, var_name, position=position)
 
 
     def request_global(self, var_name, position=None):
@@ -203,9 +207,11 @@ class ByteCodeFragment:
         :param position: optional (line, col) for error reporting
         """
 
+        if not isinstance(var_name, symbol):
+            raise TypeError(f"expected a symbol, not {var_name!r}")
         if isinstance(var_name, gensym):
             self.resolution.note_mark(var_name)
-        self.resolution.on_explicit_global(self, str(var_name), position=position)
+        self.resolution.on_explicit_global(self, var_name, position=position)
 
 
     def declare_var(self, var_name, position=None, type_expr=None):
@@ -218,7 +224,9 @@ class ByteCodeFragment:
             metadata only; not evaluated here)
         """
 
-        self.resolution.on_declare(self, str(var_name), position=position)
+        if not isinstance(var_name, symbol):
+            raise TypeError(f"expected a symbol, not {var_name!r}")
+        self.resolution.on_declare(self, var_name, position=position)
         if type_expr is not None:
             self.annotation_bindings.append((str(var_name), type_expr))
 
@@ -303,7 +311,7 @@ class ByteCodeFragment:
         nspec and names in the EXTRA row, body instructions, POP_NS.
 
         :param ns_name: name for the child namespace (e.g. source form)
-        :param names: sequence of bound names (strings or symbols)
+        :param names: sequence of bound names, symbols
         :param values: sequence of expressions (one per name)
         """
 
@@ -311,7 +319,7 @@ class ByteCodeFragment:
         ns_name = str(ns_name)
         child = compiler.fragment(ns_name)
         with compiler.resolution_scope(child):
-            names = tuple(map(str, names))
+            names = tuple(names)
             if len(names) != len(values):
                 raise CompilerError(
                     "mismatch between names and values",
@@ -335,16 +343,17 @@ class ByteCodeFragment:
             # PUSH_NS resolves it from the frame. A namespace's parent
             # link skips call frames, so the frame is the only place
             # the scope can reach it.
-            for name in nspec.closure_syms:
+            for name in child.resolution.closure_names(child):
                 if name not in self.declares:
                     self.request_var(name)
 
             if names:
                 self.merge(valfrag)
 
+            # the operand spells the bound names, as every operand does
             self.instruction(
                 OpCode.PUSH_NS,
-                (nspec, tuple(names) if names else None, 0, 0))
+                (nspec, tuple(map(str, names)) if names else None, 0, 0))
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_NS, 0)
 
@@ -370,7 +379,7 @@ class ByteCodeFragment:
             nspec = child.as_namespace_spec()
             child.resolution.register_scope_fragment(
                 child, tuple(f for f in compiler.lexical_stack if f is not child))
-            for name in nspec.closure_syms:
+            for name in child.resolution.closure_names(child):
                 if name not in self.declares:
                     self.request_var(name)
 
@@ -439,39 +448,42 @@ class DeferredFunctionSpec:
 
 def mark_candidates(mark):
     """
-    The keys a marked reference may resolve to, longest first: its own
-    key, then the key with the newest mark removed, down to the bare
-    name
+    The symbols a marked reference may resolve to, longest first: the
+    gensym itself, then the gensym under its marks with the newest
+    removed, down to the base symbol
 
     :param mark: a gensym
-    :rtype: list of str
+    :rtype: list of symbol
     """
 
-    base = str(mark.base)
-    rungs = [f"#{m:x}" for m in mark.marks]
-    out = []
-    for n in range(len(rungs), 0, -1):
-        out.append(base + "".join(rungs[:n]))
+    base = mark.base
+    marks = mark.marks
+    out = [mark]
+    for n in range(len(marks) - 1, 0, -1):
+        out.append(gensym(base, marks=marks[:n]))
     out.append(base)
     return out
 
 
 def _choose_key(candidates, scopes, module_names):
     """
-    The first candidate declared in a visible scope, or, for a marked
-    spelling, already bound in the module; the bare name when none is
+    The first candidate whose spelling is declared in a visible scope,
+    or, for a marked one, already bound in the module; the base symbol
+    when none is
 
     A marked spelling bound in the module was defined by an earlier
     turn, as a macro-generating macro's expansion leaves behind
     """
 
-    for cand in candidates:
+    for cand in candidates[:-1]:
+        spelling = str(cand)
         for scope in scopes:
-            if cand in scope:
+            if spelling in scope:
                 return cand
-        if cand is not candidates[-1] and cand in module_names:
+        if spelling in module_names:
             return cand
-    return candidates[-1]
+    base = candidates[-1]
+    return base
 
 
 def resolve_marks(fragment, ancestors):
@@ -498,21 +510,29 @@ def resolve_marks(fragment, ancestors):
     module_names = vars(compiler.module) if compiler is not None else {}
 
     def declared(frag):
-        return set(frag.declares) | set(frag._request_global)
+        return {str(n) for n in frag.declares} | {
+            str(n) for n in frag._request_global}
 
     base = [declared(fragment)]
     base.extend(declared(f) for f in reversed(ancestors))
 
+    def choose_symbol(sym, scopes):
+        if sym.base is sym:
+            return sym
+        return _choose_key(mark_candidates(sym), scopes, module_names)
+
     def choose(name, scopes):
+        # an instruction operand is a spelling; the gensym it names was
+        # noted when the operand was emitted
         mark = marks.get(name)
         if mark is None:
             return name
-        return _choose_key(mark_candidates(mark), scopes, module_names)
+        return str(_choose_key(mark_candidates(mark), scopes, module_names))
 
     def rename_bucket(bucket, scopes):
         seen = []
-        for name in bucket:
-            chosen = choose(name, scopes)
+        for sym in bucket:
+            chosen = choose_symbol(sym, scopes)
             if chosen not in seen:
                 seen.append(chosen)
         bucket[:] = seen
@@ -844,7 +864,7 @@ class Compiler:
         # have defined under the marked spelling, else the bare one
         if isinstance(name, gensym):
             for cand in mark_candidates(name):
-                found = self._find_compiled_use(cand)
+                found = self._find_compiled_use(str(cand))
                 if found is not None:
                     return found
             return None

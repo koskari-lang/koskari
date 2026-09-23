@@ -129,7 +129,7 @@ def special_bindq(compiler, caps):
     value_datum = value.datum
 
     frag = compiler.fragment(called_by)
-    frag.declare_var(name)
+    frag.declare_var(namesym)
 
     if not is_pair(value_datum):
         frag.position(value.position)

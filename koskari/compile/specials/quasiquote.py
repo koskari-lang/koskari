@@ -139,7 +139,7 @@ def _emit_call_var(frag, name, count):
     the stack (used for the bracket-cons / bracket-splice runtime calls).
     """
 
-    frag.request_var(name)
+    frag.request_var(symbol(name))
     frag.instruction(OpCode.CALL_VAR, (name, count, 0, 0))
 
 

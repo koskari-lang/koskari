@@ -138,7 +138,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
     def test_bare_symbol(self):
         x = symbol("x")
         frag = using_unpack_helper(self.compiler, x)
-        self.assertEqual(frag.declares, ["x"])
+        self.assertEqual(frag.declares, [symbol("x")])
         self.assertEqual(
             frag.instructions,
             [(OpCode.VAR_STORE, "x")])
@@ -147,7 +147,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
         a, b, c = symbol("a"), symbol("b"), symbol("c")
         lhs = cons(a, b, c, nil)
         frag = using_unpack_helper(self.compiler, lhs)
-        self.assertEqual(frag.declares, ["a", "b", "c"])
+        self.assertEqual(frag.declares, [symbol("a"), symbol("b"), symbol("c")])
         self.assertEqual(
             frag.instructions,
             [
@@ -169,7 +169,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
         star = keyword("*")
         lhs = cons(symbol("a"), star, symbol("rest"), symbol("b"), nil)
         frag = using_unpack_helper(self.compiler, lhs)
-        self.assertEqual(frag.declares, ["a", "rest", "b"])
+        self.assertEqual(frag.declares, [symbol("a"), symbol("rest"), symbol("b")])
         self.assertEqual(
             frag.instructions,
             [
@@ -184,7 +184,7 @@ class TestUsingUnpackHelper(unittest.TestCase):
         star = keyword("*")
         lhs = cons(star, whole, nil)
         frag = using_unpack_helper(self.compiler, lhs)
-        self.assertEqual(frag.declares, ["whole"])
+        self.assertEqual(frag.declares, [symbol("whole")])
         self.assertEqual(
             frag.instructions,
             [(OpCode.VAR_STORE, "whole")])

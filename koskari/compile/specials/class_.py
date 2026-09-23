@@ -23,7 +23,7 @@ Special form handler for compile/class.
 
 from ...bootstrap import builtin
 from ...exceptions import ParametersError, SpecialError
-from ...lib import OpCode
+from ...lib import OpCode, symbol
 from ...matcher import CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ..helpers import (
@@ -37,6 +37,12 @@ _CLASS_PATTERNS = [
         VALUE("supers"),
         REST("body")),
 ]
+
+_sym_class = symbol("__class__")
+_sym_doc = symbol("__doc__")
+_sym_qualname = symbol("__qualname__")
+_sym_module = symbol("__module__")
+_sym_annotations = symbol("__annotations__")
 
 
 def _extract_metaclass(kwds_seq):
@@ -126,45 +132,45 @@ def special_class(compiler, called_by, name, supers, body):
         # defined in the body close over this slot, and the class builder
         # fills it once the class object exists, so (super) and a bare
         # __class__ inside a method name the defining class.
-        body_frag.declare_var("__class__")
+        body_frag.declare_var(_sym_class)
         helper_begin(body_frag, body)
 
-        if doc and "__doc__" not in body_frag.declares:
+        if doc and _sym_doc not in body_frag.declares:
             # don't override an existing __doc__, just in case
             # some code has pre-built it.
 
             doc_frag = compiler.fragment("__doc__")
-            doc_frag.declare_var("__doc__")
+            doc_frag.declare_var(_sym_doc)
             doc_frag.instruction(OpCode.CONST, doc)
             doc_frag.instruction(OpCode.VAR_STORE, "__doc__")
             body_frag.merge(doc_frag)
 
-        if "__qualname__" not in body_frag.declares:
+        if _sym_qualname not in body_frag.declares:
             # CPython-shaped: scope-only name; module path goes in __module__.
             # Nested Outer.Inner needs a future nesting stack.
 
             qn_frag = compiler.fragment("__qualname__")
-            qn_frag.declare_var("__qualname__")
+            qn_frag.declare_var(_sym_qualname)
             qn_frag.instruction(OpCode.CONST, name)
             qn_frag.instruction(OpCode.VAR_STORE, "__qualname__")
             body_frag.merge(qn_frag)
 
         mod_for_class = _compiling_module_name(compiler)
         if (mod_for_class is not None
-                and "__module__" not in body_frag.declares):
+                and _sym_module not in body_frag.declares):
             mod_frag = compiler.fragment("__module__")
-            mod_frag.declare_var("__module__")
+            mod_frag.declare_var(_sym_module)
             mod_frag.instruction(OpCode.CONST, mod_for_class)
             mod_frag.instruction(OpCode.VAR_STORE, "__module__")
             body_frag.merge(mod_frag)
 
         binds = body_frag.annotation_bindings
-        if binds and "__annotations__" not in body_frag.declares:
+        if binds and _sym_annotations not in body_frag.declares:
             # don't override an existing __annotations__, just in case
             # some code has pre-built it.
 
             annos = compiler.fragment("__annotations__")
-            annos.declare_var("__annotations__")
+            annos.declare_var(_sym_annotations)
 
             collapsed = dict(binds)
             for name, type_expr in collapsed.items():

@@ -25,7 +25,7 @@ compiled per pattern and an optional else clause.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import Matcher, OpCode, keyword
+from ...lib import Matcher, OpCode, keyword, symbol
 from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
     repeat_capture)
@@ -142,7 +142,7 @@ def special_match(compiler, caps):
         # lowering yields both the constant and the binding names.
         # Ordered dedup: ONEOF branches may declare the same slot in
         # mutually exclusive arms.
-        names = list(dict.fromkeys(str(n) for n in frozen[1]))
+        names = list(dict.fromkeys(symbol(n) for n in frozen[1]))
 
         # externs covered by the matcher extern defaults (int, str,
         # pair, ...) resolve from that baked-in table at match time and
@@ -155,7 +155,7 @@ def special_match(compiler, caps):
         externs = [str(name) for name
                    in matcher.missing_externs(exclude_defaults=True)]
         for extern in externs:
-            fragment.request_var(extern)
+            fragment.request_var(symbol(extern))
             fragment.instruction(OpCode.VAR, extern)
 
         # the opcode binds the arm's captures itself, resolving the

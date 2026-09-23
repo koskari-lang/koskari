@@ -156,7 +156,7 @@ def special_letrec(
             if is_pair(expr):
                 frag.position_of(expr)
 
-            frag.declare_var(str(name))
+            frag.declare_var(name)
             frag.merge(compiler.full_compile(expr))
             frag.instruction(OpCode.VAR_STORE, str(name))
         helper_begin(frag, body)

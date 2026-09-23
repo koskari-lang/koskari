@@ -123,7 +123,7 @@ def emit_with(compiler, called_by, binding, body, push_op, pop_op):
 
     nc = binding.get("name")
     ec = binding.get("expr")
-    name = str(nc.datum) if nc is not None else None
+    name = nc.datum if nc is not None else None
     expr = ec.datum if ec is not None else None
 
     fragment = compiler.fragment(called_by.datum)
@@ -133,7 +133,7 @@ def emit_with(compiler, called_by, binding, body, push_op, pop_op):
         fragment.declare_var(name)
 
     fragment.position(called_by.position)
-    fragment.instruction(push_op, name)
+    fragment.instruction(push_op, None if name is None else str(name))
     helper_begin(fragment, body.datum)
     fragment.instruction(pop_op, 0)
 

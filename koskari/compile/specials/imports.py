@@ -187,18 +187,32 @@ def _name_atoms(name_form):
 
 def _bind_spelling(bind, atom):
     """
-    The name an import binds: ``bind`` as computed from the dotted
+    The symbol an import binds: ``bind`` as computed from the dotted
     module name, carrying the marks of the atom it came from, so a
     template's import binds apart from the use site and the template's
     own references reach it
 
-    :param bind: the bare binding name
+    :param bind: the bare binding name, a str
     :param atom: the source atom the binding is named after
+    :return: the symbol
     """
 
     if isinstance(atom, gensym):
-        return str(gensym(symbol(bind), marks=atom.marks))
-    return bind
+        return gensym(symbol(bind), marks=atom.marks)
+    return symbol(bind)
+
+
+def _facet_name(prefix, bind):
+    """
+    The symbol a use binds under a facet prefix: the prefix spelled
+    onto the binding's base, under the binding's marks
+
+    :param prefix: the facet prefix, a str
+    :param bind: the binding symbol
+    :return: the symbol
+    """
+
+    return _bind_spelling(prefix + str(bind.base), bind)
 
 
 def _leaf_name(dotted):
@@ -238,7 +252,7 @@ def _parse_member(elem, source, what, position=None):
     :param source: source form for error context
     :param what: form name for error messages
     :param position: source position recorded on errors
-    :return: (bind_name:str or None, target_form)
+    :return: (bind symbol or None, target_form)
     :raises SpecialError: on invalid member form
     """
 
@@ -261,7 +275,7 @@ def _parse_member(elem, source, what, position=None):
             raise SpecialError(
                 f"{what} member binding must be a symbol, not {name!r}",
                 source, position=position)
-        return (str(name), value)
+        return (name, value)
 
     raise SpecialError(
         f"{what} member must be a symbol or [TARGET as: BIND], not"
@@ -312,7 +326,7 @@ def special_import(compiler, called_by, module):
     frag = compiler.fragment(called_by.datum)
     frag.declare_var(bind)
     frag.instruction(
-        OpCode.IMPORT, (dotted, level, leaf, bind))
+        OpCode.IMPORT, (dotted, level, leaf, str(bind)))
     frag.instruction(OpCode.CONST, None)
 
     return frag
@@ -349,14 +363,14 @@ def special_import_from(compiler, called_by, module, members):
         # bare spelling, and the binding it lands in, which keeps the
         # template's marks so the import binds apart from the use site
         attrs.append(str(target.base))
-        binds.append(bind if bind is not None else str(target))
+        binds.append(bind if bind is not None else target)
 
     frag = compiler.fragment(called_by.datum)
     for bind in binds:
         frag.declare_var(bind)
 
     attrs = tuple(attrs)
-    binds = tuple(binds)
+    binds = tuple(str(bind) for bind in binds)
     if attrs == binds:
         # share one tuple constant when there are no renames
         binds = attrs
@@ -446,17 +460,17 @@ def special_use(compiler, caps):
                 f"use member must name a feature, not {target!r}",
                 elem, position=pos)
         stems.append(str(target.base))
-        binds.append(bind if bind is not None else str(target))
+        binds.append(bind if bind is not None else target)
 
     frag = compiler.fragment(called_by.datum)
     for bind in binds:
         frag.declare_var(bind)
-        if not bind.startswith(_USE_FACET_PREFIXES):
+        if not str(bind.base).startswith(_USE_FACET_PREFIXES):
             for prefix in _USE_FACET_PREFIXES:
-                frag.declare_var(prefix + bind)
+                frag.declare_var(_facet_name(prefix, bind))
 
     stems = tuple(stems)
-    binds = tuple(binds)
+    binds = tuple(str(bind) for bind in binds)
     if stems == binds:
         binds = stems
 
