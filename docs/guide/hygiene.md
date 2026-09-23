@@ -112,8 +112,8 @@ A `macro-rules` or `macro-match` arm is a procedure that builds its
 output by hand, with quasiquote or `cons`. The expander scopes that
 output after the handler returns: every symbol outside a captured piece
 gets the expansion's mark, and a piece the caller supplied, which arrives
-inside a `datum` box, is left alone. A quasiquoted template therefore
-behaves like a `syntax-rules` one:
+inside a `datum` box, is left alone. For a hand-written macro a
+quasiquoted template therefore behaves like a `syntax-rules` one:
 
 ```koskari
 define-syntax with-tmp:
@@ -143,6 +143,10 @@ define-syntax with-fresh:
 >>> (macroexpand-1 '(with-fresh tmp))
 (let [[t 10]] (+ t tmp))
 ```
+
+A backtick is data, so it projects any marks a symbol in the handler's
+body already carries. That matters in one case, a macro that a template
+defines, covered in Data and source below.
 
 ## Data and source
 
