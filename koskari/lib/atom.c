@@ -164,12 +164,21 @@ PyObject *KosSymbol_FromString(PyObject *name) {
 }
 
 
-static void symbol_dealloc(PyObject *self) {
-  if (intern_syms) {
+/**
+   Drop a dying atom's entry from its intern table. The refcount is
+   raised past zero for the duration so the dict's own decref of the
+   value does not re-enter dealloc.
+*/
+static void atom_forget(PyObject *self, PyObject *intern) {
+  if (intern) {
     self->ob_refcnt = 3;
-    PyDict_DelItem(intern_syms, KosInternedAtom_NAME(self));
+    PyDict_DelItem(intern, KosInternedAtom_NAME(self));
   }
+}
 
+
+static void symbol_dealloc(PyObject *self) {
+  atom_forget(self, intern_syms);
   Py_CLEAR(KosInternedAtom_NAME(self));
   Py_TYPE(self)->tp_free(self);
 }
@@ -336,16 +345,18 @@ static int gensym_seed(void) {
 
 
 /**
-   Coerce marks to a non-empty tuple of ints: an int becomes a
-   one-tuple, any other sequence is copied. New reference, or NULL
-   with an exception set.
+   Coerce marks to a non-empty tuple of exact ints: an int becomes a
+   one-tuple, any other sequence is copied, and each mark is rebuilt
+   as an exact unsigned int so no subclass rides into the tuple. New
+   reference, or NULL with an exception set.
 */
 static PyObject *gensym_coerce_marks(PyObject *marks) {
 
+  PyObject *tup;
   if (PyLong_Check(marks))
-    return PyTuple_Pack(1, marks);
-
-  PyObject *tup = PySequence_Tuple(marks);
+    tup = PyTuple_Pack(1, marks);
+  else
+    tup = PySequence_Tuple(marks);
   if (! tup)
     return NULL;
 
@@ -356,15 +367,34 @@ static PyObject *gensym_coerce_marks(PyObject *marks) {
     return NULL;
   }
 
-  for (Py_ssize_t i = 0; i < n; i++) {
-    if (! PyLong_Check(PyTuple_GET_ITEM(tup, i))) {
-      Py_DECREF(tup);
-      PyErr_SetString(PyExc_TypeError, "gensym marks must be ints");
-      return NULL;
-    }
+  PyObject *out = PyTuple_New(n);
+  if (! out) {
+    Py_DECREF(tup);
+    return NULL;
   }
 
-  return tup;
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *m = PyTuple_GET_ITEM(tup, i);
+    if (! PyLong_Check(m)) {
+      PyErr_SetString(PyExc_TypeError, "gensym marks must be ints");
+      goto fail;
+    }
+    unsigned long long v = PyLong_AsUnsignedLongLong(m);
+    if (v == (unsigned long long) -1 && PyErr_Occurred())
+      goto fail;
+    PyObject *exact = PyLong_FromUnsignedLongLong(v);
+    if (! exact)
+      goto fail;
+    PyTuple_SET_ITEM(out, i, exact);
+  }
+
+  Py_DECREF(tup);
+  return out;
+
+ fail:
+  Py_DECREF(tup);
+  Py_DECREF(out);
+  return NULL;
 }
 
 
@@ -445,7 +475,11 @@ static PyObject *gensym_intern(
   g->marks = marks;
 
   if (PyDict_SetItem(intern_syms, name, (PyObject *) g)) {
+    // dealloc deletes a key that was never set; keep the real error
+    PyObject *typ, *val, *tb;
+    PyErr_Fetch(&typ, &val, &tb);
     Py_DECREF(g);
+    PyErr_Restore(typ, val, tb);
     return NULL;
   }
 
@@ -590,9 +624,13 @@ PyObject *KosGensym_FromString(
 
 
 static void gensym_dealloc(PyObject *self) {
+  // leave the intern table before any field drops, so nothing that
+  // runs during the drops can look the dying spelling up
+  atom_forget(self, intern_syms);
   Py_CLEAR(KosGensym_BASE(self));
   Py_CLEAR(KosGensym_MARKS(self));
-  symbol_dealloc(self);
+  Py_CLEAR(KosInternedAtom_NAME(self));
+  Py_TYPE(self)->tp_free(self);
 }
 
 
@@ -777,11 +815,7 @@ static PyObject *keyword_new(
 
 
 static void keyword_dealloc(PyObject *self) {
-  if (intern_kwds) {
-    self->ob_refcnt = 3;
-    PyDict_DelItem(intern_kwds, KosInternedAtom_NAME(self));
-  }
-
+  atom_forget(self, intern_kwds);
   Py_CLEAR(KosInternedAtom_NAME(self));
   Py_TYPE(self)->tp_free(self);
 }

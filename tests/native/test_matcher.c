@@ -1165,7 +1165,9 @@ static int test_match_kospair_gensym_literal_matches_base(void) {
     PyObject *sym_name = PyUnicode_FromString("tmp");
     PyObject *sym = KosSymbol_FromString(sym_name);
     Py_DECREF(sym_name);
+    TEST_ASSERT_NOT_NULL(sym, "symbol built");
     PyObject *marks = Py_BuildValue("(i)", 1);
+    TEST_ASSERT_NOT_NULL(marks, "marks built");
     PyObject *g = KosGensym_New(sym, marks);
     Py_DECREF(marks);
     TEST_ASSERT_NOT_NULL(g, "gensym built");
@@ -1174,6 +1176,7 @@ static int test_match_kospair_gensym_literal_matches_base(void) {
     int slot = add_str_slot(b, "name");
     int e_sym = add_str_extern(b, "symbol");
     int c_lit = KosMatcherBuilder_AddConst(b, sym);
+    TEST_ASSERT(c_lit >= 0, "literal const added");
 
     int n_lit = append_test_literal(b, (uint32_t) c_lit);
     int n_t = append_test_type(b, (uint32_t) e_sym);
