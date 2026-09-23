@@ -180,6 +180,47 @@ class TestSiblingDefinitions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["answer"], 42)
 
 
+class TestNestedClosureOverModuleBinder(unittest.IsolatedAsyncioTestCase):
+    """
+    A template's module-level definition is visible from a function
+    body at any nesting depth, in the same compilation unit as the
+    definition
+    """
+
+    DEPTH_TWO = """
+(define-syntax d2
+  (syntax-rules []
+    [(d2 getter)
+     (begin
+       (define secret 11)
+       (define getter [] (lambda [] secret)))]))
+
+(d2 gg)
+(define answer ((gg)))
+"""
+
+    MIXED = """
+(define-syntax d2
+  (syntax-rules []
+    [(d2 getter)
+     (begin
+       (define secret 11)
+       (define getter [] (+ secret ((lambda [] secret)))))]))
+
+(d2 gg)
+(define answer (gg))
+"""
+
+    async def test_depth_two_reference(self):
+        ns = await load("mh_depth_two", self.DEPTH_TWO)
+        self.assertEqual(ns["answer"], 11)
+
+
+    async def test_depth_one_and_two_in_one_expansion(self):
+        ns = await load("mh_depth_mixed", self.MIXED)
+        self.assertEqual(ns["answer"], 22)
+
+
 class TestMutualRecursionInTemplate(unittest.IsolatedAsyncioTestCase):
     """
     labels and letrec expand to sibling definitions whose bodies name

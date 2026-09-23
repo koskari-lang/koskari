@@ -27,7 +27,7 @@ from ...matcher import (
     BODY, CALLEDBY, FORMALS, LITERAL_KW, MATCH, SYMBOL, VALUE)
 from ...syntax import special
 from ...types import is_nil
-from ..compiler import ByteCodeFragment, DeferredFunction
+from ..compiler import ByteCodeFragment, DeferredFunctionSpec
 from ..helpers import discover_docstring, gather_formals, helper_begin
 
 
@@ -115,7 +115,7 @@ def helper_function(compiler, caps, selfref):
     # the body completes when the enclosing fragment does, recording the
     # chain enclosing this lambda as the Code's ancestry; until then the
     # CONST row holds the deferred body in the FunctionSpec's place
-    deferred = DeferredFunction(lamb, proper_name, FormalsSpec(
+    deferred = DeferredFunctionSpec(lamb, proper_name, FormalsSpec(
         tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
         star, starstar, by_refs), tuple(compiler.lexical_stack))
     frag.instruction(OpCode.CONST, deferred)

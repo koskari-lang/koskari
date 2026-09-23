@@ -406,7 +406,7 @@ class CompilerMode(IntEnum):
     EXPRESSION = auto()
 
 
-class DeferredFunction:
+class DeferredFunctionSpec:
     """
     A function body awaiting completion, standing in for its
     FunctionSpec in the enclosing fragment's CONST row until the
@@ -485,7 +485,7 @@ def resolve_marks(fragment, ancestors):
     from its position: the inline scopes open around it in the
     instruction stream, the fragment's own, and the fragments that
     enclose the fragment, whose declarations are final by the time it
-    completes (see DeferredFunction). An inline scope's closure names
+    completes (see DeferredFunctionSpec). An inline scope's closure names
     resolve from outside that scope
 
     :param fragment: the fragment being completed
@@ -1291,7 +1291,7 @@ class Compiler:
         """
         Complete a fragment into a Code object.
 
-        The function bodies the fragment holds as DeferredFunction
+        The function bodies the fragment holds as DeferredFunctionSpec
         constants complete first, against this fragment's now final
         declarations, and their FunctionSpecs take their place
 
@@ -1309,7 +1309,7 @@ class Compiler:
         if ancestors is None:
             ancestors = tuple(self.lexical_stack)
 
-        self.complete_deferred(fragment)
+        self.complete_deferred(fragment, ancestors)
 
         if reso.marks:
             resolve_marks(fragment, ancestors)
@@ -1363,25 +1363,31 @@ class Compiler:
         return code
 
 
-    def complete_deferred(self, fragment):
+    def complete_deferred(self, fragment, ancestors):
         """
-        Complete every function body held as a DeferredFunction constant
-        in the fragment's instruction stream and replace each with its
-        FunctionSpec
+        Complete every function body held as a DeferredFunctionSpec
+        constant in the fragment's instruction stream and replace each
+        with its FunctionSpec.
+
+        A body's ancestry is the completing fragment's own chain, then
+        the fragment itself when the body's snapshot lacks it, then the
+        snapshot taken when the body closed, outermost first throughout
 
         :param fragment: the fragment about to complete
+        :param ancestors: the fragments enclosing it, outermost first
         """
 
         rows = fragment.instructions
         for i, (op, arg) in enumerate(rows):
-            if op is OpCode.CONST and isinstance(arg, DeferredFunction):
+            if op is OpCode.CONST and isinstance(arg, DeferredFunctionSpec):
                 # a function fragment was on the lexical stack while its
                 # body compiled; the root never is, and encloses the rest
-                ancestors = arg.ancestors
-                if fragment not in ancestors:
-                    ancestors = (fragment,) + ancestors
+                chain = ancestors
+                if fragment not in arg.ancestors:
+                    chain = chain + (fragment,)
+                chain = chain + arg.ancestors
                 code = self.complete(
-                    arg.fragment, CompilerMode.FUNCTION, ancestors=ancestors)
+                    arg.fragment, CompilerMode.FUNCTION, ancestors=chain)
                 rows[i] = (op, FunctionSpec(arg.name, arg.formals_spec, code))
 
 
