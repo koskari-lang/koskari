@@ -379,6 +379,15 @@ def tokenize(source, filename='<string>', special_names=None):
             continue
 
         if ch == '#':
+            if i < n and sl[i] in "'`":
+                # #' and #` are the quote-syntax and quasiquote-syntax
+                # prefixes, highlighted as their plain counterparts
+                text = ch + sl[i]
+                i += 1
+                line, col = _advance_pos(line, col, text[1:])
+                tok_type = 'quote' if text[1] == "'" else 'quasiquote'
+                yield Token(tok_type, text, start_line, start_col, line, col)
+                continue
             if i < n and sl[i] in '({[':
                 text = ch + sl[i]
                 i += 1

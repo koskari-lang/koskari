@@ -271,6 +271,77 @@ class TestMacroGeneratingMacro(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["y"], 100)
 
 
+class TestProceduralInnerMacro(unittest.IsolatedAsyncioTestCase):
+    """
+    A procedural macro a template defines builds its output with
+    quasiquote-syntax, which keeps the outer template's marks on the
+    symbols it wrote, so the output reaches the outer expansion's
+    binder. A plain quasiquote is data and projects the marks, so the
+    same output resolves at the use site
+    """
+
+    SRC = """
+(define-syntax mk-getter
+  (syntax-rules []
+    [(mk-getter name val)
+     (begin
+       (define secret val)
+       (define-syntax name (macro-rules [] [(name) #`secret])))]))
+
+(define secret 100)
+(mk-getter get-secret 8)
+(define got (get-secret))
+"""
+
+    PLAIN = """
+(define-syntax mk-getter
+  (syntax-rules []
+    [(mk-getter name val)
+     (begin
+       (define secret val)
+       (define-syntax name (macro-rules [] [(name) `secret])))]))
+
+(define secret 100)
+(mk-getter get-secret 8)
+(define got (get-secret))
+"""
+
+    async def test_inner_procedural_reaches_outer_binder(self):
+        ns = await load("mh_generating_procedural", self.SRC)
+        self.assertEqual(ns["got"], 8)
+        self.assertEqual(ns["secret"], 100)
+
+
+    async def test_plain_quasiquote_is_data(self):
+        ns = await load("mh_generating_procedural_plain", self.PLAIN)
+        self.assertEqual(ns["got"], 100)
+
+
+class TestScopedCaptureUnderQuote(unittest.IsolatedAsyncioTestCase):
+    """
+    A scoped symbol an outer template hands to an inner macro, which
+    quotes it as data, arrives at runtime as the plain symbol
+    """
+
+    SRC = """
+(define-syntax as-data
+  (syntax-rules []
+    [(as-data x) (quote (x))]))
+
+(define-syntax outer
+  (syntax-rules []
+    [(outer) (let [[tmp 1]] (as-data tmp))]))
+
+(define result (outer))
+"""
+
+    async def test_captured_scoped_symbol_is_plain_under_quote(self):
+        ns = await load("mh_capture_quoted", self.SRC)
+        sym = list(unpack(ns["result"]))[0]
+        self.assertIs(type(sym), symbol)
+        self.assertIs(sym, symbol("tmp"))
+
+
 class TestProceduralArm(unittest.IsolatedAsyncioTestCase):
 
     SRC = """

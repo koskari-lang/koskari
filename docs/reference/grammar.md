@@ -153,12 +153,14 @@ delimit the body. The `%N` placeholders become the formals. See
 
 ### Prefix reader sugar
 
-Four prefixes wrap the form that follows them:
+Six prefixes wrap the form that follows them:
 
 | Written | Reads as |
 |---|---|
 | `'form` | `(quote form)` |
 | `` `form `` | `(quasiquote form)` |
+| `#'form` | `(quote-syntax form)` |
+| `` #`form `` | `(quasiquote-syntax form)` |
 | `,form` | `(unquote form)` |
 | `,@form` | `(unquote-splicing form)` |
 

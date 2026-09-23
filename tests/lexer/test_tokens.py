@@ -226,6 +226,22 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual(toks[1].type, 'symbol')
 
 
+    async def test_tokenize_quote_syntax_prefixes(self):
+        toks = list(tokenize("#'x"))
+        self.assertEqual(toks[0].type, 'quote')
+        self.assertEqual(toks[0].text, "#'")
+        self.assertEqual(toks[1].type, 'symbol')
+        self.assertEqual(toks[1].text, 'x')
+
+        toks = list(tokenize("#`(x)"))
+        self.assertEqual(toks[0].type, 'quasiquote')
+        self.assertEqual(toks[0].text, "#`")
+        self.assertEqual(toks[1].type, 'paren_open')
+
+        toks = list(tokenize("#[x]"))
+        self.assertEqual(toks[0].type, 'collection_open')
+
+
 class TestNameSets(IsolatedAsyncioTestCase):
 
     async def test_special_names_non_empty(self):

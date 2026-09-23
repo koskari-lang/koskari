@@ -167,8 +167,7 @@ def special_compile_syntax_rules(compiler, called_by, name, literals, rules):
         parts.append(_emit_parse_rule_pattern(pattern_src, literals_expr))
         parts.append(cons(_sym_quote, template_expr, nil))
 
-    return cons(symbol("build-syntax"),
-                str(namesym), *parts, nil)
+    return cons(symbol("build-syntax"), str(namesym), *parts, nil)
 
 
 _BARE_SYNTAX_PATTERNS = [

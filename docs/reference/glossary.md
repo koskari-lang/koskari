@@ -78,12 +78,14 @@ with examples, see [Guide](../guide/index.md).
   forms before compilation.
 
 **mark**
-: The stamp hygiene puts on a symbol or keyword a macro template introduced:
-  the expansion that wrote it. The compiler binds and resolves a marked name
+: The stamp hygiene puts on a symbol a macro template introduced: the
+  expansion that wrote it. The compiler binds and resolves a marked name
   under its own spelling, `tmp#1a`, and a marked name nothing bound falls
-  back to the plain name. `quote` strips marks; `quote-syntax` keeps them.
-  See [Macros and hygiene](../guide/macros-and-hygiene.md) and
-  [compile/quote-syntax](specials/compile-quote-syntax.md).
+  back to the plain name. `quote` and `quasiquote` strip marks;
+  `quote-syntax` (`#'`) and `quasiquote-syntax` (`` #` ``) keep them.
+  See [Hygiene](../guide/hygiene.md),
+  [compile/quote-syntax](specials/compile-quote-syntax.md), and
+  [compile/quasiquote-syntax](specials/compile-quasiquote-syntax.md).
 
 **match**
 : Two senses. In compile-time documentation, and throughout this glossary unless

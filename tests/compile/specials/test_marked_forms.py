@@ -153,6 +153,35 @@ class TestMarkedForms(SpecialsTestCase):
         self.assertEqual(list(unpack(await expr())), [S("a"), 2])
 
 
+    async def test_quote_syntax_keeps_marks(self):
+        form = build_proper(S("quote-syntax"), build_proper(M("t"), S("u")))
+        expr, module = self.compile_form(form)
+        items = list(unpack(await expr()))
+        self.assertIs(items[0], M("t"))
+        self.assertIs(items[1], S("u"))
+        form = build_proper(S("quote-syntax"), M("t"))
+        expr, module = self.compile_form(form)
+        self.assertIs(await expr(), M("t"))
+
+
+    async def test_quasiquote_syntax_keeps_marks_and_reads_unquote(self):
+        form = build_proper(
+            S("quasiquote-syntax"),
+            build_proper(
+                M("a"),
+                build_proper(S("unquote"), build_proper(S("add"), 1, 1)),
+                build_proper(S("unquote-splicing"), S("rest"))))
+        expr, module = self.compile_form(
+            form, add=lambda a, b: a + b, rest=build_proper(M("z")))
+        items = list(unpack(await expr()))
+        self.assertIs(items[0], M("a"))
+        self.assertEqual(items[1], 2)
+        self.assertIs(items[2], M("z"))
+        form = build_proper(S("quasiquote-syntax"), M("t"))
+        expr, module = self.compile_form(form)
+        self.assertIs(await expr(), M("t"))
+
+
     async def test_attribute_name_is_a_label(self):
         class Obj:
             name = "n"

@@ -60,7 +60,8 @@ from .pairs import (
     special_car, special_cdr, special_cons, special_quote,
     special_quote_syntax)
 from .quasiquote import (
-    special_quasiquote, special_unquote, special_unquote_splicing)
+    special_quasiquote, special_quasiquote_syntax, special_unquote,
+    special_unquote_splicing)
 from .refs import (
     special_bindq, special_deref, special_ref_attr, special_ref_item,
     special_refq)
@@ -166,6 +167,7 @@ __all__ = (
     "special_parameterize",
     "special_power",
     "special_quasiquote",
+    "special_quasiquote_syntax",
     "special_quote",
     "special_quote_syntax",
     "special_raise",

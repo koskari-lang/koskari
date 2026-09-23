@@ -80,8 +80,10 @@ _symbol_decimal = symbol("decimal")
 _symbol_format = symbol("format")
 _symbol_fraction = symbol("fraction")
 _symbol_quasiquote = symbol("quasiquote")
+_symbol_quasiquote_syntax = symbol("quasiquote-syntax")
 _symbol_attr = symbol("attr")
 _symbol_quote = symbol("quote")
+_symbol_quote_syntax = symbol("quote-syntax")
 _symbol_decorate = symbol("decorate")
 _symbol_ref = symbol("ref")
 _unary_symbols = {c: symbol(c) for c in "-+~"}
@@ -1618,7 +1620,8 @@ class Reader:
 
     def _read_collection(self, stream, fchar):
         """
-        Read a collection literal (#(...), #[...], #{...})
+        Read a collection literal (#(...), #[...], #{...}), or the
+        quote-syntax and quasiquote-syntax prefixes (#'form, #`form)
 
         :param stream: the source stream
         :param fchar: the '#' character
@@ -1626,6 +1629,13 @@ class Reader:
         """
 
         peek = stream.peek(1)
+        if peek == "'":
+            stream.read(1)
+            return self._read_quote(stream, fchar + peek, _symbol_quote_syntax)
+        if peek == "`":
+            stream.read(1)
+            return self._read_quasiquote(
+                stream, fchar + peek, _symbol_quasiquote_syntax)
         if peek not in "({[":
             return DEFER, None
 
@@ -1961,12 +1971,14 @@ class Reader:
         return VALUE, value
 
 
-    def _read_quote(self, stream, char):
+    def _read_quote(self, stream, char, head=_symbol_quote):
         """
         Read a quoted expression ('expr)
 
         :param stream: the source stream
         :param char: the quote character
+        :param head: the symbol heading the read form, ``quote`` or
+            ``quote-syntax``
         :return: tuple of (VALUE, (quote expr))
         """
 
@@ -1979,15 +1991,17 @@ class Reader:
             msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
 
-        return VALUE, cons(_symbol_quote, child, nil)
+        return VALUE, cons(head, child, nil)
 
 
-    def _read_quasiquote(self, stream, char):
+    def _read_quasiquote(self, stream, char, head=_symbol_quasiquote):
         """
         Read a quasiquoted expression (`expr)
 
         :param stream: the source stream
         :param char: the backquote character
+        :param head: the symbol heading the read form, ``quasiquote`` or
+            ``quasiquote-syntax``
         :return: tuple of (VALUE, (quasiquote expr))
         """
 
@@ -2002,7 +2016,7 @@ class Reader:
             msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
 
-        return VALUE, cons(_symbol_quasiquote, child, nil)
+        return VALUE, cons(head, child, nil)
 
 
     def _fence_predicate(self, stream, c, atom_prefix):

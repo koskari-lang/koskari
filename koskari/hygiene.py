@@ -239,11 +239,11 @@ def expand_template_with_hygiene(template, bindings, mark=None):
 
 def mark_expansion(form, mark, seen=None):
     """
-    A copy of a procedural expansion with every symbol
-    outside a ``Datum`` boxed with ``mark``. A ``Datum`` is substituted
-    material and is carried over as it is; a pair inside one is never
-    entered. Pair cells are rebuilt with their positions and delimiter
-    style. A cell reached twice is a cycle, which source cannot hold
+    A copy of a procedural expansion with every symbol outside a
+    ``Datum`` scoped by ``mark``. A ``Datum`` is substituted material
+    and is carried over as it is; a pair inside one is never entered.
+    Pair cells are rebuilt with their positions and delimiter style. A
+    cell reached twice is a cycle, which source cannot hold
 
     :param form: the handler's output
     :param mark: the expansion mark

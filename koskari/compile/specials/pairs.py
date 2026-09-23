@@ -84,7 +84,7 @@ _sym_quote_syntax = symbol("quote-syntax")
 def special_quote_syntax(compiler, called_by, expr):
     """
     Compile (compile/quote-syntax FORM) as ``quote`` does, keeping the
-    marks on the atoms. A syntax transformer's patterns and templates
+    marks on the symbols. A syntax transformer's patterns and templates
     are quoted this way: a template a macro-generating macro introduced
     carries the outer expansion's marks, and its references must resolve
     to what that expansion bound
