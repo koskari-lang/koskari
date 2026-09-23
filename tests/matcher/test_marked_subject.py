@@ -68,19 +68,6 @@ class TestMarkedSubject(unittest.TestCase):
         self.assertIs(_peel(result.captures["name"]), symbol("n"))
 
 
-    def test_formals_keyword_headed_cell_keeps_mark(self):
-        m = MATCH(FORMALS("f")).build()
-        kw = Mark(keyword("argv"), 1)
-        cell = build_proper(kw, None)
-        result = m.match(build_proper(build_proper(cell)))
-        self.assertTrue(result.matched)
-        frame = _peel(result.captures["f"])
-        pos = frame["positionals"]
-        self.assertEqual(len(pos), 1)
-        self.assertIs(_peel(pos[0]["kw"]), kw)
-        self.assertIsNone(_peel(pos[0]["default"]))
-
-
     def test_formals_positional_keeps_mark(self):
         m = MATCH(FORMALS("f")).build()
         sx = Mark(symbol("x"), 1)

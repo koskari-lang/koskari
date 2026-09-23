@@ -16,11 +16,13 @@
 tests.reproducers.test_clause_body_hygiene
 
 A syntax-rules template that defines a function inside a cond, match,
-try, or when clause must rename the function's formals and the body's
-references to them together. The clause bodies of those specials were
-captured with REST, which registers no hygiene region, so binder
-discovery never descended into them. A nested macro whose plan holds
-only a repeat edge blocked discovery the same way
+try, or when clause must scope the function's formals and the body's
+references to them together: a symbol formal and its reference carry
+the same marks, and a keyword formal keeps the name the caller writes
+while the body's scoped reference falls back to it. The clause bodies
+of those specials were captured with REST, which registers no hygiene
+region, so binder discovery never descended into them. A nested macro
+whose plan holds only a repeat edge blocked discovery the same way
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -30,10 +32,10 @@ import unittest
 
 import pytest
 
-from koskari.lib import symbol
+from koskari.lib import keyword, symbol
 from koskari.module import load_module_source_async, new_module
 from koskari.types import (
-    is_keyword, is_mark, is_pair, is_symbol, strip_mark, unpack)
+    is_mark, is_pair, is_symbol, strip_mark, unpack)
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -121,42 +123,40 @@ class TestClauseBodyHygiene(unittest.IsolatedAsyncioTestCase):
         return module
 
 
-    def assert_keyword_formal_renamed(self, expansion):
+    def assert_keyword_formal_scoped(self, expansion):
         formals, body = find_define(expansion)
-        self.assertTrue(is_mark(formals[0]))
-        self.assertTrue(is_keyword(formals[0].datum))
+        self.assertIs(formals[0], keyword("argv"))
         self.assertTrue(is_mark(body))
-        self.assertTrue(is_symbol(body.datum))
-        self.assertEqual(str(formals[0]), str(body))
+        self.assertIs(strip_mark(body), symbol("argv"))
         self.assertNotEqual(str(body), "argv")
 
 
-    async def test_cond_clause_renames_keyword_formal(self):
+    async def test_cond_clause_scopes_keyword_formal(self):
         mod = await self.load("cbh_cond")
-        self.assert_keyword_formal_renamed(vars(mod)["cond-expansion"])
+        self.assert_keyword_formal_scoped(vars(mod)["cond-expansion"])
         self.assertEqual(await vars(mod)["fa"](1), 1)
 
 
-    async def test_match_clause_renames_keyword_formal(self):
+    async def test_match_clause_scopes_keyword_formal(self):
         mod = await self.load("cbh_match")
-        self.assert_keyword_formal_renamed(vars(mod)["match-expansion"])
+        self.assert_keyword_formal_scoped(vars(mod)["match-expansion"])
         self.assertEqual(await vars(mod)["fb"](2), 2)
 
 
-    async def test_try_clause_renames_keyword_formal(self):
+    async def test_try_clause_scopes_keyword_formal(self):
         mod = await self.load("cbh_try")
-        self.assert_keyword_formal_renamed(vars(mod)["try-expansion"])
+        self.assert_keyword_formal_scoped(vars(mod)["try-expansion"])
         self.assertEqual(await vars(mod)["fc"](3), 3)
 
 
-    async def test_when_macro_renames_keyword_formal(self):
+    async def test_when_macro_scopes_keyword_formal(self):
         """
         when is a syntax-rules macro with an ellipsis; its plan has a
         repeat edge and nothing to walk, and must not stop discovery
         """
 
         mod = await self.load("cbh_when")
-        self.assert_keyword_formal_renamed(vars(mod)["when-expansion"])
+        self.assert_keyword_formal_scoped(vars(mod)["when-expansion"])
         self.assertEqual(await vars(mod)["fe"](5), 5)
 
 
@@ -164,7 +164,7 @@ class TestClauseBodyHygiene(unittest.IsolatedAsyncioTestCase):
         mod = await self.load("cbh_pos")
         formals, body = find_define(vars(mod)["pos-expansion"])
         self.assertTrue(is_mark(formals[0]))
-        self.assertTrue(is_symbol(formals[0].datum))
+        self.assertTrue(is_symbol(strip_mark(formals[0])))
         self.assertEqual(formals[0], body)
         self.assertNotEqual(str(body), "argv")
         self.assertEqual(await vars(mod)["fd"](4), 4)

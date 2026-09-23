@@ -116,13 +116,13 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertEqual(loaded, value)
 
     def test_mark_const_roundtrip(self):
-        """a marked template atom round-trips with its atom and marks"""
-        for value in (Mark(symbol("t"), (1, 255)), Mark(keyword("k"), 7)):
-            loaded = self._const_roundtrip(value)
-            self.assertIsInstance(loaded, Mark)
-            self.assertEqual(loaded, value)
-            self.assertIs(loaded.datum, value.datum)
-            self.assertEqual(loaded.marks, value.marks)
+        """a Mark round-trips with its atom and marks"""
+        value = Mark(symbol("t"), (1, 255))
+        loaded = self._const_roundtrip(value)
+        self.assertIsInstance(loaded, Mark)
+        self.assertEqual(loaded, value)
+        self.assertIs(loaded.datum, value.datum)
+        self.assertEqual(loaded.marks, value.marks)
 
     def test_gensym_const_roundtrip(self):
         """

@@ -17,12 +17,13 @@ koskari.hygiene
 
 Template expansion and expansion finalize for syntax transformers.
 
-Hygiene is provenance: a symbol or keyword a template introduced is
-boxed in a Mark carrying the expansion that introduced it, and the
-compiler declares and resolves it under the mangled key the Mark
-spells. Material substituted from the use site arrives in Datum boxes
-from the matcher and is never marked. Finalize peels the Datum boxes
-for compilation and leaves the Marks for the compiler
+Hygiene is provenance: a symbol a template introduced becomes a gensym
+carrying the expansion that introduced it, and the compiler declares
+and resolves it under the spelling the gensym derives. A keyword is a
+label and carries no marks. Material substituted from the use site
+arrives in Datum boxes from the matcher and is never marked. Finalize
+peels the Datum boxes for compilation and leaves the gensyms for the
+compiler
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -31,9 +32,9 @@ for compilation and leaves the Marks for the compiler
 
 from koskari.exceptions import CompilerError
 from koskari.lib import (
-    Datum, Mark, bracket_cons, bracket_nil, bracket_pair, cons, symbol)
+    Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym)
 from koskari.types import (
-    build_proper, get_position, is_keyword, is_mark, is_nil, is_pair,
+    build_proper, get_position, is_mark, is_nil, is_pair,
     is_symbol, strip_mark, unpack)
 
 
@@ -51,30 +52,28 @@ __all__ = (
 
 def mark_atom(atom, mark):
     """
-    The atom boxed with ``mark``: a symbol or keyword becomes a Mark
-    over it, a Mark gains ``mark`` as its newest, and anything else is
-    returned unchanged
+    The atom scoped by ``mark``: a symbol becomes a gensym over it, a
+    gensym gains ``mark`` as its newest, and anything else, keywords
+    included, is returned unchanged
 
     :param atom: a source atom
     :param mark: the expansion mark, an int
     """
 
     if is_mark(atom):
-        return Mark(strip_mark(atom), atom.marks + (mark,))
-    if is_symbol(atom) or is_keyword(atom):
-        return Mark(atom, mark)
+        return gensym(strip_mark(atom), marks=atom.marks + (mark,))
+    if is_symbol(atom):
+        return gensym(atom, marks=mark)
     return atom
 
 
 def _binding_key(atom):
     """
     The symbol a template atom is looked up under in the pattern
-    bindings: itself for a symbol or a gensym, which is interned under
-    its own spelling, and the symbol spelling its key for a Mark
+    bindings: itself, since a gensym is interned under its own spelling
+    and a slot named by that spelling is that gensym
     """
 
-    if isinstance(atom, Mark):
-        return symbol(str(atom))
     return atom
 
 
@@ -171,7 +170,7 @@ def _slice_bindings(bindings, controlling, index):
 def expand_template_with_hygiene(template, bindings, mark=None):
     """
     Substitute pattern bindings into a template and mark the symbols
-    and keywords the template itself introduces.
+    the template itself introduces.
 
     Ellipsis repetition is depth-aware: a variable captured under N pattern
     ellipses carries N nested repeat sequences, and each template ``...`` peels
@@ -198,11 +197,6 @@ def expand_template_with_hygiene(template, bindings, mark=None):
                     template)
             return val
 
-        if mark is None:
-            return template
-        return mark_atom(template, mark)
-
-    if is_keyword(template):
         if mark is None:
             return template
         return mark_atom(template, mark)
@@ -256,7 +250,7 @@ def expand_template_with_hygiene(template, bindings, mark=None):
 
 def mark_expansion(form, mark, seen=None):
     """
-    A copy of a procedural expansion with every symbol and keyword
+    A copy of a procedural expansion with every symbol
     outside a ``Datum`` boxed with ``mark``. A ``Datum`` is substituted
     material and is carried over as it is; a pair inside one is never
     entered. Pair cells are rebuilt with their positions and delimiter
@@ -317,7 +311,7 @@ def peel_datums(form):
     code and is not entered. ``Datum`` layers along a cdr chain are
     unboxed the same way
 
-    :param form: expansion output (pairs, atoms, ``Datum``, ``Mark``)
+    :param form: expansion output (pairs, atoms, ``Datum``, gensyms)
     :rtype: same root object as ``form`` after in-place updates where
         applicable
     """

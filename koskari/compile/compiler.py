@@ -1004,10 +1004,6 @@ class Compiler:
         source object carrying its own position wins over it
         """
 
-        # a marked keyword is the keyword: only a symbol binds or resolves
-        if is_mark(source_obj) and is_keyword(strip_mark(source_obj)):
-            source_obj = strip_mark(source_obj)
-
         if is_symbol(source_obj) or is_mark(source_obj):
             dispatch = self.compile_symbol
         elif is_pair(source_obj):

@@ -124,7 +124,7 @@ def assert_lambda_ng_formal_renamed(test, expanded, original_name):
     else:
         param = formals_cell
     test.assertTrue(is_mark(param))
-    test.assertTrue(is_symbol(param.datum))
+    test.assertTrue(is_symbol(strip_mark(param)))
     test.assertNotEqual(str(param), original_name)
 
 

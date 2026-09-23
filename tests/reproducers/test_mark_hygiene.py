@@ -28,9 +28,9 @@ import unittest
 
 import pytest
 
-from koskari.lib import keyword
+from koskari.lib import keyword, symbol
 from koskari.module import load_module_source_async, new_module
-from koskari.types import is_symbol, strip_mark, unpack
+from koskari.types import strip_mark, unpack
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -88,8 +88,55 @@ class TestQuoteStripsMarks(unittest.IsolatedAsyncioTestCase):
         value, quoted = list(unpack(ns["result"]))
         self.assertEqual(value, 1)
         sym = list(unpack(quoted))[0]
-        self.assertTrue(is_symbol(sym))
-        self.assertEqual(str(sym), "t")
+        self.assertIs(type(sym), symbol)
+        self.assertIs(sym, symbol("t"))
+
+
+class TestQuasiquoteStripsMarks(unittest.IsolatedAsyncioTestCase):
+    """
+    A symbol a template writes inside a quasiquote is data: the runtime
+    value is the plain interned symbol by exact type, since a gensym
+    would print the same spelling
+    """
+
+    SRC = """
+(define-syntax tagged
+  (syntax-rules []
+    [(tagged v) `(tag ,v)]))
+
+(define result (tagged 5))
+"""
+
+    async def test_quasiquoted_symbol_is_bare(self):
+        ns = await load("mh_quasiquote", self.SRC)
+        head, value = list(unpack(ns["result"]))
+        self.assertIs(type(head), symbol)
+        self.assertIs(head, symbol("tag"))
+        self.assertEqual(value, 5)
+
+
+class TestByRefKeywordFormalInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    A by-ref keyword formal a template writes binds under the name the
+    caller writes, so the caller can pass a cell for it by that name
+    """
+
+    SRC = """
+(define-syntax mk-fill
+  (syntax-rules []
+    [(mk-fill name) (define name [&out: 99] out)]))
+
+(mk-fill fill)
+(define mine)
+(fill out: &mine)
+(define filled mine)
+"""
+
+    async def test_caller_name_is_bare(self):
+        ns = await load("mh_byref_keyword", self.SRC)
+        self.assertEqual(ns["filled"], 99)
+        self.assertEqual(ns["fill"].formals.kwd, ("out",))
+        self.assertEqual(ns["fill"].formals.by_refs, ("out",))
 
 
 class TestSiblingDefinitions(unittest.IsolatedAsyncioTestCase):

@@ -14,13 +14,11 @@
 """
 tests.reproducers.test_formals_keyword_hygiene
 
-Defect reproducer, RED until fixed: a parameter a macro template
-declares must not capture an identifier the template splices in from
-the use site. That holds for a formal named by a symbol and fails for
-one named by a keyword, because hygiene renames symbols only: the
-binder keyword keeps its literal name, so the spliced use-site
-reference resolves to the macro's parameter instead of the caller's
-binding, silently and with no error.
+A parameter a macro template names by a symbol must not capture an
+identifier the template splices in from the use site. A parameter
+named by a keyword is the name the caller writes: hygiene renames
+symbols only, so the keyword keeps its literal name and the template's
+own body still reads it.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -43,14 +41,6 @@ define-syntax pos-capture:
   syntax-rules ():
     ((_ body) (lambda [y] (begin body)))
 
-define-syntax kw-capture:
-  syntax-rules ():
-    ((_ body) (lambda [y: 1] (begin body)))
-
-define-syntax kwonly-capture:
-  syntax-rules ():
-    ((_ body) (lambda [*: () y: 1] (begin body)))
-
 define-syntax kw-own-body:
   syntax-rules ():
     ((_) (lambda [y: 7] y))
@@ -62,12 +52,6 @@ define-syntax kwonly-own-body:
 define check-pos []:
   ((pos-capture y) 3)
 
-define check-kw []:
-  ((kw-capture y))
-
-define check-kwonly []:
-  ((kwonly-capture y))
-
 define check-kw-own []:
   ((kw-own-body))
 
@@ -78,7 +62,8 @@ define check-kwonly-own []:
 
 class TestFormalsKeywordHygiene(unittest.IsolatedAsyncioTestCase):
     """
-    A template parameter named by a keyword shadows no use-site name
+    A template parameter named by a symbol shadows no use-site name; one
+    named by a keyword keeps the caller's spelling
     """
 
     async def load(self, name):
@@ -96,26 +81,9 @@ class TestFormalsKeywordHygiene(unittest.IsolatedAsyncioTestCase):
         mod = await self.load("fkh_pos")
         self.assertEqual(await vars(mod)["check-pos"](), 99)
 
-    async def test_keyword_default_formal_does_not_capture(self):
-        """
-        a positional default names its parameter with a keyword and
-        must not swallow a spliced use-site y
-        """
-
-        mod = await self.load("fkh_kw")
-        self.assertEqual(await vars(mod)["check-kw"](), 99)
-
-    async def test_kwonly_default_formal_does_not_capture(self):
-        """
-        the same for a kw-only default
-        """
-
-        mod = await self.load("fkh_kwonly")
-        self.assertEqual(await vars(mod)["check-kwonly"](), 99)
-
     async def test_keyword_formal_still_visible_in_its_own_body(self):
         """
-        renaming the binder keeps the template's own body reading it
+        the template's scoped reference falls back to the keyword's name
         """
 
         mod = await self.load("fkh_own")
