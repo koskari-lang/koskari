@@ -351,10 +351,14 @@ one case.
 ### Quoting
 
 `quote` and `quasiquote` strip marks from literal data, so `'(t)` in a
-template yields the bare symbol. `compile/quote-syntax` keeps them; the
-syntax specials quote patterns, literals, and templates with it, which is what
-lets a macro-generating macro's inner template reach the outer expansion's
-binder. The codex serializes a gensym as its base and marks (pool kind
+template yields the bare symbol. `compile/quote-syntax` and
+`compile/quasiquote-syntax`, read as `#'` and `` #` ``, keep them. The
+syntax specials quote patterns, literals, and templates with `quote-syntax`,
+which is what lets a macro-generating macro's inner template reach the
+outer expansion's binder; a procedural macro a template defines builds its
+output with `quasiquote-syntax` for the same reason, since a plain backtick
+projects the outer marks and the output resolves at the use site. The codex
+serializes a gensym as its base and marks (pool kind
 `GENSYM`), ahead of the symbol arm it would otherwise match, and decodes it
 back to the interned gensym.
 

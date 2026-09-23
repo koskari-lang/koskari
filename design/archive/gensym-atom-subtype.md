@@ -2,9 +2,35 @@
 
 ## Status
 
-Specified for branch `hygiene-rework`. `Mark` and the `gensym` builtin
-become one type, `KosGensym`, a subtype of the interned symbol. The
-matcher stops carrying hygiene. Name resolution is untouched.
+Archived specification. Implemented on branch `hygiene-rework`
+(`0aaebd75` through `1b64c70b`, 2026-09-23 and 24). `Mark` and the
+`gensym` builtin are one type, a subtype of the interned symbol; the
+matcher carries no hygiene; name resolution is unchanged. The rollups
+are [MATCHER.md](MATCHER.md) and [SPECIALS.md](SPECIALS.md); the user
+page is `docs/guide/hygiene.md`.
+
+As built, against the text below:
+
+- The type lives in `koskari/lib/atom.c` beside symbol and keyword and
+  shares `intern_syms`; there is no `gensym.c/h` unit.
+- One Python name: `gensym(name=None, predicate=None, *, marks=None)`
+  mints a fresh mark or spells a base under given marks, raising
+  `ValueError` when another atom holds the spelling; `gensym.next_mark()`
+  is the process counter, seeded from `os.urandom`.
+- Equality is identity, with no `tp_richcompare` or `tp_hash`; the
+  base-equality rule was dropped for the reasons in Feedback.
+- `base` is a getset on symbol and keyword as well, returning the atom.
+- `strip_mark` and `strip_marks` stay in `koskari/types.py` for sites
+  whose operand may be a pair; `is_mark` is gone, and a known atom reads
+  `.base`.
+- Keywords carry no marks. A keyword-named formal binds the caller's
+  spelling and is not renamed; a template's scoped reference to it falls
+  back to that name.
+- `quote` and `quasiquote` project marks. `quote-syntax` stays for the
+  transformer lowerings, and `quasiquote-syntax` was added after this
+  note for a procedural macro a template defines, with the reader
+  prefixes `#'` and `` #` `` and matching layout block forms.
+- Pool kind `GENSYM` takes the number `MARK` held, 24.
 
 ## Summary
 
