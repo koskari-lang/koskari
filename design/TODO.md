@@ -104,6 +104,17 @@ rule. Dead-region sweep and label GC stay last, if at all.
 
 Ref: [extent-verification.md](extent-verification.md).
 
+### Externs slot in NamespaceSpec (investigate)
+
+A fourth name list on `NamespaceSpec`: names a frame reads from a
+fully qualified module attribute rather than a scope, so a template's
+free name can resolve in the macro's own module. Bound at frame
+creation or lazily through a cached read opcode; the qualifier comes
+from the expanding transformer. Frame-level definitions stay on the
+use-site rule.
+
+Ref: [namespace-externs.md](namespace-externs.md).
+
 ### Dict literal compression (review)
 
 A theoretical `compile/#dict` form could compress `(#dict ...)` calls
