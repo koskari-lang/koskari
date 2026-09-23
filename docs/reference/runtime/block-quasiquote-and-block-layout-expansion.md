@@ -7,9 +7,10 @@ and leaves the `block:` structure alone, so a filled block is still reader
 form, not source the compiler accepts.
 
 Module reading expands blocks as it goes. Macro expansion applies the layout
-handlers to a transformer's output before hygiene runs, so a macro whose
-template is a [block quasiquote](../specials/compile-quasiquote-block.md) needs
-no extra step. Code that builds a `block:` cons at run time and wants source
+handlers to a transformer's output before the captured material is unboxed,
+so a macro whose template is a
+[block quasiquote](../specials/compile-quasiquote-block.md) needs no extra
+step. Code that builds a `block:` cons at run time and wants source
 out of it calls `apply-layout` or `apply-layouts`.
 
 ## `apply-layout`

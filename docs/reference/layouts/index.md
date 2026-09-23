@@ -58,8 +58,9 @@ handler turns a keyword line into a keyword argument.
 
 Quoted and quasiquoted blocks keep the `block:` structure as data,
 through `layout/quote` and `layout/quasiquote`, and a macro template
-that contains a block is expanded through `apply_layout` before hygiene
-so that expansion matches what the reader would have produced.
+that contains a block is expanded through `apply_layout` before the
+captured material is unboxed, so that expansion matches what the
+reader would have produced.
 
 ## Writing a handler
 

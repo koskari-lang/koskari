@@ -54,8 +54,8 @@ A nested peer stays a nested entry:
 ```
 
 **Expansion:** A filled block is still reader form. Macro expansion runs the
-layout handlers over a transformer's output before hygiene, so a macro whose
-template is a block quasiquote needs no extra step. A pipeline that builds a
+layout handlers over a transformer's output before the captured material is
+unboxed, so a macro whose template is a block quasiquote needs no extra step. A pipeline that builds a
 block at run time and wants source out of it calls
 [`apply-layout`](../runtime/block-quasiquote-and-block-layout-expansion.md)
 itself:
