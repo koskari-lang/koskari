@@ -238,7 +238,7 @@ def apply_lines(entries, target):
         entry, tail = entries
 
         if _is_block(entry):
-            if is_keyword(strip_mark(entry.cdr.car.car)):
+            if is_keyword(entry.cdr.car.car):
                 out.append(entry)
             else:
                 lowered, tail = _lower_block(entry, tail, reader)

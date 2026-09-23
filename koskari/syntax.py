@@ -660,7 +660,7 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
             f" (context {source_ctx!r})"
         )
 
-    if is_symbol(strip_mark(pattern_expr)):
+    if is_symbol(pattern_expr):
         if pattern_expr in literals:
             return MATCH(LITERAL(strip_mark(pattern_expr)))
         return MATCH(REST(str(pattern_expr)))
@@ -706,7 +706,7 @@ def _syntax_elem_pattern(pat, literals, source_ctx, seen):
             f" (context {source_ctx!r})"
         )
 
-    if is_symbol(strip_mark(pat)):
+    if is_symbol(pat):
         # a literal matches by name; a pattern variable a template
         # introduced keeps its mark in its slot name, so the marked
         # template reference finds it and a bare use-site symbol does not
@@ -732,7 +732,7 @@ def _syntax_pattern_specs(p_items, literals, source_ctx, seen):
     while i < len(p_items):
         if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
             pat = p_items[i]
-            if is_symbol(strip_mark(pat)) and pat not in literals:
+            if is_symbol(pat) and pat not in literals:
                 if i + 2 < len(p_items):
                     specs.append(REST(str(pat)))
                 else:

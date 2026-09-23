@@ -30,7 +30,7 @@ from ...matcher import (
     VALUE, parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
 from ...syntax import parse_syntax_rules_pattern, special
 from ...types import (
-    build_proper, is_pair, is_proper, is_symbol, strip_mark, unpack)
+    build_proper, is_pair, is_proper, is_symbol, unpack)
 from ..helpers import match1
 
 
@@ -396,7 +396,7 @@ def special_compile_special_match(compiler, called_by, name, rules):
         inner = res["pattern"].datum
         body_src = res["body"].datum
 
-        if is_symbol(strip_mark(inner)):
+        if is_symbol(inner):
             inner = cons(cons(symbol("REST"), inner, nil), nil)
 
         pattern_matcher = parse_explicit_rule_pattern(inner)
@@ -422,7 +422,7 @@ def collect_pattern_variable_symbols(pattern_expr, literals):
         if expr is Ellipsis:
             return
 
-        if is_symbol(strip_mark(expr)):
+        if is_symbol(expr):
             if expr in literals:
                 return
 

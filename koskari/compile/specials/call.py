@@ -25,7 +25,7 @@ from ...bootstrap import builtin
 from ...lib import OpCode, cons, nil, symbol
 from ...matcher import BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, SYMBOL, VALUE
 from ...syntax import special
-from ...types import fill_position, strip_mark
+from ...types import fill_position
 from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import gather_parameters, is_symbolish
 
@@ -220,7 +220,7 @@ def special_call(
         obj, rest = rest
         rewritten = cons(
             _sym_call_attr,
-            obj, symbol(str(strip_mark(callable))[1:]), rest)
+            obj, symbol(str(callable.base)[1:]), rest)
         fill_position(rewritten, pos)
         return rewritten
 
@@ -229,7 +229,7 @@ def special_call(
         # the var path names the callable directly rather than routing it
         # through compile_symbol, so the stray-colon check has to run here.
         # The other path calls full_compile, which checks for us.
-        compiler.check_stray_colon(strip_mark(callable), pos)
+        compiler.check_stray_colon(callable.base, pos)
         fragment.request_var(callable)
 
     fragment.position(pos)
@@ -267,7 +267,7 @@ def special_call_attr(
     pos = caps["called-by"].position
 
     obj = caps["obj"].datum
-    attr = str(strip_mark(caps["attr"].datum))
+    attr = str(caps["attr"].datum.base)
     args_src = caps["args"].datum if "args" in caps else nil
 
     fragment = compiler.fragment(called_by)

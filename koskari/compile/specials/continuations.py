@@ -27,7 +27,7 @@ from ...bootstrap import builtin
 from ...lib import OpCode, cons, nil, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
-from ...types import is_keyword, strip_mark
+from ...types import is_keyword
 from ..helpers import helper_begin
 
 
@@ -183,7 +183,7 @@ def emit_values_form(compiler, source, opcode):
 
     count = 0
     while rest:
-        if is_keyword(strip_mark(rest.car)):
+        if is_keyword(rest.car):
             # discard work in progress and return as a transform to
             # invoke the form on the values instead.
             fixup = cons(cons(_symbol_values, source.cdr), nil)

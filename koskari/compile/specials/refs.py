@@ -26,7 +26,7 @@ from ...bootstrap import builtin
 from ...lib import OpCode
 from ...matcher import CALLEDBY, DEFINE, MATCH, SYMBOL, VALUE
 from ...syntax import special
-from ...types import is_pair, strip_mark
+from ...types import is_pair
 from ..helpers import emit_item_access
 
 
@@ -73,7 +73,7 @@ def special_ref_attr(compiler, called_by, obj, sym):
     frag = compiler.fragment(called_by.datum)
     frag.position(obj.position)
     frag.merge(compiler.full_compile(obj.datum))
-    frag.instruction(OpCode.ATTR_REF, str(strip_mark(sym.datum)))
+    frag.instruction(OpCode.ATTR_REF, str(sym.datum.base))
 
     return frag
 

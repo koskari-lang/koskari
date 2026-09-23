@@ -2,7 +2,7 @@
 
 Canonical reference for the native matcher (`koskari.lib.Matcher`), the Python
 pattern builders in `koskari.matcher`, the capture wrappers (`Datum`,
-`DatumFrame`), the expansion marks (`koskari.lib.Mark`) that carry macro
+`DatumFrame`), the scoped symbols (`koskari.lib.gensym`) that carry macro
 hygiene, and the **runtime match/case system** (the case-pattern dialect, the
 `MATCH_CASE` opcode, and `compile/match` / `layout/match`).
 
@@ -95,24 +95,29 @@ expansion as their `Datum`. A `Datum` is never marked and never entered:
 whatever is inside came from the use site. Finalize (`peel_datums`) unboxes
 the cells for compilation and moves each position onto its cell.
 
-The matcher reads through `Datum` and `Mark` layers when it matches shape,
-so a template's marked atoms and a use site's boxed ones match `SYMBOL`,
-`LITERAL_KW`, and the composites like bare atoms. A capture keeps the `Mark`
-and drops the `Datum` layers, so a marked cell comes back as
-`Datum(Mark(...))`.
+The matcher reads through `Datum` layers when it matches shape, so a use
+site's boxed atoms match `SYMBOL`, `LITERAL_KW`, and the composites like
+bare atoms. A gensym is a symbol and needs no peel: `SYMBOL` takes it,
+`TEST_LITERAL` matches it against the symbol it spells by pointer, and a
+capture hands it back as itself.
 
-### Mark
+### gensym
 
-`koskari.lib.Mark` boxes a symbol or keyword a template introduced together
-with the marks of the expansions that introduced it. It is immutable and
-compares by atom identity and marks.
+`koskari.lib.gensym` is a static subtype of `symbol`: a symbol a template
+introduced, scoped by the marks of the expansions that introduced it. It
+is interned in the symbol table under its derived spelling, so
+`symbol("t#1")` is the gensym when one is alive, and equality is identity
+as for every atom. `gensym(name, predicate)` mints a fresh mark from the
+process counter; `gensym(base, marks=...)` spells a base under given marks
+and raises `ValueError` when another atom holds the spelling.
+`gensym.next_mark()` hands out the next mark. Keywords are never scoped.
 
 | Field / property | Role |
 |------------------|------|
-| `.datum` | The symbol or keyword the template wrote |
+| `.base` | The symbol the template wrote; `.base` on a plain symbol or keyword is itself |
 | `.marks` | Tuple of expansion marks, outermost first |
-| `.key` / `str()` | The mangled name, `name#hex[#hex...]`, that the compiler declares and resolves |
-| `kos_repr` | The atom under the mark, so printed expansions read as source |
+| `str()` | The derived spelling, `name#hex[#hex...]`, that the compiler declares and resolves |
+| `kos_repr` | The base, so printed expansions read as source |
 
 ### DatumFrame
 
@@ -265,37 +270,42 @@ names with that knowledge at the point it declares or references them.
 
 ### Marking
 
-Each arm expansion allocates a fresh mark (`koskari.syntax._expansion_marks`),
-counting up from a base drawn once per process (`EXPANSION_MARK_BASE`), so a
-marked spelling serialized into a `.kio` by one process is not minted again
-for a different name by the process that loads it.
+Each arm expansion draws a fresh mark from `gensym.next_mark()`, a counter
+in C seeded once per process from a random 32-bit base, so a scoped
+spelling serialized into a `.kio` by one process is not minted again for a
+different name by the process that loads it.
 
-- A template arm marks every template-literal symbol and keyword while it
-  transcribes (`expand_template_with_hygiene(template, bindings, mark)`).
-  Substituted captures are spliced in as their `Datum`, unmarked.
-- A procedural arm's output is marked after the handler returns
-  (`mark_expansion`): every symbol and keyword outside a `Datum`. A
-  `Datum` the handler built, or spliced from a capture, is left alone.
-- Marking a `Mark` extends its tuple. That is the only way marks
+- A template arm scopes every template-literal symbol while it transcribes
+  (`expand_template_with_hygiene(template, bindings, mark)`). Keywords pass
+  through unchanged. Substituted captures are spliced in as their `Datum`,
+  unmarked.
+- A procedural arm's output is scoped after the handler returns
+  (`mark_expansion`): every symbol outside a `Datum`. A `Datum` the
+  handler built, or spliced from a capture, is left alone.
+- Scoping a gensym extends its tuple. That is the only way marks
   accumulate: a template symbol inside a `define-syntax` the outer template
   introduced is template-literal to the inner expansion as well.
 - Finalize peels the `Datum` boxes (`peel_datums`) and hands the form, marks
   intact, back into the compile loop.
 
-### Reading a marked atom
+A keyword formal a template writes therefore binds under the name the
+caller writes, and the template's scoped reference to it falls back to that
+name. A keyword-named parameter is the one binder hygiene does not rename.
 
-A `Mark` reaches the compiler wherever the template symbol would have. The
-rule at each site:
+### Reading a scoped atom
+
+A gensym reaches the compiler wherever the template symbol would have, and
+every symbol test accepts it. The rule at each site:
 
 | The atom is read as | Do |
 |---------------------|----|
-| a binder or a reference | use the key (`str(mark)`) |
-| a head in call position | `find_compiled` tries the key's candidates, then the bare name |
-| a tag, label, literal, attribute, import member, operator | `strip_mark` |
-| quoted data | `quote` / `quasiquote` strip; `quote-syntax` keeps |
+| a binder or a reference | use the spelling (`str(sym)`) |
+| a head in call position | `find_compiled` tries the spelling's candidates, then the bare name |
+| a tag, label, literal, attribute, import member, operator | `.base`, or `strip_mark` when the operand may not be an atom |
+| quoted data | `quote` / `quasiquote` project to the base; `quote-syntax` keeps the gensym |
 
-`koskari.types.strip_mark` peels one atom, `strip_marks` a whole form.
-`is_symbolish` in the compile helpers accepts a `Mark` over a symbol.
+`koskari.types.strip_mark` projects one value, `strip_marks` a whole form;
+`is_mark` is the exact-type test.
 Handlers that go through `gather_formals`, the unpack helpers,
 `compile_symbol`, and the fragment's `request_var` / `declare_var` get
 the key for free; a handler that reads a name by hand applies the table.
@@ -315,7 +325,8 @@ each with its `FunctionSpec`. A sibling defined later in the same body, as
 the functions of a `labels` form are, is therefore visible to a closure
 defined before it.
 
-The candidates for `Mark(t, (1, 2))` are `t#1#2`, `t#1`, `t`, longest first.
+The candidates for `gensym(t, marks=(1, 2))` are `t#1#2`, `t#1`, `t`,
+longest first.
 The first candidate declared in a visible scope wins: the inline scopes open
 around the reference in the instruction stream, the fragment itself, the
 fragments enclosing it. Failing that, a marked spelling already bound in the
@@ -330,7 +341,7 @@ carries one closure slot per name, not one per expansion.
 
 ### Heads
 
-`find_compiled(Mark)` tries `compile/<candidate>` for each candidate, so a
+`find_compiled(gensym)` tries `compile/<candidate>` for each candidate, so a
 transformer the same expansion defined under a marked spelling is found from
 the template that uses it, and every other marked head falls through to the
 bare special or macro. Specials and macros win over local bindings in head
@@ -343,12 +354,15 @@ one case.
 template yields the bare symbol. `compile/quote-syntax` keeps them; the
 syntax specials quote patterns, literals, and templates with it, which is what
 lets a macro-generating macro's inner template reach the outer expansion's
-binder. The codex serializes `Mark` (pool kind `MARK`).
+binder. The codex serializes a gensym as its base and marks (pool kind
+`GENSYM`), ahead of the symbol arm it would otherwise match, and decodes it
+back to the interned gensym.
 
 ### Display
 
-`kos_repr` of a `Mark` prints the atom, so `macroexpand-1` output and the
-corpus `expand` records read as source. `str` and `repr` show the key.
+`kos_repr` of a gensym prints the base, so `macroexpand-1` output and the
+corpus `expand` records read as source. `str` and `repr` show the derived
+spelling.
 
 ### Typical special-form shapes
 
@@ -539,11 +553,11 @@ from koskari.compile.helpers import match, match_pattern_raw
 | `pattern_slot_names(pat)` | Slot names in declaration order |
 | `match(source, patterns)` | Try patterns; optional `with_specs` |
 | `match_pattern_raw(source, patterns)` | First capture dict or `None` |
-| `expand_template_with_hygiene(tpl, bindings, mark)` | Transcribe and mark |
-| `mark_expansion(form, mark)` | Mark a procedural arm's output |
-| `finalize_expansion(form, mark=None)` | Mark when given, then peel `Datum` |
-| `strip_mark(atom)` / `strip_marks(form)` | The atom or form without marks |
-| `resolve_marks(fragment, ancestors)` | Resolve marked references at completion |
+| `expand_template_with_hygiene(tpl, bindings, mark)` | Transcribe and scope |
+| `mark_expansion(form, mark)` | Scope a procedural arm's output |
+| `finalize_expansion(form, mark=None)` | Scope when given, then peel `Datum` |
+| `strip_mark(atom)` / `strip_marks(form)` | The atom or form projected to bases |
+| `resolve_marks(fragment, ancestors)` | Resolve scoped references at completion |
 | `parse_case_pattern(content)` | Lower one match/case clause delimiter |
 | `parse_case_element(elem)` | Lower one case-pattern element |
 
@@ -557,8 +571,9 @@ from koskari.compile.helpers import match, match_pattern_raw
 | Repeat frames | `tests/matcher/test_repeat_frames.py` |
 | DatumFrame | `tests/syntax/test_syntax_bootstrap.py` (`TestDatumFrame`) |
 | Template expansion | `tests/hygiene/test_hygiene.py` |
-| Marks through the compiler | `tests/compile/specials/test_marked_forms.py` |
-| Marks through the matcher | `tests/matcher/test_marked_subject.py` |
+| The gensym type | `tests/lib/test_gensym.py` |
+| Gensyms through the compiler | `tests/compile/specials/test_marked_forms.py` |
+| Gensyms through the matcher | `tests/matcher/test_marked_subject.py` |
 | Hygiene end to end | `tests/reproducers/test_mark_hygiene.py` |
 | Special patterns | `koskari/compile/specials/` |
 | Case-pattern dialect, `APP`, `MAP` | `tests/matcher/test_case_patterns.py` |

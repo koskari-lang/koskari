@@ -40,10 +40,11 @@ Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
 **Marks and hygiene** — **`koskari.syntax`** and **`koskari.hygiene`** own
 template transcription and expansion finalize; macro output runs
 **`koskari.reader.layouts.apply_layout`** (module namespace), a procedural
-arm's output is marked, and the `Datum` boxes are peeled. A symbol or keyword
-a template introduced reaches the compiler as a **`Mark`** and is declared and
-resolved under its mangled key; a handler that reads a name by hand reads a
-tag or label through `strip_mark` and a binder or reference by its key. See
+arm's output is scoped, and the `Datum` boxes are peeled. A symbol a
+template introduced reaches the compiler as a **`gensym`**, a symbol
+subtype, and is declared and resolved under its derived spelling; a keyword
+is never scoped. A handler that reads a name by hand reads a tag or label
+through `.base` and a binder or reference by its spelling. See
 [MATCHER.md](MATCHER.md) § Hygiene model (**`Datum`**, **`DatumFrame`**,
 **`Mark`**) and, for the superseded design,
 [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) and

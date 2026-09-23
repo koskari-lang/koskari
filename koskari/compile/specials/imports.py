@@ -348,7 +348,7 @@ def special_import_from(compiler, called_by, module, members):
         # a member names an attribute of the module, a label read by its
         # bare spelling, and the binding it lands in, which keeps the
         # template's marks so the import binds apart from the use site
-        attrs.append(str(strip_mark(target)))
+        attrs.append(str(target.base))
         binds.append(bind if bind is not None else str(target))
 
     frag = compiler.fragment(called_by.datum)
@@ -445,7 +445,7 @@ def special_use(compiler, caps):
             raise SpecialError(
                 f"use member must name a feature, not {target!r}",
                 elem, position=pos)
-        stems.append(str(strip_mark(target)))
+        stems.append(str(target.base))
         binds.append(bind if bind is not None else str(target))
 
     frag = compiler.fragment(called_by.datum)

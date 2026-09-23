@@ -1901,7 +1901,7 @@ def frame_formal_name(fr):
     if v is None:
         return None, False
     kw = v.datum if isinstance(v, Datum) else v
-    if not is_keyword(strip_mark(kw)):
+    if not is_keyword(kw):
         return None, False
     s = str(kw)
     if s[:1] == "&":
@@ -2348,7 +2348,7 @@ def parse_matcher(elem):
         return LITERAL(atom)
 
     if "quoted_symbol" in c:
-        return LITERAL_SYM(str(strip_mark(c["quoted_symbol"].datum)))
+        return LITERAL_SYM(str(c["quoted_symbol"].datum.base))
 
     if "dcolon_args" in c:
         return lower_anon_constraint(
@@ -2413,7 +2413,7 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
     if not is_nil(tail) and is_pair(tail):
         decl_bind = tail.car
         factory = lookup_matcher(str(strip_mark(head)))
-        if factory is not None and is_symbol(strip_mark(decl_bind)):
+        if factory is not None and is_symbol(decl_bind):
             return factory(head, tail)
 
     specs = []
@@ -2629,7 +2629,7 @@ def _min_option_key(elem):
     Normalize a Koskari keyword to ``min`` for ``min:`` / ``min``
     """
 
-    return str(strip_mark(elem)).rstrip(":")
+    return str(elem).rstrip(":")
 
 
 def repeat_match_factory(head_sym, raw_args):
@@ -2651,7 +2651,7 @@ def repeat_match_factory(head_sym, raw_args):
     n = len(items)
     while i < n:
         elem = items[i]
-        if not is_keyword(strip_mark(elem)):
+        if not is_keyword(elem):
             raise ValueError(
                 "(REPEAT ...) trailing arguments must be keyword/value pairs,"
                 " got %r" % (elem,))
@@ -2689,7 +2689,7 @@ def rest_match_factory(head_sym, raw_args):
     n = len(items)
     while i < n:
         elem = items[i]
-        if not is_keyword(strip_mark(elem)):
+        if not is_keyword(elem):
             raise ValueError(
                 "(REST ...) trailing arguments must be keyword/value pairs,"
                 " got %r" % (elem,))
@@ -3107,7 +3107,7 @@ def _lower_case_class(name_sym, fields):
     # keyword names an attribute: both read by their bare spelling. A
     # self-binding field binds under its marked spelling and names the
     # attribute under the bare one
-    type_name = str(strip_mark(name_sym))
+    type_name = str(name_sym.base)
     field_objs = []
     items = list(unpack(fields))
     seen_keyword = False
@@ -3171,7 +3171,7 @@ def parse_case_element(elem):
         return LITERAL(atom)
 
     if "quoted_symbol" in c:
-        return LITERAL_SYM(str(strip_mark(c["quoted_symbol"].datum)))
+        return LITERAL_SYM(str(c["quoted_symbol"].datum.base))
 
     if "seq_head" in c:
         elems = c["seq_elems"].datum if "seq_elems" in c else nil

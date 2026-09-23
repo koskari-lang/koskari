@@ -35,7 +35,7 @@ from ...lib import Compare, OpCode, Operand, cons, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
 from ...types import (
-    is_keyword, is_nil, is_pair, is_symbol, strip_mark, unpack)
+    is_keyword, is_nil, is_pair, is_symbol, unpack)
 from ..helpers import (
     const_only_expr, emit_item_place, feeder_expr, is_symbolish,
     splat_call_form)
@@ -171,7 +171,7 @@ def emit_reduce_op(
     frag = compiler.fragment(head)
 
     expr, rest = body
-    if is_nil(rest) and not is_keyword(strip_mark(expr)):
+    if is_nil(rest) and not is_keyword(expr):
         if py_unary is None:
             raise SpecialError(
                 f"{head} requires at least two arguments",
@@ -204,7 +204,7 @@ def emit_reduce_op(
         body, have_acc, acc, pending = _reduce_fold(py_fold, compiler, body)
 
     for fm in unpack(body):
-        if is_keyword(strip_mark(fm)):
+        if is_keyword(fm):
             if have_acc:
                 return cons(symbol("call"), head, acc, body)
             else:
@@ -969,7 +969,7 @@ def inplace_operand(op):
     :raises SpecialError: when the symbol names no operator
     """
 
-    binop = _INPLACE_OPERAND_MAP.get(strip_mark(op.datum))
+    binop = _INPLACE_OPERAND_MAP.get(op.datum.base)
     if binop is None:
         raise SpecialError(
             "unknown inplace operator", op.datum, position=op.position)
@@ -1076,7 +1076,7 @@ def special_inplace_attr(compiler, called_by, op, obj, attr, values):
             op.datum, position=op.position)
 
     obj_expr = obj.datum
-    sym = str(strip_mark(attr.datum))
+    sym = str(attr.datum.base)
     count = len(value_exprs)
     frag = compiler.fragment(called_by.datum)
 

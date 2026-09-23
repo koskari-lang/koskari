@@ -72,7 +72,7 @@ def layout_block(reader, source, peers):
             f"{header.car} layout does not take peers",
             get_position(source))
 
-    if is_keyword(strip_mark(header.car)):
+    if is_keyword(header.car):
         return cons(header.car, keyword_block_value(reader, header, body), nil)
 
     ret = header.copy()
@@ -83,7 +83,7 @@ def layout_block(reader, source, peers):
             ret.append(keyword_block_value(reader, eheader, ebody))
             continue
         head, rest = entry
-        if is_keyword(strip_mark(head)) and not is_nil(rest):
+        if is_keyword(head) and not is_nil(rest):
             ret.append(head)
             ret.append(reader.fold_line(rest))
         else:

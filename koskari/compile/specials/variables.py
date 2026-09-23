@@ -30,7 +30,7 @@ from ...matcher import (
     BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR, REST,
     SYMBOL, VALUE)
 from ...syntax import special
-from ...types import is_pair, strip_mark
+from ...types import is_pair
 from ..helpers import (
     _parse_decl_tail, parse_decl, unpack_lhs_bind_symbols, using_unpack_helper)
 
@@ -337,7 +337,7 @@ def special_define(compiler, caps):
     # the template's marks
     scopes = compiler.lexical_stack
     if scopes and scopes[-1].collector_scope:
-        namesym = strip_mark(namesym)
+        namesym = namesym.base
     name = str(namesym)
 
     frag = compiler.fragment(called_by)

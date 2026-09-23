@@ -50,7 +50,7 @@ def _valid_block_header(header):
     True when header is a block head list whose car is a symbol
     """
 
-    return is_pair(header) and is_symbol(strip_mark(header.car))
+    return is_pair(header) and is_symbol(header.car)
 
 
 def match_block_source(form):

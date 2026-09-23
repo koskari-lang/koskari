@@ -77,10 +77,10 @@ def _transform(pos_map, form):
             else:
                 val = cons(_transform(pos_map, head), nil)
 
-        elif is_symbol(strip_mark(head)):
+        elif is_symbol(head):
             # a placeholder is a label: %1 written by a template is the
             # same slot as %1 written by hand, so it is read stripped
-            bare = strip_mark(head)
+            bare = head.base
             if _thunksym(str(bare)):
                 if bare in pos_map:
                     head = pos_map[bare]

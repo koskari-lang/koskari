@@ -34,7 +34,7 @@ from ..lib import (
     bracket_pair, cons, keyword, kos_repr, nil, symbol)
 from ..types import (
     fill_position, get_position, is_keyword, is_mark, is_nil, is_pair,
-    is_proper, is_symbol, parameterize, strip_mark, strip_marks)
+    is_proper, is_symbol, parameterize, strip_marks)
 from .pragma import (
     BracketCalls, KeywordLiterals, KoskariPragma, PackModule, ResolutionMode,
     StrayColon)
@@ -447,7 +447,7 @@ def mark_candidates(mark):
     :rtype: list of str
     """
 
-    base = str(strip_mark(mark))
+    base = str(mark.base)
     rungs = [f"#{m:x}" for m in mark.marks]
     out = []
     for n in range(len(rungs), 0, -1):
@@ -1037,7 +1037,7 @@ class Compiler:
 
     def compile_symbol(self, fragment, sym, position=None):
 
-        bare = strip_mark(sym)
+        bare = sym.base
         if bare is not sym:
             fragment.resolution.note_mark(sym)
 
@@ -1201,12 +1201,12 @@ class Compiler:
             # but still evaluate the internal elements (so not quoted)
             return cons(_symbol_cons, *source_obj.unpack(), nil)
 
-        if is_symbol(strip_mark(head)):
+        if is_symbol(head):
             comp = self.find_compiled(head)
             if comp:
                 return self.compile_special(fragment, comp, source_obj)
 
-            if strip_mark(head) is _symbol_call:
+            if head.base is _symbol_call:
                 raise CompilerError("compile/call not found", source_obj)
 
         elif is_pair(head):
@@ -1260,7 +1260,7 @@ class Compiler:
             fill_position(ret, get_position(form) or position)
             return ret
 
-        if not is_symbol(strip_mark(head)):
+        if not is_symbol(head):
             return None
 
         comp = self.find_compiled(head)

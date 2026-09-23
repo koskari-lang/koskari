@@ -26,7 +26,6 @@ from ...bootstrap import builtin
 from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, SYMBOL, VALUE
 from ...syntax import special
-from ...types import strip_mark
 from ..helpers import is_symbolish
 
 
@@ -54,7 +53,7 @@ def emit_attr(compiler, called_by, obj, sym, var_op, stack_op, before=None):
     frag.position(called_by.position)
 
     obj = obj.datum
-    name = str(strip_mark(sym.datum))
+    name = str(sym.datum.base)
 
     if is_symbolish(obj):
         frag.request_var(obj)

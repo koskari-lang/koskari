@@ -141,7 +141,7 @@ def special_cons(compiler, called_by, exprs):
     forms = list(body.unpack())
 
     for fm in forms:
-        if is_keyword(strip_mark(fm)):
+        if is_keyword(fm):
             # a keyword among the arguments makes this the cons
             # function applied to complex arguments instead
             rewritten = cons(symbol("call"), called_by.datum, body)

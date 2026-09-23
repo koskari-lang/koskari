@@ -288,7 +288,7 @@ def _formal_kw_tag_to_key(kw):
     Map keyword atom to annotation key; empty keyword (``::`` sugar) is type
     """
 
-    raw = str(strip_mark(kw))
+    raw = str(kw)
     if raw.endswith(":"):
         raw = raw[:-1]
     if raw == "":
@@ -1290,7 +1290,7 @@ def _reject_bare_annotation(kw, typ, prev_name, source):
     :raises SpecialError: when kw is the empty keyword
     """
 
-    if str(strip_mark(kw)) != "":
+    if str(kw) != "":
         return
     name = "name" if prev_name is None else str(prev_name)
     shown = repr(typ) if isinstance(typ, str) else str(typ)
