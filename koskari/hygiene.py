@@ -243,11 +243,12 @@ def mark_expansion(form, mark, seen=None):
     ``Datum`` scoped by ``mark``. A ``Datum`` is substituted material
     and is carried over as it is; a pair inside one is never entered.
     Pair cells are rebuilt with their positions and delimiter style. A
-    cell reached twice is a cycle, which source cannot hold
+    cell that encloses itself is a cycle, which source cannot hold; a
+    sub-form placed at more than one position is copied at each
 
     :param form: the handler's output
     :param mark: the expansion mark
-    :param seen: ids of the cells already on the walk
+    :param seen: ids of the cells enclosing this form on the walk
     :return: the marked copy
     :raises CompilerError: when the output is cyclic
     """
@@ -289,6 +290,9 @@ def mark_expansion(form, mark, seen=None):
         pos = get_position(cell)
         if pos:
             out.set_position(pos)
+
+    # this spine is left; its cells may appear again under a sibling
+    seen.difference_update(id(cell) for cell in items)
     return out
 
 

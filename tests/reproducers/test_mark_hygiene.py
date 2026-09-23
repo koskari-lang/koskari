@@ -399,6 +399,42 @@ class TestProceduralArm(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["total"], 101)
 
 
+class TestSharedSubformInProceduralArm(unittest.IsolatedAsyncioTestCase):
+    """
+    A procedural arm may build one sub-form and place it at more than
+    one position of its output; the shared cells are not a cycle
+    """
+
+    NESTED = """
+(define-syntax twice
+  (macro-rules []
+    [(twice a)
+     (let [[sub `(+ ,a 1)]]
+       `(+ ,sub ,sub))]))
+
+(define answer (twice 2))
+"""
+
+    SIBLINGS = """
+(define-syntax pair-up
+  (macro-rules []
+    [(pair-up a)
+     (let [[sub `(* ,a 2)]]
+       `(#list ,sub ,sub))]))
+
+(define answer (pair-up 3))
+"""
+
+    async def test_shared_operand(self):
+        ns = await load("mh_shared_nested", self.NESTED)
+        self.assertEqual(ns["answer"], 6)
+
+
+    async def test_shared_siblings(self):
+        ns = await load("mh_shared_siblings", self.SIBLINGS)
+        self.assertEqual(ns["answer"], [6, 6])
+
+
 class TestSetqFreeName(unittest.IsolatedAsyncioTestCase):
 
     SRC = """
