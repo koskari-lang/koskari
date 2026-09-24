@@ -23,11 +23,13 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    cons, demand_call, keyword, nil, pair, symbol)
+    bracket_cons, bracket_nil, bracket_pair, cons, demand_call, gensym,
+    keyword, nil, pair, symbol)
 from koskari.types import (
     BuiltinPredicate, TypePredicate, build_proper,
     fill_position, get_position, is_keyword, is_nil, is_on_demand, is_pair,
-    is_proper, is_recursive, is_symbol, set_position, unpack)
+    is_proper, is_recursive, is_symbol, set_position, strip_mark,
+    strip_marks, unpack)
 
 
 pytestmark = pytest.mark.phase_lib
@@ -415,6 +417,73 @@ class TestIsOnDemand(unittest.IsolatedAsyncioTestCase):
 
         result = await is_on_demand()
         self.assertFalse(result)
+
+
+class TestStripMark(unittest.TestCase):
+    """
+    strip_mark projects one gensym to its base and passes anything else
+    through
+    """
+
+    def test_gensym_gives_its_base(self):
+        t = symbol("t")
+        self.assertIs(strip_mark(gensym(t, marks=(1,))), t)
+        self.assertIs(strip_mark(gensym(t, marks=(1, 2))), t)
+
+
+    def test_other_values_pass_through(self):
+        t = symbol("t")
+        form = cons(gensym(t, marks=(1,)), nil)
+        self.assertIs(strip_mark(t), t)
+        self.assertIs(strip_mark(keyword("k")), keyword("k"))
+        self.assertEqual(strip_mark(5), 5)
+        self.assertIs(strip_mark(form), form)
+
+
+class TestStripMarks(unittest.TestCase):
+    """
+    strip_marks copies a form with every gensym projected to its base,
+    keeping positions and delimiter style
+    """
+
+    def test_nested_gensyms(self):
+        a = gensym(symbol("a"), marks=(1,))
+        b = gensym(symbol("b"), marks=(1, 2))
+        form = cons(a, cons(1, cons(b, nil), nil), nil)
+        want = cons(symbol("a"), cons(1, cons(symbol("b"), nil), nil), nil)
+        self.assertEqual(strip_marks(form), want)
+
+
+    def test_positions_kept(self):
+        a = gensym(symbol("a"), marks=(1,))
+        inner = cons(a, nil)
+        inner.set_position((3, 4))
+        form = cons(symbol("f"), inner, nil)
+        form.set_position((1, 2))
+        out = strip_marks(form)
+        self.assertEqual(get_position(out), (1, 2))
+        self.assertEqual(get_position(out.cdr.car), (3, 4))
+
+
+    def test_bracket_list_stays_bracket(self):
+        a = gensym(symbol("a"), marks=(1,))
+        out = strip_marks(bracket_cons(a, 1, bracket_nil))
+        self.assertIsInstance(out, bracket_pair)
+        self.assertEqual(out, bracket_cons(symbol("a"), 1, bracket_nil))
+
+
+    def test_dotted_gensym_tail(self):
+        t = gensym(symbol("t"), marks=(1,))
+        out = strip_marks(cons(1, t))
+        self.assertEqual(out.car, 1)
+        self.assertIs(out.cdr, symbol("t"))
+
+
+    def test_unmarked_form_is_equal(self):
+        form = cons(symbol("a"), cons(1, 2, nil), nil)
+        self.assertEqual(strip_marks(form), form)
+        self.assertIs(strip_marks(symbol("a")), symbol("a"))
+        self.assertIs(strip_marks(nil), nil)
 
 
 # The end.
