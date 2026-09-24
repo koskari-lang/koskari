@@ -127,6 +127,11 @@ class ByteCodeFragment:
     closure requests and name declarations for the namespace
     """
 
+    # raised when the fragment references a marked name, directly or
+    # through a fragment it absorbs or a function body it defers
+    marked = False
+
+
     def __init__(self, compiler=None, name=None, filename=None,
                  resolution=None):
         """
@@ -171,6 +176,18 @@ class ByteCodeFragment:
         return self.resolution.build_namespace_spec(self)
 
 
+    def note_mark(self, sym):
+        """
+        Record a marked name this fragment references, for resolution
+        when it completes
+
+        :param sym: a gensym
+        """
+
+        self.marked = True
+        self.resolution.note_mark(sym)
+
+
     def request_var(self, var_name):
         """
         Record a closure request for var_name unless it is already declared
@@ -181,7 +198,7 @@ class ByteCodeFragment:
         if not isinstance(var_name, symbol):
             raise TypeError(f"expected a symbol, not {var_name!r}")
         if var_name.base is not var_name:
-            self.resolution.note_mark(var_name)
+            self.note_mark(var_name)
         self.resolution.on_request_var(self, var_name)
 
 
@@ -196,7 +213,7 @@ class ByteCodeFragment:
         if not isinstance(var_name, symbol):
             raise TypeError(f"expected a symbol, not {var_name!r}")
         if var_name.base is not var_name:
-            self.resolution.note_mark(var_name)
+            self.note_mark(var_name)
         self.resolution.on_write(self, var_name, position=position)
 
 
@@ -211,7 +228,7 @@ class ByteCodeFragment:
         if not isinstance(var_name, symbol):
             raise TypeError(f"expected a symbol, not {var_name!r}")
         if var_name.base is not var_name:
-            self.resolution.note_mark(var_name)
+            self.note_mark(var_name)
         self.resolution.on_explicit_global(self, var_name, position=position)
 
 
@@ -360,6 +377,8 @@ class ByteCodeFragment:
             if name not in self.declares:
                 self.request_global(name)
         self.annotation_bindings.extend(other.annotation_bindings)
+        if other.marked:
+            self.marked = True
         self.instructions.extend(other.instructions)
 
 
@@ -415,6 +434,8 @@ class ByteCodeFragment:
             self.instruction(
                 OpCode.PUSH_NS,
                 (nspec, tuple(map(str, names)) if names else None, 0, 0))
+            if child.marked:
+                self.marked = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_NS, 0)
 
@@ -445,6 +466,8 @@ class ByteCodeFragment:
                     self.request_var(name)
 
             self.instruction(OpCode.PUSH_COLLECT, nspec)
+            if child.marked:
+                self.marked = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_COLLECT, 0)
 
@@ -946,7 +969,7 @@ class Compiler:
 
         bare = sym.base
         if bare is not sym:
-            fragment.resolution.note_mark(sym)
+            fragment.note_mark(sym)
 
         if bare is _symbol_colon:
             self.check_stray_colon(bare)
@@ -1221,7 +1244,7 @@ class Compiler:
             if op is OpCode.CONST and isinstance(arg, Deferred):
                 rows[i] = (op, arg.complete(self, fragment, ancestors))
 
-        if reso.marks:
+        if fragment.marked:
             Resolver(fragment, ancestors, vars(self.module)).resolve(fragment)
 
         # handles compression, var-to-fast lowering, and tail-call

@@ -46,6 +46,7 @@ __all__ = (
     "declared_spellings",
     "expand_template_with_hygiene",
     "finalize_expansion",
+    "function_constant",
     "mark_atom",
     "mark_expansion",
     "peel_datums",
@@ -571,6 +572,28 @@ class HygieneFunctionSpec(Deferred):
         code = compiler.complete_function(
             self.fragment, self.chain(completer, ancestors))
         return FunctionSpec(self.name, self.formals_spec, code)
+
+
+def function_constant(compiler, parent, body, name, formals_spec):
+    """
+    The CONST value for a function body: its FunctionSpec, completed
+    now, when the body references no marked name; otherwise a
+    HygieneFunctionSpec completing with the parent, which is marked in
+    turn so its own completion waits for the declarations around it
+
+    :param compiler: the compiler
+    :param parent: the fragment the CONST row is emitted into
+    :param body: the function body fragment
+    :param name: the function name, or None
+    :param formals_spec: the FormalsSpec
+    """
+
+    ancestors = tuple(compiler.lexical_stack)
+    if not body.marked:
+        code = compiler.complete_function(body, ancestors)
+        return FunctionSpec(name, formals_spec, code)
+    parent.marked = True
+    return HygieneFunctionSpec(body, ancestors, name, formals_spec)
 
 
 # The end.

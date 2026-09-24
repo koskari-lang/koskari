@@ -25,11 +25,14 @@ procedural arms, recursion, and macro-generating macros
 """
 
 import unittest
+from unittest import mock
 
 import pytest
 
+from koskari.compile.specials import lambda_
 from koskari.exceptions import SyntaxMatchError
-from koskari.lib import keyword, symbol
+from koskari.hygiene import HygieneFunctionSpec
+from koskari.lib import FunctionSpec, keyword, symbol
 from koskari.module import load_module_source_async, new_module
 from koskari.types import strip_mark, unpack
 
@@ -918,6 +921,46 @@ class TestClassMembersInTemplate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["said"], "hi there")
         names = [n for n in dir(ns["Greeter"]) if not n.startswith("_")]
         self.assertEqual(sorted(names), ["greet", "greeting"])
+
+
+class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
+    """
+    A function body referencing no marked name completes when its lambda
+    closes; one referencing a template binder completes with its
+    enclosing fragment, which is marked in turn
+    """
+
+    SRC = """
+(define plain (lambda [n] (lambda [] n)))
+
+(define-syntax make-counter
+  (syntax-rules []
+    [(make-counter) (let [[count 0]] (lambda [] count))]))
+
+(define counter (make-counter))
+(define from-plain ((plain 3)))
+(define from-counter (counter))
+"""
+
+    async def test_only_marked_bodies_defer(self):
+        seen = []
+        real = lambda_.function_constant
+
+        def record(compiler, parent, body, name, formals_spec):
+            const = real(compiler, parent, body, name, formals_spec)
+            seen.append((type(const), parent.marked))
+            return const
+
+        with mock.patch.object(lambda_, "function_constant", record):
+            ns = await load("mh_deferral", self.SRC)
+
+        self.assertEqual(seen, [
+            (FunctionSpec, False),
+            (FunctionSpec, False),
+            (HygieneFunctionSpec, True),
+        ])
+        self.assertEqual(ns["from-plain"], 3)
+        self.assertEqual(ns["from-counter"], 0)
 
 
 # The end.

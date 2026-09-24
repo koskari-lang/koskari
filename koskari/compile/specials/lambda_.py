@@ -22,7 +22,7 @@ Special form handler for compile/lambda.
 
 
 from ...bootstrap import builtin
-from ...hygiene import HygieneFunctionSpec
+from ...hygiene import function_constant
 from ...lib import FormalsSpec, OpCode, symbol
 from ...matcher import (
     BODY, CALLEDBY, FORMALS, LITERAL_KW, MATCH, SYMBOL, VALUE)
@@ -120,14 +120,13 @@ def helper_function(compiler, caps, selfref):
 
     with compiler.resolution_scope(lamb, function=True):
         lamb = helper_begin(lamb, body_src)
-    # the body completes when the enclosing fragment does, recording the
-    # chain enclosing this lambda as the Code's ancestry; until then the
-    # CONST row holds the deferred body in the FunctionSpec's place
-    deferred = HygieneFunctionSpec(
-        lamb, tuple(compiler.lexical_stack), proper_name, FormalsSpec(
+    # a body referencing a marked name completes when the enclosing
+    # fragment does; until then the CONST row holds it in the
+    # FunctionSpec's place
+    frag.instruction(OpCode.CONST, function_constant(
+        compiler, frag, lamb, proper_name, FormalsSpec(
             tuple(pos), (), tuple(pre_kwd),
-            tuple(str(k) for k, _ in kwonly), star, starstar, by_refs))
-    frag.instruction(OpCode.CONST, deferred)
+            tuple(str(k) for k, _ in kwonly), star, starstar, by_refs)))
     frag.instruction(
         OpCode.BUILD_FUNCTION,
         (tuple(defnames), tuple(ann_names), 0, 0))
