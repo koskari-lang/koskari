@@ -166,6 +166,20 @@ Ref: [language/pragma-cli.md](language/pragma-cli.md); [PRAGMA.md](PRAGMA.md).
 
 ---
 
+## Reader
+
+### Multi-character reader macro triggers (investigate)
+
+Reader macros key on one character, so `#'`, `` #` ``, and the `#`
+collection openers are branches inside the `#` handler, repeated in the
+layout block predicate and the lexer. Investigate a registration keyed
+by a trigger string, dispatched longest first under the first
+character, that the layout reader and lexer read as data.
+
+Ref: [reader-macro-triggers.md](reader-macro-triggers.md).
+
+---
+
 ## Import / loader
 
 ### Python AST loader (transformative parser)
