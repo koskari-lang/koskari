@@ -411,9 +411,10 @@ static PyObject *gensym_build_name(PyObject *base, PyObject *marks) {
   if (! base_utf8)
     return NULL;
 
-  /* each mark is at most "#" plus sixteen hex digits */
+  /* each mark is at most "#" plus sixteen hex digits, and snprintf
+     writes its terminator past the last one */
   Py_ssize_t n = PyTuple_GET_SIZE(marks);
-  Py_ssize_t cap = base_len + n * 17;
+  Py_ssize_t cap = base_len + n * 17 + 1;
   char *buf = PyMem_Malloc(cap ? cap : 1);
   if (! buf)
     return PyErr_NoMemory();
@@ -441,12 +442,15 @@ static PyObject *gensym_build_name(PyObject *base, PyObject *marks) {
    tuple: the interned instance when it exists with that base and
    those marks, else a new one interned under the derived spelling.
    When the spelling is held by any other atom, sets *taken and
-   returns NULL with no exception. New reference otherwise, or NULL
+   returns NULL with no exception; when fresh is set, so does an
+   interned gensym with that base and those marks, since the caller
+   needs one no other code holds. New reference otherwise, or NULL
    with an exception set.
 */
 static PyObject *gensym_intern(
     PyObject *base,
     PyObject *marks,
+    int fresh,
     int *taken) {
 
   *taken = 0;
@@ -458,7 +462,8 @@ static PyObject *gensym_intern(
   PyObject *found = PyDict_GetItem(intern_syms, name);
   if (found) {
     Py_DECREF(name);
-    if (KosGensym_Check(found) && KosGensym_BASE(found) == base) {
+    if (! fresh && KosGensym_Check(found)
+        && KosGensym_BASE(found) == base) {
       int same = PyObject_RichCompareBool(
           KosGensym_MARKS(found), marks, Py_EQ);
       if (same < 0)
@@ -513,7 +518,7 @@ PyObject *KosGensym_New(PyObject *base, PyObject *marks) {
     return NULL;
 
   int taken = 0;
-  PyObject *g = gensym_intern(base, tup, &taken);
+  PyObject *g = gensym_intern(base, tup, 0, &taken);
   if (taken) {
     PyObject *name = gensym_build_name(base, tup);
     if (name) {
@@ -591,7 +596,7 @@ PyObject *KosGensym_FromString(
     // a spelling some other atom holds is skipped: the next mark is
     // as good as this one
     int taken = 0;
-    PyObject *cand = gensym_intern(base, marks, &taken);
+    PyObject *cand = gensym_intern(base, marks, 1, &taken);
     Py_DECREF(marks);
     if (taken)
       continue;

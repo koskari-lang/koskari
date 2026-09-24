@@ -170,6 +170,23 @@ class TestGensymIdentity(unittest.TestCase):
         del held
 
 
+    def test_fresh_skips_an_explicit_gensym(self):
+        nxt = gensym.next_mark()
+        held = gensym(symbol("q"), marks=(nxt + 1,))
+        g = gensym("q")
+        self.assertIsNot(g, held)
+        self.assertEqual(g.marks[0], nxt + 2)
+        del held
+
+
+    def test_sixteen_digit_mark(self):
+        top = gensym(symbol("x"), marks=(2 ** 64 - 1,))
+        self.assertEqual(str(top), "x#ffffffffffffffff")
+        below = gensym(symbol("x"), marks=(2 ** 64 - 2,))
+        self.assertIsNot(below, top)
+        self.assertEqual(str(below), "x#fffffffffffffffe")
+
+
     def test_fresh_extends_a_gensym(self):
         outer = gensym(symbol("t"), marks=(1,))
         inner = gensym(outer)
