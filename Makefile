@@ -68,9 +68,16 @@ editors/emacs/koskari-mode.el: $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $
 	@echo "Re-generating koskari-mode.el..."
 	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $@
 
-editors-grammar:  ## Regenerate the tree-sitter parser (src/parser.c) from grammar.js
-	@echo "Re-generating tree-sitter parser..."
-	@cd editors/tree-sitter && npm install --silent && npx tree-sitter generate
+TREE_SITTER_IMAGE ?= docker.io/library/node:22-slim
+
+editors-grammar:  ## Regenerate the tree-sitter parser (src/parser.c) from grammar.js, in a container
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@echo "Re-generating tree-sitter parser via $(TREE_SITTER_IMAGE)..."
+	@$(CONTAINER_ENGINE) run --rm \
+		-v $(PWD)/editors/tree-sitter:/grammar:Z \
+		-w /grammar \
+		$(TREE_SITTER_IMAGE) \
+		sh -c 'npm install --silent && npx tree-sitter generate'
 
 regen-editors: editors/textmate/syntaxes/koskari.tmLanguage.json editors/tree-sitter/queries/highlights.scm editors/zed/languages/koskari/highlights.scm editors/emacs/koskari-mode.el  ## Regenerate editor syntax-highlighting assets (incremental)
 
