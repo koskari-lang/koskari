@@ -42,6 +42,7 @@ __all__ = (
     "Deferred",
     "HygieneFunctionSpec",
     "Resolver",
+    "binding_atom",
     "candidates",
     "declared_spellings",
     "equal_by_base",
@@ -493,6 +494,22 @@ def extern_atoms(pattern, names):
                     f"pattern names two bindings spelled {spelling}",
                     pattern, position=get_position(pattern))
     return found
+
+
+def binding_atom(compiler, atom):
+    """
+    The atom a binder declares: in a class body, an attribute of the
+    class, a label named by its bare spelling; elsewhere the atom as
+    written, so a template's binder stays its own
+
+    :param compiler: the compiler, whose innermost open scope decides
+    :param atom: the binder's symbol or gensym
+    """
+
+    scopes = compiler.lexical_stack
+    if scopes and scopes[-1].collector_scope:
+        return atom.base
+    return atom
 
 
 # --- Resolution

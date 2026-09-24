@@ -23,6 +23,7 @@ compile/ref-item, compile/refq, and compile/bindq.
 
 
 from ...bootstrap import builtin
+from ...hygiene import binding_atom
 from ...lib import OpCode
 from ...matcher import CALLEDBY, DEFINE, MATCH, SYMBOL, VALUE
 from ...syntax import special
@@ -120,7 +121,7 @@ def special_bindq(compiler, caps):
     called_by = caps["called-by"].datum
     pos = caps["called-by"].position
 
-    namesym = caps["name"].datum
+    namesym = binding_atom(compiler, caps["name"].datum)
 
     value = caps["value"]
     value_datum = value.datum

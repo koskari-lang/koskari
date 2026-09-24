@@ -1140,6 +1140,34 @@ class TestClassMembersInTemplate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(names), ["greet", "greeting"])
 
 
+    BINDERS_SRC = """
+(import-from contextlib nullcontext)
+
+(define-syntax mk-binders
+  (syntax-rules []
+    [(mk-binders name)
+     (define-class name []
+       (import-from math pi)
+       (import math)
+       (bindq b (refq pi))
+       (with [cm (nullcontext 5)] None)
+       (define get-pi [self] self.pi))]))
+
+(mk-binders Binders)
+(define got-pi ((Binders).get-pi))
+"""
+
+    async def test_other_binders_are_bare(self):
+        import math
+        ns = await load("mh_class_binders", self.BINDERS_SRC)
+        cls = ns["Binders"]
+        self.assertEqual([n for n in vars(cls) if "#" in n], [])
+        names = [n for n in vars(cls) if not n.startswith("_")]
+        self.assertEqual(sorted(names), ["cm", "get-pi", "math", "pi"])
+        self.assertEqual(ns["got-pi"], math.pi)
+        self.assertEqual((cls.cm, cls.math), (5, math))
+
+
 class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
     """
     A function body referencing no marked name completes when its lambda

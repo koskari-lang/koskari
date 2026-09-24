@@ -24,6 +24,7 @@ compile/dyn-with.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
+from ...hygiene import binding_atom
 from ...lib import OpCode
 from ...matcher import BODY, CALLEDBY, MATCH, SYMBOL, USING, VALUE
 from ...syntax import special
@@ -123,7 +124,7 @@ def emit_with(compiler, called_by, binding, body, push_op, pop_op):
 
     nc = binding.get("name")
     ec = binding.get("expr")
-    name = nc.datum if nc is not None else None
+    name = binding_atom(compiler, nc.datum) if nc is not None else None
     expr = ec.datum if ec is not None else None
 
     fragment = compiler.fragment(called_by.datum)

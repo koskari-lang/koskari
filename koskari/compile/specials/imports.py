@@ -49,6 +49,7 @@ Opcode sequences produced
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
+from ...hygiene import binding_atom
 from ...lib import OpCode, gensym, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
@@ -323,6 +324,7 @@ def special_import(compiler, called_by, module):
         leaf = _IMPORT_ROOT
         bind = _bind_spelling(_root_name(dotted), _name_atoms(name_form)[0])
 
+    bind = binding_atom(compiler, bind)
     frag = compiler.fragment(called_by.datum)
     frag.declare_var(bind)
     frag.instruction(
@@ -363,7 +365,8 @@ def special_import_from(compiler, called_by, module, members):
         # bare spelling, and the binding it lands in, which keeps the
         # template's marks so the import binds apart from the use site
         attrs.append(str(target.base))
-        binds.append(bind if bind is not None else target)
+        binds.append(binding_atom(
+            compiler, bind if bind is not None else target))
 
     frag = compiler.fragment(called_by.datum)
     for bind in binds:
