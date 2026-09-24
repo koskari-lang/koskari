@@ -28,7 +28,7 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..hygiene import Resolver, candidates
+from ..hygiene import Deferred, Resolver, candidates
 from ..lib import (
     Arena, Code, Datum, FormalsSpec, FunctionSpec, Module,
     ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
@@ -474,37 +474,6 @@ class ByteCodeFragment:
 class CompilerMode(IntEnum):
     FUNCTION = auto()
     EXPRESSION = auto()
-
-
-class DeferredFunctionSpec:
-    """
-    A function body awaiting completion, standing in for its
-    FunctionSpec in the enclosing fragment's CONST row until the
-    enclosing fragment completes
-
-    A nested function resolves the marked names it references against
-    the declarations visible around it, and those are final only when
-    the fragment enclosing it completes: a sibling defined later in the
-    same body, as the functions of a labels form are, must be visible
-    to a closure defined before it. So a function body is completed
-    when its enclosing fragment is, and the FunctionSpec takes its place
-    then
-
-    :param fragment: the function body fragment
-    :param name: the function name, or None
-    :param formals_spec: the FormalsSpec
-    :param ancestors: the fragments lexically open around the body
-        when it closed, outermost first
-    """
-
-    __slots__ = ("fragment", "name", "formals_spec", "ancestors")
-
-
-    def __init__(self, fragment, name, formals_spec, ancestors):
-        self.fragment = fragment
-        self.name = name
-        self.formals_spec = formals_spec
-        self.ancestors = ancestors
 
 
 _COMPILER_LITERALS = {
@@ -1229,9 +1198,9 @@ class Compiler:
         """
         Complete a fragment into a Code object.
 
-        The function bodies the fragment holds as DeferredFunctionSpec
-        constants complete first, against this fragment's now final
-        declarations, and their FunctionSpecs take their place
+        The Deferred constants the fragment holds complete first,
+        against this fragment's now final declarations, and their
+        values take their place
 
         :param fragment: the fragment to complete
         :param mode: the mode to complete in
@@ -1247,7 +1216,10 @@ class Compiler:
         if ancestors is None:
             ancestors = tuple(self.lexical_stack)
 
-        self.complete_deferred(fragment, ancestors)
+        rows = fragment.instructions
+        for i, (op, arg) in enumerate(rows):
+            if op is OpCode.CONST and isinstance(arg, Deferred):
+                rows[i] = (op, arg.complete(self, fragment, ancestors))
 
         if reso.marks:
             Resolver(fragment, ancestors, vars(self.module)).resolve(fragment)
@@ -1301,32 +1273,17 @@ class Compiler:
         return code
 
 
-    def complete_deferred(self, fragment, ancestors):
+    def complete_function(self, fragment, ancestors):
         """
-        Complete every function body held as a DeferredFunctionSpec
-        constant in the fragment's instruction stream and replace each
-        with its FunctionSpec.
+        Complete a function body fragment under the given ancestry
 
-        A body's ancestry is the completing fragment's own chain, then
-        the fragment itself when the body's snapshot lacks it, then the
-        snapshot taken when the body closed, outermost first throughout
-
-        :param fragment: the fragment about to complete
+        :param fragment: the function body fragment
         :param ancestors: the fragments enclosing it, outermost first
+        :return: the completed Code object
         """
 
-        rows = fragment.instructions
-        for i, (op, arg) in enumerate(rows):
-            if op is OpCode.CONST and isinstance(arg, DeferredFunctionSpec):
-                # a function fragment was on the lexical stack while its
-                # body compiled; the root never is, and encloses the rest
-                chain = ancestors
-                if fragment not in arg.ancestors:
-                    chain = chain + (fragment,)
-                chain = chain + arg.ancestors
-                code = self.complete(
-                    arg.fragment, CompilerMode.FUNCTION, ancestors=chain)
-                rows[i] = (op, FunctionSpec(arg.name, arg.formals_spec, code))
+        return self.complete(
+            fragment, CompilerMode.FUNCTION, ancestors=ancestors)
 
 
     def seal(self):

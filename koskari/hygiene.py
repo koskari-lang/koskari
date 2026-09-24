@@ -32,12 +32,15 @@ compiler
 
 from koskari.exceptions import CompilerError
 from koskari.lib import (
-    Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym)
+    Datum, FunctionSpec, bracket_cons, bracket_nil, bracket_pair, cons,
+    gensym)
 from koskari.types import (
     build_proper, get_position, is_nil, is_pair, is_symbol, unpack)
 
 
 __all__ = (
+    "Deferred",
+    "HygieneFunctionSpec",
     "Resolver",
     "candidates",
     "declared_spellings",
@@ -488,6 +491,86 @@ class Resolver:
             return str(self.choose(mark, scopes))
 
         fragment.rewrite_vars(choose_spelling)
+
+
+# --- Deferred completion
+
+class Deferred:
+    """
+    A constant awaiting completion, standing in for its final value in
+    the enclosing fragment's CONST row until that fragment completes
+
+    :param fragment: the fragment to complete
+    :param ancestors: the fragments lexically open around it when it
+        closed, outermost first
+    """
+
+    __slots__ = ("fragment", "ancestors")
+
+
+    def __init__(self, fragment, ancestors):
+        self.fragment = fragment
+        self.ancestors = ancestors
+
+
+    def chain(self, completer, ancestors):
+        """
+        The ancestry the fragment completes under: the completer's own
+        chain, then the completer when the snapshot lacks it, then the
+        snapshot, outermost first throughout
+
+        A function fragment was on the lexical stack while its body
+        compiled; the root never is, and encloses the rest
+
+        :param completer: the fragment whose completion reaches this
+        :param ancestors: the fragments enclosing the completer
+        """
+
+        chain = ancestors
+        if completer not in self.ancestors:
+            chain = chain + (completer,)
+        return chain + self.ancestors
+
+
+    def complete(self, compiler, completer, ancestors):
+        """
+        The final value for the CONST row
+
+        :param compiler: the compiler completing the completer
+        :param completer: the fragment whose completion reaches this
+        :param ancestors: the fragments enclosing the completer
+        """
+
+        raise NotImplementedError
+
+
+class HygieneFunctionSpec(Deferred):
+    """
+    A function body whose marked names resolve against declarations
+    that are final only when the enclosing fragment completes: a
+    sibling defined later in the same body, as the functions of a
+    labels form are, must be visible to a closure defined before it
+
+    :param fragment: the function body fragment
+    :param ancestors: the fragments lexically open around the body
+        when it closed, outermost first
+    :param name: the function name, or None
+    :param formals_spec: the FormalsSpec
+    """
+
+    __slots__ = ("name", "formals_spec")
+
+
+    def __init__(self, fragment, ancestors, name, formals_spec):
+        super().__init__(fragment, ancestors)
+        self.name = name
+        self.formals_spec = formals_spec
+
+
+    def complete(self, compiler, completer, ancestors):
+        code = compiler.complete_function(
+            self.fragment, self.chain(completer, ancestors))
+        return FunctionSpec(self.name, self.formals_spec, code)
 
 
 # The end.

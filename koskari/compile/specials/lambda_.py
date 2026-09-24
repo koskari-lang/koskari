@@ -22,12 +22,13 @@ Special form handler for compile/lambda.
 
 
 from ...bootstrap import builtin
+from ...hygiene import HygieneFunctionSpec
 from ...lib import FormalsSpec, OpCode, symbol
 from ...matcher import (
     BODY, CALLEDBY, FORMALS, LITERAL_KW, MATCH, SYMBOL, VALUE)
 from ...syntax import special
 from ...types import is_nil
-from ..compiler import ByteCodeFragment, DeferredFunctionSpec
+from ..compiler import ByteCodeFragment
 from ..helpers import discover_docstring, gather_formals, helper_begin
 
 
@@ -122,9 +123,10 @@ def helper_function(compiler, caps, selfref):
     # the body completes when the enclosing fragment does, recording the
     # chain enclosing this lambda as the Code's ancestry; until then the
     # CONST row holds the deferred body in the FunctionSpec's place
-    deferred = DeferredFunctionSpec(lamb, proper_name, FormalsSpec(
-        tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
-        star, starstar, by_refs), tuple(compiler.lexical_stack))
+    deferred = HygieneFunctionSpec(
+        lamb, tuple(compiler.lexical_stack), proper_name, FormalsSpec(
+            tuple(pos), (), tuple(pre_kwd),
+            tuple(str(k) for k, _ in kwonly), star, starstar, by_refs))
     frag.instruction(OpCode.CONST, deferred)
     frag.instruction(
         OpCode.BUILD_FUNCTION,
