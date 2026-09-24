@@ -89,7 +89,7 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
 
         frozen = CAPTURE("x").freeze()
         self.assertEqual(frozen[1], ("x",))
-        self.assertEqual(frozen[4], (("CAPTURE", 0, -1, 0, -1),))
+        self.assertEqual(frozen[4], (("CAPTURE", 0, -1),))
 
 
     def test_capture_with_sub_emits_post_order(self):
@@ -103,7 +103,7 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
         self.assertEqual(frozen[2], ("symbol",))
         self.assertEqual(
             frozen[4],
-            (("TEST", "TYPE", 0), ("CAPTURE", 0, 0, 0, -1)))
+            (("TEST", "TYPE", 0), ("CAPTURE", 0, 0)))
         self.assertEqual(frozen[5], 1)
 
 
@@ -142,9 +142,9 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
         self.assertEqual(frozen[1], ("g", "a"))
         self.assertEqual(
             frozen[4],
-            (("CAPTURE", 1, -1, 0, -1),
+            (("CAPTURE", 1, -1),
              ("GROUP", 0),
-             ("CAPTURE", 0, 1, 0, -1)))
+             ("CAPTURE", 0, 1)))
         self.assertEqual(frozen[5], 2)
 
 
@@ -156,7 +156,7 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
         frozen = REST("rest").freeze()
         self.assertEqual(frozen[1], ("rest",))
         self.assertEqual(
-            frozen[4], (("REST", 0), ("CAPTURE", 0, 0, 0, -1)))
+            frozen[4], (("REST", 0), ("CAPTURE", 0, 0)))
 
 
     def test_oneof_collects_branches(self):
@@ -680,33 +680,6 @@ class TestEagerValidation(unittest.TestCase):
         pat = MATCH(CAPTURE("x"), REST("x"))
         with self.assertRaises(ValueError):
             pat.freeze()
-
-
-    def test_capture_hygiene_role_negative(self):
-        """
-        CAPTURE rejects negative hygiene_role values
-        """
-
-        with self.assertRaises(ValueError):
-            CAPTURE("x", hygiene_role=-1)
-
-
-    def test_capture_hygiene_role_overflow(self):
-        """
-        CAPTURE rejects hygiene_role values above 0xFFFF
-        """
-
-        with self.assertRaises(ValueError):
-            CAPTURE("x", hygiene_role=0x10000)
-
-
-    def test_capture_hygiene_role_must_be_int(self):
-        """
-        CAPTURE rejects non-int hygiene_role
-        """
-
-        with self.assertRaises(TypeError):
-            CAPTURE("x", hygiene_role="0")
 
 
     def test_field_rejects_empty_name(self):

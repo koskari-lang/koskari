@@ -170,12 +170,8 @@ they add no match-time Python logic.
 | `(val: x)` | `LITERAL(x)` |
 | `(CLASS Sym (FIELD ...))` | `CLASS` + `FIELD` nodes |
 
-Capture options on named captures (not matched input):
-
-```scheme
-(scope: body)         ; parsed and stored on the CAPTURE wire; nothing reads it
-(role: N)             ; stored on CAPTURE wire; reserved
-```
+A named capture takes no options; a keyword other than the constraint
+markers in its argument list is an error.
 
 ### Rule-level patterns (`parse_explicit_rule_pattern`)
 

@@ -39,12 +39,12 @@ def _make_lambda_matcher_tuple():
     consts = ("::",)
     nodes = (
         ("TEST", "TYPE", 0),                # 0: TEST_TYPE symbol
-        ("CAPTURE", 0, 0, 0, -1),           # 1: CAPTURE name
+        ("CAPTURE", 0, 0),           # 1: CAPTURE name
         ("TEST", "LITERAL", 0),             # 2: TEST_LITERAL "::"
         ("TEST", "ANY", -1),                # 3: TEST_ANY (return)
         ("TEST", "ANY", -1),                # 4: TEST_ANY (formals)
         ("REST", 1),                        # 5: REST min_tail
-        ("CAPTURE", 1, 5, 0, -1),           # 6: CAPTURE body
+        ("CAPTURE", 1, 5),           # 6: CAPTURE body
         ("MATCH", 1, 2, 3, 4, 6),           # 7: MATCH entry
     )
     return ("MATCHER", slots, externs, consts, nodes, 7)
@@ -80,9 +80,9 @@ class TestMatcherFromTuple(unittest.TestCase):
 
         nodes = (
             ("TEST", "ANY", -1),
-            ("CAPTURE", 0, 0, 0, -1),
+            ("CAPTURE", 0, 0),
             ("TEST", "ANY", -1),
-            ("CAPTURE", 1, 2, 0, -1),
+            ("CAPTURE", 1, 2),
             ("MATCH", 1, 3),
         )
         frozen = (
@@ -104,9 +104,9 @@ class TestMatcherFromTuple(unittest.TestCase):
 
         nodes = (
             ("TEST", "ANY", -1),
-            ("CAPTURE", 0, 0, 0, -1),
+            ("CAPTURE", 0, 0),
             ("REST", 0),
-            ("CAPTURE", 1, 2, 0, -1),
+            ("CAPTURE", 1, 2),
             ("MATCH", 1, 3),
         )
         frozen = (
@@ -133,10 +133,10 @@ class TestMatcherFromTuple(unittest.TestCase):
 
         nodes = (
             ("TEST", "LITERAL", 0),
-            ("CAPTURE", 0, 0, 0, -1),
+            ("CAPTURE", 0, 0),
             ("MATCH", 1),
             ("TEST", "LITERAL", 1),
-            ("CAPTURE", 1, 3, 0, -1),
+            ("CAPTURE", 1, 3),
             ("MATCH", 4),
             ("ONEOF", 2, 5),
         )
@@ -174,9 +174,9 @@ class TestMatcherFromTuple(unittest.TestCase):
 
         nodes = (
             ("TEST", "ANY", -1),
-            ("CAPTURE", 1, 0, 0, -1),
+            ("CAPTURE", 1, 0),
             ("GROUP", 1),
-            ("CAPTURE", 0, 2, 0, -1),
+            ("CAPTURE", 0, 2),
         )
         frozen = (
             "MATCHER",
@@ -199,7 +199,7 @@ class TestMatcherFromTuple(unittest.TestCase):
 
         nodes = (
             ("TEST", "ANY", -1),
-            ("CAPTURE", 5, 0, 0, -1),
+            ("CAPTURE", 5, 0),
         )
         frozen = (
             "MATCHER",
@@ -246,7 +246,7 @@ class TestMatcherFromTuple(unittest.TestCase):
 
         nodes = (
             ("TEST", "ANY", -1),
-            ("CAPTURE", 0, 0, 0, -1),
+            ("CAPTURE", 0, 0),
             ("MATCH", 1),
         )
         frozen = (
@@ -271,10 +271,10 @@ class TestMatcherFromTuple(unittest.TestCase):
 
         nodes = (
             ("TEST", "ANY", -1),                # 0
-            ("CAPTURE", 0, 0, 0, -1),           # 1: capture x
+            ("CAPTURE", 0, 0),           # 1: capture x
             ("FIELD_POS", 1),                   # 2
             ("TEST", "ANY", -1),                # 3
-            ("CAPTURE", 1, 3, 0, -1),           # 4: capture y
+            ("CAPTURE", 1, 3),           # 4: capture y
             ("FIELD_KW", 4, "y"),               # 5: name will be added
             ("CLASS", 0, 2, 5),                 # 6
         )

@@ -629,46 +629,22 @@ class CAPTURE(Pattern):
     """
 
 
-    def __init__(
-            self,
-            slot,
-            sub=None,
-            *,
-            hygiene_role=0,
-            scope_slot=None):
+    def __init__(self, slot, sub=None):
         """
         :param slot: target slot name
         :param sub: optional sub-pattern; when None the capture takes
             any single element
-        :param hygiene_role: integer in [0, 0xFFFF]; carried on the
-            CAPTURE wire row and read by nothing
-        :param scope_slot: optional slot name; carried on the wire row
-            and read by nothing
-        :raises TypeError: when slot is not a str, sub is not a pattern
-            or None, scope_slot is not str or None, or hygiene_role is
-            not an int
-        :raises ValueError: when slot is empty or hygiene_role is out
-            of range
+        :raises TypeError: when slot is not a str or sub is not a
+            pattern or None
+        :raises ValueError: when slot is empty
         """
 
         check_str_arg(slot, "CAPTURE slot")
         if sub is not None:
             check_pattern_arg(sub, "CAPTURE sub")
-        if scope_slot is not None:
-            check_str_arg(scope_slot, "CAPTURE scope_slot")
-        if isinstance(hygiene_role, bool) or not isinstance(hygiene_role, int):
-            raise TypeError(
-                "CAPTURE hygiene_role must be an int, got %r"
-                % type(hygiene_role).__name__)
-        if hygiene_role < 0 or hygiene_role > 0xFFFF:
-            raise ValueError(
-                "CAPTURE hygiene_role out of uint16 range: %d"
-                % (hygiene_role,))
 
         self._slot = slot
         self._sub = sub
-        self._hygiene_role = hygiene_role
-        self._scope_slot = scope_slot
 
 
     def _claim_signature(self):
@@ -695,13 +671,7 @@ class CAPTURE(Pattern):
             sub_idx = -1
         else:
             sub_idx = self._sub.lower(ctx)
-        if self._scope_slot is None:
-            scope_idx = -1
-        else:
-            scope_idx = ctx.intern_slot(self._scope_slot)
-        return ctx.append_node(
-            ("CAPTURE", slot_idx, sub_idx,
-             self._hygiene_role, scope_idx))
+        return ctx.append_node(("CAPTURE", slot_idx, sub_idx))
 
 
     def visit(self, fn):
@@ -714,10 +684,6 @@ class CAPTURE(Pattern):
         parts = [f"CAPTURE({self._slot!r}"]
         if self._sub is not None:
             parts.append(f"{repr(self._sub)}")
-        if self._hygiene_role != 0:
-            parts.append(f"hygiene_role={self._hygiene_role}")
-        if self._scope_slot is not None:
-            parts.append(f"scope_slot={self._scope_slot!r}")
         if len(parts) > 1:
             return ', '.join(parts) + ')'
         return parts[0] + ')'
@@ -742,10 +708,6 @@ class CAPTURE(Pattern):
                 parts.extend(['min:', str(sub._min_tail)])
             return f"({' '.join(parts)})"
         parts = [slot]
-        if self._scope_slot is not None:
-            parts.extend([kos_repr(keyword('scope')), self._scope_slot])
-        if self._hygiene_role != 0:
-            parts.extend([kos_repr(keyword('role')), str(self._hygiene_role)])
         if sub is None:
             if len(parts) == 1:
                 return slot
@@ -1039,8 +1001,7 @@ class GROUP(Pattern):
         g_idx = ctx.append_node(("GROUP",) + tuple(idxs))
         if self._slot is None:
             return g_idx
-        return ctx.append_node(
-            ("CAPTURE", slot_idx, g_idx, 0, -1))
+        return ctx.append_node(("CAPTURE", slot_idx, g_idx))
 
 
     def visit(self, fn):
@@ -1251,8 +1212,7 @@ class REST(Pattern):
         rest_idx = ctx.append_node(("REST", self._min_tail))
         if self._slot is None:
             return rest_idx
-        return ctx.append_node(
-            ("CAPTURE", slot_idx, rest_idx, 0, -1))
+        return ctx.append_node(("CAPTURE", slot_idx, rest_idx))
 
 
     def visit(self, fn):
@@ -2220,7 +2180,7 @@ class BODY(Pattern):
 # === Self-describing matcher syntax: registry, meta-matcher, parser ===
 
 
-CAPTURE_OPTION_KEYS = frozenset({"scope", "role"})
+CAPTURE_OPTION_KEYS = frozenset()
 
 
 MATCHER_REGISTRY = {}
@@ -2274,14 +2234,9 @@ KW_DCOLON = keyword("::")
 KW_TYPE = keyword("type")
 KW_VAL = keyword("val")
 KW_STAR = keyword("*")
-KW_SCOPE = keyword("scope")
-KW_ROLE = keyword("role")
 
 
-CAPTURE_OPTION_KW_TO_NAME = {
-    KW_SCOPE: "scope",
-    KW_ROLE: "role",
-}
+CAPTURE_OPTION_KW_TO_NAME = {}
 
 
 META_PATTERN = ONEOF(
@@ -2524,27 +2479,7 @@ def lower_named_capture(name_sym, args):
             "(%s ...) named capture accepts at most one constraint;"
             " got %d" % (name, len(constraints)))
     sub = constraints[0] if constraints else None
-
-    kwargs = {}
-    if "scope" in options:
-        scope_val = options["scope"]
-        if is_symbol(scope_val):
-            kwargs["scope_slot"] = str(scope_val)
-        elif isinstance(scope_val, str):
-            kwargs["scope_slot"] = scope_val
-        else:
-            raise ValueError(
-                "(%s ...) scope: option must be a symbol or string,"
-                " got %r" % (name, type(scope_val).__name__))
-    if "role" in options:
-        role_val = options["role"]
-        if isinstance(role_val, bool) or not isinstance(role_val, int):
-            raise ValueError(
-                "(%s ...) role: option must be an int, got %r"
-                % (name, type(role_val).__name__))
-        kwargs["hygiene_role"] = role_val
-
-    return CAPTURE(name, sub, **kwargs)
+    return CAPTURE(name, sub)
 
 
 # === Built-in factory helpers ===

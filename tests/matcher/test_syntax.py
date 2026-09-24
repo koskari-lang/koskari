@@ -221,48 +221,6 @@ class TestParseNamedCapture(unittest.TestCase):
         self.assertIsInstance(pat._sub, FORMALS)
 
 
-    def test_named_capture_with_scope_option(self):
-        """
-        (x scope: body) lowers with scope_slot recorded
-        """
-
-        src = _list(symbol("x"), keyword("scope"), symbol("body"))
-        pat = parse_matcher(src)
-        self.assertIsInstance(pat, CAPTURE)
-        self.assertEqual(pat._slot, "x")
-        self.assertEqual(pat._scope_slot, "body")
-
-
-    def test_named_capture_with_role_option(self):
-        """
-        (x role: 7) lowers with hygiene_role recorded
-        """
-
-        src = _list(symbol("x"), keyword("role"), 7)
-        pat = parse_matcher(src)
-        self.assertIsInstance(pat, CAPTURE)
-        self.assertEqual(pat._slot, "x")
-        self.assertEqual(pat._hygiene_role, 7)
-
-
-    def test_named_capture_combines_option_and_constraint(self):
-        """
-        (x scope: body :: symbol) accepts both an option and a
-        constraint marker in one form
-        """
-
-        src = _list(
-            symbol("x"),
-            keyword("scope"), symbol("body"),
-            keyword("::"), symbol("symbol"))
-        pat = parse_matcher(src)
-        self.assertIsInstance(pat, CAPTURE)
-        self.assertEqual(pat._slot, "x")
-        self.assertEqual(pat._scope_slot, "body")
-        self.assertIsInstance(pat._sub, TYPE)
-        self.assertEqual(pat._sub._extern, "symbol")
-
-
     def test_named_capture_rejects_two_constraints(self):
         """
         Named capture accepts at most one constraint
@@ -824,7 +782,7 @@ class TestRegistry(unittest.TestCase):
         CAPTURE_OPTION_KEYS holds the documented set of options
         """
 
-        self.assertEqual(CAPTURE_OPTION_KEYS, frozenset({"scope", "role"}))
+        self.assertEqual(CAPTURE_OPTION_KEYS, frozenset())
 
 
     def test_register_matcher_user_factory(self):

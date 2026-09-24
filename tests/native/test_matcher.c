@@ -101,7 +101,6 @@ static int append_capture(
     n.kind = KOS_MATCH_NODE_CAPTURE;
     n.as.capture.slot = slot;
     n.as.capture.subnode = subnode;
-    n.as.capture.scope_slot = KOS_MATCH_NO_INDEX;
     return KosMatcherBuilder_AppendNode(b, &n);
 }
 
@@ -244,7 +243,6 @@ static int test_matcher_validator_rejects_forward_ref(void) {
     n.kind = KOS_MATCH_NODE_CAPTURE;
     n.as.capture.subnode = 0;  /* references self / forward */
     n.as.capture.slot = KOS_MATCH_NO_INDEX;
-    n.as.capture.scope_slot = KOS_MATCH_NO_INDEX;
 
     int idx = KosMatcherBuilder_AppendNode(b, &n);
     TEST_ASSERT_EQ(idx, -1, "forward-ref append should fail");
@@ -612,7 +610,6 @@ static int test_matcher_validator_slot_oob_rejected(void) {
     n.kind = KOS_MATCH_NODE_CAPTURE;
     n.as.capture.slot = 5;  /* out of range */
     n.as.capture.subnode = (uint32_t) n_test;
-    n.as.capture.scope_slot = KOS_MATCH_NO_INDEX;
     int n_cap = KosMatcherBuilder_AppendNode(b, &n);
     TEST_ASSERT(n_cap >= 0, "append CAPTURE (deferred validation)");
 
@@ -2428,9 +2425,8 @@ static int test_thaw_rejects_index_oob(void) {
     PyObject *xname = PyUnicode_FromString("x");
     PyObject *slots = PyTuple_Pack(1, xname);
     PyObject *test_node = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
-    /* CAPTURE: kind=CAPTURE, slot=5 (OOB), subnode=0, hr=0, scope=-1 */
-    PyObject *cap_node = Py_BuildValue("(siiii)",
-                                       "CAPTURE", 5, 0, 0, -1);
+    /* CAPTURE: kind=CAPTURE, slot=5 (OOB), subnode=0 */
+    PyObject *cap_node = Py_BuildValue("(sii)", "CAPTURE", 5, 0);
     PyObject *nodes = PyTuple_Pack(2, test_node, cap_node);
 
     PyObject *frozen = Py_BuildValue("(sOOOOi)",
@@ -2544,14 +2540,14 @@ static int test_thaw_full_lambda(void) {
         Py_ssize_t base = PyList_GET_SIZE(nodes_list);
 
         PyObject *t_sym = Py_BuildValue("(ssi)", "TEST", "TYPE", 0);
-        PyObject *cap = Py_BuildValue("(siiii)", "CAPTURE", 0,
-                                      (int)(base + 0), 0, -1);
+        PyObject *cap = Py_BuildValue("(sii)", "CAPTURE", 0,
+                                      (int)(base + 0));
         PyObject *t_lit = Py_BuildValue("(ssi)", "TEST", "LITERAL", i);
         PyObject *t_ret = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
         PyObject *t_form = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
         PyObject *rest = Py_BuildValue("(si)", "REST", 1);
-        PyObject *cap_body = Py_BuildValue("(siiii)", "CAPTURE", 1,
-                                            (int)(base + 5), 0, -1);
+        PyObject *cap_body = Py_BuildValue("(sii)", "CAPTURE", 1,
+                                            (int)(base + 5));
         PyObject *grp = Py_BuildValue(
             "(siiiii)", "MATCH",
             (int)(base + 1), (int)(base + 2), (int)(base + 3),

@@ -92,9 +92,6 @@ typedef struct {
 typedef struct {
   uint32_t slot;
   uint32_t subnode;
-  uint16_t hygiene_role;
-  uint16_t reserved;
-  uint32_t scope_slot;
 } KosMatchCapture;
 
 
@@ -565,8 +562,8 @@ int KosMatcherBuilder_AddConst(
 /**
    Append a non-container node. Caller fills KosMatchNode kind and
    payload; min_width, max_width, and next are filled by the builder.
-   The builder rejects appends whose subnode/scope_slot references the
-   current count or higher (forward refs).
+   The builder rejects appends whose subnode references the current
+   count or higher (forward refs).
 
    Container kinds (MATCH, GROUP, ONEOF) are not accepted here; use
    KosMatcherBuilder_AppendMatch / KosMatcherBuilder_AppendGroup /
