@@ -35,7 +35,7 @@ from koskari.lib import symbol
 from koskari.pragma import ModulePragma
 from koskari.reader import (
     IndentAwareStream, LayoutReader, Reader, source_str)
-from koskari.types import get_position
+from koskari.types import get_position, unpack
 
 
 pytestmark = pytest.mark.phase_infra
@@ -105,6 +105,54 @@ class TestDatumqPrefix(TestCase):
             read_layout("define x -'foo\n"),
             pycons((symbol('define'), symbol('x'),
                     (DATUMQ, symbol('foo')))))
+
+
+    def test_layout_header_keeps_its_block_colon(self):
+        form = read_layout("frob &-'x:\n    bar\n")
+        self.assertEqual(form.car, symbol('frob'))
+        self.assertEqual(
+            form.cdr.car, pycons((symbol('ref'), (DATUMQ, symbol('x')))))
+        self.assertEqual(len(list(unpack(form))), 3)
+
+
+class TestPrefixesInsideSexprInLayout(TestCase):
+    """
+    Inside parens and backticks the layout reader hands off to its
+    s-expression reader, whose own prefix handlers see the temporary
+    macros that reader installs, such as a backtick's unquote
+    """
+
+    QQ = symbol('quasiquote')
+    UNQUOTE = symbol('unquote')
+    REF = symbol('ref')
+
+
+    def test_ref_of_unquote_in_backtick(self):
+        self.assertEqual(
+            read_layout("`(a &,b)\n"),
+            pycons((self.QQ, (symbol('a'), (self.REF, (self.UNQUOTE,
+                                                       symbol('b')))))))
+
+
+    def test_ref_of_unquoted_datumq_in_backtick(self):
+        self.assertEqual(
+            read_layout("`(a &,-'x)\n"),
+            pycons((self.QQ, (symbol('a'), (self.REF, (
+                self.UNQUOTE, (DATUMQ, symbol('x'))))))))
+
+
+    def test_ref_and_unary_inside_parens(self):
+        self.assertEqual(
+            read_layout("(f &x -y)\n"),
+            pycons((symbol('f'), (self.REF, symbol('x')),
+                    (symbol('-'), symbol('y')))))
+
+
+    def test_ref_and_unary_in_a_header(self):
+        form = read_layout("frob &x -y:\n    bar\n")
+        self.assertEqual(form.cdr.car, pycons((self.REF, symbol('x'))))
+        self.assertEqual(
+            form.cdr.cdr.car, pycons((symbol('-'), symbol('y'))))
 
 
 class TestOtherMinusUnchanged(TestCase):

@@ -217,10 +217,20 @@ class LayoutReader(Reader):
         sm('b', inner._read_bstring, False)
 
         sm('#', inner._read_collection, False)
-        sm('&', self._read_ref_call, False)
-        for c in "-+~":
-            sm(c, self._read_unary, False, predicate=self._unary_enabled)
-        sm('-', inner._read_datumq, False, predicate=inner._datumq_follows)
+
+        # the prefixes that read an operand register once per level, each
+        # bound to its own reader: at the layout level a header operand
+        # keeps its block colon, and inside parens and backticks the inner
+        # reader's operand read sees the macros it installs for the span,
+        # such as a backtick's unquote
+        for reader, sm_level in ((self, self.add_layout_event_macro),
+                                 (inner, self.add_inner_event_macro)):
+            sm_level('&', reader._read_ref_call, False)
+            for c in "-+~":
+                sm_level(c, reader._read_unary, False,
+                         predicate=reader._unary_enabled)
+            sm_level('-', reader._read_datumq, False,
+                     predicate=reader._datumq_follows)
 
         self.add_event_macro("'", inner._read_quote, True)
         self.add_event_macro("`", inner._read_quasiquote, True)
