@@ -700,10 +700,8 @@ generic. Three concerns land in three places:
    the same open-dispatch trick as `(help (pragma key))` in the bootstrap.
 
 `config/<type>` follows the same `<prefix>/<type>` convention as `job/<type>`:
-the `jobset` macro rewrites `config kafka name: ...` into `(config/kafka
-default/kafka name ...)`, and each variety defines `config/kafka` to build its
-config object. The `job` dispatcher passes the same slot ahead of the rest:
-`(job kafka audit ...)` becomes `(job/kafka default/kafka audit ...)`.
+the `jobset` macro rewrites `config kafka name: ...` into `(config/kafka name
+...)`, and each variety defines `config/kafka` to build its config object.
 
 ### Defaulting: first-wins via ref truthiness
 
@@ -717,10 +715,17 @@ shared default slot, with no registry and no duplicate check:
 ```
 
 The slot is a name the variety macros share, and a name a template writes is
-private to its expansion. So `jobset` and `job` supply `default/<type>` as a
-use-site name, and each variety macro takes it as its first pattern variable,
-`slot`, writing `(define slot)` and `&slot` where the output above shows
-`default/kafka`.
+private to its expansion. So each variety macro writes it raw, as
+`-'default/kafka`: the template emits `default/kafka` unmarked, and every config
+and job expansion reaches the one module binding.
+
+```koskari
+case (config/kafka () setting ...):
+    (begin
+        (define -'default/kafka)
+        (unless &-'default/kafka
+            (set! -'default/kafka (KafkaConfig setting ...))))
+```
 
 A job with no explicit config wires to `default/<type>` (guarded by
 `&default/<type>`, so a type with no config -- cron here -- simply skips it).
@@ -789,11 +794,12 @@ enumerates types, so this is the whole recipe:
    dies silently, leaving the job reporting itself healthy while doing
    nothing, and pinning its traceback for the life of the process.
 3. Define `config/<type>` (construct the dataclass, bind the name, run the
-   `&slot` guard) with the `()`-sentinel unnamed case. Both cases take the
-   `default/<type>` slot first: `case (config/kafka slot () setting ...)`.
+   `&-'default/<type>` guard) with the `()`-sentinel unnamed case. Write the
+   slot as `-'default/<type>` wherever it appears, so it is the shared module
+   binding and not one private to the expansion.
 4. Define `job/<type>` (parse the header, construct the job, configure it --
    `via:` the type default when one exists, fresh otherwise -- and tag-inject
-   sub-items). It takes the slot first too: `case (job/kafka slot name ...)`.
+   sub-items), naming the slot the same way.
 5. Export all of it. Remember: a macro's free names resolve at the **use
    site**, so everything a `job/<type>` or `config/<type>` expansion names
    (its class, helpers) must be exported for `import-all-from kosrunner`.
