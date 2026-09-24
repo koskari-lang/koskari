@@ -25,7 +25,7 @@ import unittest
 import pytest
 
 from koskari.compile.processor import ByteCodeProcessor
-from koskari.lib import OpCode
+from koskari.lib import NamespaceSpec, OpCode
 
 from . import make_fragment
 
@@ -41,6 +41,10 @@ RET = OpCode.RETURN
 P = OpCode.POSITION
 L = OpCode.LABEL
 J = OpCode.JUMP
+
+# a scope push as the compiler emits it: an empty inline scope
+PUSH_NS_ROW = (
+    OpCode.PUSH_NS, (NamespaceSpec(None, (), (), ()), None, 0, 0))
 
 
 def promote(instr):
@@ -108,7 +112,7 @@ class TestClearRoute(unittest.TestCase):
 
     def test_route_over_discardable_pop_promotes(self):
         out = promote([
-            (OpCode.PUSH_NS, 0),
+            PUSH_NS_ROW,
             (CALL, 1), (OpCode.POP_NS, 0), (RET, 1),
         ])
         self.assertEqual(out[1], (TAIL, 1))
@@ -143,7 +147,7 @@ class TestExtentLegality(unittest.TestCase):
 
     def test_inside_ns_allowed(self):
         out = promote([
-            (OpCode.PUSH_NS, 0),
+            PUSH_NS_ROW,
             (CALL, 1), (OpCode.POP_NS, 0), (RET, 1),
         ])
         self.assertEqual(out[1], (TAIL, 1))
@@ -158,7 +162,7 @@ class TestExtentLegality(unittest.TestCase):
     def test_ns_inside_with_denied(self):
         # whole-stack denial: an outer non-discardable extent wins
         out = promote([
-            (OpCode.PUSH_WITH, 0), (OpCode.PUSH_NS, 0),
+            (OpCode.PUSH_WITH, 0), PUSH_NS_ROW,
             (CALL, 1), (OpCode.POP_NS, 0),
             (OpCode.POP_WITH, 0), (RET, 1),
         ])

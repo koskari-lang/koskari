@@ -105,7 +105,8 @@ class ResolutionPragma(Protocol):
 
     def build_namespace_spec(self, fragment) -> NamespaceSpec:
         """
-        Build NamespaceSpec from fragment buckets
+        Build NamespaceSpec from fragment buckets; the names stay atoms
+        until lowering spells them
         """
         ...
 
@@ -163,11 +164,6 @@ class KoskariPragma:
         # enclosing function are module level and skipped like the root
         self._inline_scopes = {}
 
-        # Map derived spelling -> gensym for every scoped name this turn
-        # compiles, so a fragment's completion can resolve the key to
-        # the binding it names (see koskari.hygiene.Resolver)
-        self.marks = {}
-
 
     def on_write(self, fragment, name, *, position=None):
         """
@@ -184,14 +180,6 @@ class KoskariPragma:
 
         if name not in fragment.declares and name not in fragment._request_global:
             _unique_append(fragment.requests_for_write, name)
-
-
-    def note_mark(self, mark):
-        """
-        Register a marked identifier this turn compiles, by its key
-        """
-
-        self.marks[str(mark)] = mark
 
 
     def on_declare(self, fragment, name, *, position=None):
@@ -266,15 +254,15 @@ class KoskariPragma:
 
     def build_namespace_spec(self, fragment) -> NamespaceSpec:
         """
-        Build NamespaceSpec from fragment buckets, spelling each symbol
-        out; this is where a name leaves the fragment as a string
+        Build NamespaceSpec from fragment buckets; the names stay atoms
+        until lowering spells them
         """
 
         return NamespaceSpec(
             fragment.name,
-            tuple(str(n) for n in fragment.declares),
-            tuple(str(n) for n in self.closure_names(fragment)),
-            tuple(str(n) for n in fragment._request_global),
+            tuple(fragment.declares),
+            tuple(self.closure_names(fragment)),
+            tuple(fragment._request_global),
         )
 
 

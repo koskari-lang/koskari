@@ -178,14 +178,13 @@ class ByteCodeFragment:
 
     def note_mark(self, sym):
         """
-        Record a marked name this fragment references, for resolution
-        when it completes
+        Record that this fragment references a marked name, so its
+        completion resolves its names
 
         :param sym: a gensym
         """
 
         self.marked = True
-        self.resolution.note_mark(sym)
 
 
     def request_var(self, var_name):
@@ -314,9 +313,8 @@ class ByteCodeFragment:
         inline scopes open around it, innermost first. An inline
         scope's closure names are chosen from outside that scope
 
-        :param choose: callable taking a name and the open scopes,
-            returning the name to emit; a variable operand is its atom
-            and an inline scope's closure name is its spelling
+        :param choose: callable taking an atom and the open scopes,
+            returning the atom to emit
         """
 
         def rebuild_nspec(nspec, scopes):
@@ -335,7 +333,8 @@ class ByteCodeFragment:
             # a global an inline scope declares is bound in the module
             # and visible within the scope under that spelling, as its
             # locals are
-            return set(nspec.local_syms) | set(nspec.global_syms)
+            return {str(n) for n in nspec.local_syms} | {
+                str(n) for n in nspec.global_syms}
 
         # the stream is the compiler's own emission: PUSH_NS and
         # PUSH_COLLECT carry their NamespaceSpec as the operand, and the
@@ -442,10 +441,9 @@ class ByteCodeFragment:
             if names:
                 self.merge(valfrag)
 
-            # the operand spells the bound names, as every operand does
+            # the bound names stay atoms until lowering spells them
             self.instruction(
-                OpCode.PUSH_NS,
-                (nspec, tuple(map(str, names)) if names else None, 0, 0))
+                OpCode.PUSH_NS, (nspec, names if names else None, 0, 0))
             if child.marked:
                 self.marked = True
             self.instructions.extend(child.instructions)

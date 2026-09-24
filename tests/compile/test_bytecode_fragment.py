@@ -568,8 +568,8 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
         nspec = f.as_namespace_spec()
         self.assertIsInstance(nspec, NamespaceSpec)
         self.assertEqual(nspec.name, "ns1")
-        self.assertEqual(nspec.local_syms, ("a", "b"))
-        self.assertEqual(nspec.closure_syms, ("up",))
+        self.assertEqual(nspec.local_syms, (symbol("a"), symbol("b")))
+        self.assertEqual(nspec.closure_syms, (symbol("up"),))
 
     async def test_merge(self):
         a = ByteCodeFragment(name="a")

@@ -511,20 +511,7 @@ class Resolver:
                     out.append(chosen)
             bucket[:] = out
 
-        # a variable operand is its atom; an inline scope's closure name
-        # is a spelling, and the gensym it names was noted when the
-        # scope's reference was recorded
-        marks = fragment.resolution.marks
-
-        def choose_operand(name, scopes):
-            if isinstance(name, symbol):
-                return self.choose(name, scopes)
-            mark = marks.get(name)
-            if mark is None:
-                return name
-            return str(self.choose(mark, scopes))
-
-        fragment.rewrite_vars(choose_operand)
+        fragment.rewrite_vars(self.choose)
 
 
 # --- Deferred completion
