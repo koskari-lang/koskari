@@ -146,6 +146,18 @@
         },
         {
           "type": "SYMBOL",
+          "name": "quote_syntax"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "quasiquote_syntax"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "datumq"
+        },
+        {
+          "type": "SYMBOL",
           "name": "unquote"
         },
         {
@@ -545,6 +557,72 @@
         {
           "type": "STRING",
           "value": "`"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "_form"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "comment"
+            }
+          ]
+        }
+      ]
+    },
+    "quote_syntax": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "#'"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "_form"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "comment"
+            }
+          ]
+        }
+      ]
+    },
+    "quasiquote_syntax": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "#`"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "_form"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "comment"
+            }
+          ]
+        }
+      ]
+    },
+    "datumq": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "-'"
         },
         {
           "type": "CHOICE",
