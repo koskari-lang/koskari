@@ -115,6 +115,15 @@ use-site rule.
 
 Ref: [namespace-externs.md](namespace-externs.md).
 
+### Resolver candidate spellings (investigate)
+
+`Resolver.choose` rebuilds a marked atom's prefix gensyms and their
+spellings on every call, and `resolve` calls it per bucket entry and
+per variable operand. Profile a macro-heavy compile; if it shows, keep
+the spellings per atom for the life of the resolver.
+
+Ref: `koskari/hygiene.py` (`candidates`, `Resolver.choose`).
+
 ### Dict literal compression (review)
 
 A theoretical `compile/#dict` form could compress `(#dict ...)` calls

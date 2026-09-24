@@ -18,7 +18,7 @@ code.
 Normative layout syntax (blocks, lines, colon rules, peers, EBNF) is in
 [docs/reference/reader-layout.md](../docs/reference/reader-layout.md).
 Three authoring surfaces (layout block, layout line, s-expression) are in
-[docs/reference/concepts/layout-and-s-expressions.md](../docs/reference/concepts/layout-and-s-expressions.md).
+[docs/guide/layout-and-s-expressions.md](../docs/guide/layout-and-s-expressions.md).
 
 Agent summary:
 

@@ -77,7 +77,7 @@ Bootstrap macros in `bootstrap/_iter.ki`, not compiler specials:
 constructor (keyword `start:` / `stop:` / `step:`), and **`compile/item-slice`**
 gives the idiomatic direct form `(item-slice seq 1)` in place of
 `(item seq (slice 1 None))`. See
-[docs/reference/concepts/idiomatic-koskari.md](../docs/reference/concepts/idiomatic-koskari.md),
+[docs/guide/idiomatic-koskari.md](../docs/guide/idiomatic-koskari.md),
 [docs/reference/runtime/build-slice.md](../docs/reference/runtime/build-slice.md).
 
 ### Macros
