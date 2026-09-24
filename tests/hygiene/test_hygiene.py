@@ -27,11 +27,12 @@ import pytest
 
 from koskari.exceptions import CompilerError
 from koskari.hygiene import (
-    equal_by_base, expand_template_with_hygiene, mark_expansion)
+    equal_by_base, expand_template_with_hygiene, finalize_expansion,
+    mark_expansion)
 from koskari.lib import (
-    bracket_cons, bracket_nil, bracket_pair, cons, gensym, keyword, kos_repr,
-    nil, pair, symbol)
-from koskari.types import build_proper
+    Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym, keyword,
+    kos_repr, nil, pair, symbol)
+from koskari.types import build_proper, get_position, unpack
 
 
 pytestmark = pytest.mark.phase_infra
@@ -200,6 +201,97 @@ class TestExpandTemplate(unittest.TestCase):
         with self.assertRaises(CompilerError) as ctx:
             expand_template_with_hygiene(tpl, bindings)
         self.assertIn("ellipsis", str(ctx.exception).lower())
+
+
+class TestDatumqDirective(unittest.TestCase):
+    """
+    A template pair headed by the raw datumq symbol emits its one form
+    raw, in a Datum, unmarked and with no pattern variable substituted;
+    the Datum carries the position of the spine cell holding the form
+    """
+
+    DATUMQ = symbol("datumq")
+
+
+    def test_directive_emits_unmarked_datum(self):
+        foo = symbol("foo")
+        tpl = build_proper(symbol("list"), build_proper(self.DATUMQ, foo))
+        out = expand_template_with_hygiene(tpl, {}, 7)
+        head, rest = out
+        self.assertIsNot(head.base, head)
+        self.assertIsInstance(rest.car, Datum)
+        self.assertIs(rest.car.datum, foo)
+
+
+    def test_pattern_variable_inside_is_not_substituted(self):
+        foo = symbol("foo")
+        tpl = build_proper(self.DATUMQ, foo)
+        out = expand_template_with_hygiene(tpl, {foo: 5}, 7)
+        self.assertIsInstance(out, Datum)
+        self.assertIs(out.datum, foo)
+
+
+    def test_position_is_the_spine_cell_holding_the_form(self):
+        foo = symbol("foo")
+        directive = build_proper(self.DATUMQ, foo)
+        directive.cdr.set_position((3, 7))
+        tpl = build_proper(symbol("list"), directive)
+        out = expand_template_with_hygiene(tpl, {}, 7)
+        self.assertEqual(out.cdr.car.position, (3, 7))
+
+        # the peel moves the position onto the cell that now holds foo
+        final = finalize_expansion(out)
+        self.assertIs(final.cdr.car, foo)
+        self.assertEqual(get_position(final.cdr), (3, 7))
+
+
+    def test_pair_form_keeps_the_spine_cell_position(self):
+        inner = build_proper(symbol("a"), symbol("b"))
+        directive = build_proper(self.DATUMQ, inner)
+        directive.cdr.set_position((4, 2))
+        out = expand_template_with_hygiene(directive, {}, 7)
+        self.assertIs(out.datum, inner)
+        self.assertEqual(out.position, (4, 2))
+
+
+    def test_arity_other_than_one_is_refused(self):
+        for tpl in (build_proper(self.DATUMQ),
+                    build_proper(self.DATUMQ, symbol("a"), 3)):
+            with self.assertRaises(CompilerError) as caught:
+                expand_template_with_hygiene(tpl, {}, 7)
+            self.assertIn("exactly one form", str(caught.exception))
+
+
+    def test_literal_datumq_call_escape(self):
+        foo = symbol("foo")
+        tpl = build_proper(build_proper(self.DATUMQ, self.DATUMQ), foo)
+        final = finalize_expansion(expand_template_with_hygiene(tpl, {}, 7))
+        head, rest = final
+        self.assertIs(head, self.DATUMQ)
+        self.assertIs(rest.car.base, foo)
+        self.assertIsNot(rest.car, foo)
+
+
+    def test_nested_directive_emits_the_inner_one_raw(self):
+        foo = symbol("foo")
+        inner = build_proper(self.DATUMQ, foo)
+        tpl = build_proper(self.DATUMQ, inner)
+        out = expand_template_with_hygiene(tpl, {}, 7)
+        self.assertIs(out.datum, inner)
+
+
+    def test_directive_body_does_not_drive_an_ellipsis(self):
+        x = symbol("x")
+        tag = symbol("tag")
+        tpl = build_proper(
+            build_proper(symbol("cons"), x, build_proper(self.DATUMQ, tag)),
+            Ellipsis)
+        final = finalize_expansion(
+            expand_template_with_hygiene(tpl, {x: [1, 2], tag: [7, 8, 9]}, 7))
+        rows = list(unpack(final))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([r.cdr.car for r in rows], [1, 2])
+        self.assertEqual([r.cdr.cdr.car for r in rows], [tag, tag])
 
 
 class TestMarkExpansion(unittest.TestCase):

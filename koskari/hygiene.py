@@ -77,9 +77,43 @@ def mark_atom(atom, mark):
 # --- Template expansion
 
 
+_symbol_datumq = symbol("datumq")
+
+
+def _is_datumq_directive(form):
+    """
+    Whether form is a template pair headed by the raw datumq symbol
+    """
+
+    return is_pair(form) and not is_nil(form) and form.car is _symbol_datumq
+
+
+def _datumq_directive(template):
+    """
+    The Datum a (datumq X) template pair emits: X raw, unmarked, with the
+    position of the spine cell that holds it
+
+    :param template: a template pair headed by the raw datumq symbol
+    :raises CompilerError: when the directive does not hold one form
+    """
+
+    rest = template.cdr
+    if not is_pair(rest) or is_nil(rest) or not is_nil(rest.cdr):
+        count = len(list(unpack(rest))) if is_pair(rest) else 0
+        raise CompilerError(
+            "datumq in a template takes exactly one form, got"
+            f" {count}: {template}",
+            template)
+    return Datum(rest.car, get_position(rest))
+
+
 def _collect_symbols(expr, out):
     if is_symbol(expr):
         out.add(expr)
+        return
+
+    # a directive's form is emitted raw, so its names bind nothing
+    if _is_datumq_directive(expr):
         return
 
     if is_pair(expr):
@@ -199,6 +233,11 @@ def expand_template_with_hygiene(template, bindings, mark=None):
 
     if not is_pair(template):
         return template
+
+    # (datumq X) emits X raw; a transcription consumes the directive,
+    # so a nested one reaches the inner template as a raw form
+    if _is_datumq_directive(template):
+        return _datumq_directive(template)
 
     items = list(unpack(template))
     out = []
