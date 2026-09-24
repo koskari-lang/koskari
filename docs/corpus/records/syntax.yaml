@@ -1627,3 +1627,59 @@ tags:
   - bitwise
   - idiom
 notes: a ~ attached to the front of a name reads as the unary call (~ x), Python's __invert__; ~5 is -6 and reads as (~ 5) since no literal carries a tilde.
+---
+id: syntax-macro-generating-macro-quasiquote-syntax-001
+feature: macro/compile/define-syntax
+source: |-
+  (define-syntax mk-getter
+    (syntax-rules []
+      [(mk-getter name val)
+       (begin
+         (define secret val)
+         (define-syntax name (macro-rules [] [(name) #`secret])))]))
+  
+verify:
+  read: (define-syntax mk-getter (syntax-rules [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote-syntax secret)])))]))
+  expand: (define-global compile/mk-getter (syntax-rules mk-getter [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote-syntax secret)])))]))
+references:
+  - guide/hygiene.md
+  - reference/specials/compile-quasiquote-syntax.md
+  - reference/specials/compile-macro-rules.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - macro-rules
+  - quasiquote-syntax
+  - metaprogramming
+  - hygiene
+  - idiom
+notes: "a macro that a template defines: the outer expansion marks secret, and the inner arm's #` keeps that mark, so (get-secret) after (mk-getter get-secret 8) reads the template's secret, 8, not a use-site secret; definition only, since a macro and its use cannot share one corpus unit"
+---
+id: syntax-macro-generating-macro-plain-backtick-pitfall-001
+feature: macro/compile/define-syntax
+source: |-
+  (define-syntax mk-getter
+    (syntax-rules []
+      [(mk-getter name val)
+       (begin
+         (define secret val)
+         (define-syntax name (macro-rules [] [(name) `secret])))]))
+  
+verify:
+  read: (define-syntax mk-getter (syntax-rules [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote secret)])))]))
+  expand: (define-global compile/mk-getter (syntax-rules mk-getter [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote secret)])))]))
+references:
+  - guide/hygiene.md
+  - reference/specials/compile-quasiquote.md
+  - reference/specials/compile-quasiquote-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - macro-rules
+  - quasiquote
+  - metaprogramming
+  - hygiene
+  - pitfall
+notes: "a plain backtick is data and projects the outer expansion's mark off secret, so the inner macro's output names the use site's secret: after (define secret 100) and (mk-getter get-secret 8), (get-secret) is 100 with no error; write #`secret to reach the template's binding"
