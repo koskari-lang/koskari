@@ -38,6 +38,9 @@ from koskari.types import (
 
 
 __all__ = (
+    "Resolver",
+    "candidates",
+    "declared_spellings",
     "expand_template_with_hygiene",
     "finalize_expansion",
     "mark_atom",
@@ -370,6 +373,82 @@ def finalize_expansion(form, mark=None):
     if mark is not None:
         form = mark_expansion(form, mark)
     return peel_datums(form)
+
+
+# --- Resolution
+
+def candidates(atom):
+    """
+    The symbols a reference may resolve to, longest first: a gensym,
+    then the gensym under its marks with the newest removed, down to
+    its base. A bare symbol has itself alone
+
+    :param atom: a symbol or gensym
+    :rtype: list of symbol
+    """
+
+    base = atom.base
+    if base is atom:
+        return [atom]
+    marks = atom.marks
+    out = [atom]
+    for n in range(len(marks) - 1, 0, -1):
+        out.append(gensym(base, marks=marks[:n]))
+    out.append(base)
+    return out
+
+
+def declared_spellings(fragment):
+    """
+    The spellings a fragment declares or pulls from the module
+    """
+
+    return {str(n) for n in fragment.declares} | {
+        str(n) for n in fragment._request_global}
+
+
+class Resolver:
+    """
+    The declarations visible to one completing fragment: its own, those
+    of the fragments enclosing it, and the module's bound names
+
+    A marked spelling bound in the module was defined by an earlier
+    turn, as a macro-generating macro's expansion leaves behind
+
+    :param fragment: the fragment being completed
+    :param ancestors: the fragments enclosing it, outermost first
+    :param module_names: the module's bound names
+    """
+
+    __slots__ = ("declared", "module_names")
+
+
+    def __init__(self, fragment, ancestors, module_names):
+        self.declared = [declared_spellings(fragment)]
+        self.declared.extend(
+            declared_spellings(f) for f in reversed(ancestors))
+        self.module_names = module_names
+
+
+    def choose(self, atom, scopes=()):
+        """
+        The first candidate for atom whose spelling is declared in an
+        inline scope, the fragment, an ancestor, or the module; the
+        base when none is
+
+        :param atom: a symbol or gensym
+        :param scopes: spelling sets of the inline scopes open around
+            the reference, innermost first
+        """
+
+        cands = candidates(atom)
+        for cand in cands[:-1]:
+            spelling = str(cand)
+            if any(spelling in s for s in scopes) \
+                    or any(spelling in s for s in self.declared) \
+                    or spelling in self.module_names:
+                return cand
+        return cands[-1]
 
 
 # The end.

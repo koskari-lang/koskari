@@ -28,10 +28,11 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
+from ..hygiene import Resolver, candidates
 from ..lib import (
     Arena, Code, Datum, FormalsSpec, FunctionSpec, Module,
     ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
-    bracket_pair, cons, gensym, keyword, kos_repr, nil, symbol)
+    bracket_pair, cons, keyword, kos_repr, nil, symbol)
 from ..types import (
     equal_by_base, fill_position, get_position, is_keyword, is_nil,
     is_pair, is_proper, is_symbol, parameterize)
@@ -446,46 +447,6 @@ class DeferredFunctionSpec:
         self.ancestors = ancestors
 
 
-def mark_candidates(mark):
-    """
-    The symbols a marked reference may resolve to, longest first: the
-    gensym itself, then the gensym under its marks with the newest
-    removed, down to the base symbol
-
-    :param mark: a gensym
-    :rtype: list of symbol
-    """
-
-    base = mark.base
-    marks = mark.marks
-    out = [mark]
-    for n in range(len(marks) - 1, 0, -1):
-        out.append(gensym(base, marks=marks[:n]))
-    out.append(base)
-    return out
-
-
-def _choose_key(candidates, scopes, module_names):
-    """
-    The first candidate whose spelling is declared in a visible scope,
-    or, for a marked one, already bound in the module; the base symbol
-    when none is
-
-    A marked spelling bound in the module was defined by an earlier
-    turn, as a macro-generating macro's expansion leaves behind
-    """
-
-    for cand in candidates[:-1]:
-        spelling = str(cand)
-        for scope in scopes:
-            if spelling in scope:
-                return cand
-        if spelling in module_names:
-            return cand
-    base = candidates[-1]
-    return base
-
-
 def resolve_marks(fragment, ancestors):
     """
     Resolve every marked name the fragment references to the binding
@@ -508,18 +469,12 @@ def resolve_marks(fragment, ancestors):
     marks = reso.marks
     compiler = fragment.compiler
     module_names = vars(compiler.module) if compiler is not None else {}
-
-    def declared(frag):
-        return {str(n) for n in frag.declares} | {
-            str(n) for n in frag._request_global}
-
-    base = [declared(fragment)]
-    base.extend(declared(f) for f in reversed(ancestors))
+    resolver = Resolver(fragment, ancestors, module_names)
 
     def choose_symbol(sym, scopes):
         if sym.base is sym:
             return sym
-        return _choose_key(mark_candidates(sym), scopes, module_names)
+        return resolver.choose(sym, scopes)
 
     def choose(name, scopes):
         # an instruction operand is a spelling; the gensym it names was
@@ -527,7 +482,7 @@ def resolve_marks(fragment, ancestors):
         mark = marks.get(name)
         if mark is None:
             return name
-        return str(_choose_key(mark_candidates(mark), scopes, module_names))
+        return str(resolver.choose(mark, scopes))
 
     def rename_bucket(bucket, scopes):
         seen = set()
@@ -539,9 +494,9 @@ def resolve_marks(fragment, ancestors):
                 out.append(chosen)
         bucket[:] = out
 
-    rename_bucket(fragment.requests, base)
-    rename_bucket(fragment.requests_for_write, base)
-    rename_bucket(fragment._request_global, base)
+    rename_bucket(fragment.requests, ())
+    rename_bucket(fragment.requests_for_write, ())
+    rename_bucket(fragment._request_global, ())
 
     def rebuild_nspec(nspec, scopes):
         closure = []
@@ -562,7 +517,7 @@ def resolve_marks(fragment, ancestors):
     # the stream is the compiler's own emission: PUSH_NS and
     # PUSH_COLLECT carry their NamespaceSpec as the operand, and the
     # fused rows the processor mints later are not here yet
-    scopes = list(base)
+    scopes = []
     out = []
     for op, arg in fragment.instructions:
         if op == OpCode.PUSH_NS:
@@ -864,14 +819,14 @@ class Compiler:
 
         # a marked head names a transformer the same expansion may
         # have defined under the marked spelling, else the bare one
-        if isinstance(name, gensym):
-            for cand in mark_candidates(name):
-                found = self._find_compiled_use(str(cand))
-                if found is not None:
-                    return found
-            return None
+        if not is_symbol(name):
+            return self._find_compiled_use(str(name))
 
-        return self._find_compiled_use(str(name))
+        for cand in candidates(name):
+            found = self._find_compiled_use(str(cand))
+            if found is not None:
+                return found
+        return None
 
 
     def _find_compiled_use(self, name):
