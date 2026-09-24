@@ -335,6 +335,199 @@ static int test_gensym_no_name(void) {
 }
 
 
+static int test_gensym_new_interns(void) {
+    /*
+      Test that a base and marks name one gensym: a second request
+      for the same pair returns the interned instance.
+    */
+    PyObject *text = PyUnicode_FromString("c4_interned");
+    TEST_ASSERT_NOT_NULL(text, "create name");
+    PyObject *base = KosSymbol_FromString(text);
+    TEST_ASSERT_NOT_NULL(base, "create base");
+    PyObject *marks = Py_BuildValue("(K)", 1ULL);
+    TEST_ASSERT_NOT_NULL(marks, "create marks");
+
+    PyObject *g1 = KosGensym_New(base, marks);
+    PyObject *g2 = KosGensym_New(base, marks);
+    TEST_ASSERT_NOT_NULL(g1, "create first gensym");
+    TEST_ASSERT_NOT_NULL(g2, "create second gensym");
+    TEST_ASSERT_SAME(g1, g2, "same base and marks are one gensym");
+    TEST_ASSERT_SAME(KosGensym_BASE(g1), base, "base is kept");
+    TEST_ASSERT_EQ(Py_REFCNT(g1), 2, "two references held");
+
+    Py_DECREF(g2);
+    Py_DECREF(g1);
+    Py_DECREF(marks);
+    Py_DECREF(base);
+    Py_DECREF(text);
+    return 0;
+}
+
+
+static int test_gensym_new_errors(void) {
+    /*
+      Test the rejected requests: a base that is not a symbol, empty
+      marks, and a spelling another atom already holds. Each returns
+      NULL with an exception and leaves no gensym interned.
+    */
+    PyObject *text = PyUnicode_FromString("c4_errors");
+    TEST_ASSERT_NOT_NULL(text, "create name");
+    PyObject *kwd = KosKeyword_FromString(text);
+    PyObject *base = KosSymbol_FromString(text);
+    TEST_ASSERT_NOT_NULL(kwd, "create keyword");
+    TEST_ASSERT_NOT_NULL(base, "create base");
+
+    PyObject *one = Py_BuildValue("(K)", 1ULL);
+    PyObject *none = PyTuple_New(0);
+    TEST_ASSERT_NOT_NULL(one, "create marks");
+    TEST_ASSERT_NOT_NULL(none, "create empty marks");
+
+    PyObject *g = KosGensym_New(kwd, one);
+    TEST_ASSERT_NULL(g, "keyword base is rejected");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_TypeError),
+                "keyword base raises TypeError");
+    PyErr_Clear();
+
+    g = KosGensym_New(base, none);
+    TEST_ASSERT_NULL(g, "empty marks are rejected");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
+                "empty marks raise ValueError");
+    PyErr_Clear();
+
+    /* a plain symbol holding the derived spelling */
+    PyObject *spelled = PyUnicode_FromString("c4_errors#1");
+    TEST_ASSERT_NOT_NULL(spelled, "create spelling");
+    PyObject *holder = KosSymbol_FromString(spelled);
+    TEST_ASSERT_NOT_NULL(holder, "create holder");
+
+    g = KosGensym_New(base, one);
+    TEST_ASSERT_NULL(g, "held spelling is rejected");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
+                "held spelling raises ValueError");
+    PyErr_Clear();
+    TEST_ASSERT(! KosGensym_Check(holder), "holder is still a symbol");
+
+    Py_DECREF(holder);
+    Py_DECREF(spelled);
+    Py_DECREF(none);
+    Py_DECREF(one);
+    Py_DECREF(base);
+    Py_DECREF(kwd);
+    Py_DECREF(text);
+    return 0;
+}
+
+
+static int test_gensym_sixteen_digit_mark(void) {
+    /*
+      Test that a mark of sixteen hex digits is spelled in full, and
+      that the mark one below it is a different gensym.
+    */
+    PyObject *text = PyUnicode_FromString("c4x");
+    TEST_ASSERT_NOT_NULL(text, "create name");
+    PyObject *base = KosSymbol_FromString(text);
+    TEST_ASSERT_NOT_NULL(base, "create base");
+    PyObject *top = Py_BuildValue("(K)", 0xffffffffffffffffULL);
+    PyObject *below = Py_BuildValue("(K)", 0xfffffffffffffffeULL);
+    TEST_ASSERT_NOT_NULL(top, "create top marks");
+    TEST_ASSERT_NOT_NULL(below, "create below marks");
+
+    PyObject *g1 = KosGensym_New(base, top);
+    TEST_ASSERT_NOT_NULL(g1, "create top gensym");
+    PyObject *s1 = PyObject_Str(g1);
+    TEST_ASSERT_NOT_NULL(s1, "spell top gensym");
+    TEST_ASSERT(PyUnicode_CompareWithASCIIString(
+                    s1, "c4x#ffffffffffffffff") == 0,
+                "all sixteen digits are spelled");
+
+    PyObject *g2 = KosGensym_New(base, below);
+    TEST_ASSERT_NOT_NULL(g2, "create below gensym");
+    TEST_ASSERT_NOT_SAME(g1, g2, "neighbouring marks are distinct");
+
+    Py_DECREF(g2);
+    Py_DECREF(s1);
+    Py_DECREF(g1);
+    Py_DECREF(below);
+    Py_DECREF(top);
+    Py_DECREF(base);
+    Py_DECREF(text);
+    return 0;
+}
+
+
+static int test_gensym_fresh_skips_explicit(void) {
+    /*
+      Test that a fresh gensym never returns one built explicitly
+      under the mark the counter draws next.
+    */
+    PyObject *text = PyUnicode_FromString("c4_fresh");
+    TEST_ASSERT_NOT_NULL(text, "create name");
+    PyObject *base = KosSymbol_FromString(text);
+    TEST_ASSERT_NOT_NULL(base, "create base");
+
+    unsigned long long nxt = KosGensym_NextMark();
+    PyObject *marks = Py_BuildValue("(K)", nxt + 1);
+    TEST_ASSERT_NOT_NULL(marks, "create marks");
+    PyObject *held = KosGensym_New(base, marks);
+    TEST_ASSERT_NOT_NULL(held, "create explicit gensym");
+
+    PyObject *fresh = KosGensym_FromString(text, NULL);
+    TEST_ASSERT_NOT_NULL(fresh, "create fresh gensym");
+    TEST_ASSERT_NOT_SAME(fresh, held, "fresh is not the explicit one");
+    TEST_ASSERT_EQ(
+        PyLong_AsUnsignedLongLong(
+            PyTuple_GET_ITEM(KosGensym_MARKS(fresh), 0)),
+        nxt + 2, "fresh takes the following mark");
+
+    Py_DECREF(fresh);
+    Py_DECREF(held);
+    Py_DECREF(marks);
+    Py_DECREF(base);
+    Py_DECREF(text);
+    return 0;
+}
+
+
+static int test_gensym_rejected_candidate_released(void) {
+    /*
+      Test that a candidate the predicate rejects is released: its
+      spelling is free for a plain symbol afterwards.
+    */
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create namespace");
+    PyObject *ran = PyRun_String(
+        "seen = []\n"
+        "def pred(g):\n"
+        "    seen.append(str(g))\n"
+        "    return len(seen) > 1\n",
+        Py_file_input, ns, ns);
+    TEST_ASSERT_NOT_NULL(ran, "define predicate");
+    Py_DECREF(ran);
+
+    PyObject *pred = PyDict_GetItemString(ns, "pred");
+    PyObject *seen = PyDict_GetItemString(ns, "seen");
+    TEST_ASSERT_NOT_NULL(pred, "predicate");
+    TEST_ASSERT_NOT_NULL(seen, "seen list");
+
+    PyObject *text = PyUnicode_FromString("c4_pred");
+    TEST_ASSERT_NOT_NULL(text, "create name");
+    PyObject *g = KosGensym_FromString(text, pred);
+    TEST_ASSERT_NOT_NULL(g, "create accepted gensym");
+    TEST_ASSERT_EQ(PyList_GET_SIZE(seen), 2, "one candidate rejected");
+
+    PyObject *rejected = PyList_GET_ITEM(seen, 0);
+    PyObject *plain = KosSymbol_FromString(rejected);
+    TEST_ASSERT_NOT_NULL(plain, "rejected spelling is free");
+    TEST_ASSERT(! KosGensym_Check(plain), "a plain symbol holds it");
+
+    Py_DECREF(plain);
+    Py_DECREF(g);
+    Py_DECREF(text);
+    Py_DECREF(ns);
+    return 0;
+}
+
+
 /* === symbol/keyword distinction tests === */
 
 
@@ -423,6 +616,11 @@ int run_atom_tests(void) {
     /* Gensym tests */
     RUN_TEST(test_gensym_unique);
     RUN_TEST(test_gensym_no_name);
+    RUN_TEST(test_gensym_new_interns);
+    RUN_TEST(test_gensym_new_errors);
+    RUN_TEST(test_gensym_sixteen_digit_mark);
+    RUN_TEST(test_gensym_fresh_skips_explicit);
+    RUN_TEST(test_gensym_rejected_candidate_released);
 
     /* Cross-type tests */
     RUN_TEST(test_symbol_keyword_distinct);
