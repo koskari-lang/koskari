@@ -657,6 +657,39 @@ class TestDynWindThunksInTemplate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(ns["out"]), [1, 2, 3])
 
 
+class TestDottedTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    A dotted template expands to a dotted form, its tail quoted as the
+    plain symbol the template wrote
+    """
+
+    SRC = """
+(define-syntax d
+  (syntax-rules []
+    [(d a) (quote (a . tail))]))
+
+(define-syntax e
+  (syntax-rules []
+    [(e a b) (quote (a . b))]))
+
+(define dotted (d 1))
+(define spliced (e 1 (2 3)))
+(define bound-tail (e 1 z))
+"""
+
+    async def test_dotted_tail_survives(self):
+        ns = await load("mh_dotted", self.SRC)
+        self.assertEqual(ns["dotted"].car, 1)
+        self.assertIs(ns["dotted"].cdr, symbol("tail"))
+
+
+    async def test_pattern_variable_tail(self):
+        ns = await load("mh_dotted_var", self.SRC)
+        self.assertEqual(list(unpack(ns["spliced"])), [1, 2, 3])
+        self.assertEqual(ns["bound-tail"].car, 1)
+        self.assertIs(ns["bound-tail"].cdr, symbol("z"))
+
+
 class TestRecursiveMacro(unittest.IsolatedAsyncioTestCase):
     """
     A recursive template passes a use-site identifier into itself under

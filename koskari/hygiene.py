@@ -240,7 +240,16 @@ def expand_template_with_hygiene(template, bindings, mark=None):
     if _is_datumq_directive(template):
         return _datumq_directive(template)
 
-    items = list(unpack(template))
+    # the spine's elements, and a dotted template's terminator apart
+    # from them so it stays the terminator
+    items = []
+    cell = template
+    while is_pair(cell) and not is_nil(cell):
+        items.append(cell.car)
+        cell = cell.cdr
+    tail = expand_template_with_hygiene(cell, bindings, mark) \
+        if not is_nil(cell) else None
+
     out = []
     i = 0
     while i < len(items):
@@ -276,8 +285,12 @@ def expand_template_with_hygiene(template, bindings, mark=None):
     # rebuilds as a bracket list (terminated by bracket-nil), so a [ ] in a
     # syntax-rules template survives expansion instead of flattening to ( )
     if isinstance(template, bracket_pair):
+        if tail is not None:
+            return bracket_cons(*out, tail)
         return bracket_cons(*out, bracket_nil) if out else bracket_nil
 
+    if tail is not None:
+        return cons(*out, tail)
     return build_proper(*out)
 
 

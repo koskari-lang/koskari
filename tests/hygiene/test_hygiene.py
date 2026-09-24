@@ -203,6 +203,35 @@ class TestExpandTemplate(unittest.TestCase):
         self.assertIn("ellipsis", str(ctx.exception).lower())
 
 
+    def test_dotted_tail_is_kept(self):
+        """
+        A dotted template keeps its terminator: a symbol tail is marked
+        and another atom passes through
+        """
+
+        a = symbol("a")
+        tail = symbol("tail")
+        out = expand_template_with_hygiene(cons(a, tail), {a: 1}, 7)
+        self.assertEqual(out.car, 1)
+        self.assertIs(out.cdr, gensym(tail, marks=(7,)))
+
+        out = expand_template_with_hygiene(cons(a, 2), {a: 1}, 7)
+        self.assertEqual(out, cons(1, 2))
+
+
+    def test_dotted_bracket_tail_is_kept(self):
+        a = symbol("a")
+        out = expand_template_with_hygiene(bracket_cons(a, 2), {a: 1}, 7)
+        self.assertIsInstance(out, bracket_pair)
+        self.assertEqual((out.car, out.cdr), (1, 2))
+
+
+    def test_ellipsis_before_dotted_tail(self):
+        x = symbol("x")
+        out = expand_template_with_hygiene(cons(x, ..., 9), {x: [1, 2]})
+        self.assertEqual(out, cons(1, 2, 9))
+
+
 class TestDatumqDirective(unittest.TestCase):
     """
     A template pair headed by the raw datumq symbol emits its one form
