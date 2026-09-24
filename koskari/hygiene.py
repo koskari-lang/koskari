@@ -536,21 +536,46 @@ class Resolver:
         the instruction stream, the fragment's own, and those of the
         fragments enclosing it, which are final by the time it completes
 
+        The inline scopes compiled into the fragment have their write
+        buckets resolved the same way, with the scopes open around each
+        write, so validation reads the names the stream binds
+
         :param fragment: the fragment being completed
         """
 
         for bucket in (fragment.requests, fragment.requests_for_write,
                        fragment._request_global):
-            seen = set()
-            out = []
-            for sym in bucket:
-                chosen = self.choose(sym)
-                if chosen not in seen:
-                    seen.add(chosen)
-                    out.append(chosen)
-            bucket[:] = out
+            self.resolve_bucket(bucket)
+
+        for scope, ancestors in fragment.resolution.inline_scopes(fragment):
+            inner = ancestors[ancestors.index(fragment) + 1:]
+            scopes = [declared_spellings(scope)]
+            scopes.extend(declared_spellings(f) for f in reversed(inner))
+            for bucket in (scope.requests_for_write,
+                           scope.propagated_writes):
+                self.resolve_bucket(bucket, scopes)
 
         fragment.rewrite_vars(self.choose)
+
+
+    def resolve_bucket(self, bucket, scopes=()):
+        """
+        Replace each name in bucket with its choice, in place, keeping
+        the first of any names that choose the same binding
+
+        :param bucket: a list of atoms
+        :param scopes: spelling sets of the inline scopes open around
+            the names, innermost first
+        """
+
+        seen = set()
+        out = []
+        for sym in bucket:
+            chosen = self.choose(sym, scopes)
+            if chosen not in seen:
+                seen.add(chosen)
+                out.append(chosen)
+        bucket[:] = out
 
 
 # --- Deferred completion

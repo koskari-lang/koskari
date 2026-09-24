@@ -409,6 +409,15 @@ class KoskariPragma:
                 return
 
 
+    def inline_scopes(self, fragment):
+        """
+        The inline scopes registered under a function fragment, as
+        (scope, ancestors) pairs in the order they closed
+        """
+
+        return tuple(self._inline_scopes.get(id(fragment), ()))
+
+
 class SchemePragma(KoskariPragma):
     """
     Scheme-like: unsatisfied writes promote to global.

@@ -550,6 +550,53 @@ class TestSetqFreeName(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["counter"], 2)
 
 
+class TestSetqInInlineScope(unittest.IsolatedAsyncioTestCase):
+    """
+    A template write expanded inside a let or class body in a function
+    reaches the function's own binding, as the same write outside the
+    inline scope does
+    """
+
+    SRC = """
+(define-syntax inc-i
+  (syntax-rules []
+    [(inc-i) (setq i (+ i 1))]))
+
+(define in-let []
+  (define i 10)
+  (let [[j 1]] (inc-i))
+  i)
+
+(define in-nested-let []
+  (define i 10)
+  (let [[j 1]] (let [[k 2]] (inc-i)))
+  i)
+
+(define in-class []
+  (define i 10)
+  (define-class C [] (inc-i))
+  i)
+
+(define from-let (in-let))
+(define from-nested-let (in-nested-let))
+(define from-class (in-class))
+"""
+
+    async def test_write_in_let(self):
+        ns = await load("mh_setq_let", self.SRC)
+        self.assertEqual(ns["from-let"], 11)
+
+
+    async def test_write_in_nested_let(self):
+        ns = await load("mh_setq_nested_let", self.SRC)
+        self.assertEqual(ns["from-nested-let"], 11)
+
+
+    async def test_write_in_class_body(self):
+        ns = await load("mh_setq_class", self.SRC)
+        self.assertEqual(ns["from-class"], 11)
+
+
 class TestRecursiveMacro(unittest.IsolatedAsyncioTestCase):
     """
     A recursive template passes a use-site identifier into itself under
