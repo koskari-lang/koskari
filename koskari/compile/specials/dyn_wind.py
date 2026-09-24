@@ -23,11 +23,12 @@ Special form handler for compile/dyn-wind (dynamic-wind).
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import FormalsSpec, FunctionSpec, OpCode, cons, nil, symbol
+from ...hygiene import function_constant
+from ...lib import FormalsSpec, OpCode, cons, nil, symbol
 from ...matcher import CALLEDBY, LIST, LITERAL_KW, MATCH, ONEOF, REST, VALUE
 from ...syntax import special
 from ...types import is_nil
-from ..compiler import ByteCodeFragment, Compiler, CompilerMode
+from ..compiler import ByteCodeFragment, Compiler
 
 
 def _compile_thunk(compiler, body_src, fragment):
@@ -37,10 +38,11 @@ def _compile_thunk(compiler, body_src, fragment):
     stack.
     """
     thunk = compiler.fragment("<dyn-wind-thunk>")
-    thunk.merge(compiler.full_compile(body_src))
-    code = compiler.complete(thunk, CompilerMode.FUNCTION)
-    fspec = FunctionSpec(None, FormalsSpec((), (), (), (), None, None), code)
-    fragment.instruction(OpCode.CONST, fspec)
+    with compiler.resolution_scope(thunk, function=True):
+        thunk.merge(compiler.full_compile(body_src))
+    fragment.instruction(OpCode.CONST, function_constant(
+        compiler, fragment, thunk, None,
+        FormalsSpec((), (), (), (), None, None)))
     fragment.instruction(OpCode.BUILD_FUNCTION, ((), (), 0, 0))
     return fragment
 

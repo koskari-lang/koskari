@@ -597,6 +597,66 @@ class TestSetqInInlineScope(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["from-class"], 11)
 
 
+class TestTemplateParameterLabels(unittest.IsolatedAsyncioTestCase):
+    """
+    A parameter a template introduces binds apart from the caller's
+    names; one the template writes raw is the caller's label, and a
+    keyword call reaches it
+    """
+
+    SRC = """
+(define-syntax wrap
+  (syntax-rules []
+    [(wrap body) (lambda [x] body)]))
+
+(define-syntax make-pair-fn
+  (syntax-rules []
+    [(make-pair-fn name) (define name [-'x -'y] #(x y))]))
+
+(define x "outer")
+(define wrapped ((wrap x) "param"))
+
+(make-pair-fn pair-of)
+(define by-keyword (pair-of y: 2 x: 1))
+"""
+
+    async def test_template_parameter_does_not_capture(self):
+        ns = await load("mh_param_private", self.SRC)
+        self.assertEqual(ns["wrapped"], "outer")
+
+
+    async def test_raw_parameter_takes_keyword(self):
+        ns = await load("mh_param_label", self.SRC)
+        self.assertEqual(ns["by-keyword"], (1, 2))
+
+
+class TestDynWindThunksInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    The before, body, and after thunks of a dyn-wind a template writes
+    reach the template's own helper, defined after the function that
+    uses it, as the body of a lambda would
+    """
+
+    SRC = """
+(define out #[])
+(define hlp [x] (out.append (* 100 x)))
+
+(define-syntax make-go
+  (syntax-rules []
+    [(make-go go)
+     (begin
+       (define go [] (dyn-wind (hlp 1) (hlp 2) (hlp 3)))
+       (define hlp [x] (out.append x)))]))
+
+(make-go go)
+(go)
+"""
+
+    async def test_thunks_reach_template_helper(self):
+        ns = await load("mh_dyn_wind", self.SRC)
+        self.assertEqual(list(ns["out"]), [1, 2, 3])
+
+
 class TestRecursiveMacro(unittest.IsolatedAsyncioTestCase):
     """
     A recursive template passes a use-site identifier into itself under

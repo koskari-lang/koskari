@@ -238,6 +238,19 @@ shared-slot
 it is marked, and a pattern variable inside it is not substituted.
 Errors in the form point at where the template wrote it.
 
+A parameter a template introduces is private to the expansion too: its
+name is the function's local binding, so a caller cannot pass it by
+keyword. A template whose parameters callers name writes them raw:
+
+```koskari
+(define-syntax make-pair-fn
+  (syntax-rules [] [(make-pair-fn name) (define name [-'x -'y] #(x y))]))
+
+(make-pair-fn pair-of)
+(pair-of y: 2 x: 1)
+;; => (1, 2)
+```
+
 The expansion consumes the directive. A template that defines another
 macro nests it once per level, `(datumq (datumq slot))` or `-'-'slot`,
 so the inner template receives the raw `(datumq slot)` and its own
