@@ -594,6 +594,16 @@ class Resolver:
                        fragment._request_global):
             self.resolve_bucket(bucket)
 
+        # a name resolved to the fragment's own declaration or global is
+        # no request, as the intake of a written name already ensures
+        declares = set(fragment.declares)
+        globals_ = set(fragment._request_global)
+        fragment.requests[:] = [
+            n for n in fragment.requests if n not in declares]
+        fragment.requests_for_write[:] = [
+            n for n in fragment.requests_for_write
+            if n not in declares and n not in globals_]
+
         for scope, ancestors in fragment.resolution.inline_scopes(fragment):
             inner = ancestors[ancestors.index(fragment) + 1:]
             scopes = [declared_spellings(scope)]

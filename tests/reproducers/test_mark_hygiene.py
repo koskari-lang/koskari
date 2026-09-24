@@ -597,6 +597,31 @@ class TestSetqInInlineScope(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["from-class"], 11)
 
 
+class TestResolvedRequestMatchesHandWritten(unittest.IsolatedAsyncioTestCase):
+    """
+    A template reference that resolves to a name the function declares
+    is a local like the hand-written reference, not a closure need too
+    """
+
+    SRC = """
+(define-syntax inc-i
+  (syntax-rules []
+    [(inc-i) (setq i (+ i 1))]))
+
+(define f [] (define i 10) (inc-i) i)
+(define g [] (define i 10) (setq i (+ i 1)) i)
+"""
+
+    async def test_namespace_spec_matches(self):
+        ns = await load("mh_resolved_request", self.SRC)
+        f_spec = ns["f"].code.namespace_spec
+        g_spec = ns["g"].code.namespace_spec
+        self.assertEqual(
+            (f_spec.local_syms, f_spec.closure_syms, f_spec.global_syms),
+            (g_spec.local_syms, g_spec.closure_syms, g_spec.global_syms))
+        self.assertEqual((await ns["f"](), await ns["g"]()), (11, 11))
+
+
 class TestTemplateParameterLabels(unittest.IsolatedAsyncioTestCase):
     """
     A parameter a template introduces binds apart from the caller's
