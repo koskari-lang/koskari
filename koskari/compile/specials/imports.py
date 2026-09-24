@@ -53,7 +53,7 @@ from ...lib import OpCode, gensym, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
 from ...types import is_pair, is_symbol, strip_mark, unpack
-from ..helpers import helper_using, is_symbolish
+from ..helpers import helper_using
 
 
 __all__ = (
@@ -256,7 +256,7 @@ def _parse_member(elem, source, what, position=None):
     :raises SpecialError: on invalid member form
     """
 
-    if is_symbolish(elem):
+    if is_symbol(elem):
         return (None, elem)
 
     if is_pair(elem):
@@ -271,7 +271,7 @@ def _parse_member(elem, source, what, position=None):
         if name is None:
             return (None, value)
 
-        if not is_symbolish(name):
+        if not is_symbol(name):
             raise SpecialError(
                 f"{what} member binding must be a symbol, not {name!r}",
                 source, position=position)
@@ -354,7 +354,7 @@ def special_import_from(compiler, called_by, module, members):
     binds = []
     for elem in members.datum.unpack():
         bind, target = _parse_member(elem, elem, "import-from", pos)
-        if not is_symbolish(target):
+        if not is_symbol(target):
             raise SpecialError(
                 f"import-from member must name an attribute, not"
                 f" {target!r}",
@@ -455,7 +455,7 @@ def special_use(compiler, caps):
     binds = []
     for elem in caps["stems"].datum.unpack():
         bind, target = _parse_member(elem, elem, "use", pos)
-        if not is_symbolish(target):
+        if not is_symbol(target):
             raise SpecialError(
                 f"use member must name a feature, not {target!r}",
                 elem, position=pos)

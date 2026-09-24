@@ -34,7 +34,7 @@ from ...types import (
 from ..helpers import match1
 
 
-_sym_quote = symbol("quote-syntax")
+_sym_quote_syntax = symbol("quote-syntax")
 _sym_parse_rule_pattern = symbol("parse-rule-pattern")
 _sym_parse_match_pattern = symbol("parse-match-pattern")
 
@@ -53,8 +53,8 @@ def _emit_parse_rule_pattern(pattern_src, literals_datum):
         literals_datum = frozenset(literals_datum)
     return cons(
         _sym_parse_rule_pattern,
-        cons(_sym_quote, pattern_src, nil),
-        cons(_sym_quote, literals_datum, nil),
+        cons(_sym_quote_syntax, pattern_src, nil),
+        cons(_sym_quote_syntax, literals_datum, nil),
         nil)
 
 
@@ -65,7 +65,7 @@ def _emit_parse_match_pattern(pattern_src):
 
     return cons(
         _sym_parse_match_pattern,
-        cons(_sym_quote, pattern_src, nil),
+        cons(_sym_quote_syntax, pattern_src, nil),
         nil)
 
 
@@ -165,7 +165,7 @@ def special_compile_syntax_rules(compiler, called_by, name, literals, rules):
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
         parts.append(_emit_parse_rule_pattern(pattern_src, literals_expr))
-        parts.append(cons(_sym_quote, template_expr, nil))
+        parts.append(cons(_sym_quote_syntax, template_expr, nil))
 
     return cons(symbol("build-syntax"), str(namesym), *parts, nil)
 
@@ -198,7 +198,7 @@ def special_compile_bare_syntax(compiler, called_by, name, slot, template):
 
     return cons(symbol("build-bare-syntax"),
                 str(name.datum), str(slot.datum),
-                cons(_sym_quote, template.datum, nil),
+                cons(_sym_quote_syntax, template.datum, nil),
                 nil)
 
 
@@ -272,7 +272,7 @@ def special_compile_syntax_match(compiler, called_by, name, rules):
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
         parts.append(_emit_parse_match_pattern(pattern_src))
-        parts.append(cons(_sym_quote, template_expr, nil))
+        parts.append(cons(_sym_quote_syntax, template_expr, nil))
 
     return cons(symbol("build-syntax"), str(namesym), *parts, nil)
 

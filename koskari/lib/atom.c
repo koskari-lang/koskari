@@ -400,28 +400,38 @@ static PyObject *gensym_coerce_marks(PyObject *marks) {
 
 /**
    The derived spelling of base under marks: the base name followed
-   by "#" and the lowercase hex of each mark. New reference.
+   by "#" and the lowercase hex of each mark, built in one buffer and
+   decoded once. New reference.
 */
 static PyObject *gensym_build_name(PyObject *base, PyObject *marks) {
 
-  PyObject *name = KosInternedAtom_NAME(base);
-  Py_INCREF(name);
+  Py_ssize_t base_len;
+  const char *base_utf8 = PyUnicode_AsUTF8AndSize(
+      KosInternedAtom_NAME(base), &base_len);
+  if (! base_utf8)
+    return NULL;
 
+  /* each mark is at most "#" plus sixteen hex digits */
   Py_ssize_t n = PyTuple_GET_SIZE(marks);
+  Py_ssize_t cap = base_len + n * 17;
+  char *buf = PyMem_Malloc(cap ? cap : 1);
+  if (! buf)
+    return PyErr_NoMemory();
+
+  memcpy(buf, base_utf8, base_len);
+  Py_ssize_t len = base_len;
   for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *m = PyTuple_GET_ITEM(marks, i);
-    unsigned long long v = PyLong_AsUnsignedLongLong(m);
+    unsigned long long v = PyLong_AsUnsignedLongLong(
+        PyTuple_GET_ITEM(marks, i));
     if (v == (unsigned long long) -1 && PyErr_Occurred()) {
-      Py_DECREF(name);
+      PyMem_Free(buf);
       return NULL;
     }
-    PyObject *next = PyUnicode_FromFormat("%U#%llx", name, v);
-    Py_DECREF(name);
-    if (! next)
-      return NULL;
-    name = next;
+    len += snprintf(buf + len, cap - len, "#%llx", v);
   }
 
+  PyObject *name = PyUnicode_FromStringAndSize(buf, len);
+  PyMem_Free(buf);
   return name;
 }
 

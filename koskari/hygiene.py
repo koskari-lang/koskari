@@ -34,8 +34,7 @@ from koskari.exceptions import CompilerError
 from koskari.lib import (
     Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym)
 from koskari.types import (
-    build_proper, get_position, is_nil, is_pair,
-    is_symbol, strip_mark, unpack)
+    build_proper, get_position, is_nil, is_pair, is_symbol, unpack)
 
 
 __all__ = (
@@ -61,7 +60,7 @@ def mark_atom(atom, mark):
     """
 
     if isinstance(atom, gensym):
-        return gensym(strip_mark(atom), marks=atom.marks + (mark,))
+        return gensym(atom.base, marks=atom.marks + (mark,))
     if is_symbol(atom):
         return gensym(atom, marks=mark)
     return atom

@@ -25,9 +25,9 @@ from ...bootstrap import builtin
 from ...lib import OpCode, cons, nil, symbol
 from ...matcher import BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, SYMBOL, VALUE
 from ...syntax import special
-from ...types import fill_position
+from ...types import fill_position, is_symbol
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers import gather_parameters, is_symbolish
+from ..helpers import gather_parameters
 
 
 def _partition_args(args_seq):
@@ -210,7 +210,7 @@ def special_call(
 
     callable = caps["callable"].datum
 
-    use_var_path = is_symbolish(callable)
+    use_var_path = is_symbol(callable)
     name = str(callable) if use_var_path else None
 
     # rewriting (.foo obj args...) to
@@ -275,7 +275,7 @@ def special_call_attr(
     # The attr call always takes the var path when obj is a symbol; the
     # processor's promotion pass relabels tail-position attr calls onto
     # their TAIL_CALL_*ATTR* twins after emission.
-    use_var_path = is_symbolish(obj)
+    use_var_path = is_symbol(obj)
     name = str(obj) if use_var_path else None
 
     fragment.position(pos)

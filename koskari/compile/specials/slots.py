@@ -26,7 +26,7 @@ from ...bootstrap import builtin
 from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, SYMBOL, VALUE
 from ...syntax import special
-from ..helpers import is_symbolish
+from ...types import is_symbol
 
 
 _ATTR_PATTERNS = [
@@ -55,7 +55,7 @@ def emit_attr(compiler, called_by, obj, sym, var_op, stack_op, before=None):
     obj = obj.datum
     name = str(sym.datum.base)
 
-    if is_symbolish(obj):
+    if is_symbol(obj):
         frag.request_var(obj)
         if before is not None:
             before(frag)

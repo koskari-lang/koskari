@@ -37,8 +37,7 @@ from ...syntax import special
 from ...types import (
     is_keyword, is_nil, is_pair, is_symbol, unpack)
 from ..helpers import (
-    const_only_expr, emit_item_place, feeder_expr, is_symbolish,
-    splat_call_form)
+    const_only_expr, emit_item_place, feeder_expr, splat_call_form)
 from ..processor import item_inplace_arg, item_opcode
 
 
@@ -1083,7 +1082,7 @@ def special_inplace_attr(compiler, called_by, op, obj, attr, values):
     if not is_pair(value_exprs[0]):
         frag.position(op.position)
 
-    if is_symbolish(obj_expr):
+    if is_symbol(obj_expr):
         # obj is a variable: fused VAR_ATTR_INPLACE, derefing the name and
         # get/op/set-ing the attribute in one op. Only the values ride the
         # stack. Resolution lowers this to FAST_ATTR_INPLACE where possible.

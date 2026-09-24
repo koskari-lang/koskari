@@ -55,8 +55,6 @@ __all__ = (
     "helper_binding",
     "helper_elsebody",
     "helper_using",
-    "is_lazygensym",
-    "is_symbolish",
     "match",
     "match_pattern_raw",
     "match1",
@@ -68,15 +66,6 @@ __all__ = (
     "unpack_lhs_bind_symbols",
     "using_unpack_helper",
 )
-
-
-def is_lazygensym(x):
-    """
-    Return True if x is a lazy gensym (compile-time placeholder).
-    Koskari currently has no lazy gensyms; always False
-    """
-
-    return False
 
 
 _SYM_CALL = symbol("call")
@@ -187,15 +176,6 @@ _BINDING_FORMS = [
     LIST(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
     LIST(SYMBOL("name"), VALUE("expr")),
 ]
-
-
-def is_symbolish(thing):
-    """
-    Return True if thing is a symbol, a gensym included, or a lazy
-    gensym (valid binding name)
-    """
-
-    return is_symbol(thing) or is_lazygensym(thing)
 
 
 def helper_binding(source):
@@ -346,7 +326,7 @@ def parse_formal_parameter(form, source=None):
     Parse one formal parameter: bare symbol, or list with name and attributes
     """
 
-    if is_symbolish(form):
+    if is_symbol(form):
         return (form, {}, None)
     if not is_pair(form):
         raise SpecialError(
@@ -358,7 +338,7 @@ def parse_formal_parameter(form, source=None):
             source)
 
     elems = tuple(unpack(form))
-    if len(elems) == 1 and is_symbolish(elems[0]):
+    if len(elems) == 1 and is_symbol(elems[0]):
         return (elems[0], {}, None)
 
     _sym_expr = (LIST(SYMBOL("name"), VALUE("expr")),)
@@ -435,7 +415,7 @@ def parse_decl(form, source=None):
     Parse a binding-shaped declaration with no value
     """
 
-    if is_symbolish(form):
+    if is_symbol(form):
         return (form, None)
     if not is_pair(form):
         raise SpecialError(
@@ -447,7 +427,7 @@ def parse_decl(form, source=None):
             source)
 
     elems = tuple(unpack(form))
-    if len(elems) == 1 and is_symbolish(elems[0]):
+    if len(elems) == 1 and is_symbol(elems[0]):
         return (elems[0], None)
 
     _sym_expr = (LIST(SYMBOL("name"), VALUE("expr")),)
@@ -483,7 +463,7 @@ def gather_parameters(args, source=None):
 
     undefined = object()
 
-    if is_symbolish(args):
+    if is_symbol(args):
         return ([("*", args)], [])
 
     elif isinstance(args, (list, tuple)):
@@ -912,7 +892,7 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
     def fail(msg):
         raise SpecialError(msg, ctx)
 
-    if is_symbolish(lhs):
+    if is_symbol(lhs):
         yield lhs
         return
 
@@ -934,7 +914,7 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
         for elt in items:
             if flatten and is_pair(elt):
                 yield from unpack_lhs_bind_symbols(elt, source, flatten)
-            elif not is_symbolish(elt):
+            elif not is_symbol(elt):
                 fail("unpack pattern list elements must be symbols")
             else:
                 yield elt
@@ -948,13 +928,13 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
 
     star_name = after_star[0]
     suffix = after_star[1:]
-    if not is_symbolish(star_name):
+    if not is_symbol(star_name):
         fail("name after * in unpack pattern must be a symbol")
 
     for elt in prefix:
         if flatten and is_pair(elt):
             yield from unpack_lhs_bind_symbols(elt, source, flatten)
-        elif not is_symbolish(elt):
+        elif not is_symbol(elt):
             fail("unpack pattern list elements must be symbols")
         else:
             yield elt
@@ -964,7 +944,7 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
     for elt in suffix:
         if flatten and is_pair(elt):
             yield from unpack_lhs_bind_symbols(elt, source, flatten)
-        elif not is_symbolish(elt):
+        elif not is_symbol(elt):
             fail("unpack pattern list elements must be symbols")
         else:
             yield elt
@@ -988,7 +968,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     if source is not None:
         frag.position_of(source)
 
-    if is_symbolish(lhs):
+    if is_symbol(lhs):
         maybe_declare(lhs)
         frag.instruction(OpCode.VAR_STORE, str(lhs))
         return frag
@@ -1001,8 +981,8 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
         fail("empty unpack pattern")
 
     if len(items) == 2 \
-       and is_symbolish(items[0]) \
-       and is_symbolish(items[1]):
+       and is_symbol(items[0]) \
+       and is_symbol(items[1]):
         maybe_declare(items[0])
         maybe_declare(items[1])
         frag.instruction(
@@ -1022,7 +1002,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
         for elt in items:
             if is_pair(elt):
                 frag.merge(using_unpack_helper(compiler, elt, source, declare))
-            elif is_symbolish(elt):
+            elif is_symbol(elt):
                 maybe_declare(elt)
                 frag.instruction(OpCode.VAR_STORE, str(elt))
             else:
@@ -1037,7 +1017,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
 
     star_name = after_star[0]
     suffix = after_star[1:]
-    if not is_symbolish(star_name):
+    if not is_symbol(star_name):
         fail("name after * in unpack pattern must be a symbol")
 
     if not prefix and not suffix:
@@ -1051,7 +1031,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     for elt in prefix:
         if is_pair(elt):
             frag.merge(using_unpack_helper(compiler, elt, source, declare))
-        elif is_symbolish(elt):
+        elif is_symbol(elt):
             maybe_declare(elt)
             frag.instruction(OpCode.VAR_STORE, str(elt))
         else:
@@ -1063,7 +1043,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     for elt in suffix:
         if is_pair(elt):
             frag.merge(using_unpack_helper(compiler, elt, source, declare))
-        elif is_symbolish(elt):
+        elif is_symbol(elt):
             maybe_declare(elt)
             frag.instruction(OpCode.VAR_STORE, str(elt))
         else:
@@ -1264,7 +1244,7 @@ def _gather_one_positional_frame(fr: dict, source):
         raise SpecialError(
             f"positional frame missing name: {fr!r}",
             source)
-    if not is_symbolish(name):
+    if not is_symbol(name):
         raise SpecialError(
             "positional formals must be symbols or bracket forms, not"
             f" {name!r}",
@@ -1365,7 +1345,7 @@ def gather_formals(formals_group, source=None):
                 f"invalid kwonly frame {fr!r}",
                 source)
         name = None if (v := fr.get('name')) is None else v.datum
-        if name is not None and is_symbolish(name):
+        if name is not None and is_symbol(name):
             name, by_ref = _strip_byref_sym(name)
             if by_ref:
                 by_refs.append(str(name))
@@ -1391,13 +1371,13 @@ def gather_formals(formals_group, source=None):
 
     ss_cell = formals_group.get('starstar')
     starstar = ss_cell.datum if ss_cell else None
-    if starstar and not is_symbolish(starstar):
+    if starstar and not is_symbol(starstar):
         raise SpecialError(
             f"** keyword requires symbol binding, not {starstar!r}",
             source)
 
     if star is not None and not is_nil(star):
-        if not is_symbolish(star):
+        if not is_symbol(star):
             raise SpecialError(
                 f"* keyword requires symbol binding, not {star!r}",
                 source)
