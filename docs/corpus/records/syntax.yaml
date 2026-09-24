@@ -672,11 +672,11 @@ source: |-
       [(tag-head TAG form)
        (begin
          (define-values [head rest] form.datum)
-         `(,head ,TAG ,@rest))]))
+         (datum `(,head ,TAG.datum ,@rest)))]))
   
 verify:
-  read: (define-syntax tag-head (macro-rules [] [(tag-head TAG form) (begin (define-values [head rest] (attr form datum)) (quasiquote ((unquote head) (unquote TAG) (unquote-splicing rest))))]))
-  expand: (define-global compile/tag-head (macro-rules tag-head [] [(tag-head TAG form) (begin (define-values [head rest] (attr form datum)) (quasiquote ((unquote head) (unquote TAG) (unquote-splicing rest))))]))
+  read: (define-syntax tag-head (macro-rules [] [(tag-head TAG form) (begin (define-values [head rest] (attr form datum)) (datum (quasiquote ((unquote head) (unquote (attr TAG datum)) (unquote-splicing rest)))))]))
+  expand: (define-global compile/tag-head (macro-rules tag-head [] [(tag-head TAG form) (begin (define-values [head rest] (attr form datum)) (datum (quasiquote ((unquote head) (unquote (attr TAG datum)) (unquote-splicing rest)))))]))
 references:
   - reference/specials/compile-macro-rules.md
 stability: evolving
@@ -688,8 +688,11 @@ notes: |-
   Procedural macro that introspects its matched form: form.datum unwraps the
   matched pair, define-values [head rest] destructures it, and quasiquote with
   unquote-splicing rebuilds a form with TAG injected after the head. Used:
-  (tag-head 0 (+ 1 2)) -> (+ 0 1 2). A macro and its use must be in separate
-  compilation units, so this record verifies the definition, not a call.
+  (tag-head 0 (+ 1 2)) -> (+ 0 1 2). The rebuilt form is the caller's code,
+  so it goes back out inside datum; a piece taken out with .datum and
+  emitted bare would be marked as the macro's own. A macro and its use must
+  be in separate compilation units, so this record verifies the definition,
+  not a call.
   
 ---
 id: syntax-rules-nested-ellipsis-inject-001
@@ -736,10 +739,10 @@ feature: special/compile/macro-rules
 source: |-
   (define-syntax job
     (macro-rules []
-      [(job tp rest ...) `(,(datum (symbol f"job/{tp.datum}")) ,@rest)]))
+      [(job tp rest ...) `(,(datum (symbol f"job/{tp.datum.base}")) ,@rest)]))
 verify:
-  read: "(define-syntax job (macro-rules [] [(job tp rest ...) (quasiquote ((unquote (datum (symbol (#str \"job/\" (format (attr tp datum)))))) (unquote-splicing rest)))]))"
-  expand: "(define-global compile/job (macro-rules job [] [(job tp rest ...) (quasiquote ((unquote (datum (symbol (#str \"job/\" (format (attr tp datum)))))) (unquote-splicing rest)))]))"
+  read: "(define-syntax job (macro-rules [] [(job tp rest ...) (quasiquote ((unquote (datum (symbol (#str \"job/\" (format (attr (attr tp datum) base)))))) (unquote-splicing rest)))]))"
+  expand: "(define-global compile/job (macro-rules job [] [(job tp rest ...) (quasiquote ((unquote (datum (symbol (#str \"job/\" (format (attr (attr tp datum) base)))))) (unquote-splicing rest)))]))"
 references:
   - reference/specials/compile-macro-rules.md
 stability: evolving
@@ -747,7 +750,7 @@ tags:
   - macro
   - macro-rules
   - metaprogramming
-notes: "Dispatch by synthesized head: build the per-type name job/<type> from the matched datum with (datum (symbol f\"...\")) and emit it as the head, so the compiler re-expands into job/kafka etc. Parallels the layout/ and compile/ prefix conventions."
+notes: "Dispatch by synthesized head: build the per-type name job/<type> from the matched datum with (datum (symbol f\"...\")) and emit it as the head, so the compiler re-expands into job/kafka etc. Parallels the layout/ and compile/ prefix conventions. The tag is a label, so the name is built from its base, which also holds when a template wrote the tag."
 ---
 id: reader-unquote-dotted-attr-001
 feature: reader/unquote
