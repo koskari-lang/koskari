@@ -43,7 +43,6 @@ __all__ = (
     "is_on_demand",
     "strip_mark",
     "strip_marks",
-    "equal_by_base",
 )
 
 
@@ -165,35 +164,6 @@ def strip_marks(form):
         if pos:
             out.set_position(pos)
     return out
-
-
-def equal_by_base(left, right):
-    """
-    Whether two forms are equal once every gensym is read as its base
-    symbol, without copying either. Pair spines are walked together,
-    two symbols compare by base identity, and any other pair of values
-    compares by equality
-
-    :param left: a form
-    :param right: a form
-    :return: True when the forms are equal up to marks
-    """
-
-    while left is not right:
-        if isinstance(left, pair) and isinstance(right, pair):
-            if nilp(left) or nilp(right):
-                return nilp(left) and nilp(right)
-            if not equal_by_base(left.car, right.car):
-                return False
-            left, right = left.cdr, right.cdr
-            continue
-
-        if isinstance(left, symbol) and isinstance(right, symbol):
-            return left.base is right.base
-
-        return left == right
-
-    return True
 
 
 def is_proper(value):

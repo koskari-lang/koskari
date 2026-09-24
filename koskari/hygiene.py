@@ -33,7 +33,7 @@ compiler
 from koskari.exceptions import CompilerError
 from koskari.lib import (
     Datum, FunctionSpec, bracket_cons, bracket_nil, bracket_pair, cons,
-    gensym)
+    gensym, nilp, pair, symbol)
 from koskari.types import (
     build_proper, get_position, is_nil, is_pair, is_symbol, unpack)
 
@@ -44,6 +44,7 @@ __all__ = (
     "Resolver",
     "candidates",
     "declared_spellings",
+    "equal_by_base",
     "expand_template_with_hygiene",
     "finalize_expansion",
     "function_constant",
@@ -377,6 +378,35 @@ def finalize_expansion(form, mark=None):
     if mark is not None:
         form = mark_expansion(form, mark)
     return peel_datums(form)
+
+
+def equal_by_base(left, right):
+    """
+    Whether two forms are equal once every gensym is read as its base
+    symbol, without copying either. Pair spines are walked together,
+    two symbols compare by base identity, and any other pair of values
+    compares by equality
+
+    :param left: a form
+    :param right: a form
+    :return: True when the forms are equal up to marks
+    """
+
+    while left is not right:
+        if isinstance(left, pair) and isinstance(right, pair):
+            if nilp(left) or nilp(right):
+                return nilp(left) and nilp(right)
+            if not equal_by_base(left.car, right.car):
+                return False
+            left, right = left.cdr, right.cdr
+            continue
+
+        if isinstance(left, symbol) and isinstance(right, symbol):
+            return left.base is right.base
+
+        return left == right
+
+    return True
 
 
 # --- Resolution

@@ -28,14 +28,14 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
-from ..hygiene import Deferred, Resolver, candidates
+from ..hygiene import Deferred, Resolver, candidates, equal_by_base
 from ..lib import (
     Arena, Code, Datum, FormalsSpec, FunctionSpec, Module,
     ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
     bracket_pair, cons, keyword, kos_repr, nil, symbol)
 from ..types import (
-    equal_by_base, fill_position, get_position, is_keyword, is_nil,
-    is_pair, is_proper, is_symbol, parameterize)
+    fill_position, get_position, is_keyword, is_nil, is_pair, is_proper,
+    is_symbol, parameterize)
 from .pragma import (
     BracketCalls, KeywordLiterals, KoskariPragma, PackModule, ResolutionMode,
     StrayColon)

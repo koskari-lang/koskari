@@ -26,9 +26,11 @@ import unittest
 import pytest
 
 from koskari.exceptions import CompilerError
-from koskari.hygiene import expand_template_with_hygiene, mark_expansion
+from koskari.hygiene import (
+    equal_by_base, expand_template_with_hygiene, mark_expansion)
 from koskari.lib import (
-    bracket_nil, bracket_pair, cons, kos_repr, nil, pair, symbol)
+    bracket_cons, bracket_nil, bracket_pair, cons, gensym, keyword, kos_repr,
+    nil, pair, symbol)
 from koskari.types import build_proper
 
 
@@ -222,6 +224,51 @@ class TestMarkExpansion(unittest.TestCase):
         outer.car = inner
         with self.assertRaises(CompilerError):
             mark_expansion(outer, 1)
+
+
+class TestEqualByBase(unittest.TestCase):
+    """
+    equal_by_base compares two forms with every gensym read as its
+    base, walking the spines without copying
+    """
+
+    def test_marked_form_equals_bare_form(self):
+        t = gensym(symbol("t"), marks=(1,))
+        marked = cons(symbol("let"), cons(t, 1, nil), t, nil)
+        bare = cons(symbol("let"), cons(symbol("t"), 1, nil), symbol("t"),
+                    nil)
+        self.assertTrue(equal_by_base(marked, bare))
+        self.assertTrue(equal_by_base(bare, marked))
+
+
+    def test_different_bases_differ(self):
+        t = gensym(symbol("t"), marks=(1,))
+        self.assertFalse(equal_by_base(cons(t, nil), cons(symbol("u"), nil)))
+
+
+    def test_two_gensyms_compare_by_base(self):
+        a = gensym(symbol("t"), marks=(1,))
+        b = gensym(symbol("t"), marks=(2,))
+        self.assertTrue(equal_by_base(a, b))
+        self.assertTrue(equal_by_base(cons(a, 1, nil), cons(b, 1, nil)))
+
+
+    def test_length_and_terminator(self):
+        self.assertFalse(equal_by_base(cons(1, 2, nil), cons(1, nil)))
+        self.assertFalse(equal_by_base(cons(1, nil), cons(1, 2, nil)))
+        self.assertTrue(equal_by_base(cons(1, nil), bracket_cons(1)))
+        self.assertTrue(equal_by_base(nil, nil))
+
+
+    def test_pair_against_atom(self):
+        self.assertFalse(equal_by_base(cons(1, nil), 1))
+        self.assertFalse(equal_by_base(symbol("t"), cons(symbol("t"), nil)))
+
+
+    def test_other_values_compare_by_equality(self):
+        self.assertTrue(equal_by_base(cons(1, "a", nil), cons(1, "a", nil)))
+        self.assertFalse(equal_by_base(cons(1, "a", nil), cons(1, "b", nil)))
+        self.assertTrue(equal_by_base(keyword("k"), keyword("k")))
 
 
 # The end.
