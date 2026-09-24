@@ -178,6 +178,16 @@ character, that the layout reader and lexer read as data.
 
 Ref: [reader-macro-triggers.md](reader-macro-triggers.md).
 
+### Raw forms in templates: `datumq`, `-'`
+
+A template marks every symbol it writes, so it cannot write a name
+shared with the use site. First, the transcriber turns `(datumq X)` in
+a template body into a `Datum`, unmarked; nesting peels one level per
+template. Then `-'foo` reads as `(datumq foo)`, through
+an interim `-` predicate until multi-character triggers exist.
+
+Ref: [datumq-template-escape.md](datumq-template-escape.md).
+
 ---
 
 ## Import / loader
