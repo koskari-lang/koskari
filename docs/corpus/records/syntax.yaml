@@ -1686,3 +1686,72 @@ tags:
   - hygiene
   - pitfall
 notes: "a plain backtick is data and projects the outer expansion's mark off secret, so the inner macro's output names the use site's secret: after (define secret 100) and (mk-getter get-secret 8), (get-secret) is 100 with no error; write #`secret to reach the template's binding"
+---
+id: syntax-rules-datumq-shared-name-001
+feature: macro/compile/define-syntax
+source: |-
+  (define-syntax set-slot
+    (syntax-rules [] [(set-slot v) (define (datumq shared-slot) v)]))
+verify:
+  read: (define-syntax set-slot (syntax-rules [] [(set-slot v) (define (datumq shared-slot) v)]))
+  expand: (define-global compile/set-slot (syntax-rules set-slot [] [(set-slot v) (define (datumq shared-slot) v)]))
+references:
+  - guide/hygiene.md
+  - guide/macros-and-hygiene.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - syntax-rules
+  - datumq
+  - hygiene
+  - metaprogramming
+  - idiom
+notes: (datumq X) in a template writes X raw and unmarked, so (set-slot 7) defines the use site's shared-slot, which another template's (datumq shared-slot) and the caller's plain shared-slot both read; without it the binding would be private to the expansion. Definition only, since a macro and its use cannot share one corpus unit
+---
+id: syntax-rules-datumq-nested-001
+feature: macro/compile/define-syntax
+source: |-
+  (define-syntax make-setter
+    (syntax-rules []
+      [(make-setter mname)
+       (define-syntax mname
+         (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
+verify:
+  read: (define-syntax make-setter (syntax-rules [] [(make-setter mname) (define-syntax mname (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
+  expand: (define-global compile/make-setter (syntax-rules make-setter [] [(make-setter mname) (define-syntax mname (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
+references:
+  - guide/hygiene.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - syntax-rules
+  - datumq
+  - hygiene
+  - metaprogramming
+notes: "Each expansion consumes one datumq: the outer expansion writes the raw (datumq slot) into the inner template, and the inner expansion writes the raw slot, so after (make-setter set-slot) and (set-slot 11) the use site's slot is 11. Definition only, since a macro and its use cannot share one corpus unit"
+---
+id: syntax-rules-datumq-literal-call-001
+feature: macro/compile/define-syntax
+source: |-
+  (define-syntax make-raw
+    (syntax-rules []
+      [(make-raw mname)
+       (define-syntax mname
+         (macro-rules [] [(mname) `(define ,((datumq datumq) other) 0)]))]))
+verify:
+  read: (define-syntax make-raw (syntax-rules [] [(make-raw mname) (define-syntax mname (macro-rules [] [(mname) (quasiquote (define (unquote ((datumq datumq) other)) 0))]))]))
+  expand: (define-global compile/make-raw (syntax-rules make-raw [] [(make-raw mname) (define-syntax mname (macro-rules [] [(mname) (quasiquote (define (unquote ((datumq datumq) other)) 0))]))]))
+references:
+  - guide/hygiene.md
+stability: evolving
+tags:
+  - syntax
+  - define-syntax
+  - syntax-rules
+  - macro-rules
+  - datumq
+  - hygiene
+  - metaprogramming
+notes: A template that writes a datumq call for a procedural macro it defines writes the head raw with (datumq datumq), so the template does not consume it; the procedural body then runs (datumq other) and defines the use site's other. Definition only, since a macro and its use cannot share one corpus unit

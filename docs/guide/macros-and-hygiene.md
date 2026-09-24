@@ -90,7 +90,9 @@ needs. A printed form shows marked names as written, whether through
 a fragment as having come from the input form rather than from the
 template, so it is never marked. Everything else the procedure emits
 is marked, including the caller's code once `.datum` has taken it out
-of its match. At expand time, captured
+of its match. A template has the same escape for a name it shares with the
+use site: `(datumq name)` writes `name` raw, unmarked. See
+[Hygiene](hygiene.md#writing-a-name-the-use-site-shares). At expand time, captured
 pattern-variable values are carried in `Datum` boxes, which the finalize
 step peels before compilation. The Python and C types are under
 [`koskari.hygiene`](../reference/api/koskari-hygiene.md) and

@@ -213,6 +213,55 @@ The rule is short: data takes `'` and `` ` ``; source handed to a later
 expansion takes `#'` and `` #` ``. Outside a template the four are the
 same, since hand-written source carries no marks.
 
+## Writing a name the use site shares
+
+A name a template binds is private to its expansion. Macros that
+cooperate through one module-level name, where one defines it and
+another reads it, need that name written raw. In a `syntax-rules` or
+`syntax-match` template, `(datumq name)` writes `name` as the caller
+would, unmarked:
+
+```koskari
+(define-syntax set-slot
+  (syntax-rules [] [(set-slot v) (define (datumq shared-slot) v)]))
+(define-syntax read-slot
+  (syntax-rules [] [(read-slot) (datumq shared-slot)]))
+
+(set-slot 7)
+(read-slot)
+;; => 7
+shared-slot
+;; => 7
+```
+
+`(datumq X)` takes exactly one form and emits it as written: nothing in
+it is marked, and a pattern variable inside it is not substituted.
+Errors in the form point at where the template wrote it.
+
+The expansion consumes the directive. A template that defines another
+macro nests it once per level, so the inner template receives the raw
+`(datumq slot)` and its own expansion writes `slot`:
+
+```koskari
+(define-syntax make-setter
+  (syntax-rules []
+    [(make-setter mname)
+     (define-syntax mname
+       (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
+
+(make-setter set-slot)
+(set-slot 11)
+slot
+;; => 11
+```
+
+A template that has to write a `datumq` call itself, as in the body of
+a procedural macro it defines, writes the head raw:
+`((datumq datumq) name)`. A `datum` call needs no escape; `datum` has no
+meaning in a template. In a procedural body, `(datumq name)` is the
+ordinary macro and returns the same raw form; inside a backtick it is
+data like the rest, so it is unquoted: `` `(define ,(datumq slot) 0) ``.
+
 ## What the compiler does
 
 The compiler treats a gensym as a symbol with a longer spelling. A
