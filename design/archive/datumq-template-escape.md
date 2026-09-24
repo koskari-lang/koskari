@@ -2,10 +2,29 @@
 
 ## Status
 
-Proposed 2026-09-24 during the hygiene rework. Two phases: the
-template transcriber first honors `(datumq ...)` in a template body;
-the `-'` reader shorthand follows, as an interim trigger until
-[reader-macro-triggers.md](reader-macro-triggers.md) lands.
+Archived specification. Implemented on branch `hygiene-rework`,
+2026-09-24: the template directive in `1963d49f` with its docs and
+corpus records in `953ae47f`, the `-'` reader shorthand in `b5eeba3b`
+with its docs, editor grammars, and corpus records in `c6b31215`, and
+the per-level layout registration in `1715810f`. The scheduler example
+writes its shared slots with it in `9a5c99c8`. The rollups are
+[MATCHER.md](../MATCHER.md) and [MACROS.md](../MACROS.md); the user
+pages are `docs/guide/hygiene.md`, `docs/reference/grammar.md`, and
+`docs/reference/macros/compile-datumq.md`.
+
+As built, against the text below:
+
+- The directive applies wherever a template is transcribed, which is
+  the one `SyntaxTransform` path that `syntax-rules` and `syntax-match`
+  share. Neither has guards, and a `match` clause body is compiled code,
+  not a template.
+- The layout reader registers `-'`, `&`, and the unary prefixes once per
+  level, each bound to its own reader: at the layout level a header
+  operand keeps its block colon, and inside parens and backticks the
+  inner reader's operand read sees the unquote a backtick installs.
+- The lexer highlights `-'` with the quote class.
+- The `-` predicate stays until
+  [reader-macro-triggers.md](../reader-macro-triggers.md) lands.
 
 ## Problem
 
@@ -66,7 +85,7 @@ negating a quoted value means nothing, so no code relies on it, and the
 long form `(- 'x)` stays available.
 
 This is the one-predicate form of a two-character trigger. Under
-[reader-macro-triggers.md](reader-macro-triggers.md) it becomes a `-'`
+[reader-macro-triggers.md](../reader-macro-triggers.md) it becomes a `-'`
 registration and the predicate goes away.
 
 ## Touch points
@@ -89,10 +108,3 @@ Phase 2:
   textmate, emacs): `-'` as a prefix.
 - `docs/reference/grammar.md`: the shorthand.
 - Corpus records for `-'foo` and `-'-'foo`.
-
-## Open
-
-- Whether `syntax-match` guards and other template-adjacent positions
-  honor the directive, or only template bodies.
-- Whether the lexer's `-'` token needs its own highlight class or
-  reuses the quote prefix class.

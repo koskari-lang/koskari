@@ -175,7 +175,24 @@ stored in the module namespace.
 
 **Behaviour:** **`macro-rules`** expansion to **`(call datum expr [position])`**, capturing
 source position and marking the value as use-site material, which hygiene
-does not mark.
+does not mark. In a template `datum` is an ordinary call.
+
+
+### compile/datumq
+
+**Symbol:** `compile/datumq`
+
+**Syntax:** `(datumq form)` or `(datumq form pos)`; reader shorthand `-'form`.
+
+**Behaviour:** In code, a **`macro-rules`** expansion to
+**`(call datum (quote form) [position])`**: the form itself, unevaluated, as
+use-site material. In a **`syntax-rules`** or **`syntax-match`** template,
+`(datumq form)` is a directive the transcriber consumes: it emits a `Datum` of
+the raw form, unmarked and unsubstituted, with the position of the spine cell
+holding the form, and it takes exactly one form. A template writes a name it
+shares with the use site this way; `((datumq datumq) ...)` emits a literal
+call, and `-'-'form` reaches a nested template as `(datumq form)`. See
+[MATCHER.md](MATCHER.md) under Raw forms in templates.
 
 
 ## koskari/bootstrap/_conditionals.ki

@@ -287,6 +287,21 @@ A keyword formal a template writes therefore binds under the name the
 caller writes, and the template's scoped reference to it falls back to that
 name. A keyword-named parameter is the one binder hygiene does not rename.
 
+### Raw forms in templates
+
+A template pair headed by the raw `datumq` symbol is a directive
+(`_is_datumq_directive` in `koskari.hygiene`). `(datumq X)` transcribes
+to `Datum(X, position)`, the position being the spine cell that holds
+`X`; it is not marked and not entered, so a pattern variable inside is
+not substituted, and `_collect_symbols` skips it so a name inside never
+drives an ellipsis. Any other arity is a `CompilerError`. The head is
+matched by identity, so a transcription consumes its own directives and
+an inner template sees only raw ones: `((datumq datumq) ...)` emits a
+literal call, and `(datumq (datumq X))` reaches a nested template as
+`(datumq X)`. `-'X` reads as `(datumq X)`. `syntax-rules` and
+`syntax-match` share the path; in a procedural arm `(datumq X)` is the
+bootstrap macro, which yields the same `Datum` at run time.
+
 ### Reading a scoped atom
 
 A gensym reaches the compiler wherever the template symbol would have, and
@@ -298,6 +313,7 @@ every symbol test accepts it. The rule at each site:
 | a head in call position | `find_compiled` tries the spelling's candidates, then the bare name |
 | a tag, label, literal, attribute, import member, operator | `.base`, or `strip_mark` when the operand may not be an atom |
 | quoted data | `quote` / `quasiquote` project to the base; `quote-syntax` keeps the gensym |
+| a name shared with the use site | the template writes `(datumq name)`, or `-'name` |
 
 `koskari.types.strip_mark` projects one value, `strip_marks` a whole form;
 `type(x) is gensym` is the exact-type test, and a known atom reads `.base`.
