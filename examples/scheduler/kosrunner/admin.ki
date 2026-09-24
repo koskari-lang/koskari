@@ -105,28 +105,28 @@ define-class AdminJob [Job]:
 
 define-syntax config/admin:
     syntax-rules []:
-        case (config/admin () setting ...):
+        case (config/admin slot () setting ...):
             (begin
-                (define default/admin)
-                (unless &default/admin
-                    (set! default/admin (AdminConfig setting ...))))
-        case (config/admin nm setting ...):
+                (define slot)
+                (unless &slot
+                    (set! slot (AdminConfig setting ...))))
+        case (config/admin slot nm setting ...):
             (begin
                 (define nm (AdminConfig setting ...))
-                (define default/admin)
-                (unless &default/admin (set! default/admin nm)))
+                (define slot)
+                (unless &slot (set! slot nm)))
 
 
 ;; `job admin <name>` -- no trigger key and usually no sub-items; it
 ;; serves the control plane from its config alone.
 define-syntax job/admin:
     syntax-rules []:
-        case (job/admin name (subhead subrest ...) ...):
+        case (job/admin slot name (subhead subrest ...) ...):
             (begin
                 (define name (AdminJob))
-                (define default/admin)
-                (if &default/admin
-                    (.configure name via: default/admin)
+                (define slot)
+                (if &slot
+                    (.configure name via: slot)
                     (.configure name))
                 (subhead (admin name) subrest ...) ...)
 

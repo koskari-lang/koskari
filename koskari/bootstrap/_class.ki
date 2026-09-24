@@ -20,7 +20,12 @@ Portion of koskari.builtins
 define-syntax create-instance-check:
   macro-match:
     case (create-instance-check (BIND name)):
-      define pname (datum (symbol f"{name.datum}?"))
+      ;; the predicate is the class's name with ?, under the same marks,
+      ;; so a class a template defines has the template's predicate
+      define n name.datum
+      define pname (datum (if (is n n.base)
+                              (symbol f"{n}?")
+                              (gensym (symbol f"{n.base}?") marks: n.marks)))
       `define ,pname:
         lambda ,pname [value]:
           instance? value ,name

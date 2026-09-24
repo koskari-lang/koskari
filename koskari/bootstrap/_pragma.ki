@@ -38,19 +38,17 @@ define-syntax pragma:
     case (pragma (REPEAT settings (LIST (SYMBOL key) (REST values)))):
       define fixed:
         list-each [s settings]:
-          define key (item s "key")
-          setq key key.datum
-
+          ;; a pragma key is a pure key, never a gensym
+          define key (item s "key").datum.base
+          ;; the values are the caller's code, emitted in their Datums
           define vals (item s "values")
-          setq vals (list-each [v vals] v.datum)
-
           `#(',key (values ,@vals))
 
       `(setq __pragma__ (.rebuild __pragma__ ,@fixed))
 
 
     case (pragma (SYMBOL key)):
-      `(item __pragma__ ,(str key.datum))
+      `(item __pragma__ ,(str key.datum.base))
 
 
     case (pragma):

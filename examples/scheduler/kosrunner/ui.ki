@@ -289,27 +289,27 @@ define-class UiJob [Job]:
 
 define-syntax config/ui:
     syntax-rules []:
-        case (config/ui () setting ...):
+        case (config/ui slot () setting ...):
             (begin
-                (define default/ui)
-                (unless &default/ui
-                    (set! default/ui (UiConfig setting ...))))
-        case (config/ui nm setting ...):
+                (define slot)
+                (unless &slot
+                    (set! slot (UiConfig setting ...))))
+        case (config/ui slot nm setting ...):
             (begin
                 (define nm (UiConfig setting ...))
-                (define default/ui)
-                (unless &default/ui (set! default/ui nm)))
+                (define slot)
+                (unless &slot (set! slot nm)))
 
 
 ;; `job ui <name>` -- no trigger key; serves from its config.
 define-syntax job/ui:
     syntax-rules []:
-        case (job/ui name (subhead subrest ...) ...):
+        case (job/ui slot name (subhead subrest ...) ...):
             (begin
                 (define name (UiJob))
-                (define default/ui)
-                (if &default/ui
-                    (.configure name via: default/ui)
+                (define slot)
+                (if &slot
+                    (.configure name via: slot)
                     (.configure name))
                 (subhead (ui name) subrest ...) ...)
 

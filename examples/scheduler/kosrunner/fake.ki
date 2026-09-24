@@ -54,16 +54,16 @@ define-class FakeJob [Job]:
 ;; slot with the first-wins `&`-guard; a named one also binds its name.
 define-syntax config/fake:
     syntax-rules []:
-        case (config/fake () setting ...):
+        case (config/fake slot () setting ...):
             (begin
-                (define default/fake)
-                (unless &default/fake
-                    (set! default/fake (FakeConfig setting ...))))
-        case (config/fake nm setting ...):
+                (define slot)
+                (unless &slot
+                    (set! slot (FakeConfig setting ...))))
+        case (config/fake slot nm setting ...):
             (begin
                 (define nm (FakeConfig setting ...))
-                (define default/fake)
-                (unless &default/fake (set! default/fake nm)))
+                (define slot)
+                (unless &slot (set! slot nm)))
 
 
 ;; The `job fake <name>:` variety syntax. Fake has no trigger-key, so
@@ -71,12 +71,12 @@ define-syntax config/fake:
 ;; `(fake name)` so the base `config`/`handler` dispatch routes them.
 define-syntax job/fake:
     syntax-rules []:
-        case (job/fake name (subhead subrest ...) ...):
+        case (job/fake slot name (subhead subrest ...) ...):
             (begin
                 (define name (FakeJob 'name))
-                (define default/fake)
-                (if &default/fake
-                    (.configure name via: default/fake)
+                (define slot)
+                (if &slot
+                    (.configure name via: slot)
                     (.configure name))
                 (subhead (fake name) subrest ...) ...)
 

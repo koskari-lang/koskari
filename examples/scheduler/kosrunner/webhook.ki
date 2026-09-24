@@ -215,27 +215,27 @@ define-class WebhookJob [Job]:
 
 define-syntax config/webhook:
     syntax-rules []:
-        case (config/webhook () setting ...):
+        case (config/webhook slot () setting ...):
             (begin
-                (define default/webhook)
-                (unless &default/webhook
-                    (set! default/webhook (WebhookConfig setting ...))))
-        case (config/webhook nm setting ...):
+                (define slot)
+                (unless &slot
+                    (set! slot (WebhookConfig setting ...))))
+        case (config/webhook slot nm setting ...):
             (begin
                 (define nm (WebhookConfig setting ...))
-                (define default/webhook)
-                (unless &default/webhook (set! default/webhook nm)))
+                (define slot)
+                (unless &slot (set! slot nm)))
 
 
 ;; `job webhook <name>:` -- no trigger key; the name is the route.
 define-syntax job/webhook:
     syntax-rules []:
-        case (job/webhook name (subhead subrest ...) ...):
+        case (job/webhook slot name (subhead subrest ...) ...):
             (begin
                 (define name (WebhookJob 'name))
-                (define default/webhook)
-                (if &default/webhook
-                    (.configure name via: default/webhook)
+                (define slot)
+                (if &slot
+                    (.configure name via: slot)
                     (.configure name))
                 (subhead (webhook name) subrest ...) ...)
 

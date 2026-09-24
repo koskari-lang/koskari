@@ -291,7 +291,9 @@ def apply_layouts(blocks, target):
     reader = reader_for(target)
     result = blocks
 
-    while blocks:
+    # a Datum in the spine is the caller's material, left for the peel
+    # as a Datum car is
+    while is_pair(blocks) and blocks:
         form, tail = blocks
 
         if not form or not is_pair(form):

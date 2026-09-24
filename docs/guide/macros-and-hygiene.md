@@ -59,8 +59,14 @@ Inside a procedural body you work with the matched forms directly:
 - Build the output with quasiquote, or with variadic `cons`, whose last
   argument is the tail.
 - To emit an identifier you compute, wrap it in `datum`:
-  `(datum (symbol f"job/{tp.datum}"))`. That is how a dispatcher rewrites
-  `(job kafka ...)` into `(job/kafka ...)` and lets the compiler re-expand it.
+  `(datum (symbol f"job/{tp.datum.base}"))`. That is how a dispatcher
+  rewrites `(job kafka ...)` into `(job/kafka ...)` and lets the compiler
+  re-expand it. The tag is a label, so the name is built from its base:
+  when a template wrote `kafka`, `str` of it shows the expansion's mark.
+- To pass the caller's code back out, emit the matched form itself, or
+  re-wrap a piece you took apart with `datum`, as in
+  `(datum (cons (car e.datum) (cdr e.datum)))`. A piece taken out with
+  `.datum` and emitted bare counts as the macro's own and is marked.
 
 ## Hygiene
 
@@ -82,7 +88,9 @@ needs. A printed form shows marked names as written, whether through
 
 `(datum expr)` is the author's control in a procedural macro: it marks
 a fragment as having come from the input form rather than from the
-template, so it is never marked. At expand time, captured
+template, so it is never marked. Everything else the procedure emits
+is marked, including the caller's code once `.datum` has taken it out
+of its match. At expand time, captured
 pattern-variable values are carried in `Datum` boxes, which the finalize
 step peels before compilation. The Python and C types are under
 [`koskari.hygiene`](../reference/api/koskari-hygiene.md) and

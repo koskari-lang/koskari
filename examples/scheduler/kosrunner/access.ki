@@ -188,10 +188,10 @@ define-syntax group:
 ;; macro reads when it wires the JobSet.
 define-syntax config/access:
     syntax-rules []:
-        case (config/access () setting ...):
-            define default/access
-            unless &default/access:
-                set! default/access (AccessConfig setting ...)
+        case (config/access slot () setting ...):
+            define slot
+            unless &slot:
+                set! slot (AccessConfig setting ...)
 
 
 ;; The end.

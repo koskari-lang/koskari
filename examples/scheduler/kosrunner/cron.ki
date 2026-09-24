@@ -73,16 +73,16 @@ define-class CronJob [Job]:
 ;; `config cron [name]:` -- optional; cron jobs run fine with no config.
 define-syntax config/cron:
     syntax-rules []:
-        case (config/cron () setting ...):
+        case (config/cron slot () setting ...):
             (begin
-                (define default/cron)
-                (unless &default/cron
-                    (set! default/cron (CronConfig setting ...))))
-        case (config/cron nm setting ...):
+                (define slot)
+                (unless &slot
+                    (set! slot (CronConfig setting ...))))
+        case (config/cron slot nm setting ...):
             (begin
                 (define nm (CronConfig setting ...))
-                (define default/cron)
-                (unless &default/cron (set! default/cron nm)))
+                (define slot)
+                (unless &slot (set! slot nm)))
 
 
 ;; `(job cron <name> [<m> <h> <dom> <mon> <dow>] ...)`
@@ -94,22 +94,22 @@ define-syntax config/cron:
 ;; `with-subitems`.
 define-syntax job/cron:
     macro-rules []:
-        case (job/cron name [mi hr dom mon dow] sub ...):
+        case (job/cron slot name [mi hr dom mon dow] sub ...):
             define sched f"{mi.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}"
             `(begin
                 (define ,name (CronJob ,sched))
-                (define default/cron)
-                (if &default/cron
-                    (.configure ,name via: default/cron)
+                (define ,slot)
+                (if &,slot
+                    (.configure ,name via: ,slot)
                     (.configure ,name))
                 (with-subitems (cron ,name) ,@sub))
 
-        case (job/cron name sched sub ...):
+        case (job/cron slot name sched sub ...):
             `(begin
                 (define ,name (CronJob ,sched))
-                (define default/cron)
-                (if &default/cron
-                    (.configure ,name via: default/cron)
+                (define ,slot)
+                (if &,slot
+                    (.configure ,name via: ,slot)
                     (.configure ,name))
                 (with-subitems (cron ,name) ,@sub))
 

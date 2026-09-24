@@ -20,8 +20,11 @@ define-syntax job:
   macro-rules []:
     case (job tp rest ...):
       ;; rewrite (job kafka ...) to (job/kafka ...)
-      (cons (datum (symbol f"job/{tp.datum}")) *: rest nil)
+      (cons (datum (symbol f"job/{tp.datum.base}")) *: rest nil)
 ```
+
+The type tag is a label, so the name is built from its base; a tag a
+template wrote carries the expansion's mark, which `str` would show.
 
 `rest` is the captured tail, spliced with `*:` into the variadic `cons`
 and closed with `nil`. Passed as a single argument it would be consed on
