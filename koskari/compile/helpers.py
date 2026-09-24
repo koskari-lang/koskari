@@ -374,7 +374,7 @@ def _parse_decl_tail(tail, source):
 
     if is_nil(tail):
         return {}
-    head = strip_mark(car(tail))
+    head = car(tail)
     if not is_keyword(head):
         raise SpecialError(
             "declaration cannot include a value",
@@ -490,7 +490,7 @@ def gather_parameters(args, source=None):
     arg = next(iargs, undefined)
 
     while arg is not undefined:
-        label = strip_mark(arg)
+        label = arg
         if is_keyword(label):
             if label is _keyword_star:
                 if in_kwds_phase:
@@ -869,7 +869,7 @@ def helper_elsebody(source):
         head, tail = current
         if is_nil(tail) and is_pair(head):
             e, ebody = head
-            if strip_mark(e) is _keyword_else:
+            if e is _keyword_else:
                 body_list = cons(*collected, nil) if collected else nil
                 if is_nil(ebody):
                     return body_list, None
@@ -905,7 +905,7 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
 
     star_idx = [
         i for i, elt in enumerate(items)
-        if strip_mark(elt) is _keyword_star]
+        if elt is _keyword_star]
 
     if len(star_idx) > 1:
         fail("at most one * is allowed in an unpack pattern")
@@ -991,7 +991,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
 
     star_idx = [
         i for i, elt in enumerate(items)
-        if strip_mark(elt) is _keyword_star]
+        if elt is _keyword_star]
 
     if len(star_idx) > 1:
         fail("at most one * is allowed in an unpack pattern")
@@ -1151,7 +1151,7 @@ def _attrs_frames_to_ann(attr_frames: List[dict], source):
         kw_cell = afr.get('kw')
         if kw_cell is None:
             continue
-        kw = strip_mark(kw_cell.datum)
+        kw = kw_cell.datum
         val_cell = afr.get('attr_val')
         if val_cell is None:
             raise SpecialError(

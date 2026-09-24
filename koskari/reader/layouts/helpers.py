@@ -25,7 +25,7 @@ Layout decorator for reader block syntax and block-form matchers.
 from ...compile.helpers import match1
 from ...lib import keyword
 from ...matcher import BIND, LIST, LITERAL_KW, MATCH, REST
-from ...types import is_pair, is_symbol, strip_mark
+from ...types import is_pair, is_symbol
 
 
 _keyword_block = keyword(':block:')
@@ -36,7 +36,7 @@ def is_block(form):
     True when form is a ``:block:`` cons
     """
 
-    return form and is_pair(form) and strip_mark(form.car) is _keyword_block
+    return form and is_pair(form) and form.car is _keyword_block
 
 
 _BLOCK_SOURCE_PATTERN = MATCH(LIST(BIND('header'), REST('body')))

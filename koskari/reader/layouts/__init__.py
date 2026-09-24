@@ -250,7 +250,7 @@ def apply_lines(entries, target):
                     line.set_position(get_position(entry))
                 out.append(line)
 
-        elif is_pair(entry) and strip_mark(entry.car) is _keyword_splice:
+        elif is_pair(entry) and entry.car is _keyword_splice:
             for form in entry.cdr.unpack():
                 spread = cons(form, nil)
                 if get_position(entry):
@@ -297,7 +297,7 @@ def apply_layouts(blocks, target):
         if not form or not is_pair(form):
             pass
 
-        elif strip_mark(form.car) is _keyword_block:
+        elif form.car is _keyword_block:
             lowered, tail = _lower_block(form, tail, reader)
             blocks.cdr = tail
             blocks.car = lowered
@@ -322,7 +322,7 @@ def apply_layout(block, target):
     """
 
     if block and is_pair(block):
-        if strip_mark(block.car) is _keyword_block:
+        if block.car is _keyword_block:
             res = apply_layouts(cons(block, nil), target)
             return res.car
         else:

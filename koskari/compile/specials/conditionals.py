@@ -28,7 +28,7 @@ from ...lib import OpCode, keyword
 from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, REST, VALUE, repeat_capture)
 from ...syntax import special
-from ...types import is_pair, strip_mark
+from ...types import is_pair
 from ..helpers import helper_begin
 
 
@@ -81,7 +81,7 @@ def special_cond(compiler, called_by, clauses):
         fragment.instruction(OpCode.LABEL, label)
         label = gen_label()
 
-        if strip_mark(test) is _keyword_else:
+        if test is _keyword_else:
             if remaining:
                 raise SpecialError(
                     "else: must be last clause", test, position=clause_pos)
@@ -133,7 +133,7 @@ def special_switch(compiler, called_by, value, clauses):
 
         checks.position(clause_pos)
 
-        if strip_mark(test) is _keyword_else:
+        if test is _keyword_else:
             if remaining:
                 raise SpecialError(
                     "else: must be last clause", test, position=clause_pos)
