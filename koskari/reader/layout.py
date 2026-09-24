@@ -220,6 +220,7 @@ class LayoutReader(Reader):
         sm('&', self._read_ref_call, False)
         for c in "-+~":
             sm(c, self._read_unary, False, predicate=self._unary_enabled)
+        sm('-', inner._read_datumq, False, predicate=inner._datumq_follows)
 
         self.add_event_macro("'", inner._read_quote, True)
         self.add_event_macro("`", inner._read_quasiquote, True)

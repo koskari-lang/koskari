@@ -358,6 +358,13 @@ def tokenize(source, filename='<string>', special_names=None):
             yield Token('quote', ch, start_line, start_col, line, col)
             continue
 
+        if ch == '-' and i < n and sl[i] == "'":
+            # -' is the datumq prefix, highlighted as a quote
+            i += 1
+            line, col = _advance_pos(line, col, "'")
+            yield Token('quote', "-'", start_line, start_col, line, col)
+            continue
+
         if ch == '`':
             yield Token('quasiquote', ch, start_line, start_col, line, col)
             continue

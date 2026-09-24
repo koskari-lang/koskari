@@ -83,6 +83,7 @@ _symbol_quasiquote = symbol("quasiquote")
 _symbol_quasiquote_syntax = symbol("quasiquote-syntax")
 _symbol_attr = symbol("attr")
 _symbol_quote = symbol("quote")
+_symbol_datumq = symbol("datumq")
 _symbol_quote_syntax = symbol("quote-syntax")
 _symbol_decorate = symbol("decorate")
 _symbol_ref = symbol("ref")
@@ -1286,6 +1287,11 @@ class Reader:
         for c in "-+~":
             sm(c, self._read_unary, False, predicate=self._unary_enabled)
 
+        # -'FORM is (datumq FORM); registered after the unary prefixes so
+        # it is tried first, and admitted only before a quote. A trigger
+        # of two characters, pending multi-character registration
+        sm('-', self._read_datumq, False, predicate=self._datumq_follows)
+
         sm("'", self._read_quote, True)
         sm("`", self._read_quasiquote, True)
 
@@ -1969,6 +1975,29 @@ class Reader:
             value = _as_unicode(value)
 
         return VALUE, value
+
+
+    def _datumq_follows(self, stream, char, value):
+        """
+        Predicate for the -' prefix
+
+        :return: whether a quote follows the ``-``
+        """
+
+        return stream.peek(1) == "'"
+
+
+    def _read_datumq(self, stream, char):
+        """
+        Read a raw form (-'expr) as ``(datumq expr)``
+
+        :param stream: the source stream
+        :param char: the ``-`` character
+        :return: tuple of (VALUE, (datumq expr))
+        """
+
+        stream.read(1)
+        return self._read_quote(stream, "-'", head=_symbol_datumq)
 
 
     def _read_quote(self, stream, char, head=_symbol_quote):
