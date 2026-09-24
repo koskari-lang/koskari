@@ -112,8 +112,9 @@ PyObject *KosGensym_FromString(PyObject *name, PyObject *predicate);
 
 /**
    The next expansion mark. The counter is seeded once per process
-   from a random 32-bit base, so a mark decoded from a .kio does not
-   collide with one minted locally.
+   from a random 32-bit base, so the spellings one process mints are
+   unlikely to repeat those a module compiled in another process
+   carries; the chance is the birthday bound over 32 bits, not zero.
 */
 unsigned long long KosGensym_NextMark(void);
 
