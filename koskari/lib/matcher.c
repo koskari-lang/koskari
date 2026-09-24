@@ -1073,7 +1073,7 @@ static PyObject *wrap_slice_datums(
     return NULL;
   int boxes = subject_boxes_captures(e, subj);
   for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *raw = subject_capture_get(subj, start + i);
+    PyObject *raw = subj->vt->get(subj, start + i);
     Py_INCREF(raw);
     PyObject *cell = raw;
     if (boxes) {
@@ -1117,7 +1117,7 @@ static PyObject *source_from_spine_range(
     return subj->vt->tail(subj, start);
 
   if (span == 1) {
-    PyObject *raw = subject_capture_get(subj, start);
+    PyObject *raw = subj->vt->get(subj, start);
     Py_INCREF(raw);
     return raw;
   }

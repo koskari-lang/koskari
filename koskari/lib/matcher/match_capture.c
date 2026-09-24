@@ -94,7 +94,7 @@ static int match_capture(
 
   PyObject *value = NULL;
   if (end - start == 1) {
-    PyObject *raw = subject_capture_get(e->subj, start);
+    PyObject *raw = e->subj->vt->get(e->subj, start);
     Py_INCREF(raw);
     value = kos_datum_from_spine_cell(e, e->subj, start, raw);
     if (! value)
