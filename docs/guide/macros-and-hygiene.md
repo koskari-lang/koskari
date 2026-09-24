@@ -86,7 +86,7 @@ needs. A printed form shows marked names as written, whether through
 `print`, `str`, or `macroexpand` at the REPL; the mark shows only in
 `str` of the marked symbol itself.
 
-`(datum expr)` is the author's control in a procedural macro: it marks
+`(datum expr)` is the author's control in a procedural macro: it tags
 a fragment as having come from the input form rather than from the
 template, so it is never marked. Everything else the procedure emits
 is marked, including the caller's code once `.datum` has taken it out

@@ -3,8 +3,8 @@
 A macro writes code on the caller's behalf. Hygiene is the rule that the
 names the macro writes and the names the caller writes stay apart: a
 binding the template introduces never captures a caller's name, and a
-caller's binding never captures a name the template meant to reach
-elsewhere. Koskari keeps them apart by turning every symbol a template
+name the template uses without binding it resolves where the macro is
+used, as a name the caller wrote would. Koskari keeps them apart by turning every symbol a template
 introduces into a `gensym`, a symbol that remembers which expansion
 wrote it, and by having the compiler resolve such a symbol against what
 that expansion bound before it falls back to the plain name.
@@ -24,34 +24,34 @@ define-syntax swap!:
 
 Without hygiene, `(swap! tmp other)` expands to
 `(let [[tmp tmp]] (set! tmp other) (set! other tmp))`, and the caller's
-`tmp` is shadowed by the template's before it is read. That is capture in
-one direction: the template's binder swallows the caller's name.
-
-The other direction is a free name in the template:
-
-```koskari
-define-syntax with-cons:
-  syntax-rules []:
-    with-cons v:
-      (cons v nil)
-```
-
-The template's `cons` means the builtin. If the caller has bound `cons`
-to something else where the macro is used, an unhygienic expander hands
-the template's `cons` to the caller's binding.
-
-Hygiene makes both cases come out as the author of each name intended:
+`tmp` is shadowed by the template's before it is read. That is capture:
+the template's binder swallows the caller's name. Hygiene keeps the two
+`tmp`s apart:
 
 ```koskari
 define tmp 1
 define other 2
 (swap! tmp other)
 ;; tmp is 2, other is 1
-
-define cons "shadowed"
-(with-cons 1)
-;; => (1), the builtin cons, while cons at the use site is "shadowed"
 ```
+
+A name the template uses but does not bind is free. It resolves at the
+use site, as if the caller had written it:
+
+```koskari
+define-syntax twice:
+  syntax-rules []:
+    twice v:
+      (double v)
+
+define double [x] (* x 2)
+(twice 4)
+;; => 8
+```
+
+A macro whose free names must mean one binding wherever it is used
+needs that binding in scope at every use site, typically by exporting
+it from the macro's module.
 
 ## How Koskari achieves it
 
@@ -146,8 +146,8 @@ define-syntax with-fresh:
 ```
 
 A backtick is data, so it projects any marks a symbol in the handler's
-body already carries. One case needs the marks kept, a macro that a
-template defines, covered in Data and source below.
+body already carries. A macro that a template defines needs the marks
+kept; see [Data and source](#data-and-source).
 
 ## Data and source
 
@@ -209,7 +209,7 @@ outer template and carried `#outer`, the backtick treated it as data and
 projected it to `secret`, and the inner expansion's `secret#inner` fell
 through to the module. The two spellings exist so the author can name
 which one they mean; nothing in the surrounding form does it for them.
-The rule is short: data takes `'` and `` ` ``; source handed to a later
+Data takes `'` and `` ` ``; source handed to a later
 expansion takes `#'` and `` #` ``. Outside a template the four are the
 same, since hand-written source carries no marks.
 
@@ -291,8 +291,8 @@ The first candidate that something visible declares wins: the inline
 scopes open around the reference, the function body, the bodies that
 enclose it, and finally the module. Failing all of those, the plain name
 is used, and the runtime resolves it as it would any free name. That is
-why a template's `cons` reaches the builtin when the template bound no
-`cons` of its own, and why the inner template of a macro-generating macro
+why a free name in a template reaches the use site's binding, and why
+the inner template of a macro-generating macro
 reaches the outer expansion's binder: `secret#outer#inner` is not
 declared, `secret#outer` is.
 
@@ -319,9 +319,9 @@ there the compiler reads the base:
 - the operator in an inplace assignment;
 - quoted data, as above.
 
-Two further rules follow from the ones above. `define-global` in a
-template binds the module under the scoped spelling, so each expansion
-gets its own global and the caller's same-named global is untouched:
+`define-global` in a template binds the module under the scoped
+spelling, so each expansion gets its own global and the caller's
+same-named global is untouched:
 
 ```koskari
 define-syntax counter:

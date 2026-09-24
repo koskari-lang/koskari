@@ -60,7 +60,8 @@ with examples, see [Guide](../guide/index.md).
   the marks of the expansions that introduced it, `marks`, interned under the
   derived spelling `tmp#1a`. `symbol?` is true for it and equality is
   identity. `(gensym "t")` in a procedural macro mints one under a fresh mark;
-  `gensym.next_mark` is the counter the expander draws marks from. See
+  `(gensym.next_mark)` returns the next mark, drawn from the counter the
+  expander uses. See
   [Hygiene](../guide/hygiene.md).
 
 **layout**
