@@ -2020,7 +2020,10 @@ class Reader:
             msg = f"invalid use of {char}"
             raise stream.error(msg, pos)
 
-        return VALUE, cons(head, child, nil)
+        # the operand's cell carries its position, as a list's cells do
+        tail = cons(child, nil)
+        tail.set_position(pos)
+        return VALUE, cons(head, tail)
 
 
     def _read_quasiquote(self, stream, char, head=_symbol_quasiquote):

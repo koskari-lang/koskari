@@ -31,7 +31,8 @@ import pytest
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
 from koskari.exceptions import ReaderError
-from koskari.lib import symbol
+from koskari.hygiene import expand_template_with_hygiene
+from koskari.lib import Datum, symbol
 from koskari.pragma import ModulePragma
 from koskari.reader import (
     IndentAwareStream, LayoutReader, Reader, source_str)
@@ -93,6 +94,22 @@ class TestDatumqPrefix(TestCase):
     def test_position_is_the_prefix(self):
         form = read_sexpr("(a\n   -'foo)")
         self.assertEqual(get_position(form.cdr.car), (2, 3))
+
+
+    def test_operand_cell_position_matches_long_form(self):
+        short = read_sexpr("(a\n  -'(foo 1))").cdr.car
+        long = read_sexpr("(a\n  (datumq (foo 1)))").cdr.car
+        self.assertIsNotNone(get_position(long.cdr))
+        self.assertEqual(
+            get_position(short.cdr)[0], get_position(long.cdr)[0])
+
+
+    def test_directive_datum_takes_operand_position(self):
+        directive = read_sexpr("(a\n  -'(foo 1))").cdr.car
+        out = expand_template_with_hygiene(directive, {}, 7)
+        self.assertIsInstance(out, Datum)
+        self.assertEqual(out.position, get_position(directive.cdr))
+        self.assertIsNotNone(out.position)
 
 
     def test_eof_after_prefix(self):
