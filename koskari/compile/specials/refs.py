@@ -96,12 +96,10 @@ def special_refq(compiler, called_by, sym):
     Compile (compile/refq SYM). Load the value of the binding named SYM
     """
 
-    name = str(sym.datum)
-
     frag = compiler.fragment(called_by.datum)
     frag.position(sym.position)
     frag.request_var(sym.datum)
-    frag.instruction(OpCode.VAR_REF, name)
+    frag.instruction(OpCode.VAR_REF, sym.datum)
 
     return frag
 
@@ -123,7 +121,6 @@ def special_bindq(compiler, caps):
     pos = caps["called-by"].position
 
     namesym = caps["name"].datum
-    name = str(namesym)
 
     value = caps["value"]
     value_datum = value.datum
@@ -136,7 +133,7 @@ def special_bindq(compiler, caps):
     frag.merge(compiler.full_compile(value_datum))
 
     frag.position(pos)
-    frag.instruction(OpCode.VAR_BIND, name)
+    frag.instruction(OpCode.VAR_BIND, namesym)
     frag.instruction(OpCode.CONST, None)
 
     return frag

@@ -168,14 +168,13 @@ def special_list_append(compiler, caps):
         if not is_symbol(sym):
             raise SpecialError("#list-append name must be a symbol", caps.source)
 
-        name = str(sym)
         pos = caps["sym"].position
         frag.request_for_write(sym, position=pos)
         if not is_pair(expr):
             frag.position(pos)
 
         frag.merge(compiler.full_compile(expr))
-        frag.instruction(OpCode.VAR_LIST_APPEND, name)
+        frag.instruction(OpCode.VAR_LIST_APPEND, sym)
         frag.instruction(OpCode.CONST, None)
         return frag
 

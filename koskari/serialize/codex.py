@@ -1061,10 +1061,13 @@ def encode_pool_record_value(val, index_of, pb=None):
         return struct.pack('<B', PoolKind.BYTES) + struct.pack('<I', len(val)) + val
 
     if isinstance(val, symbol):
-        # a gensym, from a transformer a macro-generating macro defined,
-        # is written as the symbol of its scoped spelling: the spelling
-        # is what reaches the binding, and no mark survives compilation
-        return struct.pack('<B', PoolKind.SYMBOL) + _pack_string(str(val))
+        # a gensym reaches a constant only in quote-syntax data or a
+        # transformer template, which is source for a later expansion
+        # that marks it afresh; sealed code reaches its bindings through
+        # spelled operands, so the constant is written as its base and
+        # no mark survives compilation
+        return struct.pack('<B', PoolKind.SYMBOL) + _pack_string(
+            str(val.base))
 
     if isinstance(val, keyword):
         return struct.pack('<B', PoolKind.KEYWORD) + _pack_string(str(val))

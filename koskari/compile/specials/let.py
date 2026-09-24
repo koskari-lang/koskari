@@ -158,7 +158,7 @@ def special_letrec(
 
             frag.declare_var(name)
             frag.merge(compiler.full_compile(expr))
-            frag.instruction(OpCode.VAR_STORE, str(name))
+            frag.instruction(OpCode.VAR_STORE, name)
         helper_begin(frag, body)
 
     return fragment

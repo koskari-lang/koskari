@@ -290,8 +290,19 @@ class ByteCodeFragment:
         Append one bytecode instruction
 
         :param op: OpCode for the instruction
-        :param opa: argument for the instruction
+        :param opa: argument for the instruction; a variable operand,
+            the opcode's own or a variable field of a fused row, is a
+            symbol
+        :raises TypeError: when a variable operand is not a symbol
         """
+
+        if op.style == OpStyle.VAR:
+            if not isinstance(opa, symbol):
+                raise TypeError(f"expected a symbol, not {opa!r}")
+        elif op.extra and OpStyle.VAR in op.extra:
+            for v, fk in zip(opa, op.extra):
+                if fk == OpStyle.VAR and not isinstance(v, symbol):
+                    raise TypeError(f"expected a symbol, not {v!r}")
 
         self.instructions.append((op, opa))
 
@@ -303,8 +314,9 @@ class ByteCodeFragment:
         inline scopes open around it, innermost first. An inline
         scope's closure names are chosen from outside that scope
 
-        :param choose: callable taking a spelling and the open scopes,
-            returning the spelling to emit
+        :param choose: callable taking a name and the open scopes,
+            returning the name to emit; a variable operand is its atom
+            and an inline scope's closure name is its spelling
         """
 
         def rebuild_nspec(nspec, scopes):
@@ -1000,9 +1012,8 @@ class Compiler:
 
 
     def compile_raw_symbol(self, fragment, sym):
-        strsym = str(sym)
         fragment.request_var(sym)
-        fragment.instruction(OpCode.VAR, strsym)
+        fragment.instruction(OpCode.VAR, sym)
         return fragment
 
 

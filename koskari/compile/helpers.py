@@ -574,7 +574,8 @@ def const_only_expr(fragment):
 def var_only_expr(fragment):
     """
     Check whether a ByteCodeFragment consists only of a single VAR load,
-    answering (True, name) for one and (False, None) otherwise
+    answering (True, atom) with the loaded name's atom for one and
+    (False, None) otherwise
     """
 
     found = False
@@ -594,8 +595,8 @@ def var_only_expr(fragment):
 def feeder_expr(fragment):
     """
     Classify a compiled fragment as a feeder the compress pipeline
-    folds: ('const', value) for a single CONST, ('var', name) for a
-    single VAR, (None, None) for anything else
+    folds: ('const', value) for a single CONST, ('var', atom) for a
+    single VAR naming atom, (None, None) for anything else
     """
 
     is_const, value = const_only_expr(fragment)
@@ -970,7 +971,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
 
     if is_symbol(lhs):
         maybe_declare(lhs)
-        frag.instruction(OpCode.VAR_STORE, str(lhs))
+        frag.instruction(OpCode.VAR_STORE, lhs)
         return frag
 
     if not is_proper(lhs):
@@ -986,7 +987,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
         maybe_declare(items[0])
         maybe_declare(items[1])
         frag.instruction(
-            OpCode.UNPACK_VAR, (str(items[0]), str(items[1]), 0, 0))
+            OpCode.UNPACK_VAR, (items[0], items[1], 0, 0))
         return frag
 
     star_idx = [
@@ -1004,7 +1005,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
                 frag.merge(using_unpack_helper(compiler, elt, source, declare))
             elif is_symbol(elt):
                 maybe_declare(elt)
-                frag.instruction(OpCode.VAR_STORE, str(elt))
+                frag.instruction(OpCode.VAR_STORE, elt)
             else:
                 fail("unpack pattern list elements must be symbols or pairs")
         return frag
@@ -1022,7 +1023,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
 
     if not prefix and not suffix:
         maybe_declare(star_name)
-        frag.instruction(OpCode.VAR_STORE, str(star_name))
+        frag.instruction(OpCode.VAR_STORE, star_name)
         return frag
 
     left = len(prefix)
@@ -1033,19 +1034,19 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
             frag.merge(using_unpack_helper(compiler, elt, source, declare))
         elif is_symbol(elt):
             maybe_declare(elt)
-            frag.instruction(OpCode.VAR_STORE, str(elt))
+            frag.instruction(OpCode.VAR_STORE, elt)
         else:
             fail("unpack pattern list elements must be symbols or pairs")
 
     maybe_declare(star_name)
-    frag.instruction(OpCode.VAR_STORE, str(star_name))
+    frag.instruction(OpCode.VAR_STORE, star_name)
 
     for elt in suffix:
         if is_pair(elt):
             frag.merge(using_unpack_helper(compiler, elt, source, declare))
         elif is_symbol(elt):
             maybe_declare(elt)
-            frag.instruction(OpCode.VAR_STORE, str(elt))
+            frag.instruction(OpCode.VAR_STORE, elt)
         else:
             fail("unpack pattern list elements must be symbols or pairs")
 

@@ -51,6 +51,8 @@ _symbol_quasiquote = symbol("quasiquote")
 _symbol_quote = symbol("quote")
 _symbol_unquote = symbol("unquote")
 _symbol_unquote_splicing = symbol("unquote-splicing")
+_symbol_bracket_cons = symbol("bracket-cons")
+_symbol_bracket_splice = symbol("bracket-splice")
 
 _ONE_PATTERNS = [
     MATCH(CALLEDBY("called_by"), VALUE("expr")),
@@ -139,7 +141,7 @@ def _emit_call_var(frag, name, count):
     the stack (used for the bracket-cons / bracket-splice runtime calls).
     """
 
-    frag.request_var(symbol(name))
+    frag.request_var(name)
     frag.instruction(OpCode.CALL_VAR, (name, count, 0, 0))
 
 
@@ -182,7 +184,7 @@ def _emit_segment(compiler, frag, segment, as_tuple_for_splice=False,
     if bracket and not as_tuple_for_splice:
         # whole-list build for a [ ] form: bracket-cons elements + bracket-nil
         frag.instruction(OpCode.CONST, bracket_nil)
-        _emit_call_var(frag, "bracket-cons", len(segment) + 1)
+        _emit_call_var(frag, _symbol_bracket_cons, len(segment) + 1)
     else:
         frag.instruction(OpCode.PROPER, len(segment))
 
@@ -344,7 +346,7 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
 
         # explicit-tail build: bracket-cons for [ ], CONS for ( )
         if bracket:
-            _emit_call_var(frag, "bracket-cons", len(segment) + 1)
+            _emit_call_var(frag, _symbol_bracket_cons, len(segment) + 1)
         else:
             frag.instruction(OpCode.CONS, len(segment) + 1)
         return
@@ -363,7 +365,7 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
         # the [ ] twin (only its leading cell is a bracket-pair).
         if splice_count >= 1:
             if bracket:
-                _emit_call_var(frag, "bracket-splice", splice_count)
+                _emit_call_var(frag, _symbol_bracket_splice, splice_count)
             else:
                 frag.instruction(OpCode.PAIR_SPLICE, splice_count)
     elif splice_count == 0:

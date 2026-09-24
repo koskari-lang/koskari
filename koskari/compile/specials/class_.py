@@ -142,7 +142,7 @@ def special_class(compiler, called_by, name, supers, body):
             doc_frag = compiler.fragment("__doc__")
             doc_frag.declare_var(_sym_doc)
             doc_frag.instruction(OpCode.CONST, doc)
-            doc_frag.instruction(OpCode.VAR_STORE, "__doc__")
+            doc_frag.instruction(OpCode.VAR_STORE, _sym_doc)
             body_frag.merge(doc_frag)
 
         if _sym_qualname not in body_frag.declares:
@@ -152,7 +152,7 @@ def special_class(compiler, called_by, name, supers, body):
             qn_frag = compiler.fragment("__qualname__")
             qn_frag.declare_var(_sym_qualname)
             qn_frag.instruction(OpCode.CONST, name)
-            qn_frag.instruction(OpCode.VAR_STORE, "__qualname__")
+            qn_frag.instruction(OpCode.VAR_STORE, _sym_qualname)
             body_frag.merge(qn_frag)
 
         mod_for_class = _compiling_module_name(compiler)
@@ -161,7 +161,7 @@ def special_class(compiler, called_by, name, supers, body):
             mod_frag = compiler.fragment("__module__")
             mod_frag.declare_var(_sym_module)
             mod_frag.instruction(OpCode.CONST, mod_for_class)
-            mod_frag.instruction(OpCode.VAR_STORE, "__module__")
+            mod_frag.instruction(OpCode.VAR_STORE, _sym_module)
             body_frag.merge(mod_frag)
 
         binds = body_frag.annotation_bindings
@@ -178,7 +178,7 @@ def special_class(compiler, called_by, name, supers, body):
 
             annos.instruction(OpCode.BUILD_KWDS_NAMES,
                               tuple(collapsed.keys()))
-            annos.instruction(OpCode.VAR_STORE, "__annotations__")
+            annos.instruction(OpCode.VAR_STORE, _sym_annotations)
             body_frag.merge(annos)
 
     frag.instruction(OpCode.BUILD_CLASS, 0)

@@ -118,9 +118,9 @@ class TestKioRoundTrip(unittest.TestCase):
 
     def test_gensym_const_roundtrip(self):
         """
-        a template symbol is written as the SYMBOL record of its scoped
-        spelling; no pool kind carries marks, and the record reads back
-        as the symbol of that spelling
+        a template symbol is written as the SYMBOL record of its base;
+        no pool kind carries marks, and the record reads back as the
+        plain base symbol
         """
         value = gensym(symbol("t"), marks=(1, 255))
         pb = PoolBuilder()
@@ -128,8 +128,7 @@ class TestKioRoundTrip(unittest.TestCase):
         record = encode_pool_record_value(value, pb.index_of, pb)
         self.assertEqual(record[0], PoolKind.SYMBOL)
         loaded = self._const_roundtrip(value)
-        self.assertIsInstance(loaded, symbol)
-        self.assertEqual(str(loaded), "t#1#ff")
+        self.assertIs(loaded, symbol("t"))
 
     def test_slice_const_roundtrip(self):
         """slices round-trip by value, None bounds included"""

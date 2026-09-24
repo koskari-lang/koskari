@@ -29,7 +29,7 @@ import operator
 
 from ..lib import (
     NAMESPACE_FAST_SLOT_MAX, Compare, FunctionSpec, NamespaceSpec, OpCode,
-    Operand, OpStyle)
+    Operand, OpStyle, symbol)
 
 
 OPERAND_COUNT = len(Operand)
@@ -461,6 +461,29 @@ def fuse_rule(*pattern):
     return register
 
 
+def spell_operands(rows):
+    """
+    The rows with every variable operand lowered to its spelling
+
+    :param rows: instruction rows whose variable operands are atoms
+    :return: a new list of rows
+    """
+
+    # a fused compare row's VAR field holds a constant when its source
+    # selector says so, so only a symbol is spelled
+    out = []
+    for op, arg in rows:
+        if op.style == OpStyle.VAR:
+            if isinstance(arg, symbol):
+                arg = str(arg)
+        elif op.extra and OpStyle.VAR in op.extra:
+            arg = tuple(
+                str(v) if fk == OpStyle.VAR and isinstance(v, symbol) else v
+                for v, fk in zip(arg, op.extra))
+        out.append((op, arg))
+    return out
+
+
 class ByteCodeProcessor:
     """
     A single-use transformation machine over one fragment's
@@ -482,7 +505,7 @@ class ByteCodeProcessor:
         """
 
         self.fragment = fragment
-        self.instructions = list(fragment.instructions)
+        self.instructions = spell_operands(fragment.instructions)
 
         # the base NamespaceSpec resolved mid-pipeline; remains
         # readable after process returns, for Code construction

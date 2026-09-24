@@ -313,10 +313,12 @@ scoped spellings a module ended up with, look at its namespace:
 ```
 
 Each `(counter)` was its own expansion with its own mark. A `.kio` file
-stores a gensym as its base and marks, and the marks are drawn from a
-base chosen at random once per process, so a scoped spelling compiled
-into a file is not minted again for a different name by the process that
-loads it.
+holds compiled code, whose names are plain spellings such as
+`hits#50e3cb5e`. A template the file carries, in a macro it defines or a
+`#'` form, is stored with plain symbols and marked afresh when it
+expands. Marks are drawn from a base chosen at random once per process,
+so a scoped spelling compiled into a file is not minted again for a
+different name by the process that loads it.
 
 ## See also
 

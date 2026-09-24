@@ -151,11 +151,11 @@ def special_match(compiler, caps):
         # to FAST with every other read, and the request also captures
         # a closure-bound type used only in a pattern.
         matcher = Matcher.from_tuple(frozen)
-        externs = [str(name) for name
-                   in matcher.missing_externs(exclude_defaults=True)]
+        externs = matcher.missing_externs(exclude_defaults=True)
         for extern in externs:
-            fragment.request_var(symbol(extern))
-            fragment.instruction(OpCode.VAR, extern)
+            sym = symbol(extern)
+            fragment.request_var(sym)
+            fragment.instruction(OpCode.VAR, sym)
 
         # the opcode binds the arm's captures itself, resolving the
         # slot names to namespace slots once per site through its

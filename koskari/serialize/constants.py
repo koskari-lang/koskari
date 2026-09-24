@@ -69,10 +69,12 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # SYMBOL record of its scoped spelling.
 # PATCH bumped: a frozen matcher's CAPTURE row is (kind, slot, subnode);
 # the unread hygiene_role and scope_slot elements are gone.
+# PATCH bumped: a gensym constant is written as the SYMBOL record of its
+# base.
 BYTECODE_ABI_MAJOR = 0
 BYTECODE_ABI_MINOR = 19
 BYTECODE_ABI_MICRO = 0
-BYTECODE_ABI_PATCH = 4
+BYTECODE_ABI_PATCH = 5
 
 
 # The end.

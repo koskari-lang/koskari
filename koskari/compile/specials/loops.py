@@ -127,7 +127,7 @@ def special_for_each(compiler, caps):
     else:
         binding_name = binding["name"].datum
         fragment.declare_var(binding_name)
-        fragment.instruction(OpCode.VAR_STORE, str(binding_name))
+        fragment.instruction(OpCode.VAR_STORE, binding_name)
 
     # perform the loop body, then continue back up at the ITER_NEXT
     helper_begin(fragment, body)

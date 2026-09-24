@@ -59,7 +59,7 @@ def emit_attr(compiler, called_by, obj, sym, var_op, stack_op, before=None):
         frag.request_var(obj)
         if before is not None:
             before(frag)
-        frag.instruction(var_op, (str(obj), name, 0, 0))
+        frag.instruction(var_op, (obj, name, 0, 0))
     else:
         frag.merge(compiler.full_compile(obj))
         if before is not None:

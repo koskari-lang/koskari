@@ -92,7 +92,7 @@ def special_let_cc(compiler, called_by, k, body):
     with fragment.child_namespace(called_by.datum, [], []) as frag:
         frag.declare_var(k_sym)
         frag.instruction(OpCode.CAPTURE_CC, 0)
-        frag.instruction(OpCode.VAR_STORE, str(k_sym))
+        frag.instruction(OpCode.VAR_STORE, k_sym)
         helper_begin(frag, body.datum)
     fragment.instruction(OpCode.POP_CC, 0)
 
@@ -113,13 +113,13 @@ def special_capture_cc(compiler, called_by, k, body):
     completes.
     """
 
-    k_name = str(k.datum)
+    k_sym = k.datum
 
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_CC, 0)
     fragment.instruction(OpCode.CAPTURE_CC, 0)
-    fragment.instruction(OpCode.VAR_STORE, k_name)
+    fragment.instruction(OpCode.VAR_STORE, k_sym)
     helper_begin(fragment, body.datum)
     fragment.instruction(OpCode.POP_CC, 0)
 
@@ -157,7 +157,7 @@ def special_shift(compiler, called_by, k, body):
     fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_SHIFT, 0)
     fragment.declare_var(k_sym)
-    fragment.instruction(OpCode.VAR_STORE, str(k_sym))
+    fragment.instruction(OpCode.VAR_STORE, k_sym)
     helper_begin(fragment, body.datum)
     fragment.instruction(OpCode.POP_SHIFT, 0)
 

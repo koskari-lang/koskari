@@ -192,6 +192,35 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual("8 100", proc.stdout.strip())
 
 
+    def test_generated_macro_imported_from_kio_in_fresh_process(self):
+        """
+        An interpreter that did not compile the module imports the
+        generated macro from its .kio. The template carries plain
+        symbols, so the macro's free name resolves at the use site
+        """
+
+        ki_path = self._write('gen_src.ki', self.GENERATING)
+        compile_ki_file_to_kio(
+            ki_path, os.path.join(self._tmpdir, 'gen_src.kio'))
+        os.unlink(ki_path)
+        self._write(
+            'gen_use.ki',
+            "(import-from gen_src compile/get-secret)\n"
+            "(define secret 555)\n"
+            "(define here (get-secret))\n")
+        script = (
+            "import sys\n"
+            f"sys.path.insert(0, {self._tmpdir!r})\n"
+            "import koskari\n"
+            "import gen_use\n"
+            "print(gen_use.here)\n")
+        proc = subprocess.run(
+            [sys.executable, '-c', script],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertEqual("555", proc.stdout.strip())
+
+
     def test_divmod_via_kio_matches_ki(self):
         """
         A divmod call keeps its operand count through the .kio

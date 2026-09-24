@@ -89,7 +89,6 @@ def special_setq(compiler, caps):
     """
 
     symatom = caps["sym"].datum
-    sym = str(symatom)
     pos = caps["sym"].position
     expr = caps["expr"].datum
 
@@ -100,7 +99,7 @@ def special_setq(compiler, caps):
 
     frag.request_for_write(symatom, position=pos)
     frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.VAR_STORE, sym)
+    frag.instruction(OpCode.VAR_STORE, symatom)
     frag.instruction(OpCode.CONST, None)
 
     return frag
@@ -190,7 +189,7 @@ def special_delq(compiler, caps):
 
     frag.position(pos)
     frag.request_for_write(sym, position=pos)
-    frag.instruction(OpCode.VAR_CLEAR, str(sym))
+    frag.instruction(OpCode.VAR_CLEAR, sym)
     frag.instruction(OpCode.CONST, None)
 
     return frag
@@ -216,7 +215,7 @@ def special_takeq(compiler, caps):
 
     frag.position(pos)
     frag.request_for_write(sym, position=pos)
-    frag.instruction(OpCode.VAR_TAKE, str(sym))
+    frag.instruction(OpCode.VAR_TAKE, sym)
 
     return frag
 
@@ -231,8 +230,6 @@ def emit_define_value(compiler, frag, caps, namesym, type_expr):
 
     :return: the fragment
     """
-
-    name = str(namesym)
 
     if "body" in caps:
         formals = caps["formals"]
@@ -263,7 +260,7 @@ def emit_define_value(compiler, frag, caps, namesym, type_expr):
         return frag
 
     frag.merge(compiler.full_compile(val_expr))
-    frag.instruction(OpCode.VAR_STORE, name)
+    frag.instruction(OpCode.VAR_STORE, namesym)
     frag.instruction(OpCode.CONST, None)
 
     return frag

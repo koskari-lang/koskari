@@ -353,9 +353,10 @@ which is what lets a macro-generating macro's inner template reach the
 outer expansion's binder; a procedural macro a template defines builds its
 output with `quasiquote-syntax` for the same reason, since a plain backtick
 projects the outer marks and the output resolves at the use site. The codex
-writes a gensym as the `SYMBOL` record of its scoped spelling: no mark
-survives compilation, and the spelling is what reaches the binding when the
-template is loaded from a `.kio` and expanded again.
+writes a gensym constant as the `SYMBOL` record of its base: no mark
+survives compilation. Sealed code reaches its bindings through spelled
+operands, and a template loaded from a `.kio` is source that its next
+expansion marks afresh.
 
 ### Display
 
