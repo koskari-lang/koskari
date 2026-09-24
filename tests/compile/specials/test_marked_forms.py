@@ -24,7 +24,7 @@ head is read by its base, and quote strips marks
 
 import pytest
 
-from koskari.lib import gensym, keyword, symbol
+from koskari.lib import cons, gensym, keyword, symbol
 from koskari.types import build_proper, is_symbol, unpack
 
 from . import SpecialsTestCase
@@ -180,6 +180,17 @@ class TestMarkedForms(SpecialsTestCase):
         form = build_proper(S("quasiquote-syntax"), M("t"))
         expr, module = self.compile_form(form)
         self.assertIs(await expr(), M("t"))
+
+
+    async def test_quasiquote_projects_a_dotted_tail(self):
+        form = build_proper(S("quasiquote"), cons(S("a"), M("t")))
+        expr, module = self.compile_form(form)
+        result = await expr()
+        self.assertIs(result.car, S("a"))
+        self.assertIs(result.cdr, S("t"))
+        form = build_proper(S("quasiquote-syntax"), cons(S("a"), M("t")))
+        expr, module = self.compile_form(form)
+        self.assertIs((await expr()).cdr, M("t"))
 
 
     async def test_attribute_name_is_a_label(self):

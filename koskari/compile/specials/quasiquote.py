@@ -320,9 +320,10 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
             else:
                 frag.merge(sub_frag)
 
-        # Emit the dotted tail value
+        # Emit the dotted tail value, an atom projected like any other
         if _is_const(current):
-            frag.instruction(OpCode.CONST, current)
+            frag.instruction(
+                OpCode.CONST, current if keep else strip_mark(current))
         elif (is_pair(current)
               and not is_nil(current)
               and strip_mark(current[0]) is _symbol_unquote
