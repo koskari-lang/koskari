@@ -451,4 +451,43 @@ class Resolver:
         return cands[-1]
 
 
+    def resolve(self, fragment):
+        """
+        Resolve every marked name the fragment references to the binding
+        it names, in place: its request buckets and the variable operands
+        of its instruction stream
+
+        A marked reference tries its key, then the key with the newest
+        mark removed, down to the bare name, against the declarations
+        visible from its position: the inline scopes open around it in
+        the instruction stream, the fragment's own, and those of the
+        fragments enclosing it, which are final by the time it completes
+
+        :param fragment: the fragment being completed
+        """
+
+        for bucket in (fragment.requests, fragment.requests_for_write,
+                       fragment._request_global):
+            seen = set()
+            out = []
+            for sym in bucket:
+                chosen = self.choose(sym)
+                if chosen not in seen:
+                    seen.add(chosen)
+                    out.append(chosen)
+            bucket[:] = out
+
+        # an instruction operand is a spelling; the gensym it names was
+        # noted when the operand was emitted
+        marks = fragment.resolution.marks
+
+        def choose_spelling(name, scopes):
+            mark = marks.get(name)
+            if mark is None:
+                return name
+            return str(self.choose(mark, scopes))
+
+        fragment.rewrite_vars(choose_spelling)
+
+
 # The end.

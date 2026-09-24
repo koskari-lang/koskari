@@ -279,6 +279,66 @@ class ByteCodeFragment:
         self.instructions.append((op, opa))
 
 
+    def rewrite_vars(self, choose):
+        """
+        Replace each variable operand in the instruction stream with
+        choose(name, scopes), scopes holding the spelling sets of the
+        inline scopes open around it, innermost first. An inline
+        scope's closure names are chosen from outside that scope
+
+        :param choose: callable taking a spelling and the open scopes,
+            returning the spelling to emit
+        """
+
+        def rebuild_nspec(nspec, scopes):
+            closure = []
+            for name in nspec.closure_syms:
+                chosen = choose(name, scopes)
+                if chosen not in closure:
+                    closure.append(chosen)
+            if tuple(closure) == tuple(nspec.closure_syms):
+                return nspec
+            return NamespaceSpec(
+                nspec.name, nspec.local_syms, tuple(closure),
+                nspec.global_syms)
+
+        def scope_names(nspec):
+            # a global an inline scope declares is bound in the module
+            # and visible within the scope under that spelling, as its
+            # locals are
+            return set(nspec.local_syms) | set(nspec.global_syms)
+
+        # the stream is the compiler's own emission: PUSH_NS and
+        # PUSH_COLLECT carry their NamespaceSpec as the operand, and the
+        # fused rows the processor mints later are not here yet
+        scopes = []
+        out = []
+        for op, arg in self.instructions:
+            if op == OpCode.PUSH_NS:
+                nspec = rebuild_nspec(arg[0], scopes)
+                arg = (nspec,) + tuple(arg[1:])
+                scopes.insert(0, scope_names(nspec))
+
+            elif op == OpCode.PUSH_COLLECT:
+                arg = rebuild_nspec(arg, scopes)
+                scopes.insert(0, scope_names(arg))
+
+            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
+                scopes.pop(0)
+
+            elif op.style == OpStyle.VAR:
+                arg = choose(arg, scopes)
+
+            elif op.extra and OpStyle.VAR in op.extra:
+                arg = tuple(
+                    choose(v, scopes) if fk == OpStyle.VAR else v
+                    for v, fk in zip(arg, op.extra))
+
+            out.append((op, arg))
+
+        self.instructions = out
+
+
     def merge(self, other):
         """
         Merge another fragment into this one: adopt its declarations,
@@ -445,104 +505,6 @@ class DeferredFunctionSpec:
         self.name = name
         self.formals_spec = formals_spec
         self.ancestors = ancestors
-
-
-def resolve_marks(fragment, ancestors):
-    """
-    Resolve every marked name the fragment references to the binding
-    it names, in place, at the fragment's completion when its own
-    declarations are final
-
-    A marked reference tries its key, then the key with the newest mark
-    removed, down to the bare name, against the declarations visible
-    from its position: the inline scopes open around it in the
-    instruction stream, the fragment's own, and the fragments that
-    enclose the fragment, whose declarations are final by the time it
-    completes (see DeferredFunctionSpec). An inline scope's closure names
-    resolve from outside that scope
-
-    :param fragment: the fragment being completed
-    :param ancestors: fragments lexically enclosing it, outermost first
-    """
-
-    reso = fragment.resolution
-    marks = reso.marks
-    compiler = fragment.compiler
-    module_names = vars(compiler.module) if compiler is not None else {}
-    resolver = Resolver(fragment, ancestors, module_names)
-
-    def choose_symbol(sym, scopes):
-        if sym.base is sym:
-            return sym
-        return resolver.choose(sym, scopes)
-
-    def choose(name, scopes):
-        # an instruction operand is a spelling; the gensym it names was
-        # noted when the operand was emitted
-        mark = marks.get(name)
-        if mark is None:
-            return name
-        return str(resolver.choose(mark, scopes))
-
-    def rename_bucket(bucket, scopes):
-        seen = set()
-        out = []
-        for sym in bucket:
-            chosen = choose_symbol(sym, scopes)
-            if chosen not in seen:
-                seen.add(chosen)
-                out.append(chosen)
-        bucket[:] = out
-
-    rename_bucket(fragment.requests, ())
-    rename_bucket(fragment.requests_for_write, ())
-    rename_bucket(fragment._request_global, ())
-
-    def rebuild_nspec(nspec, scopes):
-        closure = []
-        for name in nspec.closure_syms:
-            chosen = choose(name, scopes)
-            if chosen not in closure:
-                closure.append(chosen)
-        if tuple(closure) == tuple(nspec.closure_syms):
-            return nspec
-        return NamespaceSpec(
-            nspec.name, nspec.local_syms, tuple(closure), nspec.global_syms)
-
-    def scope_names(nspec):
-        # a global an inline scope declares is bound in the module and
-        # visible within the scope under that spelling, as its locals are
-        return set(nspec.local_syms) | set(nspec.global_syms)
-
-    # the stream is the compiler's own emission: PUSH_NS and
-    # PUSH_COLLECT carry their NamespaceSpec as the operand, and the
-    # fused rows the processor mints later are not here yet
-    scopes = []
-    out = []
-    for op, arg in fragment.instructions:
-        if op == OpCode.PUSH_NS:
-            nspec = rebuild_nspec(arg[0], scopes)
-            arg = (nspec,) + tuple(arg[1:])
-            scopes.insert(0, scope_names(nspec))
-
-        elif op == OpCode.PUSH_COLLECT:
-            arg = rebuild_nspec(arg, scopes)
-            scopes.insert(0, scope_names(arg))
-
-        elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
-            scopes.pop(0)
-
-        elif op.style == OpStyle.VAR:
-            arg = choose(arg, scopes)
-
-        elif op.extra and OpStyle.VAR in op.extra:
-            arg = tuple(
-                choose(v, scopes) if fk == OpStyle.VAR else v
-                for v, fk in zip(arg, op.extra))
-
-        out.append((op, arg))
-
-    fragment.instructions = out
 
 
 _COMPILER_LITERALS = {
@@ -1288,7 +1250,7 @@ class Compiler:
         self.complete_deferred(fragment, ancestors)
 
         if reso.marks:
-            resolve_marks(fragment, ancestors)
+            Resolver(fragment, ancestors, vars(self.module)).resolve(fragment)
 
         # handles compression, var-to-fast lowering, and tail-call
         # promotion, deriving the pass settings from this compiler

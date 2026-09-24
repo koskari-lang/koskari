@@ -165,7 +165,7 @@ class KoskariPragma:
 
         # Map derived spelling -> gensym for every scoped name this turn
         # compiles, so a fragment's completion can resolve the key to
-        # the binding it names (see koskari.compile.compiler.resolve_marks)
+        # the binding it names (see koskari.hygiene.Resolver)
         self.marks = {}
 
 
