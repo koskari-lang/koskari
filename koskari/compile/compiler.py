@@ -530,12 +530,14 @@ def resolve_marks(fragment, ancestors):
         return str(_choose_key(mark_candidates(mark), scopes, module_names))
 
     def rename_bucket(bucket, scopes):
-        seen = []
+        seen = set()
+        out = []
         for sym in bucket:
             chosen = choose_symbol(sym, scopes)
             if chosen not in seen:
-                seen.append(chosen)
-        bucket[:] = seen
+                seen.add(chosen)
+                out.append(chosen)
+        bucket[:] = out
 
     rename_bucket(fragment.requests, base)
     rename_bucket(fragment.requests_for_write, base)

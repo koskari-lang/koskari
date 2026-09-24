@@ -478,14 +478,16 @@ class LayoutReader(Reader):
         Allow layout raw-block quote-syntax and quasiquote-syntax, spelled
         ``#'`` and ``#```, under the same conditions as the plain block
         quotes: a structural block colon on the line and a head that does
-        not open with a delimiter.
+        not open with a delimiter. ``#`` is a non-terminating macro
+        character, so this runs at dispatch only and never at an atom
+        boundary.
 
         :param stream: source stream positioned after the ``#``
         :param c: the ``#`` character
-        :param atom_prefix: atom boundary context; None at dispatch
+        :param atom_prefix: atom boundary context; always None here
         """
 
-        if atom_prefix is not None or not self.layout_enabled:
+        if not self.layout_enabled:
             return False
         nxt = stream.peek(2)
         if len(nxt) < 2 or nxt[0] not in "'`" or nxt[1] in '([{':
