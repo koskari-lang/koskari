@@ -178,7 +178,7 @@ define require-trigger! [access ctx job]:
 define-syntax group:
     macro-rules []:
         case (group name member ...):
-            `(define ,name (Group ,(str name.datum) (#list ,@member)))
+            `(define ,name (Group ,(str name.datum.base) (#list ,@member)))
 
 
 ;; --- variety entry syntax -------------------------------------------

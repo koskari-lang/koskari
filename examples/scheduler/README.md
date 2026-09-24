@@ -760,7 +760,7 @@ by name.
 | File | Contents |
 |---|---|
 | [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/`run` tracking/enabled, `jobset` back-ref), `JobSet` (tracking + control plane incl. `retrigger`), `require-extra`, `watch-task` |
-| [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `with-subitems`; the `config/logging` service config; `layout/config` |
+| [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `allow`, `with-subitems`, `reqenv`; the `config/logging` service config and `configure-logging` |
 | [kosrunner/store.ki](kosrunner/store.ki) | `StorageConfig` + `RunStore` (aiosqlite run history, per-run artifacts, log capture, additive column migration) + `mnemonic` + `config/storage` |
 | [kosrunner/memwatch.ki](kosrunner/memwatch.ki) | `memory-report` / `memory-census` / `vmrss` -- process memory sampling for a cron handler |
 | [kosrunner/server.ki](kosrunner/server.ki) | `ServerConfig` (host/port/prefix dataclass), `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action/page helpers |
