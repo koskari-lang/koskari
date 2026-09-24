@@ -1022,22 +1022,17 @@ typedef struct {
    positions. A tuple, list, or single-value subject yields raw
    values.
 */
-static int subject_boxes_captures(
-    const MatchEngine *e,
-    const KosMatchSubject *subj) {
-
-  (void) e;
+static int subject_boxes_captures(const KosMatchSubject *subj) {
   return subj->kp_tails != NULL;
 }
 
 
 static PyObject *kos_datum_from_spine_cell(
-    MatchEngine *e,
     KosMatchSubject *subj,
     Py_ssize_t cell_idx,
     PyObject *datum_owned) {
 
-  if (! subject_boxes_captures(e, subj))
+  if (! subject_boxes_captures(subj))
     return datum_owned;
 
   PyObject *pos = Py_None;
@@ -1060,7 +1055,6 @@ static PyObject *kos_datum_from_spine_cell(
 
 
 static PyObject *wrap_slice_datums(
-    MatchEngine *e,
     KosMatchSubject *subj,
     Py_ssize_t start,
     Py_ssize_t end) {
@@ -1071,13 +1065,13 @@ static PyObject *wrap_slice_datums(
   PyObject *t = PyTuple_New(n);
   if (! t)
     return NULL;
-  int boxes = subject_boxes_captures(e, subj);
+  int boxes = subject_boxes_captures(subj);
   for (Py_ssize_t i = 0; i < n; i++) {
     PyObject *raw = subj->vt->get(subj, start + i);
     Py_INCREF(raw);
     PyObject *cell = raw;
     if (boxes) {
-      cell = kos_datum_from_spine_cell(e, subj, start + i, raw);
+      cell = kos_datum_from_spine_cell(subj, start + i, raw);
       if (! cell) {
         Py_DECREF(t);
         return NULL;

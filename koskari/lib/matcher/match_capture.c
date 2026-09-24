@@ -96,11 +96,11 @@ static int match_capture(
   if (end - start == 1) {
     PyObject *raw = e->subj->vt->get(e->subj, start);
     Py_INCREF(raw);
-    value = kos_datum_from_spine_cell(e, e->subj, start, raw);
+    value = kos_datum_from_spine_cell(e->subj, start, raw);
     if (! value)
       return -1;
   } else {
-    value = wrap_slice_datums(e, e->subj, start, end);
+    value = wrap_slice_datums(e->subj, start, end);
     if (! value)
       return -1;
   }
