@@ -218,8 +218,8 @@ same, since hand-written source carries no marks.
 A name a template binds is private to its expansion. Macros that
 cooperate through one module-level name, where one defines it and
 another reads it, need that name written raw. In a `syntax-rules` or
-`syntax-match` template, `(datumq name)` writes `name` as the caller
-would, unmarked:
+`syntax-match` template, `(datumq name)`, or its reader shorthand
+`-'name`, writes `name` as the caller would, unmarked:
 
 ```koskari
 (define-syntax set-slot
@@ -239,8 +239,9 @@ it is marked, and a pattern variable inside it is not substituted.
 Errors in the form point at where the template wrote it.
 
 The expansion consumes the directive. A template that defines another
-macro nests it once per level, so the inner template receives the raw
-`(datumq slot)` and its own expansion writes `slot`:
+macro nests it once per level, `(datumq (datumq slot))` or `-'-'slot`,
+so the inner template receives the raw `(datumq slot)` and its own
+expansion writes `slot`:
 
 ```koskari
 (define-syntax make-setter

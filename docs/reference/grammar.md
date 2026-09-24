@@ -153,7 +153,7 @@ delimit the body. The `%N` placeholders become the formals. See
 
 ### Prefix reader sugar
 
-Six prefixes wrap the form that follows them:
+Seven prefixes wrap the form that follows them:
 
 | Written | Reads as |
 |---|---|
@@ -163,12 +163,15 @@ Six prefixes wrap the form that follows them:
 | `` #`form `` | `(quasiquote-syntax form)` |
 | `,form` | `(unquote form)` |
 | `,@form` | `(unquote-splicing form)` |
+| `-'form` | `(datumq form)` |
 
 In layout mode the four quoting prefixes also take a block head: `'head:`,
 `` `head: ``, `#'head:`, and `` #`head: `` quote the indented block as its
 `block:` cons; see [Reader and layout syntax](reader-layout.md).
 
-`,` and `,@` are meaningful only inside a quasiquote. `&form` reads as
+`,` and `,@` are meaningful only inside a quasiquote. `-'form` writes `form`
+raw: in a macro template it is emitted unmarked, and `-'-'form` nests one level
+per template; see [Hygiene](../guide/hygiene.md#writing-a-name-the-use-site-shares). `&form` reads as
 `(ref form)` for by-reference passing; a bare `&` with nothing attached is the
 ordinary `&` symbol.
 
@@ -181,7 +184,8 @@ unary methods, so `+x` reaches `__pos__`, which is how a `Decimal` rounds to
 its context and a `Counter` drops its non-positive counts. A `-` before a
 digit is a signed number, so `-1` and `-.5` are literals rather than calls. An
 operator standing alone is its bare symbol, and one followed by any other
-character, `->`, `-=`, `--x`, and `+=` included, is an ordinary symbol. The
+character, `->`, `-=`, `--x`, and `+=` included, is an ordinary symbol; a `-`
+before a quote is the `-'` prefix above, whatever the pragma. The unary
 prefixes are governed by the `reader/unary` pragma.
 
 ### Fenced literals

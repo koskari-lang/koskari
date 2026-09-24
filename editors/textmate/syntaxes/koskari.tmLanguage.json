@@ -17,6 +17,7 @@
     { "include": "#paren-list" },
     { "include": "#bracket-list" },
     { "include": "#brace-block" },
+    { "include": "#datumq-form" },
     { "include": "#quote-syntax-form" },
     { "include": "#quasiquote-syntax-form" },
     { "include": "#quote-form" },
@@ -236,6 +237,17 @@
         "1": { "name": "punctuation.definition.quote.koskari" }
       },
       "name": "meta.quoted.koskari",
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "datumq-form": {
+      "begin": "(-')",
+      "end": "(?=[\\s;()\\[\\]{\"'`]|$)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.quote.datumq.koskari" }
+      },
+      "name": "meta.quoted.datumq.koskari",
       "patterns": [
         { "include": "$self" }
       ]

@@ -1866,3 +1866,37 @@ tags:
   - metaprogramming
   - hygiene
 notes: "#` before a block head quasiquotes the raw block: cons keeping hygiene marks, through layout/quasiquote-syntax; a comma line is an unquote entry; define returns None"
+---
+id: reader-datumq-shorthand-001
+feature: reader/datumq
+source: -'foo
+verify:
+  read: (datumq foo)
+  expand: (call datum (quote foo) None)
+references:
+  - reference/grammar.md
+  - guide/hygiene.md
+stability: evolving
+tags:
+  - reader
+  - datumq
+  - metaprogramming
+  - hygiene
+notes: "-' is reader shorthand for (datumq ...): in a syntax-rules template it writes the form raw and unmarked, and in code it is the datumq macro, a Datum of the quoted form. Every other - reads as before"
+---
+id: reader-datumq-shorthand-nested-002
+feature: reader/datumq
+source: -'-'foo
+verify:
+  read: (datumq (datumq foo))
+  expand: (call datum (quote (datumq foo)) None)
+references:
+  - reference/grammar.md
+  - guide/hygiene.md
+stability: evolving
+tags:
+  - reader
+  - datumq
+  - metaprogramming
+  - hygiene
+notes: "Repeating -' nests: a macro-generating template writes -'-'name, the outer expansion emits the raw (datumq name) into the inner template, and the inner expansion writes the raw name"
