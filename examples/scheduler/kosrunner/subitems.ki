@@ -42,12 +42,8 @@ import-from logging basicConfig
 define-syntax job:
     macro-rules []:
         case (job tp rest ...):
-            ;; the type tag is a label: its base names the variety and
-            ;; the shared default/<type> slot, passed as a use-site name
-            ;; because a name the variety's template writes is its own
-            `(,(datum (symbol f"job/{tp.datum.base}"))
-              ,(datum (symbol f"default/{tp.datum.base}"))
-              ,@rest)
+            ;; the type tag is a label: its base names the variety
+            `(,(datum (symbol f"job/{tp.datum.base}")) ,@rest)
 
 
 ;; The `jobset` macro is a partition-and-splice over its entries. It never
@@ -70,11 +66,10 @@ define-syntax jobset:
                 define-values [head [tp rest]] e.datum
                 if (== (str head.base) "config"):
                     define newhead (symbol f"config/{tp.base}")
-                    define slot (symbol f"default/{tp.base}")
                     if (keyword? (car rest)):
-                        (configs.append (datum (cons newhead slot nil rest)))
+                        (configs.append (datum (cons newhead nil rest)))
                     else:
-                        (configs.append (datum (cons newhead slot rest)))
+                        (configs.append (datum (cons newhead rest)))
                 else:
                     (jobforms.append e)
                     define jname (car rest)
@@ -82,21 +77,18 @@ define-syntax jobset:
                         `(.register ,jsname ,(str jname) ,(datum jname)))
 
             ;; the storage and access slots are the ones their configs
-            ;; bound at the use site
-            define storage (datum 'default/storage)
-            define access (datum 'default/access)
-
+            ;; bound at the use site, written raw
             `(begin
                 ,@configs
                 ,@jobforms
                 (define ,jsname (JobSet ,(str jsname.datum)))
-                (define ,storage)
-                (if &,storage
-                    (.bind-store ,jsname ,storage)
+                (define ,-'default/storage)
+                (if &,-'default/storage
+                    (.bind-store ,jsname ,-'default/storage)
                     (.bind-store ,jsname None))
-                (define ,access)
-                (if &,access
-                    (.bind-access ,jsname ,access)
+                (define ,-'default/access)
+                (if &,-'default/access
+                    (.bind-access ,jsname ,-'default/access)
                     (.bind-access ,jsname None))
                 ,@regs)
 
@@ -176,7 +168,7 @@ define configure-logging [**: kw]:
 
 define-syntax config/logging:
     syntax-rules []:
-        case (config/logging slot () setting ...):
+        case (config/logging () setting ...):
             (configure-logging setting ...)
 
 

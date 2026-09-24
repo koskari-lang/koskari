@@ -151,28 +151,28 @@ define-class KafkaJob [Job]:
 
 define-syntax config/kafka:
     syntax-rules []:
-        case (config/kafka slot () setting ...):
+        case (config/kafka () setting ...):
             (begin
-                (define slot)
-                (unless &slot
-                    (set! slot (KafkaConfig setting ...))))
+                (define -'default/kafka)
+                (unless &-'default/kafka
+                    (set! -'default/kafka (KafkaConfig setting ...))))
 
-        case (config/kafka slot nm setting ...):
+        case (config/kafka nm setting ...):
             (begin
                 (define nm (KafkaConfig setting ...))
-                (define slot)
-                (unless &slot (set! slot nm)))
+                (define -'default/kafka)
+                (unless &-'default/kafka (set! -'default/kafka nm)))
 
 
 ;; `job kafka <name> <topic>:` -- trigger key is the topic.
 define-syntax job/kafka:
     syntax-rules []:
-        case (job/kafka slot name topic (subhead subrest ...) ...):
+        case (job/kafka name topic (subhead subrest ...) ...):
             (begin
                 (define name (KafkaJob topic))
-                (define slot)
-                (if &slot
-                    (.configure name via: slot)
+                (define -'default/kafka)
+                (if &-'default/kafka
+                    (.configure name via: -'default/kafka)
                     (.configure name))
                 (subhead (kafka name) subrest ...) ...)
 

@@ -523,11 +523,11 @@ define-class RunStore []:
 ;; wires the store onto the JobSet.
 define-syntax config/storage:
     syntax-rules []:
-        case (config/storage slot () setting ...):
+        case (config/storage () setting ...):
             (begin
-                (define slot)
-                (unless &slot
-                    (set! slot (StorageConfig setting ...))))
+                (define -'default/storage)
+                (unless &-'default/storage
+                    (set! -'default/storage (StorageConfig setting ...))))
 
 
 ;; The end.

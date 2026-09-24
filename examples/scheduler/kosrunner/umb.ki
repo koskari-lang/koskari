@@ -309,28 +309,28 @@ define-class UmbJob [Job]:
 
 define-syntax config/umb:
     syntax-rules []:
-        case (config/umb slot () setting ...):
+        case (config/umb () setting ...):
             (begin
-                (define slot)
-                (unless &slot
-                    (set! slot (UmbConfig setting ...))))
+                (define -'default/umb)
+                (unless &-'default/umb
+                    (set! -'default/umb (UmbConfig setting ...))))
 
-        case (config/umb slot nm setting ...):
+        case (config/umb nm setting ...):
             (begin
                 (define nm (UmbConfig setting ...))
-                (define slot)
-                (unless &slot (set! slot nm)))
+                (define -'default/umb)
+                (unless &-'default/umb (set! -'default/umb nm)))
 
 
 ;; `job umb <name> <destination>:` -- trigger key is the destination.
 define-syntax job/umb:
     syntax-rules []:
-        case (job/umb slot name destination (subhead subrest ...) ...):
+        case (job/umb name destination (subhead subrest ...) ...):
             (begin
                 (define name (UmbJob destination))
-                (define slot)
-                (if &slot
-                    (.configure name via: slot)
+                (define -'default/umb)
+                (if &-'default/umb
+                    (.configure name via: -'default/umb)
                     (.configure name))
                 (subhead (umb name) subrest ...) ...)
 
