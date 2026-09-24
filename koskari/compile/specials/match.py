@@ -25,6 +25,7 @@ compiled per pattern and an optional else clause.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
+from ...hygiene import extern_atoms
 from ...lib import Matcher, OpCode, keyword, symbol
 from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
@@ -149,11 +150,14 @@ def special_match(compiler, caps):
         # as ordinary variable reads pushed above the subject in
         # extern-table order for MATCH_CASE to consume. The loads lower
         # to FAST with every other read, and the request also captures
-        # a closure-bound type used only in a pattern.
+        # a closure-bound type used only in a pattern. The extern table
+        # names each by its base spelling; the load is the atom the
+        # pattern wrote, so a name a template binds resolves to it.
         matcher = Matcher.from_tuple(frozen)
         externs = matcher.missing_externs(exclude_defaults=True)
+        atoms = extern_atoms(pattern, externs)
         for extern in externs:
-            sym = symbol(extern)
+            sym = atoms.get(extern) or symbol(extern)
             fragment.request_var(sym)
             fragment.instruction(OpCode.VAR, sym)
 

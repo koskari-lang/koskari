@@ -909,6 +909,58 @@ class TestClassPatternInTemplate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["selfed"], 5)
 
 
+class TestTemplateBoundPatternType(unittest.IsolatedAsyncioTestCase):
+    """
+    A type name in a match pattern a template writes reaches the
+    template's own binding of that name, over the use site's
+    """
+
+    SRC = """
+(define-class A []
+  (define __match_args__ #("x"))
+  (define __init__ [self x] (set-attr self x x)))
+
+(define-class B []
+  (define __match_args__ #("x"))
+  (define __init__ [self x] (set-attr self x x)))
+
+(define Kind str)
+(define Shape A)
+
+(define-syntax typed
+  (syntax-rules []
+    [(typed v)
+     (let [[Kind int]]
+       (match v
+         [[(x :: Kind)] "int"]
+         [else: "other"]))]))
+
+(define-syntax shaped
+  (syntax-rules []
+    [(shaped v)
+     (let [[Shape B]]
+       (match v
+         [[Shape[x]] x]
+         [else: "other"]))]))
+
+(define typed-int (typed 3))
+(define typed-str (typed "s"))
+(define shaped-b (shaped (B 7)))
+(define shaped-a (shaped (A 8)))
+"""
+
+    async def test_typed_capture(self):
+        ns = await load("mh_pattern_type", self.SRC)
+        self.assertEqual(ns["typed-int"], "int")
+        self.assertEqual(ns["typed-str"], "other")
+
+
+    async def test_class_sugar(self):
+        ns = await load("mh_pattern_class", self.SRC)
+        self.assertEqual(ns["shaped-b"], 7)
+        self.assertEqual(ns["shaped-a"], "other")
+
+
 class TestGeneratedKeywordLiteral(unittest.IsolatedAsyncioTestCase):
     """
     A keyword literal in a rule pattern a template writes matches a

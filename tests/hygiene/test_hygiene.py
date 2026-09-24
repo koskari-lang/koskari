@@ -27,8 +27,8 @@ import pytest
 
 from koskari.exceptions import CompilerError
 from koskari.hygiene import (
-    equal_by_base, expand_template_with_hygiene, finalize_expansion,
-    mark_expansion)
+    equal_by_base, expand_template_with_hygiene, extern_atoms,
+    finalize_expansion, mark_expansion)
 from koskari.lib import (
     Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym, keyword,
     kos_repr, nil, pair, symbol)
@@ -361,6 +361,39 @@ class TestEqualByBase(unittest.TestCase):
         self.assertTrue(equal_by_base(cons(1, "a", nil), cons(1, "a", nil)))
         self.assertFalse(equal_by_base(cons(1, "a", nil), cons(1, "b", nil)))
         self.assertTrue(equal_by_base(keyword("k"), keyword("k")))
+
+
+class TestExternAtoms(unittest.TestCase):
+    """
+    extern_atoms recovers the atom a pattern wrote for each base
+    spelling asked for
+    """
+
+    def test_recovers_marked_atom(self):
+        kind = gensym(symbol("Kind"), marks=(1,))
+        x = gensym(symbol("x"), marks=(1,))
+        pattern = cons(x, keyword("::"), kind, nil)
+        self.assertEqual(extern_atoms(pattern, ("Kind",)), {"Kind": kind})
+
+
+    def test_bare_atom_and_unasked_names(self):
+        pattern = cons(symbol("x"), keyword("::"), symbol("Kind"), nil)
+        self.assertEqual(
+            extern_atoms(pattern, ("Kind",)), {"Kind": symbol("Kind")})
+        self.assertEqual(extern_atoms(pattern, ()), {})
+
+
+    def test_same_atom_twice(self):
+        kind = gensym(symbol("Kind"), marks=(1,))
+        pattern = cons(kind, cons(kind, nil), nil)
+        self.assertEqual(extern_atoms(pattern, ("Kind",)), {"Kind": kind})
+
+
+    def test_two_atoms_for_one_spelling(self):
+        kind = gensym(symbol("Kind"), marks=(1,))
+        pattern = cons(kind, symbol("Kind"), nil)
+        with self.assertRaises(CompilerError):
+            extern_atoms(pattern, ("Kind",))
 
 
 # The end.

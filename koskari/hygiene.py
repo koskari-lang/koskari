@@ -46,6 +46,7 @@ __all__ = (
     "declared_spellings",
     "equal_by_base",
     "expand_template_with_hygiene",
+    "extern_atoms",
     "finalize_expansion",
     "function_constant",
     "mark_atom",
@@ -446,6 +447,39 @@ def equal_by_base(left, right):
         return left == right
 
     return True
+
+
+def extern_atoms(pattern, names):
+    """
+    The atoms a pattern form writes for the given base spellings, as
+    a mapping from spelling to atom. A pattern lowers each name it
+    reads to its base spelling; this recovers the atom the name was
+    written as, so its load resolves as the template wrote it
+
+    :param pattern: the pattern source form
+    :param names: the base spellings to recover
+    :raises CompilerError: when one spelling is written as two
+        different atoms in the pattern
+    """
+
+    wanted = set(names)
+    found = {}
+    stack = [pattern]
+    while stack:
+        form = stack.pop()
+        if is_pair(form) and not is_nil(form):
+            stack.append(form.cdr)
+            stack.append(form.car)
+        elif isinstance(form, symbol):
+            spelling = str(form.base)
+            if spelling not in wanted:
+                continue
+            prior = found.setdefault(spelling, form)
+            if prior is not form:
+                raise CompilerError(
+                    f"pattern names two bindings spelled {spelling}",
+                    pattern, position=get_position(pattern))
+    return found
 
 
 # --- Resolution
