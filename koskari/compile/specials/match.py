@@ -25,7 +25,8 @@ compiled per pattern and an optional else clause.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import Matcher, OpCode, keyword
+from ...hygiene import extern_atoms
+from ...lib import Matcher, OpCode, keyword, symbol
 from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
     repeat_capture)
@@ -141,7 +142,7 @@ def special_match(compiler, caps):
         # lowering yields both the constant and the binding names.
         # Ordered dedup: ONEOF branches may declare the same slot in
         # mutually exclusive arms.
-        names = list(dict.fromkeys(str(n) for n in frozen[1]))
+        names = list(dict.fromkeys(symbol(n) for n in frozen[1]))
 
         # externs covered by the matcher extern defaults (int, str,
         # pair, ...) resolve from that baked-in table at match time and
@@ -149,13 +150,16 @@ def special_match(compiler, caps):
         # as ordinary variable reads pushed above the subject in
         # extern-table order for MATCH_CASE to consume. The loads lower
         # to FAST with every other read, and the request also captures
-        # a closure-bound type used only in a pattern.
+        # a closure-bound type used only in a pattern. The extern table
+        # names each by its base spelling; the load is the atom the
+        # pattern wrote, so a name a template binds resolves to it.
         matcher = Matcher.from_tuple(frozen)
-        externs = [str(name) for name
-                   in matcher.missing_externs(exclude_defaults=True)]
+        externs = matcher.missing_externs(exclude_defaults=True)
+        atoms = extern_atoms(pattern, externs)
         for extern in externs:
-            fragment.request_var(extern)
-            fragment.instruction(OpCode.VAR, extern)
+            sym = atoms.get(extern) or symbol(extern)
+            fragment.request_var(sym)
+            fragment.instruction(OpCode.VAR, sym)
 
         # the opcode binds the arm's captures itself, resolving the
         # slot names to namespace slots once per site through its

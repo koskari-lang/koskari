@@ -25,12 +25,14 @@ from typing import List
 
 from ..exceptions import ParametersError, SpecialError
 from ..lib import (
-    DatumFrame, Matcher, OpCode, bracket_nil, bracket_pair, car, cdr, cons,
+    DatumFrame, OpCode, bracket_nil, bracket_pair, car, cdr, cons,
     keyword, nil, pair, symbol)
 from ..matcher import (
     BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH, REST, SYMBOL, USING,
-    USING_UNPACK, VALUE, HygienicMatchCompiler, Pattern, frame_formal_name)
-from ..types import is_keyword, is_nil, is_pair, is_proper, is_symbol, unpack
+    USING_UNPACK, VALUE, MatchCompiler, Pattern, frame_formal_name)
+from ..types import (
+    is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark,
+    unpack)
 from .compiler import ByteCodeFragment, _is_const
 
 
@@ -53,8 +55,6 @@ __all__ = (
     "helper_binding",
     "helper_elsebody",
     "helper_using",
-    "is_lazygensym",
-    "is_symbolish",
     "match",
     "match_pattern_raw",
     "match1",
@@ -66,15 +66,6 @@ __all__ = (
     "unpack_lhs_bind_symbols",
     "using_unpack_helper",
 )
-
-
-def is_lazygensym(x):
-    """
-    Return True if x is a lazy gensym (compile-time placeholder).
-    Koskari currently has no lazy gensyms; always False
-    """
-
-    return False
 
 
 _SYM_CALL = symbol("call")
@@ -116,10 +107,7 @@ _BEGIN_HEADS = (_SYM_BEGIN,)
 def match_pattern_raw(source, patterns, literals=None):
     """
     Try each matcher pattern against ``source`` (pair spine or ``nil``).
-    Return native ``MatchResult.captures`` on first match, else ``None``.
-
-    Used by :meth:`koskari.compile.compiler.Special.match_for_hygiene` and
-    :func:`koskari.hygiene.collect_binding_symbols`.
+    Return native ``MatchResult.captures`` on first match, else ``None``
     """
 
     if not is_nil(source) and not is_pair(source):
@@ -134,8 +122,7 @@ def match_pattern_raw(source, patterns, literals=None):
             raise TypeError(
                 "compile helpers.match_pattern_raw expects matcher Pattern,"
                 f" got {pat!r}")
-        hc = HygienicMatchCompiler()
-        bm = Matcher.from_tuple(hc.lower(pat))
+        bm = MatchCompiler.compile(pat)
         m = bm.match(source)
         if m.matched:
             return m.captures
@@ -189,14 +176,6 @@ _BINDING_FORMS = [
     LIST(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
     LIST(SYMBOL("name"), VALUE("expr")),
 ]
-
-
-def is_symbolish(thing):
-    """
-    Return True if thing is a symbol or lazy gensym (valid binding name)
-    """
-
-    return is_symbol(thing) or is_lazygensym(thing)
 
 
 def helper_binding(source):
@@ -304,7 +283,7 @@ def _parse_formal_tail(tail, source):
 
     if is_nil(tail):
         return {}, None
-    head = car(tail)
+    head = strip_mark(car(tail))
     rest = cdr(tail)
     if not is_keyword(head):
         if not is_nil(rest):
@@ -317,7 +296,7 @@ def _parse_formal_tail(tail, source):
     default = None
     cur = tail
     while not is_nil(cur):
-        kw = car(cur)
+        kw = strip_mark(car(cur))
         cur = cdr(cur)
         if not is_keyword(kw):
             raise SpecialError(
@@ -347,7 +326,7 @@ def parse_formal_parameter(form, source=None):
     Parse one formal parameter: bare symbol, or list with name and attributes
     """
 
-    if is_symbol(form) or is_lazygensym(form):
+    if is_symbol(form):
         return (form, {}, None)
     if not is_pair(form):
         raise SpecialError(
@@ -359,7 +338,7 @@ def parse_formal_parameter(form, source=None):
             source)
 
     elems = tuple(unpack(form))
-    if len(elems) == 1 and is_symbolish(elems[0]):
+    if len(elems) == 1 and is_symbol(elems[0]):
         return (elems[0], {}, None)
 
     _sym_expr = (LIST(SYMBOL("name"), VALUE("expr")),)
@@ -404,7 +383,7 @@ def _parse_decl_tail(tail, source):
     ann = {}
     cur = tail
     while not is_nil(cur):
-        kw = car(cur)
+        kw = strip_mark(car(cur))
         cur = cdr(cur)
         if not is_keyword(kw):
             raise SpecialError(
@@ -436,7 +415,7 @@ def parse_decl(form, source=None):
     Parse a binding-shaped declaration with no value
     """
 
-    if is_symbol(form) or is_lazygensym(form):
+    if is_symbol(form):
         return (form, None)
     if not is_pair(form):
         raise SpecialError(
@@ -448,7 +427,7 @@ def parse_decl(form, source=None):
             source)
 
     elems = tuple(unpack(form))
-    if len(elems) == 1 and is_symbolish(elems[0]):
+    if len(elems) == 1 and is_symbol(elems[0]):
         return (elems[0], None)
 
     _sym_expr = (LIST(SYMBOL("name"), VALUE("expr")),)
@@ -484,7 +463,7 @@ def gather_parameters(args, source=None):
 
     undefined = object()
 
-    if is_symbol(args) or is_lazygensym(args):
+    if is_symbol(args):
         return ([("*", args)], [])
 
     elif isinstance(args, (list, tuple)):
@@ -511,8 +490,9 @@ def gather_parameters(args, source=None):
     arg = next(iargs, undefined)
 
     while arg is not undefined:
-        if is_keyword(arg):
-            if arg is _keyword_star:
+        label = arg
+        if is_keyword(label):
+            if label is _keyword_star:
                 if in_kwds_phase:
                     raise ParametersError(
                         "* args must come before keyword arguments",
@@ -524,7 +504,7 @@ def gather_parameters(args, source=None):
                         source)
                 args_seq.append(("*", star_sym))
 
-            elif arg is _keyword_starstar:
+            elif label is _keyword_starstar:
                 in_kwds_phase = True
                 starstar_sym = next(iargs, undefined)
                 if starstar_sym is undefined:
@@ -538,8 +518,9 @@ def gather_parameters(args, source=None):
                 value = next(iargs, undefined)
                 if value is undefined:
                     raise ParametersError(
-                        "missing value for keyword parameter %s" % arg, source)
-                kwds_seq.append((str(arg), value))
+                        "missing value for keyword parameter %s" % label,
+                        source)
+                kwds_seq.append((str(label), value))
 
         else:
             if in_kwds_phase:
@@ -593,7 +574,8 @@ def const_only_expr(fragment):
 def var_only_expr(fragment):
     """
     Check whether a ByteCodeFragment consists only of a single VAR load,
-    answering (True, name) for one and (False, None) otherwise
+    answering (True, atom) with the loaded name's atom for one and
+    (False, None) otherwise
     """
 
     found = False
@@ -613,8 +595,8 @@ def var_only_expr(fragment):
 def feeder_expr(fragment):
     """
     Classify a compiled fragment as a feeder the compress pipeline
-    folds: ('const', value) for a single CONST, ('var', name) for a
-    single VAR, (None, None) for anything else
+    folds: ('const', value) for a single CONST, ('var', atom) for a
+    single VAR naming atom, (None, None) for anything else
     """
 
     is_const, value = const_only_expr(fragment)
@@ -654,8 +636,11 @@ def emit_item_access(compiler, called_by, obj, key, stack_op, named_op):
     key_kind, _ = feeder_expr(keyfrag)
 
     if obj_kind == 'var' and key_kind is None:
+        # the object's load becomes the named operand; its request
+        # carries over without its instruction
         frag.merge(keyfrag)
-        frag.request_var(obj_name)
+        for sym in objfrag.requests:
+            frag.request_var(sym)
         frag.instruction(named_op, obj_name)
     else:
         frag.merge(objfrag)
@@ -699,17 +684,19 @@ def emit_item_place(compiler, frag, obj, keyfrag, key, value_feeders):
 
     fields = []
     obj_op = key_op = None
+    # a named operand's request carries over without its instruction
     if obj_name is None:
         frag.merge(objfrag)
     else:
-        frag.request_var(obj_name)
+        for sym in objfrag.requests:
+            frag.request_var(sym)
         obj_op = OpCode.VAR
         fields.append(obj_name)
     if key_kind is None:
         frag.merge(keyfrag)
     else:
-        if key_kind == 'var':
-            frag.request_var(key_val)
+        for sym in keyfrag.requests:
+            frag.request_var(sym)
         key_op = ITEM_FEEDER_OP[key_kind]
         fields.append(key_val)
     return obj_op, key_op, fields
@@ -906,7 +893,7 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
     def fail(msg):
         raise SpecialError(msg, ctx)
 
-    if is_symbolish(lhs):
+    if is_symbol(lhs):
         yield lhs
         return
 
@@ -919,7 +906,7 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
 
     star_idx = [
         i for i, elt in enumerate(items)
-        if is_keyword(elt) and elt is _keyword_star]
+        if elt is _keyword_star]
 
     if len(star_idx) > 1:
         fail("at most one * is allowed in an unpack pattern")
@@ -928,7 +915,7 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
         for elt in items:
             if flatten and is_pair(elt):
                 yield from unpack_lhs_bind_symbols(elt, source, flatten)
-            elif not is_symbolish(elt):
+            elif not is_symbol(elt):
                 fail("unpack pattern list elements must be symbols")
             else:
                 yield elt
@@ -942,13 +929,13 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
 
     star_name = after_star[0]
     suffix = after_star[1:]
-    if not is_symbolish(star_name):
+    if not is_symbol(star_name):
         fail("name after * in unpack pattern must be a symbol")
 
     for elt in prefix:
         if flatten and is_pair(elt):
             yield from unpack_lhs_bind_symbols(elt, source, flatten)
-        elif not is_symbolish(elt):
+        elif not is_symbol(elt):
             fail("unpack pattern list elements must be symbols")
         else:
             yield elt
@@ -958,7 +945,7 @@ def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
     for elt in suffix:
         if flatten and is_pair(elt):
             yield from unpack_lhs_bind_symbols(elt, source, flatten)
-        elif not is_symbolish(elt):
+        elif not is_symbol(elt):
             fail("unpack pattern list elements must be symbols")
         else:
             yield elt
@@ -982,10 +969,9 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     if source is not None:
         frag.position_of(source)
 
-    if is_symbolish(lhs):
-        name = str(lhs)
-        maybe_declare(name)
-        frag.instruction(OpCode.VAR_STORE, name)
+    if is_symbol(lhs):
+        maybe_declare(lhs)
+        frag.instruction(OpCode.VAR_STORE, lhs)
         return frag
 
     if not is_proper(lhs):
@@ -996,18 +982,17 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
         fail("empty unpack pattern")
 
     if len(items) == 2 \
-       and is_symbolish(items[0]) \
-       and is_symbolish(items[1]):
-        name1 = str(items[0])
-        name2 = str(items[1])
-        maybe_declare(name1)
-        maybe_declare(name2)
-        frag.instruction(OpCode.UNPACK_VAR, (name1, name2, 0, 0))
+       and is_symbol(items[0]) \
+       and is_symbol(items[1]):
+        maybe_declare(items[0])
+        maybe_declare(items[1])
+        frag.instruction(
+            OpCode.UNPACK_VAR, (items[0], items[1], 0, 0))
         return frag
 
     star_idx = [
         i for i, elt in enumerate(items)
-        if is_keyword(elt) and elt is _keyword_star]
+        if elt is _keyword_star]
 
     if len(star_idx) > 1:
         fail("at most one * is allowed in an unpack pattern")
@@ -1018,8 +1003,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
         for elt in items:
             if is_pair(elt):
                 frag.merge(using_unpack_helper(compiler, elt, source, declare))
-            elif is_symbolish(elt):
-                elt = str(elt)
+            elif is_symbol(elt):
                 maybe_declare(elt)
                 frag.instruction(OpCode.VAR_STORE, elt)
             else:
@@ -1034,9 +1018,8 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
 
     star_name = after_star[0]
     suffix = after_star[1:]
-    if not is_symbolish(star_name):
+    if not is_symbol(star_name):
         fail("name after * in unpack pattern must be a symbol")
-    star_name = str(star_name)
 
     if not prefix and not suffix:
         maybe_declare(star_name)
@@ -1049,8 +1032,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     for elt in prefix:
         if is_pair(elt):
             frag.merge(using_unpack_helper(compiler, elt, source, declare))
-        elif is_symbolish(elt):
-            elt = str(elt)
+        elif is_symbol(elt):
             maybe_declare(elt)
             frag.instruction(OpCode.VAR_STORE, elt)
         else:
@@ -1062,8 +1044,7 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     for elt in suffix:
         if is_pair(elt):
             frag.merge(using_unpack_helper(compiler, elt, source, declare))
-        elif is_symbolish(elt):
-            elt = str(elt)
+        elif is_symbol(elt):
             maybe_declare(elt)
             frag.instruction(OpCode.VAR_STORE, elt)
         else:
@@ -1264,7 +1245,7 @@ def _gather_one_positional_frame(fr: dict, source):
         raise SpecialError(
             f"positional frame missing name: {fr!r}",
             source)
-    if not (is_symbol(name) or is_lazygensym(name)):
+    if not is_symbol(name):
         raise SpecialError(
             "positional formals must be symbols or bracket forms, not"
             f" {name!r}",
@@ -1365,7 +1346,7 @@ def gather_formals(formals_group, source=None):
                 f"invalid kwonly frame {fr!r}",
                 source)
         name = None if (v := fr.get('name')) is None else v.datum
-        if name is not None and (is_symbol(name) or is_lazygensym(name)):
+        if name is not None and is_symbol(name):
             name, by_ref = _strip_byref_sym(name)
             if by_ref:
                 by_refs.append(str(name))

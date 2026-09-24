@@ -5,8 +5,8 @@
 ;; answers 403 as JSON, the UI as HTML.
 
 import-from .harness SchedulerAsyncTestCase
-import-from kosrunner:
-    AccessConfig AdminConfig AdminJob Group group HttpServer UiConfig UiJob
+(use kosrunner
+     AccessConfig AdminConfig AdminJob Group group HttpServer UiConfig UiJob)
 
 
 define OPERATOR "root@example.com"

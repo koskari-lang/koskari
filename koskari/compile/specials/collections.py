@@ -27,10 +27,9 @@ from ...exceptions import SpecialError
 from ...lib import OpCode
 from ...matcher import CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
-from ...types import is_nil, is_pair
+from ...types import is_nil, is_pair, is_symbol
 from ..helpers import (
-    call_form_reroute, gather_parameters, is_symbolish,
-    partition_collection_runs)
+    call_form_reroute, gather_parameters, partition_collection_runs)
 
 
 _DEFAULT_LIST_PATTERNS = (MATCH(CALLEDBY(), REST("rest")),)
@@ -166,17 +165,16 @@ def special_list_append(compiler, caps):
 
     if "sym" in caps:
         sym = caps["sym"].datum
-        if not is_symbolish(sym):
+        if not is_symbol(sym):
             raise SpecialError("#list-append name must be a symbol", caps.source)
 
-        name = str(sym)
         pos = caps["sym"].position
-        frag.request_for_write(name, position=pos)
+        frag.request_for_write(sym, position=pos)
         if not is_pair(expr):
             frag.position(pos)
 
         frag.merge(compiler.full_compile(expr))
-        frag.instruction(OpCode.VAR_LIST_APPEND, name)
+        frag.instruction(OpCode.VAR_LIST_APPEND, sym)
         frag.instruction(OpCode.CONST, None)
         return frag
 

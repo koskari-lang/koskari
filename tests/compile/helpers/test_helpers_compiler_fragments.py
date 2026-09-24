@@ -86,7 +86,7 @@ class TestConstOnlyExpr(unittest.TestCase):
         """
 
         frag = self.compiler.fragment("c")
-        frag.instruction(OpCode.VAR, "x")
+        frag.instruction(OpCode.VAR, symbol("x"))
         frag.instruction(OpCode.POP, 1)
         frag.instruction(OpCode.CONST, 7)
         ok, val = const_only_expr(frag)
@@ -95,7 +95,7 @@ class TestConstOnlyExpr(unittest.TestCase):
 
     def test_call_before_const_false(self):
         frag = self.compiler.fragment("c")
-        frag.instruction(OpCode.CALL_VAR, ("f", (), 0, 0))
+        frag.instruction(OpCode.CALL_VAR, (symbol("f"), (), 0, 0))
         frag.instruction(OpCode.POP, 1)
         frag.instruction(OpCode.CONST, 7)
         ok, val = const_only_expr(frag)
@@ -138,23 +138,23 @@ class TestUsingUnpackHelper(unittest.TestCase):
     def test_bare_symbol(self):
         x = symbol("x")
         frag = using_unpack_helper(self.compiler, x)
-        self.assertEqual(frag.declares, ["x"])
+        self.assertEqual(frag.declares, [symbol("x")])
         self.assertEqual(
             frag.instructions,
-            [(OpCode.VAR_STORE, "x")])
+            [(OpCode.VAR_STORE, symbol("x"))])
 
     def test_fixed_arity_list(self):
         a, b, c = symbol("a"), symbol("b"), symbol("c")
         lhs = cons(a, b, c, nil)
         frag = using_unpack_helper(self.compiler, lhs)
-        self.assertEqual(frag.declares, ["a", "b", "c"])
+        self.assertEqual(frag.declares, [symbol("a"), symbol("b"), symbol("c")])
         self.assertEqual(
             frag.instructions,
             [
                 (OpCode.UNPACK, 3),
-                (OpCode.VAR_STORE, "a"),
-                (OpCode.VAR_STORE, "b"),
-                (OpCode.VAR_STORE, "c"),
+                (OpCode.VAR_STORE, symbol("a")),
+                (OpCode.VAR_STORE, symbol("b")),
+                (OpCode.VAR_STORE, symbol("c")),
             ])
 
     def test_two_symbol_unpack_var(self):
@@ -163,20 +163,20 @@ class TestUsingUnpackHelper(unittest.TestCase):
         self.assertEqual(frag.declares, [])
         self.assertEqual(
             frag.instructions,
-            [(OpCode.UNPACK_VAR, ("a", "b", 0, 0))])
+            [(OpCode.UNPACK_VAR, (symbol("a"), symbol("b"), 0, 0))])
 
     def test_star_pattern(self):
         star = keyword("*")
         lhs = cons(symbol("a"), star, symbol("rest"), symbol("b"), nil)
         frag = using_unpack_helper(self.compiler, lhs)
-        self.assertEqual(frag.declares, ["a", "rest", "b"])
+        self.assertEqual(frag.declares, [symbol("a"), symbol("rest"), symbol("b")])
         self.assertEqual(
             frag.instructions,
             [
                 (OpCode.UNPACK_STAR, (1, 1, 0, 0)),
-                (OpCode.VAR_STORE, "a"),
-                (OpCode.VAR_STORE, "rest"),
-                (OpCode.VAR_STORE, "b"),
+                (OpCode.VAR_STORE, symbol("a")),
+                (OpCode.VAR_STORE, symbol("rest")),
+                (OpCode.VAR_STORE, symbol("b")),
             ])
 
     def test_whole_sequence_star_only(self):
@@ -184,10 +184,10 @@ class TestUsingUnpackHelper(unittest.TestCase):
         star = keyword("*")
         lhs = cons(star, whole, nil)
         frag = using_unpack_helper(self.compiler, lhs)
-        self.assertEqual(frag.declares, ["whole"])
+        self.assertEqual(frag.declares, [symbol("whole")])
         self.assertEqual(
             frag.instructions,
-            [(OpCode.VAR_STORE, "whole")])
+            [(OpCode.VAR_STORE, symbol("whole"))])
 
     def test_nested_pair_tail(self):
         inner = cons(symbol("i"), symbol("j"), nil)
@@ -224,9 +224,9 @@ class TestUsingUnpackHelper(unittest.TestCase):
             frag.instructions,
             [
                 (OpCode.UNPACK, 3),
-                (OpCode.VAR_STORE, "a"),
-                (OpCode.VAR_STORE, "b"),
-                (OpCode.VAR_STORE, "c"),
+                (OpCode.VAR_STORE, symbol("a")),
+                (OpCode.VAR_STORE, symbol("b")),
+                (OpCode.VAR_STORE, symbol("c")),
             ])
 
 

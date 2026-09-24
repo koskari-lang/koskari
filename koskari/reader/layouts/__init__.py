@@ -26,10 +26,11 @@ Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS`
 from ...bootstrap import builtin
 from ...lib import cons, keyword, nil, symbol
 from ...types import (
-    fill_position, get_position, is_keyword, is_pair, is_symbol)
+    fill_position, get_position, is_keyword, is_pair, is_symbol, strip_mark)
 from .basics import (
     layout_block, layout_block_begin, layout_inline_block,
-    layout_quasiquote, layout_quote)
+    layout_quasiquote, layout_quasiquote_syntax, layout_quote,
+    layout_quote_syntax)
 from .classes import layout_class, layout_define_class
 from .conditionals import layout_if, layout_match, layout_switch
 from .define_syntax import (
@@ -53,6 +54,8 @@ __all__ = (
     "layout_bare_syntax",
     "layout_quote",
     "layout_quasiquote",
+    "layout_quote_syntax",
+    "layout_quasiquote_syntax",
     "layout_class",
     "layout_define_class",
     "layout_dyn_wind",
@@ -149,7 +152,7 @@ def _gather_peers(tail, declared):
         sibling = _block_candidate(tail.car)
         if sibling is None:
             break
-        if str(sibling.cdr.car.car) not in declared:
+        if str(strip_mark(sibling.cdr.car.car)) not in declared:
             break
         peer = sibling.cdr
         peer_pos = get_position(sibling)
@@ -171,7 +174,7 @@ def _lower_block(form, tail, reader):
     """
 
     head_args, entries = form.cdr
-    head = head_args.car
+    head = strip_mark(head_args.car)
 
     layout_obj = None
     if is_symbol(head):
@@ -288,7 +291,9 @@ def apply_layouts(blocks, target):
     reader = reader_for(target)
     result = blocks
 
-    while blocks:
+    # a Datum in the spine is the caller's material, left for the peel
+    # as a Datum car is
+    while is_pair(blocks) and blocks:
         form, tail = blocks
 
         if not form or not is_pair(form):

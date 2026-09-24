@@ -15,11 +15,12 @@
 
 
 /**
-   Interned atom types: symbol and keyword
+   Interned atom types: symbol, keyword, and gensym
 
    Symbols and keywords are interned string-like objects. Each unique
    name maps to exactly one instance in memory, allowing for fast
-   identity comparisons.
+   identity comparisons. A gensym is a symbol scoped by expansion
+   marks, interned in the symbol table under its derived spelling.
 
    author: Christopher O'Brien <obriencj@gmail.com>
    license: GPL v.3
@@ -136,6 +137,25 @@ static PySequenceMethods atom_as_sequence = {
 };
 
 
+/**
+   The atom's bare spelling: itself for a symbol or keyword, so a
+   reader wanting the spelling under any marks writes ``x.base`` with
+   no type test
+*/
+static PyObject *atom_get_base(PyObject *self, void *closure) {
+  (void) closure;
+  Py_INCREF(self);
+  return self;
+}
+
+
+static PyGetSetDef atom_getset[] = {
+  { "base", atom_get_base, NULL,
+    "The atom itself: its spelling carries no marks", NULL },
+  { NULL }
+};
+
+
 /* === symbol === */
 
 
@@ -144,12 +164,21 @@ PyObject *KosSymbol_FromString(PyObject *name) {
 }
 
 
-static void symbol_dealloc(PyObject *self) {
-  if (intern_syms) {
+/**
+   Drop a dying atom's entry from its intern table. The refcount is
+   raised past zero for the duration so the dict's own decref of the
+   value does not re-enter dealloc.
+*/
+static void atom_forget(PyObject *self, PyObject *intern) {
+  if (intern) {
     self->ob_refcnt = 3;
-    PyDict_DelItem(intern_syms, KosInternedAtom_NAME(self));
+    PyDict_DelItem(intern, KosInternedAtom_NAME(self));
   }
+}
 
+
+static void symbol_dealloc(PyObject *self) {
+  atom_forget(self, intern_syms);
   Py_CLEAR(KosInternedAtom_NAME(self));
   Py_TYPE(self)->tp_free(self);
 }
@@ -256,6 +285,7 @@ PyTypeObject KosSymbolType = {
 
   .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_methods = symbol_methods,
+  .tp_getset = atom_getset,
   .tp_new = symbol_new,
   .tp_dealloc = symbol_dealloc,
 
@@ -268,90 +298,481 @@ PyTypeObject KosSymbolType = {
 /* === gensym === */
 
 
-static Py_uhash_t gen_counter = 97531UL;
+static PyObject *_str_gensym = NULL;
+
+static unsigned long long mark_counter = 0;
+
+
+unsigned long long KosGensym_NextMark(void) {
+  return mark_counter++;
+}
+
+
+/**
+   Seed the mark counter once per process from four random bytes,
+   plus one so the first mark is never zero.
+*/
+static int gensym_seed(void) {
+
+  if (mark_counter)
+    return 0;
+
+  PyObject *os = PyImport_ImportModule("os");
+  if (! os)
+    return -1;
+
+  PyObject *buf = PyObject_CallMethod(os, "urandom", "n", (Py_ssize_t) 4);
+  Py_DECREF(os);
+  if (! buf)
+    return -1;
+
+  if (! PyBytes_Check(buf) || PyBytes_GET_SIZE(buf) != 4) {
+    Py_DECREF(buf);
+    PyErr_SetString(PyExc_RuntimeError, "os.urandom returned a bad seed");
+    return -1;
+  }
+
+  const unsigned char *b = (const unsigned char *) PyBytes_AS_STRING(buf);
+  unsigned long long seed = ((unsigned long long) b[0]
+                             | ((unsigned long long) b[1] << 8)
+                             | ((unsigned long long) b[2] << 16)
+                             | ((unsigned long long) b[3] << 24));
+  Py_DECREF(buf);
+
+  mark_counter = seed + 1;
+  return 0;
+}
+
+
+/**
+   Coerce marks to a non-empty tuple of exact ints: an int becomes a
+   one-tuple, any other sequence is copied, and each mark is rebuilt
+   as an exact unsigned int so no subclass rides into the tuple. New
+   reference, or NULL with an exception set.
+*/
+static PyObject *gensym_coerce_marks(PyObject *marks) {
+
+  PyObject *tup;
+  if (PyLong_Check(marks))
+    tup = PyTuple_Pack(1, marks);
+  else
+    tup = PySequence_Tuple(marks);
+  if (! tup)
+    return NULL;
+
+  Py_ssize_t n = PyTuple_GET_SIZE(tup);
+  if (! n) {
+    Py_DECREF(tup);
+    PyErr_SetString(PyExc_ValueError, "gensym requires at least one mark");
+    return NULL;
+  }
+
+  PyObject *out = PyTuple_New(n);
+  if (! out) {
+    Py_DECREF(tup);
+    return NULL;
+  }
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *m = PyTuple_GET_ITEM(tup, i);
+    if (! PyLong_Check(m)) {
+      PyErr_SetString(PyExc_TypeError, "gensym marks must be ints");
+      goto fail;
+    }
+    unsigned long long v = PyLong_AsUnsignedLongLong(m);
+    if (v == (unsigned long long) -1 && PyErr_Occurred())
+      goto fail;
+    PyObject *exact = PyLong_FromUnsignedLongLong(v);
+    if (! exact)
+      goto fail;
+    PyTuple_SET_ITEM(out, i, exact);
+  }
+
+  Py_DECREF(tup);
+  return out;
+
+ fail:
+  Py_DECREF(tup);
+  Py_DECREF(out);
+  return NULL;
+}
+
+
+/**
+   The derived spelling of base under marks: the base name followed
+   by "#" and the lowercase hex of each mark, built in one buffer and
+   decoded once. New reference.
+*/
+static PyObject *gensym_build_name(PyObject *base, PyObject *marks) {
+
+  Py_ssize_t base_len;
+  const char *base_utf8 = PyUnicode_AsUTF8AndSize(
+      KosInternedAtom_NAME(base), &base_len);
+  if (! base_utf8)
+    return NULL;
+
+  /* each mark is at most "#" plus sixteen hex digits, and snprintf
+     writes its terminator past the last one */
+  Py_ssize_t n = PyTuple_GET_SIZE(marks);
+  Py_ssize_t cap = base_len + n * 17 + 1;
+  char *buf = PyMem_Malloc(cap ? cap : 1);
+  if (! buf)
+    return PyErr_NoMemory();
+
+  memcpy(buf, base_utf8, base_len);
+  Py_ssize_t len = base_len;
+  for (Py_ssize_t i = 0; i < n; i++) {
+    unsigned long long v = PyLong_AsUnsignedLongLong(
+        PyTuple_GET_ITEM(marks, i));
+    if (v == (unsigned long long) -1 && PyErr_Occurred()) {
+      PyMem_Free(buf);
+      return NULL;
+    }
+    len += snprintf(buf + len, cap - len, "#%llx", v);
+  }
+
+  PyObject *name = PyUnicode_FromStringAndSize(buf, len);
+  PyMem_Free(buf);
+  return name;
+}
+
+
+/**
+   The gensym for base, an exact symbol, under marks, a coerced
+   tuple: the interned instance when it exists with that base and
+   those marks, else a new one interned under the derived spelling.
+   When the spelling is held by any other atom, sets *taken and
+   returns NULL with no exception; when fresh is set, so does an
+   interned gensym with that base and those marks, since the caller
+   needs one no other code holds. New reference otherwise, or NULL
+   with an exception set.
+*/
+static PyObject *gensym_intern(
+    PyObject *base,
+    PyObject *marks,
+    int fresh,
+    int *taken) {
+
+  *taken = 0;
+
+  PyObject *name = gensym_build_name(base, marks);
+  if (! name)
+    return NULL;
+
+  PyObject *found = PyDict_GetItem(intern_syms, name);
+  if (found) {
+    Py_DECREF(name);
+    if (! fresh && KosGensym_Check(found)
+        && KosGensym_BASE(found) == base) {
+      int same = PyObject_RichCompareBool(
+          KosGensym_MARKS(found), marks, Py_EQ);
+      if (same < 0)
+        return NULL;
+      if (same) {
+        Py_INCREF(found);
+        return found;
+      }
+    }
+    *taken = 1;
+    return NULL;
+  }
+
+  KosGensym *g = PyObject_New(KosGensym, &KosGensymType);
+  if (! g) {
+    Py_DECREF(name);
+    return NULL;
+  }
+
+  KosInternedAtom_NAME(g) = name;
+  Py_INCREF(base);
+  g->base = base;
+  Py_INCREF(marks);
+  g->marks = marks;
+
+  if (PyDict_SetItem(intern_syms, name, (PyObject *) g)) {
+    // dealloc deletes a key that was never set; keep the real error
+    PyObject *typ, *val, *tb;
+    PyErr_Fetch(&typ, &val, &tb);
+    Py_DECREF(g);
+    PyErr_Restore(typ, val, tb);
+    return NULL;
+  }
+
+  // the intern is a borrowed ref, as for every atom: dealloc removes
+  // the entry when the last real reference drops
+  Py_DECREF(g);
+  return (PyObject *) g;
+}
+
+
+PyObject *KosGensym_New(PyObject *base, PyObject *marks) {
+
+  if (! KosSymbol_CheckExact(base)) {
+    PyErr_Format(PyExc_TypeError,
+                 "gensym base must be a symbol, not %R", base);
+    return NULL;
+  }
+
+  PyObject *tup = gensym_coerce_marks(marks);
+  if (! tup)
+    return NULL;
+
+  int taken = 0;
+  PyObject *g = gensym_intern(base, tup, 0, &taken);
+  if (taken) {
+    PyObject *name = gensym_build_name(base, tup);
+    if (name) {
+      PyErr_Format(PyExc_ValueError,
+                   "%R is already interned as another atom", name);
+      Py_DECREF(name);
+    }
+  }
+
+  Py_DECREF(tup);
+  return g;
+}
+
+
+/**
+   The base and the marks a fresh gensym extends, from name: a gensym,
+   or a str or symbol whose interned atom is one, contributes its base
+   and marks; any other spelling is the base under no marks. Both out
+   parameters are new references.
+*/
+static int gensym_prefix(
+    PyObject *name,
+    PyObject **out_base,
+    PyObject **out_marks) {
+
+  PyObject *atom = KosSymbol_FromString(name ? name : _str_gensym);
+  if (! atom)
+    return -1;
+
+  if (KosGensym_Check(atom)) {
+    *out_base = KosGensym_BASE(atom);
+    Py_INCREF(*out_base);
+    *out_marks = KosGensym_MARKS(atom);
+    Py_INCREF(*out_marks);
+    Py_DECREF(atom);
+    return 0;
+  }
+
+  *out_base = atom;
+  *out_marks = PyTuple_New(0);
+  if (! *out_marks) {
+    Py_DECREF(atom);
+    return -1;
+  }
+  return 0;
+}
 
 
 PyObject *KosGensym_FromString(
     PyObject *name,
     PyObject *predicate) {
 
+  PyObject *base = NULL;
+  PyObject *prefix = NULL;
+  PyObject *result = NULL;
+
+  if (gensym_prefix(name, &base, &prefix))
+    return NULL;
+
   while (1) {
+    PyObject *mark = PyLong_FromUnsignedLongLong(KosGensym_NextMark());
+    if (! mark)
+      break;
 
-    // generate a name
-    PyObject *maybe_name;
-    if (name) {
-      maybe_name = PyUnicode_FromFormat("%S#%x", name, gen_counter, NULL);
-    } else {
-      maybe_name = PyUnicode_FromFormat("<gensym>#%x", gen_counter, NULL);
-    }
-    if (! maybe_name)
-      return NULL;
+    PyObject *one = PyTuple_Pack(1, mark);
+    Py_DECREF(mark);
+    if (! one)
+      break;
 
-    // I don't know, some silliness to make the index number bounce
-    // all over the damned place
-    gen_counter += (Py_uhash_t) maybe_name;
-    gen_counter *= _PyHASH_MULTIPLIER;
-    if (! gen_counter)
-      gen_counter = 97531UL;
+    PyObject *marks = PySequence_Concat(prefix, one);
+    Py_DECREF(one);
+    if (! marks)
+      break;
 
-    // check whether a symbol with that name is already allocated. If
-    // it is, then this is not a unique symbol, try again.
-    if (PyDict_GetItem(intern_syms, maybe_name)) {
-      Py_CLEAR(maybe_name);
+    // a spelling some other atom holds is skipped: the next mark is
+    // as good as this one
+    int taken = 0;
+    PyObject *cand = gensym_intern(base, marks, 1, &taken);
+    Py_DECREF(marks);
+    if (taken)
       continue;
+    if (! cand)
+      break;
+
+    if (! predicate) {
+      result = cand;
+      break;
     }
 
-    // reserves the symbol for this gensym attempt
-    PyObject *maybe_symbol = KosSymbol_FromString(maybe_name);
-    Py_CLEAR(maybe_name);
-
-    if (predicate) {
-      PyObject *maybe = PyObject_CallFunctionObjArgs(predicate,
-                                                     maybe_symbol, NULL);
-      int accept;
-
-      // every arm that does not hand back the candidate releases it:
-      // symbols are weakly interned, so holding one keeps its name
-      // reserved for the life of the process
-      if (! maybe) {
-        Py_CLEAR(maybe_symbol);
-        return NULL;
-      }
-
-      accept = PyObject_IsTrue(maybe);
-      Py_DECREF(maybe);
-
-      if (accept < 0) {
-        Py_CLEAR(maybe_symbol);
-        return NULL;
-      }
-
-      if (accept)
-        return maybe_symbol;
-
-      Py_CLEAR(maybe_symbol);
-      continue;
-
-    } else {
-      return maybe_symbol;
+    // every arm that does not hand back the candidate releases it:
+    // atoms are weakly interned, so holding one keeps its spelling
+    // reserved for the life of the process
+    PyObject *maybe = PyObject_CallFunctionObjArgs(predicate, cand, NULL);
+    if (! maybe) {
+      Py_DECREF(cand);
+      break;
     }
+
+    int accept = PyObject_IsTrue(maybe);
+    Py_DECREF(maybe);
+    if (accept < 0) {
+      Py_DECREF(cand);
+      break;
+    }
+
+    if (accept) {
+      result = cand;
+      break;
+    }
+
+    Py_DECREF(cand);
   }
+
+  Py_DECREF(base);
+  Py_DECREF(prefix);
+  return result;
 }
 
 
-static PyObject *m_gensym(PyObject *mod, PyObject *args) {
+static void gensym_dealloc(PyObject *self) {
+  // leave the intern table before any field drops, so nothing that
+  // runs during the drops can look the dying spelling up
+  atom_forget(self, intern_syms);
+  Py_CLEAR(KosGensym_BASE(self));
+  Py_CLEAR(KosGensym_MARKS(self));
+  Py_CLEAR(KosInternedAtom_NAME(self));
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static PyObject *gensym_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = NULL;
   PyObject *predicate = NULL;
+  PyObject *marks = NULL;
+  static char *kwlist[] = { "name", "predicate", "marks", NULL };
 
-  if (! PyArg_ParseTuple(args, "|OO:gensym", &name, &predicate))
+  (void) type;
+  if (! PyArg_ParseTupleAndKeywords(
+          args, kwds, "|OO$O:gensym", kwlist, &name, &predicate, &marks))
     return NULL;
 
+  if (name == Py_None)
+    name = NULL;
   if (predicate == Py_None)
     predicate = NULL;
+  if (marks == Py_None)
+    marks = NULL;
 
-  return KosGensym_FromString(name, predicate);
+  if (! marks)
+    return KosGensym_FromString(name, predicate);
+
+  if (predicate) {
+    PyErr_SetString(PyExc_TypeError,
+                    "gensym takes no predicate with marks");
+    return NULL;
+  }
+
+  if (! name) {
+    PyErr_SetString(PyExc_TypeError,
+                    "gensym with marks requires a base symbol");
+    return NULL;
+  }
+
+  if (PyUnicode_Check(name)) {
+    PyObject *base = KosSymbol_FromString(name);
+    if (! base)
+      return NULL;
+    PyObject *g = KosGensym_New(base, marks);
+    Py_DECREF(base);
+    return g;
+  }
+
+  return KosGensym_New(name, marks);
 }
+
+
+static PyObject *gensym_get_base(PyObject *self, void *closure) {
+  (void) closure;
+  PyObject *b = KosGensym_BASE(self);
+  Py_INCREF(b);
+  return b;
+}
+
+
+static PyObject *gensym_get_marks(PyObject *self, void *closure) {
+  (void) closure;
+  PyObject *m = KosGensym_MARKS(self);
+  Py_INCREF(m);
+  return m;
+}
+
+
+static PyGetSetDef gensym_getset[] = {
+  { "base", gensym_get_base, NULL,
+    "The symbol the gensym spells, without its marks", NULL },
+  { "marks", gensym_get_marks, NULL,
+    "Tuple of the expansions that introduced it, outermost first",
+    NULL },
+  { NULL }
+};
+
+
+/**
+   Source spelling: the base symbol. Printed source hides expansion
+   provenance; str() carries it.
+*/
+static PyObject *gensym_kos_repr(PyObject *self, PyObject *unused) {
+  (void) unused;
+  return PyUnicode_FromFormat(
+      "%S", KosInternedAtom_NAME(KosGensym_BASE(self)));
+}
+
+
+static PyObject *gensym_next_mark(PyObject *unused, PyObject *ignored) {
+  (void) unused;
+  (void) ignored;
+  return PyLong_FromUnsignedLongLong(KosGensym_NextMark());
+}
+
+
+static PyMethodDef gensym_methods[] = {
+  { "__kos_repr__", (PyCFunction) gensym_kos_repr, METH_NOARGS,
+    "G.__kos_repr__() -> str\n"
+    "Koskari-style symbol text: the base spelling, without marks." },
+
+  { "next_mark", (PyCFunction) gensym_next_mark, METH_NOARGS|METH_STATIC,
+    "gensym.next_mark() -> int\n"
+    "The next expansion mark from the process counter." },
+
+  { NULL, NULL, 0, NULL },
+};
+
+
+PyTypeObject KosGensymType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  "gensym",
+  sizeof(KosGensym),
+  0,
+
+  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_base = &KosSymbolType,
+  .tp_doc = "A symbol scoped by expansion marks: gensym(name=None, "
+            "predicate=None) mints a fresh mark, gensym(base, marks=...) "
+            "spells base under the given marks",
+  .tp_methods = gensym_methods,
+  .tp_getset = gensym_getset,
+  .tp_new = gensym_new,
+  .tp_dealloc = gensym_dealloc,
+};
 
 
 /* === keyword === */
@@ -409,11 +830,7 @@ static PyObject *keyword_new(
 
 
 static void keyword_dealloc(PyObject *self) {
-  if (intern_kwds) {
-    self->ob_refcnt = 3;
-    PyDict_DelItem(intern_kwds, KosInternedAtom_NAME(self));
-  }
-
+  atom_forget(self, intern_kwds);
   Py_CLEAR(KosInternedAtom_NAME(self));
   Py_TYPE(self)->tp_free(self);
 }
@@ -506,24 +923,13 @@ PyTypeObject KosKeywordType = {
 
   .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_methods = keyword_methods,
+  .tp_getset = atom_getset,
   .tp_new = keyword_new,
   .tp_dealloc = keyword_dealloc,
 
   .tp_as_sequence = &atom_as_sequence,
   .tp_repr = atom_repr,
   .tp_str = atom_str,
-};
-
-
-/* === module methods === */
-
-
-static PyMethodDef atom_methods[] = {
-
-  { "gensym", (PyCFunction) m_gensym, METH_VARARGS,
-    "gensym(name=None, predicate=None) -> generate a unique symbol" },
-
-  { NULL, NULL, 0, NULL },
 };
 
 
@@ -562,10 +968,16 @@ int koskari_atom_init(PyObject *mod) {
   if (PyType_Ready(&KosKeywordType))
     return -1;
 
+  if (PyType_Ready(&KosGensymType))
+    return -1;
+
   if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosSymbolType))
     return -1;
 
   if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosKeywordType))
+    return -1;
+
+  if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosGensymType))
     return -1;
 
   /* add types to module dict */
@@ -575,8 +987,12 @@ int koskari_atom_init(PyObject *mod) {
   if (PyDict_SetItemString(dict, "keyword", (PyObject *) &KosKeywordType))
     return -1;
 
-  /* add module functions */
-  if (PyModule_AddFunctions(mod, atom_methods))
+  if (PyDict_SetItemString(dict, "gensym", (PyObject *) &KosGensymType))
+    return -1;
+
+  /* seed the expansion mark counter */
+  STR_CONST(_str_gensym, "<gensym>");
+  if (gensym_seed())
     return -1;
 
   return 0;
@@ -616,6 +1032,7 @@ int koskari_atom_clear(PyObject *mod) {
   Py_CLEAR(_str_rsplit);
   Py_CLEAR(_str_split);
   Py_CLEAR(_str_strip);
+  Py_CLEAR(_str_gensym);
 
   return 0;
 }

@@ -64,12 +64,12 @@ _LET_PATTERNS = [
     MATCH(
         CALLEDBY(),
         SYMBOL("name"),
-        BINDINGS("bindings", mode="parallel", scope="body"),
+        BINDINGS("bindings"),
         BODY("body")),
 
     MATCH(
         CALLEDBY(),
-        BINDINGS("bindings", mode="parallel", scope="body"),
+        BINDINGS("bindings"),
         BODY("body")),
 ]
 
@@ -119,7 +119,7 @@ def special_let(
 _LETREC_PATTERNS = [
     MATCH(
         CALLEDBY(),
-        BINDINGS("bindings", mode="parallel", scope="body"),
+        BINDINGS("bindings"),
         BODY("body")),
 ]
 
@@ -156,9 +156,9 @@ def special_letrec(
             if is_pair(expr):
                 frag.position_of(expr)
 
-            frag.declare_var(str(name))
+            frag.declare_var(name)
             frag.merge(compiler.full_compile(expr))
-            frag.instruction(OpCode.VAR_STORE, str(name))
+            frag.instruction(OpCode.VAR_STORE, name)
         helper_begin(frag, body)
 
     return fragment

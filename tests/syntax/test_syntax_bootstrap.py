@@ -23,8 +23,7 @@ import pytest
 from koskari.exceptions import SyntaxMatchError
 from koskari.lib import Datum, Matcher, cons, nil, symbol
 from koskari.matcher import (
-    FORM, GROUP, MATCH, VALUE, DatumFrame, HygienicMatchCompiler,
-    repeat_capture)
+    FORM, GROUP, MATCH, VALUE, DatumFrame, MatchCompiler, repeat_capture)
 from koskari.syntax import (
     MacroTransform, SpecialTransform, Syntax, SyntaxTransform, Transform,
     parse_syntax_rules_pattern, special)
@@ -309,16 +308,14 @@ class TestSyntaxCompileImpl(unittest.TestCase):
 class TestTransformFreeze(unittest.TestCase):
 
 
-    def test_transform_has_matcher_and_hygiene(self):
+    def test_transform_has_matcher(self):
         zsym = symbol("compile/z")
         p = parse_syntax_rules_pattern(
             build_proper(zsym, symbol("z")), frozenset({zsym}), None)
         t = SyntaxTransform(p, nil)
-        hc = HygienicMatchCompiler()
-        lowered = hc.lower(p)
+        lowered = MatchCompiler().lower(p)
         self.assertEqual(lowered[0], "MATCHER")
         self.assertEqual(len(lowered), 6)
-        self.assertTrue(t.hygiene.is_empty())
         r = t.matcher.match((zsym, symbol("mz")))
         self.assertTrue(r.matched)
 

@@ -64,3 +64,5 @@ transformer is bound when its defining form finishes compiling.
 - [compile/let-syntax](compile-let-syntax.md) -- local compile-time macro for the body extent
 - [compile/extend-syntax](compile-extend-syntax.md)
 - [compile/inline-macro](compile-inline-macro.md)
+- [Hygiene](../../guide/hygiene.md) -- how a template's names are kept apart
+  from the use site, and when a transformer needs `#'` or `` #` ``

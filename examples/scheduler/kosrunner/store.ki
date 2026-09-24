@@ -525,9 +525,9 @@ define-syntax config/storage:
     syntax-rules []:
         case (config/storage () setting ...):
             (begin
-                (define default/storage)
-                (unless &default/storage
-                    (set! default/storage (StorageConfig setting ...))))
+                (define -'default/storage)
+                (unless &-'default/storage
+                    (set! -'default/storage (StorageConfig setting ...))))
 
 
 ;; The end.

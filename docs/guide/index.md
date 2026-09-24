@@ -48,6 +48,7 @@ one whose topic has come up in your code.
 | Page | Covers |
 |------|--------|
 | [Macros and hygiene](macros-and-hygiene.md) | What a macro is for, `define-syntax`, templates versus procedures, hygiene, expansion order |
+| [Hygiene](hygiene.md) | What capture is, the gensym a template symbol becomes, how the expander scopes an expansion, how the compiler resolves it |
 | [Fences](fences.md) | Foreign literals as compile-time transliteration; when a format earns one |
 | [Pragmas and feature settings](pragma.md) | Setting and reading a pragma; every `reader/*`, `compiler/*`, and `pragma/*` setting |
 
@@ -75,6 +76,7 @@ hosting-from-python
 packaging
 runtime-tuning
 macros-and-hygiene
+hygiene
 fences
 pragma
 ```

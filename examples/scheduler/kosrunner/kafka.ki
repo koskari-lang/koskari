@@ -153,15 +153,15 @@ define-syntax config/kafka:
     syntax-rules []:
         case (config/kafka () setting ...):
             (begin
-                (define default/kafka)
-                (unless &default/kafka
-                    (set! default/kafka (KafkaConfig setting ...))))
+                (define -'default/kafka)
+                (unless &-'default/kafka
+                    (set! -'default/kafka (KafkaConfig setting ...))))
 
         case (config/kafka nm setting ...):
             (begin
                 (define nm (KafkaConfig setting ...))
-                (define default/kafka)
-                (unless &default/kafka (set! default/kafka nm)))
+                (define -'default/kafka)
+                (unless &-'default/kafka (set! -'default/kafka nm)))
 
 
 ;; `job kafka <name> <topic>:` -- trigger key is the topic.
@@ -170,9 +170,9 @@ define-syntax job/kafka:
         case (job/kafka name topic (subhead subrest ...) ...):
             (begin
                 (define name (KafkaJob topic))
-                (define default/kafka)
-                (if &default/kafka
-                    (.configure name via: default/kafka)
+                (define -'default/kafka)
+                (if &-'default/kafka
+                    (.configure name via: -'default/kafka)
                     (.configure name))
                 (subhead (kafka name) subrest ...) ...)
 

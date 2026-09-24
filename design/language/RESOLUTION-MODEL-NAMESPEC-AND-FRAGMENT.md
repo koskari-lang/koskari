@@ -66,8 +66,8 @@ When `fragment.merge(other)` runs, the outer fragment adopts:
 
 1. Fragment created (e.g. `compiler.fragment(name)`).
 2. Compilation populates declares, requests, requests_for_write, _request_global, instructions.
-3. `as_namespace_spec()` builds a NamespaceSpec from the buckets.
-4. `complete()` compresses instructions, runs cpool scan, builds Code, validates. Fragment is then discarded.
+3. `as_namespace_spec()` builds a NamespaceSpec from the buckets; its names are the buckets' atoms.
+4. `complete()` completes deferred bodies, resolves marks when the fragment is flagged, and spells every name when the processor copies the rows; it then compresses instructions, runs cpool scan, builds Code, validates. Fragment is then discarded.
 
 ---
 
@@ -89,6 +89,8 @@ Built by `ByteCodeFragment.as_namespace_spec()` (via pragma):
 - `local_syms` = `tuple(declares)`
 - `closure_syms` = unique union of `requests` and `requests_for_write`, excluding `_request_global`
 - `global_syms` = `tuple(_request_global)`
+
+The names are atoms until the processor spells them; a Code's NamespaceSpec holds spellings.
 
 ### Where NamespaceSpec Appears
 

@@ -408,6 +408,21 @@ static PyObject *sib_quoted(PyObject *u) {
 }
 
 
+/**
+   The str of one element of a printed pair: a string is quoted, a
+   gensym prints the symbol it spells, since str of a form is source
+   and hygiene provenance is not, and anything else prints as str
+   does. New reference, or NULL with an exception set.
+*/
+static PyObject *pair_elem_str(PyObject *elem) {
+  if (PyUnicode_CheckExact(elem))
+    return sib_quoted(elem);
+  if (KosGensym_Check(elem))
+    return PyObject_Str(KosGensym_BASE(elem));
+  return PyObject_Str(elem);
+}
+
+
 static PyObject *pair_str_inner(
     PyObject *self,
     PyObject *open_s,
@@ -465,12 +480,7 @@ static PyObject *pair_str_inner(
       Py_DECREF(tmp);
       Py_DECREF(rest_id);
 
-      tmp = KosPair_CAR(rest);
-      if (PyUnicode_CheckExact(tmp)) {
-        tmp = sib_quoted(tmp);
-      } else {
-        tmp = PyObject_Str(tmp);
-      }
+      tmp = pair_elem_str(KosPair_CAR(rest));
       if (! tmp) {
         Py_DECREF(col);
         Py_DECREF(found);
@@ -493,12 +503,7 @@ static PyObject *pair_str_inner(
   } else if (rest) {
     /* end of an improper list */
 
-    tmp = rest;
-    if (PyUnicode_CheckExact(tmp)) {
-      tmp = sib_quoted(tmp);
-    } else {
-      tmp = PyObject_Str(tmp);
-    }
+    tmp = pair_elem_str(rest);
     if (! tmp) {
       Py_DECREF(col);
       Py_DECREF(found);

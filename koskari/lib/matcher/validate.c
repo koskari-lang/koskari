@@ -163,14 +163,6 @@ static int validate_slot_extern_const_indices(KosMatcher *m) {
                      (unsigned) n->as.capture.slot, n_slots, i);
         return -1;
       }
-      if (n->as.capture.scope_slot != KOS_MATCH_NO_INDEX &&
-          (Py_ssize_t) n->as.capture.scope_slot >= n_slots) {
-        PyErr_Format(PyExc_ValueError,
-                     "CAPTURE scope_slot %u out of range "
-                     "(slots size=%zd) at node %zd",
-                     (unsigned) n->as.capture.scope_slot, n_slots, i);
-        return -1;
-      }
       break;
 
     case KOS_MATCH_NODE_REST:

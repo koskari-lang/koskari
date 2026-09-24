@@ -56,9 +56,12 @@ from .object import (
     special_modulo, special_multiply, special_ne, special_next, special_not,
     special_not_in, special_power, special_repr, special_str, special_subtract,
     special_true_divide, special_truth, special_type, special_vars)
-from .pairs import special_car, special_cdr, special_cons, special_quote
+from .pairs import (
+    special_car, special_cdr, special_cons, special_quote,
+    special_quote_syntax)
 from .quasiquote import (
-    special_quasiquote, special_unquote, special_unquote_splicing)
+    special_quasiquote, special_quasiquote_syntax, special_unquote,
+    special_unquote_splicing)
 from .refs import (
     special_bindq, special_deref, special_ref_attr, special_ref_item,
     special_refq)
@@ -164,7 +167,9 @@ __all__ = (
     "special_parameterize",
     "special_power",
     "special_quasiquote",
+    "special_quasiquote_syntax",
     "special_quote",
+    "special_quote_syntax",
     "special_raise",
     "special_ref_attr",
     "special_ref_item",

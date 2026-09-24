@@ -1,0 +1,17 @@
+{
+  "grammars": [
+    {
+      "name": "koskari",
+      "camelcase": "Koskari",
+      "scope": "source.koskari",
+      "path": ".",
+      "file-types": ["ki"],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "GPL-3.0",
+    "description": "Tree-sitter grammar for Koskari"
+  }
+}

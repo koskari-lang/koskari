@@ -22,12 +22,13 @@ Special form handler for compile/lambda.
 
 
 from ...bootstrap import builtin
-from ...lib import FormalsSpec, FunctionSpec, OpCode
+from ...hygiene import function_constant
+from ...lib import FormalsSpec, OpCode, symbol
 from ...matcher import (
     BODY, CALLEDBY, FORMALS, LITERAL_KW, MATCH, SYMBOL, VALUE)
 from ...syntax import special
 from ...types import is_nil
-from ..compiler import ByteCodeFragment, CompilerMode
+from ..compiler import ByteCodeFragment
 from ..helpers import discover_docstring, gather_formals, helper_begin
 
 
@@ -58,9 +59,16 @@ def helper_function(compiler, caps, selfref):
     proper_name = str(named) if named else None
     fragment_name = proper_name or "<lambda>"
 
+    # the formals declare as symbols and the FormalsSpec spells them; a
+    # keyword formal names its variable by the keyword's spelling
     pre_kwd = []
+    pre_kwd_syms = [symbol(str(k)) for k, _ in defaults]
+    kwonly_syms = [symbol(str(k)) for k, _ in kwonly]
+    pos_syms = list(pos)
     pos = [str(k) for k in pos]
+    star_sym = star or None
     star = str(star) if star else None
+    starstar_sym = starstar or None
     starstar = str(starstar) if starstar else None
 
     # annotation expressions evaluate in the defining scope, before the
@@ -92,33 +100,33 @@ def helper_function(compiler, caps, selfref):
             frag.merge(compiler.full_compile(expr))
 
     lamb = compiler.fragment(fragment_name)
-    lamb.declare_vars(pos)
-    lamb.declare_vars(pre_kwd)
-    if star:
-        lamb.declare_var(star)
-    lamb.declare_vars([str(k) for k, _ in kwonly])
-    if starstar:
-        lamb.declare_var(starstar)
+    lamb.declare_vars(pos_syms)
+    lamb.declare_vars(pre_kwd_syms)
+    if star_sym:
+        lamb.declare_var(star_sym)
+    lamb.declare_vars(kwonly_syms)
+    if starstar_sym:
+        lamb.declare_var(starstar_sym)
 
     # selfref indicates whether the function should receive a direct
     # self-reference at function creation. lambdas with a name get
     # a self-ref, but functions do not. This allows a function to
     # refer to a wrapped definition of itself, such as via decorators,
     # while the lambda form is always purely the exact function.
-    if selfref and proper_name is not None:
-        lamb.declare_var(proper_name)
+    if selfref and named is not None:
+        lamb.declare_var(named)
 
     lamb.doc = discover_docstring(body_src)
 
     with compiler.resolution_scope(lamb, function=True):
         lamb = helper_begin(lamb, body_src)
-    # completed outside the body's scope: the lexical stack now holds the
-    # chain enclosing this lambda, which the Code records as its ancestry
-    code = compiler.complete(lamb, CompilerMode.FUNCTION)
-    fspec = FunctionSpec(proper_name, FormalsSpec(
-        tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
-        star, starstar, by_refs), code)
-    frag.instruction(OpCode.CONST, fspec)
+    # a body referencing a marked name completes when the enclosing
+    # fragment does; until then the CONST row holds it in the
+    # FunctionSpec's place
+    frag.instruction(OpCode.CONST, function_constant(
+        compiler, frag, lamb, proper_name, FormalsSpec(
+            tuple(pos), (), tuple(pre_kwd),
+            tuple(str(k) for k, _ in kwonly), star, starstar, by_refs)))
     frag.instruction(
         OpCode.BUILD_FUNCTION,
         (tuple(defnames), tuple(ann_names), 0, 0))
@@ -132,19 +140,19 @@ _FUNCTION_PATTERNS = (
         SYMBOL("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         SYMBOL("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         SYMBOL("name"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
 )
 
@@ -170,35 +178,35 @@ _LAMBDA_PATTERNS = (
         SYMBOL("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         SYMBOL("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         LITERAL_KW("::"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         LITERAL_KW("type:"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
         SYMBOL("name"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
     MATCH(
         CALLEDBY(),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         BODY("body")),
 )
 

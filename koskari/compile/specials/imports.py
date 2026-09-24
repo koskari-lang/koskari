@@ -49,11 +49,12 @@ Opcode sequences produced
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import OpCode
+from ...hygiene import binding_atom
+from ...lib import OpCode, gensym, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_pair, is_symbol, unpack
-from ..helpers import helper_using, is_symbolish
+from ...types import is_pair, is_symbol, strip_mark, unpack
+from ..helpers import helper_using
 
 
 __all__ = (
@@ -92,6 +93,7 @@ def _attr_form_to_dotted(form, source, position=None):
     :raises SpecialError: when form is invalid
     """
 
+    form = strip_mark(form)
     if is_symbol(form) or isinstance(form, str):
         return str(form)
 
@@ -101,7 +103,7 @@ def _attr_form_to_dotted(form, source, position=None):
             source, position=position)
 
     head, tail = form
-    if str(head) != 'attr':
+    if str(strip_mark(head)) != 'attr':
         raise SpecialError(
             "import argument must be symbol or (attr ...)",
             source, position=position)
@@ -114,9 +116,10 @@ def _attr_form_to_dotted(form, source, position=None):
 
     result = []
     for p in parts:
+        p = strip_mark(p)
         if is_symbol(p) or isinstance(p, str):
             result.append(str(p))
-        elif is_pair(p) and str(p[0]) == 'attr':
+        elif is_pair(p) and str(strip_mark(p[0])) == 'attr':
             result.append(_attr_form_to_dotted(p, source, position))
         else:
             raise SpecialError(
@@ -143,6 +146,7 @@ def _parse_import_name(name_form, source, position=None):
     :raises SpecialError: when name_form is not a symbol, str, or attr form
     """
 
+    name_form = strip_mark(name_form)
     if is_symbol(name_form) or isinstance(name_form, str):
         raw = str(name_form)
         stripped = raw.lstrip('.')
@@ -150,13 +154,66 @@ def _parse_import_name(name_form, source, position=None):
         name = stripped if stripped else None
         return (level, name)
 
-    if is_pair(name_form) and str(name_form[0]) == 'attr':
+    if is_pair(name_form) and str(strip_mark(name_form[0])) == 'attr':
         dotted = _attr_form_to_dotted(name_form, source, position)
         return (0, dotted)
 
     raise SpecialError(
         "import argument must be a symbol or (attr ...)",
         source, position=position)
+
+
+def _name_atoms(name_form):
+    """
+    The root and leaf atoms of a module name form: the symbol itself,
+    or the innermost object and the outermost attribute of an
+    ``(attr ...)`` chain
+
+    :param name_form: symbol, gensym, or (attr obj name) form
+    :return: (root, leaf)
+    """
+
+    if not is_pair(name_form):
+        return name_form, name_form
+    leaf = name_form
+    root = name_form
+    while is_pair(root):
+        parts = list(unpack(root))
+        if len(parts) != 3:
+            break
+        leaf = parts[2] if leaf is name_form else leaf
+        root = parts[1]
+    return root, leaf
+
+
+def _bind_spelling(bind, atom):
+    """
+    The symbol an import binds: ``bind`` as computed from the dotted
+    module name, carrying the marks of the atom it came from, so a
+    template's import binds apart from the use site and the template's
+    own references reach it
+
+    :param bind: the bare binding name, a str
+    :param atom: the source atom the binding is named after
+    :return: the symbol
+    """
+
+    if isinstance(atom, gensym):
+        return gensym(symbol(bind), marks=atom.marks)
+    return symbol(bind)
+
+
+def _facet_name(prefix, bind):
+    """
+    The symbol a use binds under a facet prefix: the prefix spelled
+    onto the binding's base, under the binding's marks
+
+    :param prefix: the facet prefix, a str
+    :param bind: the binding symbol
+    :return: the symbol
+    """
+
+    return _bind_spelling(prefix + str(bind.base), bind)
 
 
 def _leaf_name(dotted):
@@ -196,11 +253,11 @@ def _parse_member(elem, source, what, position=None):
     :param source: source form for error context
     :param what: form name for error messages
     :param position: source position recorded on errors
-    :return: (bind_name:str or None, target_form)
+    :return: (bind symbol or None, target_form)
     :raises SpecialError: on invalid member form
     """
 
-    if is_symbolish(elem):
+    if is_symbol(elem):
         return (None, elem)
 
     if is_pair(elem):
@@ -215,11 +272,11 @@ def _parse_member(elem, source, what, position=None):
         if name is None:
             return (None, value)
 
-        if not is_symbolish(name):
+        if not is_symbol(name):
             raise SpecialError(
                 f"{what} member binding must be a symbol, not {name!r}",
                 source, position=position)
-        return (str(name), value)
+        return (name, value)
 
     raise SpecialError(
         f"{what} member must be a symbol or [TARGET as: BIND], not"
@@ -244,7 +301,7 @@ def special_import(compiler, called_by, module):
 
     bind = None
     name_form = arg
-    if is_pair(arg) and str(arg[0]) != 'attr':
+    if is_pair(arg) and str(strip_mark(arg[0])) != 'attr':
         bind, name_form = _parse_member(arg, arg, "import", pos)
 
     level, dotted = _parse_import_name(name_form, name_form, pos)
@@ -259,18 +316,19 @@ def special_import(compiler, called_by, module):
                 " member form",
                 arg, position=pos)
         leaf = _IMPORT_LEAF
-        bind = _leaf_name(dotted)
+        bind = _bind_spelling(_leaf_name(dotted), _name_atoms(name_form)[1])
     else:
         if dotted is None:
             raise SpecialError(
                 "import requires a module name", arg, position=pos)
         leaf = _IMPORT_ROOT
-        bind = _root_name(dotted)
+        bind = _bind_spelling(_root_name(dotted), _name_atoms(name_form)[0])
 
+    bind = binding_atom(compiler, bind)
     frag = compiler.fragment(called_by.datum)
     frag.declare_var(bind)
     frag.instruction(
-        OpCode.IMPORT, (dotted, level, leaf, bind))
+        OpCode.IMPORT, (dotted, level, leaf, str(bind)))
     frag.instruction(OpCode.CONST, None)
 
     return frag
@@ -298,21 +356,24 @@ def special_import_from(compiler, called_by, module, members):
     binds = []
     for elem in members.datum.unpack():
         bind, target = _parse_member(elem, elem, "import-from", pos)
-        if not is_symbolish(target):
+        if not is_symbol(target):
             raise SpecialError(
                 f"import-from member must name an attribute, not"
                 f" {target!r}",
                 elem, position=pos)
-        attr = str(target)
-        attrs.append(attr)
-        binds.append(bind if bind is not None else attr)
+        # a member names an attribute of the module, a label read by its
+        # bare spelling, and the binding it lands in, which keeps the
+        # template's marks so the import binds apart from the use site
+        attrs.append(str(target.base))
+        binds.append(binding_atom(
+            compiler, bind if bind is not None else target))
 
     frag = compiler.fragment(called_by.datum)
     for bind in binds:
         frag.declare_var(bind)
 
     attrs = tuple(attrs)
-    binds = tuple(binds)
+    binds = tuple(str(bind) for bind in binds)
     if attrs == binds:
         # share one tuple constant when there are no renames
         binds = attrs
@@ -397,23 +458,22 @@ def special_use(compiler, caps):
     binds = []
     for elem in caps["stems"].datum.unpack():
         bind, target = _parse_member(elem, elem, "use", pos)
-        if not is_symbolish(target):
+        if not is_symbol(target):
             raise SpecialError(
                 f"use member must name a feature, not {target!r}",
                 elem, position=pos)
-        stem = str(target)
-        stems.append(stem)
-        binds.append(bind if bind is not None else stem)
+        stems.append(str(target.base))
+        binds.append(bind if bind is not None else target)
 
     frag = compiler.fragment(called_by.datum)
     for bind in binds:
         frag.declare_var(bind)
-        if not bind.startswith(_USE_FACET_PREFIXES):
+        if not str(bind.base).startswith(_USE_FACET_PREFIXES):
             for prefix in _USE_FACET_PREFIXES:
-                frag.declare_var(prefix + bind)
+                frag.declare_var(_facet_name(prefix, bind))
 
     stems = tuple(stems)
-    binds = tuple(binds)
+    binds = tuple(str(bind) for bind in binds)
     if stems == binds:
         binds = stems
 

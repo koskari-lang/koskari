@@ -38,12 +38,12 @@ def _lambda_style_tuple():
     consts = ("::",)
     nodes = (
         ("TEST", "TYPE", 0),
-        ("CAPTURE", 0, 0, 0, -1),
+        ("CAPTURE", 0, 0),
         ("TEST", "LITERAL", 0),
         ("TEST", "ANY", -1),
         ("TEST", "ANY", -1),
         ("REST", 1),
-        ("CAPTURE", 1, 5, 0, -1),
+        ("CAPTURE", 1, 5),
         ("MATCH", 1, 2, 3, 4, 6),
     )
     return ("MATCHER", slots, externs, consts, nodes, 7)

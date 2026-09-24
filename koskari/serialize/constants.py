@@ -63,10 +63,18 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # every opcode after the VAR family. The FAST rows and the stack rows
 # of ITEM, STORE, and INPLACE carry a KOS_CACHE_ITEM slot (slots are
 # not serialized).
+# PATCH bumped: .kio pool kind GENSYM added, a template symbol with the
+# expansion marks it carries.
+# PATCH bumped: pool kind GENSYM removed; a gensym is written as the
+# SYMBOL record of its scoped spelling.
+# PATCH bumped: a frozen matcher's CAPTURE row is (kind, slot, subnode);
+# the unread hygiene_role and scope_slot elements are gone.
+# PATCH bumped: a gensym constant is written as the SYMBOL record of its
+# base.
 BYTECODE_ABI_MAJOR = 0
 BYTECODE_ABI_MINOR = 19
 BYTECODE_ABI_MICRO = 0
-BYTECODE_ABI_PATCH = 1
+BYTECODE_ABI_PATCH = 5
 
 
 # The end.

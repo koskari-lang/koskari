@@ -291,14 +291,14 @@ define-syntax config/ui:
     syntax-rules []:
         case (config/ui () setting ...):
             (begin
-                (define default/ui)
-                (unless &default/ui
-                    (set! default/ui (UiConfig setting ...))))
+                (define -'default/ui)
+                (unless &-'default/ui
+                    (set! -'default/ui (UiConfig setting ...))))
         case (config/ui nm setting ...):
             (begin
                 (define nm (UiConfig setting ...))
-                (define default/ui)
-                (unless &default/ui (set! default/ui nm)))
+                (define -'default/ui)
+                (unless &-'default/ui (set! -'default/ui nm)))
 
 
 ;; `job ui <name>` -- no trigger key; serves from its config.
@@ -307,9 +307,9 @@ define-syntax job/ui:
         case (job/ui name (subhead subrest ...) ...):
             (begin
                 (define name (UiJob))
-                (define default/ui)
-                (if &default/ui
-                    (.configure name via: default/ui)
+                (define -'default/ui)
+                (if &-'default/ui
+                    (.configure name via: -'default/ui)
                     (.configure name))
                 (subhead (ui name) subrest ...) ...)
 

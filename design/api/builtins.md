@@ -154,5 +154,4 @@ The following are intentionally not being migrated:
 ### To Consider
 
 - `repeatedly(work, *args, **kwargs)` - infinite generator, may stay in Python
-- `lazygensym` - lazy symbol resolution
 - Sequence utilities (`last`, `take`, `first`..`tenth`)

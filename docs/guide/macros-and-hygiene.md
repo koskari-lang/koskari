@@ -59,22 +59,49 @@ Inside a procedural body you work with the matched forms directly:
 - Build the output with quasiquote, or with variadic `cons`, whose last
   argument is the tail.
 - To emit an identifier you compute, wrap it in `datum`:
-  `(datum (symbol f"job/{tp.datum}"))`. That is how a dispatcher rewrites
-  `(job kafka ...)` into `(job/kafka ...)` and lets the compiler re-expand it.
+  `(datum (symbol f"job/{tp.datum.base}"))`. That is how a dispatcher
+  rewrites `(job kafka ...)` into `(job/kafka ...)` and lets the compiler
+  re-expand it. The tag is a label, so the name is built from its base:
+  when a template wrote `kafka`, `str` of it shows the expansion's mark.
+- To pass the caller's code back out, emit the matched form itself, or
+  re-wrap a piece you took apart with `datum`, as in
+  `(datum (cons (car e.datum) (cdr e.datum)))`. A piece taken out with
+  `.datum` and emitted bare counts as the macro's own and is marked.
 
 ## Hygiene
 
-A name the template introduces on its own is renamed, so it cannot
-collide with a binding at the use site. A name the caller supplies is
-bound as written.
+A name the template introduces on its own is kept apart from every
+binding at the use site. A name the caller supplies is bound as written.
+[Hygiene](hygiene.md) covers the mechanism in full.
 
-`(datum expr)` is the author's control over that renaming: it marks a
-fragment as having come from the input form rather than from the
-template, so renamers and binder collection leave it alone. At expand
-time, captured pattern-variable values are carried in `Datum` boxes,
-which the finalize step peels before compilation. The Python and C types
-are under [`koskari.hygiene`](../reference/api/koskari-hygiene.md) and
-[`koskari.lib.Datum`](../reference/api/koskari-lib.md).
+Each expansion marks the symbols its template wrote, and the compiler
+binds and resolves a marked name under its own spelling, `tmp#1a` for
+the `tmp` of one expansion. A marked name that nothing bound falls back
+to the plain name, so a template's `cons` is the caller's `cons`. A
+marked name passed into another macro keeps its mark, so a binder
+written through a nested macro is still the template's own, and a
+marked name inside `quote` or a backtick comes out plain; `#'` and
+`` #` `` are the forms that keep it, which a macro a template defines
+needs. A printed form shows marked names as written, whether through
+`print`, `str`, or `macroexpand` at the REPL; the mark shows only in
+`str` of the marked symbol itself.
+
+`(datum expr)` is the author's control in a procedural macro: it tags
+a fragment as having come from the input form rather than from the
+template, so it is never marked. Everything else the procedure emits
+is marked, including the caller's code once `.datum` has taken it out
+of its match. A template has the same escape for a name it shares with the
+use site: `(datumq name)` writes `name` raw, unmarked. See
+[Hygiene](hygiene.md#writing-a-name-the-use-site-shares). At expand time, captured
+pattern-variable values are carried in `Datum` boxes, which the finalize
+step peels before compilation. The Python and C types are under
+[`koskari.hygiene`](../reference/api/koskari-hygiene.md) and
+[`koskari.lib`](../reference/api/koskari-lib.md).
+
+A function body a template writes sees every definition the same
+expansion makes around it, in either order, so a template may define
+mutually recursive functions or use `labels` and `letrec` as written
+source does.
 
 ## Brackets and parens match the same shape
 
@@ -133,6 +160,8 @@ head goes through expansion.
 
 ## See also
 
+- [Hygiene](hygiene.md): marks, `quote-syntax`, `quasiquote-syntax`,
+  and the `#'` and `` #` `` prefixes
 - [Macros](../reference/macros/index.md): `define-syntax`,
   `extend-syntax`, and the rule forms
 - [compile/let-syntax](../reference/macros/compile-let-syntax.md):

@@ -34,7 +34,8 @@ from ...exceptions import SpecialError
 from ...lib import Compare, OpCode, Operand, cons, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
-from ...types import is_keyword, is_nil, is_pair, is_symbol, unpack
+from ...types import (
+    is_keyword, is_nil, is_pair, is_symbol, unpack)
 from ..helpers import (
     const_only_expr, emit_item_place, feeder_expr, splat_call_form)
 from ..processor import item_inplace_arg, item_opcode
@@ -967,7 +968,7 @@ def inplace_operand(op):
     :raises SpecialError: when the symbol names no operator
     """
 
-    binop = _INPLACE_OPERAND_MAP.get(op.datum)
+    binop = _INPLACE_OPERAND_MAP.get(op.datum.base)
     if binop is None:
         raise SpecialError(
             "unknown inplace operator", op.datum, position=op.position)
@@ -987,7 +988,6 @@ def special_inplace(compiler, called_by, op, var, value):
     binop = inplace_operand(op)
 
     value_expr = value.datum
-    name = str(var.datum)
     pos = op.position
 
     frag = compiler.fragment(called_by.datum)
@@ -995,12 +995,12 @@ def special_inplace(compiler, called_by, op, var, value):
     if not is_pair(value_expr):
         frag.position(pos)
 
-    frag.request_for_write(name, position=pos)
+    frag.request_for_write(var.datum, position=pos)
     frag.merge(compiler.full_compile(value_expr))
     # EXTRA row [OPCOUNT(op-type, count=1), VAR(name)]; resolution lowers the
     # name to a fast slot (-> FAST_INPLACE) when possible.
     frag.instruction(OpCode.VAR_INPLACE,
-                     ((binop, 1), name, 0, 0))
+                     ((binop, 1), var.datum, 0, 0))
     frag.instruction(OpCode.CONST, None)
 
     return frag
@@ -1074,7 +1074,7 @@ def special_inplace_attr(compiler, called_by, op, obj, attr, values):
             op.datum, position=op.position)
 
     obj_expr = obj.datum
-    sym = str(attr.datum)
+    sym = str(attr.datum.base)
     count = len(value_exprs)
     frag = compiler.fragment(called_by.datum)
 
@@ -1085,12 +1085,11 @@ def special_inplace_attr(compiler, called_by, op, obj, attr, values):
         # obj is a variable: fused VAR_ATTR_INPLACE, derefing the name and
         # get/op/set-ing the attribute in one op. Only the values ride the
         # stack. Resolution lowers this to FAST_ATTR_INPLACE where possible.
-        name = str(obj_expr)
-        frag.request_var(name)
+        frag.request_var(obj_expr)
         for value_expr in value_exprs:
             frag.merge(compiler.full_compile(value_expr))
         frag.instruction(OpCode.VAR_ATTR_INPLACE,
-                         ((binop, count), name, sym, 0))
+                         ((binop, count), obj_expr, sym, 0))
     else:
         # obj is an expression: fused ATTR_INPLACE, obj left on the stack
         # below the values -> [obj, v0 .. v_{count-1}].

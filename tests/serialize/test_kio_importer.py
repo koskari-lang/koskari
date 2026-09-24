@@ -20,6 +20,8 @@ Importer path for precompiled .kio modules.
 
 import importlib.util
 import os
+import subprocess
+import sys
 import tempfile
 import types
 import unittest
@@ -119,6 +121,105 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual(7, ki.b)
         self.assertEqual(ki.a, kio.a)
         self.assertEqual(ki.b, kio.b)
+
+
+    GENERATING = (
+        "(define-syntax mk-getter (syntax-rules []\n"
+        "  [(mk-getter name val)\n"
+        "   (begin (define secret val)\n"
+        "          (define-syntax name (macro-rules []\n"
+        "            [(name) #`secret])))]))\n"
+        "(define secret 100)\n"
+        "(mk-getter get-secret 8)\n"
+        "(define got (get-secret))\n")
+
+
+    def test_generated_macro_via_kio_matches_ki(self):
+        """
+        A macro a template defines keeps reaching the outer expansion's
+        binder from the .kio, which holds no gensym: the reference is
+        resolved to that binder when the module compiles, before the
+        .kio is written
+        """
+
+        ki, kio = self._both('generating', self.GENERATING)
+        self.assertEqual(8, ki.got)
+        self.assertEqual(100, ki.secret)
+        self.assertEqual(ki.got, kio.got)
+        self.assertEqual(ki.secret, kio.secret)
+
+
+    def test_generated_macro_imported_from_kio(self):
+        """
+        Another module imports the generated macro from the compiled
+        module. The macro's free name has no binding in the importing
+        module, so it resolves at the use site, as it does from a .ki
+        """
+
+        ki_path = self._write('gen_lib.ki', self.GENERATING)
+        compile_ki_file_to_kio(
+            ki_path, os.path.join(self._tmpdir, 'gen_lib.kio'))
+        os.unlink(ki_path)
+        user_path = self._write(
+            'gen_user.ki',
+            "(import-from gen_lib compile/get-secret)\n"
+            "(define secret 555)\n"
+            "(define here (get-secret))\n")
+        user = self._load('gen_user', user_path)
+        self.assertEqual(555, user.here)
+        self.assertEqual(555, user.secret)
+
+
+    def test_generated_macro_kio_in_fresh_process(self):
+        """
+        The compiled module loads and runs in an interpreter whose mark
+        seed differs from the one that compiled it
+        """
+
+        ki_path = self._write('gen_fresh.ki', self.GENERATING)
+        compile_ki_file_to_kio(
+            ki_path, os.path.join(self._tmpdir, 'gen_fresh.kio'))
+        os.unlink(ki_path)
+        script = (
+            "import sys\n"
+            f"sys.path.insert(0, {self._tmpdir!r})\n"
+            "import koskari\n"
+            "import gen_fresh\n"
+            "print(gen_fresh.got, gen_fresh.secret)\n")
+        proc = subprocess.run(
+            [sys.executable, '-c', script],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertEqual("8 100", proc.stdout.strip())
+
+
+    def test_generated_macro_imported_from_kio_in_fresh_process(self):
+        """
+        An interpreter that did not compile the module imports the
+        generated macro from its .kio. The template carries plain
+        symbols, so the macro's free name resolves at the use site
+        """
+
+        ki_path = self._write('gen_src.ki', self.GENERATING)
+        compile_ki_file_to_kio(
+            ki_path, os.path.join(self._tmpdir, 'gen_src.kio'))
+        os.unlink(ki_path)
+        self._write(
+            'gen_use.ki',
+            "(import-from gen_src compile/get-secret)\n"
+            "(define secret 555)\n"
+            "(define here (get-secret))\n")
+        script = (
+            "import sys\n"
+            f"sys.path.insert(0, {self._tmpdir!r})\n"
+            "import koskari\n"
+            "import gen_use\n"
+            "print(gen_use.here)\n")
+        proc = subprocess.run(
+            [sys.executable, '-c', script],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertEqual("555", proc.stdout.strip())
 
 
     def test_divmod_via_kio_matches_ki(self):

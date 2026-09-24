@@ -15,12 +15,13 @@
 """
 tests.reproducers.test_multi_form_arm_formal_hygiene
 
-A function a syntax-rules template defines must bind its formals under
-the same fresh name the body reads them by, whether the arm produces
-one form or several. Keyword-cell discovery once ran only on the direct
-binder path, so a define nested under the begin that wraps a multi-form
-arm kept its keyword formal's written name while the body reference was
-renamed
+A function a syntax-rules template defines must scope its formals and
+the body's references to them together, whether the arm produces one
+form or several: a symbol formal binds under the same fresh name the
+body reads it by, and a keyword formal keeps the name the caller
+writes while the body's scoped reference falls back to it. Binder
+discovery once ran only on the direct binder path, so a define nested
+under the begin that wraps a multi-form arm was missed
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -30,8 +31,9 @@ import unittest
 
 import pytest
 
+from koskari.lib import gensym, keyword, symbol
 from koskari.module import load_module_source_async, new_module
-from koskari.types import is_keyword, is_symbol, unpack
+from koskari.types import is_symbol, strip_mark, unpack
 
 
 pytestmark = pytest.mark.phase_reproducers
@@ -92,12 +94,12 @@ class TestMultiFormArmFormalHygiene(unittest.IsolatedAsyncioTestCase):
         return module
 
 
-    async def test_keyword_formal_renamed_with_body(self):
+    async def test_keyword_formal_scoped_with_body(self):
         mod = await self.load("mfa_kw")
         formals, body = defined_function_parts(vars(mod)["kw-expansion"])
-        self.assertTrue(is_keyword(formals[0]))
-        self.assertTrue(is_symbol(body))
-        self.assertEqual(str(formals[0]), str(body))
+        self.assertIs(formals[0], keyword("argv"))
+        self.assertIsInstance(body, gensym)
+        self.assertIs(strip_mark(body), symbol("argv"))
         self.assertNotEqual(str(body), "argv")
 
 
@@ -110,8 +112,9 @@ class TestMultiFormArmFormalHygiene(unittest.IsolatedAsyncioTestCase):
     async def test_positional_formal_renamed_with_body(self):
         mod = await self.load("mfa_pos")
         formals, body = defined_function_parts(vars(mod)["pos-expansion"])
-        self.assertTrue(is_symbol(formals[0]))
-        self.assertIs(formals[0], body)
+        self.assertIsInstance(formals[0], gensym)
+        self.assertTrue(is_symbol(strip_mark(formals[0])))
+        self.assertEqual(formals[0], body)
         self.assertNotEqual(str(body), "argv")
 
 
@@ -121,13 +124,13 @@ class TestMultiFormArmFormalHygiene(unittest.IsolatedAsyncioTestCase):
 
 
 
-    async def test_keyword_headed_cell_formal_renamed_with_body(self):
+    async def test_keyword_headed_cell_formal_scoped_with_body(self):
         mod = await self.load("mfa_cell")
         formals, body = defined_function_parts(vars(mod)["cell-expansion"])
         cell = list(unpack(formals[0]))
-        self.assertTrue(is_keyword(cell[0]))
-        self.assertTrue(is_symbol(body))
-        self.assertEqual(str(cell[0]), str(body))
+        self.assertIs(cell[0], keyword("argv"))
+        self.assertIsInstance(body, gensym)
+        self.assertIs(strip_mark(body), symbol("argv"))
         self.assertNotEqual(str(body), "argv")
 
 

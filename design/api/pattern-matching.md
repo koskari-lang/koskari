@@ -27,10 +27,10 @@ fidelity is the point.
 
 The **native** matcher (`koskari.lib.Matcher`) interprets frozen matcher tuples. Python-side pattern authoring uses **`koskari.matcher`** (builders such as `LIST`, `MATCH`, `FORM`, `SYMBOL`, `FORMALS`, …) and **`koskari.compile.helpers`** for compile helpers (`match_pattern_raw`, `gather_bindings`, `gather_formals`, …).
 
-The legacy Python modules **`koskari.matcher`**, **`koskari.compile.helpers`**, **`koskari.syntax`**, and **`koskari.hygiene`** have been removed.
+`koskari.hygiene` holds template transcription, marking, and resolution; `koskari.syntax` the transformer types.
 
 ```python
-from koskari.matcher import LIST, MATCH, SYMBOL, FORMALS, HygienicMatchCompiler
+from koskari.matcher import LIST, MATCH, SYMBOL, FORMALS, MatchCompiler
 from koskari.compile.helpers import match_pattern_raw, gather_formals
 ```
 
@@ -151,9 +151,9 @@ def match(self, source, literals, result, specs=None) -> Tuple[Optional[Any], bo
 
 | Tag | Payload | Meaning |
 |-----|---------|---------|
-| `matcher/bind-bindings` | slot | Element must be a list; apply `gather_bindings`; bind BindingsResult (names, values, source, source_pos). Accepts optional `mode`, `scope`, `scopes` for hygiene (see matcher-hygiene-extensions.md). |
+| `matcher/bind-bindings` | slot | Element must be a list; apply `gather_bindings`; bind BindingsResult (names, values, source, source_pos). |
 | `matcher/bind-binding` | slot | Single binding; `(name, value)` |
-| `matcher/formals` | slot | Formal parameters for lambda; bind FormalsResult (positional, defaults, kwonly, star, starstar, source, source_pos). Use `scope`/`scopes` for hygiene. |
+| `matcher/formals` | slot | Formal parameters for lambda; bind FormalsResult (positional, defaults, kwonly, star, starstar, source, source_pos). |
 | `matcher/define` | slot | Single define-style name; gensym'd (planned) |
 
 ### Helpers
@@ -168,7 +168,7 @@ Keywords in the source are matched literally; only symbols are ambiguous (litera
 - **Keyword clause** (target): `MATCH(LITERAL_KW("before:"), BIND("before_body"))` — when MATCH is a sub-expr, the element must be a pair; destructure and match. (Current: `PAIR(car_spec, cdr_spec)`.)
 - **Positional**: `BIND("body")` — capture one element.
 - **Rest**: `REST("tail")` — capture remainder of list.
-- **Type-constrained**: `SYMBOL("name")` for symbols, `PAIR("bindings")` for whole pairs, `BINDINGS("bindings")` for binding lists (pre-parsed, with optional `mode`, `scope`, `scopes`).
+- **Type-constrained**: `SYMBOL("name")` for symbols, `PAIR("bindings")` for whole pairs, `BINDINGS("bindings")` for binding lists (pre-parsed).
 
 ### Match Result Types
 
@@ -186,8 +186,8 @@ The let special uses `SYMBOL`, `BINDINGS`, and `REST`:
 
 ```python
 _LET_PATTERNS = [
-    MATCH(SYMBOL("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
-    MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
+    MATCH(SYMBOL("name"), BINDINGS("bindings"), REST("body")),
+    MATCH(BINDINGS("bindings"), REST("body")),
 ]
 matched = match(rest, _LET_PATTERNS)
 # matched["bindings"] is BindingsResult; unpack: args, vals = matched["bindings"]
@@ -282,12 +282,12 @@ Serialized:
 Construct patterns ergonomically:
 
 ```python
-from koskari.matcher import LIST, MATCH, LITERAL_KW, SYMBOL, HygienicMatchCompiler
+from koskari.matcher import LIST, MATCH, LITERAL_KW, SYMBOL, MatchCompiler
 from koskari.lib import Matcher
 
-hc = HygienicMatchCompiler()
+mc = MatchCompiler()
 # pattern = ...  # matcher Pattern tree
-frozen = hc.lower(pattern)
+frozen = mc.lower(pattern)
 matcher_obj = Matcher.from_tuple(frozen)
 ```
 
@@ -296,7 +296,7 @@ Serialization and thaw use the same frozen tuple representation consumed by **`k
 The snippet below is illustrative; exact combinator names live in **`koskari.matcher`** (see module exports).
 
 ```python
-# Illustrative: build a matcher pattern, lower with HygienicMatchCompiler,
+# Illustrative: build a matcher pattern, lower with MatchCompiler,
 # then match a source spine with koskari.lib.Matcher.from_tuple(...).match(...)
 pass
 ```
@@ -429,13 +429,7 @@ These expand to the same tagged tuples the matcher expects.
 
 ### MATCHERS Registry
 
-Matcher classes register into the native engine’s tables when lowered from **`matcher`** (see `HygienicMatchCompiler` and `Matcher.from_tuple`). Legacy Python `@matcher` registration on **`koskari.matcher`** is gone; tagged tuples produced today are consumed by **`koskari.lib.Matcher`** only.
-
-### Role Helpers (hygiene discovery)
-
-- `is_binder_spec(spec)` — True for SYMBOL (BIND_SYM), BINDINGS, FORMALS
-- `is_scope_region_spec(spec)` — True for REST, EXPR (regions usable as bodies)
-- `extract_binder_symbols(spec, value)` — yield symbol names from a binder spec and its matched value
+Matcher classes register into the native engine’s tables when lowered from **`matcher`** (see `MatchCompiler` and `Matcher.from_tuple`). Legacy Python `@matcher` registration on **`koskari.matcher`** is gone; tagged tuples produced today are consumed by **`koskari.lib.Matcher`** only.
 
 ### Const-Pool Friendliness
 
@@ -459,7 +453,7 @@ Matcher classes register into the native engine’s tables when lowered from **`
 ## Related Documents
 
 - [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md): Proposed shared Matcher IR and transformer pipeline (syntax-rules, procedural macros, specials)
-- [matcher-hygiene-extensions.md](matcher-hygiene-extensions.md): MATCH role additions for hygiene discovery; `BINDINGS` with scope; REST/EXPR as body regions; implemented `_collect_binding_symbols_matcher`
+- [../archive/matcher-hygiene-extensions.md](../archive/matcher-hygiene-extensions.md): MATCH role additions for hygiene discovery; `BINDINGS` with scope; REST/EXPR as body regions (archived; superseded by hygiene by marks)
 - [archive/macros.md](../archive/macros.md): Macro system notes; define-syntax will supersede defmacro
 - [special-forms.md](../language/special-forms.md): Special form catalog
 - [types.md](types.md): symbol, keyword, pair — types used in patterns

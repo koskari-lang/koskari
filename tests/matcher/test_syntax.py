@@ -25,7 +25,7 @@ import pytest
 
 from koskari.lib import cons, keyword, nil, pair, symbol
 from koskari.matcher import (
-    BINDING, BINDINGS, BODY, CAPTURE, CAPTURE_OPTION_KEYS, CLASS, DECL, DEFINE,
+    BINDING, BINDINGS, BODY, CAPTURE, CLASS, DECL, DEFINE,
     FIELD, FORM, FORMALS, GROUP, KNOWN_HEADS, LIST, LITERAL, LITERAL_KW,
     LITERAL_SYM, MATCH, MATCHER_REGISTRY, META_MATCHER, META_PATTERN, NOT,
     ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST, SYMBOL, TEST_ANY, TYPE,
@@ -221,48 +221,6 @@ class TestParseNamedCapture(unittest.TestCase):
         self.assertIsInstance(pat._sub, FORMALS)
 
 
-    def test_named_capture_with_scope_option(self):
-        """
-        (x scope: body) lowers with scope_slot recorded
-        """
-
-        src = _list(symbol("x"), keyword("scope"), symbol("body"))
-        pat = parse_matcher(src)
-        self.assertIsInstance(pat, CAPTURE)
-        self.assertEqual(pat._slot, "x")
-        self.assertEqual(pat._scope_slot, "body")
-
-
-    def test_named_capture_with_role_option(self):
-        """
-        (x role: 7) lowers with hygiene_role recorded
-        """
-
-        src = _list(symbol("x"), keyword("role"), 7)
-        pat = parse_matcher(src)
-        self.assertIsInstance(pat, CAPTURE)
-        self.assertEqual(pat._slot, "x")
-        self.assertEqual(pat._hygiene_role, 7)
-
-
-    def test_named_capture_combines_option_and_constraint(self):
-        """
-        (x scope: body :: symbol) accepts both an option and a
-        constraint marker in one form
-        """
-
-        src = _list(
-            symbol("x"),
-            keyword("scope"), symbol("body"),
-            keyword("::"), symbol("symbol"))
-        pat = parse_matcher(src)
-        self.assertIsInstance(pat, CAPTURE)
-        self.assertEqual(pat._slot, "x")
-        self.assertEqual(pat._scope_slot, "body")
-        self.assertIsInstance(pat._sub, TYPE)
-        self.assertEqual(pat._sub._extern, "symbol")
-
-
     def test_named_capture_rejects_two_constraints(self):
         """
         Named capture accepts at most one constraint
@@ -445,19 +403,6 @@ class TestParseCompositeSlotFirst(unittest.TestCase):
         pat = parse_matcher(src)
         self.assertIsInstance(pat, BINDINGS)
         self.assertEqual(pat._slot, "slot")
-        self.assertEqual(pat._mode, "parallel")
-
-
-    def test_bindings_with_mode_option(self):
-        """
-        (BINDINGS slot mode: sequential) carries the mode through
-        """
-
-        src = _list(symbol("BINDINGS"), symbol("s"),
-                    keyword("mode"), symbol("sequential"))
-        pat = parse_matcher(src)
-        self.assertIsInstance(pat, BINDINGS)
-        self.assertEqual(pat._mode, "sequential")
 
 
     def test_formals(self):
@@ -832,15 +777,6 @@ class TestRegistry(unittest.TestCase):
         self.assertTrue(KNOWN_HEADS.issubset(set(MATCHER_REGISTRY)))
 
 
-    def test_capture_option_keys_constant(self):
-        """
-        CAPTURE_OPTION_KEYS holds the documented set of options
-        """
-
-        self.assertEqual(CAPTURE_OPTION_KEYS,
-                         frozenset({"scope", "mode", "role"}))
-
-
     def test_register_matcher_user_factory(self):
         """
         A user-registered head dispatches via parse_matcher
@@ -1084,6 +1020,5 @@ class TestMetaMatcherExposed(unittest.TestCase):
         self.assertIs(
             result.captures["quoted_symbol"].datum,
             symbol("x"))
-
 
 # The end.

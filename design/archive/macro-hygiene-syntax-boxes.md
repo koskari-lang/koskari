@@ -18,7 +18,7 @@ peeled in at the very end, after binding normalization.
 
 ## Related documents
 
-- **Matcher hygiene metadata**: [matcher-hygiene-extensions.md](../api/matcher-hygiene-extensions.md) — how specials declare bindings and scopes for generic hygiene discovery
+- **Matcher hygiene metadata**: [matcher-hygiene-extensions.md](matcher-hygiene-extensions.md) — how specials declare bindings and scopes for generic hygiene discovery
 - **Unified matcher & transformer model**: [unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md) — shared Matcher IR and pipeline for `define-syntax`, procedural macros, and specials (syntax boxes fit step 5)
 - **Compile-time objects**: [compile-time-objects.md](../language/compile-time-objects.md) — compile-time dispatch and registration model
 - **Macros overview**: [macros.md](macros.md) — historical / broader macro notes

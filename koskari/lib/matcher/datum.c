@@ -4,15 +4,13 @@
 static PyObject *kos_datum_new(
     PyObject *datum,
     PyObject *position,
-    PyObject *binding,
-    int from_datum);
+    PyObject *binding);
 
 typedef struct {
   PyObject_HEAD
   PyObject *current;   /* KosPair-or-nil; tail pointer */
   PyObject *fallback;  /* fallback position */
   PyObject *binding;   /* capture slot name or Py_None */
-  int from_datum;      /* inherited from parent Datum */
 } KosDatumIter;
 
 
@@ -57,8 +55,7 @@ static PyObject *datum_iter_iternext(PyObject *self) {
   Py_DECREF(cell);
 
   Py_INCREF(it->binding);
-  PyObject *out = kos_datum_new(
-      elem, pos, it->binding, it->from_datum);
+  PyObject *out = kos_datum_new(elem, pos, it->binding);
   Py_DECREF(elem);
   Py_DECREF(pos);
   Py_DECREF(it->binding);
@@ -118,13 +115,6 @@ static PyObject *datum_get_binding(PyObject *self, void *closure) {
 }
 
 
-static PyObject *datum_get_from_datum(PyObject *self, void *closure) {
-  (void) closure;
-  KosDatum *d = (KosDatum *) self;
-  return PyBool_FromLong(d->from_datum);
-}
-
-
 static PyObject *datum_get_car(PyObject *self, void *closure) {
   (void) closure;
   KosDatum *d = (KosDatum *) self;
@@ -158,7 +148,6 @@ static PyObject *datum_iter(PyObject *self) {
   it->current = d->datum;
   it->fallback = d->position;
   it->binding = d->binding;
-  it->from_datum = d->from_datum;
   return (PyObject *) it;
 }
 
@@ -167,17 +156,15 @@ static PyObject *datum_tp_new(PyTypeObject *type, PyObject *args, PyObject *kwds
   PyObject *datum;
   PyObject *position = Py_None;
   PyObject *binding = Py_None;
-  int from_datum = 0;
-  static char *kwlist[] = {
-    "datum", "position", "binding", "from_datum", NULL};
+  static char *kwlist[] = {"datum", "position", "binding", NULL};
 
   (void) type;
   if (! PyArg_ParseTupleAndKeywords(
-          args, kwds, "O|OOp:Datum", kwlist,
-          &datum, &position, &binding, &from_datum))
+          args, kwds, "O|OO:Datum", kwlist,
+          &datum, &position, &binding))
     return NULL;
 
-  return kos_datum_new(datum, position, binding, from_datum);
+  return kos_datum_new(datum, position, binding);
 }
 
 
@@ -188,8 +175,6 @@ static PyGetSetDef datum_getset[] = {
     "Source position from enclosing pair cell, or None", NULL },
   { "binding", datum_get_binding, NULL,
     "Capture slot name (str) or None", NULL },
-  { "from_datum", datum_get_from_datum, NULL,
-    "True when matched inside a substitution Datum box", NULL },
   { "car", datum_get_car, NULL,
     "Underlying datum car (delegates to pair)", NULL },
   { "cdr", datum_get_cdr, NULL,
@@ -216,8 +201,7 @@ PyTypeObject KosDatumType = {
 static PyObject *kos_datum_new(
     PyObject *datum,
     PyObject *position,
-    PyObject *binding,
-    int from_datum) {
+    PyObject *binding) {
 
   KosDatum *d = PyObject_New(KosDatum, &KosDatumType);
   if (! d)
@@ -230,7 +214,6 @@ static PyObject *kos_datum_new(
   d->datum = datum;
   d->position = position;
   d->binding = binding;
-  d->from_datum = from_datum ? 1 : 0;
   return (PyObject *) d;
 }
 
@@ -323,13 +306,6 @@ static PyObject *datum_frame_get_position(PyObject *self, void *closure) {
 }
 
 
-static PyObject *datum_frame_get_from_datum(PyObject *self, void *closure) {
-  (void) closure;
-  KosDatumFrame *f = (KosDatumFrame *) self;
-  return PyBool_FromLong(f->from_datum);
-}
-
-
 /* Every DatumFrame starts with source and position set to None, from
    whichever side constructs it: the getters and the frame writers in
    matcher.c rely on both fields being real objects. */
@@ -344,7 +320,6 @@ static PyObject *datum_frame_new(PyTypeObject *type, PyObject *args,
   f->source = Py_None;
   Py_INCREF(Py_None);
   f->position = Py_None;
-  f->from_datum = 0;
   return self;
 }
 
@@ -354,8 +329,6 @@ static PyGetSetDef datum_frame_getset[] = {
     "Matched source represented by this capture frame", NULL },
   { "position", datum_frame_get_position, NULL,
     "Source position from the frame start, or None", NULL },
-  { "from_datum", datum_frame_get_from_datum, NULL,
-    "True when the matched spine cell was a substitution Datum", NULL },
   { NULL }
 };
 
@@ -463,14 +436,13 @@ static PyObject *make_match_result(
 
 /**
    Borrow through outer ``Datum`` layers for KosPair spine reads. The
-   underlying pair tree and hygiene boxes are unchanged; only matching
-   sees the inner value.
+   underlying pair tree and the boxes are unchanged; only matching
+   sees the inner value. A gensym is a symbol and is never peeled: it
+   is the identity a capture hands back to the compiler.
 */
 static PyObject *matcher_peel_datum(PyObject *obj) {
-  while (obj && KosDatum_Check(obj)) {
-    KosDatum *const d = (KosDatum *) obj;
-    obj = d->datum;
-  }
+  while (obj && KosDatum_Check(obj))
+    obj = ((KosDatum *) obj)->datum;
   return obj;
 }
 

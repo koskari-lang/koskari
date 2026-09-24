@@ -21,7 +21,7 @@ Highlights (not an exhaustive list):
 
 | Area | Implemented as |
 | ---- | -------------- |
-| Core | `compile/quote`, `compile/quasiquote`, `compile/unquote`, `compile/unquote-splicing`, `compile/quote-block`, `compile/quasiquote-block`, `compile/begin`, `compile/lambda`, `compile/function`, `compile/let`, `compile/define`, `compile/define-global`, `compile/setq`, `compile/delq`, `compile/refq`, `compile/bindq`, `compile/cons`, `compile/car`, `compile/cdr`, `compile/class` |
+| Core | `compile/quote`, `compile/quasiquote`, `compile/quote-syntax`, `compile/quasiquote-syntax`, `compile/unquote`, `compile/unquote-splicing`, `compile/begin`, `compile/lambda`, `compile/function`, `compile/let`, `compile/define`, `compile/define-global`, `compile/setq`, `compile/delq`, `compile/refq`, `compile/bindq`, `compile/cons`, `compile/car`, `compile/cdr`, `compile/class` |
 | Control | `compile/cond`, `compile/switch`, `compile/match`, `compile/and`, `compile/or`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/try`, `compile/raise`, internal exception helpers |
 | Context | `compile/with`, `compile/dyn-with`, `compile/dyn-wind`, `compile/parameterize` |
 | Generators / async | `compile/yield`, `compile/yield-from`, `compile/await` |
@@ -77,7 +77,7 @@ Bootstrap macros in `bootstrap/_iter.ki`, not compiler specials:
 constructor (keyword `start:` / `stop:` / `step:`), and **`compile/item-slice`**
 gives the idiomatic direct form `(item-slice seq 1)` in place of
 `(item seq (slice 1 None))`. See
-[docs/reference/concepts/idiomatic-koskari.md](../docs/reference/concepts/idiomatic-koskari.md),
+[docs/guide/idiomatic-koskari.md](../docs/guide/idiomatic-koskari.md),
 [docs/reference/runtime/build-slice.md](../docs/reference/runtime/build-slice.md).
 
 ### Macros

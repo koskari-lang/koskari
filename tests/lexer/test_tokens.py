@@ -226,6 +226,39 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual(toks[1].type, 'symbol')
 
 
+    async def test_tokenize_quote_syntax_prefixes(self):
+        toks = list(tokenize("#'x"))
+        self.assertEqual(toks[0].type, 'quote')
+        self.assertEqual(toks[0].text, "#'")
+        self.assertEqual(toks[1].type, 'symbol')
+        self.assertEqual(toks[1].text, 'x')
+
+        toks = list(tokenize("#`(x)"))
+        self.assertEqual(toks[0].type, 'quasiquote')
+        self.assertEqual(toks[0].text, "#`")
+        self.assertEqual(toks[1].type, 'paren_open')
+
+        toks = list(tokenize("#[x]"))
+        self.assertEqual(toks[0].type, 'collection_open')
+
+
+    async def test_tokenize_datumq_prefix(self):
+        toks = list(tokenize("-'x"))
+        self.assertEqual(toks[0].type, 'quote')
+        self.assertEqual(toks[0].text, "-'")
+        self.assertEqual(toks[1].type, 'symbol')
+        self.assertEqual(toks[1].text, 'x')
+
+        toks = list(tokenize("-'-'x"))
+        self.assertEqual([t.text for t in toks[:3]], ["-'", "-'", 'x'])
+
+        # every other - reads as before
+        self.assertEqual(list(tokenize("-1"))[0].text, '-1')
+        self.assertEqual(list(tokenize("->"))[0].text, '->')
+        toks = list(tokenize("(a-'b)"))
+        self.assertEqual([t.text for t in toks[1:3]], ['a-', "'"])
+
+
 class TestNameSets(IsolatedAsyncioTestCase):
 
     async def test_special_names_non_empty(self):

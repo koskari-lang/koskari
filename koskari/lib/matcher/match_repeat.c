@@ -57,14 +57,14 @@ static int match_repeat_capture_list(
         if (span == 1) {
           PyObject *raw = e->subj->vt->get(e->subj, saved);
           Py_INCREF(raw);
-          elem = kos_datum_from_spine_cell(e, e->subj, saved, raw);
+          elem = kos_datum_from_spine_cell(e->subj, saved, raw);
           if (! elem) {
             engine_rollback(e, snap);
             Py_DECREF(items);
             return -1;
           }
         } else if (span > 1) {
-          elem = wrap_slice_datums(e, e->subj, saved, *cursor);
+          elem = wrap_slice_datums(e->subj, saved, *cursor);
           if (! elem) {
             engine_rollback(e, snap);
             Py_DECREF(items);
@@ -137,14 +137,14 @@ static int match_repeat_capture_list(
     if (span == 1) {
       PyObject *raw = e->subj->vt->get(e->subj, saved);
       Py_INCREF(raw);
-      elem = kos_datum_from_spine_cell(e, e->subj, saved, raw);
+      elem = kos_datum_from_spine_cell(e->subj, saved, raw);
       if (! elem) {
         engine_rollback(e, snap);
         Py_DECREF(items);
         return -1;
       }
     } else if (span > 1) {
-      elem = wrap_slice_datums(e, e->subj, saved, *cursor);
+      elem = wrap_slice_datums(e->subj, saved, *cursor);
       if (! elem) {
         engine_rollback(e, snap);
         Py_DECREF(items);

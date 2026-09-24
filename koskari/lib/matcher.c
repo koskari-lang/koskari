@@ -1013,60 +1013,26 @@ typedef struct {
   Py_ssize_t change_count;
   Py_ssize_t change_capacity;
   DictChange change_inline[KOS_MATCH_CHANGE_INLINE];
-  int in_from_datum;          /* matching inside unpacked substitution */
 } MatchEngine;
-
-
-/**
-   Whether a capture at cell_idx is substitution: the walk is inside a
-   substitution Datum, or the cell itself is one.
-*/
-static int cell_from_datum_flag(
-    int in_from_datum,
-    KosMatchSubject *subj,
-    Py_ssize_t cell_idx) {
-
-  if (in_from_datum)
-    return 1;
-  if (subj->kp_cars && cell_idx >= 0
-      && cell_idx < subj->cached_length
-      && KosDatum_Check(subj->kp_cars[cell_idx]))
-    return 1;
-  return 0;
-}
-
-
-static int capture_from_datum_flag(
-    const MatchEngine *e,
-    KosMatchSubject *subj,
-    Py_ssize_t cell_idx) {
-
-  return cell_from_datum_flag(e->in_from_datum, subj, cell_idx);
-}
 
 
 /**
    Whether captures from this subject are boxed in Datum. Only a walk
    over source cells boxes: a KosPair spine, whose cells carry
-   positions, or a walk inside a substitution Datum, whose captures
-   must carry from_datum. A tuple, list, or single-value subject
-   yields raw values.
+   positions. A tuple, list, or single-value subject yields raw
+   values.
 */
-static int subject_boxes_captures(
-    const MatchEngine *e,
-    const KosMatchSubject *subj) {
-
-  return subj->kp_tails != NULL || e->in_from_datum;
+static int subject_boxes_captures(const KosMatchSubject *subj) {
+  return subj->kp_tails != NULL;
 }
 
 
 static PyObject *kos_datum_from_spine_cell(
-    MatchEngine *e,
     KosMatchSubject *subj,
     Py_ssize_t cell_idx,
     PyObject *datum_owned) {
 
-  if (! subject_boxes_captures(e, subj))
+  if (! subject_boxes_captures(subj))
     return datum_owned;
 
   PyObject *pos = Py_None;
@@ -1081,9 +1047,7 @@ static PyObject *kos_datum_from_spine_cell(
       Py_INCREF(pos);
     }
   }
-  int from_datum = capture_from_datum_flag(e, subj, cell_idx);
-  PyObject *out = kos_datum_new(
-      datum_owned, pos, Py_None, from_datum);
+  PyObject *out = kos_datum_new(datum_owned, pos, Py_None);
   Py_DECREF(datum_owned);
   Py_DECREF(pos);
   return out;
@@ -1091,7 +1055,6 @@ static PyObject *kos_datum_from_spine_cell(
 
 
 static PyObject *wrap_slice_datums(
-    MatchEngine *e,
     KosMatchSubject *subj,
     Py_ssize_t start,
     Py_ssize_t end) {
@@ -1102,13 +1065,13 @@ static PyObject *wrap_slice_datums(
   PyObject *t = PyTuple_New(n);
   if (! t)
     return NULL;
-  int boxes = subject_boxes_captures(e, subj);
+  int boxes = subject_boxes_captures(subj);
   for (Py_ssize_t i = 0; i < n; i++) {
     PyObject *raw = subj->vt->get(subj, start + i);
     Py_INCREF(raw);
     PyObject *cell = raw;
     if (boxes) {
-      cell = kos_datum_from_spine_cell(e, subj, start + i, raw);
+      cell = kos_datum_from_spine_cell(subj, start + i, raw);
       if (! cell) {
         Py_DECREF(t);
         return NULL;
@@ -1158,7 +1121,6 @@ static PyObject *source_from_spine_range(
 
 
 static int datum_frame_set_source(
-    int in_from_datum,
     PyObject *frame,
     KosMatchSubject *subj,
     Py_ssize_t start,
@@ -1182,13 +1144,6 @@ static int datum_frame_set_source(
   PyObject *old_position = f->position;
   f->source = source;
   f->position = position;
-  f->from_datum = 0;
-  for (Py_ssize_t i = start; i < end; i++) {
-    if (cell_from_datum_flag(in_from_datum, subj, i)) {
-      f->from_datum = 1;
-      break;
-    }
-  }
   Py_DECREF(old_source);
   Py_DECREF(old_position);
   return 0;
@@ -1393,6 +1348,10 @@ static int engine_test(MatchEngine *e, KosMatchTest *t, PyObject *elem) {
     PyObject *lit = PyTuple_GET_ITEM(e->m->consts, t->ref_index);
     PyObject *got = matcher_peel_datum(elem);
     if (lit == got)
+      return 1;
+    /* a literal names an atom by its bare spelling, so a gensym
+       matches the symbol it spells */
+    if (KosGensym_Check(got) && KosGensym_BASE(got) == lit)
       return 1;
     int cmp = PyObject_RichCompareBool(lit, got, Py_EQ);
     if (cmp < 0)
@@ -1713,7 +1672,6 @@ static int matcher_run_core(
   e->slot_count = PyTuple_GET_SIZE(m->slots);
   e->change_stack = e->change_inline;
   e->change_capacity = KOS_MATCH_CHANGE_INLINE;
-  e->in_from_datum = 0;
 
   Py_ssize_t cursor = 0;
   int r = 1;
@@ -1788,7 +1746,7 @@ int KosMatcher_Run(
       }
       if (matched == 1
           && datum_frame_set_source(
-              0, root, subj, 0, subj->vt->length(subj)))
+              root, subj, 0, subj->vt->length(subj)))
         matched = -1;
       if (matched < 0)
         Py_CLEAR(root);

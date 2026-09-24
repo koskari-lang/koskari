@@ -14,8 +14,8 @@
 """
 Tests for matcher composite matchers built from primitives only.
 DEFINE, DECL, BINDING, BINDINGS, FORMALS, USING, and BODY lower into
-trees of base nodes and register freeze-time hygiene owners only;
-captures are produced by the native engine and asserted directly
+trees of base nodes; captures are produced by the native engine and
+asserted directly
 """
 
 
@@ -26,7 +26,7 @@ import pytest
 from koskari.lib import Datum, cdr, cons, keyword, nil, setcdr, symbol
 from koskari.matcher import (
     BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORMALS, LITERAL, MATCH,
-    REST, TYPE, USING, VALUE, DatumFrame, Hygiene, HygienicMatchCompiler,
+    REST, TYPE, USING, VALUE, DatumFrame,
     MatchCompiler, Matcher, MatchResult, make_matcher)
 from koskari.types import build_proper
 
@@ -133,23 +133,6 @@ class TestDEFINE(unittest.TestCase):
         self.assertIsInstance(m, Matcher)
 
 
-    def test_define_registers_binder_meta(self):
-        """
-        DEFINE contributes a binder hygiene owner that yields the slot symbol
-        """
-
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(MATCH(DEFINE("name")))
-        hygiene = hc.build_hygiene()
-        binders = hygiene.root.binders
-        self.assertIn("name", binders)
-        owner = binders["name"]
-        sn = symbol("foo")
-        self.assertEqual(
-            set(owner.iter_introduced_symbols({"name": Datum(sn)})), {sn})
-        self.assertEqual(list(owner.iter_recurse_targets({})), [])
-
-
 class TestDECL(unittest.TestCase):
 
 
@@ -231,21 +214,6 @@ class TestDECL(unittest.TestCase):
         self.assertFalse(result.matched)
 
 
-    def test_decl_registers_binder_meta(self):
-        """
-        DECL binder owner extracts introduced symbols from name or bare slot
-        """
-
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(MATCH(DECL("d")))
-        hygiene = hc.build_hygiene()
-        owner = hygiene.root.binders["d"]
-        sx = symbol("x")
-        self.assertEqual(
-            set(owner.iter_introduced_symbols(
-                {"d": {"name": Datum(sx)}})), {sx})
-
-
 class TestBINDING(unittest.TestCase):
 
 
@@ -294,23 +262,6 @@ class TestBINDING(unittest.TestCase):
         subj = (_list(sa, 1, 2),)
         result = m.match(subj)
         self.assertFalse(result.matched)
-
-
-    def test_binding_registers_binder_meta(self):
-        """
-        BINDING binder owner yields name and expr recurse targets
-        """
-
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(MATCH(BINDING("b")))
-        hygiene = hc.build_hygiene()
-        owner = hygiene.root.binders["b"]
-        sn = symbol("n")
-        self.assertEqual(
-            set(owner.iter_introduced_symbols(
-                {"b": {"name": Datum(sn)}})), {sn})
-        self.assertEqual(
-            list(owner.iter_recurse_targets({"b": {"expr": 99}})), [99])
 
 
 class TestBINDINGS(unittest.TestCase):
@@ -372,32 +323,6 @@ class TestBINDINGS(unittest.TestCase):
         pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
         self.assertFalse(m.match((42, "tail")).matched)
-
-
-    def test_bindings_default_mode_recorded(self):
-        """
-        BINDINGS default mode stays on the composite instance
-        """
-
-        bs = BINDINGS("bs")
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(MATCH(bs))
-        hygiene = hc.build_hygiene()
-        self.assertEqual(bs._mode, "parallel")
-        self.assertIs(hygiene.root.binders["bs"], bs)
-
-
-    def test_bindings_sequential_mode_recorded(self):
-        """
-        BINDINGS preserves an explicit mode argument on the composite instance
-        """
-
-        bs = BINDINGS("bs", mode="sequential")
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(MATCH(bs))
-        hygiene = hc.build_hygiene()
-        self.assertEqual(bs._mode, "sequential")
-        self.assertIs(hygiene.root.binders["bs"], bs)
 
 
 class TestUSING(unittest.TestCase):
@@ -483,23 +408,6 @@ class TestUSING(unittest.TestCase):
         m = pat.build()
         result = m.match((42,))
         self.assertFalse(result.matched)
-
-
-    def test_using_registers_binder_meta(self):
-        """
-        USING binder owner extracts optional name and expr recurse
-        """
-
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(MATCH(USING("u")))
-        hygiene = hc.build_hygiene()
-        owner = hygiene.root.binders["u"]
-        sn = symbol("n")
-        self.assertEqual(
-            set(owner.iter_introduced_symbols(
-                {"u": {"name": Datum(sn)}})), {sn})
-        self.assertEqual(
-            list(owner.iter_recurse_targets({"u": {"expr": 1}})), [1])
 
 
 class TestFORMALS(unittest.TestCase):
@@ -921,22 +829,6 @@ class TestFORMALS(unittest.TestCase):
         self.assertIs(positionals[0]["name"], sn)
 
 
-    def test_formals_registers_binder_meta(self):
-        """
-        FORMALS binder owner reads introduced names from the nested GROUP dict
-        """
-
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(MATCH(FORMALS("f")))
-        hygiene = hc.build_hygiene()
-        owner = hygiene.root.binders["f"]
-        sf = symbol("rest")
-        # FORMALS binder meta expects bare Python lists for positional frames.
-        grp = {"positionals": [{"name": Datum(sf)}]}
-        self.assertEqual(
-            set(owner.iter_introduced_symbols({"f": grp})), {sf})
-
-
 class TestBODY(unittest.TestCase):
 
 
@@ -954,25 +846,6 @@ class TestBODY(unittest.TestCase):
         self.assertEqual(_ucaps(result)["body"], (2, 3))
 
 
-    def test_body_registers_scope_region(self):
-        """
-        BODY registers a scope-region owner; iter_scope_targets yields the
-        capture once (the tuple tail as a single lexical root)
-        """
-
-        pat = MATCH(CAPTURE("head"), BODY("body"))
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(pat)
-        hygiene = hc.build_hygiene()
-        regions = hygiene.root.regions
-        self.assertIn("body", regions)
-        body_owner = regions["body"]
-        bsym = symbol("b")
-        roots = list(body_owner.iter_scope_targets({"body": (bsym,)}))
-        self.assertEqual(len(roots), 1)
-        self.assertEqual(roots[0], (bsym,))
-
-
 class TestVALUE(unittest.TestCase):
 
 
@@ -988,68 +861,6 @@ class TestVALUE(unittest.TestCase):
         self.assertTrue(result.matched)
         self.assertEqual(_ucaps(result)["head"], 1)
         self.assertEqual(_ucaps(result)["expr"], 2)
-
-
-    def test_value_registers_scope_region(self):
-        """
-        VALUE registers a scope-region owner; iter_scope_targets yields
-        the capture once
-        """
-
-        pat = MATCH(CAPTURE("head"), VALUE("expr"))
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(pat)
-        hygiene = hc.build_hygiene()
-        regions = hygiene.root.regions
-        self.assertIn("expr", regions)
-        expr_owner = regions["expr"]
-        inner = symbol("inner")
-        roots = list(expr_owner.iter_scope_targets({"expr": inner}))
-        self.assertEqual(len(roots), 1)
-        self.assertIs(roots[0], inner)
-
-
-class TestRuntimeCompileHygiene(unittest.TestCase):
-
-
-    def test_primitives_compile_without_source_hygiene(self):
-        """
-        Pure primitive trees lowered with MatchCompiler emit no hygiene
-        plan
-        """
-
-        pat = MATCH(CAPTURE("x", TYPE("symbol")))
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(pat)
-        self.assertTrue(hc.build_hygiene().is_empty())
-
-
-    def test_body_compile_ignores_hygiene_when_not_hygienic(self):
-        """
-        BODY registers scope only under HygienicMatchCompiler; baseline
-        lower leaves the hygiene plan empty
-        """
-
-        pat = MATCH(BODY("b"))
-        _frozen = MatchCompiler().lower(pat)
-        m = Matcher.from_tuple(_frozen)
-        result = m.match((1, 2, 3))
-        self.assertTrue(result.matched)
-        self.assertEqual(_ucaps(result)["b"], (1, 2, 3))
-
-
-    def test_define_compile_ignores_hygiene_when_not_hygienic(self):
-        """
-        DEFINE registers binders only under HygienicMatchCompiler
-        """
-
-        pat = MATCH(DEFINE("n"))
-        _frozen = MatchCompiler().lower(pat)
-        m = Matcher.from_tuple(_frozen)
-        sa = symbol("x")
-        result = m.match((sa,), symbol=symbol)
-        self.assertTrue(result.matched)
-        self.assertIs(_ucaps(result)["n"], sa)
 
 
 class TestComposition(unittest.TestCase):
@@ -1111,26 +922,6 @@ class TestComposition(unittest.TestCase):
         self.assertEqual(_ucaps(result)["body"], ("b1", "b2"))
 
 
-class TestHygieneCompile(unittest.TestCase):
-
-
-    def test_compile_exposes_binders_and_scope_regions(self):
-        """
-        Composite-bearing patterns produce a Hygiene plan with binders and
-        scope_regions sections
-        """
-
-        dn = DEFINE("name")
-        bod = BODY("body")
-        pat = MATCH(dn, bod)
-        hc = HygienicMatchCompiler()
-        _frozen = hc.lower(pat)
-        hygiene = hc.build_hygiene()
-        self.assertIsInstance(hygiene, Hygiene)
-        self.assertIs(hygiene.root.binders["name"], dn)
-        self.assertIs(hygiene.root.regions["body"], bod)
-
-
 class TestMakeMatcher(unittest.TestCase):
 
 
@@ -1186,6 +977,5 @@ class TestCyclicPairSubject(unittest.TestCase):
         m = make_matcher(MATCH(CAPTURE("a")))
         with self.assertRaises(ValueError):
             m.match(subject)
-
 
 # The end.

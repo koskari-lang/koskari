@@ -11,8 +11,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
+
 """
-Tests for koskari.hygiene using synthetic Special-like objects.
+Tests for template expansion in koskari.hygiene: substitution,
+ellipsis repetition, and delimiter preservation, without marking
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
 """
 
 
@@ -22,174 +27,15 @@ import pytest
 
 from koskari.exceptions import CompilerError
 from koskari.hygiene import (
-    Hygiene, apply_syntax_rules_hygiene, binder_recurse_targets,
-    collect_binding_symbols, expand_template_with_hygiene,
-    finalize_macro_hygiene_unbox_one_pass, introduced_symbols_from_match,
-    walk_hygiene_tree)
+    equal_by_base, expand_template_with_hygiene, extern_atoms,
+    finalize_expansion, mark_expansion)
 from koskari.lib import (
-    Datum, bracket_nil, bracket_pair, cons, kos_repr, nil, pair, symbol)
-from koskari.types import build_proper, is_pair, is_symbol
+    Datum, bracket_cons, bracket_nil, bracket_pair, cons, gensym, keyword,
+    kos_repr, nil, pair, symbol)
+from koskari.types import build_proper, get_position, unpack
 
 
 pytestmark = pytest.mark.phase_infra
-
-
-class _FakeBinderOwner(object):
-
-
-    def __init__(self, slot):
-        self.slot = slot
-
-
-    def iter_introduced_symbols(self, matched):
-        val = matched.get(self.slot)
-        if val is None:
-            return
-        if isinstance(val, Datum) and val.from_datum:
-            return
-        if isinstance(val, Datum):
-            val = val.datum
-        if is_symbol(val):
-            yield val
-
-
-    def iter_recurse_targets(self, matched):
-        yield from ()
-
-
-    def iter_scope_targets(self, matched):
-        yield from ()
-
-
-    def hygiene_wire(self):
-        return ("DEFINE", self.slot, ())
-
-
-class _FakeBindingRecurse(object):
-
-
-    def iter_introduced_symbols(self, matched):
-        yield from ()
-
-
-    def iter_recurse_targets(self, matched):
-        ex = matched.get("expr")
-        if ex is not None:
-            yield ex
-
-
-    def iter_scope_targets(self, matched):
-        yield from ()
-
-
-    def hygiene_wire(self):
-        return ("BINDING", "b", ())
-
-
-class _FakeBodyScope(object):
-
-
-    def iter_introduced_symbols(self, matched):
-        yield from ()
-
-
-    def iter_recurse_targets(self, matched):
-        yield from ()
-
-
-    def iter_scope_targets(self, matched):
-        val = matched.get("body")
-        if val is None:
-            return
-        yield val
-
-
-    def hygiene_wire(self):
-        return ("BODY", "body")
-
-
-class _FakeCompiled(object):
-
-
-    def __init__(self, hygiene, matched):
-        self.hygiene = hygiene
-        self._matched = matched
-
-
-    def match_for_hygiene(self, rest):
-        return self._matched, None, self.hygiene
-
-
-class TestHygieneHelpers(unittest.TestCase):
-
-
-    def test_empty_hygiene_queries(self):
-        """
-        Hygiene defaults classify slots consistently
-        """
-
-        h = Hygiene.single_node()
-        self.assertTrue(h.is_empty())
-        root = h.root
-        self.assertNotIn("x", root.binders)
-        self.assertNotIn("x", root.regions)
-
-
-class TestIntroducedAndRecurse(unittest.TestCase):
-
-
-    def test_introduced_symbols_define(self):
-        """
-        Binder owner introduces captures[slot] symbol
-        """
-
-        owner = _FakeBinderOwner("nm")
-        hx = Hygiene.single_node(binders={"nm": owner})
-        sn = symbol("n")
-        matched = {"nm": Datum(sn)}
-        syms = introduced_symbols_from_match(matched, hx)
-        self.assertEqual(syms, {sn})
-
-
-    def test_introduced_symbols_skips_from_datum_capture(self):
-        """
-        Substitution captures with ``from_datum`` do not enter binding_symbols
-        """
-
-        owner = _FakeBinderOwner("nm")
-        hx = Hygiene.single_node(binders={"nm": owner})
-        sn = symbol("n")
-        matched = {"nm": Datum(sn, from_datum=True)}
-        syms = introduced_symbols_from_match(matched, hx)
-        self.assertEqual(syms, set())
-
-
-    def test_binder_recurse_binding_targets_expr(self):
-        """
-        Owner recurse walks the expr capture when present
-        """
-
-        hx = Hygiene.single_node(binders={"b": _FakeBindingRecurse()})
-        matched = {"expr": 42}
-        got = list(binder_recurse_targets(matched, hx))
-        self.assertEqual(got, [42])
-
-
-class TestScopeRegionTargets(unittest.TestCase):
-
-
-    def test_scope_region_yields_body_capture_once(self):
-        """
-        Scope-region owners normalize captures into walk roots for collect
-        """
-
-        bsym = symbol("b")
-        matched = {"body": (bsym,)}
-        tree = Hygiene.single_node(regions={"body": _FakeBodyScope()})
-        tracer = {}
-        walk_hygiene_tree(
-            tree, tree.root_id, matched, lambda h: None, tracer)
-        self.assertEqual(tracer.get("region_walk"), ["body"])
 
 
 class TestExpandTemplate(unittest.TestCase):
@@ -201,7 +47,7 @@ class TestExpandTemplate(unittest.TestCase):
         """
 
         sentinel = object()
-        out = expand_template_with_hygiene(sentinel, {}, set())
+        out = expand_template_with_hygiene(sentinel, {})
         self.assertIs(out, sentinel)
 
 
@@ -216,9 +62,8 @@ class TestExpandTemplate(unittest.TestCase):
         inner = cons(sa, sb, nil)
         tpl = cons(inner, Ellipsis, nil)
         bindings = {sa: [1], sb: [1, 2]}
-        binding_symbols = set()
         with self.assertRaises(CompilerError) as ctx:
-            expand_template_with_hygiene(tpl, bindings, binding_symbols)
+            expand_template_with_hygiene(tpl, bindings)
         self.assertIn("ellipsis", str(ctx.exception).lower())
 
 
@@ -232,8 +77,7 @@ class TestExpandTemplate(unittest.TestCase):
         xs = symbol("xs")
         tpl = build_proper(plus, xs, Ellipsis)
         bindings = {xs: cons(10, 20, nil)}
-        binding_symbols = set()
-        out = expand_template_with_hygiene(tpl, bindings, binding_symbols)
+        out = expand_template_with_hygiene(tpl, bindings)
         self.assertEqual(out, build_proper(plus, 10, 20))
 
 
@@ -246,7 +90,7 @@ class TestExpandTemplate(unittest.TestCase):
         inner = bracket_pair(cond, bracket_pair(then, bracket_nil))
         tpl = build_proper(symbol("cond"), inner)
         out = expand_template_with_hygiene(
-            tpl, {cond: symbol("foo"), then: 100}, set())
+            tpl, {cond: symbol("foo"), then: 100})
 
         self.assertIs(type(out), pair)            # outer form stays paren
         inner_out = out.cdr.car
@@ -262,9 +106,9 @@ class TestExpandTemplate(unittest.TestCase):
         n = symbol("n")
         tpl = build_proper(n, Ellipsis)
         bindings = {n: [11, 22]}
-        binding_symbols = set()
-        out = expand_template_with_hygiene(tpl, bindings, binding_symbols)
+        out = expand_template_with_hygiene(tpl, bindings)
         self.assertEqual(out, build_proper(11, 22))
+
 
     def test_template_ellipsis_repeats_compound_fn_a_b(self):
         """
@@ -284,8 +128,7 @@ class TestExpandTemplate(unittest.TestCase):
             a: [1, 3, 100, 5],
             b: [2, 4, 200, -1],
         }
-        binding_symbols = set()
-        out = expand_template_with_hygiene(tpl, bindings, binding_symbols)
+        out = expand_template_with_hygiene(tpl, bindings)
         want = cons(
             hash_list,
             cons(plus, 1, 2, nil),
@@ -312,7 +155,7 @@ class TestExpandTemplate(unittest.TestCase):
             a: [1, 4],
             b: [[2, 3], [5]],
         }
-        out = expand_template_with_hygiene(tpl, bindings, set())
+        out = expand_template_with_hygiene(tpl, bindings)
         want = cons(
             result,
             cons(1, 2, 3, nil),
@@ -333,7 +176,7 @@ class TestExpandTemplate(unittest.TestCase):
         inner = cons(b, ..., nil)
         tpl = cons(result, inner, ..., nil)
         bindings = {b: [[1, 2], [], [3]]}
-        out = expand_template_with_hygiene(tpl, bindings, set())
+        out = expand_template_with_hygiene(tpl, bindings)
         want = cons(
             result,
             cons(1, 2, nil),
@@ -356,282 +199,230 @@ class TestExpandTemplate(unittest.TestCase):
         tpl = cons(result, b, ..., nil)
         bindings = {b: [[1, 2], [3]]}
         with self.assertRaises(CompilerError) as ctx:
-            expand_template_with_hygiene(tpl, bindings, set())
+            expand_template_with_hygiene(tpl, bindings)
         self.assertIn("ellipsis", str(ctx.exception).lower())
 
 
-class TestCollectAndApply(unittest.TestCase):
-
-
-    def test_collect_finds_define_introduced_symbol(self):
+    def test_dotted_tail_is_kept(self):
         """
-        collect_binding_symbols walks Special-shaped heads via match_for_hygiene
+        A dotted template keeps its terminator: a symbol tail is marked
+        and another atom passes through
         """
 
-        hd = symbol("rule-head")
-        owner = _FakeBinderOwner("nm")
-        hx = Hygiene.single_node(binders={"nm": owner})
-        intro = symbol("fresh")
-        fake = _FakeCompiled(hx, {"nm": intro})
-        table = {hd: fake}
+        a = symbol("a")
+        tail = symbol("tail")
+        out = expand_template_with_hygiene(cons(a, tail), {a: 1}, 7)
+        self.assertEqual(out.car, 1)
+        self.assertIs(out.cdr, gensym(tail, marks=(7,)))
 
-        def find_compiled(head):
-            return table.get(head)
-
-        template = cons(hd, nil)
-        syms = collect_binding_symbols(template, find_compiled)
-        self.assertEqual(syms, {intro})
+        out = expand_template_with_hygiene(cons(a, 2), {a: 1}, 7)
+        self.assertEqual(out, cons(1, 2))
 
 
-    def test_collect_sibling_form_list_includes_car_form(self):
-        """
-        A proper list of peer forms must collect binders from the first form,
-        not only from the cdr (layout blocks and macro bodies use this shape)
-        """
-
-        hd1 = symbol("peer-one")
-        hd2 = symbol("peer-two")
-        owner1 = _FakeBinderOwner("a")
-        owner2 = _FakeBinderOwner("b")
-        hx1 = Hygiene.single_node(binders={"a": owner1})
-        hx2 = Hygiene.single_node(binders={"b": owner2})
-        intro1 = symbol("x")
-        intro2 = symbol("y")
-        fake1 = _FakeCompiled(hx1, {"a": intro1})
-        fake2 = _FakeCompiled(hx2, {"b": intro2})
-        table = {hd1: fake1, hd2: fake2}
-
-        def find_compiled(head):
-            return table.get(head)
-
-        first_form = cons(hd1, nil)
-        second_form = cons(hd2, nil)
-        peer_list = cons(first_form, second_form, nil)
-        syms = collect_binding_symbols(peer_list, find_compiled)
-        self.assertEqual(syms, {intro1, intro2})
+    def test_dotted_bracket_tail_is_kept(self):
+        a = symbol("a")
+        out = expand_template_with_hygiene(bracket_cons(a, 2), {a: 1}, 7)
+        self.assertIsInstance(out, bracket_pair)
+        self.assertEqual((out.car, out.cdr), (1, 2))
 
 
-    def test_apply_syntax_rules_hygiene_round_trip(self):
-        """
-        apply_syntax_rules_hygiene expands introduced symbols using gensyms
-        """
-
-        hd = symbol("rule-head")
-        owner = _FakeBinderOwner("nm")
-        hx = Hygiene.single_node(binders={"nm": owner})
-        intro = symbol("fresh")
-        fake = _FakeCompiled(hx, {"nm": intro})
-        table = {hd: fake}
-
-        def find_compiled(head):
-            return table.get(head)
-
-        template = cons(hd, intro, nil)
-        bindings = {}
-        out = apply_syntax_rules_hygiene(template, bindings, find_compiled)
-        parts = list(out.unpack())
-        self.assertEqual(len(parts), 2)
-        self.assertIs(parts[0], hd)
-        self.assertNotEqual(parts[1], intro)
+    def test_ellipsis_before_dotted_tail(self):
+        x = symbol("x")
+        out = expand_template_with_hygiene(cons(x, ..., 9), {x: [1, 2]})
+        self.assertEqual(out, cons(1, 2, 9))
 
 
-def _make_hygiene_compiler():
-    from koskari.bootstrap import _BUILTIN_REGISTRY
-    from koskari.compile import Compiler
-    from koskari.lib import Module, ModuleNamespace
-
-    mod_ns = ModuleNamespace("test", {})
-    for sym, fn in _BUILTIN_REGISTRY.items():
-        mod_ns.store(str(sym), fn)
-    module = Module(mod_ns)
-    return Compiler("<test>", module, filename=__file__)
-
-
-def _bootstrap_define_syntax_macro_match_form(macro_name, inner_name):
+class TestDatumqDirective(unittest.TestCase):
     """
-    Post-define-syntax shape for (define-syntax NAME (macro-match ...))
+    A template pair headed by the raw datumq symbol emits its one form
+    raw, in a Datum, unmarked and with no pattern variable substituted;
+    the Datum carries the position of the spine cell holding the form
     """
 
-    pattern = cons(macro_name, cons(inner_name, nil), nil)
-    rule = cons(pattern, cons(nil, nil), nil)
-    macro_match = cons(
-        symbol("macro-match"),
-        Datum(macro_name),
-        cons(rule, nil),
-        nil)
-    return cons(
-        symbol("define"),
-        Datum(macro_name),
-        macro_match,
-        nil)
+    DATUMQ = symbol("datumq")
 
 
-class TestDefineSyntaxBootstrapHygiene(unittest.TestCase):
+    def test_directive_emits_unmarked_datum(self):
+        foo = symbol("foo")
+        tpl = build_proper(symbol("list"), build_proper(self.DATUMQ, foo))
+        out = expand_template_with_hygiene(tpl, {}, 7)
+        head, rest = out
+        self.assertIsNot(head.base, head)
+        self.assertIsInstance(rest.car, Datum)
+        self.assertIs(rest.car.datum, foo)
 
 
-    def test_collect_skips_datum_substitution_export_name(self):
+    def test_pattern_variable_inside_is_not_substituted(self):
+        foo = symbol("foo")
+        tpl = build_proper(self.DATUMQ, foo)
+        out = expand_template_with_hygiene(tpl, {foo: 5}, 7)
+        self.assertIsInstance(out, Datum)
+        self.assertIs(out.datum, foo)
+
+
+    def test_position_is_the_spine_cell_holding_the_form(self):
+        foo = symbol("foo")
+        directive = build_proper(self.DATUMQ, foo)
+        directive.cdr.set_position((3, 7))
+        tpl = build_proper(symbol("list"), directive)
+        out = expand_template_with_hygiene(tpl, {}, 7)
+        self.assertEqual(out.cdr.car.position, (3, 7))
+
+        # the peel moves the position onto the cell that now holds foo
+        final = finalize_expansion(out)
+        self.assertIs(final.cdr.car, foo)
+        self.assertEqual(get_position(final.cdr), (3, 7))
+
+
+    def test_pair_form_keeps_the_spine_cell_position(self):
+        inner = build_proper(symbol("a"), symbol("b"))
+        directive = build_proper(self.DATUMQ, inner)
+        directive.cdr.set_position((4, 2))
+        out = expand_template_with_hygiene(directive, {}, 7)
+        self.assertIs(out.datum, inner)
+        self.assertEqual(out.position, (4, 2))
+
+
+    def test_arity_other_than_one_is_refused(self):
+        for tpl in (build_proper(self.DATUMQ),
+                    build_proper(self.DATUMQ, symbol("a"), 3)):
+            with self.assertRaises(CompilerError) as caught:
+                expand_template_with_hygiene(tpl, {}, 7)
+            self.assertIn("exactly one form", str(caught.exception))
+
+
+    def test_literal_datumq_call_escape(self):
+        foo = symbol("foo")
+        tpl = build_proper(build_proper(self.DATUMQ, self.DATUMQ), foo)
+        final = finalize_expansion(expand_template_with_hygiene(tpl, {}, 7))
+        head, rest = final
+        self.assertIs(head, self.DATUMQ)
+        self.assertIs(rest.car.base, foo)
+        self.assertIsNot(rest.car, foo)
+
+
+    def test_nested_directive_emits_the_inner_one_raw(self):
+        foo = symbol("foo")
+        inner = build_proper(self.DATUMQ, foo)
+        tpl = build_proper(self.DATUMQ, inner)
+        out = expand_template_with_hygiene(tpl, {}, 7)
+        self.assertIs(out.datum, inner)
+
+
+    def test_directive_body_does_not_drive_an_ellipsis(self):
+        x = symbol("x")
+        tag = symbol("tag")
+        tpl = build_proper(
+            build_proper(symbol("cons"), x, build_proper(self.DATUMQ, tag)),
+            Ellipsis)
+        final = finalize_expansion(
+            expand_template_with_hygiene(tpl, {x: [1, 2], tag: [7, 8, 9]}, 7))
+        rows = list(unpack(final))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([r.cdr.car for r in rows], [1, 2])
+        self.assertEqual([r.cdr.cdr.car for r in rows], [tag, tag])
+
+
+class TestMarkExpansion(unittest.TestCase):
+
+
+    def test_cyclic_output_is_refused(self):
         """
-        define-syntax ``name`` in a ``Datum`` must not enter binding_symbols
-        """
-
-        macro_name = symbol("foo")
-        inner = symbol("inner")
-        form = _bootstrap_define_syntax_macro_match_form(macro_name, inner)
-        compiler = _make_hygiene_compiler()
-        syms = collect_binding_symbols(form, compiler.find_compiled)
-        self.assertNotIn(macro_name, syms)
-
-
-    def test_finalize_preserves_pattern_literal_matching_macro_name(self):
-        """
-        Pattern head literal must not be gensymmed when export is Datum-only
-        """
-
-        macro_name = symbol("foo")
-        inner = symbol("inner")
-        form = _bootstrap_define_syntax_macro_match_form(macro_name, inner)
-        compiler = _make_hygiene_compiler()
-        syms = collect_binding_symbols(form, compiler.find_compiled)
-        macro_match = form.cdr.cdr.car
-        rule = macro_match.cdr.cdr.car.car
-        pat = rule.car
-        while isinstance(pat, Datum):
-            pat = pat.datum
-        self.assertIs(pat.car, macro_name)
-        finalize_macro_hygiene_unbox_one_pass(
-            form, syms, compiler.find_compiled)
-        pat = rule.car
-        while isinstance(pat, Datum):
-            pat = pat.datum
-        self.assertIs(pat.car, macro_name)
-
-
-    def test_collect_includes_bare_define_export_name(self):
-        """
-        Template (compile/define loop ...) still introes bare export names
-        """
-
-        loop = symbol("loop")
-        form = cons(
-            symbol("define"),
-            loop,
-            cons(nil, nil),
-            nil)
-        compiler = _make_hygiene_compiler()
-        syms = collect_binding_symbols(form, compiler.find_compiled)
-        self.assertIn(loop, syms)
-
-
-    def test_collect_define_value_descent_finds_let_binder(self):
-        """
-        VALUE capture descent finds nested let binders; Datum exports do not
-        """
-
-        tp = symbol("tp")
-        export = symbol("compile/MyType?")
-        inner_type = symbol("compile/MyType")
-        bindings = cons(cons(cons(tp, Datum(inner_type), nil), nil), nil)
-        body = cons(
-            symbol("lambda"),
-            Datum(export),
-            cons(symbol("value"), nil),
-            nil)
-        let_form = cons(symbol("let"), bindings, body, nil)
-        form = cons(symbol("define"), Datum(export), let_form, nil)
-        compiler = _make_hygiene_compiler()
-        syms = collect_binding_symbols(form, compiler.find_compiled)
-        self.assertIn(tp, syms)
-        self.assertNotIn(export, syms)
-        self.assertNotIn(inner_type, syms)
-
-
-    def test_finalize_gensyms_template_let_binder_tp(self):
-        """
-        Template ``tp`` in create-instance-check shape must be gensymmed
+        A procedural arm's output that contains itself is refused
+        rather than walked without end
         """
 
-        tp = symbol("tp")
-        export = symbol("foobar?")
-        type_sym = symbol("foobar")
-        bindings = cons(cons(cons(tp, Datum(type_sym), nil), nil), nil)
-        isinstance_form = cons(
-            symbol("isinstance"),
-            symbol("value"),
-            tp,
-            nil)
-        lambda_form = cons(
-            symbol("lambda"),
-            export,
-            cons(cons(symbol("value"), nil), nil),
-            isinstance_form,
-            nil)
-        let_form = cons(symbol("let"), bindings, lambda_form, nil)
-        form = cons(symbol("define"), Datum(export), let_form, nil)
-        compiler = _make_hygiene_compiler()
-        syms = collect_binding_symbols(form, compiler.find_compiled)
-        self.assertIn(tp, syms)
-        finalize_macro_hygiene_unbox_one_pass(
-            form, syms, compiler.find_compiled)
-
-        found = set()
-
-        def walk(node):
-            if is_symbol(node):
-                found.add(node)
-                return
-            if isinstance(node, Datum):
-                walk(node.datum)
-                return
-            if is_pair(node):
-                for elem in node.unpack():
-                    walk(elem)
-
-        walk(form)
-        self.assertNotIn(tp, found)
+        cell = cons(1, nil)
+        cell.cdr = cell
+        with self.assertRaises(CompilerError) as caught:
+            mark_expansion(cell, 1)
+        self.assertIn("cyclic", str(caught.exception))
 
 
-class TestCollectDatumOpaque(unittest.TestCase):
+    def test_car_cycle_is_refused(self):
+        outer = cons(1, nil)
+        inner = cons(outer, nil)
+        outer.car = inner
+        with self.assertRaises(CompilerError):
+            mark_expansion(outer, 1)
 
 
-    def test_collect_does_not_harvest_inside_datum_on_tree(self):
-        """
-        ``Datum`` on the expanded tree is opaque for binding-symbol discovery
-        """
+class TestEqualByBase(unittest.TestCase):
+    """
+    equal_by_base compares two forms with every gensym read as its
+    base, walking the spines without copying
+    """
 
-        hd = symbol("define")
-        export = symbol("compile/caddddr")
-        form = cons(hd, Datum(export), nil)
-        syms = collect_binding_symbols(form, lambda head: None)
-        self.assertNotIn(export, syms)
-
-
-class TestFinalizeDatum(unittest.TestCase):
-
-
-    def test_finalize_skips_gensym_for_datum_car(self):
-        """
-        Datum-wrapped substituted captures keep the real symbol after finalize
-        """
-
-        hd = symbol("define")
-        export = symbol("compile/caddddr")
-        form = cons(hd, Datum(export), nil)
-        out = finalize_macro_hygiene_unbox_one_pass(
-            form, {export}, lambda head: None)
-        self.assertIs(out.cdr.car, export)
+    def test_marked_form_equals_bare_form(self):
+        t = gensym(symbol("t"), marks=(1,))
+        marked = cons(symbol("let"), cons(t, 1, nil), t, nil)
+        bare = cons(symbol("let"), cons(symbol("t"), 1, nil), symbol("t"),
+                    nil)
+        self.assertTrue(equal_by_base(marked, bare))
+        self.assertTrue(equal_by_base(bare, marked))
 
 
-    def test_finalize_gensyms_bare_introduced_symbol(self):
-        """
-        Bare template literals in binding_symbols are still freshened
-        """
+    def test_different_bases_differ(self):
+        t = gensym(symbol("t"), marks=(1,))
+        self.assertFalse(equal_by_base(cons(t, nil), cons(symbol("u"), nil)))
 
-        hd = symbol("define")
-        export = symbol("compile/caddddr")
-        form = cons(hd, export, nil)
-        out = finalize_macro_hygiene_unbox_one_pass(
-            form, {export}, lambda head: None)
-        self.assertIsNot(out.cdr.car, export)
+
+    def test_two_gensyms_compare_by_base(self):
+        a = gensym(symbol("t"), marks=(1,))
+        b = gensym(symbol("t"), marks=(2,))
+        self.assertTrue(equal_by_base(a, b))
+        self.assertTrue(equal_by_base(cons(a, 1, nil), cons(b, 1, nil)))
+
+
+    def test_length_and_terminator(self):
+        self.assertFalse(equal_by_base(cons(1, 2, nil), cons(1, nil)))
+        self.assertFalse(equal_by_base(cons(1, nil), cons(1, 2, nil)))
+        self.assertTrue(equal_by_base(cons(1, nil), bracket_cons(1)))
+        self.assertTrue(equal_by_base(nil, nil))
+
+
+    def test_pair_against_atom(self):
+        self.assertFalse(equal_by_base(cons(1, nil), 1))
+        self.assertFalse(equal_by_base(symbol("t"), cons(symbol("t"), nil)))
+
+
+    def test_other_values_compare_by_equality(self):
+        self.assertTrue(equal_by_base(cons(1, "a", nil), cons(1, "a", nil)))
+        self.assertFalse(equal_by_base(cons(1, "a", nil), cons(1, "b", nil)))
+        self.assertTrue(equal_by_base(keyword("k"), keyword("k")))
+
+
+class TestExternAtoms(unittest.TestCase):
+    """
+    extern_atoms recovers the atom a pattern wrote for each base
+    spelling asked for
+    """
+
+    def test_recovers_marked_atom(self):
+        kind = gensym(symbol("Kind"), marks=(1,))
+        x = gensym(symbol("x"), marks=(1,))
+        pattern = cons(x, keyword("::"), kind, nil)
+        self.assertEqual(extern_atoms(pattern, ("Kind",)), {"Kind": kind})
+
+
+    def test_bare_atom_and_unasked_names(self):
+        pattern = cons(symbol("x"), keyword("::"), symbol("Kind"), nil)
+        self.assertEqual(
+            extern_atoms(pattern, ("Kind",)), {"Kind": symbol("Kind")})
+        self.assertEqual(extern_atoms(pattern, ()), {})
+
+
+    def test_same_atom_twice(self):
+        kind = gensym(symbol("Kind"), marks=(1,))
+        pattern = cons(kind, cons(kind, nil), nil)
+        self.assertEqual(extern_atoms(pattern, ("Kind",)), {"Kind": kind})
+
+
+    def test_two_atoms_for_one_spelling(self):
+        kind = gensym(symbol("Kind"), marks=(1,))
+        pattern = cons(kind, symbol("Kind"), nil)
+        with self.assertRaises(CompilerError):
+            extern_atoms(pattern, ("Kind",))
 
 
 # The end.

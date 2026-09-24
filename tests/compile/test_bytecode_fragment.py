@@ -508,34 +508,34 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
 
     async def test_declare_var(self):
         f = ByteCodeFragment()
-        f.declare_var("a")
-        self.assertEqual(f.declares, ["a"])
-        f.declare_var("b")
-        self.assertEqual(f.declares, ["a", "b"])
-        f.declare_var("a")
-        self.assertEqual(f.declares, ["a", "b"])
+        f.declare_var(symbol("a"))
+        self.assertEqual(f.declares, [symbol("a")])
+        f.declare_var(symbol("b"))
+        self.assertEqual(f.declares, [symbol("a"), symbol("b")])
+        f.declare_var(symbol("a"))
+        self.assertEqual(f.declares, [symbol("a"), symbol("b")])
 
     async def test_declare_vars(self):
         f = ByteCodeFragment()
-        f.declare_vars(("x", "y", "z"))
-        self.assertEqual(f.declares, ["x", "y", "z"])
-        f.declare_vars(["z", "w"])
-        self.assertEqual(f.declares, ["x", "y", "z", "w"])
+        f.declare_vars((symbol("x"), symbol("y"), symbol("z")))
+        self.assertEqual(f.declares, [symbol("x"), symbol("y"), symbol("z")])
+        f.declare_vars([symbol("z"), symbol("w")])
+        self.assertEqual(f.declares, [symbol("x"), symbol("y"), symbol("z"), symbol("w")])
 
     async def test_request_var(self):
         f = ByteCodeFragment()
-        f.request_var("outer")
-        self.assertEqual(f.requests, ["outer"])
-        f.request_var("other")
-        self.assertEqual(f.requests, ["outer", "other"])
-        f.request_var("outer")
-        self.assertEqual(f.requests, ["outer", "other"])
+        f.request_var(symbol("outer"))
+        self.assertEqual(f.requests, [symbol("outer")])
+        f.request_var(symbol("other"))
+        self.assertEqual(f.requests, [symbol("outer"), symbol("other")])
+        f.request_var(symbol("outer"))
+        self.assertEqual(f.requests, [symbol("outer"), symbol("other")])
 
     async def test_request_var_skipped_if_declared(self):
         f = ByteCodeFragment()
-        f.declare_var("local")
-        f.request_var("local")
-        self.assertEqual(f.declares, ["local"])
+        f.declare_var(symbol("local"))
+        f.request_var(symbol("local"))
+        self.assertEqual(f.declares, [symbol("local")])
         self.assertEqual(f.requests, [])
 
     async def test_instruction(self):
@@ -562,27 +562,27 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
 
     async def test_as_namespace_spec(self):
         f = ByteCodeFragment(name="ns1")
-        f.declare_var("a")
-        f.declare_var("b")
-        f.request_var("up")
+        f.declare_var(symbol("a"))
+        f.declare_var(symbol("b"))
+        f.request_var(symbol("up"))
         nspec = f.as_namespace_spec()
         self.assertIsInstance(nspec, NamespaceSpec)
         self.assertEqual(nspec.name, "ns1")
-        self.assertEqual(nspec.local_syms, ("a", "b"))
-        self.assertEqual(nspec.closure_syms, ("up",))
+        self.assertEqual(nspec.local_syms, (symbol("a"), symbol("b")))
+        self.assertEqual(nspec.closure_syms, (symbol("up"),))
 
     async def test_merge(self):
         a = ByteCodeFragment(name="a")
-        a.declare_var("x")
-        a.request_var("y")
+        a.declare_var(symbol("x"))
+        a.request_var(symbol("y"))
         a.instruction(OpCode.CONST, 1)
         b = ByteCodeFragment(name="b")
-        b.declare_var("z")
-        b.request_var("y")
+        b.declare_var(symbol("z"))
+        b.request_var(symbol("y"))
         b.instruction(OpCode.RETURN, 1)
         a.merge(b)
-        self.assertEqual(a.declares, ["x", "z"])
-        self.assertEqual(a.requests, ["y"])
+        self.assertEqual(a.declares, [symbol("x"), symbol("z")])
+        self.assertEqual(a.requests, [symbol("y")])
         self.assertEqual(
             a.instructions,
             [(OpCode.CONST, 1), (OpCode.RETURN, 1)],
@@ -591,22 +591,22 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
     async def test_declare_var_with_type_expr(self):
         f = ByteCodeFragment()
         t = symbol("int")
-        f.declare_var("x", type_expr=t)
-        self.assertEqual(f.declares, ["x"])
+        f.declare_var(symbol("x"), type_expr=t)
+        self.assertEqual(f.declares, [symbol("x")])
         self.assertEqual(f.annotation_bindings, [("x", t)])
 
     async def test_declare_var_without_type_expr_no_annotation_bindings(self):
         f = ByteCodeFragment()
-        f.declare_var("a")
+        f.declare_var(symbol("a"))
         self.assertEqual(f.annotation_bindings, [])
 
     async def test_merge_annotation_bindings(self):
         a = ByteCodeFragment(name="a")
         ta = symbol("int")
-        a.declare_var("x", type_expr=ta)
+        a.declare_var(symbol("x"), type_expr=ta)
         b = ByteCodeFragment(name="b")
         tb = symbol("str")
-        b.declare_var("y", type_expr=tb)
+        b.declare_var(symbol("y"), type_expr=tb)
         a.merge(b)
         self.assertEqual(a.annotation_bindings, [("x", ta), ("y", tb)])
 

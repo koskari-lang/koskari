@@ -21,7 +21,8 @@ Layout handlers for basic block syntax.
 from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...types import get_position, is_keyword, is_nil, is_pair, is_symbol, unpack
+from ...types import (
+    get_position, is_keyword, is_nil, is_pair, is_symbol, strip_mark, unpack)
 from .helpers import _keyword_block, is_block, layout
 
 
@@ -119,7 +120,7 @@ def keyword_block_value(reader, header, body):
             value.set_position(position)
         return value
 
-    head = rest.car
+    head = strip_mark(rest.car)
     layout_obj = reader.find_layout(str(head)) if is_symbol(head) else None
     if layout_obj is not None and layout_obj.peers:
         raise LayoutError(
@@ -218,6 +219,8 @@ def layout_import_from(reader, source, peers):
 
 _symbol_quote = symbol('quote')
 _symbol_quasiquote = symbol('quasiquote')
+_symbol_quote_syntax = symbol('quote-syntax')
+_symbol_quasiquote_syntax = symbol('quasiquote-syntax')
 
 
 def _unbox_compile_layout(source, peers, compile_sym, label):
@@ -267,6 +270,30 @@ def layout_quasiquote(reader, source, peers):
 
     return _unbox_compile_layout(
         source, peers, _symbol_quasiquote, 'quasiquote')
+
+
+@builtin('layout/quote-syntax')
+@layout(symbol('layout/quote-syntax'), raw=True)
+def layout_quote_syntax(reader, source, peers):
+    """
+    Unbox a synthetic quote-syntax layout block, read from a ``#'``
+    block, to ``(compile/quote-syntax INNER-BLOCK)``
+    """
+
+    return _unbox_compile_layout(
+        source, peers, _symbol_quote_syntax, 'quote-syntax')
+
+
+@builtin('layout/quasiquote-syntax')
+@layout(symbol('layout/quasiquote-syntax'), raw=True)
+def layout_quasiquote_syntax(reader, source, peers):
+    """
+    Unbox a synthetic quasiquote-syntax layout block, read from a ``#```
+    block, to ``(compile/quasiquote-syntax INNER-BLOCK)``
+    """
+
+    return _unbox_compile_layout(
+        source, peers, _symbol_quasiquote_syntax, 'quasiquote-syntax')
 
 
 # The end.

@@ -68,9 +68,16 @@ editors/emacs/koskari-mode.el: $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $
 	@echo "Re-generating koskari-mode.el..."
 	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $@
 
-editors-grammar:  ## Regenerate the tree-sitter parser (src/parser.c) from grammar.js
-	@echo "Re-generating tree-sitter parser..."
-	@cd editors/tree-sitter && npm install --silent && npx tree-sitter generate
+TREE_SITTER_IMAGE ?= docker.io/library/node:22-slim
+
+editors-grammar:  ## Regenerate the tree-sitter parser (src/parser.c) from grammar.js, in a container
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@echo "Re-generating tree-sitter parser via $(TREE_SITTER_IMAGE)..."
+	@$(CONTAINER_ENGINE) run --rm \
+		-v $(PWD)/editors/tree-sitter:/grammar:Z \
+		-w /grammar \
+		$(TREE_SITTER_IMAGE) \
+		sh -c 'npm install --silent && npx tree-sitter generate'
 
 regen-editors: editors/textmate/syntaxes/koskari.tmLanguage.json editors/tree-sitter/queries/highlights.scm editors/zed/languages/koskari/highlights.scm editors/emacs/koskari-mode.el  ## Regenerate editor syntax-highlighting assets (incremental)
 
@@ -495,6 +502,8 @@ $(ICON_LOCKUP_PNG): $(ICON_LOCKUP_SVG) $(ICON_FONTCONFIG)
 ##@ Cleanup
 
 CLEAN_DIRS := koskari tests tools examples
+# environment directories hold installed packages, not build artifacts
+CLEAN_PRUNE := \( -name .tox -o -name .venv \) -prune -o
 
 clean-built:  ## Remove build artifacts
 	@echo "Cleaning build artifacts..."
@@ -503,16 +512,16 @@ clean-built:  ## Remove build artifacts
 
 clean-ext:  ## Remove compiled extensions
 	@echo "Cleaning compiled extensions..."
-	@find $(CLEAN_DIRS) -type f -name "*.so" -delete 2>/dev/null || true
-	@find $(CLEAN_DIRS) -type f -name "*.pyd" -delete 2>/dev/null || true
-	@find $(CLEAN_DIRS) -type f -name "*.dylib" -delete 2>/dev/null || true
+	@find $(CLEAN_DIRS) $(CLEAN_PRUNE) -type f -name "*.so" -delete 2>/dev/null || true
+	@find $(CLEAN_DIRS) $(CLEAN_PRUNE) -type f -name "*.pyd" -delete 2>/dev/null || true
+	@find $(CLEAN_DIRS) $(CLEAN_PRUNE) -type f -name "*.dylib" -delete 2>/dev/null || true
 	@find koskari -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 
 clean-pyc:  ## Remove Python cache files
 	@echo "Cleaning Python cache..."
-	@find $(CLEAN_DIRS) -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find $(CLEAN_DIRS) -type f -name "*.pyc" -delete 2>/dev/null || true
-	@find $(CLEAN_DIRS) -type f -name "*.pyo" -delete 2>/dev/null || true
+	@find $(CLEAN_DIRS) $(CLEAN_PRUNE) -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find $(CLEAN_DIRS) $(CLEAN_PRUNE) -type f -name "*.pyc" -delete 2>/dev/null || true
+	@find $(CLEAN_DIRS) $(CLEAN_PRUNE) -type f -name "*.pyo" -delete 2>/dev/null || true
 
 clean-native:  ## Remove native test build artifacts
 	@$(MAKE) -C tests/native -f tests.mk clean

@@ -32,6 +32,5 @@ what lets macros like [`flet`](../macros/compile-flet.md) and
 [`labels`](../macros/compile-labels.md) carry a per-binding body
 (**`body ...`**) nested inside a per-binding declaration list.
 
-**See also:** [Macros and hygiene](../../guide/macros-and-hygiene.md), for the
-`compile/syntax-rules` hygiene patterns (`DEFINE`, `BIND` for literals, `REST`
-for rules).
+**See also:** [Macros and hygiene](../../guide/macros-and-hygiene.md),
+[Hygiene](../../guide/hygiene.md).

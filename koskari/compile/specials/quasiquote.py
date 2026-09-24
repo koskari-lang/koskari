@@ -43,7 +43,7 @@ from ...exceptions import SpecialError
 from ...lib import OpCode, bracket_nil, bracket_pair, nil, symbol
 from ...matcher import CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_nil, is_pair
+from ...types import is_nil, is_pair, strip_mark
 from ..compiler import _is_const
 
 
@@ -51,13 +51,15 @@ _symbol_quasiquote = symbol("quasiquote")
 _symbol_quote = symbol("quote")
 _symbol_unquote = symbol("unquote")
 _symbol_unquote_splicing = symbol("unquote-splicing")
+_symbol_bracket_cons = symbol("bracket-cons")
+_symbol_bracket_splice = symbol("bracket-splice")
 
 _ONE_PATTERNS = [
     MATCH(CALLEDBY("called_by"), VALUE("expr")),
 ]
 
 
-def _qq_expr(compiler, frag, expr, level):
+def _qq_expr(compiler, frag, expr, level, keep=False):
     """
     Emit bytecode for a single quasi-quoted expression at the given nesting
     level. At level 0, unquote escapes to evaluated code. Above level 0,
@@ -67,22 +69,20 @@ def _qq_expr(compiler, frag, expr, level):
     :param frag: the ByteCodeFragment to emit into
     :param expr: the source expression to quasi-quote
     :param level: nesting depth (0 = active quasi-quote level)
+    :param keep: True to emit a scoped atom as written; False projects
+        it to the symbol it spells, since quoted data is read by its
+        bare spelling
     """
 
-    if _is_const(expr):
-        frag.instruction(OpCode.CONST, expr)
-        return
+    if not keep:
+        expr = strip_mark(expr)
 
-    # redundant with _is_const(expr)
-    # if is_nil(expr):
-    #     frag.instruction(OpCode.CONST, nil)
-    #     return
-
-    if not is_pair(expr):
+    if _is_const(expr) or not is_pair(expr):
         frag.instruction(OpCode.CONST, expr)
         return
 
     head, tail = expr
+    head = strip_mark(head)
 
     if head is _symbol_unquote:
         if is_nil(tail) or not is_pair(tail):
@@ -95,7 +95,7 @@ def _qq_expr(compiler, frag, expr, level):
             frag.merge(compiler.full_compile(inner))
         else:
             frag.instruction(OpCode.CONST, _symbol_unquote)
-            _qq_expr(compiler, frag, inner, level - 1)
+            _qq_expr(compiler, frag, inner, level - 1, keep)
             frag.instruction(OpCode.PROPER, 2)
 
         return
@@ -111,14 +111,15 @@ def _qq_expr(compiler, frag, expr, level):
             raise SpecialError("quasiquote takes one argument", expr)
 
         frag.instruction(OpCode.CONST, _symbol_quasiquote)
-        _qq_expr(compiler, frag, inner, level + 1)
+        _qq_expr(compiler, frag, inner, level + 1, keep)
         frag.instruction(OpCode.PROPER, 2)
         return
 
     # [ ] lists build bracket cells directly during reconstruction:
     # _qq_list picks its constructor (bracket-cons / bracket-splice) at each
     # emission site, so construction is parallel rather than build-then-coerce.
-    _qq_list(compiler, frag, expr, level, isinstance(expr, bracket_pair))
+    _qq_list(
+        compiler, frag, expr, level, isinstance(expr, bracket_pair), keep)
 
 
 def _is_splice(expr, level):
@@ -130,7 +131,7 @@ def _is_splice(expr, level):
         level == 0
         and is_pair(expr)
         and not is_nil(expr)
-        and expr[0] is _symbol_unquote_splicing
+        and strip_mark(expr[0]) is _symbol_unquote_splicing
     )
 
 
@@ -183,14 +184,14 @@ def _emit_segment(compiler, frag, segment, as_tuple_for_splice=False,
     if bracket and not as_tuple_for_splice:
         # whole-list build for a [ ] form: bracket-cons elements + bracket-nil
         frag.instruction(OpCode.CONST, bracket_nil)
-        _emit_call_var(frag, "bracket-cons", len(segment) + 1)
+        _emit_call_var(frag, _symbol_bracket_cons, len(segment) + 1)
     else:
         frag.instruction(OpCode.PROPER, len(segment))
 
     return True
 
 
-def _compile_element(compiler, frag, expr, level):
+def _compile_element(compiler, frag, expr, level, keep=False):
     """
     Compile one element of a quasi-quoted list for storage in a segment.
 
@@ -202,8 +203,12 @@ def _compile_element(compiler, frag, expr, level):
     :param frag: the enclosing fragment (used for fragment creation)
     :param expr: the element expression
     :param level: nesting depth
+    :param keep: True to emit a scoped atom as written
     :return: (value_or_subfrag, is_const)
     """
+
+    if not keep:
+        expr = strip_mark(expr)
 
     if _is_const(expr):
         return (expr, True)
@@ -212,11 +217,11 @@ def _compile_element(compiler, frag, expr, level):
         return (nil, True)
 
     sub = compiler.fragment("qq_elem")
-    _qq_expr(compiler, sub, expr, level)
+    _qq_expr(compiler, sub, expr, level, keep)
     return (sub, False)
 
 
-def _qq_list(compiler, frag, lst, level, bracket=False):
+def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
     """
     Emit bytecode for a quasi-quoted pair (list or dotted pair).
 
@@ -256,7 +261,8 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
 
             # elem is the last element before the dotted tail of an improper
             # list
-            segment.append(_compile_element(compiler, frag, elem, level))
+            segment.append(
+                _compile_element(compiler, frag, elem, level, keep))
             break
 
         # Improper list whose dotted tail is (compile/unquote …): `current` is
@@ -267,8 +273,9 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
         if (not is_nil(current)
                 and is_pair(current)
                 and not is_nil(current.cdr)
-                and current.car is _symbol_unquote):
-            segment.append(_compile_element(compiler, frag, elem, level))
+                and strip_mark(current.car) is _symbol_unquote):
+            segment.append(
+                _compile_element(compiler, frag, elem, level, keep))
             break
 
         if _is_splice(elem, level):
@@ -293,7 +300,8 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
             splice_count += 1
 
         else:
-            segment.append(_compile_element(compiler, frag, elem, level))
+            segment.append(
+                _compile_element(compiler, frag, elem, level, keep))
 
     # current is now the cdr after the last pair: nil (proper) or a value (dotted)
     if not is_nil(current):
@@ -314,12 +322,13 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
             else:
                 frag.merge(sub_frag)
 
-        # Emit the dotted tail value
+        # Emit the dotted tail value, an atom projected like any other
         if _is_const(current):
-            frag.instruction(OpCode.CONST, current)
+            frag.instruction(
+                OpCode.CONST, current if keep else strip_mark(current))
         elif (is_pair(current)
               and not is_nil(current)
-              and current[0] is _symbol_unquote
+              and strip_mark(current[0]) is _symbol_unquote
               and level == 0):
             unquote_body = current[1]
             if is_nil(unquote_body) or not is_pair(unquote_body):
@@ -333,11 +342,11 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
                     current)
             frag.merge(compiler.full_compile(inner))
         else:
-            _qq_expr(compiler, frag, current, level)
+            _qq_expr(compiler, frag, current, level, keep)
 
         # explicit-tail build: bracket-cons for [ ], CONS for ( )
         if bracket:
-            _emit_call_var(frag, "bracket-cons", len(segment) + 1)
+            _emit_call_var(frag, _symbol_bracket_cons, len(segment) + 1)
         else:
             frag.instruction(OpCode.CONS, len(segment) + 1)
         return
@@ -356,7 +365,7 @@ def _qq_list(compiler, frag, lst, level, bracket=False):
         # the [ ] twin (only its leading cell is a bracket-pair).
         if splice_count >= 1:
             if bracket:
-                _emit_call_var(frag, "bracket-splice", splice_count)
+                _emit_call_var(frag, _symbol_bracket_splice, splice_count)
             else:
                 frag.instruction(OpCode.PAIR_SPLICE, splice_count)
     elif splice_count == 0:
@@ -378,6 +387,26 @@ def special_quasiquote(compiler, called_by, expr):
     frag = compiler.fragment(called_by.datum)
     frag.position(called_by.position)
     _qq_expr(compiler, frag, expr.datum, 0)
+    return frag
+
+
+@builtin("compile/quasiquote-syntax")
+@special("compile/quasiquote-syntax", patterns=_ONE_PATTERNS,
+         unpack="kwargs")
+def special_quasiquote_syntax(compiler, called_by, expr):
+    """
+    Compile (compile/quasiquote-syntax EXPR) as ``quasiquote`` does,
+    keeping the marks on the atoms it emits as constants. A procedural
+    macro that a template defined builds its output with this form: the
+    symbols the outer template wrote carry the outer expansion's marks,
+    and keeping them lets the output resolve to what that expansion
+    bound. Unquote and unquote-splicing sites are the same as in
+    ``quasiquote``
+    """
+
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
+    _qq_expr(compiler, frag, expr.datum, 0, keep=True)
     return frag
 
 

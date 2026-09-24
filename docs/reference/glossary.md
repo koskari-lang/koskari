@@ -25,12 +25,12 @@ with examples, see [Guide](../guide/index.md).
 
 **datum**
 : Two senses. The macro form `(datum expr)` or `(datum expr pos)` captures an
-  expression together with its source position, so renamers treat a substituted
+  expression together with its source position, so hygiene treats a substituted
   user fragment as input rather than as a freshly introduced identifier; related
   forms are `datumq`, `parse-match-patternq`, and `parse-rule-patternq`. The
-  hygiene wrapper is the `Datum` syntax box a captured pattern variable arrives
-  in at expand time -- a value plus optional position and flags, opaque to
-  renaming, peeled by the finalize step before compilation. See
+  wrapper is the `Datum` box a captured pattern variable arrives in at expand
+  time -- a value plus optional position, never marked, peeled by the finalize
+  step before compilation. See
   [Macros and hygiene](../guide/macros-and-hygiene.md),
   [compile/datum](macros/compile-datum.md),
   [koskari.hygiene](api/koskari-hygiene.md), and
@@ -55,6 +55,15 @@ with examples, see [Guide](../guide/index.md).
 **form**
 : A Koskari expression: atoms, lists, or layout-derived s-expressions.
 
+**gensym**
+: A symbol scoped by marks: the symbol a macro template wrote, `base`, under
+  the marks of the expansions that introduced it, `marks`, interned under the
+  derived spelling `tmp#1a`. `symbol?` is true for it and equality is
+  identity. `(gensym "t")` in a procedural macro mints one under a fresh mark;
+  `(gensym.next_mark)` returns the next mark, drawn from the counter the
+  expander uses. See
+  [Hygiene](../guide/hygiene.md).
+
 **layout**
 : A read-time handler for a block head (`layout/if`, `layout/block`, ...).
   Handlers run during layout expansion (`apply_layout` / `apply_layouts`) with
@@ -76,6 +85,16 @@ with examples, see [Guide](../guide/index.md).
 **macro**
 : A compile-time transformer defined with `define-syntax`. Expands to ordinary
   forms before compilation.
+
+**mark**
+: What hygiene puts on a symbol a macro template introduced: the
+  expansion that wrote it. The compiler binds and resolves a marked name
+  under its own spelling, `tmp#1a`, and a marked name nothing bound falls
+  back to the plain name. `quote` and `quasiquote` strip marks;
+  `quote-syntax` (`#'`) and `quasiquote-syntax` (`` #` ``) keep them.
+  See [Hygiene](../guide/hygiene.md),
+  [compile/quote-syntax](specials/compile-quote-syntax.md), and
+  [compile/quasiquote-syntax](specials/compile-quasiquote-syntax.md).
 
 **match**
 : Two senses. In compile-time documentation, and throughout this glossary unless

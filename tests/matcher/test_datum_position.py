@@ -40,9 +40,9 @@ def _head_tail_matcher():
 
     nodes = (
         ("TEST", "ANY", -1),
-        ("CAPTURE", 0, 0, 0, -1),
+        ("CAPTURE", 0, 0),
         ("REST", 0),
-        ("CAPTURE", 1, 2, 0, -1),
+        ("CAPTURE", 1, 2),
         ("MATCH", 1, 3),
     )
     frozen = (
@@ -122,7 +122,6 @@ class TestDatumFrameConstruction(unittest.TestCase):
         frame = DatumFrame()
         self.assertIsNone(frame.source)
         self.assertIsNone(frame.position)
-        self.assertFalse(frame.from_datum)
         self.assertEqual(dict(frame), {})
         self.assertIn("source=None", repr(frame))
         self.assertIn("position=None", repr(frame))

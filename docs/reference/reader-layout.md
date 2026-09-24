@@ -246,10 +246,11 @@ foo:
 Stream-collected peer blocks (when the layout declares peer heads) form a spine
 of `block:` conses that are expanded as one unit.
 
-Block quote and quasiquote prefixes (`'head:` and `` `head: ``) read raw
-`block:` conses in the header and body without expanding nested layout.
-They are wrapped for `layout/quote` and `layout/quasiquote` to lower at
-expansion time.
+Block quote and quasiquote prefixes (`'head:` and `` `head: ``, and their
+mark-keeping forms `#'head:` and `` #`head: ``) read raw `block:` conses in
+the header and body without expanding nested layout. They are wrapped for
+`layout/quote`, `layout/quasiquote`, `layout/quote-syntax`, and
+`layout/quasiquote-syntax` to lower at expansion time.
 
 ### Expand
 

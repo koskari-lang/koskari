@@ -58,6 +58,13 @@ class TestReaderEOF(TestCase):
             default_reader.read(source_str('"hello', "<t>"))
 
 
+    def test_syntax_quote_prefix_at_end_raises_reader_eof(self):
+        for src in ("#'", "#`"):
+            with self.assertRaises(ReaderEOF) as ctx:
+                default_reader.read(source_str(src, "<t>"))
+            self.assertNotIsInstance(ctx.exception, ReaderSyntaxError)
+
+
     def test_mismatched_bracket_stays_syntax_error(self):
         with self.assertRaises(ReaderSyntaxError):
             default_reader.read(source_str("( 1 2 ]", "<t>"))

@@ -714,6 +714,19 @@ shared default slot, with no registry and no duplicate check:
     (set! default/kafka audit-cluster))  ; so the FIRST config wins
 ```
 
+The slot is a name the variety macros share, and a name a template writes is
+private to its expansion. So each variety macro writes it raw, as
+`-'default/kafka`: the template emits `default/kafka` unmarked, and every config
+and job expansion reaches the one module binding.
+
+```koskari
+case (config/kafka () setting ...):
+    (begin
+        (define -'default/kafka)
+        (unless &-'default/kafka
+            (set! -'default/kafka (KafkaConfig setting ...))))
+```
+
 A job with no explicit config wires to `default/<type>` (guarded by
 `&default/<type>`, so a type with no config -- cron here -- simply skips it).
 
@@ -747,7 +760,7 @@ by name.
 | File | Contents |
 |---|---|
 | [kosrunner/job.ki](kosrunner/job.ki) | `Config`, `Job` base (configure/handler/`run` tracking/enabled, `jobset` back-ref), `JobSet` (tracking + control plane incl. `retrigger`), `require-extra`, `watch-task` |
-| [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `with-subitems`; the `config/logging` service config; `layout/config` |
+| [kosrunner/subitems.ki](kosrunner/subitems.ki) | `jobset`, `job`, `config`, `handler`, `on-error`, `allow`, `with-subitems`, `reqenv`; the `config/logging` service config and `configure-logging` |
 | [kosrunner/store.ki](kosrunner/store.ki) | `StorageConfig` + `RunStore` (aiosqlite run history, per-run artifacts, log capture, additive column migration) + `mnemonic` + `config/storage` |
 | [kosrunner/memwatch.ki](kosrunner/memwatch.ki) | `memory-report` / `memory-census` / `vmrss` -- process memory sampling for a cron handler |
 | [kosrunner/server.ki](kosrunner/server.ki) | `ServerConfig` (host/port/prefix dataclass), `HttpServer` (FastAPI/uvicorn, interned by host:port) + `get-server`; route/listing/action/page helpers |
@@ -781,10 +794,12 @@ enumerates types, so this is the whole recipe:
    dies silently, leaving the job reporting itself healthy while doing
    nothing, and pinning its traceback for the life of the process.
 3. Define `config/<type>` (construct the dataclass, bind the name, run the
-   `&default/<type>` guard) with the `()`-sentinel unnamed case.
+   `&-'default/<type>` guard) with the `()`-sentinel unnamed case. Write the
+   slot as `-'default/<type>` wherever it appears, so it is the shared module
+   binding and not one private to the expansion.
 4. Define `job/<type>` (parse the header, construct the job, configure it --
    `via:` the type default when one exists, fresh otherwise -- and tag-inject
-   sub-items).
+   sub-items), naming the slot the same way.
 5. Export all of it. Remember: a macro's free names resolve at the **use
    site**, so everything a `job/<type>` or `config/<type>` expansion names
    (its class, helpers) must be exported for `import-all-from kosrunner`.

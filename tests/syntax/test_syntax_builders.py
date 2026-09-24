@@ -22,7 +22,7 @@ import unittest
 import pytest
 
 from koskari.lib import Module, ModuleNamespace, cons, nil, symbol
-from koskari.types import build_proper
+from koskari.types import build_proper, strip_marks
 from tests.syntax.datum_syntax_helpers import (
     macro_from_rule_rows, special_from_match_rows, special_from_rule_rows,
     syntax_from_rule_datums)
@@ -60,7 +60,7 @@ class TestBuildSyntax(unittest.TestCase):
         comp = _StubCompiler()
         src = cons(m, symbol("z"), nil)
         out = s.compile_impl(comp, src)
-        self.assertEqual(out, symbol("first"))
+        self.assertEqual(strip_marks(out), symbol("first"))
 
     def test_build_syntax_second_arm_when_first_misses_structure(self):
         """
@@ -78,7 +78,7 @@ class TestBuildSyntax(unittest.TestCase):
         comp = _StubCompiler()
         src = cons(m, symbol("solo"), symbol("extra"), nil)
         out = s.compile_impl(comp, src)
-        self.assertEqual(out, symbol("wide"))
+        self.assertEqual(strip_marks(out), symbol("wide"))
 
     def test_build_syntax_empty_rules_raises(self):
         m = symbol("compile/m3")
@@ -110,7 +110,7 @@ class TestMacroFromRuleRows(unittest.TestCase):
         slot = symbol("slot")
         src = cons(m, slot, nil)
         out = s.compile_impl(comp, src)
-        self.assertEqual(out, symbol("macro-out"))
+        self.assertEqual(strip_marks(out), symbol("macro-out"))
         self.assertEqual(len(saw), 1)
         caps = saw[0]
         self.assertEqual(caps["v"].datum, slot)
@@ -156,7 +156,7 @@ class TestSpecialFromRuleRows(unittest.TestCase):
         s = special_from_rule_rows(m, (), ((build_proper(m, symbol("q")), proc),))
         src = cons(m, symbol("arg"), nil)
         out = s.compile_impl(None, src)
-        self.assertEqual(out, symbol("special-out"))
+        self.assertEqual(strip_marks(out), symbol("special-out"))
 
     def test_special_from_match_rows_uses_match_dialect_pattern(self):
         m = symbol("compile/sm")
@@ -169,7 +169,7 @@ class TestSpecialFromRuleRows(unittest.TestCase):
         s = special_from_match_rows(m, ((pat, proc),))
         src = cons(m, symbol("x"), nil)
         out = s.compile_impl(None, src)
-        self.assertEqual(out, symbol("match-out"))
+        self.assertEqual(strip_marks(out), symbol("match-out"))
 
     def test_special_from_rule_rows_empty_raises(self):
         m = symbol("compile/ss2")

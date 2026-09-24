@@ -25,8 +25,8 @@ from contextlib import contextmanager
 from functools import partial
 
 from .lib import (
-    Domain, KoskariSyncViolation, ParamRef, bracket_nil, bracket_pair, cons,
-    keyword, nil, nilp, pair, symbol)
+    Domain, KoskariSyncViolation, ParamRef, bracket_nil, bracket_pair,
+    cons, gensym, keyword, nil, nilp, pair, symbol)
 
 
 __all__ = (
@@ -41,6 +41,8 @@ __all__ = (
     "parameterize",
     "unpack",
     "is_on_demand",
+    "strip_mark",
+    "strip_marks",
 )
 
 
@@ -120,6 +122,48 @@ is_pair = TypePredicate("pair?", pair)
 
 is_nil = BuiltinPredicate("nil?", nilp)
 is_None = BuiltinPredicate("None?", operator.is_, None)
+
+
+def strip_mark(value):
+    """
+    The base symbol of a gensym, or value unchanged. Use where an atom
+    is read as a tag, a label, or a literal: hygiene renames only the
+    names a form binds and resolves
+    """
+
+    return value.base if type(value) is gensym else value
+
+
+def strip_marks(form):
+    """
+    A copy of a form with every gensym replaced by its base symbol.
+    Pair cells are rebuilt with their positions and delimiter style;
+    atoms other than gensyms are returned as they are
+    """
+
+    if type(form) is gensym:
+        return form.base
+
+    if not isinstance(form, pair) or nilp(form):
+        return form
+
+    cells = []
+    tail = form
+    while isinstance(tail, pair) and not nilp(tail):
+        cells.append(tail)
+        tail = tail.cdr
+
+    out = strip_marks(tail)
+    for cell in reversed(cells):
+        car = strip_marks(cell.car)
+        if isinstance(cell, bracket_pair):
+            out = bracket_pair(car, out)
+        else:
+            out = cons(car, out)
+        pos = get_position(cell)
+        if pos:
+            out.set_position(pos)
+    return out
 
 
 def is_proper(value):

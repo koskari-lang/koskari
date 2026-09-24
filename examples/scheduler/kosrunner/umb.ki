@@ -311,15 +311,15 @@ define-syntax config/umb:
     syntax-rules []:
         case (config/umb () setting ...):
             (begin
-                (define default/umb)
-                (unless &default/umb
-                    (set! default/umb (UmbConfig setting ...))))
+                (define -'default/umb)
+                (unless &-'default/umb
+                    (set! -'default/umb (UmbConfig setting ...))))
 
         case (config/umb nm setting ...):
             (begin
                 (define nm (UmbConfig setting ...))
-                (define default/umb)
-                (unless &default/umb (set! default/umb nm)))
+                (define -'default/umb)
+                (unless &-'default/umb (set! -'default/umb nm)))
 
 
 ;; `job umb <name> <destination>:` -- trigger key is the destination.
@@ -328,9 +328,9 @@ define-syntax job/umb:
         case (job/umb name destination (subhead subrest ...) ...):
             (begin
                 (define name (UmbJob destination))
-                (define default/umb)
-                (if &default/umb
-                    (.configure name via: default/umb)
+                (define -'default/umb)
+                (if &-'default/umb
+                    (.configure name via: -'default/umb)
                     (.configure name))
                 (subhead (umb name) subrest ...) ...)
 

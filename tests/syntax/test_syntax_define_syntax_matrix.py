@@ -25,7 +25,7 @@ import pytest
 
 from koskari.lib import Module, ModuleNamespace, cons, nil, symbol
 from koskari.matcher import parse_explicit_rule_pattern
-from koskari.types import build_proper
+from koskari.types import build_proper, strip_marks
 from tests.syntax.datum_syntax_helpers import (
     macro_from_match_rows, macro_from_rule_rows, special_from_match_rows,
     special_from_rule_rows, syntax_from_match_datums, syntax_from_rule_datums)
@@ -63,7 +63,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         comp = _StubCompiler()
         src = cons(m, symbol("solo"), symbol("extra"), nil)
         out = s.compile_impl(comp, src)
-        self.assertEqual(out, symbol("wide"))
+        self.assertEqual(strip_marks(out), symbol("wide"))
 
 
     def test_syntax_match_shape(self):
@@ -79,7 +79,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         comp = _StubCompiler()
         src = cons(m, symbol("arg"), nil)
         out = s.compile_impl(comp, src)
-        self.assertEqual(out, symbol("syntax-match-out"))
+        self.assertEqual(strip_marks(out), symbol("syntax-match-out"))
 
 
     def test_macro_rules_shape(self):
@@ -99,7 +99,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         slot = symbol("slotval")
         src = cons(m, slot, nil)
         out = s.compile_impl(comp, src)
-        self.assertEqual(out, symbol("macro-rules-out"))
+        self.assertEqual(strip_marks(out), symbol("macro-rules-out"))
         self.assertEqual(saw[0]["v"].datum, slot)
 
 
@@ -122,7 +122,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         slot = symbol("slotval")
         src = cons(m, slot, nil)
         out = s.compile_impl(comp, src)
-        self.assertEqual(out, symbol("macro-match-out"))
+        self.assertEqual(strip_marks(out), symbol("macro-match-out"))
         self.assertEqual(saw[0]["v"].datum, slot)
 
 
@@ -140,7 +140,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
             m, (), ((build_proper(m, symbol("q")), proc),))
         src = cons(m, symbol("arg"), nil)
         out = s.compile_impl(None, src)
-        self.assertEqual(out, symbol("special-rules-out"))
+        self.assertEqual(strip_marks(out), symbol("special-rules-out"))
 
 
     def test_special_match_shape(self):
@@ -158,7 +158,7 @@ class TestDefineSyntaxMatrix(unittest.TestCase):
         s = special_from_match_rows(m, ((pat, proc),))
         src = cons(m, symbol("arg"), nil)
         out = s.compile_impl(None, src)
-        self.assertEqual(out, symbol("special-match-out"))
+        self.assertEqual(strip_marks(out), symbol("special-match-out"))
 
 
 class TestPatternLanguageTraps(unittest.TestCase):
@@ -177,7 +177,7 @@ class TestPatternLanguageTraps(unittest.TestCase):
         comp = _StubCompiler()
         src = build_proper(m, symbol("x"), symbol("y"))
         out = s.compile_impl(comp, src)
-        self.assertEqual(out, symbol("ellipsis-ok"))
+        self.assertEqual(strip_marks(out), symbol("ellipsis-ok"))
 
 
     def test_match_dialect_rejects_same_ellipsis_spine(self):
@@ -211,7 +211,7 @@ class TestPatternLanguageTraps(unittest.TestCase):
         comp = _StubCompiler()
         src = cons(m, symbol("inner-form"), nil)
         out = s.compile_impl(comp, src)
-        self.assertEqual(out, symbol("group-out"))
+        self.assertEqual(strip_marks(out), symbol("group-out"))
 
 
     def test_top_level_ellipsis_in_parse_explicit(self):

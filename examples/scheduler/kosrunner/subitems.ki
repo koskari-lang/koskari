@@ -42,7 +42,8 @@ import-from logging basicConfig
 define-syntax job:
     macro-rules []:
         case (job tp rest ...):
-            `(,(datum (symbol f"job/{tp.datum}")) ,@rest)
+            ;; the type tag is a label: its base names the variety
+            `(,(datum (symbol f"job/{tp.datum.base}")) ,@rest)
 
 
 ;; The `jobset` macro is a partition-and-splice over its entries. It never
@@ -59,30 +60,35 @@ define-syntax jobset:
             define jobforms #[]
             define regs #[]
 
+            ;; an entry is the caller's code: it goes back out as its
+            ;; match, or rebuilt inside a datum, so hygiene leaves it be
             for-each [e entry]:
                 define-values [head [tp rest]] e.datum
-                if (== (str head) "config"):
-                    define newhead (datum (symbol f"config/{tp}"))
-                    if (keyword? (car rest)):
-                        (configs.append (cons newhead nil rest))
+                if (== (str head.base) "config"):
+                    define newhead (symbol f"config/{tp.base}")
+                    if (or (nil? rest) (keyword? (car rest))):
+                        (configs.append (datum (cons newhead nil rest)))
                     else:
-                        (configs.append (cons newhead rest))
+                        (configs.append (datum (cons newhead rest)))
                 else:
-                    (jobforms.append e.datum)
+                    (jobforms.append e)
                     define jname (car rest)
-                    (regs.append `(.register ,jsname ,(str jname) ,jname))
+                    (regs.append
+                        `(.register ,jsname ,(str jname.base) ,(datum jname)))
 
+            ;; the storage and access slots are the ones their configs
+            ;; bound at the use site, written raw
             `(begin
                 ,@configs
                 ,@jobforms
-                (define ,jsname (JobSet ,(str jsname.datum)))
-                (define default/storage)
-                (if &default/storage
-                    (.bind-store ,jsname default/storage)
+                (define ,jsname (JobSet ,(str jsname.datum.base)))
+                (define ,-'default/storage)
+                (if &,-'default/storage
+                    (.bind-store ,jsname ,-'default/storage)
                     (.bind-store ,jsname None))
-                (define default/access)
-                (if &default/access
-                    (.bind-access ,jsname default/access)
+                (define ,-'default/access)
+                (if &,-'default/access
+                    (.bind-access ,jsname ,-'default/access)
                     (.bind-access ,jsname None))
                 ,@regs)
 

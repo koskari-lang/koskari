@@ -411,6 +411,43 @@ class TestQuoted(IsolatedAsyncioTestCase):
             nil)
         self.assertEqual(col, exp)
 
+    async def test_quote_syntax_prefix(self):
+        src = """
+        #'foo
+        """
+        col = parse_source(src)
+        self.assertEqual(col, cons(symbol("quote-syntax"), symbol("foo"), nil))
+
+    async def test_quote_syntax_prefix_list(self):
+        src = """
+        #'(a b)
+        """
+        col = parse_source(src)
+        exp = cons(symbol("quote-syntax"),
+                   cons(symbol("a"), symbol("b"), nil), nil)
+        self.assertEqual(col, exp)
+
+    async def test_quasiquote_syntax_prefix(self):
+        src = """
+        #`(a ,b ,@c)
+        """
+        col = parse_source(src)
+        exp = cons(
+            symbol("quasiquote-syntax"),
+            cons(symbol("a"),
+                 cons(symbol("unquote"), symbol("b"), nil),
+                 cons(symbol("unquote-splicing"), symbol("c"), nil),
+                 nil),
+            nil)
+        self.assertEqual(col, exp)
+
+    async def test_hash_collections_still_read(self):
+        src = """
+        #[1 2]
+        """
+        col = parse_source(src)
+        self.assertEqual(col, cons(symbol("#list"), 1, 2, nil))
+
 
 class TestLists(IsolatedAsyncioTestCase):
 

@@ -18,7 +18,7 @@ code.
 Normative layout syntax (blocks, lines, colon rules, peers, EBNF) is in
 [docs/reference/reader-layout.md](../docs/reference/reader-layout.md).
 Three authoring surfaces (layout block, layout line, s-expression) are in
-[docs/reference/concepts/layout-and-s-expressions.md](../docs/reference/concepts/layout-and-s-expressions.md).
+[docs/guide/layout-and-s-expressions.md](../docs/guide/layout-and-s-expressions.md).
 
 Agent summary:
 
@@ -113,13 +113,16 @@ for macro output.
 
 **`LayoutReader.read_form`** returns a raw **`:block:`** (or a spine for peer
 groups) and a **`LINE`** for a plain line; **`read()`** folds a top-level line
-and expands a block. Quote and quasiquote block prefixes set
-**`_block_mode`** so nested colons stay raw until **`layout/quote`** /
-**`layout/quasiquote`** unbox at expansion.
+and expands a block. Quote and quasiquote block prefixes, and their
+mark-keeping forms `#'` and `` #` ``, set **`_block_mode`** so nested colons
+stay raw until **`layout/quote`** / **`layout/quasiquote`** /
+**`layout/quote-syntax`** / **`layout/quasiquote-syntax`** unbox at
+expansion.
 
-Some compiler paths preserve **`:block:`** as data — quoted blocks,
-**`compile/quasiquote-block`**, and macro templates.
-See [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block and [MACROS.md](MACROS.md).
+Some compiler paths preserve **`:block:`** as data -- quoted and
+quasiquoted blocks, and macro templates.
+See [layout/quote, layout/quasiquote, and their syntax forms](#layoutquote-layoutquasiquote-and-their-syntax-forms)
+and [MACROS.md](MACROS.md).
 
 User-facing normative syntax: [docs/reference/reader-layout.md](../docs/reference/reader-layout.md).
 
@@ -208,22 +211,30 @@ import-from itertools:
 **Implementation:** `koskari/reader/layouts/basics.layout_import_from`
 
 
-## layout/quote and layout/quasiquote
+## layout/quote, layout/quasiquote, and their syntax forms
 
-**Symbols:** `layout/quote`, `layout/quasiquote`
+**Symbols:** `layout/quote`, `layout/quasiquote`, `layout/quote-syntax`,
+`layout/quasiquote-syntax`
 
-**Use-case:** A **`'`** or **`` ` ``** prefix on a block head. The reader
-wraps the raw **`:block:`** in a synthetic
-**`(:block: (quote) INNER)`** (or `quasiquote`), the inner block as the one
-body entry, for these raw handlers to unbox.
+**Use-case:** A **`'`**, **`` ` ``**, **`#'`**, or **`` #` ``** prefix on a
+block head. The reader wraps the raw **`:block:`** in a synthetic
+**`(:block: (quote) INNER)`** (or `quasiquote`, `quote-syntax`,
+`quasiquote-syntax`), the inner block as the one body entry, for these raw
+handlers to unbox.
 
-**Behaviour:** **`(compile/quote INNER-BLOCK)`** or
-**`(compile/quasiquote INNER-BLOCK)`**, where INNER-BLOCK is the raw
-`:block:` cons, not layout-expanded. No peers.
+**Behaviour:** **`(compile/quote INNER-BLOCK)`**,
+**`(compile/quasiquote INNER-BLOCK)`**, **`(compile/quote-syntax
+INNER-BLOCK)`**, or **`(compile/quasiquote-syntax INNER-BLOCK)`**, where
+INNER-BLOCK is the raw `:block:` cons, not layout-expanded. The syntax forms
+keep the hygiene marks on the block's symbols. No peers.
 
 **Implementation:** `koskari/reader/layouts/basics.layout_quote`,
-`koskari/reader/layouts/basics.layout_quasiquote`;
-reader side `koskari/reader/parser.LayoutReader._read_quote_block`
+`koskari/reader/layouts/basics.layout_quasiquote`,
+`koskari/reader/layouts/basics.layout_quote_syntax`,
+`koskari/reader/layouts/basics.layout_quasiquote_syntax`;
+reader side `koskari/reader/layout.LayoutReader._read_quote_block` and
+`_read_quasiquote_block`, reached through the `#` event macro for the
+syntax forms
 
 
 ## layout/class

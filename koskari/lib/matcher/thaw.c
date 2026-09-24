@@ -104,7 +104,6 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
 
   KosMatchNode n;
   memset(&n, 0, sizeof(n));
-  n.as.capture.scope_slot = KOS_MATCH_NO_INDEX;
   n.as.capture.subnode = KOS_MATCH_NO_INDEX;
   Py_ssize_t arity = PyTuple_GET_SIZE(t);
 
@@ -123,11 +122,10 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
       return -1;
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "CAPTURE") == 0) {
-    if (arity != 5) {
+    if (arity != 3) {
       PyErr_Format(PyExc_ValueError,
-                   "CAPTURE node tuple must be 5-tuple "
-                   "(kind, slot, subnode, hygiene_role, scope_slot), "
-                   "got %zd", arity);
+                   "CAPTURE node tuple must be 3-tuple "
+                   "(kind, slot, subnode), got %zd", arity);
       return -1;
     }
     n.kind = KOS_MATCH_NODE_CAPTURE;
@@ -136,22 +134,6 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
       return -1;
     if (thaw_parse_index(PyTuple_GET_ITEM(t, 2),
                          &n.as.capture.subnode, "CAPTURE.subnode"))
-      return -1;
-    PyObject *hr = PyTuple_GET_ITEM(t, 3);
-    if (! PyLong_Check(hr)) {
-      PyErr_SetString(PyExc_TypeError,
-                      "CAPTURE.hygiene_role must be int");
-      return -1;
-    }
-    long hr_v = PyLong_AsLong(hr);
-    if (hr_v < 0 || hr_v > 0xFFFF) {
-      PyErr_SetString(PyExc_ValueError,
-                      "CAPTURE.hygiene_role out of uint16 range");
-      return -1;
-    }
-    n.as.capture.hygiene_role = (uint16_t) hr_v;
-    if (thaw_parse_index(PyTuple_GET_ITEM(t, 4),
-                         &n.as.capture.scope_slot, "CAPTURE.scope_slot"))
       return -1;
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "FORM") == 0) {

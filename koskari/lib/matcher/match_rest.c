@@ -20,15 +20,15 @@ rest_value_for_range(
     PyObject *value = e->subj->vt->tail(e->subj, length);
     if (! value)
       return NULL;
-    return kos_datum_from_spine_cell(e, e->subj, length, value);
+    return kos_datum_from_spine_cell(e->subj, length, value);
   }
   if (end == length) {
     PyObject *value = e->subj->vt->tail(e->subj, start);
     if (! value)
       return NULL;
-    return kos_datum_from_spine_cell(e, e->subj, start, value);
+    return kos_datum_from_spine_cell(e->subj, start, value);
   }
-  return wrap_slice_datums(e, e->subj, start, end);
+  return wrap_slice_datums(e->subj, start, end);
 }
 
 

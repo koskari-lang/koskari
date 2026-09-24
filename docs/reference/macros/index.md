@@ -65,12 +65,12 @@ the REPL shows the expansion of any of them.
 
 | Macro | Does |
 |-------|------|
-| [`define-syntax`](compile-define-syntax.md) | Define a transformer, with any of the rule and match kinds or a bare form |
+| [`define-syntax`](compile-define-syntax.md) | Define a transformer, with any of the rule and match kinds or a bare form; its template names are kept apart from the use site, see [Hygiene](../../guide/hygiene.md) |
 | [`extend-syntax`](compile-extend-syntax.md) | Add arms to an existing transformer |
 | [`let-syntax`](compile-let-syntax.md) | A transformer scoped to a body |
 | [`inline-macro`](compile-inline-macro.md) | Run a body at expand time and splice its result |
 | [`datum`](compile-datum.md) | Capture a form with its source position for hygiene |
-| [`datumq`](compile-datumq.md) | The same without evaluating the argument |
+| [`datumq`](compile-datumq.md) | The same without evaluating the argument; in a template, writes a form raw (`-'form`) |
 | [`define-fence`](compile-define-fence.md) | Define a fence handler for a triple-backtick literal |
 | [`macroexpand`, `macroexpand-1`](compile-macroexpand.md) | Expand a form fully, or by one step |
 | [`macroexpandq`, `macroexpandq-1`](compile-macroexpandq.md) | The same without quoting the form |

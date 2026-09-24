@@ -56,14 +56,14 @@ define-syntax config/fake:
     syntax-rules []:
         case (config/fake () setting ...):
             (begin
-                (define default/fake)
-                (unless &default/fake
-                    (set! default/fake (FakeConfig setting ...))))
+                (define -'default/fake)
+                (unless &-'default/fake
+                    (set! -'default/fake (FakeConfig setting ...))))
         case (config/fake nm setting ...):
             (begin
                 (define nm (FakeConfig setting ...))
-                (define default/fake)
-                (unless &default/fake (set! default/fake nm)))
+                (define -'default/fake)
+                (unless &-'default/fake (set! -'default/fake nm)))
 
 
 ;; The `job fake <name>:` variety syntax. Fake has no trigger-key, so
@@ -74,9 +74,9 @@ define-syntax job/fake:
         case (job/fake name (subhead subrest ...) ...):
             (begin
                 (define name (FakeJob 'name))
-                (define default/fake)
-                (if &default/fake
-                    (.configure name via: default/fake)
+                (define -'default/fake)
+                (if &-'default/fake
+                    (.configure name via: -'default/fake)
                     (.configure name))
                 (subhead (fake name) subrest ...) ...)
 

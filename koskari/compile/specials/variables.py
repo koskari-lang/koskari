@@ -25,6 +25,7 @@ compile/globals, and compile/locals.
 
 from ...bootstrap import builtin
 from ...exceptions import CompilerError, SpecialError
+from ...hygiene import binding_atom
 from ...lib import Datum, OpCode, cons, keyword, symbol
 from ...matcher import (
     BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR, REST,
@@ -88,7 +89,7 @@ def special_setq(compiler, caps):
     binding SYM
     """
 
-    sym = str(caps["sym"].datum)
+    symatom = caps["sym"].datum
     pos = caps["sym"].position
     expr = caps["expr"].datum
 
@@ -97,9 +98,9 @@ def special_setq(compiler, caps):
     if not is_pair(expr):
         frag.position(pos)
 
-    frag.request_for_write(sym, position=pos)
+    frag.request_for_write(symatom, position=pos)
     frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.VAR_STORE, sym)
+    frag.instruction(OpCode.VAR_STORE, symatom)
     frag.instruction(OpCode.CONST, None)
 
     return frag
@@ -131,7 +132,7 @@ def special_setq_values(compiler, caps):
     lhs = lhs_mr.datum
 
     for namesym in unpack_lhs_bind_symbols(lhs, flatten=True):
-        frag.request_for_write(str(namesym), position=pos)
+        frag.request_for_write(namesym, position=pos)
 
     frag.position(expr_mr.position)
     frag.merge(compiler.full_compile(expr_mr.datum))
@@ -188,8 +189,8 @@ def special_delq(compiler, caps):
     frag = compiler.fragment(called_by)
 
     frag.position(pos)
-    frag.request_for_write(str(sym), position=pos)
-    frag.instruction(OpCode.VAR_CLEAR, str(sym))
+    frag.request_for_write(sym, position=pos)
+    frag.instruction(OpCode.VAR_CLEAR, sym)
     frag.instruction(OpCode.CONST, None)
 
     return frag
@@ -214,8 +215,8 @@ def special_takeq(compiler, caps):
     frag = compiler.fragment(called_by)
 
     frag.position(pos)
-    frag.request_for_write(str(sym), position=pos)
-    frag.instruction(OpCode.VAR_TAKE, str(sym))
+    frag.request_for_write(sym, position=pos)
+    frag.instruction(OpCode.VAR_TAKE, sym)
 
     return frag
 
@@ -230,8 +231,6 @@ def emit_define_value(compiler, frag, caps, namesym, type_expr):
 
     :return: the fragment
     """
-
-    name = str(namesym)
 
     if "body" in caps:
         formals = caps["formals"]
@@ -262,7 +261,7 @@ def emit_define_value(compiler, frag, caps, namesym, type_expr):
         return frag
 
     frag.merge(compiler.full_compile(val_expr))
-    frag.instruction(OpCode.VAR_STORE, name)
+    frag.instruction(OpCode.VAR_STORE, namesym)
     frag.instruction(OpCode.CONST, None)
 
     return frag
@@ -274,14 +273,14 @@ _DEFINE_INLINE_PATTERNS = [
         DEFINE("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         REST("body")),
     MATCH(
         CALLEDBY(),
         DEFINE("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
-        FORMALS("formals", scope="body"),
+        FORMALS("formals"),
         REST("body")),
     MATCH(
         CALLEDBY(),
@@ -308,7 +307,7 @@ _DEFINE_INLINE_PATTERNS = [
 ]
 
 _DEFINE_DECL_PATTERNS = [
-    MATCH(CALLEDBY(), DECL("decl"), FORMALS("formals", scope="body"), BODY("body")),
+    MATCH(CALLEDBY(), DECL("decl"), FORMALS("formals"), BODY("body")),
     MATCH(CALLEDBY(), DECL("decl"), VALUE("value")),
     MATCH(CALLEDBY(), DECL("decl")),
 ]
@@ -330,16 +329,17 @@ def special_define(compiler, caps):
     pos = caps["called-by"].position
 
     namesym, type_expr = _define_name_type_pos_from_match(caps)
-    name = str(namesym)
+
+    namesym = binding_atom(compiler, namesym)
 
     frag = compiler.fragment(called_by)
 
     # the function shorthand declares untyped: the return type rides on
     # the function form instead
     if "body" in caps or type_expr is None:
-        frag.declare_var(name, position=pos)
+        frag.declare_var(namesym, position=pos)
     else:
-        frag.declare_var(name, position=pos, type_expr=type_expr)
+        frag.declare_var(namesym, position=pos, type_expr=type_expr)
 
     return emit_define_value(compiler, frag, caps, namesym, type_expr)
 
@@ -389,7 +389,7 @@ def special_define_global(compiler, caps):
 
     frag = compiler.fragment(called_by)
     try:
-        frag.request_global(name)
+        frag.request_global(namesym)
     except CompilerError:
         raise SpecialError(
             '%r cannot be both local (define) and global (define-global).'

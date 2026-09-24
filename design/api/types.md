@@ -11,6 +11,9 @@ Types are defined in the native extension `koskari.lib`; the Python module `kosk
 - Created via `symbol("name")` or reader
 - Used for variable names, function names, etc.
 - Symbols are interned (same name = same object)
+- `.base` is the symbol itself; on a gensym it is the symbol the template
+  wrote, so a reader of a tag or label takes `.base` with no type test.
+  Keywords carry `.base` the same way
 
 **Predicates**:
 - `is_symbol(obj)`: Check if object is symbol
@@ -83,17 +86,25 @@ Types are defined in the native extension `koskari.lib`; the Python module `kosk
 
 ### Gensym
 
-**`gensym([prefix])`**: Generate unique symbol
-- Creates unique symbol for macro hygiene
-- Optional prefix string
-- Guaranteed unique within compilation unit
-
-**`lazygensym(name)`**: Lazy gensym
-- Creates symbol that looks up name at runtime
-- Used for forward references
+**`gensym`**: a static subtype of `symbol` scoped by expansion marks
+(`koskari/lib/atom.c`)
+- `gensym(name=None, predicate=None)` mints a symbol under a fresh mark:
+  the base is `name` (a str, symbol, or gensym, whose own marks are kept),
+  and `predicate`, when given, rejects candidate spellings
+- `gensym(base, marks=...)` spells `base`, a symbol, under the given marks,
+  a non-empty tuple of ints, or one int; returns the interned gensym when
+  one exists and raises `ValueError` when another atom holds the spelling
+- Interned in the symbol table under the derived spelling, the base followed
+  by `#` and the lowercase hex of each mark, `tmp#1a`; equality is identity
+- `.base`: the symbol without its marks; `.marks`: the tuple of marks,
+  outermost first
+- `gensym.next_mark()`: the process counter the expander draws marks from,
+  seeded once per process from `os.urandom`
+- `symbol?` and `isinstance(x, symbol)` are true for a gensym; `type(x) is
+  gensym` tells it apart
 
 **Predicates**:
-- `is_lazygensym(obj)`: Check if lazy gensym
+- `is_symbol(obj)`: True for a gensym as for any symbol
 
 ## From sibilant-ceval
 

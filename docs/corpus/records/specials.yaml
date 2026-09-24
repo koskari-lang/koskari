@@ -1715,3 +1715,188 @@ tags:
   - import
   - star-import
 notes: "the bare form is equivalent to import-all-from: declare-exports names feature stems and __all__ is materialized at end of load as the binding keys they resolve to, so the star already carries every facet"
+---
+id: special-quote-syntax-symbol-001
+feature: special/compile/quote-syntax
+source: (quote-syntax x)
+verify:
+  read: (quote-syntax x)
+  expand: (quote-syntax x)
+  eval: symbol:x
+references:
+  - reference/specials/compile-quote-syntax.md
+  - guide/hygiene.md
+stability: evolving
+tags:
+  - special
+  - quote-syntax
+  - metaprogramming
+  - hygiene
+notes: like quote, but a symbol a macro template wrote keeps its hygiene mark; on plain source the two are the same
+---
+id: reader-quote-syntax-shorthand-001
+feature: reader/quote-syntax
+source: "#'hello"
+verify:
+  read: (quote-syntax hello)
+  expand: (quote-syntax hello)
+  eval: symbol:hello
+references:
+  - reference/grammar.md
+  - reference/specials/compile-quote-syntax.md
+stability: evolving
+tags:
+  - special
+  - reader
+  - quote-syntax
+  - metaprogramming
+  - hygiene
+notes: "#' is reader shorthand for (compile/quote-syntax ...); the mark-keeping counterpart of '"
+---
+id: reader-quasiquote-syntax-unquote-001
+feature: reader/quasiquote-syntax
+source: "#`(1 ,z 3)"
+verify:
+  read: (quasiquote-syntax (1 (unquote z) 3))
+  expand: (quasiquote-syntax (1 (unquote z) 3))
+  eval: proper-list:[1,1,3]
+references:
+  - reference/grammar.md
+  - reference/specials/compile-quasiquote-syntax.md
+stability: evolving
+tags:
+  - special
+  - reader
+  - quasiquote-syntax
+  - unquote
+  - metaprogramming
+  - hygiene
+notes: "#` is reader shorthand for (compile/quasiquote-syntax ...); comma is active inside it as inside a backtick; z=1 fixture"
+---
+id: reader-quasiquote-syntax-splice-002
+feature: reader/quasiquote-syntax
+source: "#`(0 ,@seq)"
+verify:
+  read: (quasiquote-syntax (0 (unquote-splicing seq)))
+  expand: (quasiquote-syntax (0 (unquote-splicing seq)))
+  eval: proper-list:[0,1,2,3]
+references:
+  - reference/grammar.md
+  - reference/specials/compile-quasiquote-syntax.md
+stability: evolving
+tags:
+  - special
+  - reader
+  - quasiquote-syntax
+  - unquote-splicing
+  - metaprogramming
+  - hygiene
+notes: ",@ splices inside #` as it does inside a backtick; seq=(1,2,3) fixture"
+---
+id: special-quasiquote-syntax-long-form-001
+feature: special/compile/quasiquote-syntax
+source: (quasiquote-syntax (1 (unquote z)))
+verify:
+  read: (quasiquote-syntax (1 (unquote z)))
+  expand: (quasiquote-syntax (1 (unquote z)))
+  eval: proper-list:[1,1]
+references:
+  - reference/specials/compile-quasiquote-syntax.md
+  - guide/hygiene.md
+stability: evolving
+tags:
+  - special
+  - quasiquote-syntax
+  - unquote
+  - metaprogramming
+  - hygiene
+notes: "the long form spelled without the #` prefix; a comma is only active after a reader prefix, so the unquote is written long here too; z=1 fixture"
+---
+id: layout-quote-syntax-block-001
+feature: layout/quote-syntax
+source: |-
+  define b:
+    #'foo:
+      a
+      b
+  
+verify:
+  read: "(define b (quote-syntax (block: (foo) (a) (b))))"
+  expand: "(define b (quote-syntax (block: (foo) (a) (b))))"
+  eval: "null"
+references:
+  - reference/reader-layout.md
+  - reference/specials/compile-quote-block.md
+  - reference/specials/compile-quote-syntax.md
+stability: evolving
+tags:
+  - special
+  - reader
+  - layout
+  - quote-syntax
+  - surface:block
+  - metaprogramming
+  - hygiene
+notes: "#' before a block head quotes the raw block: cons as data keeping hygiene marks, through layout/quote-syntax; define returns None"
+---
+id: layout-quasiquote-syntax-block-001
+feature: layout/quasiquote-syntax
+source: |-
+  define b:
+    #`foo:
+      ,z
+      b
+  
+verify:
+  read: "(define b (quasiquote-syntax (block: (foo) ((unquote z)) (b))))"
+  expand: "(define b (quasiquote-syntax (block: (foo) ((unquote z)) (b))))"
+  eval: "null"
+references:
+  - reference/reader-layout.md
+  - reference/specials/compile-quasiquote-block.md
+  - reference/specials/compile-quasiquote-syntax.md
+stability: evolving
+tags:
+  - special
+  - reader
+  - layout
+  - quasiquote-syntax
+  - unquote
+  - surface:block
+  - metaprogramming
+  - hygiene
+notes: "#` before a block head quasiquotes the raw block: cons keeping hygiene marks, through layout/quasiquote-syntax; a comma line is an unquote entry; define returns None"
+---
+id: reader-datumq-shorthand-001
+feature: reader/datumq
+source: -'foo
+verify:
+  read: (datumq foo)
+  expand: (call datum (quote foo) ...)
+references:
+  - reference/grammar.md
+  - guide/hygiene.md
+stability: evolving
+tags:
+  - reader
+  - datumq
+  - metaprogramming
+  - hygiene
+notes: "-' is reader shorthand for (datumq ...): in a syntax-rules template it writes the form raw and unmarked, and in code it is the datumq macro, a Datum of the quoted form. Every other - reads as before"
+---
+id: reader-datumq-shorthand-nested-002
+feature: reader/datumq
+source: -'-'foo
+verify:
+  read: (datumq (datumq foo))
+  expand: (call datum (quote (datumq foo)) ...)
+references:
+  - reference/grammar.md
+  - guide/hygiene.md
+stability: evolving
+tags:
+  - reader
+  - datumq
+  - metaprogramming
+  - hygiene
+notes: "Repeating -' nests: a macro-generating template writes -'-'name, the outer expansion emits the raw (datumq name) into the inner template, and the inner expansion writes the raw name"

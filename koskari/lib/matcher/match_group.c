@@ -62,8 +62,7 @@ static int match_group(
 
   e->cur_captures = parent_dict;
   e->capture_parent = old_capture_parent;
-  if (datum_frame_set_source(
-          e->in_from_datum, sub, e->subj, start, *cursor)) {
+  if (datum_frame_set_source(sub, e->subj, start, *cursor)) {
     Py_DECREF(sub);
     return -1;
   }

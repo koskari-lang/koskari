@@ -6,8 +6,8 @@
 ;; never protocol-relative "//" ones. Enforcement stays R4's underneath.
 
 import-from .harness SchedulerAsyncTestCase
-import-from kosrunner:
-    AccessConfig Group group HttpServer UiConfig UiJob
+(use kosrunner
+     AccessConfig Group group HttpServer UiConfig UiJob)
 
 
 define OPERATOR "root@example.com"

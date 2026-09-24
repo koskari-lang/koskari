@@ -1,9 +1,12 @@
 # Block quote
-**Syntax:** `'HEAD: BODY` (reader shorthand)
+**Syntax:** `'HEAD: BODY` (reader shorthand); `#'HEAD: BODY` keeps hygiene
+marks
 
 There is no `quote-block` special. A `'` immediately before a block head is a
 reader shorthand that lowers to [`compile/quote`](compile-quote.md) over the
-block's raw `block:` cons.
+block's raw `block:` cons, through the `layout/quote` handler; `#'` lowers to
+[`compile/quote-syntax`](compile-quote-syntax.md) through
+`layout/quote-syntax`.
 
 **Use-case:** Capture an indented block as literal data. The whole block,
 including any nested sub-blocks, becomes a `block:` cons without running layout

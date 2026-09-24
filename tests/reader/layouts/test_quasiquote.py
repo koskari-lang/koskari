@@ -152,6 +152,62 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
 
+    async def test_quasiquote_syntax_block(self):
+        src = """
+        define get-name []:
+          #`begin:
+            ,@hello
+        """
+
+        _kw_block = keyword(':block:')
+
+        expected = pycons(
+          (symbol("define"), symbol("get-name"), nil,
+           (symbol("quasiquote-syntax"),
+            (_kw_block,
+             (symbol("begin"),),
+             (keyword(':splice:'),
+              (symbol("unquote-splicing"), symbol("hello")))))))
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
+    async def test_quote_syntax_block(self):
+        src = """
+        define get-name []:
+          #'begin:
+            hello
+        """
+
+        _kw_block = keyword(':block:')
+
+        expected = pycons(
+          (symbol("define"), symbol("get-name"), nil,
+           (symbol("quote-syntax"),
+            (_kw_block,
+             (symbol("begin"),),
+             (symbol("hello"),)))))
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
+    async def test_quasiquote_syntax_atom_in_layout_block(self):
+        src = """
+        define get-name []:
+          #`hello
+        """
+
+        expected = pycons(
+          (symbol("define"), symbol("get-name"), nil,
+           (symbol("quasiquote-syntax"), symbol("hello")))
+        )
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
     async def test_quote_block_with_peers(self):
         """
         A quasiquote-block whose body contains if/else sibling sub-blocks.

@@ -76,11 +76,11 @@ def special_while(compiler, _while, test, body):
 _FOREACH_PATTERNS = (
     MATCH(
         CALLEDBY("_foreach"),
-        BINDING("binding", scope="body"),
+        BINDING("binding"),
         BODY("body")),
     MATCH(
         CALLEDBY("_foreach"),
-        USING_UNPACK("using", scope="body"),
+        USING_UNPACK("using"),
         BODY("body")),
 )
 
@@ -125,7 +125,7 @@ def special_for_each(compiler, caps):
         lhs = using["lhs"].datum
         fragment.merge(using_unpack_helper(compiler, lhs, src))
     else:
-        binding_name = str(binding["name"].datum)
+        binding_name = binding["name"].datum
         fragment.declare_var(binding_name)
         fragment.instruction(OpCode.VAR_STORE, binding_name)
 

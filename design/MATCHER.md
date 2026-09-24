@@ -1,10 +1,10 @@
 # Koskari matcher reference
 
 Canonical reference for the native matcher (`koskari.lib.Matcher`), the Python
-pattern builders in `koskari.matcher`, freeze-time hygiene plans
-(`koskari.hygiene.Hygiene`), capture wrappers (`Datum`, `DatumFrame`), and the
-**runtime match/case system** (the case-pattern dialect, the `MATCH_CASE`
-opcode, and `compile/match` / `layout/match`).
+pattern builders in `koskari.matcher`, the capture wrappers (`Datum`,
+`DatumFrame`), the scoped symbols (`koskari.lib.gensym`) that carry macro
+hygiene, and the **runtime match/case system** (the case-pattern dialect, the
+`MATCH_CASE` opcode, and `compile/match` / `layout/match`).
 
 **Implementation:** `koskari/matcher.py`, `koskari/hygiene.py`,
 `koskari/syntax.py`, `koskari/lib/matcher.{c,h}`;
@@ -14,11 +14,11 @@ runtime match/case: `koskari/compile/specials/conditionals.py`,
 
 **Related design (deeper or historical):**
 
-- [api/pattern-matching.md](api/pattern-matching.md) — tagged-tuple IR and migration notes
-- [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md) — hygiene discovery goals and macro modes
-- [language/matcher-ng-rollup.md](language/matcher-ng-rollup.md) — rollout notes and as-built sketches
-- [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) — `Datum` in macro expansion
-- [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — specials, syntax-rules, and shared finalize pipeline
+- [api/pattern-matching.md](api/pattern-matching.md) -- tagged-tuple IR and migration notes
+- [archive/matcher-hygiene-extensions.md](archive/matcher-hygiene-extensions.md) -- the superseded discovery-by-pattern hygiene design
+- [archive/matcher-ng-rollup.md](archive/matcher-ng-rollup.md) -- rollout notes and as-built sketches from before hygiene by marks; the hygiene names it uses are gone
+- [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) -- `Datum` in macro expansion
+- [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) -- specials, syntax-rules, and shared finalize pipeline
 - [archive/match-pattern-language.md](archive/match-pattern-language.md) — runtime pattern-language design record
 - [archive/match-case-form.md](archive/match-case-form.md) — MATCH_CASE opcode / cache design record
 - [language/define-matcher.md](language/define-matcher.md) — parameterized matcher templates (open design)
@@ -36,29 +36,22 @@ runs against the subject wrapped as a length-1 sequence). Patterns are built
 in Python (`MATCH(...)`, `BINDINGS(...)`, …) or parsed from surface syntax,
 lowered to a frozen **6-tuple** IR, and executed by the C `Matcher`.
 
-Two compilation paths exist:
-
-| Compiler | Produces | Use when |
-|----------|----------|----------|
-| `MatchCompiler` | Frozen matcher only | Runtime matching, tests, patterns that do not need hygiene metadata |
-| `HygienicMatchCompiler` | Frozen matcher **and** `Hygiene` plan | Compile-time specials, `Syntax` / `Transform` arms, anything that participates in `collect_binding_symbols` |
+One compilation path: `MatchCompiler` lowers a pattern to the frozen tuple.
 
 ```python
-from koskari.matcher import MATCH, BIND, DEFINE, BODY, HygienicMatchCompiler, make_matcher
-from koskari.lib import Matcher
+from koskari.matcher import MATCH, DEFINE, BODY, MatchCompiler, make_matcher
 
-hc = HygienicMatchCompiler()
-frozen = hc.lower(MATCH(DEFINE("name"), BODY("body")))
-matcher = Matcher.from_tuple(frozen)
-hygiene = hc.build_hygiene()
+matcher = MatchCompiler.compile(MATCH(DEFINE("name"), BODY("body")))
 ```
 
-`make_matcher(pattern)` is shorthand for `MatchCompiler.compile(pattern)` (no
-hygiene). `Pattern.build()` on a pattern object uses the same baseline compiler.
+`make_matcher(pattern)` and `Pattern.build()` are the same call. A pattern
+carries no hygiene metadata: which names a form binds is the handler's
+business, and hygiene is provenance on the atoms themselves (see
+[Hygiene model](#hygiene-model)).
 
 Special forms and syntax macros attach patterns via `@special(..., patterns=...)`
-or `Syntax(...)`. Each winning arm stores `matcher` + `hygiene` on its
-`Transform`, built with `HygienicMatchCompiler` in `koskari.syntax.Transform.__init__`.
+or `Syntax(...)`. Each arm stores its `matcher` on its `Transform`, built in
+`koskari.syntax.Transform.__init__`.
 
 ---
 
@@ -70,8 +63,7 @@ Lowering emits:
 ("MATCHER", slot_names, extern_names, consts, nodes, entry_index)
 ```
 
-- **Matching** and **thaw** use only this tuple; hygiene is never embedded in it.
-- **Hygiene** is a separate structure (`Hygiene.to_tuple` / `from_tuple`, tag `HYGIENE`).
+- **Matching** and **thaw** use only this tuple.
 - `thaw(frozen)` and `Matcher.from_tuple(frozen)` reconstruct a native matcher.
 
 `MatchResult.captures` is a **sparse** dict: only slots that actually bound appear.
@@ -83,12 +75,11 @@ Check membership before use.
 
 ### Datum
 
-`koskari.lib.Datum` is the hygiene **syntax box**: a native wrapper around a
-captured value with optional source position and flags.
+`koskari.lib.Datum` is the box the matcher puts input material in: a native
+wrapper around a captured value with its source position.
 
-Captures are boxed only on a walk over source: a `KosPair` spine (cell
-positions travel with the value) or a walk inside a substitution `Datum`
-(`from_datum` must travel). A tuple, list, or single-value subject yields
+Captures are boxed only on a walk over source, a `KosPair` spine whose cell
+positions travel with the value. A tuple, list, or single-value subject yields
 raw values in `captures`, including REST tails, multi-cell slices, and
 REPEAT rows. The pattern parsers (`parse_matcher`, `parse_case_element`,
 `parse_case_pattern`) hand their source element in as a one-cell pair
@@ -98,20 +89,35 @@ spine for this reason.
 |------------------|------|
 | `.datum` | Wrapped value (symbol, pair spine, list, etc.) |
 | `.position` | Source position when matched from `KosPair` cells; else `None` |
-| `.from_datum` | When true, the capture came from **substitution** (pattern variable), not template introduction |
 
-**Macro expansion:** substituted pattern-variable values are stored as `Datum`
-unchanged. Hygiene renaming must not descend into those cells.
+**Macro expansion:** substituted pattern-variable values are spliced into the
+expansion as their `Datum`. A `Datum` is never marked and never entered:
+whatever is inside came from the use site. Finalize (`peel_datums`) unboxes
+the cells for compilation and moves each position onto its cell.
 
-**Binder discovery:** `iter_introduced_symbols` on composites skips captures
-where `_intro_suppressed(capture)` is true (`Datum` with `from_datum=True`).
+The matcher reads through `Datum` layers when it matches shape, so a use
+site's boxed atoms match `SYMBOL`, `LITERAL_KW`, and the composites like
+bare atoms. A gensym is a symbol and needs no peel: `SYMBOL` takes it,
+`TEST_LITERAL` matches it against the symbol it spells by pointer, and a
+capture hands it back as itself.
 
-**Region walks:** `collect_binding_symbols` treats a bare `Datum` node as
-opaque (returns immediately). `iter_recurse_targets` yields are skipped when
-the value is a `Datum` instance.
+### gensym
 
-**Finalize:** `finalize_macro_hygiene_unbox_one_pass` peels `Datum` for compile
-without gensymming substituted interiors.
+`koskari.lib.gensym` is a static subtype of `symbol`: a symbol a template
+introduced, scoped by the marks of the expansions that introduced it. It
+is interned in the symbol table under its derived spelling, so
+`symbol("t#1")` is the gensym when one is alive, and equality is identity
+as for every atom. `gensym(name, predicate)` mints a fresh mark from the
+process counter; `gensym(base, marks=...)` spells a base under given marks
+and raises `ValueError` when another atom holds the spelling.
+`gensym.next_mark()` hands out the next mark. Keywords are never scoped.
+
+| Field / property | Role |
+|------------------|------|
+| `.base` | The symbol the template wrote; `.base` on a plain symbol or keyword is itself |
+| `.marks` | Tuple of expansion marks, outermost first |
+| `str()` | The derived spelling, `name#hex[#hex...]`, that the compiler declares and resolves |
+| `kos_repr` | The base, so printed expansions read as source |
 
 ### DatumFrame
 
@@ -130,7 +136,6 @@ without gensymming substituted interiors.
 - Behaves like a `dict` of inner capture keys (`name`, `expr`, `positionals`, …).
 - `.source` — the **whole matched cell** as a pair spine (not a dict key).
 - `.position` — position of that cell.
-- `.from_datum` — propagated when the frame represents substituted material.
 
 Use `.source` when compile code needs the raw declaration, binding cell, or
 formals list spine without re-parsing from inner keys.
@@ -165,13 +170,8 @@ they add no match-time Python logic.
 | `(val: x)` | `LITERAL(x)` |
 | `(CLASS Sym (FIELD ...))` | `CLASS` + `FIELD` nodes |
 
-Capture options on named captures (not matched input):
-
-```scheme
-(scope: body)
-(mode: parallel)    ; BINDINGS only at factory level
-(role: N)             ; stored on CAPTURE wire; reserved
-```
+A named capture takes no options; a keyword other than the constraint
+markers in its argument list is an error.
 
 ### Rule-level patterns (`parse_explicit_rule_pattern`)
 
@@ -196,8 +196,7 @@ Built-ins registered in `MATCHER_REGISTRY` include:
 
 ## Structural primitives
 
-These lower to native nodes. None register hygiene unless wrapped by a
-hygienic composite or by `VALUE` / `BODY`.
+These lower to native nodes.
 
 | Pattern | Match behaviour | Capture |
 |---------|-----------------|---------|
@@ -230,14 +229,14 @@ raises `KoskariSyncViolation`.
 
 ### Ergonomic shorthands (primitives)
 
-| Shorthand | Expands to | Hygiene |
-|-----------|------------|---------|
-| `BIND(slot)` | `CAPTURE(slot)` | None |
-| `SYMBOL(slot)` | `CAPTURE(slot, TYPE("symbol"))` | None |
-| `KEYWORD(slot)` | `CAPTURE(slot, TYPE("keyword"))` | None |
-| `PAIR(slot)` | `CAPTURE(slot, TYPE("pair"))` | None |
-| `VALUE(slot)` | `CAPTURE(slot)` + **scope region** | See below |
-| `BODY(slot)` | `REST(slot, min_tail=1)` + **scope region** | See below |
+| Shorthand | Expands to |
+|-----------|------------|
+| `BIND(slot)` | `CAPTURE(slot)` |
+| `SYMBOL(slot)` | `CAPTURE(slot, TYPE("symbol"))` |
+| `KEYWORD(slot)` | `CAPTURE(slot, TYPE("keyword"))` |
+| `PAIR(slot)` | `CAPTURE(slot, TYPE("pair"))` |
+| `VALUE(slot)` | `CAPTURE(slot)`; the slot holds an expression the form evaluates |
+| `BODY(slot)` | `REST(slot, min_tail=1)`; the slot holds a body tail |
 
 ### `repeat_capture` and binding helpers
 
@@ -259,122 +258,142 @@ one row (usually a `dict` or `DatumFrame`).
 
 ## Hygiene model
 
-Hygiene is discovered from **the same pattern** used to match a special form,
-without hard-coding form names in `koskari.hygiene`.
+Hygiene is provenance, not discovery. Nothing in a pattern says what a form
+binds; the special that compiles the form knows, and the compiler resolves
+names with that knowledge at the point it declares or references them.
 
-### Freeze time
+### Marking
 
-`HygienicMatchCompiler` records:
+Each arm expansion draws a fresh mark from `gensym.next_mark()`, a counter
+in C seeded once per process from a random 32-bit base, so a scoped
+spelling serialized into a `.kio` by one process is not minted again for a
+different name by the process that loads it.
 
-- **Binders** — slots whose patterns introduce names (`DEFINE`, `BINDINGS`, …).
-- **Regions** — slots whose captures are walked as lexical extent (`VALUE`, `BODY`).
-- **Scoped slots** — region slots referenced by a binder’s `scope:` / `scopes:`;
-  walked via the binder’s `_scopes`, not as standalone regions.
-- **Edges** — `group_child` (nested `GROUP`), `repeat_element` (`repeat_capture` lists).
+- A template arm scopes every template-literal symbol while it transcribes
+  (`expand_template_with_hygiene(template, bindings, mark)`). Keywords pass
+  through unchanged. Substituted captures are spliced in as their `Datum`,
+  unmarked.
+- A procedural arm's output is scoped after the handler returns
+  (`mark_expansion`): every symbol outside a `Datum`. A `Datum` the
+  handler built, or spliced from a capture, is left alone.
+- Scoping a gensym extends its tuple. That is the only way marks
+  accumulate: a template symbol inside a `define-syntax` the outer template
+  introduced is template-literal to the inner expansion as well.
+- Finalize peels the `Datum` boxes (`peel_datums`) and hands the form, marks
+  intact, back into the compile loop.
 
-`Pattern.visit` + `on_pattern` call `register_hygiene` on objects implementing
-`HygienicPattern`.
+A keyword formal a template writes therefore binds under the name the
+caller writes, and the template's scoped reference to it falls back to that
+name. A keyword-named parameter is the one binder hygiene does not scope.
 
-### Runtime walk (`walk_hygiene_tree`)
+### Raw forms in templates
 
-For each hygiene node on a successful match:
+A template pair headed by the raw `datumq` symbol is a directive
+(`_is_datumq_directive` in `koskari.hygiene`). `(datumq X)` transcribes
+to `Datum(X, position)`, the position being the spine cell that holds
+`X`; it is not marked and not entered, so a pattern variable inside is
+not substituted, and `_collect_symbols` skips it so a name inside never
+drives an ellipsis. Any other arity is a `CompilerError`. The head is
+matched by identity, so a transcription consumes its own directives and
+an inner template sees only raw ones: `((datumq datumq) ...)` emits a
+literal call, and `(datumq (datumq X))` reaches a nested template as
+`(datumq X)`. `-'X` reads as `(datumq X)`. `syntax-rules` and
+`syntax-match` share the path; in a procedural arm `(datumq X)` is the
+bootstrap macro, which yields the same `Datum` at run time.
 
-1. **Binders** — `iter_introduced_symbols` → add to `binding_symbols`.
-2. **Binders** — `iter_recurse_targets` → `collect_binding_symbols` on each
-   (initializer expressions), skipping `Datum`.
-3. **Binders** — `_scopes` → walk sibling capture slots (e.g. let body).
-4. **Regions** — `iter_scope_targets` → `_collect_from_region_root` on each
-   (unless slot is only in `scoped_slots`).
-5. **Edges** — recurse into nested `GROUP` dicts or `REPEAT` frame lists.
+### Reading a scoped atom
 
-`_collect_from_region_root` treats a spine whose `car` is a resolved compile
-head as **one application** and calls `special.match_for_hygiene` on it;
-otherwise it walks each top-level sibling.
+A gensym reaches the compiler wherever the template symbol would have, and
+every symbol test accepts it. The rule at each site:
 
-### Match-time vs hygiene-time
+| The atom is read as | Do |
+|---------------------|----|
+| a binder or a reference | pass the atom; the processor spells it |
+| a head in call position | `find_compiled` tries the spelling's candidates, then the bare name |
+| a tag, label, literal, attribute, import member, operator | `.base`, or `strip_mark` when the operand may not be an atom |
+| quoted data | `quote` / `quasiquote` project to the base; `quote-syntax` keeps the gensym |
+| a name shared with the use site | the template writes `(datumq name)`, or `-'name` |
 
-| Concern | Mechanism |
-|---------|-----------|
-| Does the form shape match? | Native `Matcher.match` |
-| What names does this form introduce? | `Hygiene` + `walk_hygiene_tree` |
-| What code is in scope for those names? | Region walks + binder `scope:` |
-| What must not be renamed? | `Datum` / `from_datum` |
+`koskari.types.strip_mark` projects one value, `strip_marks` a whole form;
+`type(x) is gensym` is the exact-type test, and a known atom reads `.base`.
+Handlers that go through `gather_formals`, the unpack helpers,
+`compile_symbol`, and the fragment's `request_var` / `declare_var` get
+the key for free; a handler that reads a name by hand applies the table.
 
----
+### Resolution
 
-## Hygiene reference by matcher
+Declares are immediate: a marked binder is declared under its gensym. A
+marked reference is emitted as its atom, and the fragment raises its `marked`
+flag. When the fragment completes and every declaration visible to it is
+final, `Resolver.resolve` in `koskari.hygiene` chooses each name, walking the
+instruction stream through `ByteCodeFragment.rewrite_vars`, which tracks the
+inline scopes. `function_constant` completes an unmarked function body at
+once; a marked one is deferred as a `HygieneFunctionSpec`, which completes
+against its ancestry chain when the enclosing fragment completes and is then
+replaced by its `FunctionSpec`. A sibling defined later in the same body, as
+the functions of a `labels` form are, is therefore visible to a closure
+defined before it.
 
-Legend:
+The candidates for `gensym(t, marks=(1, 2))` are `t#1#2`, `t#1`, `t`,
+longest first.
+The first candidate declared in a visible scope wins: the inline scopes open
+around the reference in the instruction stream, the fragment itself, the
+fragments enclosing it. Failing that, a marked spelling already bound in the
+module wins (a definition an earlier turn made, as a macro-generating
+macro's expansion leaves behind). Failing that, the bare name, which the
+runtime resolves as usual. A binder in a sibling scope is not visible and
+does not count. The chosen atom is written into the instruction operands,
+the closure requests, and the inline scopes' namespace specs; the
+`ByteCodeProcessor` spells every name when it copies the rows.
 
-- **Capture** — binds `captures[slot]` (or nested dict keys).
-- **Introduce** — symbols added to `binding_symbols` for gensym rename.
-- **Recurse** — nested forms scanned for inner binders (not renamed here).
-- **Region walk** — `iter_scope_targets`; full subtree hygiene via
-  `collect_binding_symbols` / nested specials.
-- **Scoped via binder** — slot listed in composite `scope:` / `scopes:`; walked
-  from binder, not registered as a standalone region.
+Free template references therefore reach the runtime bare, and a function
+carries one closure slot per name, not one per expansion.
 
-### Primitives and shorthands
+### Heads
 
-| Matcher | Capture | Introduce | Recurse | Region walk |
-|---------|---------|-----------|---------|-------------|
-| `BIND` / bare `CAPTURE` | One element | No | No | No |
-| `SYMBOL` | One symbol | No | No | No |
-| `KEYWORD` | One keyword | No | No | No |
-| `PAIR` | One pair | No | No | No |
-| `REST` | Tail spine | No | No | No |
-| `VALUE` | One element | No | No | **Yes** — entire capture |
-| `BODY` | Tail (`min_tail=1`) | No | No | **Yes** — entire capture as one extent |
-| `MATCH`, `FORM`, `LITERAL`, … | Via children only | Via children | Via children | Via children |
+`find_compiled(gensym)` tries `compile/<candidate>` for each candidate, so a
+transformer the same expansion defined under a marked spelling is found from
+the template that uses it, and every other marked head falls through to the
+bare special or macro. Specials and macros win over local bindings in head
+position regardless, so marks change which transformer runs only in that
+one case.
 
-### Composites
+### Quoting
 
-| Composite | Capture result | Introduce | Recurse | Region / scope |
-|-----------|----------------|-----------|---------|----------------|
-| `DEFINE(slot)` | Symbol in `slot` | **Yes** — `slot` symbol | No | Optional `scope:` / `scopes:` on sibling slots |
-| `DECL(slot)` | Dict / `DatumFrame`: `name`, `type`, `decl_tail`, … | **Yes** — declaration name | **Yes** — `type`, keyword tail pairs | Optional `scope:` |
-| `BINDING(slot)` | Dict / `DatumFrame`: `name`, `expr` | **Yes** — `name` | **Yes** — `expr` | Optional `scope:` |
-| `BINDINGS(slot)` | `nil` or **list** of row dicts | **Yes** — each row `name` | **Yes** — each row `expr` | Optional `scope:`; `mode:` stored, **not interpreted** yet |
-| `FORMALS(slot)` | Dict / `DatumFrame`: `positionals`, `defaults`, `star`, `kwonly`, `starstar`, `by_refs` | **Yes** — param names, `*`, `**` | **Yes** — default / attr value expressions | Optional `scope:`; `&`-prefixed names recorded in `by_refs` |
-| `USING(slot)` | Dict / `DatumFrame`: `lhs`, `name`, `expr` (arm-dependent) | **Yes** — `name` when present | **Yes** — `expr` | Optional `scope:` |
-| `USING_UNPACK(slot)` | Dict / `DatumFrame`: `lhs`, `expr` | **Yes** — symbols from unpack `lhs` | **Yes** — `expr` | Optional `scope:` |
+`quote` and `quasiquote` strip marks from literal data, so `'(t)` in a
+template yields the bare symbol. `compile/quote-syntax` and
+`compile/quasiquote-syntax`, read as `#'` and `` #` ``, keep them. The
+syntax specials quote patterns, literals, and templates with `quote-syntax`,
+which is what lets a macro-generating macro's inner template reach the
+outer expansion's binder; a procedural macro a template defines builds its
+output with `quasiquote-syntax` for the same reason, since a plain backtick
+projects the outer marks and the output resolves at the use site. The codex
+writes a gensym constant as the `SYMBOL` record of its base: no mark
+survives compilation. Sealed code reaches its bindings through spelled
+operands, and a template loaded from a `.kio` is source that its next
+expansion marks afresh.
 
-`DEFINE` does **not** imply hygienic rewriting of a sibling value slot; only the
-defined **name** is introduced. Use `VALUE` for RHS slots that must be walked for
-nested binders, or `BIND` when the slot is opaque data (literal lists, quasiquote
-fragments, etc.).
+### Display
+
+`kos_repr` of a gensym prints the base, so `macroexpand-1` output and the
+corpus `expand` records read as source. `str` and `repr` show the derived
+spelling.
 
 ### Typical special-form shapes
 
 ```python
-# define: name introduced; value walked for nested binders
+# define: name bound; value is an expression the form evaluates
 _MATCH_DEFINE = MATCH(DEFINE("name"), VALUE("value"))
 
-# let: parallel bindings; body is scope region
-_MATCH_LET = MATCH(
-    BINDINGS("bindings", mode="parallel", scope="body"),
-    BODY("body"))
+# let: bindings, then the body
+_MATCH_LET = MATCH(BINDINGS("bindings"), BODY("body"))
 
-# lambda: formals introduce; body walked
-_MATCH_LAMBDA = MATCH(
-    FORMALS("formals", scope="body"),
-    BODY("body"))
+# lambda: formals, then the body
+_MATCH_LAMBDA = MATCH(FORMALS("formals"), BODY("body"))
 ```
 
-```python
-# syntax-rules spec: name introduced; literals are data; rules tail is not a body
-_SYNTAX_RULES = MATCH(
-    SYMBOL("_"),           # head ignored for hygiene (not DEFINE)
-    DEFINE("name"),
-    BIND("literals"),       # not VALUE — do not region-walk literal list
-    REST("rules"))
-```
-
-Use `BIND` (not `VALUE`) for the literals position so hygiene does not descend
-into `(syntax-rules sym …)` embedded inside the literals list. A separate
-collector issue can still mis-classify such a spine as a full
-`compile/syntax-rules` form when walked as a compile head; fixing that may
-require collector guards, not matcher syntax alone.
+`VALUE` and `BODY` lower exactly as `BIND` and `REST(min_tail=1)`; the
+spelling records the slot's role for the reader.
 
 ---
 
@@ -405,7 +424,7 @@ require collector guards, not matcher syntax alone.
 - Phases (all optional): positionals → defaults → `*:` → kw-only → `**:`.
 - A positional or keyword name may carry a leading `&` **by-ref** marker;
   parsing strips it and records the name in the `by_refs` tuple on `Formals`
-  (never on `*` / `**`). See [SYNTAX.md](../SYNTAX.md) (By-ref formals).
+  (never on `*` / `**`). See [SYNTAX.md](SYNTAX.md) (By-ref formals).
 - **Compile:** `gather_formals` in `koskari.compile.helpers`.
 
 ### USING / USING_UNPACK
@@ -421,27 +440,20 @@ require collector guards, not matcher syntax alone.
 
 Each transform arm:
 
-1. Lowers `pattern` with `HygienicMatchCompiler`.
-2. Stores `matcher` + `hygiene` on the arm.
-3. `try_expand` runs `matcher.match(source_obj)` then `handle_expand`.
+1. Lowers `pattern` with `MatchCompiler` and stores the `matcher`.
+2. `try_expand` runs `matcher.match(source_obj)` then `handle_expand`.
 
-`Syntax.match_for_hygiene(form)` returns `(captures, pattern, hygiene)` for the
-first matching arm, or `(None, None, None)`.
+`SyntaxTransform.handle_expand` transcribes the template with a fresh mark;
+`MacroTransform.handle_expand` runs the handler and marks its output. Both
+end in `koskari.syntax._finalize_macro_output`, which applies the layout
+handlers and then `finalize_expansion`.
 
-### `collect_binding_symbols`
+### Pattern parsing under marks
 
-Used during macro finalize (`koskari.syntax._finalize_macro_output`):
-
-1. Walk template / expanded form pair tree.
-2. On compile head, call `special.match_for_hygiene`.
-3. If a hygiene plan exists, `walk_hygiene_tree`.
-4. Else fall back to element-wise descent.
-
-### Template expansion
-
-`syntax-rules` uses matcher-driven binding discovery and
-`expand_template_with_hygiene`. Substituted subtrees remain `Datum`-boxed;
-introduced template identifiers are gensymmed.
+`parse_syntax_rules_pattern` reads a marked pattern atom through
+`strip_mark` to classify it, matches a literal by name, and names a pattern
+variable's slot by the atom's key, so a template's marked reference finds
+its own variable and a bare use-site symbol does not.
 
 ---
 
@@ -451,35 +463,23 @@ introduced template identifiers are gensymmed.
 |--------|-----|
 | Match and bind any single cell | `BIND` |
 | Match a symbol cell | `SYMBOL` |
-| Match a symbol that **introduces** a binding | `DEFINE` |
-| Match RHS / initializer and find binders inside | `VALUE` |
-| Match statement tail / lambda body extent | `BODY` |
-| Match tail without hygiene registration | `REST` |
-| Match literal identifier list / opaque subform | `BIND` (not `VALUE`) |
-| Match binding list for let | `BINDINGS(..., scope="body")` |
-| Match formals list | `FORMALS(..., scope="body")` |
+| Match the symbol a form defines | `DEFINE` |
+| Match an expression the form evaluates | `VALUE` |
+| Match a body tail | `BODY` |
+| Match any tail | `REST` |
+| Match binding list for let | `BINDINGS` |
+| Match formals list | `FORMALS` |
 | Match exact atom | `LITERAL` / `LITERAL_SYM` / `LITERAL_KW` |
 | Repeat rule elements | `repeat_capture` + `REPEAT` |
 
-**Common mistake:** `VALUE("literals")` on a slot that holds a **list of symbols**
-(cannot contain binders). Hygiene will still **region-walk** the list and may treat
-nested `(syntax-rules …)` spines as full specials. Prefer `BIND("literals")`.
-
-**Doc vs implementation:** older text sometimes describes `VALUE` as “same as
-`BIND` but not a scope region.” In the current code, `VALUE` **registers a scope
-region** and is the right choice when you **want** descent (e.g. `compile/define`
-value arm). `BIND` is the right choice when you do not.
-
 ---
 
-## ONEOF, GROUP, and hygiene nesting
+## ONEOF and GROUP nesting
 
 - **ONEOF** branches use separate capture scopes; duplicate slot names across
-  arms are allowed.
-- **GROUP(slot, …)** with a name creates a `group_child` hygiene edge so nested
-  binders inside the group are discovered in a child hygiene node.
-- **REPEAT** over `GROUP(None, row)` links `repeat_element` edges when lowered
-  under `HygienicMatchCompiler` with `note_repeat_capture`.
+  arms are allowed, and a branch's slots count as formals.
+- **GROUP(slot, …)** opens a nested capture scope whose slots do not count as
+  formals of the enclosing pattern.
 
 ---
 
@@ -491,10 +491,9 @@ value arm). `BIND` is the right choice when you do not.
 | `parse_explicit_rule_pattern` | Proper list spine | `syntax-rules` / `syntax-match` rule patterns |
 | `parse_case_pattern` / `parse_case_element` | One match/case clause delimiter / one case element | Runtime `match`/`case` patterns (see the runtime section below) |
 
-Surface heads and capture options are shared; rule-level parsing sequences cells
-and supports `(BINDINGS bindings mode: parallel)` declarations. The case
-dialect adds the reader-sugar heads and delegates marked / registry-headed
-forms back to `parse_matcher`.
+Surface heads and capture options are shared; rule-level parsing sequences
+cells. The case dialect adds the reader-sugar heads and delegates marked /
+registry-headed forms back to `parse_matcher`.
 
 ---
 
@@ -553,26 +552,30 @@ patterns.
 ```python
 from koskari.matcher import (
     make_matcher, thaw, pattern_slot_names,
-    MATCH, BIND, VALUE, BODY, DEFINE, BINDINGS, FORMALS,
-    HygienicMatchCompiler,
+    MATCH, BIND, VALUE, BODY, DEFINE, BINDINGS, FORMALS, MatchCompiler,
 )
 from koskari.hygiene import (
-    collect_binding_symbols,
-    walk_hygiene_tree,
-    introduced_symbols_from_match,
+    expand_template_with_hygiene, mark_expansion, peel_datums,
+    finalize_expansion, candidates, Resolver, Deferred,
+    HygieneFunctionSpec, function_constant, equal_by_base,
 )
+from koskari.types import strip_mark, strip_marks
 from koskari.compile.helpers import match, match_pattern_raw
 ```
 
 | Function | Role |
 |----------|------|
-| `make_matcher(pat)` | Compile without hygiene |
-| `HygienicMatchCompiler().lower(pat)` | Frozen tuple + optional `build_hygiene()` |
+| `make_matcher(pat)` | Compile a pattern |
 | `pattern_slot_names(pat)` | Slot names in declaration order |
 | `match(source, patterns)` | Try patterns; optional `with_specs` |
 | `match_pattern_raw(source, patterns)` | First capture dict or `None` |
-| `collect_binding_symbols(form, find_compiled)` | Binding symbols for finalize |
-| `introduced_symbols_from_match(matched, hygiene)` | Binders only, no `find_compiled` |
+| `expand_template_with_hygiene(tpl, bindings, mark)` | Transcribe and scope |
+| `mark_expansion(form, mark)` | Scope a procedural arm's output |
+| `finalize_expansion(form, mark=None)` | Scope when given, then peel `Datum` |
+| `strip_mark(atom)` / `strip_marks(form)` | The atom or form projected to bases |
+| `Resolver(fragment, ancestors, module_names).resolve(fragment)` | Resolve scoped references at completion |
+| `function_constant(compiler, parent, body, name, formals_spec)` | A body's FunctionSpec now, or a HygieneFunctionSpec when marked |
+| `equal_by_base(left, right)` | Forms equal with every gensym read as its base |
 | `parse_case_pattern(content)` | Lower one match/case clause delimiter |
 | `parse_case_element(elem)` | Lower one case-pattern element |
 
@@ -585,7 +588,11 @@ from koskari.compile.helpers import match, match_pattern_raw
 | Composites | `tests/matcher/test_composites.py` |
 | Repeat frames | `tests/matcher/test_repeat_frames.py` |
 | DatumFrame | `tests/syntax/test_syntax_bootstrap.py` (`TestDatumFrame`) |
-| Hygiene / finalize | `tests/hygiene/test_hygiene.py` |
+| Template expansion | `tests/hygiene/test_hygiene.py` |
+| The gensym type | `tests/lib/test_gensym.py` |
+| Gensyms through the compiler | `tests/compile/specials/test_marked_forms.py` |
+| Gensyms through the matcher | `tests/matcher/test_marked_subject.py` |
+| Hygiene end to end | `tests/reproducers/test_mark_hygiene.py` |
 | Special patterns | `koskari/compile/specials/` |
 | Case-pattern dialect, `APP`, `MAP` | `tests/matcher/test_case_patterns.py` |
 | `MATCH_CASE` opcode | `tests/lib/opcode/test_match_case.py` |
@@ -599,14 +606,11 @@ from koskari.compile.helpers import match, match_pattern_raw
 When adding a new composite:
 
 1. Implement `_expand()` as pure structure.
-2. If it introduces binders, implement `iter_introduced_symbols` and
-   `register_hygiene` → `add_binder` (or inherit `HygieneWireSlotScopes`).
-3. If initializers or types need discovery, implement `iter_recurse_targets`.
-4. If a body slot should be in scope, take `scope=` / `scopes=` and document which
-   sibling slot (`BODY`, `REST`, etc.) must be registered as a region or scoped slot.
-5. Register a surface factory in `register_builtin_matchers()` if exposed in
+2. Register a surface factory in `register_builtin_matchers()` if exposed in
    `parse_matcher` / rule patterns.
-6. Add tests for both match shape and hygiene discovery.
+3. Add tests for the match shape.
 
-Keep hygiene metadata out of the frozen matcher tuple; extend `Hygiene` / composites
-only when discovery rules change.
+When writing a special that reads a name out of the form by hand, apply the
+table under [Reading a scoped atom](#reading-a-scoped-atom): the key for a
+binder or reference, `strip_mark` for anything compared by name. A missed
+peel fails loud, as a NameError on a mangled name.

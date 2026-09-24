@@ -1,5 +1,9 @@
 # Syntax macros (RULE only): ellipsis, templates, and NG implementation status
 
+**Status:** Archived. The hygiene names it traces were replaced by hygiene
+by marks; see [gensym-atom-subtype.md](gensym-atom-subtype.md) and the
+[SYNTAX.md](../SYNTAX.md) rollup.
+
 This document is **design and inventory for a future implementation**. It
 describes one important use case (ellipsis with repeated sub-patterns), traces
 the **actual** `syntax` + `hygiene` pipeline for **syntax macros built

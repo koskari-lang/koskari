@@ -1,10 +1,13 @@
 # Block quasiquote
-**Syntax:** `` `HEAD: BODY `` (reader shorthand)
+**Syntax:** `` `HEAD: BODY `` (reader shorthand); `` #`HEAD: BODY `` keeps
+hygiene marks
 
 There is no `quasiquote-block` special. A backtick immediately before a block
 head is a reader shorthand that lowers to
 [`compile/quasiquote`](compile-quasiquote.md) over the block's raw `block:`
-cons.
+cons, through the `layout/quasiquote` handler; `` #` `` lowers to
+[`compile/quasiquote-syntax`](compile-quasiquote-syntax.md) through
+`layout/quasiquote-syntax`.
 
 **Use-case:** Capture an indented block as a template, with `,EXPR` and
 `,@EXPR` unquote sites active throughout the header and the body. This is how
@@ -54,8 +57,8 @@ A nested peer stays a nested entry:
 ```
 
 **Expansion:** A filled block is still reader form. Macro expansion runs the
-layout handlers over a transformer's output before hygiene, so a macro whose
-template is a block quasiquote needs no extra step. A pipeline that builds a
+layout handlers over a transformer's output before the captured material is
+unboxed, so a macro whose template is a block quasiquote needs no extra step. A pipeline that builds a
 block at run time and wants source out of it calls
 [`apply-layout`](../runtime/block-quasiquote-and-block-layout-expansion.md)
 itself:

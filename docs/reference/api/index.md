@@ -29,7 +29,7 @@ layout handler, or driven by tooling.
 | [`koskari.compile`](koskari-compile.md) | The compiler |
 | [`koskari.compile.specials`](koskari-compile-specials.md) | The special forms, by family |
 | [`koskari.syntax`](koskari-syntax.md) | Syntax transformers: rules, match, and bare forms |
-| [`koskari.hygiene`](koskari-hygiene.md) | Datum wrappers and renaming for macro expansion |
+| [`koskari.hygiene`](koskari-hygiene.md) | Template expansion, marking, and finalize for macro expansion |
 | [`koskari.matcher`](koskari-matcher.md) | The pattern matcher behind specials, macros, and `match` |
 | [`koskari.serialize`](koskari-serialize.md) | The codex format for `.kio` files |
 | [`koskari.dis`](koskari-dis.md) | The bytecode disassembler |

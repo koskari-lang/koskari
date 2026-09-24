@@ -25,7 +25,7 @@ Pluggable name-resolution semantics for the compiler.
 from typing import Optional, Protocol, Tuple
 
 from ...exceptions import CompilerError
-from ...lib import FunctionSpec, NamespaceSpec
+from ...lib import FunctionSpec, NamespaceSpec, symbol
 
 
 def _unique_append(lst, val):
@@ -39,33 +39,43 @@ def _unique_append(lst, val):
         lst.append(val)
 
 
+def _spellings(fragment):
+    """
+    The spellings of the names a fragment declares or binds globally,
+    as a Code spells them
+    """
+
+    return [str(n) for n in fragment.declares] + [
+        str(n) for n in fragment._request_global]
+
+
 class ResolutionPragma(Protocol):
     """
     Protocol for resolution semantics during compilation
     """
 
-    def on_write(self, fragment, name: str, *, position=None):
+    def on_write(self, fragment, name, *, position=None):
         """
         Invoked when a write (setq, delq, inplace) is encountered
         """
         ...
 
 
-    def on_declare(self, fragment, name: str, *, position=None):
+    def on_declare(self, fragment, name, *, position=None):
         """
         Invoked when a name is declared (define, params, bindings)
         """
         ...
 
 
-    def on_explicit_global(self, fragment, name: str, *, position=None):
+    def on_explicit_global(self, fragment, name, *, position=None):
         """
         Invoked when a name is explicitly declared global (define-global)
         """
         ...
 
 
-    def on_request_var(self, fragment, name: str):
+    def on_request_var(self, fragment, name):
         """
         Invoked when a closure read is requested (name not yet declared)
         """
@@ -86,9 +96,17 @@ class ResolutionPragma(Protocol):
         ...
 
 
+    def closure_names(self, fragment):
+        """
+        The symbols a fragment closes over
+        """
+        ...
+
+
     def build_namespace_spec(self, fragment) -> NamespaceSpec:
         """
-        Build NamespaceSpec from fragment buckets
+        Build NamespaceSpec from fragment buckets; the names stay atoms
+        until lowering spells them
         """
         ...
 
@@ -147,17 +165,16 @@ class KoskariPragma:
         self._inline_scopes = {}
 
 
-    def on_write(self, fragment, name: str, *, position=None):
+    def on_write(self, fragment, name, *, position=None):
         """
-        Record a write (setq, delq, inplace) to name.
+        Record a write (setq, delq, inplace) to name, a symbol.
         Adds to requests_for_write unless already declared or global.
         """
 
-        name = str(name)
-
-        # Store first occurrence position for validation error messages
+        # Store first occurrence position for validation error messages,
+        # keyed by spelling since validation reads names from a Code
         if position is not None:
-            key = (id(fragment), name)
+            key = (id(fragment), str(name))
             if key not in self._write_positions:
                 self._write_positions[key] = position
 
@@ -165,13 +182,11 @@ class KoskariPragma:
             _unique_append(fragment.requests_for_write, name)
 
 
-    def on_declare(self, fragment, name: str, *, position=None):
+    def on_declare(self, fragment, name, *, position=None):
         """
-        Record a declaration (define, params, bindings).
-        Removes name from other buckets and adds to declares.
+        Record a declaration (define, params, bindings) of name, a
+        symbol. Removes name from other buckets and adds to declares.
         """
-
-        name = str(name)
 
         for bucket in (fragment.requests, fragment.requests_for_write,
                        fragment._request_global):
@@ -181,17 +196,16 @@ class KoskariPragma:
         _unique_append(fragment.declares, name)
 
 
-    def on_explicit_global(self, fragment, name: str, *, position=None):
+    def on_explicit_global(self, fragment, name, *, position=None):
         """
-        Record explicit global (define-global).
+        Record explicit global (define-global) of name, a symbol.
         Conflicts with local declaration; removes from requests buckets.
         """
 
-        name = str(name)
         if name in fragment.declares:
             raise CompilerError(
-                '%r cannot be both local (define) and global (define-global).'
-                % (name,),
+                f"{str(name)!r} cannot be both local (define) and global"
+                " (define-global).",
                 name)
 
         for bucket in (fragment.requests, fragment.requests_for_write):
@@ -201,13 +215,12 @@ class KoskariPragma:
         _unique_append(fragment._request_global, name)
 
 
-    def on_request_var(self, fragment, name: str):
+    def on_request_var(self, fragment, name):
         """
-        Record a closure read request.
+        Record a closure read request of name, a symbol.
         Adds to requests unless already declared.
         """
 
-        name = str(name)
         if name not in fragment.declares:
             _unique_append(fragment.requests, name)
 
@@ -224,10 +237,10 @@ class KoskariPragma:
         pass
 
 
-    def build_namespace_spec(self, fragment) -> NamespaceSpec:
+    def closure_names(self, fragment):
         """
-        Build NamespaceSpec from fragment buckets.
-        Closure = requests + requests_for_write minus globals.
+        The symbols a fragment closes over: its requests and write
+        requests, less its explicit globals, in first-request order
         """
 
         seen = set(fragment._request_global)
@@ -236,13 +249,20 @@ class KoskariPragma:
             if n not in seen:
                 seen.add(n)
                 closure.append(n)
+        return closure
 
-        global_syms = tuple(fragment._request_global)
+
+    def build_namespace_spec(self, fragment) -> NamespaceSpec:
+        """
+        Build NamespaceSpec from fragment buckets; the names stay atoms
+        until lowering spells them
+        """
+
         return NamespaceSpec(
             fragment.name,
             tuple(fragment.declares),
-            tuple(closure),
-            global_syms,
+            tuple(self.closure_names(fragment)),
+            tuple(fragment._request_global),
         )
 
 
@@ -271,13 +291,10 @@ class KoskariPragma:
         # scope or one that lexically encloses it. Ancestors are read now,
         # not when the Code was built, so a define later in an enclosing
         # body still counts.
-        accum = []
-        accum.extend(nspec.local_syms)
-        accum.extend(nspec.global_syms)
+        satisfied = set(nspec.local_syms)
+        satisfied.update(nspec.global_syms)
         for ancestor in self._code_ancestors.get(id(code), ()):
-            accum.extend(ancestor.declares)
-            accum.extend(ancestor._request_global)
-        satisfied = set(accum)
+            satisfied.update(_spellings(ancestor))
 
         source_frag = self._code_to_fragment.get(id(code))
 
@@ -291,16 +308,14 @@ class KoskariPragma:
         # itself and its own chain, which this function is part of
         if source_frag is not None:
             for scope, ancestors in self._inline_scopes.get(id(source_frag), ()):
-                scope_satisfied = set(scope.declares)
-                scope_satisfied.update(scope._request_global)
+                scope_satisfied = set(_spellings(scope))
                 for ancestor in ancestors:
-                    scope_satisfied.update(ancestor.declares)
-                    scope_satisfied.update(ancestor._request_global)
+                    scope_satisfied.update(_spellings(ancestor))
                 for name in scope.requests_for_write:
                     if name in scope.propagated_writes:
                         continue
-                    if name not in scope_satisfied:
-                        self._raise_unsatisfied_write(scope, name)
+                    if str(name) not in scope_satisfied:
+                        self._raise_unsatisfied_write(scope, str(name))
 
         # Recurse into nested function Codes; the pool is only how they
         # are found, each carries its own recorded ancestry
@@ -331,15 +346,18 @@ class KoskariPragma:
         outer's own.
         """
 
-        closure_syms = inner_nspec.closure_syms
-        for name in closure_syms:
-            if name not in fragment.declares:
-                _unique_append(fragment.requests, name)
+        # the inner Code spells its names; each becomes the symbol under
+        # that spelling as it enters the outer fragment
+        for name in inner_nspec.closure_syms:
+            sym = symbol(name)
+            if sym not in fragment.declares:
+                _unique_append(fragment.requests, sym)
 
         for name in (inner_write_syms or ()):
-            if name not in fragment.requests_for_write:
-                _unique_append(fragment.propagated_writes, name)
-            self.on_write(fragment, name)
+            sym = symbol(name)
+            if sym not in fragment.requests_for_write:
+                _unique_append(fragment.propagated_writes, sym)
+            self.on_write(fragment, sym)
 
 
     def get_write_position(self, fragment, name: str) -> Optional[Tuple]:
@@ -370,7 +388,7 @@ class KoskariPragma:
 
         self._code_to_fragment[id(code)] = fragment
         self._code_request_for_write[id(code)] = tuple(
-            n for n in fragment.requests_for_write
+            str(n) for n in fragment.requests_for_write
             if n not in fragment.propagated_writes)
         self._code_ancestors[id(code)] = tuple(ancestors)
 
@@ -389,6 +407,15 @@ class KoskariPragma:
                 self._inline_scopes.setdefault(id(ancestor), []).append(
                     (fragment, tuple(ancestors)))
                 return
+
+
+    def inline_scopes(self, fragment):
+        """
+        The inline scopes registered under a function fragment, as
+        (scope, ancestors) pairs in the order they closed
+        """
+
+        return tuple(self._inline_scopes.get(id(fragment), ()))
 
 
 class SchemePragma(KoskariPragma):
@@ -448,13 +475,12 @@ class PythonPragma(KoskariPragma):
         self._explicit_globals_stack.pop()
 
 
-    def on_write(self, fragment, name: str, *, position=None):
+    def on_write(self, fragment, name, *, position=None):
         """
         If name is in explicit-globals for current scope, treat as global.
         Otherwise implicit local: declare on first write (Scheme-like).
         """
 
-        name = str(name)
         if self._explicit_globals_stack \
            and name in self._explicit_globals_stack[-1]:
             self.on_explicit_global(fragment, name, position=position)
@@ -462,13 +488,13 @@ class PythonPragma(KoskariPragma):
             self.on_declare(fragment, name, position=position)
 
 
-    def on_explicit_global(self, fragment, name: str, *, position=None):
+    def on_explicit_global(self, fragment, name, *, position=None):
         """
         Record name as global for current scope, then delegate to base
         """
 
         if self._explicit_globals_stack:
-            self._explicit_globals_stack[-1].add(str(name))
+            self._explicit_globals_stack[-1].add(name)
         super().on_explicit_global(fragment, name, position=position)
 
 

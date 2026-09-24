@@ -248,6 +248,6 @@ effort** with their own design: [define-matcher.md](../language/define-matcher.m
 
 - [match-case-form.md](match-case-form.md) — opcodes, `KOS_CACHE_MATCHER`,
   lowering, stack contract.
-- [matcher-ng-rollup.md](../language/matcher-ng-rollup.md) — the unified matcher engine;
+- [matcher-ng-rollup.md](matcher-ng-rollup.md) — the unified matcher engine;
   Phase 8 is runtime match/case.
 - [../LAYOUTS.md](../LAYOUTS.md) — layout conventions.

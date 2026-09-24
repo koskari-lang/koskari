@@ -21,7 +21,8 @@ Layout handlers for conditional block syntax.
 from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
-from ...types import fill_position, get_position, is_nil, is_pair, unpack
+from ...types import (
+    fill_position, get_position, is_nil, is_pair, strip_mark, unpack)
 from .helpers import (
     block_source_from_cons, is_block, layout, match_block_source)
 
@@ -69,7 +70,7 @@ def layout_if(reader, source, peers):
 
     for peer in peers:
         pheader, pbody = peer
-        phead = pheader.car
+        phead = strip_mark(pheader.car)
         ppargs = list(unpack(pheader.cdr))
 
         if phead is _symbol_elif:
@@ -163,7 +164,7 @@ def layout_switch(reader, source, peers):
                 'switch body may only contain case or else clauses',
                 get_position(form) or get_position(source))
 
-        head = form.car
+        head = strip_mark(form.car)
         rest_parts = list(unpack(form.cdr))
 
         if head is _symbol_case:
@@ -217,6 +218,7 @@ def _split_case_guard(cargs, child):
     walk = cargs
     while walk:
         element, walk = walk
+        element = strip_mark(element)
         if element is _symbol_when or element is _symbol_unless:
             gkw = (_keyword_when if element is _symbol_when
                    else _keyword_unless)
@@ -306,6 +308,7 @@ def layout_match(reader, source, peers):
                 get_position(child) or get_position(source))
 
         chead, cargs = matched['header'].datum
+        chead = strip_mark(chead)
         cbody = matched['body'].datum
         if as_block:
             cbody = reader.fold_lines(apply_lines(cbody, reader))

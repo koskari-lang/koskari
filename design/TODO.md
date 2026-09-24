@@ -104,6 +104,26 @@ rule. Dead-region sweep and label GC stay last, if at all.
 
 Ref: [extent-verification.md](extent-verification.md).
 
+### Externs slot in NamespaceSpec (investigate)
+
+A fourth name list on `NamespaceSpec`: names a frame reads from a
+fully qualified module attribute rather than a scope, so a template's
+free name can resolve in the macro's own module. Bound at frame
+creation or lazily through a cached read opcode; the qualifier comes
+from the expanding transformer. Frame-level definitions stay on the
+use-site rule.
+
+Ref: [namespace-externs.md](namespace-externs.md).
+
+### Resolver candidate spellings (investigate)
+
+`Resolver.choose` rebuilds a marked atom's prefix gensyms and their
+spellings on every call, and `resolve` calls it per bucket entry and
+per variable operand. Profile a macro-heavy compile; if it shows, keep
+the spellings per atom for the life of the resolver.
+
+Ref: `koskari/hygiene.py` (`candidates`, `Resolver.choose`).
+
 ### Dict literal compression (review)
 
 A theoretical `compile/#dict` form could compress `(#dict ...)` calls
@@ -114,19 +134,6 @@ proof vs pragma) is settled. Backed off from the removed special
 gate options, and the equivalence obligations are recorded for review.
 
 Ref: [language/dict-literal-compression.md](language/dict-literal-compression.md).
-
-### Hygiene system review
-
-Binder discovery, the freeze-time `Hygiene` plan, and the finalize
-renamer have each been patched in isolation: keyword-cell threading,
-REST versus BODY at region captures, the plan-emptiness rule for
-ellipsis macros. Review them as one system: which captures register
-regions and why, what a plan with no binders or regions means, how
-nested macros and `Datum`-wrapped captures bound the walk, and what a
-template-introduced binder is owed at every depth.
-
-Ref: [MATCHER.md](MATCHER.md),
-[api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md).
 
 ### Bundles and namespace facets
 
@@ -165,6 +172,20 @@ modules, so nothing leaks into distributed libraries. Scope out flag spelling,
 `.ki` vs. structured settings-file format, and file discovery/precedence.
 
 Ref: [language/pragma-cli.md](language/pragma-cli.md); [PRAGMA.md](PRAGMA.md).
+
+---
+
+## Reader
+
+### Multi-character reader macro triggers (investigate)
+
+Reader macros key on one character, so `#'`, `` #` ``, and the `#`
+collection openers are branches inside the `#` handler, repeated in the
+layout block predicate and the lexer. Investigate a registration keyed
+by a trigger string, dispatched longest first under the first
+character, that the layout reader and lexer read as data.
+
+Ref: [reader-macro-triggers.md](reader-macro-triggers.md).
 
 ---
 

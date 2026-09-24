@@ -38,7 +38,8 @@ from .pragma import IndentMismatch
 from .parser import (
     BLOCK, BLOCKS, COLON, DOT, EOF, LINE, LINE_END, READ_EOF, VALUE, Reader,
     _keyword_block, _keyword_splice, _symbol_decorate, _symbol_quasiquote,
-    _symbol_quote, _symbol_unquote_splicing)
+    _symbol_quasiquote_syntax, _symbol_quote, _symbol_quote_syntax,
+    _symbol_unquote_splicing)
 from .stream import IndentAwareStream
 
 
@@ -216,9 +217,20 @@ class LayoutReader(Reader):
         sm('b', inner._read_bstring, False)
 
         sm('#', inner._read_collection, False)
-        sm('&', self._read_ref_call, False)
-        for c in "-+~":
-            sm(c, self._read_unary, False, predicate=self._unary_enabled)
+
+        # the prefixes that read an operand register once per level, each
+        # bound to its own reader: at the layout level a header operand
+        # keeps its block colon, and inside parens and backticks the inner
+        # reader's operand read sees the macros it installs for the span,
+        # such as a backtick's unquote
+        for reader, sm_level in ((self, self.add_layout_event_macro),
+                                 (inner, self.add_inner_event_macro)):
+            sm_level('&', reader._read_ref_call, False)
+            for c in "-+~":
+                sm_level(c, reader._read_unary, False,
+                         predicate=reader._unary_enabled)
+            sm_level('-', reader._read_datumq, False,
+                     predicate=reader._datumq_follows)
 
         self.add_event_macro("'", inner._read_quote, True)
         self.add_event_macro("`", inner._read_quasiquote, True)
@@ -233,6 +245,11 @@ class LayoutReader(Reader):
             self._layout_quasiquote_block_reader_macro,
             True,
             predicate=self._layout_block_quote_predicate)
+        self.add_layout_event_macro(
+            "#",
+            self._layout_syntax_quote_block_reader_macro,
+            False,
+            predicate=self._layout_block_syntax_quote_predicate)
 
         # registered after both backtick macros so the triple-backtick
         # check wins on the coordinator and inner stacks alike; bound to
@@ -465,6 +482,47 @@ class LayoutReader(Reader):
         _lin, col = stream.position()
         outer_indent = col - 1
         return BLOCK, self._read_quasiquote_block(stream, outer_indent)
+
+
+    def _layout_block_syntax_quote_predicate(self, stream, c, atom_prefix):
+        """
+        Allow layout raw-block quote-syntax and quasiquote-syntax, spelled
+        ``#'`` and ``#```, under the same conditions as the plain block
+        quotes: a structural block colon on the line and a head that does
+        not open with a delimiter. ``#`` is a non-terminating macro
+        character, so this runs at dispatch only and never at an atom
+        boundary.
+
+        :param stream: source stream positioned after the ``#``
+        :param c: the ``#`` character
+        :param atom_prefix: atom boundary context; always None here
+        """
+
+        if not self.layout_enabled:
+            return False
+        nxt = stream.peek(2)
+        if len(nxt) < 2 or nxt[0] not in "'`" or nxt[1] in '([{':
+            return False
+        return self._structural_colon_before_line_end(stream)
+
+
+    def _layout_syntax_quote_block_reader_macro(self, stream, c):
+        """
+        Reader macro for layout raw-block quote-syntax and
+        quasiquote-syntax.
+
+        :param stream: positioned after the ``#``
+        :param c: the ``#`` character
+        """
+
+        prefix = stream.read(1)
+        _lin, col = stream.position()
+        outer_indent = col - 2
+        if prefix == "'":
+            return BLOCK, self._read_quote_block(
+                stream, outer_indent, _symbol_quote_syntax)
+        return BLOCK, self._read_quasiquote_block(
+            stream, outer_indent, _symbol_quasiquote_syntax)
 
 
     @staticmethod
@@ -922,7 +980,8 @@ class LayoutReader(Reader):
         return primary, peer_blocks
 
 
-    def _read_quote_block(self, stream, outer_indent):
+    def _read_quote_block(
+            self, stream, outer_indent, quote_head=_symbol_quote):
         """
         Block-macro handler for the ' prefix
 
@@ -937,12 +996,13 @@ class LayoutReader(Reader):
         head, args, _ = self.read_block_header(stream)
         raw = self.read_block(stream, outer_indent, head, args)
         return cons(_keyword_block,
-                    cons(_symbol_quote, nil),
+                    cons(quote_head, nil),
                     raw,
                     nil)
 
 
-    def _read_quasiquote_block(self, stream, outer_indent):
+    def _read_quasiquote_block(
+            self, stream, outer_indent, quote_head=_symbol_quasiquote):
         """
         Block-macro handler for the backtick prefix
 
@@ -959,7 +1019,7 @@ class LayoutReader(Reader):
             head, args, _ = self.read_block_header(stream)
             raw = self.read_block(stream, outer_indent, head, args)
         return cons(_keyword_block,
-                    cons(_symbol_quasiquote, nil),
+                    cons(quote_head, nil),
                     raw,
                     nil)
 

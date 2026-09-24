@@ -217,14 +217,14 @@ define-syntax config/webhook:
     syntax-rules []:
         case (config/webhook () setting ...):
             (begin
-                (define default/webhook)
-                (unless &default/webhook
-                    (set! default/webhook (WebhookConfig setting ...))))
+                (define -'default/webhook)
+                (unless &-'default/webhook
+                    (set! -'default/webhook (WebhookConfig setting ...))))
         case (config/webhook nm setting ...):
             (begin
                 (define nm (WebhookConfig setting ...))
-                (define default/webhook)
-                (unless &default/webhook (set! default/webhook nm)))
+                (define -'default/webhook)
+                (unless &-'default/webhook (set! -'default/webhook nm)))
 
 
 ;; `job webhook <name>:` -- no trigger key; the name is the route.
@@ -233,9 +233,9 @@ define-syntax job/webhook:
         case (job/webhook name (subhead subrest ...) ...):
             (begin
                 (define name (WebhookJob 'name))
-                (define default/webhook)
-                (if &default/webhook
-                    (.configure name via: default/webhook)
+                (define -'default/webhook)
+                (if &-'default/webhook
+                    (.configure name via: -'default/webhook)
                     (.configure name))
                 (subhead (webhook name) subrest ...) ...)
 

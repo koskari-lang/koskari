@@ -29,7 +29,7 @@ import operator
 
 from ..lib import (
     NAMESPACE_FAST_SLOT_MAX, Compare, FunctionSpec, NamespaceSpec, OpCode,
-    Operand, OpStyle)
+    Operand, OpStyle, symbol)
 
 
 OPERAND_COUNT = len(Operand)
@@ -461,6 +461,59 @@ def fuse_rule(*pattern):
     return register
 
 
+def spell_name(name):
+    """
+    A name lowered to its spelling; a spelling is returned unchanged
+    """
+
+    return str(name) if isinstance(name, symbol) else name
+
+
+def spell_namespace_spec(nspec):
+    """
+    The NamespaceSpec with every name lowered to its spelling
+
+    :param nspec: a NamespaceSpec whose names are atoms or spellings
+    :return: a NamespaceSpec of spellings
+    """
+
+    return NamespaceSpec(
+        nspec.name,
+        tuple(map(spell_name, nspec.local_syms)),
+        tuple(map(spell_name, nspec.closure_syms)),
+        tuple(map(spell_name, nspec.global_syms)))
+
+
+def spell_operands(rows):
+    """
+    The rows with every variable operand and inline scope's names
+    lowered to their spellings
+
+    :param rows: instruction rows whose names are atoms
+    :return: a new list of rows
+    """
+
+    # a fused compare row's VAR field holds a constant when its source
+    # selector says so, so only a symbol is spelled
+    out = []
+    for op, arg in rows:
+        if op == OpCode.PUSH_NS:
+            nspec, names = arg[0], arg[1]
+            if names is not None:
+                names = tuple(map(spell_name, names))
+            arg = (spell_namespace_spec(nspec), names) + tuple(arg[2:])
+        elif op == OpCode.PUSH_COLLECT:
+            arg = spell_namespace_spec(arg)
+        elif op.style == OpStyle.VAR:
+            arg = spell_name(arg)
+        elif op.extra and OpStyle.VAR in op.extra:
+            arg = tuple(
+                spell_name(v) if fk == OpStyle.VAR else v
+                for v, fk in zip(arg, op.extra))
+        out.append((op, arg))
+    return out
+
+
 class ByteCodeProcessor:
     """
     A single-use transformation machine over one fragment's
@@ -482,7 +535,7 @@ class ByteCodeProcessor:
         """
 
         self.fragment = fragment
-        self.instructions = list(fragment.instructions)
+        self.instructions = spell_operands(fragment.instructions)
 
         # the base NamespaceSpec resolved mid-pipeline; remains
         # readable after process returns, for Code construction
@@ -1443,8 +1496,8 @@ class ByteCodeProcessor:
         # merge surviving inner FunctionSpec syms into the fragment,
         # then build the base NamespaceSpec from its buckets
         self.cpool_scan_merge()
-        self.base_nspec = self.fragment.resolution.build_namespace_spec(
-            self.fragment)
+        self.base_nspec = spell_namespace_spec(
+            self.fragment.resolution.build_namespace_spec(self.fragment))
 
         if compiler.convert_fast_enabled and function_body:
             self.convert_fast(self.base_nspec)

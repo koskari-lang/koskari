@@ -107,14 +107,14 @@ define-syntax config/admin:
     syntax-rules []:
         case (config/admin () setting ...):
             (begin
-                (define default/admin)
-                (unless &default/admin
-                    (set! default/admin (AdminConfig setting ...))))
+                (define -'default/admin)
+                (unless &-'default/admin
+                    (set! -'default/admin (AdminConfig setting ...))))
         case (config/admin nm setting ...):
             (begin
                 (define nm (AdminConfig setting ...))
-                (define default/admin)
-                (unless &default/admin (set! default/admin nm)))
+                (define -'default/admin)
+                (unless &-'default/admin (set! -'default/admin nm)))
 
 
 ;; `job admin <name>` -- no trigger key and usually no sub-items; it
@@ -124,9 +124,9 @@ define-syntax job/admin:
         case (job/admin name (subhead subrest ...) ...):
             (begin
                 (define name (AdminJob))
-                (define default/admin)
-                (if &default/admin
-                    (.configure name via: default/admin)
+                (define -'default/admin)
+                (if &-'default/admin
+                    (.configure name via: -'default/admin)
                     (.configure name))
                 (subhead (admin name) subrest ...) ...)
 

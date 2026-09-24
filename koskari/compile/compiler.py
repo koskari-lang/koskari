@@ -28,10 +28,11 @@ from contextlib import contextmanager
 from enum import IntEnum, auto
 
 from ..exceptions import CompilerError, UncaughtCompilerError
+from ..hygiene import Deferred, Resolver, candidates, equal_by_base
 from ..lib import (
-    Arena, Code, Datum, FormalsSpec, FunctionSpec, Module, ModuleNamespace,
-    Namespace, NamespaceSpec, OpCode, bracket_nil, bracket_pair, cons, keyword,
-    kos_repr, nil, symbol)
+    Arena, Code, Datum, FormalsSpec, FunctionSpec, Module,
+    ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
+    bracket_pair, cons, keyword, kos_repr, nil, symbol)
 from ..types import (
     fill_position, get_position, is_keyword, is_nil, is_pair, is_proper,
     is_symbol, parameterize)
@@ -126,6 +127,11 @@ class ByteCodeFragment:
     closure requests and name declarations for the namespace
     """
 
+    # raised when the fragment references a marked name, directly or
+    # through a fragment it absorbs or a function body it defers
+    marked = False
+
+
     def __init__(self, compiler=None, name=None, filename=None,
                  resolution=None):
         """
@@ -157,6 +163,15 @@ class ByteCodeFragment:
         # class body compiled into its enclosing Code
         self.function_scope = False
 
+        # set by collector_namespace for a class body: its bindings
+        # become the class's attributes, whose names are labels
+        self.collector_scope = False
+
+        # set by function_constant when this fragment receives a
+        # deferred function: that function's requests reach this one
+        # only when it completes, so this one cannot complete early
+        self.holds_deferred = False
+
 
     def as_namespace_spec(self):
         """
@@ -166,6 +181,17 @@ class ByteCodeFragment:
         return self.resolution.build_namespace_spec(self)
 
 
+    def note_mark(self, sym):
+        """
+        Record that this fragment references a marked name, so its
+        completion resolves its names
+
+        :param sym: a gensym
+        """
+
+        self.marked = True
+
+
     def request_var(self, var_name):
         """
         Record a closure request for var_name unless it is already declared
@@ -173,7 +199,11 @@ class ByteCodeFragment:
         :param var_name: name to request from enclosing scope
         """
 
-        self.resolution.on_request_var(self, str(var_name))
+        if not isinstance(var_name, symbol):
+            raise TypeError(f"expected a symbol, not {var_name!r}")
+        if var_name.base is not var_name:
+            self.note_mark(var_name)
+        self.resolution.on_request_var(self, var_name)
 
 
     def request_for_write(self, var_name, position=None):
@@ -184,7 +214,11 @@ class ByteCodeFragment:
         :param position: optional (line, col) for error reporting
         """
 
-        self.resolution.on_write(self, str(var_name), position=position)
+        if not isinstance(var_name, symbol):
+            raise TypeError(f"expected a symbol, not {var_name!r}")
+        if var_name.base is not var_name:
+            self.note_mark(var_name)
+        self.resolution.on_write(self, var_name, position=position)
 
 
     def request_global(self, var_name, position=None):
@@ -195,7 +229,11 @@ class ByteCodeFragment:
         :param position: optional (line, col) for error reporting
         """
 
-        self.resolution.on_explicit_global(self, str(var_name), position=position)
+        if not isinstance(var_name, symbol):
+            raise TypeError(f"expected a symbol, not {var_name!r}")
+        if var_name.base is not var_name:
+            self.note_mark(var_name)
+        self.resolution.on_explicit_global(self, var_name, position=position)
 
 
     def declare_var(self, var_name, position=None, type_expr=None):
@@ -208,7 +246,9 @@ class ByteCodeFragment:
             metadata only; not evaluated here)
         """
 
-        self.resolution.on_declare(self, str(var_name), position=position)
+        if not isinstance(var_name, symbol):
+            raise TypeError(f"expected a symbol, not {var_name!r}")
+        self.resolution.on_declare(self, var_name, position=position)
         if type_expr is not None:
             self.annotation_bindings.append((str(var_name), type_expr))
 
@@ -254,10 +294,82 @@ class ByteCodeFragment:
         Append one bytecode instruction
 
         :param op: OpCode for the instruction
-        :param opa: argument for the instruction
+        :param opa: argument for the instruction; a variable operand,
+            the opcode's own or a variable field of a fused row, is a
+            symbol
+        :raises TypeError: when a variable operand is not a symbol
         """
 
+        if op.style == OpStyle.VAR:
+            if not isinstance(opa, symbol):
+                raise TypeError(f"expected a symbol, not {opa!r}")
+        elif op.extra and OpStyle.VAR in op.extra:
+            for v, fk in zip(opa, op.extra):
+                if fk == OpStyle.VAR and not isinstance(v, symbol):
+                    raise TypeError(f"expected a symbol, not {v!r}")
+
         self.instructions.append((op, opa))
+
+
+    def rewrite_vars(self, choose):
+        """
+        Replace each variable operand in the instruction stream with
+        choose(name, scopes), scopes holding the spelling sets of the
+        inline scopes open around it, innermost first. An inline
+        scope's closure names are chosen from outside that scope
+
+        :param choose: callable taking an atom and the open scopes,
+            returning the atom to emit
+        """
+
+        def rebuild_nspec(nspec, scopes):
+            closure = []
+            for name in nspec.closure_syms:
+                chosen = choose(name, scopes)
+                if chosen not in closure:
+                    closure.append(chosen)
+            if tuple(closure) == tuple(nspec.closure_syms):
+                return nspec
+            return NamespaceSpec(
+                nspec.name, nspec.local_syms, tuple(closure),
+                nspec.global_syms)
+
+        def scope_names(nspec):
+            # a global an inline scope declares is bound in the module
+            # and visible within the scope under that spelling, as its
+            # locals are
+            return {str(n) for n in nspec.local_syms} | {
+                str(n) for n in nspec.global_syms}
+
+        # the stream is the compiler's own emission: PUSH_NS and
+        # PUSH_COLLECT carry their NamespaceSpec as the operand, and the
+        # fused rows the processor mints later are not here yet
+        scopes = []
+        out = []
+        for op, arg in self.instructions:
+            if op == OpCode.PUSH_NS:
+                nspec = rebuild_nspec(arg[0], scopes)
+                arg = (nspec,) + tuple(arg[1:])
+                scopes.insert(0, scope_names(nspec))
+
+            elif op == OpCode.PUSH_COLLECT:
+                arg = rebuild_nspec(arg, scopes)
+                scopes.insert(0, scope_names(arg))
+
+            elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
+                scopes.pop(0)
+
+            elif op.style == OpStyle.VAR:
+                arg = choose(arg, scopes)
+
+            elif op.extra and OpStyle.VAR in op.extra:
+                arg = tuple(
+                    choose(v, scopes) if fk == OpStyle.VAR else v
+                    for v, fk in zip(arg, op.extra))
+
+            out.append((op, arg))
+
+        self.instructions = out
 
 
     def merge(self, other):
@@ -281,6 +393,10 @@ class ByteCodeFragment:
             if name not in self.declares:
                 self.request_global(name)
         self.annotation_bindings.extend(other.annotation_bindings)
+        if other.marked:
+            self.marked = True
+        if other.holds_deferred:
+            self.holds_deferred = True
         self.instructions.extend(other.instructions)
 
 
@@ -293,7 +409,7 @@ class ByteCodeFragment:
         nspec and names in the EXTRA row, body instructions, POP_NS.
 
         :param ns_name: name for the child namespace (e.g. source form)
-        :param names: sequence of bound names (strings or symbols)
+        :param names: sequence of bound names, symbols
         :param values: sequence of expressions (one per name)
         """
 
@@ -301,7 +417,7 @@ class ByteCodeFragment:
         ns_name = str(ns_name)
         child = compiler.fragment(ns_name)
         with compiler.resolution_scope(child):
-            names = tuple(map(str, names))
+            names = tuple(names)
             if len(names) != len(values):
                 raise CompilerError(
                     "mismatch between names and values",
@@ -325,16 +441,20 @@ class ByteCodeFragment:
             # PUSH_NS resolves it from the frame. A namespace's parent
             # link skips call frames, so the frame is the only place
             # the scope can reach it.
-            for name in nspec.closure_syms:
+            for name in child.resolution.closure_names(child):
                 if name not in self.declares:
                     self.request_var(name)
 
             if names:
                 self.merge(valfrag)
 
+            # the bound names stay atoms until lowering spells them
             self.instruction(
-                OpCode.PUSH_NS,
-                (nspec, tuple(names) if names else None, 0, 0))
+                OpCode.PUSH_NS, (nspec, names if names else None, 0, 0))
+            if child.marked:
+                self.marked = True
+            if child.holds_deferred:
+                self.holds_deferred = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_NS, 0)
 
@@ -354,16 +474,21 @@ class ByteCodeFragment:
         compiler = self.compiler
         ns_name = str(ns_name)
         child = compiler.fragment(ns_name)
+        child.collector_scope = True
         with compiler.resolution_scope(child):
             yield child
             nspec = child.as_namespace_spec()
             child.resolution.register_scope_fragment(
                 child, tuple(f for f in compiler.lexical_stack if f is not child))
-            for name in nspec.closure_syms:
+            for name in child.resolution.closure_names(child):
                 if name not in self.declares:
                     self.request_var(name)
 
             self.instruction(OpCode.PUSH_COLLECT, nspec)
+            if child.marked:
+                self.marked = True
+            if child.holds_deferred:
+                self.holds_deferred = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_COLLECT, 0)
 
@@ -667,7 +792,25 @@ class Compiler:
         :return: Compiled instance, or None
         """
 
-        name = str(name)
+        # a marked head names a transformer the same expansion may
+        # have defined under the marked spelling, else the bare one
+        if not is_symbol(name):
+            return self._find_compiled_use(str(name))
+
+        for cand in candidates(name):
+            found = self._find_compiled_use(str(cand))
+            if found is not None:
+                return found
+        return None
+
+
+    def _find_compiled_use(self, name):
+        """
+        Resolve one spelling as a syntax use
+
+        :param name: the spelling as written
+        :return: Compiled instance, or None
+        """
 
         # prefix-only resolution: the short name is the use; the
         # prefixed spelling denotes the transformer object itself and
@@ -760,10 +903,12 @@ class Compiler:
         :raises CompilerError: on a cycle or an unsettled chain
         """
 
+        # each expansion marks its output afresh, so a cycle repeats a
+        # form up to its marks; str of a form already prints the bases
         for i, prior in enumerate(seen):
             if form is prior:
                 continue
-            if form == prior:
+            if equal_by_base(form, prior):
                 chain = " -> ".join(str(f) for f in seen[i:])
                 raise CompilerError(
                     f"macro expansion cycle: {chain} -> {form}",
@@ -843,8 +988,12 @@ class Compiler:
 
     def compile_symbol(self, fragment, sym, position=None):
 
-        if sym is _symbol_colon:
-            self.check_stray_colon(sym)
+        bare = sym.base
+        if bare is not sym:
+            fragment.note_mark(sym)
+
+        if bare is _symbol_colon:
+            self.check_stray_colon(bare)
 
         # TODO: we may want to add an alias/FOO form for
         # compile-time symbolic aliases. These would be distinct
@@ -852,8 +1001,8 @@ class Compiler:
         # source list -- the aliases would only expand the symbol
         # itself.
 
-        if sym in _COMPILER_LITERALS:
-            return self.compile_const(fragment, _COMPILER_LITERALS[sym])
+        if bare in _COMPILER_LITERALS:
+            return self.compile_const(fragment, _COMPILER_LITERALS[bare])
 
         comp = self.find_bare_compiled(sym)
         if comp is not None:
@@ -872,9 +1021,8 @@ class Compiler:
 
 
     def compile_raw_symbol(self, fragment, sym):
-        strsym = str(sym)
-        fragment.request_var(strsym)
-        fragment.instruction(OpCode.VAR, strsym)
+        fragment.request_var(sym)
+        fragment.instruction(OpCode.VAR, sym)
         return fragment
 
 
@@ -1008,7 +1156,7 @@ class Compiler:
             if comp:
                 return self.compile_special(fragment, comp, source_obj)
 
-            if head is _symbol_call:
+            if head.base is _symbol_call:
                 raise CompilerError("compile/call not found", source_obj)
 
         elif is_pair(head):
@@ -1083,18 +1231,41 @@ class Compiler:
         return res
 
 
-    def complete(self, fragment, mode=None, _validate=True, is_root=False):
+    def complete(
+            self,
+            fragment,
+            mode=None,
+            _validate=True,
+            is_root=False,
+            ancestors=None):
         """
         Complete a fragment into a Code object.
+
+        The Deferred constants the fragment holds complete first,
+        against this fragment's now final declarations, and their
+        values take their place
 
         :param fragment: the fragment to complete
         :param mode: the mode to complete in
         :param _validate: whether to validate the code
         :param is_root: whether this is the root fragment
+        :param ancestors: the fragments lexically enclosing this one,
+            outermost first; the open lexical stack when omitted
         :return: the completed Code object
         """
 
         reso = fragment.resolution
+
+        if ancestors is None:
+            ancestors = tuple(self.lexical_stack)
+
+        rows = fragment.instructions
+        for i, (op, arg) in enumerate(rows):
+            if op is OpCode.CONST and isinstance(arg, Deferred):
+                rows[i] = (op, arg.complete(self, fragment, ancestors))
+
+        if fragment.marked:
+            Resolver(fragment, ancestors, vars(self.module)).resolve(fragment)
 
         # handles compression, var-to-fast lowering, and tail-call
         # promotion, deriving the pass settings from this compiler
@@ -1125,7 +1296,7 @@ class Compiler:
                     protect=self.protect_code, cache=cache)
         if fragment.doc is not None:
             code.extras['doc'] = fragment.doc
-        reso.register_code_fragment(code, fragment, tuple(self.lexical_stack))
+        reso.register_code_fragment(code, fragment, ancestors)
 
         # Recursively validate that all writes are satisfied.
         # Only validate from root complete(); inner complete() calls skip so
@@ -1143,6 +1314,19 @@ class Compiler:
         self._minted.append(weakref.ref(code))
 
         return code
+
+
+    def complete_function(self, fragment, ancestors):
+        """
+        Complete a function body fragment under the given ancestry
+
+        :param fragment: the function body fragment
+        :param ancestors: the fragments enclosing it, outermost first
+        :return: the completed Code object
+        """
+
+        return self.complete(
+            fragment, CompilerMode.FUNCTION, ancestors=ancestors)
 
 
     def seal(self):
