@@ -148,18 +148,15 @@ class MatchCompiler:
         self.in_class_fields = False
 
 
-    def begin_nested_claims(self, inherit_formals=None, **kwargs):
+    def begin_nested_claims(self, inherit_formals=True):
         """
         Begin a nested region where duplicate capture slot names are isolated
         (for example ONEOF branches or GROUP children). When
         ``inherit_formals`` is false, slots interned inside the region are
-        omitted from :data:`formal_slot_names` (nested GROUP / REPEAT rows).
-        Left unset, a region a GROUP opens (``link_slot`` given) does not
-        inherit and a ONEOF branch does
+        omitted from :data:`formal_slot_names`: a GROUP or REPEAT row's
+        slots are fields of the row, and a ONEOF branch's are formals
         """
 
-        if inherit_formals is None:
-            inherit_formals = "link_slot" not in kwargs
         self.capture_scope_stack.append({})
         if inherit_formals:
             self._formal_scope_stack.append(self._formal_scope_stack[-1])
@@ -167,12 +164,11 @@ class MatchCompiler:
             self._formal_scope_stack.append(False)
 
 
-    def end_nested_claims(self, **kwargs):
+    def end_nested_claims(self):
         """
         End the innermost nested duplicate-slot region
         """
 
-        _ = kwargs
         if len(self.capture_scope_stack) <= 1:
             raise RuntimeError(
                 "end_nested_claims underflow (unbalanced nested scope)")
@@ -993,7 +989,7 @@ class GROUP(Pattern):
         if self._slot is not None:
             ctx.claim_slot_name(self._slot, ("group", id(self)))
             slot_idx = ctx.intern_slot(self._slot)
-        ctx.begin_nested_claims(link_slot=self._slot)
+        ctx.begin_nested_claims(inherit_formals=False)
         try:
             idxs = [c.lower(ctx) for c in self._children]
         finally:
