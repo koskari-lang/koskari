@@ -294,7 +294,7 @@ every symbol test accepts it. The rule at each site:
 
 | The atom is read as | Do |
 |---------------------|----|
-| a binder or a reference | use the spelling (`str(sym)`) |
+| a binder or a reference | pass the atom; the processor spells it |
 | a head in call position | `find_compiled` tries the spelling's candidates, then the bare name |
 | a tag, label, literal, attribute, import member, operator | `.base`, or `strip_mark` when the operand may not be an atom |
 | quoted data | `quote` / `quasiquote` project to the base; `quote-syntax` keeps the gensym |
@@ -309,14 +309,15 @@ Keyword-named formals declare the key too, so `argv:` in a template binds
 
 ### Resolution
 
-Declares are immediate: a marked binder is declared under its key. A marked
-reference is emitted under its key and resolved when its fragment completes
-(`resolve_marks` in `koskari.compile.compiler`), when every declaration
-visible to it is final. A function body does not complete when its lambda
-is compiled: the lambda special emits a `DeferredFunction` constant, and
-`Compiler.complete` on the enclosing fragment completes those bodies first,
-against the enclosing fragment's now final declarations, before replacing
-each with its `FunctionSpec`. A sibling defined later in the same body, as
+Declares are immediate: a marked binder is declared under its gensym. A
+marked reference is emitted as its atom, and the fragment raises its `marked`
+flag. When the fragment completes and every declaration visible to it is
+final, `Resolver.resolve` in `koskari.hygiene` chooses each name, walking the
+instruction stream through `ByteCodeFragment.rewrite_vars`, which tracks the
+inline scopes. `function_constant` completes an unmarked function body at
+once; a marked one is deferred as a `HygieneFunctionSpec`, which completes
+against its ancestry chain when the enclosing fragment completes and is then
+replaced by its `FunctionSpec`. A sibling defined later in the same body, as
 the functions of a `labels` form are, is therefore visible to a closure
 defined before it.
 
@@ -328,8 +329,9 @@ fragments enclosing it. Failing that, a marked spelling already bound in the
 module wins (a definition an earlier turn made, as a macro-generating
 macro's expansion leaves behind). Failing that, the bare name, which the
 runtime resolves as usual. A binder in a sibling scope is not visible and
-does not count. The chosen spelling is written into the instruction
-operands, the closure requests, and the inline scopes' namespace specs.
+does not count. The chosen atom is written into the instruction operands,
+the closure requests, and the inline scopes' namespace specs; the
+`ByteCodeProcessor` spells every name when it copies the rows.
 
 Free template references therefore reach the runtime bare, and a function
 carries one closure slot per name, not one per expansion.
@@ -541,7 +543,8 @@ from koskari.matcher import (
 )
 from koskari.hygiene import (
     expand_template_with_hygiene, mark_expansion, peel_datums,
-    finalize_expansion,
+    finalize_expansion, candidates, Resolver, Deferred,
+    HygieneFunctionSpec, function_constant, equal_by_base,
 )
 from koskari.types import strip_mark, strip_marks
 from koskari.compile.helpers import match, match_pattern_raw
@@ -557,7 +560,9 @@ from koskari.compile.helpers import match, match_pattern_raw
 | `mark_expansion(form, mark)` | Scope a procedural arm's output |
 | `finalize_expansion(form, mark=None)` | Scope when given, then peel `Datum` |
 | `strip_mark(atom)` / `strip_marks(form)` | The atom or form projected to bases |
-| `resolve_marks(fragment, ancestors)` | Resolve scoped references at completion |
+| `Resolver(fragment, ancestors, module_names).resolve(fragment)` | Resolve scoped references at completion |
+| `function_constant(compiler, parent, body, name, formals_spec)` | A body's FunctionSpec now, or a HygieneFunctionSpec when marked |
+| `equal_by_base(left, right)` | Forms equal with every gensym read as its base |
 | `parse_case_pattern(content)` | Lower one match/case clause delimiter |
 | `parse_case_element(elem)` | Lower one case-pattern element |
 

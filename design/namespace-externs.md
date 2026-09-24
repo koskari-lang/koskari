@@ -45,16 +45,16 @@ base. Two ways to carry that:
   expansion from its own definition module. Marks stay lexical; the
   qualifier rides with the symbol through captures and nested
   expansions.
-- `note_mark` records the transformer per expansion mark, and the
-  compiler maps a gensym's newest mark to a module. No change to the
-  atom; the mapping is per compile turn.
+- The compiler records the transformer per expansion mark in a
+  per-turn table and maps a gensym's newest mark to a module. No
+  change to the atom; the mapping is per compile turn.
 
 Either way the transformer must know its module, which the
 `define-syntax` lowering can pass to the builder.
 
 ## Resolution rule
 
-`resolve_marks` runs as it does. A scoped name a visible declaration
+Resolution runs as it does (`Resolver.resolve`). A scoped name a visible declaration
 matches is that declaration, so a template's own binders are
 unaffected. A scoped name nothing visible declares, whose qualifier
 names a module that binds the base, becomes an extern entry; one
