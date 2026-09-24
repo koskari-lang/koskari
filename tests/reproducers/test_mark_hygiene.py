@@ -1235,4 +1235,30 @@ class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["result"], 3)
 
 
+    OWN_GLOBAL_SRC = """
+(define-syntax top
+  (syntax-rules []
+    [(top) (begin (define-global ga 5) ga)]))
+
+(define f [] (top))
+(define result (f))
+"""
+
+    async def test_own_global_completes_now(self):
+        seen = []
+        real = lambda_.function_constant
+
+        def record(compiler, parent, body, name, formals_spec):
+            const = real(compiler, parent, body, name, formals_spec)
+            if compiler.module.__name__ == "mh_own_global":
+                seen.append(type(const))
+            return const
+
+        with mock.patch.object(lambda_, "function_constant", record):
+            ns = await load("mh_own_global", self.OWN_GLOBAL_SRC)
+
+        self.assertEqual(seen, [FunctionSpec])
+        self.assertEqual(ns["result"], 5)
+
+
 # The end.

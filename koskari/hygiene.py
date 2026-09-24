@@ -735,16 +735,17 @@ class HygieneFunctionSpec(Deferred):
 def needs_outside_choice(body):
     """
     Whether a function body's names depend on declarations outside it:
-    it references a marked name it does not declare, or it holds a
-    deferred function, whose requests reach it only when that completes
+    it references a marked name it does not declare or pull global
+    itself, or it holds a deferred function, whose requests reach it
+    only when that completes
 
     :param body: the function body fragment
     """
 
-    for bucket in (body.requests, body.requests_for_write,
-                   body._request_global):
+    own = set(body._request_global)
+    for bucket in (body.requests, body.requests_for_write):
         for name in bucket:
-            if name.base is not name:
+            if name.base is not name and name not in own:
                 return True
 
     return body.holds_deferred
