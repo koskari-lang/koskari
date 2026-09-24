@@ -167,6 +167,11 @@ class ByteCodeFragment:
         # become the class's attributes, whose names are labels
         self.collector_scope = False
 
+        # set by function_constant when this fragment receives a
+        # deferred function: that function's requests reach this one
+        # only when it completes, so this one cannot complete early
+        self.holds_deferred = False
+
 
     def as_namespace_spec(self):
         """
@@ -390,6 +395,8 @@ class ByteCodeFragment:
         self.annotation_bindings.extend(other.annotation_bindings)
         if other.marked:
             self.marked = True
+        if other.holds_deferred:
+            self.holds_deferred = True
         self.instructions.extend(other.instructions)
 
 
@@ -446,6 +453,8 @@ class ByteCodeFragment:
                 OpCode.PUSH_NS, (nspec, names if names else None, 0, 0))
             if child.marked:
                 self.marked = True
+            if child.holds_deferred:
+                self.holds_deferred = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_NS, 0)
 
@@ -478,6 +487,8 @@ class ByteCodeFragment:
             self.instruction(OpCode.PUSH_COLLECT, nspec)
             if child.marked:
                 self.marked = True
+            if child.holds_deferred:
+                self.holds_deferred = True
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.POP_COLLECT, 0)
 

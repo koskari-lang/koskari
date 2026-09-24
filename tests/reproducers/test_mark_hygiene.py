@@ -1193,7 +1193,10 @@ class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
 
         def record(compiler, parent, body, name, formals_spec):
             const = real(compiler, parent, body, name, formals_spec)
-            seen.append((type(const), parent.marked))
+            # bootstrap modules compiled lazily on first use are not
+            # this source's functions
+            if compiler.module.__name__ == "mh_deferral":
+                seen.append((type(const), parent.marked))
             return const
 
         with mock.patch.object(lambda_, "function_constant", record):
@@ -1206,6 +1209,31 @@ class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
         ])
         self.assertEqual(ns["from-plain"], 3)
         self.assertEqual(ns["from-counter"], 0)
+
+
+    SELF_BOUND_SRC = """
+(define f [] (define g (gensym-thunk (+ %1 1))) (g 2))
+(define result (f))
+"""
+
+    async def test_self_bound_marks_complete_now(self):
+        seen = []
+        real = lambda_.function_constant
+
+        def record(compiler, parent, body, name, formals_spec):
+            const = real(compiler, parent, body, name, formals_spec)
+            # bootstrap modules compiled lazily on first use are not
+            # this source's functions
+            if compiler.module.__name__ == "mh_self_bound":
+                seen.append(type(const))
+            return const
+
+        with mock.patch.object(lambda_, "function_constant", record):
+            ns = await load("mh_self_bound", self.SELF_BOUND_SRC)
+
+        self.assertTrue(seen)
+        self.assertEqual(set(seen), {FunctionSpec})
+        self.assertEqual(ns["result"], 3)
 
 
 # The end.

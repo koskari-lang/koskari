@@ -732,12 +732,31 @@ class HygieneFunctionSpec(Deferred):
         return FunctionSpec(self.name, self.formals_spec, code)
 
 
+def needs_outside_choice(body):
+    """
+    Whether a function body's names depend on declarations outside it:
+    it references a marked name it does not declare, or it holds a
+    deferred function, whose requests reach it only when that completes
+
+    :param body: the function body fragment
+    """
+
+    for bucket in (body.requests, body.requests_for_write,
+                   body._request_global):
+        for name in bucket:
+            if name.base is not name:
+                return True
+
+    return body.holds_deferred
+
+
 def function_constant(compiler, parent, body, name, formals_spec):
     """
     The CONST value for a function body: its FunctionSpec, completed
-    now, when the body references no marked name; otherwise a
-    HygieneFunctionSpec completing with the parent, which is marked in
-    turn so its own completion waits for the declarations around it
+    now, when no name in the body depends on declarations outside it;
+    otherwise a HygieneFunctionSpec completing with the parent, which
+    is marked in turn so its own completion waits for the declarations
+    around it
 
     :param compiler: the compiler
     :param parent: the fragment the CONST row is emitted into
@@ -747,10 +766,11 @@ def function_constant(compiler, parent, body, name, formals_spec):
     """
 
     ancestors = tuple(compiler.lexical_stack)
-    if not body.marked:
+    if not (body.marked and needs_outside_choice(body)):
         code = compiler.complete_function(body, ancestors)
         return FunctionSpec(name, formals_spec, code)
     parent.marked = True
+    parent.holds_deferred = True
     return HygieneFunctionSpec(body, ancestors, name, formals_spec)
 
 
