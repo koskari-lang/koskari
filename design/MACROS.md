@@ -91,13 +91,13 @@ Local compile-time binding: [archive/let-syntax-and-inline-macro.md](archive/let
 
 ### Block quasiquote and `:block:` layout expansion
 
-Block backtick reads as **`(compile/quasiquote-block (:block: …))`**, rewritten to
+Block backtick lowers through **`layout/quasiquote`** to
 **`(compile/quasiquote (:block: …))`**. `define-syntax` output is finalized through
 **`koskari.syntax._finalize_macro_output`**, which calls **`apply_layout`** and
 then peels the `Datum` boxes. A template arm's symbols are marked during
 transcription and carry their marks into layout, which reads block heads
 through the base; a procedural arm's output is marked after layout (see
-[SPECIALS.md](SPECIALS.md) § compile/quasiquote-block).
+[LAYOUTS.md](LAYOUTS.md#layoutquote-layoutquasiquote-and-their-syntax-forms)).
 
 
 ## koskari/bootstrap/_define_syntax.ki

@@ -18,7 +18,7 @@ Proposal — not implemented.
 
 ## Related
 
-- [matcher-ng-rollup.md](matcher-ng-rollup.md) — matcher IR and invocation.
+- [matcher-ng-rollup.md](../archive/matcher-ng-rollup.md) — matcher IR and invocation.
 - [SPECIALS.md](../SPECIALS.md) — `compile/define-special` and special dispatch.
 - [match-case-form.md](../archive/match-case-form.md) — runtime branching over matchers
   (expression-level analogue).

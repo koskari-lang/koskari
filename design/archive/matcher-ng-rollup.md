@@ -115,7 +115,7 @@ long-term architecture is not a design goal**; incidental overlap while
 landing patches is expected, but sustained dual-stack operation is not.
 
 Complements the current architecture reference at
-[unified-matcher-transformer-model.md](unified-matcher-transformer-model.md),
+[unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md),
 which documents the implementation `matcher` is intended to supersede.
 
 ## As-built notes

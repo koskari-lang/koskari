@@ -5,7 +5,7 @@
 **Implemented (archived).** The runtime `match` expression — a
 **sequence-unpacking** matcher, distinct from **`switch`** / equality
 dispatch — is shipped as **Phase 8** of the matcher rollup
-([matcher-ng-rollup.md](../language/matcher-ng-rollup.md)). This doc is
+([matcher-ng-rollup.md](matcher-ng-rollup.md)). This doc is
 the runtime / opcode-machinery record; the **surface pattern language**
 (clause delimiter, head-driven classifier, reader-sugar heads, guards) is
 in [match-pattern-language.md](match-pattern-language.md), whose model
@@ -270,7 +270,7 @@ directly. seq-values-kwargs remains a later optimization, not a prerequisite.
 - [match-pattern-language.md](match-pattern-language.md) — the surface pattern
   language (clause delimiter, head vocabulary, reader sugars, guards) and the
   universal shape-detection vision.
-- [matcher-ng-rollup.md](../language/matcher-ng-rollup.md) — unified matcher; Phase 8 is this
+- [matcher-ng-rollup.md](matcher-ng-rollup.md) — unified matcher; Phase 8 is this
   form.
 - [switch-eq-opcodes.md](switch-eq-opcodes.md) — `SWITCH_EQ`
   design the stack contract mirrors.

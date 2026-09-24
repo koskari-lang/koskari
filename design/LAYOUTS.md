@@ -119,9 +119,10 @@ stay raw until **`layout/quote`** / **`layout/quasiquote`** /
 **`layout/quote-syntax`** / **`layout/quasiquote-syntax`** unbox at
 expansion.
 
-Some compiler paths preserve **`:block:`** as data — quoted blocks,
-**`compile/quasiquote-block`**, and macro templates.
-See [SPECIALS.md](SPECIALS.md) § compile/quasiquote-block and [MACROS.md](MACROS.md).
+Some compiler paths preserve **`:block:`** as data -- quoted and
+quasiquoted blocks, and macro templates.
+See [layout/quote, layout/quasiquote, and their syntax forms](#layoutquote-layoutquasiquote-and-their-syntax-forms)
+and [MACROS.md](MACROS.md).
 
 User-facing normative syntax: [docs/reference/reader-layout.md](../docs/reference/reader-layout.md).
 

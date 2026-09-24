@@ -14,11 +14,11 @@ runtime match/case: `koskari/compile/specials/conditionals.py`,
 
 **Related design (deeper or historical):**
 
-- [api/pattern-matching.md](api/pattern-matching.md) — tagged-tuple IR and migration notes
-- [archive/matcher-hygiene-extensions.md](archive/matcher-hygiene-extensions.md) — the superseded discovery-by-pattern hygiene design
-- [archive/matcher-ng-rollup.md](archive/matcher-ng-rollup.md) — rollout notes and as-built sketches from before hygiene by marks; the hygiene names it uses are gone
-- [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) — `Datum` in macro expansion
-- [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — specials, syntax-rules, and shared finalize pipeline
+- [api/pattern-matching.md](api/pattern-matching.md) -- tagged-tuple IR and migration notes
+- [archive/matcher-hygiene-extensions.md](archive/matcher-hygiene-extensions.md) -- the superseded discovery-by-pattern hygiene design
+- [archive/matcher-ng-rollup.md](archive/matcher-ng-rollup.md) -- rollout notes and as-built sketches from before hygiene by marks; the hygiene names it uses are gone
+- [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) -- `Datum` in macro expansion
+- [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) -- specials, syntax-rules, and shared finalize pipeline
 - [archive/match-pattern-language.md](archive/match-pattern-language.md) — runtime pattern-language design record
 - [archive/match-case-form.md](archive/match-case-form.md) — MATCH_CASE opcode / cache design record
 - [language/define-matcher.md](language/define-matcher.md) — parameterized matcher templates (open design)
@@ -196,8 +196,7 @@ Built-ins registered in `MATCHER_REGISTRY` include:
 
 ## Structural primitives
 
-These lower to native nodes. None register hygiene unless wrapped by a
-hygienic composite or by `VALUE` / `BODY`.
+These lower to native nodes.
 
 | Pattern | Match behaviour | Capture |
 |---------|-----------------|---------|
@@ -285,7 +284,7 @@ different name by the process that loads it.
 
 A keyword formal a template writes therefore binds under the name the
 caller writes, and the template's scoped reference to it falls back to that
-name. A keyword-named parameter is the one binder hygiene does not rename.
+name. A keyword-named parameter is the one binder hygiene does not scope.
 
 ### Raw forms in templates
 
@@ -320,8 +319,6 @@ every symbol test accepts it. The rule at each site:
 Handlers that go through `gather_formals`, the unpack helpers,
 `compile_symbol`, and the fragment's `request_var` / `declare_var` get
 the key for free; a handler that reads a name by hand applies the table.
-Keyword-named formals declare the key too, so `argv:` in a template binds
-`argv#N` and the body's `argv#N` finds it.
 
 ### Resolution
 
@@ -614,6 +611,6 @@ When adding a new composite:
 3. Add tests for the match shape.
 
 When writing a special that reads a name out of the form by hand, apply the
-table under [Reading a marked atom](#reading-a-marked-atom): the key for a
+table under [Reading a scoped atom](#reading-a-scoped-atom): the key for a
 binder or reference, `strip_mark` for anything compared by name. A missed
 peel fails loud, as a NameError on a mangled name.

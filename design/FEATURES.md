@@ -21,7 +21,7 @@ Highlights (not an exhaustive list):
 
 | Area | Implemented as |
 | ---- | -------------- |
-| Core | `compile/quote`, `compile/quasiquote`, `compile/quote-syntax`, `compile/quasiquote-syntax`, `compile/unquote`, `compile/unquote-splicing`, `compile/quote-block`, `compile/quasiquote-block`, `compile/begin`, `compile/lambda`, `compile/function`, `compile/let`, `compile/define`, `compile/define-global`, `compile/setq`, `compile/delq`, `compile/refq`, `compile/bindq`, `compile/cons`, `compile/car`, `compile/cdr`, `compile/class` |
+| Core | `compile/quote`, `compile/quasiquote`, `compile/quote-syntax`, `compile/quasiquote-syntax`, `compile/unquote`, `compile/unquote-splicing`, `compile/begin`, `compile/lambda`, `compile/function`, `compile/let`, `compile/define`, `compile/define-global`, `compile/setq`, `compile/delq`, `compile/refq`, `compile/bindq`, `compile/cons`, `compile/car`, `compile/cdr`, `compile/class` |
 | Control | `compile/cond`, `compile/switch`, `compile/match`, `compile/and`, `compile/or`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/try`, `compile/raise`, internal exception helpers |
 | Context | `compile/with`, `compile/dyn-with`, `compile/dyn-wind`, `compile/parameterize` |
 | Generators / async | `compile/yield`, `compile/yield-from`, `compile/await` |

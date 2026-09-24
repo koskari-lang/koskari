@@ -526,7 +526,8 @@ form. Otherwise the prefix is treated as a plain `<quote-form>`,
 <quasiquote-block-form>
                 ::= ("`" | "#`") <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
                     <block-body>
-                  ; desugars to: (compile/quasiquote-block (:block: (<head> . <args>) <entry>...)),
+                  ; through layout/quasiquote to
+                  ; (compile/quasiquote (:block: (<head> . <args>) <entry>...)),
                   ; or through layout/quasiquote-syntax to
                   ; (compile/quasiquote-syntax (:block: ...))
                   ; unquote ("," and ",@") is active in both the header and body

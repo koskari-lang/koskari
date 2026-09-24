@@ -124,7 +124,7 @@ minimally declared. The alternatives worth weighing before committing:
 
 ## Related
 
-- [matcher-ng-rollup.md](matcher-ng-rollup.md) — the engine, the registry
+- [matcher-ng-rollup.md](../archive/matcher-ng-rollup.md) — the engine, the registry
   factory protocol, resolved decision 3 (composites always inline).
 - [match-pattern-language.md](../archive/match-pattern-language.md) — the case
   dialect a template body would likely be written in.

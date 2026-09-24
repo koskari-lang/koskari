@@ -31,8 +31,9 @@ As built, against the text below:
   note for a procedural macro a template defines, with the reader
   prefixes `#'` and `` #` `` and matching layout block forms.
 - No pool kind carries marks. A gensym in a constant is written as the
-  `SYMBOL` record of its scoped spelling; the Serialization section
-  below described a `GENSYM` kind that was added and then removed.
+  `SYMBOL` record of its base; no mark survives compilation. The
+  Serialization section below described a `GENSYM` kind that was added
+  and then removed.
 
 ## Summary
 

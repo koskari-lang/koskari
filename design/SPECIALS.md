@@ -32,7 +32,7 @@ Canonical matcher and hygiene reference:
 [MATCHER.md](MATCHER.md).
 
 **Special-form transformers** — **`special-rules`** and **`special-match`** build
-**`SpecialRulesTransformer`** values (`koskari/syntax.py`): rule procedures are
+**`SpecialTransform`** values (`koskari/syntax.py`): rule procedures are
 invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
 (unlike **`macro-rules`** / **`macro-match`**, which receive only keyword args).
 
@@ -2259,7 +2259,7 @@ flattens a list into the surrounding list.
 - ``EXPR` → `(quasiquote EXPR)`
 - `,EXPR` → `(unquote EXPR)` (only valid inside a quasiquote body)
 - `,@EXPR` → `(unquote-splicing EXPR)` (only valid inside a quasiquote body)
-- ``HEAD: BODY` → `(quasiquote-block (:block: ...))` (block quasiquote; see below)
+- ``HEAD: BODY` → `layout/quasiquote`, lowering to `(compile/quasiquote (:block: ...))`
 
 **Behaviour:** One argument required. The compiler walks the expression
 recursively at a nesting *level* (starting at 0):
@@ -2322,114 +2322,49 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 
 **Tests:** `tests/compile/specials/test_quasiquote.py`
 
-## compile/quote-block
+## compile/quote-syntax
 
-**Symbol:** `compile/quote-block`
+**Symbol:** `compile/quote-syntax`
 
-**Syntax:** `'HEAD: BODY` (reader shorthand) or `(quote-block BLOCK-REPR)`
+**Syntax:** `#'FORM` (reader shorthand) or `(quote-syntax FORM)`
 
-**Use-case:** Produce a `:block:` cons as literal data — the block-syntax
-analogue of `compile/quote`. The entire indented block (including any nested
-sub-blocks) is captured as a `:block:` cons without invoking any layout
-handler. Useful for passing block structure as data to macros or other
-compile-time code.
+**Use-case:** Quote FORM as `compile/quote` does, keeping the marks on its
+symbols. `define-syntax` quotes a transformer's patterns and templates this
+way, so a template a macro-generating macro introduced keeps the outer
+expansion's marks and its references resolve to what that expansion bound.
+Outside a template it is the same as `quote`.
 
-**Reader shorthand:** A `'` immediately preceding a block head (e.g. `'begin: ...`) causes the reader to read the entire block as a raw `:block:` cons and
-wrap it in `(compile/quote-block ...)`. Each body line is one entry of the
-cons, the list of the line's elements; sub-blocks are `:block:` entries,
-read recursively without layout expansion.
+**Behaviour:** One argument required. A non-nil pair is rewritten with
+`requote` to a list of `quote-syntax` elements combined with `compile/cons`;
+any other datum is emitted as `CONST` as it is.
 
-**Behaviour:** Purely transformative. Rewrites to `(compile/quote BLOCK-REPR)`
-and returns that cons for normal compiler dispatch. The `:block:` cons is
-treated as opaque data — no layout expansion takes place.
+**Implementation:** `koskari/compile/specials/pairs.py`
 
-**Examples:**
+**Tests:** `tests/compile/specials/test_marked_forms.py`
 
-```scheme
-;; Reader shorthand: produces (:block: (begin) (foo) (bar)) as data
-'begin:
-  foo
-  bar
+## compile/quasiquote-syntax
 
-;; Explicit form
-(quote-block (:block: (begin) (foo) (bar)))
-```
+**Symbol:** `compile/quasiquote-syntax`
 
-**Implementation:** `koskari/compile/specials/quasiquote.py`
+**Syntax:** `` #`EXPR `` (reader shorthand) or `(quasiquote-syntax EXPR)`
 
-**Tests:** `tests/compile/specials/test_quasiquote.py`, `tests/reader/layouts/test_quasiquote.py`
+**Use-case:** Build a form as `compile/quasiquote` does, keeping the marks
+on the symbols it emits as constants. A procedural macro that a template
+defines builds its output this way: the symbols the outer template wrote
+carry the outer expansion's marks, and a plain backtick would project them
+away.
 
-## compile/quasiquote-block
-
-**Symbol:** `compile/quasiquote-block`
-
-**Syntax:** ``HEAD: BODY` (reader shorthand) or `(quasiquote-block BLOCK-REPR)`
-
-**Use-case:** The block-syntax analogue of `compile/quasiquote`. Captures an
-entire indented block (including nested peer blocks such as `if`/`else`) as a
-`:block:` cons with `,EXPR` and `,@EXPR` unquote sites active throughout the
-header and body. The primary tool for writing macros in block syntax.
-
-**Reader shorthand:** A ``` immediately preceding a block head causes the
-reader to read the entire block as a raw `:block:` cons with `,`/`,@` unquote
-reader macros active for all header arguments, body forms, and nested
-sub-block headers and bodies.
-
-```scheme
-`begin:
-  ,@forms
-```
-
-produces:
-
-```
-(quasiquote-block (:block: (begin) (:splice: (unquote-splicing forms))))
-```
-
-Peers are sibling `:block:` entries of the enclosing block:
-
-```scheme
-`begin:
-  if ,cond:
-    ,then
-  else:
-    ,else
-```
-
-produces:
-
-```
-(quasiquote-block
-  (:block: (begin)
-   (:block: (if (unquote cond)) ((unquote then)))
-   (:block: (else) ((unquote else)))))
-```
-
-**Behaviour:** Purely transformative. Rewrites to `(compile/quasiquote
-BLOCK-REPR)` for normal compiler dispatch. `compile/quasiquote` walks the
-`:block:` structure and fills unquote / unquote-splicing sites; it does **not**
-invoke layout handlers, so the filled structure remains `:block:` reader form
-where the quasi-quote produced blocks.
-
-For **`define-syntax`** expansions, **`koskari.syntax._finalize_macro_output`**
-(applied after **`MacroTransform`** handlers and **`SyntaxTransform`** template
-substitution) calls **`koskari.reader.layouts.apply_layout`** on the expanded
-form using **`vars(compiler.module)`** **before** binding-symbol discovery and
-the shared hygiene / **`Datum`** finalize pass. That performs depth-first
-`:block:` expansion through **`layout/<head>`** handlers with peer consumption,
-matching reader layout semantics. Custom expansion pipelines that bypass that
-finalize step must call **`apply_layout`** (or **`apply_layouts`**) themselves
-when layout-expanded source is required.
-
-**Nesting:** `_qq_expr` recognises `compile/quasiquote-block` at depth > 0
-and reconstructs it as literal data, exactly like nested `compile/quasiquote`.
+**Behaviour:** Identical to `compile/quasiquote` except that a gensym is
+emitted as itself instead of its base. `unquote` and `unquote-splicing`
+sites are the same.
 
 **Implementation:** `koskari/compile/specials/quasiquote.py`
 
-**Tests:** `tests/compile/specials/test_quasiquote.py` (`TestQuasiquoteBlockShape`,
-`TestQuasiquoteBlockTwoPhase`, `TestQuasiquoteBlockFullStack`),
-`tests/reader/layouts/test_quasiquote.py`; runtime layout expansion behaviour:
-`tests/reader/layouts/test_apply_layout_runtime.py`
+**Tests:** `tests/compile/specials/test_marked_forms.py`
+
+The block forms `'HEAD: BODY`, `` `HEAD: BODY ``, `#'HEAD: BODY`, and
+`` #`HEAD: BODY `` are layouts, not specials: see
+[LAYOUTS.md § layout/quote, layout/quasiquote, and their syntax forms](LAYOUTS.md#layoutquote-layoutquasiquote-and-their-syntax-forms).
 
 ## compile/unquote
 
