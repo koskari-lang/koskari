@@ -179,7 +179,7 @@ class ByteCodeFragment:
 
         if not isinstance(var_name, symbol):
             raise TypeError(f"expected a symbol, not {var_name!r}")
-        if isinstance(var_name, gensym):
+        if var_name.base is not var_name:
             self.resolution.note_mark(var_name)
         self.resolution.on_request_var(self, var_name)
 
@@ -194,7 +194,7 @@ class ByteCodeFragment:
 
         if not isinstance(var_name, symbol):
             raise TypeError(f"expected a symbol, not {var_name!r}")
-        if isinstance(var_name, gensym):
+        if var_name.base is not var_name:
             self.resolution.note_mark(var_name)
         self.resolution.on_write(self, var_name, position=position)
 
@@ -209,7 +209,7 @@ class ByteCodeFragment:
 
         if not isinstance(var_name, symbol):
             raise TypeError(f"expected a symbol, not {var_name!r}")
-        if isinstance(var_name, gensym):
+        if var_name.base is not var_name:
             self.resolution.note_mark(var_name)
         self.resolution.on_explicit_global(self, var_name, position=position)
 
