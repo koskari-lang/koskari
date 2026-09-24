@@ -1149,7 +1149,6 @@ class TestClassMembersInTemplate(unittest.IsolatedAsyncioTestCase):
      (define-class name []
        (import-from math pi)
        (import math)
-       (bindq b (refq pi))
        (with [cm (nullcontext 5)] None)
        (define get-pi [self] self.pi))]))
 
