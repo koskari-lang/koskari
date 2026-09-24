@@ -22,7 +22,7 @@ import pytest
 
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
-from koskari.lib import Datum, Module, car, cdr, cons, gensym, nil, symbol
+from koskari.lib import Datum, Module, car, cdr, gensym, symbol
 from koskari.reader import IndentAwareStream, LayoutReader, source_str
 from koskari.types import (
     build_proper, is_pair, is_symbol, strip_mark)

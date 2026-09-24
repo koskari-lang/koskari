@@ -31,7 +31,7 @@ import pytest
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
 from koskari.lib import (
-    Module, ModuleNamespace, car, cdr, cons, gensym, symbol)
+    Module, ModuleNamespace, car, cdr, gensym, symbol)
 from koskari.matcher import make_matcher, parse_explicit_rule_pattern
 from koskari.syntax import (
     Syntax, SyntaxTransform, build_syntax, parse_syntax_rules_pattern)

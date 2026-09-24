@@ -103,7 +103,6 @@ __all__ = (
     "META_PATTERN",
     "META_MATCHER",
     "KNOWN_HEADS",
-    "CAPTURE_OPTION_KEYS",
 
     "CASE_ELEMENT_PATTERN",
     "CASE_ELEMENT_MATCHER",
@@ -1813,23 +1812,6 @@ def formal_param_pattern():
     )
 
 
-def formal_keyword_name(cell):
-    """
-    Resolve a formals keyword slot to the symbol it binds at runtime.
-
-    A defaults or kw-only frame names its parameter with a keyword and
-    the compiler declares the plain name that keyword spells. Returns
-    that symbol, or None when the cell is absent or is not a keyword
-    """
-
-    if cell is None:
-        return None
-    kw = cell.datum if isinstance(cell, Datum) else cell
-    if not is_keyword(kw):
-        return None
-    return symbol(str(kw))
-
-
 def frame_formal_name(fr):
     """
     Resolve one positional formal frame to (name, by_ref).
@@ -2176,9 +2158,6 @@ class BODY(Pattern):
 # === Self-describing matcher syntax: registry, meta-matcher, parser ===
 
 
-CAPTURE_OPTION_KEYS = frozenset()
-
-
 MATCHER_REGISTRY = {}
 
 
@@ -2230,9 +2209,6 @@ KW_DCOLON = keyword("::")
 KW_TYPE = keyword("type")
 KW_VAL = keyword("val")
 KW_STAR = keyword("*")
-
-
-CAPTURE_OPTION_KW_TO_NAME = {}
 
 
 META_PATTERN = ONEOF(
@@ -2419,8 +2395,7 @@ def lower_class(extern_sym, fields):
 def lower_named_capture(name_sym, args):
     """
     Lower (NAME args...) where NAME is not a registered head. Walks
-    args, splitting capture options (scope:/role: keywords)
-    from constraints. Inline ::, type:, and val: markers are
+    args for constraints. Inline ::, type:, and val: markers are
     recognised inside the args list as constraint shorthand. The
     returned CAPTURE accepts at most one constraint child; multiple
     constraints raise ValueError
@@ -2428,22 +2403,12 @@ def lower_named_capture(name_sym, args):
 
     name = str(name_sym)
     constraints = []
-    options = {}
     items = list(unpack(args))
     i = 0
     n = len(items)
     while i < n:
         elem = strip_mark(items[i])
         if is_keyword(elem):
-            opt_name = CAPTURE_OPTION_KW_TO_NAME.get(elem)
-            if opt_name is not None:
-                if i + 1 >= n:
-                    raise ValueError(
-                        "(%s ...) capture option %s: missing value"
-                        % (name, opt_name))
-                options[opt_name] = items[i + 1]
-                i += 2
-                continue
             if elem is KW_DCOLON or elem is KW_TYPE:
                 if i + 1 >= n:
                     raise ValueError(
@@ -2749,7 +2714,7 @@ def list_factory(head_sym, raw_args):
 def capture_factory(head_sym, raw_args):
     """
     Lower explicit (CAPTURE slot args...). Delegates to
-    lower_named_capture so the option/constraint splitting matches
+    lower_named_capture so the constraint splitting matches
     the implicit named-capture form
     """
 

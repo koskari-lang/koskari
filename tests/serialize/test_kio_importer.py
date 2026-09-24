@@ -137,8 +137,9 @@ class TestKioImporterParity(unittest.TestCase):
     def test_generated_macro_via_kio_matches_ki(self):
         """
         A macro a template defines keeps reaching the outer expansion's
-        binder from the .kio; its template symbols are stored by their
-        scoped spelling
+        binder from the .kio, which holds no gensym: the reference is
+        resolved to that binder when the module compiles, before the
+        .kio is written
         """
 
         ki, kio = self._both('generating', self.GENERATING)

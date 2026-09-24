@@ -25,7 +25,7 @@ import pytest
 
 from koskari.lib import cons, keyword, nil, pair, symbol
 from koskari.matcher import (
-    BINDING, BINDINGS, BODY, CAPTURE, CAPTURE_OPTION_KEYS, CLASS, DECL, DEFINE,
+    BINDING, BINDINGS, BODY, CAPTURE, CLASS, DECL, DEFINE,
     FIELD, FORM, FORMALS, GROUP, KNOWN_HEADS, LIST, LITERAL, LITERAL_KW,
     LITERAL_SYM, MATCH, MATCHER_REGISTRY, META_MATCHER, META_PATTERN, NOT,
     ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST, SYMBOL, TEST_ANY, TYPE,
@@ -775,14 +775,6 @@ class TestRegistry(unittest.TestCase):
         """
 
         self.assertTrue(KNOWN_HEADS.issubset(set(MATCHER_REGISTRY)))
-
-
-    def test_capture_option_keys_constant(self):
-        """
-        CAPTURE_OPTION_KEYS holds the documented set of options
-        """
-
-        self.assertEqual(CAPTURE_OPTION_KEYS, frozenset())
 
 
     def test_register_matcher_user_factory(self):
