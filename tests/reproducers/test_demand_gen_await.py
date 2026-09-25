@@ -16,8 +16,8 @@ tests.reproducers.test_demand_gen_await
 
 The demand bit is drive-state on the generator's frame, assigned at
 every entry: flattened iteration inherits the consumer's demand state,
-a DemandGenerator drive forces it on, an async boundary drive forces it
-off. An await under a demand drive therefore denies in-eval as
+a KosPyIter drive from Python forces it on, an async boundary drive
+forces it off. An await under a demand drive therefore denies in-eval as
 KoskariSyncViolation -- catchable by the generator body for sync
 fallback, exactly as in plain demand functions; uncaught, it unwinds
 the generator (finally runs) and propagates to the caller as the
@@ -97,7 +97,8 @@ class TestDemandGenAwait(unittest.IsolatedAsyncioTestCase):
 
     async def test_demand_call_mode1_fallback(self):
         """
-        demand_call on the yielding fn (mode-1 DemandGenerator): the
+        demand_call on the yielding fn returns its AsyncGenerator;
+        iterating it from Python drives through a KosPyIter, and the
         body catches the violation and yields the sync fallback
         """
 
@@ -107,8 +108,8 @@ class TestDemandGenAwait(unittest.IsolatedAsyncioTestCase):
 
     async def test_wrapped_agen_fallback(self):
         """
-        iter() of an existing async gen (wrapped DemandGenerator): same
-        catchable fallback
+        iter() of an existing async gen (a KosPyIter): same catchable
+        fallback
         """
 
         mod = await self.load("dga_wrapped")

@@ -264,10 +264,9 @@ class TestKoskariIterKoskariGenerator(CevalTest):
     """
     Koskari PUSH_FOREACH/ITER_NEXT over a Koskari AsyncGenerator.
 
-    PUSH_FOREACH calls iter(agen) which invokes AsyncGenerator.__iter__,
-    returning a DemandGenerator.  ITER_NEXT then calls next() on that
-    DemandGenerator, stepping the inner generator via demand_gen_step.
-    This is the implicit demand path baked into every Koskari async generator.
+    PUSH_FOREACH takes the AsyncGenerator as a KosIter provider, and
+    ITER_NEXT splices each step into the running chain; no sync adapter
+    is involved.
     """
 
     async def test_koskari_foreach_over_koskari_generator(self):

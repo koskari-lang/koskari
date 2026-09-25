@@ -17,7 +17,7 @@ tests.reproducers.test_provider_drive_matrix
 The full drive matrix for the native map and filter providers: every
 combination of function kind (python callable, koskari function, and
 the None predicate for filter), source kind (plain sequence, koskari
-generator, koskari demand generator, python generator, python async
+generator, a KosPyIter over a koskari generator, python generator, python async
 generator), and drive (python async for, python demand iteration, a
 koskari for-each consumer, and a koskari consumer that demand-drives
 through list), plus construction of the providers from koskari itself
@@ -97,7 +97,7 @@ class TestProviderDriveMatrix(unittest.IsolatedAsyncioTestCase):
         return {
             "sequence": lambda: [1, 2, 3, 4],
             "kos-gen": lambda: v["gen-src"](),
-            "kos-demand-gen": lambda: iter(v["gen-src"]()),
+            "kos-pyiter": lambda: iter(v["gen-src"]()),
             "py-gen": py_gen,
             "py-async-gen": py_async_gen,
         }

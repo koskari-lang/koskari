@@ -90,7 +90,7 @@ requires a value now and genuine suspension is an error
 flag, inherited by every frame pushed inside the extent; the denial is
 centralized where the evaluator would suspend. An awaitable that
 completes without suspending passes. "Demand surface" types (Demand,
-DemandGenerator) present this driving to python callers. Contrast:
+KosPyIter from Python) present this driving to python callers. Contrast:
 ambient async.
 
 ## durable context
@@ -162,7 +162,7 @@ an undelimited one. Reference: EVALUATOR.md §6.
 ## host (host context)
 
 The adapter-owned `KosContext` that python-facing adapters (the async
-stepper, the DemandGenerator) create to drive a provider that has no
+stepper, the KosPyIter) create to drive a provider that has no
 durable context of its own. Discarded and rebuilt after a completion at
 its root.
 

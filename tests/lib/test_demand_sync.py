@@ -177,7 +177,7 @@ class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(demand_call(fn), 100)
 
 
-class TestDemandGenerator(unittest.TestCase):
+class TestDemandYieldingFunction(unittest.TestCase):
     """
     demand_call on yielding KosFunction returns its AsyncGenerator
     """
@@ -208,7 +208,7 @@ class TestDemandGenerator(unittest.TestCase):
 
     def test_repr_includes_code_name(self):
         """
-        DemandGenerator repr matches Python-style <generator object name at ...>
+        demand_call result repr names the code (async_generator object name)
         """
         _, base_ns = build_expr(
             [["CONST", 0], ["RETURN", 1]],
@@ -908,17 +908,18 @@ class TestDemandDescriptor(unittest.TestCase):
         self.assertIn('suspension', str(ctx.exception))
 
 
-class TestKoskariIterDemandGenerator(unittest.TestCase):
+class TestKoskariIterPyIter(unittest.TestCase):
     """
-    Koskari PUSH_FOREACH/ITER_NEXT over a DemandGenerator.
+    Koskari PUSH_FOREACH/ITER_NEXT over a KosPyIter.
 
-    A DemandGenerator is a sync iterator (__iter__ returns self, __next__
-    runs demand_gen_step).  PUSH_FOREACH dispatches through it directly.
+    A KosPyIter is a KosIter provider whose suite forwards to its
+    provider, so PUSH_FOREACH takes it as a provider and each step
+    splices into the running chain.
     """
 
-    def test_koskari_foreach_over_demand_generator(self):
+    def test_koskari_foreach_over_pyiter(self):
         """
-        Koskari consumer sums values from a DemandGenerator via
+        Koskari consumer sums values from a KosPyIter via
         PUSH_FOREACH / ITER_NEXT, run via demand_call on the consumer.
         """
         _, base_ns = build_expr(
