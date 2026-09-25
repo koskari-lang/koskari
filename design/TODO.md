@@ -250,14 +250,14 @@ Gaps per [documentation-goals.md](documentation-goals.md):
 
 ## To design (broader)
 
-### Recursion guard at the Python boundary (investigate)
+### C stack at the Koskari-to-CPython call boundary (investigate)
 
-No `Py_EnterRecursiveCall` guards the nested `koskari_eval` a
-Python-boundary re-entry puts on the C stack (a three-level `(super)`
-chain segfaults). Investigate CPython's recursion accounting around the
-boundary drivers that re-enter the eval; the frame-depth limit already
-covers the chain.
-Ref: [EVALUATOR.md](EVALUATOR.md) §7 (installs and call paths).
+A Koskari call out to CPython that re-enters Koskari costs 1,424 bytes
+of C stack per level, 1,104 of them in Koskari's own frames. Attempt
+tail-call threading from the call site into the CPython call, or a
+CPS-style rebound to the trampoline that then tail-call threads, so the
+handler and call-path frames are gone before CPython runs.
+Ref: [interpreter/demand-flattening.md](interpreter/demand-flattening.md) (step 6).
 
 ### Context snapshot after completion (investigate)
 

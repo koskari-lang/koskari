@@ -441,7 +441,8 @@ Pending sign-off: the rest below.
   `reproducers/test_asyncgen_anext_await.py:104`,
   `reproducers/test_asyncgen_protocol.py:622`,
   `reproducers/test_demand_gen_await.py:19/100/110`) become `KosPyIter`.
-  Their assertions hold.
+  Their assertions hold. Applied, with the drive-matrix row renamed
+  `"kos-pyiter"`.
 - Holds unchanged: `test_run_iter_adapters.py:151` (`iter(agen) is not
   agen`); `test_dunder_adapter.py:240` (generator-function `__iter__`,
   via `KosIterFunction`); `test_repr_includes_code_name` (the
@@ -503,7 +504,7 @@ Correct `eval/eval_iter.c:37` ("Koskari AsyncGenerator passes through" ->
 `demand.c:23-38`, `:211`. Design rollups (`design/EVALUATOR.md:1907`,
 `design/INVARIANTS-AND-CLARIFICATIONS.md:167`, `:216`,
 `design/JARGON.md:93`, `:165`, `design/language/async.md:72-74`) are
-corrected only on the maintainer's go-ahead.
+corrected (done).
 
 ### 2. `__iter__` bound to a generator function: `KosIterFunction` (done)
 
@@ -629,19 +630,62 @@ tail position.
   wrapping a `call/cc` continuation, invoked from Koskari inside and
   outside a demand extent, including a second (multi-shot) entry.
 
-### 6. Recursion guard and TODO
+### 6. C stack at the Koskari-to-CPython call boundary
 
-- Decide whether the `eval.c` guard stays. Remaining users are Python
-  boundary re-entries. On 3.9-3.11 it consumes the Python recursion
-  limit, on 3.12+ the C limit (which differs between 3.12 and 3.13); the
-  `type_call` path is already counted by CPython, so the guard counts
-  that path twice. The guard does not by itself make boundary recursion
-  safe: a `type_call` -> `slot_tp_init` -> `procedure_tp_call` ->
-  `demand_sync_ex` -> `koskari_eval` level is deeper than the 1 KB D1
-  level, and the 3.12 / 3.13 C limits times that likely exceed an 8 MB
-  stack (inferred; measure before deciding).
-- Replace or remove the design TODO entry "Recursion guard at the Python
-  boundary", whose `(super)` claim is inaccurate.
+The `Py_EnterRecursiveCall` guard at `koskari_eval` entry stays: its
+remaining users are Python-boundary re-entries, and the frame-depth
+limit covers flattened calls. The TODO entry "Recursion guard at the
+Python boundary" is replaced by "C stack at the Koskari-to-CPython call
+boundary (investigate)".
+
+Measured (release build, 3.12): Koskari constructing a Koskari class
+inside `__init__`, `(define-class R [] (define __init__ [self n] (when
+(> n 0) (R (- n 1)))))`, costs 1,424 bytes of C stack per level over 12
+C frames. `RecursionError` fires at about 3,330 levels (about 4.7 MB),
+since CPython counts two units per level on top of the guard's one.
+
+| bytes | frame | owner |
+|---:|---|---|
+| 240 | `kos_call_body_window_owned_tail` | Koskari |
+| 224 | `koskari_eval` | Koskari |
+| 176 | `Koskari_DemandSync` | Koskari |
+| 160 | `KosEvalState_Call` | Koskari |
+| 144 | `demand_sync_vector` | Koskari |
+| 144 | `slot_tp_init` | CPython |
+| 96 | `_PyObject_Call` | CPython |
+| 80 | `_PyObject_MakeTpCall` | CPython |
+| 64 | `boundmethod_pycall` | Koskari |
+| 32 | `procedure_tp_call` | Koskari |
+| 32 | `kos_call_invoke_body` | Koskari |
+| 32 | `op_CALL_FAST` | Koskari |
+
+Koskari's frames are 1,104 of the 1,424 bytes, split across two runs:
+the call-out (`op_CALL_FAST` -> `kos_call_invoke_body` ->
+`kos_call_body_window_owned_tail` -> `KosEvalState_Call`, 464 bytes, all
+live while CPython runs) and the re-entry (`boundmethod_pycall` ->
+`procedure_tp_call` -> `Koskari_DemandSync` -> `demand_sync_vector` ->
+`koskari_eval`, 640 bytes).
+
+Attempt, in order:
+
+1. **Tail-call threading on the call-out.** The opcode handler, the
+   invoke body, and the call dispatch tail-call into the CPython call
+   (`PyObject_Vectorcall` and the result delivery), so one frame remains
+   under CPython instead of four.
+2. **CPS rebound, then threading.** Where a handler cannot tail-call the
+   CPython call directly (a spill that must stay alive, a tail call's
+   frame pop), the call-out returns a boundary-call result to the
+   trampoline, which makes the CPython call from its own shallow frame
+   and threads the delivery onward.
+3. **The re-entry run.** One eval state per boundary level instead of
+   two (`demand_run_koskari` keeps its own `KosEvalState` for the
+   `CallInto` install before `koskari_eval` builds another); no
+   `KosArgSpread` inline array on the stack when there are no keywords;
+   the tuple-path hops (`boundmethod_pycall` -> `procedure_tp_call` ->
+   `Koskari_DemandSync`) collapsed.
+
+Measure the per-level bytes before and after each step with the probe
+above.
 
 ### 7. Gate
 
