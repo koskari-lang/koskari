@@ -9,7 +9,7 @@ fails to flatten is a bug. The invariant is recorded in
 This rollup classifies Koskari-to-Koskari call and drive paths. Current
 corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattening.md).
 
-Entries marked (working tree) are uncommitted as of 2026-09-25.
+Entries marked (working tree) are uncommitted.
 
 ## Flattens
 
@@ -25,9 +25,9 @@ Entries marked (working tree) are uncommitted as of 2026-09-25.
   path in `kospartial_kos_vinstall` (`partial.c:190-220`).
 - **`Demand` over a frame-wanting inner.** `demand_kos_vinstall`
   installs the inner and marks it `KOS_FRAME_DEMAND`.
-- **`Demand` over any other inner.** (working tree) `KosEvalState_CallInto`
+- **`Demand` over any other inner.** `KosEvalState_CallInto`
   with a pass-through resume.
-- **`Procedure` (class `__init__`) called from Koskari.** (working tree)
+- **`Procedure` (class `__init__`) called from Koskari.**
   `KosEvalState_CallInto` with a resume that completes with None.
 - **Generator construction.** A generator function call binds arguments
   and returns the generator; nothing is evaluated.
@@ -37,11 +37,17 @@ Entries marked (working tree) are uncommitted as of 2026-09-25.
   (`kos_iter_acquire`, `KosIterRequest_Next`, `yield_from_classify`,
   `dynchain/dyn_gen.c`). The splice copies `KOS_FRAME_DEMAND` from the
   invoking frame.
-- **Iteration through a `KosPyIter`.** (working tree) The CPython
+- **Iteration through a `KosPyIter`.** The CPython
   iterator a provider's `tp_iter` returns (formerly `DemandGenerator`)
   is a KosIter provider whose suite forwards to its provider, so
   `for-each` / `yield-from` over `(iter (gen))` splice as the bare
   provider does, carrying only the consumer's demand state.
+- **A generator-function `__iter__` called from Koskari.** (working
+  tree) The class builder wraps it in `KosIterFunction`, whose install
+  is the function's own: `(.__iter__ obj)` gets the `AsyncGenerator`.
+  `for-each` over the instance acquires through `tp_iter`, a slot call
+  that evaluates nothing (construction only) and yields a `KosPyIter`,
+  which then splices as above.
 - **Transform callbacks.** `map`, `filter`, `starmap`, `accumulate`,
   `takewhile`, `dropwhile` call their function through
   `KosEvalState_CallResult` from a code-less resume frame.
@@ -65,8 +71,7 @@ Entries marked (working tree) are uncommitted as of 2026-09-25.
 
 The Python boundary. Each entry here runs the boundary's own entry (a
 fresh context and `koskari_eval`), resets the per-context frame depth,
-and is counted by `Py_EnterRecursiveCall` at `koskari_eval` entry
-(working tree).
+and is counted by `Py_EnterRecursiveCall` at `koskari_eval` entry.
 
 - **Type instantiation.** `(C args)` calls the type: `type_call` ->
   `tp_new` -> `slot_tp_init` -> `procedure_tp_call` -> the demand core.
