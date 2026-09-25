@@ -759,35 +759,15 @@ static KosOpResult kos_vinstall_boundmethod(
     int tail_call) {
 
   PyObject *func = KosBoundMethod_FUNC(callable);
-  PyObject *self = KosBoundMethod_SELF(callable);
-  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
-  Py_ssize_t total_slots = 1 + nargs + nkw;
-  PyObject **new_args = NULL;
-  KosOpResult r;
 
   if (! KosCallable_Check(func)) {
     PyErr_SetString(PyExc_TypeError,
                     "KosBoundMethod eval requires a KosCallable func");
     return EVAL_RAISE();
   }
-
-  new_args = PyMem_New(PyObject *, (size_t) total_slots);
-  if (! new_args) {
-    PyErr_NoMemory();
-    return EVAL_RAISE();
-  }
-  new_args[0] = self;
-  for (Py_ssize_t i = 0; i < nargs; i++)
-    new_args[1 + i] = args[i];
-  for (Py_ssize_t i = 0; i < nkw; i++)
-    new_args[1 + nargs + i] = args[nargs + i];
-  r = KosEvalState_CallResult(es, func, new_args, nargs + 1, kwnames,
-                              tail_call, NULL, NULL);
-  PyMem_Del(new_args);
-  return r;
+  return KosEvalState_CallWithReceiver(es, func, KosBoundMethod_SELF(callable),
+                                       args, nargs, kwnames, tail_call);
 }
-
-
 
 
 static void boundmethod_dealloc(PyObject *self) {

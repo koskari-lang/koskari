@@ -696,15 +696,18 @@ PyObject *kos_instance_call(PyObject *self, PyObject *args, PyObject *kwds) {
 
 /**
    Resolve the unbound __call__ of self's type for inline dispatch. Returns a
-   BORROWED reference to a KosCallable, or NULL if __call__ is absent or not a
-   KosCallable. Uses the type method cache (PyType_Lookup) -- no allocation, no
-   descriptor binding, no transient string. The evaluator injects self as the
-   first positional itself, so no bound method is built.
+   BORROWED reference to a KosCallable that binds its receiver (its type has
+   tp_descr_get: a function, the Demand family), or NULL when __call__ is
+   absent, not a KosCallable, or a non-descriptor such as a partial, which
+   CPython calls without self and kos_instance_call does too. Uses the type
+   method cache (PyType_Lookup) -- no allocation, no descriptor binding, no
+   transient string. The evaluator injects self as the first positional
+   itself, so no bound method is built.
 */
 PyObject *kos_instance_call_target(PyObject *self) {
 
   PyObject *fn = PyType_Lookup(Py_TYPE(self), str_call_name);
-  if (fn && KosCallable_Check(fn))
+  if (fn && KosCallable_Check(fn) && Py_TYPE(fn)->tp_descr_get)
     return fn;
   return NULL;
 }

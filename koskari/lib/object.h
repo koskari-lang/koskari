@@ -58,8 +58,9 @@ PyObject *kos_instance_call(PyObject *self, PyObject *args, PyObject *kwds);
 
 
 /**
-   Resolve the unbound __call__ KosCallable of self's type for inline dispatch.
-   Borrowed reference, or NULL. The caller injects self as the first positional.
+   Resolve the unbound __call__ KosCallable of self's type for inline
+   dispatch, when it binds its receiver. Borrowed reference, or NULL. The
+   caller injects self as the first positional.
 */
 PyObject *kos_instance_call_target(PyObject *self);
 

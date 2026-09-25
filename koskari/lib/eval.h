@@ -1499,6 +1499,22 @@ KosOpResult KosEvalState_CallInto(
 
 
 /**
+   Call callable with self as its receiver, injected as the first
+   positional, and report the outcome as KosEvalState_CallResult with
+   no resume does: RETURN with the value in hand, or an installed
+   callee. No bound method is built. args and kwnames are borrowed.
+*/
+KosOpResult KosEvalState_CallWithReceiver(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *self,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call);
+
+
+/**
    KosEvalState_CallArgs: KosEvalState_Call over a tuple and a dict,
    spread once to the vector shape. Used by CALL_STAR and
    TAIL_CALL_STAR.

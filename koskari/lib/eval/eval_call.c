@@ -131,14 +131,15 @@ static KosOpResult kos_call_dispatch(
 
 
 /**
-   An instance whose __call__ is a KosCallable: dispatch that __call__
-   with self injected as the first positional (no bound method, no
-   descriptor bind). Out of line so the injection buffer is not on the
-   stack of every python call.
+   Call callable with self as its receiver: self is injected as the
+   first positional through a small buffer (no bound method, no
+   descriptor bind) and the call dispatched, its outcome reported in
+   hand as an install reports it. Out of line so the buffer is not on
+   the stack of every call.
 */
-static KOS_NOINLINE KosOpResult kos_call_instance(
+KOS_NOINLINE KosOpResult KosEvalState_CallWithReceiver(
     KosEvalState *es,
-    PyObject *call_fn,
+    PyObject *callable,
     PyObject *self,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -162,8 +163,8 @@ static KOS_NOINLINE KosOpResult kos_call_instance(
   inj[0] = self;
   if (ntotal)
     memcpy(inj + 1, args, (size_t) ntotal * sizeof(PyObject *));
-  (void) KosCallable_CheckSlots(call_fn, &slots);
-  r = kos_call_dispatch(es, slots, call_fn, inj, nargs + 1, kwnames,
+  (void) KosCallable_CheckSlots(callable, &slots);
+  r = kos_call_dispatch(es, slots, callable, inj, nargs + 1, kwnames,
                         tail_call);
   if (inj != small)
     PyMem_Free(inj);
@@ -206,8 +207,8 @@ static KosOpResult kos_call_dispatch(
   if (KosInstanceCall_Check(callable)) {
     PyObject *call_fn = kos_instance_call_target(callable);
     if (call_fn)
-      return kos_call_instance(es, call_fn, callable, args, nargs,
-                               kwnames, tail_call);
+      return KosEvalState_CallWithReceiver(es, call_fn, callable, args,
+                                           nargs, kwnames, tail_call);
   }
 
   /* PEP 590: keyword values follow args[nargs .. nargs + nkw - 1]. */
@@ -511,6 +512,50 @@ static KOS_NOINLINE KosOpResult kos_call_legacy_spill(
 }
 
 
+static inline KosOpResult kos_call_invoke(
+        KosEvalState *es,
+        PyObject *callable,
+        PyObject *self_arg,
+        PyObject *const *argv,
+        Py_ssize_t nargs,
+        PyObject *kwnames,
+        unsigned flags);
+
+
+/**
+   An instance call from the class dispatch: re-enter the call core
+   with the __call__ target as the callable and the instance as the
+   receiver. The instance stays where it is: a window slot under the
+   arguments (WINDOW_CALLABLE becomes WINDOW_UNDER, same width) that
+   drops with the window, or a reference the handler owns, released
+   once the invoke returns. The target is borrowed from the type, so
+   the owned-callable flag is cleared for the re-entry. window is
+   unused: kos_call_invoke recomputes it from the rewritten flags.
+*/
+static KOS_NOINLINE KosOpResult kos_call_invoke_instance(
+        KosEvalState *es,
+        size_t window,
+        PyObject *instance,
+        PyObject *target,
+        PyObject *const *argv,
+        Py_ssize_t nargs,
+        PyObject *kwnames,
+        unsigned flags) {
+
+  unsigned reentry = flags & ~KOS_CALL_CALLABLE_OWNED;
+  KosOpResult r;
+
+  (void) window;
+  if (reentry & KOS_CALL_WINDOW_CALLABLE)
+    reentry = (reentry & ~KOS_CALL_WINDOW_CALLABLE) | KOS_CALL_WINDOW_UNDER;
+
+  r = kos_call_invoke(es, target, instance, argv, nargs, kwnames, reentry);
+  if (flags & KOS_CALL_CALLABLE_OWNED)
+    Py_DECREF(instance);
+  return r;
+}
+
+
 /* The class dispatch proper.  Always inlined into the per-flag bodies
    below, each of which passes a literal flags word, so every flag test
    in here folds away and each body carries only its own arms. */
@@ -708,9 +753,19 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
     goto legacy;
   }
 
+  /* Class: an instance whose __call__ binds it as receiver -- the
+     receiver-injecting entry, with the instance as the window's
+     under-slot. */
+  if (KosInstanceCall_Check(callable)) {
+    PyObject *target = kos_instance_call_target(callable);
+    if (target)
+      return kos_call_invoke_instance(es, window, callable, target, argv,
+                                      nargs, kwnames, flags);
+  }
+
   /* Class: plain Python callable -- vectorcall reading argv in place;
      the result lands on the caller's block, so the window drops first. */
-  if (! KosCallable_Check(callable) && ! KosInstanceCall_Check(callable)) {
+  if (! KosCallable_Check(callable)) {
     PyObject *result = (nargs == 0 && ! kwnames)
         ? PyObject_CallNoArgs(callable)
         : PyObject_Vectorcall(callable, argv, (size_t) nargs, kwnames);
