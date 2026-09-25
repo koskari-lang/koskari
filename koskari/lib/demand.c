@@ -176,18 +176,17 @@ steal_fail:
 
 
 /**
-   Classify a value a koskari install or eval reports as settled. A
-   plain value passes through; one that genuinely needs awaiting is
-   eagerly stepped (and denied as a sync violation if it suspends)
-   through the same machinery a plain Python callable's result already
-   takes. KosEval_ResultIsValue is the gate rather than
-   demand_step_python_result's own __await__ probe, so a Defer or a
-   future -- both exempt from ambient await -- passes through as the
-   value it is instead of being stepped.
+   Finish a value at the demand boundary, whether a Python callable or
+   a Koskari install produced it. A plain value passes through; one
+   that genuinely needs awaiting is eagerly stepped, and denied as a
+   sync violation if it suspends. KosEval_ResultIsValue is the gate
+   rather than demand_step_python_result's own __await__ probe, so a
+   Defer or a future -- both exempt from ambient await -- passes
+   through as the value it is instead of being stepped.
 
    Steals value. Returns a new reference, or NULL with PyErr set.
 */
-static PyObject *demand_finish_koskari_value(PyObject *value) {
+static PyObject *demand_finish_value(PyObject *value) {
 
   switch (KosEval_ResultIsValue(value)) {
     case 1:
@@ -266,7 +265,7 @@ static PyObject *demand_run_koskari(
          same eager-step-or-deny treatment a plain Python callable's
          result gets, instead of leaking an unstepped awaitable out of
          the demand boundary. */
-      return demand_finish_koskari_value(r.val);
+      return demand_finish_value(r.val);
 
     case KOS_RES_RAISE:
     case KOS_RES_FATAL:
@@ -289,9 +288,9 @@ static PyObject *demand_run_koskari(
 
 /**
    The demand core over a vectorcall-shaped argument vector. A plain
-   Python callable is called and an awaitable result eagerly stepped;
-   a KosCallable runs through demand_run_koskari. args and kwnames are
-   borrowed. Returns a new reference, or NULL with PyErr set.
+   Python callable is called and its result finished; a KosCallable
+   runs through demand_run_koskari. args and kwnames are borrowed.
+   Returns a new reference, or NULL with PyErr set.
 */
 static PyObject *demand_sync_vector(
     PyObject *callable,
@@ -304,7 +303,7 @@ static PyObject *demand_sync_vector(
   if (! KosCallable_Check(callable)) {
     PyObject *result = PyObject_Vectorcall(callable, args, (size_t) nargs,
                                            kwnames);
-    return result ? demand_step_python_result(result) : NULL;
+    return result ? demand_finish_value(result) : NULL;
   }
 
   return demand_run_koskari(callable, args, nargs, kwnames);
@@ -581,7 +580,7 @@ static KosOpResult demand_kos_vinstall(
                               NULL, NULL);
   switch (r.kind) {
     case KOS_RES_RETURN: {
-      PyObject *value = demand_finish_koskari_value(r.val);
+      PyObject *value = demand_finish_value(r.val);
       return value ? EVAL_RETURN(value) : EVAL_RAISE();
     }
 
@@ -617,7 +616,7 @@ KosEvaluatedTypeObject KosDemandCallableType = {
     .tp_members = demand_members,
     .tp_getset = demand_getset,
     .tp_repr = demand_repr,
-    .tp_call = KosCallAdapt_CallDemand,
+    .tp_call = PyVectorcall_Call,
     .tp_descr_get = demand_descr_get,
     .tp_new = demand_new,
     .tp_init = demand_init,
@@ -625,7 +624,7 @@ KosEvaluatedTypeObject KosDemandCallableType = {
   },
   .kos_call = {
     .kc_vinstall = demand_kos_vinstall,
-    .kc_pycall = KosCallAdapt_CallDemand,
+    .kc_pycall = NULL,
     .kc_pyvectorcall = KosCallAdapt_VectorDemand,
   },
 };

@@ -187,16 +187,11 @@ PyObject *KosCallAdapt_VectorAsync(
     PyObject *kwnames);
 
 /**
-   tp_call filler for a demand-surface callable: run self to completion on
-   the demand path (Koskari_DemandSync). Real suspension raises
-   KoskariSyncViolation; a yielding callable returns a KosPyIter.
-*/
-PyObject *KosCallAdapt_CallDemand(
-    PyObject *self, PyObject *args, PyObject *kwds);
-
-/**
-   vectorcallfunc filler with the same demand semantics; builds tuple+dict
-   and defers to the demand path.
+   vectorcallfunc filler for a demand-surface callable: run self to
+   completion on the demand path (Koskari_DemandSyncVector). Real
+   suspension raises KoskariSyncViolation; a yielding callable returns
+   its AsyncGenerator. The Demand family's tp_call is PyVectorcall_Call,
+   which reaches this through the instance's vectorcall slot.
 */
 PyObject *KosCallAdapt_VectorDemand(
     PyObject *self, PyObject *const *args, size_t nargsf,

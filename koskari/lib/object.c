@@ -153,27 +153,6 @@ static PyObject *demand_names[COUNT_OF(demand_dunders)];
 */
 
 
-static PyObject *procedure_tp_call(
-    PyObject *self,
-    PyObject *args,
-    PyObject *kwargs) {
-
-  PyObject *wrapped = KosDemand_GetWrapped(self);
-
-  if (! wrapped) {
-    PyErr_SetString(PyExc_TypeError, "Procedure object is not initialized");
-    return NULL;
-  }
-
-  PyObject *result = Koskari_DemandSync(wrapped, args, kwargs);
-  if (! result)
-    return NULL;
-
-  Py_DECREF(result);
-  Py_RETURN_NONE;
-}
-
-
 /**
    The Python vectorcall entry: the demand core over the vector, result
    discarded. A method-descriptor call from CPython (slot_tp_init)
@@ -290,12 +269,12 @@ static KosEvaluatedTypeObject KosProcedureCallableType = {
     .tp_doc = "A Demand with no result: runs its wrapped callable on the "
               "demand path and returns None",
     .tp_repr = procedure_repr,
-    .tp_call = KosCallAdapt_CallAsync,
+    .tp_call = PyVectorcall_Call,
     .tp_base = KOS_EVALUATED_PYTYPE(KosDemandCallableType),
   },
   .kos_call = {
     .kc_vinstall = procedure_kos_vinstall,
-    .kc_pycall = procedure_tp_call,
+    .kc_pycall = NULL,
     .kc_pyvectorcall = procedure_vectorcall,
   },
 };
@@ -320,31 +299,6 @@ static PyObject *KosProcedure_New(PyObject *wrapped) {
   applies when the KosPyIter is driven. Construction, binding, and
   attribute forwarding are inherited from Demand.
 */
-
-
-static PyObject *iterfunction_tp_call(
-    PyObject *self,
-    PyObject *args,
-    PyObject *kwargs) {
-
-  PyObject *wrapped = KosDemand_GetWrapped(self);
-  PyObject *agen;
-  PyObject *iter;
-
-  if (! wrapped) {
-    PyErr_SetString(PyExc_TypeError,
-                    "IterFunction object is not initialized");
-    return NULL;
-  }
-
-  agen = Koskari_AsyncCall(wrapped, args, kwargs);
-  if (! agen || ! KosPyAsyncGen_Check(agen))
-    return agen;
-
-  iter = KosIterAdapt_PyIter(agen);
-  Py_DECREF(agen);
-  return iter;
-}
 
 
 /**
@@ -435,12 +389,12 @@ static KosEvaluatedTypeObject KosIterFunctionType = {
     .tp_doc = "A generator function bound as __iter__: called from "
               "Python, presents its generator as an iterator",
     .tp_repr = iterfunction_repr,
-    .tp_call = KosCallAdapt_CallAsync,
+    .tp_call = PyVectorcall_Call,
     .tp_base = KOS_EVALUATED_PYTYPE(KosDemandCallableType),
   },
   .kos_call = {
     .kc_vinstall = iterfunction_kos_vinstall,
-    .kc_pycall = iterfunction_tp_call,
+    .kc_pycall = NULL,
     .kc_pyvectorcall = iterfunction_vectorcall,
   },
 };

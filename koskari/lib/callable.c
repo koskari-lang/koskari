@@ -234,15 +234,6 @@ PyObject *KosCallAdapt_VectorAsync(
 }
 
 
-PyObject *KosCallAdapt_CallDemand(
-    PyObject *self,
-    PyObject *args,
-    PyObject *kwds) {
-
-  return Koskari_DemandSync(self, args, kwds);
-}
-
-
 PyObject *KosCallAdapt_VectorDemand(
     PyObject *self,
     PyObject *const *args,
