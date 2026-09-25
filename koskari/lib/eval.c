@@ -1483,7 +1483,8 @@ static KosOpResult kos_eval_walk_outcome(KosEvalState *es, KosOpResult r) {
 
    :return: EVAL_NORMAL when routed (execution resumes at the invoke
             site) or when an async unwind started (pending return
-            staged); EVAL_RAISE on error
+            staged); EVAL_REPROLOGUE when the invoke site is a
+            code-less resume frame; EVAL_RAISE on error
 */
 static KosOpResult kos_eval_route_delim_return(
     KosEvalState *es,
@@ -1532,6 +1533,13 @@ static KosOpResult kos_eval_route_delim_return(
   } else if (kos_dyn_finish_delimited_pop_return(es, ret_delim, val) < 0) {
     return EVAL_RAISE();
   }
+
+  /* Both finishes leave val on the invoking frame's stack. A code-less
+     invoker (a resume frame that called the continuation) has no pc to
+     continue at: the prologue delivers the value on its stack to its
+     armed resume, the way a callee's return reaches it. */
+  if (! KosEvalState_CODE(es))
+    return EVAL_REPROLOGUE();
   return EVAL_NORMAL();
 }
 

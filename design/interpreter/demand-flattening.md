@@ -11,9 +11,10 @@ presents its generator to Python as one.
 
 Progress: steps 1 (D5), 2 (`KosIterFunction`), and 3 (D8) are
 committed; D7 is resolved by an approved contract change; step 4 (D4,
-D6) is done in the working tree with its contract changes applied. D11
-(composable continuations from code-less frames) is open and blocks
-closing the arc. Steps 5-7 remain.
+D6) is committed as WIP with its contract changes applied. D11
+(composable continuations from code-less frames) and D12 (delimited
+continuations on a foreign context) are fixed in the working tree.
+Steps 5-7 remain.
 
 ## Invariant
 
@@ -209,28 +210,54 @@ callables run on a demand eval drive") describes nesting as acceptable
 and is removed with the fix.
 
 **D11. Composable continuations invoked from a code-less resume frame.**
-Open; predates this work for transforms. When a `shift` continuation's
-landed segment completes, `POP_PROMPT` (`opcode/POP_PROMPT.c:67`) routes
-the value to the recorded invoke-site frame through
-`kos_eval_route_delim_return` (`eval.c:~1488`), which finishes the
-delim (in-place: `kos_dyn_finish_inplace_pop_return`; push-graft:
-`kos_dyn_finish_delimited_pop_return`) and resumes dispatch at the
-invoker's pc. A code-less invoker has no pc:
+Fixed in the working tree; the transform case predates this work. When
+a `shift` continuation's resumed slice completes, `POP_PROMPT`
+(`opcode/POP_PROMPT.c:67`) lands the value at the recorded invoke site
+through `kos_eval_route_delim_return` (`eval.c:~1488`). Two faults:
 
-- `(reset (* 2 (shift k ((demand k) 1))))` (invoked from `CallInto`'s
-  frame, in-place path) segfaults in `op_POP_PROMPT`.
-- `(reset (* 2 (shift k (list (map k #[1 2])))))` (invoked from a
-  transform's resume frame) returns `2`, not `[2, 4]`.
+- The in-place restitch (`kos_dyn_inplace_restitch`, `dynchain.c`)
+  restored the resume frame's saved stack and pc into the frame struct
+  while that frame's live registers still held the spent slice's pc
+  (`POP_PROMPT` runs in it); the following `kos_dyn_resync_chain`
+  flushed the stale pc back over the restored one. An invoker that is
+  that same bytecode frame hid this, because the restitch reloads the
+  invoker's registers after the resync. A code-less invoker returns into
+  the resume frame later, at the clobbered pc, so the first `k` value
+  ended the `reset`. Traced under the debug build: saved pc 8,
+  post-resync pc 16 (the `RETURN` after `POP_PROMPT`). The restitch now
+  loads the restored state into the live registers when the resume frame
+  is live, before the resync.
+- The route resumed dispatch (`NORMAL`) at the invoker's pc; a code-less
+  invoker has none. It now returns `REPROLOGUE` for a code-less invoker,
+  and the prologue delivers the value on the frame's stack to its armed
+  resume, as a callee's return reaches it. No type handles continuations.
 
-Returning REPROLOGUE from the route when the invoker is code-less, so
-the prologue delivers the value on its stack to the armed resume, stops
-the crash but still yields `2` for `(+ ((demand k) 1) ((demand k) 2))`
-and for the `map` case: the first delivery ends the reset. Not applied.
-The in-place invoke snapshots the invoke site as a bytecode resume point
-(`dynchain/xfer_plan.c:100-170`, including the nested-handler frame
-clone), and the push-graft path sets the invoker's pc; neither yet has a
-delivery-to-resume form. Needs a design pass through the in-place
-restitch and the delimited return.
+Before: `(reset (* 2 (shift k (+ ((demand k) 1) ((demand k) 2)))))`
+segfaulted; `(#list ((demand k) 1) ((demand k) 2))` gave `2`; `for-each`
+over `(map k #[1 2])` raised `NameError` or segfaulted. After: `6`,
+`[2, 4]`, `[2, 4]`. The push-graft path from code-less frames (a
+continuation invoked after its `reset` returned, same context) gives
+`(10, 10, 6, [2, 4, 6])` for `(kk 5)`, `((demand kk) 5)`, the `+` form,
+and `for-each` over `(map kk ...)`.
+
+**D12. Delimited continuations applied on a foreign context.** Fixed in
+the working tree. A delimited continuation has two modes of invocation:
+from under its delimiter (in-place resume) and from outside it, where
+the push model grafts a clone of the template, delimiter included, onto
+the call site, the way a generator installs where it is called. Neither
+needs the capturing context. `call_call_continuation` (`cont.c`) sent a
+delimited continuation on a foreign context (a different evaluator
+token) down the undelimited `KoskariContinuationApply` route, which
+`handle_continuation_apply` (`eval.c:852`) serves abortively: unwind the
+foreign context to its root and invoke in the owner. That discarded the
+work in flight (`(list (map k #[1 2]))` inside a `shift`, where Python's
+`list` drives the map on the transform's own context, gave `2`). A
+delimited continuation now always invokes on the current chain,
+in-place or grafted per `kos_delimited_inplace_ready`; the token check,
+the dead-target check, and `KoskariContinuationApply` apply to
+undelimited continuations only. The case gives `[2, 4]`, and a
+continuation captured by one top-level form and applied by another
+gives `10`.
 
 ### Boundary sites (no action)
 
@@ -258,7 +285,8 @@ steppers), `iterate.c:1087` (the `KosPyIter` Python-side drive),
 - Continuations reached through `CallInto`: an escaping `call/cc`
   continuation through a `Demand` works (`(call/cc (lambda [k] ((demand
   k) 5) 99))` -> 5). A composable (`shift`) continuation invoked from
-  any code-less resume frame is broken (D11).
+  a code-less resume frame works after the D11 fix, on both the
+  in-place and push-graft paths.
 - A retained `Context` from a boundary drive reports `namespace` as
   None after the drive ends: the root is the code-less `CallInto` frame,
   which has no namespace. `test_domain.py`'s running-context test now
@@ -317,7 +345,7 @@ Committed as WIP (`33226f50`):
   `tests/reproducers/test_partial_flatten.py`,
   `tests/reproducers/scripts/partial_flatten.ki`.
 
-Uncommitted:
+Committed as WIP (`1aa65b10`):
 
 - Step 4: `demand.c` core rewritten (`demand_run_koskari` through
   `CallInto`, vector-native `demand_sync_vector`, `demand_resume` moved
@@ -331,10 +359,22 @@ Uncommitted:
 - `test_procedure_install.py`: continuation cases through `Demand` and
   `map` (D11).
 
-Test state: everything passes except the two D11 tests:
-`test_demand_composable_continuation_twice` segfaults (taking the
-pytest run down with it) and `test_map_composable_continuation` fails
-(`2 != [2, 4]`). `make lint` is clean.
+Uncommitted:
+
+- D11: `kos_dyn_inplace_restitch` (`dynchain.c`) loads the restored
+  resume-frame state into the live registers before the resync;
+  `kos_eval_route_delim_return` (`eval.c`) returns `REPROLOGUE` for a
+  code-less invoker.
+- D12: `call_call_continuation` (`cont.c`) invokes a delimited
+  continuation on the current chain whatever context captured it.
+- `test_procedure_install.py`: the foreign-context case
+  (`test_composable_continuation_across_boundary`, `[2, 4]`), a
+  continuation applied outside its delimiter by a later top-level form
+  (`test_composable_continuation_outside_delimiter`), and the native
+  `map` case (`test_map_composable_continuation`, `for-each` over
+  `(map k ...)`).
+
+Test state: `make test` passes all ten phases; `make lint` is clean.
 
 ## Withdrawn designs
 
@@ -363,6 +403,9 @@ pytest run down with it) and `test_map_composable_continuation` fails
   suite needs none.
 - A frame flag checked on the generic return path to discard a result.
   Replaced by a resume.
+- A barrier error for a delimited continuation on a foreign context.
+  Changed an invariant: from outside its delimiter a delimited
+  continuation grafts onto any call site (D12).
 
 ## Contract changes
 

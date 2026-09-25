@@ -56,15 +56,12 @@ Entries marked (working tree) are uncommitted.
   `takewhile`, `dropwhile` call their function through
   `KosEvalState_CallResult` from a code-less resume frame.
 - **Continuations.** `call/cc`, `prompt` / `shift` transfers run on the
-  running chain.
+  running chain. A continuation invoked from a code-less resume frame
+  (a transform callback, a `Demand` over a continuation) returns into
+  that frame's resume. (working tree)
 
 ## Should flatten, does not
 
-- **Composable continuations invoked from a code-less resume frame.**
-  The call installs flattened, but the continuation's return routes to
-  the invoker's pc, which a resume frame does not have: through a
-  `Demand` it segfaults, through `map` it ends the `reset` with the
-  first value. Tracked as D11 in the demand-flattening note.
 - **Opcodes that call Koskari callables.** `OBJECT_REPR` with a Koskari
   repr handler or `__kos_repr__` (`KosUtils_Repr` ->
   `Koskari_DemandSyncEx`, `utils.c:520`, `:561`); runtime match
@@ -89,6 +86,10 @@ and is counted by `Py_EnterRecursiveCall` at `koskari_eval` entry.
   `functools`, `operator`, any Python library given a Koskari callable
   (`KosCallAdapt_CallDemand` / `VectorDemand`, `callable.c:295/319`;
   `Koskari_AsyncCall`).
+- **Undelimited continuations on a foreign context.** Applied
+  abortively in the capturing context through `KoskariContinuationApply`.
+  A delimited continuation is not in this list: from outside its
+  delimiter it grafts onto the call site on any context. (working tree)
 - **Python drives of Koskari generators.** `next` / `send` / `throw` /
   `close` / `list` / `for` from Python through the sync adapter;
   `__anext__` / `asend` / `athrow` / `aclose` through the async steppers

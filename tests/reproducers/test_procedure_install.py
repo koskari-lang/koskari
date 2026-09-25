@@ -103,9 +103,19 @@ class TestProcedureInstall(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await mod.demand_shift_twice(), 6)
 
 
+    async def test_composable_continuation_across_boundary(self):
+        mod = await self.load_module()
+        self.assertEqual(await mod.map_shift_boundary(), [2, 4])
+
+
+    async def test_composable_continuation_outside_delimiter(self):
+        mod = await self.load_module()
+        self.assertEqual(await mod.escaped_shift_later(), (10, 10, [2, 4]))
+
+
     async def test_map_composable_continuation(self):
         mod = await self.load_module()
-        self.assertEqual(await mod.map_shift(), [2, 4])
+        self.assertEqual(await mod.map_shift_native(), [2, 4])
 
 
 # The end.

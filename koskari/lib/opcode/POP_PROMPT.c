@@ -66,7 +66,20 @@ KOS_OP_HANDLER(POP_PROMPT) {
 
     if (KosDynDelim_RETURN_FRAME(ret_delim) != NULL
         && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1) {
-      RESULT_RELAY(es, kos_eval_route_delim_return(es, ret_delim, val));
+      KosOpResult routed = kos_eval_route_delim_return(es, ret_delim, val);
+#if KOS_EVAL_SAFETYNET
+      /* NORMAL threads the next instruction of the landed frame; a
+         code-less invoke site must be delivered through the prologue
+         (REPROLOGUE) instead. */
+      if (unlikely(routed.kind == KOS_RES_NORMAL
+                   && ! KosEvalState_CODE(es))) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "POP_PROMPT: delimited return resumed dispatch "
+                        "in a code-less frame");
+        RESULT_RAISE();
+      }
+#endif
+      RESULT_RELAY(es, routed);
     }
 
     if (KosEvalState_CurrentNode(es) == (KosDynNode *) ret_delim) {

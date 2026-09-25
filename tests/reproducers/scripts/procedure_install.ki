@@ -85,8 +85,29 @@ define async_partial []:
   (reset (* 2 (shift k (+ ((demand k) 1) ((demand k) 2))))))
 
 
-(define map_shift []
+;; Python's list drives the map on the transform's own context, so k is
+;; applied outside the context that captured it: it grafts, delimiter
+;; included, onto the call site there.
+(define map_shift_boundary []
   (reset (* 2 (shift k (list (map k #[1 2]))))))
+
+
+;; A continuation captured by one top-level form, applied outside its
+;; delimiter by a later one.
+(define escaped_k (reset (* 2 (shift k k))))
+
+
+(define escaped_shift_later []
+  #((escaped_k 5) ((demand escaped_k) 5) (list (map escaped_k #[1 2]))))
+
+
+;; for-each drives the map on this context: k is applied from the
+;; transform's code-less resume frame.
+(define map_shift_native []
+  (reset (* 2 (shift k (let [[out #[]]]
+                         (for-each [x (map k #[1 2])]
+                           (out.append x))
+                         out)))))
 
 
 ;; The end.
