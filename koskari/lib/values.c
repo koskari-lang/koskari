@@ -239,91 +239,6 @@ static PyObject *values_call(
 /* === KosCallable install === */
 
 
-/**
-   Return 1 if target is a KosCallable that wants a frame (flattenable into the
-   frame do_frame_prep prepared for values), 0 otherwise.
-*/
-static int values_target_is_flattenable(PyObject *target) {
-
-  if (! target)
-    return 0;
-
-  if (! KosCallable_Check(target))
-    return 0;
-
-  return KosCallable_WantsFrame(target);
-}
-
-
-/**
-   After merge: Case A flattens through bare KosCallable_CallArgs; Case B
-   reconciles the W=1 surplus frame then uses full KosEvalState_CallArgs.
-   merged_args / merged_kw are borrowed for the duration of the call.
-*/
-static KosOpResult values_dispatch(
-    KosEvalState *es,
-    PyObject *target,
-    PyObject *merged_args,
-    PyObject *merged_kw,
-    int tail_call) {
-
-  if (values_target_is_flattenable(target))
-    return KosCallable_CallArgs(es, target, merged_args, merged_kw,
-                                tail_call);
-
-  if (! tail_call) {
-    if (kos_dyn_pop_frame(es) < 0)
-      return EVAL_RAISE();
-    return KosEvalState_CallArgs(es, target, merged_args, merged_kw, 0);
-  }
-
-  /* Case B, tail. do_frame_prep already reset the values frame. When that
-     frame has a parent, KosEvalState_CallArgs(tail=1) pops it via
-     tail_prep_py_call. When it is the root, the reset cleared bytecode that
-     CONTROL_RETURNED would still walk -- deliver the result with RETURN. */
-  {
-    KosDynFrame *frame = KosEvalState_FRAME(es);
-    KosDynNode *parent = frame
-        ? KosDynNode_PARENT((KosDynNode *) frame) : NULL;
-
-    if (! parent) {
-      if (KosCallable_Check(target)) {
-        KosOpResult r = KosEvalState_CallArgs(
-            es, target, merged_args, merged_kw, 0);
-        if (r.kind != KOS_RES_NORMAL)
-          return r;
-        {
-          PyObject *rv = KosEvalState_StackPopRef(es);
-          if (! rv)
-            return EVAL_RAISE();
-          return EVAL_RETURN(rv);
-        }
-      }
-
-      {
-        PyObject *result = NULL;
-        if (merged_args)
-          result = PyObject_Call(target, merged_args, merged_kw);
-        else if (merged_kw) {
-          PyObject *empty = PyTuple_New(0);
-          if (! empty)
-            return EVAL_RAISE();
-          result = PyObject_Call(target, empty, merged_kw);
-          Py_DECREF(empty);
-        } else {
-          result = PyObject_CallNoArgs(target);
-        }
-        if (! result)
-          return EVAL_RAISE();
-        return EVAL_RETURN(result);
-      }
-    }
-  }
-
-  return KosEvalState_CallArgs(es, target, merged_args, merged_kw, 1);
-}
-
-
 static KosOpResult values_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -384,7 +299,20 @@ static KosOpResult values_kos_vinstall(
   Py_DECREF(inv_args);
   Py_XDECREF(inv_kwds);
 
-  r = values_dispatch(es, target, merged_args, merged_kw, tail_call);
+  /* The merged call goes through the call entry as the target's own
+     install reports it: a value in hand, or an installed callee. */
+  {
+    KosArgSpread spread;
+
+    if (KosArgSpread_Init(&spread, merged_args, merged_kw, NULL, 0) < 0) {
+      Py_DECREF(merged_args);
+      Py_XDECREF(merged_kw);
+      return EVAL_RAISE();
+    }
+    r = KosEvalState_CallResult(es, target, spread.argv, spread.nargs,
+                                spread.kwnames, tail_call, NULL, NULL);
+    KosArgSpread_Clear(&spread);
+  }
   Py_DECREF(merged_args);
   Py_XDECREF(merged_kw);
   return r;
@@ -820,8 +748,6 @@ KosEvaluatedTypeObject KosValuesType = {
   },
   .kos_call = {
     .kc_vinstall = values_kos_vinstall,
-    .kc_wants_frame = 1,
-    .kc_wants_frame_fn = NULL,
     .kc_pycall = values_call,
     .kc_pyvectorcall = NULL,
   },

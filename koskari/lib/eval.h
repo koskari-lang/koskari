@@ -1405,15 +1405,28 @@ extern PyObject *KoskariContinuationError;
 /* === KosEvalState_Call* : eval-state-oriented generic call entry points === */
 
 /**
-   KosEvalState_Call: generic call entry point with vectorcall-style args.
+   Install a code frame for a call: on a tail call the live frame is
+   torn down to, reset, and refilled with code and ns; otherwise a new
+   frame is pushed above it. ns is stolen on every path. Returns the
+   installed result (NORMAL, or POLL when the breaker is up), or RAISE.
+*/
+KosOpResult KosEvalState_InstallCallFrame(
+    KosEvalState *es,
+    KosCode *code,
+    PyObject *ns,
+    int tail_call);
 
-   Accepts any PyObject* callable. Performs KosCallable_Check; if true,
-   dispatches to KosCallable_Call with the same es after applying frame
-   behavior per wants_frame and tail_call. If false, invokes
-   PyObject_Vectorcall and pushes or auto-awaits the result.
 
-   Frame matrix (when KosCallable): wants_frame+tail -> reset; wants_frame+!tail
-   -> create; !wants_frame+tail -> drop; !wants_frame+!tail -> no change.
+/**
+   KosEvalState_Call: the call entry whose result lands on the current
+   frame's stack, for the CALL* opcodes and the tuple entry.
+
+   Accepts any callable. A KosCallable runs its install; a value it
+   reports in hand is pushed or awaited onto the caller's stack, and an
+   installed callee is left current. A plain Python callable is
+   vectorcalled and its result pushed or awaited the same way; in tail
+   position its frame is popped first when nothing is open above it,
+   else the result is delivered by RETURN.
 
    Caller must ensure stack is clear before calling when tail_call is true
    (use KosStackSteal). callable, args, kwnames are borrowed.
@@ -1446,10 +1459,11 @@ KosOpResult KosEvalState_Call(
    frame. A tail call replaces that frame, so it has no caller to
    resume: tail_call with a resume is a caller error.
 
-   With resume NULL the call's result relays exactly as
-   KosEvalState_Call returns it, tail_call included: NORMAL or
-   REPROLOGUE for an installed callee or a value already pushed, RETURN
-   for a value settled in hand, AWAIT, RAISE, FATAL.
+   With resume NULL the call's outcome relays as the install reports
+   it, tail_call included: RETURN with the value in hand, not yet
+   settled; NORMAL, POLL, or REPROLOGUE for an installed callee; AWAIT,
+   RAISE, FATAL. Nothing is pushed on the caller's stack. This is the
+   entry an install slot uses to call through to another callable.
 */
 KosOpResult KosEvalState_CallResult(
     KosEvalState *es,
@@ -1485,10 +1499,9 @@ KosOpResult KosEvalState_CallInto(
 
 
 /**
-   KosEvalState_CallArgs: generic call entry point with tuple+dict args.
-
-   Same semantics as KosEvalState_Call but for tuple+dict form. Use for
-   CALL_STAR, TAIL_CALL_STAR, wind after-thunk, dyn_with exit.
+   KosEvalState_CallArgs: KosEvalState_Call over a tuple and a dict,
+   spread once to the vector shape. Used by CALL_STAR and
+   TAIL_CALL_STAR.
 
    callable, args_tuple, kwds_dict are borrowed.
 */
@@ -1497,18 +1510,6 @@ KosOpResult KosEvalState_CallArgs(
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
-    int tail_call);
-
-
-/**
-   KosEvalState_CallNoArgs: fast path for zero-argument calls.
-
-   Same semantics as KosEvalState_Call. Uses PyObject_CallNoArgs for
-   non-KosCallable path. callable is borrowed.
-*/
-KosOpResult KosEvalState_CallNoArgs(
-    KosEvalState *es,
-    PyObject *callable,
     int tail_call);
 
 

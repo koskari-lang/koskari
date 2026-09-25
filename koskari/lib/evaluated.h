@@ -46,21 +46,31 @@
    Install functions receive borrowed references: callable, the argv
    vector, and kwnames must not be DECREF'd by the implementation.
    argv holds nargs positionals followed by one value per kwnames
-   entry (PEP 590 shape); tuple+dict callers are spread onto this
-   shape centrally by KosCallable_CallArgsSlots.
+   entry (PEP 590 shape); tuple+dict callers spread onto this shape
+   through KosArgSpread.
 
-   es must be the same live KosEvalState that KosEvalState_Call* prepared via
-   do_frame_prep. Use KosEvalState_CONTEXT(es) when the heap context is needed.
+   es is the live KosEvalState of the running evaluator. Use
+   KosEvalState_CONTEXT(es) when the heap context is needed.
 
-   tail_call: 1 if this is a tail call; 0 otherwise. do_frame_prep has
-   acted on it before the install runs. A frame-wanting callable finds
-   its frame pushed or, on a tail call, the caller's frame reset for
-   reuse. A no-frame callable finds the caller's frame untouched either
-   way: it may deliver a value onto that frame's stack, and the RETURN
-   that follows every TAIL_CALL retires the frame, or it may forward the
-   call to another callable, passing tail_call through unchanged so the
-   target's own prep reuses the same frame. A no-frame callable never
-   pops or resets a frame itself.
+   The install owns its frame and reports what it did, one of:
+
+   - RETURN(val): the call completed; val is a new reference, not yet
+     settled (it may be an awaitable); nothing was pushed and no frame
+     was touched. The caller settles or delivers it.
+   - NORMAL / POLL: a callee frame is installed and current, pushed by
+     the install (KosEvalState_InstallCallFrame), and the call's result
+     arrives by that frame's return.
+   - REPROLOGUE / AWAIT: the install pushed a code-less frame and armed
+     a resume on it (KosEvalState_CallInto); the resume delivers.
+   - RAISE: error, PyErr set.
+
+   tail_call: 1 if this is a tail call; 0 otherwise. An install that
+   takes a frame reuses the caller's frame for a tail call
+   (KosEvalState_InstallCallFrame does this); one that forwards the
+   call to another callable passes tail_call through unchanged; one
+   that completes in hand ignores it, and the RETURN that follows every
+   TAIL_CALL retires the caller's frame. An install never pops or
+   resets a frame on its own.
 */
 typedef KosOpResult (*KosVectorInstallFunc)(
     KosEvalState *es,
@@ -69,14 +79,6 @@ typedef KosOpResult (*KosVectorInstallFunc)(
     Py_ssize_t nargs,
     PyObject *kwnames,
     int tail_call);
-
-
-/**
-   Optional per-instance wants_frame. If non-NULL, called with the callable
-   instance; return 1 if the call needs a frame (push or reset), 0 if not.
-   Overrides kc_wants_frame when present.
-*/
-typedef int (*KosCallableWantsFrameFunc)(PyObject *callable);
 
 
 /**
@@ -92,8 +94,6 @@ typedef int (*KosCallableWantsFrameFunc)(PyObject *callable);
 */
 typedef struct KosCallSlots {
   KosVectorInstallFunc kc_vinstall;       /* the install entry */
-  int kc_wants_frame;                     /* default when fn is NULL */
-  KosCallableWantsFrameFunc kc_wants_frame_fn;  /* if non-NULL, overrides */
   ternaryfunc kc_pycall;                  /* Python-boundary call worker */
   vectorcallfunc kc_pyvectorcall;         /* vector variant; may be NULL */
 } KosCallSlots;

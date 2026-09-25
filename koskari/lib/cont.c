@@ -217,8 +217,6 @@ KosEvaluatedTypeObject KosPyDelimitedContinuationType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_continuation,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
     .kc_pycall = delimited_continuation_call,
     .kc_pyvectorcall = NULL,
   },
@@ -392,8 +390,6 @@ KosEvaluatedTypeObject KosPyContinuationType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_continuation,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
     .kc_pycall = continuation_call,
     .kc_pyvectorcall = NULL,
   },

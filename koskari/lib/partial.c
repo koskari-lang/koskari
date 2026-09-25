@@ -27,10 +27,9 @@
 
    Unlike functools.partial it is not in that type's inheritance tree -- the
    match is by duck typing, not isinstance. The payoff is that it is a static
-   KosEvaluatedTypeObject: when koskari bytecode calls it and the inner callable
-   is a flattenable KosCallable, the install slot merges args and tail-calls
-   straight through, reusing the single frame do_frame_prep prepared, with no
-   intermediate KosContext.
+   KosEvaluatedTypeObject: when koskari bytecode calls it, the install slot
+   merges the arguments and calls the inner callable through the
+   evaluator's call entry, with no intermediate KosContext.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GPL v.3
@@ -210,7 +209,7 @@ static KosOpResult kospartial_kos_vinstall(
     return r;
   }
 
-  /* Keywords: pack to tuple + dict and take the tuple arm. */
+  /* Keywords: merge as tuple + dict, then spread to the vector. */
   {
     PyObject *tup = PyTuple_New(nargs);
     PyObject *kwargs = NULL;
@@ -254,8 +253,18 @@ static KosOpResult kospartial_kos_vinstall(
     }
     Py_XDECREF(kwargs);
 
-    r = KosEvalState_CallArgs(es, inner, merged_args, merged_kw,
-                              tail_call);
+    {
+      KosArgSpread spread;
+
+      if (KosArgSpread_Init(&spread, merged_args, merged_kw, NULL, 0) < 0) {
+        Py_DECREF(merged_args);
+        Py_XDECREF(merged_kw);
+        return EVAL_RAISE();
+      }
+      r = KosEvalState_CallResult(es, inner, spread.argv, spread.nargs,
+                                  spread.kwnames, tail_call, NULL, NULL);
+      KosArgSpread_Clear(&spread);
+    }
     Py_DECREF(merged_args);
     Py_XDECREF(merged_kw);
     return r;
@@ -667,8 +676,6 @@ KosEvaluatedTypeObject KosPartialCallableType = {
   },
   .kos_call = {
     .kc_vinstall = kospartial_kos_vinstall,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
     .kc_pycall = KosPartial_Call,
     .kc_pyvectorcall = NULL,
   },

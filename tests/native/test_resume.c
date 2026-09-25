@@ -863,7 +863,7 @@ static int test_reset_for_tail_clears_resume_triple(void) {
 /* === resume == NULL: opcode-shaped default === */
 
 
-static int test_call_resume_null_pushes_normal_result(void) {
+static int test_call_resume_null_returns_value_in_hand(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
@@ -885,25 +885,23 @@ static int test_call_resume_null_pushes_normal_result(void) {
   PyObject *neg5 = PyLong_FromLong(-5);
   TEST_ASSERT_NOT_NULL(neg5, "create -5");
 
-  /* a plain Python callable's result is already pushed by
-     KosEvalState_Call itself (push_or_await_plain); resume == NULL
-     relays that NORMAL untouched -- no separate push needed here. */
+  /* a plain Python callable's result comes back in hand; resume == NULL
+     relays that RETURN untouched, and nothing lands on the stack */
   KosOpResult r = KosEvalState_CallResult(
       &es, abs_fn, &neg5, 1, NULL, 0, NULL, NULL);
 
   Py_DECREF(neg5);
   Py_DECREF(abs_fn);
 
-  TEST_ASSERT_EQ(r.kind, KOS_RES_NORMAL,
-                 "plain callable's NORMAL relays untouched");
+  TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN,
+                 "plain callable's RETURN relays untouched");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame), "no resume set on the caller");
-
-  {
-    PyObject *popped = KosEvalState_StackPopRef(&es);
-    TEST_ASSERT_NOT_NULL(popped, "value landed on the caller's stack");
-    TEST_ASSERT_EQ(PyLong_AsLong(popped), 5, "abs(-5) == 5");
-    Py_DECREF(popped);
-  }
+  TEST_ASSERT_NOT_NULL(r.val, "value in hand");
+  TEST_ASSERT_EQ(PyLong_AsLong(r.val), 5, "abs(-5) == 5");
+  Py_DECREF(r.val);
+  TEST_ASSERT(! KosDynFrame_STACK(frame)
+              || KosSegment_LEN(KosDynFrame_STACK(frame)) == 0,
+              "nothing landed on the caller's stack");
 
   KosEvalState_FreezeToContext(&es);
   Py_DECREF(ctx);
@@ -975,7 +973,7 @@ int run_resume_tests(void) {
   RUN_TEST(test_clone_refuses_step_resume_frame);
   RUN_TEST(test_park_inert_clears_resume_triple);
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
-  RUN_TEST(test_call_resume_null_pushes_normal_result);
+  RUN_TEST(test_call_resume_null_returns_value_in_hand);
   RUN_TEST(test_next_resume_null_pushes_and_continues);
 
   return 0;

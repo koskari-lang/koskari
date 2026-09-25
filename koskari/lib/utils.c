@@ -181,9 +181,8 @@ static int kos_apply_build_args_tuple(
 
 /**
    Shared apply install: fn/arglist/kwds already extracted (borrowed).
-   apply wants no frame of its own (see KosApplyType), so do_frame_prep
-   left the caller's frame alone; the tail flag is forwarded unchanged
-   and fn's own prep makes the one frame decision against that frame.
+   The call goes through the call entry with the tail flag forwarded
+   unchanged, and fn's own install reports the outcome.
 */
 static KosOpResult kos_apply_install_core(
     KosEvalState *es,
@@ -207,7 +206,17 @@ static KosOpResult kos_apply_install_core(
     return EVAL_RAISE();
   }
 
-  r = KosEvalState_CallArgs(es, fn, seq_args, kwds, tail_call);
+  {
+    KosArgSpread spread;
+
+    if (KosArgSpread_Init(&spread, seq_args, kwds, NULL, 0) < 0) {
+      Py_DECREF(seq_args);
+      return EVAL_RAISE();
+    }
+    r = KosEvalState_CallResult(es, fn, spread.argv, spread.nargs,
+                                spread.kwnames, tail_call, NULL, NULL);
+    KosArgSpread_Clear(&spread);
+  }
   Py_DECREF(seq_args);
   return r;
 }
@@ -280,8 +289,6 @@ static KosEvaluatedTypeObject KosApplyType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_apply,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
     .kc_pycall = apply_call,
     .kc_pyvectorcall = NULL,
   },

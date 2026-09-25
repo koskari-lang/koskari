@@ -17,9 +17,9 @@
 /**
    koskari/lib/callable.c
 
-   The call suite: KosCallable dispatch into the install slots of a
-   KosEvaluatedTypeObject's kos_call suite, and the reusable Python-slot
-   adapters for demand-surface callables.
+   The call suite's shared pieces: the tuple-and-dict argument spread
+   and the reusable Python-slot adapters over a KosEvaluatedTypeObject's
+   kos_call suite.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -67,37 +67,32 @@ static PyObject *vcall_build_kwds_dict(
 }
 
 
-/* === KosCallable_* : KosCallable-only (no type check, no frame prep) === */
+/* === KosCallShape === */
 
 
-static KosOpResult callable_promote_normal(KosEvalState *es, KosOpResult r) {
-  if (r.kind != KOS_RES_NORMAL)
-    return r;
-  if (KosEvalState_GOAL(es))
-    return EVAL_REPROLOGUE();
-  /* An install that left a resume on the frame rather than bytecode
-     must go through the prologue, which is where it is picked up.
-     NORMAL here would resume instruction dispatch on a frame that has
-     no code. */
-  if (KosEvalState_FRAME(es)
-      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)))
-    return EVAL_REPROLOGUE();
-  return EVAL_NORMAL();
-}
+void KosCallShape_Init(KosCallShape *shape, PyObject *callable) {
 
+  Py_INCREF(callable);
+  shape->cs_callable = callable;
 
-KosOpResult KosCallable_CallSlots(KosEvalState *es,
-    KosCallSlots *slots, PyObject *callable,
-    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
-    int tail_call) {
-
-  if (! slots->kc_vinstall) {
-    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
-    return EVAL_RAISE();
+  if (KosCallable_CheckSlots(callable, &shape->cs_slots)) {
+    shape->cs_kind = KOS_CALL_SHAPE_FRAME;
+  } else {
+    shape->cs_slots = NULL;
+    shape->cs_kind = KOS_CALL_SHAPE_PLAIN;
   }
-  return callable_promote_normal(
-      es, slots->kc_vinstall(es, callable, args, nargs, kwnames, tail_call));
+
+  /* The frame-return guarantee needs the callable to actually take a
+     frame, not merely to be a KosCallable: a yielding KosFunction's
+     install completes in hand with a new AsyncGenerator, so its return
+     is never the call's value. */
+  shape->cs_direct =
+      (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
+       && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable)));
 }
+
+
+/* === KosArgSpread === */
 
 
 int KosArgSpread_Init(
@@ -163,78 +158,6 @@ void KosArgSpread_Clear(KosArgSpread *spread) {
   PyMem_Free(spread->heap);
   spread->heap = NULL;
   spread->argv = NULL;
-}
-
-
-#define KOS_CALLARGS_SPREAD_FAST 16
-
-KosOpResult KosCallable_CallArgsSlots(KosEvalState *es,
-    KosCallSlots *slots, PyObject *callable,
-    PyObject *args_tuple, PyObject *kwds_dict,
-    int tail_call) {
-
-  PyObject *small[KOS_CALLARGS_SPREAD_FAST];
-  KosArgSpread spread;
-  KosOpResult r;
-
-  if (! slots->kc_vinstall) {
-    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
-    return EVAL_RAISE();
-  }
-
-  if (KosArgSpread_Init(&spread, args_tuple, kwds_dict, small,
-                        KOS_CALLARGS_SPREAD_FAST) < 0)
-    return EVAL_RAISE();
-
-  r = slots->kc_vinstall(es, callable, spread.argv, spread.nargs,
-                         spread.kwnames, tail_call);
-  KosArgSpread_Clear(&spread);
-  return callable_promote_normal(es, r);
-}
-
-
-KosOpResult KosCallable_Call(KosEvalState *es,
-    PyObject *callable,
-    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
-    int tail_call) {
-
-  KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
-
-  if (! slots) {
-    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
-    return EVAL_RAISE();
-  }
-  return KosCallable_CallSlots(es, slots, callable, args, nargs, kwnames,
-                               tail_call);
-}
-
-
-KosOpResult KosCallable_CallArgs(KosEvalState *es,
-    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
-    int tail_call) {
-
-  KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
-
-  if (! slots) {
-    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
-    return EVAL_RAISE();
-  }
-  return KosCallable_CallArgsSlots(es, slots, callable, args_tuple,
-                                   kwds_dict, tail_call);
-}
-
-
-KosOpResult KosCallable_CallNoArgs(KosEvalState *es,
-    PyObject *callable, int tail_call) {
-
-  KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
-
-  if (! slots || ! slots->kc_vinstall) {
-    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
-    return EVAL_RAISE();
-  }
-  return callable_promote_normal(
-      es, slots->kc_vinstall(es, callable, NULL, 0, NULL, tail_call));
 }
 
 

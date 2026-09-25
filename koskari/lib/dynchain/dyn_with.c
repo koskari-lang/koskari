@@ -344,26 +344,29 @@ static KosOpResult kos_dyn_with_enter(KosEvalState *es, KosDynWith *node) {
     return EVAL_REPROLOGUE();  /* __enter__ in flight */
 
   PyObject *enter_fn = KosDynWith_ENTER(node);
-  KosDynFrame *const caller = KosEvalState_FRAME(es);
 
   /* A plain function resolved on the type is called with the manager as
      its receiver; anything else was bound at resolution. */
   KosOpResult kr = (KosDynWith_SELF_BIND(node) & KOS_WITH_SELF_ENTER)
-      ? KosEvalState_Call(es, enter_fn, &KosDynWith_MGR(node), 1, NULL, 0)
-      : KosEvalState_CallNoArgs(es, enter_fn, 0);
+      ? KosEvalState_CallResult(es, enter_fn, &KosDynWith_MGR(node), 1,
+                                NULL, 0, NULL, NULL)
+      : KosEvalState_CallResult(es, enter_fn, NULL, 0, NULL, 0, NULL, NULL);
+
+  /* A value in hand lands on the block, or is awaited there; settled,
+     the entry completes now. */
+  if (kr.kind == KOS_RES_RETURN) {
+    kr = KosEvalState_PushOrAwait(es, kr.val);
+    if (kr.kind == KOS_RES_NORMAL)
+      return kos_dyn_with_bind_entered(es, node) < 0
+          ? EVAL_RAISE() : EVAL_NORMAL();
+  }
   if (kr.kind == KOS_RES_RAISE)
     return EVAL_RAISE();
 
-  /* A callee whose frame is now current has not run, and an awaitable
-     has not settled: nothing has been pushed, and the completion below
-     must not run. A callable that completed in place has pushed its
-     value. */
-  if (kr.kind != KOS_RES_NORMAL || KosEvalState_FRAME(es) != caller) {
-    KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_ENTER_AWAIT;
-    return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
-  }
-
-  return kos_dyn_with_bind_entered(es, node) < 0 ? EVAL_RAISE() : EVAL_NORMAL();
+  /* An installed callee has not run, and an awaitable has not settled:
+     the completion runs at the settle. */
+  KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_ENTER_AWAIT;
+  return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
 }
 
 
@@ -409,7 +412,6 @@ static KosOpResult kos_dyn_with_leave(
   }
 
   PyObject *exit_fn = KosDynWith_EXIT(node);
-  KosDynFrame *const caller = KosEvalState_FRAME(es);
   KosObligation *ob = KosDynWith_OB(node);
 
   /* The exception in flight parks on the node as the obligation __exit__
@@ -439,7 +441,22 @@ static KosOpResult kos_dyn_with_leave(
   }
 
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
-  KosOpResult kr = KosEvalState_Call(es, exit_fn, argv, argc, NULL, 0);
+  KosOpResult kr = KosEvalState_CallResult(es, exit_fn, argv, argc, NULL,
+                                           0, NULL, NULL);
+
+  /* A value in hand lands on the block, or is awaited there; settled,
+     the exit classifies now. */
+  if (kr.kind == KOS_RES_RETURN) {
+    kr = KosEvalState_PushOrAwait(es, kr.val);
+    if (kr.kind == KOS_RES_NORMAL) {
+      PyObject *result = KosEvalState_StackPopRef(es);
+      if (! result)
+        return EVAL_RAISE();
+      if (kos_dyn_with_classify_exit(es, node, result) < 0)
+        return EVAL_RAISE();
+      return EVAL_NORMAL();
+    }
+  }
 
   if (kr.kind == KOS_RES_RAISE) {
     /* __exit__ itself raised; its exception supersedes the one it was
@@ -448,22 +465,9 @@ static KosOpResult kos_dyn_with_leave(
     return EVAL_RAISE();
   }
 
-  if (kr.kind != KOS_RES_NORMAL || KosEvalState_FRAME(es) != caller) {
-    /* __exit__ has not returned: suspended, or its frame is installed
-       and current. The node keeps the triple and stays on the chain. */
-    return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
-  }
-
-  if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)))
-    return EVAL_RAISE();
-
-  PyObject *result = KosEvalState_StackPopRef(es);
-  if (! result)
-    return EVAL_RAISE();
-
-  if (kos_dyn_with_classify_exit(es, node, result) < 0)
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+  /* __exit__ has not returned: suspended, or its frame is installed and
+     current. The node keeps the triple and stays on the chain. */
+  return (kr.kind == KOS_RES_NORMAL) ? EVAL_REPROLOGUE() : kr;
 }
 
 

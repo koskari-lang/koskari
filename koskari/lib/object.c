@@ -295,8 +295,6 @@ static KosEvaluatedTypeObject KosProcedureCallableType = {
   },
   .kos_call = {
     .kc_vinstall = procedure_kos_vinstall,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
     .kc_pycall = procedure_tp_call,
     .kc_pyvectorcall = procedure_vectorcall,
   },
@@ -399,8 +397,9 @@ static PyObject *iterfunction_repr(PyObject *self) {
 
 
 /**
-   Evaluator install: the wrapped function's own install, which pushes
-   the new AsyncGenerator for the Koskari caller to iterate natively.
+   Evaluator install: the wrapped function's own install, which
+   completes in hand with the new AsyncGenerator for the Koskari caller
+   to iterate natively.
 */
 static KosOpResult iterfunction_kos_vinstall(
     KosEvalState *es,
@@ -418,7 +417,8 @@ static KosOpResult iterfunction_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  return KosCallable_Call(es, wrapped, args, nargs, kwnames, tail_call);
+  return KosEvalState_CallResult(es, wrapped, args, nargs, kwnames,
+                                 tail_call, NULL, NULL);
 }
 
 
@@ -440,8 +440,6 @@ static KosEvaluatedTypeObject KosIterFunctionType = {
   },
   .kos_call = {
     .kc_vinstall = iterfunction_kos_vinstall,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
     .kc_pycall = iterfunction_tp_call,
     .kc_pyvectorcall = iterfunction_vectorcall,
   },

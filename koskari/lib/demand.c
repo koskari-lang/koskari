@@ -554,31 +554,12 @@ static int demand_clear(PyObject *self) {
 
 
 /**
-  Return 1 if inner is a KosCallable that wants a frame (a non-yielding
-  KosFunction or KosExpression), installed directly into the frame
-  do_frame_prep prepared. Returning 0 routes to the KosEvalState_CallInto
-  path (Python callable, yielding function, nested Demand, or any other
-  KosCallable type).
+   Evaluator install: call the inner through the call entry, whatever
+   it is. A value the call completes in hand is finished as the demand
+   boundary finishes one (a settled value passes, an awaitable is
+   stepped and denied if it suspends); an installed callee's frame is
+   marked KOS_FRAME_DEMAND so the in-eval deny guards fire under it.
 */
-static int demand_inner_is_flattenable(PyObject *inner) {
-
-  if (KosDemand_CheckExact(inner))
-    return 0;
-
-  if (! KosCallable_Check(inner))
-    return 0;
-
-  return KosCallable_WantsFrame(inner);
-}
-
-
-static int demand_wants_frame(PyObject *callable) {
-
-  KosDemandObject *d = (KosDemandObject *) callable;
-  return demand_inner_is_flattenable(d->wrapped);
-}
-
-
 static KosOpResult demand_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -589,32 +570,33 @@ static KosOpResult demand_kos_vinstall(
 
   KosDemandObject *d = (KosDemandObject *) callable;
   PyObject *inner = d->wrapped;
+  KosOpResult r;
 
   if (! inner) {
     PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
     return EVAL_RAISE();
   }
 
-  if (demand_inner_is_flattenable(inner)) {
-    /* Install inner directly into the frame prepared by do_frame_prep
-       -- on the vector path, so the inner KosFunction gets its vector
-       (and simple-call) prep.  Then mark the frame as the demand root
-       so in-eval deny guards fire. */
-    KosOpResult r = KosCallable_Call(es, inner, args, nargs, kwnames,
-                                     tail_call);
-    if (r.kind == KOS_RES_NORMAL) {
+  r = KosEvalState_CallResult(es, inner, args, nargs, kwnames, tail_call,
+                              NULL, NULL);
+  switch (r.kind) {
+    case KOS_RES_RETURN: {
+      PyObject *value = demand_finish_koskari_value(r.val);
+      return value ? EVAL_RETURN(value) : EVAL_RAISE();
+    }
+
+    case KOS_RES_NORMAL:
+    case KOS_RES_POLL:
+    case KOS_RES_REPROLOGUE: {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       if (frame)
         KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
+      return r;
     }
-    return r;
-  }
 
-  /* Any other inner is called from a code-less demand-root frame whose
-     resume completes it with the result. */
-  return KosEvalState_CallInto(es, inner, args, nargs, kwnames,
-                               &demand_resume_kind, NULL,
-                               KOS_FRAME_DEMAND);
+    default:
+      return r;
+  }
 }
 
 
@@ -643,8 +625,6 @@ KosEvaluatedTypeObject KosDemandCallableType = {
   },
   .kos_call = {
     .kc_vinstall = demand_kos_vinstall,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = demand_wants_frame,
     .kc_pycall = KosCallAdapt_CallDemand,
     .kc_pyvectorcall = KosCallAdapt_VectorDemand,
   },

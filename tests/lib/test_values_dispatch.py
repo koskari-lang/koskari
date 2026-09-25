@@ -86,8 +86,7 @@ def _call_through_bytecode(callable_obj, *args, tail=False):
         body.append(["CONST", a])
     op = "TAIL_CALL" if tail else "CALL"
     body.append([op, len(args)])
-    if not tail:
-        body.append(["RETURN", 1])
+    body.append(["RETURN", 1])
 
     outer_code = build_code(
         body,
