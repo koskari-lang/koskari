@@ -329,7 +329,11 @@ static PyObject *demand_sync_vector(
 }
 
 
-/** The demand core over a tuple and a dict, spread once to a vector. */
+/**
+   The demand core over a tuple and a dict, spread once to a vector. No
+   buffer: this frame sits on the C stack of every boundary re-entry,
+   and keyword calls here are rare enough to take the heap.
+*/
 static PyObject *demand_sync_impl(
     PyObject *callable,
     PyObject *args,
@@ -338,7 +342,7 @@ static PyObject *demand_sync_impl(
   KosArgSpread spread;
   PyObject *result;
 
-  if (KosArgSpread_Init(&spread, args, kwargs) < 0)
+  if (KosArgSpread_Init(&spread, args, kwargs, NULL, 0) < 0)
     return NULL;
 
   result = demand_sync_vector(callable, spread.argv, spread.nargs,

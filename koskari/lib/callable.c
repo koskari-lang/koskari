@@ -103,11 +103,13 @@ KosOpResult KosCallable_CallSlots(KosEvalState *es,
 int KosArgSpread_Init(
     KosArgSpread *spread,
     PyObject *args_tuple,
-    PyObject *kwds_dict) {
+    PyObject *kwds_dict,
+    PyObject **buf,
+    Py_ssize_t bufcap) {
 
   Py_ssize_t nargs = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
   Py_ssize_t nkw = kwds_dict ? PyDict_Size(kwds_dict) : 0;
-  PyObject **argv = spread->small;
+  PyObject **argv = buf;
 
   spread->nargs = nargs;
   spread->kwnames = NULL;
@@ -121,7 +123,7 @@ int KosArgSpread_Init(
 
   /* Keywords: extend the vector with the dict's values and name them
      through a kwnames tuple. */
-  if (nargs + nkw > KOS_ARGSPREAD_FAST) {
+  if (nargs + nkw > bufcap) {
     argv = PyMem_Malloc((size_t) (nargs + nkw) * sizeof(PyObject *));
     if (! argv) {
       PyErr_NoMemory();
@@ -164,11 +166,14 @@ void KosArgSpread_Clear(KosArgSpread *spread) {
 }
 
 
+#define KOS_CALLARGS_SPREAD_FAST 16
+
 KosOpResult KosCallable_CallArgsSlots(KosEvalState *es,
     KosCallSlots *slots, PyObject *callable,
     PyObject *args_tuple, PyObject *kwds_dict,
     int tail_call) {
 
+  PyObject *small[KOS_CALLARGS_SPREAD_FAST];
   KosArgSpread spread;
   KosOpResult r;
 
@@ -177,7 +182,8 @@ KosOpResult KosCallable_CallArgsSlots(KosEvalState *es,
     return EVAL_RAISE();
   }
 
-  if (KosArgSpread_Init(&spread, args_tuple, kwds_dict) < 0)
+  if (KosArgSpread_Init(&spread, args_tuple, kwds_dict, small,
+                        KOS_CALLARGS_SPREAD_FAST) < 0)
     return EVAL_RAISE();
 
   r = slots->kc_vinstall(es, callable, spread.argv, spread.nargs,

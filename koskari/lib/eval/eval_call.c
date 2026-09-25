@@ -446,9 +446,85 @@ static inline int kos_tail_ns_reusable(PyObject *ns) {
 }
 
 
+/**
+   The legacy classes' steal-first spill: move the window into an owned
+   vector (refs transfer out of the block), delegate to
+   KosEvalState_Call, release. Inlined only into the per-flag spill
+   functions, which each call body reaches by a guaranteed tail call:
+   the spill buffer sits in that frame alone, and the body's frame is
+   gone while the spill runs.
+*/
+KOS_OP_INLINE KosOpResult kos_call_legacy_spill_impl(
+    KosEvalState *es,
+    size_t window,
+    PyObject *callable,
+    PyObject *const *argv,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    unsigned flags) {
+
+  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  PyObject *small[KOS_CALL_SPILL_FAST];
+  PyObject **vals = small;
+  KosOpResult r;
+
+  if (window > KOS_CALL_SPILL_FAST) {
+    vals = PyMem_Malloc(window * sizeof(PyObject *));
+    if (unlikely(! vals)) {
+      if (flags & KOS_CALL_CALLABLE_OWNED)
+        Py_DECREF(callable);
+      return EVAL_RAISE();
+    }
+  }
+  if (unlikely(KosEvalState_StackPopTailPtr(es, window, vals) < 0)) {
+    if (vals != small)
+      PyMem_Free(vals);
+    if (flags & KOS_CALL_CALLABLE_OWNED)
+      Py_DECREF(callable);
+    return EVAL_RAISE();
+  }
+
+  /* vals is the ownership ledger for the spilled window entries and
+     the vector the call reads: a tail call pops the caller's frame
+     before the callee runs, and the block storage argv points into
+     goes with it. A prepend buffer is the handler's own local, so it
+     stays valid, and the objects it names are held by vals. */
+  {
+    PyObject *target;
+    PyObject *const *call_argv;
+    if (flags & KOS_CALL_WINDOW_CALLABLE) {
+      target = vals[0];
+      call_argv = vals + 1;
+    } else {
+      target = callable;
+      /* whatever sits below the arguments in the window (a receiver
+         slot) is skipped by size, so the body need not read the flag
+         that put it there */
+      call_argv = (flags & KOS_CALL_ARGV_PREPENDED)
+          ? argv
+          : vals + (window - (size_t) (nargs + nkw));
+    }
+    r = KosEvalState_Call(es, target,
+                          (nargs + nkw) ? call_argv : NULL,
+                          nargs, kwnames,
+                          (flags & KOS_CALL_TAIL) ? 1 : 0);
+  }
+
+  for (size_t i = 0; i < window; i++)
+    Py_DECREF(vals[i]);
+  if (vals != small)
+    PyMem_Free(vals);
+  if (flags & KOS_CALL_CALLABLE_OWNED)
+    Py_DECREF(callable);
+  return r;
+}
+
+
 /* The class dispatch proper.  Always inlined into the per-flag bodies
    below, each of which passes a literal flags word, so every flag test
-   in here folds away and each body carries only its own arms. */
+   in here folds away and each body carries only its own arms.  A
+   window that takes the legacy spill sets *spill and returns without a
+   result; the body then tail-calls its spill function. */
 KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         KosEvalState *es,
         KosSegment **caller_slot,
@@ -457,9 +533,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         PyObject *const *argv,
         Py_ssize_t nargs,
         PyObject *kwnames,
-        unsigned flags) {
-
-  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+        unsigned flags,
+        int *spill) {
 
   /* Class: exact KosFunction, tail position.  Bind-before-reset: the
      namespace is prepared FROM the still-intact window, then the frame
@@ -762,59 +837,8 @@ fn_frame_install:
      KosEvalState_Call's semantics). */
 legacy:
   if (window) {
-    PyObject *small[KOS_CALL_SPILL_FAST];
-    PyObject **vals = small;
-    KosOpResult r;
-
-    if (window > KOS_CALL_SPILL_FAST) {
-      vals = PyMem_Malloc(window * sizeof(PyObject *));
-      if (unlikely(! vals)) {
-        if (flags & KOS_CALL_CALLABLE_OWNED)
-          Py_DECREF(callable);
-        return EVAL_RAISE();
-      }
-    }
-    if (unlikely(KosEvalState_StackPopTailPtr(es, window, vals) < 0)) {
-      if (vals != small)
-        PyMem_Free(vals);
-      if (flags & KOS_CALL_CALLABLE_OWNED)
-        Py_DECREF(callable);
-      return EVAL_RAISE();
-    }
-
-    /* vals is the ownership ledger for the spilled window entries and
-       the vector the call reads: a tail call pops the caller's frame
-       before the callee runs, and the block storage argv points into
-       goes with it. A prepend buffer is the handler's own local, so it
-       stays valid, and the objects it names are held by vals. */
-    {
-      PyObject *target;
-      PyObject *const *call_argv;
-      if (flags & KOS_CALL_WINDOW_CALLABLE) {
-        target = vals[0];
-        call_argv = vals + 1;
-      } else {
-        target = callable;
-        /* whatever sits below the arguments in the window (a receiver
-           slot) is skipped by size, so the body need not read the
-           flag that put it there */
-        call_argv = (flags & KOS_CALL_ARGV_PREPENDED)
-            ? argv
-            : vals + (window - (size_t) (nargs + nkw));
-      }
-      r = KosEvalState_Call(es, target,
-                            (nargs + nkw) ? call_argv : NULL,
-                            nargs, kwnames,
-                            (flags & KOS_CALL_TAIL) ? 1 : 0);
-    }
-
-    for (size_t i = 0; i < window; i++)
-      Py_DECREF(vals[i]);
-    if (vals != small)
-      PyMem_Free(vals);
-    if (flags & KOS_CALL_CALLABLE_OWNED)
-      Py_DECREF(callable);
-    return r;
+    *spill = 1;
+    return EVAL_NORMAL();
   }
 
   {
@@ -844,8 +868,22 @@ fail:
    KOS_CALL_WINDOW_UNDER shapes only the window arithmetic in
    kos_call_invoke and is never read by the body, so a word carrying
    it shares the body of the word without it.  Any other word takes
-   the generic body, which keeps flags live. */
+   the generic body, which keeps flags live.  Each body has a spill
+   twin with the same parameters, reached by a guaranteed tail call so
+   the body's frame is released before the spill runs. */
 #define KOS_CALL_BODY_VARIANT(name, FLAGS)                              \
+  static KOS_NOINLINE KosOpResult name##_spill(                         \
+      KosEvalState *es,                                                 \
+      KosSegment **caller_slot,                                         \
+      size_t window,                                                    \
+      PyObject *callable,                                               \
+      PyObject *const *argv,                                            \
+      Py_ssize_t nargs,                                                 \
+      PyObject *kwnames) {                                              \
+    (void) caller_slot;                                                 \
+    return kos_call_legacy_spill_impl(es, window, callable, argv,       \
+                                      nargs, kwnames, (FLAGS));         \
+  }                                                                     \
   static KOS_NOINLINE KosOpResult name(                                 \
       KosEvalState *es,                                                 \
       KosSegment **caller_slot,                                         \
@@ -854,8 +892,14 @@ fail:
       PyObject *const *argv,                                            \
       Py_ssize_t nargs,                                                 \
       PyObject *kwnames) {                                              \
-    return kos_call_invoke_impl(es, caller_slot, window, callable,      \
-                                argv, nargs, kwnames, (FLAGS));         \
+    int spill = 0;                                                      \
+    KosOpResult r = kos_call_invoke_impl(es, caller_slot, window,       \
+                                         callable, argv, nargs,         \
+                                         kwnames, (FLAGS), &spill);     \
+    if (spill)                                                          \
+      KOS_MUSTTAIL return name##_spill(es, caller_slot, window,         \
+                                       callable, argv, nargs, kwnames); \
+    return r;                                                           \
   }
 
 KOS_CALL_BODY_VARIANT(kos_call_body_plain, KOS_CALL_PLAIN)
@@ -879,6 +923,22 @@ KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_tail_prepended,
 #undef KOS_CALL_BODY_VARIANT
 
 
+static KOS_NOINLINE KosOpResult kos_call_body_any_spill(
+        KosEvalState *es,
+        KosSegment **caller_slot,
+        size_t window,
+        PyObject *callable,
+        PyObject *const *argv,
+        Py_ssize_t nargs,
+        PyObject *kwnames,
+        unsigned flags) {
+
+  (void) caller_slot;
+  return kos_call_legacy_spill_impl(es, window, callable, argv, nargs,
+                                    kwnames, flags);
+}
+
+
 static KOS_NOINLINE KosOpResult kos_call_body_any(
         KosEvalState *es,
         KosSegment **caller_slot,
@@ -889,8 +949,15 @@ static KOS_NOINLINE KosOpResult kos_call_body_any(
         PyObject *kwnames,
         unsigned flags) {
 
-  return kos_call_invoke_impl(es, caller_slot, window, callable,
-                              argv, nargs, kwnames, flags);
+  int spill = 0;
+  KosOpResult r = kos_call_invoke_impl(es, caller_slot, window, callable,
+                                       argv, nargs, kwnames, flags, &spill);
+
+  if (spill)
+    KOS_MUSTTAIL return kos_call_body_any_spill(es, caller_slot, window,
+                                                callable, argv, nargs,
+                                                kwnames, flags);
+  return r;
 }
 
 
