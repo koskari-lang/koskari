@@ -100,72 +100,90 @@ KosOpResult KosCallable_CallSlots(KosEvalState *es,
 }
 
 
-#define KOS_CALLARGS_SPREAD_FAST 16
+int KosArgSpread_Init(
+    KosArgSpread *spread,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
+  Py_ssize_t nargs = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
+  Py_ssize_t nkw = kwds_dict ? PyDict_Size(kwds_dict) : 0;
+  PyObject **argv = spread->small;
+
+  spread->nargs = nargs;
+  spread->kwnames = NULL;
+  spread->heap = NULL;
+
+  /* No keywords: the tuple's item array IS the vector. */
+  if (! nkw) {
+    spread->argv = nargs ? &PyTuple_GET_ITEM(args_tuple, 0) : NULL;
+    return 0;
+  }
+
+  /* Keywords: extend the vector with the dict's values and name them
+     through a kwnames tuple. */
+  if (nargs + nkw > KOS_ARGSPREAD_FAST) {
+    argv = PyMem_Malloc((size_t) (nargs + nkw) * sizeof(PyObject *));
+    if (! argv) {
+      PyErr_NoMemory();
+      return -1;
+    }
+    spread->heap = argv;
+  }
+
+  spread->kwnames = PyTuple_New(nkw);
+  if (! spread->kwnames) {
+    PyMem_Free(spread->heap);
+    spread->heap = NULL;
+    return -1;
+  }
+
+  for (Py_ssize_t i = 0; i < nargs; i++)
+    argv[i] = PyTuple_GET_ITEM(args_tuple, i);
+  {
+    PyObject *k, *v;
+    Py_ssize_t pos = 0, i = 0;
+    while (PyDict_Next(kwds_dict, &pos, &k, &v)) {
+      Py_INCREF(k);
+      PyTuple_SET_ITEM(spread->kwnames, i, k);
+      argv[nargs + i] = v;
+      i++;
+    }
+  }
+
+  spread->argv = argv;
+  return 0;
+}
+
+
+void KosArgSpread_Clear(KosArgSpread *spread) {
+
+  Py_CLEAR(spread->kwnames);
+  PyMem_Free(spread->heap);
+  spread->heap = NULL;
+  spread->argv = NULL;
+}
+
 
 KosOpResult KosCallable_CallArgsSlots(KosEvalState *es,
     KosCallSlots *slots, PyObject *callable,
     PyObject *args_tuple, PyObject *kwds_dict,
     int tail_call) {
 
-  Py_ssize_t nargs = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
-  Py_ssize_t nkw = kwds_dict ? PyDict_Size(kwds_dict) : 0;
+  KosArgSpread spread;
+  KosOpResult r;
 
   if (! slots->kc_vinstall) {
     PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
     return EVAL_RAISE();
   }
 
-  /* No keywords: the tuple's item array IS the vector. */
-  if (! nkw) {
-    PyObject *const *argv =
-        nargs ? &PyTuple_GET_ITEM(args_tuple, 0) : NULL;
-    return callable_promote_normal(
-        es, slots->kc_vinstall(es, callable, argv, nargs, NULL, tail_call));
-  }
+  if (KosArgSpread_Init(&spread, args_tuple, kwds_dict) < 0)
+    return EVAL_RAISE();
 
-  /* Keywords: extend the vector with the dict's values and name them
-     through a kwnames tuple. Every entry is borrowed -- the caller's
-     tuple and dict stay alive across the install. */
-  {
-    PyObject *small[KOS_CALLARGS_SPREAD_FAST];
-    PyObject **argv = small;
-    PyObject *kwnames = NULL;
-    KosOpResult r;
-
-    if (nargs + nkw > KOS_CALLARGS_SPREAD_FAST) {
-      argv = PyMem_Malloc((size_t) (nargs + nkw) * sizeof(PyObject *));
-      if (! argv) {
-        PyErr_NoMemory();
-        return EVAL_RAISE();
-      }
-    }
-
-    for (Py_ssize_t i = 0; i < nargs; i++)
-      argv[i] = PyTuple_GET_ITEM(args_tuple, i);
-
-    kwnames = PyTuple_New(nkw);
-    if (! kwnames) {
-      if (argv != small)
-        PyMem_Free(argv);
-      return EVAL_RAISE();
-    }
-    {
-      PyObject *k, *v;
-      Py_ssize_t pos = 0, i = 0;
-      while (PyDict_Next(kwds_dict, &pos, &k, &v)) {
-        Py_INCREF(k);
-        PyTuple_SET_ITEM(kwnames, i, k);
-        argv[nargs + i] = v;
-        i++;
-      }
-    }
-
-    r = slots->kc_vinstall(es, callable, argv, nargs, kwnames, tail_call);
-    Py_DECREF(kwnames);
-    if (argv != small)
-      PyMem_Free(argv);
-    return callable_promote_normal(es, r);
-  }
+  r = slots->kc_vinstall(es, callable, spread.argv, spread.nargs,
+                         spread.kwnames, tail_call);
+  KosArgSpread_Clear(&spread);
+  return callable_promote_normal(es, r);
 }
 
 
@@ -302,23 +320,13 @@ PyObject *KosCallAdapt_VectorDemand(
     size_t nargsf,
     PyObject *kwnames) {
 
-  Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
-  PyObject *tup = vcall_build_args_tuple(args, nargs);
-  if (! tup)
-    return NULL;
+  PyObject *result = NULL;
 
-  PyObject *kwds = NULL;
-  if (kwnames && PyTuple_GET_SIZE(kwnames)) {
-    kwds = vcall_build_kwds_dict(args + nargs, kwnames);
-    if (! kwds) {
-      Py_DECREF(tup);
-      return NULL;
-    }
-  }
+  if (kwnames && ! PyTuple_GET_SIZE(kwnames))
+    kwnames = NULL;
 
-  PyObject *result = Koskari_DemandSync(self, tup, kwds);
-  Py_DECREF(tup);
-  Py_XDECREF(kwds);
+  (void) Koskari_DemandSyncVector(self, args, PyVectorcall_NARGS(nargsf),
+                                  kwnames, &result);
   return result;
 }
 

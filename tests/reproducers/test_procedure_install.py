@@ -93,4 +93,19 @@ class TestProcedureInstall(unittest.IsolatedAsyncioTestCase):
             await mod.async_partial()
 
 
+    async def test_demand_escaping_continuation(self):
+        mod = await self.load_module()
+        self.assertEqual(await mod.demand_escape(), 5)
+
+
+    async def test_demand_composable_continuation_twice(self):
+        mod = await self.load_module()
+        self.assertEqual(await mod.demand_shift_twice(), 6)
+
+
+    async def test_map_composable_continuation(self):
+        mod = await self.load_module()
+        self.assertEqual(await mod.map_shift(), [2, 4])
+
+
 # The end.

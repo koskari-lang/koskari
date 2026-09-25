@@ -21,7 +21,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import FormalsSpec, build_class
+from koskari.lib import AsyncGenerator, FormalsSpec, build_class
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
@@ -248,7 +248,7 @@ class TestDunderAdapterKoskariSyncViolation(unittest.TestCase):
 
     def test_add_koskari_yield_raises_violation(self):
         """
-        build_class with Koskari __add__ that yields returns generator
+        build_class with Koskari __add__ that yields returns its AsyncGenerator
         """
         code = build_code(
             [
@@ -274,12 +274,12 @@ class TestDunderAdapterKoskariSyncViolation(unittest.TestCase):
 
         obj = BadAdd()
         result = obj + 1
-        self.assertTrue(hasattr(result, '__next__'))
+        self.assertIsInstance(result, AsyncGenerator)
 
 
     def test_eq_koskari_yield_raises_violation(self):
         """
-        build_class with Koskari __eq__ that yields returns generator
+        build_class with Koskari __eq__ that yields returns its AsyncGenerator
         """
         code = build_code(
             [
@@ -305,7 +305,7 @@ class TestDunderAdapterKoskariSyncViolation(unittest.TestCase):
 
         obj = BadEq()
         result = obj == 1
-        self.assertTrue(hasattr(result, '__next__'))
+        self.assertIsInstance(result, AsyncGenerator)
 
 
     def test_len_koskari_yield_raises_violation(self):

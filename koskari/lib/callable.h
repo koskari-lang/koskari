@@ -172,6 +172,44 @@ static inline void KosCallShape_Clear(KosCallShape *shape) {
 }
 
 
+/* === KosArgSpread: tuple + dict as a vectorcall vector === */
+
+
+#define KOS_ARGSPREAD_FAST 16
+
+
+/**
+   A tuple of positionals and a dict of keywords spread into a
+   vectorcall-shaped vector: argv holds the positionals then the
+   keyword values, kwnames names the keywords (NULL when there are
+   none). Every argv entry is borrowed from the source tuple and dict,
+   which must outlive the spread.
+*/
+typedef struct {
+  PyObject *small[KOS_ARGSPREAD_FAST];
+  PyObject *const *argv;
+  Py_ssize_t nargs;
+  PyObject *kwnames;
+  PyObject **heap;
+} KosArgSpread;
+
+
+/**
+   Fill spread from args_tuple (may be NULL) and kwds_dict (may be NULL
+   or empty). Without keywords argv borrows the tuple's item array and
+   nothing is allocated. Returns 0, or -1 with PyErr set and nothing
+   left to clear.
+*/
+int KosArgSpread_Init(
+    KosArgSpread *spread,
+    PyObject *args_tuple,
+    PyObject *kwds_dict);
+
+
+/** Release what KosArgSpread_Init took. */
+void KosArgSpread_Clear(KosArgSpread *spread);
+
+
 /* === KosCallable_* : KosCallable-only invocation (no type check, no frame prep) === */
 
 /**

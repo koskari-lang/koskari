@@ -60,6 +60,11 @@ Entries marked (working tree) are uncommitted.
 
 ## Should flatten, does not
 
+- **Composable continuations invoked from a code-less resume frame.**
+  The call installs flattened, but the continuation's return routes to
+  the invoker's pc, which a resume frame does not have: through a
+  `Demand` it segfaults, through `map` it ends the `reset` with the
+  first value. Tracked as D11 in the demand-flattening note.
 - **Opcodes that call Koskari callables.** `OBJECT_REPR` with a Koskari
   repr handler or `__kos_repr__` (`KosUtils_Repr` ->
   `Koskari_DemandSyncEx`, `utils.c:520`, `:561`); runtime match

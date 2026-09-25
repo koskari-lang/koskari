@@ -70,6 +70,18 @@ PyObject *Koskari_DemandSync(PyObject *callable, PyObject *args, PyObject *kwarg
 int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
                          PyObject **out_result);
 
+/**
+   Koskari_DemandSyncEx over a vectorcall-shaped argument vector: args
+   holds nargs positionals then one value per kwnames entry (kwnames
+   may be NULL). args and kwnames are borrowed.
+*/
+int Koskari_DemandSyncVector(
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    PyObject **out_result);
+
 
 /**
    Set KoskariSyncViolation on PyErr with msg as the message string.

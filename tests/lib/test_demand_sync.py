@@ -19,14 +19,15 @@ Tests for demand_call: invoke Koskari callables synchronously without suspension
 """
 
 import gc
+import operator
 import unittest
 import weakref
 
 import pytest
 
 from koskari.lib import (
-    AsyncGenerator, BoundMethod, FormalsSpec, KoskariSyncViolation, demand,
-    demand_apply, demand_call)
+    AsyncGenerator, BoundMethod, FormalsSpec, KoskariSyncViolation,
+    KosPartial, demand, demand_apply, demand_call)
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
@@ -117,7 +118,8 @@ class TestDemandSyncExpression(unittest.TestCase):
 
     def test_yield_produces_demand_generator(self):
         """
-        demand_call(expr) on a yielding expression returns a DemandGenerator
+        demand_call(expr) on a yielding expression returns its
+        AsyncGenerator; iter() of it drives on the demand path
         """
         code, ns = build_expr([
             ["CONST", 1],
@@ -126,9 +128,11 @@ class TestDemandSyncExpression(unittest.TestCase):
         ])
         expr = make_callable(code, ns)
         gen = demand_call(expr)
-        self.assertEqual(next(gen), 1)
+        self.assertIsInstance(gen, AsyncGenerator)
+        it = iter(gen)
+        self.assertEqual(next(it), 1)
         with self.assertRaises(StopIteration):
-            next(gen)
+            next(it)
 
 
 class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
@@ -175,7 +179,7 @@ class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
 
 class TestDemandGenerator(unittest.TestCase):
     """
-    demand_call on yielding KosFunction returns DemandGenerator
+    demand_call on yielding KosFunction returns its AsyncGenerator
     """
 
     def test_yielding_function_returns_generator(self):
@@ -196,10 +200,10 @@ class TestDemandGenerator(unittest.TestCase):
         )
         fn = make_callable(code, base_ns, FormalsSpec())
         result = demand_call(fn)
-        self.assertIsNotNone(result)
-        self.assertTrue(hasattr(result, '__next__'))
-        self.assertIs(iter(result), result)
-        self.assertEqual(next(result), 1)
+        self.assertIsInstance(result, AsyncGenerator)
+        it = iter(result)
+        self.assertIs(iter(it), it)
+        self.assertEqual(next(it), 1)
 
 
     def test_repr_includes_code_name(self):
@@ -280,7 +284,7 @@ class TestDemandGenerator(unittest.TestCase):
         fn = make_callable(code, base_ns, FormalsSpec())
         gen = demand_call(fn)
         with self.assertRaises(KoskariSyncViolation) as ctx:
-            next(gen)
+            next(iter(gen))
         self.assertIn('suspension', str(ctx.exception))
 
 
@@ -319,7 +323,7 @@ class TestDemandGenerator(unittest.TestCase):
         fn = make_callable(code, base_ns, FormalsSpec())
         gen = demand_call(fn)
         with self.assertRaises(KoskariSyncViolation) as ctx:
-            next(gen)
+            next(iter(gen))
         self.assertIn('suspension', str(ctx.exception))
 
 
@@ -1169,6 +1173,70 @@ class TestDemandCallFlattening(unittest.TestCase):
         result = demand_call(outer_fn)
         self.assertIsInstance(result, AsyncGenerator)
         self.assertEqual(next(iter(result)), 7)
+
+
+def _concat_fn():
+    """
+    Build KosFunction (a, b) -> a + b
+    """
+
+    code, base_ns = build_expr([
+        ["VAR", "a"],
+        ["VAR", "b"],
+        ["OBJECT_ADD", 2],
+        ["RETURN", 1],
+    ])
+    fspec = FormalsSpec(("a", "b"), None, ())
+    return code.function(fspec(), base_ns)
+
+
+class TestDemandBoundaryCallables(unittest.TestCase):
+    """
+    The demand core accepts every KosCallable at the Python boundary
+    """
+
+    def test_demand_partial_python_inner(self):
+        """
+        demand(partial(operator.add, 5))(100) from Python
+        """
+
+        self.assertEqual(demand(KosPartial(operator.add, 5))(100), 105)
+
+
+    def test_demand_call_partial_koskari_inner(self):
+        """
+        demand_call on a partial over a KosFunction
+        """
+
+        fn = _concat_fn()
+        self.assertEqual(demand_call(KosPartial(fn, "x"), "y"), "xy")
+
+
+    def test_demand_apply_keywords(self):
+        """
+        demand_apply with keyword arguments at the boundary
+        """
+
+        fn = _concat_fn()
+        self.assertEqual(demand_apply(fn, ("x",), {"b": "y"}), "xy")
+
+
+    def test_demand_vectorcall_keywords(self):
+        """
+        demand(fn) called from Python with a keyword argument
+        """
+
+        fn = _concat_fn()
+        self.assertEqual(demand(fn)("x", b="y"), "xy")
+
+
+    def test_demand_call_partial_with_bound_keyword(self):
+        """
+        demand_call on a partial carrying a bound keyword
+        """
+
+        fn = _concat_fn()
+        self.assertEqual(demand_call(KosPartial(fn, b="y"), "x"), "xy")
 
 
 # The end.

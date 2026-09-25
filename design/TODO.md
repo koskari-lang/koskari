@@ -259,6 +259,14 @@ boundary drivers that re-enter the eval; the frame-depth limit already
 covers the chain.
 Ref: [EVALUATOR.md](EVALUATOR.md) §7 (installs and call paths).
 
+### Context snapshot after completion (investigate)
+
+A boundary drive's root is now a code-less frame with no namespace, so
+a retained `Context` reports `namespace` as None once the drive ends.
+Investigate a snapshot API that preserves a finished context's state
+(namespace, last frames) for later inspection.
+Ref: [interpreter/demand-flattening.md](interpreter/demand-flattening.md).
+
 ---
 
 ## Recorded proposals (evaluate / implement)

@@ -72,4 +72,21 @@ define async_partial []:
     (.__init__ (AsyncPartial.__new__ AsyncPartial))
 
 
+;; A Demand over a continuation installs through the same code-less
+;; frame: an escaping continuation unwinds past it, and a composable
+;; one returns into it once per invocation.
+
+
+(define demand_escape []
+  (call/cc (lambda [k] ((demand k) 5) 99)))
+
+
+(define demand_shift_twice []
+  (reset (* 2 (shift k (+ ((demand k) 1) ((demand k) 2))))))
+
+
+(define map_shift []
+  (reset (* 2 (shift k (list (map k #[1 2]))))))
+
+
 ;; The end.

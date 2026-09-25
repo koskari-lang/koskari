@@ -9,9 +9,11 @@ a generator, not to constructing one; `DemandGenerator` becomes
 without applying demand; an `__iter__` bound to a generator function
 presents its generator to Python as one.
 
-Progress: steps 1 (D5) and 2 (`KosIterFunction`) are committed; D7 is
-resolved by an approved contract change; step 3 (D8) is done in the
-working tree. Steps 4-7 remain.
+Progress: steps 1 (D5), 2 (`KosIterFunction`), and 3 (D8) are
+committed; D7 is resolved by an approved contract change; step 4 (D4,
+D6) is done in the working tree with its contract changes applied. D11
+(composable continuations from code-less frames) is open and blocks
+closing the arc. Steps 5-7 remain.
 
 ## Invariant
 
@@ -134,7 +136,8 @@ hand-rolled the value-in-hand case and grew a packed fallback.
 `KosEvalState_CallInto` (`eval/eval_call.c`, declared in `eval.h`)
 provides the code-less frame.
 
-**D4. The boundary refuses most KosCallables.** Open.
+**D4. The boundary refuses most KosCallables.** Fixed in the working
+tree (step 4).
 `demand_sync_ex` (`demand.c:318-325`) accepts only exact `KosFunction`
 and `KosExpression`. Any other KosCallable reached from Python raises
 `TypeError: demand_sync does not support ...`: a `partial` bound as
@@ -158,8 +161,9 @@ providers and `am_aiter` objects, so Koskari iterating a
 `demandgen_step` -> `koskari_eval(gen->host, ...)` (`iterate.c:1087`),
 and `yield_from_classify` (`opcode/YIELD_FROM.c:33`, `:128`) the same.
 
-**D6. Generators are converted for demand at the boundary.** Open,
-step 4. The boundary's yielding branch (`demand.c:333-350`) converts a
+**D6. Generators are converted for demand at the boundary.** Fixed in
+the working tree (step 4). The boundary's yielding branch
+(`demand.c:333-350`) converted a
 yielding function's generator to a `KosPyIter`, reached only
 through its `Demand` and `BoundMethod` unwraps. With demand applied at
 the drive, the generator is returned as is and the branch is removed.
@@ -204,6 +208,30 @@ The comment there ("Matching never enters the evaluator ... koskari
 callables run on a demand eval drive") describes nesting as acceptable
 and is removed with the fix.
 
+**D11. Composable continuations invoked from a code-less resume frame.**
+Open; predates this work for transforms. When a `shift` continuation's
+landed segment completes, `POP_PROMPT` (`opcode/POP_PROMPT.c:67`) routes
+the value to the recorded invoke-site frame through
+`kos_eval_route_delim_return` (`eval.c:~1488`), which finishes the
+delim (in-place: `kos_dyn_finish_inplace_pop_return`; push-graft:
+`kos_dyn_finish_delimited_pop_return`) and resumes dispatch at the
+invoker's pc. A code-less invoker has no pc:
+
+- `(reset (* 2 (shift k ((demand k) 1))))` (invoked from `CallInto`'s
+  frame, in-place path) segfaults in `op_POP_PROMPT`.
+- `(reset (* 2 (shift k (list (map k #[1 2])))))` (invoked from a
+  transform's resume frame) returns `2`, not `[2, 4]`.
+
+Returning REPROLOGUE from the route when the invoker is code-less, so
+the prologue delivers the value on its stack to the armed resume, stops
+the crash but still yields `2` for `(+ ((demand k) 1) ((demand k) 2))`
+and for the `map` case: the first delivery ends the reset. Not applied.
+The in-place invoke snapshots the invoke site as a bytecode resume point
+(`dynchain/xfer_plan.c:100-170`, including the nested-handler frame
+clone), and the push-graft path sets the invoker's pc; neither yet has a
+delivery-to-resume form. Needs a design pass through the in-place
+restitch and the delimited return.
+
 ### Boundary sites (no action)
 
 Python-driven entries that step or create a context from Python:
@@ -227,12 +255,15 @@ steppers), `iterate.c:1087` (the `KosPyIter` Python-side drive),
   before install leaves the code-less frame unarmed and the walk pops it
   (`dyn_walk.c:646-653`); `kos_dynframe_clear_resume` tolerates a NULL
   clear (`dyn_frame.c:120-125`).
-- Continuations reached through `CallInto` (a `Demand` or `Procedure`
-  wrapping a continuation) arm a transfer goal; the prologue drops a
-  staged slot ahead of a goal drive (`eval.c:3419-3423`). Whether the
-  transfer unwinds the code-less frame and what a multi-shot re-entry
-  delivers into its resume is not established by reading. Covered by a
-  step 5 test before the arc closes.
+- Continuations reached through `CallInto`: an escaping `call/cc`
+  continuation through a `Demand` works (`(call/cc (lambda [k] ((demand
+  k) 5) 99))` -> 5). A composable (`shift`) continuation invoked from
+  any code-less resume frame is broken (D11).
+- A retained `Context` from a boundary drive reports `namespace` as
+  None after the drive ends: the root is the code-less `CallInto` frame,
+  which has no namespace. `test_domain.py`'s running-context test now
+  reads the namespace inside the drive; a snapshot API for finished
+  contexts is a TODO entry.
 
 ## Working tree
 
@@ -278,7 +309,7 @@ Committed as WIP (`511636b3`):
   `tests/reproducers/test_iter_function.py`,
   `tests/reproducers/scripts/iter_function.ki`.
 
-Uncommitted:
+Committed as WIP (`33226f50`):
 
 - Step 3: `kospartial_kos_vinstall` (`partial.c`) calls every inner
   through `KosEvalState_CallResult` / `KosEvalState_CallArgs`;
@@ -286,10 +317,24 @@ Uncommitted:
   `tests/reproducers/test_partial_flatten.py`,
   `tests/reproducers/scripts/partial_flatten.ki`.
 
-Test state: the full tree passes except
-`test_procedure_install.py::test_frameless_result_is_none` (D4, step
-4). `make test` stops at that phase-8 failure; `make lint` is clean.
-Committable as WIP.
+Uncommitted:
+
+- Step 4: `demand.c` core rewritten (`demand_run_koskari` through
+  `CallInto`, vector-native `demand_sync_vector`, `demand_resume` moved
+  above it, `Koskari_DemandSyncVector`); `KosArgSpread` in
+  `callable.h` / `callable.c`, used by `KosCallable_CallArgsSlots` and
+  the demand core; `KosCallAdapt_VectorDemand` passes its vector
+  through; the approved contract changes in `test_demand_sync.py` and
+  `test_dunder_adapter.py`; new `TestDemandBoundaryCallables`.
+- `test_domain.py`: the running-context namespace is read inside the
+  drive; a TODO entry for a finished-context snapshot API.
+- `test_procedure_install.py`: continuation cases through `Demand` and
+  `map` (D11).
+
+Test state: everything passes except the two D11 tests:
+`test_demand_composable_continuation_twice` segfaults (taking the
+pytest run down with it) and `test_map_composable_continuation` fails
+(`2 != [2, 4]`). `make lint` is clean.
 
 ## Withdrawn designs
 
