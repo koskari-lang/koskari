@@ -180,9 +180,14 @@ static KosOpResult kos_vinstall_expression(
 
 
 /**
-   Install a KosFunction call: bind the arguments into a call namespace,
-   then a generator function completes in hand with its new
-   AsyncGenerator, and any other function takes a frame.
+   Install a KosFunction call. A simple call (exact arity against plain
+   positional formals, no keywords, no self-bind) binds by slot index:
+   not in tail position it takes the function's parked frame when one
+   is there, else pushes a fresh one; in tail position it refills the
+   caller's frame. Any other call binds through the general formals
+   machine. A generator function completes in hand with its new
+   AsyncGenerator. Every installed frame is tagged with the function so
+   its release can park it.
 */
 static KosOpResult kos_vinstall_function(
     KosEvalState *es,
@@ -193,16 +198,68 @@ static KosOpResult kos_vinstall_function(
     int tail_call) {
 
   KosCode *code = (KosCode *) KosFunction_CODE(callable);
-  PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
-      callable, args, nargs, kwnames);
+  int simple = ! kwnames
+      && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
+      && KosFunction_BIND_SELF_STATE(callable) == 2;
+  int yields = code && KosCode_YIELDS(code);
+  PyObject *frame_ns;
+  KosOpResult r;
 
+  /* A generator function never takes a frame: it binds and completes
+     with the new AsyncGenerator, so the gate stands ahead of every
+     frame arm below. */
+  if (simple && ! tail_call && ! yields) {
+    KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
+
+    if (kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)
+      return EVAL_RAISE();
+
+    if (cached) {
+      for (Py_ssize_t i = 0; i < nargs; i++)
+        Py_INCREF(args[i]);
+      (void) KosFormals_SimpleStealApply(KosDynFrame_NS(cached), args,
+                                         nargs);
+      KosFunction_CACHED_FRAME(callable) = NULL;
+      kos_dyn_push_ready_frame(es, cached);
+      Py_INCREF(callable);
+      KosDynFrame_FN(cached) = callable;
+      KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+      return kos_call_installed(es);
+    }
+
+    frame_ns = KosFunction_SimpleCallNamespaceFromVector(callable, args,
+                                                         nargs);
+    if (! frame_ns)
+      return EVAL_RAISE();
+    KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
+    if (! kos_dyn_push_frame_unchecked(es, code, frame_ns))
+      return EVAL_RAISE();
+    Py_INCREF(callable);
+    KosDynFrame_FN(KosEvalState_FRAME(es)) = callable;
+    return kos_call_installed(es);
+  }
+
+  if (simple) {
+    frame_ns = KosFunction_SimpleCallNamespaceFromVector(callable, args,
+                                                         nargs);
+  } else {
+    frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+        callable, args, nargs, kwnames);
+  }
   if (! frame_ns)
     return EVAL_RAISE();
-  if (code && KosCode_YIELDS(code)) {
+
+  if (yields) {
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
     return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
   }
-  return KosEvalState_InstallCallFrame(es, code, frame_ns, tail_call);
+
+  r = KosEvalState_InstallCallFrame(es, code, frame_ns, tail_call);
+  if (r.kind != KOS_RES_RAISE) {
+    Py_INCREF(callable);
+    KosDynFrame_FN(KosEvalState_FRAME(es)) = callable;
+  }
+  return r;
 }
 
 

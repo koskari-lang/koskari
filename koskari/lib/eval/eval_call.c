@@ -218,17 +218,6 @@ static KosOpResult kos_call_dispatch(
 }
 
 
-static inline KosOpResult kos_call_invoke_body(
-    KosEvalState *es,
-    KosSegment **caller_slot,
-    size_t window,
-    PyObject *callable,
-    PyObject *const *argv,
-    Py_ssize_t nargs,
-    PyObject *kwnames,
-    unsigned flags);
-
-
 KosOpResult KosEvalState_Call(
     KosEvalState *es,
     PyObject *callable,
@@ -241,29 +230,6 @@ KosOpResult KosEvalState_Call(
   int tail_popped = 0;
   int tail_defer_return = 0;
   KosOpResult r;
-
-  /* Exact simple-arity KosFunction: the shared call core, whose
-     parked-frame reuse the legacy install path lacks. */
-  if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
-      && ! tail_call && ! kwnames
-      && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
-      && KosFunction_BIND_SELF_STATE(callable) == 2) {
-    KosSegment *dummy = NULL;
-    r = kos_call_invoke_body(es, &dummy, 0, callable, args, nargs,
-                             kwnames, 0);
-    /* POLL is a handler-relay answer; a native caller bounces through
-       the trampoline, which polls ahead of the prologue as before. */
-    if (r.kind == KOS_RES_POLL)
-      return EVAL_REPROLOGUE();
-    if (r.kind != KOS_RES_NORMAL)
-      return r;
-    if (KosEvalState_GOAL(es))
-      return EVAL_REPROLOGUE();
-    if (KosEvalState_FRAME(es)
-        && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)))
-      return EVAL_REPROLOGUE();
-    return EVAL_NORMAL();
-  }
 
   /* A plain Python callable in tail position gives up the caller's
      frame before the call; a KosCallable that completes in hand keeps
@@ -660,52 +626,26 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
     KosCode *code = (KosCode *) KosFunction_CODE(callable);
     PyObject *frame_ns;
 
-    /* A generator function call NEVER begins evaluating its code: it
-       binds the arguments and completes immediately with the new
-       AsyncGenerator as the call's value.  This gate stands ahead of
-       every install arm below, so none of them can see yielding code
-       no matter how the call classifies.  The agen lands on the
-       caller's block, so the window drops first; NewFromCodeAndNs
-       steals frame_ns. */
-    if (unlikely(code && KosCode_YIELDS(code))) {
-      if (! kwnames
-          && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
-          && KosFunction_BIND_SELF_STATE(callable) == 2) {
-        frame_ns = KosFunction_SimpleCallNamespaceFromVector(
-            callable, argv, nargs);
-      } else {
-        frame_ns = KosFunction_PrepareCallNamespaceFromVector(
-            callable, argv, nargs, kwnames);
-      }
-      if (unlikely(! frame_ns))
-        goto fail;
-      {
-        PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
-        if (window)
-          kos_stack_drop_noerr_fast(caller_slot, window);
-        if (flags & KOS_CALL_CALLABLE_OWNED)
-          Py_DECREF(callable);
-        if (unlikely(! agen))
-          return EVAL_RAISE();
-        return KosEvalState_StackPUSH(es, agen) < 0
-            ? EVAL_RAISE() : EVAL_NORMAL();
-      }
-    }
+    /* A generator function call never begins evaluating its code: it
+       binds the arguments and completes with the new AsyncGenerator as
+       the call's value, which the function's install reports in hand.
+       This gate stands ahead of the steal-bind arm below, so it never
+       sees yielding code. */
+    if (unlikely(code && KosCode_YIELDS(code)))
+      goto legacy;
 
     if (likely(! kwnames
                && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
       /* Simple call: exact arity against plain positional formals on
          non-yielding code (classified at construction, and the
          generator gate above stands regardless).  Binds by slot
-         index; the general formals machine is bypassed.  Any
-         mismatch falls through to the general path, which owns the
-         arity error messages.
+         index; the general formals machine is bypassed.
 
          When argv is the block tail (window, no self-arg prepend) and
          the function has no self-bind, the args steal-move off the
          block into the namespace -- the stolen span leaves the window,
          so only the residue (a WINDOW_CALLABLE slot) drops after the
-         install. */
+         install.  Any other shape takes the function's own install. */
       if (likely((flags & KOS_CALL_ARGV_WINDOW)
                  && ! (flags & KOS_CALL_ARGV_PREPENDED)
                  && KosFunction_BIND_SELF_STATE(callable) == 2)) {
@@ -760,83 +700,12 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         }
       }
 
-      /* Plain vector (no stack window), no self-bind: the parked
-         frame binds directly from argv -- references taken, slots
-         filled, ready-push. A miss installs and tags the frame so its
-         release parks it. */
-      if (likely(! (flags & KOS_CALL_ARGV_WINDOW)
-                 && KosFunction_BIND_SELF_STATE(callable) == 2)) {
-        KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
-
-        if (unlikely(kos_eval_check_frame_room(
-                es, KosEvalState_FRAME(es), 1) < 0)) {
-          goto fail;
-        }
-
-        if (likely(cached)) {
-          for (Py_ssize_t i = 0; i < nargs; i++)
-            Py_INCREF(argv[i]);
-          (void) KosFormals_SimpleStealApply(
-              KosDynFrame_NS(cached), argv, nargs);
-          KosFunction_CACHED_FRAME(callable) = NULL;
-          kos_dyn_push_ready_frame(es, cached);
-          if (! (flags & KOS_CALL_CALLABLE_OWNED))
-            Py_INCREF(callable);
-          KosDynFrame_FN(cached) = callable;
-          KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
-          return kos_call_installed(es);
-        }
-
-        frame_ns = KosFunction_SimpleCallNamespaceFromVector(
-            callable, argv, nargs);
-        if (unlikely(! frame_ns))
-          goto fail;
-        KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
-        {
-          KosDynFrame *frame = kos_dyn_push_frame_unchecked(
-              es, code, frame_ns);
-          if (unlikely(! frame))
-            goto fail;
-          if (! (flags & KOS_CALL_CALLABLE_OWNED))
-            Py_INCREF(callable);
-          KosDynFrame_FN(frame) = callable;
-          return kos_call_installed(es);
-        }
-      }
-
-      frame_ns = KosFunction_SimpleCallNamespaceFromVector(
-          callable, argv, nargs);
-      if (unlikely(! frame_ns))
-        goto fail;
-      KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
-      goto fn_frame_install;
     }
 
-    /* General path: the generator gate above already peeled yielding
-       code off, so this always installs a frame. */
-    frame_ns = KosFunction_PrepareCallNamespaceFromVector(
-        callable, argv, nargs, kwnames);
-
-    if (unlikely(! frame_ns))
-      goto fail;
-
-fn_frame_install:
-
-    /* Frame install: nothing lands on the caller's block, so the drop
-       runs last and the window keeps callable and args alive for the
-       whole install.  kos_dyn_push_frame installs code and frame_ns in
-       one pass (consuming frame_ns even on failure), so the live
-       registers are loaded once, with their final values. */
-    {
-      KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
-      if (unlikely(! frame))
-        goto fail;
-      if (window)
-        kos_stack_drop_noerr_fast(caller_slot, window);
-      if (flags & KOS_CALL_CALLABLE_OWNED)
-        Py_DECREF(callable);
-      return kos_call_installed(es);
-    }
+    /* Every other function call (a plain vector, keywords, a non-simple
+       arity, a self-binding function): the function's own install,
+       which binds and installs its frame, reached through the spill. */
+    goto legacy;
   }
 
   /* Class: plain Python callable -- vectorcall reading argv in place;
@@ -903,7 +772,6 @@ fail:
                                 argv, nargs, kwnames, (FLAGS));         \
   }
 
-KOS_CALL_BODY_VARIANT(kos_call_body_plain, KOS_CALL_PLAIN)
 KOS_CALL_BODY_VARIANT(kos_call_body_window_callable,
                       KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE)
 KOS_CALL_BODY_VARIANT(kos_call_body_window_callable_tail,
@@ -950,9 +818,6 @@ static inline KosOpResult kos_call_invoke_body(
         unsigned flags) {
 
   switch (flags) {
-    case KOS_CALL_PLAIN:
-      return kos_call_body_plain(es, caller_slot, window, callable,
-                                 argv, nargs, kwnames);
     case KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE:
       return kos_call_body_window_callable(es, caller_slot, window,
                                            callable, argv, nargs, kwnames);
