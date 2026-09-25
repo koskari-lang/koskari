@@ -37,6 +37,11 @@ Entries marked (working tree) are uncommitted as of 2026-09-25.
   (`kos_iter_acquire`, `KosIterRequest_Next`, `yield_from_classify`,
   `dynchain/dyn_gen.c`). The splice copies `KOS_FRAME_DEMAND` from the
   invoking frame.
+- **Iteration through a `KosPyIter`.** (working tree) The CPython
+  iterator a provider's `tp_iter` returns (formerly `DemandGenerator`)
+  is a KosIter provider whose suite forwards to its provider, so
+  `for-each` / `yield-from` over `(iter (gen))` splice as the bare
+  provider does, carrying only the consumer's demand state.
 - **Transform callbacks.** `map`, `filter`, `starmap`, `accumulate`,
   `takewhile`, `dropwhile` call their function through
   `KosEvalState_CallResult` from a code-less resume frame.
@@ -45,12 +50,6 @@ Entries marked (working tree) are uncommitted as of 2026-09-25.
 
 ## Should flatten, does not
 
-- **Koskari iteration of a `DemandGenerator`.** `kos_iter_acquire` does
-  not recognize the adapter; iteration goes `PyIter_Next` ->
-  `demandgen_step` -> a nested `koskari_eval` (`iterate.c:1087`). Every
-  `(iter (gen))` iterated from Koskari, and every Koskari `__iter__`
-  result handed back to Koskari through Python, pays this. Scheduled:
-  demand-flattening step 1.
 - **`partial` over a non-frame KosCallable inner, or with keywords.**
   `kospartial_kos_vinstall` calls `KosPartial_Call` (`partial.c:254`),
   reaching `demand_sync_ex` or another Python entry. Scheduled:

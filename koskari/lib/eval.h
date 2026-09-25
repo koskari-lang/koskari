@@ -1440,6 +1440,28 @@ KosOpResult KosEvalState_CallResult(
 
 
 /**
+   Call callable with its result delivered to resume, from a context
+   that is not itself a resume (a callable's install slot). Pushes a
+   code-less frame, ORs frame_flags into it (KOS_FRAME_DEMAND to
+   refuse suspension within the call), and makes the call from that
+   frame through KosEvalState_CallResult, which arms resume and state
+   on it. A value back in hand is staged for the resume; a callee's
+   return and a settled value reach it the same way. A failure
+   propagates past the frame. Returns REPROLOGUE for the staged value,
+   else CallResult's outcome. args are borrowed.
+*/
+KosOpResult KosEvalState_CallInto(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags);
+
+
+/**
    KosEvalState_CallArgs: generic call entry point with tuple+dict args.
 
    Same semantics as KosEvalState_Call but for tuple+dict form. Use for

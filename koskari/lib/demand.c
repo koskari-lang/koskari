@@ -25,16 +25,17 @@
    in-eval KoskariSyncViolation at the deny site so TRY/finally can run;
    uncaught, the exception surfaces as KOS_RES_RAISE.
 
-   Yielding KosFunctions return DemandGenerator instead of raising.
-   DemandGenerator stepping forces KOS_FRAME_DEMAND onto the generator's
-   frame at each entry (demand intent, embodied by the driving node), so
-   AWAIT denies in-eval exactly as in demand functions -- catchable by
-   the generator body for sync fallback; uncaught, it unwinds and exits
-   as KOS_RES_RAISE. YIELD is untouched: it surfaces as iteration. The
-   demand bit is drive-state: kos_dyn_gen_install assigns it from the
-   frame below the splice at every entry, so flattened iteration
-   inherits the consumer's demand state and async node drives force
-   it off.
+   Yielding KosFunctions return a KosPyIter instead of raising.
+   KosPyIter stepping from Python forces KOS_FRAME_DEMAND onto the
+   generator's frame at each entry (demand intent, embodied by the
+   driving node), so AWAIT denies in-eval exactly as in demand
+   functions -- catchable by the generator body for sync fallback;
+   uncaught, it unwinds and exits as KOS_RES_RAISE. YIELD is untouched:
+   it surfaces as iteration. The demand bit is drive-state:
+   kos_dyn_gen_install assigns it from the frame below the splice at
+   every entry, so flattened iteration -- over a KosPyIter too --
+   inherits the consumer's demand state and async node drives force it
+   off.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -208,7 +209,7 @@ static PyObject *demand_finish_koskari_value(PyObject *value) {
   For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; in-eval
   deny guards convert AWAIT/YIELD into KoskariSyncViolation before koskari_eval
   returns, so KOS_RES_AWAIT and KOS_RES_YIELD are unreachable here.
-  DemandGenerator stepping is unchanged (see demand.c).
+  KosPyIter stepping is unchanged (see demand.c).
 
   callable, args, kwargs are borrowed. Never decref them.
  */
@@ -340,7 +341,7 @@ static int demand_sync_ex(
       if (! agen_obj)
         goto ret_fail;
       {
-        PyObject *gen_out = KosIterAdapt_DemandIter(agen_obj);
+        PyObject *gen_out = KosIterAdapt_PyIter(agen_obj);
         Py_DECREF(agen_obj);
         if (! gen_out)
           goto ret_fail;
@@ -717,6 +718,28 @@ static int demand_wants_frame(PyObject *callable) {
 }
 
 
+/**
+   The resume on a Demand's code-less frame: completes the frame with
+   the wrapped callable's result. A failed delivery propagates.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult demand_resume(
+    KosEvalState *es,
+    void *state,
+    PyObject *value) {
+
+  (void) state;
+
+  if (! value)
+    return EVAL_RAISE();
+
+  return KosNativeFrame_ReturnPark(es, value, NULL);
+}
+
+
+KOS_RESUME_KIND(demand_resume_kind, "demand",
+                demand_resume, NULL, kos_resume_clone_shared);
+
+
 static KosOpResult demand_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -748,47 +771,11 @@ static KosOpResult demand_kos_vinstall(
     return r;
   }
 
-  /* Cold fallback: demand_sync_ex needs the tuple + dict shapes. */
-  {
-    Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
-    PyObject *tup = PyTuple_New(nargs);
-    PyObject *kwargs = NULL;
-    PyObject *result = NULL;
-    int sr;
-
-    if (! tup)
-      return EVAL_RAISE();
-    for (Py_ssize_t i = 0; i < nargs; i++) {
-      PyObject *v = args[i];
-      Py_INCREF(v);
-      PyTuple_SET_ITEM(tup, i, v);
-    }
-    if (nkw) {
-      kwargs = PyDict_New();
-      if (! kwargs) {
-        Py_DECREF(tup);
-        return EVAL_RAISE();
-      }
-      for (Py_ssize_t i = 0; i < nkw; i++) {
-        if (PyDict_SetItem(kwargs, PyTuple_GET_ITEM(kwnames, i),
-                           args[nargs + i]) < 0) {
-          Py_DECREF(tup);
-          Py_DECREF(kwargs);
-          return EVAL_RAISE();
-        }
-      }
-    }
-
-    sr = demand_sync_ex(inner, tup, kwargs, &result);
-    Py_DECREF(tup);
-    Py_XDECREF(kwargs);
-    if (sr < 0)
-      return EVAL_RAISE();
-
-    if (KosEvalState_StackPUSH(es, result) < 0)
-      return EVAL_RAISE();
-    return EVAL_NORMAL();
-  }
+  /* Any other inner is called from a code-less demand-root frame whose
+     resume completes it with the result. */
+  return KosEvalState_CallInto(es, inner, args, nargs, kwnames,
+                               &demand_resume_kind, NULL,
+                               KOS_FRAME_DEMAND);
 }
 
 

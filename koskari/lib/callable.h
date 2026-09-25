@@ -256,7 +256,7 @@ PyObject *KosCallAdapt_VectorAsync(
 /**
    tp_call filler for a demand-surface callable: run self to completion on
    the demand path (Koskari_DemandSync). Real suspension raises
-   KoskariSyncViolation; a yielding callable returns a DemandGenerator.
+   KoskariSyncViolation; a yielding callable returns a KosPyIter.
 */
 PyObject *KosCallAdapt_CallDemand(
     PyObject *self, PyObject *args, PyObject *kwds);

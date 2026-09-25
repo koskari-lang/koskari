@@ -383,7 +383,7 @@ KosEvaluatedTypeObject KosAccumulateType = {
               "(demand path)",
     .tp_traverse = kosaccumulate_traverse,
     .tp_clear = kosaccumulate_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = kosaccumulate_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

@@ -1,0 +1,75 @@
+;; Reproducer: a class __init__ called from Koskari runs in the calling
+;; evaluator. Its return is replaced with None, runaway recursion
+;; through it reaches the frame-depth limit, and a suspension inside it
+;; is refused. An __init__ bound to a callable that installs no frame
+;; takes the same path. async_init is injected by the test.
+
+
+define-class Counter []:
+
+    define __init__ [self n]:
+        set! self.n n
+        n
+
+
+define-class Runaway []:
+
+    define __init__ [self]:
+        (.__init__ self)
+
+
+define-class Sleeper []:
+
+    define __init__ [self]:
+        (sleep 0)
+        set! self.done true
+
+
+define-class Raiser []:
+
+    define __init__ [self]:
+        (raise (ValueError "boom"))
+
+
+define init_result []:
+    define c (Counter 1)
+    #(c.n (.__init__ c 7) c.n)
+
+
+define runaway []:
+    (Runaway)
+
+
+define sleeper []:
+    (.__init__ (Sleeper.__new__ Sleeper))
+
+
+define raiser []:
+    (.__init__ (Raiser.__new__ Raiser))
+
+
+define set-n [k self]:
+    set! self.n k
+    k
+
+
+define-class Partial []:
+
+    define __init__ (partial set-n 5)
+
+
+define-class AsyncPartial []:
+
+    define __init__ (partial async_init)
+
+
+define partial_result []:
+    define p (Partial)
+    #(p.n (.__init__ p) p.n)
+
+
+define async_partial []:
+    (.__init__ (AsyncPartial.__new__ AsyncPartial))
+
+
+;; The end.

@@ -344,6 +344,39 @@ KosOpResult KosEvalState_CallResult(
 }
 
 
+KosOpResult KosEvalState_CallInto(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags) {
+
+  /* The frame starts with no resume armed: an armed resume would make
+     a value pushed onto the frame read as an installed callee, and
+     skip its settling. CallResult arms it on every path but a value
+     back in hand. */
+  KosDynFrame *frame = KosResumeFrame_Install(es, NULL, NULL, NULL);
+  KosOpResult r;
+
+  if (! frame)
+    return EVAL_RAISE();
+  KosDynFrame_FLAGS(frame) |= frame_flags;
+
+  r = KosEvalState_CallResult(es, callable, args, nargs, kwnames, 0,
+                              resume, state);
+  if (r.kind != KOS_RES_RETURN)
+    return r;
+
+  KosDynFrame_RESUME_KIND(frame) = resume;
+  KosDynFrame_RESUME_STATE(frame) = state;
+  KosEvalState_StageDelivery(es, r.val);
+  return EVAL_REPROLOGUE();
+}
+
+
 /* === kos_call_invoke: the shared call core (call-unification Phase 2) ===
 
    The entry for the CALL_* opcode prologues: kos_call_invoke inlines

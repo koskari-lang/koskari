@@ -3541,6 +3541,9 @@ KosOpResult koskari_eval(
     }
   }
 
+  if (Py_EnterRecursiveCall(" in koskari_eval"))
+    return EVAL_RAISE();
+
   /* Swap in this context's handler-visible exception state (sys.exc_info),
      saving the host's. Contexts interleaved on one thread must not see
      each other's handled exception; the reverse swap runs at cleanup. */
@@ -3647,6 +3650,7 @@ koskari_eval_cleanup:
 
   /* the drive's hold on the context, taken at entry; a holder that let
      go during the drive deallocates it here */
+  Py_LeaveRecursiveCall();
   Py_DECREF(ctx);
   return eval_ret;
 }

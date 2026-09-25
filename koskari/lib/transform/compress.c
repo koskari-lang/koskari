@@ -373,7 +373,7 @@ KosEvaluatedTypeObject KosCompressType = {
               "koskari-flattened) and synchronously (demand path)",
     .tp_traverse = koscompress_traverse,
     .tp_clear = koscompress_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = koscompress_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

@@ -25,8 +25,8 @@ import weakref
 import pytest
 
 from koskari.lib import (
-    BoundMethod, FormalsSpec, KoskariSyncViolation, demand, demand_apply,
-    demand_call)
+    AsyncGenerator, BoundMethod, FormalsSpec, KoskariSyncViolation, demand,
+    demand_apply, demand_call)
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
@@ -1141,8 +1141,9 @@ class TestDemandCallFlattening(unittest.TestCase):
 
     def test_fallback_yielding_function_returns_generator(self):
         """
-        demand(yielding_fn) called from koskari bytecode takes the fallback
-        path and returns a DemandGenerator (not a flattened frame).
+        demand(yielding_fn) called from koskari bytecode returns the
+        AsyncGenerator itself; demand applies when it is driven, not when
+        it is constructed
         """
 
         fn = self._make_yielding_fn(7)
@@ -1166,9 +1167,8 @@ class TestDemandCallFlattening(unittest.TestCase):
         outer_fn = make_callable(outer_code, outer_ns, FormalsSpec())
 
         result = demand_call(outer_fn)
-        self.assertIsNotNone(result)
-        self.assertTrue(hasattr(result, '__next__'))
-        self.assertEqual(next(result), 7)
+        self.assertIsInstance(result, AsyncGenerator)
+        self.assertEqual(next(iter(result)), 7)
 
 
 # The end.

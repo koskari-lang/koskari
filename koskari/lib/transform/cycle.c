@@ -306,7 +306,7 @@ KosEvaluatedTypeObject KosCycleType = {
               "and synchronously (demand path)",
     .tp_traverse = koscycle_traverse,
     .tp_clear = koscycle_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = koscycle_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

@@ -248,7 +248,7 @@ KosEvaluatedTypeObject KosMapType = {
               "synchronously (demand path)",
     .tp_traverse = kos_transform_traverse,
     .tp_clear = kos_transform_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = kosmap_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

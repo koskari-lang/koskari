@@ -454,7 +454,7 @@ KosEvaluatedTypeObject KosZipLongestType = {
               "path)",
     .tp_traverse = koszip_longest_traverse,
     .tp_clear = koszip_longest_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = koszip_longest_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

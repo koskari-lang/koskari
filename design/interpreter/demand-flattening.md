@@ -8,6 +8,9 @@ a generator, not to constructing one; `DemandGenerator` becomes
 `KosPyIter`, a CPython iterator adapter that Koskari flattens through
 without applying demand; `__iter__` coerces its result to one.
 
+Progress: step 1 (D5) is done in the working tree; D7 is resolved by an
+approved contract change. Steps 2-7 remain.
+
 ## Invariant
 
 A call into Koskari made from Koskari flattens: it installs into the
@@ -43,7 +46,7 @@ construction.
   async-only types. Their `tp_iter` returns a `KosPyIter`, the CPython
   iterator adapter, whose Python-side drive applies demand.
 
-`KosPyIter` is today's `DemandGenerator` renamed (`KosIterDemandGenType`
+`KosPyIter` is the former `DemandGenerator` renamed (`KosIterDemandGenType`
 -> `KosPyIterType`, `KosIterDemandGen` -> `KosPyIter`,
 `KosIterAdapt_DemandIter` -> `KosIterAdapt_PyIter`, Python name
 `koskari.lib.Iterator`). The name describes an iterator adapter for
@@ -140,10 +143,11 @@ unwrap with `PySequence_Concat`, recursive `Demand` unwraps, a
 `CallResult` / `CallArgs` split on keywords, hand-sorted pre-eval
 outcomes, an "install left no code" check, manual `KOS_FRAME_DEMAND`
 marking, and a yielding branch that converts the generator to a
-`DemandGenerator` (`demand.c:333-350`). Unchanged on master; reproduced
+`KosPyIter` (`demand.c:333-350`). Unchanged on master; reproduced
 on the current build from pure Python.
 
-**D5. Koskari iteration of a `DemandGenerator` nests.** Open, step 1.
+**D5. Koskari iteration of a `DemandGenerator` nests.** Fixed in the
+working tree (step 1).
 `KosIterDemandGenType` is a plain `PyTypeObject` without KosIter slots;
 `kos_iter_acquire` (`eval/eval_iter.c:44`) passes through only KosIter
 providers and `am_aiter` objects, so Koskari iterating a
@@ -153,17 +157,17 @@ and `yield_from_classify` (`opcode/YIELD_FROM.c:33`, `:128`) the same.
 
 **D6. Generators are converted for demand at the boundary.** Open,
 step 4. The boundary's yielding branch (`demand.c:333-350`) converts a
-yielding function's generator to a `DemandGenerator`, reached only
+yielding function's generator to a `KosPyIter`, reached only
 through its `Demand` and `BoundMethod` unwraps. With demand applied at
 the drive, the generator is returned as is and the branch is removed.
 
-**D7. D2's change broke an existing test.** Open, contract change.
+**D7. D2's change broke an existing test.** Resolved: contract change
+approved and applied in the working tree.
 `tests/lib/test_demand_sync.py::TestDemandCallFlattening::test_fallback_yielding_function_returns_generator`
-fails in the working tree: `demand(yielding_fn)` called from Koskari now
-takes `CallInto` and delivers the `AsyncGenerator`. The test asserts
-`hasattr(result, '__next__')` and `next(result) == 7`. Under the drive
-rule the `AsyncGenerator` is the correct result; the test's contract
-changes (see Contract changes).
+asserted `hasattr(result, '__next__')` and `next(result) == 7` on the
+result of `demand(yielding_fn)` called from Koskari. Under the drive
+rule that result is the `AsyncGenerator` itself; the test now asserts
+`isinstance(result, AsyncGenerator)` and `next(iter(result)) == 7`.
 
 **D8. `KosPartial` nests for KosCallable inners.** Open.
 `kospartial_kos_vinstall` routes any non-frame inner to `KosPartial_Call`
@@ -245,15 +249,27 @@ Uncommitted:
 - `demand.c`: `demand_resume` / `demand_resume_kind` (complete with the
   value); the cold fallback in `demand_kos_vinstall` replaced by
   `CallInto(..., KOS_FRAME_DEMAND)`.
+- Step 1: `DemandGenerator` renamed `KosPyIter` (`iterate.c`,
+  `iterate.h`, `iter.c`, `demand.c`, the 14 `transform/*.c`); `KosPyIterType`
+  is a `KosEvaluatedTypeObject` whose `kos_iter` suite forwards to the
+  provider (`pyiter_ki_step`, `pyiter_ki_throw`, `pyiter_ki_close`,
+  `pyiter_ki_finish`); stale comments corrected (`iterate.c`,
+  `iterate.h`, `iter.c`, `callable.h`, `demand.c`, `eval/eval_iter.c`).
 - `koskari/lib/CLAUDE.md`: the flattening invariant.
 - `tests/reproducers/test_procedure_install.py`,
   `tests/reproducers/scripts/procedure_install.ki`.
+- `tests/reproducers/test_pyiter_flatten.py`,
+  `tests/reproducers/scripts/pyiter_flatten.ki`: Koskari `for-each` and
+  `yield-from` over `(iter (gen))` see the consumer's `parameterize`;
+  a suspension through the adapter proceeds off the demand path and
+  raises `KoskariSyncViolation` under `demand_call`; Python iteration is
+  unchanged. Not shown red against the pre-step-1 build.
+- `tests/lib/test_demand_sync.py`: the D7 contract change.
 
-Test state: `test_procedure_install.py` 5 of 6 pass
-(`test_frameless_result_is_none` fails on D4 at type construction);
-`tests/lib/test_demand_sync.py` 38 of 39 pass (D7). `make test` not run
-since the `CallInto` refactor. Not committable ahead of the D7 contract
-decision except as WIP.
+Test state: the full tree passes except
+`test_procedure_install.py::test_frameless_result_is_none` (D4, step
+4). `make test` stops at that phase-8 failure; `make lint` is clean.
+Committable as WIP.
 
 ## Withdrawn designs
 
@@ -283,12 +299,15 @@ decision except as WIP.
 - A frame flag checked on the generic return path to discard a result.
   Replaced by a resume.
 
-## Contract changes (need sign-off)
+## Contract changes
 
 Existing tests whose declared contract changes. Each is changed only
 with explicit approval. All follow from step 4 (the boundary returns a
 yielding callable's `AsyncGenerator` as is) or from D2's change already
 in the working tree.
+
+Applied: the D7 test (`test_fallback_yielding_function_returns_generator`).
+Pending sign-off: the rest below.
 
 - A `demand_call` / `demand(...)` result used directly as a sync
   iterator, without `iter()`:
@@ -301,7 +320,7 @@ in the working tree.
     to raise `KoskariSyncViolation`. The intent (a suspension under a
     synchronous Python drive raises) holds through `next(iter(gen))`.
   - `test_demand_sync.py::TestDemandCallFlattening::test_fallback_yielding_function_returns_generator`
-    (`:1143-1171`, D7): `hasattr(result, '__next__')`, `next(result)`.
+    (`:1143-1171`, D7): applied.
 - A yielding Koskari dunder other than `__iter__` called from Python now
   returns the `AsyncGenerator`:
   - `test_dunder_adapter.py:277` (`__add__`) and `:308` (`__eq__`):
@@ -327,7 +346,7 @@ in the working tree.
 
 Each step ends green on `make test` and `make lint`, except where noted.
 
-### 1. D5: `KosPyIter`, flattened from Koskari without demand
+### 1. D5: `KosPyIter`, flattened from Koskari without demand (done)
 
 Rename, in `iterate.c` / `iterate.h` and the 15 `tp_iter` users
 (`iter.c:573`, `transform/{accumulate,batched,chain,compress,cycle,dropwhile,filter,islice,map,pairwise,starmap,takewhile,zip,zip_longest}.c`,
@@ -363,7 +382,7 @@ The suite forwards to the provider's suite and adds nothing:
   recyclable rule against the adapter's suite.
 - `ki_pyctx`: NULL.
 
-The Python-side drive (`pyiter_step`, today `demandgen_step`) is
+The Python-side drive (`pyiter_step`, formerly `demandgen_step`) is
 unchanged, including its `KOS_FRAME_DEMAND` force (`iterate.c:1075-1084`)
 and `close`'s throw-through-drive mapping (`:1198-1227`). No state
 hand-over between Python and Koskari drives: an agen provider freezes

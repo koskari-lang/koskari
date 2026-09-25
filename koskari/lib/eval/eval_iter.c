@@ -34,10 +34,10 @@
 /**
    Acquire an iterator from an iterable, uniform over both protocols
    (the PUSH_FOREACH preference order, shared with OBJECT_ITER so the
-   two cannot drift): a Koskari AsyncGenerator passes through as itself
-   (native, never demand-wrapped); an object with am_aiter yields its
-   async iterator; otherwise the sync protocol (PyObject_GetIter,
-   including the sequence fallback).
+   two cannot drift): a KosIter provider passes through as itself (a
+   KosPyIter included: its suite forwards to its provider); an object
+   with am_aiter yields its async iterator; otherwise the sync protocol
+   (PyObject_GetIter, including the sequence fallback).
 
    :param iterable: borrowed
    :return: new iterator reference, or NULL with PyErr set
