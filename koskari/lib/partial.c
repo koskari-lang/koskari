@@ -162,22 +162,13 @@ PyObject *KosPartial_Call(
 
 
 /**
-   Return 1 if inner is a KosCallable that wants a frame, 0 otherwise --
-   the arg-packing choice in kospartial_kos_vinstall: a flattenable
-   inner takes the vector splice, others take the tuple+dict pack.
+   Evaluator install: call the inner through the evaluator's call entry
+   with the bound arguments merged in, whatever the inner is -- a
+   KosCallable installs or runs in this evaluator, a Python callable is
+   called and its awaitable result awaited. Without keywords on either
+   side the merged positionals are one borrowed vector; otherwise the
+   keywords merge into a dict and the call takes the tuple arm.
 */
-static int kospartial_inner_is_flattenable(PyObject *inner) {
-
-  if (! inner)
-    return 0;
-
-  if (! KosCallable_Check(inner))
-    return 0;
-
-  return KosCallable_WantsFrame(inner);
-}
-
-
 static KosOpResult kospartial_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -190,12 +181,10 @@ static KosOpResult kospartial_kos_vinstall(
   PyObject *inner = p->func;
   Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
 
-  /* Flattenable inner with no keywords on either side: splice the
-     bound and call positionals into one borrowed vector, so the
-     inner's vector fast paths stay engaged. */
-  if (kospartial_inner_is_flattenable(inner)
-      && ! nkw
-      && (! p->keywords || ! PyDict_Size(p->keywords))) {
+  /* No keywords on either side: splice the bound and call positionals
+     into one borrowed vector, so the inner's vector fast paths stay
+     engaged. */
+  if (! nkw && (! p->keywords || ! PyDict_Size(p->keywords))) {
     Py_ssize_t nb = PyTuple_GET_SIZE(p->args);
     Py_ssize_t total = nb + nargs;
     PyObject *small[16];
@@ -221,11 +210,12 @@ static KosOpResult kospartial_kos_vinstall(
     return r;
   }
 
-  /* Keywords or a non-flattenable inner: pack to tuple + dict and
-     take the tuple arm. */
+  /* Keywords: pack to tuple + dict and take the tuple arm. */
   {
     PyObject *tup = PyTuple_New(nargs);
     PyObject *kwargs = NULL;
+    PyObject *merged_args;
+    PyObject *merged_kw = NULL;
     KosOpResult r;
 
     if (! tup)
@@ -251,39 +241,24 @@ static KosOpResult kospartial_kos_vinstall(
       }
     }
 
-    if (! kospartial_inner_is_flattenable(inner)) {
-      PyObject *result = KosPartial_Call(callable, tup, kwargs);
-      Py_DECREF(tup);
+    merged_args = kospartial_merge_args(p->args, tup);
+    Py_DECREF(tup);
+    if (! merged_args) {
       Py_XDECREF(kwargs);
-      if (! result)
-        return EVAL_RAISE();
-      if (KosEvalState_StackPUSH(es, result) < 0)
-        return EVAL_RAISE();  /* PUSH steals ref; released on failure */
-      return EVAL_NORMAL();
+      return EVAL_RAISE();
     }
-
-    {
-      PyObject *merged_args = kospartial_merge_args(p->args, tup);
-      PyObject *merged_kw = NULL;
-
-      Py_DECREF(tup);
-      if (! merged_args) {
-        Py_XDECREF(kwargs);
-        return EVAL_RAISE();
-      }
-      if (kospartial_merge_kwds(p->keywords, kwargs, &merged_kw) < 0) {
-        Py_XDECREF(kwargs);
-        Py_DECREF(merged_args);
-        return EVAL_RAISE();
-      }
+    if (kospartial_merge_kwds(p->keywords, kwargs, &merged_kw) < 0) {
       Py_XDECREF(kwargs);
-
-      r = KosEvalState_CallArgs(es, inner, merged_args, merged_kw,
-                                tail_call);
       Py_DECREF(merged_args);
-      Py_XDECREF(merged_kw);
-      return r;
+      return EVAL_RAISE();
     }
+    Py_XDECREF(kwargs);
+
+    r = KosEvalState_CallArgs(es, inner, merged_args, merged_kw,
+                              tail_call);
+    Py_DECREF(merged_args);
+    Py_XDECREF(merged_kw);
+    return r;
   }
 }
 

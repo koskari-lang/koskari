@@ -21,8 +21,12 @@ Entries marked (working tree) are uncommitted.
   self and installs the function.
 - **Instance calls.** `__call__` resolving to a KosCallable is inlined
   through the `kos_instance_call` sentinel (`object.c:522`).
-- **`partial` over a frame-wanting inner without keywords.** The vector
-  path in `kospartial_kos_vinstall` (`partial.c:190-220`).
+- **`partial`.** (working tree) `kospartial_kos_vinstall` calls every
+  inner through the evaluator's call entry: the merged positional
+  vector through `KosEvalState_CallResult`, or with keywords the merged
+  tuple and dict through `KosEvalState_CallArgs`. A KosCallable inner
+  installs or runs in this evaluator; a Python inner is called and an
+  awaitable result awaited.
 - **`Demand` over a frame-wanting inner.** `demand_kos_vinstall`
   installs the inner and marks it `KOS_FRAME_DEMAND`.
 - **`Demand` over any other inner.** `KosEvalState_CallInto`
@@ -56,10 +60,6 @@ Entries marked (working tree) are uncommitted.
 
 ## Should flatten, does not
 
-- **`partial` over a non-frame KosCallable inner, or with keywords.**
-  `kospartial_kos_vinstall` calls `KosPartial_Call` (`partial.c:254`),
-  reaching `demand_sync_ex` or another Python entry. Scheduled:
-  demand-flattening step 3.
 - **Opcodes that call Koskari callables.** `OBJECT_REPR` with a Koskari
   repr handler or `__kos_repr__` (`KosUtils_Repr` ->
   `Koskari_DemandSyncEx`, `utils.c:520`, `:561`); runtime match

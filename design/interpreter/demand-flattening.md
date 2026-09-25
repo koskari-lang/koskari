@@ -9,9 +9,9 @@ a generator, not to constructing one; `DemandGenerator` becomes
 without applying demand; an `__iter__` bound to a generator function
 presents its generator to Python as one.
 
-Progress: step 1 (D5) is committed; D7 is resolved by an approved
-contract change; step 2 (`KosIterFunction`) is done in the working
-tree. Steps 3-7 remain.
+Progress: steps 1 (D5) and 2 (`KosIterFunction`) are committed; D7 is
+resolved by an approved contract change; step 3 (D8) is done in the
+working tree. Steps 4-7 remain.
 
 ## Invariant
 
@@ -172,14 +172,17 @@ result of `demand(yielding_fn)` called from Koskari. Under the drive
 rule that result is the `AsyncGenerator` itself; the test now asserts
 `isinstance(result, AsyncGenerator)` and `next(iter(result)) == 7`.
 
-**D8. `KosPartial` nests for KosCallable inners.** Open.
-`kospartial_kos_vinstall` routes any non-frame inner to `KosPartial_Call`
+**D8. `KosPartial` nests for KosCallable inners.** Fixed in the working
+tree (step 3). `kospartial_kos_vinstall` routed any non-frame inner to
+`KosPartial_Call`
 (`partial.c:254`), a Python-boundary call made from Koskari. For a
 KosCallable inner (a `Demand`, a `Procedure`, a continuation, a nested
 non-frame KosCallable) that reaches `demand_sync_ex` or another Python
-entry. Today `partial(demand(partial(f)))` from Koskari hits the D4
-refusal; after step 4 it runs a nested eval. The tuple branch's keyword
-merge is legitimate; the call it then makes is not.
+entry: `partial(demand(partial(f)))` from Koskari hit the D4 refusal,
+and after step 4 would have run a nested eval. The same arm pushed the
+raw result, so a partial over a Python coroutine function called from
+Koskari delivered the unawaited coroutine; both were shown red before
+the fix.
 
 **D9. `OBJECT_REPR` nests for Koskari repr handlers.**
 Deferred to the opcode dispatch group in
@@ -269,11 +272,19 @@ Committed as WIP (`8d59c673`):
   unchanged. Not shown red against the pre-step-1 build.
 - `tests/lib/test_demand_sync.py`: the D7 contract change.
 
-Uncommitted:
+Committed as WIP (`511636b3`):
 
 - Step 2: `KosIterFunctionType` and `wrap_iter_function` (`object.c`);
   `tests/reproducers/test_iter_function.py`,
   `tests/reproducers/scripts/iter_function.ki`.
+
+Uncommitted:
+
+- Step 3: `kospartial_kos_vinstall` (`partial.c`) calls every inner
+  through `KosEvalState_CallResult` / `KosEvalState_CallArgs`;
+  `kospartial_inner_is_flattenable` removed;
+  `tests/reproducers/test_partial_flatten.py`,
+  `tests/reproducers/scripts/partial_flatten.ki`.
 
 Test state: the full tree passes except
 `test_procedure_install.py::test_frameless_result_is_none` (D4, step
@@ -433,20 +444,23 @@ corrected only on the maintainer's go-ahead.
   non-generator `__iter__` staying a `demand`);
   `test_dunder_adapter.py:240` holds.
 
-### 3. D8: `KosPartial` routes KosCallable inners through the evaluator
+### 3. D8: `KosPartial` routes every inner through the evaluator (done)
 
-In `kospartial_kos_vinstall` (`partial.c:254-289`), delete the
-`kospartial_inner_is_flattenable` split in the tuple branch and call
-`KosEvalState_CallArgs(es, inner, merged_args, merged_kw, tail_call)`
-for every inner. `KosEvalState_Call` already handles a plain Python
-callable (`PyObject_Vectorcall` + `deliver_py_call_result`,
-`eval/eval_call.c:~120-140`), which also fixes a second symptom: the
-`KosPartial_Call` arm pushes the raw result (`partial.c:261-263`), so a
-partial over a Python coroutine function called from Koskari delivers
-the unawaited coroutine (inferred; a step 5 test confirms). The vector
-fast path's flattenable guard goes too (`CallResult` takes any
-callable). `KosPartial_Call` remains for `tp_call` only. Before step 4,
-which makes the nesting reachable.
+`kospartial_kos_vinstall` no longer splits on whether the inner wants a
+frame. Without keywords on either side it calls
+`KosEvalState_CallResult` with the merged positional vector; with
+keywords it merges them and calls `KosEvalState_CallArgs`.
+`KosEvalState_Call` handles a plain Python callable (`PyObject_Vectorcall`
++ `deliver_py_call_result`), so a coroutine result is awaited.
+`kospartial_inner_is_flattenable` is removed; `KosPartial_Call` remains
+for `tp_call` only.
+
+Tests: `tests/reproducers/test_partial_flatten.py` with
+`scripts/partial_flatten.ki`. `partial(demand(partial(f)))` from Koskari
+sees the caller's `parameterize`, and a partial over a Python `async
+def` returns the awaited value (both red before the fix); bound, call,
+and combined keywords over Koskari and Python inners; a Python inner in
+tail position.
 
 ### 4. D4: the boundary through `CallInto`
 

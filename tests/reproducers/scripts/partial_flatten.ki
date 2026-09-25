@@ -1,0 +1,52 @@
+;; Reproducer: a partial called from Koskari runs its inner callable
+;; through the evaluator, whatever the inner is. A parameterize binding
+;; made by the caller is visible to the inner only when it runs on the
+;; caller's chain. py_add, py_kw, and py_async are injected by the test.
+
+
+(define-parameter level 1)
+
+
+(define read-level [x]
+  #(x level))
+
+
+(define kos-kw [a b c]
+  #(a b c))
+
+
+(define via-demand-partial []
+  (define p (partial (demand (partial read-level 7))))
+  (parameterize [[level 10]]
+    (p)))
+
+
+(define via-async-partial []
+  ((partial py_async 1) 2))
+
+
+(define kos-bound-kw []
+  ((partial kos-kw 1 c: 3) 2))
+
+
+(define kos-call-kw []
+  ((partial kos-kw 1) b: 2 c: 3))
+
+
+(define kos-both-kw []
+  ((partial kos-kw 1 c: 3) b: 2))
+
+
+(define py-bound-kw []
+  ((partial py_kw 1 c: 3) 2))
+
+
+(define py-both-kw []
+  ((partial py_kw 1 c: 3) b: 2))
+
+
+(define py-tail []
+  ((partial py_add 40) 2))
+
+
+;; The end.
