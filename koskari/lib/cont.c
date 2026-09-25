@@ -155,8 +155,7 @@ static KosOpResult call_call_continuation(
    * to its owner through KoskariContinuationApply below. */
 
   if (KosPyDelimitedContinuation_Check(callable)
-      || KosContinuation_TOKEN_REF(k) == (PyObject *) KosEvalState_Token(es)
-      || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {
+      || KosContinuation_TOKEN_REF(k) == (PyObject *) KosEvalState_Token(es)) {
     if (kos_invoke_continuation(es, k, resume_val, 0, callable) < 0) {
       Py_DECREF(resume_val);
       return EVAL_RAISE();
