@@ -489,12 +489,10 @@ static inline int kos_tail_ns_reusable(PyObject *ns) {
 /**
    The legacy classes' steal-first spill: move the window into an owned
    vector (refs transfer out of the block), delegate to
-   KosEvalState_Call, release. Inlined only into the per-flag spill
-   functions, which each call body reaches by a guaranteed tail call:
-   the spill buffer sits in that frame alone, and the body's frame is
-   gone while the spill runs.
+   KosEvalState_Call, release. Out of line so the spill buffer sits in
+   this frame alone, on the paths that take it.
 */
-KOS_OP_INLINE KosOpResult kos_call_legacy_spill_impl(
+static KOS_NOINLINE KosOpResult kos_call_legacy_spill(
     KosEvalState *es,
     size_t window,
     PyObject *callable,
@@ -562,9 +560,7 @@ KOS_OP_INLINE KosOpResult kos_call_legacy_spill_impl(
 
 /* The class dispatch proper.  Always inlined into the per-flag bodies
    below, each of which passes a literal flags word, so every flag test
-   in here folds away and each body carries only its own arms.  A
-   window that takes the legacy spill sets *spill and returns without a
-   result; the body then tail-calls its spill function. */
+   in here folds away and each body carries only its own arms. */
 KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         KosEvalState *es,
         KosSegment **caller_slot,
@@ -573,8 +569,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         PyObject *const *argv,
         Py_ssize_t nargs,
         PyObject *kwnames,
-        unsigned flags,
-        int *spill) {
+        unsigned flags) {
 
   /* Class: exact KosFunction, tail position.  Bind-before-reset: the
      namespace is prepared FROM the still-intact window, then the frame
@@ -876,10 +871,9 @@ fn_frame_install:
      tail_prep_py_call; other-callable and deferred tails keep
      KosEvalState_Call's semantics). */
 legacy:
-  if (window) {
-    *spill = 1;
-    return EVAL_NORMAL();
-  }
+  if (window)
+    return kos_call_legacy_spill(es, window, callable, argv, nargs,
+                                 kwnames, flags);
 
   {
     KosOpResult r = KosEvalState_Call(es, callable, argv, nargs, kwnames,
@@ -908,22 +902,8 @@ fail:
    KOS_CALL_WINDOW_UNDER shapes only the window arithmetic in
    kos_call_invoke and is never read by the body, so a word carrying
    it shares the body of the word without it.  Any other word takes
-   the generic body, which keeps flags live.  Each body has a spill
-   twin with the same parameters, reached by a guaranteed tail call so
-   the body's frame is released before the spill runs. */
+   the generic body, which keeps flags live. */
 #define KOS_CALL_BODY_VARIANT(name, FLAGS)                              \
-  static KOS_NOINLINE KosOpResult name##_spill(                         \
-      KosEvalState *es,                                                 \
-      KosSegment **caller_slot,                                         \
-      size_t window,                                                    \
-      PyObject *callable,                                               \
-      PyObject *const *argv,                                            \
-      Py_ssize_t nargs,                                                 \
-      PyObject *kwnames) {                                              \
-    (void) caller_slot;                                                 \
-    return kos_call_legacy_spill_impl(es, window, callable, argv,       \
-                                      nargs, kwnames, (FLAGS));         \
-  }                                                                     \
   static KOS_NOINLINE KosOpResult name(                                 \
       KosEvalState *es,                                                 \
       KosSegment **caller_slot,                                         \
@@ -932,14 +912,8 @@ fail:
       PyObject *const *argv,                                            \
       Py_ssize_t nargs,                                                 \
       PyObject *kwnames) {                                              \
-    int spill = 0;                                                      \
-    KosOpResult r = kos_call_invoke_impl(es, caller_slot, window,       \
-                                         callable, argv, nargs,         \
-                                         kwnames, (FLAGS), &spill);     \
-    if (spill)                                                          \
-      KOS_MUSTTAIL return name##_spill(es, caller_slot, window,         \
-                                       callable, argv, nargs, kwnames); \
-    return r;                                                           \
+    return kos_call_invoke_impl(es, caller_slot, window, callable,      \
+                                argv, nargs, kwnames, (FLAGS));         \
   }
 
 KOS_CALL_BODY_VARIANT(kos_call_body_plain, KOS_CALL_PLAIN)
@@ -963,22 +937,6 @@ KOS_CALL_BODY_VARIANT(kos_call_body_window_owned_tail_prepended,
 #undef KOS_CALL_BODY_VARIANT
 
 
-static KOS_NOINLINE KosOpResult kos_call_body_any_spill(
-        KosEvalState *es,
-        KosSegment **caller_slot,
-        size_t window,
-        PyObject *callable,
-        PyObject *const *argv,
-        Py_ssize_t nargs,
-        PyObject *kwnames,
-        unsigned flags) {
-
-  (void) caller_slot;
-  return kos_call_legacy_spill_impl(es, window, callable, argv, nargs,
-                                    kwnames, flags);
-}
-
-
 static KOS_NOINLINE KosOpResult kos_call_body_any(
         KosEvalState *es,
         KosSegment **caller_slot,
@@ -989,15 +947,8 @@ static KOS_NOINLINE KosOpResult kos_call_body_any(
         PyObject *kwnames,
         unsigned flags) {
 
-  int spill = 0;
-  KosOpResult r = kos_call_invoke_impl(es, caller_slot, window, callable,
-                                       argv, nargs, kwnames, flags, &spill);
-
-  if (spill)
-    KOS_MUSTTAIL return kos_call_body_any_spill(es, caller_slot, window,
-                                                callable, argv, nargs,
-                                                kwnames, flags);
-  return r;
+  return kos_call_invoke_impl(es, caller_slot, window, callable, argv,
+                              nargs, kwnames, flags);
 }
 
 
