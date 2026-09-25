@@ -101,6 +101,8 @@ KosContext *KosContext_New(KosDynFrame *top) {
   KosContext_PY_RESUME_INJECT(ctx) = NULL;
   KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
+  KosContext_ENTRY_CALL(ctx) = NULL;
+
   /* Initialize exception injection */
   KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
   KosContext_INJECT_TYPE(ctx) = NULL;
@@ -196,7 +198,9 @@ int KosContext_Recycle(KosContext *ctx) {
   KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
   /* residue of the finished run that the next one must not inherit:
-     an armed throw injection and the handler-visible exception state */
+     an unconsumed entry call, an armed throw injection, and the
+     handler-visible exception state */
+  KosContext_ENTRY_CALL(ctx) = NULL;
   KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
   Py_CLEAR(KosContext_INJECT_TYPE(ctx));
   Py_CLEAR(KosContext_INJECT_VALUE(ctx));

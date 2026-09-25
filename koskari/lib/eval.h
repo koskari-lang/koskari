@@ -699,6 +699,23 @@ KosOpResult KosEvalState_NextResume(
   KosEvalState); see KosEvalState_ThawFromContext and KosEvalState_FreezeToContext.
 */
 
+
+/**
+   A call for koskari_eval to install at entry on a fresh context
+   (KosContext::entry_call): KosEvalState_CallInto from a code-less root
+   frame carrying resume and frame_flags. args and kwnames are
+   borrowed for the drive.
+*/
+typedef struct KosEntryCall {
+  PyObject *callable;
+  PyObject *const *args;
+  Py_ssize_t nargs;
+  PyObject *kwnames;
+  const KosResumeKind *resume;
+  uint32_t frame_flags;
+} KosEntryCall;
+
+
 struct KosContext {
   PyObject_HEAD
   KosDynNode *dyn_top;       /* top of dynamic chain */
@@ -723,6 +740,11 @@ struct KosContext {
   PyObject *py_resume_inject;  /* value to push on next koskari_eval when resuming */
   uint8_t py_resume_kind;      /* 0=none, 1=await, 2=yield */
   PyObject *py_await_iter;     /* iterator from __await__() when suspended on AWAIT */
+
+  /* --- Entry call (set by a Python-boundary entry on a fresh context):
+     koskari_eval installs it on its own eval state at entry, then
+     clears it. Borrowed; the setter owns the record for the drive. --- */
+  const struct KosEntryCall *entry_call;
 
   /* --- Exception injection (set by coroutine_throw or dynchain inject) --- */
   int inject_mode;         /* 0=none, 1=pending_throw */
@@ -765,6 +787,7 @@ extern PyTypeObject KosContextType;
 #define KOS_RESUME_NONE  0
 #define KOS_RESUME_AWAIT 1
 #define KOS_RESUME_YIELD 2
+#define KosContext_ENTRY_CALL(c)             (((KosContext *)(c))->entry_call)
 #define KosContext_INJECT_MODE(c)            (((KosContext *)(c))->inject_mode)
 #define KosContext_INJECT_TYPE(c)            (((KosContext *)(c))->inject_type)
 #define KosContext_INJECT_VALUE(c)           (((KosContext *)(c))->inject_value)

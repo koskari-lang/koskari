@@ -151,6 +151,82 @@ static KosOpResult deliver_py_call_result(
 }
 
 
+/**
+   An instance whose __call__ is a KosCallable: dispatch that __call__
+   with self injected as the first positional (no bound method, no
+   descriptor bind), back through KosEvalState_Call. Out of line so the
+   injection buffer is not on the stack of every python call.
+*/
+static KOS_NOINLINE KosOpResult kos_call_instance(
+    KosEvalState *es,
+    PyObject *call_fn,
+    PyObject *self,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  Py_ssize_t ntotal = nargs + nkw;
+  PyObject *small[8];
+  PyObject **inj = small;
+  KosOpResult r;
+
+  if (ntotal + 1 > (Py_ssize_t) (sizeof(small) / sizeof(small[0]))) {
+    inj = PyMem_Malloc((size_t) (ntotal + 1) * sizeof(PyObject *));
+    if (! inj) {
+      PyErr_NoMemory();
+      return EVAL_RAISE();
+    }
+  }
+  inj[0] = self;
+  if (ntotal)
+    memcpy(inj + 1, args, (size_t) ntotal * sizeof(PyObject *));
+  r = KosEvalState_Call(es, call_fn, inj, nargs + 1, kwnames, tail_call);
+  if (inj != small)
+    PyMem_Free(inj);
+  return r;
+}
+
+
+/**
+   Call a callable that is not a KosCallable from the evaluator: the one
+   copy of the native call entries' python arm. An instance with a
+   KosCallable __call__ goes through kos_call_instance; anything else is
+   vectorcalled and its result delivered by deliver_py_call_result, tail
+   included. args and kwnames are borrowed; args follows the vectorcall
+   layout.
+*/
+static inline KosOpResult kos_call_python(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  int tail_defer_return = 0;
+  PyObject *result;
+
+  if (KosInstanceCall_Check(callable)) {
+    PyObject *call_fn = kos_instance_call_target(callable);
+    if (call_fn)
+      return kos_call_instance(es, call_fn, callable, args, nargs,
+                               kwnames, tail_call);
+  }
+
+  if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
+    return EVAL_RAISE();
+  /* PEP 590: keyword values follow args[nargs .. nargs + nkw - 1]. */
+  result = (nargs == 0 && ! kwnames)
+      ? PyObject_CallNoArgs(callable)
+      : PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
+  if (! result)
+    return EVAL_RAISE();
+  return deliver_py_call_result(es, result, tail_call, tail_defer_return);
+}
+
+
 static inline KosOpResult kos_call_invoke_body(
     KosEvalState *es,
     KosSegment **caller_slot,
@@ -195,44 +271,8 @@ KosOpResult KosEvalState_Call(
     return EVAL_NORMAL();
   }
 
-  if (! KosCallable_CheckSlots(callable, &slots)) {
-    if (KosInstanceCall_Check(callable)) {
-      /* Instance with a KosCallable __call__: dispatch the unbound __call__
-         with self injected as the first positional -- no bound-method,
-         transient-string, or descriptor-bind allocation. */
-      PyObject *call_fn = kos_instance_call_target(callable);
-      if (call_fn) {
-        Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
-        Py_ssize_t ntotal = nargs + nkw;
-        PyObject *small[8];
-        PyObject **inj = small;
-        if (ntotal + 1 > (Py_ssize_t) (sizeof(small) / sizeof(small[0]))) {
-          inj = PyMem_Malloc((size_t) (ntotal + 1) * sizeof(PyObject *));
-          if (! inj)
-            return EVAL_RAISE();
-        }
-        inj[0] = callable;
-        if (ntotal)
-          memcpy(inj + 1, args, (size_t) ntotal * sizeof(PyObject *));
-        KosOpResult r = KosEvalState_Call(es, call_fn, inj, nargs + 1,
-                                          kwnames, tail_call);
-        if (inj != small)
-          PyMem_Free(inj);
-        return r;
-      }
-    }
-    int tail_defer_return = 0;
-    if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
-      return EVAL_RAISE();
-    /* nargs matches KosCallable_Call: positional count only. PEP 590:
-       keyword values follow args[nargs .. nargs + nkw - 1]. */
-    PyObject *result = (nargs == 0 && ! kwnames)
-        ? PyObject_CallNoArgs(callable)
-        : PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
-    if (! result)
-      return EVAL_RAISE();
-    return deliver_py_call_result(es, result, tail_call, tail_defer_return);
-  }
+  if (! KosCallable_CheckSlots(callable, &slots))
+    return kos_call_python(es, callable, args, nargs, kwnames, tail_call);
 
   if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();
@@ -1239,52 +1279,17 @@ KosOpResult KosEvalState_CallArgs(
   KosCallSlots *slots;
 
   if (! KosCallable_CheckSlots(callable, &slots)) {
-    if (KosInstanceCall_Check(callable)) {
-      PyObject *call_fn = kos_instance_call_target(callable);
-      if (call_fn) {
-        /* Prepend self to the positional tuple (the tuple form allocates
-           regardless). */
-        Py_ssize_t na = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
-        PyObject *inj = PyTuple_New(na + 1);
-        if (! inj)
-          return EVAL_RAISE();
-        Py_INCREF(callable);
-        PyTuple_SET_ITEM(inj, 0, callable);
-        for (Py_ssize_t i = 0; i < na; i++) {
-          PyObject *it = PyTuple_GET_ITEM(args_tuple, i);
-          Py_INCREF(it);
-          PyTuple_SET_ITEM(inj, i + 1, it);
-        }
-        KosOpResult r = KosEvalState_CallArgs(es, call_fn, inj, kwds_dict,
-                                              tail_call);
-        Py_DECREF(inj);
-        return r;
-      }
-    }
-    int tail_defer_return = 0;
-    if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
+    /* Spread once to the vectorcall layout. Keywords take the heap, as
+       PyObject_Call's own dict unpacking does. */
+    KosArgSpread spread;
+    KosOpResult r;
+
+    if (KosArgSpread_Init(&spread, args_tuple, kwds_dict, NULL, 0) < 0)
       return EVAL_RAISE();
-
-    PyObject *result = NULL;
-
-    if (args_tuple) {
-      result = PyObject_Call(callable, args_tuple, kwds_dict);
-
-    } else if (kwds_dict) {
-      PyObject *empty_args = PyTuple_New(0);
-      if (! empty_args)
-        return EVAL_RAISE();
-      result = PyObject_Call(callable, empty_args, kwds_dict);
-      Py_DECREF(empty_args);
-
-    } else {
-      result = PyObject_CallNoArgs(callable);
-    }
-
-    if (! result)
-      return EVAL_RAISE();
-
-    return deliver_py_call_result(es, result, tail_call, tail_defer_return);
+    r = kos_call_python(es, callable, spread.argv, spread.nargs,
+                        spread.kwnames, tail_call);
+    KosArgSpread_Clear(&spread);
+    return r;
   }
 
   if (do_frame_prep(es, callable, slots, tail_call) < 0)
@@ -1304,22 +1309,8 @@ KosOpResult KosEvalState_CallNoArgs(
 
   KosCallSlots *slots;
 
-  if (! KosCallable_CheckSlots(callable, &slots)) {
-    if (KosInstanceCall_Check(callable)) {
-      PyObject *call_fn = kos_instance_call_target(callable);
-      if (call_fn) {
-        return KosEvalState_Call(es, call_fn, &callable, 1, NULL, tail_call);
-      }
-    }
-    int tail_defer_return = 0;
-    if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
-      return EVAL_RAISE();
-
-    PyObject *result = PyObject_CallNoArgs(callable);
-    if (! result)
-      return EVAL_RAISE();
-    return deliver_py_call_result(es, result, tail_call, tail_defer_return);
-  }
+  if (! KosCallable_CheckSlots(callable, &slots))
+    return kos_call_python(es, callable, NULL, 0, NULL, tail_call);
 
   if (do_frame_prep(es, callable, slots, tail_call) < 0)
     return EVAL_RAISE();

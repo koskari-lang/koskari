@@ -666,26 +666,92 @@ live while CPython runs) and the re-entry (`boundmethod_pycall` ->
 `procedure_tp_call` -> `Koskari_DemandSync` -> `demand_sync_vector` ->
 `koskari_eval`, 640 bytes).
 
-Attempt, in order:
+Measured changes so far (tail probe, bytes per level):
 
-1. **Tail-call threading on the call-out.** The opcode handler, the
-   invoke body, and the call dispatch tail-call into the CPython call
-   (`PyObject_Vectorcall` and the result delivery), so one frame remains
-   under CPython instead of four.
-2. **CPS rebound, then threading.** Where a handler cannot tail-call the
-   CPython call directly (a spill that must stay alive, a tail call's
-   frame pop), the call-out returns a boundary-call result to the
-   trampoline, which makes the CPython call from its own shallow frame
-   and threads the delivery onward.
-3. **The re-entry run.** One eval state per boundary level instead of
-   two (`demand_run_koskari` keeps its own `KosEvalState` for the
-   `CallInto` install before `koskari_eval` builds another); no
-   `KosArgSpread` inline array on the stack when there are no keywords;
-   the tuple-path hops (`boundmethod_pycall` -> `procedure_tp_call` ->
-   `Koskari_DemandSync`) collapsed.
+| change | result |
+|---|---|
+| start | 1,424 |
+| `KosArgSpread` without an inline array; the demand core passes no buffer | 1,312 |
+| legacy spill out of line (plain helper) | 1,376 (body stayed live) |
+| legacy spill as per-flags twins reached by `musttail` | 1,280 |
+| an entry parameter plus wrapper for the boundary install (backed out) | 1,296 |
 
-Measure the per-level bytes before and after each step with the probe
-above.
+The non-tail probe (`(R (- n 1))` followed by `None`) measured 976
+before the parts below.
+
+#### Design
+
+Koskari calls into CPython from several places, each with its own copy
+of "call, then deliver", and each makes the call deep inside whichever C
+path decided on it, so every frame of that path stays live under
+CPython. Call-outs: the opcode dispatch's plain-Python branch
+(`kos_call_invoke_impl`); the non-KosCallable arms of
+`KosEvalState_Call`, `KosEvalState_CallArgs`, `KosEvalState_CallNoArgs`
+(instance-call injection, `tail_prep_py_call`, the call,
+`deliver_py_call_result`); `KosEvalState_CallResult`'s value-in-hand
+sorting (`kos_entry_value`); the transforms' per-element fast paths.
+Re-entries: a CPython slot binds a `KosBoundMethod` per call, which
+goes `boundmethod_pycall` -> the wrapper's `kc_pycall` -> tuple ->
+`Koskari_DemandSync` -> spread -> `demand_run_koskari` (its own eval
+state, `CallInto`, freeze) -> `koskari_eval`.
+
+1. **One Python call for the native entries.** Done in the working
+   tree: `kos_call_python` (`eval/eval_call.c`) is the single
+   non-KosCallable arm of `KosEvalState_Call`, `CallArgs` (spread once
+   through `KosArgSpread`), and `CallNoArgs`, with the one copy of
+   instance-call injection. The tail contract stays: `values.c`'s tail
+   case resets its own frame and relies on `tail_prep_py_call` popping
+   it. The transforms' inline calls stay: they are the per-element fast
+   path, and routing them through `CallResult` would add a resume frame
+   per element. `CallArgs` now vectorcalls a spread instead of passing
+   its tuple to `PyObject_Call`; only a `tp_call`-only callable called
+   with `*args` pays a rebuilt tuple.
+2. **Make the one call from the shallowest frame.** The call's operands
+   already live off the C stack: an opcode call's arguments are on the
+   operand stack. `resumable-reads.md` plans every operand row, the
+   `CALL_FAST` family included, as a deref prologue plus an apply, with
+   a `kos_row_finish[op]` table of threaded finishes that pop operands
+   off the operand stack. The CALL family's finish is the call; a Python
+   call there runs from a threaded step with the handler and dispatch
+   frames gone. Prerequisite: the resumable-reads row split for the CALL
+   family. No call record on the eval state (it would grow
+   `koskari_eval`'s frame, the frame being shrunk) and no parallel
+   per-opcode steps.
+3. **Re-entry.** Done in the working tree.
+   - One recorded fact, `Py_TPFLAGS_METHOD_DESCRIPTOR` ("calling
+     `meth(self, *args)` equals `meth.__get__(self)(*args)`"), read by
+     both CPython and Koskari. `KosFunction`, `Demand`, `Procedure`, and
+     `IterFunction` set it; the `Demand` family gains a vectorcall slot
+     (`KosDemandObject::vectorcall`, taken from the type's
+     `kc_pyvectorcall` at construction; the struct moves to `demand.h`
+     for the subtypes' offset). Koskari's `is_plain_instance_method`
+     (`eval/eval_cache.c`) is now that flag test instead of a type list,
+     so `CALL_ATTR`, the method cache, and `with`'s special-method
+     lookup return any method descriptor unbound (builtin method
+     descriptors included). Removed: the per-call `KosBoundMethod` for
+     these methods on both sides; at the boundary `boundmethod_pycall`,
+     `procedure_tp_call`'s tuple hop, and the spread.
+   - The boundary's call is recorded on the fresh `KosContext`
+     (`entry_call`, a borrowed `KosEntryCall`, beside the existing throw
+     injection), and `koskari_eval`'s out-of-line phase 0
+     (`eval_phase_entry_call`) installs it on its own eval state.
+     Removed: `demand_run_koskari`'s eval state, thaw/freeze, and
+     pre-eval result sorting; an `AWAIT` before the eval now goes
+     through `apply_kos_op_result`, where the demand mark denies it.
+   - The instance-call injection moved out of line
+     (`kos_call_instance`), so its buffer is not on every Python call's
+     stack.
+
+Order: 1, 3, 2. Measure both probes after each part.
+
+| after | tail probe | non-tail probe |
+|---|---:|---:|
+| part 1, method descriptors | 1,280 | 896 |
+| injection out of line | 1,216 | 896 |
+| context-recorded entry | 1,168 | 848 |
+
+Part 2 remains, after the resumable-reads row split for the CALL
+family.
 
 ### 7. Gate
 

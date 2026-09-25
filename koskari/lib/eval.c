@@ -2246,6 +2246,37 @@ static KosOpResult entry_revive_await(
 
 
 /**
+   Phase 0: the entry call a Python-boundary entry recorded on a fresh
+   context. Takes it off the context and installs it through
+   KosEvalState_CallInto on this eval state; a value back in hand is
+   staged for the resume, which the entry phase delivers. An outcome
+   other than an install is applied as the trampoline would apply it.
+   Out of line so koskari_eval's own frame carries none of it.
+
+   :return: EVAL_NORMAL when eval should proceed to the entry phase;
+            terminal KosOpResult when eval should stop.
+*/
+static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosEvalState *es) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  const KosEntryCall *call = KosContext_ENTRY_CALL(ctx);
+  KosOpResult r;
+
+  KosContext_ENTRY_CALL(ctx) = NULL;
+  r = KosEvalState_CallInto(es, call->callable, call->args, call->nargs,
+                            call->kwnames, call->resume, NULL,
+                            call->frame_flags);
+  if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
+    return EVAL_NORMAL();
+
+  r = apply_kos_op_result(es, r);
+  if (r.kind == KOS_RES_DISPATCH || r.kind == KOS_RES_REPROLOGUE)
+    return EVAL_NORMAL();
+  return r;
+}
+
+
+/**
    Phase 1: entry and revive normalization.
 
    Determines the initial KosEvalMode by dispatching through the current
@@ -3577,6 +3608,15 @@ KosOpResult koskari_eval(
   kos_tls_push_active_eval(&es);
   KOS_TRACE_EVAL_PUSH();
   KOS_TRACE_TRAMPOLINE_STEP();
+
+  /* Phase 0: a boundary entry's call, recorded on the context */
+  if (unlikely(KosContext_ENTRY_CALL(ctx))) {
+    r = eval_phase_entry_call(&es);
+    if (r.kind != KOS_RES_NORMAL) {
+      eval_ret = r;
+      goto koskari_eval_cleanup;
+    }
+  }
 
   /* Phase 1: entry/revive normalization */
   {

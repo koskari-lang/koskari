@@ -1496,7 +1496,8 @@ KosEvaluatedTypeObject KosFunctionType = {
   .tp_repr = function_repr,
   .tp_descr_get = function_descr_get,
   .tp_call = KosCallAdapt_CallAsync,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL | Py_TPFLAGS_HAVE_GC,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL
+      | Py_TPFLAGS_METHOD_DESCRIPTOR | Py_TPFLAGS_HAVE_GC,
   .tp_vectorcall_offset = KosFunction_VECTORCALL_OFFSET,
   .tp_dictoffset = offsetof(KosFunction, dict),
   .tp_doc = "Callable(Code, base_namespace, FormalsSpec). Calling with "

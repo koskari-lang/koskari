@@ -174,6 +174,36 @@ static PyObject *procedure_tp_call(
 }
 
 
+/**
+   The Python vectorcall entry: the demand core over the vector, result
+   discarded. A method-descriptor call from CPython (slot_tp_init)
+   arrives here unbound with self first in args.
+*/
+static PyObject *procedure_vectorcall(
+    PyObject *self,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
+
+  PyObject *wrapped = KosDemand_GetWrapped(self);
+  PyObject *result = NULL;
+
+  if (! wrapped) {
+    PyErr_SetString(PyExc_TypeError, "Procedure object is not initialized");
+    return NULL;
+  }
+  if (kwnames && ! PyTuple_GET_SIZE(kwnames))
+    kwnames = NULL;
+
+  if (Koskari_DemandSyncVector(wrapped, args, PyVectorcall_NARGS(nargsf),
+                               kwnames, &result) < 0)
+    return NULL;
+
+  Py_DECREF(result);
+  Py_RETURN_NONE;
+}
+
+
 static PyObject *procedure_repr(PyObject *self) {
 
   PyObject *wrapped = KosDemand_GetWrapped(self);
@@ -254,7 +284,9 @@ static KosEvaluatedTypeObject KosProcedureCallableType = {
     .tp_name = "koskari.lib.Procedure",
     .tp_basicsize = 0,  /* inherited from Demand by PyType_Ready */
     .tp_itemsize = 0,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL
+        | Py_TPFLAGS_METHOD_DESCRIPTOR,
+    .tp_vectorcall_offset = KosDemand_VECTORCALL_OFFSET,
     .tp_doc = "A Demand with no result: runs its wrapped callable on the "
               "demand path and returns None",
     .tp_repr = procedure_repr,
@@ -266,7 +298,7 @@ static KosEvaluatedTypeObject KosProcedureCallableType = {
     .kc_wants_frame = 0,
     .kc_wants_frame_fn = NULL,
     .kc_pycall = procedure_tp_call,
-    .kc_pyvectorcall = NULL,
+    .kc_pyvectorcall = procedure_vectorcall,
   },
 };
 
@@ -308,6 +340,36 @@ static PyObject *iterfunction_tp_call(
   }
 
   agen = Koskari_AsyncCall(wrapped, args, kwargs);
+  if (! agen || ! KosPyAsyncGen_Check(agen))
+    return agen;
+
+  iter = KosIterAdapt_PyIter(agen);
+  Py_DECREF(agen);
+  return iter;
+}
+
+
+/**
+   The Python vectorcall entry: the wrapped function's own vectorcall
+   builds the generator, presented as a KosPyIter.
+*/
+static PyObject *iterfunction_vectorcall(
+    PyObject *self,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
+
+  PyObject *wrapped = KosDemand_GetWrapped(self);
+  PyObject *agen;
+  PyObject *iter;
+
+  if (! wrapped) {
+    PyErr_SetString(PyExc_TypeError,
+                    "IterFunction object is not initialized");
+    return NULL;
+  }
+
+  agen = PyObject_Vectorcall(wrapped, args, nargsf, kwnames);
   if (! agen || ! KosPyAsyncGen_Check(agen))
     return agen;
 
@@ -367,7 +429,9 @@ static KosEvaluatedTypeObject KosIterFunctionType = {
     .tp_name = "koskari.lib.IterFunction",
     .tp_basicsize = 0,  /* inherited from Demand by PyType_Ready */
     .tp_itemsize = 0,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL
+        | Py_TPFLAGS_METHOD_DESCRIPTOR,
+    .tp_vectorcall_offset = KosDemand_VECTORCALL_OFFSET,
     .tp_doc = "A generator function bound as __iter__: called from "
               "Python, presents its generator as an iterator",
     .tp_repr = iterfunction_repr,
@@ -379,7 +443,7 @@ static KosEvaluatedTypeObject KosIterFunctionType = {
     .kc_wants_frame = 0,
     .kc_wants_frame_fn = NULL,
     .kc_pycall = iterfunction_tp_call,
-    .kc_pyvectorcall = NULL,
+    .kc_pyvectorcall = iterfunction_vectorcall,
   },
 };
 

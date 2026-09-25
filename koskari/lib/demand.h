@@ -26,6 +26,21 @@
 extern KosEvaluatedTypeObject KosDemandCallableType;
 
 
+/**
+   The layout of Demand and its subtypes (Procedure, IterFunction).
+   vectorcall is the per-type Python vectorcall entry, taken from the
+   type's kc_pyvectorcall at construction; the types are method
+   descriptors, so CPython calls them unbound with self prepended.
+*/
+typedef struct {
+  PyObject_HEAD
+  PyObject *wrapped;
+  vectorcallfunc vectorcall;
+} KosDemandObject;
+
+#define KosDemand_VECTORCALL_OFFSET offsetof(KosDemandObject, vectorcall)
+
+
 #define KosDemand_CheckExact(obj) \
   ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosDemandCallableType)))
 

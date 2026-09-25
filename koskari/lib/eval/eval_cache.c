@@ -53,11 +53,16 @@
 
 
 /**
-   True if descr is a plain instance-method descriptor (KosFunction or
-   PyFunction) that we can return without calling __get__.
+   True if descr's type is a method descriptor: calling descr(obj, *args)
+   is equivalent to calling descr.__get__(obj, type(obj))(*args), so it
+   can be returned unbound and called with the receiver prepended,
+   without running __get__ or allocating a bound method. The type
+   records this itself (Py_TPFLAGS_METHOD_DESCRIPTOR), the same fact
+   CPython's own method calls read: PyFunction, KosFunction, the Demand
+   family, builtin method descriptors.
 */
 static int is_plain_instance_method(PyObject *descr) {
-  return KosFunction_CheckExact(descr) || PyFunction_Check(descr);
+  return PyType_HasFeature(Py_TYPE(descr), Py_TPFLAGS_METHOD_DESCRIPTOR);
 }
 
 
