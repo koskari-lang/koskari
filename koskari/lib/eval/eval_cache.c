@@ -186,7 +186,8 @@ static uint64_t kos_type_version_assign(PyTypeObject *tp) {
    On success sets *out (new ref). *mode is the cacheable classification and
    *cache_descr the borrowed class-side descriptor to store, or NULL. Only
    the modes that run no __get__ during resolution are reported as cacheable
-   (DIRECT_OBJECT_GUARDED plain method / plain attribute, INSTANCE_DICT);
+   (DIRECT_METHOD_GUARDED method descriptor, DIRECT_OBJECT_GUARDED
+   plain attribute, INSTANCE_DICT);
    anything that invokes a descriptor or custom hook is reported as
    GENERIC_LOOKUP so the caller does not cache a value it cannot safely
    reproduce from a guarded descriptor.

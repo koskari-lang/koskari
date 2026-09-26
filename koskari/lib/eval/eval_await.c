@@ -261,37 +261,15 @@ static inline KosOpResult push_or_fuse(
 
 
 /**
-   Push val, or if val is awaitable run eager_step and either push the
-   result or suspend (KOS_RES_AWAIT); a fresh Koskari coroutine is
-   installed instead and REPROLOGUE names the installed callee, whose
-   return lands the value where the push would have. Use only for (1) the result of a
-   call (CALL opcode: callable returned a coroutine) and (2) the AWAIT
-   opcode (explicitly awaiting TOS). All other paths must use
-   KosEvalState_StackPUSH so we do not auto-await values that are merely
-   loaded or computed.
-
-   await_defer: the explicit AWAIT opcode drives a Defer or an asyncio
-   future; implicit sites push those as plain handles.
-
-   fuse: a CALL* handler passes 1 so a pushed result followed by POP 1
-   is elided (push_fuse_pop1); every non-opcode caller (defer_drive,
-   KosEvalState_Call, KosEvalState_PushOrAwait) passes 0. Both flags
-   are literals at every call site and fold away.
-
-   val is consumed (new reference).
-
-   :return: EVAL_NORMAL, EVAL_AWAIT, or EVAL_RAISE
-*/
-/**
-   The settle half of push_or_await: a plain value comes back as it is,
-   and so do a Defer and an asyncio future unless await_defer is set;
-   a fresh Koskari coroutine (or a Defer delegating to one, under an
-   explicit await) is installed as a call frame on the running chain;
-   any other awaitable is eagerly stepped to its result, or suspends
-   with the iterator parked on the context. NORMAL with *out the
-   settled value (new reference), REPROLOGUE with a callee installed
-   whose return delivers the value, AWAIT with the yielded value, or
-   RAISE. val is consumed.
+   The settle half of push_or_await. A plain value comes back as it
+   is, and so do a Defer and an asyncio future unless await_defer is
+   set. A fresh Koskari coroutine, or a Defer delegating to one under
+   an explicit await, is installed as a call frame on the running
+   chain. Any other awaitable is eagerly stepped to its result, or
+   suspends with the iterator parked on the context. NORMAL with *out
+   the settled value (new reference), REPROLOGUE with a callee
+   installed whose return delivers the value, AWAIT with the yielded
+   value, or RAISE. val is consumed.
 */
 static inline KosOpResult kos_settle_value(
     KosEvalState *es,
@@ -376,6 +354,28 @@ static inline KosOpResult kos_settle_value(
 }
 
 
+/**
+   Push val. An awaitable val is settled first through
+   kos_settle_value: its result is pushed, a suspension returns
+   KOS_RES_AWAIT, and a fresh Koskari coroutine is installed as a
+   callee instead, reported as REPROLOGUE, whose return lands the
+   value where the push would have. Use only for the result of a call
+   (a CALL opcode whose callable returned a coroutine) and for the
+   AWAIT opcode (explicitly awaiting TOS). Every other path must use
+   KosEvalState_StackPUSH, so values merely loaded or computed are
+   never auto-awaited.
+
+   await_defer: the explicit AWAIT opcode drives a Defer or an asyncio
+   future. Implicit sites push those as plain handles.
+
+   fuse: a CALL* handler passes 1 so a pushed result followed by POP 1
+   is elided (push_fuse_pop1). Every non-opcode caller passes 0. Both
+   flags are literals at every call site and fold away.
+
+   val is consumed (new reference).
+
+   :return: EVAL_NORMAL, EVAL_REPROLOGUE, EVAL_AWAIT, or EVAL_RAISE
+*/
 static inline KosOpResult push_or_await(
     KosEvalState *es,
     PyObject *val,
