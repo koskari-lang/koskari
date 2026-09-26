@@ -40,6 +40,7 @@ static PyObject *_module_str = NULL;     // "<module>"
 
 // forward declarations
 static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name);
+static PyObject *ns_empty = NULL;
 static PyObject *mdl_ns_builtin(PyObject *self, PyObject *name);
 static int ns_fast_index(PyObject *self, PyObject *key);
 static PyObject *ns_newfull_from_nspec(
@@ -1453,6 +1454,12 @@ static PyObject *ns_m_bind(PyObject *self, PyObject *args) {
   if (! PyArg_ParseTuple(args, "OO:Namespace.bind", &key, &ref))
     return NULL;
 
+  if (self == ns_empty) {
+    PyErr_SetString(PyExc_TypeError,
+                    "the empty namespace accepts no bindings");
+    return NULL;
+  }
+
   if (ns_bind_ref(self, key, ref))
     return NULL;
 
@@ -2120,9 +2127,6 @@ PyObject *KosNamespace_NewFull(
                          name, parent,
                          local_syms, closure_syms, global_syms);
 }
-
-
-static PyObject *ns_empty = NULL;
 
 
 PyObject *KosNamespace_Empty(void) {

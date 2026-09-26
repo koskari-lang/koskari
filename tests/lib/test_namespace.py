@@ -25,7 +25,10 @@ from operator import itemgetter
 import pytest
 
 from koskari.lib import (
-    CollectorNamespace, Module, ModuleNamespace, Namespace, NamespaceSpec, Ref)
+    CollectorNamespace, Domain, Module, ModuleNamespace, Namespace,
+    NamespaceSpec, Ref, demand)
+from tests import make_callable
+from tests.lib.opcode import build_expr
 
 
 pytestmark = pytest.mark.phase_lib
@@ -100,6 +103,42 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         """Namespace can be created"""
         ns = Namespace("ns", None, (), ())
         self.assertIs(type(ns), Namespace)
+
+
+    async def test_empty_namespace_refuses_bind(self):
+        """
+        The empty namespace every native frame carries is one shared
+        instance, so a bind through it is refused
+        """
+
+        seen = []
+
+        async def probe(x):
+            ns = Domain.current_domain().get_contexts()[0].namespace
+            seen.append(ns)
+            with self.assertRaises(TypeError):
+                ns.bind("leak", Ref())
+            return x
+
+        # demand settles the coroutine probe returns under a native
+        # frame, so probe's body runs with that frame's namespace acting
+        code, ns = build_expr([
+            ["CONST", demand(probe)],
+            ["CONST", 1],
+            ["CALL", 1],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+
+        with Domain():
+            self.assertEqual(await fn(), 1)
+            self.assertEqual(await fn(), 1)
+
+        first, second = seen
+        self.assertIs(first, second)
+        self.assertIsNone(first.parent)
+        self.assertEqual(first.keys(), [])
+        self.assertFalse(first.bound("leak"))
 
 
     async def test_name_and_parent(self):

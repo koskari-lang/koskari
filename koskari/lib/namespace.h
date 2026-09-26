@@ -145,7 +145,7 @@ PyObject *KosNamespace_NewFull(
 
 /**
    The empty namespace: no parent, no symbols, no bindings, so a store
-   through it raises NameError and nothing can be bound into it. The
+   through it raises NameError, and Namespace.bind refuses it. The
    fill of every native frame, which introduces no scope of its own but
    must never leave the live namespace register NULL. One immortal
    instance, created on first use; a borrowed reference, which holders
