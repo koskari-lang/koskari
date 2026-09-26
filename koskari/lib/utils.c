@@ -490,7 +490,6 @@ static int kos_utils_repr_registry_dispatch(
   PyObject *args = NULL;
   PyCFunction meth = NULL;
   int flags = 0;
-  int r = 0;
 
   if (! kos_utils_repr_registry)
     return 1;
@@ -524,9 +523,9 @@ static int kos_utils_repr_registry_dispatch(
     if (! args)
       return -1;
 
-    r = Koskari_DemandSyncEx(handler, args, NULL, out);
+    *out = Koskari_DemandSync(handler, args, NULL);
     Py_DECREF(args);
-    return r;
+    return *out ? 0 : -1;
   }
 
   return 1;
@@ -537,7 +536,6 @@ PyObject *KosUtils_Repr(PyObject *obj) {
 
   PyObject *meth = NULL;
   PyObject *out = NULL;
-
   int r;
 
   if (PyUnicode_CheckExact(obj))
@@ -565,22 +563,12 @@ PyObject *KosUtils_Repr(PyObject *obj) {
 
   // CallNoArgs for object. Formals apply for koscallable accepts NULL
   // for no args.
-  r = Koskari_DemandSyncEx(meth, NULL, NULL, &out);
+  out = Koskari_DemandSync(meth, NULL, NULL);
   Py_DECREF(meth);
-
-  if (r == 1) {
-    Py_XDECREF(out);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "async suspension is not allowed in __kos_repr__");
+  if (! out)
     return NULL;
-  }
 
-  if (r < 0) {
-    Py_XDECREF(out);
-    return NULL;
-  }
-
-  if (! out || ! PyUnicode_CheckExact(out)) {
+  if (! PyUnicode_CheckExact(out)) {
     Py_XDECREF(out);
     PyErr_SetString(PyExc_TypeError, "__kos_repr__ must return str");
     return NULL;

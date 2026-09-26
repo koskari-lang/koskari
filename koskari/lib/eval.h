@@ -1499,6 +1499,21 @@ KosOpResult KosEvalState_CallInto(
 
 
 /**
+   Settle a value in hand under a fresh code-less frame carrying resume
+   and frame_flags: push the frame, OR the flags in, and settle val on
+   it (KOS_FRAME_DEMAND refuses a suspension). A value that settles at
+   once is staged for the resume; one that suspends arms the resume for
+   the revive. Returns REPROLOGUE or AWAIT, or RAISE. val is consumed.
+*/
+KosOpResult KosEvalState_SettleInto(
+    KosEvalState *es,
+    PyObject *val,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags);
+
+
+/**
    Call callable with self as its receiver, injected as the first
    positional, and report the outcome as KosEvalState_CallResult with
    no resume does: RETURN with the value in hand, or an installed

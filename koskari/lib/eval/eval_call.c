@@ -379,6 +379,33 @@ KosOpResult KosEvalState_CallInto(
 }
 
 
+KosOpResult KosEvalState_SettleInto(
+    KosEvalState *es,
+    PyObject *val,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags) {
+
+  KosDynFrame *frame = KosResumeFrame_Install(es, NULL, NULL, NULL);
+  KosOpResult r;
+
+  if (! frame) {
+    Py_DECREF(val);
+    return EVAL_RAISE();
+  }
+  KosDynFrame_FLAGS(frame) |= frame_flags;
+
+  r = kos_entry_value(es, frame, val, resume, state);
+  if (r.kind != KOS_RES_RETURN)
+    return r;
+
+  KosDynFrame_RESUME_KIND(frame) = resume;
+  KosDynFrame_RESUME_STATE(frame) = state;
+  KosEvalState_StageDelivery(es, r.val);
+  return EVAL_REPROLOGUE();
+}
+
+
 /* === kos_call_invoke: the shared call core (call-unification Phase 2) ===
 
    The entry for the CALL_* opcode prologues: kos_call_invoke inlines

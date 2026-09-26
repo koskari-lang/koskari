@@ -234,23 +234,6 @@ PyObject *KosCallAdapt_VectorAsync(
 }
 
 
-PyObject *KosCallAdapt_VectorDemand(
-    PyObject *self,
-    PyObject *const *args,
-    size_t nargsf,
-    PyObject *kwnames) {
-
-  PyObject *result = NULL;
-
-  if (kwnames && ! PyTuple_GET_SIZE(kwnames))
-    kwnames = NULL;
-
-  (void) Koskari_DemandSyncVector(self, args, PyVectorcall_NARGS(nargsf),
-                                  kwnames, &result);
-  return result;
-}
-
-
 /* === Unit lifecycle === */
 
 
