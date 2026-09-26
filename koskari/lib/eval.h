@@ -1579,14 +1579,15 @@ KosOpResult KosEvalState_Settle(KosEvalState *es, PyObject *val, PyObject **out)
 
 /**
    Settle a delivery that still needs awaiting and stage the outcome
-   for the current frame's resume: one eager step through
-   KosEvalState_PushOrAwait, then the settled result moves from the
-   frame stack into the pending slot and EVAL_REPROLOGUE returns to
-   the prologue, which classifies it again (a value that settles to a
-   further awaitable bounces again). A genuine suspension relays
-   EVAL_AWAIT; a failure relays EVAL_RAISE. Sets no resume itself --
-   the caller has set one, or sets one on the REPROLOGUE / AWAIT
-   outcome, per its own contract. val is consumed.
+   for the current frame's resume. Takes one eager step through
+   KosEvalState_Settle. A settled value is placed in the pending slot
+   and EVAL_REPROLOGUE returns to the prologue, which classifies it
+   again, so a value that settles to a further awaitable bounces
+   again. A fresh Koskari coroutine is instead installed as a callee
+   and its return delivers. A genuine suspension relays EVAL_AWAIT. A
+   failure relays EVAL_RAISE. Sets no resume itself. The caller has
+   set one, or sets one on the REPROLOGUE or AWAIT outcome, per its
+   own contract. val is consumed.
 */
 KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val);
 

@@ -409,15 +409,14 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
 
 KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val) {
 
-  KosOpResult pr = KosEvalState_PushOrAwait(es, val);
-  PyObject *settled;
+  PyObject *settled = NULL;
+  KosOpResult r = KosEvalState_Settle(es, val, &settled);
 
-  if (pr.kind != KOS_RES_NORMAL)
-    return pr;  /* AWAIT: the revive delivers; RAISE: the walk propagates */
+  /* REPROLOGUE: an installed callee delivers. AWAIT: the revive
+     delivers. RAISE: the walk propagates. */
+  if (r.kind != KOS_RES_NORMAL)
+    return r;
 
-  settled = KosEvalState_StackPopRef(es);
-  if (unlikely(! settled))
-    return EVAL_RAISE();
   KosEvalState_PENDING_VALUE(es) = settled;
   return EVAL_REPROLOGUE();
 }
