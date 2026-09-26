@@ -44,14 +44,6 @@ extern KosEvaluatedTypeObject KosPartialCallableType;
   ((obj) && PyObject_TypeCheck((obj), KOS_EVALUATED_PYTYPE(KosPartialCallableType)))
 
 
-/**
-   Python-call worker: merge bound args/keywords with the call-site args
-   and invoke the inner callable. self must be a KosPartial; args and
-   kwds are borrowed (both may be NULL).
-*/
-PyObject *KosPartial_Call(PyObject *self, PyObject *args, PyObject *kwds);
-
-
 int koskari_partial_init(PyObject *mod);
 int koskari_partial_clear(PyObject *mod);
 

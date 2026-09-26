@@ -141,97 +141,35 @@ static PyObject *values_kwds_getitem(
 
 
 /**
-   Merge stored args/kwds with an invocation.
-
-   inv_args is the full call-site positional tuple whose first element is the
-   target callable. On success *out_target is borrowed, *out_args is a new
-   reference, and *out_kw is a new reference or NULL. Returns 0 on success, -1
-   with PyErr set on failure.
+   The Python vectorcall entry, and the type's tp_call through
+   PyVectorcall_Call: the first argument is the target, called with
+   the stored arguments merged in by the same spread the install uses.
 */
-static int values_merge(
-    KosValues *s,
-    PyObject *inv_args,
-    PyObject *inv_kwds,
-    PyObject **out_target,
-    PyObject **out_args,
-    PyObject **out_kw) {
-
-  PyObject *call_args = NULL;
-  PyObject *call_kwds = NULL;
-  PyObject *tmp = NULL;
-  Py_ssize_t inv_n;
-
-  if (! inv_args || ! PyTuple_GET_SIZE(inv_args)) {
-    PyErr_SetString(PyExc_TypeError, "values objects must be called with"
-                    " at least one argument, the function to apply");
-    return -1;
-  }
-
-  *out_target = PyTuple_GET_ITEM(inv_args, 0);
-  inv_n = PyTuple_GET_SIZE(inv_args);
-
-  if (inv_n > 1) {
-    tmp = PySequence_GetSlice(inv_args, 1, inv_n);
-    if (! tmp)
-      return -1;
-
-    if (PyTuple_GET_SIZE(KosValues_ARGS(s))) {
-      call_args = PySequence_Concat(KosValues_ARGS(s), tmp);
-      Py_DECREF(tmp);
-      if (! call_args)
-        return -1;
-    } else {
-      call_args = tmp;
-    }
-  } else {
-    call_args = KosValues_ARGS(s);
-    Py_INCREF(call_args);
-  }
-
-  if (inv_kwds && PyDict_Size(inv_kwds)) {
-    if (KosValues_KWDS(s) && PyDict_Size(KosValues_KWDS(s))) {
-      call_kwds = PyDict_Copy(KosValues_KWDS(s));
-      if (! call_kwds) {
-        Py_DECREF(call_args);
-        return -1;
-      }
-      if (PyDict_Update(call_kwds, inv_kwds) < 0) {
-        Py_DECREF(call_args);
-        Py_DECREF(call_kwds);
-        return -1;
-      }
-    } else {
-      call_kwds = inv_kwds;
-      Py_INCREF(call_kwds);
-    }
-  } else {
-    call_kwds = KosValues_KWDS(s);
-    Py_XINCREF(call_kwds);
-  }
-
-  *out_args = call_args;
-  *out_kw = call_kwds;
-  return 0;
-}
-
-
-static PyObject *values_call(
+static PyObject *values_vectorcall(
     PyObject *self,
-    PyObject *args,
-    PyObject *kwds) {
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
 
   KosValues *s = (KosValues *) self;
-  PyObject *target = NULL;
-  PyObject *call_args = NULL;
-  PyObject *call_kwds = NULL;
-  PyObject *result = NULL;
+  Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
+  PyObject *small[16];
+  KosArgSpread spread;
+  PyObject *result;
 
-  if (values_merge(s, args, kwds, &target, &call_args, &call_kwds) < 0)
+  if (nargs < 1) {
+    PyErr_SetString(PyExc_TypeError, "values objects must be called with"
+                    " at least one argument, the function to apply");
     return NULL;
+  }
 
-  result = PyObject_Call(target, call_args, call_kwds);
-  Py_DECREF(call_args);
-  Py_XDECREF(call_kwds);
+  if (KosArgSpread_InitMerged(
+          &spread, KosValues_ARGS(s), KosValues_KWDS(s), args + 1, nargs - 1,
+          kwnames, small, 16) < 0)
+    return NULL;
+  result = PyObject_Vectorcall(
+      args[0], spread.argv, (size_t) spread.nargs, spread.kwnames);
+  KosArgSpread_Clear(&spread);
   return result;
 }
 
@@ -684,7 +622,8 @@ KosEvaluatedTypeObject KosValuesType = {
     .tp_basicsize = sizeof(KosValues),
     .tp_itemsize = 0,
 
-    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC
+        | Py_TPFLAGS_HAVE_VECTORCALL,
     .tp_methods = values_methods,
     .tp_new = values_new,
     .tp_dealloc = values_dealloc,
@@ -697,15 +636,16 @@ KosEvaluatedTypeObject KosValuesType = {
     .tp_as_sequence = &values_as_sequence,
     .tp_as_mapping = &values_as_mapping,
 
-    .tp_call = KosCallAdapt_CallAsync,
+    .tp_call = PyVectorcall_Call,
+    .tp_vectorcall_offset = offsetof(KosValues, vectorcall),
     .tp_repr = values_repr,
     .tp_richcompare = values_richcomp,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
     .kc_vinstall = values_kos_vinstall,
-    .kc_pycall = values_call,
-    .kc_pyvectorcall = NULL,
+    .kc_pycall = NULL,
+    .kc_pyvectorcall = values_vectorcall,
   },
 };
 
@@ -739,6 +679,7 @@ PyObject *KosValues_New(PyObject *args, PyObject *kwds) {
     }
 
     KosValues_HASHED(self) = 0;
+    self->vectorcall = values_vectorcall;
 
     PyObject_GC_Track((PyObject *) self);
     return (PyObject *) self;
