@@ -674,8 +674,10 @@ static PyObject *resolve_prepare_namespace(
 /**
    tp_call shim installed on classes whose __call__ resolves to a
    KosCallable. It doubles as a sentinel: the evaluator recognizes it via
-   KosInstanceCall_Check and inlines the call through the install slot instead
-   of starting a fresh eval loop (see KosEvalState_Call).
+   KosInstanceCall_Check and, when that __call__ binds its receiver, inlines
+   the call through the install slot instead of starting a fresh eval loop
+   (see kos_call_dispatch); a non-binding __call__ (a partial) is called
+   without self, here and through CPython.
 
    Unlike the demand-wrapped dunders this preserves async semantics -- a
    bound async __call__ returns a coroutine here, exactly as CPython's

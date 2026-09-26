@@ -33,9 +33,8 @@
 
 
 /**
-   Vector-to-tuple packing for the python-boundary adapters, whose
-   workers (kc_pycall, Koskari_AsyncCall, Koskari_DemandSync) take the
-   tuple + dict shapes.
+   Vector-to-tuple packing for KosCallAdapt_VectorAsync, whose worker
+   (kc_pycall through Koskari_AsyncCall) takes the tuple + dict shapes.
 */
 static PyObject *vcall_build_args_tuple(PyObject *const *args, Py_ssize_t nargs) {
   PyObject *tup = PyTuple_New(nargs);
@@ -88,6 +87,7 @@ void KosCallShape_Init(KosCallShape *shape, PyObject *callable) {
      is never the call's value. */
   shape->cs_direct =
       (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
+       && KosFunction_CODE(callable)
        && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable)));
 }
 

@@ -96,18 +96,19 @@ static int tail_prep_py_call(
 
 /**
    Deliver a value in hand onto the current frame's stack: push-or-await,
-   then map tail-call completion to RETURN (deferred) or
-   CONTROL_RETURNED when the caller's frame was popped ahead of a
-   plain-Python tail call.  result consumed.
+   then, for a plain-Python callee in tail position (py_tail), map the
+   completion to CONTROL_RETURNED when tail_prep_py_call popped the
+   caller's frame or left a root frame in place, or to a deferred RETURN
+   when extents open above the frame kept it.  result consumed.
 */
 static KosOpResult deliver_call_value(
     KosEvalState *es,
     PyObject *result,
-    int tail_popped,
+    int py_tail,
     int tail_defer_return) {
 
   KosOpResult por = push_or_await(es, result, 0, 0);
-  if (por.kind == KOS_RES_NORMAL && tail_popped) {
+  if (por.kind == KOS_RES_NORMAL && py_tail) {
     if (tail_defer_return) {
       PyObject *rv = KosEvalState_StackPopRef(es);
       if (! rv)
@@ -150,7 +151,7 @@ KOS_NOINLINE KosOpResult KosEvalState_CallWithReceiver(
   Py_ssize_t ntotal = nargs + nkw;
   PyObject *small[8];
   PyObject **inj = small;
-  KosCallSlots *slots;
+  KosCallSlots *slots = NULL;
   KosOpResult r;
 
   if (ntotal + 1 > (Py_ssize_t) (sizeof(small) / sizeof(small[0]))) {
@@ -212,9 +213,7 @@ static KosOpResult kos_call_dispatch(
   }
 
   /* PEP 590: keyword values follow args[nargs .. nargs + nkw - 1]. */
-  result = (nargs == 0 && ! kwnames)
-      ? PyObject_CallNoArgs(callable)
-      : PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
+  result = PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
   return result ? EVAL_RETURN(result) : EVAL_RAISE();
 }
 
@@ -228,7 +227,7 @@ KosOpResult KosEvalState_Call(
     int tail_call) {
 
   KosCallSlots *slots = NULL;
-  int tail_popped = 0;
+  int py_tail = 0;
   int tail_defer_return = 0;
   KosOpResult r;
 
@@ -239,14 +238,14 @@ KosOpResult KosEvalState_Call(
       && ! KosInstanceCall_Check(callable)) {
     if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
       return EVAL_RAISE();
-    tail_popped = tail_call;
+    py_tail = tail_call;
   }
 
   r = kos_call_dispatch(es, slots, callable, args, nargs, kwnames,
                         tail_call);
   if (r.kind != KOS_RES_RETURN)
     return r;
-  return deliver_call_value(es, r.val, tail_popped, tail_defer_return);
+  return deliver_call_value(es, r.val, py_tail, tail_defer_return);
 }
 
 
@@ -766,9 +765,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
   /* Class: plain Python callable -- vectorcall reading argv in place;
      the result lands on the caller's block, so the window drops first. */
   if (! KosCallable_Check(callable)) {
-    PyObject *result = (nargs == 0 && ! kwnames)
-        ? PyObject_CallNoArgs(callable)
-        : PyObject_Vectorcall(callable, argv, (size_t) nargs, kwnames);
+    PyObject *result = PyObject_Vectorcall(callable, argv, (size_t) nargs,
+                                           kwnames);
     if (window)
       kos_stack_drop_noerr_fast(caller_slot, window);
     if (flags & KOS_CALL_CALLABLE_OWNED)
@@ -778,7 +776,9 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
 
   /* Legacy classes: preserve steal-first ordering.  Spill the window
      into an owned vector (refs transfer out of the block), delegate,
-     release.  Tail flows land here too (py tails need
+     release.  Every KosFunction call but the simple window steal-bind
+     lands here too (a generator function, keywords, a non-simple
+     arity, a self-binding function), as do tail flows (py tails need
      tail_prep_py_call; other-callable and deferred tails keep
      KosEvalState_Call's semantics). */
 legacy:
@@ -945,6 +945,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
   if (Py_TYPE(callable) != KOS_EVALUATED_PYTYPE(KosFunctionType)
       || arity1 != KosFunction_SIMPLE_ARITY1(callable)
       || KosFunction_BIND_SELF_STATE(callable) != 2
+      || ! KosFunction_CODE(callable)
       || KosCode_YIELDS((KosCode *) KosFunction_CODE(callable)))
     return 0;
 
@@ -1091,6 +1092,7 @@ static inline KosOpResult kos_call_invoke(
       /* a generator function never takes a frame-install arm; its
          call constructs the AsyncGenerator through the generator gate
          in kos_call_invoke_body instead */
+      && KosFunction_CODE(callable)
       && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable))
       && KosFunction_BIND_SELF_STATE(callable) == 2)
     return kos_call_invoke_self_steal(es, caller_slot, window, callable,
