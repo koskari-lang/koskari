@@ -73,13 +73,8 @@ void KosCallShape_Init(KosCallShape *shape, PyObject *callable) {
 
   Py_INCREF(callable);
   shape->cs_callable = callable;
-
-  if (KosCallable_CheckSlots(callable, &shape->cs_slots)) {
-    shape->cs_kind = KOS_CALL_SHAPE_FRAME;
-  } else {
-    shape->cs_slots = NULL;
-    shape->cs_kind = KOS_CALL_SHAPE_PLAIN;
-  }
+  shape->cs_kind = KosCallable_Check(callable)
+      ? KOS_CALL_SHAPE_FRAME : KOS_CALL_SHAPE_PLAIN;
 
   /* The frame-return guarantee needs the callable to actually take a
      frame, not merely to be a KosCallable: a yielding KosFunction's

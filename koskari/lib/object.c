@@ -370,7 +370,7 @@ static KosOpResult iterfunction_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  return KosEvalState_CallResult(es, wrapped, args, nargs, kwnames,
+  return KosEvalState_Call(es, wrapped, args, nargs, kwnames,
                                  tail_call, NULL, NULL);
 }
 

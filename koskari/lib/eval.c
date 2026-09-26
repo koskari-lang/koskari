@@ -1762,7 +1762,7 @@ static KosOpResult kos_op_call_star(
     }
   }
 
-  res = KosEvalState_CallArgs(es, callable, args, kwd, tail);
+  res = kos_call_push_args(es, callable, args, kwd, tail);
 
  done:
   Py_XDECREF(kwd);
@@ -3126,7 +3126,7 @@ static KosOpResult eval_step_drain_goal(KosEvalState *es) {
 
    A resume-carrying frame's own stack holds nothing else, so an empty
    stack unambiguously means no delivery was ever staged -- a consumer
-   set the resume directly (bypassing KosEvalState_CallResult /
+   set the resume directly (bypassing KosEvalState_Call /
    NextResume) to defer its own first step to this trampoline, the way
    a cold KOS_ITER_INSTALLED install must (koskari_eval runs as a
    separate step after install, never nested inside it). That resume is

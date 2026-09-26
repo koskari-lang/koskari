@@ -301,7 +301,7 @@ static KosOpResult values_kos_vinstall(
 
   /* The merged call goes through the tuple entry as the target's own
      install reports it: a value in hand, or an installed callee. */
-  r = KosEvalState_CallArgsResult(es, target, merged_args, merged_kw,
+  r = KosEvalState_CallArgs(es, target, merged_args, merged_kw,
                                   tail_call, NULL, NULL);
   Py_DECREF(merged_args);
   Py_XDECREF(merged_kw);

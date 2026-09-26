@@ -299,7 +299,6 @@ static PyObject *koscompress_new(
   }
 
   c->base.fn.cs_callable = NULL;
-  c->base.fn.cs_slots = NULL;
   c->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
 
   c->base.source = NULL;

@@ -348,9 +348,9 @@ static KosOpResult kos_dyn_with_enter(KosEvalState *es, KosDynWith *node) {
   /* A plain function resolved on the type is called with the manager as
      its receiver; anything else was bound at resolution. */
   KosOpResult kr = (KosDynWith_SELF_BIND(node) & KOS_WITH_SELF_ENTER)
-      ? KosEvalState_CallResult(es, enter_fn, &KosDynWith_MGR(node), 1,
+      ? KosEvalState_Call(es, enter_fn, &KosDynWith_MGR(node), 1,
                                 NULL, 0, NULL, NULL)
-      : KosEvalState_CallResult(es, enter_fn, NULL, 0, NULL, 0, NULL, NULL);
+      : KosEvalState_Call(es, enter_fn, NULL, 0, NULL, 0, NULL, NULL);
 
   /* A value in hand lands on the block, or is awaited there; settled,
      the entry completes now. */
@@ -441,7 +441,7 @@ static KosOpResult kos_dyn_with_leave(
   }
 
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
-  KosOpResult kr = KosEvalState_CallResult(es, exit_fn, argv, argc, NULL,
+  KosOpResult kr = KosEvalState_Call(es, exit_fn, argv, argc, NULL,
                                            0, NULL, NULL);
 
   /* A value in hand is settled, or awaited onto the block; settled,

@@ -185,7 +185,7 @@ typedef enum KosGetNextResult {
 
 /**
    A per-frame CPS resume: the fn of the KosResumeKind (dynchain.h) a
-   consumer sets on a frame via KosEvalState_CallResult /
+   consumer sets on a frame via KosEvalState_Call /
    KosEvalState_NextResume to receive exactly one settled delivery -- a call's result, a callee frame's return, a
    Next request's element, or an awaited value, however it was
    produced.
@@ -489,7 +489,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 
 /**
    RESULT_ENTRY(es, r, resume, state): end a resume with the outcome r
-   of a CPS entry (KosEvalState_CallResult, KosEvalState_NextResume)
+   of a CPS entry (KosEvalState_Call, KosEvalState_NextResume)
    it called with that same resume. NORMAL means a callee frame is
    installed and current with resume armed on the caller: thread into
    its first instruction. RETURN means the settled value is in hand
@@ -594,7 +594,7 @@ KosOpResult KosNativeFrame_ReturnPark(
    holds a parked frame it is reinstalled in place of a fresh
    allocation and *cache is emptied. The frame carries kind and state
    from the install on, so a teardown at any point after it hands the
-   kind's clear that state; the caller's later KosEvalState_CallResult
+   kind's clear that state; the caller's later KosEvalState_Call
    / NextResume call sets the resume that receives the delivery.
    Returns the frame, or NULL with PyErr set.
 */
@@ -626,7 +626,7 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 /**
    Request the next element of iter, delivering it (or the failure) to
    resume instead of making the caller interpret KosIterRequestStatus
-   by hand. Like KosEvalState_CallResult, the entry reports what
+   by hand. Like KosEvalState_Call, the entry reports what
    happened and the calling resume ends in RESULT_ENTRY: a delivered
    element that is settled reports RETURN with it, nothing armed (the
    resume is tail-called with it); one that needs settling settles one
@@ -1418,29 +1418,6 @@ KosOpResult KosEvalState_InstallCallFrame(
 
 
 /**
-   KosEvalState_Call: the call entry whose result lands on the current
-   frame's stack, for the CALL* opcodes and the tuple entry.
-
-   Accepts any callable. A KosCallable runs its install; a value it
-   reports in hand is pushed or awaited onto the caller's stack, and an
-   installed callee is left current. A plain Python callable is
-   vectorcalled and its result pushed or awaited the same way; in tail
-   position its frame is popped first when nothing is open above it,
-   else the result is delivered by RETURN.
-
-   Caller must ensure stack is clear before calling when tail_call is true
-   (use KosStackSteal). callable, args, kwnames are borrowed.
-*/
-KosOpResult KosEvalState_Call(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames,
-    int tail_call);
-
-
-/**
    The call entry: call callable with vectorcall-style args, and say
    where its result goes. tail_call and resume are independent.
 
@@ -1463,9 +1440,10 @@ KosOpResult KosEvalState_Call(
    it, tail_call included: RETURN with the value in hand, not yet
    settled; NORMAL, POLL, or REPROLOGUE for an installed callee; AWAIT,
    RAISE, FATAL. Nothing is pushed on the caller's stack. This is the
-   entry an install slot uses to call through to another callable.
+   entry an install slot uses to call through to another callable; the
+   CALL* opcodes have their own push entry inside the call core.
 */
-KosOpResult KosEvalState_CallResult(
+KosOpResult KosEvalState_Call(
     KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
@@ -1501,8 +1479,8 @@ KosDynFrame *KosEvalState_InstallNativeFrame(
    call is never a tail call, since its return must reach the resume.
    A value back in hand is staged for the resume; a callee's return
    and a settled value reach it the same way. A failure propagates
-   past the frame. Returns REPROLOGUE for the staged value, else
-   CallResult's outcome. args are borrowed.
+   past the frame. Returns REPROLOGUE for the staged value, else the
+   call's outcome. args are borrowed.
 */
 KosOpResult KosEvalState_CallInto(
     KosEvalState *es,
@@ -1532,47 +1510,31 @@ KosOpResult KosEvalState_SettleInto(
 
 
 /**
-   Call callable with self as its receiver, injected as the first
-   positional, and report the outcome as KosEvalState_CallResult with
-   no resume does: RETURN with the value in hand, or an installed
-   callee. No bound method is built. args and kwnames are borrowed.
+   KosEvalState_Call with self as the receiver, injected as the first
+   positional, under the same resume contract. No bound method is
+   built. args and kwnames are borrowed.
 */
-KosOpResult KosEvalState_CallWithReceiver(
+KosOpResult KosEvalState_CallMethod(
     KosEvalState *es,
     PyObject *callable,
     PyObject *self,
     PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames,
-    int tail_call);
+    int tail_call,
+    const KosResumeKind *resume,
+    void *state);
 
 
 /**
-   KosEvalState_CallArgs: KosEvalState_Call over a tuple and a dict. A
-   plain Python callable takes them as they are; a KosCallable's are
-   spread once to the vector shape. Used by CALL_STAR and
-   TAIL_CALL_STAR.
+   KosEvalState_Call over a tuple and a dict, under the same resume
+   contract: a plain Python callable takes them as they are, a
+   KosCallable's are spread once to the vector shape.
 
    callable, args_tuple (may be NULL), kwds_dict (may be NULL) are
    borrowed.
 */
 KosOpResult KosEvalState_CallArgs(
-    KosEvalState *es,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict,
-    int tail_call);
-
-
-/**
-   KosEvalState_CallResult over a tuple and a dict, with the same
-   resume contract: the entry an install slot uses to call through to
-   another callable with arguments it holds as a tuple and a dict.
-
-   callable, args_tuple (may be NULL), kwds_dict (may be NULL) are
-   borrowed.
-*/
-KosOpResult KosEvalState_CallArgsResult(
     KosEvalState *es,
     PyObject *callable,
     PyObject *args_tuple,
@@ -1587,7 +1549,8 @@ KosOpResult KosEvalState_CallArgsResult(
 
 /**
    Push val onto the current frame stack, or if val is awaitable run one step
-   and either push the result or suspend.
+   and either push the result or suspend; a fresh Koskari coroutine is
+   installed instead and REPROLOGUE names the installed callee.
 
    Use from code outside opcode dispatch that must not apply the CALL* POP,1
    peephole. Implementation: koskari/lib/eval/eval_await.c included into the

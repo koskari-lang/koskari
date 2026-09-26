@@ -21,7 +21,7 @@
    resume_kind/resume_state fields on KosDynFrame, the prologue's
    delivery path, the raise walk reaching a resume, and clone/park/
    tail-reset clearing. These tests set the frame fields directly,
-   below the KosEvalState_CallResult / NextResume entries.
+   below the KosEvalState_Call / NextResume entries.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -887,7 +887,7 @@ static int test_call_resume_null_returns_value_in_hand(void) {
 
   /* a plain Python callable's result comes back in hand; resume == NULL
      relays that RETURN untouched, and nothing lands on the stack */
-  KosOpResult r = KosEvalState_CallResult(
+  KosOpResult r = KosEvalState_Call(
       &es, abs_fn, &neg5, 1, NULL, 0, NULL, NULL);
 
   Py_DECREF(neg5);

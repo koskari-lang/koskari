@@ -106,7 +106,6 @@ int kos_transform_init_one(
     KosCallShape_Init(&t->fn, func);
   } else {
     t->fn.cs_callable = NULL;
-    t->fn.cs_slots = NULL;
     t->fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
   }
   t->src_sync = KosIter_CheckSync(source);

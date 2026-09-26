@@ -598,7 +598,7 @@ static KosOpResult demand_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  r = KosEvalState_CallResult(es, inner, args, nargs, kwnames, tail_call,
+  r = KosEvalState_Call(es, inner, args, nargs, kwnames, tail_call,
                               NULL, NULL);
   switch (r.kind) {
     case KOS_RES_RETURN:

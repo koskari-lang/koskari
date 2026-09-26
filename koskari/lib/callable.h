@@ -87,12 +87,10 @@ typedef enum KosCallShapeKind {
    A callable an object holds and invokes repeatedly, with its calling
    shape resolved at construction rather than per call. cs_callable is
    owned -- the holder's traverse visits it and its clear releases it
-   through KosCallShape_Clear. cs_slots is the borrowed static-type
-   suite, NULL for PLAIN.
+   through KosCallShape_Clear.
 */
 typedef struct KosCallShape {
   PyObject *cs_callable;
-  KosCallSlots *cs_slots;
   uint8_t cs_kind;
   uint8_t cs_direct;   /* FRAME only: the install fills a frame whose
                           return is the call's value, guaranteed --
@@ -113,7 +111,6 @@ void KosCallShape_Init(KosCallShape *shape, PyObject *callable);
 static inline void KosCallShape_Clear(KosCallShape *shape) {
 
   Py_CLEAR(shape->cs_callable);
-  shape->cs_slots = NULL;
 }
 
 

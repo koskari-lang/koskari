@@ -206,7 +206,7 @@ static KosOpResult kos_apply_install_core(
     return EVAL_RAISE();
   }
 
-  r = KosEvalState_CallArgsResult(es, fn, seq_args, kwds, tail_call,
+  r = KosEvalState_CallArgs(es, fn, seq_args, kwds, tail_call,
                                   NULL, NULL);
   Py_DECREF(seq_args);
   return r;

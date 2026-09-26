@@ -284,7 +284,6 @@ static PyObject *koszip_new(
   }
 
   z->base.fn.cs_callable = NULL;
-  z->base.fn.cs_slots = NULL;
   z->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
 
   z->base.source = NULL;

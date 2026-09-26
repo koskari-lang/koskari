@@ -131,21 +131,33 @@ static KosOpResult kos_call_dispatch(
     int tail_call);
 
 
+static KosOpResult kos_call_result_arm(
+    KosEvalState *es,
+    KosDynFrame *caller,
+    KosOpResult r,
+    const KosResumeKind *resume,
+    void *state);
+
+
 /**
    Call callable with self as its receiver: self is injected as the
    first positional through a small buffer (no bound method, no
-   descriptor bind) and the call dispatched, its outcome reported in
-   hand as an install reports it. Out of line so the buffer is not on
-   the stack of every call.
+   descriptor bind) and the call dispatched, its outcome handed to
+   resume as the vector entry hands it. Out of line so the buffer is
+   not on the stack of every call.
 */
-KOS_NOINLINE KosOpResult KosEvalState_CallWithReceiver(
+KOS_NOINLINE KosOpResult KosEvalState_CallMethod(
     KosEvalState *es,
     PyObject *callable,
     PyObject *self,
     PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames,
-    int tail_call) {
+    int tail_call,
+    const KosResumeKind *resume,
+    void *state) {
+
+  KosDynFrame *caller = KosEvalState_FRAME(es);
 
   Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
   Py_ssize_t ntotal = nargs + nkw;
@@ -169,7 +181,7 @@ KOS_NOINLINE KosOpResult KosEvalState_CallWithReceiver(
                         tail_call);
   if (inj != small)
     PyMem_Free(inj);
-  return r;
+  return kos_call_result_arm(es, caller, r, resume, state);
 }
 
 
@@ -210,8 +222,8 @@ static KosOpResult kos_call_dispatch(
     PyObject *target = kos_instance_call_target(callable, &binds);
 
     if (target && binds)
-      return KosEvalState_CallWithReceiver(es, target, callable, args,
-                                           nargs, kwnames, tail_call);
+      return KosEvalState_CallMethod(es, target, callable, args, nargs,
+                                     kwnames, tail_call, NULL, NULL);
     if (target) {
       KosCallSlots *target_slots = NULL;
 
@@ -227,7 +239,14 @@ static KosOpResult kos_call_dispatch(
 }
 
 
-KosOpResult KosEvalState_Call(
+/**
+   The CALL* opcodes' entry, whose result lands on the current frame's
+   stack: a value the dispatch reports in hand is pushed or awaited
+   there and an installed callee is left current. A plain Python
+   callable in tail position gives up the caller's frame before the
+   call. Reached from the class dispatch's legacy arm.
+*/
+static KosOpResult kos_call_push(
     KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
@@ -329,7 +348,7 @@ static KosOpResult kos_call_result_arm(
 }
 
 
-KosOpResult KosEvalState_CallResult(
+KosOpResult KosEvalState_Call(
     KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
@@ -425,7 +444,7 @@ KosOpResult KosEvalState_CallInto(
 
   /* The inner call is never a tail call: its return must reach this
      frame's resume. */
-  r = KosEvalState_CallResult(es, callable, args, nargs, kwnames, 0,
+  r = KosEvalState_Call(es, callable, args, nargs, kwnames, 0,
                               resume, state);
   if (r.kind != KOS_RES_RETURN)
     return r;
@@ -585,7 +604,7 @@ static KOS_NOINLINE KosOpResult kos_call_legacy_spill(
           ? argv
           : vals + (window - (size_t) (nargs + nkw));
     }
-    r = KosEvalState_Call(es, target,
+    r = kos_call_push(es, target,
                           (nargs + nkw) ? call_argv : NULL,
                           nargs, kwnames,
                           (flags & KOS_CALL_TAIL) ? 1 : 0);
@@ -893,7 +912,7 @@ legacy:
                                  kwnames, flags);
 
   {
-    KosOpResult r = KosEvalState_Call(es, callable, argv, nargs, kwnames,
+    KosOpResult r = kos_call_push(es, callable, argv, nargs, kwnames,
                                       (flags & KOS_CALL_TAIL) ? 1 : 0);
     if (flags & KOS_CALL_CALLABLE_OWNED)
       Py_DECREF(callable);
@@ -1278,7 +1297,11 @@ static KosOpResult kos_call_dispatch_args(
 }
 
 
-KosOpResult KosEvalState_CallArgs(
+/**
+   kos_call_push over a tuple and a dict, for CALL_STAR and
+   TAIL_CALL_STAR.
+*/
+static KosOpResult kos_call_push_args(
     KosEvalState *es,
     PyObject *callable,
     PyObject *args_tuple,
@@ -1305,7 +1328,7 @@ KosOpResult KosEvalState_CallArgs(
 }
 
 
-KosOpResult KosEvalState_CallArgsResult(
+KosOpResult KosEvalState_CallArgs(
     KosEvalState *es,
     PyObject *callable,
     PyObject *args_tuple,

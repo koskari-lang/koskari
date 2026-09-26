@@ -112,7 +112,7 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
      to completion in hand, its result already dropped
 */
 static KosOpResult kos_dyn_wind_fire(KosEvalState *es, PyObject *thunk) {
-  KosOpResult wr = KosEvalState_CallResult(es, thunk, NULL, 0, NULL, 0,
+  KosOpResult wr = KosEvalState_Call(es, thunk, NULL, 0, NULL, 0,
                                            NULL, NULL);
 
   /* A value in hand is settled, or awaited onto the block; settled, it
