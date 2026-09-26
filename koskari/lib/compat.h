@@ -62,8 +62,11 @@
 #endif
 
 static inline void kos_immortalize(PyObject *obj) {
-  if (KOS_IMMORTAL_REFCNT)
-    Py_SET_REFCNT(obj, (Py_ssize_t) KOS_IMMORTAL_REFCNT);
+#if KOS_IMMORTAL_REFCNT
+  Py_SET_REFCNT(obj, (Py_ssize_t) KOS_IMMORTAL_REFCNT);
+#else
+  (void) obj;
+#endif
 }
 
 
