@@ -1457,9 +1457,11 @@ KosOpResult KosEvalState_Call(
 /**
    Install a frame for a native program: a resume and its state in
    place of code and a namespace, with frame_flags ORed in. A tail
-   call reuses the live frame, as InstallCallFrame does for bytecode;
-   otherwise a native frame is pushed. The frame carries the empty
-   namespace. Returns the frame, or NULL with PyErr set.
+   call reuses the live frame, as InstallCallFrame does for bytecode.
+   Otherwise a native frame is pushed. The frame carries the empty
+   namespace. The resume is armed here, before the caller makes its
+   call, so a failure raised while this frame is current is delivered
+   to the resume as NULL. Returns the frame, or NULL with PyErr set.
 */
 KosDynFrame *KosEvalState_InstallNativeFrame(
     KosEvalState *es,
@@ -1478,9 +1480,10 @@ KosDynFrame *KosEvalState_InstallNativeFrame(
    live frame on a tail call, and makes the call from it; the inner
    call is never a tail call, since its return must reach the resume.
    A value back in hand is staged for the resume; a callee's return
-   and a settled value reach it the same way. A failure propagates
-   past the frame. Returns REPROLOGUE for the staged value, else the
-   call's outcome. args are borrowed.
+   and a settled value reach it the same way. A failure during the
+   call reaches resume as a NULL delivery, which it must handle. Later
+   failures reach it the same way. Returns REPROLOGUE for the staged
+   value, else the call's outcome. args are borrowed.
 */
 KosOpResult KosEvalState_CallInto(
     KosEvalState *es,
@@ -1497,9 +1500,10 @@ KosOpResult KosEvalState_CallInto(
 /**
    Settle a value in hand under a fresh native frame carrying resume
    and frame_flags (KOS_FRAME_DEMAND refuses a suspension). A value
-   that settles at once is staged for the resume; one that suspends
-   delivers on the revive. Returns REPROLOGUE or AWAIT, or RAISE. val
-   is consumed.
+   that settles at once is staged for the resume. One that suspends
+   delivers on the revive. A failure reaches resume as a NULL
+   delivery, which it must handle. Returns REPROLOGUE or AWAIT, or
+   RAISE. val is consumed.
 */
 KosOpResult KosEvalState_SettleInto(
     KosEvalState *es,
