@@ -191,7 +191,10 @@ KOS_NOINLINE KosOpResult KosEvalState_CallMethod(
    outcome in hand. slots is NULL for a callable without a suite. An
    install's NORMAL is promoted to REPROLOGUE when a goal is set or the
    installed frame cannot be threaded into (it carries a resume rather
-   than bytecode), so the trampoline's prologue picks it up. A plain
+   than bytecode), so the trampoline's prologue picks it up. An
+   install's POLL is answered as REPROLOGUE as well. The prologue polls
+   when the breaker is up before it delivers, and the native callers
+   of the CPS entries take REPROLOGUE as the installed outcome. A plain
    callable's result, and an instance's KosCallable __call__ run with
    self injected, report as the install contract does: RETURN with the
    value in hand, nothing pushed. args and kwnames are borrowed.
@@ -213,6 +216,8 @@ static KosOpResult kos_call_dispatch(
     if (r.kind == KOS_RES_NORMAL
         && (KosEvalState_GOAL(es)
             || ! kos_frame_threads(KosEvalState_FRAME(es))))
+      return EVAL_REPROLOGUE();
+    if (r.kind == KOS_RES_POLL)
       return EVAL_REPROLOGUE();
     return r;
   }
