@@ -144,6 +144,17 @@ PyObject *KosNamespace_NewFull(
 
 
 /**
+   The empty namespace: no parent, no symbols, no bindings, so a store
+   through it raises NameError and nothing can be bound into it. The
+   fill of every native frame, which introduces no scope of its own but
+   must never leave the live namespace register NULL. One immortal
+   instance, created on first use; a borrowed reference, which holders
+   take and release like any other. NULL with PyErr set on failure.
+*/
+PyObject *KosNamespace_Empty(void);
+
+
+/**
    Build a namespace from the given NamespaceSpec and parent.
    Same as NSPEC.get_namespace(parent). New reference or NULL on error.
 */

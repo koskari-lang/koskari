@@ -1477,15 +1477,32 @@ KosOpResult KosEvalState_CallResult(
 
 
 /**
+   Install a frame for a native program: a resume and its state in
+   place of code and a namespace, with frame_flags ORed in. A tail
+   call reuses the live frame, as InstallCallFrame does for bytecode;
+   otherwise a native frame is pushed. The frame carries the empty
+   namespace. Returns the frame, or NULL with PyErr set.
+*/
+KosDynFrame *KosEvalState_InstallNativeFrame(
+    KosEvalState *es,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags,
+    int tail_call);
+
+
+/**
    Call callable with its result delivered to resume, from a context
-   that is not itself a resume (a callable's install slot). Pushes a
-   code-less frame, ORs frame_flags into it (KOS_FRAME_DEMAND to
-   refuse suspension within the call), and makes the call from that
-   frame through KosEvalState_CallResult, which arms resume and state
-   on it. A value back in hand is staged for the resume; a callee's
-   return and a settled value reach it the same way. A failure
-   propagates past the frame. Returns REPROLOGUE for the staged value,
-   else CallResult's outcome. args are borrowed.
+   that is not itself a resume (a callable's install slot): the native
+   form of a function whose body calls callable and then continues.
+   Installs a native frame carrying resume, state, and frame_flags
+   (KOS_FRAME_DEMAND refuses suspension within the call), reusing the
+   live frame on a tail call, and makes the call from it; the inner
+   call is never a tail call, since its return must reach the resume.
+   A value back in hand is staged for the resume; a callee's return
+   and a settled value reach it the same way. A failure propagates
+   past the frame. Returns REPROLOGUE for the staged value, else
+   CallResult's outcome. args are borrowed.
 */
 KosOpResult KosEvalState_CallInto(
     KosEvalState *es,
@@ -1495,15 +1512,16 @@ KosOpResult KosEvalState_CallInto(
     PyObject *kwnames,
     const KosResumeKind *resume,
     void *state,
-    uint32_t frame_flags);
+    uint32_t frame_flags,
+    int tail_call);
 
 
 /**
-   Settle a value in hand under a fresh code-less frame carrying resume
-   and frame_flags: push the frame, OR the flags in, and settle val on
-   it (KOS_FRAME_DEMAND refuses a suspension). A value that settles at
-   once is staged for the resume; one that suspends arms the resume for
-   the revive. Returns REPROLOGUE or AWAIT, or RAISE. val is consumed.
+   Settle a value in hand under a fresh native frame carrying resume
+   and frame_flags (KOS_FRAME_DEMAND refuses a suspension). A value
+   that settles at once is staged for the resume; one that suspends
+   delivers on the revive. Returns REPROLOGUE or AWAIT, or RAISE. val
+   is consumed.
 */
 KosOpResult KosEvalState_SettleInto(
     KosEvalState *es,

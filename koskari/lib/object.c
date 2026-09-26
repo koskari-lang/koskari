@@ -228,10 +228,11 @@ KOS_RESUME_KIND(procedure_resume_kind, "procedure",
 
 
 /**
-   Evaluator install: call the wrapped callable from a code-less frame
+   Evaluator install: call the wrapped callable from a native frame
    carrying procedure_resume and marked as the demand root, so the
-   call runs in this evaluator and cannot suspend. The resume
-   completes the frame with None.
+   call runs in this evaluator and cannot suspend; in tail position
+   that frame is the caller's, reused. The resume completes the frame
+   with None.
 */
 static KosOpResult procedure_kos_vinstall(
     KosEvalState *es,
@@ -243,8 +244,6 @@ static KosOpResult procedure_kos_vinstall(
 
   PyObject *wrapped = KosDemand_GetWrapped(callable);
 
-  (void) tail_call;
-
   if (! wrapped) {
     PyErr_SetString(PyExc_TypeError, "Procedure object is not initialized");
     return EVAL_RAISE();
@@ -252,7 +251,7 @@ static KosOpResult procedure_kos_vinstall(
 
   return KosEvalState_CallInto(es, wrapped, args, nargs, kwnames,
                                &procedure_resume_kind, NULL,
-                               KOS_FRAME_DEMAND);
+                               KOS_FRAME_DEMAND, tail_call);
 }
 
 

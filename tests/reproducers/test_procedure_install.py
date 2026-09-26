@@ -70,6 +70,21 @@ class TestProcedureInstall(unittest.IsolatedAsyncioTestCase):
             await mod.runaway()
 
 
+    async def test_tail_delegation_costs_one_frame_per_level(self):
+        """
+        An __init__ delegating to another __init__ in tail position
+        keeps one frame per level, the wrapper's continuation that
+        replaces the return with None, as the lambda form of that
+        wrapper would; the caller's frame is reused for it, not kept
+        beneath it
+        """
+
+        mod = await self.load_module()
+        self.assertIsNone(await mod.chain(800))
+        with self.assertRaises(RecursionError):
+            await mod.chain(1200)
+
+
     async def test_suspension_refused(self):
         mod = await self.load_module()
         with self.assertRaises(KoskariSyncViolation):

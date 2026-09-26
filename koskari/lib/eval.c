@@ -2072,14 +2072,16 @@ static KosDynFrame *kos_push_or_reuse_codeless_frame(
     KosDynFrame **cache) {
 
   if (cache && *cache) {
-    PyObject *live_ns = KosEvalState_NAMESPACE(es);
+    PyObject *empty = KosNamespace_Empty();
     KosDynFrame *frame = *cache;
 
+    if (! empty)
+      return NULL;
     if (kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)
       return NULL;
     *cache = NULL;
-    Py_XINCREF(live_ns);
-    KosDynFrame_NS(frame) = live_ns;
+    Py_INCREF(empty);
+    KosDynFrame_NS(frame) = empty;
     kos_dyn_push_ready_frame(es, frame);
     return frame;
   }
@@ -2265,7 +2267,7 @@ static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosEvalState *es) {
   KosContext_ENTRY_CALL(ctx) = NULL;
   r = KosEvalState_CallInto(es, call->callable, call->args, call->nargs,
                             call->kwnames, call->resume, NULL,
-                            call->frame_flags);
+                            call->frame_flags, 0);
   if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
     return EVAL_NORMAL();
 

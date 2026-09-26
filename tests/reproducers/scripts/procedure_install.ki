@@ -16,6 +16,14 @@ define-class Runaway []:
 
     define __init__ [self]:
         (.__init__ self)
+        None
+
+
+define-class Chain []:
+
+    define __init__ [self n]:
+        when (> n 0):
+            (.__init__ self (- n 1))
 
 
 define-class Sleeper []:
@@ -38,6 +46,11 @@ define init_result []:
 
 define runaway []:
     (Runaway)
+
+
+define chain [n]:
+    (Chain n)
+    None
 
 
 define sleeper []:

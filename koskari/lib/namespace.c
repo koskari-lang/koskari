@@ -2122,6 +2122,24 @@ PyObject *KosNamespace_NewFull(
 }
 
 
+static PyObject *ns_empty = NULL;
+
+
+PyObject *KosNamespace_Empty(void) {
+
+  if (! ns_empty) {
+    PyObject *ns = KosNamespace_NewFull(NULL, NULL, NULL, NULL, NULL);
+
+    if (! ns)
+      return NULL;
+    PyObject_GC_UnTrack(ns);
+    kos_immortalize(ns);
+    ns_empty = ns;
+  }
+  return ns_empty;
+}
+
+
 PyObject *KosNamespace_LOOSE_REF(PyObject *namespace, PyObject *key) {
   if (KosNamespace_CheckExact(namespace) ||
       KosCollectorNamespace_CheckExact(namespace)) {
@@ -3143,6 +3161,7 @@ int koskari_namespace_clear(PyObject *mod) {
   }
   ns_freecount = 0;
 
+  Py_CLEAR(ns_empty);
   Py_CLEAR(_namespace_str);
   Py_CLEAR(str_class_name);
   Py_CLEAR(_module_str);

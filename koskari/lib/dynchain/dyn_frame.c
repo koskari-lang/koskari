@@ -274,19 +274,20 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es) {
 
 /**
    Push a frame for a native program: no code, and the namespace slot
-   holds an owned fill of the live namespace. A frame introducing its
-   own namespace is exempt from the owned-fill rule; a native frame
-   introduces none, so it carries the fill like any other
-   non-introducer node -- on a pop into it the survivor answers the
-   namespace question, and nodes the program pushes fill from a live
-   register that is never spuriously NULL.
+   holds a reference to the empty namespace. A native frame introduces
+   no scope and reads no name, so the fill only keeps the live register
+   from being NULL while the frame is current, and the empty namespace
+   says exactly that: nothing is visible through it and nothing can be
+   stored through it.
 */
 KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es) {
 
-  PyObject *live_ns = KosEvalState_NAMESPACE(es);
+  PyObject *empty = KosNamespace_Empty();
 
-  Py_XINCREF(live_ns);
-  return kos_dyn_push_frame(es, NULL, live_ns);
+  if (! empty)
+    return NULL;
+  Py_INCREF(empty);
+  return kos_dyn_push_frame(es, NULL, empty);
 }
 
 

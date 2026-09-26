@@ -362,6 +362,49 @@ KosOpResult KosEvalState_CallResult(
 }
 
 
+/**
+   Install a frame for a native program, the way InstallCallFrame
+   installs one for bytecode: a tail call tears down to the live frame,
+   resets it, and refills it as a native frame; otherwise a native
+   frame is pushed. Either way the frame carries the empty namespace,
+   the resume armed, and frame_flags. Returns the frame, or NULL with
+   PyErr set.
+*/
+KosDynFrame *KosEvalState_InstallNativeFrame(
+    KosEvalState *es,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags,
+    int tail_call) {
+
+  KosDynFrame *frame;
+
+  if (tail_call) {
+    PyObject *empty = KosNamespace_Empty();
+
+    if (! empty)
+      return NULL;
+    frame = KosEvalState_FRAME(es);
+    if (kos_dyn_teardown_to_frame(es, frame) < 0)
+      return NULL;
+    kos_dynframe_reset_for_tail(frame);
+    Py_INCREF(empty);
+    (void) KosEvalState_SetFrameCodeAndNamespace(es, frame, NULL, empty);
+    es->pc = 0;
+    es->acting_pc = 0;
+  } else {
+    frame = KosResumeFrame_Install(es, NULL, NULL, NULL);
+    if (! frame)
+      return NULL;
+  }
+
+  KosDynFrame_FLAGS(frame) |= frame_flags;
+  KosDynFrame_RESUME_KIND(frame) = resume;
+  KosDynFrame_RESUME_STATE(frame) = state;
+  return frame;
+}
+
+
 KosOpResult KosEvalState_CallInto(
     KosEvalState *es,
     PyObject *callable,
@@ -370,26 +413,23 @@ KosOpResult KosEvalState_CallInto(
     PyObject *kwnames,
     const KosResumeKind *resume,
     void *state,
-    uint32_t frame_flags) {
+    uint32_t frame_flags,
+    int tail_call) {
 
-  /* The frame starts with no resume armed: an armed resume would make
-     a value pushed onto the frame read as an installed callee, and
-     skip its settling. CallResult arms it on every path but a value
-     back in hand. */
-  KosDynFrame *frame = KosResumeFrame_Install(es, NULL, NULL, NULL);
+  KosDynFrame *frame = KosEvalState_InstallNativeFrame(
+      es, resume, state, frame_flags, tail_call);
   KosOpResult r;
 
   if (! frame)
     return EVAL_RAISE();
-  KosDynFrame_FLAGS(frame) |= frame_flags;
 
+  /* The inner call is never a tail call: its return must reach this
+     frame's resume. */
   r = KosEvalState_CallResult(es, callable, args, nargs, kwnames, 0,
                               resume, state);
   if (r.kind != KOS_RES_RETURN)
     return r;
 
-  KosDynFrame_RESUME_KIND(frame) = resume;
-  KosDynFrame_RESUME_STATE(frame) = state;
   KosEvalState_StageDelivery(es, r.val);
   return EVAL_REPROLOGUE();
 }
@@ -402,21 +442,19 @@ KosOpResult KosEvalState_SettleInto(
     void *state,
     uint32_t frame_flags) {
 
-  KosDynFrame *frame = KosResumeFrame_Install(es, NULL, NULL, NULL);
+  KosDynFrame *frame = KosEvalState_InstallNativeFrame(
+      es, resume, state, frame_flags, 0);
   KosOpResult r;
 
   if (! frame) {
     Py_DECREF(val);
     return EVAL_RAISE();
   }
-  KosDynFrame_FLAGS(frame) |= frame_flags;
 
   r = kos_entry_value(es, frame, val, resume, state);
   if (r.kind != KOS_RES_RETURN)
     return r;
 
-  KosDynFrame_RESUME_KIND(frame) = resume;
-  KosDynFrame_RESUME_STATE(frame) = state;
   KosEvalState_StageDelivery(es, r.val);
   return EVAL_REPROLOGUE();
 }
