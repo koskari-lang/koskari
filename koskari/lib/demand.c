@@ -598,8 +598,8 @@ static KosOpResult demand_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  r = KosEvalState_Call(es, inner, args, nargs, kwnames, tail_call,
-                              NULL, NULL);
+  r = KosEvalState_Call(
+      es, inner, args, nargs, kwnames, tail_call, NULL, NULL);
   switch (r.kind) {
     case KOS_RES_RETURN:
       switch (KosEval_ResultIsValue(r.val)) {
@@ -608,8 +608,8 @@ static KosOpResult demand_kos_vinstall(
         case 0:
           /* an awaitable in hand settles under a demand-marked frame,
              so a suspension is denied in-eval at the guard */
-          return KosEvalState_SettleInto(es, r.val, &demand_resume_kind,
-                                         NULL, KOS_FRAME_DEMAND);
+          return KosEvalState_SettleInto(
+              es, r.val, &demand_resume_kind, NULL, KOS_FRAME_DEMAND);
         default:
           Py_DECREF(r.val);
           return EVAL_RAISE();

@@ -2265,9 +2265,9 @@ static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosEvalState *es) {
   KosOpResult r;
 
   KosContext_ENTRY_CALL(ctx) = NULL;
-  r = KosEvalState_CallInto(es, call->callable, call->args, call->nargs,
-                            call->kwnames, call->resume, NULL,
-                            call->frame_flags, 0);
+  r = KosEvalState_CallInto(
+      es, call->callable, call->args, call->nargs, call->kwnames,
+      call->resume, NULL, call->frame_flags, 0);
   if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
     return EVAL_NORMAL();
 

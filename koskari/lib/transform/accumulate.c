@@ -135,9 +135,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
   t->pending = element;
   {
     PyObject *argv[2] = { a->total, element };
-    KosOpResult r = KosEvalState_Call(es, t->fn.cs_callable, argv, 2,
-                                            NULL, 0,
-                                            &accumulate_resume_result_kind, a);
+    KosOpResult r = KosEvalState_Call(
+        es, t->fn.cs_callable, argv, 2, NULL, 0,
+        &accumulate_resume_result_kind, a);
     RESULT_ENTRY(es, r, &accumulate_resume_result_kind, a);
   }
 }

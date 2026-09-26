@@ -202,8 +202,8 @@ static KosOpResult kospartial_kos_vinstall(
     for (Py_ssize_t i = 0; i < nargs; i++)
       vec[nb + i] = args[i];
 
-    r = KosEvalState_Call(es, inner, vec, total, NULL, tail_call,
-                                NULL, NULL);
+    r = KosEvalState_Call(
+        es, inner, vec, total, NULL, tail_call, NULL, NULL);
     if (vec != small)
       PyMem_Free(vec);
     return r;
@@ -253,8 +253,8 @@ static KosOpResult kospartial_kos_vinstall(
     }
     Py_XDECREF(kwargs);
 
-    r = KosEvalState_CallArgs(es, inner, merged_args, merged_kw,
-                                    tail_call, NULL, NULL);
+    r = KosEvalState_CallArgs(
+        es, inner, merged_args, merged_kw, tail_call, NULL, NULL);
     Py_DECREF(merged_args);
     Py_XDECREF(merged_kw);
     return r;

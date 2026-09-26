@@ -765,9 +765,9 @@ static KosOpResult kos_vinstall_boundmethod(
                     "KosBoundMethod eval requires a KosCallable func");
     return EVAL_RAISE();
   }
-  return KosEvalState_CallMethod(es, func, KosBoundMethod_SELF(callable),
-                                 args, nargs, kwnames, tail_call, NULL,
-                                 NULL);
+  return KosEvalState_CallMethod(
+      es, func, KosBoundMethod_SELF(callable), args, nargs, kwnames,
+      tail_call, NULL, NULL);
 }
 
 

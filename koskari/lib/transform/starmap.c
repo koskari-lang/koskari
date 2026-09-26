@@ -105,10 +105,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
   if (! args)
     return EVAL_RAISE();
 
-  r = KosEvalState_Call(es, t->fn.cs_callable,
-                              PySequence_Fast_ITEMS(args),
-                              PyTuple_GET_SIZE(args), NULL, 0,
-                              &starmap_resume_after_result_kind, t);
+  r = KosEvalState_Call(
+      es, t->fn.cs_callable, PySequence_Fast_ITEMS(args),
+      PyTuple_GET_SIZE(args), NULL, 0,
+      &starmap_resume_after_result_kind, t);
   Py_DECREF(args);
   RESULT_ENTRY(es, r, &starmap_resume_after_result_kind, t);
 }
@@ -180,10 +180,9 @@ static KosIterStepResult starmap_iter_step(
        fills a frame whose return IS the element) installs through the
        generic call entry with no helper frame. */
     if (t->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
-      KosOpResult r = KosEvalState_Call(es, t->fn.cs_callable,
-                                              PySequence_Fast_ITEMS(args),
-                                              PyTuple_GET_SIZE(args),
-                                              NULL, 0, NULL, NULL);
+      KosOpResult r = KosEvalState_Call(
+          es, t->fn.cs_callable, PySequence_Fast_ITEMS(args),
+          PyTuple_GET_SIZE(args), NULL, 0, NULL, NULL);
       Py_DECREF(args);
       if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
         t->busy = 1;

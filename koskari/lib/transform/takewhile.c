@@ -103,9 +103,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
      call; the argument vector borrows it for the call's duration. */
   t->pending = element;
   {
-    KosOpResult r = KosEvalState_Call(es, t->fn.cs_callable,
-                                            &element, 1, NULL, 0,
-                                            &takewhile_resume_verdict_kind, t);
+    KosOpResult r = KosEvalState_Call(
+        es, t->fn.cs_callable, &element, 1, NULL, 0,
+        &takewhile_resume_verdict_kind, t);
     RESULT_ENTRY(es, r, &takewhile_resume_verdict_kind, t);
   }
 }

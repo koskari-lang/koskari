@@ -90,8 +90,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
   if (! element)
     return EVAL_RAISE();
 
-  r = KosEvalState_Call(es, m->fn.cs_callable, &element, 1, NULL,
-                              0, &map_resume_after_result_kind, m);
+  r = KosEvalState_Call(
+      es, m->fn.cs_callable, &element, 1, NULL, 0,
+      &map_resume_after_result_kind, m);
   Py_DECREF(element);
   RESULT_ENTRY(es, r, &map_resume_after_result_kind, m);
 }
@@ -157,9 +158,8 @@ static KosIterStepResult map_iter_step(
        generic call entry -- cached frame, the element's own address
        as the argument vector -- with no helper frame. */
     if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME && m->fn.cs_direct) {
-      KosOpResult r = KosEvalState_Call(es, m->fn.cs_callable,
-                                              &element, 1, NULL, 0,
-                                              NULL, NULL);
+      KosOpResult r = KosEvalState_Call(
+          es, m->fn.cs_callable, &element, 1, NULL, 0, NULL, NULL);
       Py_DECREF(element);
       if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
         m->busy = 1;

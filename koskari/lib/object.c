@@ -249,9 +249,9 @@ static KosOpResult procedure_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  return KosEvalState_CallInto(es, wrapped, args, nargs, kwnames,
-                               &procedure_resume_kind, NULL,
-                               KOS_FRAME_DEMAND, tail_call);
+  return KosEvalState_CallInto(
+      es, wrapped, args, nargs, kwnames, &procedure_resume_kind, NULL,
+      KOS_FRAME_DEMAND, tail_call);
 }
 
 
@@ -370,8 +370,8 @@ static KosOpResult iterfunction_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  return KosEvalState_Call(es, wrapped, args, nargs, kwnames,
-                                 tail_call, NULL, NULL);
+  return KosEvalState_Call(
+      es, wrapped, args, nargs, kwnames, tail_call, NULL, NULL);
 }
 
 

@@ -222,8 +222,9 @@ static KosOpResult kos_call_dispatch(
     PyObject *target = kos_instance_call_target(callable, &binds);
 
     if (target && binds)
-      return KosEvalState_CallMethod(es, target, callable, args, nargs,
-                                     kwnames, tail_call, NULL, NULL);
+      return KosEvalState_CallMethod(
+          es, target, callable, args, nargs, kwnames, tail_call, NULL,
+          NULL);
     if (target) {
       KosCallSlots *target_slots = NULL;
 
@@ -444,8 +445,8 @@ KosOpResult KosEvalState_CallInto(
 
   /* The inner call is never a tail call: its return must reach this
      frame's resume. */
-  r = KosEvalState_Call(es, callable, args, nargs, kwnames, 0,
-                              resume, state);
+  r = KosEvalState_Call(
+      es, callable, args, nargs, kwnames, 0, resume, state);
   if (r.kind != KOS_RES_RETURN)
     return r;
 
@@ -604,10 +605,9 @@ static KOS_NOINLINE KosOpResult kos_call_legacy_spill(
           ? argv
           : vals + (window - (size_t) (nargs + nkw));
     }
-    r = kos_call_push(es, target,
-                          (nargs + nkw) ? call_argv : NULL,
-                          nargs, kwnames,
-                          (flags & KOS_CALL_TAIL) ? 1 : 0);
+    r = kos_call_push(
+        es, target, (nargs + nkw) ? call_argv : NULL, nargs, kwnames,
+        (flags & KOS_CALL_TAIL) ? 1 : 0);
   }
 
   for (size_t i = 0; i < window; i++)
@@ -908,12 +908,13 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
      KosEvalState_Call's semantics). */
 legacy:
   if (window)
-    return kos_call_legacy_spill(es, window, callable, argv, nargs,
-                                 kwnames, flags);
+    return kos_call_legacy_spill(
+        es, window, callable, argv, nargs, kwnames, flags);
 
   {
-    KosOpResult r = kos_call_push(es, callable, argv, nargs, kwnames,
-                                      (flags & KOS_CALL_TAIL) ? 1 : 0);
+    KosOpResult r = kos_call_push(
+        es, callable, argv, nargs, kwnames,
+        (flags & KOS_CALL_TAIL) ? 1 : 0);
     if (flags & KOS_CALL_CALLABLE_OWNED)
       Py_DECREF(callable);
     return r;
