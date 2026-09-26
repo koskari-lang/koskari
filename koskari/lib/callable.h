@@ -150,7 +150,30 @@ int KosArgSpread_Init(
     Py_ssize_t bufcap);
 
 
-/** Release what KosArgSpread_Init took. */
+/**
+   Fill spread with a bound tuple of positionals and a bound dict of
+   keywords (either may be NULL or empty) merged with a call vector
+   (args, nargs, kwnames): bound positionals first, then the call's,
+   then the keyword values. A call keyword that names a bound keyword
+   replaces its value in place. With nothing bound argv borrows args
+   itself and nothing is allocated. Otherwise the vector goes in buf
+   when it fits bufcap, else on the heap; buf may be NULL with bufcap
+   0. Every argv entry is borrowed from its source, which must outlive
+   the spread. Returns 0, or -1 with PyErr set and nothing left to
+   clear.
+*/
+int KosArgSpread_InitMerged(
+    KosArgSpread *spread,
+    PyObject *bound_args,
+    PyObject *bound_kwds,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    PyObject **buf,
+    Py_ssize_t bufcap);
+
+
+/** Release what KosArgSpread_Init or KosArgSpread_InitMerged took. */
 void KosArgSpread_Clear(KosArgSpread *spread);
 
 

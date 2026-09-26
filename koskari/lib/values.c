@@ -239,6 +239,11 @@ static PyObject *values_call(
 /* === KosCallable install === */
 
 
+/**
+   Evaluator install: the first argument is the target, called through
+   the evaluator's call entry with the stored arguments merged in. The
+   merge is one borrowed vector, built beside the call.
+*/
 static KosOpResult values_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -248,14 +253,9 @@ static KosOpResult values_kos_vinstall(
     int tail_call) {
 
   KosValues *s = (KosValues *) callable;
-  PyObject *inv_args = NULL;
-  PyObject *inv_kwds = NULL;
-  PyObject *target = NULL;
-  PyObject *merged_args = NULL;
-  PyObject *merged_kw = NULL;
+  PyObject *small[16];
+  KosArgSpread spread;
   KosOpResult r;
-  Py_ssize_t i;
-  Py_ssize_t nkw;
 
   if (nargs < 1) {
     PyErr_SetString(PyExc_TypeError, "values objects must be called with"
@@ -263,48 +263,14 @@ static KosOpResult values_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  inv_args = PyTuple_New(nargs);
-  if (! inv_args)
+  if (KosArgSpread_InitMerged(
+          &spread, KosValues_ARGS(s), KosValues_KWDS(s), args + 1, nargs - 1,
+          kwnames, small, 16) < 0)
     return EVAL_RAISE();
-
-  for (i = 0; i < nargs; i++) {
-    Py_INCREF(args[i]);
-    PyTuple_SET_ITEM(inv_args, i, args[i]);
-  }
-
-  if (kwnames) {
-    nkw = PyTuple_GET_SIZE(kwnames);
-    inv_kwds = PyDict_New();
-    if (! inv_kwds) {
-      Py_DECREF(inv_args);
-      return EVAL_RAISE();
-    }
-    for (i = 0; i < nkw; i++) {
-      if (PyDict_SetItem(inv_kwds, PyTuple_GET_ITEM(kwnames, i),
-                         args[nargs + i]) < 0) {
-        Py_DECREF(inv_args);
-        Py_DECREF(inv_kwds);
-        return EVAL_RAISE();
-      }
-    }
-  }
-
-  if (values_merge(s, inv_args, inv_kwds, &target, &merged_args,
-                   &merged_kw) < 0) {
-    Py_DECREF(inv_args);
-    Py_XDECREF(inv_kwds);
-    return EVAL_RAISE();
-  }
-
-  Py_DECREF(inv_args);
-  Py_XDECREF(inv_kwds);
-
-  /* The merged call goes through the tuple entry as the target's own
-     install reports it: a value in hand, or an installed callee. */
-  r = KosEvalState_CallArgs(
-      es, target, merged_args, merged_kw, tail_call, NULL, NULL);
-  Py_DECREF(merged_args);
-  Py_XDECREF(merged_kw);
+  r = KosEvalState_Call(
+      es, args[0], spread.argv, spread.nargs, spread.kwnames, tail_call,
+      NULL, NULL);
+  KosArgSpread_Clear(&spread);
   return r;
 }
 

@@ -147,6 +147,135 @@ int KosArgSpread_Init(
 }
 
 
+int KosArgSpread_InitMerged(
+    KosArgSpread *spread,
+    PyObject *bound_args,
+    PyObject *bound_kwds,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    PyObject **buf,
+    Py_ssize_t bufcap) {
+
+  Py_ssize_t nb = bound_args ? PyTuple_GET_SIZE(bound_args) : 0;
+  Py_ssize_t nbk = bound_kwds ? PyDict_Size(bound_kwds) : 0;
+  Py_ssize_t nck = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  Py_ssize_t npos = nb + nargs;
+  Py_ssize_t nhit = 0;
+  Py_ssize_t nkw = nck;
+  PyObject **argv = buf;
+  PyObject *names = NULL;
+
+  spread->nargs = npos;
+  spread->kwnames = NULL;
+  spread->heap = NULL;
+
+  /* Nothing bound: the call vector IS the vector. */
+  if (! nb && ! nbk) {
+    spread->argv = args;
+    if (nck) {
+      Py_INCREF(kwnames);
+      spread->kwnames = kwnames;
+    }
+    return 0;
+  }
+
+  /* Bound keywords: count the call keywords that replace one, so the
+     merged names tuple is sized once. */
+  if (nbk) {
+    for (Py_ssize_t i = 0; i < nck; i++) {
+      int has = PyDict_Contains(bound_kwds, PyTuple_GET_ITEM(kwnames, i));
+      if (has < 0)
+        return -1;
+      nhit += has;
+    }
+    nkw = nbk + nck - nhit;
+  }
+
+  if (npos + nkw > bufcap) {
+    argv = PyMem_Malloc((size_t) (npos + nkw) * sizeof(PyObject *));
+    if (! argv) {
+      PyErr_NoMemory();
+      return -1;
+    }
+    spread->heap = argv;
+  }
+
+  for (Py_ssize_t i = 0; i < nb; i++)
+    argv[i] = PyTuple_GET_ITEM(bound_args, i);
+  for (Py_ssize_t i = 0; i < nargs; i++)
+    argv[nb + i] = args[i];
+
+  /* Only the call side names keywords: its kwnames serve as they are. */
+  if (! nbk) {
+    for (Py_ssize_t i = 0; i < nck; i++)
+      argv[npos + i] = args[nargs + i];
+    if (nck) {
+      Py_INCREF(kwnames);
+      spread->kwnames = kwnames;
+    }
+    spread->argv = argv;
+    return 0;
+  }
+
+  /* The bound keywords head the names, in dict order; a call keyword
+     that names one replaces its value there, the rest append. */
+  names = PyTuple_New(nkw);
+  if (! names)
+    goto fail;
+
+  {
+    PyObject *k, *v;
+    Py_ssize_t pos = 0, i = 0;
+    Py_ssize_t tail = nbk;
+    Py_ssize_t found = 0;
+
+    while (PyDict_Next(bound_kwds, &pos, &k, &v)) {
+      Py_INCREF(k);
+      PyTuple_SET_ITEM(names, i, k);
+      argv[npos + i] = v;
+      i++;
+    }
+
+    for (Py_ssize_t j = 0; j < nck; j++) {
+      Py_ssize_t at = -1;
+
+      k = PyTuple_GET_ITEM(kwnames, j);
+      v = args[nargs + j];
+      for (Py_ssize_t h = 0; found < nhit && h < nbk; h++) {
+        int eq = PyObject_RichCompareBool(
+            PyTuple_GET_ITEM(names, h), k, Py_EQ);
+        if (eq < 0)
+          goto fail;
+        if (eq) {
+          at = h;
+          found++;
+          break;
+        }
+      }
+      if (at >= 0) {
+        argv[npos + at] = v;
+        continue;
+      }
+      Py_INCREF(k);
+      PyTuple_SET_ITEM(names, tail, k);
+      argv[npos + tail] = v;
+      tail++;
+    }
+  }
+
+  spread->kwnames = names;
+  spread->argv = argv;
+  return 0;
+
+ fail:
+  Py_XDECREF(names);
+  PyMem_Free(spread->heap);
+  spread->heap = NULL;
+  return -1;
+}
+
+
 void KosArgSpread_Clear(KosArgSpread *spread) {
 
   Py_CLEAR(spread->kwnames);

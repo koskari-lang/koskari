@@ -96,6 +96,49 @@ def _call_through_bytecode(callable_obj, *args):
     return demand_call(outer_fn)
 
 
+def _call_names_through_bytecode(callable_obj, pos_args, kwd_names, kwd_vals):
+    """
+    Build and run a koskari function that calls callable_obj through the
+    CALL_NAMES opcode, whose stack is callable, positionals, keyword
+    values, then the names tuple, driven synchronously through
+    demand_call
+
+    :return: The call result
+    """
+
+    _, outer_ns = build_expr(
+        [["CONST", 0], ["RETURN", 1]],
+        local_syms=("target",),
+        values={"target": callable_obj},
+    )
+
+    body = [["FAST", 0]]
+    for a in pos_args:
+        body.append(["CONST", a])
+    for v in kwd_vals:
+        body.append(["CONST", v])
+    body.append(["CONST", tuple(kwd_names)])
+    body.append(["CALL_NAMES", len(pos_args)])
+    body.append(["RETURN", 1])
+
+    outer_code = build_code(
+        body,
+        local_syms=(),
+        closure_syms=("target",),
+        name="call_partial_names",
+    )
+    outer_fn = make_callable(outer_code, outer_ns, FormalsSpec())
+    return demand_call(outer_fn)
+
+
+def _pykw(*args, **kwargs):
+    """
+    Plain Python inner that reports what it was called with
+    """
+
+    return (args, kwargs)
+
+
 class TestKosPartialBehavior(unittest.TestCase):
     """
     KosPartial reproduces functools.partial's construction and attributes.
@@ -247,6 +290,49 @@ class TestKosPartialDispatch(unittest.TestCase):
 
         kp = KosPartial(_pyadd, "A")
         self.assertEqual(_call_through_bytecode(kp, "B"), "AB")
+
+
+    def test_bound_keywords(self):
+        """
+        KosPartial(kos_fn, b="B")("A") via bytecode binds b by name
+        """
+
+        kp = KosPartial(_make_concat_fn(), b="B")
+        self.assertEqual(_call_through_bytecode(kp, "A"), "AB")
+
+
+    def test_call_keywords(self):
+        """
+        KosPartial(kos_fn, "A")(b="B") via bytecode binds b by name
+        """
+
+        kp = KosPartial(_make_concat_fn(), "A")
+        self.assertEqual(
+            _call_names_through_bytecode(kp, (), ("b",), ("B",)), "AB")
+
+
+    def test_call_keyword_overrides_bound(self):
+        """
+        A call keyword replaces the bound keyword of the same name
+        """
+
+        kp = KosPartial(_make_concat_fn(), "A", b="X")
+        self.assertEqual(
+            _call_names_through_bytecode(kp, (), ("b",), ("B",)), "AB")
+
+
+    def test_both_sides_override_and_new(self):
+        """
+        Bound and call keywords merge: the call side replaces a shared
+        name and adds a new one, bound names keep their order
+        """
+
+        kp = KosPartial(_pykw, 1, x=1, y=2)
+        args, kwargs = _call_names_through_bytecode(
+            kp, (3,), ("y", "z"), (20, 30))
+        self.assertEqual(args, (1, 3))
+        self.assertEqual(kwargs, {"x": 1, "y": 20, "z": 30})
+        self.assertEqual(list(kwargs), ["x", "y", "z"])
 
 
     def test_gc_sane(self):

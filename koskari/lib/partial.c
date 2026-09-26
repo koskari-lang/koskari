@@ -162,11 +162,10 @@ PyObject *KosPartial_Call(
 
 /**
    Evaluator install: call the inner through the evaluator's call entry
-   with the bound arguments merged in, whatever the inner is -- a
-   KosCallable installs or runs in this evaluator, a Python callable is
-   called and its awaitable result awaited. Without keywords on either
-   side the merged positionals are one borrowed vector; otherwise the
-   keywords merge into a dict and the call takes the tuple arm.
+   with the bound arguments merged in, whatever the inner is. A
+   KosCallable installs or runs in this evaluator. A Python callable
+   is called and its awaitable result awaited. The merge is one
+   borrowed vector, built beside the call.
 */
 static KosOpResult kospartial_kos_vinstall(
     KosEvalState *es,
@@ -177,88 +176,18 @@ static KosOpResult kospartial_kos_vinstall(
     int tail_call) {
 
   KosPartialObject *p = (KosPartialObject *) callable;
-  PyObject *inner = p->func;
-  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  PyObject *small[16];
+  KosArgSpread spread;
+  KosOpResult r;
 
-  /* No keywords on either side: splice the bound and call positionals
-     into one borrowed vector, so the inner's vector fast paths stay
-     engaged. */
-  if (! nkw && (! p->keywords || ! PyDict_Size(p->keywords))) {
-    Py_ssize_t nb = PyTuple_GET_SIZE(p->args);
-    Py_ssize_t total = nb + nargs;
-    PyObject *small[16];
-    PyObject **vec = small;
-    KosOpResult r;
-
-    if (total > (Py_ssize_t) (sizeof(small) / sizeof(small[0]))) {
-      vec = PyMem_Malloc((size_t) total * sizeof(PyObject *));
-      if (! vec) {
-        PyErr_NoMemory();
-        return EVAL_RAISE();
-      }
-    }
-    for (Py_ssize_t i = 0; i < nb; i++)
-      vec[i] = PyTuple_GET_ITEM(p->args, i);
-    for (Py_ssize_t i = 0; i < nargs; i++)
-      vec[nb + i] = args[i];
-
-    r = KosEvalState_Call(
-        es, inner, vec, total, NULL, tail_call, NULL, NULL);
-    if (vec != small)
-      PyMem_Free(vec);
-    return r;
-  }
-
-  /* Keywords: merge as tuple + dict and take the tuple entry. */
-  {
-    PyObject *tup = PyTuple_New(nargs);
-    PyObject *kwargs = NULL;
-    PyObject *merged_args;
-    PyObject *merged_kw = NULL;
-    KosOpResult r;
-
-    if (! tup)
-      return EVAL_RAISE();
-    for (Py_ssize_t i = 0; i < nargs; i++) {
-      PyObject *v = args[i];
-      Py_INCREF(v);
-      PyTuple_SET_ITEM(tup, i, v);
-    }
-    if (nkw) {
-      kwargs = PyDict_New();
-      if (! kwargs) {
-        Py_DECREF(tup);
-        return EVAL_RAISE();
-      }
-      for (Py_ssize_t i = 0; i < nkw; i++) {
-        if (PyDict_SetItem(kwargs, PyTuple_GET_ITEM(kwnames, i),
-                           args[nargs + i]) < 0) {
-          Py_DECREF(tup);
-          Py_DECREF(kwargs);
-          return EVAL_RAISE();
-        }
-      }
-    }
-
-    merged_args = kospartial_merge_args(p->args, tup);
-    Py_DECREF(tup);
-    if (! merged_args) {
-      Py_XDECREF(kwargs);
-      return EVAL_RAISE();
-    }
-    if (kospartial_merge_kwds(p->keywords, kwargs, &merged_kw) < 0) {
-      Py_XDECREF(kwargs);
-      Py_DECREF(merged_args);
-      return EVAL_RAISE();
-    }
-    Py_XDECREF(kwargs);
-
-    r = KosEvalState_CallArgs(
-        es, inner, merged_args, merged_kw, tail_call, NULL, NULL);
-    Py_DECREF(merged_args);
-    Py_XDECREF(merged_kw);
-    return r;
-  }
+  if (KosArgSpread_InitMerged(
+          &spread, p->args, p->keywords, args, nargs, kwnames, small, 16) < 0)
+    return EVAL_RAISE();
+  r = KosEvalState_Call(
+      es, p->func, spread.argv, spread.nargs, spread.kwnames, tail_call,
+      NULL, NULL);
+  KosArgSpread_Clear(&spread);
+  return r;
 }
 
 
