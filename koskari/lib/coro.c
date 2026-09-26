@@ -636,6 +636,29 @@ PyObject *KosCoroutine_New(KosContext *ctx) {
 }
 
 
+int KosCoroutine_TakeFresh(PyObject *self, KosCode **code, PyObject **ns) {
+
+  KosCoroutine *const coro = (KosCoroutine *) self;
+  KosDynFrame *frame;
+
+  if (coro->state != KOS_CORO_NEW || coro->in_send || ! coro->ctx)
+    return 0;
+
+  frame = KosContext_FRAME_TOP(coro->ctx);
+  if (! frame || ! KosDynFrame_CODE(frame))
+    return 0;
+
+  *code = KosDynFrame_CODE(frame);
+  Py_INCREF((PyObject *) *code);
+  *ns = KosDynFrame_NS(frame);
+  Py_XINCREF(*ns);
+
+  Py_CLEAR(coro->ctx);
+  coro->state = KOS_CORO_DONE;
+  return 1;
+}
+
+
 /* === Unit lifecycle === */
 
 

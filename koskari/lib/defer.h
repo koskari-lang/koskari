@@ -84,6 +84,15 @@ extern PyTypeObject KosDeferType;
 PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds);
 
 
+/**
+   Take the fresh Koskari coroutine a delegating defer holds, spending
+   the defer as a drive to completion would: a new reference to the
+   coroutine, or NULL with no error set when the defer is not
+   delegating to one that has not been started.
+*/
+PyObject *KosDefer_TakeFreshCoroutine(PyObject *defer);
+
+
 /* === unit lifecycle === */
 
 

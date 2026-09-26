@@ -1585,11 +1585,13 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val);
 
 /**
    Settle a value in hand without touching the stack: a plain value, a
-   Defer, or a future comes back as it is; any other awaitable is
-   eagerly stepped to its result, or suspends. NORMAL with *out the
-   settled value (new reference), AWAIT with the yielded value (the
-   revive lands the settled value on the current frame's stack), or
-   RAISE. val is consumed.
+   Defer, or a future comes back as it is; a fresh Koskari coroutine is
+   installed as a call frame on the running chain; any other awaitable
+   is eagerly stepped to its result, or suspends. NORMAL with *out the
+   settled value (new reference), REPROLOGUE with a callee installed
+   whose return lands the value on the current frame's stack, AWAIT
+   with the yielded value (the revive lands the settled value there
+   too), or RAISE. val is consumed.
 */
 KosOpResult KosEvalState_Settle(KosEvalState *es, PyObject *val, PyObject **out);
 

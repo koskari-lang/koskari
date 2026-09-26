@@ -115,11 +115,12 @@ FORK_SRC = """
   (set! (item out "after-extent") (parameterq k3 "outside"))
   (set! (item out "child-k3") (await captured))
 
-  ;; an extent the parent enters after the fork is invisible to the
-  ;; child: the defer is the capture point
+  ;; a defer evaluates at its await, under the awaiter's extent: an
+  ;; extent entered between the defer and the await is visible to it,
+  ;; as a ContextVar set before a direct await is
   (define late (defer (lambda [] (parameterq k4 "child-default"))))
   (set! (item out "child-k4")
-        (parameterize [[k4 "too-late"]]
+        (parameterize [[k4 "at-await"]]
           (await late)))
 
   out))
@@ -189,8 +190,9 @@ class TestParamTaskIsolation(unittest.IsolatedAsyncioTestCase):
 
     async def test_fork_semantics(self):
         """
-        Root-scope stores cross the fork both directions, and the fork
-        captures exactly the extents applied when it was made
+        Root-scope stores cross the fork both directions; a task captures
+        the extents applied when it was made, and a defer awaited
+        directly runs under the awaiter's extent
         """
 
         mod = await self.load("param_iso_fork", FORK_SRC)
@@ -199,7 +201,7 @@ class TestParamTaskIsolation(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["parent-sees-child"], "child-wrote")
         self.assertEqual(out["after-extent"], "outside")
         self.assertEqual(out["child-k3"], "extent-value")
-        self.assertEqual(out["child-k4"], "child-default")
+        self.assertEqual(out["child-k4"], "at-await")
 
     async def test_drop_mid_extent_harmless(self):
         """

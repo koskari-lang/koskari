@@ -1,0 +1,51 @@
+;; Reproducer: a fresh Koskari coroutine reaching the await path is
+;; installed as a call frame on the running chain, not driven on its
+;; own context. A Python wrapper (functools.partial, a helper) that
+;; calls a Koskari function returns such a coroutine; awaiting it, or a
+;; defer over it, runs on the caller's chain and meets the caller's
+;; frame-depth limit. sleeper_partial and make_coroutine are injected by
+;; the test.
+
+
+(import-from functools partial)
+(import-from koskari.lib defer demand)
+
+
+(define step [n]
+  (if (> n 0)
+      (+ 1 ((partial step) (- n 1)))
+      0))
+
+
+(define via_partial [n]
+  (step n))
+
+
+(define defer-step [n]
+  (if (> n 0)
+      (+ 1 (await (defer defer-step (- n 1))))
+      0))
+
+
+(define via_defer [n]
+  (defer-step n))
+
+
+(define add [a b]
+  (+ a b))
+
+
+(define await_object [c]
+  (await c))
+
+
+(define sleeper []
+  (sleep 0)
+  "woke")
+
+
+(define demand_over_partial []
+  ((demand sleeper_partial)))
+
+
+;; The end.

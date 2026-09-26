@@ -262,7 +262,9 @@ static inline KosOpResult push_or_fuse(
 
 /**
    Push val, or if val is awaitable run eager_step and either push the
-   result or suspend (KOS_RES_AWAIT). Use only for (1) the result of a
+   result or suspend (KOS_RES_AWAIT); a fresh Koskari coroutine is
+   installed instead and REPROLOGUE names the installed callee, whose
+   return lands the value where the push would have. Use only for (1) the result of a
    call (CALL opcode: callable returned a coroutine) and (2) the AWAIT
    opcode (explicitly awaiting TOS). All other paths must use
    KosEvalState_StackPUSH so we do not auto-await values that are merely
@@ -283,9 +285,12 @@ static inline KosOpResult push_or_fuse(
 /**
    The settle half of push_or_await: a plain value comes back as it is,
    and so do a Defer and an asyncio future unless await_defer is set;
+   a fresh Koskari coroutine (or a Defer delegating to one, under an
+   explicit await) is installed as a call frame on the running chain;
    any other awaitable is eagerly stepped to its result, or suspends
    with the iterator parked on the context. NORMAL with *out the
-   settled value (new reference), AWAIT with the yielded value, or
+   settled value (new reference), REPROLOGUE with a callee installed
+   whose return delivers the value, AWAIT with the yielded value, or
    RAISE. val is consumed.
 */
 static inline KosOpResult kos_settle_value(
@@ -304,6 +309,31 @@ static inline KosOpResult kos_settle_value(
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
     *out = val;
     return EVAL_NORMAL();
+  }
+
+  /* A Koskari coroutine that has not been started is a program with
+     nothing to drive: it installs on this chain as a call frame and
+     returns its value the way a callee does. A Defer under an explicit
+     await hands over the fresh coroutine it delegates to. A coroutine
+     already started keeps its own drive below. */
+  if (await_defer && KosDefer_Check(val)) {
+    PyObject *fresh = KosDefer_TakeFreshCoroutine(val);
+    if (fresh) {
+      Py_DECREF(val);
+      val = fresh;
+      type = Py_TYPE(val);
+    }
+  }
+  if (type == &KosCoroutineType) {
+    KosCode *code;
+    PyObject *ns;
+
+    if (KosCoroutine_TakeFresh(val, &code, &ns)) {
+      KosOpResult r = KosEvalState_InstallCallFrame(es, code, ns, 0);
+      Py_DECREF((PyObject *) code);
+      Py_DECREF(val);
+      return r.kind == KOS_RES_RAISE ? r : EVAL_REPROLOGUE();
+    }
   }
 
   /* Defer is not auto-awaited; a plain value (explicit AWAIT drives it). */
