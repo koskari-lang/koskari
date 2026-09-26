@@ -335,49 +335,62 @@ class TestKosPartialDispatch(unittest.TestCase):
         self.assertEqual(list(kwargs), ["x", "y", "z"])
 
 
-    def test_inconsistent_bound_key_raises(self):
+    def test_subclass_key_stored_as_plain_str(self):
         """
-        A bound keyword key whose equality changes its answer between
-        the merge's sizing and its fill is refused, never written past
-        the merged names
+        A str subclass key given at creation is stored as a plain str,
+        so the merge never compares through its Python methods
         """
 
-        class Flip(str):
-            answers = [True]
-
+        class Loud(str):
             def __hash__(self):
                 return str.__hash__(self)
 
             def __eq__(self, other):
-                if Flip.answers:
-                    return Flip.answers.pop()
-                return False
+                raise AssertionError("compared through Python")
 
-        kp = KosPartial(_pykw, **{Flip("b"): 1})
-        with self.assertRaises(RuntimeError):
-            _call_names_through_bytecode(kp, (), ("b",), ("B",))
+        kp = KosPartial(_pykw, **{Loud("b"): 1, "c": 2})
+        self.assertEqual([type(k) for k in kp.keywords], [str, str])
+        args, kwargs = _call_names_through_bytecode(
+            kp, (), ("b", "d"), ("B", 4))
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs, {"b": "B", "c": 2, "d": 4})
 
 
-    def test_bound_key_growing_the_dict_raises(self):
+    def test_subclass_call_name_matches_by_text(self):
         """
-        A bound keyword key whose equality adds to the bound dict is
-        refused, never written past the merged names
+        A str subclass call name binds a bound keyword by its text,
+        without its Python methods running
         """
 
-        holder = []
-
-        class Grow(str):
+        class Loud(str):
             def __hash__(self):
-                return str.__hash__(self)
+                raise AssertionError("hashed through Python")
 
             def __eq__(self, other):
-                holder[0].keywords["extra"] = 1
-                return str.__eq__(self, other)
+                raise AssertionError("compared through Python")
 
-        kp = KosPartial(_pykw, **{Grow("b"): 1})
-        holder.append(kp)
-        with self.assertRaises(RuntimeError):
+        kp = KosPartial(_pykw, b=1, c=2)
+        args, kwargs = _call_names_through_bytecode(
+            kp, (), (Loud("b"),), ("B",))
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs, {"b": "B", "c": 2})
+
+
+    def test_non_str_bound_key_refused(self):
+        """
+        A non-str key reaching the bound keywords is refused: at
+        __setstate__ on the way in, and at the call when inserted
+        through the live dict
+        """
+
+        kp = KosPartial(_pykw, b=1)
+        with self.assertRaises(TypeError):
+            kp.__setstate__((_pykw, (), {1: 2}, None))
+        kp.keywords[1] = 2
+        with self.assertRaises(TypeError):
             _call_names_through_bytecode(kp, (), ("b",), ("B",))
+        with self.assertRaises(TypeError):
+            kp(b="B")
 
 
     def test_gc_sane(self):

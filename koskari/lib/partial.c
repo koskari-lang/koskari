@@ -164,7 +164,7 @@ static PyObject *kospartial_new(
       Py_DECREF(new_args);
       return NULL;
     }
-    if (kwds && PyDict_Update(new_kw, kwds) < 0) {
+    if (KosKeywords_Update(new_kw, kwds) < 0) {
       Py_DECREF(new_args);
       Py_DECREF(new_kw);
       return NULL;
@@ -174,9 +174,10 @@ static PyObject *kospartial_new(
 
   } else {
     new_args = rest;  /* steal the slice reference */
-    new_kw = kwds ? PyDict_Copy(kwds) : PyDict_New();
-    if (! new_kw) {
+    new_kw = PyDict_New();
+    if (! new_kw || KosKeywords_Update(new_kw, kwds) < 0) {
       Py_DECREF(new_args);
+      Py_XDECREF(new_kw);
       return NULL;
     }
   }
@@ -404,9 +405,11 @@ static PyObject *kospartial_setstate(PyObject *self, PyObject *state) {
   if (! new_args)
     return NULL;
 
-  PyObject *new_kw = (kw == Py_None) ? PyDict_New() : PyDict_Copy(kw);
-  if (! new_kw) {
+  PyObject *new_kw = PyDict_New();
+  if (! new_kw
+      || KosKeywords_Update(new_kw, (kw == Py_None) ? NULL : kw) < 0) {
     Py_DECREF(new_args);
+    Py_XDECREF(new_kw);
     return NULL;
   }
 

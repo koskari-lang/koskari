@@ -161,7 +161,6 @@ int KosArgSpread_InitMerged(
   Py_ssize_t nbk = bound_kwds ? PyDict_Size(bound_kwds) : 0;
   Py_ssize_t nck = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
   Py_ssize_t npos = nb + nargs;
-  Py_ssize_t nhit = 0;
   Py_ssize_t nkw = nck;
   PyObject **argv = buf;
   PyObject *names = NULL;
@@ -181,13 +180,23 @@ int KosArgSpread_InitMerged(
   }
 
   /* Bound keywords: count the call keywords that replace one, so the
-     merged names tuple is sized once. */
+     merged names tuple is sized once. Names match by text. */
   if (nbk) {
-    for (Py_ssize_t i = 0; i < nck; i++) {
-      int has = PyDict_Contains(bound_kwds, PyTuple_GET_ITEM(kwnames, i));
-      if (has < 0)
-        return -1;
-      nhit += has;
+    Py_ssize_t nhit = 0;
+
+    for (Py_ssize_t j = 0; j < nck; j++) {
+      PyObject *k = PyTuple_GET_ITEM(kwnames, j);
+      PyObject *bk, *bv;
+      Py_ssize_t pos = 0;
+
+      if (! PyUnicode_Check(k))
+        goto not_str;
+      while (PyDict_Next(bound_kwds, &pos, &bk, &bv)) {
+        if (PyUnicode_Check(bk) && PyUnicode_Compare(bk, k) == 0) {
+          nhit++;
+          break;
+        }
+      }
     }
     nkw = nbk + nck - nhit;
   }
@@ -228,32 +237,24 @@ int KosArgSpread_InitMerged(
     PyObject *k, *v;
     Py_ssize_t pos = 0, i = 0;
     Py_ssize_t tail = nbk;
-    Py_ssize_t found = 0;
 
     while (PyDict_Next(bound_kwds, &pos, &k, &v)) {
-      if (i == nbk)
-        goto changed;
+      if (! PyUnicode_Check(k))
+        goto not_str;
       Py_INCREF(k);
       PyTuple_SET_ITEM(names, i, k);
       argv[npos + i] = v;
       i++;
     }
-    if (i != nbk)
-      goto changed;
 
     for (Py_ssize_t j = 0; j < nck; j++) {
       Py_ssize_t at = -1;
 
       k = PyTuple_GET_ITEM(kwnames, j);
       v = args[nargs + j];
-      for (Py_ssize_t h = 0; found < nhit && h < nbk; h++) {
-        int eq = PyObject_RichCompareBool(
-            PyTuple_GET_ITEM(names, h), k, Py_EQ);
-        if (eq < 0)
-          goto fail;
-        if (eq) {
+      for (Py_ssize_t h = 0; h < nbk; h++) {
+        if (PyUnicode_Compare(PyTuple_GET_ITEM(names, h), k) == 0) {
           at = h;
-          found++;
           break;
         }
       }
@@ -261,8 +262,6 @@ int KosArgSpread_InitMerged(
         argv[npos + at] = v;
         continue;
       }
-      if (tail == nkw)
-        goto changed;
       Py_INCREF(k);
       PyTuple_SET_ITEM(names, tail, k);
       argv[npos + tail] = v;
@@ -274,9 +273,8 @@ int KosArgSpread_InitMerged(
   spread->argv = argv;
   return 0;
 
- changed:
-  PyErr_SetString(PyExc_RuntimeError,
-                  "bound keywords changed during argument merge");
+ not_str:
+  PyErr_SetString(PyExc_TypeError, "keywords must be strings");
  fail:
   Py_XDECREF(names);
   PyMem_Free(spread->heap);
@@ -291,6 +289,37 @@ void KosArgSpread_Clear(KosArgSpread *spread) {
   PyMem_Free(spread->heap);
   spread->heap = NULL;
   spread->argv = NULL;
+}
+
+
+int KosKeywords_Update(PyObject *dst, PyObject *src) {
+
+  PyObject *k, *v;
+  Py_ssize_t pos = 0;
+
+  if (! src)
+    return 0;
+
+  while (PyDict_Next(src, &pos, &k, &v)) {
+    int r;
+
+    if (! PyUnicode_Check(k)) {
+      PyErr_SetString(PyExc_TypeError, "keywords must be strings");
+      return -1;
+    }
+    if (PyUnicode_CheckExact(k)) {
+      r = PyDict_SetItem(dst, k, v);
+    } else {
+      PyObject *plain = PyUnicode_FromObject(k);
+      if (! plain)
+        return -1;
+      r = PyDict_SetItem(dst, plain, v);
+      Py_DECREF(plain);
+    }
+    if (r < 0)
+      return -1;
+  }
+  return 0;
 }
 
 

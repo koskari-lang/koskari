@@ -159,9 +159,10 @@ int KosArgSpread_Init(
    itself and nothing is allocated. Otherwise the vector goes in buf
    when it fits bufcap, else on the heap; buf may be NULL with bufcap
    0. Every argv entry is borrowed from its source, which must outlive
-   the spread. A bound key whose comparison or hash changes the
-   outcome between sizing and filling raises RuntimeError. Returns 0,
-   or -1 with PyErr set and nothing left to clear.
+   the spread. Names are matched by their text, so no Python code runs
+   inside the merge. A bound key or a call name that is not a str
+   raises TypeError. Returns 0, or -1 with PyErr set and nothing left
+   to clear.
 */
 int KosArgSpread_InitMerged(
     KosArgSpread *spread,
@@ -176,6 +177,16 @@ int KosArgSpread_InitMerged(
 
 /** Release what KosArgSpread_Init or KosArgSpread_InitMerged took. */
 void KosArgSpread_Clear(KosArgSpread *spread);
+
+
+/**
+   Copy src's items into dst under exact str keys: a str subclass key
+   is stored as a plain str, and any other key raises TypeError. The
+   bound keywords of partial and values go through it, so the merge
+   can match names by text. src may be NULL. Returns 0, or -1 with
+   PyErr set.
+*/
+int KosKeywords_Update(PyObject *dst, PyObject *src);
 
 
 /* === Python-slot adapters === */

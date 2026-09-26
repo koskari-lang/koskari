@@ -671,8 +671,9 @@ PyObject *KosValues_New(PyObject *args, PyObject *kwds) {
     }
 
     if (kwds) {
-        KosValues_KWDS(self) = PyDict_Copy(kwds);
-        if (! KosValues_KWDS(self)) {
+        KosValues_KWDS(self) = PyDict_New();
+        if (! KosValues_KWDS(self)
+            || KosKeywords_Update(KosValues_KWDS(self), kwds) < 0) {
             Py_DECREF(self);
             return NULL;
         }
