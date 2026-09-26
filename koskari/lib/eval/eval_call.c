@@ -18,7 +18,8 @@
 /**
   koskari/lib/eval/eval_call.c
 
-  The call core: frame prep, the KosEvalState_Call* entries, and
+  The call core: the CPS entries (KosEvalState_Call, CallArgs,
+  CallMethod, CallInto), the one dispatch they share, and
   kos_call_invoke with its per-flag bodies for the CALL* opcode
   prologues. Included into eval.c as a segment (see the eval/ includes
   there).
@@ -504,10 +505,12 @@ KosOpResult KosEvalState_SettleInto(
      so it drops the window LAST, keeping the callable and args alive
      through the whole install with no extra refcounting.
 
-   Legacy classes (KosCallables other than exact KosFunction, and
-   instance-call injection) preserve today's steal-first ordering by
-   spilling the window into an owned vector before delegating to
-   KosEvalState_Call.  Tail calls ride the same entry under
+   Legacy classes (KosCallables other than KosFunction, and every
+   tail call the bind-before-reset arm declines) preserve the
+   steal-first ordering by spilling the window into an owned vector
+   before delegating to kos_call_push.  An instance whose __call__ is a
+   KosCallable re-enters the core on the target without a spill
+   (kos_call_invoke_instance).  Tail calls ride the same entry under
    KOS_CALL_TAIL (see the flag notes below). */
 
 #define KOS_CALL_PLAIN            0x0u
@@ -520,7 +523,7 @@ KosOpResult KosEvalState_SettleInto(
 /* Tail call: the caller's frame is reused.  Exact non-yielding
    KosFunctions take the bind-before-reset subpath (the frame reset's
    block-clear IS the window drop); everything else spills and keeps
-   KosEvalState_Call's tail semantics. */
+   kos_call_push's tail semantics. */
 #define KOS_CALL_TAIL             0x8u
 /* Internal, set by kos_call_invoke when self_arg was injected: argv is
    the prepend buffer, not the block tail, so the steal-bind fast path
@@ -557,7 +560,7 @@ static inline int kos_tail_ns_reusable(PyObject *ns) {
 /**
    The legacy classes' steal-first spill: move the window into an owned
    vector (refs transfer out of the block), delegate to
-   KosEvalState_Call, release. Out of line so the spill buffer sits in
+   kos_call_push, release. Out of line so the spill buffer sits in
    this frame alone, on the paths that take it.
 */
 static KOS_NOINLINE KosOpResult kos_call_legacy_spill(
@@ -690,7 +693,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
      reset's block-clear performs the window drop.  Requires the window
      to live in the reused frame's own block and non-yielding code;
      anything else falls to the legacy spill below (which preserves
-     KosEvalState_Call's tail semantics exactly). */
+     kos_call_push's tail semantics exactly). */
   if (unlikely(flags & KOS_CALL_TAIL)) {
     KosDynFrame *frame = KosEvalState_FRAME(es);
 
@@ -910,7 +913,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
      into an owned vector (refs transfer out of the block), delegate,
      release.  Tail flows land here too (py tails need
      tail_prep_py_call; other-callable and deferred tails keep
-     KosEvalState_Call's semantics). */
+     kos_call_push's semantics). */
 legacy:
   if (window)
     return kos_call_legacy_spill(
@@ -1114,7 +1117,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
    classified the callable -- exact KosFunction, simple arity nargs + 2,
    no self-bind, no kwnames -- and the window holds the args at the
    block tail.  Mirrors the two steal-bind arms of the simple-call
-   branch in kos_call_invoke_body.
+   branch in kos_call_invoke_impl.
 */
 static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
         KosEvalState *es,
@@ -1222,7 +1225,7 @@ static inline KosOpResult kos_call_invoke(
       && nargs + 2 == KosFunction_SIMPLE_ARITY1(callable)
       /* a generator function never takes a frame-install arm; its
          call constructs the AsyncGenerator through the generator gate
-         in kos_call_invoke_body instead */
+         in kos_call_invoke_impl instead */
       && KosFunction_CODE(callable)
       && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable))
       && KosFunction_BIND_SELF_STATE(callable) == 2)
