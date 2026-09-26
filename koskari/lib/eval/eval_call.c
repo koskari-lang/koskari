@@ -685,13 +685,10 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
     /* A generator function call never begins evaluating its code: it
        binds the arguments and completes with the new AsyncGenerator as
        the call's value, which the function's install reports in hand.
-       This gate stands ahead of the steal-bind arm below, so it never
-       sees yielding code. */
-    if (unlikely(code && KosCode_YIELDS(code)))
-      goto legacy;
-
+       The steal-bind arm below never sees yielding code. */
     if (likely(! kwnames
-               && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
+               && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
+               && ! (code && KosCode_YIELDS(code)))) {
       /* Simple call: exact arity against plain positional formals on
          non-yielding code (classified at construction, and the
          generator gate above stands regardless).  Binds by slot
@@ -758,10 +755,27 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
 
     }
 
-    /* Every other function call (a plain vector, keywords, a non-simple
-       arity, a self-binding function): the function's own install,
-       which binds and installs its frame, reached through the spill. */
-    goto legacy;
+    /* Every other function call (a generator function, a plain vector,
+       keywords, a non-simple arity, a self-binding function, a
+       prepended receiver): the function's own install, reading argv
+       in place.  An installed frame lands nothing on the caller's
+       block, so the window drops after it; a generator function
+       completes in hand and its AsyncGenerator lands on the block, so
+       the window drops first. */
+    {
+      KosOpResult r = KosFunctionType.kos_call.kc_vinstall(
+          es, callable, argv, nargs, kwnames, 0);
+
+      if (unlikely(r.kind == KOS_RES_RAISE))
+        goto fail;
+      if (window)
+        kos_stack_drop_noerr_fast(caller_slot, window);
+      if (flags & KOS_CALL_CALLABLE_OWNED)
+        Py_DECREF(callable);
+      if (r.kind == KOS_RES_RETURN)
+        return kos_op_result_PUSH_OR_AWAIT(es, r.val);
+      return r;
+    }
   }
 
   /* Class: an instance whose __call__ is a KosCallable -- the call
@@ -789,9 +803,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
 
   /* Legacy classes: preserve steal-first ordering.  Spill the window
      into an owned vector (refs transfer out of the block), delegate,
-     release.  Every KosFunction call but the simple window steal-bind
-     lands here too (a generator function, keywords, a non-simple
-     arity, a self-binding function), as do tail flows (py tails need
+     release.  Tail flows land here too (py tails need
      tail_prep_py_call; other-callable and deferred tails keep
      KosEvalState_Call's semantics). */
 legacy:
