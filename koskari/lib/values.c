@@ -299,20 +299,10 @@ static KosOpResult values_kos_vinstall(
   Py_DECREF(inv_args);
   Py_XDECREF(inv_kwds);
 
-  /* The merged call goes through the call entry as the target's own
+  /* The merged call goes through the tuple entry as the target's own
      install reports it: a value in hand, or an installed callee. */
-  {
-    KosArgSpread spread;
-
-    if (KosArgSpread_Init(&spread, merged_args, merged_kw, NULL, 0) < 0) {
-      Py_DECREF(merged_args);
-      Py_XDECREF(merged_kw);
-      return EVAL_RAISE();
-    }
-    r = KosEvalState_CallResult(es, target, spread.argv, spread.nargs,
-                                spread.kwnames, tail_call, NULL, NULL);
-    KosArgSpread_Clear(&spread);
-  }
+  r = KosEvalState_CallArgsResult(es, target, merged_args, merged_kw,
+                                  tail_call, NULL, NULL);
   Py_DECREF(merged_args);
   Py_XDECREF(merged_kw);
   return r;

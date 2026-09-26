@@ -206,17 +206,8 @@ static KosOpResult kos_apply_install_core(
     return EVAL_RAISE();
   }
 
-  {
-    KosArgSpread spread;
-
-    if (KosArgSpread_Init(&spread, seq_args, kwds, NULL, 0) < 0) {
-      Py_DECREF(seq_args);
-      return EVAL_RAISE();
-    }
-    r = KosEvalState_CallResult(es, fn, spread.argv, spread.nargs,
-                                spread.kwnames, tail_call, NULL, NULL);
-    KosArgSpread_Clear(&spread);
-  }
+  r = KosEvalState_CallArgsResult(es, fn, seq_args, kwds, tail_call,
+                                  NULL, NULL);
   Py_DECREF(seq_args);
   return r;
 }

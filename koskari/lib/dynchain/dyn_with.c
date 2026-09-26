@@ -444,14 +444,13 @@ static KosOpResult kos_dyn_with_leave(
   KosOpResult kr = KosEvalState_CallResult(es, exit_fn, argv, argc, NULL,
                                            0, NULL, NULL);
 
-  /* A value in hand lands on the block, or is awaited there; settled,
+  /* A value in hand is settled, or awaited onto the block; settled,
      the exit classifies now. */
   if (kr.kind == KOS_RES_RETURN) {
-    kr = KosEvalState_PushOrAwait(es, kr.val);
+    PyObject *result;
+
+    kr = KosEvalState_Settle(es, kr.val, &result);
     if (kr.kind == KOS_RES_NORMAL) {
-      PyObject *result = KosEvalState_StackPopRef(es);
-      if (! result)
-        return EVAL_RAISE();
       if (kos_dyn_with_classify_exit(es, node, result) < 0)
         return EVAL_RAISE();
       return EVAL_NORMAL();

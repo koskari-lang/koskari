@@ -280,35 +280,49 @@ static inline KosOpResult push_or_fuse(
 
    :return: EVAL_NORMAL, EVAL_AWAIT, or EVAL_RAISE
 */
-static inline KosOpResult push_or_await(
+/**
+   The settle half of push_or_await: a plain value comes back as it is,
+   and so do a Defer and an asyncio future unless await_defer is set;
+   any other awaitable is eagerly stepped to its result, or suspends
+   with the iterator parked on the context. NORMAL with *out the
+   settled value (new reference), AWAIT with the yielded value, or
+   RAISE. val is consumed.
+*/
+static inline KosOpResult kos_settle_value(
     KosEvalState *es,
     PyObject *val,
     int await_defer,
-    int fuse) {
+    PyObject **out) {
 
   /* Awaitability gate first: a type-level probe (two loads), so the
      dominant non-awaitable result skips everything below -- including
      the Defer subtype walk, which is sound to hoist because KosDefer
      defines am_await and therefore always passes this gate. */
   PyTypeObject *type = Py_TYPE(val);
-  SAYF("[eval] push_or_await entry is_awaitable=%d\n",
+  SAYF("[eval] settle entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
-  if (! type->tp_as_async || ! type->tp_as_async->am_await)
-    return push_or_fuse(es, val, fuse);
+  if (! type->tp_as_async || ! type->tp_as_async->am_await) {
+    *out = val;
+    return EVAL_NORMAL();
+  }
 
-  /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
-  if (! await_defer && KosDefer_Check(val))
-    return push_or_fuse(es, val, fuse);
+  /* Defer is not auto-awaited; a plain value (explicit AWAIT drives it). */
+  if (! await_defer && KosDefer_Check(val)) {
+    *out = val;
+    return EVAL_NORMAL();
+  }
 
-  /* asyncio futures are handles; implicit sites push them plain. */
+  /* asyncio futures are handles; implicit sites take them plain. */
   if (! await_defer) {
     int isfut = kos_isfuture(val);
     if (isfut < 0) {
       Py_DECREF(val);
       return EVAL_RAISE();
     }
-    if (isfut)
-      return push_or_fuse(es, val, fuse);
+    if (isfut) {
+      *out = val;
+      return EVAL_NORMAL();
+    }
   }
 
   int suspended = 0;
@@ -316,17 +330,42 @@ static inline KosOpResult push_or_await(
   PyObject *result = KosEvalState_EagerStepAwaitable(es, val, &suspended, &yielded);
   Py_DECREF(val);
 
-  if (result)
-    return push_or_fuse(es, result, fuse);
+  if (result) {
+    *out = result;
+    return EVAL_NORMAL();
+  }
 
   if (suspended && yielded) {
     KosEvalState_MarkSuspendedNotRunning(es);
-    SAYF("[eval] push_or_await set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
+    SAYF("[eval] settle set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
          suspended, yielded ? 1 : 0);
     return EVAL_AWAIT(yielded);
   }
 
   return EVAL_RAISE();
+}
+
+
+static inline KosOpResult push_or_await(
+    KosEvalState *es,
+    PyObject *val,
+    int await_defer,
+    int fuse) {
+
+  PyObject *settled;
+  KosOpResult r = kos_settle_value(es, val, await_defer, &settled);
+
+  if (r.kind != KOS_RES_NORMAL)
+    return r;
+  return push_or_fuse(es, settled, fuse);
+}
+
+
+KosOpResult KosEvalState_Settle(KosEvalState *es, PyObject *val, PyObject **out) {
+  if (unlikely(! val))
+    return EVAL_RAISE();
+
+  return kos_settle_value(es, val, 0, out);
 }
 
 

@@ -115,14 +115,13 @@ static KosOpResult kos_dyn_wind_fire(KosEvalState *es, PyObject *thunk) {
   KosOpResult wr = KosEvalState_CallResult(es, thunk, NULL, 0, NULL, 0,
                                            NULL, NULL);
 
-  /* A value in hand is settled on the block, or awaited there; settled,
-     it is not the wind's business. */
+  /* A value in hand is settled, or awaited onto the block; settled, it
+     is not the wind's business. */
   if (wr.kind == KOS_RES_RETURN) {
-    wr = KosEvalState_PushOrAwait(es, wr.val);
+    PyObject *val;
+
+    wr = KosEvalState_Settle(es, wr.val, &val);
     if (wr.kind == KOS_RES_NORMAL) {
-      PyObject *val = KosEvalState_StackPopRef(es);
-      if (! val)
-        return EVAL_RAISE();
       Py_DECREF(val);
       return EVAL_NORMAL();
     }

@@ -209,7 +209,7 @@ static KosOpResult kospartial_kos_vinstall(
     return r;
   }
 
-  /* Keywords: merge as tuple + dict, then spread to the vector. */
+  /* Keywords: merge as tuple + dict and take the tuple entry. */
   {
     PyObject *tup = PyTuple_New(nargs);
     PyObject *kwargs = NULL;
@@ -253,18 +253,8 @@ static KosOpResult kospartial_kos_vinstall(
     }
     Py_XDECREF(kwargs);
 
-    {
-      KosArgSpread spread;
-
-      if (KosArgSpread_Init(&spread, merged_args, merged_kw, NULL, 0) < 0) {
-        Py_DECREF(merged_args);
-        Py_XDECREF(merged_kw);
-        return EVAL_RAISE();
-      }
-      r = KosEvalState_CallResult(es, inner, spread.argv, spread.nargs,
-                                  spread.kwnames, tail_call, NULL, NULL);
-      KosArgSpread_Clear(&spread);
-    }
+    r = KosEvalState_CallArgsResult(es, inner, merged_args, merged_kw,
+                                    tail_call, NULL, NULL);
     Py_DECREF(merged_args);
     Py_XDECREF(merged_kw);
     return r;

@@ -1530,11 +1530,13 @@ KosOpResult KosEvalState_CallWithReceiver(
 
 
 /**
-   KosEvalState_CallArgs: KosEvalState_Call over a tuple and a dict,
+   KosEvalState_CallArgs: KosEvalState_Call over a tuple and a dict. A
+   plain Python callable takes them as they are; a KosCallable's are
    spread once to the vector shape. Used by CALL_STAR and
    TAIL_CALL_STAR.
 
-   callable, args_tuple, kwds_dict are borrowed.
+   callable, args_tuple (may be NULL), kwds_dict (may be NULL) are
+   borrowed.
 */
 KosOpResult KosEvalState_CallArgs(
     KosEvalState *es,
@@ -1542,6 +1544,24 @@ KosOpResult KosEvalState_CallArgs(
     PyObject *args_tuple,
     PyObject *kwds_dict,
     int tail_call);
+
+
+/**
+   KosEvalState_CallResult over a tuple and a dict, with the same
+   resume contract: the entry an install slot uses to call through to
+   another callable with arguments it holds as a tuple and a dict.
+
+   callable, args_tuple (may be NULL), kwds_dict (may be NULL) are
+   borrowed.
+*/
+KosOpResult KosEvalState_CallArgsResult(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    int tail_call,
+    const KosResumeKind *resume,
+    void *state);
 
 
 /* === Unit lifecycle === */
@@ -1561,6 +1581,17 @@ KosOpResult KosEvalState_CallArgs(
    val is consumed (ownership transferred).
 */
 KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val);
+
+
+/**
+   Settle a value in hand without touching the stack: a plain value, a
+   Defer, or a future comes back as it is; any other awaitable is
+   eagerly stepped to its result, or suspends. NORMAL with *out the
+   settled value (new reference), AWAIT with the yielded value (the
+   revive lands the settled value on the current frame's stack), or
+   RAISE. val is consumed.
+*/
+KosOpResult KosEvalState_Settle(KosEvalState *es, PyObject *val, PyObject **out);
 
 
 /**

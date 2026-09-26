@@ -292,6 +292,43 @@ static KosOpResult kos_entry_value(
 }
 
 
+/**
+   The resume arm shared by the CPS entries: hand a dispatch outcome to
+   resume. A value in hand goes to kos_entry_value; an installed
+   callee, a resume armed on a code-less frame the install pushed, or
+   an await from such a frame leaves caller's own frame unchanged and
+   still reachable, so resume is armed on it for the eventual
+   delivery; RAISE and FATAL relay untouched. With resume NULL the
+   outcome relays as is.
+*/
+static KosOpResult kos_call_result_arm(
+    KosEvalState *es,
+    KosDynFrame *caller,
+    KosOpResult r,
+    const KosResumeKind *resume,
+    void *state) {
+
+  if (! resume)
+    return r;
+
+  switch (r.kind) {
+    case KOS_RES_RETURN:
+      return kos_entry_value(es, caller, r.val, resume, state);
+
+    case KOS_RES_NORMAL:
+    case KOS_RES_POLL:
+    case KOS_RES_REPROLOGUE:
+    case KOS_RES_AWAIT:
+      KosDynFrame_RESUME_KIND(caller) = resume;
+      KosDynFrame_RESUME_STATE(caller) = state;
+      return r;
+
+    default:
+      return r;
+  }
+}
+
+
 KosOpResult KosEvalState_CallResult(
     KosEvalState *es,
     PyObject *callable,
@@ -321,28 +358,7 @@ KosOpResult KosEvalState_CallResult(
                           tail_call);
   }
 
-  if (! resume)
-    return r;
-
-  switch (r.kind) {
-    case KOS_RES_RETURN:
-      return kos_entry_value(es, caller, r.val, resume, state);
-
-    case KOS_RES_NORMAL:
-    case KOS_RES_POLL:
-    case KOS_RES_REPROLOGUE:
-    case KOS_RES_AWAIT:
-      /* A callee installed above caller, a resume armed on a code-less
-         frame the install pushed, or an await from such a frame:
-         caller's own frame is unchanged and still reachable, and its
-         eventual delivery lands here. */
-      KosDynFrame_RESUME_KIND(caller) = resume;
-      KosDynFrame_RESUME_STATE(caller) = state;
-      return r;
-
-    default:
-      return r;  /* RAISE / FATAL: relay untouched */
-  }
+  return kos_call_result_arm(es, caller, r, resume, state);
 }
 
 
@@ -1181,6 +1197,49 @@ static inline KosOpResult kos_call_invoke(
 }
 
 
+/**
+   The one place a tuple and a dict meet a call: a plain Python
+   callable takes them as they are through PyObject_Call and its result
+   is reported in hand; a KosCallable, or an instance whose __call__ is
+   one, is spread once to the vector shape and dispatched. Keywords
+   take the heap, as PyObject_Call's own dict unpacking does. The
+   outcome is the install contract's.
+*/
+static KosOpResult kos_call_dispatch_args(
+    KosEvalState *es,
+    KosCallSlots *slots,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    int tail_call) {
+
+  KosArgSpread spread;
+  KosOpResult r;
+
+  if (! slots && ! KosInstanceCall_Check(callable)) {
+    PyObject *empty = NULL;
+    PyObject *result;
+
+    if (! args_tuple) {
+      empty = PyTuple_New(0);
+      if (! empty)
+        return EVAL_RAISE();
+      args_tuple = empty;
+    }
+    result = PyObject_Call(callable, args_tuple, kwds_dict);
+    Py_XDECREF(empty);
+    return result ? EVAL_RETURN(result) : EVAL_RAISE();
+  }
+
+  if (KosArgSpread_Init(&spread, args_tuple, kwds_dict, NULL, 0) < 0)
+    return EVAL_RAISE();
+  r = kos_call_dispatch(es, slots, callable, spread.argv, spread.nargs,
+                        spread.kwnames, tail_call);
+  KosArgSpread_Clear(&spread);
+  return r;
+}
+
+
 KosOpResult KosEvalState_CallArgs(
     KosEvalState *es,
     PyObject *callable,
@@ -1188,17 +1247,51 @@ KosOpResult KosEvalState_CallArgs(
     PyObject *kwds_dict,
     int tail_call) {
 
-  /* Spread once to the vectorcall layout. Keywords take the heap, as
-     PyObject_Call's own dict unpacking does. */
-  KosArgSpread spread;
+  KosCallSlots *slots = NULL;
+  int py_tail = 0;
+  int tail_defer_return = 0;
   KosOpResult r;
 
-  if (KosArgSpread_Init(&spread, args_tuple, kwds_dict, NULL, 0) < 0)
+  if (! KosCallable_CheckSlots(callable, &slots)
+      && ! KosInstanceCall_Check(callable)) {
+    if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
+      return EVAL_RAISE();
+    py_tail = tail_call;
+  }
+
+  r = kos_call_dispatch_args(es, slots, callable, args_tuple, kwds_dict,
+                             tail_call);
+  if (r.kind != KOS_RES_RETURN)
+    return r;
+  return deliver_call_value(es, r.val, py_tail, tail_defer_return);
+}
+
+
+KosOpResult KosEvalState_CallArgsResult(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    int tail_call,
+    const KosResumeKind *resume,
+    void *state) {
+
+  KosDynFrame *caller = KosEvalState_FRAME(es);
+  KosCallSlots *slots = NULL;
+  KosOpResult r;
+
+#if KOS_EVAL_SAFETYNET
+  if (unlikely(tail_call && resume)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "tail call with a resume: no caller frame to resume");
     return EVAL_RAISE();
-  r = KosEvalState_Call(es, callable, spread.argv, spread.nargs,
-                        spread.kwnames, tail_call);
-  KosArgSpread_Clear(&spread);
-  return r;
+  }
+#endif
+
+  (void) KosCallable_CheckSlots(callable, &slots);
+  r = kos_call_dispatch_args(es, slots, callable, args_tuple, kwds_dict,
+                             tail_call);
+  return kos_call_result_arm(es, caller, r, resume, state);
 }
 
 
